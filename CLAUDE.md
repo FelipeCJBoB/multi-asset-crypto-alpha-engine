@@ -1,8 +1,8 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-08 | Sprint atual: **0** | Versão: v1.0
-> Documento mestre: `docs/PRD_V3_2_UNIFICADO.md` (3.329 linhas, 19 partes)
+> Atualizado: 2026-08-08 | Sprint atual: **4** (Feature Engine) | Versão: v1.1
+> Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
 > Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
 
 ---
@@ -203,6 +203,34 @@ uv run quant live run
 
 ---
 
+## Rotina de git — histórico como memória do projeto
+
+**Repositório:** `github.com/FelipeCJBoB/btcusdt-quant-engine` (privado). Branch única, `master` — trunk-based, sem PR para o dia a dia; branch separada só quando uma mudança for grande o bastante pra revisar antes de integrar, e só se pedido explicitamente.
+
+O `git log` é o registro operacional deste projeto — o que foi feito, quando e por quê. Complementa, não repete, os outros dois changelogs: **este arquivo** versiona política/regras do projeto, o **PRD** versiona o blueprint técnico, o **git log** versiona a execução — inclusive achados e decisões de não fazer algo. Antes de perguntar "o que já aconteceu", olhe o histórico — é mais confiável que reconstruir de memória de conversa.
+
+**Quando commitar.** Ao final de cada unidade de trabalho coerente — uma tarefa concluída, uma decisão registrada, um achado de dado, um Sprint fechado. Não no fim de uma sessão inteira de uma vez, não a cada arquivo isolado. Teste prático: se a mensagem do commit não coubesse numa frase sem virar "várias coisas", é grande demais — quebre em mais de um.
+
+**Formato da mensagem:**
+```
+<título curto, imperativo, até ~70 caracteres>
+
+<corpo: o quê e por quê — o diff já mostra o como>
+<âncora §X.Y do PRD quando aplicável (DoD, "Qualquer PR")>
+<achado ou decisão relevante, mesmo negativa — "não recriamos X porque Y">
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+```
+Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine encontra 2 duplicatas reais em metrics`.
+
+**Tags de marco.** Ao fechar um Sprint ou passar um Gate: `git tag sprint-N-done` / `git tag gate-M-pass`, com `git push --tags`. Não é por commit — é âncora de navegação, "me leva pro estado do repo quando o Gate 3 passou".
+
+**Push.** Direto para `origin/master` ao final de cada commit significativo, sem precisar de autorização a cada vez — isso está autorizado por este parágrafo. Qualquer coisa fora do fluxo normal (force-push, reset, mudar branch protegida, reescrever histórico) exige confirmação explícita, sempre, sem exceção.
+
+**Para quem não usa git no dia a dia.** Forma mais simples de acompanhar: abrir `github.com/FelipeCJBoB/btcusdt-quant-engine/commits/master` no navegador — lista cronológica, clicável, mensagens escritas pra serem lidas por humano, não só por máquina. Pode perguntar "o que mudou desde [data/sprint/versão]" a qualquer momento — vira `git log`/`git diff` por trás, sem precisar saber o comando.
+
+---
+
 ## Comportamento esperado
 
 **Meça antes de afirmar.** Este projeto já perdeu três decisões para números plausíveis escritos com confiança: ATR presumido de volatilidade anualizada (estava no percentil 13 do real), fórmula de concorrência trocada (fator 2 de erro), e um "≥ 3 unidades" inventado que restringiu 50% mais que o necessário. Os dados estão em `data.binance.vision`, são públicos e não exigem chave. Baixe e meça.
@@ -225,14 +253,19 @@ uv run quant live run
 
 | item | valor |
 |---|---|
-| Sprint | 0 — Gate 0 (planilha de viabilidade) |
-| TF de decisão | 15m a priori; 30m como robustez |
+| Sprint | **4** — Feature Engine, em andamento |
+| Sprints 1-3 | **concluídos** — repo/uv/CI, `src/exchange/` (REST assinado, rate limit, filtros versionados, listenKey), `src/data/` (Data Quality Engine, resample causal, camada DuckDB) |
+| TF de decisão | 15m — escolhido, T1 com **10 features** (v3.3; Grupo F saiu por quebra RPI, §2.7.1) |
 | Meta Model | **fora da V1** (§6.8 define o critério de entrada) |
-| Pendências P0 | snapshots `exchangeInfo` iniciar hoje · verificar acesso empírico à conta · MMR tier 1 não confirmado |
-| Primeiras medições | ATR sobre série completa (Sprint 3) · varredura 2D `tp_atr_mult` × `sl_atr_mult` (Sprint 6) |
+| Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde a origem real do contrato (~2019-12, medido — não os 2019-09/2020 que o PRD presumia); D08/D09 bookTicker só existe 2023-05→2024-03 upstream (medido, não é falha de coleta) |
+| Pendências P0 | verificar acesso empírico à conta (precisa credenciais, Sprint 2 parcialmente bloqueado por isso) · MMR tier 1 não confirmado · reconciliar figuras ano-a-ano da PARTE XVII contra o dado real (`known_gaps` em `config/constants.yaml`) |
+| Achado aberto | Data Quality Engine encontrou 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21) — ver `data/quality_reports/quality_report_metrics_v1.json` |
+| Primeiras medições feitas | Data Quality Engine rodado contra dado real (klines_1m, agg_trades, metrics, funding, bars_30m) |
+| Primeiras medições pendentes | ATR sobre série completa (§0.4, ainda P2/amostra de conveniência) · varredura 2D `tp_atr_mult` × `sl_atr_mult` (Sprint 6) |
 
 ---
 
 ## Changelog
 
+- v1.1 (2026-08-08) — Sprints 1-3 concluídos (repo/uv/CI, ExchangeAdapter, Data Quality Engine). PRD atualizado para v3.3 (fato RPI, §2.7.1). Backfill de dados completo. Adiciona seção "Rotina de git" — histórico como memória operacional do projeto. Corrige caminho do PRD (raiz do repo, não `docs/`).
 - v1.0 (2026-08-08) — criação. Ancorado no PRD V3.2 unificado. 32 banned patterns derivados dos 8 erros documentados na PARTE XIX.
