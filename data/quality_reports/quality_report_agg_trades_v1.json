@@ -1,0 +1,87 @@
+{
+  "dataset": "agg_trades",
+  "version": "v1",
+  "rows": 68166979,
+  "start": "2026-06-09T00:00:00Z",
+  "end": "2026-07-31T23:59:59Z",
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "gap_classification": {
+    "maintenance": 0,
+    "collection": 0,
+    "unknown": 0
+  },
+  "duplicates": 0,
+  "invalid_rows": 0,
+  "outliers_flagged": 0,
+  "cross_source_max_deviation": null,
+  "coverage_by_feature": {},
+  "effective_start": null,
+  "quality_score": 1.0,
+  "gate": "PASS",
+  "checks_skipped": [
+    {
+      "check": "2_checksum",
+      "reason": "ver nota em validate_klines_like"
+    },
+    {
+      "check": "5_8_monotonic",
+      "reason": "agg_trade_id é crescente por definição da API; transact_time NÃO é estritamente monotônico entre trades simultâneos no mesmo ms — checado por agg_trade_id, não por timestamp"
+    },
+    {
+      "check": "7_close_time_convention",
+      "reason": "trades não têm close_time — evento pontual, não barra"
+    },
+    {
+      "check": "9_grid_completeness",
+      "reason": "trades são event-driven — não existe grade fixa a priori (grid_step_ms=None em schemas.AGG_TRADES)"
+    },
+    {
+      "check": "11_ohlc_coherence",
+      "reason": "sem OHLC em agg_trades — é preço de trade único"
+    },
+    {
+      "check": "15_outlier_returns",
+      "reason": "outlier de retorno é definido sobre close de barra, não sobre trade individual — aplicar em klines, não aqui"
+    },
+    {
+      "check": "16_18_19_cross_source",
+      "reason": "não aplicável a agg_trades"
+    },
+    {
+      "check": "23_venue_semantic_break",
+      "reason": "agg_trades não deriva de bookTicker/bookDepth"
+    }
+  ],
+  "failed_checks": [],
+  "diagnostics": {
+    "1_schema": {
+      "passed": true,
+      "missing_columns": [],
+      "extra_columns": [],
+      "dtype_mismatches": [],
+      "order_matches": true
+    },
+    "3_duplicates": {
+      "excess_rows": 0,
+      "distinct_keys_with_duplicates": 0,
+      "example_keys": []
+    },
+    "4_nulls": {
+      "agg_trade_id": 0,
+      "price": 0,
+      "quantity": 0,
+      "transact_time": 0
+    },
+    "5_8_monotonic_by_agg_trade_id": {
+      "is_strictly_monotonic": true,
+      "non_positive_diff_count": 0
+    },
+    "12_positive_prices": {
+      "violation_count": 0
+    },
+    "13_non_negative_quantity": {
+      "violation_count": 0
+    }
+  }
+}

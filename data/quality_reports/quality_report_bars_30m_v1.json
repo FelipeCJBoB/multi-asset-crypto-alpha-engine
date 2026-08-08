@@ -1,0 +1,35 @@
+{
+  "dataset": "bars_30m",
+  "version": "v1",
+  "rows": 2880,
+  "start": "2026-06-09T00:00:00Z",
+  "end": "2026-08-07T23:30:00Z",
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "gap_classification": {
+    "maintenance": 0,
+    "collection": 0,
+    "unknown": 0
+  },
+  "duplicates": 0,
+  "invalid_rows": 0,
+  "outliers_flagged": 0,
+  "cross_source_max_deviation": null,
+  "coverage_by_feature": {},
+  "effective_start": null,
+  "quality_score": 1.0,
+  "gate": "PASS",
+  "checks_skipped": [
+    {
+      "check": "16_cross_source_30m_parity",
+      "reason": "nenhum kline nativo de '30m' encontrado em data/capacity/ nem data/raw/ (medido, não assumido — ver resample.find_native_klines). Comparação PENDING até existir um D0x nativo desse timeframe baixado."
+    }
+  ],
+  "failed_checks": [],
+  "diagnostics": {
+    "16_parity": {
+      "compared": false,
+      "reason": "sem dataset nativo no disco"
+    }
+  }
+}

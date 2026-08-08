@@ -1,0 +1,101 @@
+{
+  "dataset": "metrics",
+  "version": "v1",
+  "rows": 17280,
+  "start": "2026-06-09T00:05:00Z",
+  "end": "2026-08-07T23:55:00Z",
+  "missing_bars": 1,
+  "missing_timestamps": [
+    "2026-06-13T00:00:00Z"
+  ],
+  "gap_classification": {
+    "maintenance": 0,
+    "collection": 0,
+    "unknown": 1
+  },
+  "duplicates": 2,
+  "invalid_rows": 0,
+  "outliers_flagged": 0,
+  "cross_source_max_deviation": null,
+  "coverage_by_feature": {},
+  "effective_start": null,
+  "quality_score": 0.9998263989352468,
+  "gate": "FAIL",
+  "checks_skipped": [
+    {
+      "check": "2_checksum",
+      "reason": "ver nota em validate_klines_like"
+    },
+    {
+      "check": "7_close_time_convention",
+      "reason": "metrics não tem close_time — é ponto instantâneo, não barra OHLCV"
+    },
+    {
+      "check": "11_ohlc_coherence",
+      "reason": "sem OHLC em metrics"
+    },
+    {
+      "check": "12_positive_prices",
+      "reason": "sem coluna de preço em metrics"
+    },
+    {
+      "check": "13_14_volume_checks",
+      "reason": "sem volume em metrics"
+    },
+    {
+      "check": "15_outlier_returns",
+      "reason": "sem close de barra em metrics para calcular log-retorno"
+    },
+    {
+      "check": "16_18_cross_source",
+      "reason": "não aplicável a metrics"
+    },
+    {
+      "check": "23_venue_semantic_break",
+      "reason": "metrics (D04, openInterest/long-short ratios) não deriva de bookTicker/bookDepth"
+    }
+  ],
+  "failed_checks": [
+    "3_duplicates",
+    "5_8_monotonic"
+  ],
+  "diagnostics": {
+    "1_schema": {
+      "passed": true,
+      "missing_columns": [],
+      "extra_columns": [],
+      "dtype_mismatches": [],
+      "order_matches": true
+    },
+    "3_duplicates": {
+      "excess_rows": 2,
+      "distinct_keys_with_duplicates": 2,
+      "example_keys": [
+        {
+          "create_time": "2026-06-12 00:00:00"
+        },
+        {
+          "create_time": "2026-06-21 00:00:00"
+        }
+      ]
+    },
+    "4_nulls": {
+      "create_time": 0,
+      "symbol": 0
+    },
+    "5_8_monotonic": {
+      "is_strictly_monotonic": false,
+      "non_positive_diff_count": 2
+    },
+    "6_utc": "create_time é string 'YYYY-MM-DD HH:MM:SS' sem marcador de fuso — documentação da Binance declara UTC; não verificável a partir da string isolada (limitação registrada, não contornada).",
+    "9_grid_completeness_5m": {
+      "expected_count": 17279,
+      "actual_count": 17280,
+      "missing_count": 1
+    },
+    "20_alignment_30m_no_forward_fill": {
+      "expected_marks": 2880,
+      "marks_missing_native_point": 0
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "dataset": "klines_1m",
+  "version": "v1",
+  "rows": 86400,
+  "start": "2026-06-09T00:00:00Z",
+  "end": "2026-08-07T23:59:00Z",
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "gap_classification": {
+    "maintenance": 0,
+    "collection": 0,
+    "unknown": 0
+  },
+  "duplicates": 0,
+  "invalid_rows": 0,
+  "outliers_flagged": 55,
+  "cross_source_max_deviation": null,
+  "coverage_by_feature": {
+    "D01_agg_trades": "2019-12-31T00:00:00Z",
+    "D03_klines_1m": "2019-12-31T00:00:00Z",
+    "D04_metrics": "2020-09-01T00:00:00Z",
+    "D07_funding": "2020-01-01T00:00:00Z",
+    "D10_mark_price_klines_1m": "2019-12-23T00:00:00Z",
+    "D11_premium_index_klines_1m": "2019-12-24T00:00:00Z"
+  },
+  "effective_start": "2020-09-01T00:00:00Z",
+  "quality_score": 1.0,
+  "gate": "PASS",
+  "checks_skipped": [
+    {
+      "check": "2_checksum",
+      "reason": "sem .CHECKSUM da Binance nem hash gravado no download_log local — pertence à camada de download (fora do escopo deste Sprint); TODO quando src/data/download.py existir e puder gravar SHA256 no manifest."
+    },
+    {
+      "check": "16_cross_source_30m_parity",
+      "reason": "aplica-se a um dataset RESAMPLED (ex.: bars_30m), não à fonte bruta klines_1m. Ver validate_resampled_bars()."
+    },
+    {
+      "check": "18_index_price_deviation",
+      "reason": "D12 index_price_1m ainda não baixado — sem fonte para comparar (known_gaps, constants.yaml)."
+    },
+    {
+      "check": "23_venue_semantic_break",
+      "reason": "klines_1m é OHLCV bruto; check 23 valida contaminação de FEATURE derivada de bookTicker/bookDepth (Grupo F) — não se aplica a este dataset."
+    }
+  ],
+  "failed_checks": [],
+  "diagnostics": {
+    "1_schema": {
+      "passed": true,
+      "missing_columns": [],
+      "extra_columns": [],
+      "dtype_mismatches": [],
+      "order_matches": true
+    },
+    "3_duplicates": {
+      "excess_rows": 0,
+      "distinct_keys_with_duplicates": 0,
+      "example_keys": []
+    },
+    "4_nulls": {
+      "open_time": 0,
+      "open": 0,
+      "high": 0,
+      "low": 0,
+      "close": 0,
+      "volume": 0,
+      "close_time": 0
+    },
+    "5_8_monotonic": {
+      "is_strictly_monotonic": true,
+      "non_positive_diff_count": 0
+    },
+    "6_utc": "timestamp em epoch ms (Int64) — sem ambiguidade de fuso por construção, não há string de data/hora a interpretar.",
+    "7_close_time_convention": {
+      "passed": true,
+      "violation_count": 0
+    },
+    "9_grid_completeness": {
+      "expected_count": 86400,
+      "actual_count": 86400,
+      "missing_count": 0
+    },
+    "10_gap_classification_note": "sem calendário de manutenção anunciada carregado — toda lacuna cai em 'unknown' (ver checks.classify_gaps); não é uma classificação otimista, é o estado real.",
+    "11_ohlc_coherence": {
+      "violation_count": 0
+    },
+    "12_positive_prices": {
+      "violation_count": 0
+    },
+    "13_non_negative_volume": {
+      "violation_count": 0
+    },
+    "14_taker_buy_leq_volume": {
+      "violation_count": 0
+    },
+    "15_outliers": {
+      "sigma_threshold": 8.0,
+      "measured_sigma": 0.0005344443609349158,
+      "flagged_count": 55
+    },
+    "17_mark_price_deviation_pct": {
+      "max_abs_deviation_pct": 0.40610068796862064,
+      "mean_abs_deviation_pct": 0.004524114543899312,
+      "rows_compared": 86400,
+      "violation_count": 0,
+      "threshold_pct": 2.0
+    }
+  }
+}

@@ -17,6 +17,12 @@ __pycache__/
 data/*
 !data/.gitkeep
 
+# Exceção: quality_report.json é pequeno, legível por humano, e é o registro
+# formal do Gate 1 (§1.3) — evidência de auditoria, não dado bruto. Fica junto
+# de audit/ no que é versionado.
+!data/quality_reports/
+!data/quality_reports/*.json
+
 # Artefatos de modelo e experimento — versionados por outro mecanismo (registry), não git
 models/*.bin
 models/*.json
