@@ -1,0 +1,25 @@
+# config/venue_changelog.yaml
+#
+# Changelog de venue — §1.3 check 23 ("quebra semântica de fonte"). Um campo
+# pode manter schema, checksum e continuidade e ainda assim mudar de
+# significado; este arquivo é o insumo que o validador (src/data/validate.py,
+# check_venue_semantic_breaks) cruza contra as datas de uma série de feature
+# para decidir se a série atravessa uma quebra sem tratamento declarado.
+#
+# Entrada inicial obrigatória — copiada literalmente do corpo do PRD (§1.3),
+# não inventada por este Sprint.
+#
+# Regra de edição: só se acrescenta ao final de `events`. Uma quebra já
+# registrada não se edita nem se remove — o próprio propósito do arquivo é
+# impedir que uma mudança de significado seja esquecida silenciosamente.
+
+schema_version: 1
+
+events:
+  - date: "2025-11-20"
+    event: "Binance Futures lança ordens RPI"
+    endpoints_afetados: [depth, bookTicker, bookDepth]
+    semantica: "book visível deixa de ser book completo; níveis cruzados ocultos"
+    features_contaminadas:
+      [F01f, F02f, F03f, F04f, F05f, F06f, F07f, F08f, F09f, F10f, F12f]
+    tratamento: "ver PRD §2.7.1 — coluna rpi_regime {PRE,POST}, Grupo F removido de T1 até 6 meses de coleta forward de rpiDepth"

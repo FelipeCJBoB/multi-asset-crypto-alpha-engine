@@ -1,0 +1,126 @@
+[project]
+name = "btcusdt-quant"
+version = "0.1.0"
+description = "Motor quantitativo BTCUSDT perpétuo — Binance USDⓈ-M. PRD V3.2/V3.3."
+requires-python = ">=3.12"
+readme = "CLAUDE.md"
+
+dependencies = [
+    "polars>=1.9",
+    "duckdb>=1.1",
+    "pyarrow>=17.0",
+    "xgboost>=2.1",
+    "scikit-learn>=1.5",
+    "optuna>=4.0",
+    "structlog>=24.4",
+    "orjson>=3.10",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.112",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "pre-commit>=4.0",
+]
+
+[tool.uv]
+package = false
+
+# --------------------------------------------------------------------------
+# ruff — lint + format. Regras amplas; banned patterns específicos do domínio
+# (proveniência, mark price, GTX, etc.) vivem em tools/lint/banned_patterns.py,
+# não são expressáveis como regra genérica de ruff.
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["data", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",      # pycodestyle/pyflakes
+    "I",                # isort
+    "UP",               # pyupgrade
+    "B",                # bugbear
+    "C4",               # comprehensions
+    "SIM",              # simplify
+    "T20",               # flake8-print — pega print() direto (B28)
+    "RUF",
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["T20"]
+
+# --------------------------------------------------------------------------
+# mypy strict — DoD de "código de modelo"/"código de feature" exige type hints.
+# --------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+disallow_untyped_defs = true
+exclude = ["^data/", "^\\.venv/"]
+
+[[tool.mypy.overrides]]
+# libs de terceiros sem stubs completos — não relaxa nosso próprio código.
+# "yaml" entrou no Sprint 2 (src/data/_constants.py replica o mesmo import de
+# src/exchange/_constants.py — sem isso, mypy --strict falha nos dois pacotes
+# por igual; types-PyYAML resolveria mas é dependência extra por um único
+# ponto de uso em cada pacote).
+module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml"]
+ignore_missing_imports = true
+
+# --------------------------------------------------------------------------
+# pytest
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+# --------------------------------------------------------------------------
+# import-linter — hierarquia de camadas do §14.2, quebra o build se violada.
+#
+# O diagrama do PRD ("exchange -> data -> ... -> validation" e
+# "backtest <- risk <- execution <- live") descreve ORDEM DE PIPELINE, não
+# necessariamente direção de import — a própria seção nomeia só 4 regras sem
+# ambiguidade, e são essas 4 que viram contrato "forbidden" abaixo. A cadeia
+# completa como "layers" fica para quando risk/execution/live tiverem conteúdo
+# real (Sprints 12-14) e a direção puder ser confirmada contra código, não
+# inferida de um diagrama de texto.
+# --------------------------------------------------------------------------
+[tool.importlinter]
+root_packages = ["src"]
+
+[[tool.importlinter.contracts]]
+name = "features não importa labels"
+type = "forbidden"
+source_modules = ["src.features"]
+forbidden_modules = ["src.labels"]
+
+[[tool.importlinter.contracts]]
+name = "models não importa execution"
+type = "forbidden"
+source_modules = ["src.models"]
+forbidden_modules = ["src.execution"]
+
+[[tool.importlinter.contracts]]
+name = "labels só é lido por models, validation, backtest"
+type = "forbidden"
+source_modules = [
+    "src.exchange", "src.data", "src.features", "src.regime",
+    "src.risk", "src.execution", "src.live", "src.monitoring",
+]
+forbidden_modules = ["src.labels"]
+
+# TODO(Sprint 8): "alpha não pode importar meta" — formalizar como contrato
+# forbidden (src.models.alpha -> src.models.meta) quando esses módulos
+# existirem como arquivos reais, não pacote models/ genérico.

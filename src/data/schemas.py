@@ -1,0 +1,173 @@
+"""Contratos de schema das fontes T1 já baixadas em `data/capacity/` (§1.3
+check 1 — "schema bate com o contrato declarado: nomes, tipos, ordem").
+
+Os dtypes abaixo não são o que se "esperaria" de um kline — são o que foi
+medido nos parquets reais do backfill do Sprint 1 via
+`pl.read_parquet(...).schema` (ver relatório do Sprint 2). Em particular:
+`open`/`high`/`low`/`close` em `klines_1m` (e nos dois derivados de mesma
+forma, `mark_price_klines_1m` e `premium_index_klines_1m`) são `Utf8`, não
+`Float64` — o pipeline de download preserva a string decimal original da
+Binance em vez de arredondar para float na conversão, o que importa porque
+R1 (§0.2) é sensível a erro de quantização de última casa. Qualquer código
+que precise de preço numérico casta explicitamente (ver `lake.py`).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import polars as pl
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetSchema:
+    """Contrato de uma fonte em `data/capacity/{name}/{symbol}/*.parquet`."""
+
+    name: str
+    columns: dict[str, type[pl.DataType]]  # ordem do dict == ordem de coluna esperada
+    primary_key: tuple[str, ...]
+    timestamp_column: str
+    timestamp_unit: str  # "ms_epoch" | "string_datetime"
+    non_nullable: tuple[str, ...]
+    grid_step_ms: int | None  # None quando a fonte não tem grade fixa a priori (event-driven)
+    is_klines_like: bool = False
+
+
+_KLINES_LIKE_COLUMNS: dict[str, type[pl.DataType]] = {
+    "open_time": pl.Int64,
+    "open": pl.Utf8,
+    "high": pl.Utf8,
+    "low": pl.Utf8,
+    "close": pl.Utf8,
+    "volume": pl.Float64,
+    "close_time": pl.Int64,
+    "quote_volume": pl.Float64,
+    "count": pl.Int64,
+    "taker_buy_volume": pl.Float64,
+    "taker_buy_quote_volume": pl.Float64,
+    "ignore": pl.Utf8,
+}
+
+_KLINES_NON_NULLABLE = (
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+)
+
+KLINES_1M = DatasetSchema(
+    name="klines_1m",
+    columns=dict(_KLINES_LIKE_COLUMNS),
+    primary_key=("open_time",),
+    timestamp_column="open_time",
+    timestamp_unit="ms_epoch",
+    non_nullable=_KLINES_NON_NULLABLE,
+    grid_step_ms=60_000,
+    is_klines_like=True,
+)
+
+MARK_PRICE_KLINES_1M = DatasetSchema(
+    name="mark_price_klines_1m",
+    columns=dict(_KLINES_LIKE_COLUMNS),
+    primary_key=("open_time",),
+    timestamp_column="open_time",
+    timestamp_unit="ms_epoch",
+    non_nullable=_KLINES_NON_NULLABLE,
+    grid_step_ms=60_000,
+    is_klines_like=True,
+)
+
+PREMIUM_INDEX_KLINES_1M = DatasetSchema(
+    name="premium_index_klines_1m",
+    columns=dict(_KLINES_LIKE_COLUMNS),
+    primary_key=("open_time",),
+    timestamp_column="open_time",
+    timestamp_unit="ms_epoch",
+    non_nullable=_KLINES_NON_NULLABLE,
+    grid_step_ms=60_000,
+    is_klines_like=True,
+)
+
+AGG_TRADES = DatasetSchema(
+    name="agg_trades",
+    columns={
+        "agg_trade_id": pl.Int64,
+        "price": pl.Float64,
+        "quantity": pl.Float64,
+        "first_trade_id": pl.Int64,
+        "last_trade_id": pl.Int64,
+        "transact_time": pl.Int64,
+        "is_buyer_maker": pl.Boolean,
+    },
+    primary_key=("agg_trade_id",),
+    timestamp_column="transact_time",
+    timestamp_unit="ms_epoch",
+    non_nullable=("agg_trade_id", "price", "quantity", "transact_time"),
+    grid_step_ms=None,  # trades são event-driven — sem grade fixa
+)
+
+METRICS = DatasetSchema(
+    name="metrics",
+    columns={
+        # "YYYY-MM-DD HH:MM:SS", não epoch — medido, não contrato Binance genérico
+        "create_time": pl.Utf8,
+        "symbol": pl.Utf8,
+        "sum_open_interest": pl.Float64,
+        "sum_open_interest_value": pl.Float64,
+        "count_toptrader_long_short_ratio": pl.Float64,
+        "sum_toptrader_long_short_ratio": pl.Float64,
+        "count_long_short_ratio": pl.Float64,
+        "sum_taker_long_short_vol_ratio": pl.Float64,
+    },
+    primary_key=("create_time",),
+    timestamp_column="create_time",
+    timestamp_unit="string_datetime",
+    non_nullable=("create_time", "symbol"),
+    # 5 minutos — medido em data/capacity/metrics/BTCUSDT (probe do Sprint 2,
+    # ver relatório), não assumido da documentação da Binance. O check de
+    # grade (validate.check_metrics_grid_alignment) reverifica isso a cada
+    # execução; este valor é só a expectativa default para o report.
+    grid_step_ms=300_000,
+)
+
+FUNDING = DatasetSchema(
+    name="funding",
+    columns={
+        "calc_time": pl.Int64,
+        "funding_interval_hours": pl.Int64,
+        "last_funding_rate": pl.Utf8,
+    },
+    primary_key=("calc_time",),
+    timestamp_column="calc_time",
+    timestamp_unit="ms_epoch",
+    non_nullable=("calc_time", "funding_interval_hours", "last_funding_rate"),
+    # Explicitamente None — §1.3 check 19 exige derivar o intervalo do dado,
+    # nunca assumir 8h (o PRD cita isso por nome). O grid_step de funding não
+    # é um contrato a priori; é o próprio objeto medido pelo check 19.
+    grid_step_ms=None,
+)
+
+REGISTRY: dict[str, DatasetSchema] = {
+    s.name: s
+    for s in (
+        KLINES_1M,
+        MARK_PRICE_KLINES_1M,
+        PREMIUM_INDEX_KLINES_1M,
+        AGG_TRADES,
+        METRICS,
+        FUNDING,
+    )
+}
+
+
+def get_schema(name: str) -> DatasetSchema:
+    try:
+        return REGISTRY[name]
+    except KeyError as exc:
+        raise KeyError(
+            f"dataset '{name}' sem DatasetSchema registrado em src/data/schemas.py "
+            f"(disponíveis: {sorted(REGISTRY)})"
+        ) from exc

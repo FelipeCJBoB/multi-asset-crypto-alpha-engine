@@ -1,0 +1,41 @@
+# Instalar com: uv run pre-commit install
+# Todos os hooks rodam localmente antes do commit — nada chega ao histórico
+# sem passar por ruff, mypy strict e banned_patterns.py.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic>=2.9]
+        args: [--strict]
+        exclude: ^(data|tests)/
+
+  - repo: local
+    hooks:
+      - id: banned-patterns
+        name: banned patterns (CLAUDE.md, 32 padrões + Regra 1 de proveniência)
+        entry: python tools/lint/banned_patterns.py --path src --strict
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: import-linter
+        name: hierarquia de camadas (§14.2)
+        entry: lint-imports
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: scan de segredos (B31, §16.7)

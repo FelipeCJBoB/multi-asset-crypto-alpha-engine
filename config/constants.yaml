@@ -1,0 +1,414 @@
+# config/constants.yaml
+#
+# Registro de proveniência — §16.10 / PARTE XVIII do PRD V3.2 (v3.3 pendente).
+# Nenhum literal numérico entra em código de pipeline sem uma entrada aqui.
+# CI bloqueia build de produção com classe A em provenance: ASSUMED (regra M1/M2, §16.10.2).
+#
+# Schema por entrada:
+#   value:           número ou lista
+#   provenance:      MEASURED | DERIVED | LITERATURE | ASSUMED
+#   source:          de onde veio, ou por que não se sabe
+#   class:           A (invalida desenho) | B (hiperparâmetro) | C (guardrail) | D (cosmético)
+#   sweep_required:  true se classe A (M2, §16.10.2)
+#   sweep_range:     [min, max] quando sweep_required
+#   review_by:       sprint em que precisa ser resolvido/revisto
+#
+# Seed do Sprint 1 — NÃO exaustivo. As ~90 constantes classe B/C restantes (janelas de
+# feature, hiperparâmetros de XGBoost, guardrails operacionais) entram conforme cada
+# módulo é implementado (Sprints 4+), nunca direto em código.
+
+# ============================================================================
+# §0.1 — constantes de venue e conta (P0 verificado, §18.2)
+# ============================================================================
+
+tick_size:
+  value: 0.10
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT, PRICE_FILTER — snapshot 2026-08-08"
+  class: C
+  sweep_required: false
+
+step_size:
+  value: 0.001
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT, LOT_SIZE — restrição dominante do projeto (§0.2 R1)"
+  class: C
+  sweep_required: false
+
+min_notional:
+  value: 50.0
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT, MIN_NOTIONAL — reduzido de 100 em 2026-04-14, anúncio Binance"
+  class: C
+  sweep_required: false
+
+maker_fee:
+  value: 0.0002
+  provenance: MEASURED
+  source: "tabela de fees Binance USDⓈ-M, VIP 0"
+  class: C
+  sweep_required: false
+
+taker_fee:
+  value: 0.0005
+  provenance: MEASURED
+  source: "tabela de fees Binance USDⓈ-M, VIP 0"
+  class: C
+  sweep_required: false
+
+bnb_discount:
+  value: 0.90
+  provenance: MEASURED
+  source: "tabela de fees Binance — desconto de 10% com BNB ativo"
+  class: C
+  sweep_required: false
+
+capital_inicial_brl:
+  value: 1000.00
+  provenance: MEASURED
+  source: "restrição do Manager"
+  class: D
+  sweep_required: false
+
+usd_brl_ref:
+  value: 5.08
+  provenance: MEASURED
+  source: "cotação de referência, verificada na elaboração do PRD"
+  class: D
+  sweep_required: false
+
+# ============================================================================
+# §0.2 — constantes derivadas de R1/R2 (§0.2, §18.5.1) — CLASSE A
+# Cada uma exige varredura de sensibilidade ±50% antes do Gate 3 (M2, §16.10.2).
+# ============================================================================
+
+quantization_tolerance:
+  value: 0.25
+  provenance: DERIVED
+  source: "meia unidade de arredondamento / N_req — corrige o '≥3 unidades' sem base do V2 (erro corrigido #5, PARTE XIX)"
+  class: A
+  sweep_required: true
+  sweep_range: [0.125, 0.375]
+  review_by: sprint_10
+
+cost_stop_ratio_max:
+  value: 0.20
+  provenance: ASSUMED
+  source: "sem base; escolhido por conveniência (§18.5.1)"
+  class: A
+  sweep_required: true
+  sweep_range: [0.10, 0.40]
+  review_by: sprint_10
+
+fee_budget_monthly:
+  value: 0.03
+  provenance: ASSUMED
+  source: "sem base; inventado (§18.5.1) — determina taxa de sinal, threshold do Alpha, contagem de trades"
+  class: A
+  sweep_required: true
+  sweep_range: [0.015, 0.045]
+  review_by: sprint_10
+
+risk_per_trade:
+  value: 0.005
+  provenance: DERIVED
+  source: "consequência de R1+R2 (§0.3) — mas R1/R2 usam cost_stop_ratio_max e quantization_tolerance, ambas parcialmente ASSUMED; proveniência é circular até a varredura resolver os dois pais. NÃO reparametrizar como grau de liberdade livre (CLAUDE.md, 'nunca otimize de volta o que foi derivado')."
+  class: A
+  sweep_required: true
+  sweep_range: [0.0025, 0.0075]
+  review_by: sprint_10
+
+tp_atr_mult:
+  value: 2.0
+  provenance: ASSUMED
+  source: "herdado do PRD V2, nunca questionado até a auditoria da PARTE XVIII. Define toda a geometria de payoff — o breakeven WR de 48,1% é função direta deste número."
+  class: A
+  sweep_required: true
+  sweep_range: [1.0, 3.0]
+  review_by: sprint_6
+
+sl_atr_mult:
+  value: 1.5
+  provenance: ASSUMED
+  source: "herdado do PRD V2, nunca questionado. Varrer em grade 2D conjunta com tp_atr_mult (§18.6 M2, prioridade 1)."
+  class: A
+  sweep_required: true
+  sweep_range: [0.75, 2.25]
+  review_by: sprint_6
+
+time_stop_bars:
+  value: 32
+  provenance: ASSUMED
+  source: "justificado por 'uma janela de funding' — estética pós-hoc (§18.5.1), não derivação. Define amostra efetiva e teto de features."
+  class: A
+  sweep_required: true
+  sweep_range: [16, 48]
+  review_by: sprint_6
+
+atr_window:
+  value: 20
+  provenance: ASSUMED
+  source: "convenção de mercado, sem teste (§18.5.1) — define a própria medida de volatilidade que dimensiona barreiras"
+  class: A
+  sweep_required: true
+  sweep_range: [10, 30]
+  review_by: sprint_6
+
+target_signal_rate:
+  value: 0.0189
+  provenance: DERIVED
+  source: "derivada de fee_budget_monthly, ela própria ASSUMED (§18.5.1) — é o threshold do Alpha. Herda a incerteza do pai."
+  class: A
+  sweep_required: true
+  sweep_range: [0.0095, 0.0284]
+  review_by: sprint_10
+
+regime_er_cutoff:
+  value: 0.60
+  provenance: ASSUMED
+  source: "quantil q60 escolhido sem base (§18.5.1) — define a partição de regime estrutural inteira"
+  class: A
+  sweep_required: true
+  sweep_range: [0.45, 0.75]
+  review_by: sprint_5
+
+regime_vol_cutoff:
+  value: 0.70
+  provenance: ASSUMED
+  source: "sem base (§18.5.1) — corte HIGH_VOL/LOW_VOL"
+  class: A
+  sweep_required: true
+  sweep_range: [0.55, 0.85]
+  review_by: sprint_5
+
+# ============================================================================
+# Execução — seleção adversa e risco RPI (fato de venue, verificado 2026-08-08)
+# Desde 2025-11-20 existem ordens RPI (Retail Price Improvement) invisíveis à API
+# pública. Não há dump histórico. Ver PRD §9.5, §9.5.1, §2.7.1 (v3.3).
+# ============================================================================
+
+adverse_selection_bps:
+  value: 1.5
+  provenance: ASSUMED
+  source: "placeholder rotulado 'conservador' no PRD V2/V3, sem medição real (§18.5.4). Risco elevado por ordens RPI desde 2025-11-20 — não simulável a partir de dumps públicos, só validável ao vivo em Testnet/Paper (§9.5)."
+  class: A
+  sweep_required: true
+  sweep_range: [0.0, 5.0]
+  review_by: sprint_16   # experimento A/B RPI vs post-only comum, §9.5.1
+
+adverse_selection_wr_cost_per_bp:
+  value: 0.0091
+  provenance: DERIVED
+  source: "0,91 pp de win rate exigido por bp de seleção adversa, sobre TP 2,0×ATR / SL 1,5×ATR / ATR mediano 0,305% (15m). Derivado da fórmula de breakeven maker, não medido — herda a incerteza de tp_atr_mult/sl_atr_mult/atr_window, todos classe A acima."
+  class: A
+  sweep_required: false   # função fechada dos pais classe A; sweep_range não se aplica a um derivado
+  derived_from: [tp_atr_mult, sl_atr_mult, atr_window]   # varredura dos pais já cobre esta (regra 4)
+  review_by: sprint_10
+
+adverse_selection_comfort_margin_bps:
+  value: 4.3
+  provenance: DERIVED
+  source: "seleção adversa até a qual o BE win rate ainda fica abaixo do teto operacional confortável — derivado de adverse_selection_wr_cost_per_bp"
+  class: A
+  sweep_required: false
+  derived_from: [adverse_selection_wr_cost_per_bp]
+  review_by: sprint_16
+
+adverse_selection_gate0_break_bps:
+  value: 7.6
+  provenance: DERIVED
+  source: "seleção adversa na qual o BE win rate rompe o teto de 55% do Gate 0 (§0.3) — ponto de invalidação do desenho maker, não hiperparâmetro"
+  class: A
+  sweep_required: false
+  derived_from: [adverse_selection_wr_cost_per_bp]
+  review_by: sprint_16
+
+# ============================================================================
+# Riscos de dados registrados (não são hiperparâmetros — são lacunas medidas
+# que podem invalidar figuras já publicadas no PRD se não resolvidas)
+# ============================================================================
+
+known_gaps:
+  - id: dataset_start_mismatch
+    description: >
+      PRD §5.9/§11.3 assumia série desde 2020-01-01/2020-09-01. Medido em
+      2026-08-08: a lacuna real era menor que o temido — não é "faltam 2020-
+      2022", é "a Binance nunca publicou dump público para BTCUSDT perpétuo
+      antes de ~2019-12-23/31", confirmado por listagem S3 completa (D01
+      aggTrades: ausência real 2019-09-01→2019-12-30, gap de lançamento do
+      contrato em 2019-09-08 até o início da publicação de dumps, não falha
+      de coleta). Backfill CONCLUÍDO em 2026-08-08 para D01 (2019-12-31→
+      2026-07-31), D03 klines_1m (2019-12-31→2026-08-07), D04 metrics
+      (2020-09-01→2026-08-07, início real da fonte), D07 funding (2020-01→
+      2026-07), D10 markPriceKlines (2019-12-23→2026-08-07), D11
+      premiumIndexKlines (2019-12-24→2026-08-07). A janela 1 do walk-forward
+      (treino 2020-01..2022-12, §5.9) agora TEM dado por trás — mas a origem
+      das figuras ano-a-ano de 2020-2022 na PARTE XVII (ATR, IC) ainda não
+      foi reconciliada contra esses arquivos recém-baixados (nem confirmado
+      nem refutado) até o Gate 1 rodar de fato.
+    severity: class_A_risk
+    status: backfill_concluido_reconciliacao_pendente
+    review_by: gate_1
+  - id: microstructure_definition_break_2025_11_20
+    description: >
+      Ordens RPI (Retail Price Improvement) desde 2025-11-20 tornam o book
+      visível (bookTicker/bookDepth) incompleto. Grupo F (microestrutura)
+      muda de definição no meio da amostra. Ver PRD §2.7.1 (v3.3) — Grupo F
+      removido de T1 até 6 meses de coleta forward de rpiDepth (F06).
+    severity: class_A_risk
+    status: coleta_forward_iniciada
+    review_by: gate_8
+  - id: d05_d08_d09_upstream_availability_shorter_than_prd_claims
+    description: >
+      PRD §1.1 declara D05 BVOLIndex "início 2021" e D08/D09 bookTicker
+      "início 2022-01". Medido em 2026-08-08 via listagem S3 completa
+      (não por tentativa e erro de datas): D05 só existe publicamente desde
+      2023-06-20 (1.119 arquivos até 2026-08-07, agora com dump BRUTO
+      completo em data/raw/bvol_index/). D08/D09 bookTicker só existe de
+      2023-05-16 a 2024-03-30 (320 arquivos, ~52,6GB comprimidos) — a
+      Binance aparentemente descontinuou a publicação pública deste dump
+      depois de 2024-03-30; não há como confirmar isso além de "não está no
+      bucket". D08/D09 baixado por completo em 2026-08-08: 320/320 arquivos,
+      0 checksum_fail, 52,579GB, em data/raw/book_ticker/BTCUSDT/. Cobertura
+      real é 10,5 meses (2023-05-16→2024-03-30), não contínua até hoje como
+      o PRD supunha — qualquer feature do Grupo F treinada com isso herda
+      uma janela curta e datada, além de já estar fora de T1 por
+      microstructure_definition_break_2025_11_20 acima.
+    severity: class_B_risk
+    status: concluido
+    review_by: sprint_4
+
+# ============================================================================
+# Camada exchange — REST/WS/rate limit (Sprint 2, §1.4, §9.4, §16.3)
+# Constantes operacionais de venue e engenharia, não hiperparâmetros de
+# modelo — nenhuma afeta o desenho estatístico. Todas classe C (guardrail).
+# ============================================================================
+
+rate_limit_reserve_pct:
+  value: 0.30
+  provenance: LITERATURE
+  source: "PRD §9.4 — reserve_pct: 30 no YAML de design do Rate Limit Manager"
+  class: C
+  sweep_required: false
+
+ip_weight_limit_1m:
+  value: 2400
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT snapshot 2026-08-08, rateLimits REQUEST_WEIGHT/MINUTE — fallback estático; RestClient/RateLimitManager preferem o valor lido ao vivo de exchange_info() quando disponível"
+  class: C
+  sweep_required: false
+
+order_count_limit_1m:
+  value: 1200
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT snapshot 2026-08-08, rateLimits ORDERS/MINUTE"
+  class: C
+  sweep_required: false
+
+order_count_limit_10s:
+  value: 300
+  provenance: MEASURED
+  source: "exchangeInfo BTCUSDT snapshot 2026-08-08, rateLimits ORDERS/10SECOND"
+  class: C
+  sweep_required: false
+
+rest_request_timeout_s:
+  value: 10.0
+  provenance: ASSUMED
+  source: "escolha de engenharia sem base — timeout HTTP não deve travar o processo indefinidamente; revisar com dado real de latência (Sprint 3+)"
+  class: C
+  sweep_required: false
+
+recv_window_ms:
+  value: 5000
+  provenance: LITERATURE
+  source: "default documentado da API Binance para recvWindow"
+  class: C
+  sweep_required: false
+
+listen_key_validity_s:
+  value: 3600
+  provenance: LITERATURE
+  source: "documentação Binance USDⓈ-M — listenKey expira em 60 minutos sem renovação (PRD §16.3)"
+  class: C
+  sweep_required: false
+
+listen_key_keepalive_interval_s:
+  value: 1800
+  provenance: LITERATURE
+  source: "PRD §16.3 — keepalive a cada 1800s, metade da validade"
+  class: C
+  sweep_required: false
+
+listen_key_keepalive_backoff_s:
+  value: [1.0, 2.0, 4.0]
+  provenance: LITERATURE
+  source: "PRD §16.3 — on_keepalive_failure retry 3x com backoff 1s/2s/4s"
+  class: C
+  sweep_required: false
+
+listen_key_keepalive_max_retries:
+  value: 3
+  provenance: LITERATURE
+  source: "PRD §16.3 — retry: 3x"
+  class: C
+  sweep_required: false
+
+ws_watchdog_no_event_timeout_s:
+  value: 300.0
+  provenance: LITERATURE
+  source: "PRD §16.3 — watchdog sem_evento_em: 300s dispara ping sintético"
+  class: C
+  sweep_required: false
+
+ws_watchdog_no_response_timeout_s:
+  value: 60.0
+  provenance: LITERATURE
+  source: "PRD §16.3 — watchdog sem_resposta: 60s dispara TRADING_HALT"
+  class: C
+  sweep_required: false
+
+listen_key_recreate_deadline_s:
+  value: 120.0
+  provenance: LITERATURE
+  source: "PRD §16.3 — kill switch gatilho 14: listenKey inválido e não recriado em 120s"
+  class: C
+  sweep_required: false
+
+# N_lifetime — ver audit/n_lifetime.yaml (arquivo separado, versionado)
+
+# ============================================================================
+# Camada data — Data Quality Engine / resample / data lake (Sprint 2, §1.2,
+# §1.3). Guardrails de validação, não hiperparâmetros de modelo — nenhuma
+# afeta o desenho estatístico do Alpha/Meta. Todas classe C, valor citado
+# textualmente no PRD (não é "número redondo por conveniência" — é a própria
+# definição do check).
+# ============================================================================
+
+outlier_log_return_sigma_threshold:
+  value: 8.0
+  provenance: LITERATURE
+  source: "PRD §1.3 check 15 — |log(close_t/close_{t-1})| > 8*sigma. Marca para inspeção manual; NUNCA descarta automaticamente (texto explícito do PRD)."
+  class: C
+  sweep_required: false
+
+resample_cross_source_parity_tolerance:
+  value: 1.0e-8
+  provenance: LITERATURE
+  source: "PRD §1.3 check 16 e bloco INVARIANTES — cross_source_max_deviation < 1e-8 entre bars_30m reagregado e kline nativo de 30m."
+  class: C
+  sweep_required: false
+
+mark_price_deviation_max_pct:
+  value: 2.0
+  provenance: LITERATURE
+  source: "PRD §1.3 check 17 — mark_price dentro de ±2% do close do perpétuo."
+  class: C
+  sweep_required: false
+
+index_price_deviation_max_pct:
+  value: 2.0
+  provenance: LITERATURE
+  source: "PRD §1.3 check 18 — index_price dentro de ±2% do spot. Constante registrada para quando D12 (index_price_1m) for baixado; check 18 fica PENDING até lá (ver known_gaps / quality_report)."
+  class: C
+  sweep_required: false

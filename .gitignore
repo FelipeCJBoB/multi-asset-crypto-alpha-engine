@@ -1,0 +1,28 @@
+# Ambiente — gerido por uv, nunca versionado
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Segredos — nunca no repo (B31)
+.env
+.env.*
+*.pem
+*.key
+
+# Data lake — grande demais para git, reconstrutível por download determinístico
+# (git não permite re-incluir arquivo dentro de diretório ignorado; por isso data/*, não data/)
+data/*
+!data/.gitkeep
+
+# Artefatos de modelo e experimento — versionados por outro mecanismo (registry), não git
+models/*.bin
+models/*.json
+experiments/*.parquet
+
+# Locks de OS / editor
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,54 @@
+# CI — roda em todo push/PR. Nenhum destes passos é opcional (§16.10.2 regra 2:
+# bloqueia build de produção com constante classe A em provenance: ASSUMED).
+#
+# Sem remote configurado ainda (Sprint 1) — este arquivo fica pronto para
+# ativar assim que o repo for empurrado para o GitHub, não precisa de ajuste.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality-gates:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: uv sync (inclui dev deps)
+        run: uv sync --all-groups
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy --strict
+        run: uv run mypy src
+
+      - name: banned patterns (CLAUDE.md, 32 padrões + Regra 1)
+        run: uv run python tools/lint/banned_patterns.py --path src --strict
+
+      - name: import-linter (hierarquia §14.2)
+        run: uv run lint-imports
+
+      - name: constants.yaml — nenhuma classe A com provenance ASSUMED em build de produção
+        run: uv run python tools/lint/check_constants_provenance.py --fail-on-assumed-class-a
+        # Sprint 1: script ainda não existe (config/constants.yaml tem 9
+        # constantes classe A legitimamente ASSUMED até a varredura de
+        # sensibilidade, §16.10.2 regra 4 — isso é esperado nesta fase, não é
+        # bug). O passo fica declarado aqui e é ativado no Sprint 10, quando a
+        # varredura de sensibilidade estiver feita e este for de fato um gate
+        # de "build de produção", não do dia a dia de pesquisa.
+        continue-on-error: true
+
+      - name: pytest
+        run: uv run pytest -q

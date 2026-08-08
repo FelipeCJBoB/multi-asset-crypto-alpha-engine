@@ -1,0 +1,42 @@
+# audit/n_lifetime.yaml
+#
+# Ledger de trials vitalício — §16.10.2 M5. O DSR (§11.6) usa `counter`, não o N
+# de uma busca isolada. Incrementa em: cada constante classe B otimizada, cada
+# retreino, cada challenger, cada emenda ao pré-registro (§16.9), cada
+# experimento §9.5.1 (RPI vs post-only). NÃO decrementa nunca — trial gasto é
+# gasto mesmo que a variante perca.
+#
+# Regra de edição: só se acrescenta ao final de `log`. Nunca editar ou remover
+# uma entrada já registrada — isso é o próprio objeto que o ledger existe para
+# impedir.
+
+schema_version: 1
+counter: 3
+
+log:
+  - id: 1
+    date: "2026-08-08"
+    type: timeframe_search
+    description: >
+      Mudança de timeframe de decisão 5m → 1h, na elaboração do PRD V2/V3
+      (histórico da conversa que produziu o blueprint, anterior a este repo).
+    delta: 1
+  - id: 2
+    date: "2026-08-08"
+    type: timeframe_search
+    description: "Mudança de timeframe de decisão 1h → 30m."
+    delta: 1
+  - id: 3
+    date: "2026-08-08"
+    type: timeframe_search
+    description: >
+      Mudança de timeframe de decisão 30m → 15m (escolha a priori do PRD V3.2,
+      §0.4, com base em ATR medido sobre amostra de 8 meses — ela própria P2,
+      a refazer no Sprint 3).
+    delta: 1
+
+# Nota de proveniência do seed: os 3 trials acima reconstroem o histórico
+# citado em §18.6 M5 e §18.7 item 9 do PRD ("já há trials gastos"). É uma
+# reconstrução parcial, não um registro contemporâneo — o histórico completo
+# anterior a este repo (V2 → V3.0 → V3.1 → V3.2) não é auditável linha a linha.
+# Tratar `counter` como PISO, não como valor exato.
