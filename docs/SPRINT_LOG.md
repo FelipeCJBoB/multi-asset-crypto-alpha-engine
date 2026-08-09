@@ -662,6 +662,13 @@ convenção de `src.models.environments`); 1 de 8 blocos regime×lado
 `short/R1` 1/10 e `short/R2` 3/10 insuficientes; os demais 5 blocos, 0/10.
 `by_cost_tercile` (tercis de `E27f_cost_atr_ratio` sobre a população
 pooled de cada lado): 0/10 insuficiente em qualquer tercil, os dois lados.
+**"Insuficiente" não é só uma flag ao lado do número** — `mean_ret_net_bps`/
+CI95/t-stat saem `null` nessas células (literal do prompt: "não estimada"),
+`n`/`n_filled`/as taxas TP·SL·TIME·NOFILL continuam reportadas (frequência
+observada, não estimativa com incerteza amostral). Regra aplicada no mesmo
+ponto do código pras 4 chamadas de `_decile_cell` (D1 pooled, D2, D2-tercil,
+congruente/incongruente) — nenhuma das outras três tinha célula abaixo de
+200 nos dados reais, então só D2-regime muda de fato.
 
 **Subconjunto congruente/incongruente com a restrição forçada de
 `E02f_funding_z_expanding`**: IC medido por regime (reprodução da Fase E,
@@ -715,9 +722,9 @@ nenhum, só lê `raw_score`/`confidence` já persistidos em
 `predictions.parquet` e a estrutura de plateau que eles implicam.
 `audit/n_lifetime.yaml::counter` permanece em 3, não tocado.
 
-775 testes (era 768 antes desta rodada, contando os que já estavam em
-768 ao excluir `slow`/`integration` — 775 é a contagem completa
-`pytest tests/`), 0 violação de `banned_patterns`, 6/6 contratos de
+776 testes (era 752 antes desta rodada — 24 novos, todos em
+`tests/unit/test_analysis_calibration_diagnostics.py`), contagem completa
+`pytest tests/`. 0 violação de `banned_patterns`, 6/6 contratos de
 import-linter.
 
 ## Índice rápido — onde encontrar cada número

@@ -234,8 +234,24 @@ def _decile_cell(
     counts = {cat: sub.filter(pl.col("barrier_hit") == cat).height for cat in _BARRIER_CATEGORIES}
     filled = sub.filter(pl.col("barrier_hit") != _NOFILL)
     n_filled = filled.height
+    insufficient = n_filled < FAIXA1_MIN_CELL_N
 
     if n_filled > 0:
+        conf_min = float(sub[confidence_col].min())  # type: ignore[arg-type]
+        conf_max = float(sub[confidence_col].max())  # type: ignore[arg-type]
+    else:
+        conf_min = float("nan")
+        conf_max = float("nan")
+
+    # "célula com n < FAIXA1_MIN_CELL_N sai marcada insuficiente, NÃO
+    # ESTIMADA" (D2 do prompt) — aplicado uniformemente em toda chamada de
+    # `_decile_cell` (D1 pooled, D2 por regime/tercil, congruent/
+    # incongruent), não só D2: mesma regra, mesmo lugar no código, para não
+    # ter dois caminhos que podem divergir. `n`/`n_filled`/as taxas
+    # TP/SL/TIME/NOFILL continuam reportadas — são frequência OBSERVADA,
+    # não um ponto estimado com incerteza amostral (a distinção que "não
+    # estimada" protege é especificamente a média/CI/t-stat).
+    if n_filled > 0 and not insufficient:
         bps = filled["ret_net"].to_numpy().astype(np.float64) * 10_000  # noqa: magic-number — bps/fração
         mean_bps = float(np.mean(bps))
         std_bps = float(np.std(bps, ddof=1)) if n_filled > 1 else 0.0
@@ -245,15 +261,11 @@ def _decile_cell(
             else float("nan")
         )
         ci_low, ci_high = _ci95(mean_bps, std_bps, n_filled)
-        conf_min = float(sub[confidence_col].min())  # type: ignore[arg-type]
-        conf_max = float(sub[confidence_col].max())  # type: ignore[arg-type]
     else:
         mean_bps = float("nan")
         std_bps = float("nan")
         t_stat = float("nan")
         ci_low, ci_high = float("nan"), float("nan")
-        conf_min = float("nan")
-        conf_max = float("nan")
 
     return {
         "decile": decile,
@@ -274,7 +286,7 @@ def _decile_cell(
         "n_sl": counts[_SL],
         "n_time": counts[_TIME],
         "n_nofill": counts[_NOFILL],
-        "insufficient_n": n_filled < FAIXA1_MIN_CELL_N,
+        "insufficient_n": insufficient,
     }
 
 

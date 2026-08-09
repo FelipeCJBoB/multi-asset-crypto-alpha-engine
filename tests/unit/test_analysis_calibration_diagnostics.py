@@ -56,8 +56,10 @@ def _pop_df(rows: list[dict[str, object]]) -> pl.DataFrame:
 
 def test_decile_profile_conta_nofill_e_filled_separadamente() -> None:
     """10 decis, 2 linhas cada: uma preenchida (TP, bps=10*decil) e uma
-    NOFILL. `n=2`, `n_filled=1` em todo decil; `mean_ret_net_bps` só sobre
-    a linha preenchida (não dilui com NOFILL); `rate_nofill=0.5`."""
+    NOFILL. `n=2`, `n_filled=1` em todo decil (rates continuam observadas
+    — `rate_nofill=0.5` é frequência, não estimativa); `n_filled=1 <
+    FAIXA1_MIN_CELL_N` marca `insuficiente`, então `mean_ret_net_bps`/CI/
+    t-stat saem `nan` — "não estimada", não um número pouco confiável."""
     t0s = _t0s(20)
     rows: list[dict[str, object]] = []
     for k in range(1, 11):
@@ -83,15 +85,37 @@ def test_decile_profile_conta_nofill_e_filled_separadamente() -> None:
     profile = cd.decile_profile(df)
     assert len(profile) == 10
     for cell in sorted(profile, key=lambda r: r["decile"]):
-        k = cell["decile"]
         assert cell["n"] == 2
         assert cell["n_filled"] == 1
-        assert cell["mean_ret_net_bps"] == pytest.approx(10.0 * k)
         assert cell["rate_nofill"] == pytest.approx(0.5)
         assert cell["rate_tp"] == pytest.approx(0.5)
-        assert cell["std_ret_net_bps"] == 0.0
-        assert math.isnan(cell["t_stat"])  # n_filled=1 -> SE indefinido
         assert cell["insufficient_n"] is True  # 1 < FAIXA1_MIN_CELL_N
+        assert math.isnan(cell["mean_ret_net_bps"])  # "não estimada", não um valor pouco confiável
+        assert math.isnan(cell["std_ret_net_bps"])
+        assert math.isnan(cell["t_stat"])
+        assert math.isnan(cell["ci95_low"])
+        assert math.isnan(cell["ci95_high"])
+
+
+def test_decile_profile_acima_do_minimo_estima_normalmente() -> None:
+    """Contraste direto com o teste acima: `n_filled >= FAIXA1_MIN_CELL_N`
+    -> `insufficient_n=False` e `mean_ret_net_bps` É reportado."""
+    t0s = _t0s(cd.FAIXA1_MIN_CELL_N)
+    rows = [
+        {
+            "t0": t0s[i],
+            "confidence": float(i),
+            "barrier_hit": "TP",
+            "ret_net": 5.0 / 10_000.0,
+        }
+        for i in range(cd.FAIXA1_MIN_CELL_N)
+    ]
+    df = _pop_df(rows)
+    profile = cd.decile_profile(df, n_deciles=1)
+    cell = profile[0]
+    assert cell["n_filled"] == cd.FAIXA1_MIN_CELL_N
+    assert cell["insufficient_n"] is False
+    assert cell["mean_ret_net_bps"] == pytest.approx(5.0)
 
 
 def test_decile_profile_decil_vazio_marca_insuficiente_sem_quebrar() -> None:
