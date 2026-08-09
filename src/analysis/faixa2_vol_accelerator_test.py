@@ -373,3 +373,134 @@ def run_and_save_vol_accelerator_test(*, dest_path: Path | None = None) -> Path:
         elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
     )
     return dest
+
+
+# ============================================================================
+# Correção do Manager (2026-08-09): o teste acima testou C07 como
+# SUBSTITUTO do gate de confiança sobre TODAS as barras -- percentil 1
+# resultante caía numa região onde a própria geometria de barreira já não
+# é válida (stop = 1,5x ATR abaixo do piso de quantização R1), confundindo
+# "C07 não ajuda direção" com "o corte forçou uma região patológica".
+# Teste corrigido: COMPOR, não substituir -- gate de confiança de
+# produção INTACTO (`side_hat` real), C07 aplicado SOMENTE sobre o
+# conjunto JÁ DISPARADO (~1,89% das barras, não 100%) e o braço de
+# controle sorteia do MESMO conjunto disparado (não do universo) -- só
+# assim o controle isola o efeito de C07, não o efeito de perder o gate.
+# ============================================================================
+
+
+def build_production_fired_population(symbol: str = "BTCUSDT") -> pl.DataFrame:
+    """`f15.build_realized_trades` (gate de confiança de produção
+    intacto, `side_hat` REAL de `alpha_c1_v1`) + `C07_vol_pctile_
+    expanding` via join adicional por `t0` (fora de `_REALIZED_JOIN_
+    COLS`, que não inclui C07)."""
+    mf = ds.build_modeling_frame(symbol=symbol)
+    cpcv_result = cpcv.generate_splits(mf.data)
+    fold_to_path = f15.fold_to_path_map(cpcv_result.splits)
+    preds = f15.load_predictions(_MODEL_ID)
+    realized = f15.build_realized_trades(preds, mf.data, fold_to_path)
+    c07 = mf.data.select("t0", _COST_PCTILE_FEATURE).unique(subset=["t0"])
+    return realized.join(c07, on="t0", how="left")
+
+
+def run_vol_accelerator_test_composed(symbol: str = "BTCUSDT") -> dict[str, Any]:
+    """COMPOR: C07 filtra o conjunto JÁ DISPARADO pela produção, não o
+    universo. `P` continua fixado a priori pelo mesmo orçamento
+    (`trades_per_year == implied_budget`), agora como fração do conjunto
+    disparado, não das barras totais. Controle aleatório sorteia do MESMO
+    conjunto disparado (`fired`), mesma contagem por path -- isola "C07
+    adiciona algo sobre o gate" de "negociar menos ajuda"."""
+    target_tpy = float(load_constant("target_signal_rate")) * f15.BARS_PER_YEAR
+
+    fired = build_production_fired_population(symbol)
+    calib = calibrate_admission_percentile(fired, target_trades_per_year=target_tpy)
+    p_star = calib["percentil_admissao"]
+
+    admitted = fired.filter(pl.col(_COST_PCTILE_FEATURE) <= p_star)
+    admitted_n_by_path = {
+        int(pid): admitted.filter(pl.col("path_id") == pid).height
+        for pid in sorted(fired["path_id"].unique().to_list())
+    }
+    frac_retained = admitted.height / fired.height if fired.height else float("nan")
+
+    metrics_composed = compute_metrics_battery(
+        admitted, source="faixa2_vol_accelerator_test::composed_filter"
+    )
+    metrics_producao = compute_metrics_battery(
+        fired, source="faixa2_vol_accelerator_test::producao_atual"
+    )
+    control = run_random_control_arm(fired, admitted_n_by_path=admitted_n_by_path)
+
+    comparison = {
+        "directional_sharpe": {
+            "producao_atual_sem_filtro": metrics_producao["total"]["directional_sharpe"],
+            "producao_mais_c07": metrics_composed["total"]["directional_sharpe"],
+            "controle_aleatorio_do_disparado_null_p50": control["directional_sharpe_null"]["p50"],
+            "composto_percentil_vs_controle": _percentile_of_value(
+                control["directional_sharpe_replicas"],
+                metrics_composed["total"]["directional_sharpe"],
+            ),
+        },
+        "ret_net_mean_bps": {
+            "producao_atual_sem_filtro": metrics_producao["total"]["ret_net_mean_bps"],
+            "producao_mais_c07": metrics_composed["total"]["ret_net_mean_bps"],
+            "controle_aleatorio_do_disparado_null_p50": control["ret_net_mean_bps_null"]["p50"],
+            "composto_percentil_vs_controle": _percentile_of_value(
+                control["ret_net_mean_bps_replicas"],
+                metrics_composed["total"]["ret_net_mean_bps"],
+            ),
+        },
+    }
+
+    return {
+        "target_trades_per_year": target_tpy,
+        "calibracao_percentil": calib,
+        "fracao_retida_do_conjunto_disparado": frac_retained,
+        "admitted_n_by_path": {str(k): v for k, v in admitted_n_by_path.items()},
+        "metrics_producao_sem_filtro": metrics_producao,
+        "metrics_producao_mais_c07": metrics_composed,
+        "controle_aleatorio_do_disparado": control,
+        "comparison_summary": comparison,
+        "nota": (
+            "COMPOR, nao substituir (correcao do Manager sobre o teste "
+            "anterior, faixa2_vol_accelerator_test.json): gate de "
+            "confianca de producao INTACTO (side_hat real de "
+            "alpha_c1_v1); C07 filtra SOMENTE o conjunto ja disparado "
+            "(~1,89% das barras), nao 100% -- evita a regiao patologica "
+            "de vol extremamente baixa (stop=1,5xATR abaixo do piso de "
+            "quantizacao R1) que o teste anterior expos sem querer. "
+            "Controle aleatorio sorteia do MESMO conjunto disparado, "
+            "mesmas sementes do B1 -- isola 'C07 adiciona algo sobre o "
+            "gate' de 'negociar menos ajuda'."
+        ),
+    }
+
+
+def run_and_save_vol_accelerator_test_composed(*, dest_path: Path | None = None) -> Path:
+    """Ponto de entrada MANUAL. Chame: `uv run python -c "from
+    src.analysis.faixa2_vol_accelerator_test import
+    run_and_save_vol_accelerator_test_composed as r; r()"`."""
+    t0 = time.perf_counter()
+    payload = run_vol_accelerator_test_composed()
+    payload["elapsed_seconds_total"] = time.perf_counter() - t0
+    payload = {**report_provenance(), "task": "faixa2_vol_accelerator_test_composed", **payload}
+
+    dest = (
+        dest_path
+        if dest_path is not None
+        else EXPERIMENTS_DIR / "faixa2_vol_accelerator_test_composed.json"
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.with_name(dest.name + ".tmp")
+    blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2)
+    with tmp_path.open("wb") as fh:
+        fh.write(blob)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, dest)
+    logger.info(
+        "analysis.faixa2_vol_accelerator_test_composed.written",
+        path=str(dest),
+        elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
+    )
+    return dest

@@ -2073,6 +2073,71 @@ o que impede esse erro.
 medição pura), por instrução do Manager. Contador: 43 → **44**. Nenhuma
 promoção a produção — `alpha_c1_v1` continua intocado.
 
+### Correção do teste (2026-08-09) — COMPOR, não substituir: confirma, mas assimétrico
+
+Autocrítica do Manager sobre o teste acima, verificada e confirmada
+antes de rodar de novo: o erro não foi o diagnóstico (C07 mede execução,
+não direção) — foi a ação (usar um sinal de custo como porta
+DIRECIONAL). Verifiquei o achado colateral que expôs isso: no corte de
+1,08% do teste anterior, ATR% mediano cai pra **0,093%** (contra 0,405%
+na mediana geral — números próprios, não os do Manager, mas mesma ordem
+de grandeza e mesma conclusão), custo/ATR sobe pra **62%** (contra 14%),
+e o stop de 1,5×ATR (~0,139%) fica ABAIXO do piso de viabilidade de R1
+(0,275%, CLAUDE.md) — o corte anterior empurrou o sistema pra uma região
+onde a geometria de barreira já não é válida, não pra "vol baixa"
+genuína. Isso explica a performance ruim do teste anterior sem precisar
+de uma teoria nova sobre o que C07 mede.
+
+**Teste corrigido** (`run_vol_accelerator_test_composed`,
+`experiments/faixa2_vol_accelerator_test_composed.json`, ~19s): gate de
+confiança de produção INTACTO; C07 filtra só o conjunto JÁ DISPARADO
+(~1,89% das barras, não 100%); percentil calibrado a priori pelo mesmo
+orçamento cai em **85,3%** (bloqueia os 14,7% de maior vol DENTRO do
+conjunto já disparado), retendo 57,9%; controle aleatório sorteia do
+MESMO conjunto disparado (não do universo), 1.000 sementes.
+
+**Resultado pooled — CONFIRMA, de forma decisiva:**
+
+| | produção (sem filtro) | produção + C07 | controle aleatório (mediana, mesmo N) | percentil vs. controle |
+|---|---|---|---|---|
+| `directional_sharpe` | +0,879 | **+3,015** | +0,670 | **100,0** |
+| `ret_net` (bps/trade) | -2,82 | **-0,61** | -2,82 | **99,7** |
+
+Bate o controle aleatório do MESMO conjunto disparado em praticamente
+100% das 1.000 réplicas — isto não é "negociar menos ajuda" (o controle
+já negocia o mesmo tanto), é C07 fazendo trabalho real dentro do
+conjunto que a produção já dispara.
+
+**Mas o resultado pooled esconde uma assimetria forte por lado — o
+oposto do que a leitura de "vol alta piora os dois lados igualmente"
+(E3, achado do item 1 da rodada anterior) sugeriria à primeira vista:**
+
+| lado | `total_sharpe` (sem filtro → +C07) | `ret_net` bps (sem filtro → +C07) |
+|---|---|---|
+| long | -1,30 → **+0,50** (positivo!) | -4,97 → **+1,07** (positivo!) |
+| short | -0,16 → **-1,21** (piora) | -0,50 → **-2,82** (piora) |
+
+Por regime, o mecanismo fica claro: o filtro remove desproporcionalmente
+`long×R2` (a pior célula do sistema, -22,86 bps, `n` 4435→1832) enquanto
+preserva quase intacto `long×R3` (a melhor, +5,46 bps, `n` 6445→6436) —
+realocação correta para o long. Para o short, porém, `R2` e `R4` (vol
+alta) eram células BOAS ou toleráveis em produção (`short×R2`: +7,95
+bps!) — o mesmo corte de vol, aplicado ao short, remove essas células
+boas (`n` 2176→539 em R2, 5098→1625 em R4) e o que sobra piora
+(`short×R2`: +7,95→-0,52; `short×R4`: -2,82→-13,04).
+
+**Leitura**: C07 tem valor real, mas o valor é `long`-específico (ou
+mais precisamente, `long×R2`-específico) — um corte GLOBAL (mesmo
+percentil nos dois lados) capta o ganho do long e paga um preço real no
+short. Isso não invalida o resultado pooled (que já bate o controle
+aleatório por construção, incluindo o efeito líquido dessa troca) — mas
+significa que um desenho `side`-específico (ou `side×regime`) provavelmente
+captura mais do ganho sem o custo do short. Não testado nesta rodada —
+registrado como próxima pergunta, não decidido aqui.
+
+`n_lifetime` id 15, delta=1 (variante de mecanismo, mesmo raciocínio do
+id 14). Contador: 44 → **45**. Nenhuma promoção a produção.
+
 ### FASE 3 (C1/C2/C3) — em espera
 
 Precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
@@ -2125,7 +2190,8 @@ acima.
 | A triagem do E3 tem poder suficiente pra distinguir "sem sinal" de "sinal fraco"? | Discutível — N real por ambiente é ~22.891 (não ~5.000 como estimado), maior poder que o assumido; a maioria dos "zeros" tem \|IC\| mediano 0,004-0,021, perto do limiar de força, não zero | Faixa 2, Pré-FASE 3 acima |
 | Os "zeros" do E3 são sinal fraco ou sinal que inverte? | Misto, verificado direto no `ic_by_env` bruto — `A12_gap_pct`/`D04f_volume_accel` são ruído genuíno (~50/50 em todo ambiente); `K02_dow_sin`/`E02f_funding_z_expanding`/`E17f_retail_vs_top_spread` têm sinal REAL condicional a tercil de custo (77-90% de consistência em ambientes de custo alto/médio) que a fórmula de unanimidade não credita | Faixa 2, "Validação da análise do Manager" acima |
 | O modelo dispara mais e fica mais confiante em vol alta, apesar do sinal mais estável dizer o oposto? | Sim, confirmado com precisão: disparo long 0,340% (R1) vs 4,337% (R2) = 12,76x; TP rate 28,35% (R2) vs 42,42% (R3); R4 (tendência+vol alta) dispara ainda mais (long 4,27%, short 5,28%) | Faixa 2, "Validação da análise do Manager" acima |
-| Trocar o gate de confiança por um filtro de C07 (vol) melhora o resultado? | Não — `directional_sharpe` do filtro por vol fica no percentil 21 do controle aleatório (pior que a maioria dos sorteios); produção atual (+0,879) continua melhor que as duas alternativas nos dois eixos | Faixa 2, "Teste do C07 como acelerador" acima |
+| Trocar o gate de confiança por um filtro de C07 (vol) melhora o resultado? | Não, como SUBSTITUTO — percentil 21 do controle, pior que a maioria; o corte empurrou o sistema pra ATR abaixo do piso de viabilidade R1 | Faixa 2, "Teste do C07 como acelerador" acima |
+| Compor C07 COM o gate de confiança (não substituir) melhora o resultado? | Sim, decisivo no pooled — `directional_sharpe` +0,879→+3,015 (percentil 100 vs. controle aleatório do mesmo conjunto), `ret_net` -2,82→-0,61 bps (percentil 99,7) — mas TODO o ganho é do long (`total_sharpe` -1,30→+0,50); short piora (-0,16→-1,21) | Faixa 2, "Correção do teste — COMPOR" acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
