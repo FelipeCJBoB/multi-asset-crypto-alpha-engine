@@ -25,10 +25,13 @@ data/*
 
 # Saída em massa de pipeline — reconstrutível a partir de código+config+dado
 # fonte (config_hash amarra a versão exata, §3.4 B15). Mesma lógica de data/.
-labels/
-regime/
-predictions/
-backtests/
+# Ancorado na raiz (/) de propósito — sem a barra inicial, "regime/" também
+# bateria em src/regime/ (código-fonte!) e "labels/" em qualquer subpasta
+# futura chamada labels. Já pegou esse bug uma vez nesta sessão.
+/labels/
+/regime/
+/predictions/
+/backtests/
 
 # Artefatos de modelo — versionados por outro mecanismo (registry), não git
 models/*.bin

@@ -1,0 +1,45 @@
+"""Loader de `config/constants.yaml` — privado ao pacote `regime` (Regra
+Zero, §16.10). Duplicado de `src/features/_constants.py` pelo mesmo motivo
+declarado em `_paths.py` deste pacote.
+
+Nenhum literal numérico de corte/limiar do Regime Engine (cortes de
+histerese, barras de confirmação, thresholds de gatilho de stress) vive
+solto em código desta camada; tudo entra em `constants.yaml` com
+proveniência declarada e é lido daqui.
+
+Cache simples em memória — `constants.yaml` não muda durante a vida do
+processo; testes que precisam de outro valor passam override explícito em
+vez de mexer no cache global.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import yaml
+
+from ._paths import CONSTANTS_PATH
+
+_cache: dict[str, Any] | None = None
+
+
+def _load_all() -> dict[str, Any]:
+    global _cache
+    if _cache is None:
+        with CONSTANTS_PATH.open(encoding="utf-8") as f:
+            loaded: dict[str, Any] = yaml.safe_load(f) or {}
+            _cache = loaded
+    return _cache
+
+
+def load_constant(name: str) -> Any:
+    """Lê `value` da entrada `name` em `constants.yaml`. Levanta `KeyError`
+    com mensagem acionável se a entrada não existir ou estiver malformada —
+    nunca retorna um default silencioso inventado no código (Regra Zero)."""
+    entry = _load_all().get(name)
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise KeyError(
+            f"constante '{name}' ausente ou malformada em {CONSTANTS_PATH} "
+            "(toda constante precisa de 'value' + proveniência, §16.10)"
+        )
+    return entry["value"]
