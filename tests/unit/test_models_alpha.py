@@ -26,6 +26,7 @@ import pytest
 
 from src.features.build import T1_FEATURE_IDS
 from src.models import alpha, monotonic
+from src.models._constants import load_constant
 from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1
 
@@ -124,6 +125,41 @@ def test_derived_seed_varia_com_os_parametros() -> None:
     s1 = alpha._derived_seed(42, 3, 1)
     s2 = alpha._derived_seed(42, 4, 1)
     assert s1 != s2
+
+
+# ============================================================================
+# SideModelResult.gain_by_column_raw (task A1 do CLAUDE.md) — campo
+# aditivo: gain BRUTO por coluna, antes da normalização que
+# `compute_concentration` aplica em `concentration.shares`. Existe para
+# `src.models.pipeline.write_fold_diagnostics_atomic` não precisar de um
+# retreino para recuperar o gain bruto (achado que motivou a task).
+# ============================================================================
+
+
+def test_fit_side_model_expoe_gain_by_column_raw() -> None:
+    df = _synthetic_train_frame(n=80, seed=3)
+    hyper = alpha.XGBHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    assert isinstance(result.gain_by_column_raw, dict)
+    # só colunas em que o booster de fato dividiu (gain > 0) aparecem aqui —
+    # mesma convenção do dict que `compute_concentration` recebe (docstring
+    # de `src.models.hhi`), diferente de `concentration.shares` (que inclui
+    # TODAS as colunas, com 0.0 explícito para as não usadas).
+    assert set(result.gain_by_column_raw.keys()) <= set(alpha.DESIGN_COLUMNS)
+    assert all(v > 0.0 for v in result.gain_by_column_raw.values())
+    # o share normalizado (`concentration.shares`) é derivado do MESMO gain
+    # bruto — toda chave presente no bruto também está no share normalizado.
+    assert set(result.gain_by_column_raw.keys()) <= set(result.concentration.shares.keys())
 
 
 # ============================================================================

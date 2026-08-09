@@ -139,6 +139,16 @@ class SideModelResult:
     monotone_constraints: tuple[int, ...]
     tau: float
     concentration: ConcentrationDiagnostics
+    # `total_gain` bruto por coluna (`booster.get_score(importance_type=
+    # "total_gain")` remapeado para nome real de coluna), ANTES da
+    # normalização que `compute_concentration` aplica em `concentration.
+    # shares`. Persistido à parte porque a investigação de auditoria que deu
+    # origem a este campo (ver `models/{model_id}/diagnostics/`, escrito por
+    # `src.models.pipeline`) precisa do gain bruto, não só do share — colunas
+    # sem nenhuma divisão pelo booster ficam ausentes deste dict (mesma
+    # convenção de `gain_by_column` em `fit_side_model`), não aparecem como
+    # `0.0` como acontece em `concentration.shares`.
+    gain_by_column_raw: dict[str, float]
     n_train_fit: int
     n_train_calib: int
 
@@ -231,6 +241,7 @@ def fit_side_model(
         monotone_constraints=monotone_constraints,
         tau=tau,
         concentration=concentration,
+        gain_by_column_raw=gain_by_column,
         n_train_fit=int(fit_idx.shape[0]),
         n_train_calib=int(calib_idx.shape[0]),
     )
@@ -321,9 +332,16 @@ def run_fold(
     calibrator_id = np.where(side_hat == 0, "n/a", calibrator_id)
 
     # média simples entre os dois binários do fold — diagnóstico único por
-    # linha (§5.12 tem uma coluna `hhi_importancia`, não duas).
+    # linha (§5.12 tem uma coluna `hhi_importancia`, não duas). `.value` —
+    # `ConcentrationDiagnostics.hhi` virou `Metric` (`src.core.metric`,
+    # refatoração concorrente de `src/models/hhi.py`, fora do escopo desta
+    # task) durante esta mesma rodada; `Metric` não define `__truediv__`
+    # (só soma/subtração de mesma unidade e multiplicação por escalar, ver
+    # docstring do módulo), então a divisão por 2 precisa do float
+    # extraído, não do `Metric` em si. A coluna `hhi_importancia` de
+    # `predictions` continua `pl.Float64` (schema §5.12 inalterado).
     hhi_importancia_fold = (
-        long_result.concentration.hhi + short_result.concentration.hhi
+        long_result.concentration.hhi.value + short_result.concentration.hhi.value
     ) / 2
 
     predictions = pl.DataFrame(
@@ -393,8 +411,8 @@ def run_all_folds(
             n_train_long=result.n_train_long,
             n_train_short=result.n_train_short,
             n_test_bars=result.n_test_bars,
-            hhi_long=result.long_result.concentration.hhi,
-            hhi_short=result.short_result.concentration.hhi,
+            hhi_long=result.long_result.concentration.hhi.value,
+            hhi_short=result.short_result.concentration.hhi.value,
         )
         results.append(result)
     return results

@@ -43,6 +43,16 @@ data/*
 models/*.bin
 models/*.json
 
+# Estas duas regras só batem em arquivos DIRETOS em models/ (ex.
+# models/alpha_c1_v1.bin) — NÃO alcançam models/{model_id}/diagnostics/*.json
+# (confirmado com `git check-ignore -v` contra esse path exato). Isso é
+# intencional, não uma lacuna: os diagnósticos por fold x lado escritos por
+# `src.models.pipeline.write_fold_diagnostics_atomic` são evidência de
+# auditoria pequena e legível (gain_by_column, HHI, n_trees, tamanho de
+# amostra), mesma categoria de data/quality_reports/ e experiments/ acima —
+# não o artefato binário de modelo que as duas regras acima existem para
+# excluir. Fica versionado.
+
 # experiments/ NÃO está na lista acima de propósito: é pequeno (append-only
 # de config+hash+timestamp, não dado bruto) e é o que torna o N do DSR
 # reconstruível (§11.6) — mesma categoria de data/quality_reports/, versiona.

@@ -28,7 +28,7 @@ from src.validation import cpcv
 from . import alpha, backtest_lite, baselines, decomposition
 from . import dataset as ds
 from ._constants import load_constant
-from ._paths import EXPERIMENTS_DIR, PREDICTIONS_OUTPUT_DIR
+from ._paths import EXPERIMENTS_DIR, PREDICTIONS_OUTPUT_DIR, REPO_ROOT
 
 logger = structlog.get_logger(__name__)
 
@@ -36,6 +36,13 @@ MODEL_ID_CAMADA1 = "alpha_c1_v1"
 MODEL_ID_CAMADA0 = "alpha_c0_baseline_v1"
 
 SYMBOL = ds.SYMBOL_DEFAULT
+
+# `models/{model_id}/diagnostics/` (task A1 do CLAUDE.md) — diretório de
+# DADO no topo do repo (irmão de `data/`, `predictions/`, `experiments/`),
+# não o pacote de código `src/models/`. Não movido para `_paths.py` porque
+# esse arquivo está fora do escopo desta mudança; `REPO_ROOT` já é público
+# em `._paths`, então isso é só um import de símbolo existente, não edição.
+MODELS_DIR: Path = REPO_ROOT / "models"
 
 
 def write_predictions_atomic(predictions: pl.DataFrame, model_id: str) -> Path:
@@ -73,6 +80,150 @@ def write_report_atomic(payload: dict[str, Any], dest_path: Path | None = None) 
     os.replace(tmp_path, out_path)
     logger.info("models.pipeline.report_written", path=str(out_path))
     return out_path
+
+
+# Texto exato pedido pela task A1 (CLAUDE.md) — `best_iteration` não tem
+# significado sem early stopping implementado; reportar `null` com esta nota
+# em vez de inventar um número (mesma disciplina de B23/"TBD — medir no
+# Sprint N").
+_BEST_ITERATION_NOTE = "early stopping nao implementado nesta rodada, ver docstring alpha.py"
+
+
+def _side_label(side: int) -> str:
+    """+1 -> "long", -1 -> "short" — nome de arquivo legível (task A1 do
+    CLAUDE.md pede explicitamente isso em vez de `+1`/`-1` cru)."""
+    if side == 1:
+        return "long"
+    if side == -1:
+        return "short"
+    raise ValueError(f"_side_label: side desconhecido {side!r} (esperado +1 ou -1)")
+
+
+def _fold_diagnostics_payload(
+    fold_result: alpha.FoldResult,
+    side_result: alpha.SideModelResult,
+    *,
+    model_id: str,
+    expected_n_trees: int,
+) -> dict[str, Any]:
+    """Diagnóstico por fold x lado — a investigação que motivou a task A1
+    encontrou que `gain_by_column` (bruto) e `concentration.shares`
+    (normalizado) só viviam em memória dentro de `fit_side_model`/
+    `run_layer1_sprint`: recuperá-los depois do fato custou um retreino
+    completo (~117s, ver CLAUDE.md, contexto desta task). Este dict é
+    serializado 1:1 em `models/{model_id}/diagnostics/fold_{fold_id}_
+    {side_label}.json` por `write_fold_diagnostics_atomic`.
+
+    `n_trees` vem de `booster.num_boosted_rounds()` — como early stopping
+    não está implementado nesta rodada (ver docstring do módulo
+    `src.models.alpha` e `constants.yaml:alpha_xgb_n_estimators`), o
+    esperado é `n_trees == alpha_xgb_n_estimators` (300) sempre; um desvio é
+    logado como warning aqui em vez de silenciosamente ignorado.
+    `best_iteration` não tem significado sem early stopping — reportado
+    como `null` com uma nota explícita, nunca inventado (mesma disciplina
+    de `TBD — medir no Sprint N`, B23)."""
+    booster = side_result.model.get_booster()
+    n_trees = int(booster.num_boosted_rounds())
+    if n_trees != expected_n_trees:
+        logger.warning(
+            "models.pipeline.diagnostics_n_trees_diverge_de_n_estimators",
+            n_trees=n_trees,
+            alpha_xgb_n_estimators=expected_n_trees,
+            fold_id=fold_result.fold_id,
+            side=side_result.side,
+            model_id=model_id,
+        )
+
+    return {
+        "schema_version": 1,
+        "model_id": model_id,
+        "variant": fold_result.variant,
+        "fold_id": fold_result.fold_id,
+        "path_id": fold_result.path_id,
+        "side": side_result.side,
+        "side_label": _side_label(side_result.side),
+        "gain_by_column": side_result.gain_by_column_raw,
+        "concentration_shares": side_result.concentration.shares,
+        # `.value` — `hhi`/`max_share` são `Metric` (`src.core.metric`,
+        # ver nota em `hhi_values_long` acima); mantido como float plano
+        # aqui para não quebrar o schema já gravado nos 30+30 arquivos
+        # reais desta rodada (ver DoD/relatório da task A1/A2) — a
+        # proveniência completa do Metric (unit/n/source/valid) continua
+        # disponível em `side_result.concentration.hhi`/`.max_share` para
+        # quem precisar, só não duplicada neste JSON.
+        "hhi": side_result.concentration.hhi.value,
+        "max_share": side_result.concentration.max_share.value,
+        "n_features_over_1pct": side_result.concentration.n_features_over_1pct,
+        "n_trees": n_trees,
+        "best_iteration": None,
+        "best_iteration_note": _BEST_ITERATION_NOTE,
+        "n_amostras": {
+            "n_train_fit": side_result.n_train_fit,
+            "n_train_calib": side_result.n_train_calib,
+        },
+    }
+
+
+def write_fold_diagnostics_atomic(
+    fold_result: alpha.FoldResult,
+    *,
+    model_id: str,
+    expected_n_trees: int,
+) -> list[Path]:
+    """`models/{model_id}/diagnostics/fold_{fold_id}_{side_label}.json` —
+    um arquivo por fold x lado (long e short), B29: `.tmp` -> `fsync` ->
+    `rename`, mesmo padrão de `write_predictions_atomic`/
+    `write_report_atomic` acima. Ver `.gitignore`: `models/*/diagnostics/`
+    é intencionalmente versionado (evidência de auditoria pequena e
+    legível, mesma categoria de `data/quality_reports/`), não é o artefato
+    binário de modelo que `models/*.bin`/`models/*.json` (raiz de
+    `models/{model_id}/`) ignoram."""
+    out_dir = MODELS_DIR / model_id / "diagnostics"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    written: list[Path] = []
+    for side_result in (fold_result.long_result, fold_result.short_result):
+        payload = _fold_diagnostics_payload(
+            fold_result, side_result, model_id=model_id, expected_n_trees=expected_n_trees
+        )
+        side_label = _side_label(side_result.side)
+        dest_path = out_dir / f"fold_{fold_result.fold_id}_{side_label}.json"
+        tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+
+        blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
+        with tmp_path.open("wb") as fh:
+            fh.write(blob)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, dest_path)
+        written.append(dest_path)
+
+    logger.info(
+        "models.pipeline.fold_diagnostics_written",
+        model_id=model_id,
+        fold_id=fold_result.fold_id,
+        n_files=len(written),
+    )
+    return written
+
+
+def write_all_fold_diagnostics(
+    fold_results: list[alpha.FoldResult],
+    *,
+    model_id: str,
+    hyper: alpha.XGBHyperparams,
+) -> list[Path]:
+    """Escreve o diagnóstico de todos os folds de uma variante (Camada 1 OU
+    Camada 0) — chamada duas vezes por `run_layer1_sprint`, uma por
+    variante, cada uma com seu próprio `model_id`."""
+    written: list[Path] = []
+    for fr in fold_results:
+        written.extend(
+            write_fold_diagnostics_atomic(
+                fr, model_id=model_id, expected_n_trees=hyper.n_estimators
+            )
+        )
+    return written
 
 
 def _path_results_to_dict(by_path: dict[int, backtest_lite.PathBacktestResult]) -> dict[str, Any]:
@@ -126,6 +277,15 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
         seed=seed,
     )
 
+    # --- diagnóstico por fold x lado (task A1 do CLAUDE.md) — persiste o
+    # que antes só existia em memória dentro de FoldResult/SideModelResult
+    # e nunca saía do processo (gain_by_column bruto, shares normalizados,
+    # HHI, n_trees, tamanho de amostra). Escrito para as DUAS variantes,
+    # cada uma no seu próprio model_id, antes de qualquer agregação em
+    # médias no relatório final.
+    write_all_fold_diagnostics(camada1_folds, model_id=MODEL_ID_CAMADA1, hyper=hyper)
+    write_all_fold_diagnostics(camada0_folds, model_id=MODEL_ID_CAMADA0, hyper=hyper)
+
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)
     write_predictions_atomic(preds_c1, MODEL_ID_CAMADA1)
@@ -143,10 +303,17 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
     alpha_sharpe_headline = _mean_finite(c1_sharpes)
 
     # --- HHI agregado (§5.8) — média por fold, camada 1 ---
-    hhi_values_long = [fr.long_result.concentration.hhi for fr in camada1_folds]
-    hhi_values_short = [fr.short_result.concentration.hhi for fr in camada1_folds]
-    max_share_long = [fr.long_result.concentration.max_share for fr in camada1_folds]
-    max_share_short = [fr.short_result.concentration.max_share for fr in camada1_folds]
+    # `.value` — `ConcentrationDiagnostics.hhi`/`.max_share` viraram
+    # `Metric` (`src.core.metric`, refatoração concorrente de
+    # `src/models/hhi.py` fora do escopo desta task) durante esta mesma
+    # rodada; `_mean_finite`/`_percentile_finite` abaixo esperam
+    # `list[float]` (fazem `np.asarray(..., dtype=np.float64)`), não
+    # `Metric`. Extrai o valor numérico aqui, no ponto de consumo — não
+    # muda `hhi.py` (fora do escopo), só adapta o lado que já é meu.
+    hhi_values_long = [fr.long_result.concentration.hhi.value for fr in camada1_folds]
+    hhi_values_short = [fr.short_result.concentration.hhi.value for fr in camada1_folds]
+    max_share_long = [fr.long_result.concentration.max_share.value for fr in camada1_folds]
+    max_share_short = [fr.short_result.concentration.max_share.value for fr in camada1_folds]
     max_share_values = max_share_long + max_share_short
     n_over_1pct_long = [fr.long_result.concentration.n_features_over_1pct for fr in camada1_folds]
     n_over_1pct_short = [fr.short_result.concentration.n_features_over_1pct for fr in camada1_folds]
