@@ -34,6 +34,21 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: constants-referenced
+        name: toda constante referenciada em src/ tem entrada em constants.yaml (Fase H)
+        entry: python tools/lint/check_constants_referenced.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        # Lê o ÍNDICE do git (staged), não o working tree — de propósito: é o
+        # que teria pego o incidente de ~280 linhas de proveniência que
+        # ficaram staged em `.py` mas não em `constants.yaml` (Sprints 8/12,
+        # ver docs/SPRINT_LOG.md Fase H). check_sprint_log_references.py
+        # (Fase H, a outra metade) fica de fora deste arquivo — é heurístico
+        # de prosa com falso positivo esperado (ver docstring do script);
+        # bloquear commit local nele treinaria a usar --no-verify. Roda só em
+        # CI, non-blocking (continue-on-error), ver .github/workflows/ci.yml.
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:

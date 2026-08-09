@@ -16,6 +16,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 2 (não o default 1) — check_sprint_log_references.py
+          # faz `git diff HEAD~1` para achar as linhas novas de cada push; um
+          # checkout raso de profundidade 1 não teria HEAD~1 disponível. Se um
+          # push empilhar >1 commit novo, o step só vê o diff do último commit
+          # contra o penúltimo — limitação aceita dado o fluxo trunk-based
+          # deste repo (push a cada commit significativo, CLAUDE.md §Rotina de
+          # git), documentada aqui, não escondida.
+          fetch-depth: 2
 
       - name: Instalar uv
         uses: astral-sh/setup-uv@v3
@@ -39,6 +48,17 @@ jobs:
 
       - name: import-linter (hierarquia §14.2)
         run: uv run lint-imports
+
+      - name: constants referenciadas em src/ têm entrada em constants.yaml (Fase H)
+        run: uv run python tools/lint/check_constants_referenced.py
+
+      - name: SPRINT_LOG.md — número novo tem referência por perto (Fase H, heurístico)
+        run: uv run python tools/lint/check_sprint_log_references.py --base HEAD~1
+        # HEURÍSTICO de prosa (ver docstring do script) — falso positivo
+        # esperado em parágrafos legítimos sem referência formal. Fica
+        # non-blocking até calibrar contra uso real, mesmo motivo/mesmo
+        # padrão do step de constants_provenance abaixo.
+        continue-on-error: true
 
       - name: constants.yaml — nenhuma classe A com provenance ASSUMED em build de produção
         run: uv run python tools/lint/check_constants_provenance.py --fail-on-assumed-class-a

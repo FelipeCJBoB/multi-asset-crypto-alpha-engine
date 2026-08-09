@@ -488,6 +488,8 @@ para R0 = zero trades), Fase H (hooks de CI pra fechar as costuras já
 vistas: proveniência fora de commit, análise decisiva em script
 descartável).
 
+**Fase H concluída** (rodada separada) — `tools/lint/check_constants_referenced.py` (referência `load_constant("...")` em `src/` sem entrada em `constants.yaml`, verificado contra o índice do git — o que teria pego o incidente acima) e `tools/lint/check_sprint_log_references.py` (heurístico: linha nova aqui com número sem referência por perto); testes em `tests/unit/test_check_constants_referenced.py` e `tests/unit/test_check_sprint_log_references.py`, hooks em `.pre-commit-config.yaml`/`.github/workflows/ci.yml`.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
