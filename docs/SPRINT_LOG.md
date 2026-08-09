@@ -1472,13 +1472,70 @@ recria.
 book (barreira mais fácil de alcançar) contra 4,8-15,6% em `tp=2,5`; custo
 médio por trade fica entre 5,4 e 6,2bps, subindo com `tp_atr_mult` e caindo
 com `sl_atr_mult` (mais SL/TIME = mais saída taker, mas TP mais apertado
-tem menos chance de sair maker também — os dois efeitos interagem). Estes
-números alimentam a escolha de célula pra retreinar em E2/FASE 3, mas essa
-escolha ainda não foi feita aqui — DESCOBERTA, não decisão.
+tem menos chance de sair maker também — os dois efeitos interagem).
+~~Estes números alimentam a escolha de célula pra retreinar em E2/FASE
+3~~ — **superado pela conclusão abaixo: nenhuma célula deste grid vira
+configuração vencedora.**
 
 **Verificação**: 7 testes novos (`test_labels_barrier_sweep.py`), suíte
 completa 838 passam (era 832), `ruff`/`mypy` limpos, `banned_patterns` sem
 violação nova, 6/6 import-linter.
+
+### Conclusão do E1 e correção de escopo (Manager, 2026-08-09) — geometria de barreira NÃO é o gargalo
+
+**Extensão do grid (proposta em pré-E2 (1)): NEGADA.** `n_lifetime` NÃO
+gasta os +8 propostos — a proposta fica registrada como avaliada e
+rejeitada, não como pendente.
+
+**A matemática que fecha o caso.** Edge necessário pra empatar o custo
+round-trip: `cost_frac / atr_pct_mediano`. Com o custo médio medido
+(~5,76bps) e o ATR mediano citado na proveniência de
+`adverse_selection_wr_cost_per_bp` (`constants.yaml`, 0,305% a 15m):
+`0,000576 / 0,00305 ≈ 0,189 ATR`. **Verificado nesta rodada com o ATR
+mediano recalculado sobre o dataset completo atual (0,3592%, discrepância
+de fonte registrada, não escondida): `0,000576/0,003592 ≈ 0,160 ATR`** —
+os dois pontos de referência (0,160 a 0,189) convergem na mesma ordem de
+grandeza. **A melhor célula do grid inteiro (`long tp=1,5/sl=2,0`) dá
+edge médio de 0,028 ATR — entre 15% e 18% do necessário**, não uma
+diferença de ajuste fino.
+
+**Contraste com a população JÁ SELECIONADA (Alpha atual, barreiras
+antigas).** `long×R3`, população selecionada e preenchida: edge médio
+verificado nesta rodada = **0,226 ATR** (Manager citou 0,200 — mesma
+ordem de grandeza, ~106-113% do breakeven pelos dois cálculos) —
+CONFORTAVELMENTE acima do breakeven. **Ressalva não descartável**: a
+MEDIANA dessa mesma população é ≈ -0,002 ATR (essencialmente zero/
+levemente negativa) — a distribuição é fortemente assimétrica, o edge
+médio positivo é puxado por uma cauda de vencedores grandes, não pelo
+trade típico. Isso não muda a conclusão do Manager (o gap de 0,13-0,16
+ATR entre o que a geometria sozinha entrega e o que a SELEÇÃO já entrega
+é real e grande de qualquer forma), mas é uma nuance a não perder ao
+citar "106%" como se fosse robusto ao trade mediano.
+
+**Reforço estrutural**: a varredura 3×3 mostrou amplitude de CENTÉSIMOS
+de ATR entre células (ex. long: -0,009 a -0,082 de edge médio); a lacuna
+a fechar é de décimos. Nenhuma extensão de grade plausível fecha essa
+lacuna por geometria de barreira sozinha. `tp_atr_mult < 1,35` cai abaixo
+da mediana de MFE medida em D3 (1,27-1,40 ATR conforme o bloco) — barreira
+ali não é só "mais difícil", é estruturalmente inalcançável com
+frequência maior, elevando o win rate de breakeven exigido.
+
+**Conclusão registrada**: a geometria de barreira não é o gargalo do
+sistema. O gargalo está na SELEÇÃO (o que o Alpha escolhe operar), não em
+qual múltiplo de ATR define TP/SL.
+
+**Correção de escopo do E1 — limitação de desenho, não resultado.** E1
+foi varrido sobre a população INCONDICIONAL (todo trade rotulado, sem
+seleção de modelo) — `frac_tp`/`frac_sl`, e portanto `edge_atr_closed_
+form`, são estimados sobre essa população, mas a realidade operacional é
+CONDICIONAL à seleção do Alpha (que já muda a composição de barreira
+tocada, como toda a Faixa 1.x mediu repetidamente). **`tp=1,5` NÃO é uma
+configuração vencedora** — é o ótimo dentro de um espaço de busca com a
+premissa errada (população errada). O ótimo de barreira real só pode ser
+recomputado DEPOIS de E2/E3, sobre a população SELECIONADA pelo modelo
+retreinado — registrado aqui como limitação de desenho do E1, a corrigir
+na próxima rodada de varredura (se houver), não como um achado a carregar
+adiante.
 
 ### Pré-E2 — 3 medições pedidas pelo Manager antes de liberar E2 (2026-08-09)
 
@@ -1493,13 +1550,14 @@ frac_tp(regime) x tp − frac_sl(regime) x sl`. Achado central: a melhor
 célula (média dos 4 regimes) fica em `tp=1,5` (a BORDA INFERIOR do grid
 original) nos dois lados — e por regime, `tp=1,5` vence em 7 dos 8 blocos
 lado×regime (só `short×R1` prefere `sl=1,0` em vez de `sl=2,0`, mas ainda
-com `tp=1,5`). **`long×R2` é a ÚNICA célula com edge positivo do lado
-long** (+0,028 em `tp=1,5/sl=2,0`) — achado novo: o regime antes
-identificado como "pior" para o long tem geometria de barreira MAIS
-favorável dentro do grid testado, não menos. Gatilho do critério
-pré-registrado do Manager disparado (`toca_borda_inferior_tp=true`) —
-**proposta registrada, NÃO executada**: estender o grid para `tp_atr_mult
-∈ {1,0 · 1,25}`, `n_lifetime` declarado antes (+8, 2×2×2) se aprovado.
+com `tp=1,5`). `long×R2` é a única célula com edge positivo do lado long
+(+0,028 em `tp=1,5/sl=2,0`). Gatilho do critério pré-registrado do
+Manager disparado (`toca_borda_inferior_tp=true`) — proposta de estender
+o grid para `tp_atr_mult ∈ {1,0 · 1,25}` **AVALIADA E NEGADA pelo Manager
+(ver seção "Conclusão do E1" acima)**: mesmo a melhor célula (0,028 ATR)
+fica a ~15-18% do edge necessário pra empatar o custo (~0,16-0,19 ATR) —
+a lacuna é de ordem de grandeza maior que a amplitude do grid inteiro
+(centésimos), estender não fecharia. `n_lifetime` NÃO gastou os +8.
 
 **(2) Importância por permutação (AUC drop) + resolução dos 2 pares de
 ortogonalidade.** Retreino em memória da Camada 1 (mesma config/seed de
@@ -1535,6 +1593,27 @@ caminhos — "só short" e "long sem R2" isolados chegam perto (1 path cada
 falha por margem pequena, 1,04-1,05x), a combinação dos dois falha em
 todos. Emitido sem decidir entre eles.
 
+**Correção de prioridade (Manager, 2026-08-09), com uma discrepância
+numérica verificada e corrigida.** Instrução do Manager: as falhas de
+1,04-1,05x de "só short"/"long sem R2" não devem ser tratadas como
+restrição real ainda, por serem menores que a inconsistência do
+threshold efetivo já medida — citando "quantil efetivo 0,743 a 1,000
+entre paths, Faixa 1.5 Bloco 3". **Verificado nesta rodada contra
+`experiments/faixa1_5_prerequisites.json` (dado atual, não de memória):
+o valor 0,743-1,000 é o NÚMERO COM BUG (quantil-de-um-quantil, já
+documentado e corrigido na Faixa 1.6 Bloco 2) — o valor CORRIGIDO,
+persistido hoje, é 0,554-0,599** (5 caminhos: 0,5537 / 0,5619 / 0,5872 /
+0,5986 / 0,5575), uma dispersão relativa de ~8%, não ~35% como o número
+citado sugeriria. Isso enfraquece a comparação quantitativa (8% vs. a
+margem de 4-5% do orçamento é a mesma ordem de grandeza, não claramente
+"menor") — mas a decisão operacional do Manager (corrigir o threshold
+antes de remedir o orçamento, não tratar essas duas falhas como bloqueio
+ainda) permanece válida por si só, não depende do número exato para fazer
+sentido como ordem de prioridade. Registrado aqui para não perpetuar o
+número desatualizado. **A combinação "só short + long sem R2" falhando
+5/5 continua de pé como restrição real** (margem de 18-67%, ainda bem
+maior que a dispersão do threshold em qualquer uma das duas leituras).
+
 ### FASE 2 (E2/E3) e FASE 3 (C1/C2/C3) — E2 pausado por instrução; E3/FASE 3 pendentes.
 
 **Escopo real destas duas, para quem for continuar**: E2 (ampliar T1 de
@@ -1568,10 +1647,11 @@ E1+E2+E3, não estão prontos a partir só de E1.
 | Distribuição real de regime? | R1 domina (46%), R5 raro (1,7%) | Sprint 5 acima |
 | Long segue a tendência de 48b em R2? | Não detectavelmente — lift 1,02, p=0,18 (contra 1,72/p≈0 em R3) | Faixa 2, FASE 1 D1 acima |
 | MFE por regime é pior em R2? | Não — mediana ~1,3-1,4 ATR em TODOS os 8 blocos lado×regime; tp_atr_mult=2,0 parece ambicioso estruturalmente, não seletivamente em R2 | Faixa 2, FASE 1 D3 acima |
-| N_lifetime atual, auditado? | 41 (era 5 — +18 retroativo F0.1, +18 varredura E1) | `audit/n_lifetime.yaml`, Faixa 2 F0.1/E1 acima |
-| Qual célula do grid E1 tem o melhor edge em ATR? | tp=1,5 (borda inferior) nos dois lados e em 7/8 blocos lado×regime — proposta de extensão a tp∈{1,0;1,25} registrada, não executada | Faixa 2, Pré-E2 (1) acima |
+| N_lifetime atual, auditado? | 41 (era 5 — +18 retroativo F0.1, +18 varredura E1; +8 de extensão do grid AVALIADO e NEGADO, não gasto) | `audit/n_lifetime.yaml`, Faixa 2 F0.1/E1 acima |
+| Geometria de barreira é o gargalo do sistema? | Não — melhor célula do grid (0,028 ATR) fica a 15-18% do breakeven (~0,16-0,19 ATR); extensão do grid NEGADA pelo Manager | Faixa 2, "Conclusão do E1" acima |
+| tp=1,5 é a configuração vencedora pra carregar adiante? | Não — E1 rodou sobre população INCONDICIONAL; o ótimo real só é computável DEPOIS de E2/E3, sobre a população selecionada | Faixa 2, "Conclusão do E1" acima |
 | E27f_cost_atr_ratio ajuda o modelo a prever? | Importância por permutação NEGATIVA (-0,0065) — embaralhar melhora o AUC; descartada no par contra C07 | Faixa 2, Pré-E2 (2) acima |
-| Alguma config de orçamento (short-só/long-sem-R2) cabe em TODOS os 5 paths? | Não — as duas isoladas falham em exatamente 1 path cada (margem 1,04-1,05x); a combinação falha em 5/5 | Faixa 2, Pré-E2 (3) acima |
+| Alguma config de orçamento (short-só/long-sem-R2) cabe em TODOS os 5 paths? | Não — mas as falhas de 1,04-1,05x NÃO são tratadas como restrição ainda (menores que a inconsistência de threshold já medida); a combinação falhando 5/5 continua de pé como restrição real | Faixa 2, Pré-E2 (3) acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
