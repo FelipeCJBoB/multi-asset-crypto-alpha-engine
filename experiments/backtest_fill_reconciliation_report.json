@@ -1,0 +1,353 @@
+{
+  "generated_at_utc": "2026-08-09T04:45:38.198811+00:00",
+  "limitations": [
+    "Reconciliação restrita à janela onde bookTicker existe (2023-05-16..2024-03-30) — não extrapola fill real além dela; mesmo limite que src.execution.fill_simulator.simulate_window respeita (RPI_BREAK_DATE).",
+    "predictions.parquet repete cada barra até 5x (uma por caminho de CPCV cujo teste OOF a cobriu) — os números 'otimista'/'realista' aqui são pooled sobre os caminhos que caem dentro desta janela reduzida, não os 6,5 anos completos do -17,71 original (experiments/alpha_layer1_report.json); a comparação válida é OTIMISTA vs REALISTA dentro desta MESMA janela, não janela-reduzida vs 6,5-anos completos.",
+    "path_id reconstruído deterministicamente via src.validation.cpcv.generate_splits (split_id -> path_id não depende do conteúdo de labels, só de cpcv_n_groups/cpcv_n_test_groups — verificado n_splits=15/n_paths=5 batendo com fold_id observado em predictions.parquet). Amostra por caminho é pequena dentro desta janela (dezenas a centenas de sinais/caminho) — mais ruidosa que o pooled; não confundir com camada1_backtest_by_path do Sprint 8 (aquele é sobre os 6,5 anos completos, este é só a janela do bookTicker).",
+    "62 de 2305 sinais na janela têm barrier_hit==NOFILL sob a convenção do Label Engine (t_entry nulo por construção) — tratados como filled=False POR CONSTRUÇÃO na amostra-base (zero contra-exemplos medidos do oposto: filled_real==True com barrier_hit==NOFILL).",
+    "189 sinais (não-NOFILL) dentro da janela não têm linha correspondente em orders.parquet (fill_simulator.n_skipped_no_book_state — ausência genuína de estado de book, não um NOFILL) — excluídos da amostra-base comum para manter o mesmo denominador nos dois gates.",
+    "calibrate_against_real_fills (src.execution.fill_simulator) não está implementado — este módulo reconcilia os dois gates já existentes, não calibra nenhum dos dois contra fill real de Testnet/Paper (Sprints 15-16).",
+    "Direção+carry medidos DENTRO desta janela específica (~10,5 meses, 2023-05..2024-03) são negativos nos dois gates (ver module_a_fill_reconciliation.optimistic/realistic.decomposition.pnl_direcional) — não reproduzem o sinal do pooled_all_15_splits sobre os 6,5 anos completos; a janela pode não ser representativa do regime médio do modelo. A comparação otimista-vs-realista continua válida (mesma janela nos dois lados), mas não deve ser lida como 'o efeito de execução medido sobre o resultado de 6,5 anos'."
+  ],
+  "model_id": "alpha_c1_v1",
+  "module_a_fill_reconciliation": {
+    "by_path": {
+      "0": {
+        "optimistic": {
+          "decomposition": {
+            "carry_share": -0.02796409879506626,
+            "directional_sharpe": -3.869533095810701,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 528,
+            "pnl_carry": 0.030066990000000002,
+            "pnl_direcional": -0.7920666672842455,
+            "pnl_execucao": -0.3132,
+            "pnl_total": -1.0751996772842456,
+            "side_carry_asymmetry": -0.00010544898529411765,
+            "total_sharpe": -5.184292336765035
+          },
+          "fill_rate": 0.9635036496350365,
+          "gate": "otimista_label_engine",
+          "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+          "mean_trade_ret_net": -0.002036363025159556,
+          "n_base_signals": 548,
+          "n_filled": 528,
+          "sharpe_naive": -5.184292336765035,
+          "std_trade_ret_net": 0.009685608105763438,
+          "trades_per_year": 608.0262734408354
+        },
+        "realistic": {
+          "decomposition": {
+            "carry_share": -0.04108240992024176,
+            "directional_sharpe": -1.3059828789765,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 234,
+            "pnl_carry": 0.01251552,
+            "pnl_direcional": -0.17885977101394712,
+            "pnl_execucao": -0.1383,
+            "pnl_total": -0.3046442510139471,
+            "side_carry_asymmetry": -0.00010243166113901262,
+            "total_sharpe": -2.1936713582334506
+          },
+          "fill_rate": 0.42700729927007297,
+          "gate": "realista_fill_simulator",
+          "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+          "mean_trade_ret_net": -0.0013018985086066116,
+          "n_base_signals": 548,
+          "n_filled": 234,
+          "sharpe_naive": -2.1936713582334506,
+          "std_trade_ret_net": 0.009742214894173372,
+          "trades_per_year": 269.4661893658248
+        }
+      },
+      "1": {
+        "optimistic": {
+          "decomposition": {
+            "carry_share": -0.04372717581981574,
+            "directional_sharpe": -2.863624004564413,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 387,
+            "pnl_carry": 0.032195339999999996,
+            "pnl_direcional": -0.538972938458808,
+            "pnl_execucao": -0.22950000000000004,
+            "pnl_total": -0.736277598458808,
+            "side_carry_asymmetry": -0.00011384651933701658,
+            "total_sharpe": -3.8575586592085127
+          },
+          "fill_rate": 0.9650872817955112,
+          "gate": "otimista_label_engine",
+          "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+          "mean_trade_ret_net": -0.0019025260942088062,
+          "n_base_signals": 401,
+          "n_filled": 387,
+          "sharpe_naive": -3.8575586592085127,
+          "std_trade_ret_net": 0.010523311982987815,
+          "trades_per_year": 455.26967724619203
+        },
+        "realistic": {
+          "decomposition": {
+            "carry_share": -0.04641437786390369,
+            "directional_sharpe": -1.7873040123785684,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 153,
+            "pnl_carry": 0.013481650000000001,
+            "pnl_direcional": -0.2127444466689743,
+            "pnl_execucao": -0.0912,
+            "pnl_total": -0.29046279666897434,
+            "side_carry_asymmetry": -0.00011976946376811594,
+            "total_sharpe": -2.4019517076216883
+          },
+          "fill_rate": 0.38154613466334164,
+          "gate": "realista_fill_simulator",
+          "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+          "mean_trade_ret_net": -0.001898449651431205,
+          "n_base_signals": 401,
+          "n_filled": 153,
+          "sharpe_naive": -2.4019517076216883,
+          "std_trade_ret_net": 0.010603748241051,
+          "trades_per_year": 179.99033751593637
+        }
+      },
+      "2": {
+        "optimistic": {
+          "decomposition": {
+            "carry_share": -0.02098187595855369,
+            "directional_sharpe": -4.254330340856557,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 445,
+            "pnl_carry": 0.026234379999999995,
+            "pnl_direcional": -1.0115696718405287,
+            "pnl_execucao": -0.265,
+            "pnl_total": -1.2503352918405286,
+            "side_carry_asymmetry": -0.00010940373812754408,
+            "total_sharpe": -5.201862983675912
+          },
+          "fill_rate": 0.967391304347826,
+          "gate": "otimista_label_engine",
+          "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+          "mean_trade_ret_net": -0.0028097422288551207,
+          "n_base_signals": 460,
+          "n_filled": 445,
+          "sharpe_naive": -5.201862983675912,
+          "std_trade_ret_net": 0.012292096061751974,
+          "trades_per_year": 517.8890769690332
+        },
+        "realistic": {
+          "decomposition": {
+            "carry_share": -0.018023717808912088,
+            "directional_sharpe": -2.319065042330228,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 204,
+            "pnl_carry": 0.00861551,
+            "pnl_direcional": -0.3669251022129859,
+            "pnl_execucao": -0.11970000000000003,
+            "pnl_total": -0.47800959221298595,
+            "side_carry_asymmetry": -0.0000989460958503799,
+            "total_sharpe": -2.9854909821568913
+          },
+          "fill_rate": 0.4434782608695652,
+          "gate": "realista_fill_simulator",
+          "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+          "mean_trade_ret_net": -0.0023431842755538526,
+          "n_base_signals": 460,
+          "n_filled": 204,
+          "sharpe_naive": -2.9854909821568913,
+          "std_trade_ret_net": 0.012238132724731456,
+          "trades_per_year": 243.13582596872874
+        }
+      },
+      "3": {
+        "optimistic": {
+          "decomposition": {
+            "carry_share": -0.011575733151045643,
+            "directional_sharpe": -0.8474965415175229,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 117,
+            "pnl_carry": 0.0016751100000000003,
+            "pnl_direcional": -0.07918387083116052,
+            "pnl_execucao": -0.06720000000000002,
+            "pnl_total": -0.14470876083116055,
+            "side_carry_asymmetry": -0.00006283536885245901,
+            "total_sharpe": -1.5291957428377496
+          },
+          "fill_rate": 0.9831932773109243,
+          "gate": "otimista_label_engine",
+          "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+          "mean_trade_ret_net": -0.0012368270156509448,
+          "n_base_signals": 119,
+          "n_filled": 117,
+          "sharpe_naive": -1.5291957428377496,
+          "std_trade_ret_net": 0.009451438077640054,
+          "trades_per_year": 136.5538727823453
+        },
+        "realistic": {
+          "decomposition": {
+            "carry_share": -0.007838675032114608,
+            "directional_sharpe": 0.2958624190028835,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": true,
+            "n_trades": 51,
+            "pnl_carry": 0.00007770000000000005,
+            "pnl_direcional": 0.01880991051049219,
+            "pnl_execucao": -0.028800000000000003,
+            "pnl_total": -0.0099123894895078,
+            "side_carry_asymmetry": -0.00003686727272727273,
+            "total_sharpe": -0.15368162424516207
+          },
+          "fill_rate": 0.42857142857142855,
+          "gate": "realista_fill_simulator",
+          "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+          "mean_trade_ret_net": -0.00019436057822564312,
+          "n_base_signals": 119,
+          "n_filled": 51,
+          "sharpe_naive": -0.15368162424516207,
+          "std_trade_ret_net": 0.009867132137138062,
+          "trades_per_year": 60.870855742392266
+        }
+      },
+      "4": {
+        "optimistic": {
+          "decomposition": {
+            "carry_share": -0.0322814860362004,
+            "directional_sharpe": -2.759047316861935,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 577,
+            "pnl_carry": 0.02985667,
+            "pnl_direcional": -0.61474191123452,
+            "pnl_execucao": -0.33999999999999997,
+            "pnl_total": -0.92488524123452,
+            "side_carry_asymmetry": -0.00014517575373433297,
+            "total_sharpe": -4.099285823682838
+          },
+          "fill_rate": 0.9812925170068028,
+          "gate": "otimista_label_engine",
+          "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+          "mean_trade_ret_net": -0.0016029206953804506,
+          "n_base_signals": 588,
+          "n_filled": 577,
+          "sharpe_naive": -4.099285823682838,
+          "std_trade_ret_net": 0.010148996735864616,
+          "trades_per_year": 673.6565777644591
+        },
+        "realistic": {
+          "decomposition": {
+            "carry_share": -0.07856745777511542,
+            "directional_sharpe": -0.3141927111341882,
+            "gate3_carry_share_ok": true,
+            "gate3_directional_positive": false,
+            "n_trades": 250,
+            "pnl_carry": 0.01393533,
+            "pnl_direcional": -0.045103039158762126,
+            "pnl_execucao": -0.1462,
+            "pnl_total": -0.17736770915876215,
+            "side_carry_asymmetry": -0.00013718039030372989,
+            "total_sharpe": -1.2178642199489418
+          },
+          "fill_rate": 0.42517006802721086,
+          "gate": "realista_fill_simulator",
+          "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+          "mean_trade_ret_net": -0.0007094708366350486,
+          "n_base_signals": 588,
+          "n_filled": 250,
+          "sharpe_naive": -1.2178642199489418,
+          "std_trade_ret_net": 0.010039567780727721,
+          "trades_per_year": 297.0015246484838
+        }
+      }
+    },
+    "by_path_note": "path_id reconstruído deterministicamente via src.validation.cpcv.generate_splits (split_id -> path_id não depende do conteúdo de labels, só de cpcv_n_groups/cpcv_n_test_groups — verificado n_splits=15/n_paths=5 batendo com fold_id observado em predictions.parquet). Amostra por caminho é pequena dentro desta janela (dezenas a centenas de sinais/caminho) — mais ruidosa que o pooled; não confundir com camada1_backtest_by_path do Sprint 8 (aquele é sobre os 6,5 anos completos, este é só a janela do bookTicker).",
+    "join_diagnostics": {
+      "n_signals_common_base": 2116,
+      "n_signals_missing_order_data_gap": 189,
+      "n_signals_nofill_by_construction": 62,
+      "n_signals_window": 2305
+    },
+    "optimistic": {
+      "decomposition": {
+        "carry_share": -0.02905269379241701,
+        "directional_sharpe": -6.886430103439345,
+        "gate3_carry_share_ok": true,
+        "gate3_directional_positive": false,
+        "n_trades": 2054,
+        "pnl_carry": 0.12002849,
+        "pnl_direcional": -3.036535059649262,
+        "pnl_execucao": -1.2148999999999999,
+        "pnl_total": -4.131406569649263,
+        "side_carry_asymmetry": -0.0001188239857961413,
+        "total_sharpe": -9.253874178140576
+      },
+      "fill_rate": 0.9706994328922496,
+      "gate": "otimista_label_engine",
+      "gate_description": "barrier_hit != NOFILL (src.labels.triple_barrier / fill_model, Sprint 6 — toque do intervalo [low, high] = preenchimento, limite SUPERIOR)",
+      "mean_trade_ret_net": -0.0020113956035293394,
+      "n_base_signals": 2116,
+      "n_filled": 2054,
+      "sharpe_naive": -9.253874178140576,
+      "std_trade_ret_net": 0.010571055126953164,
+      "trades_per_year": 2365.3143288777956
+    },
+    "realistic": {
+      "decomposition": {
+        "carry_share": -0.03857968567592868,
+        "directional_sharpe": -2.698647310213242,
+        "gate3_carry_share_ok": true,
+        "gate3_directional_positive": false,
+        "n_trades": 892,
+        "pnl_carry": 0.04862571,
+        "pnl_direcional": -0.7848224485441773,
+        "pnl_execucao": -0.5242,
+        "pnl_total": -1.260396738544177,
+        "side_carry_asymmetry": -0.00011295549477450334,
+        "total_sharpe": -4.274955649221126
+      },
+      "fill_rate": 0.4215500945179584,
+      "gate": "realista_fill_simulator",
+      "gate_description": "filled == True (src.execution.fill_simulator, Sprint 9 — fila FIFO + aggTrades, cancelamento não modelado, limite INFERIOR)",
+      "mean_trade_ret_net": -0.001413000827964324,
+      "n_base_signals": 2116,
+      "n_filled": 892,
+      "sharpe_naive": -4.274955649221126,
+      "std_trade_ret_net": 0.010593450504100295,
+      "trades_per_year": 1027.1959013432297
+    },
+    "window_end": "2024-03-30",
+    "window_start": "2023-05-16"
+  },
+  "module_b_fill_selectivity": {
+    "barrier_hit_distribution_given_filled": {
+      "SL": 0.5457763553486568,
+      "TIME": 0.0881582775676462,
+      "TP": 0.366065367083697
+    },
+    "barrier_hit_distribution_given_notfilled": {
+      "SL": 0.5275831616131881,
+      "TIME": 0.08910803650279658,
+      "TP": 0.3833088018840153
+    },
+    "gap_pp": -1.7243434800318258,
+    "mean_ret_net_bps_given_filled": -7.8237780138863995,
+    "mean_ret_net_bps_given_notfilled": -6.016140010472508,
+    "mean_ret_net_bps_unconditional": -6.698971027954947,
+    "n_filled": 20622,
+    "n_notfilled": 33970,
+    "n_orders_matched": 54592,
+    "n_orders_total": 60650,
+    "n_orders_unmatched": 6058,
+    "p_tp_given_filled": 0.366065367083697,
+    "p_tp_given_notfilled": 0.3833088018840153,
+    "selectivity_cost_bps": -1.1248069859314525,
+    "window_end": "2024-03-30",
+    "window_start": "2023-05-16"
+  },
+  "schema_version": 1,
+  "window_end": "2024-03-30",
+  "window_start": "2023-05-16"
+}
