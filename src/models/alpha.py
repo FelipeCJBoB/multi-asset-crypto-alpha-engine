@@ -42,7 +42,12 @@ from src.validation.cpcv import CPCVSplit
 from . import dataset as ds
 from . import monotonic
 from ._constants import load_constant
-from .hhi import ConcentrationDiagnostics, compute_concentration
+from .hhi import (
+    ConcentrationDiagnostics,
+    EffectiveConcentrationDiagnostics,
+    compute_concentration,
+    compute_effective_concentration,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -99,6 +104,28 @@ def build_design_matrix(df: pl.DataFrame) -> FloatArray:
     return np.hstack([t1_arr, dummies])
 
 
+def _t1_correlation_matrix(df: pl.DataFrame) -> FloatArray:
+    """Matriz de correlação de Pearson das 10 features T1 (`T1_FEATURE_IDS`,
+    NUNCA `DESIGN_COLUMNS` — exclui as 4 dummies de regime por padrão, ver
+    `src.models.hhi.compute_effective_concentration`) — insumo de D1 (task
+    HHI efetivo, CLAUDE.md). `df` PRECISA já ser o subconjunto de TREINO do
+    fold (`train_side_df` em `fit_side_model`, já filtrado por
+    `src.models.dataset.side_subset` — NOFILL e warmup fora), nunca o
+    dataset inteiro — mesma disciplina B02/B04/B06 de `src.models.monotonic`/
+    `src.models.environments`.
+
+    `np.corrcoef` produz `NaN` para uma feature com variância zero no fold
+    (divisão por zero no denominador do coeficiente) — não tratado aqui
+    (deixado passar); a sanitização (`NaN` -> `0.0` fora da diagonal, `1.0`
+    na diagonal) é responsabilidade de `compute_effective_concentration`,
+    não desta função (mantém esta função uma leitura direta do dado, sem
+    decisão de negócio embutida)."""
+    t1_arr = df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        corr = np.corrcoef(t1_arr, rowvar=False)
+    return np.asarray(corr, dtype=np.float64)
+
+
 def _derived_seed(base_seed: int, *parts: int) -> int:
     """Seed determinística por (fold, lado, variante) — mesma semente base
     de `constants.yaml`, deslocada de forma reprodutível. Não é uma
@@ -139,6 +166,13 @@ class SideModelResult:
     monotone_constraints: tuple[int, ...]
     tau: float
     concentration: ConcentrationDiagnostics
+    # HHI EFETIVO (D1/D2 da task HHI efetivo, CLAUDE.md) — irmão de
+    # `concentration`, NUNCA a substitui. Mede concentração no espaço de
+    # FATORES DE INFORMAÇÃO (após remover redundância de features
+    # correlacionadas — ver `src.models.hhi.compute_effective_concentration`),
+    # calculado sobre a matriz de correlação das 10 features T1 do MESMO
+    # `train_side_df` deste fold/lado (in-fold, nunca vazando).
+    concentration_effective: EffectiveConcentrationDiagnostics
     # `total_gain` bruto por coluna (`booster.get_score(importance_type=
     # "total_gain")` remapeado para nome real de coluna), ANTES da
     # normalização que `compute_concentration` aplica em `concentration.
@@ -232,6 +266,15 @@ def fit_side_model(
     }
     concentration = compute_concentration(gain_by_column, DESIGN_COLUMNS)
 
+    # HHI efetivo (D1/D2, CLAUDE.md) — matriz de correlação das 10 features
+    # T1 sobre o MESMO `train_side_df` deste fold/lado (in-fold, nunca o
+    # dataset inteiro — mesma disciplina de `monotonic.screen_monotone_
+    # constraints` logo acima, que também recebe só `train_side_df`).
+    correlation_t1 = _t1_correlation_matrix(train_side_df)
+    concentration_effective = compute_effective_concentration(
+        correlation_t1, gain_by_column, T1_FEATURE_IDS
+    )
+
     return SideModelResult(
         side=side,
         variant=variant,
@@ -241,6 +284,7 @@ def fit_side_model(
         monotone_constraints=monotone_constraints,
         tau=tau,
         concentration=concentration,
+        concentration_effective=concentration_effective,
         gain_by_column_raw=gain_by_column,
         n_train_fit=int(fit_idx.shape[0]),
         n_train_calib=int(calib_idx.shape[0]),

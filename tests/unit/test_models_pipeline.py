@@ -157,6 +157,18 @@ def test_write_fold_diagnostics_atomic_escreve_dois_json_validos(
         assert 0.0 <= payload["max_share"] <= 1.0
         assert isinstance(payload["n_features_over_1pct"], int)
 
+        # HHI EFETIVO (D1/D2, CLAUDE.md) — irmão do nominal acima, sobre as
+        # 10 features T1 (não as 14 DESIGN_COLUMNS — dummies de regime
+        # ficam fora por padrão, ver src.models.hhi.
+        # compute_effective_concentration). N_eff_factors em [1, 10].
+        assert 0.0 <= payload["hhi_effective"] <= 1.0
+        assert 1.0 <= payload["n_eff_factors_t1"] <= len(T1_FEATURE_IDS) + 1e-9
+        assert isinstance(payload["concentration_effective_weights"], dict)
+        assert set(payload["concentration_effective_weights"].keys()) == set(T1_FEATURE_IDS)
+        assert abs(sum(payload["concentration_effective_weights"].values()) - 1.0) < 1e-6
+        assert isinstance(payload["concentration_effective_eigenvalues"], list)
+        assert len(payload["concentration_effective_eigenvalues"]) == len(T1_FEATURE_IDS)
+
         # sem early stopping nesta rodada (§5.10/docstring alpha.py) — deve
         # bater exatamente com alpha_xgb_n_estimators.
         assert payload["n_trees"] == hyper.n_estimators
@@ -253,6 +265,13 @@ def test_diagnostics_reais_contagem_e_schema(model_id: str) -> None:
         "hhi",
         "max_share",
         "n_features_over_1pct",
+        # HHI EFETIVO (D1/D2, CLAUDE.md) — ver
+        # test_write_fold_diagnostics_atomic_escreve_dois_json_validos acima
+        # para a checagem de forma/bounds.
+        "hhi_effective",
+        "n_eff_factors_t1",
+        "concentration_effective_weights",
+        "concentration_effective_eigenvalues",
         "n_trees",
         "best_iteration",
         "best_iteration_note",

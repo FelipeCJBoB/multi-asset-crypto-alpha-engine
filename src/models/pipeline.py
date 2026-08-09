@@ -154,6 +154,21 @@ def _fold_diagnostics_payload(
         "hhi": side_result.concentration.hhi.value,
         "max_share": side_result.concentration.max_share.value,
         "n_features_over_1pct": side_result.concentration.n_features_over_1pct,
+        # HHI EFETIVO (D1/D2, CLAUDE.md) — irmão do "hhi" nominal acima,
+        # NUNCA o substitui. Mede concentração no espaço de FATORES DE
+        # INFORMAÇÃO das 10 features T1 (após remover redundância de
+        # features correlacionadas no fold), ver
+        # `src.models.hhi.compute_effective_concentration` para a derivação
+        # exata. `.value` pelo mesmo motivo do `hhi`/`max_share` acima —
+        # proveniência completa (`unit`/`n`/`source`/`valid`) continua
+        # disponível em `side_result.concentration_effective` para quem
+        # precisar.
+        "hhi_effective": side_result.concentration_effective.hhi_effective.value,
+        "n_eff_factors_t1": side_result.concentration_effective.n_eff_factors.value,
+        "concentration_effective_weights": side_result.concentration_effective.weights,
+        "concentration_effective_eigenvalues": list(
+            side_result.concentration_effective.eigenvalues
+        ),
         "n_trees": n_trees,
         "best_iteration": None,
         "best_iteration_note": _BEST_ITERATION_NOTE,
@@ -319,6 +334,26 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
     n_over_1pct_short = [fr.short_result.concentration.n_features_over_1pct for fr in camada1_folds]
     n_features_over_1pct = n_over_1pct_long + n_over_1pct_short
 
+    # --- HHI EFETIVO (D1/D3, CLAUDE.md) — mesmo padrão acima, mas para
+    # `concentration_effective` (fatores de informação, não features cruas
+    # — ver `src.models.hhi.compute_effective_concentration`). O NOMINAL
+    # acima continua existindo e sendo reportado (D2: nunca substituído);
+    # isto só ADICIONA a série efetiva ao lado.
+    hhi_effective_values_long = [
+        fr.long_result.concentration_effective.hhi_effective.value for fr in camada1_folds
+    ]
+    hhi_effective_values_short = [
+        fr.short_result.concentration_effective.hhi_effective.value for fr in camada1_folds
+    ]
+    n_eff_factors_long = [
+        fr.long_result.concentration_effective.n_eff_factors.value for fr in camada1_folds
+    ]
+    n_eff_factors_short = [
+        fr.short_result.concentration_effective.n_eff_factors.value for fr in camada1_folds
+    ]
+    mean_hhi_nominal = _mean_finite(hhi_values_long + hhi_values_short)
+    mean_hhi_effective = _mean_finite(hhi_effective_values_long + hhi_effective_values_short)
+
     # --- baselines nulos (§16.1) ---
     realized_c1 = backtest_lite.realize_trades(camada1_folds, mf.data)
     n_filled_c1 = realized_c1.filter(pl.col("barrier_hit") != "NOFILL").height
@@ -366,10 +401,28 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
         "hhi": {
             "long_by_fold": hhi_values_long,
             "short_by_fold": hhi_values_short,
-            "mean_hhi": _mean_finite(hhi_values_long + hhi_values_short),
+            "mean_hhi": mean_hhi_nominal,
             "mean_max_share": _mean_finite(max_share_values),
             "mean_n_features_over_1pct": _mean_finite([float(v) for v in n_features_over_1pct]),
-            "gate3_4_hhi_lt_025": _mean_finite(hhi_values_long + hhi_values_short) < 0.25,  # noqa: magic-number
+            # HHI EFETIVO (D1/D2/D3, CLAUDE.md — achado Sprint 4: features
+            # do top-4 por gain correlacionadas, E27f_cost_atr_ratio x
+            # C07_vol_pctile_expanding rho=-0,913, A13_dist_ema48_atr x
+            # B01_rsi_14 rho=0,947). NUNCA substitui os campos nominais
+            # acima — só adiciona a série efetiva ao lado (D2).
+            "hhi_effective_long_by_fold": hhi_effective_values_long,
+            "hhi_effective_short_by_fold": hhi_effective_values_short,
+            "mean_hhi_effective": mean_hhi_effective,
+            "mean_n_eff_factors_t1": _mean_finite(n_eff_factors_long + n_eff_factors_short),
+            # D3 — Gate 3.4 agora decide sobre o HHI EFETIVO, não o nominal
+            # (o nominal subestima concentração real quando features do
+            # top-gain são correlacionadas — ver
+            # src.models.hhi.compute_effective_concentration para a prova).
+            "gate3_4_hhi_lt_025": mean_hhi_effective < 0.25,  # noqa: magic-number
+            # Referência histórica/comparação — o veredito que o HHI
+            # NOMINAL sozinho teria dado, mantido visível mas NUNCA usado
+            # pelo gate (D3: "mantenha o nominal no relatório também, chave
+            # separada, não sobrescrita").
+            "gate3_4_hhi_nominal_lt_025_reference": mean_hhi_nominal < 0.25,  # noqa: magic-number
             "gate3_4_max_share_lt_030": _mean_finite(max_share_values) < 0.30,  # noqa: magic-number
         },
         "baselines": {
