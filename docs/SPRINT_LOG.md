@@ -681,6 +681,18 @@ duplicada): congruente do **long é {R3,R4}** (n=12.228), incongruente
 incongruente {R3,R4} (n=11.263). Confirma numericamente a inversão de
 sinal RANGE↔TREND já registrada na Fase E.
 
+**Correção de framing (Faixa 1.6, Bloco 1, 2026-08-09):** o IC acima é
+medido sobre a população OOF/realizada (`predictions.parquet`,
+`side_hat != 0`) — a população que a triagem in-fold (§5.3, `screen_
+monotone_constraints`) efetivamente usa pra decidir a restrição é outra
+(TREINO do fold, todas as barras, antes de qualquer seleção). As duas
+populações não são intercambiáveis: IC de treino é NEGATIVO uniforme em
+R1-R4 nos 15/15 folds (Faixa 1.6, Bloco 1) — não há "inversão" nesse
+IC. A tabela acima descreve a população NEGOCIADA (útil pra D1/D2), não
+o insumo da triagem — não usar como se fosse a mesma medição. Ver
+`experiments/faixa1_6_reconciliation.json::ic_reconciliation` e
+`PRD_V3_2_UNIFICADO.md` §5.3.
+
 **D3 — NOFILL por decil, SEM filtrar**: qui-quadrado decil×NOFILL
 **altamente significativo nos dois lados — long χ²=194,5 (p≈4,7e-37, gl=9),
 short χ²=655,2 (p≈3,0e-135, gl=9)**. A taxa de NOFILL varia com o decil de
@@ -901,24 +913,32 @@ persistido (R1 +0,0383, R2 +0,1094, R3 -0,0257, R4 -0,0821 — bate exato).
 **Mistura de lado NÃO é o mecanismo dominante**: o long sozinho, OOF, já
 mostra o mesmo padrão (RANGE=+0,083, TREND=-0,085) que o pooled misturado
 (RANGE=+0,084, TREND=-0,052); o short sozinho não inverte (RANGE=+0,062,
-TREND=+0,005). **O mecanismo real é OOF vs TREINO, no mesmo lado (long),
-mesmo alvo, mesma partição de regime**: pooled-concat do TREINO dá as 4
-regiões negativas (R1=-0,016, R2=-0,016, R3=-0,014, R4=-0,037 — bate com
-o Bloco 5 da Faixa 1.5), mas pooled-concat do OOF inverte R1/R2 pro
-positivo (R1=+0,056, R2=+0,093) mantendo R3/R4 negativos. Composição de
-fold (fração de R2 dentro de RANGE no treino) NÃO explica a dispersão
-(Spearman ρ=0,025, p=0,93 — descartado como mecanismo). Achado
-secundário: mesmo dentro do OOF, pooled-concat (ponderado por n) e
-média-simples-dos-folds DIVERGEM em sinal pra R2 (+0,093 vs -0,037) — o
-resultado positivo de R2 é sensível a poucos folds de alto volume, não é
-um padrão típico de fold. Leitura consistente com o mecanismo (não
-provada formalmente): a população OOF é pós-seleção — só entra quem
-cruzou `tau`, uma função não-linear de TODAS as 10 features T1
-(inclusive a própria E02f) — condicionar numa variável correlacionada
-com E02f pode induzir correlação artificial que não existe na população
-de treino completa (mesma família de viés de seleção/Berkson, não
-autocorrelação nem vazamento). Não decide qual medição é autoritativa
-(B06 governa o USO da tabela, não a medição).
+TREND=+0,005).
+
+**Correção de framing (2026-08-09, revisão pós-Bloco 1) — não é "OOF vs
+treino" generalizando mal, é POPULAÇÃO SELECIONADA vs POPULAÇÃO
+COMPLETA, e não há inversão a explicar.** IC de treino (pooled-concat)
+dá as 4 regiões negativas (R1=-0,016, R2=-0,016, R3=-0,014, R4=-0,037 —
+bate com o Bloco 5 da Faixa 1.5, 15/15 folds negativos); IC sobre OOF
+inverte R1/R2 pro positivo (R1=+0,056, R2=+0,093). Mas OOF-long é, por
+construção, só a fração que cruzou `tau` (~1,89% de TODAS as barras) —
+e essa seleção está LONGE de ser uniforme por regime, medido
+diretamente: **0,34% das barras de R1 viram sinal long, contra 4,34% em
+R2, 2,01% em R3, 4,27% em R4** (`n_scored`/`n_side_hat_long` sobre
+`predictions.parquet` inteiro). Condicionar num evento (`tau` cruzado)
+que é função não-linear de TODAS as 10 features T1 — inclusive a
+própria E02f — muda a distribuição conjunta por construção (viés de
+seleção/Berkson, categoria diferente de vazamento temporal ou
+autocorrelação). As duas medições estão CORRETAS; respondem perguntas
+diferentes — treino é o insumo real da triagem (§5.3), OOF descreve a
+população negociada. `§5.3` do PRD ganhou uma nota citando isso como
+armadilha distinta da já existente (tabela de IC de 7 anos). Composição
+de fold (fração de R2 dentro de RANGE no treino) foi testada e NÃO
+explica a dispersão restante do OOF (Spearman ρ=0,025, p=0,93 —
+descartado). Não decide qual medição é autoritativa (B06 governa o USO
+da tabela, não a medição) — mas a frente de remover/ajustar a restrição
+de E02f com base no IC pooled/OOF cai: essa medição nunca foi o insumo
+da triagem, então não há contradição a resolver ali.
 
 **Bloco 2 — sanidade do threshold, Fase A encontrou bug real.**
 `threshold_effective_confidence_quantile` tomava o quantil sobre a
@@ -970,6 +990,50 @@ contra Camada 0: 5/5 caminhos (`min_paths_required=4`) — ainda supera
 "sem restrição nenhuma", só não supera a Camada 1 atual.
 **`n_lifetime`: 4 → 5** (`audit/n_lifetime.yaml`, id 5).
 
+**Correção de método (2026-08-09) — decomposição direcional por lado,
+não `ret_net`.** Uma leitura anterior ("long ordena, short é beta de
+regime") foi construída sobre `ret_net`/`total_sharpe` estratificado,
+que mistura direção + carry + execução (`src.models.decomposition`) —
+método errado pra falar de skill direcional. Refeito com
+`directional_sharpe` (já persistido em `stratified_headlines.by_side_
+regime`, sem retreino): **short é POSITIVO nos 4 regimes** (R1=+1,19,
+R2=+1,22, R3=+1,73, R4=+0,28 — nunca negativo), **long OSCILA
+violentamente** (R1=+0,25, R2=**-2,52**, R3=+4,35, R4=+2,00). O pooled
+long (+0,167) é quase inteiramente cancelamento entre R2 (forte
+negativo) e R3/R4 (fortes positivos); o pooled short (+1,25) é
+consistência, não cancelamento. Isso inverte a leitura anterior — se
+"ordena" significa "skill direcional estável", é o SHORT que ordena
+melhor por essa métrica, não o long. `total_sharpe`/`ret_net`
+continuam válidos pra decisão de portfólio (o que efetivamente entra no
+bolso), só não servem pra atribuir skill direcional — os dois números
+respondem perguntas diferentes, mesma classe de cuidado do Bloco 1
+acima.
+
+**Anomalia a controlar antes de canonizar o achado do T0 — pendente,
+não resolvida nesta rodada.** A restrição de E02f é justificada por
+identidade CONTÁBIL de carry (funding penaliza long, paga short), mas
+`monotonic.compute_ic_by_env` mede IC contra `ret_net` TOTAL, nunca
+isolado em `PnL_carry` — a justificativa econômica (carry) e o alvo
+estatístico (retorno total) já divergiam antes desta rodada. O efeito
+medido no Bloco 4 (0,879→0,282) aparece em `directional_sharpe`, não em
+`carry_share` — não é necessariamente evidência de que o mecanismo seja
+diferente do anunciado (o desenho nunca isolou carry do resto), mas
+também não confirma que seja carry. Controle proposto, barato, ainda
+não rodado: forçar SINAL ALEATÓRIO (não o econômico) no short, várias
+sementes — ganho similar ao medido ⟹ o efeito é regularização
+genérica (forçar qualquer sinal monotônico reduz variância), não
+conteúdo de E02f; ganho ausente ⟹ o conteúdo é real e específico da
+feature, valendo então medir o IC separado nas caudas de funding
+(hipótese: cascata de liquidação em funding extremo, não-linear,
+lavada pelo Spearman na faixa inteira — consistente com a triagem
+dizer "ruído" em 14/15 folds no short sem contradição). Terceira
+hipótese em aberto, não testada: o efeito é real mas não tem nada a
+ver com carry — E02f pode correlacionar com outra estrutura de
+mercado/regime que carrega sinal direcional genuíno por razão
+diferente da anunciada. Nenhuma das três é assumida; a variante do
+short (Bloco 4 acima) e o "ganho do T0" permanecem NÃO canônicos até
+o controle rodar.
+
 **Bloco 5 — varredura pooled vs estratificado (escopo declarado, não
 exaustivo).** 4 categorias: HHI efetivo, ratio de tau realizado, B3/B5
 (baselines estáticos) por regime, e as 10 features T1 do scan de
@@ -1017,7 +1081,8 @@ import-linter, mypy limpo.
 | `fee_budget_monthly` no valor central cabe no orçamento? | **Não** (corrigido na Faixa 1.6) — orçamento correto é 662,7 trades/ano, os 5 caminhos reais (858-1.307) TODOS excedem, 1,3x-2,0x | Faixa 1.6 abaixo, `experiments/faixa1_5_prerequisites.json::fee_budget_sweep` |
 | E02f in-fold: a triagem estatística discorda do sinal forçado? | Não em nenhum dos 15 folds (0 discordâncias) — mas só 1/15 folds no short chega a 6/6 de consistência pra opinar | Faixa 1.5 acima (hipótese do executor, não medição) |
 | CIs por path do Alpha são confiáveis? | Não totalmente — trades duplicados entre até 5 paths (mesma barra, mesma barreira) tornam os CI95 por path provavelmente otimistas; não corrigido ainda | Faixa 1.5 acima |
-| Por que o IC de E02f inverte de sinal pooled vs in-fold em RANGE? | Não é mistura de lado (long sozinho já inverte) — é OOF vs TREINO: treino dá RANGE negativo (bate com o Bloco 5 da Faixa 1.5), OOF inverte pra positivo em R1/R2 | Faixa 1.6 abaixo |
+| Por que o IC de E02f "inverte" de sinal pooled vs in-fold em RANGE? | Não inverte — não é a mesma medição. Treino (insumo real da triagem) é negativo uniforme, 15/15 folds. OOF é população SELECIONADA (~1,89% das barras, 0,34%-4,34% conforme o regime) — condicionar na saída do modelo muda a distribuição por construção (viés de seleção, não vazamento) | Faixa 1.6 abaixo, PRD §5.3 |
 | `threshold_effective_confidence_quantile` media o que o nome diz? | Não até 2026-08-09 — quantil de população já selecionada, corrigido (path 0 saía 1,0000 com 7.162 trades preenchidos) | Faixa 1.6 abaixo |
-| Quanto do ganho do T0 (0,194→0,879) vem do short vs do long? | Quase todo do short — sem a restrição forçada no short, pooled cai pra 0,282 (long sozinho mal sai do pré-T0) | Faixa 1.6 abaixo, `n_lifetime` id 5 |
-| Alguma outra feature T1 além de E02f inverte de sinal por regime? | Sim — `D06f_taker_imbalance_z_48` (pooled ~0, mas R1/R2/R4 positivos e R3 negativo) | Faixa 1.6 abaixo |
+| Quanto do ganho do T0 (0,194→0,879) vem do short vs do long? | Quase todo do short — sem a restrição forçada no short, pooled cai pra 0,282. **Não canônico**: mecanismo (carry vs direcional vs regularização) pendente de controle de sinal aleatório | Faixa 1.6 abaixo, `n_lifetime` id 5 |
+| `directional_sharpe` por regime — long ordena melhor que short? | Não — é o oposto do que se pensava com `ret_net`: short é positivo nos 4 regimes (+0,28 a +1,73), long oscila violentamente (-2,52 a +4,35) e o pooled (+0,167) é cancelamento, não skill fraca | Faixa 1.6 abaixo (correção de método) |
+| Alguma outra feature T1 além de E02f inverte de sinal por regime? | Sim — `D06f_taker_imbalance_z_48` (pooled ~0, mas R1/R2/R4 positivos e R3 negativo) | Faixa 1.6 abaixo, `features/registry.yaml` |

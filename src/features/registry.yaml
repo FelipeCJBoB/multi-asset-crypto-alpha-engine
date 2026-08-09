@@ -210,6 +210,16 @@
   version: v1
   added: 2026-08-08
 
+# Achado (Faixa 1.6, Bloco 5, 2026-08-09) — o IC pooled desta feature
+# contra ret_net é essencialmente zero (-0,0003), mas inverte de sinal por
+# regime estrutural (R1/R2/R4 positivos, R3 negativo, ver
+# experiments/faixa1_6_reconciliation.json::pooled_vs_stratified_
+# inventory.items.t1_features_leakage_scan_pooled_vs_by_regime). Segunda
+# feature T1 (depois de E02f_funding_z_expanding) com esse padrão. Não
+# elevated nem hard_fail no scan de leakage — não é achado de vazamento,
+# é achado de heterogeneidade por regime. Não muda `monotone_constraints`
+# (permanece -1, forçado por IC 7/7 anos, §5.3) — registrado só como
+# achado, sem decisão associada.
 - id: D06f_taker_imbalance_z_48
   tier: T1
   group: D
