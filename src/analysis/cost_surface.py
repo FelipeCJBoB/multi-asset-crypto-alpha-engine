@@ -77,6 +77,7 @@ import structlog
 from numpy.typing import NDArray
 
 from src.core.metric import Metric, Unit, not_computable
+from src.core.provenance import report_provenance
 from src.data import lake
 from src.features.groups.group_e import round_trip_cost_bps
 from src.labels import triple_barrier
@@ -492,6 +493,7 @@ def run_and_save_cost_surface_report(
     elapsed_s = time.perf_counter() - t0
 
     payload: dict[str, Any] = {
+        **report_provenance(),
         "symbol": symbol,
         "start": str(start),
         "end": str(end),

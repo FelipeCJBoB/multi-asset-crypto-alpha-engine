@@ -67,6 +67,7 @@ import structlog
 from numpy.typing import NDArray
 
 from src.core.metric import Metric, Unit
+from src.core.provenance import report_provenance
 from src.execution.fill_simulator import (
     BOOK_TICKER_WINDOW_END,
     BOOK_TICKER_WINDOW_START,
@@ -730,6 +731,7 @@ def run_fill_selectivity(
 class FillReconciliationReport:
     schema_version: int
     generated_at_utc: str
+    code_version: str  # hash curto do commit HEAD -- Faixa 0 item 2, ver src.core.provenance
     model_id: str
     window_start: str
     window_end: str
@@ -799,6 +801,7 @@ def build_report(
     return FillReconciliationReport(
         schema_version=1,
         generated_at_utc=datetime.now(UTC).isoformat(),
+        code_version=report_provenance()["code_version"],
         model_id=resolved_model_id,
         window_start=window_start.isoformat(),
         window_end=window_end.isoformat(),

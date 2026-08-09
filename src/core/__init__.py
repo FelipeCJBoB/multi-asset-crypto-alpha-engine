@@ -1,8 +1,9 @@
 """Camada core — utilitários transversais, sem dependência de nenhuma outra
-camada do pipeline (§14.2). Primeiro (e único, nesta rodada) módulo:
-`metric.py` — `Metric`/`Unit`/`safe_ratio`, o tipo de retorno para todo
-valor numérico REPORTÁVEL (campo público de dataclass de resultado, nunca
-cálculo intermediário de laço quente) do resto do repo.
+camada do pipeline (§14.2). `metric.py` — `Metric`/`Unit`/`safe_ratio`, o
+tipo de retorno para todo valor numérico REPORTÁVEL (campo público de
+dataclass de resultado, nunca cálculo intermediário de laço quente) do
+resto do repo. `provenance.py` — `report_provenance()`, `generated_at`/
+`code_version` pra todo relatório novo em `experiments/` (Faixa 0, item 2).
 
 Motivação (auditoria, ver commit): três achados na mesma família — uma
 razão que "passa" um gate sem checar o sinal do denominador
@@ -22,5 +23,6 @@ relatório ou gate) adotam `Metric`; cálculo interno permanece
 from __future__ import annotations
 
 from .metric import Metric, Unit, safe_ratio
+from .provenance import report_provenance
 
-__all__ = ["Metric", "Unit", "safe_ratio"]
+__all__ = ["Metric", "Unit", "report_provenance", "safe_ratio"]
