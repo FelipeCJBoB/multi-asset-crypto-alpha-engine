@@ -83,7 +83,9 @@ def test_invariante_monotone_constraints_subconjunto_das_features_treinadas() ->
     recebidas, nunca mais que isso (verificado por construção do dict, não
     só confiado)."""
     df = _synthetic_train_frame()
-    results = monotonic.screen_monotone_constraints(df, T1_FEATURE_IDS, min_consistent_envs=6)
+    results = monotonic.screen_monotone_constraints(
+        df, T1_FEATURE_IDS, side=1, min_consistent_envs=6
+    )
     assert set(results.keys()) <= set(T1_FEATURE_IDS)
 
 
@@ -96,8 +98,12 @@ def test_invariante_ic_screening_depende_so_do_frame_recebido() -> None:
     fora da janela de treino recebida."""
     df_a = _synthetic_train_frame(n=120, seed=1)
     df_b = _synthetic_train_frame(n=120, seed=2)
-    results_a = monotonic.screen_monotone_constraints(df_a, T1_FEATURE_IDS, min_consistent_envs=6)
-    results_b = monotonic.screen_monotone_constraints(df_b, T1_FEATURE_IDS, min_consistent_envs=6)
+    results_a = monotonic.screen_monotone_constraints(
+        df_a, T1_FEATURE_IDS, side=1, min_consistent_envs=6
+    )
+    results_b = monotonic.screen_monotone_constraints(
+        df_b, T1_FEATURE_IDS, side=1, min_consistent_envs=6
+    )
     ic_a = {f: r.mean_ic for f, r in results_a.items()}
     ic_b = {f: r.mean_ic for f, r in results_b.items()}
     assert ic_a != ic_b  # seeds/dados diferentes -> IC medido diferente
@@ -160,6 +166,84 @@ def test_fit_side_model_expoe_gain_by_column_raw() -> None:
     # o share normalizado (`concentration.shares`) é derivado do MESMO gain
     # bruto — toda chave presente no bruto também está no share normalizado.
     assert set(result.gain_by_column_raw.keys()) <= set(result.concentration.shares.keys())
+
+
+# ============================================================================
+# Restrição forçada por lado — `E02f_funding_z_expanding` (extensão de
+# `_ECONOMIC_FORCED_CONSTRAINT` para `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`,
+# ver `src.models.monotonic`). Fim a fim via `fit_side_model` — não só
+# `screen_monotone_constraints` isolado (esse já é coberto em
+# `tests/unit/test_models_monotonic.py`) — para provar que `side` chega
+# corretamente até o `monotone_constraints` que o XGBoost de fato recebe.
+# `_synthetic_train_frame` gera `E02f_funding_z_expanding` como ruído normal
+# independente de `ret_net` (sem sinal de IC nenhum) — a restrição só pode
+# vir da força econômica, nunca da triagem estatística.
+# ============================================================================
+
+_E02F_IDX = T1_FEATURE_IDS.index("E02f_funding_z_expanding")
+
+
+def test_fit_side_model_e02f_forcado_menos_1_no_long() -> None:
+    df = _synthetic_train_frame(n=80, seed=4)
+    hyper = alpha.XGBHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    assert result.monotone["E02f_funding_z_expanding"].constraint == -1
+    assert result.monotone["E02f_funding_z_expanding"].forced_economic is True
+    assert result.monotone_constraints[_E02F_IDX] == -1
+
+
+def test_fit_side_model_e02f_forcado_mais_1_no_short() -> None:
+    df = _synthetic_train_frame(n=80, seed=4)
+    hyper = alpha.XGBHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=-1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    assert result.monotone["E02f_funding_z_expanding"].constraint == 1
+    assert result.monotone["E02f_funding_z_expanding"].forced_economic is True
+    assert result.monotone_constraints[_E02F_IDX] == 1
+
+
+def test_fit_side_model_e02f_forcado_independente_do_variant_camada0() -> None:
+    """Camada 0 (`VARIANT_CAMADA0`) zera TODAS as restrições T1 por
+    desenho (`fit_side_model`: `t1_constraints = tuple(0 for _ in
+    T1_FEATURE_IDS)`), inclusive as forçadas — a força econômica só se
+    aplica à Camada 1. `monotone["E02f_..."].constraint` (o resultado bruto
+    de `screen_monotone_constraints`, sempre calculado) continua forçado;
+    só o `monotone_constraints` (o que de fato vai para o XGBoost) é zerado
+    pela variante Camada 0."""
+    df = _synthetic_train_frame(n=80, seed=4)
+    hyper = alpha.XGBHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA0,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    assert result.monotone["E02f_funding_z_expanding"].constraint == -1
+    assert result.monotone_constraints[_E02F_IDX] == 0
 
 
 # ============================================================================

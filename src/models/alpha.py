@@ -203,7 +203,7 @@ def fit_side_model(
     §5.2 "P(TP antes de SL)" — SL e TIME viram `y=0`, ver docstring do
     módulo `dataset.py` e o relatório do Sprint 8 para a justificativa
     completa desta escolha)."""
-    ic_results = monotonic.screen_monotone_constraints(train_side_df, T1_FEATURE_IDS)
+    ic_results = monotonic.screen_monotone_constraints(train_side_df, T1_FEATURE_IDS, side=side)
     if variant == VARIANT_CAMADA1:
         t1_constraints = tuple(ic_results[f].constraint for f in T1_FEATURE_IDS)
     elif variant == VARIANT_CAMADA0:

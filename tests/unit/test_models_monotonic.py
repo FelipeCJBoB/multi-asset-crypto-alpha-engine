@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+import pytest
 
 from src.models import monotonic
 from src.models.environments import ENVIRONMENTS
@@ -118,10 +119,57 @@ def test_screen_monotone_constraints_e27f_forcado_menos_1_mesmo_sem_sinal() -> N
     é -1."""
     df = _synthetic_screen_df("E27f_cost_atr_ratio", n_envs_consistent=0)
     results = monotonic.screen_monotone_constraints(
-        df, ("E27f_cost_atr_ratio",), min_consistent_envs=6
+        df, ("E27f_cost_atr_ratio",), side=1, min_consistent_envs=6
     )
     assert results["E27f_cost_atr_ratio"].constraint == -1
     assert results["E27f_cost_atr_ratio"].forced_economic is True
+
+
+def test_screen_monotone_constraints_e27f_forcado_menos_1_no_short_tambem() -> None:
+    """`E27f_cost_atr_ratio` é MESMO sinal nos dois lados (§5.3) — -1
+    independente de `side`, ao contrário de `E02f_funding_z_expanding`
+    (side-dependent, ver teste dedicado abaixo)."""
+    df = _synthetic_screen_df("E27f_cost_atr_ratio", n_envs_consistent=0)
+    results = monotonic.screen_monotone_constraints(
+        df, ("E27f_cost_atr_ratio",), side=-1, min_consistent_envs=6
+    )
+    assert results["E27f_cost_atr_ratio"].constraint == -1
+    assert results["E27f_cost_atr_ratio"].forced_economic is True
+
+
+def test_screen_monotone_constraints_e02f_forcado_por_lado_long_menos_1() -> None:
+    """`E02f_funding_z_expanding` (funding rate) é identidade contábil de
+    custo de carregamento COM SINAL DEPENDENTE DE LADO (não um padrão a
+    aprender por consistência de IC, mesma categoria de `E27f_cost_atr_
+    ratio`): funding alto penaliza quem está comprado. Construído aqui
+    SEM controle de sinal (n_envs_consistent=0, todo mundo "inconsistente"
+    do ponto de vista estatístico) — a restrição forçada -1 no long
+    prevalece mesmo assim."""
+    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
+    results = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=1, min_consistent_envs=6
+    )
+    assert results["E02f_funding_z_expanding"].constraint == -1
+    assert results["E02f_funding_z_expanding"].forced_economic is True
+
+
+def test_screen_monotone_constraints_e02f_forcado_por_lado_short_mais_1() -> None:
+    """Mesma identidade contábil do teste acima, lado oposto: funding alto
+    é receita para quem está vendido — restrição forçada +1 no short,
+    também independente do IC medido nos dados sintéticos (sem sinal
+    controlado)."""
+    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
+    results = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6
+    )
+    assert results["E02f_funding_z_expanding"].constraint == 1
+    assert results["E02f_funding_z_expanding"].forced_economic is True
+
+
+def test_screen_monotone_constraints_side_invalido_leva_a_value_error() -> None:
+    df = _synthetic_screen_df("B01_rsi_14", n_envs_consistent=6)
+    with pytest.raises(ValueError, match="side"):
+        monotonic.screen_monotone_constraints(df, ("B01_rsi_14",), side=0, min_consistent_envs=6)
 
 
 def test_screen_monotone_constraints_le_limiar_de_constants_yaml_por_padrao() -> None:
@@ -129,7 +177,7 @@ def test_screen_monotone_constraints_le_limiar_de_constants_yaml_por_padrao() ->
     min_envs` de `constants.yaml` (valor atual: 6, ver a entrada para a
     investigação completa do '6 de 7' vs '6 de 6')."""
     df = _synthetic_screen_df("B01_rsi_14", feature_sign=-1, n_envs_consistent=6)
-    results = monotonic.screen_monotone_constraints(df, ("B01_rsi_14",))
+    results = monotonic.screen_monotone_constraints(df, ("B01_rsi_14",), side=1)
     assert results["B01_rsi_14"].constraint == -1
 
 
