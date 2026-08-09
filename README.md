@@ -10,18 +10,28 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 
 ## Status
 
-**Sprint 8 (rodada 1) de 18 concluído** — Sprints 1-9 e 12 feitos (12
-adiantado) · 527 testes passando · 0 violações de lint.
+**Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10** —
+Sprints 1-9 e 12 feitos (12 adiantado) · 552 testes passando · 0 violações de
+lint.
 
 ⚠️ **O que sabemos agora sobre se existe edge:** o Alpha (Camada 1, restrições
 monotônicas) passa o critério arquitetural do PRD, mas **não tem edge
 operável ainda** — Sharpe negativo, e um simples buy-and-hold (+0,54) vence os
 dois. A decomposição de PnL mostra por quê: **direção e carry somados são
 positivos (+3,67)** — o custo de execução, sozinho (-17,71), é o que vira o
-resultado negativo. Não é "não tem sinal", é "o sinal existe mas a economia de
-execução está engolindo ele inteiro" — e o backtest deste sprint ainda usa a
-suposição otimista de preenchimento, não o fill rate real de 37,3% medido no
-Sprint 9. Detalhes completos em `docs/SPRINT_LOG.md`.
+resultado negativo. Uma auditoria externa do plano revisou este resultado e
+levantou 4 pontos (orçamento de fees, seletividade do fill, robustez do
+baseline aleatório, teto de features) — todos verificados contra código e
+dado real, não aceitos por plausibilidade (`docs/SPRINT_LOG.md`, seção
+"Auditoria externa"). Achados: o baseline aleatório (B1) resiste a uma
+comparação mais rigorosa (Alpha no percentil 100 de 1.000 sorteios, 4 dos 5
+caminhos); o fill rate baixo **não** esconde os trades vencedores (gap de
+seletividade pequeno, -1,72pp); e, na única janela onde dá pra medir fill
+real (bookTicker, ~10,5 meses de 6,5 anos), trocar a suposição otimista pelo
+fill real do Sprint 9 deixa o Sharpe **menos** negativo, não mais — mas essa
+janela específica não é representativa do regime médio do modelo, então a
+economia honesta sobre os 6,5 anos completos **continua em aberto**. Detalhes
+completos em `docs/SPRINT_LOG.md`.
 
 | Documento | O que é |
 |---|---|
@@ -67,9 +77,9 @@ src/
 ├── labels/       Triple barrier em mark price, pesos por unicidade
 ├── validation/   CPCV com purge/embargo, 14 testes de vazamento
 ├── execution/    Simulador de fila (pré-RPI); máquina de estados    (parcial)
-├── models/       Alpha/Meta                                        (Sprint 8+, próximo)
-├── risk/         Sizing, 18 controles, kill switch                 (Sprint 12+)
-└── backtest/     Engine de backtest, reconciliação                 (Sprint 10+)
+├── models/       Alpha Camada 1 + 5 baselines nulos                (Sprint 8, rodada 1)
+├── risk/         Sizing, 18 controles, kill switch                 (Sprint 12)
+└── backtest/     Reconciliação gate otimista vs fill real          (fatia do Sprint 10; engine completo ainda não)
 ```
 
 Hierarquia de import verificada estaticamente (`import-linter`, config em

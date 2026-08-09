@@ -287,14 +287,107 @@ consumindo ele inteiro e mais.
 **Achado metodológico a carregar pro Sprint 10**: o backtest deste sprint
 (`backtest_lite.py`) usa a convenção otimista do Label Engine (`barrier_hit !=
 NOFILL`, fill rate ~83-93%) — **ainda não incorpora o fill rate realista de
-37,3% medido pelo simulador de fila do Sprint 9.** O Sharpe de -1,69 pooled
-provavelmente fica pior, não melhor, quando essa reconciliação acontecer.
-Registrado para não ser esquecido.
+37,3% medido pelo simulador de fila do Sprint 9.** ~~O Sharpe de -1,69 pooled
+provavelmente fica pior, não melhor, quando essa reconciliação acontecer.~~
+Errado — ver "Auditoria externa + reconciliação parcial" abaixo: dentro da
+janela onde dá pra medir de verdade, o gate real deixa o Sharpe **menos**
+negativo, não mais. A intuição registrada aqui não bateu com a medição.
 
 **Próximo passo em aberto**: já que a Camada 1 passa o gate arquitetural do
 §5.11, a Camada 2 (triagem de estabilidade) é candidata a próxima rodada — mas
 a pergunta mais urgente pode ser reconciliar com o fill rate real antes de
 investir mais camadas em cima de um custo de execução ainda otimista.
+**Resolvido parcialmente — ver seção seguinte.**
+
+## Auditoria externa do Sprint 8 + reconciliação parcial (2026-08-09) · commits `f81e26e`/`6c35065`/`756a196`
+
+Antes de decidir entre Camada 2 e reconciliação, o resultado do Sprint 8 foi
+enviado pra revisão externa (quem desenhou o plano junto). A crítica levantou
+4 pontos; cada um foi verificado contra o código e os dados reais antes de
+aceitar ou refutar — não por plausibilidade.
+
+**1. "Backtest roda 7x acima do orçamento de fees (12,71 trades/dia)"** — a
+crítica tinha o instinto certo mas a aritmética errada: os 30.623 trades do
+relatório original são a SOMA dos 5 caminhos de backtest do CPCV, cada um dos
+quais reconstrói os ~6,5 anos inteiros de forma independente (é a definição
+de "caminho" em CPCV). Somar os 5 e dividir por um único calendário conta o
+mesmo período cinco vezes. O número certo já estava no relatório, por
+caminho: `trades_per_year` médio ≈ 941,7/ano ≈ 2,58/dia — **~1,4x acima do
+orçamento R3 (~660/ano), não 7x**. Também confirmado: `target_signal_rate`
+(1,89%) já é aplicado in-fold via `tau` em `alpha.py` — não é sinal cru.
+
+**2. "Fill rate de 37,3% pode ser alívio, não problema — testar
+P(TP|fill) vs P(TP|miss)"** — correto e agora medido (Módulo B da
+reconciliação, achado abaixo): gap pequeno, **não é o vilão**.
+
+**3. "AUC ~0,50 é zero discriminação; falta o baseline B1 decisivo"** — B1 já
+existia (só não tinha entrado na síntese anterior) e o resultado favorece
+"há sinal": Alpha no percentil 100 de 1.000 sorteios aleatórios. Refinado
+nesta rodada (achado abaixo) porque a comparação original tinha uma
+mistura de variância entre média-de-5-caminhos e sorteio único.
+
+**4. "N_eff medido é 16x a folga que o PRD especulava"** — confirmado,
+consistente com o já registrado no Sprint 6.
+
+**B1 refinado** (`src/models/baselines.py`,
+`experiments/alpha_b1_refinement_report.json`): três testes mais rigorosos
+que a comparação original (que misturava a variância de uma MÉDIA de 5
+caminhos com sorteios de amostra única — inflava o percentil a favor do
+Alpha mesmo que as distribuições fossem idênticas).
+
+| Teste | Resultado |
+|---|---|
+| Por caminho (nulo do próprio tamanho de amostra) | 4 de 5 caminhos no percentil 100; **caminho 4 (o pior, Sharpe -1,96) cai pra 70,9** |
+| Nulo de variância pareada (mesma estrutura de promediação do Alpha) | percentil 100 |
+| Pool total (30.623 trades vs `pooled_all_15_splits.total_sharpe`=-1,686) | percentil 100 |
+
+O percentil=100 original sobrevive ao escrutínio mais rigoroso na maior
+parte — só o caminho 4 individualmente era mais fraco do que a média
+sugeria. Não vira "prova fechada" de edge real, mas pesa contra a leitura
+"é só beta".
+
+**Reconciliação de fill real** (`src/backtest/fill_reconciliation.py`, novo —
+primeiro conteúdo real da camada `src/backtest/`, vazia desde o Sprint 1;
+fatia adiantada e estreita do Sprint 10, só a reconciliação, não o motor de
+backtest completo): troca o gate otimista do Label Engine
+(`barrier_hit != NOFILL`) pelo gate real do simulador de fila (`filled`),
+restrita à janela onde há dado de bookTicker de verdade (2023-05-16 a
+2024-03-30 — nunca extrapolado além dela, mesmo limite que o simulador já
+respeita).
+
+Duas correções de método encontradas medindo, não assumindo: `orders.t_post`
+casa com `labels.t_entry`, não `labels.t0` (uma junção ingênua por `t0`
+devolve zero linhas); `barrier_hit==NOFILL` tem `t_entry` nulo por
+construção — tratado como `filled=False`, verificado com zero
+contra-exemplos do oposto nos dados reais.
+
+| | Otimista (`barrier_hit != NOFILL`) | Real (`filled` do simulador) |
+|---|---|---|
+| Fill rate (2.116 sinais em comum) | 97,1% | 42,2% |
+| Sharpe ingênuo | -9,25 | **-4,27 — menos negativo** |
+| Direção + carry | negativos nos dois | negativos nos dois |
+
+**Leitura importante, não simplificar**: trocar o gate melhora o Sharpe
+dentro desta janela, mas direção+carry são NEGATIVOS nos dois gates aqui —
+diferente do +1,60 pooled sobre os 6,5 anos completos do Sprint 8. Esta
+janela específica (~10,5 meses) não parece representativa do regime médio
+do modelo, então este resultado **não confirma nem descarta** se o -17,71
+de execução original vira positivo com fill real — só mostra que, onde dá
+pra medir de verdade, o gate otimista superestimava o dano de execução mais
+do que subestimava. Reconciliar a economia dos 6,5 anos completos continua
+sem resposta — não há dado de bookTicker fora desta janela pra medir.
+
+**Teste de seletividade** (Módulo B, 60.650 pontos de grade — não só sinais
+do Alpha): P(TP|filled)=36,6% vs P(TP|não-filled)=38,3%, gap=-1,72pp,
+custo em EV ≈ -1,12bps. **Pequeno** — fill rate baixo não esconde uma
+concentração de vencedores do lado que não preenche, consistente com a
+seleção adversa quase nula (~0,6bps) já medida no Sprint 9. Responde
+diretamente ao ponto 2 da revisão externa: alívio confirmado, não problema.
+
+**Gap ainda aberto**: a reconciliação acima só cobre a janela do bookTicker
+(~10,5 meses de 6,5 anos). A economia honesta do Sharpe -1,69 pooled sobre a
+história completa continua sem uma resposta direta — só o Testnet/Paper
+(Sprints 15-16) mede fill real fora da janela de bookTicker disponível.
 
 ## Investigação — o fill rate de 37,3% é real ou artefato? (2026-08-08) · commit `d3bcc79`
 
@@ -338,5 +431,8 @@ mudança de desenho.
 | Correlação real entre features T1? | 2 pares violam 0,70 | Sprint 4 acima |
 | CPCV vaza treino pro teste? | Não — 0 de 462.682 labels, medido | Sprint 7 acima |
 | Quantos dos 14 testes de leakage passam? | 11 PASS, 2 pendem de modelo, 1 N/A | Sprint 7 acima |
-| Fill rate real (maker)? | **37,3%** — abaixo do piso de 60% do §9.6 | Sprint 9 acima, **item mais crítico em aberto** |
+| Fill rate real (maker)? | **37,3%** agregado (42,2% dentro da janela reconciliada) — abaixo do piso de 60% do §9.6, que é ele mesmo fabricado (§18.5.4) | Sprint 9 acima |
 | Seleção adversa real medida? | ~0,6bps (menor que o placeholder de 1,5bps) | Sprint 9 acima |
+| Gate otimista vs gate real muda o Sharpe do Alpha? | Sim, pra melhor, dentro da janela medível (-9,25 → -4,27) — mas não resolve a economia dos 6,5 anos completos | Auditoria externa acima, **item mais crítico ainda em aberto** |
+| Fill rate baixo esconde os trades vencedores? | Não — gap P(TP\|fill) vs P(TP\|miss) é só -1,72pp | Auditoria externa acima |
+| B1 (Alpha vence entrada aleatória) resiste a comparação mais rigorosa? | Sim, 4 de 5 caminhos + nulo pareado + pool total no percentil 100; caminho 4 fica em 70,9 | Auditoria externa acima |
