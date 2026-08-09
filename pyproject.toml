@@ -97,6 +97,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "golden: teste de reprodutibilidade bit-a-bit contra artefato versionado (Fase G, ~20-30s, retreina fold 0 de verdade — nao mockado)",
+]
 
 # --------------------------------------------------------------------------
 # import-linter — hierarquia de camadas do §14.2, quebra o build se violada.
