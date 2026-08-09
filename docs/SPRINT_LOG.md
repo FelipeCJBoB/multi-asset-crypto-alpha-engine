@@ -1846,16 +1846,114 @@ Nenhum alarme, consistente com "nenhuma candidata é microestrutura".
 `n_lifetime` id 13, delta=1 (1 trial, mesmo raciocínio do E2). Contador:
 42 → **43**.
 
-### FASE 3 (C1/C2/C3) — pendente, não iniciada
+### Pré-FASE 3 — 3 perguntas sobre o JSON do E3, sem retreino, sem n_lifetime (2026-08-09)
+
+Pedido do Manager antes de liberar a FASE 3: caracterizar o E3 mais a
+fundo usando só o que já foi computado (`experiments/
+faixa2_e3_stability.json`, campos novos: `ic_by_env` por célula,
+`env_sizes_by_cell`, `robust_survivors_ic_sign_by_env_and_side`,
+`c07_d03f_pair_analysis`). Nenhum retreino, nenhum trial novo.
+
+**(1) Sinal do IC de C07/D03f, por lado e por ambiente — decide a
+interpretação do E3 inteiro.** Resultado: **negativo em TODAS as 6×2×15 =
+180 combinações** para cada feature — unanimidade total, não só nos 6
+ambientes por fold. `C07_vol_pctile_expanding`: mediana entre -0,057 e
+-0,141 conforme o ambiente; `D03f_volume_z_expanding`: entre -0,021 e
+-0,063. Confirma a hipótese do Manager NA DIREÇÃO certa — vol/volume alto
+prediz retorno líquido PIOR — mas com uma correção relevante: **a
+magnitude é quase simétrica entre long e short** (ex. `C07`
+`RANGE_LOW_COST`: -0,1048 no long vs -0,1033 no short — praticamente
+igual), não assimétrica. Isso confirma "vol alta piora a entrada nova,
+nos dois lados igualmente" — o mesmo padrão de contaminação por
+volatilidade já medido na Faixa 1.7 (ρ=0,24 confiança×vol) — mas SOZINHO
+não explica a assimetria long-falha-em-R2/short-bate-passivo-em-4-regimes
+que o Manager citou como possível consequência: se o efeito fosse
+simétrico nos dois lados, ele não deveria gerar essa assimetria por si
+só. A assimetria long/short precisa de outro mecanismo (ou de uma
+interação entre vol e alguma outra variável), não decorre deste sinal
+isolado.
+
+**(2) Correlação C07×D03f + hhi_efetivo do par.** `ρ = 0,46` (Pearson,
+pooled, 458.912 linhas), `n_eff_factors = 1,65` de um teto de 2,
+`hhi_efetivo = 0,606`. **Não confirma "é um fator só"** — 1,65 está mais
+perto do meio do intervalo [1,2] que de colapsar a 1. Há redundância real
+(as duas se movem juntas quando o mercado está mais líquido/ativo — leitura
+econômica plausível: mais volume tende a vir com mais volatilidade), mas
+não ao ponto de serem intercambiáveis. As duas sobreviverem juntas na
+triagem não é um artefato de estarem medindo a mesma coisa.
+
+**(3) Poder da triagem — |IC| mediano por feature, ao lado da
+sobrevivência.** Emitido (`summary_by_feature.median_abs_ic_by_env`),
+tabela completa abaixo. Confirma o ponto do Manager: a maioria das 14
+"zeros" tem IC mediano entre 0,004 e 0,021 — perto do limiar de força
+necessário pra sobreviver com consistência unânime (`limiar/1,0² =
+0,02-0,03`), não zero. **Correção de uma premissa do cálculo de poder do
+Manager**: N por (fold, lado, ambiente) medido é **~22.891 (mediana),
+não ~5.000** — a estimativa assumia `n_rows_train/6` igualmente
+distribuído entre os 6 ambientes, mas RANGE e TREND não são
+metade-metade da amostra (R1∪R2 vs R3∪R4 têm proporções bem diferentes,
+ver `regime_counts` do Sprint 5: R1=46%, R2=11%, R3=30%, R4=10%). Com N
+~4-5x maior que o assumido, o erro-padrão de Spearman (~1/√N) é ~2x
+menor — a probabilidade de unanimidade de sinal para um IC populacional
+pequeno e real é MAIOR do que a conta original sugeria, não menor. Ou
+seja: os "zeros" são, se algo, mais informativos (mais prováveis de
+refletir efeito genuinamente perto de nulo) do que a estimativa inicial
+indicava — não menos.
+
+| feature | sobrev./30 | \|IC\| mediano |
+|---|---|---|
+| `C07_vol_pctile_expanding` (T1) | 30 | 0,0889 |
+| `D03f_volume_z_expanding` (T1) | 30 | 0,0479 |
+| `E17f_retail_vs_top_spread` (E2) | 11 | 0,0259 |
+| `E02f_funding_z_expanding` (T1) | 13 | 0,0214 |
+| `K02_dow_sin` (E2) | 2 | 0,0204 |
+| `H01_exchange_netflow_z` (E2) | 11 | 0,0203 |
+| `E05f_time_to_funding_h` (E2) | 0 | 0,0152 |
+| `E11f_oi_change_1d` (E2) | 0 | 0,0137 |
+| `E12f_price_oi_divergence` (E2) | 0 | 0,0136 |
+| `C06_vol_ratio_12_96` (T1) | 3 | 0,0136 |
+| `B01_rsi_14` (T1) | 0 | 0,0129 |
+| `K08_days_since_halving` (E2) | 3 | 0,0123 |
+| `D06f_taker_imbalance_z_48` (T1) | 0 | 0,0094 |
+| `A05_ret_vol_norm_4` (T1) | 0 | 0,0078 |
+| `A08_upper_wick_ratio` (E2) | 0 | 0,0074 |
+| `E10f_oi_change_z_48` (T1) | 0 | 0,0070 |
+| `A12_gap_pct` (E2) | 0 | 0,0064 |
+| `D04f_volume_accel` (E2) | 0 | 0,0041 |
+
+**Declaração pedida sobre `min_consistent_envs`** (não varrida, só
+declarada — o Manager pediu a posição antes de decidir se vale rodar):
+**mantenho 6/6 (atual)**, não recomendo 5/6. Com 18 candidatas avaliadas
+simultaneamente, o número esperado de "sobreviventes" por chance pura sob
+ruído é `18 × FPR`: a 6/6 (FPR=3,125%) isso dá ~0,56 — sob 1, controlado;
+a 5/6 (FPR=21,9%) dá ~3,9 — quase 4 das 18 aaprovariam por acaso, o que
+contaminaria a leitura dado que só 2 sobrevivem hoje de forma robusta.
+5/6 tornaria "sobreviver" quase não-informativo neste N de candidatas. Se
+uma varredura for feita, o valor a testar não é o `limiar` de força (o
+Manager já mostrou que ele não muda o veredito pras 2 robustas) — é
+exatamente este, e a pergunta certa é "o FPR agregado esperado continua
+< ~1 sobrevivente espúrio" pra qualquer valor considerado.
+
+**FASE 3 continua em espera**, por instrução explícita, até estas 3
+perguntas serem avaliadas pelo Manager. Nenhum `n_lifetime` gasto nesta
+rodada (recomputação sobre o mesmo passe já contado no id 13, não uma
+busca nova).
+
+### FASE 3 (C1/C2/C3) — em espera
 
 Precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
 2 recria a seleção do Alpha sem retreinar, C1/C2 (que comparam
 `directional_sharpe` do Alpha, não da população incondicional) exigem
 retreinar a Camada 1 pelo menos uma vez sob a config vencedora de
-E1+E2+E3. Decisão de desenho ainda em aberto para quando isso rodar: qual
-subconjunto exato das 18 (ou das 10+8) entra no retreino — o E3 rankeia,
-não decide sozinho; falta a varredura formal do `limiar` antes de
-qualquer corte virar produção.
+E1+E2+E3. **Instrução explícita do Manager (2026-08-09)**: se o item (1)
+acima confirmar um mecanismo coerente (aqui, parcialmente confirmado —
+sinal negativo unânime, mas simétrico entre lados, não explica a
+assimetria sozinho), o retreino deve ser sobre uma configuração honesta
+(o fator que sobrevive + o que interage com ele), NÃO sobre "as 18 menos
+as reprovadas" — escolher pelo resultado da triagem seria usar um
+critério que a própria triagem já consumiu como trial. Config exata do
+retreino ainda em aberto, aguardando revisão do Manager sobre os 3 itens
+acima.
 
 ## Índice rápido — onde encontrar cada número
 
@@ -1888,6 +1986,9 @@ qualquer corte virar produção.
 | Ambientes de triagem do E3 são 6 ou 12 (regime R1..R4)? | 6 (RANGE/TREND × tercil de custo) — "12" cruzaria vol com ela mesma e, com unanimidade exigida, ficaria 64x mais restritivo sob ruído (0,049% vs 3,125%); PRD corrigido para não confundir com o regime de reporte R1..R4 | Faixa 2, FASE 2 E3 acima |
 | `rpi_regime` (PRE/POST) entra na fórmula de estabilidade do E3? | Não — virou diagnóstico separado (`ic_by_rpi_regime`); perdeu o alvo depois que o Grupo F saiu de T1 na v3.3 | Faixa 2, FASE 2 E3 acima |
 | N_lifetime atual, auditado (pós-E3)? | 43 (era 42 — +1 pelo passe de pesquisa E3, 1 trial) | `audit/n_lifetime.yaml`, Faixa 2 E3 acima |
+| C07/D03f (únicas 2 robustas do E3) têm IC negativo consistente contra `ret_net`? | Sim — negativo em 180/180 combinações (6 ambientes × 2 lados × 15 folds), mas magnitude QUASE SIMÉTRICA entre long/short — não explica sozinho a assimetria long-falha-R2/short-bate-passivo | Faixa 2, Pré-FASE 3 acima |
+| C07 e D03f são o mesmo fator (correlação alta)? | Parcialmente — ρ=0,46, n_eff_factors=1,65 de um teto de 2 (redundância real, não colapso a 1 fator) | Faixa 2, Pré-FASE 3 acima |
+| A triagem do E3 tem poder suficiente pra distinguir "sem sinal" de "sinal fraco"? | Discutível — N real por ambiente é ~22.891 (não ~5.000 como estimado), maior poder que o assumido; a maioria dos "zeros" tem \|IC\| mediano 0,004-0,021, perto do limiar de força, não zero | Faixa 2, Pré-FASE 3 acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |

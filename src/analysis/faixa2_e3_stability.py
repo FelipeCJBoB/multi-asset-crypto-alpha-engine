@@ -31,14 +31,16 @@ import time
 from pathlib import Path
 from typing import Any, Final
 
+import numpy as np
 import orjson
 import polars as pl
 import structlog
 
 from src.core.provenance import report_provenance
 from src.models import dataset as ds
-from src.models import stability
+from src.models import environments, stability
 from src.models._constants import _load_all, load_constant
+from src.models.hhi import compute_effective_concentration
 from src.validation import cpcv
 
 from .faixa2_e2_research import CURRENT_T1, build_research_candidates_frame
@@ -110,23 +112,46 @@ def run_stability_screen_over_cpcv(
     cpcv_result = cpcv.generate_splits(df_all)
 
     per_feature_cells: dict[str, list[dict[str, Any]]] = {f: [] for f in CANDIDATES_18}
+    env_sizes_by_cell: list[dict[str, Any]] = []
     for split in cpcv_result.splits:
         train_bars = df_all[split.train_idx]
         for side in SIDES:
             train_side_df = ds.side_subset(train_bars, side=side)
+            n_train_rows = train_side_df.height
+            df_env = environments.assign_environments(train_side_df)
+            env_counts = (
+                df_env.drop_nulls(environments.ENV_COL)
+                .group_by(environments.ENV_COL)
+                .len()
+                .to_dict(as_series=False)
+            )
+            env_sizes_by_cell.append(
+                {
+                    "fold_id": split.split_id,
+                    "side": side,
+                    "n_train_rows": n_train_rows,
+                    "counts_by_env": dict(
+                        zip(env_counts[environments.ENV_COL], env_counts["len"], strict=True)
+                    ),
+                }
+            )
             results = stability.stability_screen(train_side_df, CANDIDATES_18, limiar=limiar)
             for feature, r in results.items():
                 per_feature_cells[feature].append(
                     {
                         "fold_id": split.split_id,
                         "side": side,
+                        "n_train_rows": n_train_rows,
                         "n_envs_with_data": r.n_envs_with_data,
+                        "ic_by_env": r.ic_by_env,
                         "forca": r.forca,
                         "consistencia": r.consistencia,
                         "estabilidade": r.estabilidade,
                         "survives": r.survives,
                     }
                 )
+
+    import statistics
 
     summary: dict[str, Any] = {}
     for feature, cells in per_feature_cells.items():
@@ -145,6 +170,18 @@ def run_stability_screen_over_cpcv(
                 "n_survived": n_side_survived,
                 "mean_estabilidade": mean_est_side,
             }
+        # |IC| MEDIANO -- pedido do Manager (2026-08-09, "caracterizar o
+        # PODER da triagem antes de interpretar os zeros"): mediana de
+        # TODOS os IC de ambiente individuais (fold x side x env) com
+        # dado, não a média com denominador fixo 6 que `forca` usa (essa
+        # é a métrica CERTA pra `estabilidade`, mas underestima magnitude
+        # típica quando ambientes faltam dado).
+        all_abs_ic = [
+            abs(v)
+            for c in cells
+            for v in c["ic_by_env"].values()
+            if isinstance(v, int | float) and v == v  # exclui NaN
+        ]
         summary[feature] = {
             "n_cells_total": n_cells,
             "n_cells_survived": n_survived,
@@ -156,6 +193,8 @@ def run_stability_screen_over_cpcv(
             if n_cells
             else float("nan"),
             "mean_forca": sum(c["forca"] for c in cells) / n_cells if n_cells else float("nan"),
+            "median_abs_ic_by_env": statistics.median(all_abs_ic) if all_abs_ic else float("nan"),
+            "n_ic_env_observations": len(all_abs_ic),
             "by_side": by_side,
         }
 
@@ -169,6 +208,20 @@ def run_stability_screen_over_cpcv(
         for point in sweep_points
     }
 
+    all_env_counts = [n for cell in env_sizes_by_cell for n in cell["counts_by_env"].values()]
+    env_size_summary = {
+        "median_obs_per_env_cell": statistics.median(all_env_counts) if all_env_counts else None,
+        "min_obs_per_env_cell": min(all_env_counts) if all_env_counts else None,
+        "max_obs_per_env_cell": max(all_env_counts) if all_env_counts else None,
+        "note": (
+            "N por (fold, lado, ambiente) individual -- MEDIDO, não a "
+            "premissa de ~5.000/ambiente usada na estimativa de poder do "
+            "Manager (baseada em n_rows_train/6 pooled; o corte real de "
+            "tercil não distribui igual entre os 6 ambientes porque "
+            "RANGE/TREND não são metade/metade da amostra)."
+        ),
+    }
+
     return {
         "limiar": limiar,
         "limiar_sensitivity_note": (
@@ -178,11 +231,78 @@ def run_stability_screen_over_cpcv(
             "de vizinhança imediata, não a varredura formal de Gate 3."
         ),
         "limiar_sensitivity": limiar_sensitivity,
+        "env_size_summary": env_size_summary,
+        "env_sizes_by_cell": env_sizes_by_cell,
         "n_splits": len(cpcv_result.splits),
         "n_sides": len(SIDES),
         "n_cells_per_feature": len(cpcv_result.splits) * len(SIDES),
         "summary_by_feature": summary,
         "cells_detail": per_feature_cells,
+    }
+
+
+def summarize_ic_sign_by_env_and_side(
+    screen: dict[str, Any], features: tuple[str, ...]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Pergunta do Manager (2026-08-09, item 1): "sinal do IC de C07 e
+    D03f, por lado e por ambiente". Cada fold recorta tercis diferentes
+    (mesmo ambiente lógico, corte numérico diferente por fold) — resume
+    aqui como mediana do IC entre os 15 folds + contagem de folds
+    positivos/negativos, por (feature, lado, ambiente)."""
+    import statistics
+
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for feature in features:
+        cells = screen["cells_detail"][feature]
+        by_side: dict[str, dict[str, Any]] = {}
+        for side in SIDES:
+            by_env: dict[str, Any] = {}
+            for env in environments.ENVIRONMENTS:
+                values = [
+                    c["ic_by_env"][env]
+                    for c in cells
+                    if c["side"] == side and c["ic_by_env"][env] == c["ic_by_env"][env]
+                ]
+                n_pos = sum(1 for v in values if v > 0)
+                n_neg = sum(1 for v in values if v < 0)
+                by_env[env] = {
+                    "median_ic": statistics.median(values) if values else float("nan"),
+                    "n_folds_with_data": len(values),
+                    "n_folds_negative": n_neg,
+                    "n_folds_positive": n_pos,
+                }
+            by_side[str(side)] = by_env
+        out[feature] = by_side
+    return out
+
+
+def c07_d03f_pair_analysis(df_all: pl.DataFrame) -> dict[str, Any]:
+    """Pergunta do Manager (2026-08-09, item 2): correlação POOLED entre
+    `C07_vol_pctile_expanding` e `D03f_volume_z_expanding` (as duas únicas
+    candidatas robustas em toda a vizinhança do sweep_range do E3) +
+    `hhi_efetivo`/`n_eff_factors` do par — usa `compute_effective_
+    concentration` (mesma função de `src.models.hhi`/D1, `gain_by_column`
+    vazio -> peso uniforme, mesma leitura deliberada do E2: mede
+    REDUNDÂNCIA DE INFORMAÇÃO, não importância preditiva)."""
+    pair = ("C07_vol_pctile_expanding", "D03f_volume_z_expanding")
+    sub = df_all.select(pair).drop_nulls()
+    x = sub[pair[0]].to_numpy().astype(np.float64)
+    y = sub[pair[1]].to_numpy().astype(np.float64)
+    rho = float(np.corrcoef(x, y)[0, 1])
+    corr_matrix = np.array([[1.0, rho], [rho, 1.0]])
+    diag = compute_effective_concentration(corr_matrix, {}, pair)
+    return {
+        "pair": list(pair),
+        "n_rows": int(sub.height),
+        "pearson_correlation": rho,
+        "n_eff_factors": diag.n_eff_factors.value,
+        "hhi_efetivo": diag.hhi_effective.value,
+        "nota": (
+            "n_eff_factors=1,65 de um teto de 2 (rho=0,46): redundancia "
+            "PARCIAL, nao total -- mais perto do meio do que de colapsar a "
+            "1 fator so. Nao confirma 'e um fator so' ao pe da letra; "
+            "confirma que ha sobreposicao real, nao ortogonalidade."
+        ),
     }
 
 
@@ -197,10 +317,18 @@ def run_rpi_regime_diagnostic(df_all: pl.DataFrame) -> dict[str, dict[str, dict[
     return out
 
 
+_ROBUST_SURVIVORS: Final[tuple[str, ...]] = (
+    "C07_vol_pctile_expanding",
+    "D03f_volume_z_expanding",
+)
+
+
 def run_e3_stability(symbol: str = "BTCUSDT") -> dict[str, Any]:
     df_all = build_extended_modeling_frame(symbol)
     screen = run_stability_screen_over_cpcv(df_all)
     rpi_diagnostic = run_rpi_regime_diagnostic(df_all)
+    robust_survivors_ic_sign = summarize_ic_sign_by_env_and_side(screen, _ROBUST_SURVIVORS)
+    c07_d03f_pair = c07_d03f_pair_analysis(df_all)
 
     return {
         "candidates_18": list(CANDIDATES_18),
@@ -208,6 +336,8 @@ def run_e3_stability(symbol: str = "BTCUSDT") -> dict[str, Any]:
         "e2_selected_beyond_t1": list(E2_SELECTED_BEYOND_T1),
         "stability_screen": screen,
         "rpi_regime_diagnostic_pre_post": rpi_diagnostic,
+        "robust_survivors_ic_sign_by_env_and_side": robust_survivors_ic_sign,
+        "c07_d03f_pair_analysis": c07_d03f_pair,
         "nota": (
             "estabilidade = forca * consistencia**2, denominador fixo 6 "
             "(src.models.stability). limiar ASSUMED "
