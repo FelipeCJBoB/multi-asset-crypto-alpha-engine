@@ -19,6 +19,20 @@
 > referenciava `Metric`/`safe_ratio` — confirmado por grep imediatamente antes
 > de escrever este relatório. Nenhum achado abaixo é `JA_CORRIGIDO`.
 
+## Atualização (2026-08-09, Faixa 0 — dívida de engenharia)
+
+**`src/risk/limits.py:228` (`control_10_risco_real`) corrigido** — guarda
+trocada de `equity == 0` para `equity <= 0` (mesmo padrão de
+`kill_switch.k01_daily_loss`), retornando `ControlOutcome.FAIL` (não
+`NOT_COMPUTABLE` — é um controle pré-trade que bloqueia a ordem, mesmo
+padrão de `control_09b_resolucao_sizing`, não um gatilho de monitoramento).
+Teste `test_control_10_falha_com_equity_negativo`
+(`tests/unit/test_risk_limits.py`) cobre `equity=-1`, espelhando
+`test_k01_not_computable_com_equity_nao_positivo`. Isto sai da contagem de
+`RISCO REAL` abaixo — resta 1 (`decomposition.py:125`, já é `Metric`/
+`safe_ratio`, ver Fase B). Os outros 12 itens da tabela permanecem
+inalterados (fora de escopo desta rodada).
+
 ## Resumo
 
 - **13 divisões** de razão variável encontradas nos arquivos em escopo

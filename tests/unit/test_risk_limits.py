@@ -249,6 +249,17 @@ def test_control_10_falha_acima_do_teto() -> None:
     assert limits.control_10_risco_real(sizing) == ControlOutcome.FAIL
 
 
+def test_control_10_falha_com_equity_negativo() -> None:
+    """Achado de auditoria (`audit/division_guard_audit.md`): a guarda antiga
+    era `equity == 0`, então `equity=-1` deixava `risk_real/equity` sair
+    negativo e passar o teto trivialmente. Mesmo cenário de
+    `test_k01_not_computable_com_equity_nao_positivo` em
+    `test_risk_kill_switch.py`, adaptado ao tri-estado deste controle
+    (`FAIL`, não `NOT_COMPUTABLE` — ver docstring de `control_10_risco_real`)."""
+    sizing = _make_sizing(equity=Decimal("-1"))
+    assert limits.control_10_risco_real(sizing) == ControlOutcome.FAIL
+
+
 # ============================================================================
 # Controle 11 — nocional máximo (leverage_eff <= max_notional_multiple)
 # ============================================================================

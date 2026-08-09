@@ -221,9 +221,19 @@ def control_10_risco_real(sizing: SizingResult) -> ControlOutcome:
     pode (e no caso mediano, deve — ver tabela §8.3) ficar um pouco ACIMA do
     alvo de 0,5%, nunca exatamente nele. 0,6% é a margem que o desenho tolera
     antes de rejeitar; 0,5% nunca é reparametrizado a partir daqui (CLAUDE.md:
-    "nunca otimize de volta o que foi derivado")."""
+    "nunca otimize de volta o que foi derivado").
+
+    **`equity <= 0`, não `== 0`** (achado de auditoria, `audit/
+    division_guard_audit.md`): com `equity` negativo a guarda antiga não
+    disparava e `risk_real/equity` saía negativo, passando o teto
+    trivialmente — o controle aprovava exatamente o caso em que deveria
+    bloquear com mais força. `FAIL`, não `NOT_COMPUTABLE`, porque este é um
+    controle pré-trade que bloqueia a ordem (mesmo padrão de
+    `control_09b_resolucao_sizing` acima), diferente de
+    `kill_switch.k01_daily_loss`, que monitora estado e usa
+    `NOT_COMPUTABLE` para distinguir "não sei" de "confirmado seguro"."""
     max_ratio = _to_decimal(load_constant("risk_overshoot_max_pct_equity"))
-    if sizing.equity == 0:
+    if sizing.equity <= 0:
         return ControlOutcome.FAIL
     ratio = sizing.risk_real / sizing.equity
     return ControlOutcome.PASS if ratio <= max_ratio else ControlOutcome.FAIL
