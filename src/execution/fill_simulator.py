@@ -116,6 +116,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -304,27 +305,153 @@ def _simulate_one_order(
         else:
             t_entry_ms, fill_price = None, None
 
-    markouts: dict[str, float | None] = {}
-    if t_entry_ms is not None and fill_price is not None:
-        last_book_time = int(book.transaction_time[-1])
-        for label, h_ms in _MARKOUT_HORIZONS_MS.items():
-            target_ms = t_entry_ms + h_ms
-            if target_ms > last_book_time:
-                # Horizonte além do bookTicker carregado (fim real da
-                # janela, item 6 da docstring) — null, não um valor stale.
-                markouts[label] = None
-                continue
-            target_idx = _asof_index(book.transaction_time, target_ms)
-            mid = (book.best_bid_price[target_idx] + book.best_ask_price[target_idx]) / 2.0
-            markouts[label] = side * (mid - fill_price) / fill_price * _BPS_PER_UNIT
-    else:
-        markouts = dict.fromkeys(_MARKOUT_HORIZONS_MS)
+    markouts = _compute_markouts(book, t_entry_ms=t_entry_ms, fill_price=fill_price, side=side)
 
     return SimulatedOrder(
         t_post_ms=t_post_ms,
         side=side,
         limit_price=limit_price,
         queue_ahead_initial=queue_ahead,
+        filled=t_entry_ms is not None,
+        t_entry_ms=t_entry_ms,
+        fill_price=fill_price,
+        markout_1m_bps=markouts["1m"],
+        markout_5m_bps=markouts["5m"],
+        markout_30m_bps=markouts["30m"],
+    )
+
+
+def _compute_markouts(
+    book: _BookArrays, *, t_entry_ms: int | None, fill_price: float | None, side: int
+) -> dict[str, float | None]:
+    """Núcleo comum de cálculo de markout por horizonte (docstring do módulo,
+    item 3) — extraído de `_simulate_one_order` para reuso EXATO (mesma
+    definição, mesma tolerância de janela carregada) por
+    `_simulate_one_order_price_improved` (investigação pós-Sprint 9, item 4).
+    Retorna `{h: None for h in horizontes}` quando `t_entry_ms`/`fill_price`
+    são `None` (NOFILL) — mesma convenção de antes, agora centralizada."""
+    if t_entry_ms is None or fill_price is None:
+        return dict.fromkeys(_MARKOUT_HORIZONS_MS)
+
+    last_book_time = int(book.transaction_time[-1])
+    markouts: dict[str, float | None] = {}
+    for label, h_ms in _MARKOUT_HORIZONS_MS.items():
+        target_ms = t_entry_ms + h_ms
+        if target_ms > last_book_time:
+            # Horizonte além do bookTicker carregado (fim real da
+            # janela, item 6 da docstring) — null, não um valor stale.
+            markouts[label] = None
+            continue
+        target_idx = _asof_index(book.transaction_time, target_ms)
+        mid = (book.best_bid_price[target_idx] + book.best_ask_price[target_idx]) / 2.0
+        markouts[label] = side * (mid - fill_price) / fill_price * _BPS_PER_UNIT
+    return markouts
+
+
+def _simulate_one_order_price_improved(
+    book: _BookArrays,
+    trades: _TradeArrays,
+    *,
+    t_post_ms: int,
+    side: int,
+    fill_timeout_ms: int,
+    tick_size: float,
+) -> SimulatedOrder | None:
+    """Variante de SENSIBILIDADE, não o desenho (investigação pós-Sprint 9,
+    item 4 do pedido do Manager — auditoria do `p_fill` de 37,3%). Posta 1
+    tick MELHOR que o topo do livro observado — vira o novo melhor bid/ask,
+    fila vazia à frente POR CONSTRUÇÃO, não um artefato residual de dado
+    como o `queue_ahead == 0` de `_simulate_one_order`. O PRD §9.1 especifica
+    "price: best_bid (long) | best_ask (short)", sem melhora — esta função
+    NÃO substitui `_simulate_one_order` nem é usada pelo caminho principal
+    (`simulate_window` com os argumentos padrão); existe só para responder
+    "quanto o p_fill melhora se aceitarmos pior preço médio de entrada
+    (fura-fila)", pergunta de sensibilidade, não uma proposta de mudança de
+    padrão de execução.
+
+    **Por que `queue_ahead <= 0` de `_simulate_one_order` NÃO é reaproveitado
+    aqui.** Lá, qty==0 no nível JÁ EXISTENTE é um artefato residual (o resto
+    da fila real, que existia antes do nosso post, já foi consumido por
+    trades observados) e preenche IMEDIATAMENTE no instante do post, sem
+    exigir nenhum trade real depois. Aqui o nível de preço é criado pela
+    própria ordem — ninguém mais tem prioridade à nossa frente, mas ainda
+    precisamos que um taker de fato negocie NESSE preço exato depois do post
+    (o print apareceria em `aggTrades`) para considerar preenchido.
+    Reaproveitar a via "queue_ahead<=0 preenche no post" inflaria p_fill
+    artificialmente para perto de 100% — não corresponde a nenhuma execução
+    real. Em vez disso, preenche no PRIMEIRO trade casado (mesmo filtro de
+    direção/preço de `_simulate_one_order`) dentro da janela de timeout —
+    fila vazia por construção significa que o primeiro trade que negocia
+    nesse preço já nos preenche, não que preenchemos sem nenhum trade.
+
+    **Ordens que cruzariam o lado oposto** (spread observado <= 1 tick — a
+    melhora ultrapassaria ou igualaria o topo do outro lado) não são
+    postáveis como GTX (post-only); o exchange rejeitaria (`EXPIRED_GTX`,
+    §9.2). Retorna uma `SimulatedOrder` com `queue_ahead_initial=-1.0`
+    (sentinela — literal permitido pelo lint, documentado aqui, não um novo
+    número de negócio) e `filled=False` para esses pontos, em vez de `None`,
+    para que `simulate_window` (reusada sem mudança) continue contando
+    `n_skipped_no_book_state` só para ausência REAL de estado de book — o
+    módulo de análise separa os dois motivos filtrando por esse sentinela."""
+    if side not in (1, -1):
+        raise ValueError(f"side deve ser 1 (compra) ou -1 (venda), recebido {side}")
+
+    post_idx = _asof_index(book.transaction_time, t_post_ms)
+    if post_idx < 0:
+        return None
+
+    best_bid = float(book.best_bid_price[post_idx])
+    best_ask = float(book.best_ask_price[post_idx])
+
+    if side == 1:
+        limit_price = best_bid + tick_size
+        would_cross = limit_price >= best_ask
+    else:
+        limit_price = best_ask - tick_size
+        would_cross = limit_price <= best_bid
+
+    if would_cross:
+        return SimulatedOrder(
+            t_post_ms=t_post_ms,
+            side=side,
+            limit_price=limit_price,
+            queue_ahead_initial=-1.0,
+            filled=False,
+            t_entry_ms=None,
+            fill_price=None,
+            markout_1m_bps=None,
+            markout_5m_bps=None,
+            markout_30m_bps=None,
+        )
+
+    horizon_ms = t_post_ms + fill_timeout_ms
+    lo = int(np.searchsorted(trades.transact_time, t_post_ms, side="right"))
+    hi = int(np.searchsorted(trades.transact_time, horizon_ms, side="right"))
+
+    window_time = trades.transact_time[lo:hi]
+    window_price = trades.price[lo:hi]
+    window_is_buyer_maker = trades.is_buyer_maker[lo:hi]
+
+    direction_match = window_is_buyer_maker if side == 1 else ~window_is_buyer_maker
+    price_match = np.abs(window_price - limit_price) < (tick_size / 2.0)
+    matching = direction_match & price_match
+
+    t_entry_ms: int | None
+    fill_price: float | None
+    if bool(matching.any()):
+        first_idx = int(np.argmax(matching))
+        t_entry_ms = int(window_time[first_idx])
+        fill_price = limit_price
+    else:
+        t_entry_ms, fill_price = None, None
+
+    markouts = _compute_markouts(book, t_entry_ms=t_entry_ms, fill_price=fill_price, side=side)
+
+    return SimulatedOrder(
+        t_post_ms=t_post_ms,
+        side=side,
+        limit_price=limit_price,
+        queue_ahead_initial=0.0,
         filled=t_entry_ms is not None,
         t_entry_ms=t_entry_ms,
         fill_price=fill_price,
@@ -456,6 +583,9 @@ class SimulationRunResult:
     n_days_no_data: int
 
 
+_OrderSimulator = Callable[..., SimulatedOrder | None]
+
+
 def simulate_window(
     symbol: str = "BTCUSDT",
     start: date = BOOK_TICKER_WINDOW_START,
@@ -463,13 +593,22 @@ def simulate_window(
     *,
     sides: tuple[int, ...] = (1, -1),
     fill_timeout_bars: int | None = None,
+    _order_simulator: _OrderSimulator = _simulate_one_order,
 ) -> SimulationRunResult:
     """Percorre `[start, end]` dia a dia, dia útil de calendário (não
     apenas dias com dado — dias sem arquivo de bookTicker são contados em
     `n_days_no_data` e pulados). Para cada dia carrega o par
     `(dia, dia+1)` de bookTicker + `aggTrades` (via `src.data.lake`), gera a
     grade de 15m do dia e simula UMA ordem por lado por ponto de grade
-    (ambos os lados por padrão — ver docstring do módulo, item 2)."""
+    (ambos os lados por padrão — ver docstring do módulo, item 2).
+
+    `_order_simulator`: hook interno (prefixo `_` deliberado — não é API
+    pública nova) que troca o núcleo numérico por ordem simulada, mantendo
+    IO/orquestração/agregação idênticos. Default `_simulate_one_order`
+    preserva o comportamento desta função em toda chamada existente sem
+    este argumento. Usado por `simulate_window_price_improved` (investigação
+    pós-Sprint 9, item 4) para não duplicar este laço inteiro por uma
+    variante de sensibilidade que não é o desenho especificado (§9.1)."""
     if end >= RPI_BREAK_DATE:
         raise ValueError(
             f"end={end.isoformat()} >= {RPI_BREAK_DATE.isoformat()} (quebra RPI, §9.5 v3.3) — "
@@ -513,7 +652,7 @@ def simulate_window(
         n_before = len(cols["t_post"])
         for side in sides:
             for t_post_ms in grid:
-                order = _simulate_one_order(
+                order = _order_simulator(
                     book_arr,
                     trade_arr,
                     t_post_ms=t_post_ms,
@@ -547,6 +686,32 @@ def simulate_window(
         orders=df,
         n_skipped_no_book_state=n_skipped_no_book_state,
         n_days_no_data=n_days_no_data,
+    )
+
+
+def simulate_window_price_improved(
+    symbol: str = "BTCUSDT",
+    start: date = BOOK_TICKER_WINDOW_START,
+    end: date = BOOK_TICKER_WINDOW_END,
+    *,
+    sides: tuple[int, ...] = (1, -1),
+    fill_timeout_bars: int | None = None,
+) -> SimulationRunResult:
+    """Variante de SENSIBILIDADE (investigação pós-Sprint 9, item 4) —
+    mesma orquestração de `simulate_window`, núcleo trocado para
+    `_simulate_one_order_price_improved` (posta 1 tick melhor que o topo,
+    fura fila). NÃO é chamada por nenhum caminho de produção — só pelo
+    módulo/relatório de análise desta investigação e por testes. Linhas com
+    `queue_ahead_initial == -1.0` no resultado são pontos de grade onde a
+    melhora de 1 tick cruzaria o lado oposto (spread observado <= 1 tick) —
+    não postáveis como GTX; ver docstring de `_simulate_one_order_price_improved`."""
+    return simulate_window(
+        symbol,
+        start,
+        end,
+        sides=sides,
+        fill_timeout_bars=fill_timeout_bars,
+        _order_simulator=_simulate_one_order_price_improved,
     )
 
 

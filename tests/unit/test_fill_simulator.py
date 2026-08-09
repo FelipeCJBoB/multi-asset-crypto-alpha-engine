@@ -303,6 +303,177 @@ def test_markout_none_quando_nofill() -> None:
 
 
 # ============================================================================
+# _simulate_one_order_price_improved — variante de sensibilidade (item 4 da
+# investigação pós-Sprint 9): posta 1 tick melhor que o topo do livro.
+# ============================================================================
+
+
+def test_price_improved_sem_estado_de_book_devolve_none() -> None:
+    book = _book([10_000], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=5_000, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is None
+
+
+def test_price_improved_side_invalido_levanta_erro() -> None:
+    book = _book([0], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    with pytest.raises(ValueError):
+        fs._simulate_one_order_price_improved(
+            book, trades, t_post_ms=0, side=0, fill_timeout_ms=900_000, tick_size=0.10
+        )
+
+
+def test_price_improved_compra_melhora_um_tick_acima_do_bid() -> None:
+    # bid=100.0, ask=100.3 -> compra melhorada posta em 100.1 (1 tick acima
+    # do bid), fila vazia por construção (queue_ahead_initial == 0.0).
+    book = _book([0], [100.0], [1.0], [100.3], [1.0])
+    trades = _trades(
+        times=[100], prices=[100.1], qtys=[0.05], is_buyer_maker=[True]
+    )
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.limit_price == pytest.approx(100.1)
+    assert order.queue_ahead_initial == 0.0
+    assert order.filled is True
+    assert order.t_entry_ms == 100
+    assert order.fill_price == pytest.approx(100.1)
+
+
+def test_price_improved_venda_melhora_um_tick_abaixo_do_ask() -> None:
+    book = _book([0], [100.0], [1.0], [100.3], [1.0])
+    trades = _trades(
+        times=[100], prices=[100.2], qtys=[0.05], is_buyer_maker=[False]
+    )
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=-1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.limit_price == pytest.approx(100.2)
+    assert order.filled is True
+    assert order.t_entry_ms == 100
+
+
+def test_price_improved_primeiro_trade_casado_ja_preenche_sem_acumular() -> None:
+    """Diferente de `_simulate_one_order`: aqui não há fila alheia para
+    esvaziar — o primeiro trade casado (qualquer quantidade) já preenche,
+    não precisa de cumsum cruzando um total."""
+    book = _book([0], [100.0], [1.0], [100.3], [1.0])
+    trades = _trades(
+        times=[100, 200],
+        prices=[100.1, 100.1],
+        qtys=[0.001, 5.0],  # o primeiro trade, minúsculo, já basta
+        is_buyer_maker=[True, True],
+    )
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 100  # primeiro trade casado, não o segundo
+
+
+def test_price_improved_sem_trade_casado_nofill() -> None:
+    book = _book([0], [100.0], [1.0], [100.3], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+    assert order.t_entry_ms is None
+    assert order.fill_price is None
+    assert order.markout_1m_bps is None
+
+
+def test_price_improved_spread_de_um_tick_cruzaria_e_nao_posta() -> None:
+    # bid=100.0, ask=100.1 (spread == 1 tick) -> compra melhorada seria
+    # 100.1 == ask -> cruzaria -> GTX rejeitaria -> sentinela -1.0.
+    book = _book([0], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.queue_ahead_initial == -1.0
+    assert order.filled is False
+    assert order.t_entry_ms is None
+
+
+def test_price_improved_spread_menor_que_um_tick_tambem_cruzaria() -> None:
+    # ask abaixo do que seria o novo bid melhorado -> cruza também.
+    book = _book([0], [100.0], [1.0], [100.05], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=-1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.queue_ahead_initial == -1.0
+
+
+def test_price_improved_markout_usa_o_mesmo_nucleo_compartilhado() -> None:
+    # Fill acontece em t_entry=100ms (primeiro trade casado, não em t_post=0)
+    # -> horizonte de 1m cai em 100 + 60_000 = 60_100ms; book precisa cobrir
+    # até lá (não só 60_000) para o markout não ficar None (item 6/docstring).
+    book = _book(
+        times=[0, 60_100],
+        bid_px=[100.0, 101.0],
+        bid_qty=[1.0, 1.0],
+        ask_px=[100.3, 101.3],
+        ask_qty=[1.0, 1.0],
+    )
+    trades = _trades(times=[100], prices=[100.1], qtys=[1.0], is_buyer_maker=[True])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 100
+    # mid em 60_100 = (101.0+101.3)/2 = 101.15 -> markout = (101.15-100.1)/100.1*10000
+    expected = (101.15 - 100.1) / 100.1 * 10_000
+    assert order.markout_1m_bps == pytest.approx(expected)
+
+
+def test_price_improved_trade_fora_da_janela_nao_conta() -> None:
+    book = _book([0], [100.0], [1.0], [100.3], [1.0])
+    trades = _trades(times=[1_000_000], prices=[100.1], qtys=[1.0], is_buyer_maker=[True])
+    order = fs._simulate_one_order_price_improved(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+
+
+# ============================================================================
+# simulate_window_price_improved — encaminha para simulate_window com o
+# núcleo trocado, sem duplicar IO/laço de orquestração.
+# ============================================================================
+
+
+def test_simulate_window_price_improved_encaminha_nucleo_correto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_simulate_window(*args: object, **kwargs: object) -> fs.SimulationRunResult:
+        captured.update(kwargs)
+        captured["args"] = args
+        return fs.SimulationRunResult(
+            orders=fs._empty_orders_frame(), n_skipped_no_book_state=0, n_days_no_data=0
+        )
+
+    monkeypatch.setattr(fs, "simulate_window", _fake_simulate_window)
+    fs.simulate_window_price_improved("BTCUSDT", date(2023, 6, 1), date(2023, 6, 2))
+
+    assert captured["_order_simulator"] is fs._simulate_one_order_price_improved
+    assert captured["args"] == ("BTCUSDT", date(2023, 6, 1), date(2023, 6, 2))
+
+
+# ============================================================================
 # _day_grid_ms
 # ============================================================================
 
