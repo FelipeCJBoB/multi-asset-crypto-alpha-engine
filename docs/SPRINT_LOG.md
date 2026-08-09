@@ -1753,15 +1753,109 @@ piso. Duplicaria o que a triagem do §5.4 já faz in-fold, custaria +1
 `n_lifetime`, e filtrar por IC marginal descartaria features que só
 valem em interação (o próprio raciocínio do Manager para não pedir).
 
-### E3 e FASE 3 (C1/C2/C3) — pendentes, não iniciados
+### FASE 2, E3 — Camada 2 implementada, ambientes de triagem esclarecidos (2026-08-09)
 
-E3 (Camada 2, §5.4) é um módulo novo de triagem de estabilidade in-fold
-sobre as 10 candidatas do E2 acima — ainda não existe. FASE 3 (C1/C2/C3)
-precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
+**Ambientes do E3 — por que 6, não 12** (resolvendo a inconsistência de
+vocabulário que eu mesmo levantei antes de codificar). O PRD usa "regime
+estrutural" para duas coisas de granularidade diferente: os 6 AMBIENTES
+DE TRIAGEM de §5.4/§5.7 (`RANGE = R1∪R2`, `TREND = R3∪R4`, × tercil de
+`cost_atr_ratio`) e os 4 REGIMES DE REPORTE R1..R4 de §5.11/Gate 4
+("Sharpe > 0 em CADA regime R1..R4"). `src/models/environments.py` (já
+existente, criado durante o Sprint 8, verificado linha a linha nesta
+rodada) já resolvia isso corretamente — o "6 células" do PRD estava
+certo, a citação paralela em R1..R4 é sobre outro eixo. Decisão do
+Manager: **manter 6, corrigir o PRD** (não mudar o código). Duas razões
+técnicas, não só terminológicas, para não ir a 12:
+- R1..R4 já É estrutura × vol (`trend_state × vol_state`), e
+  `cost_atr_ratio` é proxy de vol — cruzar de novo duplicaria o eixo de
+  volatilidade consigo mesmo.
+- `alpha_monotonic_consistency_min_envs` exige UNANIMIDADE (6 de 6,
+  `constants.yaml`). P(unanimidade sob ruído puro) = 2×0,5⁶ = **3,125%**
+  com 6 ambientes; com 12, 2×0,5¹² = **0,049%** — 64x mais restritivo. A
+  12 células a triagem provavelmente não aprovaria NADA, indistinguível
+  de "não há sinal" — perderíamos o experimento sem saber que perdemos.
+
+`rpi_regime` (PRE/POST, quebra em 2025-11-20) **saiu da fórmula de
+estabilidade, virou diagnóstico** (`stability.ic_by_rpi_regime`): a
+dimensão foi desenhada para o Grupo F (microestrutura), que já saiu de T1
+na v3.3 — nenhuma das 18 candidatas (T1-8 + E2-10) é microestrutura, a
+dimensão perdeu o alvo. Cruzar mesmo assim fragmentaria os ~8-9 meses de
+POST em fatias pequenas demais para Spearman estável. PRD corrigido
+(§5.4) com as duas decisões e a matemática acima.
+
+**Implementação** (`src/models/stability.py`, 9 testes unitários):
+`estabilidade = forca × consistencia²`, denominador FIXO 6 nos dois
+termos (mesma convenção já resolvida em `monotonic.py` para
+`min_consistent_envs` — um ambiente sem dado não deve inflar nem força
+nem consistência). Reusa `environments.assign_environments` e
+`monotonic.compute_ic_by_env` — nenhum motor novo, só a fórmula do §5.4
+em cima da mesma infraestrutura que §5.3 já usa e já tem teste. `limiar`
+declarado em `constants.yaml::alpha_stability_screen_limiar` (classe A,
+ASSUMED=0,02, sweep_range [0,01; 0,03], `review_by: sprint_11`).
+
+**Resultado — rodado sobre os 15 splits REAIS do CPCV × 2 lados (30
+células), não uma amostra** (`src/analysis/faixa2_e3_stability.py`,
+`experiments/faixa2_e3_stability.json`, ~99s):
+
+| feature | sobrevive (30) @0,01 | @0,02 | @0,03 |
+|---|---|---|---|
+| `C07_vol_pctile_expanding` (T1) | 30 | 30 | 30 |
+| `D03f_volume_z_expanding` (T1) | 30 | 30 | 30 |
+| `E02f_funding_z_expanding` (T1) | 23 | 13 | 0 |
+| `E17f_retail_vs_top_spread` (E2) | 21 | 11 | 5 |
+| `H01_exchange_netflow_z` (E2) | 17 | 11 | 5 |
+| `E12f_price_oi_divergence` (E2) | 16 | 0 | 0 |
+| `C06_vol_ratio_12_96` (T1) | 11 | 3 | 0 |
+| `K02_dow_sin` (E2) | 11 | 2 | 0 |
+| `E05f_time_to_funding_h` (E2) | 10 | 0 | 0 |
+| `K08_days_since_halving` (E2) | 7 | 3 | 1 |
+| `B01_rsi_14` / `D06f_taker_imbalance_z_48` (T1) | 7 | 0 | 0 |
+| `E11f_oi_change_1d` / `A08_upper_wick_ratio` (E2) | 5 | 0 | 0 |
+| `E10f_oi_change_z_48` (T1) | 1 | 0 | 0 |
+| `A05_ret_vol_norm_4` (T1) / `A12_gap_pct` / `D04f_volume_accel` (E2) | 0 | 0 | 0 |
+
+**Só 2 das 18 são robustas em TODA a vizinhança do sweep_range**:
+`C07_vol_pctile_expanding` e `D03f_volume_z_expanding` — 30/30 em
+0,01/0,02/0,03, sem exceção. Todo o resto é sensível ao limiar (ranking
+embaralha entre as 3 colunas) — exatamente o tipo de "pico estreito" que
+CLAUDE.md pede pra não tratar como resultado definitivo (varredura de
+sensibilidade ainda pendente, formal, antes do Gate 3).
+
+**Confirma a suspeita original do Manager, de um ângulo diferente**: das
+10 candidatas do E2 (selecionadas por ORTOGONALIDADE, não por
+estabilidade), só `H01_exchange_netflow_z` e `E17f_retail_vs_top_spread`
+mostram sobrevivência não-trivial (37% em @0,02); as outras 8 — incluindo
+as 3 determinísticas apontadas na correção acima (`E05f`, `K08`,
+`K02_dow_sin`) — ficam em 0-10%. Ortogonalidade e estabilidade são
+critérios genuinamente diferentes: o E2 mediu diversidade de eixo: o E3
+mede se o eixo tem sinal consistente. A maioria das 10 tem o primeiro sem
+o segundo. Do T1 atual (8), o quadro é parecido: só 2 de 8
+(`C07`/`D03f`) são robustas; `E02f_funding_z_expanding` é forte mas
+sensível ao limiar (23→13→0); os outros 5 T1 também caem a zero ou perto
+disso na vizinhança alta do sweep.
+
+**Diagnóstico PRE/POST** (`rpi_regime_diagnostic_pre_post`, pooled por
+lado, fora da fórmula): nenhuma das 18 candidatas mostra inversão de
+sinal PRE↔POST em nenhum dos dois lados — o IC muda de magnitude (ex.
+`K02_dow_sin` no long: -0,002 PRE → -0,056 POST) mas não de direção.
+Nenhum alarme, consistente com "nenhuma candidata é microestrutura".
+
+**Nada disto é produção.** `registry.yaml`/`T1_FEATURE_IDS` intocados —
+é ranking para decidir depois, junto com a varredura formal de
+`alpha_stability_screen_limiar` (classe A, ainda pendente) e a FASE 3.
+`n_lifetime` id 13, delta=1 (1 trial, mesmo raciocínio do E2). Contador:
+42 → **43**.
+
+### FASE 3 (C1/C2/C3) — pendente, não iniciada
+
+Precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
 2 recria a seleção do Alpha sem retreinar, C1/C2 (que comparam
 `directional_sharpe` do Alpha, não da população incondicional) exigem
 retreinar a Camada 1 pelo menos uma vez sob a config vencedora de
-E1+E2+E3, não estão prontos a partir só de E1/E2.
+E1+E2+E3. Decisão de desenho ainda em aberto para quando isso rodar: qual
+subconjunto exato das 18 (ou das 10+8) entra no retreino — o E3 rankeia,
+não decide sozinho; falta a varredura formal do `limiar` antes de
+qualquer corte virar produção.
 
 ## Índice rápido — onde encontrar cada número
 
@@ -1790,6 +1884,10 @@ E1+E2+E3, não estão prontos a partir só de E1/E2.
 | N_lifetime atual, auditado (pós-E2)? | 42 (era 41 — +1 pelo passe de pesquisa E2, contado como 1 trial por instrução do Manager, não 70; +0 pela correção de dado on-chain, confirmação não busca nova) | `audit/n_lifetime.yaml`, Faixa 2 E2 acima |
 | Dos 10 selecionados em E2, quantos são determinísticos por construção (função do relógio, zero informação de mercado)? | 3 — `E05f_time_to_funding_h`, `K08_days_since_halving`, `K02_dow_sin` — somam 2,831 de 9,347 de ganho (30,3%); leitura correta do ganho de MERCADO é ~6,52, não 9,35 | Faixa 2, "Correção do Manager pré-E3" acima |
 | O aviso de defasagem on-chain de 75 dias (H01/H02/H03/H06/H08) era latência real da fonte? | Não — CSV local desatualizado; CoinMetrics publica com ~1 dia de atraso real. Corrigido, seleção do E2 confirmada robusta (Δn_eff ruído) | Faixa 2, "Correção do Manager pré-E3" acima |
+| Quantas das 18 candidatas (T1-8 + E2-10) sobrevivem à triagem de estabilidade (§5.4) de forma robusta, não só num ponto do limiar? | Só 2 — `C07_vol_pctile_expanding` e `D03f_volume_z_expanding`, 30/30 células em toda a vizinhança 0,01-0,03 do sweep_range | Faixa 2, FASE 2 E3 acima |
+| Ambientes de triagem do E3 são 6 ou 12 (regime R1..R4)? | 6 (RANGE/TREND × tercil de custo) — "12" cruzaria vol com ela mesma e, com unanimidade exigida, ficaria 64x mais restritivo sob ruído (0,049% vs 3,125%); PRD corrigido para não confundir com o regime de reporte R1..R4 | Faixa 2, FASE 2 E3 acima |
+| `rpi_regime` (PRE/POST) entra na fórmula de estabilidade do E3? | Não — virou diagnóstico separado (`ic_by_rpi_regime`); perdeu o alvo depois que o Grupo F saiu de T1 na v3.3 | Faixa 2, FASE 2 E3 acima |
+| N_lifetime atual, auditado (pós-E3)? | 43 (era 42 — +1 pelo passe de pesquisa E3, 1 trial) | `audit/n_lifetime.yaml`, Faixa 2 E3 acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |

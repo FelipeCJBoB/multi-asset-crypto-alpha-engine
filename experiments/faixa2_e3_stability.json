@@ -1,0 +1,5528 @@
+{
+  "generated_at": "2026-08-09T22:31:03.754493+00:00",
+  "code_version": "1537923",
+  "task": "faixa2_e3_stability",
+  "candidates_18": [
+    "A05_ret_vol_norm_4",
+    "B01_rsi_14",
+    "C06_vol_ratio_12_96",
+    "C07_vol_pctile_expanding",
+    "D03f_volume_z_expanding",
+    "D06f_taker_imbalance_z_48",
+    "E02f_funding_z_expanding",
+    "E10f_oi_change_z_48",
+    "A12_gap_pct",
+    "E05f_time_to_funding_h",
+    "E12f_price_oi_divergence",
+    "K08_days_since_halving",
+    "H01_exchange_netflow_z",
+    "E11f_oi_change_1d",
+    "A08_upper_wick_ratio",
+    "K02_dow_sin",
+    "D04f_volume_accel",
+    "E17f_retail_vs_top_spread"
+  ],
+  "current_t1_8": [
+    "A05_ret_vol_norm_4",
+    "B01_rsi_14",
+    "C06_vol_ratio_12_96",
+    "C07_vol_pctile_expanding",
+    "D03f_volume_z_expanding",
+    "D06f_taker_imbalance_z_48",
+    "E02f_funding_z_expanding",
+    "E10f_oi_change_z_48"
+  ],
+  "e2_selected_beyond_t1": [
+    "A12_gap_pct",
+    "E05f_time_to_funding_h",
+    "E12f_price_oi_divergence",
+    "K08_days_since_halving",
+    "H01_exchange_netflow_z",
+    "E11f_oi_change_1d",
+    "A08_upper_wick_ratio",
+    "K02_dow_sin",
+    "D04f_volume_accel",
+    "E17f_retail_vs_top_spread"
+  ],
+  "stability_screen": {
+    "limiar": 0.02,
+    "limiar_sensitivity_note": "n_cells_survived (de 30) recomputado, SEM rerodar o screen, nos extremos de sweep_range declarado em constants.yaml -- classe A exige varredura ANTES do Gate 3 (CLAUDE.md); isto é a checagem de vizinhança imediata, não a varredura formal de Gate 3.",
+    "limiar_sensitivity": {
+      "0.010": {
+        "A05_ret_vol_norm_4": 0,
+        "B01_rsi_14": 7,
+        "C06_vol_ratio_12_96": 11,
+        "C07_vol_pctile_expanding": 30,
+        "D03f_volume_z_expanding": 30,
+        "D06f_taker_imbalance_z_48": 7,
+        "E02f_funding_z_expanding": 23,
+        "E10f_oi_change_z_48": 1,
+        "A12_gap_pct": 0,
+        "E05f_time_to_funding_h": 10,
+        "E12f_price_oi_divergence": 16,
+        "K08_days_since_halving": 7,
+        "H01_exchange_netflow_z": 17,
+        "E11f_oi_change_1d": 5,
+        "A08_upper_wick_ratio": 5,
+        "K02_dow_sin": 11,
+        "D04f_volume_accel": 0,
+        "E17f_retail_vs_top_spread": 21
+      },
+      "0.020": {
+        "A05_ret_vol_norm_4": 0,
+        "B01_rsi_14": 0,
+        "C06_vol_ratio_12_96": 3,
+        "C07_vol_pctile_expanding": 30,
+        "D03f_volume_z_expanding": 30,
+        "D06f_taker_imbalance_z_48": 0,
+        "E02f_funding_z_expanding": 13,
+        "E10f_oi_change_z_48": 0,
+        "A12_gap_pct": 0,
+        "E05f_time_to_funding_h": 0,
+        "E12f_price_oi_divergence": 0,
+        "K08_days_since_halving": 3,
+        "H01_exchange_netflow_z": 11,
+        "E11f_oi_change_1d": 0,
+        "A08_upper_wick_ratio": 0,
+        "K02_dow_sin": 2,
+        "D04f_volume_accel": 0,
+        "E17f_retail_vs_top_spread": 11
+      },
+      "0.030": {
+        "A05_ret_vol_norm_4": 0,
+        "B01_rsi_14": 0,
+        "C06_vol_ratio_12_96": 0,
+        "C07_vol_pctile_expanding": 30,
+        "D03f_volume_z_expanding": 30,
+        "D06f_taker_imbalance_z_48": 0,
+        "E02f_funding_z_expanding": 0,
+        "E10f_oi_change_z_48": 0,
+        "A12_gap_pct": 0,
+        "E05f_time_to_funding_h": 0,
+        "E12f_price_oi_divergence": 0,
+        "K08_days_since_halving": 1,
+        "H01_exchange_netflow_z": 5,
+        "E11f_oi_change_1d": 0,
+        "A08_upper_wick_ratio": 0,
+        "K02_dow_sin": 0,
+        "D04f_volume_accel": 0,
+        "E17f_retail_vs_top_spread": 5
+      }
+    },
+    "n_splits": 15,
+    "n_sides": 2,
+    "n_cells_per_feature": 30,
+    "summary_by_feature": {
+      "A05_ret_vol_norm_4": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.0036696145709326613,
+        "mean_consistencia": 0.6333333333333333,
+        "mean_forca": 0.008257354411125137,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.0027713305195764875
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.004567898622288835
+          }
+        }
+      },
+      "B01_rsi_14": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.007327567098581949,
+        "mean_consistencia": 0.638888888888889,
+        "mean_forca": 0.016678975915815478,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008751438808693408
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.00590369538847049
+          }
+        }
+      },
+      "C06_vol_ratio_12_96": {
+        "n_cells_total": 30,
+        "n_cells_survived": 3,
+        "survival_rate": 0.1,
+        "mean_estabilidade": 0.009290787327774648,
+        "mean_consistencia": 0.7388888888888889,
+        "mean_forca": 0.01554746626596846,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.006768310591657732
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 3,
+            "mean_estabilidade": 0.011813264063891568
+          }
+        }
+      },
+      "C07_vol_pctile_expanding": {
+        "n_cells_total": 30,
+        "n_cells_survived": 30,
+        "survival_rate": 1.0,
+        "mean_estabilidade": 0.08976800318387275,
+        "mean_consistencia": 1.0,
+        "mean_forca": 0.08976800318387275,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 15,
+            "mean_estabilidade": 0.09658760663735515
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 15,
+            "mean_estabilidade": 0.08294839973039034
+          }
+        }
+      },
+      "D03f_volume_z_expanding": {
+        "n_cells_total": 30,
+        "n_cells_survived": 30,
+        "survival_rate": 1.0,
+        "mean_estabilidade": 0.0448315092262943,
+        "mean_consistencia": 1.0,
+        "mean_forca": 0.0448315092262943,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 15,
+            "mean_estabilidade": 0.04062552370280391
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 15,
+            "mean_estabilidade": 0.0490374947497847
+          }
+        }
+      },
+      "D06f_taker_imbalance_z_48": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.007937499521505227,
+        "mean_consistencia": 0.8777777777777779,
+        "mean_forca": 0.01022725650258028,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008804826898113686
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.007070172144896769
+          }
+        }
+      },
+      "E02f_funding_z_expanding": {
+        "n_cells_total": 30,
+        "n_cells_survived": 13,
+        "survival_rate": 0.43333333333333335,
+        "mean_estabilidade": 0.01696181738631275,
+        "mean_consistencia": 0.8277777777777777,
+        "mean_forca": 0.02346237915886564,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 10,
+            "mean_estabilidade": 0.02117221338853437
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 3,
+            "mean_estabilidade": 0.01275142138409113
+          }
+        }
+      },
+      "E10f_oi_change_z_48": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.004686089644274055,
+        "mean_consistencia": 0.7222222222222222,
+        "mean_forca": 0.008361337174305879,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.006325614293820889
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.0030465649947272228
+          }
+        }
+      },
+      "A12_gap_pct": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.0036264659186543272,
+        "mean_consistencia": 0.7055555555555556,
+        "mean_forca": 0.007001317370905756,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.0032166728982691703
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.004036258939039484
+          }
+        }
+      },
+      "E05f_time_to_funding_h": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.009042559768227126,
+        "mean_consistencia": 0.7444444444444444,
+        "mean_forca": 0.016477768181341754,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.009613460924479433
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.00847165861197482
+          }
+        }
+      },
+      "E12f_price_oi_divergence": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.00951854431923461,
+        "mean_consistencia": 0.7833333333333333,
+        "mean_forca": 0.014648968956653007,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.010356162148393336
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008680926490075881
+          }
+        }
+      },
+      "K08_days_since_halving": {
+        "n_cells_total": 30,
+        "n_cells_survived": 3,
+        "survival_rate": 0.1,
+        "mean_estabilidade": 0.008888165853025648,
+        "mean_consistencia": 0.7055555555555556,
+        "mean_forca": 0.015042144212735309,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 3,
+            "mean_estabilidade": 0.011990874829948097
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.005785456876103199
+          }
+        }
+      },
+      "H01_exchange_netflow_z": {
+        "n_cells_total": 30,
+        "n_cells_survived": 11,
+        "survival_rate": 0.36666666666666664,
+        "mean_estabilidade": 0.015696276482016675,
+        "mean_consistencia": 0.7611111111111111,
+        "mean_forca": 0.023912299193990884,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 5,
+            "mean_estabilidade": 0.014837047316590376
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 6,
+            "mean_estabilidade": 0.016555505647442972
+          }
+        }
+      },
+      "E11f_oi_change_1d": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.007375889708652664,
+        "mean_consistencia": 0.6722222222222223,
+        "mean_forca": 0.01562640504743521,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008086355179711548
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.006665424237593783
+          }
+        }
+      },
+      "A08_upper_wick_ratio": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.006773416188137679,
+        "mean_consistencia": 0.861111111111111,
+        "mean_forca": 0.00881021184170395,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.004741736406000977
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008805095970274382
+          }
+        }
+      },
+      "K02_dow_sin": {
+        "n_cells_total": 30,
+        "n_cells_survived": 2,
+        "survival_rate": 0.06666666666666667,
+        "mean_estabilidade": 0.00986407506487449,
+        "mean_consistencia": 0.6833333333333333,
+        "mean_forca": 0.019972949858372023,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.007897784550739091
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 2,
+            "mean_estabilidade": 0.011830365579009886
+          }
+        }
+      },
+      "D04f_volume_accel": {
+        "n_cells_total": 30,
+        "n_cells_survived": 0,
+        "survival_rate": 0.0,
+        "mean_estabilidade": 0.0017709024537501017,
+        "mean_consistencia": 0.5777777777777777,
+        "mean_forca": 0.0048864358032629064,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.0017027786054283716
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.0018390263020718319
+          }
+        }
+      },
+      "E17f_retail_vs_top_spread": {
+        "n_cells_total": 30,
+        "n_cells_survived": 11,
+        "survival_rate": 0.36666666666666664,
+        "mean_estabilidade": 0.016668011818398328,
+        "mean_consistencia": 0.7222222222222222,
+        "mean_forca": 0.028412515570974094,
+        "by_side": {
+          "1": {
+            "n_cells": 15,
+            "n_survived": 11,
+            "mean_estabilidade": 0.02463294182558422
+          },
+          "-1": {
+            "n_cells": 15,
+            "n_survived": 0,
+            "mean_estabilidade": 0.008703081811212437
+          }
+        }
+      }
+    },
+    "cells_detail": {
+      "A05_ret_vol_norm_4": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.007230398502311057,
+          "consistencia": 0.5,
+          "estabilidade": 0.0018075996255777643,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009619429748789744,
+          "consistencia": 0.5,
+          "estabilidade": 0.002404857437197436,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008626718507604408,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005990776741391951,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01052233721433473,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007307178621065786,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.007080710604839525,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.004917160142249671,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009865276452133956,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006850886425093026,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008395632862653225,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005830300599064741,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013438856284620444,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009332539086541976,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006034056366879074,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002681802829724033,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006678488046307152,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.004637838921046634,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009812411620851128,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00436107183148939,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011925539553590173,
+          "consistencia": 0.5,
+          "estabilidade": 0.002981384888397543,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005896832087797701,
+          "consistencia": 0.5,
+          "estabilidade": 0.0014742080219494252,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007420164217415891,
+          "consistencia": 0.5,
+          "estabilidade": 0.0018550410543539727,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006368227707089078,
+          "consistencia": 0.5,
+          "estabilidade": 0.0015920569267722695,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010182744414738506,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004525664184328225,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.003676458178742705,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0004084953531936339,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005505330740998218,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0024468136626658744,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005222929404897128,
+          "consistencia": 0.5,
+          "estabilidade": 0.001305732351224282,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007936089872581771,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003527151054480787,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008808995855489657,
+          "consistencia": 0.5,
+          "estabilidade": 0.002202248963872414,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013406518979244726,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005958452879664323,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0033639190055833484,
+          "consistencia": 0.5,
+          "estabilidade": 0.0008409797513958371,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007352112119316162,
+          "consistencia": 0.5,
+          "estabilidade": 0.0018380280298290405,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00821013923559776,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003648950771376782,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01157287658082276,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.008036719847793585,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005205548614782161,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0023135771621254045,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009705315132722043,
+          "consistencia": 0.5,
+          "estabilidade": 0.0024263287831805106,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008779986888958856,
+          "consistencia": 0.5,
+          "estabilidade": 0.002194996722239714,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009876587532061054,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004389594458693802,
+          "survives": false
+        }
+      ],
+      "B01_rsi_14": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018230278554471017,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008102346024209341,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01036439790040058,
+          "consistencia": 0.5,
+          "estabilidade": 0.002591099475100145,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019250485152584148,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008555771178926287,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015025972186814944,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006678209860806641,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012969780543225999,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005764346908100444,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006979911907557917,
+          "consistencia": 0.5,
+          "estabilidade": 0.0017449779768894792,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015301411892991055,
+          "consistencia": 0.5,
+          "estabilidade": 0.003825352973247764,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012671703205032784,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005631868091125682,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0182889503343301,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008128422370813378,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01212964836900103,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0053909548306671235,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020135272773521954,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013982828314945803,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012996998028928862,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005776443568412827,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01326882623010948,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00921446265979825,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01115890058809256,
+          "consistencia": 0.5,
+          "estabilidade": 0.00278972514702314,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02000769376163952,
+          "consistencia": 0.5,
+          "estabilidade": 0.00500192344040988,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013713517070578959,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006094896475812871,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01880234907600817,
+          "consistencia": 0.5,
+          "estabilidade": 0.004700587269002043,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014108900277663582,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006270622345628259,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018015708532956996,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01251090870344236,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01534892320579081,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006821743647018138,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02157128748116348,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0023968097201292754,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020743881413228565,
+          "consistencia": 0.5,
+          "estabilidade": 0.005185970353307141,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.022875403055832258,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01588569656655018,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01927209821943873,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013383401541276896,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.016635650082556127,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011552534779552868,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013655987536056576,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0015173319484507305,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.021447194577519316,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014893885123277304,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02043979938965701,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014194305131706258,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.027022824391983752,
+          "consistencia": 0.5,
+          "estabilidade": 0.006755706097995938,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.017935521735328072,
+          "consistencia": 0.5,
+          "estabilidade": 0.004483880433832018,
+          "survives": false
+        }
+      ],
+      "C06_vol_ratio_12_96": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020899188515697314,
+          "consistencia": 0.5,
+          "estabilidade": 0.0052247971289243285,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01978606545877487,
+          "consistencia": 0.5,
+          "estabilidade": 0.004946516364693718,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015938039254631064,
+          "consistencia": 1.0,
+          "estabilidade": 0.015938039254631064,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009571885751043247,
+          "consistencia": 0.5,
+          "estabilidade": 0.002392971437760812,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.014363205004224236,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006383646668544104,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016760685490261596,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011639364923792776,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015150890176852247,
+          "consistencia": 0.5,
+          "estabilidade": 0.0037877225442130616,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01911219592687047,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01327235828254894,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012820957773687644,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005698203454972286,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01907793395790508,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013248565248545197,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020419006876641166,
+          "consistencia": 0.5,
+          "estabilidade": 0.0051047517191602915,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.019282261226656622,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008569893878514053,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006770340851996935,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0030090403786653046,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016408623490017957,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011394877423623584,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.017074066098980645,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01185699034651434,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02615535740557665,
+          "consistencia": 1.0,
+          "estabilidade": 0.02615535740557665,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008492396806921656,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005897497782584484,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020411720992372224,
+          "consistencia": 1.0,
+          "estabilidade": 0.020411720992372224,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0119376581924531,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005305625863312489,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008092194231179252,
+          "consistencia": 0.5,
+          "estabilidade": 0.002023048557794813,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.014875708565304638,
+          "consistencia": 0.5,
+          "estabilidade": 0.0037189271413261595,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0155584910419858,
+          "consistencia": 1.0,
+          "estabilidade": 0.0155584910419858,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01248851327992555,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005550450346633577,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012178472130344994,
+          "consistencia": 1.0,
+          "estabilidade": 0.012178472130344994,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013875500131752004,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009635763980383337,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022046634563580397,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009798504250480176,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010956454634864672,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004869535393273187,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011822113499262746,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005254272666338998,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013742880295288267,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009543666871727963,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020354546354000764,
+          "consistencia": 1.0,
+          "estabilidade": 0.020354546354000764,
+          "survives": true
+        }
+      ],
+      "C07_vol_pctile_expanding": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.09037638633221791,
+          "consistencia": 1.0,
+          "estabilidade": 0.09037638633221791,
+          "survives": true
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.07886314739510038,
+          "consistencia": 1.0,
+          "estabilidade": 0.07886314739510038,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.08965071936067583,
+          "consistencia": 1.0,
+          "estabilidade": 0.08965071936067583,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.08397123590466847,
+          "consistencia": 1.0,
+          "estabilidade": 0.08397123590466847,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.09446594576773491,
+          "consistencia": 1.0,
+          "estabilidade": 0.09446594576773491,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.07162771584945062,
+          "consistencia": 1.0,
+          "estabilidade": 0.07162771584945062,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.09757080804301234,
+          "consistencia": 1.0,
+          "estabilidade": 0.09757080804301234,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.07400318636601926,
+          "consistencia": 1.0,
+          "estabilidade": 0.07400318636601926,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.08213504812660773,
+          "consistencia": 1.0,
+          "estabilidade": 0.08213504812660773,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.09258652993828227,
+          "consistencia": 1.0,
+          "estabilidade": 0.09258652993828227,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.10207650696437788,
+          "consistencia": 1.0,
+          "estabilidade": 0.10207650696437788,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.08827473075960433,
+          "consistencia": 1.0,
+          "estabilidade": 0.08827473075960433,
+          "survives": true
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.10309578945591656,
+          "consistencia": 1.0,
+          "estabilidade": 0.10309578945591656,
+          "survives": true
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0721095119940989,
+          "consistencia": 1.0,
+          "estabilidade": 0.0721095119940989,
+          "survives": true
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.10347925640637727,
+          "consistencia": 1.0,
+          "estabilidade": 0.10347925640637727,
+          "survives": true
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.07610081699471523,
+          "consistencia": 1.0,
+          "estabilidade": 0.07610081699471523,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.08953714393486699,
+          "consistencia": 1.0,
+          "estabilidade": 0.08953714393486699,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.09233385219007435,
+          "consistencia": 1.0,
+          "estabilidade": 0.09233385219007435,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.1004391127521338,
+          "consistencia": 1.0,
+          "estabilidade": 0.1004391127521338,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0794986087126919,
+          "consistencia": 1.0,
+          "estabilidade": 0.0794986087126919,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.10363731069231379,
+          "consistencia": 1.0,
+          "estabilidade": 0.10363731069231379,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.08141519166806506,
+          "consistencia": 1.0,
+          "estabilidade": 0.08141519166806506,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.08705107238820446,
+          "consistencia": 1.0,
+          "estabilidade": 0.08705107238820446,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.10053278337379706,
+          "consistencia": 1.0,
+          "estabilidade": 0.10053278337379706,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.11052056931149307,
+          "consistencia": 1.0,
+          "estabilidade": 0.11052056931149307,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.07060227539249513,
+          "consistencia": 1.0,
+          "estabilidade": 0.07060227539249513,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.09656167920609454,
+          "consistencia": 1.0,
+          "estabilidade": 0.09656167920609454,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.08657818983906522,
+          "consistencia": 1.0,
+          "estabilidade": 0.08657818983906522,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.09821675081830017,
+          "consistencia": 1.0,
+          "estabilidade": 0.09821675081830017,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.09572821957772694,
+          "consistencia": 1.0,
+          "estabilidade": 0.09572821957772694,
+          "survives": true
+        }
+      ],
+      "D03f_volume_z_expanding": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04165914387604374,
+          "consistencia": 1.0,
+          "estabilidade": 0.04165914387604374,
+          "survives": true
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.03921760836294106,
+          "consistencia": 1.0,
+          "estabilidade": 0.03921760836294106,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04465572651618197,
+          "consistencia": 1.0,
+          "estabilidade": 0.04465572651618197,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.050020945380336655,
+          "consistencia": 1.0,
+          "estabilidade": 0.050020945380336655,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04373618242104447,
+          "consistencia": 1.0,
+          "estabilidade": 0.04373618242104447,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.046780239729528876,
+          "consistencia": 1.0,
+          "estabilidade": 0.046780239729528876,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03679347504438793,
+          "consistencia": 1.0,
+          "estabilidade": 0.03679347504438793,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.045337748363393694,
+          "consistencia": 1.0,
+          "estabilidade": 0.045337748363393694,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04146921152640062,
+          "consistencia": 1.0,
+          "estabilidade": 0.04146921152640062,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.03953166443751036,
+          "consistencia": 1.0,
+          "estabilidade": 0.03953166443751036,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04109765414083059,
+          "consistencia": 1.0,
+          "estabilidade": 0.04109765414083059,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.05524526327982703,
+          "consistencia": 1.0,
+          "estabilidade": 0.05524526327982703,
+          "survives": true
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04219006941618577,
+          "consistencia": 1.0,
+          "estabilidade": 0.04219006941618577,
+          "survives": true
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.05259763295251798,
+          "consistencia": 1.0,
+          "estabilidade": 0.05259763295251798,
+          "survives": true
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03519832676681187,
+          "consistencia": 1.0,
+          "estabilidade": 0.03519832676681187,
+          "survives": true
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.05207689528127584,
+          "consistencia": 1.0,
+          "estabilidade": 0.05207689528127584,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04182542960994675,
+          "consistencia": 1.0,
+          "estabilidade": 0.04182542960994675,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.04259081509514378,
+          "consistencia": 1.0,
+          "estabilidade": 0.04259081509514378,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04729342260272199,
+          "consistencia": 1.0,
+          "estabilidade": 0.04729342260272199,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.06114301619752228,
+          "consistencia": 1.0,
+          "estabilidade": 0.06114301619752228,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0384169201763058,
+          "consistencia": 1.0,
+          "estabilidade": 0.0384169201763058,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0564822165532807,
+          "consistencia": 1.0,
+          "estabilidade": 0.0564822165532807,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04217766778362717,
+          "consistencia": 1.0,
+          "estabilidade": 0.04217766778362717,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.05200464669793301,
+          "consistencia": 1.0,
+          "estabilidade": 0.05200464669793301,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0356017821234213,
+          "consistencia": 1.0,
+          "estabilidade": 0.0356017821234213,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.05397008780732759,
+          "consistencia": 1.0,
+          "estabilidade": 0.05397008780732759,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04171431034244639,
+          "consistencia": 1.0,
+          "estabilidade": 0.04171431034244639,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.04547279339523807,
+          "consistencia": 1.0,
+          "estabilidade": 0.04547279339523807,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03555353319570221,
+          "consistencia": 1.0,
+          "estabilidade": 0.03555353319570221,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.04309084771299354,
+          "consistencia": 1.0,
+          "estabilidade": 0.04309084771299354,
+          "survives": true
+        }
+      ],
+      "D06f_taker_imbalance_z_48": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00889332173836582,
+          "consistencia": 1.0,
+          "estabilidade": 0.00889332173836582,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008703311063128265,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006043966016061296,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010697837656296628,
+          "consistencia": 1.0,
+          "estabilidade": 0.010697837656296628,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009645690909688361,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006698396465061363,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008815309626685796,
+          "consistencia": 1.0,
+          "estabilidade": 0.008815309626685796,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009562314439755268,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006640496138718937,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010164813142210091,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0070588980154236754,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009837395887666885,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006831524921990893,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009739686148177046,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006763670936234061,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009950607335988544,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006910143983325379,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009267689633099636,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006435895578541415,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007833903090640602,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00544021047961153,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.007838743220065185,
+          "consistencia": 1.0,
+          "estabilidade": 0.007838743220065185,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006728815711530985,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0046727886885631845,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010202716308656332,
+          "consistencia": 1.0,
+          "estabilidade": 0.010202716308656332,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010885790807346703,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004838129247709645,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00937116792260237,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006507755501807201,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008504867080239327,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005906157694610645,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011142864483449248,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007738100335728646,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012021143303841823,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00834801618322349,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0112809018926399,
+          "consistencia": 1.0,
+          "estabilidade": 0.0112809018926399,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013527193133852639,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00601208583726784,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011376516748032766,
+          "consistencia": 1.0,
+          "estabilidade": 0.011376516748032766,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0139973467870623,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00972037971323771,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010066028242085074,
+          "consistencia": 1.0,
+          "estabilidade": 0.010066028242085074,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011352133066298948,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00788342574048538,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009892941763864394,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006870098447128052,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011281466412360266,
+          "consistencia": 1.0,
+          "estabilidade": 0.011281466412360266,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011526609224014725,
+          "consistencia": 1.0,
+          "estabilidade": 0.011526609224014725,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012708568297762513,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.008825394651223967,
+          "survives": false
+        }
+      ],
+      "E02f_funding_z_expanding": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010070414377019271,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006993343317374495,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011260931559914528,
+          "consistencia": 0.5,
+          "estabilidade": 0.002815232889978632,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023751080703677166,
+          "consistencia": 1.0,
+          "estabilidade": 0.023751080703677166,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01896255567802734,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008427802523567706,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023480053109300094,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.016305592437013957,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.023988136332514894,
+          "consistencia": 1.0,
+          "estabilidade": 0.023988136332514894,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020717032030387137,
+          "consistencia": 1.0,
+          "estabilidade": 0.020717032030387137,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02014288612568141,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013988115365056536,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02475328724446094,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.017189782808653433,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02140134334347392,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009511708152655075,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.025703927705126934,
+          "consistencia": 1.0,
+          "estabilidade": 0.025703927705126934,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013764840050632138,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009558916701827874,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020544575857668345,
+          "consistencia": 1.0,
+          "estabilidade": 0.020544575857668345,
+          "survives": true
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012075004686748386,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005366668749665949,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.017667847019488894,
+          "consistencia": 1.0,
+          "estabilidade": 0.017667847019488894,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011682627944001477,
+          "consistencia": 0.5,
+          "estabilidade": 0.0029206569860003692,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02588596333088615,
+          "consistencia": 1.0,
+          "estabilidade": 0.02588596333088615,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016716317325347972,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011608553698158315,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03175801637920108,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.022054178041111865,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.03163855707668,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.02197122019213889,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.028999229267615476,
+          "consistencia": 1.0,
+          "estabilidade": 0.028999229267615476,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02600010817579709,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01805563067763687,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03470703302890941,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.02410210627007598,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.03200242505568201,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.022223906288668063,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.030144657682712656,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.020933790057439346,
+          "survives": true
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.033643401360951876,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.014952622827089722,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02982671962775028,
+          "consistencia": 1.0,
+          "estabilidade": 0.02982671962775028,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.028947637110345103,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.012865616493486711,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.024347566589394368,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01690803235374609,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.029287198986572966,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.013016532882921317,
+          "survives": false
+        }
+      ],
+      "E10f_oi_change_z_48": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005668372630959237,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.003936369882610581,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006573940364158812,
+          "consistencia": 0.5,
+          "estabilidade": 0.001643485091039703,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008581853565726456,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005959620531754484,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010014764279881645,
+          "consistencia": 0.5,
+          "estabilidade": 0.002503691069970411,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008465198274805508,
+          "consistencia": 1.0,
+          "estabilidade": 0.008465198274805508,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006439629430671507,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002862057524742892,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006915273945907863,
+          "consistencia": 0.5,
+          "estabilidade": 0.0017288184864769657,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007014019203634026,
+          "consistencia": 0.5,
+          "estabilidade": 0.0017535048009085065,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008860673978561757,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006153245818445665,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008861439251336546,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003938417445038465,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006853859905827426,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00475962493460238,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006318603878364253,
+          "consistencia": 0.5,
+          "estabilidade": 0.0015796509695910632,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009023785583779859,
+          "consistencia": 1.0,
+          "estabilidade": 0.009023785583779859,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007566487354824035,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003362883268810682,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0065731233843667955,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0045646690169213865,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009304370480794593,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00646136838944069,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009130312070966864,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004057916475985273,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009531327055671798,
+          "consistencia": 0.5,
+          "estabilidade": 0.0023828317639179495,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009671047501318489,
+          "consistencia": 1.0,
+          "estabilidade": 0.009671047501318489,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0062438070846244755,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.004335977142100331,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008838501227706881,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006137848074796446,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007373626800059106,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0032771674666929357,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010615783187595087,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007372071658052145,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00841603737297855,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0037404610546571335,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012580158242860908,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.008736221001986743,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00935571912790237,
+          "consistencia": 0.5,
+          "estabilidade": 0.0023389297819755924,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01011488843803323,
+          "consistencia": 1.0,
+          "estabilidade": 0.01011488843803323,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007193808822412338,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0031972483655165946,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009456499637424393,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004202888727744174,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009283203146021555,
+          "consistencia": 0.5,
+          "estabilidade": 0.0023208007865053886,
+          "survives": false
+        }
+      ],
+      "A12_gap_pct": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.004009287982719236,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0017819057700974382,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008002786425733514,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005557490573426052,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009678124640722202,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0067209198893904195,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007857833809038716,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003492370581794985,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008011789623066949,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005563742793796493,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0065184442461767205,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002897086331634098,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.007937317102814595,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00551202576584347,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00832128157864498,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003698347368286658,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008064993881762735,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005600690195668567,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010741724523641834,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0047740997882852595,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00473190563683101,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002103069171924893,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006485919654797753,
+          "consistencia": 1.0,
+          "estabilidade": 0.006485919654797753,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005438127714096799,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002416945650709688,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005289317295200974,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0023508076867559883,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005777693871909249,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0025678639430707774,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007621091988995848,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005292424992358228,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005651464630244184,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002511762057886304,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005608628224694478,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0038948807115933883,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005710411818702684,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002537960808312304,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006642778408832589,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0029523459594811502,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006395909730808588,
+          "consistencia": 0.5,
+          "estabilidade": 0.001598977432702147,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007694686272843057,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0034198605657080254,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006165021398188634,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0027400095103060594,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008799914397644609,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003911073065619826,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.007677245474626984,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0034121090998342147,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007308928989706306,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.005075645131740491,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006871758480708625,
+          "consistencia": 0.5,
+          "estabilidade": 0.0017179396201771563,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007716394161762109,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003429508516338715,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005856687057270486,
+          "consistencia": 0.5,
+          "estabilidade": 0.0014641717643176216,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007452052104986209,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003312023157771648,
+          "survives": false
+        }
+      ],
+      "E05f_time_to_funding_h": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012420117493484893,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.008625081592697844,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01279901691777046,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005688451963453537,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01587178648817845,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011022073950123926,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015288265322299058,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010616850918263235,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013131100746523254,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009118819962863373,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011207189637528129,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0049809731722347235,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01693827446792147,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007528121985742875,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01798263549171618,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.012487941313691792,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.014974321648934655,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00665525406619318,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013642141546959535,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00947370940761079,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01676276957003297,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011640812201411785,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012466753053112635,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0055407791347167265,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011920070678699822,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00827782686020821,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010073535411793682,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006995510702634503,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018148473950824154,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.012603106910294553,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016423453627107547,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011405176129935798,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.016786163572320236,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011657058036333498,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014123811906171768,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009808202712619285,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018225880143151664,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008100391174734073,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011446527091156164,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005087345373847183,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023809283267884177,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010581903674615189,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020854112967650607,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009268494652289157,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019614667557420872,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008717630025520387,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013718543376250029,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009526766233506966,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.022501223125198908,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010000543611199514,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01902552838812711,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00845579039472316,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018741105168155713,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008329380074735871,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.018648297767787456,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008288132341238869,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02552379691616377,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.011343909740517232,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.021264198139927273,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009450754728856566,
+          "survives": false
+        }
+      ],
+      "E12f_price_oi_divergence": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011779280384924111,
+          "consistencia": 1.0,
+          "estabilidade": 0.011779280384924111,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015571666812694916,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006920740805642185,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013725523385750804,
+          "consistencia": 1.0,
+          "estabilidade": 0.013725523385750804,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015410849848807487,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010701979061671868,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.011883835525100037,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00825266355909725,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014447045151107438,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01003267024382461,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019371050548588665,
+          "consistencia": 1.0,
+          "estabilidade": 0.019371050548588665,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016086472008598394,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01117116111708222,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012461297888343338,
+          "consistencia": 1.0,
+          "estabilidade": 0.012461297888343338,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013162970638576585,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005850209172700704,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01037102814760864,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004609345843381617,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015425534008612763,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006855792892716783,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0096682926052003,
+          "consistencia": 0.5,
+          "estabilidade": 0.002417073151300075,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015385255197891792,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006837891199063018,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013952357226349117,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009689136962742444,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016079345110756142,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007146375604780507,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005761719096011822,
+          "consistencia": 0.5,
+          "estabilidade": 0.0014404297740029555,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009745767425314699,
+          "consistencia": 0.5,
+          "estabilidade": 0.0024364418563286748,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013940202913886542,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009680696467976766,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015702303047715912,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010904377116469384,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020425366041539744,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01418428197329149,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016894626481028827,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011732379500714464,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013270126437210657,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00921536558139629,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014928365198783586,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010366920276933048,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018875174263302926,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013107759905071478,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015084399319954207,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010475277305523757,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01628079002490083,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011306104183958911,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01562283964606617,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010849194198657064,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02030748856714635,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014102422616073855,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.017848095747817365,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00793248699902994,
+          "survives": false
+        }
+      ],
+      "K08_days_since_halving": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.016918980145357736,
+          "consistencia": 0.5,
+          "estabilidade": 0.004229745036339434,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009391689744104963,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004174084330713317,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018066420896129896,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.012546125622312429,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010166014465568167,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00451822865136363,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009661992725008575,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006709717170144845,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015183023742638012,
+          "consistencia": 1.0,
+          "estabilidade": 0.015183023742638012,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.041267999148199695,
+          "consistencia": 1.0,
+          "estabilidade": 0.041267999148199695,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01588967120448349,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0017655190227203878,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01856613196896811,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0128931472006723,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014666500056481247,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010185069483667535,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.014102153875723951,
+          "consistencia": 0.5,
+          "estabilidade": 0.0035255384689309877,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012378734183862055,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005501659637272024,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010300452210304862,
+          "consistencia": 0.5,
+          "estabilidade": 0.0025751130525762155,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010247486624062508,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004554438499583337,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018717578340055437,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008318923706691305,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013936450681958016,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006193978080870229,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013987644728240647,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0062167309903291765,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012617385906714516,
+          "consistencia": 0.5,
+          "estabilidade": 0.003154346476678629,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0074428988861755105,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003307955060522449,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009475858354688461,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00421149260208376,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0239421324855726,
+          "consistencia": 1.0,
+          "estabilidade": 0.0239421324855726,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008703754881559457,
+          "consistencia": 0.5,
+          "estabilidade": 0.002175938720389864,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.013061634565217688,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00907057955917895,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012311177050531495,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005471634244680664,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018771989073766784,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008343106255007459,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012477759768247118,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.008665110950171612,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01342055179726067,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009319827636986577,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007273801698998549,
+          "consistencia": 0.5,
+          "estabilidade": 0.0018184504247496373,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02759648105575704,
+          "consistencia": 1.0,
+          "estabilidade": 0.02759648105575704,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020719976116422036,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009208878273965349,
+          "survives": false
+        }
+      ],
+      "H01_exchange_netflow_z": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0329417502436066,
+          "consistencia": 1.0,
+          "estabilidade": 0.0329417502436066,
+          "survives": true
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.025039533440998223,
+          "consistencia": 1.0,
+          "estabilidade": 0.025039533440998223,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.031824173820570595,
+          "consistencia": 1.0,
+          "estabilidade": 0.031824173820570595,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.030160304631869098,
+          "consistencia": 1.0,
+          "estabilidade": 0.030160304631869098,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.029024052788979977,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.02015559221456943,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02674907879302889,
+          "consistencia": 1.0,
+          "estabilidade": 0.02674907879302889,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.03422423141448891,
+          "consistencia": 1.0,
+          "estabilidade": 0.03422423141448891,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.031546597875114414,
+          "consistencia": 1.0,
+          "estabilidade": 0.031546597875114414,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02741668584725175,
+          "consistencia": 1.0,
+          "estabilidade": 0.02741668584725175,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.025829163767104032,
+          "consistencia": 1.0,
+          "estabilidade": 0.025829163767104032,
+          "survives": true
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020720777646637396,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00920923450961662,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0157093605085363,
+          "consistencia": 1.0,
+          "estabilidade": 0.0157093605085363,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02400982318410033,
+          "consistencia": 0.5,
+          "estabilidade": 0.006002455796025082,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01604853544884052,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007132682421706897,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02406471725143983,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010695429889528813,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01693674617463063,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.011761629287937938,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020631599663884247,
+          "consistencia": 0.5,
+          "estabilidade": 0.005157899915971062,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.012993772673108557,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009023453245214277,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.028707723298446664,
+          "consistencia": 0.5,
+          "estabilidade": 0.007176930824611666,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02303683679018383,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.01023859412897059,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0232538656805775,
+          "consistencia": 0.5,
+          "estabilidade": 0.005813466420144375,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.023117781752771658,
+          "consistencia": 1.0,
+          "estabilidade": 0.023117781752771658,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.022632377663043237,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.002514708629227026,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.021524100904065663,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009566267068473628,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02301871142020979,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01598521626403458,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01796749176073955,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007985551893662022,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02300726185719378,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0025563624285770865,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022039662870828088,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009795405720368038,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.024483535943922104,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010881571530632047,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.018708720703554307,
+          "consistencia": 0.5,
+          "estabilidade": 0.004677180175888577,
+          "survives": false
+        }
+      ],
+      "E11f_oi_change_1d": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015815280065938978,
+          "consistencia": 0.5,
+          "estabilidade": 0.003953820016484744,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01556488395985437,
+          "consistencia": 0.5,
+          "estabilidade": 0.0038912209899635924,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015705601650723943,
+          "consistencia": 0.5,
+          "estabilidade": 0.003926400412680986,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011686361405130186,
+          "consistencia": 0.5,
+          "estabilidade": 0.0029215903512825464,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009505202079695727,
+          "consistencia": 0.5,
+          "estabilidade": 0.0023763005199239316,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011384232927616061,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0050596590789404716,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01180013642403265,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.005244505077347844,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00888662015114533,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006171263993850925,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009127568362560439,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.006338589140666972,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.017225424137765396,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007655744061229064,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.020345530670941716,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009042458075974095,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01704103068426924,
+          "consistencia": 0.5,
+          "estabilidade": 0.00426025767106731,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019445854116406175,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008642601829513855,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014960256939478958,
+          "consistencia": 0.5,
+          "estabilidade": 0.0037400642348697395,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023195021691742517,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01610765395259897,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013353548641691445,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.009273297667841282,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018428337686129583,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.00819037230494648,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01698125784144958,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007547225707310924,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01478631321685713,
+          "consistencia": 0.5,
+          "estabilidade": 0.0036965783042142825,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01088089519779221,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004835953421240982,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02052172954732553,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009120768687700235,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.009690440871265952,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004306862609451534,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010293286174259569,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007148115398791368,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013968055510713763,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006208024671428339,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01955762338881511,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008692277061695605,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015483681040382932,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010752556278043704,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019946304044127058,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013851600030643792,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022304261702007746,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009913005200892331,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.021547133110785655,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01496328688249004,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01936027818215135,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013444637626493996,
+          "survives": false
+        }
+      ],
+      "A08_upper_wick_ratio": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00407108867905587,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.002827144916011021,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011131822669341882,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007730432409265197,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008296613032929391,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0036873835701908405,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010143142742828418,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00704384912696418,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006539028232962155,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0045409918284459415,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.007832210555286812,
+          "consistencia": 1.0,
+          "estabilidade": 0.007832210555286812,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006397360880592521,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.004442611722633696,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008401574381584334,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.00583442665387801,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.004741035376223067,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.003292385677932686,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008515015804324956,
+          "consistencia": 1.0,
+          "estabilidade": 0.008515015804324956,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008765618595061744,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003895830486694108,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.013317734962918824,
+          "consistencia": 1.0,
+          "estabilidade": 0.013317734962918824,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00711610519013528,
+          "consistencia": 1.0,
+          "estabilidade": 0.00711610519013528,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01118410421297915,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007766739036791078,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0056103256540817005,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0024934780684807557,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010655224560539243,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004735655360239664,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0059611983190854465,
+          "consistencia": 1.0,
+          "estabilidade": 0.0059611983190854465,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01109783613843493,
+          "consistencia": 1.0,
+          "estabilidade": 0.01109783613843493,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009563876097676558,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0066415806233865,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011449889320117528,
+          "consistencia": 1.0,
+          "estabilidade": 0.011449889320117528,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008497452256024524,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0037766454471220103,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0100647770782047,
+          "consistencia": 1.0,
+          "estabilidade": 0.0100647770782047,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006974412290242576,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.004843341868224012,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.011326694101834164,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007865759792940392,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.010302212323035206,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.004578761032460092,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.008752168816614716,
+          "consistencia": 1.0,
+          "estabilidade": 0.008752168816614716,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.009429146425887604,
+          "consistencia": 1.0,
+          "estabilidade": 0.009429146425887604,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010932799655684423,
+          "consistencia": 1.0,
+          "estabilidade": 0.010932799655684423,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.008098742054980465,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.003599440913324651,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00913714484245033,
+          "consistencia": 1.0,
+          "estabilidade": 0.00913714484245033,
+          "survives": false
+        }
+      ],
+      "K02_dow_sin": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023304677527395557,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010357634456620248,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014651351223554326,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.010174549460801617,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.024302706798621176,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010801203021609411,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01497184341766468,
+          "consistencia": 0.5,
+          "estabilidade": 0.00374296085441617,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.021839800889525307,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009706578173122359,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01890370718903536,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008401647639571271,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.012973738261551878,
+          "consistencia": 0.5,
+          "estabilidade": 0.0032434345653879694,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022084702309662082,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.015336598826154225,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.021264206525631366,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009450758455836162,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010550605122650712,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007326809112951884,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02068056135943754,
+          "consistencia": 0.5,
+          "estabilidade": 0.005170140339859385,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.014975039114875485,
+          "consistencia": 0.5,
+          "estabilidade": 0.0037437597787188712,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018659780515693974,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008293235784752877,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.02123731644278173,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014748136418598425,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.01681405993113664,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.007472915524949617,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.020577536179903922,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009145571635512854,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.018939937459388975,
+          "consistencia": 0.5,
+          "estabilidade": 0.004734984364847244,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016611009841970906,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0073826710408759575,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.025706338120028798,
+          "consistencia": 0.5,
+          "estabilidade": 0.0064265845300071995,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.018642395823184967,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.012946108210545117,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.025224635384786656,
+          "consistencia": 0.5,
+          "estabilidade": 0.006306158846196664,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0269188850812337,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.018693670195301184,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.028135884545185674,
+          "consistencia": 0.5,
+          "estabilidade": 0.007033971136296419,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015670507288097258,
+          "consistencia": 0.5,
+          "estabilidade": 0.0039176268220243145,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02107834965736184,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.009368155403271928,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.026696576643352638,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.018539289335661558,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.015196664098441988,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.006754072932640883,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.021052366731101394,
+          "consistencia": 1.0,
+          "estabilidade": 0.021052366731101394,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.019219594644990734,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.013346940725688011,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022303717622913458,
+          "consistencia": 1.0,
+          "estabilidade": 0.022303717622913458,
+          "survives": true
+        }
+      ],
+      "D04f_volume_accel": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.004580348312081061,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002035710360924916,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0032089791831424997,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0014262129702855553,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00801170073522893,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0035607558823239687,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.00741016997089584,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0032934088759537065,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0032549801249214514,
+          "consistencia": 0.5,
+          "estabilidade": 0.0008137450312303629,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.004373837542188186,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.00048598194913202067,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.00404503144509821,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0017977917533769823,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.006324105428024403,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0028107135235664014,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0034716439065710625,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.00038573821184122913,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.004558045580256392,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0020257980356695074,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006438183109606296,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0044709604927821505,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005248475136342777,
+          "consistencia": 0.5,
+          "estabilidade": 0.0013121187840856943,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006078065331057959,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002701362369359093,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.002990144533857863,
+          "consistencia": 0.5,
+          "estabilidade": 0.0007475361334644657,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005729021685511343,
+          "consistencia": 0.5,
+          "estabilidade": 0.0014322554213778357,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0033324178983926323,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.002314179096105995,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005215850402450436,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.000579538933605604,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005865693595646537,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0026069749313984607,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006212423481435216,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.002761077102860096,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0039825933935858345,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0017700415082603708,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.006390674456067194,
+          "consistencia": 0.16666666666666666,
+          "estabilidade": 0.0001775187348907554,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005220607100539781,
+          "consistencia": 0.5,
+          "estabilidade": 0.0013051517751349452,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.005201294080345849,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0023116862579314885,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.003853773554187798,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.001712788246305688,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.003876598923469891,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0004307332137188768,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0058480155557448866,
+          "consistencia": 0.5,
+          "estabilidade": 0.0014620038889362216,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.003385135641783709,
+          "consistencia": 0.5,
+          "estabilidade": 0.0008462839104459273,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.005753095976878467,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0025569315452793184,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0027821731607016475,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.0012365214047562877,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.003949994851873031,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.001755553267499125,
+          "survives": false
+        }
+      ],
+      "E17f_retail_vs_top_spread": [
+        {
+          "fold_id": 0,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.02135957794758565,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014833040241378926,
+          "survives": false
+        },
+        {
+          "fold_id": 0,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022519320856300335,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.01563841726131968,
+          "survives": false
+        },
+        {
+          "fold_id": 1,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04255917339294407,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.029554981522877832,
+          "survives": true
+        },
+        {
+          "fold_id": 1,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.015441733267463828,
+          "consistencia": 0.5,
+          "estabilidade": 0.003860433316865957,
+          "survives": false
+        },
+        {
+          "fold_id": 2,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0398734161328272,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.027689872314463338,
+          "survives": true
+        },
+        {
+          "fold_id": 2,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.01849595688516571,
+          "consistencia": 0.5,
+          "estabilidade": 0.004623989221291427,
+          "survives": false
+        },
+        {
+          "fold_id": 3,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.047274464684805256,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.0328294893644481,
+          "survives": true
+        },
+        {
+          "fold_id": 3,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.018178089004055237,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008079150668468994,
+          "survives": false
+        },
+        {
+          "fold_id": 4,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.051105127841282925,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.03548967211200203,
+          "survives": true
+        },
+        {
+          "fold_id": 4,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0215758455857116,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.014983226101188614,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.023658638464414978,
+          "consistencia": 0.5,
+          "estabilidade": 0.0059146596161037445,
+          "survives": false
+        },
+        {
+          "fold_id": 5,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.018453447488896154,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.008201532217287179,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.024213599226676746,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.016814999462969965,
+          "survives": false
+        },
+        {
+          "fold_id": 6,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.016474587643889968,
+          "consistencia": 0.5,
+          "estabilidade": 0.004118646910972492,
+          "survives": false
+        },
+        {
+          "fold_id": 7,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.030991505238558818,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.02152187863788807,
+          "survives": true
+        },
+        {
+          "fold_id": 7,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.017495392827918874,
+          "consistencia": 0.3333333333333333,
+          "estabilidade": 0.0019439325364354304,
+          "survives": false
+        },
+        {
+          "fold_id": 8,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.029401252878716883,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.020417536721331172,
+          "survives": true
+        },
+        {
+          "fold_id": 8,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.010935770564922384,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.007594285114529435,
+          "survives": false
+        },
+        {
+          "fold_id": 9,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.0355708863869156,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.024702004435358058,
+          "survives": true
+        },
+        {
+          "fold_id": 9,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.023612433216170126,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010494414762742278,
+          "survives": false
+        },
+        {
+          "fold_id": 10,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04424468313088772,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.030725474396449806,
+          "survives": true
+        },
+        {
+          "fold_id": 10,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.023196756519635417,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010309669564282408,
+          "survives": false
+        },
+        {
+          "fold_id": 11,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.048214473829238984,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.033482273492527075,
+          "survives": true
+        },
+        {
+          "fold_id": 11,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.019795988383181164,
+          "consistencia": 0.5,
+          "estabilidade": 0.004948997095795291,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.029814553026988988,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.01325091245643955,
+          "survives": false
+        },
+        {
+          "fold_id": 12,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.022692917866530198,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.01008574127401342,
+          "survives": false
+        },
+        {
+          "fold_id": 13,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04081349379191662,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.028342704022164326,
+          "survives": true
+        },
+        {
+          "fold_id": 13,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.0239029351741941,
+          "consistencia": 0.6666666666666666,
+          "estabilidade": 0.010623526744086266,
+          "survives": false
+        },
+        {
+          "fold_id": 14,
+          "side": 1,
+          "n_envs_with_data": 6,
+          "forca": 0.04885146516580025,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.03392462858736129,
+          "survives": true
+        },
+        {
+          "fold_id": 14,
+          "side": -1,
+          "n_envs_with_data": 6,
+          "forca": 0.021657980705627074,
+          "consistencia": 0.8333333333333334,
+          "estabilidade": 0.015040264378907693,
+          "survives": false
+        }
+      ]
+    }
+  },
+  "rpi_regime_diagnostic_pre_post": {
+    "1": {
+      "A05_ret_vol_norm_4": {
+        "PRE": -0.0018766159853865765,
+        "POST": -0.006776624090014385
+      },
+      "B01_rsi_14": {
+        "PRE": 0.008819122469011014,
+        "POST": -0.0032891354322248994
+      },
+      "C06_vol_ratio_12_96": {
+        "PRE": -0.019824134766811205,
+        "POST": -0.041456878761153976
+      },
+      "C07_vol_pctile_expanding": {
+        "PRE": -0.12443139175472348,
+        "POST": -0.1669679449285768
+      },
+      "D03f_volume_z_expanding": {
+        "PRE": -0.08337912110897844,
+        "POST": -0.08692284881383634
+      },
+      "D06f_taker_imbalance_z_48": {
+        "PRE": -0.009939227467541568,
+        "POST": -0.008938801121790692
+      },
+      "E02f_funding_z_expanding": {
+        "PRE": -0.022206607889276624,
+        "POST": 0.018310949128971424
+      },
+      "E10f_oi_change_z_48": {
+        "PRE": -0.005789005487439884,
+        "POST": -0.007951779719076861
+      },
+      "A12_gap_pct": {
+        "PRE": 0.001149563123920746,
+        "POST": 0.009222981766122828
+      },
+      "E05f_time_to_funding_h": {
+        "PRE": 0.0031790259486297297,
+        "POST": -0.006517804025846658
+      },
+      "E12f_price_oi_divergence": {
+        "PRE": 0.013326312857535754,
+        "POST": 0.015334283809792633
+      },
+      "K08_days_since_halving": {
+        "PRE": 0.011160225248735835,
+        "POST": 0.029620813978173142
+      },
+      "H01_exchange_netflow_z": {
+        "PRE": -0.027335033314505663,
+        "POST": -0.03939751913950976
+      },
+      "E11f_oi_change_1d": {
+        "PRE": 0.006644080214188163,
+        "POST": -0.01210948820626282
+      },
+      "A08_upper_wick_ratio": {
+        "PRE": 0.0017131713143274537,
+        "POST": 0.0006080845413787595
+      },
+      "K02_dow_sin": {
+        "PRE": -0.0024470721923781865,
+        "POST": -0.05563624897491962
+      },
+      "D04f_volume_accel": {
+        "PRE": 0.0007263462623523287,
+        "POST": -0.009225443044060998
+      },
+      "E17f_retail_vs_top_spread": {
+        "PRE": -0.059191607683236745,
+        "POST": -0.01654770881726499
+      }
+    },
+    "-1": {
+      "A05_ret_vol_norm_4": {
+        "PRE": 0.005759521547902493,
+        "POST": 0.013123080577939143
+      },
+      "B01_rsi_14": {
+        "PRE": -0.000782879374298799,
+        "POST": 0.02143444551784559
+      },
+      "C06_vol_ratio_12_96": {
+        "PRE": -0.0370747450526617,
+        "POST": -0.036415370937632266
+      },
+      "C07_vol_pctile_expanding": {
+        "PRE": -0.13249097810876737,
+        "POST": -0.08310583915454425
+      },
+      "D03f_volume_z_expanding": {
+        "PRE": -0.09190317543360679,
+        "POST": -0.0809728751808563
+      },
+      "D06f_taker_imbalance_z_48": {
+        "PRE": 0.009451939311561817,
+        "POST": 0.006698274744216214
+      },
+      "E02f_funding_z_expanding": {
+        "PRE": 0.017154225511404175,
+        "POST": 0.04874350964044218
+      },
+      "E10f_oi_change_z_48": {
+        "PRE": 0.006404440637136896,
+        "POST": 0.011005660815421805
+      },
+      "A12_gap_pct": {
+        "PRE": -0.004298638226601379,
+        "POST": -0.010055683818401752
+      },
+      "E05f_time_to_funding_h": {
+        "PRE": -0.0050318350886548605,
+        "POST": 0.006961999449218539
+      },
+      "E12f_price_oi_divergence": {
+        "PRE": -0.00768001441871678,
+        "POST": -0.012452905096905519
+      },
+      "K08_days_since_halving": {
+        "PRE": 0.0077621096470482254,
+        "POST": 0.02734278870781546
+      },
+      "H01_exchange_netflow_z": {
+        "PRE": 0.010525504502007265,
+        "POST": 0.04863969388176552
+      },
+      "E11f_oi_change_1d": {
+        "PRE": -0.008703982158282211,
+        "POST": 0.018056105165114095
+      },
+      "A08_upper_wick_ratio": {
+        "PRE": -0.013861487612216755,
+        "POST": -0.008120664764438892
+      },
+      "K02_dow_sin": {
+        "PRE": -0.024439640664430967,
+        "POST": -0.0059480216761588515
+      },
+      "D04f_volume_accel": {
+        "PRE": 0.0018311367120725495,
+        "POST": 0.009652923135634752
+      },
+      "E17f_retail_vs_top_spread": {
+        "PRE": -0.018609061201049035,
+        "POST": -0.04408897703737934
+      }
+    }
+  },
+  "nota": "estabilidade = forca * consistencia**2, denominador fixo 6 (src.models.stability). limiar ASSUMED (alpha_stability_screen_limiar=0.02, classe A, sweep pendente antes do Gate 3) -- sobrevivencia aqui e um RANKING sob esse valor, nao ainda uma decisao final de producao.",
+  "elapsed_seconds_total": 98.80218150001019
+}

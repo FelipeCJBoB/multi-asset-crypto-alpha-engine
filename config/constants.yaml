@@ -970,6 +970,26 @@ alpha_monotonic_consistency_min_envs:
   sweep_required: false
   review_by: sprint_11
 
+alpha_stability_screen_limiar:
+  value: 0.02
+  provenance: ASSUMED
+  source: >
+    §5.4 literal: "`limiar` é constante classe A — varrer, não escolher
+    (§18)". Nenhuma base numérica no PRD. `estabilidade = forca *
+    consistencia**2` (src.models.stability) — `forca` é média de |IC de
+    Spearman| (tipicamente 0,01-0,05 neste projeto para sinal fraco real,
+    ver "IC de +0,042" citado no achado do §17.2/PARTE XIX) e
+    `consistencia` ∈ [0,1] com denominador fixo 6 (mesma convenção de
+    `alpha_monotonic_consistency_min_envs` acima). 0,02 escolhido como
+    piso plausível (força ~0,02-0,03 com consistência unânime, ou força
+    maior com consistência parcial) sem varredura ainda — sweep_range
+    ±50% declarado, não executado nesta rodada (E3, Faixa 2). Nenhuma
+    decisão de produção depende do valor exato até a varredura.
+  class: A
+  sweep_required: true
+  sweep_range: [0.01, 0.03]
+  review_by: sprint_11
+
 alpha_calibration_holdout_frac:
   value: 0.25
   provenance: ASSUMED

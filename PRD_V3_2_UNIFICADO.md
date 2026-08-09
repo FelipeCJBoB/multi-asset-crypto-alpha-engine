@@ -1008,7 +1008,7 @@ regime_economico:                       # eixo ortogonal, quantis expansivos
 
 Valores históricos anuais de `cost/ATR` (§17.1): 2021 = 11,0% · 2023 = 19,9% · 2026 = 19,4%. O eixo teria classificado 2021 como favorável e 2023/2026 como hostil — **e é economicamente motivado em vez de estatisticamente ajustado**.
 
-**Uso duplo:** (a) terceira dimensão dos ambientes de treino do Alpha (§5.4, 6 células = tercil × regime estrutural); (b) gate operacional no Gate 0 contínuo (§16.11), bloqueando entrada acima de `cost_atr_max`.
+**Uso duplo:** (a) terceira dimensão dos ambientes de treino do Alpha (§5.4, 6 células = tercil × grupo estrutural RANGE/TREND — ver correção de vocabulário 2026-08-09 em §5.4, não confundir com o `regime` R1..R4 de reporte); (b) gate operacional no Gate 0 contínuo (§16.11), bloqueando entrada acima de `cost_atr_max`.
 
 ## 4.4 Gatilhos de STRESS (R5)
 
@@ -1153,9 +1153,9 @@ monotone_constraints = {
 
 ## 5.4 Camada 2 — Triagem de estabilidade entre ambientes (in-fold)
 
-Ambientes = **tercil de `cost_atr_ratio` × regime estrutural**, seis células. Não usar "ano": ano não é partição econômica e confunde ciclo de preço com estado de mercado.
+Ambientes = **tercil de `cost_atr_ratio` × grupo estrutural**, seis células: `RANGE = R1 ∪ R2`, `TREND = R3 ∪ R4` (R0/R5 excluídos — warmup e stress não expressam "tendência vs faixa" de forma coerente). **Correção de vocabulário (Manager, 2026-08-09, Faixa 2 E3):** "regime estrutural" neste parágrafo e em §5.7 referia-se ambiguamente aos MESMOS símbolos R1..R4 usados como regime de REPORTE (§5.11, §11.3.1, Gate 4 — "Sharpe > 0 em CADA regime estrutural R1..R4 individualmente"), o que levaria a 3×4=12 células, não 6. São dois conceitos de granularidade DIFERENTE, resolvidos e implementados em `src.models.environments` (6 = RANGE/TREND × tercil): 12 células cruzaria volatilidade com ela mesma (R1..R4 já é estrutura×vol; `cost_atr_ratio` é proxy de vol) e, combinado com `alpha_monotonic_consistency_min_envs` exigindo unanimidade, tornaria a probabilidade de sobreviver sob ruído puro 64x mais restritiva (0,049% vs 3,125% em 6 ambientes) — ver `docs/SPRINT_LOG.md`, "Ambientes do E3", para o cálculo completo. Não usar "ano" como ambiente: ano não é partição econômica e confunde ciclo de preço com estado de mercado.
 
-**v3.3 — `rpi_regime` como dimensão adicional de ambiente.** Desde a quebra de definição de 2025-11-20 (§2.7.1), toda feature candidata a T1 é também avaliada com `rpi_regime` ∈ {PRE, POST} cruzando as seis células acima. Uma feature cuja definição mudou no meio da amostra terá IC inconsistente entre PRE e POST e é penalizada por `consistência²` como qualquer outra inconsistência de ambiente — sem exceção manual.
+**v3.3 — `rpi_regime` (PRE/POST) como diagnóstico, NÃO ambiente cruzado (revisado 2026-08-09).** Texto original desta seção pedia "`rpi_regime` ∈ {PRE, POST} cruzando as seis células acima" (12 ambientes). Revisado: a dimensão foi desenhada para capturar features do Grupo F (microestrutura, `bookTicker`/`bookDepth`), cuja definição quebrou em 2025-11-20 (§2.7.1); o Grupo F saiu de T1 na própria v3.3 (§2.7.1) e nenhuma candidata de T1/T2 avaliada até agora (E2, Faixa 2) é microestrutura — a dimensão perdeu o alvo que a motivou. Cruzar mesmo assim fragmentaria os ~8-9 meses de dado POST em fatias pequenas demais para Spearman estável. `rpi_regime` continua obrigatório como **corte de RELATÓRIO** (`ic_by_rpi_regime`, `src.models.stability`) — uma feature cujo IC diverge muito entre PRE e POST ainda é sinalizada, só não entra na fórmula de `estabilidade` abaixo. Se uma candidata futura FOR de microestrutura, reabrir esta decisão.
 
 ```python
 def stability_screen(X_train, y_train, envs_train):
