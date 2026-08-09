@@ -691,6 +691,31 @@ cpcv_embargo_bars:
   sweep_required: false
   review_by: sprint_10
 
+# --- Scan estatístico de leakage por correlação (auditoria de projeto
+# irmão Laplace_Quant_V14/V16, 2026-08-09) — src/validation/leakage.py::
+# scan_feature_target_correlation. Complementa os 14 testes de §11.5 (não
+# é um 15º teste renumerado do PRD — não tem âncora própria em §11.5,
+# registrado aqui + PRD §11.5 nota de rodapé). Detecta lookahead
+# ESTATISTICAMENTE (Spearman feature x ret_net) em vez de só estruturalmente
+# (causal_proof do registry) — pega o erro de implementação que a prova
+# textual não cobre. ---
+
+feature_leakage_bonferroni_factor:
+  value: 2.0
+  provenance: LITERATURE
+  source: "Convenção do projeto irmão Laplace_Quant_V16 (pipeline/build_features_v14.py::assert_no_leakage, threshold = 2/sqrt(N) x sqrt(n_features), citado como correção Bonferroni). Fator '2' não tem derivação própria documentada na fonte — heurística de sensibilidade, não um alpha estatístico formal (ex. 1.96 de IC95%). Usado SÓ para o campo informativo 'elevated' do scan (não bloqueia build) — ver feature_leakage_hard_fail_threshold para o gate que de fato falha."
+  class: D
+  sweep_required: false
+
+feature_leakage_hard_fail_threshold:
+  value: 0.30
+  provenance: DERIVED
+  source: "MEDIDO nesta auditoria (2026-08-09): rodando scan_feature_target_correlation sobre as 10 T1 x ret_net (labels/v1 completo, filled trades, n=436.366), o maior |rho| genuíno e já causal-provado foi E27f_cost_atr_ratio=+0.142 — NÃO é leakage (o rho elevado é estrutural: barreiras TP/SL são escaladas por ATR, e várias T1 derivam de ATR/volatilidade, então correlacionam mecanicamente com a geometria do label mesmo sendo 100% causais). O threshold Bonferroni ingênuo (2/sqrt(N)*sqrt(10) ~= 0.0096, ver feature_leakage_bonferroni_factor) FLAGARIA 4 das 10 features T1 como 'leakage' por esse motivo — falso positivo confirmado, não copiado do projeto irmão sem verificar. 0.30 = ~2x o maior |rho| causal já medido (0.142), margem de segurança escolhida para separar 'correlação estrutural esperada' de 'algo obviamente errado' (ex. feature que literalmente vaza high/low futuro chegaria perto de 1.0). Não é quantil de uma distribuição (M3 §16.10.2 pede quantil para classe C, mas só há 10 pontos medidos — amostra pequena demais para quantil ter sentido); reavaliar quando T1 mudar de composição ou quando houver mais medições."
+  class: C
+  sweep_required: true
+  sweep_range: [0.20, 0.40]
+  review_by: sprint_10
+
 # ============================================================================
 # Camada risk — Risk Engine (Sprint 9, §8 sizing/controles, §10.2 kill
 # switch). risk_per_trade/sl_atr_mult/atr_window/quantization_tolerance/

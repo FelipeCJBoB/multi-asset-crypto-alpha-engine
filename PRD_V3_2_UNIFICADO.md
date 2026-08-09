@@ -2194,6 +2194,8 @@ G-WF-6  deriva_hhi < 0,10 entre janelas consecutivas
 
 **Testes 10 a 14 não existiam no V2.** O 10 é o vazamento estrutural mais comum do desenho Alpha→Meta.
 
+**Nota (auditoria de engenharia, 2026-08-09) — scan estatístico complementar, NÃO um 15º teste desta tabela.** `src/validation/leakage.py::scan_feature_target_correlation` (inspirado em `assert_no_leakage` do projeto irmão Laplace_Quant_V16) mede Spearman de cada feature T1 contra `ret_net`, com threshold Bonferroni-corrigido pelo número de features — pega erro de IMPLEMENTAÇÃO (off-by-one num `.shift()`, janela errada) que os 14 testes acima, focados em prova estrutural/causal_proof, não cobrem sozinhos. Deliberadamente NÃO é um gate PASS/FAIL binário: medido nesta auditoria que o Label Engine escala TP/SL por ATR (§3.4), então features derivadas de volatilidade correlacionam ESTRUTURALMENTE com `ret_net` mesmo sendo 100% causais (`E27f_cost_atr_ratio` mediu `rho=+0,142`, maior que o threshold Bonferroni ingênuo) — copiar o gate do projeto irmão sem essa verificação teria produzido falso positivo em 4 das 10 T1. Por isso o scan reporta `elevated` (informativo) separado de `hard_fail` (bloqueante, threshold calibrado no maior `rho` causal já medido — `constants.yaml::feature_leakage_hard_fail_threshold`). Proveniência completa em `constants.yaml::feature_leakage_bonferroni_factor`/`feature_leakage_hard_fail_threshold`.
+
 ## 11.6 Correção por múltiplos testes — DSR
 
 O CPCV valida a estratégia **escolhida**, mas não corrige o fato de que ela foi escolhida entre N variantes testadas.
@@ -3289,6 +3291,48 @@ Isso impede a falha mais cara: ajustar `tp_atr_mult` até o backtest ficar bonit
 | 7 | Varrer `cost_stop_ratio_max` e `fee_budget_monthly` | 10 | determinam a janela e a taxa de sinal |
 | 8 | Verificar MMR tier 1 | 2 | único P0 não confirmado |
 | 9 | Iniciar `N_lifetime` com o histórico desta conversa | 1 | já há trials gastos |
+
+### 18.7.1 — Nota de implementação para o item 2 (auditoria de engenharia, 2026-08-09)
+
+Auditoria comparativa contra um projeto irmão (Laplace_Quant_V16, forex
+multi-par) trouxe dois pontos concretos para quando a varredura 2D de
+`tp_atr_mult` × `sl_atr_mult` do item 2 for implementada. Registrados aqui
+— não implementados agora — para não se perderem até o Sprint 6.
+
+**(a) Rodar a varredura SEPARADAMENTE por lado, não assumir simetria.**
+`LabelConfig` hoje usa um `tp_atr_mult`/`sl_atr_mult`/`time_stop_bars`
+único para os dois lados (`side * sl_atr_mult`, mesmo multiplicador, sinal
+invertido — §3.3/§3.4). Essa simetria nunca foi medida, só herdada
+(`tp_atr_mult`/`sl_atr_mult` são §18.5.1, "herdado do V2, nunca
+questionado"). O projeto irmão roda grid search independente por direção
+(`triple_barrier_v14.py::_grid_pass(..., pass_dir=+1|-1)`, inclusive com
+grade de `time_stop` diferente por lado) — e há motivo agora, não só
+teórico, pra desconfiar da simetria aqui: uma investigação anterior a
+esta nota (Faixa 1, `experiments/faixa1_calibration_diagnostic.json`)
+mediu, de forma independente, que long e short se comportam de modo
+estruturalmente diferente em quase toda dimensão observada (sinal de
+`E02f_funding_z` por regime, ordenação do score cru por decil, taxa de
+NOFILL por decil). Escopo do Sprint 6: rodar o grid 2D uma vez por lado
+(`tp_atr_mult_long`/`sl_atr_mult_long` × `tp_atr_mult_short`/
+`sl_atr_mult_short`), comparar contra a variante simétrica atual pelo
+mesmo critério de permanência já usado em outras camadas (§5.11), e só
+manter a versão assimétrica se ela realmente vencer — não assumir a
+priori que assimetria é melhor.
+
+**(b) Técnica de implementação — busca vetorizada via `sliding_window_view`.**
+`src/analysis/cost_surface.py` varre o grid rotulando a série inteira uma
+vez por célula (`build_labels_both_sides`, ~50-60s medido por combinação,
+§ nota do próprio módulo) — factível pro grid 3×3 já rodado, mais caro
+pra um grid 2D maior com `time_stop` variável. O projeto irmão implementa
+a detecção de toque de barreira via `numpy.lib.stride_tricks.
+sliding_window_view` sobre `high`/`low` (`triple_barrier_v14.py::
+compute_labels_vectorized`), testando TODAS as combinações de TP/SL sem
+loop Python por barra. Não é código diretamente portável (a versão daqui
+precisa de `mark_1m`, fill simulado, funding e quantização — mais rica
+que a do projeto irmão, que não tem nenhum desses), mas a TÉCNICA de
+vetorização é diretamente aplicável na hora de escrever a varredura real:
+usar `sliding_window_view` sobre `mark_1m` em vez de rotular a série
+inteira uma vez por célula do grid.
 
 ---
 

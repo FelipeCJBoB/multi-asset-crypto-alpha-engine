@@ -38,10 +38,29 @@ relatório em `data/validation_reports/leakage_report.json` com o mesmo
 padrão `.tmp -> fsync -> rename` (B29) já usado em
 `src.data.validate.write_report_atomic`/`src.labels.triple_barrier.
 write_labels_atomic`.
-"""
+
+**`scan_feature_target_correlation` — scan estatístico, não um 15º teste
+numerado.** Auditoria de um projeto irmão (Laplace_Quant_V16, 2026-08-09)
+trouxe um padrão que os 14 testes de §11.5 não cobrem: correlação Spearman
+de CADA feature contra o target, com threshold Bonferroni-corrigido pelo
+número de features — pega erro de IMPLEMENTAÇÃO (off-by-one num `.shift()`,
+janela errada) que a prova textual `causal_proof` do registry não pega,
+porque essa prova documenta a INTENÇÃO causal, não verifica o resultado
+numérico. Não entra na lista de 14 (sem âncora §11.5 própria — registrado
+em `constants.yaml` + nota do PRD) e **não é um gate binário PASS/FAIL
+como os outros 14**: uma checagem MEDIDA nesta mesma auditoria mostrou que
+o threshold Bonferroni ingênuo (cópia direta da fonte) marca 4 das 10
+features T1 como suspeitas — todas com prova causal já verificada, porque
+o Label Engine escala TP/SL por ATR e várias T1 derivam de volatilidade,
+criando correlação ESTRUTURAL genuína (não vazamento) com a geometria do
+label. Por isso o scan reporta dois campos por feature: `elevated`
+(informativo, threshold Bonferroni) e `hard_fail` (bloqueante, threshold
+bem mais conservador, calibrado pelo maior |rho| causal já medido — ver
+`constants.yaml::feature_leakage_hard_fail_threshold`)."""
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections.abc import Sequence
@@ -56,11 +75,13 @@ import polars as pl
 import structlog
 import yaml
 from numpy.typing import NDArray
+from scipy.stats import spearmanr
 
 from src.regime import classifier as regime_classifier
 from src.regime import stress as regime_stress
 
 from . import cpcv
+from ._constants import load_constant
 from ._paths import CONSTANTS_PATH, REPO_ROOT, VALIDATION_REPORTS_DIR
 
 logger = structlog.get_logger(__name__)
@@ -548,9 +569,7 @@ def _test_11_calibracao_vazada() -> LeakageTestResult:
     only_called_with_train = not _grep_source(
         re.compile(r"fit_side_model\(\s*test"), (_SRC_ROOT / "models",)
     )
-    calib_split_from_train = bool(
-        re.search(r"_stratified_calib_split\(\s*y_all,", source)
-    )
+    calib_split_from_train = bool(re.search(r"_stratified_calib_split\(\s*y_all,", source))
     calibrator_fits_on_calib_split = (
         "calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)" in source
     )
@@ -740,6 +759,128 @@ def write_leakage_report_atomic(
         os.fsync(fh.fileno())
     os.replace(tmp_path, out_path)
     logger.info("validation.leakage.report_written", path=str(out_path))
+    return out_path
+
+
+# ============================================================================
+# Scan estatístico de leakage por correlação — complementar aos 14 testes,
+# ver docstring do módulo.
+# ============================================================================
+
+_MIN_OBS_CORRELATION_SCAN = 3  # noqa: magic-number — mínimo matemático do spearmanr, não constante de domínio
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureLeakageScanEntry:
+    feature: str
+    spearman_rho: float
+    n: int
+    bonferroni_threshold: float
+    hard_fail_threshold: float
+    elevated: bool
+    hard_fail: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "feature": self.feature,
+            "spearman_rho": self.spearman_rho,
+            "n": self.n,
+            "bonferroni_threshold": self.bonferroni_threshold,
+            "hard_fail_threshold": self.hard_fail_threshold,
+            "elevated": self.elevated,
+            "hard_fail": self.hard_fail,
+        }
+
+
+def scan_feature_target_correlation(
+    df: pl.DataFrame,
+    feature_ids: Sequence[str],
+    *,
+    target_col: str = "ret_net",
+) -> list[FeatureLeakageScanEntry]:
+    """Spearman(feature, `target_col`) por feature — `df` já deve estar
+    restrito à população que faz sentido correlacionar (ex.: trades
+    preenchidos, `barrier_hit != "NOFILL"`; NOFILL tem `ret_net == 0` por
+    construção e diluiria o rho sem informação nova, mesmo cuidado de
+    `src.analysis.attribution.confidence_deciles_by_side`). Não decide
+    nada — `elevated`/`hard_fail` são dados calculados, quem chama decide
+    o que fazer (ver docstring do módulo para a diferença entre os dois)."""
+    if not feature_ids:
+        raise ValueError("scan_feature_target_correlation: feature_ids vazio — nada para medir")
+    if target_col not in df.columns:
+        raise ValueError(f"scan_feature_target_correlation: target_col '{target_col}' ausente")
+
+    bonferroni_factor = float(load_constant("feature_leakage_bonferroni_factor"))
+    hard_fail_threshold = float(load_constant("feature_leakage_hard_fail_threshold"))
+    n_total = df.height
+    n_features = len(feature_ids)
+    bonferroni_threshold = (bonferroni_factor / math.sqrt(max(n_total, 1))) * math.sqrt(n_features)
+
+    y = df[target_col].to_numpy().astype(np.float64)
+    entries: list[FeatureLeakageScanEntry] = []
+    for feature in feature_ids:
+        if feature not in df.columns:
+            raise ValueError(f"scan_feature_target_correlation: feature '{feature}' ausente em df")
+        x = df[feature].to_numpy().astype(np.float64)
+        mask = np.isfinite(x) & np.isfinite(y)
+        n_valid = int(mask.sum())
+        if n_valid < _MIN_OBS_CORRELATION_SCAN or np.std(x[mask]) == 0.0 or np.std(y[mask]) == 0.0:
+            entries.append(
+                FeatureLeakageScanEntry(
+                    feature,
+                    float("nan"),
+                    n_valid,
+                    bonferroni_threshold,
+                    hard_fail_threshold,
+                    False,
+                    False,
+                )
+            )
+            continue
+        rho, _p = spearmanr(x[mask], y[mask])
+        rho = float(rho) if np.isfinite(rho) else float("nan")
+        elevated = math.isfinite(rho) and abs(rho) > bonferroni_threshold
+        hard_fail = math.isfinite(rho) and abs(rho) > hard_fail_threshold
+        entries.append(
+            FeatureLeakageScanEntry(
+                feature,
+                rho,
+                n_valid,
+                bonferroni_threshold,
+                hard_fail_threshold,
+                elevated,
+                hard_fail,
+            )
+        )
+
+    logger.info(
+        "validation.leakage.correlation_scan",
+        n_features=n_features,
+        n_total=n_total,
+        bonferroni_threshold=round(bonferroni_threshold, 6),
+        hard_fail_threshold=hard_fail_threshold,
+        n_elevated=sum(1 for e in entries if e.elevated),
+        n_hard_fail=sum(1 for e in entries if e.hard_fail),
+    )
+    return entries
+
+
+def write_correlation_scan_report_atomic(
+    entries: Sequence[FeatureLeakageScanEntry], dest_path: Path | None = None
+) -> Path:
+    """B29 — mesmo padrão de `write_leakage_report_atomic`."""
+    default_path = VALIDATION_REPORTS_DIR / "feature_leakage_scan_report.json"
+    out_path = dest_path if dest_path is not None else default_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schema_version": 1, "entries": [e.to_dict() for e in entries]}
+    tmp_path = out_path.with_name(out_path.name + ".tmp")
+    blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
+    with tmp_path.open("wb") as fh:
+        fh.write(blob)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, out_path)
+    logger.info("validation.leakage.correlation_scan_report_written", path=str(out_path))
     return out_path
 
 

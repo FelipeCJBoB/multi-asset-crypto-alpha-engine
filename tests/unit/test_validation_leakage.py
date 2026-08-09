@@ -250,3 +250,133 @@ def test_run_all_leakage_tests_sobre_dataset_real() -> None:
     assert results[6].status == leakage.LeakageStatus.PASS, results[6].detail
     assert results[7].status == leakage.LeakageStatus.PASS, results[7].detail
     assert results[12].status == leakage.LeakageStatus.PASS, results[12].detail
+
+
+# ============================================================================
+# scan_feature_target_correlation — scan estatístico (auditoria Laplace_
+# Quant_V16, 2026-08-09), não um dos 14 testes numerados
+# ============================================================================
+
+
+def _synthetic_scan_frame(n: int = 500) -> pl.DataFrame:
+    """`clean` não correlaciona com o target (ruído independente); `leaked`
+    É o target com ruído mínimo — deve estourar `hard_fail` sempre, em
+    qualquer N razoável (rho esperado ~0.99, muito acima de 0.30)."""
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    target = rng.normal(size=n)
+    clean = rng.normal(size=n)
+    leaked = target + rng.normal(scale=0.001, size=n)
+    return pl.DataFrame(
+        {
+            "ret_net": target.astype(np.float64),
+            "clean_feature": clean.astype(np.float64),
+            "leaked_feature": leaked.astype(np.float64),
+        }
+    )
+
+
+def test_scan_detecta_feature_vazada_e_nao_flag_feature_limpa() -> None:
+    df = _synthetic_scan_frame()
+    entries = leakage.scan_feature_target_correlation(
+        df, ("clean_feature", "leaked_feature")
+    )
+    by_name = {e.feature: e for e in entries}
+
+    assert abs(by_name["leaked_feature"].spearman_rho) > 0.9
+    assert by_name["leaked_feature"].hard_fail is True
+    assert by_name["leaked_feature"].elevated is True
+
+    assert by_name["clean_feature"].hard_fail is False
+    assert by_name["clean_feature"].n == 500
+
+
+def test_scan_threshold_bonferroni_escala_com_n_e_n_features() -> None:
+    df = _synthetic_scan_frame(n=200)
+    entries_1f = leakage.scan_feature_target_correlation(df, ("clean_feature",))
+    entries_2f = leakage.scan_feature_target_correlation(
+        df, ("clean_feature", "leaked_feature")
+    )
+    # mais features -> threshold Bonferroni mais alto (sqrt(2) > sqrt(1))
+    assert entries_2f[0].bonferroni_threshold > entries_1f[0].bonferroni_threshold
+    # hard_fail_threshold é constante fixa, não escala com n_features
+    assert entries_2f[0].hard_fail_threshold == entries_1f[0].hard_fail_threshold
+
+
+def test_scan_amostra_insuficiente_nao_quebra() -> None:
+    df = pl.DataFrame({"ret_net": [1.0, 2.0], "f": [1.0, 2.0]})
+    entries = leakage.scan_feature_target_correlation(df, ("f",))
+    assert len(entries) == 1
+    assert entries[0].n == 2
+    assert entries[0].elevated is False
+    assert entries[0].hard_fail is False
+
+
+def test_scan_feature_ids_vazio_levanta_valueerror() -> None:
+    df = pl.DataFrame({"ret_net": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="feature_ids vazio"):
+        leakage.scan_feature_target_correlation(df, ())
+
+
+def test_scan_target_col_ausente_levanta_valueerror() -> None:
+    df = pl.DataFrame({"f": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="target_col"):
+        leakage.scan_feature_target_correlation(df, ("f",))
+
+
+def test_scan_feature_ausente_levanta_valueerror() -> None:
+    df = pl.DataFrame({"ret_net": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="ausente em df"):
+        leakage.scan_feature_target_correlation(df, ("nao_existe",))
+
+
+def test_write_correlation_scan_report_atomic_grava_json_sem_deixar_tmp(
+    tmp_path: object,
+) -> None:
+    from pathlib import Path
+
+    assert isinstance(tmp_path, Path)
+    df = _synthetic_scan_frame()
+    entries = leakage.scan_feature_target_correlation(
+        df, ("clean_feature", "leaked_feature")
+    )
+    dest = tmp_path / "feature_leakage_scan_report.json"
+    path = leakage.write_correlation_scan_report_atomic(entries, dest_path=dest)
+    assert path == dest
+    assert path.exists()
+    assert not path.with_name(path.name + ".tmp").exists()
+
+    import orjson
+
+    payload = orjson.loads(path.read_bytes())
+    assert payload["schema_version"] == 1
+    assert len(payload["entries"]) == 2
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_scan_sobre_dataset_real_nenhuma_feature_t1_hard_falha() -> None:
+    """Dataset real, as 10 T1 x `ret_net` (filled trades). Não afirma um
+    valor específico de `spearman_rho` (pode mudar se o Label Engine
+    mudar de versão) — só que, com o `hard_fail_threshold` calibrado
+    nesta auditoria (2x o maior |rho| causal já medido, 0.142), nenhuma
+    T1 hoje deveria estourar o gate bloqueante. `elevated` pode ser True
+    (é informativo, não falha o teste) — ver docstring do módulo para o
+    motivo de `E27f_cost_atr_ratio`/`C07_vol_pctile_expanding`/
+    `C06_vol_ratio_12_96`/`D03f_volume_z_expanding` ficarem elevated por
+    correlação estrutural com a geometria ATR-escalada do label, não
+    vazamento."""
+    from src.features.build import T1_FEATURE_IDS
+    from src.models import dataset as ds
+
+    _skip_if_labels_missing()
+    mf = ds.build_modeling_frame()
+    filled = mf.data.filter(pl.col("barrier_hit") != "NOFILL")
+    entries = leakage.scan_feature_target_correlation(filled, T1_FEATURE_IDS)
+    hard_failures = [e for e in entries if e.hard_fail]
+    assert not hard_failures, (
+        f"T1 features estourando hard_fail_threshold (revisar Label Engine ou "
+        f"recalibrar constants.yaml::feature_leakage_hard_fail_threshold): "
+        f"{[(e.feature, e.spearman_rho) for e in hard_failures]}"
+    )

@@ -479,6 +479,132 @@ def test_d4_raw_vs_calibrated_troca_quando_rankings_invertidos() -> None:
 
 
 # ============================================================================
+# ECE — expected_calibration_error / calibration_error_by_side
+# ============================================================================
+
+
+def test_expected_calibration_error_perfeitamente_calibrado_da_zero() -> None:
+    """10 bins, cada um com `confidence` == `mean(outcome)` exato do bin
+    (n grande o bastante pra média bater exatamente por construção) ->
+    ECE = 0."""
+    import numpy as np
+
+    n_per_bin = 100
+    confidences = []
+    outcomes = []
+    for b in range(10):
+        conf = (b + 0.5) / 10.0  # centro do bin
+        n_pos = round(conf * n_per_bin)
+        confidences.extend([conf] * n_per_bin)
+        outcomes.extend([1] * n_pos + [0] * (n_per_bin - n_pos))
+    out = cd.expected_calibration_error(
+        np.array(confidences, dtype=np.float64), np.array(outcomes, dtype=np.int64)
+    )
+    assert out["ece"] == pytest.approx(0.0, abs=1e-9)
+    assert out["n"] == 1000
+    assert len(out["bins"]) == 10
+    assert all(b["n"] == 100 for b in out["bins"])
+
+
+def test_expected_calibration_error_confianca_excessiva_da_gap_positivo() -> None:
+    """`confidence` sempre 0.9, `outcome` sempre 0 (modelo excessivamente
+    confiante e sempre errado) -> ECE = 0.9 (todo peso num único bin,
+    gap = |0.9 - 0.0|)."""
+    import numpy as np
+
+    n = 50
+    out = cd.expected_calibration_error(
+        np.full(n, 0.9, dtype=np.float64), np.zeros(n, dtype=np.int64)
+    )
+    assert out["ece"] == pytest.approx(0.9, abs=1e-9)
+
+
+def test_expected_calibration_error_e_ponderado_por_populacao_do_bin() -> None:
+    """Bin A: 1 observação, gap=1.0. Bin B: 99 observações, gap=0.0.
+    ECE ponderado por n = (1/100)*1.0 + (99/100)*0.0 = 0.01 — NÃO a média
+    simples dos gaps (que daria 0.5, a leitura não-ponderada que
+    `train_alpha_c1_v14.py` usa e que esta função deliberadamente não
+    reproduz, ver docstring)."""
+    import numpy as np
+
+    confidences = np.array([0.05] + [0.95] * 99, dtype=np.float64)
+    outcomes = np.array([1] + [1] * 99, dtype=np.int64)
+    # bin 0 (0.0-0.1): confidence=0.05, outcome=1 -> gap=0.95
+    # bin 9 (0.9-1.0): confidence=0.95, outcome=1 -> gap=0.05
+    out = cd.expected_calibration_error(confidences, outcomes)
+    expected = (1 / 100) * 0.95 + (99 / 100) * 0.05
+    assert out["ece"] == pytest.approx(expected, abs=1e-9)
+    # média simples (não-ponderada) dos dois gaps seria bem maior — confirma
+    # que a ponderação por n realmente muda o número, não só documentação
+    unweighted = (0.95 + 0.05) / 2
+    assert out["ece"] < unweighted
+
+
+def test_expected_calibration_error_bin_vazio_nao_quebra() -> None:
+    import numpy as np
+
+    out = cd.expected_calibration_error(
+        np.array([0.05, 0.95], dtype=np.float64), np.array([0, 1], dtype=np.int64)
+    )
+    assert len(out["bins"]) == 10
+    empty_bins = [b for b in out["bins"] if b["n"] == 0]
+    assert len(empty_bins) == 8
+    assert all(b["mean_confidence"] != b["mean_confidence"] for b in empty_bins)  # NaN
+
+
+def test_expected_calibration_error_amostra_vazia() -> None:
+    import numpy as np
+
+    out = cd.expected_calibration_error(
+        np.array([], dtype=np.float64), np.array([], dtype=np.int64)
+    )
+    assert out["n"] == 0
+    assert out["bins"] == []
+    assert out["ece"] != out["ece"]  # NaN
+
+
+def test_calibration_error_by_side_so_sobre_filled_e_compara_raw_vs_calibrado() -> None:
+    t0s = _t0s(4)
+    rows = [
+        {
+            "t0": t0s[0],
+            "confidence": 0.9,
+            "raw_score": 0.5,
+            "barrier_hit": "TP",
+            "ret_net": 0.001,
+        },
+        {
+            "t0": t0s[1],
+            "confidence": 0.9,
+            "raw_score": 0.5,
+            "barrier_hit": "SL",
+            "ret_net": -0.001,
+        },
+        {
+            "t0": t0s[2],
+            "confidence": 0.5,
+            "raw_score": 0.5,
+            "barrier_hit": "NOFILL",
+            "ret_net": 0.0,
+        },
+        {
+            "t0": t0s[3],
+            "confidence": 0.5,
+            "raw_score": 0.5,
+            "barrier_hit": "TIME",
+            "ret_net": 0.0,
+        },
+    ]
+    df = _pop_df(rows)
+    out = cd.calibration_error_by_side(df)
+    assert out["n_filled"] == 3  # NOFILL excluído
+    assert out["calibrated"]["n"] == 3
+    assert out["raw_score"]["n"] == 3
+    assert "ece" in out["calibrated"]
+    assert "ece" in out["raw_score"]
+
+
+# ============================================================================
 # build_side_population — retém NOFILL, filtra is_oof/side_hat, dedup regime
 # ============================================================================
 
@@ -651,6 +777,7 @@ def test_run_faixa1_diagnostic_monta_todas_as_chaves_da_rubrica() -> None:
         "constraint_congruent_subset",
         "constraint_incongruent_subset",
         "calibrator_comparison",
+        "expected_calibration_error",
     }
     assert expected_keys <= set(payload.keys())
     for side_label in ("long", "short"):
@@ -658,6 +785,9 @@ def test_run_faixa1_diagnostic_monta_todas_as_chaves_da_rubrica() -> None:
         assert len(payload["decile_mean_bps"][side_label]) == 10
         assert side_label in payload["calibrator_comparison"]
         assert "isotonic_plateau" in payload["calibrator_comparison"][side_label]
+        assert side_label in payload["expected_calibration_error"]
+        assert "calibrated" in payload["expected_calibration_error"][side_label]
+        assert "raw_score" in payload["expected_calibration_error"][side_label]
 
 
 # ============================================================================

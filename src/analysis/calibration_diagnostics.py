@@ -703,6 +703,104 @@ def d4_raw_vs_calibrated(df_side: pl.DataFrame) -> dict[str, Any]:
 
 
 # ============================================================================
+# ECE — Expected Calibration Error (auditoria Laplace_Quant_V16, 2026-08-09)
+# ============================================================================
+
+# Nº de bins do ECE — parâmetro de relato deste diagnóstico (mesma categoria
+# de FAIXA1_N_DECILES, ver docstring do módulo), não constante de domínio.
+FAIXA1_ECE_N_BINS = 10
+
+
+def expected_calibration_error(
+    confidence: FloatArray, outcome: NDArray[np.int64], *, n_bins: int = FAIXA1_ECE_N_BINS
+) -> dict[str, Any]:
+    """ECE padrão (Guo et al. 2017, "On Calibration of Modern Neural
+    Networks") — bins de LARGURA uniforme sobre `[0, 1]` (não por quantil/
+    contagem igual: um bin quase vazio precisa aparecer vazio no relatório,
+    não ser escondido atrás de uma borda ajustada pra caber gente),
+    ponderado por população de cada bin:
+    `ECE = Σ_b (n_b/N) × |mean(confidence_b) − mean(outcome_b)|`.
+
+    Diferença deliberada da leitura de ECE em
+    `train_alpha_c1_v14.py::main` do projeto irmão Laplace_Quant_V16 (que
+    inspirou esta função): lá o cálculo é `mean(|prob_true_b − prob_pred_b|)`
+    SEM ponderar por `n_b` (`sklearn.calibration.calibration_curve` com
+    `strategy="uniform"` seguido de média simples) — um bin com 3
+    observações pesa igual a um com 3000. A definição de Guo et al. é a
+    convenção padrão da literatura de calibração e é o que a maioria das
+    ferramentas chama de "ECE" sem qualificar; por isso a reimplementação
+    aqui pondera por `n_b`, não copia a leitura da fonte sem verificar.
+
+    `outcome` precisa ser `{0, 1}` (ex. `barrier_hit == "TP"`) — não
+    filtra `NOFILL` sozinha, quem chama passa só a população preenchida
+    (mesma disciplina de `decile_profile`)."""
+    n = confidence.shape[0]
+    if n == 0:
+        return {"ece": float("nan"), "n": 0, "bins": []}
+
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_idx = np.clip(np.digitize(confidence, edges[1:-1], right=False), 0, n_bins - 1)
+
+    bins: list[dict[str, Any]] = []
+    ece = 0.0
+    for b in range(n_bins):
+        mask = bin_idx == b
+        n_b = int(mask.sum())
+        if n_b == 0:
+            bins.append(
+                {
+                    "bin": b,
+                    "bin_edge_low": float(edges[b]),
+                    "bin_edge_high": float(edges[b + 1]),
+                    "n": 0,
+                    "mean_confidence": float("nan"),
+                    "mean_outcome": float("nan"),
+                    "gap": float("nan"),
+                }
+            )
+            continue
+        mean_conf = float(confidence[mask].mean())
+        mean_out = float(outcome[mask].astype(np.float64).mean())
+        gap = abs(mean_conf - mean_out)
+        ece += (n_b / n) * gap
+        bins.append(
+            {
+                "bin": b,
+                "bin_edge_low": float(edges[b]),
+                "bin_edge_high": float(edges[b + 1]),
+                "n": n_b,
+                "mean_confidence": mean_conf,
+                "mean_outcome": mean_out,
+                "gap": gap,
+            }
+        )
+    return {"ece": float(ece), "n": n, "bins": bins}
+
+
+def calibration_error_by_side(
+    df_side: pl.DataFrame, *, n_bins: int = FAIXA1_ECE_N_BINS
+) -> dict[str, Any]:
+    """ECE sobre `confidence` (calibrado, produção) E sobre `raw_score`
+    (pré-calibração) — mesmo par de colunas de `d4_raw_vs_calibrated`, pra
+    responder a pergunta que a ordenação por decil não responde sozinha:
+    a calibração piora a ORDENAÇÃO (já medido em D4) e melhora, piora ou
+    não muda a MAGNITUDE (`P_cal` bate com a frequência real de TP)? São
+    perguntas diferentes — uma calibração pode desordenar e ainda reduzir
+    o erro de magnitude, ou vice-versa. Só sobre trades preenchidos
+    (`barrier_hit != NOFILL`); `outcome = (barrier_hit == "TP")`, mesma
+    definição de `y` usada no treino (`src.models.alpha.fit_side_model`)."""
+    filled = df_side.filter(pl.col("barrier_hit") != _NOFILL)
+    outcome = (filled["barrier_hit"] == _TP).to_numpy().astype(np.int64)
+    confidence = filled["confidence"].to_numpy().astype(np.float64)
+    raw_score = filled["raw_score"].to_numpy().astype(np.float64)
+    return {
+        "n_filled": filled.height,
+        "calibrated": expected_calibration_error(confidence, outcome, n_bins=n_bins),
+        "raw_score": expected_calibration_error(raw_score, outcome, n_bins=n_bins),
+    }
+
+
+# ============================================================================
 # Orquestração — monta o JSON da rubrica pré-registrada
 # ============================================================================
 
@@ -753,6 +851,11 @@ def run_faixa1_diagnostic(
         for side, side_label in _SIDE_LABEL_BY_HAT.items()
     }
 
+    ece = {
+        side_label: calibration_error_by_side(populations[side])
+        for side, side_label in _SIDE_LABEL_BY_HAT.items()
+    }
+
     payload: dict[str, Any] = {
         "schema_version": 1,
         "task": "faixa1_calibration_diagnostic",
@@ -778,6 +881,7 @@ def run_faixa1_diagnostic(
         "constraint_congruent_subset": congruent,
         "constraint_incongruent_subset": incongruent,
         "calibrator_comparison": d4,
+        "expected_calibration_error": ece,
     }
     return payload
 

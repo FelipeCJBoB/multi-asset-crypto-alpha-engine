@@ -727,6 +727,67 @@ nenhum, só lê `raw_score`/`confidence` já persistidos em
 `pytest tests/`. 0 violação de `banned_patterns`, 6/6 contratos de
 import-linter.
 
+## Auditoria comparativa — projeto irmão Laplace_Quant_V16 (2026-08-09)
+
+Comparação de engenharia contra um projeto irmão mais maduro (forex
+multi-par, mesmo autor). Três achados aplicados nesta rodada, dois
+registrados para o Sprint 6 (§18.7.1 do PRD), e uma auditoria cross-file
+mais ampla reportada ao Manager sem mudança de código (achados de outro
+projeto, não deste repo — não há o que aplicar aqui além do que já foi
+listado).
+
+**Aplicado — ECE em `calibration_diagnostics.py::expected_calibration_error`/
+`calibration_error_by_side`.** Complementa D1-D4 da Faixa 1 (que medem
+ORDENAÇÃO por decil) com uma métrica de MAGNITUDE (Guo et al. 2017,
+ponderada por população do bin — deliberadamente diferente da leitura
+não-ponderada do projeto irmão, ver docstring). Achado real, dado
+real: **calibração isotônica MELHORA o ECE nos dois lados** (long
+0,256→0,200; short 0,234→0,155) mesmo **piorando a ordenação por decil**
+(D4, rodada anterior) — são propriedades diferentes da mesma
+calibração, uma medida cada, nenhuma prevista pela outra.
+
+**Aplicado — scan estatístico de leakage em `src/validation/leakage.py::
+scan_feature_target_correlation`.** Não é um 15º teste do §11.5 (sem
+âncora própria, PRD recebeu nota de rodapé). Medido antes de virar gate:
+o threshold Bonferroni ingênuo (cópia direta da fonte) marcaria 4 das 10
+T1 como suspeitas — `E27f_cost_atr_ratio` sozinho mede `rho=+0,142`
+contra `ret_net`, porque o Label Engine escala TP/SL por ATR e várias T1
+derivam de volatilidade — correlação ESTRUTURAL genuína, não vazamento.
+Copiar o número do projeto irmão sem essa verificação teria produzido um
+gate quebrado desde o primeiro commit. Por isso dois campos por feature:
+`elevated` (informativo, Bonferroni) e `hard_fail` (bloqueante, threshold
+calibrado no maior `rho` causal medido — `constants.yaml::
+feature_leakage_hard_fail_threshold`, classe C, sweep_required). Rodado
+sobre as 10 T1 reais: nenhuma estoura `hard_fail`
+(`test_scan_sobre_dataset_real_nenhuma_feature_t1_hard_falha`).
+
+**Registrado, não implementado — PRD §18.7.1.** (a) varredura 2D de
+`tp_atr_mult`×`sl_atr_mult` do Sprint 6 deve rodar separada por lado, não
+assumir simetria (motivada pela própria Faixa 1: long/short já medidos
+como estruturalmente diferentes em quase toda dimensão observada); (b)
+técnica de vetorização via `sliding_window_view` para a busca, em vez de
+rotular a série inteira por célula do grid.
+
+**Achados cross-file do projeto irmão, não aplicáveis a este repo** (reportados
+ao Manager, sem ação neste código): arquitetura `multi:softprob` 3-classes
+em produção — confirma a decisão de B18 aqui (dois binários), e o próprio
+Laplace já está migrando pra 4 trainers binários por razão semelhante;
+seleção de threshold por métrica OOS no gate de escolha de estratégia
+Phase2 (`train_alpha_c1_v14.py`) — violação viva de B20, achada por
+inspeção direta de código, não hipotética; divergência de lista de pares
+entre 7+ arquivos, autocatalogada em `audit/pair_divergence_matrix.md`
+do projeto irmão; `live_engine` recalcula features inline em vez de usar
+o parquet de treino (Achado #17 catalogado como severidade ALTA lá,
+correção mandatória antes de live) — exatamente a classe de bug que
+nosso §2.0 Princípio 3 (caminho único batch/streaming) e o teste de
+paridade < 1e-8 do DoD previnem por desenho aqui, não por correção
+posterior; ausência de motor de backtest dedicado (confirmado por grep,
+zero módulo, só 2 menções incidentais em comentário); 3 constantes de
+latência (`LATENCY_KILL_MS`/`LATENCY_CRIT_MS`/`HEARTBEAT_INTERVAL_S`)
+importadas mas nunca referenciadas fora do import — "circuit breaker" de
+2000ms citado como decisão fechada na doc do projeto irmão não tem
+nenhum código que de fato mate algo hoje.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
@@ -748,3 +809,5 @@ import-linter.
 | Decis de confiança ordenam retorno? | Não, nos dois lados (ρ_long=0,14 p=0,70; ρ_short=-0,20 p=0,58) — mas o score CRU (pré-calibração) ordena SIGNIFICATIVAMENTE (long ρ=-0,82 p=0,004; short ρ=+0,69 p=0,03), com ~75% dos trades trocando de decil entre score cru e calibrado | Faixa 1 acima, `experiments/faixa1_calibration_diagnostic.json` |
 | NOFILL varia com a confiança? | Sim, associação forte nos dois lados (χ²long p≈5e-37, χ²short p≈3e-135) | Faixa 1 acima |
 | E02f_funding_z inverte de sinal RANGE↔TREND? | Sim, medido: R1=+0,04/R2=+0,11/R3=-0,03/R4=-0,08 | Faixa 1 acima, reproduz Fase E |
+| Calibração isotônica melhora ou piora a confiança? | As duas coisas — piora ORDENAÇÃO (D4) e melhora MAGNITUDE/ECE (long 0,256→0,200; short 0,234→0,155) | Auditoria Laplace_Quant_V16 acima |
+| Alguma T1 vaza informação futura (scan estatístico)? | Não — 0 de 10 estoura o `hard_fail_threshold`; 4 ficam `elevated` por correlação estrutural com ATR, não vazamento | Auditoria Laplace_Quant_V16 acima, `src/validation/leakage.py::scan_feature_target_correlation` |
