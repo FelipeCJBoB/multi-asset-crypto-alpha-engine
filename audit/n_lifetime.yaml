@@ -11,7 +11,7 @@
 # impedir.
 
 schema_version: 1
-counter: 23
+counter: 41
 
 log:
   - id: 1
@@ -117,6 +117,22 @@ log:
       Artefato: experiments/faixa1_7_edge_or_beta.json
       ::q1_r3_split_por_direcao_de_tendencia.
     delta: 1
+  - id: 10
+    date: "2026-08-09"
+    type: barrier_geometry_sweep
+    description: >
+      Faixa 2, FASE 2 E1 — varredura declarada ANTES da busca (B20) de
+      tp_atr_mult x sl_atr_mult, grade 3x3 independente por lado (long:
+      {1.5,2.0,2.5}x{1.0,1.5,2.0}; short: mesma grade) = 18 variantes.
+      Resolução de barreira vetorizada via sliding_window_view
+      (`src/labels/barrier_sweep.py`, §18.7.1, nunca implementado antes
+      desta rodada) — reusa o FILL já persistido em
+      labels/v1/labels.parquet (independente de tp/sl, ver docstring do
+      módulo), recalcula só TP/SL/TIME por célula. Sanidade: célula
+      central (tp=2.0, sl=1.5, config de produção atual) reproduz a
+      distribuição pooled do Sprint 6 com max_abs_diff=2,3e-5. delta=18.
+      Artefato: experiments/faixa2_e1_barrier_sweep.json.
+    delta: 18
 
 # Nota de escopo (Faixa 2, F0.1, 2026-08-09): os 4 itens acima (ids 6-9,
 # delta total +18, contador 5->23) são exatamente os listados pela task

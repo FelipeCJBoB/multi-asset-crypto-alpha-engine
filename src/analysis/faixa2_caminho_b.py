@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Final
@@ -35,8 +36,12 @@ import structlog
 from scipy.stats import chisquare, spearmanr
 
 from src.core.provenance import report_provenance
+from src.data import lake
+from src.labels import barrier_sweep as bs
+from src.labels import triple_barrier as tb
 from src.models import dataset as ds
 from src.models._constants import load_constant
+from src.models.decomposition import decompose
 from src.models.environments import ENVIRONMENTS, assign_environments
 from src.models.monotonic import _assign_from_ic, compute_ic_by_env
 from src.validation import cpcv
@@ -591,6 +596,270 @@ def d4_e10f_como_candidata(
         "correlacao_pooled_com_b07_efficiency_ratio": corr_b07,
         "nota": "não decide inclusão/exclusão de E10f em T1 — só mede, por instrução da task",
     }
+
+
+# ============================================================================
+# E1 — varredura de barreiras 3x3 por lado (`src.labels.barrier_sweep`,
+# sliding_window_view — §18.7.1). Grade DECLARADA antes da busca (B20):
+# tp_atr_mult x sl_atr_mult, 9 células x 2 lados = 18 variantes.
+# n_lifetime += 18 (declarado aqui, aplicado em audit/n_lifetime.yaml pelo
+# chamador do relatório -- ver run_and_save_fase2_e1).
+# ============================================================================
+
+E1_TP_GRID: Final[tuple[float, ...]] = (1.5, 2.0, 2.5)
+E1_SL_GRID: Final[tuple[float, ...]] = (1.0, 1.5, 2.0)
+
+
+def _filled_side_population(mf_data: pl.DataFrame, *, side: int) -> pl.DataFrame:
+    """Trades JÁ preenchidos de UM lado, de QUALQUER config (fill não
+    depende de tp/sl -- ver docstring de `src.labels.barrier_sweep`).
+    Colunas exigidas por `resolve_barriers_vectorized` + as que os
+    sumários de célula precisam (regime, atr_at_t0)."""
+    return mf_data.filter(
+        (pl.col("side") == side) & (pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
+    ).select("t0", "t_entry", "entry_price_fill", "atr_at_t0", "regime")
+
+
+def _cell_trades(
+    filled_side: pl.DataFrame, resolved: bs.ResolvedBarriers, *, side: int
+) -> pl.DataFrame:
+    n = filled_side.height
+    return filled_side.select("t0", "regime", "atr_at_t0").with_columns(
+        pl.Series("side_hat", [side] * n, dtype=pl.Int64),
+        pl.Series("barrier_hit", resolved.barrier_hit),
+        pl.Series("ret_gross", resolved.ret_gross),
+        pl.Series("ret_net", resolved.ret_net),
+        pl.Series("funding_bps", resolved.funding_bps),
+        pl.Series("cost_entry_bps", resolved.cost_entry_bps),
+        pl.Series("cost_exit_bps", resolved.cost_exit_bps),
+    )
+
+
+def _map_trades_to_paths(
+    trades: pl.DataFrame, predictions: pl.DataFrame, fold_to_path: dict[int, int]
+) -> pl.DataFrame:
+    """Mesma técnica de `f15.build_realized_trades`, SEM filtrar
+    `side_hat != 0` -- E1 mede capacidade INCONDICIONAL da nova geometria
+    de barreira (nenhum modelo foi retreinado sobre ela), mesmo espírito
+    de `f17.b1_any_entry_by_regime`/`b2_continuous_exposure_by_regime`. Um
+    `t0` é testado (OOF) em 5 splits diferentes (1-fatoração de K_6,
+    `n_backtest_paths=5`) -- o join duplica a linha em até 5 paths, por
+    desenho (mesmo comportamento de `build_realized_trades`)."""
+    oof_all = predictions.filter(pl.col("is_oof")).select("t0", "fold_id").unique()
+    joined = trades.join(oof_all, on="t0", how="inner")
+    path_series = pl.Series(
+        "path_id", [fold_to_path[f] for f in joined["fold_id"].to_list()], dtype=pl.Int64
+    )
+    return joined.with_columns(path_series)
+
+
+def _cell_summary(
+    cell_trades: pl.DataFrame,
+    cell_trades_with_path: pl.DataFrame,
+    *,
+    n_total_side: int,
+    n_nofill_side: int,
+    tp: float,
+    sl: float,
+    side_label: str,
+) -> dict[str, Any]:
+    """`cell_trades` (sem duplicação de path) alimenta directional_sharpe/
+    edge/custo -- `cell_trades_with_path` (duplicado até 5x, um por path,
+    ver `_map_trades_to_paths`) só alimenta `trades_per_year_by_path`.
+    Misturar os dois em `decompose()` enviesaria levemente média/desvio na
+    direção dos trades perto do centro do dataset (que aparecem em mais
+    paths que os das bordas) -- evitado mantendo as duas populações
+    separadas."""
+    edge_atr = (cell_trades["ret_gross"] / cell_trades["atr_at_t0"]).to_numpy().astype(np.float64)
+    edge_atr = edge_atr[np.isfinite(edge_atr)]
+    cost_bps = (
+        (cell_trades["cost_entry_bps"] + cell_trades["cost_exit_bps"]).to_numpy().astype(np.float64)
+    )
+
+    by_regime: dict[str, Any] = {}
+    for regime in _STRUCTURAL_REGIMES:
+        cell_regime = cell_trades.filter(pl.col("regime") == regime)
+        result = decompose(cell_regime, source=f"faixa2::e1::{side_label}_tp{tp}_sl{sl}_{regime}")
+        by_regime[regime] = {
+            "n_trades": result.n_trades,
+            "directional_sharpe": result.directional_sharpe.value,
+        }
+
+    per_path = f15._trades_per_year_per_path(cell_trades_with_path)
+
+    return {
+        "tp_atr_mult": tp,
+        "sl_atr_mult": sl,
+        "n_filled": cell_trades.height,
+        "n_total_side": n_total_side,
+        "n_nofill_side": n_nofill_side,
+        "frac_nofill": n_nofill_side / n_total_side if n_total_side else float("nan"),
+        "edge_atr_units_mean": float(np.mean(edge_atr)) if edge_atr.size else float("nan"),
+        "cost_bps_mean": float(np.mean(cost_bps)) if cost_bps.size else float("nan"),
+        "directional_sharpe_by_regime": by_regime,
+        "trades_per_year_by_path": {str(pid): v["trades_per_year"] for pid, v in per_path.items()},
+    }
+
+
+def run_fase2_e1(
+    mf_data: pl.DataFrame,
+    predictions: pl.DataFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+) -> dict[str, Any]:
+    """FASE 2, E1 — roda o grid 3x3 DECLARADO (`E1_TP_GRID`/`E1_SL_GRID`)
+    independente por lado (9 células/lado, 18 total). Carrega
+    `mark_1m`/`funding` da série completa UMA VEZ (mesmo padrão de
+    `cost_surface.build_cost_surface_grid_for_symbol`), reusa para as 18
+    células. NÃO decide/escolhe -- só emite, mesmo padrão de todo o resto
+    da Faixa 2."""
+    cfg = tb.LabelConfig.from_constants()
+    fold_to_path = f15.fold_to_path_map(splits)
+
+    t0_min, t0_max = mf_data["t0"].min(), mf_data["t0"].max()
+    start = (t0_min.date() - timedelta(days=3)).isoformat()  # type: ignore[union-attr]
+    end = (t0_max.date() + timedelta(days=3)).isoformat()  # type: ignore[union-attr]
+    mark_1m = lake.query_bars(
+        ds.SYMBOL_DEFAULT, "1m", start, end, source="mark_price_klines_1m", cast_prices=True
+    )
+    funding = lake.query_funding(ds.SYMBOL_DEFAULT, start, end)
+    logger.info(
+        "analysis.faixa2_e1.data_loaded", n_mark_1m=mark_1m.height, n_funding=funding.height
+    )
+
+    payload: dict[str, Any] = {
+        "grid_declared_before_search": {
+            "tp_atr_mult": list(E1_TP_GRID),
+            "sl_atr_mult": list(E1_SL_GRID),
+        },
+        "n_lifetime_delta": len(E1_TP_GRID) * len(E1_SL_GRID) * 2,
+        "cells": {},
+        "sanidade_centro_da_grade": {},
+    }
+
+    for side, side_label in ((1, "long"), (-1, "short")):
+        filled_side = _filled_side_population(mf_data, side=side)
+        n_total_side = mf_data.filter(pl.col("side") == side).height
+        n_nofill_side = n_total_side - filled_side.height
+
+        for tp in E1_TP_GRID:
+            for sl in E1_SL_GRID:
+                t_cell = time.perf_counter()
+                resolved = bs.resolve_barriers_vectorized(
+                    filled_side,
+                    mark_1m,
+                    funding,
+                    side=side,
+                    tp_atr_mult=tp,
+                    sl_atr_mult=sl,
+                    time_stop_bars=cfg.time_stop_bars,
+                    maker_fee=cfg.maker_fee,
+                    taker_fee=cfg.taker_fee,
+                )
+                cell_trades = _cell_trades(filled_side, resolved, side=side)
+
+                # distribuição TP/SL/TIME EXATA sobre a população SEM
+                # duplicação de path (antes do join com predictions).
+                barrier_arr = np.array(resolved.barrier_hit)
+                n_tp_exact = int((barrier_arr == "TP").sum())
+                n_sl_exact = int((barrier_arr == "SL").sum())
+                n_time_exact = int((barrier_arr == "TIME").sum())
+
+                cell_with_path = _map_trades_to_paths(cell_trades, predictions, fold_to_path)
+                summary = _cell_summary(
+                    cell_trades,
+                    cell_with_path,
+                    n_total_side=n_total_side,
+                    n_nofill_side=n_nofill_side,
+                    tp=tp,
+                    sl=sl,
+                    side_label=side_label,
+                )
+                summary["frac_tp"] = n_tp_exact / n_total_side
+                summary["frac_sl"] = n_sl_exact / n_total_side
+                summary["frac_time"] = n_time_exact / n_total_side
+                summary["elapsed_seconds"] = time.perf_counter() - t_cell
+
+                key = f"{side_label}_tp{tp}_sl{sl}"
+                payload["cells"][key] = summary
+                logger.info(
+                    "analysis.faixa2_e1.cell_done",
+                    side=side_label,
+                    tp_atr_mult=tp,
+                    sl_atr_mult=sl,
+                    elapsed_s=round(summary["elapsed_seconds"], 1),
+                )
+
+    # sanidade: centro da grade (tp=2.0, sl=1.5, herdado de constants.yaml)
+    # reproduz a distribuição pooled do Sprint 6 (TP 36,5% / SL 51,3% /
+    # TIME 6,5% / NOFILL 5,7% -- docs/SPRINT_LOG.md, secao Sprint 6).
+    center_long = payload["cells"][f"long_tp{cfg.tp_atr_mult}_sl{cfg.sl_atr_mult}"]
+    center_short = payload["cells"][f"short_tp{cfg.tp_atr_mult}_sl{cfg.sl_atr_mult}"]
+    n_total_pooled = center_long["n_total_side"] + center_short["n_total_side"]
+    pooled_frac = {
+        "TP": (
+            center_long["frac_tp"] * center_long["n_total_side"]
+            + center_short["frac_tp"] * center_short["n_total_side"]
+        )
+        / n_total_pooled,
+        "SL": (
+            center_long["frac_sl"] * center_long["n_total_side"]
+            + center_short["frac_sl"] * center_short["n_total_side"]
+        )
+        / n_total_pooled,
+        "TIME": (
+            center_long["frac_time"] * center_long["n_total_side"]
+            + center_short["frac_time"] * center_short["n_total_side"]
+        )
+        / n_total_pooled,
+        "NOFILL": (
+            center_long["frac_nofill"] * center_long["n_total_side"]
+            + center_short["frac_nofill"] * center_short["n_total_side"]
+        )
+        / n_total_pooled,
+    }
+    sprint6_reference = {"TP": 0.3654, "SL": 0.5125, "TIME": 0.0652, "NOFILL": 0.0569}
+    payload["sanidade_centro_da_grade"] = {
+        "pooled_frac_recomputado": pooled_frac,
+        "sprint6_referencia": sprint6_reference,
+        "max_abs_diff": max(abs(pooled_frac[k] - sprint6_reference[k]) for k in sprint6_reference),
+    }
+    return payload
+
+
+E1_OUTPUT_PATH: Final[Path] = EXPERIMENTS_DIR / "faixa2_e1_barrier_sweep.json"
+
+
+def run_and_save_fase2_e1(*, dest_path: Path | None = None) -> Path:
+    """Ponto de entrada MANUAL, separado de `run_and_save_fase0_e_fase1`
+    (custo real: carrega `mark_1m`/`funding` da série completa + 18
+    resoluções vetorizadas — minutos, não segundos). Chame:
+    `uv run python -c "from src.analysis.faixa2_caminho_b import
+    run_and_save_fase2_e1 as r; r()"`."""
+    mf = ds.build_modeling_frame()
+    cpcv_result = cpcv.generate_splits(mf.data)
+    splits = cpcv_result.splits
+    predictions = f15.load_predictions()
+
+    t0 = time.perf_counter()
+    payload = run_fase2_e1(mf.data, predictions, splits)
+    payload["elapsed_seconds_total"] = time.perf_counter() - t0
+    payload = {**report_provenance(), "task": "faixa2_e1_barrier_sweep", **payload}
+
+    dest = dest_path if dest_path is not None else E1_OUTPUT_PATH
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.with_name(dest.name + ".tmp")
+    blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2)
+    with tmp_path.open("wb") as fh:
+        fh.write(blob)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, dest)
+    logger.info(
+        "analysis.faixa2_e1.written",
+        path=str(dest),
+        elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
+    )
+    return dest
 
 
 # ============================================================================

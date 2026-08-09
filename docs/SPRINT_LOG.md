@@ -1428,7 +1428,71 @@ inteira, NOFILL fica nulo), suíte completa 832 passam (era 793), `ruff`/
 justificados com `# noqa: magic-number`, mesma convenção do resto do
 repo), 6/6 import-linter.
 
-### FASE 2 (E1/E2/E3) e FASE 3 (C1/C2/C3) — em andamento, ver seções abaixo quando concluídas.
+### FASE 2, E1 — varredura de barreiras 3x3 por lado (§18.7.1 pago)
+
+Grade DECLARADA antes da busca (B20): `tp_atr_mult ∈ {1,5·2,0·2,5}` x
+`sl_atr_mult ∈ {1,0·1,5·2,0}`, independente por lado — 18 variantes.
+Módulo novo `src/labels/barrier_sweep.py` — resolução de barreira
+vetorizada via `numpy.lib.stride_tricks.sliding_window_view` (§18.7.1,
+"nunca implementado" até esta rodada). Resultado em
+`experiments/faixa2_e1_barrier_sweep.json`. `n_lifetime`: 23 → **41**
+(`audit/n_lifetime.yaml`, id 10, delta +18).
+
+**Insight que tornou a varredura barata**: o FILL (se/quando a ordem
+limite preenche) não depende de `tp_atr_mult`/`sl_atr_mult` — só de
+`limit_price`/`fill_timeout_bars`, ambos fixos na varredura. Reusado
+direto de `labels/v1/labels.parquet` (`t_entry`/`entry_price_fill`/
+`atr_at_t0`, qualquer config), a varredura só recalcula TP/SL/TIME por
+célula. Resultado: **18 células em 35,8s** (vs. ~426,5s medidos em
+`cost_surface.py` para um grid comparável 9-células-ambos-os-lados com o
+motor em laço — mais de 10x mais rápido), sem re-rodar o Label Engine.
+
+**Correção verificada, não assumida.** `resolve_barriers_vectorized`
+reproduz `triple_barrier.build_labels` byte-a-byte em 5 cenários
+sintéticos (TP/SL/TIME/desempate-mesmo-candle/múltiplos-trades) e sobre
+2024 completo real (`ret_net` máx diff < 1e-6, zero divergência de
+`barrier_hit`) — `tests/unit/test_labels_barrier_sweep.py`, 7 testes.
+
+**Sanidade do centro da grade — PASSOU.** `tp=2,0/sl=1,5` (config de
+produção) reproduz a distribuição pooled do Sprint 6 com
+`max_abs_diff=2,3e-5` (TP 36,54% vs. 36,54% referência; SL/TIME/NOFILL
+igualmente exatos).
+
+**Achado estrutural, população INCONDICIONAL (todo trade rotulado, sem
+seleção de modelo — nenhum modelo foi retreinado nesta rodada).** `edge_
+atr_units_mean` (`ret_gross/atr_at_t0`) é NEGATIVO nas 18 células, os dois
+lados — consistente com o B1 já medido na Faixa 1.7 (todo regime negativo
+sem seletividade). Isto não é um achado novo sobre existir edge ou não —
+é a confirmação de que a geometria de barreira SOZINHA, sem o Alpha
+selecionando quando entrar, nunca foi desenhada para ser lucrativa; a
+pergunta de C1/C2 (FASE 3) exige a seleção do modelo, que a FASE 2 E1 não
+recria.
+
+**Trade-off geometria mensurável**: `tp=1,5` reduz TIME para 1,2-6,8% do
+book (barreira mais fácil de alcançar) contra 4,8-15,6% em `tp=2,5`; custo
+médio por trade fica entre 5,4 e 6,2bps, subindo com `tp_atr_mult` e caindo
+com `sl_atr_mult` (mais SL/TIME = mais saída taker, mas TP mais apertado
+tem menos chance de sair maker também — os dois efeitos interagem). Estes
+números alimentam a escolha de célula pra retreinar em E2/FASE 3, mas essa
+escolha ainda não foi feita aqui — DESCOBERTA, não decisão.
+
+**Verificação**: 7 testes novos (`test_labels_barrier_sweep.py`), suíte
+completa 838 passam (era 832), `ruff`/`mypy` limpos, `banned_patterns` sem
+violação nova, 6/6 import-linter.
+
+### FASE 2 (E2/E3) e FASE 3 (C1/C2/C3) — pendentes.
+
+**Escopo real destas duas, para quem for continuar**: E2 (ampliar T1 de
+10 para 12-15 features) exige escolher candidatas específicas do tier T2
+do PRD (§2.2-2.12), registrar `causal_proof`+paridade lote/streaming pra
+cada uma, e resolver os dois pares de ortogonalidade já violados
+(E27f×C07, A13×B01) — decisão de desenho, não só medição. E3 (Camada 2,
+§5.4) é um módulo novo de triagem de estabilidade in-fold, ainda não
+existente. FASE 3 (C1/C2/C3) precisa rodar sobre "a melhor configuração
+da FASE 2" — como nenhuma FASE 2 recria a seleção do Alpha sem retreinar,
+C1/C2 (que comparam `directional_sharpe` do Alpha, não da população
+incondicional) exigem retreinar a Camada 1 pelo menos uma vez sob a
+config vencedora de E1+E2+E3, não estão prontos a partir só de E1.
 
 ## Índice rápido — onde encontrar cada número
 
@@ -1447,7 +1511,9 @@ repo), 6/6 import-linter.
 | Distribuição real de regime? | R1 domina (46%), R5 raro (1,7%) | Sprint 5 acima |
 | Long segue a tendência de 48b em R2? | Não detectavelmente — lift 1,02, p=0,18 (contra 1,72/p≈0 em R3) | Faixa 2, FASE 1 D1 acima |
 | MFE por regime é pior em R2? | Não — mediana ~1,3-1,4 ATR em TODOS os 8 blocos lado×regime; tp_atr_mult=2,0 parece ambicioso estruturalmente, não seletivamente em R2 | Faixa 2, FASE 1 D3 acima |
-| N_lifetime atual, auditado? | 23 (era 5 — +18 de comparações seletivas retroativas, escopo parcial declarado) | `audit/n_lifetime.yaml`, Faixa 2 F0.1 acima |
+| N_lifetime atual, auditado? | 41 (era 5 — +18 retroativo F0.1, +18 varredura E1) | `audit/n_lifetime.yaml`, Faixa 2 F0.1/E1 acima |
+| sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
+| A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
 | Correlação real entre features T1? | 2 pares violam 0,70 | Sprint 4 acima |
 | CPCV vaza treino pro teste? | Não — 0 de 462.682 labels, medido | Sprint 7 acima |
