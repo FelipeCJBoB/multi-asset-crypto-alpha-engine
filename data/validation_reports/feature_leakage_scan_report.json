@@ -1,0 +1,95 @@
+{
+  "entries": [
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "A05_ret_vol_norm_4",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": 0.0021065562127919797
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "A13_dist_ema48_atr",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": 0.00609251057989569
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "B01_rsi_14",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": 0.004311906170193301
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": true,
+      "feature": "E27f_cost_atr_ratio",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": 0.11712898356033588
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": true,
+      "feature": "C06_vol_ratio_12_96",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": -0.025638858849380913
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": true,
+      "feature": "C07_vol_pctile_expanding",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": -0.10509378556663286
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": true,
+      "feature": "D03f_volume_z_expanding",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": -0.07531365784097363
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "D06f_taker_imbalance_z_48",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458516,
+      "spearman_rho": -0.00025535675324078896
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "E02f_funding_z_expanding",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 458912,
+      "spearman_rho": 0.0033519537969863974
+    },
+    {
+      "bonferroni_threshold": 0.009297981838696588,
+      "elevated": false,
+      "feature": "E10f_oi_change_z_48",
+      "hard_fail": false,
+      "hard_fail_threshold": 0.3,
+      "n": 413248,
+      "spearman_rho": -0.000053737203718020925
+    }
+  ],
+  "schema_version": 1
+}

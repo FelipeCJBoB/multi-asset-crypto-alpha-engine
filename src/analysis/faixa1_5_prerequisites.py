@@ -216,9 +216,22 @@ def fee_budget_sweep(realized: pl.DataFrame) -> dict[str, Any]:
     verificada no repo — não existe fórmula fechada documentada): a
     relação é LINEAR — `target_signal_rate_ajustada = target_signal_rate *
     (candidato / fee_budget_monthly_atual)`. `orçamento/ano implicado =
-    target_signal_rate_ajustada * 2 lados * BARS_PER_YEAR` — mesma
-    fórmula de `src.analysis.tau_diagnostics` ("alvo nominal"), reusada,
-    não reinventada.
+    target_signal_rate_ajustada * BARS_PER_YEAR` — mesma fórmula de
+    `src.analysis.tau_diagnostics` ("alvo nominal"), reusada, não
+    reinventada.
+
+    **Correção (Faixa 1.6, Bloco 3, 2026-08-09) — SEM fator de lado.** Até
+    2026-08-09 esta função multiplicava por `2.0` ("2 lados"), citando
+    `tau_diagnostics` como precedente — fator que `tau_diagnostics`
+    introduziu e que este módulo herdou por citação, sem checar contra a
+    derivação original. `PRD_V3_2_UNIFICADO.md:95-101` (§0.2 R3) deriva o
+    orçamento como contagem TOTAL de trades (`661/ano`, sem termo de
+    lado), e `target_signal_rate` já é essa taxa dividida por
+    `BARS_PER_YEAR` — dobrar de volta aqui dobrava o orçamento de fees
+    implícito (ver `config/constants.yaml::fee_budget_is_per_side`, e
+    `src/analysis/faixa1_6_reconciliation.py`, Bloco 3, para a auditoria
+    completa). Os pontos deste sweep antes da correção tinham
+    `implied_trades_per_year` 2x maior que o correto.
 
     Não escolhe valor, não conclui se cabe — só reporta, por ponto da
     grade, o orçamento implicado e quais `path_id`/células excedem."""
@@ -244,7 +257,7 @@ def fee_budget_sweep(realized: pl.DataFrame) -> dict[str, Any]:
     for candidate in grid:
         scale = candidate / fee_budget_current
         adjusted_rate = target_signal_rate_current * scale
-        implied_trades_per_year = adjusted_rate * 2.0 * BARS_PER_YEAR
+        implied_trades_per_year = adjusted_rate * BARS_PER_YEAR
 
         by_path_exceeds = {
             str(pid): bool(tpy > implied_trades_per_year) if math.isfinite(tpy) else None
@@ -470,12 +483,30 @@ def _ci95_mean(values: np.ndarray) -> tuple[float, float]:
     return mean - half, mean + half
 
 
-def path_dispersion(realized: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) -> dict[str, Any]:
+def path_dispersion(
+    realized: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...], predictions: pl.DataFrame
+) -> dict[str, Any]:
     """Bloco 3 — DESCOBERTA. Por `path_id`: `n_filled`, cobertura
     calendário, trades/ano, ret_net médio ponderado + IC95, distribuição
     de regime, threshold efetivo (quantil de `confidence` realizado vs
     `target_signal_rate`), fração de barras compartilhadas com outros
     paths. Spearman `n_filled` x `ret_net médio`, n=5 (ressalva explícita).
+
+    **Correção (Faixa 1.6, Bloco 2 Fase A, 2026-08-09) —
+    `threshold_effective_confidence_quantile` era medido sobre a
+    população ERRADA.** Até 2026-08-09 este campo tomava o quantil `1 -
+    target_signal_rate` de `confidence` dentro de `realized` — que já é
+    só sinais EMITIDOS (`side_hat != 0`, pós-seleção: toda linha ali JÁ
+    passou `confidence > tau`). Isso é quantil-de-um-quantil: path 0 media
+    exatamente `1,0000` com 7.162 trades preenchidos, o que o nome do
+    campo sugeria (erradamente) ser um threshold que produziria ZERO
+    trades. Verificado empiricamente (`src.analysis.
+    faixa1_6_reconciliation`, Bloco 2): recalculado sobre a população
+    CORRETA — todo bar OOF que o modelo pontuou naquele path, via
+    `predictions` (`is_oof=True`, SEM filtrar `side_hat != 0`) — os 5
+    valores caem numa faixa estreita e plausível (0,55–0,60), não mais
+    colados em 1,0000 nem variando 0,74–1,00. `predictions` agora é
+    parâmetro obrigatório desta função por causa disso.
 
     **Limitação de independência dos CIs, registrada aqui e não
     corrigida nesta rodada:** os CI95 abaixo tratam cada trade dentro de
@@ -488,6 +519,11 @@ def path_dispersion(realized: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) 
     paths, fora do escopo desta rodada (DESCOBERTA, não correção)."""
     target_signal_rate = float(load_constant("target_signal_rate"))
     path_ids = sorted(realized["path_id"].unique().to_list())
+    fold_to_path = fold_to_path_map(splits)
+    all_scored = predictions.filter(pl.col("is_oof"))
+    folds_by_path: dict[int, list[int]] = {}
+    for fold_id, pid in fold_to_path.items():
+        folds_by_path.setdefault(pid, []).append(fold_id)
 
     all_t0_by_path: dict[int, set[Any]] = {
         pid: set(realized.filter(pl.col("path_id") == pid)["t0"].to_list()) for pid in path_ids
@@ -524,12 +560,18 @@ def path_dispersion(realized: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) 
         n_shared = len(all_t0_by_path[pid] & others_t0)
         frac_shared = n_shared / len(all_t0_by_path[pid]) if all_t0_by_path[pid] else float("nan")
 
-        conf_realized = (
-            sub_all["confidence"].to_numpy().astype(np.float64) if sub_all.height else np.array([])
+        # POPULAÇÃO CORRETA (Bloco 2 Fase A) — todo bar OOF pontuado nos
+        # folds deste path, SEM filtrar side_hat != 0 (`all_scored`, não
+        # `sub_all`/`realized`, que já é pós-seleção — ver docstring).
+        scored_this_path = all_scored.filter(pl.col("fold_id").is_in(folds_by_path.get(pid, [])))
+        conf_all_scored = (
+            scored_this_path["confidence"].to_numpy().astype(np.float64)
+            if scored_this_path.height
+            else np.array([])
         )
         threshold_effective = (
-            float(np.quantile(conf_realized, 1.0 - target_signal_rate))
-            if conf_realized.size
+            float(np.quantile(conf_all_scored, 1.0 - target_signal_rate))
+            if conf_all_scored.size
             else float("nan")
         )
 
@@ -546,6 +588,7 @@ def path_dispersion(realized: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) 
             "ci95_high_bps": ci_high,
             "regime_distribution": regime_counts,
             "threshold_effective_confidence_quantile": threshold_effective,
+            "n_all_scored_bars_this_path": int(scored_this_path.height),
             "n_t0_shared_with_other_paths": n_shared,
             "fraction_t0_shared": frac_shared,
         }
@@ -725,7 +768,7 @@ def run_faixa1_5(
         "task": "faixa1_5_prerequisites",
         "fee_budget_sweep": fee_budget_sweep(realized),
         "stratified_headlines": stratified_headlines(realized, hhi_df),
-        "path_dispersion": path_dispersion(realized, splits),
+        "path_dispersion": path_dispersion(realized, splits, predictions),
         "confidence_variants": confidence_variants_analysis(predictions_with_rank, mf_data),
         "e02f_in_fold": e02f_in_fold(mf_data, splits),
     }

@@ -166,6 +166,55 @@ def test_screen_monotone_constraints_e02f_forcado_por_lado_short_mais_1() -> Non
     assert results["E02f_funding_z_expanding"].forced_economic is True
 
 
+def test_unforce_features_by_side_libera_so_o_lado_pedido() -> None:
+    """Faixa 1.6, Bloco 4 — `unforce_features_by_side` remove a restrição
+    forçada de E02f SÓ no lado passado; a triagem estatística normal
+    decide. `n_envs_consistent=3` (3 de 6 blocos com sinal oposto) —
+    diferente de `n_envs_consistent=0` (que dá sinal UNÂNIME nos 6
+    blocos, só invertido, e portanto constraint estatístico igual ao
+    forçado por coincidência), aqui a consistência não bate >= 6 e a
+    triagem estatística cai em `constraint=0` — o único jeito de
+    discriminar "caiu pra estatística" de "o forçado ainda valia de
+    qualquer jeito". O long, fora do override, continua forçado -1 —
+    exatamente a garantia que o Bloco 4 precisa (variante experimental
+    isolada por lado, produção intocada)."""
+    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=3)
+    unforce = {"E02f_funding_z_expanding": frozenset({-1})}
+
+    short_results = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6,
+        unforce_features_by_side=unforce,
+    )
+    assert short_results["E02f_funding_z_expanding"].constraint == 0
+    assert short_results["E02f_funding_z_expanding"].forced_economic is False
+
+    long_results = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=1, min_consistent_envs=6,
+        unforce_features_by_side=unforce,
+    )
+    assert long_results["E02f_funding_z_expanding"].constraint == -1
+    assert long_results["E02f_funding_z_expanding"].forced_economic is True
+
+
+def test_unforce_features_by_side_default_none_preserva_producao() -> None:
+    """Default `None` -- comportamento idêntico a antes do parâmetro
+    existir (regressão contra o Bloco 4 mudar produção por acidente)."""
+    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
+    with_default = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6
+    )
+    with_explicit_none = monotonic.screen_monotone_constraints(
+        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6,
+        unforce_features_by_side=None,
+    )
+    assert with_default["E02f_funding_z_expanding"].constraint == 1
+    assert with_default["E02f_funding_z_expanding"].forced_economic is True
+    assert (
+        with_explicit_none["E02f_funding_z_expanding"].constraint
+        == with_default["E02f_funding_z_expanding"].constraint
+    )
+
+
 def test_screen_monotone_constraints_side_invalido_leva_a_value_error() -> None:
     df = _synthetic_screen_df("B01_rsi_14", n_envs_consistent=6)
     with pytest.raises(ValueError, match="side"):

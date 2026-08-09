@@ -16,12 +16,25 @@ fronteira que `src.analysis.attribution` já declara (PÓS-HOC, lê resultado
 REALIZADO já persistido em disco, nenhum retreino).
 
 **Alvo nominal — antes de qualquer atrito de preenchimento.**
-`target_signal_rate × 2 lados × bars_per_year` — é a própria definição do
-quantil (`1 - target_signal_rate` da massa de probabilidade calibrada,
-por lado) aplicada a um ano inteiro de barras, somada nos dois lados
-independentes (`M_long`/`M_short`, B18: dois binários separados, nunca um
-único classificador multiclasse). Não depende de nenhum dado de backtest —
-é aritmética pura sobre os dois parâmetros de entrada.
+`target_signal_rate × bars_per_year` — é a própria definição do quantil
+(`1 - target_signal_rate` da massa de probabilidade calibrada) aplicada a
+um ano inteiro de barras. Não depende de nenhum dado de backtest — é
+aritmética pura sobre os dois parâmetros de entrada.
+
+**Correção (Faixa 1.6, Bloco 3, 2026-08-09) — o fator `2.0` (lados) foi
+removido daqui.** Este módulo introduziu o fator originalmente, com o
+comentário "2.0 é contagem estrutural de lados, não hiperparâmetro" — mas
+a derivação do orçamento em `PRD_V3_2_UNIFICADO.md:95-101` (§0.2 R3) não
+tem termo de lado: `trades/mês ≤ (fee_budget_monthly × equity) / (N × c)`,
+onde `c` é custo POR TRADE, agnóstico de lado, e o resultado (`661/ano ·
+1,89% das barras`) já é uma contagem TOTAL. `target_signal_rate` foi
+DERIVADO desse total (`661 / 35.064 ≈ 0,0189`), então multiplicar de volta
+por 2 aqui dobra o orçamento de fees implícito — não é uma leitura
+alternativa legítima, é o mesmo orçamento contado duas vezes. Ver
+`config/constants.yaml::fee_budget_is_per_side` (provenance DERIVED) e
+`src/analysis/faixa1_6_reconciliation.py` (Bloco 3) para a auditoria
+completa, incluindo onde esse fator se propagou (`src/analysis/
+faixa1_5_prerequisites.py::fee_budget_sweep`, mesmo `git blame`).
 
 **Realizado — DUAS versões, deliberadamente não escolhidas uma pela
 outra.** `camada1_backtest_by_path` carrega, por caminho de CPCV,
@@ -296,10 +309,11 @@ def tau_realization_diagnostic(
         )
 
     # alvo nominal — quantil (1 - target_signal_rate) aplicado a um ano
-    # inteiro de barras, nos 2 lados independentes (B18: M_long/M_short
-    # binários separados) — 2.0 é contagem estrutural de lados, não
-    # hiperparâmetro (whitelisted em banned_patterns._ALLOWED_NUMERIC_LITERALS).
-    target_value = target_signal_rate * 2.0 * bars_per_year
+    # inteiro de barras. SEM fator de lado (Faixa 1.6 Bloco 3 — ver
+    # docstring do módulo, "Correção": target_signal_rate já é uma taxa
+    # TOTAL, derivada de §0.2 R3 sem termo de lado; dobrar aqui dobraria o
+    # orçamento de fees implícito).
+    target_value = target_signal_rate * bars_per_year
     target = Metric(
         value=target_value,
         unit=Unit.COUNT,

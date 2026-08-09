@@ -72,13 +72,33 @@ _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE: dict[str, dict[int, int]] = {
 }
 
 
-def _forced_constraint_for(feature: str, *, side: int) -> int | None:
+def _forced_constraint_for(
+    feature: str,
+    *,
+    side: int,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+) -> int | None:
     """`None` se `feature` não tem restrição forçada por identidade
     contábil (nem constante-nos-dois-lados nem por-lado) — nesse caso
     `screen_monotone_constraints` cai para a triagem estatística normal.
     Caso contrário, devolve o inteiro da restrição já resolvido para o
     `side` pedido (`+1`/`-1`, mesma convenção de
-    `src.models.dataset.side_subset`)."""
+    `src.models.dataset.side_subset`).
+
+    `unforce_features_by_side` (Faixa 1.6, Bloco 4) — override EXPLÍCITO e
+    ADITIVO, default `None` em toda a cadeia de chamada (`screen_monotone_
+    constraints` -> `fit_side_model` -> `run_fold` -> `run_all_folds`), nunca
+    passado por `src.models.pipeline.run_layer1_sprint` (o treino de
+    produção de `alpha_c1_v1`/`alpha_c0_baseline_v1`): produção continua
+    bit-a-bit idêntica. Só usado por
+    `src.analysis.faixa1_6_reconciliation` para medir uma VARIANTE
+    experimental (E02f sem restrição forçada num lado específico) sem
+    mexer em `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` nem em nenhum outro
+    ponto do desenho de produção."""
+    if unforce_features_by_side is not None:
+        unforced_sides = unforce_features_by_side.get(feature)
+        if unforced_sides is not None and side in unforced_sides:
+            return None
     if feature in _ECONOMIC_FORCED_CONSTRAINT:
         return _ECONOMIC_FORCED_CONSTRAINT[feature]
     by_side = _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE.get(feature)
@@ -151,6 +171,7 @@ def screen_monotone_constraints(
     side: int,
     target_col: str = "ret_net",
     min_consistent_envs: int | None = None,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> dict[str, FeatureICResult]:
     """Núcleo da Camada 1 para UM lado, UM fold: `df_train_side` é o
     subconjunto de TREINO já filtrado por `src.models.dataset.side_subset`
@@ -163,7 +184,10 @@ def screen_monotone_constraints(
     para as duas categorias — quem chama não precisa saber qual feature é
     qual. Retorna `{feature_id: FeatureICResult}` para todas as
     `feature_ids`, incluindo as forçadas (IC medido sempre reportado para
-    transparência, mesmo quando não decide a restrição)."""
+    transparência, mesmo quando não decide a restrição).
+
+    `unforce_features_by_side` — ver docstring de `_forced_constraint_for`;
+    default `None` preserva o comportamento de produção exatamente."""
     if side not in (1, -1):
         raise ValueError(f"screen_monotone_constraints: side deve ser 1 ou -1, recebido {side}")
     if min_consistent_envs is None:
@@ -174,7 +198,9 @@ def screen_monotone_constraints(
     results: dict[str, FeatureICResult] = {}
     for feature in feature_ids:
         ic_by_env = compute_ic_by_env(df_env, feature, target_col)
-        forced_constraint = _forced_constraint_for(feature, side=side)
+        forced_constraint = _forced_constraint_for(
+            feature, side=side, unforce_features_by_side=unforce_features_by_side
+        )
         forced = forced_constraint is not None
         constraint, mean_ic, n_consistent, n_with_data = _assign_from_ic(
             ic_by_env, min_consistent_envs=min_consistent_envs

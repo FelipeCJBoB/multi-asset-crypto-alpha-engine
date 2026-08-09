@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-09T15:54:38.450846+00:00",
-  "code_version": "5081937",
+  "generated_at": "2026-08-09T16:55:53.449345+00:00",
+  "code_version": "e32c782",
   "schema_version": 1,
   "task": "faixa1_5_prerequisites",
   "fee_budget_sweep": {
@@ -23,7 +23,7 @@
         "fee_budget_monthly": 0.015,
         "scale_vs_current": 0.5,
         "target_signal_rate_adjusted": 0.00945,
-        "implied_trades_per_year": 662.7096,
+        "implied_trades_per_year": 331.3548,
         "unconditional_trades_per_year_by_path": {
           "0": 1098.5637081851467,
           "1": 1075.527302791302,
@@ -133,6 +133,446 @@
         "fee_budget_monthly": 0.02,
         "scale_vs_current": 0.6666666666666667,
         "target_signal_rate_adjusted": 0.012600000000000002,
+        "implied_trades_per_year": 441.80640000000005,
+        "unconditional_trades_per_year_by_path": {
+          "0": 1098.5637081851467,
+          "1": 1075.527302791302,
+          "2": 1261.8269491902843,
+          "3": 1306.689120598072,
+          "4": 858.090806557377
+        },
+        "unconditional_by_path_exceeds": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true
+        },
+        "by_cell": {
+          "long_R1": {
+            "n_filled_total": 1544,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R2": {
+            "n_filled_total": 4435,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R3": {
+            "n_filled_total": 6445,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R4": {
+            "n_filled_total": 4501,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R1": {
+            "n_filled_total": 2158,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R2": {
+            "n_filled_total": 2176,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R3": {
+            "n_filled_total": 4610,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R4": {
+            "n_filled_total": 5098,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          }
+        }
+      },
+      "0.025": {
+        "fee_budget_monthly": 0.025,
+        "scale_vs_current": 0.8333333333333334,
+        "target_signal_rate_adjusted": 0.01575,
+        "implied_trades_per_year": 552.258,
+        "unconditional_trades_per_year_by_path": {
+          "0": 1098.5637081851467,
+          "1": 1075.527302791302,
+          "2": 1261.8269491902843,
+          "3": 1306.689120598072,
+          "4": 858.090806557377
+        },
+        "unconditional_by_path_exceeds": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true
+        },
+        "by_cell": {
+          "long_R1": {
+            "n_filled_total": 1544,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R2": {
+            "n_filled_total": 4435,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R3": {
+            "n_filled_total": 6445,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R4": {
+            "n_filled_total": 4501,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R1": {
+            "n_filled_total": 2158,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R2": {
+            "n_filled_total": 2176,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R3": {
+            "n_filled_total": 4610,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R4": {
+            "n_filled_total": 5098,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          }
+        }
+      },
+      "0.030": {
+        "fee_budget_monthly": 0.03,
+        "scale_vs_current": 1.0,
+        "target_signal_rate_adjusted": 0.0189,
+        "implied_trades_per_year": 662.7096,
+        "unconditional_trades_per_year_by_path": {
+          "0": 1098.5637081851467,
+          "1": 1075.527302791302,
+          "2": 1261.8269491902843,
+          "3": 1306.689120598072,
+          "4": 858.090806557377
+        },
+        "unconditional_by_path_exceeds": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true
+        },
+        "by_cell": {
+          "long_R1": {
+            "n_filled_total": 1544,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R2": {
+            "n_filled_total": 4435,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R3": {
+            "n_filled_total": 6445,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R4": {
+            "n_filled_total": 4501,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R1": {
+            "n_filled_total": 2158,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R2": {
+            "n_filled_total": 2176,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R3": {
+            "n_filled_total": 4610,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R4": {
+            "n_filled_total": 5098,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          }
+        }
+      },
+      "0.035": {
+        "fee_budget_monthly": 0.035,
+        "scale_vs_current": 1.1666666666666667,
+        "target_signal_rate_adjusted": 0.02205,
+        "implied_trades_per_year": 773.1612,
+        "unconditional_trades_per_year_by_path": {
+          "0": 1098.5637081851467,
+          "1": 1075.527302791302,
+          "2": 1261.8269491902843,
+          "3": 1306.689120598072,
+          "4": 858.090806557377
+        },
+        "unconditional_by_path_exceeds": {
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true
+        },
+        "by_cell": {
+          "long_R1": {
+            "n_filled_total": 1544,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R2": {
+            "n_filled_total": 4435,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R3": {
+            "n_filled_total": 6445,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "long_R4": {
+            "n_filled_total": 4501,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R1": {
+            "n_filled_total": 2158,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R2": {
+            "n_filled_total": 2176,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R3": {
+            "n_filled_total": 4610,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          },
+          "short_R4": {
+            "n_filled_total": 5098,
+            "insufficient_n": false,
+            "by_path_exceeds": {
+              "0": false,
+              "1": false,
+              "2": false,
+              "3": false,
+              "4": false
+            }
+          }
+        }
+      },
+      "0.040": {
+        "fee_budget_monthly": 0.04,
+        "scale_vs_current": 1.3333333333333335,
+        "target_signal_rate_adjusted": 0.025200000000000004,
         "implied_trades_per_year": 883.6128000000001,
         "unconditional_trades_per_year_by_path": {
           "0": 1098.5637081851467,
@@ -239,451 +679,11 @@
           }
         }
       },
-      "0.025": {
-        "fee_budget_monthly": 0.025,
-        "scale_vs_current": 0.8333333333333334,
-        "target_signal_rate_adjusted": 0.01575,
-        "implied_trades_per_year": 1104.516,
-        "unconditional_trades_per_year_by_path": {
-          "0": 1098.5637081851467,
-          "1": 1075.527302791302,
-          "2": 1261.8269491902843,
-          "3": 1306.689120598072,
-          "4": 858.090806557377
-        },
-        "unconditional_by_path_exceeds": {
-          "0": false,
-          "1": false,
-          "2": true,
-          "3": true,
-          "4": false
-        },
-        "by_cell": {
-          "long_R1": {
-            "n_filled_total": 1544,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R2": {
-            "n_filled_total": 4435,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R3": {
-            "n_filled_total": 6445,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R4": {
-            "n_filled_total": 4501,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R1": {
-            "n_filled_total": 2158,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R2": {
-            "n_filled_total": 2176,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R3": {
-            "n_filled_total": 4610,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R4": {
-            "n_filled_total": 5098,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          }
-        }
-      },
-      "0.030": {
-        "fee_budget_monthly": 0.03,
-        "scale_vs_current": 1.0,
-        "target_signal_rate_adjusted": 0.0189,
-        "implied_trades_per_year": 1325.4192,
-        "unconditional_trades_per_year_by_path": {
-          "0": 1098.5637081851467,
-          "1": 1075.527302791302,
-          "2": 1261.8269491902843,
-          "3": 1306.689120598072,
-          "4": 858.090806557377
-        },
-        "unconditional_by_path_exceeds": {
-          "0": false,
-          "1": false,
-          "2": false,
-          "3": false,
-          "4": false
-        },
-        "by_cell": {
-          "long_R1": {
-            "n_filled_total": 1544,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R2": {
-            "n_filled_total": 4435,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R3": {
-            "n_filled_total": 6445,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R4": {
-            "n_filled_total": 4501,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R1": {
-            "n_filled_total": 2158,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R2": {
-            "n_filled_total": 2176,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R3": {
-            "n_filled_total": 4610,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R4": {
-            "n_filled_total": 5098,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          }
-        }
-      },
-      "0.035": {
-        "fee_budget_monthly": 0.035,
-        "scale_vs_current": 1.1666666666666667,
-        "target_signal_rate_adjusted": 0.02205,
-        "implied_trades_per_year": 1546.3224,
-        "unconditional_trades_per_year_by_path": {
-          "0": 1098.5637081851467,
-          "1": 1075.527302791302,
-          "2": 1261.8269491902843,
-          "3": 1306.689120598072,
-          "4": 858.090806557377
-        },
-        "unconditional_by_path_exceeds": {
-          "0": false,
-          "1": false,
-          "2": false,
-          "3": false,
-          "4": false
-        },
-        "by_cell": {
-          "long_R1": {
-            "n_filled_total": 1544,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R2": {
-            "n_filled_total": 4435,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R3": {
-            "n_filled_total": 6445,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R4": {
-            "n_filled_total": 4501,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R1": {
-            "n_filled_total": 2158,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R2": {
-            "n_filled_total": 2176,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R3": {
-            "n_filled_total": 4610,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R4": {
-            "n_filled_total": 5098,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          }
-        }
-      },
-      "0.040": {
-        "fee_budget_monthly": 0.04,
-        "scale_vs_current": 1.3333333333333335,
-        "target_signal_rate_adjusted": 0.025200000000000004,
-        "implied_trades_per_year": 1767.2256000000002,
-        "unconditional_trades_per_year_by_path": {
-          "0": 1098.5637081851467,
-          "1": 1075.527302791302,
-          "2": 1261.8269491902843,
-          "3": 1306.689120598072,
-          "4": 858.090806557377
-        },
-        "unconditional_by_path_exceeds": {
-          "0": false,
-          "1": false,
-          "2": false,
-          "3": false,
-          "4": false
-        },
-        "by_cell": {
-          "long_R1": {
-            "n_filled_total": 1544,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R2": {
-            "n_filled_total": 4435,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R3": {
-            "n_filled_total": 6445,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "long_R4": {
-            "n_filled_total": 4501,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R1": {
-            "n_filled_total": 2158,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R2": {
-            "n_filled_total": 2176,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R3": {
-            "n_filled_total": 4610,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          },
-          "short_R4": {
-            "n_filled_total": 5098,
-            "insufficient_n": false,
-            "by_path_exceeds": {
-              "0": false,
-              "1": false,
-              "2": false,
-              "3": false,
-              "4": false
-            }
-          }
-        }
-      },
       "0.045": {
         "fee_budget_monthly": 0.045,
         "scale_vs_current": 1.5,
         "target_signal_rate_adjusted": 0.02835,
-        "implied_trades_per_year": 1988.1288,
+        "implied_trades_per_year": 994.0644,
         "unconditional_trades_per_year_by_path": {
           "0": 1098.5637081851467,
           "1": 1075.527302791302,
@@ -692,10 +692,10 @@
           "4": 858.090806557377
         },
         "unconditional_by_path_exceeds": {
-          "0": false,
-          "1": false,
-          "2": false,
-          "3": false,
+          "0": true,
+          "1": true,
+          "2": true,
+          "3": true,
           "4": false
         },
         "by_cell": {
@@ -1591,7 +1591,8 @@
             "len": 959
           }
         ],
-        "threshold_effective_confidence_quantile": 1.0,
+        "threshold_effective_confidence_quantile": 0.553706169128418,
+        "n_all_scored_bars_this_path": 229456,
         "n_t0_shared_with_other_paths": 5681,
         "fraction_t0_shared": 0.6715923868069512
       },
@@ -1625,7 +1626,8 @@
             "len": 1494
           }
         ],
-        "threshold_effective_confidence_quantile": 0.7795116305351257,
+        "threshold_effective_confidence_quantile": 0.5618519186973572,
+        "n_all_scored_bars_this_path": 229456,
         "n_t0_shared_with_other_paths": 6936,
         "fraction_t0_shared": 0.8151369138559172
       },
@@ -1659,7 +1661,8 @@
             "len": 1832
           }
         ],
-        "threshold_effective_confidence_quantile": 0.8151728510856628,
+        "threshold_effective_confidence_quantile": 0.5871638655662537,
+        "n_all_scored_bars_this_path": 229456,
         "n_t0_shared_with_other_paths": 8101,
         "fraction_t0_shared": 0.8156463954893274
       },
@@ -1693,7 +1696,8 @@
             "len": 1756
           }
         ],
-        "threshold_effective_confidence_quantile": 0.742924690246582,
+        "threshold_effective_confidence_quantile": 0.5986329913139343,
+        "n_all_scored_bars_this_path": 229456,
         "n_t0_shared_with_other_paths": 7879,
         "fraction_t0_shared": 0.7821123684732976
       },
@@ -1727,7 +1731,8 @@
             "len": 1427
           }
         ],
-        "threshold_effective_confidence_quantile": 0.9646622538566589,
+        "threshold_effective_confidence_quantile": 0.5574796199798584,
+        "n_all_scored_bars_this_path": 229456,
         "n_t0_shared_with_other_paths": 6032,
         "fraction_t0_shared": 0.914216429220976
       }

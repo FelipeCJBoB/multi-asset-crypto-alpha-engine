@@ -102,6 +102,8 @@ com fee_budget_monthly = 0,03:  5,91 / 0,1072 = 55,1
 
 ⚠️ **`fee_budget_monthly = 0,03` é premissa arbitrária.** Ver §16.10.
 
+⚠️ **Nota (Faixa 1.6, Bloco 3, 2026-08-09) — `661/ano` é TOTAL, sem termo de lado.** O denominador da fórmula acima (`N × c`) é custo POR TRADE, agnóstico de long/short — não há "2 lados" em nenhum ponto desta derivação. Entre 2026-08-08 e 2026-08-09, `src/analysis/tau_diagnostics.py` introduziu (e `src/analysis/faixa1_5_prerequisites.py` herdou por citação) um fator ×2 no orçamento implicado, lendo esta constante como se fosse por lado — corrigido; ver `config/constants.yaml::fee_budget_is_per_side` (`false`, provenance DERIVED) e `src/analysis/faixa1_6_reconciliation.py`. Sob o orçamento correto (662,7 trades/ano no ponto central de `fee_budget_monthly`), os 5 caminhos de backtest medidos excedem — 1,3x a 2,0x no incondicional, 2,6x a 3,9x no pior ponto do sweep (`experiments/faixa1_5_prerequisites.json::fee_budget_sweep`). R3 volta a ser objeção ativa, não satisfeita.
+
 **R4 — Teto de features.** *(Reescrito na v3.1 — era uma constante derivada de fórmula errada; virou procedimento de medição.)*
 
 Labels de triple barrier ocupam um intervalo `[t0, t1]`, não um instante. Labels que se sobrepõem compartilham o mesmo caminho de preço e carregam informação redundante. Isso é sólido e está em AFML cap. 4.

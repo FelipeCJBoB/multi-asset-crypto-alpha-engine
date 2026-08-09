@@ -163,6 +163,27 @@ target_signal_rate:
   sweep_range: [0.0095, 0.0284]
   review_by: sprint_10
 
+fee_budget_is_per_side:
+  value: false
+  provenance: DERIVED
+  source: >
+    Faixa 1.6, Bloco 3 (2026-08-09) — a constante que faltava, antes só
+    implícita em código. PRD §0.2 R3:95-101 deriva o orçamento como
+    "trades/mês ≤ (fee_budget_monthly × equity) / (N × c)", com c = custo
+    POR TRADE, sem termo de lado — o resultado (661/ano, 1,89% das barras)
+    já é uma contagem TOTAL. target_signal_rate = 0,0189 foi derivado desse
+    total (661/35.064), não de um orçamento por lado. Entre 2026-08-08 e
+    2026-08-09, src/analysis/tau_diagnostics.py introduziu um fator ×2.0
+    ("2 lados") no alvo nominal, propagado por citação para
+    src/analysis/faixa1_5_prerequisites.py::fee_budget_sweep — os dois
+    corrigidos nesta rodada (ambos liam esta constante implicitamente como
+    true; agora leem false, explicitamente). Ver
+    src/analysis/faixa1_6_reconciliation.py Bloco 3 para a auditoria.
+  class: A
+  sweep_required: false
+  derived_from: [fee_budget_monthly, target_signal_rate]
+  review_by: sprint_10
+
 regime_er_cutoff:
   value: 0.60
   provenance: ASSUMED

@@ -95,10 +95,10 @@ def _round_number_report() -> dict[str, Any]:
 
 _TARGET_SIGNAL_RATE = 0.01
 _BARS_PER_YEAR = 10_000.0
-_TARGET_NOMINAL = _TARGET_SIGNAL_RATE * 2.0 * _BARS_PER_YEAR  # 200.0
+_TARGET_NOMINAL = _TARGET_SIGNAL_RATE * _BARS_PER_YEAR  # 100.0 -- SEM fator de lado, ver Bloco 3
 
 
-def test_alvo_nominal_e_a_definicao_do_quantil_vezes_2_lados_vezes_bars_per_year() -> None:
+def test_alvo_nominal_e_a_definicao_do_quantil_vezes_bars_per_year() -> None:
     result = tau.tau_realization_diagnostic(
         _round_number_report(), target_signal_rate=_TARGET_SIGNAL_RATE, bars_per_year=_BARS_PER_YEAR
     )
@@ -107,6 +107,24 @@ def test_alvo_nominal_e_a_definicao_do_quantil_vezes_2_lados_vezes_bars_per_year
     assert result.target_nominal_per_year.n == round(_BARS_PER_YEAR)
     assert result.target_nominal_per_year.n_semantics == "bars"
     assert result.target_nominal_per_year.valid is True
+
+
+def test_alvo_nominal_nao_tem_fator_de_lado() -> None:
+    """Regressão (Faixa 1.6, Bloco 3) — `target_signal_rate` já é uma taxa
+    TOTAL (derivada de §0.2 R3 sem termo de lado, ver
+    `config/constants.yaml::fee_budget_is_per_side`). Se alguém
+    reintroduzir um fator ×2 (ou qualquer outro fator de lado) no alvo
+    nominal, este teste falha — trava contra a regressão que motivou esta
+    task."""
+    result = tau.tau_realization_diagnostic(
+        _round_number_report(), target_signal_rate=_TARGET_SIGNAL_RATE, bars_per_year=_BARS_PER_YEAR
+    )
+    assert result.target_nominal_per_year.value == pytest.approx(
+        _TARGET_SIGNAL_RATE * _BARS_PER_YEAR
+    )
+    assert result.target_nominal_per_year.value != pytest.approx(
+        _TARGET_SIGNAL_RATE * 2.0 * _BARS_PER_YEAR
+    )
 
 
 def test_anualizacao_e_razao_por_caminho_batem_a_mao() -> None:
@@ -118,8 +136,9 @@ def test_anualizacao_e_razao_por_caminho_batem_a_mao() -> None:
 
     expected_signals_per_year = {0: 200.0, 1: 300.0, 2: 100.0}
     expected_filled_per_year = {0: 100.0, 1: 200.0, 2: 50.0}
-    expected_ratio_pre = {0: 1.0, 1: 1.5, 2: 0.5}
-    expected_ratio_post = {0: 0.5, 1: 1.0, 2: 0.25}
+    # alvo = 100.0 (SEM fator de lado, ver Bloco 3) -> ratio dobra vs a versão antiga
+    expected_ratio_pre = {0: 2.0, 1: 3.0, 2: 1.0}
+    expected_ratio_post = {0: 1.0, 1: 2.0, 2: 0.5}
 
     for path_id in (0, 1, 2):
         p = by_id[path_id]
@@ -142,8 +161,9 @@ def test_media_e_dispersao_entre_caminhos_batem_a_mao() -> None:
     assert result.mean_n_signals_per_year.n_semantics == "cpcv_paths"
     assert result.mean_n_filled_per_year.value == pytest.approx(350.0 / 3.0)
 
-    assert result.mean_ratio_pre_fill_to_target.value == pytest.approx(1.0)
-    assert result.mean_ratio_post_fill_to_target.value == pytest.approx(350.0 / 3.0 / 200.0)
+    # alvo = 100.0 (SEM fator de lado, ver Bloco 3)
+    assert result.mean_ratio_pre_fill_to_target.value == pytest.approx(2.0)
+    assert result.mean_ratio_post_fill_to_target.value == pytest.approx(350.0 / 3.0 / 100.0)
 
     assert result.dispersion_pre_fill.value == pytest.approx(3.0)
     assert result.dispersion_pre_fill.unit == Unit.RATIO

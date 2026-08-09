@@ -161,7 +161,10 @@ def test_fee_budget_sweep_no_ponto_central_scale_e_um(monkeypatch: pytest.Monkey
     central = result["points"]["0.030"]
     assert central["scale_vs_current"] == pytest.approx(1.0)
     assert central["target_signal_rate_adjusted"] == pytest.approx(0.0189)
-    assert central["implied_trades_per_year"] == pytest.approx(0.0189 * 2.0 * f15.BARS_PER_YEAR)
+    # SEM fator de lado (Faixa 1.6, Bloco 3) -- target_signal_rate ja e uma
+    # taxa TOTAL, derivada de §0.2 R3 sem termo de lado
+    assert central["implied_trades_per_year"] == pytest.approx(0.0189 * f15.BARS_PER_YEAR)
+    assert central["implied_trades_per_year"] != pytest.approx(0.0189 * 2.0 * f15.BARS_PER_YEAR)
 
 
 def test_fee_budget_sweep_grid_cobre_o_sweep_range_inteiro(
@@ -180,6 +183,69 @@ def test_fee_budget_sweep_grid_cobre_o_sweep_range_inteiro(
 
 def test_bars_per_year_bate_com_365_25_x_96() -> None:
     assert pytest.approx(365.25 * 96) == f15.BARS_PER_YEAR
+
+
+# ============================================================================
+# path_dispersion — threshold_effective_confidence_quantile (Bloco 2 Fase A)
+# ============================================================================
+
+
+def test_path_dispersion_threshold_usa_populacao_scored_completa_nao_so_selecionada(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regressão (Faixa 1.6, Bloco 2 Fase A) — `threshold_effective_
+    confidence_quantile` precisa ser medido sobre TODO bar OOF scored do
+    path (via `predictions`), não só os sinais já selecionados
+    (`side_hat != 0`, o que `realized` contém). O bug antigo tomava o
+    quantil de uma população já filtrada por seleção (quantil-de-um-
+    quantil) — 10 bars scored, só 2 viram sinal (confidence 0.9/1.0);
+    com `target_signal_rate=0.5` (mediana), a população completa dá
+    mediana ~0.55, a população só-selecionada (o bug) dava ~0.95."""
+    monkeypatch.setattr(f15, "load_constant", lambda name: 0.5)
+    n = 10
+    confidences = [0.1 * (i + 1) for i in range(n)]  # 0.1..1.0
+    side_hats = [0] * 8 + [1, 1]  # só os 2 últimos (conf 0.9, 1.0) viram sinal
+    predictions = pl.DataFrame(
+        {
+            "t0": list(range(1, n + 1)),
+            "fold_id": [0] * n,
+            "side_hat": side_hats,
+            "confidence": confidences,
+            "score_long_raw": confidences,
+            "score_short_raw": [0.0] * n,
+            "is_oof": [True] * n,
+        }
+    ).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
+    mf_rows = [
+        {
+            "t0": t0,
+            "side": 1,
+            "barrier_hit": "TP",
+            "ret_net": 0.01,
+            "ret_gross": 0.01,
+            "cost_entry_bps": 0.0,
+            "cost_exit_bps": 0.0,
+            "funding_bps": 0.0,
+            "regime": "R1",
+            "E27f_cost_atr_ratio": 0.1,
+            "E02f_funding_z_expanding": 0.1,
+        }
+        for t0 in (9, 10)
+    ]
+    mf_data = pl.DataFrame(mf_rows).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
+
+    fold_to_path = {0: 0}
+    realized = f15.build_realized_trades(predictions, mf_data, fold_to_path)
+    splits = (_FakeSplit(split_id=0, path_id=0),)
+
+    result = f15.path_dispersion(realized, splits, predictions)  # type: ignore[arg-type]
+    entry = result["per_path"]["0"]
+
+    assert entry["n_all_scored_bars_this_path"] == n
+    # populacao completa (10 bars, 0.1..1.0), mediana ~0.55 -- longe de 1.0
+    assert entry["threshold_effective_confidence_quantile"] == pytest.approx(0.55, abs=0.06)
+    # nunca deve reproduzir o valor do bug antigo (quantil só dos 2 selecionados, ~0.95)
+    assert entry["threshold_effective_confidence_quantile"] < 0.8
 
 
 # ============================================================================

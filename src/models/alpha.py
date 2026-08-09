@@ -195,6 +195,7 @@ def fit_side_model(
     hyper: XGBHyperparams,
     seed: int,
     target_signal_rate: float,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -202,8 +203,19 @@ def fit_side_model(
     (nunca o teste). `y = 1` sse `barrier_hit == "TP"` (leitura literal de
     §5.2 "P(TP antes de SL)" — SL e TIME viram `y=0`, ver docstring do
     módulo `dataset.py` e o relatório do Sprint 8 para a justificativa
-    completa desta escolha)."""
-    ic_results = monotonic.screen_monotone_constraints(train_side_df, T1_FEATURE_IDS, side=side)
+    completa desta escolha).
+
+    `unforce_features_by_side` — repassado a `monotonic.
+    screen_monotone_constraints` sem alteração; default `None` (produção,
+    ver `src.models.monotonic._forced_constraint_for`). Existe só para
+    `src.analysis.faixa1_6_reconciliation` (Bloco 4) treinar uma variante
+    experimental sem restrição forçada de uma feature num lado."""
+    ic_results = monotonic.screen_monotone_constraints(
+        train_side_df,
+        T1_FEATURE_IDS,
+        side=side,
+        unforce_features_by_side=unforce_features_by_side,
+    )
     if variant == VARIANT_CAMADA1:
         t1_constraints = tuple(ic_results[f].constraint for f in T1_FEATURE_IDS)
     elif variant == VARIANT_CAMADA0:
@@ -330,6 +342,7 @@ def run_fold(
     model_id: str,
     seed: int,
     feature_version: str = "t1_v1",
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> FoldResult:
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
@@ -345,6 +358,7 @@ def run_fold(
         hyper=hyper,
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
+        unforce_features_by_side=unforce_features_by_side,
     )
     short_result = fit_side_model(
         train_short,
@@ -353,6 +367,7 @@ def run_fold(
         hyper=hyper,
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
+        unforce_features_by_side=unforce_features_by_side,
     )
 
     test_bars_unique = _unique_test_bars(test_bars)
@@ -435,6 +450,7 @@ def run_all_folds(
     model_id: str,
     hyper: XGBHyperparams | None = None,
     seed: int | None = None,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> list[FoldResult]:
     hyper = hyper if hyper is not None else XGBHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
@@ -447,7 +463,15 @@ def run_all_folds(
             path_id=split.path_id,
             variant=variant,
         )
-        result = run_fold(df_all, split, variant=variant, hyper=hyper, model_id=model_id, seed=seed)
+        result = run_fold(
+            df_all,
+            split,
+            variant=variant,
+            hyper=hyper,
+            model_id=model_id,
+            seed=seed,
+            unforce_features_by_side=unforce_features_by_side,
+        )
         logger.info(
             "models.alpha.run_fold_done",
             split_id=split.split_id,

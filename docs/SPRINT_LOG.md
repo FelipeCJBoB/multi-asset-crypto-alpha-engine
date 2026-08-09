@@ -816,6 +816,12 @@ Escala assumida linear (`target_signal_rate_ajustada = target_signal_rate
 × candidato/atual`) — decisão de modelagem declarada, não verificada no
 repo (não existe fórmula fechada documentada da derivação original).
 
+**Correção (Faixa 1.6, Bloco 3, 2026-08-09):** o "2 lados" acima está
+ERRADO — `PRD_V3_2_UNIFICADO.md:95-101` (§0.2 R3) deriva o orçamento sem
+termo de lado (661/ano TOTAL, não por lado). Orçamento correto no ponto
+central: **662,7 trades/ano** — os 5 caminhos reais (858-1.307) TODOS
+excedem, 1,3x a 2,0x. Ver seção "Faixa 1.6" abaixo.
+
 **Bloco 2 — checagem de Simpson**: recomputado por lado×regime e
 lado×tercil de custo (`decompose()` reusado, não reimplementado). Achado
 estrutural: `total_sharpe` pooled **long=-1,297 vs short=-0,164** —
@@ -873,6 +879,118 @@ docstring do módulo), `check_constants_referenced` OK, 6/6 import-linter,
 mypy limpo. `pytest tests/` — 13 testes novos, todos passam (1 integração
 real, skip-if-ausente).
 
+## Faixa 1.6 — reconciliação de medições e correções (2026-08-09)
+
+A Faixa 1.5 expôs uma contradição entre dois artefatos do próprio repo: o
+IC de E02f medido pooled (Fase E) e o mesmo IC medido in-fold (Bloco 5 da
+Faixa 1.5) divergiam em SINAL pro subconjunto RANGE. Cinco blocos, regime
+declarado por bloco. Módulo novo `src/analysis/faixa1_6_reconciliation.py`
+(18 testes novos), resultado completo em
+`experiments/faixa1_6_reconciliation.json`.
+
+**STEP 0** confirmou as 5 premissas do prompt (mesmo alvo `ret_net`, mesma
+coluna/janela de E02f, `tau` fixado por fold, restrição forçada
+estruturalmente separável por lado, mapeamento fold→path já existente) e
+descobriu um sexto fator fora da lista original: `calibration_diagnostics.
+congruent_incongruent_subsets` mistura long e short numa ÚNICA correlação
+por regime, enquanto o in-fold é sempre separado por lado — testado
+explicitamente no Bloco 1 como candidato "side_mixing".
+
+**Bloco 1 — reconciliação do IC.** Reproduzido byte-a-byte o número já
+persistido (R1 +0,0383, R2 +0,1094, R3 -0,0257, R4 -0,0821 — bate exato).
+**Mistura de lado NÃO é o mecanismo dominante**: o long sozinho, OOF, já
+mostra o mesmo padrão (RANGE=+0,083, TREND=-0,085) que o pooled misturado
+(RANGE=+0,084, TREND=-0,052); o short sozinho não inverte (RANGE=+0,062,
+TREND=+0,005). **O mecanismo real é OOF vs TREINO, no mesmo lado (long),
+mesmo alvo, mesma partição de regime**: pooled-concat do TREINO dá as 4
+regiões negativas (R1=-0,016, R2=-0,016, R3=-0,014, R4=-0,037 — bate com
+o Bloco 5 da Faixa 1.5), mas pooled-concat do OOF inverte R1/R2 pro
+positivo (R1=+0,056, R2=+0,093) mantendo R3/R4 negativos. Composição de
+fold (fração de R2 dentro de RANGE no treino) NÃO explica a dispersão
+(Spearman ρ=0,025, p=0,93 — descartado como mecanismo). Achado
+secundário: mesmo dentro do OOF, pooled-concat (ponderado por n) e
+média-simples-dos-folds DIVERGEM em sinal pra R2 (+0,093 vs -0,037) — o
+resultado positivo de R2 é sensível a poucos folds de alto volume, não é
+um padrão típico de fold. Leitura consistente com o mecanismo (não
+provada formalmente): a população OOF é pós-seleção — só entra quem
+cruzou `tau`, uma função não-linear de TODAS as 10 features T1
+(inclusive a própria E02f) — condicionar numa variável correlacionada
+com E02f pode induzir correlação artificial que não existe na população
+de treino completa (mesma família de viés de seleção/Berkson, não
+autocorrelação nem vazamento). Não decide qual medição é autoritativa
+(B06 governa o USO da tabela, não a medição).
+
+**Bloco 2 — sanidade do threshold, Fase A encontrou bug real.**
+`threshold_effective_confidence_quantile` tomava o quantil sobre a
+população JÁ SELECIONADA (`side_hat != 0`) em vez de todo bar OOF scored
+do path — quantil-de-um-quantil. Path 0 media exatamente 1,0000 com
+7.162 trades preenchidos (contradição óbvia: threshold no máximo
+produziria zero trades). Corrigido em
+`src.analysis.faixa1_5_prerequisites.path_dispersion` (agora recebe
+`predictions`); os 5 valores caem de uma faixa 0,74-1,00 pra uma faixa
+estreita e plausível 0,55-0,60. Fase B não rodou (instrução do prompt:
+parar quando a Fase A encontra defeito de medição).
+
+**Bloco 3 — correção real do fator ×2 no orçamento.** `PRD_V3_2_
+UNIFICADO.md:95-101` (§0.2 R3) deriva o orçamento sem termo de lado
+(661/ano TOTAL). `src/analysis/tau_diagnostics.py` introduziu um fator
+×2,0 ("2 lados") no alvo nominal; `faixa1_5_prerequisites.py::fee_budget_
+sweep` herdou por citação. Removido dos dois sites; `config/
+constants.yaml::fee_budget_is_per_side` (`false`, DERIVED) formaliza a
+constante que antes só existia implícita. Orçamento correto no ponto
+central: **662,7 trades/ano** (era 1.325,4) — os 5 caminhos reais
+(858-1.307) TODOS excedem agora, 1,3x a 2,0x no incondicional, 2,6x a
+3,9x no pior ponto do sweep. `experiments/faixa1_5_prerequisites.json`
+reemitido com as duas correções (Bloco 2 + Bloco 3). Teste de regressão
+em `test_analysis_tau_diagnostics.py`/`test_analysis_faixa1_5_
+prerequisites.py` trava contra reintrodução do fator.
+
+**Bloco 4 — variante do short sem restrição forçada de E02f (retreino
+real).** Parâmetro novo `unforce_features_by_side` (aditivo, default
+`None` em toda a cadeia `screen_monotone_constraints` → `fit_side_model`
+→ `run_fold` → `run_all_folds`; `run_layer1_sprint` nunca passa esse
+argumento — `alpha_c1_v1`/`alpha_c0_baseline_v1` saem bit-a-bit
+idênticos). Retreinados os 15 folds × 2 lados (long INTOCADO, só o short
+perde a restrição forçada), model_id novo `alpha_c1_e02f_short_
+unforced_v1`, artefatos persistidos (predictions.parquet + 30
+diagnostics). **Achado central**: `directional_sharpe` pooled cai de
+0,879 (baseline atual, os dois lados forçados) pra **0,282** — quase
+todo o ganho do T0 (0,194→0,879) vinha do SHORT, não do long (long
+sozinho, sem o short forçado, mal sai do pré-T0: 0,282 vs 0,194 de
+partida). Isso é surpreendente à luz do Bloco 5 da Faixa 1.5: a triagem
+estatística quase NUNCA confirmaria essa restrição no short sozinha
+(1/15 folds com unanimidade 6/6) — a restrição que os dados quase nunca
+"aprovam" é a que está fazendo a maior parte do trabalho. Efeito colateral
+medido: 12.637 barras trocam de lado vencedor (`argmax(p_long,p_short)`)
+entre baseline e variante — os dois binários são independentes em peso
+mas acoplados na SELEÇÃO, então a diferença não é uma decomposição
+aditiva limpa (mesmo `directional_sharpe` do long muda ligeiramente,
+0,167→0,140, sem seu próprio modelo ter mudado). Permanência da variante
+contra Camada 0: 5/5 caminhos (`min_paths_required=4`) — ainda supera
+"sem restrição nenhuma", só não supera a Camada 1 atual.
+**`n_lifetime`: 4 → 5** (`audit/n_lifetime.yaml`, id 5).
+
+**Bloco 5 — varredura pooled vs estratificado (escopo declarado, não
+exaustivo).** 4 categorias: HHI efetivo, ratio de tau realizado, B3/B5
+(baselines estáticos) por regime, e as 10 features T1 do scan de
+leakage por regime (scan nunca tinha sido rodado contra dado real antes
+desta rodada — `data/validation_reports/feature_leakage_scan_report.json`
+gerado agora, 0/10 hard_fail, confirma o achado da auditoria comparativa
+anterior). Maior divergência: B5 (short permanente) e B3 (regra
+estática R3/R4), ambos ~72-75% de divergência relativa entre pooled e
+por-regime — mas sem sign_flip (Sharpe sempre negativo, só a magnitude
+varia). **Achado novo**: `D06f_taker_imbalance_z_48` também inverte de
+sinal entre regimes (R1/R2/R4 positivos, R3 negativo) — pooled é
+essencialmente zero (-0,0003), não elevado nem hard_fail no scan de
+leakage, mas é o SEGUNDO caso (depois de E02f) de uma feature T1 cuja
+correlação pooled esconde heterogeneidade por regime.
+
+**Verificação**: 18 testes novos (`test_analysis_faixa1_6_
+reconciliation.py`) + 2 de regressão do Bloco 3 + 2 de
+`unforce_features_by_side` em `test_models_monotonic.py`, todos passam.
+`banned_patterns` limpo, `check_constants_referenced` OK, 6/6
+import-linter, mypy limpo.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
@@ -896,6 +1014,10 @@ real, skip-if-ausente).
 | E02f_funding_z inverte de sinal RANGE↔TREND? | Sim, medido: R1=+0,04/R2=+0,11/R3=-0,03/R4=-0,08 | Faixa 1 acima, reproduz Fase E |
 | Calibração isotônica melhora ou piora a confiança? | As duas coisas — piora ORDENAÇÃO (D4) e melhora MAGNITUDE/ECE (long 0,256→0,200; short 0,234→0,155) | Auditoria Laplace_Quant_V16 acima |
 | Alguma T1 vaza informação futura (scan estatístico)? | Não — 0 de 10 estoura o `hard_fail_threshold`; 4 ficam `elevated` por correlação estrutural com ATR, não vazamento | Auditoria Laplace_Quant_V16 acima, `src/validation/leakage.py::scan_feature_target_correlation` |
-| `fee_budget_monthly` no valor central cabe no orçamento? | Sim — 1.325 trades/ano implicados vs 858-1.307 reais por caminho, nenhum excede | Faixa 1.5 acima, `experiments/faixa1_5_prerequisites.json::fee_budget_sweep` |
+| `fee_budget_monthly` no valor central cabe no orçamento? | **Não** (corrigido na Faixa 1.6) — orçamento correto é 662,7 trades/ano, os 5 caminhos reais (858-1.307) TODOS excedem, 1,3x-2,0x | Faixa 1.6 abaixo, `experiments/faixa1_5_prerequisites.json::fee_budget_sweep` |
 | E02f in-fold: a triagem estatística discorda do sinal forçado? | Não em nenhum dos 15 folds (0 discordâncias) — mas só 1/15 folds no short chega a 6/6 de consistência pra opinar | Faixa 1.5 acima (hipótese do executor, não medição) |
 | CIs por path do Alpha são confiáveis? | Não totalmente — trades duplicados entre até 5 paths (mesma barra, mesma barreira) tornam os CI95 por path provavelmente otimistas; não corrigido ainda | Faixa 1.5 acima |
+| Por que o IC de E02f inverte de sinal pooled vs in-fold em RANGE? | Não é mistura de lado (long sozinho já inverte) — é OOF vs TREINO: treino dá RANGE negativo (bate com o Bloco 5 da Faixa 1.5), OOF inverte pra positivo em R1/R2 | Faixa 1.6 abaixo |
+| `threshold_effective_confidence_quantile` media o que o nome diz? | Não até 2026-08-09 — quantil de população já selecionada, corrigido (path 0 saía 1,0000 com 7.162 trades preenchidos) | Faixa 1.6 abaixo |
+| Quanto do ganho do T0 (0,194→0,879) vem do short vs do long? | Quase todo do short — sem a restrição forçada no short, pooled cai pra 0,282 (long sozinho mal sai do pré-T0) | Faixa 1.6 abaixo, `n_lifetime` id 5 |
+| Alguma outra feature T1 além de E02f inverte de sinal por regime? | Sim — `D06f_taker_imbalance_z_48` (pooled ~0, mas R1/R2/R4 positivos e R3 negativo) | Faixa 1.6 abaixo |

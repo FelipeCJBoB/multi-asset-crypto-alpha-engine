@@ -11,7 +11,7 @@
 # impedir.
 
 schema_version: 1
-counter: 4
+counter: 5
 
 log:
   - id: 1
@@ -44,6 +44,23 @@ log:
       recalibra sobre OOF empilhado, não ajusta calibrador nenhum — mas é
       uma variante de definição de sinal (§5.12), variante de modelo pelo
       critério de M5.
+    delta: 1
+  - id: 5
+    date: "2026-08-09"
+    type: monotonic_constraint_variant
+    description: >
+      Faixa 1.6, Bloco 4 — retreino dos 15 folds x 2 lados da Camada 1 com a
+      restrição forçada de `E02f_funding_z_expanding` REMOVIDA só do short
+      (`unforce_features_by_side`, parâmetro aditivo novo em
+      `src.models.monotonic`/`src.models.alpha`, default `None` em produção
+      — `alpha_c1_v1`/`alpha_c0_baseline_v1` intocados). Model_id novo
+      `alpha_c1_e02f_short_unforced_v1`, artefatos persistidos
+      (predictions.parquet + diagnostics/) sem substituir nenhum existente.
+      `directional_sharpe` pooled caiu de 0,879 (baseline atual, os dois
+      lados forçados) para 0,282 — a maior parte do ganho do T0 vinha do
+      short, não do long, apesar de o Bloco 5 da Faixa 1.6 ter medido que a
+      triagem estatística quase nunca confirmaria essa restrição sozinha
+      (1/15 folds com unanimidade). Variante de modelo pelo critério de M5.
     delta: 1
 
 # Nota de proveniência do seed: os 3 trials acima reconstroem o histórico
