@@ -1,0 +1,84 @@
+{
+  "elapsed_seconds": 18.84878444671631,
+  "item1_per_path_comparison": {
+    "0": {
+      "alpha_sharpe": -0.5470901708662491,
+      "n_seeds": 1000,
+      "null_mean": -2.3110901777815167,
+      "null_p50": -2.308378795399385,
+      "null_p95": -1.6489839851904666,
+      "path_id": 0,
+      "percentile_of_alpha": 100.0,
+      "sample_size": 4827
+    },
+    "1": {
+      "alpha_sharpe": -0.10974159371185221,
+      "n_seeds": 1000,
+      "null_mean": -2.479887959364665,
+      "null_p50": -2.4839414124809513,
+      "null_p95": -1.858989790855957,
+      "path_id": 1,
+      "percentile_of_alpha": 100.0,
+      "sample_size": 5574
+    },
+    "2": {
+      "alpha_sharpe": -0.8947245596357827,
+      "n_seeds": 1000,
+      "null_mean": -2.8368324709700543,
+      "null_p50": -2.827261944236152,
+      "null_p95": -2.212668576954577,
+      "path_id": 2,
+      "percentile_of_alpha": 100.0,
+      "sample_size": 7356
+    },
+    "3": {
+      "alpha_sharpe": -0.5637321625382516,
+      "n_seeds": 1000,
+      "null_mean": -3.103486787876553,
+      "null_p50": -3.107724293554133,
+      "null_p95": -2.4784666607054806,
+      "path_id": 3,
+      "percentile_of_alpha": 100.0,
+      "sample_size": 8649
+    },
+    "4": {
+      "alpha_sharpe": -1.9594574621427185,
+      "n_seeds": 1000,
+      "null_mean": -2.1899174471887934,
+      "null_p50": -2.191493661423441,
+      "null_p95": -1.5451931340770713,
+      "path_id": 4,
+      "percentile_of_alpha": 70.89999999999999,
+      "sample_size": 4217
+    }
+  },
+  "item2_paired_variance_null": {
+    "alpha_sharpe": -0.8149491897789709,
+    "n_seeds": 1000,
+    "null_mean": -2.569149034316265,
+    "null_p50": -2.5675183720997525,
+    "null_p95": -2.283251386999894,
+    "null_std": 0.18438236891408002,
+    "path_sample_sizes": [
+      4827,
+      5574,
+      7356,
+      8649,
+      4217
+    ],
+    "percentile_of_alpha": 100.0
+  },
+  "item3_pool_total": {
+    "alpha_sharpe": -1.6860813177384495,
+    "n_seeds": 1000,
+    "null_mean": -5.798231429957969,
+    "null_p50": -5.780824093859996,
+    "null_p95": -5.2013956377055415,
+    "percentile_of_alpha": 100.0,
+    "sample_size": 30623
+  },
+  "n_rows_modeling_frame": 462682,
+  "problem_statement": "camada1_sharpe_mean e' a MEDIA de 5 Sharpes de CPCV (variancia ja reduzida por promediacao) comparada, no relatorio original, contra sorteios UNICOS de sample_size (variancia de uma amostra so) -- infla o percentil a favor do Alpha de forma artificial, mesmo que as duas distribuicoes subjacentes fossem identicas.",
+  "schema_version": 1,
+  "source_report": "experiments/alpha_layer1_report.json"
+}
