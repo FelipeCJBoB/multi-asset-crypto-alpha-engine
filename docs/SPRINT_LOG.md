@@ -1480,19 +1480,76 @@ escolha ainda não foi feita aqui — DESCOBERTA, não decisão.
 completa 838 passam (era 832), `ruff`/`mypy` limpos, `banned_patterns` sem
 violação nova, 6/6 import-linter.
 
-### FASE 2 (E2/E3) e FASE 3 (C1/C2/C3) — pendentes.
+### Pré-E2 — 3 medições pedidas pelo Manager antes de liberar E2 (2026-08-09)
+
+E2 (ampliar T1) segue PAUSADO por instrução explícita — as 3 medições
+abaixo são pré-requisito, não abertura de escopo. Resultado completo em
+`experiments/faixa2_caminho_b.json` (itens 1 e 3) e
+`experiments/faixa2_e2_prereq_permutation_importance.json` (item 2).
+
+**(1) Edge em unidades de ATR por célula do E1, por lado e por regime —
+forma fechada, não `directional_sharpe` incondicional.** `edge =
+frac_tp(regime) x tp − frac_sl(regime) x sl`. Achado central: a melhor
+célula (média dos 4 regimes) fica em `tp=1,5` (a BORDA INFERIOR do grid
+original) nos dois lados — e por regime, `tp=1,5` vence em 7 dos 8 blocos
+lado×regime (só `short×R1` prefere `sl=1,0` em vez de `sl=2,0`, mas ainda
+com `tp=1,5`). **`long×R2` é a ÚNICA célula com edge positivo do lado
+long** (+0,028 em `tp=1,5/sl=2,0`) — achado novo: o regime antes
+identificado como "pior" para o long tem geometria de barreira MAIS
+favorável dentro do grid testado, não menos. Gatilho do critério
+pré-registrado do Manager disparado (`toca_borda_inferior_tp=true`) —
+**proposta registrada, NÃO executada**: estender o grid para `tp_atr_mult
+∈ {1,0 · 1,25}`, `n_lifetime` declarado antes (+8, 2×2×2) se aprovado.
+
+**(2) Importância por permutação (AUC drop) + resolução dos 2 pares de
+ortogonalidade.** Retreino em memória da Camada 1 (mesma config/seed de
+`alpha_c1_v1`), NUNCA persistido em disco — verificado **bit-idêntico**
+contra o modelo de produção (0 `side_hat` divergente, `max_confidence_
+abs_diff=0.0` em 1.147.280 linhas comparadas) antes de confiar em
+qualquer número, `n_lifetime += 0` (é o mesmo modelo já contado, não uma
+variante nova). Achado notável: `E27f_cost_atr_ratio` tem importância por
+permutação **NEGATIVA** (-0,0065 pooled) — embaralhar seus valores
+MELHORA levemente o AUC do modelo, apesar de ser uma das features de
+maior `gain`/uso em splits — divergência clássica entre as duas métricas
+(gain mede USO na árvore, permutação mede CONTRIBUIÇÃO preditiva real).
+Resolvendo os pares pela regra pedida (descarta o de MENOR importância):
+`E27f_cost_atr_ratio` descartada (perde para `C07_vol_pctile_expanding`,
++0,0033 vs -0,0065) e `A13_dist_ema48_atr` descartada (perde para
+`B01_rsi_14`, +0,0016 vs +0,0019, margem pequena). `hhi_efetivo`:
+**0,191 → 0,179** (10→8 features) — reproduz exatamente o
+`mean_hhi_effective` já persistido em `alpha_layer1_report.json`
+(cross-validação da própria metodologia). Nenhuma promoção/remoção de T1
+foi aplicada em produção — isto é medição para quando E2 for liberado.
+
+**(3) Configurações viáveis de orçamento, por path, sem escolher.**
+
+| cenário | paths viáveis | totalmente viável? |
+|---|---|---|
+| sistema atual (long+short) | 0/5 | não |
+| só short | 4/5 (falha path 1, razão 1,05x) | não |
+| long sem R2 | 4/5 (falha path 3, razão 1,04x) | não |
+| só short + long sem R2 | 0/5 | não |
+
+Nenhuma das 4 configurações já testadas cabe no orçamento em TODOS os 5
+caminhos — "só short" e "long sem R2" isolados chegam perto (1 path cada
+falha por margem pequena, 1,04-1,05x), a combinação dos dois falha em
+todos. Emitido sem decidir entre eles.
+
+### FASE 2 (E2/E3) e FASE 3 (C1/C2/C3) — E2 pausado por instrução; E3/FASE 3 pendentes.
 
 **Escopo real destas duas, para quem for continuar**: E2 (ampliar T1 de
-10 para 12-15 features) exige escolher candidatas específicas do tier T2
-do PRD (§2.2-2.12), registrar `causal_proof`+paridade lote/streaming pra
-cada uma, e resolver os dois pares de ortogonalidade já violados
-(E27f×C07, A13×B01) — decisão de desenho, não só medição. E3 (Camada 2,
-§5.4) é um módulo novo de triagem de estabilidade in-fold, ainda não
-existente. FASE 3 (C1/C2/C3) precisa rodar sobre "a melhor configuração
-da FASE 2" — como nenhuma FASE 2 recria a seleção do Alpha sem retreinar,
-C1/C2 (que comparam `directional_sharpe` do Alpha, não da população
-incondicional) exigem retreinar a Camada 1 pelo menos uma vez sob a
-config vencedora de E1+E2+E3, não estão prontos a partir só de E1.
+10 para 12-15 features), quando liberado, roda SEM curadoria — todas as
+candidatas T2 do §2.2-2.12 num passe de pesquisa (sem registry/paridade
+ainda), ranqueadas por ortogonalidade incremental contra o T1 corrente
+(já reduzido a 8 pelo pré-E2 (2) acima), parando em `hhi_efetivo` de
+12-15 — 1 trial no `n_lifetime`, não um por feature; a triagem do §5.4
+decide in-fold quais ficam. E3 (Camada 2, §5.4) é um módulo novo de
+triagem de estabilidade in-fold, ainda não existente. FASE 3 (C1/C2/C3)
+precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
+2 recria a seleção do Alpha sem retreinar, C1/C2 (que comparam
+`directional_sharpe` do Alpha, não da população incondicional) exigem
+retreinar a Camada 1 pelo menos uma vez sob a config vencedora de
+E1+E2+E3, não estão prontos a partir só de E1.
 
 ## Índice rápido — onde encontrar cada número
 
@@ -1512,6 +1569,9 @@ config vencedora de E1+E2+E3, não estão prontos a partir só de E1.
 | Long segue a tendência de 48b em R2? | Não detectavelmente — lift 1,02, p=0,18 (contra 1,72/p≈0 em R3) | Faixa 2, FASE 1 D1 acima |
 | MFE por regime é pior em R2? | Não — mediana ~1,3-1,4 ATR em TODOS os 8 blocos lado×regime; tp_atr_mult=2,0 parece ambicioso estruturalmente, não seletivamente em R2 | Faixa 2, FASE 1 D3 acima |
 | N_lifetime atual, auditado? | 41 (era 5 — +18 retroativo F0.1, +18 varredura E1) | `audit/n_lifetime.yaml`, Faixa 2 F0.1/E1 acima |
+| Qual célula do grid E1 tem o melhor edge em ATR? | tp=1,5 (borda inferior) nos dois lados e em 7/8 blocos lado×regime — proposta de extensão a tp∈{1,0;1,25} registrada, não executada | Faixa 2, Pré-E2 (1) acima |
+| E27f_cost_atr_ratio ajuda o modelo a prever? | Importância por permutação NEGATIVA (-0,0065) — embaralhar melhora o AUC; descartada no par contra C07 | Faixa 2, Pré-E2 (2) acima |
+| Alguma config de orçamento (short-só/long-sem-R2) cabe em TODOS os 5 paths? | Não — as duas isoladas falham em exatamente 1 path cada (margem 1,04-1,05x); a combinação falha em 5/5 | Faixa 2, Pré-E2 (3) acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-09T19:30:12.211390+00:00",
-  "code_version": "636396d",
+  "generated_at": "2026-08-09T20:11:41.863543+00:00",
+  "code_version": "240769f",
   "schema_version": 1,
   "task": "faixa2_caminho_b",
   "fase0_f0_1_n_lifetime_auditado": {
@@ -1038,5 +1038,173 @@
       "n": 206624
     },
     "nota": "não decide inclusão/exclusão de E10f em T1 — só mede, por instrução da task"
+  },
+  "pre_e2_3_configuracoes_viaveis_orcamento": {
+    "implied_budget_trades_per_year": 662.7096,
+    "cenarios": {
+      "sistema_atual": {
+        "paths_viaveis": [],
+        "paths_inviaveis": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "n_paths_viaveis": 0,
+        "n_paths_total": 5,
+        "cenario_totalmente_viavel": false,
+        "detalhe_por_path": {
+          "0": {
+            "trades_per_year": 1098.5637081851467,
+            "razao_vs_orcamento": 1.6576849168702952,
+            "viavel": false
+          },
+          "1": {
+            "trades_per_year": 1075.527302791302,
+            "razao_vs_orcamento": 1.6229239817731658,
+            "viavel": false
+          },
+          "2": {
+            "trades_per_year": 1261.8269491902843,
+            "razao_vs_orcamento": 1.9040420558119036,
+            "viavel": false
+          },
+          "3": {
+            "trades_per_year": 1306.689120598072,
+            "razao_vs_orcamento": 1.9717371237689507,
+            "viavel": false
+          },
+          "4": {
+            "trades_per_year": 858.090806557377,
+            "razao_vs_orcamento": 1.2948217538381472,
+            "viavel": false
+          }
+        }
+      },
+      "so_short": {
+        "paths_viaveis": [
+          "0",
+          "2",
+          "3",
+          "4"
+        ],
+        "paths_inviaveis": [
+          "1"
+        ],
+        "n_paths_viaveis": 4,
+        "n_paths_total": 5,
+        "cenario_totalmente_viavel": false,
+        "detalhe_por_path": {
+          "0": {
+            "trades_per_year": 484.2454100447512,
+            "razao_vs_orcamento": 0.7307052893827873,
+            "viavel": true
+          },
+          "1": {
+            "trades_per_year": 693.1414548365507,
+            "razao_vs_orcamento": 1.045920347066876,
+            "viavel": false
+          },
+          "2": {
+            "trades_per_year": 647.3627482705242,
+            "razao_vs_orcamento": 0.9768422673679756,
+            "viavel": true
+          },
+          "3": {
+            "trades_per_year": 428.00047216210896,
+            "razao_vs_orcamento": 0.6458341212532743,
+            "viavel": true
+          },
+          "4": {
+            "trades_per_year": 442.9943606557377,
+            "razao_vs_orcamento": 0.6684592476942204,
+            "viavel": true
+          }
+        }
+      },
+      "long_sem_r2": {
+        "paths_viaveis": [
+          "0",
+          "1",
+          "2",
+          "4"
+        ],
+        "paths_inviaveis": [
+          "3"
+        ],
+        "n_paths_viaveis": 4,
+        "n_paths_total": 5,
+        "cenario_totalmente_viavel": false,
+        "detalhe_por_path": {
+          "0": {
+            "trades_per_year": 461.9948160947914,
+            "razao_vs_orcamento": 0.6971301096208526,
+            "viavel": true
+          },
+          "1": {
+            "trades_per_year": 301.9971143791282,
+            "razao_vs_orcamento": 0.45570052762043617,
+            "viavel": true
+          },
+          "2": {
+            "trades_per_year": 451.7904316058889,
+            "razao_vs_orcamento": 0.681732136679307,
+            "viavel": true
+          },
+          "3": {
+            "trades_per_year": 688.1425909163515,
+            "razao_vs_orcamento": 1.0383772785490832,
+            "viavel": false
+          },
+          "4": {
+            "trades_per_year": 344.37009994188907,
+            "razao_vs_orcamento": 0.5196395222611669,
+            "viavel": true
+          }
+        }
+      },
+      "so_short_mais_long_sem_r2": {
+        "paths_viaveis": [],
+        "paths_inviaveis": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
+        "n_paths_viaveis": 0,
+        "n_paths_total": 5,
+        "cenario_totalmente_viavel": false,
+        "detalhe_por_path": {
+          "0": {
+            "trades_per_year": 942.7216630139503,
+            "razao_vs_orcamento": 1.4225260400844506,
+            "viavel": false
+          },
+          "1": {
+            "trades_per_year": 992.5466594926576,
+            "razao_vs_orcamento": 1.497709795501163,
+            "viavel": false
+          },
+          "2": {
+            "trades_per_year": 1098.0817191521344,
+            "razao_vs_orcamento": 1.6569576163558433,
+            "viavel": false
+          },
+          "3": {
+            "trades_per_year": 1106.0255754475704,
+            "razao_vs_orcamento": 1.6689445504449767,
+            "viavel": false
+          },
+          "4": {
+            "trades_per_year": 782.3678950819672,
+            "razao_vs_orcamento": 1.1805591696302078,
+            "viavel": false
+          }
+        }
+      }
+    },
+    "nota": "lista viabilidade por path em cada cenario ja medido em F0.2 -- NAO escolhe entre eles, por instrucao explicita do Manager"
   }
 }

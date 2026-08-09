@@ -37,12 +37,15 @@ from scipy.stats import chisquare, spearmanr
 
 from src.core.provenance import report_provenance
 from src.data import lake
+from src.features.build import T1_FEATURE_IDS
 from src.labels import barrier_sweep as bs
 from src.labels import triple_barrier as tb
+from src.models import alpha
 from src.models import dataset as ds
 from src.models._constants import load_constant
 from src.models.decomposition import decompose
 from src.models.environments import ENVIRONMENTS, assign_environments
+from src.models.hhi import compute_effective_concentration
 from src.models.monotonic import _assign_from_ic, compute_ic_by_env
 from src.validation import cpcv
 
@@ -164,6 +167,43 @@ def fase0_orcamento_fees_por_cenario(realized: pl.DataFrame) -> dict[str, Any]:
                 else float("nan")
             ),
         }
+    return out
+
+
+def e2_prereq_configuracoes_viaveis_orcamento(
+    orcamento_por_cenario: dict[str, Any],
+) -> dict[str, Any]:
+    """Pré-E2 (3), a pedido do Manager (2026-08-09): a partir de
+    `fase0_orcamento_fees_por_cenario` (F0.2), listar EXPLICITAMENTE quais
+    paths são viáveis (não excedem o orçamento) em cada cenário -- não
+    escolhe entre eles, só declara o que já foi medido de forma
+    diretamente acionável (path a path, não só a razão média agregada)."""
+    implied_budget = orcamento_por_cenario["implied_budget_trades_per_year"]
+    out: dict[str, Any] = {"implied_budget_trades_per_year": implied_budget, "cenarios": {}}
+    for nome, cenario in orcamento_por_cenario["cenarios"].items():
+        paths_viaveis: list[str] = []
+        paths_inviaveis: list[str] = []
+        detalhe_por_path: dict[str, Any] = {}
+        for pid, tpy in cenario["trades_per_year_by_path"].items():
+            viavel = math.isfinite(tpy) and tpy <= implied_budget
+            (paths_viaveis if viavel else paths_inviaveis).append(pid)
+            detalhe_por_path[pid] = {
+                "trades_per_year": tpy,
+                "razao_vs_orcamento": tpy / implied_budget if math.isfinite(tpy) else float("nan"),
+                "viavel": viavel,
+            }
+        out["cenarios"][nome] = {
+            "paths_viaveis": sorted(paths_viaveis, key=int),
+            "paths_inviaveis": sorted(paths_inviaveis, key=int),
+            "n_paths_viaveis": len(paths_viaveis),
+            "n_paths_total": len(cenario["trades_per_year_by_path"]),
+            "cenario_totalmente_viavel": len(paths_inviaveis) == 0,
+            "detalhe_por_path": detalhe_por_path,
+        }
+    out["nota"] = (
+        "lista viabilidade por path em cada cenario ja medido em F0.2 -- "
+        "NAO escolhe entre eles, por instrucao explicita do Manager"
+    )
     return out
 
 
@@ -606,8 +646,8 @@ def d4_e10f_como_candidata(
 # chamador do relatório -- ver run_and_save_fase2_e1).
 # ============================================================================
 
-E1_TP_GRID: Final[tuple[float, ...]] = (1.5, 2.0, 2.5)
-E1_SL_GRID: Final[tuple[float, ...]] = (1.0, 1.5, 2.0)
+E1_TP_GRID: Final[tuple[float, ...]] = (1.5, 2.0, 2.5)  # noqa: magic-number
+E1_SL_GRID: Final[tuple[float, ...]] = (1.0, 1.5, 2.0)  # noqa: magic-number
 
 
 def _filled_side_population(mf_data: pl.DataFrame, *, side: int) -> pl.DataFrame:
@@ -653,9 +693,47 @@ def _map_trades_to_paths(
     return joined.with_columns(path_series)
 
 
+def _edge_atr_closed_form_by_regime(
+    cell_trades: pl.DataFrame, mf_data_side_all: pl.DataFrame, *, tp: float, sl: float
+) -> dict[str, Any]:
+    """Edge em unidades de ATR por regime, forma fechada pedida pelo
+    Manager (2026-08-09, resposta pré-E2): `edge = frac_tp(regime) x tp -
+    frac_sl(regime) x sl` -- NÃO `directional_sharpe` incondicional (que
+    mistura variância/anualização, não é o número que isola geometria).
+    `frac_tp`/`frac_sl` usam como denominador TODA barra do lado NAQUELE
+    regime (preenchida ou não, mesma convenção side-level do resto do E1),
+    não só as preenchidas -- TIME contribui 0 implicitamente (aproximação
+    declarada: o payoff médio de TIME não é 0 exato, mas é pequeno e não
+    determinístico por construção, diferente de TP/SL que são exatamente
+    +tp/-sl por definição de barreira)."""
+    out: dict[str, Any] = {}
+    for regime in _STRUCTURAL_REGIMES:
+        n_total_regime = mf_data_side_all.filter(pl.col("regime") == regime).height
+        regime_trades = cell_trades.filter(pl.col("regime") == regime)
+        barrier = regime_trades["barrier_hit"]
+        n_tp = int((barrier == "TP").sum())
+        n_sl = int((barrier == "SL").sum())
+        n_time = int((barrier == "TIME").sum())
+        frac_tp = n_tp / n_total_regime if n_total_regime else float("nan")
+        frac_sl = n_sl / n_total_regime if n_total_regime else float("nan")
+        frac_time = n_time / n_total_regime if n_total_regime else float("nan")
+        out[regime] = {
+            "n_total_regime": n_total_regime,
+            "frac_tp": frac_tp,
+            "frac_sl": frac_sl,
+            "frac_time": frac_time,
+            "edge_atr_closed_form": (
+                frac_tp * tp - frac_sl * sl if math.isfinite(frac_tp) and math.isfinite(frac_sl)
+                else float("nan")
+            ),
+        }
+    return out
+
+
 def _cell_summary(
     cell_trades: pl.DataFrame,
     cell_trades_with_path: pl.DataFrame,
+    mf_data_side_all: pl.DataFrame,
     *,
     n_total_side: int,
     n_nofill_side: int,
@@ -686,6 +764,9 @@ def _cell_summary(
         }
 
     per_path = f15._trades_per_year_per_path(cell_trades_with_path)
+    edge_atr_by_regime = _edge_atr_closed_form_by_regime(
+        cell_trades, mf_data_side_all, tp=tp, sl=sl
+    )
 
     return {
         "tp_atr_mult": tp,
@@ -695,6 +776,7 @@ def _cell_summary(
         "n_nofill_side": n_nofill_side,
         "frac_nofill": n_nofill_side / n_total_side if n_total_side else float("nan"),
         "edge_atr_units_mean": float(np.mean(edge_atr)) if edge_atr.size else float("nan"),
+        "edge_atr_closed_form_by_regime": edge_atr_by_regime,
         "cost_bps_mean": float(np.mean(cost_bps)) if cost_bps.size else float("nan"),
         "directional_sharpe_by_regime": by_regime,
         "trades_per_year_by_path": {str(pid): v["trades_per_year"] for pid, v in per_path.items()},
@@ -738,7 +820,8 @@ def run_fase2_e1(
 
     for side, side_label in ((1, "long"), (-1, "short")):
         filled_side = _filled_side_population(mf_data, side=side)
-        n_total_side = mf_data.filter(pl.col("side") == side).height
+        mf_data_side_all = mf_data.filter(pl.col("side") == side).select("regime")
+        n_total_side = mf_data_side_all.height
         n_nofill_side = n_total_side - filled_side.height
 
         for tp in E1_TP_GRID:
@@ -768,6 +851,7 @@ def run_fase2_e1(
                 summary = _cell_summary(
                     cell_trades,
                     cell_with_path,
+                    mf_data_side_all,
                     n_total_side=n_total_side,
                     n_nofill_side=n_nofill_side,
                     tp=tp,
@@ -817,13 +901,107 @@ def run_fase2_e1(
         )
         / n_total_pooled,
     }
-    sprint6_reference = {"TP": 0.3654, "SL": 0.5125, "TIME": 0.0652, "NOFILL": 0.0569}
+    # fatos MEDIDOS do Sprint 6 (labels/v1/labels.parquet, ver SPRINT_LOG),
+    # não parâmetros de domínio -- mesma categoria de
+    # `_PRE_T0_DIRECTIONAL_SHARPE_POOLED` em faixa1_6_reconciliation.py.
+    sprint6_reference = {
+        "TP": 0.3654,  # noqa: magic-number
+        "SL": 0.5125,  # noqa: magic-number
+        "TIME": 0.0652,  # noqa: magic-number
+        "NOFILL": 0.0569,  # noqa: magic-number
+    }
     payload["sanidade_centro_da_grade"] = {
         "pooled_frac_recomputado": pooled_frac,
         "sprint6_referencia": sprint6_reference,
         "max_abs_diff": max(abs(pooled_frac[k] - sprint6_reference[k]) for k in sprint6_reference),
     }
+    payload["edge_atr_synthesis"] = _edge_atr_synthesis(payload["cells"])
     return payload
+
+
+_E1_TP_LOWER_BOUNDARY: Final[float] = min(E1_TP_GRID)
+
+
+def _edge_atr_synthesis(cells: dict[str, Any]) -> dict[str, Any]:
+    """Melhor célula por `edge_atr_closed_form` (média sobre os 4 regimes),
+    por lado, e por lado x regime -- NÃO decide, só ordena e detecta se a
+    borda inferior de `tp_atr_mult` foi tocada (critério do Manager,
+    2026-08-09: 'se a melhor célula for a de menor tp, propor extensão')."""
+    out: dict[str, Any] = {"best_by_side": {}, "best_by_side_regime": {}}
+    for side_label in ("long", "short"):
+        side_keys = [k for k in cells if k.startswith(f"{side_label}_")]
+        ranked = sorted(
+            side_keys,
+            key=lambda k: float(
+                np.mean(
+                    [
+                        e["edge_atr_closed_form"]
+                        for e in cells[k]["edge_atr_closed_form_by_regime"].values()
+                    ]
+                )
+            ),
+            reverse=True,
+        )
+        best_key = ranked[0]
+        best_cell = cells[best_key]
+        best_mean_edge = float(
+            np.mean(
+                [
+                    e["edge_atr_closed_form"]
+                    for e in best_cell["edge_atr_closed_form_by_regime"].values()
+                ]
+            )
+        )
+        out["best_by_side"][side_label] = {
+            "cell": best_key,
+            "tp_atr_mult": best_cell["tp_atr_mult"],
+            "sl_atr_mult": best_cell["sl_atr_mult"],
+            "mean_edge_atr_closed_form": best_mean_edge,
+            "toca_borda_inferior_tp": best_cell["tp_atr_mult"] <= _E1_TP_LOWER_BOUNDARY,
+        }
+        for regime in _STRUCTURAL_REGIMES:
+
+            def _edge_for_regime(key: str, *, _regime: str = regime) -> float:
+                edge = cells[key]["edge_atr_closed_form_by_regime"][_regime][
+                    "edge_atr_closed_form"
+                ]
+                return float(edge)
+
+            regime_ranked = sorted(side_keys, key=_edge_for_regime, reverse=True)
+            best_regime_key = regime_ranked[0]
+            best_regime_cell = cells[best_regime_key]
+            best_regime_edge = best_regime_cell["edge_atr_closed_form_by_regime"][regime][
+                "edge_atr_closed_form"
+            ]
+            out["best_by_side_regime"][f"{side_label}_{regime}"] = {
+                "cell": best_regime_key,
+                "tp_atr_mult": best_regime_cell["tp_atr_mult"],
+                "sl_atr_mult": best_regime_cell["sl_atr_mult"],
+                "edge_atr_closed_form": best_regime_edge,
+                "toca_borda_inferior_tp": best_regime_cell["tp_atr_mult"] <= _E1_TP_LOWER_BOUNDARY,
+            }
+
+    any_touches_lower_boundary = out["best_by_side"]["long"]["toca_borda_inferior_tp"] or out[
+        "best_by_side"
+    ]["short"]["toca_borda_inferior_tp"]
+    out["proposta_extensao_grade"] = (
+        {
+            "gatilho": (
+                "melhor celula (media dos 4 regimes) toca a borda inferior de "
+                f"tp_atr_mult={_E1_TP_LOWER_BOUNDARY} em pelo menos um lado -- "
+                "criterio do Manager (2026-08-09): propor extensao, nao rodar"
+            ),
+            "tp_atr_mult_proposto": [1.0, 1.25],  # noqa: magic-number
+            "n_lifetime_delta_se_aprovado": 2 * 2 * 2,
+            "nota": (
+                "PROPOSTA, nao executada. Precisa de N_lifetime declarado "
+                "ANTES de rodar (B20), mesma disciplina do grid original de E1."
+            ),
+        }
+        if any_touches_lower_boundary
+        else {"gatilho": "nao disparado -- melhor celula nao toca a borda inferior de tp"}
+    )
+    return out
 
 
 E1_OUTPUT_PATH: Final[Path] = EXPERIMENTS_DIR / "faixa2_e1_barrier_sweep.json"
@@ -863,6 +1041,277 @@ def run_and_save_fase2_e1(*, dest_path: Path | None = None) -> Path:
 
 
 # ============================================================================
+# Pré-E2 (2) — importância por permutação + resolução dos 2 pares de
+# ortogonalidade (§5.8, achado do Sprint 4: E27f_cost_atr_ratio x
+# C07_vol_pctile_expanding rho=-0,913; A13_dist_ema48_atr x B01_rsi_14
+# rho=+0,947). Retreina a Camada 1 EM MEMÓRIA (mesma config/seed de
+# produção -- verificado bit-idêntico contra alpha_c1_v1 antes de confiar
+# em qualquer número daqui), nunca persiste um model_id novo.
+# ============================================================================
+
+_ORTHOGONALITY_PAIRS: Final[tuple[tuple[str, str], ...]] = (
+    ("E27f_cost_atr_ratio", "C07_vol_pctile_expanding"),
+    ("A13_dist_ema48_atr", "B01_rsi_14"),
+)
+
+
+def _test_side_xy(
+    mf_data: pl.DataFrame, split: cpcv.CPCVSplit, *, side: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """MESMA definição de `y` que `alpha.fit_side_model` usa no TREINO
+    (`label==1`, "TP antes de SL"), aplicada ao TESTE do fold -- avaliação
+    de importância precisa do desempenho em dado que o modelo não viu."""
+    test_bars = mf_data[split.test_idx]
+    test_side = ds.side_subset(test_bars, side=side)
+    x = alpha.build_design_matrix(test_side)
+    y = (test_side["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
+    return x, y
+
+
+def _permutation_importance_auc_drop(
+    model: Any,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    *,
+    n_t1_features: int,
+    rng: np.random.Generator,
+) -> list[float]:
+    """`baseline_auc - permuted_auc` por feature T1 (colunas `0..n_t1_
+    features-1` de `x_test` -- as dummies de regime, colunas seguintes,
+    nunca são permutadas: a pergunta é sobre as 10 T1, não sobre regime).
+    Uma permutação por feature (não repetida/mediana de N shuffles) --
+    aproximação declarada por custo (15 folds x 2 lados x 10 features já
+    são 300 avaliações de AUC; repetir 10x seria 3.000)."""
+    from sklearn.metrics import roc_auc_score
+
+    if x_test.shape[0] < 2 or len(np.unique(y_test)) < 2:
+        return [float("nan")] * n_t1_features
+    baseline_auc = roc_auc_score(y_test, model.predict_proba(x_test)[:, 1])
+    out: list[float] = []
+    for j in range(n_t1_features):
+        x_perm = x_test.copy()
+        perm = rng.permutation(x_perm.shape[0])
+        x_perm[:, j] = x_perm[perm, j]
+        permuted_auc = roc_auc_score(y_test, model.predict_proba(x_perm)[:, 1])
+        out.append(float(baseline_auc - permuted_auc))
+    return out
+
+
+def e2_prereq_permutation_importance_and_orthogonality(
+    mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]
+) -> dict[str, Any]:
+    hyper = alpha.XGBHyperparams.from_constants()
+    seed = int(load_constant("alpha_random_seed"))
+
+    logger.info("analysis.faixa2_e2prereq.retrain_start")
+    fold_results = alpha.run_all_folds(
+        mf_data,
+        splits,
+        variant=alpha.VARIANT_CAMADA1,
+        model_id="e2_prereq_verification_not_persisted",
+        hyper=hyper,
+        seed=seed,
+    )
+    logger.info("analysis.faixa2_e2prereq.retrain_done", n_folds=len(fold_results))
+
+    new_preds = alpha.assemble_predictions_table(fold_results)
+    existing_preds = f15.load_predictions()
+    cmp = new_preds.select("t0", "fold_id", "side_hat", "confidence").join(
+        existing_preds.select("t0", "fold_id", "side_hat", "confidence"),
+        on=["t0", "fold_id"],
+        how="inner",
+        suffix="_existing",
+    )
+    n_side_hat_mismatch = int((cmp["side_hat"] != cmp["side_hat_existing"]).sum())
+    conf_diff_arr = (
+        (cmp["confidence"] - cmp["confidence_existing"]).abs().to_numpy().astype(np.float64)
+    )
+    max_conf_diff = float(np.max(conf_diff_arr)) if conf_diff_arr.size else float("nan")
+    reproduction_check = {
+        "n_rows_compared": cmp.height,
+        "n_side_hat_mismatch": n_side_hat_mismatch,
+        "max_confidence_abs_diff": max_conf_diff,
+        "bit_identical": n_side_hat_mismatch == 0 and max_conf_diff < 1e-9,  # noqa: magic-number
+        "nota": (
+            "retreino em memoria, MESMA config/seed de alpha_c1_v1, nunca "
+            "persistido em disco -- este check confirma que os numeros de "
+            "importancia abaixo vem do modelo de producao, nao de uma "
+            "variante nova (n_lifetime += 0 se bit_identical)"
+        ),
+    }
+
+    importance_records: list[dict[str, Any]] = []
+    hhi_before_records: list[dict[str, Any]] = []
+    correlation_by_fold_side: dict[tuple[int, int], np.ndarray] = {}
+    gain_by_fold_side: dict[tuple[int, int], dict[str, float]] = {}
+
+    for fold_result, split in zip(fold_results, splits, strict=True):
+        train_bars = mf_data[split.train_idx]
+        for side, side_label, side_result in (
+            (1, "long", fold_result.long_result),
+            (-1, "short", fold_result.short_result),
+        ):
+            train_side = ds.side_subset(train_bars, side=side)
+            correlation_t1 = alpha._t1_correlation_matrix(train_side)
+            gain_by_column = side_result.gain_by_column_raw
+            correlation_by_fold_side[(split.split_id, side)] = correlation_t1
+            gain_by_fold_side[(split.split_id, side)] = gain_by_column
+
+            hhi_before = compute_effective_concentration(
+                correlation_t1,
+                gain_by_column,
+                T1_FEATURE_IDS,
+                source=f"faixa2::e2prereq::hhi_before::fold{split.split_id}_{side_label}",
+            )
+            hhi_before_records.append(
+                {
+                    "fold_id": split.split_id,
+                    "side": side_label,
+                    "hhi_effective": hhi_before.hhi_effective.value,
+                }
+            )
+
+            x_test, y_test = _test_side_xy(mf_data, split, side=side)
+            rng = np.random.default_rng(alpha._derived_seed(seed, split.split_id, side, 99))
+            importances = _permutation_importance_auc_drop(
+                side_result.model, x_test, y_test, n_t1_features=len(T1_FEATURE_IDS), rng=rng
+            )
+            for feat, imp in zip(T1_FEATURE_IDS, importances, strict=True):
+                importance_records.append(
+                    {
+                        "fold_id": split.split_id,
+                        "side": side_label,
+                        "feature": feat,
+                        "auc_drop": imp,
+                    }
+                )
+
+    importance_df = pl.DataFrame(importance_records)
+    mean_importance_by_side_feature: dict[str, dict[str, float]] = {"long": {}, "short": {}}
+    for side_label in ("long", "short"):
+        sub = importance_df.filter(pl.col("side") == side_label)
+        for feat in T1_FEATURE_IDS:
+            vals = sub.filter(pl.col("feature") == feat)["auc_drop"].to_numpy().astype(np.float64)
+            vals = vals[np.isfinite(vals)]
+            mean_importance_by_side_feature[side_label][feat] = (
+                float(np.mean(vals)) if vals.size else float("nan")
+            )
+
+    pooled_importance = {
+        feat: float(
+            np.nanmean(
+                [
+                    mean_importance_by_side_feature["long"][feat],
+                    mean_importance_by_side_feature["short"][feat],
+                ]
+            )
+        )
+        for feat in T1_FEATURE_IDS
+    }
+
+    dropped: list[str] = []
+    pair_decisions: list[dict[str, Any]] = []
+    for feat_a, feat_b in _ORTHOGONALITY_PAIRS:
+        imp_a, imp_b = pooled_importance[feat_a], pooled_importance[feat_b]
+        loser = feat_a if imp_a < imp_b else feat_b
+        winner = feat_b if loser == feat_a else feat_a
+        dropped.append(loser)
+        pair_decisions.append(
+            {
+                "par": [feat_a, feat_b],
+                "importancia_pooled": {feat_a: imp_a, feat_b: imp_b},
+                "descartada_menor_importancia": loser,
+                "mantida": winner,
+            }
+        )
+
+    reduced_feature_ids = tuple(f for f in T1_FEATURE_IDS if f not in dropped)
+    idx_reduced = [T1_FEATURE_IDS.index(f) for f in reduced_feature_ids]
+
+    hhi_after_records: list[dict[str, Any]] = []
+    for (fold_id, side), correlation_t1 in correlation_by_fold_side.items():
+        gain_by_column = gain_by_fold_side[(fold_id, side)]
+        correlation_reduced = correlation_t1[np.ix_(idx_reduced, idx_reduced)]
+        side_label = "long" if side == 1 else "short"
+        hhi_after = compute_effective_concentration(
+            correlation_reduced,
+            gain_by_column,
+            reduced_feature_ids,
+            source=f"faixa2::e2prereq::hhi_after::fold{fold_id}_{side_label}",
+        )
+        hhi_after_records.append(
+            {"fold_id": fold_id, "side": side_label, "hhi_effective": hhi_after.hhi_effective.value}
+        )
+
+    mean_hhi_before = float(np.mean([r["hhi_effective"] for r in hhi_before_records]))
+    mean_hhi_after = float(np.mean([r["hhi_effective"] for r in hhi_after_records]))
+
+    return {
+        "reproduction_check_vs_alpha_c1_v1": reproduction_check,
+        "permutation_importance_mean_auc_drop_by_side_feature": mean_importance_by_side_feature,
+        "permutation_importance_pooled": pooled_importance,
+        "orthogonality_pair_decisions": pair_decisions,
+        "features_descartadas": dropped,
+        "features_mantidas_t1_reduzido": list(reduced_feature_ids),
+        "hhi_efetivo_antes": {
+            "mean": mean_hhi_before,
+            "n_features": len(T1_FEATURE_IDS),
+            "by_fold_side": hhi_before_records,
+        },
+        "hhi_efetivo_depois": {
+            "mean": mean_hhi_after,
+            "n_features": len(reduced_feature_ids),
+            "by_fold_side": hhi_after_records,
+        },
+        "nota": (
+            "descarta o membro de MENOR importancia por permutacao de cada "
+            "par -- nao decide manter/promover nada em T1, essa decisao "
+            "fica com E2 (pausado por instrucao do Manager, 2026-08-09)"
+        ),
+    }
+
+
+E2_PREREQ_OUTPUT_PATH: Final[Path] = (
+    EXPERIMENTS_DIR / "faixa2_e2_prereq_permutation_importance.json"
+)
+
+
+def run_and_save_e2_prereq_permutation_importance(*, dest_path: Path | None = None) -> Path:
+    """Ponto de entrada MANUAL -- retreina a Camada 1 (15 folds x 2 lados),
+    minutos não segundos. Chame: `uv run python -c "from
+    src.analysis.faixa2_caminho_b import
+    run_and_save_e2_prereq_permutation_importance as r; r()"`."""
+    mf = ds.build_modeling_frame()
+    cpcv_result = cpcv.generate_splits(mf.data)
+    splits = cpcv_result.splits
+
+    t0 = time.perf_counter()
+    payload = e2_prereq_permutation_importance_and_orthogonality(mf.data, splits)
+    payload["elapsed_seconds_total"] = time.perf_counter() - t0
+    payload = {
+        **report_provenance(),
+        "task": "faixa2_e2_prereq_permutation_importance",
+        **payload,
+    }
+
+    dest = dest_path if dest_path is not None else E2_PREREQ_OUTPUT_PATH
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.with_name(dest.name + ".tmp")
+    blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2)
+    with tmp_path.open("wb") as fh:
+        fh.write(blob)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, dest)
+    logger.info(
+        "analysis.faixa2_e2prereq.written",
+        path=str(dest),
+        elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
+    )
+    return dest
+
+
+# ============================================================================
 # Orquestração FASE 0 + FASE 1 (D1/D2/D4 — D3 é tratado em
 # src.labels.triple_barrier, ver mfe_atr_units; E1/E2/E3/FASE 3 entram em
 # rodadas seguintes deste mesmo módulo).
@@ -877,6 +1326,7 @@ def run_fase0_e_fase1() -> dict[str, Any]:
     fold_to_path = f15.fold_to_path_map(splits)
     realized = f15.build_realized_trades(predictions, mf.data, fold_to_path)
 
+    orcamento_por_cenario = fase0_orcamento_fees_por_cenario(realized)
     payload: dict[str, Any] = {
         "schema_version": 1,
         "task": "faixa2_caminho_b",
@@ -886,7 +1336,7 @@ def run_fase0_e_fase1() -> dict[str, Any]:
             "delta": 18,
             "fonte": "audit/n_lifetime.yaml, ids 6-9",
         },
-        "fase0_f0_2_orcamento_fees_por_cenario": fase0_orcamento_fees_por_cenario(realized),
+        "fase0_f0_2_orcamento_fees_por_cenario": orcamento_por_cenario,
         "fase0_f0_3_declaracao_escopo_fill": fase0_declaracao_escopo_fill(),
         "fase1_d1_taxa_base_direcional_por_regime": d1_taxa_base_direcional_por_regime(
             mf.data, realized
@@ -896,6 +1346,9 @@ def run_fase0_e_fase1() -> dict[str, Any]:
         ),
         "fase1_d3_mfe_por_regime": d3_mfe_por_regime(mf.data),
         "fase1_d4_e10f_como_candidata": d4_e10f_como_candidata(mf.data, splits),
+        "pre_e2_3_configuracoes_viaveis_orcamento": e2_prereq_configuracoes_viaveis_orcamento(
+            orcamento_por_cenario
+        ),
     }
     return payload
 
