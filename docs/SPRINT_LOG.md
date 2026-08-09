@@ -184,12 +184,55 @@ proporcionalmente; reconciliar com a ablação do Sprint 8.
 
 ---
 
-## Sprint 7 + Sprint 9 (adiantado) — em andamento
+## Sprints 7 e 9 (adiantado) — em paralelo (2026-08-08)
+### commits `26be2a5` / `2444ab3` / `abcc3fc`, tag `sprint-7-9-done`
 
-CPCV com purge/embargo + os 14 testes de vazamento computáveis sem modelo
-treinado (`src/validation/`), e o simulador de fila sobre a janela real de
-`bookTicker` pré-RPI (`src/execution/fill_simulator.py`), rodando em paralelo.
-Esta seção é atualizada quando os dois fecharem.
+**Sprint 7 — CPCV + testes de vazamento (`src/validation/`):** splitter real (6
+grupos cronológicos, 15 splits combinatórios, 5 caminhos de backtest via
+1-fatoração de K₆) sobre os 462.682 labels reais. Purge usa o `t1` real de cada
+label — mais estrito que a leitura literal do PRD, que sugeria uma margem fixa.
+
+**Resultado do purge sobre dado real: 15/15 splits, zero `t1` de treino vazando
+pro teste.** `n_purged` 0–54/split, `n_embargoed` 321–1.377/split — ambos bem
+abaixo de 1% de cada fold (~308 mil linhas).
+
+**Os 14 testes de vazamento do §11.5**, cada um com status explícito: **11
+PASS**, 2 `PENDING_SPRINT_8` (shuffle de alvo pra AUC e vazamento de calibrador
+— nenhum dos dois é testável sem modelo treinado, que só existe no Sprint 8), 1
+`NOT_APPLICABLE_V1_1` (encadeamento do Meta — Meta está fora da V1 por desenho,
+não é pendência). **Zero teste fingido.**
+
+**Achado — 2 bugs reais de documentação, corrigidos:** a auditoria dos testes
+2/3/9 achou que `registry.yaml` citava um teste de causalidade pra `E27f` que
+não existia mais com esse nome, e afirmava que `A13` tinha teste de causalidade
+dedicado quando só `A05` tinha (resíduo de copy-paste do Sprint 4) — corrigidos,
+não só documentados.
+
+**Achado — TF do embargo:** os "175 barras ≈ 88h" do §11.4 só batem a 30m; na
+decisão real de 15m são **43,75h**. Registrado no comentário da constante.
+
+**Sprint 9 (adiantado) — Simulador de fila (`src/execution/fill_simulator.py`):**
+reconstrução de posição na fila a partir de `bookTicker` (topo do livro) +
+`aggTrades` (volume agressor), sobre a única janela real disponível — 2023-05-16
+a 2024-03-30, inteiramente pré-RPI. Bloqueio explícito no código contra simular
+qualquer janela que cruze 2025-11-20.
+
+**Achado principal — a medição mais importante até agora**, 60.650 ordens
+simuladas nos dois lados:
+
+| Métrica | Medido | Referência |
+|---|---|---|
+| `p_fill` | **37,3%** (compra 36,7% / venda 37,9%) | PRD §9.6: abaixo de 60%, "a economia do desenho maker evapora" |
+| markout 1m/5m/30m | -0,586 / -0,643 / -0,590 bps | placeholder era 1,5bps (`adverse_selection_bps`) |
+
+**Duas direções opostas.** A seleção adversa real (~0,6bps) é ~2,5x **menor**
+que o placeholder assumido — boa notícia pro breakeven. Mas o `p_fill` medido
+(37,3%) fica **abaixo do piso de 60%** que o próprio PRD cita como o ponto de
+inviabilidade do desenho maker. É limite inferior pessimista (o modelo não
+modela cancelamento nem fila além do topo do livro — só o Testnet/Paper,
+Sprints 15-16, dão o número calibrado de verdade), mas é a primeira medição
+real desse número, e a direção preocupa, não tranquiliza. Registrado como item
+a reconciliar antes do Gate 5.
 
 ---
 
@@ -197,10 +240,14 @@ Esta seção é atualizada quando os dois fecharem.
 
 | Pergunta | Resposta | Onde |
 |---|---|---|
-| Quantos testes passam hoje? | 307 (1 skip esperado) | `pytest tests/ -q` |
+| Quantos testes passam hoje? | 384 (1 skip esperado) | `pytest tests/ -q` |
 | Distribuição real de TP/SL/TIME/NOFILL? | 36,5/51,3/6,5/5,7% | `labels/v1/labels.parquet`, Sprint 6 acima |
 | N_eff real (teto de features)? | ~32,4 mil por modelo | Sprint 6 acima |
 | Quais gatilhos de stress funcionam? | 3 de 10 (S1,S3,S6) | `src/regime/stress.py`, Sprint 5 acima |
 | Distribuição real de regime? | R1 domina (46%), R5 raro (1,7%) | Sprint 5 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
 | Correlação real entre features T1? | 2 pares violam 0,70 | Sprint 4 acima |
+| CPCV vaza treino pro teste? | Não — 0 de 462.682 labels, medido | Sprint 7 acima |
+| Quantos dos 14 testes de leakage passam? | 11 PASS, 2 pendem de modelo, 1 N/A | Sprint 7 acima |
+| Fill rate real (maker)? | **37,3%** — abaixo do piso de 60% do §9.6 | Sprint 9 acima, **item mais crítico em aberto** |
+| Seleção adversa real medida? | ~0,6bps (menor que o placeholder de 1,5bps) | Sprint 9 acima |

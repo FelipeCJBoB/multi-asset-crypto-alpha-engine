@@ -10,7 +10,14 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 
 ## Status
 
-**Sprint 6 de 18 concluído** · 307 testes passando · 0 violações de lint.
+**Sprint 9 (adiantado) de 18 concluído** — Sprints 1-7 e 9 feitos, Sprint 8
+(Alpha) é o próximo · 384 testes passando · 0 violações de lint.
+
+⚠️ **Item crítico em aberto:** fill rate maker medido em **37,3%**, abaixo do
+piso de 60% que o próprio PRD cita como o ponto em que a economia do desenho
+maker deixa de fazer sentido (§9.6). É medição preliminar (limite inferior
+pessimista, sem calibração contra fills reais ainda) — mas é a primeira vez que
+esse número existe, e a direção pede atenção antes de avançar pro Alpha.
 
 | Documento | O que é |
 |---|---|
@@ -33,6 +40,10 @@ Detalhes em `PRD_V3_2_UNIFICADO.md` §0.
   PRD documentava como fabricados.
 - **Teto de features real**: ~32,4 mil observações efetivas por modelo — acima
   do que o blueprint original especulava.
+- **CPCV sem vazamento**: purge testado contra os 462 mil labels reais — zero
+  `t1` de treino cruzando pro teste, em 15 de 15 splits.
+- **Fill rate maker real**: 37,3% (ver alerta acima) · seleção adversa real
+  ~0,6bps, menor que o placeholder assumido de 1,5bps.
 - **Distribuição real de regime de mercado**: 97,5% do tempo é tradeable; regime
   de stress (R5) é raro (1,7%).
 - **Cobertura real de dado**: a Binance só publica dumps públicos desde
@@ -50,9 +61,9 @@ src/
 ├── features/     Feature Engine — 10 features T1, registry, paridade lote/streaming
 ├── regime/       5 regimes por quantis, histerese, gatilhos de stress
 ├── labels/       Triple barrier em mark price, pesos por unicidade
-├── validation/   CPCV com purge/embargo, testes de vazamento        (em andamento)
-├── execution/    Simulador de fila, máquina de estados de ordem     (em andamento)
-├── models/       Alpha/Meta                                        (Sprint 8+)
+├── validation/   CPCV com purge/embargo, 14 testes de vazamento
+├── execution/    Simulador de fila (pré-RPI); máquina de estados    (parcial)
+├── models/       Alpha/Meta                                        (Sprint 8+, próximo)
 ├── risk/         Sizing, 18 controles, kill switch                 (Sprint 12+)
 └── backtest/     Engine de backtest, reconciliação                 (Sprint 10+)
 ```
