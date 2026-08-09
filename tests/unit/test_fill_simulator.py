@@ -623,6 +623,7 @@ def test_record_experiment_cria_e_acrescenta(tmp_path: Path) -> None:
 _SCHEMA_FIXTURE_DAY = "2023-06-01"
 
 
+@pytest.mark.integration
 def test_load_book_ticker_pair_schema_real() -> None:
     _skip_if_missing_book_ticker(_SCHEMA_FIXTURE_DAY)
     df = fs.load_book_ticker_pair(_SYMBOL, date.fromisoformat(_SCHEMA_FIXTURE_DAY))

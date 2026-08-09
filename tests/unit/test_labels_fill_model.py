@@ -159,6 +159,7 @@ def test_wrapper_polars_janela_vazia_e_nofill() -> None:
 _SCHEMA_FIXTURE_DAY = "2024-01-15"
 
 
+@pytest.mark.integration
 def test_mark_1m_e_klines_like_nao_valor_unico_por_minuto() -> None:
     _skip_if_missing(_SCHEMA_FIXTURE_DAY)
     df = lake.query_bars(

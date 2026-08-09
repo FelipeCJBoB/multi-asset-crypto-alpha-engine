@@ -67,6 +67,7 @@ def _assert_invariantes_484(df: pl.DataFrame) -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_build_regimes_colunas_e_dtypes() -> None:
     _skip_if_missing(_FIXTURE_START)
     df = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -86,6 +87,7 @@ def test_build_regimes_colunas_e_dtypes() -> None:
     assert df.height == 3936
 
 
+@pytest.mark.integration
 def test_build_regimes_t0_e_open_time_alinhado() -> None:
     _skip_if_missing(_FIXTURE_START)
     df = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -99,12 +101,14 @@ def test_build_regimes_t0_e_open_time_alinhado() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_build_regimes_invariantes_484_dado_real() -> None:
     _skip_if_missing(_FIXTURE_START)
     df = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
     _assert_invariantes_484(df)
 
 
+@pytest.mark.integration
 def test_build_regimes_determinismo() -> None:
     _skip_if_missing(_FIXTURE_START)
     out1 = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -117,6 +121,7 @@ def test_build_regimes_determinismo() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_write_regimes_atomic_roundtrip() -> None:
     _skip_if_missing(_FIXTURE_START)
     df = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -139,6 +144,8 @@ def test_write_regimes_atomic_roundtrip() -> None:
 # ============================================================================
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_build_regimes_distribuicao_historico_completo() -> None:
     _skip_if_missing(_FULL_START)
     df = build.build_regimes("BTCUSDT", _FULL_START, _FULL_END)

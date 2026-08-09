@@ -91,6 +91,8 @@ def _skip_if_labels_missing() -> None:
         pytest.skip("labels/v1/labels.parquet ausente — rode o Label Engine (Sprint 6) primeiro")
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_regime_r0_e_100_por_cento_warmup_sem_t1_valido() -> None:
     """Teste de regressão da causa estrutural do achado F1, sobre o frame
     real (`build_modeling_frame`, ~14s medido — não uma amostra sintética,
@@ -127,6 +129,8 @@ def _skip_if_predictions_missing() -> None:
         )
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_predictions_reais_do_alpha_zero_sinais_em_r0() -> None:
     """Segundo teste do achado F1 — dado real ponta a ponta (não só a
     causa estrutural do teste acima): junta `predictions/alpha/{model_id}/

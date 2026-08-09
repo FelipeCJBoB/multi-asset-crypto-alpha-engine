@@ -331,6 +331,7 @@ def test_load_labels_v1_inexistente_levanta_filenotfound() -> None:
         cpcv.load_labels_v1(version="versao_que_nao_existe_12345")
 
 
+@pytest.mark.integration
 def test_cpcv_sobre_dataset_real_15_splits_zero_vazamento() -> None:
     """O teste central — §11.5 #6 rodando contra `labels/v1/labels.parquet`
     real (462.682 linhas, ambos os lados, 2020-01→2026-08, Sprint 6), não
@@ -358,6 +359,7 @@ def test_cpcv_sobre_dataset_real_15_splits_zero_vazamento() -> None:
         assert 0.2 < row["n_test"] / total < 0.45
 
 
+@pytest.mark.integration
 def test_cpcv_sobre_dataset_real_grupos_cobrem_series_completa() -> None:
     _skip_if_labels_missing()
     labels = cpcv.load_labels_v1()
@@ -370,6 +372,7 @@ def test_cpcv_sobre_dataset_real_grupos_cobrem_series_completa() -> None:
         assert 300 < span_days < 450  # ~1 ano, com folga
 
 
+@pytest.mark.integration
 def test_cpcv_sobre_dataset_real_purge_e_embargo_sao_pequenos_face_ao_dataset() -> None:
     """`time_stop_bars` (32 barras, 8h) e `embargo_bars` (175 barras,
     ~44h) são desprezíveis frente a grupos de ~1 ano — purge+embargo por

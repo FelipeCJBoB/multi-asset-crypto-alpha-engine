@@ -21,6 +21,7 @@ def _skip_if_missing(path: Path) -> None:
         pytest.skip(f"fixture ausente no backfill local: {path}")
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "source_name",
     ["klines_1m", "mark_price_klines_1m", "premium_index_klines_1m"],
@@ -38,6 +39,7 @@ def test_klines_like_schema_bate_com_parquet_real(source_name: str) -> None:
         )
 
 
+@pytest.mark.integration
 def test_agg_trades_schema_bate_com_parquet_real() -> None:
     path = CAPACITY_DIR / "agg_trades" / "BTCUSDT" / f"{_FIXTURE_DAY}.parquet"
     _skip_if_missing(path)
@@ -46,6 +48,7 @@ def test_agg_trades_schema_bate_com_parquet_real() -> None:
     assert df.columns == list(schema.columns.keys())
 
 
+@pytest.mark.integration
 def test_metrics_schema_bate_com_parquet_real() -> None:
     path = CAPACITY_DIR / "metrics" / "BTCUSDT" / f"{_FIXTURE_DAY}.parquet"
     _skip_if_missing(path)
@@ -57,6 +60,7 @@ def test_metrics_schema_bate_com_parquet_real() -> None:
     assert df.schema["create_time"] == pl.Utf8
 
 
+@pytest.mark.integration
 def test_funding_schema_bate_com_parquet_real() -> None:
     path = CAPACITY_DIR / "funding" / "BTCUSDT" / f"{_FIXTURE_MONTH}.parquet"
     _skip_if_missing(path)

@@ -67,6 +67,7 @@ def test_day_bounds_ms_e_utc_independente_do_fuso_local() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_query_bars_klines_1m() -> None:
     _skip_if_missing("klines_1m")
     df = lake.query_bars(
@@ -77,6 +78,7 @@ def test_query_bars_klines_1m() -> None:
     assert df["open_time"].is_sorted()
 
 
+@pytest.mark.integration
 def test_query_bars_cast_prices() -> None:
     _skip_if_missing("klines_1m")
     df = lake.query_bars(
@@ -85,6 +87,7 @@ def test_query_bars_cast_prices() -> None:
     assert df.schema["open"] == pl.Float64
 
 
+@pytest.mark.integration
 def test_query_bars_resample_compoe_com_lake() -> None:
     _skip_if_missing("klines_1m")
     df_30m = lake.query_bars("BTCUSDT", "30m", _FIXTURE_START, _FIXTURE_END, source="klines_1m")
@@ -96,6 +99,7 @@ def test_query_bars_source_invalido_levanta_erro() -> None:
         lake.query_bars("BTCUSDT", "1m", _FIXTURE_START, _FIXTURE_END, source="metrics")
 
 
+@pytest.mark.integration
 def test_query_agg_trades() -> None:
     _skip_if_missing("agg_trades")
     df = lake.query_agg_trades("BTCUSDT", _FIXTURE_START, _FIXTURE_START)
@@ -103,12 +107,14 @@ def test_query_agg_trades() -> None:
     assert df["transact_time"].is_sorted()
 
 
+@pytest.mark.integration
 def test_query_metrics() -> None:
     _skip_if_missing("metrics")
     df = lake.query_metrics("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
     assert df.height == 3 * 288  # 288 pontos de 5m por dia
 
 
+@pytest.mark.integration
 def test_query_funding() -> None:
     _skip_if_missing("funding")
     df = lake.query_funding("BTCUSDT", _FIXTURE_START, _FIXTURE_END)

@@ -232,6 +232,7 @@ def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(tmp_path: object)
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_run_all_leakage_tests_sobre_dataset_real() -> None:
     """Roda o relatório completo contra o dataset real de produção — o
     caminho que `python -m src.validation.leakage` de fato exercita. Não

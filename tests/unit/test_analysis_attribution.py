@@ -750,6 +750,8 @@ def _skip_if_real_artifacts_missing(model_id: str) -> None:
         pytest.skip(f"artefato(s) real(is) ausente(s), rode o pipeline primeiro: {missing}")
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_integracao_real_ic_by_regime_e_gain_by_side_e_feature_agreement() -> None:
     from src.features.build import T1_FEATURE_IDS
     from src.models import dataset as ds

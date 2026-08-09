@@ -39,6 +39,8 @@ def _skip_if_missing() -> None:
         pytest.skip(f"fixture ausente no backfill local: {path}")
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_paridade_lote_streaming_ultimas_500_barras() -> None:
     _skip_if_missing()
 
@@ -81,6 +83,7 @@ def test_paridade_lote_streaming_ultimas_500_barras() -> None:
     )
 
 
+@pytest.mark.integration
 def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario() -> None:
     """Complemento pontual do teste acima, mais barato: pega UM prefixo
     arbitrário no meio da série (não só a cauda) e confirma que rodar

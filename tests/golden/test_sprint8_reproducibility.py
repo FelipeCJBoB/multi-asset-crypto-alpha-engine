@@ -73,6 +73,8 @@ def modeling_frame_and_splits() -> tuple[object, tuple[cpcv.CPCVSplit, ...]]:
 
 
 @pytest.mark.golden
+@pytest.mark.slow
+@pytest.mark.integration
 def test_fold_0_reproduz_diagnostico_commitado_bit_a_bit(
     modeling_frame_and_splits: tuple[object, tuple[cpcv.CPCVSplit, ...]],
     tmp_path: Path,

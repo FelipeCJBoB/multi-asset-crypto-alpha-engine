@@ -160,6 +160,7 @@ def test_s06_gap_multiplo_ainda_marca_so_a_retomada() -> None:
     assert out[2] == stress.TriggerState.TRIGGERED
 
 
+@pytest.mark.integration
 def test_s06_serie_real_klines_15m_nao_tem_gap() -> None:
     """Achado do Sprint 5 (medido, não presumido): a grade de 15m derivada
     de `klines_1m` (2019-12-31 -> 2026-08-07, 231.552 barras) não tem
@@ -230,6 +231,7 @@ def test_discover_filters_hash_snapshots_estado_real_do_repo() -> None:
     assert isinstance(h, str) and len(h) == 64  # sha256 hexdigest
 
 
+@pytest.mark.integration
 def test_compute_filters_hash_determinismo_e_sensibilidade() -> None:
     from dataclasses import replace
 

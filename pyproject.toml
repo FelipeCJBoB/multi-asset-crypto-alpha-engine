@@ -99,6 +99,8 @@ testpaths = ["tests"]
 addopts = "-ra"
 markers = [
     "golden: teste de reprodutibilidade bit-a-bit contra artefato versionado (Fase G, ~20-30s, retreina fold 0 de verdade — nao mockado)",
+    "slow: teste que sozinho custa mais que ~2s (reconstroi serie/frame real completo, nao fixture sintetica) — excluido de 'pytest -m \"not slow\"'",
+    "integration: le artefato real do disco (data/, labels/, predictions/, models/) via skip-if-ausente, em vez de fixture sintetica — pode ser pulado (SKIPPED) fora do ambiente com backfill local",
 ]
 
 # --------------------------------------------------------------------------

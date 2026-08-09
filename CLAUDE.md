@@ -203,6 +203,39 @@ uv run quant live run
 
 ---
 
+## Marcadores pytest
+
+Três marcadores registrados em `pyproject.toml::[tool.pytest.ini_options]`,
+eixos independentes — um teste pode carregar mais de um:
+
+| marcador | significa | quando aplicar |
+|---|---|---|
+| `golden` | reprodutibilidade bit-a-bit contra artefato versionado (Fase G) | testes que retreinam algo de verdade e comparam contra um `.json` commitado |
+| `slow` | custa sozinho mais que ~2s | reconstrói série/frame real completo (`build_modeling_frame`, `build_regimes` histórico completo, CPCV+diagnóstico de fold) — não fixture sintética |
+| `integration` | lê artefato real do disco (`data/`, `labels/`, `predictions/`, `models/`) via skip-if-ausente | qualquer teste que chama um `_skip_if_*`/`pytest.skip(...)` condicionado à existência de um arquivo de backfill local |
+
+`slow` e `integration` frequentemente coincidem (reconstruir dado real
+tende a ser caro) mas não são o mesmo eixo — um teste pode ler um arquivo
+real pequeno (`integration`, rápido) sem ser `slow`, ou ser caro sem ser
+`integration` num teste sintético grande o bastante (nenhum caso disso
+existe hoje, mas o marcador não presume que nunca vai existir).
+
+```bash
+uv run pytest                    # tudo, inclusive slow/integration
+uv run pytest -m "not slow"      # ciclo rápido de desenvolvimento, < 30s
+uv run pytest -m "not integration"   # sem backfill local (ex. CI sem os dados)
+uv run pytest -m golden          # só o teste de reprodutibilidade
+```
+
+Todo teste novo que reconstrói dado real ganha `@pytest.mark.integration`;
+se também passar de ~2s, ganha `@pytest.mark.slow` também. Não é
+retroativo automático — testes que já existiam antes desta convenção
+(2026-08-09) foram marcados numa varredura única, não perfeitamente
+exaustiva; um teste real sem marcador encontrado depois é um bug de
+marcação, não uma exceção à regra.
+
+---
+
 ## Rotina de git — histórico como memória do projeto
 
 **Repositório:** `github.com/FelipeCJBoB/btcusdt-quant-engine` (privado). Branch única, `master` — trunk-based, sem PR para o dia a dia; branch separada só quando uma mudança for grande o bastante pra revisar antes de integrar, e só se pedido explicitamente.

@@ -376,6 +376,7 @@ def test_assert_label_invariants_detecta_t1_menor_que_t0() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_build_labels_for_symbol_strict_levanta_sem_snapshot_historico() -> None:
     """B01 real, não só documentado: por padrão (`historical_filters_fallback`
     não passado), datas anteriores a 2026-08-08 levantam
@@ -386,6 +387,7 @@ def test_build_labels_for_symbol_strict_levanta_sem_snapshot_historico() -> None
         tb.build_labels_for_symbol("BTCUSDT", _FIXTURE_START, "2024-01-02")
 
 
+@pytest.mark.integration
 def test_build_labels_for_symbol_real_dado_invariantes() -> None:
     _skip_if_missing(_FIXTURE_START)
     cfg = tb.LabelConfig.from_constants()
@@ -404,6 +406,7 @@ def test_build_labels_for_symbol_real_dado_invariantes() -> None:
     assert set(out["side"].unique().to_list()) == {1, -1}
 
 
+@pytest.mark.integration
 def test_build_labels_for_symbol_determinismo() -> None:
     _skip_if_missing(_FIXTURE_START)
     cfg = tb.LabelConfig.from_constants()
@@ -416,6 +419,7 @@ def test_build_labels_for_symbol_determinismo() -> None:
     assert out1.equals(out2, null_equal=True)
 
 
+@pytest.mark.integration
 def test_build_labels_for_symbol_barrier_hit_cobre_os_quatro_desfechos() -> None:
     """Não é uma garantia estrutural (poderia, em teoria, não ocorrer um dos
     quatro num recorte pequeno) — mas sobre 2 semanas reais de BTCUSDT os

@@ -38,6 +38,7 @@ def _skip_if_missing(day: str) -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_determinismo_bit_a_bit() -> None:
     _skip_if_missing(_FIXTURE_START)
     out1 = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -45,6 +46,7 @@ def test_determinismo_bit_a_bit() -> None:
     assert out1.equals(out2, null_equal=True)
 
 
+@pytest.mark.integration
 def test_determinismo_hash() -> None:
     """`hash(build(data, cfg, v1)) == hash(build(data, cfg, v1))` — §2.15
     invariante 3, literal: hash sobre os bytes do resultado."""
@@ -61,6 +63,7 @@ def test_determinismo_hash() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_warmup_uniforme_todas_nulas_antes_do_corte() -> None:
     _skip_if_missing(_FIXTURE_START)
     out = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
@@ -72,6 +75,7 @@ def test_warmup_uniforme_todas_nulas_antes_do_corte() -> None:
         assert head[col].null_count() == warmup, f"{col} tem valor não-null antes do warmup"
 
 
+@pytest.mark.integration
 def test_warmup_uniforme_maioria_valida_depois_do_corte() -> None:
     """Depois do warmup, a esmagadora maioria das linhas deve ter todas as
     features T1 válidas — algumas poucas exceções pontuais são esperadas e
@@ -113,6 +117,7 @@ def test_warmup_zero_barras_nao_quebra() -> None:
 # ============================================================================
 
 
+@pytest.mark.integration
 def test_t1_ortogonalidade_spearman_2anos() -> None:
     """§2.13: 'nenhum par em T1 pode ter |correlação de Spearman| > 0,70 na
     janela de treino'. Calculado aqui sobre ~2 anos reais (2024-08-08 a
