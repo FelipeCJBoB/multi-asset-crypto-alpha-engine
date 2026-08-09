@@ -66,6 +66,7 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.core.metric import Metric, Unit
 from src.execution.fill_simulator import (
     BOOK_TICKER_WINDOW_END,
     BOOK_TICKER_WINDOW_START,
@@ -304,17 +305,27 @@ def build_reconciliation_base(
     return base, diagnostics
 
 
+# `Metric.source` para os campos deste módulo — identifica o CÓDIGO que
+# calculou o valor (este módulo é puro em relação a artefato upstream
+# específico; `window_start`/`window_end`/`gate` já aparecem nos outros
+# campos do relatório, não precisam ser repetidos dentro de `source`).
+_SOURCE_MODULE = "backtest.fill_reconciliation"
+_N_SEMANTICS_SIGNALS = "signals"
+_N_SEMANTICS_TRADES = "trades"
+_N_SEMANTICS_ORDERS = "orders"
+
+
 @dataclass(frozen=True, slots=True)
 class GateResult:
     gate: str
     gate_description: str
     n_base_signals: int
     n_filled: int
-    fill_rate: float
-    sharpe_naive: float
-    trades_per_year: float
-    mean_trade_ret_net: float
-    std_trade_ret_net: float
+    fill_rate: Metric
+    sharpe_naive: Metric
+    trades_per_year: Metric
+    mean_trade_ret_net: Metric
+    std_trade_ret_net: Metric
     decomposition: decomposition.DecompositionResult
 
 
@@ -332,18 +343,55 @@ def _evaluate_gate(
     mean_ret = float(np.mean(rets)) if rets.size else float("nan")
     std_ret = float(np.std(rets, ddof=1)) if rets.size >= 2 else float("nan")
 
-    decomp = decomposition.decompose(executed)
+    source = f"{_SOURCE_MODULE}::{gate}"
+    decomp = decomposition.decompose(executed, source=source)
 
     return GateResult(
         gate=gate,
         gate_description=gate_description,
         n_base_signals=n_base,
         n_filled=n_filled,
-        fill_rate=fill_rate,
-        sharpe_naive=sharpe,
-        trades_per_year=trades_per_year,
-        mean_trade_ret_net=mean_ret,
-        std_trade_ret_net=std_ret,
+        fill_rate=Metric(
+            value=fill_rate,
+            unit=Unit.PROBABILITY,
+            n=n_base,
+            n_semantics=_N_SEMANTICS_SIGNALS,
+            source=source,
+        ),
+        sharpe_naive=Metric(
+            value=sharpe,
+            unit=Unit.SHARPE_ANNUALIZED,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_TRADES,
+            source=source,
+        ),
+        # `trades_per_year` é uma taxa anualizada (frequência projetada, não
+        # uma contagem de amostra) — mapeada em `Unit.COUNT` na ausência de
+        # um membro dedicado no enum atual (escopo desta rodada não inclui
+        # uma unidade "rate_per_year"); `n_semantics` deixa explícito que
+        # `n` aqui é o tamanho da amostra que ALIMENTOU a taxa, não a taxa
+        # em si.
+        trades_per_year=Metric(
+            value=trades_per_year,
+            unit=Unit.COUNT,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_TRADES,
+            source=source,
+        ),
+        mean_trade_ret_net=Metric(
+            value=mean_ret,
+            unit=Unit.FRACTION_OF_NOTIONAL,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_TRADES,
+            source=source,
+        ),
+        std_trade_ret_net=Metric(
+            value=std_ret,
+            unit=Unit.FRACTION_OF_NOTIONAL,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_TRADES,
+            source=source,
+        ),
         decomposition=decomp,
     )
 
@@ -450,10 +498,10 @@ def run_fill_reconciliation(
         "backtest.fill_reconciliation.module_a_done",
         window_start=result.window_start,
         window_end=result.window_end,
-        optimistic_sharpe=optimistic.sharpe_naive,
-        realistic_sharpe=realistic.sharpe_naive,
-        optimistic_fill_rate=optimistic.fill_rate,
-        realistic_fill_rate=realistic.fill_rate,
+        optimistic_sharpe=optimistic.sharpe_naive.value,
+        realistic_sharpe=realistic.sharpe_naive.value,
+        optimistic_fill_rate=optimistic.fill_rate.value,
+        realistic_fill_rate=realistic.fill_rate.value,
     )
     return result
 
@@ -498,13 +546,21 @@ class SelectivityResult:
     n_orders_matched: int
     n_filled: int
     n_notfilled: int
-    p_tp_given_filled: float
-    p_tp_given_notfilled: float
-    gap_pp: float
-    mean_ret_net_bps_given_filled: float
-    mean_ret_net_bps_given_notfilled: float
-    mean_ret_net_bps_unconditional: float
-    selectivity_cost_bps: float
+    p_tp_given_filled: Metric
+    p_tp_given_notfilled: Metric
+    gap_pp: Metric
+    mean_ret_net_bps_given_filled: Metric
+    mean_ret_net_bps_given_notfilled: Metric
+    mean_ret_net_bps_unconditional: Metric
+    selectivity_cost_bps: Metric
+    # `dict[str, float]` mantido (não `dict[str, Metric]`) — mesma decisão
+    # pragmática de `src.models.hhi.ConcentrationDiagnostics.shares`: shares
+    # de uma distribuição categórica já normalizada somando 1.0 por barra
+    # (`_barrier_distribution`), sem ambiguidade de unidade própria por
+    # entrada (é sempre PROBABILITY/fração do total do grupo) — envelopar
+    # cada valor do dict em `Metric` repetiria a mesma unidade/n/source N
+    # vezes por pouco ganho de interpretação sobre o dict já é auto-
+    # descritivo (chave = rótulo de `barrier_hit`, valor = fração).
     barrier_hit_distribution_given_filled: dict[str, float]
     barrier_hit_distribution_given_notfilled: dict[str, float]
 
@@ -564,31 +620,85 @@ def compute_fill_selectivity(
     mean_bps_unconditional = _mean_bps(matched["ret_net"])
     selectivity_cost_bps = mean_bps_filled - mean_bps_unconditional
 
+    window_label = f"{window_start.isoformat()}..{window_end.isoformat()}"
+    source = f"{_SOURCE_MODULE}::fill_selectivity::{window_label}"
+    n_filled = filled_grp.height
+    n_notfilled = notfilled_grp.height
+    n_matched = matched.height
+
     result = SelectivityResult(
         window_start=window_start.isoformat(),
         window_end=window_end.isoformat(),
         n_orders_total=n_total,
         n_orders_unmatched=n_unmatched,
-        n_orders_matched=matched.height,
-        n_filled=filled_grp.height,
-        n_notfilled=notfilled_grp.height,
-        p_tp_given_filled=p_tp_filled,
-        p_tp_given_notfilled=p_tp_notfilled,
-        gap_pp=gap_pp,
-        mean_ret_net_bps_given_filled=mean_bps_filled,
-        mean_ret_net_bps_given_notfilled=mean_bps_notfilled,
-        mean_ret_net_bps_unconditional=mean_bps_unconditional,
-        selectivity_cost_bps=selectivity_cost_bps,
+        n_orders_matched=n_matched,
+        n_filled=n_filled,
+        n_notfilled=n_notfilled,
+        p_tp_given_filled=Metric(
+            value=p_tp_filled,
+            unit=Unit.PROBABILITY,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        p_tp_given_notfilled=Metric(
+            value=p_tp_notfilled,
+            unit=Unit.PROBABILITY,
+            n=n_notfilled,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        # gap_pp/selectivity_cost_bps descrevem um efeito sobre a amostra
+        # MATCHED inteira (comparam o subgrupo filled contra o
+        # incondicional/notfilled) — n=n_matched, não n_filled, porque a
+        # pergunta que respondem é "o quanto a amostra matched inteira se
+        # divide pelo gate `filled`", não uma estatística restrita ao
+        # subgrupo filled sozinho.
+        gap_pp=Metric(
+            value=gap_pp,
+            unit=Unit.PERCENTAGE_POINTS,
+            n=n_matched,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        mean_ret_net_bps_given_filled=Metric(
+            value=mean_bps_filled,
+            unit=Unit.BPS_PER_TRADE,
+            n=n_filled,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        mean_ret_net_bps_given_notfilled=Metric(
+            value=mean_bps_notfilled,
+            unit=Unit.BPS_PER_TRADE,
+            n=n_notfilled,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        mean_ret_net_bps_unconditional=Metric(
+            value=mean_bps_unconditional,
+            unit=Unit.BPS_PER_TRADE,
+            n=n_matched,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
+        selectivity_cost_bps=Metric(
+            value=selectivity_cost_bps,
+            unit=Unit.BPS_PER_TRADE,
+            n=n_matched,
+            n_semantics=_N_SEMANTICS_ORDERS,
+            source=source,
+        ),
         barrier_hit_distribution_given_filled=_barrier_distribution(filled_grp),
         barrier_hit_distribution_given_notfilled=_barrier_distribution(notfilled_grp),
     )
     logger.info(
         "backtest.fill_selectivity.done",
         n_matched=result.n_orders_matched,
-        p_tp_given_filled=result.p_tp_given_filled,
-        p_tp_given_notfilled=result.p_tp_given_notfilled,
-        gap_pp=result.gap_pp,
-        selectivity_cost_bps=result.selectivity_cost_bps,
+        p_tp_given_filled=result.p_tp_given_filled.value,
+        p_tp_given_notfilled=result.p_tp_given_notfilled.value,
+        gap_pp=result.gap_pp.value,
+        selectivity_cost_bps=result.selectivity_cost_bps.value,
     )
     return result
 
@@ -699,6 +809,20 @@ def build_report(
 
 
 def write_report_atomic(report: FillReconciliationReport, dest_path: Path | None = None) -> Path:
+    # `asdict(report)` (não chamadas explícitas a `Metric.to_json()` campo a
+    # campo) — verificado deliberadamente, não presumido: `dataclasses.
+    # asdict()` recursa em todo `Metric` aninhado (é uma dataclass simples)
+    # e preserva TODOS os seus campos (value/unit/n/n_semantics/source/
+    # valid/invalid_reason); `orjson.dumps` serializa `Unit` (StrEnum)
+    # nativamente pelo `.value` string, produzindo JSON byte-idêntico ao
+    # que `Metric.to_json()` produziria campo a campo (conferido
+    # manualmente antes desta escolha). Reescrever a serialização inteira
+    # deste relatório profundamente aninhado (ReconciliationResult ->
+    # GateResult -> DecompositionResult -> Metric, e
+    # SelectivityResult -> Metric) para chamadas explícitas não muda o
+    # byte final e não paga o esforço — "prefira explícito se o esforço
+    # for razoável" (task) não se aplica aqui porque não há diferença de
+    # resultado a justificar o esforço.
     out_path = (
         dest_path
         if dest_path is not None
@@ -722,9 +846,9 @@ def _run_cli() -> int:
     write_report_atomic(report)
     logger.info(
         "backtest.fill_reconciliation.cli_done",
-        optimistic_sharpe=report.module_a_fill_reconciliation.optimistic.sharpe_naive,
-        realistic_sharpe=report.module_a_fill_reconciliation.realistic.sharpe_naive,
-        selectivity_gap_pp=report.module_b_fill_selectivity.gap_pp,
+        optimistic_sharpe=report.module_a_fill_reconciliation.optimistic.sharpe_naive.value,
+        realistic_sharpe=report.module_a_fill_reconciliation.realistic.sharpe_naive.value,
+        selectivity_gap_pp=report.module_b_fill_selectivity.gap_pp.value,
     )
     return 0
 

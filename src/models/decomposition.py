@@ -40,6 +40,8 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.core.metric import Metric, Unit, safe_ratio
+
 from . import backtest_lite
 from ._constants import load_constant
 
@@ -51,23 +53,48 @@ FloatArray = NDArray[np.float64]
 # `_BPS_PER_UNIT` em `src.labels.triple_barrier`), não constante de domínio.
 _BPS_PER_UNIT = 10_000  # noqa: magic-number
 
+# `Metric.source` para todo campo produzido por `decompose()` — a função é
+# pura (não sabe se `trades` veio do pooled de 15 splits ou de um
+# `path_id` isolado; essa distinção é responsabilidade de quem chama, ver
+# `src.models.pipeline`), então o `source` aponta para o CÓDIGO que
+# calculou o valor, não para o artefato upstream. `decompose()` aceita
+# `source` como override explícito (kwarg com default, não quebra a
+# chamada posicional existente em `src.models.pipeline.run_layer1_sprint`)
+# para quando o chamador tiver contexto melhor (ex. "alpha_layer1_report::
+# pooled_all_15_splits").
+_DEFAULT_SOURCE = "models.decomposition.decompose"
+
+_N_SEMANTICS_TRADES = "trades"
+
 
 @dataclass(frozen=True, slots=True)
 class DecompositionResult:
     n_trades: int
-    pnl_total: float
-    pnl_direcional: float
-    pnl_carry: float
-    pnl_execucao: float
-    carry_share: float
-    total_sharpe: float
-    directional_sharpe: float
-    side_carry_asymmetry: float
+    pnl_total: Metric
+    pnl_direcional: Metric
+    pnl_carry: Metric
+    pnl_execucao: Metric
+    carry_share: Metric
+    total_sharpe: Metric
+    directional_sharpe: Metric
+    side_carry_asymmetry: Metric
     gate3_directional_positive: bool
     gate3_carry_share_ok: bool
 
 
-def decompose(trades: pl.DataFrame) -> DecompositionResult:
+def _empty_metric(unit: Unit, source: str, *, reason: str) -> Metric:
+    return Metric(
+        value=float("nan"),
+        unit=unit,
+        n=0,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+        valid=False,
+        invalid_reason=reason,
+    )
+
+
+def decompose(trades: pl.DataFrame, *, source: str = _DEFAULT_SOURCE) -> DecompositionResult:
     """`trades` precisa ter `ret_gross, funding_bps, cost_entry_bps,
     cost_exit_bps, ret_net, side_hat, t0` — já restrito aos trades
     EXECUTADOS (`barrier_hit != "NOFILL"`; NOFILL tem `ret_*` e `*_bps`
@@ -79,18 +106,27 @@ def decompose(trades: pl.DataFrame) -> DecompositionResult:
     [t0, side]` e o polars descarta a coluna direita do join quando os
     nomes de chave diferem — o valor é o mesmo (o lado REALIZADO é sempre
     igual ao lado sinalizado, por construção do join), só o nome da coluna
-    sobrevivente muda."""
+    sobrevivente muda.
+
+    `source` identifica a origem do `Metric` resultante (ex.
+    `"experiments/alpha_layer1_report.json::pooled_all_15_splits"`) — por
+    padrão aponta para esta própria função, já que `decompose()` não tem
+    como saber se `trades` é o pooled de 15 splits ou um `path_id` isolado
+    (essa distinção é de quem chama)."""
     if trades.is_empty():
+        empty_reason = "trades vazio — nenhum trade executado na amostra"
         return DecompositionResult(
             n_trades=0,
-            pnl_total=float("nan"),
-            pnl_direcional=float("nan"),
-            pnl_carry=float("nan"),
-            pnl_execucao=float("nan"),
-            carry_share=float("nan"),
-            total_sharpe=float("nan"),
-            directional_sharpe=float("nan"),
-            side_carry_asymmetry=float("nan"),
+            pnl_total=_empty_metric(Unit.FRACTION_OF_NOTIONAL, source, reason=empty_reason),
+            pnl_direcional=_empty_metric(Unit.FRACTION_OF_NOTIONAL, source, reason=empty_reason),
+            pnl_carry=_empty_metric(Unit.FRACTION_OF_NOTIONAL, source, reason=empty_reason),
+            pnl_execucao=_empty_metric(Unit.FRACTION_OF_NOTIONAL, source, reason=empty_reason),
+            carry_share=_empty_metric(Unit.RATIO, source, reason=empty_reason),
+            total_sharpe=_empty_metric(Unit.SHARPE_ANNUALIZED, source, reason=empty_reason),
+            directional_sharpe=_empty_metric(Unit.SHARPE_ANNUALIZED, source, reason=empty_reason),
+            side_carry_asymmetry=_empty_metric(
+                Unit.FRACTION_OF_NOTIONAL, source, reason=empty_reason
+            ),
             gate3_directional_positive=False,
             gate3_carry_share_ok=False,
         )
@@ -117,31 +153,87 @@ def decompose(trades: pl.DataFrame) -> DecompositionResult:
             n_trades=int(trades.height),
         )
 
-    pnl_direcional = float(np.sum(pnl_direcional_series))
-    pnl_carry = float(np.sum(pnl_carry_series))
-    pnl_execucao = float(np.sum(pnl_execucao_series))
-    pnl_total = float(np.sum(ret_net))
+    n_trades = int(trades.height)
 
-    carry_share = pnl_carry / pnl_total if pnl_total != 0.0 else float("nan")
+    def _pnl_metric(value: float) -> Metric:
+        return Metric(
+            value=value,
+            unit=Unit.FRACTION_OF_NOTIONAL,
+            n=n_trades,
+            n_semantics=_N_SEMANTICS_TRADES,
+            source=source,
+        )
+
+    pnl_direcional = _pnl_metric(float(np.sum(pnl_direcional_series)))
+    pnl_carry = _pnl_metric(float(np.sum(pnl_carry_series)))
+    pnl_execucao = _pnl_metric(float(np.sum(pnl_execucao_series)))
+    pnl_total = _pnl_metric(float(np.sum(ret_net)))
+
+    # Achado nº1 da auditoria: `carry_share = pnl_carry / pnl_total` sem
+    # checar o sinal de `pnl_total` "passa" o gate3 por acidente quando
+    # `pnl_total` é negativo (é, nos dados reais de hoje) — a razão de dois
+    # negativos fica positiva e pequena mesmo quando o funding domina o
+    # resultado, testando o sinal errado do que o gate pretende. `safe_ratio`
+    # com `require_den_positive=True` torna isso `valid=False` em vez de um
+    # número que passa por acaso — NÃO redefine a fórmula (correção da
+    # fórmula em si, ex. `pnl_carry / (pnl_direcional + pnl_carry)`, é
+    # deliberadamente adiada para outra rodada; só o guard de validade
+    # entra agora).
+    carry_share = safe_ratio(
+        pnl_carry,
+        pnl_total,
+        require_den_positive=True,
+        unit=Unit.RATIO,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+    )
 
     span = backtest_lite.span_seconds(trades["t0"])
-    directional_sharpe, _ = backtest_lite.sharpe_naive(pnl_direcional_series, span_seconds=span)
-    total_sharpe, _ = backtest_lite.sharpe_naive(ret_net, span_seconds=span)
+    directional_sharpe_value, _ = backtest_lite.sharpe_naive(
+        pnl_direcional_series, span_seconds=span
+    )
+    total_sharpe_value, _ = backtest_lite.sharpe_naive(ret_net, span_seconds=span)
+    directional_sharpe = Metric(
+        value=directional_sharpe_value,
+        unit=Unit.SHARPE_ANNUALIZED,
+        n=n_trades,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+    )
+    total_sharpe = Metric(
+        value=total_sharpe_value,
+        unit=Unit.SHARPE_ANNUALIZED,
+        n=n_trades,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+    )
 
     long_carry = pnl_carry_series[side > 0]
     short_carry = pnl_carry_series[side < 0]
-    side_carry_asymmetry = (
+    side_carry_asymmetry_value = (
         float(np.mean(long_carry) - np.mean(short_carry))
         if long_carry.size and short_carry.size
         else float("nan")
     )
+    side_carry_asymmetry = _pnl_metric(side_carry_asymmetry_value)
 
     carry_share_max = float(load_constant("alpha_gate3_carry_share_max"))
-    gate3_directional_positive = bool(np.isfinite(directional_sharpe) and directional_sharpe > 0.0)
-    gate3_carry_share_ok = bool(np.isfinite(carry_share) and abs(carry_share) < carry_share_max)
+    gate3_directional_positive = bool(
+        np.isfinite(directional_sharpe.value) and directional_sharpe.value > 0.0
+    )
+    # B3 do escopo desta task ("gate que recebe Metric inválido FALHA, não
+    # passa"): `carry_share.valid` é `False` quando `pnl_total <= 0`
+    # (guard de `safe_ratio` acima) — o gate3 nunca mais "passa por
+    # acidente" nesse caso. Decisão explícita (documentada aqui e no
+    # relatório da task): estado binário, não um terceiro valor
+    # None/"indeterminado" — `gate3_carry_share_ok` continua `bool` no
+    # dataclass; Metric inválido reprova o gate em vez de indeterminá-lo,
+    # coerente com a postura de risco do resto do repo (nunca "passa" por
+    # ausência de evidência).
+    gate3_carry_share_ok = bool(carry_share.valid and abs(carry_share.value) < carry_share_max)
 
     result = DecompositionResult(
-        n_trades=int(trades.height),
+        n_trades=n_trades,
         pnl_total=pnl_total,
         pnl_direcional=pnl_direcional,
         pnl_carry=pnl_carry,
@@ -156,9 +248,10 @@ def decompose(trades: pl.DataFrame) -> DecompositionResult:
     logger.info(
         "models.decomposition.decompose",
         n_trades=result.n_trades,
-        carry_share=result.carry_share,
-        directional_sharpe=result.directional_sharpe,
-        total_sharpe=result.total_sharpe,
+        carry_share=result.carry_share.value,
+        carry_share_valid=result.carry_share.valid,
+        directional_sharpe=result.directional_sharpe.value,
+        total_sharpe=result.total_sharpe.value,
         gate3_directional_positive=result.gate3_directional_positive,
         gate3_carry_share_ok=result.gate3_carry_share_ok,
     )

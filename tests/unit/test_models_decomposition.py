@@ -6,11 +6,13 @@ porque os três termos vêm da mesma fórmula que
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import polars as pl
 
+from src.core.metric import Unit
 from src.models import decomposition
 
 
@@ -44,24 +46,44 @@ def test_decompose_reconcilia_exatamente_com_ret_net() -> None:
     trades = _synthetic_trades()
     result = decomposition.decompose(trades)
     reconciled = result.pnl_direcional + result.pnl_carry + result.pnl_execucao
-    assert abs(reconciled - result.pnl_total) < 1e-9
+    assert abs(reconciled.value - result.pnl_total.value) < 1e-9
+    assert reconciled.valid  # mesmos n_trades/n_semantics nos 3 termos, ver Metric.__add__
 
 
-def test_decompose_carry_share_positivo_quando_funding_domina() -> None:
-    """Funding fortemente enviesado (custo alto e constante) domina o
-    PnL_total negativo — `carry_share` deve refletir isso com o sinal
-    correto (PnL_carry negativo / PnL_total negativo = carry_share
-    positivo, já que os dois têm o mesmo sinal)."""
+def test_decompose_carry_share_invalido_quando_pnl_total_negativo() -> None:
+    """Achado nº1 da auditoria: com funding fortemente enviesado, o
+    `pnl_total` fica negativo (mesmo sinal dos dados reais de hoje) — sob a
+    fórmula ingênua, `carry_share = pnl_carry / pnl_total` seria positivo
+    (dois negativos) e "passaria" o gate por acidente, testando o sinal
+    errado do que §16.6 pretende ("carry é majoritariamente do PnL", não
+    "carry e total têm o mesmo sinal"). Com o guard de `safe_ratio`
+    (`require_den_positive=True`), a razão NUNCA É CALCULADA nesse caso —
+    `carry_share.value` é `nan` por construção (não um número que dá pra
+    conferir o sinal), `carry_share.valid` é `False`, e B3 ("gate que
+    recebe Metric inválido FALHA, não passa") reprova `gate3_carry_share_ok`
+    em vez de deixá-lo passar em silêncio como antes desta mudança."""
     trades = _synthetic_trades(funding_bias_bps=50.0)  # noqa: magic-number
     result = decomposition.decompose(trades)
-    assert result.pnl_carry < 0.0
-    assert result.carry_share > 0.0
+    assert result.pnl_carry.value < 0.0
+    assert result.pnl_total.value < 0.0  # funding domina o net -> total também negativo
+    assert result.carry_share.valid is False  # guard de safe_ratio: denominador <= 0
+    assert math.isnan(result.carry_share.value)  # não calculada, não só "suspeita"
+    assert result.gate3_carry_share_ok is False  # B3 — Metric inválido reprova o gate
+
+
+def test_decompose_carry_share_valido_quando_pnl_total_positivo() -> None:
+    """Contraponto do teste acima: com `pnl_total > 0`, `safe_ratio` calcula
+    normalmente e `carry_share.valid` é `True`."""
+    trades = _synthetic_trades(funding_bias_bps=-50.0, seed=2)  # noqa: magic-number
+    result = decomposition.decompose(trades)
+    assert result.pnl_total.value > 0.0
+    assert result.carry_share.valid is True
 
 
 def test_decompose_gate3_directional_positive_flag() -> None:
     trades = _synthetic_trades(seed=1)
     result = decomposition.decompose(trades)
-    assert result.gate3_directional_positive == (result.directional_sharpe > 0.0)
+    assert result.gate3_directional_positive == (result.directional_sharpe.value > 0.0)
 
 
 def test_decompose_vazio_retorna_nan_sem_quebrar() -> None:
@@ -79,3 +101,27 @@ def test_decompose_vazio_retorna_nan_sem_quebrar() -> None:
     result = decomposition.decompose(empty)
     assert result.n_trades == 0
     assert result.gate3_directional_positive is False
+    assert result.pnl_total.valid is False
+    assert result.pnl_total.n == 0
+    assert math.isnan(result.pnl_total.value)
+
+
+def test_decompose_metric_fields_tem_unit_e_source_corretos() -> None:
+    trades = _synthetic_trades()
+    result = decomposition.decompose(trades)
+    assert result.pnl_total.unit == Unit.FRACTION_OF_NOTIONAL
+    assert result.carry_share.unit == Unit.RATIO
+    assert result.total_sharpe.unit == Unit.SHARPE_ANNUALIZED
+    assert result.directional_sharpe.unit == Unit.SHARPE_ANNUALIZED
+    assert result.pnl_total.n == result.n_trades
+    assert result.pnl_total.n_semantics == "trades"
+    assert result.pnl_total.source == "models.decomposition.decompose"
+
+
+def test_decompose_aceita_source_override_sem_quebrar_chamada_posicional() -> None:
+    """`source` é kwarg com default — chamada posicional existente em
+    `src.models.pipeline.run_layer1_sprint` (`decomposition.decompose(df)`)
+    continua funcionando; quem tem contexto melhor pode sobrescrever."""
+    trades = _synthetic_trades()
+    result = decomposition.decompose(trades, source="experiments/alpha_layer1_report.json")
+    assert result.pnl_total.source == "experiments/alpha_layer1_report.json"

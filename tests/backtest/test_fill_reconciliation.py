@@ -20,6 +20,7 @@ import polars as pl
 import pytest
 
 from src.backtest import fill_reconciliation as fr
+from src.core.metric import Unit
 from src.execution.fill_simulator import RPI_BREAK_DATE
 
 _BAR_MS = 900_000  # 15m, mesma constante de tests/unit/test_validation_cpcv.py
@@ -203,11 +204,13 @@ def test_evaluate_gate_otimista_vs_realista_mesma_base() -> None:
     # base = {A(TP,filled=T), B(SL,filled=F), D(NOFILL,filled=F por construção), E(TP,filled=T)}
     assert optimistic.n_base_signals == 4
     assert optimistic.n_filled == 3  # A, B, E (só D é NOFILL)
-    assert optimistic.fill_rate == pytest.approx(3 / 4)
+    assert optimistic.fill_rate.value == pytest.approx(3 / 4)
+    assert optimistic.fill_rate.unit == Unit.PROBABILITY
+    assert optimistic.fill_rate.valid is True
 
     assert realistic.n_base_signals == 4
     assert realistic.n_filled == 2  # só A e E têm filled=True
-    assert realistic.fill_rate == pytest.approx(2 / 4)
+    assert realistic.fill_rate.value == pytest.approx(2 / 4)
 
     # realista é sempre <= otimista na mesma amostra-base (limite inferior
     # vs superior, ver docstring do módulo).
@@ -236,8 +239,8 @@ def test_evaluate_gate_vazio_nao_quebra() -> None:
     )
     assert result.n_base_signals == 0
     assert result.n_filled == 0
-    assert np.isnan(result.fill_rate)
-    assert np.isnan(result.sharpe_naive)
+    assert np.isnan(result.fill_rate.value)
+    assert np.isnan(result.sharpe_naive.value)
 
 
 # ============================================================================
@@ -313,12 +316,15 @@ def test_compute_fill_selectivity_p_tp_condicional() -> None:
     assert result.n_filled == 2
     assert result.n_notfilled == 2
     # filled: TP,TP -> P(TP|filled)=1.0 ; notfilled: SL,SL -> P(TP|notfilled)=0.0
-    assert result.p_tp_given_filled == pytest.approx(1.0)
-    assert result.p_tp_given_notfilled == pytest.approx(0.0)
-    assert result.gap_pp == pytest.approx(100.0)  # noqa: magic-number
-    assert result.mean_ret_net_bps_given_filled == pytest.approx(
+    assert result.p_tp_given_filled.value == pytest.approx(1.0)
+    assert result.p_tp_given_filled.unit == Unit.PROBABILITY
+    assert result.p_tp_given_notfilled.value == pytest.approx(0.0)
+    assert result.gap_pp.value == pytest.approx(100.0)  # noqa: magic-number
+    assert result.gap_pp.unit == Unit.PERCENTAGE_POINTS
+    assert result.mean_ret_net_bps_given_filled.value == pytest.approx(
         (0.02 + 0.03) / 2 * 10_000  # noqa: magic-number — mesmos retornos sintéticos acima
     )
+    assert result.mean_ret_net_bps_given_filled.unit == Unit.BPS_PER_TRADE
 
 
 def test_compute_fill_selectivity_amostra_vazia_nao_quebra() -> None:
@@ -330,8 +336,8 @@ def test_compute_fill_selectivity_amostra_vazia_nao_quebra() -> None:
         labels, orders, window_start=date(2024, 1, 1), window_end=date(2024, 1, 2)
     )
     assert result.n_orders_matched == 0
-    assert np.isnan(result.p_tp_given_filled)
-    assert np.isnan(result.selectivity_cost_bps)
+    assert np.isnan(result.p_tp_given_filled.value)
+    assert np.isnan(result.selectivity_cost_bps.value)
 
 
 # ============================================================================
