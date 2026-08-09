@@ -690,3 +690,285 @@ cpcv_embargo_bars:
   class: C
   sweep_required: false
   review_by: sprint_10
+
+# ============================================================================
+# Camada risk — Risk Engine (Sprint 9, §8 sizing/controles, §10.2 kill
+# switch). risk_per_trade/sl_atr_mult/atr_window/quantization_tolerance/
+# maker_fee/taker_fee/fee_budget_monthly/step_size/min_notional/tick_size já
+# existem acima e são REUSADOS aqui, não duplicados. stress_spread_pctile_threshold
+# (Sprint 5) também é REUSADO pelo controle 17 (§8.3) — mesmo corte de
+# quantil (p95) aplicado ao mesmo dado físico (spread_bps), duas leituras do
+# mesmo número, não duas constantes com o mesmo valor.
+# ============================================================================
+
+reconciliation_max_age_s:
+  value: 60.0
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 4 — 'idade < 60s'. Guardrail operacional citado textualmente, mesma classe de outlier_log_return_sigma_threshold acima."
+  class: C
+  sweep_required: false
+
+data_staleness_bar_max_s:
+  value: 90.0
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 5 — 'barra < 90s'. Mesmo limiar já referenciado em src/regime/stress.py::s05_stale_data (§4.4 S5, sinal só existe ao vivo)."
+  class: C
+  sweep_required: false
+
+data_staleness_book_max_s:
+  value: 5.0
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 5 — 'book < 5s'."
+  class: C
+  sweep_required: false
+
+min_granularity_units:
+  value: 3.0
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 8 — 'notional_real >= 3 x unit_notional', citado textualmente no texto ATUAL (v3.3) do PRD. NÃO é o mesmo número que o '>= 3 unidades' do V2 já invalidado (erro corrigido #5, PARTE XIX) — aquele operava sobre N_req (nocional teórico, pré-quantização) e foi substituído por quantization_tolerance + min_sizing_resolution_units; este opera sobre notional_real (pós-quantização) e mede se a posição executável tem massa discreta suficiente para um preenchimento parcial fazer sentido (§9.3). Dois controles distintos do PRD v3.3, ambos vivos simultaneamente — ver docstring de src/risk/limits.py::control_08_granularidade."
+  class: C
+  sweep_required: false
+
+min_sizing_resolution_units:
+  value: 2.0
+  provenance: DERIVED
+  source: "PRD §8.3 controle 9b — 'N_req/unit >= 2,0'. Parte da restrição inviolável R1 (CLAUDE.md: 'N_req/unit >= 2'). Não é fórmula fechada, mas também não é escolha estética: a tabela de dispersão de risco por TF do §8.3 mostra p90/p10=1,33x a 15m (unidade mediana 3,32) contra p90/p10=3,05x a 2h (unidade mediana 1,14, o caso que 'passava por sorte' com só quant_error). 2,0 exclui o regime de alta dispersão observado sem exigir a mediana inteira (~3,32) — limiar justificado por medição direta, DERIVED (não ASSUMED), mas sem fórmula fechada, por isso ainda sujeito a varredura como classe A."
+  class: A
+  sweep_required: true
+  sweep_range: [1.0, 3.0]
+  review_by: sprint_10
+
+risk_overshoot_max_pct_equity:
+  value: 0.006
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 10 e §8.7 invariante — 'risk_real/equity <= 0,006'. DIFERENTE de risk_per_trade (0,005, acima): risk_per_trade é o ALVO usado no passo 1 do sizing (§8.2), antes da quantização; este é o TETO pós-quantização — depois do floor_to_step, risk_real fica tipicamente um pouco acima do alvo (ver tabela §8.3), e 0,006 é até onde isso é tolerado antes de rejeitar. Não reparametrizar risk_per_trade a partir deste número (CLAUDE.md, 'nunca otimize de volta o que foi derivado')."
+  class: C
+  sweep_required: false
+
+max_notional_multiple:
+  value: 3.0
+  provenance: ASSUMED
+  source: "PRD §8.6 — 'max_notional_multiple: 3.0 <- o controle real, no Risk Engine', herdado do max_leverage:3 do V2 (changelog V2->V3 #6) sem teste de sensibilidade próprio documentado. Alavancagem CONFIGURADA na exchange não é controle de risco (§8.6); este multiplicador é o controle de fato (controle 11, §8.3)."
+  class: A
+  sweep_required: true
+  sweep_range: [1.5, 4.5]
+  review_by: sprint_10
+
+im_required_max_pct_equity:
+  value: 0.60
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 12 — 'IM_req <= 0,60 x equity'."
+  class: C
+  sweep_required: false
+
+daily_loss_limit_pct_equity:
+  value: 0.02
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 14 e §10.2 gatilho 1 do kill switch — 'perda diária <= 2% do equity' / '> 2% do equity'. Mesmo limiar citado nos dois lugares do PRD (pré-trade e kill switch); uma constante, REUSADA por src.risk.limits.control_14_perda_diaria e src.risk.kill_switch.k01_daily_loss, não duplicada."
+  class: C
+  sweep_required: false
+
+max_drawdown_pct_peak:
+  value: 0.10
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 15 e §10.2 gatilho 2 — 'DD do pico <= 10%' / '> 10% do pico'. REUSADA por control_15_max_drawdown e k02_max_drawdown."
+  class: C
+  sweep_required: false
+
+max_consecutive_losses:
+  value: 5
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 16 e §10.2 gatilho 3 — 'perdas consecutivas <= 5' / '> 5'. REUSADA por control_16_perdas_consecutivas e k03_consecutive_losses."
+  class: C
+  sweep_required: false
+
+min_liquidity_depth_units:
+  value: 4.0
+  provenance: LITERATURE
+  source: "PRD §8.3 controle 17 — 'depth_20bps >= 4 x unit'. Distinto de min_granularity_units (3x, controle 8) — dois números diferentes citados no mesmo §8.3. Metade 'depth' de controle 17 é NOT_COMPUTABLE hoje (mesmo achado do Sprint 5 para S7, src/regime/stress.py::s07_shallow_liquidity — sem bucket de 20bp em data/capacity/book_depth/), então esta constante fica sem uso real no pipeline até o dado existir; registrada mesmo assim (Regra Zero: nenhuma constante nova sem entrada aqui, mesmo que hoje inerte)."
+  class: C
+  sweep_required: false
+
+equity_floor_usd:
+  value: 150.0
+  provenance: LITERATURE
+  source: "PRD §10.2 gatilho 13 — 'equity abaixo do piso operacional < US$ 150 (~2,3 unidades)'. 'Gatilho específico deste capital' (texto do PRD) — abaixo do piso, o controle 8 (granularidade) reprova essencialmente todo trade."
+  class: C
+  sweep_required: false
+
+exchange_disconnect_kill_switch_s:
+  value: 120.0
+  provenance: LITERATURE
+  source: "PRD §10.2 gatilho 4 — 'desconexão da exchange > 120s sem WebSocket nem REST'. Sensor pronto (src.risk.kill_switch.k04_exchange_disconnected), sem fonte de dado real ainda — ver docstring do módulo."
+  class: C
+  sweep_required: false
+
+api_error_storm_threshold_count:
+  value: 10
+  provenance: LITERATURE
+  source: "PRD §10.2 gatilho 7 — 'tempestade de erros de API > 10 erros em 60s'. A janela de 60s é parte da própria definição do sinal de entrada (nome do parâmetro `api_errors_last_60s`), não uma constante separada."
+  class: C
+  sweep_required: false
+
+unknown_order_state_kill_switch_s:
+  value: 120.0
+  provenance: LITERATURE
+  source: "PRD §10.2 gatilho 11 — 'estado de execução UNKNOWN não resolvido em 120s'."
+  class: C
+  sweep_required: false
+
+# ============================================================================
+# Camada models — Alpha, Camada 1 (Sprint 8, §5). Dois binários M_long/M_short
+# (B18), restrições monotônicas (§5.3) sobre IC de Spearman in-fold, sub-split
+# de calibração isotônica (§5.9 passo 9, B08), harness de validação = CPCV
+# (Sprint 7, reuso — walk-forward de 14 janelas fica para o Sprint 11, §5.9).
+# ============================================================================
+
+# --- hiperparâmetros do modelo-base XGBoost (§5.10) ---
+# Citados TEXTUALMENTE no bloco YAML do PRD §5.10, e o próprio §18.5.2 os
+# lista nominalmente entre "hiperparâmetros nunca testados" (mesma classe de
+# proveniência que as janelas de feature `feature_*` acima) — nenhum sweep
+# rodado nesta rodada (Camada 1 é sobre restrições monotônicas, não sobre
+# busca de hiperparâmetro; um sweep de hiperparâmetro seria um trial novo no
+# `audit/n_lifetime.yaml`, fora do escopo desta rodada).
+
+alpha_xgb_max_depth:
+  value: 3
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.max_depth — citado como 'classe B — varrer' no próprio bloco, e listado em §18.5.2 entre os hiperparâmetros nunca testados. Nenhuma busca rodada neste sprint."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_n_estimators:
+  value: 300
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.n_estimators — 'early stopping no fold' citado no mesmo bloco, mas early stopping não está implementado nesta rodada (não pedido pela task; ver docstring de src/models/alpha.py). §18.5.2 lista o hiperparâmetro-base como nunca testado."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_learning_rate:
+  value: 0.03
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.learning_rate — §18.5.2, hiperparâmetro-base nunca testado."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_subsample:
+  value: 0.8
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.subsample — §18.5.2, hiperparâmetro-base nunca testado."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_colsample_bytree:
+  value: 1.0
+  provenance: DERIVED
+  source: "PRD §5.10 — DESATIVADO deliberadamente (não ASSUMED): amostragem aleatória de colunas conflita com o bagging estruturado da Camada 3 (§5.5), que não está implementada nesta rodada, mas o valor 1.0 já é a escolha correta desde já (B19 — colsample_bytree < 1.0 é banned pattern quando bagging por grupo está ativo; aqui nem bagging por grupo existe ainda, então 1.0 é simplesmente 'sem amostragem de coluna', não uma antecipação da Camada 3)."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_min_child_weight:
+  value: 30
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.min_child_weight — §18.5.2, hiperparâmetro-base nunca testado."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_xgb_reg_lambda:
+  value: 5.0
+  provenance: ASSUMED
+  source: "PRD §5.10 xgboost_base.reg_lambda — §18.5.2, hiperparâmetro-base nunca testado."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+# --- Camada 1 — restrições monotônicas (§5.3) ---
+
+alpha_monotonic_consistency_min_envs:
+  value: 6
+  provenance: DERIVED
+  source: >
+    §5.3 literal diz "consistente em >= 6 de 7 ambientes", mas §5.4 define
+    ambientes como "tercil de cost_atr_ratio x regime estrutural, seis
+    células" — 6, não 7. Investigado: o "7" não tem nenhuma sétima categoria
+    de ambiente em lugar nenhum do PRD (§5.4 é a única definição de
+    ambiente e diz explicitamente "seis células"); a leitura mais
+    consistente é que "7" é resíduo de contaminação com a tabela de IC
+    ANUAL de 7 anos (2020-2026) do §17.2/§5.0 — a mesma tabela que o
+    próprio §5.3 proíbe explicitamente de usar para configurar o modelo
+    ("A tabela de IC do §17 cobre 2020-2026 e NAO pode ser usada para
+    atribuir restrições... vazamento de horizonte"), e cujos exemplos
+    adjacentes na mesma seção usam literalmente "IC negativo em 7/7 anos" /
+    "IC negativo em 6/7" — anos, não ambientes. Usado 6 ambientes (§5.4),
+    não 7, por instrução explícita da task e por esta investigação.
+    Limiar de consistência adaptado de "6 de 7" (tolera exatamente 1
+    ambiente dissidente em 7) para 6 ambientes por PRESERVAÇÃO DA TOLERÂNCIA
+    QUALITATIVA, não da razão numérica: floor(1/7 * 6) = 0 ambientes
+    dissidentes tolerados, logo 6 de 6 (unânime) — mesmo resultado do
+    critério "arredondar para preservar ou exceder o rigor original"
+    (ceil(6/7 * 6) = ceil(5.14) = 6). A alternativa por razão mais
+    PRÓXIMA (não por tolerância) seria 5 de 6 (83,3%, mais perto de 85,7%
+    que 100%) — calculada e reportada como sensibilidade no relatório do
+    Sprint 8, mas não adotada como padrão: o princípio de tolerância
+    (floor/ceil) é aplicado de forma consistente com o mesmo raciocínio
+    usado em alpha_layer1_permanence_min_paths abaixo, e ambos os
+    princípios (tolerância e "não afrouxar o rigor") concordam em 6 aqui,
+    divergindo só do critério de razão mais próxima.
+  class: B
+  sweep_required: false
+  review_by: sprint_11
+
+alpha_calibration_holdout_frac:
+  value: 0.25
+  provenance: ASSUMED
+  source: "PRD §5.9 passo 9 pede 'sub-split interno do treino' para a calibração isotônica (B08) mas não declara fração. Convenção de ML (holdout 75/25) escolhida sem teste — nenhuma varredura de sensibilidade rodada nesta rodada."
+  class: B
+  sweep_required: false
+  review_by: sprint_10
+
+alpha_random_seed:
+  value: 42
+  provenance: ASSUMED
+  source: "Seed de determinismo (split de calibração, embaralhamento de coluna do B4, sementes do B1) — convenção arbitrária fixada por reprodutibilidade, sem significado estatístico. Mesma categoria de 'escolha de engenharia sem base' já usada em rest_request_timeout_s."
+  class: D
+  sweep_required: false
+
+alpha_layer1_permanence_min_paths:
+  value: 4
+  provenance: DERIVED
+  source: >
+    §5.11 pede "Sharpe WF >= baseline em >= 9 de 14 janelas" para a Camada 1
+    permanecer. Esta rodada usa os 5 caminhos de backtest do CPCV (Sprint 7)
+    em vez de walk-forward real (Sprint 11) — adaptação documentada
+    explicitamente pela task. "9 de 14" tolera 5 janelas dissidentes em 14
+    (35,7%); floor(5/14 * 5) = floor(1,79) = 1 caminho dissidente tolerado
+    em 5, logo >= 4 de 5 — mesmo valor do critério "não afrouxar o rigor"
+    (ceil(9/14 * 5) = ceil(3,21) = 4). Decisão a REVALIDAR no Sprint 11 com
+    walk-forward de 14 janelas de verdade, conforme pedido pela task.
+  class: B
+  sweep_required: false
+  review_by: sprint_11
+
+# --- Baselines nulos (§16.1) ---
+
+alpha_b1_n_seeds:
+  value: 1000
+  provenance: LITERATURE
+  source: "PRD §16.1 — 'B1 roda 1.000 sementes, produzindo a distribuição nula do Sharpe.' Citado textualmente, não hiperparâmetro estatístico — mesma classe de regime_confirmation_bars/stress_*_threshold acima."
+  class: C
+  sweep_required: false
+
+# --- Decomposição de PnL carry/direcional (§16.6, RF-029) ---
+
+alpha_gate3_carry_share_max:
+  value: 0.30
+  provenance: LITERATURE
+  source: "PRD §16.6 — 'se > 0,30, a estratégia é majoritariamente carry' / 'Gate 3 revisado: directional_sharpe > 0 isoladamente'. Citado textualmente, guardrail de gate, não hiperparâmetro de busca — mesma classe de outlier_log_return_sigma_threshold acima."
+  class: C
+  sweep_required: false
