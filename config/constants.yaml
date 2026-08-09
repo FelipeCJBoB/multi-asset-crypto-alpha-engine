@@ -277,6 +277,36 @@ known_gaps:
     severity: class_B_risk
     status: concluido
     review_by: sprint_4
+  - id: exchange_info_snapshot_coverage_gap
+    description: >
+      Medido no Sprint 6 (Label Engine, §3.4): data/raw/snapshots/exchange_info/
+      só tem UM snapshot canônico no disco, "2026-08-08.json" — a coleta
+      forward começou nesta mesma data (pendência P0 já citada no cabeçalho
+      deste arquivo) e o diretório reconstructed/ está vazio. Isso significa
+      que load_filters_asof(t) (src/exchange/filters.py, §1.4) levanta
+      NoFiltersAvailableError para QUALQUER t anterior a 2026-08-08 — ou
+      seja, hoje é literalmente impossível resolver tick_size/min_notional/
+      step_size vigentes de forma B01-compliant para os ~6,5 anos de
+      histórico usados no resto do pipeline (features, labels). O Label
+      Engine (src/labels/triple_barrier.py) só consome tick_size (para
+      round_to_tick da entrada) — min_notional/step_size são consumidos por
+      risk/execution, fora de escopo aqui. tick_size não tem nenhum evento
+      de mudança documentado (ao contrário de min_notional, que mudou
+      100->50 em 2026-04-14 — ver measured acima), então usar o único
+      snapshot existente como proxy do tick_size histórico é uma aproximação
+      MENOR do que seria usar min_notional do snapshot de hoje para o
+      passado. src/labels/triple_barrier.py implementa isso como fallback
+      EXPLÍCITO, não-default (historical_filters_fallback: bool = False —
+      o caminho default continua levantando o erro, B01-compliant de
+      verdade): só quando o chamador pede fallback=True o único snapshot
+      disponível é reusado para datas históricas, com log estruturado de
+      WARNING a cada uso e o fato registrado dentro do próprio filters_hash
+      da linha (não fica silencioso). Resolução de verdade (reconstrução
+      histórica de exchangeInfo por anúncio da Binance, mesmo mecanismo já
+      previsto em filters.py) é P0 pendente de outro sprint, não deste.
+    severity: class_B_risk
+    status: medido_sprint_6_fallback_explicito_implementado
+    review_by: gate_1
 
 # ============================================================================
 # Camada exchange — REST/WS/rate limit (Sprint 2, §1.4, §9.4, §16.3)
@@ -519,3 +549,90 @@ min_warmup_bars:
   class: B
   sweep_required: false
   review_by: sprint_8
+
+# ============================================================================
+# Camada labels — Label Engine (Sprint 6, §3). tp_atr_mult/sl_atr_mult/
+# time_stop_bars/atr_window/maker_fee/taker_fee/adverse_selection_bps já
+# existem acima (§0.2 R1/R2, execução) e são REUSADOS aqui, não duplicados.
+# fill_timeout_bars é a única constante nova deste Sprint.
+# ============================================================================
+
+fill_timeout_bars:
+  value: 1
+  provenance: ASSUMED
+  source: "citado explicitamente no PRD §3.3 (fill_timeout_bars: 1) mas sem teste de sensibilidade — quanto tempo uma ordem limite fica postada antes do timeout (on_timeout: CANCEL, B13). Não invalida o desenho sozinho (NOFILL já é um desfecho de primeira classe, §3.2) — classe B, não A, mas ainda precisa de proveniência (Regra 1)."
+  class: B
+  sweep_required: false
+  review_by: sprint_6
+
+# ============================================================================
+# Camada regime — Regime Engine (Sprint 5, §4). regime_er_cutoff (0.60) e
+# regime_vol_cutoff (0.70) já existem acima (§0.2, classe A) como os cortes
+# de ENTRADA da histerese de §4.5 — REUSADOS aqui, não duplicados. As duas
+# constantes abaixo são os cortes de SAÍDA (mesma proveniência/classe dos
+# pais de entrada, texto explícito da task: "mesma proveniência dos cortes
+# de entrada"). regime_confirmation_bars/regime_stress_exit_confirmation_bars
+# e os 4 thresholds de gatilho de stress são citados textualmente no PRD
+# (§4.4/§4.5) — mesmo padrão já usado para outros guardrails classe C
+# citados do texto (ver outlier_log_return_sigma_threshold acima).
+# ============================================================================
+
+regime_vol_cutoff_exit:
+  value: 0.65
+  provenance: ASSUMED
+  source: "sem base (§18.5.1, mesma ausência de justificativa de regime_vol_cutoff) — corte de SAÍDA da histerese §4.5: 'saída exige vol_pct < 0,65'. Par com regime_vol_cutoff (entrada, 0,70); varredura conjunta faz mais sentido que isolada, mas cada um mantém sweep_range próprio até essa decisão ser tomada no Sprint 10."
+  class: A
+  sweep_required: true
+  sweep_range: [0.50, 0.80]
+  review_by: sprint_5
+
+regime_er_cutoff_exit:
+  value: 0.55
+  provenance: ASSUMED
+  source: "sem base (§18.5.1, mesma ausência de justificativa de regime_er_cutoff) — corte de SAÍDA da histerese §4.5: 'ER: entrada em TREND com q60, saída com q55'. Par com regime_er_cutoff (entrada, 0,60)."
+  class: A
+  sweep_required: true
+  sweep_range: [0.40, 0.70]
+  review_by: sprint_5
+
+regime_confirmation_bars:
+  value: 2
+  provenance: LITERATURE
+  source: "PRD §4.5 — 'mudança de regime só é efetivada após 2 barras consecutivas na nova condição'. Guardrail de suavização citado textualmente, não hiperparâmetro estatisticamente ajustado."
+  class: C
+  sweep_required: false
+
+regime_stress_exit_confirmation_bars:
+  value: 4
+  provenance: LITERATURE
+  source: "PRD §4.5 — 'R5 STRESS entra imediatamente... e sai com 4 barras de confirmação'. Assimetria deliberada (entrada sem confirmação, saída com 4x o padrão de regime_confirmation_bars) — texto explícito do PRD."
+  class: C
+  sweep_required: false
+
+stress_vol_pctile_threshold:
+  value: 0.98
+  provenance: LITERATURE
+  source: "PRD §4.4 S1 — vol_pctile_expanding > 0,98. Gatilho operacional de bloqueio (R5), não hiperparâmetro de partição estatística — mesma classe de outlier_log_return_sigma_threshold acima."
+  class: C
+  sweep_required: false
+
+stress_funding_z_threshold:
+  value: 3.0
+  provenance: LITERATURE
+  source: "PRD §4.4 S3 — |funding_z| > 3,0."
+  class: C
+  sweep_required: false
+
+stress_spread_pctile_threshold:
+  value: 0.95
+  provenance: LITERATURE
+  source: "PRD §4.4 S2 — spread_pctile_expanding > 0,95. Constante usada apenas se/quando F02f voltar a T1 (§2.7.1) — ver src/regime/stress.py::s02_spread_extreme para a decisão de NOT_COMPUTABLE no pipeline real do Sprint 5."
+  class: C
+  sweep_required: false
+
+stress_filters_hash_window_hours:
+  value: 24
+  provenance: LITERATURE
+  source: "PRD §4.4 S10 — 'filters_hash mudou nas últimas 24h'."
+  class: C
+  sweep_required: false
