@@ -23,10 +23,20 @@ data/*
 !data/quality_reports/
 !data/quality_reports/*.json
 
-# Artefatos de modelo e experimento — versionados por outro mecanismo (registry), não git
+# Saída em massa de pipeline — reconstrutível a partir de código+config+dado
+# fonte (config_hash amarra a versão exata, §3.4 B15). Mesma lógica de data/.
+labels/
+regime/
+predictions/
+backtests/
+
+# Artefatos de modelo — versionados por outro mecanismo (registry), não git
 models/*.bin
 models/*.json
-experiments/*.parquet
+
+# experiments/ NÃO está na lista acima de propósito: é pequeno (append-only
+# de config+hash+timestamp, não dado bruto) e é o que torna o N do DSR
+# reconstruível (§11.6) — mesma categoria de data/quality_reports/, versiona.
 
 # Locks de OS / editor
 .DS_Store
