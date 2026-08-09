@@ -10,9 +10,22 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 
 ## Status
 
-**Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10** —
-Sprints 1-9 e 12 feitos (12 adiantado) · 552 testes passando · 0 violações de
-lint.
+**Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10 + sprint
+de engenharia pós-auditoria** — Sprints 1-9 e 12 feitos (12 adiantado) · 585
+testes passando · 0 violações de lint.
+
+🔧 **Achado de engenharia (não de trading):** uma auditoria externa do
+Sprint 8 expôs que números DERIVADOS (Sharpe, decomposição de PnL,
+concentração de features) circulavam sem os metadados que os tornam
+interpretáveis — unidade, tamanho de amostra, denominador validado —
+enquanto toda CONSTANTE já era obrigada a isso. Corrigido com um tipo
+`Metric` novo (`src/core/metric.py`) aplicado nos módulos de decomposição,
+reconciliação e concentração. Mudança de comportamento real: um gate
+(`gate3_carry_share_ok`) que "passava" por acidente aritmético quando o
+resultado era negativo agora reprova corretamente. A mesma auditoria achou
+um controle real do Risk Engine (`control_10_risco_real`) com a mesma
+classe de bug — registrado, ainda não corrigido. Detalhes em
+`docs/SPRINT_LOG.md`, seção "Sprint de engenharia".
 
 ⚠️ **O que sabemos agora sobre se existe edge:** o Alpha (Camada 1, restrições
 monotônicas) passa o critério arquitetural do PRD, mas **não tem edge

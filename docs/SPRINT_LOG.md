@@ -418,6 +418,76 @@ Sensibilidade testada (não adotada como novo padrão): postar 1 tick melhor
 rate mas piora a seleção adversa em 71%. Registrado como pista futura, não
 mudança de desenho.
 
+## Sprint de engenharia — "faltou proveniência de valor derivado" (2026-08-09)
+### commits `ff68873`/`5221396`/`713c5db`/`b387dd7`/`39ac296`
+
+A auditoria externa do Sprint 8 (seção acima) expôs 6 achados que pareciam
+independentes mas eram a mesma causa raiz: **número derivado circula sem os
+metadados que o tornam interpretável.** `constants.yaml` sempre exigiu
+proveniência de toda CONSTANTE — nunca exigiu o mesmo de nenhum valor
+DERIVADO. Entrada tinha proveniência; saída não tinha. Timeboxed, escopo
+fechado a priori (Fases A/B/C1-C2/G; D/E/F/H ficam para depois, não
+iniciadas).
+
+**Fase A — parar a hemorragia de diagnóstico.** `alpha.py` calculava
+`gain_by_column`/`concentration` por fold × lado, todo run, e descartava
+depois de alimentar o HHI agregado — recuperar isso para a investigação de
+importância de features custou um retreino completo (~117s). Agora persiste
+em `models/{model_id}/diagnostics/fold_{k}_{side}.json` (60 arquivos reais,
+gain bruto + normalizado, HHI, n_trees, n_amostras). Inventário (não
+corrigido) de 7 outros candidatos ao mesmo padrão em
+`docs/audit_discarded_diagnostics.md` — prioridade máxima:
+`monotonic.py::FeatureICResult.ic_by_env`, o irmão direto do bug que
+motivou esta fase inteira.
+
+**Fase B — o tipo `Metric`.** `src/core/metric.py` (novo, deliberadamente
+pequeno): `Metric(value, unit, n, n_semantics, source, valid,
+invalid_reason)` + `safe_ratio()` com guarda estrutural de denominador.
+Aplicado nos campos reportáveis de `decomposition.py`,
+`backtest/fill_reconciliation.py`, `hhi.py`. **Mudança de comportamento
+real, não só cosmética**: `carry_share = pnl_carry/pnl_total` agora é
+`Metric` inválido quando `pnl_total <= 0` (é, nos dados reais) —
+`gate3_carry_share_ok` vira `False` em vez de passar por acidente
+aritmético, visível ponta a ponta no rerun final do pipeline (era `true`,
+virou `false`). A fórmula em si (`pnl_carry/(pnl_direcional+pnl_carry)`)
+fica para outra rodada — só a guarda de validade entrou agora.
+
+**Fase C1/C2 — auditoria de divisões sem guarda (tabela, sem corrigir).**
+13 divisões de razão variável varridas em `risk/limits.py`,
+`risk/kill_switch.py`, `decomposition.py`, `backtest/*`, `validation/*` —
+**2 RISCO REAL**. Além do `carry_share` já conhecido: **`risk/limits.py:228`
+(`control_10_risco_real`) guarda só `equity==0`, não `equity<=0`** — com
+`risk_real` estruturalmente ≥0, um `equity` negativo (perda extrema — lote
+mínimo já é 33% do equity de US$196,85) faz a razão sair ≤0, que passa
+trivialmente o limiar. O controle de "estouro de risco" aprovaria
+automaticamente na pior hora. O mesmo campo `equity`, no mesmo sprint, é
+guardado corretamente em `kill_switch.py::k01_daily_loss` — só não em
+`limits.py`. **Não corrigido nesta rodada** (tabela completa em
+`audit/division_guard_audit.md`), fica pendente de decisão explícita.
+
+**Fase G — golden-file de reprodutibilidade.** A investigação de
+importância de features assumiu que XGBoost com seed fixo reproduziria os
+números do Sprint 8 sem nunca conferir isso — suposição certa, mas
+suposição. `tests/golden/test_sprint8_reproducibility.py` reproduz o fold 0
+(as 4 combinações variante×lado) com a config real e compara contra os
+artefatos commitados da Fase A, tolerância zero, comparação por igualdade
+de ponto flutuante. Passou de primeira. O rerun final completo do pipeline
+(que gerou os artefatos commitados) também reproduziu bit-a-bit os 15
+splits inteiros contra a rodada anterior — só `elapsed_seconds` e
+`gate3_carry_share_ok` (o achado da Fase B, esperado) mudaram.
+
+585 testes (era 552), 0 violação de lint, 4/4 contratos de import-linter
+mantidos.
+
+**Não iniciado nesta rodada, ponto de parada explícito**: Fase D (HHI
+efetivo, correção por correlação entre features), Fase E (módulo de
+explicabilidade pós-hoc, `src/analysis/`, com contrato de import-linter
+proibindo `models/`/`features/` de importar dele — separação crítica de
+insumo-de-treino vs. diagnóstico-pós-hoc), Fase F (sentinela de ausência
+para R0 = zero trades), Fase H (hooks de CI pra fechar as costuras já
+vistas: proveniência fora de commit, análise decisiva em script
+descartável).
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
