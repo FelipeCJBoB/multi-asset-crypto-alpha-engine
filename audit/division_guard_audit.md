@@ -95,3 +95,23 @@ Não incluído na tabela principal (fora do escopo de arquivos desta task) e
 não modificado — sinalizado aqui para uma rodada futura de auditoria olhar
 `src/risk/sizing.py` explicitamente, já que é a origem comum de `equity`
 para vários dos controles acima.
+
+**Resolvido (2026-08-09, auditoria de engenharia de `limits.py` completo +
+fix imediato).** Confirmado ainda aberto e verificado empiricamente antes do
+fix (não só por inspeção): `compute_sizing(equity=Decimal("-100"), ...)`
+produzia `quant_error=-0.2988` (`control_09a_erro_quantizacao` → `PASS`) e
+`leverage_eff=1.2988` (`control_11_nocional_maximo` → `PASS`), ambos
+deveriam `FAIL`. Único motivo de não ser explorável no `evaluate_all` real
+hoje: `control_10` (corrigido antes, mesma sessão) avalia ANTES na ordem
+fixa e barra primeiro — proteção implícita, não estrutural.
+
+Fix: `compute_sizing()` agora levanta `NonPositiveEquityError` se
+`equity<=0`, ANTES de qualquer aritmética (mesmo padrão de
+`ZeroStopDistanceError` já existente para `stop_pct==0`). Isso resolve as
+duas divisões de uma vez — `notional_req`/`leverage_eff` nunca mais fluem
+com sinal invertido a partir de `equity`, porque `equity_d>0` garantido na
+origem torna toda a cadeia downstream (`risk_usd`, `notional_req`, `qty`,
+`notional_real`, `risk_real`) estruturalmente não-negativa. Testes:
+`test_equity_negativa_levanta_non_positive_equity_error`/
+`test_equity_zero_levanta_non_positive_equity_error` em
+`tests/unit/test_risk_sizing.py`.

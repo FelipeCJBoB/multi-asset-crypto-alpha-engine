@@ -31,7 +31,12 @@ from decimal import Decimal
 import pytest
 
 from src.exchange.filters import Filters
-from src.risk.sizing import SizingResult, ZeroStopDistanceError, compute_sizing
+from src.risk.sizing import (
+    NonPositiveEquityError,
+    SizingResult,
+    ZeroStopDistanceError,
+    compute_sizing,
+)
 
 _T0 = datetime(2026, 8, 8, 14, 30, tzinfo=UTC)
 _MARK_PRICE = Decimal("64940")
@@ -247,6 +252,36 @@ def test_atr_pct_zero_levanta_zero_stop_distance_error() -> None:
     with pytest.raises(ZeroStopDistanceError):
         compute_sizing(
             t0=_T0, equity=_EQUITY, atr_pct=Decimal("0"), mark_price=_MARK_PRICE, filters=filters
+        )
+
+
+def test_equity_negativa_levanta_non_positive_equity_error() -> None:
+    """Achado de auditoria (`audit/division_guard_audit.md`, "achado
+    lateral"): sem esta guarda, `equity=-100` produzia `qty`/`notional_real`/
+    `risk_real` negativos silenciosamente, e `quant_error`/`leverage_eff`
+    saíam com sinal invertido de um jeito que fazia `control_09a_erro_
+    quantizacao`/`control_11_nocional_maximo` (`src.risk.limits`) passarem
+    trivialmente — verificado empiricamente antes deste fix."""
+    filters = _make_filters()
+    with pytest.raises(NonPositiveEquityError):
+        compute_sizing(
+            t0=_T0,
+            equity=Decimal("-100"),
+            atr_pct=Decimal("0.003"),
+            mark_price=_MARK_PRICE,
+            filters=filters,
+        )
+
+
+def test_equity_zero_levanta_non_positive_equity_error() -> None:
+    filters = _make_filters()
+    with pytest.raises(NonPositiveEquityError):
+        compute_sizing(
+            t0=_T0,
+            equity=Decimal("0"),
+            atr_pct=Decimal("0.003"),
+            mark_price=_MARK_PRICE,
+            filters=filters,
         )
 
 

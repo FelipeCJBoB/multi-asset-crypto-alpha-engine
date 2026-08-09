@@ -51,6 +51,26 @@ class ZeroStopDistanceError(ValueError):
     seria infinito. Não é um caso de negócio válido; é erro de entrada."""
 
 
+class NonPositiveEquityError(ValueError):
+    """`equity <= 0` — sizing não tem significado sobre um patrimônio zerado
+    ou negativo (não existe fração de risco de um capital que não existe).
+    Não é um caso de negócio válido; é erro de entrada — mesma categoria de
+    `ZeroStopDistanceError` acima.
+
+    **Achado de auditoria (`audit/division_guard_audit.md`, "achado
+    lateral").** Sem esta guarda, `equity_d` negativo fluía sem checagem
+    por `risk_usd -> notional_req -> qty -> notional_real -> risk_real`,
+    produzindo uma cascata de valores negativos SEM ERRO — e dois deles
+    (`quant_error`, `leverage_eff`) tinham sinal invertido de um jeito que
+    fazia `control_09a_erro_quantizacao`/`control_11_nocional_maximo`
+    (`src.risk.limits`) passarem trivialmente sob `equity` negativo,
+    verificado empiricamente (`equity=-100` -> `quant_error=-0.2988` PASS,
+    `leverage_eff=1.2988` PASS). `control_10_risco_real` já guarda
+    `equity<=0` como segunda linha de defesa, mas depende da ORDEM fixa de
+    avaliação em `evaluate_all` — essa guarda aqui elimina o problema na
+    origem, não só num controle específico."""
+
+
 def _to_decimal(value: Decimal | float | str) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
@@ -98,6 +118,12 @@ def compute_sizing(
     REUSADOS aqui, não redeclarados (CLAUDE.md: "nunca otimize de volta o que
     foi derivado")."""
     equity_d = _to_decimal(equity)
+    if equity_d <= 0:
+        raise NonPositiveEquityError(
+            f"equity <= 0 em t0={t0.isoformat()} (equity={equity_d}) — sizing não "
+            "tem significado sem patrimônio positivo; controle upstream (kill "
+            "switch / reconciliação) deve interceptar antes de chegar aqui"
+        )
     atr_pct_d = _to_decimal(atr_pct)
     mark_price_d = _to_decimal(mark_price)
 
@@ -181,6 +207,7 @@ def compute_sizing_asof(
 
 
 __all__ = [
+    "NonPositiveEquityError",
     "SizingResult",
     "ZeroStopDistanceError",
     "compute_sizing",
