@@ -530,6 +530,57 @@ documentado como tal).
 import-linter mantidos (2 novos desta rodada). As 8 fases (A/B/C/D/E/F/G/H)
 do sprint de engenharia estão completas.
 
+## Tarefas quant pós-auditoria — T0 a T5 (2026-08-09)
+### commits `c1ca0ae`/`cef8e46`/`f6abdf3`/`faa9b3c`/`19c73aa`
+
+Retomada da lista que o criador do plano deixou pra depois do sprint de
+engenharia, agora com `Metric` em vigor. 715 testes (era 646).
+
+**T0 — restrição monotônica grátis, achado positivo real**: `E02f_funding_z`
+forçado por identidade contábil (-1 no long, +1 no short — mesmo padrão de
+`E27f_cost_atr_ratio`, mas sinal por lado), sem custo de `n_lifetime`
+(confirmado lendo o único writer do ledger, não assumido). Substituiu
+`alpha_c1_v1` (mesma variante). **`directional_sharpe` pooled saltou de
+0,194 pra 0,879, permanência foi de 4/5 pra 5/5 caminhos** — a primeira
+melhora real e gratuita medida no Alpha desde o Sprint 8.
+
+**T1 — decis de confiança não ordenam retorno**: Spearman entre rank do
+decil e retorno realizado ≈0 nos dois lados (não significativo). Achado
+mais preocupante: **no long, o decil de MAIOR confiança é o de PIOR
+desempenho** (-25,6bps, t=-3,0) — anti-padrão, não ruído. Sem ranking
+explorável pra Camada 2+. O número de contexto citado numa devolutiva
+anterior ("edge 0,427 vs 2,273bps") não reproduziu com `ret_net` — melhor
+hipótese, não forçada: confusão com `ret_gross`.
+
+**T2+T3 — carry não é o motor do percentil=100, mas não decompõe por
+percentil sozinho**: a previsão registrada (cair pra ~65-70% sem carry)
+não se confirmou — os três testes (B1 original, carry-stripped, B1' só-lado)
+saturam em 100. Mas o **z-score** (não usado antes) decompõe: tirar o carry
+quase não move o z (14,0→13,2); fixar timing real e sortear só o lado
+derruba mais (14,0→~9-11), sobrando um resíduo grande atribuível à escolha
+de lado em si. Lido junto com T1: o modelo parece acertar a direção binária
+melhor que cara-ou-coroa, mas não calibra bem a magnitude de confiança.
+
+**T4 — o invariante do tau passa sobre a história completa**: a dispersão
+de 4,9x que preocupava era específica da janela restrita do bookTicker
+(10,5 meses), não do sistema inteiro. Sobre os 6,5 anos: realizado/alvo
+≈1,01 (pré-fill) / 0,85 (pós-fill), dispersão entre caminhos 1,52x — dentro
+do critério proposto (±20%/dispersão<2x).
+
+**T5 — superfície de custo 2D, 9 células, história completa (não amostra)**:
+custo vai de 5,37bps (tp solto/sl solto) a 6,25bps (tp apertado/sl
+apertado); base atual 5,84bps. Achado de leitura de código: **TIME também
+paga taker, não só SL** — revisa a leitura anterior "TP=maker,SL=taker"
+para "TP=maker,{SL,TIME}=taker". Share do taker no custo total: 42-60%
+conforme `sl_atr_mult`, confirma essa constante como a alavanca real.
+
+**Leitura conjunta T0-T5**: o Alpha tem um componente direcional real
+(T0 melhora de graça, T2+T3 mostra resíduo de direção que sobrevive a
+timing e carry) mas não sabe se auto-avaliar (T1, decis não ordenam) —
+duas capacidades diferentes, só uma presente. `tau`/orçamento de trades
+não são mais suspeitos (T4). Custo de execução tem alavanca clara e
+quantificada pra otimizar depois (T5).
+
 **Fase H concluída** (rodada separada) — `tools/lint/check_constants_referenced.py` (referência `load_constant("...")` em `src/` sem entrada em `constants.yaml`, verificado contra o índice do git — o que teria pego o incidente acima) e `tools/lint/check_sprint_log_references.py` (heurístico: linha nova aqui com número sem referência por perto); testes em `tests/unit/test_check_constants_referenced.py` e `tests/unit/test_check_sprint_log_references.py`, hooks em `.pre-commit-config.yaml`/`.github/workflows/ci.yml`.
 
 ## Índice rápido — onde encontrar cada número

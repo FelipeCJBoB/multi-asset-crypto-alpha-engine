@@ -11,9 +11,19 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 ## Status
 
 **Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10 + sprint
-de engenharia pós-auditoria (8 fases completas)** — Sprints 1-9 e 12 feitos
-(12 adiantado) · 646 testes passando · 0 violações de lint · 6/6 contratos de
-import-linter.
+de engenharia pós-auditoria (8 fases) + 6 tarefas quant pós-auditoria** —
+Sprints 1-9 e 12 feitos (12 adiantado) · 715 testes passando · 0 violações
+de lint · 6/6 contratos de import-linter.
+
+📈 **Melhora real medida no Alpha**: uma restrição monotônica grátis
+(identidade contábil de funding, sem custo de busca estatística) elevou o
+`directional_sharpe` pooled de 0,194 para **0,879** e a permanência de 4/5
+para **5/5 caminhos** — a primeira melhora real e gratuita desde o Sprint 8.
+Mas o modelo **não sabe se auto-avaliar**: os decis de confiança não ordenam
+o retorno realizado (Spearman ≈0), e no lado comprado o decil de MAIOR
+confiança é o de PIOR desempenho. Duas capacidades diferentes — só uma
+está presente. Detalhes em `docs/SPRINT_LOG.md`, seção "Tarefas quant
+pós-auditoria".
 
 🔧 **Achado de engenharia (não de trading):** uma auditoria externa do
 Sprint 8 expôs que números DERIVADOS (Sharpe, decomposição de PnL,
