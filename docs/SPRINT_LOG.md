@@ -1333,6 +1333,103 @@ negativo/None, join do split lado×regime), `ruff`/`mypy` limpos,
 `banned_patterns` sem violação nova, suíte completa (793 rápidos +
 xfails esperados) passa.
 
+## Faixa 2 — caminho B com critério de encerramento (2026-08-09)
+
+Decisão do Manager após a Faixa 1.7 (Q1/Q2 negativos para o long): uma
+tentativa estrutural nos dois parâmetros definidos por erro e nunca
+corrigidos (T1=10 features quando N_eff medido no Sprint 6 suporta 65-163;
+`tp_atr_mult`/`sl_atr_mult` herdados do V2, nunca varridos) — critério de
+encerramento C1/C2/C3 pré-registrado, aplicado por script na FASE 3. Módulo
+novo `src/analysis/faixa2_caminho_b.py`, resultado em
+`experiments/faixa2_caminho_b.json`.
+
+### FASE 0 — pré-requisitos
+
+**F0.1 — N_lifetime auditado.** `audit/n_lifetime.yaml::counter` 5 → **23**
+(ids 6-9, delta +18): 7 comparações lado×regime da Faixa 1 (D2 por decil —
+8 blocos existiam, 1 [long/R1] saiu 100% insuficiente, então 7 produziram
+estatística), 8 células direcionais da Faixa 1.5 Bloco 2
+(`stratified_headlines.by_side_regime`), 2 escolhas do subconjunto
+congruente/incongruente da Faixa 1 (uma por lado), 1 split direcional de R3
+da Faixa 1.7. Escopo explicitamente PARCIAL — não inclui as demais
+medições exploratórias da Faixa 1.7 (B1/B2, IC carry/direcional, R2 por
+ano, distribuição de feature, extensão do gap por lado×regime), por
+instrução literal da task; nota deixada no próprio YAML para reabrir se o
+Manager quiser exaustividade completa.
+
+**F0.2 — orçamento de fees por cenário** (teto: 662,7 trades/ano, ponto
+central corrigido da Faixa 1.6):
+
+| cenário | paths que excedem | razão média vs. orçamento |
+|---|---|---|
+| sistema atual (long+short) | 5/5 | 1,69x |
+| só short | 1/5 | 0,81x |
+| long sem R2 | 1/5 | 0,68x |
+| só short + long sem R2 | 5/5 | 1,49x |
+
+Short sozinho e long-sem-R2 isolados cabem no orçamento na maioria dos
+caminhos; a COMBINAÇÃO dos dois ainda excede em todos — remover só R2 do
+long não é suficiente para o sistema caber no orçamento de fees sozinho
+(threshold/T1 têm que fazer parte da conta, não só a exclusão de regime).
+
+**F0.3 — declaração de escopo do fill**, anexada a todo relatório desta
+Faixa: todos os números derivam de fill otimista do Label Engine; a única
+janela verificável (2023-05→2024-03, 10,5 de 6,5 anos) teve
+direcional+carry NEGATIVOS nos dois gates, diferente do pooled positivo;
+direção do viés fora da janela é DESCONHECIDA, não "sempre otimista".
+
+### FASE 1 — diagnósticos (sem retreino)
+
+**D1 — taxa base direcional + lift + qui-quadrado, por regime.** O achado
+mais preciso desta fase: em **R2 o lift do long é 1,02 (não-significativo,
+p=0,18)** — o modelo NÃO segue a tendência de 48 barras em R2 de forma
+detectável, bem diferente de R3 (lift 1,72, p≈0) e R4 (lift 1,35,
+p≈3,7e-137). O antipadrão de R2 não é "segue a tendência errada" — é
+"não segue tendência nenhuma", mecanismo genuinamente distinto do resto do
+livro. Short tem lift significativo em TODOS os regimes (1,22 a 1,93,
+todos p<1e-30).
+
+**D2 — long×R2, selecionado vs. visto-e-não-disparado.** `bars_in_regime`
+(posição no ciclo do regime) é a única variável testada com efeito
+detectável: selecionado tem média 20,1 barras dentro do regime contra
+18,7 do não-selecionado (KS p=1,1e-5, mas Cohen's d=0,08 — estatisticamente
+real, materialmente pequeno). As 10 features T1 (KS+Cohen's d) não mostram
+divergência de distribuição maior que ruído — **a hipótese de "features
+mais extremas" continua refutada**, agora também dentro de R2 (não só
+R2-vs-tendência, já refutado na Faixa 1.7). O que diferencia trade
+selecionado de trade ignorado dentro de R2 permanece sem explicação
+univariada — candidato a interação/limiar de split específico, não medido
+aqui.
+
+**D3 — MFE por regime e lado** (`mfe_atr_units`, coluna nova persistida em
+`labels/v1/labels.parquet` — `src/labels/triple_barrier.py` estendido no
+mesmo laço que já varria `path_high`/`path_low`, `config_hash` idêntico ao
+anterior, `b281a18954e224ef`, 462.682 linhas, nada mais mudou). **Achado
+que refuta a hipótese original da task**: a mediana de MFE fica em
+1,27-1,40 ATR em TODOS os 8 blocos lado×regime — R2 NÃO é
+sistematicamente pior que os outros regimes nesta dimensão (long-R2:
+mediana 1,36; long-R3: 1,34; long-R4: 1,27). 60-65% de TODO trade
+preenchido, em qualquer regime/lado, nunca alcança 2,0 ATR de excursão
+favorável — `tp_atr_mult=2,0` parece ambicioso demais estruturalmente,
+não seletivamente em R2. Isto pesa diretamente na grade de E1 abaixo.
+
+**D4 — E10f como candidata.** Estabilidade (`|IC|×consistência²`) baixa
+nos dois lados (long 0,0054, short 0,0013) — mesma ordem de grandeza da
+fragilidade já medida para E02f. Correlação pooled com B07 (eixo de
+estrutura já em T1 indiretamente, via Regime Engine) é praticamente nula
+(ρ=0,028, n=206.624) — E10f não é redundante com B07, mas também não
+mostra sinal individual forte. Não decide inclusão/exclusão (por
+instrução da task).
+
+**Verificação**: 36 testes em `test_labels_triple_barrier.py` (era 33 — 3
+novos para `mfe_atr_units`: TP bate >= `tp_atr_mult`, TIME usa a janela
+inteira, NOFILL fica nulo), suíte completa 832 passam (era 793), `ruff`/
+`mypy` limpos, `banned_patterns` sem violação nova (3 literais novos
+justificados com `# noqa: magic-number`, mesma convenção do resto do
+repo), 6/6 import-linter.
+
+### FASE 2 (E1/E2/E3) e FASE 3 (C1/C2/C3) — em andamento, ver seções abaixo quando concluídas.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
@@ -1348,6 +1445,9 @@ xfails esperados) passa.
 | N_eff real (teto de features)? | ~32,4 mil por modelo | Sprint 6 acima |
 | Quais gatilhos de stress funcionam? | 3 de 10 (S1,S3,S6) | `src/regime/stress.py`, Sprint 5 acima |
 | Distribuição real de regime? | R1 domina (46%), R5 raro (1,7%) | Sprint 5 acima |
+| Long segue a tendência de 48b em R2? | Não detectavelmente — lift 1,02, p=0,18 (contra 1,72/p≈0 em R3) | Faixa 2, FASE 1 D1 acima |
+| MFE por regime é pior em R2? | Não — mediana ~1,3-1,4 ATR em TODOS os 8 blocos lado×regime; tp_atr_mult=2,0 parece ambicioso estruturalmente, não seletivamente em R2 | Faixa 2, FASE 1 D3 acima |
+| N_lifetime atual, auditado? | 23 (era 5 — +18 de comparações seletivas retroativas, escopo parcial declarado) | `audit/n_lifetime.yaml`, Faixa 2 F0.1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
 | Correlação real entre features T1? | 2 pares violam 0,70 | Sprint 4 acima |
 | CPCV vaza treino pro teste? | Não — 0 de 462.682 labels, medido | Sprint 7 acima |

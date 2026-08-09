@@ -342,6 +342,21 @@ class _BarrierTouch:
     t1_ms: int
     exit_price: float
     tie_break_used: bool
+    mfe_price: float  # melhor preço favorável até o toque (inclusive) — ver mfe_atr_units
+
+
+def _mfe_price(
+    path_high: FloatArray, path_low: FloatArray, side: int, end_idx_inclusive: int
+) -> float:
+    """Excursão favorável máxima, em PREÇO bruto (não normalizado por ATR
+    ainda — isso é responsabilidade de `build_labels`, que tem `fill_px`/
+    `atr_pct_i` em escopo). `side=1` (long): o melhor preço é o MAIOR high
+    até `end_idx_inclusive`; `side=-1` (short): o MENOR low. MESMA janela
+    de `path_high`/`path_low` que `_first_barrier_touch` já varreu para
+    achar o toque — reuso do laço, não recomputação à parte (D3, Faixa 2)."""
+    if side == 1:
+        return float(np.max(path_high[: end_idx_inclusive + 1]))
+    return float(np.min(path_low[: end_idx_inclusive + 1]))
 
 
 def _first_barrier_touch(
@@ -371,13 +386,16 @@ def _first_barrier_touch(
     sl_idx = int(np.argmax(sl_touch)) if bool(sl_touch.any()) else -1
 
     if tp_idx == -1 and sl_idx == -1:
-        return _BarrierTouch("TIME", horizon_end_ms, float(path_close[-1]), False)
+        mfe = _mfe_price(path_high, path_low, side, path_high.shape[0] - 1)
+        return _BarrierTouch("TIME", horizon_end_ms, float(path_close[-1]), False, mfe)
 
     if sl_idx == -1 or (tp_idx != -1 and tp_idx < sl_idx):
-        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False)
+        mfe = _mfe_price(path_high, path_low, side, tp_idx)
+        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False, mfe)
 
     if tp_idx == -1 or (sl_idx != -1 and sl_idx < tp_idx):
-        return _BarrierTouch("SL", int(path_time[sl_idx]), sl_price, False)
+        mfe = _mfe_price(path_high, path_low, side, sl_idx)
+        return _BarrierTouch("SL", int(path_time[sl_idx]), sl_price, False, mfe)
 
     # tp_idx == sl_idx: TP e SL tocados no MESMO candle de 1m — resíduo de
     # B11 em escala menor (ver docstring do módulo, item 5). Resolvido por
@@ -385,9 +403,10 @@ def _first_barrier_touch(
     k = tp_idx
     dist_tp = abs(path_open[k] - tp_price)
     dist_sl = abs(path_open[k] - sl_price)
+    mfe = _mfe_price(path_high, path_low, side, k)
     if dist_tp <= dist_sl:
-        return _BarrierTouch("TP", int(path_time[k]), tp_price, True)
-    return _BarrierTouch("SL", int(path_time[k]), sl_price, True)
+        return _BarrierTouch("TP", int(path_time[k]), tp_price, True, mfe)
+    return _BarrierTouch("SL", int(path_time[k]), sl_price, True, mfe)
 
 
 # ============================================================================
@@ -415,6 +434,7 @@ _PRE_WEIGHT_SCHEMA: dict[str, Any] = {
     "adverse_selection_bps": pl.Float64,
     "ret_net": pl.Float64,
     "atr_at_t0": pl.Float64,
+    "mfe_atr_units": pl.Float64,
     "n_bars_held": pl.Int16,
     "n_funding_events": pl.Int8,
     "filters_hash": pl.Utf8,
@@ -441,6 +461,7 @@ LABEL_COLUMNS: Final[tuple[str, ...]] = (
     "adverse_selection_bps",
     "ret_net",
     "atr_at_t0",
+    "mfe_atr_units",
     "n_bars_held",
     "n_funding_events",
     "concurrency",
@@ -496,6 +517,7 @@ def _append_nofill_row(
     cols["adverse_selection_bps"].append(0.0)
     cols["ret_net"].append(0.0)
     cols["atr_at_t0"].append(atr_pct_i)
+    cols["mfe_atr_units"].append(None)
     cols["n_bars_held"].append(0)
     cols["n_funding_events"].append(0)
     cols["filters_hash"].append(filters_hash)
@@ -675,6 +697,17 @@ def build_labels(
         ret_net = ret_gross - cost_entry_frac - cost_exit_frac - funding_frac
         n_bars_held = int(np.ceil((t1 - t0) / _BAR_MS)) if t1 > t0 else 0
 
+        # D3 (Faixa 2) — excursão favorável máxima, em unidades de ATR (mesma
+        # normalização de tp_price/sl_price: `fill_px * mult * atr_pct_i`).
+        # Sanidade esperada: se barrier=="TP", mfe_atr_units >= tp_atr_mult
+        # por construção (o toque QUE definiu TP já é >= tp_price).
+        atr_unit_price = fill_px * atr_pct_i
+        mfe_atr_units = (
+            side * (touch.mfe_price - fill_px) / atr_unit_price
+            if atr_unit_price > 0
+            else float("nan")
+        )
+
         cols["t0"].append(t0)
         cols["t_post"].append(t_post)
         cols["t_entry"].append(t_entry)
@@ -694,6 +727,7 @@ def build_labels(
         cols["adverse_selection_bps"].append(adverse_selection_bps_const)
         cols["ret_net"].append(ret_net)
         cols["atr_at_t0"].append(atr_pct_i)
+        cols["mfe_atr_units"].append(mfe_atr_units)
         cols["n_bars_held"].append(n_bars_held)
         cols["n_funding_events"].append(n_funding_events)
         cols["filters_hash"].append(resolved_filters.filters_hash)

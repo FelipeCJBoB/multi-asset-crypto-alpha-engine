@@ -233,6 +233,68 @@ def test_build_labels_tp_long() -> None:
     assert row["ret_net"] == pytest.approx(expected_net, rel=1e-9)
 
 
+def test_build_labels_mfe_atr_units_tp_long_bate_ao_menos_tp_atr_mult() -> None:
+    """D3 (Faixa 2) — quando `barrier_hit=='TP'`, o toque QUE definiu TP já
+    é `high >= tp_price` por construção (`_first_barrier_touch`), então
+    `mfe_atr_units` tem que ser >= `tp_atr_mult` (a barra que disparou TP
+    pode ter ido além do preço exato de TP antes de a barreira ser
+    registrada — nunca menos)."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ]
+        )
+    )
+    out = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TP"
+    assert row["mfe_atr_units"] >= _CFG.tp_atr_mult - 1e-9
+
+
+def test_build_labels_mfe_atr_units_time_usa_janela_inteira() -> None:
+    """Sem toque de TP/SL, `mfe_atr_units` reflete o melhor preço ATINGIDO
+    em toda a janela até `horizon_end_ms` (não só o preço de saída em
+    TIME) — a excursão favorável pode ter existido e revertido antes do
+    time stop. `tp_price`/`sl_price` desta fixture (`_CFG`, ATR sintético
+    fixo) ficam em ~100,77/~99,25 — o pico de 100,5 abaixo fica
+    deliberadamente dentro dessa faixa, nunca tocando nenhuma barreira."""
+    t0 = _t0()
+    rows: list[_Row] = [
+        (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+        # sobe favoravelmente (long) sem tocar TP (~100,77), depois recua
+        # sem tocar SL (~99,25) -- exit em TIME, mas o pico de 100,5 é o MFE.
+        (t0 + 5 * 60_000, 100.3, 100.5, 100.2, 100.4),
+        (t0 + 9 * 60_000, 100.1, 100.2, 99.8, 99.9),
+    ]
+    mark = _mark(_with_horizon_coverage(rows))
+    out = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TIME"
+    fill_px = row["entry_price_fill"]
+    atr_unit_price = fill_px * row["atr_at_t0"]
+    expected_mfe = (100.5 - fill_px) / atr_unit_price
+    assert row["mfe_atr_units"] == pytest.approx(expected_mfe, rel=1e-6)
+
+
+def test_build_labels_mfe_atr_units_nulo_em_nofill() -> None:
+    """NOFILL não tem excursão -- nunca houve trade (mesma convenção de
+    `entry_price_fill`/`tp_price`/`sl_price`, todos `None`, não `0.0`)."""
+    t0 = _t0()
+    # limite inatingível -- nunca preenche, produz NOFILL.
+    mark = _mark(
+        _with_horizon_coverage(
+            [(t0 + 1 * 60_000, 200.0, 210.0, 195.0, 205.0)],
+        )
+    )
+    out = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "NOFILL"
+    assert row["mfe_atr_units"] is None
+
+
 def test_build_labels_sl_long() -> None:
     t0 = _t0()
     mark = _mark(
