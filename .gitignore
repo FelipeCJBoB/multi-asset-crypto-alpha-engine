@@ -23,6 +23,11 @@ data/*
 !data/quality_reports/
 !data/quality_reports/*.json
 
+# Mesma categoria/motivo de data/quality_reports/ acima — leakage_report.json
+# (§11.5, Gate 2) é evidência de auditoria pequena e legível, não dado bruto.
+!data/validation_reports/
+!data/validation_reports/*.json
+
 # Saída em massa de pipeline — reconstrutível a partir de código+config+dado
 # fonte (config_hash amarra a versão exata, §3.4 B15). Mesma lógica de data/.
 # Ancorado na raiz (/) de propósito — sem a barra inicial, "regime/" também
@@ -32,6 +37,7 @@ data/*
 /regime/
 /predictions/
 /backtests/
+/execution/
 
 # Artefatos de modelo — versionados por outro mecanismo (registry), não git
 models/*.bin

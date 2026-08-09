@@ -223,6 +223,19 @@ adverse_selection_gate0_break_bps:
   derived_from: [adverse_selection_wr_cost_per_bp]
   review_by: sprint_16
 
+# NOTA (Sprint 9, 2026-08-08, informativa — NÃO altera `adverse_selection_bps.value`
+# acima; isso continua reservado para a calibração real do §9.5, Testnet/Paper,
+# Sprint 15-16, método explicitamente diferente do abaixo):
+# `src/execution/fill_simulator.py` mediu markout real sobre bookTicker+aggTrades,
+# janela pré-RPI completa 2023-05-16..2024-03-30 (60.650 ordens simuladas, ambos
+# os lados, grade de 15m): markout médio 1m=-0,586bps / 5m=-0,643bps / 30m=-0,590bps
+# (mediana 1m=-0,515 / 5m=-0,576 / 30m=-0,407bps; sinal negativo = seleção adversa
+# real, na direção esperada pela teoria) — em MAGNITUDE, ~2,5x MENOR que o
+# placeholder de 1,5bps acima. `p_fill` medido no mesmo run: 37,3% (buy 36,7%,
+# sell 37,9%) — LIMITE INFERIOR pessimista (cancelamento de fila não modelado,
+# ver docstring do módulo), abaixo do piso de 60% citado no §9.6. Detalhe completo
+# em `experiments/fill_simulator_runs.parquet` (run_id=1) e
+# `execution/fill_simulator/v1/summary.json` (bulk, gitignored).
 # ============================================================================
 # Riscos de dados registrados (não são hiperparâmetros — são lacunas medidas
 # que podem invalidar figuras já publicadas no PRD se não resolvidas)
@@ -636,3 +649,44 @@ stress_filters_hash_window_hours:
   source: "PRD §4.4 S10 — 'filters_hash mudou nas últimas 24h'."
   class: C
   sweep_required: false
+
+# ============================================================================
+# Camada validation — CPCV (Sprint 10 adiantado, §11.4). `time_stop_bars`
+# (purge — o horizonte MÁXIMO de um label, já limitado por construção em
+# `src/labels/triple_barrier.py`) já existe acima (§0.2 R1/R2) e é REUSADO,
+# não duplicado. As três constantes abaixo (n_groups, n_test_groups,
+# embargo_bars) são novas deste módulo — os três números do bloco YAML
+# `cpcv:` do PRD §11.4, citados textualmente, não hiperparâmetros varridos
+# por busca (mesma classe de `regime_confirmation_bars`/
+# `stress_*_threshold` acima — "guardrail citado do texto", não "otimizado
+# de volta" per CLAUDE.md). `n_splits` (C(6,2)=15) e `n_backtest_paths`
+# (C(5,1)=5) NÃO viram constantes próprias — são funções puramente
+# combinatórias de n_groups/n_test_groups (`math.comb`, ver
+# `src/validation/cpcv.py::CPCVConfig`); declará-las como constantes
+# separadas arriscaria as duas ficarem inconsistentes entre si se uma
+# mudasse sem a outra.
+# ============================================================================
+
+cpcv_n_groups:
+  value: 6
+  provenance: LITERATURE
+  source: "PRD §11.4 — cpcv.n_groups: 6 ('~1 ano por grupo' sobre os ~6,6 anos de labels/v1, 2020-01→2026-08). Convenção de particionamento, não medição; não varrida por busca de sensibilidade — mudar o número muda a granularidade da validação, não invalida o desenho por si só (classe C, não A)."
+  class: C
+  sweep_required: false
+  review_by: sprint_10
+
+cpcv_n_test_groups:
+  value: 2
+  provenance: LITERATURE
+  source: "PRD §11.4 — cpcv.n_test_groups: 2. Junto com cpcv_n_groups=6 produz C(6,2)=15 splits combinatórios e phi=C(5,1)=5 caminhos de backtest, ambos citados no mesmo bloco do PRD (n_splits/n_backtest_paths não são redeclarados — ver nota do bloco acima)."
+  class: C
+  sweep_required: false
+  review_by: sprint_10
+
+cpcv_embargo_bars:
+  value: 175
+  provenance: LITERATURE
+  source: "PRD §11.4/§11.4.1 (valor literal '175 barras') + §18.4 ('embargo | 1% do fold | sugestão de López de Prado | força média' — heurística de literatura, não derivação). Discrepância de TF encontrada e reportada, não escondida: §11.4 anota '175 barras ~= 88h', mas 175 barras de 30m = 87,5h — mesma classe de resíduo de versão anterior do PRD já documentada em `feature_*` acima (§2.2-2.6 anotam TF=30m, decision_tf real=15m desde §0.4/§0.5). A 15m, 175 barras = 43,75h, e um fold real (~1 ano ~= 35.040 barras de 15m) daria ~350 barras para a MESMA heurística de '1% do fold' — quase o dobro do valor citado. Mantido o valor literal do PRD (175) em vez de recalcular para 350: '1%' já é convenção de força média (§18.4), não derivação; trocar uma convenção não testada por outra igualmente não testada não é ganho. Revisar junto da varredura de sensibilidade das constantes classe A no Sprint 10."
+  class: C
+  sweep_required: false
+  review_by: sprint_10
