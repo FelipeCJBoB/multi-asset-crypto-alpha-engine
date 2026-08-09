@@ -86,6 +86,18 @@ def test_assert_no_lookahead_passa_para_resample_correto() -> None:
     resample.assert_no_lookahead(df_1m, out, "15m")  # não deve levantar
 
 
+def test_assert_no_lookahead_passa_para_resample_correto_30m() -> None:
+    """Complemento explícito do Sprint de validação (§11.5 teste 9): a
+    cobertura acima só exercitava 5m/15m; o PRD (§11.5 #9) cita literalmente
+    "agregação 1m->30m fecha em close_time" — mesma função genérica
+    (`resample_klines`/`assert_no_lookahead`, parametrizada por `timeframe`),
+    mas testada aqui contra 30m explicitamente, não só por generalização."""
+    df_1m = _make_1m_bars(90)  # 3 buckets completos de 30m
+    out = resample.resample_klines(df_1m, "30m")
+    assert out.height == 3
+    resample.assert_no_lookahead(df_1m, out, "30m")  # não deve levantar
+
+
 def test_assert_no_lookahead_detecta_close_time_futuro_forjado() -> None:
     df_1m = _make_1m_bars(30)
     out = resample.resample_klines(df_1m, "15m")

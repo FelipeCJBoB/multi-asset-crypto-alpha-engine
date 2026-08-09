@@ -82,6 +82,33 @@ def test_a05_causalidade() -> None:
     np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
 
 
+def test_a13_causalidade() -> None:
+    """Achado da auditoria de vazamento (`src.validation.leakage`, §11.5
+    teste 2): `registry.yaml` já citava
+    'testado em tests/unit/test_features_groups.py::test_a13_causalidade'
+    para A13, mas essa função nunca existiu neste arquivo — só
+    `test_a05_causalidade` cobria causalidade de fato, e cobria A05, não
+    A13 (resíduo de copy-paste do Sprint 4, não vazamento real: A13 usa as
+    mesmas primitivas causais que A05, `ema`/`atr_wilder`, ambas já
+    verificadas causais em `test_features_support.py`). Gap de teste
+    fechado aqui — mesma técnica de `test_a05_causalidade` (perturbar o
+    futuro não muda o passado), agora com a função que a citação sempre
+    afirmou existir."""
+    bars = _make_ohlcv(300)
+    atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
+    ema48 = support.ema(bars["close"], span=48)
+    cutoff = 150
+    out_base = group_a.a13_dist_ema48_atr(bars["close"], ema48, atr_abs)
+
+    close2 = bars["close"].copy()
+    close2[cutoff + 1 :] *= 1.5
+    atr_abs2 = support.atr_wilder(bars["high"], bars["low"], close2, window=20)
+    ema48_2 = support.ema(close2, span=48)
+    out_perturbed = group_a.a13_dist_ema48_atr(close2, ema48_2, atr_abs2)
+
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
 # ============================================================================
 # B01 / B07
 # ============================================================================

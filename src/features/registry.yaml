@@ -279,7 +279,7 @@
   dtype: float64
   range: [0.0, .inf]
   nan_policy: "NaN onde atr_20_pct é NaN/0; null antes de min_warmup_bars"
-  causal_proof: "numerador é constante (maker_fee/taker_fee não variam por barra); denominador (atr_20_pct) é causal — testado em tests/unit/test_features_groups.py::test_e27f_causalidade"
+  causal_proof: "numerador é constante (maker_fee/taker_fee não variam por barra); denominador (atr_20_pct) é causal — testado em tests/unit/test_features_groups.py::test_e27f_causalidade_e_positivo"
   parity_tested: true
   version: v1
   added: 2026-08-08
