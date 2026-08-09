@@ -1939,6 +1939,83 @@ perguntas serem avaliadas pelo Manager. Nenhum `n_lifetime` gasto nesta
 rodada (recomputação sobre o mesmo passe já contado no id 13, não uma
 busca nova).
 
+### Validação da análise do Manager sobre o E3 — "os zeros invertem, não faltam" (2026-08-09)
+
+Manager pediu validação/aprimoramento (modo "ultrathink") da própria
+leitura da Pré-FASE 3 acima, com metodologia de engenharia: não aceitar
+a conta sem recomputar, verificar cada número citado como "dado que já
+tínhamos" contra o artefato real. Três verificações independentes,
+recomputadas do zero (não da memória):
+
+**(a) Tabela esperado-vs-real do Manager (SE=1/√N, N=22.891, `p =
+Φ(|IC|/SE)`, `esperado = 30·p⁶`).** Reproduzida ponto a ponto — todos os
+8 valores citados batem exatamente (`C07`→30,0, `E17f`→30,0,
+`E02f`→29,9, `K02_dow_sin`→29,8, `E05f`→28,1, `B01`→25,7, `A05`→14,0).
+Metodologia sólida: `forca`/`median_abs_ic` (que usa `|IC|`) e
+`consistencia` (que usa SINAL) são estatisticamente independentes o
+suficiente para a comparação ser informativa, não circular.
+
+**(b) Citações "dado que já tínhamos" — todas conferem, com precisão
+maior que a citada.** Recomputado direto de `predictions/alpha/
+alpha_c1_v1/predictions.parquet` (OOF) + regime real: taxa de disparo
+long R1=**0,340%**, R2=**4,337%** → razão **12,76x** (Manager citou
+"0,34% / 4,34% / 12,8x" — exato). TP rate long fired: R2=**28,35%**,
+R3=**42,42%** (Manager citou "28,3% / 42,4%" — exato). R2 é
+RANGE+vol-alta, confirmado em `src/regime/classifier.py` (`is_high_vol_raw
+and not is_trend_raw -> R2`) — mas **R4 (TREND+vol-alta) dispara AINDA
+MAIS** (long 4,27%, short 5,28%, medido nesta verificação, não citado
+pelo Manager) — achado adicional que reforça o padrão "dispara mais em
+vol alta" além do par R1/R2 citado.
+
+**(c) Refinamento do "16 de 18 invertem"** — o achado central, testado
+diretamente contra `ic_by_env` bruto (não só a via indireta SE/esperado).
+Para cada feature, reorganizado por ambiente: sinal dominante DENTRO de
+cada um dos 6 ambientes (agregando os 15 folds × 2 lados = até 30
+valores por ambiente) e SE esse sinal dominante muda entre ambientes.
+Resultado: **não é uniforme — dois padrões distintos, não um só**:
+
+- **Ruído genuíno** (`A12_gap_pct`, `D04f_volume_accel`, e em grau menor
+  `B01_rsi_14`): IC mediano perto de zero E fração de sinal perto de
+  50/50 em CADA um dos 6 ambientes individualmente, não só no agregado.
+  Aqui "instabilidade" é a leitura certa — não há estrutura pra
+  recuperar.
+- **Estrutura condicional a custo, real** (`K02_dow_sin`,
+  `E02f_funding_z_expanding`, `E17f_retail_vs_top_spread`): sinal FORTE
+  e consistente (77-83% dos folds concordam, não 50%) especificamente em
+  ambientes de custo ALTO ou MÉDIO, mas fraco/misto em custo BAIXO — ex.
+  `K02_dow_sin` em `TREND_HIGH_COST`: 27 de 30 negativos (90%,
+  IC mediano -0,022); em `RANGE_LOW_COST`: 15/15 empatado. `E17f` em
+  `RANGE_MID_COST`/`TREND_MID_COST`: 25 de 30 negativos (83%) nos dois;
+  em `RANGE_LOW_COST`/`RANGE_HIGH_COST`: perto de empate ou até sinal
+  oposto. Isso não é "sinal que inverte ao acaso" — é sinal cuja DIREÇÃO
+  depende sistematicamente do ambiente de custo, exatamente o tipo de
+  heterogeneidade que a fórmula de unanimidade do §5.4 (por desenho) não
+  consegue creditar, mas que `E27f_cost_atr_ratio` como dimensão de
+  ambiente já estava, em certo sentido, tentando capturar. Acaso pareça
+  "zero" na triagem atual, mas seria candidato natural a um termo de
+  interação (feature × tercil de custo) ou ao Camada 5 / Group DRO
+  (§5.7, já no PRD, ainda não implementado) — que existe PRECISAMENTE
+  pra tratar heterogeneidade entre ambientes sem descartar a feature.
+
+**Conclusão refinada, não substitui a do Manager — precisa ela**: dos 16
+"reprovados", pelo menos 3 (`K02_dow_sin`, `E02f_funding_z_expanding`,
+`E17f_retail_vs_top_spread`) parecem ter sinal condicional REAL perdido
+pela agregação, não ruído puro; pelo menos 2 (`A12_gap_pct`,
+`D04f_volume_accel`) parecem ruído genuíno mesmo. Os outros ficam entre
+os dois extremos, não caracterizados individualmente nesta rodada. A
+tese central do Manager sobrevive e fica mais forte: a maioria das 18
+não tem estabilidade INCONDICIONAL de sinal — só muda a explicação
+de "por quê" caso a caso.
+
+**Endosso confirmado, `min_consistent_envs` mantido em 6/6** — cálculo
+do Manager (FPR agregado 0,56 vs 3,9 espúrios em 18 candidatas) é o
+argumento certo, sem ressalva.
+
+**Proposta do Manager — filtro de admissão por percentil de `C07`,
+remedir sem retreinar**: desenho sólido, avaliado, ainda NÃO executado
+— aguardando confirmação explícita antes de rodar (é uma medição nova,
+mesmo que barata; ver próxima entrada do log se/quando rodar).
+
 ### FASE 3 (C1/C2/C3) — em espera
 
 Precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
@@ -1989,6 +2066,8 @@ acima.
 | C07/D03f (únicas 2 robustas do E3) têm IC negativo consistente contra `ret_net`? | Sim — negativo em 180/180 combinações (6 ambientes × 2 lados × 15 folds), mas magnitude QUASE SIMÉTRICA entre long/short — não explica sozinho a assimetria long-falha-R2/short-bate-passivo | Faixa 2, Pré-FASE 3 acima |
 | C07 e D03f são o mesmo fator (correlação alta)? | Parcialmente — ρ=0,46, n_eff_factors=1,65 de um teto de 2 (redundância real, não colapso a 1 fator) | Faixa 2, Pré-FASE 3 acima |
 | A triagem do E3 tem poder suficiente pra distinguir "sem sinal" de "sinal fraco"? | Discutível — N real por ambiente é ~22.891 (não ~5.000 como estimado), maior poder que o assumido; a maioria dos "zeros" tem \|IC\| mediano 0,004-0,021, perto do limiar de força, não zero | Faixa 2, Pré-FASE 3 acima |
+| Os "zeros" do E3 são sinal fraco ou sinal que inverte? | Misto, verificado direto no `ic_by_env` bruto — `A12_gap_pct`/`D04f_volume_accel` são ruído genuíno (~50/50 em todo ambiente); `K02_dow_sin`/`E02f_funding_z_expanding`/`E17f_retail_vs_top_spread` têm sinal REAL condicional a tercil de custo (77-90% de consistência em ambientes de custo alto/médio) que a fórmula de unanimidade não credita | Faixa 2, "Validação da análise do Manager" acima |
+| O modelo dispara mais e fica mais confiante em vol alta, apesar do sinal mais estável dizer o oposto? | Sim, confirmado com precisão: disparo long 0,340% (R1) vs 4,337% (R2) = 12,76x; TP rate 28,35% (R2) vs 42,42% (R3); R4 (tendência+vol alta) dispara ainda mais (long 4,27%, short 5,28%) | Faixa 2, "Validação da análise do Manager" acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
