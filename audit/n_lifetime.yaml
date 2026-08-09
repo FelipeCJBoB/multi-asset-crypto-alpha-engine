@@ -11,7 +11,7 @@
 # impedir.
 
 schema_version: 1
-counter: 43
+counter: 44
 
 log:
   - id: 1
@@ -194,6 +194,32 @@ log:
       raciocínio do E2 -- a triagem inteira é uma pergunta de desenho, não
       uma por feature). delta=1.
       Artefato: experiments/faixa2_e3_stability.json.
+    delta: 1
+  - id: 14
+    date: "2026-08-09"
+    type: selection_mechanism_variant
+    description: >
+      Faixa 2, pré-FASE 3 — teste do C07 (`C07_vol_pctile_expanding`) como
+      ACELERADOR, substituindo o gate de confiança (§5.6), sobre
+      predições JÁ EXISTENTES de `alpha_c1_v1` (SEM retreino). `side_hat`
+      recomputado como `argmax(p_long, p_short)` (threshold de confiança
+      no mínimo que ainda produz sinal); único filtro de admissão =
+      percentil de C07, fixado A PRIORI pelo orçamento
+      (`trades_per_year == 662,71`, bisseção sobre volume, nunca sobre
+      performance — evita B20). Braço de controle: corte aleatório
+      retendo a MESMA contagem por path, 1000 sementes
+      (`alpha_b1_n_seeds`/`alpha_random_seed`, mesma convenção de
+      `run_b1_random_entry`). Resultado: NÃO confirma a hipótese —
+      `directional_sharpe` do filtro por vol (-1,01) fica no percentil 21
+      do nulo aleatório (pior que ~79% dos sorteios aleatórios do mesmo
+      tamanho); produção atual (+0,88) continua muito melhor que as duas
+      alternativas. `ret_net` melhora modestamente sobre o aleatório
+      (percentil 84) mas continua bem pior que a produção. Contado como
+      variante de MECANISMO DE SELEÇÃO (side_hat recomputado + filtro
+      novo aplicado), não medição pura — por instrução explícita do
+      Manager ("é uma variante de mecanismo de seleção, não medição").
+      delta=1. Nenhuma promoção a produção.
+      Artefato: experiments/faixa2_vol_accelerator_test.json.
     delta: 1
 
 # Nota de escopo (Faixa 2, F0.1, 2026-08-09): os 4 itens acima (ids 6-9,

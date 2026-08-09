@@ -2012,9 +2012,66 @@ do Manager (FPR agregado 0,56 vs 3,9 espúrios em 18 candidatas) é o
 argumento certo, sem ressalva.
 
 **Proposta do Manager — filtro de admissão por percentil de `C07`,
-remedir sem retreinar**: desenho sólido, avaliado, ainda NÃO executado
-— aguardando confirmação explícita antes de rodar (é uma medição nova,
-mesmo que barata; ver próxima entrada do log se/quando rodar).
+remedir sem retreinar**: desenho sólido, avaliado — **rodada** (ver
+próxima entrada abaixo).
+
+### Teste do C07 como acelerador — NÃO confirma a hipótese (2026-08-09)
+
+Rodado conforme o desenho do Manager (`src/analysis/
+faixa2_vol_accelerator_test.py`, `experiments/
+faixa2_vol_accelerator_test.json`, ~38s), filtro sobre predições JÁ
+EXISTENTES de `alpha_c1_v1` — SEM retreino:
+
+1. `side_hat` recomputado como `argmax(p_long, p_short)` — threshold de
+   confiança no mínimo que ainda produz sinal, gate de admissão único
+   vira o percentil de `C07`.
+2. Percentil calibrado A PRIORI só pelo orçamento (bisseção sobre
+   `trades_per_year`, nunca sobre performance, evita B20):
+   `P = 0,01077` (1,08% inferior de `C07`) — precisa ser MUITO mais
+   restritivo que o "vol baixa" informal, porque remover o gate de
+   confiança expõe ~100% das barras ao filtro (antes só ~1,89% chegava
+   a disparar); `trades_per_year` resultante = 662,75, contra o
+   orçamento de 662,71 (bate).
+3. Braço de controle: corte aleatório com a MESMA contagem por path
+   (4.676 cada), 1.000 sementes (`alpha_b1_n_seeds`/`alpha_random_seed`,
+   mesma convenção de `run_b1_random_entry`).
+
+**Resultado — não confirma a hipótese, numa direção específica e
+informativa:**
+
+| | `directional_sharpe` | `ret_net` médio (bps/trade) |
+|---|---|---|
+| Produção atual (gate de confiança) | **+0,879** | -2,82 |
+| Filtro por `C07` (substituindo o gate) | -1,011 | -6,12 |
+| Controle aleatório (mediana de 1.000 sorteios, mesmo N) | -0,696 | -6,71 |
+| Filtro por `C07` vs. controle, percentil | **21,3** (pior que ~79% dos sorteios aleatórios) | 84,3 (melhor que a maioria, ainda muito negativo) |
+
+O filtro por `C07` NÃO bate o controle aleatório em `directional_sharpe`
+— fica no percentil 21, ou seja, pior que a maioria dos sorteios
+aleatórios de mesmo tamanho. Bate o controle em `ret_net` (percentil
+84,3), mas mesmo assim continua bem pior que a produção atual (-6,12 vs
+-2,82 bps/trade). A produção atual — apesar da confiança não ordenar
+dentro do conjunto disparado (ρ≈0, achado já registrado) — continua
+sendo a melhor das três opções nos dois eixos, por margem grande.
+
+**Leitura, sem forçar a mão**: isto é consistente com o próprio
+mecanismo já medido — o IC de `C07` é contra `ret_net` (líquido de
+execução), não contra `ret_gross`/direção (a métrica que
+`directional_sharpe` isola). Filtrar só por vol recupera parte do custo
+de execução evitado (`ret_net` melhora vs. aleatório), mas não devolve
+nenhuma informação DIRECIONAL — e ao remover o gate de confiança
+inteiro, perde-se o que quer que a produção atual estivesse capturando
+que NÃO é "vol baixa" (o gate de confiança, mesmo sem ordenar bem
+dentro do conjunto disparado, parece funcionar como um filtro grosso
+razoável — hipótese a investigar depois, não resolvida aqui). O teste
+foi desenhado pra decidir, e decidiu: **não trocar o acelerador por
+`C07` sozinho.** Substituir por vol pareceria uma "correção óbvia" olhando
+só o sinal isolado (180/180 unânime) — o braço de controle é exatamente
+o que impede esse erro.
+
+`n_lifetime` id 14, delta=1 — variante de MECANISMO DE SELEÇÃO (não
+medição pura), por instrução do Manager. Contador: 43 → **44**. Nenhuma
+promoção a produção — `alpha_c1_v1` continua intocado.
 
 ### FASE 3 (C1/C2/C3) — em espera
 
@@ -2068,6 +2125,7 @@ acima.
 | A triagem do E3 tem poder suficiente pra distinguir "sem sinal" de "sinal fraco"? | Discutível — N real por ambiente é ~22.891 (não ~5.000 como estimado), maior poder que o assumido; a maioria dos "zeros" tem \|IC\| mediano 0,004-0,021, perto do limiar de força, não zero | Faixa 2, Pré-FASE 3 acima |
 | Os "zeros" do E3 são sinal fraco ou sinal que inverte? | Misto, verificado direto no `ic_by_env` bruto — `A12_gap_pct`/`D04f_volume_accel` são ruído genuíno (~50/50 em todo ambiente); `K02_dow_sin`/`E02f_funding_z_expanding`/`E17f_retail_vs_top_spread` têm sinal REAL condicional a tercil de custo (77-90% de consistência em ambientes de custo alto/médio) que a fórmula de unanimidade não credita | Faixa 2, "Validação da análise do Manager" acima |
 | O modelo dispara mais e fica mais confiante em vol alta, apesar do sinal mais estável dizer o oposto? | Sim, confirmado com precisão: disparo long 0,340% (R1) vs 4,337% (R2) = 12,76x; TP rate 28,35% (R2) vs 42,42% (R3); R4 (tendência+vol alta) dispara ainda mais (long 4,27%, short 5,28%) | Faixa 2, "Validação da análise do Manager" acima |
+| Trocar o gate de confiança por um filtro de C07 (vol) melhora o resultado? | Não — `directional_sharpe` do filtro por vol fica no percentil 21 do controle aleatório (pior que a maioria dos sorteios); produção atual (+0,879) continua melhor que as duas alternativas nos dois eixos | Faixa 2, "Teste do C07 como acelerador" acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
