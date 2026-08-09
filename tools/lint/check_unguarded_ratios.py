@@ -197,9 +197,19 @@ def _visit_node(
         _visit_node(child, stack, py_file=py_file, source_lines=source_lines, findings=findings)
 
 
+def _iter_py_files(root: Path) -> list[Path]:
+    """`root` pode ser um arquivo único ou um diretório — `Path.rglob` só
+    itera diretórios; num arquivo, devolve vazio silenciosamente (achado real
+    desta auditoria, ver docs/SPRINT_LOG.md: `--path <arquivo>` reportava
+    "0 encontrado" sem nunca ler o arquivo)."""
+    if root.is_file():
+        return [root] if root.suffix == ".py" else []
+    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
+
+
 def find_findings(root: Path) -> list[Finding]:
     findings: list[Finding] = []
-    for py_file in sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts):
+    for py_file in _iter_py_files(root):
         source = py_file.read_text(encoding="utf-8")
         source_lines = source.splitlines()
         try:

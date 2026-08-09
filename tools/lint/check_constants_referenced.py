@@ -52,6 +52,17 @@ class Reference:
     line: int
 
 
+def _iter_py_files(root: Path) -> list[Path]:
+    """`root` pode ser um arquivo único ou um diretório — `Path.rglob` só
+    itera diretórios; num arquivo, devolve vazio silenciosamente (achado real
+    de auditoria, ver docs/SPRINT_LOG.md: `--src <arquivo>` reportava "0
+    referência(s)... OK" sem nunca ler o arquivo — falso negativo, não
+    ausência real de referências)."""
+    if root.is_file():
+        return [root] if root.suffix == ".py" else []
+    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
+
+
 def find_references(root: Path) -> list[Reference]:
     """AST-scan de `root` procurando toda chamada `load_constant("literal")`
     (aceita tanto `load_constant(...)` quanto `algo.load_constant(...)`, para
@@ -65,7 +76,7 @@ def find_references(root: Path) -> list[Reference]:
     verá — limitação conhecida do approach AST estático, não um bug silencioso.
     """
     refs: list[Reference] = []
-    for py_file in sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts):
+    for py_file in _iter_py_files(root):
         source = py_file.read_text(encoding="utf-8")
         try:
             tree = ast.parse(source, filename=str(py_file))

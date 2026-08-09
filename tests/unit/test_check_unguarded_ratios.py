@@ -119,6 +119,21 @@ def test_guarda_em_outra_funcao_nao_conta(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------
+# --path apontando pra um arquivo único, não um diretório — Path.rglob
+# devolve vazio silenciosamente nesse caso (achado real de auditoria,
+# ver docs/SPRINT_LOG.md); find_findings precisa tratar os dois casos.
+# --------------------------------------------------------------------------
+
+
+def test_detecta_divisao_quando_path_e_arquivo_unico(tmp_path: Path) -> None:
+    mod = tmp_path / "mod.py"
+    mod.write_text("def f(a, b):\n    return a / b\n", encoding="utf-8")
+    findings = cur.find_findings(mod)
+    assert len(findings) == 1
+    assert not findings[0].guarded
+
+
+# --------------------------------------------------------------------------
 # supressão explícita
 # --------------------------------------------------------------------------
 

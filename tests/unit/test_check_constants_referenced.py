@@ -89,6 +89,18 @@ def test_find_references_ignora_syntax_error(tmp_path: Path) -> None:
     assert ccr.find_references(src) == []
 
 
+def test_find_references_com_path_de_arquivo_unico(tmp_path: Path) -> None:
+    """`--src <arquivo>` (não diretório) — `Path.rglob` devolve vazio
+    silenciosamente nesse caso (achado real de auditoria, ver
+    docs/SPRINT_LOG.md); `find_references` precisa tratar os dois casos."""
+    mod = tmp_path / "mod.py"
+    mod.write_text('load_constant("tick_size")\n', encoding="utf-8")
+
+    refs = ccr.find_references(mod)
+
+    assert {r.name for r in refs} == {"tick_size"}
+
+
 # --------------------------------------------------------------------------
 # check() — comparação contra chaves definidas
 # --------------------------------------------------------------------------
