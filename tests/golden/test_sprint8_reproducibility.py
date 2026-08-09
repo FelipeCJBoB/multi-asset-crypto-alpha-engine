@@ -31,9 +31,9 @@ from pathlib import Path
 import pytest
 
 from src.models import alpha, pipeline
+from src.models import dataset as ds
 from src.models._constants import load_constant
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1, MODELS_DIR
-from src.models import dataset as ds
 from src.validation import cpcv
 
 _FOLD_ID_GOLDEN = 0

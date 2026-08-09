@@ -142,6 +142,18 @@ type = "forbidden"
 source_modules = ["src.risk"]
 forbidden_modules = ["src.execution", "src.models"]
 
+[[tool.importlinter.contracts]]
+name = "models não importa analysis"
+type = "forbidden"
+source_modules = ["src.models"]
+forbidden_modules = ["src.analysis"]
+
+[[tool.importlinter.contracts]]
+name = "features não importa analysis"
+type = "forbidden"
+source_modules = ["src.features"]
+forbidden_modules = ["src.analysis"]
+
 # TODO(Sprint 8): "alpha não pode importar meta" — formalizar como contrato
 # forbidden (src.models.alpha -> src.models.meta) quando esses módulos
 # existirem como arquivos reais, não pacote models/ genérico.
