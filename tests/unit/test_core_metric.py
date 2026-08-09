@@ -298,6 +298,78 @@ def test_metric_mul_por_metric_levanta_typeerror() -> None:
 
 
 # ============================================================================
+# per_unit — value/n convertido para bps_per_trade (Faixa 0, item 3;
+# substitui a divisão manual que já causou consumidores lendo n de um
+# momento diferente do value, ver docs/SPRINT_LOG.md).
+# ============================================================================
+
+
+def test_per_unit_converte_fraction_of_notional_para_bps_per_trade() -> None:
+    m = _m(-0.001030, n=36538)  # pnl_total real pós-T0, ver docs/SPRINT_LOG.md
+    result = m.per_unit()
+    assert result.unit == Unit.BPS_PER_TRADE
+    assert result.value == pytest.approx((-0.001030 / 36538) * 10_000)
+    assert result.n == 36538
+    assert result.n_semantics == "trades"
+    assert result.valid is True
+
+
+def test_per_unit_com_unidade_errada_levanta_valueerror() -> None:
+    m = _m(0.01, unit=Unit.RATIO)
+    try:
+        m.per_unit()
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("esperava ValueError com unit != FRACTION_OF_NOTIONAL")
+
+
+def test_per_unit_com_n_semantics_que_nao_permite_divisao_levanta_valueerror() -> None:
+    """DoD explícito da Faixa 0 item 3: n_semantics != 'trades' (ex.
+    'cpcv_paths') não pode virar 'bps por trade' silenciosamente — é
+    exatamente o tipo de mistura de população que motivou n/n_semantics
+    existirem em Metric (achado nº3 da auditoria, ver docstring do módulo)."""
+    m = Metric(
+        value=0.01, unit=Unit.FRACTION_OF_NOTIONAL, n=5, n_semantics="cpcv_paths", source="s"
+    )
+    try:
+        m.per_unit()
+    except ValueError as exc:
+        assert "n_semantics" in str(exc)
+    else:
+        raise AssertionError("esperava ValueError com n_semantics != 'trades'")
+
+
+def test_per_unit_com_n_zero_devolve_metric_invalido_sem_levantar() -> None:
+    """`n<=0` é condição de dado legítima (ex. saída de `not_computable`),
+    não erro de uso — não levanta, propaga `valid=False`/`nan`, mesmo
+    idioma de `safe_ratio` para denominador degenerado."""
+    m = not_computable(
+        Unit.FRACTION_OF_NOTIONAL, n_semantics="trades", source="s", reason="populacao vazia"
+    )
+    result = m.per_unit()
+    assert result.valid is False
+    assert math.isnan(result.value)
+    assert result.n == 0
+
+
+def test_per_unit_propaga_invalidez_de_metric_ja_invalido_com_n_positivo() -> None:
+    m = Metric(
+        value=float("nan"),
+        unit=Unit.FRACTION_OF_NOTIONAL,
+        n=10,
+        n_semantics="trades",
+        source="s",
+        valid=False,
+        invalid_reason="denominador <= 0",
+    )
+    result = m.per_unit()
+    assert result.valid is False
+    assert math.isnan(result.value)
+    assert result.invalid_reason == "denominador <= 0"
+
+
+# ============================================================================
 # not_computable — categoria própria de "nunca foi medido", distinta de
 # "medido e deu zero" (mesmo princípio de TriggerState.NOT_COMPUTABLE em
 # src.regime.stress/src.risk.kill_switch e ControlOutcome.NOT_COMPUTABLE em

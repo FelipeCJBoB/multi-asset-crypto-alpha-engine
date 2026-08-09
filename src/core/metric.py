@@ -37,6 +37,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
+# Fator de conversão fração -> pontos-base — definição matemática, não
+# constante de domínio (mesma categoria de `_BPS_PER_UNIT` em
+# `src.labels.triple_barrier`/`src.data.resample._TIMEFRAME_MINUTES`).
+_BPS_PER_UNIT = 10_000
+
 
 class Unit(StrEnum):
     """Unidades usadas pelos campos REPORTÁVEIS convertidos para `Metric`
@@ -103,6 +108,57 @@ class Metric:
             "valid": self.valid,
             "invalid_reason": self.invalid_reason,
         }
+
+    def per_unit(self) -> Metric:
+        """`value/n` convertido para bps, como novo `Metric(unit=BPS_PER_TRADE)`.
+
+        Só definido para `unit=FRACTION_OF_NOTIONAL` sobre uma população com
+        `n_semantics="trades"` — é exatamente a conversão que motivou este
+        método: um `Metric` somado ao longo de N trades (ex. `pnl_total` em
+        `src.models.decomposition`) dividido manualmente por `n` em
+        múltiplos consumidores, com risco real de usar um `n` de um momento
+        diferente do `value` (achado desta investigação — três consumidores
+        distintos já leram `experiments/alpha_layer1_report.json` com essa
+        divergência). Levanta `ValueError` para `unit`/`n_semantics` que não
+        descrevem essa conversão — erro de uso do chamador, não condição de
+        dado, então não segue o idioma `valid=False` de `safe_ratio`/
+        `not_computable` (mesmo raciocínio de `__add__`/`__mul__` acima,
+        que já levantam em vez de devolver `Metric` inválido para unidade
+        incompatível).
+
+        `n <= 0`, ao contrário, É uma condição de dado legítima (ex. saída
+        de `not_computable`, que sempre tem `n=0`) — não levanta; devolve um
+        `Metric(valid=False, value=nan)` propagando `n`/`source`, mesmo
+        idioma de `safe_ratio` para denominador degenerado."""
+        if self.unit != Unit.FRACTION_OF_NOTIONAL:
+            raise ValueError(
+                "per_unit() só converte Unit.FRACTION_OF_NOTIONAL para bps_per_trade; "
+                f"unidade recebida: {self.unit.value}"
+            )
+        if self.n_semantics != "trades":
+            raise ValueError(
+                "per_unit() exige n_semantics='trades' (é a divisão que produz "
+                f"'por trade'); recebido n_semantics={self.n_semantics!r}"
+            )
+        if self.n <= 0:
+            return Metric(
+                value=float("nan"),
+                unit=Unit.BPS_PER_TRADE,
+                n=self.n,
+                n_semantics=self.n_semantics,
+                source=self.source,
+                valid=False,
+                invalid_reason=self.invalid_reason or f"n={self.n} <= 0 — divisão indefinida",
+            )
+        return Metric(
+            value=(self.value / self.n) * _BPS_PER_UNIT,
+            unit=Unit.BPS_PER_TRADE,
+            n=self.n,
+            n_semantics=self.n_semantics,
+            source=self.source,
+            valid=self.valid,
+            invalid_reason=self.invalid_reason,
+        )
 
     def __add__(self, other: object) -> Metric:
         if not isinstance(other, Metric):
