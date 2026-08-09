@@ -2138,6 +2138,88 @@ registrado como próxima pergunta, não decidido aqui.
 `n_lifetime` id 15, delta=1 (variante de mecanismo, mesmo raciocínio do
 id 14). Contador: 44 → **45**. Nenhuma promoção a produção.
 
+### DSR formal + comparação com B2 — o "long + C07" não passa o piso do Gate 6 (2026-08-09)
+
+Pedido do Manager, ANTES de qualquer novo teste: emitir o DSR (Deflated
+Sharpe Ratio, Bailey & López de Prado 2014) formal da config "long +
+filtro C07" (`total_sharpe` +0,4966, `n_lifetime`=45), e comparar contra
+B2 buy-and-hold no mesmo período. **Primeira implementação de DSR/PSR
+neste repo** (`src/validation/dsr.py`, 12 testes, §11.6 — citado como
+pendente desde `backtest_lite.py`/`validation/__init__.py`; escopo aqui
+é só o suficiente pra esta config, não o módulo formal completo do
+Sprint 11 — PBO continua fora). Isto é INTERPRETAÇÃO ESTATÍSTICA de um
+resultado já medido (id 15), não um trial novo — `n_lifetime` não
+incrementa.
+
+**DSR** (`src/analysis/faixa2_dsr_and_b2_check.py`,
+`experiments/faixa2_dsr_and_b2_check.json`, ~46s). Reconstruída a
+população long+C07 com a MESMA calibração do id 15 (percentil 0,8527,
+calibrado sobre os DOIS lados juntos — achei e corrigi um bug próprio
+antes de rodar: calibrar só sobre o long contra o orçamento cheio dava
+`P=1,0`, "nenhum filtro", porque o long sozinho já cabe perto do
+orçamento total; o percentil certo é o do sistema completo, aplicado
+depois ao subconjunto long — `n_trades`=12.291, bate exato com o `id 15`).
+
+| | valor |
+|---|---|
+| `N_lifetime` (trials, auditado) | 45 |
+| `SR` observado, anualizado | +0,497 |
+| skewness / excess kurtosis (real, não Normal assumido) | +0,168 / -1,574 |
+| `SR_0` (piso esperado por acaso, N=45), anualizado | **+0,874** |
+| **DSR** | **0,167** (16,7%) |
+| Passa o limiar convencional de 0,95? | **Não** |
+
+`SR_0` = +0,874 fica ACIMA do `SR` observado (+0,497) — a configuração
+não fecha a distância até o piso de significância. `DSR`=0,167 está
+longe de 0,95: sob `N_lifetime`=45 trials já gastos, a probabilidade de
+que este Sharpe reflita habilidade real (e não o melhor resultado
+esperado por puro acaso depois de 45 tentativas) é baixa. **Isto
+confirma a direção do cálculo do Manager (a config não fecha a
+distância até o piso), mas com um piso mais baixo que a estimativa
+preliminar deles (~1,60)** — `sigma_SR` aqui vem do erro-padrão do
+próprio Sharpe observado (proxy padrão da literatura quando a
+distribuição real de Sharpe entre os 45 trials não foi rastreada
+individualmente, mesmo proxy do exemplo numérico de López de Prado em
+AFML cap. 8), calculado com skewness/kurtose REAIS da amostra, não
+Normal assumida — a estimativa exata de `sigma_SR`/`SR_0` é uma escolha
+metodológica onde a literatura não tem consenso único quando falta o
+histórico completo por trial; o veredito qualitativo (DSR muito abaixo
+de 0,95, gap real e grande) não depende de qual das duas estimativas de
+piso se usa.
+
+**Comparação com B2** — dois números, não um: B2 pooled no MESMO período
+(2019-12-29 a 2026-08-09) = **+0,539** (bate o "+0,54" citado pelo
+Manager, quase exato). Mas o "+0,497" da config long+C07 usa
+anualização POR TRADE (`sqrt(trades_per_year)`, convenção de
+`backtest_lite.sharpe_naive` usada no resto do projeto) — **comparar
+direto contra o +0,539 de B2 (anualização diária) não é mesma unidade**.
+Refeito com o MESMO método (agregação diária, soma de `ret_net` por dia,
+0 nos dias sem trade): long+C07 diário anualizado = **+0,121**, bem
+mais baixo que os +0,497 originais e muito abaixo de B2 (+0,539). Teste
+de diferença por bootstrap em blocos (2.000 réplicas, blocos de 20 dias,
+séries PAREADAS dia-a-dia — evita depender de uma fórmula fechada de
+covariância tipo Jobson-Korkie/Memmel reconstruída de memória): diferença
+observada -0,022, IC95% [-0,066; +0,028], **p=0,397 — não significativa**.
+A config só opera em 928 de 2.416 dias (38,4%) — a diluição por dias
+"flat" (0 de exposição, vs. B2 sempre 100% exposto) reduz o poder do
+teste diário mais do que reflete a diferença real de qualidade —
+limitação estrutural de comparar uma estratégia de apostas esparsas
+contra um benchmark sempre-investido pela mesma régua diária, não um
+defeito do teste em si.
+
+**Retratação registrada** (pedida pelo Manager, verificada — não havia
+nada a corrigir nos artefatos deste repo): a estimativa anterior de que
+a correção de Lo(2002) levaria +0,50 a +0,37 nunca foi usada nem
+persistida em nenhum artefato desta Faixa (`grep` confirmado limpo) — a
+correção de Lo continua PENDENTE, sinal do efeito DESCONHECIDO, como já
+documentado em `backtest_lite.py` desde o Sprint 8.
+
+**Veredito, na moldura do próprio Manager**: DSR=0,167 é o resultado do
+Gate 6 pra esta config especificamente — não passa o limiar convencional
+de 0,95, por margem grande o suficiente pra não depender da escolha
+exata de `sigma_SR`. `n_lifetime` NÃO incrementa (interpretação
+estatística de trial já medido). Nenhuma promoção a produção.
+
 ### FASE 3 (C1/C2/C3) — em espera
 
 Precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
@@ -2192,6 +2274,8 @@ acima.
 | O modelo dispara mais e fica mais confiante em vol alta, apesar do sinal mais estável dizer o oposto? | Sim, confirmado com precisão: disparo long 0,340% (R1) vs 4,337% (R2) = 12,76x; TP rate 28,35% (R2) vs 42,42% (R3); R4 (tendência+vol alta) dispara ainda mais (long 4,27%, short 5,28%) | Faixa 2, "Validação da análise do Manager" acima |
 | Trocar o gate de confiança por um filtro de C07 (vol) melhora o resultado? | Não, como SUBSTITUTO — percentil 21 do controle, pior que a maioria; o corte empurrou o sistema pra ATR abaixo do piso de viabilidade R1 | Faixa 2, "Teste do C07 como acelerador" acima |
 | Compor C07 COM o gate de confiança (não substituir) melhora o resultado? | Sim, decisivo no pooled — `directional_sharpe` +0,879→+3,015 (percentil 100 vs. controle aleatório do mesmo conjunto), `ret_net` -2,82→-0,61 bps (percentil 99,7) — mas TODO o ganho é do long (`total_sharpe` -1,30→+0,50); short piora (-0,16→-1,21) | Faixa 2, "Correção do teste — COMPOR" acima |
+| A config "long + C07" passa o DSR (Gate 6, N_lifetime=45)? | Não — DSR=0,167 (limiar convencional 0,95); SR observado +0,497 fica abaixo do piso esperado por acaso SR_0=+0,874 | Faixa 2, "DSR formal + comparação com B2" acima |
+| "long + C07" bate B2 buy-and-hold no mesmo período, mesmo método? | Não — B2 diário=+0,539, long+C07 diário=+0,121 (comparação por trade, +0,497, usava anualização diferente, não era mesma unidade); diferença não significativa no teste bootstrap (p=0,397) por baixo poder — estratégia só opera 38% dos dias | Faixa 2, "DSR formal + comparação com B2" acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |

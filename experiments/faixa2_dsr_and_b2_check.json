@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-08-09T23:55:46.768061+00:00",
+  "code_version": "492fade",
+  "task": "faixa2_dsr_and_b2_check",
+  "dsr_check": {
+    "n_lifetime_auditado": 45,
+    "calibracao_percentil_reusada": {
+      "percentil_admissao": 0.8526967471152602,
+      "target_trades_per_year": 662.7096,
+      "trades_per_year_no_percentil": 662.830948536672,
+      "nota": "P fixado SOMENTE pelo criterio de volume (trades/ano == orcamento) -- nenhuma metrica de performance (Sharpe/ret_net) consultada nesta calibracao, por instrucao explicita do Manager (evitar B20)."
+    },
+    "n_trades": 12291,
+    "dsr_result": {
+      "n_trials": 45,
+      "n_obs": 12291,
+      "trades_per_year": 1881.717426898542,
+      "sr_per_trade": 0.011447861025090244,
+      "sr_annualized": 0.49659409611623845,
+      "skewness": 0.16815472795911285,
+      "excess_kurtosis": -1.574455472180044,
+      "sigma_sr_per_trade": 0.009011444687663479,
+      "sr0_per_trade": 0.020146347803460106,
+      "sr0_annualized": 0.8739237273736707,
+      "dsr": 0.16720453118055806,
+      "dsr_passa_limiar_convencional_0_95": false
+    },
+    "nota": "DSR calculado na escala POR TRADE (T=n_trades, skew/kurtosis amostrais reais, nao Normal assumido) -- sr_annualized/sr0_annualized reportados so para leitura (mesma escala de sqrt(trades_per_year) aplicada aos dois, razao preservada). sigma_sr usa o erro-padrao do proprio Sharpe observado como proxy pra dispersao entre os N_lifetime trials (distribuicao real de Sharpe por trial nao foi rastreada individualmente neste projeto -- mesmo proxy do exemplo numerico de Lopez de Prado, AFML cap. 8)."
+  },
+  "b2_comparison": {
+    "periodo": {
+      "start": "2019-12-29",
+      "end": "2026-08-09"
+    },
+    "b2_buy_and_hold": {
+      "sharpe_naive_anualizado": 0.5390590462993594,
+      "n_days": 2412
+    },
+    "long_mais_c07_agregado_diario": {
+      "sharpe_naive_anualizado": 0.12138548979653203,
+      "n_days_grade": 2416,
+      "n_days_com_trade": 928
+    },
+    "teste_diferenca_bootstrap_blocos": {
+      "observed_diff": -0.021854549976910533,
+      "bootstrap_mean_diff": -0.020164294525962193,
+      "bootstrap_std_diff": 0.024383061710691805,
+      "ci95_low": -0.06574705385519812,
+      "ci95_high": 0.028298400284012974,
+      "p_value_two_sided": 0.397,
+      "n_boot": 2000,
+      "block_size": 20
+    },
+    "nota": "Series diarias ALINHADAS (mesmo n de dias, mesma janela de calendario) para o teste -- 'long+C07' agrega ret_net por dia (soma, 0 nos dias sem trade); B2 usa log-retorno diario do close. Teste por bootstrap em blocos (nao Jobson-Korkie/Memmel fechado) -- reamostra os PARES (dia a dia), preserva a correlacao contemporanea entre as duas series (mesmo ativo subjacente) sem depender de uma formula de covariancia reconstruida de memoria."
+  },
+  "elapsed_seconds_total": 46.52783980011009
+}
