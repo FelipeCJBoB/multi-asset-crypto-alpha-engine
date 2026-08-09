@@ -788,6 +788,91 @@ importadas mas nunca referenciadas fora do import — "circuit breaker" de
 2000ms citado como decisão fechada na doc do projeto irmão não tem
 nenhum código que de fato mate algo hoje.
 
+## Faixa 1.5 — pré-requisitos do walk-forward (2026-08-09)
+
+Seis blocos, regime declarado por bloco (Blocos 1/2/3/5 DESCOBERTA — medem,
+não concluem; Bloco 4 CONSTRUTIVO). Módulo novo
+`src/analysis/faixa1_5_prerequisites.py` (13 testes, 1 integração real
+skip-if-ausente), resultado completo em
+`experiments/faixa1_5_prerequisites.json`.
+
+**STEP 0 — todas as premissas confirmadas no disco**, com uma nota: o
+prompt citava "barras/ano = 35.064 (365×96)", mas 365×96=35.040, não
+35.064 — a fórmula certa é 365,25×96=35.064 EXATO (`backtest_lite.
+DAYS_PER_YEAR`, já a convenção de anualização usada em todo o resto do
+repo). O valor-alvo (35.064) está correto, só a anotação da fórmula no
+prompt tinha uma imprecisão — reproduzido aqui como aritmética
+(`DAYS_PER_YEAR × SECONDS_PER_DAY / 900`), nunca um literal solto.
+`predictions.parquet` confirmado retendo `score_{side}_raw` por
+`fold_id` — Bloco 4 seguiu adiante.
+
+**Bloco 1 — varredura de `fee_budget_monthly`**: no ponto central (0,030),
+orçamento implicado é **1.325 trades/ano** (2 lados, `target_signal_rate
+× 2 × bars_per_year`); os 5 `trades_per_year` REAIS por caminho ficam
+entre 858 e 1.307 — nenhum excede o orçamento no ponto central (GATE 1
+não dispara). 8 de 8 células lado×regime têm `n` suficiente no ponto
+central — o "7 células" do prompt não se confirmou; todas as 8 têm dado.
+Escala assumida linear (`target_signal_rate_ajustada = target_signal_rate
+× candidato/atual`) — decisão de modelagem declarada, não verificada no
+repo (não existe fórmula fechada documentada da derivação original).
+
+**Bloco 2 — checagem de Simpson**: recomputado por lado×regime e
+lado×tercil de custo (`decompose()` reusado, não reimplementado). Achado
+estrutural: `total_sharpe` pooled **long=-1,297 vs short=-0,164** —
+os dois lados negativos, mas de magnitude bem diferente, já visível no
+agregado (mesma direção da assimetria estrutural entre lados que a Faixa
+1 já vinha medindo em outras dimensões). HHI "estratificado" é uma
+APROXIMAÇÃO declarada (média de HHI por fold ponderada pela fração de
+trades do fold no subconjunto — HHI é propriedade do modelo por fold, não
+do trade individual; refit condicional a regime exigiria retreino, fora
+de escopo). Nenhuma célula saiu `insufficient_n` nos dados reais.
+
+**Bloco 3 — dispersão entre paths**: Spearman `n_filled` × `ret_net`
+médio **ρ=0,10, p=0,87, n=5** — sem relação detectável (amostra
+pequena, ressalva explícita no JSON). Fração de `t0` compartilhado entre
+paths varia de 67% (path 0) a 91% (path 4). **Limitação registrada, não
+corrigida nesta rodada**: os CI95 por path tratam trades como i.i.d.,
+mas a mesma barra aparece em até 5 paths com `ret_net` correlacionado
+(mesma barreira, modelo-fold diferente) — CIs provavelmente OTIMISTAS,
+mesma família do §16.5 (Lo 2002) só que por duplicação ENTRE paths, não
+autocorrelação intra-path.
+
+**Bloco 4 — `confidence_rank`**: campo novo em `predictions.parquet`
+(percentil do score cru DENTRO do `fold_id`, via `.rank().over("fold_id")`
+— invariante verificado: Spearman(score cru, rank) = 1,0 dentro de
+qualquer fold). Não recalibra sobre OOF empilhado. D1/D4 reexecutados
+sobre as três versões (cru/calibrado/rank) com a mesma rubrica da Faixa
+1 — três perfis completos no JSON, sem escolha entre eles feita aqui.
+`§5.12` do PRD atualizado. **`n_lifetime`: 3 → 4**
+(`audit/n_lifetime.yaml`, id 4).
+
+**Bloco 5 — E02f in-fold**: `compute_ic_by_env`/`_assign_from_ic`
+rodados nos 15 folds × 2 lados × 6 ambientes, sobre TREINO do fold
+(nunca teste), sem retreinar. `alpha_monotonic_consistency_min_envs=6`
+(consistência precisa ser 6/6, não 6/7 como o texto do §5.3 sugere —
+já investigado e resolvido em rodada anterior). **Hipótese do executor,
+marcada como tal, não como achado**: contando os 15 folds, o sinal que a
+triagem estatística padrão atribuiria (`screen_sign_if_not_forced`,
+ignorando a restrição forçada) nunca DISCORDA do sinal forçado quando
+tem evidência suficiente pra decidir — 8/15 folds no long, 1/15 no
+short chegam a 6/6 de consistência, e 100% desses concordam com o sinal
+econômico (`_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`); os outros folds
+(7/15 long, 14/15 short) simplesmente não atingem 6/6, não apontam pro
+lado oposto. Leitura possível: a restrição forçada de E02f não parece
+estar sendo usada pra "salvar" um sinal que os dados contradizem — onde
+os dados têm poder estatístico suficiente pra opinar, eles concordam;
+o problema (se houver) é mais estatístico (n_consistent baixo,
+especialmente no short) que de direção errada. Mas isso é leitura, não
+medição — nenhuma regra por regime foi hardcoded, `monotonic.py` não
+foi tocado, a decisão entre manter/remover a restrição forçada continua
+do Manager.
+
+**Verificação**: `banned_patterns --strict` limpo, `check_unguarded_ratios`
+revisado (11 achados, todos seguros por construção — documentado no
+docstring do módulo), `check_constants_referenced` OK, 6/6 import-linter,
+mypy limpo. `pytest tests/` — 13 testes novos, todos passam (1 integração
+real, skip-if-ausente).
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
@@ -811,3 +896,6 @@ nenhum código que de fato mate algo hoje.
 | E02f_funding_z inverte de sinal RANGE↔TREND? | Sim, medido: R1=+0,04/R2=+0,11/R3=-0,03/R4=-0,08 | Faixa 1 acima, reproduz Fase E |
 | Calibração isotônica melhora ou piora a confiança? | As duas coisas — piora ORDENAÇÃO (D4) e melhora MAGNITUDE/ECE (long 0,256→0,200; short 0,234→0,155) | Auditoria Laplace_Quant_V16 acima |
 | Alguma T1 vaza informação futura (scan estatístico)? | Não — 0 de 10 estoura o `hard_fail_threshold`; 4 ficam `elevated` por correlação estrutural com ATR, não vazamento | Auditoria Laplace_Quant_V16 acima, `src/validation/leakage.py::scan_feature_target_correlation` |
+| `fee_budget_monthly` no valor central cabe no orçamento? | Sim — 1.325 trades/ano implicados vs 858-1.307 reais por caminho, nenhum excede | Faixa 1.5 acima, `experiments/faixa1_5_prerequisites.json::fee_budget_sweep` |
+| E02f in-fold: a triagem estatística discorda do sinal forçado? | Não em nenhum dos 15 folds (0 discordâncias) — mas só 1/15 folds no short chega a 6/6 de consistência pra opinar | Faixa 1.5 acima (hipótese do executor, não medição) |
+| CIs por path do Alpha são confiáveis? | Não totalmente — trades duplicados entre até 5 paths (mesma barra, mesma barreira) tornam os CI95 por path provavelmente otimistas; não corrigido ainda | Faixa 1.5 acima |

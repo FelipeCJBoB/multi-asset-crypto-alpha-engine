@@ -1343,6 +1343,7 @@ Nenhuma camada entra por fé. Cada uma é uma variante que **incrementa `N_lifet
 | `score_long_raw` `score_short_raw` | `float64` | antes da calibração |
 | `side_hat` | `int8` | −1 / 0 / +1 |
 | `confidence` | `float64` | `max(p_long, p_short)` |
+| `confidence_rank` | `float64` | percentil (0,1] de `score_{side}_raw` DENTRO do `fold_id` que gerou a linha |
 | `ensemble_std` | `float64` | **desvio entre os 12 modelos — proxy de incerteza epistêmica** |
 | `n_models_agree` | `int8` | quantos dos 12 concordam com `side_hat` |
 | `model_id` `calibrator_id` `feature_version` | `str` | |
@@ -1353,6 +1354,8 @@ Nenhuma camada entra por fé. Cada uma é uma variante que **incrementa `N_lifet
 | **`is_oof`** | `bool` | **o discriminador que impede o vazamento Alpha→Meta** |
 
 `ensemble_std` e `n_models_agree` são novos e valiosos: com 12 modelos de features disjuntas, **discordância alta é sinal de que o edge daquela barra vem de um único conceito** — exatamente o caso que não sobrevive a mudança de regime. São candidatas naturais a feature do Meta e a filtro do Decision Engine.
+
+**`confidence_rank` (2026-08-09, Faixa 1.5 Bloco 4) — segunda definição de confiança, adicionada sem remover `confidence`.** Mecanismo verificado empiricamente: o calibrador isotônico é ajustado POR FOLD (§5.9 passo 9); empilhar as predições OOF dos 15 folds preserva a ordem *dentro* de cada fold (cada mapa é individualmente monotônico), mas **não** preserva uma ordem global — o mesmo valor de `confidence` calibrado em fold A e em fold B pode corresponder a percentis muito diferentes da distribuição de score cru daquele fold. `confidence_rank = rank(score_{side}_raw) / count(score_{side}_raw)` calculado com `.over(fold_id)` (percentil, não probabilidade) resolve isso sem recalibrar sobre OOF empilhado — recalibrar vazaria os 15 folds entre si na própria probabilidade que o Meta consumiria na V1.1 (vazamento estrutural, mesma classe de B07). `confidence_rank` é ORDEM pura: não substitui `confidence` onde a magnitude calibrada é necessária (ex. `P(TP)` para dimensionamento), e qual campo o Decision Engine consome continua sendo decisão do Manager — este item só adiciona a opção, não escolhe entre elas. Ver `experiments/faixa1_5_prerequisites.json::confidence_variants` para os três perfis (cru/calibrado/rank) lado a lado.
 
 ## 5.13 INVARIANTES
 
