@@ -146,6 +146,42 @@ def test_b2_continuous_exposure_retorno_positivo_da_sharpe_positivo() -> None:
 
 
 # ============================================================================
+# continuous_exposure_by_side_and_regime / alpha_vs_naive_continuous_gap —
+# short é EXATAMENTE o espelho de sinal do long sobre o mesmo bar_ret; o
+# gap é positivo quando o Alpha bate a exposição passiva, negativo quando
+# a seleção do Alpha é pior que não selecionar nada.
+# ============================================================================
+
+
+def test_continuous_exposure_short_e_espelho_exato_do_long() -> None:
+    rows = []
+    for t0, px in enumerate([100.0 * (1.001**i) for i in range(20)]):
+        rows.append({"t0": t0, "side": 1, "entry_price_limit": px, "regime": "R1"})
+    mf = pl.DataFrame(rows).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
+    out = f17.continuous_exposure_by_side_and_regime(mf)
+    assert out["long"]["R1"]["sharpe_naive"] > 0
+    assert out["short"]["R1"]["sharpe_naive"] == pytest.approx(-out["long"]["R1"]["sharpe_naive"])
+    assert out["long"]["R1"]["n_bars"] == out["short"]["R1"]["n_bars"] == 19
+
+
+def test_gap_alpha_menos_naive_positivo_quando_alpha_bate_passivo() -> None:
+    naive = {"long": {"R2": {"sharpe_naive": 1.5}}, "short": {"R2": {"sharpe_naive": -1.5}}}
+    alpha = {"long": {"R2": -2.5}, "short": {"R2": 1.2}}
+    out = f17.alpha_vs_naive_continuous_gap(naive, alpha)
+    assert out["long"]["R2"]["gap_alpha_menos_naive"] == pytest.approx(-2.5 - 1.5)
+    assert out["short"]["R2"]["gap_alpha_menos_naive"] == pytest.approx(1.2 - (-1.5))
+    assert out["long"]["R2"]["gap_alpha_menos_naive"] < 0  # seleção pior que passivo
+    assert out["short"]["R2"]["gap_alpha_menos_naive"] > 0  # seleção bate passivo
+
+
+def test_gap_alpha_menos_naive_none_quando_naive_nao_finito() -> None:
+    naive = {"long": {"R1": {"sharpe_naive": float("nan")}}, "short": {}}
+    alpha = {"long": {"R1": 0.5}, "short": {}}
+    out = f17.alpha_vs_naive_continuous_gap(naive, alpha)
+    assert out["long"]["R1"]["gap_alpha_menos_naive"] is None
+
+
+# ============================================================================
 # Residualização (dentro de orthogonalize_confidence_vs_vol) — testada via
 # a matemática isolada, não a função inteira (que exige predictions/mf.data
 # reais com build_side_population) -- prova que a regressão OLS de 1
@@ -187,3 +223,41 @@ def test_nofill_x_cost_tercile_amostra_insuficiente_nao_quebra() -> None:
     ).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
     out = f17.nofill_x_cost_tercile_within_r2(mf)
     assert out == {"aplicavel": False}
+
+
+# ============================================================================
+# trend_split_by_regime_and_side — join trend x realized, filtro por
+# side_hat/regime, plumbing nova (generaliza r3_split_by_trend_direction
+# pros dois lados e R3/R4).
+# ============================================================================
+
+
+def test_trend_split_by_regime_and_side_filtra_side_hat_e_regime_certos() -> None:
+    # preco sobe -- depois de 48 barras, trend_sign_48b = 1 (alta) em toda barra >= 48
+    prices = [100.0 + i for i in range(60)]
+    mf_trend = pl.DataFrame(
+        {"t0": list(range(60)), "side": [1] * 60, "entry_price_limit": prices}
+    ).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
+
+    realized = pl.DataFrame(
+        {
+            "t0": [50, 51, 52, 53],
+            "side_hat": [1, 1, -1, 1],
+            "regime": ["R3", "R4", "R3", "R3"],
+            "barrier_hit": ["TP", "TP", "SL", "SL"],
+            "ret_net": [0.01, 0.01, -0.01, -0.01],
+            "ret_gross": [0.012, 0.012, -0.012, -0.012],
+            "cost_entry_bps": [1.0] * 4,
+            "cost_exit_bps": [1.0] * 4,
+            "funding_bps": [0.1] * 4,
+        }
+    ).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
+
+    out = f17.trend_split_by_regime_and_side(
+        mf_trend, realized, side=1, side_label="long", regime="R3"
+    )
+    # so t0=50 (side_hat=1, regime=R3) deveria entrar -- t0=51 e' R4,
+    # t0=52 e' side_hat=-1, t0=53 e' TIME/SL mas side_hat certo e regime certo -> entra tambem
+    assert out["n_total_signals"] == 2
+    assert out["alta"]["n_trades"] == 2  # trend_sign=1 (alta) em t>=48
+    assert out["baixa"]["n_trades"] == 0

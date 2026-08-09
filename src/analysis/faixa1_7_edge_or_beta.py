@@ -214,6 +214,91 @@ def b2_continuous_exposure_by_regime(mf_data: pl.DataFrame) -> dict[str, Any]:
     return out
 
 
+def continuous_exposure_by_side_and_regime(mf_data: pl.DataFrame) -> dict[str, Any]:
+    """Espelho short de `b2_continuous_exposure_by_regime` — MESMO
+    retorno bar-a-bar (`bar_ret`), sinal invertido pro short (posição
+    espelhada no MESMO preço, sem custo/funding — mesma simplificação
+    declarada do B2 original). Devolve os dois lados juntos, pra montar
+    o gap contra o Alpha (`alpha_vs_naive_continuous_gap`) sem duplicar a
+    extração de preço."""
+    px = (
+        mf_data.filter(pl.col("side") == 1)
+        .select("t0", "entry_price_limit", "regime")
+        .unique(subset=["t0"])
+        .sort("t0")
+    )
+    log_px = np.log(px["entry_price_limit"].to_numpy().astype(np.float64))
+    bar_ret = np.diff(log_px)
+    regime_of_origin = px["regime"].to_list()[:-1]
+
+    out: dict[str, Any] = {"long": {}, "short": {}}
+    for regime in _STRUCTURAL_REGIMES:
+        mask = np.array([r == regime for r in regime_of_origin])
+        for side_label, sign in (("long", 1.0), ("short", -1.0)):
+            rets = sign * bar_ret[mask]
+            if rets.size < 2:
+                out[side_label][regime] = {"n_bars": int(rets.size), "sharpe_naive": float("nan")}
+                continue
+            mean, std = float(np.mean(rets)), float(np.std(rets, ddof=1))
+            sharpe = mean / std * math.sqrt(f15.BARS_PER_YEAR) if std > 0 else float("nan")
+            out[side_label][regime] = {"n_bars": int(rets.size), "sharpe_naive": sharpe}
+    return out
+
+
+def alpha_vs_naive_continuous_gap(
+    naive_by_side_regime: dict[str, Any], alpha_directional_sharpe_by_side_regime: dict[str, Any]
+) -> dict[str, Any]:
+    """O teste mais direto de skill seletivo desta rodada: `Alpha
+    (directional_sharpe seletivo) - naive (sempre exposto, mesmo lado,
+    mesmo regime)`. Positivo = a seleção de ENTRADA do Alpha bate ficar
+    simplesmente exposto o tempo todo naquele regime (skill real de
+    timing). Negativo = a seleção é PIOR que não selecionar nada — o
+    Alpha está escolhendo momentos ativamente ruins dentro de um regime
+    que, passivamente, teria sido aceitável ou bom."""
+    out: dict[str, Any] = {}
+    for side_label in ("long", "short"):
+        out[side_label] = {}
+        for regime in _STRUCTURAL_REGIMES:
+            alpha_val = alpha_directional_sharpe_by_side_regime.get(side_label, {}).get(regime)
+            naive_val = naive_by_side_regime.get(side_label, {}).get(regime, {}).get("sharpe_naive")
+            gap = (
+                alpha_val - naive_val
+                if alpha_val is not None and naive_val is not None and math.isfinite(naive_val)
+                else None
+            )
+            out[side_label][regime] = {
+                "alpha_directional_sharpe": alpha_val,
+                "naive_continuous_sharpe": naive_val,
+                "gap_alpha_menos_naive": gap,
+            }
+    return out
+
+
+# ============================================================================
+# Medição extra (a pedido, pós-síntese) — R3/R4 partidos por direção de
+# tendência, os DOIS lados (a Medição 1 original só cobriu long x R3).
+# ============================================================================
+
+
+def trend_split_by_regime_and_side(
+    mf_data: pl.DataFrame, realized: pl.DataFrame, *, side: int, side_label: str, regime: str
+) -> dict[str, Any]:
+    trend = _trend_direction_48b(mf_data)
+    pop = realized.filter((pl.col("side_hat") == side) & (pl.col("regime") == regime)).join(
+        trend, on="t0", how="left"
+    )
+    n_total = pop.height
+    out: dict[str, Any] = {"n_total_signals": n_total}
+    for label, sign in (("alta", 1), ("baixa", -1)):
+        sub = pop.filter(pl.col("trend_sign_48b") == sign)
+        out[label] = _decompose_regime_cell(
+            sub, source=f"faixa1_7::trend_split::{side_label}_{regime}_{label}"
+        )
+    n_alta = out["alta"]["n_trades"]
+    out["fracao_em_alta"] = n_alta / n_total if n_total else float("nan")
+    return out
+
+
 # ============================================================================
 # Medição 3 (Q1) — IC de E02f contra PnL_carry vs PnL_direcional,
 # separados (sem retreino).
@@ -459,6 +544,20 @@ def nofill_x_cost_tercile_within_r2(mf_data: pl.DataFrame) -> dict[str, Any]:
 # ============================================================================
 
 
+def _load_alpha_directional_sharpe_by_side_regime() -> dict[str, Any]:
+    """Relê `stratified_headlines.by_side_regime` já persistido
+    (Faixa 1.5/1.6) — não recalcula (mesmo `decompose()` sobre a mesma
+    população, já correto ali)."""
+    f15_path = EXPERIMENTS_DIR / "faixa1_5_prerequisites.json"
+    payload = orjson.loads(f15_path.read_bytes())
+    bsr = payload["stratified_headlines"]["by_side_regime"]
+    out: dict[str, Any] = {"long": {}, "short": {}}
+    for side_label in ("long", "short"):
+        for regime in _STRUCTURAL_REGIMES:
+            out[side_label][regime] = bsr[f"{side_label}_{regime}"]["directional_sharpe"]["value"]
+    return out
+
+
 def run_faixa1_7() -> dict[str, Any]:
     mf = ds.build_modeling_frame()
     predictions = f15.load_predictions(model_id=pipeline.MODEL_ID_CAMADA1)
@@ -468,6 +567,18 @@ def run_faixa1_7() -> dict[str, Any]:
     fold_to_path = f15.fold_to_path_map(cpcv_result.splits)
     realized = f15.build_realized_trades(predictions, mf.data, fold_to_path)
     realized_long = realized.filter(pl.col("side_hat") == 1)
+
+    naive_continuous = continuous_exposure_by_side_and_regime(mf.data)
+    alpha_dirsharpe = _load_alpha_directional_sharpe_by_side_regime()
+
+    trend_split_r3_r4_both_sides: dict[str, Any] = {}
+    for side, side_label in ((1, "long"), (-1, "short")):
+        for regime in ("R3", "R4"):
+            trend_split_r3_r4_both_sides[f"{side_label}_{regime}"] = (
+                trend_split_by_regime_and_side(
+                    mf.data, realized, side=side, side_label=side_label, regime=regime
+                )
+            )
 
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -487,6 +598,13 @@ def run_faixa1_7() -> dict[str, Any]:
         "pendente_regime_r2_por_ano": regime_r2_by_year(mf.data),
         "pendente_distribuicao_feature_r2_vs_tendencia": feature_distribution_r2_vs_others(mf.data),
         "pendente_nofill_x_custo_dentro_r2": nofill_x_cost_tercile_within_r2(mf.data),
+        # Extensão pós-síntese (a pedido) — resposta "milimétrica" a onde
+        # o motor acerta no pior-esperado e erra no melhor-esperado.
+        "extensao_naive_continuo_por_lado_e_regime": naive_continuous,
+        "extensao_gap_alpha_menos_naive": alpha_vs_naive_continuous_gap(
+            naive_continuous, alpha_dirsharpe
+        ),
+        "extensao_trend_split_r3_r4_ambos_lados": trend_split_r3_r4_both_sides,
     }
     return payload
 

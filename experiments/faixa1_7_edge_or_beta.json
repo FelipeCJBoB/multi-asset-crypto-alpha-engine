@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-09T18:43:12.974047+00:00",
-  "code_version": "29f7e79",
+  "generated_at": "2026-08-09T18:57:48.320327+00:00",
+  "code_version": "7aed4f7",
   "schema_version": 1,
   "task": "faixa1_7_edge_or_beta",
   "mfe_por_regime_escopo": "NÃO computado nesta rodada -- exige re-caminhar mark_1m por trade, computação nova (não reuso de coluna existente). Ver docstring do módulo para o desenho recomendado (estender build_labels, não recomputar à parte).",
@@ -211,6 +211,156 @@
     "HIGH_COST": {
       "n": 8188,
       "rate_nofill": 0.04066927210552027
+    }
+  },
+  "extensao_naive_continuo_por_lado_e_regime": {
+    "long": {
+      "R1": {
+        "n_bars": 106388,
+        "sharpe_naive": -0.011299246661641928
+      },
+      "R2": {
+        "n_bars": 24563,
+        "sharpe_naive": 1.5298364104729416
+      },
+      "R3": {
+        "n_bars": 70465,
+        "sharpe_naive": 0.21121614575896397
+      },
+      "R4": {
+        "n_bars": 24179,
+        "sharpe_naive": 0.3635511971028917
+      }
+    },
+    "short": {
+      "R1": {
+        "n_bars": 106388,
+        "sharpe_naive": 0.011299246661641928
+      },
+      "R2": {
+        "n_bars": 24563,
+        "sharpe_naive": -1.5298364104729416
+      },
+      "R3": {
+        "n_bars": 70465,
+        "sharpe_naive": -0.21121614575896397
+      },
+      "R4": {
+        "n_bars": 24179,
+        "sharpe_naive": -0.3635511971028917
+      }
+    }
+  },
+  "extensao_gap_alpha_menos_naive": {
+    "long": {
+      "R1": {
+        "alpha_directional_sharpe": 0.25408535098868323,
+        "naive_continuous_sharpe": -0.011299246661641928,
+        "gap_alpha_menos_naive": 0.2653845976503252
+      },
+      "R2": {
+        "alpha_directional_sharpe": -2.5209475724654484,
+        "naive_continuous_sharpe": 1.5298364104729416,
+        "gap_alpha_menos_naive": -4.05078398293839
+      },
+      "R3": {
+        "alpha_directional_sharpe": 4.350265815443926,
+        "naive_continuous_sharpe": 0.21121614575896397,
+        "gap_alpha_menos_naive": 4.139049669684962
+      },
+      "R4": {
+        "alpha_directional_sharpe": 1.9969946996487662,
+        "naive_continuous_sharpe": 0.3635511971028917,
+        "gap_alpha_menos_naive": 1.6334435025458744
+      }
+    },
+    "short": {
+      "R1": {
+        "alpha_directional_sharpe": 1.1910268086800575,
+        "naive_continuous_sharpe": 0.011299246661641928,
+        "gap_alpha_menos_naive": 1.1797275620184156
+      },
+      "R2": {
+        "alpha_directional_sharpe": 1.2182598524810349,
+        "naive_continuous_sharpe": -1.5298364104729416,
+        "gap_alpha_menos_naive": 2.7480962629539762
+      },
+      "R3": {
+        "alpha_directional_sharpe": 1.7280034369055948,
+        "naive_continuous_sharpe": -0.21121614575896397,
+        "gap_alpha_menos_naive": 1.9392195826645588
+      },
+      "R4": {
+        "alpha_directional_sharpe": 0.28017673008780586,
+        "naive_continuous_sharpe": -0.3635511971028917,
+        "gap_alpha_menos_naive": 0.6437279271906975
+      }
+    }
+  },
+  "extensao_trend_split_r3_r4_ambos_lados": {
+    "long_R3": {
+      "n_total_signals": 7067,
+      "alta": {
+        "n_trades": 6067,
+        "directional_sharpe": 4.616870713305031,
+        "total_sharpe": 2.388399341702097,
+        "ret_net_bps": 6.383310321464707
+      },
+      "baixa": {
+        "n_trades": 378,
+        "directional_sharpe": -0.3285145493531634,
+        "total_sharpe": -0.787754441703272,
+        "ret_net_bps": -9.332951638912771
+      },
+      "fracao_em_alta": 0.8584972406961936
+    },
+    "long_R4": {
+      "n_total_signals": 5161,
+      "alta": {
+        "n_trades": 3054,
+        "directional_sharpe": 3.6610546267952158,
+        "total_sharpe": 2.672795944370985,
+        "ret_net_bps": 16.488979612762886
+      },
+      "baixa": {
+        "n_trades": 1447,
+        "directional_sharpe": -0.5910558845135377,
+        "total_sharpe": -0.9767220315469748,
+        "ret_net_bps": -13.982042601107032
+      },
+      "fracao_em_alta": 0.5917457857004457
+    },
+    "short_R3": {
+      "n_total_signals": 4883,
+      "alta": {
+        "n_trades": 506,
+        "directional_sharpe": 0.3038582619202992,
+        "total_sharpe": -0.23391002247653458,
+        "ret_net_bps": -2.0503080542760426
+      },
+      "baixa": {
+        "n_trades": 4104,
+        "directional_sharpe": 1.7252013114108011,
+        "total_sharpe": 0.023450881549934813,
+        "ret_net_bps": 0.07370404955408
+      },
+      "fracao_em_alta": 0.10362482080688101
+    },
+    "short_R4": {
+      "n_total_signals": 6380,
+      "alta": {
+        "n_trades": 1685,
+        "directional_sharpe": -1.922921514082052,
+        "total_sharpe": -2.297028379941857,
+        "ret_net_bps": -21.40248480760514
+      },
+      "baixa": {
+        "n_trades": 3413,
+        "directional_sharpe": 1.4244788438780702,
+        "total_sharpe": 0.7854425242065659,
+        "ret_net_bps": 6.354097499758731
+      },
+      "fracao_em_alta": 0.26410658307210033
     }
   }
 }

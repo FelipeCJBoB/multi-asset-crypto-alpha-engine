@@ -1279,16 +1279,68 @@ variante do short continuam NÃO canônicos (Faixa 1.6). A leitura acima é
 a aplicação do critério já declarado, não uma conclusão nova sobre o que
 fazer — essa decisão é do Manager.
 
-**Verificação**: 9 testes novos, `ruff`/`mypy` limpos, `banned_patterns`
-sem violação nova, suíte completa (789 rápidos + xfails esperados)
-passa.
+### Extensão — gap Alpha-menos-passivo por lado × regime (2026-08-09,
+pedido pós-síntese)
+
+Pergunta mais fina que a original: não "o Alpha bate um nulo aleatório",
+mas **"a SELEÇÃO de entrada do Alpha bate simplesmente ficar exposto o
+tempo todo, no MESMO lado, no MESMO regime?"** — `directional_sharpe`
+seletivo do Alpha MENOS Sharpe de exposição contínua (`entry_price_
+limit` bar-a-bar, marcado pelo regime de origem, os dois lados
+derivados do mesmo `bar_ret`, short = long invertido).
+
+| lado | regime | Alpha (seletivo) | passivo (contínuo) | gap |
+|---|---|---|---|---|
+| long | R1 | +0,25 | -0,01 | +0,27 |
+| long | **R2** | **-2,52** | **+1,53** | **-4,05** |
+| long | R3 | +4,35 | +0,21 | +4,14 |
+| long | R4 | +2,00 | +0,36 | +1,63 |
+| short | R1 | +1,19 | +0,01 | +1,18 |
+| short | R2 | +1,22 | -1,53 | +2,75 |
+| short | R3 | +1,73 | -0,21 | +1,94 |
+| short | R4 | +0,28 | -0,36 | +0,64 |
+
+**Achado mais preciso desta investigação inteira**: `long × R2` é o
+ÚNICO gap negativo grande da tabela — e não por falta de oportunidade
+(o passivo ali era o TERCEIRO melhor da tabela inteira, +1,53), mas
+porque a SELEÇÃO do Alpha escolhe especificamente momentos ruins dentro
+de um regime que, sem seleção nenhuma, teria sido bom. Isso é diferente
+de "ausência de edge" — é seleção ATIVAMENTE prejudicial, um alvo mais
+cirúrgico de investigação do que "R2 é ruim".
+
+**Short bate o passivo em TODOS os 4 regimes**, sem exceção — o achado
+mais consistente e robusto da rodada. Mas partido por direção de
+tendência (mesma técnica da Medição 1, agora nos 4 pares lado×regime
+R3/R4): short-R3 tem 89,6% do book em "short durante baixa" (trivial,
+dir_sharpe +1,73), só 10,4% em "short durante alta" (contrário, fraco,
++0,30, n=506); short-R4 tem 73,6% em "durante baixa" (+1,42), 26,4% em
+"durante alta" (**-1,92**, negativo). Long-R4 é menos concentrado que
+long-R3 (59%/41% em vez de 86%/14%), mas a fatia contrária (compra
+durante baixa) continua negativa (-0,59).
+
+**Leitura, não conclusão**: o padrão de concentração é PARECIDO nos dois
+lados (a maior parte do book está no lado "trivial"/a-favor-da-tendência
+em ambos) — então o gap positivo do short não é reversão pura tanto
+quanto RECONHECIMENTO de regime/tendência aplicado à decisão de lado
+(saber quando NÃO ficar exposto compra mais do que saber prever
+reversão). Isso ainda bate o passivo de forma robusta e consistente —
+não é nada, mas é um tipo de skill mais estreito (filtro adaptativo)
+do que "mean reversion" como a justificativa original das features
+(A05/B01/D06f, forçadas -1) sugeria.
+
+**Verificação**: 13 testes (4 novos: espelho short do B2, gap positivo/
+negativo/None, join do split lado×regime), `ruff`/`mypy` limpos,
+`banned_patterns` sem violação nova, suíte completa (793 rápidos +
+xfails esperados) passa.
 
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
 |---|---|---|
-| Existe edge direcional real, ou é beta + regularização? | Mais consistente com beta — R3 é 86% concentrado em "comprado na alta", B2 sem seletividade já lucra mais que o Alpha em R2, E02f é majoritariamente carry | Faixa 1.7 abaixo |
+| Existe edge direcional real, ou é beta + regularização? | Misto, não uniforme: long-R2 é seleção ATIVAMENTE pior que ficar passivo (gap -4,05, o pior de toda a tabela); short bate o passivo nos 4 regimes (gap sempre positivo), mas concentrado no lado "trivial" da tendência (reconhecimento de regime, não reversão pura) | Faixa 1.7 abaixo |
 | A confiança é consertável removendo contaminação por volatilidade? | Não pela via simples — contaminação confirmada (ρ=0,24 long, p≈0) mas resíduo continua sem ordenar retorno | Faixa 1.7 abaixo |
+| Onde a seleção do Alpha é PIOR que não selecionar nada? | Só `long × R2` — gap Alpha-menos-passivo -4,05, o único grande negativo da tabela lado×regime | Faixa 1.7 abaixo, extensão |
+| Onde a seleção do Alpha bate consistentemente ficar passivo? | Short, nos 4 regimes sem exceção (gap +0,64 a +2,75) | Faixa 1.7 abaixo, extensão |
 | O sweep assimétrico tp/sl por lado (trazido do Laplace_Quant) foi implementado? | Não — continua só nota registrada em §18.7.1, Sprint 6 | Faixa 1.7 abaixo |
 | Backtest reconciliado com fill real (37,3%) fora da janela de bookTicker? | Não — só a janela de 10,5 meses (2023-05 a 2024-03) foi reconciliada; direção do viés fora dela é desconhecida, não "sempre otimista" | Faixa 1.7 abaixo, Sprint 8 auditoria externa acima |
 | Quantos testes passam hoje? | 384 (1 skip esperado) | `pytest tests/ -q` |
