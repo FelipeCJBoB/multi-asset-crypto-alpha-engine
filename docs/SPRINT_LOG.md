@@ -1,0 +1,206 @@
+# Sprint Log — BTCUSDT Quant Engine
+
+> Registro narrativo, para humanos, do que foi construído e medido em cada sprint.
+> Complementa o `git log` (que registra o *quê* e o *porquê* técnico) e o `CLAUDE.md`
+> (que registra as *regras*). Aqui fica o *resultado* — os números que saíram de
+> cada etapa, as decisões tomadas e os achados que mudaram alguma suposição do PRD.
+>
+> Atualizado a cada sprint concluído. Não é um resumo escrito depois — é atualizado
+> na hora, com números conferidos contra o repo real antes de entrar aqui.
+
+---
+
+## Como ler este documento
+
+Cada sprint tem: o que foi construído, o que foi **medido** (o que importa — este
+projeto existe pra parar de aceitar números plausíveis sem checar), decisões
+tomadas, e a tag/commit do GitHub onde aquele estado do repo pode ser visto.
+
+Link do repositório: **[github.com/FelipeCJBoB/btcusdt-quant-engine](https://github.com/FelipeCJBoB/btcusdt-quant-engine)** (privado).
+
+---
+
+## Sprint 0 — Descoberta e limpeza (2026-08-08, antes do Sprint 1)
+
+Antes de escrever qualquer código do PRD V3.2, o repo já tinha conteúdo de um
+projeto anterior e distinto: um estudo de viabilidade sub-1h (`btc-sub1h-
+feasibility`) que **aprovou T1** (razão custo/movimento, 18,3% no candidato de
+15 minutos — é por isso que o PRD V3.2 escolheu 15m) mas deixou **T2 e T3
+bloqueados** — desde 2025-11-20 existem ordens RPI (Retail Price Improvement) na
+Binance, invisíveis à API pública, que contaminam qualquer medição de taxa de
+preenchimento e seleção adversa feita sobre dado histórico.
+
+**Decisão:** os artefatos de código daquele estudo (`src/bars/`, `src/data/`
+antigos) foram excluídos — eram específicos de um problema mais estreito, não do
+motor completo do PRD V3.2. Os dados brutos já baixados (`data/capacity/`, ~23GB)
+foram **mantidos**, pois batiam com o catálogo de fontes do próprio PRD (§1.1).
+
+**Achado que mudou o PRD:** a lacuna RPI não estava documentada em lugar nenhum do
+blueprint de 3.328 linhas. Isso virou a v3.3 do PRD (ver abaixo).
+
+---
+
+## PRD → v3.3 — incorporação do fato RPI (2026-08-08)
+
+10 edições aplicadas a `PRD_V3_2_UNIFICADO.md`, mais **11 inconsistências
+adicionais** encontradas e corrigidas de tabelas que citavam o T1 antigo de 12
+features (agora 10 — Grupo F, microestrutura, saiu por quebra de definição).
+
+**Principais mudanças:**
+- Nova fonte `F06 rpiDepth` (coleta forward, sem dump histórico possível).
+- `T1` passa de 12 para **10 features** — `F02f_spread_pctile` e
+  `F04f_book_imbalance_l1` saem por quebra de definição, não por desempenho.
+- Simulador de fila (§9.5) explicitamente dividido em pré/pós-2025-11-20 — fills
+  depois dessa data **não são simuláveis** a partir de dump público.
+- Sensibilidade de seleção adversa medida: cada 1 bp custa 0,91pp de win rate
+  exigido; margem confortável até 4,3bps; o Gate 0 rompe em 7,6bps.
+
+---
+
+## Sprints 1–3 — Infraestrutura (2026-08-08) · commit `162014a`
+
+**Sprint 1 — scaffolding:** repositório git, `uv`+`pyproject.toml` (64 pacotes),
+hierarquia de camadas verificada por `import-linter`, `config/constants.yaml` com
+proveniência obrigatória, `tools/lint/banned_patterns.py` (12 dos 32 padrões do
+CLAUDE.md automatizados), `structlog`+`orjson` com mascaramento automático de
+segredo, `audit/n_lifetime.yaml` (ledger de trials), CI.
+
+**Sprint 2 — ExchangeAdapter (`src/exchange/`):** cliente REST Binance USDⓈ-M com
+assinatura HMAC correta (percent-encode antes de assinar — inverter a ordem
+quebra com erro -1022), gerenciador de rate limit (orçamento de peso e de
+contagem de ordens independentes, fila de prioridade), filtros de instrumento
+versionados por data (`load_filters_asof`), ciclo de vida do `listenKey`
+(keepalive/backoff/watchdog). 43 testes.
+
+**Sprint 3 — Data Quality Engine (`src/data/`):** as verificações de qualidade do
+PRD §1.3, resample causal (1m→5m/15m/30m/1h/2h/1d), camada DuckDB fina sobre o
+lake. 74 testes.
+
+**Achado real:** rodado contra 60 dias de `metrics` (Open Interest), o validador
+encontrou **2 duplicatas e 1 gap genuínos** em `2026-06-12`/`2026-06-21` — dois
+arquivos que quebram a convenção de fronteira que o resto da série segue. Não é
+bug do validador. Fica registrado em `data/quality_reports/quality_report_
+metrics_v1.json` (versionado no git — é evidência de auditoria, não dado bruto).
+
+### Backfill de dados (paralelo aos Sprints 1-3)
+
+**Achado principal:** o PRD assumia a série começando em 2020-01/2020-09. Medido
+via listagem completa do S3 da Binance: **a publicação pública de dumps começa em
+~2019-12-23/31**, não antes — o contrato foi lançado em 2019-09-08, mas a Binance
+só passou a publicar dumps históricos ~3,5 meses depois. Não é falha de coleta —
+é limite real do que existe.
+
+**Resultado do backfill** (D01/D03/D04/D07/D10/D11 completos desde a origem real
+até hoje; D05 completo desde 2023-06-20, único início real; D08/D09 bookTicker
+baixado por completo mas só existe publicamente 2023-05-16→2024-03-30 — a Binance
+aparentemente descontinuou esse dump depois disso):
+
+| Fonte | Cobertura real |
+|---|---|
+| D01 aggTrades | 2019-12-31 → 2026-07-31 |
+| D03 klines 1m | 2019-12-31 → 2026-08-07 |
+| D04 metrics | 2020-09-01 → 2026-08-07 |
+| D05 BVOLIndex | 2023-06-20 → 2026-08-07 |
+| D07 funding | 2020-01 → 2026-07 |
+| D10 markPriceKlines | 2019-12-23 → 2026-08-07 |
+| D11 premiumIndexKlines | 2019-12-24 → 2026-08-07 |
+| D08/D09 bookTicker | 2023-05-16 → 2024-03-30 (janela completa, única disponível) |
+
+---
+
+## Sprint 4 — Feature Engine (2026-08-08) · commit `b549bd9`, tag `sprint-4-done`
+
+As 10 features T1 da v3.3 + `B07_efficiency_ratio_48` (insumo do Regime Engine).
+Paridade lote↔streaming: **0,0 de desvio exato** (tolerância exigida era 1e-8).
+206 testes.
+
+**Achado — inconsistência de timeframe resolvida:** as tabelas de fórmula do PRD
+(§2.2-2.6) diziam TF=30m pra quase toda feature, mas a decisão real do projeto é
+15m desde a v3.1 (§0.4). Confirmado por leitura cruzada do documento inteiro —
+era resíduo não atualizado. Todas as features implementadas a 15m.
+
+**Achado — ortogonalidade real medida** (Spearman, ~68 mil barras, 2024-08→2026-08):
+dois pares violam o limite de |ρ|≤0,70 do §2.13:
+- `A13_dist_ema48_atr` × `B01_rsi_14` = **0,947**
+- `E27f_cost_atr_ratio` × `C07_vol_pctile_expanding` = **-0,913**
+
+Resolução exige importância por permutação de modelo treinado (Sprint 8) —
+registrado, não escondido nem podado agora.
+
+**Achado — qualidade de dado:** 31 pontos isolados de `sum_open_interest == 0.0`
+no histórico (fisicamente impossível pra Open Interest) — teriam envenenado
+`E10f` com `log(0)`. Mascarados para null na fonte.
+
+---
+
+## Sprints 5 e 6 — Regime Engine + Label Engine, em paralelo (2026-08-08)
+### commits `53ef7a4` / `d023fd9` / `766036a`, tag `sprint-5-6-done`
+
+**Sprint 5 — Regime Engine (`src/regime/`):** classificador R0-R5 por quantis
+expansivos, histerese assimétrica (R5 entra imediato, sai só com 4 barras de
+confirmação), eixo econômico por tercil de `cost_atr_ratio`. 43 testes.
+
+**Achado — mapa de computabilidade dos 10 gatilhos de stress (S1-S10):** investigado
+contra o dado real, não assumido:
+
+| Computável hoje | Não computável (e por quê) |
+|---|---|
+| S1 vol extremo, S3 funding extremo, S6 gap de barra | S2 spread (Grupo F fora de T1), S4 basis (falta índice de preço, nunca baixado), S5/S8/S9 (sinais só-ao-vivo ou fonte nunca coletada), S7 liquidez (book_depth existe mas em buckets errados), S10 filtro mudou (só 1 snapshot no disco) |
+
+Cada gatilho não-computável retorna um sentinela explícito — nunca `False`
+silencioso (que pareceria "não disparou" quando na verdade é "não sei").
+
+**Distribuição real de regime** (2019-12-31→2026-08-07, 231.552 barras de 15m):
+R0=0,86% · R1=45,97% · R2=10,61% · R3=30,45% · R4=10,44% · R5=1,67%.
+**97,47% do tempo é tradeable.**
+
+**2 bugs reais encontrados e corrigidos** durante a implementação: um `Enum` com
+mixin de `str` quebrava comparação vetorizada do numpy silenciosamente (virava
+sempre `False`, sem erro); `Polars.value_counts()` não garante ordem entre duas
+chamadas separadas.
+
+**Sprint 6 — Label Engine (`src/labels/`):** triple barrier avaliado em mark price
+real (1 minuto, primeiro toque cronológico), fill model simplificado e
+explicitamente marcado como otimista (o simulador de fila de verdade é o Sprint
+9), pesos por unicidade (AFML cap. 4). 58 testes.
+
+**Achado principal — distribuição real medida sobre 6,5 anos** (462.682 labels,
+2020-01→2026-08, os dois lados), substituindo os números fabricados do PRD antigo:
+
+| Desfecho | Medido | Fabricado (PRD antigo, banido) |
+|---|---|---|
+| TP | 36,5% | 30–40% |
+| SL | **51,3%** | 35–45% |
+| TIME | 6,5% | 20–30% |
+| NOFILL | 5,7% | 10–25% |
+
+Barreiras resolvem muito mais decisivamente (menos `TIME`/`NOFILL`) e com mais
+`SL` do que a suposição antiga previa.
+
+**Achado — teto de features revisado:** `N_eff` (Σ unicidade) medido pela primeira
+vez: **32.608 (long) / 32.236 (short)** por modelo — **acima** do topo da faixa
+que o PRD especulava (3.241–20.740, §0.2 R4). O teto de features por modelo sobe
+proporcionalmente; reconciliar com a ablação do Sprint 8.
+
+---
+
+## Sprint 7 + Sprint 9 (adiantado) — em andamento
+
+CPCV com purge/embargo + os 14 testes de vazamento computáveis sem modelo
+treinado (`src/validation/`), e o simulador de fila sobre a janela real de
+`bookTicker` pré-RPI (`src/execution/fill_simulator.py`), rodando em paralelo.
+Esta seção é atualizada quando os dois fecharem.
+
+---
+
+## Índice rápido — onde encontrar cada número
+
+| Pergunta | Resposta | Onde |
+|---|---|---|
+| Quantos testes passam hoje? | 307 (1 skip esperado) | `pytest tests/ -q` |
+| Distribuição real de TP/SL/TIME/NOFILL? | 36,5/51,3/6,5/5,7% | `labels/v1/labels.parquet`, Sprint 6 acima |
+| N_eff real (teto de features)? | ~32,4 mil por modelo | Sprint 6 acima |
+| Quais gatilhos de stress funcionam? | 3 de 10 (S1,S3,S6) | `src/regime/stress.py`, Sprint 5 acima |
+| Distribuição real de regime? | R1 domina (46%), R5 raro (1,7%) | Sprint 5 acima |
+| Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
+| Correlação real entre features T1? | 2 pares violam 0,70 | Sprint 4 acima |

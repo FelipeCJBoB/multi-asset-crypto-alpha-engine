@@ -225,6 +225,8 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 **Tags de marco.** Ao fechar um Sprint ou passar um Gate: `git tag sprint-N-done` / `git tag gate-M-pass`, com `git push --tags`. Não é por commit — é âncora de navegação, "me leva pro estado do repo quando o Gate 3 passou".
 
+**`docs/SPRINT_LOG.md` — atualizar ao fechar cada sprint, antes de tagear.** É o documento pra humano lembrar/apresentar o que já foi feito: o que foi construído, e principalmente **o que foi medido** — os números reais, não os do PRD original. `README.md` também recebe um toque leve se algum número ali (status do sprint, achados em destaque) ficar desatualizado. Isso não é opcional nem cosmético — é a diferença entre "o repo tem a resposta" e "alguém precisa reconstruir de memória de conversa" na próxima sessão.
+
 **Push.** Direto para `origin/master` ao final de cada commit significativo, sem precisar de autorização a cada vez — isso está autorizado por este parágrafo. Qualquer coisa fora do fluxo normal (force-push, reset, mudar branch protegida, reescrever histórico) exige confirmação explícita, sempre, sem exceção.
 
 **Para quem não usa git no dia a dia.** Forma mais simples de acompanhar: abrir `github.com/FelipeCJBoB/btcusdt-quant-engine/commits/master` no navegador — lista cronológica, clicável, mensagens escritas pra serem lidas por humano, não só por máquina. Pode perguntar "o que mudou desde [data/sprint/versão]" a qualquer momento — vira `git log`/`git diff` por trás, sem precisar saber o comando.
