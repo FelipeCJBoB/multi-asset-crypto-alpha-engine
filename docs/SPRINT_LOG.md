@@ -236,6 +236,35 @@ a reconciliar antes do Gate 5.
 
 ---
 
+## Investigação — o fill rate de 37,3% é real ou artefato? (2026-08-08) · commit `d3bcc79`
+
+Antes de avançar pro Sprint 8, o achado do Sprint 9 (fill rate abaixo do piso de
+60% que o PRD cita) foi investigado a fundo em 5 frentes, todas sobre dado real:
+curva de tempo-até-preenchimento, timeout 15min vs 30min, estratificação por
+regime e hora UTC, sensibilidade a postar 1 tick melhor, e correlação entre
+velocidade de preenchimento e seleção adversa.
+
+**Conclusão: o número é real, não artefato do modelo simplificado.** Sobrevive
+a todos os testes — mediana de tempo-até-fill é 4 segundos (72,5% do que vai
+preencher já preencheu em 30s), dobrar o timeout pra 30min move o número de
+37,3% pra só 40,7%, a estratificação por regime mostra direção consistente com
+a teoria mas efeito pequeno (~8,5pp) e nenhum regime nem horário chega perto de
+60%.
+
+**Mas o achado mais importante foi sobre o próprio piso de comparação**: "fill
+rate mínimo 60%" (PRD §9.6) está **literalmente listado em §18.5.4 do PRD como
+número fabricado**, sem derivação, mesma categoria do `adverse_selection_bps`
+que o Sprint 9 já tinha mostrado errado por ~2,5x. Comparar uma medição real
+contra um limiar inventado é o mesmo erro de sempre, só que do lado do limiar.
+**Recomendação registrada**: derivar o fill rate realmente necessário (não
+aceitar 60% a priori) quando o Alpha existir (Sprint 8+) — não é remedição, é
+trabalho que depende do modelo.
+
+Sensibilidade testada (não adotada como novo padrão): postar 1 tick melhor
+(furar fila) só é possível em 25% dos pontos, e onde é possível, dobra o fill
+rate mas piora a seleção adversa em 71%. Registrado como pista futura, não
+mudança de desenho.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |

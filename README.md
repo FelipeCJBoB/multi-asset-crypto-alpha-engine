@@ -13,11 +13,14 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 **Sprint 9 (adiantado) de 18 concluído** — Sprints 1-7 e 9 feitos, Sprint 8
 (Alpha) é o próximo · 384 testes passando · 0 violações de lint.
 
-⚠️ **Item crítico em aberto:** fill rate maker medido em **37,3%**, abaixo do
-piso de 60% que o próprio PRD cita como o ponto em que a economia do desenho
-maker deixa de fazer sentido (§9.6). É medição preliminar (limite inferior
-pessimista, sem calibração contra fills reais ainda) — mas é a primeira vez que
-esse número existe, e a direção pede atenção antes de avançar pro Alpha.
+⚠️ **Item em aberto, já investigado a fundo:** fill rate maker medido em
+**37,3%**, abaixo do piso de 60% que o PRD cita (§9.6). Investigação de 5
+frentes (curva de tempo-até-fill, timeout 15 vs 30min, regime, hora UTC,
+sensibilidade a preço) conclui que **o número é real, não artefato do modelo**
+— mas também achou que o **próprio piso de 60% é um número fabricado sem
+derivação** (confessado em §18.5.4 do PRD, mesma categoria de outro placeholder
+que já mostramos errado). Recomendação: derivar o piso de verdade quando o
+Alpha existir, não aceitar 60% a priori. Detalhes em `docs/SPRINT_LOG.md`.
 
 | Documento | O que é |
 |---|---|
