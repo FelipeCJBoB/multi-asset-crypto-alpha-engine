@@ -1098,10 +1098,199 @@ separado) fica para o Manager decidir antes do Gate 3
 (`§16.10.3` exige `N_lifetime` "declarado e versionado", não define o
 que conta).
 
+**Pendente — próxima rodada (2026-08-09).** Discussão sobre o mecanismo
+por trás da seleção 12,8x maior em R2 (a mais escolhida contra a pior
+performance direcional, `long_R2 directional_sharpe=-2,52`) levantou
+4 medições ainda não feitas:
+
+1. `directional_sharpe`/`ret_net` de R2 por ANO — decidir se a perda é
+   estrutural (uniforme em todo ano com R2) ou de cauda (dominada por
+   um ano específico, ex. 2021, o de maior prevalência de R2 medida:
+   21,3%, contra 2,8% em 2023 — quase 8x de variação entre anos).
+2. SHAP (ou gain_by_column) CONDICIONADO por regime — não só o gain
+   global já medido (`regime_R2` dummy é só ~0,95% do gain médio; quem
+   domina são features vol-sensíveis: `E27f_cost_atr_ratio`,
+   `B01_rsi_14`, `C06_vol_ratio_12_96`, `A05_ret_vol_norm_4`) — precisa
+   confirmar se são essas mesmas features que dirigem os splits
+   especificamente dentro de barras R2.
+3. `rate_nofill` cruzado com `E27f_cost_atr_ratio` — R2 já tem a pior
+   NOFILL entre R1-R4 (16,7% vs 8,8% em R3); testar se é a interação
+   custo×regime que explica isso.
+4. Baseline B1 (entrada aleatória) estratificado por regime — nunca
+   feito (mesma lacuna de escopo do Bloco 5 acima). Decide se o padrão
+   R2-ruim/R3-bom é dirigido pela FEATURE (skill do Alpha) ou pela
+   GEOMETRIA da barreira (`tp_atr_mult=2,0 > sl_atr_mult=1,5` favorece
+   estruturalmente regimes de tendência, mesmo com entrada aleatória).
+
+**Resolvidas na Faixa 1.7, abaixo.**
+
+## Faixa 1.7 — edge ou beta+regularização? (2026-08-09)
+
+Diferente das rodadas anteriores por instrução explícita: existe pra
+produzir uma decisão, não só medir. Módulo novo
+`src/analysis/faixa1_7_edge_or_beta.py` (9 testes), resultado completo em
+`experiments/faixa1_7_edge_or_beta.json`. Critério de decisão
+**pré-registrado abaixo, antes de rodar** — a aplicação aos números vem
+depois, não embutida no JSON (sem campo `passed`/`ok`/`conclusion`).
+
+**Duas perguntas de status, resolvidas primeiro:**
+
+1. **Sweep assimétrico de `tp_atr_mult`/`sl_atr_mult` por lado (a técnica
+   trazida da comparação com Laplace_Quant, §18.7.1)** — verificado contra
+   `git log` e `src/`: **nunca implementado**, nem a varredura por lado nem
+   `sliding_window_view`. Continua exatamente o que era — uma nota
+   registrada pro Sprint 6, não uma dívida esquecida silenciosamente.
+2. **Backtest usa fill otimista do Label Engine, não o simulador de fila
+   (37,3%)** — a caracterização "nunca foi feito, sempre parece melhor do
+   que é" está PARCIALMENTE certa e precisa de nuance: a reconciliação FOI
+   feita, uma vez, dentro da janela onde há bookTicker real (2023-05 a
+   2024-03, ~10,5 meses de 6,5 anos — ver "Auditoria externa do Sprint 8"
+   acima). O resultado, medido, foi o OPOSTO do intuitivo: trocar pro gate
+   real deixou o Sharpe MENOS negativo (-9,25 → -4,27), não mais — mas
+   direção+carry ficaram NEGATIVOS nos dois gates nessa janela específica,
+   diferente do +1,60 positivo do pooled de 6,5 anos. **A reconciliação da
+   economia completa continua sem resposta** — não há bookTicker fora
+   dessa janela pra medir, só Testnet/Paper (Sprints 15-16) resolve isso
+   de verdade. Todo número desta Faixa 1.x continua sobre fill otimista;
+   a direção do viés, onde já foi medida, não é "sempre parece melhor" —
+   é desconhecida fora da janela de 10,5 meses.
+
+### Critério pré-registrado (antes de ver qualquer número abaixo)
+
+**Q1 — existe edge, ou é beta + regularização?**
+- R3 partido por direção de tendência: lucra nas duas direções (skill) vs.
+  só na direção favorável (beta).
+- B1/B2 por regime: se o baseline sem seletividade já reproduz o padrão
+  R2-ruim/R3-bom, é geometria — Alpha precisa SUPERAR essas células, não
+  só repetir o sinal.
+- IC de E02f contra carry vs. direcional: `|IC_carry| >> |IC_direcional|`
+  confirma a identidade contábil; comparável ou invertido não invalida o
+  T0 mas muda a explicação.
+
+**Q2 — a confiança é consertável?**
+- Regime one-hot ausente da matriz → dar informação, não filtrar. Presente
+  → o problema é peso/interação, não ausência.
+- Confiança residualizada (removida a componente linear de vol) ordena
+  retorno por decil (Spearman p<0,05) → consertável por essa via. Resíduo
+  continua sem ordenar → não é (só) contaminação por vol.
+
+### Resultados
+
+**Q1, medição 1 — R3 partido por direção (retorno de 48 barras, causal).**
+R3-alta: n=6.067 (85,8% do book long em R3), `directional_sharpe=+4,62`,
+`ret_net=+6,38bps`. R3-baixa: n=378 (5,6%), `directional_sharpe=-0,33`,
+`ret_net=-9,33bps`. **Critério aponta pra BETA**: o book é 86% concentrado
+onde "estar comprado numa tendência de alta" já é o resultado trivial
+esperado; a fatia pequena que aposta contra a tendência imediata (a
+prova de skill real) é neutra-a-negativa, não positiva.
+
+**Q1, medição 2 — B1 (qualquer entrada) e B2 (exposição contínua) por
+regime.** B1 (ambos os lados, todo trade não-NOFILL da regime): TODOS os
+4 regimes negativos, mas R1/R3 são os PIORES (-20,1/-15,8), R2/R4 "menos
+ruins" (-5,6/-5,8) — **não reproduz** o padrão do Alpha (que tem R3 como
+melhor regime). B2 (sempre comprado, retorno bar-a-bar marcado pelo
+regime de ORIGEM): R2 é o MELHOR regime pra ficar simplesmente comprado
+(+1,53), R1 quase zero (-0,01), R3/R4 modestos (+0,21/+0,36) — **inverte**
+o padrão do Alpha. Isso é mais rico que o critério previa: não é "a
+geometria reproduz o padrão" nem "não reproduz" — é que ficar comprado o
+tempo todo em R2 teria sido OK, mas as entradas SELETIVAS do Alpha em R2
+perdem feio. Isso aponta pra um problema de TIMING de entrada dentro de
+R2, não ausência de oportunidade ali. B1 mal-comparável (mistura os dois
+lados numa regime onde direção importa, então qualquer aposta sem direção
+apanha) — registrado, não usado como decisivo sozinho.
+
+**Q1, medição 3 — IC de E02f contra `PnL_carry` vs. `PnL_direcional`,
+separados.** Long: `IC_carry=-0,354` vs. `IC_direcional=+0,034` (razão
+10,5x). Short: `IC_carry=+0,175` vs. `IC_direcional=-0,005` (razão 36,3x).
+**Critério aponta pra identidade contábil CONFIRMADA** — a correlação de
+E02f com o resultado é quase inteiramente carry, direcional é
+essencialmente ruído. A anomalia da Faixa 1.6 (efeito do T0 aparecendo em
+`directional_sharpe`) fica mais bem explicada por um efeito de SEGUNDA
+ORDEM (a restrição muda quais barras são selecionadas, isso desloca
+`directional_sharpe` indiretamente) do que por E02f carregar informação
+direcional própria — reduz a prioridade do controle de sinal aleatório
+(ainda não rodado, mas menos urgente à luz disso).
+
+**Q2, medição 4 — regime one-hot na matriz.** Confirmado presente
+(`DESIGN_COLUMNS = T1_FEATURE_IDS + REGIME_DUMMY_COLUMNS`,
+`src/models/alpha.py`). **Critério aponta pra**: o problema não é
+informação ausente — é peso baixo (gain médio ~0,95%) relativo às 10
+features contínuas.
+
+**Q2, medição 5 — confiança ortogonalizada contra volatilidade
+(`C07_vol_pctile_expanding`).** Contaminação CONFIRMADA e forte:
+Spearman(confiança, vol)=+0,239 long / +0,101 short, p≈0 nos dois.
+Decil da confiança ORIGINAL: ρ=0,139 (p=0,70 long), ρ=-0,20 (p=0,58
+short) — bate com o achado da Faixa 1 (não ordena). Decil da confiança
+RESIDUALIZADA (removida a componente linear de vol): ρ=0,164 (p=0,65
+long), ρ=+0,19 (p=0,60 short) — **continua sem ordenar, praticamente sem
+mudança no p-valor**. **Critério aponta pra NÃO consertável por essa
+via** — a contaminação por vol é real e mensurável, mas removê-la
+(residualização linear simples) não revela um sinal de confiança
+escondido. Ressalva: é diagnóstico global de uma variável, não uma
+residualização robusta/não-linear por fold — não fecha a porta de
+vez, só refuta a hipótese mais simples.
+
+**As 3 medições pendentes do turno anterior, resolvidas:**
+- **R2 por ano**: NÃO é viés estrutural uniforme nem puro risco de cauda
+  de um ano só — varia bastante: 2020/2021 fortemente negativos (`directional_
+  sharpe` -3,38/-4,44), 2022-2025 majoritariamente positivos (pico +7,36
+  em 2025), 2026 parcial volta fortemente negativo (-8,79). Os piores
+  anos (2020, 2021) coincidem com os anos de MAIOR prevalência de R2
+  (14,9%/21,3%) — sugestivo de que R2 piora quando é mais dominante, não
+  só "acontece mal às vezes".
+- **Distribuição de feature R2 vs. tendência (proxy de SHAP-por-regime,
+  não SHAP real — Boosters não persistidos, exigiria retreino)**: a
+  hipótese anterior ("features vol-sensíveis ficam mais extremas em R2")
+  **NÃO se confirma** — nas 4 features de maior gain, TREND (R3/R4) tem
+  desvio-padrão e p90 iguais ou MAIORES que R2, não menores. Corrigindo
+  a própria especulação de duas rodadas atrás: o mecanismo de por que o
+  modelo dispara mais em R2 não está explicado por extremos univariados
+  de feature — pode ser a dummy de regime (baixo peso, mas não-zero),
+  interação entre features, ou limiar de split específico, não
+  investigado além disso aqui.
+- **NOFILL × tercil de custo dentro de R2**: confirma a hipótese do
+  usuário — `rate_nofill` cai monotonicamente com o custo
+  (LOW_COST=19,9%, MID_COST=10,9%, HIGH_COST=4,1%) — o tercil de MENOR
+  custo relativo ao ATR é onde o preenchimento falha mais dentro de R2.
+
+**Medição 6 (MFE por regime) — deliberadamente NÃO rodada.** Exige
+re-caminhar `mark_1m` por trade (computação nova, não reuso de coluna já
+existente como as outras 8). Desenho recomendado se for feita: estender
+`build_labels` pra persistir `mfe_atr_units` no mesmo laço que já varre
+`path_high`/`path_low`, não recomputar à parte.
+
+### Síntese — aplicando o critério pré-registrado
+
+**Q1: mais consistente com beta + regularização do que com edge
+direcional limpo.** R3 é 86% concentrado em "comprado durante alta", a
+fatia contrária é neutra; B2 (sem seletividade nenhuma) já lucra mais em
+R2 do que o Alpha SELETIVO no mesmo regime, invertendo a expectativa; e
+E02f — a peça do T0 mais citada como "achado positivo real" — é
+majoritariamente carry, não direção. Nenhuma medição isolada fecha o
+caso, mas as três apontam na mesma direção.
+
+**Q2: não consertável pela via mais simples (remover vol linear).** A
+contaminação existe e é forte, mas removê-la não recupera ordenação.
+
+**Nenhuma decisão de arquitetura foi tomada a partir disso** — `monotone_
+constraints` intocado, nenhum filtro de regime implementado, T0 e a
+variante do short continuam NÃO canônicos (Faixa 1.6). A leitura acima é
+a aplicação do critério já declarado, não uma conclusão nova sobre o que
+fazer — essa decisão é do Manager.
+
+**Verificação**: 9 testes novos, `ruff`/`mypy` limpos, `banned_patterns`
+sem violação nova, suíte completa (789 rápidos + xfails esperados)
+passa.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
 |---|---|---|
+| Existe edge direcional real, ou é beta + regularização? | Mais consistente com beta — R3 é 86% concentrado em "comprado na alta", B2 sem seletividade já lucra mais que o Alpha em R2, E02f é majoritariamente carry | Faixa 1.7 abaixo |
+| A confiança é consertável removendo contaminação por volatilidade? | Não pela via simples — contaminação confirmada (ρ=0,24 long, p≈0) mas resíduo continua sem ordenar retorno | Faixa 1.7 abaixo |
+| O sweep assimétrico tp/sl por lado (trazido do Laplace_Quant) foi implementado? | Não — continua só nota registrada em §18.7.1, Sprint 6 | Faixa 1.7 abaixo |
+| Backtest reconciliado com fill real (37,3%) fora da janela de bookTicker? | Não — só a janela de 10,5 meses (2023-05 a 2024-03) foi reconciliada; direção do viés fora dela é desconhecida, não "sempre otimista" | Faixa 1.7 abaixo, Sprint 8 auditoria externa acima |
 | Quantos testes passam hoje? | 384 (1 skip esperado) | `pytest tests/ -q` |
 | Distribuição real de TP/SL/TIME/NOFILL? | 36,5/51,3/6,5/5,7% | `labels/v1/labels.parquet`, Sprint 6 acima |
 | N_eff real (teto de features)? | ~32,4 mil por modelo | Sprint 6 acima |
