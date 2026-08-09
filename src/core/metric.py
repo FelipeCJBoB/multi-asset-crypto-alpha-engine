@@ -248,3 +248,47 @@ def safe_ratio(
         valid=num.valid and den.valid,
         invalid_reason=num.invalid_reason or den.invalid_reason,
     )
+
+
+def not_computable(unit: Unit, n_semantics: str, source: str, reason: str) -> Metric:
+    """`Metric` para a categoria "nunca foi medido" — mesmo formato que
+    `safe_ratio` já produz para "denominador inválido" (`value=nan`,
+    `valid=False`, `invalid_reason=reason`), mas com nome próprio para o
+    caso em que a POPULAÇÃO em si nunca existiu para medir: feature
+    indisponível, sensor sem fonte de dado ao vivo, ou uma fatia do dado
+    que nunca teve amostra válida (ex.: regime `R0` em
+    `tests/unit/test_models_dataset.py` — 100% warmup, nenhuma barra chega
+    a ter as 10 features T1 não-nulas, então "contagem de trades em R0" é
+    NOT_COMPUTABLE, não `0` medido). Mesmo princípio do sentinela tri-
+    valorado já usado em `TriggerState.NOT_COMPUTABLE`
+    (`src.regime.stress`, `src.risk.kill_switch`) e
+    `ControlOutcome.NOT_COMPUTABLE` (`src.risk.limits`): "não sei" precisa
+    ser um estado explícito no tipo, nunca um `False`/`0.0` silencioso
+    quando o dado não existe.
+
+    `n=0` aqui é consequência de "população nunca existiu", não um
+    parâmetro livre — este factory não aceita `n` porque não há amostra
+    nenhuma para contar. **A distinção que separa este caso de "zero
+    medido de fato" NÃO é `n` (um `Metric(value=0.0, n=0, valid=True,
+    ...)` também é uma construção permitida pelo dataclass, embora
+    incomum) — é `valid`.** `not_computable(...)` sempre devolve
+    `valid=False`; um caller que quer registrar "medi e deu exatamente
+    zero" continua construindo `Metric(...)` diretamente com `valid=True`,
+    nunca por este factory.
+
+    `__add__`/`__sub__` (`Metric._combine`) já propagam `valid=False` de
+    qualquer operando inválido para o resultado — um agregador que soma
+    `Metric`s não trata `not_computable` como `0.0` silencioso: o `value`
+    do resultado também vira `nan` (`nan + x == nan`), e `valid=False`
+    fica visível em qualquer checagem posterior. Ver
+    `test_not_computable_dominante_em_soma_nao_vira_zero_silencioso` em
+    `tests/unit/test_core_metric.py`."""
+    return Metric(
+        value=float("nan"),
+        unit=unit,
+        n=0,
+        n_semantics=n_semantics,
+        source=source,
+        valid=False,
+        invalid_reason=reason,
+    )

@@ -16,7 +16,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from src.core.metric import Metric, Unit, safe_ratio
+from src.core.metric import Metric, Unit, not_computable, safe_ratio
 
 # ============================================================================
 # Estratégias
@@ -295,3 +295,68 @@ def test_metric_mul_por_metric_levanta_typeerror() -> None:
         pass
     else:
         raise AssertionError("esperava TypeError ao multiplicar Metric por Metric")
+
+
+# ============================================================================
+# not_computable — categoria própria de "nunca foi medido", distinta de
+# "medido e deu zero" (mesmo princípio de TriggerState.NOT_COMPUTABLE em
+# src.regime.stress/src.risk.kill_switch e ControlOutcome.NOT_COMPUTABLE em
+# src.risk.limits — ver regime R0, tests/unit/test_models_dataset.py).
+# ============================================================================
+
+
+def test_not_computable_produz_metric_invalido_com_value_nan() -> None:
+    m = not_computable(
+        Unit.COUNT,
+        n_semantics="trades",
+        source="src.models.dataset.build_modeling_frame",
+        reason="regime R0 e 100% warmup -- nenhuma barra tem as 10 features T1 nao-nulas",
+    )
+    assert math.isnan(m.value)
+    assert m.valid is False
+    assert m.n == 0
+    assert m.unit == Unit.COUNT
+    assert m.n_semantics == "trades"
+    assert m.invalid_reason is not None and "R0" in m.invalid_reason
+
+
+def test_not_computable_e_distinguivel_de_zero_medido_pelos_campos() -> None:
+    """`n=0` sozinho NÃO distingue os dois casos (um `Metric(value=0.0,
+    n=0, valid=True, ...)` é permitido, ainda que incomum) — `valid` é o
+    campo que separa "nunca existiu população" de "medi e deu zero"."""
+    zero_medido = Metric(
+        value=0.0, unit=Unit.COUNT, n=30_623, n_semantics="trades", source="labels/v1", valid=True
+    )
+    nunca_medido = not_computable(
+        Unit.COUNT, n_semantics="trades", source="labels/v1", reason="populacao vazia"
+    )
+    assert zero_medido.valid is True
+    assert nunca_medido.valid is False
+    assert zero_medido.value == 0.0
+    assert math.isnan(nunca_medido.value)
+    assert zero_medido != nunca_medido
+
+
+def test_not_computable_dominante_em_soma_nao_vira_zero_silencioso() -> None:
+    """Achado nº1 da auditoria (docstring do módulo) era exatamente isto,
+    ao contrário: um número que "passa" um gate por acidente. Aqui a
+    checagem é que `not_computable` somado a um `Metric` válido NÃO produz
+    um resultado que pareça um `Metric` válido comum — `__add__` já
+    propaga `valid=False` (`Metric._combine`) e o `value` também vira
+    `nan` (`nan + x == nan`), então nenhum agregador que só olhe `.value`
+    é enganado a tratar "nunca medido" como "contribuiu com zero"."""
+    componente_medido = _m(0.05, unit=Unit.COUNT, n=100)
+    componente_nao_computavel = not_computable(
+        Unit.COUNT, n_semantics="trades", source="s", reason="sem fonte de dado"
+    )
+    soma = componente_medido + componente_nao_computavel
+    assert soma.valid is False
+    assert math.isnan(soma.value)  # NÃO é 0.05 -- não_computable não é tratado como 0.0
+    assert soma.invalid_reason is not None
+
+
+def test_not_computable_unit_e_n_semantics_repassados_ao_metric() -> None:
+    for unit in (Unit.BPS_PER_TRADE, Unit.SHARPE_ANNUALIZED, Unit.PROBABILITY):
+        m = not_computable(unit, n_semantics="folds", source="s", reason="r")
+        assert m.unit == unit
+        assert m.n_semantics == "folds"
