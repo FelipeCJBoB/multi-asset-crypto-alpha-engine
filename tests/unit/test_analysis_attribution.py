@@ -1,9 +1,9 @@
 """Testes de `src/analysis/attribution.py` — `ic_by_regime`/`gain_by_side`/
-`feature_agreement`. Módulo PÓS-HOC (ver docstring do módulo): lê
-`ret_net`/`barrier_hit` REALIZADOS e diagnóstico já persistido, nunca
-insumo de treino.
+`feature_agreement`/`confidence_deciles_by_side`. Módulo PÓS-HOC (ver
+docstring do módulo): lê `ret_net`/`barrier_hit` REALIZADOS e diagnóstico
+já persistido, nunca insumo de treino.
 
-Três blocos, mesmo padrão do resto do repo (`test_models_monotonic.py`,
+Quatro blocos, mesmo padrão do resto do repo (`test_models_monotonic.py`,
 `test_models_pipeline.py`):
 
 1. `ic_by_regime` — fixture sintética com correlação PERFEITA e sinal
@@ -17,7 +17,14 @@ Três blocos, mesmo padrão do resto do repo (`test_models_monotonic.py`,
    conferidos à mão.
 3. `feature_agreement` — rankings sintéticos com correlação de rank
    conhecida.
-4. Integração real — `skip` a menos que
+4. `confidence_deciles_by_side` — fixtures com rank/confidence/t0
+   alinhados por construção, t-stat calculável à mão (par de bps
+   `{a, a+2}` sempre dá `t_stat = a+1`, ver cabeçalho da seção), mais
+   casos de decil vazio (menos trades que decis), `n=1` (`std=0`,
+   `t_stat=nan`), desempate por `t0` quando `confidence` empata, e os
+   mesmos 3 filtros de `ic_by_regime` (`is_oof=False`/lado errado/
+   `NOFILL`).
+5. Integração real — `skip` a menos que
    `predictions/alpha/{model_id}/predictions.parquet`,
    `labels/v1/labels.parquet` e `models/{model_id}/diagnostics/` já
    existam (mesmo padrão skip de `test_models_alpha.py`/
@@ -482,6 +489,246 @@ def test_feature_agreement_amostra_insuficiente_marca_invalido() -> None:
 
 
 # ============================================================================
+# confidence_deciles_by_side — fixtures com rank/confidence/t0 alinhados por
+# construção (rank == ordem de confidence == ordem de t0 == ordem da lista de
+# entrada), t-stat calculável à mão: par de bps {a, a+2} sempre dá
+# std amostral = sqrt(2), SE = std/sqrt(2) = 1.0, logo t_stat = mean = a+1.
+# ============================================================================
+
+
+def _confidence_predictions_df(rows: list[dict[str, object]]) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "t0": pl.Series([r["t0"] for r in rows], dtype=_T0_DTYPE_MS),
+            "side_hat": pl.Series([r["side_hat"] for r in rows], dtype=pl.Int8),
+            "is_oof": pl.Series([r["is_oof"] for r in rows], dtype=pl.Boolean),
+            "confidence": pl.Series([r["confidence"] for r in rows], dtype=pl.Float64),
+        }
+    )
+
+
+def _decile_fixture_side(
+    *, n: int, side_hat: int, bps_values: list[float], t0_offset_days: int = 0
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """`predictions`/`labels` de UM lado, `n` trades. `confidence` e `t0`
+    crescem estritamente com a posição na lista (`i`) — rank de confiança
+    == índice `i` == posição em `bps_values` -- então o decil de cada linha
+    é conhecido a priori e `ret_net = bps_values[i] / 10_000` dá controle
+    direto sobre `mean_ret_net_bps`/`std_ret_net_bps`/`t_stat` de cada
+    decil (ver cabeçalho da seção)."""
+    assert len(bps_values) == n
+    t0s = _t0s(n, offset_days=t0_offset_days)
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": side_hat, "is_oof": True, "confidence": float(i)}
+        for i in range(n)
+    ]
+    label_rows = [
+        {
+            "t0": t0s[i],
+            "side": side_hat,
+            "barrier_hit": "TP",
+            "ret_net": bps_values[i] / 10_000.0,
+        }
+        for i in range(n)
+    ]
+    return _confidence_predictions_df(pred_rows), _labels_df(label_rows)
+
+
+def test_confidence_deciles_by_side_media_e_tstat_conferidos_a_mao_long() -> None:
+    """20 trades long, 2 por decil. Decil k tem bps = {2k-1, 2k+1} ->
+    mean=2k, std=sqrt(2), t_stat=2k (ver derivação no cabeçalho da seção).
+    Decil 1: mean=2, t=2.0. Decil 10: mean=20, t=20.0 — monotônico por
+    construção, serve também de fixture "sinal ordena por confiança"."""
+    bps_values: list[float] = []
+    for k in range(1, 11):
+        bps_values.extend([2.0 * k - 1.0, 2.0 * k + 1.0])
+    predictions, labels = _decile_fixture_side(n=20, side_hat=1, bps_values=bps_values)
+
+    out = attr.confidence_deciles_by_side(predictions, labels)
+    assert out.height == 10
+    assert set(out["side"].unique().to_list()) == {"long"}
+    assert set(out["decile"].to_list()) == set(range(1, 11))
+
+    d1 = out.filter(pl.col("decile") == 1).row(0, named=True)
+    assert d1["n"] == 2
+    assert d1["mean_ret_net_bps_value"] == pytest.approx(2.0)
+    assert d1["std_ret_net_bps"] == pytest.approx(math.sqrt(2))
+    assert d1["t_stat"] == pytest.approx(2.0)
+    assert d1["mean_ret_net_bps_valid"] is True
+    assert d1["mean_ret_net_bps_unit"] == "bps_per_trade"
+    assert d1["mean_ret_net_bps_n"] == 2
+    assert d1["mean_ret_net_bps_n_semantics"] == "trades"
+    assert d1["mean_ret_net_bps_invalid_reason"] is None
+
+    d10 = out.filter(pl.col("decile") == 10).row(0, named=True)
+    assert d10["n"] == 2
+    assert d10["mean_ret_net_bps_value"] == pytest.approx(20.0)
+    assert d10["std_ret_net_bps"] == pytest.approx(math.sqrt(2))
+    assert d10["t_stat"] == pytest.approx(20.0)
+
+    means = out.sort("decile")["mean_ret_net_bps_value"].to_list()
+    assert means == sorted(means)
+    assert means[0] < means[-1]
+
+
+def test_confidence_deciles_by_side_std_zero_e_tstat_nan_quando_n_igual_1() -> None:
+    """10 trades short, 1 por decil (`n_deciles` default = 10) — `n=1` por
+    decil força `std_ret_net_bps=0.0` (mesma convenção de `gain_by_side`) e
+    `t_stat=nan` (SE indefinido, não `ZeroDivisionError`/`inf`)."""
+    bps_values = [float(i + 1) for i in range(10)]
+    predictions, labels = _decile_fixture_side(n=10, side_hat=-1, bps_values=bps_values)
+
+    out = attr.confidence_deciles_by_side(predictions, labels)
+    assert out.height == 10
+    assert set(out["side"].unique().to_list()) == {"short"}
+
+    for decile in range(1, 11):
+        row = out.filter(pl.col("decile") == decile).row(0, named=True)
+        assert row["n"] == 1
+        assert row["std_ret_net_bps"] == 0.0
+        assert math.isnan(row["t_stat"])
+        assert row["mean_ret_net_bps_value"] == pytest.approx(float(decile))
+        assert row["mean_ret_net_bps_valid"] is True  # média de 1 ponto ainda é média válida
+
+
+def test_confidence_deciles_by_side_decil_vazio_quando_menos_trades_que_deciles() -> None:
+    """3 trades, `n_deciles` default = 10 -> só 3 dos 10 índices de decil
+    recebem alguma linha (rank*10//3: r0->decil1, r1->decil4, r2->decil7).
+    Os outros 7 saem com `n=0`, `mean_ret_net_bps_valid=False`
+    (`not_computable`) e `t_stat=nan` — não são omitidos da tabela."""
+    bps_values = [5.0, 15.0, 25.0]
+    predictions, labels = _decile_fixture_side(n=3, side_hat=1, bps_values=bps_values)
+
+    out = attr.confidence_deciles_by_side(predictions, labels)
+    assert out.height == 10
+    assert out["n"].sum() == 3
+
+    empty = out.filter(pl.col("n") == 0)
+    assert empty.height == 7
+    assert set(empty["mean_ret_net_bps_valid"].to_list()) == {False}
+    assert all(math.isnan(v) for v in empty["t_stat"].to_list())
+    assert all(math.isnan(v) for v in empty["mean_ret_net_bps_value"].to_list())
+    assert all(math.isnan(v) for v in empty["confidence_min"].to_list())
+    assert all(r is not None for r in empty["mean_ret_net_bps_invalid_reason"].to_list())
+
+    nonempty = out.filter(pl.col("n") > 0)
+    assert nonempty.height == 3
+    assert set(nonempty["mean_ret_net_bps_valid"].to_list()) == {True}
+    assert sorted(nonempty["decile"].to_list()) == [1, 4, 7]
+
+
+def test_confidence_deciles_by_side_desempate_por_t0_quando_confidence_empata() -> None:
+    """4 trades com `confidence` EXATAMENTE igual — se o desempate não
+    fosse determinístico por `t0`, a atribuição de decil dependeria da
+    ordem de chegada das linhas no frame de entrada. `bps` cresce com
+    `t0`: com desempate por `t0`, decil 1 (n_deciles=2) pega os 2 `t0`
+    mais antigos (bps mais baixo)."""
+    t0s = _t0s(4)
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": 1, "is_oof": True, "confidence": 0.5} for i in range(4)
+    ]
+    bps = [1.0, 3.0, 5.0, 7.0]
+    label_rows = [
+        {"t0": t0s[i], "side": 1, "barrier_hit": "TP", "ret_net": bps[i] / 10_000.0}
+        for i in range(4)
+    ]
+    predictions = _confidence_predictions_df(pred_rows)
+    labels = _labels_df(label_rows)
+
+    out = attr.confidence_deciles_by_side(predictions, labels, n_deciles=2)
+    assert out.height == 2
+    d1 = out.filter(pl.col("decile") == 1).row(0, named=True)
+    d2 = out.filter(pl.col("decile") == 2).row(0, named=True)
+    assert d1["mean_ret_net_bps_value"] == pytest.approx(2.0)  # (1+3)/2
+    assert d2["mean_ret_net_bps_value"] == pytest.approx(6.0)  # (5+7)/2
+
+
+def test_confidence_deciles_by_side_filtros_excluem_is_oof_false_lado_errado_e_nofill() -> None:
+    """Mesmo espírito de `test_ic_by_regime_filtros_excluem_is_oof_false_
+    side0_e_nofill`: 3 linhas "armadilha" (uma por filtro) que, se
+    entrassem no cômputo do lado `long`, mudariam `n`/`mean_ret_net_bps`.
+    A terceira armadilha (`side_hat=-1`) não é descartada por um filtro —
+    é um trade `short` legítimo, e serve para confirmar que ele aparece
+    SÓ do lado `short`, nunca contaminando `long`."""
+    predictions, labels = _decile_fixture_side(n=4, side_hat=1, bps_values=[1.0, 3.0, 5.0, 7.0])
+
+    extra_oof_false_t0 = _BASE + timedelta(days=500)
+    extra_short_t0 = _BASE + timedelta(days=501)
+    extra_nofill_t0 = _BASE + timedelta(days=502)
+
+    trap_preds = pl.DataFrame(
+        {
+            "t0": pl.Series(
+                [extra_oof_false_t0, extra_short_t0, extra_nofill_t0], dtype=_T0_DTYPE_MS
+            ),
+            "side_hat": pl.Series([1, -1, 1], dtype=pl.Int8),
+            "is_oof": pl.Series([False, True, True], dtype=pl.Boolean),
+            "confidence": pl.Series([0.99, 0.99, 0.99], dtype=pl.Float64),
+        }
+    )
+    trap_labels = pl.DataFrame(
+        {
+            "t0": pl.Series(
+                [extra_oof_false_t0, extra_short_t0, extra_nofill_t0], dtype=_T0_DTYPE_MS
+            ),
+            "side": pl.Series([1, -1, 1], dtype=pl.Int8),
+            "barrier_hit": pl.Series(["TP", "TP", "NOFILL"], dtype=pl.Utf8),
+            "ret_net": pl.Series([9.0, 9.0, 9.0], dtype=pl.Float64) / 10_000.0,
+        }
+    )
+    predictions = pl.concat([predictions, trap_preds], how="vertical")
+    labels = pl.concat([labels, trap_labels], how="vertical")
+
+    out = attr.confidence_deciles_by_side(predictions, labels, n_deciles=2)
+
+    long_out = out.filter(pl.col("side") == "long")
+    assert long_out["n"].sum() == 4  # não 5, 6 ou 7 — as 2 armadilhas de long foram excluídas
+
+    short_out = out.filter(pl.col("side") == "short")
+    assert short_out.height == 2  # os 2 índices de decil aparecem mesmo com só 1 trade
+    assert short_out["n"].sum() == 1  # só o trade side_hat=-1 legítimo
+
+
+def test_confidence_deciles_by_side_coluna_ausente_em_predictions_levanta_valueerror() -> None:
+    predictions, labels = _decile_fixture_side(n=2, side_hat=1, bps_values=[1.0, 2.0])
+    with pytest.raises(ValueError, match="predictions"):
+        attr.confidence_deciles_by_side(predictions.drop("confidence"), labels)
+
+
+def test_confidence_deciles_by_side_coluna_ausente_em_labels_levanta_valueerror() -> None:
+    predictions, labels = _decile_fixture_side(n=2, side_hat=1, bps_values=[1.0, 2.0])
+    with pytest.raises(ValueError, match="labels"):
+        attr.confidence_deciles_by_side(predictions, labels.drop("ret_net"))
+
+
+def test_confidence_deciles_by_side_n_deciles_invalido_levanta_valueerror() -> None:
+    predictions, labels = _decile_fixture_side(n=2, side_hat=1, bps_values=[1.0, 2.0])
+    with pytest.raises(ValueError, match="n_deciles"):
+        attr.confidence_deciles_by_side(predictions, labels, n_deciles=0)
+
+
+def test_confidence_deciles_by_side_nenhum_trade_retorna_frame_vazio_com_schema() -> None:
+    predictions, labels = _decile_fixture_side(n=2, side_hat=1, bps_values=[1.0, 2.0])
+    out = attr.confidence_deciles_by_side(
+        predictions.filter(pl.lit(False)), labels.filter(pl.lit(False))
+    )
+    assert out.height == 0
+    assert out.schema == attr._DECILE_OUTPUT_SCHEMA
+
+
+def test_confidence_deciles_by_side_n_deciles_customizado() -> None:
+    """`n_deciles` não é hardcoded em 10 — 8 trades, 4 decis de 2."""
+    bps_values = [1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0]
+    predictions, labels = _decile_fixture_side(n=8, side_hat=1, bps_values=bps_values)
+    out = attr.confidence_deciles_by_side(predictions, labels, n_deciles=4)
+    assert out.height == 4
+    d1 = out.filter(pl.col("decile") == 1).row(0, named=True)
+    d4 = out.filter(pl.col("decile") == 4).row(0, named=True)
+    assert d1["mean_ret_net_bps_value"] == pytest.approx(2.0)  # (1+3)/2
+    assert d4["mean_ret_net_bps_value"] == pytest.approx(14.0)  # (13+15)/2
+
+
+# ============================================================================
 # Integração real — skip se predictions/labels/diagnostics ainda não existem
 # ============================================================================
 
@@ -544,3 +791,35 @@ def test_integracao_real_ic_by_regime_e_gain_by_side_e_feature_agreement() -> No
     assert agreement.n == len(T1_FEATURE_IDS)
     if agreement.valid:
         assert -1.0 <= agreement.value <= 1.0
+
+
+def test_integracao_real_confidence_deciles_by_side() -> None:
+    from src.models._paths import PREDICTIONS_OUTPUT_DIR
+    from src.models.pipeline import MODEL_ID_CAMADA1
+    from src.validation._paths import LABELS_OUTPUT_DIR
+
+    model_id = MODEL_ID_CAMADA1
+    _skip_if_real_artifacts_missing(model_id)
+
+    predictions = pl.read_parquet(
+        PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet"
+    )
+    labels = pl.read_parquet(LABELS_OUTPUT_DIR / "v1" / "labels.parquet")
+
+    out = attr.confidence_deciles_by_side(predictions, labels)
+    assert out.schema == attr._DECILE_OUTPUT_SCHEMA
+    assert out.height == 20  # 10 decis x 2 lados — dado real tem >> 10 trades por lado
+    assert set(out["side"].unique().to_list()) == {"long", "short"}
+    assert set(out["decile"].unique().to_list()) == set(range(1, 11))
+    assert (out["n"] > 0).all()
+    assert out.filter(pl.col("mean_ret_net_bps_valid")).height == out.height
+
+    # ranking estrito: dentro do mesmo lado, o piso de confiança do decil
+    # k+1 nunca é menor que o teto de confiança do decil k (consequência
+    # direta do bucketing por rank de `_deciles_for_side`).
+    for side in ("long", "short"):
+        side_df = out.filter(pl.col("side") == side).sort("decile")
+        conf_min = side_df["confidence_min"].to_list()
+        conf_max = side_df["confidence_max"].to_list()
+        for i in range(1, len(side_df)):
+            assert conf_min[i] >= conf_max[i - 1]

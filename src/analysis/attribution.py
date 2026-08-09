@@ -1,6 +1,7 @@
 """Atribuição de importância de feature — IC de Spearman por regime
-(`ic_by_regime`) e gain do XGBoost por lado (`gain_by_side`), mais uma
-métrica de concordância entre os dois rankings (`feature_agreement`).
+(`ic_by_regime`) e gain do XGBoost por lado (`gain_by_side`), uma métrica
+de concordância entre os dois rankings (`feature_agreement`), e monotonia
+de retorno por decil de confiança calibrada (`confidence_deciles_by_side`).
 
 **PÓS-HOC, EXPLICATIVO, NUNCA INSUMO DE TREINO OU SELEÇÃO DE FEATURE.**
 Este módulo lê resultado REALIZADO (`ret_net`, `barrier_hit` — o que
@@ -39,7 +40,23 @@ reproduz esse cálculo de forma testável. `gain_by_side` agrega o
 `gain_by_column`/`concentration_shares` já persistido por
 `src.models.pipeline.write_fold_diagnostics_atomic` (Fase A) — dado real
 em disco, nenhum retreino. `feature_agreement` quantifica o quanto os dois
-rankings (gain vs IC) concordam."""
+rankings (gain vs IC) concordam.
+
+**`confidence_deciles_by_side` responde uma pergunta diferente das três
+acima.** Não é "a feature carrega informação" (`ic_by_regime`) nem "o
+booster usou a feature" (`gain_by_side`) — é "a PROBABILIDADE CALIBRADA
+final do Alpha (`p_long`/`p_short`/`confidence`) ordena os trades por
+retorno realizado, separado por lado". Isto testa monotonia da calibração,
+não o sinal médio (que já é medido em outro lugar, ex.
+`src.backtest.fill_reconciliation`): um Alpha com sinal médio positivo mas
+SEM monotonia por confiança não teria o que uma Camada 2+ (Meta Model,
+§6.8, hoje fora da V1) pudesse explorar — a informação de ranking já
+estaria saturada na Camada 1. Reusa o MESMO padrão de junção de
+`ic_by_regime` (`is_oof=True`, `side_hat` do lado em questão, join com
+`labels` por `(t0, side)`, descarta `barrier_hit == "NOFILL"`), mas não
+compartilha código com ela (nova junção dedicada por lado, ver
+`_deciles_for_side`) — mesmo raciocínio dos parágrafos acima sobre não
+amarrar lógica de análise a um único caminho de código."""
 
 from __future__ import annotations
 
@@ -54,7 +71,7 @@ import structlog
 from numpy.typing import NDArray
 from scipy.stats import spearmanr
 
-from src.core.metric import Metric, Unit
+from src.core.metric import Metric, Unit, not_computable
 
 logger = structlog.get_logger(__name__)
 
@@ -75,6 +92,25 @@ _BARRIER_HIT_COL = "barrier_hit"
 _NOFILL = "NOFILL"
 _N_SEMANTICS_TRADES = "trades"
 _N_SEMANTICS_FEATURES = "features"
+
+_CONFIDENCE_COL = "confidence"
+# `side_hat`/`side` (`Int8`, {-1, 0, 1}) -> rótulo de lado usado na saída de
+# `confidence_deciles_by_side` — mesma convenção de `gain_by_side`
+# (`side_label` "long"/"short"), não o inteiro cru do schema de
+# `predictions.parquet`/`labels.parquet`.
+_SIDE_LABEL_BY_HAT: dict[int, str] = {1: "long", -1: "short"}
+_N_DECILES_DEFAULT = 10
+# `ret_net` (fração) -> bps. Mesma conversão de
+# `src.backtest.fill_reconciliation._mean_bps` (`* 10_000`), duplicada aqui
+# por design: `src.analysis` e `src.backtest` são pacotes irmãos sem
+# contrato de import entre si (nenhum contrato de `[tool.importlinter]`
+# amarra os dois), então importar de lá criaria um acoplamento que o
+# import-linter não verifica — mesmo raciocínio de não-compartilhamento de
+# código descrito na docstring do módulo. `10_000` é definição de unidade
+# (1 bps = 1/10000), não constante de domínio — não é `float`, não cai na
+# Regra 1 do lint de proveniência (`tools/lint/banned_patterns.py` só marca
+# literais `float`).
+_BPS_PER_UNIT = 10_000
 
 # Convenção de dtype de `t0` em `predictions.parquet`/`labels/v1/labels.parquet`
 # (ver schemas reais, `src.models.alpha.PREDICTIONS_SCHEMA_COLUMNS`/
@@ -110,6 +146,25 @@ _GAIN_OUTPUT_SCHEMA: pl.Schema = pl.Schema(
         "share_mean": pl.Float64,
         "share_std": pl.Float64,
         "n_folds": pl.Int64,
+    }
+)
+
+_DECILE_OUTPUT_SCHEMA: pl.Schema = pl.Schema(
+    {
+        "side": pl.Utf8,
+        "decile": pl.Int64,
+        "n": pl.Int64,
+        "confidence_min": pl.Float64,
+        "confidence_max": pl.Float64,
+        "mean_ret_net_bps_value": pl.Float64,
+        "mean_ret_net_bps_unit": pl.Utf8,
+        "mean_ret_net_bps_n": pl.Int64,
+        "mean_ret_net_bps_n_semantics": pl.Utf8,
+        "mean_ret_net_bps_source": pl.Utf8,
+        "mean_ret_net_bps_valid": pl.Boolean,
+        "mean_ret_net_bps_invalid_reason": pl.Utf8,
+        "std_ret_net_bps": pl.Float64,
+        "t_stat": pl.Float64,
     }
 )
 
@@ -434,3 +489,194 @@ def feature_agreement(
     x = joined[gain_col].to_numpy().astype(np.float64)
     y = joined[ic_col].to_numpy().astype(np.float64)
     return _spearman_metric(x, y, n_semantics=_N_SEMANTICS_FEATURES, source=source)
+
+
+def confidence_deciles_by_side(
+    predictions: pl.DataFrame,
+    labels: pl.DataFrame,
+    *,
+    n_deciles: int = _N_DECILES_DEFAULT,
+) -> pl.DataFrame:
+    """Testa se a probabilidade calibrada do Alpha (`confidence` —
+    `max(p_long, p_short)`, que por construção é `p_long` quando
+    `side_hat=1` e `p_short` quando `side_hat=-1`, ver
+    `src.models.alpha.run_fold`) ordena os trades por retorno REALIZADO,
+    para cada lado separadamente. Pergunta diferente de "o sinal médio é
+    positivo" — é "a confiança carrega informação MONOTÔNICA": decil 10
+    (mais confiante) deveria, se a calibração for informativa, entregar
+    `mean_ret_net_bps` maior que decil 1 (menos confiante). Ver docstring
+    do módulo para o motivo desta função existir (avalia se uma Camada 2+
+    do Alpha teria o que explorar, §5.11/§6.8).
+
+    **Junção — mesmo padrão de `ic_by_regime`, uma vez por lado:**
+    `predictions` filtrado por `is_oof=True` e `side_hat == side` (não
+    `!= 0` — aqui o lado é fixo por iteração, não "qualquer lado
+    decidido") é juntado com `labels` por `(t0, side_hat == side)`, e
+    `barrier_hit == "NOFILL"` é descartado (ruído de execução, não sinal
+    de confiança). `predictions` precisa conter `t0`, `side_hat`,
+    `is_oof` e `confidence`; `labels` precisa conter `t0`, `side`,
+    `barrier_hit` e `ret_net`.
+
+    **Decis por RANK, não por valor (`qcut`).** Dentro de cada lado, os
+    trades juntados são ordenados por `confidence` ascendente — decil 1 =
+    confiança mais baixa, decil `n_deciles` = mais alta — com desempate
+    determinístico por `t0` (o calibrador isotônico produz platôs de
+    `confidence` idêntica; sem desempate estável a atribuição de decil
+    dependeria da ordem de chegada das linhas no parquet, que não é
+    garantida — `assemble_predictions_table` concatena folds por `t0`, não
+    por confiança). O índice de decil de cada linha é
+    `(posição_no_rank * n_deciles) // n_total_do_lado + 1`: bucketing por
+    RANK garante grupos do mesmo tamanho (a menos de ±1) mesmo com muitos
+    empates de valor, ao contrário de `qcut` por quantil de VALOR (que
+    pode colapsar vários decis num só se houver platô grande o bastante).
+    Se `n_total_do_lado < n_deciles`, alguns índices de decil não recebem
+    nenhuma linha — essas linhas saem com `n=0`,
+    `mean_ret_net_bps_valid=False` (`not_computable`) e `t_stat=nan`, não
+    são omitidas da tabela (o buraco em si é informação: poucos trades
+    naquele lado para a granularidade de decil pedida).
+
+    **Cada decil vira uma linha** com `side`, `decile` (1..`n_deciles`),
+    `n` (contagem de trades REALIZADOS naquele decil — mesmo valor que
+    `mean_ret_net_bps_n`, duplicado como coluna própria por legibilidade
+    direta, sem precisar desempacotar o `Metric`), `confidence_min`/
+    `confidence_max` (bordas do decil, para reportar a faixa de
+    probabilidade que ele cobre), o `Metric` da média de `ret_net` em BPS
+    (`ret_net * 10_000`, `Unit.BPS_PER_TRADE`, `n_semantics="trades"`)
+    achatado em colunas prefixadas `mean_ret_net_bps_*` (mesmo padrão de
+    `ic_by_regime`/`_prefixed_metric`, mas com prefixo próprio — não reusa
+    `_prefixed_metric` porque aquele helper está fixado ao prefixo `ic_`;
+    ver docstring do módulo sobre não amarrar lógica de análise a um único
+    caminho de código), `std_ret_net_bps` (desvio-padrão AMOSTRAL,
+    `ddof=1`, `0.0` se só 1 trade — mesma convenção de `gain_by_side`), e
+    `t_stat` (`mean_ret_net_bps / (std_ret_net_bps / sqrt(n))`, testando
+    se a média do decil é diferente de zero — `nan` se `n < 2` ou
+    `std_ret_net_bps == 0.0`, denominador indefinido/nulo, nunca
+    `ZeroDivisionError`/`inf` silencioso).
+
+    **Não decide nada.** Esta função só mede — não aplica os critérios do
+    achado (candidatura a operar em frequência menor se decil 10 tiver
+    `mean_ret_net_bps >= 6.0` com `t > 2.0`; evidência contra Camada 2+ se
+    todos os decis ficarem entre 0,5 e 2,5 bps sem ordenação clara) nem
+    escreve de volta em nenhum lugar do pipeline — isso é leitura de quem
+    chama, no relatório, não comportamento do módulo (mesma fronteira
+    PÓS-HOC/nunca-insumo da docstring do módulo)."""
+    if n_deciles < 1:
+        raise ValueError(f"confidence_deciles_by_side: n_deciles={n_deciles} — precisa ser >= 1")
+
+    _require_columns(
+        predictions, ("t0", "side_hat", "is_oof", _CONFIDENCE_COL), df_name="predictions"
+    )
+    _require_columns(labels, ("t0", "side", _BARRIER_HIT_COL, _RET_NET_COL), df_name="labels")
+
+    source = _infer_predictions_source(predictions)
+    labels_small = labels.select(["t0", "side", _BARRIER_HIT_COL, _RET_NET_COL]).with_columns(
+        pl.col("t0").cast(_T0_DTYPE)
+    )
+
+    rows: list[dict[str, Any]] = []
+    for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
+        preds_side = (
+            predictions.filter(pl.col("is_oof") & (pl.col("side_hat") == side_value))
+            .select(["t0", "side_hat", _CONFIDENCE_COL])
+            .with_columns(pl.col("t0").cast(_T0_DTYPE))
+        )
+        joined = preds_side.join(
+            labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+        ).filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+
+        logger.info(
+            "analysis.attribution.confidence_deciles_by_side_joined",
+            side=side_label,
+            n_predictions_oof_lado=preds_side.height,
+            n_apos_join_labels_e_nofill=joined.height,
+            n_deciles=n_deciles,
+            source=source,
+        )
+
+        if joined.height == 0:
+            logger.warning(
+                "analysis.attribution.confidence_deciles_sem_trades_no_lado", side=side_label
+            )
+            continue
+
+        rows.extend(
+            _deciles_for_side(joined, side_label=side_label, n_deciles=n_deciles, source=source)
+        )
+
+    if not rows:
+        return pl.DataFrame(schema=_DECILE_OUTPUT_SCHEMA)
+    return pl.DataFrame(rows, schema=_DECILE_OUTPUT_SCHEMA)
+
+
+def _deciles_for_side(
+    joined: pl.DataFrame, *, side_label: str, n_deciles: int, source: str
+) -> list[dict[str, Any]]:
+    """Núcleo de bucketing por rank + agregação, uma chamada por lado (ver
+    `confidence_deciles_by_side`). `joined` já passou pelos dois filtros
+    (`is_oof`/`side_hat`/`NOFILL`) — aqui só ordena, atribui decil e agrega."""
+    ordered = joined.sort([_CONFIDENCE_COL, "t0"])
+    n_total = ordered.height
+    idx = np.arange(n_total, dtype=np.int64)
+    decile_idx = (idx * n_deciles) // n_total + 1  # sempre em [1, n_deciles], ver docstring
+    ordered = ordered.with_columns(pl.Series("decile", decile_idx, dtype=pl.Int64))
+
+    rows: list[dict[str, Any]] = []
+    for decile in range(1, n_deciles + 1):
+        sub = ordered.filter(pl.col("decile") == decile)
+        rows.append(
+            _decile_row(
+                sub, side_label=side_label, decile=decile, n_deciles=n_deciles, source=source
+            )
+        )
+    return rows
+
+
+def _decile_row(
+    sub: pl.DataFrame, *, side_label: str, decile: int, n_deciles: int, source: str
+) -> dict[str, Any]:
+    n = sub.height
+    if n == 0:
+        metric = not_computable(
+            Unit.BPS_PER_TRADE,
+            _N_SEMANTICS_TRADES,
+            source,
+            f"decil {decile}/{n_deciles} sem trades no lado {side_label} "
+            f"(n_total_do_lado < n_deciles)",
+        )
+        return {
+            "side": side_label,
+            "decile": decile,
+            "n": 0,
+            "confidence_min": float("nan"),
+            "confidence_max": float("nan"),
+            **{f"mean_ret_net_bps_{k}": v for k, v in metric.to_json().items()},
+            "std_ret_net_bps": float("nan"),
+            "t_stat": float("nan"),
+        }
+
+    bps = sub[_RET_NET_COL].to_numpy().astype(np.float64) * _BPS_PER_UNIT
+    confidence = sub[_CONFIDENCE_COL].to_numpy().astype(np.float64)
+
+    mean_bps = float(np.mean(bps))
+    std_bps = float(np.std(bps, ddof=1)) if n > 1 else 0.0
+    t_stat = mean_bps / (std_bps / math.sqrt(n)) if n > 1 and std_bps > 0.0 else float("nan")
+
+    metric = Metric(
+        value=mean_bps,
+        unit=Unit.BPS_PER_TRADE,
+        n=n,
+        n_semantics=_N_SEMANTICS_TRADES,
+        source=source,
+        valid=True,
+        invalid_reason=None,
+    )
+    return {
+        "side": side_label,
+        "decile": decile,
+        "n": n,
+        "confidence_min": float(np.min(confidence)),
+        "confidence_max": float(np.max(confidence)),
+        **{f"mean_ret_net_bps_{k}": v for k, v in metric.to_json().items()},
+        "std_ret_net_bps": std_bps,
+        "t_stat": t_stat,
+    }
