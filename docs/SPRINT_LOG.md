@@ -488,6 +488,48 @@ para R0 = zero trades), Fase H (hooks de CI pra fechar as costuras já
 vistas: proveniência fora de commit, análise decisiva em script
 descartável).
 
+## Sprint de engenharia — Fases D/E/F/H (2026-08-09)
+### commits `fe7f705`/`43b8865`/`2fae0d9`/`32e8422`
+
+Continuação da rodada acima, depois do ponto de parada.
+
+**Fase D — HHI efetivo** (`hhi.py::compute_effective_concentration`):
+número efetivo de fatores via participation ratio dos autovalores da
+matriz de correlação das T1 ponderada por gain (`N_eff = (Σλ)²/Σλ²`,
+`hhi_effective = 1/N_eff`) — prova matemática de que `hhi_effective >=
+hhi_nominal` sempre, igualdade só sem correlação. **Achado real, rerun
+completo**: nominal 0,1131 (bate exato com o já reportado) vs **efetivo
+0,1888 — 67% maior**. Em média só **5,3 dos 10 fatores T1 carregam
+informação genuinamente independente**. Gate 3.4 passa a avaliar o
+efetivo (nominal preservado ao lado, nunca substituído) — não muda de
+veredito (0,189 < 0,25 também), mas a concentração real é pior do que o
+número "saudável" original sugeria.
+
+**Fase E — `src/analysis/attribution.py`**: formaliza a análise ad hoc de
+IC-por-regime feita numa investigação anterior (e deletada depois) como
+módulo testado. Reproduziu, sobre dado real, o mesmo achado: funding
+inverte de sinal entre regime de faixa (R1/R2) e tendência (R3/R4), pico
+em R5 (+0,199). Dois contratos novos de import-linter (`models`/`features`
+não importam `analysis`) tornam a separação treino-vs-explicação
+estrutural, não só documentada — mesma classe de proteção do banned
+pattern B06.
+
+**Fase F**: confirmado ponta a ponta — R0 (0,81% da história) é **100%
+warmup**, zero barras com T1 válido, não efeito de `tau`. `not_computable()`
+adicionado ao `Metric`, formalizando o padrão `NOT_COMPUTABLE` já usado em
+Regime/Risk.
+
+**Fase H**: dois hooks de CI fecham as lacunas de processo já vistas —
+`check_constants_referenced.py` (AST-scan de `load_constant()` contra
+`constants.yaml` **no índice do git**, não a working tree — é o mecanismo
+que teria pego o incidente real das ~280 linhas fora de commit) e
+`check_sprint_log_references.py` (heurístico, `continue-on-error` no CI,
+documentado como tal).
+
+**646 testes** (era 585), 0 violação de lint, **6/6 contratos** de
+import-linter mantidos (2 novos desta rodada). As 8 fases (A/B/C/D/E/F/G/H)
+do sprint de engenharia estão completas.
+
 **Fase H concluída** (rodada separada) — `tools/lint/check_constants_referenced.py` (referência `load_constant("...")` em `src/` sem entrada em `constants.yaml`, verificado contra o índice do git — o que teria pego o incidente acima) e `tools/lint/check_sprint_log_references.py` (heurístico: linha nova aqui com número sem referência por perto); testes em `tests/unit/test_check_constants_referenced.py` e `tests/unit/test_check_sprint_log_references.py`, hooks em `.pre-commit-config.yaml`/`.github/workflows/ci.yml`.
 
 ## Índice rápido — onde encontrar cada número

@@ -11,8 +11,9 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 ## Status
 
 **Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10 + sprint
-de engenharia pós-auditoria** — Sprints 1-9 e 12 feitos (12 adiantado) · 585
-testes passando · 0 violações de lint.
+de engenharia pós-auditoria (8 fases completas)** — Sprints 1-9 e 12 feitos
+(12 adiantado) · 646 testes passando · 0 violações de lint · 6/6 contratos de
+import-linter.
 
 🔧 **Achado de engenharia (não de trading):** uma auditoria externa do
 Sprint 8 expôs que números DERIVADOS (Sharpe, decomposição de PnL,
@@ -24,8 +25,16 @@ reconciliação e concentração. Mudança de comportamento real: um gate
 (`gate3_carry_share_ok`) que "passava" por acidente aritmético quando o
 resultado era negativo agora reprova corretamente. A mesma auditoria achou
 um controle real do Risk Engine (`control_10_risco_real`) com a mesma
-classe de bug — registrado, ainda não corrigido. Detalhes em
-`docs/SPRINT_LOG.md`, seção "Sprint de engenharia".
+classe de bug — registrado, ainda não corrigido.
+
+O sprint completo (8 fases — A/B/C persistem diagnóstico, tipo `Metric`,
+auditoria de divisões; D/E/F/H HHI efetivo, explicabilidade pós-hoc,
+ausência explícita, hooks de CI) achou que o HHI "saudável" (0,113) do
+Sprint 8 **subestima a concentração real em 67%** quando duas features
+correlacionadas (ρ=-0,913) são tratadas como fatores independentes — o
+HHI efetivo é 0,189, ainda abaixo do limiar de 0,25, mas não por tanta
+folga quanto parecia. Detalhes em `docs/SPRINT_LOG.md`, seção "Sprint de
+engenharia".
 
 ⚠️ **O que sabemos agora sobre se existe edge:** o Alpha (Camada 1, restrições
 monotônicas) passa o critério arquitetural do PRD, mas **não tem edge
