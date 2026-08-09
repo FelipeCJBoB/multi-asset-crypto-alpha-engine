@@ -621,6 +621,105 @@ arquivos — ordem sugerida pro primeiro sweep: `exchange/` → `data/` →
 
 **Fase H concluída** (rodada separada) — `tools/lint/check_constants_referenced.py` (referência `load_constant("...")` em `src/` sem entrada em `constants.yaml`, verificado contra o índice do git — o que teria pego o incidente acima) e `tools/lint/check_sprint_log_references.py` (heurístico: linha nova aqui com número sem referência por perto); testes em `tests/unit/test_check_constants_referenced.py` e `tests/unit/test_check_sprint_log_references.py`, hooks em `.pre-commit-config.yaml`/`.github/workflows/ci.yml`.
 
+## Faixa 1 — diagnóstico de calibração de confiança (2026-08-09)
+
+Retomada do achado de T1 ("decis de confiança não ordenam retorno",
+Sprint acima): T1 media só o agregado pooled, sem NOFILL, sem
+estratificação, sem testar se o antipadrão sobrevive ao score cru. Regime
+DESCOBERTA — medição pura, nenhum decil/threshold/calibrador/feature de
+produção alterado. Módulo novo `src/analysis/calibration_diagnostics.py`
+(consolidado: join predictions+labels+regime SEM filtrar NOFILL, reusado
+por D1-D4), `tests/unit/test_analysis_calibration_diagnostics.py` (23
+testes, 1 integração real com skip-if-ausente). Resultado completo em
+`experiments/faixa1_calibration_diagnostic.json`.
+
+**STEP 0 — as 5 premissas `[HIPÓTESE]` do prompt, todas confirmadas no
+disco** via `src.analysis.attribution.confidence_deciles_by_side` (o
+método que gerou os números de T1 originalmente): decis equal-sized por
+lado (±1, mecânico); `-25,6bps`/`t=-3,00` e `+4,69bps` na mesma unidade
+(bps por trade) reproduzidos bit-a-bit; `pnl_total=-10,30` é SOMA sobre
+`n=36.538` (não média — confirmado em `alpha_layer1_report.json`);
+`carry_share=26,6%` é a leitura `pnl_carry/(pnl_direcional+pnl_carry)` =
+`2,858/(7,892+2,858)` = `0,2658` (a fórmula hoje em código,
+`pnl_carry/pnl_total`, dá inválida por `pnl_total<0`, guard já existente —
+achado da auditoria anterior, nunca reescrita); `predictions.parquet`
+retém a linha mesmo com `barrier_hit=="NOFILL"` (confirmado: 2.681 linhas
+NOFILL no lado long, 4.353 no short, sobrevivem à junção sem filtro).
+Nenhuma premissa refutada — gate passou, D1-D4 rodaram.
+
+**D1 — perfil completo de decil, população cheia (filled+NOFILL, não só
+preenchidos como em T1)**: Spearman confiança×retorno **long ρ=0,139
+p=0,70; short ρ=-0,20 p=0,58** — nem um nem outro significativo, mesma
+leitura direcional de T1 (sem ranking explorável), números levemente
+diferentes por desenho (decis aqui rankeiam sobre TODOS os sinais, não só
+os preenchidos — necessário pra D3 medir taxa de NOFILL sem ser
+trivialmente zero). `mean_excluding_decile_k`: 10 valores por lado, sem
+comentário (ver JSON).
+
+**D2 — por regime estrutural**: `by_regime` cobre R1-R4 (R0/R5 fora, mesma
+convenção de `src.models.environments`); 1 de 8 blocos regime×lado
+(`long/R1`, n_total=1.808) sai 10/10 células `insuficiente` (n<200);
+`short/R1` 1/10 e `short/R2` 3/10 insuficientes; os demais 5 blocos, 0/10.
+`by_cost_tercile` (tercis de `E27f_cost_atr_ratio` sobre a população
+pooled de cada lado): 0/10 insuficiente em qualquer tercil, os dois lados.
+
+**Subconjunto congruente/incongruente com a restrição forçada de
+`E02f_funding_z_expanding`**: IC medido por regime (reprodução da Fase E,
+`ic_by_regime` pooled) — **R1 IC=+0,038 (n=3.702), R2 IC=+0,109
+(n=6.611), R3 IC=-0,026 (n=11.055), R4 IC=-0,082 (n=9.599)**, todos
+`ic_valid=true`. Restrição forçada é -1 no long / +1 no short (§5.3,
+`src.models.monotonic`, lida direto do código de produção — não
+duplicada): congruente do **long é {R3,R4}** (n=12.228), incongruente
+{R1,R2} (n=7.135); congruente do **short é {R1,R2}** (n=5.478),
+incongruente {R3,R4} (n=11.263). Confirma numericamente a inversão de
+sinal RANGE↔TREND já registrada na Fase E.
+
+**D3 — NOFILL por decil, SEM filtrar**: qui-quadrado decil×NOFILL
+**altamente significativo nos dois lados — long χ²=194,5 (p≈4,7e-37, gl=9),
+short χ²=655,2 (p≈3,0e-135, gl=9)**. A taxa de NOFILL varia com o decil de
+confiança; a tabela completa (10 taxas + IC95 por lado) está no JSON, sem
+leitura de direção registrada aqui (medição, não veredito).
+
+**D4 (revisado — correção recebida em andamento, D4 original com 3
+calibradores ajustados foi descartado antes de rodar sobre dado real;
+`n_lifetime` não incrementa, não há variante de modelo nem de calibrador)
+— score CRU vs score CALIBRADO, mesma população**:
+
+| | long | short |
+|---|---|---|
+| Spearman sobre score cru | **ρ=-0,818, p=0,0038** (H1 decrescente: p=0,0019) | **ρ=+0,685, p=0,029** (H1 crescente: p=0,0144) |
+| Spearman sobre score calibrado (=D1) | ρ=0,139, p=0,70 | ρ=-0,20, p=0,58 |
+| fração de trades que trocam de decil | 0,747 (16.172/21.639) | 0,761 (16.687/21.933) |
+| plateau mais largo do isotônico (unidade de score) | 0,201 (fold 9) | 0,099 (fold 6) |
+| pontos no plateau do topo (soma dos 15 folds) | 457 | 50 |
+
+Sem conclusão registrada aqui — os números falam por si e a decisão
+(`(a)` do prompt: "se as duas tabelas forem iguais, o antipadrão é do
+modelo, não do calibrador") é do Manager. **Hipótese do executor, marcada
+como tal, não como achado**: as duas tabelas não são iguais — o score CRU
+mostra relação monotônica MAIS forte e estatisticamente significativa que
+o score calibrado nos dois lados (inclusive de sinal OPOSTO ao antipadrão
+no long-decrescente vira ainda mais decrescente, não mais fraco), e ~75%
+dos trades trocam de decil entre as duas versões; a leitura mais direta
+desses três números juntos aponta pro calibrador diluindo/invertendo um
+sinal que já existe no score cru, não o modelo criando um antipadrão que
+o calibrador preserva — mas essa é uma leitura, não uma medição, e outras
+são possíveis (ex. o isotônico pode estar corrigindo um viés real do score
+cru que os 457+50 pontos no plateau do topo escondem). Fica para o Manager
+decidir com o JSON completo em mãos.
+
+**`n_lifetime`: incrementado em 0.** Correção recebida do Manager depois
+da primeira versão do D4 (que ajustava Platt + isotônico-bin-mínimo sobre
+`raw_score`, contaria +2) — a versão que rodou não ajusta calibrador
+nenhum, só lê `raw_score`/`confidence` já persistidos em
+`predictions.parquet` e a estrutura de plateau que eles implicam.
+`audit/n_lifetime.yaml::counter` permanece em 3, não tocado.
+
+775 testes (era 768 antes desta rodada, contando os que já estavam em
+768 ao excluir `slow`/`integration` — 775 é a contagem completa
+`pytest tests/`), 0 violação de `banned_patterns`, 6/6 contratos de
+import-linter.
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
@@ -639,3 +738,6 @@ arquivos — ordem sugerida pro primeiro sweep: `exchange/` → `data/` →
 | Gate otimista vs gate real muda o Sharpe do Alpha? | Sim, pra melhor, dentro da janela medível (-9,25 → -4,27) — mas não resolve a economia dos 6,5 anos completos | Auditoria externa acima, **item mais crítico ainda em aberto** |
 | Fill rate baixo esconde os trades vencedores? | Não — gap P(TP\|fill) vs P(TP\|miss) é só -1,72pp | Auditoria externa acima |
 | B1 (Alpha vence entrada aleatória) resiste a comparação mais rigorosa? | Sim, 4 de 5 caminhos + nulo pareado + pool total no percentil 100; caminho 4 fica em 70,9 | Auditoria externa acima |
+| Decis de confiança ordenam retorno? | Não, nos dois lados (ρ_long=0,14 p=0,70; ρ_short=-0,20 p=0,58) — mas o score CRU (pré-calibração) ordena SIGNIFICATIVAMENTE (long ρ=-0,82 p=0,004; short ρ=+0,69 p=0,03), com ~75% dos trades trocando de decil entre score cru e calibrado | Faixa 1 acima, `experiments/faixa1_calibration_diagnostic.json` |
+| NOFILL varia com a confiança? | Sim, associação forte nos dois lados (χ²long p≈5e-37, χ²short p≈3e-135) | Faixa 1 acima |
+| E02f_funding_z inverte de sinal RANGE↔TREND? | Sim, medido: R1=+0,04/R2=+0,11/R3=-0,03/R4=-0,08 | Faixa 1 acima, reproduz Fase E |
