@@ -2144,6 +2144,7 @@ walk_forward:
 | `ganho_por_esquema_de_peso` | Sharpe de cada variante | decide uniforme vs decaimento vs similaridade |
 | `deriva_hhi` | variação do HHI de importância entre janelas | **detecta troca de personalidade do modelo** |
 | `ganho_por_camada` | Sharpe com camadas 1..5 do §5.11 | decide onde parar |
+| `composicao_regime_por_janela` | fração de trades em R1-R4, por janela, por lado | **confunde-se com decaimento se omitida — ver nota abaixo** |
 
 ### Gates — os números que faltavam
 
@@ -2169,6 +2170,8 @@ G-WF-6  deriva_hhi < 0,10 entre janelas consecutivas
 ```
 
 **G-WF-2 fecha o laço com §16.4:** a cadência trimestral era assumida; agora é derivada da meia-vida medida.
+
+⚠️ **Nota (Faixa 1.6, 2026-08-09) — confound de composição de regime, medido antes de qualquer janela ter rodado.** `directional_sharpe` por regime estrutural (mesmos dados de `stratified_headlines.by_side_regime`) tem amplitude MUITO diferente por lado: **long, -2,52 (R2) a +4,35 (R3), amplitude 6,87; short, +0,28 (R4) a +1,73 (R3), amplitude 1,45**. A composição de regime NÃO é estável no tempo (R2/R4 concentram a seleção de sinal do long 12-13x mais que R1, medido em `experiments/faixa1_6_reconciliation.json::ic_reconciliation`, taxa de seleção 0,34% em R1 vs 4,34% em R2) — uma janela trimestral que calhe de ser rica em R2 mede um Sharpe ruim por composição, não por envelhecimento do modelo, e o inverso em R3. Sem `composicao_regime_por_janela` reportado ao lado de `sharpe_por_janela`, **G-WF-2 (meia-vida) e G-WF-3 (Sharpe positivo em ≥9/14) não distinguem decaimento de mix de regime** — o risco é assimétrico por lado dado o gap de amplitude acima (long muito mais vulnerável que short). Antes de rodar o walk-forward (Sprint 11): (a) reportar composição por janela como acima; (b) se a correlação entre `sharpe_por_janela` e a fração de R2/R3 for alta, os gates G-WF-2/G-WF-3 precisam ser reinterpretados condicionados a regime, não simplesmente aplicados à série bruta — critério exato de "quão condicionado" fica para quando o Sprint 11 rodar com dado real, não decidido a priori aqui.
 
 ### Integração
 

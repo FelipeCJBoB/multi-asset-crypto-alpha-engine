@@ -1055,6 +1055,49 @@ reconciliation.py`) + 2 de regressão do Bloco 3 + 2 de
 `banned_patterns` limpo, `check_constants_referenced` OK, 6/6
 import-linter, mypy limpo.
 
+**Revisão externa da Faixa 1.6 (2026-08-09).** Confirmou o Bloco 1
+(seleção não-uniforme por regime, 0,34% em R1 a 4,34% em R2 — modelo
+dispara **12,8x mais em R2 que em R1**) e nomeou um padrão que estava
+implícito nos dois números sem estar unificado: **é o mesmo antipadrão
+do decil de confiança (Faixa 1, D1: decis não ordenam retorno), agora
+em granularidade de regime** — onde o modelo tem mais convicção
+(R2/R4, alta taxa de seleção), o `directional_sharpe` do long é pior
+(-2,52 em R2). Ponderado pela composição real de trades (27,5% do long
+cai em R2), o pooled +0,167 é cancelamento com peso pesado no pior
+regime, não "skill fraca" — quantitativo, não qualitativo.
+
+Identificou um confound que o blueprint do walk-forward (§11.4.1) não
+cobria: a composição de regime varia entre as 14 janelas, e a amplitude
+de `directional_sharpe` entre regimes é MUITO maior no long (6,87) que
+no short (1,45) — sem reportar composição por janela, G-WF-2
+(meia-vida) e G-WF-3 (≥9/14 positivas) medem mix de regime, não
+decaimento. **Corrigido em §11.4.1** (nova saída `composicao_regime_
+por_janela` + nota de interpretação condicionada) antes do Sprint 11
+rodar.
+
+Propôs um teste mais barato que o controle de sinal aleatório pra
+decidir a anomalia carry-vs-direcional: medir o IC de E02f contra
+`PnL_carry` e `PnL_direcional` SEPARADAMENTE (ambos já existem por
+trade via `src.models.decomposition`, sem retreino) — se carry for
+forte e direcional for ruído, a identidade contábil se confirma.
+**Não rodado nesta sessão** — próximo passo recomendado, ver seção de
+recomendações abaixo.
+
+Levantou que `N_lifetime` (em 5) conta variantes de modelo/retreinos/
+constantes classe B, mas não comparações estatísticas feitas durante
+análise exploratória (7 células lado×regime na Faixa 1, 8 células
+direcionais + a escolha do subconjunto congruente na Faixa 1.6).
+Verificado contra §16.9/§16.10.2/§9.5.1: o escopo hoje documentado de
+`N_lifetime` é result de decisão (retreino, challenger, constante
+otimizada, decisão de protocolo tipo RPI-vs-post-only) — não há
+precedente escrito pra contar comparação descritiva de EDA. É uma
+preocupação legítima de inferência seletiva (multiplicidade de
+comparações), mas categoricamente diferente do que `N_lifetime` rastreia
+hoje — decisão de escopo (estender `N_lifetime` ou criar mecanismo
+separado) fica para o Manager decidir antes do Gate 3
+(`§16.10.3` exige `N_lifetime` "declarado e versionado", não define o
+que conta).
+
 ## Índice rápido — onde encontrar cada número
 
 | Pergunta | Resposta | Onde |
