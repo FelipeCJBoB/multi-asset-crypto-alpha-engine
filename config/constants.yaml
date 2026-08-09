@@ -412,3 +412,110 @@ index_price_deviation_max_pct:
   source: "PRD §1.3 check 18 — index_price dentro de ±2% do spot. Constante registrada para quando D12 (index_price_1m) for baixado; check 18 fica PENDING até lá (ver known_gaps / quality_report)."
   class: C
   sweep_required: false
+
+# ============================================================================
+# Camada features — Feature Engine T1 (Sprint 4, §2). Janelas de lookback
+# das 106 features do blueprint são citadas em §18.5.2 como "todas
+# inventadas — EMA48, ATR20, RSI14, z-score de 48 — nenhuma testada". Todas
+# classe B (hiperparâmetro, não invalida o desenho sozinho, mas ainda
+# precisa de entrada — Regra 1, §16.10.2, não abre exceção pra classe B).
+# `sweep_required: false` porque check_constants_provenance.py só exige
+# sweep_range para classe A; a ablação real destas janelas acontece por
+# outro mecanismo (§2.0.1 — ablação dentro do CPCV no Sprint 8), não por
+# varredura de sensibilidade ±50% isolada.
+#
+# `atr_window` (ATR de Wilder, janela 20) NÃO é duplicado aqui — já existe
+# acima como constante classe A (§0.2 R1/R2), reaproveitado por A05, A13,
+# C01, C02 e E27f.
+#
+# NOTA DE TF (achado do Sprint 4, reportado por instrução explícita da
+# task): as tabelas de fórmula §2.2-2.6 do PRD anotam quase toda feature
+# com TF="30m", mas §0.1 declara `decision_tf: 15m` como escolha a priori
+# do projeto ("v3.1: era 30m; ver §0.4"), §0.4/§0.5 mostram a medição que
+# elegeu 15m sobre 30m, e §5.9/PARTE XVII usam "230.784 barras de 15m" como
+# a série completa de referência. A única linha de T1 já escrita com TF
+# correto no PRD é a própria E27f_cost_atr_ratio ("15m", §2.6) — todas as
+# outras 9 linhas de T1 em §2.2-2.6 dizem "30m", resíduo não atualizado da
+# v3.0. Implementado a 15m neste Sprint, batendo com `decision_tf`; ver
+# `src/features/registry.yaml` para a mesma nota anexada a cada entrada.
+# ============================================================================
+
+feature_a05_ret_lookback_bars:
+  value: 4
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'janelas de lookback das 106 features são todas inventadas'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a13_ema_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2 cita 'EMA48' nominalmente entre as janelas nunca testadas), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b01_rsi_window:
+  value: 14
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2 cita 'RSI14' nominalmente), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b07_efficiency_ratio_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'ER (16, 48)'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c06_vol_ratio_short_window:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'vol_ratio (12/96)'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c06_vol_ratio_long_window:
+  value: 96
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'vol_ratio (12/96)'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c07_vol_pctile_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'janelas de z-score (48, 96)') — realized_vol_48 é o insumo do posto expansivo de C07, nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d06f_taker_imbalance_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§2.5 D06f declara lookback 48 explicitamente na tabela de fórmula), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_e10f_oi_change_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§2.6 E10f declara lookback 48 explicitamente na tabela de fórmula), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+min_warmup_bars:
+  value: 2000
+  provenance: ASSUMED
+  source: "convenção herdada do PRD (§18.5.2, 'min_warmup_bars: 2000'), nunca testada — corte uniforme aplicado sobre TODO o vetor T1 (§2.15 invariante 5), não um warmup por feature"
+  class: B
+  sweep_required: false
+  review_by: sprint_8

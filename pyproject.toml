@@ -54,7 +54,14 @@ select = [
     "T20",               # flake8-print — pega print() direto (B28)
     "RUF",
 ]
-ignore = []
+ignore = [
+    # RUF002 marca σ/×/√/− em docstrings como "caractere ambíguo" (confundível
+    # com ataque de homoglifo). Aqui são notação matemática legítima em
+    # português — as fórmulas do PRD inteiro usam esses símbolos (§2.2-2.6) —
+    # não texto disfarçado. Mutilar pra ASCII (x, sigma, sqrt) pioraria a
+    # fidelidade da docstring à fórmula fonte sem ganho de segurança real.
+    "RUF002",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]

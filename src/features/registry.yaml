@@ -1,0 +1,292 @@
+# src/features/registry.yaml
+#
+# Registro de features do Feature Engine — §2.14 do PRD. Formato exato:
+# id, tier, group, formula, sources, lookback_bars, min_warmup_bars, tf,
+# dtype, range, nan_policy, causal_proof, parity_tested, version, added.
+#
+# Sprint 4 (2026-08-08): vetor T1 (§2.13, com E27f_cost_atr_ratio no lugar
+# de B07_efficiency_ratio_48 — v3.3) + B07 (T2, insumo do Regime Engine
+# §4.2, Sprint 5) + C01/C02 (T2, insumo direto de A05/A13/C06/C07/E27f).
+# Grupo F (microestrutura) e Grupos G-K ficam fora deste registry — fora de
+# escopo do Sprint 4 (Grupo F removido de T1 na v3.3 por quebra RPI,
+# §2.7.1; G/H/I/J/K são T2/T3 de sprints futuros).
+#
+# ============================================================================
+# NOTA DE TF — achado do Sprint 4, reportado por instrução explícita da
+# task, não decisão silenciosa:
+#
+# As tabelas de fórmula §2.2-2.6 do PRD anotam quase toda feature T1 com
+# TF="30m". Mas:
+#   - §0.1 declara `decision_tf: 15m` como escolha a priori do sistema,
+#     com o comentário explícito "v3.1: era 30m; ver §0.4".
+#   - §0.4 é a seção inteira que mede ATR real em 4 timeframes (5m/15m/
+#     30m/1h) e escolhe 15m sobre 30m ("A premissa de 0,272% a 30m estava
+#     no percentil 13 da distribuição real").
+#   - §0.5 confirma: "15m é escolha a priori, registrada no pré-registro
+#     (§16.9). 30m é verificação de robustez, não competidor."
+#   - §5.9 e a PARTE XVII (estudo de não-estacionariedade) usam
+#     "230.784 barras de 15m, 2020-01-01 a 2026-07-31" como a série
+#     completa de referência do projeto inteiro.
+#   - §3.3 (Label Engine) declara `time_stop_bars: 32` como "8h a 15m —
+#     uma janela de funding", ancorando o Label Engine também em 15m.
+#   - A própria tabela §2.6 já tem UMA linha de T1 com TF correto:
+#     E27f_cost_atr_ratio diz "15m" explicitamente (é a feature mais nova
+#     do documento, adicionada depois que 30m→15m já tinha sido decidido).
+#     As outras 9 linhas de T1 em §2.2-2.6 dizem "30m" — resíduo textual
+#     não atualizado quando `decision_tf` mudou de 30m (v3.0) para 15m
+#     (v3.1), carregado adiante até a v3.3 sem correção.
+#
+# Conclusão: todas as features T1 abaixo são calculadas a 15m (`tf: 15m`),
+# batendo com `decision_tf` e com o resto do documento (Label Engine,
+# estudo de não-estacionariedade, pré-registro). O "30m" nas tabelas
+# §2.2-2.6 é dívida de documentação do PRD, não uma instrução a seguir —
+# seguir "30m" literalmente produziria features numa granularidade
+# diferente da que o Label Engine e o Alpha realmente usam, uma
+# inconsistência pior do que a que está sendo corrigida aqui.
+#
+# Consequência colateral, também reportada (não corrigida silenciosamente):
+# as janelas de lookback em barras (EMA48, RSI14, z-score 48, vol_ratio
+# 12/96) foram herdadas literalmente do PRD como CONTAGEM DE BARRAS, não
+# recalibradas para preservar o intervalo de calendário original. A 30m,
+# 48 barras = 1 dia; a 15m, as mesmas 48 barras = 12h. Isso é consistente
+# com a instrução explícita da task ("janelas de lookback (EMA48, ATR20,
+# RSI14, vol_ratio 12/96, z-score 48/96, min_warmup_bars=2000) são todas
+# classe B... registre") — os valores em `config/constants.yaml` são as
+# contagens de barra literais do PRD, aplicadas ao novo TF, não uma
+# tentativa de preservar o intervalo de calendário de 30m. Fica registrado
+# como pergunta em aberto para a ablação do Sprint 8 (§2.0.1): se o
+# intervalo de calendário importa mais que a contagem de barras para
+# alguma dessas janelas, a ablação vai mostrar.
+# ============================================================================
+
+- id: A05_ret_vol_norm_4
+  tier: T1
+  group: A
+  formula: "ln(C_t / C_{t-4}) / (atr_20_pct_t * 2)"
+  sources: [D03]
+  lookback_bars: 4
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até warmup completo (precisa de atr_20_pct, que precisa de atr_window=20 barras); null antes de min_warmup_bars por corte uniforme"
+  causal_proof: "usa só close[t-4..t] e atr_20_pct[t] (janela rolante <= t, sem lookahead) — testado em tests/unit/test_features_groups.py::test_a05_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: A13_dist_ema48_atr
+  tier: T1
+  group: A
+  formula: "(C_t - EMA_48_t) / atr_20_abs_t"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até EMA_48/ATR_20 convergirem; null antes de min_warmup_bars"
+  causal_proof: "EMA/ATR são recursivos causais (ewm_mean/wilder_smooth, ambos só olham para trás) — testado em tests/unit/test_features_groups.py::test_a13_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: B01_rsi_14
+  tier: T1
+  group: B
+  formula: "(RSI_wilder_14_t - 50) / 50"
+  sources: [D03]
+  lookback_bars: 14
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN até o seed de Wilder (14 barras); null antes de min_warmup_bars"
+  causal_proof: "wilder_smooth é recursivo estritamente para trás — testado em tests/unit/test_features_support.py::test_rsi_wilder_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: B07_efficiency_ratio_48
+  tier: T2
+  group: B
+  formula: "abs(C_t - C_{t-48}) / sum(abs(C_i - C_{i-1}) for i in [t-47, t])"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47, t], sem índice > t — testado em tests/unit/test_features_support.py::test_efficiency_ratio_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+  nota: >
+    T2 no vetor de treino do Alpha V1 (saiu de T1 na v3.3, substituída por
+    E27f_cost_atr_ratio — IC inconsistente 57% entre anos, §2.13). Implementada
+    no Sprint 4 mesmo assim: é o eixo de estrutura do Regime Engine (§4.2),
+    Sprint 5 depende dela existir.
+
+- id: C01_atr_20
+  tier: T2
+  group: C
+  formula: "ATR de Wilder (janela 20), absoluto (unidade de preço)"
+  sources: [D03]
+  lookback_bars: 20
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN até o seed de Wilder (20 barras); null antes de min_warmup_bars"
+  causal_proof: "wilder_smooth é recursivo estritamente para trás — testado em tests/unit/test_features_support.py::test_atr_wilder_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+  nota: "Não é T1 isolada — insumo de A05 (via atr_20_pct), A13, E27f. Registrada por completude de catálogo (§2.14: 'toda feature, em qualquer tier')."
+
+- id: C02_atr_20_pct
+  tier: T2
+  group: C
+  formula: "atr_20_abs_t / C_t"
+  sources: [D03]
+  lookback_bars: 20
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN onde atr_20_abs é NaN; null antes de min_warmup_bars"
+  causal_proof: "razão ponto a ponto de duas quantidades causais (atr_20_abs, close) — sem janela própria"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+  nota: "Insumo de A05 e E27f. Registrada por completude de catálogo."
+
+- id: C06_vol_ratio_12_96
+  tier: T1
+  group: C
+  formula: "realized_vol_12_t / realized_vol_96_t"
+  sources: [D03]
+  lookback_bars: 96
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN até realized_vol_96 ter 96 barras; null antes de min_warmup_bars"
+  causal_proof: "duas janelas rolantes fixas (12, 96), ambas <= t — testado em tests/unit/test_features_groups.py::test_c06_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: C07_vol_pctile_expanding
+  tier: T1
+  group: C
+  formula: "posto percentil de realized_vol_48_t na distribuição EXPANSIVA de realized_vol_48 em [t0_dataset, t-1] (estrito, nunca inclui t)"
+  sources: [D03]
+  lookback_bars: expanding
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN até haver >= 1 ponto prévio de realized_vol_48 não-NaN; null antes de min_warmup_bars"
+  causal_proof: "posto calculado só sobre índices < t (Fenwick tree, support.expanding_percentile_rank_strict) — banned pattern B02, testado em tests/unit/test_features_support.py::test_expanding_percentile_rank_strict_nao_usa_indice_t"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: D03f_volume_z_expanding
+  tier: T1
+  group: D
+  formula: "z-score EXPANSIVO estrito de log(1+V_t) em [t0_dataset, t-1]"
+  sources: [D03]
+  lookback_bars: expanding
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até 2 pontos prévios válidos (desvio amostral ddof=1); null antes de min_warmup_bars"
+  causal_proof: "Welford online, z_t calculado a partir do estado ANTES de incorporar x_t — banned pattern B02, testado em tests/unit/test_features_support.py::test_expanding_zscore_strict_nao_usa_indice_t"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: D06f_taker_imbalance_z_48
+  tier: T1
+  group: D
+  formula: "z-score ROLANTE (janela 48) de (2*taker_buy_ratio_t - 1), taker_buy_ratio = taker_buy_volume/volume"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47, t] — testado em tests/unit/test_features_groups.py::test_d06f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: E02f_funding_z_expanding
+  tier: T1
+  group: E
+  formula: "z-score EXPANSIVO estrito de funding_last_t (alinhado ao grid de 15m por asof-join backward) em [t0_dataset, t-1]"
+  sources: [D07]
+  lookback_bars: expanding
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até 2 pontos prévios válidos; null antes de min_warmup_bars; também NaN se a barra for anterior ao primeiro evento de funding conhecido (asof-join sem match)"
+  causal_proof: "asof-join backward (nunca usa calc_time > close_time da barra) seguido de Welford online — B02, testado em tests/unit/test_features_sources.py::test_asof_align_backward_nunca_usa_evento_futuro"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+
+- id: E10f_oi_change_z_48
+  tier: T1
+  group: E
+  formula: "z-score ROLANTE (janela 48) de delta_ln(oi_contracts_t), oi_contracts alinhado ao grid de 15m por asof-join backward sobre metrics/sum_open_interest deduplicado"
+  sources: [D04]
+  lookback_bars: 48
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras após o primeiro OI conhecido; null antes de min_warmup_bars"
+  causal_proof: "asof-join backward + janela rolante fixa — testado em tests/unit/test_features_groups.py::test_e10f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+  nota: >
+    Fonte (data/capacity/metrics/BTCUSDT) tem 2 dias com create_time
+    duplicado E COM VALORES DIVERGENTES entre o arquivo do dia anterior e o
+    do próprio dia (2026-06-12, 2026-06-21 — ver quality_report_metrics_v1.json,
+    failed_checks 3_duplicates/5_8_monotonic). Tratado em
+    src/features/_sources.py::load_oi_series_deduped com resolução
+    determinística (mantém a linha do arquivo cujo nome bate com a data do
+    create_time) e log de structlog toda vez que ocorre — não silenciado,
+    não hardcoded pras duas datas conhecidas (a checagem roda sobre
+    qualquer intervalo pedido).
+
+- id: E27f_cost_atr_ratio
+  tier: T1
+  group: E
+  formula: "custo_round_trip_bps / (atr_20_pct_t * 10000), custo_round_trip_bps = (maker_fee + 0.5*maker_fee + 0.5*taker_fee) * 10000"
+  sources: [derivado, constants.yaml:maker_fee, constants.yaml:taker_fee]
+  lookback_bars: 20
+  min_warmup_bars: 2000
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN onde atr_20_pct é NaN/0; null antes de min_warmup_bars"
+  causal_proof: "numerador é constante (maker_fee/taker_fee não variam por barra); denominador (atr_20_pct) é causal — testado em tests/unit/test_features_groups.py::test_e27f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-08
+  nota: >
+    Única feature de T1 já com tf=15m corretamente anotado no PRD original
+    (§2.6) — ver NOTA DE TF no topo deste arquivo. custo_round_trip_bps
+    reproduz o c_médio(assimétrico)=0,055% citado textualmente em §0.2 R2
+    dado maker_fee=0,0002/taker_fee=0,0005 (peso 50/50 entre cenário
+    TP-tocado e SL-tocado — ver docstring de
+    src/features/groups/group_e.py::round_trip_cost_bps).

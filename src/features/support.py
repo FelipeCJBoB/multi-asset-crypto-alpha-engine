@@ -1,0 +1,268 @@
+"""Primitivas causais compartilhadas por vários grupos de features (§2.0
+princípios 2 e 4 — causalidade e normalização causal).
+
+Tudo aqui opera sobre `numpy.ndarray` 1D (já extraído de uma coluna
+polars pelo chamador) e devolve `numpy.ndarray` do mesmo comprimento, com
+NaN onde o warmup individual daquela quantidade ainda não completou. O
+warmup UNIFORME de `min_warmup_bars` (§2.15 invariante 5) é aplicado
+depois, em `build.py`, sobre o vetor T1 inteiro — as funções aqui não
+conhecem essa constante.
+
+Duas famílias de janela, deliberadamente distintas (banned pattern B02):
+
+* **Janela rolante fixa** (ATR, EMA, RSI, realized_vol, z-score rolante de
+  D06f/E10f): a barra `t` pode entrar na sua própria janela — ela é
+  informação disponível em `t`, não do futuro. `polars.rolling_*` já é
+  causal por construção (janela sempre para trás, nunca centrada).
+* **Janela expansiva estrita** (C07, D03f, E02f): o quantil/z-score em `t`
+  usa só índices `< t`, nunca `t` — é a definição literal do banned
+  pattern B02 e a razão de essas três funções existirem separadas das
+  acima.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import polars as pl
+from numpy.typing import NDArray
+
+FloatArray = NDArray[np.float64]
+
+
+def true_range(high: FloatArray, low: FloatArray, close: FloatArray) -> FloatArray:
+    """`TR_t = max(H_t-L_t, |H_t-C_{t-1}|, |L_t-C_{t-1}|)`. No primeiro
+    índice não existe `C_{t-1}` — só `H-L` é definido ali (convenção comum
+    de TR; o primeiro valor nunca sobrevive ao warmup de qualquer janela
+    que o consuma, então a escolha não afeta nenhum resultado reportado)."""
+    n = high.shape[0]
+    tr = np.full(n, np.nan, dtype=np.float64)
+    if n == 0:
+        return tr
+    tr[0] = high[0] - low[0]
+    if n == 1:
+        return tr
+    prev_close = close[:-1]
+    hi = high[1:]
+    lo = low[1:]
+    tr[1:] = np.maximum(hi - lo, np.maximum(np.abs(hi - prev_close), np.abs(lo - prev_close)))
+    return tr
+
+
+def _first_valid_index(values: FloatArray) -> int:
+    n = values.shape[0]
+    i = 0
+    while i < n and np.isnan(values[i]):
+        i += 1
+    return i
+
+
+def wilder_smooth(values: FloatArray, window: int) -> FloatArray:
+    """Suavização de Wilder (usada por ATR e RSI): seed = média simples dos
+    primeiros `window` valores válidos a partir do primeiro índice não-NaN
+    de `values`; depois recursivo:
+
+        out[t] = (out[t-1] * (window - 1) + values[t]) / window
+
+    Índices antes do seed ficam NaN. Implementado com laço explícito em vez
+    de `ewm_mean` porque o seed de Wilder é a MÉDIA SIMPLES da primeira
+    janela, não o primeiro valor bruto — `ewm_mean(adjust=False)` seed do
+    primeiro ponto é uma definição diferente (convergem assintoticamente,
+    mas não são bit-idênticas, e a feature registrada como "ATR de Wilder"
+    precisa ser a definição literal, não uma aproximação)."""
+    n = values.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    first_valid = _first_valid_index(values)
+    seed_idx = first_valid + window - 1
+    if seed_idx >= n:
+        return out
+    seed = float(np.mean(values[first_valid : first_valid + window]))
+    out[seed_idx] = seed
+    prev = seed
+    for t in range(seed_idx + 1, n):
+        v = values[t]
+        if np.isnan(v):
+            out[t] = np.nan
+            continue
+        prev = (prev * (window - 1) + v) / window
+        out[t] = prev
+    return out
+
+
+def atr_wilder(high: FloatArray, low: FloatArray, close: FloatArray, window: int) -> FloatArray:
+    """ATR de Wilder, absoluto (unidade de preço) — §2.4 C01."""
+    tr = true_range(high, low, close)
+    return wilder_smooth(tr, window)
+
+
+def ema(values: FloatArray, span: int) -> FloatArray:
+    """EMA padrão (`alpha = 2/(span+1)`, `adjust=False`), seed no primeiro
+    valor da série. Não usa o seed-SMA de Wilder — EMA e ATR de Wilder são
+    convenções distintas mesmo quando ambas "suavizações exponenciais"; a
+    diferença de seed é irrelevante aqui porque `min_warmup_bars` (2000) é
+    ordens de magnitude maior que qualquer `span` usado em T1 (48), e o
+    peso do seed decai como `(1-alpha)^n` — já é desprezível muito antes
+    da barra 2000."""
+    s = pl.Series(values)
+    alpha = 2.0 / (span + 1)
+    out: FloatArray = s.ewm_mean(alpha=alpha, adjust=False, min_samples=span).to_numpy()
+    return out
+
+
+def rsi_wilder(close: FloatArray, window: int) -> FloatArray:
+    """RSI de Wilder, escala nativa [0, 100] — §2.3 B01. Ganhos/perdas
+    suavizados por `wilder_smooth`, não por média rolante simples (é
+    exatamente a diferença entre "RSI de Wilder" e outras variantes de
+    RSI que usam SMA)."""
+    n = close.shape[0]
+    delta = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        delta[1:] = np.diff(close)
+    gain = np.where(np.isnan(delta), np.nan, np.where(delta > 0, delta, 0.0))
+    loss = np.where(np.isnan(delta), np.nan, np.where(delta < 0, -delta, 0.0))
+
+    avg_gain = wilder_smooth(gain, window)
+    avg_loss = wilder_smooth(loss, window)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rs = avg_gain / avg_loss
+        rsi = 100.0 - 100.0 / (1.0 + rs)  # escala fixa do RSI [noqa: magic-number]
+
+    zero_loss_trending = (avg_loss == 0) & (avg_gain > 0)
+    rsi[zero_loss_trending] = 100.0  # teto da escala do RSI [noqa: magic-number]
+    flat = (avg_loss == 0) & (avg_gain == 0)
+    rsi[flat] = 50.0  # ponto neutro da escala do RSI, sem movimento no período [noqa: magic-number]
+    return rsi
+
+
+def realized_vol(log_return: FloatArray, window: int) -> FloatArray:
+    """`σ(log_return) × √window` sobre janela rolante de `window` barras,
+    incluindo a barra atual (§2.4 C03) — janela rolante fixa, não
+    expansiva, então B02 não se aplica (a barra `t` pode estar na sua
+    própria janela)."""
+    s = pl.Series(log_return)
+    std = s.rolling_std(window_size=window, min_samples=window, ddof=1).to_numpy()
+    out: FloatArray = std * np.sqrt(window)
+    return out
+
+
+def rolling_zscore(values: FloatArray, window: int) -> FloatArray:
+    """Z-score sobre janela rolante fixa de `window` barras, incluindo a
+    barra atual (D06f, E10f — o PRD declara lookback fixo "48" para essas
+    duas, não "expansiva"; ver banned pattern B02 na docstring do módulo
+    para a distinção)."""
+    s = pl.Series(values)
+    mean = s.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    std = s.rolling_std(window_size=window, min_samples=window, ddof=1).to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = (values - mean) / std
+    return out
+
+
+def efficiency_ratio(close: FloatArray, window: int) -> FloatArray:
+    """`|C_t - C_{t-window}| / Σ_{i=t-window+1}^{t} |C_i - C_{i-1}|` — §2.3
+    B07. Janela rolante fixa (inclui a barra atual no numerador e no
+    denominador)."""
+    n = close.shape[0]
+    abs_diff = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        abs_diff[1:] = np.abs(np.diff(close))
+    rolling_sum = pl.Series(abs_diff).rolling_sum(window_size=window, min_samples=window).to_numpy()
+
+    numerator = np.full(n, np.nan, dtype=np.float64)
+    if n > window:
+        numerator[window:] = np.abs(close[window:] - close[:-window])
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = numerator / rolling_sum
+    return out
+
+
+def expanding_zscore_strict(values: FloatArray) -> FloatArray:
+    """Z-score em janela EXPANSIVA estrita: `z_t = (x_t - média_{<t}) /
+    desvio_{<t}`, onde média/desvio usam só índices `< t` (banned pattern
+    B02 — nunca `<= t`). Implementado com algoritmo online de Welford
+    (O(n), um passe): calcula `z_t` a partir do estado acumulado ANTES de
+    incorporar `x_t` ao estado, e só then atualiza o estado com `x_t`.
+
+    Requer pelo menos 2 pontos prévios válidos para desvio amostral
+    (`ddof=1`) definido — `out[0]` e `out[1]` são sempre NaN."""
+    n = values.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    count = 0
+    mean = 0.0
+    m2 = 0.0
+    for t in range(n):
+        x = values[t]
+        if count >= 2:
+            var = m2 / (count - 1)
+            if var > 0:
+                out[t] = (x - mean) / np.sqrt(var)
+        if not np.isnan(x):
+            count += 1
+            delta = x - mean
+            mean += delta / count
+            delta2 = x - mean
+            m2 += delta * delta2
+    return out
+
+
+def expanding_percentile_rank_strict(values: FloatArray) -> FloatArray:
+    """Posto percentil em janela EXPANSIVA estrita: `rank_t = #{i<t :
+    x_i "<" x_t} / #{i<t : x_i não-NaN}` — só índices `< t` entram na
+    distribuição de referência (B02), nunca `t` mesmo. `out[t]` é NaN se
+    não houver nenhum ponto prévio não-NaN.
+
+    Implementado com uma Fenwick tree (Binary Indexed Tree) sobre o posto
+    denso GLOBAL dos valores não-NaN — O(n log n), necessário porque um
+    laço O(n) por atualização (busca+inserção linear) degrada para O(n²) e
+    fica proibitivo na série completa (~230 mil barras de 15m, §5.9).
+
+    O `"<"` acima é entre aspas de propósito: empates (valores idênticos)
+    são desfeitos por ordem de chegada via posto denso GLOBAL
+    (`argsort(kind="stable")` sobre a série inteira de valores não-NaN,
+    calculado uma vez no início) — entre dois valores idênticos, o que
+    ocorre mais cedo na série recebe posto denso menor e por isso conta
+    como "menor" quando comparado a uma ocorrência posterior do mesmo
+    valor, mesmo sendo numericamente igual. Não é a convenção de "mid-rank"
+    (contar empate como metade) usada em algumas bibliotecas de estatística
+    — é mais simples e totalmente determinística, o que importa mais aqui
+    (§2.0 princípio 1). Em dado de mercado real (float64 de retorno/
+    volatilidade) empates exatos são raríssimos, então o efeito da escolha
+    é desprezível; documentado aqui para não ficar implícito."""
+    n = values.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    finite_mask = ~np.isnan(values)
+    idx_finite = np.flatnonzero(finite_mask)
+    m = idx_finite.shape[0]
+    if m == 0:
+        return out
+
+    vals_finite = values[idx_finite]
+    order = np.argsort(vals_finite, kind="stable")
+    dense_rank = np.empty(m, dtype=np.int64)
+    dense_rank[order] = np.arange(m)
+
+    tree = np.zeros(m + 1, dtype=np.int64)
+
+    def _update(i: int) -> None:
+        i += 1
+        while i <= m:
+            tree[i] += 1
+            i += i & (-i)
+
+    def _query_prefix(i: int) -> int:
+        """Soma de posições com posto denso em `[0, i)` já inseridas."""
+        s = 0
+        while i > 0:
+            s += int(tree[i])
+            i -= i & (-i)
+        return s
+
+    for k in range(m):
+        r = int(dense_rank[k])
+        t = int(idx_finite[k])
+        if k > 0:  # k == número de pontos já inseridos (0-indexado) -- nenhum contador redundante
+            less = _query_prefix(r)
+            out[t] = less / k
+        _update(r)
+    return out
