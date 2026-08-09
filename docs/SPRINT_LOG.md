@@ -236,6 +236,66 @@ a reconciliar antes do Gate 5.
 
 ---
 
+## Sprint 12 (adiantado) — Risk Engine (2026-08-09) · commit `981b153`
+
+`src/risk/`: sizing quantizado via `Decimal`+`floor_to_step` (reusa `Filters` do
+Sprint 2), os 18 controles do §8.3 em ordem, kill switch com os 13 gatilhos do
+§10.2. Validado contra o exemplo numérico do próprio PRD (stop 0,50% → 3
+unidades → risco real 0,495% — bate exato).
+
+**Achado:** as outras 3 linhas da tabela ilustrativa do §8.3 só reproduzem com
+arredondamento pro mais próximo, não com `floor_to_step` (o algoritmo que o
+próprio §8.2 manda usar) — resolvido a favor do floor, o lado mais seguro.
+Também achou e corrigiu um bug real nos próprios testes: o controle 17
+(liquidez) não checava corretamente a metade "profundidade" de uma composição
+de três valores, deixando passar profundidade insuficiente em silêncio.
+
+16 dos 18 controles e 5 dos 13 gatilhos são totalmente computáveis hoje; o
+resto fica com sensor pronto, sem fonte de dado real ainda (mesmo padrão do
+Regime Engine). 89 testes novos.
+
+## Sprint 8 (rodada 1) — Alpha, Camada 1 (2026-08-09) · commit `8654500`, tag `sprint-8-layer1-done`
+
+Dois modelos binários (`M_long`/`M_short`, §5.2), restrições monotônicas
+(Camada 1, §5.3) atribuídas *in-fold* sobre 6 ambientes (tercil de
+custo/ATR × regime estrutural, §5.4 — não 7, como uma leitura literal de §5.3
+sugeria; investigado e resolvido como resíduo de contaminação com a tabela de
+IC anual do §17.2, a mesma que o próprio §5.3 proíbe usar pra configurar o
+modelo). Calibração isotônica corrigida (sub-split interno, fecha o teste de
+vazamento 11 que o Sprint 7 tinha deixado pendente).
+
+**O critério de permanência da Camada 1 passa**: supera a Camada 0 (sem
+restrição) em 4 de 5 caminhos do CPCV. HHI passa com folga (0,113 < 0,25).
+
+**Mas isso não é "o Alpha tem edge pronto pra operar" — é importante não
+confundir os dois:**
+
+| Medição | Resultado |
+|---|---|
+| Sharpe (ingênuo) Camada 1 / Camada 0 | -0,81 / -1,18 — **os dois negativos** |
+| B2 buy-and-hold | **+0,54 — positivo, vence os dois variantes do Alpha** |
+| B4 (AUC real, sem embaralhar) | ~0,50 (0,497 long / 0,503 short) — pouca discriminação individual mesmo antes do teste de embaralhamento |
+| Decomposição §16.6 (30.623 trades) | direção +1,60 · carry +2,07 · **execução -17,71** · total -14,03 |
+
+**A leitura honesta**: sem custo de execução, direção+carry somam **+3,67 —
+positivo**. É o custo de execução, sozinho, que vira o resultado negativo — não
+falta de sinal direcional (`directional_sharpe = +0,194`, positivo). Isso
+conecta direto com o achado do fill rate (37,3%, ver investigação abaixo): o
+motor pode ter um fiozinho real de sinal, mas a economia de execução está
+consumindo ele inteiro e mais.
+
+**Achado metodológico a carregar pro Sprint 10**: o backtest deste sprint
+(`backtest_lite.py`) usa a convenção otimista do Label Engine (`barrier_hit !=
+NOFILL`, fill rate ~83-93%) — **ainda não incorpora o fill rate realista de
+37,3% medido pelo simulador de fila do Sprint 9.** O Sharpe de -1,69 pooled
+provavelmente fica pior, não melhor, quando essa reconciliação acontecer.
+Registrado para não ser esquecido.
+
+**Próximo passo em aberto**: já que a Camada 1 passa o gate arquitetural do
+§5.11, a Camada 2 (triagem de estabilidade) é candidata a próxima rodada — mas
+a pergunta mais urgente pode ser reconciliar com o fill rate real antes de
+investir mais camadas em cima de um custo de execução ainda otimista.
+
 ## Investigação — o fill rate de 37,3% é real ou artefato? (2026-08-08) · commit `d3bcc79`
 
 Antes de avançar pro Sprint 8, o achado do Sprint 9 (fill rate abaixo do piso de

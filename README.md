@@ -10,17 +10,18 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 
 ## Status
 
-**Sprint 9 (adiantado) de 18 concluído** — Sprints 1-7 e 9 feitos, Sprint 8
-(Alpha) é o próximo · 384 testes passando · 0 violações de lint.
+**Sprint 8 (rodada 1) de 18 concluído** — Sprints 1-9 e 12 feitos (12
+adiantado) · 527 testes passando · 0 violações de lint.
 
-⚠️ **Item em aberto, já investigado a fundo:** fill rate maker medido em
-**37,3%**, abaixo do piso de 60% que o PRD cita (§9.6). Investigação de 5
-frentes (curva de tempo-até-fill, timeout 15 vs 30min, regime, hora UTC,
-sensibilidade a preço) conclui que **o número é real, não artefato do modelo**
-— mas também achou que o **próprio piso de 60% é um número fabricado sem
-derivação** (confessado em §18.5.4 do PRD, mesma categoria de outro placeholder
-que já mostramos errado). Recomendação: derivar o piso de verdade quando o
-Alpha existir, não aceitar 60% a priori. Detalhes em `docs/SPRINT_LOG.md`.
+⚠️ **O que sabemos agora sobre se existe edge:** o Alpha (Camada 1, restrições
+monotônicas) passa o critério arquitetural do PRD, mas **não tem edge
+operável ainda** — Sharpe negativo, e um simples buy-and-hold (+0,54) vence os
+dois. A decomposição de PnL mostra por quê: **direção e carry somados são
+positivos (+3,67)** — o custo de execução, sozinho (-17,71), é o que vira o
+resultado negativo. Não é "não tem sinal", é "o sinal existe mas a economia de
+execução está engolindo ele inteiro" — e o backtest deste sprint ainda usa a
+suposição otimista de preenchimento, não o fill rate real de 37,3% medido no
+Sprint 9. Detalhes completos em `docs/SPRINT_LOG.md`.
 
 | Documento | O que é |
 |---|---|
