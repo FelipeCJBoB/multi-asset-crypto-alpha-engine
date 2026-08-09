@@ -82,8 +82,13 @@ exclude = ["^data/", "^\\.venv/"]
 # "yaml" entrou no Sprint 2 (src/data/_constants.py replica o mesmo import de
 # src/exchange/_constants.py — sem isso, mypy --strict falha nos dois pacotes
 # por igual; types-PyYAML resolveria mas é dependência extra por um único
-# ponto de uso em cada pacote).
-module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml"]
+# ponto de uso em cada pacote). "scipy"/"sklearn" entraram no Sprint 8
+# (src/models/monotonic.py usa scipy.stats.spearmanr; src/models/alpha.py e
+# src/models/baselines.py usam sklearn.isotonic/model_selection/metrics) —
+# mesmo motivo: scipy-stubs/sklearn não publicam stubs completos o
+# suficiente para mypy --strict, e adicionar types-* extras por um punhado
+# de pontos de uso não paga o custo de dependência extra.
+module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml", "scipy.*", "sklearn.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------

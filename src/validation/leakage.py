@@ -70,6 +70,7 @@ IntArray = NDArray[np.int64]
 _SRC_ROOT: Path = REPO_ROOT / "src"
 _FEATURE_REGISTRY_PATH: Path = _SRC_ROOT / "features" / "registry.yaml"
 _TRIPLE_BARRIER_PATH: Path = _SRC_ROOT / "labels" / "triple_barrier.py"
+_ALPHA_PATH: Path = _SRC_ROOT / "models" / "alpha.py"
 _FEATURES_PARITY_TEST_PATH: Path = REPO_ROOT / "tests" / "parity" / "test_features_parity.py"
 
 # Escopo dos grep estáticos de auditoria (testes 8/13): pacotes de PIPELINE,
@@ -511,15 +512,75 @@ def _test_10_encadeamento_modelo() -> LeakageTestResult:
 
 
 def _test_11_calibracao_vazada() -> LeakageTestResult:
-    return LeakageTestResult(
-        11,
-        "calibração vazada (calibrador ajustado em sub-split interno)",
-        "§11.5 #11",
-        LeakageStatus.PENDING_SPRINT_8,
-        "Nenhum calibrador existe ainda — calibração isotônica é o passo 9 do cronograma "
-        "§5.9, dentro do treino do Alpha (Sprint 8). Sentinela explícito.",
-        note="Reexecutar assim que src/models/alpha implementar o passo de calibração.",
+    """Sprint 8 implementou `src/models/alpha.py::fit_side_model` — este
+    teste sai de `PENDING_SPRINT_8` para uma auditoria estática real (mesmo
+    padrão do teste 13): confirma, no CÓDIGO FONTE, que o calibrador
+    isotônico nunca vê o próprio OOF nem o teste do fold (B08).
+
+    Duas propriedades verificadas, ambas necessárias:
+
+    1. **Isolamento por construção** — `fit_side_model` recebe um único
+       parâmetro de dado (`train_side_df`), sem nenhum parâmetro de
+       teste/OOF — arquiteturalmente impossível vazar dado que a função
+       nunca recebe (mesmo argumento do teste 12 para o "seletor
+       fictício"). `run_fold` só chama `fit_side_model` com
+       `train_long`/`train_short` (nunca `test_bars`).
+    2. **Sub-split interno real** — o calibrador (`IsotonicRegression`) é
+       ajustado sobre `X_calib`/`y_calib`/`w_calib`, que vêm de
+       `_stratified_calib_split(y_all, ...)` aplicado ao PRÓPRIO
+       `train_side_df` (nunca sobre `X_all` inteiro nem sobre o teste)."""
+    if not _ALPHA_PATH.exists():
+        return LeakageTestResult(
+            11,
+            "calibração vazada (calibrador ajustado em sub-split interno)",
+            "§11.5 #11",
+            LeakageStatus.PENDING_SPRINT_8,
+            "src/models/alpha.py ainda não existe.",
+            note="Reexecutar assim que src/models/alpha implementar o passo de calibração.",
+        )
+
+    source = _ALPHA_PATH.read_text(encoding="utf-8")
+
+    def_match = re.search(r"def fit_side_model\(\s*train_side_df: pl\.DataFrame,", source)
+    no_test_param = def_match is not None and not re.search(
+        r"def fit_side_model\([^)]*\btest\w*\s*:", source, re.DOTALL
     )
+    only_called_with_train = not _grep_source(
+        re.compile(r"fit_side_model\(\s*test"), (_SRC_ROOT / "models",)
+    )
+    calib_split_from_train = bool(
+        re.search(r"_stratified_calib_split\(\s*y_all,", source)
+    )
+    calibrator_fits_on_calib_split = (
+        "calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)" in source
+    )
+
+    ok = bool(
+        def_match
+        and no_test_param
+        and only_called_with_train
+        and calib_split_from_train
+        and calibrator_fits_on_calib_split
+    )
+    status = LeakageStatus.PASS if ok else LeakageStatus.FAIL
+    detail = (
+        f"fit_side_model(train_side_df: pl.DataFrame, ...) sem parâmetro de teste/OOF: "
+        f"{def_match is not None and no_test_param}. Nenhuma chamada em src/models/ passa "
+        f"dado de teste para fit_side_model: {only_called_with_train}. Sub-split de "
+        f"calibração (_stratified_calib_split) aplicado a y_all (derivado de "
+        f"train_side_df, não de X_all bruto nem do teste): {calib_split_from_train}. "
+        f"IsotonicRegression.fit chamado com raw_calib/y_calib/w_calib (não raw_train_all "
+        f"nem dado de teste): {calibrator_fits_on_calib_split}."
+    )
+    note = (
+        "Auditoria estática do código-fonte (mesmo padrão do teste 13), não execução real "
+        "sobre labels/v1/labels.parquet — a execução real (Sprint 8) já rodou via "
+        "src.models.pipeline.run_layer1_sprint e produziu "
+        "predictions/alpha/{alpha_c1_v1,alpha_c0_baseline_v1}/predictions.parquet, "
+        "verificados em tests/unit/test_models_alpha.py (schema + invariantes §5.13)."
+    )
+    name = "calibração vazada (calibrador ajustado em sub-split interno)"
+    return LeakageTestResult(11, name, "§11.5 #11", status, detail, note)
 
 
 def _test_12_selecao_feature_vazada(labels: pl.DataFrame) -> LeakageTestResult:

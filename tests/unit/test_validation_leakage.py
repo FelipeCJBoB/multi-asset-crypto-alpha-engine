@@ -43,10 +43,14 @@ def test_teste_1_close_futuro_e_pending_sprint_8() -> None:
     assert result.status == leakage.LeakageStatus.PENDING_SPRINT_8
 
 
-def test_teste_11_calibracao_e_pending_sprint_8() -> None:
+def test_teste_11_calibracao_passa_apos_sprint_8() -> None:
+    """Sprint 8 implementou `src/models/alpha.py::fit_side_model` com
+    calibração isotônica em sub-split interno do treino (§5.9 passo 9) —
+    o teste 11 sai de PENDING_SPRINT_8 (era o caso antes deste sprint) para
+    PASS via auditoria estática do código-fonte real."""
     result = leakage._test_11_calibracao_vazada()
     assert result.test_id == 11
-    assert result.status == leakage.LeakageStatus.PENDING_SPRINT_8
+    assert result.status == leakage.LeakageStatus.PASS, result.detail
 
 
 def test_teste_10_meta_e_not_applicable_v1_1_nao_pending() -> None:
@@ -186,10 +190,11 @@ def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico() -> None:
     results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels)}
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
     assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
-    assert results[11].status == leakage.LeakageStatus.PENDING_SPRINT_8
-    # os demais 11 (2,3,4,5,6,7,8,9,12,13,14) precisam ter rodado de verdade
-    # e reportado PASS contra o dataset sintético/registry real
-    ran_for_real = {2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14}
+    # teste 11 saiu de PENDING_SPRINT_8 para PASS no Sprint 8 — ver
+    # test_teste_11_calibracao_passa_apos_sprint_8 acima.
+    # os demais 12 (2,3,4,5,6,7,8,9,11,12,13,14) precisam ter rodado de
+    # verdade e reportado PASS contra o dataset sintético/registry real
+    ran_for_real = {2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14}
     for tid in ran_for_real:
         assert results[tid].status == leakage.LeakageStatus.PASS, (
             f"teste {tid}: {results[tid].detail}"
@@ -240,7 +245,7 @@ def test_run_all_leakage_tests_sobre_dataset_real() -> None:
     assert len(results) == 14
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
     assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
-    assert results[11].status == leakage.LeakageStatus.PENDING_SPRINT_8
+    assert results[11].status == leakage.LeakageStatus.PASS, results[11].detail
     assert results[6].status == leakage.LeakageStatus.PASS, results[6].detail
     assert results[7].status == leakage.LeakageStatus.PASS, results[7].detail
     assert results[12].status == leakage.LeakageStatus.PASS, results[12].detail
