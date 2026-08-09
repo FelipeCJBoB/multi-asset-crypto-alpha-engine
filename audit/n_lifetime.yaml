@@ -11,7 +11,7 @@
 # impedir.
 
 schema_version: 1
-counter: 41
+counter: 42
 
 log:
   - id: 1
@@ -133,6 +133,24 @@ log:
       distribuição pooled do Sprint 6 com max_abs_diff=2,3e-5. delta=18.
       Artefato: experiments/faixa2_e1_barrier_sweep.json.
     delta: 18
+  - id: 11
+    date: "2026-08-09"
+    type: feature_orthogonality_research_pass
+    description: >
+      Faixa 2, FASE 2 E2 — passe de pesquisa LIBERADO pelo Manager sem
+      curadoria: 70 candidatas T2 computáveis do catálogo §2.2-2.12
+      (grupos A/B/C/D/E/H/K; F excluído por quebra de RPI §2.7.1, G/I sem
+      dado, J excluído por desenho §5.8) avaliadas em bloco único contra
+      o T1 de 8 (já reduzido pelo pré-E2 (2), id 10), rankeadas por
+      ortogonalidade incremental (seleção gulosa maximizando
+      hhi_efetivo/n_eff_factors a cada passo) até a faixa-alvo 12-15
+      pedida pelo Manager. Nenhum modelo retreinado, nenhuma promoção a
+      T1_FEATURE_IDS/registry.yaml em produção — é medição para a
+      triagem in-fold do §5.4 (E3, ainda não implementado) decidir.
+      Contado como 1 trial por instrução explícita do Manager ("conta
+      como 1 trial, não um por feature") — não 70. delta=1.
+      Artefato: experiments/faixa2_e2_research.json.
+    delta: 1
 
 # Nota de escopo (Faixa 2, F0.1, 2026-08-09): os 4 itens acima (ids 6-9,
 # delta total +18, contador 5->23) são exatamente os listados pela task

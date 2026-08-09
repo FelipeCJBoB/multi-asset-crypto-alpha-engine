@@ -1614,21 +1614,72 @@ número desatualizado. **A combinação "só short + long sem R2" falhando
 5/5 continua de pé como restrição real** (margem de 18-67%, ainda bem
 maior que a dispersão do threshold em qualquer uma das duas leituras).
 
-### FASE 2 (E2/E3) e FASE 3 (C1/C2/C3) — E2 pausado por instrução; E3/FASE 3 pendentes.
+### FASE 2, E2 — passe de pesquisa sem curadoria, 70 candidatas T2 (2026-08-09)
 
-**Escopo real destas duas, para quem for continuar**: E2 (ampliar T1 de
-10 para 12-15 features), quando liberado, roda SEM curadoria — todas as
-candidatas T2 do §2.2-2.12 num passe de pesquisa (sem registry/paridade
-ainda), ranqueadas por ortogonalidade incremental contra o T1 corrente
-(já reduzido a 8 pelo pré-E2 (2) acima), parando em `hhi_efetivo` de
-12-15 — 1 trial no `n_lifetime`, não um por feature; a triagem do §5.4
-decide in-fold quais ficam. E3 (Camada 2, §5.4) é um módulo novo de
-triagem de estabilidade in-fold, ainda não existente. FASE 3 (C1/C2/C3)
+Liberado pelo Manager sem curadoria (ver "Conclusão do E1" acima): "todas
+as candidatas T2 do §2.2-2.12 em passe de pesquisa (sem registry/
+paridade), ranquear por ortogonalidade incremental contra o T1 corrente,
+parar em `hhi_efetivo` de 12-15... conta como 1 trial, não um por
+feature." Resultado completo em `experiments/faixa2_e2_research.json`.
+
+**Escopo computável, medido antes de escrever qualquer candidata**
+(`src/features/_sources_research.py`, `src/features/research_t2.py`):
+grupos A (retorno/preço), B (momentum/reversão), C (volatilidade), D
+(volume/fluxo), E (funding/OI/basis) e K (temporal/calendário) — todos
+com dado real disponível. H (on-chain) parcial, com aviso de cobertura
+(granularidade diária, ~96 barras de 15m constantes por observação; série
+com 75 dias de defasagem na cauda, 2026-05-24). F excluído por decisão já
+tomada (quebra de RPI, §2.7.1). G (opções) e I (macro) sem dado. J
+excluído por desenho (§5.8, Meta-exclusive). Deferidos dentro dos grupos
+computáveis, por razão específica: A16/A17/B12 (dependem de fonte ainda
+não mapeada), C08 (percentil rolante ingênuo ≈ 8 bilhões de comparações
+sobre 35.064 barras, sem primitiva O(n log w) disponível — não é
+"esqueceu", é infeasível como escrito), D11f/D13f (agregação por
+percentil/comprimento-de-sequência a nível de trade dentro do bucket de
+15m, não é `SUM`/`GROUP BY` simples como D12f), E23f (não mapeada).
+**70 candidatas efetivamente computadas e avaliadas** (72 - 2 já
+descartadas no pré-E2 (2), `E27f_cost_atr_ratio`/`A13_dist_ema48_atr`,
+explicitamente excluídas da re-seleção — decisão fechada por um critério
+diferente, ortogonalidade não reabre importância por permutação).
+
+**Correlação com o proxy de vol, medida e reportada por candidata**
+(orientação explícita do Manager, dado que `E27f` mostrou o vetor
+"saturado de volatilidade"): `C15_iv_rv_spread` correlaciona -0,80 com
+`C07_vol_pctile_expanding`, `C03_realized_vol_48` +0,79, `C02_atr_20_pct`
++0,76 — confirma a preocupação como MEDIÇÃO real, várias candidatas de
+volatilidade são de fato quase-redundantes com o proxy já em T1.
+
+**Seleção gulosa, `n_eff_factors` 6,479 → 15,825 em 10 passos, alvo
+[12,15] atingido no passo 10** (não estourou o teto): `A12_gap_pct`,
+`E05f_time_to_funding_h`, `E12f_price_oi_divergence`,
+`K08_days_since_halving`, `H01_exchange_netflow_z`, `E11f_oi_change_1d`,
+`A08_upper_wick_ratio`, `K02_dow_sin`, `D04f_volume_accel`,
+`E17f_retail_vs_top_spread`. **Nenhuma das 10 selecionadas está sinalizada
+como saturada de vol** (`vol_saturated_flags_in_selection: []`,
+threshold de correlação 0,60 com `C07`) — a preocupação do Manager era
+real e mensurável (parágrafo acima), mas o algoritmo de ortogonalidade
+já a penaliza estruturalmente: candidatas de vol quase-redundante
+(`C03`/`C02`/`C15`/`C04`/`C05`/`C09`/`C12`) nunca entram porque adicionar
+uma feature correlacionada não move `n_eff_factors`, e a seleção gulosa
+sempre prefere quem move mais. O aviso não foi ignorado — foi confirmado
+como já resolvido pelo próprio critério de seleção, não por curadoria
+manual.
+
+**Nada disto é T1 de produção.** `registry.yaml`/`T1_FEATURE_IDS` não
+foram tocados — é medição de ranking para o E3 (triagem in-fold do §5.4)
+decidir quais das 10 sobrevivem fora da amostra, por fold. `n_lifetime`
+id 11, delta=1 (não 70) por instrução explícita do Manager — ver
+`audit/n_lifetime.yaml`. Contador: 41 → **42**.
+
+### E3 e FASE 3 (C1/C2/C3) — pendentes, não iniciados
+
+E3 (Camada 2, §5.4) é um módulo novo de triagem de estabilidade in-fold
+sobre as 10 candidatas do E2 acima — ainda não existe. FASE 3 (C1/C2/C3)
 precisa rodar sobre "a melhor configuração da FASE 2" — como nenhuma FASE
 2 recria a seleção do Alpha sem retreinar, C1/C2 (que comparam
 `directional_sharpe` do Alpha, não da população incondicional) exigem
 retreinar a Camada 1 pelo menos uma vez sob a config vencedora de
-E1+E2+E3, não estão prontos a partir só de E1.
+E1+E2+E3, não estão prontos a partir só de E1/E2.
 
 ## Índice rápido — onde encontrar cada número
 
@@ -1652,6 +1703,9 @@ E1+E2+E3, não estão prontos a partir só de E1.
 | tp=1,5 é a configuração vencedora pra carregar adiante? | Não — E1 rodou sobre população INCONDICIONAL; o ótimo real só é computável DEPOIS de E2/E3, sobre a população selecionada | Faixa 2, "Conclusão do E1" acima |
 | E27f_cost_atr_ratio ajuda o modelo a prever? | Importância por permutação NEGATIVA (-0,0065) — embaralhar melhora o AUC; descartada no par contra C07 | Faixa 2, Pré-E2 (2) acima |
 | Alguma config de orçamento (short-só/long-sem-R2) cabe em TODOS os 5 paths? | Não — mas as falhas de 1,04-1,05x NÃO são tratadas como restrição ainda (menores que a inconsistência de threshold já medida); a combinação falhando 5/5 continua de pé como restrição real | Faixa 2, Pré-E2 (3) acima |
+| E2 (passe de pesquisa T2, sem curadoria) — quantas candidatas e quais entraram? | 70 avaliadas, 10 selecionadas por ortogonalidade incremental (`n_eff_factors` 6,479→15,825): A12, E05f, E12f, K08, H01, E11f, A08, K02_dow_sin, D04f, E17f | Faixa 2, FASE 2 E2 acima |
+| A preocupação de "vetor saturado de vol" (E27f) se confirma nas candidatas T2? | Sim como medição (C15 correlaciona -0,80 com C07, C03 +0,79) — mas 0 das 10 selecionadas fica sinalizada, o critério de ortogonalidade já as penaliza estruturalmente | Faixa 2, FASE 2 E2 acima |
+| N_lifetime atual, auditado (pós-E2)? | 42 (era 41 — +1 pelo passe de pesquisa E2, contado como 1 trial por instrução do Manager, não 70) | `audit/n_lifetime.yaml`, Faixa 2 E2 acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |
