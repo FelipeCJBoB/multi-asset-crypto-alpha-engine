@@ -11,9 +11,17 @@ capital tratado como restrição física do desenho, não como parâmetro livre.
 ## Status
 
 **Sprint 8 (rodada 1) de 18 concluído + fatia adiantada do Sprint 10 + sprint
-de engenharia pós-auditoria (8 fases) + 6 tarefas quant pós-auditoria** —
-Sprints 1-9 e 12 feitos (12 adiantado) · 715 testes passando · 0 violações
-de lint · 6/6 contratos de import-linter.
+de engenharia pós-auditoria (8 fases) + 6 tarefas quant pós-auditoria +
+skill de auditoria de engenharia** — Sprints 1-9 e 12 feitos (12 adiantado)
+· 729 testes passando · 0 violações de lint · 6/6 contratos de import-linter.
+
+🔍 **Cobertura de auditoria ainda desigual**: a mesma classe de bug (divisão
+sem guarda de sinal) apareceu de forma independente em `models/` e `risk/` —
+subsistemas diferentes, construídos em momentos diferentes. `.claude/skills/
+audit_engineering/` (metodologia de 4 lentes, fundamentada em Sculley et al.
+2015 e Breck et al. 2017) mais `tools/lint/check_unguarded_ratios.py`
+existem pra cobrir sistematicamente o que ainda não passou por esse
+checklist: `exchange/`, `data/`, `labels/`, `execution/`, `risk/sizing.py`.
 
 📈 **Melhora real medida no Alpha**: uma restrição monotônica grátis
 (identidade contábil de funding, sem custo de busca estatística) elevou o

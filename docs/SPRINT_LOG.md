@@ -581,6 +581,44 @@ duas capacidades diferentes, só uma presente. `tau`/orçamento de trades
 não são mais suspeitos (T4). Custo de execução tem alavanca clara e
 quantificada pra otimizar depois (T5).
 
+## Skill de auditoria de engenharia + script mecânico de divisões (2026-08-09)
+### commit `07ac7a6`
+
+Motivado por um achado concreto: a mesma classe de bug (divisão sem guarda de
+sinal) apareceu em dois subsistemas diferentes, construídos em momentos
+diferentes por agentes diferentes (`decomposition.py`, Sprint 8; `risk/
+limits.py`, Sprint 12) — prova de que não é específica de onde a atenção
+esteve. ~6.900 linhas (`exchange/`, `data/`, `labels/`, `execution/`,
+`risk/sizing.py`, `monitoring/`) nunca passaram pelo checklist de engenharia
+desta investigação (só `models/`, `backtest/`, `validation/`, `risk/limits.py`
+e `kill_switch.py` receberam essa atenção até agora).
+
+**`tools/lint/check_unguarded_ratios.py`** — AST-scan repo-wide, mecaniza a
+pergunta que a Fase C1/C2 fez à mão sobre só 5 arquivos. Achado real ao rodar
+pela primeira vez: `pathlib.Path.__truediv__` (junção de caminho) usa o mesmo
+nó AST de divisão aritmética — gerou 182 falsos-positivos de 206 antes de um
+filtro heurístico (literal string ou nome terminando em `_DIR`/`_ROOT`/
+`_PATH`). Depois do filtro: **83 divisões reais, 59 sem guarda** —
+incluindo `src/risk/sizing.py:131` (`notional_real / equity_d`), o MESMO
+`equity` que já tinha o bug confirmado em `limits.py`, achado de forma
+independente pelo script. Escape hatch `# noqa: unguarded-ratio — <motivo>`,
+mesmo padrão de `# noqa: magic-number` já usado no repo.
+
+**`.claude/skills/audit_engineering/`** — skill nova, adapta a metodologia de
+lente quádrupla (FS estatística / FI implementação / FT tecnológica / FCN
+contrato negativo) de um projeto irmão, cross-referenciando os banned
+patterns do CLAUDE.md e as 6 classes de bug confirmadas nesta investigação em
+vez das do outro projeto. Pesquisa web obrigatória antes de auditar,
+fundamentada em metodologia estabelecida: Sculley et al. 2015 ("Hidden
+Technical Debt in ML Systems"), Breck et al. 2017 (Google, "ML Test Score"),
+e um paper de 2026 que formaliza vazamento temporal como propriedade
+verificável (base da pergunta central da lente FS). Modo varredura usa
+`Workflow` pra particionar por pacote quando o pedido for mais que 1-2
+arquivos — ordem sugerida pro primeiro sweep: `exchange/` → `data/` →
+`labels/` → `execution/` → `risk/sizing.py` → `monitoring/`.
+
+729 testes (era 715), 0 violação de lint, 6/6 contratos de import-linter.
+
 **Fase H concluída** (rodada separada) — `tools/lint/check_constants_referenced.py` (referência `load_constant("...")` em `src/` sem entrada em `constants.yaml`, verificado contra o índice do git — o que teria pego o incidente acima) e `tools/lint/check_sprint_log_references.py` (heurístico: linha nova aqui com número sem referência por perto); testes em `tests/unit/test_check_constants_referenced.py` e `tests/unit/test_check_sprint_log_references.py`, hooks em `.pre-commit-config.yaml`/`.github/workflows/ci.yml`.
 
 ## Índice rápido — onde encontrar cada número
