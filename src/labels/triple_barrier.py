@@ -49,6 +49,14 @@ deixadas implícitas** (task explícita: reportar toda interpretação):
    `sample_weight` é normalizado para média 1 sobre o dataset COMBINADO
    (os dois lados juntos), porque §3.8 verifica a média sobre
    `labels/{version}/labels.parquet` inteiro, um arquivo só.
+8. **Assimetria de fee no exit (`cost_exit_frac`) não é escolha deste
+   módulo — é `§9.1` (PARTE IX, Execution Engine) traduzida.** `take_profit`
+   é `LIMIT`/`GTC`/`reduce_only` (maker); `stop_loss` é `STOP_MARKET`/
+   `working_type: MARK_PRICE` (taker — ordem algorítmica que não consome
+   liquidez RPI, §9.5.1); `time_stop` é `MARKET reduce_only` (taker
+   explícito). `barrier_hit == "TP"` mapeia para `maker_fee`; `SL` e `TIME`
+   caem no mesmo ramo `else` porque os dois exigem execução garantida via
+   ordem agressiva — não porque compartilham qualquer outra semântica.
 
 **Reuso, não reimplementação:** ATR vem de
 `src.features.groups.group_c.c01_atr_20`/`c02_atr_20_pct` (Wilder,

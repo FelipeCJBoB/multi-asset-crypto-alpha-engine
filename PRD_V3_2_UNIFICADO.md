@@ -1715,13 +1715,15 @@ execution:
     reduce_only: true
     close_position: false
   time_stop:
-    bars: 16
+    bars: 32                    # 8h a 15m — ver time_stop_bars em constants.yaml
     action: MARKET reduce_only
 ```
 
 **`on_timeout: CANCEL` é uma decisão de desenho, não uma otimização.** Se o limite não encheu em 30 minutos, o sinal envelheceu; converter para mercado destrói a economia toda de §0.3 e transforma o caminho assimétrico (0,055%) em taker/taker (0,10%), que reprova o Gate 0.
 
 **`working_type: MARK_PRICE` no stop** é obrigatório para alinhar com o Label Engine (§3.4). Se o label avalia barreira em mark e a execução dispara em last, o modelo aprendeu sobre um trade diferente do que é executado.
+
+**Corrigido (auditoria de engenharia, 2026-08-09):** `time_stop.bars` estava em 16 — sobra da era em que o TF de decisão era 30m (16×30m=8h). O valor canônico atual, usado por `constants.yaml::time_stop_bars` e por todo o resto do PRD (linhas 822, 2911, 3146), é 32 barras de 15m para a mesma janela de 8h/1 funding. O código nunca leu este bloco YAML (lê `constants.yaml` diretamente), então não houve impacto em labels/modelo — o risco era só para uma futura implementação de `src/execution/` que copiasse este trecho literalmente.
 
 ## 9.2 Máquina de estados da ordem
 
