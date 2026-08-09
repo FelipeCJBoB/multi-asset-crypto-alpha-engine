@@ -1671,6 +1671,88 @@ decidir quais das 10 sobrevivem fora da amostra, por fold. `n_lifetime`
 id 11, delta=1 (não 70) por instrução explícita do Manager — ver
 `audit/n_lifetime.yaml`. Contador: 41 → **42**.
 
+### Correção do Manager pré-E3 — ortogonalidade recompensa estrutura, não informação (2026-08-09)
+
+O Manager apontou um defeito real no próprio critério de E2: ortogonalidade
+é cega a CONTEÚDO — uma variável determinística (função pura do relógio)
+é ortogonal a tudo por construção, sem carregar nenhuma informação de
+mercado, e ainda assim conta ponto cheio de `n_eff_factors`. Pediu 3
+ajustes antes do E3 e citou um cálculo (+0,967/+0,973/+0,977 somando
+2,92 de 9,35, ~31% do ganho) para quantificar o efeito.
+
+**Verificação do cálculo contra `experiments/faixa2_e2_research.json`
+(`selection_history`), por instrução própria do CLAUDE.md de medir antes
+de aceitar qualquer número, inclusive os do Manager.** O ponto
+qualitativo está correto e a proporção é aproximadamente essa — mas os
+três deltas citados (0,967/0,973/0,977) não são das três candidatas
+determinísticas por construção. São dos **três primeiros passos da
+seleção gulosa** (`A12_gap_pct` +0,967, `E05f_time_to_funding_h` +0,970,
+`E12f_price_oi_divergence` +0,972) — e `A12_gap_pct`/`E12f_price_oi_divergence`
+são features de MERCADO reais (gap de preço, divergência preço×OI), não
+determinísticas. As três REALMENTE determinísticas por construção entre
+as 10 selecionadas são `E05f_time_to_funding_h` (passo 2, +0,970),
+`K08_days_since_halving` (passo 4, +0,940) e `K02_dow_sin` (passo 8,
++0,921) — soma **2,831**, não 2,92; **30,3%** do ganho total (9,347), não
+"~31%" por coincidência de arredondamento, não por ele ter acertado a
+composição. **Leitura correta do ganho de mercado: ~6,52 (9,347 − 2,831),
+não ~6,4.**
+
+**Achado adicional, não pedido mas decorrente da verificação**: o defeito
+é mais estrutural do que o exemplo do Manager sugere. `A12_gap_pct` e
+`E12f_price_oi_divergence` — features de mercado genuínas — também têm
+delta ~0,97, maior que os das determinísticas (~0,92-0,97). Isso é porque
+o ganho marginal de `n_eff_factors` (razão de participação) é maior nos
+PRIMEIROS passos independente do conteúdo informacional — é propriedade
+da métrica (adicionar 1 eixo ortogonal a um conjunto pequeno move mais a
+razão de participação que adicionar o mesmo eixo a um conjunto já maior),
+não das features específicas. Ou seja: não é só "determinística ganha de
+graça" — é "cedo ganha de graça", determinística ou não. Isso reforça o
+ponto do Manager (ortogonalidade ≠ informação) além do que os 30,3%
+capturam sozinhos, mas não muda nenhuma decisão desta rodada — registrado
+para o desenho do E3 considerar.
+
+**Os 3 ajustes, registrados como critério para o E3 (nenhum bloqueante,
+nenhum rodado ainda — E3 não existe como módulo):**
+
+1. **`K08_days_since_halving` — escrutínio prioritário.** Periodicidade de
+   4 anos, ~1,6 ciclos na amostra (2020-01 a 2026-08), os dois ciclos
+   observados com desfecho OPOSTO (ciclo 1: +519%; ciclo 2: pico em
+   ~115k, volta a ~64k, -3%) — mesma fase de ciclo mapeando pra sinais
+   contrários é sub-amostragem clássica, não estabilidade real. Critério
+   registrado para quando o E3 rodar: IC estratificado por ciclo (PRE
+   2024-04-19 vs POST), não promover se o sinal vier de um ciclo só.
+2. **`H01_exchange_netflow_z` — latência verificada, CORRIGIDA nesta
+   rodada.** Hipótese do Manager estava certa: os "75 dias de defasagem"
+   eram CSV local desatualizado (`data/capacity/onchain/btc_coinmetrics.csv`,
+   última linha 2026-05-24, arquivo baixado em 2026-08-04), não latência
+   estrutural — verificado contra `community-api.coinmetrics.io`, que
+   publica com ~1 dia de atraso real. Arquivo atualizado via download
+   direto (2.443 linhas, 2019-12-01→2026-08-08; original preservado como
+   `btc_coinmetrics.csv.stale_2026-05-24.bak`, fora do git —
+   `data/capacity/onchain/` é gitignored). Passo de pesquisa E2
+   RE-RODADO com o dado corrigido para confirmar robustez: seleção final
+   IDÊNTICA, `n_eff_factors` 15,825459850990606 → 15,825275447201294
+   (Δ -0,0002, ruído) — `n_lifetime` id 12, **delta=0** (confirmação, não
+   busca nova; mesmo tratamento do bit-idêntico de pré-E2 (2)). O
+   problema real que SOBREVIVE à correção, como o Manager já esperava, é
+   a granularidade diária (~96 barras de 15m constantes por observação,
+   reduz amostra efetiva e infla correlação serial) — registrado no
+   `coverage_warnings` do relatório, agora medido dinamicamente a cada
+   rodada em vez de citar uma data fixa (a mensagem antiga ficou FALSA
+   silenciosamente assim que o CSV foi atualizado uma vez; a nova lê o
+   último `_ts_ms` real do CSV a cada execução).
+3. **`E05f_time_to_funding_h` e `K02_dow_sin` — mantidas, mas o E3 deve
+   reportar a estabilidade das determinísticas SEPARADA das de mercado.**
+   São ortogonais por construção; se sobreviverem à triagem in-fold do
+   §5.4, o número de `estabilidade` (força × consistência²) precisa
+   aparecer isolado antes de qualquer promoção a T1 de produção.
+
+**Não feito, por instrução explícita — registrado como alternativa, não
+como tarefa**: reexecutar a seleção com uma trava de `|IC|` in-fold como
+piso. Duplicaria o que a triagem do §5.4 já faz in-fold, custaria +1
+`n_lifetime`, e filtrar por IC marginal descartaria features que só
+valem em interação (o próprio raciocínio do Manager para não pedir).
+
 ### E3 e FASE 3 (C1/C2/C3) — pendentes, não iniciados
 
 E3 (Camada 2, §5.4) é um módulo novo de triagem de estabilidade in-fold
@@ -1705,7 +1787,9 @@ E1+E2+E3, não estão prontos a partir só de E1/E2.
 | Alguma config de orçamento (short-só/long-sem-R2) cabe em TODOS os 5 paths? | Não — mas as falhas de 1,04-1,05x NÃO são tratadas como restrição ainda (menores que a inconsistência de threshold já medida); a combinação falhando 5/5 continua de pé como restrição real | Faixa 2, Pré-E2 (3) acima |
 | E2 (passe de pesquisa T2, sem curadoria) — quantas candidatas e quais entraram? | 70 avaliadas, 10 selecionadas por ortogonalidade incremental (`n_eff_factors` 6,479→15,825): A12, E05f, E12f, K08, H01, E11f, A08, K02_dow_sin, D04f, E17f | Faixa 2, FASE 2 E2 acima |
 | A preocupação de "vetor saturado de vol" (E27f) se confirma nas candidatas T2? | Sim como medição (C15 correlaciona -0,80 com C07, C03 +0,79) — mas 0 das 10 selecionadas fica sinalizada, o critério de ortogonalidade já as penaliza estruturalmente | Faixa 2, FASE 2 E2 acima |
-| N_lifetime atual, auditado (pós-E2)? | 42 (era 41 — +1 pelo passe de pesquisa E2, contado como 1 trial por instrução do Manager, não 70) | `audit/n_lifetime.yaml`, Faixa 2 E2 acima |
+| N_lifetime atual, auditado (pós-E2)? | 42 (era 41 — +1 pelo passe de pesquisa E2, contado como 1 trial por instrução do Manager, não 70; +0 pela correção de dado on-chain, confirmação não busca nova) | `audit/n_lifetime.yaml`, Faixa 2 E2 acima |
+| Dos 10 selecionados em E2, quantos são determinísticos por construção (função do relógio, zero informação de mercado)? | 3 — `E05f_time_to_funding_h`, `K08_days_since_halving`, `K02_dow_sin` — somam 2,831 de 9,347 de ganho (30,3%); leitura correta do ganho de MERCADO é ~6,52, não 9,35 | Faixa 2, "Correção do Manager pré-E3" acima |
+| O aviso de defasagem on-chain de 75 dias (H01/H02/H03/H06/H08) era latência real da fonte? | Não — CSV local desatualizado; CoinMetrics publica com ~1 dia de atraso real. Corrigido, seleção do E2 confirmada robusta (Δn_eff ruído) | Faixa 2, "Correção do Manager pré-E3" acima |
 | sliding_window_view (§18.7.1) foi implementado? | Sim — `src/labels/barrier_sweep.py`, 18 células em 35,8s, reproduz Sprint 6 com max_abs_diff=2,3e-5 | Faixa 2, FASE 2 E1 acima |
 | A geometria de barreira sozinha (sem seleção de modelo) tem edge positivo em algum ponto do grid? | Não — negativo nas 18 células, os dois lados (população incondicional, mesmo padrão do B1 já medido) | Faixa 2, FASE 2 E1 acima |
 | Cobertura real de dado por fonte? | tabela acima | Sprint 0/backfill acima, `config/constants.yaml::known_gaps` |

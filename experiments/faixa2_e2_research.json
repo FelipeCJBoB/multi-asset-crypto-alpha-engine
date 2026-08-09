@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-09T21:02:04.371108+00:00",
-  "code_version": "9acba34",
+  "generated_at": "2026-08-09T22:02:16.098756+00:00",
+  "code_version": "a8a4f6e",
   "task": "faixa2_e2_research",
   "current_t1_8": [
     "A05_ret_vol_norm_4",
@@ -21,11 +21,11 @@
     "C13_bvol_index": "cobertura 47.5% do periodo -- BVOL so existe desde 2023-06-20",
     "C14_bvol_z_90d": "cobertura 47.5% do periodo -- BVOL so existe desde 2023-06-20",
     "C15_iv_rv_spread": "cobertura 47.5% do periodo -- BVOL so existe desde 2023-06-20",
-    "H01_exchange_netflow_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 75 dias de defasagem na cauda (2026-05-24)",
-    "H02_exchange_balance_pct": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 75 dias de defasagem na cauda (2026-05-24)",
-    "H03_active_addresses_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 75 dias de defasagem na cauda (2026-05-24)",
-    "H06_mvrv_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 75 dias de defasagem na cauda (2026-05-24)",
-    "H08_hash_rate_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 75 dias de defasagem na cauda (2026-05-24)"
+    "H01_exchange_netflow_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 1.0 dias A FRENTE do fim da janela de bars (nao e gargalo) (medido nesta rodada, ultimo ponto do CSV local)",
+    "H02_exchange_balance_pct": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 1.0 dias A FRENTE do fim da janela de bars (nao e gargalo) (medido nesta rodada, ultimo ponto do CSV local)",
+    "H03_active_addresses_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 1.0 dias A FRENTE do fim da janela de bars (nao e gargalo) (medido nesta rodada, ultimo ponto do CSV local)",
+    "H06_mvrv_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 1.0 dias A FRENTE do fim da janela de bars (nao e gargalo) (medido nesta rodada, ultimo ponto do CSV local)",
+    "H08_hash_rate_z": "granularidade diaria -- constante por ~96 barras de 15m; serie on-chain com 1.0 dias A FRENTE do fim da janela de bars (nao e gargalo) (medido nesta rodada, ultimo ponto do CSV local)"
   },
   "correlation_with_c07_all_candidates": {
     "A05_ret_vol_norm_4": 0.0013005853803255882,
@@ -92,12 +92,12 @@
     "E16f_global_ls_ratio": 0.17805739633488527,
     "E17f_retail_vs_top_spread": 0.17090740726008624,
     "E18f_taker_ls_vol_ratio": -0.06796430724598342,
-    "D12f_agg_order_flow_imb": 0.001979513967829245,
-    "H01_exchange_netflow_z": 0.08700043363234687,
-    "H02_exchange_balance_pct": 0.2035617904207174,
-    "H03_active_addresses_z": 0.2454561376554252,
-    "H06_mvrv_z": 0.18544408445025948,
-    "H08_hash_rate_z": -0.22662246559050336,
+    "D12f_agg_order_flow_imb": 0.0019795139678292434,
+    "H01_exchange_netflow_z": 0.08703460052304075,
+    "H02_exchange_balance_pct": 0.20432672206890976,
+    "H03_active_addresses_z": 0.24903730821389355,
+    "H06_mvrv_z": 0.18727240565831474,
+    "H08_hash_rate_z": -0.22059037780622776,
     "K01_hour_sin": -0.059075917383391914,
     "K01_hour_cos": 0.1487989325494504,
     "K02_dow_sin": 0.0915218717789614,
@@ -141,7 +141,7 @@
       "D04f_volume_accel",
       "E17f_retail_vs_top_spread"
     ],
-    "final_n_eff_factors": 15.825459850990606,
+    "final_n_eff_factors": 15.825275447201294,
     "n_eff_target": [
       12.0,
       15.0
@@ -176,32 +176,32 @@
       {
         "step": 5,
         "feature_added": "H01_exchange_netflow_z",
-        "n_eff_factors": 11.26732459783048
+        "n_eff_factors": 11.266988853925767
       },
       {
         "step": 6,
         "feature_added": "E11f_oi_change_1d",
-        "n_eff_factors": 12.204387946108252
+        "n_eff_factors": 12.204084354773586
       },
       {
         "step": 7,
         "feature_added": "A08_upper_wick_ratio",
-        "n_eff_factors": 13.132766133065143
+        "n_eff_factors": 13.132459991118049
       },
       {
         "step": 8,
         "feature_added": "K02_dow_sin",
-        "n_eff_factors": 14.053581574298878
+        "n_eff_factors": 14.053275460650829
       },
       {
         "step": 9,
         "feature_added": "D04f_volume_accel",
-        "n_eff_factors": 14.951877853460532
+        "n_eff_factors": 14.951571097697554
       },
       {
         "step": 10,
         "feature_added": "E17f_retail_vs_top_spread",
-        "n_eff_factors": 15.825459850990606
+        "n_eff_factors": 15.825275447201294
       }
     ],
     "vol_proxy_correlation_by_candidate": {
@@ -260,12 +260,12 @@
       "E16f_global_ls_ratio": 0.17805739633488527,
       "E17f_retail_vs_top_spread": 0.17090740726008624,
       "E18f_taker_ls_vol_ratio": -0.06796430724598342,
-      "D12f_agg_order_flow_imb": 0.001979513967829245,
-      "H01_exchange_netflow_z": 0.08700043363234687,
-      "H02_exchange_balance_pct": 0.2035617904207174,
-      "H03_active_addresses_z": 0.2454561376554252,
-      "H06_mvrv_z": 0.18544408445025948,
-      "H08_hash_rate_z": -0.22662246559050336,
+      "D12f_agg_order_flow_imb": 0.0019795139678292434,
+      "H01_exchange_netflow_z": 0.08703460052304075,
+      "H02_exchange_balance_pct": 0.20432672206890976,
+      "H03_active_addresses_z": 0.24903730821389355,
+      "H06_mvrv_z": 0.18727240565831474,
+      "H08_hash_rate_z": -0.22059037780622776,
       "K01_hour_sin": -0.059075917383391914,
       "K01_hour_cos": 0.1487989325494504,
       "K02_dow_sin": 0.0915218717789614,
@@ -279,5 +279,5 @@
   },
   "vol_saturated_flags_in_selection": [],
   "nota": "correlacao pooled, pesos uniformes na projecao de n_eff -- NAO decide promocao a producao (registry.yaml/T1_FEATURE_IDS), so ranqueia. A decisao de permanencia real e do E3 (Camada 2, in-fold), ainda nao implementado.",
-  "elapsed_seconds_total": 65.63301520003006
+  "elapsed_seconds_total": 81.57916589989327
 }

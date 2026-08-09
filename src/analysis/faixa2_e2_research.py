@@ -188,10 +188,30 @@ def build_research_candidates_frame(
         "H06_mvrv_z",
         "H08_hash_rate_z",
     )
-    h_group_note = (
-        "granularidade diaria -- constante por ~96 barras de 15m; serie "
-        "on-chain com 75 dias de defasagem na cauda (2026-05-24)"
-    )
+    # Defasagem MEDIDA a cada rodada (não hardcoded) -- a versão anterior
+    # deste aviso citava uma data fixa (2026-05-24) que virou FALSA assim
+    # que o CSV local foi atualizado, sem qualquer sinal de que o texto
+    # estava desatualizado. `onchain_series` é a série RAW (não
+    # forward-filled pelo asof), então seu último `_ts_ms` real é a
+    # medida certa de defasagem -- comparado ao último `close_time` das
+    # barras carregadas.
+    onchain_series = sr.load_onchain_series()
+    hours_per_day = 24.0  # noqa: magic-number -- conversao de unidade, nao constante de dominio
+    ms_per_hour = 3_600_000  # noqa: magic-number -- conversao de unidade, nao constante de dominio
+    if onchain_series.height and bars_15m.height:
+        last_onchain_ms = int(onchain_series["_ts_ms"].max())  # type: ignore[arg-type]
+        last_bar_ms = int(bars_15m["close_time"].max())  # type: ignore[arg-type]
+        lag_days = (last_bar_ms - last_onchain_ms) / ms_per_hour / hours_per_day
+        if lag_days > 0:
+            lag_desc = f"{lag_days:.1f} dias de defasagem atras do fim da janela de bars"
+        else:
+            lag_desc = f"{abs(lag_days):.1f} dias A FRENTE do fim da janela de bars (nao e gargalo)"
+        h_group_note = (
+            f"granularidade diaria -- constante por ~96 barras de 15m; serie "
+            f"on-chain com {lag_desc} (medido nesta rodada, ultimo ponto do CSV local)"
+        )
+    else:
+        h_group_note = "granularidade diaria -- constante por ~96 barras de 15m; CSV on-chain vazio"
     for h_col in h_group_cols:
         coverage_warnings[h_col] = h_group_note
 

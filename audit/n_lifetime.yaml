@@ -151,6 +151,29 @@ log:
       como 1 trial, não um por feature") — não 70. delta=1.
       Artefato: experiments/faixa2_e2_research.json.
     delta: 1
+  - id: 12
+    date: "2026-08-09"
+    type: data_quality_correction
+    description: >
+      Faixa 2, E2 — correção de dado (não busca nova, `delta=0`, mesmo
+      tratamento do "bit-idêntico, n_lifetime += 0" de pré-E2 (2)/id ~10).
+      Manager pediu verificar se a "defasagem de 75 dias" do on-chain
+      (H01/H02/H03/H06/H08) era latência estrutural da fonte ou CSV local
+      desatualizado. Verificado contra community-api.coinmetrics.io: dado
+      publicado até 2026-08-08 (~1 dia de atraso real, não 75). O
+      `data/capacity/onchain/btc_coinmetrics.csv` local estava de fato
+      obsoleto (última linha 2026-05-24, arquivo de 2026-08-04) —
+      atualizado via download direto da community API (2443 linhas,
+      2019-12-01..2026-08-08; original preservado como
+      `btc_coinmetrics.csv.stale_2026-05-24.bak`, arquivo gitignored, não
+      versionado). Passo de pesquisa E2 (id 11) RE-RODADO com dado
+      corrigido para confirmar robustez, não para re-buscar: seleção
+      final IDÊNTICA (mesmas 10 candidatas, mesma ordem),
+      `n_eff_factors` 15,825459850990606 -> 15,825275447201294 (Δ
+      -0,0002, ruído). Conclusão do id 11 não muda; delta=0 porque não é
+      um trial novo, é confirmação de que o já contado sobrevive à
+      correção do bug.
+    delta: 0
 
 # Nota de escopo (Faixa 2, F0.1, 2026-08-09): os 4 itens acima (ids 6-9,
 # delta total +18, contador 5->23) são exatamente os listados pela task

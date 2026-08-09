@@ -146,12 +146,16 @@ def load_bvol_aligned(bars_15m: pl.DataFrame, start: DateLike, end: DateLike) ->
 
 
 # ============================================================================
-# On-chain (E01, CoinMetrics CSV) — data/capacity/onchain/, granularidade
-# diária. Série termina 2026-05-24 (75 dias defasada do resto do dataset
-# no snapshot medido) -- barras depois disso recebem o ÚLTIMO valor
-# conhecido via asof backward (nunca um valor futuro), não um valor
-# inventado; ficam efetivamente "congeladas" na cauda, sinalizado no
-# relatório de ranking, não escondido.
+# On-chain (E01, CoinMetrics community-api.coinmetrics.io CSV export) —
+# data/capacity/onchain/, granularidade diária. A defasagem de ~75 dias
+# medida em 2026-08-09 (arquivo terminava 2026-05-24) era staleness do
+# SNAPSHOT LOCAL, não latência estrutural da fonte -- verificado contra a
+# community API (dado publicado até 2026-08-08, ~1 dia de atraso real) e
+# corrigido no mesmo turno (Manager, "Faixa 2, E2 -- correção de vetor
+# saturado de vol"). Ainda assim granularidade diária => barras de 15m
+# dentro do mesmo dia recebem o ÚLTIMO valor conhecido via asof backward
+# (nunca um valor futuro) -- ~96 barras "congeladas" por observação diária,
+# não uma cauda congelada inteira; sinalizado no relatório de ranking.
 # ============================================================================
 
 _ONCHAIN_CSV_PATH = DATA_ROOT / "capacity" / "onchain" / "btc_coinmetrics.csv"
