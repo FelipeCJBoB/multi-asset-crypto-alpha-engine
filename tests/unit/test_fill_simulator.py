@@ -1,0 +1,463 @@
+"""Testes de `src/execution/fill_simulator.py` — simulador de fila (§9.5,
+Sprint 9). Cobre o núcleo numérico puro (`_simulate_one_order`,
+`_asof_index`, `_day_grid_ms`) com fixtures sintéticas pequenas primeiro
+(sem IO — a janela real 2023-05-16..2024-03-30 NÃO é varrida aqui, isso é
+feito por uma execução separada, fora da suíte de testes, que produz
+`experiments/fill_simulator_runs.parquet`), depois `summarize`/escrita
+atômica/log de experimentos com `tmp_path`, e por fim um teste de integração
+leve (skip se o backfill local não existir) confirmando o schema real de
+`data/raw/book_ticker/BTCUSDT/`."""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from src.execution import fill_simulator as fs
+from src.execution._paths import BOOK_TICKER_DIR
+
+_SYMBOL = "BTCUSDT"
+
+
+def _skip_if_missing_book_ticker(day: str) -> None:
+    path = BOOK_TICKER_DIR / _SYMBOL / f"{day}.parquet"
+    if not path.exists():
+        pytest.skip(f"fixture ausente no backfill local: {path}")
+
+
+def _book(
+    times: list[int],
+    bid_px: list[float],
+    bid_qty: list[float],
+    ask_px: list[float],
+    ask_qty: list[float],
+) -> fs._BookArrays:
+    return fs._BookArrays(
+        transaction_time=np.array(times, dtype=np.int64),
+        best_bid_price=np.array(bid_px, dtype=np.float64),
+        best_bid_qty=np.array(bid_qty, dtype=np.float64),
+        best_ask_price=np.array(ask_px, dtype=np.float64),
+        best_ask_qty=np.array(ask_qty, dtype=np.float64),
+    )
+
+
+def _trades(
+    times: list[int], prices: list[float], qtys: list[float], is_buyer_maker: list[bool]
+) -> fs._TradeArrays:
+    return fs._TradeArrays(
+        transact_time=np.array(times, dtype=np.int64),
+        price=np.array(prices, dtype=np.float64),
+        quantity=np.array(qtys, dtype=np.float64),
+        is_buyer_maker=np.array(is_buyer_maker, dtype=np.bool_),
+    )
+
+
+# ============================================================================
+# _asof_index
+# ============================================================================
+
+
+def test_asof_index_antes_do_primeiro_registro_e_menos_um() -> None:
+    times = np.array([1_000, 2_000, 3_000], dtype=np.int64)
+    assert fs._asof_index(times, 500) == -1
+
+
+def test_asof_index_exato_e_entre_registros() -> None:
+    times = np.array([1_000, 2_000, 3_000], dtype=np.int64)
+    assert fs._asof_index(times, 2_000) == 1
+    assert fs._asof_index(times, 2_500) == 1
+    assert fs._asof_index(times, 3_500) == 2
+
+
+# ============================================================================
+# _simulate_one_order — sem estado de book conhecido
+# ============================================================================
+
+
+def test_sem_estado_de_book_devolve_none() -> None:
+    book = _book([10_000], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=5_000, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is None
+
+
+def test_side_invalido_levanta_erro() -> None:
+    book = _book([0], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    with pytest.raises(ValueError):
+        fs._simulate_one_order(
+            book, trades, t_post_ms=0, side=0, fill_timeout_ms=900_000, tick_size=0.10
+        )
+
+
+# ============================================================================
+# _simulate_one_order — fila vazia preenche imediatamente
+# ============================================================================
+
+
+def test_queue_ahead_zero_preenche_no_proprio_post() -> None:
+    book = _book([0], [100.0], [0.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 0
+    assert order.fill_price == 100.0
+    assert order.queue_ahead_initial == 0.0
+
+
+# ============================================================================
+# _simulate_one_order — compra no bid, preenchida por venda agressora
+# ============================================================================
+
+
+def test_compra_preenchida_por_venda_agressora_no_mesmo_nivel() -> None:
+    book = _book([0], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades(
+        times=[100, 200, 300],
+        prices=[100.0, 100.0, 100.0],
+        qtys=[0.3, 0.3, 0.5],  # cumsum: 0.3, 0.6, 1.1 -> cruza 1.0 no terceiro
+        is_buyer_maker=[True, True, True],  # comprador=maker (nosso lado), vendedor=agressor
+    )
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 300  # primeiro trade que CRUZA o total, não o último
+    assert order.fill_price == 100.0
+
+
+def test_compra_nao_preenche_por_trade_do_lado_errado() -> None:
+    """`is_buyer_maker=False` (comprador é o agressor) não decrementa a fila
+    de uma ordem de COMPRA repousando no bid — é o mesmo lado do book, não o
+    agressor que bateria contra nós."""
+    book = _book([0], [100.0], [1.0], [100.1], [1.0])
+    trades = _trades(
+        times=[100, 200],
+        prices=[100.0, 100.0],
+        qtys=[5.0, 5.0],
+        is_buyer_maker=[False, False],
+    )
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+    assert order.t_entry_ms is None
+    assert order.fill_price is None
+
+
+def test_compra_nao_preenche_por_trade_em_nivel_de_preco_diferente() -> None:
+    book = _book([0], [100.0], [0.5], [100.1], [1.0])
+    trades = _trades(
+        times=[100],
+        prices=[99.5],  # fora da tolerância tick_size/2 de 100.0
+        qtys=[10.0],
+        is_buyer_maker=[True],
+    )
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+
+
+# ============================================================================
+# _simulate_one_order — venda no ask, preenchida por compra agressora
+# ============================================================================
+
+
+def test_venda_preenchida_por_compra_agressora_no_mesmo_nivel() -> None:
+    book = _book([0], [100.0], [1.0], [100.1], [0.4])
+    trades = _trades(
+        times=[100, 200],
+        prices=[100.1, 100.1],
+        qtys=[0.2, 0.3],  # cumsum 0.2, 0.5 -> cruza 0.4 no segundo
+        is_buyer_maker=[False, False],  # vendedor=maker (nosso lado), comprador=agressor
+    )
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=-1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 200
+    assert order.fill_price == 100.1
+
+
+# ============================================================================
+# _simulate_one_order — janela de timeout
+# ============================================================================
+
+
+def test_trade_fora_da_janela_de_timeout_nao_conta() -> None:
+    book = _book([0], [100.0], [0.5], [100.1], [1.0])
+    trades = _trades(
+        times=[1_000_000],  # depois do horizonte de 900_000ms
+        prices=[100.0],
+        qtys=[10.0],
+        is_buyer_maker=[True],
+    )
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+
+
+def test_trade_exatamente_em_t_post_nao_conta() -> None:
+    """Janela é `(t_post, horizon]`, estritamente posterior a `t_post` —
+    mesma convenção de `src.labels.fill_model`."""
+    book = _book([0], [100.0], [0.5], [100.1], [1.0])
+    trades = _trades(times=[0], prices=[100.0], qtys=[10.0], is_buyer_maker=[True])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+
+
+# ============================================================================
+# _simulate_one_order — markout
+# ============================================================================
+
+
+def test_markout_calculado_no_horizonte_com_sinal_correto() -> None:
+    # Preenche imediatamente (queue_ahead=0) em t_post=0, fill_price=100.0 (compra).
+    book = _book(
+        times=[0, 60_000, 300_000, 1_800_000],
+        bid_px=[100.0, 101.0, 99.0, 102.0],
+        bid_qty=[0.0, 1.0, 1.0, 1.0],
+        ask_px=[100.2, 101.2, 99.2, 102.2],
+        ask_qty=[1.0, 1.0, 1.0, 1.0],
+    )
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.t_entry_ms == 0
+    # mid em 60_000 = (101.0+101.2)/2 = 101.1 -> markout = +1 * (101.1-100.0)/100.0 * 10000
+    assert order.markout_1m_bps == pytest.approx((101.1 - 100.0) / 100.0 * 10_000)
+    # mid em 300_000 = (99.0+99.2)/2 = 99.1 -> markout negativo (preço caiu, ruim pra compra)
+    assert order.markout_5m_bps == pytest.approx((99.1 - 100.0) / 100.0 * 10_000)
+    assert order.markout_5m_bps is not None
+    assert order.markout_5m_bps < 0
+    assert order.markout_30m_bps == pytest.approx((102.1 - 100.0) / 100.0 * 10_000)
+
+
+def test_markout_sinal_invertido_para_venda() -> None:
+    # Venda no ask preenche imediatamente; preço SOBE depois -> markout negativo (ruim pra venda).
+    book = _book(
+        times=[0, 60_000],
+        bid_px=[100.0, 101.0],
+        bid_qty=[1.0, 1.0],
+        ask_px=[100.2, 101.2],
+        ask_qty=[0.0, 1.0],
+    )
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=-1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.fill_price == 100.2
+    mid_60s = (101.0 + 101.2) / 2.0
+    expected = -1 * (mid_60s - 100.2) / 100.2 * 10_000
+    assert order.markout_1m_bps == pytest.approx(expected)
+    assert order.markout_1m_bps is not None
+    assert order.markout_1m_bps < 0  # preço subiu, ruim pra quem vendeu
+
+
+def test_markout_none_quando_horizonte_alem_do_book_carregado() -> None:
+    # Só há book até 60_000ms — horizonte de 30m (1_800_000ms) fica fora.
+    book = _book([0, 60_000], [100.0, 100.0], [0.0, 1.0], [100.2, 100.2], [1.0, 1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is True
+    assert order.markout_1m_bps is not None
+    assert order.markout_30m_bps is None  # não um valor stale
+
+
+def test_markout_none_quando_nofill() -> None:
+    book = _book([0], [100.0], [5.0], [100.1], [1.0])
+    trades = _trades([], [], [], [])
+    order = fs._simulate_one_order(
+        book, trades, t_post_ms=0, side=1, fill_timeout_ms=900_000, tick_size=0.10
+    )
+    assert order is not None
+    assert order.filled is False
+    assert order.markout_1m_bps is None
+    assert order.markout_5m_bps is None
+    assert order.markout_30m_bps is None
+
+
+# ============================================================================
+# _day_grid_ms
+# ============================================================================
+
+
+def test_day_grid_tem_96_pontos_de_15_minutos() -> None:
+    grid = fs._day_grid_ms(date(2024, 1, 15), 900_000)
+    assert grid.shape[0] == 96
+    assert int(grid[0]) == 1705276800000  # 2024-01-15T00:00:00Z em epoch ms
+    assert int(grid[1]) - int(grid[0]) == 900_000
+    assert int(grid[-1]) - int(grid[0]) == 95 * 900_000
+
+
+# ============================================================================
+# summarize
+# ============================================================================
+
+
+def test_summarize_dataset_vazio() -> None:
+    empty = fs._empty_orders_frame()
+    summary = fs.summarize(empty, symbol="BTCUSDT", start="2024-01-01", end="2024-01-02")
+    assert summary.n_orders == 0
+    assert summary.n_filled == 0
+    assert np.isnan(summary.p_fill)
+
+
+def test_summarize_conta_p_fill_e_markout_corretamente() -> None:
+    cols: dict[str, list[object]] = {c: [] for c in fs._ORDERS_SCHEMA}
+    rows = [
+        # side, filled, t_entry, fill_price, m1, m5, m30
+        (1, True, 0, 100.0, 1.0, 2.0, 3.0),
+        (1, False, None, None, None, None, None),
+        (-1, True, 0, 100.0, -1.0, -2.0, None),
+    ]
+    for side, filled, t_entry, fill_price, m1, m5, m30 in rows:
+        cols["symbol"].append("BTCUSDT")
+        cols["t_post"].append(0)
+        cols["side"].append(side)
+        cols["limit_price"].append(100.0)
+        cols["queue_ahead_initial"].append(0.0)
+        cols["filled"].append(filled)
+        cols["t_entry"].append(t_entry)
+        cols["fill_price"].append(fill_price)
+        cols["markout_1m_bps"].append(m1)
+        cols["markout_5m_bps"].append(m5)
+        cols["markout_30m_bps"].append(m30)
+    df = fs._finalize_orders_frame(cols)
+
+    summary = fs.summarize(df, symbol="BTCUSDT", start="2024-01-01", end="2024-01-02")
+    assert summary.n_orders == 3
+    assert summary.n_filled == 2
+    assert summary.n_nofill == 1
+    assert summary.p_fill == pytest.approx(2 / 3)
+    assert summary.p_fill_by_side["buy"] == pytest.approx(1 / 2)
+    assert summary.p_fill_by_side["sell"] == pytest.approx(1.0)
+    assert summary.markout_n["1m"] == 2
+    assert summary.markout_mean_bps["1m"] == pytest.approx((1.0 + -1.0) / 2)
+    assert summary.markout_n["30m"] == 1  # um dos fills tem markout_30m None
+    assert summary.markout_mean_bps["30m"] == pytest.approx(3.0)
+
+
+# ============================================================================
+# calibrate_against_real_fills — hook não implementado
+# ============================================================================
+
+
+def test_calibrate_against_real_fills_levanta_not_implemented() -> None:
+    empty = fs._empty_orders_frame()
+    with pytest.raises(NotImplementedError):
+        fs.calibrate_against_real_fills(empty, empty)
+
+
+# ============================================================================
+# simulate_window — guard-rails (sem IO real — falha antes de tocar disco)
+# ============================================================================
+
+
+def test_simulate_window_recusa_janela_pos_quebra_rpi() -> None:
+    with pytest.raises(ValueError, match="RPI"):
+        fs.simulate_window("BTCUSDT", date(2025, 11, 1), date(2025, 12, 1))
+
+
+# ============================================================================
+# Escrita atômica + log de experimentos — tmp_path, nunca o arquivo real do repo
+# ============================================================================
+
+
+def _dummy_summary() -> fs.FillSimulationSummary:
+    return fs.FillSimulationSummary(
+        symbol="BTCUSDT",
+        start="2024-01-01",
+        end="2024-01-02",
+        n_orders=10,
+        n_filled=6,
+        n_nofill=4,
+        p_fill=0.6,
+        n_skipped_no_book_state=0,
+        n_days_no_data=0,
+        p_fill_by_side={"buy": 0.6, "sell": 0.6},
+        markout_mean_bps={"1m": 0.5, "5m": 1.0, "30m": 1.5},
+        markout_median_bps={"1m": 0.4, "5m": 0.9, "30m": 1.4},
+        markout_n={"1m": 6, "5m": 6, "30m": 5},
+    )
+
+
+def test_write_orders_atomic_e_write_summary_atomic(tmp_path: Path) -> None:
+    df = fs._empty_orders_frame()
+    orders_path = fs.write_orders_atomic(df, dest_dir=tmp_path)
+    assert orders_path.exists()
+    assert orders_path.name == "orders.parquet"
+
+    summary = _dummy_summary()
+    summary_path = fs.write_summary_atomic(summary, dest_dir=tmp_path)
+    assert summary_path.exists()
+    assert summary_path.name == "summary.json"
+    import orjson
+
+    payload = orjson.loads(summary_path.read_bytes())
+    assert payload["p_fill"] == 0.6
+    assert payload["markout_mean_bps"]["5m"] == 1.0
+
+
+def test_record_experiment_cria_e_acrescenta(tmp_path: Path) -> None:
+    log_path = tmp_path / "runs.parquet"
+    summary = _dummy_summary()
+
+    written = fs.record_experiment(
+        summary, fill_timeout_bars_used=1, tick_size_used=0.10, path=log_path
+    )
+    assert written == log_path
+    out = fs.load_experiment_log(log_path)
+    assert out.height == 1
+    assert out["run_id"][0] == 1
+    assert out["p_fill"][0] == 0.6
+
+    fs.record_experiment(
+        summary, fill_timeout_bars_used=1, tick_size_used=0.10, path=log_path, notes="segunda run"
+    )
+    out2 = fs.load_experiment_log(log_path)
+    assert out2.height == 2
+    assert sorted(out2["run_id"].to_list()) == [1, 2]
+
+
+# ============================================================================
+# Integração leve — confirma o schema real de bookTicker (skip se ausente)
+# ============================================================================
+
+_SCHEMA_FIXTURE_DAY = "2023-06-01"
+
+
+def test_load_book_ticker_pair_schema_real() -> None:
+    _skip_if_missing_book_ticker(_SCHEMA_FIXTURE_DAY)
+    df = fs.load_book_ticker_pair(_SYMBOL, date.fromisoformat(_SCHEMA_FIXTURE_DAY))
+    assert not df.is_empty()
+    for col in fs._BOOK_TICKER_COLUMNS:
+        assert col in df.columns
+    # ordenado por transaction_time
+    ts = df["transaction_time"].to_numpy()
+    assert bool((ts[1:] >= ts[:-1]).all())
