@@ -1,7 +1,7 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-08 | Sprint atual: **4** (Feature Engine) | Versão: v1.1
+> Atualizado: 2026-08-10 | Sprint atual: **4** (Feature Engine) | Versão: v1.2
 > Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
 > Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
 
@@ -180,6 +180,20 @@ Verificada estaticamente. Violações que quebram o build:
 
 ---
 
+## Protocolo de execução — quem roda o quê
+
+**Claude Code nunca executa `.py` nem comando que rode código Python** (`uv run quant ...`, `uv run pytest`, `python -m ...`, script avulso) via Bash/PowerShell. Só o usuário executa, no terminal dele. O fluxo é:
+
+1. Claude escreve/edita o código normalmente (Write/Edit são execução de ferramenta, não de Python — seguem liberados).
+2. Quando algo precisa **rodar**, Claude entrega o comando exato num bloco de código, pronto pra copiar e colar — sem variação, sem "algo como".
+3. Claude não prossegue para o próximo passo que depende do resultado até o usuário colar o output de volta.
+
+**Consequência direta:** como Claude não vê o output em tempo real, o output do script precisa ser autoexplicativo — `structlog` estruturado, mensagem de erro com contexto suficiente pra diagnosticar sem re-rodar, resumo final legível (não só um JSON cru despejado) sempre que o comando for pensado pra ser lido por humano. Isso é parte do Definition of Done de qualquer script novo, não um detalhe de estilo.
+
+**O que continua liberado pra Claude rodar direto** (não é execução de Python, é inspeção/versionamento): `git`, listagem e leitura de arquivo, `grep`/`rg`. A restrição é sobre rodar Python — não sobre o resto do Bash/PowerShell.
+
+---
+
 ## Comandos
 
 ```bash
@@ -302,5 +316,6 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.2 (2026-08-10) — Adiciona seção "Protocolo de execução — quem roda o quê": Claude nunca roda `.py`/`uv run`/`pytest` diretamente, só entrega comando copy-paste; usuário executa no terminal dele. Consequência: output de script novo precisa ser autoexplicativo (parte do DoD).
 - v1.1 (2026-08-08) — Sprints 1-3 concluídos (repo/uv/CI, ExchangeAdapter, Data Quality Engine). PRD atualizado para v3.3 (fato RPI, §2.7.1). Backfill de dados completo. Adiciona seção "Rotina de git" — histórico como memória operacional do projeto. Corrige caminho do PRD (raiz do repo, não `docs/`).
 - v1.0 (2026-08-08) — criação. Ancorado no PRD V3.2 unificado. 32 banned patterns derivados dos 8 erros documentados na PARTE XIX.
