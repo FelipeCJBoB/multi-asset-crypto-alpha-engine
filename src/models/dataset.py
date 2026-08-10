@@ -90,7 +90,23 @@ class ModelingFrame:
     regime_labels_present: tuple[str, ...]
 
 
-def build_modeling_frame(symbol: str = SYMBOL_DEFAULT) -> ModelingFrame:
+def build_modeling_frame(
+    symbol: str = SYMBOL_DEFAULT,
+    *,
+    t0_start: str | None = None,
+    t0_end: str | None = None,
+) -> ModelingFrame:
+    """`t0_start`/`t0_end` (ISO date, inclusive, ex. "2021-12-01") filtram o
+    frame FINAL por `t0`, DEPOIS de features/regime terem sido computados
+    sobre o histórico COMPLETO de `labels` — nunca antes. `build_t1_features`/
+    `build_regimes` não estendem a janela pedida automaticamente
+    (`src/features/build.py` docstring); filtrar `labels` antes de
+    `date_bounds` reiniciaria as séries expansivas (`C07_vol_pctile_
+    expanding`, `E02f_funding_z_expanding`, e o regime que deriva de C07) em
+    `t0_start` em vez de no início real do dataset, mudando silenciosamente a
+    definição de regime/feature da janela — violaria a instrução do
+    PRD_V4_1.md T0.5 ("sem alteração alguma"). Janela `None`/`None` (default)
+    preserva o comportamento anterior byte a byte."""
     labels = cpcv.load_labels_v1().with_row_index("_pos")
     start, end = date_bounds(labels)
 
@@ -113,6 +129,19 @@ def build_modeling_frame(symbol: str = SYMBOL_DEFAULT) -> ModelingFrame:
     merged = labels2.join(bar_table.select(join_cols), on="_close_time_ms", how="left")
     merged = merged.sort("_pos").drop(["_pos", "_close_time_ms"])
 
+    # Filtro de janela por `t0` — SÓ AQUI, depois de features/regime já
+    # computados sobre o histórico completo (ver docstring). `n_rows_pre_
+    # janela` fica no log para o filtro nunca ser silencioso.
+    # `t0` é `Datetime` UTC-aware (`src.labels.triple_barrier`,
+    # `.dt.replace_time_zone("UTC")`) — comparar via `pl.lit(...).str.
+    # to_datetime(time_zone="UTC")` em vez de `datetime.fromisoformat` cru
+    # (naive) evita erro/mismatch de timezone na comparação.
+    n_rows_pre_janela = merged.height
+    if t0_start is not None:
+        merged = merged.filter(pl.col("t0") >= pl.lit(t0_start).str.to_datetime(time_zone="UTC"))
+    if t0_end is not None:
+        merged = merged.filter(pl.col("t0") <= pl.lit(t0_end).str.to_datetime(time_zone="UTC"))
+
     n_missing_regime = int(merged[REGIME_COL].null_count())
     n_missing_feat = int(merged[T1_FEATURE_IDS[0]].null_count())
     regimes_present = tuple(
@@ -121,8 +150,11 @@ def build_modeling_frame(symbol: str = SYMBOL_DEFAULT) -> ModelingFrame:
     logger.info(
         "models.dataset.build_modeling_frame",
         symbol=symbol,
+        t0_start_filter=t0_start,
+        t0_end_filter=t0_end,
         start=start,
         end=end,
+        n_rows_pre_janela=n_rows_pre_janela,
         n_rows=merged.height,
         n_missing_regime=n_missing_regime,
         n_missing_t1_first_feature=n_missing_feat,

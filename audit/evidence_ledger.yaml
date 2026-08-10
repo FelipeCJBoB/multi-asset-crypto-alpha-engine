@@ -2148,3 +2148,41 @@ entries:
   data: '2026-08-09'
   nota: direcionalmente pior mas teste tem baixo poder (estratégia só opera 38,4% dos dias) — inconclusivo,
     não confirmadamente pior
+- id_curto: t05-permanence-camada1-vs-camada0-janela-comum
+  fase: PRD V4.1 T0.5
+  lado: both
+  regime: all
+  janela: '2021-12-01 -> 2026-08-01'
+  feature_ou_filtro: Camada 1 (restrição monotônica in-fold) vs Camada 0 (sem restrição) — mesmo código
+    de sprint8-permanence-camada1-vs-camada0, rerun na janela comum
+  metrica_tipo: CPCV permanence (paths onde Camada1 supera Camada0)
+  metrica_valor: 1 de 5 caminhos (min_paths_required=4); camada1_sharpe_mean=-0,365, camada0_sharpe_mean=-0,095
+  n: 5
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report_t05_janela_comum.json
+  fonte_secao: PRD_V4_1.md T0.5 — baseline reprocessado na janela comum
+  data: '2026-08-10'
+  supersedes: sprint8-permanence-camada1-vs-camada0
+  nota: mesma comparação de sprint8-permanence-camada1-vs-camada0 (5/5 na janela cheia 2020-01→2026-08)
+    falha (1/5) na janela comum 2021-12→2026-08, que exclui a mania 2020-2021 (I5, PRD_V4_1.md §2.10) —
+    dispara critério de encerramento #3 do PRD (§6.5) — reavaliar escopo antes de gastar trials da Camada
+    1/2. Ver t05-directional-sharpe-positivo-cost-dominado para o porquê — não é ausência de sinal.
+- id_curto: t05-directional-sharpe-positivo-cost-dominado
+  fase: PRD V4.1 T0.5
+  lado: both
+  regime: all
+  janela: '2021-12-01 -> 2026-08-01'
+  feature_ou_filtro: Camada 1 alpha_c1_v1 — decomposição de PnL pooled (15 splits) e por path
+  metrica_tipo: directional_sharpe (decomposition_pnl) vs total_sharpe
+  metrica_valor: directional_sharpe pooled +2,51 (positivo em 5/5 paths, 0,18 a 2,04); total_sharpe pooled
+    -0,82; pnl_direcional +12,45 vs pnl_execucao -17,11 (fração de notional, pooled)
+  n: 29519
+  status: amarelo
+  fonte_arquivo: experiments/alpha_layer1_report_t05_janela_comum.json
+  fonte_secao: PRD_V4_1.md T0.5 — decomposition_pnl.pooled_all_15_splits e by_path
+  data: '2026-08-10'
+  nota: componente direcional consistente e positivo em todos os 5 paths mesmo na janela comum — não é
+    ausência de sinal, é custo de execução dominando (fill/spread otimista do Label Engine, ver M5
+    PRD_V4_1.md §3.2 — fill real medido 42,2% vs 97,1% assumido). carry_share inválido (denominador
+    pnl_total<=0) em 3 dos 5 paths. classificado amarelo — pooled/in-sample desta rodada, não testado por
+    significância formal (DSR) ainda.

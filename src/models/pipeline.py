@@ -260,9 +260,24 @@ def _percentile_finite(values: list[float], pct: float) -> float:
     return float(np.percentile(finite, pct)) if finite.size else float("nan")
 
 
-def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
+def run_layer1_sprint(
+    *,
+    symbol: str = SYMBOL,
+    t0_start: str | None = None,
+    t0_end: str | None = None,
+    model_id_camada1: str = MODEL_ID_CAMADA1,
+    model_id_camada0: str = MODEL_ID_CAMADA0,
+    report_path: Path | None = None,
+) -> dict[str, Any]:
+    """`t0_start`/`t0_end`/`model_id_camada{0,1}`/`report_path` default para
+    o comportamento anterior byte a byte (janela cheia, `MODEL_ID_CAMADA1`/
+    `MODEL_ID_CAMADA0`, `experiments/alpha_layer1_report.json`). Passados
+    explicitamente, permitem reprocessar um subintervalo (PRD_V4_1.md T0.5)
+    SEM sobrescrever os artefatos já gravados da rodada de janela cheia —
+    `model_id` novo implica `predictions/alpha/{model_id}/` e
+    `models/{model_id}/diagnostics/` novos, não uma sobrescrita."""
     t_start = time.time()
-    mf = ds.build_modeling_frame(symbol=symbol)
+    mf = ds.build_modeling_frame(symbol=symbol, t0_start=t0_start, t0_end=t0_end)
     cpcv_result = cpcv.generate_splits(mf.data)
     splits = cpcv_result.splits
     logger.info(
@@ -279,7 +294,7 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
         mf.data,
         splits,
         variant=alpha.VARIANT_CAMADA1,
-        model_id=MODEL_ID_CAMADA1,
+        model_id=model_id_camada1,
         hyper=hyper,
         seed=seed,
     )
@@ -287,7 +302,7 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
         mf.data,
         splits,
         variant=alpha.VARIANT_CAMADA0,
-        model_id=MODEL_ID_CAMADA0,
+        model_id=model_id_camada0,
         hyper=hyper,
         seed=seed,
     )
@@ -298,13 +313,13 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
     # HHI, n_trees, tamanho de amostra). Escrito para as DUAS variantes,
     # cada uma no seu próprio model_id, antes de qualquer agregação em
     # médias no relatório final.
-    write_all_fold_diagnostics(camada1_folds, model_id=MODEL_ID_CAMADA1, hyper=hyper)
-    write_all_fold_diagnostics(camada0_folds, model_id=MODEL_ID_CAMADA0, hyper=hyper)
+    write_all_fold_diagnostics(camada1_folds, model_id=model_id_camada1, hyper=hyper)
+    write_all_fold_diagnostics(camada0_folds, model_id=model_id_camada0, hyper=hyper)
 
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)
-    write_predictions_atomic(preds_c1, MODEL_ID_CAMADA1)
-    write_predictions_atomic(preds_c0, MODEL_ID_CAMADA0)
+    write_predictions_atomic(preds_c1, model_id_camada1)
+    write_predictions_atomic(preds_c0, model_id_camada0)
 
     # --- backtest por caminho + critério de permanência (§5.11 adaptado) ---
     c1_by_path = backtest_lite.backtest_by_path(camada1_folds, mf.data)
@@ -382,6 +397,10 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
         "schema_version": 1,
         "sprint": 8,
         "symbol": symbol,
+        "model_id_camada1": model_id_camada1,
+        "model_id_camada0": model_id_camada0,
+        "t0_start_filter": t0_start,
+        "t0_end_filter": t0_end,
         "n_rows_modeling_frame": mf.data.height,
         "n_cpcv_splits": cpcv_result.config.n_splits,
         "n_backtest_paths": cpcv_result.config.n_backtest_paths,
@@ -463,9 +482,12 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
             },
         },
     }
-    write_report_atomic(report)
+    write_report_atomic(report, dest_path=report_path)
     logger.info(
         "models.pipeline.run_layer1_sprint_done",
+        model_id_camada1=model_id_camada1,
+        t0_start_filter=t0_start,
+        t0_end_filter=t0_end,
         elapsed_seconds=elapsed_s,
         permanence_pass=permanence_pass,
         n_better=n_better,
@@ -475,10 +497,54 @@ def run_layer1_sprint(*, symbol: str = SYMBOL) -> dict[str, Any]:
 
 
 if __name__ == "__main__":  # pragma: no cover — execução manual
+    import argparse
     import sys
 
+    def _parse_args() -> argparse.Namespace:
+        parser = argparse.ArgumentParser(
+            description=(
+                "Sprint 8 -- Alpha Camada 1. Sem argumentos: comportamento "
+                "identico ao de sempre (janela cheia, model_id/relatorio "
+                "default). --t0-start/--t0-end + --run-tag reprocessam um "
+                "subintervalo (ex. PRD_V4_1.md T0.5, janela comum "
+                "2021-12-01..2026-08-01) sem sobrescrever a rodada existente."
+            )
+        )
+        parser.add_argument("--symbol", default=SYMBOL)
+        parser.add_argument(
+            "--t0-start", default=None, help="ISO date inclusive, ex. 2021-12-01"
+        )
+        parser.add_argument("--t0-end", default=None, help="ISO date inclusive, ex. 2026-08-01")
+        parser.add_argument(
+            "--run-tag",
+            default=None,
+            help=(
+                "sufixo aplicado a model_id/relatorio para nao colidir com a "
+                "rodada de janela cheia (ex. t05_common_window)"
+            ),
+        )
+        return parser.parse_args()
+
     def _run_cli() -> int:
-        run_layer1_sprint()
+        args = _parse_args()
+        tag = f"_{args.run_tag}" if args.run_tag else ""
+        report = run_layer1_sprint(
+            symbol=args.symbol,
+            t0_start=args.t0_start,
+            t0_end=args.t0_end,
+            model_id_camada1=f"{MODEL_ID_CAMADA1}{tag}",
+            model_id_camada0=f"{MODEL_ID_CAMADA0}{tag}",
+            report_path=(EXPERIMENTS_DIR / f"alpha_layer1_report{tag}.json") if tag else None,
+        )
+        logger.info(
+            "models.pipeline.cli_done",
+            report_path=str(
+                (EXPERIMENTS_DIR / f"alpha_layer1_report{tag}.json")
+                if tag
+                else (EXPERIMENTS_DIR / "alpha_layer1_report.json")
+            ),
+            permanence_pass=report["layer1_vs_layer0"]["permanence_pass"],
+        )
         return 0
 
     sys.exit(_run_cli())
