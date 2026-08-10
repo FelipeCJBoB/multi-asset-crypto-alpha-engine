@@ -209,6 +209,60 @@ e bateu:
 
 ---
 
+## Adendo (2026-08-10) — inventário de filesystem sobre `data/capacity/`/`data/raw/`, C1 confirmado E aprofundado
+
+Levantamento mecânico (nomes/contagem de arquivo, sem abrir parquet) sobre os 5
+símbolos, feito para decidir o que falta baixar antes de qualquer medição
+multi-ativo. Duas correções concretas às tabelas do V4.1, ambas verificáveis
+por qualquer pessoa via `ls`/`dir`:
+
+**A1 — a "janela comum" real dos 4 alts começa em 2023-01-01, não 2021-12-01.**
+`klines_1m`, `metrics` e `funding` para ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT existem
+**uniformemente e sem gaps** de 2023-01-01 até 2026-08-07 — mas **zero arquivos
+existem antes disso**, para qualquer um dos 4, em qualquer fonte. O V4.1 §2.1
+(F1) declara que `metrics` dos 4 não-BTC "começa 15 meses depois" do BTC, citando
+início em **2021-12** para os quatro — e usa esse número para fixar a "janela
+comum" do projeto em 2021-12-01→2026-08-01 (§2.1, decisão; §0.4 escopo; roadmap
+V41-1). Isso não bate com o que está no disco: a lacuna real é de **~25 meses**
+(2021-12→2023-01), não zero. Ou o catálogo `data.binance.vision` upstream tem
+esse histórico e só não foi baixado (mais provável, dado que o download em si
+não deixou rastro de proveniência — ver A3), ou o número "2021-12" do V4.1 está
+errado. De qualquer forma, **toda medição multi-ativo que assumir a janela
+2021-12→2026-08 hoje vai rodar sobre um subconjunto vazio pros 4 alts antes de
+2023-01** — isso precisa ser resolvido (baixar o histórico que falta, ou
+corrigir a janela declarada) antes de M1–M6 da Camada 1 rodarem cross-asset.
+
+**A2 — `bookTicker` NÃO é "idêntica nos cinco" nem cobre até 2025-11 (§2.4, F4).**
+O V4.1 afirma textualmente: *"Janela útil de microestrutura: 2023-05 → 2025-11,
+~30 meses, idêntica nos cinco."* O filesystem mostra o oposto: `data/raw/
+book_ticker/` só tem pasta para **BTCUSDT** — nenhuma para os outros 4 — e a
+janela real em disco é **2023-05-16 → 2024-03-30 (~10,5 meses)**, não até
+2025-11. `agg_trades` (fonte separada, também citada como base do Grupo F) é
+igualmente BTC-only, isso o V4.1 não erra. Mas a alegação central de F4 —
+microestrutura disponível e comparável nos 5 ativos — está factualmente errada
+pelo que existe hoje neste repo. Se a fonte com a janela completa existe em
+algum lugar (backfill não commitado, sessão separada), o artefato correspondente
+precisa aparecer no repo antes de qualquer decisão sobre o Grupo F se apoiar
+nela — mesmo padrão de C1/C2 acima.
+
+**A3 — `data/capacity/_download_log/*.jsonl` não serve como prova de
+proveniência por símbolo.** Nenhum dos 8 arquivos de log tem campo `symbol`;
+a maioria está truncada em 2022-12 enquanto o filesystem real vai até
+2026-08; todos os timestamps `ts` são do mesmo dia (2026-08-08), sugerindo
+regeneração recente, não um log cumulativo real. Não dá pra reconstruir quando/
+como os dados dos 4 alts foram baixados a partir disso — só o filesystem em si
+(contagem e range de datas de arquivo) é confiável hoje.
+
+**Não é achado novo de severidade C1–C4** (já cobertos acima) — é a
+**quantificação concreta** do que C1 já apontava em abstrato ("nenhum artefato
+para os 4 símbolos"): agora sabemos exatamente que cobertura existe (2023-01→
+2026-08, sem gaps, para klines/metrics/funding), o que falta (25 meses de
+histórico anterior, mais todo o book_ticker dos 4 alts), e que duas alegações
+factuais específicas do V4.1 (§2.1 data de início, §2.4 cobertura de
+bookTicker) não sobrevivem à checagem contra o filesystem local.
+
+---
+
 ## Veredito
 
 V4.1 aplica ao V3.2 exatamente o escrutínio que este projeto diz valorizar — e
