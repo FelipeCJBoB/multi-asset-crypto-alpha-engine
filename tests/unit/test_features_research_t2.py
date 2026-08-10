@@ -1,4 +1,4 @@
-"""Testes de `src/features/research_t2.py` — cobertura focada em bugs
+"""Testes de `research/research_t2.py` — cobertura focada em bugs
 reais já encontrados (K03 is_weekend, regressão travada) e nas primitivas
 genéricas novas (`log_return_n`/`rolling_corr`) que `support.py` não
 tinha. Não é cobertura exaustiva das ~70 candidatas (research-pass, ver
@@ -13,7 +13,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from src.features import research_t2 as r2
+from research import research_t2 as r2
 
 
 def test_log_return_n_causal_e_correto() -> None:

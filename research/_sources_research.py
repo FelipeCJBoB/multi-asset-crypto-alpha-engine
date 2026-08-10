@@ -17,9 +17,8 @@ import structlog
 
 from src.data._util import metrics_timestamp_to_ms
 from src.data.lake import _list_files_in_range
-
-from ._paths import DATA_ROOT, capacity_symbol_dir
-from ._sources import DateLike, _as_date, asof_align_backward
+from src.features._paths import DATA_ROOT, capacity_symbol_dir
+from src.features._sources import DateLike, _as_date, asof_align_backward
 
 logger = structlog.get_logger(__name__)
 

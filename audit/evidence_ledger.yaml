@@ -1,0 +1,2150 @@
+# audit/evidence_ledger.yaml
+#
+# Ledger de EVIDÊNCIA empírica — medições de edge/winrate acumuladas do
+# Sprint 8 até a Faixa 2 (pré-FASE 3). Complementa, não substitui, os
+# outros dois ledgers: audit/n_lifetime.yaml conta TRIALS (pro DSR),
+# config/constants.yaml versiona PARÂMETROS com proveniência — este
+# arquivo versiona ACHADOS. Critério do Manager pra existir: "se sumisse,
+# quanto custaria refazer" — este inventário levou 3 agentes em paralelo
+# + leitura integral de docs/SPRINT_LOG.md e 16 arquivos experiments/*.json
+# numa única sessão (2026-08-09); refazer do zero custa isso de novo.
+#
+# status: verde = edge positivo, n>=200, não contradito depois | amarelo =
+# positivo mas in-sample/pooled/n pequeno/não testado por significância |
+# vermelho = negativo explícito ou hipótese invalidada no texto | cinza =
+# mencionado como ideia, nunca efetivamente medido.
+#
+# Regra de edição: append-only, igual ao n_lifetime.yaml. Uma entrada
+# corrigida por medição posterior NÃO é removida nem editada — ganha
+# `superseded_by: <id_curto>` e a entrada nova ganha `supersedes: <id_curto>`.
+# Apagar destrói o próprio histórico de correção que este ledger existe
+# pra preservar.
+#
+# Gerado por inventário mecânico em 2026-08-09 (não memória de conversa) —
+# ver mapa navegável publicado do mesmo inventário (Artifact, trilha
+# cronológica + matriz lado x regime + tabela completa).
+
+schema_version: 1
+generated_at: "2026-08-09"
+n_lifetime_at_generation: 45
+entries:
+- id_curto: sprint8-permanence-camada1-vs-camada0
+  fase: Sprint 8 rodada 1
+  lado: both
+  regime: all
+  feature_ou_filtro: Camada 1 (restrição monotônica in-fold) vs Camada 0 (sem restrição)
+  metrica_tipo: CPCV permanence (paths onde Camada1 supera Camada0)
+  metrica_valor: 4 de 5 caminhos (pré-T0)
+  n: 5
+  status: amarelo
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: Sprint 8 (rodada 1)
+  data: '2026-08-09'
+  nota: corrigido para 5/5 após T0 (ver t0-directional-sharpe-jump)
+- id_curto: sprint8-sharpe-ingenuo-camada1-camada0
+  fase: Sprint 8 rodada 1
+  lado: both
+  regime: all
+  feature_ou_filtro: Camada 1 vs Camada 0
+  metrica_tipo: sharpe_naive
+  metrica_valor: Camada1 -0,81 / Camada0 -1,18
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Sprint 8 (rodada 1)
+  data: '2026-08-09'
+  nota: ambos negativos; convenção otimista do Label Engine, ainda não incorpora fill rate realista
+- id_curto: sprint8-b2-buyhold-sharpe
+  fase: Sprint 8 rodada 1
+  lado: n/a
+  regime: all
+  feature_ou_filtro: B2 buy-and-hold baseline
+  metrica_tipo: sharpe_naive
+  metrica_valor: 0.539
+  n: 2412
+  status: verde
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: baselines.b2_buy_and_hold
+  data: '2026-08-09'
+  nota: positivo, vence Camada0 e Camada1 do Alpha desde o início do projeto
+- id_curto: sprint8-b4-auc-real
+  fase: Sprint 8 rodada 1
+  lado: both
+  regime: all
+  feature_ou_filtro: Alpha discriminação bruta (AUC), sem shuffle
+  metrica_tipo: AUC
+  metrica_valor: long 0,4976 / short 0,5034 / pooled 0,5007
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: baselines.b4_feature_shuffle
+  data: '2026-08-09'
+  nota: n_eval_long=1.070.165; pouca discriminação individual, próximo de 0,50 aleatório
+- id_curto: sprint8-directional-sharpe-pre-t0
+  fase: Sprint 8 rodada 1
+  lado: both
+  regime: all
+  feature_ou_filtro: componente direcional isolado do Alpha, antes de T0
+  metrica_tipo: directional_sharpe
+  metrica_valor: 0.194
+  n: 30623
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Sprint 8 (rodada 1)
+  data: '2026-08-09'
+  nota: positivo mas pequeno; motivou T0, ver t0-directional-sharpe-jump
+- id_curto: b1-refinado-por-caminho
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: B1 random entry refinado — por caminho
+  metrica_tipo: percentile_of_alpha por path
+  metrica_valor: 4 de 5 caminhos percentil 100; caminho 4 (pior) cai para 70,9
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/alpha_b1_refinement_report.json
+  fonte_secao: item1_per_path_comparison
+  data: '2026-08-09'
+  nota: 'path sample sizes: 4827/5574/7356/8649/4217'
+- id_curto: b1-refinado-variancia-pareada
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: B1 refinado — nulo de variância pareada
+  metrica_tipo: percentile_of_alpha
+  metrica_valor: 100.0
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/alpha_b1_refinement_report.json
+  fonte_secao: item2_paired_variance_null
+  data: '2026-08-09'
+  nota: sobrevive ao teste mais rigoroso, ainda estatístico, não retorno absoluto
+- id_curto: b1-refinado-pool-total
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: B1 refinado — pool total
+  metrica_tipo: percentile_of_alpha
+  metrica_valor: 100.0
+  n: 30623
+  status: amarelo
+  fonte_arquivo: experiments/alpha_b1_refinement_report.json
+  fonte_secao: item3_pool_total
+  data: '2026-08-09'
+  nota: sobrevive ao escrutínio mais rigoroso; pesa contra a leitura 'é só beta'
+- id_curto: reconciliacao-fillrate-otimista-vs-real
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: gate otimista (Label Engine) vs gate real (fill_simulator)
+  metrica_tipo: fill_rate
+  metrica_valor: otimista 97,1% vs real 42,2%
+  n: 2116
+  status: amarelo
+  fonte_arquivo: experiments/backtest_fill_reconciliation_report.json
+  fonte_secao: module_a_fill_reconciliation
+  data: '2026-08-09'
+  nota: restrito à janela com bookTicker real (2023-05 a 2024-03, ~10,5 meses de 6,5 anos)
+- id_curto: reconciliacao-sharpe-otimista-vs-real
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: gate otimista vs gate real do fill simulator
+  metrica_tipo: sharpe_naive
+  metrica_valor: otimista -9,25 vs real -4,27
+  n: 2116
+  status: vermelho
+  fonte_arquivo: experiments/backtest_fill_reconciliation_report.json
+  fonte_secao: module_a_fill_reconciliation
+  data: '2026-08-09'
+  nota: gate real melhora mas continua negativo; item mais crítico ainda em aberto — não resolve os 6,5
+    anos completos
+- id_curto: reconciliacao-direcao-carry-negativo-janela
+  fase: Auditoria externa Sprint 8
+  lado: both
+  regime: all
+  feature_ou_filtro: decomposição direção+carry dentro da janela bookTicker
+  metrica_tipo: pnl_direcional + pnl_carry
+  metrica_valor: 'otimista: -3,04/+0,12; real: -0,79/+0,05 (ambos líquido negativo)'
+  n: 2054
+  status: vermelho
+  fonte_arquivo: experiments/backtest_fill_reconciliation_report.json
+  fonte_secao: module_a_fill_reconciliation
+  data: '2026-08-09'
+  nota: contraria o +1,60 pooled dos 6,5 anos completos; janela de 10,5 meses pode não ser representativa
+    — não confirma nem descarta
+- id_curto: modulo-b-seletividade-fill
+  fase: Auditoria externa Sprint 8
+  lado: n/a
+  regime: all
+  feature_ou_filtro: 'seleção adversa: P(TP|filled) vs P(TP|não-filled)'
+  metrica_tipo: rate_tp condicional + gap
+  metrica_valor: 36,6% vs 38,3%; gap=-1,72pp; custo EV≈-1,12bps
+  n: 60650
+  status: verde
+  fonte_arquivo: experiments/backtest_fill_reconciliation_report.json
+  fonte_secao: module_b_fill_selectivity
+  data: '2026-08-09'
+  nota: gap pequeno — fill rate baixo NÃO esconde concentração de vencedores; alívio confirmado
+- id_curto: investigacao-fillrate-373-real
+  fase: Investigação fill rate
+  lado: n/a
+  regime: n/a
+  feature_ou_filtro: fill rate do simulador de fila, timeout 15min
+  metrica_tipo: fill_rate
+  metrica_valor: 37,3% (confirmado, sobrevive a 5 testes de robustez)
+  n: null
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Investigação — fill rate 37,3%
+  data: '2026-08-08'
+  nota: PRD §9.6 citava piso de 60%, mas esse número é fabricado (§18.5.4), sem derivação
+- id_curto: investigacao-fillrate-1tick-melhor
+  fase: Investigação fill rate
+  lado: n/a
+  regime: n/a
+  feature_ou_filtro: postar 1 tick melhor (furar fila)
+  metrica_tipo: fill_rate + seleção adversa
+  metrica_valor: possível em 25% dos pontos; dobra fill rate mas piora seleção adversa em 71%
+  n: null
+  status: cinza
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Investigação — fill rate 37,3%
+  data: '2026-08-08'
+  nota: pista futura, não adotada
+- id_curto: engenharia-carry-share-guarda-invalidez
+  fase: Sprint engenharia — proveniência
+  lado: both
+  regime: all
+  feature_ou_filtro: carry_share = pnl_carry/pnl_total
+  metrica_tipo: carry_share (ratio) — validade
+  metrica_valor: inválido (denominador pnl_total<=0); gate3_carry_share_ok true->false
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: decomposition_pnl.carry_share
+  data: '2026-08-09'
+  nota: 'correção de bug: divisão sem guarda fazia gate3 passar por acidente aritmético'
+- id_curto: fase-d-hhi-efetivo
+  fase: Sprint engenharia — Fases D/E/F/H
+  lado: both
+  regime: all
+  feature_ou_filtro: concentração de features T1 — HHI nominal vs efetivo
+  metrica_tipo: HHI
+  metrica_valor: nominal 0,1131 vs efetivo 0,1888 (67% maior)
+  n: 15
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Sprint engenharia — Fases D/E/F/H
+  data: '2026-08-09'
+  nota: gate 3.4 ainda passa (0,189<0,25) mas concentração real pior que o número nominal sugeria
+- id_curto: fase-e-funding-ic-por-regime
+  fase: Sprint engenharia — Fases D/E/F/H
+  lado: n/a
+  regime: all
+  feature_ou_filtro: funding rate — IC por regime
+  metrica_tipo: IC por regime
+  metrica_valor: inverte de sinal entre RANGE(R1/R2) e TREND(R3/R4); pico em R5 (+0,199)
+  n: null
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Sprint engenharia — Fases D/E/F/H
+  data: '2026-08-09'
+  nota: formaliza achado anterior num módulo testado
+- id_curto: t0-directional-sharpe-jump
+  fase: T0-T5 pós-auditoria
+  lado: both
+  regime: all
+  feature_ou_filtro: E02f_funding_z forçado por identidade contábil (restrição -1 long/+1 short)
+  metrica_tipo: directional_sharpe pooled
+  metrica_valor: 0,194 -> 0,879
+  n: 36538
+  status: verde
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: T0-T5 pós-auditoria
+  data: '2026-08-09'
+  nota: primeira melhora real e gratuita medida no Alpha; permanência 4/5->5/5; substituiu alpha_c1_v1
+- id_curto: t1-decis-confianca-nao-ordenam
+  fase: T0-T5 pós-auditoria
+  lado: both
+  regime: all
+  feature_ou_filtro: ranking por decil de confiança vs retorno realizado
+  metrica_tipo: Spearman
+  metrica_valor: ≈0 nos dois lados (não significativo)
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: T0-T5 pós-auditoria
+  data: '2026-08-09'
+  nota: sem ranking explorável pra Camada 2+
+- id_curto: t1-anti-padrao-long-maior-confianca
+  fase: T0-T5 pós-auditoria
+  lado: long
+  regime: all
+  feature_ou_filtro: decil de maior confiança (long)
+  metrica_tipo: retorno médio bps + t-stat
+  metrica_valor: -25,6bps, t=-3,0
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: T0-T5 pós-auditoria
+  data: '2026-08-09'
+  nota: anti-padrão real, não ruído — decil de MAIOR confiança é o de PIOR desempenho
+- id_curto: t5-superficie-custo-2d
+  fase: T0-T5 pós-auditoria
+  lado: n/a
+  regime: n/a
+  feature_ou_filtro: custo round-trip vs tp_atr_mult x sl_atr_mult (grade 3x3, história completa)
+  metrica_tipo: custo bps por trade
+  metrica_valor: 5,37bps a 6,25bps; base atual ≈5,84bps
+  n: null
+  status: verde
+  fonte_arquivo: experiments/cost_surface_report.json
+  fonte_secao: rows
+  data: '2026-08-09'
+  nota: 'achado de leitura de código: TIME também paga taker, não só SL; share do taker no custo 42-60%'
+- id_curto: b3-regime-only-sharpe
+  fase: Sprint 8 rodada 1
+  lado: n/a
+  regime: all
+  feature_ou_filtro: B3 regime_only baseline
+  metrica_tipo: sharpe_naive
+  metrica_valor: -6.495
+  n: 47084
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: baselines.b3_regime_only
+  data: '2026-08-09'
+  nota: trades_per_year=7201, muito acima do orçamento de fees
+- id_curto: b5-short-permanent-sharpe
+  fase: Sprint 8 rodada 1
+  lado: short
+  regime: all
+  feature_ou_filtro: B5 short_permanent baseline
+  metrica_tipo: sharpe_naive
+  metrica_valor: -14.753
+  n: 220634
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: baselines.b5_short_permanent
+  data: '2026-08-09'
+  nota: trades_per_year=33.441, muitíssimo acima do orçamento
+- id_curto: sprint8-hhi-nominal-013
+  fase: Sprint 8 rodada 1
+  lado: both
+  regime: all
+  feature_ou_filtro: HHI de concentração de gain das features T1
+  metrica_tipo: HHI nominal
+  metrica_valor: 0.1096
+  n: 15
+  status: verde
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: hhi
+  data: '2026-08-09'
+  nota: passa gate 3.4 (<0,25) com folga; versão corrigida por correlação é maior (0,1888, ver fase-d-hhi-efetivo)
+- id_curto: t1-ic-fold0-c07-long
+  fase: Sprint 8 rodada 1
+  lado: long
+  regime: all
+  feature_ou_filtro: C07_vol_pctile_expanding
+  metrica_tipo: IC (mean_ic, exemplo fold0)
+  metrica_valor: -0.0904
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: monotone_constraints_example_fold0.long
+  data: '2026-08-09'
+  nota: constraint=-1, n_consistent=6/6 — feature que depois se confirma (E3) como a mais robusta do projeto
+- id_curto: t1-ic-fold0-e27f-long
+  fase: Sprint 8 rodada 1
+  lado: long
+  regime: all
+  feature_ou_filtro: E27f_cost_atr_ratio
+  metrica_tipo: IC (mean_ic, exemplo fold0)
+  metrica_valor: 0.1397
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/alpha_layer1_report.json
+  fonte_secao: monotone_constraints_example_fold0.long
+  data: '2026-08-09'
+  nota: maior |IC| da tabela de fold único; depois descartada no pré-E2(2) por importância por permutação
+    negativa
+- id_curto: faixa1-t1-repro-long-d10
+  fase: Faixa 1
+  lado: long
+  regime: all
+  feature_ou_filtro: confidence decile 10 (highest, reprodução bit-a-bit de T1)
+  metrica_tipo: ret_net_bps_mean + t_stat
+  metrica_valor: -25.61 bps (t=-3.00)
+  n: 1895
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: step0_premises_reproduced.long
+  data: '2026-08-09'
+  nota: 'reprodução bit-exata do achado original de T1; anti-padrão estatisticamente significativo (t~-3):
+    decil de maior confiança tem pior retorno.'
+- id_curto: faixa1-t1-repro-short-d10
+  fase: Faixa 1
+  lado: short
+  regime: all
+  feature_ou_filtro: confidence decile 10 (highest, reprodução bit-a-bit de T1)
+  metrica_tipo: ret_net_bps_mean + t_stat
+  metrica_valor: +4.69 bps (t=1.07)
+  n: 1758
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: step0_premises_reproduced.short
+  data: '2026-08-09'
+  nota: reprodução de T1; positivo mas t=1.07, não significativo.
+- id_curto: faixa1-d1-spearman-long
+  fase: Faixa 1
+  lado: long
+  regime: all
+  feature_ou_filtro: confidence decile ordering (D1, população cheia incl. NOFILL)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.139
+  n: 21639
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: spearman_by_side.long
+  data: '2026-08-09'
+  nota: p=0.70, não significativo; texto explícito 'sem ranking explorável', mesma leitura de T1.
+- id_curto: faixa1-d1-spearman-short
+  fase: Faixa 1
+  lado: short
+  regime: all
+  feature_ou_filtro: confidence decile ordering (D1, população cheia incl. NOFILL)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: -0.2
+  n: 21933
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: spearman_by_side.short
+  data: '2026-08-09'
+  nota: p=0.58, não significativo, sinal oposto ao esperado.
+- id_curto: faixa1-d2-regime-long-R1
+  fase: Faixa 1
+  lado: long
+  regime: R1
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: null
+  n: 1808
+  status: cinza
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.long.R1
+  data: '2026-08-09'
+  nota: 10/10 células insuficiente_n (n<200); correlações não estimadas (null).
+- id_curto: faixa1-d2-regime-long-R2
+  fase: Faixa 1
+  lado: long
+  regime: R2
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: -0.091
+  n: 5327
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.long.R2
+  data: '2026-08-09'
+  nota: p=0.80, não significativo, sinal negativo (oposto ao esperado).
+- id_curto: faixa1-d2-regime-long-R3
+  fase: Faixa 1
+  lado: long
+  regime: R3
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.588
+  n: 7067
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.long.R3
+  data: '2026-08-09'
+  nota: two-sided p=0.074 (não sig 0.05), monotonic_increasing_p=0.037 (sig one-sided); misto/fronteiriço.
+- id_curto: faixa1-d2-regime-long-R4
+  fase: Faixa 1
+  lado: long
+  regime: R4
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.842
+  n: 5161
+  status: verde
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.long.R4
+  data: '2026-08-09'
+  nota: p=0.0022, monotonic_increasing_p=0.0011; único bloco lado×regime com ordenação decil×retorno claramente
+    significativa em D2; confirmado de novo na variante 'rank' (rho=0.661,p=0.038).
+- id_curto: faixa1-d2-regime-short-R1
+  fase: Faixa 1
+  lado: short
+  regime: R1
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.483
+  n: 2428
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.short.R1
+  data: '2026-08-09'
+  nota: p=0.187, não significativo; 1/10 células insuficiente_n.
+- id_curto: faixa1-d2-regime-short-R2
+  fase: Faixa 1
+  lado: short
+  regime: R2
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: -0.036
+  n: 3050
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.short.R2
+  data: '2026-08-09'
+  nota: p=0.94, não significativo; 3/10 células insuficiente_n.
+- id_curto: faixa1-d2-regime-short-R3
+  fase: Faixa 1
+  lado: short
+  regime: R3
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: -0.236
+  n: 4883
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.short.R3
+  data: '2026-08-09'
+  nota: p=0.51, não significativo, sinal negativo.
+- id_curto: faixa1-d2-regime-short-R4
+  fase: Faixa 1
+  lado: short
+  regime: R4
+  feature_ou_filtro: confidence decile ordering por regime (D2)
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.079
+  n: 6380
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: by_regime.short.R4
+  data: '2026-08-09'
+  nota: p=0.83, não significativo.
+- id_curto: faixa1-e02f-ic-by-regime-realized
+  fase: Faixa 1
+  lado: n/a
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding IC por regime, população OOF/realizada (side_hat!=0)
+  metrica_tipo: IC (Spearman, funding_z vs retorno)
+  metrica_valor: R1=+0.038 R2=+0.109 R3=-0.026 R4=-0.082
+  n: 30967
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: constraint_congruent_subset.e02f_ic_by_regime
+  data: '2026-08-09'
+  nota: ic_valid=true, n por regime R1=3702,R2=6611,R3=11055,R4=9599; SUPERADO por faixa1-6-correction-ic-infold-negative
+    — não é a população que a triagem real usa.
+- id_curto: faixa1-6-correction-ic-infold-negative
+  fase: Faixa 1.6 Bloco 1
+  lado: n/a
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding IC, população de TREINO in-fold (a que screen_monotone_constraints
+    usa de fato)
+  metrica_tipo: IC (Spearman, funding_z vs retorno), sinal por fold
+  metrica_valor: negativo uniforme em R1-R4
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Faixa 1.6, Bloco 1 (correção de framing)
+  data: '2026-08-09'
+  nota: 'CORREÇÃO de faixa1-e02f-ic-by-regime-realized: negativo uniforme nos 15/15 folds de treino —
+    não há ''inversão'' de sinal na população que decide a restrição; valores exatos ficam em experiments/faixa1_6_reconciliation.json
+    (não lido nesta passada).'
+- id_curto: faixa1-d3-nofill-chi2-long
+  fase: Faixa 1
+  lado: long
+  regime: all
+  feature_ou_filtro: taxa de NOFILL por decil de confiança (D3)
+  metrica_tipo: chi2 (decil x NOFILL)
+  metrica_valor: chi2=194.52, p=4.66e-37, gl=9
+  n: 21639
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: nofill_rate_by_decile.long.chi2_test
+  data: '2026-08-09'
+  nota: taxa de NOFILL varia com decil, altamente significativo; direção não interpretada no texto.
+- id_curto: faixa1-d3-nofill-chi2-short
+  fase: Faixa 1
+  lado: short
+  regime: all
+  feature_ou_filtro: taxa de NOFILL por decil de confiança (D3)
+  metrica_tipo: chi2 (decil x NOFILL)
+  metrica_valor: chi2=655.18, p=2.97e-135, gl=9
+  n: 21933
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: nofill_rate_by_decile.short.chi2_test
+  data: '2026-08-09'
+  nota: efeito ainda mais forte que no long; sem leitura de direção registrada.
+- id_curto: faixa1-d4-raw-score-long
+  fase: Faixa 1
+  lado: long
+  regime: all
+  feature_ou_filtro: score CRU (pré-calibração) vs retorno (D4)
+  metrica_tipo: Spearman rho (raw_score x ret_net_bps)
+  metrica_valor: -0.818
+  n: 18958
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: confidence_variants.long.variants.raw_score
+  data: '2026-08-09'
+  nota: p=0.0038 (H1 decrescente p=0.0019), mais forte que o score calibrado (rho=0.139,p=0.70); anti-padrão
+    MAIS forte no score cru.
+- id_curto: faixa1-d4-raw-score-short
+  fase: Faixa 1
+  lado: short
+  regime: all
+  feature_ou_filtro: score CRU (pré-calibração) vs retorno (D4)
+  metrica_tipo: Spearman rho (raw_score x ret_net_bps)
+  metrica_valor: 0.685
+  n: 17580
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: confidence_variants.short.variants.raw_score
+  data: '2026-08-09'
+  nota: p=0.029, positivo e significativo, mas score calibrado (=D1) não é (rho=-0.20); ~76% dos trades
+    trocam de decil entre versões — leitura frágil, marcada 'hipótese do executor'.
+- id_curto: faixa1-ece-long
+  fase: Faixa 1
+  lado: long
+  regime: all
+  feature_ou_filtro: Expected Calibration Error, calibrado vs cru
+  metrica_tipo: ECE
+  metrica_valor: calibrado=0.200, cru=0.256
+  n: 18958
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: expected_calibration_error.long
+  data: '2026-08-09'
+  nota: calibração isotônica melhora MAGNITUDE (ECE) mesmo piorando ORDENAÇÃO por decil — propriedades
+    diferentes.
+- id_curto: faixa1-ece-short
+  fase: Faixa 1
+  lado: short
+  regime: all
+  feature_ou_filtro: Expected Calibration Error, calibrado vs cru
+  metrica_tipo: ECE
+  metrica_valor: calibrado=0.155, cru=0.234
+  n: 17580
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_calibration_diagnostic.json
+  fonte_secao: expected_calibration_error.short
+  data: '2026-08-09'
+  nota: mesma leitura do long.
+- id_curto: faixa15-total-sharpe-pooled-long
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: total_sharpe
+  metrica_valor: -1.297
+  n: 18958
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.long
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa15-total-sharpe-pooled-short
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: total_sharpe
+  metrica_valor: -0.164
+  n: 17580
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.short
+  data: '2026-08-09'
+  nota: negativo mas magnitude bem menor que o long.
+- id_curto: faixa15-directional-sharpe-pooled-long
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: directional_sharpe
+  metrica_valor: 0.167
+  n: 18958
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.long
+  data: '2026-08-09'
+  nota: contradiz total_sharpe negativo na mesma população — checagem de Simpson.
+- id_curto: faixa15-directional-sharpe-pooled-short
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: directional_sharpe
+  metrica_valor: 1.25
+  n: 17580
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.short
+  data: '2026-08-09'
+  nota: positivo e forte, mas total_sharpe da mesma população é negativo.
+- id_curto: faixa15-retnet-pooled-long
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: ret_net_bps_per_trade
+  metrica_valor: -4.968
+  n: 18958
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.long
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa15-retnet-pooled-short
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: decomposição de Simpson, pooled
+  metrica_tipo: ret_net_bps_per_trade
+  metrica_valor: -0.504
+  n: 17580
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.pooled.short
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa15-regime-long-R1
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: R1
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-0.809, ret_net=-4.41bps
+  n: 1544
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.long_R1
+  data: '2026-08-09'
+  nota: directional_sharpe=0.254 (positivo fraco), total e ret_net negativos.
+- id_curto: faixa15-regime-long-R2
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: R2
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-3.312, ret_net=-22.86bps
+  n: 4435
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.long_R2
+  data: '2026-08-09'
+  nota: pior célula lado×regime medida.
+- id_curto: faixa15-regime-long-R3
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: R3
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=2.088, directional=4.350, ret_net=5.46bps
+  n: 6445
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.long_R3
+  data: '2026-08-09'
+  nota: positivo e consistente nas 3 métricas — melhor célula long medida.
+- id_curto: faixa15-regime-long-R4
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: R4
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=1.062, directional=1.997, ret_net=6.69bps
+  n: 4501
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.long_R4
+  data: '2026-08-09'
+  nota: positivo e consistente; coincide com a única célula de ordenação de confiança significativa (faixa1-d2-regime-long-R4).
+- id_curto: faixa15-regime-short-R1
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: R1
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=0.106, ret_net=0.435bps
+  n: 2158
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.short_R1
+  data: '2026-08-09'
+  nota: positivo mas muito fraco; directional_sharpe=1.191 mais forte.
+- id_curto: faixa15-regime-short-R2
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: R2
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=0.786, directional=1.218, ret_net=7.945bps
+  n: 2176
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.short_R2
+  data: '2026-08-09'
+  nota: positivo e consistente nas 3 métricas.
+- id_curto: faixa15-regime-short-R3
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: R3
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-0.054, directional=1.728, ret_net=-0.159bps
+  n: 4610
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.short_R3
+  data: '2026-08-09'
+  nota: total e ret_net ~zero, directional forte positivo — sinal misto.
+- id_curto: faixa15-regime-short-R4
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: R4
+  feature_ou_filtro: decomposição de Simpson por lado x regime
+  metrica_tipo: total_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-0.438, ret_net=-2.82bps
+  n: 5098
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_regime.short_R4
+  data: '2026-08-09'
+  nota: negativo; directional_sharpe positivo fraco (0.280) não compensa.
+- id_curto: faixa15-cost-long-LOW
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo (E27f_cost_atr_ratio)
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-1.708, directional=-1.310, ret_net=-21.70bps
+  n: 4956
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.long_LOW_COST
+  data: '2026-08-09'
+  nota: tercil de menor custo é o pior para o long (contraintuitivo).
+- id_curto: faixa15-cost-long-MID
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=0.226, directional=1.883, ret_net=0.799bps
+  n: 6997
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.long_MID_COST
+  data: '2026-08-09'
+  nota: positivo mas fraco em total/ret_net.
+- id_curto: faixa15-cost-long-HIGH
+  fase: Faixa 1.5 Bloco 2
+  lado: long
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=0.481, directional=3.038, ret_net=1.108bps
+  n: 7005
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.long_HIGH_COST
+  data: '2026-08-09'
+  nota: tercil de MAIOR custo é o melhor para o long — contraintuitivo, positivo e consistente.
+- id_curto: faixa15-cost-short-LOW
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=0.871, directional=1.451, ret_net=5.82bps
+  n: 6793
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.short_LOW_COST
+  data: '2026-08-09'
+  nota: padrão OPOSTO ao long — tercil de MENOR custo é o melhor para o short.
+- id_curto: faixa15-cost-short-MID
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-1.683, directional=-0.749, ret_net=-7.78bps
+  n: 4491
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.short_MID_COST
+  data: '2026-08-09'
+  nota: negativo nas 3 métricas.
+- id_curto: faixa15-cost-short-HIGH
+  fase: Faixa 1.5 Bloco 2
+  lado: short
+  regime: all
+  feature_ou_filtro: Simpson por lado x tercil de custo
+  metrica_tipo: total_sharpe / directional_sharpe / ret_net_bps_per_trade
+  metrica_valor: sharpe=-0.952, directional=1.221, ret_net=-2.13bps
+  n: 6296
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: stratified_headlines.by_side_cost_tercile.short_HIGH_COST
+  data: '2026-08-09'
+  nota: total e ret_net negativos, directional positivo — sinal misto.
+- id_curto: faixa15-bloco3-path-dispersion
+  fase: Faixa 1.5 Bloco 3
+  lado: both
+  regime: all
+  feature_ou_filtro: dispersão de retorno entre os 5 paths de fold/modelo
+  metrica_tipo: Spearman rho (n_filled x ret_net médio por path)
+  metrica_valor: 0.1
+  n: 5
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: path_dispersion.spearman_n_filled_vs_mean_bps
+  data: '2026-08-09'
+  nota: p=0.87, n=5 (amostra minúscula); CI95 por path tratam trades como i.i.d. mas há duplicação de
+    barra entre paths — CIs provavelmente otimistas, não corrigido.
+- id_curto: faixa15-bloco4-r4-long-raw
+  fase: Faixa 1.5 Bloco 4
+  lado: long
+  regime: R4
+  feature_ou_filtro: confidence_rank variantes — score CRU, R4 long
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.333
+  n: 5161
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: confidence_variants.long.by_regime.R4.raw_score
+  data: '2026-08-09'
+  nota: p=0.347, não significativo no score cru — só aparece no calibrado/rank.
+- id_curto: faixa15-bloco4-r4-long-rank
+  fase: Faixa 1.5 Bloco 4
+  lado: long
+  regime: R4
+  feature_ou_filtro: confidence_rank variantes — rank dentro do fold, R4 long
+  metrica_tipo: Spearman rho (decil x ret_net_bps)
+  metrica_valor: 0.661
+  n: 5161
+  status: verde
+  fonte_arquivo: experiments/faixa1_5_prerequisites.json
+  fonte_secao: confidence_variants.long.by_regime.R4.rank
+  data: '2026-08-09'
+  nota: p=0.038; confirma na variante rank o mesmo achado do decil calibrado — R4 long é o único bloco
+    com ordenação de confiança robusta a 2 das 3 variantes de score.
+- id_curto: faixa15-bloco5-e02f-infold-consistency
+  fase: Faixa 1.5 Bloco 5
+  lado: both
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding — consistência de sinal IC in-fold (6 ambientes) vs restrição
+    forçada §5.3
+  metrica_tipo: n_folds com consistência 6/6 (de 15)
+  metrica_valor: long 8/15, short 1/15
+  n: 15
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Faixa 1.5 — Bloco 5
+  data: '2026-08-09'
+  nota: onde atinge 6/6, 100% concorda com o sinal econômico forçado; marcado 'hipótese do executor, não
+    achado' — amostra de folds pequena, especialmente short (1/15).
+- id_curto: faixa16-b1-ic-e02f-oof-mixed-r1
+  fase: Faixa 1.6 Bloco 1
+  lado: both
+  regime: R1
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF, lado misturado (pooled produção)
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.0383
+  n: 3702
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_mixed_side_ic_by_regime
+  data: '2026-08-09'
+  nota: reproduzido byte-a-byte; medição correta mas sofre viés de seleção de Berkson, não é o insumo
+    real da triagem
+- id_curto: faixa16-b1-ic-e02f-oof-mixed-r2
+  fase: Faixa 1.6 Bloco 1
+  lado: both
+  regime: R2
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF, lado misturado
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.1094
+  n: 6611
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_mixed_side_ic_by_regime
+  data: '2026-08-09'
+  nota: mesma ressalva de viés de seleção do R1
+- id_curto: faixa16-b1-ic-e02f-oof-mixed-r3
+  fase: Faixa 1.6 Bloco 1
+  lado: both
+  regime: R3
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF, lado misturado
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0257
+  n: 11055
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_mixed_side_ic_by_regime
+  data: '2026-08-09'
+  nota: IC negativo
+- id_curto: faixa16-b1-ic-e02f-oof-mixed-r4
+  fase: Faixa 1.6 Bloco 1
+  lado: both
+  regime: R4
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF, lado misturado
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0821
+  n: 9599
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_mixed_side_ic_by_regime
+  data: '2026-08-09'
+  nota: IC negativo
+- id_curto: faixa16-b1-ic-e02f-oof-long-r1
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R1
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF long-only
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.0555
+  n: 1544
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_long_only_ic_by_regime
+  data: '2026-08-09'
+  nota: long sozinho já reproduz o padrão RANGE+/TREND- do pooled
+- id_curto: faixa16-b1-ic-e02f-oof-long-r2
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R2
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF long-only
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.0925
+  n: 4435
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_long_only_ic_by_regime
+  data: '2026-08-09'
+  nota: positivo mas sob mesmo viés de seleção do pooled
+- id_curto: faixa16-b1-ic-e02f-oof-long-r3
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R3
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF long-only
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0313
+  n: 6445
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_long_only_ic_by_regime
+  data: '2026-08-09'
+  nota: negativo
+- id_curto: faixa16-b1-ic-e02f-oof-long-r4
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R4
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF long-only
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.1623
+  n: 4501
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_long_only_ic_by_regime
+  data: '2026-08-09'
+  nota: mais negativo de todos os 8 pares lado×regime desta medição
+- id_curto: faixa16-b1-ic-e02f-oof-short-r1
+  fase: Faixa 1.6 Bloco 1
+  lado: short
+  regime: R1
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF short-only
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0248
+  n: 2158
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_short_only_ic_by_regime
+  data: '2026-08-09'
+  nota: short sozinho NÃO inverte o padrão pooled — refuta side_mixing como mecanismo dominante
+- id_curto: faixa16-b1-ic-e02f-oof-short-r2
+  fase: Faixa 1.6 Bloco 1
+  lado: short
+  regime: R2
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF short-only
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.1476
+  n: 2176
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_short_only_ic_by_regime
+  data: '2026-08-09'
+  nota: positivo, sob mesmo viés de seleção
+- id_curto: faixa16-b1-ic-e02f-oof-short-r3
+  fase: Faixa 1.6 Bloco 1
+  lado: short
+  regime: R3
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF short-only
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.0091
+  n: 4610
+  status: cinza
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_short_only_ic_by_regime
+  data: '2026-08-09'
+  nota: essencialmente zero
+- id_curto: faixa16-b1-ic-e02f-oof-short-r4
+  fase: Faixa 1.6 Bloco 1
+  lado: short
+  regime: R4
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, OOF short-only
+  metrica_tipo: IC Spearman
+  metrica_valor: 0.002
+  n: 5098
+  status: cinza
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.oof_short_only_ic_by_regime
+  data: '2026-08-09'
+  nota: essencialmente zero
+- id_curto: faixa16-b1-ic-e02f-train-infold-long-r1
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R1
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, TREINO in-fold pooled-concat (insumo real
+    da triagem)
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0163
+  n: 1002296
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.candidate_mechanisms.weighting.train_long.pooled_concat_by_regime
+  data: '2026-08-09'
+  nota: bate com Bloco 5 da Faixa 1.5 — 15/15 folds negativos; número que efetivamente alimenta a triagem
+    in-fold
+- id_curto: faixa16-b1-ic-e02f-train-infold-long-r2
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R2
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, TREINO in-fold pooled-concat
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0162
+  n: 216838
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.candidate_mechanisms.weighting.train_long.pooled_concat_by_regime
+  data: '2026-08-09'
+  nota: negativo, insumo real da triagem
+- id_curto: faixa16-b1-ic-e02f-train-infold-long-r3
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R3
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, TREINO in-fold pooled-concat
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0138
+  n: 668366
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.candidate_mechanisms.weighting.train_long.pooled_concat_by_regime
+  data: '2026-08-09'
+  nota: negativo, insumo real da triagem
+- id_curto: faixa16-b1-ic-e02f-train-infold-long-r4
+  fase: Faixa 1.6 Bloco 1
+  lado: long
+  regime: R4
+  feature_ou_filtro: E02f_funding_z_expanding — IC vs ret_net, TREINO in-fold pooled-concat
+  metrica_tipo: IC Spearman
+  metrica_valor: -0.0368
+  n: 217244
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: ic_reconciliation.candidate_mechanisms.weighting.train_long.pooled_concat_by_regime
+  data: '2026-08-09'
+  nota: mais negativo das 4 regiões no treino
+- id_curto: faixa16-b4-t0-baseline-dirsharpe-pooled
+  fase: Faixa 1.6 Bloco 4
+  lado: both
+  regime: all
+  feature_ou_filtro: E02f monotonic constraint forçado nos dois lados (T0 canônico, alpha_c1_v1)
+  metrica_tipo: directional_sharpe pooled
+  metrica_valor: 0.879
+  n: 36538
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: short_constraint_variant.t0_attribution.post_t0_both_sides_forced_directional_sharpe_pooled
+  data: '2026-08-09'
+  nota: referência T0 (positivo canônico); Faixa 1.7 Q1 medição 3 mostra depois que E02f é majoritariamente
+    carry, não direção
+- id_curto: faixa16-b4-t0-variant-short-unforced-dirsharpe-pooled
+  fase: Faixa 1.6 Bloco 4
+  lado: both
+  regime: all
+  feature_ou_filtro: E02f unforced short — retirada da restrição monotônica forçada só no short
+  metrica_tipo: directional_sharpe pooled
+  metrica_valor: 0.282
+  n: 31709
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: short_constraint_variant.t0_attribution.variant_short_unforced_directional_sharpe_pooled
+  data: '2026-08-09'
+  nota: queda de 0,879 para 0,282 — quase todo o ganho do T0 vinha do SHORT forçado, não do long; n_lifetime
+    id 5
+- id_curto: faixa16-b4-pre-t0-referencia-historica
+  fase: Faixa 1.6 Bloco 4
+  lado: both
+  regime: all
+  feature_ou_filtro: Alpha sem nenhuma restrição monotônica forçada (pré-T0)
+  metrica_tipo: directional_sharpe pooled
+  metrica_valor: 0.194
+  n: null
+  status: cinza
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Faixa 1.6 Bloco 4
+  data: '2026-08-09'
+  nota: referência histórica citada, não recomputada; variante antiga não está mais persistida em disco
+- id_curto: faixa16-dirsharpe-long-r1
+  fase: Faixa 1.6 — Correção de método
+  lado: long
+  regime: R1
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 0.254
+  n: 1544
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.long_R1
+  data: '2026-08-09'
+  nota: fraco/quase neutro
+- id_curto: faixa16-dirsharpe-long-r2
+  fase: Faixa 1.6 — Correção de método
+  lado: long
+  regime: R2
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: -2.52
+  n: 4435
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.long_R2
+  data: '2026-08-09'
+  nota: fortemente negativo; regime onde o modelo mais dispara sinal long (12,8x mais que R1) tem a pior
+    performance
+- id_curto: faixa16-dirsharpe-long-r3
+  fase: Faixa 1.6 — Correção de método
+  lado: long
+  regime: R3
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 4.35
+  n: 6445
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.long_R3
+  data: '2026-08-09'
+  nota: positivo pooled, mas Faixa 1.7 Q1 mostra 86% do book concentrado no lado trivial de tendência
+    — beta, não skill limpo
+- id_curto: faixa16-dirsharpe-long-r4
+  fase: Faixa 1.6 — Correção de método
+  lado: long
+  regime: R4
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 2.0
+  n: 4501
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.long_R4
+  data: '2026-08-09'
+  nota: positivo pooled, mas extensão Faixa 1.7 mostra concentração 59%/41% com fatia contrária negativa
+- id_curto: faixa16-dirsharpe-short-r1
+  fase: Faixa 1.6 — Correção de método
+  lado: short
+  regime: R1
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 1.19
+  n: 2158
+  status: verde
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.short_R1
+  data: '2026-08-09'
+  nota: short positivo nos 4 regimes, nunca negativo
+- id_curto: faixa16-dirsharpe-short-r2
+  fase: Faixa 1.6 — Correção de método
+  lado: short
+  regime: R2
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 1.22
+  n: 2176
+  status: verde
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.short_R2
+  data: '2026-08-09'
+  nota: consistente, sem cancelamento entre regimes como o long
+- id_curto: faixa16-dirsharpe-short-r3
+  fase: Faixa 1.6 — Correção de método
+  lado: short
+  regime: R3
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 1.73
+  n: 4610
+  status: verde
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.short_R3
+  data: '2026-08-09'
+  nota: maior valor do short entre os 4 regimes
+- id_curto: faixa16-dirsharpe-short-r4
+  fase: Faixa 1.6 — Correção de método
+  lado: short
+  regime: R4
+  feature_ou_filtro: Alpha canônico (alpha_c1_v1) — decomposição direcional por lado×regime
+  metrica_tipo: directional_sharpe
+  metrica_valor: 0.28
+  n: 5098
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: headlines_baseline_alpha_c1_v1.by_side_regime.short_R4
+  data: '2026-08-09'
+  nota: positivo mas o mais fraco dos 4 regimes do short
+- id_curto: faixa16-b5-baseline-b3-pooled
+  fase: Faixa 1.6 Bloco 5
+  lado: both
+  regime: all
+  feature_ou_filtro: B3 baseline — regra estática de entrada por regime R3/R4
+  metrica_tipo: sharpe_naive
+  metrica_valor: -6.495
+  n: 47084
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: pooled_vs_stratified_inventory.baselines_b3_b5.b3_regime_only
+  data: '2026-08-09'
+  nota: regra estática só dispara em R3/R4 (R1/R2 têm 0 trades); negativo
+- id_curto: faixa16-b5-baseline-b3-r3
+  fase: Faixa 1.6 Bloco 5
+  lado: both
+  regime: R3
+  feature_ou_filtro: B3 baseline — regra estática de entrada por regime
+  metrica_tipo: sharpe_naive
+  metrica_valor: -6.945
+  n: 36264
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: pooled_vs_stratified_inventory.baselines_b3_b5.b3_regime_only.by_regime.R3
+  data: '2026-08-09'
+  nota: pior sub-métrica de B3
+- id_curto: faixa16-b5-baseline-b3-r4
+  fase: Faixa 1.6 Bloco 5
+  lado: both
+  regime: R4
+  feature_ou_filtro: B3 baseline — regra estática de entrada por regime
+  metrica_tipo: sharpe_naive
+  metrica_valor: -2.297
+  n: 10820
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: pooled_vs_stratified_inventory.baselines_b3_b5.b3_regime_only.by_regime.R4
+  data: '2026-08-09'
+  nota: negativo, menos severo que R3
+- id_curto: faixa16-b5-baseline-b5-pooled
+  fase: Faixa 1.6 Bloco 5
+  lado: short
+  regime: all
+  feature_ou_filtro: B5 baseline — short permanente (sempre vendido)
+  metrica_tipo: sharpe_naive
+  metrica_valor: -14.753
+  n: 216111
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: pooled_vs_stratified_inventory.baselines_b3_b5.b5_short_permanent
+  data: '2026-08-09'
+  nota: ficar sempre vendido é fortemente negativo em todos os regimes
+- id_curto: faixa16-b5-d06f-sign-flip
+  fase: Faixa 1.6 Bloco 5
+  lado: n/a
+  regime: all
+  feature_ou_filtro: D06f_taker_imbalance_z_48 — IC pooled vs por regime
+  metrica_tipo: IC Spearman (sign flip por regime)
+  metrica_valor: pooled≈-0.0003; R1/R2/R4 positivos, R3 negativo
+  n: null
+  status: cinza
+  fonte_arquivo: experiments/faixa1_6_reconciliation.json
+  fonte_secao: pooled_vs_stratified_inventory.t1_features_leakage_scan.D06f_taker_imbalance_z_48
+  data: '2026-08-09'
+  nota: segundo caso de feature T1 cuja correlação pooled esconde heterogeneidade por regime; não hard_fail
+    no scan de leakage
+- id_curto: faixa17-q1-r3-alta-trivial
+  fase: Faixa 1.7 Q1 medição 1
+  lado: long
+  regime: R3
+  feature_ou_filtro: R3 split por direção de tendência 48 barras — 'comprado durante alta' (trivial)
+  metrica_tipo: directional_sharpe
+  metrica_valor: 4.617
+  n: 6067
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_r3_split_por_direcao_de_tendencia.R3_alta
+  data: '2026-08-09'
+  nota: 85,8% do book long em R3; total_sharpe=+2,39, ret_net=+6,38bps; resultado trivial esperado
+- id_curto: faixa17-q1-r3-baixa-contrario
+  fase: Faixa 1.7 Q1 medição 1
+  lado: long
+  regime: R3
+  feature_ou_filtro: R3 split por direção de tendência 48 barras — 'comprado durante baixa' (contrário,
+    prova de skill)
+  metrica_tipo: directional_sharpe
+  metrica_valor: -0.329
+  n: 378
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_r3_split_por_direcao_de_tendencia.R3_baixa
+  data: '2026-08-09'
+  nota: total_sharpe=-0,79, ret_net=-9,33bps; fatia pequena (5,6%) contrária à tendência neutra-negativa
+    — pilar central do veredito Q1
+- id_curto: faixa17-q1-b2-r1
+  fase: Faixa 1.7 Q1 medição 2
+  lado: long
+  regime: R1
+  feature_ou_filtro: B2 baseline — exposição contínua (sempre comprado)
+  metrica_tipo: sharpe_naive
+  metrica_valor: -0.011
+  n: 106388
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_b2_exposicao_continua_por_regime.R1
+  data: '2026-08-09'
+  nota: quase zero
+- id_curto: faixa17-q1-b2-r2
+  fase: Faixa 1.7 Q1 medição 2
+  lado: long
+  regime: R2
+  feature_ou_filtro: B2 baseline — exposição contínua (sempre comprado)
+  metrica_tipo: sharpe_naive
+  metrica_valor: 1.53
+  n: 24563
+  status: verde
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_b2_exposicao_continua_por_regime.R2
+  data: '2026-08-09'
+  nota: R2 é o MELHOR regime pra ficar simplesmente comprado sem seleção — inverte o Alpha seletivo, que
+    perde feio no mesmo regime; base do achado 'seleção ativamente prejudicial'
+- id_curto: faixa17-q1-b2-r3
+  fase: Faixa 1.7 Q1 medição 2
+  lado: long
+  regime: R3
+  feature_ou_filtro: B2 baseline — exposição contínua (sempre comprado)
+  metrica_tipo: sharpe_naive
+  metrica_valor: 0.211
+  n: 70465
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_b2_exposicao_continua_por_regime.R3
+  data: '2026-08-09'
+  nota: modesto
+- id_curto: faixa17-q1-b2-r4
+  fase: Faixa 1.7 Q1 medição 2
+  lado: long
+  regime: R4
+  feature_ou_filtro: B2 baseline — exposição contínua (sempre comprado)
+  metrica_tipo: sharpe_naive
+  metrica_valor: 0.364
+  n: 24179
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_b2_exposicao_continua_por_regime.R4
+  data: '2026-08-09'
+  nota: modesto
+- id_curto: faixa17-q1-e02f-carry-vs-dir-long
+  fase: Faixa 1.7 Q1 medição 3
+  lado: long
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding — IC contra PnL_carry vs PnL_direcional separados
+  metrica_tipo: IC Spearman (carry vs direcional)
+  metrica_valor: IC_carry=-0.354; IC_direcional=+0.034 (razão 10,5x)
+  n: 18958
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_e02f_ic_carry_vs_direcional.long
+  data: '2026-08-09'
+  nota: confirma identidade contábil — correlação de E02f é quase inteiramente carry, não direção
+- id_curto: faixa17-q1-e02f-carry-vs-dir-short
+  fase: Faixa 1.7 Q1 medição 3
+  lado: short
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding — IC contra PnL_carry vs PnL_direcional separados
+  metrica_tipo: IC Spearman (carry vs direcional)
+  metrica_valor: IC_carry=+0.175; IC_direcional=-0.005 (razão 36,3x)
+  n: 17580
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q1_e02f_ic_carry_vs_direcional.short
+  data: '2026-08-09'
+  nota: razão ainda mais extrema que o long
+- id_curto: faixa17-q2-confianca-decil-long-original
+  fase: Faixa 1.7 Q2 medição 5
+  lado: long
+  regime: all
+  feature_ou_filtro: confiança do Alpha (score calibrado) — ordenação por decil, original
+  metrica_tipo: IC Spearman decil confiança vs retorno
+  metrica_valor: 0.139
+  n: 10
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q2_confianca_ortogonalizada_vs_vol.long.decile_spearman_confidence_original
+  data: '2026-08-09'
+  nota: p=0,70; decis não ordenam retorno
+- id_curto: faixa17-q2-confianca-decil-long-residualizada
+  fase: Faixa 1.7 Q2 medição 5
+  lado: long
+  regime: all
+  feature_ou_filtro: confiança residualizada contra C07_vol_pctile_expanding
+  metrica_tipo: IC Spearman decil confiança vs retorno
+  metrica_valor: 0.164
+  n: 10
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q2_confianca_ortogonalizada_vs_vol.long.decile_spearman_confidence_residualizada
+  data: '2026-08-09'
+  nota: p=0,65 — sem mudança vs original; contaminação por vol real mas removê-la não recupera ordenação
+- id_curto: faixa17-q2-confianca-decil-short-original
+  fase: Faixa 1.7 Q2 medição 5
+  lado: short
+  regime: all
+  feature_ou_filtro: confiança do Alpha (score calibrado) — ordenação por decil, original
+  metrica_tipo: IC Spearman decil confiança vs retorno
+  metrica_valor: -0.2
+  n: 10
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q2_confianca_ortogonalizada_vs_vol.short.decile_spearman_confidence_original
+  data: '2026-08-09'
+  nota: p=0,58
+- id_curto: faixa17-q2-confianca-decil-short-residualizada
+  fase: Faixa 1.7 Q2 medição 5
+  lado: short
+  regime: all
+  feature_ou_filtro: confiança residualizada contra C07_vol_pctile_expanding
+  metrica_tipo: IC Spearman decil confiança vs retorno
+  metrica_valor: 0.188
+  n: 10
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: q2_confianca_ortogonalizada_vs_vol.short.decile_spearman_confidence_residualizada
+  data: '2026-08-09'
+  nota: p=0,60; sinal inverte vs original mas continua não-significativo
+- id_curto: faixa17-r2-por-ano-2020
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2020
+  metrica_tipo: directional_sharpe
+  metrica_valor: -3.38
+  n: 4873
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2020
+  data: '2026-08-09'
+  nota: ret_net=-12,50bps
+- id_curto: faixa17-r2-por-ano-2021
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2021
+  metrica_tipo: directional_sharpe
+  metrica_valor: -4.44
+  n: 5312
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2021
+  data: '2026-08-09'
+  nota: ret_net=-14,88bps; pior ano, prevalência de R2 mais alta da série (21,3%)
+- id_curto: faixa17-r2-por-ano-2022
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2022
+  metrica_tipo: directional_sharpe
+  metrica_valor: 2.25
+  n: 3223
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2022
+  data: '2026-08-09'
+  nota: total_sharpe ainda negativo (-0,53)
+- id_curto: faixa17-r2-por-ano-2023
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2023
+  metrica_tipo: directional_sharpe
+  metrica_valor: 4.36
+  n: 945
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2023
+  data: '2026-08-09'
+  nota: ret_net=+7,00bps
+- id_curto: faixa17-r2-por-ano-2024
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2024
+  metrica_tipo: directional_sharpe
+  metrica_valor: 1.61
+  n: 3401
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2024
+  data: '2026-08-09'
+  nota: total_sharpe negativo (-2,14)
+- id_curto: faixa17-r2-por-ano-2025
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2025
+  metrica_tipo: directional_sharpe
+  metrica_valor: 7.36
+  n: 2060
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2025
+  data: '2026-08-09'
+  nota: ret_net=+9,27bps; pico da série
+- id_curto: faixa17-r2-por-ano-2026
+  fase: Faixa 1.7 — R2 por ano
+  lado: both
+  regime: R2
+  feature_ou_filtro: R2 estratificado por ano — 2026 (parcial)
+  metrica_tipo: directional_sharpe
+  metrica_valor: -8.79
+  n: 1895
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: pendente_regime_r2_por_ano.2026
+  data: '2026-08-09'
+  nota: ret_net=-18,03bps; ano parcial, volta forte negativa
+- id_curto: faixa17-gap-long-r2
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: long
+  regime: R2
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: -4.05
+  n: 4435
+  status: vermelho
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.long.R2
+  data: '2026-08-09'
+  nota: 'ACHADO MAIS PRECISO da investigação: alpha=-2,52 vs passivo=+1,53 — seleção ATIVAMENTE escolhe
+    momentos ruins num regime que seria bom sem seleção nenhuma; único gap negativo grande da tabela'
+- id_curto: faixa17-gap-long-r1
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: long
+  regime: R1
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 0.27
+  n: 1544
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.long.R1
+  data: '2026-08-09'
+  nota: gap pequeno
+- id_curto: faixa17-gap-long-r3
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: long
+  regime: R3
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 4.14
+  n: 6445
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.long.R3
+  data: '2026-08-09'
+  nota: gap grande mas sob ressalva de beta (86% do book trivial)
+- id_curto: faixa17-gap-long-r4
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: long
+  regime: R4
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 1.63
+  n: 4501
+  status: amarelo
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.long.R4
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa17-gap-short-r1
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: short
+  regime: R1
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 1.18
+  n: 2158
+  status: verde
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.short.R1
+  data: '2026-08-09'
+  nota: short bate o passivo em todos os 4 regimes, sem exceção
+- id_curto: faixa17-gap-short-r2
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: short
+  regime: R2
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 2.75
+  n: 2176
+  status: verde
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.short.R2
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa17-gap-short-r3
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: short
+  regime: R3
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 1.94
+  n: 4610
+  status: verde
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.short.R3
+  data: '2026-08-09'
+  nota: null
+- id_curto: faixa17-gap-short-r4
+  fase: Faixa 1.7 Extensão — gap Alpha menos passivo
+  lado: short
+  regime: R4
+  feature_ou_filtro: Alpha seletivo menos exposição passiva contínua
+  metrica_tipo: gap_directional_sharpe (alpha - passivo)
+  metrica_valor: 0.64
+  n: 5098
+  status: verde
+  fonte_arquivo: experiments/faixa1_7_edge_or_beta.json
+  fonte_secao: extensao_gap_alpha_menos_naive.short.R4
+  data: '2026-08-09'
+  nota: menor gap do short, ainda positivo
+- id_curto: faixa17-veredito-q1-edge-vs-beta
+  fase: Faixa 1.7 Síntese — Q1
+  lado: both
+  regime: all
+  feature_ou_filtro: Critério pré-registrado Q1 — existe edge, ou é beta + regularização?
+  metrica_tipo: veredito qualitativo pré-registrado
+  metrica_valor: mais consistente com beta + regularização do que com edge direcional limpo
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Faixa 1.7 — Síntese
+  data: '2026-08-09'
+  nota: 'VEREDITO FINAL, pré-registrado antes de ver os números — base: R3 86% trivial + fatia contrária
+    neutra-negativa; B2 passivo bate Alpha seletivo em R2; IC de E02f é majoritariamente carry'
+- id_curto: faixa17-veredito-q2-confianca-consertavel
+  fase: Faixa 1.7 Síntese — Q2
+  lado: both
+  regime: all
+  feature_ou_filtro: Critério pré-registrado Q2 — a confiança é consertável?
+  metrica_tipo: veredito qualitativo pré-registrado
+  metrica_valor: não consertável pela via mais simples (remoção linear da componente de vol)
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Faixa 1.7 — Síntese
+  data: '2026-08-09'
+  nota: VEREDITO FINAL — contaminação por vol confirmada e forte, mas residualização linear simples não
+    recupera ordenação (p~0,60-0,70 nos 4 casos)
+- id_curto: f2-d1-long-r2-sem-lift
+  fase: Faixa 2, FASE 1 D1
+  lado: long
+  regime: R2
+  feature_ou_filtro: lift direcional 48 barras
+  metrica_tipo: lift + p-valor
+  metrica_valor: 1,02 (p=0,18, não-significativo)
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D1
+  data: '2026-08-09'
+  nota: long não segue tendência de forma detectável em R2 — mecanismo distinto do resto do livro, não
+    'segue a tendência errada'
+- id_curto: f2-d1-long-r3-lift
+  fase: Faixa 2, FASE 1 D1
+  lado: long
+  regime: R3
+  feature_ou_filtro: lift direcional 48 barras
+  metrica_tipo: lift + p-valor
+  metrica_valor: 1,72 (p≈0)
+  n: null
+  status: verde
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D1
+  data: '2026-08-09'
+  nota: null
+- id_curto: f2-d1-long-r4-lift
+  fase: Faixa 2, FASE 1 D1
+  lado: long
+  regime: R4
+  feature_ou_filtro: lift direcional 48 barras
+  metrica_tipo: lift + p-valor
+  metrica_valor: 1,35 (p≈3,7e-137)
+  n: null
+  status: verde
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D1
+  data: '2026-08-09'
+  nota: null
+- id_curto: f2-d1-short-todos-regimes
+  fase: Faixa 2, FASE 1 D1
+  lado: short
+  regime: all
+  feature_ou_filtro: lift direcional 48 barras
+  metrica_tipo: lift + p-valor
+  metrica_valor: 1,22 a 1,93, todos p<1e-30
+  n: null
+  status: verde
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D1
+  data: '2026-08-09'
+  nota: significativo em TODOS os 4 regimes, sem exceção
+- id_curto: f2-d2-features-extremas-refutada
+  fase: Faixa 2, FASE 1 D2
+  lado: long
+  regime: R2
+  feature_ou_filtro: features T1 (KS+Cohen's d), selecionado vs não-selecionado
+  metrica_tipo: Cohen's d
+  metrica_valor: ruído (só bars_in_regime real, d=0,08)
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D2
+  data: '2026-08-09'
+  nota: hipótese 'features mais extremas explicam seleção' REFUTADA dentro de R2
+- id_curto: f2-d3-mfe-por-regime
+  fase: Faixa 2, FASE 1 D3
+  lado: both
+  regime: all
+  feature_ou_filtro: mfe_atr_units
+  metrica_tipo: mediana ATR
+  metrica_valor: 1,27-1,40 em todos os 8 blocos
+  n: null
+  status: cinza
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D3
+  data: '2026-08-09'
+  nota: achado estrutural (não é edge em si) — refuta 'R2 é pior em MFE'; tp_atr_mult=2,0 ambicioso demais
+    estruturalmente
+- id_curto: f2-d4-e10f-fraca
+  fase: Faixa 2, FASE 1 D4
+  lado: both
+  regime: n/a
+  feature_ou_filtro: E10f_oi_change_z_48
+  metrica_tipo: estabilidade (|IC|×consistência²)
+  metrica_valor: long 0,0054 / short 0,0013
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: FASE 1 D4
+  data: '2026-08-09'
+  nota: mesma ordem de grandeza da fragilidade de E02f; não redundante com B07 mas sem sinal individual
+    forte
+- id_curto: f2-e1-incondicional-negativo
+  fase: Faixa 2, FASE 2 E1
+  lado: both
+  regime: all
+  feature_ou_filtro: geometria de barreira 3x3, população incondicional
+  metrica_tipo: edge_atr_units_mean
+  metrica_valor: negativo nas 18 células, os dois lados
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_e1_barrier_sweep.json
+  fonte_secao: FASE 2 E1
+  data: '2026-08-09'
+  nota: confirma que geometria sozinha, sem seleção do Alpha, nunca foi desenhada pra ser lucrativa
+- id_curto: f2-e1-long-r3-selecionado-edge
+  fase: Faixa 2, FASE 2 E1 / Conclusão E1
+  lado: long
+  regime: R3
+  feature_ou_filtro: população JÁ SELECIONADA pelo Alpha (barreiras atuais)
+  metrica_tipo: edge médio (ATR units)
+  metrica_valor: 0,226 ATR (~106-113% do breakeven)
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: Conclusão do E1
+  data: '2026-08-09'
+  nota: CONFORTAVELMENTE acima do breakeven na MÉDIA, mas mediana ≈ -0,002 ATR — puxado por cauda de vencedores
+    grandes, não pelo trade típico
+- id_curto: f2-pree2-1-melhor-celula-grid
+  fase: Faixa 2, Pré-E2 (1)
+  lado: both
+  regime: all
+  feature_ou_filtro: melhor célula do grid 3x3 (forma fechada)
+  metrica_tipo: edge (ATR)
+  metrica_valor: 0,028 ATR = 15-18% do breakeven necessário (~0,16-0,19)
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: Pré-E2 (1)
+  data: '2026-08-09'
+  nota: lacuna de ordem de grandeza, não de ajuste fino — extensão do grid avaliada e NEGADA
+- id_curto: f2-pree2-1-long-r2-unica-positiva
+  fase: Faixa 2, Pré-E2 (1)
+  lado: long
+  regime: R2
+  feature_ou_filtro: forma fechada tp=1,5/sl=2,0
+  metrica_tipo: edge (ATR)
+  metrica_valor: +0,028 (única célula positiva do long isolado)
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_caminho_b.json
+  fonte_secao: Pré-E2 (1)
+  data: '2026-08-09'
+  nota: positivo mas longe do breakeven necessário
+- id_curto: f2-e2-selecao-ortogonalidade
+  fase: Faixa 2, FASE 2 E2
+  lado: both
+  regime: n/a
+  feature_ou_filtro: 10 candidatas selecionadas por ortogonalidade incremental
+  metrica_tipo: n_eff_factors
+  metrica_valor: 6,479 → 15,825
+  n: null
+  status: cinza
+  fonte_arquivo: experiments/faixa2_e2_research.json
+  fonte_secao: FASE 2 E2
+  data: '2026-08-09'
+  nota: seleção de DIVERSIDADE de eixo, não de edge — ainda não testado por estabilidade/edge (isso é
+    o E3)
+- id_curto: f2-e3-c07-robusto
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: C07_vol_pctile_expanding
+  metrica_tipo: sobrevivência estabilidade (30 células)
+  metrica_valor: 30/30 em 0,01/0,02/0,03
+  n: null
+  status: verde
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: 1 de só 2 features robustas em TODA a vizinhança do sweep — base do que 'funciona' no projeto
+- id_curto: f2-e3-d03f-robusto
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: D03f_volume_z_expanding
+  metrica_tipo: sobrevivência estabilidade (30 células)
+  metrica_valor: 30/30 em 0,01/0,02/0,03
+  n: null
+  status: verde
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: a outra das 2 robustas
+- id_curto: f2-e3-e02f-sensivel
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: E02f_funding_z_expanding (T1)
+  metrica_tipo: sobrevivência estabilidade
+  metrica_valor: 23→13→0 conforme limiar 0,01/0,02/0,03
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: forte mas sensível ao limiar — pico estreito
+- id_curto: f2-e3-e17f-parcial
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: E17f_retail_vs_top_spread (E2)
+  metrica_tipo: sobrevivência estabilidade
+  metrica_valor: 21→11→5
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: melhor das 10 candidatas do E2, ainda parcial
+- id_curto: f2-e3-h01-parcial
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: H01_exchange_netflow_z (E2)
+  metrica_tipo: sobrevivência estabilidade
+  metrica_valor: 17→11→5
+  n: null
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: null
+- id_curto: f2-e3-resto-fraco
+  fase: Faixa 2, FASE 2 E3
+  lado: both
+  regime: all
+  feature_ou_filtro: outras 13 das 18 candidatas
+  metrica_tipo: sobrevivência estabilidade
+  metrica_valor: cai a 0 ou perto na vizinhança alta do sweep
+  n: null
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_e3_stability.json
+  fonte_secao: FASE 2 E3
+  data: '2026-08-09'
+  nota: null
+- id_curto: f2-ultrathink-sinal-condicional-custo
+  fase: Faixa 2, Ultrathink (validação E3)
+  lado: both
+  regime: n/a
+  feature_ou_filtro: K02_dow_sin, E02f_funding_z_expanding, E17f_retail_vs_top_spread
+  metrica_tipo: consistência de sinal por tercil de custo
+  metrica_valor: 77-90% de consistência em ambientes de custo alto/médio
+  n: null
+  status: amarelo
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Validação da análise do Manager sobre o E3
+  data: '2026-08-09'
+  nota: sinal REAL condicional perdido pela agregação de unanimidade — candidato a termo de interação
+    ou Camada 5/Group DRO, não capturado hoje
+- id_curto: f2-ultrathink-ruido-genuino
+  fase: Faixa 2, Ultrathink (validação E3)
+  lado: both
+  regime: n/a
+  feature_ou_filtro: A12_gap_pct, D04f_volume_accel
+  metrica_tipo: consistência de sinal por ambiente
+  metrica_valor: ~50/50 em TODOS os 6 ambientes individualmente
+  n: null
+  status: vermelho
+  fonte_arquivo: docs/SPRINT_LOG.md
+  fonte_secao: Validação da análise do Manager sobre o E3
+  data: '2026-08-09'
+  nota: ruído genuíno, não há estrutura pra recuperar
+- id_curto: f2-ultrathink-dispara-mais-vol-alta
+  fase: Faixa 2, Ultrathink (validação E3)
+  lado: both
+  regime: R1 vs R2 vs R4
+  feature_ou_filtro: taxa de disparo do Alpha vs vol
+  metrica_tipo: razão de taxa de disparo
+  metrica_valor: long R1=0,340% vs R2=4,337% (12,76x); R4 dispara ainda mais (long 4,27%, short 5,28%)
+  n: null
+  status: vermelho
+  fonte_arquivo: predictions/alpha/alpha_c1_v1/predictions.parquet
+  fonte_secao: Validação da análise do Manager sobre o E3
+  data: '2026-08-09'
+  nota: modelo dispara mais e fica mais confiante em vol alta apesar do sinal mais estável (C07/D03f)
+    dizer o oposto — contradição estrutural, candidato a bug de calibração pra V2
+- id_curto: f2-volacc-substituicao-falha
+  fase: Faixa 2, vol accelerator (substituição, id14)
+  lado: both
+  regime: all
+  feature_ou_filtro: C07 como SUBSTITUTO do gate de confiança
+  metrica_tipo: percentil directional_sharpe vs controle aleatório
+  metrica_valor: percentil 21,3 (pior que 79% dos sorteios aleatórios)
+  n: 4676
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test.json
+  fonte_secao: Teste do C07 como acelerador
+  data: '2026-08-09'
+  nota: corte empurrou o sistema pra ATR abaixo do piso de viabilidade R1 — não é 'vol baixa' genuína
+- id_curto: f2-volacc-composto-pooled
+  fase: Faixa 2, vol accelerator (composto, id15)
+  lado: both
+  regime: all
+  feature_ou_filtro: C07 COMPONDO com gate de confiança intacto
+  metrica_tipo: directional_sharpe / percentil vs controle
+  metrica_valor: +0,879 → +3,015 (percentil 100 vs controle aleatório do conjunto disparado)
+  n: 21621
+  status: verde
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test_composed.json
+  fonte_secao: Correção do teste — COMPOR
+  data: '2026-08-09'
+  nota: pooled — bate o controle aleatório em ~100% das 1000 réplicas
+- id_curto: f2-volacc-composto-long
+  fase: Faixa 2, vol accelerator (composto, id15)
+  lado: long
+  regime: all
+  feature_ou_filtro: C07 compondo, lado long
+  metrica_tipo: total_sharpe
+  metrica_valor: -1,30 → +0,50 (positivo)
+  n: 12291
+  status: verde
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test_composed.json
+  fonte_secao: Correção do teste — COMPOR
+  data: '2026-08-09'
+  nota: ret_net -4,97 → +1,07 bps/trade
+- id_curto: f2-volacc-composto-short
+  fase: Faixa 2, vol accelerator (composto, id15)
+  lado: short
+  regime: all
+  feature_ou_filtro: C07 compondo, lado short
+  metrica_tipo: total_sharpe
+  metrica_valor: -0,16 → -1,21 (piora)
+  n: 9330
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test_composed.json
+  fonte_secao: Correção do teste — COMPOR
+  data: '2026-08-09'
+  nota: ret_net -0,50 → -2,82 bps/trade — filtro global (mesmo percentil nos dois lados) prejudica o short
+- id_curto: f2-volacc-long-r3-preservado
+  fase: Faixa 2, vol accelerator (composto, id15)
+  lado: long
+  regime: R3
+  feature_ou_filtro: C07 compondo
+  metrica_tipo: total_sharpe / ret_net_mean_bps
+  metrica_valor: 2,09 → 2,15 / +5,46bps (n quase intacto, 6445→6436)
+  n: 6436
+  status: verde
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test_composed.json
+  fonte_secao: Correção do teste — COMPOR
+  data: '2026-08-09'
+  nota: melhor célula do sistema, preservada pelo filtro
+- id_curto: f2-volacc-short-r2-destruido
+  fase: Faixa 2, vol accelerator (composto, id15)
+  lado: short
+  regime: R2
+  feature_ou_filtro: C07 compondo
+  metrica_tipo: total_sharpe / ret_net_mean_bps
+  metrica_valor: +0,79 (+7,95bps) → -0,04 (-0,52bps), n 2176→539
+  n: 539
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_vol_accelerator_test_composed.json
+  fonte_secao: Correção do teste — COMPOR
+  data: '2026-08-09'
+  nota: era uma célula BOA em produção — o filtro global de vol a destrói; motivação direta do teste side-specific
+    pré-registrado pendente
+- id_curto: f2-dsr-falha-gate6
+  fase: Faixa 2, DSR + B2
+  lado: long
+  regime: all
+  feature_ou_filtro: long + C07 (id15)
+  metrica_tipo: DSR
+  metrica_valor: 0,167 (limiar convencional 0,95)
+  n: 12291
+  status: vermelho
+  fonte_arquivo: experiments/faixa2_dsr_and_b2_check.json
+  fonte_secao: DSR formal + comparação com B2
+  data: '2026-08-09'
+  nota: SR observado +0,497 abaixo do piso esperado por acaso SR_0=+0,874, N_lifetime=45 — veredito formal
+    do Gate 6 para esta config
+- id_curto: f2-b2-comparacao-inconclusiva
+  fase: Faixa 2, DSR + B2
+  lado: long
+  regime: all
+  feature_ou_filtro: long + C07 vs B2 buy-and-hold, mesma base diária
+  metrica_tipo: sharpe diário anualizado + bootstrap p-valor
+  metrica_valor: +0,121 vs +0,539 (B2); diferença não-significativa, p=0,397
+  n: 2416
+  status: amarelo
+  fonte_arquivo: experiments/faixa2_dsr_and_b2_check.json
+  fonte_secao: DSR formal + comparação com B2
+  data: '2026-08-09'
+  nota: direcionalmente pior mas teste tem baixo poder (estratégia só opera 38,4% dos dias) — inconclusivo,
+    não confirmadamente pior

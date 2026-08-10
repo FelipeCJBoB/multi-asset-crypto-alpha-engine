@@ -33,11 +33,11 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from research import _sources_research as sr
+from research import research_t2 as r2
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.features import _sources
-from src.features import _sources_research as sr
-from src.features import research_t2 as r2
 from src.features.build import T1_FEATURE_IDS, compute_t1_features
 from src.features.groups import group_c
 from src.models.hhi import compute_effective_concentration

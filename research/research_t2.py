@@ -58,7 +58,7 @@ import numpy as np
 import polars as pl
 from numpy.typing import NDArray
 
-from . import support
+from src.features import support
 
 FloatArray = NDArray[np.float64]
 

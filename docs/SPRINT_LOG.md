@@ -2300,3 +2300,56 @@ acima.
 | Quanto do ganho do T0 (0,194→0,879) vem do short vs do long? | Quase todo do short — sem a restrição forçada no short, pooled cai pra 0,282. **Não canônico**: mecanismo (carry vs direcional vs regularização) pendente de controle de sinal aleatório | Faixa 1.6 abaixo, `n_lifetime` id 5 |
 | `directional_sharpe` por regime — long ordena melhor que short? | Não — é o oposto do que se pensava com `ret_net`: short é positivo nos 4 regimes (+0,28 a +1,73), long oscila violentamente (-2,52 a +4,35) e o pooled (+0,167) é cancelamento, não skill fraca | Faixa 1.6 abaixo (correção de método) |
 | Alguma outra feature T1 além de E02f inverte de sinal por regime? | Sim — `D06f_taker_imbalance_z_48` (pooled ~0, mas R1/R2/R4 positivos e R3 negativo) | Faixa 1.6 abaixo, `features/registry.yaml` |
+| Onde está o mapa de todo edge/winrate já medido, do Sprint 8 até aqui? | Artifact publicado (trilha cronológica em Mermaid + 3 matrizes lado×regime + 8 perguntas abertas + tabela de 160 registros), gerado a partir de `audit/evidence_ledger.yaml` | "Discovery — mapa canônico de evidência" abaixo |
+| `research_t2.py`/`_sources_research.py` ainda vivem em `src/features/`? | Não — movidos pra `research/` em 2026-08-09 (grau de pesquisa, fora de `root_packages` do import-linter); `README.md` lá explica o critério e como promover uma candidata | "Discovery — mapa canônico de evidência" abaixo |
+
+## Discovery — mapa canônico de evidência + reorganização canônico/andaime (2026-08-09)
+
+Pedido do Manager, com um critério explícito de classificação: **"o critério
+não é 'isto foi útil', é 'se sumisse, quanto custaria refazer'."** Duas
+entregas.
+
+**1 — Inventário mecânico de todo caminho de edge/winrate medido, Sprint 8
+até a Faixa 2.** 3 agentes em paralelo (Fundação/Alpha C1 · Faixa 1+1.5 ·
+Faixa 1.6+1.7) + leitura direta da Faixa 2, cada um extraindo registros
+estruturados (lado, regime, feature/filtro, métrica, n, status, fonte) de
+`docs/SPRINT_LOG.md` e de `experiments/*.json` — nunca de memória de
+conversa. **160 registros** (68 vermelho / 56 amarelo / 28 verde / 8
+cinza), persistidos como novo ledger canônico de DADO,
+`audit/evidence_ledger.yaml` (append-only, mesma convenção do
+`n_lifetime.yaml` — corrigir é adicionar `superseded_by`/`supersedes`,
+nunca editar ou apagar uma entrada). Publicado também como Artifact
+navegável: trilha cronológica (Mermaid), 3 matrizes lado×regime (Alpha
+canônico · gap Alpha-menos-passivo · depois do filtro C07), e 8 perguntas
+abertas geradas mecanicamente do próprio inventário (ex.: o modelo dispara
+12,76x mais em R2/vol-alta apesar de C07/D03f dizerem que vol alta piora o
+retorno; `D06f_taker_imbalance_z_48` é o 2º caso de feature que inverte de
+sinal por regime, nunca tratado como E02f foi). Nenhuma decisão de
+arquitetura tomada — é discovery, FASE 3 continua em espera.
+
+**2 — Reorganização canônico vs. andaime**, aplicando o mesmo critério de
+custo-de-refazer:
+
+- **Canônico como código** (verificado que existe, nenhum movido):
+  `src/labels/barrier_sweep.py`, `src/models/stability.py`,
+  `src/core/metric.py` (+ `safe_ratio`), `src/models/environments.py`,
+  `src/models/monotonic.py`, `src/validation/dsr.py`,
+  `src/execution/fill_simulator.py`, `tools/lint/check_constants_referenced.py`.
+- **Canônico como dado**: `audit/n_lifetime.yaml`, `config/constants.yaml`,
+  `labels/v1/labels.parquet` (distribuições de barreira do Sprint 6),
+  `tests/golden/test_sprint8_reproducibility.py`, e o novo
+  `audit/evidence_ledger.yaml` acima.
+- **Andaime, arquivado não apagado**: `research_t2.py` e
+  `_sources_research.py` (70 candidatas T2 em grau de pesquisa) movidos de
+  `src/features/` pra `research/` (`git mv`, imports relativos corrigidos
+  pra absolutos — `from . import support` → `from src.features import
+  support`, etc.), com `research/README.md` explicando o porquê e o
+  caminho de promoção. Saem de `root_packages` do import-linter de
+  propósito — nunca passaram pela cerimônia de produção (`registry.yaml`,
+  `causal_proof`, paridade), e forçá-los pra dentro escondia isso.
+
+**Verificação**: `ruff`/`mypy` limpos nos arquivos tocados,
+`import-linter` 6/6 contratos mantidos, `banned_patterns` sem violação
+nova, suíte completa `not slow and not integration`: 851 passam (era 851,
+mesma contagem — só reorganização, nenhum teste novo nem quebrado), 1
+skip/2 xfail pré-existentes e não relacionados.
