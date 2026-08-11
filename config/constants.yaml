@@ -341,6 +341,27 @@ known_gaps:
     severity: class_B_risk
     status: medido_sprint_6_fallback_explicito_implementado
     review_by: gate_1
+  - id: solusdt_xrpusdt_klines_1m_gap_2022_02_2022_04
+    description: >
+      Medido em 2026-08-11 durante o backfill multi-ativo (src/data/
+      download.py, janela 2021-12-01→2022-12-31): klines_1m de SOLUSDT e
+      XRPUSDT tem 5 dias ausentes upstream em data.binance.vision, mesmas
+      datas nos dois símbolos — 2022-02-26/27/28 e 2022-04-01/02
+      (missing_upstream confirmado, HTTP 404 na partição monthly/, não
+      falha de download nem de checksum — os outros 391/396 dias de cada
+      mês bateram SHA256 normalmente). BTCUSDT/ETHUSDT/BNBUSDT não tem
+      esse gap no mesmo período. Coincide com as mesmas datas em que
+      book_depth já tinha gap simultâneo nos 5 símbolos (auditoria de
+      cobertura, mesma sessão) — indício de outage real da Binance
+      upstream, não falha de coleta. Impacto: ~0,3% da amostra (5/1711
+      dias) só para SOL/XRP, propagando pra features/labels/regime
+      derivados de klines_1m nesses dois símbolos nessas datas — não
+      bloqueia nenhum gate da Camada 0/1, mas deve aparecer em qualquer
+      estratificação (symbol, tf, lado, regime) que M1-M6/Camada 2
+      emitirem, mesmo padrão dos outros known_gaps desta lista.
+    severity: class_B_risk
+    status: measured_not_backfillable
+    review_by: camada_1
 
 # ============================================================================
 # Camada exchange — REST/WS/rate limit (Sprint 2, §1.4, §9.4, §16.3)
