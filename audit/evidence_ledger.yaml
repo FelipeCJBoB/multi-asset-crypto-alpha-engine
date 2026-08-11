@@ -24,9 +24,38 @@
 # ver mapa navegável publicado do mesmo inventário (Artifact, trilha
 # cronológica + matriz lado x regime + tabela completa).
 
-schema_version: 1
+schema_version: 2
 generated_at: "2026-08-09"
 n_lifetime_at_generation: 45
+
+# --- T0.6 (PRD_V4_1.md §3.1, Gate G-C0-7) — migração 2026-08-11 ---
+#
+# G-C0-7 exige "evidence_ledger migrado com symbol, tf e janela". Escopo
+# desta migração é EXATAMENTE esses 3 campos — não os 9 do texto mais
+# amplo do T0.6 (estagio/tier/mechanism/control/superseded_by/
+# n_lifetime_cost também citados na task). Motivo do corte: symbol/tf/
+# janela são mecânicos e 100% verificáveis (as 162 entradas existentes
+# são todas BTCUSDT, todas 15m, todas de antes do T0.5 exceto as 2
+# últimas). `estagio`/`tier`/`mechanism`/`control`/`n_lifetime_cost`
+# exigiriam reler cada uma das 162 entradas contra a régua de evidência
+# do §6.4 (tier 0-3) — fazer isso rápido pra 162 itens arriscaria
+# fabricar julgamento que não foi feito de verdade. Fica como rodada
+# dedicada separada, não fingida como concluída aqui.
+#
+# default_symbol/default_tf/default_janela abaixo valem para toda entrada
+# que NÃO declara seu próprio `symbol`/`tf`/`janela` — as 160 entradas
+# legadas (Sprint 8 até Faixa 2, geradas 2026-08-09) não têm esses campos
+# individualmente porque são homogêneas nos três eixos (checado por
+# leitura integral das 162 entradas, não amostrado). As 2 entradas T0.5
+# (`t05-permanence-camada1-vs-camada0-janela-comum`,
+# `t05-directional-sharpe-positivo-cost-dominado`) já declaram `janela`
+# própria desde que foram escritas (T0.5, 2026-08-10) — override, não
+# omissão. Qualquer entrada futura (V4.1, multi-ativo) que rodar noutro
+# symbol/tf/janela declara os campos próprios, do mesmo jeito.
+default_symbol: BTCUSDT
+default_tf: 15m
+default_janela: "pré-T0.5 (janela cheia histórica, não a janela comum 2021-12-01 -> 2026-08-01 do T0.5; ver known_gaps.dataset_start_mismatch em constants.yaml para a variação de data_start entre as entradas mais antigas, 2026-08-08/09, e o backfill que fechou esse gap)"
+
 entries:
 - id_curto: sprint8-permanence-camada1-vs-camada0
   fase: Sprint 8 rodada 1
