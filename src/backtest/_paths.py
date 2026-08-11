@@ -27,7 +27,10 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 # `labels/{version}/labels.parquet` — mesmo caminho que
 # `src/models/_paths.py::LABELS_OUTPUT_DIR` / `src/validation/_paths.py`
-# resolvem.
+# resolvem. Não usado por `fill_reconciliation.load_labels()` desde T0.3
+# (delega em `src.validation.cpcv.load_labels_v1()`, já importado neste
+# pacote) — mantido só por caso futuro que precise do caminho legado
+# diretamente.
 LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
 
 # `predictions/alpha/{model_id}/predictions.parquet` (§5.12) — mesmo

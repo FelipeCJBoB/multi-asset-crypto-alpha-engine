@@ -736,10 +736,10 @@ def test_confidence_deciles_by_side_n_deciles_customizado() -> None:
 def _skip_if_real_artifacts_missing(model_id: str) -> None:
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODELS_DIR
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation._paths import labels_symbol_tf_dir
 
     preds_path = PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet"
-    labels_path = LABELS_OUTPUT_DIR / "v1" / "labels.parquet"
+    labels_path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
     diag_dir = MODELS_DIR / model_id / "diagnostics"
     missing = [
         str(p) for p in (preds_path, labels_path) if not p.exists()
@@ -757,7 +757,7 @@ def test_integracao_real_ic_by_regime_e_gain_by_side_e_feature_agreement() -> No
     from src.models import dataset as ds
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1, MODELS_DIR
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation import cpcv
 
     model_id = MODEL_ID_CAMADA1
     _skip_if_real_artifacts_missing(model_id)
@@ -765,7 +765,7 @@ def test_integracao_real_ic_by_regime_e_gain_by_side_e_feature_agreement() -> No
     predictions = pl.read_parquet(
         PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet"
     )
-    labels = pl.read_parquet(LABELS_OUTPUT_DIR / "v1" / "labels.parquet")
+    labels = cpcv.load_labels_v1()
     mf = ds.build_modeling_frame()  # ~14s medido (ver test_models_dataset.py)
     regimes = mf.data.select(["t0", "regime", *T1_FEATURE_IDS])
 
@@ -798,7 +798,7 @@ def test_integracao_real_ic_by_regime_e_gain_by_side_e_feature_agreement() -> No
 def test_integracao_real_confidence_deciles_by_side() -> None:
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation import cpcv
 
     model_id = MODEL_ID_CAMADA1
     _skip_if_real_artifacts_missing(model_id)
@@ -806,7 +806,7 @@ def test_integracao_real_confidence_deciles_by_side() -> None:
     predictions = pl.read_parquet(
         PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet"
     )
-    labels = pl.read_parquet(LABELS_OUTPUT_DIR / "v1" / "labels.parquet")
+    labels = cpcv.load_labels_v1()
 
     out = attr.confidence_deciles_by_side(predictions, labels)
     assert out.schema == attr._DECILE_OUTPUT_SCHEMA

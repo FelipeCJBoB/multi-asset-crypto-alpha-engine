@@ -19,7 +19,7 @@ from src.features.build import T1_FEATURE_IDS
 from src.models import dataset as ds
 from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA1
-from src.validation._paths import LABELS_OUTPUT_DIR
+from src.validation._paths import labels_symbol_tf_dir
 
 
 def _synthetic_frame() -> pl.DataFrame:
@@ -87,8 +87,9 @@ def test_side_subset_side_invalido_levanta_erro() -> None:
 
 
 def _skip_if_labels_missing() -> None:
-    if not (LABELS_OUTPUT_DIR / "v1" / "labels.parquet").exists():
-        pytest.skip("labels/v1/labels.parquet ausente — rode o Label Engine (Sprint 6) primeiro")
+    path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
 
 @pytest.mark.slow

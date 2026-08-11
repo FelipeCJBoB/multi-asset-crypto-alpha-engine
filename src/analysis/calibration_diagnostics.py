@@ -904,12 +904,14 @@ def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
     from src.models import dataset as ds
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation import cpcv
 
     predictions = pl.read_parquet(
         PREDICTIONS_OUTPUT_DIR / "alpha" / MODEL_ID_CAMADA1 / "predictions.parquet"
     )
-    labels = pl.read_parquet(LABELS_OUTPUT_DIR / "v1" / "labels.parquet")
+    # T0.3 -- via cpcv.load_labels_v1() em vez de reconstruir o caminho
+    # (que migrou de labels/v1/ pro layout chaveado data/labels/BTCUSDT/15m/v1/).
+    labels = cpcv.load_labels_v1()
     mf = ds.build_modeling_frame()
     regimes = mf.data.select(["t0", "regime", COST_FEATURE, E02F_FEATURE])
 

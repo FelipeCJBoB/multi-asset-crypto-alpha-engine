@@ -80,7 +80,6 @@ from src.validation import cpcv
 from ._paths import (
     EXPERIMENTS_DIR,
     FILL_SIMULATOR_OUTPUT_DIR,
-    LABELS_OUTPUT_DIR,
     PREDICTIONS_OUTPUT_DIR,
 )
 
@@ -136,13 +135,12 @@ def load_predictions(model_id: str = MODEL_ID_CAMADA1) -> pl.DataFrame:
 
 
 def load_labels(version: str = "v1") -> pl.DataFrame:
-    path = LABELS_OUTPUT_DIR / version / "labels.parquet"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"labels não encontrado em {path} — rode `uv run quant labels build` primeiro "
-            "(src.labels.triple_barrier)"
-        )
-    return pl.read_parquet(path)
+    """Via `cpcv.load_labels_v1()` (T0.3) -- caminho migrado de
+    `labels/v1/labels.parquet` (legado) pro layout chaveado
+    `data/labels/BTCUSDT/15m/v1/`; mensagem de erro/comportamento em caso
+    de ausência preservados (mesma exceção, levantada dentro de
+    `load_labels_v1`)."""
+    return cpcv.load_labels_v1(version)
 
 
 def load_orders(version: str = "v1") -> pl.DataFrame:

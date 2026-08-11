@@ -2,10 +2,14 @@
 (PRD_V4_1.md T0.1). Dois eixos: (1) unit puro com barras sintéticas,
 comparando `ATRWilderEstimator` contra `support.atr_wilder` chamado direto
 (garante que o wrapper não introduz nenhuma transformação além de
-`/close`); (2) golden bit-exato contra `labels/v1/labels.parquet::
-atr_at_t0` (G-C0-1) -- recomputa ATR das mesmas `bars_15m` (BTCUSDT,
-`close_time == t0`, `triple_barrier.py:573/576-577`) que o Label Engine
-usou e compara com tolerância zero."""
+`/close`); (2) golden bit-exato contra `data/labels/BTCUSDT/15m/v1/
+labels.parquet::atr_at_t0` (G-C0-1) -- recomputa ATR das mesmas `bars_15m`
+(BTCUSDT, `close_time == t0`, `triple_barrier.py:573/576-577`) que o
+Label Engine usou e compara com tolerância zero.
+
+Caminho migrado do legado `labels/v1/labels.parquet` pro layout chaveado
+(T0.3, PRD_V4_1.md §3.1) nesta mesma rodada -- via
+`src.validation.cpcv.load_labels_v1()`, o loader canônico único."""
 
 from __future__ import annotations
 
@@ -16,9 +20,9 @@ import pytest
 from src.data import lake
 from src.features import support
 from src.features.volatility import ATRWilderEstimator, Bars
-from src.validation._paths import LABELS_OUTPUT_DIR
+from src.validation._paths import labels_symbol_tf_dir
 
-_LABELS_PATH = LABELS_OUTPUT_DIR / "v1" / "labels.parquet"
+_LABELS_PATH = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
 
 
 def _synthetic_bars(n: int = 40) -> pl.DataFrame:
@@ -71,7 +75,7 @@ def test_from_constants_le_atr_window_de_constants_yaml() -> None:
 
 def _skip_if_labels_missing() -> None:
     if not _LABELS_PATH.exists():
-        pytest.skip("labels/v1/labels.parquet ausente -- rode o Label Engine (Sprint 6) primeiro")
+        pytest.skip(f"{_LABELS_PATH} ausente -- rode o Label Engine (Sprint 6) primeiro")
 
 
 @pytest.mark.golden

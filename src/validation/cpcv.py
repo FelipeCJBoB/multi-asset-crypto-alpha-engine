@@ -58,7 +58,7 @@ from numpy.typing import NDArray
 from src.data.resample import step_ms
 
 from ._constants import load_constant
-from ._paths import LABELS_OUTPUT_DIR
+from ._paths import labels_symbol_tf_dir
 
 logger = structlog.get_logger(__name__)
 
@@ -418,11 +418,17 @@ def summarize_splits(result: CPCVResult) -> pl.DataFrame:
 # ============================================================================
 
 
-def load_labels_v1(version: str = "v1") -> pl.DataFrame:
-    """`labels/{version}/labels.parquet` — insumo real do CPCV (Sprint 6).
-    Levanta `FileNotFoundError` com mensagem acionável se ainda não foi
-    gerado (nunca inventa um dataset sintético no caminho real)."""
-    path = LABELS_OUTPUT_DIR / version / "labels.parquet"
+def load_labels_v1(version: str = "v1", *, symbol: str = "BTCUSDT") -> pl.DataFrame:
+    """`data/labels/{symbol}/15m/{version}/labels.parquet` — insumo real do
+    CPCV (Sprint 6). Levanta `FileNotFoundError` com mensagem acionável se
+    ainda não foi gerado (nunca inventa um dataset sintético no caminho
+    real).
+
+    Layout chaveado (T0.3, PRD_V4_1.md §3.1) — migrado de `labels/v1/
+    labels.parquet` (caminho legado pré-V4.1) para
+    `data/labels/BTCUSDT/15m/v1/` nesta mesma rodada; `symbol` default
+    preserva o artefato real já existente no novo local."""
+    path = labels_symbol_tf_dir(symbol, version) / "labels.parquet"
     if not path.exists():
         raise FileNotFoundError(
             f"labels não encontrado em {path} — rode `uv run quant labels build` primeiro "

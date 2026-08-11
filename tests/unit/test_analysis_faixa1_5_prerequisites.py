@@ -352,10 +352,10 @@ def test_e02f_in_fold_roda_um_fold_pequeno_sem_levantar(monkeypatch: pytest.Monk
 def _skip_if_missing() -> None:
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation._paths import labels_symbol_tf_dir
 
     preds_path = PREDICTIONS_OUTPUT_DIR / "alpha" / MODEL_ID_CAMADA1 / "predictions.parquet"
-    labels_path = LABELS_OUTPUT_DIR / "v1" / "labels.parquet"
+    labels_path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
     if not preds_path.exists() or not labels_path.exists():
         pytest.skip(f"artefato(s) real(is) ausente(s): {preds_path}, {labels_path}")
 

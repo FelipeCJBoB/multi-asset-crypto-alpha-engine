@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 
 from src.validation import cpcv
-from src.validation._paths import LABELS_OUTPUT_DIR
+from src.validation._paths import labels_symbol_tf_dir
 
 _BAR_MS = 900_000  # 15m
 
@@ -322,8 +322,9 @@ def test_summarize_splits_soma_train_test_purge_embargo_bate_com_candidato() -> 
 
 
 def _skip_if_labels_missing() -> None:
-    if not (LABELS_OUTPUT_DIR / "v1" / "labels.parquet").exists():
-        pytest.skip("labels/v1/labels.parquet ausente — rode o Label Engine (Sprint 6) primeiro")
+    path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
 
 def test_load_labels_v1_inexistente_levanta_filenotfound() -> None:

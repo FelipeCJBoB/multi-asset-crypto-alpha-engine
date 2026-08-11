@@ -798,10 +798,10 @@ def test_run_faixa1_diagnostic_monta_todas_as_chaves_da_rubrica() -> None:
 def _skip_if_real_artifacts_missing() -> None:
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation._paths import labels_symbol_tf_dir
 
     preds_path = PREDICTIONS_OUTPUT_DIR / "alpha" / MODEL_ID_CAMADA1 / "predictions.parquet"
-    labels_path = LABELS_OUTPUT_DIR / "v1" / "labels.parquet"
+    labels_path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
     missing = [str(p) for p in (preds_path, labels_path) if not p.exists()]
     if missing:
         pytest.skip(f"artefato(s) real(is) ausente(s), rode o pipeline primeiro: {missing}")
@@ -814,14 +814,14 @@ def test_integracao_real_run_faixa1_diagnostic() -> None:
     from src.models import dataset as ds
     from src.models._paths import PREDICTIONS_OUTPUT_DIR
     from src.models.pipeline import MODEL_ID_CAMADA1
-    from src.validation._paths import LABELS_OUTPUT_DIR
+    from src.validation import cpcv
 
     _skip_if_real_artifacts_missing()
     model_id = MODEL_ID_CAMADA1
     predictions = pl.read_parquet(
         PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet"
     )
-    labels = pl.read_parquet(LABELS_OUTPUT_DIR / "v1" / "labels.parquet")
+    labels = cpcv.load_labels_v1()
     assert cd.COST_FEATURE in T1_FEATURE_IDS
     assert cd.E02F_FEATURE in T1_FEATURE_IDS
     mf = ds.build_modeling_frame()

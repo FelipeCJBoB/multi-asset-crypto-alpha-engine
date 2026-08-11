@@ -10,12 +10,13 @@ import polars as pl
 import pytest
 
 from src.validation import cpcv, leakage
-from src.validation._paths import LABELS_OUTPUT_DIR
+from src.validation._paths import labels_symbol_tf_dir
 
 
 def _skip_if_labels_missing() -> None:
-    if not (LABELS_OUTPUT_DIR / "v1" / "labels.parquet").exists():
-        pytest.skip("labels/v1/labels.parquet ausente — rode o Label Engine (Sprint 6) primeiro")
+    path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
+    if not path.exists():
+        pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
 
 def _make_synthetic_labels(n: int, *, horizon_bars: int = 1) -> pl.DataFrame:

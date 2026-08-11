@@ -29,8 +29,18 @@ DATA_ROOT: Path = REPO_ROOT / "data"
 # `labels/{version}/labels.parquet` — diretório de DADO no topo do repo
 # (irmão de `data/`, `models/`, `experiments/`), mesmo caminho que
 # `src/labels/_paths.py::LABELS_OUTPUT_DIR` resolve — duplicado aqui pela
-# mesma tática de isolamento entre pacotes descrita acima.
+# mesma tática de isolamento entre pacotes descrita acima. Legado
+# (pré-V4.1) — ver `labels_symbol_tf_dir` abaixo pro layout chaveado novo,
+# que é onde `labels/v1/labels.parquet` (BTCUSDT) foi migrado (T0.3).
 LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
+
+_DEFAULT_TF = "15m"
+
+
+def labels_symbol_tf_dir(symbol: str, version: str, *, tf: str = _DEFAULT_TF) -> Path:
+    """`data/labels/{symbol}/{tf}/{version}/` — mesmo layout de
+    `src.labels._paths.labels_symbol_tf_dir` (T0.3)."""
+    return DATA_ROOT / "labels" / symbol / tf / version
 
 # Saída dos relatórios deste pacote (`leakage_report.json`, resumo de splits
 # do CPCV) — irmão de `data/quality_reports/` (Data Quality Engine, Sprint
