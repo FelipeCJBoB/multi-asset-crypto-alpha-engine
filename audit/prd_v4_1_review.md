@@ -232,6 +232,24 @@ errado. De qualquer forma, **toda medição multi-ativo que assumir a janela
 2023-01** — isso precisa ser resolvido (baixar o histórico que falta, ou
 corrigir a janela declarada) antes de M1–M6 da Camada 1 rodarem cross-asset.
 
+> **Resolução (2026-08-11).** Gap fechado: `src/data/download.py` (novo,
+> commit `9b12cdd`) baixou `klines_1m`/`metrics`/`funding` de
+> `data.binance.vision` pros 4 alts, 2021-12-01→2022-12-31, com verificação
+> SHA256 (0 `checksum_mismatch` em 3.316 arquivos escritos). Confirmado em
+> disco: `klines_1m`/`metrics` agora cobrem 2021-12-01→2026-08-07 nos 4
+> símbolos (ETH/BNB completos, 1711/1711 dias; SOL/XRP com 5 gaps genuínos
+> — 2022-02-26/27/28 e 2022-04-01/02, `missing_upstream` confirmado, não
+> falha de download — mesmas datas em que `book_depth` já tinha gap pros 5
+> símbolos simultaneamente, ver auditoria original, seção "book_depth"
+> acima, provável outage upstream). `funding` completo, 56/56 meses. A
+> "janela comum" 2021-12→2026-08 do §2.1 agora tem lastro real em disco
+> pros 5 ativos — deixa de ser bloqueio pra M1–M6. Achado lateral: o
+> primeiro run crashou em `count_long_short_ratio`/colunas de razão vazias
+> (`""`) nos primeiros dias de `metrics` — bug de cast estrito em
+> `download.py`, corrigido no commit `2e60060` (nulls agora atravessam
+> colunas que `schemas.py` já declarava nullable, em vez de derrubar o
+> processo).
+
 **A2 — `bookTicker` NÃO é "idêntica nos cinco" nem cobre até 2025-11 (§2.4, F4).**
 O V4.1 afirma textualmente: *"Janela útil de microestrutura: 2023-05 → 2025-11,
 ~30 meses, idêntica nos cinco."* O filesystem mostra o oposto: `data/raw/
