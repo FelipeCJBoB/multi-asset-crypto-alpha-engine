@@ -98,6 +98,18 @@ def test_r0_para_todas_as_barras_antes_do_warmup() -> None:
 
 
 # ============================================================================
+# QuantileRegimeClassifier (PRD_V4_1.md T0.2) — properties (IO real fica em
+# test_regime_build.py::test_build_regimes_colunas_e_dtypes)
+# ============================================================================
+
+
+def test_quantile_regime_classifier_n_states_e_classifier_id() -> None:
+    qrc = classifier.QuantileRegimeClassifier(symbol="BTCUSDT")
+    assert qrc.n_states == 6  # R0..R5
+    assert qrc.classifier_id == "quantile_regime_v1"
+
+
+# ============================================================================
 # I-d (PRD_V4_1.md T0.2) — ponto de injeção para er_quantile/econ_quantile
 # ============================================================================
 

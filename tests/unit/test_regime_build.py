@@ -42,6 +42,7 @@ _EXPECTED_COLUMNS = (
     "engine_version",
     "cost_atr_ratio",
     "econ_regime",
+    "classifier_id",
 )
 
 
@@ -84,6 +85,9 @@ def test_build_regimes_colunas_e_dtypes() -> None:
     assert df.schema["tradeable"] == pl.Boolean
     assert df.schema["engine_version"] == pl.Utf8
     assert (df["engine_version"] == classifier.ENGINE_VERSION).all()
+    assert df.schema["classifier_id"] == pl.Utf8
+    qrc = classifier.QuantileRegimeClassifier(symbol="BTCUSDT")
+    assert (df["classifier_id"] == qrc.classifier_id).all()
     assert df.height == 3936
 
 

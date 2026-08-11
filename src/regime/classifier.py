@@ -36,6 +36,7 @@ a barra em que R0 termina e as poucas barras seguintes; o output para
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 import polars as pl
@@ -389,3 +390,76 @@ def classify_regimes(
         regime_counts=df["regime"].value_counts().sort("regime").to_dicts(),
     )
     return df
+
+
+# ============================================================================
+# RegimeClassifier (PRD_V4_1.md T0.2) -- Protocol + implementação inicial
+# ============================================================================
+
+
+class RegimeClassifier(Protocol):
+    def classify(self, features: pl.DataFrame) -> pl.DataFrame:
+        """Colunas: t0, regime, regime_raw, tradeable, classifier_id.
+        Causal e online: barra t usa apenas índices < t."""
+        ...
+
+    @property
+    def n_states(self) -> int: ...
+
+    @property
+    def classifier_id(self) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class QuantileRegimeClassifier:
+    """Wrapper de `classify_regimes` atrás do `RegimeClassifier` Protocol —
+    bit-idêntico ao que `src.regime.build.build_regimes` já roda hoje
+    (mesmas 4 colunas extraídas de `features`, mesmo
+    `stress.compute_stress_triggers`; `build_regimes` foi refatorado pra
+    delegar aqui em vez de duplicar a extração).
+
+    `symbol` é bound no construtor: a única IO que sobrevive dentro de
+    `classify()` — `stress.discover_filters_hash_snapshots(symbol)`, leve,
+    um glob + parse de JSON, não a carga pesada de features — precisa
+    saber de qual símbolo. A IO pesada (`build_t1_features`) fica de fora
+    do Protocol, no chamador, que monta `features` antes de chamar
+    `classify()`."""
+
+    symbol: str
+    thresholds: RegimeThresholds | None = None
+
+    def classify(self, features: pl.DataFrame) -> pl.DataFrame:
+        open_time_ms = features["open_time"].cast(pl.Int64).to_numpy()
+        er_48 = features["B07_efficiency_ratio_48"].cast(pl.Float64).to_numpy()
+        vol_pctile = features["C07_vol_pctile_expanding"].cast(pl.Float64).to_numpy()
+        funding_z = features["E02f_funding_z_expanding"].cast(pl.Float64).to_numpy()
+        cost_atr_ratio = features["E27f_cost_atr_ratio"].cast(pl.Float64).to_numpy()
+
+        filters_snapshots = stress_mod.discover_filters_hash_snapshots(self.symbol)
+        stress_inputs = stress_mod.StressInputs(
+            n=features.height,
+            open_time_ms=open_time_ms,
+            vol_pctile_expanding=vol_pctile,
+            funding_z_expanding=funding_z,
+            spread_pctile_expanding=None,
+            filters_hash_snapshots=filters_snapshots,
+        )
+        stress_result = stress_mod.compute_stress_triggers(stress_inputs)
+
+        df = classify_regimes(
+            open_time_ms,
+            er_48,
+            vol_pctile,
+            cost_atr_ratio,
+            stress_result,
+            thresholds=self.thresholds,
+        )
+        return df.with_columns(pl.lit(self.classifier_id).alias("classifier_id"))
+
+    @property
+    def n_states(self) -> int:
+        return len(REGIME_LABELS)
+
+    @property
+    def classifier_id(self) -> str:
+        return "quantile_regime_v1"

@@ -16,7 +16,7 @@ import structlog
 
 from src.features import build as features_build
 
-from . import classifier, stress
+from . import classifier
 from ._paths import REGIME_OUTPUT_DIR
 
 logger = structlog.get_logger(__name__)
@@ -39,33 +39,16 @@ def build_regimes(
 
     `spread_pctile_expanding` (S2) não é passado — F02f não existe como
     feature hoje (ver `stress.s02_spread_extreme`); resolve para
-    `NOT_COMPUTABLE` em toda barra deste pipeline, por design."""
+    `NOT_COMPUTABLE` em toda barra deste pipeline, por design.
+
+    Extração de colunas + wiring de stress delegados a
+    `classifier.QuantileRegimeClassifier` (PRD_V4_1.md T0.2) — este
+    módulo só cuida de IO (carregar `features_df`), não duplica a lógica
+    de classificação."""
     features_df = features_build.build_t1_features(symbol, start, end, apply_warmup_mask=False)
 
-    open_time_ms = features_df["open_time"].cast(pl.Int64).to_numpy()
-    er_48 = features_df["B07_efficiency_ratio_48"].cast(pl.Float64).to_numpy()
-    vol_pctile = features_df["C07_vol_pctile_expanding"].cast(pl.Float64).to_numpy()
-    funding_z = features_df["E02f_funding_z_expanding"].cast(pl.Float64).to_numpy()
-    cost_atr_ratio = features_df["E27f_cost_atr_ratio"].cast(pl.Float64).to_numpy()
-
-    filters_snapshots = stress.discover_filters_hash_snapshots(symbol)
-    stress_inputs = stress.StressInputs(
-        n=features_df.height,
-        open_time_ms=open_time_ms,
-        vol_pctile_expanding=vol_pctile,
-        funding_z_expanding=funding_z,
-        spread_pctile_expanding=None,
-        filters_hash_snapshots=filters_snapshots,
-    )
-    stress_result = stress.compute_stress_triggers(stress_inputs)
-
-    regimes = classifier.classify_regimes(
-        open_time_ms,
-        er_48,
-        vol_pctile,
-        cost_atr_ratio,
-        stress_result,
-        thresholds=thresholds,
+    regimes = classifier.QuantileRegimeClassifier(symbol=symbol, thresholds=thresholds).classify(
+        features_df
     )
     logger.info(
         "regime.build.build_regimes",
