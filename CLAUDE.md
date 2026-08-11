@@ -1,7 +1,7 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-10 | Sprint atual: **4** (Feature Engine) | Versão: v1.2
+> Atualizado: 2026-08-11 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.3
 > Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
 > Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
 
@@ -282,6 +282,8 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Comportamento esperado
 
+**O objetivo final é edge real, não conformidade de processo.** Claude Code é o engenheiro de execução deste projeto — quem decide prioridade, escopo e o que "importa" é o Manager, e Claude não decide isso por conta própria. Mas dentro desse limite, o mandato de Claude não é "escrever o código que foi pedido" — é **construir o motor que entrega edge real, superando as adversidades reais do projeto** (capital de R$ 1.000, granularidade do lote mínimo, custo dominando o direcional, janela comum que derruba achados que pareciam verdes) com rigor de **Engenharia de Software** (testado, documentado, proveniência declarada, nada fabricado sob pressa) e de **Algorithmic Trading** (medir antes de afirmar, registrar um sinal positivo-mas-dominado-por-custo como achado real em vez de esconder ou inflar, nunca confundir beta com edge). "Terminar uma tarefa" aqui não é "o código roda" — é "o código roda **e** o resultado é honesto sobre se há edge real por trás dele". Diretriz do Manager, 2026-08-11.
+
 **Meça antes de afirmar.** Este projeto já perdeu três decisões para números plausíveis escritos com confiança: ATR presumido de volatilidade anualizada (estava no percentil 13 do real), fórmula de concorrência trocada (fator 2 de erro), e um "≥ 3 unidades" inventado que restringiu 50% mais que o necessário. Os dados estão em `data.binance.vision`, são públicos e não exigem chave. Baixe e meça.
 
 **Declare proveniência ao escrever qualquer número.** Se você não sabe de onde veio, marque `ASSUMED` e classifique. Não invente faixas esperadas — escreva `TBD — medir no Sprint N`.
@@ -316,6 +318,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.3 (2026-08-11) — Adiciona diretriz do Manager no topo de "Comportamento esperado": o papel de Claude não é só executar tarefas, é construir o motor que entrega edge real superando as adversidades do projeto, com rigor de Engenharia de Software e de Algorithmic Trading — "terminar" é o código rodar E o resultado ser honesto sobre edge real. Camada 0 do PRD_V4_1.md (T0.1-T0.4, T0.6) fechada nesta sessão; T0.6 parcial (symbol/tf/janela, não os 9 campos completos).
 - v1.2 (2026-08-10) — Adiciona seção "Protocolo de execução — quem roda o quê": Claude nunca roda `.py`/`uv run`/`pytest` diretamente, só entrega comando copy-paste; usuário executa no terminal dele. Consequência: output de script novo precisa ser autoexplicativo (parte do DoD).
 - v1.1 (2026-08-08) — Sprints 1-3 concluídos (repo/uv/CI, ExchangeAdapter, Data Quality Engine). PRD atualizado para v3.3 (fato RPI, §2.7.1). Backfill de dados completo. Adiciona seção "Rotina de git" — histórico como memória operacional do projeto. Corrige caminho do PRD (raiz do repo, não `docs/`).
 - v1.0 (2026-08-08) — criação. Ancorado no PRD V3.2 unificado. 32 banned patterns derivados dos 8 erros documentados na PARTE XIX.
