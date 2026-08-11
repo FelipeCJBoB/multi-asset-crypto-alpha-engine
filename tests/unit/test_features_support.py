@@ -159,6 +159,65 @@ def test_realized_vol_causalidade() -> None:
     _assert_causal(fn, log_ret, cutoff=40)
 
 
+# ============================================================================
+# parkinson_vol / garman_klass_vol (PRD_V4_1.md §3.2 M1)
+# ============================================================================
+
+
+def test_parkinson_vol_barra_constante_da_zero() -> None:
+    # high == low em toda barra -> ln(H/L) = 0 em toda barra -> vol = 0
+    high = np.full(30, 100.0)
+    low = np.full(30, 100.0)
+    out = support.parkinson_vol(high, low, window=10)
+    valid = out[~np.isnan(out)]
+    assert np.allclose(valid, 0.0)
+
+
+def test_parkinson_vol_causalidade() -> None:
+    rng = np.random.default_rng(11)
+    n = 60
+    close = 100.0 + np.cumsum(rng.normal(0, 1, n))
+    low = close - rng.uniform(0.1, 1.0, n)
+
+    def fn(high: np.ndarray) -> np.ndarray:
+        return support.parkinson_vol(high, low, window=14)
+
+    high_base = close + rng.uniform(0.1, 1.0, n)
+    _assert_causal(fn, high_base, cutoff=30)
+
+
+def test_parkinson_vol_warmup_e_janela_menos_um_nan() -> None:
+    high = np.array([10.0, 12.0, 11.0, 13.0, 14.0, 15.0])
+    low = np.array([9.0, 10.0, 9.5, 11.5, 12.0, 13.0])
+    out = support.parkinson_vol(high, low, window=3)
+    assert np.isnan(out[:2]).all()
+    assert not np.isnan(out[2:]).any()
+
+
+def test_garman_klass_vol_barra_constante_da_zero() -> None:
+    high = np.full(30, 100.0)
+    low = np.full(30, 100.0)
+    open_ = np.full(30, 100.0)
+    close = np.full(30, 100.0)
+    out = support.garman_klass_vol(high, low, open_, close, window=10)
+    valid = out[~np.isnan(out)]
+    assert np.allclose(valid, 0.0)
+
+
+def test_garman_klass_vol_causalidade() -> None:
+    rng = np.random.default_rng(12)
+    n = 60
+    close = 100.0 + np.cumsum(rng.normal(0, 1, n))
+    low = close - rng.uniform(0.1, 1.0, n)
+    open_ = close + rng.normal(0, 0.05, n)
+
+    def fn(high: np.ndarray) -> np.ndarray:
+        return support.garman_klass_vol(high, low, open_, close, window=14)
+
+    high_base = close + rng.uniform(0.1, 1.0, n)
+    _assert_causal(fn, high_base, cutoff=30)
+
+
 def test_rolling_zscore_causalidade() -> None:
     rng = np.random.default_rng(9)
     values = rng.normal(0, 1, 100)

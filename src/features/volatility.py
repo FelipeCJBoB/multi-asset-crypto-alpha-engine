@@ -103,3 +103,99 @@ class ATRWilderEstimator:
     @property
     def estimator_id(self) -> str:
         return f"atr_wilder_w{self.window}"
+
+
+@dataclass(frozen=True, slots=True)
+class ParkinsonEstimator:
+    """Parkinson (1980) — um dos 6 candidatos de M1 (PRD_V4_1.md §3.2).
+    `window` é sempre explícito no construtor: qual janela é "certa" por
+    (symbol, tf) é exatamente o que a calibração walk-forward de M1
+    decide, não algo que este módulo deveria presumir via
+    `from_constants()` — não existe `atr_window`-equivalente ainda medido
+    para este estimador."""
+
+    window: int
+
+    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
+        if horizon_minutes != bars.timeframe_minutes:
+            raise NotImplementedError(
+                "ParkinsonEstimator so estima no horizonte nativo da barra "
+                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
+                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
+            )
+        high = bars.frame["high"].cast(pl.Float64).to_numpy()
+        low = bars.frame["low"].cast(pl.Float64).to_numpy()
+        return support.parkinson_vol(high, low, self.window)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.window
+
+    @property
+    def estimator_id(self) -> str:
+        return f"parkinson_w{self.window}"
+
+
+@dataclass(frozen=True, slots=True)
+class GarmanKlassEstimator:
+    """Garman-Klass (1980) — candidato de M1. Mesmo racional de
+    `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`."""
+
+    window: int
+
+    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
+        if horizon_minutes != bars.timeframe_minutes:
+            raise NotImplementedError(
+                "GarmanKlassEstimator so estima no horizonte nativo da barra "
+                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
+                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
+            )
+        high = bars.frame["high"].cast(pl.Float64).to_numpy()
+        low = bars.frame["low"].cast(pl.Float64).to_numpy()
+        open_ = bars.frame["open"].cast(pl.Float64).to_numpy()
+        close = bars.frame["close"].cast(pl.Float64).to_numpy()
+        return support.garman_klass_vol(high, low, open_, close, self.window)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.window
+
+    @property
+    def estimator_id(self) -> str:
+        return f"garman_klass_w{self.window}"
+
+
+@dataclass(frozen=True, slots=True)
+class RealizedVolEstimator:
+    """Volatilidade realizada de retorno log — `sigma(log_return) *
+    sqrt(window)` (`support.realized_vol`, já usada por C06/C07 do
+    Feature Engine). Candidato de M1; mesmo racional de `window` explícito
+    dos outros dois novos estimadores."""
+
+    window: int
+
+    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
+        if horizon_minutes != bars.timeframe_minutes:
+            raise NotImplementedError(
+                "RealizedVolEstimator so estima no horizonte nativo da barra "
+                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
+                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
+            )
+        close = bars.frame["close"].cast(pl.Float64).to_numpy()
+        n = close.shape[0]
+        log_return = np.full(n, np.nan, dtype=np.float64)
+        if n > 1:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_return[1:] = np.log(close[1:] / close[:-1])
+        return support.realized_vol(log_return, self.window)
+
+    @property
+    def warmup_bars(self) -> int:
+        # +1: log_return[0] é sempre NaN (sem C_{-1}), então a janela de
+        # `window` retornos válidos só fecha em `window` barras depois
+        # do primeiro retorno computável.
+        return self.window + 1
+
+    @property
+    def estimator_id(self) -> str:
+        return f"realized_vol_w{self.window}"

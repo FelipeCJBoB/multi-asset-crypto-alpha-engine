@@ -134,6 +134,42 @@ def rsi_wilder(close: FloatArray, window: int) -> FloatArray:
     return rsi
 
 
+def parkinson_vol(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
+    """Estimador de Parkinson (1980) — PRD_V4_1.md §3.2 M1, um dos 6
+    candidatos de `VolatilityEstimator`. `sigma_P,t^2 = mean_window(ln(H/L)^2)
+    / (4*ln2)`; retorna `sigma_P,t` (raiz), fração do preço, mesma escala
+    de `atr_wilder(...)/close`. Janela rolante fixa — a barra `t` entra na
+    própria janela (mesma família de `atr_wilder`/`realized_vol`, B02 não
+    se aplica)."""
+    log_hl_sq = np.log(high / low) ** 2
+    mean_sq = (
+        pl.Series(log_hl_sq).rolling_mean(window_size=window, min_samples=window).to_numpy()
+    )
+    var = mean_sq / (4.0 * np.log(2.0))
+    with np.errstate(invalid="ignore"):
+        out: FloatArray = np.sqrt(var)
+    return out
+
+
+def garman_klass_vol(
+    high: FloatArray, low: FloatArray, open_: FloatArray, close: FloatArray, window: int
+) -> FloatArray:
+    """Estimador de Garman-Klass (1980) — PRD_V4_1.md §3.2 M1. Por barra:
+    `gk_i = 0.5*ln(H_i/L_i)^2 - (2*ln2-1)*ln(C_i/O_i)^2`;
+    `sigma_GK,t^2 = mean_window(gk_i)`, retorna a raiz (fração do preço).
+    Janela rolante fixa, mesma convenção de `parkinson_vol`. Média da
+    janela negativa (ruído numérico possível em janela curta com poucos
+    candles de range quase nulo) vira NaN em vez de `sqrt` de número
+    complexo silencioso."""
+    log_hl_sq = np.log(high / low) ** 2
+    log_co_sq = np.log(close / open_) ** 2
+    gk = 0.5 * log_hl_sq - (2.0 * np.log(2.0) - 1.0) * log_co_sq
+    mean_gk = pl.Series(gk).rolling_mean(window_size=window, min_samples=window).to_numpy()
+    with np.errstate(invalid="ignore"):
+        out: FloatArray = np.sqrt(np.where(mean_gk >= 0, mean_gk, np.nan))
+    return out
+
+
 def realized_vol(log_return: FloatArray, window: int) -> FloatArray:
     """`σ(log_return) × √window` sobre janela rolante de `window` barras,
     incluindo a barra atual (§2.4 C03) — janela rolante fixa, não
