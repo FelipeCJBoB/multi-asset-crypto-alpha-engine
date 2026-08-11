@@ -38,6 +38,7 @@ from research import research_t2 as r2
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.features import _sources
+from src.features._constants import load_constant
 from src.features.build import T1_FEATURE_IDS, compute_t1_features
 from src.features.groups import group_c
 from src.models.hhi import compute_effective_concentration
@@ -113,7 +114,9 @@ def build_research_candidates_frame(
     close_time_ms = bars_15m["close_time"].cast(pl.Float64).to_numpy()
     open_time_ms = bars_15m["open_time"].cast(pl.Float64).to_numpy()
 
-    atr_20_abs = group_c.c01_atr_20(high, low, close, 20)
+    # I-b (PRD_V4_1.md T0.1): era literal 20 -- banned pattern ativo, uma
+    # varredura de atr_window não alcançava esta chamada.
+    atr_20_abs = group_c.c01_atr_20(high, low, close, int(load_constant("atr_window")))
     atr_20_pct = group_c.c02_atr_20_pct(atr_20_abs, close)
     log_return_1 = np.full(close.shape[0], np.nan, dtype=np.float64)
     log_return_1[1:] = np.log(close[1:] / close[:-1])

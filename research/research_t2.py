@@ -59,6 +59,7 @@ import polars as pl
 from numpy.typing import NDArray
 
 from src.features import support
+from src.features._constants import load_constant
 
 FloatArray = NDArray[np.float64]
 
@@ -129,7 +130,10 @@ def group_a_research(bars_15m: pl.DataFrame, atr_20_pct: FloatArray) -> dict[str
         gap_pct = (open_ - prev_close) / prev_close
 
     ema_12 = support.ema(close, 12)
-    atr_20_abs = support.atr_wilder(high, low, close, 20)
+    # I-a (PRD_V4_1.md T0.1): era literal 20 -- uma varredura de atr_window
+    # divergia em silêncio aqui, já que atr_20_pct (parâmetro) mudava e este
+    # recomputo local não.
+    atr_20_abs = support.atr_wilder(high, low, close, int(load_constant("atr_window")))
 
     # A15 VWAP diário: reseta na virada de dia UTC, causal (só o próprio dia
     # até a barra atual -- cumsum de quote_volume/volume por grupo de dia).
