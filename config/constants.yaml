@@ -1038,3 +1038,34 @@ alpha_gate3_carry_share_max:
   source: "PRD §16.6 — 'se > 0,30, a estratégia é majoritariamente carry' / 'Gate 3 revisado: directional_sharpe > 0 isoladamente'. Citado textualmente, guardrail de gate, não hiperparâmetro de busca — mesma classe de outlier_log_return_sigma_threshold acima."
   class: C
   sweep_required: false
+
+# --- src/data/download.py — downloader multi-ativo data.binance.vision (PRD_V4_1.md F5/T0.3) ---
+
+data_download_request_timeout_s:
+  value: 30.0
+  provenance: ASSUMED
+  source: "escolha de engenharia sem base — mesma categoria de rest_request_timeout_s acima, mas pra CDN estático (data.binance.vision), não a API fapi.binance.com; timeout maior porque os arquivos (zip de kline mensal) são bem maiores que uma resposta de API"
+  class: C
+  sweep_required: false
+
+data_download_max_retries:
+  value: 3
+  provenance: ASSUMED
+  source: "escolha de engenharia sem base — mesma contagem de listen_key_keepalive_max_retries acima, sem relação causal, só convenção de 3 tentativas antes de desistir"
+  class: D
+  sweep_required: false
+
+data_download_retry_backoff_s:
+  value: 2.0
+  provenance: ASSUMED
+  source: "escolha de engenharia sem base — backoff fixo simples entre tentativas; data.binance.vision é CDN estático sem header de rate-limit documentado pra calibrar contra"
+  class: D
+  sweep_required: false
+
+klines_daily_partition_cutover_date:
+  value: "2023-06-01"
+  provenance: LITERATURE
+  source: "PRD_V4_1.md §2.5 (F5) — 'daily/klines começa 2023-06, monthly/klines vai a 2020'. Não reverificado ao vivo por este processo (Claude Code não executa Python/HTTP); o downloader trata 404 na partição escolhida como missing_upstream em vez de assumir que esta data está certa — ver docstring de klines_partition_for_date."
+  class: C
+  sweep_required: false
+  sweep_required: false
