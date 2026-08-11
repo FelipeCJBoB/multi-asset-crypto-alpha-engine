@@ -151,3 +151,82 @@ def test_month_range_cobre_virada_de_ano() -> None:
 def test_date_range_e_inclusivo_nas_duas_pontas() -> None:
     days = list(dl._date_range(date(2022, 1, 30), date(2022, 2, 1)))
     assert days == [date(2022, 1, 30), date(2022, 1, 31), date(2022, 2, 1)]
+
+
+def test_agg_trades_url() -> None:
+    url = dl._agg_trades_url("ETHUSDT", date(2022, 3, 1))
+    assert url == (
+        "https://data.binance.vision/data/futures/um/daily/aggTrades/"
+        "ETHUSDT/ETHUSDT-aggTrades-2022-03-01.zip"
+    )
+
+
+def test_book_ticker_url() -> None:
+    url = dl._book_ticker_url("SOLUSDT", date(2023, 6, 1))
+    assert url == (
+        "https://data.binance.vision/data/futures/um/daily/bookTicker/"
+        "SOLUSDT/SOLUSDT-bookTicker-2023-06-01.zip"
+    )
+
+
+def test_parse_csv_agg_trades_is_buyer_maker_string_vira_boolean() -> None:
+    # Medido ao vivo em 2026-08-11 (amostra real ETHUSDT-aggTrades-2022-03-01):
+    # CSV sem header, is_buyer_maker chega como "true"/"false" (string), não
+    # 0/1 -- confirma que Polars faz esse cast Utf8 -> Boolean sem crashar
+    # (não documentado no schema, então não presumido, testado).
+    csv_text = (
+        "766470841,2920.05,22.308,1474115524,1474115533,1646092800145,false\n"
+        "766470842,2920.08,0.119,1474115534,1474115534,1646092800175,true\n"
+    )
+    df = dl._parse_csv(csv_text, schemas.AGG_TRADES)
+    assert df["is_buyer_maker"].to_list() == [False, True]
+    assert df.schema["is_buyer_maker"] == pl.Boolean
+    assert df["agg_trade_id"].to_list() == [766470841, 766470842]
+
+
+def test_parse_book_ticker_csv_com_header_descarta_update_id_e_event_time() -> None:
+    # Header real medido em 2026-08-11 (amostra ETHUSDT-bookTicker-2023-06-01):
+    # 7 colunas no CSV bruto, só 5 sobrevivem no parquet local (mesmo
+    # contrato de data/raw/book_ticker/BTCUSDT/ já em disco).
+    csv_text = (
+        "update_id,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty,"
+        "transaction_time,event_time\n"
+        "2899808024194,1872.84000000,55.72800000,1872.85000000,24.16400000,"
+        "1685577600027,1685577600031\n"
+    )
+    df = dl._parse_book_ticker_csv(csv_text)
+    assert df.columns == [
+        "transaction_time",
+        "best_bid_price",
+        "best_bid_qty",
+        "best_ask_price",
+        "best_ask_qty",
+    ]
+    assert df["transaction_time"].to_list() == [1685577600027]
+    assert df["best_bid_price"].to_list() == [1872.84]
+    assert df.schema["best_bid_price"] == pl.Float64
+
+
+def test_parse_book_ticker_csv_sem_header() -> None:
+    csv_text = (
+        "2899808024194,1872.84000000,55.72800000,1872.85000000,24.16400000,"
+        "1685577600027,1685577600031\n"
+    )
+    df = dl._parse_book_ticker_csv(csv_text)
+    assert df.height == 1
+    assert df["best_ask_qty"].to_list() == [24.164]
+
+
+def test_clip_to_book_ticker_window_pedido_maior_recorta_dos_dois_lados() -> None:
+    clipped = dl._clip_to_book_ticker_window(date(2021, 12, 1), date(2026, 8, 7))
+    assert clipped == (dl.BOOK_TICKER_WINDOW_START, dl.BOOK_TICKER_WINDOW_END)
+
+
+def test_clip_to_book_ticker_window_pedido_dentro_da_janela_nao_recorta() -> None:
+    start, end = date(2023, 6, 1), date(2023, 12, 1)
+    assert dl._clip_to_book_ticker_window(start, end) == (start, end)
+
+
+def test_clip_to_book_ticker_window_pedido_fora_da_janela_retorna_none() -> None:
+    assert dl._clip_to_book_ticker_window(date(2020, 1, 1), date(2020, 12, 31)) is None
+    assert dl._clip_to_book_ticker_window(date(2025, 1, 1), date(2025, 12, 31)) is None

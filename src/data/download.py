@@ -1,8 +1,30 @@
 """Downloader multi-símbolo de `data.binance.vision` (CDN público, sem
-chave) para `klines_1m`, `metrics`, `funding` — PRD_V4_1.md T0.1-T0.4 e o
-gap concreto medido em `audit/prd_v4_1_review.md` (adendo 2026-08-10, achado
-A1): ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT cobrem 2023-01-01→2026-08-07 sem gaps,
-mas ZERO arquivos existem antes disso — este módulo fecha esse intervalo.
+chave) para `klines_1m`, `metrics`, `funding`, `agg_trades`, `book_ticker` —
+PRD_V4_1.md T0.1-T0.4. O gap original que motivou este módulo (ETHUSDT/
+SOLUSDT/BNBUSDT/XRPUSDT sem histórico anterior a 2023) já foi fechado; as
+duas fontes `agg_trades`/`book_ticker` foram adicionadas depois, por serem
+as únicas que ainda faltavam pros 4 alts (ver `constants.yaml::known_gaps`).
+
+`agg_trades`/`book_ticker` são opt-in — não entram em `DEFAULT_SOURCES`,
+só rodam com `--sources agg_trades book_ticker` explícito. `book_ticker`
+recorta automaticamente `[start, end]` pra `BOOK_TICKER_WINDOW_START/_END`
+abaixo: sondagem HTTP direta contra `data.binance.vision` em 2026-08-11
+confirmou que a janela 2023-05-16..2024-03-30 (já medida só pra BTCUSDT em
+`known_gaps.d05_d08_d09_upstream_availability_shorter_than_prd_claims`) é
+global — 404 antes e depois pros 4 alts também, não peculiaridade de
+BTCUSDT. `agg_trades`, ao contrário de `klines_1m`, não tem cutover
+monthly/daily: `daily/aggTrades` respondeu 200 em toda data sondada, de
+2021-12 a 2026-08 — partição sempre `daily`.
+
+`book_ticker` grava em `data/raw/book_ticker/{symbol}/`, não em
+`data/capacity/` (layout provisório do Sprint 1, ver `_paths.py`) — schema
+próprio de 5 colunas (`transaction_time`, `best_bid_price/_qty`,
+`best_ask_price/_qty`), igual ao que já existe em disco pra BTCUSDT e ao
+que `src/execution/fill_simulator.py::_BOOK_TICKER_COLUMNS` espera ler; o
+CSV bruto da Binance tem 7 colunas (mais `update_id`, `event_time`,
+descartadas aqui). Por isso não usa `schemas.DatasetSchema`/`_parse_csv`
+genérico (que exige 1:1 entre colunas do CSV e do contrato) — tem parser
+próprio, `_parse_book_ticker_csv`.
 
 `src/data/validate.py:227-228` já citava este arquivo por nome (`"TODO
 quando src/data/download.py existir e puder gravar SHA256 no manifest"`) —
@@ -43,7 +65,7 @@ import zipfile
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 import orjson
 import polars as pl
@@ -52,7 +74,7 @@ import structlog
 
 from . import schemas
 from ._constants import load_constant
-from ._paths import CAPACITY_DIR
+from ._paths import CAPACITY_DIR, RAW_DIR
 
 logger = structlog.get_logger(__name__)
 
@@ -111,6 +133,29 @@ def _funding_url(symbol: str, year: int, month: int) -> str:
         f"{BASE_URL}/data/futures/um/monthly/fundingRate/{symbol}/"
         f"{symbol}-fundingRate-{period}.zip"
     )
+
+
+def _agg_trades_url(symbol: str, d: date) -> str:
+    day = d.isoformat()
+    return f"{BASE_URL}/data/futures/um/daily/aggTrades/{symbol}/{symbol}-aggTrades-{day}.zip"
+
+
+def _book_ticker_url(symbol: str, d: date) -> str:
+    day = d.isoformat()
+    return f"{BASE_URL}/data/futures/um/daily/bookTicker/{symbol}/{symbol}-bookTicker-{day}.zip"
+
+
+# Janela MEDIDA, não estimada — sondagem HTTP direta (200/404) contra
+# data.binance.vision em 2026-08-11 pros 4 alts, confirmando que a mesma
+# janela já registrada só pra BTCUSDT em constants.yaml::known_gaps
+# (d05_d08_d09_upstream_availability_shorter_than_prd_claims) é uma
+# descontinuação global do dump, não peculiaridade de um símbolo. Duplicada
+# de propósito de `src/execution/fill_simulator.py::BOOK_TICKER_WINDOW_START/
+# _END` — `data/` não pode importar de `execution/` (§14.2, hierarquia de
+# camadas, direção proibida), mesmo padrão de duplicação tática já usado
+# entre `data/_paths.py` e `exchange/_paths.py`.
+BOOK_TICKER_WINDOW_START: Final[date] = date(2023, 5, 16)
+BOOK_TICKER_WINDOW_END: Final[date] = date(2024, 3, 30)
 
 
 # ============================================================================
@@ -216,12 +261,81 @@ def _parse_csv(csv_text: str, schema: schemas.DatasetSchema) -> pl.DataFrame:
     # crashar: medido ao vivo em 2021-12-30 (as 4 rodadas de download desta
     # sessão) — Binance não populava essas colunas de razão nos primeiros
     # dias de metrics para os alts, "" no CSV cru, não erro de rede/parse.
+    #
+    # `pl.Boolean` é caso à parte: medido ao vivo em 2026-08-11 (rodando
+    # `uv run python -m pytest` via agente autorizado) que `.cast(Boolean,
+    # strict=...)` direto de Utf8 levanta `InvalidOperationError` nesta
+    # versão do Polars ("casting from Utf8View to Boolean not supported") —
+    # não existe conversão implícita Utf8->Boolean no engine pra strings
+    # literais "true"/"false" (só pra numérico). `agg_trades.is_buyer_maker`
+    # é a única coluna Boolean do repo; comparação de string preserva null
+    # (three-valued logic do Polars: `null == "true"` -> null).
     casts = [
-        pl.col(name).cast(dtype, strict=name in schema.non_nullable)
+        (
+            (pl.col(name).str.to_lowercase() == "true").alias(name)
+            if dtype is pl.Boolean
+            else pl.col(name).cast(dtype, strict=name in schema.non_nullable)
+        )
         for name, dtype in schema.columns.items()
         if dtype is not pl.Utf8
     ]
     return raw.with_columns(casts).select(column_names) if casts else raw.select(column_names)
+
+
+# CSV bruto da Binance tem 7 colunas (medido via amostra real em 2026-08-11,
+# ETHUSDT-bookTicker-2023-06-01.zip: header
+# "update_id,best_bid_price,best_bid_qty,best_ask_price,best_ask_qty,
+# transaction_time,event_time"). O contrato local em disco (BTCUSDT já
+# gravado, `fill_simulator.py::_BOOK_TICKER_COLUMNS`) mantém só 5 — descarta
+# `update_id`/`event_time`.
+_BOOK_TICKER_RAW_COLUMNS: dict[str, type[pl.DataType]] = {
+    "update_id": pl.Int64,
+    "best_bid_price": pl.Float64,
+    "best_bid_qty": pl.Float64,
+    "best_ask_price": pl.Float64,
+    "best_ask_qty": pl.Float64,
+    "transaction_time": pl.Int64,
+    "event_time": pl.Int64,
+}
+_BOOK_TICKER_OUTPUT_COLUMNS: tuple[str, ...] = (
+    "transaction_time",
+    "best_bid_price",
+    "best_bid_qty",
+    "best_ask_price",
+    "best_ask_qty",
+)
+
+
+def _parse_book_ticker_csv(csv_text: str) -> pl.DataFrame:
+    """Mesma disciplina de `_parse_csv` (lê tudo Utf8, depois casta), mas
+    sem passar por `schemas.DatasetSchema` — `book_ticker` não é uma fonte
+    de `data/capacity/` (ver docstring do módulo) e as 7 colunas do CSV
+    bruto não batem 1:1 com as 5 colunas do contrato de disco. `strict=True`
+    em todas: as 7 colunas do dump bruto são identificadores/preços/
+    timestamps, nenhuma delas tem motivo conhecido pra vir vazia (ao
+    contrário das razões de `metrics`, §ver `_parse_csv`) — célula vazia
+    aqui é falha de integridade real, deve levantar."""
+    column_names = list(_BOOK_TICKER_RAW_COLUMNS.keys())
+    lines = csv_text.splitlines()
+    if not lines:
+        return pl.DataFrame(
+            schema={c: _BOOK_TICKER_RAW_COLUMNS[c] for c in _BOOK_TICKER_OUTPUT_COLUMNS}
+        )
+    skip_rows = 1 if _has_header(lines[0], column_names[0]) else 0
+    raw = pl.read_csv(
+        io.StringIO(csv_text),
+        has_header=False,
+        skip_rows=skip_rows,
+        new_columns=column_names,
+        schema_overrides=dict.fromkeys(column_names, pl.Utf8),
+    )
+    casts = [
+        pl.col(name).cast(dtype, strict=True)
+        for name, dtype in _BOOK_TICKER_RAW_COLUMNS.items()
+        if dtype is not pl.Utf8
+    ]
+    parsed = raw.with_columns(casts) if casts else raw
+    return parsed.select(list(_BOOK_TICKER_OUTPUT_COLUMNS))
 
 
 def _split_klines_by_day(df: pl.DataFrame) -> dict[date, pl.DataFrame]:
@@ -473,10 +587,129 @@ def download_klines_1m(symbol: str, start: date, end: date, *, session: requests
         )
 
 
+def download_agg_trades(symbol: str, start: date, end: date, *, session: requests.Session) -> None:
+    schema = schemas.AGG_TRADES
+    out_dir = CAPACITY_DIR / "agg_trades" / symbol
+    for d in _date_range(start, end):
+        period = d.isoformat()
+        dest = out_dir / f"{period}.parquet"
+        if dest.exists():
+            _log_manifest_entry(
+                symbol=symbol, source="agg_trades", period=period, status="skipped_existing"
+            )
+            continue
+        url = _agg_trades_url(symbol, d)
+        payload = _download_with_retries(session, url)
+        if payload is None:
+            logger.warning(
+                "data.download.missing_upstream",
+                symbol=symbol, source="agg_trades", period=period, url=url,
+            )
+            _log_manifest_entry(
+                symbol=symbol, source="agg_trades", period=period, status="missing_upstream"
+            )
+            continue
+        checksum_ok = _verify_checksum(session, url, payload)
+        if checksum_ok is False:
+            logger.error(
+                "data.download.checksum_mismatch",
+                symbol=symbol, source="agg_trades", period=period, url=url,
+            )
+            _log_manifest_entry(
+                symbol=symbol, source="agg_trades", period=period, status="checksum_mismatch"
+            )
+            continue
+        df = _parse_csv(_extract_single_csv(payload), schema)
+        _write_parquet_atomic(df, dest)
+        logger.info(
+            "data.download.written",
+            symbol=symbol, source="agg_trades", period=period,
+            n_rows=df.height, checksum_verified=checksum_ok,
+        )
+        _log_manifest_entry(
+            symbol=symbol, source="agg_trades", period=period, status="ok",
+            n_rows=df.height, checksum_verified=checksum_ok,
+        )
+
+
+def _clip_to_book_ticker_window(start: date, end: date) -> tuple[date, date] | None:
+    """`None` = interseção vazia entre `[start, end]` pedido e a janela
+    medida (`BOOK_TICKER_WINDOW_START/_END`) — nenhum dia a baixar."""
+    window_start = max(start, BOOK_TICKER_WINDOW_START)
+    window_end = min(end, BOOK_TICKER_WINDOW_END)
+    if window_start > window_end:
+        return None
+    return window_start, window_end
+
+
+def download_book_ticker(symbol: str, start: date, end: date, *, session: requests.Session) -> None:
+    out_dir = RAW_DIR / "book_ticker" / symbol
+    clipped = _clip_to_book_ticker_window(start, end)
+    if clipped is None:
+        logger.warning(
+            "data.download.book_ticker_out_of_window",
+            symbol=symbol,
+            requested_start=start.isoformat(), requested_end=end.isoformat(),
+            window_start=BOOK_TICKER_WINDOW_START.isoformat(),
+            window_end=BOOK_TICKER_WINDOW_END.isoformat(),
+        )
+        return
+    window_start, window_end = clipped
+    if window_start > start or window_end < end:
+        logger.info(
+            "data.download.book_ticker_clipped_to_measured_window",
+            symbol=symbol,
+            requested_start=start.isoformat(), requested_end=end.isoformat(),
+            effective_start=window_start.isoformat(), effective_end=window_end.isoformat(),
+        )
+    for d in _date_range(window_start, window_end):
+        period = d.isoformat()
+        dest = out_dir / f"{period}.parquet"
+        if dest.exists():
+            _log_manifest_entry(
+                symbol=symbol, source="book_ticker", period=period, status="skipped_existing"
+            )
+            continue
+        url = _book_ticker_url(symbol, d)
+        payload = _download_with_retries(session, url)
+        if payload is None:
+            logger.warning(
+                "data.download.missing_upstream",
+                symbol=symbol, source="book_ticker", period=period, url=url,
+            )
+            _log_manifest_entry(
+                symbol=symbol, source="book_ticker", period=period, status="missing_upstream"
+            )
+            continue
+        checksum_ok = _verify_checksum(session, url, payload)
+        if checksum_ok is False:
+            logger.error(
+                "data.download.checksum_mismatch",
+                symbol=symbol, source="book_ticker", period=period, url=url,
+            )
+            _log_manifest_entry(
+                symbol=symbol, source="book_ticker", period=period, status="checksum_mismatch"
+            )
+            continue
+        df = _parse_book_ticker_csv(_extract_single_csv(payload))
+        _write_parquet_atomic(df, dest)
+        logger.info(
+            "data.download.written",
+            symbol=symbol, source="book_ticker", period=period,
+            n_rows=df.height, checksum_verified=checksum_ok,
+        )
+        _log_manifest_entry(
+            symbol=symbol, source="book_ticker", period=period, status="ok",
+            n_rows=df.height, checksum_verified=checksum_ok,
+        )
+
+
 SOURCE_DOWNLOADERS = {
     "klines_1m": download_klines_1m,
     "metrics": download_metrics,
     "funding": download_funding,
+    "agg_trades": download_agg_trades,
+    "book_ticker": download_book_ticker,
 }
 
 
@@ -503,10 +736,14 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         parser = argparse.ArgumentParser(
             description=(
                 "Downloader multi-ativo de data.binance.vision (klines_1m, "
-                "metrics, funding). Idempotente (pula periodo ja existente em "
+                "metrics, funding, agg_trades, book_ticker -- os 2 ultimos sao "
+                "opt-in, precisam de --sources explicito, book_ticker recorta "
+                "automaticamente para a janela medida 2023-05-16..2024-03-30). "
+                "Idempotente (pula periodo ja existente em "
                 "disco), verifica checksum SHA256 quando o .CHECKSUM da Binance "
                 "esta disponivel, loga cada periodo com campo symbol em "
-                "data/capacity/_download_log/multi_asset_backfill.jsonl."
+                "data/capacity/_download_log/multi_asset_backfill.jsonl "
+                "(book_ticker loga em data/raw/book_ticker/{symbol}/)."
             )
         )
         parser.add_argument("--symbols", nargs="+", default=list(DEFAULT_SYMBOLS))
