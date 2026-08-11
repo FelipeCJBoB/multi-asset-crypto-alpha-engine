@@ -279,6 +279,8 @@ def classify_regimes(
     stress_result: stress_mod.StressResult,
     *,
     thresholds: RegimeThresholds | None = None,
+    er_quantile: FloatArray | None = None,
+    econ_quantile: FloatArray | None = None,
 ) -> pl.DataFrame:
     """Núcleo puro do Regime Engine (§4). Todos os arrays de entrada devem
     vir NÃO mascarados por `min_warmup_bars` (ver docstring do módulo) e
@@ -292,7 +294,16 @@ def classify_regimes(
     adicional de saída", não listado na tabela literal do §4.6):
     `cost_atr_ratio` (valor bruto) e `econ_regime`
     (`ECONOMICS_FAVORABLE/NEUTRAL/HOSTILE/UNKNOWN`). Extensão documentada,
-    não silenciosa."""
+    não silenciosa.
+
+    `er_quantile`/`econ_quantile` (I-d, PRD_V4_1.md T0.2): opcionais —
+    `None` (default, comportamento inalterado) recomputa internamente via
+    `expanding_percentile_rank_strict`, igual a antes. Passados prontos,
+    usa direto sem recomputar — o mesmo ponto de injeção que `vol_pctile`
+    já tinha (chega pronto de `C07_vol_pctile_expanding`) e que `er_48`/
+    `cost_atr_ratio` não tinham: sem isso, um chamador que já calculou o
+    quantil (ou quer trocar o método de ranking) não tinha como injetar,
+    só recalcular por baixo — assimetria sem razão declarada."""
     if thresholds is None:
         thresholds = RegimeThresholds.from_constants()
 
@@ -306,8 +317,10 @@ def classify_regimes(
     if stress_result.triggered_mask.shape[0] != n:
         raise ValueError("classify_regimes: stress_result não está alinhado com open_time_ms")
 
-    er_quantile = support.expanding_percentile_rank_strict(er_48)
-    econ_quantile = support.expanding_percentile_rank_strict(cost_atr_ratio)
+    if er_quantile is None:
+        er_quantile = support.expanding_percentile_rank_strict(er_48)
+    if econ_quantile is None:
+        econ_quantile = support.expanding_percentile_rank_strict(cost_atr_ratio)
 
     regime, regime_raw = _run_state_machine(
         er_quantile, vol_pctile, stress_result.triggered_mask, thresholds

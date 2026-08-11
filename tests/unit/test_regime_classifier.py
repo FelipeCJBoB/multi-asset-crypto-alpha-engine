@@ -98,6 +98,62 @@ def test_r0_para_todas_as_barras_antes_do_warmup() -> None:
 
 
 # ============================================================================
+# I-d (PRD_V4_1.md T0.2) — ponto de injeção para er_quantile/econ_quantile
+# ============================================================================
+
+
+def test_er_quantile_econ_quantile_default_none_recomputa_como_antes() -> None:
+    n = 20
+    rng = np.random.default_rng(2)
+    er_48 = rng.uniform(0, 1, n)
+    vol_pctile = rng.uniform(0, 1, n)
+    cost_atr = rng.uniform(0.05, 0.3, n)
+    stress_result = _empty_stress_result(n)
+
+    default = classifier.classify_regimes(
+        _open_time(n), er_48, vol_pctile, cost_atr, stress_result, thresholds=_THRESHOLDS
+    )
+    from src.features import support
+
+    explicit = classifier.classify_regimes(
+        _open_time(n),
+        er_48,
+        vol_pctile,
+        cost_atr,
+        stress_result,
+        thresholds=_THRESHOLDS,
+        er_quantile=support.expanding_percentile_rank_strict(er_48),
+        econ_quantile=support.expanding_percentile_rank_strict(cost_atr),
+    )
+    assert default.equals(explicit)
+
+
+def test_er_quantile_injetado_e_usado_em_vez_de_recomputado() -> None:
+    # er_quantile injetado, TODO 0.99 (>= er_cutoff_enter=0.60) -- força
+    # regime de tendência mesmo com er_48 bruto apontando pra outro lado
+    # (valores baixos, que produziriam er_quantile baixo se recomputado).
+    n = 20
+    er_48 = np.linspace(0.01, 0.02, n)  # bruto todo baixo, de propósito
+    vol_pctile = np.zeros(n)
+    cost_atr = np.full(n, 0.1)
+    forced_er_quantile = np.full(n, 0.99)
+    stress_result = _empty_stress_result(n)
+
+    df = classifier.classify_regimes(
+        _open_time(n),
+        er_48,
+        vol_pctile,
+        cost_atr,
+        stress_result,
+        thresholds=_THRESHOLDS,
+        er_quantile=forced_er_quantile,
+    )
+    tail = df.tail(n - _THRESHOLDS.min_warmup_bars)
+    assert tail["er_quantile"].to_numpy() == pytest.approx(0.99)
+    assert (tail["regime"] == "R3").all()  # trend alto, vol baixo -- R3 (§4.3)
+
+
+# ============================================================================
 # Histerese + confirmação — eixo volatilidade (mesma mecânica do eixo ER)
 #
 # Estes 3 testes chamam `classifier._run_state_machine` diretamente (não
