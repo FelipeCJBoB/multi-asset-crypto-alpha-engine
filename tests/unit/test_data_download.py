@@ -78,6 +78,35 @@ def test_parse_csv_funding_sem_header() -> None:
     assert df["calc_time"].to_list() == [1638316800000, 1638345600000]
 
 
+def test_parse_csv_metrics_celula_vazia_em_coluna_nullable_vira_null() -> None:
+    # Reproduz o que foi medido ao vivo em 2021-12-30 (ETH/SOL/BNB/XRP, sessão
+    # 2026-08-11): Binance não populava count_long_short_ratio pros alts nos
+    # primeiros dias do dataset de metrics — "" no CSV cru, não erro de rede.
+    header = (
+        "create_time,symbol,sum_open_interest,sum_open_interest_value,"
+        "count_toptrader_long_short_ratio,sum_toptrader_long_short_ratio,"
+        "count_long_short_ratio,sum_taker_long_short_vol_ratio\n"
+    )
+    row = '2021-12-30 00:00:00,ETHUSDT,123.4,567.8,1.1,2.2,"",4.4\n'
+    df = dl._parse_csv(header + row, schemas.METRICS)
+    assert df.height == 1
+    assert df["count_long_short_ratio"].to_list() == [None]
+    assert df["sum_open_interest"].to_list() == [123.4]
+    assert df.schema["count_long_short_ratio"] == pl.Float64
+
+
+def test_parse_csv_klines_celula_vazia_em_coluna_non_nullable_vira_null() -> None:
+    # Medido: campo CSV vazio vira `null` no Polars (não ""), e null atravessa
+    # cast mesmo com strict=True — strict só rejeita valor não-nulo ilegível,
+    # não substitui a checagem de `non_nullable`. Enforcement de
+    # `non_nullable` é responsabilidade de `src.data.validate` (check de
+    # integridade downstream), não de `_parse_csv` — este teste documenta
+    # esse limite em vez de presumir que o download.py barra aqui.
+    row = ',"1","1","1","1",1.0,1638403080000,1.0,1,1.0,1.0,"0"\n'
+    df = dl._parse_csv(row, schemas.KLINES_1M)
+    assert df["open_time"].to_list() == [None]
+
+
 def test_parse_csv_funding_com_header_e_pulado() -> None:
     csv_text = (
         "calc_time,funding_interval_hours,last_funding_rate\n"

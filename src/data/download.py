@@ -209,8 +209,17 @@ def _parse_csv(csv_text: str, schema: schemas.DatasetSchema) -> pl.DataFrame:
         new_columns=column_names,
         schema_overrides=dict.fromkeys(column_names, pl.Utf8),
     )
+    # `strict=True` só para colunas que o próprio `DatasetSchema.non_nullable`
+    # declara obrigatórias — um valor ilegível ali é falha de integridade real
+    # e deve levantar. Para o resto (`metrics` tem 6 colunas nullable por
+    # contrato, ex. `count_long_short_ratio`), "" vira null em vez de
+    # crashar: medido ao vivo em 2021-12-30 (as 4 rodadas de download desta
+    # sessão) — Binance não populava essas colunas de razão nos primeiros
+    # dias de metrics para os alts, "" no CSV cru, não erro de rede/parse.
     casts = [
-        pl.col(name).cast(dtype) for name, dtype in schema.columns.items() if dtype is not pl.Utf8
+        pl.col(name).cast(dtype, strict=name in schema.non_nullable)
+        for name, dtype in schema.columns.items()
+        if dtype is not pl.Utf8
     ]
     return raw.with_columns(casts).select(column_names) if casts else raw.select(column_names)
 
