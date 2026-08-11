@@ -28,10 +28,20 @@ DATA_ROOT: Path = REPO_ROOT / "data"
 # `src/validation/_paths.py::LABELS_OUTPUT_DIR` resolve.
 LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
 
-# §5.12 — `predictions/alpha/{model_id}/predictions.parquet`. Diretório de
-# DADO no topo do repo (irmão de `data/`, `labels/`, `models/`,
-# `experiments/`), não confundir com o pacote de CÓDIGO `src/models/`.
+# §5.12 — `predictions/alpha/{model_id}/predictions.parquet` (legado,
+# pré-V4.1). Diretório de DADO no topo do repo (irmão de `data/`, `labels/`,
+# `models/`, `experiments/`), não confundir com o pacote de CÓDIGO
+# `src/models/`.
 PREDICTIONS_OUTPUT_DIR: Path = REPO_ROOT / "predictions"
+
+# Layout chaveado do PRD_V4_1.md T0.3 (§3.1): `predictions/alpha/{symbol}/
+# {tf}/{model_id}/`.
+_DEFAULT_TF = "15m"
+
+
+def predictions_symbol_tf_dir(symbol: str, model_id: str, *, tf: str = _DEFAULT_TF) -> Path:
+    """`predictions/alpha/{symbol}/{tf}/{model_id}/`."""
+    return PREDICTIONS_OUTPUT_DIR / "alpha" / symbol / tf / model_id
 
 # Registro append-only de experimentos (§11.6) — mesmo diretório que
 # `src/labels/_paths.py::EXPERIMENTS_DIR` resolve; este pacote grava

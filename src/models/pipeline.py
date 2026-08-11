@@ -45,11 +45,18 @@ SYMBOL = ds.SYMBOL_DEFAULT
 MODELS_DIR: Path = REPO_ROOT / "models"
 
 
-def write_predictions_atomic(predictions: pl.DataFrame, model_id: str) -> Path:
+def write_predictions_atomic(
+    predictions: pl.DataFrame, model_id: str, *, dest_dir: Path | None = None
+) -> Path:
     """§5.12 — `predictions/alpha/{model_id}/predictions.parquet`. Mesmo
     padrão `.tmp -> fsync -> rename` (B29) de
-    `src.labels.triple_barrier.write_labels_atomic`."""
-    out_dir = PREDICTIONS_OUTPUT_DIR / "alpha" / model_id
+    `src.labels.triple_barrier.write_labels_atomic`.
+
+    `dest_dir` (T0.3): default `None` preserva o caminho legado
+    `PREDICTIONS_OUTPUT_DIR/alpha/{model_id}`. Passar
+    `_paths.predictions_symbol_tf_dir(symbol, model_id)` grava no layout
+    chaveado novo."""
+    out_dir = dest_dir if dest_dir is not None else (PREDICTIONS_OUTPUT_DIR / "alpha" / model_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_path = out_dir / "predictions.parquet"
     tmp_path = dest_path.with_name(dest_path.name + ".tmp")

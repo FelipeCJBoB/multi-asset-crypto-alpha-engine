@@ -61,15 +61,22 @@ def build_regimes(
 
 
 def write_regimes_atomic(
-    df: pl.DataFrame, version: str = classifier.ENGINE_VERSION
+    df: pl.DataFrame,
+    version: str = classifier.ENGINE_VERSION,
+    *,
+    dest_dir: Path | None = None,
 ) -> Path:
     """B29 — `.tmp` -> `fsync` -> `rename`. `polars.write_parquet` não
     expõe o file handle usado internamente, então o `fsync` é feito
     reabrindo o `.tmp` recém-escrito por descritor (`os.open`/`os.fsync`),
     mesma garantia de durabilidade do padrão já usado em
     `src.data.validate.write_report_atomic` (que fecha o handle que
-    escreveu, porque ali a escrita é feita à mão via `orjson`/`open`)."""
-    dest_dir = REGIME_OUTPUT_DIR / version
+    escreveu, porque ali a escrita é feita à mão via `orjson`/`open`).
+
+    `dest_dir` (T0.3): default `None` preserva o caminho legado
+    `REGIME_OUTPUT_DIR/{version}`. Passar `_paths.regime_symbol_tf_dir(
+    symbol, version)` grava no layout chaveado novo."""
+    dest_dir = dest_dir if dest_dir is not None else (REGIME_OUTPUT_DIR / version)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / "regimes.parquet"
     tmp_path = dest_path.with_name(dest_path.name + ".tmp")

@@ -493,3 +493,31 @@ def test_build_labels_for_symbol_barrier_hit_cobre_os_quatro_desfechos() -> None
     )
     observed = set(out["barrier_hit"].cast(pl.Utf8).unique().to_list())
     assert observed == {"TP", "SL", "TIME", "NOFILL"}
+
+
+# ============================================================================
+# labels_symbol_tf_dir (PRD_V4_1.md T0.3) — layout chaveado novo, convive
+# com LABELS_OUTPUT_DIR legado (não migra o artefato existente)
+# ============================================================================
+
+
+def test_labels_symbol_tf_dir_layout_chaveado() -> None:
+    from src.labels._paths import DATA_ROOT, labels_symbol_tf_dir
+
+    path = labels_symbol_tf_dir("ETHUSDT", "v1")
+    assert path == DATA_ROOT / "labels" / "ETHUSDT" / "15m" / "v1"
+
+
+def test_labels_symbol_tf_dir_aceita_tf_explicito() -> None:
+    from src.labels._paths import DATA_ROOT, labels_symbol_tf_dir
+
+    path = labels_symbol_tf_dir("ETHUSDT", "v1", tf="30m")
+    assert path == DATA_ROOT / "labels" / "ETHUSDT" / "30m" / "v1"
+
+
+def test_write_labels_atomic_dest_dir_override_usa_layout_chaveado(tmp_path) -> None:
+    df = pl.DataFrame({"t0": [1], "label": [1]})
+    keyed_dir = tmp_path / "ETHUSDT" / "15m" / "v1"
+    dest = tb.write_labels_atomic(df, dest_dir=keyed_dir)
+    assert dest == keyed_dir / "labels.parquet"
+    assert dest.exists()

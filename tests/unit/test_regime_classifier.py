@@ -109,6 +109,13 @@ def test_quantile_regime_classifier_n_states_e_classifier_id() -> None:
     assert qrc.classifier_id == "quantile_regime_v1"
 
 
+def test_regime_symbol_tf_dir_layout_chaveado() -> None:
+    from src.regime._paths import DATA_ROOT, regime_symbol_tf_dir
+
+    path = regime_symbol_tf_dir("ETHUSDT", classifier.ENGINE_VERSION)
+    assert path == DATA_ROOT / "regimes" / "ETHUSDT" / "15m" / classifier.ENGINE_VERSION
+
+
 # ============================================================================
 # I-d (PRD_V4_1.md T0.2) — ponto de injeção para er_quantile/econ_quantile
 # ============================================================================

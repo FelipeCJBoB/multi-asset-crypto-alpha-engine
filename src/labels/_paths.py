@@ -27,8 +27,23 @@ CAPACITY_DIR: Path = DATA_ROOT / "capacity"
 
 # Output do Label Engine — §3.5: `labels/{version}/labels.parquet`. Diretório
 # de DADO no topo do repo (irmão de `data/`, `models/`, `experiments/`), não
-# confundir com o pacote de CÓDIGO `src/labels/`.
+# confundir com o pacote de CÓDIGO `src/labels/`. Layout LEGADO (pré-V4.1,
+# só BTCUSDT) — o artefato real `labels/v1/labels.parquet` mora aqui e
+# continua morando aqui (~29 módulos/testes referenciam este caminho
+# literalmente; migrá-los é trabalho separado, não feito nesta rodada).
 LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
+
+# Layout chaveado do PRD_V4_1.md T0.3 (§3.1): `data/labels/{symbol}/{tf}/
+# {label_version}/`. Convive com LABELS_OUTPUT_DIR acima -- não substitui
+# nem migra o artefato legado. Escritas NOVAS (símbolos além de BTCUSDT, ou
+# BTCUSDT reprocessado deliberadamente sob o layout novo) usam isto.
+_DEFAULT_TF = "15m"
+
+
+def labels_symbol_tf_dir(symbol: str, version: str, *, tf: str = _DEFAULT_TF) -> Path:
+    """`data/labels/{symbol}/{tf}/{version}/`."""
+    return DATA_ROOT / "labels" / symbol / tf / version
+
 
 # Registro append-only de experimentos (§11.6) — `experiments/label_engine_runs.parquet`.
 EXPERIMENTS_DIR: Path = REPO_ROOT / "experiments"

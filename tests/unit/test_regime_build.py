@@ -141,6 +141,14 @@ def test_write_regimes_atomic_roundtrip() -> None:
         shutil.rmtree(dest_dir, ignore_errors=True)
 
 
+def test_write_regimes_atomic_dest_dir_override_usa_layout_chaveado(tmp_path) -> None:
+    df = pl.DataFrame({"t0": [1], "regime": ["R0"]})
+    keyed_dir = tmp_path / "ETHUSDT" / "15m" / classifier.ENGINE_VERSION
+    dest = build.write_regimes_atomic(df, dest_dir=keyed_dir)
+    assert dest == keyed_dir / "regimes.parquet"
+    assert dest.exists()
+
+
 # ============================================================================
 # Histórico completo — achado pedido pela task: distribuição real dos 5
 # regimes. Também é a validação mais forte das invariantes (231.552 barras

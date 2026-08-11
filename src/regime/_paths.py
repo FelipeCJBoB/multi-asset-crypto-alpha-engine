@@ -21,9 +21,21 @@ CONSTANTS_PATH: Path = REPO_ROOT / "config" / "constants.yaml"
 
 DATA_ROOT: Path = REPO_ROOT / "data"
 
-# Layout §1.2/§4.6 do PRD: `data/regimes/{version}/regimes.parquet`, irmão
-# de `data/features/{version}/` e `data/labels/{version}/`.
+# Layout §1.2/§4.6 do PRD (pré-V4.1, legado): `data/regimes/{version}/
+# regimes.parquet`, irmão de `data/features/{version}/` e
+# `data/labels/{version}/`.
 REGIME_OUTPUT_DIR: Path = DATA_ROOT / "regimes"
+
+# Layout chaveado do PRD_V4_1.md T0.3 (§3.1, "todo artefato passa a ser
+# chaveado" -- extensão do mesmo princípio aplicado a labels/predictions,
+# regimes não está no exemplo literal do PRD mas é dado igualmente
+# símbolo-específico): `data/regimes/{symbol}/{tf}/{version}/`.
+_DEFAULT_TF = "15m"
+
+
+def regime_symbol_tf_dir(symbol: str, version: str, *, tf: str = _DEFAULT_TF) -> Path:
+    """`data/regimes/{symbol}/{tf}/{version}/`."""
+    return DATA_ROOT / "regimes" / symbol / tf / version
 
 # Duplicado de `src/exchange/_paths.py::DEFAULT_SNAPSHOTS_DIR` — mesma tática
 # de duplicação tática já usada por `data`/`features` para não cruzar a
