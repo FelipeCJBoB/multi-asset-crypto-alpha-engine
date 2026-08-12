@@ -109,6 +109,8 @@ Um `edge_bruto_atr = 0,25` idêntico nos cinco:
 
 > **Nenhuma decisão sobre um número só.** Todo relatório emite `edge_bruto_atr`, `custo_atr`, `edge_liq_atr` e `captura`, por ativo, por TF, por lado e por regime. Comparação entre ativos usa `edge_bruto_atr` para sinal e `captura` para economia — **nunca `ret_net` isolado**.
 
+⚠️ **Achado (2026-08-12), não corrigido aqui:** grep exaustivo de `src/` confirma que só `custo_atr` tem implementação real (`group_e.e27f_cost_atr_ratio`) — `edge_bruto_atr`, `edge_liq_atr` e `captura` **não existem em nenhum lugar do código**, nem como função, nem como coluna/chave de relatório. A invariante acima é mandato do PRD, não prática hoje; nenhum relatório real do repo emite os 4 juntos. Precisa de decisão explícita sobre onde essa álgebra deveria viver (provável candidato: módulo companheiro de `group_e.py`, consumido por `src/analysis/`) antes de qualquer relatório poder alegar conformidade com esta regra.
+
 ## 1.5 Breakeven por ativo
 
 `edge_bruto_atr` mínimo para EV zero é exatamente `custo_atr`:
