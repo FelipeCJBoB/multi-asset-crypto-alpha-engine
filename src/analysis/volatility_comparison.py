@@ -7,11 +7,16 @@ os dois eixos de validação do "vencedor" (taxa de vitória por fold +
 Diebold-Mariano) — mesma classe de módulo que `src.analysis.cost_surface`
 (ponto de entrada manual, nunca dentro da suíte automatizada de testes).
 
-**Só 4 dos 6 candidatos de M1 rodam aqui.** `HAR-RV`/`EGARCH(1,1)` exigem
-ajuste de modelo por fold (parâmetro estimado no treino, não fórmula
-fechada) — infraestrutura ainda não escrita. `ATRWilderEstimator` é o
-BASELINE (já em produção, T0.1), nunca um candidato — os outros 3
-(`Parkinson`, `GarmanKlass`, `RealizedVol`) competem contra ele.
+**5 dos 6 candidatos de M1 rodam aqui — só falta `EGARCH(1,1)`.**
+`ATRWilderEstimator` é o BASELINE (já em produção, T0.1), nunca um
+candidato — os outros 5 (`Parkinson`, `GarmanKlass`, `RealizedVol`, mais
+`HAR-RV`) competem contra ele. `HAR-RV` (Corsi 2009,
+`src.features.volatility_models`) é o primeiro candidato FOLD-AWARE —
+diferente dos 3 fechados (mesmo `estimate()` pra série inteira), ele
+reajusta coeficientes por OLS a cada fold, só sobre o próprio treino, e
+prevê só a própria região de teste (`_har_rv_forecast_var`). `EGARCH(1,1)`
+(MLE) segue a mesma ideia mas ainda não está escrito — infraestrutura de
+otimização numérica é escopo maior, deixado pra próxima rodada.
 
 **`window` idêntico entre os 3 candidatos e o baseline — `atr_window`
 (`constants.yaml`, valor 20) reusado, não uma constante nova.** Isso NÃO
@@ -73,6 +78,7 @@ from src.core.provenance import report_provenance
 from src.data import lake
 from src.data.lake import DateLike
 from src.features._constants import load_constant
+from src.features import volatility_models
 from src.features.volatility import (
     ATRWilderEstimator,
     Bars,
@@ -104,6 +110,11 @@ SYMBOL_START_DATE: Final[dict[str, str]] = {
     "XRPUSDT": "2021-12-01",
 }
 END_DATE: Final[str] = "2026-08-07"
+
+# Barras por dia corrido (24h, cripto 24/7 -- não a convenção de 5/22
+# dias úteis de bolsa tradicional que HAR-RV normalmente usa) por TF --
+# insumo de HAR-RV pras janelas dia/semana/mês (volatility_models.py).
+TF_BARS_PER_DAY: Final[dict[str, int]] = {"15m": 96, "30m": 48, "1h": 24}
 
 
 def _baseline_estimator() -> VolatilityEstimator:
@@ -204,6 +215,33 @@ def _per_fold_qlike(
     return out
 
 
+def _har_rv_forecast_var(
+    realized_var: FloatArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+    *,
+    bars_per_day: int,
+) -> FloatArray:
+    """HAR-RV é fold-aware -- ao contrário dos `VolatilityEstimator`
+    fechados (mesmo `estimate()` pra toda a série), cada fold reajusta os
+    coeficientes só sobre o próprio treino (`fit_har_rv`) antes de prever
+    a própria região de teste. Retorna `forecast_var` NaN fora de toda
+    região de teste (não coberta por fold nenhum) -- só a união dos
+    `[test_start_idx, test_end_idx)` de todos os folds é preenchida."""
+    n = realized_var.shape[0]
+    forecast_var = np.full(n, np.nan, dtype=np.float64)
+    for split in splits:
+        fit = volatility_models.fit_har_rv(
+            realized_var, bars_per_day=bars_per_day, train_end_idx=split.train_end_idx
+        )
+        if fit is None:
+            continue
+        pred = volatility_models.predict_har_rv(fit, realized_var, bars_per_day=bars_per_day)
+        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
+            split.test_start_idx : split.test_end_idx
+        ]
+    return forecast_var
+
+
 def _estimator_metrics(
     estimator_id: str,
     forecast_var: FloatArray,
@@ -282,12 +320,20 @@ def compare_estimators_for_combination(
         splits, vwf.qlike_loss(baseline_forecast_var, realized_var)
     )
 
+    candidate_forecasts: list[tuple[str, FloatArray]] = [
+        (estimator.estimator_id, _forecast_var(estimator, bars))
+        for estimator in _candidate_estimators(window=candidate_window)
+    ]
+    har_rv_forecast_var = _har_rv_forecast_var(
+        realized_var, splits, bars_per_day=TF_BARS_PER_DAY[tf]
+    )
+    candidate_forecasts.append((f"har_rv_d{TF_BARS_PER_DAY[tf]}", har_rv_forecast_var))
+
     candidates: list[CandidateValidation] = []
     any_beats = False
-    for estimator in _candidate_estimators(window=candidate_window):
-        cand_forecast_var = _forecast_var(estimator, bars)
+    for cand_estimator_id, cand_forecast_var in candidate_forecasts:
         cand_metrics, cand_qlike_oos = _estimator_metrics(
-            estimator.estimator_id,
+            cand_estimator_id,
             cand_forecast_var,
             realized_var,
             oos_start=oos_start,

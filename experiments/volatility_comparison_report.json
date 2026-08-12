@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-12T00:33:52.417290+00:00",
-  "code_version": "e178d5f",
+  "generated_at": "2026-08-12T00:59:04.012880+00:00",
+  "code_version": "f497a84",
   "n_combinations_requested": 15,
   "n_combinations_evaluated": 15,
   "skipped": [],
-  "elapsed_seconds_total": 20.132022500038147,
+  "elapsed_seconds_total": 23.252135999966413,
   "stopping_criterion_1_triggered": false,
   "combinations": [
     {
@@ -77,6 +77,24 @@
           "fold_win_rate": 0.0,
           "dm_stat": 244.54348095795692,
           "dm_p_value": 0.0,
+          "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d96",
+            "qlike_mean": 1.910412528399787,
+            "mse_mean": 2.544456279085216e-9,
+            "bias": 1.8244825876817433e-6,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 170111,
+            "n_oos_obs": 170111,
+            "n_inf_qlike": 159
+          },
+          "fold_win_rate": 0.6,
+          "dm_stat": 2.429012708084563,
+          "dm_p_value": 0.015140001652364177,
           "beats_baseline_qlike": false
         }
       ],
@@ -153,6 +171,24 @@
           "dm_stat": 226.83167734593974,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d48",
+            "qlike_mean": 1.9490500762315488,
+            "mse_mean": 5.907702994209803e-9,
+            "bias": 3.1413698725156284e-6,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 85055,
+            "n_oos_obs": 85055,
+            "n_inf_qlike": 35
+          },
+          "fold_win_rate": 0.8,
+          "dm_stat": -13.162864560314766,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -228,6 +264,24 @@
           "dm_stat": 144.3582155558302,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d24",
+            "qlike_mean": 1.9801059942313315,
+            "mse_mean": 1.2921078884791537e-8,
+            "bias": 7.3394737124065234e-6,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 42527,
+            "n_oos_obs": 42527,
+            "n_inf_qlike": 13
+          },
+          "fold_win_rate": 0.85,
+          "dm_stat": -17.982225010922303,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -303,6 +357,24 @@
           "dm_stat": 221.62849367988503,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d96",
+            "qlike_mean": 1.783227751222405,
+            "mse_mean": 4.923504872359607e-9,
+            "bias": 2.613819321084617e-7,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 100031,
+            "n_oos_obs": 100031,
+            "n_inf_qlike": 77
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -10.698097047706211,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -378,6 +450,24 @@
           "dm_stat": 199.1672758242735,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d48",
+            "qlike_mean": 1.8478822322576363,
+            "mse_mean": 1.3978973122777353e-8,
+            "bias": 4.2246879723262174e-7,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 50015,
+            "n_oos_obs": 50015,
+            "n_inf_qlike": 31
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -16.45419138968453,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -453,6 +543,24 @@
           "dm_stat": 141.68372631834774,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d24",
+            "qlike_mean": 1.8938764633888963,
+            "mse_mean": 4.129169769721971e-8,
+            "bias": 9.744677141724446e-7,
+            "mz_intercept": 9.712881861618625e-6,
+            "mz_slope": 0.7822837571460569,
+            "mz_r_squared": 0.023691022149552876,
+            "mz_n": 25007,
+            "n_oos_obs": 25007,
+            "n_inf_qlike": 9
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -14.00269330222586,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -528,6 +636,24 @@
           "dm_stat": 321.1239066437163,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d96",
+            "qlike_mean": 1.5891759695076355,
+            "mse_mean": 1.0717869549069163e-8,
+            "bias": 3.1336277248724034e-6,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 100031,
+            "n_oos_obs": 100031,
+            "n_inf_qlike": 805
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -22.969420544788868,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -603,6 +729,24 @@
           "dm_stat": 283.17338689230917,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d48",
+            "qlike_mean": 1.6292861302635622,
+            "mse_mean": 3.04028440269661e-8,
+            "bias": 6.276912875789268e-6,
+            "mz_intercept": 3.3470964474046556e-6,
+            "mz_slope": 0.8088358020077655,
+            "mz_r_squared": 0.04412298510564694,
+            "mz_n": 50015,
+            "n_oos_obs": 50015,
+            "n_inf_qlike": 304
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -27.05312045094134,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -678,6 +822,24 @@
           "dm_stat": 209.35901197111346,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d24",
+            "qlike_mean": 1.6621109433877135,
+            "mse_mean": 7.669482017272294e-8,
+            "bias": 0.000013046160318316514,
+            "mz_intercept": 1.6363280169292882e-6,
+            "mz_slope": 0.8522556998131313,
+            "mz_r_squared": 0.05910576867183759,
+            "mz_n": 25007,
+            "n_oos_obs": 25007,
+            "n_inf_qlike": 110
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -19.898319423150472,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -753,6 +915,24 @@
           "dm_stat": 306.06664430449405,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d96",
+            "qlike_mean": 1.688732035816986,
+            "mse_mean": 6.442378621444299e-9,
+            "bias": 4.5566448399960275e-7,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 100031,
+            "n_oos_obs": 100031,
+            "n_inf_qlike": 441
+          },
+          "fold_win_rate": 0.8333333333333334,
+          "dm_stat": -7.422679343838116,
+          "dm_p_value": 1.1479706074624119e-13,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -828,6 +1008,24 @@
           "dm_stat": 203.25767318252556,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d48",
+            "qlike_mean": 1.7469060587074674,
+            "mse_mean": 4.1305192533351726e-8,
+            "bias": 1.2334041953483173e-6,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 50015,
+            "n_oos_obs": 50015,
+            "n_inf_qlike": 165
+          },
+          "fold_win_rate": 0.8333333333333334,
+          "dm_stat": -5.218074223831173,
+          "dm_p_value": 1.8079301811191328e-7,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -903,6 +1101,24 @@
           "dm_stat": 189.07812340641075,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d24",
+            "qlike_mean": 1.7241635363948238,
+            "mse_mean": 1.923875714443935e-8,
+            "bias": 2.662633757761961e-6,
+            "mz_intercept": -1.8050304903533728e-6,
+            "mz_slope": 0.9773544861537659,
+            "mz_r_squared": 0.05511753102773387,
+            "mz_n": 25007,
+            "n_oos_obs": 25007,
+            "n_inf_qlike": 74
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -17.060120611298125,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -977,6 +1193,24 @@
           "fold_win_rate": 0.0,
           "dm_stat": 90.34365372170048,
           "dm_p_value": 0.0,
+          "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d96",
+            "qlike_mean": 1.7720913894101566,
+            "mse_mean": 3.5966398519157876e-8,
+            "bias": 2.3394250853580393e-7,
+            "mz_intercept": null,
+            "mz_slope": null,
+            "mz_r_squared": null,
+            "mz_n": 100031,
+            "n_oos_obs": 100031,
+            "n_inf_qlike": 1882
+          },
+          "fold_win_rate": 0.4166666666666667,
+          "dm_stat": 3.130462734152751,
+          "dm_p_value": 0.0017453114184282637,
           "beats_baseline_qlike": false
         }
       ],
@@ -1053,6 +1287,24 @@
           "dm_stat": 109.03812914054942,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d48",
+            "qlike_mean": 1.7764419156890041,
+            "mse_mean": 1.4613079284304884e-7,
+            "bias": 9.169704968547863e-8,
+            "mz_intercept": 6.551297336194801e-6,
+            "mz_slope": 0.8297777051255064,
+            "mz_r_squared": 0.013680445263344554,
+            "mz_n": 50015,
+            "n_oos_obs": 50015,
+            "n_inf_qlike": 676
+          },
+          "fold_win_rate": 0.8333333333333334,
+          "dm_stat": -4.876664225622685,
+          "dm_p_value": 1.0789486450946129e-6,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
@@ -1128,6 +1380,24 @@
           "dm_stat": 116.2335189386841,
           "dm_p_value": 0.0,
           "beats_baseline_qlike": false
+        },
+        {
+          "metrics": {
+            "estimator_id": "har_rv_d24",
+            "qlike_mean": 1.8033436335564068,
+            "mse_mean": 1.5170333989765357e-7,
+            "bias": 8.389804653365358e-7,
+            "mz_intercept": -0.000020263639601426434,
+            "mz_slope": 1.2635428374707964,
+            "mz_r_squared": 0.049089642686337864,
+            "mz_n": 25007,
+            "n_oos_obs": 25007,
+            "n_inf_qlike": 221
+          },
+          "fold_win_rate": 1.0,
+          "dm_stat": -9.086537361102707,
+          "dm_p_value": 0.0,
+          "beats_baseline_qlike": true
         }
       ],
       "any_candidate_beats_baseline": true
