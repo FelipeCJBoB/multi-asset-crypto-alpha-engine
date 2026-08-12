@@ -1,7 +1,7 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-11 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.3
+> Atualizado: 2026-08-11 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.4
 > Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
 > Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
 
@@ -298,6 +298,8 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 **Pare na primeira camada que funcionar.** As cinco camadas do §5.11 são ordenadas por razão ganho/custo, com critério de parada explícito. Cinco camadas custam cinco entradas no `N_lifetime` e cinco fontes de bug.
 
+**Nunca remediar, sempre solucionar — inclusive em warning "cosmético".** Um `RuntimeWarning` do numpy não é ruído a silenciar por padrão — é sinal de que uma operação está fazendo aritmética inválida (`inf - inf`, divisão por zero) que pode estar sendo mascarada, não tratada. `np.errstate(invalid="ignore")` em cima do sintoma sem investigar a causa é remediação. Achado real desta sessão (M1, `diebold_mariano`): o warning vinha de `d = loss_candidate - loss_baseline` onde QLIKE pode ser `inf`; a causa raiz não era o warning em si, era que `finite - inf = ±inf` (não `NaN`) passava direto pelo filtro `~np.isnan(d)` aplicado DEPOIS da subtração — um único bar degenerado num candidato (sem o baseline ter o mesmo) corromperia o teste inteiro sem nenhuma barreira. A correção real foi filtrar `isfinite` dos DOIS lados ANTES de subtrair, não abafar o aviso. Quando um warning aparecer, a pergunta é sempre "o que essa operação está tentando me dizer sobre o dado", não "como faço isso parar de aparecer".
+
 ---
 
 ## Estado atual
@@ -318,6 +320,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.4 (2026-08-11) — Adiciona "Nunca remediar, sempre solucionar" em "Comportamento esperado": warning do numpy silenciado com `np.errstate` sem investigar a causa (M1, `diebold_mariano`) escondia um buraco real (`finite - inf` vazando pro teste) — corrigido filtrando `isfinite` antes de operar, não abafando o sintoma. M1: 4 dos 6 estimadores de volatilidade rodados sobre as 15 combinações reais (Parkinson/Garman-Klass batem ATRWilder em QLIKE nas 15/15); HAR-RV (5º) integrado como candidato fold-aware.
 - v1.3 (2026-08-11) — Adiciona diretriz do Manager no topo de "Comportamento esperado": o papel de Claude não é só executar tarefas, é construir o motor que entrega edge real superando as adversidades do projeto, com rigor de Engenharia de Software e de Algorithmic Trading — "terminar" é o código rodar E o resultado ser honesto sobre edge real. Camada 0 do PRD_V4_1.md (T0.1-T0.4, T0.6) fechada nesta sessão; T0.6 parcial (symbol/tf/janela, não os 9 campos completos).
 - v1.2 (2026-08-10) — Adiciona seção "Protocolo de execução — quem roda o quê": Claude nunca roda `.py`/`uv run`/`pytest` diretamente, só entrega comando copy-paste; usuário executa no terminal dele. Consequência: output de script novo precisa ser autoexplicativo (parte do DoD).
 - v1.1 (2026-08-08) — Sprints 1-3 concluídos (repo/uv/CI, ExchangeAdapter, Data Quality Engine). PRD atualizado para v3.3 (fato RPI, §2.7.1). Backfill de dados completo. Adiciona seção "Rotina de git" — histórico como memória operacional do projeto. Corrige caminho do PRD (raiz do repo, não `docs/`).

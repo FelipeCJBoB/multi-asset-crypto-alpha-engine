@@ -225,14 +225,25 @@ def diebold_mariano(loss_candidate: FloatArray, loss_baseline: FloatArray) -> Di
     passo induziria. Se M1 evoluir para `horizon_minutes` multi-barra,
     este teste precisa de correção HAC antes de ser usado — não
     implementado aqui porque não existe caso de uso real ainda (I2 do
-    T0.1 continua sem resolver conversão clock-based entre TFs)."""
-    d = loss_candidate - loss_baseline
-    valid = d[~np.isnan(d)]
-    n = valid.shape[0]
+    T0.1 continua sem resolver conversão clock-based entre TFs).
+
+    **Filtra `isfinite` nos DOIS lados ANTES de subtrair, não depois.**
+    `qlike_loss` pode devolver `inf` (forecast quase-zero, ver docstring
+    de `qlike_loss`) -- se só um dos dois lados for `inf` no mesmo bar,
+    `finite - inf` dá `±inf`, não `NaN`, e um filtro `~np.isnan(d)`
+    aplicado DEPOIS da subtração deixaria esse `±inf` passar direto pra
+    `mean_d`/`std_d`. Filtrar os dois lados antes evita computar
+    `inf - inf`/`finite - inf` de todo -- não é só evitar o
+    RuntimeWarning do numpy (isso seria remediar o sintoma), é fechar o
+    buraco real: um candidato com degenerescência num bar que o baseline
+    não tem (ou vice-versa) não pode contaminar o teste."""
+    finite = np.isfinite(loss_candidate) & np.isfinite(loss_baseline)
+    d = loss_candidate[finite] - loss_baseline[finite]
+    n = d.shape[0]
     if n < 2:
         return DieboldMarianoResult(float("nan"), float("nan"), float("nan"), n)
-    mean_d = float(np.mean(valid))
-    std_d = float(np.std(valid, ddof=1))
+    mean_d = float(np.mean(d))
+    std_d = float(np.std(d, ddof=1))
     if std_d == 0.0:
         return DieboldMarianoResult(float("nan"), float("nan"), mean_d, n)
     dm_stat = float(mean_d / (std_d / np.sqrt(n)))

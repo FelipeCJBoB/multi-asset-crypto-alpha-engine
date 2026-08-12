@@ -214,3 +214,31 @@ def test_diebold_mariano_poucos_pontos_da_nan() -> None:
     result = vwf.diebold_mariano(np.array([0.1]), np.array([0.2]))
     assert np.isnan(result.dm_stat)
     assert result.n == 1
+
+
+def test_diebold_mariano_ignora_bar_com_inf_de_um_lado_so() -> None:
+    # candidate tem inf isolado num bar que o baseline NAO tem -- filtro
+    # antigo (~np.isnan(d) DEPOIS de subtrair) deixaria "finite - inf =
+    # -inf" passar direto pro mean_d/std_d, corrompendo o teste inteiro
+    # com um unico bar degenerado. O filtro correto (isfinite dos dois
+    # lados ANTES de subtrair) exclui esse bar e usa só os pares
+    # genuinamente comparaveis.
+    # valores com variância real entre pares (não todos -0.05 idênticos --
+    # isso acionaria a guarda separada std_d==0.0, não o filtro isfinite
+    # que este teste quer exercitar)
+    loss_candidate = np.array([0.04, 0.06, np.inf, 0.05, 0.045])
+    loss_baseline = np.array([0.10, 0.10, 0.10, 0.10, 0.10])
+    result = vwf.diebold_mariano(loss_candidate, loss_baseline)
+    assert result.n == 4  # o bar com inf foi excluido, não virou -inf
+    assert np.isfinite(result.dm_stat)
+    assert np.isfinite(result.mean_loss_diff)
+
+
+def test_diebold_mariano_ambos_inf_no_mesmo_bar_tambem_e_excluido() -> None:
+    # inf-inf ja daria NaN mesmo no filtro antigo -- caso de controle,
+    # confirma que o comportamento correto (excluir) se mantém.
+    loss_candidate = np.array([0.04, np.inf, 0.05, 0.045])
+    loss_baseline = np.array([0.10, np.inf, 0.10, 0.10])
+    result = vwf.diebold_mariano(loss_candidate, loss_baseline)
+    assert result.n == 3
+    assert np.isfinite(result.dm_stat)
