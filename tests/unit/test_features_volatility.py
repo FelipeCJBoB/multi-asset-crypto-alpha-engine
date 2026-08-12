@@ -28,6 +28,8 @@ from src.features.volatility import (
     GarmanKlassEstimator,
     ParkinsonEstimator,
     RealizedVolEstimator,
+    RogersSatchellEstimator,
+    YangZhangEstimator,
 )
 from src.validation._paths import labels_symbol_tf_dir
 
@@ -172,6 +174,137 @@ def test_realized_vol_estimator_horizonte_diferente_do_nativo_levanta() -> None:
     bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
     with pytest.raises(NotImplementedError):
         RealizedVolEstimator(window=5).estimate(bars, horizon_minutes=30)
+
+
+# ============================================================================
+# RogersSatchellEstimator / YangZhangEstimator (extensão PÓS-M1, decisão do
+# Manager 2026-08-11 -- não são texto de PRD_V4_1.md §3.2, avaliados contra
+# o vencedor de M1, Garman-Klass; mesma disciplina de wrapper fino sobre
+# support.py dos 3 candidatos originais)
+# ============================================================================
+
+
+def test_rogers_satchell_estimator_bate_com_support_direto() -> None:
+    frame = _synthetic_bars()
+    window = 5
+    bars = Bars(frame=frame, timeframe_minutes=15)
+    got = RogersSatchellEstimator(window=window).estimate(bars, horizon_minutes=15)
+    expected = support.rogers_satchell_vol(
+        frame["high"].to_numpy(),
+        frame["low"].to_numpy(),
+        frame["open"].to_numpy(),
+        frame["close"].to_numpy(),
+        window,
+    )
+    both_nan = np.isnan(got) & np.isnan(expected)
+    assert np.array_equal(got[~both_nan], expected[~both_nan])
+    assert np.array_equal(np.isnan(got), np.isnan(expected))
+
+
+def test_rogers_satchell_estimator_warmup_bars_e_estimator_id() -> None:
+    estimator = RogersSatchellEstimator(window=20)
+    assert estimator.warmup_bars == 20
+    assert estimator.estimator_id == "rogers_satchell_w20"
+
+
+def test_rogers_satchell_estimator_horizonte_diferente_do_nativo_levanta() -> None:
+    bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
+    with pytest.raises(NotImplementedError):
+        RogersSatchellEstimator(window=5).estimate(bars, horizon_minutes=30)
+
+
+def test_rogers_satchell_bar_sem_pavio_contra_tendencia_da_termo_zero() -> None:
+    # Propriedade que define Rogers-Satchell (1991): drift-independente --
+    # uma barra que abre na mínima e fecha na máxima (sem pavio "contra a
+    # tendência") contribui EXATAMENTE zero pro termo por barra, mesmo com
+    # drift grande. `ln(H/C)*ln(H/O) + ln(L/C)*ln(L/O)` com O=L e C=H:
+    # `ln(H/H)*ln(H/L) + ln(L/H)*ln(L/L) = 0*x + y*0 = 0`. Janela inteira
+    # assim -> média zero -> sigma_RS = 0, valor exato, não aproximado.
+    n = 6
+    low = np.full(n, 100.0)
+    high = np.full(n, 105.0)
+    open_ = low.copy()  # abre na mínima
+    close = high.copy()  # fecha na máxima -- tendência de alta pura, sem pavio contrário
+    out = support.rogers_satchell_vol(high, low, open_, close, window=5)
+    valid = out[~np.isnan(out)]
+    assert valid.size > 0
+    assert np.allclose(valid, 0.0, atol=1e-12)
+
+
+def test_yang_zhang_estimator_bate_com_support_direto() -> None:
+    frame = _synthetic_bars()
+    window = 5
+    bars = Bars(frame=frame, timeframe_minutes=15)
+    got = YangZhangEstimator(window=window).estimate(bars, horizon_minutes=15)
+    expected = support.yang_zhang_vol(
+        frame["high"].to_numpy(),
+        frame["low"].to_numpy(),
+        frame["open"].to_numpy(),
+        frame["close"].to_numpy(),
+        window,
+    )
+    both_nan = np.isnan(got) & np.isnan(expected)
+    assert np.array_equal(got[~both_nan], expected[~both_nan])
+    assert np.array_equal(np.isnan(got), np.isnan(expected))
+
+
+def test_yang_zhang_estimator_warmup_bars_e_estimator_id() -> None:
+    estimator = YangZhangEstimator(window=20)
+    assert estimator.warmup_bars == 21  # +1: overnight[0] sempre NaN (sem C_{-1})
+    assert estimator.estimator_id == "yang_zhang_w20"
+
+
+def test_yang_zhang_estimator_horizonte_diferente_do_nativo_levanta() -> None:
+    bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
+    with pytest.raises(NotImplementedError):
+        YangZhangEstimator(window=5).estimate(bars, horizon_minutes=30)
+
+
+def test_yang_zhang_sem_gap_overnight_reduz_a_v_c_e_v_rs_ponderados() -> None:
+    # Quando open[i] == close[i-1] pra toda barra (sem gap entre barras,
+    # caso comum em kline contínuo), overnight_i = ln(O_i/C_{i-1}) = 0
+    # sempre -> V_o = 0 -> sigma_YZ^2 = k*V_c + (1-k)*V_rs, sem o termo
+    # overnight. Constrói `open` A PARTIR de `close` (caminho independente
+    # de `yang_zhang_vol`) pra não ser um reteste tautológico da mesma
+    # implementação.
+    window = 6
+    rng = np.random.default_rng(23)
+    n = 30
+    close = 100.0 + np.cumsum(rng.normal(0, 0.4, n))
+    open_ = np.empty(n)
+    open_[0] = close[0]
+    open_[1:] = close[:-1]  # open[i] == close[i-1] -- gap zero por construção
+    high = np.maximum(open_, close) + rng.uniform(0, 0.5, n)
+    low = np.minimum(open_, close) - rng.uniform(0, 0.5, n)
+
+    got = support.yang_zhang_vol(high, low, open_, close, window)
+
+    rs = np.log(high / close) * np.log(high / open_) + np.log(low / close) * np.log(low / open_)
+    oc = np.log(close / open_)
+    # `overnight` reconstrói o MESMO deslocamento de `yang_zhang_vol`
+    # (overnight[0] sempre NaN, sem C_{-1}) -- necessário pro padrão de NaN
+    # bater com `got` mesmo com V_o valendo 0 em todo índice válido: o
+    # warmup de V_o (janela fecha 1 índice DEPOIS de V_c/V_rs, por causa do
+    # NaN inicial) ainda governa onde `got` é NaN, independente do valor.
+    overnight = np.full(n, np.nan, dtype=np.float64)
+    overnight[1:] = np.log(open_[1:] / close[:-1])
+    v_o = (
+        pl.Series(overnight)
+        .rolling_std(window_size=window, min_samples=window, ddof=1)
+        .to_numpy()
+        ** 2
+    )
+    assert np.allclose(v_o[~np.isnan(v_o)], 0.0, atol=1e-12)  # sem gap -> overnight sempre 0
+    v_c = (
+        pl.Series(oc).rolling_std(window_size=window, min_samples=window, ddof=1).to_numpy() ** 2
+    )
+    v_rs = pl.Series(rs).rolling_mean(window_size=window, min_samples=window).to_numpy()
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    expected = np.sqrt(v_o + k * v_c + (1.0 - k) * v_rs)
+
+    both_nan = np.isnan(got) & np.isnan(expected)
+    assert np.array_equal(np.isnan(got), np.isnan(expected))
+    assert np.allclose(got[~both_nan], expected[~both_nan], atol=1e-12)
 
 
 def _skip_if_labels_missing() -> None:

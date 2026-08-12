@@ -178,6 +178,101 @@ def garman_klass_vol(
     return out
 
 
+def rogers_satchell_vol(
+    high: FloatArray, low: FloatArray, open_: FloatArray, close: FloatArray, window: int
+) -> FloatArray:
+    """Estimador de Rogers-Satchell (1991) -- PRD_V4_1.md §3.2 M1 só declara
+    6 candidatos (ATRWilder/EGARCH/HAR-RV/Parkinson/GarmanKlass/RealizedVol);
+    este é extensão PÓS-M1 (decisão do Manager, 2026-08-11), não texto do
+    PRD -- avalia se a família "fórmula fechada, sem drift zero" supera o
+    vencedor de M1 (Garman-Klass). Por barra:
+    `rs_i = ln(H_i/C_i)*ln(H_i/O_i) + ln(L_i/C_i)*ln(L_i/O_i)`;
+    `sigma_RS,t^2 = mean_window(rs_i)`, retorna a raiz (fração do preço).
+    Sem constante de escala (diferente de Parkinson/GK) -- `rs_i` já é
+    proxy de variância não-enviesado por construção mesmo com drift não
+    nulo (a limitação que Parkinson/GK carregam e RS resolve, Rogers &
+    Satchell 1991). Janela rolante fixa, mesma convenção de
+    `parkinson_vol`/`garman_klass_vol` -- a barra `t` entra na própria
+    janela. Média da janela negativa (ruído numérico possível em janela
+    curta) vira NaN em vez de `sqrt` de número complexo silencioso, e
+    `high/low/open/close <= 0` viram NaN via `errstate` -- mesma
+    disciplina de `parkinson_vol`/`garman_klass_vol` (achado F2 do
+    audit_engineering, 2026-08-11, aplicado aqui desde a origem)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rs = np.log(high / close) * np.log(high / open_) + np.log(low / close) * np.log(
+            low / open_
+        )
+    mean_rs = pl.Series(rs).rolling_mean(window_size=window, min_samples=window).to_numpy()
+    with np.errstate(invalid="ignore"):
+        out: FloatArray = np.sqrt(np.where(mean_rs >= 0, mean_rs, np.nan))
+    return out
+
+
+def yang_zhang_vol(
+    high: FloatArray, low: FloatArray, open_: FloatArray, close: FloatArray, window: int
+) -> FloatArray:
+    """Estimador de Yang-Zhang (2000) -- mesmo status de extensão PÓS-M1 de
+    `rogers_satchell_vol` (ver docstring acima), candidato por adicionar o
+    componente overnight/gap que Garman-Klass ignora:
+
+        overnight_i = ln(O_i / C_{i-1})   -- i>=1, exige 1 barra extra antes da janela
+        oc_i        = ln(C_i / O_i)
+        V_o,t  = variância amostral (ddof=1) de `overnight` na janela
+        V_c,t  = variância amostral (ddof=1) de `oc` na janela
+        V_rs,t = mean_window(rs_i)         -- mesmo termo de `rogers_satchell_vol`, sem a raiz
+        k = 0.34 / (1.34 + (window+1)/(window-1))   -- Yang & Zhang (2000);
+            peso que minimiza a variância do estimador combinado, NÃO o
+            "k=0.34 fixo" citado em fontes secundárias simplificadas --
+            0.34 é só o numerador da fórmula original, o peso real
+            depende de `window` e converge a ~0,145 quando window->infinito
+            (nunca a 0,34). `0.34`/`1.34` são constantes de fórmula da
+            literatura (mesma classe de `4*ln2` em `parkinson_vol`/
+            `2*ln2-1` em `garman_klass_vol`), não hiperparâmetro do
+            projeto -- não entram em `constants.yaml` pelo mesmo motivo
+            que as outras duas não entram.
+        sigma_YZ,t^2 = V_o,t + k*V_c,t + (1-k)*V_rs,t
+
+    Retorna a raiz (fração do preço). `overnight_i` exige `close[i-1]` --
+    em cripto 24/7 isso é o gap ENTRE BARRAS consecutivas de kline
+    contínuo (não sessão de bolsa tradicional; mesma adaptação que o
+    HAR-RV retirado deste repo fazia pro seu "dia" em barras, commit
+    3ceb5b7), tipicamente pequeno mas não garantido zero -- é justamente o que este
+    candidato testa (hipótese: erro do GK concentrado em candles de
+    abertura). Warmup de `window + 1` barras (1 barra extra pro primeiro
+    overnight da janela), mesmo racional de `RealizedVolEstimator.
+    warmup_bars`. Soma dos 3 termos pode ficar negativa (mesma razão de
+    `garman_klass_vol`: `V_rs,t` isolado pode ser negativo numa janela
+    ruidosa) -- vira NaN em vez de `sqrt` de número complexo, mesma
+    disciplina das outras duas."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rs = np.log(high / close) * np.log(high / open_) + np.log(low / close) * np.log(
+            low / open_
+        )
+
+    n = close.shape[0]
+    overnight = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            overnight[1:] = np.log(open_[1:] / close[:-1])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        oc = np.log(close / open_)
+
+    v_o = (
+        pl.Series(overnight).rolling_std(window_size=window, min_samples=window, ddof=1).to_numpy()
+        ** 2
+    )
+    v_c = (
+        pl.Series(oc).rolling_std(window_size=window, min_samples=window, ddof=1).to_numpy() ** 2
+    )
+    v_rs = pl.Series(rs).rolling_mean(window_size=window, min_samples=window).to_numpy()
+
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    sigma_sq = v_o + k * v_c + (1.0 - k) * v_rs
+    with np.errstate(invalid="ignore"):
+        out: FloatArray = np.sqrt(np.where(sigma_sq >= 0, sigma_sq, np.nan))
+    return out
+
+
 def realized_vol(log_return: FloatArray, window: int) -> FloatArray:
     """`σ(log_return) × √window` sobre janela rolante de `window` barras,
     incluindo a barra atual (§2.4 C03) — janela rolante fixa, não

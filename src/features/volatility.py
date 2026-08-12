@@ -166,6 +166,69 @@ class GarmanKlassEstimator:
 
 
 @dataclass(frozen=True, slots=True)
+class RogersSatchellEstimator:
+    """Rogers-Satchell (1991) -- candidato de extensão PÓS-M1 (decisão do
+    Manager, 2026-08-11; não é um dos 6 candidatos declarados em
+    PRD_V4_1.md §3.2), avaliado contra o vencedor de M1 (Garman-Klass) na
+    mesma família "fórmula fechada, sem MLE/OLS por fold". Mesmo racional
+    de `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`."""
+
+    window: int
+
+    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
+        if horizon_minutes != bars.timeframe_minutes:
+            raise NotImplementedError(
+                "RogersSatchellEstimator so estima no horizonte nativo da barra "
+                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
+                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
+            )
+        high = bars.frame["high"].cast(pl.Float64).to_numpy()
+        low = bars.frame["low"].cast(pl.Float64).to_numpy()
+        open_ = bars.frame["open"].cast(pl.Float64).to_numpy()
+        close = bars.frame["close"].cast(pl.Float64).to_numpy()
+        return support.rogers_satchell_vol(high, low, open_, close, self.window)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.window
+
+    @property
+    def estimator_id(self) -> str:
+        return f"rogers_satchell_w{self.window}"
+
+
+@dataclass(frozen=True, slots=True)
+class YangZhangEstimator:
+    """Yang-Zhang (2000) -- mesmo status de extensão PÓS-M1 de
+    `RogersSatchellEstimator` (ver docstring). `warmup_bars` é `window + 1`
+    (não `window`): o componente overnight precisa de `close[i-1]`, mesmo
+    racional de `RealizedVolEstimator.warmup_bars`."""
+
+    window: int
+
+    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
+        if horizon_minutes != bars.timeframe_minutes:
+            raise NotImplementedError(
+                "YangZhangEstimator so estima no horizonte nativo da barra "
+                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
+                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
+            )
+        high = bars.frame["high"].cast(pl.Float64).to_numpy()
+        low = bars.frame["low"].cast(pl.Float64).to_numpy()
+        open_ = bars.frame["open"].cast(pl.Float64).to_numpy()
+        close = bars.frame["close"].cast(pl.Float64).to_numpy()
+        return support.yang_zhang_vol(high, low, open_, close, self.window)
+
+    @property
+    def warmup_bars(self) -> int:
+        return self.window + 1
+
+    @property
+    def estimator_id(self) -> str:
+        return f"yang_zhang_w{self.window}"
+
+
+@dataclass(frozen=True, slots=True)
 class RealizedVolEstimator:
     """Volatilidade realizada de retorno log — `sigma(log_return) *
     sqrt(window)` (`support.realized_vol`, já usada por C06/C07 do

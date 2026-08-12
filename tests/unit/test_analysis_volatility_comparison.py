@@ -1,8 +1,10 @@
-"""Testes de `src/analysis/volatility_comparison.py` -- M1 (PRD_V4_1.md
-§3.2), orquestração real dos 4 candidatos implementados sobre bars.
-`compare_estimators_for_combination` é o núcleo puro (bars sintéticas, sem
-IO); `run_volatility_comparison_for_symbol_tf` é o único ponto que toca
-disco real (`integration`, pula se o backfill local não existir)."""
+"""Testes de `src/analysis/volatility_comparison.py` -- extensão PÓS-M1
+(Garman-Klass baseline, Parkinson/Rogers-Satchell/Yang-Zhang candidatos;
+ver docstring do módulo para o porquê do M1 original de PRD_V4_1.md §3.2
+não ser mais o que este harness roda). `compare_estimators_for_combination`
+é o núcleo puro (bars sintéticas, sem IO); `run_volatility_comparison_for_
+symbol_tf` é o único ponto que toca disco real (`integration`, pula se o
+backfill local não existir)."""
 
 from __future__ import annotations
 
@@ -80,60 +82,24 @@ def test_compare_estimators_estrutura_do_resultado() -> None:
     assert result.tf == "15m"
     assert result.n_bars == 1460
     assert result.n_folds > 0
-    assert result.baseline.estimator_id == "atr_wilder_w20"
+    assert result.baseline.estimator_id == "garman_klass_w20"
     assert result.baseline.n_oos_obs > 0
 
     candidate_ids = {c.metrics.estimator_id for c in result.candidates}
     assert candidate_ids == {
         "parkinson_w20",
-        "garman_klass_w20",
-        "realized_vol_w20",
-        "har_rv_d96",
-        "egarch_1_1",
+        "rogers_satchell_w20",
+        "yang_zhang_w20",
     }
     for c in result.candidates:
         assert 0.0 <= c.fold_win_rate <= 1.0 or np.isnan(c.fold_win_rate)
         assert isinstance(c.beats_baseline_qlike, bool)
+        # Todos os 4 candidatos/baseline atuais são fórmula fechada (sem
+        # fit por fold) -- diferente do HAR-RV/EGARCH que existiam aqui
+        # antes, nenhum motivo estrutural pra faltar observação OOS com
+        # 1460 barras/2 anos de treino inicial.
+        assert c.metrics.n_oos_obs > 0
     assert isinstance(result.any_candidate_beats_baseline, bool)
-
-
-def test_compare_estimators_har_rv_produz_forecast_nao_trivial_com_dado_suficiente() -> None:
-    # 1460 barras "diárias" não bastam pra janela mensal do HAR-RV fechar
-    # em tf=15m (bars_per_day=96, mês=2880) -- esse teste usa mais barras
-    # especificamente pra confirmar que a integração produz observações
-    # reais, não só "não quebra". Correção matemática do HAR-RV em si já
-    # é coberta em tests/unit/test_features_volatility_models.py.
-    bars_df = _synthetic_bars_df(4000, seed=13)
-    result = vc.compare_estimators_for_combination(
-        "BTCUSDT",
-        "15m",
-        bars_df,
-        timeframe_minutes=15,
-        candidate_window=20,
-        initial_train_years=2,
-    )
-    assert result is not None
-    har_rv = next(c for c in result.candidates if c.metrics.estimator_id == "har_rv_d96")
-    assert har_rv.metrics.n_oos_obs > 0
-
-
-def test_compare_estimators_egarch_produz_forecast_nao_trivial() -> None:
-    # EGARCH não precisa de janela grande pra fechar (diferente do HAR-RV
-    # mensal) -- 1460 barras já bastam pra confirmar que a integração
-    # funciona de ponta a ponta. Correção matemática do EGARCH em si já é
-    # coberta em tests/unit/test_features_volatility_models.py.
-    bars_df = _synthetic_bars_df(1460)
-    result = vc.compare_estimators_for_combination(
-        "BTCUSDT",
-        "15m",
-        bars_df,
-        timeframe_minutes=15,
-        candidate_window=20,
-        initial_train_years=2,
-    )
-    assert result is not None
-    egarch = next(c for c in result.candidates if c.metrics.estimator_id == "egarch_1_1")
-    assert egarch.metrics.n_oos_obs > 0
 
 
 def test_compare_estimators_forecast_var_e_o_quadrado_do_estimate() -> None:
@@ -145,19 +111,22 @@ def test_compare_estimators_forecast_var_e_o_quadrado_do_estimate() -> None:
     from src.features.volatility import Bars
 
     bars = Bars(frame=bars_df, timeframe_minutes=15)
-    forecast_var = vc._forecast_var(vc._baseline_estimator(), bars)
+    forecast_var = vc._forecast_var(vc._baseline_estimator(window=20), bars)
     valid = forecast_var[~np.isnan(forecast_var)]
     assert np.all(valid >= 0.0)
 
 
 # ============================================================================
-# stopping_criterion_1_from_results -- §6.5 critério de parada #1
+# stopping_criterion_1_from_results -- mesmo mecanismo do §6.5 critério de
+# parada #1 do PRD, reaplicado aqui contra o baseline atual (GK), não o
+# gate formal em si (já resolvido na rodada original de M1 contra
+# ATRWilder -- ver docstring da função)
 # ============================================================================
 
 
 def _fake_combination_result(*, any_beats: bool) -> vc.CombinationResult:
     metrics = vc.EstimatorMetrics(
-        estimator_id="atr_wilder_w20",
+        estimator_id="garman_klass_w20",
         qlike_mean=0.1,
         mse_mean=0.01,
         bias=0.0,

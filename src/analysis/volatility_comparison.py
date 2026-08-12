@@ -1,37 +1,51 @@
-"""M1 — comparação real dos candidatos de volatilidade sobre as 15
-combinações (5 ativos × 3 TFs), PRD_V4_1.md §3.2. Orquestração com IO:
-carrega `bars` reais via `src.data.lake.query_bars`, roda cada
-`VolatilityEstimator` (T0.1, `src.features.volatility`) através do
-walk-forward ancorado de `src.validation.volatility_walkforward`, e aplica
-os dois eixos de validação do "vencedor" (taxa de vitória por fold +
-Diebold-Mariano) — mesma classe de módulo que `src.analysis.cost_surface`
-(ponto de entrada manual, nunca dentro da suíte automatizada de testes).
+"""Comparação real de estimadores de volatilidade sobre as 15 combinações
+(5 ativos × 3 TFs). Orquestração com IO: carrega `bars` reais via
+`src.data.lake.query_bars`, roda cada `VolatilityEstimator` (T0.1,
+`src.features.volatility`) através do walk-forward ancorado de
+`src.validation.volatility_walkforward`, e aplica os dois eixos de
+validação do "vencedor" (taxa de vitória por fold + Diebold-Mariano) —
+mesma classe de módulo que `src.analysis.cost_surface` (ponto de entrada
+manual, nunca dentro da suíte automatizada de testes).
 
-**Os 6 candidatos de M1 rodam aqui — enumeração completa.**
-`ATRWilderEstimator` é o BASELINE (já em produção, T0.1), nunca um
-candidato — os outros 5 (`Parkinson`, `GarmanKlass`, `RealizedVol`,
-`HAR-RV`, `EGARCH(1,1)`) competem contra ele. `HAR-RV` (Corsi 2009) e
-`EGARCH(1,1)` (Nelson 1991, MLE) são os 2 candidatos FOLD-AWARE
-(`src.features.volatility_models`) — diferente dos 3 fechados (mesmo
-`estimate()` pra série inteira), reajustam parâmetro a cada fold, só
-sobre o próprio treino, e preveem só a própria região de teste
-(`_har_rv_forecast_var`/`_egarch_forecast_var`). EGARCH é o mais caro dos
-6 — recursão sequencial recomputada do zero por fold, não vetorizável
-(ver docstring de `predict_egarch`); rodar as 15 combinações completas
-leva bem mais que os ~20s dos 4 candidatos fechados+HAR-RV.
+**M1 (PRD_V4_1.md §3.2) já fechou com os 6 candidatos declarados no
+texto do PRD** (`ATRWilder`, `EGARCH(1,1)`, `HAR-RV`, `Parkinson`,
+`GarmanKlass`, `RealizedVol`) — resultado congelado em
+`experiments/volatility_comparison_report.json` (commit `2410bc1`,
+histórico, não regenerado por este módulo). `§6.5` critério 1 NÃO
+disparou: Parkinson e Garman-Klass bateram `ATRWilder` em QLIKE em
+14/15 combinações (Garman-Klass venceu a comparação direta Parkinson×GK
+em 9 das 14), HAR-RV venceu 1 (ETHUSDT×H1), EGARCH(1,1) e RealizedVol
+nunca venceram. **Decisão do Manager (2026-08-11): Garman-Klass é o
+vencedor.**
 
-**`window` idêntico entre os 3 candidatos e o baseline — `atr_window`
+**Este módulo, a partir daqui, é a extensão PÓS-M1** (não texto do PRD):
+`ATRWilderEstimator` (baseline antigo), `HAR-RV` e `EGARCH(1,1)` foram
+amputados do harness — perderam a comparação e não têm mais papel aqui
+(a classe `ATRWilderEstimator` continua existindo em
+`src.features.volatility`, intocada: é bit-idêntica ao que roda em
+produção e tem golden test contra `labels/v1/labels.parquet`, só não é
+mais o baseline DESTE harness). `RealizedVol` também saiu (pior candidato
+em 15/15, sem indício de que voltaria a competir). **O baseline agora é
+`GarmanKlass`** (o vencedor de M1) e os candidatos são `Parkinson`
+(mantido, quase empatado com GK) + os 2 novos: `RogersSatchell` (1991,
+remove a suposição de drift zero que Parkinson/GK carregam) e
+`YangZhang` (2000, soma o componente overnight/gap que GK ignora) — ver
+docstrings de `support.rogers_satchell_vol`/`support.yang_zhang_vol` para
+as fórmulas. Os 2 novos são candidatos de fórmula fechada, mesma classe
+computacional de Parkinson/GK (sem MLE/OLS por fold) — por isso não são
+`FOLD-AWARE`: `estimate()` sozinho já é a resposta pra série inteira,
+igual aos 3 candidatos fechados do M1 original.
+
+**`window` idêntico entre os candidatos e o baseline — `atr_window`
 (`constants.yaml`, valor 20) reusado, não uma constante nova.** Isso NÃO
 resolve I2 (PRD §2.7: `atr_window` não tem conversão clock-based entre
 TFs) — usar 20 barras em M15/M30/H1 significa 3 janelas de relógio
-diferentes (5h/10h/20h). É exatamente a pergunta que I2 deixa em aberto;
-esta rodada mede os candidatos na mesma convenção "20 barras" que já está
-em produção em 15m, sem fingir que resolve a calibração por TF — isso
-fica para uma iteração seguinte de M1 se o resultado desta justificar.
+diferentes (5h/10h/20h). Mesma ressalva do M1 original, não resolvida
+aqui.
 
 **Escala do forecast — `estimate()**2`.** Todo `VolatilityEstimator`
-retorna uma fração do preço (`ATR/close`, `Parkinson`, `Garman-Klass`,
-`sigma(log_return)*sqrt(window)`) — escala de DESVIO-PADRÃO, não
+retorna uma fração do preço (`Garman-Klass`, `Parkinson`,
+`Rogers-Satchell`, `Yang-Zhang`) — escala de DESVIO-PADRÃO, não
 variância. `next_bar_realized_variance` (o alvo) é `r_{t+1}^2`, escala de
 VARIÂNCIA. Elevar `estimate()` ao quadrado é a única forma de comparar as
 duas na mesma escala sem inventar um fator de conversão — não é uma
@@ -81,14 +95,13 @@ from src.core.provenance import report_provenance
 from src.data import lake
 from src.data.lake import DateLike
 from src.features._constants import load_constant
-from src.features import volatility_models
 from src.features.volatility import (
-    ATRWilderEstimator,
     Bars,
     GarmanKlassEstimator,
     ParkinsonEstimator,
-    RealizedVolEstimator,
+    RogersSatchellEstimator,
     VolatilityEstimator,
+    YangZhangEstimator,
 )
 from src.validation import volatility_walkforward as vwf
 from src.validation._constants import load_constant as load_validation_constant
@@ -99,7 +112,12 @@ FloatArray = NDArray[np.float64]
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
-DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "volatility_comparison_report.json"
+# Nome distinto do artefato histórico do M1 original
+# (`volatility_comparison_report.json`, commit `2410bc1`, 6 candidatos
+# contra baseline ATRWilder) -- essa rodada compara uma família diferente
+# de candidatos contra um baseline diferente (GK), não é o mesmo
+# experimento regravado por cima.
+DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "volatility_rs_yz_vs_gk_report.json"
 
 TIMEFRAMES: Final[tuple[str, ...]] = ("15m", "30m", "1h")
 
@@ -114,21 +132,20 @@ SYMBOL_START_DATE: Final[dict[str, str]] = {
 }
 END_DATE: Final[str] = "2026-08-07"
 
-# Barras por dia corrido (24h, cripto 24/7 -- não a convenção de 5/22
-# dias úteis de bolsa tradicional que HAR-RV normalmente usa) por TF --
-# insumo de HAR-RV pras janelas dia/semana/mês (volatility_models.py).
-TF_BARS_PER_DAY: Final[dict[str, int]] = {"15m": 96, "30m": 48, "1h": 24}
 
-
-def _baseline_estimator() -> VolatilityEstimator:
-    return ATRWilderEstimator.from_constants()
+def _baseline_estimator(*, window: int) -> VolatilityEstimator:
+    """Garman-Klass -- vencedor de M1 (ver docstring do módulo). Antes de
+    2026-08-11 este papel era `ATRWilderEstimator.from_constants()`; a
+    classe continua existindo em `src.features.volatility` (golden test
+    contra produção), só não é mais o baseline DESTE harness."""
+    return GarmanKlassEstimator(window=window)
 
 
 def _candidate_estimators(*, window: int) -> tuple[VolatilityEstimator, ...]:
     return (
         ParkinsonEstimator(window=window),
-        GarmanKlassEstimator(window=window),
-        RealizedVolEstimator(window=window),
+        RogersSatchellEstimator(window=window),
+        YangZhangEstimator(window=window),
     )
 
 
@@ -218,61 +235,6 @@ def _per_fold_qlike(
     return out
 
 
-def _har_rv_forecast_var(
-    realized_var: FloatArray,
-    splits: tuple[vwf.WalkForwardSplit, ...],
-    *,
-    bars_per_day: int,
-) -> FloatArray:
-    """HAR-RV é fold-aware -- ao contrário dos `VolatilityEstimator`
-    fechados (mesmo `estimate()` pra toda a série), cada fold reajusta os
-    coeficientes só sobre o próprio treino (`fit_har_rv`) antes de prever
-    a própria região de teste. Retorna `forecast_var` NaN fora de toda
-    região de teste (não coberta por fold nenhum) -- só a união dos
-    `[test_start_idx, test_end_idx)` de todos os folds é preenchida."""
-    n = realized_var.shape[0]
-    forecast_var = np.full(n, np.nan, dtype=np.float64)
-    for split in splits:
-        fit = volatility_models.fit_har_rv(
-            realized_var, bars_per_day=bars_per_day, train_end_idx=split.train_end_idx
-        )
-        if fit is None:
-            continue
-        pred = volatility_models.predict_har_rv(fit, realized_var, bars_per_day=bars_per_day)
-        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
-            split.test_start_idx : split.test_end_idx
-        ]
-    return forecast_var
-
-
-def _egarch_forecast_var(
-    close: FloatArray,
-    splits: tuple[vwf.WalkForwardSplit, ...],
-) -> FloatArray:
-    """EGARCH(1,1) também é fold-aware, mas por um motivo diferente do
-    HAR-RV: a recursão é sequencial (`sigma_t` depende de `sigma_{t-1}`),
-    então não dá pra separar "componentes causais" de "coeficientes" como
-    em HAR-RV -- cada fold recomputa a trajetória inteira desde o início
-    da série com seus próprios coeficientes ajustados (ver docstring de
-    `predict_egarch`). Mais caro que os outros 5 candidatos (não
-    vetorizável), mas ainda `O(n × n_folds)`."""
-    n = close.shape[0]
-    log_return = np.full(n, np.nan, dtype=np.float64)
-    if n > 1:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            log_return[1:] = np.log(close[1:] / close[:-1])
-    forecast_var = np.full(n, np.nan, dtype=np.float64)
-    for split in splits:
-        fit = volatility_models.fit_egarch(log_return, train_end_idx=split.train_end_idx)
-        if fit is None:
-            continue
-        pred = volatility_models.predict_egarch(fit, log_return)
-        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
-            split.test_start_idx : split.test_end_idx
-        ]
-    return forecast_var
-
-
 def _estimator_metrics(
     estimator_id: str,
     forecast_var: FloatArray,
@@ -338,7 +300,7 @@ def compare_estimators_for_combination(
     close = bars_df["close"].cast(pl.Float64).to_numpy()
     realized_var = vwf.next_bar_realized_variance(close)
 
-    baseline = _baseline_estimator()
+    baseline = _baseline_estimator(window=candidate_window)
     baseline_forecast_var = _forecast_var(baseline, bars)
     baseline_metrics, baseline_qlike_oos = _estimator_metrics(
         baseline.estimator_id,
@@ -355,13 +317,6 @@ def compare_estimators_for_combination(
         (estimator.estimator_id, _forecast_var(estimator, bars))
         for estimator in _candidate_estimators(window=candidate_window)
     ]
-    har_rv_forecast_var = _har_rv_forecast_var(
-        realized_var, splits, bars_per_day=TF_BARS_PER_DAY[tf]
-    )
-    candidate_forecasts.append((f"har_rv_d{TF_BARS_PER_DAY[tf]}", har_rv_forecast_var))
-
-    egarch_forecast_var = _egarch_forecast_var(close, splits)
-    candidate_forecasts.append(("egarch_1_1", egarch_forecast_var))
 
     candidates: list[CandidateValidation] = []
     any_beats = False
@@ -456,10 +411,16 @@ def run_volatility_comparison_for_symbol_tf(
 
 
 def stopping_criterion_1_from_results(results: list[CombinationResult]) -> bool:
-    """§6.5 critério de parada #1: se NENHUM candidato bate o baseline em
-    QLIKE em NENHUMA combinação avaliada, a linha de busca se encerra
-    inteira. `results` vazio -> `False` (ausência de medição não é
-    "nenhum candidato venceu", é "nada foi medido ainda")."""
+    """Checagem genérica "nenhum candidato bateu o baseline em QLIKE em
+    NENHUMA combinação avaliada" -- mesmo mecanismo do `§6.5` critério de
+    parada #1 do PRD, mas **não é mais literalmente esse gate**: o gate
+    formal já resolveu (`False`) na rodada original de M1 contra
+    `ATRWilder` (`experiments/volatility_comparison_report.json`, commit
+    `2410bc1`, histórico congelado). Aqui o "baseline" é `GarmanKlass` (o
+    vencedor de M1) -- reaplicar o mesmo mecanismo pra decidir se vale a
+    pena promover Rogers-Satchell/Yang-Zhang, não pra reabrir o gate do
+    PRD. `results` vazio -> `False` (ausência de medição não é "nenhum
+    candidato venceu", é "nada foi medido ainda")."""
     return bool(results) and not any(r.any_candidate_beats_baseline for r in results)
 
 
@@ -510,13 +471,14 @@ def run_and_save_volatility_comparison_report(
     15 combinações não paga a cada `pytest`).
 
     **Paralelo entre combinações, não dentro de uma combinação.** Cada
-    (symbol, tf) é totalmente independente das outras 14 -- EGARCH é caro
-    (medido: ~144s pra BTCUSDT×M15 sozinho, a maior combinação, 20 folds)
-    mas embaraçosamente paralelo entre combinações. `max_workers=None`
-    usa `os.cpu_count()` (todos os núcleos disponíveis) -- explícito por
-    padrão, não conservador. `ProcessPoolExecutor`, não threads: o custo
-    é CPU-bound (recursão Python pura do EGARCH, GIL não libera), threads
-    não ganhariam nada aqui.
+    (symbol, tf) é totalmente independente das outras 14 -- os 4
+    candidatos atuais (Garman-Klass baseline + Parkinson/Rogers-Satchell/
+    Yang-Zhang) são todos fórmula fechada (sem MLE/OLS por fold, muito
+    mais baratos que o EGARCH/HAR-RV que rodavam aqui antes), mas o
+    paralelismo entre combinações continua valendo a pena no volume de
+    IO (15 × até 230k barras). `max_workers=None` usa `os.cpu_count()`
+    (todos os núcleos disponíveis) -- explícito por padrão, não
+    conservador. `ProcessPoolExecutor`, não threads.
 
     Chame manualmente:
     `uv run python -c "from src.analysis.volatility_comparison import run_and_save_volatility_comparison_report as r; r()"`
@@ -561,7 +523,7 @@ def run_and_save_volatility_comparison_report(
 
     # Combinações puladas (dado insuficiente) não contam nem a favor nem
     # contra -- não são medição, são ausência de medição.
-    stopping_criterion_1_triggered = stopping_criterion_1_from_results(results)
+    no_candidate_beats_gk_anywhere = stopping_criterion_1_from_results(results)
 
     payload: dict[str, Any] = {
         **report_provenance(),
@@ -569,7 +531,7 @@ def run_and_save_volatility_comparison_report(
         "n_combinations_evaluated": len(results),
         "skipped": skipped,
         "elapsed_seconds_total": elapsed_s,
-        "stopping_criterion_1_triggered": stopping_criterion_1_triggered,
+        "no_candidate_beats_gk_anywhere": no_candidate_beats_gk_anywhere,
         "combinations": [_combination_to_dict(r) for r in results],
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
@@ -579,7 +541,7 @@ def run_and_save_volatility_comparison_report(
         n_combinations_evaluated=len(results),
         n_skipped=len(skipped),
         elapsed_seconds_total=round(elapsed_s, 1),
-        stopping_criterion_1_triggered=stopping_criterion_1_triggered,
+        no_candidate_beats_gk_anywhere=no_candidate_beats_gk_anywhere,
         dest=str(dest),
     )
     return dest
