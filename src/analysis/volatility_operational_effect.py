@@ -173,10 +173,15 @@ def compute_operational_effect_for_symbol(symbol: str) -> list[OperationalEffect
     bars = Bars(frame=bars_df, timeframe_minutes=DECISION_TF_MINUTES)
     mark_price = bars_df["close"].cast(pl.Float64).to_numpy()
 
-    # `load_filters_asof` exige `datetime | date`, não string --
-    # `END_DATE`/`SYMBOL_START_DATE` são `str` em `volatility_comparison.py`
-    # (formato `lake.query_bars`, que aceita `DateLike`); converte só aqui.
-    filters = load_filters_asof(date.fromisoformat(END_DATE), symbol=symbol)
+    # Filtro VIGENTE, não o filtro na data de `END_DATE` das barras --
+    # esta é uma caracterização "com a economia de hoje" (mesma convenção
+    # do equity_usd/§0.2, ver docstring do módulo), não um backtest
+    # point-in-time (que usaria `load_filters_asof(t)` por barra, como
+    # `triple_barrier.py` faz de verdade). `date.today()` > `END_DATE`
+    # das barras (2026-08-07) -- `load_filters_asof(END_DATE, ...)` falhava
+    # porque o único snapshot em disco (`2026-08-08.json`) é POSTERIOR a
+    # `END_DATE`, então "vigente em END_DATE" não achava nada.
+    filters = load_filters_asof(date.today(), symbol=symbol)
     step_size = float(filters.step_size)
 
     equity_usd = _EQUITY_USD_FALLBACK
