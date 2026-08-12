@@ -1,13 +1,22 @@
-# PLANO MESTRE DO PROJETO — BTCUSDT Quant Engine, sob PRINCE2 adaptado
+# PLANO INSTITUCIONAL DE CONSTRUÇÃO — Binance_Futures
 
-**Versão:** 1.0 · **Data:** 2026-08-12
-**Natureza:** camada de governança sobre `PRD_V4_1.md` — não substitui o PRD,
-envolve ele. Em termos PRINCE2: este documento é o **produto de gestão**
-(Project Initiation Documentation); `PRD_V4_1.md`/`PRD_V3_2_UNIFICADO.md`
-continuam sendo os **produtos especialistas** (a especificação técnica do
-que está sendo construído). PRINCE2 distingue os dois tipos de produto
-formalmente — misturar os dois num documento só seria já a primeira
-violação do próprio método que estamos adotando.
+**Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
+PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
+arquivo/git, ver §0 sobre por quê).
+**Versão:** 1.1 · **Data:** 2026-08-12
+**Natureza:** **base da verdade institucional do projeto** (elevação de
+status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
+governança sobre o PRD"; v1.1 assume o papel de documento organizador de
+TODOS os produtos, especialistas e de gestão). Em termos PRINCE2: este é o
+**produto de gestão** de topo (Project Initiation Documentation, papel de
+Project Product Description); `PRD_V4_1.md`/`PRD_V3_2_UNIFICADO.md`,
+`CLAUDE.md`, as skills, e os registros append-only (`audit/*.yaml`) são os
+**produtos especialistas e de gestão subordinados** — ver §11 (Product
+Breakdown Structure) para o mapa completo. PRINCE2 distingue os tipos de
+produto formalmente; a mudança de v1.0→v1.1 não é cosmética, é a correção
+de uma inversão: um documento de governança que só "envolve" o PRD sem
+organizá-lo desperdiça a técnica de Product-Based Planning que o método
+oferece — ver §0 sobre a única peça que ainda não fechou por causa disso.
 
 > **Por que este documento existe.** No dia 2026-08-11/12, um furo de
 > arquitetura real — `triple_barrier.py` (Label Engine, produção) chamando
@@ -18,6 +27,45 @@ violação do próprio método que estamos adotando.
 > Isso não é falha de um agente descuidado — é ausência de PROCESSO que
 > obrigasse a pergunta a ser feita ANTES, de forma sistemática, em todo
 > arquivo tocado. Este documento formaliza esse processo.
+
+---
+
+## 0. Duas decisões fechadas agora, uma aberta <a name="0"></a>
+
+**Fechadas por padrão (Manage by Exception — princípio 4, §3): eu adoto e
+sigo a partir de agora, você ajusta se discordar, em vez de esperar
+aprovação explícita antes de continuar.**
+
+1. **§2 (papéis):** opção 3 — revisão independente via `Agent` obrigatória
+   por padrão (skill `project_assurance`, criada 2026-08-12), escalonamento
+   pra você só quando o achado for de escopo/negócio, não de engenharia.
+2. **§6.2 (formato da Descrição de Produto):** template adotado como está.
+
+Razão de fechar por padrão em vez de perguntar: o próprio v1.0 deste
+documento já argumentava (§3, princípio 4) que pausar pra aprovação de todo
+detalhe operacional é o oposto de "gerenciar por exceção" — só volta pra
+você o que for exceção de verdade. Papéis e template não são isso.
+
+**Aberta, não decidida por mim — decisão de arquitetura maior, escalonamento
+correto por §6.5:** `CLAUDE.md`, no topo, declara "Documento mestre:
+`PRD_V3_2_UNIFICADO.md`". Se este Plano Institucional agora organiza os
+produtos especialistas (§11) — incluindo o PRD — essa linha do `CLAUDE.md`
+fica desatualizada, e `CLAUDE.md` é o único documento deste repo marcado
+para OVERRIDE de qualquer comportamento padrão. Não troquei essa linha
+sozinho: é exatamente o tipo de contradição entre documentos que a
+pergunta #16 do checklist de `project_assurance` existe para pegar, e
+mudar a declaração de hierarquia institucional do projeto é decisão sua,
+não minha, por mais que a mudança pareça mecânica. Proposta concreta em
+§13.
+
+**Por que o nome do arquivo não mudou:** `PLANO_MESTRE_PRINCE2.md` já tem
+histórico real no git (commit `93ff811`, referenciado em
+`audit/architecture_gaps_log.yaml` AG-001/AG-002) e no seu próprio uso
+("Li seu @PLANO_MESTRE_PRINCE2.md"). Renomear o arquivo git (`git mv`)
+quebra esse link sem necessidade — o título institucional novo já muda
+como o documento se apresenta; o caminho de arquivo é identidade técnica,
+não a mesma coisa. Se você preferir o rename físico, é reversível e barato
+de fazer depois.
 
 ---
 
@@ -33,6 +81,9 @@ violação do próprio método que estamos adotando.
 8. [Relação com PRD_V4_1.md e com as skills existentes](#8)
 9. [Caso trabalhado: aplicando o protocolo retroativamente a `volatility.py`](#9)
 10. [Primeiro ciclo real: o próximo arquivo a ser tocado](#10)
+11. [**Product Breakdown Structure — o mapa institucional completo**](#11)
+12. [Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund](#12)
+13. [Decisão pendente: `CLAUDE.md` "Documento mestre"](#13)
 
 ---
 
@@ -118,12 +169,16 @@ o produtor. Três formas de resolver isso, em ordem de rigor:
    engenharia) — exatamente o tipo de pergunta "vale a pena continuar" que
    só o Manager responde.
 
-**Decisão proposta (você aprova ou ajusta):** (3), com (2) obrigatório e
-(1) sob demanda. Isso é literalmente Project Assurance delegado a um
+**Decisão fechada por padrão em 2026-08-12 (§0):** (3), com (2) obrigatório
+e (1) sob demanda. Isso é literalmente Project Assurance delegado a um
 segundo agente — não é uma invenção fora de PRINCE2, é a leitura mais
 estrita do princípio "papéis definidos" aplicada a um contexto onde o
 segundo humano não existe, mas um segundo AGENTE de IA, com contexto
-genuinamente separado, existe e é barato de invocar.
+genuinamente separado, existe e é barato de invocar. **Implementado** como
+skill `.claude/skills/project_assurance/SKILL.md` — 16 perguntas (as 5
+originais do §6.3 + 11 novas, organizadas nos 3 pilares de validação de
+SR 26-2, ver §12), critério de materialidade de 4 eixos que substitui a
+lista simples do §6.1 abaixo.
 
 ---
 
@@ -187,8 +242,8 @@ produto"). [Fonte: Projex — Quality Review Technique.](https://www.projex.com/
 
 ### 6.1 Quando este protocolo se aplica
 
-Todo arquivo (ou grupo de arquivos fortemente acoplados, ex. um módulo +
-seus testes) que:
+Heurística original (v1.0), mantida como triagem rápida — todo arquivo (ou
+grupo de arquivos fortemente acoplados, ex. um módulo + seus testes) que:
 - expõe uma interface/abstração nova (Protocol, classe pública, contrato),
 - é consumido por mais de um outro módulo, OU
 - fica em `src/labels/`, `src/risk/`, `src/execution/`, `src/regime/`
@@ -197,6 +252,14 @@ seus testes) que:
 Não se aplica a: scripts de análise exploratória em `src/analysis/`/
 `research/` de uso único, ajuste de docstring sem mudança de comportamento,
 correção de teste sem mudança de produção.
+
+**Substituído no detalhe (v1.1) pelo critério de materialidade de 4 eixos**
+em `.claude/skills/project_assurance/SKILL.md` §4 (exposição financeira /
+peso da decisão / complexidade / contexto de uso, adaptado de SR 26-2 —
+§12) — a heurística acima continua válida como primeiro filtro rápido, mas
+quando ela e o critério de 4 eixos discordarem, o critério de 4 eixos
+decide, porque distingue "materialidade ALTA → protocolo completo" de
+"1 eixo → registro leve", o que esta lista binária não fazia.
 
 ### 6.2 Antes de tocar o arquivo — Descrição de Produto (5 minutos, não 5 páginas)
 
@@ -244,13 +307,17 @@ Trabalho que crie ou modifique uma interface/abstração:
 ### 6.4 Revisão independente — obrigatória, não por escolha
 
 Depois que eu termino a implementação, ANTES de considerar o Pacote de
-Trabalho fechado: invoco `Agent` (subagente fresco, sem o contexto de por
-que decidi implementar daquele jeito) com uma instrução adversarial —
-"aqui está o arquivo X e seus consumidores reais (liste); as 5 Perguntas
-de Integração acima têm resposta completa e honesta? Encontre o que eu não
-vi." Isso usa a infraestrutura que já existe (`audit_engineering`, skill
-já escrita, quad-lens FS/FI/FT/FCN) — a mudança é tornar essa invocação
-**padrão do protocolo**, não uma escolha pontual.
+Trabalho fechado: invoco a skill `project_assurance`
+(`.claude/skills/project_assurance/SKILL.md`, criada 2026-08-12), que
+formaliza exatamente este passo — spawna `Agent` fresco, sem o contexto de
+por que a implementação foi feita daquele jeito, com as 16 perguntas do
+checklist (5 originais + 11 novas) e a Descrição de Produto do §6.2 como
+entrada. Reusa `audit_engineering` como MÉTODO de qualidade dentro da
+revisão, mas o objeto da pergunta é integração, não só correção — ver
+`project_assurance/SKILL.md` seção "Diferença de audit_engineering". A
+mudança de v1.0→v1.1 é tornar essa invocação **padrão do protocolo, com
+ferramenta própria**, não uma escolha pontual nem uma instrução em prosa
+sem skill dedicada.
 
 Se o segundo agente achar algo: vira entrada no `architecture_gaps_log`
 (§7), não é silenciosamente corrigido e esquecido — mesma disciplina de
@@ -385,6 +452,140 @@ experiência" aplicado ao PROCESSO, não só ao código).
 
 ---
 
+## 11. Product Breakdown Structure — o mapa institucional completo <a name="11"></a>
+
+Product-Based Planning (a técnica de planejamento de PRINCE2 citada no §6)
+começa por um **Product Breakdown Structure (PBS)** — decompor tudo que o
+projeto produz numa hierarquia, ANTES de planejar atividades. Esta seção é
+essa decomposição, feita por inspeção real do repo (`ls` em 2026-08-12), não
+por memória — o mesmo padrão de rigor que o resto do projeto exige de
+qualquer número. Três camadas:
+
+### 11.1 Produtos de gestão (governam COMO o projeto é conduzido)
+
+| produto | caminho | papel PRINCE2 |
+|---|---|---|
+| **Este documento** | `PLANO_MESTRE_PRINCE2.md` | Project Product Description + PID — organiza tudo abaixo |
+| Regras de execução | `CLAUDE.md` | Termo de referência operacional — banned patterns, protocolo "quem roda o quê", DoD por tipo de tarefa (ver §13 sobre o único ponto de atrito com este documento) |
+| Registro de risco/proveniência | `config/constants.yaml` | Risk Register (§7) |
+| Log de achados estatísticos | `audit/evidence_ledger.yaml` | Issue Register (parte estatística) |
+| Log de furos de arquitetura | `audit/architecture_gaps_log.yaml` | Issue Register (parte integração) — novo, §7 |
+| Contagem de trials/otimizações | `audit/n_lifetime.yaml` | controle de multiple-testing — Business Case input |
+| Achados de divisão sem guarda | `audit/division_guard_audit.md` | Issue Register especializado (FCN) |
+| Progresso legível por humano | `docs/SPRINT_LOG.md` | Highlight Report acumulado |
+| Diagnósticos descartados catalogados | `docs/audit_discarded_diagnostics.md` | Issue Register especializado |
+| Catálogo de fan-in/consumidores | `docs/CODE_DISCOVERY.md` | mapa de Dependencies (RAID) |
+| Mapa de blast radius de uma migração específica | `docs/refactor_gk_canonico.md` | Product Description de um Pacote de Trabalho em curso |
+| Métodos de Quality Review | `.claude/skills/audit_engineering/`, `.claude/skills/project_assurance/` | Quality Management Approach |
+| Scripts de verificação mecânica | `tools/lint/*.py` (`banned_patterns`, `check_constants_provenance`, `check_constants_referenced`, `check_unguarded_ratios`, `check_sprint_log_references`) | parte automatizada da prática de Qualidade |
+
+### 11.2 Produtos especialistas (o QUE está sendo construído — a engenharia em si)
+
+| produto | caminho | subordina-se a |
+|---|---|---|
+| Blueprint técnico corrente | `PRD_V4_1.md` | este plano organiza, não substitui |
+| Blueprint técnico histórico (proveniência) | `PRD_V3_2_UNIFICADO.md` | mantido por rastreabilidade — não editar como se fosse o atual |
+| Apresentação pro usuário não-técnico | `README.md` | reflexo simplificado do estado real |
+| Os 11 estágios do pipeline (`exchange → data → features → labels → regime → models → validation → backtest → risk → execution → live`) | `src/exchange/`, `src/data/`, `src/features/`, `src/labels/`, `src/regime/`, `src/models/`, `src/validation/`, `src/backtest/`, `src/risk/`, `src/execution/`, `src/live/` | camada verificada estaticamente (hierarquia do CLAUDE.md) |
+| Núcleo compartilhado (`Metric`, `ControlOutcome`) | `src/core/` | contrato de dados usado por todas as camadas acima |
+| Scripts de análise/pesquisa (M1, feasibility, faixa2) | `src/analysis/` | não-produção, mas informa decisões que VIRAM produção (`constants.yaml`) |
+| Testes | `tests/` | prova de que os dois produtos acima cumprem o que prometem |
+| Saídas de pipeline versionadas | `experiments/*.json`, `data/quality_reports/*.json`, `models/*/diagnostics/*.json` | evidência, não fonte — sempre derivável do código + dado, nunca a única cópia da verdade |
+
+### 11.3 O que a inspeção real confirma que NÃO existe ainda (não inventar)
+
+`ls` de 2026-08-12 confirma pastas `execution/`, `predictions/`, `research/`,
+`scripts/` no nível raiz além do `src/execution/` — **não abri o conteúdo
+delas nesta passada**; qualquer afirmação sobre o que têm dentro fica como
+`TBD — inspecionar antes de decidir se entram no PBS`, em vez de presumida.
+Isso é deliberado: um PBS que finge completude sem ter olhado é exatamente
+o tipo de "afirmação não re-verificada" que a pergunta #6 de
+`project_assurance` existe pra pegar — inclusive quando quem afirma sou eu,
+escrevendo este próprio documento.
+
+---
+
+## 12. Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund <a name="12"></a>
+
+Você pediu para trazer **SR 26-2** e **padrões de execução de hedge fund**
+como referência — explicitamente "apenas como referência", não como adoção.
+Pesquisa feita 2026-08-12, resumo do que se aplica e do que não:
+
+### 12.1 SR 26-2 — o que é e por que serve de referência
+
+`SR 26-2` é orientação revisada de **Model Risk Management**, emitida
+conjuntamente por Federal Reserve/OCC/FDIC em abril de 2026, substituindo a
+`SR 11-7` (2011) que era o padrão de-facto da indústria há 15 anos. [Fonte:
+Federal Reserve, SR 26-2](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.htm).
+Não se aplica a este projeto por jurisdição — este não é um banco
+supervisionado, não tem board, não tem US$ 30 bilhões em ativos (tem
+US$ 196,85). **O que se aproveita é a TAXONOMIA, não a burocracia:**
+
+- **3 pilares de validação** — Solidez Conceitual (design/premissas antes
+  de tudo), Análise de Resultado (previsto vs. real), Monitoramento
+  Contínuo (gatilho de risco, não calendário fixo). Isso organiza as 16
+  perguntas de `project_assurance` (§12 lá) em 3 blocos em vez de uma lista
+  plana de 16 — mais fácil de lembrar e de saber ONDE um achado novo
+  pertence.
+- **"Effective challenge" por qualidade, não por posição organizacional**
+  — SR 26-2 é explícito que revisão independente não precisa de um
+  departamento separado, precisa de expertise E independência de fato. Isso
+  valida diretamente a solução do §2: um segundo `Agent`, não um segundo
+  humano que não existe neste projeto.
+- **Materialidade por 4 eixos** (exposição financeira, peso da decisão,
+  complexidade, contexto de uso) — adaptado no §6.1/§4 de
+  `project_assurance` pra substituir a heurística binária original.
+
+**O que NÃO se importou:** cadência regulatória fixa, exigência de comitê,
+validação anual obrigatória, documentação para auditor externo — nada disso
+serve a um projeto de 1 desenvolvedor e seria burocracia pura, violando o
+próprio princípio 7 (adaptar ao contexto) deste plano.
+
+### 12.2 Padrões de execução de hedge fund — referência futura, não retroativa
+
+Pesquisa (TCA — Transaction Cost Analysis, best execution) confirma que
+fundos sistemáticos usam TCA como ferramenta CONTÍNUA de avaliação de
+qualidade de execução, não só relatório periódico — e que governança de
+research/versionamento de modelo/capacidade de aposentar modelo é o que
+diferencia due diligence séria de superficial. **Isso não vira trabalho
+agora:** `src/execution/` ainda não tem caller de produção
+(`docs/refactor_gk_canonico.md` item 5 confirma isso pro `sizing.py`) — TCA
+sem execução real pra medir é análise de dado que não existe. Fica marcado
+aqui como referência **para quando** `execution`/`backtest` forem
+implementados: a métrica que vai importar (slippage vs. mid, não só custo
+maker/taker teórico) já está identificada, não vai precisar de pesquisa
+nova naquele momento.
+
+---
+
+## 13. Decisão pendente: `CLAUDE.md` "Documento mestre" <a name="13"></a>
+
+`CLAUDE.md`, linha 4, declara: `Documento mestre: PRD_V3_2_UNIFICADO.md`.
+Isso foi escrito antes deste plano existir — e antes até do `PRD_V4_1.md`
+existir como o blueprint técnico corrente (o próprio `CLAUDE.md` já cita
+`PRD_V4_1.md` em vários pontos sem ter atualizado essa linha original).
+
+Com a elevação de status deste documento (v1.0→v1.1, §0), a leitura mais
+consistente seria:
+
+```
+Documento mestre: PLANO_MESTRE_PRINCE2.md (governança + Product Breakdown
+Structure completo, §11) — blueprint técnico corrente em PRD_V4_1.md,
+regras de execução no restante deste arquivo.
+```
+
+**Não apliquei esta mudança.** `CLAUDE.md` é o único documento deste repo
+com autoridade de override explícita sobre qualquer comportamento padrão —
+mudar a frase que declara SUA PRÓPRIA posição na hierarquia institucional é
+uma decisão sobre a hierarquia, não uma correção mecânica de texto
+desatualizado (o caso do §1.4 do PRD, corrigido sozinho numa sessão
+anterior, era diferente: lá eu havia registrado algo factualmente falso
+sobre o PRD; aqui é uma decisão de qual documento manda, que é sua por
+princípio 3, papéis definidos). Se você aprovar, é uma edição de uma linha
+— fica pronta assim que confirmar.
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -394,3 +595,21 @@ experiência" aplicado ao PROCESSO, não só ao código).
 - [Projex Academy — A técnica de Quality Review](https://www.projex.com/demystifying-the-prince2-quality-review-technique/)
 - [Purple Griffon — O que há de novo no PRINCE2 7](https://purplegriffon.com/blog/whats-new-in-prince2-7)
 - [Knowledgehut — Guia de documentos PRINCE2](https://www.knowledgehut.com/blog/project-management/prince2-documents)
+- [SR 26-2 — Revised Guidance on Model Risk Management, Federal Reserve/OCC/FDIC, abril/2026](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.htm)
+- [Domino.ai — SR 26-2 explicado, estrutura de 3 pilares de validação](https://domino.ai/data-science-dictionary/sr-26-2)
+
+---
+
+## Changelog
+
+- **v1.1 (2026-08-12)** — Elevação de status: de "camada de governança sobre
+  o PRD" para base da verdade institucional (§0). Fecha §2/§6.2 por padrão
+  (Manage by Exception). Adiciona §11 (Product Breakdown Structure — mapa
+  completo, por inspeção real do repo), §12 (SR 26-2 e padrões de execução
+  de hedge fund como referência de taxonomia, não adoção de framework), §13
+  (decisão pendente sobre `CLAUDE.md` "Documento mestre" — escalada, não
+  aplicada unilateralmente). Skill `project_assurance` criada e referenciada
+  em §2/§6.1/§6.4, substituindo a menção em prosa por ferramenta operável.
+- **v1.0 (2026-08-12)** — Criação. Pesquisa da metodologia oficial PRINCE2,
+  adaptação a 2 papéis (Manager + Claude), Protocolo de Pacote de Trabalho
+  por Arquivo (§6).

@@ -85,7 +85,7 @@ entries:
       de verdade do próprio processo -- exatamente a classe de achado que
       PLANO_MESTRE_PRINCE2.md §6.3 pergunta #16 ("alguma doc contradiz este
       arquivo?") existe para pegar.
-    resolved_by_commit: "mesmo commit que introduz .claude/skills/project_assurance/SKILL.md"
+    resolved_by_commit: "de03a3b"
     resolution: >
       Passo 4 reescrito para entregar comando copy-paste e marcar
       PENDENTE-DE-EXECUÇÃO-HUMANA, igual ao resto do protocolo de execução.
