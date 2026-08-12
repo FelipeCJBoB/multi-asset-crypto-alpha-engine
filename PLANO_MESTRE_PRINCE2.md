@@ -3,7 +3,7 @@
 **Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
 PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
 arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.2 · **Data:** 2026-08-12
+**Versão:** 1.3 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -16,7 +16,8 @@ Breakdown Structure) para o mapa completo. PRINCE2 distingue os tipos de
 produto formalmente; a mudança de v1.0→v1.1 não é cosmética, é a correção
 de uma inversão: um documento de governança que só "envolve" o PRD sem
 organizá-lo desperdiça a técnica de Product-Based Planning que o método
-oferece — ver §0 sobre a única peça que ainda não fechou por causa disso.
+oferece — ver §0 e §13: a última peça dessa inversão (a linha "Documento
+mestre" do `CLAUDE.md`) foi fechada em 2026-08-12, aprovação do Manager.
 
 > **Por que este documento existe.** No dia 2026-08-11/12, um furo de
 > arquitetura real — `triple_barrier.py` (Label Engine, produção) chamando
@@ -30,11 +31,14 @@ oferece — ver §0 sobre a única peça que ainda não fechou por causa disso.
 
 ---
 
-## 0. Duas decisões fechadas agora, uma aberta <a name="0"></a>
+## 0. Três decisões fechadas <a name="0"></a>
 
-**Fechadas por padrão (Manage by Exception — princípio 4, §3): eu adoto e
-sigo a partir de agora, você ajusta se discordar, em vez de esperar
-aprovação explícita antes de continuar.**
+**Duas fechadas por padrão (Manage by Exception — princípio 4, §3): eu
+adoto e sigo a partir de agora, você ajusta se discordar, em vez de esperar
+aprovação explícita antes de continuar. A terceira (CLAUDE.md) foi
+escalada corretamente e fechada por aprovação explícita sua, 2026-08-12 —
+não é caso de Manage by Exception, era decisão de hierarquia institucional
+mesmo (§13).**
 
 1. **§2 (papéis):** opção 3 — revisão independente via `Agent` obrigatória
    por padrão (skill `project_assurance`, criada 2026-08-12), escalonamento
@@ -46,17 +50,11 @@ documento já argumentava (§3, princípio 4) que pausar pra aprovação de todo
 detalhe operacional é o oposto de "gerenciar por exceção" — só volta pra
 você o que for exceção de verdade. Papéis e template não são isso.
 
-**Aberta, não decidida por mim — decisão de arquitetura maior, escalonamento
-correto por §6.5:** `CLAUDE.md`, no topo, declara "Documento mestre:
-`PRD_V3_2_UNIFICADO.md`". Se este Plano Institucional agora organiza os
-produtos especialistas (§11) — incluindo o PRD — essa linha do `CLAUDE.md`
-fica desatualizada, e `CLAUDE.md` é o único documento deste repo marcado
-para OVERRIDE de qualquer comportamento padrão. Não troquei essa linha
-sozinho: é exatamente o tipo de contradição entre documentos que a
-pergunta #16 do checklist de `project_assurance` existe para pegar, e
-mudar a declaração de hierarquia institucional do projeto é decisão sua,
-não minha, por mais que a mudança pareça mecânica. Proposta concreta em
-§13.
+**Fechada em 2026-08-12 — "Autorizado, eu aprovo" (Manager):** `CLAUDE.md`
+linha 5 mudou de "Documento mestre: `PRD_V3_2_UNIFICADO.md`" para
+"Documento mestre: `PLANO_MESTRE_PRINCE2.md`" (v1.6, ver §13 — a proposta
+de uma linha ficou pronta e foi aplicada assim que aprovada, nada além do
+que estava escrito).
 
 **Por que o nome do arquivo não mudou:** `PLANO_MESTRE_PRINCE2.md` já tem
 histórico real no git (commit `93ff811`, referenciado em
@@ -83,7 +81,8 @@ de fazer depois.
 10. [Primeiro ciclo real: o próximo arquivo a ser tocado](#10)
 11. [**Product Breakdown Structure — o mapa institucional completo**](#11)
 12. [Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund](#12)
-13. [Decisão pendente: `CLAUDE.md` "Documento mestre"](#13)
+13. [Decisão fechada: `CLAUDE.md` "Documento mestre"](#13)
+14. [Road_Map Vivo — HTML, atualizado a cada mudança de status](#14)
 
 ---
 
@@ -179,6 +178,18 @@ skill `.claude/skills/project_assurance/SKILL.md` — 16 perguntas (as 5
 originais do §6.3 + 11 novas, organizadas nos 3 pilares de validação de
 SR 26-2, ver §12), critério de materialidade de 4 eixos que substitui a
 lista simples do §6.1 abaixo.
+
+**Honestidade sobre o histórico, exigida pelo próprio achado AG-003
+(§7):** até o primeiro ciclo real deste documento (2026-08-12), os dois
+únicos achados reais em `architecture_gaps_log.yaml` vieram do Manager
+(AG-001) e de autorrevisão na mesma sessão do produtor (AG-002) — nenhum
+do Agent independente que este parágrafo propõe. Ou seja: o mecanismo
+central desta seção tinha **0/2 de histórico prospectivo** até ser
+testado de verdade em `PLANO_MESTRE_PRINCE2.md` (AG-003, achado real
+pelo Agent independente — ver §14). Um resultado, não é prova estatística
+de nada ainda, mas é o primeiro ponto de dado a favor. Tratar isso como
+"mecanismo comprovado" antes desse primeiro ciclo teria sido exatamente o
+tipo de confiança sem base que este projeto inteiro existe para evitar.
 
 ---
 
@@ -329,10 +340,15 @@ O segundo agente resolve gaps de ENGENHARIA (o código faz o que diz que
 faz, está integrado, está testado). Ele NÃO decide gaps de NEGÓCIO/ESCOPO
 — isso volta pra você, mesmo que descoberto no meio de um Pacote de
 Trabalho pequeno. Sinal de escalonamento: a resposta às 5 Perguntas revela
-que uma decisão de arquitetura maior (ex. "GK devia ser canônico em
-produção?") está implícita e não decidida — isso é Managing by Exception
-(princípio 4) aplicado ao processo: eu paro, reporto, você decide,
-depois eu continuo.
+que uma decisão de arquitetura maior — ex. "GK devia ser o estimador
+padrão do projeto?" — está implícita e não decidida. **Desambiguação de
+termo (achado AG-003):** "canônico" foi usado neste repo pra duas coisas
+diferentes — a ESCOLHA de qual estimador é o certo (decidida, 2026-08-11,
+`docs/refactor_gk_canonico.md`) e o ESTADO de produção (`labels/`
+reprocessado com ele, ainda não feito, mesma recomendação registrada em
+`docs/refactor_gk_canonico.md` §"Recomendação registrada"). Este é o tipo
+de decisão que é Managing by Exception (princípio 4) aplicado ao
+processo: eu paro, reporto, você decide, depois eu continuo.
 
 ---
 
@@ -609,31 +625,60 @@ nova naquele momento.
 
 ---
 
-## 13. Decisão pendente: `CLAUDE.md` "Documento mestre" <a name="13"></a>
+## 13. Decisão fechada: `CLAUDE.md` "Documento mestre" <a name="13"></a>
 
-`CLAUDE.md`, linha 4, declara: `Documento mestre: PRD_V3_2_UNIFICADO.md`.
-Isso foi escrito antes deste plano existir — e antes até do `PRD_V4_1.md`
-existir como o blueprint técnico corrente (o próprio `CLAUDE.md` já cita
-`PRD_V4_1.md` em vários pontos sem ter atualizado essa linha original).
-
-Com a elevação de status deste documento (v1.0→v1.1, §0), a leitura mais
-consistente seria:
+**Status: aplicada, 2026-08-12** — "Autorizado, eu aprovo" (Manager).
+`CLAUDE.md` linha 5 dizia `Documento mestre: PRD_V3_2_UNIFICADO.md`,
+escrito antes deste plano existir e antes até do `PRD_V4_1.md` existir
+como blueprint técnico corrente. Passou a dizer, em `CLAUDE.md` v1.6:
 
 ```
-Documento mestre: PLANO_MESTRE_PRINCE2.md (governança + Product Breakdown
-Structure completo, §11) — blueprint técnico corrente em PRD_V4_1.md,
-regras de execução no restante deste arquivo.
+Documento mestre: PLANO_MESTRE_PRINCE2.md (governança institucional +
+Product Breakdown Structure completo, §11) — aprovado pelo Manager,
+2026-08-12. Blueprint técnico corrente em dois níveis: arquitetura/
+contratos em PRD_V3_2_UNIFICADO.md, emenda de escopo multi-ativo em
+PRD_V4_1.md.
 ```
 
-**Não apliquei esta mudança.** `CLAUDE.md` é o único documento deste repo
-com autoridade de override explícita sobre qualquer comportamento padrão —
-mudar a frase que declara SUA PRÓPRIA posição na hierarquia institucional é
-uma decisão sobre a hierarquia, não uma correção mecânica de texto
-desatualizado (o caso do §1.4 do PRD, corrigido sozinho numa sessão
-anterior, era diferente: lá eu havia registrado algo factualmente falso
-sobre o PRD; aqui é uma decisão de qual documento manda, que é sua por
-princípio 3, papéis definidos). Se você aprovar, é uma edição de uma linha
-— fica pronta assim que confirmar.
+Exatamente a proposta que estava escrita aqui — nenhuma mudança de
+conteúdo além do aprovado, edição de uma linha, aplicada assim que
+confirmada (a decisão de qual documento organiza qual continua sendo sua;
+o quê tecnicamente manda — os contratos do V3.2, a emenda do V4.1 — não
+mudou nem podia mudar por decisão de rótulo).
+
+---
+
+## 14. Road_Map Vivo <a name="14"></a>
+
+**https://claude.ai/code/artifact/a6335e1a-1eb1-42ae-b3af-9b43b87ea3dd**
+
+Mapa ponta a ponta em HTML, publicado a pedido do Manager 2026-08-12,
+**vivo** — Claude republica a mesma URL a cada mudança de status ou Área
+nova/removida (não um retrato único). Conteúdo: as duas trilhas
+reconciliadas explicitamente em vez de forçadas numa sequência única
+inventada —
+
+- **Trilha de Sprints** (`PRD_V3_2_UNIFICADO.md` §14.3) — arquitetura/
+  infraestrutura, Sprint 0-18, posição atual marcada (Sprint 4).
+- **Trilha de Camadas** (`PRD_V4_1.md` Parte VIII) — a emenda de escopo
+  multi-ativo, V41-0 a V41-12, com o ponto de reconvergência explícito em
+  V41-5 (as duas trilhas voltam a ser uma só a partir daí — o documento
+  não finge saber o meio do caminho que ainda não foi medido).
+- Tabela de decisões abertas/fechadas (a mesma linha de raciocínio da
+  resposta anterior nesta conversa, agora com status atualizado: `CLAUDE.md`
+  fechado, recomendação de GK registrada, ciclo do §6 fechado).
+- Cartões de governança (skills, `architecture_gaps_log` com as 3 entradas).
+- Log do próprio Road_Map — quando cada mudança de status aconteceu, à
+  parte do changelog deste documento (são registros de granularidade
+  diferente: este documento versiona a si mesmo; o Road_Map versiona o
+  ESTADO do projeto).
+
+**Honestidade sobre o que não foi confirmado nesta passada:** V41-1 (T0.5,
+baseline na janela comum) aparece marcado "não confirmado" no Road_Map —
+não achei confirmação explícita de que rodou, em nenhum dos documentos
+lidos nesta sessão. Marcar como feito sem essa confirmação seria o mesmo
+erro que o achado AG-003 já pegou uma vez nesta sessão (confiança sem
+verificação). Fica como item a confirmar, não como suposição.
 
 ---
 
@@ -653,6 +698,21 @@ princípio 3, papéis definidos). Se você aprovar, é uma edição de uma linha
 
 ## Changelog
 
+- **v1.3 (2026-08-12)** — Três ações do Manager nesta rodada: (1)
+  `CLAUDE.md` "Documento mestre" aprovado e aplicado — §0/§13 fecham,
+  `CLAUDE.md` v1.6; (2) primeiro ciclo real do protocolo §6 escolhido —
+  este próprio documento, validado antes contra PRD_V4_1/V3_2/`CLAUDE.md`
+  — rodado via skill `project_assurance` (`Agent` independente, não
+  retroativo), achou 4 itens reais (AG-003): TOC morto (§14 prometido e
+  ausente — corrigido, é esta seção), changelog v1.2 não registrava o
+  fechamento de §0/§13 (corrigido aqui), mecanismo de revisão
+  independente tinha 0/2 de histórico prospectivo antes deste ciclo
+  (declarado explicitamente em §2), termo "canônico" usado pra decisão E
+  pra estado de produção sem distinção (desambiguado em §6.5); (3)
+  recomendação sobre promoção de GK dada e registrada em
+  `docs/refactor_gk_canonico.md` — travar a escolha agora, adiar
+  reprocessamento até M2/M3 fecharem. Novo §14 — Road_Map Vivo, HTML
+  publicado, atualizado a cada mudança de status.
 - **v1.2 (2026-08-12)** — Leitura completa de `PRD_V3_2_UNIFICADO.md`
   (TOC + Partes XVI-XIX) a pedido do Manager, pra achar o que faltava
   incluir aqui. §11.2 corrigido: V3.2 não é "histórico", é obsoleto só no

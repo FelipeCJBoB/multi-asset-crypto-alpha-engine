@@ -181,3 +181,35 @@ de M1 (já feito) não tocou produção nenhuma — foi seguro por construção.
 Passo 0 executado nesta sessão. Passos 1-5 continuam pendentes — decisão
 de promoção (passo 1) é do Manager, não confundir "dá pra fazer agora" com
 "decidido fazer agora".
+
+### Recomendação registrada (2026-08-12, resposta a pergunta direta do Manager)
+
+**Recomendo: sim para "GK é canônico" como fato — não para "reprocessar
+agora".** Duas perguntas diferentes que o passo 1 embaralha numa só:
+
+1. **GK é o estimador certo?** Já está decidido e não precisa de mais
+   teste lado a lado — M1 (14/15 QLIKE) + a extensão RS/YZ pós-M1 (GK
+   segue vencendo 10/15, nenhum candidato novo supera) já são evidência
+   robusta, redundante inclusive. Rodar um terceiro teste comparativo só
+   pra confirmar de novo seria gastar tempo sem aprender nada novo —
+   exatamente o oposto de "pare na primeira camada que funcionar"
+   (`CLAUDE.md`, Comportamento esperado).
+2. **Reprocessar `labels/` pra `labels/v2_gk/` agora?** Não — adiar até
+   **M2 (barra) e M3 (timeframe) fecharem** (`PRD_V4_1.md` §3.2,
+   roadmap V41-3). Razão: M2 pode trocar o tipo de barra de decisão
+   (tempo → dollar/volume/tick-imbalance) e M3 pode trocar `decision_tf`
+   (15m → 30m/1h) — qualquer um dos dois força um NOVO reprocessamento de
+   `labels/` independente do estimador de volatilidade escolhido, porque
+   muda o que `t0` significa. Reprocessar agora (por causa do GK) e de
+   novo depois (por causa de M2/M3, se mudarem) é retrabalho duplicado —
+   o próprio passo 3 acima já registra "precisa de gate próprio antes de
+   reabrir Camada 2/3", o que já aponta na mesma direção. `PRD_V4_1.md`
+   §3.0 também é explícito: "Nenhuma camada abre antes da anterior fechar
+   com resultado registrado" — Camada 1 (M1-M6) ainda não fechou (M2, M3,
+   M4, M5, M6 pendentes).
+
+**Ação concreta, se aprovada:** registrar `garman_klass_w20` como
+`estimator_id` DECIDIDO em `constants.yaml` agora (classe A, `provenance:
+MEASURED`, fonte = M1 + extensão RS/YZ) — trava a decisão 1 sem pagar o
+custo da decisão 2. O reprocessamento real (passos 2-5 acima) vira item
+do roadmap logo após G-C1-1 (M2/M3/M5/M6 emitidos), não antes.

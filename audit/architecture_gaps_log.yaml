@@ -91,3 +91,39 @@ entries:
       PENDENTE-DE-EXECUÇÃO-HUMANA, igual ao resto do protocolo de execução.
       Skill versionada para v1.1.
     status: "fechado — documentação alinhada"
+
+  - id: AG-003
+    date: "2026-08-12"
+    file: "PLANO_MESTRE_PRINCE2.md"
+    related_file: ".claude/skills/project_assurance/SKILL.md"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- 1o ciclo real do protocolo Sec6, nao retroativo"
+    gap: >
+      4 achados na primeira revisao independente de verdade (nao
+      retroativa) desde que o protocolo Sec6 foi escrito: (1) HIGH -- o
+      Sumario prometia um item "14. Road_Map Vivo" com link #14 que nao
+      existia no corpo do documento (TOC morto); (2) MEDIUM-HIGH -- o
+      changelog v1.2 nao registrava o fechamento de Sec0/Sec13 (linha
+      "Documento mestre" do CLAUDE.md), quebrando a propria disciplina
+      append-only que o documento exige de audit/*.yaml; (3) MEDIUM -- o
+      documento nao afirmava explicitamente que o mecanismo de revisao
+      independente tem 0/2 de historico prospectivo (AG-001 achado pelo
+      Manager, AG-002 achado na mesma sessao do produtor -- nenhum dos
+      dois pelo Agent independente que Sec2/Sec6.4 propoe); (4) LOW --
+      "GK canonico" usado ora para a DECISAO (ja tomada, 2026-08-11) ora
+      para o ESTADO de producao (ainda pendente) em documentos diferentes,
+      confusao terminologica leve.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      Sinal de saude do processo, nao so achado isolado: e o primeiro
+      "found_by" desta ledger que nao e Manager nem auto-revisao na mesma
+      sessao -- exatamente a metrica que Sec7 do PLANO_MESTRE diz ser "a
+      mais importante" para saber se o protocolo funciona sozinho.
+      Funcionou no primeiro ciclo real.
+    resolved_by_commit: "PENDENTE — commit desta sessão"
+    resolution: >
+      Sec14 (Road_Map Vivo) escrita com o link real do artifact publicado.
+      Changelog v1.3 passa a registrar Sec0/Sec13. Nota explicita de
+      limitacao prospectiva adicionada em Sec2. Termo "canonico"
+      desambiguado em Sec6.5 (decisao vs. estado de producao).
+    status: "fechado — corrigido na mesma sessão do achado"

@@ -1,9 +1,9 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.5
-> Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
-> Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
+> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.6
+> Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança institucional + Product Breakdown Structure completo, §11) — aprovado pelo Manager, 2026-08-12. Blueprint técnico corrente em dois níveis: arquitetura/contratos em `PRD_V3_2_UNIFICADO.md` (raiz, v3.3, ~3.400 linhas), emenda de escopo multi-ativo em `PRD_V4_1.md`.
+> Toda regra abaixo é ancorada em §X.Y do PRD (V3.2 para arquitetura, V4.1 para escopo). Regra sem âncora é dívida técnica.
 
 ---
 
@@ -343,6 +343,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.6 (2026-08-12) — Aprovado pelo Manager: "Documento mestre" passa de `PRD_V3_2_UNIFICADO.md` para `PLANO_MESTRE_PRINCE2.md` (proposta que estava pendente em `PLANO_MESTRE_PRINCE2.md` §13). PRD_V3_2 e PRD_V4_1 continuam como fonte técnica (arquitetura e emenda de escopo, respectivamente) — a mudança é sobre qual documento organiza qual, não sobre qual documento manda tecnicamente.
 - v1.5 (2026-08-12) — Adiciona exceção nomeada ao "Protocolo de execução": Claude pode rodar diretamente os 5 scripts mecânicos de auditoria (`banned_patterns.py`, `check_constants_referenced.py`, `check_constants_provenance.py`, `check_unguarded_ratios.py`, `check_sprint_log_references.py`, `ruff check`, `mypy`) — autorização explícita do Manager, porque são leitura pura sem efeito em dado/exchange/trial. Não se estende a `pytest`/`uv run quant`. Motivado por `audit_engineering`/`project_assurance` não conseguirem auditar de verdade sem rodar os próprios scripts que citam como parte do processo.
 - v1.4 (2026-08-11) — Adiciona "Nunca remediar, sempre solucionar" em "Comportamento esperado": warning do numpy silenciado com `np.errstate` sem investigar a causa (M1, `diebold_mariano`) escondia um buraco real (`finite - inf` vazando pro teste) — corrigido filtrando `isfinite` antes de operar, não abafando o sintoma. M1: 4 dos 6 estimadores de volatilidade rodados sobre as 15 combinações reais (Parkinson/Garman-Klass batem ATRWilder em QLIKE nas 15/15); HAR-RV (5º) integrado como candidato fold-aware.
 - v1.3 (2026-08-11) — Adiciona diretriz do Manager no topo de "Comportamento esperado": o papel de Claude não é só executar tarefas, é construir o motor que entrega edge real superando as adversidades do projeto, com rigor de Engenharia de Software e de Algorithmic Trading — "terminar" é o código rodar E o resultado ser honesto sobre edge real. Camada 0 do PRD_V4_1.md (T0.1-T0.4, T0.6) fechada nesta sessão; T0.6 parcial (symbol/tf/janela, não os 9 campos completos).
