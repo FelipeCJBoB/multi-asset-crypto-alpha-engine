@@ -3,7 +3,7 @@
 **Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
 PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
 arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.5 · **Data:** 2026-08-12
+**Versão:** 1.6 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -707,6 +707,18 @@ também, não só pros números do PRD.
 
 ## Changelog
 
+- **v1.6 (2026-08-12)** — Manager disse "pode seguir" pra M5/M6.
+  Verifiquei o disco (`data/labels/`, `predictions/alpha/`,
+  `execution/fill_simulator/`, `data/raw/book_ticker/`) antes de escrever
+  qualquer código — achado dois erros próprios, não do repo: (1)
+  `PRD_V4_1.md` §2.4 dizia janela de `bookTicker` até 2025-11, o disco tem
+  só até 2024-03; (2) eu tinha chamado M5/M6 "escopo completo, 0 trials"
+  como rápidos — `labels`/`predictions`/`orders` só existem pra BTCUSDT,
+  estender a 5 ativos exige Feature+Label Engine pros outros 4 primeiro.
+  Corrigido em `PRD_V4_1.md`, `CLAUDE.md` v1.9, Road_Map Vivo. Terceira
+  vez nesta sessão que verificar antes de escrever pegou algo que eu
+  tinha dito com confiança maior do que os dados sustentavam — o padrão
+  já é reconhecível o bastante pra virar rotina, não exceção.
 - **v1.5 (2026-08-12)** — Reavaliação de escopo do critério de encerramento
   #3 fechada: "não encerrar", M5 (fill, escopo completo) e M6 (fator
   comum) priorizados antes de M4. No caminho, pergunta técnica direta do
