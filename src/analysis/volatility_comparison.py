@@ -149,6 +149,16 @@ def _candidate_estimators(*, window: int) -> tuple[VolatilityEstimator, ...]:
     )
 
 
+def current_estimator_lineup(*, window: int) -> tuple[VolatilityEstimator, ...]:
+    """Baseline (GK) + candidatos atuais, juntos — conveniência pública pra
+    quem precisa iterar sobre "os 4 estimadores vivos hoje no harness" sem
+    duplicar a lista (ex. `volatility_operational_effect.py`, §3.2 M1 linha
+    354/356). `_baseline_estimator`/`_candidate_estimators` continuam
+    privados e usados separadamente aqui dentro, onde baseline e candidato
+    têm papéis distintos (comparação QLIKE)."""
+    return (_baseline_estimator(window=window), *_candidate_estimators(window=window))
+
+
 # ============================================================================
 # Núcleo — uma (symbol, tf) combinação, `bars` já em memória
 # ============================================================================
