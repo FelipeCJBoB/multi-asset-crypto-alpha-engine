@@ -1,0 +1,259 @@
+{
+  "generated_at": "2026-08-12T09:18:59.032602+00:00",
+  "code_version": "8f6c2d7",
+  "decision_tf": "15m",
+  "equity_usd_source": "CLAUDE.md prosa -- NAO e constants.yaml, ver docstring do modulo",
+  "equity_usd": 196.85,
+  "symbols": {
+    "BNBUSDT": [
+      {
+        "symbol": "BNBUSDT",
+        "estimator_id": "garman_klass_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.0023486939602811465,
+        "stop_pct_median": 0.0035230409404217195,
+        "custo_atr_median": 0.23417269738036162,
+        "r1_pass_fraction": 0.9998782247605594,
+        "r2_pass_fraction": 0.6709572142696225,
+        "janela_viavel_fraction": 0.670835439030182
+      },
+      {
+        "symbol": "BNBUSDT",
+        "estimator_id": "parkinson_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.002323743188238187,
+        "stop_pct_median": 0.0034856147823572802,
+        "custo_atr_median": 0.23668708434902327,
+        "r1_pass_fraction": 0.9998782247605594,
+        "r2_pass_fraction": 0.6642900199102516,
+        "janela_viavel_fraction": 0.664168244670811
+      },
+      {
+        "symbol": "BNBUSDT",
+        "estimator_id": "rogers_satchell_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.002373251219280998,
+        "stop_pct_median": 0.0035598768289214974,
+        "custo_atr_median": 0.23174959124918448,
+        "r1_pass_fraction": 0.9998721359985874,
+        "r2_pass_fraction": 0.6764249225205039,
+        "janela_viavel_fraction": 0.6762970585190913
+      },
+      {
+        "symbol": "BNBUSDT",
+        "estimator_id": "yang_zhang_w20",
+        "n_bars": 164256,
+        "n_valid": 164236,
+        "estimator_pct_median": 0.002365345801465867,
+        "stop_pct_median": 0.0035480187021988,
+        "custo_atr_median": 0.23252414072887273,
+        "r1_pass_fraction": 0.9998782240190944,
+        "r2_pass_fraction": 0.6762037555712511,
+        "janela_viavel_fraction": 0.6760819795903455
+      }
+    ],
+    "BTCUSDT": [
+      {
+        "symbol": "BTCUSDT",
+        "estimator_id": "garman_klass_w20",
+        "n_bars": 231552,
+        "n_valid": 231533,
+        "estimator_pct_median": 0.002412291193205568,
+        "stop_pct_median": 0.0036184367898083516,
+        "custo_atr_median": 0.2279990083904977,
+        "r1_pass_fraction": 0.9070067765718062,
+        "r2_pass_fraction": 0.6744438157843591,
+        "janela_viavel_fraction": 0.581519696976241
+      },
+      {
+        "symbol": "BTCUSDT",
+        "estimator_id": "parkinson_w20",
+        "n_bars": 231552,
+        "n_valid": 231533,
+        "estimator_pct_median": 0.0023495028259263775,
+        "stop_pct_median": 0.003524254238889566,
+        "custo_atr_median": 0.23409207851586317,
+        "r1_pass_fraction": 0.9095161380883071,
+        "r2_pass_fraction": 0.6608518008232088,
+        "janela_viavel_fraction": 0.5704672768028748
+      },
+      {
+        "symbol": "BTCUSDT",
+        "estimator_id": "rogers_satchell_w20",
+        "n_bars": 231552,
+        "n_valid": 231533,
+        "estimator_pct_median": 0.002458831856198238,
+        "stop_pct_median": 0.003688247784297357,
+        "custo_atr_median": 0.2236834530240678,
+        "r1_pass_fraction": 0.9026272712745051,
+        "r2_pass_fraction": 0.685124798624818,
+        "janela_viavel_fraction": 0.5878384506744179
+      },
+      {
+        "symbol": "BTCUSDT",
+        "estimator_id": "yang_zhang_w20",
+        "n_bars": 231552,
+        "n_valid": 231532,
+        "estimator_pct_median": 0.0024296513757156033,
+        "stop_pct_median": 0.003644477063573405,
+        "custo_atr_median": 0.22636992512743073,
+        "r1_pass_fraction": 0.9052744329077622,
+        "r2_pass_fraction": 0.6792020109531296,
+        "janela_viavel_fraction": 0.5845541868942522
+      }
+    ],
+    "ETHUSDT": [
+      {
+        "symbol": "ETHUSDT",
+        "estimator_id": "garman_klass_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.0028943643908543623,
+        "stop_pct_median": 0.004341546586281543,
+        "custo_atr_median": 0.19002444949153421,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8014332945682154,
+        "janela_viavel_fraction": 0.8014332945682154
+      },
+      {
+        "symbol": "ETHUSDT",
+        "estimator_id": "parkinson_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.002816173344131858,
+        "stop_pct_median": 0.004224260016197787,
+        "custo_atr_median": 0.19530047791484534,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.7852189214367042,
+        "janela_viavel_fraction": 0.7852189214367042
+      },
+      {
+        "symbol": "ETHUSDT",
+        "estimator_id": "rogers_satchell_w20",
+        "n_bars": 164256,
+        "n_valid": 164237,
+        "estimator_pct_median": 0.00295390557347368,
+        "stop_pct_median": 0.0044308583602105205,
+        "custo_atr_median": 0.18619417118104456,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8132942028897264,
+        "janela_viavel_fraction": 0.8132942028897264
+      },
+      {
+        "symbol": "ETHUSDT",
+        "estimator_id": "yang_zhang_w20",
+        "n_bars": 164256,
+        "n_valid": 164236,
+        "estimator_pct_median": 0.002916592856351318,
+        "stop_pct_median": 0.0043748892845269765,
+        "custo_atr_median": 0.18857620075571868,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8064736111449378,
+        "janela_viavel_fraction": 0.8064736111449378
+      }
+    ],
+    "SOLUSDT": [
+      {
+        "symbol": "SOLUSDT",
+        "estimator_id": "garman_klass_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.0040635003590696,
+        "stop_pct_median": 0.0060952505386044,
+        "custo_atr_median": 0.13535128618173195,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.9559896676172621,
+        "janela_viavel_fraction": 0.9559896676172621
+      },
+      {
+        "symbol": "SOLUSDT",
+        "estimator_id": "parkinson_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.003986845678152903,
+        "stop_pct_median": 0.005980268517229354,
+        "custo_atr_median": 0.1379536717495456,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.9510249943513865,
+        "janela_viavel_fraction": 0.9510249943513865
+      },
+      {
+        "symbol": "SOLUSDT",
+        "estimator_id": "rogers_satchell_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.004114241341314785,
+        "stop_pct_median": 0.006171362011972177,
+        "custo_atr_median": 0.1336819973288774,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.9589819061169904,
+        "janela_viavel_fraction": 0.9589819061169904
+      },
+      {
+        "symbol": "SOLUSDT",
+        "estimator_id": "yang_zhang_w20",
+        "n_bars": 163776,
+        "n_valid": 163756,
+        "estimator_pct_median": 0.004078962242634468,
+        "stop_pct_median": 0.0061184433639517016,
+        "custo_atr_median": 0.1348382180472846,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.9574061408436942,
+        "janela_viavel_fraction": 0.9574061408436942
+      }
+    ],
+    "XRPUSDT": [
+      {
+        "symbol": "XRPUSDT",
+        "estimator_id": "garman_klass_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.0031236261951594875,
+        "stop_pct_median": 0.004685439292739232,
+        "custo_atr_median": 0.1760774067179693,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8583327735608249,
+        "janela_viavel_fraction": 0.8583327735608249
+      },
+      {
+        "symbol": "XRPUSDT",
+        "estimator_id": "parkinson_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.0030488435853942616,
+        "stop_pct_median": 0.004573265378091392,
+        "custo_atr_median": 0.18039626651718726,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8475179686975213,
+        "janela_viavel_fraction": 0.8475179686975213
+      },
+      {
+        "symbol": "XRPUSDT",
+        "estimator_id": "rogers_satchell_w20",
+        "n_bars": 163776,
+        "n_valid": 163757,
+        "estimator_pct_median": 0.0031814981054019836,
+        "stop_pct_median": 0.0047722471581029755,
+        "custo_atr_median": 0.1728745332477598,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8652515617652986,
+        "janela_viavel_fraction": 0.8652515617652986
+      },
+      {
+        "symbol": "XRPUSDT",
+        "estimator_id": "yang_zhang_w20",
+        "n_bars": 163776,
+        "n_valid": 163756,
+        "estimator_pct_median": 0.0031446420971147295,
+        "stop_pct_median": 0.0047169631456720935,
+        "custo_atr_median": 0.17490066691906475,
+        "r1_pass_fraction": 1.0,
+        "r2_pass_fraction": 0.8621180292630499,
+        "janela_viavel_fraction": 0.8621180292630499
+      }
+    ]
+  }
+}
