@@ -67,10 +67,20 @@ def generate_anchored_walk_forward_splits(
     deriva ao longo dos anos. Cada fold de teste é um trimestre civil
     inteiro (ou parcial, se for o último trimestre disponível na série);
     o treino do fold seguinte inclui esse trimestre inteiro (expansão
-    real, não sobreposição parcial)."""
+    real, não sobreposição parcial).
+
+    `open_time_ms` precisa estar ORDENADO crescente -- `np.searchsorted`
+    abaixo assume isso implicitamente e produziria fold incorreto
+    silencioso se não estivesse. Hoje protegido porque `lake.query_bars`
+    sempre devolve ordenado, mas essa função não tinha essa garantia
+    verificada nela mesma (achado F3 do audit_engineering, 2026-08-11)."""
     n = open_time_ms.shape[0]
     if n == 0:
         return ()
+    assert np.all(np.diff(open_time_ms) >= 0), (
+        "open_time_ms precisa estar ordenado crescente -- np.searchsorted "
+        "abaixo produz fold incorreto silencioso caso contrário"
+    )
 
     dates = pl.from_epoch(pl.Series(open_time_ms), time_unit="ms").dt.date()
     period = (dates.dt.year() * 4 + dates.dt.quarter()).to_numpy()

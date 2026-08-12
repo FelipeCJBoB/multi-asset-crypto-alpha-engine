@@ -70,6 +70,16 @@ def test_splits_cobre_toda_a_serie_ate_a_ultima_barra() -> None:
     assert splits[-1].test_end_idx == open_time.shape[0]
 
 
+def test_splits_open_time_desordenado_levanta_assertion() -> None:
+    # np.searchsorted assume ordem crescente -- fora de ordem produziria
+    # fold incorreto silencioso sem essa guarda (achado F3 do audit).
+    open_time = _daily_open_time_ms("2021-01-01", 1460)
+    shuffled = open_time.copy()
+    shuffled[0], shuffled[-1] = shuffled[-1], shuffled[0]  # quebra a ordem
+    with pytest.raises(AssertionError):
+        vwf.generate_anchored_walk_forward_splits(shuffled, initial_train_years=2)
+
+
 # ============================================================================
 # next_bar_realized_variance
 # ============================================================================

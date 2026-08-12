@@ -140,8 +140,13 @@ def parkinson_vol(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
     / (4*ln2)`; retorna `sigma_P,t` (raiz), fração do preço, mesma escala
     de `atr_wilder(...)/close`. Janela rolante fixa — a barra `t` entra na
     própria janela (mesma família de `atr_wilder`/`realized_vol`, B02 não
-    se aplica)."""
-    log_hl_sq = np.log(high / low) ** 2
+    se aplica). `low <= 0` (dado corrompido, nunca visto em preço cripto
+    real mas sem garantia estrutural) vira NaN silencioso via `errstate`
+    em vez de `RuntimeWarning` não suprimido -- mesma disciplina que
+    `RealizedVolEstimator` já aplica ao log_return equivalente
+    (achado F2 do audit_engineering, 2026-08-11)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_hl_sq = np.log(high / low) ** 2
     mean_sq = (
         pl.Series(log_hl_sq).rolling_mean(window_size=window, min_samples=window).to_numpy()
     )
@@ -160,9 +165,12 @@ def garman_klass_vol(
     Janela rolante fixa, mesma convenção de `parkinson_vol`. Média da
     janela negativa (ruído numérico possível em janela curta com poucos
     candles de range quase nulo) vira NaN em vez de `sqrt` de número
-    complexo silencioso."""
-    log_hl_sq = np.log(high / low) ** 2
-    log_co_sq = np.log(close / open_) ** 2
+    complexo silencioso. `low <= 0` ou `open_ <= 0` viram NaN via
+    `errstate`, mesma disciplina de `parkinson_vol` (achado F2 do
+    audit_engineering, 2026-08-11)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_hl_sq = np.log(high / low) ** 2
+        log_co_sq = np.log(close / open_) ** 2
     gk = 0.5 * log_hl_sq - (2.0 * np.log(2.0) - 1.0) * log_co_sq
     mean_gk = pl.Series(gk).rolling_mean(window_size=window, min_samples=window).to_numpy()
     with np.errstate(invalid="ignore"):
