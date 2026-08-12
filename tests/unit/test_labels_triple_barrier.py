@@ -18,6 +18,7 @@ import pytest
 
 from src.data._paths import CAPACITY_DIR
 from src.exchange.filters import NoFiltersAvailableError
+from src.features.volatility import ATRWilderEstimator, GarmanKlassEstimator
 from src.labels import triple_barrier as tb
 
 _FIXTURE_START = "2024-01-01"
@@ -63,8 +64,8 @@ def test_round_to_tick_size_zero_devolve_preco_original() -> None:
 
 
 def test_config_hash_deterministico() -> None:
-    cfg1 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
-    cfg2 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
+    cfg1 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg2 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
     assert cfg1.config_hash == cfg2.config_hash
 
 
@@ -79,13 +80,14 @@ def test_config_hash_deterministico() -> None:
         ("maker_fee", 0.0003),
         ("taker_fee", 0.0006),
         ("decision_tf_minutes", 30),
+        ("estimator_id", "garman_klass_w20"),
     ],
 )
 def test_config_hash_muda_se_qualquer_parametro_mudar(field: str, value: float) -> None:
     """B15 — a garantia central: mudar QUALQUER parâmetro do bloco de
     barreiras muda o hash. Sem isso, labels calculados com uma config
     diferente da execução passariam despercebidos."""
-    base = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
+    base = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
     changed = replace(base, **{field: value})
     assert base.config_hash != changed.config_hash
 
@@ -113,7 +115,7 @@ def _one_row_labels(config_hash: str) -> pl.DataFrame:
 
 
 def test_verify_config_hash_passa_quando_bate() -> None:
-    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
+    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
     labels = _one_row_labels(cfg.config_hash)
     tb.verify_config_hash(labels, cfg)  # não levanta
 
@@ -122,16 +124,16 @@ def test_verify_config_hash_quebra_se_parametro_mudou_sem_recalcular() -> None:
     """O cenário real que B15 proíbe: labels calculados com `tp_atr_mult=2.0`,
     execução rodando com `tp_atr_mult=2.5` — tem que quebrar, não passar
     silenciosamente."""
-    labels_config = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
-    execution_config = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005)  # só tp_atr_mult mudou
+    labels_config = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    execution_config = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")  # só tp_atr_mult mudou
     labels = _one_row_labels(labels_config.config_hash)
     with pytest.raises(tb.ConfigHashMismatchError):
         tb.verify_config_hash(labels, execution_config)
 
 
 def test_verify_config_hash_quebra_se_dataset_mistura_configs() -> None:
-    cfg_a = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
-    cfg_b = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005)
+    cfg_a = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg_b = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
     labels = pl.DataFrame(
         {"config_hash": [cfg_a.config_hash, cfg_b.config_hash], "ret_net": [0.01, -0.01]}
     )
@@ -140,7 +142,7 @@ def test_verify_config_hash_quebra_se_dataset_mistura_configs() -> None:
 
 
 def test_verify_config_hash_dataset_vazio_levanta_erro() -> None:
-    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005)
+    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
     empty = pl.DataFrame(schema={"config_hash": pl.Utf8, "ret_net": pl.Float64})
     with pytest.raises(tb.ConfigHashMismatchError):
         tb.verify_config_hash(empty, cfg)
@@ -157,7 +159,7 @@ _BASE_MS = int(datetime(2026, 8, 8, 0, 0, tzinfo=UTC).timestamp() * 1000)
 _CLOSES = [100.0, 100.2, 99.9]
 _CFG = tb.LabelConfig(
     tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_bars=4, fill_timeout_bars=1, atr_window=3,
-    maker_fee=0.0002, taker_fee=0.0005,
+    maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w3",
 )
 _EMPTY_FUNDING = pl.DataFrame(schema={"calc_time": pl.Int64, "last_funding_rate": pl.Float64})
 
@@ -171,10 +173,15 @@ def _synthetic_bars() -> pl.DataFrame:
     close_time = [t + _BAR_MS - 1 for t in open_time]
     high = [c + 0.2 for c in _CLOSES]
     low = [c - 0.2 for c in _CLOSES]
+    # `open` != `close` (offset fixo) -- não usado por ATRWilderEstimator
+    # (só high/low/close), mas Garman-Klass/etc. precisam dele; testes de
+    # injeção de estimador (abaixo) dependem desta coluna existir.
+    open_ = [c - 0.05 for c in _CLOSES]
     return pl.DataFrame(
         {
             "open_time": open_time,
             "close_time": close_time,
+            "open": open_,
             "close": _CLOSES,
             "high": high,
             "low": low,
@@ -208,6 +215,86 @@ def _with_horizon_coverage(rows: list[_Row]) -> list[_Row]:
     horizon = _t0() + _CFG.time_stop_bars * _BAR_MS
     last_px = rows[-1][4]
     return [*rows, (horizon, last_px, last_px, last_px, last_px)]
+
+
+# ============================================================================
+# `estimator` injetável (2026-08-12) -- VolatilityEstimator pluggable em vez
+# de group_c.c01_atr_20/c02_atr_20_pct hardcoded. Ver docstring do módulo.
+# ============================================================================
+
+
+def _tp_long_mark() -> pl.DataFrame:
+    """Mesmo cenário de `test_build_labels_tp_long` (TP bate de forma
+    inequívoca) -- reusado pelos testes de injeção de estimador abaixo,
+    que não precisam de um cenário novo, só variar `estimator`."""
+    t0 = _t0()
+    return _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ]
+        )
+    )
+
+
+def test_build_labels_estimator_none_e_explicito_atr_wilder_batem_bit_exato() -> None:
+    """`estimator=None` (default) tem que produzir EXATAMENTE o mesmo
+    resultado que passar `ATRWilderEstimator(window=cfg.atr_window)`
+    explicitamente -- é a alegação central da migração (preservar
+    comportamento de produção, não só "parecido")."""
+    mark = _tp_long_mark()
+    out_default = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    out_explicit = tb.build_labels(
+        _synthetic_bars(),
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=_CFG,
+        estimator=ATRWilderEstimator(window=_CFG.atr_window),
+    )
+    row_default = out_default.row(0, named=True)
+    row_explicit = out_explicit.row(0, named=True)
+    assert row_default["atr_at_t0"] == pytest.approx(row_explicit["atr_at_t0"], abs=1e-15)
+    assert row_default["tp_price"] == pytest.approx(row_explicit["tp_price"], abs=1e-12)
+    assert row_default["sl_price"] == pytest.approx(row_explicit["sl_price"], abs=1e-12)
+
+
+def test_build_labels_estimator_id_divergente_do_config_levanta_valueerror() -> None:
+    """B15 -- passar um `GarmanKlassEstimator` mas deixar `cfg.estimator_id`
+    dizendo `"atr_wilder_w3"` (o `_CFG` padrão deste arquivo) tem que
+    falhar alto, nunca gerar labels com `config_hash` mentiroso."""
+    mark = _tp_long_mark()
+    with pytest.raises(ValueError, match="estimator_id"):
+        tb.build_labels(
+            _synthetic_bars(),
+            mark,
+            _EMPTY_FUNDING,
+            side=1,
+            config=_CFG,  # estimator_id="atr_wilder_w3"
+            estimator=GarmanKlassEstimator(window=_CFG.atr_window),
+        )
+
+
+def test_build_labels_garman_klass_produz_atr_at_t0_diferente_do_wilder() -> None:
+    """Confirma que a injeção realmente TROCA o número, não só aceita o
+    parâmetro sem efeito -- Garman-Klass e ATR de Wilder são fórmulas
+    genuinamente diferentes sobre o mesmo OHLC sintético."""
+    mark = _tp_long_mark()
+    cfg_gk = replace(_CFG, estimator_id="garman_klass_w3")
+    out_wilder = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    out_gk = tb.build_labels(
+        _synthetic_bars(),
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=cfg_gk,
+        estimator=GarmanKlassEstimator(window=_CFG.atr_window),
+    )
+    atr_wilder = out_wilder.row(0, named=True)["atr_at_t0"]
+    atr_gk = out_gk.row(0, named=True)["atr_at_t0"]
+    assert atr_wilder != pytest.approx(atr_gk)
+    assert out_gk.row(0, named=True)["config_hash"] != out_wilder.row(0, named=True)["config_hash"]
 
 
 def test_build_labels_tp_long() -> None:

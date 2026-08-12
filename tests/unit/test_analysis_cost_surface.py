@@ -63,6 +63,7 @@ def test_default_grid_axes_usa_tp_sl_do_config_passado() -> None:
         atr_window=20,
         maker_fee=0.0002,
         taker_fee=0.0005,
+        estimator_id="atr_wilder_w20",
     )
     tp_axis, sl_axis = cs.default_grid_axes(cfg)
     assert tp_axis == pytest.approx((2.8, 4.0, 5.2))
@@ -208,6 +209,7 @@ _BASE_CFG = tb.LabelConfig(
     atr_window=3,
     maker_fee=0.0002,
     taker_fee=0.0005,
+    estimator_id="atr_wilder_w3",
 )
 _EMPTY_FUNDING = pl.DataFrame(schema={"calc_time": pl.Int64, "last_funding_rate": pl.Float64})
 

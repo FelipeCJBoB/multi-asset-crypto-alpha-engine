@@ -34,6 +34,7 @@ _CFG = tb.LabelConfig(
     atr_window=3,
     maker_fee=0.0002,
     taker_fee=0.0005,
+    estimator_id="atr_wilder_w3",
 )
 _EMPTY_FUNDING = pl.DataFrame(schema={"calc_time": pl.Int64, "last_funding_rate": pl.Float64})
 

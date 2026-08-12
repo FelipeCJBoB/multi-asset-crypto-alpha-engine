@@ -58,11 +58,34 @@ deixadas implícitas** (task explícita: reportar toda interpretação):
    caem no mesmo ramo `else` porque os dois exigem execução garantida via
    ordem agressiva — não porque compartilham qualquer outra semântica.
 
-**Reuso, não reimplementação:** ATR vem de
-`src.features.groups.group_c.c01_atr_20`/`c02_atr_20_pct` (Wilder,
-`src.features.support`) — mesmo código do Feature Engine (Sprint 4), não
-uma segunda implementação. `load_filters_asof` vem de
-`src.exchange.filters`, inalterado.
+**Reuso, não reimplementação — e injetável (2026-08-12).** O estimador de
+volatilidade que dimensiona TP/SL não é mais hardcoded em `group_c.
+c01_atr_20`/`c02_atr_20_pct` — `build_labels`/`build_labels_both_sides`
+recebem um `estimator: VolatilityEstimator | None` opcional
+(`src.features.volatility`), default `ATRWilderEstimator(window=cfg.
+atr_window)` (bit-idêntico ao comportamento anterior a esta mudança — o
+golden test `test_atr_wilder_estimator_bate_bit_exato_com_labels_v1`
+continua batendo `labels/v1/labels.parquet::atr_at_t0` sem alteração).
+Isto fecha a lacuna que `src/features/volatility.py` (T0.1) deixou aberta
+desde a criação da interface: "a migração completa dos 135 pontos de
+fan-in (G-C0-2) é trabalho subsequente" — este é o ponto de fan-in de
+maior criticidade (dimensiona `tp_price`/`sl_price`/`mfe_atr_units`/
+`atr_at_t0` de PRODUÇÃO), agora migrado.
+
+**`LabelConfig.estimator_id` é campo OBRIGATÓRIO, sem default mágico.**
+Cogitei um default auto-derivado de `atr_window` (`f"atr_wilder_w
+{atr_window}"`), mas isso quebra silenciosamente sob `dataclasses.
+replace(cfg, atr_window=novo)` — o `estimator_id` ficaria desatualizado
+(ainda citando o `atr_window` antigo) sem nenhum erro, exatamente o tipo
+de drift silencioso que B15 existe para impedir. Melhor exigir explícito
+(mesma disciplina de `tp_atr_mult`/`sl_atr_mult`/etc.) do que inventar
+conveniência que esconde um bug depois. `build_labels` valida em runtime
+que `estimator.estimator_id == cfg.estimator_id` -- se um chamador passar
+um `GarmanKlassEstimator` mas esquecer de atualizar `cfg.estimator_id`,
+o hash persistido MENTIRIA sobre qual estimador gerou o label (B15); isso
+levanta `ValueError` em vez de deixar passar.
+
+`load_filters_asof` vem de `src.exchange.filters`, inalterado.
 """
 
 from __future__ import annotations
@@ -85,7 +108,7 @@ from numpy.typing import NDArray
 from src.data import lake
 from src.data.resample import step_ms
 from src.exchange.filters import Filters, NoFiltersAvailableError, load_filters_asof
-from src.features.groups import group_c
+from src.features.volatility import ATRWilderEstimator, Bars, VolatilityEstimator
 
 from . import fill_model, weights
 from ._constants import load_constant
@@ -135,7 +158,13 @@ class LabelConfig:
     `tp_atr_mult`/`sl_atr_mult`/`time_stop_bars`/`atr_window`/`maker_fee`/
     `taker_fee` já existem em `constants.yaml` (§0.2 R1/R2) — REUSADOS aqui,
     não redeclarados. `fill_timeout_bars` é a única constante nova do
-    Sprint 6 (ver `constants.yaml`)."""
+    Sprint 6 (ver `constants.yaml`).
+
+    `estimator_id` (2026-08-12) identifica qual `VolatilityEstimator`
+    dimensiona TP/SL — OBRIGATÓRIO, sem default (ver docstring do módulo
+    sobre por que um default auto-derivado de `atr_window` seria inseguro
+    sob `dataclasses.replace`). `build_labels` valida em runtime que o
+    `estimator` de fato passado bate com este campo."""
 
     tp_atr_mult: float
     sl_atr_mult: float
@@ -144,18 +173,31 @@ class LabelConfig:
     atr_window: int
     maker_fee: float
     taker_fee: float
+    estimator_id: str
     decision_tf_minutes: int = 15
 
     @classmethod
-    def from_constants(cls) -> LabelConfig:
+    def from_constants(cls, *, estimator_id: str | None = None) -> LabelConfig:
+        """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
+        no `atr_window` lido de `constants.yaml` — o estimador de produção
+        atual, comportamento inalterado desde antes desta classe existir.
+        Passar um `estimator_id` explícito (e o `estimator` correspondente
+        para `build_labels`) é como um chamador optaria por outro
+        estimador (ex. `GarmanKlassEstimator`, vencedor de M1 — ainda não
+        promovido a canônico, ver `docs/refactor_gk_canonico.md`)."""
+        atr_window = int(load_constant("atr_window"))
+        resolved_estimator_id = (
+            estimator_id if estimator_id is not None else f"atr_wilder_w{atr_window}"
+        )
         return cls(
             tp_atr_mult=float(load_constant("tp_atr_mult")),
             sl_atr_mult=float(load_constant("sl_atr_mult")),
             time_stop_bars=int(load_constant("time_stop_bars")),
             fill_timeout_bars=int(load_constant("fill_timeout_bars")),
-            atr_window=int(load_constant("atr_window")),
+            atr_window=atr_window,
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
+            estimator_id=resolved_estimator_id,
         )
 
     @property
@@ -163,7 +205,15 @@ class LabelConfig:
         """Hash determinístico (sha256, truncado a 16 hex) do bloco de
         barreiras — muda se QUALQUER campo mudar. `orjson` com chaves
         ordenadas garante que o mesmo conjunto de valores sempre produz o
-        mesmo hash, independente da ordem de construção do dataclass."""
+        mesmo hash, independente da ordem de construção do dataclass.
+
+        **Muda de valor pra configs pré-2026-08-12** (mesmo com
+        `ATRWilderEstimator`/`atr_window` idênticos) porque `estimator_id`
+        é campo novo no payload — intencional, não regressão: antes desta
+        mudança o hash não tinha como capturar "qual estimador" porque só
+        existia um. `labels/v1/labels.parquet` (gerado sob o hash antigo)
+        continua válido como está; precisa de reprocessamento só se for
+        recombinado com uma config nova para verificação B15."""
         payload = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
@@ -172,6 +222,7 @@ class LabelConfig:
             "atr_window": self.atr_window,
             "maker_fee": self.maker_fee,
             "taker_fee": self.taker_fee,
+            "estimator_id": self.estimator_id,
             "decision_tf_minutes": self.decision_tf_minutes,
         }
         blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
@@ -538,6 +589,7 @@ def build_labels(
     side: int,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
 ) -> pl.DataFrame:
     """Núcleo do Label Engine (§3.4) para UM lado (`side=1` long, `side=-1`
@@ -545,9 +597,9 @@ def build_labels(
 
     `bars_15m`: klines REGULARES (não mark) a 15m — schema de
     `src.data.resample.resample_klines` (`open_time`, `close_time`, `open`,
-    `high`, `low`, `close`, ...). `close` vira `entry_ref`; `high`/`low`/
-    `close` alimentam o ATR (§0.2 R1/R2) que dimensiona TP/SL — NUNCA usados
-    para decidir toque de barreira (isso é só `mark_1m`, B11).
+    `high`, `low`, `close`, ...). `close` vira `entry_ref`; `open`/`high`/
+    `low`/`close` alimentam o `estimator` (§0.2 R1/R2) que dimensiona TP/SL
+    — NUNCA usados para decidir toque de barreira (isso é só `mark_1m`, B11).
 
     `mark_1m`: schema `MARK_PRICE_KLINES_1M` (klines-like, `open_time`
     epoch ms, `open`/`high`/`low`/`close`) — fonte OBRIGATÓRIA de toque de
@@ -555,12 +607,29 @@ def build_labels(
 
     `funding`: schema `FUNDING` (`calc_time` epoch ms, `last_funding_rate`).
 
+    `estimator` (`None` default) resolve para `ATRWilderEstimator(window=
+    cfg.atr_window)` — comportamento de produção inalterado. Passar outro
+    `VolatilityEstimator` (`src.features.volatility`) exige que
+    `cfg.estimator_id` bata com `estimator.estimator_id`, ou levanta
+    `ValueError` (ver docstring do módulo/`LabelConfig`) — nunca deixa o
+    `config_hash` persistido mentir sobre qual estimador rodou.
+
     Retorna o schema pré-pesos (sem `concurrency`/`uniqueness`/
     `sample_weight` — essas exigem o conjunto completo do lado, calculadas
     em `weights.apply_weights` por `build_labels_both_sides`)."""
     if side not in (1, -1):
         raise ValueError(f"side deve ser 1 (long) ou -1 (short), recebido {side}")
     cfg = config if config is not None else LabelConfig.from_constants()
+    resolved_estimator = (
+        estimator if estimator is not None else ATRWilderEstimator(window=cfg.atr_window)
+    )
+    if resolved_estimator.estimator_id != cfg.estimator_id:
+        raise ValueError(
+            f"estimator.estimator_id ({resolved_estimator.estimator_id!r}) != "
+            f"cfg.estimator_id ({cfg.estimator_id!r}) -- o config_hash persistido "
+            "mentiria sobre qual estimador gerou estes labels (B15). Passe um "
+            "LabelConfig com estimator_id igual ao de `estimator`."
+        )
 
     bars = bars_15m.sort("open_time")
     n = bars.height
@@ -572,9 +641,12 @@ def build_labels(
     low = bars["low"].cast(pl.Float64).to_numpy()
     t0_arr = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
 
-    # ATR reusado do Feature Engine (Sprint 4) — não reimplementado aqui.
-    atr_abs = group_c.c01_atr_20(high, low, close, cfg.atr_window)
-    atr_pct = group_c.c02_atr_20_pct(atr_abs, close)
+    # `estimator.estimate()` já retorna fração do preço (mesma escala que
+    # `atr_pct` sempre teve) -- 2026-08-12, ver docstring do módulo.
+    atr_pct = resolved_estimator.estimate(
+        Bars(frame=bars, timeframe_minutes=cfg.decision_tf_minutes),
+        horizon_minutes=cfg.decision_tf_minutes,
+    )
     valid_atr = ~np.isnan(atr_pct)
     n_warmup_dropped = int((~valid_atr).sum())
 
@@ -754,13 +826,19 @@ def build_labels_both_sides(
     *,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
 ) -> pl.DataFrame:
     """Roda `build_labels` para os dois lados (M_long `side=1`, M_short
     `side=-1` — B18) e aplica `weights.apply_weights` sobre o conjunto
     combinado (concorrência/unicidade por lado, peso normalizado
     globalmente — item 7 da docstring do módulo). Retorna já no schema
-    final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`)."""
+    final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`).
+
+    `estimator` (ver `build_labels`) é resolvido UMA vez aqui e passado
+    IDÊNTICO aos dois lados -- long e short compartilham o mesmo
+    dimensionamento de volatilidade por construção (§3.4), nunca
+    estimadores diferentes por lado."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
     long_labels = build_labels(
@@ -770,6 +848,7 @@ def build_labels_both_sides(
         side=1,
         symbol=symbol,
         config=cfg,
+        estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
     )
     short_labels = build_labels(
@@ -779,6 +858,7 @@ def build_labels_both_sides(
         side=-1,
         symbol=symbol,
         config=cfg,
+        estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
     )
     combined = pl.concat([long_labels, short_labels], how="vertical")
@@ -792,19 +872,28 @@ def build_labels_for_symbol(
     end: DateLike,
     *,
     config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
 ) -> pl.DataFrame:
     """Ponto de entrada com IO — análogo a
     `features.build.build_t1_features(symbol, start, end)`. Carrega klines
-    regulares de 15m (`entry_ref`/ATR), `mark_1m` e `funding` via
-    `src.data.lake` (reuso, não reimplementação).
+    regulares de 15m (`entry_ref`/estimador de volatilidade), `mark_1m` e
+    `funding` via `src.data.lake` (reuso, não reimplementação).
 
     `mark_1m`/`funding` são buscados com 1 dia de folga ALÉM de `end` — sem
     isso, os últimos `time_stop_bars` labels do intervalo pedido seriam
     descartados por "cauda incompleta" apesar do dado existir logo depois
     de `end` (1 dia cobre time_stop_bars*15m e fill_timeout_bars*15m com
     folga, já que ambos ficam bem abaixo de 24h com os valores atuais de
-    `constants.yaml`)."""
+    `constants.yaml`).
+
+    `estimator=None` (default) preserva o comportamento de produção atual
+    (`ATRWilderEstimator`, ver `build_labels`). Este é o ÚNICO ponto de
+    entrada real com IO deste módulo -- é aqui que promover GK a canônico
+    de fato aconteceria (`docs/refactor_gk_canonico.md`), passando
+    `estimator=GarmanKlassEstimator(window=cfg.atr_window)` e um `config`
+    com `estimator_id="garman_klass_w{window}"` -- NÃO feito por padrão
+    aqui, decisão explícita pendente de quem chama."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
     bars_15m = lake.query_bars(symbol, "15m", start, end, source="klines_1m", cast_prices=True)
@@ -831,6 +920,7 @@ def build_labels_for_symbol(
         funding,
         symbol=symbol,
         config=cfg,
+        estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
     )
 

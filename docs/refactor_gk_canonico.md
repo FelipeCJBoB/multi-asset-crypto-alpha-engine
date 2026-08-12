@@ -30,27 +30,42 @@ documento é a **síntese de blast radius**, não uma redescoberta.
 
 ### 1. `src/labels/triple_barrier.py` — CRÍTICO, o Label Engine
 
-`atr_at_t0`/`tp_price`/`sl_price`/`mfe_atr_units` são todos dimensionados
-por ATR de Wilder hoje:
+✅ **Injeção de estimador implementada (2026-08-12), migração em si NÃO.**
+`build_labels`/`build_labels_both_sides`/`build_labels_for_symbol` agora
+aceitam `estimator: VolatilityEstimator | None` (default `None` →
+`ATRWilderEstimator(window=cfg.atr_window)`, bit-exato ao comportamento
+anterior — `group_c.c01_atr_20`/`c02_atr_20_pct` não são mais chamados
+daqui, o import de `group_c` foi removido do arquivo). `LabelConfig` ganhou
+campo `estimator_id: str` OBRIGATÓRIO (sem default mágico — ver docstring
+do módulo sobre por que um default auto-derivado de `atr_window` seria
+inseguro sob `dataclasses.replace`), incluído em `config_hash` — **isso
+muda o valor do hash mesmo para configs default** (intencional: antes o
+hash não tinha como capturar "qual estimador"; `labels/v1/labels.parquet`
+existente continua válido como está, só o hash formula mudou pra frente).
+`build_labels` valida em runtime que `estimator.estimator_id ==
+cfg.estimator_id`, levantando `ValueError` se não bater — fecha o risco de
+`config_hash` mentir sobre qual estimador rodou.
 
-- `triple_barrier.py:576-577` — `atr_abs = group_c.c01_atr_20(...)`;
-  `atr_pct = group_c.c02_atr_20_pct(atr_abs, close)`.
-- `triple_barrier.py:602` — barras sem ATR válido (warmup) são PULADAS do
-  label engine inteiro.
-- `triple_barrier.py:662-663` — `tp_price`/`sl_price` calculados direto de
-  `atr_pct_i × tp_atr_mult`/`sl_atr_mult`.
-- `triple_barrier.py:700-709` — `mfe_atr_units` também normalizado por
-  `atr_pct_i`.
-- `triple_barrier.py:729-730` — persistência final em `labels.parquet`.
+Isso fecha a lacuna do item "ATRWilderEstimator (a classe)" abaixo: agora
+o ponto de fan-in de maior criticidade (dimensiona `tp_price`/`sl_price`/
+`mfe_atr_units`/`atr_at_t0` de produção) É injetável via a interface
+`VolatilityEstimator` (T0.1), não mais hardcoded. **O que NÃO foi feito:**
+ninguém chamou `build_labels_for_symbol(..., estimator=GarmanKlassEstimator(...))`
+de verdade — `labels/v1/labels.parquet` no disco continua gerado por
+ATRWilder, sem reprocessamento. O golden test
+`test_atr_wilder_estimator_bate_bit_exato_com_labels_v1`
+(`tests/unit/test_features_volatility.py`) continua batendo sem alteração
+(não testa `build_labels`, reconstrói ATR independentemente e compara
+contra o parquet persistido).
 
-**Trocar para GK aqui invalida `data/labels/*/v1/labels.parquet` inteiro —
-não é hot-swap, exige reprocessamento completo do histórico.** Também
-quebra por design o teste golden `test_atr_wilder_estimator_bate_bit_exato_
-com_labels_v1` (`tests/unit/test_features_volatility.py`) — esperado, não
-é regressão: esse teste hoje prova que `ATRWilderEstimator` é bit-idêntica
-ao que gerou o `labels.parquet` ATUAL (baseado em ATR). Precisa virar um
-teste equivalente para GK depois da migração (ou ser aposentado com
-justificativa registrada).
+**Ainda pendente, não tocado:** `src/labels/experiment_log.py` persiste
+`atr_window` como metadado de cada run em
+`experiments/label_engine_runs.parquet` (schema Parquet já populado,
+dado real acumulado) mas NÃO ganhou uma coluna `estimator_id` — decisão
+deliberada de não migrar o schema de um arquivo com histórico real
+acumulado sem tratar compatibilidade de leitura das linhas antigas
+primeiro (risco de schema mismatch no read-modify-write). Fica como
+próximo passo, não escondido.
 
 ### 2. `src/features/build.py` + `src/features/groups/group_c.py`/`group_a.py`/`group_e.py` — Feature Engine
 
@@ -134,17 +149,24 @@ de M1 (já feito) não tocou produção nenhuma — foi seguro por construção.
   `src/regime/` ou `src/execution/` — só em `src/labels/`, `src/features/`
   (M1) e scripts de análise.
 
-## Ordem sugerida (não é decisão tomada, é ponto de partida)
+## Ordem sugerida (atualizado 2026-08-12 — passo 0 concluído)
 
-1. **Decidir formalmente** (registrar em `constants.yaml`/PRD, não só nesta
-   conversa): GK substitui ATR em `group_c.c01_atr_20`/`c02_atr_20_pct`, ou
-   entra como feature NOVA ao lado das antigas (ambas coexistindo por um
-   tempo)? A segunda opção é mais segura (não quebra `labels.parquet`
-   existente de imediato) mas duplica manutenção.
-2. Se substituição direta: reprocessar `labels/v1/` → `labels/v2/` (ou
-   equivalente versionado) com GK, atualizar `triple_barrier.py`,
-   aposentar/reescrever o teste golden do item 1, invalidar
-   `barrier_sweep.py` até re-rodar.
+0. ✅ **`triple_barrier.py` aceita `VolatilityEstimator` injetado, default
+   preserva comportamento atual bit-exato.** Feito nesta sessão — ver item 1
+   acima. Pré-requisito para tudo abaixo; sem isso não dava pra sequer
+   EXPERIMENTAR gerar labels com GK sem reescrever o Label Engine.
+1. **Decidir formalmente** (registrar em `constants.yaml`/PRD, não só numa
+   conversa): GK substitui ATR como produção, ou os dois coexistem por um
+   tempo (rodar `build_labels_for_symbol(..., estimator=GarmanKlassEstimator(...),
+   config=LabelConfig.from_constants(estimator_id="garman_klass_w20"))`
+   pra um período de teste, comparando `labels/v1/` (ATR) vs uma versão
+   nova lado a lado, ANTES de promover)?
+2. Se promovido: reprocessar todo o histórico real → `labels/v2_gk/` (ou
+   equivalente versionado, nunca sobrescrever `labels/v1/` — ele continua
+   sendo o registro do que rodou até aqui), aposentar/reescrever o teste
+   golden do item 1 pra apontar pro novo parquet, invalidar
+   `barrier_sweep.py` até re-rodar sobre o novo `atr_at_t0` (que passaria a
+   ser "GK at t0", nome de coluna mantido por compat de schema).
 3. Propagar para `E27f_cost_atr_ratio`/`_economics_regime`/`econ_regime` —
    isso muda rótulos de regime histórico, o que por sua vez pode invalidar
    modelos/backtests já treinados sobre o regime antigo. Precisa de gate
@@ -152,5 +174,10 @@ de M1 (já feito) não tocou produção nenhuma — foi seguro por construção.
 4. `A05`/`A13` (Grupo A) mudam de valor mas não de definição estrutural —
    menor risco, mas ainda precisa retreinar qualquer modelo que já
    consumiu essas colunas.
+5. `src/labels/experiment_log.py` — adicionar `estimator_id` ao schema,
+   com plano de migração pras linhas já persistidas em
+   `experiments/label_engine_runs.parquet` (ver nota no item 1).
 
-Nenhum destes passos foi executado nesta sessão — é mapa, não implementação.
+Passo 0 executado nesta sessão. Passos 1-5 continuam pendentes — decisão
+de promoção (passo 1) é do Manager, não confundir "dá pra fazer agora" com
+"decidido fazer agora".

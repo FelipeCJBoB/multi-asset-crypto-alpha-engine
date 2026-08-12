@@ -16,7 +16,7 @@ from src.labels.triple_barrier import LabelConfig
 
 _CFG = LabelConfig(
     tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_bars=32, fill_timeout_bars=1, atr_window=20,
-    maker_fee=0.0002, taker_fee=0.0005,
+    maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w20",
 )
 
 
@@ -116,7 +116,7 @@ def test_record_experiment_acrescenta_sem_apagar_anterior(tmp_path: Path) -> Non
     )
     cfg_b = LabelConfig(
         tp_atr_mult=2.5, sl_atr_mult=1.5, time_stop_bars=32, fill_timeout_bars=1, atr_window=20,
-        maker_fee=0.0002, taker_fee=0.0005,
+        maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w20",
     )
     experiment_log.record_experiment(
         labels_b,
