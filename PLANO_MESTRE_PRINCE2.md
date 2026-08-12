@@ -3,7 +3,7 @@
 **Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
 PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
 arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.1 · **Data:** 2026-08-12
+**Versão:** 1.2 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -186,7 +186,7 @@ lista simples do §6.1 abaixo.
 
 | # | princípio | aplicação neste projeto |
 |---|---|---|
-| 1 | **Justificativa contínua de negócio** | Já existe: §6.5 critérios de encerramento pré-registrados, DSR, `N_lifetime`. Nenhuma mudança necessária — só formalizar que TODO Pacote de Trabalho (§6) precisa citar qual critério de M1-M6/Camada ele serve. |
+| 1 | **Justificativa contínua de negócio** | Já existe em DOIS níveis, não um: `PRD_V4_1.md` §6.5 tem os critérios de encerramento da emenda V4.1 (escopo estreito — M1-M6/Camadas); `PRD_V3_2_UNIFICADO.md` §16.9 (RF-032) tem o mecanismo ORIGINAL e mais amplo — `pre_registro` YAML congelado antes de qualquer resultado OOS, 7 critérios de encerramento do PROJETO inteiro (DSR<0,50 em 6 meses, equity<US$150, `N_lifetime`>5.000 sem DSR>0,95, teto de preço do BTC por 30 dias, venue indisponível), e disciplina anti-HARKing explícita ("hipótese reformulada depois de ver os dados é registrada como reformulação, não como confirmação"). v1.1 deste documento só citava o primeiro — omissão corrigida agora. Nenhuma mudança de processo necessária, só formalizar que TODO Pacote de Trabalho (§6) cita qual critério, dos dois níveis, ele serve. |
 | 2 | **Aprender com a experiência** | Já existe: `docs/SPRINT_LOG.md`, `audit/evidence_ledger.yaml`. Falta: um **Lessons Log** curto e pesquisável especificamente de FUROS DE ARQUITETURA (não achados estatísticos) — proponho `audit/architecture_gaps_log.yaml` (§7). |
 | 3 | **Papéis e responsabilidades definidos** | Resolvido no §2. |
 | 4 | **Gerenciar por exceção** | Já existe parcialmente (`sweep_range`, R1-R3). Falta aplicar ao PROCESSO, não só aos números: definir tolerância de escopo por Pacote de Trabalho (§6.2) — se o trabalho for além do arquivo/gap declarado, isso é uma exceção que precisa voltar pra você, não decisão unilateral minha. |
@@ -388,6 +388,22 @@ do §6 não está funcionando e precisa de ajuste, não só o código.
   exatamente como estão — são Risk/Business-Case registers que já
   funcionam. `audit/architecture_gaps_log.yaml` (§7) é o único registro
   genuinamente novo proposto aqui.
+- **Proveniência cross-project da metodologia de auditoria (achado da
+  releitura de 2026-08-12):** `PRD_V3_2_UNIFICADO.md` §18.7.1 já documenta
+  que parte do método por trás de `audit_engineering` veio de comparação
+  com um projeto irmão — "Laplace_Quant_V16, forex multi-par" — não foi
+  inventado do zero. Fato verificável neste mesmo ambiente, não lembrança:
+  o roster de subagentes disponível nesta sessão inclui `auditor`,
+  `implementer`, `spec-author`, `verifier-lint`, `verifier-paridade`,
+  `verifier-test`, `state-updater`, todos descritos como "Laplace_Quant
+  V17" — uma versão sucessora do mesmo projeto citado no PRD, com pipeline
+  orquestrado próprio (Skills 03/04/07/12). **Isso não vira trabalho
+  agora** — não abri esse projeto, não é deste repo, e usar os agentes
+  dele fora de contexto seria misturar dois Product Breakdown Structures
+  diferentes. Registrado aqui porque é exatamente o tipo de "aprender com
+  a experiência" (princípio 2, §3) que não vem de dentro deste repo — um
+  canal de transferência de metodologia entre projetos que já existe e é
+  citável, não hipotético.
 
 ---
 
@@ -472,25 +488,60 @@ qualquer número. Três camadas:
 | Log de furos de arquitetura | `audit/architecture_gaps_log.yaml` | Issue Register (parte integração) — novo, §7 |
 | Contagem de trials/otimizações | `audit/n_lifetime.yaml` | controle de multiple-testing — Business Case input |
 | Achados de divisão sem guarda | `audit/division_guard_audit.md` | Issue Register especializado (FCN) |
-| Progresso legível por humano | `docs/SPRINT_LOG.md` | Highlight Report acumulado |
+| Progresso legível por humano | `docs/SPRINT_LOG.md` | Highlight Report acumulado (EXECUÇÃO — o que foi feito, sprint a sprint) |
 | Diagnósticos descartados catalogados | `docs/audit_discarded_diagnostics.md` | Issue Register especializado |
 | Catálogo de fan-in/consumidores | `docs/CODE_DISCOVERY.md` | mapa de Dependencies (RAID) |
+| Triagem de 54 divergências PRD↔código (T0.4) | `docs/T0_4_TRIAGEM.md` | Issue Register especializado — omitido da PBS v1.1 por descuido, corrigido agora (ver nota abaixo) |
 | Mapa de blast radius de uma migração específica | `docs/refactor_gk_canonico.md` | Product Description de um Pacote de Trabalho em curso |
+| Rastreabilidade de requisitos + lições de elaboração do blueprint | `PRD_V3_2_UNIFICADO.md` Parte XIX (54 requisitos rastreados, 9 erros corrigidos, 2 registros de mudança V2→V3/v3.2→v3.3) | Lessons Log — 4º tipo de log do projeto, distinto de SPRINT_LOG (execução)/evidence_ledger (achado estatístico)/architecture_gaps_log (integração); este é sobre o TEXTO do blueprint em si |
+| Changelog de semântica de venue | `config/venue_changelog.yaml` | Risk Register especializado — alimenta o check 23 (Data Quality Engine, §1.3 do V3.2) que detecta quebra semântica de fonte sem quebra de schema (ex. rollout de RPI em 2025-11-20) |
 | Métodos de Quality Review | `.claude/skills/audit_engineering/`, `.claude/skills/project_assurance/` | Quality Management Approach |
 | Scripts de verificação mecânica | `tools/lint/*.py` (`banned_patterns`, `check_constants_provenance`, `check_constants_referenced`, `check_unguarded_ratios`, `check_sprint_log_references`) | parte automatizada da prática de Qualidade |
+
+**Nota sobre `docs/T0_4_TRIAGEM.md` (omissão da v1.1, corrigida agora):**
+`ls docs/` já tinha sido rodado na sessão que escreveu a v1.1 deste
+documento — o arquivo estava visível e ficou de fora da tabela por
+descuido, não por julgamento. Registrado aqui em vez de silenciado, mesma
+disciplina que este documento cobra de qualquer Pacote de Trabalho.
+**Não confundir com** a tabela de 54 requisitos de `PRD_V3_2_UNIFICADO.md`
+Parte XIX (linha acima) — coincidência de contagem (ambas têm 54 itens),
+artefatos diferentes: a Parte XIX rastreia requisito↔decisão↔evidência da
+ELABORAÇÃO do blueprint original; `T0_4_TRIAGEM.md` classifica divergências
+PRD↔código encontradas por leitura mecânica do código atual
+(`code_discovery.json`, `code_version: ddc0362`) em `corrigir-PRD` /
+`corrigir-código` / `ambiguidade-de-vocabulário`. Não verifiquei se os dois
+conjuntos de 54 se sobrepõem — ficaria como afirmação não verificada se eu
+dissesse que sim ou que não.
 
 ### 11.2 Produtos especialistas (o QUE está sendo construído — a engenharia em si)
 
 | produto | caminho | subordina-se a |
 |---|---|---|
-| Blueprint técnico corrente | `PRD_V4_1.md` | este plano organiza, não substitui |
-| Blueprint técnico histórico (proveniência) | `PRD_V3_2_UNIFICADO.md` | mantido por rastreabilidade — não editar como se fosse o atual |
+| Blueprint técnico corrente — **emenda de escopo** | `PRD_V4_1.md` | este plano organiza, não substitui |
+| Blueprint técnico corrente — **arquitetura e contratos** | `PRD_V3_2_UNIFICADO.md` | este plano organiza, não substitui |
 | Apresentação pro usuário não-técnico | `README.md` | reflexo simplificado do estado real |
 | Os 11 estágios do pipeline (`exchange → data → features → labels → regime → models → validation → backtest → risk → execution → live`) | `src/exchange/`, `src/data/`, `src/features/`, `src/labels/`, `src/regime/`, `src/models/`, `src/validation/`, `src/backtest/`, `src/risk/`, `src/execution/`, `src/live/` | camada verificada estaticamente (hierarquia do CLAUDE.md) |
 | Núcleo compartilhado (`Metric`, `ControlOutcome`) | `src/core/` | contrato de dados usado por todas as camadas acima |
 | Scripts de análise/pesquisa (M1, feasibility, faixa2) | `src/analysis/` | não-produção, mas informa decisões que VIRAM produção (`constants.yaml`) |
 | Testes | `tests/` | prova de que os dois produtos acima cumprem o que prometem |
 | Saídas de pipeline versionadas | `experiments/*.json`, `data/quality_reports/*.json`, `models/*/diagnostics/*.json` | evidência, não fonte — sempre derivável do código + dado, nunca a única cópia da verdade |
+
+**Correção 2026-08-12, a pedido do Manager, depois de reler os dois PRDs
+inteiros (v1.1 tinha isso errado):** `PRD_V3_2_UNIFICADO.md` não é
+"histórico" no sentido de superado — é **obsoleto só no escopo** (BTC-only,
+Partes 0/§0.1-§0.6 e as tabelas de capital/janela específicas do único
+ativo), **não na arquitetura**. Partes I–XV (Feature/Label/Regime/Alpha/
+Meta/Decision/Risk/Execution Engine, Reconciliação, Backtest/Validação,
+Quality Gates 0–10, Stack §14.1, Estrutura de software §14.2, DoD §15) e
+Partes XVI–XIX (banned patterns novos RF-024..034, proveniência §16.10/
+PARTE XVIII, rastreabilidade PARTE XIX) **continuam sendo a fonte viva**
+dos contratos que `CLAUDE.md` resume (`Metric`/`ControlOutcome`, hierarquia
+de camadas, os 32 banned patterns têm âncora aqui, não em V4.1).
+`PRD_V4_1.md` é uma **emenda de escopo** sobre isso — 5 ativos, 3 TFs,
+Camadas 0-3 — não um substituto (o próprio cabeçalho do V4.1 diz isso:
+"emenda, não substituição"). Tratar V3.2 como puro arquivo de proveniência
+teria feito a mesma coisa que o achado do §1.4 já corrigiu uma vez: uma
+afirmação factual meio-errada sobre um documento, escrita com confiança.
 
 ### 11.3 O que a inspeção real confirma que NÃO existe ainda (não inventar)
 
@@ -602,6 +653,22 @@ princípio 3, papéis definidos). Se você aprovar, é uma edição de uma linha
 
 ## Changelog
 
+- **v1.2 (2026-08-12)** — Leitura completa de `PRD_V3_2_UNIFICADO.md`
+  (TOC + Partes XVI-XIX) a pedido do Manager, pra achar o que faltava
+  incluir aqui. §11.2 corrigido: V3.2 não é "histórico", é obsoleto só no
+  ESCOPO (BTC-only) — a arquitetura (Partes I-XV, XVI-XIX) continua viva,
+  V4.1 é emenda de escopo sobre ela, não substituto. §3 princípio 1
+  expandido: o pré-registro original (§16.9/RF-032, `pre_registro` YAML +
+  7 critérios de encerramento do PROJETO + anti-HARKing) estava ausente,
+  só o critério mais estreito da emenda V4.1 (§6.5) estava citado. §11.1
+  ganha 3 linhas que faltavam: `docs/T0_4_TRIAGEM.md` (omitido por
+  descuido, não julgamento — corrigido com nota explícita), Parte XIX do
+  V3.2 como 4º tipo de log (rastreabilidade/lições de elaboração,
+  distinto de SPRINT_LOG/evidence_ledger/architecture_gaps_log),
+  `config/venue_changelog.yaml`. §8 ganha nota sobre proveniência
+  cross-project da metodologia de auditoria (V3.2 §18.7.1 cita projeto
+  irmão "Laplace_Quant_V16"; este ambiente tem um roster de agentes
+  "Laplace_Quant V17" ativo — fato verificável, não ação nova).
 - **v1.1 (2026-08-12)** — Elevação de status: de "camada de governança sobre
   o PRD" para base da verdade institucional (§0). Fecha §2/§6.2 por padrão
   (Manage by Exception). Adiciona §11 (Product Breakdown Structure — mapa
