@@ -234,9 +234,20 @@ catalogados — não reaudite os 5 arquivos já cobertos do zero, CONFIRA se a
 situação mudou); `docs/audit_discarded_diagnostics.md`; `src/core/metric.py`
 (padrão de referência).
 
-### Passo 4 — Scripts mecânicos (rodar, não substituir por leitura manual)
+### Passo 4 — Scripts mecânicos (entregar comando, nunca rodar — CLAUDE.md "Protocolo de execução")
 
-Pra qualquer arquivo/pacote em `src/`:
+**Correção 2026-08-12 (AG-002, `audit/architecture_gaps_log.yaml`):** esta
+seção, escrita em 2026-08-09, instruía "rodar" os scripts abaixo
+diretamente. `CLAUDE.md` v1.2 (2026-08-10) — um dia depois — proibiu Claude
+de executar qualquer `.py`/`uv run`/`pytest` via Bash/PowerShell, sem
+exceção. Esta skill nunca foi atualizada pra refletir isso; quem a seguisse
+ao pé da letra violaria o protocolo vigente. Corrigido agora: **Claude (e
+qualquer agente/subagente, inclusive `project_assurance`) entrega o comando
+exato pronto pra copiar/colar; só o usuário roda.** Isso vale mesmo dentro
+de uma sessão de `Agent`/`Workflow` isolada — a restrição é sobre QUEM
+executa Python, não sobre em qual contexto de conversa isso acontece.
+
+Pra qualquer arquivo/pacote em `src/`, entregar ao usuário:
 
 ```bash
 python tools/lint/banned_patterns.py --path <alvo> --strict
@@ -246,10 +257,13 @@ uv run ruff check <alvo>
 uv run mypy <alvo>
 ```
 
-Achados automatizados entram no relatório como evidência, não como
-substituto do julgamento das 4 lentes — um script limpo não significa
-arquivo aprovado (`banned_patterns.py` mesmo documenta isso: metade dos 32
-padrões não é automatizável).
+O relatório da auditoria fica com essas linhas marcadas
+**PENDENTE-DE-EXECUÇÃO-HUMANA** até o usuário colar o output de volta — não
+se assume "limpo" nem se preenche a tabela do Passo 6 com resultado
+inventado. Achados automatizados, quando o output chegar, entram no
+relatório como evidência, não como substituto do julgamento das 4 lentes —
+um script limpo não significa arquivo aprovado (`banned_patterns.py` mesmo
+documenta isso: metade dos 32 padrões não é automatizável).
 
 ### Passo 5 — Classificação de severidade
 
@@ -335,6 +349,15 @@ v1.0 — 2026-08-09 — Criação. Adapta a metodologia de lente quádrupla
                      estabelecida (Sculley et al. 2015, Breck et al. 2017,
                      temporal non-interference 2026). Inclui os dois scripts
                      mecânicos como parte obrigatória do Passo 4.
+v1.1 — 2026-08-12 — Corrige Passo 4: instruía "rodar" scripts mecânicos
+                     diretamente, o que contradiz CLAUDE.md v1.2
+                     (2026-08-10, um dia posterior à criação desta skill) —
+                     "Protocolo de execução — quem roda o quê". Agora entrega
+                     comando copy-paste, marca PENDENTE-DE-EXECUÇÃO-HUMANA.
+                     Achado AG-002 (audit/architecture_gaps_log.yaml), via
+                     arquitetura de `project_assurance` (skill nova, revisão
+                     independente por Agent fresco per PLANO_MESTRE_PRINCE2.md
+                     §6.4).
 ```
 
 Atualizar quando: novo banned pattern adicionado ao CLAUDE.md, nova classe de

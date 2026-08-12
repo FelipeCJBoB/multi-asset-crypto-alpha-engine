@@ -58,3 +58,36 @@ entries:
       GK ainda NÃO promovido a canônico -- só a porta pra trocar existe
       agora (ver docs/refactor_gk_canonico.md).
     status: "fechado — ponto de injeção existe; promoção de GK a canônico continua pendente, decisão do Manager"
+
+  - id: AG-002
+    date: "2026-08-12"
+    file: ".claude/skills/audit_engineering/SKILL.md"
+    related_file: "CLAUDE.md"
+    found_by: "Claude, arquitetando a skill project_assurance"
+    gap: >
+      audit_engineering/SKILL.md Passo 4 (escrito 2026-08-09) instruía
+      "rodar" scripts mecânicos (banned_patterns.py, check_constants_
+      referenced.py, check_unguarded_ratios.py, ruff, mypy) diretamente via
+      Bash. CLAUDE.md v1.2 (2026-08-10, um dia depois) proibiu Claude de
+      executar qualquer .py/uv run/pytest sem exceção -- a skill nunca foi
+      atualizada pra refletir isso. Um agente seguindo audit_engineering ao
+      pé da letra hoje violaria o protocolo de execução vigente. Achado por
+      inspeção ao desenhar project_assurance (revisão independente, PRINCE2
+      §6.4) e perceber que a skill que ela reusa como método (Passo 2/3)
+      tinha uma instrução obsoleta -- não foi encontrado testando o arquivo,
+      foi encontrado auditando a PRÓPRIA infraestrutura de auditoria.
+    severity: "médio"
+    layer: "process/skill"
+    consequence: >
+      Baixo risco de execução real (nenhuma sessão rodou audit_engineering
+      literalmente citando "rode X" até agora, segundo o histórico desta
+      sessão), mas era uma contradição documental ativa entre duas fontes
+      de verdade do próprio processo -- exatamente a classe de achado que
+      PLANO_MESTRE_PRINCE2.md §6.3 pergunta #16 ("alguma doc contradiz este
+      arquivo?") existe para pegar.
+    resolved_by_commit: "mesmo commit que introduz .claude/skills/project_assurance/SKILL.md"
+    resolution: >
+      Passo 4 reescrito para entregar comando copy-paste e marcar
+      PENDENTE-DE-EXECUÇÃO-HUMANA, igual ao resto do protocolo de execução.
+      Skill versionada para v1.1.
+    status: "fechado — documentação alinhada"
