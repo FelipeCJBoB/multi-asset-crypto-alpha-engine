@@ -234,20 +234,20 @@ catalogados — não reaudite os 5 arquivos já cobertos do zero, CONFIRA se a
 situação mudou); `docs/audit_discarded_diagnostics.md`; `src/core/metric.py`
 (padrão de referência).
 
-### Passo 4 — Scripts mecânicos (entregar comando, nunca rodar — CLAUDE.md "Protocolo de execução")
+### Passo 4 — Scripts mecânicos (Claude roda direto — exceção nomeada, CLAUDE.md v1.5)
 
-**Correção 2026-08-12 (AG-002, `audit/architecture_gaps_log.yaml`):** esta
-seção, escrita em 2026-08-09, instruía "rodar" os scripts abaixo
-diretamente. `CLAUDE.md` v1.2 (2026-08-10) — um dia depois — proibiu Claude
-de executar qualquer `.py`/`uv run`/`pytest` via Bash/PowerShell, sem
-exceção. Esta skill nunca foi atualizada pra refletir isso; quem a seguisse
-ao pé da letra violaria o protocolo vigente. Corrigido agora: **Claude (e
-qualquer agente/subagente, inclusive `project_assurance`) entrega o comando
-exato pronto pra copiar/colar; só o usuário roda.** Isso vale mesmo dentro
-de uma sessão de `Agent`/`Workflow` isolada — a restrição é sobre QUEM
-executa Python, não sobre em qual contexto de conversa isso acontece.
+**Histórico da correção:** esta seção, escrita em 2026-08-09, instruía
+"rodar" os scripts abaixo diretamente. `CLAUDE.md` v1.2 (2026-08-10)
+proibiu Claude de executar qualquer `.py`/`uv run`/`pytest`, sem exceção —
+esta skill não tinha sido atualizada pra refletir isso (achado AG-002,
+`audit/architecture_gaps_log.yaml`), e por um dia (2026-08-12, entre a
+correção de AG-002 e esta reversão) o Passo 4 exigiu comando copy-paste
+por causa disso. **`CLAUDE.md` v1.5 (2026-08-12) abriu uma exceção nomeada
+exatamente para estes 5 scripts** (autorização explícita do Manager: sem
+rodar, a skill não audita de verdade) — Claude volta a rodar direto, mas
+SÓ estes 7 comandos, nenhum outro `.py`/`uv run` fora desta lista.
 
-Pra qualquer arquivo/pacote em `src/`, entregar ao usuário:
+Pra qualquer arquivo/pacote em `src/`, rodar via Bash/PowerShell:
 
 ```bash
 python tools/lint/banned_patterns.py --path <alvo> --strict
@@ -257,13 +257,12 @@ uv run ruff check <alvo>
 uv run mypy <alvo>
 ```
 
-O relatório da auditoria fica com essas linhas marcadas
-**PENDENTE-DE-EXECUÇÃO-HUMANA** até o usuário colar o output de volta — não
-se assume "limpo" nem se preenche a tabela do Passo 6 com resultado
-inventado. Achados automatizados, quando o output chegar, entram no
-relatório como evidência, não como substituto do julgamento das 4 lentes —
-um script limpo não significa arquivo aprovado (`banned_patterns.py` mesmo
-documenta isso: metade dos 32 padrões não é automatizável).
+Achados automatizados entram no relatório como evidência, não como
+substituto do julgamento das 4 lentes — um script limpo não significa
+arquivo aprovado (`banned_patterns.py` mesmo documenta isso: metade dos 32
+padrões não é automatizável). Se algum destes comandos falhar de um jeito
+que sugira efeito colateral fora do esperado (leitura pura), parar e
+reportar — não presumir que a exceção cobre o que aconteceu.
 
 ### Passo 5 — Classificação de severidade
 
@@ -352,12 +351,16 @@ v1.0 — 2026-08-09 — Criação. Adapta a metodologia de lente quádrupla
 v1.1 — 2026-08-12 — Corrige Passo 4: instruía "rodar" scripts mecânicos
                      diretamente, o que contradiz CLAUDE.md v1.2
                      (2026-08-10, um dia posterior à criação desta skill) —
-                     "Protocolo de execução — quem roda o quê". Agora entrega
-                     comando copy-paste, marca PENDENTE-DE-EXECUÇÃO-HUMANA.
-                     Achado AG-002 (audit/architecture_gaps_log.yaml), via
-                     arquitetura de `project_assurance` (skill nova, revisão
-                     independente por Agent fresco per PLANO_MESTRE_PRINCE2.md
-                     §6.4).
+                     "Protocolo de execução — quem roda o quê". Passa a
+                     entregar comando copy-paste, marca
+                     PENDENTE-DE-EXECUÇÃO-HUMANA. Achado AG-002
+                     (audit/architecture_gaps_log.yaml), via arquitetura de
+                     `project_assurance` (skill nova, revisão independente
+                     por Agent fresco per PLANO_MESTRE_PRINCE2.md §6.4).
+v1.2 — 2026-08-12 — Reverte parcialmente v1.1: CLAUDE.md v1.5 abre exceção
+                     nomeada pros 5 scripts mecânicos do Passo 4 (+ ruff/
+                     mypy), autorização explícita do Manager. Passo 4 volta
+                     a rodar direto — só estes 7 comandos, nada além.
 ```
 
 Atualizar quando: novo banned pattern adicionado ao CLAUDE.md, nova classe de

@@ -77,15 +77,18 @@ Agent({
   commit message sobre quem consome o quê** — re-derivar via Grep próprio.
   Um docstring que diz "consumido por X" é uma alegação do produtor, não um
   fato verificado.
-- **O agente NUNCA executa `.py`/`pytest`/`uv run` via Bash** — mesma regra
-  de `CLAUDE.md` ("Protocolo de execução"), sem exceção mesmo estando numa
-  sessão separada. Se uma verificação mecânica (`ruff`, `mypy`,
-  `banned_patterns.py`, `pytest`) for necessária, o agente formula o comando
-  exato e devolve como PENDENTE-DE-EXECUÇÃO-HUMANA no relatório, nunca roda
-  sozinho. *(Nota: `audit_engineering` v1.0 Passo 4, escrito em
-  2026-08-09, um dia antes deste protocolo existir em CLAUDE.md v1.2
-  [2026-08-10], ainda instruía "rodar" os scripts diretamente — corrigido
-  nesta sessão, ver `audit/architecture_gaps_log.yaml` AG-002.)*
+- **O agente pode executar diretamente, via Bash, SÓ os 7 comandos da
+  exceção nomeada de `CLAUDE.md` v1.5** (2026-08-12, autorização explícita
+  do Manager): `banned_patterns.py`, `check_constants_referenced.py`,
+  `check_constants_provenance.py`, `check_unguarded_ratios.py`,
+  `check_sprint_log_references.py`, `ruff check`, `mypy` — leitura pura,
+  sem efeito em dado/exchange/trial. **Qualquer outro `.py`/`pytest`/
+  `uv run` continua proibido**, sem exceção, mesmo numa sessão de `Agent`
+  separada — a exceção é sobre o COMANDO específico, não sobre "está numa
+  sessão isolada então vale tudo". Se uma verificação fora desses 7
+  comandos for necessária (ex. `pytest` de integração), o agente formula o
+  comando exato e devolve como PENDENTE-DE-EXECUÇÃO-HUMANA, nunca roda
+  sozinho.
 
 ### Template do prompt
 
@@ -217,4 +220,8 @@ v1.0 -- 2026-08-12 -- Criação. Opera PLANO_MESTRE_PRINCE2.md §6.4. 5
                        adoção de framework bancário). Critério de
                        materialidade do §6.1 do PLANO_MESTRE substituído
                        por versão de 4 eixos adaptada de SR 26-2 §4.
+v1.1 -- 2026-08-12 -- CLAUDE.md v1.5 abre exceção nomeada pros 7 comandos
+                       mecânicos (autorização do Manager). Agent de
+                       project_assurance passa a rodá-los direto -- só
+                       esses, nenhum outro .py/pytest/uv run.
 ```

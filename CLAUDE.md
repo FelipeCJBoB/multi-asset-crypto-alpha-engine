@@ -1,7 +1,7 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-11 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.4
+> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.5
 > Documento mestre: `PRD_V3_2_UNIFICADO.md` (raiz do repo, agora v3.3, ~3.400 linhas)
 > Toda regra abaixo é ancorada em §X.Y do PRD. Regra sem âncora é dívida técnica.
 
@@ -192,6 +192,29 @@ Verificada estaticamente. Violações que quebram o build:
 
 **O que continua liberado pra Claude rodar direto** (não é execução de Python, é inspeção/versionamento): `git`, listagem e leitura de arquivo, `grep`/`rg`. A restrição é sobre rodar Python — não sobre o resto do Bash/PowerShell.
 
+### Exceção nomeada: os 5 scripts mecânicos de auditoria (Manager, 2026-08-12)
+
+Autorização explícita: **Claude pode executar diretamente**, via Bash/PowerShell, exatamente estes comandos — e nenhum outro `.py`/`uv run` fora desta lista:
+
+```bash
+python tools/lint/banned_patterns.py --path <alvo> --strict
+python tools/lint/check_constants_referenced.py --src <alvo>
+python tools/lint/check_constants_provenance.py
+python tools/lint/check_unguarded_ratios.py --path <alvo>
+python tools/lint/check_sprint_log_references.py
+uv run ruff check <alvo>
+uv run mypy <alvo>
+```
+
+Por quê estes e não outros: são leitura pura de código/config já no disco — nenhum grava em `data/`/`labels/`/`models/`, nenhum chama a exchange, nenhum gasta orçamento de trial (`N_lifetime`), nenhum tem efeito que precise ser revisto antes de acontecer. É exatamente o motivo original do protocolo (visibilidade antes de efeito) que não se aplica aqui. Usado por `.claude/skills/audit_engineering/SKILL.md` (Passo 4) e `.claude/skills/project_assurance/SKILL.md` (Passo 2/3, inclusive dentro de um `Agent` fresco — a exceção é sobre o COMANDO, não sobre qual agente invoca).
+
+**Esta exceção NÃO se estende a:**
+- `uv run pytest`, mesmo com `-m "not slow"` — roda código de produção de verdade; um teste mal isolado pode ter efeito colateral não óbvio (I/O, mutação de fixture compartilhada). Continua protocolo original.
+- Qualquer `uv run quant <subcomando>` da seção "Comandos" abaixo — todos ou processam dado real ou, em `testnet`/`paper`/`live run`, tocam a exchange.
+- Qualquer script fora dos 7 comandos listados acima, mesmo que pareça só leitura — a lista é exaustiva, não um padrão a extrapolar.
+
+Se um desses 7 comandos falhar de um jeito que sugira que ele NÃO é mais só-leitura (ex. erro de permissão de escrita, traceback tocando `data/`), parar e reportar — não presumir que a exceção ainda vale.
+
 ---
 
 ## Comandos
@@ -320,6 +343,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.5 (2026-08-12) — Adiciona exceção nomeada ao "Protocolo de execução": Claude pode rodar diretamente os 5 scripts mecânicos de auditoria (`banned_patterns.py`, `check_constants_referenced.py`, `check_constants_provenance.py`, `check_unguarded_ratios.py`, `check_sprint_log_references.py`, `ruff check`, `mypy`) — autorização explícita do Manager, porque são leitura pura sem efeito em dado/exchange/trial. Não se estende a `pytest`/`uv run quant`. Motivado por `audit_engineering`/`project_assurance` não conseguirem auditar de verdade sem rodar os próprios scripts que citam como parte do processo.
 - v1.4 (2026-08-11) — Adiciona "Nunca remediar, sempre solucionar" em "Comportamento esperado": warning do numpy silenciado com `np.errstate` sem investigar a causa (M1, `diebold_mariano`) escondia um buraco real (`finite - inf` vazando pro teste) — corrigido filtrando `isfinite` antes de operar, não abafando o sintoma. M1: 4 dos 6 estimadores de volatilidade rodados sobre as 15 combinações reais (Parkinson/Garman-Klass batem ATRWilder em QLIKE nas 15/15); HAR-RV (5º) integrado como candidato fold-aware.
 - v1.3 (2026-08-11) — Adiciona diretriz do Manager no topo de "Comportamento esperado": o papel de Claude não é só executar tarefas, é construir o motor que entrega edge real superando as adversidades do projeto, com rigor de Engenharia de Software e de Algorithmic Trading — "terminar" é o código rodar E o resultado ser honesto sobre edge real. Camada 0 do PRD_V4_1.md (T0.1-T0.4, T0.6) fechada nesta sessão; T0.6 parcial (symbol/tf/janela, não os 9 campos completos).
 - v1.2 (2026-08-10) — Adiciona seção "Protocolo de execução — quem roda o quê": Claude nunca roda `.py`/`uv run`/`pytest` diretamente, só entrega comando copy-paste; usuário executa no terminal dele. Consequência: output de script novo precisa ser autoexplicativo (parte do DoD).
