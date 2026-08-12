@@ -202,7 +202,8 @@ class YangZhangEstimator:
     """Yang-Zhang (2000) -- mesmo status de extensão PÓS-M1 de
     `RogersSatchellEstimator` (ver docstring). `warmup_bars` é `window + 1`
     (não `window`): o componente overnight precisa de `close[i-1]`, mesmo
-    racional de `RealizedVolEstimator.warmup_bars`."""
+    tipo de +1 que `next_bar_realized_variance` (`volatility_walkforward.py`)
+    aplica por precisar de `close[t+1]`."""
 
     window: int
 
@@ -226,39 +227,3 @@ class YangZhangEstimator:
     @property
     def estimator_id(self) -> str:
         return f"yang_zhang_w{self.window}"
-
-
-@dataclass(frozen=True, slots=True)
-class RealizedVolEstimator:
-    """Volatilidade realizada de retorno log — `sigma(log_return) *
-    sqrt(window)` (`support.realized_vol`, já usada por C06/C07 do
-    Feature Engine). Candidato de M1; mesmo racional de `window` explícito
-    dos outros dois novos estimadores."""
-
-    window: int
-
-    def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
-        if horizon_minutes != bars.timeframe_minutes:
-            raise NotImplementedError(
-                "RealizedVolEstimator so estima no horizonte nativo da barra "
-                f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
-                "pedido. Conversao clock-based entre TFs (I2) e escopo do M1."
-            )
-        close = bars.frame["close"].cast(pl.Float64).to_numpy()
-        n = close.shape[0]
-        log_return = np.full(n, np.nan, dtype=np.float64)
-        if n > 1:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                log_return[1:] = np.log(close[1:] / close[:-1])
-        return support.realized_vol(log_return, self.window)
-
-    @property
-    def warmup_bars(self) -> int:
-        # +1: log_return[0] é sempre NaN (sem C_{-1}), então a janela de
-        # `window` retornos válidos só fecha em `window` barras depois
-        # do primeiro retorno computável.
-        return self.window + 1
-
-    @property
-    def estimator_id(self) -> str:
-        return f"realized_vol_w{self.window}"

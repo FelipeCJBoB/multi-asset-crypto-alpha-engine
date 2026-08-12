@@ -1,14 +1,20 @@
 """Testes de `src/features/volatility.py` -- `VolatilityEstimator`
-(PRD_V4_1.md T0.1) e os candidatos de M1 (§3.2, Camada 1). Eixos: (1)
-unit puro com barras sintéticas, comparando cada `*Estimator` contra a
-primitiva `support.*` chamada direto (garante que o wrapper não introduz
-nenhuma transformação além do que o docstring declara); (2) golden
-bit-exato de `ATRWilderEstimator` contra `data/labels/BTCUSDT/15m/v1/
+(PRD_V4_1.md T0.1) e o lineup atual do harness de comparação (GK baseline +
+Parkinson/Rogers-Satchell/Yang-Zhang, decisão do Manager 2026-08-11 -- ver
+docstring de `src.analysis.volatility_comparison`). Eixos: (1) unit puro com
+barras sintéticas, comparando cada `*Estimator` contra a primitiva
+`support.*` chamada direto (garante que o wrapper não introduz nenhuma
+transformação além do que o docstring declara); (2) golden bit-exato de
+`ATRWilderEstimator` contra `data/labels/BTCUSDT/15m/v1/
 labels.parquet::atr_at_t0` (G-C0-1) -- recomputa ATR das mesmas `bars_15m`
 (BTCUSDT, `close_time == t0`, `triple_barrier.py:573/576-577`) que o
-Label Engine usou e compara com tolerância zero. `Parkinson`/`GarmanKlass`/
-`RealizedVol` (3 dos 6 candidatos de M1) não têm golden -- não são
-produção ainda, não existe artefato de referência pra comparar.
+Label Engine usou e compara com tolerância zero. `ATRWilderEstimator`
+continua no lineup só por causa deste golden test (é bit-idêntica ao que
+roda em produção); não é mais o baseline do harness de M1. Nenhum dos 4
+estimadores do lineup atual tem golden -- não são produção ainda, não
+existe artefato de referência pra comparar. `RealizedVolEstimator` (M1
+original, perdeu 15/15 em QLIKE) foi removido do módulo -- não tinha
+dependência de produção, mesmo tratamento de HAR-RV/EGARCH.
 
 Caminho migrado do legado `labels/v1/labels.parquet` pro layout chaveado
 (T0.3, PRD_V4_1.md §3.1) nesta mesma rodada -- via
@@ -27,7 +33,6 @@ from src.features.volatility import (
     Bars,
     GarmanKlassEstimator,
     ParkinsonEstimator,
-    RealizedVolEstimator,
     RogersSatchellEstimator,
     YangZhangEstimator,
 )
@@ -86,10 +91,10 @@ def test_from_constants_le_atr_window_de_constants_yaml() -> None:
 
 
 # ============================================================================
-# ParkinsonEstimator / GarmanKlassEstimator / RealizedVolEstimator
-# (PRD_V4_1.md §3.2 M1 -- 3 dos 6 candidatos, wrappers finos sobre
-# support.py; mesma disciplina de horizon_minutes/warmup_bars/
-# estimator_id do ATRWilderEstimator)
+# ParkinsonEstimator / GarmanKlassEstimator
+# (PRD_V4_1.md §3.2 M1 -- 2 dos 6 candidatos originais, ainda no lineup
+# atual; wrappers finos sobre support.py; mesma disciplina de
+# horizon_minutes/warmup_bars/estimator_id do ATRWilderEstimator)
 # ============================================================================
 
 
@@ -145,35 +150,6 @@ def test_garman_klass_estimator_horizonte_diferente_do_nativo_levanta() -> None:
     bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
     with pytest.raises(NotImplementedError):
         GarmanKlassEstimator(window=5).estimate(bars, horizon_minutes=30)
-
-
-def test_realized_vol_estimator_bate_com_support_direto() -> None:
-    frame = _synthetic_bars()
-    window = 5
-    bars = Bars(frame=frame, timeframe_minutes=15)
-    got = RealizedVolEstimator(window=window).estimate(bars, horizon_minutes=15)
-
-    close = frame["close"].to_numpy()
-    n = close.shape[0]
-    log_return = np.full(n, np.nan, dtype=np.float64)
-    log_return[1:] = np.log(close[1:] / close[:-1])
-    expected = support.realized_vol(log_return, window)
-
-    both_nan = np.isnan(got) & np.isnan(expected)
-    assert np.array_equal(got[~both_nan], expected[~both_nan])
-    assert np.array_equal(np.isnan(got), np.isnan(expected))
-
-
-def test_realized_vol_estimator_warmup_bars_e_estimator_id() -> None:
-    estimator = RealizedVolEstimator(window=20)
-    assert estimator.warmup_bars == 21  # +1: log_return[0] sempre NaN
-    assert estimator.estimator_id == "realized_vol_w20"
-
-
-def test_realized_vol_estimator_horizonte_diferente_do_nativo_levanta() -> None:
-    bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
-    with pytest.raises(NotImplementedError):
-        RealizedVolEstimator(window=5).estimate(bars, horizon_minutes=30)
 
 
 # ============================================================================

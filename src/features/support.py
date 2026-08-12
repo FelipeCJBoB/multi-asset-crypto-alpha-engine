@@ -142,9 +142,9 @@ def parkinson_vol(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
     própria janela (mesma família de `atr_wilder`/`realized_vol`, B02 não
     se aplica). `low <= 0` (dado corrompido, nunca visto em preço cripto
     real mas sem garantia estrutural) vira NaN silencioso via `errstate`
-    em vez de `RuntimeWarning` não suprimido -- mesma disciplina que
-    `RealizedVolEstimator` já aplica ao log_return equivalente
-    (achado F2 do audit_engineering, 2026-08-11)."""
+    em vez de `RuntimeWarning` não suprimido -- mesma disciplina aplicada
+    a todo log-ratio de preço neste módulo (`yang_zhang_vol`/log_return
+    de `E27f`/etc., achado F2 do audit_engineering, 2026-08-11)."""
     with np.errstate(divide="ignore", invalid="ignore"):
         log_hl_sq = np.log(high / low) ** 2
     mean_sq = (
@@ -239,8 +239,8 @@ def yang_zhang_vol(
     3ceb5b7), tipicamente pequeno mas não garantido zero -- é justamente o que este
     candidato testa (hipótese: erro do GK concentrado em candles de
     abertura). Warmup de `window + 1` barras (1 barra extra pro primeiro
-    overnight da janela), mesmo racional de `RealizedVolEstimator.
-    warmup_bars`. Soma dos 3 termos pode ficar negativa (mesma razão de
+    overnight da janela) -- mesmo tipo de +1 que `next_bar_realized_
+    variance` precisa por depender de `close[t+1]`. Soma dos 3 termos pode ficar negativa (mesma razão de
     `garman_klass_vol`: `V_rs,t` isolado pode ser negativo numa janela
     ruidosa) -- vira NaN em vez de `sqrt` de número complexo, mesma
     disciplina das outras duas."""
