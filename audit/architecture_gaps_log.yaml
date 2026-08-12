@@ -1,0 +1,60 @@
+# audit/architecture_gaps_log.yaml
+#
+# Registro de FUROS DE ARQUITETURA/INTEGRAÇÃO -- diferente de
+# audit/evidence_ledger.yaml (achados de MEDIÇÃO estatística/edge) e de
+# config/constants.yaml (proveniência de PARÂMETROS numéricos). Este
+# ledger existe pra responder uma pergunta específica: "uma interface/
+# abstração existe no código mas não está de fato integrada ao pipeline
+# que deveria consumi-la?" -- a classe de furo que motivou
+# PLANO_MESTRE_PRINCE2.md §6/§7 (achado real, 2026-08-11/12,
+# src/features/volatility.py vs src/labels/triple_barrier.py).
+#
+# Regra de edição: append-only, mesmo padrão de evidence_ledger.yaml/
+# n_lifetime.yaml. Nunca editar/remover uma entrada existente -- um gap
+# fechado ganha `status: fechado` + `resolved_by_commit`, nunca desaparece
+# do arquivo (o histórico de "quantos furos encontramos e quem achou
+# primeiro" é o próprio valor deste registro).
+#
+# `found_by` é o campo mais importante pra saúde do PROCESSO (não do
+# código): se a maioria das entradas continuar dizendo "Manager" depois de
+# vários ciclos do protocolo (PLANO_MESTRE_PRINCE2.md §6.4, revisão
+# adversarial via Agent independente), o protocolo não está pegando o que
+# deveria pegar sozinho, e precisa de ajuste -- não é uma falha aceitável
+# permanente, é o sinal de que o processo em si precisa iterar.
+
+schema_version: 1
+generated_at: "2026-08-12"
+
+entries:
+  - id: AG-001
+    date: "2026-08-11"
+    file: "src/labels/triple_barrier.py"
+    related_file: "src/features/volatility.py"
+    found_by: "Manager, questionando o resumo da sessão anterior"
+    gap: >
+      src/labels/triple_barrier.py (Label Engine, produção real -- dimensiona
+      tp_price/sl_price/mfe_atr_units/atr_at_t0) chamava
+      group_c.c01_atr_20/c02_atr_20_pct diretamente, nunca consumindo a
+      interface VolatilityEstimator que src/features/volatility.py (T0.1)
+      já expunha desde 2026-08-08. A própria docstring do módulo já
+      declarava isso como "trabalho subsequente" (G-C0-2, 135 pontos de
+      fan-in) mas sem Pacote de Trabalho aberto nem prazo -- ficou adiado
+      indefinidamente, sem registro de que era um gap ATIVO, não uma nota
+      de rodapé resolvida.
+    severity: "alto"
+    layer: "labels"
+    consequence: >
+      M1 (PRD_V4_1.md §3.2) escolher Garman-Klass como vencedor não tinha
+      nenhum efeito no sistema real -- o ponto de maior criticidade
+      (Label Engine) permanecia hardcoded em ATR de Wilder, sem caminho
+      pra trocar sem reescrever o módulo inteiro.
+    resolved_by_commit: "2341a96"
+    resolution: >
+      build_labels/build_labels_both_sides/build_labels_for_symbol passam
+      a aceitar `estimator: VolatilityEstimator | None` (default preserva
+      comportamento bit-exato). LabelConfig ganha `estimator_id`
+      obrigatório, incluído em config_hash (B15). Validação em runtime
+      garante que estimator.estimator_id bate com cfg.estimator_id.
+      GK ainda NÃO promovido a canônico -- só a porta pra trocar existe
+      agora (ver docs/refactor_gk_canonico.md).
+    status: "fechado — ponto de injeção existe; promoção de GK a canônico continua pendente, decisão do Manager"
