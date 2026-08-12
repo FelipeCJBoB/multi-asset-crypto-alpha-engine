@@ -7,16 +7,18 @@ os dois eixos de validação do "vencedor" (taxa de vitória por fold +
 Diebold-Mariano) — mesma classe de módulo que `src.analysis.cost_surface`
 (ponto de entrada manual, nunca dentro da suíte automatizada de testes).
 
-**5 dos 6 candidatos de M1 rodam aqui — só falta `EGARCH(1,1)`.**
+**Os 6 candidatos de M1 rodam aqui — enumeração completa.**
 `ATRWilderEstimator` é o BASELINE (já em produção, T0.1), nunca um
-candidato — os outros 5 (`Parkinson`, `GarmanKlass`, `RealizedVol`, mais
-`HAR-RV`) competem contra ele. `HAR-RV` (Corsi 2009,
-`src.features.volatility_models`) é o primeiro candidato FOLD-AWARE —
-diferente dos 3 fechados (mesmo `estimate()` pra série inteira), ele
-reajusta coeficientes por OLS a cada fold, só sobre o próprio treino, e
-prevê só a própria região de teste (`_har_rv_forecast_var`). `EGARCH(1,1)`
-(MLE) segue a mesma ideia mas ainda não está escrito — infraestrutura de
-otimização numérica é escopo maior, deixado pra próxima rodada.
+candidato — os outros 5 (`Parkinson`, `GarmanKlass`, `RealizedVol`,
+`HAR-RV`, `EGARCH(1,1)`) competem contra ele. `HAR-RV` (Corsi 2009) e
+`EGARCH(1,1)` (Nelson 1991, MLE) são os 2 candidatos FOLD-AWARE
+(`src.features.volatility_models`) — diferente dos 3 fechados (mesmo
+`estimate()` pra série inteira), reajustam parâmetro a cada fold, só
+sobre o próprio treino, e preveem só a própria região de teste
+(`_har_rv_forecast_var`/`_egarch_forecast_var`). EGARCH é o mais caro dos
+6 — recursão sequencial recomputada do zero por fold, não vetorizável
+(ver docstring de `predict_egarch`); rodar as 15 combinações completas
+leva bem mais que os ~20s dos 4 candidatos fechados+HAR-RV.
 
 **`window` idêntico entre os 3 candidatos e o baseline — `atr_window`
 (`constants.yaml`, valor 20) reusado, não uma constante nova.** Isso NÃO
@@ -242,6 +244,34 @@ def _har_rv_forecast_var(
     return forecast_var
 
 
+def _egarch_forecast_var(
+    close: FloatArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+) -> FloatArray:
+    """EGARCH(1,1) também é fold-aware, mas por um motivo diferente do
+    HAR-RV: a recursão é sequencial (`sigma_t` depende de `sigma_{t-1}`),
+    então não dá pra separar "componentes causais" de "coeficientes" como
+    em HAR-RV -- cada fold recomputa a trajetória inteira desde o início
+    da série com seus próprios coeficientes ajustados (ver docstring de
+    `predict_egarch`). Mais caro que os outros 5 candidatos (não
+    vetorizável), mas ainda `O(n × n_folds)`."""
+    n = close.shape[0]
+    log_return = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_return[1:] = np.log(close[1:] / close[:-1])
+    forecast_var = np.full(n, np.nan, dtype=np.float64)
+    for split in splits:
+        fit = volatility_models.fit_egarch(log_return, train_end_idx=split.train_end_idx)
+        if fit is None:
+            continue
+        pred = volatility_models.predict_egarch(fit, log_return)
+        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
+            split.test_start_idx : split.test_end_idx
+        ]
+    return forecast_var
+
+
 def _estimator_metrics(
     estimator_id: str,
     forecast_var: FloatArray,
@@ -328,6 +358,9 @@ def compare_estimators_for_combination(
         realized_var, splits, bars_per_day=TF_BARS_PER_DAY[tf]
     )
     candidate_forecasts.append((f"har_rv_d{TF_BARS_PER_DAY[tf]}", har_rv_forecast_var))
+
+    egarch_forecast_var = _egarch_forecast_var(close, splits)
+    candidate_forecasts.append(("egarch_1_1", egarch_forecast_var))
 
     candidates: list[CandidateValidation] = []
     any_beats = False

@@ -89,6 +89,7 @@ def test_compare_estimators_estrutura_do_resultado() -> None:
         "garman_klass_w20",
         "realized_vol_w20",
         "har_rv_d96",
+        "egarch_1_1",
     }
     for c in result.candidates:
         assert 0.0 <= c.fold_win_rate <= 1.0 or np.isnan(c.fold_win_rate)
@@ -114,6 +115,25 @@ def test_compare_estimators_har_rv_produz_forecast_nao_trivial_com_dado_suficien
     assert result is not None
     har_rv = next(c for c in result.candidates if c.metrics.estimator_id == "har_rv_d96")
     assert har_rv.metrics.n_oos_obs > 0
+
+
+def test_compare_estimators_egarch_produz_forecast_nao_trivial() -> None:
+    # EGARCH não precisa de janela grande pra fechar (diferente do HAR-RV
+    # mensal) -- 1460 barras já bastam pra confirmar que a integração
+    # funciona de ponta a ponta. Correção matemática do EGARCH em si já é
+    # coberta em tests/unit/test_features_volatility_models.py.
+    bars_df = _synthetic_bars_df(1460)
+    result = vc.compare_estimators_for_combination(
+        "BTCUSDT",
+        "15m",
+        bars_df,
+        timeframe_minutes=15,
+        candidate_window=20,
+        initial_train_years=2,
+    )
+    assert result is not None
+    egarch = next(c for c in result.candidates if c.metrics.estimator_id == "egarch_1_1")
+    assert egarch.metrics.n_oos_obs > 0
 
 
 def test_compare_estimators_forecast_var_e_o_quadrado_do_estimate() -> None:
