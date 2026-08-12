@@ -120,7 +120,7 @@ entries:
       sessao -- exatamente a metrica que Sec7 do PLANO_MESTRE diz ser "a
       mais importante" para saber se o protocolo funciona sozinho.
       Funcionou no primeiro ciclo real.
-    resolved_by_commit: "PENDENTE — commit desta sessão"
+    resolved_by_commit: "e25d85c"
     resolution: >
       Sec14 (Road_Map Vivo) escrita com o link real do artifact publicado.
       Changelog v1.3 passa a registrar Sec0/Sec13. Nota explicita de
