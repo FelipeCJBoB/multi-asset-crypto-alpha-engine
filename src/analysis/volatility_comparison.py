@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import os
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -501,21 +502,44 @@ def run_and_save_volatility_comparison_report(
     symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
     timeframes: tuple[str, ...] = TIMEFRAMES,
     dest_path: Path | None = None,
+    max_workers: int | None = None,
 ) -> Path:
     """Ponto de entrada MANUAL — roda as `len(symbols) * len(timeframes)`
     combinações (15 por default) e persiste o relatório completo, atômico
     (B29). NÃO roda dentro da suíte automatizada (custo de IO + cálculo em
     15 combinações não paga a cada `pytest`).
 
+    **Paralelo entre combinações, não dentro de uma combinação.** Cada
+    (symbol, tf) é totalmente independente das outras 14 -- EGARCH é caro
+    (medido: ~144s pra BTCUSDT×M15 sozinho, a maior combinação, 20 folds)
+    mas embaraçosamente paralelo entre combinações. `max_workers=None`
+    usa `os.cpu_count()` (todos os núcleos disponíveis) -- explícito por
+    padrão, não conservador. `ProcessPoolExecutor`, não threads: o custo
+    é CPU-bound (recursão Python pura do EGARCH, GIL não libera), threads
+    não ganhariam nada aqui.
+
     Chame manualmente:
     `uv run python -c "from src.analysis.volatility_comparison import run_and_save_volatility_comparison_report as r; r()"`
     ou `uv run python -m src.analysis.volatility_comparison`."""
+    combos = [(symbol, tf) for symbol in symbols for tf in timeframes]
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    logger.info(
+        "analysis.volatility_comparison.starting",
+        n_combinations=len(combos),
+        max_workers=workers,
+    )
+
     t0 = time.perf_counter()
     results: list[CombinationResult] = []
     skipped: list[dict[str, str]] = []
-    for symbol in symbols:
-        for tf in timeframes:
-            result = run_volatility_comparison_for_symbol_tf(symbol, tf)
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        future_to_combo = {
+            executor.submit(run_volatility_comparison_for_symbol_tf, symbol, tf): (symbol, tf)
+            for symbol, tf in combos
+        }
+        for future in as_completed(future_to_combo):
+            symbol, tf = future_to_combo[future]
+            result = future.result()
             if result is None:
                 skipped.append({"symbol": symbol, "tf": tf, "reason": "folds_insuficientes"})
                 continue
@@ -529,6 +553,11 @@ def run_and_save_volatility_comparison_report(
                 any_candidate_beats_baseline=result.any_candidate_beats_baseline,
             )
     elapsed_s = time.perf_counter() - t0
+    # ProcessPoolExecutor.as_completed devolve em ordem de conclusão, não
+    # de submissão -- ordena pra o relatório final ser determinístico
+    # (mesmo conteúdo sempre na mesma posição, independente de qual
+    # worker terminou primeiro).
+    results.sort(key=lambda r: (r.symbol, r.tf))
 
     # Combinações puladas (dado insuficiente) não contam nem a favor nem
     # contra -- não são medição, são ausência de medição.
