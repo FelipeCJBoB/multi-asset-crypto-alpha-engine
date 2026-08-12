@@ -3,7 +3,7 @@
 **Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
 PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
 arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.4 · **Data:** 2026-08-12
+**Versão:** 1.5 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -673,16 +673,21 @@ inventada —
   diferente: este documento versiona a si mesmo; o Road_Map versiona o
   ESTADO do projeto).
 
-**Atualização — T0.5 investigado e confirmado (2026-08-12, mesma sessão):**
-o item acima registrava T0.5 como "não confirmado". Investigação real
-(git log + `experiments/alpha_layer1_report_t05_janela_comum.json`)
-encontrou o commit `5d8c8aa` (2026-08-10) — T0.5 **está feito**, e o
-resultado é consequente: dispara o critério de encerramento #3
-(`PRD_V4_1.md` §6.5), achado já em `audit/evidence_ledger.yaml` desde
-2026-08-10 mas nunca anotado no próprio §6.5 nem no `CLAUDE.md`. Ambos
-corrigidos agora. Ver Road_Map Vivo (§14, link acima) pro alerta
-completo — este é o item de maior prioridade real desta rodada, maior
-que qualquer um dos itens de processo acima.
+**Atualização — T0.5 investigado, critério #3 reavaliado e fechado
+(2026-08-12, mesma sessão):** T0.5 **está feito** (commit `5d8c8aa`,
+2026-08-10) e dispara o critério de encerramento #3 (`PRD_V4_1.md` §6.5).
+Reavaliação pedida pelo Manager ("vamos reavaliar escopo agora") e
+confirmada: **não encerrar**. No processo, uma pergunta técnica direta do
+Manager expôs um erro meu — eu tinha conectado o `pnl_execução` (-17,11)
+ao achado de fill real (42,2%) sem verificar se o número usava esse fill;
+não usava (usa o fill simulado ~97% do Label Engine). Corrigido em
+`PRD_V4_1.md` §6.5, `CLAUDE.md` e no Road_Map Vivo (§14, link acima), que
+tem o alerta completo. Decisão final: M5 (fill, escopo completo) e M6
+(fator comum — testa se o problema é específico do BTC) priorizados antes
+de M4 (único item pago da Camada 1). Este foi o item de maior prioridade
+real desta rodada, maior que qualquer item de processo acima — e o
+melhor teste, até aqui, de que "medir antes de afirmar" vale pra mim
+também, não só pros números do PRD.
 
 ---
 
@@ -702,6 +707,16 @@ que qualquer um dos itens de processo acima.
 
 ## Changelog
 
+- **v1.5 (2026-08-12)** — Reavaliação de escopo do critério de encerramento
+  #3 fechada: "não encerrar", M5 (fill, escopo completo) e M6 (fator
+  comum) priorizados antes de M4. No caminho, pergunta técnica direta do
+  Manager ("como pnl_execução é calculado?") expôs que eu tinha conectado
+  esse número ao fill real (42,2%) sem checar — não usava, usava o fill
+  simulado (~97%) do Label Engine; corrigido em `PRD_V4_1.md` §6.5,
+  `CLAUDE.md`, Road_Map Vivo. Autocrítica registrada: este documento
+  cobra "meça antes de afirmar" de todo número do projeto — o mesmo
+  padrão vale pra conexões que EU faço entre dois achados, não só pra
+  constantes numéricas.
 - **v1.4 (2026-08-12)** — Recomendação de GK aceita ("vamos seguir") e
   executada: `canonical_volatility_estimator` travado em
   `config/constants.yaml` (classe A, MEASURED), reprocessamento de
