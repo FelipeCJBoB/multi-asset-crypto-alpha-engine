@@ -38,7 +38,22 @@ antes de escrever este módulo). Cada símbolo usa sua própria história
 completa — não corta BTCUSDT pra bater com os alts, porque mais dado de
 treino/teste é estritamente melhor para o walk-forward, e o objetivo aqui
 é medir cada candidato o mais precisamente possível, não uma janela comum
-entre ativos (isso é outra pergunta, do T0.5)."""
+entre ativos (isso é outra pergunta, do T0.5).
+
+**Risco reconhecido, não resolvido nesta rodada — decisão explícita do
+Manager.** BTCUSDT roda 20 folds (2019-12-31→2026-08-07) contra 12 dos
+4 alts (2021-12-01→2026-08-07) — não é só "mais dado", é uma janela de
+CALENDÁRIO parcialmente diferente: os 8 folds extras de BTC cobrem
+2020-2021, regime que nenhum alt vive. Se um candidato bate o baseline em
+BTC mas o efeito vem majoritariamente desses 8 folds extras, "vence em
+5/5 ativos" não são 5 votos independentes na mesma condição. Perguntado
+explicitamente ao Manager se valeria rodar uma segunda passada com janela
+comum (2021-12-01→2026-08-07 pros 5) pra checar se a conclusão sobrevive
+-- resposta: não agora, história completa de cada ativo basta por
+enquanto; checagem de janela comum fica para uma iteração futura do M1
+se o resultado precisar de mais escrutínio (mesma classe de risco que
+já mudou conclusão neste projeto antes -- CLAUDE.md, "Comportamento
+esperado")."""
 
 from __future__ import annotations
 
@@ -111,7 +126,21 @@ def _candidate_estimators(*, window: int) -> tuple[VolatilityEstimator, ...]:
 @dataclass(frozen=True, slots=True)
 class EstimatorMetrics:
     """Métricas OOS agregadas (pooled, sobre toda a região de teste do
-    walk-forward) de UM estimador em UMA combinação (symbol, tf)."""
+    walk-forward) de UM estimador em UMA combinação (symbol, tf).
+
+    `qlike_mean` é a média sobre observações FINITAS apenas -- QLIKE
+    (Patton 2011) não é robusto a forecast quase-zero: um único bar onde
+    `forecast_var` é minúsculo (mas `> 0`, então não vira NaN) faz
+    `qlike_loss` explodir pra `inf`, e com centenas de milhares de barras
+    reais SEMPRE existe pelo menos um desses -- medido: entre 9 e 1882
+    bars por combinação, de ~25k a 170k. Incluir esses pontos faz a média
+    pooled virar `inf` em TODA combinação testada (baseline E candidatos
+    igualmente), o que tornaria `qlike_mean < baseline.qlike_mean` sempre
+    falso por construção e o vencedor indeterminável -- não é uma escolha
+    de deixar a métrica "bonita", é a diferença entre a métrica comparar
+    alguma coisa ou nunca comparar nada. `n_inf_qlike` reporta quantos
+    pontos foram excluídos, pra isso ficar auditável em vez de
+    escondido."""
 
     estimator_id: str
     qlike_mean: float
@@ -122,6 +151,7 @@ class EstimatorMetrics:
     mz_r_squared: float
     mz_n: int
     n_oos_obs: int
+    n_inf_qlike: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,10 +190,15 @@ def _oos_slice(splits: tuple[vwf.WalkForwardSplit, ...]) -> tuple[int, int]:
 def _per_fold_qlike(
     splits: tuple[vwf.WalkForwardSplit, ...], qlike: FloatArray
 ) -> FloatArray:
+    """Média por fold sobre observações FINITAS -- mesmo racional de
+    `_estimator_metrics`/`EstimatorMetrics.qlike_mean`: um `inf` isolado
+    dentro de um fold (forecast quase-zero pontual) não pode contaminar o
+    fold inteiro, senão `fold_win_rate` vira ruído de qual lado teve o
+    `inf` primeiro em vez de medir robustez real."""
     out = np.full(len(splits), np.nan, dtype=np.float64)
     for i, s in enumerate(splits):
         fold_vals = qlike[s.test_start_idx : s.test_end_idx]
-        valid = fold_vals[~np.isnan(fold_vals)]
+        valid = fold_vals[np.isfinite(fold_vals)]
         if valid.size:
             out[i] = float(np.mean(valid))
     return out
@@ -186,9 +221,11 @@ def _estimator_metrics(
     b = vwf.bias(f_oos, r_oos)
     mz = vwf.mincer_zarnowitz(f_oos, r_oos)
     n_valid = int(np.sum(~np.isnan(qlike)))
+    n_inf = int(np.sum(np.isinf(qlike)))
+    qlike_finite = qlike[np.isfinite(qlike)]
     metrics = EstimatorMetrics(
         estimator_id=estimator_id,
-        qlike_mean=float(np.nanmean(qlike)) if n_valid else float("nan"),
+        qlike_mean=float(np.mean(qlike_finite)) if qlike_finite.size else float("nan"),
         mse_mean=float(np.nanmean(mse)) if n_valid else float("nan"),
         bias=b,
         mz_intercept=mz.intercept,
@@ -196,6 +233,7 @@ def _estimator_metrics(
         mz_r_squared=mz.r_squared,
         mz_n=mz.n,
         n_oos_obs=n_valid,
+        n_inf_qlike=n_inf,
     )
     return metrics, qlike
 

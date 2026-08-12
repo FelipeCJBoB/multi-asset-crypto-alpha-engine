@@ -121,6 +121,7 @@ def _fake_combination_result(*, any_beats: bool) -> vc.CombinationResult:
         mz_r_squared=0.5,
         mz_n=100,
         n_oos_obs=100,
+        n_inf_qlike=0,
     )
     return vc.CombinationResult(
         symbol="BTCUSDT",

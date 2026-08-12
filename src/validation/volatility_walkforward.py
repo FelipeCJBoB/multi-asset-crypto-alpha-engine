@@ -235,6 +235,6 @@ def diebold_mariano(loss_candidate: FloatArray, loss_baseline: FloatArray) -> Di
     std_d = float(np.std(valid, ddof=1))
     if std_d == 0.0:
         return DieboldMarianoResult(float("nan"), float("nan"), mean_d, n)
-    dm_stat = mean_d / (std_d / np.sqrt(n))
+    dm_stat = float(mean_d / (std_d / np.sqrt(n)))
     p_value = float(2.0 * (1.0 - norm.cdf(abs(dm_stat))))
     return DieboldMarianoResult(dm_stat, p_value, mean_d, n)
