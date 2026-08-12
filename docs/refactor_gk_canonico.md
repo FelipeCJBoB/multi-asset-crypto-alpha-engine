@@ -213,3 +213,12 @@ agora".** Duas perguntas diferentes que o passo 1 embaralha numa só:
 MEASURED`, fonte = M1 + extensão RS/YZ) — trava a decisão 1 sem pagar o
 custo da decisão 2. O reprocessamento real (passos 2-5 acima) vira item
 do roadmap logo após G-C1-1 (M2/M3/M5/M6 emitidos), não antes.
+
+**✅ Aprovado e aplicado (2026-08-12) — "Aceito sua recomendação, vamos
+seguir".** `config/constants.yaml::canonical_volatility_estimator` agora
+registra `garman_klass_w20` como decisão travada (classe A, `provenance:
+MEASURED`, `sweep_range` categórico com os 8 candidatos comparados —
+`check_constants_provenance.py`/`check_constants_referenced.py` passam
+limpos). **Passo 1 fechado.** Passos 2-5 continuam explicitamente
+bloqueados até M2 (barra) e M3 (timeframe) fecharem — não é ausência de
+decisão, é sequenciamento deliberado pra evitar relabeling duplicado.

@@ -3,7 +3,7 @@
 **Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
 PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
 arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.3 · **Data:** 2026-08-12
+**Versão:** 1.4 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -673,12 +673,16 @@ inventada —
   diferente: este documento versiona a si mesmo; o Road_Map versiona o
   ESTADO do projeto).
 
-**Honestidade sobre o que não foi confirmado nesta passada:** V41-1 (T0.5,
-baseline na janela comum) aparece marcado "não confirmado" no Road_Map —
-não achei confirmação explícita de que rodou, em nenhum dos documentos
-lidos nesta sessão. Marcar como feito sem essa confirmação seria o mesmo
-erro que o achado AG-003 já pegou uma vez nesta sessão (confiança sem
-verificação). Fica como item a confirmar, não como suposição.
+**Atualização — T0.5 investigado e confirmado (2026-08-12, mesma sessão):**
+o item acima registrava T0.5 como "não confirmado". Investigação real
+(git log + `experiments/alpha_layer1_report_t05_janela_comum.json`)
+encontrou o commit `5d8c8aa` (2026-08-10) — T0.5 **está feito**, e o
+resultado é consequente: dispara o critério de encerramento #3
+(`PRD_V4_1.md` §6.5), achado já em `audit/evidence_ledger.yaml` desde
+2026-08-10 mas nunca anotado no próprio §6.5 nem no `CLAUDE.md`. Ambos
+corrigidos agora. Ver Road_Map Vivo (§14, link acima) pro alerta
+completo — este é o item de maior prioridade real desta rodada, maior
+que qualquer um dos itens de processo acima.
 
 ---
 
@@ -698,6 +702,16 @@ verificação). Fica como item a confirmar, não como suposição.
 
 ## Changelog
 
+- **v1.4 (2026-08-12)** — Recomendação de GK aceita ("vamos seguir") e
+  executada: `canonical_volatility_estimator` travado em
+  `config/constants.yaml` (classe A, MEASURED), reprocessamento de
+  `labels/` confirmado adiado até M2/M3. Ao responder "próximos passos",
+  investigação real corrigiu §14: T0.5 estava marcado "não confirmado" —
+  na verdade está feito (commit `5d8c8aa`, 2026-08-10) e dispara o
+  critério de encerramento #3 (`PRD_V4_1.md` §6.5), achado real já
+  registrado em `audit/evidence_ledger.yaml` desde 2026-08-10 mas nunca
+  anotado no §6.5 nem no `CLAUDE.md` — corrigido nos dois agora. Este é o
+  achado de maior prioridade da sessão até aqui.
 - **v1.3 (2026-08-12)** — Três ações do Manager nesta rodada: (1)
   `CLAUDE.md` "Documento mestre" aprovado e aplicado — §0/§13 fecham,
   `CLAUDE.md` v1.6; (2) primeiro ciclo real do protocolo §6 escolhido —

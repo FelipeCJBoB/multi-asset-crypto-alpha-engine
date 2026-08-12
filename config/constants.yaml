@@ -154,6 +154,32 @@ atr_window:
   sweep_range: [10, 30]
   review_by: sprint_6
 
+canonical_volatility_estimator:
+  value: "garman_klass_w20"
+  provenance: MEASURED
+  source: >
+    M1 (PRD_V4_1.md §3.2, experiments/volatility_comparison_report.json,
+    commit 2410bc1) comparou 6 candidatos (ATRWilder baseline, EGARCH(1,1),
+    HAR-RV, Parkinson, Garman-Klass, RealizedVol) sobre as 15 combinações
+    reais (5 ativos × 3 TFs) por QLIKE walk-forward ancorado — Garman-Klass
+    venceu 14/15. Extensão pós-M1 (experiments/volatility_rs_yz_vs_gk_report.json,
+    commit 2436b33) testou Rogers-Satchell e Yang-Zhang contra o vencedor —
+    GK seguiu vencendo 10/15, nenhum candidato dos 8 total supera. Decisão
+    do Manager 2026-08-11 (GK é o vencedor de M1), travada aqui em
+    2026-08-12 a pedido explícito do Manager ("Aceito sua recomendação").
+    ATENÇÃO — esta constante registra a DECISÃO, não o deployment:
+    `LabelConfig.from_constants()` (src/labels/triple_barrier.py) continua
+    default `atr_wilder_w{atr_window}` — reprocessamento real de `labels/`
+    para `labels/v2_gk/` foi deliberadamente ADIADO até M2 (barra) e M3
+    (timeframe) fecharem, porque qualquer um dos dois pode forçar novo
+    relabeling independente do estimador (mudam o que t0 significa) —
+    reprocessar duas vezes seria retrabalho puro. Ver
+    docs/refactor_gk_canonico.md, seção "Recomendação registrada".
+  class: A
+  sweep_required: true
+  sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]
+  review_by: camada_1_M2_M3
+
 target_signal_rate:
   value: 0.0189
   provenance: DERIVED

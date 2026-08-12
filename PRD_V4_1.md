@@ -644,7 +644,7 @@ Estimativa provisória: `1,15 × ~1,5 ≈ 1,7 trials` por hipótese.
 |---|---|---|
 | 1 | nenhum estimador bate `ATRWilder` em QLIKE em nenhum ativo | encerrar — o gargalo não é volatilidade — ✅ **medido 2026-08-11: NÃO disparou** (Parkinson/GK batem em 14/15, ver §3.2 M1) |
 | 2 | nenhuma partição bate os quantis em separação **e** ortogonalidade contra vol | encerrar a linha de regime; C2 segue com quantis |
-| 3 | T0.5 mostra que os verdes não sobrevivem à janela comum | reavaliar escopo antes de gastar trials |
+| 3 | T0.5 mostra que os verdes não sobrevivem à janela comum | reavaliar escopo antes de gastar trials — ⚠️ **disparou, 2026-08-10** (commit `5d8c8aa`, `audit/evidence_ledger.yaml::t05-permanence-camada1-vs-camada0-janela-comum`, status vermelho): permanência Camada1 vs Camada0 cai de 5/5 (janela cheia) para 1/5 (janela comum, mínimo exigido 4). **Mas não é ausência de sinal** — `directional_sharpe` pooled +2,51, positivo em 5/5 paths (`t05-directional-sharpe-positivo-cost-dominado`, status amarelo); `pnl_direcional` +12,45 vs `pnl_execução` -17,11 — custo de execução domina, consistente com M5 (fill real 42,2% vs 97,1% assumido). **Reavaliação de escopo formal ainda não registrada como decisão** — achado logado desde 2026-08-10, nunca virou linha de decisão explícita do Manager em nenhum documento até 2026-08-12. Não presumir "continuar" nem "encerrar" sem essa decisão. |
 | 4 | Camada 2 fecha com `edge_bruto_atr` abaixo de `custo_atr` no melhor ativo | encerrar |
 | 5 | `N_lifetime` > 60 sem Camada 2 fechada | encerrar — orçamento exaurido |
 | 6 | DSR final < 0,50 | encerrar |

@@ -1,7 +1,7 @@
 # CLAUDE.md — BTCUSDT Quant Engine
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.6
+> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.7
 > Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança institucional + Product Breakdown Structure completo, §11) — aprovado pelo Manager, 2026-08-12. Blueprint técnico corrente em dois níveis: arquitetura/contratos em `PRD_V3_2_UNIFICADO.md` (raiz, v3.3, ~3.400 linhas), emenda de escopo multi-ativo em `PRD_V4_1.md`.
 > Toda regra abaixo é ancorada em §X.Y do PRD (V3.2 para arquitetura, V4.1 para escopo). Regra sem âncora é dívida técnica.
 
@@ -336,6 +336,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde a origem real do contrato (~2019-12, medido — não os 2019-09/2020 que o PRD presumia); D08/D09 bookTicker só existe 2023-05→2024-03 upstream (medido, não é falha de coleta) |
 | Pendências P0 | verificar acesso empírico à conta (precisa credenciais, Sprint 2 parcialmente bloqueado por isso) · MMR tier 1 não confirmado · reconciliar figuras ano-a-ano da PARTE XVII contra o dado real (`known_gaps` em `config/constants.yaml`) |
 | Achado aberto | Data Quality Engine encontrou 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21) — ver `data/quality_reports/quality_report_metrics_v1.json` |
+| Achado aberto — P0 | **Critério de encerramento #3 (PRD_V4_1.md §6.5) disparou em 2026-08-10** — permanência Camada1×Camada0 cai de 5/5 (janela cheia) para 1/5 (janela comum). Sinal direcional sobrevive (+2,51 Sharpe, 5/5 paths) — é custo de execução dominando, não ausência de sinal (ver M5). Reavaliação de escopo formal (a ação que o critério manda) ainda não foi registrada como decisão do Manager — surfaced de novo em 2026-08-12, `docs/SPRINT_LOG.md`/`audit/evidence_ledger.yaml` têm o achado desde 2026-08-10 mas nenhum documento registra a decisão de continuar ou encerrar |
 | Primeiras medições feitas | Data Quality Engine rodado contra dado real (klines_1m, agg_trades, metrics, funding, bars_30m) |
 | Primeiras medições pendentes | ATR sobre série completa (§0.4, ainda P2/amostra de conveniência) · varredura 2D `tp_atr_mult` × `sl_atr_mult` (Sprint 6) |
 
@@ -343,6 +344,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v1.7 (2026-08-12) — Adiciona linha "Achado aberto — P0" ao Estado atual: critério de encerramento #3 (PRD_V4_1.md §6.5) disparou em 2026-08-10 (T0.5, commit `5d8c8aa`) e nunca virou decisão explícita — achado real preexistente, só agora tornado visível aqui (investigando "próximos passos" a pedido do Manager). Trava `canonical_volatility_estimator` em `config/constants.yaml` (GK, decisão aceita pelo Manager, reprocessamento adiado até M2/M3).
 - v1.6 (2026-08-12) — Aprovado pelo Manager: "Documento mestre" passa de `PRD_V3_2_UNIFICADO.md` para `PLANO_MESTRE_PRINCE2.md` (proposta que estava pendente em `PLANO_MESTRE_PRINCE2.md` §13). PRD_V3_2 e PRD_V4_1 continuam como fonte técnica (arquitetura e emenda de escopo, respectivamente) — a mudança é sobre qual documento organiza qual, não sobre qual documento manda tecnicamente.
 - v1.5 (2026-08-12) — Adiciona exceção nomeada ao "Protocolo de execução": Claude pode rodar diretamente os 5 scripts mecânicos de auditoria (`banned_patterns.py`, `check_constants_referenced.py`, `check_constants_provenance.py`, `check_unguarded_ratios.py`, `check_sprint_log_references.py`, `ruff check`, `mypy`) — autorização explícita do Manager, porque são leitura pura sem efeito em dado/exchange/trial. Não se estende a `pytest`/`uv run quant`. Motivado por `audit_engineering`/`project_assurance` não conseguirem auditar de verdade sem rodar os próprios scripts que citam como parte do processo.
 - v1.4 (2026-08-11) — Adiciona "Nunca remediar, sempre solucionar" em "Comportamento esperado": warning do numpy silenciado com `np.errstate` sem investigar a causa (M1, `diebold_mariano`) escondia um buraco real (`finite - inf` vazando pro teste) — corrigido filtrando `isfinite` antes de operar, não abafando o sintoma. M1: 4 dos 6 estimadores de volatilidade rodados sobre as 15 combinações reais (Parkinson/Garman-Klass batem ATRWilder em QLIKE nas 15/15); HAR-RV (5º) integrado como candidato fold-aware.
