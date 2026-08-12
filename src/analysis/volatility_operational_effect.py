@@ -69,6 +69,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Final
 
@@ -172,7 +173,10 @@ def compute_operational_effect_for_symbol(symbol: str) -> list[OperationalEffect
     bars = Bars(frame=bars_df, timeframe_minutes=DECISION_TF_MINUTES)
     mark_price = bars_df["close"].cast(pl.Float64).to_numpy()
 
-    filters = load_filters_asof(END_DATE, symbol=symbol)
+    # `load_filters_asof` exige `datetime | date`, não string --
+    # `END_DATE`/`SYMBOL_START_DATE` são `str` em `volatility_comparison.py`
+    # (formato `lake.query_bars`, que aceita `DateLike`); converte só aqui.
+    filters = load_filters_asof(date.fromisoformat(END_DATE), symbol=symbol)
     step_size = float(filters.step_size)
 
     equity_usd = _EQUITY_USD_FALLBACK
