@@ -14,7 +14,15 @@ antes (achado 2026-08-12, ver `PRD_V4_1.md` §0.2) — só existiam calculadas
 declaradas explicitamente por rigor decrescente-mas-honesto:
 
 - `breakeven_win_rate_naive`: usa `custo_atr` (custo médio 50/50 maker/
-  taker) — reproduz os números originais do §0.2 dentro de ~0,1pp.
+  taker) — derivação EV=0 literal de §1.5 ("edge_bruto_atr mínimo para EV
+  zero é exatamente custo_atr"). **Medido, não suposto (achado
+  2026-08-12):** reproduz 2 dos 5 números originais do §0.2 (SOL/XRP)
+  dentro de ~0,10pp, mas ETH/BTC/BNB ficam entre 0,16 e 0,24pp de
+  distância — gap real, sem nota de derivação recuperável no repo pra
+  explicá-lo, então não dá pra saber se está na fórmula ou na conta
+  manual original (este mesmo PRD já precisou corrigir número calculado
+  à mão duas vezes, §0.2 ressalva). Ver
+  `tests/unit/test_analysis_feasibility.py` pro gap exato por ativo.
 - `breakeven_win_rate`: separa o custo por DESFECHO (`TP` sempre sai
   maker; `SL`/`TIME` sempre saem taker — §9.1, `triple_barrier.py` item 8
   da docstring do módulo). Mais correto porque a saída NÃO é 50/50 de
