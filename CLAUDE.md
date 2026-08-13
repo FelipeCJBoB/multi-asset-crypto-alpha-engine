@@ -1,7 +1,7 @@
-# CLAUDE.md — BTCUSDT Quant Engine
+# CLAUDE.md — Motor Quant Multi-Ativo (ex-BTCUSDT Quant Engine)
 
 > Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v1.9
+> Atualizado: 2026-08-12 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v2.0
 > Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança institucional + Product Breakdown Structure completo, §11) — aprovado pelo Manager, 2026-08-12. Blueprint técnico corrente em dois níveis: arquitetura/contratos em `PRD_V3_2_UNIFICADO.md` (raiz, v3.3, ~3.400 linhas), emenda de escopo multi-ativo em `PRD_V4_1.md`.
 > Toda regra abaixo é ancorada em §X.Y do PRD (V3.2 para arquitetura, V4.1 para escopo). Regra sem âncora é dívida técnica.
 
@@ -9,7 +9,9 @@
 
 ## Contexto
 
-Motor quantitativo local para **BTCUSDT perpétuo na Binance USDⓈ-M**, capital de **R$ 1.000 (US$ 196,85)**, decisão a **15m**, execução **maker post-only**. Solo developer, grau prop desk.
+⚠️ **Correção 2026-08-12 (achado do Manager — o pedido de refatoração de `src/` "não foi levado a sério", e este parágrafo era prova disso):** este projeto **não é** um motor BTCUSDT. É um **Motor Quant multi-timeframe (M15, M30, H1), multi-par (BTC, ETH, SOL, BNB, XRP), bidirecional (long e short)**, cujo objetivo é adaptar o antigo projeto BTC-only para comparação sistemática de modelos/métodos em toda a árvore `src/` (padrão já estabelecido por `volatility.py`, M1) — definição completa e o discovery de engenharia que a valida estão em `PLANO_MESTRE_PRINCE2.md` §15.
+
+Motor quantitativo local na Binance USDⓈ-M, capital de **R$ 1.000 (US$ 196,85)**, execução **maker post-only**. A frase original desta seção ("BTCUSDT perpétuo... decisão a 15m") descrevia só o escopo da V1 original — mantida por proveniência, não como definição atual:
 
 **A V1 não existe para provar que BTCUSDT pode ser previsto.** Existe para construir infraestrutura em que uma hipótese quantitativa possa ser formulada → testada → invalidada ou aprovada → simulada → monitorada → executada → auditada. Com US$ 196,85, isso é a única leitura honesta do projeto.
 
@@ -344,6 +346,7 @@ Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine enc
 
 ## Changelog
 
+- v2.0 (2026-08-12) — Correção de identidade: título e "Contexto" ainda descreviam um motor BTCUSDT-only. Manager apontou que o pedido anterior de refatorar `src/` pra nova amplitude "não foi levado a sério" — este título era evidência concreta. Corrigido para refletir o projeto real (multi-TF, multi-par, bidirecional, comparação entre modelos em toda `src/`), definição completa em `PLANO_MESTRE_PRINCE2.md` §15, que também traz discovery file-by-file de todo `src/` (6 agentes paralelos) e um modelo de estágios de pipeline validado contra o código (não a proposta original sem verificação).
 - v1.9 (2026-08-12) — Manager disse "pode seguir" pra M5/M6; antes de escrever qualquer código fui checar o disco (`data/labels/`, `predictions/alpha/`, `execution/fill_simulator/`, `data/raw/book_ticker/`) e achei dois erros meus: (1) `PRD_V4_1.md` §2.4 F4 afirmava janela de `bookTicker` 2023-05→2025-11 — o disco tem só 2023-05→2024-03 (`CLAUDE.md` já sabia disso, o PRD nunca tinha sido conferido); (2) eu tinha chamado M5/M6 "escopo completo, 0 trials" como se fossem rápidos — `labels`/`predictions`/`orders` só existem pra BTCUSDT, estender a 5 ativos exige rodar Feature+Label Engine pros outros 4 primeiro. Corrigido em `PRD_V4_1.md` §2.4/§3.2/§6.5.
 - v1.8 (2026-08-12) — Corrige uma alegação própria de v1.7: eu tinha escrito que o `pnl_execução` (-17,11) de T0.5 era "consistente com M5 (fill real 42,2%)" — pergunta direta do Manager expôs que isso não bate: `pnl_execução` foi calculado com o fill SIMULADO (~97%) do Label Engine, não o real; o único estudo que usou fill real (mais estreito, só BTC, 10,5 meses) achou o Sharpe MELHORAR com a correção, não piorar. Reavaliação de escopo formal do critério #3 fechada: Manager decide não encerrar, prioriza M5 (escopo completo) e M6 (testa se o problema é BTC-específico) antes de M4.
 - v1.7 (2026-08-12) — Adiciona linha "Achado aberto — P0" ao Estado atual: critério de encerramento #3 (PRD_V4_1.md §6.5) disparou em 2026-08-10 (T0.5, commit `5d8c8aa`) e nunca virou decisão explícita — achado real preexistente, só agora tornado visível aqui (investigando "próximos passos" a pedido do Manager). Trava `canonical_volatility_estimator` em `config/constants.yaml` (GK, decisão aceita pelo Manager, reprocessamento adiado até M2/M3).

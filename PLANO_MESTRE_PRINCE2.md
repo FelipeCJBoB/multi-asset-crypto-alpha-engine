@@ -1,9 +1,18 @@
 # PLANO INSTITUCIONAL DE CONSTRUÇÃO — Binance_Futures
 
-**Também referido como:** Plano Mestre do Projeto, BTCUSDT Quant Engine, sob
-PRINCE2 adaptado (nome original deste arquivo — mantido como identidade de
-arquivo/git, ver §0 sobre por quê).
-**Versão:** 1.6 · **Data:** 2026-08-12
+**Também referido como:** Plano Mestre do Projeto (nome original deste
+arquivo — mantido como identidade de arquivo/git, ver §0 sobre por quê).
+**⚠️ Correção de identidade, 2026-08-12 (achado do Manager, §15):** este
+documento chamava o projeto de "BTCUSDT Quant Engine" até v1.6 — **errado**.
+O projeto **não é** um motor BTCUSDT. É um **Motor Quant multi-timeframe
+(M15, M30, H1) e multi-par (BTC, ETH, SOL, BNB, XRP), bidirecional (long e
+short)**, cujo objetivo é adaptar o antigo projeto BTC-only para um motor
+onde cada estágio do pipeline (`src/`) suporta **comparação entre múltiplos
+modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
+candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
+Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
+Quant Engine" não aparece mais neste documento a partir daqui.
+**Versão:** 2.0 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -83,6 +92,7 @@ de fazer depois.
 12. [Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund](#12)
 13. [Decisão fechada: `CLAUDE.md` "Documento mestre"](#13)
 14. [Road_Map Vivo — HTML, atualizado a cada mudança de status](#14)
+15. [**Descoberta de Engenharia de `src/` — o Motor Quant multi-ativo validado contra o código**](#15) — resposta ao pedido de refatoração completa
 
 ---
 
@@ -691,6 +701,192 @@ também, não só pros números do PRD.
 
 ---
 
+## 15. Descoberta de Engenharia de `src/` — o Motor Quant multi-ativo validado contra o código <a name="15"></a>
+
+**Contexto do pedido.** O Manager afirmou ter pedido, antes desta sessão,
+que todos os arquivos de `src/` fossem refatorados por causa da mudança de
+escopo — e que isso "não foi levado a sério". Evidência concreta do
+sintoma: este documento, até v1.6, ainda se chamava a si mesmo "BTCUSDT
+Quant Engine" no cabeçalho, enquanto o próprio `PRD_V4_1.md` (que este
+documento organiza) já era uma emenda multi-ativo há dias. Isso é um furo
+real de consistência que passou por múltiplas revisões deste mesmo
+documento sem ser pego — a crítica procede. Corrigido no cabeçalho acima;
+esta seção é a resposta de engenharia completa, não só o pedido de
+desculpas.
+
+### 15.1 Definição do projeto (registrada pelo Manager, verbatim)
+
+> É uma Motor Quant multi time-frame M15, M30 e H1, multi par SOL, BTC,
+> ETH, XRP, BNB, bidirecional Long e Short com objetivo de adaptar o ex
+> projeto morto de BTCUSDT only para o novo Motor Quant, afim de
+> "comparison" diversos modelos e combinações entre a arvore pipeline de
+> `src/` (assim como fizemos com volatility).
+
+Duas implicações técnicas diretas desta definição, que este documento não
+tinha capturado antes:
+
+1. **"Comparison" não é um recurso do estágio de volatilidade — é o padrão
+   arquitetural que TODO estágio deveria seguir.** `VolatilityEstimator`
+   (Protocol + N implementações + harness de comparação) é o exemplo
+   único hoje; o objetivo declarado é generalizar esse padrão (interface
+   pluggable + comparação medida) para barra, regime, features, barreiras,
+   learner, calibração — não é um caso especial isolado, é o modelo de
+   referência.
+2. **Multi-ativo/multi-TF não é um parâmetro a mais em funções existentes
+   — é uma restrição estrutural**, do mesmo tipo que o lote mínimo do BTC é
+   uma restrição estrutural (CLAUDE.md, "Comportamento esperado"). Um
+   código que aceita `symbol` como kwarg mas nunca foi exercitado fora de
+   BTCUSDT não está "pronto para multi-ativo" — está "não-hostil a
+   multi-ativo", uma diferença que a descoberta abaixo torna concreta.
+
+### 15.2 Metodologia — não presumir, verificar
+
+6 agentes `Explore` independentes, cada um restrito a 2-4 pacotes de
+`src/` (nenhuma sobreposição), instruídos a: (a) listar todo `.py` real
+(exclui `__pycache__`), (b) citar consumidor real via grep — nunca
+"deveria consumir" —, (c) citar hardcode de símbolo/TF com número de
+linha, (d) mapear cada arquivo ao estágio candidato da lista do Manager
+ou declarar que não mapeia. Nenhum agente teve acesso ao raciocínio dos
+outros — achados convergentes (ex. "REGIME depende de FEATURES", achado
+independentemente pelo agente de `features+regime`, consistente com o
+diagrama de import do CLAUDE.md quando lido com cuidado) carregam mais
+peso que achados isolados.
+
+**Resultado completo (todos os ~85 arquivos, tabela file-by-file):**
+**https://claude.ai/code/artifact/38dea9cf-8ead-454c-9fbc-b7e3809ff4c8**
+
+Resumo por camada abaixo — não repete o detalhe do artifact, só a síntese
+necessária pra validar/corrigir a proposta do Manager.
+
+| camada | pacotes | prontidão real |
+|---|---|---|
+| DATA — ingestão/checagem | `exchange/`, `data/` | **A mais pronta.** `symbol`/`tf` são parâmetros de primeira classe já exercitados em `lake.py`/`resample.py`/`download.py` (`DEFAULT_SYMBOLS` cobre os 5 desde o Sprint 3) |
+| DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf) |
+| DATA — barreiras/label | `labels/` | Parcial. `symbol` real, **TF hardcoded em 3 lugares independentes** (`triple_barrier.py` 2x, `barrier_sweep.py` 1x) — `decision_tf_minutes` existe no config mas metade do código não o lê |
+| ML | `models/`, `validation/` | **1,5 de 5 camadas de ablação do PRD implementadas**; DSR e os 14 testes de leakage existem mas não rodam automaticamente; `model_id` sem símbolo/TF no nome |
+| LIVE TRADING | `risk/`, `execution/`, `live/`, `monitoring/` | **~5% implementado.** `risk/` é biblioteca real sem nenhum caller de produção e sem dimensão de símbolo; `execution/`≈0%; `live/`=pacote vazio; `monitoring/`=1 função nunca chamada |
+| Suporte | `core/`, `backtest/`, `analysis/` | `core/` é contrato puro, correto como está; `backtest/` tem conteúdo real mas zero consumidor de produção; `analysis/` tem pelo menos 4 arquivos que informam `constants.yaml`/PRD mesmo excluídos do protocolo formal |
+
+### 15.3 O pipeline de 17 estágios proposto — validado, com 6 correções justificadas
+
+O Manager pediu para tratar a proposta como visão, não regra, e validar.
+Veredito: **a decomposição em estágios e o agrupamento em 3 camadas estão
+certos e são uma melhoria real sobre a ausência de modelo explícito que
+este documento tinha até agora.** Seis pontos específicos, porém, não
+sobrevivem ao confronto com o código real — cada um com evidência
+citável, não opinião:
+
+| # | proposta original | correção, com evidência |
+|---|---|---|
+| 1 | `04_REGIME` antes de `05_FEATURES` | **Invertido.** `regime/build.py:48` chama `features_build.build_t1_features(...)` antes de classificar; `classifier.py:432-436` lê colunas (`B07`, `C07`, `E02f`, `E27f`) que só existem porque Features já rodou. Não é preferência de design — é dependência de dado hard-coded. Correto: **FEATURES antes de REGIME**. |
+| 2 | `03_VOLATILIDADE` como estágio upstream de regime/features | **Reclassificado.** Hoje `VolatilityEstimator` só alimenta `07_LABEL` — zero import em `features/build.py` ou `regime/`. FEATURES/REGIME ainda usam o ATR legado (`group_c.c01_atr_20`). Volatilidade não é "estágio 3" numa cadeia linear hoje — é um serviço que deveria ser injetado em pelo menos 2 pontos (features E labels) e hoje só chega a 1. |
+| 3 | `06_BARREIRAS` como estágio separado antes de `07_LABEL` | **Não existe separação real ainda.** `tp_atr_mult`/`sl_atr_mult` vivem no mesmo `LabelConfig`/`config_hash` que fill e custo; `build_labels` resolve tudo numa função. `barrier_sweep.py` parece ser 06 mas na verdade lê fill/ATR já persistidos por 07 — é pós-07, não pré-07. Extrair 06 de verdade é trabalho de refatoração real, não uma reorganização de nome. |
+| 4 | `08_META_LABEL` logo após `07_LABEL`, antes do learner | **Erro de categoria.** Zero código de meta-labeling em `src/labels/`. O "Meta Model" real do PRD consome predições OOF do Alpha (`predictions/alpha/{model_id}/predictions.parquet`) — que só existem depois do `10_LEARNER` treinar. Meta-label estruturalmente não pode vir antes do modelo primário existir. Reclassificado como estágio pós-learner (ver tabela §15.4). |
+| 5 | `13_PESOS` na ML LAYER | **Não vive lá.** `sample_weight` é computado em `src/labels/weights.py` (DATA LAYER) e só consumido (nunca recalculado) em `alpha.py:229`. Não há módulo de pesos em `models/`/`validation/`. Movido pra DATA LAYER, dentro de `07_LABEL`. |
+| 6 | `09_SPLIT_VALIDACAO` e `12_VALIDACAO` como duas fases distintas | **É o mesmo mecanismo (`cpcv.py::CPCVResult`) reusado**, não duas fases sequenciais — treina, audita vazamento e reconstrói caminho de backtest a partir do MESMO objeto de split. A distinção nominal do Manager aponta pra um gap real, mas o gap não é "faltam dois estágios", é "falta um GATE automático pós-calibração" (DSR + os 14 testes de leakage existem mas não rodam dentro de `pipeline.py` hoje — são scripts manuais órfãos). |
+
+### 15.4 Modelo de estágios corrigido
+
+```
+DATA LAYER
+  01_BARRA            src/data/{resample,lake,download}.py            ✅ pronto multi-ativo/TF
+  02_DATA_CHECK        src/data/{checks,validate,schemas}.py           parcial, symbol nunca exercitado
+  03_FEATURES          src/features/{build,support,groups/*}.py        TF hardcoded, thresholds globais
+  04_VOLATILIDADE      src/features/volatility.py                      ilha — só alimenta labels hoje
+  05_REGIME            src/regime/{build,classifier,stress}.py         depende de 03, corrigido de posição
+  06_BARREIRAS         (não existe separado — dentro de labels/)       refatoração real necessária
+  07_LABEL             src/labels/{triple_barrier,fill_model}.py       TF hardcoded 3x
+  07b_PESOS            src/labels/weights.py                           movido da ML LAYER
+
+ML LAYER
+  08_SPLIT             src/validation/cpcv.py                          embargo hardcoded em 15m
+  09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD; stability.py órfã
+  09b_CALIBRACAO       (inline em alpha.py — não separável hoje)
+  10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe, não wired em pipeline.py
+  11_META_MODEL        (não existe — PRD §6.8, fora da V1)              movido de 08 pra cá, pós-learner
+
+LIVE TRADING LAYER
+  12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         real, zero wiring, sem dimensão symbol
+  13_EXECUCAO          src/exchange/adapter.py, src/execution/         ~0%, place_order NotImplementedError
+  14_MONITORAMENTO     src/monitoring/logging.py                       1 função, nunca chamada
+  15_FEEDBACK_POST_TRADE (não existe em nenhuma forma)                 100% green-field
+```
+
+Reduzido de 17 para 15 posições numeradas porque dois itens do Manager
+(`06_BARREIRAS`, `09b_CALIBRACAO`) não são hoje estágios separáveis sem
+refatoração — mantidos na lista como TRABALHO A FAZER, não renomeados
+como se já existissem.
+
+### 15.5 Erros identificados neste documento (PLANO_MESTRE_PRINCE2.md, pré-v2.0)
+
+Falhas de desenho/planejamento/arquitetura encontradas nesta rodada,
+listadas sem eufemismo — é o que o Manager pediu ("detectar falhas
+ocultas"):
+
+1. **Identidade desatualizada por 6 versões.** "BTCUSDT Quant Engine" no
+   cabeçalho sobreviveu de v1.0 a v1.6 mesmo com `PRD_V4_1.md` (emenda
+   multi-ativo) sendo citado como fonte técnica em todas elas. Nenhuma
+   revisão própria (nem a auto-crítica de v1.2-v1.5) pegou isso — só uma
+   leitura humana pegou. Corrigido nesta versão.
+2. **Product Breakdown Structure (§11) parou no nível de diretório.** "Os
+   11 estágios do pipeline: `src/exchange/`, `src/data/`, ..." dava a
+   impressão de cobertura completa sem nunca ter aberto um arquivo. Um
+   PBS que declara granularidade de diretório como se fosse suficiente
+   pra decisão de engenharia é exatamente o tipo de "afirmação não
+   re-verificada" que a pergunta #6 de `project_assurance` deveria ter
+   pego antes — e não pegou, porque o §11 nunca passou pelo protocolo de
+   revisão adversarial (só o documento inteiro passou, uma vez, em outro
+   contexto, achando AG-003 sobre coisas diferentes).
+3. **Sequenciamento de trabalho guiado por prioridade de MEDIÇÃO (M1→M5→M6
+   do PRD), nunca confrontado com prontidão de ENGENHARIA.** Esta sessão
+   executou M1 (volatilidade) e começou a planejar M5/M6 sem nunca
+   verificar se `src/` como um todo suporta o "comparison... entre a
+   árvore pipeline" que é o objetivo declarado do projeto. O achado desta
+   seção (TF hardcoded em 4+ lugares, thresholds globais, `risk/` sem
+   dimensão de símbolo) mostra que a resposta era "não, ainda não" — e
+   isso deveria ter sido perguntado antes de propor M5/M6 como "próximos
+   passos rápidos" (erro já corrigido nesta sessão, mas por acidente de
+   verificação pontual, não por processo que perguntasse isso
+   sistematicamente).
+4. **§6.1 (quando o protocolo de Pacote de Trabalho se aplica) nunca foi
+   testado contra um arquivo de `src/labels/`, `src/risk/` ou
+   `src/execution/` de verdade** — só contra o próprio `PLANO_MESTRE_PRINCE2.md`
+   (§10, ciclo 1). O primeiro teste real do protocolo continua pendente.
+5. **Nenhum registro RAID (§7) capturava os bloqueadores estruturais de
+   multi-ativo/TF antes desta seção** — eles existiam no código (TF
+   hardcoded, thresholds globais) mas não existiam como ISSUE
+   documentado em lugar nenhum do projeto. Corrigido com AG-004..AG-007
+   abaixo.
+
+### 15.6 Recomendação de sequenciamento — o que refatorar primeiro, e por quê
+
+Não recomendo "refatorar tudo antes de continuar" — violaria o próprio
+princípio de Manage by Exception e o histórico de "pare na primeira
+camada que funcionar" do CLAUDE.md. Recomendo sequenciar pelo que
+**bloqueia de verdade** o objetivo de comparação multi-ativo, não pelo
+número do estágio:
+
+1. **`validation/cpcv.py::_BAR_MS` hardcoded em 15m** — prioridade mais
+   alta de TODOS os achados, porque é o único bloqueador que produziria
+   um **erro silencioso** (embargo em unidade errada) em vez de um erro
+   visível, se M2/M3 (timeframe) rodarem antes disso ser corrigido.
+2. **Conectar a infra multi-symbol/TF que já existe mas está morta**
+   (`regime_symbol_tf_dir`, `labels_symbol_tf_dir`,
+   `predictions_symbol_tf_dir`) aos writers reais — não é código novo, é
+   trocar o destino de escrita, baixo risco.
+3. **Migrar `features/build.py`/`group_c.py` pro `VolatilityEstimator`**
+   — fecha a duplicação de fórmula ATR (achado desta sessão E da
+   anterior) e faz `03_FEATURES`/`05_REGIME` herdarem a escolha do GK
+   automaticamente, sem trabalho extra.
+4. **Rodar Feature+Label Engine pros outros 4 ativos** (já identificado
+   na resposta anterior desta conversa, pré-requisito de M5/M6) — agora
+   com o item 1 corrigido primeiro, pra não gerar dado errado silenciosamente.
+5. Só depois disso, decisão do Manager sobre extrair `06_BARREIRAS` como
+   estágio real (é refatoração de `triple_barrier.py`, arquivo crítico —
+   passa pelo protocolo completo do §6, primeiro teste real dele).
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -707,6 +903,32 @@ também, não só pros números do PRD.
 
 ## Changelog
 
+- **v2.0 (2026-08-12)** — Manager: "não levou a sério" o pedido anterior
+  de refatorar `src/` inteiro pra nova amplitude do projeto — evidência
+  concreta apontada: este documento ainda se chamava "BTCUSDT Quant
+  Engine". Correção de identidade no cabeçalho (§0) + definição do
+  projeto registrada verbatim (§15.1: motor multi-TF/multi-par/
+  bidirecional, objetivo de comparação entre modelos em toda a árvore de
+  `src/`, não um projeto BTC). 6 agentes `Explore` paralelos fizeram
+  discovery file-by-file de todo `src/` (~85 arquivos, artifact completo
+  linkado em §15.2) para validar a proposta de pipeline de 17 estágios
+  do Manager contra o código real — 6 correções justificadas com
+  evidência (REGIME depende de FEATURES, não o contrário; VOLATILIDADE é
+  ilha isolada hoje; BARREIRAS não é separável de LABEL sem refatoração;
+  META_LABEL é category error antes do LEARNER existir; PESOS vive no
+  Label Engine, não na ML LAYER; SPLIT/VALIDACAO são o mesmo mecanismo
+  CPCV reusado). Modelo de estágios corrigido publicado (§15.4). 5 erros
+  de desenho identificados no próprio documento (§15.5), incluindo que o
+  PBS do §11 nunca desceu a nível de arquivo. 5 novos achados de
+  arquitetura registrados como AG-004..AG-008 (TF hardcoded em CPCV —
+  risco de erro silencioso, o mais grave; TF hardcoded 3x em labels/;
+  infra multi-symbol/TF existente mas morta; risk/ sem dimensão de
+  símbolo; ATR duplicado entre volatility.py e o caminho legado).
+  Recomendação de sequenciamento por bloqueio real, não por número de
+  estágio (§15.6). Bump de versão maior (1.6→2.0) porque a correção de
+  identidade e o novo modelo de estágios mudam como todo trabalho futuro
+  deste projeto é enquadrado — não é incremento de conteúdo, é correção
+  de norte.
 - **v1.6 (2026-08-12)** — Manager disse "pode seguir" pra M5/M6.
   Verifiquei o disco (`data/labels/`, `predictions/alpha/`,
   `execution/fill_simulator/`, `data/raw/book_ticker/`) antes de escrever

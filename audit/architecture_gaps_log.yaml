@@ -120,6 +120,135 @@ entries:
       sessao -- exatamente a metrica que Sec7 do PLANO_MESTRE diz ser "a
       mais importante" para saber se o protocolo funciona sozinho.
       Funcionou no primeiro ciclo real.
+    resolved_by_commit: "d1e5c9a"
+    resolution: >
+      Sec14 escrita, changelog v1.3 backfilled, nota de limitacao
+      prospectiva em Sec2, "canonico" desambiguado em Sec6.5.
+    status: "fechado — corrigido na mesma sessão do achado"
+
+  - id: AG-004
+    date: "2026-08-12"
+    file: "src/validation/cpcv.py"
+    related_file: "PLANO_MESTRE_PRINCE2.md §15"
+    found_by: "Agent discovery (Explore, 6 agentes paralelos, discovery de src/ solicitado pelo Manager)"
+    gap: >
+      cpcv.py:70 -- `_BAR_MS: Final[int] = step_ms("15m")`, constante de
+      MODULO fixa em 15 minutos, usada para converter `embargo_bars`
+      (contagem de barras) em milissegundos (`embargo_ms = cfg.embargo_bars
+      * _BAR_MS`, linha 262). Nao existe parametro `tf` em
+      `generate_splits`/`load_labels_v1` para sobrescrever isso.
+    severity: "alto"
+    layer: "validation"
+    consequence: >
+      Rodar CPCV para um TF diferente de 15m (M2/M3 do PRD V4.1, ja no
+      roadmap) produziria embargo em UNIDADE DE TEMPO ERRADA --
+      SILENCIOSAMENTE, sem erro visivel. E o unico bloqueador de
+      multi-TF desta descoberta com risco de dado errado nao detectado,
+      em vez de crash/erro obvio -- por isso e o item de maior prioridade
+      de correcao entre os achados de src/ (PLANO_MESTRE Sec15.6).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-005
+    date: "2026-08-12"
+    file: "src/labels/triple_barrier.py, src/labels/barrier_sweep.py"
+    related_file: "src/features/_sources.py"
+    found_by: "Agent discovery (Explore, 6 agentes paralelos)"
+    gap: >
+      TF hardcoded em 15m de forma DUPLICADA e INDEPENDENTE em 3+ lugares:
+      triple_barrier.py:129 (`_BAR_MS`, usado em horizonte/n_bars_held),
+      triple_barrier.py:899 (`query_bars(symbol, "15m", ...)` literal
+      dentro de `build_labels_for_symbol`), barrier_sweep.py:51 (`_BAR_MS
+      = 15*60_000`, copia propria). `LabelConfig.decision_tf_minutes`
+      existe e entra no config_hash, mas so e lido para o estimador de
+      volatilidade -- a aritmetica real de horizonte/fill continua fixa
+      em 15m mesmo se `decision_tf_minutes` mudar. Campo existe, parece
+      configuravel, mas metade do codigo nao o respeita.
+    severity: "alto"
+    layer: "labels"
+    consequence: >
+      Bloqueia M2/M3 (barra/timeframe, PRD V4.1) de produzirem labels
+      corretos em 30m/1h sem refatoracao real -- nao e so passar um
+      argumento novo, e reescrever a assinatura de duas funcoes publicas.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-006
+    date: "2026-08-12"
+    file: "src/regime/_paths.py, src/labels/_paths.py, src/models/_paths.py"
+    related_file: "src/regime/build.py, src/labels/triple_barrier.py, src/models/pipeline.py"
+    found_by: "Agent discovery (Explore, 6 agentes paralelos)"
+    gap: >
+      Infraestrutura de path multi-symbol/TF ja existe em 3 pacotes
+      (`regime_symbol_tf_dir(symbol,tf)`, `labels_symbol_tf_dir(symbol,tf)`,
+      `predictions_symbol_tf_dir(symbol,tf)`, todas com symbol+tf reais)
+      mas NENHUM writer de producao as usa -- `write_regimes_atomic`,
+      `write_labels_atomic`, `write_predictions_atomic` gravam sempre no
+      layout legado plano (sem chave de symbol/tf), a menos que o
+      chamador passe `dest_dir=` explicito, o que nenhum caller de
+      producao faz hoje. So testes unitarios exercitam as funcoes novas.
+    severity: "médio"
+    layer: "regime/labels/models"
+    consequence: >
+      T0.3 (Camada 0, "chaveamento por symbol/tf") foi marcado como
+      fechado no roadmap, mas a infra construida nunca foi conectada aos
+      pontos de escrita reais -- gate G-C0-4 mediu a existencia do
+      codigo, nao o uso dele. Correcao e baixo risco (trocar destino de
+      escrita, nao logica nova) mas nao e automatica.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-007
+    date: "2026-08-12"
+    file: "src/risk/limits.py, src/risk/kill_switch.py"
+    related_file: "PLANO_MESTRE_PRINCE2.md §15"
+    found_by: "Agent discovery (Explore, 6 agentes paralelos)"
+    gap: >
+      `RiskEngineInputs`/`KillSwitchInputs` tem exatamente UM
+      `equity`/`daily_loss_usd`/`equity_peak_usd`/`consecutive_losses`
+      por chamada -- escalares de conta, sem campo `symbol` nem
+      estrutura por-ativo. Thresholds em constants.yaml (daily_loss_limit,
+      max_drawdown, max_consecutive_losses) tambem sao flat, sem mapa
+      `by_symbol`.
+    severity: "alto"
+    layer: "risk"
+    consequence: >
+      Nao ha mecanismo hoje pra gatear "BTC bateu o limite diario mas ETH
+      nao", nem pra dimensionar/limitar risco por ativo independentemente
+      -- adicionar isso e redesenho real dos dois dataclasses e do schema
+      de constants.yaml, nao wiring. Relevante so quando 14_RISK_ENGINE
+      ganhar um caller de producao real (ainda nao tem nenhum).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-008
+    date: "2026-08-12"
+    file: "src/features/groups/group_c.py, src/features/build.py"
+    related_file: "src/features/volatility.py, src/labels/triple_barrier.py"
+    found_by: "Agent discovery (Explore, 6 agentes paralelos) -- confirma achado ja registrado em docs/refactor_gk_canonico.md, agora com evidencia de nao-migracao"
+    gap: >
+      Duas implementacoes independentes da mesma matematica de ATR
+      coexistem: `features/volatility.py::VolatilityEstimator` (novo,
+      Protocol, usado so por `labels/triple_barrier.py`) e
+      `group_c.c01_atr_20`/`support.atr_wilder` (legado, ainda o unico
+      caminho usado por `features/build.py`, que alimenta REGIME por
+      coluna). `canonical_volatility_estimator` (constants.yaml) trava a
+      decisao do estimador vencedor (GK) mas so labels/ de fato consome
+      isso -- features/regime continuam no ATR de Wilder legado.
+    severity: "médio"
+    layer: "features"
+    consequence: >
+      A escolha do GK (M1, decisao do Manager 2026-08-11) nao tem efeito
+      em nenhuma feature nem em nenhum eixo de regime hoje -- so em
+      labels. "GK e canonico" e verdade parcial ate esta migracao
+      acontecer.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
     resolved_by_commit: "e25d85c"
     resolution: >
       Sec14 (Road_Map Vivo) escrita com o link real do artifact publicado.
