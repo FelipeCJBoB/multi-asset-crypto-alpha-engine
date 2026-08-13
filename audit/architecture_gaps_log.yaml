@@ -181,10 +181,12 @@ entries:
       (nenhuma linha fora do proprio grupo de teste satisfaz
       `t1 >= g_start`), isolando a escala pura do embargo -- com isso a
       razao exata 2x volta a valer e a asserção `== 2 *` permanece forte.
-      pytest ainda nao re-rodado com a correcao (PENDENTE-DE-EXECUCAO-
-      HUMANA, protocolo de execucao) -- status fica "aguarda confirmacao"
-      ate o Manager confirmar verde.
-    status: "fechado — aguarda confirmação de pytest verde após correção do fixture (protocolo de execução)"
+      Manager rodou `uv run pytest tests/unit/test_validation_cpcv.py -v`
+      apos a correcao do fixture (2026-08-13): **34 passed in 1.78s**.
+      Fechamento formal: correcao original (tf parametrizado, embargo_ms
+      escalando por step_ms(cfg.tf)) verificada verde end-to-end, incluindo
+      a propria checagem que valida a escala numerica exata.
+    status: "fechado — pytest verde (34 passed), confirmado pelo Manager em 2026-08-13"
 
   - id: AG-009
     date: "2026-08-12"

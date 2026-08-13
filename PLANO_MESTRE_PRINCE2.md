@@ -914,6 +914,27 @@ registrado como **AG-009**, não escondido. AG-004 fecha como "aguarda
 confirmação de pytest" — protocolo de execução não muda: eu não rodo o
 teste, entrego o comando, o Manager confirma verde.
 
+**Fechamento real (2026-08-13).** Primeira rodada do Manager achou o
+teste de escala de embargo falhando (300 vs 140 observado, não 280
+esperado pela versão fortalecida). Investigação (não afrouxar a
+asserção — "nunca remediar, sempre solucionar", CLAUDE.md) achou a
+causa raiz: com `horizon_bars=1` no fixture sintético, a linha de
+treino logo à esquerda de cada fronteira de grupo de teste tem
+`t1 == g_start` exatamente, satisfazendo a condição de *purge* e sendo
+contada em `n_purged`, não `n_embargoed` (dedup proposital do próprio
+código, `embargo_mask & ~purge_mask`). Esse desconto é 1 linha
+constante por fronteira esquerda, não escala com `embargo_bars`/`tf` —
+quebrava a razão exata 2× só nas 20 fronteiras esquerda de 40 totais
+(`C(6,2)=15` splits). Fórmula derivada à mão bateu com os dois números
+observados (`20×4+20×3=140`; `20×8+20×7=300`) — confirmando que
+`generate_splits` estava **correto**; o bug era a premissa do teste.
+Corrigido o *fixture* (`horizon_bars=0`, elimina a interação com
+purge), não o código-fonte. Segunda rodada do Manager:
+**34 passed in 1.78s**. AG-004 fecha de verdade — primeiro ciclo
+completo do §6 (Descrição de Produto → implementação → revisão
+independente → achado real em revisão → achado real em pytest →
+causa raiz → correção → verificação humana) em código de produção.
+
 ---
 
 ## Fontes desta pesquisa
@@ -932,6 +953,20 @@ teste, entrego o comando, o Manager confirma verde.
 
 ## Changelog
 
+- **v2.3 (2026-08-13)** — AG-004 fecha de verdade: primeira rodada de
+  `pytest` do Manager achou o teste de escala de embargo falhando (300 vs
+  140, não 280/2× esperado) — investigado até a causa raiz em vez de
+  afrouxar a asserção ("nunca remediar, sempre solucionar"). Achado: com
+  `horizon_bars=1` no fixture sintético, a linha de treino logo à
+  esquerda de cada fronteira de teste tem `t1 == g_start` exatamente,
+  sendo contada em `n_purged` em vez de `n_embargoed` (dedup proposital
+  do próprio `generate_splits`) — desconto de 1 linha CONSTANTE por
+  fronteira esquerda, não escalável com `tf`, que quebrava a razão exata
+  2× só nas 20 fronteiras esquerda de 40. Fórmula derivada à mão bateu
+  com os dois números observados — `generate_splits` estava correto, o
+  bug era a premissa do teste. Corrigido o *fixture* (`horizon_bars=0`),
+  não o código-fonte. Segunda rodada: **34 passed in 1.78s**. Primeiro
+  ciclo completo do §6 em produção fechado ponta a ponta.
 - **v2.2 (2026-08-12)** — Executado o item 1 da recomendação de
   sequenciamento (§15.6): AG-004 corrigido em `src/validation/cpcv.py`,
   primeiro Pacote de Trabalho real do protocolo §6 rodado contra código
