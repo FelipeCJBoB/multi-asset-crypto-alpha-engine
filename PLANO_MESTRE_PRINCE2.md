@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 2.0 · **Data:** 2026-08-12
+**Versão:** 2.1 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -690,6 +690,15 @@ inventada —
   diferente: este documento versiona a si mesmo; o Road_Map versiona o
   ESTADO do projeto).
 
+**Atualização — reconciliação visual com §15 (2026-08-12, a pedido do
+Manager):** o Road_Map ganhou uma seção "Modelo de Estágios de
+Engenharia" — os 15 estágios de §15.4 lado a lado (Data/ML/Live Trading
+Layer), cada um com prontidão real e bloqueador citado, mais um callout
+conectando explicitamente M1/M5/M6 (trilha de Camadas, QUANDO o trabalho
+acontece) aos estágios 04/13/07 (modelo de engenharia, O QUE EXISTE DE
+VERDADE). Os dois eixos — tempo e arquitetura — agora num lugar só, não
+dois documentos separados.
+
 **Atualização — T0.5 investigado, critério #3 reavaliado e fechado
 (2026-08-12, mesma sessão):** T0.5 **está feito** (commit `5d8c8aa`,
 2026-08-10) e dispara o critério de encerramento #3 (`PRD_V4_1.md` §6.5).
@@ -910,6 +919,12 @@ número do estágio:
 
 ## Changelog
 
+- **v2.1 (2026-08-12)** — Road_Map Vivo (§14) ganhou a reconciliação
+  visual pedida: os 15 estágios de §15.4 renderizados lado a lado por
+  camada (Data/ML/Live Trading), com prontidão e bloqueador por estágio,
+  mais um callout ligando M1/M5/M6 (trilha de Camadas) aos estágios
+  04/13/07 correspondentes. Cartão de governança e tabela de decisões do
+  Road_Map atualizados com AG-004..008.
 - **v2.0 (2026-08-12)** — Manager: "não levou a sério" o pedido anterior
   de refatorar `src/` inteiro pra nova amplitude do projeto — evidência
   concreta apontada: este documento ainda se chamava "BTCUSDT Quant
