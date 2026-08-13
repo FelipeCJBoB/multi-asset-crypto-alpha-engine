@@ -244,9 +244,10 @@ entries:
       todos usam `tf="15m"` default nos dois lados. Scripts mecânicos
       (ruff/mypy/banned_patterns/check_unguarded_ratios) rodados por mim
       de forma independente sobre o resultado do Agent, não só aceitos
-      por relato -- limpos. pytest ainda não rodado (PENDENTE-DE-
-      EXECUÇÃO-HUMANA, protocolo de execução).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      por relato -- limpos. Manager rodou os 3 pytest dos Pacotes de
+      Trabalho desta rodada juntos (AG-005/006/009): **106 passed in
+      9.83s** (2026-08-13).
+    status: "fechado — pytest verde (106 passed), confirmado pelo Manager em 2026-08-13"
 
   - id: AG-005
     date: "2026-08-12"
@@ -311,8 +312,9 @@ entries:
       nomeado no achado original. Registrar como follow-up.
       Mecânicos (ruff/mypy/banned_patterns/check_unguarded_ratios)
       confirmados limpos/só-pré-existente por mim via `git stash`.
-      pytest ainda não rodado (PENDENTE-DE-EXECUÇÃO-HUMANA).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      Manager rodou os 3 pytest dos Pacotes de Trabalho desta rodada
+      juntos (AG-005/006/009): **106 passed in 9.83s** (2026-08-13).
+    status: "fechado — pytest verde (106 passed), confirmado pelo Manager em 2026-08-13"
 
   - id: AG-011
     date: "2026-08-13"
@@ -405,9 +407,10 @@ entries:
       duas rodadas) sem nenhum caller de produção -- nada implementado
       pra eles, conforme instruído (evitar fabricar caller). Mecânicos
       (ruff/mypy/banned_patterns) rerodados por mim de forma independente
-      sobre o resultado final -- limpos. pytest ainda não rodado
-      (PENDENTE-DE-EXECUÇÃO-HUMANA).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      sobre o resultado final -- limpos. Manager rodou os 3 pytest dos
+      Pacotes de Trabalho desta rodada juntos (AG-005/006/009): **106
+      passed in 9.83s** (2026-08-13).
+    status: "fechado — pytest verde (106 passed), confirmado pelo Manager em 2026-08-13"
 
   - id: AG-012
     date: "2026-08-13"

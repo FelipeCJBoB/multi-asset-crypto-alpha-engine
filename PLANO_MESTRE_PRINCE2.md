@@ -976,7 +976,8 @@ causa raiz → correção → verificação humana) em código de produção.
   `write_predictions_atomic`). AG-007 (redesenho real do `risk/`) e
   AG-008 (migração de ATR que muda valores reais de modelo) ficaram de
   fora da delegação — não são mecânicos, precisam de decisão do Manager.
-  Todos os 3 fecham como "aguarda confirmação de pytest".
+  **Fechamento real (2026-08-13):** Manager rodou os 3 pytest juntos —
+  **106 passed in 9.83s**. AG-005, AG-006 e AG-009 fecham de verdade.
 - **v2.3 (2026-08-13)** — AG-004 fecha de verdade: primeira rodada de
   `pytest` do Manager achou o teste de escala de embargo falhando (300 vs
   140, não 280/2× esperado) — investigado até a causa raiz em vez de
