@@ -541,6 +541,13 @@ dissesse que sim ou que não.
 
 ### 11.2 Produtos especialistas (o QUE está sendo construído — a engenharia em si)
 
+**Nível de granularidade desta tabela: diretório, não arquivo.** Para o
+inventário file-by-file (~85 arquivos, consumidor real citado por
+arquivo, prontidão multi-ativo/TF), ver §15 — que também é a correção
+registrada de um erro real desta seção: o §15.5 item 2 documenta que
+esta tabela, sozinha, deu impressão de cobertura completa sem nunca ter
+sido verificada no nível que decisão de engenharia exige.
+
 | produto | caminho | subordina-se a |
 |---|---|---|
 | Blueprint técnico corrente — **emenda de escopo** | `PRD_V4_1.md` | este plano organiza, não substitui |
