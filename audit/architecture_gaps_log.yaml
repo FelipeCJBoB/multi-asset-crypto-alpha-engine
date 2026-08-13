@@ -462,6 +462,54 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto"
+    addendum_2026-08-13: >
+      Pesquisa de preparacao de engenharia (Agent research, nao
+      implementacao) + verificacao independente do Manager (leu
+      limits.py/kill_switch.py/sizing.py na integra + PRD_V3_2 Sec8.6/8.7 +
+      PRD_V4_1 Sec2.9/5.3/5.4 + docs Binance) confirmaram o achado original
+      e acrescentaram 3 pontos, guardados aqui pra quando o primeiro
+      caller real de risk/ aparecer (nao reconstruir esse raciocinio do
+      zero):
+      (1) o vacuo e maior que "zero caller" -- e "zero FONTE tambem": nao
+      existe hoje nenhum modulo de reconciliacao de conta que calcule
+      equity/daily_loss_usd/equity_peak_usd. Redesenhar o schema agora
+      arrisca contra uma fonte de dado que nem existe ainda, nao so contra
+      um caller ausente.
+      (2) o controle 19 (AGGREGATE_RISK_LIMIT, PRD_V4_1 Sec5.3,
+      sigma_agg=sqrt(w.T@Corr@w)) e TECNICAMENTE desacoplado do dilema de
+      decompor equity -- e funcao pura nova, mesmo padrao de
+      control_01..18, podia ser escrita e testada isoladamente hoje sem
+      resolver nada de AG-007. So nao e implementada agora por
+      SEQUENCIAMENTO de roadmap (V41-8, apos M4/reconvergencia V41-5,
+      PRD_V4_1 Sec6.5), nao por vacuo -- dado que o proprio PRD chama I4
+      de "falha de seguranca, nao de medicao" (Sec2.9), vale perguntar
+      explicitamente ao Manager se isso justifica furar a fila (decisao
+      dele).
+      (3) decomposicao de Euler/risco marginal sobre a formula do
+      controle 19 (CR_i = w_i*(Corr@w)_i/sigma_agg, soma_i CR_i ==
+      sigma_agg exato, propriedade padrao de risk budgeting -- Component &
+      Marginal VaR/AnalystPrep FRM) da atribuicao de risco POR SIMBOLO sem
+      decompor equity -- via de observabilidade (log "BTC contribuiu com
+      X% do sigma_agg"), nunca gate, ortogonal as 3 rotas do relatorio de
+      pesquisa original.
+      (4) criterio real de decomponibilidade, nao julgamento: Binance
+      GET /fapi/v1/income aceita filtro por symbol e devolve REALIZED_PNL
+      ja marcado por simbolo (evento de trade, nao de saldo de carteira)
+      -- daily_loss_usd/consecutive_losses/nocional SAO genuinamente
+      decomponiveis por simbolo via trade ledger; equity/equity_peak/
+      margem disponivel NAO SAO, irredutivelmente de conta sob CROSSED
+      (PRD_V3_2 Sec8.7). A Rota 3 correta e por linhagem de dado
+      (AccountRiskInputs = so o que a exchange reporta de conta;
+      SymbolRiskInputs = so o que e reconstruivel do trade ledger por
+      simbolo), nao "duas dataclasses simetricas por instinto". Ponto
+      ainda em aberto mesmo com essa separacao: K01 (daily_loss_usd/
+      equity) tem denominador ambiguo se o numerador virar por-simbolo --
+      2% de QUE equity (total compartilhado, ou algum nocional de
+      referencia por simbolo)? Decisao de negocio do Manager, nao
+      consequencia automatica do redesenho estrutural.
+      Nenhuma implementacao feita -- confirma a recomendacao original:
+      nao redesenhar agora, guardar este addendum pro primeiro caller
+      real.
 
   - id: AG-008
     date: "2026-08-12"
@@ -487,6 +535,41 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto"
+    addendum_2026-08-13: >
+      Pesquisa de preparacao de engenharia (Agent research) + verificacao
+      independente do Manager (leu docs/refactor_gk_canonico.md na
+      integra + o codigo real) confirmaram o achado: 3 das 10 features T1
+      (A05/A13/E27f) sao ATR-derivadas, 5 modelos ja treinados em disco
+      ficariam invalidos se features/build.py migrar, promocao ja
+      corretamente represada ate M2/M3 fecharem (decisao registrada em
+      refactor_gk_canonico.md, nao revista).
+      Lacuna real identificada nos dois lados independentemente: M1 mediu
+      QLIKE (qualidade de PREVISAO de variancia do bar seguinte), nunca a
+      diferenca de NIVEL entre GK e Wilder no MESMO bar -- E27f_cost_atr_
+      ratio/econ_regime usa nivel (percentil expansivo, tercil), nao
+      previsao, entao QLIKE genuinamente nao testou a grandeza que decide
+      se os tercis mudam.
+      Decisao (Manager): rodar a medicao de shadow mode AGORA, como
+      extensao de pesquisa -- mesma categoria ja aprovada da extensao
+      RS/YZ pos-M1 (nao escreve constants.yaml, nao regrava labels/,
+      nao retreina, NAO consome N_lifetime pela propria definicao do
+      CLAUDE.md) -- e reaproveitar o instrumento de Rand ajustado que
+      PRD_V4_1.md ja especifica (Sec4.5, "a medicao decide" pra
+      equivalencia de regime BTC-derivado) em vez de inventar metrica
+      nova.
+      Implementado: `src/analysis/gk_vs_wilder_econ_regime_shift.py`
+      (medicao pura, mesmo padrao IO de `volatility_comparison.py`/
+      `volatility_operational_effect.py`) + testes unitarios
+      (`tests/unit/test_analysis_gk_vs_wilder_econ_regime_shift.py`,
+      nucleo puro `_econ_regime_shift_metrics` testado sem IO). Mede por
+      simbolo: `median_abs_relative_diff` (a lacuna que faltava),
+      `fraction_econ_regime_changed`, `adjusted_rand_index`
+      (`sklearn.metrics.adjusted_rand_score`, mesmo pacote ja usado em
+      `models/alpha.py`). TF unico 15m (decision_tf de producao). Scripts
+      mecanicos autorizados rodados, limpos. Ainda nao executado
+      (PENDENTE-DE-EXECUCAO-HUMANA, protocolo de execucao) -- comando
+      entregue ao Manager. Decisao de PROMOCAO continua represada ate
+      M2/M3, nao revista por esta medicao.
 
   # AG-010 -- achado ao preparar contexto pra delegar AG-005/006/009 a
   # agentes (2026-08-13): a entrada acima (AG-008) tinha chaves YAML

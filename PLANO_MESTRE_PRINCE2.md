@@ -935,6 +935,44 @@ completo do §6 (Descrição de Produto → implementação → revisão
 independente → achado real em revisão → achado real em pytest →
 causa raiz → correção → verificação humana) em código de produção.
 
+### 15.7 Preparação de engenharia — AG-007 e AG-008 (2026-08-13)
+
+Os dois achados restantes de §15.6 (AG-007, risco por-símbolo; AG-008,
+migração de ATR) não são fixes mecânicos — o primeiro é redesenho real
+de arquitetura, o segundo muda valores reais consumidos por modelos já
+treinados. Antes de qualquer implementação, rodei pesquisa (2 `Agent`
+paralelos, código real + PRD) preparando o terreno de decisão, e o
+Manager fez sua própria verificação independente — bateu com a pesquisa
+em praticamente todo fato verificável, corrigiu onde o vácuo era maior
+do que eu tinha registrado, e acrescentou 3+3 achados novos. Detalhe
+completo, não duplicado aqui, vive nos addenda `2026-08-13` das próprias
+entradas AG-007/AG-008 em `audit/architecture_gaps_log.yaml` (o código/
+dado é a fonte da verdade; este documento é um pointer, não a cópia).
+
+**Resumo executivo:**
+
+- **AG-007** — conta roda em `margin_mode: CROSSED` (PRD_V3_2 §8.6):
+  `equity`/`daily_loss_usd`/`equity_peak_usd` são irredutivelmente de
+  CONTA, não decomponíveis por símbolo pela própria exchange; só
+  `daily_loss_usd`/`consecutive_losses`/nocional são genuinamente
+  decomponíveis via trade ledger (`GET /fapi/v1/income`, `REALIZED_PNL`
+  por símbolo). Vácuo maior do que "zero caller": também "zero fonte" —
+  nenhum módulo de reconciliação de conta existe ainda. **Decisão: não
+  redesenhar agora** — schema especificado no vácuo é o mesmo tipo de
+  erro que já motivou a correção do `control_10_risco_real`. Addendum
+  registrado para quando `risk/` ganhar o primeiro caller real.
+- **AG-008** — lacuna real achada: M1 mediu QLIKE (previsão), nunca a
+  diferença de NÍVEL entre GK/Wilder no mesmo bar, que é o que decide se
+  `econ_regime` desloca. **Decisão: medir agora, em shadow mode** — não
+  escreve `constants.yaml`, não regrava `labels/`, não retreina, não
+  consome `N_lifetime` (mesma categoria já aprovada da extensão RS/YZ).
+  Implementado `src/analysis/gk_vs_wilder_econ_regime_shift.py` +
+  testes — mede `median_abs_relative_diff`, `fraction_econ_regime_
+  changed`, `adjusted_rand_index` (reaproveita o instrumento que
+  PRD_V4_1.md §4.5 já propõe para equivalência de regime BTC-derivado,
+  não inventa métrica nova). Decisão de PROMOÇÃO continua represada até
+  M2/M3, como já decidido em `docs/refactor_gk_canonico.md`.
+
 ---
 
 ## Fontes desta pesquisa
@@ -953,6 +991,20 @@ causa raiz → correção → verificação humana) em código de produção.
 
 ## Changelog
 
+- **v2.5 (2026-08-13)** — §15.7: preparação de engenharia para AG-007
+  (risco por-símbolo) e AG-008 (migração ATR), pedida pelo Manager antes
+  de qualquer implementação (nenhum dos dois é fix mecânico). Pesquisa em
+  2 Agents paralelos + verificação independente do Manager (bateu com a
+  pesquisa em quase tudo, corrigiu o tamanho real do vácuo em AG-007 —
+  "zero caller" era só metade do problema, também "zero fonte" — e
+  acrescentou o critério de decomponibilidade real via trade ledger da
+  Binance). AG-007: decisão de não redesenhar agora, addendum guardado no
+  ledger. AG-008: decisão de medir em shadow mode antes de decidir rota —
+  implementado `src/analysis/gk_vs_wilder_econ_regime_shift.py`, mede o
+  que faltava (diferença de NÍVEL entre GK/Wilder, não só QLIKE de
+  previsão) reaproveitando o instrumento de Rand ajustado que PRD_V4_1.md
+  §4.5 já propõe. Não consome N_lifetime nem escreve produção — só
+  medição. Comando de pytest entregue ao Manager, ainda não confirmado.
 - **v2.4 (2026-08-13)** — 3 Pacotes de Trabalho do §6 delegados a Agents
   em paralelo (AG-005, AG-006, AG-009 — arquivos não sobrepostos), cada
   um com contexto rico e protocolo de execução explícito, primeira vez
