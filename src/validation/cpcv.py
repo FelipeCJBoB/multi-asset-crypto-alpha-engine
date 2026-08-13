@@ -75,6 +75,21 @@ IntArray = NDArray[np.int64]
 # mais uma constante de import-time.
 _DEFAULT_TF: Final[str] = "15m"
 
+# AG-009 (audit/architecture_gaps_log.yaml) — `load_labels_v1(tf=...)` (que
+# resolve QUAL arquivo de dado é lido) e `CPCVConfig(tf=...)` (que resolve
+# `step_ms` no cálculo do embargo) são dois parâmetros passados
+# INDEPENDENTEMENTE pelo caller — nada os ligava estruturalmente até esta
+# correção. `assert_tf_consistent` fecha o gap medindo o espaçamento REAL de
+# `t0` no `labels` carregado contra `step_ms(config.tf)`; `_TF_CONSISTENCY_RTOL`
+# é a tolerância dessa medição — folgada o bastante para não reagir a gaps
+# reais do dataset (poucos, ver `known_gaps`), apertada o bastante para pegar
+# qualquer TF suportado hoje trocado por outro (15m/30m/1h diferem entre si
+# por um fator >= 2x, bem acima de 5%). Tolerância de MEDIÇÃO/checagem
+# estrutural, não hiperparâmetro de domínio — mesma classe de
+# `leakage.py::tolerance = 1e-6` (marcado `noqa: magic-number`, não
+# `constants.yaml`).
+_TF_CONSISTENCY_RTOL: Final[float] = 0.05  # noqa: magic-number
+
 
 class CPCVError(Exception):
     """Base para erros de configuração/geração do CPCV."""
@@ -225,6 +240,71 @@ def _path_assignment(n_groups: int) -> dict[tuple[int, ...], int]:
 
 
 # ============================================================================
+# AG-009 — guarda cruzada entre o `tf` real de `labels` e `CPCVConfig.tf`.
+# ============================================================================
+
+
+def _embargo_ms(config: CPCVConfig) -> int:
+    """`embargo_bars` convertido pra milissegundos via `step_ms(config.tf)`
+    — extraído em função própria (antes inline, duplicado em
+    `generate_splits` e `assert_embargo_respected`) pra que os dois
+    caminhos usem literalmente a MESMA linha de código, não duas cópias
+    que podem divergir silenciosamente uma da outra (a própria classe de
+    risco que motivou o teste `test_assert_embargo_respected_usa_tf_do_
+    config_nao_constante_fixa`, AG-004)."""
+    return config.embargo_bars * step_ms(config.tf)
+
+
+def assert_tf_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
+    """AG-009 (audit/architecture_gaps_log.yaml) — guarda cruzada entre o
+    `tf` REAL de `labels` (o TF em que os `t0` foram gerados — ex. via
+    `load_labels_v1(tf=...)`) e `config.tf`, usado por `generate_splits`
+    pra converter `embargo_bars` em milissegundos (`_embargo_ms`). Os dois
+    são hoje parâmetros passados INDEPENDENTEMENTE pelo caller —
+    `load_labels_v1` não conhece o `CPCVConfig` que vai rodar depois —
+    então nada os liga estruturalmente sem esta checagem. Sem ela, um
+    caller poderia escrever `load_labels_v1(tf="30m")` +
+    `CPCVConfig.from_constants()` (default `tf="15m"`) e computar o
+    embargo na unidade ERRADA silenciosamente — mesma classe de bug que
+    AG-004 fechou, um nível acima (composição de duas funções em vez de
+    uma constante única).
+
+    Mede o espaçamento real de `t0` como a MEDIANA do diff entre valores
+    ordenados e deduplicados — não o mínimo, não uma checagem de
+    uniformidade estrita. Dado real tem gaps (poucos — ver `known_gaps`
+    em `constants.yaml`; item 1 da docstring do módulo: "densidade ~
+    constante ao longo dos ~6,6 anos, poucos gaps reais"), então exigir
+    espaçamento perfeitamente uniforme quebraria o caso normal; a mediana
+    é robusta a uma MINORIA de gaps maiores que o step nominal, desde que
+    a maioria das barras seja consecutiva.
+
+    Levanta `CPCVError` se a mediana do diff não bate com
+    `step_ms(config.tf)` dentro de `_TF_CONSISTENCY_RTOL` — calibrada pra
+    pegar o caso real (TF trocado por outro suportado, que difere por um
+    fator >= 2x), não pra exigir precisão maior que o necessário. Não
+    levanta se `labels` tiver menos de 2 `t0` distintos — não há diff pra
+    medir; `assign_time_groups`, chamada logo depois dentro de
+    `generate_splits`, já rejeita esse caso com uma mensagem própria."""
+    t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    t0_unique_sorted = np.unique(t0_ms)
+    if t0_unique_sorted.shape[0] < 2:
+        return
+
+    median_diff_ms = float(np.median(np.diff(t0_unique_sorted)))
+    expected_ms = float(step_ms(config.tf))
+    if abs(median_diff_ms - expected_ms) > _TF_CONSISTENCY_RTOL * expected_ms:
+        raise CPCVError(
+            "AG-009: espaçamento real de `t0` em `labels` (mediana="
+            f"{median_diff_ms:.0f}ms) não bate com step_ms(config.tf="
+            f"{config.tf!r})={expected_ms:.0f}ms — `labels` provavelmente foi "
+            "carregado com um `tf` diferente do usado em `CPCVConfig` (ex. "
+            "`load_labels_v1(tf=\"30m\")` combinado com o default `tf=\"15m\"` de "
+            "`CPCVConfig`/`CPCVConfig.from_constants()`). Passe o MESMO `tf` nos "
+            "dois lados."
+        )
+
+
+# ============================================================================
 # Splits — purge por t1 real + embargo simétrico nas bordas do bloco de teste.
 # ============================================================================
 
@@ -262,7 +342,12 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
 
     Levanta `CPCVError` se `n_test_groups != 2` (reconstrução de
     `n_backtest_paths` só implementada para pares, ver item 3 da docstring
-    do módulo)."""
+    do módulo). Levanta `CPCVError` (AG-009) se o espaçamento real de `t0`
+    em `labels` não bater com `step_ms(config.tf)` — roda SEMPRE, sem
+    opt-out, porque é aqui (não em `load_labels_v1`, que não conhece o
+    `CPCVConfig` usado depois) que as duas metades da informação — dado
+    carregado e config declarada — finalmente se encontram; ver
+    `assert_tf_consistent`."""
     cfg = config if config is not None else CPCVConfig.from_constants()
     if labels.is_empty():
         raise CPCVError("generate_splits: labels vazio")
@@ -271,13 +356,14 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
             "generate_splits: atribuição de n_backtest_paths só implementada para "
             f"n_test_groups=2 (1-fatoração de pares) — recebido {cfg.n_test_groups}"
         )
+    assert_tf_consistent(labels, cfg)
 
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t1_ms = labels["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     n = t0_ms.shape[0]
 
     group_id, edges_ms = assign_time_groups(t0_ms, cfg.n_groups)
-    embargo_ms = cfg.embargo_bars * step_ms(cfg.tf)
+    embargo_ms = _embargo_ms(cfg)
     path_by_pair = _path_assignment(cfg.n_groups)
 
     row_idx_all = np.arange(n, dtype=np.int64)
@@ -380,7 +466,7 @@ def assert_embargo_respected(labels: pl.DataFrame, result: CPCVResult) -> None:
     de treino tem `t0` dentro da janela de embargo nas bordas de qualquer
     grupo de teste do split."""
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
-    embargo_ms = result.config.embargo_bars * step_ms(result.config.tf)
+    embargo_ms = _embargo_ms(result.config)
 
     violations: list[str] = []
     for split in result.splits:
@@ -450,9 +536,13 @@ def load_labels_v1(
     preservam o artefato real já existente no local atual. `tf` adicionado
     junto da correção AG-004 — o caller que passar `tf` não-default aqui
     também precisa passar o MESMO `tf` em `CPCVConfig`, senão o embargo é
-    calculado numa unidade diferente da dos dados carregados (nenhuma
-    validação cruzada automática entre os dois hoje — responsabilidade do
-    caller, documentada aqui explicitamente)."""
+    calculado numa unidade diferente da dos dados carregados. Isto já NÃO
+    é mais só responsabilidade documentada do caller (AG-009): o
+    `DataFrame` retornado por esta função, se passado para
+    `generate_splits` com um `CPCVConfig.tf` divergente, agora levanta
+    `CPCVError` (`assert_tf_consistent`, medindo o espaçamento real de
+    `t0` contra `step_ms(config.tf)`) em vez de calcular o embargo
+    silenciosamente errado."""
     path = labels_symbol_tf_dir(symbol, version, tf=tf) / "labels.parquet"
     if not path.exists():
         raise FileNotFoundError(

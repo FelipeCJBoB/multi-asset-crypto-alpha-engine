@@ -212,8 +212,41 @@ entries:
       tf!="15m" -- documentado por comentario no codigo (cpcv.py, docstring
       de load_labels_v1), mas comentario nao e guarda.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto — follow-up antes de M2/M3 usarem tf!=15m"
+    resolution: >
+      Delegado a um Agent fresco (general-purpose) com contexto rico e
+      protocolo de execução explícito. Rota escolhida: (a) assert cruzado
+      dentro de `generate_splits`, rodando SEMPRE, sem opt-out -- mesma
+      disciplina de "falhar alto e cedo" que `CPCVConfig.__post_init__`
+      já aplica pra `tf` desconhecido. Rota (b) (parâmetro único
+      compartilhado) rejeitada -- exigiria tocar ~15 call sites reais sem
+      ganho funcional, ja que nenhum passa `tf` não-default hoje.
+      `assert_tf_consistent(labels, config)` mede a MEDIANA do diff entre
+      `t0` únicos/ordenados contra `step_ms(config.tf)`, tolerância 5%
+      (`_TF_CONSISTENCY_RTOL`, medição estrutural, não hiperparâmetro de
+      domínio) -- robusta a uma minoria de gaps reais do dataset,
+      apertada o bastante pra pegar qualquer TF suportado trocado por
+      outro (fator >= 2x entre 15m/30m/1h). `_embargo_ms(config)`
+      extraída como função pura, usada por `generate_splits` E
+      `assert_embargo_respected` (antes duas cópias inline da mesma
+      fórmula, risco de divergência silenciosa entre elas).
+      Achado no caminho: os 2 testes originais do AG-004 simulavam "TF
+      diferente" reclamando `tf="30m"` sobre dado sintético espaçado em
+      15m -- exatamente o padrão que a nova guarda rejeita por design.
+      Corrigidos: um passou a testar `_embargo_ms` isoladamente (mais
+      preciso, sem interação com purge/embargo_mask), o outro passou a
+      usar dado genuinamente espaçado em 30m. 7 testes novos/reescritos
+      cobrindo aceitação (default e tf explícito consistente), rejeição
+      (15m-vs-30m, 15m-vs-1h), tolerância a gaps minoritários (~5%
+      removido, mediana não reage), caso degenerado (<2 t0 distintos), e
+      que a guarda dispara de dentro de `generate_splits` sem precisar
+      ser chamada manualmente. Callers reais (`models/`, `backtest/`,
+      `validation/leakage.py`, `analysis/*`) confirmados inalterados --
+      todos usam `tf="15m"` default nos dois lados. Scripts mecânicos
+      (ruff/mypy/banned_patterns/check_unguarded_ratios) rodados por mim
+      de forma independente sobre o resultado do Agent, não só aceitos
+      por relato -- limpos. pytest ainda não rodado (PENDENTE-DE-
+      EXECUÇÃO-HUMANA, protocolo de execução).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
 
   - id: AG-005
     date: "2026-08-12"

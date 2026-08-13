@@ -13,6 +13,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from src.data.resample import step_ms
 from src.validation import cpcv
 from src.validation._paths import labels_symbol_tf_dir
 
@@ -20,14 +21,24 @@ _BAR_MS = 900_000  # 15m
 
 
 def _make_synthetic_labels(
-    n: int, *, side: int = 1, horizon_bars: int = 4, start_ms: int = 0
+    n: int, *, side: int = 1, horizon_bars: int = 4, start_ms: int = 0, bar_ms: int = _BAR_MS
 ) -> pl.DataFrame:
-    """`n` labels sintéticos com `t0` em barras de 15m consecutivas e
-    `t1 = t0 + horizon_bars * 15m` (horizonte fixo, análogo a um
-    `time_stop_bars` pequeno) — o suficiente para exercitar purge/embargo
-    sem precisar do dataset real."""
-    t0_ms = [start_ms + i * _BAR_MS for i in range(n)]
-    t1_ms = [t + horizon_bars * _BAR_MS for t in t0_ms]
+    """`n` labels sintéticos com `t0` em barras CONSECUTIVAS espaçadas de
+    `bar_ms` (default 15m) e `t1 = t0 + horizon_bars * bar_ms` (horizonte
+    fixo, análogo a um `time_stop_bars` pequeno) — o suficiente para
+    exercitar purge/embargo sem precisar do dataset real.
+
+    `bar_ms` (AG-009) — antes desta correção o espaçamento era sempre
+    `_BAR_MS` (15m) independente do `tf` de um `CPCVConfig` associado,
+    truque usado pelos testes AG-004 originais para simular um "TF
+    diferente" sem reescrever a fixture. Isso agora colide de propósito
+    com `assert_tf_consistent` (a própria guarda AG-009 que esta rodada
+    adiciona) — dado espaçado em 15m analisado com `config.tf="30m"` é
+    EXATAMENTE o cenário que a guarda existe para rejeitar. `bar_ms`
+    deixa o chamador declarar um espaçamento que bate de verdade com o
+    `tf` do `CPCVConfig` usado no teste."""
+    t0_ms = [start_ms + i * bar_ms for i in range(n)]
+    t1_ms = [t + horizon_bars * bar_ms for t in t0_ms]
     return pl.DataFrame(
         {
             "t0": pl.Series(t0_ms).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
@@ -94,73 +105,146 @@ def test_config_rejeita_tf_desconhecido() -> None:
         cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2, tf="7m")
 
 
-def test_embargo_escala_com_tf_nao_fica_preso_em_15m() -> None:
+def test_embargo_ms_escala_com_tf_nao_fica_preso_em_15m() -> None:
     """O achado real de AG-004: embargo em 30m tinha que ser 2x o de 15m
     pro MESMO embargo_bars, porque cada barra de 30m cobre o dobro do
     tempo. Antes da correção, os dois davam o mesmo embargo_ms (bug
     silencioso) porque _BAR_MS estava fixo em 15m independente de `tf`.
 
-    Achado do Agent independente (project_assurance, revisão desta
-    correção): a versão anterior deste teste só checava
-    `n_embargoed_30m > n_embargoed_15m` — passaria até para uma correção
-    parcial (ex. escala 1,3x em vez de 2x). `t0` sintético é espaçado a
-    900_000ms fixo independente de `tf`, então a razão exata É
-    computável — trava o valor exato, não só a direção.
-
-    `horizon_bars=0` é deliberado, não arbitrário: com horizonte > 0 a linha
-    de treino logo à ESQUERDA de cada fronteira de grupo de teste tem
-    `t1 == g_start` exatamente, o que satisfaz a condição de purge
-    (`t1 >= g_start`, `generate_splits`) e rouba essa linha de `n_embargoed`
-    pra `n_purged` (dedup proposital em `embargo_mask & ~purge_mask`, pra
-    não contar a mesma linha duas vezes). Esse desconto é de exatamente 1
-    linha por fronteira esquerda, CONSTANTE — não escala com `embargo_bars`
-    nem com `tf` — então ele quebra a razão exata 2x só nas fronteiras
-    esquerdas (confirmado à mão: com horizon_bars=1 nesta fixture,
-    140 = 20×4 + 20×(4-1) contra 300 = 20×8 + 20×(8-1), razão 2,14, não 2).
-    Isso não é bug em `generate_splits` — é a interação correta e esperada
-    entre purge (por `t1` real) e embargo (B09). `horizon_bars=0` (`t1=t0`)
-    elimina a interação (nenhuma linha fora do próprio grupo de teste
-    satisfaz `t1 >= g_start`), isolando o que este teste realmente quer
-    medir: a escala do embargo isolada de qualquer interferência de purge."""
-    n = 600
-    labels = _make_synthetic_labels(n, horizon_bars=0)
-
+    Reescrito nesta rodada (AG-009) para testar `cpcv._embargo_ms`
+    diretamente — a função pura extraída de `generate_splits`/
+    `assert_embargo_respected` — em vez de rodar `generate_splits`
+    ponta-a-ponta sobre um `labels` sintético deliberadamente espaçado em
+    15m mas reclamado como `tf="30m"`. Essa combinação (dado de um TF,
+    config de outro) é EXATAMENTE o que a guarda `assert_tf_consistent`
+    (AG-009, roda sempre dentro de `generate_splits`) agora rejeita por
+    design — não é mais um jeito válido de simular "escala com tf" via
+    `generate_splits`. Testar `_embargo_ms` isoladamente é estritamente
+    mais preciso: nenhuma interação com purge/embargo_mask/boundary de
+    grupo a considerar, só a aritmética `embargo_bars * step_ms(tf)` que
+    é o que AG-004 corrigiu."""
     cfg_15m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="15m")
     cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="30m")
 
-    result_15m = cpcv.generate_splits(labels, cfg_15m)
-    result_30m = cpcv.generate_splits(labels, cfg_30m)
+    embargo_ms_15m = cpcv._embargo_ms(cfg_15m)
+    embargo_ms_30m = cpcv._embargo_ms(cfg_30m)
 
-    n_embargoed_15m = sum(s.n_embargoed for s in result_15m.splits)
-    n_embargoed_30m = sum(s.n_embargoed for s in result_30m.splits)
-
-    assert n_embargoed_15m > 0, "fixture precisa gerar embargo>0 em 15m pra este teste valer algo"
-    # embargo_ms dobra (30m = 2x step_ms de 15m); t0 sintético é espaçado a
-    # 900_000ms fixo (_BAR_MS de teste), logo o número de barras cobertas
-    # pela janela de embargo também dobra exatamente -- razão 2,0, não só ">"
-    assert n_embargoed_30m == 2 * n_embargoed_15m, (
-        f"embargo em 30m precisa cobrir EXATAMENTE 2x as linhas de 15m para o "
-        f"mesmo embargo_bars ({n_embargoed_30m} vs {n_embargoed_15m}) — razão "
-        "parcial indicaria escala errada, não só ausência de escala"
+    assert embargo_ms_15m == 4 * step_ms("15m")
+    assert embargo_ms_30m == 2 * embargo_ms_15m, (
+        "embargo em 30m precisa cobrir EXATAMENTE 2x o tempo (ms) do de 15m para o "
+        f"mesmo embargo_bars ({embargo_ms_30m} vs {embargo_ms_15m})"
     )
 
 
-def test_assert_embargo_respected_usa_tf_do_config_nao_constante_fixa() -> None:
-    """assert_embargo_respected precisa calcular embargo_ms a partir de
-    result.config.tf, não de uma constante de módulo — senão a própria
-    checagem de embargo (que deveria pegar violação) ficaria calibrada
-    pro TF errado e passaria silenciosamente."""
+def test_generate_splits_e_assert_embargo_respected_usam_o_mesmo_embargo_ms(
+) -> None:
+    """`generate_splits` (que aplica o embargo) e `assert_embargo_respected`
+    (que checa que ele foi respeitado) precisam calcular embargo_ms a
+    partir do MESMO `config.tf` -- senão a própria checagem (que deveria
+    pegar violação) ficaria calibrada pro TF errado e passaria
+    silenciosamente. Os dois agora chamam literalmente `_embargo_ms`
+    (extraído nesta rodada, AG-009) em vez de duas cópias inline da mesma
+    fórmula -- este teste roda o caminho real com `tf="30m"` e dado
+    sintético genuinamente espaçado em 30m (`bar_ms=step_ms("30m")`, não
+    mais o truque de reclamar 30m sobre dado de 15m, que colidiria com a
+    guarda `assert_tf_consistent`)."""
     n = 600
-    labels = _make_synthetic_labels(n, horizon_bars=1)
+    labels = _make_synthetic_labels(n, horizon_bars=1, bar_ms=step_ms("30m"))
     cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="30m")
     result = cpcv.generate_splits(labels, cfg_30m)
-    # não deve levantar -- a própria geração de splits já respeitou o embargo
-    # calculado com tf="30m"; se assert_embargo_respected recalculasse com
-    # 15m hardcoded, a janela seria menor e o teste passaria por acidente,
-    # não por corretude -- este teste não distingue os dois casos sozinho,
-    # mas falha se generate_splits e assert_embargo_respected divergirem de
-    # config.tf em direções opostas (o que um _BAR_MS remanescente causaria).
-    cpcv.assert_embargo_respected(labels, result)
+    assert sum(s.n_embargoed for s in result.splits) > 0
+    cpcv.assert_embargo_respected(labels, result)  # não deve levantar
+
+
+# ============================================================================
+# AG-009 — assert_tf_consistent: guarda cruzada entre `tf` de `labels` e
+# `CPCVConfig.tf`. `load_labels_v1(tf=...)` e `CPCVConfig(tf=...)` são dois
+# parâmetros independentes hoje (nenhuma ligação estrutural entre os dois) --
+# esta guarda mede o espaçamento REAL de `t0` contra `step_ms(config.tf)` e
+# falha alto se divergirem, em vez de computar o embargo na unidade errada
+# silenciosamente.
+# ============================================================================
+
+
+def test_assert_tf_consistent_aceita_default_15m_bit_exato() -> None:
+    """Caso consistente -- dado sintético espaçado em 15m (`_BAR_MS`, o
+    default de `_make_synthetic_labels`) contra `CPCVConfig` default
+    (`tf="15m"`) não deve levantar, e `generate_splits` continua
+    produzindo exatamente os mesmos 15 splits/5 caminhos de sempre -- a
+    guarda é read-only (não muda `t0_ms`/`t1_ms`/grupos/purge/embargo),
+    então bit-exatidão do resultado segue por construção, não por
+    coincidência de teste."""
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cpcv.assert_tf_consistent(labels, _CFG)  # não deve levantar
+
+    result = cpcv.generate_splits(labels, _CFG)
+    assert len(result.splits) == 15
+    assert result.config.n_backtest_paths == 5
+
+
+def test_assert_tf_consistent_aceita_tf_explicito_consistente() -> None:
+    """Não é só o default 15m -- qualquer `tf` suportado cujo dado bata
+    com o espaçamento declarado passa."""
+    labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
+    cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2, tf="30m")
+    cpcv.assert_tf_consistent(labels, cfg_30m)  # não deve levantar
+
+
+def test_assert_tf_consistent_rejeita_tf_divergente_15m_vs_30m() -> None:
+    """O footgun real do AG-009, reproduzido sem precisar do dataset real:
+    `labels` espaçado em 30m (como `load_labels_v1(tf="30m")` produziria)
+    combinado com um `CPCVConfig` no default `tf="15m"` (como
+    `CPCVConfig.from_constants()` sem `tf` explícito) -- os dois lados
+    nunca eram checados um contra o outro antes desta correção."""
+    labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
+    cfg_15m_default = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2)
+    with pytest.raises(cpcv.CPCVError, match="AG-009"):
+        cpcv.assert_tf_consistent(labels, cfg_15m_default)
+
+
+def test_assert_tf_consistent_rejeita_tf_divergente_15m_vs_1h() -> None:
+    labels = _make_synthetic_labels(600, horizon_bars=1)  # 15m (default bar_ms)
+    cfg_1h = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2, tf="1h")
+    with pytest.raises(cpcv.CPCVError, match="AG-009"):
+        cpcv.assert_tf_consistent(labels, cfg_1h)
+
+
+def test_assert_tf_consistent_tolera_gaps_minoritarios_na_mediana() -> None:
+    """Dado real tem gaps ocasionais (ver `known_gaps`, docstring do
+    módulo) -- a guarda usa a MEDIANA do diff entre `t0` consecutivos, não
+    o mínimo nem uniformidade estrita, então uma MINORIA de barras
+    faltando não pode disparar falso positivo. Simulado removendo ~5% das
+    linhas de um grid de 15m antes de checar contra `tf="15m"`."""
+    n = 600
+    labels = _make_synthetic_labels(n, horizon_bars=1)
+    rng = np.random.default_rng(42)
+    drop_idx = rng.choice(n, size=n // 20, replace=False)  # noqa: magic-number -- ~5%
+    keep_mask = np.ones(n, dtype=bool)
+    keep_mask[drop_idx] = False
+    labels_com_gaps = labels.filter(pl.Series(keep_mask))
+    cpcv.assert_tf_consistent(labels_com_gaps, _CFG)  # não deve levantar
+
+
+def test_assert_tf_consistent_instancia_unica_nao_levanta() -> None:
+    """Sem pelo menos 2 `t0` distintos não há diff pra medir -- a guarda
+    não levanta neste caso degenerado (deixa `assign_time_groups`, chamada
+    logo depois dentro de `generate_splits`, levantar seu próprio erro
+    mais específico de 'instante único não particionável')."""
+    labels = _make_synthetic_labels(1, horizon_bars=1)
+    cpcv.assert_tf_consistent(labels, _CFG)  # não deve levantar
+
+
+def test_generate_splits_rejeita_tf_inconsistente_sem_opt_out() -> None:
+    """A guarda roda DENTRO de `generate_splits`, sempre, sem opt-out
+    (decisão AG-009) -- não só disponível como função separada que o
+    caller precisa lembrar de invocar. Prova que a combinação
+    `load_labels_v1(tf="30m")` + `CPCVConfig.from_constants()` (default
+    `tf="15m"`) descrita no achado é pega automaticamente, não só
+    detectável manualmente."""
+    labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
+    cfg_15m_default = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2)
+    with pytest.raises(cpcv.CPCVError, match="AG-009"):
+        cpcv.generate_splits(labels, cfg_15m_default)
 
 
 # ============================================================================
