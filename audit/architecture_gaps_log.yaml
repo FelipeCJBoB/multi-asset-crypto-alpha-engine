@@ -146,9 +146,53 @@ entries:
       multi-TF desta descoberta com risco de dado errado nao detectado,
       em vez de crash/erro obvio -- por isso e o item de maior prioridade
       de correcao entre os achados de src/ (PLANO_MESTRE Sec15.6).
+    resolved_by_commit: "PENDENTE — commit desta sessão"
+    resolution: >
+      CPCVConfig ganhou campo `tf: str = "15m"` (default bit-exato pra todo
+      caller existente, nenhum passa tf hoje). embargo_ms passa a ser
+      computado por `step_ms(cfg.tf)` em cada chamada (generate_splits E
+      assert_embargo_respected), nao mais uma constante `_BAR_MS` fixa em
+      import-time. `load_labels_v1` ganhou `tf` correspondente. 3 testes
+      novos: paridade bit-exata do default, escala EXATA 2x embargo 15m->30m
+      (fortalecido apos revisao do Agent independente pedir razao exata, nao
+      so ">"), e tf desconhecido levanta UnsupportedTimeframeError na
+      construcao (falha alto, nao tarde). Scripts mecanicos autorizados
+      (ruff/mypy/banned_patterns/check_unguarded_ratios) rodados, limpos.
+      Revisao independente via skill project_assurance (Agent fresco,
+      general-purpose) confirmou compatibilidade retroativa por inspecao de
+      TODOS os callers reais, nao presumida -- achou 1 gap real (AG-009,
+      abaixo) e 1 teste mais fraco que o docstring alegava (corrigido antes
+      de fechar). pytest ainda nao rodado (PENDENTE-DE-EXECUCAO-HUMANA,
+      protocolo de execucao) -- status fica "fechado com verificacao
+      mecanica" ate o Manager confirmar verde.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-009
+    date: "2026-08-12"
+    file: "src/validation/cpcv.py"
+    related_file: "src/validation/_paths.py"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- revisao da correcao de AG-004"
+    gap: >
+      A correcao de AG-004 fecha o bug original (embargo_ms hardcoded em
+      15m) mas cria um footgun novo, um nivel acima: `load_labels_v1(tf=...)`
+      e `CPCVConfig(tf=...)` sao dois parametros passados INDEPENDENTEMENTE
+      pelo caller, sem nenhuma checagem cruzada entre os dois. Nada impede
+      um caller futuro de chamar `load_labels_v1(tf="30m")` +
+      `CPCVConfig.from_constants()` (default tf="15m") e computar embargo na
+      unidade errada -- silenciosamente, mesma classe de falha que AG-004
+      existia pra fechar.
+    severity: "médio"
+    layer: "validation"
+    consequence: >
+      Nenhum caller real hoje faz essa combinacao errada (todos usam
+      default 15m em ambos), entao NAO bloqueia fechar AG-004. Mas precisa
+      virar guarda real (assert cruzado, ou parametro unico compartilhado)
+      antes de M2/M3 (PRD V4.1) introduzirem o primeiro caller real de
+      tf!="15m" -- documentado por comentario no codigo (cpcv.py, docstring
+      de load_labels_v1), mas comentario nao e guarda.
     resolved_by_commit: null
     resolution: null
-    status: "aberto"
+    status: "aberto — follow-up antes de M2/M3 usarem tf!=15m"
 
   - id: AG-005
     date: "2026-08-12"

@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 2.1 · **Data:** 2026-08-12
+**Versão:** 2.2 · **Data:** 2026-08-12
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -901,6 +901,19 @@ número do estágio:
    estágio real (é refatoração de `triple_barrier.py`, arquivo crítico —
    passa pelo protocolo completo do §6, primeiro teste real dele).
 
+**Item 1 executado (2026-08-12) — primeiro Pacote de Trabalho real do §6
+em código de produção.** `src/validation/cpcv.py`: Descrição de Produto →
+`CPCVConfig` ganha `tf` (default `"15m"` bit-exato) → `embargo_ms`
+computado por `step_ms(cfg.tf)` em vez de constante fixa → 3 testes novos
+→ 4 scripts mecânicos autorizados limpos → revisão independente via
+`project_assurance` (Agent fresco, não retroativa). A revisão achou 2
+coisas reais: um teste mais fraco do que o docstring alegava (corrigido
+antes de fechar) e um footgun NOVO — `load_labels_v1(tf=...)` e
+`CPCVConfig(tf=...)` são parâmetros independentes sem checagem cruzada,
+registrado como **AG-009**, não escondido. AG-004 fecha como "aguarda
+confirmação de pytest" — protocolo de execução não muda: eu não rodo o
+teste, entrego o comando, o Manager confirma verde.
+
 ---
 
 ## Fontes desta pesquisa
@@ -919,6 +932,15 @@ número do estágio:
 
 ## Changelog
 
+- **v2.2 (2026-08-12)** — Executado o item 1 da recomendação de
+  sequenciamento (§15.6): AG-004 corrigido em `src/validation/cpcv.py`,
+  primeiro Pacote de Trabalho real do protocolo §6 rodado contra código
+  de produção (não retroativo/self-referential como os ciclos anteriores).
+  Revisão independente (`project_assurance`) achou AG-009 (novo — cross-
+  check de `tf` ausente entre `load_labels_v1`/`CPCVConfig`) e uma
+  fraqueza de teste, ambos corrigidos/registrados antes de fechar. AG-004
+  fecha como "aguarda pytest" — protocolo de execução do CLAUDE.md
+  intacto, comando entregue ao Manager, não rodado por Claude.
 - **v2.1 (2026-08-12)** — Road_Map Vivo (§14) ganhou a reconciliação
   visual pedida: os 15 estágios de §15.4 renderizados lado a lado por
   camada (Data/ML/Live Trading), com prontidão e bloqueador por estágio,

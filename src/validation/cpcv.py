@@ -64,10 +64,16 @@ logger = structlog.get_logger(__name__)
 
 IntArray = NDArray[np.int64]
 
-# Fato de calendário do TF de decisão atual (§0.1 decision_tf=15m) — mesmo
-# raciocínio de `_BAR_MS` em `src.labels.triple_barrier`: não é hiperparâmetro,
-# é a própria definição de barra do pipeline corrente.
-_BAR_MS: Final[int] = step_ms("15m")
+# AG-004 (audit/architecture_gaps_log.yaml) — até esta correção, `_BAR_MS` era
+# uma constante de MÓDULO fixa em `step_ms("15m")`, usada pra converter
+# `embargo_bars` em milissegundos. Rodar CPCV para M30/H1 (M2/M3, PRD_V4_1.md
+# §3.2) com essa constante ainda fixa em 15m produziria embargo em UNIDADE DE
+# TEMPO ERRADA silenciosamente — nenhum erro, nenhum warning, só um embargo
+# 2x/4x menor que o pretendido. `tf` agora é campo de `CPCVConfig`
+# (default "15m" — bit-exato pra todo caller existente, nenhum passa `tf`
+# hoje), e `embargo_ms` é computado por `step_ms(cfg.tf)` em cada chamada, não
+# mais uma constante de import-time.
+_DEFAULT_TF: Final[str] = "15m"
 
 
 class CPCVError(Exception):
@@ -84,13 +90,20 @@ class CPCVConfig:
     n_groups: int
     n_test_groups: int
     embargo_bars: int
+    tf: str = _DEFAULT_TF
+    """Timeframe de decisão desta rodada — NÃO é constante de domínio
+    (não vem de `constants.yaml`, por isso `from_constants()` a recebe como
+    parâmetro em vez de carregá-la): é um parâmetro de execução, como
+    `symbol` em `load_labels_v1`. Determina `step_ms(tf)` no cálculo do
+    embargo (AG-004). Default preserva todo caller existente bit-exato."""
 
     @classmethod
-    def from_constants(cls) -> CPCVConfig:
+    def from_constants(cls, *, tf: str = _DEFAULT_TF) -> CPCVConfig:
         return cls(
             n_groups=int(load_constant("cpcv_n_groups")),
             n_test_groups=int(load_constant("cpcv_n_test_groups")),
             embargo_bars=int(load_constant("cpcv_embargo_bars")),
+            tf=tf,
         )
 
     def __post_init__(self) -> None:
@@ -103,6 +116,11 @@ class CPCVConfig:
             )
         if self.embargo_bars < 0:
             raise CPCVError(f"embargo_bars precisa ser >= 0, recebido {self.embargo_bars}")
+        # step_ms levanta KeyError/ValueError pra tf desconhecido — falha alto
+        # aqui, na construção, em vez de silenciosamente mais tarde dentro de
+        # generate_splits (mesma disciplina de "falhar cedo e alto" do resto
+        # do módulo, ver assign_time_groups).
+        step_ms(self.tf)
 
     @property
     def n_splits(self) -> int:
@@ -259,7 +277,7 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
     n = t0_ms.shape[0]
 
     group_id, edges_ms = assign_time_groups(t0_ms, cfg.n_groups)
-    embargo_ms = cfg.embargo_bars * _BAR_MS
+    embargo_ms = cfg.embargo_bars * step_ms(cfg.tf)
     path_by_pair = _path_assignment(cfg.n_groups)
 
     row_idx_all = np.arange(n, dtype=np.int64)
@@ -362,7 +380,7 @@ def assert_embargo_respected(labels: pl.DataFrame, result: CPCVResult) -> None:
     de treino tem `t0` dentro da janela de embargo nas bordas de qualquer
     grupo de teste do split."""
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
-    embargo_ms = result.config.embargo_bars * _BAR_MS
+    embargo_ms = result.config.embargo_bars * step_ms(result.config.tf)
 
     violations: list[str] = []
     for split in result.splits:
@@ -418,17 +436,24 @@ def summarize_splits(result: CPCVResult) -> pl.DataFrame:
 # ============================================================================
 
 
-def load_labels_v1(version: str = "v1", *, symbol: str = "BTCUSDT") -> pl.DataFrame:
-    """`data/labels/{symbol}/15m/{version}/labels.parquet` — insumo real do
+def load_labels_v1(
+    version: str = "v1", *, symbol: str = "BTCUSDT", tf: str = _DEFAULT_TF
+) -> pl.DataFrame:
+    """`data/labels/{symbol}/{tf}/{version}/labels.parquet` — insumo real do
     CPCV (Sprint 6). Levanta `FileNotFoundError` com mensagem acionável se
     ainda não foi gerado (nunca inventa um dataset sintético no caminho
     real).
 
     Layout chaveado (T0.3, PRD_V4_1.md §3.1) — migrado de `labels/v1/
     labels.parquet` (caminho legado pré-V4.1) para
-    `data/labels/BTCUSDT/15m/v1/` nesta mesma rodada; `symbol` default
-    preserva o artefato real já existente no novo local."""
-    path = labels_symbol_tf_dir(symbol, version) / "labels.parquet"
+    `data/labels/BTCUSDT/15m/v1/` nesta mesma rodada; `symbol`/`tf` default
+    preservam o artefato real já existente no local atual. `tf` adicionado
+    junto da correção AG-004 — o caller que passar `tf` não-default aqui
+    também precisa passar o MESMO `tf` em `CPCVConfig`, senão o embargo é
+    calculado numa unidade diferente da dos dados carregados (nenhuma
+    validação cruzada automática entre os dois hoje — responsabilidade do
+    caller, documentada aqui explicitamente)."""
+    path = labels_symbol_tf_dir(symbol, version, tf=tf) / "labels.parquet"
     if not path.exists():
         raise FileNotFoundError(
             f"labels não encontrado em {path} — rode `uv run quant labels build` primeiro "

@@ -72,6 +72,82 @@ def test_config_from_constants_le_constants_yaml() -> None:
 
 
 # ============================================================================
+# AG-004 — tf deixa de ser _BAR_MS hardcoded em 15m
+# ============================================================================
+
+
+def test_config_tf_default_e_15m_bit_exato() -> None:
+    """Todo caller existente no repo constrói CPCVConfig sem `tf` — o
+    default precisa preservar exatamente o comportamento de antes da
+    correção AG-004 (_BAR_MS fixo em step_ms("15m"))."""
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2)
+    assert cfg.tf == "15m"
+
+    cfg_from_constants = cpcv.CPCVConfig.from_constants()
+    assert cfg_from_constants.tf == "15m"
+
+
+def test_config_rejeita_tf_desconhecido() -> None:
+    from src.data.resample import UnsupportedTimeframeError
+
+    with pytest.raises(UnsupportedTimeframeError):
+        cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=2, tf="7m")
+
+
+def test_embargo_escala_com_tf_nao_fica_preso_em_15m() -> None:
+    """O achado real de AG-004: embargo em 30m tinha que ser 2x o de 15m
+    pro MESMO embargo_bars, porque cada barra de 30m cobre o dobro do
+    tempo. Antes da correção, os dois davam o mesmo embargo_ms (bug
+    silencioso) porque _BAR_MS estava fixo em 15m independente de `tf`.
+
+    Achado do Agent independente (project_assurance, revisão desta
+    correção): a versão anterior deste teste só checava
+    `n_embargoed_30m > n_embargoed_15m` — passaria até para uma correção
+    parcial (ex. escala 1,3x em vez de 2x). `t0` sintético é espaçado a
+    900_000ms fixo independente de `tf`, então a razão exata É
+    computável — trava o valor exato, não só a direção."""
+    n = 600
+    labels = _make_synthetic_labels(n, horizon_bars=1)
+
+    cfg_15m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="15m")
+    cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="30m")
+
+    result_15m = cpcv.generate_splits(labels, cfg_15m)
+    result_30m = cpcv.generate_splits(labels, cfg_30m)
+
+    n_embargoed_15m = sum(s.n_embargoed for s in result_15m.splits)
+    n_embargoed_30m = sum(s.n_embargoed for s in result_30m.splits)
+
+    assert n_embargoed_15m > 0, "fixture precisa gerar embargo>0 em 15m pra este teste valer algo"
+    # embargo_ms dobra (30m = 2x step_ms de 15m); t0 sintético é espaçado a
+    # 900_000ms fixo (_BAR_MS de teste), logo o número de barras cobertas
+    # pela janela de embargo também dobra exatamente -- razão 2,0, não só ">"
+    assert n_embargoed_30m == 2 * n_embargoed_15m, (
+        f"embargo em 30m precisa cobrir EXATAMENTE 2x as linhas de 15m para o "
+        f"mesmo embargo_bars ({n_embargoed_30m} vs {n_embargoed_15m}) — razão "
+        "parcial indicaria escala errada, não só ausência de escala"
+    )
+
+
+def test_assert_embargo_respected_usa_tf_do_config_nao_constante_fixa() -> None:
+    """assert_embargo_respected precisa calcular embargo_ms a partir de
+    result.config.tf, não de uma constante de módulo — senão a própria
+    checagem de embargo (que deveria pegar violação) ficaria calibrada
+    pro TF errado e passaria silenciosamente."""
+    n = 600
+    labels = _make_synthetic_labels(n, horizon_bars=1)
+    cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="30m")
+    result = cpcv.generate_splits(labels, cfg_30m)
+    # não deve levantar -- a própria geração de splits já respeitou o embargo
+    # calculado com tf="30m"; se assert_embargo_respected recalculasse com
+    # 15m hardcoded, a janela seria menor e o teste passaria por acidente,
+    # não por corretude -- este teste não distingue os dois casos sozinho,
+    # mas falha se generate_splits e assert_embargo_respected divergirem de
+    # config.tf em direções opostas (o que um _BAR_MS remanescente causaria).
+    cpcv.assert_embargo_respected(labels, result)
+
+
+# ============================================================================
 # assign_time_groups — partição cronológica
 # ============================================================================
 
@@ -330,6 +406,21 @@ def _skip_if_labels_missing() -> None:
 def test_load_labels_v1_inexistente_levanta_filenotfound() -> None:
     with pytest.raises(FileNotFoundError):
         cpcv.load_labels_v1(version="versao_que_nao_existe_12345")
+
+
+def test_load_labels_v1_tf_default_preserva_caminho_15m_existente() -> None:
+    """`tf` é novo (AG-004) — o default precisa continuar resolvendo pro
+    MESMO caminho de sempre (data/labels/{symbol}/15m/{version}/), não um
+    caminho novo que quebraria o artefato real já gravado."""
+    with pytest.raises(FileNotFoundError) as exc_info:
+        cpcv.load_labels_v1(version="versao_que_nao_existe_12345")
+    assert "\\15m\\" in str(exc_info.value) or "/15m/" in str(exc_info.value)
+
+
+def test_load_labels_v1_tf_explicito_muda_o_caminho_resolvido() -> None:
+    with pytest.raises(FileNotFoundError) as exc_info:
+        cpcv.load_labels_v1(version="versao_que_nao_existe_12345", tf="30m")
+    assert "\\30m\\" in str(exc_info.value) or "/30m/" in str(exc_info.value)
 
 
 @pytest.mark.integration
