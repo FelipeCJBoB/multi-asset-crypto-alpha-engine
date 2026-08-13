@@ -146,7 +146,7 @@ entries:
       multi-TF desta descoberta com risco de dado errado nao detectado,
       em vez de crash/erro obvio -- por isso e o item de maior prioridade
       de correcao entre os achados de src/ (PLANO_MESTRE Sec15.6).
-    resolved_by_commit: "PENDENTE — commit desta sessão"
+    resolved_by_commit: "648935c"
     resolution: >
       CPCVConfig ganhou campo `tf: str = "15m"` (default bit-exato pra todo
       caller existente, nenhum passa tf hoje). embargo_ms passa a ser
