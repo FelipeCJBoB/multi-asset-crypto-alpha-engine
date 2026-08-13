@@ -953,6 +953,30 @@ causa raiz → correção → verificação humana) em código de produção.
 
 ## Changelog
 
+- **v2.4 (2026-08-13)** — 3 Pacotes de Trabalho do §6 delegados a Agents
+  em paralelo (AG-005, AG-006, AG-009 — arquivos não sobrepostos), cada
+  um com contexto rico e protocolo de execução explícito, primeira vez
+  que a delegação a agentes é usada pra correções mecânicas em série (não
+  só para revisão independente). Antes de delegar: recalibrei o escopo
+  do AG-006 (grep real achou que só 1 dos 3 writers tinha caller de
+  produção — a suposição original estava imprecisa) e achei/corrigi uma
+  corrupção de chaves YAML duplicadas em AG-008 (virou AG-010, ironia
+  reconhecida: furo na própria ferramenta de furos). Revisão independente
+  de cada resultado antes de commitar, não confiança cega no relato do
+  Agent: AG-009 aceito após reler o diff e rerodar os 4 scripts
+  mecânicos; AG-005 aceito após verificar à mão que a matemática de
+  `date + timedelta` (Python trunca componentes sub-dia) nunca sub-cobre
+  o horizonte real; AG-006 devolvido uma vez — a 1ª versão do Agent
+  quebrava a bit-exatidão do default (migraria o destino de escrita real
+  de `run_layer1_sprint`, orfanando 7 leitores de produção que dependem
+  do caminho legado), corrigida na 2ª rodada com um parâmetro sentinela.
+  2 achados novos, não fabricados nem corrigidos fora de escopo,
+  reportados pelos próprios Agents: AG-011 (terceiro hardcode de "15m"
+  em `cost_surface.py`) e AG-012 (segundo caller real de
+  `write_predictions_atomic`). AG-007 (redesenho real do `risk/`) e
+  AG-008 (migração de ATR que muda valores reais de modelo) ficaram de
+  fora da delegação — não são mecânicos, precisam de decisão do Manager.
+  Todos os 3 fecham como "aguarda confirmação de pytest".
 - **v2.3 (2026-08-13)** — AG-004 fecha de verdade: primeira rodada de
   `pytest` do Manager achou o teste de escala de embargo falhando (300 vs
   140, não 280/2× esperado) — investigado até a causa raiz em vez de
