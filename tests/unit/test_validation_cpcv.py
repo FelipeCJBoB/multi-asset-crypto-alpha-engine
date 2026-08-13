@@ -105,9 +105,25 @@ def test_embargo_escala_com_tf_nao_fica_preso_em_15m() -> None:
     `n_embargoed_30m > n_embargoed_15m` — passaria até para uma correção
     parcial (ex. escala 1,3x em vez de 2x). `t0` sintético é espaçado a
     900_000ms fixo independente de `tf`, então a razão exata É
-    computável — trava o valor exato, não só a direção."""
+    computável — trava o valor exato, não só a direção.
+
+    `horizon_bars=0` é deliberado, não arbitrário: com horizonte > 0 a linha
+    de treino logo à ESQUERDA de cada fronteira de grupo de teste tem
+    `t1 == g_start` exatamente, o que satisfaz a condição de purge
+    (`t1 >= g_start`, `generate_splits`) e rouba essa linha de `n_embargoed`
+    pra `n_purged` (dedup proposital em `embargo_mask & ~purge_mask`, pra
+    não contar a mesma linha duas vezes). Esse desconto é de exatamente 1
+    linha por fronteira esquerda, CONSTANTE — não escala com `embargo_bars`
+    nem com `tf` — então ele quebra a razão exata 2x só nas fronteiras
+    esquerdas (confirmado à mão: com horizon_bars=1 nesta fixture,
+    140 = 20×4 + 20×(4-1) contra 300 = 20×8 + 20×(8-1), razão 2,14, não 2).
+    Isso não é bug em `generate_splits` — é a interação correta e esperada
+    entre purge (por `t1` real) e embargo (B09). `horizon_bars=0` (`t1=t0`)
+    elimina a interação (nenhuma linha fora do próprio grupo de teste
+    satisfaz `t1 >= g_start`), isolando o que este teste realmente quer
+    medir: a escala do embargo isolada de qualquer interferência de purge."""
     n = 600
-    labels = _make_synthetic_labels(n, horizon_bars=1)
+    labels = _make_synthetic_labels(n, horizon_bars=0)
 
     cfg_15m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="15m")
     cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_bars=4, tf="30m")

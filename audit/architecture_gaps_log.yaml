@@ -162,10 +162,29 @@ entries:
       general-purpose) confirmou compatibilidade retroativa por inspecao de
       TODOS os callers reais, nao presumida -- achou 1 gap real (AG-009,
       abaixo) e 1 teste mais fraco que o docstring alegava (corrigido antes
-      de fechar). pytest ainda nao rodado (PENDENTE-DE-EXECUCAO-HUMANA,
-      protocolo de execucao) -- status fica "fechado com verificacao
-      mecanica" ate o Manager confirmar verde.
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      de fechar). Primeira rodada de pytest do Manager (2026-08-13) achou
+      `test_embargo_escala_com_tf_nao_fica_preso_em_15m` falhando: 300 vs
+      140 observado, nao 280 (2x) esperado pela versao fortalecida do
+      teste. Causa raiz derivada a mao sobre o algoritmo real (nao e bug em
+      `generate_splits`): com `horizon_bars=1` na fixture, a linha de
+      treino logo a ESQUERDA de cada fronteira de grupo de teste tem
+      `t1 == g_start` exatamente, satisfazendo a condicao de purge
+      (`t1 >= g_start`) e sendo contada em `n_purged`, nao `n_embargoed`
+      (dedup proposital `embargo_mask & ~purge_mask`, pra nao contar a
+      mesma linha 2x). Esse desconto e 1 linha CONSTANTE por fronteira
+      esquerda -- nao escala com `embargo_bars`/`tf` -- entao quebra a
+      razao exata 2x so nas 20 fronteiras esquerda (das 40 totais nos 15
+      splits de C(6,2)). Formula confirma os dois numeros observados:
+      15m = 20*4 + 20*(4-1) = 140; 30m = 20*8 + 20*(8-1) = 300 (razao
+      2,14, nao 2). Corrigido o TESTE (nao o codigo-fonte): fixture passa
+      a usar `horizon_bars=0` (`t1=t0`), que elimina a interacao com purge
+      (nenhuma linha fora do proprio grupo de teste satisfaz
+      `t1 >= g_start`), isolando a escala pura do embargo -- com isso a
+      razao exata 2x volta a valer e a asserção `== 2 *` permanece forte.
+      pytest ainda nao re-rodado com a correcao (PENDENTE-DE-EXECUCAO-
+      HUMANA, protocolo de execucao) -- status fica "aguarda confirmacao"
+      ate o Manager confirmar verde.
+    status: "fechado — aguarda confirmação de pytest verde após correção do fixture (protocolo de execução)"
 
   - id: AG-009
     date: "2026-08-12"
