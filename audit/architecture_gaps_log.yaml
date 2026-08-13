@@ -700,4 +700,80 @@ entries:
       volta a ter uma unica ocorrencia de `resolved_by_commit`/
       `resolution`/`status`, todas corretamente `null`/"aberto".
     status: "fechado — corrigido na mesma sessão do achado"
+
+  - id: AG-014
+    date: "2026-08-13"
+    file: "src/data/download.py"
+    related_file: "src/data/download.py::download_klines_1m"
+    found_by: "Claude, escrevendo download_mark_price_klines_1m (Sec15.6 item 4 do PLANO_MESTRE)"
+    gap: >
+      `download_klines_1m` itera por MES (`_month_range`) e, quando
+      `klines_partition_for_date(month_start) == "daily"` (regime pos-
+      cutover, 2023-06-01 em diante), constroi a URL via `_klines_url(
+      symbol, "daily", month_start)` -- que aponta pra UM UNICO dia (o
+      arquivo diario da Binance cobre so aquele dia, nunca o mes inteiro).
+      O codigo entao trata a resposta como se cobrisse `target_days`
+      inteiro (todos os dias do mes), tentando `_split_klines_by_day`
+      sobre um payload de 1 dia so. Na pratica isso deixaria ~1 de ~30
+      dias como "ok" por mes e marcaria o resto "missing_upstream"
+      incorretamente.
+    severity: "médio"
+    layer: "data"
+    consequence: >
+      Nao e hipotetico, mas tambem nunca foi pego em producao: o manifest
+      real (`data/capacity/_download_log/multi_asset_backfill.jsonl`) so
+      tem entradas `klines_1m` ate 2022-12 (regime "monthly" inteiro) --
+      o branch "daily" deste codigo NUNCA foi exercitado de verdade; a
+      cobertura em disco de 2023-01 em diante (confirmada completa, ex.
+      31/31 dias de 2024-01 pra ETHUSDT) veio de outro processo, anterior
+      a este modulo. Bloqueia qualquer reexecucao futura de
+      `download_klines_1m` que precise preencher um gap real no regime
+      diario -- silenciosamente traria so 1 dia por mes.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-015
+    date: "2026-08-13"
+    file: "src/models/dataset.py"
+    related_file: "src/validation/cpcv.py, src/models/pipeline.py, src/analysis/faixa1_6_reconciliation.py"
+    found_by: "Claude, preparando engenharia multi-simbolo (Sec15.6 item 4 do PLANO_MESTRE)"
+    gap: >
+      `build_modeling_frame(symbol=..., ...)` computava `features_build.
+      build_t1_features(symbol, ...)`/`regime_build.build_regimes(symbol,
+      ...)` de verdade sobre o simbolo pedido, mas chamava `cpcv.
+      load_labels_v1()` SEM `symbol=` -- sempre carregava
+      `labels/BTCUSDT/15m/v1/labels.parquet` (default), nao importa qual
+      `symbol` fosse pedido. O join final (por `_close_time_ms`, mesmo
+      grid de 15m entre ativos) casava as features do simbolo pedido com
+      os LABELS do BTC -- "features de ETH, alvo de BTC", silenciosamente
+      incoerente, sem nenhum erro.
+    severity: "alto"
+    layer: "models"
+    consequence: >
+      Bloqueava de verdade qualquer treino multi-ativo, independente de
+      `labels/` existir pros outros simbolos: `run_layer1_sprint`,
+      `faixa1_6_reconciliation.py::run_e02f_short_unforced_variant`,
+      `faixa2_vol_accelerator_test.py`, `faixa2_e3_stability.py`,
+      `faixa2_dsr_and_b2_check.py` ja chamam `build_modeling_frame(
+      symbol=symbol)` hoje esperando comportamento correto -- nenhum
+      notou porque nenhum simbolo alem de BTCUSDT teve `labels/` gerado
+      ate esta rodada. Teria feito qualquer treino em ETH/SOL/BNB/XRP
+      parecer rodar normalmente enquanto secretamente reusava o alvo do
+      BTC -- classe de bug mais cara que um crash.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido: `build_modeling_frame` ganhou `labels_version="v1"`/
+      `tf="15m"` e passa `symbol=symbol` pra `cpcv.load_labels_v1(
+      labels_version, symbol=symbol, tf=tf)`. Default preserva bit-exato
+      todo caller que ja usa `symbol="BTCUSDT"` (ou omite) -- `load_labels_
+      v1("v1", symbol="BTCUSDT", tf="15m")` e identico a `load_labels_v1()`
+      sem argumentos. Callers com `symbol` nao-BTC corrigem de bug, nao
+      mudam de comportamento correto pre-existente (nao havia). 2 testes
+      novos (monkeypatch em `cpcv.load_labels_v1`/`features_build.
+      build_t1_features`/`regime_build.build_regimes`, sem IO real):
+      roteamento do argumento com `symbol` explicito, e paridade bit-exata
+      do default. Scripts mecanicos autorizados rodados, limpos. pytest
+      ainda nao rodado (PENDENTE-DE-EXECUCAO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
     status: "fechado — corrigido na mesma sessão do achado"

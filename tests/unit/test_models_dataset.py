@@ -10,16 +10,103 @@ suíte que já roda ~100s no total."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
+from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
 from src.models import dataset as ds
 from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA1
+from src.regime import build as regime_build
+from src.validation import cpcv
 from src.validation._paths import labels_symbol_tf_dir
+
+# ============================================================================
+# build_modeling_frame -- roteamento symbol/version/tf até load_labels_v1
+# (achado 2026-08-13, §15.6 item 4): antes desta correção, `symbol` era
+# aceito mas NUNCA chegava a `cpcv.load_labels_v1()`, que sempre carregava
+# BTCUSDT por default -- features de um símbolo, labels de outro,
+# silenciosamente. Mockado (não IO real) porque o objetivo aqui é provar o
+# ROTEAMENTO do argumento, não a corretude do join em si (já coberta pelos
+# testes de integração citados no docstring do módulo).
+# ============================================================================
+
+
+def _one_row_labels(t0: datetime) -> pl.DataFrame:
+    return pl.DataFrame({"t0": [t0]}).with_columns(pl.col("t0").dt.replace_time_zone("UTC"))
+
+
+def _one_row_bar_table(t0: datetime) -> pl.DataFrame:
+    ms = int(t0.timestamp() * 1000)
+    cols: dict[str, Any] = {"open_time": [ms], "close_time": [ms]}
+    for fid in T1_FEATURE_IDS:
+        cols[fid] = [0.0]
+    return pl.DataFrame(cols)
+
+
+def _one_row_regime(t0: datetime) -> pl.DataFrame:
+    return pl.DataFrame(
+        {"t0": [t0], "regime": ["R1"], "tradeable": [True]}
+    ).with_columns(pl.col("t0").dt.replace_time_zone("UTC"))
+
+
+def test_build_modeling_frame_roteia_symbol_version_tf_ate_load_labels_v1(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    calls: list[dict[str, Any]] = []
+
+    def _fake_load_labels_v1(
+        version: str = "v1", *, symbol: str = "BTCUSDT", tf: str = "15m"
+    ) -> pl.DataFrame:
+        calls.append({"version": version, "symbol": symbol, "tf": tf})
+        return _one_row_labels(t0)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
+    monkeypatch.setattr(
+        features_build, "build_t1_features", lambda symbol, start, end: _one_row_bar_table(t0)
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end: _one_row_regime(t0)
+    )
+
+    ds.build_modeling_frame(symbol="ETHUSDT", labels_version="v1", tf="30m")
+
+    assert calls == [{"version": "v1", "symbol": "ETHUSDT", "tf": "30m"}]
+
+
+def test_build_modeling_frame_default_bate_com_load_labels_v1_sem_argumentos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default (`symbol=SYMBOL_DEFAULT="BTCUSDT"`, `labels_version="v1"`,
+    `tf="15m"`) precisa produzir a MESMA chamada que `load_labels_v1()`
+    sem argumento nenhum -- bit-exato pra todo caller existente que não
+    passa esses parâmetros."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    calls: list[dict[str, Any]] = []
+
+    def _fake_load_labels_v1(
+        version: str = "v1", *, symbol: str = "BTCUSDT", tf: str = "15m"
+    ) -> pl.DataFrame:
+        calls.append({"version": version, "symbol": symbol, "tf": tf})
+        return _one_row_labels(t0)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
+    monkeypatch.setattr(
+        features_build, "build_t1_features", lambda symbol, start, end: _one_row_bar_table(t0)
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end: _one_row_regime(t0)
+    )
+
+    ds.build_modeling_frame()
+
+    assert calls == [{"version": "v1", "symbol": "BTCUSDT", "tf": "15m"}]
 
 
 def _synthetic_frame() -> pl.DataFrame:

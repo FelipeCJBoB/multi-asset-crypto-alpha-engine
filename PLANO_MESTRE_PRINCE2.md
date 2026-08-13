@@ -897,6 +897,60 @@ número do estágio:
 4. **Rodar Feature+Label Engine pros outros 4 ativos** (já identificado
    na resposta anterior desta conversa, pré-requisito de M5/M6) — agora
    com o item 1 corrigido primeiro, pra não gerar dado errado silenciosamente.
+
+   **Item 4 executado (2026-08-13) — engenharia de pipeline multi-ativo,
+   não wiring.** Investigação (não implementação direta) achou que
+   "rodar Feature+Label Engine" escondia dois blocos bem diferentes:
+
+   - **Features e Regime NÃO são artefatos persistidos** — `dataset.
+     build_modeling_frame` recomputa os dois em memória a cada chamada
+     (~8s, já documentado no módulo). "Rodar Feature/Regime Engine pros
+     4 alts" não exige escrever nada novo: `build_t1_features(symbol,
+     ...)`/`build_regimes(symbol, ...)` já são 100% parametrizados por
+     símbolo, sem hardcode de BTCUSDT — confirmado por leitura, não
+     suposto.
+   - **Labels PRECISAM ser persistidos** (simulação O(n) cara demais pra
+     recomputar por chamada) — e aqui apareceram 3 achados reais, dois
+     bloqueadores e um latente:
+     1. **`mark_price_klines_1m` nunca existiu pros 4 alts** — confirmado
+        via `ls data/capacity/mark_price_klines_1m/`, só BTCUSDT tinha.
+        B11 exige essa fonte pra resolução de barreira; sem ela,
+        `build_labels_for_symbol` falha por dado ausente. Resolvido:
+        `download_mark_price_klines_1m` novo em `src/data/download.py`
+        (URL confirmada via `binance/binance-public-data` + sondagem
+        HTTP direta em 2 arquivos reais, 2026-08-13) — opt-in, mesmo
+        padrão de `agg_trades`/`book_ticker`. No caminho, achado um
+        SEGUNDO bug real (não corrigido, fora de escopo desta função):
+        `download_klines_1m` trata incorretamente o regime `"daily"`
+        pós-cutover como se 1 dia cobrisse o mês inteiro — nunca
+        exercitado em produção (manifest só vai até 2022-12), registrado
+        como **AG-014**.
+     2. **`build_modeling_frame` tinha um bug real e mais grave, achado
+        no caminho** — `symbol` nunca chegava a `cpcv.load_labels_v1()`
+        (sempre carregava BTCUSDT por default), então mesmo com
+        `labels/` gerado pros 4 alts, todo treino continuaria
+        silenciosamente usando alvo do BTC contra features de outro
+        ativo. Bloqueava M5/M6 de forma mais fundamental que a falta de
+        dado — registrado e corrigido como **AG-015**.
+     3. Filtros de exchange: só 1 snapshot canônico no disco
+        (2026-08-08), cobrindo os 5 símbolos — `historical_filters_
+        fallback=True` obrigatório pra qualquer data histórica, mesmo
+        mecanismo já usado no backfill original de BTCUSDT (não é achado
+        novo, só confirmado).
+
+     Escrito `src/labels/backfill_multi_symbol.py` (orquestra
+     `build_labels_for_symbol`+`write_labels_atomic` pros 4 alts, layout
+     chaveado T0.3 — a mesma infra que AG-006 achou sem caller de
+     produção, agora com um) + testes. **`triple_barrier.py` (arquivo
+     crítico) não foi tocado** — toda a correção ficou em módulos
+     satélite (`dataset.py`, `download.py`, o módulo novo), preservando a
+     cautela já estabelecida sobre esse arquivo.
+
+     Sequência de comandos entregue ao Manager (protocolo de execução —
+     Claude não roda `.py`): 1) backfill de `mark_price_klines_1m`, 2)
+     `pytest` dos módulos tocados, 3) `backfill_multi_symbol` de verdade
+     (escreve `data/labels/{ETH,SOL,BNB,XRP}USDT/15m/v1/labels.parquet`).
+     Passo 3 ainda não executado.
 5. Só depois disso, decisão do Manager sobre extrair `06_BARREIRAS` como
    estágio real (é refatoração de `triple_barrier.py`, arquivo crítico —
    passa pelo protocolo completo do §6, primeiro teste real dele).
@@ -1009,6 +1063,20 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
 
 ## Changelog
 
+- **v2.7 (2026-08-13)** — §15.6 item 4 executado: engenharia de pipeline
+  multi-ativo (não wiring simples). Achado central: features/regime já
+  são 100% multi-símbolo (recomputados em memória, sem hardcode) — o
+  bloqueio real era em `labels/` (persistido, caro de recomputar). 3
+  achados: `mark_price_klines_1m` nunca existiu pros 4 alts (resolvido,
+  `download_mark_price_klines_1m` novo, URL verificada via web research
+  + sondagem HTTP real); `download_klines_1m` tem um bug real não
+  exercitado no regime diário pós-cutover (AG-014, não corrigido, fora
+  de escopo); `build_modeling_frame` nunca passava `symbol` pra
+  `load_labels_v1` — bug mais grave que a falta de dado, teria deixado
+  todo treino multi-ativo usar alvo do BTC silenciosamente (AG-015,
+  corrigido). `triple_barrier.py` não foi tocado. Novo módulo
+  `src/labels/backfill_multi_symbol.py` orquestra a geração real dos 4
+  ativos — comando ainda não executado pelo Manager.
 - **v2.6 (2026-08-13)** — Manager rodou a medição shadow-mode do AG-008
   (`uv run pytest` verde, 4 passed, depois `uv run python -m src.analysis.
   gk_vs_wilder_econ_regime_shift` sobre os 5 ativos). Resultado real:

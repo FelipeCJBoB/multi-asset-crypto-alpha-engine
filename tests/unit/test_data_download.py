@@ -43,6 +43,31 @@ def test_klines_url_daily() -> None:
     )
 
 
+def test_mark_price_klines_url_monthly() -> None:
+    url = dl._mark_price_klines_url("ETHUSDT", "monthly", date(2021, 12, 15))
+    assert url == (
+        "https://data.binance.vision/data/futures/um/monthly/markPriceKlines/"
+        "ETHUSDT/1m/ETHUSDT-1m-2021-12.zip"
+    )
+
+
+def test_mark_price_klines_url_daily() -> None:
+    url = dl._mark_price_klines_url("XRPUSDT", "daily", date(2026, 8, 1))
+    assert url == (
+        "https://data.binance.vision/data/futures/um/daily/markPriceKlines/"
+        "XRPUSDT/1m/XRPUSDT-1m-2026-08-01.zip"
+    )
+
+
+def test_mark_price_klines_1m_registrado_em_source_downloaders() -> None:
+    """`mark_price_klines_1m` (AG-014) precisa estar em `SOURCE_DOWNLOADERS`
+    pra `--sources mark_price_klines_1m` funcionar na CLI, e opt-in (fora
+    de `DEFAULT_SOURCES`, mesmo padrão de `agg_trades`/`book_ticker`) —
+    ninguém deveria baixar isso sem pedir explicitamente."""
+    assert dl.SOURCE_DOWNLOADERS["mark_price_klines_1m"] is dl.download_mark_price_klines_1m
+    assert "mark_price_klines_1m" not in dl.DEFAULT_SOURCES
+
+
 def test_metrics_url() -> None:
     url = dl._metrics_url("SOLUSDT", date(2022, 3, 1))
     assert url == (

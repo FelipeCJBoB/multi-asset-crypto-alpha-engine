@@ -1,12 +1,18 @@
 """Downloader multi-símbolo de `data.binance.vision` (CDN público, sem
-chave) para `klines_1m`, `metrics`, `funding`, `agg_trades`, `book_ticker` —
-PRD_V4_1.md T0.1-T0.4. O gap original que motivou este módulo (ETHUSDT/
-SOLUSDT/BNBUSDT/XRPUSDT sem histórico anterior a 2023) já foi fechado; as
-duas fontes `agg_trades`/`book_ticker` foram adicionadas depois, por serem
-as únicas que ainda faltavam pros 4 alts (ver `constants.yaml::known_gaps`).
+chave) para `klines_1m`, `metrics`, `funding`, `agg_trades`, `book_ticker`,
+`mark_price_klines_1m` — PRD_V4_1.md T0.1-T0.4. O gap original que motivou
+este módulo (ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT sem histórico anterior a 2023)
+já foi fechado; `agg_trades`/`book_ticker` foram adicionadas depois, por
+serem as únicas que ainda faltavam pros 4 alts (ver
+`constants.yaml::known_gaps`). `mark_price_klines_1m` (2026-08-13,
+§15.6 item 4 do PLANO_MESTRE) fecha um gap mais crítico: os 4 alts NUNCA
+tiveram essa fonte baixada — bloqueador de dado bruto pro Label Engine
+(B11 exige `mark_1m` pra resolução de barreira), não achado antes porque
+ninguém tinha checado a cobertura em disco especificamente pra essa fonte.
 
-`agg_trades`/`book_ticker` são opt-in — não entram em `DEFAULT_SOURCES`,
-só rodam com `--sources agg_trades book_ticker` explícito. `book_ticker`
+`agg_trades`/`book_ticker`/`mark_price_klines_1m` são opt-in — não entram
+em `DEFAULT_SOURCES`, só rodam com `--sources <fonte>` explícito.
+`book_ticker`
 recorta automaticamente `[start, end]` pra `BOOK_TICKER_WINDOW_START/_END`
 abaixo: sondagem HTTP direta contra `data.binance.vision` em 2026-08-11
 confirmou que a janela 2023-05-16..2024-03-30 (já medida só pra BTCUSDT em
@@ -143,6 +149,27 @@ def _agg_trades_url(symbol: str, d: date) -> str:
 def _book_ticker_url(symbol: str, d: date) -> str:
     day = d.isoformat()
     return f"{BASE_URL}/data/futures/um/daily/bookTicker/{symbol}/{symbol}-bookTicker-{day}.zip"
+
+
+def _mark_price_klines_url(symbol: str, partition: Partition, d: date) -> str:
+    """Mesma estrutura de `_klines_url`, trocando só `klines`->
+    `markPriceKlines` no path -- confirmado via `binance/binance-public-data`
+    (script `download-futures-markPriceKlines.py` + `utility.py::get_path`,
+    2026-08-13: `data/futures/{trading_type}/{period}/{market_data_type}/
+    {SYMBOL}/{interval}/{SYMBOL}-{interval}-{period}.zip`) e via sondagem
+    HTTP direta (`.CHECKSUM`, texto plano, mais barato que baixar o `.zip`
+    inteiro só pra confirmar existência): `ETHUSDT-1m-2021-12.zip.CHECKSUM`
+    (monthly, início da história do ativo neste projeto) e
+    `XRPUSDT-1m-2026-08-01.zip.CHECKSUM` (daily, ponta recente) responderam
+    com hash SHA256 real, não 404."""
+    if partition == "monthly":
+        period = f"{d.year:04d}-{d.month:02d}"
+        return (
+            f"{BASE_URL}/data/futures/um/monthly/markPriceKlines/{symbol}/1m/"
+            f"{symbol}-1m-{period}.zip"
+        )
+    day = d.isoformat()
+    return f"{BASE_URL}/data/futures/um/daily/markPriceKlines/{symbol}/1m/{symbol}-1m-{day}.zip"
 
 
 # Janela MEDIDA, não estimada — sondagem HTTP direta (200/404) contra
@@ -587,6 +614,150 @@ def download_klines_1m(symbol: str, start: date, end: date, *, session: requests
         )
 
 
+def download_mark_price_klines_1m(
+    symbol: str, start: date, end: date, *, session: requests.Session
+) -> None:
+    """Preenche o gap real que motivou este achado: `mark_price_klines_1m`
+    nunca foi baixado pros 4 alts (só BTCUSDT tinha, via processo anterior
+    a este módulo) -- bloqueador de dado bruto pro Label Engine rodar
+    multi-ativo (B11 exige `mark_1m` pra resolução de barreira). URL
+    confirmada via `binance/binance-public-data` (`download-futures-
+    markPriceKlines.py`) + sondagem HTTP direta em 2 arquivos reais
+    (`ETHUSDT-1m-2021-12.zip.CHECKSUM` monthly, `XRPUSDT-1m-2026-08-01.zip.
+    CHECKSUM` daily, 2026-08-13) -- ver `_mark_price_klines_url`.
+
+    **Diverge de propósito de `download_klines_1m` no regime `"daily"`
+    (achado AG-014, `audit/architecture_gaps_log.yaml`, não corrigido em
+    `download_klines_1m` por estar fora do escopo desta função):**
+    `download_klines_1m` usa `_klines_url(symbol, partition, month_start)`
+    também no regime diário — mas o arquivo diário da Binance cobre só
+    `month_start` (o dia 1º do mês), nunca o mês inteiro, então esse
+    padrão devolveria só 1 de ~30 dias como `"ok"` e marcaria o resto
+    `"missing_upstream"` incorretamente. Não é uma suposição: o manifest
+    real (`multi_asset_backfill.jsonl`) só tem entradas `klines_1m` até
+    2022-12 (regime `"monthly"` inteiro, cutover é 2023-06-01) — o regime
+    `"daily"` desse código nunca foi exercitado de verdade em produção; o
+    resto da cobertura em disco veio de outro processo, anterior a este
+    módulo. Esta função corrige isso: regime `"monthly"` continua 1
+    request cobrindo o mês inteiro (mesma otimização, mesmo padrão de
+    `download_klines_1m`); regime `"daily"` faz 1 request POR DIA (mesmo
+    padrão de `download_metrics`), não tenta economizar requests
+    inventando uma cobertura que a Binance não publica."""
+    schema = schemas.MARK_PRICE_KLINES_1M
+    out_dir = CAPACITY_DIR / "mark_price_klines_1m" / symbol
+    source = "mark_price_klines_1m"
+
+    def _log_days(days: list[date], status: ManifestStatus) -> None:
+        for d in days:
+            _log_manifest_entry(symbol=symbol, source=source, period=d.isoformat(), status=status)
+
+    for year, month in _month_range(start, end):
+        month_start = date(year, month, 1)
+        month_end = (
+            date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        ) - timedelta(days=1)
+        range_start = max(start, month_start)
+        range_end = min(end, month_end)
+        target_days = list(_date_range(range_start, range_end))
+        target_paths = {d: out_dir / f"{d.isoformat()}.parquet" for d in target_days}
+
+        if all(p.exists() for p in target_paths.values()):
+            _log_days(target_days, "skipped_existing")
+            continue
+
+        partition = klines_partition_for_date(month_start)
+
+        if partition == "monthly":
+            url = _mark_price_klines_url(symbol, "monthly", month_start)
+            payload = _download_with_retries(session, url)
+            if payload is None:
+                logger.warning(
+                    "data.download.missing_upstream",
+                    symbol=symbol, source=source, period=f"{year:04d}-{month:02d}",
+                    partition=partition, url=url,
+                )
+                _log_days(target_days, "missing_upstream")
+                continue
+            checksum_ok = _verify_checksum(session, url, payload)
+            if checksum_ok is False:
+                logger.error(
+                    "data.download.checksum_mismatch",
+                    symbol=symbol, source=source, period=f"{year:04d}-{month:02d}", url=url,
+                )
+                _log_days(target_days, "checksum_mismatch")
+                continue
+
+            df = _parse_csv(_extract_single_csv(payload), schema)
+            by_day = _split_klines_by_day(df)
+            n_written = 0
+            for d in target_days:
+                day_df = by_day.get(d)
+                period = d.isoformat()
+                if day_df is None or day_df.is_empty():
+                    logger.warning(
+                        "data.download.day_missing_within_month",
+                        symbol=symbol, source=source, period=period, partition=partition,
+                    )
+                    _log_days([d], "missing_upstream")
+                    continue
+                _write_parquet_atomic(day_df, target_paths[d])
+                _log_manifest_entry(
+                    symbol=symbol, source=source, period=period, status="ok",
+                    n_rows=day_df.height, checksum_verified=checksum_ok,
+                )
+                n_written += 1
+            logger.info(
+                "data.download.month_processed",
+                symbol=symbol, source=source, period=f"{year:04d}-{month:02d}",
+                partition=partition, n_days_written=n_written, n_days_target=len(target_days),
+            )
+            continue
+
+        # partition == "daily" -- a Binance publica 1 arquivo POR DIA nesse
+        # regime, não 1 por mês (ver docstring, AG-014). 1 request por dia,
+        # mesmo padrão de `download_metrics`.
+        for d in target_days:
+            period = d.isoformat()
+            dest = target_paths[d]
+            if dest.exists():
+                _log_manifest_entry(
+                    symbol=symbol, source=source, period=period, status="skipped_existing"
+                )
+                continue
+            url = _mark_price_klines_url(symbol, "daily", d)
+            payload = _download_with_retries(session, url)
+            if payload is None:
+                logger.warning(
+                    "data.download.missing_upstream",
+                    symbol=symbol, source=source, period=period, url=url,
+                )
+                _log_manifest_entry(
+                    symbol=symbol, source=source, period=period, status="missing_upstream"
+                )
+                continue
+            checksum_ok = _verify_checksum(session, url, payload)
+            if checksum_ok is False:
+                logger.error(
+                    "data.download.checksum_mismatch",
+                    symbol=symbol, source=source, period=period, url=url,
+                )
+                _log_manifest_entry(
+                    symbol=symbol, source=source, period=period, status="checksum_mismatch"
+                )
+                continue
+            df = _parse_csv(_extract_single_csv(payload), schema)
+            _write_parquet_atomic(df, dest)
+            logger.info(
+                "data.download.written",
+                symbol=symbol, source=source, period=period,
+                n_rows=df.height, checksum_verified=checksum_ok,
+            )
+            _log_manifest_entry(
+                symbol=symbol, source=source, period=period, status="ok",
+                n_rows=df.height, checksum_verified=checksum_ok,
+            )
+
+
 def download_agg_trades(symbol: str, start: date, end: date, *, session: requests.Session) -> None:
     schema = schemas.AGG_TRADES
     out_dir = CAPACITY_DIR / "agg_trades" / symbol
@@ -710,6 +881,7 @@ SOURCE_DOWNLOADERS = {
     "funding": download_funding,
     "agg_trades": download_agg_trades,
     "book_ticker": download_book_ticker,
+    "mark_price_klines_1m": download_mark_price_klines_1m,
 }
 
 
@@ -736,9 +908,10 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         parser = argparse.ArgumentParser(
             description=(
                 "Downloader multi-ativo de data.binance.vision (klines_1m, "
-                "metrics, funding, agg_trades, book_ticker -- os 2 ultimos sao "
-                "opt-in, precisam de --sources explicito, book_ticker recorta "
-                "automaticamente para a janela medida 2023-05-16..2024-03-30). "
+                "metrics, funding, agg_trades, book_ticker, "
+                "mark_price_klines_1m -- os 3 ultimos sao opt-in, precisam de "
+                "--sources explicito; book_ticker recorta automaticamente "
+                "para a janela medida 2023-05-16..2024-03-30). "
                 "Idempotente (pula periodo ja existente em "
                 "disco), verifica checksum SHA256 quando o .CHECKSUM da Binance "
                 "esta disponivel, loga cada periodo com campo symbol em "

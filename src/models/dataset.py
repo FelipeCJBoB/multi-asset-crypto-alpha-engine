@@ -93,6 +93,8 @@ class ModelingFrame:
 def build_modeling_frame(
     symbol: str = SYMBOL_DEFAULT,
     *,
+    labels_version: str = "v1",
+    tf: str = "15m",
     t0_start: str | None = None,
     t0_end: str | None = None,
 ) -> ModelingFrame:
@@ -106,8 +108,32 @@ def build_modeling_frame(
     `t0_start` em vez de no início real do dataset, mudando silenciosamente a
     definição de regime/feature da janela — violaria a instrução do
     PRD_V4_1.md T0.5 ("sem alteração alguma"). Janela `None`/`None` (default)
-    preserva o comportamento anterior byte a byte."""
-    labels = cpcv.load_labels_v1().with_row_index("_pos")
+    preserva o comportamento anterior byte a byte.
+
+    **Achado real, corrigido aqui (§15.6 item 4 do PLANO_MESTRE, preparação
+    de engenharia multi-ativo, 2026-08-13):** até esta correção,
+    `cpcv.load_labels_v1()` era chamado SEM `symbol=` — sempre carregava
+    `labels/BTCUSDT/15m/v1/labels.parquet` (default de `load_labels_v1`),
+    não importa qual `symbol` fosse pedido aqui. `symbol="ETHUSDT"` fazia
+    `build_t1_features`/`build_regimes` calcularem de verdade sobre dado do
+    ETH, mas o `join` final (linha ~129, por `_close_time_ms`) casava essas
+    features com os LABELS do BTC (mesmo grid de 15m, timestamps batem por
+    coincidência de calendário, não por serem do mesmo ativo) — um frame de
+    "features de ETH, alvo de BTC", silenciosamente incoerente. Não é
+    hipotético: `src/models/pipeline.py::run_layer1_sprint`,
+    `faixa1_6_reconciliation.py`, `faixa2_vol_accelerator_test.py`,
+    `faixa2_e3_stability.py`, `faixa2_dsr_and_b2_check.py` já chamam esta
+    função com `symbol=symbol` explícito hoje — nenhum notou o bug porque
+    nenhum símbolo além de BTCUSDT teve `labels/` gerado até agora
+    (pré-requisito que este item do roadmap resolve). `labels_version`/`tf`
+    novos, mesmo padrão de `CPCVConfig.tf`/`LabelConfig.tf` (AG-004/005) —
+    default `"v1"`/`"15m"` preserva bit-exato todo caller que já passa
+    `symbol="BTCUSDT"` (ou usa o default), já que carregar
+    `load_labels_v1("v1", symbol="BTCUSDT", tf="15m")` é idêntico a
+    `load_labels_v1()` sem argumentos. Callers com `symbol` não-BTC
+    corrigem de bug, não mudam de comportamento -- não havia comportamento
+    "correto" anterior pra preservar nesse caso."""
+    labels = cpcv.load_labels_v1(labels_version, symbol=symbol, tf=tf).with_row_index("_pos")
     start, end = date_bounds(labels)
 
     features_df = features_build.build_t1_features(symbol, start, end)
