@@ -566,10 +566,39 @@ entries:
       `fraction_econ_regime_changed`, `adjusted_rand_index`
       (`sklearn.metrics.adjusted_rand_score`, mesmo pacote ja usado em
       `models/alpha.py`). TF unico 15m (decision_tf de producao). Scripts
-      mecanicos autorizados rodados, limpos. Ainda nao executado
-      (PENDENTE-DE-EXECUCAO-HUMANA, protocolo de execucao) -- comando
-      entregue ao Manager. Decisao de PROMOCAO continua represada ate
-      M2/M3, nao revista por esta medicao.
+      mecanicos autorizados rodados, limpos.
+      **Executado pelo Manager (2026-08-13): 4 passed in 1.47s, depois
+      `uv run python -m src.analysis.gk_vs_wilder_econ_regime_shift`
+      rodado sobre os 5 ativos, historia completa (163k-231k barras cada).
+      Resultado NAO e desprezivel -- consistente nos 5 ativos
+      independentes, o que descarta coincidencia de amostra:**
+
+      | symbol | adjusted_rand_index | fraction_econ_regime_changed | median_abs_relative_diff |
+      |---|---|---|---|
+      | BTCUSDT | 0,598 | 16,0% | 33,7% |
+      | ETHUSDT | 0,556 | 17,7% | 33,2% |
+      | SOLUSDT | 0,611 | 15,8% | 34,8% |
+      | BNBUSDT | 0,618 | 15,5% | 34,9% |
+      | XRPUSDT | 0,602 | 16,2% | 34,5% |
+
+      Relatorio completo: `experiments/gk_vs_wilder_econ_regime_shift_
+      report.json`. ARI ~0,55-0,62 e divergencia REAL, nao ruido -- longe
+      de 1,0 (mesma classificacao) e de 0 (aleatorio). Achado de
+      interpretacao: se GK fosse so um fator de escala constante sobre
+      Wilder, o RANKING seria preservado por construcao e ARI seria ~1,0
+      mesmo com `median_abs_relative_diff` alto -- nao e o caso aqui, ou
+      seja a diferenca de ~33-35% no nivel nao e recalibracao, e diferenca
+      real de FORMA entre os dois estimadores, que reordena ~1 em cada 6
+      barras entre FAVORABLE/NEUTRAL/HOSTILE.
+      **Conclusao da medicao:** a hipotese "desprezivel" esta descartada
+      -- migrar ATRWilder->GK em `features/build.py` moveria
+      `econ_regime` de forma substancial, nao cosmetica. Isso NAO muda a
+      decisao de sequenciamento ja tomada (promocao represada ate M2/M3,
+      `docs/refactor_gk_canonico.md`) mas informa que, quando M2/M3
+      fecharem, a migracao de GK precisa ser tratada como mudanca real de
+      ambiente de treino (retreino + reavaliacao de metricas
+      estratificadas por regime economico), nao como troca de formula
+      cosmetica -- ja era a leitura qualitativa antes, agora quantificada.
 
   # AG-010 -- achado ao preparar contexto pra delegar AG-005/006/009 a
   # agentes (2026-08-13): a entrada acima (AG-008) tinha chaves YAML

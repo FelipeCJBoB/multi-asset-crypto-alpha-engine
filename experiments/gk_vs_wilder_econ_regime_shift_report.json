@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-08-13T22:30:24.061850+00:00",
+  "code_version": "562a30a",
+  "decision_tf": "15m",
+  "purpose": "AG-008 shadow-mode: mede o deslocamento de econ_regime (tercil expansivo de cost_atr_ratio) se ATRWilder for trocado por Garman-Klass em features/build.py -- medicao pura, nao promove nada em producao, nao consome N_lifetime.",
+  "symbols": {
+    "BNBUSDT": {
+      "symbol": "BNBUSDT",
+      "n_bars": 164256,
+      "n_valid_both": 164236,
+      "median_abs_relative_diff": 0.3488829539821829,
+      "fraction_econ_regime_changed": 0.15457025256338439,
+      "adjusted_rand_index": 0.6174842476138921,
+      "counts_wilder": {
+        "ECONOMICS_FAVORABLE": 36903,
+        "ECONOMICS_NEUTRAL": 50091,
+        "ECONOMICS_HOSTILE": 77242
+      },
+      "counts_gk": {
+        "ECONOMICS_FAVORABLE": 38355,
+        "ECONOMICS_NEUTRAL": 49807,
+        "ECONOMICS_HOSTILE": 76074
+      }
+    },
+    "BTCUSDT": {
+      "symbol": "BTCUSDT",
+      "n_bars": 231552,
+      "n_valid_both": 231532,
+      "median_abs_relative_diff": 0.337113653609522,
+      "fraction_econ_regime_changed": 0.16036228253545945,
+      "adjusted_rand_index": 0.5976839764039918,
+      "counts_wilder": {
+        "ECONOMICS_FAVORABLE": 52610,
+        "ECONOMICS_NEUTRAL": 75035,
+        "ECONOMICS_HOSTILE": 103887
+      },
+      "counts_gk": {
+        "ECONOMICS_FAVORABLE": 53730,
+        "ECONOMICS_NEUTRAL": 74738,
+        "ECONOMICS_HOSTILE": 103064
+      }
+    },
+    "ETHUSDT": {
+      "symbol": "ETHUSDT",
+      "n_bars": 164256,
+      "n_valid_both": 164236,
+      "median_abs_relative_diff": 0.33197337461015775,
+      "fraction_econ_regime_changed": 0.17737889378698946,
+      "adjusted_rand_index": 0.5563219027175837,
+      "counts_wilder": {
+        "ECONOMICS_FAVORABLE": 43033,
+        "ECONOMICS_NEUTRAL": 55860,
+        "ECONOMICS_HOSTILE": 65343
+      },
+      "counts_gk": {
+        "ECONOMICS_FAVORABLE": 44021,
+        "ECONOMICS_NEUTRAL": 55099,
+        "ECONOMICS_HOSTILE": 65116
+      }
+    },
+    "SOLUSDT": {
+      "symbol": "SOLUSDT",
+      "n_bars": 163776,
+      "n_valid_both": 163756,
+      "median_abs_relative_diff": 0.3475493230361988,
+      "fraction_econ_regime_changed": 0.15843694276850925,
+      "adjusted_rand_index": 0.6107703266351266,
+      "counts_wilder": {
+        "ECONOMICS_FAVORABLE": 34888,
+        "ECONOMICS_NEUTRAL": 49985,
+        "ECONOMICS_HOSTILE": 78883
+      },
+      "counts_gk": {
+        "ECONOMICS_FAVORABLE": 37239,
+        "ECONOMICS_NEUTRAL": 49845,
+        "ECONOMICS_HOSTILE": 76672
+      }
+    },
+    "XRPUSDT": {
+      "symbol": "XRPUSDT",
+      "n_bars": 163776,
+      "n_valid_both": 163756,
+      "median_abs_relative_diff": 0.3444964007445086,
+      "fraction_econ_regime_changed": 0.16235740980483157,
+      "adjusted_rand_index": 0.6018175249987492,
+      "counts_wilder": {
+        "ECONOMICS_FAVORABLE": 42895,
+        "ECONOMICS_NEUTRAL": 48807,
+        "ECONOMICS_HOSTILE": 72054
+      },
+      "counts_gk": {
+        "ECONOMICS_FAVORABLE": 43808,
+        "ECONOMICS_NEUTRAL": 49302,
+        "ECONOMICS_HOSTILE": 70646
+      }
+    }
+  }
+}

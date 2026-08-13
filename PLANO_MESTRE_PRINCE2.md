@@ -973,6 +973,24 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
   não inventa métrica nova). Decisão de PROMOÇÃO continua represada até
   M2/M3, como já decidido em `docs/refactor_gk_canonico.md`.
 
+  **Resultado medido (2026-08-13) — a hipótese "desprezível" está
+  descartada.** Rodado sobre os 5 ativos, história completa: `adjusted_
+  rand_index` 0,556–0,618, `fraction_econ_regime_changed` 15,5%–17,7%,
+  `median_abs_relative_diff` 33,2%–34,9% — consistente entre os 5 ativos
+  independentes (descarta coincidência de amostra). ARI nessa faixa é
+  divergência real, não ruído; o nível divergir ~33-35% enquanto o
+  ranking (ARI) também diverge de forma substancial confirma que GK não
+  é um mero fator de escala sobre Wilder (um fator de escala constante
+  preservaria o ranking por construção, dando ARI≈1,0) — é diferença
+  real de forma entre os dois estimadores. Não muda o sequenciamento já
+  decidido (promoção continua represada até M2/M3), mas informa que a
+  migração, quando acontecer, precisa ser tratada como mudança real de
+  ambiente de treino — retreino + reavaliação de métricas estratificadas
+  por regime econômico —, não como troca de fórmula cosmética. Detalhe
+  completo (tabela por símbolo, relatório): addendum de AG-008 em
+  `audit/architecture_gaps_log.yaml` e `experiments/gk_vs_wilder_econ_
+  regime_shift_report.json`.
+
 ---
 
 ## Fontes desta pesquisa
@@ -991,6 +1009,16 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
 
 ## Changelog
 
+- **v2.6 (2026-08-13)** — Manager rodou a medição shadow-mode do AG-008
+  (`uv run pytest` verde, 4 passed, depois `uv run python -m src.analysis.
+  gk_vs_wilder_econ_regime_shift` sobre os 5 ativos). Resultado real:
+  `adjusted_rand_index` 0,556–0,618, `fraction_econ_regime_changed`
+  15,5%–17,7%, `median_abs_relative_diff` 33,2%–34,9% — consistente nos
+  5 ativos, hipótese "desprezível" descartada. Não muda a decisão de
+  sequenciamento (promoção continua represada até M2/M3), mas quantifica
+  que a migração GK, quando acontecer, é mudança real de ambiente de
+  treino, não troca cosmética de fórmula. §15.7 e `audit/architecture_
+  gaps_log.yaml` (addendum AG-008) atualizados com a tabela completa.
 - **v2.5 (2026-08-13)** — §15.7: preparação de engenharia para AG-007
   (risco por-símbolo) e AG-008 (migração ATR), pedida pelo Manager antes
   de qualquer implementação (nenhum dos dois é fix mecânico). Pesquisa em
