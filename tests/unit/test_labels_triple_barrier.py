@@ -79,7 +79,7 @@ def test_config_hash_deterministico() -> None:
         ("atr_window", 14),
         ("maker_fee", 0.0003),
         ("taker_fee", 0.0006),
-        ("decision_tf_minutes", 30),
+        ("tf", "30m"),
         ("estimator_id", "garman_klass_w20"),
     ],
 )
@@ -97,6 +97,34 @@ def test_config_hash_de_constants_yaml_e_estavel() -> None:
     cfg2 = tb.LabelConfig.from_constants()
     assert cfg1.config_hash == cfg2.config_hash
     assert cfg1 == cfg2
+
+
+# ============================================================================
+# LabelConfig.tf — AG-005 (audit/architecture_gaps_log.yaml)
+# ============================================================================
+
+
+def test_label_config_tf_default_e_15m() -> None:
+    """Default bit-exato pra todo caller existente (nenhum passava `tf`/
+    `decision_tf_minutes` antes do AG-005)."""
+    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    assert cfg.tf == "15m"
+
+
+def test_label_config_tf_invalido_levanta_unsupportedtimeframeerror() -> None:
+    """AG-005 — a rota escolhida (`tf: str` + `step_ms` no `__post_init__`)
+    existe pra ganhar esta validação de graça (o antigo `decision_tf_minutes:
+    int` aceitava qualquer inteiro, ex. 45, sem TF real correspondente)."""
+    from src.data.resample import UnsupportedTimeframeError
+
+    with pytest.raises(UnsupportedTimeframeError):
+        tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20", tf="45m")
+
+
+def test_label_config_from_constants_propaga_tf() -> None:
+    cfg = tb.LabelConfig.from_constants(tf="30m")
+    assert cfg.tf == "30m"
+    assert cfg.config_hash != tb.LabelConfig.from_constants(tf="15m").config_hash
 
 
 # ============================================================================
@@ -447,6 +475,71 @@ def test_build_labels_time_quando_nunca_toca_barreira() -> None:
     assert row["n_bars_held"] == _CFG.time_stop_bars
     assert row["exit_price"] == pytest.approx(99.9)
     assert row["ret_net"] == pytest.approx(-_CFG.maker_fee - _CFG.taker_fee, rel=1e-9)
+
+
+def test_build_labels_tf_default_bate_bit_exato_com_tf_explicito_15m() -> None:
+    """AG-005 — `config` sem `tf` (default de `LabelConfig`) tem que produzir
+    EXATAMENTE o mesmo resultado que `tf="15m"` explícito -- a alegação
+    central da correção (preservar produção atual, não só "parecido"),
+    mesmo padrão de `test_build_labels_estimator_none_e_explicito_atr_
+    wilder_batem_bit_exato` acima."""
+    t0 = _t0()
+    horizon = t0 + _CFG.time_stop_bars * _BAR_MS
+    mark = _mark([(t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9), (horizon, 99.9, 99.95, 99.85, 99.9)])
+    cfg_explicit = replace(_CFG, tf="15m")
+    out_default = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    out_explicit = tb.build_labels(
+        _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=cfg_explicit
+    )
+    assert out_default.equals(out_explicit, null_equal=True)
+
+
+def test_build_labels_horizon_escala_com_tf_diferente_de_15m() -> None:
+    """AG-005 — `horizon_end_ms`/`t1`/`n_bars_held` têm que escalar com
+    `cfg.tf`, não ficar presos ao antigo `_BAR_MS` fixo em 15m. Cenário
+    TIME (nunca toca TP/SL): por construção, `t1 == t0 + time_stop_bars *
+    step_ms(cfg.tf)` EXATAMENTE. A diferença entre os dois TFs é comparada
+    contra `step_ms` medido, não um fator "2x" presumido a priori — lição
+    AG-004 (`src.validation.cpcv`): não travar uma proporção redonda sem
+    conferir efeito de borda; aqui não há purge/embargo por fold envolvido
+    (é aritmética direta t0 + N*step_ms), então a proporção exata É a
+    grandeza certa a travar, mas medida explicitamente, não assumida."""
+    from src.data.resample import step_ms
+
+    t0 = _t0()
+    cfg_15m = _CFG
+    cfg_30m = replace(_CFG, tf="30m")
+
+    def _time_only_mark(cfg: tb.LabelConfig) -> pl.DataFrame:
+        horizon = t0 + cfg.time_stop_bars * step_ms(cfg.tf)
+        rows: list[_Row] = [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (horizon, 99.9, 99.95, 99.85, 99.9),
+        ]
+        return _mark(rows)
+
+    out_15m = tb.build_labels(
+        _synthetic_bars(), _time_only_mark(cfg_15m), _EMPTY_FUNDING, side=1, config=cfg_15m
+    )
+    out_30m = tb.build_labels(
+        _synthetic_bars(), _time_only_mark(cfg_30m), _EMPTY_FUNDING, side=1, config=cfg_30m
+    )
+    row_15m = out_15m.row(0, named=True)
+    row_30m = out_30m.row(0, named=True)
+    assert row_15m["barrier_hit"] == "TIME"
+    assert row_30m["barrier_hit"] == "TIME"
+    assert row_15m["n_bars_held"] == cfg_15m.time_stop_bars
+    assert row_30m["n_bars_held"] == cfg_30m.time_stop_bars
+
+    t1_15m_ms = row_15m["t1"].timestamp() * 1000
+    t1_30m_ms = row_30m["t1"].timestamp() * 1000
+    assert t1_15m_ms == pytest.approx(t0 + cfg_15m.time_stop_bars * step_ms("15m"), abs=1.0)
+    assert t1_30m_ms == pytest.approx(t0 + cfg_30m.time_stop_bars * step_ms("30m"), abs=1.0)
+    # medido, não assumido: a diferença exata bate com a diferença de
+    # step_ms multiplicada por time_stop_bars (não um "2x" solto).
+    measured_delta_ms = t1_30m_ms - t1_15m_ms
+    expected_delta_ms = cfg_15m.time_stop_bars * (step_ms("30m") - step_ms("15m"))
+    assert measured_delta_ms == pytest.approx(expected_delta_ms, abs=1.0)
 
 
 def test_build_labels_nofill_quando_nunca_toca_limite() -> None:

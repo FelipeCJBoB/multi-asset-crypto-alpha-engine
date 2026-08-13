@@ -252,6 +252,150 @@ def test_vetorizado_processa_multiplos_trades_de_uma_vez() -> None:
 
 
 # ============================================================================
+# tf — AG-005 (audit/architecture_gaps_log.yaml)
+# ============================================================================
+
+
+def test_resolve_barriers_vectorized_tf_default_bate_bit_exato_com_explicito() -> None:
+    """AG-005 — `tf` omitido (default `"15m"`) tem que produzir EXATAMENTE
+    o mesmo resultado que `tf="15m"` explícito — preserva todo caller
+    existente (`src.analysis.faixa2_caminho_b`, testes acima) bit-exato."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ]
+        )
+    )
+    scalar_out = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    filled = scalar_out.filter(pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
+    out_default = bs.resolve_barriers_vectorized(
+        filled,
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        tp_atr_mult=_CFG.tp_atr_mult,
+        sl_atr_mult=_CFG.sl_atr_mult,
+        time_stop_bars=_CFG.time_stop_bars,
+        maker_fee=_CFG.maker_fee,
+        taker_fee=_CFG.taker_fee,
+    )
+    out_explicit = bs.resolve_barriers_vectorized(
+        filled,
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        tp_atr_mult=_CFG.tp_atr_mult,
+        sl_atr_mult=_CFG.sl_atr_mult,
+        time_stop_bars=_CFG.time_stop_bars,
+        maker_fee=_CFG.maker_fee,
+        taker_fee=_CFG.taker_fee,
+        tf="15m",
+    )
+    assert out_default.barrier_hit == out_explicit.barrier_hit
+    assert np.array_equal(out_default.t1_ms, out_explicit.t1_ms)
+    assert np.array_equal(out_default.n_bars_held, out_explicit.n_bars_held)
+    assert np.allclose(out_default.ret_net, out_explicit.ret_net)
+
+
+def test_resolve_barriers_vectorized_tf_invalido_levanta_unsupportedtimeframeerror() -> None:
+    """AG-005 — `step_ms(tf)` roda ANTES de qualquer acesso a `filled`/
+    `mark_1m`/`funding` (primeira linha da função), então falha alto mesmo
+    com DataFrames vazios/placeholder."""
+    from src.data.resample import UnsupportedTimeframeError
+
+    with pytest.raises(UnsupportedTimeframeError):
+        bs.resolve_barriers_vectorized(
+            pl.DataFrame(),
+            pl.DataFrame(),
+            pl.DataFrame(),
+            side=1,
+            tp_atr_mult=2.0,
+            sl_atr_mult=1.5,
+            time_stop_bars=4,
+            maker_fee=0.0002,
+            taker_fee=0.0005,
+            tf="45m",
+        )
+
+
+def test_resolve_barriers_vectorized_horizon_escala_com_tf_diferente_de_15m() -> None:
+    """AG-005 — `horizon_end`/`n_bars_held`/`t1_ms` têm que escalar com
+    `tf`, não ficar presos ao antigo `_BAR_MS` fixo em 15m (a mesma
+    constante existia aqui, CÓPIA independente da de `triple_barrier.py`).
+    Cenário TIME (mark plano dentro de TP/SL, nunca toca), `filled`
+    construído diretamente (não via `build_labels`) para isolar só a
+    escala de `tf`. Diferença entre 15m/30m medida contra `step_ms`, não
+    um fator "2x" presumido a priori (lição AG-004 — não travar proporção
+    redonda sem medir)."""
+    from src.data.resample import step_ms
+
+    t0_i = _BASE_MS
+    fill_px = 100.0
+    atr_pct = 0.004  # tp=100.8/sl=99.4 (tp_atr_mult=2.0/sl_atr_mult=1.5) -- mark plano nunca toca
+    filled = pl.DataFrame(
+        {
+            "t0": [t0_i],
+            "t_entry": [t0_i + 60_000],
+            "entry_price_fill": [fill_px],
+            "atr_at_t0": [atr_pct],
+        }
+    ).with_columns(
+        pl.col("t0").cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+        pl.col("t_entry").cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+    )
+
+    def _flat_mark(tf: str, time_stop_bars: int) -> pl.DataFrame:
+        horizon = t0_i + time_stop_bars * step_ms(tf)
+        n_1m_bars = (horizon - (t0_i + 60_000)) // 60_000 + 1
+        rows: list[_Row] = [
+            (t0_i + 60_000 + m * 60_000, fill_px, fill_px + 0.05, fill_px - 0.05, fill_px)
+            for m in range(int(n_1m_bars))
+        ]
+        return _mark(rows)
+
+    time_stop_bars = 4
+    vec_15m = bs.resolve_barriers_vectorized(
+        filled,
+        _flat_mark("15m", time_stop_bars),
+        _EMPTY_FUNDING,
+        side=1,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_bars=time_stop_bars,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        tf="15m",
+    )
+    vec_30m = bs.resolve_barriers_vectorized(
+        filled,
+        _flat_mark("30m", time_stop_bars),
+        _EMPTY_FUNDING,
+        side=1,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_bars=time_stop_bars,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        tf="30m",
+    )
+    assert vec_15m.barrier_hit == ["TIME"]
+    assert vec_30m.barrier_hit == ["TIME"]
+    assert int(vec_15m.n_bars_held[0]) == time_stop_bars
+    assert int(vec_30m.n_bars_held[0]) == time_stop_bars
+
+    expected_t1_15m = t0_i + time_stop_bars * step_ms("15m")
+    expected_t1_30m = t0_i + time_stop_bars * step_ms("30m")
+    assert int(vec_15m.t1_ms[0]) == expected_t1_15m
+    assert int(vec_30m.t1_ms[0]) == expected_t1_30m
+    measured_delta = int(vec_30m.t1_ms[0]) - int(vec_15m.t1_ms[0])
+    expected_delta = time_stop_bars * (step_ms("30m") - step_ms("15m"))
+    assert measured_delta == expected_delta
+
+
+# ============================================================================
 # Reprodução sobre dado real — 2024, um ano, side=1 (mais barato que os
 # 6,5 anos completos do E1 de verdade).
 # ============================================================================

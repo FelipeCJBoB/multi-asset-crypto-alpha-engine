@@ -270,6 +270,70 @@ entries:
       corretos em 30m/1h sem refatoracao real -- nao e so passar um
       argumento novo, e reescrever a assinatura de duas funcoes publicas.
     resolved_by_commit: null
+    resolution: >
+      Delegado a um Agent fresco com contexto rico (achado, precedente
+      AG-004, protocolo de execução). Revisado independentemente antes
+      deste commit: diffs completos lidos, ruff/mypy/banned_patterns/
+      check_unguarded_ratios rerodados por mim sobre o resultado (não só
+      aceitos por relato), incluindo `git stash`/`git stash pop` pra
+      confirmar quais findings eram pré-existentes vs. novos.
+      Rota escolhida: `LabelConfig.decision_tf_minutes: int` -> `tf: str`
+      (mesmo padrão de `CPCVConfig.tf`), validado por `step_ms` no
+      `__post_init__` -- reconstruir a string TF a partir do int seria
+      frágil (`_TIMEFRAME_MINUTES` não é bijetivo por nome, "1h" != "60m").
+      `_BAR_MS` de módulo (cópia independente em `triple_barrier.py` E
+      `barrier_sweep.py`) removida nos dois arquivos, substituída por
+      `bar_ms = step_ms(tf)` calculado por chamada. `build_labels_for_
+      symbol` NÃO ganhou um `tf` paralelo a `config.tf` -- deliberado,
+      evita recriar a mesma classe de bug (duas fontes de verdade pro
+      mesmo TF). `config_hash` muda de valor (payload key `decision_tf_
+      minutes`->`tf`) -- mudança intencional, mesma categoria já aceita em
+      AG-001 (adição de `estimator_id`); confirmei via grep que nenhum
+      consumidor compara contra um hash literal persistido, só recalcula
+      e persiste fresco.
+      Achado proativo no caminho (não pedido, mas correto reportar e
+      corrigir): a folga de `mark_1m`/`funding` em `build_labels_for_
+      symbol` era um "+1 dia" fixo, calibrado só pro caso 15m (horizonte
+      máximo ~8h, bem abaixo de 24h) -- em TF=1h (horizonte ~32h) essa
+      folga fixa descartaria labels reais por "cauda incompleta"
+      silenciosamente, bloqueador real pra M2/M3. Corrigido para
+      `max(time_stop_bars, fill_timeout_bars) * step_ms(cfg.tf)` + 1 dia de
+      margem. Verifiquei à mão que `date + timedelta(milliseconds=X,
+      days=1)` (Python trunca componentes sub-dia ao somar em `date`, usa
+      só `.days`) NUNCA sub-cobre o horizonte real (prova: dias_componente
+      = 1+floor(horizon_sec/86400) é sempre > horizon_sec/86400) e é
+      bit-exato pro default 15m (horizonte sempre < 1 dia nesse caso,
+      floor=0, resultado idêntico ao "+1 dia" original).
+      Achado reportado, não corrigido (fora do escopo desta correção): um
+      TERCEIRO hardcode independente de "15m" existe em
+      `src/analysis/cost_surface.py:391` (`build_cost_surface_grid_for_
+      symbol`) -- mesma classe de bug, também vai bloquear M2/M3, não
+      nomeado no achado original. Registrar como follow-up.
+      Mecânicos (ruff/mypy/banned_patterns/check_unguarded_ratios)
+      confirmados limpos/só-pré-existente por mim via `git stash`.
+      pytest ainda não rodado (PENDENTE-DE-EXECUÇÃO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-011
+    date: "2026-08-13"
+    file: "src/analysis/cost_surface.py"
+    related_file: "src/labels/triple_barrier.py, src/labels/barrier_sweep.py"
+    found_by: "Agent (delegado pra corrigir AG-005), reportado sem corrigir -- fora do escopo pedido"
+    gap: >
+      `build_cost_surface_grid_for_symbol` (cost_surface.py:391) tem um
+      TERCEIRO hardcode independente de `"15m"` em
+      `lake.query_bars(symbol, "15m", start, end, source="klines_1m",
+      cast_prices=True)` -- mesma classe de bug que AG-005 corrigiu em
+      `triple_barrier.py`/`barrier_sweep.py`, não nomeado no achado
+      original (a descoberta de src/ não cobriu este arquivo com esse
+      nível de detalhe).
+    severity: "médio"
+    layer: "analysis"
+    consequence: >
+      Bloqueia M2/M3 (30m/1h) de produzirem a grade de custo corretamente
+      -- mesmo risco de bug silencioso dos outros dois hardcodes já
+      corrigidos.
+    resolved_by_commit: null
     resolution: null
     status: "aberto"
 

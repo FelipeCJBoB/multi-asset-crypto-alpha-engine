@@ -121,12 +121,31 @@ FloatArray = NDArray[np.float64]
 
 DateLike = date | str
 
-# Fato de calendário do TF de decisão atual (§0.1 decision_tf=15m), não um
-# hiperparâmetro — mesmo raciocínio de `resample._TIMEFRAME_MINUTES`. Entra
-# no `config_hash` (LabelConfig.decision_tf_minutes) porque uma mudança
-# futura de TF mudaria a semântica do label inteira, mesmo não sendo
-# "sweepable" como tp_atr_mult/sl_atr_mult.
-_BAR_MS: Final[int] = step_ms("15m")
+# AG-005 (audit/architecture_gaps_log.yaml) — até esta correção, `_BAR_MS`
+# era uma constante de MÓDULO fixa em `step_ms("15m")`, usada em TODA a
+# aritmética de horizonte/fill/n_bars_held, mesmo já existindo
+# `LabelConfig.decision_tf_minutes` (que só alimentava o estimador de
+# volatilidade, ver `atr_pct` abaixo — nunca fill/horizonte). Rodar M2/M3
+# (PRD_V4_1.md §3.2, 30m/1h) mudando só `decision_tf_minutes` produziria
+# fill/horizonte calculados em milissegundos de 15m — bug silencioso, mesma
+# classe do AG-004 já corrigido em `src.validation.cpcv` (ver esse arquivo,
+# padrão de referência). Correção: `decision_tf_minutes: int` (minutos,
+# sem validação — nada impedia `decision_tf_minutes=45`, que não
+# corresponde a TF real algum) vira `LabelConfig.tf: str` (mesmo padrão de
+# `CPCVConfig.tf`), validado por `step_ms` no `__post_init__` — reconstruir
+# a string a partir do int seria frágil (`1h` != `60m`, `_TIMEFRAME_MINUTES`
+# não é bijetivo por nome). `_BAR_MS` de módulo é substituído por
+# `bar_ms = step_ms(cfg.tf)`, calculado por chamada em `build_labels`.
+# Default "15m" preserva todo caller existente bit-exato.
+_DEFAULT_TF: Final[str] = "15m"
+
+# Fato de calendário (ms por minuto) — mesma categoria de
+# `resample._MS_PER_MINUTE` (privada lá; duplicada aqui, mesmo padrão de
+# `barrier_sweep._MINUTE_MS`, em vez de expor uma constante só para isto).
+# Único uso: `VolatilityEstimator.estimate`/`Bars` (`src.features.
+# volatility`) exigem `timeframe_minutes: int`, não falam a linguagem de
+# string de TF que `step_ms` fala.
+_MINUTE_MS: Final[int] = 60_000
 
 # Fator de conversão fração -> pontos-base — definição matemática, não
 # constante de domínio (mesma categoria de "60s por minuto" em resample.py).
@@ -164,7 +183,16 @@ class LabelConfig:
     dimensiona TP/SL — OBRIGATÓRIO, sem default (ver docstring do módulo
     sobre por que um default auto-derivado de `atr_window` seria inseguro
     sob `dataclasses.replace`). `build_labels` valida em runtime que o
-    `estimator` de fato passado bate com este campo."""
+    `estimator` de fato passado bate com este campo.
+
+    `tf` (AG-005, substitui `decision_tf_minutes: int`) é o TF de decisão —
+    NÃO é constante de domínio (não vem de `constants.yaml`, mesmo
+    raciocínio de `CPCVConfig.tf`): é parâmetro de execução. Determina
+    `step_ms(tf)` em TODA a aritmética de horizonte/fill/n_bars_held de
+    `build_labels`, e `timeframe_minutes` passado ao `VolatilityEstimator`.
+    Validado (`UnsupportedTimeframeError` se desconhecido) no
+    `__post_init__`. Default `"15m"` preserva todo caller existente
+    bit-exato."""
 
     tp_atr_mult: float
     sl_atr_mult: float
@@ -174,17 +202,31 @@ class LabelConfig:
     maker_fee: float
     taker_fee: float
     estimator_id: str
-    decision_tf_minutes: int = 15
+    tf: str = _DEFAULT_TF
+
+    def __post_init__(self) -> None:
+        # step_ms levanta UnsupportedTimeframeError pra tf desconhecido --
+        # falha alto aqui, na construção, em vez de silenciosamente mais
+        # tarde dentro de build_labels (mesma disciplina de
+        # CPCVConfig.__post_init__, AG-004).
+        step_ms(self.tf)
 
     @classmethod
-    def from_constants(cls, *, estimator_id: str | None = None) -> LabelConfig:
+    def from_constants(
+        cls, *, estimator_id: str | None = None, tf: str = _DEFAULT_TF
+    ) -> LabelConfig:
         """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
         no `atr_window` lido de `constants.yaml` — o estimador de produção
         atual, comportamento inalterado desde antes desta classe existir.
         Passar um `estimator_id` explícito (e o `estimator` correspondente
         para `build_labels`) é como um chamador optaria por outro
         estimador (ex. `GarmanKlassEstimator`, vencedor de M1 — ainda não
-        promovido a canônico, ver `docs/refactor_gk_canonico.md`)."""
+        promovido a canônico, ver `docs/refactor_gk_canonico.md`).
+
+        `tf` (AG-005) não vem de `constants.yaml` — mesmo raciocínio de
+        `CPCVConfig.from_constants(*, tf=...)`, é parâmetro de execução do
+        chamador (M2/M3 rodando 30m/1h passam `tf="30m"`/`tf="1h"` aqui),
+        não um valor medido/otimizado do domínio."""
         atr_window = int(load_constant("atr_window"))
         resolved_estimator_id = (
             estimator_id if estimator_id is not None else f"atr_wilder_w{atr_window}"
@@ -198,6 +240,7 @@ class LabelConfig:
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
             estimator_id=resolved_estimator_id,
+            tf=tf,
         )
 
     @property
@@ -213,7 +256,14 @@ class LabelConfig:
         mudança o hash não tinha como capturar "qual estimador" porque só
         existia um. `labels/v1/labels.parquet` (gerado sob o hash antigo)
         continua válido como está; precisa de reprocessamento só se for
-        recombinado com uma config nova para verificação B15."""
+        recombinado com uma config nova para verificação B15.
+
+        **Muda de valor de novo com AG-005** (payload key
+        `decision_tf_minutes` -> `tf`, mesmo default `"15m"`/`15`
+        semanticamente) — mesma categoria de mudança intencional, mesmo
+        motivo: um `config_hash` antigo comparado contra um novo já
+        divergiria por `estimator_id`; este campo não reabre nenhuma
+        janela de comparação que já não estivesse fechada."""
         payload = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
@@ -223,7 +273,7 @@ class LabelConfig:
             "maker_fee": self.maker_fee,
             "taker_fee": self.taker_fee,
             "estimator_id": self.estimator_id,
-            "decision_tf_minutes": self.decision_tf_minutes,
+            "tf": self.tf,
         }
         blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
         return hashlib.sha256(blob).hexdigest()[:16]
@@ -641,11 +691,19 @@ def build_labels(
     low = bars["low"].cast(pl.Float64).to_numpy()
     t0_arr = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
 
+    # AG-005 -- `bar_ms` substitui a antiga constante de módulo `_BAR_MS`
+    # (fixa em 15m); TODA a aritmética de horizonte/fill/n_bars_held abaixo
+    # usa isto, não mais um literal. `tf_minutes` é só pra falar a
+    # linguagem (`timeframe_minutes: int`) que `Bars`/`VolatilityEstimator`
+    # exigem (src.features.volatility) -- mesmo `cfg.tf`, unidade diferente.
+    bar_ms = step_ms(cfg.tf)
+    tf_minutes = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
+
     # `estimator.estimate()` já retorna fração do preço (mesma escala que
     # `atr_pct` sempre teve) -- 2026-08-12, ver docstring do módulo.
     atr_pct = resolved_estimator.estimate(
-        Bars(frame=bars, timeframe_minutes=cfg.decision_tf_minutes),
-        horizon_minutes=cfg.decision_tf_minutes,
+        Bars(frame=bars, timeframe_minutes=tf_minutes),
+        horizon_minutes=tf_minutes,
     )
     valid_atr = ~np.isnan(atr_pct)
     n_warmup_dropped = int((~valid_atr).sum())
@@ -688,7 +746,7 @@ def build_labels(
         )
         limit_px = round_to_tick(entry_ref, side, resolved_filters.tick_size)
 
-        fill_horizon_ms = t_post + cfg.fill_timeout_bars * _BAR_MS
+        fill_horizon_ms = t_post + cfg.fill_timeout_bars * bar_ms
         if fill_horizon_ms > max_mark_open_time:
             n_incomplete_tail += 1
             continue
@@ -726,7 +784,7 @@ def build_labels(
                 "fill_price None com t_entry_ms definido — contrato de FillResult quebrado"
             )
 
-        horizon_end_ms = t0 + cfg.time_stop_bars * _BAR_MS
+        horizon_end_ms = t0 + cfg.time_stop_bars * bar_ms
         if horizon_end_ms > max_mark_open_time:
             n_incomplete_tail += 1
             continue
@@ -767,7 +825,7 @@ def build_labels(
         funding_frac = float(np.nansum(events_rate)) * side
 
         ret_net = ret_gross - cost_entry_frac - cost_exit_frac - funding_frac
-        n_bars_held = int(np.ceil((t1 - t0) / _BAR_MS)) if t1 > t0 else 0
+        n_bars_held = int(np.ceil((t1 - t0) / bar_ms)) if t1 > t0 else 0
 
         # D3 (Faixa 2) — excursão favorável máxima, em unidades de ATR (mesma
         # normalização de tp_price/sl_price: `fill_px * mult * atr_pct_i`).
@@ -877,15 +935,41 @@ def build_labels_for_symbol(
 ) -> pl.DataFrame:
     """Ponto de entrada com IO — análogo a
     `features.build.build_t1_features(symbol, start, end)`. Carrega klines
-    regulares de 15m (`entry_ref`/estimador de volatilidade), `mark_1m` e
-    `funding` via `src.data.lake` (reuso, não reimplementação).
+    regulares no TF de decisão (`cfg.tf`, `entry_ref`/estimador de
+    volatilidade), `mark_1m` e `funding` via `src.data.lake` (reuso, não
+    reimplementação).
 
-    `mark_1m`/`funding` são buscados com 1 dia de folga ALÉM de `end` — sem
-    isso, os últimos `time_stop_bars` labels do intervalo pedido seriam
-    descartados por "cauda incompleta" apesar do dado existir logo depois
-    de `end` (1 dia cobre time_stop_bars*15m e fill_timeout_bars*15m com
-    folga, já que ambos ficam bem abaixo de 24h com os valores atuais de
-    `constants.yaml`).
+    **AG-005** — não existe parâmetro `tf` separado aqui de propósito: o TF
+    já entra pela config (`config.tf`, default `"15m"`), a mesma fonte que
+    `build_labels` usa pra toda a aritmética de horizonte. Um segundo
+    parâmetro `tf` paralelo a `config.tf` recriaria exatamente a classe de
+    bug que este achado corrige (duas fontes de verdade pro mesmo TF que
+    podem divergir) — `lake.query_bars(symbol, cfg.tf, ...)` usa
+    `cfg.tf` diretamente, não mais `"15m"` literal.
+
+    `bars_15m` continua carregado no TF de DECISÃO (`cfg.tf`) — o nome do
+    parâmetro é histórico (mantido por compat com `build_labels`/
+    `build_labels_both_sides`, que também o chamam assim), não significa
+    literalmente 15 minutos.
+
+    `mark_1m` continua SEMPRE carregado em granularidade nativa de 1
+    minuto, independente de `cfg.tf` — isto NÃO é o mesmo hardcode do
+    AG-005: B11 exige que o toque de barreira seja resolvido na resolução
+    mais fina disponível, em ordem cronológica real (docstring do módulo,
+    regra dura B11), nunca na resolução da barra de decisão. Mudar `cfg.tf`
+    muda QUANDO uma decisão é tomada e o horizonte em ms de fill/time-stop
+    — nunca a granularidade em que TP/SL são detectados. Fora de escopo
+    desta correção, documentado explicitamente em vez de deixado implícito.
+
+    `mark_1m`/`funding` são buscados com folga ALÉM de `end` — o suficiente
+    pra cobrir `max(time_stop_bars, fill_timeout_bars) * step_ms(cfg.tf)`
+    (o maior horizonte possível no TF pedido) MAIS 1 dia de margem extra.
+    Antes do AG-005 a folga era um "1 dia" fixo, calibrado só pro caso 15m
+    (`time_stop_bars=32 * 15m = 8h`, bem abaixo de 24h) — em 1h
+    (`32 * 1h = 32h`) essa folga fixa seria insuficiente e descartaria
+    labels reais por "cauda incompleta" silenciosamente (bloqueador real
+    pra M2/M3, PRD_V4_1.md §3.2). Sem isso, os últimos labels do intervalo
+    pedido seriam descartados apesar do dado existir logo depois de `end`.
 
     `estimator=None` (default) preserva o comportamento de produção atual
     (`ATRWilderEstimator`, ver `build_labels`). Este é o ÚNICO ponto de
@@ -896,9 +980,10 @@ def build_labels_for_symbol(
     aqui, decisão explícita pendente de quem chama."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
-    bars_15m = lake.query_bars(symbol, "15m", start, end, source="klines_1m", cast_prices=True)
+    bars_15m = lake.query_bars(symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True)
 
-    mark_end = _as_date(end) + timedelta(days=1)
+    horizon_ms = max(cfg.time_stop_bars, cfg.fill_timeout_bars) * step_ms(cfg.tf)
+    mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True
     )

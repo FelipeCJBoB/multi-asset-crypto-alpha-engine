@@ -32,7 +32,20 @@ fill, qualquer tp/sl), não recalculados aqui.
 `tests/unit/test_labels_barrier_sweep.py::test_reproduz_build_labels_*`):
 primeiro toque em ORDEM CRONOLÓGICA real (B11), desempate TP=SL no mesmo
 candle por proximidade ao `open`, `TIME` quando nenhum toca, `t1` de
-`TIME` é `horizon_end_ms` exato (não o último bar da janela)."""
+`TIME` é `horizon_end_ms` exato (não o último bar da janela).
+
+**AG-005 (audit/architecture_gaps_log.yaml)** — até esta correção, `_BAR_MS`
+era uma constante de MÓDULO fixa em `15 * 60_000` (15m), CÓPIA independente
+da mesma constante que existia em `triple_barrier.py` — as duas hardcodavam
+o mesmo fato de calendário em dois lugares, sem nenhum campo de TF em
+`resolve_barriers_vectorized`. Rodar a varredura de grade sobre labels de
+M2/M3 (30m/1h, PRD_V4_1.md §3.2) produziria `horizon_end`/`n_bars_held`
+calculados em milissegundos de 15m — bug silencioso, mesma classe do AG-004
+já corrigido em `src.validation.cpcv` (padrão de referência). Correção:
+`resolve_barriers_vectorized` ganha `tf: str = "15m"` (mesmo default de
+`LabelConfig.tf`/`CPCVConfig.tf` — bit-exato pra todo caller existente,
+nenhum passa `tf` hoje), validado via `step_ms(tf)` no início da função
+(falha alto, `UnsupportedTimeframeError`, antes de qualquer cálculo)."""
 
 from __future__ import annotations
 
@@ -44,11 +57,12 @@ import polars as pl
 from numpy.lib.stride_tricks import sliding_window_view
 from numpy.typing import NDArray
 
+from src.data.resample import step_ms
+
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 BoolArray = NDArray[np.bool_]
 
-_BAR_MS: Final[int] = 15 * 60_000
 _MINUTE_MS: Final[int] = 60_000
 _BPS_PER_UNIT: Final[int] = 10_000
 _TP = "TP"
@@ -56,7 +70,7 @@ _SL = "SL"
 _TIME = "TIME"
 
 # Margem de segurança do tamanho da janela (em barras de 1m) além de
-# `time_stop_bars * 15` — cobre gaps eventuais do mark_1m (já documentados
+# `time_stop_bars * (bar_ms // _MINUTE_MS)` — cobre gaps eventuais do mark_1m (já documentados
 # em outras partes do repo, ex. Data Quality Engine) sem mudar o resultado:
 # a janela em si é MASCARADA por comparação de timestamp real
 # (`horizon_end_ms`), não por contagem de barra — a margem só garante que
@@ -103,6 +117,7 @@ def resolve_barriers_vectorized(
     time_stop_bars: int,
     maker_fee: float,
     taker_fee: float,
+    tf: str = "15m",
 ) -> ResolvedBarriers:
     """`filled`: trades JÁ preenchidos de UM lado (`barrier_hit != "NOFILL"`
     numa config qualquer — `t_entry`/`entry_price_fill`/`atr_at_t0`/`t0` não
@@ -111,17 +126,28 @@ def resolve_barriers_vectorized(
     mesmo schema de `triple_barrier.build_labels`. Vetorizado via
     `sliding_window_view` sobre `mark_1m` — sem laço Python por trade.
 
+    `tf` (AG-005, default `"15m"`) é o TF de DECISÃO de `filled` — precisa
+    ser o MESMO `LabelConfig.tf` usado para gerar `filled` (`t0`/`t1`/
+    `n_bars_held` de `filled` já foram calculados sob esse TF por
+    `triple_barrier.build_labels`); nenhuma validação cruzada automática
+    entre os dois hoje, responsabilidade do chamador, mesma ressalva já
+    documentada em `CPCVConfig`/`load_labels_v1` (`src.validation.cpcv`).
+    `mark_1m` continua granularidade nativa de 1 minuto independente de
+    `tf` — mesmo raciocínio de B11 em `triple_barrier.build_labels_for_
+    symbol` (toque de barreira sempre na resolução mais fina disponível).
+
     Levanta `ValueError` se qualquer trade não tiver janela completa até
     `horizon_end_ms` no `mark_1m` fornecido (equivalente ao
     `n_incomplete_tail` de `build_labels` — aqui é erro, não skip
     silencioso, porque `filled` já deveria vir de trades com cauda
     completa, dado que se originam de `labels/v1/labels.parquet`)."""
+    bar_ms = step_ms(tf)  # UnsupportedTimeframeError falha alto se tf desconhecido
     n = filled.height
     t0 = filled["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t_entry = filled["t_entry"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     fill_px = filled["entry_price_fill"].to_numpy().astype(np.float64)
     atr_pct = filled["atr_at_t0"].to_numpy().astype(np.float64)
-    horizon_end = t0 + time_stop_bars * _BAR_MS
+    horizon_end = t0 + time_stop_bars * bar_ms
 
     mark = mark_1m.sort("open_time")
     mark_open_time = mark["open_time"].cast(pl.Int64).to_numpy().astype(np.int64)
@@ -130,7 +156,10 @@ def resolve_barriers_vectorized(
     mark_low = mark["low"].cast(pl.Float64).to_numpy().astype(np.float64)
     mark_close = mark["close"].cast(pl.Float64).to_numpy().astype(np.float64)
 
-    window_bars = time_stop_bars * 15 + _WINDOW_SAFETY_MARGIN_BARS
+    # `bar_ms // _MINUTE_MS` -- barras de mark_1m (1min) por barra de
+    # decisão (AG-005: era `* 15` fixo, presumindo TF=15m).
+    bars_per_decision_bar = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
+    window_bars = time_stop_bars * bars_per_decision_bar + _WINDOW_SAFETY_MARGIN_BARS
     start_idx = np.searchsorted(mark_open_time, t_entry, side="left")
     if start_idx.size and int(np.max(start_idx)) + window_bars > mark_open_time.shape[0]:
         # janela tocaria além do fim do array disponível -- preenche com
@@ -233,7 +262,7 @@ def resolve_barriers_vectorized(
     funding_frac = (prefix[f_hi] - prefix[f_lo]) * side
 
     ret_net = ret_gross - cost_entry_frac - cost_exit_frac - funding_frac
-    n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / _BAR_MS).astype(np.int64), 0)
+    n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / bar_ms).astype(np.int64), 0)
 
     return ResolvedBarriers(
         barrier_hit=list(barrier_hit),
