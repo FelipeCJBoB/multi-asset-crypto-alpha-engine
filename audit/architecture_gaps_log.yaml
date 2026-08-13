@@ -314,10 +314,51 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto"
-    resolved_by_commit: "e25d85c"
+
+  # AG-010 -- achado ao preparar contexto pra delegar AG-005/006/009 a
+  # agentes (2026-08-13): a entrada acima (AG-008) tinha chaves YAML
+  # DUPLICADAS -- um segundo bloco `resolved_by_commit: "e25d85c"` +
+  # `resolution` + `status` apontando pra um commit e um texto (Sec14,
+  # changelog v1.3, termo "canonico" em Sec6.5) que pertencem a AG-003,
+  # nao a AG-008 (ATR duplicado). Confirmado por `git show e25d85c` --
+  # commit real e sobre CLAUDE.md/documento-mestre/AG-003, nada a ver com
+  # ATR. Corrupcao de copy-paste no commit e23053b (sessao de discovery de
+  # src/, quando AG-004..008 foram criados em lote), nao editada desde.
+  # Efeito pratico: um parser YAML padrao (inclusive PyYAML) resolve
+  # chaves duplicadas pegando a ULTIMA ocorrencia -- ou seja, qualquer
+  # leitura programada deste arquivo veria AG-008 com o commit/resolucao
+  # ERRADOS de AG-003, nao "aberto" como o `status` original (primeira
+  # ocorrencia) dizia. Ironico dado que este ledger existe justamente pra
+  # capturar "abstracao existe mas nao esta de fato integrada" -- aqui e
+  # dado corrompido, nao codigo, mas a mesma familia de furo (fonte de
+  # verdade dizendo uma coisa, comportamento real do parser fazendo outra).
+  - id: AG-010
+    date: "2026-08-13"
+    file: "audit/architecture_gaps_log.yaml"
+    related_file: "commit e23053b"
+    found_by: "Claude, preparando contexto para delegar AG-005/006/009 a agentes"
+    gap: >
+      Entrada AG-008 tinha chaves `resolved_by_commit`/`resolution`/
+      `status` DUPLICADAS -- primeira ocorrencia correta ("aberto", nulls),
+      segunda ocorrencia com o commit/resolucao de AG-003 colados por
+      engano (mesmo tema -- Sec14/changelog/"canonico" -- sugerindo
+      copy-paste do template de AG-003 ao redigir AG-008 em lote, nunca
+      limpo). Introduzido no commit e23053b.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      Qualquer parser YAML padrao resolve chave duplicada pegando a
+      ULTIMA ocorrencia -- leitura programada deste arquivo veria AG-008
+      como resolvido pelo commit/texto ERRADO de AG-003, nao como
+      "aberto" (que e o estado real: migracao ATR nao aconteceu).
+      Nenhuma automacao le este YAML hoje (uso e so humano/Agent lendo
+      prosa), entao impacto pratico foi zero ate agora -- mas e
+      exatamente o tipo de furo silencioso que vira erro real no dia
+      em que alguem escrever um script contra este arquivo.
+    resolved_by_commit: null
     resolution: >
-      Sec14 (Road_Map Vivo) escrita com o link real do artifact publicado.
-      Changelog v1.3 passa a registrar Sec0/Sec13. Nota explicita de
-      limitacao prospectiva adicionada em Sec2. Termo "canonico"
-      desambiguado em Sec6.5 (decisao vs. estado de producao).
+      Chaves duplicadas de AG-008 removidas nesta mesma edicao -- AG-008
+      volta a ter uma unica ocorrencia de `resolved_by_commit`/
+      `resolution`/`status`, todas corretamente `null`/"aberto".
+    status: "fechado — corrigido na mesma sessão do achado"
     status: "fechado — corrigido na mesma sessão do achado"
