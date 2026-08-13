@@ -265,6 +265,24 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto"
+    remedicao_2026-08-13: >
+      Antes de delegar a correcao, `grep` real por callers de
+      `write_regimes_atomic`/`write_labels_atomic`/`write_predictions_atomic`
+      (nao so a definicao) achou algo mais preciso que o gap original: SO
+      `write_predictions_atomic` tem chamador de producao real hoje
+      (`src/models/pipeline.py:328-329`, dentro da funcao que roda
+      camada1/camada0, `symbol` ja em escopo via
+      `ds.build_modeling_frame(symbol=symbol, ...)`). `write_labels_atomic`
+      e `write_regimes_atomic` NAO tem NENHUM caller de producao em
+      `src/` -- so os proprios testes unitarios de `dest_dir=` os chamam
+      (confirmado: nao ha CLI `quant` implementado, `pyproject.toml` nao
+      declara `[project.scripts]`; os comandos `uv run quant labels
+      build`/`regime build` do CLAUDE.md sao aspiracionais, ainda nao
+      codigo). Isso muda o escopo real da correcao: "trocar destino de
+      escrita" so se aplica de fato ao writer de predictions -- pros
+      outros dois, nao ha o que trocar sem inventar um caller que nao foi
+      pedido (seria scope creep). Fix delegado a um Agent com esse escopo
+      corrigido, nao o original.
 
   - id: AG-007
     date: "2026-08-12"
