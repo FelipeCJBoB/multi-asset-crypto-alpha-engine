@@ -4,9 +4,14 @@
 nulos, a decomposição de PnL, e decide o critério de permanência do §5.11
 adaptado (`alpha_layer1_permanence_min_paths`, ver `constants.yaml`).
 
-Escreve `predictions/alpha/{model_id}/predictions.parquet` (§5.12, um
-arquivo por variante) e `experiments/alpha_layer1_report.json` (números
-desta rodada — HHI, baselines, decomposição, decisão de permanência)."""
+Escreve `predictions.parquet` (§5.12/PRD_V4_1.md T0.3, um arquivo por
+variante) em `predictions/alpha/{model_id}/` por default (`tf=None`,
+caminho legado plano — ver docstring de `run_layer1_sprint` pro porquê:
+7 leitores de produção reais ainda dependem dele) ou em
+`predictions/alpha/{symbol}/{tf}/{model_id}/` (layout chaveado) quando
+`tf` é passado explicitamente; e `experiments/alpha_layer1_report.json`
+(números desta rodada — HHI, baselines, decomposição, decisão de
+permanência)."""
 
 from __future__ import annotations
 
@@ -23,12 +28,18 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.data.resample import step_ms
 from src.validation import cpcv
 
 from . import alpha, backtest_lite, baselines, decomposition
 from . import dataset as ds
 from ._constants import load_constant
-from ._paths import EXPERIMENTS_DIR, PREDICTIONS_OUTPUT_DIR, REPO_ROOT
+from ._paths import (
+    EXPERIMENTS_DIR,
+    PREDICTIONS_OUTPUT_DIR,
+    REPO_ROOT,
+    predictions_symbol_tf_dir,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -270,6 +281,7 @@ def _percentile_finite(values: list[float], pct: float) -> float:
 def run_layer1_sprint(
     *,
     symbol: str = SYMBOL,
+    tf: str | None = None,
     t0_start: str | None = None,
     t0_end: str | None = None,
     model_id_camada1: str = MODEL_ID_CAMADA1,
@@ -280,9 +292,48 @@ def run_layer1_sprint(
     o comportamento anterior byte a byte (janela cheia, `MODEL_ID_CAMADA1`/
     `MODEL_ID_CAMADA0`, `experiments/alpha_layer1_report.json`). Passados
     explicitamente, permitem reprocessar um subintervalo (PRD_V4_1.md T0.5)
-    SEM sobrescrever os artefatos já gravados da rodada de janela cheia —
-    `model_id` novo implica `predictions/alpha/{model_id}/` e
-    `models/{model_id}/diagnostics/` novos, não uma sobrescrita."""
+    SEM sobrescrever os artefatos já gravados da rodada de janela cheia.
+
+    `tf` (PRD_V4_1.md T0.3, §3.1, AG-006) — sentinela `None`, NÃO `"15m"`:
+
+    - `tf=None` (default, o que TODO chamador/teste existente faz hoje —
+      nunca ninguém passou este argumento porque ele não existia antes
+      desta mudança): comportamento bit-exato de antes, sem exceção.
+      `write_predictions_atomic` é chamado SEM `dest_dir`, gravando no
+      caminho legado plano `PREDICTIONS_OUTPUT_DIR/alpha/{model_id}`; `tf`
+      não é validado (`step_ms` não é chamado).
+    - `tf="15m"`/`"30m"`/... explícito: grava no layout chaveado
+      `_paths.predictions_symbol_tf_dir(symbol, model_id, tf=tf)` e valida
+      `tf` via `step_ms(tf)` ANTES de qualquer trabalho caro
+      (`build_modeling_frame`, CPCV, treino XGBoost) — mesma disciplina de
+      `CPCVConfig.__post_init__` (`src/validation/cpcv.py`): falhar cedo e
+      alto em vez de deixar um `tf` desconhecido virar silenciosamente um
+      nome de diretório qualquer (`predictions_symbol_tf_dir` não valida
+      `tf` sozinho).
+
+    Por que o sentinela e não `tf: str = "15m"` com propagação incondicional
+    (a primeira versão desta mudança fazia isso, revertido em code review):
+    `predictions_symbol_tf_dir(symbol, model_id, tf="15m")` produz um
+    CAMINHO DIFERENTE do fallback `dest_dir=None` legado, mesmo sendo o
+    "mesmo timeframe" — não é o mesmo lugar no disco. Migrar o destino de
+    escrita do default silenciosamente orfanaria leitores de produção reais
+    que leem `PREDICTIONS_OUTPUT_DIR/alpha/{model_id}/predictions.parquet`
+    direto, sem noção de `symbol`/`tf` (grep `load_predictions|
+    PREDICTIONS_OUTPUT_DIR` em `src/`, 2026-08-13):
+    `src/backtest/fill_reconciliation.py:126-127`,
+    `src/analysis/faixa1_5_prerequisites.py:105-106`,
+    `src/analysis/faixa1_6_reconciliation.py:711,716,1066` (via
+    `f15.load_predictions`), `src/analysis/faixa1_7_edge_or_beta.py:563`,
+    `src/analysis/faixa2_caminho_b.py:1019,1118,1325`,
+    `src/analysis/faixa2_vol_accelerator_test.py:84,290,400`,
+    `src/analysis/calibration_diagnostics.py:905-910`. Nenhum desses
+    módulos erraria de forma visível — os arquivos antigos no caminho
+    legado continuam existindo, então eles silenciosamente leriam artefato
+    cada vez mais desatualizado, sem nenhum erro. Migrar esses 7 leitores
+    pro layout chaveado é um trabalho coordenado à parte, fora do escopo
+    desta mudança."""
+    if tf is not None:
+        step_ms(tf)  # UnsupportedTimeframeError cedo — antes do trabalho caro abaixo
     t_start = time.time()
     mf = ds.build_modeling_frame(symbol=symbol, t0_start=t0_start, t0_end=t0_end)
     cpcv_result = cpcv.generate_splits(mf.data)
@@ -325,8 +376,18 @@ def run_layer1_sprint(
 
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)
-    write_predictions_atomic(preds_c1, model_id_camada1)
-    write_predictions_atomic(preds_c0, model_id_camada0)
+    # `tf=None` (default): SEM dest_dir -> caminho legado plano, bit-exato
+    # com o comportamento anterior a esta mudança (ver docstring da função
+    # — 7 leitores de produção reais ainda dependem disso). `tf` explícito:
+    # layout chaveado por symbol/tf.
+    dest_dir_c1 = (
+        predictions_symbol_tf_dir(symbol, model_id_camada1, tf=tf) if tf is not None else None
+    )
+    dest_dir_c0 = (
+        predictions_symbol_tf_dir(symbol, model_id_camada0, tf=tf) if tf is not None else None
+    )
+    write_predictions_atomic(preds_c1, model_id_camada1, dest_dir=dest_dir_c1)
+    write_predictions_atomic(preds_c0, model_id_camada0, dest_dir=dest_dir_c0)
 
     # --- backtest por caminho + critério de permanência (§5.11 adaptado) ---
     c1_by_path = backtest_lite.backtest_by_path(camada1_folds, mf.data)

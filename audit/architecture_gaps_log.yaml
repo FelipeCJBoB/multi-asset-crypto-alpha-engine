@@ -359,9 +359,6 @@ entries:
       pontos de escrita reais -- gate G-C0-4 mediu a existencia do
       codigo, nao o uso dele. Correcao e baixo risco (trocar destino de
       escrita, nao logica nova) mas nao e automatica.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto"
     remedicao_2026-08-13: >
       Antes de delegar a correcao, `grep` real por callers de
       `write_regimes_atomic`/`write_labels_atomic`/`write_predictions_atomic`
@@ -380,6 +377,64 @@ entries:
       outros dois, nao ha o que trocar sem inventar um caller que nao foi
       pedido (seria scope creep). Fix delegado a um Agent com esse escopo
       corrigido, nao o original.
+    resolved_by_commit: null
+    resolution: >
+      Delegado a um Agent fresco com o escopo já recalibrado acima.
+      Primeira versão implementava `tf: str = "15m"` propagando
+      incondicionalmente pra `predictions_symbol_tf_dir` -- REVISADA e
+      devolvida por mim antes de aceitar: `predictions_symbol_tf_dir(
+      symbol, model_id, tf="15m")` produz um caminho DIFERENTE do
+      fallback `dest_dir=None` legado (não é bit-exato, mesmo "mesmo
+      timeframe"). Grep real (`load_predictions|PREDICTIONS_OUTPUT_DIR`
+      em `src/`) achou 7 leitores de produção reais que dependem do
+      caminho legado plano sem noção de symbol/tf
+      (`fill_reconciliation.py`, `faixa1_5/6/7_*`, `faixa2_caminho_b.py`,
+      `faixa2_vol_accelerator_test.py`, `calibration_diagnostics.py`) --
+      migrar o destino de escrita do DEFAULT os orfanaria silenciosamente
+      (arquivo velho continua existindo, nenhum erro, só desatualiza pra
+      sempre). Corrigido: `tf: str | None = None`, sentinela. `tf=None`
+      (o que todo caller/teste faz hoje) preserva bit-exato o caminho
+      legado, `step_ms` nem é chamado. `tf` explícito (`"15m"`, `"30m"`,
+      ...) usa o layout chaveado com validação `step_ms(tf)` cedo. Achado
+      adicional (segunda rodada, do próprio Agent): um SEGUNDO chamador
+      de produção de `write_predictions_atomic` existe
+      (`src/analysis/faixa1_6_reconciliation.py:704`), não citado no
+      achado original (que falava só de `run_layer1_sprint`) -- não
+      tocado, fora do escopo explícito, reportado pro Manager decidir.
+      `write_labels_atomic`/`write_regimes_atomic` confirmados (grep,
+      duas rodadas) sem nenhum caller de produção -- nada implementado
+      pra eles, conforme instruído (evitar fabricar caller). Mecânicos
+      (ruff/mypy/banned_patterns) rerodados por mim de forma independente
+      sobre o resultado final -- limpos. pytest ainda não rodado
+      (PENDENTE-DE-EXECUÇÃO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-012
+    date: "2026-08-13"
+    file: "src/analysis/faixa1_6_reconciliation.py"
+    related_file: "src/models/pipeline.py"
+    found_by: "Agent (delegado pra corrigir AG-006), reportado sem corrigir -- fora do escopo pedido"
+    gap: >
+      Segundo chamador de produção de `write_predictions_atomic` além de
+      `run_layer1_sprint`: `faixa1_6_reconciliation.py:704`
+      (`pipeline.write_predictions_atomic(preds_variant,
+      VARIANT_MODEL_ID_E02F_SHORT_UNFORCED)`), dentro de um bloco de
+      reconciliação ad-hoc. Grava sem `dest_dir` -- caminho legado plano
+      -- e é lido de volta no mesmo módulo via `f15.load_predictions(...)`
+      (par escrita/leitura consistente, ambos legado hoje). AG-006 só
+      recebeu `tf` em `run_layer1_sprint`; este segundo caller não foi
+      tocado.
+    severity: "baixo"
+    layer: "analysis"
+    consequence: >
+      Não bloqueia nada hoje (par escrita/leitura consistente). Se algum
+      dia este script precisar rodar em `tf!=15m`, precisa do mesmo
+      tratamento (`tf` explícito + `predictions_symbol_tf_dir`) que
+      `run_layer1_sprint` recebeu -- senão herda o mesmo risco de leitor
+      órfão que AG-006 corrigiu no caller principal.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
 
   - id: AG-007
     date: "2026-08-12"
