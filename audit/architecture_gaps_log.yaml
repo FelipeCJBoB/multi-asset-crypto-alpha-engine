@@ -336,8 +336,22 @@ entries:
       -- mesmo risco de bug silencioso dos outros dois hardcodes já
       corrigidos.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto"
+    resolution: >
+      Delegado a um Agent fresco com contexto rico (já pré-investigado por
+      mim: resto do módulo já reusa `triple_barrier.build_labels_both_
+      sides`, que pós-AG-005 já usa `cfg.tf`; único hardcode remanescente
+      era esta linha + a mesma folga fixa de `mark_end` que AG-005 já
+      corrigiu em `triple_barrier.py`). Replicado o mesmo padrão
+      (`horizon_ms = max(time_stop_bars, fill_timeout_bars) * step_ms(
+      cfg.tf)`), sem reinventar nada. 3 testes novos (monkeypatch em
+      `lake.query_bars`/`query_funding`, evita IO real). Revisado
+      independentemente antes deste commit: diff lido, ruff/mypy/
+      banned_patterns/check_unguarded_ratios rerodados por mim (git
+      stash/pop pra confirmar 0 regressão nas divisões pré-existentes de
+      `cost_surface_cell`) -- limpos. Único caller real confirmado via
+      grep (`run_and_save_cost_surface_report`, bit-exato com o default).
+      pytest ainda não rodado (PENDENTE-DE-EXECUÇÃO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
 
   - id: AG-006
     date: "2026-08-12"
@@ -435,6 +449,46 @@ entries:
       tratamento (`tf` explícito + `predictions_symbol_tf_dir`) que
       `run_layer1_sprint` recebeu -- senão herda o mesmo risco de leitor
       órfão que AG-006 corrigiu no caller principal.
+    resolved_by_commit: null
+    resolution: >
+      Delegado a um Agent fresco com contexto rico (achado original +
+      precedente AG-006). Escopo ampliado corretamente pelo próprio Agent:
+      `run_e02f_short_unforced_variant` já aceita `symbol` de verdade
+      (`build_modeling_frame(symbol=symbol)`), então corrigir só a
+      ESCRITA deixaria um chamador futuro com `symbol` não-default
+      comparando a variante daquele símbolo contra o baseline ERRADO
+      (sempre BTC, via `f15.load_predictions` sem `dest_dir`) -- corrigiu
+      as TRÊS operações de IO (escrita + 2 leituras) com o mesmo sentinela
+      `tf: str | None = None` de AG-006. `f15.load_predictions` ganhou
+      `dest_dir` (não `symbol`/`tf` direto, mesmo sentinela `None`) porque
+      tem 8 outros callers reais em 5 arquivos, todos preservados
+      bit-exatos. 3 testes novos seguindo o padrão de
+      `test_models_pipeline_paths.py`. Revisado independentemente antes
+      deste commit: diff lido, ruff/mypy/banned_patterns/check_unguarded_
+      ratios rerodados por mim (git stash/pop confirma 0 regressão nas 5
+      divisões pré-existentes) -- limpos. pytest ainda não rodado
+      (PENDENTE-DE-EXECUÇÃO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-013
+    date: "2026-08-13"
+    file: "src/analysis/faixa1_5_prerequisites.py"
+    related_file: "src/models/pipeline.py"
+    found_by: "Agent (delegado pra corrigir AG-012), reportado sem corrigir -- fora do escopo pedido"
+    gap: >
+      `f15._hhi_by_fold_side(model_id=...)` lê de
+      `MODELS_DIR / model_id / "diagnostics"` -- esse diretório não é
+      chaveado por `symbol`/`tf` em lugar nenhum, só por `model_id`.
+      Mesma classe de footgun que AG-006/AG-012 corrigiram pra
+      `predictions/`, um nível abaixo (diagnósticos de fold, não
+      predictions.parquet).
+    severity: "baixo"
+    layer: "analysis"
+    consequence: >
+      Mesmo risco de colisão entre símbolos que motivou AG-006/AG-012 se
+      algum chamador rodar `_hhi_by_fold_side` pra um símbolo não-BTC no
+      futuro -- diagnósticos de fold ficariam misturados/sobrescritos
+      entre ativos no mesmo `model_id`.
     resolved_by_commit: null
     resolution: null
     status: "aberto"

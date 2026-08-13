@@ -3,7 +3,7 @@ por (`tp_atr_mult`, `sl_atr_mult`). Módulo PÓS-HOC (ver docstring de lá):
 lê `cost_entry_bps`/`cost_exit_bps`/`barrier_hit` REALIZADOS do Label
 Engine, nunca insumo de treino.
 
-Cinco blocos:
+Seis blocos:
 1. `cost_axis_values`/`default_grid_axes` — aritmética do grid, conferida à
    mão, mais o eixo real de `constants.yaml` ficando dentro do
    `sweep_range` já declarado (não coincidência, ver `GRID_FACTORS`).
@@ -16,13 +16,24 @@ Cinco blocos:
    `run_and_save_cost_surface_report`, chamado manualmente, ver DoD da
    task).
 4. `pivot_cost_surface` — reshape puro.
-5. `_atomic_write_json` — B29, `.tmp` não sobrevive."""
+5. `_atomic_write_json` — B29, `.tmp` não sobrevive.
+6. `build_cost_surface_grid_for_symbol` — AG-011: `tf`/`mark_end` não são
+   mais hardcode independente de `"15m"`/`+1 dia` fixo (mesma classe de bug
+   do AG-005 em `triple_barrier.build_labels_for_symbol`, replicada aqui
+   porque este ponto de entrada tinha sua própria cópia). `lake.query_bars`/
+   `lake.query_funding`/`build_cost_surface_grid` são monkeypatchados por
+   spies — testa só a WIRING (quais argumentos chegam em cada chamada), não
+   o grid em si (já coberto no bloco 3 com Label Engine real); rodar IO real
+   aqui exigiria backfill local ou um snapshot histórico de filtros só para
+   um teste de wiring, custo desproporcional ao que está sendo verificado."""
 
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import orjson
 import polars as pl
@@ -31,6 +42,8 @@ import yaml
 
 from src.analysis import cost_surface as cs
 from src.core.metric import Unit
+from src.data import lake
+from src.data.resample import step_ms
 from src.features.groups.group_e import round_trip_cost_bps
 from src.labels import triple_barrier as tb
 from src.labels._paths import CONSTANTS_PATH
@@ -383,3 +396,150 @@ def test_atomic_write_json_tmp_nao_sobrevive(tmp_path: Path) -> None:
     assert loaded["a"] == 1
     assert loaded["b"][0] == 1.0
     assert loaded["b"][2] is None  # NaN -> null (orjson), não quebra o round-trip
+
+
+# ============================================================================
+# 6. build_cost_surface_grid_for_symbol — AG-011 (tf/mark_end não mais
+#    hardcode independente de "15m"/+1 dia fixo)
+# ============================================================================
+
+
+def _patch_lake_and_grid_spies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[tuple[Any, ...]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Substitui `lake.query_bars`/`lake.query_funding` por spies que só
+    registram os argumentos recebidos (devolvendo `DataFrame`s vazios) e
+    `build_cost_surface_grid` por um spy que registra o `kwargs` recebido
+    (devolvendo um grid vazio no schema real) — isola o teste da wiring de
+    IO/orquestração do Label Engine real, já coberto no bloco 3 e nos testes
+    de `triple_barrier.build_labels_for_symbol` (AG-005).
+
+    Patcheia o módulo `src.data.lake` diretamente (importado aqui como
+    `lake`, o MESMO objeto de módulo que `cs.lake` referencia — `from X
+    import Y` só cria um segundo nome pro mesmo objeto, não uma cópia) em
+    vez de `cs.lake`: mypy strict (`no_implicit_reexport`) rejeita acessar
+    `cs.lake` como atributo não reexportado explicitamente do módulo
+    `cost_surface`."""
+    query_bars_calls: list[tuple[Any, ...]] = []
+    query_funding_calls: list[dict[str, Any]] = []
+    grid_calls: list[dict[str, Any]] = []
+
+    def fake_query_bars(
+        symbol: str, tf: str, start: Any, end: Any, *, source: str, cast_prices: bool
+    ) -> pl.DataFrame:
+        query_bars_calls.append((symbol, tf, start, end, source, cast_prices))
+        return pl.DataFrame()
+
+    def fake_query_funding(symbol: str, start: Any, end: Any) -> pl.DataFrame:
+        query_funding_calls.append({"symbol": symbol, "start": start, "end": end})
+        return pl.DataFrame()
+
+    def fake_build_cost_surface_grid(
+        bars_15m: pl.DataFrame,
+        mark_1m: pl.DataFrame,
+        funding: pl.DataFrame,
+        **kwargs: Any,
+    ) -> pl.DataFrame:
+        grid_calls.append(kwargs)
+        return pl.DataFrame(schema=cs._GRID_OUTPUT_SCHEMA)
+
+    monkeypatch.setattr(lake, "query_bars", fake_query_bars)
+    monkeypatch.setattr(lake, "query_funding", fake_query_funding)
+    monkeypatch.setattr(cs, "build_cost_surface_grid", fake_build_cost_surface_grid)
+    return query_bars_calls, query_funding_calls, grid_calls
+
+
+def test_build_cost_surface_grid_for_symbol_default_tf_bate_com_hardcode_anterior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Paridade bit-exata do default: sem `base_config`, `LabelConfig.
+    from_constants()` resolve `tf="15m"` (mesmo valor que estava hardcoded
+    antes do AG-011) — `lake.query_bars` da barra de decisão continua
+    recebendo literalmente `"15m"`, callers reais (nenhum passa `base_config`
+    hoje, ver grep na task) veem exatamente a mesma chamada de antes."""
+    query_bars_calls, query_funding_calls, grid_calls = _patch_lake_and_grid_spies(monkeypatch)
+
+    cs.build_cost_surface_grid_for_symbol("BTCUSDT", "2024-01-01", "2024-01-02")
+
+    cfg = tb.LabelConfig.from_constants()
+    assert cfg.tf == "15m"
+
+    # 1ª chamada: bars_15m no TF de decisão, com o mesmo literal "15m" de
+    # antes do AG-011 -- comportamento do default inalterado.
+    assert query_bars_calls[0] == ("BTCUSDT", "15m", "2024-01-01", "2024-01-02", "klines_1m", True)
+
+    # mark_1m/funding: a folga MUDA de propósito (essa é a correção AG-011,
+    # não um efeito colateral) -- de "+1 dia" fixo para
+    # "+ max(time_stop_bars, fill_timeout_bars)*step_ms(tf) + 1 dia", mesma
+    # fórmula do AG-005 em triple_barrier.build_labels_for_symbol.
+    horizon_ms = max(cfg.time_stop_bars, cfg.fill_timeout_bars) * step_ms(cfg.tf)
+    expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
+
+    assert query_bars_calls[1][:2] == ("BTCUSDT", "1m")
+    assert query_bars_calls[1][3] == expected_mark_end
+    assert query_funding_calls[0]["end"] == expected_mark_end
+
+    # o núcleo recebe o mesmo cfg resolvido (base_config=cfg), não um valor
+    # solto -- é essa mesma instância que determina tf/horizonte acima.
+    assert grid_calls[0]["base_config"] == cfg
+
+
+def test_build_cost_surface_grid_for_symbol_tf_customizado_muda_query_bars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Passar `base_config` com `tf` diferente de `"15m"` muda o TF usado em
+    `lake.query_bars` para a barra de decisão -- prova de que a linha 391
+    (antes `"15m"` literal) agora lê `cfg.tf`, não um valor fixo."""
+    query_bars_calls, query_funding_calls, _grid_calls = _patch_lake_and_grid_spies(monkeypatch)
+
+    base_cfg = replace(tb.LabelConfig.from_constants(), tf="30m")
+    assert base_cfg.tf == "30m"  # __post_init__ já validou via step_ms
+
+    cs.build_cost_surface_grid_for_symbol(
+        "ETHUSDT", "2024-01-01", "2024-01-02", base_config=base_cfg
+    )
+
+    assert query_bars_calls[0] == ("ETHUSDT", "30m", "2024-01-01", "2024-01-02", "klines_1m", True)
+
+    # horizonte em "30m" é maior em ms que em "15m" para o mesmo
+    # time_stop_bars/fill_timeout_bars (step_ms("30m") == 2 * step_ms("15m"))
+    # -- a folga cresce de acordo, não fica presa ao valor calibrado pra 15m.
+    horizon_ms = max(base_cfg.time_stop_bars, base_cfg.fill_timeout_bars) * step_ms("30m")
+    expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
+    assert query_bars_calls[1][3] == expected_mark_end
+    assert query_funding_calls[0]["end"] == expected_mark_end
+
+
+def test_build_cost_surface_grid_for_symbol_tf_maior_amplia_folga_vs_15m(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado que motivou o AG-011 (mesmo do AG-005): a folga fixa de "+1
+    dia" era calibrada só pro caso 15m -- em TF maior o horizonte de
+    `time_stop_bars`/`fill_timeout_bars` (expresso em BARRAS, não em tempo)
+    pode ultrapassar 24h. Usa `tf="1h"` (não `"30m"`) de propósito: com os
+    valores REAIS de `constants.yaml` (`time_stop_bars=32`,
+    `fill_timeout_bars=1`), o horizonte em 30m é 16h -- ainda `< 24h`, então
+    `date.__add__` (que ignora `timedelta.seconds`/`.microseconds`, só soma
+    `.days` -- comportamento documentado do `datetime` da stdlib, medido
+    aqui, não presumido) trunca 15m e 30m pro MESMO `mark_end` (+1 dia); só
+    em 1h (horizonte 32h, cruza a fronteira de 24h) a folga realmente muda
+    de dia. Achado reportado à parte (não é bug desta correção nem do AG-005
+    que ela replica: `lake.query_bars` trata `end` como fronteira de DIA
+    inteiro inclusiva, o que já cobre a folga que a truncagem de sub-dia
+    perde -- ver relatório final da task)."""
+    cfg_15m = tb.LabelConfig.from_constants()
+    cfg_1h = replace(cfg_15m, tf="1h")
+
+    query_bars_calls_15m, _, _ = _patch_lake_and_grid_spies(monkeypatch)
+    cs.build_cost_surface_grid_for_symbol(
+        "BTCUSDT", "2024-01-01", "2024-01-02", base_config=cfg_15m
+    )
+    mark_end_15m = query_bars_calls_15m[1][3]
+
+    query_bars_calls_1h, _, _ = _patch_lake_and_grid_spies(monkeypatch)
+    cs.build_cost_surface_grid_for_symbol(
+        "BTCUSDT", "2024-01-01", "2024-01-02", base_config=cfg_1h
+    )
+    mark_end_1h = query_bars_calls_1h[1][3]
+
+    assert mark_end_1h > mark_end_15m

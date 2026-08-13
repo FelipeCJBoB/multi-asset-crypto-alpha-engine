@@ -290,6 +290,143 @@ def test_reconcile_e02f_ic_payload_serializa_sem_dict_key_nao_string() -> None:
 
 
 # ============================================================================
+# run_e02f_short_unforced_variant(symbol=..., tf=...) — roteamento de IO
+# (AG-012). Mesmo espírito de `tests/unit/test_models_pipeline_paths.py`
+# (AG-006): stuba tudo que é caro/precisa de schema real (treino, dataset,
+# CPCV, realized/HHI/headlines), captura só os `(model_id, dest_dir)`
+# passados a `write_predictions_atomic`/`f15.load_predictions`, e para a
+# execução via sentinela assim que os TRÊS pontos de IO já foram
+# exercitados — o resto da função (permanence, decomposition, t0_attribution)
+# não faz parte do que este teste verifica.
+# ============================================================================
+
+
+class _StopAfterIO(Exception):
+    """Sentinela pra interromper `run_e02f_short_unforced_variant` logo após
+    os TRÊS pontos de IO relevantes (1 escrita da variante + 2 leituras de
+    baseline) terem sido chamados."""
+
+
+def _empty_predictions_df() -> pl.DataFrame:
+    from src.models import alpha
+
+    return pl.DataFrame(
+        {c: [] for c in alpha.PREDICTIONS_SCHEMA_COLUMNS},
+        schema=dict.fromkeys(alpha.PREDICTIONS_SCHEMA_COLUMNS, pl.Float64),
+    )
+
+
+def _run_variant_capturing_io_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: str
+) -> list[dict[str, object]]:
+    from types import SimpleNamespace
+
+    from src.analysis import faixa1_5_prerequisites as f15_mod
+    from src.models import alpha, dataset, pipeline
+    from src.validation import cpcv
+
+    write_calls: list[dict[str, object]] = []
+    read_calls: list[dict[str, object]] = []
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+
+    fake_cpcv_result = SimpleNamespace(splits=())
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    def _fake_write_predictions_atomic(
+        predictions: pl.DataFrame, model_id: str, **kw: object
+    ) -> None:
+        write_calls.append({"model_id": model_id, "dest_dir": kw.get("dest_dir")})
+
+    monkeypatch.setattr(pipeline, "write_predictions_atomic", _fake_write_predictions_atomic)
+
+    # Downstream de cada preds_* (realized/HHI/headlines) não faz parte do
+    # que este teste verifica (roteamento de dest_dir) — stubado igual a
+    # `write_predictions_atomic`, mesma disciplina.
+    monkeypatch.setattr(f15_mod, "build_realized_trades", lambda *a, **k: pl.DataFrame())
+    monkeypatch.setattr(f15_mod, "_hhi_by_fold_side", lambda *a, **k: pl.DataFrame())
+    monkeypatch.setattr(f15_mod, "stratified_headlines", lambda *a, **k: {})
+
+    def _fake_load_predictions(*, model_id: str, **kw: object) -> pl.DataFrame:
+        read_calls.append({"model_id": model_id, "dest_dir": kw.get("dest_dir")})
+        if len(read_calls) >= 2:
+            raise _StopAfterIO()
+        return _empty_predictions_df()
+
+    monkeypatch.setattr(f15_mod, "load_predictions", _fake_load_predictions)
+
+    with pytest.raises(_StopAfterIO):
+        f16.run_e02f_short_unforced_variant(**run_kwargs)
+
+    assert len(write_calls) == 1
+    assert len(read_calls) == 2
+    return [*write_calls, *read_calls]
+
+
+def test_run_e02f_short_unforced_variant_tf_default_preserva_caminho_legado_plano(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEM passar `tf` (default, o que `run_faixa1_6` e todo chamador/teste
+    existente fazem hoje) — a escrita da variante E as duas leituras de
+    baseline (Camada 1, Camada 0) usam `dest_dir=None`, bit-exato com o
+    caminho legado plano de antes desta mudança (AG-012)."""
+    from src.models import pipeline
+
+    calls = _run_variant_capturing_io_calls(monkeypatch)
+
+    assert calls[0] == {
+        "model_id": f16.VARIANT_MODEL_ID_E02F_SHORT_UNFORCED,
+        "dest_dir": None,
+    }
+    assert calls[1] == {"model_id": pipeline.MODEL_ID_CAMADA1, "dest_dir": None}
+    assert calls[2] == {"model_id": pipeline.MODEL_ID_CAMADA0, "dest_dir": None}
+
+
+def test_run_e02f_short_unforced_variant_tf_explicito_roteia_escrita_e_as_duas_leituras(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`tf` explícito propaga até o `dest_dir` das TRÊS operações de IO —
+    não só a escrita (achado AG-012: se só a escrita fosse corrigida, a
+    variante de um `symbol` não-default compararia contra o baseline
+    ERRADO, sempre lido do caminho legado plano)."""
+    from src.models._paths import predictions_symbol_tf_dir
+    from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1
+
+    calls = _run_variant_capturing_io_calls(monkeypatch, symbol="ETHUSDT", tf="30m")
+
+    expected_variant = predictions_symbol_tf_dir(
+        "ETHUSDT", f16.VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, tf="30m"
+    )
+    expected_camada1 = predictions_symbol_tf_dir("ETHUSDT", MODEL_ID_CAMADA1, tf="30m")
+    expected_camada0 = predictions_symbol_tf_dir("ETHUSDT", MODEL_ID_CAMADA0, tf="30m")
+
+    assert calls[0] == {
+        "model_id": f16.VARIANT_MODEL_ID_E02F_SHORT_UNFORCED,
+        "dest_dir": expected_variant,
+    }
+    assert calls[1] == {"model_id": MODEL_ID_CAMADA1, "dest_dir": expected_camada1}
+    assert calls[2] == {"model_id": MODEL_ID_CAMADA0, "dest_dir": expected_camada0}
+
+
+def test_run_e02f_short_unforced_variant_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
+    """`step_ms(tf)` valida ANTES de `build_modeling_frame`/CPCV/treino —
+    sem nenhum monkeypatch: se a validação não fosse a primeira linha da
+    função, este teste tentaria I/O real (labels/features/regime) e
+    falharia por outro motivo, não pelo `tf` inválido."""
+    from src.data.resample import UnsupportedTimeframeError
+
+    with pytest.raises(UnsupportedTimeframeError):
+        f16.run_e02f_short_unforced_variant(tf="7m")
+
+
+# ============================================================================
 # Integração real — skip se os artefatos de produção não existirem.
 # NÃO exercita o Bloco 4 (retreino) -- só as peças que leem artefato real.
 # ============================================================================

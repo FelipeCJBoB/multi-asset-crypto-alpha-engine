@@ -49,9 +49,11 @@ import structlog
 from scipy.stats import spearmanr
 
 from src.core.provenance import report_provenance
+from src.data.resample import step_ms
 from src.models import alpha, backtest_lite, decomposition, pipeline
 from src.models import dataset as ds
 from src.models._constants import load_constant
+from src.models._paths import predictions_symbol_tf_dir
 from src.validation import cpcv
 
 from . import faixa1_5_prerequisites as f15
@@ -664,7 +666,9 @@ def _sharpe_by_path_from_realized(realized: pl.DataFrame) -> dict[int, float]:
     return out
 
 
-def run_e02f_short_unforced_variant(*, symbol: str = ds.SYMBOL_DEFAULT) -> dict[str, Any]:
+def run_e02f_short_unforced_variant(
+    *, symbol: str = ds.SYMBOL_DEFAULT, tf: str | None = None
+) -> dict[str, Any]:
     """Bloco 4 — DESCOBERTA, com UMA alteração de código medida
     (`unforce_features_by_side={_E02F_FEATURE: frozenset({-1})}` — só o
     short; o long usa a MESMA `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` de
@@ -674,7 +678,27 @@ def run_e02f_short_unforced_variant(*, symbol: str = ds.SYMBOL_DEFAULT) -> dict[
     isolar só o short sem retreinar os dois). `n_lifetime += 1` — é uma
     variante NOVA de modelo (feature entra sem restrição forçada num
     lado), não uma correção de bug (Bloco 3) nem medição pós-hoc
-    (Blocos 1/2/5)."""
+    (Blocos 1/2/5).
+
+    `tf` (AG-012, mesmo padrão sentinela de `src.models.pipeline.
+    run_layer1_sprint`, AG-006) — `None` (default, o que `run_faixa1_6`
+    e todo chamador/teste existente fazem hoje): `write_predictions_atomic`
+    grava e as duas leituras de baseline (`f15.load_predictions` para
+    `MODEL_ID_CAMADA1`/`MODEL_ID_CAMADA0`) lêem do caminho legado plano
+    `PREDICTIONS_OUTPUT_DIR/alpha/{model_id}` — bit-exato com o
+    comportamento anterior. `tf` explícito: as TRÊS operações de IO
+    (a escrita da variante E as duas leituras de baseline) roteiam pelo
+    layout chaveado `predictions_symbol_tf_dir(symbol, model_id, tf=tf)` —
+    não só a escrita, porque `symbol` já é aceito de verdade por esta
+    função (`mf = ds.build_modeling_frame(symbol=symbol)` abaixo já usa
+    dado do símbolo pedido); se só a escrita fosse corrigida, um chamador
+    futuro com `symbol` não-default compararia a variante daquele símbolo
+    contra o baseline ERRADO (sempre `BTCUSDT`, lido do caminho legado
+    plano, que `f15.load_predictions` não tem como distinguir por
+    símbolo). `step_ms(tf)` valida cedo, antes do retreino caro dos 15
+    folds x 2 lados."""
+    if tf is not None:
+        step_ms(tf)  # UnsupportedTimeframeError cedo -- antes do treino caro abaixo
     mf = ds.build_modeling_frame(symbol=symbol)
     cpcv_result = cpcv.generate_splits(mf.data)
     splits = cpcv_result.splits
@@ -701,19 +725,44 @@ def run_e02f_short_unforced_variant(*, symbol: str = ds.SYMBOL_DEFAULT) -> dict[
         variant_folds, model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, hyper=hyper
     )
     preds_variant = alpha.assemble_predictions_table(variant_folds)
-    pipeline.write_predictions_atomic(preds_variant, VARIANT_MODEL_ID_E02F_SHORT_UNFORCED)
+    # `tf=None` (default): SEM dest_dir -> caminho legado plano, bit-exato
+    # com o comportamento anterior a esta mudança. `tf` explícito: layout
+    # chaveado por symbol/tf — mesma disciplina de `run_layer1_sprint`
+    # (AG-006) para as TRÊS operações de IO desta função (ver docstring).
+    dest_dir_variant = (
+        predictions_symbol_tf_dir(symbol, VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, tf=tf)
+        if tf is not None
+        else None
+    )
+    pipeline.write_predictions_atomic(
+        preds_variant, VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, dest_dir=dest_dir_variant
+    )
     logger.info("analysis.faixa1_6.bloco4_variant_train_done", n_folds=len(variant_folds))
 
     realized_variant = f15.build_realized_trades(preds_variant, mf.data, fold_to_path)
     hhi_variant = f15._hhi_by_fold_side(model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED)
     headlines_variant = f15.stratified_headlines(realized_variant, hhi_variant)
 
-    preds_baseline = f15.load_predictions(model_id=pipeline.MODEL_ID_CAMADA1)
+    dest_dir_camada1 = (
+        predictions_symbol_tf_dir(symbol, pipeline.MODEL_ID_CAMADA1, tf=tf)
+        if tf is not None
+        else None
+    )
+    preds_baseline = f15.load_predictions(
+        model_id=pipeline.MODEL_ID_CAMADA1, dest_dir=dest_dir_camada1
+    )
     realized_baseline = f15.build_realized_trades(preds_baseline, mf.data, fold_to_path)
     hhi_baseline = f15._hhi_by_fold_side(model_id=pipeline.MODEL_ID_CAMADA1)
     headlines_baseline = f15.stratified_headlines(realized_baseline, hhi_baseline)
 
-    preds_camada0 = f15.load_predictions(model_id=pipeline.MODEL_ID_CAMADA0)
+    dest_dir_camada0 = (
+        predictions_symbol_tf_dir(symbol, pipeline.MODEL_ID_CAMADA0, tf=tf)
+        if tf is not None
+        else None
+    )
+    preds_camada0 = f15.load_predictions(
+        model_id=pipeline.MODEL_ID_CAMADA0, dest_dir=dest_dir_camada0
+    )
     realized_camada0 = f15.build_realized_trades(preds_camada0, mf.data, fold_to_path)
 
     variant_sharpe_by_path = _sharpe_by_path_from_realized(realized_variant)

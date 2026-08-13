@@ -102,8 +102,21 @@ BARS_PER_YEAR: Final[float] = (
 # ============================================================================
 
 
-def load_predictions(model_id: str = MODEL_ID_CAMADA1) -> pl.DataFrame:
-    return pl.read_parquet(PREDICTIONS_OUTPUT_DIR / "alpha" / model_id / "predictions.parquet")
+def load_predictions(
+    model_id: str = MODEL_ID_CAMADA1, *, dest_dir: Path | None = None
+) -> pl.DataFrame:
+    """`dest_dir` (AG-012, mesmo padrão de `src.models.pipeline.
+    write_predictions_atomic`/`run_layer1_sprint`, AG-006): default `None`
+    preserva o caminho legado plano `PREDICTIONS_OUTPUT_DIR/alpha/
+    {model_id}/predictions.parquet`, bit-exato com todo chamador existente
+    (nenhum passa este argumento hoje — `faixa1_5_prerequisites.py`,
+    `faixa1_6_reconciliation.py`, `faixa1_7_edge_or_beta.py`,
+    `faixa2_caminho_b.py`, `faixa2_vol_accelerator_test.py`). Passar
+    `src.models._paths.predictions_symbol_tf_dir(symbol, model_id, tf=tf)`
+    lê do layout chaveado novo — o par simétrico de leitura do que
+    `write_predictions_atomic(dest_dir=...)` já grava."""
+    src_dir = dest_dir if dest_dir is not None else (PREDICTIONS_OUTPUT_DIR / "alpha" / model_id)
+    return pl.read_parquet(src_dir / "predictions.parquet")
 
 
 def fold_to_path_map(splits: tuple[cpcv.CPCVSplit, ...]) -> dict[int, int]:
