@@ -19,13 +19,25 @@ def _trades(
 ) -> pl.DataFrame:
     n = len(price)
     assert len(quantity) == n and len(is_buyer_maker) == n
+    # schema explícito -- sem isso, `is_buyer_maker=[]` infere dtype Null
+    # (não Boolean), e `_aggregate_bars` quebra em `~pl.col("is_buyer_
+    # maker")`. Dado real de `lake.query_agg_trades` sempre carrega o
+    # schema AGG_TRADES fixo mesmo com 0 linhas (parquet preserva tipo);
+    # este helper de teste precisa fazer o mesmo pra não fabricar um
+    # cenário que não existe em produção.
     return pl.DataFrame(
         {
             "transact_time": list(range(n)),
             "price": price,
             "quantity": quantity,
             "is_buyer_maker": is_buyer_maker,
-        }
+        },
+        schema={
+            "transact_time": pl.Int64,
+            "price": pl.Float64,
+            "quantity": pl.Float64,
+            "is_buyer_maker": pl.Boolean,
+        },
     )
 
 
