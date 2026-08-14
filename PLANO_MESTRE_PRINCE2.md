@@ -1057,6 +1057,50 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
   `audit/architecture_gaps_log.yaml` e `experiments/gk_vs_wilder_econ_
   regime_shift_report.json`.
 
+### 15.9 AG-013/014 delegados, M6 implementado, M5 pausado por achado real (2026-08-14)
+
+**AG-013/AG-014 delegados a Agents com contexto rico**, mesmo padrão da
+rodada anterior — revisados independentemente antes de commitar (diff
+lido, scripts mecânicos rerodados por mim). AG-013: `models/*/
+diagnostics/` ganha layout chaveado `models_diagnostics_symbol_tf_dir`
+(`src/models/_paths.py`), default bit-exato preservado porque esses JSONs
+são intencionalmente versionados no git. Achado no caminho, não
+corrigido: `run_layer1_sprint`/`run_e02f_short_unforced_variant` ainda
+não fiam `dest_dir` pra diagnostics mesmo com `tf` explícito —
+**AG-016**, aberto. AG-014: `download_klines_1m` corrigido pra fazer 1
+request por dia no regime `"daily"` pós-cutover (mesmo padrão de
+`download_mark_price_klines_1m`, escrita na rodada anterior
+especificamente pra não repetir esse bug).
+
+**M6 (fator comum) implementado e pronto** —
+`src/analysis/m6_common_factor_hypothesis.py`. Confirmado antes de
+escrever qualquer código: `edge_bruto_atr`/`custo_atr` vêm só de
+`labels.parquet::barrier_hit`/`atr_at_t0` (`src.analysis.feasibility`,
+já existente) — nenhum modelo treinado necessário, zero trials genuíno,
+sem ambiguidade. Instrumento de falsificação: heterogeneidade de
+meta-análise (Cochran's Q/I², DerSimonian & Laird 1986) sobre
+`edge_bruto_atr` por símbolo com erro-padrão derivado da variância
+multinomial de `frac_TP`/`frac_SL` — mesma classe de instrumento formal
+que M4 já usa (Rand ajustado). Comando de execução entregue ao Manager,
+ainda não rodado.
+
+**M5 (fill completo) — pausado, achado real antes de gastar orçamento.**
+Reli a definição exata do PRD: "escopo completo" exige não só `labels/`
+(já feito) mas `predictions.parquet` (via Alpha/CPCV) e `orders.parquet`
+(via `fill_simulator`, que já lê `data/raw/book_ticker/` — confirmado
+presente pros 5 ativos, 320 arquivos cada) pros 4 alts, dentro da janela
+real de `bookTicker` (2023-05-16→2024-03-30). Isso significa treinar
+Alpha pela primeira vez pra 4 símbolos novos — e `audit/n_lifetime.yaml`
+mostra, em precedentes reais (ids 11/13/14 vs. id 12), que **o Manager
+decide explicitamente, caso a caso, se um retreino/variante conta como
+trial** — não é uma regra mecânica que eu deva aplicar sozinho, nem
+assumir "0 trials" do texto do PRD sem essa confirmação (o próprio PRD já
+foi corrigido por decisão do Manager quando o texto e o comportamento
+divergiram, várias vezes nesta sessão). Não decidi isso unilateralmente —
+apresentado ao Manager para a mesma decisão explícita que os ids
+11/13/14 já tiveram, antes de treinar qualquer coisa nos ~15 trials
+restantes do orçamento (M4 sozinho ainda precisa de até 6).
+
 ---
 
 ## Fontes desta pesquisa
@@ -1075,6 +1119,15 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
 
 ## Changelog
 
+- **v2.9 (2026-08-14)** — §15.9: AG-013/AG-014 delegados e fechados
+  (achado no caminho: AG-016, diagnostics ainda não fiado nos
+  orquestradores reais). M6 implementado e pronto pra rodar — zero
+  trials confirmado (`edge_bruto_atr` só precisa de `labels.parquet`).
+  M5 pausado deliberadamente: escopo completo exige treinar Alpha pra 4
+  símbolos novos, e o ledger de `N_lifetime` mostra que essa decisão
+  (conta como trial ou não) é do Manager caso a caso, não uma regra que
+  eu aplico sozinho — apresentado para decisão explícita antes de gastar
+  orçamento.
 - **v2.8 (2026-08-14)** — §15.6 item 4 fecha de verdade: Manager rodou os
   3 comandos (backfill de `mark_price_klines_1m`, `pytest` verde,
   `run_and_write_labels_for_alts`). `labels/` existe pela primeira vez
