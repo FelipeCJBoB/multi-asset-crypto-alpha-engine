@@ -393,6 +393,20 @@ Refazer o §0.5 do V3.2 com ATR da série completa e o estimador vencedor de M1,
 
 **Nota de honestidade:** 30m foi eliminado no V3.2 com `stop 0,659%` contra teto de `0,758%` — estava dentro. A eliminação foi por "menos unidades", não por inviabilidade. E o teto era do BTC.
 
+**Resultado (medido 2026-08-14, `experiments/m3_timeframe_choice_report.json`, commit `daa1ab5`):** Garman-Klass (vencedor de M1), série completa por ativo, `atr_window=20` idêntico nos 3 TFs (I2 não resolvido, mesma ressalva herdada). `janela_viavel_fraction` (R1 **e** R2) por (ativo, TF):
+
+| ativo | 15m | 30m | 1h |
+|---|---|---|---|
+| BTC | 58,2% | **65,5%** | 56,9% |
+| BNB | 67,1% | 88,3% | 98,1% |
+| ETH | 80,1% | 94,3% | 99,1% |
+| XRP | 85,8% | 97,3% | 99,9% |
+| SOL | 95,6% | 99,4% | **100,0%** |
+
+**Achado central: BTC é o único ativo em que subir de TF não melhora monotonicamente a viabilidade — chega a piorar.** Nos outros 4 ativos, R1 (quantização) nunca vincula de verdade em nenhum TF (`r1_pass_fraction` entre 99,98% e 100% sempre) — `janela_viavel_fraction` sobe monotonicamente com o TF porque só R2 (custo) está em jogo, e custo dilui com TF maior. Em BTC, R1 **piora** com TF maior (`r1_pass_fraction`: 90,7%→78,1%→59,9% de 15m→30m→1h) — mecanismo: `notional_req = risk_usd/stop_pct`, e `stop_pct` cresce com TF, então o notional requerido por trade *encolhe*, ficando mais perto do lote mínimo caro do BTC (mesmo mecanismo de §0.1, agora medido nos 3 TFs, não só 15m). O resultado é `janela_viavel_fraction` não-monótona em BTC: melhor em 30m (65,5%) que em 15m (58,2%) OU 1h (56,9%) — o ponto-doce fica no meio, não na borda. Terceiro caller real, junto com M1/M6, a confirmar que o problema de quantização é estrutural do instrumento BTC, não do timeframe de decisão.
+
+**Não fechado ainda:** este resultado é medição (R1/R2/R3 por TF), não decisão de qual TF adotar — isso é V41-5 (PRD V4.2), depois de M2/M4 fecharem também.
+
 ### M4 — Regime (≤6 trials)
 
 **Única da Camada 1 que gasta orçamento** — não existe "regime verdadeiro" contra o qual comparar.
