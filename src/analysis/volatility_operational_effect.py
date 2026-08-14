@@ -95,6 +95,7 @@ from src.risk._constants import load_constant as load_risk_constant
 logger = structlog.get_logger(__name__)
 
 FloatArray = NDArray[np.float64]
+BoolArray = NDArray[np.bool_]
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
@@ -158,7 +159,9 @@ def _r1_vectorized(
     return quant_error, n_req_over_unit
 
 
-def _r1_pass(quant_error: FloatArray, n_req_over_unit: FloatArray, *, tolerance: float, min_units: float) -> FloatArray:
+def _r1_pass(
+    quant_error: FloatArray, n_req_over_unit: FloatArray, *, tolerance: float, min_units: float
+) -> BoolArray:
     return (quant_error <= tolerance) & (n_req_over_unit >= min_units)
 
 
