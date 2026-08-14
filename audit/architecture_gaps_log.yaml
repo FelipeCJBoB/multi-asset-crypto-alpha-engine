@@ -734,8 +734,25 @@ entries:
       `download_klines_1m` que precise preencher um gap real no regime
       diario -- silenciosamente traria so 1 dia por mes.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto"
+    resolution: >
+      Delegado a um Agent fresco com contexto rico (achado + o padrao de
+      referencia ja correto, `download_mark_price_klines_1m`, escrita
+      nesta mesma sessao especificamente pra nao repetir este bug --
+      instrucao explicita de replicar, nao reinventar). Reescrito
+      `download_klines_1m`: regime "monthly" idem ao original (comparado
+      linha a linha via git diff -- unica mudanca e cosmetica, variavel
+      `source` substituindo string literal repetida), regime "daily"
+      agora faz 1 request POR DIA (mesmo padrao de `download_metrics`/
+      `download_mark_price_klines_1m`), idempotente por dia. 2 testes
+      novos (monkeypatch de `_download_with_retries`/`_verify_checksum`,
+      `CAPACITY_DIR`/`_MANIFEST_PATH` redirecionados pra `tmp_path` --
+      nenhum toca `data/capacity/klines_1m/` real): regime diario faz 3
+      requests pra 3 dias (nao 1 tentando cobrir os 3); regime mensal
+      continua 1 request so. Revisado independentemente antes deste
+      commit: diff lido linha a linha, ruff/mypy/banned_patterns/
+      check_unguarded_ratios rerodados por mim -- limpos. pytest ainda
+      nao rodado (PENDENTE-DE-EXECUCAO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
 
   - id: AG-015
     date: "2026-08-13"

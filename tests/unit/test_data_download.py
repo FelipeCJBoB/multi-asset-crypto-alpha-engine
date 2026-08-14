@@ -1,17 +1,31 @@
-"""Testes de `src/data/download.py` — só lógica pura (URL, header
-detection, parsing, split por dia, seleção de partição). Nada de rede real
-(`_download_with_retries`/`_verify_checksum` não são testados aqui —
-exigiriam mock de `requests`, fora do escopo desta rodada).
+"""Testes de `src/data/download.py` — majoritariamente lógica pura (URL,
+header detection, parsing, split por dia, seleção de partição). Nada de
+rede real em nenhum teste.
 
 `test_klines_partition_for_date_*` é o "teste obrigatório" que
 PRD_V4_1.md §2.5 (F5) e §3.1 (T0.3) pedem e que não existia antes deste
-módulo: falha se a seleção monthly/daily estiver errada."""
+módulo: falha se a seleção monthly/daily estiver errada.
+
+`test_download_klines_1m_regime_*` (AG-014, `audit/architecture_gaps_log.
+yaml`) são a exceção à regra "só lógica pura": `_download_with_retries`/
+`_verify_checksum` são substituídas (`monkeypatch`) por stubs em memória —
+ainda sem rede real, só o suficiente pra provar que o regime `"daily"`
+agora faz 1 request POR DIA (não 1 por mês tentando cobrir `target_days`
+inteiro com uma única URL diária, o bug original) e que o regime
+`"monthly"` continua bit-exato (1 request só, cobrindo o mês inteiro).
+`CAPACITY_DIR`/`_MANIFEST_PATH` também são substituídos por um `tmp_path`
+isolado — nenhum dos dois testes toca `data/capacity/klines_1m/` real."""
 
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import date
+from pathlib import Path
 
 import polars as pl
+import pytest
+import requests
 
 from src.data import download as dl
 from src.data import schemas
@@ -66,6 +80,96 @@ def test_mark_price_klines_1m_registrado_em_source_downloaders() -> None:
     ninguém deveria baixar isso sem pedir explicitamente."""
     assert dl.SOURCE_DOWNLOADERS["mark_price_klines_1m"] is dl.download_mark_price_klines_1m
     assert "mark_price_klines_1m" not in dl.DEFAULT_SOURCES
+
+
+# ============================================================================
+# AG-014 — download_klines_1m regime "daily" fazia 1 request pro mês
+# inteiro (URL de um único dia tratada como se cobrisse target_days
+# inteiro). Corrigido pra replicar o padrão de
+# download_mark_price_klines_1m: 1 request POR DIA no regime "daily".
+# ============================================================================
+
+
+def _zip_with_single_csv(csv_text: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("data.csv", csv_text)
+    return buf.getvalue()
+
+
+def _klines_row(open_time_ms: int) -> str:
+    # 12 colunas de schemas.KLINES_1M, todas non_nullable preenchidas com
+    # valor trivial -- só `open_time`/`close_time` variam entre linhas.
+    return f"{open_time_ms},1,1,1,1,1.0,{open_time_ms + 59_999},1.0,1,1.0,1.0,0"
+
+
+def test_download_klines_1m_regime_daily_faz_1_request_por_dia(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Antes da correção, o regime `"daily"` fazia `_klines_url(symbol,
+    "daily", month_start)` — 1 request cobrindo só o dia 1º do mês — e
+    tentava satisfazer `target_days` inteiro (~30 dias) com aquele payload
+    de 1 dia só. Prova, sem rede real, que a versão corrigida faz 1
+    request por dia, cada um contra a URL do dia certo (não `month_start`
+    repetido), e escreve um parquet por dia."""
+    monkeypatch.setattr(dl, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(dl, "_MANIFEST_PATH", tmp_path / "_download_log" / "manifest.jsonl")
+
+    requested_urls: list[str] = []
+
+    def _fake_download(session: requests.Session, url: str) -> bytes:
+        requested_urls.append(url)
+        # Regime "daily" não passa pelo `_split_klines_by_day` -- o
+        # `open_time` da linha não precisa bater com o dia `d` do request.
+        return _zip_with_single_csv(_klines_row(1_685_577_600_000) + "\n")
+
+    monkeypatch.setattr(dl, "_download_with_retries", _fake_download)
+    monkeypatch.setattr(dl, "_verify_checksum", lambda *_a, **_k: None)
+
+    start, end = date(2023, 6, 1), date(2023, 6, 3)  # regime "daily" (cutover = 2023-06-01)
+    dl.download_klines_1m("ETHUSDT", start, end, session=requests.Session())
+
+    assert requested_urls == [
+        dl._klines_url("ETHUSDT", "daily", date(2023, 6, 1)),
+        dl._klines_url("ETHUSDT", "daily", date(2023, 6, 2)),
+        dl._klines_url("ETHUSDT", "daily", date(2023, 6, 3)),
+    ]
+    out_dir = tmp_path / "klines_1m" / "ETHUSDT"
+    written = sorted(p.name for p in out_dir.glob("*.parquet"))
+    assert written == ["2023-06-01.parquet", "2023-06-02.parquet", "2023-06-03.parquet"]
+
+
+def test_download_klines_1m_regime_monthly_continua_1_request_por_mes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regressão: o regime `"monthly"` (antes do cutover) precisa
+    continuar fazendo exatamente 1 request cobrindo o mês inteiro — a
+    correção do regime `"daily"` (AG-014) não pode mudar esse
+    comportamento preexistente."""
+    monkeypatch.setattr(dl, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(dl, "_MANIFEST_PATH", tmp_path / "_download_log" / "manifest.jsonl")
+
+    requested_urls: list[str] = []
+    # 2021-12-30T00:00:00Z / 2021-12-31T00:00:00Z em epoch ms -- 1 barra por
+    # dia é suficiente pro `_split_klines_by_day` separar os 2 dias-alvo.
+    month_csv = "\n".join(
+        _klines_row(open_time_ms) for open_time_ms in (1_640_822_400_000, 1_640_908_800_000)
+    ) + "\n"
+
+    def _fake_download(session: requests.Session, url: str) -> bytes:
+        requested_urls.append(url)
+        return _zip_with_single_csv(month_csv)
+
+    monkeypatch.setattr(dl, "_download_with_retries", _fake_download)
+    monkeypatch.setattr(dl, "_verify_checksum", lambda *_a, **_k: None)
+
+    start, end = date(2021, 12, 30), date(2021, 12, 31)  # regime "monthly"
+    dl.download_klines_1m("ETHUSDT", start, end, session=requests.Session())
+
+    assert requested_urls == [dl._klines_url("ETHUSDT", "monthly", date(2021, 12, 1))]
+    out_dir = tmp_path / "klines_1m" / "ETHUSDT"
+    written = sorted(p.name for p in out_dir.glob("*.parquet"))
+    assert written == ["2021-12-30.parquet", "2021-12-31.parquet"]
 
 
 def test_metrics_url() -> None:
