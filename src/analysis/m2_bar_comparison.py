@@ -61,6 +61,28 @@ automatizada)."""
 from __future__ import annotations
 
 import os
+
+# Oversubscription de threads BLAS/polars -- ProcessPoolExecutor já
+# paraleliza no nível de PROCESSO (até `os.cpu_count()` workers, ver
+# `run_and_save_bar_comparison_report`). Sem isso, cada um dos N processos
+# TAMBÉM deixa numpy/scipy/statsmodels (BLAS) e polars abrirem seu próprio
+# pool de threads interno -- N processos x M threads cada competem pelos
+# mesmos N núcleos. Causa raiz confirmada na prática (não hipotética): rodar
+# `run_and_save_bar_comparison_report` com `max_workers=12` produziu
+# `numpy._core._exceptions._ArrayMemoryError` dentro de `statsmodels.
+# adfuller`/`_autolag` (2026-08-15) -- contenção de alocação sob 12
+# processos concorrentes cada um multi-thread, não falta de memória real
+# (o array que falhou tinha 36 MiB, trivial pra qualquer máquina com RAM
+# disponível). Precisa ser setado ANTES de importar numpy/polars/scipy/
+# statsmodels -- no Windows (spawn, não fork) cada worker do pool
+# reexecuta o módulo inteiro do zero, então isso vale em CADA processo,
+# não só no principal.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
