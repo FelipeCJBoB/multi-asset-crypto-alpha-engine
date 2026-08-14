@@ -40,11 +40,23 @@ models, validation, backtest" lista só `exchange/data/features/regime/
 risk/execution/live/monitoring` como proibidos — `analysis` fica de fora
 deliberadamente, mesmo padrão já usado em `m6_common_factor_hypothesis.py`).
 
-**Performance.** `tick_imbalance_bars` é sequencial (ver docstring de
-`src.data.bars`) — rodar os 5 ativos com história completa é o item mais
-lento da Camada 1 até agora. Ponto de entrada manual, não é testado de
-ponta a ponta no pytest (mesma convenção de M1/M3/M6 — IO real fica fora
-da suíte automatizada)."""
+**Performance — granularidade de paralelismo é por (symbol, bar_type), não
+por symbol.** `tick_imbalance_bars` é sequencial (ver docstring de
+`src.data.bars`), single-thread, e é o item mais lento da Camada 1 até
+agora — com só 5 símbolos, paralelizar por símbolo (1 task cada) usa no
+máximo 5 núcleos, não importa quantos existam. `run_and_save_bar_
+comparison_report` fatia o trabalho em `len(symbols) × len(BAR_TYPES)`
+tasks independentes (até 20, com os 5 ativos), cada uma um processo do
+`ProcessPoolExecutor` dimensionado por `os.cpu_count()` — usa os núcleos
+disponíveis de verdade, não só 5. Custo aceito conscientemente: cada task
+de `dollar`/`volume`/`tick_imbalance` recarrega `aggTrades` do disco de
+forma independente (`lake.query_agg_trades`, sem cache entre tasks) em
+vez de reusar um `DataFrame` já carregado — serializar um `DataFrame` de
+milhões de linhas entre processos custaria mais que reler do parquet, e a
+E/S de disco é pequena perto do loop Python de `tick_imbalance_bars`
+mesmo assim. Ponto de entrada manual, não é testado de ponta a ponta no
+pytest (mesma convenção de M1/M3/M6 — IO real fica fora da suíte
+automatizada)."""
 
 from __future__ import annotations
 
@@ -177,15 +189,8 @@ def compute_bar_statistics(
     )
 
 
-def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
-    """Núcleo de IO -- carrega `klines_1m` (baseline) e `aggTrades`
-    (dollar/volume/tick imbalance) reais, calibra os 3 tipos alternativos
-    pra mesma frequência média do baseline, e computa as métricas dos 4."""
-    time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
-    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
-    ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
-
-    baseline = lake.query_bars(
+def _query_baseline(symbol: str) -> pl.DataFrame:
+    return lake.query_bars(
         symbol,
         BASELINE_TF,
         SYMBOL_START_DATE[symbol],
@@ -193,33 +198,30 @@ def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]
         source="klines_1m",
         cast_prices=True,
     )
-    target_n_bars = baseline.height
-    if target_n_bars == 0:
+
+
+def _target_n_bars(symbol: str, baseline: pl.DataFrame) -> int:
+    n = baseline.height
+    if n == 0:
         raise ValueError(
             f"baseline vazio para {symbol} -- sem klines_1m no período "
             f"{SYMBOL_START_DATE[symbol]}..{END_DATE}, não dá pra calibrar dollar/volume/tick "
             "imbalance bars pra frequência média nenhuma"
         )
-    logger.info(
-        "analysis.m2_bar_comparison.baseline_loaded", symbol=symbol, target_n_bars=target_n_bars
-    )
+    return n
 
-    trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
-    n_ticks = trades.height
-    total_dollar = float((trades["price"] * trades["quantity"]).sum())
-    total_volume = float(trades["quantity"].sum())
 
-    # target_n_bars > 0 garantido pelo raise acima.
-    dollar_threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio
-    volume_threshold = total_volume / target_n_bars  # noqa: unguarded-ratio
-    exp_num_ticks_init = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
-
+def _build_tick_imbalance_config(
+    trades: pl.DataFrame, target_n_bars: int
+) -> TickImbalanceBarsConfig:
+    # target_n_bars > 0 garantido pelo caller (_target_n_bars).
+    exp_num_ticks_init = float(trades.height) / target_n_bars  # noqa: unguarded-ratio
     clip_mult = float(load_data_constant("bars_tick_imbalance_clip_multiplier"))
     if clip_mult <= 0:
         raise ValueError(
             f"bars_tick_imbalance_clip_multiplier precisa ser > 0, constants.yaml tem {clip_mult}"
         )
-    tib_config = TickImbalanceBarsConfig(
+    return TickImbalanceBarsConfig(
         num_prev_bars=int(load_data_constant("bars_tick_imbalance_num_prev_bars")),
         expected_imbalance_window=int(
             load_data_constant("bars_tick_imbalance_expected_imbalance_window")
@@ -229,33 +231,68 @@ def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]
         exp_num_ticks_max=exp_num_ticks_init * clip_mult,
     )
 
-    bars_by_type: dict[str, pl.DataFrame] = {
-        "time": baseline,
-        "dollar": dollar_bars(trades, threshold=dollar_threshold),
-        "volume": volume_bars(trades, threshold=volume_threshold),
-        "tick_imbalance": tick_imbalance_bars(trades, tib_config),
-    }
 
-    results: list[BarComparisonMetrics] = []
-    for bar_type in BAR_TYPES:
-        metrics = compute_bar_statistics(
-            symbol,
-            bar_type,
-            bars_by_type[bar_type],
-            time_stop_ms=time_stop_ms,
-            ljung_box_lags=ljung_box_lags,
+def compute_bar_type_for_symbol(
+    symbol: str, bar_type: str, *, time_stop_ms: int, ljung_box_lags: int
+) -> BarComparisonMetrics:
+    """Núcleo de IO pra EXATAMENTE um (symbol, bar_type) -- desenhado pra
+    rodar como task independente num pool grande (ver `run_and_save_bar_
+    comparison_report`), não presume que outro `bar_type` do mesmo símbolo
+    já rodou ou vai rodar no mesmo processo (ver "Performance" na
+    docstring do módulo sobre o custo de releitura de `aggTrades`)."""
+    if bar_type not in BAR_TYPES:
+        raise ValueError(f"bar_type desconhecido: {bar_type!r} (válidos: {BAR_TYPES})")
+
+    if bar_type == "time":
+        bars = _query_baseline(symbol)
+        return compute_bar_statistics(
+            symbol, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
         )
-        results.append(metrics)
-        logger.info(
-            "analysis.m2_bar_comparison.bar_type_done",
-            symbol=symbol,
-            bar_type=bar_type,
-            n_bars=metrics.n_bars,
-            jarque_bera_pvalue=metrics.jarque_bera_pvalue,
-            ljung_box_r_pvalue=metrics.ljung_box_r_pvalue,
-            avg_uniqueness=metrics.avg_uniqueness,
+
+    target_n_bars = _target_n_bars(symbol, _query_baseline(symbol))
+    trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
+
+    if bar_type == "dollar":
+        total_dollar = float((trades["price"] * trades["quantity"]).sum())
+        threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+        bars = dollar_bars(trades, threshold=threshold)
+    elif bar_type == "volume":
+        total_volume = float(trades["quantity"].sum())
+        threshold = total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+        bars = volume_bars(trades, threshold=threshold)
+    else:  # "tick_imbalance"
+        config = _build_tick_imbalance_config(trades, target_n_bars)
+        bars = tick_imbalance_bars(trades, config)
+
+    metrics = compute_bar_statistics(
+        symbol, bar_type, bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+    )
+    logger.info(
+        "analysis.m2_bar_comparison.task_done",
+        symbol=symbol,
+        bar_type=bar_type,
+        n_bars=metrics.n_bars,
+        jarque_bera_pvalue=metrics.jarque_bera_pvalue,
+        ljung_box_r_pvalue=metrics.ljung_box_r_pvalue,
+        avg_uniqueness=metrics.avg_uniqueness,
+    )
+    return metrics
+
+
+def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
+    """Conveniência pra depuração manual de UM símbolo, sequencial (os 4
+    `bar_type` no mesmo processo) -- o caminho de produção real é
+    `run_and_save_bar_comparison_report`, que fatia por (symbol, bar_type)
+    pra paralelismo de verdade (ver docstring do módulo)."""
+    time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
+    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
+    ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
+    return [
+        compute_bar_type_for_symbol(
+            symbol, bar_type, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
         )
-    return results
+        for bar_type in BAR_TYPES
+    ]
 
 
 def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
@@ -277,31 +314,53 @@ def run_and_save_bar_comparison_report(
     dest_path: Path | None = None,
     max_workers: int | None = None,
 ) -> Path:
-    """Ponto de entrada MANUAL -- roda os 5 ativos (paralelo entre
-    símbolos) e persiste o relatório, atômico (B29). Tick imbalance bars é
-    sequencial por símbolo (ver docstring do módulo) -- cada processo do
-    pool absorve isso independentemente, não serializa entre símbolos.
+    """Ponto de entrada MANUAL -- fatia o trabalho em `len(symbols) ×
+    len(BAR_TYPES)` tasks independentes (até 20, com os 5 ativos padrão) e
+    roda num `ProcessPoolExecutor` dimensionado por `os.cpu_count()` --
+    não por `len(symbols)` (ver "Performance" na docstring do módulo:
+    paralelizar só por símbolo deixaria núcleo ocioso, já que só há 5
+    símbolos mas potencialmente muito mais núcleos disponíveis). Persiste
+    o relatório, atômico (B29).
 
     Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
-    logger.info("analysis.m2_bar_comparison.starting", n_symbols=len(symbols), max_workers=workers)
+    time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
+    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
+    ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
 
-    results_by_symbol: dict[str, list[BarComparisonMetrics]] = {}
-    with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
-        future_to_symbol = {
-            executor.submit(compute_bar_comparison_for_symbol, symbol): symbol for symbol in symbols
+    tasks = [(symbol, bar_type) for symbol in symbols for bar_type in BAR_TYPES]
+    logger.info(
+        "analysis.m2_bar_comparison.starting",
+        n_symbols=len(symbols),
+        n_tasks=len(tasks),
+        max_workers=workers,
+    )
+
+    results_by_symbol: dict[str, dict[str, BarComparisonMetrics]] = {
+        symbol: {} for symbol in symbols
+    }
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        future_to_task = {
+            executor.submit(
+                compute_bar_type_for_symbol,
+                symbol,
+                bar_type,
+                time_stop_ms=time_stop_ms,
+                ljung_box_lags=ljung_box_lags,
+            ): (symbol, bar_type)
+            for symbol, bar_type in tasks
         }
-        for future in as_completed(future_to_symbol):
-            symbol = future_to_symbol[future]
-            results_by_symbol[symbol] = future.result()
+        for future in as_completed(future_to_task):
+            symbol, bar_type = future_to_task[future]
+            results_by_symbol[symbol][bar_type] = future.result()
 
     payload: dict[str, Any] = {
         **report_provenance(),
         "baseline_tf": BASELINE_TF,
         "bar_types": list(BAR_TYPES),
         "symbols": {
-            symbol: [asdict(m) for m in sorted(metrics, key=lambda m: BAR_TYPES.index(m.bar_type))]
-            for symbol, metrics in sorted(results_by_symbol.items())
+            symbol: [asdict(results_by_symbol[symbol][bar_type]) for bar_type in BAR_TYPES]
+            for symbol in sorted(symbols)
         },
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
