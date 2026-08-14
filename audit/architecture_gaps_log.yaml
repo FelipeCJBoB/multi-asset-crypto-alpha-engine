@@ -494,6 +494,50 @@ entries:
       futuro -- diagnósticos de fold ficariam misturados/sobrescritos
       entre ativos no mesmo `model_id`.
     resolved_by_commit: null
+    resolution: >
+      Delegado a um Agent fresco com contexto rico (achado + a nuance de
+      design flagrada antes de delegar: models/*/diagnostics/*.json e
+      INTENCIONALMENTE versionado no git, ao contrario de predictions/,
+      entao o default nao pode migrar sozinho). Layout escolhido:
+      models/{symbol}/{tf}/{model_id}/diagnostics/, via novo helper
+      models_diagnostics_symbol_tf_dir em src/models/_paths.py -- SEM o
+      segmento "alpha" que predictions_symbol_tf_dir tem (nunca existiu
+      no legado de diagnostico, adicionar inventaria uma migracao que
+      nao corresponde a nada real). write_fold_diagnostics_atomic/
+      write_all_fold_diagnostics/_hhi_by_fold_side ganham dest_dir: Path
+      | None = None, mesmo sentinela de AG-006/AG-012 -- default
+      continua bit-exato (models/{model_id}/diagnostics/), nunca migra
+      sozinho, preservando os ~30 arquivos ja commitados. MODELS_DIR
+      movido de pipeline.py pra _paths.py (reexportado, nao duplicado).
+      Testes novos nos 3 arquivos tocados. Revisado independentemente
+      antes deste commit: diff lido, ruff/mypy/banned_patterns
+      rerodados por mim -- limpos. pytest ainda nao rodado
+      (PENDENTE-DE-EXECUCAO-HUMANA).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-016
+    date: "2026-08-14"
+    file: "src/models/pipeline.py, src/analysis/faixa1_6_reconciliation.py"
+    related_file: "src/models/_paths.py::models_diagnostics_symbol_tf_dir"
+    found_by: "Agent (delegado pra corrigir AG-013), reportado sem corrigir -- fora do escopo pedido"
+    gap: >
+      A capacidade de escrever/ler diagnostics chaveado por symbol/tf
+      agora existe (AG-013), mas `pipeline.run_layer1_sprint` e
+      `faixa1_6_reconciliation.run_e02f_short_unforced_variant` --
+      mesmo quando chamados com `tf` explicito (que ja roteia
+      `predictions` corretamente, AG-006/AG-012) -- continuam chamando
+      `write_all_fold_diagnostics`/`_hhi_by_fold_side` SEM `dest_dir`.
+      Ou seja, mesmo depois do AG-013, um chamador real com
+      `symbol="ETHUSDT", tf="15m"` ainda colidiria em
+      `models/{model_id}/diagnostics/` entre simbolos.
+    severity: "baixo"
+    layer: "models/analysis"
+    consequence: >
+      Mesmo risco de colisao entre simbolos que AG-006/AG-012/AG-013 ja
+      corrigiram, mas nos dois ORQUESTRADORES reais que ja tem symbol/tf
+      em escopo -- a capacidade existe, so nao esta fiada nos dois
+      lugares que precisariam dela primeiro.
+    resolved_by_commit: null
     resolution: null
     status: "aberto"
 

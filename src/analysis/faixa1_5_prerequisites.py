@@ -354,12 +354,23 @@ def _decompose_metrics(trades_filled: pl.DataFrame, *, source: str) -> dict[str,
     }
 
 
-def _hhi_by_fold_side(model_id: str = MODEL_ID_CAMADA1) -> pl.DataFrame:
+def _hhi_by_fold_side(
+    model_id: str = MODEL_ID_CAMADA1, *, dest_dir: Path | None = None
+) -> pl.DataFrame:
     """Carrega `hhi`/`hhi_effective` dos 30 arquivos de diagnóstico por
     fold x lado já persistidos (`models/{model_id}/diagnostics/fold_N_
     {side}.json`, Fase A) — não recalcula (recalcular exigiria o `X`/
-    `booster` do fold, não persistidos)."""
-    diag_dir = MODELS_DIR / model_id / "diagnostics"
+    `booster` do fold, não persistidos).
+
+    `dest_dir` (AG-013, `audit/architecture_gaps_log.yaml` — mesmo padrão
+    de `load_predictions` acima/`write_fold_diagnostics_atomic`,
+    AG-006/AG-012): default `None` preserva o caminho legado
+    `MODELS_DIR/{model_id}/diagnostics/`, bit-exato com todo chamador
+    existente (nenhum passa este argumento hoje). Passar
+    `src.models._paths.models_diagnostics_symbol_tf_dir(symbol, model_id,
+    tf=tf)` lê do layout chaveado novo — o par simétrico de leitura do que
+    `write_fold_diagnostics_atomic(dest_dir=...)` grava."""
+    diag_dir = dest_dir if dest_dir is not None else (MODELS_DIR / model_id / "diagnostics")
     rows: list[dict[str, Any]] = []
     for path in sorted(diag_dir.glob("fold_*_*.json")):
         d = orjson.loads(path.read_bytes())

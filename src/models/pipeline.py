@@ -34,12 +34,15 @@ from src.validation import cpcv
 from . import alpha, backtest_lite, baselines, decomposition
 from . import dataset as ds
 from ._constants import load_constant
-from ._paths import (
-    EXPERIMENTS_DIR,
-    PREDICTIONS_OUTPUT_DIR,
-    REPO_ROOT,
-    predictions_symbol_tf_dir,
-)
+from ._paths import EXPERIMENTS_DIR, PREDICTIONS_OUTPUT_DIR, predictions_symbol_tf_dir
+
+# Reexport explícito (`as MODELS_DIR`, não só `import MODELS_DIR`) —
+# `mypy --strict`/`no_implicit_reexport` (`pyproject.toml`) trata um import
+# simples como privado ao módulo; vários chamadores fazem
+# `from src.models.pipeline import MODELS_DIR` (`faixa1_5_prerequisites.py`
+# e testes, ver AG-013) e precisam continuar funcionando sob checagem
+# estrita, não só em runtime.
+from ._paths import MODELS_DIR as MODELS_DIR
 
 logger = structlog.get_logger(__name__)
 
@@ -48,12 +51,16 @@ MODEL_ID_CAMADA0 = "alpha_c0_baseline_v1"
 
 SYMBOL = ds.SYMBOL_DEFAULT
 
-# `models/{model_id}/diagnostics/` (task A1 do CLAUDE.md) — diretório de
-# DADO no topo do repo (irmão de `data/`, `predictions/`, `experiments/`),
-# não o pacote de código `src/models/`. Não movido para `_paths.py` porque
-# esse arquivo está fora do escopo desta mudança; `REPO_ROOT` já é público
-# em `._paths`, então isso é só um import de símbolo existente, não edição.
-MODELS_DIR: Path = REPO_ROOT / "models"
+# `MODELS_DIR` (AG-013) — importado de `._paths` acima, não redefinido
+# aqui. Vivia neste módulo até AG-013 (`models/{model_id}/diagnostics/`,
+# task A1 do CLAUDE.md, diretório de DADO no topo do repo, irmão de
+# `data/`/`predictions/`/`experiments/`, não o pacote de código
+# `src/models/`); movido para `_paths.py` porque agora existe um layout
+# chaveado (`models_diagnostics_symbol_tf_dir`) que precisa viver junto —
+# ver docstring de `MODELS_DIR` em `_paths.py` para o porquê completo.
+# `pipeline.MODELS_DIR` continua existindo (mesmo objeto `Path`) para não
+# quebrar nenhum `monkeypatch.setattr(pipeline, "MODELS_DIR", ...)`
+# existente nem nenhum `from src.models.pipeline import MODELS_DIR`.
 
 
 def write_predictions_atomic(
@@ -202,6 +209,7 @@ def write_fold_diagnostics_atomic(
     *,
     model_id: str,
     expected_n_trees: int,
+    dest_dir: Path | None = None,
 ) -> list[Path]:
     """`models/{model_id}/diagnostics/fold_{fold_id}_{side_label}.json` —
     um arquivo por fold x lado (long e short), B29: `.tmp` -> `fsync` ->
@@ -210,8 +218,19 @@ def write_fold_diagnostics_atomic(
     é intencionalmente versionado (evidência de auditoria pequena e
     legível, mesma categoria de `data/quality_reports/`), não é o artefato
     binário de modelo que `models/*.bin`/`models/*.json` (raiz de
-    `models/{model_id}/`) ignoram."""
-    out_dir = MODELS_DIR / model_id / "diagnostics"
+    `models/{model_id}/`) ignoram.
+
+    `dest_dir` (AG-013, mesmo sentinela `Path | None = None` de
+    `write_predictions_atomic`/`run_layer1_sprint`, AG-006/AG-012): default
+    `None` preserva o caminho legado `MODELS_DIR/{model_id}/diagnostics/`,
+    bit-exato com todo chamador/teste existente — nenhum passa este
+    argumento hoje. Passar `src.models._paths.
+    models_diagnostics_symbol_tf_dir(symbol, model_id, tf=tf)` grava no
+    layout chaveado novo (`models/{symbol}/{tf}/{model_id}/diagnostics/`)
+    em vez do plano — ver docstring desse helper para por que o default
+    NÃO migra (JSON versionado no git, migrar o default orfanaria os 30+
+    arquivos já commitados)."""
+    out_dir = dest_dir if dest_dir is not None else (MODELS_DIR / model_id / "diagnostics")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     written: list[Path] = []
@@ -245,15 +264,20 @@ def write_all_fold_diagnostics(
     *,
     model_id: str,
     hyper: alpha.XGBHyperparams,
+    dest_dir: Path | None = None,
 ) -> list[Path]:
     """Escreve o diagnóstico de todos os folds de uma variante (Camada 1 OU
     Camada 0) — chamada duas vezes por `run_layer1_sprint`, uma por
-    variante, cada uma com seu próprio `model_id`."""
+    variante, cada uma com seu próprio `model_id`.
+
+    `dest_dir` (AG-013) — repassado sem alteração a
+    `write_fold_diagnostics_atomic` para cada fold, mesmo sentinela
+    (`None` preserva o caminho legado plano)."""
     written: list[Path] = []
     for fr in fold_results:
         written.extend(
             write_fold_diagnostics_atomic(
-                fr, model_id=model_id, expected_n_trees=hyper.n_estimators
+                fr, model_id=model_id, expected_n_trees=hyper.n_estimators, dest_dir=dest_dir
             )
         )
     return written

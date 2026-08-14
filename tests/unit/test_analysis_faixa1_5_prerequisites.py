@@ -388,3 +388,81 @@ def test_run_and_save_faixa1_5_ponta_a_ponta_dado_real(tmp_path: Path) -> None:
     blob = orjson.dumps(payload).decode("utf-8").lower()
     for key in forbidden_keys:
         assert f'"{key}"' not in blob, f"campo de veredito proibido encontrado: {key}"
+
+
+# ============================================================================
+# _hhi_by_fold_side — dest_dir (AG-013, audit/architecture_gaps_log.yaml)
+#
+# `_hhi_by_fold_side` só LÊ arquivos já persistidos por
+# `src.models.pipeline.write_fold_diagnostics_atomic` — não recalcula.
+# Os dois testes abaixo escrevem um JSON de diagnóstico mínimo à mão (só
+# as 4 chaves que `_hhi_by_fold_side` de fato lê: fold_id/side/hhi/
+# hhi_effective, ver corpo da função) em vez de rodar
+# `write_fold_diagnostics_atomic` de verdade — mais barato, e o formato do
+# arquivo já é coberto por `tests/unit/test_models_pipeline.py`.
+# ============================================================================
+
+
+def _write_fake_diagnostics_file(
+    diag_dir: Path, *, fold_id: int, side: int, hhi: float, hhi_effective: float
+) -> None:
+    import orjson
+
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    side_label = "long" if side == 1 else "short"
+    payload = {
+        "fold_id": fold_id,
+        "side": side,
+        "hhi": hhi,
+        "hhi_effective": hhi_effective,
+    }
+    (diag_dir / f"fold_{fold_id}_{side_label}.json").write_bytes(orjson.dumps(payload))
+
+
+def test_hhi_by_fold_side_sem_dest_dir_usa_caminho_legado_bit_exato(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`dest_dir=None` (omitido, o que todo chamador existente faz hoje —
+    `run_faixa1_5`/`faixa1_6_reconciliation.run_e02f_short_unforced_variant`)
+    — paridade bit-exata com o comportamento anterior a AG-013: continua
+    lendo de `MODELS_DIR/{model_id}/diagnostics/`.
+
+    `MODEL_ID_CAMADA1` importado direto de `src.models.pipeline` (não via
+    `f15.MODEL_ID_CAMADA1`) — `mypy --strict`/`no_implicit_reexport` recusa
+    um atributo reimportado sem reexport explícito; `pipeline.py` DEFINE
+    `MODEL_ID_CAMADA1` (não reimporta), então importar de lá é limpo sob
+    checagem estrita."""
+    from src.models.pipeline import MODEL_ID_CAMADA1
+
+    monkeypatch.setattr(f15, "MODELS_DIR", tmp_path)
+    legacy_dir = tmp_path / MODEL_ID_CAMADA1 / "diagnostics"
+    _write_fake_diagnostics_file(legacy_dir, fold_id=0, side=1, hhi=0.2, hhi_effective=0.3)
+    _write_fake_diagnostics_file(legacy_dir, fold_id=0, side=-1, hhi=0.4, hhi_effective=0.5)
+
+    out = f15._hhi_by_fold_side(MODEL_ID_CAMADA1)
+
+    assert out.height == 2
+    assert set(out["side"].to_list()) == {1, -1}
+    assert sorted(out["hhi"].to_list()) == [0.2, 0.4]
+
+
+def test_hhi_by_fold_side_dest_dir_override_usa_layout_chaveado(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`dest_dir` explícito (AG-013) lê de um diretório totalmente fora de
+    `MODELS_DIR` — prova de que o parâmetro substitui o destino de leitura
+    em vez de só compor com o legado (mesmo padrão de
+    `test_models_pipeline_paths.py::
+    test_write_predictions_atomic_dest_dir_override_usa_layout_chaveado`)."""
+    from src.models.pipeline import MODEL_ID_CAMADA1
+
+    monkeypatch.setattr(f15, "MODELS_DIR", tmp_path / "nao_deveria_ser_lido")
+    keyed_dir = tmp_path / "ETHUSDT" / "15m" / MODEL_ID_CAMADA1 / "diagnostics"
+    _write_fake_diagnostics_file(keyed_dir, fold_id=0, side=1, hhi=0.7, hhi_effective=0.8)
+    _write_fake_diagnostics_file(keyed_dir, fold_id=0, side=-1, hhi=0.6, hhi_effective=0.65)
+
+    out = f15._hhi_by_fold_side(MODEL_ID_CAMADA1, dest_dir=keyed_dir)
+
+    assert out.height == 2
+    assert sorted(out["hhi"].to_list()) == [0.6, 0.7]
+    assert not (tmp_path / "nao_deveria_ser_lido").exists()

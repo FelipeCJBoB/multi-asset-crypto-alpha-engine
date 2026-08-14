@@ -28,7 +28,12 @@ import pytest
 
 from src.data.resample import UnsupportedTimeframeError
 from src.models import alpha, dataset, pipeline
-from src.models._paths import PREDICTIONS_OUTPUT_DIR, predictions_symbol_tf_dir
+from src.models._paths import (
+    MODELS_DIR,
+    PREDICTIONS_OUTPUT_DIR,
+    models_diagnostics_symbol_tf_dir,
+    predictions_symbol_tf_dir,
+)
 from src.validation import cpcv
 
 # `alpha`/`dataset`/`cpcv` importados diretamente (não via `pipeline.alpha`/
@@ -76,6 +81,31 @@ def test_write_predictions_atomic_sem_dest_dir_usa_caminho_legado_plano(
     dest = pipeline.write_predictions_atomic(predictions, "alpha_c1_v1")
     assert dest == tmp_path / "alpha" / "alpha_c1_v1" / "predictions.parquet"
     assert dest.exists()
+
+
+# ============================================================================
+# models_diagnostics_symbol_tf_dir (AG-013, audit/architecture_gaps_log.yaml)
+# ============================================================================
+
+
+def test_models_diagnostics_symbol_tf_dir_layout_chaveado() -> None:
+    path = models_diagnostics_symbol_tf_dir("ETHUSDT", "alpha_c1_v1")
+    assert path == MODELS_DIR / "ETHUSDT" / "15m" / "alpha_c1_v1" / "diagnostics"
+
+
+def test_models_diagnostics_symbol_tf_dir_aceita_tf_explicito() -> None:
+    path = models_diagnostics_symbol_tf_dir("ETHUSDT", "alpha_c1_v1", tf="30m")
+    assert path == MODELS_DIR / "ETHUSDT" / "30m" / "alpha_c1_v1" / "diagnostics"
+
+
+def test_models_diagnostics_symbol_tf_dir_sem_segmento_alpha() -> None:
+    """Diferença deliberada em relação a `predictions_symbol_tf_dir` (ver
+    docstring do helper em `_paths.py`): o layout LEGADO de diagnóstico
+    (`models/{model_id}/diagnostics/`) nunca teve um segmento `"alpha"`
+    literal — só `predictions/alpha/{model_id}/` tinha. O layout chaveado
+    não inventa um segmento que não existia."""
+    path = models_diagnostics_symbol_tf_dir("ETHUSDT", "alpha_c1_v1")
+    assert "alpha" not in path.relative_to(MODELS_DIR).parts
 
 
 # ============================================================================

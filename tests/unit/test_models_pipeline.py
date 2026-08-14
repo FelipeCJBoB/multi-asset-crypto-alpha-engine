@@ -216,6 +216,58 @@ def test_write_all_fold_diagnostics_um_arquivo_por_fold_x_lado(
 
 
 # ============================================================================
+# dest_dir (AG-013, audit/architecture_gaps_log.yaml) — write_fold_
+# diagnostics_atomic/write_all_fold_diagnostics ganham o mesmo sentinela
+# `Path | None = None` de write_predictions_atomic (AG-006/AG-012). Paridade
+# bit-exata do default já é coberta pelos 3 testes acima (nenhum passa
+# `dest_dir`, e continuam passando sem alteração após a mudança) — os dois
+# testes abaixo cobrem só o roteamento novo.
+# ============================================================================
+
+
+def test_write_fold_diagnostics_atomic_dest_dir_override_usa_layout_chaveado(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`dest_dir` explícito grava fora de `MODELS_DIR` inteiramente — não só
+    num subdiretório dele — prova de que o parâmetro substitui o destino em
+    vez de só compor com o legado."""
+    monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path / "nao_deveria_ser_usado")
+    hyper = alpha.XGBHyperparams.from_constants()
+    fold = _fake_fold_result(fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=21)
+    keyed_dir = tmp_path / "ETHUSDT" / "15m" / _TEST_MODEL_ID / "diagnostics"
+
+    written = pipeline.write_fold_diagnostics_atomic(
+        fold, model_id=_TEST_MODEL_ID, expected_n_trees=hyper.n_estimators, dest_dir=keyed_dir
+    )
+
+    assert len(written) == 2
+    assert {p.name for p in written} == {"fold_0_long.json", "fold_0_short.json"}
+    for path in written:
+        assert path.parent == keyed_dir
+    assert not (tmp_path / "nao_deveria_ser_usado").exists()
+
+
+def test_write_all_fold_diagnostics_propaga_dest_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path / "nao_deveria_ser_usado")
+    hyper = alpha.XGBHyperparams.from_constants()
+    folds = [
+        _fake_fold_result(fold_id=i, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=200 + i)
+        for i in range(2)
+    ]
+    keyed_dir = tmp_path / "ETHUSDT" / "15m" / _TEST_MODEL_ID / "diagnostics"
+
+    written = pipeline.write_all_fold_diagnostics(
+        folds, model_id=_TEST_MODEL_ID, hyper=hyper, dest_dir=keyed_dir
+    )
+
+    assert len(written) == 2 * 2
+    assert all(path.parent == keyed_dir for path in written)
+    assert not (tmp_path / "nao_deveria_ser_usado").exists()
+
+
+# ============================================================================
 # Integração real — skip se o pipeline completo ainda não rodou
 # ============================================================================
 
