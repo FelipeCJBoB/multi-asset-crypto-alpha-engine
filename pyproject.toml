@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "requests>=2.32",
     "tzdata>=2024.1",
+    "statsmodels>=0.14",
 ]
 
 [dependency-groups]
@@ -88,8 +89,11 @@ exclude = ["^data/", "^\\.venv/"]
 # src/models/baselines.py usam sklearn.isotonic/model_selection/metrics) —
 # mesmo motivo: scipy-stubs/sklearn não publicam stubs completos o
 # suficiente para mypy --strict, e adicionar types-* extras por um punhado
-# de pontos de uso não paga o custo de dependência extra.
-module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml", "scipy.*", "sklearn.*"]
+# de pontos de uso não paga o custo de dependência extra. "statsmodels"
+# entrou no M2 (PRD_V4_1.md §3.2) -- src/analysis/m2_bar_comparison.py usa
+# statsmodels.stats.diagnostic.acorr_ljungbox/statsmodels.tsa.stattools.
+# adfuller, mesmo motivo dos outros.
+module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml", "scipy.*", "sklearn.*", "statsmodels.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------

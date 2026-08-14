@@ -1125,4 +1125,46 @@ klines_daily_partition_cutover_date:
   source: "PRD_V4_1.md §2.5 (F5) — 'daily/klines começa 2023-06, monthly/klines vai a 2020'. Não reverificado ao vivo por este processo (Claude Code não executa Python/HTTP); o downloader trata 404 na partição escolhida como missing_upstream em vez de assumir que esta data está certa — ver docstring de klines_partition_for_date."
   class: C
   sweep_required: false
+
+# ============================================================================
+# src/data/bars.py — tick imbalance bars (PRD_V4_1.md §3.2 M2). Hiperparâmetros
+# de engenharia SEM derivação teórica no AFML (López de Prado, cap. 2) — a
+# pesquisa web feita antes de implementar (commit da mesma rodada) confirmou
+# que nem o próprio livro nem a implementação de referência (mlfinlab/Hudson &
+# Thames) derivam esses números; são defaults empíricos da implementação.
+# `exp_num_ticks_init` NÃO entra aqui — é calculado por símbolo em
+# `m2_bar_comparison.py` (mesma calibração "frequência média igual ao
+# baseline" usada em dollar/volume bars), não um valor universal fabricado.
+# ============================================================================
+
+bars_tick_imbalance_num_prev_bars:
+  value: 3
+  provenance: ASSUMED
+  source: "sem derivação teórica no AFML cap.2 — default da implementação de referência mlfinlab (Hudson & Thames), janela (em nº de barras) da EWMA de E_0[T]. Pesquisa web confirmou ausência de justificativa teórica publicada."
+  class: B
+  sweep_required: false
+  review_by: sprint_9
+
+bars_tick_imbalance_expected_imbalance_window:
+  value: 10000
+  provenance: ASSUMED
+  source: "sem derivação teórica no AFML cap.2 — default da implementação de referência mlfinlab, janela (em nº de ticks) da EWMA do imbalance por tick (2P[b=1]-1). Varia por ativo/liquidez na prática; valor único aqui é ponto de partida, não calibração medida."
+  class: B
+  sweep_required: false
+  review_by: sprint_9
+
+bars_tick_imbalance_clip_multiplier:
+  value: 10.0
+  provenance: ASSUMED
+  source: "mitigação padrão de facto contra a instabilidade/\"explosão\" de E_0[T] documentada na literatura de referência (mlfinlab `exp_num_ticks_constraints`) — bounds = [init/mult, init*mult]. Band-aid empírico aceito pela prática, não derivação estatística nova (pesquisa web confirmou ausência de correção formal publicada 2022-2026)."
+  class: B
+  sweep_required: false
+  review_by: sprint_9
+
+bars_comparison_ljung_box_lags:
+  value: 10
+  provenance: LITERATURE
+  source: "convenção comum em testes de autocorrelação de retornos financeiros intradiários (Ljung-Box) na literatura de séries temporais financeiras (ex. Tsay, Analysis of Financial Time Series) — não calibrado especificamente para este dataset."
+  class: C
+  sweep_required: false
   sweep_required: false

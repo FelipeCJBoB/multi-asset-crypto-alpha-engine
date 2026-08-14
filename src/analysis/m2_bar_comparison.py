@@ -1,0 +1,316 @@
+"""M2 — comparação de tipo de barra (PRD_V4_1.md §3.2, linhas 382-388):
+"Candidatos: tempo (baseline) · dollar bars · volume bars · tick imbalance
+bars, calibradas para a mesma frequência média. Métricas: Jarque-Bera ·
+curtose · Ljung-Box em `r` e `r²` · ADF · razão de amostra efetiva
+(unicidade média com `time_stop` equivalente em relógio)." Zero trials —
+medição, não busca.
+
+**Hipótese testável, não assumida (nota multi-ativo do PRD):** dollar bars
+normalizam por atividade — com volume variando 3.700x entre os 5 ativos
+(I1), podem tornar os cinco mais comparáveis que barras de tempo. Este
+módulo MEDE se isso é verdade (JB/curtose/Ljung-Box mais "bem
+comportados", i.e. mais perto de ruído branco gaussiano, em dollar bars
+do que em barras de tempo, consistentemente nos 5 ativos) — não presume.
+
+**A partir de `aggTrades`, não de `klines_1m`.** `klines_1m` já É uma
+agregação temporal — usar klines pra medir "a barra de tempo é pior que
+outra coisa" seria circular (o próprio dado de entrada já tem a
+propriedade sendo testada). `src.data.bars` constrói as 3 barras
+alternativas trade-a-trade real; o baseline usa `lake.query_bars` (mesma
+fonte de M1/M3) pra ficar consistente com o resto da Camada 1.
+
+**Calibração — mesma frequência média que o baseline, medida não
+suposta.** `target_n_bars` = nº de barras de 15m do baseline no mesmo
+período; `threshold` de dollar/volume bars = volume total (em $ ou
+unidades) dividido por `target_n_bars`; `exp_num_ticks_init` de tick
+imbalance bars = nº total de ticks dividido por `target_n_bars` (mesma
+lógica: barra "típica" do TIB deveria consumir, em média, tantos ticks
+quantos a barra de 15m consome em relógio).
+
+**"Razão de amostra efetiva" reusa `src.labels.weights.
+compute_concurrency_and_uniqueness`** (produção real, testada, mesma
+função que calcula `sample_weight` do Label Engine) — não uma
+reimplementação. `t0` = `close_time` de cada barra, `t1` = `close_time +
+time_stop_bars×15min` (mesmo horizonte de `time_stop_bars`,
+`constants.yaml`, convertido pra relógio) — "unicidade média com
+time_stop equivalente em relógio", literal do PRD. Import de
+`src.labels` a partir de `src.analysis` NÃO viola a hierarquia de camadas
+(`pyproject.toml::[tool.importlinter]`, contrato "labels só é lido por
+models, validation, backtest" lista só `exchange/data/features/regime/
+risk/execution/live/monitoring` como proibidos — `analysis` fica de fora
+deliberadamente, mesmo padrão já usado em `m6_common_factor_hypothesis.py`).
+
+**Performance.** `tick_imbalance_bars` é sequencial (ver docstring de
+`src.data.bars`) — rodar os 5 ativos com história completa é o item mais
+lento da Camada 1 até agora. Ponto de entrada manual, não é testado de
+ponta a ponta no pytest (mesma convenção de M1/M3/M6 — IO real fica fora
+da suíte automatizada)."""
+
+from __future__ import annotations
+
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Final
+
+import numpy as np
+import orjson
+import polars as pl
+import structlog
+from numpy.typing import NDArray
+from scipy import stats as scipy_stats
+from statsmodels.stats.diagnostic import acorr_ljungbox
+from statsmodels.tsa.stattools import adfuller
+
+from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE
+from src.core.provenance import report_provenance
+from src.data import lake
+from src.data._constants import load_constant as load_data_constant
+from src.data.bars import TickImbalanceBarsConfig, dollar_bars, tick_imbalance_bars, volume_bars
+from src.data.resample import step_ms
+from src.labels.weights import compute_concurrency_and_uniqueness
+from src.risk._constants import load_constant as load_risk_constant
+
+logger = structlog.get_logger(__name__)
+
+FloatArray = NDArray[np.float64]
+
+_REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
+EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
+DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "m2_bar_comparison_report.json"
+
+BASELINE_TF: Final[str] = "15m"
+BAR_TYPES: Final[tuple[str, ...]] = ("time", "dollar", "volume", "tick_imbalance")
+
+# Ljung-Box/ADF exigem amostra bem maior que o número de lags -- 4x é uma
+# folga de engenharia (não domínio), evita crash de statsmodels em barras
+# degeneradas sem inventar mais uma constante de constants.yaml.
+_MIN_OBS_FOR_TESTS_MULTIPLIER: Final[int] = 4
+
+
+@dataclass(frozen=True, slots=True)
+class BarComparisonMetrics:
+    """Resumo por (symbol, bar_type) -- `NaN` explícito onde a amostra é
+    pequena demais pros testes (nunca um zero fabricado)."""
+
+    symbol: str
+    bar_type: str
+    n_bars: int
+    n_returns: int
+    jarque_bera_stat: float
+    jarque_bera_pvalue: float
+    kurtosis_excess: float
+    ljung_box_r_pvalue: float
+    ljung_box_r2_pvalue: float
+    adf_stat: float
+    adf_pvalue: float
+    avg_uniqueness: float
+
+
+def _log_returns(close: FloatArray) -> FloatArray:
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = np.diff(np.log(close))
+    return r
+
+
+def _nan_metrics(symbol: str, bar_type: str, n_bars: int, n_returns: int) -> BarComparisonMetrics:
+    nan = float("nan")
+    return BarComparisonMetrics(
+        symbol=symbol,
+        bar_type=bar_type,
+        n_bars=n_bars,
+        n_returns=n_returns,
+        jarque_bera_stat=nan,
+        jarque_bera_pvalue=nan,
+        kurtosis_excess=nan,
+        ljung_box_r_pvalue=nan,
+        ljung_box_r2_pvalue=nan,
+        adf_stat=nan,
+        adf_pvalue=nan,
+        avg_uniqueness=nan,
+    )
+
+
+def compute_bar_statistics(
+    symbol: str, bar_type: str, bars: pl.DataFrame, *, time_stop_ms: int, ljung_box_lags: int
+) -> BarComparisonMetrics:
+    """Núcleo puro (sem IO) -- JB/curtose/Ljung-Box(r,r²)/ADF sobre
+    log-retorno de `close`, e unicidade média via `compute_concurrency_and_
+    uniqueness` sobre `close_time`. Testável isoladamente com `bars`
+    sintético, ao contrário de `compute_bar_comparison_for_symbol` (IO
+    real)."""
+    n_bars = bars.height
+    close = bars["close"].cast(pl.Float64).to_numpy()
+    r = _log_returns(close)
+    n_returns = int(np.sum(np.isfinite(r)))
+    min_obs = _MIN_OBS_FOR_TESTS_MULTIPLIER * ljung_box_lags
+    if n_returns < min_obs:
+        return _nan_metrics(symbol, bar_type, n_bars, n_returns)
+    r_finite = r[np.isfinite(r)]
+
+    jb = scipy_stats.jarque_bera(r_finite)
+    kurt = float(scipy_stats.kurtosis(r_finite, fisher=True))
+    lb_r = acorr_ljungbox(r_finite, lags=[ljung_box_lags], return_df=True)
+    lb_r2 = acorr_ljungbox(r_finite**2, lags=[ljung_box_lags], return_df=True)
+    adf_result = adfuller(r_finite, autolag="AIC")
+    adf_stat, adf_pvalue = float(adf_result[0]), float(adf_result[1])
+
+    close_time = bars["close_time"].cast(pl.Int64).to_numpy()
+    t0 = close_time.astype(np.int64)
+    t1 = t0 + time_stop_ms
+    _, uniqueness = compute_concurrency_and_uniqueness(t0, t1)
+
+    return BarComparisonMetrics(
+        symbol=symbol,
+        bar_type=bar_type,
+        n_bars=n_bars,
+        n_returns=n_returns,
+        jarque_bera_stat=float(jb.statistic),
+        jarque_bera_pvalue=float(jb.pvalue),
+        kurtosis_excess=kurt,
+        ljung_box_r_pvalue=float(lb_r["lb_pvalue"].iloc[0]),
+        ljung_box_r2_pvalue=float(lb_r2["lb_pvalue"].iloc[0]),
+        adf_stat=adf_stat,
+        adf_pvalue=adf_pvalue,
+        avg_uniqueness=float(np.mean(uniqueness)) if uniqueness.size else float("nan"),
+    )
+
+
+def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
+    """Núcleo de IO -- carrega `klines_1m` (baseline) e `aggTrades`
+    (dollar/volume/tick imbalance) reais, calibra os 3 tipos alternativos
+    pra mesma frequência média do baseline, e computa as métricas dos 4."""
+    time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
+    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
+    ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
+
+    baseline = lake.query_bars(
+        symbol,
+        BASELINE_TF,
+        SYMBOL_START_DATE[symbol],
+        END_DATE,
+        source="klines_1m",
+        cast_prices=True,
+    )
+    target_n_bars = baseline.height
+    if target_n_bars == 0:
+        raise ValueError(
+            f"baseline vazio para {symbol} -- sem klines_1m no período "
+            f"{SYMBOL_START_DATE[symbol]}..{END_DATE}, não dá pra calibrar dollar/volume/tick "
+            "imbalance bars pra frequência média nenhuma"
+        )
+    logger.info(
+        "analysis.m2_bar_comparison.baseline_loaded", symbol=symbol, target_n_bars=target_n_bars
+    )
+
+    trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
+    n_ticks = trades.height
+    total_dollar = float((trades["price"] * trades["quantity"]).sum())
+    total_volume = float(trades["quantity"].sum())
+
+    # target_n_bars > 0 garantido pelo raise acima.
+    dollar_threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio
+    volume_threshold = total_volume / target_n_bars  # noqa: unguarded-ratio
+    exp_num_ticks_init = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
+
+    clip_mult = float(load_data_constant("bars_tick_imbalance_clip_multiplier"))
+    if clip_mult <= 0:
+        raise ValueError(
+            f"bars_tick_imbalance_clip_multiplier precisa ser > 0, constants.yaml tem {clip_mult}"
+        )
+    tib_config = TickImbalanceBarsConfig(
+        num_prev_bars=int(load_data_constant("bars_tick_imbalance_num_prev_bars")),
+        expected_imbalance_window=int(
+            load_data_constant("bars_tick_imbalance_expected_imbalance_window")
+        ),
+        exp_num_ticks_init=exp_num_ticks_init,
+        exp_num_ticks_min=exp_num_ticks_init / clip_mult,  # noqa: unguarded-ratio -- clip_mult>0 acima
+        exp_num_ticks_max=exp_num_ticks_init * clip_mult,
+    )
+
+    bars_by_type: dict[str, pl.DataFrame] = {
+        "time": baseline,
+        "dollar": dollar_bars(trades, threshold=dollar_threshold),
+        "volume": volume_bars(trades, threshold=volume_threshold),
+        "tick_imbalance": tick_imbalance_bars(trades, tib_config),
+    }
+
+    results: list[BarComparisonMetrics] = []
+    for bar_type in BAR_TYPES:
+        metrics = compute_bar_statistics(
+            symbol,
+            bar_type,
+            bars_by_type[bar_type],
+            time_stop_ms=time_stop_ms,
+            ljung_box_lags=ljung_box_lags,
+        )
+        results.append(metrics)
+        logger.info(
+            "analysis.m2_bar_comparison.bar_type_done",
+            symbol=symbol,
+            bar_type=bar_type,
+            n_bars=metrics.n_bars,
+            jarque_bera_pvalue=metrics.jarque_bera_pvalue,
+            ljung_box_r_pvalue=metrics.ljung_box_r_pvalue,
+            avg_uniqueness=metrics.avg_uniqueness,
+        )
+    return results
+
+
+def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
+    """B29 -- mesmo padrão de `volatility_operational_effect._atomic_write_json`."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+    blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2)
+    with tmp_path.open("wb") as fh:
+        fh.write(blob)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, dest_path)
+    logger.info("analysis.m2_bar_comparison.report_written", path=str(dest_path))
+
+
+def run_and_save_bar_comparison_report(
+    *,
+    symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
+    dest_path: Path | None = None,
+    max_workers: int | None = None,
+) -> Path:
+    """Ponto de entrada MANUAL -- roda os 5 ativos (paralelo entre
+    símbolos) e persiste o relatório, atômico (B29). Tick imbalance bars é
+    sequencial por símbolo (ver docstring do módulo) -- cada processo do
+    pool absorve isso independentemente, não serializa entre símbolos.
+
+    Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    logger.info("analysis.m2_bar_comparison.starting", n_symbols=len(symbols), max_workers=workers)
+
+    results_by_symbol: dict[str, list[BarComparisonMetrics]] = {}
+    with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
+        future_to_symbol = {
+            executor.submit(compute_bar_comparison_for_symbol, symbol): symbol for symbol in symbols
+        }
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            results_by_symbol[symbol] = future.result()
+
+    payload: dict[str, Any] = {
+        **report_provenance(),
+        "baseline_tf": BASELINE_TF,
+        "bar_types": list(BAR_TYPES),
+        "symbols": {
+            symbol: [asdict(m) for m in sorted(metrics, key=lambda m: BAR_TYPES.index(m.bar_type))]
+            for symbol, metrics in sorted(results_by_symbol.items())
+        },
+    }
+    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
+    _atomic_write_json(payload, dest)
+    logger.info(
+        "analysis.m2_bar_comparison.done", n_symbols=len(results_by_symbol), dest=str(dest)
+    )
+    return dest
+
+
+if __name__ == "__main__":
+    run_and_save_bar_comparison_report()
