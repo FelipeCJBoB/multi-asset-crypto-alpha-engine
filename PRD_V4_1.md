@@ -429,6 +429,12 @@ Não há `bookTicker` fora de 2023-05 → 2024-03 (janela real, corrigida em §2
 
 **É teste de proposição, não busca.** Zero trials.
 
+**Resultado (medido 2026-08-14, `experiments/m6_common_factor_hypothesis_report.json`, commit pendente):** teste de heterogeneidade de Cochran's Q/I² rodado sobre `edge_bruto_atr` pooled (sem estratificação por regime) nos 5 ativos, `decision_tf=15m`, cada lado testado separadamente. **H0 rejeitada nos dois lados, com folga:** long `I²=96,1%`, `p≈3,2×10⁻²¹`; short `I²=97,8%`, `p≈1,0×10⁻³⁸`. Por convenção de Higgins & Thompson (2002), `I²>75%` já é "alta heterogeneidade" — 96–98% é heterogeneidade quase total, praticamente nada da variação entre ativos é ruído amostral.
+
+`edge_bruto_atr` por ativo (long / short): BTC −0,0375 / −0,0384 · ETH −0,0252 / −0,0109 · SOL −0,0514 / **+0,0066** · BNB −0,0435 / **+0,0059** · XRP −0,0793 / **+0,0296**. No lado long todos os 5 são negativos mas com amplitude >3× entre o melhor (ETH) e o pior (XRP — pior que BTC). No lado short o sinal **inverte**: BTC/ETH negativos, SOL/BNB/XRP positivos — evidência qualitativa direta da heterogeneidade, não só o p-value.
+
+**Interpretação:** falsificação confirmada — existe componente idiossincrático real por ativo, além do fator comum. Multi-ativo é diversificação real, não "um ativo com cinco estruturas de custo". **Não** significa que algum ativo tem edge líquido positivo — `edge_liq_atr` (após `custo_atr`) segue negativo em todos os 10 pares ativo×lado pooled, inclusive onde `edge_bruto_atr` é positivo (custo ainda domina). Onde `edge_bruto_atr` é pequeno e positivo mas `edge_liq_atr` é negativo, `captura` degenera (ex. BNB short R1: `captura=-2280`) — artefato conhecido da razão perto de zero no denominador, não erro de cálculo; não usar `captura` como métrica de decisão nesses casos. **Consequência para M5:** o achado de T0.5 (permanência 5/5→1/5 na janela comum, só BTC) não pode mais ser presumido representativo dos outros 4 ativos — a heterogeneidade medida aqui é evidência a favor de rodar M5 em escopo completo, não a favor de encerrar.
+
 ### Gate da Camada 1
 
 ```
