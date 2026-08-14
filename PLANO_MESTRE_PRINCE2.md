@@ -950,7 +950,19 @@ número do estágio:
      Claude não roda `.py`): 1) backfill de `mark_price_klines_1m`, 2)
      `pytest` dos módulos tocados, 3) `backfill_multi_symbol` de verdade
      (escreve `data/labels/{ETH,SOL,BNB,XRP}USDT/15m/v1/labels.parquet`).
-     Passo 3 ainda não executado.
+
+     **Os 3 passos executados pelo Manager (2026-08-14) — item 4 fecha
+     de verdade.** `labels/` existe agora pros 4 alts pela primeira vez
+     no projeto: ETHUSDT (328.409 linhas), BNBUSDT (328.409), XRPUSDT
+     (327.448), SOLUSDT. Warning `labels.filters_fallback_used` em
+     todos — esperado, mesmo mecanismo que o histórico de BTCUSDT já usa
+     (`known_gaps.exchange_info_snapshot_coverage_gap`, Sprint 6, não é
+     achado novo). É a prova de que a correção do AG-015 funcionou de
+     ponta a ponta: sem ela, esses 4 arquivos existiriam no disco mas
+     `build_modeling_frame`/treino continuariam ignorando-os
+     silenciosamente. M5/M6 (represados desde a reavaliação do critério
+     de encerramento #3) têm agora o pré-requisito de dado que faltava —
+     decisão de quando rodá-los continua com o Manager.
 5. Só depois disso, decisão do Manager sobre extrair `06_BARREIRAS` como
    estágio real (é refatoração de `triple_barrier.py`, arquivo crítico —
    passa pelo protocolo completo do §6, primeiro teste real dele).
@@ -1063,6 +1075,14 @@ dado é a fonte da verdade; este documento é um pointer, não a cópia).
 
 ## Changelog
 
+- **v2.8 (2026-08-14)** — §15.6 item 4 fecha de verdade: Manager rodou os
+  3 comandos (backfill de `mark_price_klines_1m`, `pytest` verde,
+  `run_and_write_labels_for_alts`). `labels/` existe pela primeira vez
+  pros 4 alts (ETHUSDT/BNBUSDT 328.409 linhas, XRPUSDT 327.448, SOLUSDT).
+  Warning `labels.filters_fallback_used` em todos — confirmado como
+  comportamento esperado (mesmo mecanismo já usado pelo histórico de
+  BTCUSDT, `known_gaps.exchange_info_snapshot_coverage_gap`), não um
+  achado novo. Pré-requisito de dado do M5/M6 satisfeito.
 - **v2.7 (2026-08-13)** — §15.6 item 4 executado: engenharia de pipeline
   multi-ativo (não wiring simples). Achado central: features/regime já
   são 100% multi-símbolo (recomputados em memória, sem hardcode) — o

@@ -350,8 +350,10 @@ entries:
       stash/pop pra confirmar 0 regressão nas divisões pré-existentes de
       `cost_surface_cell`) -- limpos. Único caller real confirmado via
       grep (`run_and_save_cost_surface_report`, bit-exato com o default).
-      pytest ainda não rodado (PENDENTE-DE-EXECUÇÃO-HUMANA).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      Manager rodou `uv run pytest tests/unit/test_analysis_cost_surface.py
+      ... -v` (2026-08-14, junto com AG-012/AG-014-testes/AG-015) —
+      confirmado verde.
+    status: "fechado — pytest verde, confirmado pelo Manager em 2026-08-14"
 
   - id: AG-006
     date: "2026-08-12"
@@ -466,9 +468,11 @@ entries:
       `test_models_pipeline_paths.py`. Revisado independentemente antes
       deste commit: diff lido, ruff/mypy/banned_patterns/check_unguarded_
       ratios rerodados por mim (git stash/pop confirma 0 regressão nas 5
-      divisões pré-existentes) -- limpos. pytest ainda não rodado
-      (PENDENTE-DE-EXECUÇÃO-HUMANA).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      divisões pré-existentes) -- limpos. Manager rodou
+      `uv run pytest tests/unit/test_analysis_faixa1_6_reconciliation.py
+      tests/unit/test_analysis_faixa1_5_prerequisites.py ... -v`
+      (2026-08-14) — confirmado verde.
+    status: "fechado — pytest verde, confirmado pelo Manager em 2026-08-14"
 
   - id: AG-013
     date: "2026-08-13"
@@ -773,7 +777,17 @@ entries:
       novos (monkeypatch em `cpcv.load_labels_v1`/`features_build.
       build_t1_features`/`regime_build.build_regimes`, sem IO real):
       roteamento do argumento com `symbol` explicito, e paridade bit-exata
-      do default. Scripts mecanicos autorizados rodados, limpos. pytest
-      ainda nao rodado (PENDENTE-DE-EXECUCAO-HUMANA).
-    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+      do default. Scripts mecanicos autorizados rodados, limpos.
+      **Manager rodou `uv run pytest tests/unit/test_models_dataset.py
+      ... -v` (2026-08-14) -- confirmado verde. Em seguida rodou o
+      backfill de verdade** (`run_and_write_labels_for_alts`) --
+      `labels/` gerado com sucesso pros 4 alts pela primeira vez:
+      ETHUSDT (328.409 linhas), BNBUSDT (328.409), XRPUSDT (327.448),
+      SOLUSDT. Warning `labels.filters_fallback_used` presente em todos,
+      ESPERADO (mesmo mecanismo que o histórico de BTCUSDT já usa --
+      `known_gaps.exchange_info_snapshot_coverage_gap`, `constants.yaml`,
+      Sprint 6 -- não é achado novo desta correção). Prova de que a
+      correção do bug real funcionou -- sem ela, esses 4 arquivos
+      existiriam mas o treino continuaria ignorando-os.
+    status: "fechado — pytest verde + labels/ gerado pros 4 alts, confirmado pelo Manager em 2026-08-14"
     status: "fechado — corrigido na mesma sessão do achado"
