@@ -68,6 +68,15 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
+# tools/lint/*.py são scripts CLI standalone (rodados via `python
+# tools/lint/x.py`, nunca importados como lib de pipeline) -- print() é o
+# mecanismo de saída, não um substituto de structlog em código de
+# produção (B28/§14.1 continua valendo pra src/). Achado de auditoria
+# (AG-028, 2026-08-15): banned_patterns.py -- o próprio script que
+# ENFORCE o banimento de print() -- já usava print() 6x antes desta
+# entrada existir; a config estava inconsistente com a própria regra que
+# aplica. `tests/**` já tinha essa exceção; faltava estender aqui.
+"tools/lint/**" = ["T20"]
 
 # --------------------------------------------------------------------------
 # mypy strict — DoD de "código de modelo"/"código de feature" exige type hints.

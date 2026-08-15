@@ -22,6 +22,29 @@ risco por nome ("...se M2/M3 rodarem antes disso ser corrigido") antes
 deste módulo existir. Registrado como `AG-017`,
 `audit/architecture_gaps_log.yaml`.
 
+**Desmembrado em 3 arquivos (2026-08-15) — brainstorm próprio + validação
+por auditoria externa, Opção 3: cortar por FRONTEIRA DE PROCESSO, não por
+camada nem por estágio de pipeline.** `src.analysis.m2_stats` — núcleo
+estatístico puro (`BarComparisonMetrics`, `compute_bar_statistics`, JB/
+curtose/Ljung-Box/ADF), zero IO. `src.analysis.m2_worker` — TUDO que roda
+DENTRO de 1 processo filho do `ProcessPoolExecutor` abaixo: calibração +
+construção de barra via streaming de `aggTrades`
+(`compute_time_bar_for_symbol`, `compute_trades_dependent_bars_for_
+symbol_tf`, e o `initializer` `warm_numba_cache_in_worker`), incluindo o
+bloco de env vars de BLAS que precisa rodar antes de qualquer import
+pesado. Este arquivo (`m2_bar_comparison.py`) fica só com orquestração:
+`ProcessPoolExecutor`, fan-out, montagem e persistência do relatório —
+mantém esta docstring narrativa completa por ser o ponto de entrada real
+(`uv run python -m src.analysis.m2_bar_comparison`); `m2_stats.py`/
+`m2_worker.py` têm docstrings curtas que apontam de volta pra cá.
+Razão da fronteira: `__module__` de uma função é o módulo onde ela foi
+DEFINIDA — as duas funções submetidas ao pool, definidas agora em
+`m2_worker.py` e importadas aqui, resolvem `__module__` como
+`"src.analysis.m2_worker"` (caminho de import absoluto de verdade) em vez
+de `"__main__"` (que dependia da maquinaria de reconstrução do
+`multiprocessing.spawn` no Windows, funcionando só porque a invocação é
+sempre via `-m`). Ver `PLANO_MESTRE_PRINCE2.md` §15 pro registro formal.
+
 **Hipótese testável, não assumida (nota multi-ativo do PRD):** dollar bars
 normalizam por atividade — com volume variando 3.700x entre os 5 ativos
 (I1), podem tornar os cinco mais comparáveis que barras de tempo. Este
@@ -36,8 +59,8 @@ outra coisa" seria circular (o próprio dado de entrada já tem a
 propriedade sendo testada). `src.data.bars` constrói as 3 barras
 alternativas trade-a-trade real, TF-agnóstico por natureza (só enxerga
 trades crus, nunca um conceito de "timeframe") — só a camada de
-calibração/comparação aqui em `m2_bar_comparison.py` tem dimensão de TF.
-O baseline usa `lake.query_bars` (mesma fonte de M1/M3) pra ficar
+calibração (`m2_worker.py`) e comparação/relatório (aqui) tem dimensão de
+TF. O baseline usa `lake.query_bars` (mesma fonte de M1/M3) pra ficar
 consistente com o resto da Camada 1.
 
 **Calibração — mesma frequência média que o baseline DAQUELE TF, medida
@@ -47,15 +70,16 @@ total (em $ ou unidades) dividido por `target_n_bars`; `exp_num_ticks_init`
 de tick imbalance bars = nº total de ticks dividido por `target_n_bars`
 (mesma lógica: barra "típica" do TIB deveria consumir, em média, tantos
 ticks quantos a barra daquele TF consome em relógio). O volume
-total/nº de ticks (`_scan_trades_totals`) NÃO depende de TF — é somado
-1x por símbolo e reusado nos 3 TFs (ver `compute_trades_dependent_bars_
-for_symbol`); só o `target_n_bars` (e portanto o `threshold` calibrado)
-muda por TF.
+total/nº de ticks (`m2_worker._scan_trades_totals`) NÃO depende de TF — é
+somado 1x por símbolo e reusado nos 3 TFs dentro de cada chamada de
+`compute_trades_dependent_bars_for_symbol_tf`; só o `target_n_bars` (e
+portanto o `threshold` calibrado) muda por TF.
 
 **"Razão de amostra efetiva" reusa `src.labels.weights.
 compute_concurrency_and_uniqueness`** (produção real, testada, mesma
 função que calcula `sample_weight` do Label Engine) — não uma
-reimplementação. `t0` = `close_time` de cada barra, `t1` = `close_time +
+reimplementação; chamada de dentro de `m2_stats.compute_bar_statistics`,
+não aqui. `t0` = `close_time` de cada barra, `t1` = `close_time +
 time_stop_bars×15min`. **`time_stop_ms` é FIXO, calculado 1x via
 `step_ms("15m")` — nunca recalculado por TF.** `time_stop_bars=32`
 (`constants.yaml`) é justificado como "uma janela de funding"
@@ -65,19 +89,14 @@ mudaria o horizonte de "amostra efetiva" a cada TF (16h em 30m, 32h em
 1h) — exatamente a classe de erro silencioso de unidade que
 `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já tinha previsto pra este módulo.
 `TIME_STOP_REFERENCE_TF` abaixo existe só pra deixar essa invariância
-explícita, não é o TF sendo medido em cada iteração. Import de
-`src.labels` a partir de `src.analysis` NÃO viola a hierarquia de camadas
-(`pyproject.toml::[tool.importlinter]`, contrato "labels só é lido por
-models, validation, backtest" lista só `exchange/data/features/regime/
-risk/execution/live/monitoring` como proibidos — `analysis` fica de fora
-deliberadamente, mesmo padrão já usado em `m6_common_factor_hypothesis.py`).
+explícita, não é o TF sendo medido em cada iteração.
 
 **Memória domina o desenho, não CPU.** Achado de auditoria (2026-08-15,
 medido antes de mudar qualquer coisa): `aggTrades` de BTCUSDT/ETHUSDT são
-27GB/20GB *comprimidos* em disco — descompactado como `DataFrame` tipado,
+27GB/20GB *comprimidos* em disco, descompactado como `DataFrame` tipado,
 isso não cabe na RAM inteira de uma vez, em NENHUMA concorrência (nem 1
-processo sozinho). `compute_trades_dependent_bars_for_symbol_tf` processa
-cada `(símbolo, TF)` em streaming, chunk-a-chunk (`bars_streaming_
+processo sozinho). `m2_worker.compute_trades_dependent_bars_for_symbol_tf`
+processa cada `(símbolo, TF)` em streaming, chunk-a-chunk (`bars_streaming_
 chunk_days` dias por vez — ver `src.data.bars`, que mantém só o estado
 necessário entre chunks, nunca o histórico inteiro), em 2 passadas: 1ª só
 soma totais pra calibrar `threshold`/`exp_num_ticks_init`, 2ª constrói as
@@ -99,13 +118,24 @@ TOTAL da máquina e várias threads *por conexão*, sem coordenação entre
 processos — cada um dos até `n_tasks=10` processos concorrentes
 (`ProcessPoolExecutor`) abre sua PRÓPRIA conexão via `lake._read_files`
 com esse mesmo orçamento otimista, e a soma estoura a RAM real disponível
-mesmo com cada query individual pequena. `_duckdb_throttle()` aplica `SET
-memory_limit`/`SET threads` explícitos (`constants.yaml::m2_duckdb_
-memory_limit_gb`/`m2_duckdb_threads`, derivados de `28GB livres / 10
-tasks` com margem de segurança) em toda chamada a `lake.query_bars`/
-`lake.query_agg_trades` deste módulo — `lake.py` continua com os defaults
-do DuckDB pra todo resto do repo (parâmetros opcionais, `None` por
-padrão, zero mudança de comportamento fora daqui).
+mesmo com cada query individual pequena. `m2_worker._duckdb_throttle()`
+aplica `SET memory_limit`/`SET threads` explícitos (`constants.yaml::m2_
+duckdb_memory_limit_gb`/`m2_duckdb_threads`, derivados de `28GB livres /
+10 tasks` com margem de segurança) em toda chamada a `lake.query_bars`/
+`lake.query_agg_trades` — `lake.py` continua com os defaults do DuckDB
+pra todo resto do repo (parâmetros opcionais, `None` por padrão, zero
+mudança de comportamento fora daqui).
+
+**Achado externo (auditoria, 2026-08-15) — cache Numba concorrente sob
+`spawn` no Windows.** `@numba.njit(cache=True)` em `src.data.bars.
+_tick_imbalance_loop` tem um risco documentado e confirmado
+(`numba/numba#8755`): `ensure_cache_path()` pode entrar em loop infinito
+no Windows checando gravabilidade do diretório de cache, se múltiplos
+processos disputarem a 1ª compilação/checagem ao mesmo tempo. Corrigido
+estruturalmente, não por convenção: `ProcessPoolExecutor(initializer=
+m2_worker.warm_numba_cache_in_worker)` força cada worker a compilar
+isoladamente, na criação do processo, antes de aceitar qualquer task —
+ver `run_and_save_bar_comparison_report` abaixo.
 
 **Paralelismo fatiado por `(symbol, tf)` na parte pesada, não por
 símbolo só** (`run_and_save_bar_comparison_report`, `ProcessPoolExecutor`
@@ -117,35 +147,34 @@ processa em paralelo com os outros 14, teto real de 12 concorrentes
 não ao histórico inteiro. **2º achado de desenho (2026-08-15):** a
 1ª versão (loop de TF DENTRO de cada task pesada, `n_tasks=10`) travava
 a concorrência real em `min(12, 10)=10` e rodava os 3 TFs de cada
-símbolo em SÉRIE — deixando núcleos ociosos. `compute_trades_dependent_
-bars_for_symbol_tf` (autocontida, 1 por `(symbol, tf)`) corrige isso ao
-custo de refazer a 1ª passada (totais, barata) 3x por símbolo em vez de
-1x — troca deliberada, ver docstring da função. `compute_time_bar_for_
-symbol` continua leve e itera os 3 TFs internamente (não vale a pena
-fatiar mais uma parte já barata). Ponto de entrada manual, não é testado
-de ponta a ponta no pytest (mesma convenção de M1/M3/M6 — IO real fica
-fora da suíte automatizada; a propriedade crítica de streaming↔lote é
-testada em `test_data_bars.py`, que não depende de IO real)."""
+símbolo em SÉRIE — deixando núcleos ociosos.
+`m2_worker.compute_trades_dependent_bars_for_symbol_tf` (autocontida, 1
+por `(symbol, tf)`) corrige isso ao custo de refazer a 1ª passada
+(totais, barata) 3x por símbolo em vez de 1x — troca deliberada, ver
+docstring da função. `m2_worker.compute_time_bar_for_symbol` continua
+leve e itera os 3 TFs internamente (não vale a pena fatiar mais uma parte
+já barata). Ponto de entrada manual, não é testado de ponta a ponta no
+pytest (mesma convenção de M1/M3/M6 — IO real fica fora da suíte
+automatizada; a propriedade crítica de streaming↔lote é testada em
+`test_data_bars.py`, que não depende de IO real)."""
 
 from __future__ import annotations
 
 import os
 
-# Oversubscription de threads BLAS/polars -- ProcessPoolExecutor já
-# paraleliza no nível de PROCESSO (até `os.cpu_count()` workers, ver
-# `run_and_save_bar_comparison_report`). Sem isso, cada um dos N processos
-# TAMBÉM deixa numpy/scipy/statsmodels (BLAS) e polars abrirem seu próprio
-# pool de threads interno -- N processos x M threads cada competem pelos
-# mesmos N núcleos. Causa raiz confirmada na prática (não hipotética): rodar
-# `run_and_save_bar_comparison_report` com `max_workers=12` produziu
-# `numpy._core._exceptions._ArrayMemoryError` dentro de `statsmodels.
-# adfuller`/`_autolag` (2026-08-15) -- contenção de alocação sob 12
-# processos concorrentes cada um multi-thread, não falta de memória real
-# (o array que falhou tinha 36 MiB, trivial pra qualquer máquina com RAM
-# disponível). Precisa ser setado ANTES de importar numpy/polars/scipy/
-# statsmodels -- no Windows (spawn, não fork) cada worker do pool
-# reexecuta o módulo inteiro do zero, então isso vale em CADA processo,
-# não só no principal.
+# m2_worker seta os env vars de BLAS (OMP_NUM_THREADS/etc) na 1ª linha de
+# código do módulo -- importar `m2_worker` ANTES de qualquer numpy/duckdb/
+# polars/scipy/statsmodels TAMBÉM neste arquivo garante que isso rode cedo
+# o bastante aqui também, já que o Windows (spawn) reimporta
+# `m2_bar_comparison.py` inteiro como `__main__` em cada worker. Mesmo
+# assim, o bloco abaixo é DUPLICADO (idempotente) como defesa redundante
+# -- nenhum dos dois arquivos depende da ordem de import do outro.
+from src.analysis.m2_worker import (
+    compute_time_bar_for_symbol,
+    compute_trades_dependent_bars_for_symbol_tf,
+    warm_numba_cache_in_worker,
+)
+
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -153,42 +182,21 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
-from datetime import date, timedelta
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Final
 
-import duckdb
-import numpy as np
 import orjson
-import polars as pl
 import structlog
-from numpy.typing import NDArray
-from scipy import stats as scipy_stats
-from statsmodels.stats.diagnostic import acorr_ljungbox
-from statsmodels.tsa.stattools import adfuller
 
-from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE, TIMEFRAMES
+from src.analysis.m2_stats import BAR_TYPES, BarComparisonMetrics, _nan_metrics
+from src.analysis.volatility_comparison import SYMBOL_START_DATE, TIMEFRAMES
 from src.core.provenance import report_provenance
-from src.data import lake
 from src.data._constants import load_constant as load_data_constant
-from src.data.bars import (
-    TickImbalanceBarsConfig,
-    dollar_bars_carry,
-    threshold_bars_finish,
-    threshold_bars_step,
-    tick_imbalance_bars_carry,
-    tick_imbalance_bars_finish,
-    tick_imbalance_bars_step,
-    volume_bars_carry,
-)
 from src.data.resample import step_ms
-from src.labels.weights import compute_concurrency_and_uniqueness
 from src.risk._constants import load_constant as load_risk_constant
 
 logger = structlog.get_logger(__name__)
-
-FloatArray = NDArray[np.float64]
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
@@ -198,465 +206,9 @@ DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "m2_bar_comparison_report.j
 #: `time_stop_bars=32` é "1 janela de funding" em unidades de barra de
 #: 15m, fixo independente de qual TF está sendo medido na iteração de
 #: `TIMEFRAMES`). Não é o baseline de bar comparison -- esse é `tf`,
-#: iterado, ver `compute_time_bar_for_symbol`/`compute_trades_dependent_
-#: bars_for_symbol`.
+#: iterado dentro de `m2_worker.compute_time_bar_for_symbol`/
+#: `compute_trades_dependent_bars_for_symbol_tf`.
 TIME_STOP_REFERENCE_TF: Final[str] = "15m"
-BAR_TYPES: Final[tuple[str, ...]] = ("time", "dollar", "volume", "tick_imbalance")
-
-# Ljung-Box/ADF exigem amostra bem maior que o número de lags -- 4x é uma
-# folga de engenharia (não domínio), evita crash de statsmodels em barras
-# degeneradas sem inventar mais uma constante de constants.yaml.
-_MIN_OBS_FOR_TESTS_MULTIPLIER: Final[int] = 4
-
-
-@dataclass(frozen=True, slots=True)
-class BarComparisonMetrics:
-    """Resumo por (symbol, tf, bar_type) -- `NaN` explícito onde a amostra
-    é pequena demais pros testes (nunca um zero fabricado)."""
-
-    symbol: str
-    tf: str
-    bar_type: str
-    n_bars: int
-    n_returns: int
-    jarque_bera_stat: float
-    jarque_bera_pvalue: float
-    kurtosis_excess: float
-    ljung_box_r_pvalue: float
-    ljung_box_r2_pvalue: float
-    adf_stat: float
-    adf_pvalue: float
-    avg_uniqueness: float
-
-
-def _log_returns(close: FloatArray) -> FloatArray:
-    with np.errstate(divide="ignore", invalid="ignore"):
-        r = np.diff(np.log(close))
-    return r
-
-
-def _run_adfuller(
-    symbol: str, tf: str, bar_type: str, r: FloatArray, *, maxlag: int
-) -> tuple[float, float]:
-    """ADF sobre `r`, com duas correções sobre `adfuller(r, autolag="AIC")`
-    ingênuo -- achado real de auditoria (`audit_engineering`, 2026-08-15,
-    pesquisa web antes de codar, não hipótese):
-
-    1. **`autolag=None` (lag FIXO em `maxlag`, não busca 1..maxlag').**
-       `adfuller(autolag="AIC")` sem `maxlag` explícito usa o default
-       `12*(nobs/100)^0.25` -- para `nobs≈164 mil` (o tamanho típico de
-       barra de 15m dos 5 ativos), isso é `maxlag≈76`, e a busca AIC ajusta
-       UMA regressão OLS (logo, UMA SVD via `np.linalg.svd` dentro de
-       `pinv_extended`) por cada lag testado -- até 76 SVDs por chamada,
-       cada uma sobre uma matriz de desenho `(nobs, lag+2)`. Isso é um
-       problema conhecido e documentado da própria `statsmodels`
-       (`autolag` "wasting memory", issue #1849, aberta desde 2014, ainda
-       sem fix definitivo em 0.14.6) -- não uma suposição. Fixar
-       `maxlag=ljung_box_lags` (mesma constante do Ljung-Box, mesma
-       justificativa de "nº de lags relevante pra retorno financeiro
-       intradiário") faz UMA única regressão em vez de até 76 -- reduz o
-       nº de SVDs por task em ~76x e o tamanho da MAIOR matriz testada de
-       `(nobs, 78)` pra `(nobs, ljung_box_lags+2)`.
-    2. **Blindagem contra falha conhecida do driver LAPACK `gesdd`.** Mesmo
-       com (1), `np.linalg.svd` sobre matriz alta-e-estreita (`nobs` linhas
-       × poucas colunas) usa por padrão o driver `gesdd` (divide-and-
-       conquer) do backend BLAS dos wheels do NumPy pro Windows/PyPI
-       (OpenBLAS, confirmado por pesquisa -- não presumido) -- `gesdd` tem
-       histórico documentado de falhar/vazar memória sob concorrência ou
-       matrizes grandes independente do nº de threads (numpy#20384 "init_
-       dgesdd failed init for large SVD"; OpenBLAS#3044 "GESDD fails when
-       GESVD succeeds, depends on number of threads"; múltiplos issues de
-       crash em matriz alta-e-estreita no próprio OpenBLAS). `numpy.linalg.
-       svd` não expõe parâmetro de driver (diferente de `scipy.linalg.svd
-       (..., lapack_driver=...)`), então não dá pra forçar `gesvd` sem
-       monkey-patch frágil -- a defesa correta é capturar a falha (
-       `MemoryError`/`numpy.linalg.LinAlgError`, ambas observadas em
-       produção nesta sessão) e devolver NaN explícito pra ESSA célula, não
-       deixar 1 task ruim derrubar as outras 19 do batch (mesma disciplina
-       FCN de `_nan_metrics` -- não computável ≠ zero)."""
-    try:
-        adf_result = adfuller(r, maxlag=maxlag, autolag=None)
-        return float(adf_result[0]), float(adf_result[1])
-    except (MemoryError, np.linalg.LinAlgError) as exc:
-        logger.warning(
-            "analysis.m2_bar_comparison.adf_failed",
-            symbol=symbol,
-            tf=tf,
-            bar_type=bar_type,
-            n_returns=len(r),
-            error=repr(exc),
-        )
-        return float("nan"), float("nan")
-
-
-def _nan_metrics(
-    symbol: str, tf: str, bar_type: str, n_bars: int, n_returns: int
-) -> BarComparisonMetrics:
-    nan = float("nan")
-    return BarComparisonMetrics(
-        symbol=symbol,
-        tf=tf,
-        bar_type=bar_type,
-        n_bars=n_bars,
-        n_returns=n_returns,
-        jarque_bera_stat=nan,
-        jarque_bera_pvalue=nan,
-        kurtosis_excess=nan,
-        ljung_box_r_pvalue=nan,
-        ljung_box_r2_pvalue=nan,
-        adf_stat=nan,
-        adf_pvalue=nan,
-        avg_uniqueness=nan,
-    )
-
-
-def compute_bar_statistics(
-    symbol: str,
-    tf: str,
-    bar_type: str,
-    bars: pl.DataFrame,
-    *,
-    time_stop_ms: int,
-    ljung_box_lags: int,
-) -> BarComparisonMetrics:
-    """Núcleo puro (sem IO) -- JB/curtose/Ljung-Box(r,r²)/ADF sobre
-    log-retorno de `close`, e unicidade média via `compute_concurrency_and_
-    uniqueness` sobre `close_time`. Testável isoladamente com `bars`
-    sintético, ao contrário de `compute_bar_comparison_for_symbol` (IO
-    real). `time_stop_ms` é FIXO entre chamadas com `tf` diferente -- ver
-    docstring do módulo (`TIME_STOP_REFERENCE_TF`) -- este núcleo só
-    recebe o valor já calculado, não recalcula por `tf`."""
-    n_bars = bars.height
-    close = bars["close"].cast(pl.Float64).to_numpy()
-    r = _log_returns(close)
-    n_returns = int(np.sum(np.isfinite(r)))
-    min_obs = _MIN_OBS_FOR_TESTS_MULTIPLIER * ljung_box_lags
-    if n_returns < min_obs:
-        return _nan_metrics(symbol, tf, bar_type, n_bars, n_returns)
-    r_finite = r[np.isfinite(r)]
-
-    jb = scipy_stats.jarque_bera(r_finite)
-    kurt = float(scipy_stats.kurtosis(r_finite, fisher=True))
-    lb_r = acorr_ljungbox(r_finite, lags=[ljung_box_lags], return_df=True)
-    lb_r2 = acorr_ljungbox(r_finite**2, lags=[ljung_box_lags], return_df=True)
-    adf_stat, adf_pvalue = _run_adfuller(symbol, tf, bar_type, r_finite, maxlag=ljung_box_lags)
-
-    close_time = bars["close_time"].cast(pl.Int64).to_numpy()
-    t0 = close_time.astype(np.int64)
-    t1 = t0 + time_stop_ms
-    _, uniqueness = compute_concurrency_and_uniqueness(t0, t1)
-
-    return BarComparisonMetrics(
-        symbol=symbol,
-        tf=tf,
-        bar_type=bar_type,
-        n_bars=n_bars,
-        n_returns=n_returns,
-        jarque_bera_stat=float(jb.statistic),
-        jarque_bera_pvalue=float(jb.pvalue),
-        kurtosis_excess=kurt,
-        ljung_box_r_pvalue=float(lb_r["lb_pvalue"].iloc[0]),
-        ljung_box_r2_pvalue=float(lb_r2["lb_pvalue"].iloc[0]),
-        adf_stat=adf_stat,
-        adf_pvalue=adf_pvalue,
-        avg_uniqueness=float(np.mean(uniqueness)) if uniqueness.size else float("nan"),
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _DuckDBThrottle:
-    memory_limit_gb: float
-    threads: int
-
-
-def _duckdb_throttle() -> _DuckDBThrottle:
-    """`memory_limit`/`threads` por conexão DuckDB -- achado de auditoria
-    (2026-08-14): `duckdb.connect(":memory:")` sem `SET` explícito assume
-    até ~80% da RAM TOTAL da máquina e várias threads por conexão, achando
-    que é o único processo rodando nela. Sob `ProcessPoolExecutor` com até
-    `os.cpu_count()` processos concorrentes (`run_and_save_bar_comparison_
-    report`, teto real de 12 nesta máquina desde o redesenho por
-    `(symbol, tf)` de 2026-08-15 -- ver `compute_trades_dependent_bars_
-    for_symbol_tf`), cada um abrindo sua própria conexão via
-    `lake._read_files`, o orçamento otimista somado estourava a RAM real
-    disponível mesmo com `bars_streaming_chunk_days` já limitando o
-    tamanho de CADA query individual -- `duckdb.OutOfMemoryException`
-    recorrente em produção (2026-08-14) não era sobre tamanho de query,
-    era sobre orçamento default assumido por conexão × nº de conexões
-    concorrentes. `constants.yaml::m2_duckdb_memory_limit_gb`/
-    `m2_duckdb_threads` foram derivados com `28GB livres / 10 tasks`
-    (provenance original) -- ainda seguros no teto real de 12 (`12 ×
-    2,0GB = 24GB < 28GB`), a margem de segurança absorveu a diferença.
-    Ver docstring de `lake._read_files`."""
-    return _DuckDBThrottle(
-        memory_limit_gb=float(load_data_constant("m2_duckdb_memory_limit_gb")),
-        threads=int(load_data_constant("m2_duckdb_threads")),
-    )
-
-
-def _query_baseline(symbol: str, tf: str) -> pl.DataFrame:
-    throttle = _duckdb_throttle()
-    return lake.query_bars(
-        symbol,
-        tf,
-        SYMBOL_START_DATE[symbol],
-        END_DATE,
-        source="klines_1m",
-        cast_prices=True,
-        duckdb_memory_limit_gb=throttle.memory_limit_gb,
-        duckdb_threads=throttle.threads,
-    )
-
-
-def _target_n_bars(symbol: str, tf: str, baseline: pl.DataFrame) -> int:
-    n = baseline.height
-    if n == 0:
-        raise ValueError(
-            f"baseline vazio para {symbol}/{tf} -- sem klines_1m no período "
-            f"{SYMBOL_START_DATE[symbol]}..{END_DATE}, não dá pra calibrar dollar/volume/tick "
-            "imbalance bars pra frequência média nenhuma"
-        )
-    return n
-
-
-def _build_tick_imbalance_config(n_ticks: int, target_n_bars: int) -> TickImbalanceBarsConfig:
-    # target_n_bars > 0 garantido pelo caller (_target_n_bars).
-    exp_num_ticks_init = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
-    clip_mult = float(load_data_constant("bars_tick_imbalance_clip_multiplier"))
-    if clip_mult <= 0:
-        raise ValueError(
-            f"bars_tick_imbalance_clip_multiplier precisa ser > 0, constants.yaml tem {clip_mult}"
-        )
-    return TickImbalanceBarsConfig(
-        num_prev_bars=int(load_data_constant("bars_tick_imbalance_num_prev_bars")),
-        expected_imbalance_window=int(
-            load_data_constant("bars_tick_imbalance_expected_imbalance_window")
-        ),
-        exp_num_ticks_init=exp_num_ticks_init,
-        exp_num_ticks_min=exp_num_ticks_init / clip_mult,  # noqa: unguarded-ratio -- clip_mult>0 acima
-        exp_num_ticks_max=exp_num_ticks_init * clip_mult,
-    )
-
-
-def _date_chunks(start: str, end: str, *, chunk_days: int) -> list[tuple[date, date]]:
-    """Fatia `[start, end]` em janelas de `chunk_days` dias (última pode
-    ser menor) -- `lake.query_agg_trades` já aceita `date` diretamente
-    (`DateLike = date | datetime | str`), sem precisar formatar string."""
-    if chunk_days <= 0:
-        raise ValueError(f"chunk_days precisa ser > 0, recebido {chunk_days}")
-    start_date = date.fromisoformat(start)
-    end_date = date.fromisoformat(end)
-    if start_date > end_date:
-        raise ValueError(f"start ({start}) posterior a end ({end})")
-
-    chunks: list[tuple[date, date]] = []
-    cursor = start_date
-    step = timedelta(days=chunk_days)
-    one_day = timedelta(days=1)
-    while cursor <= end_date:
-        chunk_end = min(cursor + step - one_day, end_date)
-        chunks.append((cursor, chunk_end))
-        cursor = chunk_end + one_day
-    return chunks
-
-
-@dataclass(slots=True)
-class _TradesTotals:
-    """Saída da 1ª passada (só somas, nunca materializa o histórico
-    inteiro de uma vez -- ver `_scan_trades_totals`)."""
-
-    total_dollar: float = 0.0
-    total_volume: float = 0.0
-    n_ticks: int = 0
-
-
-def _scan_trades_totals(symbol: str, chunks: list[tuple[date, date]]) -> _TradesTotals:
-    """1ª passada: só soma `price*quantity`/`quantity`/contagem por chunk,
-    descartando cada chunk assim que somado -- memória limitada ao tamanho
-    de 1 chunk (`bars_streaming_chunk_days`), nunca ao histórico inteiro.
-    Necessária pra calibrar `threshold`/`exp_num_ticks_init` (§3.2 M2: "mesma
-    frequência média que o baseline") ANTES de construir as barras de
-    verdade na 2ª passada (`_build_trades_dependent_bars`) -- custo aceito
-    conscientemente: cada dia de `aggTrades` é lido do disco 2x, não 1x,
-    mas isso troca E/S (barata, arquivos locais) por memória (o recurso que
-    realmente estourou, ver docstring do módulo)."""
-    totals = _TradesTotals()
-    throttle = _duckdb_throttle()
-    for chunk_start, chunk_end in chunks:
-        chunk = lake.query_agg_trades(
-            symbol,
-            chunk_start,
-            chunk_end,
-            duckdb_memory_limit_gb=throttle.memory_limit_gb,
-            duckdb_threads=throttle.threads,
-        )
-        if chunk.is_empty():
-            continue
-        totals.total_dollar += float((chunk["price"] * chunk["quantity"]).sum())
-        totals.total_volume += float(chunk["quantity"].sum())
-        totals.n_ticks += chunk.height
-    return totals
-
-
-def _build_trades_dependent_bars(
-    symbol: str,
-    chunks: list[tuple[date, date]],
-    *,
-    dollar_threshold: float,
-    volume_threshold: float,
-    tib_config: TickImbalanceBarsConfig,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """2ª passada: relê os mesmos chunks e alimenta os 3 acumuladores de
-    barra (`dollar`/`volume`/`tick_imbalance`) num loop só -- 1x de E/S por
-    chunk aqui, não 3x (os 3 tipos compartilham o mesmo chunk já carregado
-    em memória, só o estado carregado entre chunks é que é por tipo)."""
-    dollar_carry = dollar_bars_carry(threshold=dollar_threshold)
-    volume_carry = volume_bars_carry(threshold=volume_threshold)
-    tib_carry = tick_imbalance_bars_carry(tib_config)
-
-    throttle = _duckdb_throttle()
-    for chunk_start, chunk_end in chunks:
-        chunk = lake.query_agg_trades(
-            symbol,
-            chunk_start,
-            chunk_end,
-            duckdb_memory_limit_gb=throttle.memory_limit_gb,
-            duckdb_threads=throttle.threads,
-        )
-        if chunk.is_empty():
-            continue
-        threshold_bars_step(dollar_carry, chunk)
-        threshold_bars_step(volume_carry, chunk)
-        tick_imbalance_bars_step(tib_carry, chunk)
-
-    return (
-        threshold_bars_finish(dollar_carry),
-        threshold_bars_finish(volume_carry),
-        tick_imbalance_bars_finish(tib_carry),
-    )
-
-
-_TRADES_DEPENDENT_BAR_TYPES: Final[tuple[str, ...]] = tuple(bt for bt in BAR_TYPES if bt != "time")
-
-
-def _log_task_done(metrics: BarComparisonMetrics) -> None:
-    logger.info(
-        "analysis.m2_bar_comparison.task_done",
-        symbol=metrics.symbol,
-        tf=metrics.tf,
-        bar_type=metrics.bar_type,
-        n_bars=metrics.n_bars,
-        jarque_bera_pvalue=metrics.jarque_bera_pvalue,
-        ljung_box_r_pvalue=metrics.ljung_box_r_pvalue,
-        avg_uniqueness=metrics.avg_uniqueness,
-    )
-
-
-def compute_time_bar_for_symbol(
-    symbol: str, *, time_stop_ms: int, ljung_box_lags: int
-) -> list[BarComparisonMetrics]:
-    """Núcleo de IO pro tipo `"time"` -- só `klines_1m`, leve, roda numa
-    task própria pra não competir por memória com as tasks de `aggTrades`
-    (ver `compute_trades_dependent_bars_for_symbol_tf`). Itera
-    `TIMEFRAMES` internamente (mesmo padrão de `m3_timeframe_choice.py::
-    compute_timeframe_choice_for_symbol`) -- barato o bastante pra não
-    valer a pena fatiar mais, ver docstring do módulo."""
-    results: list[BarComparisonMetrics] = []
-    for tf in TIMEFRAMES:
-        bars = _query_baseline(symbol, tf)
-        metrics = compute_bar_statistics(
-            symbol, tf, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
-        )
-        _log_task_done(metrics)
-        results.append(metrics)
-    return results
-
-
-def compute_trades_dependent_bars_for_symbol_tf(
-    symbol: str, tf: str, *, time_stop_ms: int, ljung_box_lags: int
-) -> list[BarComparisonMetrics]:
-    """Constrói `dollar`/`volume`/`tick_imbalance` bars pra 1 (símbolo, TF)
-    em STREAMING -- task AUTOCONTIDA, uma por combinação de
-    `run_and_save_bar_comparison_report` (achado de auditoria 2026-08-15:
-    com o loop de TF DENTRO da task -- desenho anterior -- `n_tasks=10`
-    travava a concorrência real em `min(os.cpu_count()=12, n_tasks=10)=10`,
-    e os 3 TFs de cada símbolo pesado rodavam em SÉRIE dentro do mesmo
-    processo; fatiar por `(symbol, tf)` sobe o teto real pra 12, limitado
-    só por `os.cpu_count()`, paralelizando a parte cara -- construção de
-    barra, inclui o loop sequencial de tick imbalance -- entre os 3 TFs).
-
-    `aggTrades` de BTCUSDT/ETHUSDT são 27GB/20GB *comprimidos* em disco,
-    não cabem em memória de uma vez em NENHUMA concorrência (nem 1
-    processo sozinho) -- daí o streaming em 2 passadas por chamada.
-
-    **Custo aceito conscientemente:** a 1ª passada (`_scan_trades_totals`,
-    totais de $/unidades/ticks) NÃO depende de TF -- mas como cada task
-    agora é autocontida (sem orquestração em 2 estágios, sem IPC entre
-    processos pra compartilhar `totals`), ela roda de novo aqui a cada
-    chamada, 3x por símbolo no total (1x por TF) em vez de 1x. Isso é
-    aceitável porque a 1ª passada é só soma (`price*quantity`/`quantity`/
-    contagem), sem o loop sequencial de tick imbalance que domina o custo
-    da 2ª -- repetir a parte barata pra paralelizar de verdade a parte
-    cara é a troca certa aqui, mesmo racional de "E/S barata por memória"
-    já usado no desenho de streaming original (ver docstring do módulo).
-
-    Blindada contra `duckdb.OutOfMemoryException` de forma independente em
-    cada passada (mesma disciplina FCN de `_run_adfuller`/`_nan_metrics`)
-    -- uma falha nesta (symbol, tf) vira `NaN` só pros 3 `bar_types` desta
-    combinação, não derruba as outras 14 tasks do batch."""
-    chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
-    chunks = _date_chunks(SYMBOL_START_DATE[symbol], END_DATE, chunk_days=chunk_days)
-
-    try:
-        totals = _scan_trades_totals(symbol, chunks)
-    except duckdb.OutOfMemoryException as exc:
-        logger.warning(
-            "analysis.m2_bar_comparison.trades_totals_failed", symbol=symbol, tf=tf, error=repr(exc)
-        )
-        return [
-            _nan_metrics(symbol, tf, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES
-        ]
-    if totals.n_ticks == 0:
-        raise ValueError(
-            f"aggTrades vazio para {symbol} no período "
-            f"{SYMBOL_START_DATE[symbol]}..{END_DATE} -- não dá pra calibrar bars"
-        )
-
-    target_n_bars = _target_n_bars(symbol, tf, _query_baseline(symbol, tf))
-    dollar_threshold = totals.total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-    volume_threshold = totals.total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-    tib_config = _build_tick_imbalance_config(totals.n_ticks, target_n_bars)
-
-    try:
-        dollar_df, volume_df, tib_df = _build_trades_dependent_bars(
-            symbol,
-            chunks,
-            dollar_threshold=dollar_threshold,
-            volume_threshold=volume_threshold,
-            tib_config=tib_config,
-        )
-    except duckdb.OutOfMemoryException as exc:
-        logger.warning(
-            "analysis.m2_bar_comparison.trades_build_failed", symbol=symbol, tf=tf, error=repr(exc)
-        )
-        return [
-            _nan_metrics(symbol, tf, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES
-        ]
-
-    bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
-    results: list[BarComparisonMetrics] = []
-    for bar_type in _TRADES_DEPENDENT_BAR_TYPES:
-        metrics = compute_bar_statistics(
-            symbol,
-            tf,
-            bar_type,
-            bars_by_type[bar_type],
-            time_stop_ms=time_stop_ms,
-            ljung_box_lags=ljung_box_lags,
-        )
-        _log_task_done(metrics)
-        results.append(metrics)
-    return results
 
 
 def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
@@ -694,6 +246,42 @@ def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
     logger.info("analysis.m2_bar_comparison.report_written", path=str(dest_path))
 
 
+def _build_payload(
+    results_by_symbol: dict[str, dict[tuple[str, str], BarComparisonMetrics]],
+    symbols: tuple[str, ...],
+    *,
+    partial: bool,
+) -> dict[str, Any]:
+    """Monta o payload achatado (3 TF × 4 bar_types por símbolo) --
+    qualquer célula `(symbol, tf, bar_type)` ainda não presente em
+    `results_by_symbol` (task não terminou ainda, OU terminou com falha
+    não tratada -- achado de auditoria 2026-08-15, ver
+    `run_and_save_bar_comparison_report`) vira `NaN` explícito via
+    `_nan_metrics`, nunca um `KeyError` nem uma ausência silenciosa --
+    mesma disciplina FCN do resto do módulo. `partial=True` marca o
+    payload como checkpoint intermediário (chamado a cada task concluída,
+    não só no fim) -- `partial=False` só depois que TODAS as tasks
+    resolveram (com sucesso ou falha registrada)."""
+    return {
+        **report_provenance(),
+        "partial": partial,
+        "timeframes": list(TIMEFRAMES),
+        "bar_types": list(BAR_TYPES),
+        "symbols": {
+            symbol: [
+                asdict(
+                    results_by_symbol[symbol][(tf, bar_type)]
+                    if (tf, bar_type) in results_by_symbol[symbol]
+                    else _nan_metrics(symbol, tf, bar_type, 0, 0)
+                )
+                for tf in TIMEFRAMES
+                for bar_type in BAR_TYPES
+            ]
+            for symbol in sorted(symbols)
+        },
+    }
+
+
 def run_and_save_bar_comparison_report(
     *,
     symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
@@ -705,19 +293,42 @@ def run_and_save_bar_comparison_report(
     (`"time"`, só `klines_1m`, itera os 3 TFs internamente -- barato,
     não precisa fatiar mais) + 1 task pesada por `(symbol, tf)`
     (`compute_trades_dependent_bars_for_symbol_tf`, autocontida, 15 no
-    total). Achado de auditoria (2026-08-15): a versão anterior (loop de
+    total), ambas definidas em `m2_worker.py` (ver docstring do módulo
+    pra por quê essa fronteira de arquivo importa pro `spawn` do
+    Windows). Achado de auditoria (2026-08-15): a versão anterior (loop de
     TF DENTRO de cada task pesada, `n_tasks=10`) travava a concorrência
     real em `min(os.cpu_count()=12, n_tasks=10)=10` e rodava os 3 TFs de
     cada símbolo em SÉRIE -- fatiar por `(symbol, tf)` sobe o teto real
     pra 12 (agora limitado só por `os.cpu_count()`, não mais por
     `n_tasks`), paralelizando a parte cara (construção de barra) entre os
     3 TFs, ao custo de cada task pesada refazer a 1ª passada (totais,
-    barata -- ver docstring de `compute_trades_dependent_bars_for_symbol_
-    tf`) sozinha. `m2_duckdb_memory_limit_gb`/`m2_duckdb_threads`
+    barata -- ver docstring de `m2_worker.compute_trades_dependent_bars_
+    for_symbol_tf`) sozinha. `m2_duckdb_memory_limit_gb`/`m2_duckdb_threads`
     continuam válidos sem re-derivação -- `12 × 2,0GB = 24GB`, ainda
     dentro dos ~28GB livres medidos (a constante já foi derivada com
     margem, o teto real de 12 sempre foi menor que o assumido na
-    provenance original de 10). Persiste o relatório, atômico (B29).
+    provenance original de 10). `initializer=warm_numba_cache_in_worker`
+    fecha a janela de compilação Numba concorrente (achado de auditoria
+    externa, ver docstring do módulo). Persiste o relatório, atômico (B29).
+
+    **Isolamento de falha por task + checkpoint incremental (achado de
+    auditoria `project_assurance`, 2026-08-15, HIGH -- confirmado por 3
+    revisores independentes).** Versão anterior só capturava
+    `duckdb.OutOfMemoryException`, e só DENTRO de cada task -- qualquer
+    outra exceção (`ValueError` de `_target_n_bars`/`totals.n_ticks==0`,
+    `MemoryError` de numpy, bug de programação) subia sem tratamento
+    nenhum até este loop, abortava o `with ProcessPoolExecutor(...)`
+    inteiro e descartava os resultados de TODAS as outras tasks já
+    concluídas -- contradizendo a garantia que a docstring de
+    `compute_trades_dependent_bars_for_symbol_tf` já fazia. Agora: cada
+    `future.result()` roda em `try/except Exception` próprio (linha de
+    defesa mais externa, complementar às blindagens específicas de OOM
+    dentro de `m2_worker.py` -- não substitui, generaliza); o payload é
+    reescrito atomicamente a CADA task resolvida (sucesso ou falha), não
+    só no fim -- dado o histórico real de runs multi-hora e falhas
+    tardias já observadas nesta sessão (OOM 3x, travamento de 16h+), 1
+    falha na task 17/20 agora perde só a célula dela, não as 19 anteriores
+    já persistidas em disco.
 
     Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
@@ -734,56 +345,74 @@ def run_and_save_bar_comparison_report(
         max_workers=workers,
     )
 
+    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
     results_by_symbol: dict[str, dict[tuple[str, str], BarComparisonMetrics]] = {
         symbol: {} for symbol in symbols
     }
-    with ProcessPoolExecutor(max_workers=min(workers, n_tasks)) as executor:
-        time_futures = {
+    failed_tasks: list[tuple[str, str | None]] = []
+
+    with ProcessPoolExecutor(
+        max_workers=min(workers, n_tasks), initializer=warm_numba_cache_in_worker
+    ) as executor:
+        task_identity: dict[Any, tuple[str, str | None]] = {
             executor.submit(
                 compute_time_bar_for_symbol,
                 symbol,
                 time_stop_ms=time_stop_ms,
                 ljung_box_lags=ljung_box_lags,
-            ): symbol
+            ): (symbol, None)
             for symbol in symbols
         }
-        trades_futures = {
-            executor.submit(
-                compute_trades_dependent_bars_for_symbol_tf,
-                symbol,
-                tf,
-                time_stop_ms=time_stop_ms,
-                ljung_box_lags=ljung_box_lags,
-            ): (symbol, tf)
-            for symbol in symbols
-            for tf in TIMEFRAMES
-        }
-        for time_future in as_completed(time_futures):
-            symbol = time_futures[time_future]
-            for metrics in time_future.result():
-                results_by_symbol[symbol][(metrics.tf, metrics.bar_type)] = metrics
-        for trades_future in as_completed(trades_futures):
-            symbol, _tf = trades_futures[trades_future]
-            for metrics in trades_future.result():
-                results_by_symbol[symbol][(metrics.tf, metrics.bar_type)] = metrics
-
-    payload: dict[str, Any] = {
-        **report_provenance(),
-        "timeframes": list(TIMEFRAMES),
-        "bar_types": list(BAR_TYPES),
-        "symbols": {
-            symbol: [
-                asdict(results_by_symbol[symbol][(tf, bar_type)])
+        task_identity.update(
+            {
+                executor.submit(
+                    compute_trades_dependent_bars_for_symbol_tf,
+                    symbol,
+                    tf,
+                    time_stop_ms=time_stop_ms,
+                    ljung_box_lags=ljung_box_lags,
+                ): (symbol, tf)
+                for symbol in symbols
                 for tf in TIMEFRAMES
-                for bar_type in BAR_TYPES
-            ]
-            for symbol in sorted(symbols)
-        },
-    }
-    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
-    _atomic_write_json(payload, dest)
+            }
+        )
+
+        for n_done, future in enumerate(as_completed(task_identity), start=1):
+            symbol, tf = task_identity[future]
+            try:
+                for metrics in future.result():
+                    results_by_symbol[symbol][(metrics.tf, metrics.bar_type)] = metrics
+            # linha de defesa mais externa (ver docstring) -- não silenciosa,
+            # registrada em failed_tasks + logger.error logo abaixo
+            except Exception as exc:
+                failed_tasks.append((symbol, tf))
+                logger.error(
+                    "analysis.m2_bar_comparison.task_failed",
+                    symbol=symbol,
+                    tf=tf,
+                    n_done=n_done,
+                    n_tasks=n_tasks,
+                    error=repr(exc),
+                )
+            _atomic_write_json(_build_payload(results_by_symbol, symbols, partial=True), dest)
+            logger.info(
+                "analysis.m2_bar_comparison.checkpoint", n_done=n_done, n_tasks=n_tasks
+            )
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.m2_bar_comparison.tasks_failed",
+            n_failed=len(failed_tasks),
+            n_tasks=n_tasks,
+            failed=failed_tasks,
+        )
+
+    _atomic_write_json(_build_payload(results_by_symbol, symbols, partial=False), dest)
     logger.info(
-        "analysis.m2_bar_comparison.done", n_symbols=len(results_by_symbol), dest=str(dest)
+        "analysis.m2_bar_comparison.done",
+        n_symbols=len(results_by_symbol),
+        n_failed=len(failed_tasks),
+        dest=str(dest),
     )
     return dest
 

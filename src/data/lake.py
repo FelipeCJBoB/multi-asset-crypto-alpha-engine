@@ -22,6 +22,7 @@ se ela não for "um arquivo por dia", um caso em `_list_files_in_range`.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -36,6 +37,33 @@ from ._util import cast_price_columns
 logger = structlog.get_logger(__name__)
 
 DateLike = date | datetime | str
+
+
+@dataclass(frozen=True, slots=True)
+class DuckDBThrottle:
+    """`memory_limit_gb`/`threads` pra passar a `_read_files`/`query_bars`/
+    `query_agg_trades` -- ver docstring de `_read_files` pro achado de
+    auditoria que motiva (DuckDB assume até ~80% da RAM TOTAL por conexão
+    sem `SET` explícito, sem coordenação entre processos concorrentes).
+    Tipo compartilhado (achado de auditoria 2026-08-15, `project_assurance`:
+    o mesmo bug corrigido só em M2 existia estruturalmente em M1/M3/
+    `gk_vs_wilder_econ_regime_shift`/`volatility_operational_effect`, cada
+    um sob `ProcessPoolExecutor` sem nenhum throttle -- em vez de cada
+    módulo duplicar a própria dataclass, todos importam esta).
+
+    **Sem loader genérico de propósito** (achado de auditoria 2026-08-15,
+    `check_constants_referenced.py`: uma 1ª versão desta mudança tinha
+    `load_duckdb_throttle(memory_limit_constant: str, ...)` recebendo o
+    NOME da constante como parâmetro -- isso quebra a rastreabilidade
+    estática do script, que escaneia por `load_constant("literal")` no
+    texto-fonte de cada arquivo; um nome passado por variável nunca é
+    visto). Cada módulo chama `load_constant(...)` com o literal direto
+    E constrói `DuckDBThrottle(...)` ele mesmo -- mais repetição de 2
+    linhas por módulo, mas cada constante continua auditável pelo script
+    mecânico."""
+
+    memory_limit_gb: float
+    threads: int
 
 
 def _as_date(value: DateLike) -> date:

@@ -75,6 +75,7 @@ from sklearn.metrics import adjusted_rand_score
 from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE
 from src.core.provenance import report_provenance
 from src.data import lake
+from src.data._constants import load_constant as load_data_constant
 from src.features._constants import load_constant as load_feature_constant
 from src.features.groups.group_e import e27f_cost_atr_ratio
 from src.features.support import expanding_percentile_rank_strict
@@ -201,6 +202,14 @@ def compute_econ_regime_shift_for_symbol(symbol: str) -> EconRegimeShiftMetrics:
     maker_fee = float(load_risk_constant("maker_fee"))
     taker_fee = float(load_risk_constant("taker_fee"))
 
+    # achado de auditoria 2026-08-15 (project_assurance): mesmo gap
+    # estrutural de m2_bar_comparison.py (DuckDB sem SET memory_limit/
+    # threads sob ProcessPoolExecutor concorrente) -- ver
+    # constants.yaml::gk_vs_wilder_duckdb_memory_limit_gb.
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("gk_vs_wilder_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("gk_vs_wilder_duckdb_threads")),
+    )
     bars_df = lake.query_bars(
         symbol,
         DECISION_TF,
@@ -208,6 +217,8 @@ def compute_econ_regime_shift_for_symbol(symbol: str) -> EconRegimeShiftMetrics:
         END_DATE,
         source="klines_1m",
         cast_prices=True,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
     )
     bars = Bars(frame=bars_df, timeframe_minutes=DECISION_TF_MINUTES)
 

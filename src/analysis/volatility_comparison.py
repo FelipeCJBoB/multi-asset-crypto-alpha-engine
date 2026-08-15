@@ -93,6 +93,7 @@ from numpy.typing import NDArray
 
 from src.core.provenance import report_provenance
 from src.data import lake
+from src.data._constants import load_constant as load_data_constant
 from src.data.lake import DateLike
 from src.features._constants import load_constant
 from src.features.volatility import (
@@ -398,8 +399,23 @@ def run_volatility_comparison_for_symbol_tf(
         else int(load_validation_constant("m1_walkforward_initial_train_years"))
     )
 
+    # achado de auditoria 2026-08-15 (project_assurance): mesmo gap
+    # estrutural de m2_bar_comparison.py (DuckDB sem SET memory_limit/
+    # threads sob ProcessPoolExecutor concorrente), corrigido aqui pela
+    # mesma disciplina -- ver constants.yaml::m1_duckdb_memory_limit_gb.
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m1_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m1_duckdb_threads")),
+    )
     bars_df = lake.query_bars(
-        symbol, tf, resolved_start, resolved_end, source="klines_1m", cast_prices=True
+        symbol,
+        tf,
+        resolved_start,
+        resolved_end,
+        source="klines_1m",
+        cast_prices=True,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
     )
     tf_minutes = {"15m": 15, "30m": 30, "1h": 60}[tf]
     logger.info(

@@ -50,6 +50,7 @@ from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE, TIME
 from src.analysis.volatility_operational_effect import _r1_pass, _r1_vectorized
 from src.core.provenance import report_provenance
 from src.data import lake
+from src.data._constants import load_constant as load_data_constant
 from src.exchange.filters import load_filters_asof
 from src.features._constants import load_constant as load_feature_constant
 from src.features.groups.group_e import round_trip_cost_bps
@@ -120,11 +121,27 @@ def compute_timeframe_choice_for_symbol(symbol: str) -> list[TimeframeChoiceMetr
     filters = load_filters_asof(date.today(), symbol=symbol)
     step_size = float(filters.step_size)
 
+    # achado de auditoria 2026-08-15 (project_assurance): mesmo gap
+    # estrutural de m2_bar_comparison.py (DuckDB sem SET memory_limit/
+    # threads sob ProcessPoolExecutor concorrente) -- ver
+    # constants.yaml::m3_duckdb_memory_limit_gb.
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m3_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m3_duckdb_threads")),
+    )
+
     results: list[TimeframeChoiceMetrics] = []
     for tf in TIMEFRAMES:
         tf_minutes = _TF_TO_MINUTES[tf]
         bars_df = lake.query_bars(
-            symbol, tf, SYMBOL_START_DATE[symbol], END_DATE, source="klines_1m", cast_prices=True
+            symbol,
+            tf,
+            SYMBOL_START_DATE[symbol],
+            END_DATE,
+            source="klines_1m",
+            cast_prices=True,
+            duckdb_memory_limit_gb=throttle.memory_limit_gb,
+            duckdb_threads=throttle.threads,
         )
         bars = Bars(frame=bars_df, timeframe_minutes=tf_minutes)
         mark_price = bars_df["close"].cast(pl.Float64).to_numpy()

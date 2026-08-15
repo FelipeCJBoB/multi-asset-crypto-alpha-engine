@@ -68,13 +68,23 @@ tempo real.
 
 **Achado de magnitude (2026-08-15) — o loop sequencial precisou de JIT.**
 Rodando o M2 real pela 1ª vez sem OOM, o histórico completo de BTCUSDT
-mostrou ser da ordem de bilhões de trades (extrapolado de
-`data/quality_reports/quality_report_agg_trades_v1.json`, 68,2 milhões de
-trades numa janela de 53 dias) — um loop Python puro trade-a-trade, por
-mais que já evitasse iterar `DataFrame` linha a linha (já convertia pra
-array numpy antes do loop), levaria dezenas de minutos a mais de 1h só
-pra esse símbolo, puramente por overhead de interpretador. `_tick_
-imbalance_loop` (Numba `@njit(cache=True)`, SEM `fastmath`) resolve isso
+mostrou ser da ordem de bilhões de trades. Correção de proveniência
+(2026-08-15, achado de auditoria externa): a extrapolação original citava
+`data/quality_reports/quality_report_agg_trades_v1.json` (68,2 milhões de
+trades / 53 dias) como se fosse BTCUSDT sem o arquivo declarar `symbol` —
+estimativa, não medição, mesmo que o número tenha se confirmado certo.
+**Medido de verdade** via `tools/diagnostics/measure_btcusdt_trade_rate.py`
+direto dos 2.412 arquivos de `data/capacity/agg_trades/BTCUSDT/`
+(2019-12-31 a 2026-08-07): **3.385.807.729 trades no total** (confirma "da
+ordem de bilhões"), taxa média de 1.403.735 trades/dia no histórico
+completo — só 1,09x a taxa da janela de 53 dias do quality_report
+(1.286.169/dia, que por sua vez bateu EXATO com o quality_report,
+confirmando que aquele arquivo já media BTCUSDT mesmo, só não declarava).
+Um loop Python puro trade-a-trade, por mais que já evitasse iterar
+`DataFrame` linha a linha (já convertia pra array numpy antes do loop),
+levaria dezenas de minutos a mais de 1h só pra esse símbolo, puramente por
+overhead de interpretador. `_tick_imbalance_loop` (Numba `@njit(cache=True)`,
+SEM `fastmath`) resolve isso
 compilando o mesmo algoritmo pra código de máquina — `fastmath=False`
 (default) preserva ordem estrita de operação IEEE 754, então o resultado
 é bit-a-bit idêntico ao loop Python original (confirmado por pesquisa web
@@ -93,6 +103,8 @@ import numba
 import numpy as np
 import polars as pl
 from numpy.typing import NDArray
+
+from src.data._constants import load_constant as load_data_constant
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -323,6 +335,26 @@ class TickImbalanceBarsConfig:
             raise ValueError(
                 f"exp_num_ticks_init precisa ser > 0, recebido {self.exp_num_ticks_init}"
             )
+        # Achado de auditoria (2026-08-15, project_assurance): a guarda antiga
+        # em _tick_imbalance_loop ("close_threshold > 0.0") blindava contra
+        # DUAS causas possíveis de close_threshold<=0 -- ewma_b==0 (mercado,
+        # ver bars_tick_imbalance_ewma_floor abaixo) OU exp_num_ticks<=0
+        # (config malformada). O piso numérico de ewma_b só cobre a 1ª causa
+        # -- esta validação fecha a 2ª na CONSTRUÇÃO da config, não
+        # silenciosamente dentro do loop JIT. Hoje o único chamador real
+        # (m2_worker._build_tick_imbalance_config) já garante isso por fora
+        # (exp_num_ticks_min/max derivados de exp_num_ticks_init/clip_mult,
+        # ambos >0) -- esta checagem existe pra qualquer chamador futuro não
+        # herdar essa garantia por acidente.
+        if self.exp_num_ticks_min <= 0:
+            raise ValueError(
+                f"exp_num_ticks_min precisa ser > 0, recebido {self.exp_num_ticks_min}"
+            )
+        if self.exp_num_ticks_max < self.exp_num_ticks_min:
+            raise ValueError(
+                f"exp_num_ticks_max ({self.exp_num_ticks_max}) precisa ser >= "
+                f"exp_num_ticks_min ({self.exp_num_ticks_min})"
+            )
 
 
 @dataclass(slots=True)
@@ -400,6 +432,7 @@ def _tick_imbalance_loop(
     alpha_bars: float,
     exp_num_ticks_min: float,
     exp_num_ticks_max: float,
+    ewma_floor: float,
     theta: float,
     ewma_b: float,
     exp_num_ticks: float,
@@ -478,8 +511,18 @@ def _tick_imbalance_loop(
         theta += b_i
         ticks_in_bar += 1
 
-        close_threshold = exp_num_ticks * abs(ewma_b)
-        if close_threshold > 0.0 and abs(theta) >= close_threshold:
+        # Piso de segurança numérica -- se ewma_b caísse em exatamente 0.0
+        # (bit a bit), close_threshold seria 0 e a guarda `> 0.0` original
+        # bloquearia o fechamento da barra pra sempre dali em diante.
+        # `ewma_floor` vem de `constants.yaml::bars_tick_imbalance_ewma_
+        # floor` (calculado 1x por chunk em `tick_imbalance_bars_step`,
+        # passado por valor -- nopython não lê YAML). Cobre só a causa
+        # "ewma_b->0" de close_threshold<=0; a causa "exp_num_ticks<=0" é
+        # coberta na CONSTRUÇÃO da config (`TickImbalanceBarsConfig.
+        # __post_init__`), não aqui -- as duas causas são independentes,
+        # ver achado de auditoria 2026-08-15 (project_assurance).
+        close_threshold = exp_num_ticks * max(abs(ewma_b), ewma_floor)
+        if abs(theta) >= close_threshold:
             out_open_time[n_closed] = open_time
             out_close_time[n_closed] = close_time
             out_open[n_closed] = open_
@@ -543,6 +586,9 @@ def tick_imbalance_bars_step(carry: TickImbalanceBarsCarry, chunk: pl.DataFrame)
     cfg = carry.config
     alpha_imbalance = 2.0 / (cfg.expected_imbalance_window + 1.0)  # noqa: unguarded-ratio -- validado no __post_init__ de TickImbalanceBarsConfig
     alpha_bars = 2.0 / (cfg.num_prev_bars + 1.0)  # noqa: unguarded-ratio -- idem
+    # constants.yaml, cache em memória via _constants._load_all() -- barato
+    # o suficiente pra recalcular por chunk (mesmo padrão de alpha_* acima).
+    ewma_floor = float(load_data_constant("bars_tick_imbalance_ewma_floor"))
 
     n = chunk.height
     out_open_time = np.empty(n, dtype=np.int64)
@@ -584,6 +630,7 @@ def tick_imbalance_bars_step(carry: TickImbalanceBarsCarry, chunk: pl.DataFrame)
         alpha_bars,
         cfg.exp_num_ticks_min,
         cfg.exp_num_ticks_max,
+        ewma_floor,
         carry.theta,
         carry.ewma_b,
         carry.exp_num_ticks,

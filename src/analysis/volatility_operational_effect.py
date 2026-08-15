@@ -86,6 +86,7 @@ from src.analysis.volatility_comparison import (
 )
 from src.core.provenance import report_provenance
 from src.data import lake
+from src.data._constants import load_constant as load_data_constant
 from src.exchange.filters import load_filters_asof
 from src.features._constants import load_constant as load_feature_constant
 from src.features.groups.group_e import round_trip_cost_bps
@@ -170,8 +171,25 @@ def compute_operational_effect_for_symbol(symbol: str) -> list[OperationalEffect
     completa medida, `SYMBOL_START_DATE`/`END_DATE`) e computa as métricas
     de todos os estimadores do lineup atual para este símbolo."""
     window = int(load_feature_constant("atr_window"))
+    # achado de auditoria 2026-08-15 (project_assurance): mesmo gap
+    # estrutural de m2_bar_comparison.py (DuckDB sem SET memory_limit/
+    # threads sob ProcessPoolExecutor concorrente) -- ver
+    # constants.yaml::volatility_operational_effect_duckdb_memory_limit_gb.
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(
+            load_data_constant("volatility_operational_effect_duckdb_memory_limit_gb")
+        ),
+        threads=int(load_data_constant("volatility_operational_effect_duckdb_threads")),
+    )
     bars_df = lake.query_bars(
-        symbol, DECISION_TF, SYMBOL_START_DATE[symbol], END_DATE, source="klines_1m", cast_prices=True
+        symbol,
+        DECISION_TF,
+        SYMBOL_START_DATE[symbol],
+        END_DATE,
+        source="klines_1m",
+        cast_prices=True,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
     )
     bars = Bars(frame=bars_df, timeframe_minutes=DECISION_TF_MINUTES)
     mark_price = bars_df["close"].cast(pl.Float64).to_numpy()

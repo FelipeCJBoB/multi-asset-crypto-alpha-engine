@@ -158,6 +158,50 @@ def test_tick_imbalance_bars_fecha_barra_no_limiar_esperado_tracado_a_mao() -> N
     assert bars["taker_buy_volume"].to_list() == pytest.approx([3.0, 5.0])
 
 
+def test_tick_imbalance_bars_fluxo_balanceado_ewma_pequeno_nao_trava() -> None:
+    """Achado de auditoria (`project_assurance`, 2026-08-15): TODOS os
+    testes de TIB até aqui usam `expected_imbalance_window=1`, que colapsa
+    `alpha_imbalance` pra 1,0 -- `ewma_b` vira substituição direta por
+    `b_t` (sempre exatamente +-1,0), nunca exercitando a suavização EWMA
+    de verdade nem se aproximando de zero. `bars_tick_imbalance_ewma_floor`
+    (piso numérico contra `ewma_b==0`, ver `constants.yaml`) não tinha
+    NENHUM teste cobrindo a região onde ele poderia atuar.
+
+    Este teste usa `expected_imbalance_window=99` (`alpha~=0,02`, EWMA de
+    verdade) com fluxo de ordem quase perfeitamente alternado (regime que
+    a literatura mlfinlab documenta como real em mercado balanceado, não
+    hipotético) -- não força `ewma_b` a chegar literalmente em `1e-12`
+    (isso exigiria uma sequência muito mais longa e uma amplitude de
+    convergência específica, impraticável num teste sintético), mas
+    exercita a suavização EWMA numa faixa ordens de magnitude menor que
+    qualquer teste anterior. Prova: (1) sem exceção/hang; (2) barras
+    fecham (`height>0`); (3) paridade streaming<->lote se mantém também
+    NESTE regime, não só no traçado à mão com alpha=1,0."""
+    n = 200
+    price = [100.0 + 0.1 * ((i * 7) % 5) for i in range(n)]
+    quantity = [1.0] * n
+    is_buyer_maker = [i % 2 == 0 for i in range(n)]  # alterna b_i: -1,+1,-1,+1,...
+    trades = _trades(price=price, quantity=quantity, is_buyer_maker=is_buyer_maker)
+
+    config = TickImbalanceBarsConfig(
+        num_prev_bars=3,
+        expected_imbalance_window=99,
+        exp_num_ticks_init=20.0,
+        exp_num_ticks_min=1.0,
+        exp_num_ticks_max=1000.0,
+    )
+
+    batch_bars = tick_imbalance_bars(trades, config)
+    assert batch_bars.height > 0
+
+    carry = tick_imbalance_bars_carry(config)
+    for chunk in _chunk(trades, [50, 50, 50, 50]):
+        tick_imbalance_bars_step(carry, chunk)
+    streaming_bars = tick_imbalance_bars_finish(carry)
+
+    _bars_equal(batch_bars, streaming_bars)
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -179,6 +223,34 @@ def test_tick_imbalance_bars_config_invalida_levanta_erro(kwargs: dict[str, int 
             exp_num_ticks_init=float(kwargs["exp_num_ticks_init"]),
             exp_num_ticks_min=1.0,
             exp_num_ticks_max=100.0,
+        )
+
+
+@pytest.mark.parametrize(
+    "exp_num_ticks_min,exp_num_ticks_max",
+    [
+        (0.0, 100.0),  # exp_num_ticks_min <= 0
+        (-1.0, 100.0),  # exp_num_ticks_min < 0
+        (50.0, 10.0),  # exp_num_ticks_max < exp_num_ticks_min
+    ],
+)
+def test_tick_imbalance_bars_config_clip_bounds_invalidos_levanta_erro(
+    exp_num_ticks_min: float, exp_num_ticks_max: float
+) -> None:
+    """Achado de auditoria (`project_assurance`, 2026-08-15): a guarda
+    antiga em `_tick_imbalance_loop` (`close_threshold > 0.0`) blindava
+    contra as DUAS causas possíveis de `close_threshold<=0` -- `ewma_b==0`
+    (mercado, coberta pelo piso `bars_tick_imbalance_ewma_floor`) OU
+    `exp_num_ticks<=0` (config malformada). O piso só cobre a 1ª causa --
+    esta validação fecha a 2ª na CONSTRUÇÃO da config, antes mesmo do
+    `__post_init__` deste teste ser adicionado ela não existia."""
+    with pytest.raises(ValueError):
+        TickImbalanceBarsConfig(
+            num_prev_bars=3,
+            expected_imbalance_window=10,
+            exp_num_ticks_init=5.0,
+            exp_num_ticks_min=exp_num_ticks_min,
+            exp_num_ticks_max=exp_num_ticks_max,
         )
 
 

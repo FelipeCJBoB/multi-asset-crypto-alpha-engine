@@ -136,7 +136,7 @@ Verificada estaticamente. Violações que quebram o build:
 
 - `features/` **não pode** importar `labels/`
 - `models/` **não pode** importar `execution/`
-- Ninguém além de `models/`, `validation/`, `backtest/` lê `labels/`
+- Ninguém além de `models/`, `validation/`, `backtest/`, **e `analysis/`** lê `labels/` — `analysis/` fica de fora do contrato `pyproject.toml::[tool.importlinter]` deliberadamente (medição pós-hoc, nunca insumo de treino/seleção de feature), já usado por `cost_surface.py`/`faixa2_caminho_b.py`/`m6_common_factor_hypothesis.py` antes de `m2_stats.py` virar a 4ª instância — texto corrigido aqui em 2026-08-15 (achado de auditoria `project_assurance`: o texto original ficou factualmente impreciso por várias sessões sem que o contrato real (que já tinha a exceção) fosse refletido de volta aqui)
 - `alpha` **não pode** importar `meta` (zero realimentação, §5.8)
 
 ---
