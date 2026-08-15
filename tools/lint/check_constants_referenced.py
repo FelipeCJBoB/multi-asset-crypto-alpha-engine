@@ -63,10 +63,38 @@ def _iter_py_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
 
 
+def _load_constant_local_names(tree: ast.AST) -> set[str]:
+    """Nomes locais que se referem a `load_constant` NESTE arquivo — sempre
+    inclui `"load_constant"` (chamada direta/sem alias), mais qualquer
+    `from ... import load_constant as X` (`X` entra no set).
+
+    Achado de auditoria (2026-08-14, `m2_bar_comparison.py`): o arquivo
+    importa `from src.data._constants import load_constant as
+    load_data_constant` e chama só `load_data_constant(...)` daí em diante.
+    A checagem original comparava `func.id == "load_constant"` literal —
+    nunca via NENHUMA chamada nesse arquivo (nem as antigas, nem as novas
+    adicionadas na mesma sessão), reportando "0 referência(s)... OK" de
+    forma vazia (nada pra checar), não porque não havia nada a checar de
+    verdade. Só cobre `from ... import X as Y` (o padrão usado no repo);
+    `import modulo as m` seguido de `m.load_constant(...)` já funciona sem
+    isso, porque o ramo `ast.Attribute` abaixo casa pelo nome do ATRIBUTO
+    (`load_constant`), não pelo nome do módulo."""
+    aliases = {"load_constant"}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            if alias.name == "load_constant" and alias.asname:
+                aliases.add(alias.asname)
+    return aliases
+
+
 def find_references(root: Path) -> list[Reference]:
     """AST-scan de `root` procurando toda chamada `load_constant("literal")`
-    (aceita tanto `load_constant(...)` quanto `algo.load_constant(...)`, para
-    não depender de como o símbolo foi importado).
+    (aceita `load_constant(...)`, `algo.load_constant(...)` — não depende de
+    como o módulo foi importado — e `X(...)` onde `X` é um alias de import
+    local, `from ... import load_constant as X`, ver
+    `_load_constant_local_names`).
 
     Chamadas com primeiro argumento não-literal (variável, f-string, etc.) não
     podem ser resolvidas estaticamente — são ignoradas, não reportadas nem como
@@ -82,11 +110,12 @@ def find_references(root: Path) -> list[Reference]:
             tree = ast.parse(source, filename=str(py_file))
         except SyntaxError:
             continue
+        local_names = _load_constant_local_names(tree)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not node.args:
                 continue
             func = node.func
-            is_load_constant = (isinstance(func, ast.Name) and func.id == "load_constant") or (
+            is_load_constant = (isinstance(func, ast.Name) and func.id in local_names) or (
                 isinstance(func, ast.Attribute) and func.attr == "load_constant"
             )
             if not is_load_constant:

@@ -89,6 +89,45 @@ def test_find_references_ignora_syntax_error(tmp_path: Path) -> None:
     assert ccr.find_references(src) == []
 
 
+def test_find_references_detecta_chamada_com_alias_de_import(tmp_path: Path) -> None:
+    """Achado de auditoria (2026-08-14): `m2_bar_comparison.py` importa
+    `from src.data._constants import load_constant as load_data_constant`
+    e chama só `load_data_constant(...)` daí em diante -- sem resolver o
+    alias, o AST-scan original nunca via nenhuma chamada nesse arquivo."""
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "mod.py").write_text(
+        "from src.data._constants import load_constant as load_data_constant\n"
+        'x = load_data_constant("tick_size")\n',
+        encoding="utf-8",
+    )
+
+    refs = ccr.find_references(src)
+
+    assert {r.name for r in refs} == {"tick_size"}
+
+
+def test_find_references_alias_e_por_arquivo_nao_vaza_entre_arquivos(tmp_path: Path) -> None:
+    """Um alias declarado num arquivo não deve fazer o scanner aceitar a
+    mesma chamada literal (sem o import) em outro arquivo como válida --
+    cada árvore AST é resolvida independentemente."""
+    src = tmp_path / "src"
+    (src / "a").mkdir(parents=True)
+    (src / "b").mkdir(parents=True)
+    (src / "a" / "mod.py").write_text(
+        "from src.data._constants import load_constant as load_data_constant\n"
+        'load_data_constant("foo")\n',
+        encoding="utf-8",
+    )
+    # `load_data_constant` aqui não é nem definido nem chamado -- não deve
+    # gerar falso positivo nem contaminar o outro arquivo.
+    (src / "b" / "mod.py").write_text('load_constant("bar")\n', encoding="utf-8")
+
+    refs = ccr.find_references(src)
+
+    assert {r.name for r in refs} == {"foo", "bar"}
+
+
 def test_find_references_com_path_de_arquivo_unico(tmp_path: Path) -> None:
     """`--src <arquivo>` (não diretório) — `Path.rglob` devolve vazio
     silenciosamente nesse caso (achado real de auditoria, ver
