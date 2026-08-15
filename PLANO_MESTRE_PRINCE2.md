@@ -1155,6 +1155,19 @@ num lugar que uma auditoria futura vai consultar.
 
 ## Changelog
 
+- **v3.0 (2026-08-15)** — §15.10: AG-017 — `m2_bar_comparison.py` escrito
+  com TF único (15m) hardcoded, apesar do PRD_V4_1.md §0.4 exigir os 3
+  TFs "obrigatórios ponta a ponta" E de §15.6 item 1 (escrito ANTES de M2
+  existir) já ter citado M2 por nome como risco previsto. Corrigido
+  (commit `67a1426`) — módulo agora itera `TIMEFRAMES`, mesmo padrão de
+  `m3_timeframe_choice.py`. Registra por que o registro RAID sozinho não
+  bastou (nada no processo de escrever código novo consultava esse
+  registro antes de codar) e a correção de processo (nova pergunta na
+  Lente FI de `audit_engineering`, v1.3). Mesma sessão: M2 também
+  corrigido pra streaming (não cabia inteiro em RAM) e pra travar
+  `memory_limit`/`threads` do DuckDB por conexão (oversubscription sob
+  processos concorrentes) — ver `AG-017` completo em
+  `audit/architecture_gaps_log.yaml`.
 - **v2.9 (2026-08-14)** — §15.9: AG-013/AG-014 delegados e fechados
   (achado no caminho: AG-016, diagnostics ainda não fiado nos
   orquestradores reais). M6 implementado e pronto pra rodar — zero
