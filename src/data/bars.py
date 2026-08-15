@@ -64,13 +64,32 @@ limiar de fechamento de cada barra depende do tamanho da barra anterior)
 `volume_bars_step` continuam vetorizados DENTRO de cada chunk (só o
 "leftover" entre chunks é pequeno, nunca mais que os trades de 1 barra
 ainda aberta). Ponto de entrada manual (M2), não código de produção em
-tempo real."""
+tempo real.
+
+**Achado de magnitude (2026-08-15) — o loop sequencial precisou de JIT.**
+Rodando o M2 real pela 1ª vez sem OOM, o histórico completo de BTCUSDT
+mostrou ser da ordem de bilhões de trades (extrapolado de
+`data/quality_reports/quality_report_agg_trades_v1.json`, 68,2 milhões de
+trades numa janela de 53 dias) — um loop Python puro trade-a-trade, por
+mais que já evitasse iterar `DataFrame` linha a linha (já convertia pra
+array numpy antes do loop), levaria dezenas de minutos a mais de 1h só
+pra esse símbolo, puramente por overhead de interpretador. `_tick_
+imbalance_loop` (Numba `@njit(cache=True)`, SEM `fastmath`) resolve isso
+compilando o mesmo algoritmo pra código de máquina — `fastmath=False`
+(default) preserva ordem estrita de operação IEEE 754, então o resultado
+é bit-a-bit idêntico ao loop Python original (confirmado por pesquisa web
+antes de aplicar, não presumido) — mesmos testes de paridade, sem
+afrouxar tolerância nenhuma. Estado do carry passado por escalares (não
+a dataclass inteira -- `nopython` do Numba não suporta objeto Python
+arbitrário), barras fechadas escritas em arrays pré-alocados no tamanho
+do chunk (pior caso: toda trade fecha sua própria barra)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Final
 
+import numba
 import numpy as np
 import polars as pl
 from numpy.typing import NDArray
@@ -317,7 +336,14 @@ class TickImbalanceBarsCarry:
     todos" (EWMA nasce nele, sem recorrência) de "primeiro trade DE UM
     CHUNK, mas não da série" (EWMA continua a recorrência normal) -- sem
     isso, cada novo chunk reiniciaria a EWMA do zero, quebrando a
-    causalidade "só olha pra trás" através de fronteiras de chunk."""
+    causalidade "só olha pra trás" através de fronteiras de chunk.
+    `open_time`/`close_time`/`open` são `int`/`float` concretos, não
+    `Optional` -- o valor antes do 1º trade nunca é lido (`ticks_in_bar
+    ==0` sempre reseta os três no próximo trade processado), e o núcleo
+    Numba (`_tick_imbalance_loop`) não representa `Optional` em escalar
+    passado por argumento. `bar_frames` guarda barras JÁ fechadas como
+    `DataFrame`s pequenos por chunk (mesmo padrão de `ThresholdBarsCarry.
+    bar_frames`), não mais uma lista de dicts."""
 
     config: TickImbalanceBarsConfig
     theta: float = 0.0
@@ -325,9 +351,9 @@ class TickImbalanceBarsCarry:
     exp_num_ticks: float = 0.0
     ticks_in_bar: int = 0
     started: bool = False
-    open_time: int | None = None
-    close_time: int | None = None
-    open: float | None = None
+    open_time: int = 0
+    close_time: int = 0
+    open: float = 0.0
     high: float = float("-inf")
     low: float = float("inf")
     close: float = 0.0
@@ -336,124 +362,302 @@ class TickImbalanceBarsCarry:
     count: int = 0
     taker_buy_volume: float = 0.0
     taker_buy_quote_volume: float = 0.0
-    bar_rows: list[dict[str, Any]] = field(default_factory=list)
+    bar_frames: list[pl.DataFrame] = field(default_factory=list)
 
 
 def tick_imbalance_bars_carry(config: TickImbalanceBarsConfig) -> TickImbalanceBarsCarry:
     return TickImbalanceBarsCarry(config=config, exp_num_ticks=config.exp_num_ticks_init)
 
 
+_TickImbalanceLoopResult = tuple[
+    float,
+    float,
+    float,
+    int,
+    bool,
+    int,
+    int,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    float,
+    float,
+    int,
+]
+
+
+@numba.njit(cache=True)
+def _tick_imbalance_loop(
+    price: FloatArray,
+    quantity: FloatArray,
+    transact_time: IntArray,
+    is_buyer_maker: NDArray[np.bool_],
+    alpha_imbalance: float,
+    alpha_bars: float,
+    exp_num_ticks_min: float,
+    exp_num_ticks_max: float,
+    theta: float,
+    ewma_b: float,
+    exp_num_ticks: float,
+    ticks_in_bar: int,
+    started: bool,
+    open_time: int,
+    close_time: int,
+    open_: float,
+    high: float,
+    low: float,
+    close: float,
+    volume: float,
+    quote_volume: float,
+    count: int,
+    taker_buy_volume: float,
+    taker_buy_quote_volume: float,
+    out_open_time: IntArray,
+    out_close_time: IntArray,
+    out_open: FloatArray,
+    out_high: FloatArray,
+    out_low: FloatArray,
+    out_close: FloatArray,
+    out_volume: FloatArray,
+    out_quote_volume: FloatArray,
+    out_count: IntArray,
+    out_taker_buy_volume: FloatArray,
+    out_taker_buy_quote_volume: FloatArray,
+) -> _TickImbalanceLoopResult:
+    """Núcleo JIT (Numba, achado de auditoria 2026-08-15 -- ver docstring
+    do módulo) do loop trade-a-trade que era `tick_imbalance_bars_step`.
+    `nopython` não suporta a dataclass `TickImbalanceBarsCarry` nem
+    `Optional` -- estado passado por escalares, devolvido em tupla na
+    MESMA ordem dos parâmetros de entrada (+ `n_closed` no fim). Barras
+    fechadas escritas nos arrays `out_*` (pré-alocados pelo chamador,
+    tamanho = nº de trades do chunk -- pior caso: toda trade fecha sua
+    própria barra); `n_closed` diz quantas posições são válidas. SEM
+    `fastmath` (default `False`) -- ordem estrita de operação IEEE 754,
+    mesmo resultado bit-a-bit do loop Python que este núcleo substitui
+    (confirmado por pesquisa web antes de aplicar, não presumido)."""
+    n = price.shape[0]
+    n_closed = 0
+    for i in range(n):
+        buyer_maker = is_buyer_maker[i]
+        b_i = -1.0 if buyer_maker else 1.0
+        if not started:
+            ewma_b = b_i
+            started = True
+        else:
+            ewma_b = alpha_imbalance * b_i + (1.0 - alpha_imbalance) * ewma_b
+
+        p = price[i]
+        q = quantity[i]
+        t = transact_time[i]
+        value = p * q
+        is_taker_buy = not buyer_maker
+
+        if ticks_in_bar == 0:
+            open_time = t
+            open_ = p
+            high = p
+            low = p
+        else:
+            if p > high:
+                high = p
+            if p < low:
+                low = p
+        close = p
+        close_time = t
+        volume += q
+        quote_volume += value
+        count += 1
+        if is_taker_buy:
+            taker_buy_volume += q
+            taker_buy_quote_volume += value
+
+        theta += b_i
+        ticks_in_bar += 1
+
+        close_threshold = exp_num_ticks * abs(ewma_b)
+        if close_threshold > 0.0 and abs(theta) >= close_threshold:
+            out_open_time[n_closed] = open_time
+            out_close_time[n_closed] = close_time
+            out_open[n_closed] = open_
+            out_high[n_closed] = high
+            out_low[n_closed] = low
+            out_close[n_closed] = close
+            out_volume[n_closed] = volume
+            out_quote_volume[n_closed] = quote_volume
+            out_count[n_closed] = count
+            out_taker_buy_volume[n_closed] = taker_buy_volume
+            out_taker_buy_quote_volume[n_closed] = taker_buy_quote_volume
+            n_closed += 1
+
+            exp_num_ticks = alpha_bars * ticks_in_bar + (1.0 - alpha_bars) * exp_num_ticks
+            exp_num_ticks = min(max(exp_num_ticks, exp_num_ticks_min), exp_num_ticks_max)
+            ticks_in_bar = 0
+            theta = 0.0
+            volume = 0.0
+            quote_volume = 0.0
+            count = 0
+            taker_buy_volume = 0.0
+            taker_buy_quote_volume = 0.0
+            high = -np.inf
+            low = np.inf
+
+    return (
+        theta,
+        ewma_b,
+        exp_num_ticks,
+        ticks_in_bar,
+        started,
+        open_time,
+        close_time,
+        open_,
+        high,
+        low,
+        close,
+        volume,
+        quote_volume,
+        count,
+        taker_buy_volume,
+        taker_buy_quote_volume,
+        n_closed,
+    )
+
+
 def tick_imbalance_bars_step(carry: TickImbalanceBarsCarry, chunk: pl.DataFrame) -> None:
-    """Processa 1 chunk trade-a-trade -- muta `carry` in place, inclusive
+    """Processa 1 chunk trade-a-trade via `_tick_imbalance_loop` (Numba
+    JIT, ver docstring do módulo) -- muta `carry` in place, inclusive
     fechando barras que completam durante o chunk (acrescentadas a
-    `carry.bar_rows`). Chunk vazio é no-op seguro."""
+    `carry.bar_frames`). Chunk vazio é no-op seguro."""
     _require_trade_columns(chunk)
     if chunk.is_empty():
         return
 
     price = chunk["price"].to_numpy()
     quantity = chunk["quantity"].to_numpy()
-    transact_time = chunk["transact_time"].to_numpy()
+    transact_time = chunk["transact_time"].to_numpy().astype(np.int64)
     is_buyer_maker = chunk["is_buyer_maker"].to_numpy()
 
     cfg = carry.config
     alpha_imbalance = 2.0 / (cfg.expected_imbalance_window + 1.0)  # noqa: unguarded-ratio -- validado no __post_init__ de TickImbalanceBarsConfig
     alpha_bars = 2.0 / (cfg.num_prev_bars + 1.0)  # noqa: unguarded-ratio -- idem
 
-    for i in range(chunk.height):
-        b_i = -1.0 if is_buyer_maker[i] else 1.0
-        if not carry.started:
-            carry.ewma_b = b_i
-            carry.started = True
-        else:
-            carry.ewma_b = alpha_imbalance * b_i + (1.0 - alpha_imbalance) * carry.ewma_b
+    n = chunk.height
+    out_open_time = np.empty(n, dtype=np.int64)
+    out_close_time = np.empty(n, dtype=np.int64)
+    out_open = np.empty(n, dtype=np.float64)
+    out_high = np.empty(n, dtype=np.float64)
+    out_low = np.empty(n, dtype=np.float64)
+    out_close = np.empty(n, dtype=np.float64)
+    out_volume = np.empty(n, dtype=np.float64)
+    out_quote_volume = np.empty(n, dtype=np.float64)
+    out_count = np.empty(n, dtype=np.int64)
+    out_taker_buy_volume = np.empty(n, dtype=np.float64)
+    out_taker_buy_quote_volume = np.empty(n, dtype=np.float64)
 
-        p = float(price[i])
-        q = float(quantity[i])
-        t = int(transact_time[i])
-        value = p * q
-        is_taker_buy = not bool(is_buyer_maker[i])
-
-        if carry.ticks_in_bar == 0:
-            carry.open_time = t
-            carry.open = p
-            carry.high = p
-            carry.low = p
-        else:
-            carry.high = max(carry.high, p)
-            carry.low = min(carry.low, p)
-        carry.close = p
-        carry.close_time = t
-        carry.volume += q
-        carry.quote_volume += value
-        carry.count += 1
-        if is_taker_buy:
-            carry.taker_buy_volume += q
-            carry.taker_buy_quote_volume += value
-
-        carry.theta += b_i
-        carry.ticks_in_bar += 1
-
-        close_threshold = carry.exp_num_ticks * abs(carry.ewma_b)
-        if close_threshold > 0.0 and abs(carry.theta) >= close_threshold:
-            _close_tick_imbalance_bar(carry, alpha_bars)
-
-
-def _close_tick_imbalance_bar(carry: TickImbalanceBarsCarry, alpha_bars: float) -> None:
-    carry.bar_rows.append(
-        {
-            "open_time": carry.open_time,
-            "close_time": carry.close_time,
-            "open": carry.open,
-            "high": carry.high,
-            "low": carry.low,
-            "close": carry.close,
-            "volume": carry.volume,
-            "quote_volume": carry.quote_volume,
-            "count": carry.count,
-            "taker_buy_volume": carry.taker_buy_volume,
-            "taker_buy_quote_volume": carry.taker_buy_quote_volume,
-        }
+    (
+        carry.theta,
+        carry.ewma_b,
+        carry.exp_num_ticks,
+        carry.ticks_in_bar,
+        carry.started,
+        carry.open_time,
+        carry.close_time,
+        carry.open,
+        carry.high,
+        carry.low,
+        carry.close,
+        carry.volume,
+        carry.quote_volume,
+        carry.count,
+        carry.taker_buy_volume,
+        carry.taker_buy_quote_volume,
+        n_closed,
+    ) = _tick_imbalance_loop(
+        price,
+        quantity,
+        transact_time,
+        is_buyer_maker,
+        alpha_imbalance,
+        alpha_bars,
+        cfg.exp_num_ticks_min,
+        cfg.exp_num_ticks_max,
+        carry.theta,
+        carry.ewma_b,
+        carry.exp_num_ticks,
+        carry.ticks_in_bar,
+        carry.started,
+        carry.open_time,
+        carry.close_time,
+        carry.open,
+        carry.high,
+        carry.low,
+        carry.close,
+        carry.volume,
+        carry.quote_volume,
+        carry.count,
+        carry.taker_buy_volume,
+        carry.taker_buy_quote_volume,
+        out_open_time,
+        out_close_time,
+        out_open,
+        out_high,
+        out_low,
+        out_close,
+        out_volume,
+        out_quote_volume,
+        out_count,
+        out_taker_buy_volume,
+        out_taker_buy_quote_volume,
     )
-    carry.exp_num_ticks = alpha_bars * carry.ticks_in_bar + (1.0 - alpha_bars) * carry.exp_num_ticks
-    carry.exp_num_ticks = min(
-        max(carry.exp_num_ticks, carry.config.exp_num_ticks_min), carry.config.exp_num_ticks_max
-    )
-    carry.ticks_in_bar = 0
-    carry.theta = 0.0
-    carry.volume = 0.0
-    carry.quote_volume = 0.0
-    carry.count = 0
-    carry.taker_buy_volume = 0.0
-    carry.taker_buy_quote_volume = 0.0
-    carry.open = None
-    carry.high = float("-inf")
-    carry.low = float("inf")
+
+    if n_closed > 0:
+        carry.bar_frames.append(
+            pl.DataFrame(
+                {
+                    "open_time": out_open_time[:n_closed],
+                    "close_time": out_close_time[:n_closed],
+                    "open": out_open[:n_closed],
+                    "high": out_high[:n_closed],
+                    "low": out_low[:n_closed],
+                    "close": out_close[:n_closed],
+                    "volume": out_volume[:n_closed],
+                    "quote_volume": out_quote_volume[:n_closed],
+                    "count": out_count[:n_closed],
+                    "taker_buy_volume": out_taker_buy_volume[:n_closed],
+                    "taker_buy_quote_volume": out_taker_buy_quote_volume[:n_closed],
+                }
+            ).cast(_BAR_OUTPUT_SCHEMA)
+        )
 
 
 def tick_imbalance_bars_finish(carry: TickImbalanceBarsCarry) -> pl.DataFrame:
     """Fecha o stream -- inclui a última barra mesmo que parcial (mesma
     convenção de `threshold_bars_finish`)."""
     if carry.ticks_in_bar > 0:
-        carry.bar_rows.append(
-            {
-                "open_time": carry.open_time,
-                "close_time": carry.close_time,
-                "open": carry.open,
-                "high": carry.high,
-                "low": carry.low,
-                "close": carry.close,
-                "volume": carry.volume,
-                "quote_volume": carry.quote_volume,
-                "count": carry.count,
-                "taker_buy_volume": carry.taker_buy_volume,
-                "taker_buy_quote_volume": carry.taker_buy_quote_volume,
-            }
+        carry.bar_frames.append(
+            pl.DataFrame(
+                {
+                    "open_time": [carry.open_time],
+                    "close_time": [carry.close_time],
+                    "open": [carry.open],
+                    "high": [carry.high],
+                    "low": [carry.low],
+                    "close": [carry.close],
+                    "volume": [carry.volume],
+                    "quote_volume": [carry.quote_volume],
+                    "count": [carry.count],
+                    "taker_buy_volume": [carry.taker_buy_volume],
+                    "taker_buy_quote_volume": [carry.taker_buy_quote_volume],
+                }
+            ).cast(_BAR_OUTPUT_SCHEMA)
         )
         carry.ticks_in_bar = 0
-    if not carry.bar_rows:
+    if not carry.bar_frames:
         return _empty_bars()
-    return pl.DataFrame(carry.bar_rows, schema=_BAR_OUTPUT_SCHEMA)
+    return pl.concat(carry.bar_frames)
 
 
 def tick_imbalance_bars(trades: pl.DataFrame, config: TickImbalanceBarsConfig) -> pl.DataFrame:

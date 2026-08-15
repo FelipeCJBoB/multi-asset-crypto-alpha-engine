@@ -315,4 +315,4 @@ def test_tick_imbalance_bars_step_chunk_vazio_e_no_op() -> None:
     empty = _trades(price=[], quantity=[], is_buyer_maker=[])
     tick_imbalance_bars_step(carry, empty)
     assert carry.started is False
-    assert carry.bar_rows == []
+    assert carry.bar_frames == []

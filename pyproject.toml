@@ -20,6 +20,7 @@ dependencies = [
     "requests>=2.32",
     "tzdata>=2024.1",
     "statsmodels>=0.14",
+    "numba>=0.61",
 ]
 
 [dependency-groups]
@@ -92,8 +93,21 @@ exclude = ["^data/", "^\\.venv/"]
 # de pontos de uso não paga o custo de dependência extra. "statsmodels"
 # entrou no M2 (PRD_V4_1.md §3.2) -- src/analysis/m2_bar_comparison.py usa
 # statsmodels.stats.diagnostic.acorr_ljungbox/statsmodels.tsa.stattools.
-# adfuller, mesmo motivo dos outros.
-module = ["xgboost.*", "optuna.*", "duckdb.*", "yaml", "scipy.*", "sklearn.*", "statsmodels.*"]
+# adfuller, mesmo motivo dos outros. "numba" entrou em 2026-08-15 (achado
+# de magnitude do M2: historico completo de BTCUSDT e' da ordem de bilhoes
+# de trades, loop Python puro de tick_imbalance_bars_step levaria dezenas
+# de minutos a mais de 1h so nesse simbolo) -- src/data/bars.py usa
+# numba.njit, sem stubs completos publicados.
+module = [
+    "xgboost.*",
+    "optuna.*",
+    "duckdb.*",
+    "yaml",
+    "scipy.*",
+    "sklearn.*",
+    "statsmodels.*",
+    "numba.*",
+]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------
