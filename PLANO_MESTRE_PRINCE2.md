@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 2.2 · **Data:** 2026-08-12
+**Versão:** 3.2 · **Data:** 2026-08-15 (achado ao editar: header estava em "2.2" desde 2026-08-12 enquanto o Changelog já tinha chegado em v3.0 — mesma classe de defeito de §15.5 item 1, "identidade desatualizada", corrigida aqui de novo)
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -282,6 +282,39 @@ quando ela e o critério de 4 eixos discordarem, o critério de 4 eixos
 decide, porque distingue "materialidade ALTA → protocolo completo" de
 "1 eixo → registro leve", o que esta lista binária não fazia.
 
+**Gatilho adicional (v3.1, achado AG-027): lente FE de `audit_engineering`.**
+Além dos critérios acima, o protocolo completo (incluindo a lente
+condicional FE — Falha de Especificação Econômica, `.claude/skills/
+audit_engineering/SKILL.md` Passo 3) dispara nestes 3 eventos, mesmo que o
+arquivo em si não bata na heurística de materialidade padrão (o risco aqui
+não é "este arquivo específico é crítico", é "este EVENTO muda o escopo
+implícito de números já em produção"):
+1. Feature Engine ganha o 1º timeframe além de 15m (`src/features/build.py`/
+   `_sources.py` deixam de hardcodar um TF único).
+2. Qualquer constante `class: B, provenance: ASSUMED` entra no vetor de
+   treino de um modelo promovido além de research (Gate 3/4) —
+   `python tools/lint/check_constants_provenance.py` lista essas constantes
+   com `review_by` (achado AG-028).
+3. Antes de `12_RISK_ENGINE`/`13_EXECUCAO` (§15.4) ganharem o 1º caller real
+   — toda constante ainda `ASSUMED` nesse ponto vira bloqueio de Gate, não
+   nota de rodapé.
+
+**Regra de segurança orçamentária (v3.2, achado AG-027 addendum ponto 1,
+2026-08-15).** A lente FE é 0 trials por desenho — lê `constants.yaml`,
+código-fonte e artefato já persistido, nunca abre sweep/Optuna por conta
+própria. Isso importa porque `audit/n_lifetime.yaml::counter=45`, teto 60
+(`PRD_V4_1.md`, critério de encerramento 5: `N_lifetime > 60 sem Camada 2
+fechada → encerrar`) — restam 15 trials. Interpretar um achado da lente FE
+("N janelas ASSUMED") como autorização pra varrer todas gastaria esse
+orçamento inteiro numa sessão e poderia disparar o encerramento do projeto
+sem nenhuma decisão do Manager. Sequência obrigatória, sempre nesta ordem:
+10 perguntas (0 trials) → medição descritiva sobre dado já existente, sem
+sweep (achado-modelo: `round_trip_cost_bps` corrigido por contagem direta
+em `labels.parquet` já gravado) → registro em `architecture_gaps_log.yaml`
+com a magnitude medida → só então, se material, escalar ao Manager citando
+o `N_lifetime` restante explicitamente na própria pergunta. Detalhe completo
+em `.claude/skills/audit_engineering/SKILL.md` v1.5.
+
 ### 6.2 Antes de tocar o arquivo — Descrição de Produto (5 minutos, não 5 páginas)
 
 Template mínimo — eu escreno isto e coloco na mensagem ANTES de editar,
@@ -396,6 +429,43 @@ arquivos, quem achou primeiro (eu ou você)?"** — essa última coluna
 (`found_by`) é a métrica mais importante do processo: se depois de alguns
 ciclos ela continuar dizendo "Manager" na maioria das vezes, o protocolo
 do §6 não está funcionando e precisa de ajuste, não só o código.
+
+**Classe de defeito nomeada (v3.1, 4ª ocorrência confirmada — deixa de ser
+"achado avulso" e vira categoria própria do RAID): "parâmetro carrega
+escopo implícito (timeframe/ativo) nunca declarado nem testado".**
+Confirmada 4x, sempre pelo mesmo mecanismo — uma constante expressa numa
+unidade (barras, não relógio; um TF fixo, não uma lista) só vira problema
+visível quando o escopo real do projeto (multi-TF, multi-ativo) se expande
+de fato:
+
+| # | arquivo | manifestação |
+|---|---|---|
+| AG-004 | `src/validation/cpcv.py` | embargo de CPCV hardcoded em unidades de barra de 15m, sem parâmetro `tf` pra sobrescrever |
+| AG-005 | `src/labels/triple_barrier.py`, `barrier_sweep.py` | TF hardcoded 3x, de forma duplicada e independente, apesar de `LabelConfig.decision_tf_minutes` existir e parecer configurável |
+| AG-017 | `src/analysis/m2_bar_comparison.py` | `BASELINE_TF="15m"` fixo, apesar de `TIMEFRAMES` já existir num import vizinho e `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já ter previsto esse risco por nome antes do módulo existir |
+| AG-027 | `src/features/groups/*.py`, `src/regime/classifier.py` | 8 janelas de feature em contagem de barra, `provenance:ASSUMED`, "convenção herdada do PRD, nunca testada" — Feature Engine roda hardcoded em 15m, decisão bar-count×clock-time nunca tomada |
+
+Raiz mecânica confirmada (AG-028): `check_constants_provenance.py` só
+processava constantes `class: A` — o campo `review_by`, presente em toda
+constante `class: B` `ASSUMED` (incluindo as 4 ocorrências acima), nunca
+tinha nenhum enforcement/visibilidade mecânica. Corrigido — ver lente FE
+(`.claude/skills/audit_engineering/SKILL.md` Passo 3) pro protocolo de
+prevenção de uma 5ª ocorrência.
+
+**AG-030 (2026-08-15) — defeito relacionado, mas de classe distinta: não é
+"parâmetro carrega escopo implícito", é "feature carrega ESCALA DE HISTÓRICO
+implícita".** `C07_vol_pctile_expanding`, `D03f`, `E02f` (`src/features/
+groups/group_c.py`, `group_d.py`, `group_e.py`) usam janela EXPANSIVA desde a
+origem de cada ativo, não fixa — o mesmo valor bruto produz percentil/z-score
+diferente por ativo dependendo só de quanto histórico aquele ativo já
+acumulou (BTCUSDT: até 231.552 barras de 15m desde 2019-12-31; os 4 alts: até
+164.256 desde 2021-12-01, medido a partir de `SYMBOL_START_DATE`). Não é
+vazamento temporal — é não-comparabilidade entre ativos que confunde
+diretamente H0 do M6 (`edge_bruto_atr` igual entre os 5 ativos, §15/T0.5):
+qualquer diferença medida pode ser artefato de warmup expansivo desigual, não
+edge real. **Decisão do Manager necessária antes do M6 rodar, não depois** —
+reverter uma conclusão de M6 já publicada custa mais que decidir agora. Ver
+`audit/architecture_gaps_log.yaml::AG-030`.
 
 ---
 
@@ -1155,6 +1225,41 @@ num lugar que uma auditoria futura vai consultar.
 
 ## Changelog
 
+- **v3.2 (2026-08-15)** — Manager entrega "Continuando Ultrathink" (7 pontos
+  sobre AG-027), todos verificados por Claude via leitura direta de código/
+  dado antes de aceitar. Ponto mais crítico (#1): rodar a lente FE
+  ingenuamente arriscava disparar o critério de encerramento #5 sozinho —
+  `N_lifetime` tem só 15 trials restantes (counter=45, teto=60). §6.1 ganha
+  "Regra de segurança orçamentária": as 10 perguntas da lente FE são 0
+  trials por desenho, nenhuma resposta autoriza sweep sem escalar ao Manager
+  com o orçamento restante explícito (mesma regra espelhada em
+  `audit_engineering` v1.5). §7 ganha AG-030 (achado #5 do Manager) —
+  features expansivas desde a origem do ativo (C07/D03f/E02f) confundem H0
+  do M6 por escala de histórico desigual entre BTC (231.552 barras) e os 4
+  alts (164.256), decisão necessária antes do M6 rodar. AG-027 recebe
+  addendum com os 7 pontos completos: Q2 já tinha resposta medida em
+  `backtest_fill_reconciliation_report.json` (59,9% SL — mais assimétrico
+  que a teoria); vencedor do M1 (GK canônico) é condicional ao tipo de
+  barra do M2, razão de adiamento hoje registrada em `docs/
+  refactor_gk_canonico.md` é mais fraca que a real; whitelist de literais
+  do lint (`_ALLOWED_NUMERIC_LITERALS`) esconde 2 premissas de domínio sem
+  proveniência (0,5 do split maker/taker, 2,0 de `a05_ret_vol_norm_4`);
+  `sweep_required: false` nas 8 janelas reclassificado de "furo a corrigir"
+  pra "decisão de Business Case pendente do Manager".
+- **v3.1 (2026-08-15)** — §6.1/§7: AG-027 (Manager, lente Feature/Alpha/
+  Signal Researcher — 8 janelas de feature `ASSUMED`/nunca testadas em
+  contagem de barra, Feature Engine hardcoded em 15m; `round_trip_cost_bps`
+  assume 50/50 de qual barreira toca primeiro, viés quantificado ~4% via
+  rederivação matemática independente — não hipótese) + AG-028
+  (`check_constants_provenance.py` nunca lia `review_by` de constantes
+  classe B, corrigido). Nomeia a classe de defeito "parâmetro carrega
+  escopo implícito nunca declarado" (4ª ocorrência: AG-004→AG-005→
+  AG-017→AG-027) como categoria própria do RAID em §7, e adiciona os 3
+  eventos de transição de escopo que disparam a nova lente FE de
+  `audit_engineering` (v1.4) em §6.1. Header corrigido de "2.2" pra "3.1"
+  — estava desatualizado desde 2026-08-12 enquanto o Changelog já tinha
+  passado por v2.3-v3.0 (mesma classe de defeito já nomeada em §15.5
+  item 1 pro CLAUDE.md, agora confirmada também neste documento).
 - **v3.0 (2026-08-15)** — §15.10: AG-017 — `m2_bar_comparison.py` escrito
   com TF único (15m) hardcoded, apesar do PRD_V4_1.md §0.4 exigir os 3
   TFs "obrigatórios ponta a ponta" E de §15.6 item 1 (escrito ANTES de M2

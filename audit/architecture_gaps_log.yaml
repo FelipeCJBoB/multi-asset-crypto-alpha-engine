@@ -906,4 +906,641 @@ entries:
       código. Prevenção de recorrência: nova pergunta na Lente FI de
       audit_engineering (SKILL.md) -- módulo novo em src/analysis/ itera
       TIMEFRAMES ou hardcoda TF sem justificativa registrada?
+
+      AMENDMENT 2026-08-15 (achado de `project_assurance`, revisão
+      independente pós-desmembramento): o texto de resolution acima ficou
+      desatualizado depois de 2 redesenhos posteriores no mesmo dia --
+      `compute_trades_dependent_bars_for_symbol` virou `..._for_symbol_tf`
+      (commit 56b9ffc, n_tasks 10->20, fatiado por (symbol,tf) em vez de
+      loop de TF dentro da task) e o próprio arquivo foi desmembrado em
+      `m2_stats.py`/`m2_worker.py`/`m2_bar_comparison.py` (Opção 3 do
+      brainstorm de arquitetura, ver PLANO_MESTRE_PRINCE2.md §15).
+      Registrado aqui como nota, não reaberto -- a correção de fundo
+      (multi-TF) continua válida, só a topologia/nome de função descritos
+      mudaram depois.
     status: "fechado — commit 67a1426, aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-018
+    date: "2026-08-15"
+    file: "src/analysis/__init__.py"
+    related_file: "src/analysis/attribution.py, src/analysis/m2_worker.py, src/analysis/m2_bar_comparison.py"
+    found_by: "Agent audit_engineering (grupo m2-core, Workflow de auditoria pós-split), confirmado por 2 revisores project_assurance independentes"
+    gap: >
+      src/analysis/__init__.py importava attribution.py (numpy/polars/
+      scipy) incondicionalmente. Python sempre termina de executar o
+      __init__.py de um pacote ANTES de importar qualquer submódulo dele
+      -- então from src.analysis.m2_worker import (...) (ou o unpickle de
+      qualquer função de m2_worker sob spawn em cada processo filho do
+      Windows) disparava attribution.py, e portanto numpy/polars/scipy,
+      ANTES do bloco os.environ.setdefault(OMP_NUM_THREADS=1, ...) de
+      m2_worker.py/m2_bar_comparison.py ter qualquer chance de rodar --
+      neutralizando as duas defesas redundantes contra oversubscription
+      de BLAS por completo. Confirmado via pesquisa web: OPENBLAS_NUM_
+      THREADS/OMP_NUM_THREADS precisam ser setados ANTES de `import
+      numpy` pra ter efeito (BLAS inicializa no load da lib); documentação
+      oficial do Polars confirma o mesmo pro próprio pool de threads.
+    severity: "crítico"
+    layer: "analysis"
+    consequence: >
+      Sob os até 12 processos concorrentes de run_and_save_bar_comparison_
+      report, cada worker rodaria numpy/scipy/statsmodels/polars com os
+      defaults de thread da máquina (não 1), reproduzindo o exato cenário
+      de oversubscription (numpy._core._exceptions._ArrayMemoryError,
+      já observado em produção nesta sessão) que a arquitetura do split
+      foi desenhada pra eliminar -- explica por que CLAUDE.md "Estado
+      atual" já registrava cautela ("ainda não confirmado rodando ponta a
+      ponta").
+    resolved_by_commit: null
+    resolution: >
+      src/analysis/__init__.py convertido pra import preguiçoso (PEP 562
+      __getattr__) -- feature_agreement/gain_by_side/ic_by_regime só
+      importam attribution.py no primeiro ACESSO ao atributo, não na
+      execução do __init__.py. Confirmado por grep que nenhum consumidor
+      real usa `from src.analysis import feature_agreement` (todos usam
+      `from src.analysis import attribution as attr` ou importam
+      submódulos), então o comportamento observável não muda. 2 testes
+      novos (tests/unit/test_analysis_init_lazy_import.py) MEDEM o
+      invariante em subprocesso limpo -- não assumem pela leitura do
+      código.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-019
+    date: "2026-08-15"
+    file: "src/analysis/m2_bar_comparison.py, src/analysis/m2_worker.py"
+    related_file: "src/analysis/volatility_comparison.py, m3_timeframe_choice.py, m6_common_factor_hypothesis.py, volatility_operational_effect.py, gk_vs_wilder_econ_regime_shift.py"
+    found_by: "Agent project_assurance (revisão independente, 3 revisores convergentes -- m2-core/m2_bar_comparison/m2_worker)"
+    gap: >
+      run_and_save_bar_comparison_report não tinha nenhum try/except em
+      volta de future.result() nos 2 loops as_completed -- qualquer
+      exceção não pega numa das 20 tasks (ValueError de
+      totals.n_ticks==0/_target_n_bars, MemoryError de numpy, bug
+      qualquer) abortava o `with ProcessPoolExecutor(...)` inteiro e
+      descartava os resultados de TODAS as outras tasks já concluídas,
+      contradizendo a garantia da própria docstring de
+      compute_trades_dependent_bars_for_symbol_tf. Dentro de m2_worker.py,
+      a chamada _query_baseline usada pra target_n_bars ficava FORA das 2
+      blindagens de duckdb.OutOfMemoryException existentes; compute_time_
+      bar_for_symbol não tinha proteção nenhuma. Mesmo padrão (as_completed
+      +.result() sem try/except) confirmado idêntico, via grep, em
+      volatility_comparison.py (M1), m3_timeframe_choice.py (M3),
+      m6_common_factor_hypothesis.py (M6), volatility_operational_effect.py
+      e gk_vs_wilder_econ_regime_shift.py -- não é bug isolado de M2.
+    severity: "alto"
+    layer: "analysis"
+    consequence: >
+      Dado o histórico real de travamento de 16h+ e OOM 3x nesta sessão,
+      1 falha não-OOM em qualquer das 20 tasks descartaria horas de
+      trabalho já concluído. Os outros 5 módulos citados carregam o mesmo
+      risco estrutural, ainda não corrigido neles (fora do escopo desta
+      correção -- registrado aqui pra rastreabilidade, não fechado nos
+      outros arquivos).
+    resolved_by_commit: null
+    resolution: >
+      m2_bar_comparison.py: cada future.result() agora roda em try/except
+      Exception próprio; payload reescrito atomicamente (_atomic_write_
+      json + _build_payload com NaN explícito pra célula ainda não
+      resolvida) a CADA task concluída, não só no fim -- checkpoint
+      incremental, não só isolamento. m2_worker.py: _query_baseline (pra
+      target_n_bars) ganhou seu próprio try/except duckdb.
+      OutOfMemoryException, e compute_time_bar_for_symbol ganhou proteção
+      por TF (1 TF falho não perde os outros 2 já computados na mesma
+      task). Os outros 5 módulos citados em related_file continuam com o
+      gap -- não corrigidos nesta rodada.
+    status: "fechado (M2) — outros 5 módulos permanecem abertos, ver related_file"
+
+  - id: AG-020
+    date: "2026-08-15"
+    file: "src/analysis/m2_stats.py"
+    related_file: "tests/unit/test_analysis_m2_stats.py"
+    found_by: "Agent audit_engineering (grupo m2-core) + Agent project_assurance (m2_stats), achado convergente"
+    gap: >
+      _run_adfuller capturava (MemoryError, np.linalg.LinAlgError) como
+      defesa contra falha de np.linalg.svd/LAPACK gesdd, citando
+      numpy#20384 como uma das issues motivadoras -- mas essa issue
+      específica documenta uma falha SEM exceção nenhuma (mensagem
+      C-level impressa, arrays possivelmente zero/não-inicializados
+      devolvidos normalmente), um modo que o except existente não cobria.
+    severity: "alto"
+    layer: "analysis"
+    consequence: >
+      Se o modo de falha silencioso ocorresse, adf_stat/adf_pvalue sairia
+      FINITO mas potencialmente fabricado a partir de uma SVD corrompida,
+      em vez de NaN -- contradizendo o princípio FCN que o próprio módulo
+      declara seguir ("NaN explícito, nunca zero/valor fabricado").
+    resolved_by_commit: null
+    resolution: >
+      Gate de plausibilidade pós-cálculo adicionado: adf_stat fora de
+      [-30, 30] ou não-finito vira NaN explícito com log distinto
+      (adf_stat_implausible), mesmo quando adfuller() não levanta
+      exceção nenhuma -- prior de domínio (estatística ADF pra retorno
+      financeiro intradiário real não tem leitura econômica além dessa
+      faixa) substituindo confiança cega no retorno da lib.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-021
+    date: "2026-08-15"
+    file: "src/data/bars.py"
+    related_file: "src/analysis/m2_worker.py (_build_tick_imbalance_config)"
+    found_by: "Agent project_assurance (bars_diff), protocolo de 16 perguntas"
+    gap: >
+      A guarda "close_threshold > 0.0 and abs(theta) >= close_threshold"
+      em _tick_imbalance_loop foi removida (substituída pelo piso de
+      ewma_b, ver AG-023) sem que TickImbalanceBarsConfig validasse
+      exp_num_ticks_min/exp_num_ticks_max > 0 -- a guarda antiga blindava
+      contra AS DUAS causas possíveis de close_threshold<=0 (ewma_b==0 OU
+      exp_num_ticks<=0); o piso novo só cobre a 1ª. Hoje não explorável
+      (o único caller real, m2_worker._build_tick_imbalance_config, já
+      garante isso por fora), mas a garantia vivia fora da classe que
+      deveria protegê-la.
+    severity: "alto"
+    layer: "data"
+    consequence: >
+      Se exp_num_ticks_min/max<=0 chegasse em TickImbalanceBarsConfig por
+      qualquer caminho futuro, toda trade fecharia sua própria barra
+      SILENCIOSAMENTE (sem exceção) em vez do comportamento antigo (barra
+      nunca fecha -- trava visível) -- regressão de falha barulhenta pra
+      falha silenciosa, corrompendo a comparação estatística que M2
+      existe pra fazer.
+    resolved_by_commit: null
+    resolution: >
+      TickImbalanceBarsConfig.__post_init__ agora valida exp_num_ticks_min
+      > 0 e exp_num_ticks_max >= exp_num_ticks_min, fail-fast na
+      construção -- mesmo padrão já usado pros outros 3 campos. 3 novos
+      casos de teste parametrizados em test_data_bars.py.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-022
+    date: "2026-08-15"
+    file: "src/analysis/m2_worker.py, tools/diagnostics/warm_tick_imbalance_cache.py"
+    related_file: ""
+    found_by: "Agent audit_engineering (grupos m2-core e diagnostics), WebFetch de numba/numba#8755"
+    gap: >
+      Docstring de warm_numba_cache_in_worker caracterizava numba/numba#8755
+      como risco de MÚLTIPLOS workers disputando a 1ª compilação ao mesmo
+      tempo -- a issue real (confirmada via WebFetch, não só título)
+      documenta um hang de PROCESSO ÚNICO causado por alternância de
+      permissão de diretório interagindo com bug do tempfile do Python no
+      Windows, sem nenhuma menção a concorrência entre processos.
+      warm_tick_imbalance_cache.py chamava a função 2x no MESMO processo,
+      o que só demonstra memoização em memória do Dispatcher do Numba
+      (acontece com ou sem cache=True), não reuso de cache em DISCO entre
+      processos -- o mecanismo real relevante pro ProcessPoolExecutor.
+    severity: "médio"
+    layer: "analysis"
+    consequence: >
+      A mitigação (compilar isolado por worker via initializer=) continua
+      boa prática defensiva, mas a justificativa citada não seguia da
+      fonte -- e o script de diagnóstico não conseguiria detectar um hang
+      de permissão real (esperado seria a 1ª chamada TRAVAR, não terminar
+      devagar).
+    resolved_by_commit: null
+    resolution: >
+      Docstrings corrigidas (m2_worker.py e warm_tick_imbalance_cache.py)
+      pra caracterizar o gatilho real (permissão, não corrida) e marcar a
+      extensão a múltiplos processos como extrapolação própria razoável,
+      não confirmada pela fonte. warm_tick_imbalance_cache.py reescrito
+      pra rodar em 2 SUBPROCESSOS reais (fronteira de processo de
+      verdade), não 2 chamadas no mesmo processo.
+    status: "fechado"
+
+  - id: AG-023
+    date: "2026-08-15"
+    file: "src/data/bars.py"
+    related_file: "config/constants.yaml"
+    found_by: "Agent project_assurance (bars_diff), protocolo de 16 perguntas"
+    gap: >
+      O piso "max(abs(ewma_b), 1e-12)" em _tick_imbalance_loop introduzia
+      uma constante numérica nova direto no núcleo JIT de produção, isenta
+      de constants.yaml via "# noqa: magic-number -- piso numerico, nao
+      parametro de dominio". §16.10 Regra 1 do CLAUDE.md é textualmente
+      incondicional ("Nenhum literal numérico em código de pipeline") --
+      o mecanismo de escape do lint aceitava a alegação sem segundo
+      revisor. Diferente do precedente citado (dado sintético de warm-up
+      em warm_numba_cache_in_worker, que nunca afeta resultado real), este
+      piso participa do algoritmo que decide fechamento de barra de
+      verdade.
+    severity: "médio"
+    layer: "data"
+    consequence: >
+      Risco funcional verificado como baixo (piso matematicamente inerte
+      nos limites reais de exp_num_ticks observados), mas abria precedente
+      pra constantes de algoritmo real escaparem da Regra Zero via
+      autoclassificação não revisada.
+    resolved_by_commit: null
+    resolution: >
+      Registrado como bars_tick_imbalance_ewma_floor em constants.yaml
+      (provenance DERIVED, derivação explícita: ~4 ordens de magnitude
+      acima do epsilon de máquina float64, muito abaixo da faixa normal
+      documentada de |EWMA(b_t)| de 1e-3 a 1). _tick_imbalance_loop agora
+      recebe o piso como parâmetro (calculado 1x por chunk em
+      tick_imbalance_bars_step via load_constant, nopython não lê YAML
+      diretamente), não mais literal hardcoded.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-024
+    date: "2026-08-15"
+    file: "src/analysis/m2_stats.py"
+    related_file: "config/constants.yaml"
+    found_by: "Agent project_assurance (m2_stats), protocolo de 16 perguntas"
+    gap: >
+      _MIN_OBS_FOR_TESTS_MULTIPLIER=4 (decide se uma célula do relatório
+      M2 vira NaN ou estatísticas reais) era literal local auto-
+      classificado como "folga de engenharia, não domínio" sem
+      justificativa medida -- a aproximação qui-quadrado do Ljung-Box
+      exige n>>lags pra ser válida; a literatura de séries temporais
+      recomenda ordem de n>=10x lags, não 4x.
+    severity: "médio"
+    layer: "analysis"
+    consequence: >
+      Não havia como auditar se 4x era conservador ou agressivo demais
+      sem ler o código-fonte; o valor provavelmente subestimava o mínimo
+      seguro especificamente pro Ljung-Box.
+    resolved_by_commit: null
+    resolution: >
+      Movido pra constants.yaml::bars_comparison_min_obs_multiplier
+      (value: 10, provenance: LITERATURE, citando Tsay -- Analysis of
+      Financial Time Series). m2_stats.py agora lê via load_constant em
+      vez de literal Final local.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-025
+    date: "2026-08-15"
+    file: "src/labels/weights.py"
+    related_file: "src/analysis/m2_stats.py"
+    found_by: "Agent project_assurance (m2_stats), pergunta 10 (caso de borda não tentado)"
+    gap: >
+      compute_concurrency_and_uniqueness documenta "t0 já ordenado
+      ascendente" como precondição do chamador, sem nenhum assert no
+      corpo da função -- se violada, np.searchsorted (que assume array
+      ordenado) devolveria idx1 sem sentido silenciosamente, uniqueness
+      plausível mas ERRADO, sem erro nenhum. m2_stats.compute_bar_
+      statistics é um chamador novo que nunca valida essa invariante
+      antes de passar close_time de barras construídas via streaming
+      multi-chunk.
+    severity: "médio"
+    layer: "analysis / labels"
+    consequence: >
+      Esta função também é a fronteira real usada por apply_weights pra
+      calcular sample_weight de PRODUÇÃO (07b_PESOS) -- um bug de
+      ordenação silencioso corromperia peso de treino do modelo Alpha,
+      não só uma métrica de diagnóstico de M2. Mesma classe de erro
+      silencioso que AG-017 já registrou como risco de maior prioridade
+      do projeto.
+    resolved_by_commit: null
+    resolution: >
+      Validação adicionada DENTRO de compute_concurrency_and_uniqueness
+      (não só no chamador de M2) -- fail-fast com ValueError se t0 não
+      estiver ordenado ascendente. Mora na função, não no chamador,
+      porque é fronteira compartilhada entre M2 (diagnóstico) e
+      apply_weights (sample_weight de produção); custo O(n), desprezível
+      frente ao O(n log n) do searchsorted já existente. 1 teste novo em
+      test_labels_weights.py; nenhum teste existente usava t0
+      desordenado, então nada quebrou.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-026
+    date: "2026-08-15"
+    file: "src/analysis/volatility_comparison.py, m3_timeframe_choice.py, gk_vs_wilder_econ_regime_shift.py, volatility_operational_effect.py"
+    related_file: "src/analysis/m2_worker.py (_duckdb_throttle), src/data/lake.py"
+    found_by: "Agent project_assurance (m2_worker), pergunta 11 (mesma classe de bug em outro lugar), grep ativo"
+    gap: >
+      O mesmo bug de duckdb.connect() sem SET memory_limit/threads
+      assumindo até ~80% da RAM por conexão sob ProcessPoolExecutor
+      concorrente, corrigido só em M2 (m2_duckdb_memory_limit_gb/
+      m2_duckdb_threads), existia estruturalmente em pelo menos 4 outros
+      módulos de src/analysis/ -- ProcessPoolExecutor(max_workers=até
+      os.cpu_count()) chamando lake.query_bars(...) sem
+      duckdb_memory_limit_gb/duckdb_threads. lake.py já expunha os
+      parâmetros pra qualquer caller -- nenhum dos 4 os usava.
+    severity: "médio"
+    layer: "analysis/data"
+    consequence: >
+      Risco real não medido (klines_1m/bars_Nm são estruturalmente
+      menores que aggTrades, o que pode explicar por que nenhum dos 4
+      módulos jamais produziu duckdb.OutOfMemoryException observado --
+      mas isso é suposição, não medição, contra "meça antes de afirmar"
+      do CLAUDE.md). Sob concorrência real, o mesmo mecanismo de causa
+      raiz que quebrou M2 3x nesta sessão poderia se repetir sem aviso.
+    resolved_by_commit: null
+    resolution: >
+      lake.DuckDBThrottle (dataclass) extraída como tipo compartilhado
+      (antes duplicada só em m2_worker._DuckDBThrottle). Correção sobre a
+      1ª versão desta resolução (mesmo dia): um `lake.load_duckdb_
+      throttle(nome_da_constante: str, ...)` genérico foi tentado, mas
+      quebrava a rastreabilidade do check_constants_referenced.py (nome
+      passado por variável, não literal -- o script escaneia texto-fonte
+      por `load_constant("literal")`). Revertido: cada módulo chama
+      `load_constant(...)` com o literal direto e constrói
+      `lake.DuckDBThrottle(...)` ele mesmo -- só o TIPO é compartilhado,
+      não o loader. 4 novos pares de constantes em constants.yaml (m1_/
+      m3_/gk_vs_wilder_/volatility_operational_effect_duckdb_memory_
+      limit_gb+threads), cada um derivado do teto real de concorrência do
+      próprio módulo (M1: 12, os outros 3: 5) -- mesma metodologia de
+      m2_duckdb_memory_limit_gb, não um valor genérico compartilhado. Os
+      4 arquivos wireados pra passar o throttle em lake.query_bars(...).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-027
+    date: "2026-08-15"
+    file: "src/features/groups/group_a.py, group_b.py, group_c.py, group_d.py, group_e.py, src/features/build.py, src/regime/classifier.py, config/constants.yaml"
+    related_file: "src/features/_sources.py, PLANO_MESTRE_PRINCE2.md §15.6"
+    found_by: "Manager (Felipe), lente Feature/Alpha/Signal Researcher; validado e refinado por revisão adversarial própria do Manager; verificado por Claude via leitura de código + rederivação matemática independente"
+    gap: >
+      8 janelas de feature (feature_a13_ema_window=48, feature_b01_rsi_
+      window=14, feature_b07_efficiency_ratio_window=48, feature_c06_vol_
+      ratio_short/long_window=12/96, feature_c07_vol_pctile_window=48,
+      feature_d06f_taker_imbalance_window=48, feature_e10f_oi_change_
+      window=48) + min_warmup_bars=2000 são provenance:ASSUMED, com o
+      texto "convenção herdada do PRD (§18.5.2), nunca testada" já
+      presente em constants.yaml -- mas expressas em CONTAGEM DE BARRAS
+      enquanto o Feature Engine roda hardcoded em 15m
+      (build_t1_features/_sources.load_bars_15m, sem parâmetro tf) --
+      decisão bar-count-fixo vs clock-time-fixo entre TFs nunca tomada
+      nem registrada. Mesma classe de defeito de AG-004 (CPCV embargo
+      hardcoded 15m), AG-005 (TF hardcoded 3x em labels) e AG-017 (M2
+      BASELINE_TF) -- esta é a 5ª ocorrência confirmada do padrão
+      "parâmetro carrega escopo implícito (TF/ativo) nunca declarado".
+
+      Achado quantificado, verificado por rederivação independente
+      (aproximação de ruína do apostador, caminhante aleatório simétrico
+      sem drift, 2 barreiras absorventes -- primeira ordem, não medição
+      empírica): round_trip_cost_bps (group_e.py:37-49) assume P(TP
+      primeiro)=P(SL primeiro)=0,5 ao estimar o custo esperado de
+      round-trip que alimenta E27f_cost_atr_ratio. Com tp_atr_mult=2,0/
+      sl_atr_mult=1,5 (distâncias assimétricas), P(TP primeiro)=1,5/3,5
+      ≈42,9%, P(SL primeiro)=2,0/3,5≈57,1% (barreira mais próxima tem
+      mais chance de ser tocada primeiro sob passeio simétrico). Custo
+      recalculado: maker_fee + 0,429×maker_fee + 0,571×taker_fee =
+      5,71bps, contra os 5,50bps assumidos (0,0002+0,5×0,0002+0,5×0,0005)
+      -- viés de ~4% de SUBESTIMAÇÃO, direção conhecida (a favor do
+      caminhante, não aleatória), não só hipótese.
+
+      Achado corrigido após verificação de código (1ª formulação do
+      Manager estava errada no mecanismo, mantida a preocupação de fundo):
+      o corte de tercil em _economics_regime (classifier.py:258-272) NÃO
+      opera sobre cost_atr_ratio bruto -- opera sobre econ_quantile, que
+      já é expanding_percentile_rank_strict(cost_atr_ratio) (classifier.py
+      linha 324). Corte em posto percentil produz baldes populacionalmente
+      equilibrados por construção, qualquer que seja a distribuição bruta
+      -- risco real não é desequilíbrio de contagem, é INSTABILIDADE DE
+      FRONTEIRA: sob distribuição de cost_atr_ratio right-skewed
+      (plausível, não medida), os limiares p33/p66 podem mapear pra
+      valores muito próximos em unidade real de custo, fazendo uma
+      variação minúscula de custo trocar o rótulo de regime sem mudança
+      econômica real que justifique.
+
+      Achado temperado: A13 (dist_ema48_atr = (C_t-EMA_48)/ATR_20,
+      group_a.py:43-47) e B07 (efficiency_ratio = |C_t-C_t-48|/Σ|ΔC_i|,
+      support.py:300-312) usam a mesma janela (48) mas medem conceitos
+      matematicamente distintos -- A13 é distância POSICIONAL assinada a
+      uma média (mean-reversion/tendência), B07 é eficiência de TRAJETO
+      (independente do nível atual) -- correlação empírica não medida,
+      mas expectativa a priori de redundância alta é mais fraca do que
+      a formulação inicial sugeria.
+    severity: "alto"
+    layer: "features/regime"
+    consequence: >
+      Migração pra multi-TF (objetivo declarado do PRD_V4_1) herdaria
+      estes números sem nenhuma decisão explícita sobre unidade (barra
+      vs relógio) -- mesmo padrão que já custou correção reativa em CPCV
+      (AG-004) e labels (AG-005), agora na 5ª instância. E27f_cost_atr_
+      ratio carrega víes sistemático de subestimação de custo (~4%,
+      direção conhecida) enquanto round_trip_cost_bps não for corrigido
+      pra probabilidade real (medível hoje via contagem em labels.parquet
+      de qual barreira tocou primeiro -- não precisa de experimento novo).
+      Regime econômico pode ter fronteira de decisão instável perto de
+      p33/p66 sem que isso seja visível sem medir a distribuição bruta.
+    resolved_by_commit: null
+    resolution: null
+    addendum_2026_08_15: >
+      Sete pontos adicionais (Manager, "Continuando Ultrathink"), cada um
+      verificado por Claude via leitura direta de código/dado antes de
+      aceitar -- nenhum aceito só pela palavra do Manager:
+
+      (1) RISCO DE ORÇAMENTO, o mais crítico dos sete -- confirmado:
+      `audit/n_lifetime.yaml::counter=45`, teto 60 (`PRD_V4_1.md` linha
+      671, critério de encerramento 5: "N_lifetime > 60 sem Camada 2
+      fechada -> encerrar -- orçamento exaurido"), 15 trials restantes.
+      Executar a lente FE ingenuamente -- interpretar "8 janelas
+      ASSUMED" como "varra as 8" -- gastaria 15+ trials fácil e pode
+      disparar o encerramento do projeto por conta própria, sem decisão
+      do Manager. Distinção que passa a ser regra permanente da lente FE
+      (ver `.claude/skills/audit_engineering/SKILL.md` v1.5): as 10
+      perguntas FE são, por desenho, 0 trials -- leem `constants.yaml`,
+      código-fonte, `labels.parquet` já existente. NENHUMA resposta a
+      elas autoriza sozinha abrir um sweep/Optuna; isso exige decisão
+      explícita do Manager, feita DEPOIS de medir descritivamente (como
+      Q2 abaixo) e COM o `N_lifetime` restante explícito na pergunta.
+
+      (2) A Q2 original ("medível hoje") já tinha resposta medida em
+      OUTRO estudo antes mesmo deste achado existir -- confirmado:
+      `experiments/backtest_fill_reconciliation_report.json::
+      module_b_fill_selectivity.barrier_hit_distribution_given_filled`
+      = SL 54,58% / TP 36,61% / TIME 8,82% (BTCUSDT, 2023-05->2024-03,
+      condicional a fill real, não simulado). Normalizando só entre
+      SL/TP (excluindo TIME): P(SL|SL-ou-TP) = 0,5458/(0,5458+0,3661) ~=
+      59,9% -- MAIS assimétrico que a ruína do apostador (57,1%) e que a
+      medição pooled desta sessão sobre os 5 ativos/labels completos
+      (57,94%, ver `tools/diagnostics/measure_barrier_touch_probability.py`).
+      As duas medições não são a mesma população: a pooled é sobre todo
+      trade RESOLVIDO (TP/SL/TIME/NOFILL) nos 5 ativos; a do relatório de
+      fill é condicional a ORDEM TER SIDO PREENCHIDA, só BTC, janela mais
+      estreita -- divergência é esperada, não contraditória, mas mostra
+      que "a" probabilidade certa depende de qual estágio do funil se
+      está perguntando. Faixa de custo recalculada (5,64-5,90bps) NÃO
+      converge num único número porque o tipo de saída (maker/taker) do
+      exit por TIME não foi verificado neste achado -- pendente, não
+      assumido.
+
+      (3) O vencedor do M1 (Garman-Klass canônico,
+      `docs/refactor_gk_canonico.md`, lido por completo) é condicional ao
+      tipo de barra -- achado novo, mais forte que a razão hoje registrada
+      no doc. O doc justifica adiar reprocessamento de `labels/` até M2/M3
+      fecharem só por "evitar retrabalho duplicado" (texto literal, linha
+      ~200) -- razão logisticamente válida mas mais fraca do que a real:
+      GK/Parkinson/Rogers-Satchell assumem formalmente intervalo de tempo
+      FIXO (derivação Browniana); dollar/volume/tick-imbalance bars (M2)
+      têm duração variável por construção -- se M2 aprovar uma barra
+      não-temporal, a PRÓPRIA comparação de estimadores do M1 (rodada só
+      sobre barras de tempo) pode não ser válida no novo espaço, não só
+      "precisar rodar de novo". Isso não muda a decisão de adiar (mesma
+      conclusão), muda O QUE precisa ser reconfirmado quando M2 fechar --
+      não só "os labels", a ranking de estimador em si.
+
+      (4) A whitelist de literais do lint virou esconderijo de premissa
+      de domínio -- confirmado, `tools/lint/banned_patterns.py:32`,
+      `_ALLOWED_NUMERIC_LITERALS = frozenset({0.0, 1.0, -1.0, 2.0, 0.5})`.
+      Dois casos reais escondidos atrás dela, isentos de `# noqa` E de
+      entrada em `constants.yaml`: o `0,5` do split maker/taker 50/50 em
+      `round_trip_cost_bps` (a MESMA suposição do achado original desta
+      entrada, Q2) e o `2,0` divisor em `a05_ret_vol_norm_4`
+      (`atr_20_pct × 2.0`, group_a.py, normalização sem justificativa
+      registrada). A whitelist é legítima pra matemática pura (expoentes,
+      sinais) -- o gap é que ela isenta do lint MECÂNICO sem isentar da
+      OBRIGAÇÃO de proveniência; hoje ela isenta as duas coisas juntas,
+      sem querer. Não corrigido nesta rodada (mudança em
+      `banned_patterns.py` ou em `round_trip_cost_bps`/`group_a.py` requer
+      autorização explícita antes de tocar código de produção/lint) --
+      registrado como decisão pendente.
+
+      (5) Aritmética de bar-count confirmada por recálculo independente
+      (`SYMBOL_START_DATE`/`END_DATE`, `src/analysis/volatility_comparison.py:127-134`):
+      BTCUSDT 2019-12-31->2026-08-07 = 2412 dias = 231.552 barras de 15m;
+      os 4 alts 2021-12-01->2026-08-07 = 1711 dias = 164.256 barras.
+      `min_warmup_bars=2000` consome 0,864% (BTC) / 1,218% (alts) --
+      bate com os "~0,86%/~1,22%" citados, aritmética de fato modesta.
+      A assimetria mais grave não está no warmup fixo, está nas features
+      EXPANSIVAS desde a origem de cada ativo (não uma janela fixa):
+      C07_vol_pctile_expanding (`expanding_percentile_rank_strict`,
+      group_c.py:47), D03f (`expanding_zscore_strict` sobre log_volume,
+      group_d.py:19), E02f (`expanding_zscore_strict` sobre funding,
+      group_e.py:20) -- confirmados via grep. O mesmo valor bruto produz
+      percentil/z-score estruturalmente diferente por ativo dependendo de
+      quanta história aquele ativo já acumulou (BTC com 231k barras de
+      contexto expansivo vs. alts com no máximo 164k, e MENOS ainda no
+      início da vida de cada alt) -- não é vazamento temporal (ainda
+      estritamente `< t`), é NÃO-COMPARABILIDADE ENTRE ATIVOS que confunde
+      diretamente H0 do M6 (edge_bruto_atr igual entre os 5 ativos) --
+      qualquer diferença medida em M6 pode ser artefato de quanto histórico
+      de warmup expansivo cada ativo tinha, não edge real. Merece decisão
+      ANTES do M6 rodar, não depois -- ver AG-030 (nova entrada, abaixo).
+
+      (6) `sweep_required: false` nas 8 janelas de AG-027 não é
+      descuido de engenharia -- é uma decisão de orçamento (Business
+      Case, PRINCE2) que nunca foi tomada explicitamente pelo Manager.
+      Severidade/status desta entrada NÃO devem ser lidos como "furo a
+      corrigir" (implica trabalho de engenharia disponível) -- devem ser
+      lidos como "risco aceito silenciosamente, precisa virar aceito
+      EXPLICITAMENTE ou orçado". Reclassificação de enquadramento (não de
+      severidade -- "alto" continua correto pro impacto se o risco se
+      materializar): status abaixo passa a nomear a pendência como decisão
+      de Manager, não como backlog técnico.
+
+      (7) Transparência do que NÃO foi verificado nesta rodada: tipo de
+      saída (maker/taker) do exit por TIME (resolveria a faixa de custo
+      de (2) pra um único número); se a lente FE condicional (dispara só
+      em 3 eventos) é estritamente melhor que rodar as 10 perguntas sempre
+      -- condicional é mais barato mas depende de alguém lembrar de checar
+      os 3 gatilhos, mesma classe de risco que AG-028 fechou pra
+      `review_by`. Nenhuma das duas pendências foi resolvida nesta rodada.
+    status: >-
+      aberto -- reclassificado 2026-08-15 (ponto 6 do addendum): a
+      pendência central NÃO é "corrigir 8 janelas", é "Manager decidir
+      explicitamente aceitar o risco (documentar e seguir) OU orçar
+      trials pra investigar, com N_lifetime restante (15, teto 60) visível
+      na decisão" -- ver PLANO_MESTRE_PRINCE2.md §6.1/§7 (lente FE v1.5) e
+      AG-030 (confundimento do M6 por features expansivas, mais urgente,
+      prazo antes do M6 rodar)
+
+  - id: AG-028
+    date: "2026-08-15"
+    file: "tools/lint/check_constants_provenance.py"
+    related_file: "config/constants.yaml, AG-027"
+    found_by: "Manager (Felipe); verificado por Claude via leitura integral do script (88 linhas)"
+    gap: >
+      check_constants_provenance.py (lido por completo) só processa
+      entry["class"] == "A" -- valida sweep_required/sweep_range (Regra
+      4, §16.10.2) e lista constantes classe A ainda ASSUMED. O campo
+      `review_by` (presente em TODA constante classe B ASSUMED, incluindo
+      as 8 janelas de feature de AG-027, cada uma com review_by:
+      sprint_5/6/8/9) NUNCA é lido em nenhum lugar do script -- confirmado
+      por leitura linha a linha, não suposição. O campo existe como
+      intenção documentada em constants.yaml, sem nenhum mecanismo que
+      converta "está anotado" em "alguém é forçado a olhar quando o
+      gatilho chega".
+    severity: "médio"
+    layer: "tooling/lint"
+    consequence: >
+      Toda constante classe B (a classe de TODAS as janelas de feature
+      auditadas em AG-027) passa pelo único script mecânico de
+      proveniência do repo sem nenhuma checagem de review_by -- a dívida
+      técnica fica documentada mas nunca resurge automaticamente pra
+      revisão, dependendo inteiramente de alguém lembrar de checar um
+      número de sprint manualmente. Raiz mecânica de por que AG-004/
+      AG-005/AG-017/AG-027 (mesma classe de defeito) só foram achados por
+      auditoria humana/agente, nunca pelo lint.
+    resolved_by_commit: null
+    resolution: >
+      check_constants_provenance.py ganhou check_assumed_class_b_review_by()
+      -- lista (nome, review_by) de toda constante class:B ASSUMED com
+      review_by declarado, sempre visível na saída do script (não falha,
+      só reporta -- mesmo padrão já usado pra classe A). Rodado: confirma
+      21 constantes hoje nessa situação (as 8 janelas de feature de AG-027
+      + bars_tick_imbalance_*, alpha_xgb_*, fill_timeout_bars, min_warmup_
+      bars). Não implementa comparação contra "sprint atual" (não há
+      tracking machine-readable de sprint neste repo -- mesma limitação já
+      aceita por check_assumed_class_a) -- fecha a parte de VISIBILIDADE
+      do gap, não é enforcement automático completo.
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
+
+  - id: AG-029
+    date: "2026-08-15"
+    file: "src/labels/backfill_multi_symbol.py, src/labels/triple_barrier.py"
+    related_file: "src/labels/triple_barrier.py::assert_label_invariants, src/labels/weights.py"
+    found_by: "Agent (audit_engineering, delegado pra revisar src/labels/weights.py), achado no caminho ao rastrear os chamadores de apply_weights"
+    gap: >
+      assert_label_invariants (a única função do repo que checa
+      sample_weight.mean()~=1 via np.mean comum, que propaga NaN em vez de
+      mascarar como np.nanmean) NUNCA é chamada no caminho real de
+      escrita -- build_and_write_labels_for_symbol vai direto de
+      build_labels_for_symbol pra write_labels_atomic, sem checagem de
+      invariante no meio. Só é chamada em teste, sobre dado sintético.
+      Achado irmão no mesmo Agent: apply_weights usava np.nanmean(raw_
+      weight) pro guard de degeneração -- se só ALGUMAS linhas tiverem
+      ret_net/uniqueness não-finito (corrupção upstream numa única
+      linha), nanmean calcula a média das demais SILENCIOSAMENTE, o
+      guard passa normal, e sample_weight=NaN só NAQUELA linha vaza pra
+      labels.parquet sem erro -- já corrigido em weights.py (validação
+      de finitude antes do nanmean), mas a rede de segurança de
+      integração (assert_label_invariants) continua ausente do caminho
+      real.
+    severity: "alto"
+    layer: "labels"
+    consequence: >
+      sample_weight de PRODUÇÃO (07b_PESOS, treino real do modelo Alpha)
+      não passa por nenhuma validação de invariante entre ser calculado e
+      ser persistido -- um bug futuro em qualquer parte do caminho
+      (triple_barrier, weights, ou upstream) só seria pego se alguém
+      rodasse o teste sintético manualmente, nunca em produção real.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto"
+
+  - id: AG-030
+    date: "2026-08-15"
+    file: "src/features/groups/group_c.py, group_d.py, group_e.py"
+    related_file: "src/features/support.py::expanding_percentile_rank_strict,expanding_zscore_strict; src/analysis/volatility_comparison.py::SYMBOL_START_DATE; PLANO_MESTRE_PRINCE2.md T0.5/M6"
+    found_by: "Manager, ponto 5 de 'Continuando Ultrathink'; verificado por Claude via grep direto dos 3 sites de uso + recálculo independente de contagem de barras"
+    gap: >
+      C07_vol_pctile_expanding (expanding_percentile_rank_strict sobre
+      realized_vol, group_c.py:47), D03f (expanding_zscore_strict sobre
+      log_volume, group_d.py:19) e E02f (expanding_zscore_strict sobre
+      funding, group_e.py:20) são calculadas sobre janela EXPANSIVA desde
+      a origem de cada ativo (SYMBOL_START_DATE), não uma janela fixa.
+      BTCUSDT acumula até 231.552 barras de 15m de contexto (2019-12-31->
+      2026-08-07, 2412 dias, recalculado e confirmado); os 4 alts no
+      máximo 164.256 (2021-12-01->mesma data, 1711 dias) -- e MENOS ainda
+      no início da vida de cada alt, quando a janela expansiva é curta e
+      instável por construção. O MESMO valor bruto de entrada produz
+      percentil/z-score estruturalmente diferente por ativo, dependendo
+      só de quanto histórico aquele ativo já acumulou -- não é vazamento
+      temporal (`< t` estrito preservado), é NÃO-COMPARABILIDADE ENTRE
+      ATIVOS introduzida pelo desenho da própria feature.
+    severity: "alto"
+    layer: "features/regime"
+    consequence: >
+      M6 testa H0: edge_bruto_atr igual entre os 5 ativos (PLANO_MESTRE
+      §15/T0.5) -- COM estas 3 features expansivas no vetor, qualquer
+      diferença medida entre BTC e os alts pode ser artefato de quanto
+      histórico de warmup expansivo cada ativo tinha no momento medido,
+      não edge real diferencial. Ao contrário de AG-027 (janelas FIXAS
+      ASSUMED, correção é 0-trial e pode esperar), este risco é
+      estrutural ao desenho da feature e ataca diretamente a validade do
+      teste que M6 existe pra fazer -- precisa de decisão (documentar como
+      limitação conhecida do teste, normalizar por história disponível,
+      ou excluir estas 3 features do vetor usado em M6 especificamente)
+      ANTES do M6 rodar, não depois -- reverter uma conclusão de M6 já
+      publicada custaria mais caro que decidir agora.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager necessária antes do M6 (T0.5) rodar, ver AG-027 addendum ponto 5"

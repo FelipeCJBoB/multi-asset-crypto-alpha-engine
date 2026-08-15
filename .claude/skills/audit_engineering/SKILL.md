@@ -11,13 +11,17 @@ description: |
   pipeline (parquet/JSON em `experiments/`, `models/`, `data/`).
 
   Aplica lente quádrupla obrigatória (FS estatística + FI implementação +
-  FT tecnológica + FCN contrato negativo), com pesquisa web crítica antes
-  de afirmar qualquer coisa sobre biblioteca/método, severidade
-  classificada (CRITICAL/HIGH/MEDIUM/LOW), prioridade P0-P3, cross-check
-  obrigatório contra os 32 banned patterns do CLAUDE.md + as 6 classes de
-  bug já confirmadas nesta investigação (ver Contexto), e roda os dois
-  scripts mecânicos (`check_constants_referenced.py`,
-  `check_unguarded_ratios.py`) como parte do processo, não como
+  FT tecnológica + FCN contrato negativo) — mais uma 5ª lente CONDICIONAL,
+  FE (Falha de Especificação Econômica: hiperparâmetro de feature/label
+  derivado de convenção de mercado tradicional em vez de cripto M15/M30/
+  H1, dispara só em 3 eventos de transição de escopo, não em toda
+  auditoria) — com pesquisa web crítica antes de afirmar qualquer coisa
+  sobre biblioteca/método, severidade classificada (CRITICAL/HIGH/MEDIUM/
+  LOW), prioridade P0-P3, cross-check obrigatório contra os 32 banned
+  patterns do CLAUDE.md + as 7 classes de bug já confirmadas nesta
+  investigação (ver Contexto), e roda os scripts mecânicos
+  (`check_constants_referenced.py`, `check_unguarded_ratios.py`,
+  `check_constants_provenance.py`) como parte do processo, não como
   substituto dele.
 
   Pra varredura de mais de 1-2 arquivos, usa `Workflow` internamente
@@ -59,6 +63,7 @@ hipotético):
 | 4 | Zero medido vs nunca medido conflados | R0 (0,81% da história) tinha zero trades — era warmup, não `tau`, mas não havia distinção explícita até ser investigado | FCN |
 | 5 | Constante referenciada sem entrada em `constants.yaml` NO ÍNDICE do git | ~280 linhas de proveniência (Sprints 8/12) fora de commit por sessões inteiras | mecanizado (`check_constants_referenced.py`) |
 | 6 | Hierarquia de camada violada | (nenhuma violação real encontrada até agora — os contratos existentes já protegem) | mecanizado (`import-linter`) |
+| 7 | Parâmetro carrega escopo implícito (TF/ativo) nunca declarado nem testado | AG-004 (CPCV embargo 15m hardcoded) → AG-005 (TF hardcoded 3x em labels) → AG-017 (M2 `BASELINE_TF`) → AG-027 (8 janelas de feature em contagem de barra, Feature Engine hardcoded em 15m) — 4 ocorrências confirmadas, mesmo padrão | FE (nova, 2026-08-15) |
 
 Esta skill audita as classes 1-4 (não totalmente mecanizáveis — exigem julgamento
 de domínio) e cross-referencia as classes 5-6 (já rodam sozinhas em CI, não
@@ -97,6 +102,13 @@ t?" (lente FS) vem direto dali, não é intuição.
 Se o pedido não especificar, pergunte: auditoria isolada, ou em contexto (precisa
 ler módulos relacionados)? Auditar `src/models/alpha.py` sem ler
 `src/models/dataset.py`/`monotonic.py` perde a maior parte das falhas de FS.
+
+**Lente FE (Falha de Especificação Econômica, ver Passo 3) é condicional, não
+por tipo de arquivo** — não pertence a esta tabela porque não depende de QUAL
+arquivo é, depende de QUANDO um dos 3 gatilhos de escopo dispara (Passo 3, FE).
+Mesmo assim, arquivos em `src/features/`, `src/regime/`, `src/labels/` e
+`config/constants.yaml::feature_*`/`regime_*` são o universo típico onde ela
+se aplica quando disparada.
 
 ### Passo 2 — Pesquisa web crítica (obrigatória, não pule)
 
@@ -252,6 +264,104 @@ catalogados — não reaudite os 5 arquivos já cobertos do zero, CONFIRA se a
 situação mudou); `docs/audit_discarded_diagnostics.md`; `src/core/metric.py`
 (padrão de referência).
 
+#### Lente FE — Falha de Especificação Econômica (condicional, não roda em toda auditoria)
+
+**Diferente de FS/FI/FT/FCN, a lente FE NÃO é obrigatória em toda auditoria de
+`src/`** — é cara demais (exige julgamento de domínio quant, não só leitura de
+código) pra rodar em arquivo que não parametriza sinal/feature/label. Dispara
+SÓ nestes 3 eventos de transição de escopo (achado 2026-08-15, Manager, ver
+`PLANO_MESTRE_PRINCE2.md` §6.1/AG-027):
+
+| gatilho | o que dispara | por quê este ponto |
+|---|---|---|
+| Feature Engine ganha o 1º TF além de 15m (`build_t1_features`/`_sources.load_bars_15m` deixa de ser hardcoded) | mudança de escopo TEMPORAL | decisão bar-count×clock-time precisa existir ANTES do 1º commit multi-TF, não depois (mesmo erro de AG-004/005/017 se repetir pela 5ª vez) |
+| Constante `class: B, provenance: ASSUMED` entra no vetor de treino de um modelo promovido além de research (Gate 3/4) | mudança de escopo de USO (pesquisa → produção) | `check_constants_provenance.py` já lista essas constantes com `review_by` (AG-028) — rode-o antes de aprovar a promoção |
+| Antes de `12_RISK_ENGINE`/`13_EXECUCAO` ganharem o 1º caller real | mudança de escopo (research → capital real) | toda constante ainda `ASSUMED` nesse ponto vira bloqueio de Gate, não nota de rodapé |
+
+**Regra de segurança orçamentária (v1.5, achado 2026-08-15 — Manager, "a
+auditoria está correta, mas executá-la ingenuamente dispara o critério de
+encerramento #5"):** as 10 perguntas abaixo são, por desenho, **0 trials** —
+leem `constants.yaml`, código-fonte já escrito, e artefato já persistido
+(`labels.parquet`, `experiments/*.json`). Nenhuma resposta a elas autoriza,
+sozinha, abrir um sweep/Optuna/retreino pra "corrigir" o parâmetro
+encontrado. `audit/n_lifetime.yaml::counter` tem teto declarado em
+`PRD_V4_1.md` (critério de encerramento 5: `N_lifetime > 60 sem Camada 2
+fechada → encerrar`); interpretar "N janelas ASSUMED encontradas" como "varra
+as N" pode consumir o orçamento restante inteiro numa única sessão e disparar
+o encerramento do projeto sem nenhuma decisão do Manager ter sido tomada
+sobre isso. Sequência obrigatória, sempre nesta ordem:
+1. Responda as 10 perguntas (0 trials).
+2. Se a resposta sugerir viés/erro, meça DESCRITIVAMENTE onde possível, sem
+   sweep — contagem direta em dado já existente (achado-modelo: `AG-027`
+   Q2, `round_trip_cost_bps` corrigido por contagem em `labels.parquet`
+   já gravado, não por experimento novo).
+3. Registre o achado em `architecture_gaps_log.yaml` com a magnitude medida.
+4. Só se (2) mostrar diferença material E a correção exigir otimização de
+   verdade, escale ao Manager pedindo autorização — citando explicitamente
+   `N_lifetime` restante na própria pergunta (não deixe o Manager decidir às
+   cegas do orçamento). Nunca abra um sweep por conta própria a partir de um
+   achado desta lente.
+
+Aplique as 10 perguntas a CADA parâmetro numérico que parametriza uma
+feature/indicador/label/regra de regime no escopo do Pacote de Trabalho (não
+só a que motivou o gatilho):
+
+1. **Bar-count fixo ou clock-time fixo entre TFs, pra esta janela específica?**
+   A decisão está registrada em algum lugar (comentário, `constants.yaml`), ou
+   é implícita? (achado-modelo: AG-027, 8 janelas de feature em contagem de
+   barra sem essa decisão)
+2. **A premissa embutida na fórmula é medível no dado real já existente?**
+   (achado-modelo: `round_trip_cost_bps` assumia 50/50 de qual barreira toca
+   primeiro — `labels.parquet` já registra qual tocou, contagem direta, sem
+   experimento novo — e a aproximação analítica de 1ª ordem, ruína do
+   apostador com barreiras assimétricas, já mostrava viés de ~4% antes até de
+   medir)
+3. **O método/estimador tem premissa estrutural que cripto 24/7 viola
+   conceitualmente** (ex. "overnight"/sessão de mercado em Yang-Zhang/
+   Rogers-Satchell)? Cite literatura que confirme a incompatibilidade, não só
+   o resultado empírico de qual estimador "ganhou" — resultado ruim pode ser
+   sintoma de premissa errada, não de janela errada.
+4. **A mesma janela/threshold é aplicada uniformemente a todos os N ativos do
+   universo?** Alguém MEDIU se a estrutura de autocorrelação difere o
+   bastante entre ativos (maturidade/liquidez diferentes) pra justificar
+   parametrização por ativo, ou é suposição de conveniência?
+5. **Corte de threshold/regime: sobre valor bruto ou sobre posto percentil?**
+   Se sobre posto percentil (`expanding_percentile_rank_strict` ou
+   equivalente), desequilíbrio populacional NÃO é o risco (percentil
+   equilibra por construção) — o risco é INSTABILIDADE DE FRONTEIRA: meça a
+   distância real entre os percentis de corte vizinhos (ex. p33/p66) EM
+   UNIDADE BRUTA, não em percentil. Sob distribuição enviesada, threshold
+   populacionalmente "limpo" pode trocar de rótulo com variação econômica
+   desprezível.
+6. **Duas features com a mesma janela medem conceitos matematicamente
+   distintos, ou uma é redundante da outra?** Verifique a FÓRMULA antes de
+   supor redundância (posição vs. trajeto, nível vs. variação são
+   frequentemente confundidos) — e meça correlação empírica real (o pipeline
+   de HHI/importância do projeto já serve pra isso).
+7. **Constante de warmup/lookback em contagem de barras interage desigual com
+   ativos de histórico mais curto?** Medido em % de dados descartados POR
+   ATIVO, não só globalmente?
+8. **Um parâmetro faz DOIS papéis simultâneos** (ex. dimensiona a geometria do
+   LABEL e também alimenta uma FEATURE, mesmo ATR)? Isso não é vazamento
+   temporal, mas é acoplamento de design — erro de calibração se propaga
+   correlacionado pros dois lados, risco de correlação espúria feature↔label
+   que parece sinal sem ser.
+9. **A justificativa registrada é derivação real ou estética pós-hoc?**
+   Frases-alerta pra buscar no próprio `source:` de `constants.yaml`: "janela
+   de funding", "número redondo", "convenção de mercado", "soa razoável" —
+   sem medição citada por trás.
+10. **`review_by` já foi alcançado pelo estado atual do projeto?** Rode
+    `python tools/lint/check_constants_provenance.py` (agora lista toda
+    constante `class: B` `ASSUMED` com seu `review_by`, achado AG-028) — se o
+    sprint já passou, a revisão foi feita de verdade ou só passou
+    despercebido?
+
+Cross-check obrigatório: `config/constants.yaml` (toda entrada citada tem
+`provenance`/`source` que resiste às 10 perguntas acima, não só existe);
+`audit/architecture_gaps_log.yaml` AG-004/AG-005/AG-017/AG-027 (mesma classe
+de defeito, não trate achado novo como isolado se bater no padrão);
+`tools/lint/check_constants_provenance.py` (rodar, ver Passo 4).
+
 ### Passo 4 — Scripts mecânicos (Claude roda direto — exceção nomeada, CLAUDE.md v1.5)
 
 **Histórico da correção:** esta seção, escrita em 2026-08-09, instruía
@@ -391,6 +501,51 @@ v1.3 — 2026-08-15 — Adiciona pergunta de TF hardcoded à Lente FI. Achado
                      pedida, e o módulo nunca foi auditado antes de
                      "pronto") — registra o critério pra quando alguém
                      pedir auditoria de um módulo novo desse tipo.
+v1.4 — 2026-08-15 — Adiciona 5ª lente CONDICIONAL, FE (Falha de
+                     Especificação Econômica) — hiperparâmetro de feature/
+                     indicador/label herdado de convenção de mercado
+                     tradicional sem validação pra cripto M15/M30/H1.
+                     Achado AG-027 (Manager, lente Feature/Alpha/Signal
+                     Researcher, validado por revisão adversarial própria +
+                     verificação de código/rederivação matemática): 8
+                     janelas de feature ASSUMED/nunca testadas, expressas
+                     em contagem de barra enquanto o Feature Engine roda
+                     hardcoded em 15m; round_trip_cost_bps assume 50/50 de
+                     qual barreira toca primeiro (viés quantificado ~4%,
+                     não hipótese); tercil econômico opera sobre posto
+                     percentil (desequilíbrio populacional não é risco;
+                     instabilidade de fronteira é). 4ª ocorrência confirmada
+                     da mesma classe de defeito de AG-004/AG-005/AG-017 —
+                     promovida a classe própria (#7) na tabela de Contexto.
+                     Diferente de FS/FI/FT/FCN, NÃO roda em toda auditoria —
+                     dispara só em 3 eventos de transição de escopo (Feature
+                     Engine ganha TF além de 15m; constante classe B
+                     ASSUMED entra em modelo promovido; antes do 1º caller
+                     real de risk/execution), porque exige julgamento de
+                     domínio quant caro demais pra rodar sempre. AG-028
+                     (achado irmão, mesma sessão): check_constants_
+                     provenance.py nunca lia `review_by` de constantes
+                     classe B — corrigido, script agora lista visibilidade
+                     (não enforcement) de toda classe B ASSUMED com
+                     review_by declarado.
+v1.5 — 2026-08-15 — Adiciona "Regra de segurança orçamentária" à lente FE
+                     (achado do Manager, "Continuando Ultrathink" ponto 1):
+                     a lente é 100% 0-trial por desenho (só lê constants.yaml/
+                     código/labels.parquet já existentes), mas nada nela
+                     autoriza abrir sweep/Optuna a partir de um achado — só
+                     escalar ao Manager, citando N_lifetime restante
+                     explicitamente. Risco real, não hipotético: AG-027
+                     interpretado ingenuamente como "varra as 8 janelas"
+                     gastaria os 15 trials restantes (counter=45, teto=60,
+                     PRD_V4_1.md critério de encerramento 5) e poderia
+                     disparar o encerramento do projeto sem decisão do
+                     Manager. Sequência agora explícita: 10 perguntas →
+                     medição descritiva (0 trials) → registro em
+                     architecture_gaps_log.yaml → só então, se material,
+                     escalar pedindo trial com orçamento visível. AG-030
+                     registrado no mesmo achado (features expansivas desde a
+                     origem do ativo — C07/D03f/E02f — confundem H0 do M6,
+                     decisão necessária antes do M6 rodar).
 ```
 
 Atualizar quando: novo banned pattern adicionado ao CLAUDE.md, nova classe de
