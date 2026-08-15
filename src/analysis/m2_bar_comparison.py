@@ -88,6 +88,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
 
+import duckdb
 import numpy as np
 import orjson
 import polars as pl
@@ -306,67 +307,127 @@ def _build_tick_imbalance_config(
     )
 
 
-def compute_bar_type_for_symbol(
-    symbol: str, bar_type: str, *, time_stop_ms: int, ljung_box_lags: int
-) -> BarComparisonMetrics:
-    """Núcleo de IO pra EXATAMENTE um (symbol, bar_type) -- desenhado pra
-    rodar como task independente num pool grande (ver `run_and_save_bar_
-    comparison_report`), não presume que outro `bar_type` do mesmo símbolo
-    já rodou ou vai rodar no mesmo processo (ver "Performance" na
-    docstring do módulo sobre o custo de releitura de `aggTrades`)."""
-    if bar_type not in BAR_TYPES:
-        raise ValueError(f"bar_type desconhecido: {bar_type!r} (válidos: {BAR_TYPES})")
+_TRADES_DEPENDENT_BAR_TYPES: Final[tuple[str, ...]] = tuple(bt for bt in BAR_TYPES if bt != "time")
 
-    if bar_type == "time":
-        bars = _query_baseline(symbol)
-        return compute_bar_statistics(
-            symbol, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
-        )
 
-    target_n_bars = _target_n_bars(symbol, _query_baseline(symbol))
-    trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
-
-    if bar_type == "dollar":
-        total_dollar = float((trades["price"] * trades["quantity"]).sum())
-        threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-        bars = dollar_bars(trades, threshold=threshold)
-    elif bar_type == "volume":
-        total_volume = float(trades["quantity"].sum())
-        threshold = total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-        bars = volume_bars(trades, threshold=threshold)
-    else:  # "tick_imbalance"
-        config = _build_tick_imbalance_config(trades, target_n_bars)
-        bars = tick_imbalance_bars(trades, config)
-
-    metrics = compute_bar_statistics(
-        symbol, bar_type, bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
-    )
+def _log_task_done(metrics: BarComparisonMetrics) -> None:
     logger.info(
         "analysis.m2_bar_comparison.task_done",
-        symbol=symbol,
-        bar_type=bar_type,
+        symbol=metrics.symbol,
+        bar_type=metrics.bar_type,
         n_bars=metrics.n_bars,
         jarque_bera_pvalue=metrics.jarque_bera_pvalue,
         ljung_box_r_pvalue=metrics.ljung_box_r_pvalue,
         avg_uniqueness=metrics.avg_uniqueness,
     )
+
+
+def compute_time_bar_for_symbol(
+    symbol: str, *, time_stop_ms: int, ljung_box_lags: int
+) -> BarComparisonMetrics:
+    """Núcleo de IO pro tipo `"time"` -- só `klines_1m`, leve, roda numa
+    task própria pra não competir por memória com as tasks de `aggTrades`
+    (ver `compute_trades_dependent_bars_for_symbol`)."""
+    bars = _query_baseline(symbol)
+    metrics = compute_bar_statistics(
+        symbol, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+    )
+    _log_task_done(metrics)
     return metrics
 
 
+def compute_trades_dependent_bars_for_symbol(
+    symbol: str, *, time_stop_ms: int, ljung_box_lags: int
+) -> list[BarComparisonMetrics]:
+    """Carrega `aggTrades` de UM símbolo UMA vez só e constrói `dollar`/
+    `volume`/`tick_imbalance` bars a partir do MESMO `DataFrame` --
+    achado de auditoria (2026-08-15): a versão anterior recarregava
+    `aggTrades` 3x por símbolo (uma vez por `bar_type`, cada um sua
+    própria task) para paralelizar por (symbol, bar_type); com múltiplos
+    símbolos concorrentes isso multiplicava a pressão de memória (até 15
+    cargas concorrentes de histórico completo de trades, não 5) o
+    suficiente pra estourar `duckdb.OutOfMemoryException` mesmo numa
+    máquina com ~32GB de RAM total / ~28GB livres (medido via
+    `Get-CimInstance Win32_OperatingSystem`, 2026-08-15) -- a versão
+    original (1 task por símbolo, antes da fatia fina por bar_type) NUNCA
+    tinha batido nesse teto; o gargalo real era o volume de SVDs dentro do
+    ADF (corrigido em `_run_adfuller`), não a carga de `aggTrades` em si.
+    Reunir os 3 tipos de volta numa única task por símbolo devolve a
+    concorrência de carga de `aggTrades` pro nível que já era conhecido
+    seguro (no máximo `len(symbols)` cargas concorrentes, ver `run_and_
+    save_bar_comparison_report`), sem abrir mão do paralelismo de verdade
+    que `_run_adfuller`/thread-pinning já conquistou dentro de cada task.
+
+    Blindado contra `duckdb.OutOfMemoryException` residual (mesma
+    disciplina FCN de `_run_adfuller`/`_nan_metrics`) -- se AINDA assim a
+    carga falhar (ex. símbolo com histórico particularmente grande numa
+    máquina com menos RAM livre no momento), devolve `NaN` explícito pros
+    3 tipos dependentes de trades desse símbolo, sem derrubar os outros 4
+    símbolos do batch."""
+    target_n_bars = _target_n_bars(symbol, _query_baseline(symbol))
+    try:
+        trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
+    except duckdb.OutOfMemoryException as exc:
+        logger.warning(
+            "analysis.m2_bar_comparison.trades_load_failed", symbol=symbol, error=repr(exc)
+        )
+        return [_nan_metrics(symbol, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES]
+
+    results: list[BarComparisonMetrics] = []
+
+    total_dollar = float((trades["price"] * trades["quantity"]).sum())
+    dollar_threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+    dollar_result = compute_bar_statistics(
+        symbol,
+        "dollar",
+        dollar_bars(trades, threshold=dollar_threshold),
+        time_stop_ms=time_stop_ms,
+        ljung_box_lags=ljung_box_lags,
+    )
+    results.append(dollar_result)
+
+    total_volume = float(trades["quantity"].sum())
+    volume_threshold = total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+    volume_result = compute_bar_statistics(
+        symbol,
+        "volume",
+        volume_bars(trades, threshold=volume_threshold),
+        time_stop_ms=time_stop_ms,
+        ljung_box_lags=ljung_box_lags,
+    )
+    results.append(volume_result)
+
+    tib_config = _build_tick_imbalance_config(trades, target_n_bars)
+    tick_imbalance_result = compute_bar_statistics(
+        symbol,
+        "tick_imbalance",
+        tick_imbalance_bars(trades, tib_config),
+        time_stop_ms=time_stop_ms,
+        ljung_box_lags=ljung_box_lags,
+    )
+    results.append(tick_imbalance_result)
+
+    for metrics in results:
+        _log_task_done(metrics)
+    return results
+
+
 def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
-    """Conveniência pra depuração manual de UM símbolo, sequencial (os 4
-    `bar_type` no mesmo processo) -- o caminho de produção real é
-    `run_and_save_bar_comparison_report`, que fatia por (symbol, bar_type)
-    pra paralelismo de verdade (ver docstring do módulo)."""
+    """Conveniência pra depuração manual de UM símbolo, sequencial -- o
+    caminho de produção real é `run_and_save_bar_comparison_report`, que
+    roda a task leve (`"time"`) e a task pesada (dollar/volume/tick_
+    imbalance, `aggTrades` carregado uma vez) em paralelo entre símbolos
+    (ver docstring do módulo)."""
     time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
     time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
     ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
-    return [
-        compute_bar_type_for_symbol(
-            symbol, bar_type, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
-        )
-        for bar_type in BAR_TYPES
-    ]
+    time_metrics = compute_time_bar_for_symbol(
+        symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+    )
+    trades_metrics = compute_trades_dependent_bars_for_symbol(
+        symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+    )
+    return [time_metrics, *trades_metrics]
 
 
 def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
@@ -388,13 +449,20 @@ def run_and_save_bar_comparison_report(
     dest_path: Path | None = None,
     max_workers: int | None = None,
 ) -> Path:
-    """Ponto de entrada MANUAL -- fatia o trabalho em `len(symbols) ×
-    len(BAR_TYPES)` tasks independentes (até 20, com os 5 ativos padrão) e
-    roda num `ProcessPoolExecutor` dimensionado por `os.cpu_count()` --
-    não por `len(symbols)` (ver "Performance" na docstring do módulo:
-    paralelizar só por símbolo deixaria núcleo ocioso, já que só há 5
-    símbolos mas potencialmente muito mais núcleos disponíveis). Persiste
-    o relatório, atômico (B29).
+    """Ponto de entrada MANUAL -- `2 × len(symbols)` tasks (até 10, com os
+    5 ativos padrão): 1 task leve por símbolo (`"time"`, só `klines_1m`) +
+    1 task pesada por símbolo (`aggTrades` carregado uma vez,
+    `dollar`+`volume`+`tick_imbalance` construídos do mesmo `DataFrame`,
+    ver `compute_trades_dependent_bars_for_symbol`). Um único
+    `ProcessPoolExecutor` dimensionado por `os.cpu_count()` -- como só
+    existem `len(symbols)` tasks pesadas no total, o pool nunca roda mais
+    que isso concorrentemente mesmo com mais slots livres, que é
+    exatamente o nível de concorrência de carga de `aggTrades` já
+    confirmado seguro (ver docstring de `compute_trades_dependent_bars_
+    for_symbol` -- achado de auditoria 2026-08-15: fatiar por bar_type
+    além de symbol multiplicava essa carga 3x e estourava memória). Não
+    precisa de dois pools separados por esse motivo. Persiste o
+    relatório, atômico (B29).
 
     Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
@@ -402,31 +470,43 @@ def run_and_save_bar_comparison_report(
     time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
     ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
 
-    tasks = [(symbol, bar_type) for symbol in symbols for bar_type in BAR_TYPES]
+    n_tasks = 2 * len(symbols)
     logger.info(
         "analysis.m2_bar_comparison.starting",
         n_symbols=len(symbols),
-        n_tasks=len(tasks),
+        n_tasks=n_tasks,
         max_workers=workers,
     )
 
     results_by_symbol: dict[str, dict[str, BarComparisonMetrics]] = {
         symbol: {} for symbol in symbols
     }
-    with ProcessPoolExecutor(max_workers=workers) as executor:
-        future_to_task = {
+    with ProcessPoolExecutor(max_workers=min(workers, n_tasks)) as executor:
+        time_futures = {
             executor.submit(
-                compute_bar_type_for_symbol,
+                compute_time_bar_for_symbol,
                 symbol,
-                bar_type,
                 time_stop_ms=time_stop_ms,
                 ljung_box_lags=ljung_box_lags,
-            ): (symbol, bar_type)
-            for symbol, bar_type in tasks
+            ): symbol
+            for symbol in symbols
         }
-        for future in as_completed(future_to_task):
-            symbol, bar_type = future_to_task[future]
-            results_by_symbol[symbol][bar_type] = future.result()
+        trades_futures = {
+            executor.submit(
+                compute_trades_dependent_bars_for_symbol,
+                symbol,
+                time_stop_ms=time_stop_ms,
+                ljung_box_lags=ljung_box_lags,
+            ): symbol
+            for symbol in symbols
+        }
+        for time_future in as_completed(time_futures):
+            symbol = time_futures[time_future]
+            results_by_symbol[symbol]["time"] = time_future.result()
+        for trades_future in as_completed(trades_futures):
+            symbol = trades_futures[trades_future]
+            for metrics in trades_future.result():
+                results_by_symbol[symbol][metrics.bar_type] = metrics
 
     payload: dict[str, Any] = {
         **report_provenance(),
