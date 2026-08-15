@@ -165,11 +165,23 @@ class ThresholdBarsCarry:
     barra (`price*quantity` = dollar, `quantity` = volume) -- ver
     `dollar_bars_carry`/`volume_bars_carry`. `leftover` guarda só os trades
     do bar ainda aberto; `bar_frames` acumula barras JÁ fechadas
-    (agregadas, pequenas -- não trades crus)."""
+    (agregadas, pequenas -- não trades crus). `base_value` é o valor total
+    (dólar ou volume) já consumido por todas as barras fechadas até agora --
+    achado de bug (2026-08-15, teste de paridade `sizes=[1]*20` de
+    `volume_bars` falhando com barra fantasma): uma barra só fecha quando um
+    trade EXCEDE o threshold, não quando bate exatamente nele, então o
+    "resto" acumulado ao fechar não é múltiplo do threshold em geral. Sem
+    `base_value`, cada `step()` recalculava o cumsum do zero pra
+    `leftover+chunk`, perdendo esse resto e fechando barras cedo demais
+    sempre que o leftover sobrevivia a mais de 1 chunk -- não pegou no teste
+    de `dollar_bars` só porque lá o valor por trade já excede o threshold
+    (leftover nunca sobrevive), mascarando o bug por coincidência dos
+    dados."""
 
     threshold: float
     value_expr: pl.Expr
     leftover: pl.DataFrame | None = None
+    base_value: float = 0.0
     bar_frames: list[pl.DataFrame] = field(default_factory=list)
 
 
@@ -198,7 +210,13 @@ def threshold_bars_step(carry: ThresholdBarsCarry, chunk: pl.DataFrame) -> None:
         if carry.leftover is not None and not carry.leftover.is_empty()
         else chunk
     )
-    cum_value = combined.select(carry.value_expr.alias("_v")).to_series().cum_sum()
+    local_cum = combined.select(carry.value_expr.alias("_v")).to_series().cum_sum()
+    # soma o valor ja consumido por barras fechadas (`base_value`) antes de
+    # dividir pelo threshold -- sem isso, cada chunk recomeca o cumsum do
+    # zero e perde o "resto" de barras que fecharam sem bater exatamente no
+    # multiplo do threshold, fechando barra fantasma cedo demais (ver
+    # docstring de `ThresholdBarsCarry`).
+    cum_value = local_cum + carry.base_value
     # carry.threshold > 0 garantido por dollar_bars_carry/volume_bars_carry
     # (único jeito de construir ThresholdBarsCarry) antes de chegar aqui.
     bar_id = (cum_value // carry.threshold).cast(pl.Int64)  # noqa: unguarded-ratio
@@ -213,6 +231,10 @@ def threshold_bars_step(carry: ThresholdBarsCarry, chunk: pl.DataFrame) -> None:
     if not closed.is_empty():
         closed_bar_id = closed["_bar_id"].to_numpy()
         carry.bar_frames.append(_aggregate_bars(closed.drop("_bar_id"), closed_bar_id))
+        # bar_id e' monotonico nao-decrescente -> "closed" e' sempre um
+        # prefixo de `combined`; cum_value[n_closed-1] e' o valor acumulado
+        # exatamente ate o fim da ultima barra fechada, o novo `base_value`.
+        carry.base_value = float(cum_value[closed.height - 1])
 
 
 def threshold_bars_finish(carry: ThresholdBarsCarry) -> pl.DataFrame:
