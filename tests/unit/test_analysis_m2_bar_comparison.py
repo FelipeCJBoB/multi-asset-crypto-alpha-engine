@@ -10,15 +10,16 @@ uniqueness` está corretamente calibrada (t0/t1), não uma reimplementação
 das próprias fórmulas estatísticas.
 
 Redesenho multi-TF (2026-08-15, PRD_V4_1.md §0.4 -- "Três timeframes
-obrigatórios ponta a ponta", achado de gap registrado em `AG-017`): dois
-testes novos (`test_compute_trades_dependent_bars_for_symbol_reusa_totais_
-entre_tfs`, `test_time_stop_ms_e_invariante_entre_tfs`) provam, via
-monkeypatch NA FRONTEIRA de IO (`_scan_trades_totals`/`_query_baseline`/
+obrigatórios ponta a ponta", achado de gap registrado em `AG-017`) +
+redesenho de fan-out (2026-08-15, `n_tasks` 10→20 por `(symbol, tf)` pra
+usar os 12 núcleos de verdade): testes novos provam, via monkeypatch NA
+FRONTEIRA de IO (`_scan_trades_totals`/`_query_baseline`/
 `_build_trades_dependent_bars`, não `lake.*` direto -- mesmo padrão já
-usado nos testes de `_run_adfuller` abaixo), as duas propriedades de
-correção mais importantes do redesenho: a 1ª passada de `aggTrades`
-(totais) roda 1x por símbolo, não 3x; `time_stop_ms` é idêntico nas 3
-iterações de TF, nunca recalculado por TF."""
+usado nos testes de `_run_adfuller` abaixo), as propriedades de correção
+mais importantes: `compute_trades_dependent_bars_for_symbol_tf` é
+autocontida (1 scan de totais + 1 build por chamada, devolve só o TF
+pedido); `time_stop_ms` é idêntico nas 3 iterações de TF do path leve,
+nunca recalculado por TF."""
 
 from __future__ import annotations
 
@@ -159,17 +160,21 @@ def test_run_adfuller_captura_memoryerror_e_devolve_nan_sem_derrubar_o_batch(
 # ============================================================================
 
 
-def test_compute_trades_dependent_bars_for_symbol_reusa_totais_entre_tfs(
+def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 1ª passada (`_scan_trades_totals`, totais de $/volume/ticks) NÃO
-    depende de TF -- precisa rodar 1x por símbolo, não 3x (1 por TF).
-    Reler o histórico completo de `aggTrades` 3x só pra somar a mesma
-    coisa seria desperdício de I/O sem ganho de correção nenhum. A 2ª
-    passada (`_build_trades_dependent_bars`) DEVE rodar 1x por TF (
-    `target_n_bars` diferente por TF -> threshold diferente)."""
+    """Achado de desenho (2026-08-15): `compute_trades_dependent_bars_
+    for_symbol_tf` é 1 task AUTOCONTIDA por `(symbol, tf)` -- refaz a 1ª
+    passada (`_scan_trades_totals`, TF-independente mas barata) a cada
+    chamada, deliberadamente, pra permitir fan-out flat de `len(symbols) ×
+    (1 + len(TIMEFRAMES))` tasks sem orquestração em 2 estágios (ver
+    docstring da função e de `run_and_save_bar_comparison_report`) --
+    troca de I/O redundante barato por paralelismo real da parte cara
+    (construção) nos 12 núcleos. Este teste prova: 1 chamada = 1 scan de
+    totais + 1 build, devolvendo as 3 métricas (dollar/volume/tick_
+    imbalance) do TF pedido -- não mistura TFs."""
     scan_calls: list[str] = []
-    build_calls: list[str] = []
+    build_calls: list[tuple[str, float, float]] = []
     small_bars = _bars(close=[1.0, 2.0, 3.0], close_time=[0, 1_000, 2_000])
 
     def _fake_scan(symbol: str, chunks: object) -> m2._TradesTotals:
@@ -187,7 +192,7 @@ def test_compute_trades_dependent_bars_for_symbol_reusa_totais_entre_tfs(
         volume_threshold: float,
         tib_config: object,
     ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-        build_calls.append(symbol)
+        build_calls.append((symbol, dollar_threshold, volume_threshold))
         return small_bars, small_bars, small_bars
 
     monkeypatch.setattr(m2, "_date_chunks", lambda start, end, *, chunk_days: [])
@@ -195,14 +200,15 @@ def test_compute_trades_dependent_bars_for_symbol_reusa_totais_entre_tfs(
     monkeypatch.setattr(m2, "_query_baseline", _fake_query_baseline)
     monkeypatch.setattr(m2, "_build_trades_dependent_bars", _fake_build)
 
-    results = m2.compute_trades_dependent_bars_for_symbol(
-        "BTCUSDT", time_stop_ms=1_000, ljung_box_lags=10
+    results = m2.compute_trades_dependent_bars_for_symbol_tf(
+        "BTCUSDT", "30m", time_stop_ms=1_000, ljung_box_lags=10
     )
 
     assert len(scan_calls) == 1
-    assert len(build_calls) == len(TIMEFRAMES)
-    assert {metrics.tf for metrics in results} == set(TIMEFRAMES)
-    assert len(results) == len(TIMEFRAMES) * len(m2._TRADES_DEPENDENT_BAR_TYPES)
+    assert len(build_calls) == 1
+    assert {metrics.tf for metrics in results} == {"30m"}
+    assert {metrics.bar_type for metrics in results} == set(m2._TRADES_DEPENDENT_BAR_TYPES)
+    assert len(results) == len(m2._TRADES_DEPENDENT_BAR_TYPES)
 
 
 def test_time_stop_ms_e_invariante_entre_tfs(monkeypatch: pytest.MonkeyPatch) -> None:
