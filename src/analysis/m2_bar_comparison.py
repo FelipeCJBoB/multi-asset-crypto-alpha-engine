@@ -5,35 +5,67 @@ curtose · Ljung-Box em `r` e `r²` · ADF · razão de amostra efetiva
 (unicidade média com `time_stop` equivalente em relógio)." Zero trials —
 medição, não busca.
 
+**Multi-timeframe, PRD_V4_1.md §0.4: "Três timeframes — M15, M30, H1 —
+obrigatórios ponta a ponta."** Iterado sobre `TIMEFRAMES = ("15m", "30m",
+"1h")` (`src.analysis.volatility_comparison`, mesma constante que
+`m3_timeframe_choice.py` já consome) — cada (symbol, tf) tem seu próprio
+baseline, `target_n_bars` e calibração de threshold/`exp_num_ticks_init`,
+porque dollar/volume/tick-imbalance bars calibradas pra 15m não são
+"reagregáveis" em 30m/1h como barras de tempo seriam (roll-up hierárquico
+não existe pra barra particionada por threshold — precisa reparticionar
+os trades crus do zero por TF). Achado de auditoria (2026-08-15): este
+módulo foi escrito nesta sessão SEM essa iteração — hardcodava
+`BASELINE_TF = "15m"` — apesar de `TIMEFRAMES` estar um `import` de
+distância (mesmo `from src.analysis.volatility_comparison import ...` já
+em uso) e de `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já ter previsto esse
+risco por nome ("...se M2/M3 rodarem antes disso ser corrigido") antes
+deste módulo existir. Registrado como `AG-017`,
+`audit/architecture_gaps_log.yaml`.
+
 **Hipótese testável, não assumida (nota multi-ativo do PRD):** dollar bars
 normalizam por atividade — com volume variando 3.700x entre os 5 ativos
 (I1), podem tornar os cinco mais comparáveis que barras de tempo. Este
 módulo MEDE se isso é verdade (JB/curtose/Ljung-Box mais "bem
 comportados", i.e. mais perto de ruído branco gaussiano, em dollar bars
-do que em barras de tempo, consistentemente nos 5 ativos) — não presume.
+do que em barras de tempo, consistentemente nos 5 ativos E nos 3 TFs) —
+não presume.
 
 **A partir de `aggTrades`, não de `klines_1m`.** `klines_1m` já É uma
 agregação temporal — usar klines pra medir "a barra de tempo é pior que
 outra coisa" seria circular (o próprio dado de entrada já tem a
 propriedade sendo testada). `src.data.bars` constrói as 3 barras
-alternativas trade-a-trade real; o baseline usa `lake.query_bars` (mesma
-fonte de M1/M3) pra ficar consistente com o resto da Camada 1.
+alternativas trade-a-trade real, TF-agnóstico por natureza (só enxerga
+trades crus, nunca um conceito de "timeframe") — só a camada de
+calibração/comparação aqui em `m2_bar_comparison.py` tem dimensão de TF.
+O baseline usa `lake.query_bars` (mesma fonte de M1/M3) pra ficar
+consistente com o resto da Camada 1.
 
-**Calibração — mesma frequência média que o baseline, medida não
-suposta.** `target_n_bars` = nº de barras de 15m do baseline no mesmo
-período; `threshold` de dollar/volume bars = volume total (em $ ou
-unidades) dividido por `target_n_bars`; `exp_num_ticks_init` de tick
-imbalance bars = nº total de ticks dividido por `target_n_bars` (mesma
-lógica: barra "típica" do TIB deveria consumir, em média, tantos ticks
-quantos a barra de 15m consome em relógio).
+**Calibração — mesma frequência média que o baseline DAQUELE TF, medida
+não suposta.** `target_n_bars` = nº de barras do baseline NO TF sendo
+medido, no mesmo período; `threshold` de dollar/volume bars = volume
+total (em $ ou unidades) dividido por `target_n_bars`; `exp_num_ticks_init`
+de tick imbalance bars = nº total de ticks dividido por `target_n_bars`
+(mesma lógica: barra "típica" do TIB deveria consumir, em média, tantos
+ticks quantos a barra daquele TF consome em relógio). O volume
+total/nº de ticks (`_scan_trades_totals`) NÃO depende de TF — é somado
+1x por símbolo e reusado nos 3 TFs (ver `compute_trades_dependent_bars_
+for_symbol`); só o `target_n_bars` (e portanto o `threshold` calibrado)
+muda por TF.
 
 **"Razão de amostra efetiva" reusa `src.labels.weights.
 compute_concurrency_and_uniqueness`** (produção real, testada, mesma
 função que calcula `sample_weight` do Label Engine) — não uma
 reimplementação. `t0` = `close_time` de cada barra, `t1` = `close_time +
-time_stop_bars×15min` (mesmo horizonte de `time_stop_bars`,
-`constants.yaml`, convertido pra relógio) — "unicidade média com
-time_stop equivalente em relógio", literal do PRD. Import de
+time_stop_bars×15min`. **`time_stop_ms` é FIXO, calculado 1x via
+`step_ms("15m")` — nunca recalculado por TF.** `time_stop_bars=32`
+(`constants.yaml`) é justificado como "uma janela de funding"
+(32×15min = 8h exatas) — é uma constante em UNIDADES DE BARRA DE 15M, não
+um nº de barras TF-agnóstico. Recalcular como `time_stop_bars × step_ms(tf)`
+mudaria o horizonte de "amostra efetiva" a cada TF (16h em 30m, 32h em
+1h) — exatamente a classe de erro silencioso de unidade que
+`PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já tinha previsto pra este módulo.
+`TIME_STOP_REFERENCE_TF` abaixo existe só pra deixar essa invariância
+explícita, não é o TF sendo medido em cada iteração. Import de
 `src.labels` a partir de `src.analysis` NÃO viola a hierarquia de camadas
 (`pyproject.toml::[tool.importlinter]`, contrato "labels só é lido por
 models, validation, backtest" lista só `exchange/data/features/regime/
@@ -74,15 +106,27 @@ tasks` com margem de segurança) em toda chamada a `lake.query_bars`/
 do DuckDB pra todo resto do repo (parâmetros opcionais, `None` por
 padrão, zero mudança de comportamento fora daqui).
 
-**Paralelismo entre símbolos continua por processo** (`run_and_save_bar_
-comparison_report`, `ProcessPoolExecutor` dimensionado por
-`os.cpu_count()`) — `tick_imbalance_bars_step` é sequencial dentro de cada
-processo (ver docstring de `src.data.bars`), mas os 5 símbolos processam
-em paralelo entre si, cada um com memória limitada ao tamanho de 1 chunk,
-não ao histórico inteiro. Ponto de entrada manual, não é testado de ponta
-a ponta no pytest (mesma convenção de M1/M3/M6 — IO real fica fora da
-suíte automatizada; a propriedade crítica de streaming↔lote é testada em
-`test_data_bars.py`, que não depende de IO real)."""
+**Paralelismo entre símbolos continua por processo, topologia do pool NÃO
+muda com os 3 TFs** (`run_and_save_bar_comparison_report`,
+`ProcessPoolExecutor` dimensionado por `os.cpu_count()`, ainda `2 ×
+len(symbols)` tasks) — `tick_imbalance_bars_step` é sequencial dentro de
+cada processo (ver docstring de `src.data.bars`), mas os 5 símbolos
+processam em paralelo entre si, cada um com memória limitada ao tamanho
+de 1 chunk, não ao histórico inteiro. `compute_time_bar_for_symbol`/
+`compute_trades_dependent_bars_for_symbol` passam a devolver
+`list[BarComparisonMetrics]` (3 e 9 itens, um por TF/[TF×bar_type]) em
+vez de 1 item — o loop dos 3 TFs fica DENTRO da task por símbolo (mesmo
+padrão de `m3_timeframe_choice.py::compute_timeframe_choice_for_symbol`),
+não um novo eixo de fan-out do pool — preserva a contagem de tasks
+concorrentes que `m2_duckdb_memory_limit_gb`/`m2_duckdb_threads` já foram
+derivados para. Custo real: o path pesado (`aggTrades`) passa de 1 pass-1
++ 1 pass-2 por símbolo para 1 pass-1 (compartilhado, TF-independente) + 3
+pass-2 (1 por TF, threshold diferente) — ~4x o I/O de `aggTrades` do
+desenho de 1 TF só, runtime esperado maior. Ponto de entrada manual, não
+é testado de ponta a ponta no pytest (mesma convenção de M1/M3/M6 — IO
+real fica fora da suíte automatizada; a propriedade crítica de
+streaming↔lote é testada em `test_data_bars.py`, que não depende de IO
+real)."""
 
 from __future__ import annotations
 
@@ -125,7 +169,7 @@ from scipy import stats as scipy_stats
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tsa.stattools import adfuller
 
-from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE
+from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE, TIMEFRAMES
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
@@ -151,7 +195,13 @@ _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
 DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "m2_bar_comparison_report.json"
 
-BASELINE_TF: Final[str] = "15m"
+#: TF usado SÓ pra calcular `time_stop_ms` (ver docstring do módulo --
+#: `time_stop_bars=32` é "1 janela de funding" em unidades de barra de
+#: 15m, fixo independente de qual TF está sendo medido na iteração de
+#: `TIMEFRAMES`). Não é o baseline de bar comparison -- esse é `tf`,
+#: iterado, ver `compute_time_bar_for_symbol`/`compute_trades_dependent_
+#: bars_for_symbol`.
+TIME_STOP_REFERENCE_TF: Final[str] = "15m"
 BAR_TYPES: Final[tuple[str, ...]] = ("time", "dollar", "volume", "tick_imbalance")
 
 # Ljung-Box/ADF exigem amostra bem maior que o número de lags -- 4x é uma
@@ -162,10 +212,11 @@ _MIN_OBS_FOR_TESTS_MULTIPLIER: Final[int] = 4
 
 @dataclass(frozen=True, slots=True)
 class BarComparisonMetrics:
-    """Resumo por (symbol, bar_type) -- `NaN` explícito onde a amostra é
-    pequena demais pros testes (nunca um zero fabricado)."""
+    """Resumo por (symbol, tf, bar_type) -- `NaN` explícito onde a amostra
+    é pequena demais pros testes (nunca um zero fabricado)."""
 
     symbol: str
+    tf: str
     bar_type: str
     n_bars: int
     n_returns: int
@@ -186,7 +237,7 @@ def _log_returns(close: FloatArray) -> FloatArray:
 
 
 def _run_adfuller(
-    symbol: str, bar_type: str, r: FloatArray, *, maxlag: int
+    symbol: str, tf: str, bar_type: str, r: FloatArray, *, maxlag: int
 ) -> tuple[float, float]:
     """ADF sobre `r`, com duas correções sobre `adfuller(r, autolag="AIC")`
     ingênuo -- achado real de auditoria (`audit_engineering`, 2026-08-15,
@@ -231,6 +282,7 @@ def _run_adfuller(
         logger.warning(
             "analysis.m2_bar_comparison.adf_failed",
             symbol=symbol,
+            tf=tf,
             bar_type=bar_type,
             n_returns=len(r),
             error=repr(exc),
@@ -238,10 +290,13 @@ def _run_adfuller(
         return float("nan"), float("nan")
 
 
-def _nan_metrics(symbol: str, bar_type: str, n_bars: int, n_returns: int) -> BarComparisonMetrics:
+def _nan_metrics(
+    symbol: str, tf: str, bar_type: str, n_bars: int, n_returns: int
+) -> BarComparisonMetrics:
     nan = float("nan")
     return BarComparisonMetrics(
         symbol=symbol,
+        tf=tf,
         bar_type=bar_type,
         n_bars=n_bars,
         n_returns=n_returns,
@@ -257,27 +312,35 @@ def _nan_metrics(symbol: str, bar_type: str, n_bars: int, n_returns: int) -> Bar
 
 
 def compute_bar_statistics(
-    symbol: str, bar_type: str, bars: pl.DataFrame, *, time_stop_ms: int, ljung_box_lags: int
+    symbol: str,
+    tf: str,
+    bar_type: str,
+    bars: pl.DataFrame,
+    *,
+    time_stop_ms: int,
+    ljung_box_lags: int,
 ) -> BarComparisonMetrics:
     """Núcleo puro (sem IO) -- JB/curtose/Ljung-Box(r,r²)/ADF sobre
     log-retorno de `close`, e unicidade média via `compute_concurrency_and_
     uniqueness` sobre `close_time`. Testável isoladamente com `bars`
     sintético, ao contrário de `compute_bar_comparison_for_symbol` (IO
-    real)."""
+    real). `time_stop_ms` é FIXO entre chamadas com `tf` diferente -- ver
+    docstring do módulo (`TIME_STOP_REFERENCE_TF`) -- este núcleo só
+    recebe o valor já calculado, não recalcula por `tf`."""
     n_bars = bars.height
     close = bars["close"].cast(pl.Float64).to_numpy()
     r = _log_returns(close)
     n_returns = int(np.sum(np.isfinite(r)))
     min_obs = _MIN_OBS_FOR_TESTS_MULTIPLIER * ljung_box_lags
     if n_returns < min_obs:
-        return _nan_metrics(symbol, bar_type, n_bars, n_returns)
+        return _nan_metrics(symbol, tf, bar_type, n_bars, n_returns)
     r_finite = r[np.isfinite(r)]
 
     jb = scipy_stats.jarque_bera(r_finite)
     kurt = float(scipy_stats.kurtosis(r_finite, fisher=True))
     lb_r = acorr_ljungbox(r_finite, lags=[ljung_box_lags], return_df=True)
     lb_r2 = acorr_ljungbox(r_finite**2, lags=[ljung_box_lags], return_df=True)
-    adf_stat, adf_pvalue = _run_adfuller(symbol, bar_type, r_finite, maxlag=ljung_box_lags)
+    adf_stat, adf_pvalue = _run_adfuller(symbol, tf, bar_type, r_finite, maxlag=ljung_box_lags)
 
     close_time = bars["close_time"].cast(pl.Int64).to_numpy()
     t0 = close_time.astype(np.int64)
@@ -286,6 +349,7 @@ def compute_bar_statistics(
 
     return BarComparisonMetrics(
         symbol=symbol,
+        tf=tf,
         bar_type=bar_type,
         n_bars=n_bars,
         n_returns=n_returns,
@@ -326,11 +390,11 @@ def _duckdb_throttle() -> _DuckDBThrottle:
     )
 
 
-def _query_baseline(symbol: str) -> pl.DataFrame:
+def _query_baseline(symbol: str, tf: str) -> pl.DataFrame:
     throttle = _duckdb_throttle()
     return lake.query_bars(
         symbol,
-        BASELINE_TF,
+        tf,
         SYMBOL_START_DATE[symbol],
         END_DATE,
         source="klines_1m",
@@ -340,11 +404,11 @@ def _query_baseline(symbol: str) -> pl.DataFrame:
     )
 
 
-def _target_n_bars(symbol: str, baseline: pl.DataFrame) -> int:
+def _target_n_bars(symbol: str, tf: str, baseline: pl.DataFrame) -> int:
     n = baseline.height
     if n == 0:
         raise ValueError(
-            f"baseline vazio para {symbol} -- sem klines_1m no período "
+            f"baseline vazio para {symbol}/{tf} -- sem klines_1m no período "
             f"{SYMBOL_START_DATE[symbol]}..{END_DATE}, não dá pra calibrar dollar/volume/tick "
             "imbalance bars pra frequência média nenhuma"
         )
@@ -475,6 +539,7 @@ def _log_task_done(metrics: BarComparisonMetrics) -> None:
     logger.info(
         "analysis.m2_bar_comparison.task_done",
         symbol=metrics.symbol,
+        tf=metrics.tf,
         bar_type=metrics.bar_type,
         n_bars=metrics.n_bars,
         jarque_bera_pvalue=metrics.jarque_bera_pvalue,
@@ -485,84 +550,107 @@ def _log_task_done(metrics: BarComparisonMetrics) -> None:
 
 def compute_time_bar_for_symbol(
     symbol: str, *, time_stop_ms: int, ljung_box_lags: int
-) -> BarComparisonMetrics:
+) -> list[BarComparisonMetrics]:
     """Núcleo de IO pro tipo `"time"` -- só `klines_1m`, leve, roda numa
     task própria pra não competir por memória com as tasks de `aggTrades`
-    (ver `compute_trades_dependent_bars_for_symbol`)."""
-    bars = _query_baseline(symbol)
-    metrics = compute_bar_statistics(
-        symbol, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
-    )
-    _log_task_done(metrics)
-    return metrics
+    (ver `compute_trades_dependent_bars_for_symbol`). Itera `TIMEFRAMES`
+    internamente (mesmo padrão de `m3_timeframe_choice.py::compute_
+    timeframe_choice_for_symbol`) -- não é um eixo novo de fan-out do
+    pool, ver docstring do módulo."""
+    results: list[BarComparisonMetrics] = []
+    for tf in TIMEFRAMES:
+        bars = _query_baseline(symbol, tf)
+        metrics = compute_bar_statistics(
+            symbol, tf, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+        )
+        _log_task_done(metrics)
+        results.append(metrics)
+    return results
 
 
 def compute_trades_dependent_bars_for_symbol(
     symbol: str, *, time_stop_ms: int, ljung_box_lags: int
 ) -> list[BarComparisonMetrics]:
-    """Constrói `dollar`/`volume`/`tick_imbalance` bars pra 1 símbolo em
-    STREAMING -- achado de auditoria (2026-08-15, medido antes de mudar
-    qualquer coisa): `aggTrades` de BTCUSDT/ETHUSDT são 27GB/20GB
-    *comprimidos* em disco, não cabem em memória de uma vez em NENHUMA
-    concorrência (nem 1 processo sozinho) -- as duas tentativas anteriores
-    (reduzir de 15 pra 5 cargas concorrentes, depois travar threads BLAS)
-    atacavam concorrência, não o tamanho real do problema, por isso
-    continuaram falhando com `duckdb.OutOfMemoryException`.
+    """Constrói `dollar`/`volume`/`tick_imbalance` bars pra 1 símbolo, nos
+    3 TFs de `TIMEFRAMES`, em STREAMING -- achado de auditoria
+    (2026-08-15, medido antes de mudar qualquer coisa): `aggTrades` de
+    BTCUSDT/ETHUSDT são 27GB/20GB *comprimidos* em disco, não cabem em
+    memória de uma vez em NENHUMA concorrência (nem 1 processo sozinho).
 
-    Duas passadas em chunks de `bars_streaming_chunk_days` dias (nunca o
-    histórico inteiro em memória, ver `src.data.bars` e `_scan_trades_
-    totals`/`_build_trades_dependent_bars`): a 1ª só soma totais pra
-    calibrar `threshold`/`exp_num_ticks_init` (§3.2 M2 exige "mesma
-    frequência média que o baseline" -- precisa do total ANTES de poder
-    fechar a primeira barra de verdade); a 2ª constrói as barras de fato,
-    alimentando os 3 acumuladores (`ThresholdBarsCarry`×2 +
-    `TickImbalanceBarsCarry`) no mesmo loop de chunks (1x de E/S por
-    chunk, não 3x). Blindado contra `duckdb.OutOfMemoryException` residual
-    por chunk (mesma disciplina FCN de `_run_adfuller`/`_nan_metrics`) --
-    se mesmo um chunk de ~30 dias ainda estourar (ex. menos RAM livre no
-    momento), devolve `NaN` explícito pros 3 tipos desse símbolo, sem
-    derrubar os outros 4 do batch."""
-    target_n_bars = _target_n_bars(symbol, _query_baseline(symbol))
+    A 1ª passada (`_scan_trades_totals`, totais de $/unidades/ticks) NÃO
+    depende de TF -- roda 1x aqui, reusada nos 3 TFs. A 2ª passada
+    (`_build_trades_dependent_bars`, threshold calibrado + construção de
+    fato) DEPENDE de TF (`target_n_bars` diferente por TF -> threshold
+    diferente -> partição diferente dos mesmos trades crus, barras
+    calibradas por threshold não são "reagregáveis" hierarquicamente como
+    barras de tempo) -- roda 1x POR TF, 3x no total por símbolo. Cada
+    iteração de TF é blindada contra `duckdb.OutOfMemoryException`
+    residual de forma independente (mesma disciplina FCN de
+    `_run_adfuller`/`_nan_metrics`) -- um chunk ruim num TF vira `NaN` só
+    pros 3 `bar_types` DAQUELE TF, não derruba os outros 2 TFs nem os
+    outros símbolos do batch. Se a 1ª passada (totais, compartilhada)
+    falhar, os 3 TFs × 3 bar_types (9 linhas) desse símbolo viram `NaN`
+    de uma vez -- sem totais não há como calibrar threshold nenhum."""
     chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
     chunks = _date_chunks(SYMBOL_START_DATE[symbol], END_DATE, chunk_days=chunk_days)
 
     try:
         totals = _scan_trades_totals(symbol, chunks)
-        if totals.n_ticks == 0:
-            raise ValueError(
-                f"aggTrades vazio para {symbol} no período "
-                f"{SYMBOL_START_DATE[symbol]}..{END_DATE} -- não dá pra calibrar bars"
-            )
+    except duckdb.OutOfMemoryException as exc:
+        logger.warning(
+            "analysis.m2_bar_comparison.trades_totals_failed", symbol=symbol, error=repr(exc)
+        )
+        return [
+            _nan_metrics(symbol, tf, bar_type, 0, 0)
+            for tf in TIMEFRAMES
+            for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+        ]
+    if totals.n_ticks == 0:
+        raise ValueError(
+            f"aggTrades vazio para {symbol} no período "
+            f"{SYMBOL_START_DATE[symbol]}..{END_DATE} -- não dá pra calibrar bars"
+        )
+
+    results: list[BarComparisonMetrics] = []
+    for tf in TIMEFRAMES:
+        target_n_bars = _target_n_bars(symbol, tf, _query_baseline(symbol, tf))
         dollar_threshold = totals.total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
         volume_threshold = totals.total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
         tib_config = _build_tick_imbalance_config(totals.n_ticks, target_n_bars)
 
-        dollar_df, volume_df, tib_df = _build_trades_dependent_bars(
-            symbol,
-            chunks,
-            dollar_threshold=dollar_threshold,
-            volume_threshold=volume_threshold,
-            tib_config=tib_config,
-        )
-    except duckdb.OutOfMemoryException as exc:
-        logger.warning(
-            "analysis.m2_bar_comparison.trades_load_failed", symbol=symbol, error=repr(exc)
-        )
-        return [_nan_metrics(symbol, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES]
+        try:
+            dollar_df, volume_df, tib_df = _build_trades_dependent_bars(
+                symbol,
+                chunks,
+                dollar_threshold=dollar_threshold,
+                volume_threshold=volume_threshold,
+                tib_config=tib_config,
+            )
+        except duckdb.OutOfMemoryException as exc:
+            logger.warning(
+                "analysis.m2_bar_comparison.trades_build_failed",
+                symbol=symbol,
+                tf=tf,
+                error=repr(exc),
+            )
+            results.extend(
+                _nan_metrics(symbol, tf, bar_type, 0, 0)
+                for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+            )
+            continue
 
-    bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
-    results = [
-        compute_bar_statistics(
-            symbol,
-            bar_type,
-            bars_by_type[bar_type],
-            time_stop_ms=time_stop_ms,
-            ljung_box_lags=ljung_box_lags,
-        )
-        for bar_type in _TRADES_DEPENDENT_BAR_TYPES
-    ]
-    for metrics in results:
-        _log_task_done(metrics)
+        bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
+        for bar_type in _TRADES_DEPENDENT_BAR_TYPES:
+            metrics = compute_bar_statistics(
+                symbol,
+                tf,
+                bar_type,
+                bars_by_type[bar_type],
+                time_stop_ms=time_stop_ms,
+                ljung_box_lags=ljung_box_lags,
+            )
+            _log_task_done(metrics)
+            results.append(metrics)
     return results
 
 
@@ -570,10 +658,11 @@ def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]
     """Conveniência pra depuração manual de UM símbolo, sequencial -- o
     caminho de produção real é `run_and_save_bar_comparison_report`, que
     roda a task leve (`"time"`) e a task pesada (dollar/volume/tick_
-    imbalance, `aggTrades` carregado uma vez) em paralelo entre símbolos
-    (ver docstring do módulo)."""
+    imbalance, `aggTrades` carregado uma vez pra totais + 3x pra
+    construção, um por TF) em paralelo entre símbolos (ver docstring do
+    módulo)."""
     time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
-    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
+    time_stop_ms = time_stop_bars_n * step_ms(TIME_STOP_REFERENCE_TF)
     ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
     time_metrics = compute_time_bar_for_symbol(
         symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
@@ -581,7 +670,7 @@ def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]
     trades_metrics = compute_trades_dependent_bars_for_symbol(
         symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
     )
-    return [time_metrics, *trades_metrics]
+    return [*time_metrics, *trades_metrics]
 
 
 def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
@@ -604,10 +693,15 @@ def run_and_save_bar_comparison_report(
     max_workers: int | None = None,
 ) -> Path:
     """Ponto de entrada MANUAL -- `2 × len(symbols)` tasks (até 10, com os
-    5 ativos padrão): 1 task leve por símbolo (`"time"`, só `klines_1m`) +
-    1 task pesada por símbolo (`aggTrades` carregado uma vez,
-    `dollar`+`volume`+`tick_imbalance` construídos do mesmo `DataFrame`,
-    ver `compute_trades_dependent_bars_for_symbol`). Um único
+    5 ativos padrão): 1 task leve por símbolo (`"time"`, só `klines_1m`,
+    itera os 3 TFs internamente) + 1 task pesada por símbolo (`aggTrades`
+    carregado uma vez pra totais + 3x pra construção, um por TF, ver
+    `compute_trades_dependent_bars_for_symbol`). A topologia do pool NÃO
+    cresce com os 3 TFs -- o loop de TF fica DENTRO de cada task (mesmo
+    padrão de `m3_timeframe_choice.py`), preservando a contagem de
+    processos concorrentes que `m2_duckdb_memory_limit_gb`/
+    `m2_duckdb_threads` já foram derivados pra suportar (nenhuma constante
+    de throttle precisa mudar por causa do multi-TF). Um único
     `ProcessPoolExecutor` dimensionado por `os.cpu_count()` -- como só
     existem `len(symbols)` tasks pesadas no total, o pool nunca roda mais
     que isso concorrentemente mesmo com mais slots livres, que é
@@ -621,18 +715,19 @@ def run_and_save_bar_comparison_report(
     Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
     time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
-    time_stop_ms = time_stop_bars_n * step_ms(BASELINE_TF)
+    time_stop_ms = time_stop_bars_n * step_ms(TIME_STOP_REFERENCE_TF)
     ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
 
     n_tasks = 2 * len(symbols)
     logger.info(
         "analysis.m2_bar_comparison.starting",
         n_symbols=len(symbols),
+        n_timeframes=len(TIMEFRAMES),
         n_tasks=n_tasks,
         max_workers=workers,
     )
 
-    results_by_symbol: dict[str, dict[str, BarComparisonMetrics]] = {
+    results_by_symbol: dict[str, dict[tuple[str, str], BarComparisonMetrics]] = {
         symbol: {} for symbol in symbols
     }
     with ProcessPoolExecutor(max_workers=min(workers, n_tasks)) as executor:
@@ -656,18 +751,23 @@ def run_and_save_bar_comparison_report(
         }
         for time_future in as_completed(time_futures):
             symbol = time_futures[time_future]
-            results_by_symbol[symbol]["time"] = time_future.result()
+            for metrics in time_future.result():
+                results_by_symbol[symbol][(metrics.tf, metrics.bar_type)] = metrics
         for trades_future in as_completed(trades_futures):
             symbol = trades_futures[trades_future]
             for metrics in trades_future.result():
-                results_by_symbol[symbol][metrics.bar_type] = metrics
+                results_by_symbol[symbol][(metrics.tf, metrics.bar_type)] = metrics
 
     payload: dict[str, Any] = {
         **report_provenance(),
-        "baseline_tf": BASELINE_TF,
+        "timeframes": list(TIMEFRAMES),
         "bar_types": list(BAR_TYPES),
         "symbols": {
-            symbol: [asdict(results_by_symbol[symbol][bar_type]) for bar_type in BAR_TYPES]
+            symbol: [
+                asdict(results_by_symbol[symbol][(tf, bar_type)])
+                for tf in TIMEFRAMES
+                for bar_type in BAR_TYPES
+            ]
             for symbol in sorted(symbols)
         },
     }
