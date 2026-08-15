@@ -13,10 +13,15 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import polars as pl
 import pytest
+from statsmodels.tsa.stattools import adfuller as real_adfuller
 
+import src.analysis.m2_bar_comparison as m2
 from src.analysis.m2_bar_comparison import compute_bar_statistics
+
+AdfullerResult = tuple[float, float, int, int, dict[str, float], float]
 
 
 def _bars(*, close: list[float], close_time: list[int]) -> pl.DataFrame:
@@ -81,3 +86,53 @@ def test_avg_uniqueness_e_um_quando_janelas_de_time_stop_nao_se_sobrepoem() -> N
     )
 
     assert metrics.avg_uniqueness == pytest.approx(1.0)
+
+
+def test_run_adfuller_usa_maxlag_fixo_nao_busca_ate_default_grande(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado de auditoria (`audit_engineering`, 2026-08-15, pesquisa web):
+    `adfuller(autolag="AIC")` sem `maxlag` explícito ajusta até ~76
+    regressões (cada uma uma SVD) pra nobs~164mil -- issue conhecido da
+    statsmodels desde 2014 (#1849, "wasting memory"). `_run_adfuller` DEVE
+    chamar com `autolag=None` (lag fixo, 1 regressão só) -- este teste
+    prova isso via spy no `adfuller` real, não confia só na leitura do
+    código."""
+    calls: list[dict[str, object]] = []
+
+    def _spy(*args: object, **kwargs: object) -> AdfullerResult:
+        calls.append(kwargs)
+        result: AdfullerResult = real_adfuller(*args, **kwargs)
+        return result
+
+    monkeypatch.setattr(m2, "adfuller", _spy)
+
+    close = [100.0 + 0.5 * ((i * 37) % 11) for i in range(101)]
+    r = np.diff(np.log(np.array(close)))
+    m2._run_adfuller("BTCUSDT", "dollar", r, maxlag=10)
+
+    assert len(calls) == 1
+    assert calls[0]["autolag"] is None
+    assert calls[0]["maxlag"] == 10
+
+
+def test_run_adfuller_captura_memoryerror_e_devolve_nan_sem_derrubar_o_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado de auditoria: `np.linalg.svd`/LAPACK `gesdd` tem histórico
+    documentado de `MemoryError`/`LinAlgError` sob concorrência mesmo com
+    matriz pequena (numpy#20384, OpenBLAS#3044) -- uma célula ruim não pode
+    derrubar as outras 19 do batch. Simula a falha via monkeypatch em vez
+    de tentar reproduzir a condição de corrida real (não determinística)."""
+
+    def _boom(*args: object, **kwargs: object) -> AdfullerResult:
+        raise MemoryError("Unable to allocate 36.2 MiB (simulado)")
+
+    monkeypatch.setattr(m2, "adfuller", _boom)
+
+    stat, pvalue = m2._run_adfuller(
+        "BTCUSDT", "dollar", np.array([0.01, -0.02, 0.03, -0.01]), maxlag=2
+    )
+
+    assert math.isnan(stat)
+    assert math.isnan(pvalue)

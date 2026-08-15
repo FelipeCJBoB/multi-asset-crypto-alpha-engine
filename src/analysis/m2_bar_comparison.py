@@ -148,6 +148,59 @@ def _log_returns(close: FloatArray) -> FloatArray:
     return r
 
 
+def _run_adfuller(
+    symbol: str, bar_type: str, r: FloatArray, *, maxlag: int
+) -> tuple[float, float]:
+    """ADF sobre `r`, com duas correções sobre `adfuller(r, autolag="AIC")`
+    ingênuo -- achado real de auditoria (`audit_engineering`, 2026-08-15,
+    pesquisa web antes de codar, não hipótese):
+
+    1. **`autolag=None` (lag FIXO em `maxlag`, não busca 1..maxlag').**
+       `adfuller(autolag="AIC")` sem `maxlag` explícito usa o default
+       `12*(nobs/100)^0.25` -- para `nobs≈164 mil` (o tamanho típico de
+       barra de 15m dos 5 ativos), isso é `maxlag≈76`, e a busca AIC ajusta
+       UMA regressão OLS (logo, UMA SVD via `np.linalg.svd` dentro de
+       `pinv_extended`) por cada lag testado -- até 76 SVDs por chamada,
+       cada uma sobre uma matriz de desenho `(nobs, lag+2)`. Isso é um
+       problema conhecido e documentado da própria `statsmodels`
+       (`autolag` "wasting memory", issue #1849, aberta desde 2014, ainda
+       sem fix definitivo em 0.14.6) -- não uma suposição. Fixar
+       `maxlag=ljung_box_lags` (mesma constante do Ljung-Box, mesma
+       justificativa de "nº de lags relevante pra retorno financeiro
+       intradiário") faz UMA única regressão em vez de até 76 -- reduz o
+       nº de SVDs por task em ~76x e o tamanho da MAIOR matriz testada de
+       `(nobs, 78)` pra `(nobs, ljung_box_lags+2)`.
+    2. **Blindagem contra falha conhecida do driver LAPACK `gesdd`.** Mesmo
+       com (1), `np.linalg.svd` sobre matriz alta-e-estreita (`nobs` linhas
+       × poucas colunas) usa por padrão o driver `gesdd` (divide-and-
+       conquer) do backend BLAS dos wheels do NumPy pro Windows/PyPI
+       (OpenBLAS, confirmado por pesquisa -- não presumido) -- `gesdd` tem
+       histórico documentado de falhar/vazar memória sob concorrência ou
+       matrizes grandes independente do nº de threads (numpy#20384 "init_
+       dgesdd failed init for large SVD"; OpenBLAS#3044 "GESDD fails when
+       GESVD succeeds, depends on number of threads"; múltiplos issues de
+       crash em matriz alta-e-estreita no próprio OpenBLAS). `numpy.linalg.
+       svd` não expõe parâmetro de driver (diferente de `scipy.linalg.svd
+       (..., lapack_driver=...)`), então não dá pra forçar `gesvd` sem
+       monkey-patch frágil -- a defesa correta é capturar a falha (
+       `MemoryError`/`numpy.linalg.LinAlgError`, ambas observadas em
+       produção nesta sessão) e devolver NaN explícito pra ESSA célula, não
+       deixar 1 task ruim derrubar as outras 19 do batch (mesma disciplina
+       FCN de `_nan_metrics` -- não computável ≠ zero)."""
+    try:
+        adf_result = adfuller(r, maxlag=maxlag, autolag=None)
+        return float(adf_result[0]), float(adf_result[1])
+    except (MemoryError, np.linalg.LinAlgError) as exc:
+        logger.warning(
+            "analysis.m2_bar_comparison.adf_failed",
+            symbol=symbol,
+            bar_type=bar_type,
+            n_returns=len(r),
+            error=repr(exc),
+        )
+        return float("nan"), float("nan")
+
+
 def _nan_metrics(symbol: str, bar_type: str, n_bars: int, n_returns: int) -> BarComparisonMetrics:
     nan = float("nan")
     return BarComparisonMetrics(
@@ -187,8 +240,7 @@ def compute_bar_statistics(
     kurt = float(scipy_stats.kurtosis(r_finite, fisher=True))
     lb_r = acorr_ljungbox(r_finite, lags=[ljung_box_lags], return_df=True)
     lb_r2 = acorr_ljungbox(r_finite**2, lags=[ljung_box_lags], return_df=True)
-    adf_result = adfuller(r_finite, autolag="AIC")
-    adf_stat, adf_pvalue = float(adf_result[0]), float(adf_result[1])
+    adf_stat, adf_pvalue = _run_adfuller(symbol, bar_type, r_finite, maxlag=ljung_box_lags)
 
     close_time = bars["close_time"].cast(pl.Int64).to_numpy()
     t0 = close_time.astype(np.int64)
