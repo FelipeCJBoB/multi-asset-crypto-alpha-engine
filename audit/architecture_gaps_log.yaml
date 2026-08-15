@@ -852,3 +852,58 @@ entries:
       existiriam mas o treino continuaria ignorando-os.
     status: "fechado — pytest verde + labels/ gerado pros 4 alts, confirmado pelo Manager em 2026-08-14"
     status: "fechado — corrigido na mesma sessão do achado"
+
+  - id: AG-017
+    date: "2026-08-15"
+    file: "src/analysis/m2_bar_comparison.py"
+    related_file: "src/analysis/volatility_comparison.py, src/analysis/m3_timeframe_choice.py, PLANO_MESTRE_PRINCE2.md §15.6"
+    found_by: "usuário, perguntando 'os dollar/volume/tick_imbalance vão sair para os 3 timeframes?' depois de um fix não relacionado (throttle de DuckDB)"
+    gap: >
+      m2_bar_comparison.py foi escrito nesta sessão com
+      BASELINE_TF: Final[str] = "15m" hardcoded -- media dollar/volume/
+      tick_imbalance bars só contra o baseline de 15m, apesar do PRD_V4_1.md
+      §0.4 exigir "Três timeframes — M15, M30, H1 — obrigatórios ponta a
+      ponta". O módulo importava END_DATE, SYMBOL_START_DATE de
+      src.analysis.volatility_comparison mas NÃO o vizinho direto no mesmo
+      módulo, TIMEFRAMES = ("15m", "30m", "1h") (volatility_comparison.py:122)
+      -- já consumido corretamente por m3_timeframe_choice.py (`for tf in
+      TIMEFRAMES:`). Mais grave: PLANO_MESTRE_PRINCE2.md §15.6 item 1
+      (escrito 2026-08-12/13, ANTES de M2 existir) já tinha catalogado "TF
+      hardcoded" como padrão sistêmico recorrente no repo e registrado como
+      item de prioridade mais alta de todos os achados, com a frase literal
+      "é o único bloqueador que produziria um erro silencioso... se M2/M3
+      (timeframe) rodarem antes disso ser corrigido" -- citando M2 pelo
+      nome, como risco previsto, antes do módulo ser escrito. A informação
+      não só estava disponível -- o projeto já tinha um registro formal
+      avisando exatamente desse risco pra exatamente este módulo.
+    severity: "alto"
+    layer: "analysis"
+    consequence: >
+      Qualquer conclusão de M2 (qual tipo de barra é "melhor comportado")
+      valeria só pro TF de decisão de 15m, não pros 3 TFs que o PRD exige
+      como "obrigatórios ponta a ponta" -- a mesma classe de furo que
+      §15.6 já tinha nomeado como o risco de maior prioridade do projeto
+      (erro SILENCIOSO, não um crash: o módulo rodaria, produziria um
+      relatório com números plausíveis, e ninguém notaria que 2/3 dos TFs
+      nunca foram medidos, a menos que perguntassem, como o usuário
+      perguntou aqui).
+    resolved_by_commit: "67a1426"
+    resolution: >
+      m2_bar_comparison.py importa TIMEFRAMES de volatility_comparison;
+      compute_time_bar_for_symbol/compute_trades_dependent_bars_for_symbol
+      iteram os 3 TFs internamente (mesmo padrão de
+      m3_timeframe_choice.py::compute_timeframe_choice_for_symbol),
+      preservando a topologia do pool (2×len(symbols) tasks, sem
+      re-derivar m2_duckdb_memory_limit_gb/m2_duckdb_threads). 1ª passada
+      de aggTrades (totais) compartilhada entre os 3 TFs, só a 2ª
+      (construção calibrada por threshold) roda 1x por TF. time_stop_ms
+      calculado 1x via TIME_STOP_REFERENCE_TF="15m" fixo -- achado
+      embutido na correção: time_stop_bars=32 é "1 janela de funding" em
+      UNIDADES DE BARRA DE 15M, recalcular via step_ms(tf) por TF mudaria
+      esse horizonte a cada TF, exatamente a classe de erro silencioso de
+      unidade que §15.6 item 1 previu. 3 testes novos provam reuso de
+      totais e invariância de time_stop_ms via spy, não só leitura de
+      código. Prevenção de recorrência: nova pergunta na Lente FI de
+      audit_engineering (SKILL.md) -- módulo novo em src/analysis/ itera
+      TIMEFRAMES ou hardcoda TF sem justificativa registrada?
+    status: "fechado — commit 67a1426, aguarda confirmação de pytest verde (protocolo de execução)"

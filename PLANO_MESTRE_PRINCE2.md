@@ -1101,6 +1101,42 @@ apresentado ao Manager para a mesma decisão explícita que os ids
 11/13/14 já tiveram, antes de treinar qualquer coisa nos ~15 trials
 restantes do orçamento (M4 sozinho ainda precisa de até 6).
 
+### 15.10 AG-017 — §15.1 previu o risco por nome, M2 caiu nele mesmo assim (2026-08-15)
+
+**A previsão de §15.6 item 1 se confirmou, no módulo que ela citou por
+nome.** `m2_bar_comparison.py` (escrito nesta sessão, depois de §15
+existir) foi implementado com `BASELINE_TF = "15m"` hardcoded — media
+dollar/volume/tick_imbalance bars só contra 15m, apesar do PRD_V4_1.md
+§0.4 exigir os 3 TFs "obrigatórios ponta a ponta". Achado não veio de
+revisão própria — veio de o usuário perguntar "os dollar/volume/
+tick_imbalance vão sair para os 3 timeframes?" depois de eu já ter
+fechado (na minha cabeça) o módulo como pronto.
+
+**Por que isso importa mais do que "mais um bug corrigido":** a
+informação estava disponível em DOIS lugares antes de eu escrever a
+primeira linha do módulo — (1) `TIMEFRAMES` já definido em
+`volatility_comparison.py`, um `import` de distância do que eu já estava
+importando desse mesmo arquivo; (2) este documento, §15.6 item 1, já
+tinha escrito literalmente "é o único bloqueador que produziria um erro
+silencioso... se **M2/M3** rodarem antes disso ser corrigido" — nomeando
+M2 como risco previsto, antes de M2 existir. Ter o registro RAID (AG-004,
+sobre `cpcv.py::_BAR_MS`) não impediu a MESMA classe de bug reaparecer
+num módulo novo, porque nada no processo de escrever um módulo novo
+consultava esse registro antes de codar.
+
+**Correção de código:** commit `67a1426` — `m2_bar_comparison.py` itera
+`TIMEFRAMES` (mesmo padrão de `m3_timeframe_choice.py`), topologia do
+pool preservada, `time_stop_ms` corrigido pra não recalcular por TF
+(achado embutido — ver `AG-017`, `audit/architecture_gaps_log.yaml`).
+
+**Correção de processo, pra não reaparecer uma 3ª vez:** nova pergunta
+explícita na Lente FI de `audit_engineering` — todo módulo novo em
+`src/analysis/`/`src/features/`/`src/labels/`/etc. precisa declarar se
+itera `TIMEFRAMES` ou por que não. Isso não elimina a classe de bug
+sozinho (a skill só roda quando alguém pede auditoria — este módulo não
+foi auditado antes de "pronto"), mas registra o critério de julgamento
+num lugar que uma auditoria futura vai consultar.
+
 ---
 
 ## Fontes desta pesquisa

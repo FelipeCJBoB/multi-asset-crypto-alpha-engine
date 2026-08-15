@@ -173,9 +173,27 @@ Cross-check obrigatório: CLAUDE.md banned patterns B01-B10, B18-B25; PRD Gate 3
   era idêntico em fold IS e OOS).
 - **`config_hash` do label idêntico ao da execução?** (B15)
 - **`sample_weight` de unicidade sempre aplicado, não opcional?**
+- **TF hardcoded num módulo que deveria ser multi-timeframe?** (AG-017,
+  2026-08-15 — `src/analysis/m2_bar_comparison.py` escrito com
+  `BASELINE_TF = "15m"` fixo, apesar de `TIMEFRAMES = ("15m", "30m", "1h")`
+  já existir em `src.analysis.volatility_comparison` e já ser consumido
+  corretamente por `m3_timeframe_choice.py` — e apesar de
+  `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já ter previsto esse risco por
+  nome, antes do módulo existir. Pergunta obrigatória em todo módulo NOVO
+  de `src/analysis/`, `src/features/`, `src/labels/`, `src/regime/`,
+  `src/validation/`: itera `TIMEFRAMES` (import de
+  `src.analysis.volatility_comparison`, ou `_TF_TO_MINUTES`/`step_ms` de
+  `src.data.resample` pra conversão de unidade), ou hardcoda um TF único?
+  Se hardcoda, há uma constante/comentário explicando POR QUE esse módulo
+  é exceção (ex. `TIME_STOP_REFERENCE_TF` em `m2_bar_comparison.py` —
+  intencional, não um TF de comparação, ver docstring do módulo), ou é só
+  a mesma lacuna se repetindo? PRD_V4_1.md §0.4 ("Três timeframes... —
+  obrigatórios ponta a ponta") é a referência pra julgar se TF único é
+  aceitável nesse módulo específico.
 
 Cross-check obrigatório: CLAUDE.md B11, B15, B29; DoD "código de feature"/"código
-de modelo"/"código de execução" do CLAUDE.md.
+de modelo"/"código de execução" do CLAUDE.md; `PRD_V4_1.md` §0.4 (escopo
+multi-TF); `audit/architecture_gaps_log.yaml` AG-017.
 
 #### Lente FT — Falhas Tecnológicas
 
@@ -361,6 +379,18 @@ v1.2 — 2026-08-12 — Reverte parcialmente v1.1: CLAUDE.md v1.5 abre exceção
                      nomeada pros 5 scripts mecânicos do Passo 4 (+ ruff/
                      mypy), autorização explícita do Manager. Passo 4 volta
                      a rodar direto — só estes 7 comandos, nada além.
+v1.3 — 2026-08-15 — Adiciona pergunta de TF hardcoded à Lente FI. Achado
+                     AG-017: `m2_bar_comparison.py`, escrito DEPOIS desta
+                     skill existir, foi implementado com TF único
+                     hardcoded apesar de `TIMEFRAMES` já existir num
+                     import vizinho e de `PLANO_MESTRE_PRINCE2.md` §15.6
+                     item 1 já ter previsto esse risco por nome — a skill
+                     não tinha pergunta explícita pra pegar essa classe,
+                     só as adjacentes (causalidade, config_hash). Não
+                     teria pego sozinha (a auditoria só roda quando
+                     pedida, e o módulo nunca foi auditado antes de
+                     "pronto") — registra o critério pra quando alguém
+                     pedir auditoria de um módulo novo desse tipo.
 ```
 
 Atualizar quando: novo banned pattern adicionado ao CLAUDE.md, nova classe de
