@@ -40,23 +40,30 @@ models, validation, backtest" lista só `exchange/data/features/regime/
 risk/execution/live/monitoring` como proibidos — `analysis` fica de fora
 deliberadamente, mesmo padrão já usado em `m6_common_factor_hypothesis.py`).
 
-**Performance — granularidade de paralelismo é por (symbol, bar_type), não
-por symbol.** `tick_imbalance_bars` é sequencial (ver docstring de
-`src.data.bars`), single-thread, e é o item mais lento da Camada 1 até
-agora — com só 5 símbolos, paralelizar por símbolo (1 task cada) usa no
-máximo 5 núcleos, não importa quantos existam. `run_and_save_bar_
-comparison_report` fatia o trabalho em `len(symbols) × len(BAR_TYPES)`
-tasks independentes (até 20, com os 5 ativos), cada uma um processo do
-`ProcessPoolExecutor` dimensionado por `os.cpu_count()` — usa os núcleos
-disponíveis de verdade, não só 5. Custo aceito conscientemente: cada task
-de `dollar`/`volume`/`tick_imbalance` recarrega `aggTrades` do disco de
-forma independente (`lake.query_agg_trades`, sem cache entre tasks) em
-vez de reusar um `DataFrame` já carregado — serializar um `DataFrame` de
-milhões de linhas entre processos custaria mais que reler do parquet, e a
-E/S de disco é pequena perto do loop Python de `tick_imbalance_bars`
-mesmo assim. Ponto de entrada manual, não é testado de ponta a ponta no
-pytest (mesma convenção de M1/M3/M6 — IO real fica fora da suíte
-automatizada)."""
+**Memória domina o desenho, não CPU.** Achado de auditoria (2026-08-15,
+medido antes de mudar qualquer coisa): `aggTrades` de BTCUSDT/ETHUSDT são
+27GB/20GB *comprimidos* em disco — descompactado como `DataFrame` tipado,
+isso não cabe na RAM inteira de uma vez, em NENHUMA concorrência (nem 1
+processo sozinho). `compute_trades_dependent_bars_for_symbol` processa
+cada símbolo em streaming, chunk-a-chunk (`bars_streaming_chunk_days` dias
+por vez — ver `src.data.bars`, que mantém só o estado necessário entre
+chunks, nunca o histórico inteiro), em 2 passadas: 1ª só soma totais pra
+calibrar `threshold`/`exp_num_ticks_init`, 2ª constrói as barras de fato.
+Duas tentativas anteriores (reduzir de 15 pra 5 cargas concorrentes,
+depois travar threads BLAS pra 1) atacavam CONCORRÊNCIA e continuaram
+falhando com `duckdb.OutOfMemoryException` — o problema real nunca foi
+quantos processos rodavam ao mesmo tempo, era que uma única carga do
+histórico completo de 1 símbolo já não cabia.
+
+**Paralelismo entre símbolos continua por processo** (`run_and_save_bar_
+comparison_report`, `ProcessPoolExecutor` dimensionado por
+`os.cpu_count()`) — `tick_imbalance_bars_step` é sequencial dentro de cada
+processo (ver docstring de `src.data.bars`), mas os 5 símbolos processam
+em paralelo entre si, cada um com memória limitada ao tamanho de 1 chunk,
+não ao histórico inteiro. Ponto de entrada manual, não é testado de ponta
+a ponta no pytest (mesma convenção de M1/M3/M6 — IO real fica fora da
+suíte automatizada; a propriedade crítica de streaming↔lote é testada em
+`test_data_bars.py`, que não depende de IO real)."""
 
 from __future__ import annotations
 
@@ -85,6 +92,7 @@ os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -102,7 +110,16 @@ from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
-from src.data.bars import TickImbalanceBarsConfig, dollar_bars, tick_imbalance_bars, volume_bars
+from src.data.bars import (
+    TickImbalanceBarsConfig,
+    dollar_bars_carry,
+    threshold_bars_finish,
+    threshold_bars_step,
+    tick_imbalance_bars_carry,
+    tick_imbalance_bars_finish,
+    tick_imbalance_bars_step,
+    volume_bars_carry,
+)
 from src.data.resample import step_ms
 from src.labels.weights import compute_concurrency_and_uniqueness
 from src.risk._constants import load_constant as load_risk_constant
@@ -286,11 +303,9 @@ def _target_n_bars(symbol: str, baseline: pl.DataFrame) -> int:
     return n
 
 
-def _build_tick_imbalance_config(
-    trades: pl.DataFrame, target_n_bars: int
-) -> TickImbalanceBarsConfig:
+def _build_tick_imbalance_config(n_ticks: int, target_n_bars: int) -> TickImbalanceBarsConfig:
     # target_n_bars > 0 garantido pelo caller (_target_n_bars).
-    exp_num_ticks_init = float(trades.height) / target_n_bars  # noqa: unguarded-ratio
+    exp_num_ticks_init = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
     clip_mult = float(load_data_constant("bars_tick_imbalance_clip_multiplier"))
     if clip_mult <= 0:
         raise ValueError(
@@ -304,6 +319,90 @@ def _build_tick_imbalance_config(
         exp_num_ticks_init=exp_num_ticks_init,
         exp_num_ticks_min=exp_num_ticks_init / clip_mult,  # noqa: unguarded-ratio -- clip_mult>0 acima
         exp_num_ticks_max=exp_num_ticks_init * clip_mult,
+    )
+
+
+def _date_chunks(start: str, end: str, *, chunk_days: int) -> list[tuple[date, date]]:
+    """Fatia `[start, end]` em janelas de `chunk_days` dias (última pode
+    ser menor) -- `lake.query_agg_trades` já aceita `date` diretamente
+    (`DateLike = date | datetime | str`), sem precisar formatar string."""
+    if chunk_days <= 0:
+        raise ValueError(f"chunk_days precisa ser > 0, recebido {chunk_days}")
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end)
+    if start_date > end_date:
+        raise ValueError(f"start ({start}) posterior a end ({end})")
+
+    chunks: list[tuple[date, date]] = []
+    cursor = start_date
+    step = timedelta(days=chunk_days)
+    one_day = timedelta(days=1)
+    while cursor <= end_date:
+        chunk_end = min(cursor + step - one_day, end_date)
+        chunks.append((cursor, chunk_end))
+        cursor = chunk_end + one_day
+    return chunks
+
+
+@dataclass(slots=True)
+class _TradesTotals:
+    """Saída da 1ª passada (só somas, nunca materializa o histórico
+    inteiro de uma vez -- ver `_scan_trades_totals`)."""
+
+    total_dollar: float = 0.0
+    total_volume: float = 0.0
+    n_ticks: int = 0
+
+
+def _scan_trades_totals(symbol: str, chunks: list[tuple[date, date]]) -> _TradesTotals:
+    """1ª passada: só soma `price*quantity`/`quantity`/contagem por chunk,
+    descartando cada chunk assim que somado -- memória limitada ao tamanho
+    de 1 chunk (`bars_streaming_chunk_days`), nunca ao histórico inteiro.
+    Necessária pra calibrar `threshold`/`exp_num_ticks_init` (§3.2 M2: "mesma
+    frequência média que o baseline") ANTES de construir as barras de
+    verdade na 2ª passada (`_build_trades_dependent_bars`) -- custo aceito
+    conscientemente: cada dia de `aggTrades` é lido do disco 2x, não 1x,
+    mas isso troca E/S (barata, arquivos locais) por memória (o recurso que
+    realmente estourou, ver docstring do módulo)."""
+    totals = _TradesTotals()
+    for chunk_start, chunk_end in chunks:
+        chunk = lake.query_agg_trades(symbol, chunk_start, chunk_end)
+        if chunk.is_empty():
+            continue
+        totals.total_dollar += float((chunk["price"] * chunk["quantity"]).sum())
+        totals.total_volume += float(chunk["quantity"].sum())
+        totals.n_ticks += chunk.height
+    return totals
+
+
+def _build_trades_dependent_bars(
+    symbol: str,
+    chunks: list[tuple[date, date]],
+    *,
+    dollar_threshold: float,
+    volume_threshold: float,
+    tib_config: TickImbalanceBarsConfig,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """2ª passada: relê os mesmos chunks e alimenta os 3 acumuladores de
+    barra (`dollar`/`volume`/`tick_imbalance`) num loop só -- 1x de E/S por
+    chunk aqui, não 3x (os 3 tipos compartilham o mesmo chunk já carregado
+    em memória, só o estado carregado entre chunks é que é por tipo)."""
+    dollar_carry = dollar_bars_carry(threshold=dollar_threshold)
+    volume_carry = volume_bars_carry(threshold=volume_threshold)
+    tib_carry = tick_imbalance_bars_carry(tib_config)
+
+    for chunk_start, chunk_end in chunks:
+        chunk = lake.query_agg_trades(symbol, chunk_start, chunk_end)
+        if chunk.is_empty():
+            continue
+        threshold_bars_step(dollar_carry, chunk)
+        threshold_bars_step(volume_carry, chunk)
+        tick_imbalance_bars_step(tib_carry, chunk)
+
+    return (
+        threshold_bars_finish(dollar_carry),
+        threshold_bars_finish(volume_carry),
+        tick_imbalance_bars_finish(tib_carry),
     )
 
 
@@ -339,74 +438,67 @@ def compute_time_bar_for_symbol(
 def compute_trades_dependent_bars_for_symbol(
     symbol: str, *, time_stop_ms: int, ljung_box_lags: int
 ) -> list[BarComparisonMetrics]:
-    """Carrega `aggTrades` de UM símbolo UMA vez só e constrói `dollar`/
-    `volume`/`tick_imbalance` bars a partir do MESMO `DataFrame` --
-    achado de auditoria (2026-08-15): a versão anterior recarregava
-    `aggTrades` 3x por símbolo (uma vez por `bar_type`, cada um sua
-    própria task) para paralelizar por (symbol, bar_type); com múltiplos
-    símbolos concorrentes isso multiplicava a pressão de memória (até 15
-    cargas concorrentes de histórico completo de trades, não 5) o
-    suficiente pra estourar `duckdb.OutOfMemoryException` mesmo numa
-    máquina com ~32GB de RAM total / ~28GB livres (medido via
-    `Get-CimInstance Win32_OperatingSystem`, 2026-08-15) -- a versão
-    original (1 task por símbolo, antes da fatia fina por bar_type) NUNCA
-    tinha batido nesse teto; o gargalo real era o volume de SVDs dentro do
-    ADF (corrigido em `_run_adfuller`), não a carga de `aggTrades` em si.
-    Reunir os 3 tipos de volta numa única task por símbolo devolve a
-    concorrência de carga de `aggTrades` pro nível que já era conhecido
-    seguro (no máximo `len(symbols)` cargas concorrentes, ver `run_and_
-    save_bar_comparison_report`), sem abrir mão do paralelismo de verdade
-    que `_run_adfuller`/thread-pinning já conquistou dentro de cada task.
+    """Constrói `dollar`/`volume`/`tick_imbalance` bars pra 1 símbolo em
+    STREAMING -- achado de auditoria (2026-08-15, medido antes de mudar
+    qualquer coisa): `aggTrades` de BTCUSDT/ETHUSDT são 27GB/20GB
+    *comprimidos* em disco, não cabem em memória de uma vez em NENHUMA
+    concorrência (nem 1 processo sozinho) -- as duas tentativas anteriores
+    (reduzir de 15 pra 5 cargas concorrentes, depois travar threads BLAS)
+    atacavam concorrência, não o tamanho real do problema, por isso
+    continuaram falhando com `duckdb.OutOfMemoryException`.
 
-    Blindado contra `duckdb.OutOfMemoryException` residual (mesma
-    disciplina FCN de `_run_adfuller`/`_nan_metrics`) -- se AINDA assim a
-    carga falhar (ex. símbolo com histórico particularmente grande numa
-    máquina com menos RAM livre no momento), devolve `NaN` explícito pros
-    3 tipos dependentes de trades desse símbolo, sem derrubar os outros 4
-    símbolos do batch."""
+    Duas passadas em chunks de `bars_streaming_chunk_days` dias (nunca o
+    histórico inteiro em memória, ver `src.data.bars` e `_scan_trades_
+    totals`/`_build_trades_dependent_bars`): a 1ª só soma totais pra
+    calibrar `threshold`/`exp_num_ticks_init` (§3.2 M2 exige "mesma
+    frequência média que o baseline" -- precisa do total ANTES de poder
+    fechar a primeira barra de verdade); a 2ª constrói as barras de fato,
+    alimentando os 3 acumuladores (`ThresholdBarsCarry`×2 +
+    `TickImbalanceBarsCarry`) no mesmo loop de chunks (1x de E/S por
+    chunk, não 3x). Blindado contra `duckdb.OutOfMemoryException` residual
+    por chunk (mesma disciplina FCN de `_run_adfuller`/`_nan_metrics`) --
+    se mesmo um chunk de ~30 dias ainda estourar (ex. menos RAM livre no
+    momento), devolve `NaN` explícito pros 3 tipos desse símbolo, sem
+    derrubar os outros 4 do batch."""
     target_n_bars = _target_n_bars(symbol, _query_baseline(symbol))
+    chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
+    chunks = _date_chunks(SYMBOL_START_DATE[symbol], END_DATE, chunk_days=chunk_days)
+
     try:
-        trades = lake.query_agg_trades(symbol, SYMBOL_START_DATE[symbol], END_DATE)
+        totals = _scan_trades_totals(symbol, chunks)
+        if totals.n_ticks == 0:
+            raise ValueError(
+                f"aggTrades vazio para {symbol} no período "
+                f"{SYMBOL_START_DATE[symbol]}..{END_DATE} -- não dá pra calibrar bars"
+            )
+        dollar_threshold = totals.total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+        volume_threshold = totals.total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
+        tib_config = _build_tick_imbalance_config(totals.n_ticks, target_n_bars)
+
+        dollar_df, volume_df, tib_df = _build_trades_dependent_bars(
+            symbol,
+            chunks,
+            dollar_threshold=dollar_threshold,
+            volume_threshold=volume_threshold,
+            tib_config=tib_config,
+        )
     except duckdb.OutOfMemoryException as exc:
         logger.warning(
             "analysis.m2_bar_comparison.trades_load_failed", symbol=symbol, error=repr(exc)
         )
         return [_nan_metrics(symbol, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES]
 
-    results: list[BarComparisonMetrics] = []
-
-    total_dollar = float((trades["price"] * trades["quantity"]).sum())
-    dollar_threshold = total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-    dollar_result = compute_bar_statistics(
-        symbol,
-        "dollar",
-        dollar_bars(trades, threshold=dollar_threshold),
-        time_stop_ms=time_stop_ms,
-        ljung_box_lags=ljung_box_lags,
-    )
-    results.append(dollar_result)
-
-    total_volume = float(trades["quantity"].sum())
-    volume_threshold = total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
-    volume_result = compute_bar_statistics(
-        symbol,
-        "volume",
-        volume_bars(trades, threshold=volume_threshold),
-        time_stop_ms=time_stop_ms,
-        ljung_box_lags=ljung_box_lags,
-    )
-    results.append(volume_result)
-
-    tib_config = _build_tick_imbalance_config(trades, target_n_bars)
-    tick_imbalance_result = compute_bar_statistics(
-        symbol,
-        "tick_imbalance",
-        tick_imbalance_bars(trades, tib_config),
-        time_stop_ms=time_stop_ms,
-        ljung_box_lags=ljung_box_lags,
-    )
-    results.append(tick_imbalance_result)
-
+    bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
+    results = [
+        compute_bar_statistics(
+            symbol,
+            bar_type,
+            bars_by_type[bar_type],
+            time_stop_ms=time_stop_ms,
+            ljung_box_lags=ljung_box_lags,
+        )
+        for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+    ]
     for metrics in results:
         _log_task_done(metrics)
     return results

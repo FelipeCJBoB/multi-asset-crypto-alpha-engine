@@ -4,14 +4,30 @@ causalidade de `dollar_bars`/`volume_bars` (partição vetorizada, conferida
 `expected_imbalance_window=1`/`num_prev_bars=1` -- ambos com alpha de EWMA
 =1,0, ou seja EWMA vira substituição direta pelo valor mais recente, o
 suficiente para reduzir o algoritmo adaptativo a aritmética verificável na
-mão sem perder nenhuma etapa real do fechamento de barra)."""
+mão sem perder nenhuma etapa real do fechamento de barra). Também prova a
+propriedade mais importante do redesenho em streaming (achado de auditoria
+2026-08-15, aggTrades não cabe em memória de uma vez): processar em N
+chunks pequenos precisa produzir EXATAMENTE o mesmo resultado que processar
+tudo de uma vez -- `test_..._streaming_bate_com_lote_*`."""
 
 from __future__ import annotations
 
 import polars as pl
 import pytest
 
-from src.data.bars import TickImbalanceBarsConfig, dollar_bars, tick_imbalance_bars, volume_bars
+from src.data.bars import (
+    TickImbalanceBarsConfig,
+    dollar_bars,
+    dollar_bars_carry,
+    threshold_bars_finish,
+    threshold_bars_step,
+    tick_imbalance_bars,
+    tick_imbalance_bars_carry,
+    tick_imbalance_bars_finish,
+    tick_imbalance_bars_step,
+    volume_bars,
+    volume_bars_carry,
+)
 
 
 def _trades(
@@ -39,6 +55,20 @@ def _trades(
             "is_buyer_maker": pl.Boolean,
         },
     )
+
+
+def _chunk(trades: pl.DataFrame, sizes: list[int]) -> list[pl.DataFrame]:
+    """Fatia `trades` em pedaços de tamanho `sizes` (soma == trades.height),
+    simulando o que `m2_bar_comparison.py` recebe de `lake.query_agg_trades`
+    dia a dia -- tamanhos DESIGUAIS de propósito (dia real não tem sempre o
+    mesmo nº de trades), inclusive testando chunk vazio no meio."""
+    assert sum(sizes) == trades.height, (sizes, trades.height)
+    chunks = []
+    offset = 0
+    for size in sizes:
+        chunks.append(trades.slice(offset, size))
+        offset += size
+    return chunks
 
 
 def test_dollar_bars_particao_bate_com_calculo_manual() -> None:
@@ -137,16 +167,19 @@ def test_tick_imbalance_bars_fecha_barra_no_limiar_esperado_tracado_a_mao() -> N
     ],
 )
 def test_tick_imbalance_bars_config_invalida_levanta_erro(kwargs: dict[str, int | float]) -> None:
-    trades = _trades(price=[1.0], quantity=[1.0], is_buyer_maker=[False])
-    config = TickImbalanceBarsConfig(
-        num_prev_bars=int(kwargs["num_prev_bars"]),
-        expected_imbalance_window=int(kwargs["expected_imbalance_window"]),
-        exp_num_ticks_init=float(kwargs["exp_num_ticks_init"]),
-        exp_num_ticks_min=1.0,
-        exp_num_ticks_max=100.0,
-    )
+    """Validação migrou pra `TickImbalanceBarsConfig.__post_init__` (fail
+    fast na construção, não só quando `tick_imbalance_bars`/`_carry` é
+    chamado -- protege os dois pontos de entrada agora que existem:
+    wrapper de DataFrame único E o caminho em streaming) -- por isso a
+    própria construção precisa estar dentro do `pytest.raises`."""
     with pytest.raises(ValueError):
-        tick_imbalance_bars(trades, config)
+        TickImbalanceBarsConfig(
+            num_prev_bars=int(kwargs["num_prev_bars"]),
+            expected_imbalance_window=int(kwargs["expected_imbalance_window"]),
+            exp_num_ticks_init=float(kwargs["exp_num_ticks_init"]),
+            exp_num_ticks_min=1.0,
+            exp_num_ticks_max=100.0,
+        )
 
 
 def test_dollar_bars_dataframe_vazio_devolve_vazio() -> None:
@@ -169,3 +202,117 @@ def test_dollar_bars_sem_coluna_obrigatoria_levanta_erro() -> None:
     trades = pl.DataFrame({"price": [1.0], "quantity": [1.0]})
     with pytest.raises(ValueError, match="coluna"):
         dollar_bars(trades, threshold=1.0)
+
+
+# ============================================================================
+# Paridade streaming <-> lote -- a propriedade central do redesenho
+# (auditoria 2026-08-15: aggTrades de BTC/ETH não cabem em memória de uma
+# vez, 27GB/20GB comprimidos em disco; processar em chunks pequenos PRECISA
+# dar o mesmo resultado que processar tudo de uma vez, senão o streaming
+# está silenciosamente mudando o que M2 mede).
+# ============================================================================
+
+
+def _bars_equal(a: pl.DataFrame, b: pl.DataFrame) -> None:
+    assert a.height == b.height
+    assert a.columns == b.columns
+    assert a.schema == b.schema
+    for col in a.columns:
+        assert a[col].to_list() == pytest.approx(b[col].to_list()), col
+
+
+@pytest.mark.parametrize("sizes", [[20], [1] * 20, [7, 5, 3, 5], [1, 19], [19, 1], [4, 0, 16]])
+def test_dollar_bars_streaming_bate_com_lote_varios_tamanhos_de_chunk(
+    sizes: list[int],
+) -> None:
+    """Mesmos 20 trades, particionados em chunks de tamanhos bem diferentes
+    (incluindo 1 chunk vazio no meio, `[4, 0, 16]`) -- resultado tem que
+    ser byte-a-byte igual ao processamento em 1 `DataFrame` só."""
+    n = 20
+    trades = _trades(
+        price=[100.0 + 0.7 * ((i * 13) % 9) for i in range(n)],
+        quantity=[1.0 + (i % 4) for i in range(n)],
+        is_buyer_maker=[i % 3 == 0 for i in range(n)],
+    )
+    threshold = 30.0  # pequeno o suficiente pra fechar várias barras nos 20 trades
+
+    batch_bars = dollar_bars(trades, threshold=threshold)
+
+    carry = dollar_bars_carry(threshold=threshold)
+    for chunk in _chunk(trades, sizes):
+        threshold_bars_step(carry, chunk)
+    streaming_bars = threshold_bars_finish(carry)
+
+    _bars_equal(batch_bars, streaming_bars)
+
+
+@pytest.mark.parametrize("sizes", [[20], [1] * 20, [7, 5, 3, 5], [1, 19], [4, 0, 16]])
+def test_volume_bars_streaming_bate_com_lote_varios_tamanhos_de_chunk(
+    sizes: list[int],
+) -> None:
+    n = 20
+    trades = _trades(
+        price=[50.0 + 0.3 * ((i * 11) % 7) for i in range(n)],
+        quantity=[1.0 + (i % 5) for i in range(n)],
+        is_buyer_maker=[i % 2 == 0 for i in range(n)],
+    )
+    threshold = 10.0
+
+    batch_bars = volume_bars(trades, threshold=threshold)
+
+    carry = volume_bars_carry(threshold=threshold)
+    for chunk in _chunk(trades, sizes):
+        threshold_bars_step(carry, chunk)
+    streaming_bars = threshold_bars_finish(carry)
+
+    _bars_equal(batch_bars, streaming_bars)
+
+
+@pytest.mark.parametrize("sizes", [[10], [1] * 10, [3, 4, 3], [1, 9], [9, 1], [2, 0, 8]])
+def test_tick_imbalance_bars_streaming_bate_com_lote_varios_tamanhos_de_chunk(
+    sizes: list[int],
+) -> None:
+    """Mesma prova de paridade, agora sobre o traço já verificado à mão em
+    `test_tick_imbalance_bars_fecha_barra_no_limiar_esperado_tracado_a_mao`
+    -- se streaming bate com lote NESSE caso (2 barras, geometria não
+    trivial), a EWMA/exp_num_ticks estão sendo carregados corretamente
+    entre chunks, não reiniciando do zero a cada chunk."""
+    price = [100.0, 101.0, 102.0, 99.0, 98.0, 97.0, 103.0, 104.0, 105.0, 106.0]
+    is_buyer_maker = [False, False, False, True, True, False, False, False, False, False]
+    trades = _trades(price=price, quantity=[1.0] * 10, is_buyer_maker=is_buyer_maker)
+    config = TickImbalanceBarsConfig(
+        num_prev_bars=1,
+        expected_imbalance_window=1,
+        exp_num_ticks_init=3.0,
+        exp_num_ticks_min=1.0,
+        exp_num_ticks_max=100.0,
+    )
+
+    batch_bars = tick_imbalance_bars(trades, config)
+
+    carry = tick_imbalance_bars_carry(config)
+    for chunk in _chunk(trades, sizes):
+        tick_imbalance_bars_step(carry, chunk)
+    streaming_bars = tick_imbalance_bars_finish(carry)
+
+    _bars_equal(batch_bars, streaming_bars)
+
+
+def test_threshold_bars_step_chunk_vazio_e_no_op() -> None:
+    carry = dollar_bars_carry(threshold=10.0)
+    empty = _trades(price=[], quantity=[], is_buyer_maker=[])
+    threshold_bars_step(carry, empty)  # não deve levantar nem mudar estado
+    assert carry.leftover is None
+    assert carry.bar_frames == []
+
+
+def test_tick_imbalance_bars_step_chunk_vazio_e_no_op() -> None:
+    config = TickImbalanceBarsConfig(
+        num_prev_bars=3, expected_imbalance_window=10, exp_num_ticks_init=5.0,
+        exp_num_ticks_min=1.0, exp_num_ticks_max=100.0,
+    )
+    carry = tick_imbalance_bars_carry(config)
+    empty = _trades(price=[], quantity=[], is_buyer_maker=[])
+    tick_imbalance_bars_step(carry, empty)
+    assert carry.started is False
+    assert carry.bar_rows == []

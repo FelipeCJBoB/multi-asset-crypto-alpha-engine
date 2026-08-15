@@ -1167,4 +1167,10 @@ bars_comparison_ljung_box_lags:
   source: "convenção comum em testes de autocorrelação de retornos financeiros intradiários (Ljung-Box) na literatura de séries temporais financeiras (ex. Tsay, Analysis of Financial Time Series) — não calibrado especificamente para este dataset."
   class: C
   sweep_required: false
+
+bars_streaming_chunk_days:
+  value: 30
+  provenance: ASSUMED
+  source: "achado de auditoria 2026-08-15: aggTrades de BTCUSDT/ETHUSDT são 27GB/20GB comprimidos em disco — não cabe em memória de uma vez, em nenhuma concorrência. 30 dias (~11,25MB/dia comprimido pro pior caso, BTC) fica bem abaixo do orçamento de RAM medido nesta máquina (~28GB livres, Get-CimInstance Win32_OperatingSystem) mesmo assumindo expansão pessimista de ~8x ao descomprimir (zstd sobre dado tick-a-tick) e vários processos concorrentes. Não é medição exata do tamanho descomprimido por chunk — é uma margem de segurança conservadora; ajustar pra baixo se ainda assim faltar memória."
+  class: C
   sweep_required: false
