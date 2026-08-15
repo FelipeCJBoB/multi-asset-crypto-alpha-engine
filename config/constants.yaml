@@ -1174,3 +1174,17 @@ bars_streaming_chunk_days:
   source: "achado de auditoria 2026-08-15: aggTrades de BTCUSDT/ETHUSDT são 27GB/20GB comprimidos em disco — não cabe em memória de uma vez, em nenhuma concorrência. 30 dias (~11,25MB/dia comprimido pro pior caso, BTC) fica bem abaixo do orçamento de RAM medido nesta máquina (~28GB livres, Get-CimInstance Win32_OperatingSystem) mesmo assumindo expansão pessimista de ~8x ao descomprimir (zstd sobre dado tick-a-tick) e vários processos concorrentes. Não é medição exata do tamanho descomprimido por chunk — é uma margem de segurança conservadora; ajustar pra baixo se ainda assim faltar memória."
   class: C
   sweep_required: false
+
+m2_duckdb_memory_limit_gb:
+  value: 2.0
+  provenance: ASSUMED
+  source: "achado de auditoria 2026-08-14: mesmo após bars_streaming_chunk_days (bound de tamanho por query), run_and_save_bar_comparison_report ainda produziu duckdb.OutOfMemoryException em 3/5 símbolos — pesquisa web (duckdb.org/docs/current/guides/performance/oom; GitHub duckdb/duckdb#11155 'DuckDB Settings Across Multiple Processes In Memory') confirmou que cada duckdb.connect(':memory:') sem SET memory_limit explícito assume por padrão até ~80% da RAM TOTAL da máquina, por PROCESSO — não há coordenação entre processos. Com n_tasks=10 processos concorrentes (ProcessPoolExecutor), cada um abrindo sua própria conexão via lake._read_files, o orçamento efetivo somado excedia em muito os ~28GB livres medidos nesta máquina (mesma medição de bars_streaming_chunk_days). 2,0GB = 28GB / 10 tasks (~2,8GB) com margem de segurança pra overhead de Python/polars/SO que a contabilidade do duckdb não cobre — não é medição exata do pico de RAM por conexão."
+  class: C
+  sweep_required: false
+
+m2_duckdb_threads:
+  value: 1
+  provenance: ASSUMED
+  source: "mesmo achado de m2_duckdb_memory_limit_gb: duckdb.connect() sem SET threads explícito usa por padrão múltiplas threads por conexão (nº de cores, dependendo da versão) — com até 10 processos concorrentes (ProcessPoolExecutor) nos 12 cores lógicos desta máquina, cada um abrindo seu próprio pool de threads do duckdb, a oversubscription de CPU agrava a de memória (mais threads = mais buffers internos alocados pro mesmo tempo). 1 thread por processo replica a mesma disciplina já aplicada a BLAS/polars em m2_bar_comparison.py (OMP_NUM_THREADS=1 etc.) — o paralelismo real já acontece no nível de PROCESSO (ProcessPoolExecutor), não precisa de novo dentro de cada conexão duckdb."
+  class: C
+  sweep_required: false

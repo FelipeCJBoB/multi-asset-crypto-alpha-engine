@@ -95,15 +95,37 @@ def _list_files_in_range(
 
 
 def _read_files(
-    files: list[Path], *, ts_col: str | None, start_ms: int | None, end_ms: int | None
+    files: list[Path],
+    *,
+    ts_col: str | None,
+    start_ms: int | None,
+    end_ms: int | None,
+    duckdb_memory_limit_gb: float | None = None,
+    duckdb_threads: int | None = None,
 ) -> pl.DataFrame:
     """DuckDB relation sobre exatamente `files` (já podados por nome), com
-    filtro de timestamp e ordenação delegados ao motor — não ao Python."""
+    filtro de timestamp e ordenação delegados ao motor — não ao Python.
+
+    `duckdb_memory_limit_gb`/`duckdb_threads` (default `None` = defaults do
+    próprio DuckDB, sem mudança de comportamento pra quem já chama sem
+    esses argumentos). Achado de auditoria (2026-08-14): sem `SET
+    memory_limit`/`SET threads` explícitos, cada `duckdb.connect(":memory:")`
+    assume por padrão até ~80% da RAM TOTAL da máquina e várias threads,
+    achando que é o único processo rodando nela — sob `ProcessPoolExecutor`
+    com N processos concorrentes (caso de `m2_bar_comparison.py`), cada um
+    abre sua própria conexão com esse mesmo orçamento otimista, e a soma
+    estoura a RAM real disponível mesmo quando cada query individual é
+    pequena (`duckdb.OutOfMemoryException`, não é sobre tamanho de query).
+    Ver `constants.yaml::m2_duckdb_memory_limit_gb`/`m2_duckdb_threads`."""
     if not files:
         return pl.DataFrame()
 
     con = duckdb.connect(database=":memory:")
     try:
+        if duckdb_memory_limit_gb is not None:
+            con.execute(f"SET memory_limit='{duckdb_memory_limit_gb}GB'")
+        if duckdb_threads is not None:
+            con.execute(f"SET threads={duckdb_threads}")
         rel = con.read_parquet([str(f) for f in files])
         if ts_col is not None:
             conditions = []
@@ -148,13 +170,16 @@ def query_bars(
     *,
     source: str = "klines_1m",
     cast_prices: bool = True,
+    duckdb_memory_limit_gb: float | None = None,
+    duckdb_threads: int | None = None,
 ) -> pl.DataFrame:
     """Barras OHLCV de `source` (`klines_1m`, `mark_price_klines_1m` ou
     `premium_index_klines_1m` — todas 1m no disco), reamostradas para `tf`
     se `tf != "1m"` via `resample.resample_klines`. Import de `resample`
     feito dentro da função para não criar um ciclo de import a nível de
     módulo (`resample` não precisa saber de `lake`, mas `lake` compõe
-    `resample` neste único ponto)."""
+    `resample` neste único ponto). `duckdb_memory_limit_gb`/`duckdb_threads`
+    -- ver `_read_files`."""
     schema = schemas.get_schema(source)
     if not schema.is_klines_like:
         raise ValueError(
@@ -164,7 +189,14 @@ def query_bars(
 
     files = _list_files_in_range(source, symbol, start, end)
     start_ms, end_ms = _day_bounds_ms(start, end)
-    df = _read_files(files, ts_col="open_time", start_ms=start_ms, end_ms=end_ms)
+    df = _read_files(
+        files,
+        ts_col="open_time",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        duckdb_memory_limit_gb=duckdb_memory_limit_gb,
+        duckdb_threads=duckdb_threads,
+    )
 
     if cast_prices or tf != "1m":
         df = cast_price_columns(df, ("open", "high", "low", "close"))
@@ -181,10 +213,21 @@ def query_agg_trades(
     symbol: str = "BTCUSDT",
     start: DateLike | None = None,
     end: DateLike | None = None,
+    *,
+    duckdb_memory_limit_gb: float | None = None,
+    duckdb_threads: int | None = None,
 ) -> pl.DataFrame:
+    """`duckdb_memory_limit_gb`/`duckdb_threads` -- ver `_read_files`."""
     files = _list_files_in_range("agg_trades", symbol, start, end)
     start_ms, end_ms = _day_bounds_ms(start, end)
-    return _read_files(files, ts_col="transact_time", start_ms=start_ms, end_ms=end_ms)
+    return _read_files(
+        files,
+        ts_col="transact_time",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        duckdb_memory_limit_gb=duckdb_memory_limit_gb,
+        duckdb_threads=duckdb_threads,
+    )
 
 
 def query_metrics(

@@ -55,6 +55,25 @@ falhando com `duckdb.OutOfMemoryException` — o problema real nunca foi
 quantos processos rodavam ao mesmo tempo, era que uma única carga do
 histórico completo de 1 símbolo já não cabia.
 
+**4º achado (2026-08-14) — chunking sozinho não bastou: era o orçamento
+default do DuckDB, não o tamanho da query.** Mesmo com `bars_streaming_
+chunk_days` limitando cada query a ~30 dias, uma execução real ainda
+produziu `duckdb.OutOfMemoryException` em 3 dos 5 símbolos. Pesquisa web
+(duckdb.org/docs/current/guides/performance/oom; GitHub `duckdb/duckdb`
+discussion #11155) confirmou: `duckdb.connect(":memory:")` sem `SET
+memory_limit`/`SET threads` explícitos assume por padrão até ~80% da RAM
+TOTAL da máquina e várias threads *por conexão*, sem coordenação entre
+processos — cada um dos até `n_tasks=10` processos concorrentes
+(`ProcessPoolExecutor`) abre sua PRÓPRIA conexão via `lake._read_files`
+com esse mesmo orçamento otimista, e a soma estoura a RAM real disponível
+mesmo com cada query individual pequena. `_duckdb_throttle()` aplica `SET
+memory_limit`/`SET threads` explícitos (`constants.yaml::m2_duckdb_
+memory_limit_gb`/`m2_duckdb_threads`, derivados de `28GB livres / 10
+tasks` com margem de segurança) em toda chamada a `lake.query_bars`/
+`lake.query_agg_trades` deste módulo — `lake.py` continua com os defaults
+do DuckDB pra todo resto do repo (parâmetros opcionais, `None` por
+padrão, zero mudança de comportamento fora daqui).
+
 **Paralelismo entre símbolos continua por processo** (`run_and_save_bar_
 comparison_report`, `ProcessPoolExecutor` dimensionado por
 `os.cpu_count()`) — `tick_imbalance_bars_step` é sequencial dentro de cada
@@ -281,7 +300,34 @@ def compute_bar_statistics(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _DuckDBThrottle:
+    memory_limit_gb: float
+    threads: int
+
+
+def _duckdb_throttle() -> _DuckDBThrottle:
+    """`memory_limit`/`threads` por conexão DuckDB -- achado de auditoria
+    (2026-08-14): `duckdb.connect(":memory:")` sem `SET` explícito assume
+    até ~80% da RAM TOTAL da máquina e várias threads por conexão, achando
+    que é o único processo rodando nela. Sob `ProcessPoolExecutor` com até
+    `n_tasks=10` processos concorrentes (`run_and_save_bar_comparison_
+    report`), cada um abrindo sua própria conexão via `lake._read_files`,
+    o orçamento otimista somado estourava a RAM real disponível mesmo com
+    `bars_streaming_chunk_days` já limitando o tamanho de CADA query
+    individual -- `duckdb.OutOfMemoryException` recorrente em produção
+    (2026-08-14) não era sobre tamanho de query, era sobre orçamento
+    default assumido por conexão × nº de conexões concorrentes. Ver
+    `constants.yaml::m2_duckdb_memory_limit_gb`/`m2_duckdb_threads` e
+    docstring de `lake._read_files`."""
+    return _DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m2_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m2_duckdb_threads")),
+    )
+
+
 def _query_baseline(symbol: str) -> pl.DataFrame:
+    throttle = _duckdb_throttle()
     return lake.query_bars(
         symbol,
         BASELINE_TF,
@@ -289,6 +335,8 @@ def _query_baseline(symbol: str) -> pl.DataFrame:
         END_DATE,
         source="klines_1m",
         cast_prices=True,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
     )
 
 
@@ -365,8 +413,15 @@ def _scan_trades_totals(symbol: str, chunks: list[tuple[date, date]]) -> _Trades
     mas isso troca E/S (barata, arquivos locais) por memória (o recurso que
     realmente estourou, ver docstring do módulo)."""
     totals = _TradesTotals()
+    throttle = _duckdb_throttle()
     for chunk_start, chunk_end in chunks:
-        chunk = lake.query_agg_trades(symbol, chunk_start, chunk_end)
+        chunk = lake.query_agg_trades(
+            symbol,
+            chunk_start,
+            chunk_end,
+            duckdb_memory_limit_gb=throttle.memory_limit_gb,
+            duckdb_threads=throttle.threads,
+        )
         if chunk.is_empty():
             continue
         totals.total_dollar += float((chunk["price"] * chunk["quantity"]).sum())
@@ -391,8 +446,15 @@ def _build_trades_dependent_bars(
     volume_carry = volume_bars_carry(threshold=volume_threshold)
     tib_carry = tick_imbalance_bars_carry(tib_config)
 
+    throttle = _duckdb_throttle()
     for chunk_start, chunk_end in chunks:
-        chunk = lake.query_agg_trades(symbol, chunk_start, chunk_end)
+        chunk = lake.query_agg_trades(
+            symbol,
+            chunk_start,
+            chunk_end,
+            duckdb_memory_limit_gb=throttle.memory_limit_gb,
+            duckdb_threads=throttle.threads,
+        )
         if chunk.is_empty():
             continue
         threshold_bars_step(dollar_carry, chunk)
