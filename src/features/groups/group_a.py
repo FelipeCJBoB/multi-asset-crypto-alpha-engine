@@ -35,8 +35,12 @@ def a05_ret_vol_norm_4(close: FloatArray, atr_20_pct: FloatArray, lookback_bars:
     log_ret = np.full(n, np.nan, dtype=np.float64)
     if n > lookback_bars:
         log_ret[lookback_bars:] = np.log(close[lookback_bars:] / close[:-lookback_bars])
+    # 2.0 = feature_a05_vol_norm_divisor em config/constants.yaml (AG-027,
+    # 2026-08-15) -- valor ASSUMED, propósito não documentado em lugar
+    # nenhum encontrado; não lido dinamicamente ainda (ver ressalva de
+    # escopo na entrada do yaml).
     with np.errstate(divide="ignore", invalid="ignore"):
-        out: FloatArray = log_ret / (atr_20_pct * 2.0)
+        out: FloatArray = log_ret / (atr_20_pct * 2.0)  # noqa: magic-number -- ver comentário acima
     return out
 
 

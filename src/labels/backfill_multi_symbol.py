@@ -55,6 +55,7 @@ from src.labels._paths import labels_symbol_tf_dir
 from src.labels.triple_barrier import (
     DateLike,
     LabelConfig,
+    assert_label_invariants,
     build_labels_for_symbol,
     write_labels_atomic,
 )
@@ -90,6 +91,21 @@ def build_and_write_labels_for_symbol(
     labels = build_labels_for_symbol(
         symbol, start, end, config=cfg, historical_filters_fallback=True
     )
+    # AG-029 (audit/architecture_gaps_log.yaml) -- assert_label_invariants
+    # existia desde §3.8 mas nunca era chamada no caminho real de escrita,
+    # só em teste sobre dado sintético; sample_weight/n_bars_held/uniqueness
+    # de PRODUÇÃO nunca passavam por nenhuma validação entre calcular e
+    # persistir. Falha alto de propósito (mesma disciplina de apply_weights,
+    # src/labels/weights.py) -- symbol/tf reinjetados na mensagem porque
+    # run_and_write_labels_for_alts roda em ProcessPoolExecutor, e um
+    # AssertionError sem contexto não diria qual dos 4 alts falhou.
+    try:
+        assert_label_invariants(labels, time_stop_bars=cfg.time_stop_bars)
+    except AssertionError as exc:
+        raise AssertionError(
+            f"build_and_write_labels_for_symbol: invariante de label violada "
+            f"para {symbol}/{tf} (AG-029) -- {exc}"
+        ) from exc
     dest_dir = labels_symbol_tf_dir(symbol, version, tf=tf)
     dest_path = write_labels_atomic(labels, version=version, dest_dir=dest_dir)
     logger.info(

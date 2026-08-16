@@ -56,6 +56,31 @@ taker_fee:
   class: C
   sweep_required: false
 
+round_trip_cost_bps_maker_prob:
+  value: 0.5
+  provenance: ASSUMED
+  source: "AG-027 (audit/architecture_gaps_log.yaml, 2026-08-15): estava
+    hardcoded como literal 0.5 (x2, entrada e saída) em src/features/groups/
+    group_e.py::round_trip_cost_bps, isento do lint de proveniência via
+    tools/lint/banned_patterns.py::_ALLOWED_NUMERIC_LITERALS (frozenset com
+    0.5) -- registrado aqui pra fechar esse esconderijo. VALOR MANTIDO em
+    0.5 (não atualizado nesta rodada -- Regra Zero, número medido não se
+    otimiza de volta sozinho, decisão de mudar o valor é separada e não
+    autorizada aqui). Ruína do apostador (tp_atr_mult=2.0/sl_atr_mult=1.5)
+    prevê P(maker, TP primeiro)=42,9%, não 50%; medição empírica real
+    (tools/diagnostics/measure_barrier_touch_probability.py, 5 ativos,
+    labels.parquet) confirma 42,06% pooled -- viés de ~4% de subestimação
+    de custo em E27f_cost_atr_ratio, direção conhecida, não corrigido.
+    round_trip_cost_bps NÃO lê este valor dinamicamente ainda (permanece
+    função pura, literal no corpo) -- threading do valor por load_constant
+    exigiria mudar a assinatura e os 6 call sites conhecidos
+    (cost_surface.py/volatility_operational_effect.py/feasibility.py/
+    m3_timeframe_choice.py/risk/limits.py/group_e.py), fora do escopo desta
+    correção pontual de proveniência/visibilidade."
+  class: B
+  sweep_required: false
+  review_by: sprint_9
+
 bnb_discount:
   value: 0.90
   provenance: MEASURED
@@ -175,10 +200,54 @@ canonical_volatility_estimator:
     relabeling independente do estimador (mudam o que t0 significa) —
     reprocessar duas vezes seria retrabalho puro. Ver
     docs/refactor_gk_canonico.md, seção "Recomendação registrada".
+    ATUALIZAÇÃO 2026-08-16 — as DUAS condições do gate ("M2 e M3
+    fecharem") estão satisfeitas agora: M3 (TF=15m) já estava decidido;
+    M2 (barra) fechou hoje com `dollar` canônico (ver
+    `canonical_bar_type` abaixo). Isso NÃO significa que o
+    reprocessamento começou sozinho -- só que o gate que o bloqueava não
+    é mais o impedimento. Decisão de quando/se reprocessar
+    `labels/v2_gk/` (e agora também `v2_gk_dollar/`, já que os dois
+    fecharam juntos) segue pendente do Manager, escopo real é grande
+    (Feature/Regime/Label Engine inteiros, não só o estimador).
   class: A
   sweep_required: true
   sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]
   review_by: camada_1_M2_M3
+
+canonical_bar_type:
+  value: "dollar"
+  provenance: MEASURED
+  source: >
+    M2 (PRD_V4_1.md §3.2, experiments/m2_report_{luna,ftx,winter,etf,
+    recente}.json, 2026-08-16) comparou barra de tempo (baseline) contra
+    dollar/volume/tick_imbalance bars sobre 5 janelas de regime deliberadamente
+    distintas (LUNA/UST 2022-05, FTX 2022-11, crypto winter 2023-06,
+    ETF/halving 2024-03, recente 2026-07) — 5 ativos × 3 TFs cada, 75
+    combinações por tipo de barra no pooled. Dollar bars venceu por score
+    composto (JB/Ljung-Box/ADF/unicidade) em 4 das 5 janelas (volume venceu
+    a 5ª, winter, por margem pequena) e no pooled -- bate o baseline em toda
+    métrica exceto ADF (empate, ADF passa 100% em todo tipo de barra, não
+    discrimina neste teste). Decisão do Manager 2026-08-16 (dollar é o
+    vencedor de M2), travada aqui no mesmo dia.
+    RESSALVA IMPORTANTE -- tick_imbalance bars tem AG-035 aberto
+    (audit/architecture_gaps_log.yaml): a calibração da harness de M2 pra
+    esse candidato está confirmadamente quebrada (produziu 250x-1000x mais
+    barras que o alvo em toda combinação testada), então o resultado dele
+    nesta comparação NÃO é confiável -- não participou de verdade da
+    disputa. A vitória de dollar sobre TEMPO (o baseline real que importa)
+    não depende de tick_imbalance e é sólida; a vitória de dollar sobre
+    tick_imbalance especificamente é indeterminada até AG-035 ser corrigido
+    e a janela remedida.
+    ATENÇÃO — esta constante registra a DECISÃO, não o deployment: todo o
+    pipeline (Feature/Regime/Label Engine) foi construído sobre barra de
+    TEMPO até aqui (Sprints 1-4) -- migrar pra dollar bars como grade
+    canônica é reprocessamento estrutural grande, não troca de 1 parâmetro,
+    e NÃO foi iniciado. Ver "próximos passos" registrados na sessão de
+    2026-08-16 (git log) pro escopo completo.
+  class: A
+  sweep_required: true
+  sweep_range: ["time", "dollar", "volume", "tick_imbalance"]
+  review_by: ag_035_recalibracao_tick_imbalance
 
 target_signal_rate:
   value: 0.0189
@@ -559,74 +628,168 @@ feature_a05_ret_lookback_bars:
   sweep_required: false
   review_by: sprint_8
 
+feature_a05_vol_norm_divisor:
+  value: 2.0
+  provenance: ASSUMED
+  source: "AG-027 (2026-08-15): estava hardcoded como literal 2.0 em
+    src/features/groups/group_a.py::a05_ret_vol_norm_4 (atr_20_pct * 2.0),
+    isento do lint via _ALLOWED_NUMERIC_LITERALS -- registrado aqui pra
+    fechar esse esconderijo. Propósito do divisor NÃO documentado em lugar
+    nenhum encontrado (PRD_V3_2_UNIFICADO.md tabela §2.2 cita a fórmula mas
+    não explica o 2.0) -- razão desconhecida, não é a mesma análise
+    dimensional que já justifica atr_20_pct vs atr_20_abs (ver docstring de
+    group_a.py). a05_ret_vol_norm_4 NÃO lê este valor dinamicamente ainda
+    (permanece função pura, literal no corpo) -- mesma ressalva de escopo
+    de round_trip_cost_bps_maker_prob acima."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
 feature_a13_ema_window:
   value: 48
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2 cita 'EMA48' nominalmente entre as janelas nunca testadas), nunca testada"
   class: B
+  scaling_invariant: clock
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant (2026-08-15, achado AG-027 addendum -- "3 classes"):
+  # memória/suavização -- span deve ser comensurável ao horizonte de RELÓGIO
+  # do label (time_stop_bars=32/8h a 15m), não à contagem de barras -- em
+  # multi-TF, span escala INVERSAMENTE ao TF pra preservar meia-vida em
+  # tempo real (ex.: 96@15m -> 48@30m -> 24@1h, NÃO 96 fixo). Decisão do
+  # Manager (2026-08-15): manter 48. Autorização anterior de testar
+  # EMA(24)/EMA(96) REVOGADA no mesmo dia -- não gastar N_lifetime nisso
+  # por ora. Ver audit/architecture_gaps_log.yaml AG-027.
 
 feature_b01_rsi_window:
   value: 14
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2 cita 'RSI14' nominalmente), nunca testada"
   class: B
+  scaling_invariant: clock
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: memória/suavização (mesma classe de A13) -- escala
+  # inversamente ao TF. Decisão do Manager (2026-08-15): manter 14, sem
+  # sweep autorizado -- prioridade baixa (14 barras de 15m calha, por
+  # coincidência de magnitude, numa faixa intraday plausível).
 
 feature_b07_efficiency_ratio_window:
   value: 48
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2, 'ER (16, 48)'), nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: agregação/estimação -- contagem de barra fixa entre
+  # TFs (erro amostral não conhece relógio). Decisão do Manager
+  # (2026-08-15): NÃO tocar a janela -- duas questões abertas mais
+  # fundamentais primeiro: (1) "ER (16, 48)" do PRD pode denotar DUAS
+  # features (B07 + uma B08 nunca implementada), não dois candidatos pra
+  # UM valor -- reabrir antes de mexer no número; (2) efficiency_ratio_48
+  # tem 57% de consistência de sinal em 7 anos (PRD_V3_2_UNIFICADO.md:2934,
+  # já rebaixada a T2) e ainda assim é o eixo estrutural do Regime Engine
+  # -- validade FUNDACIONAL de usar feature instável como eixo de regime é
+  # a pergunta real, não a janela. Ver AG-027 addendum.
 
 feature_c06_vol_ratio_short_window:
   value: 12
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2, 'vol_ratio (12/96)'), nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: agregação/estimação -- contagem de barra fixa.
+  # Prioridade ELEVADA 2026-08-15 (achado, corrige subestimação anterior):
+  # vol_ratio_12_96 tem 57% de consistência de sinal em 7 anos
+  # (PRD_V3_2_UNIFICADO.md:2935) -- MESMO grupo instável de
+  # efficiency_ratio_48/volume_z_96, os 3 já rebaixados a T2 juntos pelo
+  # PRD (linha 2958). n=12 carrega ~20,4% de erro amostral puro
+  # (1/sqrt(2n)) -- parte da instabilidade pode ser ruído de amostragem
+  # corrigível (n maior), não só o fenômeno medido ser fraco. Candidato
+  # "justificativa do 96 = 3x ciclo de funding" LEVANTADO mas NÃO
+  # CONFIRMADO em nenhuma fonte encontrada (nem constants.yaml nem PRD) --
+  # tratar como não verificado até achar a referência exata.
 
 feature_c06_vol_ratio_long_window:
   value: 96
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2, 'vol_ratio (12/96)'), nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: agregação/estimação -- contagem de barra fixa.
+  # Mesmo achado/prioridade elevada do short_window acima -- 57% de
+  # consistência, já rebaixada a T2 (PRD_V3_2_UNIFICADO.md:2935/2958).
+  # long=96 sozinho tem erro amostral aceitável (7,2%) -- o par short/long
+  # INTEIRO está sob suspeita pela instabilidade medida, não só o lado
+  # curto.
 
 feature_c07_vol_pctile_window:
   value: 48
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2, 'janelas de z-score (48, 96)') — realized_vol_48 é o insumo do posto expansivo de C07, nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: agregação/estimação -- contagem de barra fixa.
+  # Decisão do Manager (2026-08-15): manter -- 10,2% de erro amostral
+  # aceitável, e a saída é posto percentil (escala bruta não importa). O
+  # risco real de C07 é o POSTO ser expansivo desde a origem do ativo
+  # (AG-030), não esta janela.
 
 feature_d06f_taker_imbalance_window:
   value: 48
   provenance: ASSUMED
   source: "convenção herdada do PRD (§2.5 D06f declara lookback 48 explicitamente na tabela de fórmula), nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: NORMALIZAÇÃO (não agregação do próprio sinal) --
+  # contagem de barra fixa. Decisão do Manager (2026-08-15): manter --
+  # janela longa é o comportamento CORRETO pra baseline de normalização
+  # (evita a baseline "correr atrás" do próprio evento que deveria
+  # detectar); suspeita original de "lento demais" era erro de categoria
+  # (aplicava lógica de janela de agregação a uma janela de normalização).
 
 feature_e10f_oi_change_window:
   value: 48
   provenance: ASSUMED
   source: "convenção herdada do PRD (§2.6 E10f declara lookback 48 explicitamente na tabela de fórmula), nunca testada"
   class: B
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
+  # scaling_invariant: normalização -- contagem de barra fixa. MEDIDO
+  # 2026-08-15 (tools/diagnostics/measure_funding_cycle_oi_seasonality.py,
+  # rodado pelo Manager): a hipótese "48=1,5 ciclo de funding contamina
+  # fase" NÃO tem suporte empírico. Funding é 8h/32 barras em 4 dos 5
+  # ativos por ~100% da história (BTC/ETH/BNB/XRP); SOL tem uma exceção
+  # real (~8 dias, 2022-11-09/18, funding em 2h/4h -- coincide com o
+  # colapso da FTX, achado concreto de por que "verificar por símbolo, não
+  # assumir" importava). Mas ACF/periodograma de Δln(OI) nos 5 ativos NÃO
+  # mostra pico perto de 32 barras (critério do próprio script: ACF no
+  # ciclo tem que exceder o ruído de fundo E o periodograma tem que ter
+  # pico perto do ciclo -- nenhum dos dois bateu pra 32). O que existe,
+  # fraco mas consistente nos 5 ativos, é sazonalidade de ~96 barras (24h)
+  # -- ACF no 3º harmônico do funding e o pico dominante do periodograma
+  # caem os dois perto de 96, não de 32. NÃO mover pra 32/64 (hipótese
+  # original refutada). Se alguém quiser perseguir a sazonalidade fraca de
+  # 24h encontrada, o candidato seria 96 -- mas isso reabre a MESMA
+  # suspeita de C06 long (também 96, também sob revisão), então não
+  # decidir isso isoladamente. Manter 48 por ora -- nenhuma alternativa
+  # específica tem evidência suficiente ainda.
 
 min_warmup_bars:
-  value: 2000
-  provenance: ASSUMED
-  source: "convenção herdada do PRD (§18.5.2, 'min_warmup_bars: 2000'), nunca testada — corte uniforme aplicado sobre TODO o vetor T1 (§2.15 invariante 5), não um warmup por feature"
+  value: 200
+  provenance: DERIVED
+  source: "2026-08-15 -- ERA 'convenção herdada do PRD (§18.5.2), nunca testada' (2000, ASSUMED). Recalculado: max(lookback fixo de qualquer feature T1/T2 do vetor) + convergência prática de suavização exponencial (~3 meias-vidas além do maior span EMA/Wilder ativo) = max(96 [C06 long], 48+~50 [A13 EMA48, meia-vida 16,6b]) = ~150, arredondado com margem pra 200. Fórmula, não número fixo -- recalcular se qualquer janela componente mudar (ex.: se A13 virar EMA96, o termo de convergência sobe pra 96+~100=196, ainda dentro de 200 hoje, mas revisar). RESSALVA REGISTRADA, NÃO FECHADA: min_warmup_bars também mascara C07/D03f/E02f (percentil/z-score EXPANSIVOS desde a origem do ativo) no caminho do Alpha (apply_warmup_mask=True, default) -- 2000 pode ter servido, mesmo sem documentar, de piso de ESTABILIDADE ESTATÍSTICA pra essas 3 (erro padrão de posto percentil em n=150-200 é bem maior que em n=2000), não só de warmup das janelas fixas. Baixar pra 200 é defensável pro requisito das janelas fixas, mas pode reintroduzir ruído early-sample nas 3 expansivas quando consumidas pelo Alpha -- não confirmado, precisa de medição própria antes de considerar fechado (Regime Engine já ignora esta máscara inteira via apply_warmup_mask=False, ver docstring de src/regime/classifier.py -- não afetado por esta mudança)."
   class: B
   sweep_required: false
   review_by: sprint_8
