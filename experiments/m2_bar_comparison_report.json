@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-16T01:32:33.566639+00:00",
-  "code_version": "4cbbff2",
+  "generated_at": "2026-08-16T21:04:49.319431+00:00",
+  "code_version": "d85e6a5",
   "partial": true,
   "timeframes": [
     "15m",
@@ -18,21 +18,23 @@
       {
         "symbol": "BNBUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 164256,
+        "n_returns": 164255,
+        "jarque_bera_stat": 23787854.242566183,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 58.95414443138008,
+        "ljung_box_r_pvalue": 1.5937462727733102e-10,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -124.70076904928901,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.03030598208853926
       },
       {
         "symbol": "BNBUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -48,6 +50,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -63,6 +66,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -78,21 +82,23 @@
       {
         "symbol": "BNBUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 82128,
+        "n_returns": 82127,
+        "jarque_bera_stat": 21955784.12629808,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 80.08747447040776,
+        "ljung_box_r_pvalue": 3.3468614791367805e-12,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -88.86015756914469,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.058829259348344085
       },
       {
         "symbol": "BNBUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -108,6 +114,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -123,6 +130,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -138,21 +146,23 @@
       {
         "symbol": "BNBUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 41064,
+        "n_returns": 41063,
+        "jarque_bera_stat": 810304.8506415688,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 21.752880112189295,
+        "ljung_box_r_pvalue": 0.0014552834062582477,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -61.25492749609626,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.11112193432484144
       },
       {
         "symbol": "BNBUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -168,6 +178,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -183,6 +194,7 @@
       {
         "symbol": "BNBUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -200,21 +212,23 @@
       {
         "symbol": "BTCUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 231552,
+        "n_returns": 231551,
+        "jarque_bera_stat": 167728118.73507312,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 131.85071752890443,
+        "ljung_box_r_pvalue": 1.391090344053453e-97,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -145.20161280680773,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.030305124210570314
       },
       {
         "symbol": "BTCUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -230,6 +244,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -245,6 +260,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -260,21 +276,23 @@
       {
         "symbol": "BTCUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 115776,
+        "n_returns": 115775,
+        "jarque_bera_stat": 24223954.51500206,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 70.84677367761788,
+        "ljung_box_r_pvalue": 1.8611975183862443e-23,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -104.857785181839,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.05882759405581521
       },
       {
         "symbol": "BTCUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -290,6 +308,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -305,6 +324,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -320,21 +340,23 @@
       {
         "symbol": "BTCUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 57888,
+        "n_returns": 57887,
+        "jarque_bera_stat": 7937174.892571324,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 57.32922001169179,
+        "ljung_box_r_pvalue": 3.0233942861837926e-6,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -72.60138868479024,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.11111878877231934
       },
       {
         "symbol": "BTCUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -350,6 +372,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -365,6 +388,7 @@
       {
         "symbol": "BTCUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -382,21 +406,23 @@
       {
         "symbol": "ETHUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 164256,
+        "n_returns": 164255,
+        "jarque_bera_stat": 13154611.153965557,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 43.83609745210973,
+        "ljung_box_r_pvalue": 0.00010096472786692929,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -121.96750951301688,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.03030598208853926
       },
       {
         "symbol": "ETHUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -412,6 +438,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -427,6 +454,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -442,21 +470,23 @@
       {
         "symbol": "ETHUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 82128,
+        "n_returns": 82127,
+        "jarque_bera_stat": 1913744.9317303372,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 23.633739011598507,
+        "ljung_box_r_pvalue": 0.00018696799469271872,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -86.09745576557519,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.058829259348344085
       },
       {
         "symbol": "ETHUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -472,6 +502,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -487,6 +518,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -502,21 +534,23 @@
       {
         "symbol": "ETHUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "time",
-        "n_bars": 0,
-        "n_returns": 0,
-        "jarque_bera_stat": null,
-        "jarque_bera_pvalue": null,
-        "kurtosis_excess": null,
-        "ljung_box_r_pvalue": null,
-        "ljung_box_r2_pvalue": null,
-        "adf_stat": null,
-        "adf_pvalue": null,
-        "avg_uniqueness": null
+        "n_bars": 41064,
+        "n_returns": 41063,
+        "jarque_bera_stat": 420168.5060881329,
+        "jarque_bera_pvalue": 0.0,
+        "kurtosis_excess": 15.654294866216567,
+        "ljung_box_r_pvalue": 0.1565738041338936,
+        "ljung_box_r2_pvalue": 0.0,
+        "adf_stat": -60.49022583357295,
+        "adf_pvalue": 0.0,
+        "avg_uniqueness": 0.11112193432484144
       },
       {
         "symbol": "ETHUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -532,6 +566,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -547,6 +582,7 @@
       {
         "symbol": "ETHUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -564,6 +600,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "time",
         "n_bars": 163776,
         "n_returns": 163775,
@@ -579,6 +616,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -594,6 +632,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -609,6 +648,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -624,6 +664,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "time",
         "n_bars": 81888,
         "n_returns": 81887,
@@ -639,6 +680,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -654,6 +696,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -669,6 +712,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -684,6 +728,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "time",
         "n_bars": 40944,
         "n_returns": 40943,
@@ -699,6 +744,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -714,6 +760,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -729,6 +776,7 @@
       {
         "symbol": "SOLUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -746,6 +794,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "time",
         "n_bars": 163776,
         "n_returns": 163775,
@@ -761,6 +810,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -776,6 +826,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -791,6 +842,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "15m",
+        "resolution_id": "R1",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -806,6 +858,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "time",
         "n_bars": 81888,
         "n_returns": 81887,
@@ -821,6 +874,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -836,6 +890,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -851,6 +906,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "30m",
+        "resolution_id": "R2",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
@@ -866,6 +922,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "time",
         "n_bars": 40944,
         "n_returns": 40943,
@@ -881,6 +938,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "dollar",
         "n_bars": 0,
         "n_returns": 0,
@@ -896,6 +954,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "volume",
         "n_bars": 0,
         "n_returns": 0,
@@ -911,6 +970,7 @@
       {
         "symbol": "XRPUSDT",
         "tf": "1h",
+        "resolution_id": "R3",
         "bar_type": "tick_imbalance",
         "n_bars": 0,
         "n_returns": 0,
