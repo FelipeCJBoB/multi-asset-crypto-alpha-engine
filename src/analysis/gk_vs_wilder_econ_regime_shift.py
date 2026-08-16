@@ -282,6 +282,7 @@ def run_and_save_econ_regime_shift_report(
     )
 
     results: dict[str, EconRegimeShiftMetrics] = {}
+    failed_tasks: list[str] = []
     with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
         future_to_symbol = {
             executor.submit(compute_econ_regime_shift_for_symbol, symbol): symbol
@@ -289,7 +290,26 @@ def run_and_save_econ_regime_shift_report(
         }
         for future in as_completed(future_to_symbol):
             symbol = future_to_symbol[future]
-            results[symbol] = future.result()
+            # AG-019: future.result() isolado em try/except -- 1 símbolo
+            # falhando não pode derrubar os outros já concluídos com
+            # sucesso (ver m2_bar_comparison.run_and_save_bar_comparison_report).
+            try:
+                results[symbol] = future.result()
+            except Exception as exc:
+                failed_tasks.append(symbol)
+                logger.error(
+                    "analysis.gk_vs_wilder_econ_regime_shift.task_failed",
+                    symbol=symbol,
+                    error=repr(exc),
+                )
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.gk_vs_wilder_econ_regime_shift.tasks_failed",
+            n_failed=len(failed_tasks),
+            n_symbols=len(symbols),
+            failed=failed_tasks,
+        )
 
     payload: dict[str, Any] = {
         **report_provenance(),
@@ -300,12 +320,16 @@ def run_and_save_econ_regime_shift_report(
             "Garman-Klass em features/build.py -- medicao pura, nao promove "
             "nada em producao, nao consome N_lifetime."
         ),
+        "failed_symbols": failed_tasks,
         "symbols": {symbol: asdict(m) for symbol, m in sorted(results.items())},
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
     _atomic_write_json(payload, dest)
     logger.info(
-        "analysis.gk_vs_wilder_econ_regime_shift.done", n_symbols=len(results), dest=str(dest)
+        "analysis.gk_vs_wilder_econ_regime_shift.done",
+        n_symbols=len(results),
+        n_failed=len(failed_tasks),
+        dest=str(dest),
     )
     return dest
 

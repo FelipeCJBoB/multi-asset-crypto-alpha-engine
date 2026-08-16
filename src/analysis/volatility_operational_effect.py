@@ -300,19 +300,40 @@ def run_and_save_operational_effect_report(
     )
 
     results_by_symbol: dict[str, list[OperationalEffectMetrics]] = {}
+    failed_tasks: list[str] = []
     with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
         future_to_symbol = {
             executor.submit(compute_operational_effect_for_symbol, symbol): symbol for symbol in symbols
         }
         for future in as_completed(future_to_symbol):
             symbol = future_to_symbol[future]
-            results_by_symbol[symbol] = future.result()
+            # AG-019: future.result() isolado em try/except -- 1 símbolo
+            # falhando não pode derrubar os outros já concluídos com
+            # sucesso (ver m2_bar_comparison.run_and_save_bar_comparison_report).
+            try:
+                results_by_symbol[symbol] = future.result()
+            except Exception as exc:
+                failed_tasks.append(symbol)
+                logger.error(
+                    "analysis.volatility_operational_effect.task_failed",
+                    symbol=symbol,
+                    error=repr(exc),
+                )
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.volatility_operational_effect.tasks_failed",
+            n_failed=len(failed_tasks),
+            n_symbols=len(symbols),
+            failed=failed_tasks,
+        )
 
     payload: dict[str, Any] = {
         **report_provenance(),
         "decision_tf": DECISION_TF,
         "equity_usd_source": "CLAUDE.md prosa -- NAO e constants.yaml, ver docstring do modulo",
         "equity_usd": _EQUITY_USD_FALLBACK,
+        "failed_symbols": failed_tasks,
         "symbols": {
             symbol: [asdict(m) for m in sorted(metrics, key=lambda m: m.estimator_id)]
             for symbol, metrics in sorted(results_by_symbol.items())
@@ -320,7 +341,12 @@ def run_and_save_operational_effect_report(
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
     _atomic_write_json(payload, dest)
-    logger.info("analysis.volatility_operational_effect.done", n_symbols=len(results_by_symbol), dest=str(dest))
+    logger.info(
+        "analysis.volatility_operational_effect.done",
+        n_symbols=len(results_by_symbol),
+        n_failed=len(failed_tasks),
+        dest=str(dest),
+    )
     return dest
 
 

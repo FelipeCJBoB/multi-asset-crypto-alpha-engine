@@ -520,6 +520,7 @@ def run_and_save_volatility_comparison_report(
     t0 = time.perf_counter()
     results: list[CombinationResult] = []
     skipped: list[dict[str, str]] = []
+    failed_tasks: list[dict[str, str]] = []
     with ProcessPoolExecutor(max_workers=workers) as executor:
         future_to_combo = {
             executor.submit(run_volatility_comparison_for_symbol_tf, symbol, tf): (symbol, tf)
@@ -527,7 +528,21 @@ def run_and_save_volatility_comparison_report(
         }
         for future in as_completed(future_to_combo):
             symbol, tf = future_to_combo[future]
-            result = future.result()
+            # AG-019: future.result() isolado em try/except -- 1 task
+            # falhando (exceção dentro do ProcessPoolExecutor) não pode
+            # derrubar as outras já concluídas com sucesso (ver
+            # m2_bar_comparison.run_and_save_bar_comparison_report).
+            try:
+                result = future.result()
+            except Exception as exc:
+                failed_tasks.append({"symbol": symbol, "tf": tf})
+                logger.error(
+                    "analysis.volatility_comparison.task_failed",
+                    symbol=symbol,
+                    tf=tf,
+                    error=repr(exc),
+                )
+                continue
             if result is None:
                 skipped.append({"symbol": symbol, "tf": tf, "reason": "folds_insuficientes"})
                 continue
@@ -540,6 +555,15 @@ def run_and_save_volatility_comparison_report(
                 baseline_qlike=round(result.baseline.qlike_mean, 6),
                 any_candidate_beats_baseline=result.any_candidate_beats_baseline,
             )
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.volatility_comparison.tasks_failed",
+            n_failed=len(failed_tasks),
+            n_combinations=len(combos),
+            failed=failed_tasks,
+        )
+
     elapsed_s = time.perf_counter() - t0
     # ProcessPoolExecutor.as_completed devolve em ordem de conclusão, não
     # de submissão -- ordena pra o relatório final ser determinístico
@@ -556,6 +580,7 @@ def run_and_save_volatility_comparison_report(
         "n_combinations_requested": len(symbols) * len(timeframes),
         "n_combinations_evaluated": len(results),
         "skipped": skipped,
+        "failed": failed_tasks,
         "elapsed_seconds_total": elapsed_s,
         "no_candidate_beats_gk_anywhere": no_candidate_beats_gk_anywhere,
         "combinations": [_combination_to_dict(r) for r in results],
@@ -566,6 +591,7 @@ def run_and_save_volatility_comparison_report(
         "analysis.volatility_comparison.done",
         n_combinations_evaluated=len(results),
         n_skipped=len(skipped),
+        n_failed=len(failed_tasks),
         elapsed_seconds_total=round(elapsed_s, 1),
         no_candidate_beats_gk_anywhere=no_candidate_beats_gk_anywhere,
         dest=str(dest),

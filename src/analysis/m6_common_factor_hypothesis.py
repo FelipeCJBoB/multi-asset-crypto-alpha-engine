@@ -297,6 +297,7 @@ def run_and_save_m6_report(
 
     pooled_by_symbol: dict[str, tuple[StratumMetrics, ...]] = {}
     detail_by_symbol: dict[str, tuple[StratumMetrics, ...]] = {}
+    failed_tasks: list[str] = []
     with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
         future_to_symbol = {
             executor.submit(compute_metrics_for_symbol, symbol, tf=tf): symbol
@@ -304,14 +305,39 @@ def run_and_save_m6_report(
         }
         for future in as_completed(future_to_symbol):
             symbol = future_to_symbol[future]
-            pooled, detail = future.result()
+            # AG-019: future.result() isolado em try/except -- 1 símbolo
+            # falhando não pode derrubar os outros já concluídos com
+            # sucesso (ver m2_bar_comparison.run_and_save_bar_comparison_report).
+            try:
+                pooled, detail = future.result()
+            except Exception as exc:
+                failed_tasks.append(symbol)
+                logger.error(
+                    "analysis.m6_common_factor.task_failed",
+                    symbol=symbol,
+                    error=repr(exc),
+                )
+                continue
             pooled_by_symbol[symbol] = pooled
             detail_by_symbol[symbol] = detail
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.m6_common_factor.tasks_failed",
+            n_failed=len(failed_tasks),
+            n_symbols=len(symbols),
+            failed=failed_tasks,
+        )
+
+    # Cochran's Q e o detalhe por símbolo só cobrem quem resolveu -- um
+    # símbolo falho (ausente de pooled_by_symbol) não pode derrubar o
+    # teste dos outros nem virar KeyError aqui.
+    ok_symbols = tuple(symbol for symbol in symbols if symbol in pooled_by_symbol)
 
     heterogeneity_by_side: dict[int, HeterogeneityTest] = {}
     for side in SIDES:
         strata = tuple(
-            next(s for s in pooled_by_symbol[symbol] if s.side == side) for symbol in symbols
+            next(s for s in pooled_by_symbol[symbol] if s.side == side) for symbol in ok_symbols
         )
         heterogeneity_by_side[side] = cochrans_q_heterogeneity(strata)
 
@@ -319,6 +345,7 @@ def run_and_save_m6_report(
         **report_provenance(),
         "decision_tf": tf,
         "symbols": list(symbols),
+        "failed_symbols": failed_tasks,
         "hypothesis": (
             "H0 (Q1, PRD_V4_1.md Sec3.2): edge_bruto_atr e o MESMO entre os "
             "5 ativos -- diferencas em ret_net vem inteiramente de custo_atr. "
@@ -338,7 +365,7 @@ def run_and_save_m6_report(
             for side, het in heterogeneity_by_side.items()
         },
         "detail_by_symbol_side_regime": {
-            symbol: [asdict(s) for s in detail_by_symbol[symbol]] for symbol in symbols
+            symbol: [asdict(s) for s in detail_by_symbol[symbol]] for symbol in ok_symbols
         },
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
@@ -349,6 +376,7 @@ def run_and_save_m6_report(
         i_squared_short=round(heterogeneity_by_side[-1].i_squared_pct, 2),
         p_value_long=heterogeneity_by_side[1].p_value,
         p_value_short=heterogeneity_by_side[-1].p_value,
+        n_failed=len(failed_tasks),
         dest=str(dest),
     )
     return dest
