@@ -386,6 +386,81 @@ def test_generate_splits_purge_cresce_com_horizonte_do_label() -> None:
     assert total_longo > total_curto
 
 
+def test_generate_splits_purge_cobre_lookback_de_feature_de_treino_apos_g_end() -> None:
+    """AG-032/E4 — critério de aceite explícito (item 2b da docstring do
+    módulo). 'Purge usa o t1 real do teste' fecha o componente 32
+    (horizonte do LABEL de teste esticando pra FRENTE, além de `g_end`) —
+    mas isso sozinho NÃO cobre o componente 96 (janela de LOOKBACK de uma
+    feature de TREINO, ex. `feature_c06_vol_ratio_long_window`, esticando
+    pra TRÁS através de `g_end`, pra dentro do território de teste). São
+    duas direções mecanicamente diferentes da mesma cegueira de fronteira.
+
+    Isola SÓ o componente 96: toda a base usa `horizon_bars=1` (label
+    curtíssimo — nenhum `t1`, nem de teste nem de treino, chega perto de
+    cruzar fronteira nenhuma sozinho), então qualquer purge observado aqui
+    só pode vir do parâmetro novo, não de overlap de label.
+
+    Prova as duas metades do critério de aceite: (a) com
+    `max_feature_lookback_ms=0` (default, comportamento de sempre), uma
+    linha de treino no "vão" logo após `g_end` sobrevive no treino — prova
+    que o componente 96 NÃO é pego sem o parâmetro; (b) com
+    `max_feature_lookback_ms` cobrindo o vão, a MESMA linha é purgada."""
+    n = 400  # 4 grupos de ~100 barras cada
+    base = _make_synthetic_labels(n, horizon_bars=1)
+    cfg_probe = cpcv.CPCVConfig(n_groups=4, n_test_groups=2, embargo_bars=0)
+    t0_ms_base = base["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    _, edges_ms = cpcv.assign_time_groups(t0_ms_base, cfg_probe.n_groups)
+    g1_end = int(edges_ms[2]) - 1  # borda direita do grupo 1 (fronteira exclusiva)
+
+    # Linha extra R: t0 dez barras DEPOIS de g1_end -- cai no grupo 2
+    # (candidato de treino quando test_groups=(0,1)), label curtíssimo
+    # (horizon_bars=1, igual à base). offset_bars=10 é deliberadamente
+    # generoso: g_end_effective do grupo 1 pode crescer até 1 bar acima de
+    # g1_end (a última linha do grupo pode ter t1=t0+1bar ultrapassando a
+    # fronteira, mesmo sob horizon=1) -- 10 barras de folga garante R
+    # sobrevive em (a) mesmo no pior caso desse efeito de arredondamento.
+    offset_bars = 10
+    r_t0_ms = g1_end + 1 + offset_bars * _BAR_MS
+    r_row = pl.DataFrame(
+        {
+            "t0": pl.Series([r_t0_ms]).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+            "t1": pl.Series([r_t0_ms + _BAR_MS])
+            .cast(pl.Datetime("ms"))
+            .dt.replace_time_zone("UTC"),
+            "side": pl.Series([1], dtype=pl.Int8),
+            "sample_weight": pl.Series([1.0], dtype=pl.Float64),
+        }
+    )
+    labels = pl.concat([base, r_row])
+    r_idx = n  # última linha (R é a única acrescentada após os `n` da base)
+
+    # (a) default -- sem max_feature_lookback_ms, componente 96 não é pego.
+    cfg_sem_lookback = cpcv.CPCVConfig(n_groups=4, n_test_groups=2, embargo_bars=0)
+    result_sem = cpcv.generate_splits(labels, cfg_sem_lookback)
+    split0_sem = result_sem.splits[0]
+    assert split0_sem.test_groups == (0, 1), "premissa do teste: 1º split cobre grupos 0+1"
+    assert r_idx in split0_sem.train_idx.tolist(), (
+        "sem max_feature_lookback_ms, a linha do vão sobrevive no treino -- "
+        "comportamento ATUAL, prova que o componente 96 não é pego por padrão"
+    )
+
+    # (b) lookback cobrindo o vão (11 barras >= offset_bars+1) -- mesma
+    # linha precisa ser purgada agora.
+    lookback_ms = (offset_bars + 1) * _BAR_MS
+    cfg_com_lookback = cpcv.CPCVConfig(
+        n_groups=4, n_test_groups=2, embargo_bars=0, max_feature_lookback_ms=lookback_ms
+    )
+    result_com = cpcv.generate_splits(labels, cfg_com_lookback)
+    split0_com = result_com.splits[0]
+    assert split0_com.test_groups == (0, 1)
+    assert r_idx not in split0_com.train_idx.tolist(), (
+        "com max_feature_lookback_ms cobrindo o vão, a MESMA linha precisa ser "
+        "purgada -- prova que o parâmetro fecha o componente 96 (AG-032, "
+        "critério de aceite de E4)"
+    )
+    assert split0_com.n_purged >= split0_sem.n_purged + 1
+
+
 def test_generate_splits_embargo_remove_bordas_mesmo_sem_overlap_de_t1() -> None:
     n = 1200
     labels = _make_synthetic_labels(n, horizon_bars=1)  # sem overlap de t1

@@ -1817,21 +1817,33 @@ entries:
       convenção atual -- os labels resultantes precisariam ser
       descartados/reprocessados.
     resolved_by_commit: null
-    resolution: null
+    resolution: >
+      DECIDIDO 2026-08-16 (Manager, Bloqueador 1 de docs/refactor_dollar_
+      bar_canonico.md §2.3): Opção 2 -- horizonte em RELÓGIO FIXO
+      (t1 = t0 + time_stop_ms, nº de barras variável dentro). Confirma a
+      recomendação deste Agent -- é o que M2 já implementa, é o que o PRD
+      já decidiu 3x (§2.7 I2/§3.2 M1/§4.2), e tem suporte empírico direto:
+      M2 mediu avg_uniqueness essencialmente idêntica entre grade de tempo
+      e dollar sob esta convenção (BTCUSDT 15m janela recente: 0,030466
+      vs. 0,030496, experiments/m2_report_recente.json). Vai no MESMO
+      pacote de trabalho que atr_window (mesma I2), confirmado.
     status: >-
-      aberto -- recomendação do Agent (não implementada, aguarda decisão
-      do Manager): adotar RELÓGIO FIXO em triple_barrier.py (M2 já está
-      correto, não precisa mudar), no mesmo Pacote de Trabalho que
-      atr_window (mesma I2 do PRD, mesmo defeito, resolve as duas
-      pendências §2.7/§3.2 M1 juntas). Pendências antes de fechar como
-      Pacote de Trabalho: (1) grep completo por outros callers de
-      LabelConfig/time_stop_bars além de triple_barrier.py (ex.
-      barrier_sweep.py, que teve hardcode de 15m corrigido junto com
-      AG-005 -- confirmar não reabre o mesmo problema); (2) decidir se
-      atr_window entra no mesmo PR; (3) suíte de teste precisa rodar de
-      novo depois (protocolo do usuário, não meu). É mudança de código de
-      produção real (config_hash muda, B15) -- não fiz a implementação,
-      só o registro do achado e da recomendação.
+      aberto -- DECIDIDO, implementação pendente. Escopo confirmado do
+      Pacote de Trabalho: (1) triple_barrier.py -- horizon_end_ms passa a
+      usar time_stop_ms fixo, não time_stop_bars*step_ms(tf); (2)
+      n_bars_held (triple_barrier.py:828) precisa virar contagem REAL de
+      barras dentro do horizonte (não mais derivável por aritmética) --
+      invariante n_bars_held<=time_stop_bars (linha 330) precisa de
+      substituto, teto em barras deixa de existir por construção; (3)
+      n_funding_events:Int8 (linha ~540, max 127) fica arriscado se o
+      horizonte for reexpresso e alguém aumentar; (4) atr_window entra no
+      mesmo PR (mesma I2); (5) grep completo por outros callers de
+      LabelConfig/time_stop_bars (ex. barrier_sweep.py) antes de fechar;
+      (6) suíte de teste roda de novo depois (protocolo do usuário). Não
+      depende de dollar bar existir de fato -- pode ser implementado e
+      testado no grid de TEMPO atual primeiro, já que a convenção vale
+      pros dois grids (é conceitualmente sobre unidade do horizonte, não
+      sobre o tipo de barra).
 
   - id: AG-032
     date: "2026-08-15"
@@ -1882,19 +1894,100 @@ entries:
       escalonamento -- se M2/M3 rodar CPCV real em 30m/1h, o mesmo 175
       produz 87,5h/175h de embargo real, nunca avaliados.
     resolved_by_commit: null
-    resolution: null
+    resolution: >
+      DECIDIDO 2026-08-16 (Manager, Bloqueador 3 de docs/refactor_dollar_
+      bar_canonico.md §4.3): **E4 + E1, nessa ordem, E4 tratado como
+      correção estrutural obrigatória, não como alternativa a E1.**
+      Separa as duas responsabilidades que hoje estão misturadas: PURGE
+      elimina sobreposição real de intervalo [t0,t1] (deve responder
+      "existe overlap real com o teste?", não usar `g_end` como proxy);
+      EMBARGO protege só correlação serial pós-fronteira, fenômeno de
+      RELÓGIO -- por isso E1 (relógio fixo), nunca E2 (contagem de barra,
+      reacopla embargo à densidade de dollar bar) nem E3 (max de dois
+      buffers -- remedia um purge imperfeito em vez de corrigi-lo,
+      violando "nunca remediar, sempre solucionar").
+
+      **Achado novo que AFINA a decisão, não a contradiz:** este mesmo
+      registro (linha "(1) se vale mudar purge_mask...") já continha a
+      pista -- "tornando 96 de fato suficiente" pressupõe que corrigir só
+      o `t1` do LABEL de teste (componente 32, time_stop esticando pra
+      FRENTE) deixaria o componente de LOOKBACK de feature (96, C06
+      esticando pra TRÁS a partir de treino logo após g_end) ainda como
+      responsabilidade do embargo. São duas direções de "cegueira de
+      fronteira" mecanicamente diferentes -- uma é overlap de INTERVALO DE
+      LABEL, a outra é alcance de JANELA DE FEATURE. **Critério de aceite
+      explícito da implementação de E4** (não presumir, testar): escrever
+      um caso de teste que isola só o componente 96 -- uma linha de treino
+      com `t0` bem depois de `g_end` mas cuja janela de 96 barras alcança
+      pra dentro do teste, sem nenhum `time_stop` envolvido -- e confirmar
+      se o novo `purge_mask` pega esse caso. Se SIM (E4 escopado pra cobrir
+      as duas direções): embargo reduz a "1% do fold" puro, nos dois
+      lados -- e esse número já é computável AGORA, sem esperar dollar bar
+      existir, porque `assign_time_groups` (cpcv.py:177) já particiona por
+      LARGURA DE TEMPO igual (`np.linspace`), então "1% do fold" é
+      quantidade de relógio nativa. Se NÃO (E4 cobre só o componente 32):
+      embargo ainda precisa de `max(1% do fold, pior-caso de relógio do
+      lookback de 96 barras)`, e o 2º termo depende de medir a distribuição
+      de duração da dollar bar (P-2, docs/refactor_dollar_bar_canonico.md
+      §8) -- não fecha sem isso.
+
+      43,75h (175 barras × 15min, valor legado) NÃO é levado adiante como
+      placeholder -- se E4 fechar o piso mecânico (mesmo que parcialmente),
+      43,75h vira SUPERESTIMATIVA (foi calibrado pra cobrir 128+47 de
+      folga, ~27%) e carregá-lo remove treino que já não protege nada.
+      Primeira estimativa honesta: "1% do fold" recalculado direto do
+      `np.linspace`, provavelmente bem menor que 43,75h.
+
+      `step_ms(tf)` sai do caminho CANÔNICO do CPCV (`CPCVConfig` deixa de
+      chamar), mas não é removido do repo -- `m2_bar_comparison.py`
+      continua precisando comparar grades (é o mecanismo que decidiu
+      dollar bar vencer em M2), então o caminho que resolve `step_ms(tf)`
+      pra barra de tempo permanece em paralelo, só deixa de ser o default.
     status: >-
-      aberto -- recomendação: manter `provenance: LITERATURE` por ora, NÃO
-      reclassificar pra DERIVED pleno (só metade do mecanismo -- lado
-      direito/frente -- tem fórmula auditável; lado esquerdo/trás continua
-      heurístico). Registrar 128 como piso mecânico mínimo a checar antes
-      de qualquer redução no Sprint 10. Decisão pendente do Manager: (1) se
-      vale mudar `purge_mask` pra usar `t1` real das linhas de teste em vez
-      da fronteira `g_end` (fecharia o resíduo no próprio purge, tornando
-      96 de fato suficiente -- mudança de código real, não só metadado);
-      (2) se `cpcv_embargo_bars` deveria ganhar `scaling_invariant`
-      (`bar_count`, coerente com `feature_c06`) antes do M2/M3 rodarem
-      CPCV em 30m/1h de verdade.
+      aberto -- DECIDIDO na estratégia (E4+E1). **E4 (passos 1-2)
+      IMPLEMENTADO 2026-08-16** em `src/validation/cpcv.py`:
+      `g_end_effective = max(g_end, max(t1 das linhas de teste do grupo))`
+      fecha o componente 32 (usado tanto em `generate_splits` quanto em
+      `assert_no_train_t1_leaks_into_test`, pra não deixar a checagem de
+      verificação mais fraca que o purge de verdade); novo campo
+      `CPCVConfig.max_feature_lookback_ms` (default 0, bit-exato pra todo
+      caller existente) fecha o componente 96 quando o caller fornece a
+      duração da maior janela de lookback de feature. Teste de aceite
+      escrito ANTES do fix (TDD), isola só o componente 96 (base inteira
+      com `horizon_bars=1`, nenhum overlap de label em lugar nenhum):
+      `test_generate_splits_purge_cobre_lookback_de_feature_de_treino_
+      apos_g_end` (`tests/unit/test_validation_cpcv.py`). Os 5 comandos
+      mecânicos autorizados rodaram limpos nos dois arquivos.
+
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou `uv run
+      pytest tests/unit/test_validation_cpcv.py -v`: **42 passed** (bate
+      exatamente com `grep -c "^def test_"` no arquivo -- nenhum teste
+      pulado, nenhum quebrado, inclusive os 3 `@pytest.mark.integration`
+      contra `labels.parquet` real de 462.682 linhas). Revisão
+      independente (`project_assurance`, Agent fresco) confirmou a
+      aritmética dos dois extremos do teste de aceite ALGEBRICAMENTE (não
+      só nos valores concretos) -- margem estrutural de `9·BAR+1`ms em (a),
+      folga de `BAR-1`ms em (b), corretas em qualquer valor real que
+      `g_end_effective` assuma; confirmou `edges_ms` idêntico com/sem a
+      linha extra (não move `t_min`/`t_max`); confirmou `assert_tf_
+      consistent` robusto à linha fora do grid (mediana intacta com conta
+      explícita); revisou TODOS os testes existentes que chamam
+      `generate_splits` e não achou nenhuma asserção `==` exata em risco
+      (as duas identidades exatas existentes são estruturalmente
+      inafetadas pela mudança). 2 achados não-bloqueantes, ambos
+      corrigidos: (i) docstring do módulo passou a ecoar explicitamente
+      que o embargo foi deixado de fora de propósito + o efeito colateral
+      esperado (purge mais abrangente pode realocar `n_embargoed` ->
+      `n_purged` em dado real, nunca o contrário); (ii) nenhum código novo
+      exigido. Erro de `mypy` em `test_validation_cpcv.py:296` confirmado
+      pré-existente (via `git show HEAD:...`), não relacionado.
+
+      Ordem de trabalho restante: (4) computar o valor final de E1 a
+      partir de `np.linspace`/`assign_time_groups`, substituindo
+      `cpcv_embargo_bars=175` por um valor em relógio (ms/horas), removendo
+      a dependência de `step_ms(tf)` do caminho canônico. **Não depende de
+      dollar bar existir** -- testável e implementável hoje, sobre o
+      `labels.parquet` de grade de TEMPO já em disco.
 
   - id: AG-033
     date: "2026-08-15"
@@ -2311,3 +2404,122 @@ entries:
     resolved_by_commit: null
     resolution: "NÃO IMPLEMENTADO -- correção de 1 caractere, baixa prioridade."
     status: "aberto"
+
+  - id: AG-042
+    date: "2026-08-16"
+    file: "src/analysis/m2_worker.py, src/validation/cpcv.py, config/constants.yaml"
+    related_file: "docs/refactor_dollar_bar_canonico.md §3, audit/architecture_gaps_log.yaml::AG-037 (grade_id)"
+    found_by: "Manager -- decisão do Bloqueador 2 (o que 'M15/M30/H1' significa sob dollar bars)."
+    gap: >
+      Registro de decisão, não achado novo -- Bloqueador 2 (sem AG número
+      próprio até agora) decidido: **Opção A′ (threshold fixo por
+      símbolo/resolução + alarme de deriva) combinada com Opção D
+      (abandonar os nomes M15/M30/H1, adotar resolution_id R1/R2/R3)**.
+      Ontologia formalizada pelo Manager:
+
+      canonical_bar_type = dollar
+      bar_measure = quote_volume  (price*quantity, já confirmado em
+        bars.py:222 -- ver troca de mensagem sobre "qual contagem" desta
+        mesma sessão)
+      bar_unit = USDT
+      bar_close_condition: cumulative_quote_volume >= threshold_usdt
+
+      IDENTIDADE da grade = symbol + resolution_id + threshold_usdt +
+      calibration_version -- NÃO barras/dia. `target_activity` (a
+      densidade histórica que calibrou o threshold) vira insumo de
+      CALIBRAÇÃO/MONITORAMENTO apenas, nunca parte da identidade -- fecha
+      a ambiguidade que o documento original deixava aberta (m2_worker.py
+      calibra por `total_dollar/target_n_bars`, mas o discovery nunca
+      declarou se "resolução" = threshold ou = contagem-alvo).
+
+      Separação de camada explícita: SEMÂNTICA da barra = threshold_usdt;
+      CALIBRAÇÃO da resolução = densidade histórica desejada; IDENTIDADE
+      da grade = symbol+resolução+threshold+versão. Evita que "R1 = 15m
+      equivalente" volte a contaminar o projeto pela porta dos fundos --
+      mesma classe de risco já confirmada 6x (AG-004/005/017/027/031/037).
+    severity: "médio"
+    layer: "analysis/data"
+    consequence: >
+      Sem isso registrado, qualquer implementação futura teria que
+      reconstruir a ontologia por conta própria, arriscando reintroduzir a
+      leitura "R1≈15m" que o próprio achado D do Bloqueador 2 já identificou
+      como "mentira operacional". Registrar agora, antes de qualquer linha
+      de código, é o que torna a decisão auditável.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- decisão de ontologia registrada, código pendente.
+      Dependências reais antes de implementar: (1) `grade_id` versionado
+      (AG-037) precisa existir primeiro -- Bloqueador 2 e o redesenho de
+      `assert_tf_consistent` compartilham o mesmo pré-requisito; (2) o
+      "alarme de deriva" da Opção A′ exige um monitor NOVO -- `src/
+      monitoring/` está vazio hoje, isto não é metadado, é código real; (3)
+      regra de quando `calibration_version` incrementa (manual, disparado
+      pelo Manager quando o alarme soar -- Opção A′ é explicitamente SEM
+      recalibração automática) precisa ficar escrita, não implícita.
+    status: "aberto -- decidido, aguarda grade_id (AG-037) como pré-requisito"
+
+  - id: AG-043
+    date: "2026-08-16"
+    file: "config/constants.yaml (8 janelas de feature, AG-027)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-027, docs/refactor_dollar_bar_canonico.md (F1/F2/F3), src/features/support.py"
+    found_by: "Manager -- extensão do vocabulário scaling_invariant e decisão de reclassificação."
+    gap: >
+      Registro de decisão sobre o vocabulário `scaling_invariant`
+      (AG-027 addendum, hoje `clock`|`bar_count`). Ganha 3ª classe
+      `activity`, MAS com regra explícita: dollar bar não converte
+      automaticamente toda feature em `activity` -- a unidade é definida
+      pela INTENÇÃO da feature, não pelo tipo de barra.
+
+      Dois casos reais que testam a regra: `feature_d06f_taker_imbalance_
+      window` já é `bar_count` hoje (justificativa: baseline não deve
+      "correr atrás do próprio evento") -- sob dollar bar, `bar_count` já
+      É proporcional a atividade, então esta feature ganha a propriedade
+      de `activity` DE GRAÇA, sem precisar da 3ª classe. `feature_a13_ema_
+      window`/`feature_b01_rsi_window`, ao contrário, estão marcadas
+      `clock` com justificativa ESPECÍFICA amarrada ao Bloqueador 1 (A13:
+      "span deve ser comensurável ao horizonte de RELÓGIO do label",
+      constants.yaml). Reclassificar essas duas pra `bar_count`
+      SILENCIOSAMENTE (sem reescrever a justificativa) violaria a própria
+      regra -- a tag mudaria de sentido sem a intenção documentada mudar
+      junto. Nota: B01 tem a MESMA classe `clock` mas justificativa mais
+      fraca ("coincidência de magnitude", não amarrada ao horizonte do
+      label como A13) -- as duas não têm o mesmo peso de decisão.
+
+      Decisão: **F1 explícito para A13 (e reavaliar B01 separadamente,
+      justificativa mais fraca)** -- tratar como mudança DELIBERADA de
+      intenção ("EMA de 48 dollar bars, ponto"), reescrever a justificativa
+      em `constants.yaml` junto com a tag, rodar como parte da MESMA
+      passada F3 (classificação pura, 0 trials por desenho -- compatível
+      com os 15 trials restantes). F2 (preservar intenção original via
+      `span = duração_mediana_medida`) descartado -- reintroduz a
+      não-estacionariedade do Bloqueador 2 dentro da própria feature, e
+      `support.ema` só aceita span inteiro fixo.
+
+      Achado adicional (a tag sozinha não resolve, precisa auditoria de
+      código): `support.py:283` (`std*sqrt(window)` assume `window`
+      proporcional a tempo -- falso sob dollar bar mesmo em features JÁ
+      marcadas `bar_count`, afeta C06/C07); `support.py:252-256` (gap
+      "overnight" do Yang-Zhang colapsa de sentido, vira gap tick-a-tick);
+      `group_e.py`/`_sources.py:60-65` (defasagem do asof-join de OI/
+      funding vira variável). Grupo K (`hour_of_day`/`day_of_week`/
+      `days_since_halving`) é uma 4ª categoria ADJACENTE, não confundir --
+      indexado por timestamp real, não é pergunta de span de agregação.
+    severity: "baixo"
+    layer: "features"
+    consequence: >
+      Sem separar "reclassificação de tag" de "correção de matemática em
+      support.py", a passada F3 poderia dar falsa sensação de completude
+      -- a tag `bar_count`/`clock` fica coerente no YAML, mas o código que
+      de fato calcula a feature continua com premissa de relógio
+      escondida, exatamente a classe de furo que `project_assurance`
+      existe pra pegar.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- 2 peças de trabalho distintas registradas: (1) F3
+      -- passada de classificação pura em constants.yaml (0 trials,
+      inclui reescrever a justificativa de A13, reavaliar B01
+      separadamente); (2) auditoria + correção de código em support.py/
+      group_e.py/_sources.py pras premissas de relógio escondidas --
+      trabalho de código real, maior que (1), não incluído na mesma
+      passada.
+    status: "aberto -- decidido (F1 pra A13, B01 a reavaliar), implementação pendente"

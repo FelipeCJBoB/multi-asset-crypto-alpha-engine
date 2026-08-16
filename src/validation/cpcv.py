@@ -31,6 +31,31 @@ escondidas):
    "purge por `t1`", que é exatamente isto, não "purge por uma margem
    conservadora".
 
+   **2b. AG-032/E4 (2026-08-16) — a fronteira direita do purge é `g_end_
+   effective`, não `g_end` cru.** `g_end` (fim do grupo de teste) vem só
+   da partição de `t0` (`assign_time_groups`) — mas o `t1` REAL das linhas
+   de TESTE daquele grupo pode esticar além dele (horizonte do label,
+   "componente 32"). `g_end_effective = max(g_end, max(t1 das linhas cujo
+   t0 caiu no grupo))` fecha esse resíduo. Isto é diferente — e não
+   resolve sozinho — o "componente 96": a janela de LOOKBACK de uma
+   feature de TREINO (ex. `feature_c06_vol_ratio_long_window`, 96 barras)
+   alcançando pra TRÁS, através de `g_end_effective`, pra dentro do
+   território de teste. Overlap de intervalo de LABEL (o que o purge
+   sempre checou) e alcance de JANELA DE FEATURE são mecanicamente
+   diferentes — por isso `max_feature_lookback_ms` (`CPCVConfig`, default
+   `0` = comportamento de sempre) existe como parâmetro à parte, nunca
+   inferido. Teste que isola só o componente 96, sem nenhum overlap de
+   label envolvido:
+   `test_generate_splits_purge_cobre_lookback_de_feature_de_treino_apos_g_end`
+   (`tests/unit/test_validation_cpcv.py`). O EMBARGO (`embargo_mask`,
+   `generate_splits`) deliberadamente NÃO usa `g_end_effective` — continua
+   em `g_end` cru; redesenho do embargo (E1, AG-032) é passo separado,
+   pendente do resultado deste fix. Efeito colateral esperado sobre dado
+   real: `purge_mask` mais abrangente pode realocar linhas que antes
+   contavam como `n_embargoed` pra `n_purged` (nunca o contrário) — leia
+   os dois números juntos, não isoladamente, ao comparar `summarize_
+   splits()` antes/depois desta correção.
+
 3. **`n_backtest_paths` via 1-fatoração de K_n_groups (round-robin/"circle
    method"), não hardcoded.** Com `n_groups=6` e `n_test_groups=2`, há
    `C(6,2)=15` splits e `phi=C(5,1)=5` caminhos completos de reconstrução
@@ -111,14 +136,29 @@ class CPCVConfig:
     parâmetro em vez de carregá-la): é um parâmetro de execução, como
     `symbol` em `load_labels_v1`. Determina `step_ms(tf)` no cálculo do
     embargo (AG-004). Default preserva todo caller existente bit-exato."""
+    max_feature_lookback_ms: int = 0
+    """AG-032/E4 (2026-08-16) — maior janela de LOOKBACK entre as features
+    do vetor de treino (ex. `feature_c06_vol_ratio_long_window`=96 barras),
+    convertida pra duração de relógio pelo CALLER (`96 * step_ms(tf)` sob
+    grade de tempo hoje; sob dollar bar, exigiria uma medição própria —
+    fora do escopo desta correção). NÃO é lida de `constants.yaml` aqui de
+    propósito: `validation/` não conhece `features/registry.yaml`
+    (hierarquia de camada, CLAUDE.md) — quem monta o `CPCVConfig` real
+    decide o valor. Default `0` preserva bit-exato todo caller existente
+    (a condição de purge que este parâmetro habilita vira sempre-falsa com
+    `0`, ver `generate_splits`). Cobre o "componente 96" do achado AG-032 —
+    ver item 2b da docstring do módulo."""
 
     @classmethod
-    def from_constants(cls, *, tf: str = _DEFAULT_TF) -> CPCVConfig:
+    def from_constants(
+        cls, *, tf: str = _DEFAULT_TF, max_feature_lookback_ms: int = 0
+    ) -> CPCVConfig:
         return cls(
             n_groups=int(load_constant("cpcv_n_groups")),
             n_test_groups=int(load_constant("cpcv_n_test_groups")),
             embargo_bars=int(load_constant("cpcv_embargo_bars")),
             tf=tf,
+            max_feature_lookback_ms=max_feature_lookback_ms,
         )
 
     def __post_init__(self) -> None:
@@ -131,6 +171,11 @@ class CPCVConfig:
             )
         if self.embargo_bars < 0:
             raise CPCVError(f"embargo_bars precisa ser >= 0, recebido {self.embargo_bars}")
+        if self.max_feature_lookback_ms < 0:
+            raise CPCVError(
+                "max_feature_lookback_ms precisa ser >= 0, recebido "
+                f"{self.max_feature_lookback_ms}"
+            )
         # step_ms levanta KeyError/ValueError pra tf desconhecido — falha alto
         # aqui, na construção, em vez de silenciosamente mais tarde dentro de
         # generate_splits (mesma disciplina de "falhar cedo e alto" do resto
@@ -347,7 +392,12 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
     opt-out, porque é aqui (não em `load_labels_v1`, que não conhece o
     `CPCVConfig` usado depois) que as duas metades da informação — dado
     carregado e config declarada — finalmente se encontram; ver
-    `assert_tf_consistent`."""
+    `assert_tf_consistent`.
+
+    Purge (item 2b): fronteira direita usa `g_end_effective` (cobre o `t1`
+    real de teste esticando além de `g_end`) e, se `config.max_feature_
+    lookback_ms > 0`, também cobre a janela de lookback de features de
+    treino alcançando pra trás através de `g_end_effective` — AG-032/E4."""
     cfg = config if config is not None else CPCVConfig.from_constants()
     if labels.is_empty():
         raise CPCVError("generate_splits: labels vazio")
@@ -379,9 +429,39 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
         for g in test_groups:
             g_start = int(edges_ms[g])
             g_end = int(edges_ms[g + 1]) - 1  # fronteira direita é exclusiva
-            # purge (B09) — qualquer [t0, t1] que CRUZE [g_start, g_end]
-            purge_mask |= (t0_ms <= g_end) & (t1_ms >= g_start)
-            # embargo — barras extras removidas nas DUAS bordas do bloco de teste
+
+            # AG-032/E4, componente 32 — g_end vem só da partição de t0
+            # (assign_time_groups), mas o t1 REAL das linhas de TESTE deste
+            # grupo pode esticar além dele (horizonte do label). g_end_
+            # effective fecha esse resíduo; sem ele, uma linha de treino
+            # com t0 no intervalo (g_end, g_end_effective] escaparia do
+            # purge (ver item 2b da docstring do módulo).
+            group_rows_mask = group_id == g
+            g_end_effective = g_end
+            if group_rows_mask.any():
+                g_end_effective = max(g_end, int(t1_ms[group_rows_mask].max()))
+
+            # purge (B09) — qualquer [t0, t1] que CRUZE [g_start, g_end_effective]
+            purge_mask |= (t0_ms <= g_end_effective) & (t1_ms >= g_start)
+            if cfg.max_feature_lookback_ms > 0:
+                # AG-032/E4, componente 96 — linha de treino já depois de
+                # g_end_effective (não pega pelo check acima) cuja janela
+                # de LOOKBACK de feature (t0 - max_feature_lookback_ms)
+                # alcança pra dentro do território de teste. Mecanicamente
+                # diferente do componente 32 (overlap de intervalo de
+                # LABEL) — é alcance de JANELA DE FEATURE, por isso é uma
+                # condição própria, não uma extensão do g_end_effective
+                # acima.
+                purge_mask |= (t0_ms > g_end_effective) & (
+                    (t0_ms - cfg.max_feature_lookback_ms) <= g_end_effective
+                )
+
+            # embargo — barras extras removidas nas DUAS bordas do bloco de
+            # teste. Fronteira NÃO muda pra g_end_effective aqui de
+            # propósito — redesenho do embargo (E1, AG-032) é passo
+            # separado, depende do resultado empírico deste fix (ver
+            # docstring do módulo); mudar as duas coisas juntas
+            # confundiria qual delas fechou o quê.
             embargo_mask |= (t0_ms > g_end) & (t0_ms <= g_end + embargo_ms)
             embargo_mask |= (t0_ms < g_start) & (t0_ms >= g_start - embargo_ms)
 
@@ -432,7 +512,14 @@ def assert_no_train_t1_leaks_into_test(labels: pl.DataFrame, result: CPCVResult)
     janela de teste") como função reusável — chamada pelos testes E
     disponível para `src.validation.leakage` reportar como PASS/FAIL real,
     não um `assert` solto. Levanta `AssertionError` com a contagem de
-    violações POR split na primeira falha; nunca ignora silenciosamente."""
+    violações POR split na primeira falha; nunca ignora silenciosamente.
+
+    AG-032/E4 (2026-08-16) — usa `g_end_effective` (mesma correção de
+    `generate_splits`, item 2b da docstring do módulo), não `g_end` cru:
+    do contrário este verificador validaria contra uma fronteira mais
+    fraca que a que o purge de fato aplica, e não pegaria uma regressão se
+    o fix de `g_end_effective` fosse revertido em `generate_splits` sem
+    tocar aqui."""
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t1_ms = labels["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
 
@@ -445,7 +532,11 @@ def assert_no_train_t1_leaks_into_test(labels: pl.DataFrame, result: CPCVResult)
         for g in split.test_groups:
             g_start = int(result.edges_ms[g])
             g_end = int(result.edges_ms[g + 1]) - 1
-            bad = (train_t0 <= g_end) & (train_t1 >= g_start)
+            group_rows_mask = result.group_id == g
+            g_end_effective = g_end
+            if group_rows_mask.any():
+                g_end_effective = max(g_end, int(t1_ms[group_rows_mask].max()))
+            bad = (train_t0 <= g_end_effective) & (train_t1 >= g_start)
             n_bad = int(bad.sum())
             if n_bad:
                 violations.append(
