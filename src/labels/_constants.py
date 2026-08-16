@@ -3,7 +3,7 @@ Zero, §16.10). Duplicado de `src/features/_constants.py` pelo mesmo motivo
 declarado em `_paths.py` deste pacote.
 
 Nenhum literal numérico de barreira (tp_atr_mult, sl_atr_mult,
-time_stop_bars, fill_timeout_bars, atr_window, maker_fee, taker_fee,
+time_stop_ms, fill_timeout_bars, atr_window_ms, maker_fee, taker_fee,
 adverse_selection_bps) vive solto em código desta camada; tudo entra em
 `constants.yaml` com proveniência declarada e é lido daqui.
 

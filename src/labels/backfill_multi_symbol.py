@@ -100,7 +100,7 @@ def build_and_write_labels_for_symbol(
     # run_and_write_labels_for_alts roda em ProcessPoolExecutor, e um
     # AssertionError sem contexto não diria qual dos 4 alts falhou.
     try:
-        assert_label_invariants(labels, time_stop_bars=cfg.time_stop_bars)
+        assert_label_invariants(labels, time_stop_ms=cfg.time_stop_ms)
     except AssertionError as exc:
         raise AssertionError(
             f"build_and_write_labels_for_symbol: invariante de label violada "

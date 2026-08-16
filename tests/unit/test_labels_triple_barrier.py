@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import polars as pl
 import pytest
@@ -23,6 +24,16 @@ from src.labels import triple_barrier as tb
 
 _FIXTURE_START = "2024-01-01"
 _FIXTURE_END = "2024-01-15"
+
+# AG-031/B1 -- 32/20 barras @ 15m (900_000ms), valores canônicos atuais de
+# constants.yaml (time_stop_bars/atr_window, superseded por time_stop_ms/
+# atr_window_ms) -- usados nas construções de LabelConfig abaixo que só
+# testam sensibilidade de config_hash/tf, não a mecânica de horizonte/ATR
+# em si. estimator_id="atr_wilder_w20" bate exato com
+# _ATR_WINDOW_MS_DEFAULT em tf="15m" (validado por LabelConfig.
+# __post_init__ -- ver AG-031/B1 em triple_barrier.py).
+_TIME_STOP_MS_DEFAULT = 32 * 900_000
+_ATR_WINDOW_MS_DEFAULT = 20 * 900_000
 
 
 def _skip_if_missing(day: str) -> None:
@@ -64,8 +75,12 @@ def test_round_to_tick_size_zero_devolve_preco_original() -> None:
 
 
 def test_config_hash_deterministico() -> None:
-    cfg1 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
-    cfg2 = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg1 = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    cfg2 = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     assert cfg1.config_hash == cfg2.config_hash
 
 
@@ -74,21 +89,38 @@ def test_config_hash_deterministico() -> None:
     [
         ("tp_atr_mult", 2.5),
         ("sl_atr_mult", 1.0),
-        ("time_stop_bars", 16),
+        ("time_stop_ms", 16 * 900_000),
         ("fill_timeout_bars", 2),
-        ("atr_window", 14),
+        # +100_000ms (não 14*900_000) -- muda o payload do hash sem mudar
+        # window_bars (round(18_100_000/900_000)==20, mesmo de _CFG), senão
+        # dispararia a validação de LabelConfig.__post_init__ (AG-031/B1 --
+        # estimator_id ficaria "atr_wilder_w20" mas o window_bars real
+        # seria 14, inconsistente).
+        ("atr_window_ms", _ATR_WINDOW_MS_DEFAULT + 100_000),
         ("maker_fee", 0.0003),
         ("taker_fee", 0.0006),
         ("tf", "30m"),
         ("estimator_id", "garman_klass_w20"),
     ],
 )
-def test_config_hash_muda_se_qualquer_parametro_mudar(field: str, value: float) -> None:
+def test_config_hash_muda_se_qualquer_parametro_mudar(field: str, value: Any) -> None:
     """B15 — a garantia central: mudar QUALQUER parâmetro do bloco de
     barreiras muda o hash. Sem isso, labels calculados com uma config
     diferente da execução passariam despercebidos."""
-    base = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
-    changed = replace(base, **{field: value})
+    from src.data.resample import step_ms
+
+    base = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    changed_kwargs: dict[str, object] = {field: value}
+    if field == "tf":
+        # AG-031/B1 -- estimator_id codifica window_bars, que depende de tf;
+        # mudar tf sozinho invalidaria estimator_id (LabelConfig.
+        # __post_init__ rejeitaria) -- recalcula junto, mesma disciplina
+        # que qualquer caller real precisa seguir.
+        window_bars = round(base.atr_window_ms / step_ms(value))
+        changed_kwargs["estimator_id"] = f"atr_wilder_w{window_bars}"
+    changed = replace(base, **changed_kwargs)
     assert base.config_hash != changed.config_hash
 
 
@@ -107,7 +139,9 @@ def test_config_hash_de_constants_yaml_e_estavel() -> None:
 def test_label_config_tf_default_e_15m() -> None:
     """Default bit-exato pra todo caller existente (nenhum passava `tf`/
     `decision_tf_minutes` antes do AG-005)."""
-    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     assert cfg.tf == "15m"
 
 
@@ -118,7 +152,10 @@ def test_label_config_tf_invalido_levanta_unsupportedtimeframeerror() -> None:
     from src.data.resample import UnsupportedTimeframeError
 
     with pytest.raises(UnsupportedTimeframeError):
-        tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20", tf="45m")
+        tb.LabelConfig(
+            2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005,
+            "atr_wilder_w20", tf="45m",
+        )
 
 
 def test_label_config_from_constants_propaga_tf() -> None:
@@ -143,7 +180,9 @@ def _one_row_labels(config_hash: str) -> pl.DataFrame:
 
 
 def test_verify_config_hash_passa_quando_bate() -> None:
-    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     labels = _one_row_labels(cfg.config_hash)
     tb.verify_config_hash(labels, cfg)  # não levanta
 
@@ -152,16 +191,25 @@ def test_verify_config_hash_quebra_se_parametro_mudou_sem_recalcular() -> None:
     """O cenário real que B15 proíbe: labels calculados com `tp_atr_mult=2.0`,
     execução rodando com `tp_atr_mult=2.5` — tem que quebrar, não passar
     silenciosamente."""
-    labels_config = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
-    execution_config = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")  # só tp_atr_mult mudou
+    labels_config = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    # só tp_atr_mult mudou
+    execution_config = tb.LabelConfig(
+        2.5, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     labels = _one_row_labels(labels_config.config_hash)
     with pytest.raises(tb.ConfigHashMismatchError):
         tb.verify_config_hash(labels, execution_config)
 
 
 def test_verify_config_hash_quebra_se_dataset_mistura_configs() -> None:
-    cfg_a = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
-    cfg_b = tb.LabelConfig(2.5, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg_a = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    cfg_b = tb.LabelConfig(
+        2.5, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     labels = pl.DataFrame(
         {"config_hash": [cfg_a.config_hash, cfg_b.config_hash], "ret_net": [0.01, -0.01]}
     )
@@ -170,7 +218,9 @@ def test_verify_config_hash_quebra_se_dataset_mistura_configs() -> None:
 
 
 def test_verify_config_hash_dataset_vazio_levanta_erro() -> None:
-    cfg = tb.LabelConfig(2.0, 1.5, 32, 1, 20, 0.0002, 0.0005, "atr_wilder_w20")
+    cfg = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
     empty = pl.DataFrame(schema={"config_hash": pl.Utf8, "ret_net": pl.Float64})
     with pytest.raises(tb.ConfigHashMismatchError):
         tb.verify_config_hash(empty, cfg)
@@ -186,8 +236,9 @@ _BASE_MS = int(datetime(2026, 8, 8, 0, 0, tzinfo=UTC).timestamp() * 1000)
 # 0+3-1=2) -- exatamente 1 linha de decisão por chamada, fixture mínima.
 _CLOSES = [100.0, 100.2, 99.9]
 _CFG = tb.LabelConfig(
-    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_bars=4, fill_timeout_bars=1, atr_window=3,
-    maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w3",
+    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_ms=4 * _BAR_MS, fill_timeout_bars=1,
+    atr_window_ms=3 * _BAR_MS, maker_fee=0.0002, taker_fee=0.0005,
+    estimator_id="atr_wilder_w3",
 )
 _EMPTY_FUNDING = pl.DataFrame(schema={"calc_time": pl.Int64, "last_funding_rate": pl.Float64})
 
@@ -240,7 +291,7 @@ def _with_horizon_coverage(rows: list[_Row]) -> list[_Row]:
     Sprint 6 prototipando este teste — comportamento correto e
     intencional: não dá pra saber de antemão que o resto do horizonte não
     importava)."""
-    horizon = _t0() + _CFG.time_stop_bars * _BAR_MS
+    horizon = _t0() + _CFG.time_stop_ms
     last_px = rows[-1][4]
     return [*rows, (horizon, last_px, last_px, last_px, last_px)]
 
@@ -268,9 +319,9 @@ def _tp_long_mark() -> pl.DataFrame:
 
 def test_build_labels_estimator_none_e_explicito_atr_wilder_batem_bit_exato() -> None:
     """`estimator=None` (default) tem que produzir EXATAMENTE o mesmo
-    resultado que passar `ATRWilderEstimator(window=cfg.atr_window)`
-    explicitamente -- é a alegação central da migração (preservar
-    comportamento de produção, não só "parecido")."""
+    resultado que passar `ATRWilderEstimator(window=round(cfg.atr_window_ms
+    / bar_ms))` explicitamente -- é a alegação central da migração
+    (preservar comportamento de produção, não só "parecido")."""
     mark = _tp_long_mark()
     out_default = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
     out_explicit = tb.build_labels(
@@ -279,7 +330,7 @@ def test_build_labels_estimator_none_e_explicito_atr_wilder_batem_bit_exato() ->
         _EMPTY_FUNDING,
         side=1,
         config=_CFG,
-        estimator=ATRWilderEstimator(window=_CFG.atr_window),
+        estimator=ATRWilderEstimator(window=_CFG.atr_window_ms // _BAR_MS),
     )
     row_default = out_default.row(0, named=True)
     row_explicit = out_explicit.row(0, named=True)
@@ -300,7 +351,7 @@ def test_build_labels_estimator_id_divergente_do_config_levanta_valueerror() -> 
             _EMPTY_FUNDING,
             side=1,
             config=_CFG,  # estimator_id="atr_wilder_w3"
-            estimator=GarmanKlassEstimator(window=_CFG.atr_window),
+            estimator=GarmanKlassEstimator(window=_CFG.atr_window_ms // _BAR_MS),
         )
 
 
@@ -317,7 +368,7 @@ def test_build_labels_garman_klass_produz_atr_at_t0_diferente_do_wilder() -> Non
         _EMPTY_FUNDING,
         side=1,
         config=cfg_gk,
-        estimator=GarmanKlassEstimator(window=_CFG.atr_window),
+        estimator=GarmanKlassEstimator(window=_CFG.atr_window_ms // _BAR_MS),
     )
     atr_wilder = out_wilder.row(0, named=True)["atr_at_t0"]
     atr_gk = out_gk.row(0, named=True)["atr_at_t0"]
@@ -465,16 +516,63 @@ def test_build_labels_sl_short_quando_preco_sobe() -> None:
 
 def test_build_labels_time_quando_nunca_toca_barreira() -> None:
     t0 = _t0()
-    horizon = t0 + _CFG.time_stop_bars * _BAR_MS
+    horizon = t0 + _CFG.time_stop_ms
     mark = _mark([(t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9), (horizon, 99.9, 99.95, 99.85, 99.9)])
     out = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
     assert out.height == 1
     row = out.row(0, named=True)
     assert row["barrier_hit"] == "TIME"
     assert row["label"] == 0
-    assert row["n_bars_held"] == _CFG.time_stop_bars
+    assert row["n_bars_held"] == _CFG.time_stop_ms // _BAR_MS
     assert row["exit_price"] == pytest.approx(99.9)
     assert row["ret_net"] == pytest.approx(-_CFG.maker_fee - _CFG.taker_fee, rel=1e-9)
+
+
+def test_build_labels_n_bars_held_conta_real_e_detecta_gap_no_array_de_decisao() -> None:
+    """AG-031/B1 -- n_bars_held vira contagem REAL via busca em `t0_arr`,
+    não mais `ceil((t1-t0)/bar_ms)`. Constrói `bars_15m` com um GAP
+    deliberado (uma barra de decisão faltando entre a entrada e o
+    horizonte) -- a contagem real reflete UMA barra a menos que a
+    aritmética teria dado, provando que o mecanismo é sensível a dado
+    real (falha de coleta), não é só uma reformulação equivalente da mesma
+    divisão. `bars_15m` estende além de `t0` (índices 3,4,5) pra dar à
+    busca algo pra encontrar -- essas linhas extras viram NOFILL (mark_1m
+    só cobre a janela do índice 2), filtradas antes de assertar."""
+    closes = [100.0, 100.2, 99.9, 99.9, 99.9, 99.9]
+    open_time = [
+        _BASE_MS,
+        _BASE_MS + 1 * _BAR_MS,
+        _BASE_MS + 2 * _BAR_MS,
+        _BASE_MS + 3 * _BAR_MS,
+        _BASE_MS + 4 * _BAR_MS,
+        _BASE_MS + 6 * _BAR_MS,  # GAP -- pula o slot de 5*_BAR_MS de propósito
+    ]
+    close_time = [t + _BAR_MS - 1 for t in open_time]
+    bars = pl.DataFrame(
+        {
+            "open_time": open_time,
+            "close_time": close_time,
+            "open": [c - 0.05 for c in closes],
+            "close": closes,
+            "high": [c + 0.2 for c in closes],
+            "low": [c - 0.2 for c in closes],
+        }
+    )
+    t0 = close_time[2]  # atr_window_ms=3*_BAR_MS -> ATR válido a partir do índice 2
+    horizon = t0 + _CFG.time_stop_ms
+    assert horizon == close_time[5], "fixture mal construída -- horizonte precisa cair no índice 5"
+
+    mark = _mark([(t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9), (horizon, 99.9, 99.95, 99.85, 99.9)])
+    out = tb.build_labels(bars, mark, _EMPTY_FUNDING, side=1, config=_CFG)
+    filled = out.filter(pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
+    assert filled.height == 1, "só o índice 2 (t0 alvo) preenche -- 3/4/5 sem cauda de mark"
+    row = filled.row(0, named=True)
+    assert row["barrier_hit"] == "TIME"
+
+    naive_arithmetic = -(-(horizon - t0) // _BAR_MS)  # ceil division, mesma fórmula antiga
+    assert naive_arithmetic == 4
+    assert row["n_bars_held"] == 3, "contagem real (índice 5 - índice 2) tem que refletir o gap"
+    assert row["n_bars_held"] != naive_arithmetic
 
 
 def test_build_labels_tf_default_bate_bit_exato_com_tf_explicito_15m() -> None:
@@ -484,7 +582,7 @@ def test_build_labels_tf_default_bate_bit_exato_com_tf_explicito_15m() -> None:
     mesmo padrão de `test_build_labels_estimator_none_e_explicito_atr_
     wilder_batem_bit_exato` acima."""
     t0 = _t0()
-    horizon = t0 + _CFG.time_stop_bars * _BAR_MS
+    horizon = t0 + _CFG.time_stop_ms
     mark = _mark([(t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9), (horizon, 99.9, 99.95, 99.85, 99.9)])
     cfg_explicit = replace(_CFG, tf="15m")
     out_default = tb.build_labels(_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG)
@@ -494,24 +592,38 @@ def test_build_labels_tf_default_bate_bit_exato_com_tf_explicito_15m() -> None:
     assert out_default.equals(out_explicit, null_equal=True)
 
 
-def test_build_labels_horizon_escala_com_tf_diferente_de_15m() -> None:
-    """AG-005 — `horizon_end_ms`/`t1`/`n_bars_held` têm que escalar com
-    `cfg.tf`, não ficar presos ao antigo `_BAR_MS` fixo em 15m. Cenário
-    TIME (nunca toca TP/SL): por construção, `t1 == t0 + time_stop_bars *
-    step_ms(cfg.tf)` EXATAMENTE. A diferença entre os dois TFs é comparada
-    contra `step_ms` medido, não um fator "2x" presumido a priori — lição
-    AG-004 (`src.validation.cpcv`): não travar uma proporção redonda sem
-    conferir efeito de borda; aqui não há purge/embargo por fold envolvido
-    (é aritmética direta t0 + N*step_ms), então a proporção exata É a
-    grandeza certa a travar, mas medida explicitamente, não assumida."""
+def test_build_labels_horizon_e_invariante_a_tf_nao_escala_mais() -> None:
+    """AG-031/B1 — substitui `test_build_labels_horizon_escala_com_tf_
+    diferente_de_15m` (que travava exatamente a convenção que este achado
+    corrige: "horizon_end_ms escala com cfg.tf"). Com `time_stop_ms` fixo
+    (relógio), `t1` de um cenário TIME tem que ser o MESMO valor absoluto
+    em qualquer `tf` — por construção, `t1 == t0 + cfg.time_stop_ms`,
+    sem depender de `step_ms(cfg.tf)` nenhuma. `n_bars_held`, ao
+    contrário, PASSA a divergir entre TFs (mesmo relógio, `bar_ms`
+    diferente -> contagem de barra diferente) — é o efeito colateral
+    correto e esperado, não um bug: "nº de barras variável dentro" é
+    literal do texto da decisão (AG-031, Manager, 2026-08-16)."""
     from src.data.resample import step_ms
 
     t0 = _t0()
     cfg_15m = _CFG
-    cfg_30m = replace(_CFG, tf="30m")
+    # AG-031/B1 -- estimator_id codifica window_bars, que depende de tf;
+    # replace(cfg, tf=novo) sem recalcular junto dispara a validação de
+    # LabelConfig.__post_init__ (mesmo raciocínio de não deixar
+    # dataclasses.replace invalidar a config silenciosamente). Em vez de
+    # reusar _CFG.atr_window_ms (3 barras @ 15m -- mudaria pra 2 barras a
+    # 30m, ATR ficaria válido também no índice 1 de _synthetic_bars() e
+    # explodiria pra 2 linhas de saída, quebrando a premissa de 1 linha
+    # deste teste), atr_window_ms é escolhido especificamente pra manter
+    # window=3 TAMBÉM a 30m -- este teste é sobre time_stop/n_bars_held,
+    # não sobre atr_window, então mantém o fixture de warmup inalterado.
+    cfg_30m = replace(
+        _CFG, tf="30m", atr_window_ms=3 * step_ms("30m")
+    )
+    assert cfg_30m.estimator_id == "atr_wilder_w3"  # window_bars fica 3 nos dois TFs, de propósito
 
     def _time_only_mark(cfg: tb.LabelConfig) -> pl.DataFrame:
-        horizon = t0 + cfg.time_stop_bars * step_ms(cfg.tf)
+        horizon = t0 + cfg.time_stop_ms
         rows: list[_Row] = [
             (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
             (horizon, 99.9, 99.95, 99.85, 99.9),
@@ -528,18 +640,16 @@ def test_build_labels_horizon_escala_com_tf_diferente_de_15m() -> None:
     row_30m = out_30m.row(0, named=True)
     assert row_15m["barrier_hit"] == "TIME"
     assert row_30m["barrier_hit"] == "TIME"
-    assert row_15m["n_bars_held"] == cfg_15m.time_stop_bars
-    assert row_30m["n_bars_held"] == cfg_30m.time_stop_bars
+    # n_bars_held diverge por construção -- mesmo relógio, bar_ms diferente.
+    assert row_15m["n_bars_held"] == cfg_15m.time_stop_ms // _BAR_MS
+    assert row_30m["n_bars_held"] == cfg_30m.time_stop_ms // step_ms("30m")
 
     t1_15m_ms = row_15m["t1"].timestamp() * 1000
     t1_30m_ms = row_30m["t1"].timestamp() * 1000
-    assert t1_15m_ms == pytest.approx(t0 + cfg_15m.time_stop_bars * step_ms("15m"), abs=1.0)
-    assert t1_30m_ms == pytest.approx(t0 + cfg_30m.time_stop_bars * step_ms("30m"), abs=1.0)
-    # medido, não assumido: a diferença exata bate com a diferença de
-    # step_ms multiplicada por time_stop_bars (não um "2x" solto).
-    measured_delta_ms = t1_30m_ms - t1_15m_ms
-    expected_delta_ms = cfg_15m.time_stop_bars * (step_ms("30m") - step_ms("15m"))
-    assert measured_delta_ms == pytest.approx(expected_delta_ms, abs=1.0)
+    assert t1_15m_ms == pytest.approx(t0 + cfg_15m.time_stop_ms, abs=1.0)
+    assert t1_30m_ms == pytest.approx(t0 + cfg_30m.time_stop_ms, abs=1.0)
+    # a garantia central de AG-031/B1: o horizonte NÃO escala mais com tf.
+    assert t1_15m_ms == pytest.approx(t1_30m_ms, abs=1.0)
 
 
 def test_build_labels_nofill_quando_nunca_toca_limite() -> None:
@@ -589,7 +699,7 @@ def test_assert_label_invariants_passa_em_frame_valido() -> None:
     ]
     mark = _mark(_with_horizon_coverage(rows))
     out = tb.build_labels_both_sides(_synthetic_bars(), mark, _EMPTY_FUNDING, config=_CFG)
-    tb.assert_label_invariants(out, time_stop_bars=_CFG.time_stop_bars)
+    tb.assert_label_invariants(out, time_stop_ms=_CFG.time_stop_ms)
 
 
 def _ms_utc(values: list[int]) -> pl.Series:
@@ -610,7 +720,7 @@ def test_assert_label_invariants_detecta_t1_menor_que_t0() -> None:
         }
     )
     with pytest.raises(AssertionError):
-        tb.assert_label_invariants(bad, time_stop_bars=32)
+        tb.assert_label_invariants(bad, time_stop_ms=28_800_000)
 
 
 # ============================================================================
@@ -639,7 +749,7 @@ def test_build_labels_for_symbol_real_dado_invariantes() -> None:
     assert out.height > 0
     assert list(out.columns) == list(tb.LABEL_COLUMNS)
 
-    tb.assert_label_invariants(out, time_stop_bars=cfg.time_stop_bars)
+    tb.assert_label_invariants(out, time_stop_ms=cfg.time_stop_ms)
     tb.verify_config_hash(out, cfg)
 
     # side só ±1 (item 1 da docstring do módulo — nunca 0)

@@ -18,7 +18,7 @@ a `fill_model.simulate_fill_arrays` (decide SE/QUANDO a ordem limite
 preenche) acontece ANTES de qualquer referência a `tp_price`/`sl_price` —
 depende só de `limit_price` (função de `entry_ref`/tick, não de barreira)
 e `fill_timeout_bars`. Logo, para varrer um grid de tp/sl com
-`fill_timeout_bars`/`time_stop_bars`/`atr_window` FIXOS (o caso de E1), o
+`fill_timeout_bars`/`time_stop_ms`/`atr_window` FIXOS (o caso de E1), o
 fill de cada trade só precisa existir UMA VEZ — reusado de
 `labels/v1/labels.parquet` (a config de produção atual já tem essa
 informação: `t_entry`, `entry_price_fill`, `atr_at_t0`, `barrier_hit ==
@@ -45,7 +45,22 @@ já corrigido em `src.validation.cpcv` (padrão de referência). Correção:
 `resolve_barriers_vectorized` ganha `tf: str = "15m"` (mesmo default de
 `LabelConfig.tf`/`CPCVConfig.tf` — bit-exato pra todo caller existente,
 nenhum passa `tf` hoje), validado via `step_ms(tf)` no início da função
-(falha alto, `UnsupportedTimeframeError`, antes de qualquer cálculo)."""
+(falha alto, `UnsupportedTimeframeError`, antes de qualquer cálculo).
+
+**AG-031/B1 (audit/architecture_gaps_log.yaml)** — `time_stop_bars`
+(contagem de barra) vira `time_stop_ms` (relógio fixo), mesmo motivo/mesma
+correção de `triple_barrier.build_labels` (ver comentário de módulo lá):
+duas interpretações incompatíveis do mesmo parâmetro coexistiam no repo,
+PRD já decidia relógio fixo 3x antes do bug. `horizon_end = t0 +
+time_stop_ms` direto. `window_bars` (tamanho da janela vetorizada, em
+barras de 1m de `mark_1m`) deixa de passar por `time_stop_bars *
+bars_per_decision_bar` — deriva direto de `time_stop_ms // _MINUTE_MS`,
+sem depender de `bar_ms`/contagem de barra de decisão nenhuma.
+`n_bars_held` ganha o parâmetro OPCIONAL `decision_bar_close_time_ms` —
+quando fornecido, vira contagem real (busca, paridade com
+`build_labels`); `None` (default) mantém a aritmética antiga, usada pelo
+único caller real hoje (`faixa2_caminho_b.py`, que não carrega `bars_15m`
+nem consome esse campo)."""
 
 from __future__ import annotations
 
@@ -70,7 +85,7 @@ _SL = "SL"
 _TIME = "TIME"
 
 # Margem de segurança do tamanho da janela (em barras de 1m) além de
-# `time_stop_bars * (bar_ms // _MINUTE_MS)` — cobre gaps eventuais do mark_1m (já documentados
+# `time_stop_ms // _MINUTE_MS` (AG-031/B1) — cobre gaps eventuais do mark_1m (já documentados
 # em outras partes do repo, ex. Data Quality Engine) sem mudar o resultado:
 # a janela em si é MASCARADA por comparação de timestamp real
 # (`horizon_end_ms`), não por contagem de barra — a margem só garante que
@@ -114,10 +129,11 @@ def resolve_barriers_vectorized(
     side: int,
     tp_atr_mult: float,
     sl_atr_mult: float,
-    time_stop_bars: int,
+    time_stop_ms: int,
     maker_fee: float,
     taker_fee: float,
     tf: str = "15m",
+    decision_bar_close_time_ms: IntArray | None = None,
 ) -> ResolvedBarriers:
     """`filled`: trades JÁ preenchidos de UM lado (`barrier_hit != "NOFILL"`
     numa config qualquer — `t_entry`/`entry_price_fill`/`atr_at_t0`/`t0` não
@@ -125,6 +141,10 @@ def resolve_barriers_vectorized(
     `entry_price_fill`, `atr_at_t0`, todas não-nulas. `mark_1m`/`funding`:
     mesmo schema de `triple_barrier.build_labels`. Vetorizado via
     `sliding_window_view` sobre `mark_1m` — sem laço Python por trade.
+
+    `time_stop_ms` (AG-031/B1) é o horizonte do label em RELÓGIO fixo —
+    mesma convenção de `LabelConfig.time_stop_ms`, precisa ser o MESMO
+    valor usado para gerar `filled`.
 
     `tf` (AG-005, default `"15m"`) é o TF de DECISÃO de `filled` — precisa
     ser o MESMO `LabelConfig.tf` usado para gerar `filled` (`t0`/`t1`/
@@ -135,6 +155,16 @@ def resolve_barriers_vectorized(
     `mark_1m` continua granularidade nativa de 1 minuto independente de
     `tf` — mesmo raciocínio de B11 em `triple_barrier.build_labels_for_
     symbol` (toque de barreira sempre na resolução mais fina disponível).
+
+    `decision_bar_close_time_ms` (AG-031/B1, opcional) é o array de
+    `close_time` (ms) das barras de DECISÃO (`bars_15m`, mesmas que geraram
+    `filled`) — quando fornecido, `n_bars_held` vira contagem REAL (busca
+    neste array), mesma lógica de `triple_barrier.build_labels`, com
+    paridade garantida (`test_reproduz_build_labels_*` passa este array).
+    `None` (default) cai pra aritmética `ceil((t1-t0)/bar_ms)` — usada por
+    `src.analysis.faixa2_caminho_b`, que não carrega `bars_15m` (só reusa
+    `t_entry`/`atr_at_t0` já persistidos) e não consome `n_bars_held` do
+    resultado; nesse caller a aproximação é aceitável.
 
     Levanta `ValueError` se qualquer trade não tiver janela completa até
     `horizon_end_ms` no `mark_1m` fornecido (equivalente ao
@@ -147,7 +177,7 @@ def resolve_barriers_vectorized(
     t_entry = filled["t_entry"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     fill_px = filled["entry_price_fill"].to_numpy().astype(np.float64)
     atr_pct = filled["atr_at_t0"].to_numpy().astype(np.float64)
-    horizon_end = t0 + time_stop_bars * bar_ms
+    horizon_end = t0 + time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
 
     mark = mark_1m.sort("open_time")
     mark_open_time = mark["open_time"].cast(pl.Int64).to_numpy().astype(np.int64)
@@ -156,10 +186,10 @@ def resolve_barriers_vectorized(
     mark_low = mark["low"].cast(pl.Float64).to_numpy().astype(np.float64)
     mark_close = mark["close"].cast(pl.Float64).to_numpy().astype(np.float64)
 
-    # `bar_ms // _MINUTE_MS` -- barras de mark_1m (1min) por barra de
-    # decisão (AG-005: era `* 15` fixo, presumindo TF=15m).
-    bars_per_decision_bar = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
-    window_bars = time_stop_bars * bars_per_decision_bar + _WINDOW_SAFETY_MARGIN_BARS
+    # AG-031/B1 -- janela em barras de 1m derivada direto do relógio
+    # (`time_stop_ms // _MINUTE_MS`), sem passar por contagem de barra de
+    # decisão nenhuma (`bars_per_decision_bar` não existe mais aqui).
+    window_bars = -(-time_stop_ms // _MINUTE_MS) + _WINDOW_SAFETY_MARGIN_BARS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
     start_idx = np.searchsorted(mark_open_time, t_entry, side="left")
     if start_idx.size and int(np.max(start_idx)) + window_bars > mark_open_time.shape[0]:
         # janela tocaria além do fim do array disponível -- preenche com
@@ -262,7 +292,24 @@ def resolve_barriers_vectorized(
     funding_frac = (prefix[f_hi] - prefix[f_lo]) * side
 
     ret_net = ret_gross - cost_entry_frac - cost_exit_frac - funding_frac
-    n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / bar_ms).astype(np.int64), 0)
+
+    if decision_bar_close_time_ms is not None and decision_bar_close_time_ms.size:
+        # AG-031/B1 -- contagem REAL via busca em decision_bar_close_time_ms
+        # (mesma lógica de triple_barrier.build_labels), com fallback
+        # aritmético pra cauda além do último decision bar carregado.
+        dbc = decision_bar_close_time_ms
+        idx0 = np.searchsorted(dbc, t0, side="left")
+        idx1_within = np.searchsorted(dbc, t1, side="right") - 1
+        last_close = int(dbc[-1])
+        within_range = t1 <= last_close
+        real_count = np.where(
+            within_range,
+            idx1_within - idx0,
+            (dbc.size - 1 - idx0) + np.ceil((t1 - last_close) / bar_ms).astype(np.int64),
+        )
+        n_bars_held = np.where(t1 > t0, real_count, 0)
+    else:
+        n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / bar_ms).astype(np.int64), 0)
 
     return ResolvedBarriers(
         barrier_hit=list(barrier_hit),

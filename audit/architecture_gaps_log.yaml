@@ -1828,22 +1828,108 @@ entries:
       vs. 0,030496, experiments/m2_report_recente.json). Vai no MESMO
       pacote de trabalho que atr_window (mesma I2), confirmado.
     status: >-
-      aberto -- DECIDIDO, implementação pendente. Escopo confirmado do
-      Pacote de Trabalho: (1) triple_barrier.py -- horizon_end_ms passa a
-      usar time_stop_ms fixo, não time_stop_bars*step_ms(tf); (2)
-      n_bars_held (triple_barrier.py:828) precisa virar contagem REAL de
-      barras dentro do horizonte (não mais derivável por aritmética) --
-      invariante n_bars_held<=time_stop_bars (linha 330) precisa de
-      substituto, teto em barras deixa de existir por construção; (3)
-      n_funding_events:Int8 (linha ~540, max 127) fica arriscado se o
-      horizonte for reexpresso e alguém aumentar; (4) atr_window entra no
-      mesmo PR (mesma I2); (5) grep completo por outros callers de
-      LabelConfig/time_stop_bars (ex. barrier_sweep.py) antes de fechar;
-      (6) suíte de teste roda de novo depois (protocolo do usuário). Não
-      depende de dollar bar existir de fato -- pode ser implementado e
-      testado no grid de TEMPO atual primeiro, já que a convenção vale
-      pros dois grids (é conceitualmente sobre unidade do horizonte, não
-      sobre o tipo de barra).
+      aberto -- IMPLEMENTADO 2026-08-16, escopo COMPLETO (itens 1-6
+      originais, incluindo atr_window/item 4 e n_bars_held real/item 2 --
+      ambos decididos pelo Manager após reler docs/refactor_dollar_bar_
+      canonico.md, ver parágrafos abaixo e AG-047). Pendente só de
+      confirmação empírica (pytest) antes de commitar.
+
+      **time_stop: IMPLEMENTADO.** `LabelConfig.time_stop_bars`->
+      `time_stop_ms` em `src/labels/triple_barrier.py`, `barrier_sweep.py`,
+      `cost_surface.py`, `backfill_multi_symbol.py`, `experiment_log.py`,
+      `faixa2_caminho_b.py`. `horizon_end_ms = t0 + cfg.time_stop_ms`
+      direto (item 1). Invariante de `assert_label_invariants` reescrita:
+      teto antigo `n_bars_held <= time_stop_bars` vira teto direto em
+      relógio `(t1-t0) <= time_stop_ms` sobre linhas não-NOFILL -- não
+      depende mais de `bar_ms`/`n_bars_held` (item 2, resolvido via
+      substituição do mecanismo de checagem, não via reescrita de
+      `n_bars_held` -- essa arithmetic continua válida enquanto bars_15m
+      for grade de TEMPO; vira contagem real só quando dollar bar existir
+      de fato, comentário deixado no código apontando pra isso). `n_funding_
+      events` Int8->Int16, widening preventivo (item 3). Grep completo
+      confirmado sem callers órfãos (item 5, re-verificado por
+      project_assurance independentemente). Nova constante `time_stop_ms`
+      em `constants.yaml` (DERIVED, mesmo valor de `time_stop_bars` em
+      15m, 28.800.000ms); `time_stop_bars` mantida "SUPERSEDIDO", não
+      apagada.
+
+      **ESCOPO RESTRINGIDO, DEPOIS REVERTIDO -- atr_window ENTROU no
+      pacote.** Numa primeira rodada, atr_window ficou de fora (motivo
+      registrado: leitura equivocada do `NotImplementedError` de
+      `ATRWilderEstimator.estimate()` como se protegesse `window`, quando
+      na verdade protege só `horizon_minutes` -- um problema DIFERENTE,
+      não implementado, que não bloqueia derivar `window` em barras fora
+      do estimador). `project_assurance` (Agent fresco) confirmou a
+      distinção arquitetural (constante compartilhada com Feature Engine)
+      mas o Manager, ao reler `docs/refactor_dollar_bar_canonico.md:403`
+      ("resolver só metade deixa a barreira dimensionada numa unidade e o
+      horizonte em outra"), decidiu explicitamente incluir `atr_window`
+      nesta mesma PR -- ver AG-047 pra decisão registrada.
+
+      **atr_window: IMPLEMENTADO 2026-08-16.**
+      `LabelConfig.atr_window: int` (barras) vira `atr_window_ms: int`
+      (relógio) -- SÓ neste dataclass; `constants.yaml::atr_window`
+      continua existindo, inalterada, porque o Feature Engine (`src/
+      features/build.py:90,142`, scripts de `src/analysis/`) consome a
+      mesma constante direto como contagem de barra, decisão deliberada e
+      separada (`scaling_invariant: bar_count`, AG-043/F1). Nova constante
+      `atr_window_ms=18000000` (DERIVED, 20 barras @ 15m) em
+      `constants.yaml`. `build_labels`/`LabelConfig.from_constants()`
+      derivam `window_bars = round(atr_window_ms / bar_ms)` FORA do
+      `ATRWilderEstimator` -- ele continua recebendo um `int` em barras,
+      nenhuma mudança interna nele. `estimator_id` default passa a usar o
+      `window_bars` já ajustado ao `tf` pedido (bit-exato `"atr_wilder_
+      w20"` em `tf="15m"`; diverge em outro `tf`, corretamente, já que a
+      contagem real de barras pra cobrir o mesmo relógio muda).
+
+      **n_bars_held: IMPLEMENTADO 2026-08-16** (Manager decidiu incluir,
+      ao reler o texto literal do item 2 do escopo original abaixo).
+      Vira contagem REAL via busca em `t0_arr` (não mais `ceil((t1-t0)/
+      bar_ms)`), em `triple_barrier.build_labels` E `barrier_sweep.
+      resolve_barriers_vectorized` (parâmetro novo, opcional,
+      `decision_bar_close_time_ms` -- `None` cai pra aritmética antiga,
+      usado pelo único caller real que não carrega `bars_15m` nem consome
+      o campo, `faixa2_caminho_b.py`). Fallback aritmético preservado pra
+      cauda além do último decision bar carregado (bars_15m não tem
+      buffer além de `end`, ao contrário de mark_1m) -- garante bit-
+      exatidão com a fórmula antiga onde não há gap real no dado.
+      Testes novos provam que o mecanismo detecta gaps de verdade (valor
+      DIFERENTE da aritmética quando falta uma barra no array), não é só
+      uma reformulação equivalente da mesma divisão --
+      `test_build_labels_n_bars_held_conta_real_e_detecta_gap_no_array_de_
+      decisao` (`test_labels_triple_barrier.py`),
+      `test_resolve_barriers_vectorized_n_bars_held_contagem_real_detecta_
+      gap` (`test_labels_barrier_sweep.py`). Teste de integração sobre
+      dado real (1 ano, BTCUSDT) adicionado em `test_reproduz_
+      distribuicao_real_2024_long` confirmando paridade exata entre os
+      dois motores.
+
+      **BUG DE RAIZ achado pelo usuário rodando pytest (2026-08-16),
+      corrigido:** `test_build_labels_horizon_e_invariante_a_tf_nao_
+      escala_mais` quebrou com `ValueError` de `estimator_id` inconsistente
+      -- causa raiz: `estimator_id` (convenção `atr_wilder_w{N}`) passou a
+      depender de DOIS campos (`atr_window_ms` E `tf`, via `window_bars =
+      round(atr_window_ms/step_ms(tf))`), mas `dataclasses.replace(cfg,
+      tf=novo)` só atualiza `tf`, deixando `estimator_id` obsoleto
+      silenciosamente -- a MESMA classe de risco que a docstring da classe
+      já citava pra `atr_window_ms` sozinho, só que a dependência de `tf`
+      não tinha sido reconhecida. Solução robusta (não band-aid): validação
+      nova em `LabelConfig.__post_init__` -- se `estimator_id` segue a
+      convenção `"atr_wilder_w..."`, valida que bate com `round(
+      atr_window_ms/step_ms(tf))`, falha alto NA CONSTRUÇÃO (inclusive via
+      `replace()`, que re-chama `__post_init__`) com mensagem apontando pra
+      causa raiz -- não só no ponto profundo dentro de `build_labels` onde
+      o sintoma aparecia antes. Efeito colateral descoberto no caminho: um
+      bug PRÉ-EXISTENTE e mais antigo (de quando `_TIME_STOP_MS_DEFAULT` foi
+      introduzido) ficou exposto por essa validação -- 11 construções de
+      teste tinham `atr_window_ms=20` (literal, correto só quando o campo
+      era `atr_window` em barras) em vez de `20*900_000`; corrigido com
+      constante `_ATR_WINDOW_MS_DEFAULT` nova. 3 call-sites de teste que
+      usavam `replace(cfg, tf=X)` sem recalcular `estimator_id`/
+      `atr_window_ms` corrigidos (`test_labels_triple_barrier.py`,
+      `test_analysis_cost_surface.py`) -- nenhum caller de PRODUÇÃO real
+      afetado (todos usam `LabelConfig.from_constants(tf=...)`, que já
+      deriva `estimator_id` corretamente).
 
   - id: AG-032
     date: "2026-08-15"
@@ -2561,3 +2647,191 @@ entries:
       trabalho de código real, maior que (1), não incluído na mesma
       passada.
     status: "aberto -- decidido (F1 pra A13, B01 a reavaliar), implementação pendente"
+
+  - id: AG-044
+    date: "2026-08-16"
+    file: "src/labels/experiment_log.py"
+    related_file: "experiments/label_engine_runs.parquet, tests/unit/test_labels_experiment_log.py"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- revisão independente de AG-031/B1"
+    gap: >
+      `record_experiment` trocou `pl.concat(how="vertical")` por
+      `how="diagonal")` especificamente para tolerar o schema antigo do
+      arquivo real `experiments/label_engine_runs.parquet` (existe desde
+      2026-08-09, confirmado via extração de strings do parquet pelo
+      revisor: coluna é `time_stop_bars`, não `time_stop_ms`). Nenhum
+      teste em `test_labels_experiment_log.py` exercitava esse caminho --
+      todos os testes usavam `tmp_path` e construíam `existing`/`new_row`
+      com o MESMO `_SCHEMA` atual (produzido pela própria
+      `record_experiment`), nunca contra um DataFrame com o schema antigo
+      real.
+    severity: "alto"
+    layer: "labels"
+    consequence: >
+      A próxima chamada de produção de `record_experiment()` (path
+      default, contra o arquivo real) seria a primeira execução desse
+      código contra dado de schema divergente -- sem nenhuma prova de que
+      o diagonal concat funciona como esperado contra o arquivo real (vs.
+      apenas contra dois frames sintéticos de schema idêntico). Este
+      arquivo é o insumo do trial_budget/N_lifetime para o DSR (Sprint
+      11).
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO na mesma sessão: novo teste
+      `test_record_experiment_tolera_arquivo_real_com_schema_antigo_sem_
+      time_stop_ms` (`tests/unit/test_labels_experiment_log.py`) escreve o
+      schema antigo de verdade em disco (bypassando `record_experiment`,
+      via helper `_legacy_schema_row`) e confirma que uma chamada real de
+      `record_experiment` não levanta e produz as duas linhas corretamente
+      alinhadas por nome de coluna (linha antiga com `time_stop_ms=null`/
+      `time_stop_bars=32`, linha nova com `time_stop_ms` populado/
+      `time_stop_bars=null`).
+    status: "fechado -- teste real adicionado, pendente confirmação de pytest pelo usuário"
+
+  - id: AG-045
+    date: "2026-08-16"
+    file: "src/labels/triple_barrier.py (_PRE_WEIGHT_SCHEMA), tools/diagnostics/measure_n_bars_held_vs_cost_and_regime.py"
+    related_file: "data/labels/{BTC,ETH,SOL,BNB,XRP}USDT/15m/v1/labels.parquet"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- revisão independente de AG-031/B1"
+    gap: >
+      `n_funding_events` mudou de `pl.Int8` para `pl.Int16`
+      (`triple_barrier.py`, widening preventivo do AG-031/B1). Seguro para
+      cada arquivo em si (`write_labels_atomic` reescreve o parquet
+      inteiro, sem concat/append), mas a regeneração de `labels.parquet` é
+      por símbolo, não atômica entre os 5 (`backfill_multi_symbol.py` só
+      cobre os 4 alts; BTCUSDT é regenerado por processo separado) -- se
+      só um subconjunto for regenerado, existe um estado misto Int8/Int16
+      no disco. `tools/diagnostics/measure_n_bars_held_vs_cost_and_
+      regime.py:316` fazia `pl.concat(pooled_resolved, how="vertical")`
+      (estrito) pooling os 5 símbolos -- quebraria com `SchemaError` nesse
+      estado misto.
+    severity: "médio"
+    layer: "labels/analysis"
+    consequence: >
+      Falha alta (crash, não corrupção silenciosa) na primeira vez que
+      alguém rodasse o script de diagnóstico após uma regeneração parcial
+      dos 5 símbolos. Não documentado em lugar nenhum como risco de
+      transição.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO na mesma sessão: `how="vertical"` -> `how="vertical_
+      relaxed"` em `measure_n_bars_held_vs_cost_and_regime.py:316` --
+      tolera dtype divergindo por coluna (promove ao supertipo comum), sem
+      mudar o resultado quando os 5 símbolos já estão no mesmo dtype (caso
+      de hoje). 1 linha, sem custo, fecha a janela de crash.
+    status: "fechado -- fix preventivo aplicado, mecânico, não exige pytest pra validar (só type-check)"
+
+  - id: AG-046
+    date: "2026-08-16"
+    file: "config/constants.yaml"
+    related_file: "tools/diagnostics/measure_time_stop_slack.py, tools/diagnostics/measure_n_bars_held_vs_cost_and_regime.py, AG-031"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- revisão independente de AG-031/B1"
+    gap: >
+      `time_stop_bars` foi marcado "SUPERSEDIDO" mas mantido como entrada
+      classe A ATIVA (`sweep_required: true`, `sweep_range: [16,48]`,
+      `provenance: ASSUMED` -- ainda aparece na lista de
+      `check_constants_provenance.py`). Dois scripts de diagnóstico
+      (`tools/diagnostics/measure_time_stop_slack.py`,
+      `measure_n_bars_held_vs_cost_and_regime.py`) leem essa constante
+      DIRETO via `load_constant`, em paralelo a `LabelConfig.time_stop_ms`.
+      Não existe nenhum guard de código (teste ou assert) que force
+      `time_stop_ms == time_stop_bars × step_ms("15m")` -- é a MESMA
+      classe de bug que o próprio AG-031 corrige (duas fontes de verdade
+      pro mesmo conceito, sem sincronização mecânica), reintroduzida em
+      outro par de campos. Mesmo padrão de risco já aceito em
+      `cpcv_embargo_bars`/`cpcv_embargo_ms` (AG-032/E1) -- não é uma
+      escolha nova desta PR, é o mesmo trade-off "superseded, não
+      apagada" já em uso no resto do repo.
+    severity: "médio"
+    layer: "labels/config"
+    consequence: >
+      Se o sweep do Sprint 6 (já `sweep_required: true` nos dois) atualizar
+      só um dos dois campos, os dois scripts de diagnóstico passam a medir
+      contra um teto que não é mais o real usado por `build_labels` --
+      silenciosamente, mesmo padrão de falha do AG-031 original.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- não bloqueia esta PR, mas precisa endereçamento antes do sweep do Sprint 6 tocar em qualquer um dos dois campos (time_stop_bars OU time_stop_ms)"
+
+  - id: AG-047
+    date: "2026-08-16"
+    file: "audit/architecture_gaps_log.yaml::AG-031"
+    related_file: "src/labels/triple_barrier.py, config/constants.yaml, src/features/volatility.py"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose) -- revisão independente de AG-031/B1"
+    gap: >
+      AG-031 tinha `status: "aberto -- DECIDIDO, implementação pendente"`
+      com escopo confirmado explícito incluindo item (4) "atr_window entra
+      no mesmo PR (mesma I2)". A implementação entregou só `time_stop`
+      (itens 1,2,3,5,6) e deixou `atr_window` de fora, com justificativa
+      técnica verificada pelo revisor como factualmente correta
+      (`ATRWilderEstimator` não tem conversão relógio-barra, `atr_window` é
+      compartilhado com o Feature Engine, mudar sua unidade muda a
+      suavização real do Wilder ATR entre TFs -- não é troca neutra como
+      `time_stop` foi) -- mas essa restrição de escopo foi decidida pelo
+      implementador, não re-confirmada pelo Manager que originalmente
+      autorizou o escopo bundled.
+    severity: "médio"
+    layer: "governança/audit-trail"
+    consequence: >
+      Quem lesse AG-031 sem este achado acharia que `atr_window` ainda
+      estava "confirmado no mesmo pacote de trabalho, pendente" quando na
+      verdade a decisão real foi excluí-lo deliberadamente desta PR -- o
+      registro formal da decisão divergiria do que foi de fato
+      decidido/entregue.
+    resolved_by_commit: null
+    resolution: >
+      DECIDIDO 2026-08-16 (Manager): incluir `atr_window` nesta mesma PR,
+      não deixar como item separado. Manager releu `docs/refactor_dollar_
+      bar_canonico.md:403` ("resolver só metade deixa a barreira
+      dimensionada numa unidade e o horizonte em outra") e considerou mais
+      taxativo do que o texto do AG-031 sozinho sugeria. Implementação
+      corrigiu também a premissa técnica que motivou a exclusão original:
+      o `NotImplementedError` de `ATRWilderEstimator.estimate()` protege
+      `horizon_minutes` (conversão de horizonte de previsão, não
+      implementada), não `window` (parâmetro de suavização) -- nada
+      impede derivar `window` em barras a partir de um valor em ms FORA
+      do estimador, mesmo padrão já usado pra `time_stop`. Ver AG-031 pra
+      implementação completa (`atr_window_ms`, `constants.yaml`,
+      `LabelConfig`, `build_labels`).
+    status: "fechado -- atr_window incluído nesta PR, implementado, pendente confirmação de pytest"
+
+  - id: AG-048
+    date: "2026-08-16"
+    file: "audit/architecture_gaps_log.yaml::AG-031, src/labels/triple_barrier.py, src/labels/barrier_sweep.py"
+    related_file: "docs/refactor_dollar_bar_canonico.md:379, tests/unit/test_labels_triple_barrier.py, tests/unit/test_labels_barrier_sweep.py"
+    found_by: "Claude, ao reler docs/refactor_dollar_bar_canonico.md a pedido do Manager (checagem de alinhamento pós-implementação de AG-031/B1)"
+    gap: >
+      Item 2 do escopo confirmado de AG-031 dizia explicitamente:
+      "n_bars_held (triple_barrier.py:828) precisa virar contagem REAL de
+      barras dentro do horizonte (não mais derivável por aritmética)".
+      `docs/refactor_dollar_bar_canonico.md:379` reforça: "n_bars_held...
+      precisa virar contagem real de barras (não ceil((t1-t0)/bar_ms))".
+      A implementação inicial de AG-031/B1 só substituiu o INVARIANTE que
+      usava `n_bars_held` (linha 330, teto viraram relógio direto) mas
+      deixou a fórmula de `n_bars_held` em si INALTERADA (aritmética),
+      com o raciocínio de que ela só quebra sob dollar bar (bar_ms
+      variável) -- válido tecnicamente no grid de tempo atual, mas uma
+      leitura própria que divergia do texto literal do escopo já
+      confirmado, sem ter sido destacada com o mesmo peso que a exclusão
+      de atr_window (AG-047).
+    severity: "médio"
+    layer: "labels"
+    consequence: >
+      Mesma classe de risco de AG-047: quem lesse AG-031 acharia que
+      n_bars_held já tinha virado contagem real, quando só o invariante
+      tinha mudado -- divergência entre o que foi decidido e o que foi
+      entregue, sem registro formal até esta checagem.
+    resolved_by_commit: null
+    resolution: >
+      DECIDIDO 2026-08-16 (Manager): implementar contagem real agora,
+      mesmo sendo um no-op na grade de tempo atual (sem gaps). Implementado
+      via busca em `t0_arr` (`triple_barrier.build_labels`) e novo
+      parâmetro opcional `decision_bar_close_time_ms` (`barrier_sweep.
+      resolve_barriers_vectorized`, `None` cai pra aritmética antiga --
+      único caller real, `faixa2_caminho_b.py`, não carrega `bars_15m` nem
+      consome o campo). Fallback aritmético preservado pra cauda além do
+      último decision bar carregado (bars_15m não tem buffer além de
+      `end`, ao contrário de mark_1m). Testes novos provam que o
+      mecanismo detecta gaps reais (valor difere da aritmética quando
+      falta uma barra), não é só reformulação equivalente -- ver AG-031
+      pra lista completa de testes.
+    status: "fechado -- implementado, pendente confirmação de pytest"

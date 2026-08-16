@@ -71,9 +71,9 @@ def test_default_grid_axes_usa_tp_sl_do_config_passado() -> None:
     cfg = tb.LabelConfig(
         tp_atr_mult=4.0,
         sl_atr_mult=2.0,
-        time_stop_bars=32,
+        time_stop_ms=32 * 900_000,
         fill_timeout_bars=1,
-        atr_window=20,
+        atr_window_ms=20 * 900_000,
         maker_fee=0.0002,
         taker_fee=0.0005,
         estimator_id="atr_wilder_w20",
@@ -217,9 +217,9 @@ _CLOSES = [100.0, 100.2, 99.9]  # atr_window=3 -> só a última barra tem ATR v�
 _BASE_CFG = tb.LabelConfig(
     tp_atr_mult=1.0,  # sobrescrito por célula do grid, valor aqui é irrelevante
     sl_atr_mult=1.0,
-    time_stop_bars=4,
+    time_stop_ms=4 * _BAR_MS,
     fill_timeout_bars=1,
-    atr_window=3,
+    atr_window_ms=3 * _BAR_MS,
     maker_fee=0.0002,
     taker_fee=0.0005,
     estimator_id="atr_wilder_w3",
@@ -258,7 +258,7 @@ def _crash_mark() -> pl.DataFrame:
     preço; mesmo `sl_atr_mult`/`tp_atr_mult` até dezenas de ATR não
     alcançaria essa distância)."""
     t0 = _t0()
-    horizon = t0 + _BASE_CFG.time_stop_bars * _BAR_MS
+    horizon = t0 + _BASE_CFG.time_stop_ms
     rows = [
         (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
         (t0 + 5 * 60_000, 60.0, 65.0, 50.0, 55.0),
@@ -470,9 +470,9 @@ def test_build_cost_surface_grid_for_symbol_default_tf_bate_com_hardcode_anterio
 
     # mark_1m/funding: a folga MUDA de propósito (essa é a correção AG-011,
     # não um efeito colateral) -- de "+1 dia" fixo para
-    # "+ max(time_stop_bars, fill_timeout_bars)*step_ms(tf) + 1 dia", mesma
-    # fórmula do AG-005 em triple_barrier.build_labels_for_symbol.
-    horizon_ms = max(cfg.time_stop_bars, cfg.fill_timeout_bars) * step_ms(cfg.tf)
+    # "+ max(time_stop_ms, fill_timeout_bars*step_ms(tf)) + 1 dia", mesma
+    # fórmula do AG-005/AG-031/B1 em triple_barrier.build_labels_for_symbol.
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
     expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
 
     assert query_bars_calls[1][:2] == ("BTCUSDT", "1m")
@@ -492,7 +492,13 @@ def test_build_cost_surface_grid_for_symbol_tf_customizado_muda_query_bars(
     (antes `"15m"` literal) agora lê `cfg.tf`, não um valor fixo."""
     query_bars_calls, query_funding_calls, _grid_calls = _patch_lake_and_grid_spies(monkeypatch)
 
-    base_cfg = replace(tb.LabelConfig.from_constants(), tf="30m")
+    # AG-031/B1 -- estimator_id codifica window_bars, que depende de tf;
+    # replace(cfg, tf=novo) sem recalcular junto dispara a validação de
+    # LabelConfig.__post_init__ (dataclasses.replace não pode invalidar a
+    # config silenciosamente).
+    cfg_15m = tb.LabelConfig.from_constants()
+    window_bars_30m = round(cfg_15m.atr_window_ms / step_ms("30m"))
+    base_cfg = replace(cfg_15m, tf="30m", estimator_id=f"atr_wilder_w{window_bars_30m}")
     assert base_cfg.tf == "30m"  # __post_init__ já validou via step_ms
 
     cs.build_cost_surface_grid_for_symbol(
@@ -501,34 +507,33 @@ def test_build_cost_surface_grid_for_symbol_tf_customizado_muda_query_bars(
 
     assert query_bars_calls[0] == ("ETHUSDT", "30m", "2024-01-01", "2024-01-02", "klines_1m", True)
 
-    # horizonte em "30m" é maior em ms que em "15m" para o mesmo
-    # time_stop_bars/fill_timeout_bars (step_ms("30m") == 2 * step_ms("15m"))
-    # -- a folga cresce de acordo, não fica presa ao valor calibrado pra 15m.
-    horizon_ms = max(base_cfg.time_stop_bars, base_cfg.fill_timeout_bars) * step_ms("30m")
+    # AG-031/B1 -- horizonte não escala mais com tf (time_stop_ms é o termo
+    # dominante do max(), fixo); só o componente fill_timeout ainda escala,
+    # e é pequeno demais pra dominar. A fórmula em si continua correta pra
+    # QUALQUER tf, só o valor resultante deixou de crescer com ele.
+    horizon_ms = max(base_cfg.time_stop_ms, base_cfg.fill_timeout_bars * step_ms("30m"))
     expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
     assert query_bars_calls[1][3] == expected_mark_end
     assert query_funding_calls[0]["end"] == expected_mark_end
 
 
-def test_build_cost_surface_grid_for_symbol_tf_maior_amplia_folga_vs_15m(
+def test_build_cost_surface_grid_for_symbol_folga_e_invariante_a_tf_nao_amplia_mais(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Achado que motivou o AG-011 (mesmo do AG-005): a folga fixa de "+1
-    dia" era calibrada só pro caso 15m -- em TF maior o horizonte de
-    `time_stop_bars`/`fill_timeout_bars` (expresso em BARRAS, não em tempo)
-    pode ultrapassar 24h. Usa `tf="1h"` (não `"30m"`) de propósito: com os
-    valores REAIS de `constants.yaml` (`time_stop_bars=32`,
-    `fill_timeout_bars=1`), o horizonte em 30m é 16h -- ainda `< 24h`, então
-    `date.__add__` (que ignora `timedelta.seconds`/`.microseconds`, só soma
-    `.days` -- comportamento documentado do `datetime` da stdlib, medido
-    aqui, não presumido) trunca 15m e 30m pro MESMO `mark_end` (+1 dia); só
-    em 1h (horizonte 32h, cruza a fronteira de 24h) a folga realmente muda
-    de dia. Achado reportado à parte (não é bug desta correção nem do AG-005
-    que ela replica: `lake.query_bars` trata `end` como fronteira de DIA
-    inteiro inclusiva, o que já cobre a folga que a truncagem de sub-dia
-    perde -- ver relatório final da task)."""
+    """AG-031/B1 — substitui `..._tf_maior_amplia_folga_vs_15m`, que travava
+    exatamente o comportamento que este achado corrige: sob
+    `time_stop_bars` (contagem de barra), o horizonte crescia com `tf`
+    (16h a 30m, 32h a 1h — cruzava a fronteira de 24h só em 1h, ampliando
+    `mark_end`). Sob `time_stop_ms` (relógio fixo, 8h por padrão),
+    `fill_timeout_bars * step_ms(tf)` nunca chega perto de dominar o
+    `max(...)` em nenhum TF suportado — `mark_end` fica igual em 15m/30m/1h.
+    Continua usando `tf="1h"` (o caso que MAIS ampliaria sob a convenção
+    antiga) de propósito, agora como o teste que prova que não amplia mais."""
     cfg_15m = tb.LabelConfig.from_constants()
-    cfg_1h = replace(cfg_15m, tf="1h")
+    # AG-031/B1 -- mesmo raciocínio do teste acima: estimator_id precisa
+    # ser recalculado junto com tf, senão __post_init__ rejeita a config.
+    window_bars_1h = round(cfg_15m.atr_window_ms / step_ms("1h"))
+    cfg_1h = replace(cfg_15m, tf="1h", estimator_id=f"atr_wilder_w{window_bars_1h}")
 
     query_bars_calls_15m, _, _ = _patch_lake_and_grid_spies(monkeypatch)
     cs.build_cost_surface_grid_for_symbol(
@@ -542,4 +547,4 @@ def test_build_cost_surface_grid_for_symbol_tf_maior_amplia_folga_vs_15m(
     )
     mark_end_1h = query_bars_calls_1h[1][3]
 
-    assert mark_end_1h > mark_end_15m
+    assert mark_end_1h == mark_end_15m

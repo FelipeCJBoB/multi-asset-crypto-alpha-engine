@@ -6,7 +6,9 @@ populado pelo run de medição real do Sprint 6, não pela suíte de testes)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -15,8 +17,9 @@ from src.labels import experiment_log
 from src.labels.triple_barrier import LabelConfig
 
 _CFG = LabelConfig(
-    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_bars=32, fill_timeout_bars=1, atr_window=20,
-    maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w20",
+    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_ms=32 * 900_000, fill_timeout_bars=1,
+    atr_window_ms=20 * 900_000, maker_fee=0.0002, taker_fee=0.0005,
+    estimator_id="atr_wilder_w20",
 )
 
 
@@ -115,8 +118,9 @@ def test_record_experiment_acrescenta_sem_apagar_anterior(tmp_path: Path) -> Non
         path=log_path,
     )
     cfg_b = LabelConfig(
-        tp_atr_mult=2.5, sl_atr_mult=1.5, time_stop_bars=32, fill_timeout_bars=1, atr_window=20,
-        maker_fee=0.0002, taker_fee=0.0005, estimator_id="atr_wilder_w20",
+        tp_atr_mult=2.5, sl_atr_mult=1.5, time_stop_ms=32 * 900_000, fill_timeout_bars=1,
+        atr_window_ms=20 * 900_000, maker_fee=0.0002, taker_fee=0.0005,
+        estimator_id="atr_wilder_w20",
     )
     experiment_log.record_experiment(
         labels_b,
@@ -137,6 +141,119 @@ def test_record_experiment_acrescenta_sem_apagar_anterior(tmp_path: Path) -> Non
     second = out.filter(pl.col("experiment_id") == 2)
     assert second["config_hash"][0] == cfg_b.config_hash
     assert second["n_labels"][0] == 3
+
+
+def _legacy_schema_row(log_path: Path) -> None:
+    """Simula o arquivo REAL em disco (`experiments/label_engine_runs.
+    parquet`, existe desde 2026-08-09) escrito sob o `_SCHEMA` de ANTES do
+    AG-031/B1 -- sem a coluna `time_stop_ms`, `time_stop_bars` como fonte
+    única (Int32, populado). Bypassa `record_experiment` de propósito: o
+    objetivo é criar em disco exatamente o schema antigo, não o schema
+    atual com um valor antigo dentro."""
+    legacy_schema: dict[str, Any] = {
+        "experiment_id": pl.Int64,
+        "logged_at_utc": pl.Datetime("ms", "UTC"),
+        "sprint": pl.Int32,
+        "stage": pl.Utf8,
+        "symbol": pl.Utf8,
+        "period_start": pl.Utf8,
+        "period_end": pl.Utf8,
+        "config_hash": pl.Utf8,
+        "tp_atr_mult": pl.Float64,
+        "sl_atr_mult": pl.Float64,
+        "time_stop_bars": pl.Int32,
+        "fill_timeout_bars": pl.Int32,
+        "atr_window": pl.Int32,
+        "maker_fee": pl.Float64,
+        "taker_fee": pl.Float64,
+        "n_labels": pl.Int64,
+        "n_tp": pl.Int64,
+        "n_sl": pl.Int64,
+        "n_time": pl.Int64,
+        "n_nofill": pl.Int64,
+        "pct_tp": pl.Float64,
+        "pct_sl": pl.Float64,
+        "pct_time": pl.Float64,
+        "pct_nofill": pl.Float64,
+        "mean_ret_net": pl.Float64,
+        "std_ret_net": pl.Float64,
+        "sum_uniqueness": pl.Float64,
+        "notes": pl.Utf8,
+    }
+    legacy_row = {
+        "experiment_id": 1,
+        "logged_at_utc": datetime(2026, 8, 9, tzinfo=UTC),
+        "sprint": 6,
+        "stage": "labels_build",
+        "symbol": "BTCUSDT",
+        "period_start": "2020-01-01",
+        "period_end": "2026-08-08",
+        "config_hash": "legado0000000000",
+        "tp_atr_mult": 2.0,
+        "sl_atr_mult": 1.5,
+        "time_stop_bars": 32,
+        "fill_timeout_bars": 1,
+        "atr_window": 20,
+        "maker_fee": 0.0002,
+        "taker_fee": 0.0005,
+        "n_labels": 1000,
+        "n_tp": 300,
+        "n_sl": 300,
+        "n_time": 300,
+        "n_nofill": 100,
+        "pct_tp": 0.3,
+        "pct_sl": 0.3,
+        "pct_time": 0.3,
+        "pct_nofill": 0.1,
+        "mean_ret_net": 0.001,
+        "std_ret_net": 0.01,
+        "sum_uniqueness": 500.0,
+        "notes": "run pré-AG-031",
+    }
+    pl.DataFrame([legacy_row], schema=legacy_schema).write_parquet(log_path)
+
+
+def test_record_experiment_tolera_arquivo_real_com_schema_antigo_sem_time_stop_ms_nem_atr_window_ms(
+    tmp_path: Path,
+) -> None:
+    """AG-044 (achado de `project_assurance`) -- o `how="diagonal"` em
+    `record_experiment` existe especificamente pra tolerar o schema do
+    arquivo REAL (`experiments/label_engine_runs.parquet`, sem
+    `time_stop_ms` nem `atr_window_ms`), mas nenhum teste exercitava esse
+    caminho contra um frame de schema DIFERENTE -- só contra dois frames já
+    no schema atual. Este teste escreve o schema antigo de verdade em disco
+    (bypassando `record_experiment`, ver `_legacy_schema_row`) e confirma
+    que uma chamada real de `record_experiment` não levanta e produz as
+    duas linhas corretamente alinhadas por nome de coluna."""
+    log_path = tmp_path / "runs_legado.parquet"
+    _legacy_schema_row(log_path)
+
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol="BTCUSDT",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        path=log_path,
+    )
+
+    out = experiment_log.load_experiment_log(log_path)
+    assert out.height == 2
+    assert sorted(out["experiment_id"].to_list()) == [1, 2]
+
+    legacy_row = out.filter(pl.col("experiment_id") == 1)
+    assert legacy_row["time_stop_bars"][0] == 32
+    assert legacy_row["time_stop_ms"][0] is None
+    assert legacy_row["atr_window"][0] == 20
+    assert legacy_row["atr_window_ms"][0] is None
+
+    new_row = out.filter(pl.col("experiment_id") == 2)
+    assert new_row["time_stop_ms"][0] == _CFG.time_stop_ms
+    assert new_row["time_stop_bars"][0] is None
+    assert new_row["atr_window_ms"][0] == _CFG.atr_window_ms
+    assert new_row["atr_window"][0] is None
+    assert new_row["config_hash"][0] == _CFG.config_hash
 
 
 def test_record_experiment_notes_e_periodo_gravados(tmp_path: Path) -> None:

@@ -50,9 +50,20 @@ _SCHEMA: dict[str, Any] = {
     "config_hash": pl.Utf8,
     "tp_atr_mult": pl.Float64,
     "sl_atr_mult": pl.Float64,
+    # AG-031/B1 -- time_stop_bars (contagem de barra) aposentado como fonte
+    # de LabelConfig, mas a COLUNA fica (registro histórico de runs
+    # anteriores a 2026-08-16, todos em 32 barras @ 15m). Linhas novas
+    # gravam null aqui e o valor real em time_stop_ms (abaixo) -- não
+    # fabricar uma conversão pra trás que a config não tem mais.
     "time_stop_bars": pl.Int32,
+    "time_stop_ms": pl.Int64,
     "fill_timeout_bars": pl.Int32,
+    # AG-031/B1 -- mesmo padrão de time_stop_bars/time_stop_ms acima:
+    # atr_window (bars) aposentado como fonte de LabelConfig, coluna fica
+    # pro histórico, linhas novas gravam null aqui e o valor real em
+    # atr_window_ms.
     "atr_window": pl.Int32,
+    "atr_window_ms": pl.Int64,
     "maker_fee": pl.Float64,
     "taker_fee": pl.Float64,
     "n_labels": pl.Int64,
@@ -169,17 +180,25 @@ def record_experiment(
         "config_hash": config.config_hash,
         "tp_atr_mult": config.tp_atr_mult,
         "sl_atr_mult": config.sl_atr_mult,
-        "time_stop_bars": config.time_stop_bars,
+        "time_stop_bars": None,  # AG-031/B1 -- LabelConfig não tem mais este campo
+        "time_stop_ms": config.time_stop_ms,
         "fill_timeout_bars": config.fill_timeout_bars,
-        "atr_window": config.atr_window,
+        "atr_window": None,  # AG-031/B1 -- LabelConfig não tem mais este campo
+        "atr_window_ms": config.atr_window_ms,
         "maker_fee": config.maker_fee,
         "taker_fee": config.taker_fee,
         "notes": notes,
         **stats,
     }
     new_row = pl.DataFrame([row], schema=_SCHEMA)
+    # AG-031/B1 -- "diagonal" (não "vertical") porque o arquivo real em
+    # disco (label_engine_runs.parquet, existe desde 2026-08-09) foi escrito
+    # sob o _SCHEMA antigo, sem a coluna time_stop_ms -- alinha por NOME de
+    # coluna e preenche null onde falta, em vez de exigir schema idêntico.
+    # Mesmo padrão "aditivo, nunca migração destrutiva" de constants.yaml/
+    # architecture_gaps_log.yaml.
     combined = (
-        pl.concat([existing, new_row], how="vertical") if not existing.is_empty() else new_row
+        pl.concat([existing, new_row], how="diagonal") if not existing.is_empty() else new_row
     )
 
     log_path.parent.mkdir(parents=True, exist_ok=True)

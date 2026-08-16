@@ -834,7 +834,7 @@ def run_fase2_e1(
                     side=side,
                     tp_atr_mult=tp,
                     sl_atr_mult=sl,
-                    time_stop_bars=cfg.time_stop_bars,
+                    time_stop_ms=cfg.time_stop_ms,
                     maker_fee=cfg.maker_fee,
                     taker_fee=cfg.taker_fee,
                 )

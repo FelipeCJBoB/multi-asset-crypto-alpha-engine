@@ -62,10 +62,11 @@ deixadas implícitas** (task explícita: reportar toda interpretação):
 volatilidade que dimensiona TP/SL não é mais hardcoded em `group_c.
 c01_atr_20`/`c02_atr_20_pct` — `build_labels`/`build_labels_both_sides`
 recebem um `estimator: VolatilityEstimator | None` opcional
-(`src.features.volatility`), default `ATRWilderEstimator(window=cfg.
-atr_window)` (bit-idêntico ao comportamento anterior a esta mudança — o
-golden test `test_atr_wilder_estimator_bate_bit_exato_com_labels_v1`
-continua batendo `labels/v1/labels.parquet::atr_at_t0` sem alteração).
+(`src.features.volatility`), default `ATRWilderEstimator(window=round(cfg.
+atr_window_ms / bar_ms))` (AG-031/B1 — bit-idêntico ao comportamento
+anterior a esta mudança em `tf="15m"`, `window=20` — o golden test
+`test_atr_wilder_estimator_bate_bit_exato_com_labels_v1` continua batendo
+`labels/v1/labels.parquet::atr_at_t0` sem alteração).
 Isto fecha a lacuna que `src/features/volatility.py` (T0.1) deixou aberta
 desde a criação da interface: "a migração completa dos 135 pontos de
 fan-in (G-C0-2) é trabalho subsequente" — este é o ponto de fan-in de
@@ -73,10 +74,10 @@ maior criticidade (dimensiona `tp_price`/`sl_price`/`mfe_atr_units`/
 `atr_at_t0` de PRODUÇÃO), agora migrado.
 
 **`LabelConfig.estimator_id` é campo OBRIGATÓRIO, sem default mágico.**
-Cogitei um default auto-derivado de `atr_window` (`f"atr_wilder_w
-{atr_window}"`), mas isso quebra silenciosamente sob `dataclasses.
-replace(cfg, atr_window=novo)` — o `estimator_id` ficaria desatualizado
-(ainda citando o `atr_window` antigo) sem nenhum erro, exatamente o tipo
+Cogitei um default auto-derivado de `atr_window_ms` (`f"atr_wilder_w
+{window_bars}"`), mas isso quebra silenciosamente sob `dataclasses.
+replace(cfg, atr_window_ms=novo)` — o `estimator_id` ficaria desatualizado
+(ainda citando o `window_bars` antigo) sem nenhum erro, exatamente o tipo
 de drift silencioso que B15 existe para impedir. Melhor exigir explícito
 (mesma disciplina de `tp_atr_mult`/`sl_atr_mult`/etc.) do que inventar
 conveniência que esconde um bug depois. `build_labels` valida em runtime
@@ -147,6 +148,40 @@ _DEFAULT_TF: Final[str] = "15m"
 # string de TF que `step_ms` fala.
 _MINUTE_MS: Final[int] = 60_000
 
+# AG-031/B1 (audit/architecture_gaps_log.yaml) — até esta correção,
+# `time_stop_bars` (contagem de barra) era interpretado de forma MUTUAMENTE
+# INCOMPATÍVEL por dois módulos: `src.analysis.m2_bar_comparison` já tratava
+# como RELÓGIO fixo (8h sempre, independente do TF); este módulo tratava
+# como CONTAGEM DE BARRA fixa (`horizon_end_ms = t0 + time_stop_bars *
+# bar_ms` — 8h a 15m, 16h a 30m, 32h a 1h). A 15m as duas convenções
+# coincidem, por isso nunca gerou erro visível. PRD_V4_1.md já decidia isto
+# 3x (§2.7 I2/§3.2 M1/§4.2, "horizonte em relógio fixo") ANTES do bug
+# existir — `LabelConfig.time_stop_bars: int` (barras) vira
+# `time_stop_ms: int` (relógio), `horizon_end_ms = t0 + cfg.time_stop_ms`
+# direto, sem multiplicar por `bar_ms`. Valor default (32 barras @ 15m =
+# 28.800.000ms) é BIT-EXATO ao comportamento anterior para todo caller que
+# roda em `tf="15m"` (todo caller de produção hoje) — só diverge em
+# 30m/1h, exatamente onde a convenção antiga estava errada.
+#
+# `atr_window` tem a MESMA I2 do PRD (docs/refactor_dollar_bar_canonico.md
+# §2.3 Opção 2, linha 403: "qualquer opção escolhida aqui deve ser aplicada
+# no mesmo pacote de trabalho que atr_window... resolver só metade deixa a
+# barreira dimensionada numa unidade e o horizonte em outra") — INCLUÍDA
+# nesta correção. `LabelConfig.atr_window: int` (barras) vira `atr_window_ms:
+# int` (relógio) SÓ NESTE dataclass -- `constants.yaml::atr_window`
+# continua existindo, inalterada, porque o Feature Engine (`src/features/
+# build.py`, scripts de `src/analysis/`) consome a mesma constante
+# diretamente como contagem de barra, decisão deliberada e separada
+# (scaling_invariant: bar_count, AG-043/F1) que este dataclass não deveria
+# quebrar. `ATRWilderEstimator.window` (`src.features.volatility`) continua
+# recebendo um `int` em barras -- essa conversão acontece FORA do
+# estimador (`round(atr_window_ms / bar_ms)`, em `build_labels`/
+# `from_constants()`), não dentro dele. O `NotImplementedError` de
+# `estimate()` protege `horizon_minutes` (conversão do HORIZONTE de
+# previsão entre TFs, ainda não implementada) -- um problema DIFERENTE do
+# `window` (parâmetro de suavização), que não precisa de nenhum mecanismo
+# novo dentro do estimador para ser derivado do relógio.
+
 # Fator de conversão fração -> pontos-base — definição matemática, não
 # constante de domínio (mesma categoria de "60s por minuto" em resample.py).
 _BPS_PER_UNIT: Final[int] = 10_000
@@ -174,16 +209,37 @@ def _ms_epoch_to_utc(expr: pl.Expr) -> pl.Expr:
 @dataclass(frozen=True, slots=True)
 class LabelConfig:
     """Todo parâmetro que, se mudar, invalida labels já calculados (B15).
-    `tp_atr_mult`/`sl_atr_mult`/`time_stop_bars`/`atr_window`/`maker_fee`/
+    `tp_atr_mult`/`sl_atr_mult`/`time_stop_ms`/`atr_window_ms`/`maker_fee`/
     `taker_fee` já existem em `constants.yaml` (§0.2 R1/R2) — REUSADOS aqui,
     não redeclarados. `fill_timeout_bars` é a única constante nova do
     Sprint 6 (ver `constants.yaml`).
+
+    `time_stop_ms` (AG-031/B1, substitui `time_stop_bars: int`) é o
+    horizonte do label em RELÓGIO fixo — `horizon_end_ms = t0 +
+    time_stop_ms`, não mais `t0 + time_stop_bars * bar_ms`. Ver comentário
+    de módulo acima para o achado completo (duas interpretações
+    incompatíveis coexistindo, PRD já decidia relógio fixo 3x antes do bug).
+
+    `atr_window_ms` (AG-031/B1, substitui `atr_window: int` NESTE dataclass
+    só — a constante `atr_window` de `constants.yaml` continua existindo,
+    inalterada, pro Feature Engine) é a janela do `ATRWilderEstimator` em
+    RELÓGIO fixo, mesma I2 do PRD que `time_stop`. `build_labels` deriva
+    `window_bars = round(atr_window_ms / bar_ms)` na hora de construir o
+    estimador default — NÃO é o `horizon_minutes` que `VolatilityEstimator.
+    estimate()` valida (esse continua nativo da barra, `NotImplementedError`
+    fora daí, ver `src/features/volatility.py`); é só o parâmetro de
+    suavização (`window`), calculado FORA do estimador, ele não precisa de
+    nenhuma conversão relógio↔barra interna pra isso.
 
     `estimator_id` (2026-08-12) identifica qual `VolatilityEstimator`
     dimensiona TP/SL — OBRIGATÓRIO, sem default (ver docstring do módulo
     sobre por que um default auto-derivado de `atr_window` seria inseguro
     sob `dataclasses.replace`). `build_labels` valida em runtime que o
-    `estimator` de fato passado bate com este campo.
+    `estimator` de fato passado bate com este campo. `from_constants()`
+    deriva o `estimator_id` default USANDO o `window_bars` já ajustado ao
+    `tf` pedido (não um valor de referência fixo) — em `tf="15m"` continua
+    bit-exato `"atr_wilder_w20"`; em outro `tf`, o número muda porque a
+    contagem de barra REAL pra cobrir o mesmo relógio muda.
 
     `tf` (AG-005, substitui `decision_tf_minutes: int`) é o TF de decisão —
     NÃO é constante de domínio (não vem de `constants.yaml`, mesmo
@@ -196,9 +252,9 @@ class LabelConfig:
 
     tp_atr_mult: float
     sl_atr_mult: float
-    time_stop_bars: int
+    time_stop_ms: int
     fill_timeout_bars: int
-    atr_window: int
+    atr_window_ms: int
     maker_fee: float
     taker_fee: float
     estimator_id: str
@@ -209,34 +265,67 @@ class LabelConfig:
         # falha alto aqui, na construção, em vez de silenciosamente mais
         # tarde dentro de build_labels (mesma disciplina de
         # CPCVConfig.__post_init__, AG-004).
-        step_ms(self.tf)
+        bar_ms = step_ms(self.tf)
+
+        # AG-031/B1 -- `estimator_id` (convenção "atr_wilder_w{N}") agora
+        # codifica um window_bars que depende de DOIS campos, atr_window_ms
+        # E tf (não só atr_window_ms, como a docstring da classe já alertava
+        # sobre `dataclasses.replace`). `replace(cfg, tf=novo)` sem também
+        # recalcular `estimator_id` deixa os dois inconsistentes -- sem esta
+        # checagem, o erro só apareceria 2-3 chamadas depois, dentro de
+        # `build_labels`, com uma mensagem que não aponta pra causa raiz
+        # (visto na prática: `test_build_labels_horizon_e_invariante_a_tf_
+        # nao_escala_mais` quebrou assim). Só valida quando `estimator_id`
+        # segue essa convenção específica -- outros estimadores (ex.
+        # `"garman_klass_w20"`) não são tocados.
+        if self.estimator_id.startswith("atr_wilder_w"):
+            expected_window = round(self.atr_window_ms / bar_ms)
+            expected_id = f"atr_wilder_w{expected_window}"
+            if self.estimator_id != expected_id:
+                raise ValueError(
+                    f"estimator_id={self.estimator_id!r} inconsistente com "
+                    f"atr_window_ms={self.atr_window_ms}/tf={self.tf!r} "
+                    f"(esperado {expected_id!r}) -- dataclasses.replace(cfg, "
+                    "tf=... ou atr_window_ms=...) sem recalcular estimator_id "
+                    "junto invalida a config silenciosamente (AG-031/B1). Use "
+                    "LabelConfig.from_constants(tf=...) ou passe estimator_id "
+                    "explícito consistente."
+                )
 
     @classmethod
     def from_constants(
         cls, *, estimator_id: str | None = None, tf: str = _DEFAULT_TF
     ) -> LabelConfig:
         """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
-        no `atr_window` lido de `constants.yaml` — o estimador de produção
-        atual, comportamento inalterado desde antes desta classe existir.
-        Passar um `estimator_id` explícito (e o `estimator` correspondente
-        para `build_labels`) é como um chamador optaria por outro
-        estimador (ex. `GarmanKlassEstimator`, vencedor de M1 — ainda não
-        promovido a canônico, ver `docs/refactor_gk_canonico.md`).
+        no `atr_window_ms` lido de `constants.yaml` — o estimador de
+        produção atual, comportamento inalterado desde antes desta classe
+        existir (bit-exato a `atr_window=20` em `tf="15m"`). Passar um
+        `estimator_id` explícito (e o `estimator` correspondente para
+        `build_labels`) é como um chamador optaria por outro estimador
+        (ex. `GarmanKlassEstimator`, vencedor de M1 — ainda não promovido
+        a canônico, ver `docs/refactor_gk_canonico.md`).
 
         `tf` (AG-005) não vem de `constants.yaml` — mesmo raciocínio de
         `CPCVConfig.from_constants(*, tf=...)`, é parâmetro de execução do
         chamador (M2/M3 rodando 30m/1h passam `tf="30m"`/`tf="1h"` aqui),
-        não um valor medido/otimizado do domínio."""
-        atr_window = int(load_constant("atr_window"))
+        não um valor medido/otimizado do domínio.
+
+        `estimator_id` default usa `window_bars` já ajustado a `tf` (AG-031/
+        B1) -- mesma derivação que `build_labels` faz na hora de construir
+        o estimador default, garantindo que os dois nunca divirjam (senão a
+        validação `resolved_estimator.estimator_id != cfg.estimator_id`
+        dispararia até no caminho default)."""
+        atr_window_ms = int(load_constant("atr_window_ms"))
+        window_bars = round(atr_window_ms / step_ms(tf))
         resolved_estimator_id = (
-            estimator_id if estimator_id is not None else f"atr_wilder_w{atr_window}"
+            estimator_id if estimator_id is not None else f"atr_wilder_w{window_bars}"
         )
         return cls(
             tp_atr_mult=float(load_constant("tp_atr_mult")),
             sl_atr_mult=float(load_constant("sl_atr_mult")),
-            time_stop_bars=int(load_constant("time_stop_bars")),
+            time_stop_ms=int(load_constant("time_stop_ms")),
             fill_timeout_bars=int(load_constant("fill_timeout_bars")),
-            atr_window=atr_window,
+            atr_window_ms=atr_window_ms,
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
             estimator_id=resolved_estimator_id,
@@ -263,13 +352,19 @@ class LabelConfig:
         semanticamente) — mesma categoria de mudança intencional, mesmo
         motivo: um `config_hash` antigo comparado contra um novo já
         divergiria por `estimator_id`; este campo não reabre nenhuma
-        janela de comparação que já não estivesse fechada."""
+        janela de comparação que já não estivesse fechada.
+
+        **Muda de valor de novo com AG-031/B1** (payload key
+        `time_stop_bars` -> `time_stop_ms` E `atr_window` -> `atr_window_ms`,
+        mesmo valor numérico em 15m — 28.800.000ms == 32 barras,
+        18.000.000ms == 20 barras) — mesma categoria de mudança intencional
+        pelo mesmo motivo: já divergiria por `tf`/`estimator_id`."""
         payload = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
-            "time_stop_bars": self.time_stop_bars,
+            "time_stop_ms": self.time_stop_ms,
             "fill_timeout_bars": self.fill_timeout_bars,
-            "atr_window": self.atr_window,
+            "atr_window_ms": self.atr_window_ms,
             "maker_fee": self.maker_fee,
             "taker_fee": self.taker_fee,
             "estimator_id": self.estimator_id,
@@ -306,10 +401,23 @@ def verify_config_hash(labels: pl.DataFrame, execution_config: LabelConfig) -> N
         )
 
 
-def assert_label_invariants(labels: pl.DataFrame, *, time_stop_bars: int) -> None:
+def assert_label_invariants(labels: pl.DataFrame, *, time_stop_ms: int) -> None:
     """§3.8 — as seis invariantes do PRD, como função reusável em vez de
     `assert` solto: chamada pelos testes E disponível para o caminho real
-    (validation/backtest) validar um `labels.parquet` antes de consumir."""
+    (validation/backtest) validar um `labels.parquet` antes de consumir.
+
+    **AG-031/B1** — o teto era `n_bars_held <= time_stop_bars` (contagem de
+    barra). `docs/refactor_dollar_bar_canonico.md` (achado "invariante que
+    presume espaçamento uniforme") já registrava que esse teto só vale
+    porque `n_bars_held`/`horizon_end_ms` usam o mesmo `bar_ms` — vira vácuo
+    ou falso assim que um dos dois deixa de ser contagem de barra fixa
+    (exatamente o que `time_stop_ms` faz). Substituído por um teto direto em
+    RELÓGIO sobre `t1 - t0` (não depende de `bar_ms`/`n_bars_held` para
+    nada) — mais direto E fecha essa fragilidade preventivamente, antes de
+    dollar bar tornar `n_bars_held` uma contagem real necessária (item 10 da
+    tabela `PLANO_MESTRE_PRINCE2.md` §11.5, ainda não implementado).
+    `NOFILL` fica de fora do teto (seu `t1` vem de `fill_timeout`, não de
+    `time_stop` — nunca esteve sob este horizonte)."""
     assert bool((labels["t1"] > labels["t0"]).all()), "t1 <= t0 em alguma linha"
 
     entry_null = labels["t_entry"].is_null()
@@ -327,7 +435,10 @@ def assert_label_invariants(labels: pl.DataFrame, *, time_stop_bars: int) -> Non
     tolerance = 1e-6  # literal do próprio §3.8 do PRD, não escolha nova  # noqa: magic-number
     assert abs(mean_w - 1.0) < tolerance, f"sample_weight.mean() = {mean_w}, esperado ~1.0"
 
-    assert bool((labels["n_bars_held"] <= time_stop_bars).all()), "n_bars_held > time_stop_bars"
+    non_nofill = labels.filter(labels["barrier_hit"].cast(pl.Utf8) != "NOFILL")
+    if non_nofill.height:
+        held_ms = (non_nofill["t1"] - non_nofill["t0"]).dt.total_milliseconds()
+        assert bool((held_ms <= time_stop_ms).all()), "t1 - t0 > time_stop_ms em alguma linha"
 
     uniq = labels["uniqueness"]
     assert bool(((uniq >= 0.0) & (uniq <= 1.0)).all()), "uniqueness fora de [0, 1]"
@@ -537,7 +648,13 @@ _PRE_WEIGHT_SCHEMA: dict[str, Any] = {
     "atr_at_t0": pl.Float64,
     "mfe_atr_units": pl.Float64,
     "n_bars_held": pl.Int16,
-    "n_funding_events": pl.Int8,
+    # AG-031/B1 -- Int8 (max 127) já era risco de overflow latente se o
+    # horizonte fosse reexpresso e alguém aumentado (docs/refactor_dollar_
+    # bar_canonico.md). Widening preventivo, sem custo: `time_stop_ms`
+    # nesta PR preserva o valor de horizonte atual (8h) bit-exato em 15m,
+    # não aumenta o risco por si só -- mas já que este schema está sendo
+    # tocado pela mesma correção, fechar o risco aqui é grátis.
+    "n_funding_events": pl.Int16,
     "filters_hash": pl.Utf8,
     "config_hash": pl.Utf8,
 }
@@ -658,7 +775,8 @@ def build_labels(
     `funding`: schema `FUNDING` (`calc_time` epoch ms, `last_funding_rate`).
 
     `estimator` (`None` default) resolve para `ATRWilderEstimator(window=
-    cfg.atr_window)` — comportamento de produção inalterado. Passar outro
+    round(cfg.atr_window_ms / bar_ms))` — comportamento de produção
+    inalterado em `tf="15m"` (AG-031/B1). Passar outro
     `VolatilityEstimator` (`src.features.volatility`) exige que
     `cfg.estimator_id` bata com `estimator.estimator_id`, ou levanta
     `ValueError` (ver docstring do módulo/`LabelConfig`) — nunca deixa o
@@ -670,8 +788,25 @@ def build_labels(
     if side not in (1, -1):
         raise ValueError(f"side deve ser 1 (long) ou -1 (short), recebido {side}")
     cfg = config if config is not None else LabelConfig.from_constants()
+
+    # AG-005 -- `bar_ms` substitui a antiga constante de módulo `_BAR_MS`
+    # (fixa em 15m); TODA a aritmética de horizonte/fill/n_bars_held abaixo
+    # usa isto, não mais um literal. `tf_minutes` é só pra falar a
+    # linguagem (`timeframe_minutes: int`) que `Bars`/`VolatilityEstimator`
+    # exigem (src.features.volatility) -- mesmo `cfg.tf`, unidade diferente.
+    # Movido pra ANTES da resolução do estimador (AG-031/B1): o default
+    # precisa de bar_ms pra derivar window_bars de atr_window_ms.
+    bar_ms = step_ms(cfg.tf)
+    tf_minutes = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
+
+    # AG-031/B1 -- window em barras derivado do relógio (atr_window_ms),
+    # mesma derivação que LabelConfig.from_constants() usa pro estimator_id
+    # default (os dois têm que bater, senão a validação abaixo dispara até
+    # no caminho default). Bit-exato a window=20 em tf="15m".
     resolved_estimator = (
-        estimator if estimator is not None else ATRWilderEstimator(window=cfg.atr_window)
+        estimator
+        if estimator is not None
+        else ATRWilderEstimator(window=round(cfg.atr_window_ms / bar_ms))
     )
     if resolved_estimator.estimator_id != cfg.estimator_id:
         raise ValueError(
@@ -690,14 +825,6 @@ def build_labels(
     high = bars["high"].cast(pl.Float64).to_numpy()
     low = bars["low"].cast(pl.Float64).to_numpy()
     t0_arr = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
-
-    # AG-005 -- `bar_ms` substitui a antiga constante de módulo `_BAR_MS`
-    # (fixa em 15m); TODA a aritmética de horizonte/fill/n_bars_held abaixo
-    # usa isto, não mais um literal. `tf_minutes` é só pra falar a
-    # linguagem (`timeframe_minutes: int`) que `Bars`/`VolatilityEstimator`
-    # exigem (src.features.volatility) -- mesmo `cfg.tf`, unidade diferente.
-    bar_ms = step_ms(cfg.tf)
-    tf_minutes = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
 
     # `estimator.estimate()` já retorna fração do preço (mesma escala que
     # `atr_pct` sempre teve) -- 2026-08-12, ver docstring do módulo.
@@ -784,7 +911,7 @@ def build_labels(
                 "fill_price None com t_entry_ms definido — contrato de FillResult quebrado"
             )
 
-        horizon_end_ms = t0 + cfg.time_stop_bars * bar_ms
+        horizon_end_ms = t0 + cfg.time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
         if horizon_end_ms > max_mark_open_time:
             n_incomplete_tail += 1
             continue
@@ -825,7 +952,25 @@ def build_labels(
         funding_frac = float(np.nansum(events_rate)) * side
 
         ret_net = ret_gross - cost_entry_frac - cost_exit_frac - funding_frac
-        n_bars_held = int(np.ceil((t1 - t0) / bar_ms)) if t1 > t0 else 0
+        # AG-031/B1 -- n_bars_held vira contagem REAL de barras (busca em
+        # t0_arr), não mais ceil((t1-t0)/bar_ms) (docs/refactor_dollar_bar_
+        # canonico.md, "invariante que presume espaçamento uniforme").
+        # `i` é a posição da própria barra de decisão (t0 = t0_arr[i]);
+        # `idx1` é o índice da ÚLTIMA barra de decisão com close_time <= t1.
+        # `t0_arr` só cobre até `end` (ao contrário de mark_1m, que tem
+        # folga extra além de `end` -- ver build_labels_for_symbol), então
+        # a cauda do intervalo pedido pode ter t1 além do último decision
+        # bar carregado; nesse caso o restante é reconstruído por
+        # aritmética a partir do último bar real, preservando bit-exatidão
+        # com a fórmula antiga na grade de tempo atual (nenhum dado real
+        # existe pra contar além do que foi carregado).
+        if t1 <= t0:
+            n_bars_held = 0
+        elif t1 <= int(t0_arr[-1]):
+            idx1 = int(np.searchsorted(t0_arr, t1, side="right")) - 1
+            n_bars_held = idx1 - i
+        else:
+            n_bars_held = (n - 1 - i) + int(np.ceil((t1 - t0_arr[-1]) / bar_ms))
 
         # D3 (Faixa 2) — excursão favorável máxima, em unidades de ATR (mesma
         # normalização de tp_price/sl_price: `fill_px * mult * atr_pct_i`).
@@ -962,27 +1107,33 @@ def build_labels_for_symbol(
     desta correção, documentado explicitamente em vez de deixado implícito.
 
     `mark_1m`/`funding` são buscados com folga ALÉM de `end` — o suficiente
-    pra cobrir `max(time_stop_bars, fill_timeout_bars) * step_ms(cfg.tf)`
-    (o maior horizonte possível no TF pedido) MAIS 1 dia de margem extra.
-    Antes do AG-005 a folga era um "1 dia" fixo, calibrado só pro caso 15m
-    (`time_stop_bars=32 * 15m = 8h`, bem abaixo de 24h) — em 1h
-    (`32 * 1h = 32h`) essa folga fixa seria insuficiente e descartaria
-    labels reais por "cauda incompleta" silenciosamente (bloqueador real
-    pra M2/M3, PRD_V4_1.md §3.2). Sem isso, os últimos labels do intervalo
-    pedido seriam descartados apesar do dado existir logo depois de `end`.
+    pra cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.
+    tf))` (o maior horizonte possível no TF pedido) MAIS 1 dia de margem
+    extra. Antes do AG-005 a folga era um "1 dia" fixo, calibrado só pro
+    caso 15m — em TF maior (quando o horizonte ainda era `time_stop_bars *
+    step_ms(tf)`, crescendo com o TF) essa folga fixa seria insuficiente e
+    descartaria labels reais por "cauda incompleta" silenciosamente
+    (bloqueador real pra M2/M3, PRD_V4_1.md §3.2). **AG-031/B1** — com
+    `time_stop_ms` fixo (relógio, não mais barras), o termo dominante do
+    `max(...)` deixa de crescer com `tf`: a folga por `time_stop` agora É a
+    mesma em qualquer TF (8h, por padrão), só `fill_timeout_bars *
+    step_ms(cfg.tf)` ainda escala (e é sempre pequeno comparado a 8h). Sem
+    isso, os últimos labels do intervalo pedido seriam descartados apesar
+    do dado existir logo depois de `end`.
 
     `estimator=None` (default) preserva o comportamento de produção atual
     (`ATRWilderEstimator`, ver `build_labels`). Este é o ÚNICO ponto de
     entrada real com IO deste módulo -- é aqui que promover GK a canônico
     de fato aconteceria (`docs/refactor_gk_canonico.md`), passando
-    `estimator=GarmanKlassEstimator(window=cfg.atr_window)` e um `config`
-    com `estimator_id="garman_klass_w{window}"` -- NÃO feito por padrão
-    aqui, decisão explícita pendente de quem chama."""
+    `estimator=GarmanKlassEstimator(window=round(cfg.atr_window_ms /
+    step_ms(cfg.tf)))` e um `config` com `estimator_id="garman_klass_w
+    {window}"` -- NÃO feito por padrão aqui, decisão explícita pendente de
+    quem chama."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
     bars_15m = lake.query_bars(symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True)
 
-    horizon_ms = max(cfg.time_stop_bars, cfg.fill_timeout_bars) * step_ms(cfg.tf)
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
     mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True

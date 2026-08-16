@@ -313,7 +313,13 @@ def main() -> None:
         )
         return
 
-    pooled_df = pl.concat(pooled_resolved, how="vertical")
+    # AG-045 (achado de project_assurance sobre AG-031/B1) -- "vertical"
+    # estrito quebraria com SchemaError se os 5 símbolos não forem
+    # regenerados atomicamente sob o mesmo dtype de n_funding_events
+    # (Int8->Int16, triple_barrier.py). "vertical_relaxed" tolera o dtype
+    # divergindo por coluna, promovendo ao supertipo comum -- não muda o
+    # resultado quando os 5 já estão no mesmo dtype (caso de hoje).
+    pooled_df = pl.concat(pooled_resolved, how="vertical_relaxed")
     pooled_n_bars_held = pooled_df["n_bars_held"].cast(pl.Float64).to_numpy()
     pooled_cost = pooled_df[_COST_COL].to_numpy()
     pooled_valid_mask = np.isfinite(pooled_n_bars_held) & np.isfinite(pooled_cost)

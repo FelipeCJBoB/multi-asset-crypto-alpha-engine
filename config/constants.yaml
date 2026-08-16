@@ -164,19 +164,37 @@ sl_atr_mult:
 time_stop_bars:
   value: 32
   provenance: ASSUMED
-  source: "justificado por 'uma janela de funding' — estética pós-hoc (§18.5.1), não derivação. Define amostra efetiva e teto de features."
+  source: "SUPERSEDIDO 2026-08-16 por time_stop_ms (AG-031/B1) -- horizonte do label vira relógio fixo, não mais contagem de barra (PRD_V4_1.md §2.7 I2/§3.2 M1/§4.2, decidido 3x antes desta correção). Entrada mantida como registro histórico -- ainda referenciada por tools/diagnostics/measure_time_stop_slack.py e measure_n_bars_held_vs_cost_and_regime.py (estudam a censura no teto de barras sobre dado 15m já persistido, onde 32 barras == time_stop_ms bit-exato). Justificativa original: 'uma janela de funding' — estética pós-hoc (§18.5.1), não derivação. Define amostra efetiva e teto de features."
   class: A
   sweep_required: true
   sweep_range: [16, 48]
   review_by: sprint_6
 
+time_stop_ms:
+  value: 28800000
+  provenance: DERIVED
+  source: "derivado de time_stop_bars(32, ASSUMED) × step_ms('15m')=900000 -- mesmo valor (8h), reexpresso em relógio fixo (AG-031/B1). horizon_end_ms = t0 + time_stop_ms, direto, sem depender de tf/bar_ms -- mesmo padrão de cpcv_embargo_ms (AG-032/E1). A suposição de horizonte em si (8h) permanece ASSUMED e sem sweep de sensibilidade feito -- este valor só reexpressa a unidade, não resolve o sweep_required herdado de time_stop_bars."
+  class: A
+  sweep_required: true
+  sweep_range: [14400000, 43200000]
+  review_by: sprint_6
+
 atr_window:
   value: 20
   provenance: ASSUMED
-  source: "convenção de mercado, sem teste (§18.5.1) — define a própria medida de volatilidade que dimensiona barreiras"
+  source: "SUPERSEDIDO 2026-08-16 (só pro Label Engine) por atr_window_ms (AG-031/B1) -- LabelConfig.atr_window_ms passa a ser a fonte canônica de janela do ATRWilderEstimator que dimensiona TP/SL. Esta entrada CONTINUA em uso direto e inalterado pelo Feature Engine (src/features/build.py:90,142, c01_atr_20/c02_atr_20_pct -- scaling_invariant: bar_count, decisão deliberada e separada, ver AG-043/F1) e por scripts de pesquisa em src/analysis/ -- não renomear/apagar. Justificativa original: convenção de mercado, sem teste (§18.5.1) — define a própria medida de volatilidade que dimensiona barreiras."
   class: A
   sweep_required: true
   sweep_range: [10, 30]
+  review_by: sprint_6
+
+atr_window_ms:
+  value: 18000000
+  provenance: DERIVED
+  source: "derivado de atr_window(20, ASSUMED) × step_ms('15m')=900000 -- mesmo valor (5h), reexpresso em relógio fixo pro Label Engine (AG-031/B1), mesmo padrão de time_stop_ms. Usado só por LabelConfig/build_labels (src/labels/triple_barrier.py) pra derivar o window em barras do ATRWilderEstimator default via round(atr_window_ms / step_ms(cfg.tf)) -- bit-exato a 20 barras em tf='15m' (todo caller de produção hoje). NÃO usado pelo Feature Engine -- atr_window (acima) continua sendo a fonte dele, deliberadamente em contagem de barra. A suposição de janela em si (5h) permanece ASSUMED, sweep_required herdado."
+  class: A
+  sweep_required: true
+  sweep_range: [9000000, 27000000]
   review_by: sprint_6
 
 canonical_volatility_estimator:

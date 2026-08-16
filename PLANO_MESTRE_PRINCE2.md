@@ -705,7 +705,7 @@ escrito no fim, é o estado real.
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
 | `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
 | `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
-| `labels` (`src/labels/triple_barrier.py`) | horizonte do label em relógio fixo (B1 = Opção 2), mesmo pacote que `atr_window` | ⬜ não iniciado | `AG-031` |
+| `labels` (`src/labels/triple_barrier.py` + `barrier_sweep.py`/`cost_surface.py`/`backfill_multi_symbol.py`/`experiment_log.py`) | horizonte do label em relógio fixo (B1 = Opção 2), `time_stop_bars`→`time_stop_ms`, `atr_window`→`atr_window_ms` (Label Engine só), `n_bars_held` vira contagem real | ✅ implementado, escopo COMPLETO (Manager decidiu incluir atr_window + n_bars_held real), revisado (`project_assurance`), aguarda pytest | `AG-031`, `AG-044`..`048` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `threshold_usdt`/`resolution_id`/`grade_id`, abandona nomes M15/M30/H1 (B2 = A′+D) | ⬜ não iniciado — depende de `grade_id` (item abaixo) | `AG-042` |
 | `validation` (`assert_tf_consistent`) | guard vira igualdade discreta de `grade_id`, não mais `rtol` estatístico | ⬜ não iniciado | `AG-037` (achado `project_assurance`) |
 | `features` (`constants.yaml`, `support.py`) | `scaling_invariant` ganha `activity`; A13 vira F1 explícito; correção de `sqrt(window)`/Yang-Zhang/asof-join | ⬜ não iniciado | `AG-043` |
@@ -1284,6 +1284,59 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.13 (2026-08-16)** — Bug de raiz corrigido, achado pelo usuário
+  rodando pytest sobre v3.12: `estimator_id` (convenção `atr_wilder_w{N}`)
+  depende de `atr_window_ms` E `tf` juntos, mas `dataclasses.replace(cfg,
+  tf=novo)` só atualiza `tf` — mesma classe de risco que a docstring da
+  classe já citava pra `atr_window_ms` sozinho, dependência de `tf` não
+  reconhecida. Solução: validação em `LabelConfig.__post_init__` (falha na
+  construção, não 2-3 chamadas depois dentro de `build_labels`). Expôs de
+  quebra um bug pré-existente mais antigo (11 construções de teste com
+  `atr_window_ms=20` literal, devia ser `20*900_000`) e 3 call-sites de
+  teste com `replace(cfg, tf=X)` incompletos — nenhum caller de produção
+  real afetado. Detalhe completo em `AG-031`.
+
+- **v3.12 (2026-08-16)** — AG-031/B1 fechado com escopo COMPLETO. Manager
+  pediu releitura de `docs/refactor_dollar_bar_canonico.md` + artefato
+  "Bloqueadores Dollar Bar" pra checar alinhamento — achou duas divergências
+  entre o que v3.11 tinha entregue e o que estava decidido: (1) linha 403
+  do doc é taxativa que `time_stop`/`atr_window` têm que fechar no MESMO
+  pacote, mais forte do que o texto do AG-031 sozinho sugeria; (2) linha
+  379 pede `n_bars_held` como contagem REAL, não só o invariante trocado.
+  Manager decidiu incluir os dois. `atr_window` implementado como
+  `atr_window_ms` (mesmo padrão de `time_stop_ms`, nova constante
+  `constants.yaml`, `constants.yaml::atr_window` original preservada pro
+  Feature Engine que a usa em paralelo, deliberadamente em barras).
+  Achado de processo: a exclusão original de `atr_window` citava o
+  `NotImplementedError` de `ATRWilderEstimator.estimate()` como bloqueio —
+  leitura equivocada (esse guard protege `horizon_minutes`, não `window`).
+  `n_bars_held` vira contagem real via busca em array (`t0_arr` no motor
+  escalar, novo parâmetro opcional `decision_bar_close_time_ms` no
+  vetorizado), com fallback aritmético pra cauda sem buffer e testes novos
+  provando detecção de gap real (não é reformulação equivalente da
+  aritmética). `AG-047`/`AG-048` registram as duas decisões do Manager.
+
+- **v3.11 (2026-08-16)** — AG-031/B1 implementado: `LabelConfig.
+  time_stop_bars`→`time_stop_ms` (relógio fixo), mesma classe de bug do
+  AG-004/AG-032 (parâmetro interpretado incompatível por `triple_barrier.py`
+  vs. `m2_bar_comparison.py`). 7 arquivos de produção + 4 de teste tocados;
+  3 testes que travavam a convenção ANTIGA ("horizonte escala com TF")
+  reescritos pro invariante correto. `atr_window` (mesma I2) EXCLUÍDO do
+  escopo por decisão de implementação — `ATRWilderEstimator` não tem
+  conversão relógio↔barra, constante compartilhada com Feature Engine,
+  mudança não seria neutra (muda suavização real do Wilder ATR entre TFs).
+  Revisão independente (`project_assurance`, Agent fresco) achou 4 gaps
+  reais, não no núcleo técnico: `AG-044` (alto — mecanismo de tolerância
+  a schema antigo em `experiment_log.py` nunca tinha sido testado contra
+  schema real, corrigido na hora com teste novo), `AG-045` (médio — risco
+  de `SchemaError` em pooling se regeneração de `labels.parquet` ficar
+  parcial entre os 5 símbolos, corrigido na hora com `vertical_relaxed`),
+  `AG-046` (médio — `time_stop_bars`/`time_stop_ms` sem guard de
+  sincronização, mesmo trade-off já aceito em `cpcv_embargo_bars`/`_ms`,
+  registrado não corrigido), `AG-047` (médio — este próprio changelog não
+  registrava a restrição de escopo do `atr_window`, corrigido). Pendente:
+  confirmação de pytest antes de commitar.
 
 - **v3.10 (2026-08-16)** — E1 fechado. Usuário confirmou `uv run pytest
   tests/unit/test_validation_cpcv.py -v` → **42 passed in 2,37s**, nenhuma

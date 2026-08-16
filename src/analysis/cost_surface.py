@@ -389,18 +389,20 @@ def build_cost_surface_grid_for_symbol(
     ponto de entrada tinha sua própria cópia independente do hardcode.
 
     `mark_1m`/`funding` buscados com folga ALÉM de `end` — o suficiente pra
-    cobrir `max(time_stop_bars, fill_timeout_bars) * step_ms(cfg.tf)` (o
-    maior horizonte possível no TF pedido) MAIS 1 dia de margem extra, mesmo
-    padrão de `triple_barrier.build_labels_for_symbol` (AG-005). Antes da
-    correção a folga era um "1 dia" fixo calibrado só pro caso 15m — em TF
-    maior (`time_stop_bars`/`fill_timeout_bars` expressos em barras, não em
-    tempo) essa folga fixa poderia ser insuficiente e descartar labels reais
-    por "cauda incompleta" silenciosamente."""
+    cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))`
+    (o maior horizonte possível no TF pedido) MAIS 1 dia de margem extra,
+    mesmo padrão de `triple_barrier.build_labels_for_symbol` (AG-005/
+    AG-031/B1). Antes da correção AG-005 a folga era um "1 dia" fixo
+    calibrado só pro caso 15m — quando `time_stop_bars`/`fill_timeout_bars`
+    eram expressos em barras (crescendo com o TF), essa folga fixa podia
+    ser insuficiente e descartar labels reais por "cauda incompleta"
+    silenciosamente. **AG-031/B1** — com `time_stop_ms` fixo (relógio), o
+    termo dominante do `max(...)` deixa de crescer com `tf`."""
     cfg = base_config if base_config is not None else LabelConfig.from_constants()
 
     bars_15m = lake.query_bars(symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True)
 
-    horizon_ms = max(cfg.time_stop_bars, cfg.fill_timeout_bars) * step_ms(cfg.tf)
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
     mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True
