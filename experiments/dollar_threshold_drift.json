@@ -1,0 +1,388 @@
+{
+  "generated_at": "2026-08-16T21:43:42.774831+00:00",
+  "code_version": "c719dea",
+  "measurement_provenance": "MEASURED -- soma real de price*quantity (aggTrades) por (symbol, window), via src.analysis.m2_worker._scan_trades_totals (mesma função que M2 usa para calibrar dollar_threshold, reaproveitada sem reimplementação -- ver docstring do módulo). NÃO é o proxy de bytes/contagem de trades de docs/refactor_dollar_bar_canonico.md §3.1: aquele media contagem de linhas (bytes comprimidos ∝ nº de trades), não volume em dólar. Responde P-1 (§7) do mesmo doc.",
+  "windows": [
+    {
+      "name": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31
+    },
+    {
+      "name": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30
+    },
+    {
+      "name": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30
+    },
+    {
+      "name": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31
+    },
+    {
+      "name": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31
+    }
+  ],
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "results": [
+    {
+      "symbol": "BTCUSDT",
+      "window": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31,
+      "total_dollar": 454967217955.49365,
+      "total_volume": 14463715.773999998,
+      "n_ticks": 60764860,
+      "dollar_per_day": 14676361869.53,
+      "vs_min_ratio": 1.6679
+    },
+    {
+      "symbol": "BTCUSDT",
+      "window": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30,
+      "total_dollar": 326649142966.7899,
+      "total_volume": 18460614.012999997,
+      "n_ticks": 36885751,
+      "dollar_per_day": 10888304765.56,
+      "vs_min_ratio": 1.2374
+    },
+    {
+      "symbol": "BTCUSDT",
+      "window": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30,
+      "total_dollar": 392456088085.9144,
+      "total_volume": 14099299.272999994,
+      "n_ticks": 39024962,
+      "dollar_per_day": 13081869602.86,
+      "vs_min_ratio": 1.4867
+    },
+    {
+      "symbol": "BTCUSDT",
+      "window": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31,
+      "total_dollar": 788206045479.3694,
+      "total_volume": 11717578.298,
+      "n_ticks": 66512993,
+      "dollar_per_day": 25426001467.08,
+      "vs_min_ratio": 2.8896
+    },
+    {
+      "symbol": "BTCUSDT",
+      "window": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31,
+      "total_dollar": 272771098059.2383,
+      "total_volume": 4297823.617,
+      "n_ticks": 34057419,
+      "dollar_per_day": 8799067679.33,
+      "vs_min_ratio": 1.0
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31,
+      "total_dollar": 169271430765.62677,
+      "total_volume": 79037735.62599999,
+      "n_ticks": 42599184,
+      "dollar_per_day": 5460368734.38,
+      "vs_min_ratio": 1.0
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30,
+      "total_dollar": 283226702359.907,
+      "total_volume": 218097493.25300002,
+      "n_ticks": 44954740,
+      "dollar_per_day": 9440890078.66,
+      "vs_min_ratio": 1.729
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30,
+      "total_dollar": 166127835698.24686,
+      "total_volume": 91463493.06200002,
+      "n_ticks": 24368924,
+      "dollar_per_day": 5537594523.27,
+      "vs_min_ratio": 1.0141
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31,
+      "total_dollar": 354966194421.636,
+      "total_volume": 98257946.66299997,
+      "n_ticks": 53472384,
+      "dollar_per_day": 11450522400.7,
+      "vs_min_ratio": 2.097
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31,
+      "total_dollar": 214632981391.83316,
+      "total_volume": 117588875.539,
+      "n_ticks": 30376663,
+      "dollar_per_day": 6923644561.03,
+      "vs_min_ratio": 1.268
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31,
+      "total_dollar": 36283859561.978004,
+      "total_volume": 658511004.0,
+      "n_ticks": 9905515,
+      "dollar_per_day": 1170447082.64,
+      "vs_min_ratio": 1.9632
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30,
+      "total_dollar": 41424236419.85,
+      "total_volume": 2385079852.0,
+      "n_ticks": 24109462,
+      "dollar_per_day": 1380807880.66,
+      "vs_min_ratio": 2.316
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30,
+      "total_dollar": 17886120029.224,
+      "total_volume": 1062588660.0,
+      "n_ticks": 9080215,
+      "dollar_per_day": 596204000.97,
+      "vs_min_ratio": 1.0
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31,
+      "total_dollar": 151389638273.15298,
+      "total_volume": 918161633.0,
+      "n_ticks": 53567556,
+      "dollar_per_day": 4883536718.49,
+      "vs_min_ratio": 8.191
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31,
+      "total_dollar": 39274719704.03119,
+      "total_volume": 507701204.65999997,
+      "n_ticks": 6657259,
+      "dollar_per_day": 1266926442.07,
+      "vs_min_ratio": 2.125
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31,
+      "total_dollar": 17473834581.411865,
+      "total_volume": 55700340.67,
+      "n_ticks": 11579649,
+      "dollar_per_day": 563672083.27,
+      "vs_min_ratio": 2.6275
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30,
+      "total_dollar": 25851861250.00863,
+      "total_volume": 84716301.83000001,
+      "n_ticks": 14213318,
+      "dollar_per_day": 861728708.33,
+      "vs_min_ratio": 4.0169
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30,
+      "total_dollar": 19018362408.93881,
+      "total_volume": 76833371.67999999,
+      "n_ticks": 7745085,
+      "dollar_per_day": 633945413.63,
+      "vs_min_ratio": 2.9551
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31,
+      "total_dollar": 31577001664.833817,
+      "total_volume": 59307314.66,
+      "n_ticks": 17838313,
+      "dollar_per_day": 1018612956.93,
+      "vs_min_ratio": 4.7482
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31,
+      "total_dollar": 6650364558.847601,
+      "total_volume": 11612418.680000002,
+      "n_ticks": 5903713,
+      "dollar_per_day": 214527889.0,
+      "vs_min_ratio": 1.0
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "luna",
+      "start": "2022-05-01",
+      "end": "2022-05-31",
+      "n_days": 31,
+      "total_dollar": 14631768336.706308,
+      "total_volume": 31832097343.5,
+      "n_ticks": 6001910,
+      "dollar_per_day": 471992526.99,
+      "vs_min_ratio": 1.0897
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "ftx",
+      "start": "2022-11-01",
+      "end": "2022-11-30",
+      "n_days": 30,
+      "total_dollar": 22401535250.62334,
+      "total_volume": 56002533341.0,
+      "n_ticks": 6320077,
+      "dollar_per_day": 746717841.69,
+      "vs_min_ratio": 1.7239
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "winter",
+      "start": "2023-06-01",
+      "end": "2023-06-30",
+      "n_days": 30,
+      "total_dollar": 23618383152.219067,
+      "total_volume": 46981370141.9,
+      "n_ticks": 7812623,
+      "dollar_per_day": 787279438.41,
+      "vs_min_ratio": 1.8176
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "etf",
+      "start": "2024-03-01",
+      "end": "2024-03-31",
+      "n_days": 31,
+      "total_dollar": 38103213957.26524,
+      "total_volume": 60027939495.600006,
+      "n_ticks": 8911478,
+      "dollar_per_day": 1229135934.11,
+      "vs_min_ratio": 2.8377
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "recente",
+      "start": "2026-07-01",
+      "end": "2026-07-31",
+      "n_days": 31,
+      "total_dollar": 13427489647.77084,
+      "total_volume": 12187396796.300001,
+      "n_ticks": 4655489,
+      "dollar_per_day": 433144827.35,
+      "vs_min_ratio": 1.0
+    }
+  ],
+  "drift_summary": [
+    {
+      "symbol": "BTCUSDT",
+      "max_window": "etf",
+      "max_dollar_per_day": 25426001467.08,
+      "min_window": "recente",
+      "min_dollar_per_day": 8799067679.33,
+      "drift_ratio": 2.8896
+    },
+    {
+      "symbol": "ETHUSDT",
+      "max_window": "etf",
+      "max_dollar_per_day": 11450522400.7,
+      "min_window": "luna",
+      "min_dollar_per_day": 5460368734.38,
+      "drift_ratio": 2.097
+    },
+    {
+      "symbol": "SOLUSDT",
+      "max_window": "etf",
+      "max_dollar_per_day": 4883536718.49,
+      "min_window": "winter",
+      "min_dollar_per_day": 596204000.97,
+      "drift_ratio": 8.191
+    },
+    {
+      "symbol": "BNBUSDT",
+      "max_window": "etf",
+      "max_dollar_per_day": 1018612956.93,
+      "min_window": "recente",
+      "min_dollar_per_day": 214527889.0,
+      "drift_ratio": 4.7482
+    },
+    {
+      "symbol": "XRPUSDT",
+      "max_window": "etf",
+      "max_dollar_per_day": 1229135934.11,
+      "min_window": "recente",
+      "min_dollar_per_day": 433144827.35,
+      "drift_ratio": 2.8377
+    }
+  ]
+}
