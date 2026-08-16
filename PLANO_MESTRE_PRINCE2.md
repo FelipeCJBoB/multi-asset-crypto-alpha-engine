@@ -678,7 +678,9 @@ numa narrativa de "decisão pendente" fora de contexto.
 | Sprint 11 | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
 | Quando reprocessamento dollar-bar concluir | remedição de M1, 8 estimadores | `audit/architecture_gaps_log.yaml::AG-036` |
-| Decisão do Manager, sem stage travado ainda | 3 bloqueadores dollar-bar (`AG-031`, redefinição M15/M30/H1, `AG-032`) | `docs/refactor_dollar_bar_canonico.md` |
+| ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
+| Decisão do Manager, sem stage travado ainda | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — precisa fechar ANTES do M6 rodar | `audit/architecture_gaps_log.yaml::AG-030` |
+| Decisão do Manager, sem stage travado ainda | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — precisa fechar antes do Sprint 5/6 tocarem nos sweeps acima | `audit/architecture_gaps_log.yaml::AG-039` |
 
 **Regra de leitura:** nenhuma linha desta tabela é orçamento de
 `N_lifetime` em risco hoje — um sweep só custa trial quando de fato roda,

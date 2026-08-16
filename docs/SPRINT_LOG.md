@@ -2538,7 +2538,7 @@ pendente do usuário.
 | `canonical_volatility_estimator` | `garman_klass_w20` (decidido, deployment adiado) |
 | `canonical_bar_type` | `dollar` (decidido, deployment não iniciado) |
 | T1 | extinto — pool único de 13 features, ranking via PRD §2.0.1 ainda não rodado |
-| Bloqueadores dollar-bar (AG-031/redefinição TF/AG-032) | opções mapeadas, decisão do Manager pendente |
+| Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
 | `N_lifetime` | 45/60, 15 trials restantes |
 | Meta Model | fora da V1 (§6.8 define critério de entrada) |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |

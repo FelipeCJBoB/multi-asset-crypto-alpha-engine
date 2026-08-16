@@ -851,7 +851,6 @@ entries:
       correção do bug real funcionou -- sem ela, esses 4 arquivos
       existiriam mas o treino continuaria ignorando-os.
     status: "fechado — pytest verde + labels/ gerado pros 4 alts, confirmado pelo Manager em 2026-08-14"
-    status: "fechado — corrigido na mesma sessão do achado"
 
   - id: AG-017
     date: "2026-08-15"
@@ -2554,8 +2553,8 @@ entries:
     layer: "documentação"
     consequence: "Nenhuma -- imprecisão cosmética, não afeta leitura nem decisão."
     resolved_by_commit: null
-    resolution: "NÃO IMPLEMENTADO -- correção de 1 caractere, baixa prioridade."
-    status: "aberto"
+    resolution: "IMPLEMENTADO 2026-08-16 -- as 2 ocorrências de \"PRD_V4_1.md:670\" em docs/refactor_dollar_bar_canonico.md (linhas 150, 624) corrigidas pra \"PRD_V4_1.md:671\"."
+    status: "fechado"
 
   - id: AG-042
     date: "2026-08-16"
