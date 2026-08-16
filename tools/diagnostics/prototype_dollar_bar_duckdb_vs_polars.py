@@ -48,10 +48,21 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 import tracemalloc
 from pathlib import Path
 from typing import Any
+
+# Script standalone -- sem isto, `from src...` abaixo falha com
+# `ModuleNotFoundError: No module named 'src'` quando invocado por caminho
+# direto (`uv run python tools/diagnostics/<este arquivo>.py`), já que só o
+# diretório do script entra em sys.path[0] nesse modo (diferente de `-m`, que
+# usa o cwd). Achado real (2026-08-16): os 8 scripts de tools/diagnostics/
+# que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # Mesma disciplina de m2_worker.py -- sem isso, Polars abre pool de threads
 # interno e compete consigo mesmo dentro do mesmo processo, distorcendo a
@@ -69,7 +80,6 @@ from src.data.bars import dollar_bars_carry, threshold_bars_finish, threshold_ba
 
 logger = structlog.get_logger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEST_PATH = _REPO_ROOT / "experiments" / "prototype_dollar_bar_duckdb_vs_polars.json"
 
 

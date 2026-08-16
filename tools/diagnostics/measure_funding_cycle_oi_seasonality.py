@@ -104,8 +104,20 @@ completo -- ver CLAUDE.md "Estado atual")."""
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from pathlib import Path
+
+# Script standalone -- sem isto, `from src...` abaixo falha com
+# `ModuleNotFoundError: No module named 'src'` quando invocado por caminho
+# direto (`uv run python tools/diagnostics/<este arquivo>.py`), já que só o
+# diretório do script entra em sys.path[0] nesse modo (diferente de `-m`, que
+# usa o cwd). Achado real (2026-08-16): os 8 scripts de tools/diagnostics/
+# que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import polars as pl

@@ -63,11 +63,25 @@ XRPUSDT/SOLUSDT, confirmado no Road Map Vivo)."""
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Script standalone -- sem isto, `from src...` abaixo falha com
+# `ModuleNotFoundError: No module named 'src'` quando invocado por caminho
+# direto (`uv run python tools/diagnostics/<este arquivo>.py`), já que só o
+# diretório do script entra em sys.path[0] nesse modo (diferente de `-m`, que
+# usa o cwd). Achado real (2026-08-16): os 8 scripts de tools/diagnostics/
+# que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import numpy as np
 import polars as pl
 import structlog
 
 from src.data._constants import load_constant as load_data_constant
+from src.data.resample import step_ms
 from src.validation.cpcv import load_labels_v1
 
 logger = structlog.get_logger(__name__)
@@ -82,7 +96,23 @@ def _percentiles(n_bars_held: np.ndarray) -> dict[str, float]:
 
 
 def main() -> None:
-    time_stop_bars = int(load_data_constant("time_stop_bars"))
+    # AG-046: `time_stop_bars` foi SUPERSEDIDO por `time_stop_ms` (AG-031/B1)
+    # mas continuava ativo como 2ª fonte de verdade lida direto aqui, sem
+    # nenhum guard que forçasse as duas a concordar -- se o sweep do
+    # Sprint 6 (sweep_required em ambos) atualizasse só um dos dois campos,
+    # este script passaria a medir contra um teto que não é mais o real
+    # usado por `build_labels`/`LabelConfig`. Corrigido eliminando a 2ª
+    # fonte em vez de sincronizá-la manualmente: deriva o teto em barras a
+    # partir de `time_stop_ms` (fonte de verdade real), convertendo pra
+    # unidade de barra só aqui, onde é exibido/comparado -- mesmo princípio
+    # já usado no projeto (AG-032/E4: "corrigir a causa em vez de
+    # administrar duas fontes"). `step_ms("15m")` porque `load_labels_v1`
+    # é chamado sem `tf` explícito acima -- grid default é 15m
+    # (`src.validation.cpcv._DEFAULT_TF`).
+    time_stop_ms = int(load_data_constant("time_stop_ms"))
+    time_stop_bars = round(
+        time_stop_ms / step_ms("15m")  # noqa: unguarded-ratio -- "15m" é literal fixo em _TIMEFRAME_MINUTES, step_ms nunca retorna <=0 pra tf suportado, e levanta UnsupportedTimeframeError (nunca None/0 silencioso) se não suportado
+    )
     ceiling_threshold = time_stop_bars - _CEILING_PROXIMITY_BARS
 
     pooled: list[int] = []

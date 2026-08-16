@@ -30,8 +30,19 @@ B29) + log estruturado com o resumo legível."""
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+# Script standalone -- sem isto, `from src...` abaixo falha com
+# `ModuleNotFoundError: No module named 'src'` quando invocado por caminho
+# direto (`uv run python tools/diagnostics/<este arquivo>.py`), já que só o
+# diretório do script entra em sys.path[0] nesse modo (diferente de `-m`, que
+# usa o cwd). Achado real (2026-08-16): os 8 scripts de tools/diagnostics/
+# que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
@@ -43,7 +54,6 @@ from src.validation import cpcv
 
 logger = structlog.get_logger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEST_PATH = _REPO_ROOT / "experiments" / "cpcv_embargo_clock_candidate.json"
 
 _MS_PER_HOUR = 3_600_000

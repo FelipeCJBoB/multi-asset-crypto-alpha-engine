@@ -78,6 +78,17 @@ ignore = [
 # aplica. `tests/**` já tinha essa exceção; faltava estender aqui.
 "tools/lint/**" = ["T20"]
 
+# tools/diagnostics/*.py são scripts standalone (rodados via `uv run python
+# tools/diagnostics/x.py`, caminho direto, não `-m`) que importam de `src.*`
+# -- sem `sys.path.insert(_REPO_ROOT, ...)` ANTES desse import, `src` não é
+# encontrado (`ModuleNotFoundError`), porque só o diretório do próprio
+# script entra em sys.path[0] nesse modo de invocação. Achado real
+# (2026-08-16): os 8 scripts existentes tinham esse bug, nunca detectado
+# porque nunca tinham sido de fato invocados por caminho direto até o
+# usuário rodar. E402 (import fora do topo) é o preço estrutural do fix --
+# aceito aqui, não em `src/`.
+"tools/diagnostics/**" = ["E402"]
+
 # --------------------------------------------------------------------------
 # mypy strict — DoD de "código de modelo"/"código de feature" exige type hints.
 # --------------------------------------------------------------------------

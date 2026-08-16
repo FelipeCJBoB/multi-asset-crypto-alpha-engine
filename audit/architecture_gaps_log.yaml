@@ -538,8 +538,57 @@ entries:
       em escopo -- a capacidade existe, so nao esta fiada nos dois
       lugares que precisariam dela primeiro.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto"
+    resolution: >
+      Corrigido diretamente (achado já vinha com o ponto exato e o padrão
+      de referência — `write_predictions_atomic`/`dest_dir_c1`/`dest_dir_c0`
+      já cabeados em `run_layer1_sprint`, AG-006/AG-012 — copiar o mesmo
+      sentinela pro par `models_diagnostics_symbol_tf_dir` era mecânico,
+      sem escolha de design nova). `src/models/pipeline.py:
+      run_layer1_sprint` — import de `models_diagnostics_symbol_tf_dir`
+      adicionado (`_paths.py`); `dest_dir_diag_c1`/`dest_dir_diag_c0`
+      computados com o MESMO sentinela `tf is not None` de
+      `dest_dir_c1`/`dest_dir_c0`, passados às duas chamadas de
+      `write_all_fold_diagnostics` (Camada 1 e Camada 0). `src/analysis/
+      faixa1_6_reconciliation.py: run_e02f_short_unforced_variant` — três
+      pontos de IO de diagnóstico corrigidos, não só um: a escrita
+      (`pipeline.write_all_fold_diagnostics` da variante) E as duas
+      leituras de baseline (`f15._hhi_by_fold_side` para
+      `VARIANT_MODEL_ID_E02F_SHORT_UNFORCED`/`MODEL_ID_CAMADA1`) — mesmo
+      raciocínio de AG-012 (só corrigir a escrita deixaria um `symbol`
+      não-default comparando a variante contra HHI de baseline errado,
+      sempre lido do caminho legado plano). `symbol`/`tf` já estavam em
+      escopo nos dois arquivos (parâmetros de `run_layer1_sprint`/
+      `run_e02f_short_unforced_variant`), nenhum valor inventado. Default
+      `tf=None` continua bit-exato (`dest_dir=None` em todas as chamadas
+      tocadas) — nenhum caller de produção existente muda de caminho.
+      ruff/mypy/banned_patterns/check_constants_referenced/
+      check_unguarded_ratios rerodados nos 2 arquivos — limpos, 0 achado
+      novo (5 divisões pré-existentes em faixa1_6_reconciliation.py e 1 em
+      pipeline.py inalteradas, nenhuma nas linhas tocadas). NENHUM teste
+      novo adicionado (escopo desta correção restrito aos 2 arquivos de
+      código, outros agentes trabalhando em paralelo no repo) — os testes
+      existentes (`test_models_pipeline.py`/`test_models_pipeline_paths.py`
+      /`test_analysis_faixa1_5_prerequisites.py`/
+      `test_analysis_faixa1_6_reconciliation.py`) cobrem a plumbing de
+      baixo nível de `dest_dir` (AG-013) e o roteamento de `tf` das
+      PREDICTIONS nos dois orquestradores (AG-006/AG-012), mas nenhum
+      ainda faz asserção direta do roteamento de `dest_dir` dos
+      DIAGNOSTICS nestes dois orquestradores — não quebram com esta
+      mudança (harness de `test_analysis_faixa1_6_reconciliation.py` não
+      stuba `write_all_fold_diagnostics`, mas `variant_folds` é lista
+      vazia no teste, então a chamada real é no-op; `_hhi_by_fold_side` é
+      stubado com `lambda *a, **k`, absorve o `dest_dir` novo sem quebrar),
+      mas o par simétrico aos testes `..._tf_explicito_...` de predictions
+      fica como débito técnico pra fechar depois (teste novo capturando
+      `(model_id, dest_dir)` de `write_all_fold_diagnostics`/
+      `_hhi_by_fold_side`, mesmo padrão dos já existentes). Comando de
+      pytest que confirma isso: `uv run pytest
+      tests/unit/test_models_pipeline.py
+      tests/unit/test_models_pipeline_paths.py
+      tests/unit/test_analysis_faixa1_5_prerequisites.py
+      tests/unit/test_analysis_faixa1_6_reconciliation.py -v`
+      (PENDENTE-DE-EXECUCAO-HUMANA, protocolo de execução).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução); débito técnico: falta teste de regressão do roteamento de dest_dir dos DIAGNOSTICS nos 2 orquestradores (só predictions tem esse teste hoje)"
 
   - id: AG-007
     date: "2026-08-12"
@@ -1005,7 +1054,39 @@ entries:
       por TF (1 TF falho não perde os outros 2 já computados na mesma
       task). Os outros 5 módulos citados em related_file continuam com o
       gap -- não corrigidos nesta rodada.
-    status: "fechado (M2) — outros 5 módulos permanecem abertos, ver related_file"
+
+      AMENDMENT 2026-08-16: os 5 módulos restantes corrigidos, mesmo
+      padrão (try/except Exception só em volta de future.result(), nunca
+      do loop inteiro; logger.error com o identificador da task + repr da
+      exceção; acumulado em failed_tasks; loop continua; logger.warning
+      de resumo no fim se failed_tasks não vazio). volatility_comparison.py
+      (run_and_save_volatility_comparison_report, identificador
+      (symbol, tf) -- lógica pré-existente de "result is None -> skipped"
+      preservada intacta, só a chamada de future.result() ganhou guarda);
+      m3_timeframe_choice.py (run_and_save_timeframe_choice_report,
+      identificador symbol); m6_common_factor_hypothesis.py
+      (run_and_save_m6_report, identificador symbol -- achado extra: o
+      cálculo de heterogeneidade de Cochran's Q e o payload
+      detail_by_symbol_side_regime iteravam `symbols` sem checar
+      presença em pooled_by_symbol/detail_by_symbol; com o try/except no
+      lugar, um símbolo falho ficaria ausente desses dicts e geraria
+      KeyError logo depois do loop, derrubando a função mesmo com a
+      task isolada -- corrigido filtrando pra `ok_symbols`, só quem
+      resolveu); volatility_operational_effect.py
+      (run_and_save_operational_effect_report, identificador symbol);
+      gk_vs_wilder_econ_regime_shift.py
+      (run_and_save_econ_regime_shift_report, identificador symbol). Em
+      todos, a lista de falhas também exposta no payload em disco
+      (chave `failed`/`failed_symbols`/`n_failed` no log final), não só
+      no log -- mesma disciplina FCN de m2_bar_comparison.py. Lint
+      mecânico (banned_patterns --strict, check_constants_referenced,
+      check_unguarded_ratios, check_constants_provenance,
+      check_sprint_log_references, ruff, mypy) rodado nos 5 arquivos:
+      todos OK, mypy limpo; ruff aponta só achados pré-existentes (E501
+      e `# noqa` mal-formado) em linhas não tocadas por esta correção,
+      fora de escopo. pytest não executado (protocolo de execução --
+      Claude não roda .py/pytest, só o usuário).
+    status: "fechado — aguarda confirmação de pytest verde (protocolo de execução)"
 
   - id: AG-020
     date: "2026-08-15"
@@ -1744,8 +1825,24 @@ entries:
       comparação cross-asset estratificada por regime (§4, Regime Engine)
       herda o mesmo confundimento, não só o teste específico do T0.5.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão do Manager necessária antes do M6 (T0.5) rodar E antes de qualquer comparação cross-asset estratificada por regime, ver AG-027 addendum ponto 5"
+    resolution: >
+      DECIDIDO 2026-08-16 (Manager, entre as 3 opções listadas em
+      `consequence` acima): **normalizar por histórico disponível** —
+      corrige a causa (warmup desigual), não administra o sintoma. Janela
+      expansiva de `C07`/`D03f`/`E02f` E de `er_quantile`/`econ_quantile`
+      (`classify_regimes`) passa a ser capada no histórico MÍNIMO comum
+      entre os 5 ativos (~164.256 barras, teto do alt mais novo) — não mais
+      `SYMBOL_START_DATE` de cada ativo individualmente. Mecanismo exato
+      (truncar o início de cada série pro mesmo nº de barras acumuladas vs.
+      converter a janela pra tamanho fixo N em vez de verdadeiramente
+      expansiva) fica pra investigação de implementação, dado que afeta
+      `support.py::expanding_percentile_rank_strict`/`expanding_zscore_
+      strict`, usadas em múltiplos sites — não decidir o mecanismo sem ler
+      o código real primeiro (mesma disciplina de "medir antes de afirmar").
+      Custo real: reprocessamento de Feature Engine + Regime Engine pros 5
+      ativos — não é 0-trial como AG-027, é trabalho de pipeline real.
+      Implementação pendente.
+    status: "aberto -- DECIDIDO (normalizar por histórico comum), implementação pendente"
 
   - id: AG-031
     date: "2026-08-15"
@@ -2717,14 +2814,32 @@ entries:
       existe pra pegar.
     resolved_by_commit: null
     resolution: >
-      NÃO IMPLEMENTADO -- 2 peças de trabalho distintas registradas: (1) F3
-      -- passada de classificação pura em constants.yaml (0 trials,
-      inclui reescrever a justificativa de A13, reavaliar B01
-      separadamente); (2) auditoria + correção de código em support.py/
-      group_e.py/_sources.py pras premissas de relógio escondidas --
-      trabalho de código real, maior que (1), não incluído na mesma
-      passada.
-    status: "aberto -- decidido (F1 pra A13, B01 a reavaliar), implementação pendente"
+      PARCIALMENTE IMPLEMENTADO 2026-08-16 -- só a peça (1), F3 (passada de
+      classificação pura em constants.yaml, 0 trials): `feature_a13_ema_
+      window` mantido `scaling_invariant: clock`, justificativa reescrita
+      pra deixar explícito que é decisão DELIBERADA de intenção ("EMA de
+      48 barras de RELÓGIO, ponto -- não converte pra bar_count sob dollar
+      bar"), não classificação por omissão. `feature_b01_rsi_window`
+      REAVALIADO separadamente, com justificativa PRÓPRIA (não emprestada
+      de A13) -- RECLASSIFICADO de `clock` para `bar_count`: a
+      justificativa `clock` anterior ("mesma classe de A13") nunca amarrou
+      o span ao horizonte de relógio do label, era só coincidência de
+      magnitude; RSI de Wilder usa o mesmo primitivo de suavização de
+      `atr_window` (`support.py::wilder_smooth`), que já está decidido
+      `bar_count` pro Feature Engine sob esta mesma AG-043; RSI é
+      oscilador limitado (família agregação/estimação, como B07/C06/C07),
+      não distância posicional amarrada ao horizonte do label como A13.
+      Nenhum valor numérico mudou (A13 continua 48, B01 continua 14) --
+      só a tag e a justificativa, 0 trials. `feature_d06f_taker_imbalance_
+      window` NÃO tocado (já `bar_count`, fora de escopo por desenho).
+
+      Peça (2) -- auditoria + correção de código em support.py/group_e.py/
+      _sources.py pras premissas de relógio escondidas (`std*sqrt(window)`
+      em support.py:283, gap "overnight" do Yang-Zhang em support.py:
+      252-256, defasagem do asof-join em group_e.py/_sources.py:60-65) --
+      CONTINUA NÃO IMPLEMENTADA, trabalho de código real, maior que (1),
+      deliberadamente fora desta passada.
+    status: "parcialmente fechado -- F3 (classificação pura) implementado: A13 mantido `clock` com justificativa reescrita como decisão deliberada; B01 reavaliado separadamente e RECLASSIFICADO pra `bar_count`. Auditoria de código (support.py/group_e.py/_sources.py) permanece ABERTA, não incluída nesta passada"
 
   - id: AG-044
     date: "2026-08-16"
@@ -2827,8 +2942,37 @@ entries:
       contra um teto que não é mais o real usado por `build_labels` --
       silenciosamente, mesmo padrão de falha do AG-031 original.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- não bloqueia esta PR, mas precisa endereçamento antes do sweep do Sprint 6 tocar em qualquer um dos dois campos (time_stop_bars OU time_stop_ms)"
+    resolution: >
+      CORRIGIDO 2026-08-16. Achado durante o endereçamento: o gap original
+      descrevia os DOIS scripts como leitores diretos de `time_stop_bars`
+      via `load_constant` -- verificado que isso só é verdade pra um deles.
+      `measure_time_stop_slack.py:85` de fato lia `time_stop_bars`
+      numericamente pra montar `ceiling_threshold` (teto de comparação);
+      corrigido eliminando a 2ª fonte de verdade em vez de sincronizá-la
+      manualmente (mesmo princípio de AG-032/E4): agora lê `time_stop_ms`
+      (fonte canônica real, usada por `LabelConfig`/`build_labels`) e
+      deriva `time_stop_bars = round(time_stop_ms / step_ms("15m"))` só no
+      ponto de uso, com `# noqa: unguarded-ratio` justificado (`step_ms`
+      nunca retorna <=0 pra tf suportado, levanta `UnsupportedTimeframeError`
+      se não suportado -- nunca 0/None silencioso).
+      `measure_n_bars_held_vs_cost_and_regime.py` NÃO chama `load_constant`
+      pra `time_stop_bars` nem `time_stop_ms` em nenhum lugar do código --
+      a menção a `time_stop_bars` no docstring é só explicação do
+      INVARIANTE categórico (`barrier_hit == "TIME"` implica
+      `n_bars_held == time_stop_bars` por construção), a exclusão real no
+      código é `barrier_hit.is_in(["TP", "SL"])`, puramente categórica, sem
+      nenhuma comparação numérica contra o teto. Não havia 2ª fonte de
+      verdade pra sincronizar neste script -- nenhum guard foi adicionado
+      (seria guard morto); em vez disso, o docstring agora documenta essa
+      correção de registro (AG-046) explicitamente, pra o próximo leitor
+      não presumir que o gap original se aplicava aos dois igualmente.
+      Nenhum teste em `tests/unit/` cobre nenhum dos 2 scripts (verificado
+      -- 0 arquivos casando `measure_time_stop_slack`/
+      `measure_n_bars_held_vs_cost_and_regime`); checks mecânicos
+      (`banned_patterns`, `check_constants_referenced`,
+      `check_constants_provenance`, `check_unguarded_ratios`, `ruff`,
+      `mypy`) rodaram limpos nos 2 arquivos.
+    status: "fechado -- 2ª fonte de verdade eliminada em measure_time_stop_slack.py (deriva de time_stop_ms); measure_n_bars_held_vs_cost_and_regime.py não tinha o bug descrito (não lê a constante), correção de registro documentada no próprio script"
 
   - id: AG-047
     date: "2026-08-16"
@@ -2913,3 +3057,52 @@ entries:
       falta uma barra), não é só reformulação equivalente -- ver AG-031
       pra lista completa de testes.
     status: "fechado -- implementado, pendente confirmação de pytest"
+
+  - id: AG-049
+    date: "2026-08-16"
+    file: "tools/diagnostics/*.py (8 scripts)"
+    related_file: "docs/refactor_dollar_bar_canonico.md §7 (P-1/P-3), pyproject.toml::[tool.ruff.lint.per-file-ignores]"
+    found_by: "usuário, tentando rodar os comandos P-1/P-3 exatamente como documentados/entregues"
+    gap: >
+      Os 8 scripts de `tools/diagnostics/` que importam de `src.*`
+      (`measure_barrier_touch_probability.py`, `measure_cpcv_embargo_
+      clock_candidate.py`, `measure_dollar_threshold_drift.py`,
+      `measure_funding_cycle_oi_seasonality.py`, `measure_n_bars_held_vs_
+      cost_and_regime.py`, `measure_sample_weight_by_econ_regime.py`,
+      `measure_time_stop_slack.py`, `prototype_dollar_bar_duckdb_vs_
+      polars.py`) faziam `from src.xxx import yyy` no nível de módulo SEM
+      nunca colocar a raiz do repo em `sys.path`. Funciona só quando
+      invocado via `-m` (`python -m pacote.modulo`, que usa o `cwd` como
+      `sys.path[0]`) -- quebra com `ModuleNotFoundError: No module named
+      'src'` quando invocado por caminho direto (`python tools/
+      diagnostics/x.py`, que usa o diretório do PRÓPRIO script como
+      `sys.path[0]`), que é exatamente como os comandos são documentados
+      em `docs/refactor_dollar_bar_canonico.md` §7 (P-1, P-3) e como o
+      usuário de fato tentou rodar. Bug estrutural presente desde a
+      criação de cada script -- nunca detectado porque nenhum tinha sido
+      efetivamente invocado por caminho direto até esta sessão.
+    severity: "médio"
+    layer: "tooling"
+    consequence: >
+      Todo comando de diagnóstico entregue nesta sessão (P-1, P-3, e
+      qualquer um dos 5 scripts pré-existentes) falhava na primeira
+      tentativa real do usuário -- não é cosmético, bloqueava
+      literalmente rodar qualquer um dos 8. Mesma classe de achado que
+      AG-017/AG-019: código nunca exercitado da forma real de uso
+      esconde um bug óbvio até alguém genuinamente tentar usá-lo.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-16. Cada um dos 8 scripts ganhou um bloco
+      `_REPO_ROOT = Path(__file__).resolve().parents[2]` +
+      `sys.path.insert(0, str(_REPO_ROOT))` logo após `from __future__
+      import annotations`, ANTES de qualquer `from src...`/`import
+      src...`. `pyproject.toml::[tool.ruff.lint.per-file-ignores]` ganhou
+      `"tools/diagnostics/**" = ["E402"]` (mesmo padrão já usado pra
+      `tools/lint/**`/`T20`) -- o bloco de `sys.path` necessariamente vem
+      antes de imports de terceiros, violando E402 por desenho; aceito
+      aqui, não em `src/`. Os 6 comandos mecânicos autorizados rodaram
+      limpos nos 8 arquivos (ruff/mypy/banned_patterns/
+      check_constants_referenced). `check_unguarded_ratios.py` e
+      `check_sprint_log_references.py` não aplicáveis (nenhuma divisão
+      nova, nenhuma referência a `SPRINT_LOG.md`).
+    status: "fechado -- 6 checks mecânicos limpos, comandos re-entregues ao usuário pra confirmação real"

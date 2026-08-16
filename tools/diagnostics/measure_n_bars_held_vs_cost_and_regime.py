@@ -47,11 +47,38 @@ close_time` da MESMA barra.
 "vence" é o tempo (`n_bars_held == time_stop_bars` sempre), e é 0 literal
 quando a ordem nunca encheu (NOFILL). Incluir qualquer um dos dois
 corromperia tanto a correlação quanto a estratificação por regime -- não é
-tempo de retenção real em nenhum dos dois casos."""
+tempo de retenção real em nenhum dos dois casos.
+
+**AG-046 (2026-08-16, achado de project_assurance sobre AG-031/B1) --
+correção de registro:** o gap original descrevia os DOIS scripts de
+diagnóstico deste diretório como leitores diretos de `time_stop_bars` via
+`load_constant`, em paralelo a `LabelConfig.time_stop_ms`, sem guard entre
+os dois. Verificado ao endereçar o gap: isso é verdade só pra
+`measure_time_stop_slack.py` (lê `time_stop_bars` numericamente pra montar
+um teto de comparação -- corrigido lá, derivando o teto a partir de
+`time_stop_ms`). ESTE script não chama `load_constant` pra nenhum dos dois
+campos -- a exclusão TIME/NOFILL acima é puramente CATEGÓRICA
+(`barrier_hit.is_in(["TP", "SL"])`), não compara nenhum valor numérico
+contra `time_stop_bars`/`time_stop_ms`. Não há 2ª fonte de verdade pra
+sincronizar aqui, então nenhum guard foi adicionado -- a menção a
+`time_stop_bars` acima é só explicação do INVARIANTE (por que TIME empata
+no teto, qualquer que seja o teto), não uma leitura de constante."""
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+# Script standalone -- sem isto, `from src...` abaixo falha com
+# `ModuleNotFoundError: No module named 'src'` quando invocado por caminho
+# direto (`uv run python tools/diagnostics/<este arquivo>.py`), já que só o
+# diretório do script entra em sys.path[0] nesse modo (diferente de `-m`, que
+# usa o cwd). Achado real (2026-08-16): os 8 scripts de tools/diagnostics/
+# que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import numpy as np
 import polars as pl

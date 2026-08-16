@@ -25,6 +25,18 @@ XRPUSDT/SOLUSDT, confirmado no Road Map Vivo)."""
 from __future__ import annotations
 
 import math
+import sys
+from pathlib import Path
+
+# Script standalone (não pacote instalado) -- sem isto, `from src...` abaixo
+# falha com `ModuleNotFoundError: No module named 'src'` quando invocado por
+# caminho direto (`uv run python tools/diagnostics/<este arquivo>.py`), porque
+# só o diretório do próprio script entra em sys.path[0] nesse modo de
+# invocação (diferente de `-m`, que usa o cwd). Achado real (2026-08-16): os 8
+# scripts de tools/diagnostics/ que importam de `src.*` tinham este mesmo bug.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import structlog
 
