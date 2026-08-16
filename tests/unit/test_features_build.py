@@ -10,6 +10,7 @@ matriz completa via `-s`/log em caso de violação, não só falha muda."""
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -88,6 +89,91 @@ def test_warmup_uniforme_maioria_valida_depois_do_corte() -> None:
     t1_cols = list(build.T1_FEATURE_IDS)
     n_fully_valid = tail.select(t1_cols).drop_nulls().height
     assert n_fully_valid / tail.height > 0.95
+
+
+def test_feature_windows_min_common_history_bars_from_constants() -> None:
+    """AG-030 (T0.5): min_common_history_bars_15m, config/constants.yaml --
+    ~164.256 barras de 15m = histórico comum mínimo entre os 5 ativos
+    (2021-12-01 -> 2026-08-07, teto do alt mais novo; ver AG-030 no
+    architecture_gaps_log.yaml e o comentário da constante)."""
+    windows = build.FeatureWindows.from_constants()
+    assert windows.min_common_history_bars == 164256
+
+
+def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> None:
+    """AG-030 (T0.5): com um cap menor que `n`, as primeiras `n - cap`
+    barras de C07/D03f/E02f ficam nulas (janela expansiva recomeça no novo
+    "início") -- as outras 9 colunas T1/T2 não são afetadas (não usam
+    `min_common_history_bars`), provado comparando byte-a-byte contra uma
+    rodada sem cap (`windows` default de `from_constants()`).
+
+    `n=200`/`cap=100` (não um par pequeno tipo 40/15): `C07` depende de
+    `realized_vol(window=48)` computada ANTES do posto expansivo -- com
+    `n` pequeno essa janela de 48 barras nem teria convergido ainda,
+    contaminando o teste (toda a coluna já sairia NaN mesmo sem cap nenhum,
+    e o teste "passaria" sem provar nada sobre o mecanismo do AG-030).
+    `offset = n - cap = 100 > 48` garante que a janela de 48 já convergiu
+    bem antes do ponto de corte do cap."""
+    n = 200
+    cap = 100
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(83)
+    # variância real de propósito (não constante) -- E02f é z-score expansivo
+    # de Welford, que fica NaN o tempo todo (var==0) sobre série constante,
+    # o que mascararia o efeito do cap sendo testado aqui.
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+
+    windows_sem_cap = build.FeatureWindows.from_constants()
+    windows_com_cap = dataclasses.replace(windows_sem_cap, min_common_history_bars=cap)
+
+    out_sem_cap = build.compute_t1_features(
+        bars, funding, oi, windows=windows_sem_cap, apply_warmup_mask=False
+    )
+    out_com_cap = build.compute_t1_features(
+        bars, funding, oi, windows=windows_com_cap, apply_warmup_mask=False
+    )
+
+    for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
+        head_null_count = out_com_cap.head(n - cap)[col].null_count()
+        assert head_null_count == n - cap, f"{col}: esperava {n - cap} nulos no início do cap"
+        # sem cap, o mesmo trecho inicial NÃO deve estar 100% nulo (prova
+        # de que o cap muda o resultado, não é um no-op)
+        assert out_sem_cap.head(n - cap)[col].null_count() < n - cap
+
+    # todas as outras colunas T1/T2 (não usam min_common_history_bars) têm
+    # que sair IDÊNTICAS com ou sem cap -- prova de isolamento do efeito
+    cols_afetadas = {
+        "C07_vol_pctile_expanding",
+        "D03f_volume_z_expanding",
+        "E02f_funding_z_expanding",
+    }
+    outros_cols = [c for c in build.ALL_OUTPUT_COLUMNS if c not in cols_afetadas]
+    assert out_sem_cap.select(outros_cols).equals(out_com_cap.select(outros_cols), null_equal=True)
+
+
+def _make_synthetic_bars_for_cap_test(n: int) -> pl.DataFrame:
+    rng = np.random.default_rng(81)
+    close = 100.0 + np.cumsum(rng.normal(0, 1, n))
+    high = close + rng.uniform(0.1, 1.0, n)
+    low = close - rng.uniform(0.1, 1.0, n)
+    open_ = close + rng.normal(0, 0.5, n)
+    volume = rng.uniform(10, 100, n)
+    taker_buy_volume = volume * rng.uniform(0.3, 0.7, n)
+    open_time = np.arange(n, dtype=np.int64) * 900_000
+    close_time = open_time + 899_999
+    return pl.DataFrame(
+        {
+            "open_time": open_time,
+            "close_time": close_time,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "taker_buy_volume": taker_buy_volume,
+        }
+    )
 
 
 def test_warmup_zero_barras_nao_quebra() -> None:

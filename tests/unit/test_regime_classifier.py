@@ -74,6 +74,24 @@ def test_thresholds_from_constants_bate_com_prd() -> None:
     assert th.min_warmup_bars == 2000
     assert th.confirmation_bars == 2
     assert th.stress_exit_confirmation_bars == 4
+    # AG-030 (T0.5): min_common_history_bars_15m, config/constants.yaml
+    assert th.min_common_history_bars == 164256
+
+
+def test_thresholds_min_common_history_bars_default_e_none() -> None:
+    """Construção manual (sem `from_constants()`) sem o campo novo -- mesmo
+    caminho que `_THRESHOLDS` deste arquivo já usa -- preserva o
+    comportamento anterior ao AG-030 (sem cap)."""
+    th = classifier.RegimeThresholds(
+        er_cutoff_enter=0.60,
+        er_cutoff_exit=0.55,
+        vol_cutoff_enter=0.70,
+        vol_cutoff_exit=0.65,
+        min_warmup_bars=5,
+        confirmation_bars=2,
+        stress_exit_confirmation_bars=4,
+    )
+    assert th.min_common_history_bars is None
 
 
 # ============================================================================
@@ -145,6 +163,54 @@ def test_er_quantile_econ_quantile_default_none_recomputa_como_antes() -> None:
         econ_quantile=support.expanding_percentile_rank_strict(cost_atr),
     )
     assert default.equals(explicit)
+
+
+def test_er_quantile_econ_quantile_respeita_min_common_history_bars_do_threshold() -> None:
+    """AG-030 (T0.5, escopo ampliado): quando `er_quantile`/`econ_quantile`
+    NÃO são injetados, `thresholds.min_common_history_bars` tem que chegar
+    até a recomputação interna (`classify_regimes` linhas ~321-330) --
+    mesma constante que já capa C07/D03f/E02f no Feature Engine."""
+    n = 20
+    rng = np.random.default_rng(3)
+    er_48 = rng.uniform(0, 1, n)
+    vol_pctile = rng.uniform(0, 1, n)
+    cost_atr = rng.uniform(0.05, 0.3, n)
+    stress_result = _empty_stress_result(n)
+    cap = 12
+
+    from src.features import support
+
+    thresholds_com_cap = classifier.RegimeThresholds(
+        er_cutoff_enter=_THRESHOLDS.er_cutoff_enter,
+        er_cutoff_exit=_THRESHOLDS.er_cutoff_exit,
+        vol_cutoff_enter=_THRESHOLDS.vol_cutoff_enter,
+        vol_cutoff_exit=_THRESHOLDS.vol_cutoff_exit,
+        min_warmup_bars=_THRESHOLDS.min_warmup_bars,
+        confirmation_bars=_THRESHOLDS.confirmation_bars,
+        stress_exit_confirmation_bars=_THRESHOLDS.stress_exit_confirmation_bars,
+        min_common_history_bars=cap,
+    )
+
+    out = classifier.classify_regimes(
+        _open_time(n), er_48, vol_pctile, cost_atr, stress_result, thresholds=thresholds_com_cap
+    )
+    expected_er_quantile = support.expanding_percentile_rank_strict(
+        er_48, min_common_history_bars=cap
+    )
+    expected_econ_quantile = support.expanding_percentile_rank_strict(
+        cost_atr, min_common_history_bars=cap
+    )
+    np.testing.assert_array_equal(out["er_quantile"].to_numpy(), expected_er_quantile)
+    # econ_quantile não é coluna de saída direta -- confere via `econ_regime`,
+    # que é função determinística de econ_quantile (`_economics_regime`).
+    # `.to_list()` (não `.to_numpy()`) porque a coluna é `pl.Enum` -- forma
+    # mais direta de comparar contra a lista Python de `expected_econ_regime`.
+    expected_econ_regime = classifier._economics_regime(expected_econ_quantile)
+    assert out["econ_regime"].to_list() == list(expected_econ_regime)
+    # o cap tem que ter mudado ALGO em relação ao _THRESHOLDS sem cap (senão
+    # o teste não prova nada) -- n=20 > cap=12, então a região [0, n-cap) fica
+    # NaN em er_quantile só com o cap ativo.
+    assert np.isnan(expected_er_quantile[: n - cap]).all()
 
 
 def test_er_quantile_injetado_e_usado_em_vez_de_recomputado() -> None:

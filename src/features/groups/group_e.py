@@ -15,9 +15,18 @@ from .. import support
 from ..support import FloatArray
 
 
-def e02f_funding_z_expanding(funding_last_aligned: FloatArray) -> FloatArray:
-    """Z-score expansivo estrito de `funding_last` — §2.6 E02f."""
-    return support.expanding_zscore_strict(funding_last_aligned)
+def e02f_funding_z_expanding(
+    funding_last_aligned: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
+    """Z-score expansivo estrito de `funding_last` — §2.6 E02f.
+
+    `min_common_history_bars` (AG-030, T0.5): repassado direto a
+    `support.expanding_zscore_strict` — cap no histórico comum entre os 5
+    ativos (ver docstring da primitiva). `None` (default) preserva o
+    comportamento expansivo desde a origem do ativo."""
+    return support.expanding_zscore_strict(
+        funding_last_aligned, min_common_history_bars=min_common_history_bars
+    )
 
 
 def e10f_oi_change_z_48(oi_contracts_aligned: FloatArray, window: int) -> FloatArray:

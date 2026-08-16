@@ -18,6 +18,21 @@ Duas famílias de janela, deliberadamente distintas (banned pattern B02):
   usa só índices `< t`, nunca `t` — é a definição literal do banned
   pattern B02 e a razão de essas três funções existirem separadas das
   acima.
+
+`expanding_zscore_strict`/`expanding_percentile_rank_strict` aceitam
+`min_common_history_bars` opcional (AG-030, T0.5 — comparabilidade
+cross-asset: BTC acumula ~231.552 barras de 15m desde `SYMBOL_START_DATE`,
+os 4 alts só ~164.256 — o MESMO valor bruto produzia posto/z-score
+estruturalmente diferente por ativo, dependendo só de quanto histórico
+aquele ativo já tinha, não de vazamento temporal). Quando informado, os
+primeiros `len(values) - min_common_history_bars` pontos da série são
+excluídos da distribuição/estado de referência (saem como NaN) e o cálculo
+expansivo recomeça no primeiro índice retido — Opção A do AG-030 (truncar o
+INÍCIO da série pro mesmo nº de barras acumuladas), não Opção B (rolling de
+tamanho fixo): a semântica continua "expansiva desde o início", só o
+"início" de cada ativo passa a ser redefinido para o mesmo ponto relativo
+de história acumulada. `None` (default) preserva bit-exato o comportamento
+anterior a esta constante existir.
 """
 
 from __future__ import annotations
@@ -240,7 +255,8 @@ def yang_zhang_vol(
     candidato testa (hipótese: erro do GK concentrado em candles de
     abertura). Warmup de `window + 1` barras (1 barra extra pro primeiro
     overnight da janela) -- mesmo tipo de +1 que `next_bar_realized_
-    variance` precisa por depender de `close[t+1]`. Soma dos 3 termos pode ficar negativa (mesma razão de
+    variance` precisa por depender de `close[t+1]`. Soma dos 3 termos pode
+    ficar negativa (mesma razão de
     `garman_klass_vol`: `V_rs,t` isolado pode ser negativo numa janela
     ruidosa) -- vira NaN em vez de `sqrt` de número complexo, mesma
     disciplina das outras duas."""
@@ -316,7 +332,9 @@ def efficiency_ratio(close: FloatArray, window: int) -> FloatArray:
     return out
 
 
-def expanding_zscore_strict(values: FloatArray) -> FloatArray:
+def expanding_zscore_strict(
+    values: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
     """Z-score em janela EXPANSIVA estrita: `z_t = (x_t - média_{<t}) /
     desvio_{<t}`, onde média/desvio usam só índices `< t` (banned pattern
     B02 — nunca `<= t`). Implementado com algoritmo online de Welford
@@ -324,7 +342,37 @@ def expanding_zscore_strict(values: FloatArray) -> FloatArray:
     incorporar `x_t` ao estado, e só then atualiza o estado com `x_t`.
 
     Requer pelo menos 2 pontos prévios válidos para desvio amostral
-    (`ddof=1`) definido — `out[0]` e `out[1]` são sempre NaN."""
+    (`ddof=1`) definido — `out[0]` e `out[1]` são sempre NaN (contados a
+    partir do início EFETIVO da série, ver `min_common_history_bars`
+    abaixo).
+
+    `min_common_history_bars` (AG-030, T0.5, Opção A — ver docstring do
+    módulo): quando informado e `len(values) > min_common_history_bars`, os
+    primeiros `len(values) - min_common_history_bars` índices ficam de fora
+    do estado de Welford inteiramente (saem como NaN) e a acumulação
+    recomeça (`count=0`) no primeiro índice retido — equivalente a chamar
+    esta função só sobre `values[-min_common_history_bars:]` e colar o
+    resultado de volta no comprimento original. Cada índice retido `t`
+    continua usando exclusivamente índices retidos `< t` (subconjunto
+    ESTRITO do `< t` original — nunca um superconjunto), então B02
+    permanece satisfeito por construção; não é uma segunda forma de
+    calcular o z-score, é a mesma primitiva com o ponto de partida
+    deslocado. `None` (default) ou `len(values) <= min_common_history_bars`
+    preservam bit-exato o comportamento sem o parâmetro (início em `t=0`)."""
+    n = values.shape[0]
+    offset = 0 if min_common_history_bars is None else max(0, n - min_common_history_bars)
+    if offset == 0:
+        return _expanding_zscore_strict_core(values)
+    out = np.full(n, np.nan, dtype=np.float64)
+    out[offset:] = _expanding_zscore_strict_core(values[offset:])
+    return out
+
+
+def _expanding_zscore_strict_core(values: FloatArray) -> FloatArray:
+    """Corpo original (pré-AG-030) de `expanding_zscore_strict` — Welford
+    O(n), expansivo desde o índice 0 de `values`. Extraído para função
+    privada só para ser reaproveitado pelo wrapper de
+    `min_common_history_bars` acima sem duplicar o algoritmo."""
     n = values.shape[0]
     out = np.full(n, np.nan, dtype=np.float64)
     count = 0
@@ -345,7 +393,9 @@ def expanding_zscore_strict(values: FloatArray) -> FloatArray:
     return out
 
 
-def expanding_percentile_rank_strict(values: FloatArray) -> FloatArray:
+def expanding_percentile_rank_strict(
+    values: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
     """Posto percentil em janela EXPANSIVA estrita: `rank_t = #{i<t :
     x_i "<" x_t} / #{i<t : x_i não-NaN}` — só índices `< t` entram na
     distribuição de referência (B02), nunca `t` mesmo. `out[t]` é NaN se
@@ -367,7 +417,35 @@ def expanding_percentile_rank_strict(values: FloatArray) -> FloatArray:
     — é mais simples e totalmente determinística, o que importa mais aqui
     (§2.0 princípio 1). Em dado de mercado real (float64 de retorno/
     volatilidade) empates exatos são raríssimos, então o efeito da escolha
-    é desprezível; documentado aqui para não ficar implícito."""
+    é desprezível; documentado aqui para não ficar implícito.
+
+    `min_common_history_bars` (AG-030, T0.5, Opção A — ver docstring do
+    módulo): quando informado e `len(values) > min_common_history_bars`, os
+    primeiros `len(values) - min_common_history_bars` índices ficam de fora
+    da árvore de Fenwick inteiramente (saem como NaN) e a distribuição de
+    referência recomeça vazia no primeiro índice retido — equivalente a
+    chamar esta função só sobre `values[-min_common_history_bars:]` e colar
+    o resultado de volta no comprimento original (inclusive o posto denso
+    GLOBAL do desempate é recalculado só sobre essa sub-série, não sobre a
+    série inteira original). Cada índice retido `t` continua usando
+    exclusivamente índices retidos `< t` (subconjunto ESTRITO do `< t`
+    original — nunca um superconjunto), então B02 permanece satisfeito por
+    construção. `None` (default) ou `len(values) <= min_common_history_bars`
+    preservam bit-exato o comportamento sem o parâmetro (início em `t=0`)."""
+    n = values.shape[0]
+    offset = 0 if min_common_history_bars is None else max(0, n - min_common_history_bars)
+    if offset == 0:
+        return _expanding_percentile_rank_strict_core(values)
+    out = np.full(n, np.nan, dtype=np.float64)
+    out[offset:] = _expanding_percentile_rank_strict_core(values[offset:])
+    return out
+
+
+def _expanding_percentile_rank_strict_core(values: FloatArray) -> FloatArray:
+    """Corpo original (pré-AG-030) de `expanding_percentile_rank_strict` —
+    Fenwick tree O(n log n), expansivo desde o índice 0 de `values`.
+    Extraído para função privada só para ser reaproveitado pelo wrapper de
+    `min_common_history_bars` acima sem duplicar o algoritmo."""
     n = values.shape[0]
     out = np.full(n, np.nan, dtype=np.float64)
     finite_mask = ~np.isnan(values)

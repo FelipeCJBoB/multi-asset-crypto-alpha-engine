@@ -173,6 +173,21 @@ def test_c07_faixa_0_1_e_nao_usa_indice_t() -> None:
         assert out[t] == pytest.approx(expected), f"t={t}"
 
 
+def test_c07_min_common_history_bars_e_repassado_a_primitiva() -> None:
+    """AG-030 (T0.5): C07 não implementa o cap sozinho -- só repassa o
+    kwarg pra `support.expanding_percentile_rank_strict` sobre a MESMA
+    `realized_vol` já calculada. Prova de fiação, não de mecanismo (o
+    mecanismo em si já é testado em `test_features_support.py`)."""
+    bars = _make_ohlcv(300)
+    log_ret = _log_return_1(bars["close"])
+    cap = 200
+    out = group_c.c07_vol_pctile_expanding(log_ret, window=48, min_common_history_bars=cap)
+    rv = support.realized_vol(log_ret, window=48)
+    expected = support.expanding_percentile_rank_strict(rv, min_common_history_bars=cap)
+    np.testing.assert_array_equal(out, expected)
+    assert np.isnan(out[: 300 - cap]).all()
+
+
 # ============================================================================
 # D03f / D06f
 # ============================================================================
@@ -186,6 +201,17 @@ def test_d03f_nao_usa_indice_t() -> None:
         prior = log_vol[:t]
         expected = (log_vol[t] - prior.mean()) / prior.std(ddof=1)
         assert out[t] == pytest.approx(expected), f"t={t}"
+
+
+def test_d03f_min_common_history_bars_e_repassado_a_primitiva() -> None:
+    """AG-030 (T0.5) -- mesma prova de fiação de C07, para D03f."""
+    bars = _make_ohlcv(200)
+    cap = 120
+    out = group_d.d03f_volume_z_expanding(bars["volume"], min_common_history_bars=cap)
+    log_vol = np.log1p(bars["volume"])
+    expected = support.expanding_zscore_strict(log_vol, min_common_history_bars=cap)
+    np.testing.assert_array_equal(out, expected)
+    assert np.isnan(out[: 200 - cap]).all()
 
 
 def test_d06f_causalidade() -> None:
@@ -217,6 +243,17 @@ def test_e02f_nao_usa_indice_t() -> None:
         prior = funding[:t]
         expected = (funding[t] - prior.mean()) / prior.std(ddof=1)
         assert out[t] == pytest.approx(expected), f"t={t}"
+
+
+def test_e02f_min_common_history_bars_e_repassado_a_primitiva() -> None:
+    """AG-030 (T0.5) -- mesma prova de fiação de C07/D03f, para E02f."""
+    rng = np.random.default_rng(51)
+    funding = rng.normal(0.0001, 0.0002, 150)
+    cap = 90
+    out = group_e.e02f_funding_z_expanding(funding, min_common_history_bars=cap)
+    expected = support.expanding_zscore_strict(funding, min_common_history_bars=cap)
+    np.testing.assert_array_equal(out, expected)
+    assert np.isnan(out[: 150 - cap]).all()
 
 
 def test_e10f_causalidade() -> None:

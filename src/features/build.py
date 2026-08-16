@@ -83,6 +83,7 @@ class FeatureWindows:
     maker_fee: float
     taker_fee: float
     min_warmup_bars: int
+    min_common_history_bars: int | None = None
 
     @classmethod
     def from_constants(cls) -> FeatureWindows:
@@ -100,6 +101,7 @@ class FeatureWindows:
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
             min_warmup_bars=int(load_constant("min_warmup_bars")),
+            min_common_history_bars=int(load_constant("min_common_history_bars_15m")),
         )
 
 
@@ -156,13 +158,19 @@ def compute_t1_features(
             log_return_1, windows.vol_ratio_short_window, windows.vol_ratio_long_window
         ),
         "C07_vol_pctile_expanding": group_c.c07_vol_pctile_expanding(
-            log_return_1, windows.c07_window
+            log_return_1,
+            windows.c07_window,
+            min_common_history_bars=windows.min_common_history_bars,
         ),
-        "D03f_volume_z_expanding": group_d.d03f_volume_z_expanding(volume),
+        "D03f_volume_z_expanding": group_d.d03f_volume_z_expanding(
+            volume, min_common_history_bars=windows.min_common_history_bars
+        ),
         "D06f_taker_imbalance_z_48": group_d.d06f_taker_imbalance_z_48(
             taker_buy_volume, volume, windows.d06f_window
         ),
-        "E02f_funding_z_expanding": group_e.e02f_funding_z_expanding(funding_arr),
+        "E02f_funding_z_expanding": group_e.e02f_funding_z_expanding(
+            funding_arr, min_common_history_bars=windows.min_common_history_bars
+        ),
         "E10f_oi_change_z_48": group_e.e10f_oi_change_z_48(oi_arr, windows.e10f_window),
         "C01_atr_20": atr_20_abs,
         "C02_atr_20_pct": atr_20_pct,
@@ -199,7 +207,20 @@ def build_t1_features(
     folga suficiente ANTES do início real de interesse para que
     `min_warmup_bars` (e, para C07/D03f/E02f, o histórico expansivo desde
     o início do dataset) tenham dado real por trás — esta função não
-    estende o intervalo pedido automaticamente."""
+    estende o intervalo pedido automaticamente.
+
+    AG-030 (T0.5, Opção A): `windows.min_common_history_bars` (default
+    `FeatureWindows.from_constants()` → `min_common_history_bars_15m`,
+    `config/constants.yaml`) capa a janela expansiva de C07/D03f/E02f no
+    histórico MÍNIMO comum entre os 5 ativos, contado a partir do FIM de
+    `bars_15m` — ou seja, relativo a `start`/`end` passados aqui, não a uma
+    data absoluta hardcoded. Chamar com `start = SYMBOL_START_DATE[symbol]`
+    (histórico completo do ativo, convenção já usada pelo pipeline real)
+    produz o efeito pretendido (BTC trunca as barras mais antigas; os 4
+    alts, já dentro do orçamento, ficam inalterados); chamar com um `start`
+    mais recente que a origem do ativo simplesmente não aciona o corte (`n`
+    já cabe no orçamento), sem quebrar nada — mas também sem garantir
+    comparabilidade cross-asset fora desse uso padrão."""
     bars_15m = _sources.load_bars_15m(symbol, start, end)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)

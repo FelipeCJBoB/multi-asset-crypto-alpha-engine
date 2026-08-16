@@ -38,10 +38,19 @@ def c06_vol_ratio_12_96(
     return out
 
 
-def c07_vol_pctile_expanding(log_return_1: FloatArray, window: int) -> FloatArray:
+def c07_vol_pctile_expanding(
+    log_return_1: FloatArray, window: int, *, min_common_history_bars: int | None = None
+) -> FloatArray:
     """Posto de `realized_vol_48` na distribuição EXPANSIVA estrita até
     `t-1` — §2.4 C07. Janela rolante fixa (`window`) só para calcular a
     volatilidade realizada em si; o posto dela é que é expansivo estrito
-    (B02)."""
+    (B02).
+
+    `min_common_history_bars` (AG-030, T0.5): repassado direto a
+    `support.expanding_percentile_rank_strict` — cap no histórico comum
+    entre os 5 ativos (ver docstring da primitiva). `None` (default)
+    preserva o comportamento expansivo desde a origem do ativo."""
     rv = support.realized_vol(log_return_1, window)
-    return support.expanding_percentile_rank_strict(rv)
+    return support.expanding_percentile_rank_strict(
+        rv, min_common_history_bars=min_common_history_bars
+    )

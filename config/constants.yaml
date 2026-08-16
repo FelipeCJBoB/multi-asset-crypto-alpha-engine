@@ -681,27 +681,49 @@ feature_a13_ema_window:
   scaling_invariant: clock
   sweep_required: false
   review_by: sprint_8
-  # scaling_invariant (2026-08-15, achado AG-027 addendum -- "3 classes"):
-  # memória/suavização -- span deve ser comensurável ao horizonte de RELÓGIO
-  # do label (time_stop_bars=32/8h a 15m), não à contagem de barras -- em
-  # multi-TF, span escala INVERSAMENTE ao TF pra preservar meia-vida em
-  # tempo real (ex.: 96@15m -> 48@30m -> 24@1h, NÃO 96 fixo). Decisão do
-  # Manager (2026-08-15): manter 48. Autorização anterior de testar
-  # EMA(24)/EMA(96) REVOGADA no mesmo dia -- não gastar N_lifetime nisso
-  # por ora. Ver audit/architecture_gaps_log.yaml AG-027.
+  # scaling_invariant (2026-08-16, AG-043 -- F3, decisão DELIBERADA de
+  # intenção, NÃO classificação por omissão): EMA de 48 barras de RELÓGIO,
+  # PONTO -- não converte pra bar_count sob dollar bar. O vocabulário
+  # scaling_invariant ganha 3ª classe `activity` (AG-043), mas dollar bar
+  # NÃO converte automaticamente toda feature em `activity`: a unidade é
+  # definida pela INTENÇÃO da feature. A intenção declarada de A13 é
+  # memória/suavização comensurável ao horizonte de RELÓGIO do label
+  # (time_stop_ms=8h, AG-031/B1 -- `time_stop_bars` supersedido, ver
+  # entrada abaixo), não à contagem de barras -- em multi-TF, span escala
+  # INVERSAMENTE ao TF pra preservar meia-vida em tempo real (ex.:
+  # 96@15m -> 48@30m -> 24@1h, NÃO 96 fixo). Origem do achado: AG-027
+  # addendum (2026-08-15). Decisão do Manager (2026-08-15): manter valor
+  # 48. Autorização anterior de testar EMA(24)/EMA(96) REVOGADA no mesmo
+  # dia -- não gastar N_lifetime nisso por ora. Ver AG-027 e AG-043.
 
 feature_b01_rsi_window:
   value: 14
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2 cita 'RSI14' nominalmente), nunca testada"
   class: B
-  scaling_invariant: clock
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
-  # scaling_invariant: memória/suavização (mesma classe de A13) -- escala
-  # inversamente ao TF. Decisão do Manager (2026-08-15): manter 14, sem
-  # sweep autorizado -- prioridade baixa (14 barras de 15m calha, por
-  # coincidência de magnitude, numa faixa intraday plausível).
+  # scaling_invariant (2026-08-16, AG-043 -- F3, REAVALIADO SEPARADAMENTE de
+  # A13, justificativa PRÓPRIA, não emprestada): RECLASSIFICADO de `clock`
+  # para `bar_count`. A classificação `clock` anterior citava "mesma classe
+  # de A13", mas a justificativa de A13 amarra o span ao horizonte de
+  # RELÓGIO do label (time_stop_ms) -- B01 nunca teve essa amarração: o
+  # texto era "14 barras de 15m calha, por coincidência de magnitude, numa
+  # faixa intraday plausível", ou seja, nenhuma intenção declarada de
+  # rastrear tempo real, só uma observação pós-hoc de magnitude. RSI de
+  # Wilder usa o MESMO primitivo de suavização de `atr_window`
+  # (support.py::wilder_smooth, usado por ATR e RSI) -- `atr_window` já
+  # está decidido `bar_count` pro Feature Engine sob esta mesma AG-043 (ver
+  # entrada `atr_window` acima, C01/C02, "AG-043/F1"). RSI é oscilador
+  # limitado [0,100] via razão de ganhos/perdas suavizados -- família de
+  # agregação/estimação (erro amostral não conhece relógio, mesma lógica
+  # de B07/C06/C07), não de distância posicional amarrada ao horizonte do
+  # label como A13 (dist_ema48_atr). Nenhuma base econômica encontrada em
+  # PRD/registry.yaml que amarre o span do RSI ao horizonte de holding --
+  # `bar_count` é o default mais honesto na ausência dessa amarração.
+  # Decisão (2026-08-16): manter valor 14 (0 trials -- reclassificação de
+  # tag, não sweep), sem sweep autorizado. Ver AG-027 e AG-043.
 
 feature_b07_efficiency_ratio_window:
   value: 48
@@ -821,6 +843,56 @@ min_warmup_bars:
   class: B
   sweep_required: false
   review_by: sprint_8
+
+min_common_history_bars_15m:
+  value: 164256
+  provenance: MEASURED
+  source: "AG-030 (T0.5, decidido 2026-08-16): cap da janela expansiva de
+    C07_vol_pctile_expanding/D03f_volume_z_expanding/E02f_funding_z_expanding
+    (group_c.py/group_d.py/group_e.py) e de er_quantile/econ_quantile dentro
+    de classify_regimes (src/regime/classifier.py) no histórico MÍNIMO comum
+    entre os 5 ativos -- sem isso, o MESMO valor bruto de entrada produzia
+    percentil/z-score estruturalmente diferente por ativo, dependendo só de
+    quanto histórico aquele ativo já tinha acumulado (não vazamento
+    temporal, < t estrito preservado -- não-comparabilidade CROSS-ASSET
+    introduzida pelo desenho da própria feature, achado do Manager). Medido
+    de `SYMBOL_START_DATE`/`END_DATE` em
+    src/analysis/volatility_comparison.py: ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT
+    (os 4 alts, teto comum) começam em 2021-12-01, BTCUSDT em 2019-12-31;
+    END_DATE=2026-08-07 pros 5. Contagem de dias INCLUSIVA (ambas as pontas
+    contam) -- mesma convenção já usada na entrada AG-030 do
+    architecture_gaps_log.yaml: 2021-12-01 -> 2026-08-07 = 1711 dias x 96
+    barras/dia (15m) = 164.256 (recalculado e confirmado nesta rodada,
+    2026-08-16 -- BTCUSDT bate em 2412 dias x 96 = 231.552, também
+    confirmado). Fato de cobertura de backfill (mesma natureza de
+    SYMBOL_START_DATE/END_DATE, que documentam explicitamente 'não é
+    constante de domínio, é fato de cobertura de backfill' -- diferença
+    aqui é que este número FLUI para dentro de código de pipeline
+    (group_c/d/e, classifier.py), não fica confinado a um script de
+    análise -- por isso precisa de entrada aqui (Regra 1, §16.10.2), ao
+    contrário de SYMBOL_START_DATE/END_DATE. NÃO reavaliar sozinho quando o
+    backfill avançar (os 5 ativos crescem juntos, o teto sobe igual para
+    todos) -- só recalcular se a DATA DE INÍCIO de algum ativo mudar (ex.:
+    novo ativo adicionado com histórico mais curto que os alts atuais, ou
+    correção de um SYMBOL_START_DATE errado)."
+  class: B
+  scaling_invariant: clock
+  sweep_required: false
+  review_by: sprint_8
+  # scaling_invariant: clock -- o valor 164.256 é a contagem de barras de
+  # 15m equivalente a uma janela de CALENDÁRIO fixa (1711 dias,
+  # 2021-12-01->2026-08-07), não uma contagem de barra arbitrária -- mesma
+  # categoria de A13 (feature_a13_ema_window). O nome carrega o sufixo
+  # `_15m` de propósito: o Feature Engine (src/features/build.py) e o
+  # Regime Engine (src/regime/classifier.py) hoje só operam a 15m
+  # (`bars_15m` hardcoded, ver docstring de compute_t1_features) -- se algum
+  # dia processarem M30/H1 diretamente (não é o caso hoje, M2 é a única
+  # camada multi-TF), este valor precisa de conversão proporcional ao TF
+  # (÷2 a 30m, ÷4 a 1h) pra representar a MESMA janela de calendário, não
+  # ficar fixo em barras. Implementação pendente: nem `FeatureWindows`
+  # (src/features/build.py) nem `RegimeThresholds` (src/regime/
+  # classifier.py) fazem essa conversão hoje -- os dois leem este valor
+  # cru via `load_constant("min_common_history_bars_15m")`.
 
 # ============================================================================
 # Camada labels — Label Engine (Sprint 6, §3). tp_atr_mult/sl_atr_mult/

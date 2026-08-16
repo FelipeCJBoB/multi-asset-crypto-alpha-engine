@@ -1842,7 +1842,128 @@ entries:
       Custo real: reprocessamento de Feature Engine + Regime Engine pros 5
       ativos — não é 0-trial como AG-027, é trabalho de pipeline real.
       Implementação pendente.
-    status: "aberto -- DECIDIDO (normalizar por histórico comum), implementação pendente"
+    implementacao_2026_08_16: >
+      Mecanismo escolhido: OPÇÃO A (truncar o início de cada série pro
+      mesmo nº de barras acumuladas), não Opção B (rolling de tamanho
+      fixo) — mantém a semântica "expansiva desde o início", só redefine
+      onde "início" está por ativo; Opção B mudaria o que a feature
+      REPRESENTA (deixaria de ser "todo o histórico até agora"), o que
+      exigiria justificativa própria não pedida pela decisão do Manager.
+      Confirmado implementável sem quebrar B02 (`< t` estrito): cada
+      índice retido `t` continua usando exclusivamente índices retidos
+      `< t` — um SUBCONJUNTO estrito do `< t` original, nunca um
+      superconjunto — então excluir as barras mais antigas nunca introduz
+      olhar pro futuro, só reduz quanto passado é usado.
+
+      `src/features/support.py::expanding_zscore_strict`/
+      `expanding_percentile_rank_strict` ganharam parâmetro opcional
+      `min_common_history_bars: int | None = None` (default `None`
+      preserva bit-exato o comportamento anterior — mesmo padrão de
+      sentinela de AG-013). Quando informado e `len(values) >
+      min_common_history_bars`, os primeiros `len(values) -
+      min_common_history_bars` índices saem como NaN e a expansão
+      (Welford / Fenwick tree) recomeça no primeiro índice retido —
+      implementado extraindo o corpo original de cada função pra
+      `_expanding_zscore_strict_core`/`_expanding_percentile_rank_strict_
+      core` (privadas) e chamando-as sobre a fatia retida, sem duplicar
+      o algoritmo. Repassado nos 4 sites: `group_c.py::
+      c07_vol_pctile_expanding`, `group_d.py::d03f_volume_z_expanding`,
+      `group_e.py::e02f_funding_z_expanding` (todos com o novo parâmetro
+      keyword-only) e `classifier.py::classify_regimes` (via
+      `RegimeThresholds.min_common_history_bars`, usado só na
+      recomputação interna de `er_quantile`/`econ_quantile` — se
+      injetados prontos pelo chamador, o cap não se aplica ali, é
+      responsabilidade de quem os calculou).
+
+      Constante nova `min_common_history_bars_15m` em
+      `config/constants.yaml` (value: 164256, provenance: MEASURED,
+      class: B, scaling_invariant: clock, sweep_required: false,
+      review_by: sprint_8) — threaded via `FeatureWindows.
+      min_common_history_bars` (`src/features/build.py`) e
+      `RegimeThresholds.min_common_history_bars` (`src/regime/
+      classifier.py`), ambos carregando `load_constant(
+      "min_common_history_bars_15m")` em `from_constants()`. Recálculo
+      confirmado nesta rodada (não só citado): `SYMBOL_START_DATE`/
+      `END_DATE` reais em `src/analysis/volatility_comparison.py` —
+      alts 2021-12-01→2026-08-07 = 1711 dias (contagem inclusiva) × 96
+      barras/dia (15m) = 164.256; BTCUSDT 2019-12-31→mesma data = 2412
+      dias × 96 = 231.552 — bate com os números já citados no `gap`
+      acima.
+
+      Mecanismo opera sobre `n = len(values)` recebido pela função, não
+      sobre uma data absoluta hardcoded — depende do chamador passar o
+      histórico completo do ativo (`build_t1_features(symbol,
+      SYMBOL_START_DATE[symbol], END_DATE)`, convenção já documentada
+      na docstring de `build_t1_features` antes desta mudança); chamar
+      com um `start` mais recente simplesmente não aciona o corte (`n`
+      já cabe no orçamento), sem quebrar nada mas também sem garantir
+      comparabilidade fora do uso padrão — documentado na docstring de
+      `build_t1_features`.
+
+      `scaling_invariant: clock` declarado (não `bar_count`): o valor
+      164.256 representa uma janela de CALENDÁRIO fixa (1711 dias), não
+      uma contagem de barra arbitrária — mas Feature/Regime Engine hoje
+      só operam a 15m (`bars_15m` hardcoded), então nenhuma conversão
+      pra 30m/1h foi implementada; ressalva registrada no comentário da
+      constante em `constants.yaml` pra quando esse dia chegar.
+
+      Testes novos (mesmo padrão dos testes de causalidade já existentes
+      de `expanding_zscore_strict`/`expanding_percentile_rank_strict`,
+      incluindo prova B02 direta e `_assert_causal`):
+      `tests/unit/test_features_support.py` (10 testes: valor conhecido/
+      divergência vs sem cap, equivalência à cauda isolada, None/cap
+      folgado preserva bit-exato, causalidade, determinismo — 5 por
+      função × 2 funções), `tests/unit/test_features_groups.py` (3
+      testes de fiação C07/D03f/E02f -- confirmam que o grupo só repassa
+      o kwarg, não reimplementa), `tests/unit/test_regime_classifier.py`
+      (3 testes -- valor da constante via `from_constants()`, default
+      `None` em construção manual, cap chega até a recomputação interna
+      de er_quantile/econ_quantile), `tests/unit/test_features_build.py`
+      (2 testes -- valor da constante via `FeatureWindows.
+      from_constants()`, e prova end-to-end em `compute_t1_features`
+      que só C07/D03f/E02f mudam com o cap, as outras 9 colunas T1/T2
+      saem byte-idênticas com/sem cap).
+
+      Checks mecânicos (7 permitidos) rodados contra todos os arquivos
+      tocados: `banned_patterns.py --strict` limpo (0 violação
+      automatizada); `check_constants_referenced.py --worktree` OK (toda
+      referência `load_constant(...)` tem entrada); `check_constants_
+      provenance.py` OK (constante nova não é ASSUMED, não entra nas
+      listas de alerta); `check_unguarded_ratios.py` sem NENHUM achado
+      novo (só ratios pré-existentes já sem guarda, nenhum introduzido
+      por esta mudança — não modifiquei nenhuma divisão); `check_sprint_
+      log_references.py` OK; `ruff check` limpo em todos os arquivos
+      tocados (1 E501 pré-existente em `support.py` na docstring de
+      `yang_zhang_vol`, linha deslocada por esta edição mas não
+      relacionada ao AG-030, corrigido de passagem por estar no mesmo
+      arquivo; 1 warning de `# noqa` mal-formado pré-existente em
+      `group_e.py:61`, não tocado, fora de escopo); `mypy` limpo em
+      todos os arquivos de `src/` tocados e em 3 dos 4 arquivos de teste
+      tocados — `tests/unit/test_features_support.py` tem 1 erro
+      `no-untyped-def` PRÉ-EXISTENTE (linha 14, parâmetro `fn` de
+      `_assert_causal`, commit b549bd9 2026-08-08, antes desta task) —
+      confirmado via `git blame`, não introduzido nem corrigido aqui
+      (fora do escopo do AG-030, risco de tocar assinatura usada em
+      todos os testes de causalidade do arquivo).
+
+      NÃO EXECUTADO (proibido — só o usuário roda `.py`/`pytest`/`uv run
+      quant`): `uv run pytest tests/unit/test_features_support.py
+      tests/unit/test_features_groups.py tests/unit/test_regime_
+      classifier.py tests/unit/test_features_build.py -v` confirmaria os
+      20 testes novos (10+3+3+2, mais os pré-existentes que continuam
+      cobrindo o comportamento sem cap) sem quebrar nada. Reprocessamento
+      real de Feature Engine + Regime Engine pros 5 ativos (`uv run
+      quant features build` / `uv run quant regime build`) SEGUE
+      PENDENTE — é o item de custo real citado na `resolution` acima,
+      não coberto por este código nem pelos testes sintéticos: os
+      parquets já materializados em disco (se existirem de rodadas
+      anteriores) continuam com a janela expansiva antiga até serem
+      regerados com este código.
+    status: "aberto -- código implementado + testado (síntese/unitário),
+      reprocessamento real de Feature/Regime Engine pros 5 ativos
+      PENDENTE (usuário precisa rodar `uv run quant features build` +
+      `uv run quant regime build` pra cada um dos 5 símbolos e confirmar
+      via pytest que os 20 testes novos passam)"
 
   - id: AG-031
     date: "2026-08-15"

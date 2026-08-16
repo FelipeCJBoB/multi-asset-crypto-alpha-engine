@@ -87,6 +87,7 @@ class RegimeThresholds:
     min_warmup_bars: int
     confirmation_bars: int
     stress_exit_confirmation_bars: int
+    min_common_history_bars: int | None = None
 
     @classmethod
     def from_constants(cls) -> RegimeThresholds:
@@ -100,6 +101,7 @@ class RegimeThresholds:
             stress_exit_confirmation_bars=int(
                 load_constant("regime_stress_exit_confirmation_bars")
             ),
+            min_common_history_bars=int(load_constant("min_common_history_bars_15m")),
         )
 
 
@@ -304,7 +306,17 @@ def classify_regimes(
     já tinha (chega pronto de `C07_vol_pctile_expanding`) e que `er_48`/
     `cost_atr_ratio` não tinham: sem isso, um chamador que já calculou o
     quantil (ou quer trocar o método de ranking) não tinha como injetar,
-    só recalcular por baixo — assimetria sem razão declarada."""
+    só recalcular por baixo — assimetria sem razão declarada.
+
+    AG-030 (T0.5, Opção A): quando `er_quantile`/`econ_quantile` NÃO são
+    injetados (recomputados aqui dentro), `thresholds.min_common_history_
+    bars` capa a janela expansiva de ambos no histórico MÍNIMO comum entre
+    os 5 ativos, mesmo mecanismo/constante de `C07_vol_pctile_expanding`
+    (ver `support.expanding_percentile_rank_strict`/`FeatureWindows` em
+    `src.features.build`) — contado a partir do FIM de `er_48`/
+    `cost_atr_ratio`, não de uma data absoluta. Se `er_quantile`/
+    `econ_quantile` forem injetados prontos, este cap não se aplica aqui
+    (é responsabilidade de quem os calculou)."""
     if thresholds is None:
         thresholds = RegimeThresholds.from_constants()
 
@@ -319,9 +331,13 @@ def classify_regimes(
         raise ValueError("classify_regimes: stress_result não está alinhado com open_time_ms")
 
     if er_quantile is None:
-        er_quantile = support.expanding_percentile_rank_strict(er_48)
+        er_quantile = support.expanding_percentile_rank_strict(
+            er_48, min_common_history_bars=thresholds.min_common_history_bars
+        )
     if econ_quantile is None:
-        econ_quantile = support.expanding_percentile_rank_strict(cost_atr_ratio)
+        econ_quantile = support.expanding_percentile_rank_strict(
+            cost_atr_ratio, min_common_history_bars=thresholds.min_common_history_bars
+        )
 
     regime, regime_raw = _run_state_machine(
         er_quantile, vol_pctile, stress_result.triggered_mask, thresholds

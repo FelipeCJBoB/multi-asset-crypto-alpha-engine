@@ -13,10 +13,19 @@ from .. import support
 from ..support import FloatArray
 
 
-def d03f_volume_z_expanding(volume: FloatArray) -> FloatArray:
-    """Z-score expansivo estrito de `log(1+V_t)` — §2.5 D03f."""
+def d03f_volume_z_expanding(
+    volume: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
+    """Z-score expansivo estrito de `log(1+V_t)` — §2.5 D03f.
+
+    `min_common_history_bars` (AG-030, T0.5): repassado direto a
+    `support.expanding_zscore_strict` — cap no histórico comum entre os 5
+    ativos (ver docstring da primitiva). `None` (default) preserva o
+    comportamento expansivo desde a origem do ativo."""
     log_volume = np.log1p(volume)
-    return support.expanding_zscore_strict(log_volume)
+    return support.expanding_zscore_strict(
+        log_volume, min_common_history_bars=min_common_history_bars
+    )
 
 
 def d06f_taker_imbalance_z_48(

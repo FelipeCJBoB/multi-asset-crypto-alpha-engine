@@ -366,3 +366,153 @@ def test_expanding_percentile_rank_strict_com_nan_intercalado() -> None:
     assert np.isnan(out[4])
     # posto em t=3 (valor 2.0) usa só {1.0, 3.0} (não-NaN prévios): 1 de 2 é menor
     assert out[3] == pytest.approx(0.5)
+
+
+# ============================================================================
+# min_common_history_bars — AG-030 (T0.5, Opção A): cap no histórico comum
+# entre os 5 ativos, aplicado às DUAS primitivas expansivas. `None` (default)
+# preserva bit-exato o comportamento testado acima; os testes abaixo cobrem
+# só o comportamento NOVO do parâmetro.
+# ============================================================================
+
+
+def test_expanding_zscore_strict_min_common_history_bars_none_ou_folgado_e_bit_exato() -> None:
+    rng = np.random.default_rng(61)
+    values = rng.normal(0, 1, 30)
+    baseline = support.expanding_zscore_strict(values)
+    # None explícito == omitir o kwarg (default já testado acima)
+    assert np.array_equal(
+        support.expanding_zscore_strict(values, min_common_history_bars=None),
+        baseline,
+        equal_nan=True,
+    )
+    # cap >= len(values): não há o que truncar, resultado idêntico ao sem cap
+    assert np.array_equal(
+        support.expanding_zscore_strict(values, min_common_history_bars=30),
+        baseline,
+        equal_nan=True,
+    )
+    assert np.array_equal(
+        support.expanding_zscore_strict(values, min_common_history_bars=1000),
+        baseline,
+        equal_nan=True,
+    )
+
+
+def test_expanding_zscore_strict_min_common_history_bars_equivale_a_cauda_isolada() -> None:
+    """Truncar as primeiras `n - cap` barras e calcular deve dar EXATAMENTE
+    o mesmo resultado que chamar a função sem cap só sobre a cauda — é a
+    definição do mecanismo (Opção A do AG-030): recomeçar a expansão no
+    novo "início", não uma segunda implementação."""
+    rng = np.random.default_rng(63)
+    values = rng.normal(0, 1, 40)
+    cap = 15
+    offset = 40 - cap
+    out = support.expanding_zscore_strict(values, min_common_history_bars=cap)
+    assert np.isnan(out[:offset]).all()
+    expected_tail = support.expanding_zscore_strict(values[offset:])
+    np.testing.assert_array_equal(out[offset:], expected_tail)
+
+
+def test_expanding_zscore_strict_min_common_history_bars_muda_resultado_vs_sem_cap() -> None:
+    """Exemplo ilustrativo direto do achado do AG-030: um outlier "de
+    história antiga" (só BTC teria) distorce o z-score calculado desde a
+    origem verdadeira; capado no histórico comum, o outlier some da
+    distribuição de referência e o resultado muda (prova de que o cap não é
+    um no-op)."""
+    values = np.array([1000.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+    uncapped = support.expanding_zscore_strict(values)
+    capped = support.expanding_zscore_strict(values, min_common_history_bars=5)
+    assert np.isnan(capped[0])  # barra com o outlier antigo, excluída
+    assert not np.isnan(uncapped[5]) and not np.isnan(capped[5])
+    assert capped[5] != pytest.approx(uncapped[5])
+    # e bate com a cauda isolada, mesma prova do teste anterior
+    expected_tail = support.expanding_zscore_strict(values[1:])
+    np.testing.assert_array_equal(capped[1:], expected_tail)
+
+
+def test_expanding_zscore_strict_min_common_history_bars_preserva_causalidade() -> None:
+    rng = np.random.default_rng(65)
+    values = rng.normal(0, 1, 60)
+
+    def fn(v: np.ndarray) -> np.ndarray:
+        return support.expanding_zscore_strict(v, min_common_history_bars=25)
+
+    _assert_causal(fn, values, cutoff=40)
+
+
+def test_expanding_zscore_strict_min_common_history_bars_determinismo() -> None:
+    values = np.array([1.0, 5.0, 2.0, 9.0, 3.0, 7.0, 4.0, 8.0])
+    out1 = support.expanding_zscore_strict(values, min_common_history_bars=5)
+    out2 = support.expanding_zscore_strict(values, min_common_history_bars=5)
+    np.testing.assert_array_equal(out1, out2)
+
+
+def test_expanding_percentile_rank_strict_min_common_history_bars_none_ou_folgado_e_bit_exato() -> (
+    None
+):
+    rng = np.random.default_rng(71)
+    values = rng.normal(0, 1, 30)
+    baseline = support.expanding_percentile_rank_strict(values)
+    assert np.array_equal(
+        support.expanding_percentile_rank_strict(values, min_common_history_bars=None),
+        baseline,
+        equal_nan=True,
+    )
+    assert np.array_equal(
+        support.expanding_percentile_rank_strict(values, min_common_history_bars=30),
+        baseline,
+        equal_nan=True,
+    )
+    assert np.array_equal(
+        support.expanding_percentile_rank_strict(values, min_common_history_bars=1000),
+        baseline,
+        equal_nan=True,
+    )
+
+
+def test_expanding_percentile_rank_strict_min_common_history_bars_equivale_a_cauda_isolada() -> (
+    None
+):
+    rng = np.random.default_rng(73)
+    values = rng.normal(0, 1, 40)
+    cap = 15
+    offset = 40 - cap
+    out = support.expanding_percentile_rank_strict(values, min_common_history_bars=cap)
+    assert np.isnan(out[:offset]).all()
+    expected_tail = support.expanding_percentile_rank_strict(values[offset:])
+    np.testing.assert_array_equal(out[offset:], expected_tail)
+
+
+def test_expanding_percentile_rank_strict_min_common_history_bars_muda_resultado_vs_sem_cap() -> (
+    None
+):
+    """Mesmo exemplo do z-score: `100.0` é um valor "de história antiga" que
+    só existiria pro ativo com mais barras (BTC) — sem cap, ele entra na
+    distribuição de referência e abaixa o posto de toda a série crescente
+    que vem depois; com cap, ele é excluído e a série recomeça do zero."""
+    values = np.array([100.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+    uncapped = support.expanding_percentile_rank_strict(values)
+    capped = support.expanding_percentile_rank_strict(values, min_common_history_bars=5)
+    assert np.isnan(capped[0])
+    assert uncapped[5] == pytest.approx(0.8)  # 4 de 5 prévios (100,1,2,3,4) são < 5
+    assert capped[5] == pytest.approx(1.0)  # 4 de 4 prévios (1,2,3,4) são < 5 -- outlier excluído
+    expected_tail = support.expanding_percentile_rank_strict(values[1:])
+    np.testing.assert_array_equal(capped[1:], expected_tail)
+
+
+def test_expanding_percentile_rank_strict_min_common_history_bars_preserva_causalidade() -> None:
+    rng = np.random.default_rng(75)
+    values = rng.normal(0, 1, 60)
+
+    def fn(v: np.ndarray) -> np.ndarray:
+        return support.expanding_percentile_rank_strict(v, min_common_history_bars=25)
+
+    _assert_causal(fn, values, cutoff=40)
+
+
+def test_expanding_percentile_rank_strict_min_common_history_bars_determinismo() -> None:
+    values = np.array([5.0, 1.0, 9.0, 2.0, 7.0, 3.0, 8.0, 4.0])
+    out1 = support.expanding_percentile_rank_strict(values, min_common_history_bars=5)
+    out2 = support.expanding_percentile_rank_strict(values, min_common_history_bars=5)
+    np.testing.assert_array_equal(out1, out2)
