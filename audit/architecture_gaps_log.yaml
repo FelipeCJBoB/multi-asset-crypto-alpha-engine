@@ -2417,17 +2417,42 @@ entries:
       escopo, não de dado. `_embargo_ms()` (`cpcv.py:247-255`) tem o mesmo
       problema-irmão, mas esse já está corretamente atribuído ao Bloqueador
       3/AG-032 pelo documento original.
-    resolved_by_commit: null
+    resolved_by_commit: "982b5d4"
     resolution: >
-      NÃO IMPLEMENTADO. Caminho sugerido pela revisão (não é decisão,
-      Manager escolhe): com `grade_id` (símbolo+camada+threshold+data de
-      calibração) existindo dos dois lados (labels e `CPCVConfig`),
-      `assert_tf_consistent` viraria checagem de igualdade discreta
-      (`labels_grade_id == config.grade_id`) em vez de comparação numérica
-      com tolerância -- mais forte (detecta divergência de calibração, não
-      só de nome de TF) e sem depender de `step_ms`. Retrocompatível pra
-      barra de tempo (`grade_id == tf`).
-    status: "aberto -- redesenho separado dos 3 bloqueadores nomeados, decisão do Manager sobre quando escopar"
+      IMPLEMENTADO 2026-08-16 -- escopo escolhido pelo Manager entre 2
+      opções apresentadas (restrito a M2, ou completo incluindo `cpcv.py`):
+      completo. `CPCVConfig` ganhou `grade_id: str | None = None`,
+      `__post_init__` deriva pra `self.tf` via `object.__setattr__`
+      (dataclass frozen) quando `None` -- bit-exato pra todo caller
+      existente, já que nenhum passa `grade_id` hoje e `grade_id == tf`
+      pra qualquer grade de TEMPO (confirma a recomendação original:
+      "retrocompatível pra barra de tempo"). `assert_tf_consistent`
+      renomeada `assert_grade_consistent` -- mecânica de verificação
+      IDÊNTICA pra grade de tempo (mediana de espaçamento de `t0` vs.
+      `step_ms(config.grade_id)`, mesma `_GRADE_CONSISTENCY_RTOL`), porque
+      não existe caminho de dado real pra igualdade discreta
+      (`labels_grade_id` como coluna persistida) sem tocar o schema de
+      `labels.parquet` -- decisão consciente de NÃO fazer essa migração
+      agora (zero caller de dollar bar real, custo desproporcional ao
+      benefício). Diferença real: `step_ms(grade_id)` fora do dict fechado
+      de grades de tempo levanta `NotImplementedError` explícito (não
+      `UnsupportedTimeframeError` cru sem contexto) -- verificação de
+      identidade de grade dollar continua sem mecanismo, registrado como
+      tal, não fingido. `generate_splits` chama `assert_grade_consistent`.
+      Auditados os ~15 callers reais de `generate_splits`/`CPCVConfig`
+      (`leakage.py`, `dataset.py`, `pipeline.py`, `fill_reconciliation.py`,
+      `faixa1_5/1_6/1_7/2_caminho_b/2_vol_accelerator_test/2_e3_
+      stability.py`) -- todos usam `config=None`/default, nenhum muda de
+      comportamento. `tests/unit/test_validation_cpcv.py`: 6 testes
+      renomeados `test_assert_grade_consistent_*`, +2 novos (`grade_id`
+      explícito respeitado, `NotImplementedError` fora do dict de
+      `step_ms`). **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou
+      `uv run pytest` sobre os arquivos tocados + rede de segurança
+      (`test_validation_leakage.py`, `test_models_dataset.py`,
+      `test_models_pipeline.py`): **105 passed**, nenhuma regressão nos
+      ~15 callers auditados. Commitado em `982b5d4`, pushed pra
+      `origin/master`.
+    status: "FECHADO 2026-08-16 -- implementado, testado (105 passed), commitado"
 
   - id: AG-038
     date: "2026-08-16"
@@ -2572,18 +2597,59 @@ entries:
       leitura "R1≈15m" que o próprio achado D do Bloqueador 2 já identificou
       como "mentira operacional". Registrar agora, antes de qualquer linha
       de código, é o que torna a decisão auditável.
-    resolved_by_commit: null
+    resolved_by_commit: "982b5d4"
     resolution: >
-      NÃO IMPLEMENTADO -- decisão de ontologia registrada, código pendente.
-      Dependências reais antes de implementar: (1) `grade_id` versionado
-      (AG-037) precisa existir primeiro -- Bloqueador 2 e o redesenho de
-      `assert_tf_consistent` compartilham o mesmo pré-requisito; (2) o
-      "alarme de deriva" da Opção A′ exige um monitor NOVO -- `src/
-      monitoring/` está vazio hoje, isto não é metadado, é código real; (3)
-      regra de quando `calibration_version` incrementa (manual, disparado
-      pelo Manager quando o alarme soar -- Opção A′ é explicitamente SEM
-      recalibração automática) precisa ficar escrita, não implícita.
-    status: "aberto -- decidido, aguarda grade_id (AG-037) como pré-requisito"
+      IMPLEMENTADO PARCIALMENTE 2026-08-16 -- item (1) das 3 dependências
+      registradas abaixo fechado (`grade_id`, AG-037, mesmo commit). Escopo
+      real desta entrada era a parte de M2: `BarComparisonMetrics` ganhou
+      `resolution_id: str` (novo, ao lado de `tf`, que passa a ser só o
+      parâmetro de CALIBRAÇÃO -- decide qual baseline de `klines_1m` define
+      `target_n_bars`). `m2_worker.RESOLUTION_ID_BY_TF` (`dict(zip(
+      TIMEFRAMES, ("R1","R2","R3")))`) implementa o pareamento posicional;
+      threading completo em `compute_time_bar_for_symbol`/`compute_trades_
+      dependent_bars_for_symbol_tf`/`_log_task_done`/`m2_bar_comparison.
+      _build_payload`. `bar_measure=quote_volume`/`bar_unit=USDT`/
+      `bar_close_condition` (já implícitos em `bars.py:222`) documentados
+      como nota em `constants.yaml::canonical_bar_type`, sem constante YAML
+      nova (vocabulário, não valor de domínio numérico -- mesmo tratamento
+      de `BAR_TYPES`/`TIMEFRAMES`). Teste de regressão travando o
+      invariante central (`resolution_id` nunca é um literal de
+      `TIMEFRAMES`) escrito ANTES da implementação estar correta -- pegou
+      um bug de raiz meu na hora (ver abaixo).
+
+      Itens (2) e (3) permanecem NÃO IMPLEMENTADOS, fora de escopo desta
+      leva por decisão explícita (nenhum caller de produção real até
+      dollar bar ser implantado): "alarme de deriva" (monitor novo em
+      `src/monitoring/`, hoje vazio) e regra formal de incremento de
+      `calibration_version`. Ambos continuam registrados como dependência
+      restante de A′ pra quando dollar bar deployment de fato começar.
+
+      **BUG DE RAIZ meu, achado pelo pytest do usuário (2026-08-16),
+      corrigido:** `RESOLUTION_ID_BY_TF = dict(zip(("R1","R2","R3"),
+      TIMEFRAMES))` -- `dict(zip(a,b))` usa o 1º argumento como CHAVE;
+      escrevi a ordem invertida, produzindo `{"R1":"15m",...}` em vez de
+      `{"15m":"R1",...}`, e todo call site (`RESOLUTION_ID_BY_TF[tf]`)
+      levantava `KeyError`. Corrigido invertendo a ordem do `zip`. Pego
+      pelo próprio teste de regressão escrito nesta mesma leva -- prova de
+      que o teste tem dente, não só cobertura de linha.
+
+      **Bug PRÉ-EXISTENTE, não meu, exposto no caminho:** `commit f0bd28c`
+      (M2, antes desta leva) deu `start`/`end` obrigatórios a `m2_worker.
+      _query_baseline` e atualizou o fake de só 1 dos 3 testes que a
+      chamam (`test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_
+      curta`) -- `test_compute_trades_dependent_bars_for_symbol_tf_e_
+      autocontida`/`test_time_stop_ms_e_invariante_entre_tfs` ficaram com
+      fakes de 2 argumentos, nunca pegos porque não rodaram de novo depois
+      da mudança (mesma classe de bug que a docstring do próprio arquivo
+      já documentava, 2ª ocorrência). Corrigido: os 2 fakes aceitam
+      `start`/`end` agora.
+
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou `uv run
+      pytest` (3 rodadas: a 1ª achou o bug de `zip` invertido, a 2ª achou o
+      bug pré-existente de `_query_baseline`, a 3ª confirmou limpo):
+      **105 passed in 167,23s**. Commitado em `982b5d4`, pushed pra
+      `origin/master`.
+    status: "FECHADO PARCIALMENTE 2026-08-16 -- itens (1)/M2 implementados e testados (105 passed), commitados. Itens (2) alarme de deriva e (3) regra de calibration_version seguem abertos, fora de escopo desta leva (sem caller real até dollar bar ser implantado)."
 
   - id: AG-043
     date: "2026-08-16"

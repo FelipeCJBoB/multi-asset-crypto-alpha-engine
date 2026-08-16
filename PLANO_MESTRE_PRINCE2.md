@@ -706,10 +706,10 @@ escrito no fim, é o estado real.
 | `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
 | `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
 | `labels` (`src/labels/triple_barrier.py` + `barrier_sweep.py`/`cost_surface.py`/`backfill_multi_symbol.py`/`experiment_log.py`) | horizonte do label em relógio fixo (B1 = Opção 2), `time_stop_bars`→`time_stop_ms`, `atr_window`→`atr_window_ms` (Label Engine só), `n_bars_held` vira contagem real | ✅ pronto — confirmado empiricamente (`uv run pytest`, 121 passed), commitado e pushed | `AG-031`, `AG-044`..`048`, commit `c0ac546` |
-| `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `threshold_usdt`/`resolution_id`/`grade_id`, abandona nomes M15/M30/H1 (B2 = A′+D) | ⬜ não iniciado — depende de `grade_id` (item abaixo) | `AG-042` |
-| `validation` (`assert_tf_consistent`) | guard vira igualdade discreta de `grade_id`, não mais `rtol` estatístico | ⬜ não iniciado | `AG-037` (achado `project_assurance`) |
+| `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `resolution_id` (R1/R2/R3) substitui M15/M30/H1 como identidade de dollar/volume/tick_imbalance bars (B2 = A′+D, parte 1 — `threshold_usdt` como identidade formal fica pra quando dollar bar for implantado) | ✅ pronto — confirmado empiricamente (`uv run pytest`, 105 passed), commitado e pushed | `AG-042`, commit `982b5d4` |
+| `validation` (`assert_grade_consistent`, `src/validation/cpcv.py`) | `CPCVConfig` ganha `grade_id` (deriva de `tf`, retrocompatível); guard renomeado de `assert_tf_consistent`, `NotImplementedError` explícito fora do dict de `step_ms` (mecânica de checagem em si continua `rtol` pra grade de tempo — igualdade discreta exigiria coluna nova em `labels.parquet`, fora de escopo sem caller real) | ✅ pronto — confirmado empiricamente (`uv run pytest`, 105 passed), commitado e pushed, ~15 callers reais auditados sem mudança | `AG-037`, commit `982b5d4` |
 | `features` (`constants.yaml`, `support.py`) | `scaling_invariant` ganha `activity`; A13 vira F1 explícito; correção de `sqrt(window)`/Yang-Zhang/asof-join | ⬜ não iniciado | `AG-043` |
-| `monitoring` (`src/monitoring/`, hoje vazio) | alarme de deriva de threshold (parte de A′) | ⬜ não iniciado — código novo, não existe nada ainda | `AG-042` |
+| `monitoring` (`src/monitoring/`, hoje vazio) | alarme de deriva de threshold (parte de A′) + regra de incremento de `calibration_version` | ⬜ não iniciado — código novo, não existe nada ainda; itens (2)/(3) do escopo original de `AG-042`, deliberadamente fora desta leva | `AG-042` |
 | `features` (M1, `src/features/volatility.py`) | remedição dos 8 estimadores sob grade dollar | ⬜ bloqueado — precisa dollar bar real construída primeiro | `AG-036` |
 | `data` (reprocessamento real, 61GB `aggTrades`) | grade dollar construída em escala, todo o pipeline rerodado | ⬜ não iniciado — risco de memória (`AG-034`) segue sem solução | `docs/refactor_dollar_bar_canonico.md` §5.3 |
 
@@ -1284,6 +1284,26 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.14 (2026-08-16)** — `AG-042`/`AG-037` fechados (escopo M2 +
+  `grade_id`). Manager escolheu o escopo completo entre 2 opções
+  apresentadas (M2 sozinho, ou M2 + `cpcv.py`) depois de eu achar que
+  `AG-042` dependia de `grade_id` (`AG-037`) como pré-requisito real —
+  inversão de ordem não percebida antes. `BarComparisonMetrics` ganha
+  `resolution_id` (R1/R2/R3), separado de `tf` (que vira só parâmetro de
+  calibração) — fecha a "mentira operacional" de M15/M30/H1 em dollar/
+  volume/tick_imbalance bars (§3.5, Opção D). `CPCVConfig` ganha
+  `grade_id` (deriva de `tf`, retrocompatível); `assert_tf_consistent`
+  renomeada `assert_grade_consistent`, `NotImplementedError` explícito
+  fora do dict de `step_ms` em vez de fingir verificar identidade de
+  grade dollar sem mecanismo. ~15 callers reais de `generate_splits`
+  auditados, nenhuma mudança de comportamento. 2 bugs de raiz achados
+  pelo pytest do usuário: um meu (`dict(zip(...))` com argumentos
+  invertidos, pego pelo próprio teste de regressão que escrevi) e um
+  pré-existente (fakes de teste desatualizados desde commit `f0bd28c`,
+  mesma classe já documentada no arquivo). `105 passed`, commit `982b5d4`.
+  Alarme de deriva (`src/monitoring/`) e regra de `calibration_version`
+  seguem fora de escopo — sem caller real até dollar bar ser implantado.
 
 - **v3.13 (2026-08-16)** — Bug de raiz corrigido, achado pelo usuário
   rodando pytest sobre v3.12: `estimator_id` (convenção `atr_wilder_w{N}`)
