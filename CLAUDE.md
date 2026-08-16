@@ -1,27 +1,59 @@
-# CLAUDE.md — Motor Quant Multi-Ativo (ex-BTCUSDT Quant Engine)
+# CLAUDE.md — Motor Quant Multi-Ativo
 
-> Instruções persistentes para Claude Code rodando neste repo.
-> Atualizado: 2026-08-15 | Sprint atual: **4** (Feature Engine) → Camada 1 V4.1 em andamento | Versão: v2.1
-> Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança institucional + Product Breakdown Structure completo, §11) — aprovado pelo Manager, 2026-08-12. Blueprint técnico corrente em dois níveis: arquitetura/contratos em `PRD_V3_2_UNIFICADO.md` (raiz, v3.3, ~3.400 linhas), emenda de escopo multi-ativo em `PRD_V4_1.md`.
-> Toda regra abaixo é ancorada em §X.Y do PRD (V3.2 para arquitetura, V4.1 para escopo). Regra sem âncora é dívida técnica.
+> Instruções persistentes para Claude Code neste repo. Só regras e diretrizes —
+> nada de estado ou histórico aqui.
+> Estado atual do projeto: `docs/SPRINT_LOG.md`. Histórico de mudança (o quê/por
+> quê): `git log`. Histórico deste arquivo: `git log -- CLAUDE.md`.
+> Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança + PBS, §11). Blueprint
+> técnico: `PRD_V3_2_UNIFICADO.md` (arquitetura) + `PRD_V4_1.md` (escopo
+> multi-ativo).
+> Toda regra abaixo tem âncora §X.Y do PRD. Regra sem âncora é dívida técnica.
 
 ---
 
-## Contexto
+## Referência rápida — onde cada coisa mora
 
-⚠️ **Correção 2026-08-12 (achado do Manager — o pedido de refatoração de `src/` "não foi levado a sério", e este parágrafo era prova disso):** este projeto **não é** um motor BTCUSDT. É um **Motor Quant multi-timeframe (M15, M30, H1), multi-par (BTC, ETH, SOL, BNB, XRP), bidirecional (long e short)**, cujo objetivo é adaptar o antigo projeto BTC-only para comparação sistemática de modelos/métodos em toda a árvore `src/` (padrão já estabelecido por `volatility.py`, M1) — definição completa e o discovery de engenharia que a valida estão em `PLANO_MESTRE_PRINCE2.md` §15.
+| procura por | caminho |
+|---|---|
+| Estado atual do projeto, sprint a sprint | `docs/SPRINT_LOG.md` |
+| Governança, PBS, agenda por stage (Road Map Vivo §11.4) | `PLANO_MESTRE_PRINCE2.md` |
+| Blueprint — arquitetura e contratos | `PRD_V3_2_UNIFICADO.md` |
+| Blueprint — emenda de escopo multi-ativo | `PRD_V4_1.md` |
+| Proveniência/classe de toda constante | `config/constants.yaml` |
+| Furos de arquitetura/integração (AG-NNN) | `audit/architecture_gaps_log.yaml` |
+| Orçamento de trials (multiple-testing) | `audit/n_lifetime.yaml` |
+| Achados estatísticos medidos | `audit/evidence_ledger.yaml` |
+| Skills disponíveis | `.claude/skills/` |
+| Histórico de execução (o quê/por quê) | `git log` |
 
-Motor quantitativo local na Binance USDⓈ-M, capital de **R$ 1.000 (US$ 196,85)**, execução **maker post-only**. A frase original desta seção ("BTCUSDT perpétuo... decisão a 15m") descrevia só o escopo da V1 original — mantida por proveniência, não como definição atual:
+## Bootstrap — antes de qualquer decisão grande
 
-**A V1 não existe para provar que BTCUSDT pode ser previsto.** Existe para construir infraestrutura em que uma hipótese quantitativa possa ser formulada → testada → invalidada ou aprovada → simulada → monitorada → executada → auditada. Com US$ 196,85, isso é a única leitura honesta do projeto.
+1. `docs/SPRINT_LOG.md` — últimas seções, pra saber o estado real.
+2. `PLANO_MESTRE_PRINCE2.md` §11.4 (Road Map Vivo) — o que já está agendado
+   pra qual stage, antes de tratar algo como urgente.
+3. `audit/architecture_gaps_log.yaml` — gaps abertos relevantes à tarefa.
+4. `audit/n_lifetime.yaml` — orçamento de trials restante, se a tarefa
+   envolver otimização/sweep/retreino.
+5. `config/constants.yaml` — se a tarefa tocar em constante nova ou existente.
 
-**O capital não é um parâmetro — é a restrição estrutural que determina o desenho.** Lote mínimo de 0,001 BTC = US$ 64,94 = 33% do equity. Tudo neste repo decorre disso.
+---
+
+## Projeto
+
+- Motor quant multi-timeframe (M15/M30/H1), multi-par (BTC/ETH/SOL/BNB/XRP),
+  bidirecional (long/short), Binance USDⓈ-M, capital R$ 1.000, execução maker
+  post-only. Definição completa: `PLANO_MESTRE_PRINCE2.md` §15.
+- V1 existe pra construir infraestrutura de hipótese → teste → validação →
+  execução → auditoria — não pra provar que BTC é previsível. Motivo:
+  `PLANO_MESTRE_PRINCE2.md` §15.
+- Capital é restrição estrutural do desenho, nunca parâmetro livre. Lote
+  mínimo = 33% do equity. Motivo: `PLANO_MESTRE_PRINCE2.md` §0.
 
 ---
 
 ## As 5 restrições invioláveis (§0.2)
 
-Qualquer código que as viole é rejeitado, mesmo que passe nos testes.
+Código que as viole é rejeitado mesmo passando nos testes.
 
 | # | restrição | valor operacional |
 |---|---|---|
@@ -31,17 +63,16 @@ Qualquer código que as viole é rejeitado, mesmo que passe nos testes.
 | R4 | teto de features = medido, **nunca estipulado** | ver §0.2 R4 |
 | R5 | alavancagem **não é** controle de risco; nocional é | `max_notional_multiple` |
 
-**Janela viável atual:** stop ∈ [0,275% ; 0,758%], escolhido 0,458% = 1,5 × ATR(20,15m).
-**Teto de preço do BTC:** US$ 107.568. Acima disso a granularidade morre e o Gate 0 contínuo bloqueia (§16.11).
+Janela viável de stop: [0,275% ; 0,758%]. Teto de preço do BTC: US$ 107.568
+(acima disso, Gate 0 contínuo bloqueia, §16.11).
 
 ---
 
-## Regra zero: proveniência (§16.10, PARTE XVIII)
+## Proveniência (§16.10)
 
-**70% das constantes do PRD original não tinham base.** Este repo existe para não repetir isso.
+Toda constante em `config/constants.yaml` segue este schema:
 
 ```yaml
-# config/constants.yaml — TODA constante tem esta estrutura
 cost_stop_ratio_max:
   value: 0.20
   provenance: ASSUMED        # MEASURED | DERIVED | LITERATURE | ASSUMED
@@ -51,13 +82,18 @@ cost_stop_ratio_max:
   sweep_range: [0.10, 0.40]
 ```
 
-Regras de enforcement:
+1. Nenhum literal numérico em código de pipeline. Enforcement:
+   `tools/lint/banned_patterns.py`.
+2. Constante classe A com `provenance: ASSUMED` bloqueia build de produção.
+   Enforcement: CI.
+3. Guardrails classe C são quantis (`p95(spread, 90d)`), nunca número redondo.
+4. Classe A exige sweep de sensibilidade ±50% antes do Gate 3 — critério é
+   robustez na vizinhança, não "Sharpe bom no valor escolhido".
+5. `N_lifetime` (`audit/n_lifetime.yaml`) incrementa em toda otimização classe
+   B, retreino, challenger — nunca decrementa. DSR usa `N_lifetime`, não o `N`
+   de uma busca isolada.
 
-1. **Nenhum literal numérico em código de pipeline.** Lint quebra o build.
-2. **CI bloqueia build de produção com classe A em `provenance: ASSUMED`.**
-3. **Guardrails classe C são quantis, não números redondos.** `p95(spread, 90d)`, não `3.0`.
-4. **Classe A exige varredura de sensibilidade ±50% antes do Gate 3.** Critério não é "Sharpe bom no valor escolhido" — é **robusto na vizinhança**. Pico estreito significa que o número faz o trabalho que deveria ser do modelo.
-5. **`N_lifetime` é arquivo versionado.** Toda constante classe B otimizada, todo retreino, todo challenger incrementa. O DSR usa `N_lifetime`, não o `N` de uma busca isolada.
+Motivo histórico: `PLANO_MESTRE_PRINCE2.md` §16.10, PARTE XVIII do PRD.
 
 ---
 
@@ -132,20 +168,27 @@ exchange → data → features → labels → regime → models → validation
                           backtest ← risk ← execution ← live
 ```
 
-Verificada estaticamente. Violações que quebram o build:
+Verificada estaticamente (`pyproject.toml::[tool.importlinter]`). Violações
+quebram o build:
 
-- `features/` **não pode** importar `labels/`
-- `models/` **não pode** importar `execution/`
-- Ninguém além de `models/`, `validation/`, `backtest/`, **e `analysis/`** lê `labels/` — `analysis/` fica de fora do contrato `pyproject.toml::[tool.importlinter]` deliberadamente (medição pós-hoc, nunca insumo de treino/seleção de feature), já usado por `cost_surface.py`/`faixa2_caminho_b.py`/`m6_common_factor_hypothesis.py` antes de `m2_stats.py` virar a 4ª instância — texto corrigido aqui em 2026-08-15 (achado de auditoria `project_assurance`: o texto original ficou factualmente impreciso por várias sessões sem que o contrato real (que já tinha a exceção) fosse refletido de volta aqui)
-- `alpha` **não pode** importar `meta` (zero realimentação, §5.8)
+- `features/` não pode importar `labels/`.
+- `models/` não pode importar `execution/`.
+- Só `models/`, `validation/`, `backtest/`, `analysis/` leem `labels/`.
+  `analysis/` fica fora do contrato `importlinter` de propósito — é medição
+  pós-hoc, nunca pode virar insumo de treino/seleção de feature.
+- `alpha` não pode importar `meta` (zero realimentação, §5.8).
 
 ---
 
 ## Stack 2026
 
-**Obrigatório:** Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB · Parquet+zstd · XGBoost `binary:logistic` · scikit-learn (calibração isotônica) · Optuna com orçamento declarado · structlog+orjson · Pydantic+YAML · pytest+hypothesis · ruff · mypy strict
+**Obrigatório:** Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB ·
+Parquet+zstd · XGBoost `binary:logistic` · scikit-learn (calibração isotônica)
+· Optuna com orçamento declarado · structlog+orjson · Pydantic+YAML ·
+pytest+hypothesis · ruff · mypy strict
 
-**Avaliar antes de escrever motor próprio:** NautilusTrader (backtest event-driven, mesmo código em backtest e live) · `binance-futures-connector` oficial atrás de interface própria
+**Avaliar antes de escrever motor próprio:** NautilusTrader (backtest
+event-driven) · `binance-futures-connector` oficial atrás de interface própria
 
 **Proibido:** `hmmlearn` · Pandas no core · pip/venv/conda · `print()`
 
@@ -154,7 +197,7 @@ Verificada estaticamente. Violações que quebram o build:
 ## Definition of Done por tipo de tarefa
 
 ### Código de feature
-- [ ] Entrada em `features/registry.yaml` com fórmula, fonte, lookback, `causal_proof`
+- [ ] Entrada em `features/registry.yaml` (fórmula, fonte, lookback, `causal_proof`)
 - [ ] Teste de causalidade: nenhum índice ≥ `t0`
 - [ ] Teste de paridade lote↔streaming < 1e-8 nas últimas 500 barras
 - [ ] Teste de determinismo: mesmo input → mesmo hash
@@ -163,15 +206,15 @@ Verificada estaticamente. Violações que quebram o build:
 ### Código de modelo
 - [ ] `sample_weight` de unicidade aplicado
 - [ ] Predições marcadas com `is_oof`
-- [ ] `monotone_constraints` derivadas **in-fold**
+- [ ] `monotone_constraints` derivadas in-fold
 - [ ] HHI de importância < 0,25, maior share < 0,30
-- [ ] Métricas estratificadas por regime R1..R4 **e** por regime econômico
+- [ ] Métricas estratificadas por regime R1..R4 e por regime econômico
 
 ### Código de execução
 - [ ] `time_in_force: GTX` na entrada
-- [ ] SL antes de TP no handler de fill, com timeout de 2s
+- [ ] SL antes de TP no handler de fill, timeout de 2s
 - [ ] `client_order_id` determinístico e idempotente
-- [ ] Teste de fill parcial na entrada **e** na saída
+- [ ] Teste de fill parcial na entrada e na saída
 - [ ] Teste de reinício com posição aberta
 
 ### Qualquer PR
@@ -184,19 +227,22 @@ Verificada estaticamente. Violações que quebram o build:
 
 ## Protocolo de execução — quem roda o quê
 
-**Claude Code nunca executa `.py` nem comando que rode código Python** (`uv run quant ...`, `uv run pytest`, `python -m ...`, script avulso) via Bash/PowerShell. Só o usuário executa, no terminal dele. O fluxo é:
+Claude nunca executa `.py` nem comando que rode código Python (`uv run
+quant ...`, `uv run pytest`, `python -m ...`) via Bash/PowerShell. Só o
+usuário executa. Fluxo:
 
-1. Claude escreve/edita o código normalmente (Write/Edit são execução de ferramenta, não de Python — seguem liberados).
-2. Quando algo precisa **rodar**, Claude entrega o comando exato num bloco de código, pronto pra copiar e colar — sem variação, sem "algo como".
-3. Claude não prossegue para o próximo passo que depende do resultado até o usuário colar o output de volta.
+1. Claude escreve/edita código normalmente (Write/Edit não é execução).
+2. Comando pra rodar: entregue exato, pronto pra copiar/colar, sem variação.
+3. Claude não avança pro próximo passo até o usuário colar o output.
 
-**Consequência direta:** como Claude não vê o output em tempo real, o output do script precisa ser autoexplicativo — `structlog` estruturado, mensagem de erro com contexto suficiente pra diagnosticar sem re-rodar, resumo final legível (não só um JSON cru despejado) sempre que o comando for pensado pra ser lido por humano. Isso é parte do Definition of Done de qualquer script novo, não um detalhe de estilo.
+Consequência: output de script novo precisa ser autoexplicativo
+(`structlog`, erro com contexto suficiente, resumo legível) — parte do DoD.
 
-**O que continua liberado pra Claude rodar direto** (não é execução de Python, é inspeção/versionamento): `git`, listagem e leitura de arquivo, `grep`/`rg`. A restrição é sobre rodar Python — não sobre o resto do Bash/PowerShell.
+Liberado sem restrição (não é execução de Python): `git`, leitura/listagem
+de arquivo, `grep`/`rg`.
 
-### Exceção nomeada: os 5 scripts mecânicos de auditoria (Manager, 2026-08-12)
-
-Autorização explícita: **Claude pode executar diretamente**, via Bash/PowerShell, exatamente estes comandos — e nenhum outro `.py`/`uv run` fora desta lista:
+**Exceção nomeada — 7 comandos mecânicos de auditoria** (só leitura, sem
+efeito em dado/exchange/trial), autorização do Manager, 2026-08-12:
 
 ```bash
 python tools/lint/banned_patterns.py --path <alvo> --strict
@@ -208,14 +254,13 @@ uv run ruff check <alvo>
 uv run mypy <alvo>
 ```
 
-Por quê estes e não outros: são leitura pura de código/config já no disco — nenhum grava em `data/`/`labels/`/`models/`, nenhum chama a exchange, nenhum gasta orçamento de trial (`N_lifetime`), nenhum tem efeito que precise ser revisto antes de acontecer. É exatamente o motivo original do protocolo (visibilidade antes de efeito) que não se aplica aqui. Usado por `.claude/skills/audit_engineering/SKILL.md` (Passo 4) e `.claude/skills/project_assurance/SKILL.md` (Passo 2/3, inclusive dentro de um `Agent` fresco — a exceção é sobre o COMANDO, não sobre qual agente invoca).
-
-**Esta exceção NÃO se estende a:**
-- `uv run pytest`, mesmo com `-m "not slow"` — roda código de produção de verdade; um teste mal isolado pode ter efeito colateral não óbvio (I/O, mutação de fixture compartilhada). Continua protocolo original.
-- Qualquer `uv run quant <subcomando>` da seção "Comandos" abaixo — todos ou processam dado real ou, em `testnet`/`paper`/`live run`, tocam a exchange.
-- Qualquer script fora dos 7 comandos listados acima, mesmo que pareça só leitura — a lista é exaustiva, não um padrão a extrapolar.
-
-Se um desses 7 comandos falhar de um jeito que sugira que ele NÃO é mais só-leitura (ex. erro de permissão de escrita, traceback tocando `data/`), parar e reportar — não presumir que a exceção ainda vale.
+NÃO se estende a `pytest` (mesmo `-m "not slow"`), a `uv run quant
+<subcomando>`, nem a qualquer script fora desta lista — exaustiva, não um
+padrão a extrapolar. Se um dos 7 falhar de um jeito que sugira efeito
+colateral real (erro de permissão de escrita, traceback tocando `data/`),
+parar e reportar, não presumir que a exceção ainda vale. Motivo/detalhe:
+`CLAUDE.md` histórico em `git log -- CLAUDE.md`, usado por
+`.claude/skills/audit_engineering/` e `.claude/skills/project_assurance/`.
 
 ---
 
@@ -244,118 +289,72 @@ uv run quant live run
 
 ## Marcadores pytest
 
-Três marcadores registrados em `pyproject.toml::[tool.pytest.ini_options]`,
-eixos independentes — um teste pode carregar mais de um:
+`golden`/`slow`/`integration` (`pyproject.toml::[tool.pytest.ini_options]`),
+eixos independentes — um teste pode carregar mais de um.
 
 | marcador | significa | quando aplicar |
 |---|---|---|
-| `golden` | reprodutibilidade bit-a-bit contra artefato versionado (Fase G) | testes que retreinam algo de verdade e comparam contra um `.json` commitado |
-| `slow` | custa sozinho mais que ~2s | reconstrói série/frame real completo (`build_modeling_frame`, `build_regimes` histórico completo, CPCV+diagnóstico de fold) — não fixture sintética |
-| `integration` | lê artefato real do disco (`data/`, `labels/`, `predictions/`, `models/`) via skip-if-ausente | qualquer teste que chama um `_skip_if_*`/`pytest.skip(...)` condicionado à existência de um arquivo de backfill local |
+| `golden` | reprodutibilidade bit-a-bit contra artefato versionado | retreina algo de verdade e compara contra `.json` commitado |
+| `slow` | custa sozinho mais que ~2s | reconstrói série/frame real completo, não fixture sintética |
+| `integration` | lê artefato real do disco via skip-if-ausente | chama `_skip_if_*`/`pytest.skip(...)` condicionado a backfill local |
 
-`slow` e `integration` frequentemente coincidem (reconstruir dado real
-tende a ser caro) mas não são o mesmo eixo — um teste pode ler um arquivo
-real pequeno (`integration`, rápido) sem ser `slow`, ou ser caro sem ser
-`integration` num teste sintético grande o bastante (nenhum caso disso
-existe hoje, mas o marcador não presume que nunca vai existir).
+Todo teste novo que reconstrói dado real ganha `integration`; se passar de
+~2s, ganha `slow` também.
 
 ```bash
-uv run pytest                    # tudo, inclusive slow/integration
-uv run pytest -m "not slow"      # ciclo rápido de desenvolvimento, < 30s
-uv run pytest -m "not integration"   # sem backfill local (ex. CI sem os dados)
-uv run pytest -m golden          # só o teste de reprodutibilidade
+uv run pytest                        # tudo, inclusive slow/integration
+uv run pytest -m "not slow"          # ciclo rápido, < 30s
+uv run pytest -m "not integration"   # sem backfill local
+uv run pytest -m golden              # só reprodutibilidade
 ```
 
-Todo teste novo que reconstrói dado real ganha `@pytest.mark.integration`;
-se também passar de ~2s, ganha `@pytest.mark.slow` também. Não é
-retroativo automático — testes que já existiam antes desta convenção
-(2026-08-09) foram marcados numa varredura única, não perfeitamente
-exaustiva; um teste real sem marcador encontrado depois é um bug de
-marcação, não uma exceção à regra.
+---
+
+## Git
+
+Repositório `github.com/FelipeCJBoB/btcusdt-quant-engine` (privado). Branch
+única `master`, trunk-based — sem PR pro dia a dia.
+
+- Commitar ao fechar unidade de trabalho coerente (tarefa, decisão, achado,
+  sprint) — não por sessão inteira, não por arquivo isolado.
+- Mensagem: título curto imperativo (~70 char) + corpo (o quê/por quê, o
+  diff já mostra o como) + âncora §X.Y do PRD quando aplicável + achado
+  relevante, mesmo negativo.
+- Tag `sprint-N-done` / `gate-M-pass` ao fechar sprint/gate, com `git push
+  --tags`.
+- `docs/SPRINT_LOG.md` atualizado ao fechar sprint, ANTES de tagear — é o
+  documento de estado atual pra humano, não este arquivo.
+- Push direto pra `origin/master` após commit significativo — autorizado
+  por padrão, sem pedir a cada vez. Force-push/reset/rewrite/branch
+  protegida exigem confirmação explícita, sempre, sem exceção.
+
+Motivo/detalhe completo: `PLANO_MESTRE_PRINCE2.md` §11.
 
 ---
 
-## Rotina de git — histórico como memória do projeto
+## Diretrizes de comportamento
 
-**Repositório:** `github.com/FelipeCJBoB/btcusdt-quant-engine` (privado). Branch única, `master` — trunk-based, sem PR para o dia a dia; branch separada só quando uma mudança for grande o bastante pra revisar antes de integrar, e só se pedido explicitamente.
-
-O `git log` é o registro operacional deste projeto — o que foi feito, quando e por quê. Complementa, não repete, os outros dois changelogs: **este arquivo** versiona política/regras do projeto, o **PRD** versiona o blueprint técnico, o **git log** versiona a execução — inclusive achados e decisões de não fazer algo. Antes de perguntar "o que já aconteceu", olhe o histórico — é mais confiável que reconstruir de memória de conversa.
-
-**Quando commitar.** Ao final de cada unidade de trabalho coerente — uma tarefa concluída, uma decisão registrada, um achado de dado, um Sprint fechado. Não no fim de uma sessão inteira de uma vez, não a cada arquivo isolado. Teste prático: se a mensagem do commit não coubesse numa frase sem virar "várias coisas", é grande demais — quebre em mais de um.
-
-**Formato da mensagem:**
-```
-<título curto, imperativo, até ~70 caracteres>
-
-<corpo: o quê e por quê — o diff já mostra o como>
-<âncora §X.Y do PRD quando aplicável (DoD, "Qualquer PR")>
-<achado ou decisão relevante, mesmo negativa — "não recriamos X porque Y">
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
-```
-Título ruim: `update files`. Título bom: `Sprint 3 — Data Quality Engine encontra 2 duplicatas reais em metrics`.
-
-**Tags de marco.** Ao fechar um Sprint ou passar um Gate: `git tag sprint-N-done` / `git tag gate-M-pass`, com `git push --tags`. Não é por commit — é âncora de navegação, "me leva pro estado do repo quando o Gate 3 passou".
-
-**`docs/SPRINT_LOG.md` — atualizar ao fechar cada sprint, antes de tagear.** É o documento pra humano lembrar/apresentar o que já foi feito: o que foi construído, e principalmente **o que foi medido** — os números reais, não os do PRD original. `README.md` também recebe um toque leve se algum número ali (status do sprint, achados em destaque) ficar desatualizado. Isso não é opcional nem cosmético — é a diferença entre "o repo tem a resposta" e "alguém precisa reconstruir de memória de conversa" na próxima sessão.
-
-**Push.** Direto para `origin/master` ao final de cada commit significativo, sem precisar de autorização a cada vez — isso está autorizado por este parágrafo. Qualquer coisa fora do fluxo normal (force-push, reset, mudar branch protegida, reescrever histórico) exige confirmação explícita, sempre, sem exceção.
-
-**Para quem não usa git no dia a dia.** Forma mais simples de acompanhar: abrir `github.com/FelipeCJBoB/btcusdt-quant-engine/commits/master` no navegador — lista cronológica, clicável, mensagens escritas pra serem lidas por humano, não só por máquina. Pode perguntar "o que mudou desde [data/sprint/versão]" a qualquer momento — vira `git log`/`git diff` por trás, sem precisar saber o comando.
-
----
-
-## Comportamento esperado
-
-**O objetivo final é edge real, não conformidade de processo.** Claude Code é o engenheiro de execução deste projeto — quem decide prioridade, escopo e o que "importa" é o Manager, e Claude não decide isso por conta própria. Mas dentro desse limite, o mandato de Claude não é "escrever o código que foi pedido" — é **construir o motor que entrega edge real, superando as adversidades reais do projeto** (capital de R$ 1.000, granularidade do lote mínimo, custo dominando o direcional, janela comum que derruba achados que pareciam verdes) com rigor de **Engenharia de Software** (testado, documentado, proveniência declarada, nada fabricado sob pressa) e de **Algorithmic Trading** (medir antes de afirmar, registrar um sinal positivo-mas-dominado-por-custo como achado real em vez de esconder ou inflar, nunca confundir beta com edge). "Terminar uma tarefa" aqui não é "o código roda" — é "o código roda **e** o resultado é honesto sobre se há edge real por trás dele". Diretriz do Manager, 2026-08-11.
-
-**Meça antes de afirmar.** Este projeto já perdeu três decisões para números plausíveis escritos com confiança: ATR presumido de volatilidade anualizada (estava no percentil 13 do real), fórmula de concorrência trocada (fator 2 de erro), e um "≥ 3 unidades" inventado que restringiu 50% mais que o necessário. Os dados estão em `data.binance.vision`, são públicos e não exigem chave. Baixe e meça.
-
-**Declare proveniência ao escrever qualquer número.** Se você não sabe de onde veio, marque `ASSUMED` e classifique. Não invente faixas esperadas — escreva `TBD — medir no Sprint N`.
-
-**Trate lote mínimo como restrição física.** Não é arredondamento; é o que determina timeframe, tipo de ordem, número de features e risco por trade. Se uma mudança de parâmetro viola R1 ou R2, a mudança está errada, não a restrição.
-
-**Nunca "otimize" de volta o que foi derivado.** `risk_per_trade = 0,005` não é escolha estética — é consequência de R1 e R2. Código que o parametriza como livre viola o desenho.
-
-**Discorde do Manager quando os dados discordarem.** Este PRD melhorou porque erros foram apontados, não porque foram acomodados. Se uma instrução contradiz uma medição, apresente a medição.
-
-**Não escreva motor próprio antes de avaliar o de prateleira.** O backtest engine é o componente caseiro de maior risco do projeto.
-
-**Pare na primeira camada que funcionar.** As cinco camadas do §5.11 são ordenadas por razão ganho/custo, com critério de parada explícito. Cinco camadas custam cinco entradas no `N_lifetime` e cinco fontes de bug.
-
-**Nunca remediar, sempre solucionar — inclusive em warning "cosmético".** Um `RuntimeWarning` do numpy não é ruído a silenciar por padrão — é sinal de que uma operação está fazendo aritmética inválida (`inf - inf`, divisão por zero) que pode estar sendo mascarada, não tratada. `np.errstate(invalid="ignore")` em cima do sintoma sem investigar a causa é remediação. Achado real desta sessão (M1, `diebold_mariano`): o warning vinha de `d = loss_candidate - loss_baseline` onde QLIKE pode ser `inf`; a causa raiz não era o warning em si, era que `finite - inf = ±inf` (não `NaN`) passava direto pelo filtro `~np.isnan(d)` aplicado DEPOIS da subtração — um único bar degenerado num candidato (sem o baseline ter o mesmo) corromperia o teste inteiro sem nenhuma barreira. A correção real foi filtrar `isfinite` dos DOIS lados ANTES de subtrair, não abafar o aviso. Quando um warning aparecer, a pergunta é sempre "o que essa operação está tentando me dizer sobre o dado", não "como faço isso parar de aparecer".
-
----
-
-## Estado atual
-
-| item | valor |
-|---|---|
-| Sprint | **4** — Feature Engine, em andamento |
-| Sprints 1-3 | **concluídos** — repo/uv/CI, `src/exchange/` (REST assinado, rate limit, filtros versionados, listenKey), `src/data/` (Data Quality Engine, resample causal, camada DuckDB) |
-| TF de decisão | 15m — escolhido, T1 com **10 features** (v3.3; Grupo F saiu por quebra RPI, §2.7.1) |
-| M2 (comparação de barra) | Código pronto, multi-TF (M15/M30/H1) — streaming (`bars_streaming_chunk_days`), `memory_limit`/`threads` de DuckDB travados por conexão (`m2_duckdb_*`, achado: `duckdb.connect()` sem `SET` assume até 80% da RAM da máquina POR CONEXÃO, sem coordenação entre processos concorrentes). Reescrito com os 3 TFs depois de ter sido escrito só com 15m hardcoded (`AG-017` — `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já tinha previsto esse risco por nome, antes do módulo existir). Ainda não confirmado rodando ponta a ponta sem erro pelo usuário — 3 correções sucessivas nesta sessão tornam prudente não declarar sucesso antes da confirmação real |
-| Meta Model | **fora da V1** (§6.8 define o critério de entrada) |
-| Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde a origem real do contrato (~2019-12, medido — não os 2019-09/2020 que o PRD presumia); D08/D09 bookTicker só existe 2023-05→2024-03 upstream (medido, não é falha de coleta) |
-| Pendências P0 | verificar acesso empírico à conta (precisa credenciais, Sprint 2 parcialmente bloqueado por isso) · MMR tier 1 não confirmado · reconciliar figuras ano-a-ano da PARTE XVII contra o dado real (`known_gaps` em `config/constants.yaml`) |
-| Achado aberto | Data Quality Engine encontrou 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21) — ver `data/quality_reports/quality_report_metrics_v1.json` |
-| Achado, reavaliado | Critério de encerramento #3 (PRD_V4_1.md §6.5) disparou em 2026-08-10 — permanência Camada1×Camada0 cai de 5/5 (janela cheia) para 1/5 (janela comum). Sinal direcional sobrevive (+2,51 Sharpe, 5/5 paths). O `pnl_execução` (-17,11) usa o fill SIMULADO (~97%) do Label Engine, não o fill real medido (42,2%, estudo à parte e mais estreito, só BTC, 2023-05→2024-03 — a janela real de `bookTicker`, não 2023-05→2025-11 como o PRD original dizia, corrigido em §2.4) — onde comparável, o fill real MELHOROU o Sharpe, não piorou. **Decisão do Manager 2026-08-12: não encerrar** — M5 (fill) e M6 (fator comum) priorizados antes de M4. **2ª correção, mesmo dia:** M5/M6 pra 5 ativos não são triviais — `labels.parquet`/`predictions`/`orders` só existem pra BTCUSDT hoje; pré-requisito real é rodar Feature+Label Engine pros outros 4 ativos primeiro (0 trials, mas engenharia de pipeline real, não script rápido) |
-| Primeiras medições feitas | Data Quality Engine rodado contra dado real (klines_1m, agg_trades, metrics, funding, bars_30m) |
-| Primeiras medições pendentes | ATR sobre série completa (§0.4, ainda P2/amostra de conveniência) · varredura 2D `tp_atr_mult` × `sl_atr_mult` (Sprint 6) |
-
----
-
-## Changelog
-
-- v2.1 (2026-08-15) — M2 (comparação de barra) reescrito 3x na mesma sessão, cada vez corrigindo um erro real: (1) streaming/chunked pra caber em RAM (`aggTrades` de BTC/ETH são 27GB/20GB comprimidos, não cabiam de nenhum jeito inteiros); (2) bug de "barra fantasma" no streaming de dollar/volume bars (cumsum recomeçando do zero a cada chunk, perdendo o resto de barras que fecham sem bater exato no threshold — achado via teste de paridade streaming↔lote, não em produção); (3) `duckdb.connect()` sem `SET memory_limit`/`SET threads` assume até 80% da RAM da máquina POR CONEXÃO, sem coordenação entre processos — travado explicitamente (`m2_duckdb_memory_limit_gb`/`m2_duckdb_threads`). Acima de tudo: o módulo tinha sido escrito com TF único (15m) hardcoded, apesar do PRD_V4_1.md §0.4 exigir os 3 TFs "obrigatórios ponta a ponta" e de `PLANO_MESTRE_PRINCE2.md` §15.6 item 1 já ter previsto esse risco por nome, antes do módulo existir — corrigido (multi-TF, `time_stop_ms` blindado contra recálculo por TF), achado registrado como `AG-017`, nova pergunta na Lente FI de `audit_engineering` pra não repetir numa 3ª vez. `tools/lint/check_constants_referenced.py` também corrigido no caminho — não resolvia alias de import (`load_constant as X`), ficava cego pras próprias referências que deveria checar.
-- v2.0 (2026-08-12) — Correção de identidade: título e "Contexto" ainda descreviam um motor BTCUSDT-only. Manager apontou que o pedido anterior de refatorar `src/` pra nova amplitude "não foi levado a sério" — este título era evidência concreta. Corrigido para refletir o projeto real (multi-TF, multi-par, bidirecional, comparação entre modelos em toda `src/`), definição completa em `PLANO_MESTRE_PRINCE2.md` §15, que também traz discovery file-by-file de todo `src/` (6 agentes paralelos) e um modelo de estágios de pipeline validado contra o código (não a proposta original sem verificação).
-- v1.9 (2026-08-12) — Manager disse "pode seguir" pra M5/M6; antes de escrever qualquer código fui checar o disco (`data/labels/`, `predictions/alpha/`, `execution/fill_simulator/`, `data/raw/book_ticker/`) e achei dois erros meus: (1) `PRD_V4_1.md` §2.4 F4 afirmava janela de `bookTicker` 2023-05→2025-11 — o disco tem só 2023-05→2024-03 (`CLAUDE.md` já sabia disso, o PRD nunca tinha sido conferido); (2) eu tinha chamado M5/M6 "escopo completo, 0 trials" como se fossem rápidos — `labels`/`predictions`/`orders` só existem pra BTCUSDT, estender a 5 ativos exige rodar Feature+Label Engine pros outros 4 primeiro. Corrigido em `PRD_V4_1.md` §2.4/§3.2/§6.5.
-- v1.8 (2026-08-12) — Corrige uma alegação própria de v1.7: eu tinha escrito que o `pnl_execução` (-17,11) de T0.5 era "consistente com M5 (fill real 42,2%)" — pergunta direta do Manager expôs que isso não bate: `pnl_execução` foi calculado com o fill SIMULADO (~97%) do Label Engine, não o real; o único estudo que usou fill real (mais estreito, só BTC, 10,5 meses) achou o Sharpe MELHORAR com a correção, não piorar. Reavaliação de escopo formal do critério #3 fechada: Manager decide não encerrar, prioriza M5 (escopo completo) e M6 (testa se o problema é BTC-específico) antes de M4.
-- v1.7 (2026-08-12) — Adiciona linha "Achado aberto — P0" ao Estado atual: critério de encerramento #3 (PRD_V4_1.md §6.5) disparou em 2026-08-10 (T0.5, commit `5d8c8aa`) e nunca virou decisão explícita — achado real preexistente, só agora tornado visível aqui (investigando "próximos passos" a pedido do Manager). Trava `canonical_volatility_estimator` em `config/constants.yaml` (GK, decisão aceita pelo Manager, reprocessamento adiado até M2/M3).
-- v1.6 (2026-08-12) — Aprovado pelo Manager: "Documento mestre" passa de `PRD_V3_2_UNIFICADO.md` para `PLANO_MESTRE_PRINCE2.md` (proposta que estava pendente em `PLANO_MESTRE_PRINCE2.md` §13). PRD_V3_2 e PRD_V4_1 continuam como fonte técnica (arquitetura e emenda de escopo, respectivamente) — a mudança é sobre qual documento organiza qual, não sobre qual documento manda tecnicamente.
-- v1.5 (2026-08-12) — Adiciona exceção nomeada ao "Protocolo de execução": Claude pode rodar diretamente os 5 scripts mecânicos de auditoria (`banned_patterns.py`, `check_constants_referenced.py`, `check_constants_provenance.py`, `check_unguarded_ratios.py`, `check_sprint_log_references.py`, `ruff check`, `mypy`) — autorização explícita do Manager, porque são leitura pura sem efeito em dado/exchange/trial. Não se estende a `pytest`/`uv run quant`. Motivado por `audit_engineering`/`project_assurance` não conseguirem auditar de verdade sem rodar os próprios scripts que citam como parte do processo.
-- v1.4 (2026-08-11) — Adiciona "Nunca remediar, sempre solucionar" em "Comportamento esperado": warning do numpy silenciado com `np.errstate` sem investigar a causa (M1, `diebold_mariano`) escondia um buraco real (`finite - inf` vazando pro teste) — corrigido filtrando `isfinite` antes de operar, não abafando o sintoma. M1: 4 dos 6 estimadores de volatilidade rodados sobre as 15 combinações reais (Parkinson/Garman-Klass batem ATRWilder em QLIKE nas 15/15); HAR-RV (5º) integrado como candidato fold-aware.
-- v1.3 (2026-08-11) — Adiciona diretriz do Manager no topo de "Comportamento esperado": o papel de Claude não é só executar tarefas, é construir o motor que entrega edge real superando as adversidades do projeto, com rigor de Engenharia de Software e de Algorithmic Trading — "terminar" é o código rodar E o resultado ser honesto sobre edge real. Camada 0 do PRD_V4_1.md (T0.1-T0.4, T0.6) fechada nesta sessão; T0.6 parcial (symbol/tf/janela, não os 9 campos completos).
-- v1.2 (2026-08-10) — Adiciona seção "Protocolo de execução — quem roda o quê": Claude nunca roda `.py`/`uv run`/`pytest` diretamente, só entrega comando copy-paste; usuário executa no terminal dele. Consequência: output de script novo precisa ser autoexplicativo (parte do DoD).
-- v1.1 (2026-08-08) — Sprints 1-3 concluídos (repo/uv/CI, ExchangeAdapter, Data Quality Engine). PRD atualizado para v3.3 (fato RPI, §2.7.1). Backfill de dados completo. Adiciona seção "Rotina de git" — histórico como memória operacional do projeto. Corrige caminho do PRD (raiz do repo, não `docs/`).
-- v1.0 (2026-08-08) — criação. Ancorado no PRD V3.2 unificado. 32 banned patterns derivados dos 8 erros documentados na PARTE XIX.
+- Mandato: entregar edge real, não só código que roda — "terminar" é o
+  código rodar E o resultado ser honesto sobre edge real. Escopo/prioridade
+  são do Manager; como perseguir dentro do escopo é de Claude. Motivo:
+  diretriz do Manager, `git log` (2026-08-11).
+- Meça antes de afirmar. Nunca invente faixa esperada — escreva `TBD —
+  medir no Sprint N` (B23). Histórico de erros por não medir:
+  `PRD_V3_2_UNIFICADO.md` PARTE XIX (9 erros corrigidos, mapa de
+  rastreabilidade).
+- Declare proveniência (`MEASURED`/`DERIVED`/`LITERATURE`/`ASSUMED`) em todo
+  número novo. Sem base conhecida → `ASSUMED` + classificar.
+- Lote mínimo é restrição física, não arredondamento. Mudança de parâmetro
+  que viola R1/R2 está errada — a restrição não é o problema.
+- Nunca reparametrize de volta um valor `DERIVED` como grau de liberdade
+  livre (ex. `risk_per_trade`).
+- Discorde do Manager quando o dado discordar — apresente a medição, não
+  acomode a instrução.
+- Avalie stack de prateleira antes de escrever motor próprio (backtest
+  engine é o maior risco caseiro do projeto).
+- Pare na primeira camada que atender o critério de parada declarado (§5.11)
+  — cada camada extra custa `N_lifetime` e uma fonte de bug a mais.
+- Nunca silencie warning sem achar a causa raiz, mesmo "cosmético"
+  (`np.errstate` em cima do sintoma é remediação, não solução). A pergunta
+  é sempre "o que essa operação está tentando dizer sobre o dado". Exemplo
+  real: `docs/SPRINT_LOG.md` (M1, `diebold_mariano`).

@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.2 · **Data:** 2026-08-15 (achado ao editar: header estava em "2.2" desde 2026-08-12 enquanto o Changelog já tinha chegado em v3.0 — mesma classe de defeito de §15.5 item 1, "identidade desatualizada", corrigida aqui de novo)
+**Versão:** 3.5 · **Data:** 2026-08-16
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -657,6 +657,39 @@ o tipo de "afirmação não re-verificada" que a pergunta #6 de
 `project_assurance` existe pra pegar — inclusive quando quem afirma sou eu,
 escrevendo este próprio documento.
 
+### 11.4 Road Map Vivo — agenda por stage, alinhada ao PRD
+
+Rollup de tudo que já tem sprint/gatilho de revisão declarado em outro
+lugar do repo — não duplica a fonte, aponta pra ela. Criado depois de uma
+correção real do Manager (2026-08-16): "13 constantes classe A ainda
+`ASSUMED`" foi apresentado numa resposta como se fosse orçamento de
+`N_lifetime` em risco AGORA — errado. Cada uma dessas 13 já tem `review_by`
+em `config/constants.yaml`, esperado desde a decisão de ir multi-TF/
+multi-ativo (constantes atravessam mais stress de teste/reteste sob mais
+combinações — não é surpresa, é consequência já antecipada da própria
+refatoração). O lugar certo pra essa informação é aqui, por stage — não
+numa narrativa de "decisão pendente" fora de contexto.
+
+| stage | item agendado | fonte |
+|---|---|---|
+| Sprint 5 (Regime Engine) | sweep `regime_er_cutoff`, `regime_vol_cutoff`, `regime_er_cutoff_exit`, `regime_vol_cutoff_exit` | `config/constants.yaml` |
+| Sprint 6 (Label Engine) | sweep `tp_atr_mult`, `sl_atr_mult`, `time_stop_bars`, `atr_window` | `config/constants.yaml` |
+| Sprint 10 | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
+| Sprint 11 | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
+| Sprint 16 (experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
+| Quando reprocessamento dollar-bar concluir | remedição de M1, 8 estimadores | `audit/architecture_gaps_log.yaml::AG-036` |
+| Decisão do Manager, sem stage travado ainda | 3 bloqueadores dollar-bar (`AG-031`, redefinição M15/M30/H1, `AG-032`) | `docs/refactor_dollar_bar_canonico.md` |
+
+**Regra de leitura:** nenhuma linha desta tabela é orçamento de
+`N_lifetime` em risco hoje — um sweep só custa trial quando de fato roda,
+no sprint declarado, nunca antes. O único item com custo real de
+`N_lifetime` já disparado nesta rodada é `AG-036` (M1 precisa ser
+remedido) — e é diferente dos outros justamente porque não estava
+agendado, foi um achado NOVO (M2 decidir `canonical_bar_type=dollar`
+invalidou a grade sob a qual M1 tinha sido medido). Atualizar esta tabela
+quando um `review_by` mudar em `config/constants.yaml`, ou quando um
+bloqueador ganhar stage decidido.
+
 ---
 
 ## 12. Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund <a name="12"></a>
@@ -1224,6 +1257,157 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.7 (2026-08-16)** — Correção do Manager sobre a resposta de N_lifetime
+  da v3.6: as 13 constantes classe A ainda `ASSUMED` NÃO são orçamento de
+  trials em risco agora — cada uma já tem `review_by` (sprint) em
+  `config/constants.yaml`, esperado desde a decisão de multi-TF/multi-ativo,
+  não um achado novo. Nova seção **§11.4 Road Map Vivo** — rollup por
+  stage de tudo que já tem sprint/gatilho de revisão declarado, pra essa
+  informação ter um lugar certo em vez de virar narrativa de "decisão
+  pendente" fora de contexto. Único item com custo real de `N_lifetime`
+  desta rodada continua sendo `AG-036` (M1 remedido, disparado pelo achado
+  de M2 — diferente dos 13 porque não estava agendado).
+
+- **v3.6 (2026-08-16)** — Objetivação dos 5 pontos em aberto de v3.5: (1)
+  `project_assurance` disparado (Agent independente) sobre `docs/refactor_
+  dollar_bar_canonico.md`, escopo focado em 3 perguntas prioritárias —
+  `assert_tf_consistent` precisa de redesenho separado dos 4 opções do
+  Bloqueador 2? acoplamento posicional de T1 em `src/models/` está completo
+  no relatório? a regra "sweep classe A = 1 trial em bloco ou N por ponto"
+  existe em algum lugar? — resultado pendente. (2) **T1 — escopo
+  expandido**: as 13 features do registry atual (não as ~64 de
+  `research/`, fora de escopo) viram pool único sem cap, ranqueadas via o
+  procedimento já definido em `PRD_V3_2_UNIFICADO.md` §2.0.1 (Sprint 6:
+  `N_eff` medido; Sprint 8: ablação por `k` dentro do CPCV, 5 variantes = 5
+  trials). Achado: **não há dependência técnica dos 3 bloqueadores
+  dollar-bar** — o adiamento registrado em v3.5 foi escolha de
+  sequenciamento, não necessidade estrutural; pode rodar agora no grid de
+  TEMPO (Sprint 4, atual), com remedição futura sob dollar bar (mesmo
+  padrão de AG-036/M1). (3) Protótipo de medição DuckDB-nativo vs.
+  Polars-vetorizado para construção de dollar bar aprovado e escrito
+  (`tools/diagnostics/prototype_dollar_bar_duckdb_vs_polars.py`), aguarda
+  execução do usuário. (4) Explicação visual de `N_lifetime`/constantes
+  classe A entregue como artefato — sem mudança de `constants.yaml`.
+
+- **v3.5 (2026-08-16)** — Fechamento de governança do pós-M2 (segue direto
+  de v3.4). **AG-034** (esgotamento de memória sob concorrência plena) e
+  **AG-035** (calibração quebrada de `tick_imbalance`) fechados por
+  decisão explícita do Manager, risco aceito e registrado, não silenciado
+  — nenhum dos dois é pré-requisito de `canonical_bar_type=dollar`, que já
+  estava decidido sem depender deles. **Nova decisão do Manager**: remover
+  o limitador de T1 (10 features curadas) — todas as features do registry
+  passam a canônicas pro Alpha. Decisão registrada, implementação
+  explicitamente adiada até os 3 bloqueadores abaixo fecharem.
+
+  **3 bloqueadores identificados pro redesenho dollar-bar, delegados a
+  investigação dedicada** (Agent, contexto rico, ponta a ponta data layer
+  → ML layer, retorno em Markdown — resultado ainda não incorporado a este
+  documento no momento deste changelog):
+  (1) **AG-031** — `time_stop_bars`/horizonte do label não tem
+  correspondência de relógio nenhuma sob dollar bars ("32 barras" deixa de
+  significar "8h"); (2) **redefinição de M15/M30/H1** — cada TF hoje é
+  calibrado pra bater a frequência média histórica daquele TF em dollar
+  bars, mas volume muda estruturalmente ano a ano (confirmado nas 5
+  janelas de M2) — precisa decisão de design entre threshold fixo travado
+  numa data vs. recalibração periódica; (3) **AG-032** — unidade do
+  embargo do CPCV (128 barras) precisa da mesma reavaliação.
+
+- **v3.4 (2026-08-16)** — **M2 fechado: `canonical_bar_type=dollar`**
+  (`config/constants.yaml`, decisão do Manager, mesmo padrão de governança
+  já usado pro `canonical_volatility_estimator`/GK em M1). Sequência real:
+  1º run canônico completo achou 2 bugs (`AG-033`, fechados na hora —
+  colisão de `temp_directory` do DuckDB entre os 12 processos
+  concorrentes; limiar de plausibilidade do ADF calibrado contra caso
+  sintético, nunca verificado contra dado real de produção, disparando
+  falso-positivo em 13/13 tasks de barra de tempo); 2º run travou de novo,
+  desta vez por esgotamento de memória real sob concorrência plena
+  (`AG-034`, aberto — `SET memory_limit` do DuckDB só cobre o buffer
+  interno, não o estado Python acumulado nem a soma de 12 processos).
+  Em vez de reduzir concorrência ou encolher pra um mês só (perderia
+  diversidade de regime, o próprio objetivo do teste), M2 rodou em 5
+  janelas escolhidas deliberadamente por evento/regime real (LUNA/UST
+  2022-05, FTX 2022-11 — confirmado no dado via anomalia real de funding
+  do SOL, crypto winter 2023-06, ETF/halving 2024-03, recente 2026-07) —
+  `--start`/`--end` viraram parâmetro de `m2_bar_comparison.py`. Dollar
+  bars venceu tempo (baseline) em 4 das 5 janelas + no pooled, em toda
+  métrica (Jarque-Bera, Ljung-Box r/r², unicidade) exceto ADF (empate —
+  ADF passa 100% em todo tipo de barra, não discrimina neste teste).
+
+  **Achado à parte, investigado a pedido do Manager**: `tick_imbalance`
+  falhou em 5/5 janelas de forma tão sistemática (JB/Ljung-Box=0%,
+  unicidade ~300x menor) que parecia sinal estrutural, não ruído — e era,
+  mas não do jeito hipotetizado. Causa raiz encontrada lendo
+  `src/data/bars.py` linha a linha (`AG-035`, aberto): a calibração da
+  harness de M2 pra esse candidato específico (`_build_tick_imbalance_
+  config`) usa a MESMA fórmula de dollar/volume bars
+  (`exp_num_ticks_init = n_ticks/target_n_bars`) — mas tick imbalance bars
+  não fecham após consumir um nº fixo de ticks, fecham quando o
+  DESEQUILÍBRIO LÍQUIDO acumulado atinge `exp_num_ticks × |ewma_b|`. A
+  fórmula da harness assume implicitamente desequilíbrio ≈100% por tick
+  (todo tick na mesma direção) — falso pra qualquer mercado líquido, onde
+  o desequilíbrio real tick-a-tick fica na casa de 0,1%-1%. Resultado
+  observado (250x-1000x mais barras que o alvo, em toda combinação, sem
+  exceção) bate com essa causa. Conclusão: o resultado mede uma
+  calibração quebrada, não que tick imbalance bars sejam ruins pra cripto
+  — a decisão de `canonical_bar_type` seguiu adiante mesmo assim porque a
+  vitória de dollar sobre TEMPO (o baseline que de fato importa) não
+  depende do resultado de tick_imbalance.
+
+  **Efeito colateral de governança**: as duas condições do gate de
+  reprocessamento do GK (`canonical_volatility_estimator`, "adiado até M2
+  e M3 fecharem") estão as duas satisfeitas agora — M3 (TF=15m) já
+  estava decidido, M2 fechou hoje. Isso NÃO inicia reprocessamento
+  sozinho, só remove o bloqueio formal; decisão de quando/se reprocessar
+  `labels/`+Feature+Regime Engine pra grade dollar-bar segue pendente,
+  registrada como pendência explícita, não como trabalho em andamento.
+
+  Artefato "Biblioteca de Testes" (antes só M1/GK) ganhou aba M2 —
+  1ª vez que um artefato deste projeto vira multi-teste em vez de
+  single-use, a pedido do Manager ("quero que aquele HTML se torne a
+  biblioteca dos testes que fazemos").
+
+- **v3.3 (2026-08-15)** — 5 agentes em paralelo (contexto rico) resolvem o
+  que era medível/pesquisável a custo 0 do panorama consolidado de AG-027:
+  **AG-031** (novo) — `time_stop_bars=32` interpretado de forma
+  incompatível por `m2_bar_comparison.py` (relógio fixo, 8h) e
+  `triple_barrier.py` pós-AG-005 (contagem de barra fixa, escala com TF) —
+  achado maior do que o esperado: o PRD_V4_1.md JÁ DECIDIU esta questão
+  três vezes (§2.7/§3.2/§4.2 + changelog formal V4.0→V4.1), três dias
+  antes do commit de AG-005, que corrigiu só o bug de unidade sem
+  consultar essa decisão. `atr_window` carrega a mesma pendência
+  (`"ressalva herdada"`, nem M1 nem M3 resolveram). Recomendação (relógio
+  fixo, custo zero hoje — nenhum label em 30m/1h existe no disco) NÃO
+  implementada, decisão do Manager. **AG-032** (novo) — proposta de
+  reclassificar `cpcv_embargo_bars` pra `DERIVED` com "96 basta" está
+  mecanicamente incorreta: o piso real, dado como `purge_mask`/
+  `embargo_mask` funcionam hoje em `cpcv.py`, é 128 (32+96), não 96 —
+  175 ainda cobre com folga, mas a fórmula proposta subestimaria o piso
+  em 25%. Mantido `LITERATURE`, não `DERIVED`. **AG-027, pendências 2 e 3
+  resolvidas** — "ER (16,48)" do PRD são DUAS features (B07 T1 + B08 T2,
+  esta última testada uma vez em pesquisa exploratória 2026-08-09 e nunca
+  promovida, não "candidato descartado"); validade de B07 como eixo de
+  regime confirmada como convenção nunca testada, decisão do Manager
+  pendente. Dois scripts de medição descritiva entregues, aguardando
+  execução: `sample_weight` médio por `econ_regime` (Canal 3 do Manager —
+  hipótese de subponderação de regime hostil via unicidade) e
+  sazonalidade de funding em ΔOI por símbolo (E10f).
+
+  Decisões do Manager sobre o panorama, mesma sessão: custo de funding
+  fica fora de `round_trip_cost_bps` por escolha deliberada de escopo
+  (não indecisão); **AG-029 fechado** — `assert_label_invariants` cabeado
+  em `build_and_write_labels_for_symbol`, falha alto com `symbol`/`tf` no
+  erro; whitelist do lint (`0,5`/`2,0` em `round_trip_cost_bps`/`a05`)
+  ganha entrada própria em `constants.yaml`
+  (`round_trip_cost_bps_maker_prob`/`feature_a05_vol_norm_divisor`) e
+  marcador inline no código — visibilidade corrigida, VALOR mantido
+  (Regra Zero); teste `slow` de calibração desproporcional corrigido
+  (baseline escopado à janela do teste, não ao histórico inteiro); AG-030
+  e a atualização de `docs/refactor_gk_canonico.md` explicitamente
+  adiados pro Road Map Vivo como pendência (não agora); discovery de
+  arquitetura pra triagem IC in-fold multi-horizonte (§5.4, resposta ao
+  vão "features validadas contra 32 barras, label resolve em 7")
+  delegado a agente antes de desenhar a infraestrutura de verdade.
 
 - **v3.2 (2026-08-15)** — Manager entrega "Continuando Ultrathink" (7 pontos
   sobre AG-027), todos verificados por Claude via leitura direta de código/

@@ -1423,14 +1423,179 @@ entries:
       -- condicional é mais barato mas depende de alguém lembrar de checar
       os 3 gatilhos, mesma classe de risco que AG-028 fechou pra
       `review_by`. Nenhuma das duas pendências foi resolvida nesta rodada.
+    decisoes_manager_2026_08_15: >
+      Decisão consolidada por hiperparâmetro (detalhe completo nos
+      comentários `scaling_invariant`/`source` de cada entrada em
+      `config/constants.yaml`, não duplicado aqui):
+      min_warmup_bars: FEITO, 2000->200, ASSUMED->DERIVED, ressalva sobre
+      C07/D03f/E02f registrada junto (não fechada).
+      A13: manter 48. Autorização de testar EMA(24)/EMA(96) REVOGADA em
+      2026-08-15 (mesmo dia) -- não gastar N_lifetime nisso por ora.
+      B01: manter 14, sem sweep autorizado.
+      B07: NÃO tocar a janela -- reabre 2 perguntas mais fundamentais:
+      (1) "ER (16,48)" do PRD pode ser 2 features nunca implementadas
+      (B07+B08?), não 2 candidatos pra 1 valor; (2) validade fundacional
+      de usar feature com 57% de consistência de sinal (PRD_V3_2_
+      UNIFICADO.md:2934) como eixo de regime.
+      C06 (short 12/long 96): prioridade ELEVADA (correção -- eu tinha
+      subestimado). vol_ratio_12_96 tem a MESMA consistência de sinal de
+      57% que efficiency_ratio_48 (PRD_V3_2_UNIFICADO.md:2935) e foi
+      rebaixada a T2 JUNTO com ela (linha 2958) -- não é "a mais segura
+      das 8". Justificativa "96=3x funding" citada pelo Manager NÃO
+      encontrada em nenhuma fonte (checado constants.yaml + busca ampla
+      no PRD) -- tratar como não confirmada até achar a referência exata.
+      C07: manter -- risco real é o posto expansivo (AG-030), não a
+      janela.
+      D06f: manter -- janela longa é comportamento CORRETO de baseline de
+      normalização (correção de uma suspeita minha anterior, categoria
+      errada: tratava janela de normalização como se fosse de agregação).
+      E10f: MEDIR sazonalidade de funding em ΔOI antes de decidir --
+      delegado a agente (ver Agent dispatch 2026-08-15). 48=1,5 ciclo é o
+      pior valor da vizinhança (contaminação de fase); candidatos 32/64
+      (não 96 -- C06 sob suspeita, não serve de âncora). Verificar
+      intervalo de funding REAL por símbolo, não assumir 8h uniforme.
+      scaling_invariant: campo novo declarado em TODAS as 8 entradas de
+      constants.yaml (clock: A13/B01; bar_count: B07/C06×2/C07/D06f/E10f)
+      -- resolve a Q1 original desta entrada (bar-count vs clock-time não
+      tem resposta única, cada classe escala diferente).
+      Âncora (32 barras/8h): confirmado que §17.2 do PRD já avalia toda
+      feature T1 contra retorno de 32 barras -- a âncora JÁ EXISTE de
+      fato, só nunca foi declarada como invariante. M2 trata como 8h fixo
+      (TIME_STOP_REFERENCE_TF="15m" sempre); triple_barrier.py pós-AG-005
+      trata como 32 barras fixas (horizonte de relógio escala com TF) --
+      inconsistência CONFIRMADA (não mais "aparente"), delegada a agente
+      pra reconciliação formal antes do M3/multi-TF.
+    custo_pendente_n_lifetime: >
+      REVOGADO 2026-08-15 (mesmo dia da autorização original): A13
+      EMA(24)/EMA(96) não vai mais rodar -- Manager decidiu manter EMA
+      fixa em 48. Nenhum item desta entrada consome N_lifetime no momento
+      -- counter=45, teto=60, 15 trials restantes seguem intocados.
+    resolucao_pendencia_2_2026_08_15: >
+      "ER (16, 48)" do PRD (§18.5.2, PRD_V3_2_UNIFICADO.md:3172)
+      RESOLVIDO por Agent (general-purpose) -- são DUAS features
+      distintas, não dois candidatos pra um valor. Evidência: (1) tabela
+      de catálogo §2.3 lista B07_efficiency_ratio_48 (T1) e
+      B08_efficiency_ratio_16 (T2) como linhas SEPARADAS
+      (PRD_V3_2_UNIFICADO.md:521-522); (2) notação de §18.5.2 usa vírgula
+      pra "dois IDs distintos" (RSI (14,48) = B01/B02) e barra pra "uma
+      razão com dois lookbacks" (vol_ratio (12/96) = C06) -- ER (16,48)
+      está no grupo vírgula; (3) B08_efficiency_ratio_16 EXISTE em código
+      (research/research_t2.py:223), foi computado e avaliado no passe de
+      pesquisa Faixa 2 E2 2026-08-09 (experiments/faixa2_e2_research.json:
+      61, correlação com C07 = 0,086, mais ortogonal que B07's 0,20) mas
+      NÃO foi selecionado pela seleção greedy de ortogonalidade -- nunca
+      promovido a src/features/groups/group_b.py. Não é "candidato
+      descartado", é "feature de catálogo avaliada uma vez, não escolhida".
+    resolucao_pendencia_3_2026_08_15: >
+      Validade de B07 como eixo de regime CONTINUA SEM TESTE -- Agent
+      confirmou que é convenção não testada, mesma classe das 8 janelas
+      desta entrada. Única justificativa existente é uma frase
+      (PRD_V3_2_UNIFICADO.md:2958, "descrever quão tendencial está o
+      mercado não exige estabilidade de sinal"), sem ablação, sem medição
+      de estabilidade do eixo estrutural em si (persistência de R1-R4,
+      robustez de fronteira q60(ER)), sem comparação de performance do
+      Alpha com/sem este eixo. A tabela de IC (linha 2934, 57% de
+      consistência) mede consistência de SINAL direcional -- não testa a
+      alegação, que é sobre estrutura, não direção.
+      `tests/unit/test_regime_classifier.py` (17 testes) cobre só
+      mecânica/corretude, não valida a premissa. PERMANECE ABERTA --
+      decisão do Manager necessária: aceitar risco explicitamente (mesmo
+      padrão do ponto 6 do addendum) ou orçar validação (custa
+      N_lifetime).
+    decisao_manager_b07_2026_08_15: >
+      Manager decide NÃO investir em validar B07 como eixo de regime agora
+      -- risco aceito explicitamente (não fica em silêncio), motivo: o
+      próprio método de classificação de regime vai ser trocado mais pra
+      frente (fora do escopo desta sessão), então qualquer validação de B07
+      especificamente como eixo do Regime Engine ATUAL teria vida curta.
+      0 trials gastos, nenhum código tocado. Reabrir esta pergunta quando o
+      novo método de regime entrar em desenho -- nesse ponto a pergunta
+      certa já não é mais "B07 é válido pro Regime Engine atual", é "que
+      eixo(s) o novo método usa, e eles têm o mesmo risco de instabilidade
+      de sinal".
+    resolucao_canal_3_subponderacao_regime_2026_08_15: >
+      MEDIDO (Manager rodou tools/diagnostics/measure_sample_weight_by_
+      econ_regime.py) -- hipótese CONFIRMADA, e o tamanho é grande, não
+      marginal. Razão sample_weight médio FAVORABLE/HOSTILE = 3,08x pooled
+      (não-NOFILL), consistente nos 5 ativos (2,85x-3,36x, sem outlier) --
+      bem acima do limiar "grande" (1,5x) que o próprio script definiu
+      a priori. Reframing que torna o efeito concreto: HOSTILE é o maior
+      bucket em CONTAGEM de linhas (44,8% do dataset não-NOFILL, pooled)
+      mas contribui só 26,1% do peso total de treino; FAVORABLE é o menor
+      em contagem (23,4%) mas contribui 42,1% do peso -- o Alpha aprende
+      desproporcionalmente mais sobre condições econômicas favoráveis do
+      que a própria prevalência delas no histórico sugeriria, e é
+      implantado em todas as condições. NÃO confirma a cadeia causal
+      inteira (concorrência->resolução lenta->cost_atr_ratio->econ_regime
+      -- os elos intermediários não foram testados por este script, só o
+      sintoma final), mas o sintoma medido é real, grande e uniforme nos
+      5 ativos -- deixou de ser hipótese.
+    resolucao_e10f_sazonalidade_2026_08_15: >
+      MEDIDO (Manager rodou tools/diagnostics/measure_funding_cycle_oi_
+      seasonality.py) -- hipótese "48=1,5 ciclo de funding contamina fase"
+      REFUTADA. Funding é 8h/32 barras por ~100% da história em 4 dos 5
+      ativos; SOL tem exceção real (~8 dias, 2022-11-09/18, funding em
+      2h/4h -- coincide com o colapso da FTX, justifica por que "verificar
+      por símbolo" era necessário). Mas ACF/periodograma de Δln(OI) nos 5
+      ativos NÃO mostra sazonalidade de 32 barras (nem ACF no ciclo excede
+      o ruído de fundo, nem o periodograma tem pico perto de 32, nos 5
+      ativos). Existe, fraco mas consistente, sazonalidade de ~96 barras
+      (24h) -- não perseguida agora porque reabriria a mesma suspeita já
+      registrada sobre C06 long (também 96). `feature_e10f_oi_change_
+      window` mantido em 48 -- nenhuma alternativa específica tem
+      evidência suficiente. Detalhe em constants.yaml::feature_e10f_oi_
+      change_window.
+    medicao_elo_causal_canal_3_e_horizonte_ambiente_2026_08_15: >
+      MEDIDO (Manager rodou tools/diagnostics/measure_n_bars_held_vs_cost_
+      and_regime.py, 1.616.882 trades TP/SL pooled) -- elo mecânico
+      ("hostil resolve mais devagar") REFUTADO, consistente e não
+      marginal. `spearman_rho(n_bars_held, cost_atr_ratio)` NEGATIVO nos 5
+      ativos (BTC -0,069, ETH -0,063, BNB -0,073, XRP -0,053, SOL -0,061;
+      pooled -0,060) -- sinal OPOSTO ao hipotetizado (esperava-se positivo:
+      custo alto -> resolução lenta), embora fraco em magnitude.
+      `n_bars_held` mediano HOSTILE/FAVORABLE = 0,875 pooled (0,857-1,0 por
+      ativo, nunca > 1) -- regime hostil resolve na mesma velocidade ou
+      LEVEMENTE MAIS RÁPIDO que favorável, nunca mais devagar, nos 5
+      ativos sem exceção. Consistência direcional em 5/5 ativos (não
+      espalhado ao redor de zero) indica efeito real, só que na direção
+      contrária à cadeia causal proposta -- não é ruído amostral.
+      IMPLICAÇÃO 1 (Canal 3): a explicação "concorrência alta em regime
+      hostil vem de trades individuais demorando mais" está eliminada.
+      Isso NÃO fecha a causa raiz do desbalanço de 3,08x (permanecem 2
+      hipóteses não testadas: persistência/run-length do regime -- muitos
+      trades abertos DURANTE um mesmo trecho hostil longo se sobrepõem
+      entre si mesmo cada um resolvendo rápido, mecanismo diferente do
+      testado aqui -- ou sinal econômico genuíno). Recomendação de
+      resolucao_canal_3_subponderacao_regime_2026_08_15 mantida (não
+      reponderar; medir desempenho OOS por regime primeiro), agora com
+      prior mais baixo pra "artefato mecânico simples" e mais alto pra
+      "precisa investigar persistência de regime OU é sinal econômico".
+      IMPLICAÇÃO 2 (horizonte×ambiente): rho fraco (não forte) refuta a
+      hipótese de entrelaçamento -- horizonte e ambiente são
+      EMPIRICAMENTE PRÓXIMOS DE INDEPENDENTES, não a mesma coisa vista por
+      dois ângulos. Cruzar os dois eixos (6 ambientes × 4 horizontes) NÃO
+      seria redundante se algum dia for priorizado -- mas nenhuma decisão
+      de fazer isso foi tomada, só a suspeita de redundância foi removida.
     status: >-
-      aberto -- reclassificado 2026-08-15 (ponto 6 do addendum): a
-      pendência central NÃO é "corrigir 8 janelas", é "Manager decidir
-      explicitamente aceitar o risco (documentar e seguir) OU orçar
-      trials pra investigar, com N_lifetime restante (15, teto 60) visível
-      na decisão" -- ver PLANO_MESTRE_PRINCE2.md §6.1/§7 (lente FE v1.5) e
-      AG-030 (confundimento do M6 por features expansivas, mais urgente,
-      prazo antes do M6 rodar)
+      aberto -- decisões consolidadas 2026-08-15 (ver decisoes_manager_
+      2026_08_15 acima). Pendências: (1) A13 sweep autorizado mas não
+      agendado/orçado -- REVOGADO no mesmo dia, ver decisoes_manager_
+      2026_08_15 (A13); (2) RESOLVIDA 2026-08-15 -- ER(16,48) = 2 features
+      (B07+B08), ver resolucao_pendencia_2 acima; (3) validade de B07 como
+      eixo de regime CONFIRMADA sem resposta -- DECIDIDO 2026-08-15, ver
+      decisao_manager_b07 acima: risco aceito, não investe agora porque o
+      método de regime vai ser trocado; (4) RESOLVIDA 2026-08-15 -- Canal 3
+      (subponderação de regime hostil) CONFIRMADO, 3,08x, ver resolucao_
+      canal_3 acima -- elo causal mecânico proposto REFUTADO 2026-08-16
+      (ver medicao_elo_causal_canal_3_e_horizonte_ambiente acima); causa
+      raiz do 3,08x segue aberta (persistência de regime OU sinal
+      econômico, nenhum testado ainda), decisão do Manager pendente sobre
+      priorizar essa investigação vs. ir direto pra métricas OOS por
+      regime (já recomendado); (5) RESOLVIDA
+      2026-08-15 -- sazonalidade de E10f medida e refutada, ver
+      resolucao_e10f acima; (6) anchor/embargo já viraram AG-031/AG-032
+      próprios. Ver PLANO_MESTRE_PRINCE2.md §6.1/§7 (lente FE v1.5) e
+      AG-030 (confundimento do M6, mais urgente, prazo antes do M6 rodar)
 
   - id: AG-028
     date: "2026-08-15"
@@ -1503,14 +1668,26 @@ entries:
       (triple_barrier, weights, ou upstream) só seria pego se alguém
       rodasse o teste sintético manualmente, nunca em produção real.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto"
+    resolution: >
+      2026-08-15 (autorizado pelo Manager, "solucionar robusto"):
+      `assert_label_invariants(labels, time_stop_bars=cfg.time_stop_bars)`
+      inserida em `build_and_write_labels_for_symbol`
+      (`backfill_multi_symbol.py`), entre `build_labels_for_symbol` e
+      `write_labels_atomic` -- falha alto de propósito, mesma disciplina
+      de `apply_weights`. `AssertionError` é recapturada e relançada com
+      `symbol`/`tf` no texto (`from exc`, preserva a causa original),
+      porque `run_and_write_labels_for_alts` roda em
+      `ProcessPoolExecutor` -- sem isso, um erro não diria qual dos 4
+      alts falhou. 5 checks mecânicos limpos. Suíte de teste ainda não
+      re-executada (protocolo do usuário) -- resolução pendente de
+      confirmação de que nada quebrou.
+    status: "fechado -- pendente confirmação de pytest pelo usuário"
 
   - id: AG-030
     date: "2026-08-15"
-    file: "src/features/groups/group_c.py, group_d.py, group_e.py"
+    file: "src/features/groups/group_c.py, group_d.py, group_e.py, src/regime/classifier.py"
     related_file: "src/features/support.py::expanding_percentile_rank_strict,expanding_zscore_strict; src/analysis/volatility_comparison.py::SYMBOL_START_DATE; PLANO_MESTRE_PRINCE2.md T0.5/M6"
-    found_by: "Manager, ponto 5 de 'Continuando Ultrathink'; verificado por Claude via grep direto dos 3 sites de uso + recálculo independente de contagem de barras"
+    found_by: "Manager, ponto 5 de 'Continuando Ultrathink'; verificado por Claude via grep direto dos 3 sites de uso + recálculo independente de contagem de barras; ESCOPO AMPLIADO 2026-08-15 (mesmo dia, sessão seguinte) ao reler classifier.py aplicando a lente FE às 8 janelas de AG-027 -- achado próprio, não pedido pelo Manager desta vez"
     gap: >
       C07_vol_pctile_expanding (expanding_percentile_rank_strict sobre
       realized_vol, group_c.py:47), D03f (expanding_zscore_strict sobre
@@ -1526,6 +1703,22 @@ entries:
       só de quanto histórico aquele ativo já acumulou -- não é vazamento
       temporal (`< t` estrito preservado), é NÃO-COMPARABILIDADE ENTRE
       ATIVOS introduzida pelo desenho da própria feature.
+
+      ESCOPO AMPLIADO: `classify_regimes` (classifier.py:321-324) usa a
+      MESMA primitiva (`expanding_percentile_rank_strict`) pra calcular
+      `er_quantile` (posto de `er_48`/B07, eixo ESTRUTURAL do state
+      machine R1..R5) e `econ_quantile` (posto de `cost_atr_ratio`/E27f,
+      eixo econômico, `_economics_regime`) -- não só as 3 features
+      originais. Confirmado por leitura direta: `if er_quantile is None:
+      er_quantile = support.expanding_percentile_rank_strict(er_48)` /
+      `if econ_quantile is None: econ_quantile = support.expanding_
+      percentile_rank_strict(cost_atr_ratio)`. Ou seja, os 3 EIXOS de
+      regime (estrutura, volatilidade via `vol_pctile`=C07, economia)
+      dependem todos da mesma janela expansiva desde a origem do ativo --
+      não é mais só um problema de 3 features de entrada do Alpha, é um
+      problema do PRÓPRIO RÓTULO DE REGIME usado pra estratificar
+      praticamente toda métrica do projeto (CLAUDE.md DoD "código de
+      modelo": "Métricas estratificadas por regime R1..R4").
     severity: "alto"
     layer: "features/regime"
     consequence: >
@@ -1541,6 +1734,580 @@ entries:
       ou excluir estas 3 features do vetor usado em M6 especificamente)
       ANTES do M6 rodar, não depois -- reverter uma conclusão de M6 já
       publicada custaria mais caro que decidir agora.
+
+      Com o escopo ampliado (er_quantile/econ_quantile em classify_
+      regimes): o mesmo viés atinge a própria CLASSIFICAÇÃO de regime, não
+      só 3 colunas do vetor de treino -- qualquer comparação "métrica por
+      regime, ativo A vs ativo B" (não só M6) herda a mesma confusão,
+      porque o CORTE que decide se uma barra é R1 vs R5, ou
+      ECONOMICS_FAVORABLE vs HOSTILE, já embute quanto histórico aquele
+      ativo tinha acumulado no momento. Mais amplo que M6: qualquer
+      comparação cross-asset estratificada por regime (§4, Regime Engine)
+      herda o mesmo confundimento, não só o teste específico do T0.5.
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- decisão do Manager necessária antes do M6 (T0.5) rodar, ver AG-027 addendum ponto 5"
+    status: "aberto -- decisão do Manager necessária antes do M6 (T0.5) rodar E antes de qualquer comparação cross-asset estratificada por regime, ver AG-027 addendum ponto 5"
+
+  - id: AG-031
+    date: "2026-08-15"
+    file: "src/labels/triple_barrier.py, src/analysis/m2_bar_comparison.py"
+    related_file: "PRD_V4_1.md §2.7/§3.2/§4.2, PRD_V3_2_UNIFICADO.md §17.2, audit/architecture_gaps_log.yaml AG-005, config/constants.yaml::time_stop_bars/atr_window"
+    found_by: "Manager, AG-027 addendum ponto sobre a âncora 32b/8h; reconciliação formal delegada a Agent (general-purpose), 2026-08-15"
+    gap: >
+      `time_stop_bars=32` é interpretado de forma MUTUAMENTE INCOMPATÍVEL
+      por dois módulos, ambos deliberados e documentados: `m2_bar_
+      comparison.py` trata como RELÓGIO fixo (`TIME_STOP_REFERENCE_TF=
+      "15m"` sempre, 8h independente do TF sendo comparado -- linhas
+      83-92/211/335-336); `triple_barrier.py` pós-AG-005 trata como
+      CONTAGEM DE BARRA fixa (`horizon_end_ms = t0 + time_stop_bars *
+      step_ms(cfg.tf)`, linha 787 -- 8h a 15m, 16h a 30m, 32h a 1h, docstring
+      linha 964-972 confirma "32*1h=32h" explicitamente). A 15m as duas
+      convenções coincidem, por isso nunca gerou erro visível.
+
+      O Agent confirmou, por leitura de `AG-005` (linhas 252-317): a
+      correção de AG-005 tratou só o BUG de unidade (`_BAR_MS` hardcoded
+      em 15m mesmo quando `decision_tf_minutes` mudava) -- a palavra
+      "relógio" não aparece nenhuma vez na entrada inteira. A convenção
+      "contagem de barra fixa" que resultou é efeito colateral não
+      examinado da correção mínima do bug, não uma escolha deliberada
+      entre as duas convenções.
+
+      Achado mais importante: o PRD_V4_1.md JÁ DECIDIU esta questão,
+      três vezes, incluindo no changelog formal, TRÊS DIAS ANTES do
+      commit de AG-005: §2.7 I2 (linha 174-185, "o horizonte em relógio
+      fixo e a janela em barras derivada"); §3.2 M1 (linha 368, "cada
+      estimador é calibrado com horizonte em relógio fixo"); §4.2 (linha
+      483, "time_stop vira relógio (I2), não barras"); Registro de
+      mudanças V4.0->V4.1 item 7 (linha 779, "atr_window/time_stop em
+      relógio, não em barras | horizontes divergem entre TFs"). A
+      convenção pretendida é RELÓGIO FIXO -- a mesma que M2 já implementa
+      (por raciocínio independente, sem citar essas seções do PRD) --
+      `triple_barrier.py` é quem diverge do próprio PRD, não M2.
+
+      Achado colateral: `atr_window` (mesma I2 do PRD, §2.7/§3.2) tem o
+      MESMO defeito não resolvido -- M1 e M3 já rodaram com `atr_window=20`
+      fixo em contagem de barra nos 3 TFs, "ressalva herdada" (PRD_V4_1.md
+      linha 378/396, "I2 não resolvido") -- não é só `triple_barrier.py`
+      atrasado em relação ao PRD, o projeto inteiro está.
+
+      Achado colateral 2: `scaling_invariant` (campo novo desta sessão,
+      AG-027 addendum) foi aplicado às 8 janelas de feature (A13/B01=
+      `clock`) com a premissa explícita "span deve ser comensurável ao
+      horizonte de RELÓGIO do label (8h a 15m)" -- mas `time_stop_bars`
+      em si NÃO recebeu esse campo, e essa premissa é FALSA fora de 15m
+      sob o comportamento atual de `triple_barrier.py` (onde o horizonte
+      real seria 16h/32h, não 8h).
+    severity: "alto"
+    layer: "labels/analysis"
+    consequence: >
+      Decisão A13/B01 já tomada nesta sessão (`scaling_invariant: clock`)
+      fica silenciosamente invalidada em qualquer TF != 15m enquanto este
+      gap não for corrigido. Sem correção, o multi-TF herda um horizonte
+      de label que MUDA de significado por TF sem nenhuma decisão
+      explícita ter sido tomada sobre isso -- mesma classe de defeito de
+      AG-004/005/017/027 (parâmetro carrega escopo implícito nunca
+      declarado), 6ª ocorrência confirmada.
+
+      Custo de correção HOJE é zero: confirmado por leitura direta do
+      disco (`data/labels/`) que só existem labels persistidos em 15m
+      pros 5 símbolos -- nenhum 30m/1h ainda existe, então não há
+      reprocessamento de dado real, só o primeiro caller de tf!="15m"
+      ainda não existe. Esse custo deixa de ser zero assim que alguém
+      rodar `build_labels_for_symbol` com `tf="30m"` ou `"1h"` sob a
+      convenção atual -- os labels resultantes precisariam ser
+      descartados/reprocessados.
+    resolved_by_commit: null
+    resolution: null
+    status: >-
+      aberto -- recomendação do Agent (não implementada, aguarda decisão
+      do Manager): adotar RELÓGIO FIXO em triple_barrier.py (M2 já está
+      correto, não precisa mudar), no mesmo Pacote de Trabalho que
+      atr_window (mesma I2 do PRD, mesmo defeito, resolve as duas
+      pendências §2.7/§3.2 M1 juntas). Pendências antes de fechar como
+      Pacote de Trabalho: (1) grep completo por outros callers de
+      LabelConfig/time_stop_bars além de triple_barrier.py (ex.
+      barrier_sweep.py, que teve hardcode de 15m corrigido junto com
+      AG-005 -- confirmar não reabre o mesmo problema); (2) decidir se
+      atr_window entra no mesmo PR; (3) suíte de teste precisa rodar de
+      novo depois (protocolo do usuário, não meu). É mudança de código de
+      produção real (config_hash muda, B15) -- não fiz a implementação,
+      só o registro do achado e da recomendação.
+
+  - id: AG-032
+    date: "2026-08-15"
+    file: "src/validation/cpcv.py"
+    related_file: "config/constants.yaml::cpcv_embargo_bars/time_stop_bars/feature_c06_vol_ratio_long_window, tests/unit/test_validation_cpcv.py"
+    found_by: "Agent (general-purpose), a pedido do Manager -- avaliação de proposta de reclassificação LITERATURE -> DERIVED"
+    gap: >
+      Proposta de reclassificar `cpcv_embargo_bars` pra DERIVED com base em
+      "embargo só precisa cobrir o lookback de feature (96), pois purge já
+      cobre o alcance do label" está MECANICAMENTE INCORRETA pro código
+      real. `purge_mask` (cpcv.py:383) só atua sobre linhas de treino com
+      `t0 <= g_end` -- qualquer linha com `t0 > g_end` NUNCA é purgada,
+      porque `t1 > t0` sempre (confirmado por
+      `test_generate_splits_embargo_remove_bordas_mesmo_sem_overlap_de_t1`,
+      que prova o embargo agindo SEM overlap de `t1`). A fronteira `g_end`
+      (cpcv.py:380-381) vem só da partição de `t0` (`assign_time_groups`,
+      linhas 161-194) -- nunca referencia o `t1` real das linhas de TESTE,
+      que pode esticar até `g_end + time_stop_bars` (32 barras, teto por
+      construção). Esse resíduo de até 32 barras após `g_end` fica sem
+      cobertura de purge e só é removido pelo embargo. Piso mecânico real
+      pro lado direito/frente, dado o código como está: `time_stop_bars`
+      (32) + `feature_c06_vol_ratio_long_window` (96) = **128**, não 96.
+      175 (atual) ainda cobre com folga de 47 barras (~27%) -- sem
+      urgência, mas a fórmula "96 sozinho" subestimaria o piso real em 25%.
+
+      Achado adicional: o lado esquerdo/trás do embargo (`t0 < g_start`,
+      cpcv.py:386) NÃO tem derivação mecânica equivalente rastreável --
+      continua sendo, na prática, o buffer heurístico original de
+      correlação serial (López de Prado, "1% do fold"), não uma fórmula.
+
+      Achado independente, já registrado em `constants.yaml`: a suspeita
+      de erro de unidade/TF ("175 barras ~= 88h" só fecha a conta a 30m,
+      não a 15m) NÃO é resolvida pela cobertura de lookback -- são duas
+      justificativas CONCORRENTES e incompatíveis pro mesmo número: "88h"
+      exige escalonar por TF; "128 barras" (`feature_c06` é
+      `scaling_invariant: bar_count`, fixo entre TFs) exige NÃO escalonar.
+      Reclassificar pra DERIVED trocaria o alvo, não validaria nem
+      invalidaria a suspeita original.
+    severity: "médio"
+    layer: "validation"
+    consequence: >
+      Nenhum risco imediato -- 175 > 128 com folga. Risco latente: se
+      `cpcv_embargo_bars` for reclassificado pra DERIVED com a fórmula
+      "96 sozinho" (ou reduzido perto de 96 numa varredura de
+      sensibilidade futura, Sprint 10), o piso real (128) seria violado
+      SILENCIOSAMENTE -- mesma classe de risco de AG-004/AG-009. Além
+      disso, `embargo_bars` é hoje escalar único aplicado a M15/M30/H1 sem
+      escalonamento -- se M2/M3 rodar CPCV real em 30m/1h, o mesmo 175
+      produz 87,5h/175h de embargo real, nunca avaliados.
+    resolved_by_commit: null
+    resolution: null
+    status: >-
+      aberto -- recomendação: manter `provenance: LITERATURE` por ora, NÃO
+      reclassificar pra DERIVED pleno (só metade do mecanismo -- lado
+      direito/frente -- tem fórmula auditável; lado esquerdo/trás continua
+      heurístico). Registrar 128 como piso mecânico mínimo a checar antes
+      de qualquer redução no Sprint 10. Decisão pendente do Manager: (1) se
+      vale mudar `purge_mask` pra usar `t1` real das linhas de teste em vez
+      da fronteira `g_end` (fecharia o resíduo no próprio purge, tornando
+      96 de fato suficiente -- mudança de código real, não só metadado);
+      (2) se `cpcv_embargo_bars` deveria ganhar `scaling_invariant`
+      (`bar_count`, coerente com `feature_c06`) antes do M2/M3 rodarem
+      CPCV em 30m/1h de verdade.
+
+  - id: AG-033
+    date: "2026-08-15"
+    file: "src/data/lake.py"
+    related_file: "src/analysis/m2_stats.py, src/analysis/m2_worker.py, config/constants.yaml::m2_duckdb_memory_limit_gb"
+    found_by: "Manager -- 1ª tentativa real do run canônico de M2, `uv run python -m src.analysis.m2_bar_comparison`, 9 das 20 tasks falharam"
+    gap: >
+      Dois defeitos reais achados no 1º run canônico de verdade de M2,
+      ambos corrigidos na hora:
+
+      (1) `_read_files` (`lake.py`, função compartilhada por `query_bars`/
+      `query_agg_trades`/`query_funding` -- não é específico de M2) faz
+      `duckdb.connect(":memory:")` sem `temp_directory` explícito. DuckDB
+      sem essa configuração usa por padrão um caminho RELATIVO ao cwd
+      (".tmp/duckdb_temp_storage_<classe-de-tamanho>-<n>.tmp"), com nome de
+      arquivo de overflow fixo pela classe de tamanho do buffer -- não
+      único por conexão. Sob `ProcessPoolExecutor` (12 workers
+      concorrentes), todo processo herda o mesmo cwd e pode escolher o
+      MESMO nome de arquivo simultaneamente -- 9 de 20 tasks morreram com
+      `IOException: Failed to delete file ".tmp\duckdb_temp_storage_
+      S32K-0.tmp"` (e S64K/S96K), um processo apagando o arquivo que outro
+      processo, sem saber, também estava usando. Mesma CLASSE de bug já
+      corrigida pra memory_limit/threads (cada conexão assumindo orçamento
+      otimista sem coordenar com as outras) -- aqui o recurso em disputa é
+      o NOME DO ARQUIVO de overflow em disco, não RAM. Corrigido: cada
+      conexão recebe `temp_directory` único por PID
+      (`tempfile.gettempdir()/duckdb_lake_pid{os.getpid()}`).
+
+      (2) `_ADF_STAT_PLAUSIBLE_ABS_MAX=30.0` (`m2_stats.py`, gate de
+      plausibilidade contra SVD degenerada, numpy#20384, adicionado nesta
+      mesma sessão) disparou em TODAS as 13 tasks de barra de tempo do run
+      real (n de 40.943 a 231.551), sempre com `|adf_stat|` entre 60 e 145
+      -- padrão sistemático demais pra ser anomalia, sinal de que o limiar
+      estava errado, não o dado. Verificado: `adf_stat/sqrt(n)` fica em
+      ~-0,30 nas 13 tasks, consistente entre símbolos e TFs -- exatamente
+      o comportamento esperado de uma estatística GENUÍNA (ADF diverge com
+      `sqrt(n)` sob forte estacionariedade real). A justificativa original
+      do limiar ("ADF costuma ficar bem dentro de [-10,10]") nunca tinha
+      sido verificada contra dado real deste projeto em escala de
+      produção -- só contra um caso sintético patológico (período exato,
+      `-1,27e14`) e pesquisa de literatura genérica. Corrigido: limiar
+      subiu pra 2000 (margem enorme dos dois lados -- bem acima de
+      qualquer extrapolação razoável do padrão `sqrt(n)` observado, e
+      ainda 11 ordens de magnitude abaixo do padrão de corrupção real já
+      visto).
+    severity: "alto"
+    layer: "analysis/data"
+    consequence: >
+      (1) Sem o fix, ~metade das tasks de M2 falhariam de forma
+      não-determinística a cada run (depende de qual worker escolhe qual
+      nome de arquivo primeiro) -- inviabilizava confirmar o run canônico
+      ponta a ponta, objetivo real do Sprint 4. Mesmo bug latente em
+      QUALQUER caller concorrente de `lake.py` fora de M2 (M1/M3 rodam
+      `ProcessPoolExecutor` também). (2) Sem o fix, TODA task de barra de
+      tempo do M2 real reportaria `adf_stat`/`adf_pvalue` como NaN --
+      gate de segurança virando falso-positivo sistemático, mascarando
+      resultado real válido como "não computável".
+    resolved_by_commit: null
+    resolution: >
+      Corrigido na mesma sessão do achado. `lake.py::_read_files` ganha
+      `SET temp_directory` único por PID, incondicional (não só quando
+      throttle é passado). `m2_stats._ADF_STAT_PLAUSIBLE_ABS_MAX` 30->2000,
+      docstring reescrita citando o padrão sqrt(n) observado nas 13 tasks
+      reais, não mais só a afirmação genérica original. 5 checks mecânicos
+      limpos nos 2 arquivos. Run canônico ainda não reexecutado até o fim
+      após o fix -- pendente confirmação do Manager.
+    status: "fechado -- pendente confirmação de run completo pelo Manager"
+
+  - id: AG-034
+    date: "2026-08-16"
+    file: "src/analysis/m2_bar_comparison.py"
+    related_file: "config/constants.yaml::m2_duckdb_memory_limit_gb, src/analysis/m2_worker.py"
+    found_by: "Manager -- 2ª tentativa real do run canônico de M2, pós-AG-033. Travou às 23:29 (2026-08-15), zero linhas de log novas até 08:50 (2026-08-16) -- 9h+ parado, mesma assinatura do 'travamento de 16h+ ainda não diagnosticado' já citado no plano de desmembramento (wise-exploring-panda.md) como explicitamente fora de escopo do split."
+    gap: >
+      HIPÓTESE, não confirmado -- não há telemetria de RAM/swap do momento
+      do travamento, só o log. Nos minutos antes de parar, várias tasks
+      falharam com `OutOfMemoryException` de origens DIFERENTES: algumas
+      com mensagem estruturada do DuckDB ("ArrowBuffer: failed to allocate
+      8388608 bytes... Increasing the memory limit"), outras com só
+      "Allocation failure" genérica (sem o texto de sugestão do DuckDB) --
+      essa segunda forma é consistente com falha de alocação a nível de
+      SISTEMA OPERACIONAL, não do limite soft interno do DuckDB.
+
+      `m2_duckdb_memory_limit_gb=2.0` (constants.yaml) e
+      `m2_duckdb_threads=1` já estão travados por conexão (correção
+      anterior, mesma classe do AG-033/item 1) -- mas `SET memory_limit`
+      só governa o buffer manager INTERNO do DuckDB, não a RSS total do
+      processo Python que o hospeda. Com `max_workers=min(os.cpu_count()=12,
+      n_tasks=20)=12` processos concorrentes, o orçamento DELIBERADO
+      (12 x 2GB = 24GB) não inclui: (a) os DataFrames Polars/Arrow já
+      materializados fora do DuckDB depois de cada query; (b) o estado
+      acumulado do streaming chunk-a-chunk (`carry`/`bar_frames` em
+      `m2_worker.py`, cresce ao longo de até 81 chunks por task); (c) o
+      overhead de 12 interpretadores Python + cache Numba carregados em
+      paralelo. Nenhum desses três é limitado por `SET memory_limit`. Se a
+      soma real ultrapassar a RAM física da máquina, o sintoma esperado é
+      exatamente isto: sem crash limpo (sem exceção Python capturável),
+      SO thrashing (paginação pesada) que se parece com "parado" mais do
+      que com "travado" -- CPU baixo, disco alto, sem novas linhas de log
+      porque nenhuma task consegue terminar um passo.
+    severity: "alto"
+    layer: "analysis"
+    consequence: >
+      M2 não confirma o run canônico ponta a ponta desde que foi escrito
+      -- 2 tentativas reais, 2 causas raízes diferentes (AG-033 e esta),
+      nenhuma delas o mesmo bug. Se a hipótese estiver certa, rodar de novo
+      sem mudar concorrência/orçamento reproduz o travamento -- não é
+      seguro simplesmente tentar de novo com a mesma configuração.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- hipótese não verificada, decisão do Manager
+      necessária antes de gastar mais uma tentativa de 9h+. Três caminhos
+      possíveis, nenhum escolhido ainda: (1) reduzir `max_workers`/`n_tasks`
+      concorrentes de M2 especificamente (troca tempo de parede por
+      segurança de memória); (2) medir RSS real por processo durante a
+      PRÓXIMA tentativa (Gerenciador de Tarefas, sem rodar nenhum .py novo)
+      pra confirmar/refutar a hipótese antes de mudar código; (3) mover
+      acumulação de `carry`/`bar_frames` pra descarregar em disco
+      incrementalmente em vez de manter tudo em memória Python até o fim
+      da task (mudança estrutural, mais cara). Recomendação: (2) primeiro
+      -- é 0 código, confirma ou refuta a hipótese, decide entre (1) e (3)
+      com dado real em vez de suposição.
+    status: >-
+      FECHADO 2026-08-16 pelo Manager -- decisão explícita de não
+      investigar/corrigir mais. `canonical_bar_type=dollar` já foi decidido
+      independente disso (M2 concluiu sobre as 5 janelas parciais sem
+      precisar do histórico completo). Risco aceito, não esquecido: o
+      esgotamento de memória sob concorrência plena é uma restrição real da
+      máquina que volta a valer se algum dia o histórico completo precisar
+      ser reprocessado em dollar bars pra produção (ver escopo desse
+      reprocessamento, ainda maior que o run de M2 -- bilhões de trades por
+      símbolo, não só 5 janelas de 1 mês). Reabrir nesse momento, não
+      antes.
+
+  - id: AG-035
+    date: "2026-08-16"
+    file: "src/analysis/m2_worker.py"
+    related_file: "src/data/bars.py, config/constants.yaml::bars_tick_imbalance_ewma_floor"
+    found_by: "Manager pediu investigação do achado M2 (tick imbalance falhando em 5/5 janelas, ver aba M2 da Biblioteca de Testes) -- causa raiz encontrada por leitura de código, não suposição."
+    gap: >
+      CAUSA RAIZ CONFIRMADA -- `tick_imbalance` produz 250x-1000x mais
+      barras que o alvo calibrado, nas 5 janelas, nos 5 ativos, nos 3 TFs,
+      sem exceção. Exemplo real (BNBUSDT 15m, janela LUNA): alvo (mesmo do
+      baseline `time`) = 2.976 barras; `tick_imbalance` real = 969.263 --
+      325x mais. Isso, não "tick imbalance é estruturalmente ruim pra
+      cripto", explica o JB/Ljung-Box=0% e a unicidade ~300x menor
+      (painel 05 da aba M2): com 325x mais barras no mesmo intervalo de
+      relógio, cada barra fica minúscula (maioria quase degenerada) e a
+      janela de concorrência fixa (`time_stop_ms`) passa a sobrepor
+      centenas de barras em vez de poucas.
+
+      Mecanismo (`src/data/bars.py::_tick_imbalance_loop`, lido linha a
+      linha): uma barra fecha quando `abs(theta) >= exp_num_ticks *
+      max(abs(ewma_b), ewma_floor)`. `m2_worker._build_tick_imbalance_
+      config` calibra `exp_num_ticks_init = n_ticks / target_n_bars` --
+      MESMA fórmula usada pra dollar/volume bars (fechar após consumir um
+      nº fixo de ticks/volume/$). Mas tick imbalance bars NÃO fecham após
+      consumir `exp_num_ticks` ticks -- fecham após acumular `exp_num_ticks
+      × |ewma_b|` de DESEQUILÍBRIO LÍQUIDO, onde `ewma_b` é a EWMA (janela
+      de 10.000 ticks, `bars_tick_imbalance_expected_imbalance_window`) do
+      sinal de agressor (+1/-1) por tick. Pra qualquer mercado sem
+      imbalance persistente forte no nível de tick individual (cripto
+      líquida entra nessa categoria -- cada trade é ~cara-ou-coroa entre
+      comprador/vendedor agressor na maior parte do tempo), `|ewma_b|`
+      fica bem abaixo de 1 em regime estável -- estimativa empírica pelo
+      exemplo acima: ~1/325 ≈ 0,003 (0,3% de desequilíbrio líquido médio
+      por tick). A fórmula de calibração da task NUNCA leva isso em conta
+      -- implicitamente assume `|imbalance|≈1` sempre, o que só seria
+      verdade se todo tick fosse na mesma direção.
+
+      `bars_tick_imbalance_ewma_floor=1e-12` (constants.yaml) NÃO é a
+      causa -- seu único propósito documentado (`bars.py` linha 514-523) é
+      evitar `close_threshold` EXATAMENTE zero (guarda de divisão por
+      zero), não prover um piso significativo. `ewma_b` nunca chega perto
+      de 1e-12 no estado estável (fica na casa de 1e-3 a 1e-2, como
+      esperado de mercado balanceado) -- o floor nunca é o fator ativo,
+      confirmado lendo a lógica de atualização (`ewma_b = alpha_imbalance *
+      b_i + (1-alpha_imbalance) * ewma_b`, `alpha_imbalance=2/10001`).
+    severity: "alto"
+    layer: "analysis/data"
+    consequence: >
+      A conclusão publicada na aba M2 da Biblioteca de Testes ("tick
+      imbalance falha sistematicamente") está tecnicamente correta sobre O
+      QUE foi medido, mas a LEITURA "tick imbalance bars não servem pra
+      este universo de ativos" seria uma inferência não sustentada -- o
+      que foi medido é uma calibração quebrada da harness de M2, não o
+      método em si. Nenhuma decisão de descartar tick imbalance como
+      candidato deveria se apoiar neste resultado até a calibração ser
+      corrigida e remedida.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- diagnóstico completo, fix não escrito ainda
+      (decisão do Manager: só investigar foi pedido nesta rodada). Caminho
+      de correção mais direto: `_build_tick_imbalance_config` precisaria
+      estimar `|imbalance|` esperado (via passe de amostragem sobre uma
+      fração do período, medindo `ewma_b` real observado) em vez de
+      assumir `exp_num_ticks_init = n_ticks/target_n_bars` diretamente --
+      mesma disciplina de "medir, não estipular" já aplicada em outros
+      pontos do projeto. Fora de escopo desta entrada decidir se vale a
+      pena consertar e remedir M2, ou se o achado fica documentado como
+      limitação conhecida da harness (custo: reprocessar as 5 janelas de
+      novo, ~10min cada pela experiência real desta sessão).
+    status: >-
+      FECHADO 2026-08-16 pelo Manager -- decisão explícita de não
+      corrigir/remedir. `canonical_bar_type=dollar` já foi decidido
+      independente disso, e a vitória de dollar sobre TEMPO (baseline
+      real) não depende de tick_imbalance estar calibrado certo. Risco
+      aceito, não esquecido: fica sem resposta se tick_imbalance
+      recalibrado bateria dollar -- tick_imbalance continua descartado
+      como candidato sem essa validação ter sido feita, não porque foi
+      provado inferior. Reabrir se tick_imbalance voltar a ser cogitado
+      como candidato no futuro.
+
+  - id: AG-036
+    date: "2026-08-16"
+    file: "src/features/volatility.py"
+    related_file: "docs/refactor_dollar_bar_canonico.md (achado D), config/constants.yaml::canonical_volatility_estimator, audit/architecture_gaps_log.yaml::AG-001"
+    found_by: "Agent de investigação ponta a ponta (docs/refactor_dollar_bar_canonico.md), confirmado pelo Manager ao revisar o relatório."
+    gap: >
+      O contrato `estimate(bars, horizon_minutes=...)` de TODO estimador de
+      volatilidade (`src/features/volatility.py:49,83-90,120-125,147-152,
+      179-184,211-216`) exige `horizon_minutes == bars.timeframe_minutes` e
+      levanta `NotImplementedError` caso contrário. Uma dollar bar não tem
+      `timeframe_minutes` -- é bloqueio de CONSTRUÇÃO, não de resultado, e
+      atinge M1 (o próprio estimador vencedor, GK) simultaneamente com
+      Feature Engine (C01/C02/C06/C07) e Label Engine (dimensionamento de
+      barreira). O resultado de M1 publicado (GK vence ATRWilder/Parkinson
+      nas 15/15 combinações medidas, `CLAUDE.md` v1.4) foi medido 100% sob
+      grade de TEMPO -- nenhum dos 8 estimadores candidatos (ATRWilder,
+      Parkinson, Garman-Klass, Volatilidade Realizada, HAR-RV, EGARCH(1,1),
+      Rogers-Satchell, Yang-Zhang) foi testado sob dollar bar, porque dollar
+      bar não existia como grade candidata quando M1 rodou.
+    severity: "médio"
+    layer: "features/validation"
+    consequence: >
+      Se `canonical_bar_type=dollar` for implementado sem reabrir M1, o
+      pipeline promove um estimador de volatilidade cuja vitória nunca foi
+      medida na grade que ele vai efetivamente rodar em produção --
+      exatamente o mesmo tipo de furo que AG-001 fechou pro Label Engine
+      (interface pronta, decisão nunca revalidada na condição real de uso).
+      Achado D também expõe dependências mais finas que uma remedição
+      precisa cobrir, não só rerodar M1 como está: `support.py:283`
+      (`std*sqrt(window)` assume √tempo, não √contagem-de-barra, sob
+      dollar bar) e `support.py:252-256` (componente overnight de
+      Yang-Zhang colapsa porque "gap entre barras" deixa de existir em
+      dollar bar -- toda barra começa exatamente onde a anterior terminou
+      no relógio de trades).
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- decisão registrada, execução explicitamente
+      adiada. Decisão do Manager (2026-08-16): M1 será re-medido por
+      completo, com os 8 estimadores, assim que a refatoração da grade
+      dollar-bar estiver 100% finalizada (bloqueadores AG-031/AG-032 + a
+      redefinição de M15/M30/H1, ver docs/refactor_dollar_bar_canonico.md
+      §2-4, fechados). Não é reabertura do resultado de M1 hoje -- a
+      vitória do GK sob grade de TEMPO continua válida e não é questionada
+      por este achado. É um pré-requisito explícito e travado para a
+      PRÓXIMA vez que `canonical_volatility_estimator` for promovido a
+      produção sob a nova grade, não uma tarefa deste sprint.
+    status: >-
+      ABERTO -- decisão do Manager, não corrige agora. Reabrir/fechar
+      quando o reprocessamento dollar-bar (T1→todas-as-features, ver
+      PLANO_MESTRE_PRINCE2.md v3.5) chegar na etapa de Feature Engine e M1
+      for de fato remedido; até lá, `canonical_volatility_estimator=GK`
+      (constants.yaml) segue valendo só para grade de TEMPO.
+
+  - id: AG-037
+    date: "2026-08-16"
+    file: "src/validation/cpcv.py"
+    related_file: "docs/refactor_dollar_bar_canonico.md (achado C, §3.6 item 2), audit/architecture_gaps_log.yaml::AG-031, AG-032"
+    found_by: "Agent Project Assurance (revisão independente de docs/refactor_dollar_bar_canonico.md, PRINCE2 §6.4), pergunta prioritária 1."
+    gap: >
+      `assert_tf_consistent` (`cpcv.py:288-304`, chamada incondicional em
+      `:359`, `_TF_CONSISTENCY_RTOL=0.05` em `:91`) NÃO é resolvido por
+      nenhuma das 4 opções do Bloqueador 2 (calibração de threshold sob
+      dollar bars) sozinha -- confirmado por leitura direta do código,
+      não suposição. `CPCVConfig.__post_init__` (`cpcv.py:138`) já chama
+      `step_ms(self.tf)` na CONSTRUÇÃO, antes mesmo do guard rodar;
+      `step_ms()` (`src/data/resample.py:70-76`) é dict fechado sobre
+      `{5m,15m,30m,1h,2h,1d}` -- qualquer `tf` fora disso levanta
+      `UnsupportedTimeframeError` imediatamente. Nenhuma opção do
+      Bloqueador 2 altera essa tabela nem a mecânica estatística do guard
+      (mediana de espaçamento de `t0` vs. `step_ms` nominal). As opções do
+      Bloqueador 2 respondem "o que M15/M30/H1 significa" (calibração); o
+      guard resolve um problema anterior e diferente -- "os dois `tf`
+      passados independentemente (labels carregados vs. `CPCVConfig`)
+      apontam pra mesma grade" (identidade de configuração), hoje resolvido
+      por proxy estatístico só porque pra barra de tempo os dois
+      coincidem. O próprio documento já propõe a peça que resolveria isso
+      (`grade_id` versionado, §3.6 item 2) mas nunca conecta essa proposta
+      de volta ao achado C -- lacuna de síntese dentro do próprio relatório,
+      não erro factual.
+    severity: "MEDIUM"
+    layer: "validation"
+    consequence: >
+      Se o Manager escolher uma opção do Bloqueador 2 presumindo que isso
+      também resolve o guard duro do achado C, a implementação descobre o
+      erro tarde -- `CPCVConfig.__post_init__` continua levantando
+      `UnsupportedTimeframeError` de qualquer forma. Custo de retrabalho de
+      escopo, não de dado. `_embargo_ms()` (`cpcv.py:247-255`) tem o mesmo
+      problema-irmão, mas esse já está corretamente atribuído ao Bloqueador
+      3/AG-032 pelo documento original.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO. Caminho sugerido pela revisão (não é decisão,
+      Manager escolhe): com `grade_id` (símbolo+camada+threshold+data de
+      calibração) existindo dos dois lados (labels e `CPCVConfig`),
+      `assert_tf_consistent` viraria checagem de igualdade discreta
+      (`labels_grade_id == config.grade_id`) em vez de comparação numérica
+      com tolerância -- mais forte (detecta divergência de calibração, não
+      só de nome de TF) e sem depender de `step_ms`. Retrocompatível pra
+      barra de tempo (`grade_id == tf`).
+    status: "aberto -- redesenho separado dos 3 bloqueadores nomeados, decisão do Manager sobre quando escopar"
+
+  - id: AG-038
+    date: "2026-08-16"
+    file: "src/analysis/faixa2_caminho_b.py"
+    related_file: "docs/refactor_dollar_bar_canonico.md (§1.6), audit/architecture_gaps_log.yaml::AG-036 (extinção de T1)"
+    found_by: "Agent Project Assurance (revisão independente), pergunta prioritária 2."
+    gap: >
+      Ponto de acoplamento posicional ao T1 não citado pela varredura do
+      documento original (que cita `faixa2_caminho_b.py` só em
+      `:1079-1081,1177`): `idx_reduced = [T1_FEATURE_IDS.index(f) for f in
+      reduced_feature_ids]` (`:1229`), usado logo depois (`:1234`) pra
+      fatiar `correlation_t1[np.ix_(idx_reduced, idx_reduced)]` -- deriva
+      índice posicional via nome→posição no vetor T1 atual. Revisão
+      também confirmou, por Grep independente, que `T1_FEATURE_IDS`/
+      `DESIGN_COLUMNS` têm ZERO ocorrências em `src/models/pipeline.py` e
+      `src/models/monotonic.py` -- escopo real do acoplamento fica confinado
+      a `alpha.py`+`dataset.py`+`baselines.py`+3 arquivos de `analysis/`,
+      não `pipeline.py`.
+    severity: "LOW"
+    layer: "analysis (fora do contrato import-linter, medição pós-hoc)"
+    consequence: >
+      Não muda a conclusão "pelo menos 8 lugares" do documento original
+      (contagem independente confirma >=10, incluindo este). Mas se a
+      lista virar checklist literal de implementação da extinção de T1
+      (AG-036), este ponto ficaria fora sem esta correção.
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- achado registrado pra a lista de implementação real não perder este ponto."
+    status: "aberto"
+
+  - id: AG-039
+    date: "2026-08-16"
+    file: "audit/n_lifetime.yaml"
+    related_file: "PLANO_MESTRE_PRINCE2.md:1164-1165,1421-1423, config/constants.yaml (13 constantes classe A ASSUMED), CLAUDE.md (Regra de proveniência #4)"
+    found_by: "Agent Project Assurance (revisão independente), pergunta prioritária 3."
+    gap: >
+      Não existe definição a priori de quando uma varredura de sensibilidade
+      ±50% de constante classe A conta como 1 trial (bloco) vs. N trials (1
+      por ponto testado). Confirmado por leitura direta: o repo
+      institucionaliza isso como "decisão do Manager caso a caso" em duas
+      citações literais (`PLANO_MESTRE_PRINCE2.md:1164-1165` e `:1421-1423`),
+      não como fórmula. O relatório original (docs/refactor_dollar_bar_
+      canonico.md §5.4) cita só o precedente `n_lifetime.yaml` id 11
+      (70 candidatas em bloco, 1 trial) a favor de "expandir o vetor T1 não
+      consome N_lifetime", sem mencionar `id 10` (grade 3×3×2 lados = 18
+      trials, N-trials) como contraponto -- e nenhum dos dois é literalmente
+      o caso que vai ocorrer (sweep de `time_stop_bars`/`cpcv_embargo_bars`/
+      threshold de dollar bar).
+    severity: "LOW"
+    layer: "governance"
+    consequence: >
+      Risco de subestimar o custo em `N_lifetime` de um sweep específico no
+      momento em que ele de fato for declarado e rodado. **Correção do
+      Manager, 2026-08-16 (mesmo dia):** isto NÃO é orçamento em risco
+      agora — as 13 constantes citadas já têm `review_by` (sprint) em
+      `config/constants.yaml`, cada sweep só roda (e só custa trial) no
+      sprint agendado; ver `PLANO_MESTRE_PRINCE2.md` §11.4 (Road Map Vivo,
+      novo). Severidade rebaixada de MEDIUM pra LOW por isso -- a
+      ambiguidade de processo (1 trial vs. N) continua real, mas não é
+      urgente enquanto nenhum sweep estiver de fato em execução.
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- ambiguidade de processo é achado real, não erro; fica registrada até o Manager declarar o framing a priori, no momento em que CADA sweep for de fato agendado pra rodar (mesma disciplina de B20) — não antes."
+    status: "aberto -- baixa prioridade, sem sweep em execução no momento"
+
+  - id: AG-040
+    date: "2026-08-16"
+    file: "docs/refactor_dollar_bar_canonico.md (§5.4)"
+    related_file: "docs/SPRINT_LOG.md:180-182 (N_eff long/short), audit/architecture_gaps_log.yaml::AG-030 (posto expansivo cross-asset)"
+    found_by: "Agent Project Assurance (revisão independente), Bloco B pergunta 10."
+    gap: >
+      O argumento "a favor" de expandir o vetor T1 (`N_eff` = 32.608 long /
+      32.236 short, citado como acima do topo da faixa especulada) não
+      qualifica se foi medido em BTCUSDT apenas ou nos 5 ativos.
+      `docs/SPRINT_LOG.md:180-182` não nomeia o símbolo; pelo contexto
+      (Sprint 6, antes do Feature/Label Engine rodar pros 4 alts) é
+      provavelmente BTC-only. SOL/XRP têm histórico mais curto (2021-12 vs.
+      ~2019-12 do BTC) -- `N_eff` pode não generalizar pros 5 ativos.
+    severity: "MEDIUM"
+    layer: "models (via docs/refactor_dollar_bar_canonico.md)"
+    consequence: >
+      O argumento quantitativo mais forte a favor de "o vetor de 10 é
+      conservador" pode estar enviesado pro ativo com mais histórico,
+      exatamente na direção que faria a decisão de expandir T1 (AG-036)
+      parecer mais segura do que é pra SOL/XRP/BNB.
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- verificação de símbolo/qualificação por ativo pendente antes de tratar o argumento N_eff como válido pros 5 ativos."
+    status: "aberto"
+
+  - id: AG-041
+    date: "2026-08-16"
+    file: "docs/refactor_dollar_bar_canonico.md (linha 150, 624)"
+    related_file: "PRD_V4_1.md:671"
+    found_by: "Agent Project Assurance (revisão independente)."
+    gap: >
+      Citação "PRD_V4_1.md:670" pro texto do critério de encerramento #5
+      ("N_lifetime > 60 sem Camada 2 fechada → encerrar") está 1 linha
+      off -- o texto exato está na linha 671 (linha 670 é o critério #4,
+      sobre edge_bruto_atr vs. custo_atr).
+    severity: "LOW"
+    layer: "documentação"
+    consequence: "Nenhuma -- imprecisão cosmética, não afeta leitura nem decisão."
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- correção de 1 caractere, baixa prioridade."
+    status: "aberto"

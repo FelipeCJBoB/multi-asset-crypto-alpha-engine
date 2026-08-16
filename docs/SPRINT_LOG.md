@@ -2353,3 +2353,193 @@ custo-de-refazer:
 nova, suíte completa `not slow and not integration`: 851 passam (era 851,
 mesma contagem — só reorganização, nenhum teste novo nem quebrado), 1
 skip/2 xfail pré-existentes e não relacionados.
+
+<!-- check-sprint-log: skip -->
+## M1 — comparação de estimadores de volatilidade (2026-08-11)
+
+4 dos 6 estimadores candidatos (ATRWilder baseline, Parkinson, Garman-Klass,
+HAR-RV) rodados sobre as 15 combinações reais (5 ativos × 3 TFs) por QLIKE
+walk-forward ancorado (`experiments/volatility_comparison_report.json`,
+commit `2410bc1`). **Garman-Klass venceu 14/15** contra ATRWilder.
+Extensão pós-M1 testou mais dois candidatos (Rogers-Satchell, Yang-Zhang)
+contra o vencedor — GK seguiu vencendo 10/15, nenhum dos 8 supera
+(`experiments/volatility_rs_yz_vs_gk_report.json`, commit `2436b33`).
+
+**Achado de engenharia real, não cosmético:** um `RuntimeWarning` do numpy
+em `diebold_mariano` não era ruído — `d = loss_candidate - loss_baseline`
+podia envolver QLIKE `inf`, e `finite - inf = ±inf` (não `NaN`) passava
+direto pelo filtro `~np.isnan(d)` aplicado DEPOIS da subtração. Um único bar
+degenerado num candidato corrompia o teste inteiro sem barreira. Corrigido
+filtrando `isfinite` dos dois lados ANTES de subtrair — não abafando o
+warning com `np.errstate`. Virou diretriz permanente ("nunca remediar,
+sempre solucionar") em `CLAUDE.md`.
+
+**Decisão do Manager, 2026-08-11:** Garman-Klass é o vencedor de M1,
+registrado em `config/constants.yaml::canonical_volatility_estimator`.
+Travado 2026-08-12 ("aceito sua recomendação"). **Deployment explicitamente
+adiado** até M2 (barra) e M3 (timeframe) fecharem — mudar qualquer um dos
+dois força relabeling de qualquer forma, reprocessar duas vezes seria
+retrabalho. Detalhe: `docs/refactor_gk_canonico.md`.
+
+<!-- check-sprint-log: skip -->
+## M2 — comparação de tipo de barra, dollar bar vira canônico (2026-08-15 → 2026-08-16)
+
+Comparou barra de tempo (baseline, klines) contra dollar/volume/tick-imbalance
+bars construídas trade-a-trade de `aggTrades` real (27GB/20GB comprimidos só
+BTC/ETH — não cabem em memória de uma vez em nenhuma concorrência, motivou
+desenho streaming chunked em `src/data/bars.py` com paridade lote↔streaming
+testada em `tests/unit/test_data_bars.py`).
+
+**3 bugs reais corrigidos no caminho** (`src/data/bars.py`,
+`src/analysis/m2_stats.py`), cada um achado rodando contra dado real, não
+em teste sintético:
+- Streaming de dollar/volume bars fechava "barra fantasma" — cumsum
+  recomeçava do zero a cada chunk, perdendo o resto de barras que fecham
+  sem bater exato no threshold. Achado via teste de paridade streaming↔lote
+  (`tests/unit/test_data_bars.py`).
+- `duckdb.connect()` sem `SET memory_limit`/`SET threads` assume até 80% da
+  RAM da máquina POR CONEXÃO, sem coordenação entre processos concorrentes
+  — travado explicitamente (`config/constants.yaml::m2_duckdb_memory_limit_gb`).
+- Colisão de `temp_directory` do DuckDB entre processos concorrentes
+  (`audit/architecture_gaps_log.yaml::AG-033`) + limiar de plausibilidade
+  do teste ADF calibrado só contra caso sintético patológico (30,0), não
+  dado real de série longa — recalibrado pra 2000,0 com evidência de
+  escala √n.
+
+**Run canônico completo (histórico inteiro) travou por esgotamento de
+memória sob concorrência plena** (`audit/architecture_gaps_log.yaml::AG-034`)
+— 12 processos × estado acumulado sem orçamento agregado, nunca corrigido.
+Em vez de reduzir concorrência ou encolher pra 1 mês recente (perderia
+diversidade de regime), M2 rodou em **5 janelas deliberadamente escolhidas
+por regime**: LUNA/UST (2022-05), FTX (2022-11), crypto winter (2023-06),
+ETF/halving (2024-03), recente (2026-07). Suporte a `--start`/`--end`/
+`--max-workers` adicionado a `src/analysis/m2_bar_comparison.py`.
+
+**Resultado: dollar bars venceu 4 das 5 janelas + o pooled** sobre o
+baseline de tempo (volume venceu a 5ª, winter, por margem pequena) — bate
+o baseline em toda métrica (JB/Ljung-Box/unicidade) exceto ADF (empate,
+100% em todo tipo). `tick_imbalance` falhou 5/5 (JB/LB=0% em toda janela).
+Resultado completo por janela: `experiments/m2_report_luna.json` e as 4
+janelas irmãs (`ftx`/`winter`/`etf`/`recente`), mesmo diretório.
+
+**Causa raiz do `tick_imbalance` investigada**
+(`audit/architecture_gaps_log.yaml::AG-035`) — produzia 250x-1000x mais
+barras que o alvo em toda combinação (ex. BNBUSDT 15m LUNA: alvo 2.976,
+real 969.263). `src/analysis/m2_worker.py::_build_tick_imbalance_config`
+calibrava com a MESMA fórmula de dollar/volume bars
+(`n_ticks/target_n_bars`), que assume implicitamente desequilíbrio de
+ordem ≈100% por tick — falso pra mercado líquido, onde o desequilíbrio
+real fica em ~0,1%-1%. **Não é evidência de que tick imbalance bars sejam
+ruins pra cripto — é calibração quebrada da harness de M2.** Não invalida
+a vitória de dollar sobre TEMPO.
+
+**Decisão do Manager, 2026-08-16:** dollar bar é o vencedor de M2, travado
+em `config/constants.yaml::canonical_bar_type=dollar`. `AG-034`/`AG-035`
+fechados por decisão explícita — risco aceito, não corrigidos (reabrir se
+histórico completo precisar reprocessar, ou se tick_imbalance voltar a ser
+cogitado). **Deployment não iniciado** — todo o pipeline (Feature/Regime/
+Label Engine) foi construído sobre barra de tempo até aqui.
+
+Resultado completo, por janela e pooled: artefato "Biblioteca de Testes" (aba M2, publicado 2026-08-16) — link em posse do Manager, não versionado no repo. <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+## Governança pós-M2 — T1 extinto, bloqueadores do redesenho dollar-bar (2026-08-16)
+
+**Investigação de arquitetura ponta-a-ponta delegada** (Agent, contexto
+rico) mapeando o que muda em cada camada (`exchange` → `live`) na migração
+pra dollar bar. Entregue como `docs/refactor_dollar_bar_canonico.md` (~13
+camadas). 8 achados-chave:
+
+- Nenhuma dollar bar foi construída sobre o histórico completo de nenhum
+  ativo — o run canônico nunca terminou uma célula sequer; as 5 janelas de
+  M2 são toda a evidência empírica que existe.
+- `canonical_bar_type` ainda não é lido por nenhuma linha de código — é
+  registro de decisão puro, mesmo padrão do GK.
+- `src/validation/cpcv.py::assert_tf_consistent` é uma trava dura
+  (`rtol=0,05` contra `step_ms(tf)` nominal) que bloqueia CPCV pra
+  qualquer grade não-tempo — **sem solução escolhida ainda**.
+- O contrato `estimate(bars, horizon_minutes=...)` de TODO estimador de
+  volatilidade (inclusive GK, `src/features/volatility.py`) exige
+  `horizon_minutes == timeframe_minutes` — dollar bar não tem isso.
+  Bloqueia M1, Feature Engine (grupo C do `features/registry.yaml`) e
+  Label Engine simultaneamente. Virou
+  `audit/architecture_gaps_log.yaml::AG-036` (aberto): M1 (8 estimadores)
+  precisa ser remedido do zero quando a refatoração de barra terminar; GK
+  continua válido só pra grade de TEMPO até lá.
+- 3 bloqueadores nomeados apresentados com opções e trade-offs, sem
+  recomendação (decisão reservada ao Manager): `AG-031` (horizonte do
+  label sob dollar bars), redefinição de "M15/M30/H1" sob dollar bars
+  (4 opções: threshold fixo · recalibração periódica · EWMA causal ·
+  abandonar os nomes por "camadas de resolução"), `AG-032` (embargo do
+  CPCV sob dollar bars) — ver `docs/refactor_dollar_bar_canonico.md` §2-4.
+- Construção de dollar bar em produção não tem nada pronto — `src/live/`
+  é 3 linhas, sem stream assinado em lugar nenhum.
+- `control_05_frescor_dados` (`src/risk/limits.py`) vai rejeitar trades
+  durante períodos legitimamente quietos sob dollar bar (medido em
+  segundos, dollar bar não tem "segundos entre barras" garantidos).
+- Custo real de reprocessamento medido (`docs/refactor_dollar_bar_
+  canonico.md` §5.3): 61GB de `aggTrades` vs 0,5GB de klines, 3,4 bilhões
+  de trades só de BTC.
+
+**T1 extinto** (decisão do Manager, 2026-08-16, expandida no mesmo dia):
+as 13 features do registry atual (não as ~64 do pool `research/` — fora de
+escopo, decisão separada) viram pool candidato único, sem cap de 10,
+ranqueadas por desempenho via o procedimento já definido em
+`PRD_V3_2_UNIFICADO.md` §2.0.1 (Sprint 6: mede `N_eff` real; Sprint 8:
+ablação dentro do CPCV, k=6,9,12,16,24, PBO<0,30 como critério de parada —
+as 5 variantes de k custam 5 trials de `N_lifetime`). **Sem dependência
+técnica dos 3 bloqueadores dollar-bar** — pode rodar agora, no grid de
+tempo atual; precisará ser remedido sob dollar bar depois (mesmo padrão de
+`AG-036`). Achado do relatório (`docs/refactor_dollar_bar_canonico.md`
+§1.6): T1 está acoplado posicionalmente em ≥8 lugares de `src/models/`
+(`alpha.py::DESIGN_COLUMNS`, `monotone_constraints` como tupla posicional,
+denominadores diferentes do HHI nominal×efetivo em `models/hhi.py`,
+`CURRENT_T1` hardcoded em `src/analysis/faixa2_e2_research.py`) — remover
+o cap exige tornar essas referências dinâmicas, não só editar o registry.
+
+**Revisão independente disparada** (`project_assurance`, Agent fresco, sem
+contexto de justificativa) sobre `docs/refactor_dollar_bar_canonico.md` —
+reverifica os 8 achados por Grep próprio, responde se
+`src/validation/cpcv.py::assert_tf_consistent` precisa de redesenho
+separado das 4 opções do bloqueador de TF, reconfirma o acoplamento de T1,
+e checa se existe regra explícita de custo de sweep classe A em
+`audit/n_lifetime.yaml` (não achada em nenhum doc até aqui). Resultado
+pendente.
+
+**Explicação visual do orçamento `N_lifetime`** (`audit/n_lifetime.yaml`)
+publicada como artefato — `counter=45`/teto `60`/**15 trials restantes**;
+critério de encerramento #5 do PRD (`PRD_V4_1.md` §6.5).
+
+**Correção do Manager, mesmo dia:** a 1ª versão do artefato apresentou as
+13 constantes classe A ainda `ASSUMED` (`tp_atr_mult`, `sl_atr_mult`,
+`atr_window`, `time_stop_bars`, `cost_stop_ratio_max`, `fee_budget_monthly`,
+`regime_er_cutoff`/`_exit`, `regime_vol_cutoff`/`_exit`,
+`adverse_selection_bps`, `max_notional_multiple`,
+`alpha_stability_screen_limiar`) como se fossem orçamento de `N_lifetime`
+em risco agora — errado. Cada uma já tem `review_by` (sprint 5/6/10/11/16)
+em `config/constants.yaml`, esperado desde a decisão de ir multi-TF/
+multi-ativo, não um achado novo. Só custa trial quando o sweep de fato
+roda, no sprint declarado. Lugar certo pra essa agenda: `PLANO_MESTRE_
+PRINCE2.md` §11.4 (Road Map Vivo, novo). O único item desta rodada com
+custo real de `N_lifetime` continua sendo `AG-036` (remedição de M1,
+disparada pelo achado de M2 — não agendada previamente, por isso é trial
+de verdade, diferente dos 13). Protótipo de medição DuckDB-nativo vs.
+Polars-vetorizado pra construção de dollar bar aprovado e escrito
+(`tools/diagnostics/prototype_dollar_bar_duckdb_vs_polars.py`), execução
+pendente do usuário.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-16)
+
+| item | valor |
+|---|---|
+| Sprint | 4 — Feature Engine, em andamento |
+| TF de decisão | 15m |
+| `canonical_volatility_estimator` | `garman_klass_w20` (decidido, deployment adiado) |
+| `canonical_bar_type` | `dollar` (decidido, deployment não iniciado) |
+| T1 | extinto — pool único de 13 features, ranking via PRD §2.0.1 ainda não rodado |
+| Bloqueadores dollar-bar (AG-031/redefinição TF/AG-032) | opções mapeadas, decisão do Manager pendente |
+| `N_lifetime` | 45/60, 15 trials restantes |
+| Meta Model | fora da V1 (§6.8 define critério de entrada) |
+| Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
+| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json` |
