@@ -34,7 +34,12 @@ from src.validation import cpcv
 from . import alpha, backtest_lite, baselines, decomposition
 from . import dataset as ds
 from ._constants import load_constant
-from ._paths import EXPERIMENTS_DIR, PREDICTIONS_OUTPUT_DIR, predictions_symbol_tf_dir
+from ._paths import (
+    EXPERIMENTS_DIR,
+    PREDICTIONS_OUTPUT_DIR,
+    models_diagnostics_symbol_tf_dir,
+    predictions_symbol_tf_dir,
+)
 
 # Reexport explícito (`as MODELS_DIR`, não só `import MODELS_DIR`) —
 # `mypy --strict`/`no_implicit_reexport` (`pyproject.toml`) trata um import
@@ -395,8 +400,27 @@ def run_layer1_sprint(
     # HHI, n_trees, tamanho de amostra). Escrito para as DUAS variantes,
     # cada uma no seu próprio model_id, antes de qualquer agregação em
     # médias no relatório final.
-    write_all_fold_diagnostics(camada1_folds, model_id=model_id_camada1, hyper=hyper)
-    write_all_fold_diagnostics(camada0_folds, model_id=model_id_camada0, hyper=hyper)
+    # `tf=None` (default): SEM dest_dir -> caminho legado plano
+    # `MODELS_DIR/{model_id}/diagnostics/`, bit-exato (AG-013 preserva os
+    # ~30 arquivos já commitados). `tf` explícito: layout chaveado por
+    # symbol/tf (AG-016) — mesmo sentinela de `dest_dir_c1`/`dest_dir_c0`
+    # usado abaixo para `write_predictions_atomic`.
+    dest_dir_diag_c1 = (
+        models_diagnostics_symbol_tf_dir(symbol, model_id_camada1, tf=tf)
+        if tf is not None
+        else None
+    )
+    dest_dir_diag_c0 = (
+        models_diagnostics_symbol_tf_dir(symbol, model_id_camada0, tf=tf)
+        if tf is not None
+        else None
+    )
+    write_all_fold_diagnostics(
+        camada1_folds, model_id=model_id_camada1, hyper=hyper, dest_dir=dest_dir_diag_c1
+    )
+    write_all_fold_diagnostics(
+        camada0_folds, model_id=model_id_camada0, hyper=hyper, dest_dir=dest_dir_diag_c0
+    )
 
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)

@@ -53,7 +53,7 @@ from src.data.resample import step_ms
 from src.models import alpha, backtest_lite, decomposition, pipeline
 from src.models import dataset as ds
 from src.models._constants import load_constant
-from src.models._paths import predictions_symbol_tf_dir
+from src.models._paths import models_diagnostics_symbol_tf_dir, predictions_symbol_tf_dir
 from src.validation import cpcv
 
 from . import faixa1_5_prerequisites as f15
@@ -696,7 +696,22 @@ def run_e02f_short_unforced_variant(
     contra o baseline ERRADO (sempre `BTCUSDT`, lido do caminho legado
     plano, que `f15.load_predictions` não tem como distinguir por
     símbolo). `step_ms(tf)` valida cedo, antes do retreino caro dos 15
-    folds x 2 lados."""
+    folds x 2 lados.
+
+    AG-016 (`audit/architecture_gaps_log.yaml`) — mesmo raciocínio acima,
+    aplicado ao lado `diagnostics/` em vez de `predictions/`: as TRÊS
+    operações equivalentes de IO de diagnóstico (`pipeline.
+    write_all_fold_diagnostics` da variante E as duas leituras de baseline
+    via `f15._hhi_by_fold_side` para `VARIANT_MODEL_ID_E02F_SHORT_UNFORCED`/
+    `MODEL_ID_CAMADA1`) agora também roteiam por `tf`: `None` preserva o
+    caminho legado plano `MODELS_DIR/{model_id}/diagnostics/` (AG-013,
+    bit-exato, os arquivos já commitados nunca migram sozinhos); `tf`
+    explícito roteia pelo layout chaveado `models_diagnostics_symbol_tf_dir(
+    symbol, model_id, tf=tf)`. Antes desta correção, a capacidade existia
+    (AG-013) mas não estava fiada aqui — um `symbol` não-default com `tf`
+    explícito já comparava as PREDICTIONS certas mas colidiria os
+    DIAGNOSTICS de fold entre símbolos em `MODELS_DIR/{model_id}/
+    diagnostics/` plano."""
     if tf is not None:
         step_ms(tf)  # UnsupportedTimeframeError cedo -- antes do treino caro abaixo
     mf = ds.build_modeling_frame(symbol=symbol)
@@ -721,8 +736,21 @@ def run_e02f_short_unforced_variant(
         seed=seed,
         unforce_features_by_side=unforce,
     )
+    # `tf=None` (default): SEM dest_dir -> caminho legado plano
+    # `MODELS_DIR/{model_id}/diagnostics/`, bit-exato (AG-013 preserva os
+    # arquivos já commitados). `tf` explícito: layout chaveado por
+    # symbol/tf (AG-016) — mesma disciplina de `dest_dir_variant` abaixo
+    # para `write_predictions_atomic`.
+    dest_dir_diag_variant = (
+        models_diagnostics_symbol_tf_dir(symbol, VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, tf=tf)
+        if tf is not None
+        else None
+    )
     pipeline.write_all_fold_diagnostics(
-        variant_folds, model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, hyper=hyper
+        variant_folds,
+        model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED,
+        hyper=hyper,
+        dest_dir=dest_dir_diag_variant,
     )
     preds_variant = alpha.assemble_predictions_table(variant_folds)
     # `tf=None` (default): SEM dest_dir -> caminho legado plano, bit-exato
@@ -740,7 +768,12 @@ def run_e02f_short_unforced_variant(
     logger.info("analysis.faixa1_6.bloco4_variant_train_done", n_folds=len(variant_folds))
 
     realized_variant = f15.build_realized_trades(preds_variant, mf.data, fold_to_path)
-    hhi_variant = f15._hhi_by_fold_side(model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED)
+    # Par simétrico de leitura de `dest_dir_diag_variant` acima -- mesmo
+    # `model_id`/`symbol`/`tf`, o que `write_all_fold_diagnostics` acabou
+    # de gravar.
+    hhi_variant = f15._hhi_by_fold_side(
+        model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED, dest_dir=dest_dir_diag_variant
+    )
     headlines_variant = f15.stratified_headlines(realized_variant, hhi_variant)
 
     dest_dir_camada1 = (
@@ -752,7 +785,18 @@ def run_e02f_short_unforced_variant(
         model_id=pipeline.MODEL_ID_CAMADA1, dest_dir=dest_dir_camada1
     )
     realized_baseline = f15.build_realized_trades(preds_baseline, mf.data, fold_to_path)
-    hhi_baseline = f15._hhi_by_fold_side(model_id=pipeline.MODEL_ID_CAMADA1)
+    # `tf=None` (default): SEM dest_dir -> caminho legado plano, bit-exato.
+    # `tf` explícito: layout chaveado por symbol/tf (AG-016) -- mesmo par
+    # symbol/tf usado acima em `dest_dir_camada1` pra ler as predictions
+    # deste mesmo baseline (`MODEL_ID_CAMADA1`), agora pro diagnostics.
+    dest_dir_diag_camada1 = (
+        models_diagnostics_symbol_tf_dir(symbol, pipeline.MODEL_ID_CAMADA1, tf=tf)
+        if tf is not None
+        else None
+    )
+    hhi_baseline = f15._hhi_by_fold_side(
+        model_id=pipeline.MODEL_ID_CAMADA1, dest_dir=dest_dir_diag_camada1
+    )
     headlines_baseline = f15.stratified_headlines(realized_baseline, hhi_baseline)
 
     dest_dir_camada0 = (
