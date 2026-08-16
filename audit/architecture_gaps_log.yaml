@@ -1944,9 +1944,12 @@ entries:
       dollar bar vencer em M2), então o caminho que resolve `step_ms(tf)`
       pra barra de tempo permanece em paralelo, só deixa de ser o default.
     status: >-
-      aberto -- DECIDIDO e IMPLEMENTADO (E4+E1), pendente só de
-      confirmação empírica (pytest) antes de commitar. **E4 (passos 1-2)
-      IMPLEMENTADO 2026-08-16** em `src/validation/cpcv.py`:
+      aberto -- DECIDIDO e IMPLEMENTADO (E4+E1), ambos confirmados
+      empiricamente e commitados. Fica aberto só pela ressalva do
+      `max_feature_lookback_ms` sem caller de produção real (ver fim
+      deste bloco) -- não é mais bloqueador de commit, é item de trabalho
+      subsequente. **E4 (passos 1-2) IMPLEMENTADO 2026-08-16** em
+      `src/validation/cpcv.py`:
       `g_end_effective = max(g_end, max(t1 das linhas de teste do grupo))`
       fecha o componente 32 (usado tanto em `generate_splits` quanto em
       `assert_no_train_t1_leaks_into_test`, pra não deixar a checagem de
@@ -2008,14 +2011,21 @@ entries:
       não escala mais com ele -- o bug original de AG-004 deixou de poder
       existir por construção). 5 comandos mecânicos limpos.
 
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou `uv run
+      pytest tests/unit/test_validation_cpcv.py -v`: **42 passed in
+      2,37s**, nenhuma regressão. Commitado em `3b19c20` (junto com
+      `experiments/cpcv_embargo_clock_candidate.json` e `experiments/
+      prototype_dollar_bar_duckdb_vs_polars.json` como evidência) e
+      pushed pra `origin/master`.
+
       **RESSALVA REGISTRADA, NÃO FECHADA:** este valor (96,39h) só protege
       corretamente contra correlação serial SE o componente 96 (lookback
       de feature de treino) estiver de fato coberto -- `max_feature_
       lookback_ms` existe e foi testado (commit `a7e7e16`), mas NENHUM
       caller de produção real o usa ainda (só o teste de aceite sintético
-      prova o mecanismo). Fica pendente-de-execução-humana: confirmação
-      via `uv run pytest tests/unit/test_validation_cpcv.py -v` antes de
-      commitar.
+      prova o mecanismo). Fica como item de trabalho subsequente (item 4+
+      da tabela `PLANO_MESTRE_PRINCE2.md` §11.5) -- não bloqueia mais
+      nada, mas segue sem dono/prazo declarado.
 
   - id: AG-033
     date: "2026-08-15"

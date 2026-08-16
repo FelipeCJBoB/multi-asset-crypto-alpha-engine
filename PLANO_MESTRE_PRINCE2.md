@@ -704,7 +704,7 @@ escrito no fim, é o estado real.
 |---|---|---|---|
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
 | `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
-| `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado — 96,39h medido, aguarda confirmação de pytest | `AG-032`, esta sessão |
+| `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
 | `labels` (`src/labels/triple_barrier.py`) | horizonte do label em relógio fixo (B1 = Opção 2), mesmo pacote que `atr_window` | ⬜ não iniciado | `AG-031` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `threshold_usdt`/`resolution_id`/`grade_id`, abandona nomes M15/M30/H1 (B2 = A′+D) | ⬜ não iniciado — depende de `grade_id` (item abaixo) | `AG-042` |
 | `validation` (`assert_tf_consistent`) | guard vira igualdade discreta de `grade_id`, não mais `rtol` estatístico | ⬜ não iniciado | `AG-037` (achado `project_assurance`) |
@@ -1284,6 +1284,16 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.10 (2026-08-16)** — E1 fechado. Usuário confirmou `uv run pytest
+  tests/unit/test_validation_cpcv.py -v` → **42 passed in 2,37s**, nenhuma
+  regressão. Commitado (`3b19c20`) e pushed pra `origin/master`, junto com
+  os dois artefatos de medição (`experiments/cpcv_embargo_clock_
+  candidate.json`, `experiments/prototype_dollar_bar_duckdb_vs_polars.
+  json`) como evidência. Dependência em aberto registrada (não fechada
+  aqui): `max_feature_lookback_ms` (E4, componente 96) ainda não tem
+  nenhum caller de produção real que o wire-e — só o teste sintético prova
+  o mecanismo.
 
 - **v3.9 (2026-08-16)** — E1 (embargo do CPCV) implementado. Usuário mediu
   o candidato real (`tools/diagnostics/measure_cpcv_embargo_clock_
