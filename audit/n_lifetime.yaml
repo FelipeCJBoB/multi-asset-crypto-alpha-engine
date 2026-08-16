@@ -9,6 +9,31 @@
 # Regra de edição: só se acrescenta ao final de `log`. Nunca editar ou remover
 # uma entrada já registrada — isso é o próprio objeto que o ledger existe para
 # impedir.
+#
+# Regra de contagem — 1 trial em bloco vs. N trials (AG-039, fechado
+# 2026-08-16). Não havia fórmula declarada até aqui, só "decisão do Manager
+# caso a caso" (PLANO_MESTRE_PRINCE2.md:1164-1165/1421-1423) — o log já
+# demonstrava a distinção na prática (id 10 vs. id 11 abaixo), só nunca
+# generalizada. Regra explícita, extraída do próprio precedente:
+#
+#   N trials = nº de combinações de parâmetro que exigem um AJUSTE DE MODELO
+#   OU RECÁLCULO DE BACKTEST novo por combinação (cada ponto é uma decisão
+#   testada contra dado real). Exemplo: id 10 — grade tp_atr_mult x
+#   sl_atr_mult, 3x3 por lado = 18 combinações, cada uma resolvendo a
+#   barreira de novo -> delta=18.
+#
+#   1 trial = passe de RANKING/TRIAGEM que reusa um artefato já ajustado
+#   (nenhum modelo novo treinado, nenhum backtest novo por candidata) —
+#   conta como 1 INDEPENDENTE do nº de candidatas comparadas. Exemplo:
+#   id 11 — 70 candidatas rankeadas por ortogonalidade incremental sobre
+#   correlação já computada, "nenhum modelo retreinado" -> delta=1.
+#
+#   Sweep de sensibilidade ±50% de constante classe A (§16.10 regra 4,
+#   obrigatório antes do Gate 3) segue a mesma régua: se cada ponto do sweep
+#   (ex. -50%/baseline/+50%) dispara um retreino/backtest novo, delta = nº de
+#   pontos testados; se o sweep é lido de um backtest/modelo já existente sem
+#   reajuste, delta=1. Aplica-se aos sweeps já agendados em §11.4 (Sprint 5/6/
+#   10/11/16) no momento em que cada um de fato rodar.
 
 schema_version: 1
 counter: 45

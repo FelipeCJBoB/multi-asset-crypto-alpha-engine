@@ -2512,8 +2512,18 @@ entries:
       ambiguidade de processo (1 trial vs. N) continua real, mas não é
       urgente enquanto nenhum sweep estiver de fato em execução.
     resolved_by_commit: null
-    resolution: "NÃO IMPLEMENTADO -- ambiguidade de processo é achado real, não erro; fica registrada até o Manager declarar o framing a priori, no momento em que CADA sweep for de fato agendado pra rodar (mesma disciplina de B20) — não antes."
-    status: "aberto -- baixa prioridade, sem sweep em execução no momento"
+    resolution: >
+      IMPLEMENTADO 2026-08-16 — Manager autorizou fechar. Regra registrada em
+      `audit/n_lifetime.yaml` (cabeçalho): N trials = nº de combinações que
+      exigem ajuste de modelo/backtest novo por ponto (precedente id 10, grade
+      3×3 = 18); 1 trial = passe de ranking/triagem sem reajuste por candidata,
+      independente da contagem (precedente id 11, 70 candidatas = 1). Sweep de
+      sensibilidade ±50% classe A segue a mesma régua: delta = nº de pontos
+      testados SE cada ponto disparar retreino/backtest novo; delta=1 se lido
+      de artefato já existente sem reajuste. Regra é a priori (declarada antes
+      de qualquer sweep agendado em §11.4 rodar de verdade) — não retroativa
+      aos ids 1-15 já registrados, que mantêm seu delta original.
+    status: "FECHADO 2026-08-16 -- convenção registrada em audit/n_lifetime.yaml, autorizada pelo Manager"
 
   - id: AG-040
     date: "2026-08-16"
