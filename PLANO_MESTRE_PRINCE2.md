@@ -690,6 +690,33 @@ invalidou a grade sob a qual M1 tinha sido medido). Atualizar esta tabela
 quando um `review_by` mudar em `config/constants.yaml`, ou quando um
 bloqueador ganhar stage decidido.
 
+### 11.5 M1+M2 — Refactor dollar-bar canônico, ponta a ponta <a name="11-5"></a>
+
+Aba dedicada (Manager, 2026-08-16) — rastreio único do redesenho completo
+que M2 (`canonical_bar_type=dollar`) e M1 (remedição de volatilidade,
+`AG-036`) disparam, camada por camada (`exchange → data → features →
+labels → regime → models → validation → backtest → risk → execution →
+live`, hierarquia do `CLAUDE.md`), **para não perder o fio entre sessões**.
+Atualizada a cada commit que muda status de uma linha — não é retrospecto
+escrito no fim, é o estado real.
+
+| camada | o que muda | status | referência |
+|---|---|---|---|
+| `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
+| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
+| `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | 🔧 em andamento | `AG-032`, esta sessão |
+| `labels` (`src/labels/triple_barrier.py`) | horizonte do label em relógio fixo (B1 = Opção 2), mesmo pacote que `atr_window` | ⬜ não iniciado | `AG-031` |
+| `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `threshold_usdt`/`resolution_id`/`grade_id`, abandona nomes M15/M30/H1 (B2 = A′+D) | ⬜ não iniciado — depende de `grade_id` (item abaixo) | `AG-042` |
+| `validation` (`assert_tf_consistent`) | guard vira igualdade discreta de `grade_id`, não mais `rtol` estatístico | ⬜ não iniciado | `AG-037` (achado `project_assurance`) |
+| `features` (`constants.yaml`, `support.py`) | `scaling_invariant` ganha `activity`; A13 vira F1 explícito; correção de `sqrt(window)`/Yang-Zhang/asof-join | ⬜ não iniciado | `AG-043` |
+| `monitoring` (`src/monitoring/`, hoje vazio) | alarme de deriva de threshold (parte de A′) | ⬜ não iniciado — código novo, não existe nada ainda | `AG-042` |
+| `features` (M1, `src/features/volatility.py`) | remedição dos 8 estimadores sob grade dollar | ⬜ bloqueado — precisa dollar bar real construída primeiro | `AG-036` |
+| `data` (reprocessamento real, 61GB `aggTrades`) | grade dollar construída em escala, todo o pipeline rerodado | ⬜ não iniciado — risco de memória (`AG-034`) segue sem solução | `docs/refactor_dollar_bar_canonico.md` §5.3 |
+
+**Regra desta aba:** nenhuma linha muda de status sem um commit real
+apontável (âncora na coluna "referência") — "planejado" não é um status
+válido aqui, só "não iniciado", "em andamento" ou "pronto".
+
 ---
 
 ## 12. Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund <a name="12"></a>
@@ -1257,6 +1284,14 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.8 (2026-08-16)** — Nova seção **§11.5 M1+M2 — Refactor dollar-bar
+  canônico, ponta a ponta**: aba dedicada de rastreio camada-por-camada
+  (10 linhas, `exchange`→`live`) pro redesenho completo disparado por M2/
+  M1, a ser atualizada a cada commit real (regra explícita: sem commit
+  apontável, sem mudança de status). Primeira linha fechada: `validation`/
+  purge (`AG-032`/E4) — componentes 32+96, 42/42 testes, revisão
+  independente sem achado bloqueante, commit `a7e7e16`.
 
 - **v3.7 (2026-08-16)** — Correção do Manager sobre a resposta de N_lifetime
   da v3.6: as 13 constantes classe A ainda `ASSUMED` NÃO são orçamento de
