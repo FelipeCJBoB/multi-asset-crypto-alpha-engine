@@ -1944,7 +1944,8 @@ entries:
       dollar bar vencer em M2), então o caminho que resolve `step_ms(tf)`
       pra barra de tempo permanece em paralelo, só deixa de ser o default.
     status: >-
-      aberto -- DECIDIDO na estratégia (E4+E1). **E4 (passos 1-2)
+      aberto -- DECIDIDO e IMPLEMENTADO (E4+E1), pendente só de
+      confirmação empírica (pytest) antes de commitar. **E4 (passos 1-2)
       IMPLEMENTADO 2026-08-16** em `src/validation/cpcv.py`:
       `g_end_effective = max(g_end, max(t1 das linhas de teste do grupo))`
       fecha o componente 32 (usado tanto em `generate_splits` quanto em
@@ -1982,12 +1983,39 @@ entries:
       exigido. Erro de `mypy` em `test_validation_cpcv.py:296` confirmado
       pré-existente (via `git show HEAD:...`), não relacionado.
 
-      Ordem de trabalho restante: (4) computar o valor final de E1 a
-      partir de `np.linspace`/`assign_time_groups`, substituindo
-      `cpcv_embargo_bars=175` por um valor em relógio (ms/horas), removendo
-      a dependência de `step_ms(tf)` do caminho canônico. **Não depende de
-      dollar bar existir** -- testável e implementável hoje, sobre o
-      `labels.parquet` de grade de TEMPO já em disco.
+      **E1 IMPLEMENTADO 2026-08-16.** Usuário rodou `tools/diagnostics/
+      measure_cpcv_embargo_clock_candidate.py` contra o dataset real
+      (462.682 linhas): os 6 grupos cronológicos deram EXATAMENTE o mesmo
+      valor -- `96,39h` (`347.010.000ms`), sem ambiguidade de qual
+      estatística usar. Confirma, por medição real, a suspeita que já
+      estava registrada (não medida) na entrada original de
+      `cpcv_embargo_bars` em `constants.yaml` ("~350 barras/~87,5h
+      estimado à mão") -- **2,2x o valor legado (43,75h)**, não menor,
+      como uma hipótese anterior desta sessão presumiu sem medir (erro
+      próprio, corrigido no script antes do usuário rodar).
+
+      `CPCVConfig.embargo_bars` (`int`) substituído por `embargo_ms`
+      (`int`) em `src/validation/cpcv.py` -- `_embargo_ms()` agora retorna
+      `config.embargo_ms` direto, sem `* step_ms(tf)`. `step_ms(tf)` sai
+      do cálculo de embargo especificamente (continua em uso em
+      `__post_init__`/`assert_tf_consistent`, redesenho via `grade_id`
+      continua sendo AG-037, escopo separado). Nova constante
+      `cpcv_embargo_ms=347010000` (MEASURED) em `constants.yaml`;
+      `cpcv_embargo_bars` mantida como registro histórico (superseded, não
+      apagada). Todos os call sites de teste atualizados --
+      `test_embargo_ms_escala_com_tf_nao_fica_preso_em_15m` REESCRITO pra
+      testar o invariante OPOSTO (embargo_ms agora é invariante a `tf`,
+      não escala mais com ele -- o bug original de AG-004 deixou de poder
+      existir por construção). 5 comandos mecânicos limpos.
+
+      **RESSALVA REGISTRADA, NÃO FECHADA:** este valor (96,39h) só protege
+      corretamente contra correlação serial SE o componente 96 (lookback
+      de feature de treino) estiver de fato coberto -- `max_feature_
+      lookback_ms` existe e foi testado (commit `a7e7e16`), mas NENHUM
+      caller de produção real o usa ainda (só o teste de aceite sintético
+      prova o mecanismo). Fica pendente-de-execução-humana: confirmação
+      via `uv run pytest tests/unit/test_validation_cpcv.py -v` antes de
+      commitar.
 
   - id: AG-033
     date: "2026-08-15"

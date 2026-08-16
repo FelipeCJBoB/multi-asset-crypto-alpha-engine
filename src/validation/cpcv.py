@@ -89,15 +89,22 @@ logger = structlog.get_logger(__name__)
 
 IntArray = NDArray[np.int64]
 
-# AG-004 (audit/architecture_gaps_log.yaml) — até esta correção, `_BAR_MS` era
-# uma constante de MÓDULO fixa em `step_ms("15m")`, usada pra converter
-# `embargo_bars` em milissegundos. Rodar CPCV para M30/H1 (M2/M3, PRD_V4_1.md
-# §3.2) com essa constante ainda fixa em 15m produziria embargo em UNIDADE DE
-# TEMPO ERRADA silenciosamente — nenhum erro, nenhum warning, só um embargo
-# 2x/4x menor que o pretendido. `tf` agora é campo de `CPCVConfig`
-# (default "15m" — bit-exato pra todo caller existente, nenhum passa `tf`
-# hoje), e `embargo_ms` é computado por `step_ms(cfg.tf)` em cada chamada, não
-# mais uma constante de import-time.
+# AG-004 (audit/architecture_gaps_log.yaml) — até a correção original,
+# `_BAR_MS` era uma constante de MÓDULO fixa em `step_ms("15m")`, usada pra
+# converter um embargo em CONTAGEM DE BARRA pra milissegundos. Rodar CPCV
+# para M30/H1 com essa constante fixa em 15m produzia embargo em UNIDADE DE
+# TEMPO ERRADA silenciosamente. `tf` virou campo de `CPCVConfig` (default
+# "15m" — bit-exato pra todo caller existente) pra resolver `step_ms(cfg.tf)`
+# corretamente.
+#
+# AG-032/E1 (2026-08-16) — SUPERSEDE o parágrafo acima pro embargo
+# especificamente: `embargo_bars * step_ms(tf)` foi trocado por `embargo_ms`
+# direto (medido, não mais contagem de barra). O bug de AG-004 (escalar por
+# TF errado) deixa de poder existir pra embargo, por construção — não porque
+# foi corrigido de novo, mas porque a unidade de origem não é mais barra.
+# `tf` continua existindo em `CPCVConfig` (ainda gate `__post_init__`/
+# `assert_tf_consistent`, redesenho pendente via `grade_id`, AG-037) — só o
+# cálculo de embargo parou de depender dele.
 _DEFAULT_TF: Final[str] = "15m"
 
 # AG-009 (audit/architecture_gaps_log.yaml) — `load_labels_v1(tf=...)` (que
@@ -129,7 +136,20 @@ class CPCVError(Exception):
 class CPCVConfig:
     n_groups: int
     n_test_groups: int
-    embargo_bars: int
+    embargo_ms: int
+    """AG-032/E1 (2026-08-16) — distância de relógio (ms) removida nas duas
+    bordas de cada bloco de teste, protegendo só correlação serial (fenômeno
+    de relógio, por isso relógio, não contagem de barra — E2/E3 rejeitados).
+    Substitui `embargo_bars` (aposentado): não depende mais de `step_ms(tf)`
+    nem de quantas barras "cabem" numa duração — imune à densidade de
+    dollar bar, e não precisa saber o que uma "barra" significa sob a nova
+    grade. Valor de produção vem de `cpcv_embargo_ms` (constants.yaml,
+    MEASURED — 1% da largura real de cada grupo cronológico do CPCV,
+    medido via `tools/diagnostics/measure_cpcv_embargo_clock_candidate.py`
+    sobre o dataset real). Depende de E4 (`max_feature_lookback_ms`) estar
+    de fato cabeado num caller real de produção pra cobrir o componente 96
+    — sem isso, este valor protege só correlação serial, não o lookback de
+    feature de treino (ver item 2b da docstring do módulo)."""
     tf: str = _DEFAULT_TF
     """Timeframe de decisão desta rodada — NÃO é constante de domínio
     (não vem de `constants.yaml`, por isso `from_constants()` a recebe como
@@ -156,7 +176,7 @@ class CPCVConfig:
         return cls(
             n_groups=int(load_constant("cpcv_n_groups")),
             n_test_groups=int(load_constant("cpcv_n_test_groups")),
-            embargo_bars=int(load_constant("cpcv_embargo_bars")),
+            embargo_ms=int(load_constant("cpcv_embargo_ms")),
             tf=tf,
             max_feature_lookback_ms=max_feature_lookback_ms,
         )
@@ -169,8 +189,8 @@ class CPCVConfig:
                 f"n_test_groups precisa estar em [1, n_groups), recebido "
                 f"{self.n_test_groups} com n_groups={self.n_groups}"
             )
-        if self.embargo_bars < 0:
-            raise CPCVError(f"embargo_bars precisa ser >= 0, recebido {self.embargo_bars}")
+        if self.embargo_ms < 0:
+            raise CPCVError(f"embargo_ms precisa ser >= 0, recebido {self.embargo_ms}")
         if self.max_feature_lookback_ms < 0:
             raise CPCVError(
                 "max_feature_lookback_ms precisa ser >= 0, recebido "
@@ -290,22 +310,28 @@ def _path_assignment(n_groups: int) -> dict[tuple[int, ...], int]:
 
 
 def _embargo_ms(config: CPCVConfig) -> int:
-    """`embargo_bars` convertido pra milissegundos via `step_ms(config.tf)`
-    — extraído em função própria (antes inline, duplicado em
-    `generate_splits` e `assert_embargo_respected`) pra que os dois
-    caminhos usem literalmente a MESMA linha de código, não duas cópias
-    que podem divergir silenciosamente uma da outra (a própria classe de
-    risco que motivou o teste `test_assert_embargo_respected_usa_tf_do_
-    config_nao_constante_fixa`, AG-004)."""
-    return config.embargo_bars * step_ms(config.tf)
+    """Retorna `config.embargo_ms` diretamente — extraído em função própria
+    (antes inline, duplicado em `generate_splits` e `assert_embargo_
+    respected`) pra que os dois caminhos usem literalmente a MESMA linha de
+    código, não duas cópias que podem divergir silenciosamente uma da outra.
+
+    AG-032/E1 (2026-08-16): até esta correção, retornava `config.embargo_
+    bars * step_ms(config.tf)` — mantida como função (não inlined de volta
+    pro campo direto) porque o histórico de por que ela existe (AG-004,
+    duas cópias divergindo) continua valendo como razão estrutural, mesmo
+    a fórmula tendo simplificado."""
+    return config.embargo_ms
 
 
 def assert_tf_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
     """AG-009 (audit/architecture_gaps_log.yaml) — guarda cruzada entre o
     `tf` REAL de `labels` (o TF em que os `t0` foram gerados — ex. via
-    `load_labels_v1(tf=...)`) e `config.tf`, usado por `generate_splits`
-    pra converter `embargo_bars` em milissegundos (`_embargo_ms`). Os dois
-    são hoje parâmetros passados INDEPENDENTEMENTE pelo caller —
+    `load_labels_v1(tf=...)`) e `config.tf`. Nota AG-032/E1 (2026-08-16):
+    `config.tf` NÃO controla mais o cálculo de embargo (virou `embargo_ms`
+    direto, sem `step_ms`) — esta guarda continua existindo pra outros usos
+    de `tf` em `CPCVConfig` (redesenho completo via `grade_id` pendente,
+    AG-037). Os dois (`tf` de `labels` e de `config`) são hoje parâmetros
+    passados INDEPENDENTEMENTE pelo caller —
     `load_labels_v1` não conhece o `CPCVConfig` que vai rodar depois —
     então nada os liga estruturalmente sem esta checagem. Sem ela, um
     caller poderia escrever `load_labels_v1(tf="30m")` +
@@ -497,7 +523,7 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
         n_test_groups=cfg.n_test_groups,
         n_splits=cfg.n_splits,
         n_backtest_paths=cfg.n_backtest_paths,
-        embargo_bars=cfg.embargo_bars,
+        embargo_ms=cfg.embargo_ms,
     )
     return result
 

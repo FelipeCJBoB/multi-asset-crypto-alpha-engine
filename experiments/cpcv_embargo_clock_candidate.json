@@ -1,0 +1,61 @@
+{
+  "symbol": "BTCUSDT",
+  "tf": "15m",
+  "n_groups": 6,
+  "n_rows_total": 462682,
+  "per_group": [
+    {
+      "group": 0,
+      "span_days": 401.63,
+      "n_rows": 77114,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    },
+    {
+      "group": 1,
+      "span_days": 401.63,
+      "n_rows": 77114,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    },
+    {
+      "group": 2,
+      "span_days": 401.63,
+      "n_rows": 77112,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    },
+    {
+      "group": 3,
+      "span_days": 401.63,
+      "n_rows": 77114,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    },
+    {
+      "group": 4,
+      "span_days": 401.63,
+      "n_rows": 77114,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    },
+    {
+      "group": 5,
+      "span_days": 401.63,
+      "n_rows": 77114,
+      "embargo_1pct_ms": 347010000,
+      "embargo_1pct_hours": 96.39
+    }
+  ],
+  "candidate_median_ms": 347010000,
+  "candidate_median_hours": 96.39,
+  "candidate_min_ms": 347010000,
+  "candidate_max_ms": 347010000,
+  "legacy_embargo_bars": 175,
+  "legacy_embargo_ms": 157500000,
+  "legacy_embargo_hours": 43.75,
+  "mechanical_floor_bars_pre_e4": 128,
+  "mechanical_floor_ms_pre_e4": 115200000,
+  "mechanical_floor_hours_pre_e4": 32.0,
+  "median_vs_legacy_ratio": 2.203
+}

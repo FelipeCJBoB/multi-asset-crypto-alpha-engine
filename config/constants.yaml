@@ -917,10 +917,18 @@ cpcv_n_test_groups:
 cpcv_embargo_bars:
   value: 175
   provenance: LITERATURE
-  source: "PRD §11.4/§11.4.1 (valor literal '175 barras') + §18.4 ('embargo | 1% do fold | sugestão de López de Prado | força média' — heurística de literatura, não derivação). Discrepância de TF encontrada e reportada, não escondida: §11.4 anota '175 barras ~= 88h', mas 175 barras de 30m = 87,5h — mesma classe de resíduo de versão anterior do PRD já documentada em `feature_*` acima (§2.2-2.6 anotam TF=30m, decision_tf real=15m desde §0.4/§0.5). A 15m, 175 barras = 43,75h, e um fold real (~1 ano ~= 35.040 barras de 15m) daria ~350 barras para a MESMA heurística de '1% do fold' — quase o dobro do valor citado. Mantido o valor literal do PRD (175) em vez de recalcular para 350: '1%' já é convenção de força média (§18.4), não derivação; trocar uma convenção não testada por outra igualmente não testada não é ganho. Revisar junto da varredura de sensibilidade das constantes classe A no Sprint 10."
+  source: "SUPERSEDIDO 2026-08-16 por `cpcv_embargo_ms` (ver entrada abaixo) — `src/validation/cpcv.py` não lê mais esta constante em nenhum caminho canônico (AG-032/E1). Mantido aqui só como registro histórico, não apagado (mesmo espírito de append-only dos ledgers deste projeto). Texto original: PRD §11.4/§11.4.1 (valor literal '175 barras') + §18.4 ('embargo | 1% do fold | sugestão de López de Prado | força média' — heurística de literatura, não derivação). Discrepância de TF encontrada e reportada, não escondida: §11.4 anota '175 barras ~= 88h', mas 175 barras de 30m = 87,5h — mesma classe de resíduo de versão anterior do PRD já documentada em `feature_*` acima (§2.2-2.6 anotam TF=30m, decision_tf real=15m desde §0.4/§0.5). A 15m, 175 barras = 43,75h, e um fold real (~1 ano ~= 35.040 barras de 15m) daria ~350 barras para a MESMA heurística de '1% do fold' — quase o dobro do valor citado. Essa suspeita registrada aqui (sem nunca ter sido medida) é exatamente o que `cpcv_embargo_ms` confirma por medição real: 96,39h, 2,2x o valor legado."
   class: C
   sweep_required: false
   review_by: sprint_10
+
+cpcv_embargo_ms:
+  value: 347010000
+  provenance: MEASURED
+  source: "AG-032/E1 (2026-08-16) — medido via `tools/diagnostics/measure_cpcv_embargo_clock_candidate.py`: largura real de cada um dos 6 grupos cronológicos do CPCV (`assign_time_groups` sobre `t0` real de `data/labels/BTCUSDT/15m/v1/labels.parquet`, 462.682 linhas), 1% dela — mesma heurística de força média de López de Prado que `cpcv_embargo_bars` já citava, agora medida em vez de citada do PRD. Os 6 grupos deram exatamente o mesmo valor (401,63 dias cada — dataset real tem poucos gaps, densidade ~constante) — sem ambiguidade de qual estatística usar (min=mediana=max=96,39h). Substitui `cpcv_embargo_bars=175` (43,75h, LITERATURE, nunca medido, ver entrada superseded acima) — 2,2x maior, confirmando a suspeita já registrada lá (~350 barras estimadas à mão, nunca verificadas). `experiments/cpcv_embargo_clock_candidate.json` tem o detalhe por grupo. RESSALVA REGISTRADA, NÃO FECHADA: este valor protege só correlação serial (fenômeno de relógio) SE o componente 96 (lookback de feature de treino atravessando a fronteira de teste, AG-032 achado original) estiver de fato coberto pelo purge (`CPCVConfig.max_feature_lookback_ms`, mecanismo implementado e testado — commit `a7e7e16` — mas NÃO cabeado em nenhum caller real de produção ainda, só provado via teste de aceite sintético). Revisar quando o Learner (Sprint 8) existir de verdade e `max_feature_lookback_ms` for de fato wireado com o lookback real do vetor T1."
+  class: C
+  sweep_required: false
+  review_by: sprint_8  # revisar quando max_feature_lookback_ms for wireado no Learner real
 
 # --- M1 -- comparação de estimadores de volatilidade (PRD_V4_1.md §3.2,
 # Camada 1, walk-forward ancorado) ---

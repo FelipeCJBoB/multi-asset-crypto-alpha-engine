@@ -1,0 +1,28 @@
+{
+  "symbol": "BTCUSDT",
+  "window": "2026-07-01..2026-07-03",
+  "n_files": 3,
+  "target_n_bars": 300,
+  "threshold_usd": 127767273.86708432,
+  "total_dollar_volume": 38330182160.1253,
+  "polars": {
+    "approach": "polars_vectorized_cumsum",
+    "n_trades": 4891759,
+    "n_bars": 300,
+    "elapsed_load_s": 0.9436,
+    "elapsed_construct_s": 0.327,
+    "elapsed_total_s": 1.2706,
+    "tracemalloc_peak_mb": 3.02
+  },
+  "duckdb": {
+    "approach": "duckdb_window_function",
+    "n_trades": 4891759,
+    "n_bars": 301,
+    "elapsed_load_s": null,
+    "elapsed_construct_s": null,
+    "elapsed_total_s": 1.9728,
+    "tracemalloc_peak_mb": 0.01
+  },
+  "n_bars_diff_abs": 1,
+  "duckdb_speedup_factor": 0.644
+}

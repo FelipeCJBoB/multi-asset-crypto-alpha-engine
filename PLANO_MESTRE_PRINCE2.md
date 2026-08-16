@@ -704,7 +704,7 @@ escrito no fim, é o estado real.
 |---|---|---|---|
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
 | `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
-| `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | 🔧 em andamento | `AG-032`, esta sessão |
+| `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado — 96,39h medido, aguarda confirmação de pytest | `AG-032`, esta sessão |
 | `labels` (`src/labels/triple_barrier.py`) | horizonte do label em relógio fixo (B1 = Opção 2), mesmo pacote que `atr_window` | ⬜ não iniciado | `AG-031` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `threshold_usdt`/`resolution_id`/`grade_id`, abandona nomes M15/M30/H1 (B2 = A′+D) | ⬜ não iniciado — depende de `grade_id` (item abaixo) | `AG-042` |
 | `validation` (`assert_tf_consistent`) | guard vira igualdade discreta de `grade_id`, não mais `rtol` estatístico | ⬜ não iniciado | `AG-037` (achado `project_assurance`) |
@@ -1284,6 +1284,18 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.9 (2026-08-16)** — E1 (embargo do CPCV) implementado. Usuário mediu
+  o candidato real (`tools/diagnostics/measure_cpcv_embargo_clock_
+  candidate.py`, dataset real 462.682 linhas): **96,39h**, 2,2x o legado
+  (43,75h) — confirma por medição a suspeita já registrada em
+  `constants.yaml::cpcv_embargo_bars` (nunca antes verificada). Corrige
+  hipótese própria anterior desta sessão que presumiu "menor" sem medir.
+  `CPCVConfig.embargo_bars`→`embargo_ms`, nova constante `cpcv_embargo_ms`
+  (MEASURED), `step_ms(tf)` sai do cálculo de embargo especificamente.
+  Teste `test_embargo_ms_escala_com_tf_nao_fica_preso_em_15m` reescrito
+  pro invariante oposto (embargo não escala mais com `tf`). Pendente:
+  confirmação de pytest antes de commitar.
 
 - **v3.8 (2026-08-16)** — Nova seção **§11.5 M1+M2 — Refactor dollar-bar
   canônico, ponta a ponta**: aba dedicada de rastreio camada-por-camada
