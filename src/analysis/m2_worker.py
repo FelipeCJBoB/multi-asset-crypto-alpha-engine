@@ -123,13 +123,13 @@ def _duckdb_throttle() -> lake.DuckDBThrottle:
     )
 
 
-def _query_baseline(symbol: str, tf: str) -> pl.DataFrame:
+def _query_baseline(symbol: str, tf: str, *, start: str, end: str) -> pl.DataFrame:
     throttle = _duckdb_throttle()
     return lake.query_bars(
         symbol,
         tf,
-        SYMBOL_START_DATE[symbol],
-        END_DATE,
+        start,
+        end,
         source="klines_1m",
         cast_prices=True,
         duckdb_memory_limit_gb=throttle.memory_limit_gb,
@@ -137,12 +137,12 @@ def _query_baseline(symbol: str, tf: str) -> pl.DataFrame:
     )
 
 
-def _target_n_bars(symbol: str, tf: str, baseline: pl.DataFrame) -> int:
+def _target_n_bars(symbol: str, tf: str, baseline: pl.DataFrame, *, start: str, end: str) -> int:
     n = baseline.height
     if n == 0:
         raise ValueError(
             f"baseline vazio para {symbol}/{tf} -- sem klines_1m no período "
-            f"{SYMBOL_START_DATE[symbol]}..{END_DATE}, não dá pra calibrar dollar/volume/tick "
+            f"{start}..{end}, não dá pra calibrar dollar/volume/tick "
             "imbalance bars pra frequência média nenhuma"
         )
     return n
@@ -312,7 +312,12 @@ def _log_task_done(metrics: BarComparisonMetrics) -> None:
 
 
 def compute_time_bar_for_symbol(
-    symbol: str, *, time_stop_ms: int, ljung_box_lags: int
+    symbol: str,
+    *,
+    time_stop_ms: int,
+    ljung_box_lags: int,
+    start: str | None = None,
+    end: str | None = None,
 ) -> list[BarComparisonMetrics]:
     """Núcleo de IO pro tipo `"time"` -- só `klines_1m`, leve, roda numa
     task própria pra não competir por memória com as tasks de `aggTrades`
@@ -321,14 +326,21 @@ def compute_time_bar_for_symbol(
     compute_timeframe_choice_for_symbol`) -- barato o bastante pra não
     valer a pena fatiar mais, ver docstring de `m2_bar_comparison.py`.
 
+    `start`/`end` (ISO date, opcionais) sobrescrevem `SYMBOL_START_DATE`/
+    `END_DATE` pra ESTE símbolo -- suporte a janelas específicas
+    (AG-034/discovery de período 2026-08-16), não muda o comportamento
+    default (histórico completo) quando omitidos.
+
     Blindada por TF, não só por símbolo (achado de auditoria 2026-08-15,
     `project_assurance`: versão anterior não tinha proteção NENHUMA aqui)
     -- uma falha de `duckdb.OutOfMemoryException` num TF vira `NaN` só
     pra esse TF, sem perder os outros 2 já computados nesta mesma task."""
+    resolved_start = start if start is not None else SYMBOL_START_DATE[symbol]
+    resolved_end = end if end is not None else END_DATE
     results: list[BarComparisonMetrics] = []
     for tf in TIMEFRAMES:
         try:
-            bars = _query_baseline(symbol, tf)
+            bars = _query_baseline(symbol, tf, start=resolved_start, end=resolved_end)
         except duckdb.OutOfMemoryException as exc:
             logger.warning(
                 "analysis.m2_worker.time_baseline_failed", symbol=symbol, tf=tf, error=repr(exc)
@@ -346,7 +358,13 @@ def compute_time_bar_for_symbol(
 
 
 def compute_trades_dependent_bars_for_symbol_tf(
-    symbol: str, tf: str, *, time_stop_ms: int, ljung_box_lags: int
+    symbol: str,
+    tf: str,
+    *,
+    time_stop_ms: int,
+    ljung_box_lags: int,
+    start: str | None = None,
+    end: str | None = None,
 ) -> list[BarComparisonMetrics]:
     """Constrói `dollar`/`volume`/`tick_imbalance` bars pra 1 (símbolo, TF)
     em STREAMING -- task AUTOCONTIDA, uma por combinação de
@@ -381,9 +399,15 @@ def compute_trades_dependent_bars_for_symbol_tf(
     existentes, quebrando a garantia abaixo pra essa chamada especificamente)
     -- mesma disciplina FCN de `m2_stats._run_adfuller`/`_nan_metrics`: uma
     falha nesta (symbol, tf) vira `NaN` só pros 3 `bar_types` desta
-    combinação, não derruba as outras 14 tasks do batch."""
+    combinação, não derruba as outras 14 tasks do batch.
+
+    `start`/`end` (ISO date, opcionais) sobrescrevem `SYMBOL_START_DATE`/
+    `END_DATE` -- mesmo suporte de `compute_time_bar_for_symbol`, ver ali
+    pra motivação (AG-034/discovery de período 2026-08-16)."""
+    resolved_start = start if start is not None else SYMBOL_START_DATE[symbol]
+    resolved_end = end if end is not None else END_DATE
     chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
-    chunks = _date_chunks(SYMBOL_START_DATE[symbol], END_DATE, chunk_days=chunk_days)
+    chunks = _date_chunks(resolved_start, resolved_end, chunk_days=chunk_days)
 
     try:
         totals = _scan_trades_totals(symbol, tf, chunks)
@@ -397,11 +421,12 @@ def compute_trades_dependent_bars_for_symbol_tf(
     if totals.n_ticks == 0:
         raise ValueError(
             f"aggTrades vazio para {symbol} no período "
-            f"{SYMBOL_START_DATE[symbol]}..{END_DATE} -- não dá pra calibrar bars"
+            f"{resolved_start}..{resolved_end} -- não dá pra calibrar bars"
         )
 
     try:
-        target_n_bars = _target_n_bars(symbol, tf, _query_baseline(symbol, tf))
+        baseline = _query_baseline(symbol, tf, start=resolved_start, end=resolved_end)
+        target_n_bars = _target_n_bars(symbol, tf, baseline, start=resolved_start, end=resolved_end)
     except duckdb.OutOfMemoryException as exc:
         logger.warning(
             "analysis.m2_worker.trades_baseline_failed", symbol=symbol, tf=tf, error=repr(exc)

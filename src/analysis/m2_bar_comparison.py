@@ -5,6 +5,21 @@ curtose · Ljung-Box em `r` e `r²` · ADF · razão de amostra efetiva
 (unicidade média com `time_stop` equivalente em relógio)." Zero trials —
 medição, não busca.
 
+**Decisão do Manager (2026-08-16): dollar bars é o vencedor de M2**,
+travada em `config/constants.yaml::canonical_bar_type`. Medido sobre 5
+janelas de regime deliberadamente distintas (LUNA/UST 2022-05, FTX
+2022-11, crypto winter 2023-06, ETF/halving 2024-03, recente 2026-07 —
+não o histórico completo, ver AG-034 abaixo) — dollar bars venceu tempo
+(baseline) em 4/5 janelas + no pooled, em toda métrica exceto ADF
+(empate, ADF passa 100% em qualquer tipo de barra testado). `tick_imbalance`
+falhou em 5/5 janelas por uma causa raiz confirmada (AG-035, aberto) —
+calibração da harness quebrada, não evidência de que o método seja ruim
+pra este universo de ativos; a vitória de dollar sobre TEMPO não depende
+disso. Resultado completo, por janela e pooled: artefato "Biblioteca de
+Testes" (aba M2). Reprocessamento do pipeline (Feature/Regime/Label
+Engine) pra grade dollar-bar **não iniciado** — decisão registrada, não
+deployment.
+
 **Multi-timeframe, PRD_V4_1.md §0.4: "Três timeframes — M15, M30, H1 —
 obrigatórios ponta a ponta."** Iterado sobre `TIMEFRAMES = ("15m", "30m",
 "1h")` (`src.analysis.volatility_comparison`, mesma constante que
@@ -181,6 +196,7 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
@@ -211,23 +227,32 @@ DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "m2_bar_comparison_report.j
 TIME_STOP_REFERENCE_TF: Final[str] = "15m"
 
 
-def compute_bar_comparison_for_symbol(symbol: str) -> list[BarComparisonMetrics]:
+def compute_bar_comparison_for_symbol(
+    symbol: str, *, start: str | None = None, end: str | None = None
+) -> list[BarComparisonMetrics]:
     """Conveniência pra depuração manual de UM símbolo, sequencial -- o
     caminho de produção real é `run_and_save_bar_comparison_report`, que
     roda a task leve (`"time"`, 1/símbolo) e as 3 tasks pesadas
     (`compute_trades_dependent_bars_for_symbol_tf`, 1 por TF, autocontidas)
-    em paralelo entre TODAS as combinações -- ver docstring do módulo."""
+    em paralelo entre TODAS as combinações -- ver docstring do módulo.
+    `start`/`end` opcionais, mesmo suporte de janela -- ver docstring de
+    `run_and_save_bar_comparison_report`."""
     time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
     time_stop_ms = time_stop_bars_n * step_ms(TIME_STOP_REFERENCE_TF)
     ljung_box_lags = int(load_data_constant("bars_comparison_ljung_box_lags"))
     time_metrics = compute_time_bar_for_symbol(
-        symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+        symbol, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags, start=start, end=end
     )
     trades_metrics: list[BarComparisonMetrics] = []
     for tf in TIMEFRAMES:
         trades_metrics.extend(
             compute_trades_dependent_bars_for_symbol_tf(
-                symbol, tf, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+                symbol,
+                tf,
+                time_stop_ms=time_stop_ms,
+                ljung_box_lags=ljung_box_lags,
+                start=start,
+                end=end,
             )
         )
     return [*time_metrics, *trades_metrics]
@@ -287,6 +312,8 @@ def run_and_save_bar_comparison_report(
     symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
     dest_path: Path | None = None,
     max_workers: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
 ) -> Path:
     """Ponto de entrada MANUAL -- `len(symbols) × (1 + len(TIMEFRAMES))`
     tasks (20, com os 5 ativos × 3 TFs padrão): 1 task leve por símbolo
@@ -330,6 +357,17 @@ def run_and_save_bar_comparison_report(
     falha na task 17/20 agora perde só a célula dela, não as 19 anteriores
     já persistidas em disco.
 
+    **`start`/`end` (ISO date, opcionais, AG-034/discovery de período
+    2026-08-16):** sobrescrevem `SYMBOL_START_DATE`/`END_DATE` pra TODOS os
+    `symbols` desta chamada -- pensado pra rodar UMA VEZ POR JANELA
+    escolhida (Manager passa `dest_path` diferente por janela), nunca pra
+    concatenar janelas descontínuas num único relatório: ADF/Ljung-Box
+    (`m2_stats.compute_bar_statistics`) assumem série CONTÍGUA -- juntar
+    trechos de datas não-adjacentes introduziria quebras artificiais que
+    corrompem os dois testes. Omitido (default), comportamento idêntico ao
+    histórico completo de sempre -- não muda nada pra quem já chama sem
+    esses argumentos.
+
     Chame manualmente: `uv run python -m src.analysis.m2_bar_comparison`."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
     time_stop_bars_n = int(load_risk_constant("time_stop_bars"))
@@ -360,6 +398,8 @@ def run_and_save_bar_comparison_report(
                 symbol,
                 time_stop_ms=time_stop_ms,
                 ljung_box_lags=ljung_box_lags,
+                start=start,
+                end=end,
             ): (symbol, None)
             for symbol in symbols
         }
@@ -371,6 +411,8 @@ def run_and_save_bar_comparison_report(
                     tf,
                     time_stop_ms=time_stop_ms,
                     ljung_box_lags=ljung_box_lags,
+                    start=start,
+                    end=end,
                 ): (symbol, tf)
                 for symbol in symbols
                 for tf in TIMEFRAMES
@@ -417,5 +459,38 @@ def run_and_save_bar_comparison_report(
     return dest
 
 
+def _parse_cli_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "M2 -- comparação de tipo de barra. Sem argumentos, roda o histórico "
+            "completo de sempre (comportamento idêntico a antes de 2026-08-16). "
+            "--start/--end restringem a UMA janela (AG-034/discovery de período) "
+            "-- rode 1x por janela, com --dest-path diferente cada vez; nunca "
+            "concatena janelas descontínuas (ver docstring de "
+            "run_and_save_bar_comparison_report)."
+        )
+    )
+    parser.add_argument("--start", default=None, help="ISO date, ex. 2022-05-01")
+    parser.add_argument("--end", default=None, help="ISO date, ex. 2022-05-31")
+    parser.add_argument(
+        "--dest-path",
+        default=None,
+        help="caminho do relatório -- default: experiments/m2_bar_comparison_report.json",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=None,
+        help="default: os.cpu_count() (AG-034: considere reduzir)",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    run_and_save_bar_comparison_report()
+    _args = _parse_cli_args()
+    run_and_save_bar_comparison_report(
+        dest_path=Path(_args.dest_path) if _args.dest_path is not None else None,
+        max_workers=_args.max_workers,
+        start=_args.start,
+        end=_args.end,
+    )

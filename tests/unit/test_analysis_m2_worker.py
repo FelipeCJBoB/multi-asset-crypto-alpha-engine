@@ -44,6 +44,7 @@ import src.analysis.m2_worker as m2_worker
 from src.analysis.m2_stats import BarComparisonMetrics, compute_bar_statistics
 from src.analysis.m2_stats import compute_bar_statistics as real_compute_bar_statistics
 from src.analysis.volatility_comparison import TIMEFRAMES
+from src.data import lake
 from src.data._paths import CAPACITY_DIR
 
 
@@ -214,8 +215,31 @@ def test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_curta() -> None:
     totals = m2_worker._scan_trades_totals(symbol, tf, chunks)
     assert totals.n_ticks > 0, "aggTrades vazio na janela -- ajustar start/end do teste"
 
-    baseline = m2_worker._query_baseline(symbol, tf)
-    target_n_bars = m2_worker._target_n_bars(symbol, tf, baseline)
+    # Achado de auditoria 2026-08-15 (Manager): `m2_worker._query_baseline`
+    # varre o histórico COMPLETO (`SYMBOL_START_DATE`..`END_DATE`, ~231 mil
+    # barras de 15m pro BTC) -- usar isso aqui calibra `dollar_threshold`/
+    # `volume_threshold`/`tib_config` pra densidade do histórico INTEIRO
+    # aplicada a só 3 dias de trades, produzindo um threshold ~800x menor
+    # do que a janela precisa e fazendo o teste tentar construir dezenas de
+    # milhares de barras a partir de 3 dias de dado (minutos de execução,
+    # não segundos -- travou um run real). Baseline escopado à MESMA janela
+    # dos `chunks` corrige a calibração pro que o teste já promete ("janela
+    # curta"), sem tocar `m2_worker.py`: em produção real
+    # (`compute_trades_dependent_bars_for_symbol_tf`), `chunks` e baseline
+    # SEMPRE cobrem a mesma janela (histórico completo) -- esse mismatch é
+    # exclusivo deste teste, não existe fora dele.
+    throttle = m2_worker._duckdb_throttle()
+    baseline = lake.query_bars(
+        symbol,
+        tf,
+        start,
+        end,
+        source="klines_1m",
+        cast_prices=True,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
+    )
+    target_n_bars = m2_worker._target_n_bars(symbol, tf, baseline, start=start, end=end)
     dollar_threshold = totals.total_dollar / target_n_bars
     volume_threshold = totals.total_volume / target_n_bars
     tib_config = m2_worker._build_tick_imbalance_config(totals.n_ticks, target_n_bars)

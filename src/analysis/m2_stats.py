@@ -43,13 +43,30 @@ FloatArray = NDArray[np.float64]
 
 BAR_TYPES: Final[tuple[str, ...]] = ("time", "dollar", "volume", "tick_imbalance")
 
-# ADF/gesdd: estatística fora desta faixa não tem leitura econômica --
-# nenhum retorno financeiro intradiário real produz |t| tão extremo, então
-# um valor além disso é sinal de SVD corrompida (numpy#20384), não de
-# rejeição forte de H0. Faixa larga o bastante pra nunca descartar um
-# resultado legítimo (ADF costuma ficar bem dentro de [-10,10] mesmo em
-# séries fortemente estacionárias) -- ver achado de auditoria abaixo.
-_ADF_STAT_PLAUSIBLE_ABS_MAX: Final[float] = 30.0
+# ADF/gesdd: estatística fora desta faixa não tem leitura econômica -- um
+# valor além disso é sinal de SVD corrompida (numpy#20384), não de rejeição
+# forte de H0.
+#
+# CORREÇÃO 2026-08-15 (achado no 1º run canônico real de M2): o valor
+# original (30.0) partiu de uma afirmação nunca verificada contra dado real
+# deste projeto ("ADF costuma ficar bem dentro de [-10,10] mesmo em séries
+# fortemente estacionárias") -- estava ERRADA pra amostra grande. O run real
+# disparou o gate em TODAS as 13 tasks de barra de tempo (n de 40.943 a
+# 231.551), sempre com |adf_stat| entre 60 e 145 -- padrão sistemático, não
+# anomalia isolada, sinal de que o limiar estava errado, não o dado.
+# Verificado: adf_stat/sqrt(n) fica em ~-0,30 nas 13 tasks, consistente
+# entre símbolos e TFs -- exatamente o comportamento esperado de uma
+# estatística genuína (ADF diverge com sqrt(n) sob forte estacionariedade;
+# quanto maior a amostra, mais extremo o valor, sem ser corrupção). O modo
+# de falha real (numpy#20384) produz algo qualitativamente diferente --
+# `-1,27e14` no caso sintético já capturado por este gate (12 ordens de
+# grandeza acima de qualquer valor real observado aqui), não uma dezena de
+# vezes maior. Novo limiar (2000) mantém margem enorme dos dois lados: bem
+# acima de qualquer extrapolação razoável do padrão sqrt(n) observado
+# (~-0,30 x sqrt(n) chegaria a ~-300 só em n=1.000.000, um TF/ativo que não
+# existe neste projeto), e ainda assim 11 ordens de magnitude abaixo do
+# padrão de corrupção real já visto.
+_ADF_STAT_PLAUSIBLE_ABS_MAX: Final[float] = 2000.0
 
 
 @dataclass(frozen=True, slots=True)

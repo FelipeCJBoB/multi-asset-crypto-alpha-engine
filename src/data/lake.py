@@ -22,6 +22,8 @@ se ela não for "um arquivo por dia", um caso em `_list_files_in_range`.
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -150,6 +152,27 @@ def _read_files(
 
     con = duckdb.connect(database=":memory:")
     try:
+        # Achado de auditoria 2026-08-15 (run real de M2, 12 workers
+        # concorrentes): duckdb.connect(":memory:") sem `temp_directory`
+        # explícito usa por padrão um caminho RELATIVO ao cwd
+        # (".tmp/duckdb_temp_storage_<classe-de-tamanho>-<n>.tmp"), e o
+        # NOME do arquivo de overflow é fixo pela classe de tamanho do
+        # buffer, não único por conexão. Sob ProcessPoolExecutor, todo
+        # worker herda o mesmo cwd -- 12 processos sem relação entre si
+        # compartilham fisicamente o mesmo diretório e podem escolher o
+        # MESMO nome de arquivo de overflow simultaneamente. Resultado
+        # observado: `IOException: Failed to delete file
+        # ".tmp\duckdb_temp_storage_S32K-0.tmp"` -- um processo apaga o
+        # arquivo que outro processo (usando o mesmo nome por coincidência
+        # de classe de tamanho) ainda considerava seu. Mesma classe de bug
+        # já corrigida para memory_limit/threads (cada conexão assumindo
+        # orçamento otimista sem coordenar com as outras) -- aqui o recurso
+        # em disputa é o NOME DO ARQUIVO de overflow, não RAM. Isolado por
+        # PID: cada processo grava em seu próprio diretório, sem
+        # coordenação entre processos necessária (mesmo espírito de
+        # DuckDBThrottle, um nível abaixo).
+        temp_dir = Path(tempfile.gettempdir()) / f"duckdb_lake_pid{os.getpid()}"
+        con.execute(f"SET temp_directory='{temp_dir.as_posix()}'")
         if duckdb_memory_limit_gb is not None:
             con.execute(f"SET memory_limit='{duckdb_memory_limit_gb}GB'")
         if duckdb_threads is not None:
