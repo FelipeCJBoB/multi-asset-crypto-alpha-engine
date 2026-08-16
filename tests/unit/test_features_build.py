@@ -22,7 +22,7 @@ from src.data._paths import CAPACITY_DIR
 from src.features import build
 
 _FIXTURE_START = "2024-01-01"
-_FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 2000 de warmup
+_FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
 
 _CORR_START = "2024-08-08"
 _CORR_END = "2026-08-07"  # ~2 anos, janela pedida pela task para ortogonalidade real
@@ -66,9 +66,14 @@ def test_determinismo_hash() -> None:
 
 @pytest.mark.integration
 def test_warmup_uniforme_todas_nulas_antes_do_corte() -> None:
+    """`warmup=200` -- `min_warmup_bars` recalculado por fórmula (AG-027,
+    2026-08-15, `config/constants.yaml`), não mais os 2000 herdados do PRD
+    sem justificativa. Este teste nunca tinha sido re-rodado desde essa
+    mudança (achado real via pytest do usuário, 2026-08-16) -- ficou
+    hardcoded no valor antigo por uma sessão inteira sem ninguém notar."""
     _skip_if_missing(_FIXTURE_START)
     out = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    warmup = 2000
+    warmup = 200
     assert out.height > warmup
     feature_cols = [c for c in out.columns if c not in ("open_time", "close_time")]
     head = out.head(warmup).select(feature_cols)
@@ -85,7 +90,7 @@ def test_warmup_uniforme_maioria_valida_depois_do_corte() -> None:
     mas não devem dominar a amostra."""
     _skip_if_missing(_FIXTURE_START)
     out = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    tail = out.tail(out.height - 2000)
+    tail = out.tail(out.height - 200)  # min_warmup_bars real, ver AG-027
     t1_cols = list(build.T1_FEATURE_IDS)
     n_fully_valid = tail.select(t1_cols).drop_nulls().height
     assert n_fully_valid / tail.height > 0.95
@@ -134,12 +139,20 @@ def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> Non
         bars, funding, oi, windows=windows_com_cap, apply_warmup_mask=False
     )
 
+    # `apply_warmup_mask=False` -- os arrays numpy (com `np.nan`, não Polars
+    # `None`) entram direto em `pl.DataFrame(columns)` sem passar por
+    # `apply_min_warmup_mask` (que é quem converteria pra `null` explícito
+    # via `pl.when(...).then(None)`). `.null_count()` NÃO conta `NaN` --
+    # são conceitos diferentes em Polars (achado real via pytest do
+    # usuário, 2026-08-16: a asserção original dava 0 sempre, mesmo com o
+    # mecanismo de cap funcionando corretamente). `.is_nan()` é o jeito
+    # certo de checar aqui.
     for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
-        head_null_count = out_com_cap.head(n - cap)[col].null_count()
-        assert head_null_count == n - cap, f"{col}: esperava {n - cap} nulos no início do cap"
-        # sem cap, o mesmo trecho inicial NÃO deve estar 100% nulo (prova
+        head_nan_count = out_com_cap.head(n - cap)[col].is_nan().sum()
+        assert head_nan_count == n - cap, f"{col}: esperava {n - cap} NaN no início do cap"
+        # sem cap, o mesmo trecho inicial NÃO deve estar 100% NaN (prova
         # de que o cap muda o resultado, não é um no-op)
-        assert out_sem_cap.head(n - cap)[col].null_count() < n - cap
+        assert out_sem_cap.head(n - cap)[col].is_nan().sum() < n - cap
 
     # todas as outras colunas T1/T2 (não usam min_common_history_bars) têm
     # que sair IDÊNTICAS com ou sem cap -- prova de isolamento do efeito

@@ -71,7 +71,13 @@ def test_thresholds_from_constants_bate_com_prd() -> None:
     assert th.er_cutoff_exit == pytest.approx(0.55)
     assert th.vol_cutoff_enter == pytest.approx(0.70)
     assert th.vol_cutoff_exit == pytest.approx(0.65)
-    assert th.min_warmup_bars == 2000
+    # min_warmup_bars DIVERGE do PRD (§18.5.2 cita 2000) de propósito --
+    # AG-027 (2026-08-15, config/constants.yaml) recalculou por fórmula
+    # (max lookback fixo + convergência de suavização) pra 200, DERIVED,
+    # substituindo a convenção herdada nunca testada. Teste nunca tinha
+    # sido re-rodado desde essa mudança (achado via pytest do usuário,
+    # 2026-08-16) -- ficou hardcoded no valor antigo do PRD.
+    assert th.min_warmup_bars == 200
     assert th.confirmation_bars == 2
     assert th.stress_exit_confirmation_bars == 4
     # AG-030 (T0.5): min_common_history_bars_15m, config/constants.yaml

@@ -1965,6 +1965,48 @@ entries:
       `uv run quant regime build` pra cada um dos 5 símbolos e confirmar
       via pytest que os 20 testes novos passam)"
 
+    # ------------------------------------------------------------------
+    # AMENDMENT 2026-08-16 (mesmo dia) -- 4 falhas achadas pelo pytest do
+    # usuário sobre o código acima, causas raízes investigadas uma a uma:
+    #
+    # (1) test_reconcile_e02f_ic_dado_real_reproduz_o_pooled_ja_persistido
+    #     (test_analysis_faixa1_6_reconciliation.py) -- FALLOUT ESPERADO,
+    #     não bug. `er_quantile`/`econ_quantile` agora usam o cap real
+    #     (min_common_history_bars_15m via from_constants()), então a
+    #     reconstrução do IC diverge do valor persistido em
+    #     experiments/faixa1_calibration_diagnostic.json (calculado com o
+    #     código PRÉ-AG-030). O próprio teste documenta essa exata
+    #     possibilidade ("ou a reimplementação está errada ou o artefato
+    #     mudou sem re-rodar a Faixa 1"). Continuará falhando, corretamente,
+    #     até o artefato ser regerado: `uv run python -m
+    #     src.analysis.calibration_diagnostics`.
+    # (2) test_thresholds_from_constants_bate_com_prd
+    #     (test_regime_classifier.py) -- teste obsoleto, não bug do AG-030.
+    #     `min_warmup_bars` 2000->200 já tinha sido decidido em AG-027
+    #     (commit a9d5d80, 2026-08-15, UM DIA antes desta leva) -- este
+    #     teste nunca tinha rodado de novo desde então. Corrigido.
+    # (3) test_warmup_uniforme_todas_nulas_antes_do_corte
+    #     (test_features_build.py) -- mesma causa raiz de (2), mesmo fix.
+    #     test_warmup_uniforme_maioria_valida_depois_do_corte tinha o mesmo
+    #     "2000" hardcoded (não estava na lista de falhas porque sua
+    #     asserção de proporção >0.95 tolerava a imprecisão), corrigido
+    #     junto por consistência.
+    # (4) test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f
+    #     (test_features_build.py) -- bug real, mas NO TESTE, não no
+    #     mecanismo. `apply_warmup_mask=False` faz o array numpy (com
+    #     `np.nan`) entrar direto em `pl.DataFrame` sem passar por
+    #     `apply_min_warmup_mask` (que converteria pra `None`/null
+    #     explícito) -- `.null_count()` não conta `NaN` (conceito
+    #     diferente de `null` em Polars). Mecanismo de cap confirmado
+    #     CORRETO por leitura de código (out = np.full(n, np.nan);
+    #     out[offset:] = ... garante NaN nos primeiros `offset` índices
+    #     por construção, sem exceção possível). Fix: `.is_nan().sum()`
+    #     em vez de `.null_count()`.
+    #
+    # (2)/(3)/(4) corrigidos e re-verificados (ruff+mypy limpos). (1) fica
+    # aberto de propósito -- não é pra "consertar", é pra reprocessar.
+    # ------------------------------------------------------------------
+
   - id: AG-031
     date: "2026-08-15"
     file: "src/labels/triple_barrier.py, src/analysis/m2_bar_comparison.py"
