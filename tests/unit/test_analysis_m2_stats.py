@@ -38,7 +38,7 @@ def test_amostra_pequena_devolve_nan_sem_levantar() -> None:
     demais pros outros 4."""
     bars = _bars(close=[100.0, 101.0, 99.0, 102.0, 98.0], close_time=list(range(5)))
     metrics = compute_bar_statistics(
-        "BTCUSDT", "15m", "time", bars, time_stop_ms=1_000, ljung_box_lags=10
+        "BTCUSDT", "15m", "R1", "time", bars, time_stop_ms=1_000, ljung_box_lags=10
     )
 
     assert metrics.n_bars == 5
@@ -48,6 +48,22 @@ def test_amostra_pequena_devolve_nan_sem_levantar() -> None:
     assert math.isnan(metrics.adf_pvalue)
     assert not math.isnan(metrics.avg_uniqueness)
     assert 0.0 < metrics.avg_uniqueness < 1.0
+
+
+def test_resolution_id_e_repassado_distinto_de_tf_sem_reinterpretacao() -> None:
+    """AG-042 -- `compute_bar_statistics` só REPASSA `resolution_id` pro
+    `BarComparisonMetrics` devolvido, não deriva nem reinterpreta a partir
+    de `tf`. Passa um `resolution_id` que NÃO é o que `m2_worker.
+    RESOLUTION_ID_BY_TF["15m"]` produziria, de propósito -- se o núcleo
+    algum dia passar a derivar por conta própria (reintroduzindo a mentira
+    operacional por outra porta), este teste quebra."""
+    bars = _bars(close=[100.0, 101.0, 99.0, 102.0, 98.0], close_time=list(range(5)))
+    metrics = compute_bar_statistics(
+        "BTCUSDT", "15m", "R2", "dollar", bars, time_stop_ms=1_000, ljung_box_lags=10
+    )
+
+    assert metrics.tf == "15m"
+    assert metrics.resolution_id == "R2"
 
 
 def test_amostra_grande_produz_valores_finitos_e_em_faixa_valida() -> None:
@@ -71,7 +87,7 @@ def test_amostra_grande_produz_valores_finitos_e_em_faixa_valida() -> None:
     bars = _bars(close=close, close_time=close_time)
 
     metrics = compute_bar_statistics(
-        "BTCUSDT", "15m", "dollar", bars, time_stop_ms=1_000, ljung_box_lags=10
+        "BTCUSDT", "15m", "R1", "dollar", bars, time_stop_ms=1_000, ljung_box_lags=10
     )
 
     assert metrics.n_bars == 101
@@ -101,7 +117,7 @@ def test_avg_uniqueness_e_um_quando_janelas_de_time_stop_nao_se_sobrepoem() -> N
     bars = _bars(close=close, close_time=close_time)
 
     metrics = compute_bar_statistics(
-        "BTCUSDT", "15m", "tick_imbalance", bars, time_stop_ms=100, ljung_box_lags=10
+        "BTCUSDT", "15m", "R1", "tick_imbalance", bars, time_stop_ms=100, ljung_box_lags=10
     )
 
     assert metrics.avg_uniqueness == pytest.approx(1.0)

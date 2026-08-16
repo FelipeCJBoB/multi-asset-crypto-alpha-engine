@@ -72,10 +72,25 @@ _ADF_STAT_PLAUSIBLE_ABS_MAX: Final[float] = 2000.0
 @dataclass(frozen=True, slots=True)
 class BarComparisonMetrics:
     """Resumo por (symbol, tf, bar_type) -- `NaN` explícito onde a amostra
-    é pequena demais pros testes (nunca um zero fabricado)."""
+    é pequena demais pros testes (nunca um zero fabricado).
+
+    `tf`/`resolution_id` têm papéis DIFERENTES desde AG-042 (2026-08-16,
+    ontologia do Bloqueador 2 -- docs/refactor_dollar_bar_canonico.md §3.5,
+    Opção D). `tf` é o parâmetro de CALIBRAÇÃO -- pra todo `bar_type`,
+    inclusive dollar/volume/tick_imbalance, é usado pra buscar o baseline
+    de klines que define `target_n_bars` (ver `m2_worker.py::
+    _target_n_bars`). `resolution_id` (R1/R2/R3) é a IDENTIDADE real do
+    resultado. Pra `bar_type="time"` os dois coincidem em significado (R1 É
+    15 minutos de relógio). Pra dollar/volume/tick_imbalance NÃO coincidem
+    -- `resolution_id="R1"` significa só "calibrado pra dar o mesmo nº de
+    barras que R1 (tempo) deu nesta janela", não "15 minutos" -- não há
+    relógio ali. Ler `tf` como duração real pra esses `bar_type` é
+    exatamente a "mentira operacional" que motivou AG-042; `resolution_id`
+    existe pra nunca mais precisar disso."""
 
     symbol: str
     tf: str
+    resolution_id: str
     bar_type: str
     n_bars: int
     n_returns: int
@@ -178,6 +193,7 @@ def _run_adfuller(
 def _nan_metrics(
     symbol: str,
     tf: str,
+    resolution_id: str,
     bar_type: str,
     n_bars: int,
     n_returns: int,
@@ -196,6 +212,7 @@ def _nan_metrics(
     return BarComparisonMetrics(
         symbol=symbol,
         tf=tf,
+        resolution_id=resolution_id,
         bar_type=bar_type,
         n_bars=n_bars,
         n_returns=n_returns,
@@ -213,6 +230,7 @@ def _nan_metrics(
 def compute_bar_statistics(
     symbol: str,
     tf: str,
+    resolution_id: str,
     bar_type: str,
     bars: pl.DataFrame,
     *,
@@ -225,7 +243,13 @@ def compute_bar_statistics(
     sintético, ao contrário das funções de `m2_worker.py` (IO real).
     `time_stop_ms` é FIXO entre chamadas com `tf` diferente -- ver
     docstring de `m2_bar_comparison.py` (`TIME_STOP_REFERENCE_TF`) -- este
-    núcleo só recebe o valor já calculado, não recalcula por `tf`."""
+    núcleo só recebe o valor já calculado, não recalcula por `tf`.
+
+    `resolution_id` é resolvido pelo CALLER (`m2_worker.py::
+    RESOLUTION_ID_BY_TF`) -- este núcleo só repassa pro `BarComparisonMetrics`
+    devolvido, não conhece a tabela de mapeamento (ver docstring de
+    `BarComparisonMetrics` pra por que os dois campos existem separados,
+    AG-042)."""
     n_bars = bars.height
     close = bars["close"].cast(pl.Float64).to_numpy()
     r = _log_returns(close)
@@ -251,7 +275,9 @@ def compute_bar_statistics(
     min_obs_multiplier = int(load_data_constant("bars_comparison_min_obs_multiplier"))
     min_obs = min_obs_multiplier * ljung_box_lags
     if n_returns < min_obs:
-        return _nan_metrics(symbol, tf, bar_type, n_bars, n_returns, avg_uniqueness=avg_uniqueness)
+        return _nan_metrics(
+            symbol, tf, resolution_id, bar_type, n_bars, n_returns, avg_uniqueness=avg_uniqueness
+        )
     r_finite = r[np.isfinite(r)]
 
     jb = scipy_stats.jarque_bera(r_finite)
@@ -263,6 +289,7 @@ def compute_bar_statistics(
     return BarComparisonMetrics(
         symbol=symbol,
         tf=tf,
+        resolution_id=resolution_id,
         bar_type=bar_type,
         n_bars=n_bars,
         n_returns=n_returns,

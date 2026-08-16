@@ -102,25 +102,26 @@ IntArray = NDArray[np.int64]
 # direto (medido, não mais contagem de barra). O bug de AG-004 (escalar por
 # TF errado) deixa de poder existir pra embargo, por construção — não porque
 # foi corrigido de novo, mas porque a unidade de origem não é mais barra.
-# `tf` continua existindo em `CPCVConfig` (ainda gate `__post_init__`/
-# `assert_tf_consistent`, redesenho pendente via `grade_id`, AG-037) — só o
-# cálculo de embargo parou de depender dele.
+# `tf` continua existindo em `CPCVConfig` -- `grade_id` (AG-037, implementado
+# 2026-08-16) é quem agora governa `__post_init__`/`assert_grade_consistent`;
+# `tf` vira só a base de derivação default de `grade_id` pra grade de tempo.
 _DEFAULT_TF: Final[str] = "15m"
 
 # AG-009 (audit/architecture_gaps_log.yaml) — `load_labels_v1(tf=...)` (que
 # resolve QUAL arquivo de dado é lido) e `CPCVConfig(tf=...)` (que resolve
 # `step_ms` no cálculo do embargo) são dois parâmetros passados
 # INDEPENDENTEMENTE pelo caller — nada os ligava estruturalmente até esta
-# correção. `assert_tf_consistent` fecha o gap medindo o espaçamento REAL de
-# `t0` no `labels` carregado contra `step_ms(config.tf)`; `_TF_CONSISTENCY_RTOL`
-# é a tolerância dessa medição — folgada o bastante para não reagir a gaps
-# reais do dataset (poucos, ver `known_gaps`), apertada o bastante para pegar
-# qualquer TF suportado hoje trocado por outro (15m/30m/1h diferem entre si
-# por um fator >= 2x, bem acima de 5%). Tolerância de MEDIÇÃO/checagem
-# estrutural, não hiperparâmetro de domínio — mesma classe de
+# correção. `assert_grade_consistent` (renomeada de `assert_tf_consistent`,
+# AG-037, 2026-08-16) fecha o gap medindo o espaçamento REAL de `t0` no
+# `labels` carregado contra `step_ms(config.grade_id)`; `_GRADE_CONSISTENCY_
+# RTOL` é a tolerância dessa medição — folgada o bastante para não reagir a
+# gaps reais do dataset (poucos, ver `known_gaps`), apertada o bastante para
+# pegar qualquer TF suportado hoje trocado por outro (15m/30m/1h diferem
+# entre si por um fator >= 2x, bem acima de 5%). Tolerância de MEDIÇÃO/
+# checagem estrutural, não hiperparâmetro de domínio — mesma classe de
 # `leakage.py::tolerance = 1e-6` (marcado `noqa: magic-number`, não
 # `constants.yaml`).
-_TF_CONSISTENCY_RTOL: Final[float] = 0.05  # noqa: magic-number
+_GRADE_CONSISTENCY_RTOL: Final[float] = 0.05  # noqa: magic-number
 
 
 class CPCVError(Exception):
@@ -156,6 +157,19 @@ class CPCVConfig:
     parâmetro em vez de carregá-la): é um parâmetro de execução, como
     `symbol` em `load_labels_v1`. Determina `step_ms(tf)` no cálculo do
     embargo (AG-004). Default preserva todo caller existente bit-exato."""
+    grade_id: str | None = None
+    """AG-037 (2026-08-16) — identidade REAL da grade sob a qual `labels`
+    foi gerado (docs/refactor_dollar_bar_canonico.md §3.6 item 2, AG-042).
+    `tf` conflava dois papéis: "qual grade" E "como converter pra
+    milissegundos" — `grade_id` separa o primeiro papel do segundo.
+    `None` (default) deriva pra `self.tf` em `__post_init__`
+    (`object.__setattr__`, dataclass `frozen`) — bit-exato pra TODO caller
+    existente, já que nenhum passa `grade_id` hoje e `grade_id == tf` pra
+    qualquer grade de TEMPO. Só grade de tempo existe em produção
+    (`canonical_bar_type=dollar` decidido, deployment não iniciado) — um
+    `grade_id` explícito fora do dict fechado de `step_ms` faz
+    `assert_grade_consistent` levantar `NotImplementedError`, não fingir
+    verificar o que não tem mecanismo ainda."""
     max_feature_lookback_ms: int = 0
     """AG-032/E4 (2026-08-16) — maior janela de LOOKBACK entre as features
     do vetor de treino (ex. `feature_c06_vol_ratio_long_window`=96 barras),
@@ -171,13 +185,18 @@ class CPCVConfig:
 
     @classmethod
     def from_constants(
-        cls, *, tf: str = _DEFAULT_TF, max_feature_lookback_ms: int = 0
+        cls,
+        *,
+        tf: str = _DEFAULT_TF,
+        grade_id: str | None = None,
+        max_feature_lookback_ms: int = 0,
     ) -> CPCVConfig:
         return cls(
             n_groups=int(load_constant("cpcv_n_groups")),
             n_test_groups=int(load_constant("cpcv_n_test_groups")),
             embargo_ms=int(load_constant("cpcv_embargo_ms")),
             tf=tf,
+            grade_id=grade_id,
             max_feature_lookback_ms=max_feature_lookback_ms,
         )
 
@@ -201,6 +220,12 @@ class CPCVConfig:
         # generate_splits (mesma disciplina de "falhar cedo e alto" do resto
         # do módulo, ver assign_time_groups).
         step_ms(self.tf)
+        # AG-037 — grade_id=None deriva pra tf (retrocompatível, bit-exato:
+        # todo caller existente tem grade_id==tf). object.__setattr__ porque
+        # o dataclass é frozen -- mesmo padrão que seria necessário em
+        # qualquer derivação de default no __post_init__ de um frozen.
+        if self.grade_id is None:
+            object.__setattr__(self, "grade_id", self.tf)
 
     @property
     def n_splits(self) -> int:
@@ -323,22 +348,22 @@ def _embargo_ms(config: CPCVConfig) -> int:
     return config.embargo_ms
 
 
-def assert_tf_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
-    """AG-009 (audit/architecture_gaps_log.yaml) — guarda cruzada entre o
-    `tf` REAL de `labels` (o TF em que os `t0` foram gerados — ex. via
-    `load_labels_v1(tf=...)`) e `config.tf`. Nota AG-032/E1 (2026-08-16):
-    `config.tf` NÃO controla mais o cálculo de embargo (virou `embargo_ms`
-    direto, sem `step_ms`) — esta guarda continua existindo pra outros usos
-    de `tf` em `CPCVConfig` (redesenho completo via `grade_id` pendente,
-    AG-037). Os dois (`tf` de `labels` e de `config`) são hoje parâmetros
-    passados INDEPENDENTEMENTE pelo caller —
-    `load_labels_v1` não conhece o `CPCVConfig` que vai rodar depois —
-    então nada os liga estruturalmente sem esta checagem. Sem ela, um
-    caller poderia escrever `load_labels_v1(tf="30m")` +
-    `CPCVConfig.from_constants()` (default `tf="15m"`) e computar o
-    embargo na unidade ERRADA silenciosamente — mesma classe de bug que
-    AG-004 fechou, um nível acima (composição de duas funções em vez de
-    uma constante única).
+def assert_grade_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
+    """AG-009/AG-037 (audit/architecture_gaps_log.yaml) — guarda cruzada
+    entre a grade REAL de `labels` (hoje sempre um TF — o TF em que os `t0`
+    foram gerados, ex. via `load_labels_v1(tf=...)`) e `config.grade_id`.
+    Renomeada de `assert_tf_consistent` (AG-037, 2026-08-16) -- `tf`
+    conflava dois papéis (qual grade + como converter pra ms);
+    `config.grade_id` (deriva de `config.tf` por default, retrocompatível)
+    é agora a identidade que esta guarda verifica. Os dois (`tf` de
+    `labels` e `grade_id`/`tf` de `config`) são hoje parâmetros passados
+    INDEPENDENTEMENTE pelo caller — `load_labels_v1` não conhece o
+    `CPCVConfig` que vai rodar depois — então nada os liga estruturalmente
+    sem esta checagem. Sem ela, um caller poderia escrever
+    `load_labels_v1(tf="30m")` + `CPCVConfig.from_constants()` (default
+    `tf="15m"`) e computar o embargo na unidade ERRADA silenciosamente —
+    mesma classe de bug que AG-004 fechou, um nível acima (composição de
+    duas funções em vez de uma constante única).
 
     Mede o espaçamento real de `t0` como a MEDIANA do diff entre valores
     ordenados e deduplicados — não o mínimo, não uma checagem de
@@ -350,28 +375,49 @@ def assert_tf_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
     a maioria das barras seja consecutiva.
 
     Levanta `CPCVError` se a mediana do diff não bate com
-    `step_ms(config.tf)` dentro de `_TF_CONSISTENCY_RTOL` — calibrada pra
-    pegar o caso real (TF trocado por outro suportado, que difere por um
-    fator >= 2x), não pra exigir precisão maior que o necessário. Não
-    levanta se `labels` tiver menos de 2 `t0` distintos — não há diff pra
-    medir; `assign_time_groups`, chamada logo depois dentro de
-    `generate_splits`, já rejeita esse caso com uma mensagem própria."""
+    `step_ms(config.grade_id)` dentro de `_GRADE_CONSISTENCY_RTOL` —
+    calibrada pra pegar o caso real (TF trocado por outro suportado, que
+    difere por um fator >= 2x), não pra exigir precisão maior que o
+    necessário. Não levanta se `labels` tiver menos de 2 `t0` distintos —
+    não há diff pra medir; `assign_time_groups`, chamada logo depois dentro
+    de `generate_splits`, já rejeita esse caso com uma mensagem própria.
+
+    Levanta `NotImplementedError` se `config.grade_id` não for uma grade de
+    TEMPO conhecida por `step_ms` (ex. uma futura grade dollar/`R1`/`R2`) —
+    verificar identidade de grade não-tempo por mediana de espaçamento não
+    funciona (dollar bars não têm espaçamento constante por desenho) e
+    NENHUM mecanismo alternativo existe ainda, porque não há caller de
+    produção real (`canonical_bar_type=dollar` decidido,
+    docs/refactor_dollar_bar_canonico.md, deployment não iniciado). Falhar
+    explícito aqui é mais honesto que fingir que a checagem de hoje
+    generaliza."""
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t0_unique_sorted = np.unique(t0_ms)
     if t0_unique_sorted.shape[0] < 2:
         return
 
+    grade_id = config.grade_id
+    assert grade_id is not None  # __post_init__ sempre resolve pra str
+    try:
+        expected_ms = float(step_ms(grade_id))
+    except (KeyError, ValueError) as exc:
+        raise NotImplementedError(
+            f"assert_grade_consistent: grade_id={grade_id!r} não é uma grade de "
+            "TEMPO conhecida -- verificação de identidade pra grade dollar/volume "
+            "ainda não tem mecanismo implementado (AG-037/AG-042), porque não há "
+            "caller de produção real até dollar bar ser implantado."
+        ) from exc
+
     median_diff_ms = float(np.median(np.diff(t0_unique_sorted)))
-    expected_ms = float(step_ms(config.tf))
-    if abs(median_diff_ms - expected_ms) > _TF_CONSISTENCY_RTOL * expected_ms:
+    if abs(median_diff_ms - expected_ms) > _GRADE_CONSISTENCY_RTOL * expected_ms:
         raise CPCVError(
             "AG-009: espaçamento real de `t0` em `labels` (mediana="
-            f"{median_diff_ms:.0f}ms) não bate com step_ms(config.tf="
-            f"{config.tf!r})={expected_ms:.0f}ms — `labels` provavelmente foi "
+            f"{median_diff_ms:.0f}ms) não bate com step_ms(config.grade_id="
+            f"{grade_id!r})={expected_ms:.0f}ms — `labels` provavelmente foi "
             "carregado com um `tf` diferente do usado em `CPCVConfig` (ex. "
             "`load_labels_v1(tf=\"30m\")` combinado com o default `tf=\"15m\"` de "
-            "`CPCVConfig`/`CPCVConfig.from_constants()`). Passe o MESMO `tf` nos "
-            "dois lados."
+            "`CPCVConfig`/`CPCVConfig.from_constants()`). Passe o MESMO `tf` "
+            "(ou `grade_id` explícito) nos dois lados."
         )
 
 
@@ -414,11 +460,11 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
     Levanta `CPCVError` se `n_test_groups != 2` (reconstrução de
     `n_backtest_paths` só implementada para pares, ver item 3 da docstring
     do módulo). Levanta `CPCVError` (AG-009) se o espaçamento real de `t0`
-    em `labels` não bater com `step_ms(config.tf)` — roda SEMPRE, sem
+    em `labels` não bater com `step_ms(config.grade_id)` — roda SEMPRE, sem
     opt-out, porque é aqui (não em `load_labels_v1`, que não conhece o
     `CPCVConfig` usado depois) que as duas metades da informação — dado
     carregado e config declarada — finalmente se encontram; ver
-    `assert_tf_consistent`.
+    `assert_grade_consistent`.
 
     Purge (item 2b): fronteira direita usa `g_end_effective` (cobre o `t1`
     real de teste esticando além de `g_end`) e, se `config.max_feature_
@@ -432,7 +478,7 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
             "generate_splits: atribuição de n_backtest_paths só implementada para "
             f"n_test_groups=2 (1-fatoração de pares) — recebido {cfg.n_test_groups}"
         )
-    assert_tf_consistent(labels, cfg)
+    assert_grade_consistent(labels, cfg)
 
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t1_ms = labels["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
@@ -657,8 +703,8 @@ def load_labels_v1(
     é mais só responsabilidade documentada do caller (AG-009): o
     `DataFrame` retornado por esta função, se passado para
     `generate_splits` com um `CPCVConfig.tf` divergente, agora levanta
-    `CPCVError` (`assert_tf_consistent`, medindo o espaçamento real de
-    `t0` contra `step_ms(config.tf)`) em vez de calcular o embargo
+    `CPCVError` (`assert_grade_consistent`, medindo o espaçamento real de
+    `t0` contra `step_ms(config.grade_id)`) em vez de calcular o embargo
     silenciosamente errado."""
     path = labels_symbol_tf_dir(symbol, version, tf=tf) / "labels.parquet"
     if not path.exists():

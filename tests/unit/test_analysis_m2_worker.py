@@ -54,6 +54,17 @@ def _bars(*, close: list[float], close_time: list[int]) -> pl.DataFrame:
     return pl.DataFrame({"close": close, "close_time": close_time})
 
 
+def test_resolution_id_by_tf_nunca_e_lido_como_duracao_de_relogio() -> None:
+    """AG-042 -- trava o invariante central do achado D
+    (docs/refactor_dollar_bar_canonico.md §3.5): `resolution_id` (R1/R2/R3)
+    é pareado posicionalmente com `TIMEFRAMES`, mas NUNCA é um dos próprios
+    literais de `TIMEFRAMES` -- se alguém "simplificar" o mapeamento de
+    volta pra `{tf: tf}` (reintroduzindo a mentira operacional que motivou
+    o achado), este teste quebra."""
+    assert m2_worker.RESOLUTION_ID_BY_TF == {"15m": "R1", "30m": "R2", "1h": "R3"}
+    assert not set(m2_worker.RESOLUTION_ID_BY_TF.values()) & set(TIMEFRAMES)
+
+
 def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -72,7 +83,16 @@ def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
     `tf` desde o redesenho multi-TF mas os fakes deste teste não -- nunca
     pego porque o teste não tinha sido rodado de novo depois daquela
     mudança), devolvendo as 3 métricas (dollar/volume/tick_imbalance) do
-    TF pedido -- não mistura TFs."""
+    TF pedido -- não mistura TFs.
+
+    **Mesma classe de bug, 2ª ocorrência (achada pelo pytest do usuário,
+    AG-042):** `commit f0bd28c` deu `start`/`end` obrigatórios a
+    `_query_baseline` (janela específica, AG-034) e atualizou o fake só do
+    teste de integração (`test_trades_dependent_bars_btcusdt_sobre_dado_
+    real_janela_curta`) -- este teste e `test_time_stop_ms_e_invariante_
+    entre_tfs` ficaram com fakes de 2 argumentos, nunca pegos pela mesma
+    razão de sempre: não rodaram de novo depois da mudança. `_fake_query_
+    baseline`/lambda corrigidos pra aceitar `start`/`end`."""
     scan_calls: list[tuple[str, str]] = []
     build_calls: list[tuple[str, str, float, float]] = []
     small_bars = _bars(close=[1.0, 2.0, 3.0], close_time=[0, 1_000, 2_000])
@@ -81,7 +101,7 @@ def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
         scan_calls.append((symbol, tf))
         return m2_worker._TradesTotals(total_dollar=1_000.0, total_volume=100.0, n_ticks=500)
 
-    def _fake_query_baseline(symbol: str, tf: str) -> pl.DataFrame:
+    def _fake_query_baseline(symbol: str, tf: str, *, start: str, end: str) -> pl.DataFrame:
         return small_bars
 
     def _fake_build(
@@ -109,6 +129,7 @@ def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
     assert len(build_calls) == 1
     assert build_calls[0][:2] == ("BTCUSDT", "30m")
     assert {metrics.tf for metrics in results} == {"30m"}
+    assert {metrics.resolution_id for metrics in results} == {"R2"}
     assert {metrics.bar_type for metrics in results} == set(m2_worker._TRADES_DEPENDENT_BAR_TYPES)
     assert len(results) == len(m2_worker._TRADES_DEPENDENT_BAR_TYPES)
 
@@ -128,6 +149,7 @@ def test_time_stop_ms_e_invariante_entre_tfs(monkeypatch: pytest.MonkeyPatch) ->
     def _spy_compute_bar_statistics(
         symbol: str,
         tf: str,
+        resolution_id: str,
         bar_type: str,
         bars: pl.DataFrame,
         *,
@@ -136,11 +158,19 @@ def test_time_stop_ms_e_invariante_entre_tfs(monkeypatch: pytest.MonkeyPatch) ->
     ) -> BarComparisonMetrics:
         received_time_stop_ms.append(time_stop_ms)
         return real_compute_bar_statistics(
-            symbol, tf, bar_type, bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+            symbol,
+            tf,
+            resolution_id,
+            bar_type,
+            bars,
+            time_stop_ms=time_stop_ms,
+            ljung_box_lags=ljung_box_lags,
         )
 
     monkeypatch.setattr(m2_worker, "compute_bar_statistics", _spy_compute_bar_statistics)
-    monkeypatch.setattr(m2_worker, "_query_baseline", lambda symbol, tf: small_bars)
+    monkeypatch.setattr(
+        m2_worker, "_query_baseline", lambda symbol, tf, *, start, end: small_bars
+    )
 
     m2_worker.compute_time_bar_for_symbol("BTCUSDT", time_stop_ms=123_456, ljung_box_lags=10)
 
@@ -180,6 +210,7 @@ def test_compute_time_bar_for_symbol_btcusdt_sobre_dado_real() -> None:
     )
 
     assert [r.tf for r in results] == list(TIMEFRAMES)
+    assert [r.resolution_id for r in results] == ["R1", "R2", "R3"]
     for r in results:
         assert r.symbol == "BTCUSDT"
         assert r.bar_type == "time"
@@ -253,14 +284,22 @@ def test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_curta() -> None:
         tib_config=tib_config,
     )
 
+    resolution_id = m2_worker.RESOLUTION_ID_BY_TF[tf]
     bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
     for bar_type, bars in bars_by_type.items():
         assert bars.height > 0, f"{bar_type}: nenhuma barra fechada na janela de 3 dias"
         metrics = compute_bar_statistics(
-            symbol, tf, bar_type, bars, time_stop_ms=8 * 60 * 60 * 1_000, ljung_box_lags=10
+            symbol,
+            tf,
+            resolution_id,
+            bar_type,
+            bars,
+            time_stop_ms=8 * 60 * 60 * 1_000,
+            ljung_box_lags=10,
         )
         assert metrics.n_bars > 0
         assert metrics.symbol == symbol and metrics.tf == tf and metrics.bar_type == bar_type
+        assert metrics.resolution_id == resolution_id
 
     # matemática de calibração central do módulo, verificada de verdade
     # (não só "roda sem erro") -- reconstrói o total consumido a partir

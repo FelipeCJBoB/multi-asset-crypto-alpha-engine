@@ -88,6 +88,23 @@ logger = structlog.get_logger(__name__)
 
 _TRADES_DEPENDENT_BAR_TYPES: Final[tuple[str, ...]] = tuple(bt for bt in BAR_TYPES if bt != "time")
 
+# AG-042 (2026-08-16, docs/refactor_dollar_bar_canonico.md §3.5, Opção D) --
+# "M15/M30/H1" é uma mentira operacional pra dollar/volume/tick_imbalance
+# bars: não há relógio nenhum ali, só um nº de barras herdado do baseline de
+# tempo usado pra calibrar (`_target_n_bars`). `RESOLUTION_ID_BY_TF` nomeia a
+# identidade REAL do resultado (R1/R2/R3) -- posicionalmente pareada com
+# `TIMEFRAMES`, não uma constante de domínio numérica (mesmo tratamento já
+# dado a `BAR_TYPES`), por isso vive aqui como código, não em
+# `constants.yaml`. `tf` continua existindo em todo caller abaixo -- ainda é
+# o parâmetro real de CALIBRAÇÃO (decide qual baseline de klines definiu
+# `target_n_bars`), só deixa de ser tratado como identidade do resultado.
+# dict(zip(a, b)) usa o 1o argumento como CHAVE -- precisa ser
+# zip(TIMEFRAMES, ("R1",...)), não o inverso (bug real desta sessão: a
+# ordem trocada produzia {"R1": "15m", ...}, invertido do que todo
+# `RESOLUTION_ID_BY_TF[tf]` abaixo precisa; achado pelo próprio teste de
+# regressão, test_analysis_m2_worker.py, no primeiro pytest real).
+RESOLUTION_ID_BY_TF: Final[dict[str, str]] = dict(zip(TIMEFRAMES, ("R1", "R2", "R3"), strict=True))
+
 
 def _duckdb_throttle() -> lake.DuckDBThrottle:
     """`memory_limit`/`threads` por conexão DuckDB -- achado de auditoria
@@ -303,6 +320,7 @@ def _log_task_done(metrics: BarComparisonMetrics) -> None:
         "analysis.m2_worker.task_done",
         symbol=metrics.symbol,
         tf=metrics.tf,
+        resolution_id=metrics.resolution_id,
         bar_type=metrics.bar_type,
         n_bars=metrics.n_bars,
         jarque_bera_pvalue=metrics.jarque_bera_pvalue,
@@ -339,18 +357,25 @@ def compute_time_bar_for_symbol(
     resolved_end = end if end is not None else END_DATE
     results: list[BarComparisonMetrics] = []
     for tf in TIMEFRAMES:
+        resolution_id = RESOLUTION_ID_BY_TF[tf]
         try:
             bars = _query_baseline(symbol, tf, start=resolved_start, end=resolved_end)
         except duckdb.OutOfMemoryException as exc:
             logger.warning(
                 "analysis.m2_worker.time_baseline_failed", symbol=symbol, tf=tf, error=repr(exc)
             )
-            metrics = _nan_metrics(symbol, tf, "time", 0, 0)
+            metrics = _nan_metrics(symbol, tf, resolution_id, "time", 0, 0)
             _log_task_done(metrics)
             results.append(metrics)
             continue
         metrics = compute_bar_statistics(
-            symbol, tf, "time", bars, time_stop_ms=time_stop_ms, ljung_box_lags=ljung_box_lags
+            symbol,
+            tf,
+            resolution_id,
+            "time",
+            bars,
+            time_stop_ms=time_stop_ms,
+            ljung_box_lags=ljung_box_lags,
         )
         _log_task_done(metrics)
         results.append(metrics)
@@ -403,7 +428,19 @@ def compute_trades_dependent_bars_for_symbol_tf(
 
     `start`/`end` (ISO date, opcionais) sobrescrevem `SYMBOL_START_DATE`/
     `END_DATE` -- mesmo suporte de `compute_time_bar_for_symbol`, ver ali
-    pra motivação (AG-034/discovery de período 2026-08-16)."""
+    pra motivação (AG-034/discovery de período 2026-08-16).
+
+    **`tf` aqui é só o parâmetro de CALIBRAÇÃO** (AG-042, 2026-08-16) --
+    decide qual baseline de `klines_1m` define `target_n_bars` (linha
+    acima) e, por tabela, `dollar_threshold`/`volume_threshold`/
+    `tib_config`. NÃO é a identidade do resultado: os 3 `bar_type` desta
+    função (dollar/volume/tick_imbalance) não têm 15/30/60 minutos em
+    lugar nenhum -- `resolution_id = RESOLUTION_ID_BY_TF[tf]` (R1/R2/R3) é
+    o rótulo honesto, calibrado só pra dar o mesmo nº de barras que o
+    baseline de TEMPO deu nesta janela. Ler `resolution_id="R1"` como "15
+    minutos" pra estes `bar_type` é exatamente a "mentira operacional"
+    que motivou AG-042 (docs/refactor_dollar_bar_canonico.md §3.5)."""
+    resolution_id = RESOLUTION_ID_BY_TF[tf]
     resolved_start = start if start is not None else SYMBOL_START_DATE[symbol]
     resolved_end = end if end is not None else END_DATE
     chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
@@ -416,7 +453,8 @@ def compute_trades_dependent_bars_for_symbol_tf(
             "analysis.m2_worker.trades_totals_failed", symbol=symbol, tf=tf, error=repr(exc)
         )
         return [
-            _nan_metrics(symbol, tf, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+            _nan_metrics(symbol, tf, resolution_id, bar_type, 0, 0)
+            for bar_type in _TRADES_DEPENDENT_BAR_TYPES
         ]
     if totals.n_ticks == 0:
         raise ValueError(
@@ -432,7 +470,8 @@ def compute_trades_dependent_bars_for_symbol_tf(
             "analysis.m2_worker.trades_baseline_failed", symbol=symbol, tf=tf, error=repr(exc)
         )
         return [
-            _nan_metrics(symbol, tf, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+            _nan_metrics(symbol, tf, resolution_id, bar_type, 0, 0)
+            for bar_type in _TRADES_DEPENDENT_BAR_TYPES
         ]
     dollar_threshold = totals.total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
     volume_threshold = totals.total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
@@ -452,7 +491,8 @@ def compute_trades_dependent_bars_for_symbol_tf(
             "analysis.m2_worker.trades_build_failed", symbol=symbol, tf=tf, error=repr(exc)
         )
         return [
-            _nan_metrics(symbol, tf, bar_type, 0, 0) for bar_type in _TRADES_DEPENDENT_BAR_TYPES
+            _nan_metrics(symbol, tf, resolution_id, bar_type, 0, 0)
+            for bar_type in _TRADES_DEPENDENT_BAR_TYPES
         ]
 
     bars_by_type = {"dollar": dollar_df, "volume": volume_df, "tick_imbalance": tib_df}
@@ -461,6 +501,7 @@ def compute_trades_dependent_bars_for_symbol_tf(
         metrics = compute_bar_statistics(
             symbol,
             tf,
+            resolution_id,
             bar_type,
             bars_by_type[bar_type],
             time_stop_ms=time_stop_ms,

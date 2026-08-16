@@ -37,6 +37,21 @@ risco por nome ("...se M2/M3 rodarem antes disso ser corrigido") antes
 deste módulo existir. Registrado como `AG-017`,
 `audit/architecture_gaps_log.yaml`.
 
+**`resolution_id` substitui "M15/M30/H1" como identidade do resultado
+(AG-042, 2026-08-16, docs/refactor_dollar_bar_canonico.md §3.5, Opção D).**
+`tf`/`TIMEFRAMES` continuam existindo -- ainda é o parâmetro real de
+CALIBRAÇÃO (decide qual baseline de `klines_1m` define `target_n_bars` pra
+cada `(symbol, tf)`, ver parágrafo acima). Mas "M15/30/H1" nunca foi a
+identidade REAL de `dollar`/`volume`/`tick_imbalance` -- essas barras não
+têm relógio nenhum, só um nº de barras calibrado pra bater com o baseline
+de tempo. Cada linha do payload carrega os dois campos agora:
+`resolution_id` (R1/R2/R3, `m2_worker.RESOLUTION_ID_BY_TF`) é a identidade
+honesta; `tf` é só o rótulo do baseline usado na calibração. Pra
+`bar_type="time"` os dois significam a mesma coisa (R1 É 15 minutos); pra
+qualquer outro `bar_type`, só `resolution_id` deve ser lido como
+identidade -- ler `tf` como duração de relógio nesse caso é a "mentira
+operacional" que motivou este achado.
+
 **Desmembrado em 3 arquivos (2026-08-15) — brainstorm próprio + validação
 por auditoria externa, Opção 3: cortar por FRONTEIRA DE PROCESSO, não por
 camada nem por estágio de pipeline.** `src.analysis.m2_stats` — núcleo
@@ -185,6 +200,7 @@ import os
 # assim, o bloco abaixo é DUPLICADO (idempotente) como defesa redundante
 # -- nenhum dos dois arquivos depende da ordem de import do outro.
 from src.analysis.m2_worker import (
+    RESOLUTION_ID_BY_TF,
     compute_time_bar_for_symbol,
     compute_trades_dependent_bars_for_symbol_tf,
     warm_numba_cache_in_worker,
@@ -297,7 +313,7 @@ def _build_payload(
                 asdict(
                     results_by_symbol[symbol][(tf, bar_type)]
                     if (tf, bar_type) in results_by_symbol[symbol]
-                    else _nan_metrics(symbol, tf, bar_type, 0, 0)
+                    else _nan_metrics(symbol, tf, RESOLUTION_ID_BY_TF[tf], bar_type, 0, 0)
                 )
                 for tf in TIMEFRAMES
                 for bar_type in BAR_TYPES

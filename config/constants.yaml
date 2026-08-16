@@ -262,6 +262,16 @@ canonical_bar_type:
     canônica é reprocessamento estrutural grande, não troca de 1 parâmetro,
     e NÃO foi iniciado. Ver "próximos passos" registrados na sessão de
     2026-08-16 (git log) pro escopo completo.
+    ONTOLOGIA (AG-042, 2026-08-16) — o vocabulário formal pra "o que M15/
+    M30/H1 significa" sob esta barra está registrado em
+    `audit/architecture_gaps_log.yaml::AG-042`: `bar_measure=quote_volume`,
+    `bar_unit=USDT`, identidade da grade = symbol+resolution_id+
+    threshold_usdt+calibration_version (NÃO barras/dia). `resolution_id`
+    (R1/R2/R3) implementado em `src.analysis.m2_worker.RESOLUTION_ID_BY_TF`
+    substitui "M15/M30/H1" como identidade de `dollar`/`volume`/
+    `tick_imbalance` bars nos relatórios de M2. `grade_id` (identidade
+    versionada, `src.validation.cpcv.CPCVConfig`) implementado em paralelo,
+    AG-037.
   class: A
   sweep_required: true
   sweep_range: ["time", "dollar", "volume", "tick_imbalance"]

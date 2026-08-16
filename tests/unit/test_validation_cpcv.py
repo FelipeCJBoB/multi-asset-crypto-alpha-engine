@@ -32,9 +32,9 @@ def _make_synthetic_labels(
     `_BAR_MS` (15m) independente do `tf` de um `CPCVConfig` associado,
     truque usado pelos testes AG-004 originais para simular um "TF
     diferente" sem reescrever a fixture. Isso agora colide de propósito
-    com `assert_tf_consistent` (a própria guarda AG-009 que esta rodada
-    adiciona) — dado espaçado em 15m analisado com `config.tf="30m"` é
-    EXATAMENTE o cenário que a guarda existe para rejeitar. `bar_ms`
+    com `assert_grade_consistent` (a própria guarda AG-009/AG-037 que esta
+    rodada adiciona) — dado espaçado em 15m analisado com `config.tf="30m"`
+    é EXATAMENTE o cenário que a guarda existe para rejeitar. `bar_ms`
     deixa o chamador declarar um espaçamento que bate de verdade com o
     `tf` do `CPCVConfig` usado no teste."""
     t0_ms = [start_ms + i * bar_ms for i in range(n)]
@@ -145,8 +145,9 @@ def test_generate_splits_e_assert_embargo_respected_usam_o_mesmo_embargo_ms(
     AG-032/E1 pra retornar `config.embargo_ms` direto) em vez de duas
     cópias inline. Continua rodando com `tf="30m"` e dado genuinamente
     espaçado em 30m -- não porque `embargo_ms` dependa de `tf` (não
-    depende mais), mas porque `assert_tf_consistent` (AG-009, ainda ativa
-    por outros motivos) rejeitaria a combinação se não batesse."""
+    depende mais), mas porque `assert_grade_consistent` (AG-009/AG-037,
+    ainda ativa por outros motivos) rejeitaria a combinação se não
+    batesse."""
     n = 600
     labels = _make_synthetic_labels(n, horizon_bars=1, bar_ms=step_ms("30m"))
     cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=4 * step_ms("30m"), tf="30m")
@@ -156,40 +157,67 @@ def test_generate_splits_e_assert_embargo_respected_usam_o_mesmo_embargo_ms(
 
 
 # ============================================================================
-# AG-009 — assert_tf_consistent: guarda cruzada entre `tf` de `labels` e
-# `CPCVConfig.tf`. `load_labels_v1(tf=...)` e `CPCVConfig(tf=...)` são dois
-# parâmetros independentes hoje (nenhuma ligação estrutural entre os dois) --
-# esta guarda mede o espaçamento REAL de `t0` contra `step_ms(config.tf)` e
-# falha alto se divergirem, em vez de computar o embargo na unidade errada
-# silenciosamente.
+# AG-009/AG-037 — assert_grade_consistent: guarda cruzada entre a grade real
+# de `labels` e `CPCVConfig.grade_id`. `load_labels_v1(tf=...)` e
+# `CPCVConfig(tf=...)` são dois parâmetros independentes hoje (nenhuma
+# ligação estrutural entre os dois) -- esta guarda mede o espaçamento REAL
+# de `t0` contra `step_ms(config.grade_id)` e falha alto se divergirem, em
+# vez de computar o embargo na unidade errada silenciosamente. Renomeada de
+# `assert_tf_consistent` (AG-037, 2026-08-16) -- ver docstring da função.
 # ============================================================================
 
 
-def test_assert_tf_consistent_aceita_default_15m_bit_exato() -> None:
+def test_assert_grade_consistent_aceita_default_15m_bit_exato() -> None:
     """Caso consistente -- dado sintético espaçado em 15m (`_BAR_MS`, o
     default de `_make_synthetic_labels`) contra `CPCVConfig` default
-    (`tf="15m"`) não deve levantar, e `generate_splits` continua
-    produzindo exatamente os mesmos 15 splits/5 caminhos de sempre -- a
-    guarda é read-only (não muda `t0_ms`/`t1_ms`/grupos/purge/embargo),
-    então bit-exatidão do resultado segue por construção, não por
-    coincidência de teste."""
+    (`tf="15m"`, `grade_id` deriva pra `"15m"`) não deve levantar, e
+    `generate_splits` continua produzindo exatamente os mesmos 15 splits/5
+    caminhos de sempre -- a guarda é read-only (não muda `t0_ms`/`t1_ms`/
+    grupos/purge/embargo), então bit-exatidão do resultado segue por
+    construção, não por coincidência de teste."""
     labels = _make_synthetic_labels(600, horizon_bars=1)
-    cpcv.assert_tf_consistent(labels, _CFG)  # não deve levantar
+    cpcv.assert_grade_consistent(labels, _CFG)  # não deve levantar
 
     result = cpcv.generate_splits(labels, _CFG)
     assert len(result.splits) == 15
     assert result.config.n_backtest_paths == 5
 
 
-def test_assert_tf_consistent_aceita_tf_explicito_consistente() -> None:
+def test_assert_grade_consistent_aceita_tf_explicito_consistente() -> None:
     """Não é só o default 15m -- qualquer `tf` suportado cujo dado bata
-    com o espaçamento declarado passa."""
+    com o espaçamento declarado passa (`grade_id` deriva de `tf`)."""
     labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
     cfg_30m = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, tf="30m")
-    cpcv.assert_tf_consistent(labels, cfg_30m)  # não deve levantar
+    cpcv.assert_grade_consistent(labels, cfg_30m)  # não deve levantar
 
 
-def test_assert_tf_consistent_rejeita_tf_divergente_15m_vs_30m() -> None:
+def test_assert_grade_consistent_aceita_grade_id_explicito_diferente_de_tf() -> None:
+    """AG-037 -- `grade_id` passado explícito é RESPEITADO, não só derivado
+    de `tf`. `tf="15m"` aqui é decorativo (usado só se `grade_id` fosse
+    `None`) -- o `step_ms` real que a guarda mede vem de `grade_id="30m"`,
+    então dado espaçado em 30m precisa bater com ISSO, não com `tf`."""
+    labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
+    cfg = cpcv.CPCVConfig(
+        n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, tf="15m", grade_id="30m"
+    )
+    assert cfg.grade_id == "30m"  # não foi sobrescrito por tf
+    cpcv.assert_grade_consistent(labels, cfg)  # não deve levantar
+
+
+def test_assert_grade_consistent_grade_id_fora_de_step_ms_levanta_not_implemented() -> None:
+    """AG-037/AG-042 -- `grade_id` que não é uma grade de TEMPO conhecida
+    (ex. um `resolution_id` R1/R2/R3 de uma futura grade dollar) não tem
+    mecanismo de verificação implementado ainda -- `NotImplementedError`
+    explícito, não `CPCVError`/`KeyError` cru vazando de `step_ms`."""
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(
+        n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, tf="15m", grade_id="R1"
+    )
+    with pytest.raises(NotImplementedError, match="AG-037"):
+        cpcv.assert_grade_consistent(labels, cfg)
+
+
+def test_assert_grade_consistent_rejeita_tf_divergente_15m_vs_30m() -> None:
     """O footgun real do AG-009, reproduzido sem precisar do dataset real:
     `labels` espaçado em 30m (como `load_labels_v1(tf="30m")` produziria)
     combinado com um `CPCVConfig` no default `tf="15m"` (como
@@ -198,17 +226,17 @@ def test_assert_tf_consistent_rejeita_tf_divergente_15m_vs_30m() -> None:
     labels = _make_synthetic_labels(600, horizon_bars=1, bar_ms=step_ms("30m"))
     cfg_15m_default = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS)
     with pytest.raises(cpcv.CPCVError, match="AG-009"):
-        cpcv.assert_tf_consistent(labels, cfg_15m_default)
+        cpcv.assert_grade_consistent(labels, cfg_15m_default)
 
 
-def test_assert_tf_consistent_rejeita_tf_divergente_15m_vs_1h() -> None:
+def test_assert_grade_consistent_rejeita_tf_divergente_15m_vs_1h() -> None:
     labels = _make_synthetic_labels(600, horizon_bars=1)  # 15m (default bar_ms)
     cfg_1h = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, tf="1h")
     with pytest.raises(cpcv.CPCVError, match="AG-009"):
-        cpcv.assert_tf_consistent(labels, cfg_1h)
+        cpcv.assert_grade_consistent(labels, cfg_1h)
 
 
-def test_assert_tf_consistent_tolera_gaps_minoritarios_na_mediana() -> None:
+def test_assert_grade_consistent_tolera_gaps_minoritarios_na_mediana() -> None:
     """Dado real tem gaps ocasionais (ver `known_gaps`, docstring do
     módulo) -- a guarda usa a MEDIANA do diff entre `t0` consecutivos, não
     o mínimo nem uniformidade estrita, então uma MINORIA de barras
@@ -221,16 +249,16 @@ def test_assert_tf_consistent_tolera_gaps_minoritarios_na_mediana() -> None:
     keep_mask = np.ones(n, dtype=bool)
     keep_mask[drop_idx] = False
     labels_com_gaps = labels.filter(pl.Series(keep_mask))
-    cpcv.assert_tf_consistent(labels_com_gaps, _CFG)  # não deve levantar
+    cpcv.assert_grade_consistent(labels_com_gaps, _CFG)  # não deve levantar
 
 
-def test_assert_tf_consistent_instancia_unica_nao_levanta() -> None:
+def test_assert_grade_consistent_instancia_unica_nao_levanta() -> None:
     """Sem pelo menos 2 `t0` distintos não há diff pra medir -- a guarda
     não levanta neste caso degenerado (deixa `assign_time_groups`, chamada
     logo depois dentro de `generate_splits`, levantar seu próprio erro
     mais específico de 'instante único não particionável')."""
     labels = _make_synthetic_labels(1, horizon_bars=1)
-    cpcv.assert_tf_consistent(labels, _CFG)  # não deve levantar
+    cpcv.assert_grade_consistent(labels, _CFG)  # não deve levantar
 
 
 def test_generate_splits_rejeita_tf_inconsistente_sem_opt_out() -> None:
