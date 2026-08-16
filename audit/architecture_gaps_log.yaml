@@ -2005,6 +2005,13 @@ entries:
     #
     # (2)/(3)/(4) corrigidos e re-verificados (ruff+mypy limpos). (1) fica
     # aberto de propósito -- não é pra "consertar", é pra reprocessar.
+    #
+    # CONFIRMADO EMPIRICAMENTE 2026-08-16 -- usuário rodou `uv run pytest
+    # tests/unit/test_regime_classifier.py tests/unit/test_features_build.py
+    # tests/unit/test_features_support.py tests/unit/test_features_groups.py
+    # -v`: 94 passed in 3,55s. (1) deliberadamente fora deste comando --
+    # só fecha depois de `uv run python -m src.analysis.calibration_
+    # diagnostics` regerar o artefato.
     # ------------------------------------------------------------------
 
   - id: AG-031
