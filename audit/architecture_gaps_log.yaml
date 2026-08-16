@@ -1828,11 +1828,14 @@ entries:
       vs. 0,030496, experiments/m2_report_recente.json). Vai no MESMO
       pacote de trabalho que atr_window (mesma I2), confirmado.
     status: >-
-      aberto -- IMPLEMENTADO 2026-08-16, escopo COMPLETO (itens 1-6
+      FECHADO 2026-08-16 -- IMPLEMENTADO, escopo COMPLETO (itens 1-6
       originais, incluindo atr_window/item 4 e n_bars_held real/item 2 --
       ambos decididos pelo Manager após reler docs/refactor_dollar_bar_
-      canonico.md, ver parágrafos abaixo e AG-047). Pendente só de
-      confirmação empírica (pytest) antes de commitar.
+      canonico.md, ver parágrafos abaixo e AG-047). **CONFIRMADO
+      EMPIRICAMENTE 2026-08-16** -- usuário rodou `uv run pytest` sobre os
+      5 arquivos de teste tocados: **121 passed in 7,95s**, nenhuma
+      regressão, inclusive o bug de raiz (`estimator_id`) corrigido nesta
+      mesma rodada. Commitado em `c0ac546` e pushed pra `origin/master`.
 
       **time_stop: IMPLEMENTADO.** `LabelConfig.time_stop_bars`->
       `time_stop_ms` em `src/labels/triple_barrier.py`, `barrier_sweep.py`,
