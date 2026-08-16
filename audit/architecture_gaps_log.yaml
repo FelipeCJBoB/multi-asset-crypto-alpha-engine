@@ -1951,19 +1951,37 @@ entries:
       tests/unit/test_features_groups.py tests/unit/test_regime_
       classifier.py tests/unit/test_features_build.py -v` confirmaria os
       20 testes novos (10+3+3+2, mais os pré-existentes que continuam
-      cobrindo o comportamento sem cap) sem quebrar nada. Reprocessamento
-      real de Feature Engine + Regime Engine pros 5 ativos (`uv run
-      quant features build` / `uv run quant regime build`) SEGUE
-      PENDENTE — é o item de custo real citado na `resolution` acima,
-      não coberto por este código nem pelos testes sintéticos: os
-      parquets já materializados em disco (se existirem de rodadas
-      anteriores) continuam com a janela expansiva antiga até serem
-      regerados com este código.
-    status: "aberto -- código implementado + testado (síntese/unitário),
-      reprocessamento real de Feature/Regime Engine pros 5 ativos
-      PENDENTE (usuário precisa rodar `uv run quant features build` +
-      `uv run quant regime build` pra cada um dos 5 símbolos e confirmar
-      via pytest que os 20 testes novos passam)"
+      cobrindo o comportamento sem cap) sem quebrar nada.
+
+      **CORREÇÃO 2026-08-16 (mesmo dia) sobre o parágrafo de
+      "reprocessamento pendente" que existia aqui**: estava errado.
+      `uv run quant features build`/`regime build` foi citado sem
+      verificar se o comando existe — NÃO EXISTE (`quant` não tem
+      `[project.scripts]` em `pyproject.toml`, nenhum módulo/CLI
+      correspondente no repo; confirmado por busca direta, achado do
+      usuário ao tentar rodar e receber `error: Failed to spawn: quant`).
+      Mais importante: **não há artefato persistido pra reprocessar**.
+      `data/features/` nem existe como diretório -- Feature Engine é
+      recomputado on-the-fly a cada chamada. `data/regimes/regime_v1/
+      regimes.parquet` existe mas é um artefato JÁ CONHECIDO como
+      desatualizado desde o Sprint 5 (`src/models/dataset.py:8-24`,
+      achado documentado, não escondido) -- `build_modeling_frame` NUNCA
+      lê esse arquivo, reconstrói regime EM MEMÓRIA a cada chamada
+      (~8s) precisamente pra não depender dele. Ou seja: o cap do
+      AG-030 já está em produção pra QUALQUER código que chame
+      `build_t1_features`/`classify_regimes`/`build_modeling_frame` --
+      confirmado ao vivo quando o usuário rodou `uv run python -m
+      src.analysis.calibration_diagnostics` (logs mostram `regime.
+      classifier.classify_regimes`/`regime.build.build_regimes`
+      executando de verdade, n_bars=231552, com o código corrigido).
+      Único artefato que de fato precisava de regeneração era
+      `experiments/faixa1_calibration_diagnostic.json` (item (1) do
+      amendment abaixo) -- já regerado.
+    status: "FECHADO 2026-08-16 -- código implementado, testado (94
+      passed), artefato afetado regerado. Não há reprocessamento
+      batch pendente -- Feature/Regime Engine são recomputados on-the-
+      fly, sem CLI quant (nunca implementada) nem parquet persistido
+      dependente."
 
     # ------------------------------------------------------------------
     # AMENDMENT 2026-08-16 (mesmo dia) -- 4 falhas achadas pelo pytest do

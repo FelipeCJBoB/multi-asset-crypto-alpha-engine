@@ -266,6 +266,22 @@ parar e reportar, não presumir que a exceção ainda vale. Motivo/detalhe:
 
 ## Comandos
 
+**ATENÇÃO (2026-08-16): esta CLI `quant` é a interface PRETENDIDA, ainda
+NÃO implementada.** `pyproject.toml` não tem `[project.scripts]`, não
+existe módulo/pacote `quant` no repo — `uv run quant <qualquer coisa>`
+falha com `error: Failed to spawn: quant`. Achado real: citei este bloco
+como se existisse antes de verificar, o usuário tentou rodar e recebeu o
+erro. Até essa CLI ser construída (sprint não definido), os pipelines
+reais são invocados direto por módulo, ex. `uv run python -m
+src.labels.backfill_multi_symbol`, `uv run python -m
+src.analysis.m2_bar_comparison`, `uv run python -m
+src.analysis.calibration_diagnostics` — cada um com seu próprio
+`if __name__ == "__main__":`. Nem todo pipeline tem um desses hoje
+(Feature/Regime Engine não persistem artefato em lote, são recomputados
+on-the-fly a cada chamada de `build_modeling_frame` — ver docstring de
+`src/models/dataset.py`). Antes de citar um comando `quant` como "rode
+isto", confirme que ele existe de verdade.
+
 ```bash
 uv run quant feasibility          # Gate 0 — roda em segundos, ANTES de tudo
 uv run quant data download        # 15 fontes, checksums
