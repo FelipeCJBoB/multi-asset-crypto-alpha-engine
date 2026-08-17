@@ -5741,3 +5741,88 @@ entries:
       "gap que revela decisão de ESCOPO/NEGÓCIO não tomada... escalona
       pro Manager"). Reportado nesta sessão, aguardando resposta.
     status: "aberto -- decisão do Manager pendente: os 6 itens (Data check, Label-scheme, Split, Learner, Monitoramento, Feedback pós-trade) precisam de estudo comparativo novo, ou as decisões já fixadas nos PRDs ficam como estão?"
+
+  - id: AG-080
+    date: "2026-08-17"
+    file: "PLANO_MESTRE_PRINCE2.md §14, §15.2, §15.4, §15.6, §15.9"
+    related_file: "PLANO_MESTRE_PRINCE2.md §11.4/§11.6, audit/architecture_gaps_log.yaml::AG-075, AG-078, AG-079"
+    found_by: "Claude, a pedido do Manager ('o Roadmap vivo tem que estar alinhado a ele também, se hoje houver divergência entre ambos também entra no sweep_divergencias')"
+    gap: >
+      O próprio `PLANO_MESTRE_PRINCE2.md` tem DUAS estruturas de
+      governança paralelas, nunca reconciliadas entre si: `§11.4-§11.6`
+      (roadmap Sprint-N/V41-N/M1-M6, reescrito nesta sessão) e `§15`
+      ("Descoberta de Engenharia de src/", 2026-08-12..15, nunca revisado
+      desde então). Achados, todos validados por leitura de código:
+
+      (1) **`§15.4` (modelo de 15 estágios, linhas 1078-1103) é
+      literalmente a origem da nomenclatura "Data Layer/ML Layer/Live
+      Trading Layer" que o Manager usou nesta conversa** (Data check,
+      Split, Learner, Calibração, Validação, Meta-model, Monitoramento,
+      Feedback pós-trade -- todos nomes exatos de `§15.4`). `AG-079`
+      pergunta se esses itens precisam de rigor tipo-M1 sem nunca ter
+      cruzado com o fato de que `§15` já mapeou a prontidão de ENGENHARIA
+      de cada um (ex.: `14_MONITORAMENTO` = "1 função, nunca chamada",
+      `15_FEEDBACK_POST_TRADE` = "100% green-field") -- as duas seções
+      fazem a mesma pergunta ("o que falta, em que ordem") de ângulos
+      diferentes (prontidão de código vs. medição estatística) sem se
+      citarem uma vez sequer.
+
+      (2) **`§15.2` (tabela de prontidão real) está desatualizada** --
+      escrita 2026-08-12, ANTES da migração dollar-bar/Parkinson (Fases
+      0-6 desta sessão, 2026-08-16/17). Validado por código: a linha
+      "TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`)" está
+      parcialmente errada hoje -- `src/features/_sources.py:39-55` já
+      branch por `bar_source` (`time_15m`/`dollar_r1`), corrigido pela
+      Fase 3/4 desta sessão sem `§15` ser atualizado.
+
+      (3) **`§15.6` itens 2-3 (sequenciamento recomendado) foram
+      substantivamente endereçados por esta sessão mas nunca marcados
+      como executados** -- diferente dos itens 1 e 4, que têm cabeçalho
+      explícito "Item N executado (data)". Item 2 (conectar infra
+      multi-symbol/TF) foi feito pela Fase 4 (orquestração,
+      `build_modeling_frame`/`run_layer1_sprint`/`leakage.py`/
+      `fill_reconciliation.py` parametrizados). Item 3 (migrar
+      `features/build.py`/`group_c.py` pro `VolatilityEstimator`) foi
+      endereçado por MECANISMO DIFERENTE do especificado -- confirmado
+      por código (`group_c.py:18-20`): `c01_atr_20` continua chamando
+      `support.atr_wilder` direto, não o Protocol `VolatilityEstimator`
+      injetado; o que existe é uma função irmã (`c01_atr_20_parkinson`)
+      selecionável por string (`vol_estimator_id`), resultado prático
+      similar mas não o desenho original.
+
+      (4) **`§15.9` ("M5 pausado... decisão explícita do Manager sobre
+      trial") tem framing desatualizado** -- escrito 2026-08-14, sob o
+      regime onde `N_lifetime` era gate vinculante. Descontinuado
+      2026-08-17 (`AG-077`); M4/M5 já foram priorizados explicitamente
+      (`§11.6`). O texto de `§15.9` segue narrando a decisão como
+      pendente sob a régua antiga, sem apontar pra resolução real.
+
+      (5) **`§14` ("Road_Map Vivo", artefato HTML externo) nunca foi
+      republicado desde 2026-08-12**, apesar de se autodeclarar "vivo --
+      Claude republica a mesma URL a cada mudança de status". Descreve
+      "posição atual marcada (Sprint 4)" e uma Trilha de Camadas anterior
+      a TODA a migração dollar-bar/Parkinson, à descontinuação do
+      `N_lifetime`, e à priorização de M4/M5 desta sessão -- 5 dias de
+      trabalho real não refletidos num artefato que promete estar
+      sincronizado a cada mudança.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      Risco concreto: uma sessão futura lendo só `§15` (não `§11.4-
+      §11.6`) toma decisão de prioridade com base em prontidão de
+      engenharia de 5 dias atrás, sem saber que parte do trabalho já
+      aconteceu (Fases 2-4 do refactor Parkinson) e que a régua de
+      orçamento mudou (`N_lifetime` descontinuado). Quem abre o artefato
+      de `§14` esperando o estado atual (é o que "vivo" promete) recebe
+      informação de 2026-08-12, sem aviso de que está obsoleta.
+    resolved_by_commit: null
+    resolution: >
+      PARCIAL -- notas-ponteiro (não reescrita) aplicadas em `§14`,
+      `§15.2`, `§15.6` (itens 2-3), `§15.9`, apontando pra `§11.4-§11.6`
+      como fonte de estado atual e citando esta entrada. Republicação
+      real do artefato de `§14` (HTML) e reconciliação completa de
+      `§15.4` com `§11.6` (M1-M6) NÃO feitas -- fora do escopo desta
+      rodada (documentação de rollup, não reconstrução do artefato
+      externo nem fusão das duas estruturas). `AG-079` já cobre a
+      pergunta de escopo que `§15.4` deixou latente.
+    status: "aberto -- republicar §14 (HTML) e decidir se §15.4/§11.6 devem ser fundidos numa estrutura só ficam pendentes de decisão do Manager; notas-ponteiro aplicadas evitam a leitura desatualizada no meio-tempo"

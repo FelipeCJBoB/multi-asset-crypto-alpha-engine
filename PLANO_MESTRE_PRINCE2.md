@@ -941,6 +941,13 @@ mudou nem podia mudar por decisão de rótulo).
 
 ## 14. Road_Map Vivo <a name="14"></a>
 
+> **⚠️ DESATUALIZADO (achado 2026-08-17, `AG-080`) — não republicado desde
+> 2026-08-12,** apesar da promessa "vivo" abaixo. Descreve "posição atual
+> Sprint 4" e uma Trilha de Camadas anterior à migração dollar-bar/
+> Parkinson, à descontinuação do `N_lifetime` e à priorização de M4/M5 —
+> **`§11.4-§11.6` é a fonte de estado atual**, não este artefato, até ele
+> ser republicado.
+
 **https://claude.ai/code/artifact/a6335e1a-1eb1-42ae-b3af-9b43b87ea3dd**
 
 Mapa ponta a ponta em HTML, publicado a pedido do Manager 2026-08-12,
@@ -1051,7 +1058,7 @@ necessária pra validar/corrigir a proposta do Manager.
 | camada | pacotes | prontidão real |
 |---|---|---|
 | DATA — ingestão/checagem | `exchange/`, `data/` | **A mais pronta.** `symbol`/`tf` são parâmetros de primeira classe já exercitados em `lake.py`/`resample.py`/`download.py` (`DEFAULT_SYMBOLS` cobre os 5 desde o Sprint 3) |
-| DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf) |
+| DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf). **[DESATUALIZADO, `AG-080`]** `_sources.py:39-55` já branch por `bar_source` (`time_15m`/`dollar_r1`) desde a migração Parkinson/dollar-bar (§11.5) — `stress.py` segue com default hardcoded |
 | DATA — barreiras/label | `labels/` | Parcial. `symbol` real, **TF hardcoded em 3 lugares independentes** (`triple_barrier.py` 2x, `barrier_sweep.py` 1x) — `decision_tf_minutes` existe no config mas metade do código não o lê |
 | ML | `models/`, `validation/` | **1,5 de 5 camadas de ablação do PRD implementadas**; DSR e os 14 testes de leakage existem mas não rodam automaticamente; `model_id` sem símbolo/TF no nome |
 | LIVE TRADING | `risk/`, `execution/`, `live/`, `monitoring/` | **~5% implementado.** `risk/` é biblioteca real sem nenhum caller de produção e sem dimensão de símbolo; `execution/`≈0%; `live/`=pacote vazio; `monitoring/`=1 função nunca chamada |
@@ -1076,6 +1083,15 @@ citável, não opinião:
 | 6 | `09_SPLIT_VALIDACAO` e `12_VALIDACAO` como duas fases distintas | **É o mesmo mecanismo (`cpcv.py::CPCVResult`) reusado**, não duas fases sequenciais — treina, audita vazamento e reconstrói caminho de backtest a partir do MESMO objeto de split. A distinção nominal do Manager aponta pra um gap real, mas o gap não é "faltam dois estágios", é "falta um GATE automático pós-calibração" (DSR + os 14 testes de leakage existem mas não rodam dentro de `pipeline.py` hoje — são scripts manuais órfãos). |
 
 ### 15.4 Modelo de estágios corrigido
+
+> **Nunca cruzado com `§11.4-§11.6` (`AG-080`, 2026-08-17).** Os nomes
+> "Data Layer/ML Layer/Live Trading Layer" e seus itens (Data check,
+> Split, Learner, Calibração, Monitoramento, Feedback pós-trade) vêm
+> exatamente daqui. `§11.6` rastreia MEDIÇÃO (M1-M6/V41-N); esta seção
+> rastreia PRONTIDÃO DE ENGENHARIA — perguntas relacionadas, nunca
+> reconciliadas. Ver `AG-079` (pergunta de escopo: os itens abaixo sem
+> equivalente M1-M6 precisam de estudo tipo-M1?) e
+> `docs/roadmap_sweep_divergencias_2026-08-17.md`.
 
 ```
 DATA LAYER
@@ -1164,10 +1180,23 @@ número do estágio:
    (`regime_symbol_tf_dir`, `labels_symbol_tf_dir`,
    `predictions_symbol_tf_dir`) aos writers reais — não é código novo, é
    trocar o destino de escrita, baixo risco.
+   **Item 2 endereçado (2026-08-16/17, Fase 4 do refactor Parkinson/
+   dollar-bar, `AG-080`)** — `build_modeling_frame`/`run_layer1_sprint`/
+   `leakage.py`/`fill_reconciliation.py` agora parametrizados por
+   `resolution_id`/`tf`, roteando pra path real em vez de default morto.
+   Nunca marcado como "executado" nesta seção até agora.
 3. **Migrar `features/build.py`/`group_c.py` pro `VolatilityEstimator`**
    — fecha a duplicação de fórmula ATR (achado desta sessão E da
    anterior) e faz `03_FEATURES`/`05_REGIME` herdarem a escolha do GK
    automaticamente, sem trabalho extra.
+   **Item 3 endereçado por mecanismo DIFERENTE do especificado
+   (2026-08-16/17, `AG-080`)** — `c01_atr_20` (`group_c.py:18-20`)
+   continua chamando `support.atr_wilder` direto, não injeta o Protocol
+   `VolatilityEstimator`; o que existe é uma função irmã
+   (`c01_atr_20_parkinson`) selecionável por `vol_estimator_id` (string).
+   Resultado prático similar (estimador pluggable), desenho diferente do
+   originalmente proposto — registrado com a nuance, não como "feito
+   100%".
 4. **Rodar Feature+Label Engine pros outros 4 ativos** (já identificado
    na resposta anterior desta conversa, pré-requisito de M5/M6) — agora
    com o item 1 corrigido primeiro, pra não gerar dado errado silenciosamente.
@@ -1374,6 +1403,13 @@ divergiram, várias vezes nesta sessão). Não decidi isso unilateralmente —
 apresentado ao Manager para a mesma decisão explícita que os ids
 11/13/14 já tiveram, antes de treinar qualquer coisa nos ~15 trials
 restantes do orçamento (M4 sozinho ainda precisa de até 6).
+
+> **Framing desatualizado (`AG-080`, 2026-08-17).** O parágrafo acima
+> narra M5 como pausado sob orçamento `N_lifetime` vinculante — esse
+> regime foi DESCONTINUADO (`AG-077`, 2026-08-17) e M4+M5 já foram
+> priorizados explicitamente pelo Manager (`§11.6`). A decisão que este
+> parágrafo apresenta como pendente já foi tomada; ver `§11.4`/`§11.6`
+> pro estado real.
 
 ### 15.10 AG-017 — §15.1 previu o risco por nome, M2 caiu nele mesmo assim (2026-08-15)
 

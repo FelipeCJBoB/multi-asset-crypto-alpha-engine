@@ -91,6 +91,24 @@ Isso é **decisão de escopo, não achado de arquitetura** — abrir 6 estudos n
 
 **Não decidi isso sozinho** — registrado em `AG-079`, aberto.
 
+## 2b. Divergência interna ao próprio `PLANO_MESTRE_PRINCE2.md` (`AG-080`)
+
+O Manager pediu explicitamente: *"o Roadmap vivo tem que estar alinhado a ele também [ao PLANO_MESTRE], se hoje houver divergência entre ambos também entra no sweep_divergencias."* Achado real, maior do que uma checagem de rotina: o próprio documento tem **duas estruturas de governança paralelas, nunca reconciliadas**.
+
+`§15` ("Descoberta de Engenharia de `src/`", 2026-08-12..15) mapeou um modelo de 15 estágios em **DATA LAYER / ML LAYER / LIVE TRADING LAYER** (`§15.4`) — e é literalmente a origem dos nomes "Data check", "Split", "Learner", "Monitoramento", "Feedback pós-trade" que motivaram a seção 2 acima. `§15` nunca foi cruzada com `§11.4-§11.6` (reescrita nesta sessão) — as duas respondem à mesma pergunta ("o que falta, em que ordem") de ângulos diferentes (prontidão de ENGENHARIA vs. medição estatística tipo-M1), sem se citarem.
+
+Achados adicionais, todos validados por leitura de código:
+
+| achado | validação |
+|---|---|
+| `§15.2` (tabela de prontidão) desatualizada | `src/features/_sources.py:39-55` já branch por `bar_source` — a linha "TF hardcoded em `_sources.py`" não é mais verdade, corrigida pela Fase 3/4 do refactor Parkinson sem `§15` ser atualizada |
+| `§15.6` item 2 (conectar infra multi-symbol/TF) | **endereçado** pela Fase 4 desta sessão (`build_modeling_frame`/`run_layer1_sprint`/`leakage.py`/`fill_reconciliation.py` parametrizados) — nunca marcado como "executado" como os itens 1/4 foram |
+| `§15.6` item 3 (migrar pro `VolatilityEstimator`) | endereçado por **mecanismo diferente** do especificado — `group_c.py:18-20` confirma `c01_atr_20` ainda chama `atr_wilder` direto, não injeta o Protocol; existe uma função irmã (`c01_atr_20_parkinson`) selecionável por string. Resultado prático similar, desenho diferente |
+| `§15.9` ("M5 pausado... decisão pendente do Manager sobre trial") | framing desatualizado — escrito sob o regime `N_lifetime`-como-gate, descontinuado em `AG-077`; a decisão que o parágrafo apresenta como aberta já foi tomada (`§11.6`) |
+| `§14` ("Road_Map Vivo", artefato HTML externo) | não republicado desde 2026-08-12 apesar de se autodeclarar "vivo" — descreve "Sprint 4" e uma Trilha de Camadas anterior a toda a migração dollar-bar/Parkinson, à descontinuação do `N_lifetime` e à priorização de M4/M5 |
+
+**Aplicado nesta sessão:** notas-ponteiro curtas (não reescrita do histórico) em `§14`, `§15.2`, `§15.4`, `§15.6` (itens 2-3), `§15.9`, todas apontando pra `§11.4-§11.6` como fonte de estado atual. **Não aplicado, decisão sua:** republicar o artefato HTML de `§14`; decidir se `§15.4` e `§11.6` devem virar uma estrutura só (a pergunta de fundo é a mesma do `AG-079` — os itens de `§15.4` sem equivalente M1-M6 precisam de rigor de medição, ou prontidão de engenharia já basta?). Registrado como `AG-080`.
+
 ## 3. O que já foi aplicado ao Road Map Vivo nesta sessão
 
 - `§11.5`/`§11.6`: nota "DECIDIDO, NÃO DEPLOYADO" no item M1/Parkinson, com o valor literal de `constants.yaml` citado.
@@ -104,3 +122,5 @@ Isso é **decisão de escopo, não achado de arquitetura** — abrir 6 estudos n
 1. Decisão de escopo da seção 2 (6 itens) — sim/não precisam de estudo tipo-M1.
 2. Confirmar (ou corrigir) a tabela de reconciliação Sprint-N↔V41-N do `§11.6` — segue marcada como reconstrução por evidência indireta, não fato declarado.
 3. Prioridade de `aggregate_risk_max` (sweep classe A pendente) e do experimento RPI (§9.5.1) frente a M4/M5 — nenhum dos dois é urgente hoje, mas nenhum tem linha de roadmap ainda.
+4. Republicar o artefato HTML de `§14` (ou decidir aposentá-lo formalmente, já que `§11.4-§11.6` cumprem o mesmo papel hoje) — ver `AG-080`.
+5. Decidir se `§15.4` (modelo de 15 estágios, prontidão de engenharia) e `§11.6` (M1-M6, medição) devem virar uma estrutura única, ou continuam como duas lentes complementares mantidas separadas — mesma pergunta de fundo do item 1, olhada pelo ângulo de engenharia em vez de medição.
