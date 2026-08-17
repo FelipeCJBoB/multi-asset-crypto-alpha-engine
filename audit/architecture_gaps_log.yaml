@@ -5359,3 +5359,62 @@ entries:
       (quebraria a prova de bit-exatidão existente, precisaria de nova
       verificação), por isso não implementado sem decisão explícita.
     status: "aberto -- achado real registrado, decisão do Manager sobre se/quando investigar"
+
+  - id: AG-075
+    date: "2026-08-17"
+    file: "PLANO_MESTRE_PRINCE2.md §11.4 (Road Map Vivo)"
+    related_file: "PRD_V4_1.md §3.2 (M1-M6), Parte VIII (Roadmap V41-0..12), audit/architecture_gaps_log.yaml::AG-051 (achado irmão -- 5 itens soltos, categoria diferente)"
+    found_by: "Manager, correção direta ('Regime vai sofrer comparison igual M1-Volatilidade e M2-Comparação de barra, essa informação não está no Road_map vivo? procure novamente') -- Claude tinha respondido 'não sobra nenhuma ação de regime pendente' sem verificar a Camada 1/2 do PRD antes de afirmar, mesmo erro de padrão que AG-051/AG-052 já tinham achado uma vez (§11.4 tratado como fonte completa sem checar contra o PRD real)."
+    gap: >
+      `PRD_V4_1.md` §3.2 define 6 medições nomeadas da Camada 1 (M1
+      Volatilidade, M2 Barra, M3 Timeframe, M4 Regime, M5 Reconciliação
+      de fill, M6 Fator comum) mais a Parte VIII (Roadmap) que estende a
+      sequência pra Camada 2 (V41-6 Barreiras rederivadas, V41-7 Pesos +
+      Features, V41-8 Controle 19 + sizing, V41-9 Calibração, V41-10
+      Meta-Model, V41-11 Walk-forward, V41-12 DSR final). `PLANO_MESTRE_
+      PRINCE2.md` §11.4 (que se autodescreve como "rollup de tudo que já
+      tem sprint/gatilho de revisão declarado") **não tem NENHUMA linha**
+      pra M4, V41-6, V41-7, V41-8, V41-9, V41-10, V41-11 nem V41-12 --
+      só M1/M2/M3/M5/M6 aparecem, e só de forma indireta, dentro de §11.5
+      (a aba dedicada dollar-bar) ou dentro de texto de changelog
+      histórico, nunca como linha viva rastreável. M4 especificamente
+      (Regime, ≤6 trials, ÚNICA medição paga da Camada 1 -- quantis
+      expansivos baseline vs. HMM gaussiano `dynamax` 2/3/4 estados vs.
+      Jump Model vs. BOCPD) foi deliberadamente sequenciada DEPOIS de
+      M5/M6 (`PLANO_MESTRE_PRINCE2.md` linha ~863, changelog histórico:
+      "M5 (fill, escopo completo) e M6... priorizados antes de M4"),
+      decisão real do Manager -- mas essa decisão nunca ganhou uma linha
+      rastreável em §11.4, só existe enterrada em prosa de changelog.
+    severity: "alto"
+    layer: "process/doc"
+    consequence: >
+      Mesma classe de consequência de `AG-051` (quem usa §11.4 como fonte
+      única pra "o que está pendente" subestima o volume real), mas
+      categoria mais grave: `AG-051` era sobre 5 achados de ARQUITETURA
+      soltos; isto é sobre MEDIÇÕES DE CAMADA 1/2 inteiras do próprio PRD
+      -- com orçamento de trial já comprometido (M4 ≤6, V41-6 ≤4, V41-7
+      ≤3 -- 13 trials potenciais) -- ausentes da visão consolidada.
+      Concretamente: perguntado "Regime não tem mais nada a fazer?",
+      Claude respondeu que não sobrava ação nenhuma, baseado só em §11.4/
+      §11.5 -- resposta ERRADA, corrigida pelo Manager. Sem esta linha
+      registrada, o mesmo erro se repete em qualquer sessão futura que
+      confie no rollup sem reler o PRD inteiro.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- registro do achado. Sequenciamento real, pra
+      quando M4/V41-6/V41-7 forem retomados: M6 (fator comum) fechado
+      2026-08-14 (heterogeneidade real confirmada, I²=96-98%). M5 (fill)
+      só parcialmente -- medido em BTCUSDT (fill real 42,2% vs. 97,1%
+      otimista), mas "escopo completo" (5 ativos) precisa de `predictions.
+      parquet`/`orders.parquet` (via `fill_simulator`) pros 4 alts, que
+      não existem ainda -- só `labels.parquet` dos 5 foi gerado até agora
+      (Sprint 6 original + Fase 5 desta migração, R1). M4 continua
+      esperando M5 completo, pela decisão de sequenciamento já tomada
+      (não redecidida aqui). **Nenhum dos três (M4/V41-6/V41-7) está
+      autorizado a rodar** -- são medições que EXPLORAM edge novo (não
+      "aplicam decisão já medida", diferente da migração Parkinson que
+      justificou o override do `N_lifetime` id 17 em `audit/
+      n_lifetime.yaml`), e `N_lifetime.counter=63` já excede o teto de
+      60 -- qualquer um dos três exigiria uma NOVA decisão de orçamento
+      do Manager, não coberta pela autorização existente.
+    status: "aberto -- Manager avisado, decisão de quando retomar M4/V41-6/V41-7 e de orçamento de N_lifetime pendente"
