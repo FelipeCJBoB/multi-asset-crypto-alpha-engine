@@ -3126,6 +3126,55 @@ entries:
       +desenho aprofundado de como cada um dos 3 muda sob duração variável
       (delegado a seguir), ainda sem implementar -- mesma trava de (b)/(c)
       acima continua valendo antes de qualquer execução real.
+    addendum_pesquisa_readaptacao_2026_08_17: >
+      Pesquisa aprofundada (Agent, contexto rico, código deletado real
+      via `git show 3ceb5b7`/`50dd621`/`caffdc6`/`aec7b59`, não
+      reconstrução de memória) dos 3 resgatados, mais 1 achado que reduz
+      o escopo do bloqueio compartilhado:
+
+      **Achado que muda o quadro:** `next_bar_realized_variance`
+      (`volatility_walkforward.py:113-122`, o ALVO de M1) já é "1 barra à
+      frente" por definição, não "N minutos à frente" -- a construção do
+      ALVO não depende estritamente da medição de duração pendente (P-2).
+      P-2 continua necessário só pra (a) desenhar os componentes internos
+      de HAR-RV/EGARCH que somam ao longo do tempo, e (b) interpretar se
+      o QLIKE agregado não é dominado por caudas de duração extrema.
+
+      **RealizedVol** -- esforço PEQUENO, ~95% reúso. Fórmula
+      (`σ×√window`) provavelmente não muda -- teoria de relógio de
+      atividade/subordinação (Ané&amp;Geman 2000, Journal of Finance)
+      argumenta que essa premissa fica MAIS válida sob relógio de
+      negócio, não menos (corroboração fraca mas real já no repo: curtose
+      de BTCUSDT 15m caiu de 5,437 pra 0,039 sob grade dollar, M2). Só a
+      guarda de interface muda -- MESMA guarda que os 4 sobreviventes
+      (ATRWilder/Parkinson/GK/RS) também precisam (achado D compartilhado,
+      não específico). NÃO bloqueado por P-2.
+
+      **HAR-RV** -- esforço MÉDIO, ~40-50% reúso. Fix concreto: `_har_
+      components` troca janela em CONTAGEM DE BARRA por janela causal em
+      RELÓGIO REAL usando `close_time` (já no schema de `bars.py`) --
+      `day[t] = média(realized_var[i])` com `close_time[i] &lt; close_time[t]`
+      (estrito, nunca `&lt;=`, senão vaza B02 em rajada com timestamp
+      repetido) e `close_time[t]-close_time[i] &lt;= 86400000ms` (idem ×7/×30
+      pra semana/mês). Elimina `bars_per_day` como parâmetro. Implementável
+      HOJE, não bloqueado por P-2 no núcleo do desenho (P-2 só valida
+      robustez depois).
+
+      **EGARCH(1,1)** -- esforço GRANDE, ~30% reúso. Único dos 3 onde a
+      FÓRMULA em si precisa mudar, não só a agregação -- 2 rotas
+      plausíveis (ACD-GARCH acoplado, Ghysels&amp;Jasiak 1998; ou heurística
+      de escala por duração com `Δt_ref`/`κ` novos) e a escolha certa
+      depende de conhecer a forma da distribuição real de duração (P-2) --
+      genuinamente BLOQUEADO, não just "não medido ainda".
+
+      **Prioridade recomendada: RealizedVol → HAR-RV → EGARCH** (custo
+      ascendente, dependência de P-2 ascendente, histórico empírico:
+      HAR-RV único com 1 vitória real de 15, RealizedVol e EGARCH 0/15
+      cada).
+
+      Fontes: Ané&amp;Geman (2000, JF), Dimitriadis et al. (arXiv
+      2212.11833), Ghysels&amp;Jasiak (1998, SNDE), Engle&amp;Russell
+      (UHF-GARCH).
 
   - id: AG-037
     date: "2026-08-16"
