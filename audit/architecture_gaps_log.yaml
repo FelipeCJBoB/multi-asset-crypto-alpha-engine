@@ -3042,6 +3042,67 @@ entries:
       PLANO_MESTRE_PRINCE2.md v3.5) chegar na etapa de Feature Engine e M1
       for de fato remedido; até lá, `canonical_volatility_estimator=GK`
       (constants.yaml) segue valendo só para grade de TEMPO.
+    addendum_pesquisa_desenho_2026_08_16: >
+      Manager autorizou pesquisa+desenho (não implementação) enquanto o
+      reprocessamento dollar-bar rodava. Agent (general-purpose, contexto
+      rico, só leitura/pesquisa web) confirmou o gap central e trouxe 3
+      achados novos que mudam o quadro:
+
+      **(1) Achado factual real -- 3 dos 8 candidatos não estão "nunca
+      implementados", foram implementados e DELETADOS após perder a
+      comparação original.** `src/features/volatility_models.py` teve
+      `HAR-RV` (commit `3ceb5b7`) e `EGARCH(1,1)` (commit `50dd621`)
+      implementados e integrados ao harness; `RealizedVolEstimator`
+      também (commit `caffdc6`). Todos os 3 perderam (HAR-RV 1/15,
+      EGARCH 0/15, RealizedVol 0/15) e foram removidos (commit `aec7b59`,
+      "Finaliza amputacao do M1"). Só a matemática crua de RealizedVol
+      sobrevive (`support.realized_vol()`, alimenta feature C03, sem o
+      wrapper de `VolatilityEstimator`). Pesquisa da metodologia dos 8
+      (fontes citadas no relatório completo do Agent) confirma que os 3
+      amputados são justamente os com dependência estrutural MAIS forte
+      de espaçamento regular no tempo (HAR-RV: cascata diário/semanal/
+      mensal; EGARCH: MLE assume espaçamento regular; RealizedVol: lei de
+      escala Browniana `σ_N=σ_1·√N` exige Δt ≈ constante) -- consistente
+      com terem perdido já sob grade de tempo, onde a premissa deles já
+      era só aproximada. Resgatar+readaptar os 3 é pesquisa nova (ex.
+      ACD-GARCH/UHF-GARCH pra dado irregular), não resgate mecânico do
+      git. **Decisão de escopo pendente do Manager, empilhada pra próxima
+      sessão: rerodar M1 só com os 4 sobreviventes (GK/Parkinson/RS/YZ)
+      ou resgatar+readaptar os 8 originais.**
+
+      **(2) `resolution_id`/`grade_id` (AG-042/AG-037) NÃO resolve o
+      problema central sozinho -- confirma a suspeita registrada nesta
+      sessão.** Esses dois resolvem IDENTIDADE de grade; o problema real
+      de M1 é um terceiro eixo sem precedente no projeto: dado um
+      horizonte em relógio fixo (`horizon_minutes`), quantas barras de
+      duração VARIÁVEL isso cobre. Duas rotas candidatas (contagem fixa
+      de barras vs. janela de largura variável por relógio real), nenhuma
+      implementável sem medir a distribuição real de duração de dollar
+      bar -- **mesmo bloqueio já registrado em `AG-043` (item a/b)**, M1
+      herda a dependência, não é bloqueio novo.
+
+      **(3) Gap adicional no raio de explosão, fora do escopo de M1:**
+      `triple_barrier.py:799` (`step_ms(cfg.tf)`) já quebra hoje para
+      `tf` de dollar bar, antes mesmo de chegar em `Bars(...)`/
+      `.estimate(...)` -- Label Engine, não Feature Engine, já rastreado
+      à parte (`AG-031`, fechado só pra grade de tempo). `diebold_mariano`
+      (`volatility_walkforward.py:230-238`) precisa de correção HAC assim
+      que o horizonte deixar de ser 1-barra-à-frente (auto-documentado no
+      código, nunca implementado).
+
+      **Status de dado, confirmado nesta checagem:**
+      `data/capacity/dollar_bars_r1/BTCUSDT/` já tem histórico completo
+      (2412 arquivos, 2019-12-31→2026-08-07, `calibrated_at` muito
+      recente) -- o full run já terminou pra BTC. Os outros 4 símbolos
+      ainda não apareciam no diretório no momento desta checagem.
+
+      Desenho concreto (`Bars.timeframe_minutes: int|None` +
+      `resolution_id`, retrocompatível bit-exato pra grade de tempo) e
+      lista arquivo-por-arquivo de escopo qualitativo ficam no relatório
+      completo do Agent (transcript desta sessão) -- não implementados
+      aqui, aguardando: (a) a decisão de escopo 4-vs-8 acima, (b) medição
+      real de duração de dollar bar (bloqueia junto com AG-043), (c) os 5
+      símbolos completos no reprocessamento.
 
   - id: AG-037
     date: "2026-08-16"
