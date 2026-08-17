@@ -3307,6 +3307,34 @@ entries:
       autorizou estourar pra esta migração especificamente --
       `audit/n_lifetime.yaml`).
     status_final_2026_08_17: "FECHADO -- decisão tomada e registrada (Parkinson canônico). Migração de produção em andamento, ver docs/refactor_parkinson_canonico.md."
+    addendum_engenharia_pronta_producao_adiada_2026_08_17: >
+      **Fases 0-4 do plano de migração (`docs/refactor_parkinson_
+      canonico.md`) implementadas, testadas e commitadas nesta mesma
+      sessão** -- Label Engine (`LabelConfig.resolution_id`,
+      commit `5df33c3`), Feature Engine (`vol_estimator_id` selecionável,
+      `c01_atr_20_parkinson`, commit `3449471`), Regime Engine
+      (`build_regimes` ganha `bar_source`/`vol_estimator_id`, commit
+      `9a4c3c5`), orquestração ponta a ponta (`build_modeling_frame`,
+      `run_layer1_sprint`, `leakage.py`, `fill_reconciliation.py`, commit
+      `b5760fe`). Suíte completa 1305/1305 sem regressão ao fim da Fase 4.
+      O pipeline está de fato pronto pra honrar `resolution_id="R1"` +
+      `vol_estimator_id="parkinson_w20"` ponta a ponta, sob demanda.
+
+      **Fase 5 (flip de `constants.yaml::canonical_volatility_estimator.
+      value`, reprocessamento real de labels/features/regime pros 5
+      símbolos, retreino de Alpha Camada 1) DELIBERADAMENTE NÃO EXECUTADA
+      -- instrução explícita do Manager, 2026-08-17, nesta mesma
+      conversa**: "Faça tudo que estiver planejado mas não treine alpha
+      nem regime, os testes estão liberados mas o run de produção não
+      pois vamos fazer isso já programado no PRD e no road_map com outras
+      mudanças previstas. Então run canônico de produção agora seria
+      desperdício de tempo." O corte real de produção fica agendado junto
+      de outras mudanças já previstas no roadmap (ver
+      `PLANO_MESTRE_PRINCE2.md` §11.5, linha "reprocessamento real")
+      -- não é bloqueio técnico nem decisão pendente, é sequenciamento
+      deliberado pra não fazer 2 reprocessamentos onde 1 bastaria.
+      `constants.yaml::value` permanece `garman_klass_w20` até essa
+      rodada futura acontecer.
 
   - id: AG-037
     date: "2026-08-16"
@@ -4874,7 +4902,7 @@ entries:
       estatística) -- nuance que a medição parcial (só R1) não podia
       revelar. Ver `AG-036` pro resultado completo, `AG-074` pra ressalva
       sobre `egarch_coupled`.
-    status_final_2026_08_17: "SUPERSEDIDO -- ver AG-036::addendum_medicao_completa_2026_08_17 pro resultado completo. Decisão do Manager: Parkinson é a volatilidade canônica (AG-036::addendum_decisao_manager_2026_08_17), migração de produção em andamento."
+    status_final_2026_08_17: "SUPERSEDIDO -- ver AG-036::addendum_medicao_completa_2026_08_17 pro resultado completo. Decisão do Manager: Parkinson é a volatilidade canônica (AG-036::addendum_decisao_manager_2026_08_17). Engenharia (Fases 0-4) pronta e commitada; corte real de produção (Fase 5) deliberadamente adiado pra rodada futura já agendada no roadmap, ver AG-036::addendum_engenharia_pronta_producao_adiada_2026_08_17."
 
   - id: AG-066
     date: "2026-08-17"

@@ -224,22 +224,47 @@ de USO, não mudança de código nesse módulo.
 
 ## Fases de execução (ver plano completo da sessão pra detalhe fase a fase)
 
-0. Decisão registrada no repo (`AG-036`/`AG-065`/`constants.yaml` — feito,
+0. ✅ Decisão registrada no repo (`AG-036`/`AG-065`/`constants.yaml` — feito,
    este documento faz parte disso) + fundação compartilhada
    (`step_ms`/branch de grade, `assert_grade_consistent` corrigido).
-1. Label Engine — `LabelConfig.resolution_id`, `Bars(resolution_id=...)`,
+   Commit `e32b7a4`.
+1. ✅ Label Engine — `LabelConfig.resolution_id`, `Bars(resolution_id=...)`,
    path de escrita novo com guarda anti-colisão, `experiment_log.py`,
-   `barrier_sweep.py`.
-2. Feature Engine — `group_c.py` com Parkinson, `bar_source` default,
-   `min_common_history_bars_15m` sob dollar bar, `registry.yaml`.
-3. Regime Engine — `build_regimes` ganha `bar_source`, `min_common_history_
-   bars` mesma decisão do item 2.
-4. Orquestração — `dataset.py`, `pipeline.py` (corrige o bug real),
-   `validation/leakage.py`, `backtest/fill_reconciliation.py`.
-5. `constants.yaml` (`value` finalmente muda) + reprocessamento real +
-   retreino (consome `N_lifetime`, autorizado).
-6. Docs/governança — este documento, `PLANO_MESTRE_PRINCE2.md`, artefatos
-   publicados, ledgers.
+   `barrier_sweep.py`. Commit `5df33c3`.
+2. ✅ Feature Engine — `group_c.py` com Parkinson, `vol_estimator_id`
+   selecionável (default bit-exato, NÃO o `bar_source` default como o
+   texto original deste item sugeria — ver seção Feature Engine acima),
+   `min_common_history_bars_15m` sob dollar bar, `registry.yaml`. Commit
+   `3449471`.
+3. ✅ Regime Engine — `build_regimes` ganha `bar_source`/`vol_estimator_id`,
+   `min_common_history_bars` mesma decisão do item 2. Commit `9a4c3c5`.
+4. ✅ Orquestração — `dataset.py` (`resolution_id` único parâmetro de
+   grade, deriva `bar_source`), `pipeline.py` (corrige o bug real de `tf`
+   não repassado), `validation/leakage.py`, `backtest/
+   fill_reconciliation.py`. Commit `b5760fe`. Suíte completa 1305/1305.
+5. ⬜ **`constants.yaml` (`value` muda) + reprocessamento real + retreino —
+   DELIBERADAMENTE NÃO EXECUTADO, decisão do Manager 2026-08-17 (mesma
+   conversa que fechou as Fases 0-4).** Verbatim: "Faça tudo que estiver
+   planejado mas não treine alpha nem regime, os testes estão liberados
+   mas o run de produção não pois vamos fazer isso já programado no PRD e
+   no road_map com outras mudanças previstas. Então run canônico de
+   produção agora seria desperdício de tempo." A engenharia (Fases 0-4)
+   está pronta pra honrar `resolution_id="R1"` + `vol_estimator_id=
+   "parkinson_w20"` ponta a ponta sob demanda — o que falta é
+   EXECUÇÃO real (reprocessar `labels/`+features+regime pros 5 símbolos,
+   rodar os 14 testes de vazamento contra R1, retreinar Alpha Camada 1),
+   deliberadamente agendada junto de outras mudanças já previstas no
+   roadmap (`PLANO_MESTRE_PRINCE2.md` §11.5), não como run isolado agora.
+   `audit/n_lifetime.yaml` id 17 registra a autorização de estourar o
+   orçamento (`delta=0`) — o retreino real, quando rodar, consome
+   `N_lifetime` normalmente, não é isento por esta entrada.
+6. ✅ Docs/governança — este documento, `PLANO_MESTRE_PRINCE2.md` §11.5,
+   `audit/architecture_gaps_log.yaml` (addendums em AG-036/AG-065),
+   `audit/n_lifetime.yaml` (id 17), `config/constants.yaml` (nota de
+   deferral, `value` inalterado). Escopo reduzido em relação ao plano
+   original (que previa "fechar AG-036/065 de vez, decisão MEDIDA E
+   APLICADA") — decisão está MEDIDA e a ENGENHARIA está pronta, mas
+   APLICAÇÃO real (Fase 5) continua deliberadamente pendente.
 
 ## O que NÃO é decidido aqui
 

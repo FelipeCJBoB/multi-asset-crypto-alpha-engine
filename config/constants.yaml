@@ -247,6 +247,17 @@ canonical_volatility_estimator:
     plano de migração) -- não antes, pra não haver janela onde este
     campo mente sobre o que o pipeline de fato faz. Ver
     `docs/refactor_parkinson_canonico.md` pro blast radius completo.
+    ATUALIZAÇÃO 2026-08-17 (engenharia pronta, corte adiado) -- Fases 0-4
+    do plano (Label/Feature/Regime Engine + orquestração ponta a ponta)
+    implementadas, testadas (1305/1305) e commitadas (`5df33c3`,
+    `3449471`, `9a4c3c5`, `b5760fe`). `value` PERMANECE `garman_klass_w20`
+    -- Manager decidiu explicitamente adiar o flip real (junto com o
+    reprocessamento de labels/features/regime pros 5 símbolos e o
+    retreino de Alpha) pra uma rodada futura já agendada no roadmap,
+    junto de outras mudanças previstas (`PLANO_MESTRE_PRINCE2.md` §11.5)
+    -- não é bloqueio técnico, é sequenciamento deliberado. Ver
+    `audit/architecture_gaps_log.yaml::AG-036::
+    addendum_engenharia_pronta_producao_adiada_2026_08_17`.
   class: A
   sweep_required: true
   sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]
