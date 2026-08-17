@@ -268,3 +268,72 @@ def test_measure_new_window_drift_sem_trades_levanta_erro(
     )
     with pytest.raises(ValueError, match="aggTrades vazio"):
         dollar_bar_drift.measure_new_window_drift(_baseline(), "2026-01-01", "2026-01-07")
+
+
+# ============================================================================
+# resolution_id R2/R3 -- achado AG-066 (project_assurance, 2026-08-17):
+# _BASELINE_TF fixo em "15m" ficou desatualizado quando build_dollar_bars
+# passou a suportar R2/R3 -- corrigido pra resolver via
+# CALIBRATION_TF_BY_RESOLUTION[baseline.resolution_id]. Este teste trava
+# que o TF certo é de fato usado, não só que o resultado "parece razoável".
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("resolution_id", "expected_tf"), [("R1", "15m"), ("R2", "30m"), ("R3", "1h")]
+)
+def test_measure_new_window_drift_resolution_id_usa_tf_certo(
+    monkeypatch: pytest.MonkeyPatch, resolution_id: str, expected_tf: str
+) -> None:
+    seen_tfs: list[str] = []
+
+    def _fake_scan_trades_totals(
+        symbol: str, tf: str, chunks: object
+    ) -> _chunked_scan.TradesTotals:
+        seen_tfs.append(tf)
+        return _chunked_scan.TradesTotals(
+            total_dollar=1_000_000.0, total_volume=10_000.0, n_ticks=500
+        )
+
+    def _fake_query_baseline(symbol: str, tf: str, *, start: str, end: str) -> pl.DataFrame:
+        seen_tfs.append(tf)
+        return pl.DataFrame({"close": [1.0] * 10})
+
+    monkeypatch.setattr(_chunked_scan, "scan_trades_totals", _fake_scan_trades_totals)
+    monkeypatch.setattr(_chunked_scan, "query_baseline", _fake_query_baseline)
+
+    baseline = _baseline(threshold_usdt=50_000.0)
+    baseline = DollarBarCalibration(
+        symbol=baseline.symbol,
+        resolution_id=resolution_id,
+        threshold_usdt=baseline.threshold_usdt,
+        calibration_scope=baseline.calibration_scope,
+        calibration_window_start=baseline.calibration_window_start,
+        calibration_window_end=baseline.calibration_window_end,
+        n_trades=baseline.n_trades,
+        calibrated_at=baseline.calibrated_at,
+    )
+
+    dollar_bar_drift.measure_new_window_drift(
+        baseline, "2026-01-01", "2026-01-07", alarm_threshold_ratio=3.0
+    )
+
+    assert all(tf == expected_tf for tf in seen_tfs)
+
+
+def test_measure_new_window_drift_resolution_id_invalido_levanta_erro() -> None:
+    baseline = _baseline()
+    invalid_baseline = DollarBarCalibration(
+        symbol=baseline.symbol,
+        resolution_id="R4",
+        threshold_usdt=baseline.threshold_usdt,
+        calibration_scope=baseline.calibration_scope,
+        calibration_window_start=baseline.calibration_window_start,
+        calibration_window_end=baseline.calibration_window_end,
+        n_trades=baseline.n_trades,
+        calibrated_at=baseline.calibrated_at,
+    )
+    with pytest.raises(ValueError, match="resolution_id"):
+        dollar_bar_drift.measure_new_window_drift(
+            invalid_baseline, "2026-01-01", "2026-01-07"
+        )

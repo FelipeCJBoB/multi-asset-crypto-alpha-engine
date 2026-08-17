@@ -286,16 +286,22 @@ def query_dollar_bars(
     start: DateLike | None = None,
     end: DateLike | None = None,
     *,
+    resolution_id: str = "R1",
     duckdb_memory_limit_gb: float | None = None,
     duckdb_threads: int | None = None,
 ) -> pl.DataFrame:
-    """Barras `dollar_bars_r1` (`schemas.DOLLAR_BARS_R1`) escritas por
-    `src.data.build_dollar_bars.write_dollar_bars_and_calibration` --
-    MESMO padrão de `query_agg_trades` (poda de arquivo por dia + filtro de
-    timestamp via DuckDB), sem lógica nova. Filtra/ordena por `close_time`
+    """Barras `dollar_bars_{r1,r2,r3}` (`schemas.DOLLAR_BARS_R1/R2/R3`)
+    escritas por `src.data.build_dollar_bars.
+    write_dollar_bars_and_calibration` -- MESMO padrão de
+    `query_agg_trades` (poda de arquivo por dia + filtro de timestamp via
+    DuckDB), sem lógica nova. Filtra/ordena por `close_time`
     (`timestamp_column` do schema — não `open_time`, ver docstring de
-    `schemas.DOLLAR_BARS_R1`). `duckdb_memory_limit_gb`/`duckdb_threads` --
-    ver `_read_files`.
+    `schemas.DOLLAR_BARS_R1`). `resolution_id` (`"R1"`/`"R2"`/`"R3"`,
+    default `"R1"` -- preserva bit-exato todo caller existente que não
+    passa o argumento) seleciona qual dataset ler
+    (`f"dollar_bars_{resolution_id.lower()}"`, mesma convenção de
+    `src.data.build_dollar_bars._source_name`). `duckdb_memory_limit_gb`/
+    `duckdb_threads` -- ver `_read_files`.
 
     Só lê de `_paths.CAPACITY_DIR` (via `capacity_symbol_dir`, mesmo
     caminho de todo `query_*` desta camada) — sem parâmetro de root
@@ -306,7 +312,7 @@ def query_dollar_bars(
     teste, `lake.capacity_symbol_dir` com um wrapper que só redireciona
     `source="dollar_bars_r1"`) — mesmo padrão já usado em
     `tests/unit/test_features_sources.py::metrics_dir`."""
-    files = _list_files_in_range("dollar_bars_r1", symbol, start, end)
+    files = _list_files_in_range(f"dollar_bars_{resolution_id.lower()}", symbol, start, end)
     start_ms, end_ms = _day_bounds_ms(start, end)
     return _read_files(
         files,

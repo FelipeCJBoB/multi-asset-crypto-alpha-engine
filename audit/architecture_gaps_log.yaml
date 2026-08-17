@@ -4572,6 +4572,21 @@ entries:
       esta readaptação, registrado pra fechar quando o módulo ganhar o
       primeiro caller real (reintegração ao harness de M1, `AG-036`).
     status: "fechado parcialmente -- Gap 1 corrigido e confirmado (17 passed), Gaps 2/3 abertos como débito pré-existente"
+    addendum_primeiro_caller_real_2026_08_17: >
+      O "primeiro caller real" que a `resolution` acima previa chegou
+      nesta mesma sessão -- `_har_rv_forecast_var_dollar_bar`
+      (`src/analysis/volatility_comparison.py`, `AG-070`) religou
+      `fit_har_rv`/`predict_har_rv` ao harness de comparação. Verificado
+      (Agent `project_assurance` independente, revisão de AG-070):
+      `generate_anchored_walk_forward_splits` (`src/validation/
+      volatility_walkforward.py`) nunca produz `train_end_idx<=0` por
+      construção, então Gap 2 continua sem exploração possível via este
+      caller. Decisão consciente: Gaps 2/3 continuam ABERTOS, adiados de
+      novo -- não corrigidos nesta leva (fora do escopo aprovado da
+      remediação de M1, que é religar candidatos, não endurecer contratos
+      de função já existentes sem caller que os quebre). Registrar aqui
+      em vez de abrir AG-074 nova, por instrução do revisor independente
+      (não duplicar achado já rastreado).
 
   - id: AG-063
     date: "2026-08-17"
@@ -4760,3 +4775,248 @@ entries:
       como novo candidato líder só sob dollar bar?) é do Manager -- não
       implementada aqui.
     status: "aberto -- achado real registrado, decisão do Manager sobre o que fazer com ele"
+
+  - id: AG-066
+    date: "2026-08-17"
+    file: "src/monitoring/dollar_bar_drift.py"
+    related_file: "src/data/build_dollar_bars.py::CALIBRATION_TF_BY_RESOLUTION, AG-042 (item 2, alarme de deriva)"
+    found_by: "Agent Project Assurance (revisão independente), src/data/build_dollar_bars.py"
+    gap: >
+      `measure_new_window_drift` usava `_BASELINE_TF: Final[str] = "15m"`
+      hardcoded para derivar `target_n_bars` do baseline de `klines_1m`,
+      sem indexar por `baseline.resolution_id`. O próprio docstring do
+      módulo já documentava a dependência com `src.data.build_dollar_bars`
+      citando `_CALIBRATION_TF` -- nome que a generalização R1->R1/R2/R3
+      do mesmo dia (esta leva) renomeou para `CALIBRATION_TF_BY_RESOLUTION`
+      (dict indexado por resolução), exatamente porque o TF de calibração
+      deixou de ser único. `dollar_bar_drift.py` não tinha sido
+      atualizado -- para um baseline `resolution_id="R2"`(30m) ou
+      `"R3"`(1h), `measure_new_window_drift` calcularia
+      `new_window_threshold_usdt` usando o baseline de `klines_1m` em 15m
+      (TF errado), produzindo `drift_ratio` não comparável, sem levantar
+      erro. Os 12 testes existentes só cobriam `resolution_id="R1"`.
+    severity: "médio"
+    layer: "monitoring"
+    consequence: >
+      Hoje só existe `_calibration.json` real para R1 no disco e o módulo
+      só é invocado manualmente por operador -- impacto real zero até o
+      build de R2/R3 existir. Sem a correção, a 1ª chamada de
+      `measure_new_window_drift`/`main()` contra um baseline R2/R3
+      produziria `drift_ratio` silenciosamente errado (falso positivo ou
+      falso negativo do alarme).
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-17 -- `measure_new_window_drift` agora resolve
+      `baseline_tf = CALIBRATION_TF_BY_RESOLUTION[baseline.resolution_id]`
+      (importado de `build_dollar_bars`, não duplicado), com `ValueError`
+      explícito se `resolution_id` não for suportado. `_BASELINE_TF`/
+      `Final` (import agora não usado) removidos. Teste novo
+      parametrizado `test_measure_new_window_drift_resolution_id_usa_tf_certo`
+      (`R1`/`R2`/`R3`) + `test_measure_new_window_drift_resolution_id_invalido_levanta_erro`
+      em `tests/unit/test_monitoring_dollar_bar_drift.py`.
+    status: "fechado"
+
+  - id: AG-067
+    date: "2026-08-17"
+    file: "src/data/build_dollar_bars.py, src/data/schemas.py, src/data/lake.py"
+    related_file: "tools/diagnostics/measure_dollar_bar_duration_distribution.py (hardcode paralelo, _SOURCE_NAME='dollar_bars_r1')"
+    found_by: "Agent Project Assurance (revisão independente), src/data/build_dollar_bars.py"
+    gap: >
+      A convenção de nome `f"dollar_bars_{resolution_id.lower()}"` está
+      duplicada em 3 lugares independentes: `build_dollar_bars.
+      _source_name()`, `schemas._dollar_bars_schema()`, e o f-string
+      inline dentro de `lake.query_dollar_bars` (não pode chamar
+      `_source_name()` porque `build_dollar_bars.py` já importa `lake`
+      -- importar de volta criaria ciclo). Sem fonte única de verdade.
+    severity: "baixo"
+    layer: "data"
+    consequence: >
+      Se um dos 3 templates divergir por engano no futuro, o caminho de
+      leitura falha ALTO (`FileNotFoundError`/`KeyError` em
+      `capacity_symbol_dir`/`schemas.get_schema`), não silenciosamente --
+      verificado por leitura direta dessas 2 funções. Ainda assim, 3
+      pontos de manutenção manual sem teste que trave a consistência
+      entre eles.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- baixa prioridade dado que a falha é auditável (loud), não silenciosa; considerar 1 teste cruzado R1/R2/R3 numa leva futura"
+
+  - id: AG-068
+    date: "2026-08-17"
+    file: "src/data/lake.py::query_dollar_bars"
+    related_file: "src/data/build_dollar_bars.py::RESOLUTION_ID"
+    found_by: "Agent Project Assurance (revisão independente), src/data/build_dollar_bars.py"
+    gap: >
+      `lake.query_dollar_bars(..., resolution_id: str = "R1")` é um
+      literal `"R1"` independente de `build_dollar_bars.RESOLUTION_ID =
+      "R1"` -- os dois defaults coincidem hoje só porque foram escritos
+      iguais, sem mecanismo (import, constante compartilhada, teste) que
+      os mantenha sincronizados.
+    severity: "baixo"
+    layer: "data"
+    consequence: >
+      Impacto atual zero -- nenhum consumidor real encadeia os dois
+      defaults sem passar `resolution_id` explícito. Landmine latente se
+      `RESOLUTION_ID` mudar um dia sem lembrar de mudar o outro.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- baixa prioridade; considerar teste que trave a igualdade dos 2 defaults"
+
+  - id: AG-069
+    date: "2026-08-17"
+    file: "tests/unit/test_data_build_dollar_bars.py, tests/unit/test_data_schemas.py"
+    related_file: "revisão project_assurance de src/data/build_dollar_bars.py"
+    found_by: "Agent Project Assurance (revisão independente) -- claim REFUTADA por Claude após verificação direta"
+    gap: >
+      O Agent de `project_assurance` reportou divergência entre "29
+      passed local" (citado na Descrição de Produto) e sua contagem
+      estática de 36 itens coletados, sinalizando como MEDIUM ("meça
+      antes de afirmar"). Verificação direta (`uv run pytest
+      tests/unit/test_data_build_dollar_bars.py
+      tests/unit/test_data_schemas.py -v`, sem filtro de marker):
+      **36 passed**, exatamente os 36 itens que o Agent esperava. A causa
+      raiz do "29": a rodada original citada na Descrição de Produto tinha
+      sido feita com `-m "not integration"` (saída real: "29 passed, 7
+      deselected"), filtro que o Agent não foi informado que existia --
+      29+7=36 reconcilia exatamente. Não é um bug de código nem teste
+      quebrado -- era relato incompleto (faltou mencionar o filtro de
+      marker), não uma contagem defasada nem teste fantasma.
+    severity: "baixo"
+    layer: "data (verificação/CI) -- achado do revisor, não do código"
+    consequence: >
+      Nenhuma -- claim refutada após execução real. Registrado aqui só
+      para manter o padrão desta sessão de nunca aceitar nem descartar
+      silenciosamente um achado de `project_assurance` sem verificação
+      independente (mesmo padrão já usado para a divergência de "43
+      passed" em AG-064).
+    resolved_by_commit: null
+    resolution: "REFUTADA 2026-08-17 -- 36 passed confirmado via pytest real, sem regressão."
+    status: "fechado -- refutada"
+
+  - id: AG-070
+    date: "2026-08-17"
+    file: "src/analysis/volatility_comparison.py"
+    related_file: "src/analysis/attribution.py, src/execution/fill_simulator.py, src/analysis/m6_common_factor_hypothesis.py"
+    found_by: "Agent Project Assurance (revisão independente), src/analysis/volatility_comparison.py"
+    gap: >
+      `_har_rv_forecast_var_dollar_bar`/`_egarch_coupled_forecast_var_
+      dollar_bar` (glue code que religou HAR-RV/EGARCH-acoplado ao
+      harness dollar-bar) faziam `if fit is None: continue` sem nenhum
+      `logger.warning`, para cada fold onde `fit_har_rv`/`fit_acd`/
+      `fit_egarch_coupled` falha (dado insuficiente, MLE não converge).
+      Quebrava a convenção já estabelecida no próprio arquivo
+      (`folds_insuficientes*` logam antes de pular) e em 3 outros módulos
+      do repo. Herdado do código histórico deletado (`git show 50dd621`
+      já tinha o mesmo silêncio), não é regressão nova, mas o produtor
+      tinha nomeado "falha silenciosa" como critério de qualidade
+      prioritário desta leva e não tinha corrigido.
+    severity: "médio"
+    layer: "analysis"
+    consequence: >
+      Sem o log, `n_oos_obs`/`fold_win_rate`/`qlike_mean` de HAR-RV/
+      EGARCH-acoplado no relatório final caem organicamente quando um
+      fold falha, sem sinal de QUAL fold ou POR QUÊ. Risco metodológico
+      real: se um candidato só converge nos folds "fáceis", o QLIKE médio
+      fica com viés de seleção favorável, inflando uma comparação que
+      alimenta a decisão real do Manager sobre `canonical_volatility_
+      estimator` (AG-065).
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-17 -- as 2 funções ganharam parâmetros
+      `symbol`/`resolution_id` (context de log) e `logger.warning`
+      (`..._fold_sem_ajuste`/`..._fold_sem_ajuste_acd`/`..._fold_sem_ajuste_egarch`)
+      antes de cada `continue`, com `fold_id`/`train_end_idx` no payload.
+    status: "fechado"
+
+  - id: AG-071
+    date: "2026-08-17"
+    file: "src/analysis/volatility_comparison.py"
+    related_file: "AG-019 (isolamento de exceção por task), src/features/volatility_models.py, src/features/acd.py"
+    found_by: "Agent Project Assurance (revisão independente), src/analysis/volatility_comparison.py"
+    gap: >
+      Nenhum `future.result()` em todo o repo passa `timeout=`, e
+      `scipy.optimize.minimize` (L-BFGS-B, usado por `fit_acd`/
+      `fit_egarch_coupled`) só limita ITERAÇÕES (`maxiter=200`), não
+      tempo de parede. `AG-019` já endureceu isolamento de EXCEÇÃO por
+      task dentro de `ProcessPoolExecutor`, mas nunca endereçou HANG de
+      task. A religação de HAR-RV/EGARCH-acoplado ao harness dollar-bar
+      (esta leva) aumenta a exposição real: antes, as combinações por
+      task eram só fórmula fechada (barata); agora cada task pode rodar
+      até 2×(12-20 folds) otimizações MLE não vetorizadas em cascata
+      (ACD + EGARCH-acoplado).
+    severity: "médio"
+    layer: "analysis/ops"
+    consequence: >
+      Se uma task travar (contenção de OS/memória, não necessariamente
+      bug do otimizador), `as_completed()` bloqueia indefinidamente
+      esperando ela, e a rodada inteira (até 15 combinações × 2
+      candidatos MLE-pesados) trava sem sinal de qual task travou nem
+      kill-switch. Projeto já tem histórico real desta classe de problema
+      (AG-019: "16h+ travamento e OOM 3x nesta sessão").
+    resolved_by_commit: null
+    resolution: >
+      NÃO corrigido nesta leva -- é uma decisão de arquitetura real (que
+      timeout? matar o processo do worker deixa estado órfão do
+      `ProcessPoolExecutor`? skip-e-alerta ou aborta a rodada inteira?),
+      fora do escopo aprovado desta remediação de M1. Registrado pra
+      decisão do Manager antes da rodada real de R2/R3 em escala (Fase 2
+      do plano aprovado 2026-08-17) -- se a rodada real travar, este é o
+      motivo mais provável a investigar primeiro.
+    status: "aberto -- aguarda decisão do Manager sobre mecanismo de timeout/kill"
+
+  - id: AG-072
+    date: "2026-08-17"
+    file: "tests/unit/test_analysis_volatility_comparison.py"
+    related_file: "src/analysis/volatility_comparison.py"
+    found_by: "Agent Project Assurance (revisão independente), src/analysis/volatility_comparison.py"
+    gap: >
+      `test_har_rv_forecast_var_dollar_bar_fold_usa_so_o_proprio_treino`/
+      o análogo de EGARCH perturbavam dado só a partir de
+      `splits[-1].test_start_idx` e checavam só o fold 0 -- provam
+      ausência de vazamento 1º-vs-último fold, não vazamento
+      fold-ADJACENTE (ex. fold `i` usando `splits[i+1].train_end_idx` por
+      engano). Risco de exploração baixo (o loop real é `for split in
+      splits:` com acesso direto de atributo, sem indexação manual onde
+      esse off-by-one se esconderia), mas a alegação de "no-leakage" era
+      mais forte do que o que o teste de fato provava.
+    severity: "baixo"
+    layer: "analysis (testes)"
+    consequence: >
+      Uma regressão futura que introduzisse indexação manual no loop de
+      folds (ex. numa refatoração pra paralelizar folds) poderia
+      introduzir vazamento fold-adjacente sem que a suíte pegasse.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-17 -- novo teste
+      `test_har_rv_forecast_var_dollar_bar_fold_adjacente_nao_vaza`
+      perturba a partir de `splits[1].test_start_idx` (início da região
+      de teste do 2º fold, ainda fora do treino do 1º) e confirma que o
+      forecast do 1º fold continua intocado -- cobre especificamente o
+      caso "vazamento de 1 fold à frente" que os testes anteriores não
+      alcançavam.
+    status: "fechado"
+
+  - id: AG-073
+    date: "2026-08-17"
+    file: "src/analysis/volatility_comparison.py"
+    related_file: "src/features/volatility.py, experiments/volatility_comparison_report.json (commit 2410bc1, histórico)"
+    found_by: "Agent Project Assurance (revisão independente), src/analysis/volatility_comparison.py"
+    gap: >
+      `estimator_id` dos 2 candidatos fold-aware novos é string fixa sem
+      sufixo (`"har_rv"`, `"egarch_coupled"`), ao contrário dos 6
+      estimadores de fórmula fechada (`f"parkinson_w{window}"` etc.). Sem
+      colisão de fato hoje (grades de tempo/dollar-bar em arquivos JSON
+      distintos, `CombinationResult.tf` desambigua dentro de cada
+      arquivo), mas o artefato histórico congelado
+      `experiments/volatility_comparison_report.json` (commit `2410bc1`)
+      já contém um `"har_rv"`/`"egarch"` com semântica DIFERENTE
+      (bar-count, não causal por `close_time` real).
+    severity: "baixo"
+    layer: "analysis"
+    consequence: >
+      Risco adiado -- só se materializa se um script futuro agregar
+      `estimator_id` através de múltiplos arquivos `experiments/*.json`
+      sem também chavear por arquivo/`tf`/`resolution_id`.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- baixa prioridade; nenhuma ferramenta de agregação cross-relatório existe ainda"

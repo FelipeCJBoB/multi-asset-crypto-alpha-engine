@@ -109,7 +109,7 @@ AGG_TRADES = DatasetSchema(
     grid_step_ms=None,  # trades são event-driven — sem grade fixa
 )
 
-_DOLLAR_BARS_R1_COLUMNS: dict[str, type[pl.DataType]] = {
+_DOLLAR_BARS_COLUMNS: dict[str, type[pl.DataType]] = {
     "open_time": pl.Int64,
     "close_time": pl.Int64,
     "open": pl.Float64,
@@ -123,21 +123,34 @@ _DOLLAR_BARS_R1_COLUMNS: dict[str, type[pl.DataType]] = {
     "taker_buy_quote_volume": pl.Float64,
 }
 
-DOLLAR_BARS_R1 = DatasetSchema(
-    name="dollar_bars_r1",
-    columns=dict(_DOLLAR_BARS_R1_COLUMNS),
-    primary_key=("open_time",),
-    # `close_time`, não `open_time` — usado tanto pra particionar por dia
-    # calendário quanto pro filtro de range em `lake.query_dollar_bars`
-    # (mesmo campo usado por `src.data.build_dollar_bars.
-    # write_dollar_bars_and_calibration` pra decidir o arquivo do dia).
-    timestamp_column="close_time",
-    timestamp_unit="ms_epoch",
-    non_nullable=tuple(_DOLLAR_BARS_R1_COLUMNS),
-    # event-driven (barra calibrada por threshold de $, não relógio) —
-    # mesmo motivo de AGG_TRADES.
-    grid_step_ms=None,
-)
+
+def _dollar_bars_schema(resolution_id: str) -> DatasetSchema:
+    """Schema idêntico pras 3 resoluções de dollar bar (`R1`/`R2`/`R3`,
+    `AG-042`) — só o `name`/dataset em disco muda
+    (`data/capacity/dollar_bars_{r1,r2,r3}/{symbol}/*.parquet`), colunas e
+    invariantes de timestamp são os mesmos porque a MECÂNICA de
+    construção da barra (`src.data.bars.dollar_bars_carry`) não muda com
+    o threshold calibrado, só o `resolution_id`/`threshold_usdt`."""
+    return DatasetSchema(
+        name=f"dollar_bars_{resolution_id.lower()}",
+        columns=dict(_DOLLAR_BARS_COLUMNS),
+        primary_key=("open_time",),
+        # `close_time`, não `open_time` — usado tanto pra particionar por dia
+        # calendário quanto pro filtro de range em `lake.query_dollar_bars`
+        # (mesmo campo usado por `src.data.build_dollar_bars.
+        # write_dollar_bars_and_calibration` pra decidir o arquivo do dia).
+        timestamp_column="close_time",
+        timestamp_unit="ms_epoch",
+        non_nullable=tuple(_DOLLAR_BARS_COLUMNS),
+        # event-driven (barra calibrada por threshold de $, não relógio) —
+        # mesmo motivo de AGG_TRADES.
+        grid_step_ms=None,
+    )
+
+
+DOLLAR_BARS_R1 = _dollar_bars_schema("R1")
+DOLLAR_BARS_R2 = _dollar_bars_schema("R2")
+DOLLAR_BARS_R3 = _dollar_bars_schema("R3")
 
 METRICS = DatasetSchema(
     name="metrics",
@@ -188,6 +201,8 @@ REGISTRY: dict[str, DatasetSchema] = {
         PREMIUM_INDEX_KLINES_1M,
         AGG_TRADES,
         DOLLAR_BARS_R1,
+        DOLLAR_BARS_R2,
+        DOLLAR_BARS_R3,
         METRICS,
         FUNDING,
     )

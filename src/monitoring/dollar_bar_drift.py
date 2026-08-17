@@ -37,9 +37,14 @@ impede. Por isso `measure_new_window_drift` abaixo importa
 `src.data._chunked_scan` diretamente (`date_chunks`/`scan_trades_totals`/
 `query_baseline`/`target_n_bars`) — MESMA fórmula de `src.data.
 build_dollar_bars.calibrate_dollar_threshold_for_validation`
-(`threshold_usdt = total_dollar/target_n_bars`, baseline de `klines_1m` em
-`tf="15m"`), não reimplementada às cegas: é o mesmo cálculo de uma linha,
-citado aqui explicitamente para que uma mudança de fórmula em
+(`threshold_usdt = total_dollar/target_n_bars`, baseline de `klines_1m` no
+TF de calibração de `baseline.resolution_id` —
+`CALIBRATION_TF_BY_RESOLUTION`, IMPORTADO de `src.data.build_dollar_bars`,
+não duplicado — corrigido em 2026-08-17, achado `project_assurance`
+AG-066: a leva anterior desta generalização tinha um `_BASELINE_TF="15m"`
+fixo aqui, desatualizado desde que `build_dollar_bars` deixou de ter um
+único TF de calibração), não reimplementada às cegas: é o mesmo cálculo de
+uma linha, citado aqui explicitamente para que uma mudança de fórmula em
 `calibrate_dollar_threshold_for_validation` saiba que precisa atualizar
 este módulo também (o motivo de não chamar aquela função diretamente é que
 ela descarta `total_dollar` depois de calcular `threshold_usdt` — este
@@ -69,26 +74,17 @@ import argparse
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import orjson
 import structlog
 
 from src.data import _chunked_scan
-from src.data.build_dollar_bars import DollarBarCalibration
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION, DollarBarCalibration
 
 from ._constants import load_constant
 
 logger = structlog.get_logger(__name__)
-
-#: `tf` de calibração usada para o baseline de `klines_1m` que deriva
-#: `target_n_bars` — precisa ser a MESMA que `src.data.build_dollar_bars.
-#: calibrate_dollar_threshold_for_validation` usa internamente (lá,
-#: `_CALIBRATION_TF`, privada ao módulo, não importável daqui) para que
-#: `new_window_threshold_usdt` seja comparável ao `threshold_usdt` do
-#: baseline: mesma fórmula, mesmo baseline de klines_1m, única variável
-#: sendo a janela.
-_BASELINE_TF: Final[str] = "15m"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,11 +210,22 @@ def measure_new_window_drift(
     `_chunked_scan.date_chunks`/`scan_trades_totals`/`query_baseline`/
     `target_n_bars` diretamente em vez de chamar `calibrate_dollar_
     threshold_for_validation` — ver docstring do módulo (aquela função
-    descarta `total_dollar`, este módulo precisa dele)."""
+    descarta `total_dollar`, este módulo precisa dele).
+
+    TF de calibração resolvido por `baseline.resolution_id` via
+    `CALIBRATION_TF_BY_RESOLUTION` (`"R1"`→`"15m"`/`"R2"`→`"30m"`/
+    `"R3"`→`"1h"`) — nunca fixo, senão um baseline R2/R3 seria comparado
+    contra um `target_n_bars` calculado no TF errado (`AG-066`)."""
+    if baseline.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+        raise ValueError(
+            f"baseline.resolution_id={baseline.resolution_id!r} não suportado -- esperado "
+            f"um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+        )
+    baseline_tf = CALIBRATION_TF_BY_RESOLUTION[baseline.resolution_id]
     chunk_days = int(load_constant("bars_streaming_chunk_days"))
     chunks = _chunked_scan.date_chunks(new_window_start, new_window_end, chunk_days=chunk_days)
 
-    totals = _chunked_scan.scan_trades_totals(baseline.symbol, _BASELINE_TF, chunks)
+    totals = _chunked_scan.scan_trades_totals(baseline.symbol, baseline_tf, chunks)
     if totals.n_ticks == 0:
         raise ValueError(
             f"aggTrades vazio para {baseline.symbol} na janela nova "
@@ -226,11 +233,11 @@ def measure_new_window_drift(
         )
 
     baseline_klines = _chunked_scan.query_baseline(
-        baseline.symbol, _BASELINE_TF, start=new_window_start, end=new_window_end
+        baseline.symbol, baseline_tf, start=new_window_start, end=new_window_end
     )
     n_bars = _chunked_scan.target_n_bars(
         baseline.symbol,
-        _BASELINE_TF,
+        baseline_tf,
         baseline_klines,
         start=new_window_start,
         end=new_window_end,

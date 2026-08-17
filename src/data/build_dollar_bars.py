@@ -14,11 +14,12 @@ inteiro em escala.
 **Escopo desta leva, explícito (autocrítica registrada em sessão, não
 decisão silenciosa):**
 
-1. **1 resolução só, `"R1"`** — equivalente ao antigo baseline de 15m de M2
-   (`m2_worker.RESOLUTION_ID_BY_TF["15m"] == "R1"`, duplicado aqui como
-   `_CALIBRATION_TF`/`RESOLUTION_ID` porque `src.data` não pode importar
-   `src.analysis`). `"R2"`/`"R3"` (30m/1h) ficam fora — não pedidos nesta
-   leva.
+1. **3 resoluções, `"R1"`/`"R2"`/`"R3"`** — equivalentes aos antigos
+   baselines de 15m/30m/1h de M2 (`m2_worker.RESOLUTION_ID_BY_TF`,
+   duplicado aqui como `CALIBRATION_TF_BY_RESOLUTION` porque `src.data`
+   não pode importar `src.analysis`). Remediação de M1 (`AG-036`) exige
+   as 3, não só R1 — R2/R3 adicionadas em 2026-08-17 (histórico: só R1
+   existia até então, ver `git log -- src/data/build_dollar_bars.py`).
 2. **`calibration_scope` é sempre `"validation"`, NUNCA `"frozen_
    production"`.** O threshold é calibrado sobre a MESMA janela sendo
    validada — decidir uma calibração congelada pra produção real (que
@@ -63,20 +64,34 @@ from ._paths import CAPACITY_DIR
 
 logger = structlog.get_logger(__name__)
 
-#: Único par (resolution_id, tf de calibração) suportado nesta leva --
-#: equivalente a `m2_worker.RESOLUTION_ID_BY_TF["15m"] == "R1"`, duplicado
-#: aqui (não importado) porque `src.data` não pode importar `src.analysis`
+#: Resoluções suportadas de dollar bar, mapeadas ao TF de calibração --
+#: equivalente a `m2_worker.RESOLUTION_ID_BY_TF` invertido, duplicado aqui
+#: (não importado) porque `src.data` não pode importar `src.analysis`
 #: (contrato `importlinter` "data não importa analysis").
+CALIBRATION_TF_BY_RESOLUTION: Final[dict[str, str]] = {
+    "R1": "15m",
+    "R2": "30m",
+    "R3": "1h",
+}
+
+#: Resolução default pros callers que não passam `resolution_id`
+#: explicitamente -- mantido por compatibilidade (import existente em
+#: `src.analysis.volatility_comparison`).
 RESOLUTION_ID: Final[str] = "R1"
-_CALIBRATION_TF: Final[str] = "15m"
 
 #: `DollarBarCalibration.calibration_scope` -- ver docstring do módulo,
 #: item 2. O único valor que este módulo escreve; `"frozen_production"`
 #: nunca aparece aqui (decisão de negócio não tomada, AG-042 itens 2/3).
 CALIBRATION_SCOPE_VALIDATION: Final[str] = "validation"
 
-_SOURCE_NAME: Final[str] = "dollar_bars_r1"
 _CALIBRATION_FILENAME: Final[str] = "_calibration.json"
+
+
+def _source_name(resolution_id: str) -> str:
+    """`dollar_bars_r1`/`dollar_bars_r2`/`dollar_bars_r3` -- nome do
+    dataset em `data/capacity/{name}/{symbol}/*.parquet`, um por
+    resolução (mesmo padrão de `schemas._dollar_bars_schema`)."""
+    return f"dollar_bars_{resolution_id.lower()}"
 
 # Epsilon de comparação float pra guarda de calibração divergente (não é
 # constante de domínio -- mesma classe de `src.labels.triple_barrier.
@@ -105,7 +120,7 @@ class DollarBarCalibration:
     `calibrate_dollar_threshold_for_validation` -- sempre popula)."""
 
     symbol: str
-    resolution_id: str  # sempre "R1" nesta leva (RESOLUTION_ID)
+    resolution_id: str  # "R1"/"R2"/"R3" -- ver CALIBRATION_TF_BY_RESOLUTION
     threshold_usdt: float
     calibration_scope: str  # sempre "validation" aqui -- NUNCA "frozen_production"
     calibration_window_start: str
@@ -116,27 +131,34 @@ class DollarBarCalibration:
 
 
 def calibrate_dollar_threshold_for_validation(
-    symbol: str, start: str, end: str
+    symbol: str, start: str, end: str, *, resolution_id: str = RESOLUTION_ID
 ) -> DollarBarCalibration:
     """Calibra `threshold_usdt` pra `[start, end]` -- MESMA fórmula que
     `src.analysis.m2_worker.compute_trades_dependent_bars_for_symbol_tf`
     usa (`threshold = totals.total_dollar / target_n_bars`, baseline de
-    `klines_1m` em `tf="15m"` pro `target_n_bars`), reusando as funções
-    movidas de lá em 2026-08-16 (`src.data._chunked_scan`) -- não
+    `klines_1m` no TF de calibração de `resolution_id` --
+    `CALIBRATION_TF_BY_RESOLUTION` -- pro `target_n_bars`), reusando as
+    funções movidas de lá em 2026-08-16 (`src.data._chunked_scan`) -- não
     reimplementada. `calibration_scope` sai sempre `"validation"` (ver
     docstring do módulo)."""
+    if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+        raise ValueError(
+            f"resolution_id={resolution_id!r} não suportado -- esperado um de "
+            f"{sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+        )
+    calibration_tf = CALIBRATION_TF_BY_RESOLUTION[resolution_id]
     chunk_days = int(load_constant("bars_streaming_chunk_days"))
     chunks = _chunked_scan.date_chunks(start, end, chunk_days=chunk_days)
 
-    totals = _chunked_scan.scan_trades_totals(symbol, _CALIBRATION_TF, chunks)
+    totals = _chunked_scan.scan_trades_totals(symbol, calibration_tf, chunks)
     if totals.n_ticks == 0:
         raise ValueError(
             f"aggTrades vazio para {symbol} no período {start}..{end} -- não dá pra "
             "calibrar dollar bar de validação sem trades"
         )
 
-    baseline = _chunked_scan.query_baseline(symbol, _CALIBRATION_TF, start=start, end=end)
-    n_bars = _chunked_scan.target_n_bars(symbol, _CALIBRATION_TF, baseline, start=start, end=end)
+    baseline = _chunked_scan.query_baseline(symbol, calibration_tf, start=start, end=end)
+    n_bars = _chunked_scan.target_n_bars(symbol, calibration_tf, baseline, start=start, end=end)
     threshold_usdt = totals.total_dollar / n_bars  # noqa: unguarded-ratio -- target_n_bars levanta ValueError se <=0
 
     # Mesma fórmula/constante de `m2_worker._max_leftover_trades` -- ver
@@ -154,7 +176,7 @@ def calibrate_dollar_threshold_for_validation(
 
     calibration = DollarBarCalibration(
         symbol=symbol,
-        resolution_id=RESOLUTION_ID,
+        resolution_id=resolution_id,
         threshold_usdt=threshold_usdt,
         calibration_scope=CALIBRATION_SCOPE_VALIDATION,
         calibration_window_start=start,
@@ -166,6 +188,7 @@ def calibrate_dollar_threshold_for_validation(
     logger.info(
         "data.build_dollar_bars.calibrated",
         symbol=symbol,
+        resolution_id=resolution_id,
         start=start,
         end=end,
         threshold_usdt=threshold_usdt,
@@ -328,7 +351,7 @@ def write_dollar_bars_and_calibration(
     e escrever) -- aceitável pelo mesmo motivo, não seguro pra execução
     paralela do mesmo símbolo."""
     root = dest_root if dest_root is not None else CAPACITY_DIR
-    symbol_dir = root / _SOURCE_NAME / calibration.symbol
+    symbol_dir = root / _source_name(calibration.resolution_id) / calibration.symbol
     calibration_path = symbol_dir / _CALIBRATION_FILENAME
 
     if overwrite and symbol_dir.is_dir():
@@ -378,7 +401,7 @@ def write_dollar_bars_and_calibration(
 def _parse_cli_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Runner de VALIDAÇÃO de dollar bar canônico (R1) -- calibra sobre a "
+            "Runner de VALIDAÇÃO de dollar bar canônico -- calibra sobre a "
             "própria janela, constrói, escreve. NÃO é a decisão de calibração "
             "congelada de produção (AG-042 itens 2/3 continuam deferidos); NÃO "
             "prova validade estatística (AG-043 continua pendente) -- ver "
@@ -390,9 +413,15 @@ def _parse_cli_args() -> argparse.Namespace:
     parser.add_argument("--start", required=True, help="ISO date, ex. 2026-07-01")
     parser.add_argument("--end", required=True, help="ISO date, ex. 2026-07-07")
     parser.add_argument(
+        "--resolution",
+        default=RESOLUTION_ID,
+        choices=sorted(CALIBRATION_TF_BY_RESOLUTION),
+        help="resolution_id da grade dollar-bar -- R1=15m/R2=30m/R3=1h (AG-042)",
+    )
+    parser.add_argument(
         "--dest-root",
         default=None,
-        help="default: data/capacity/ (CAPACITY_DIR) -- diretório-raiz de dollar_bars_r1/",
+        help="default: data/capacity/ (CAPACITY_DIR) -- diretório-raiz de dollar_bars_{r1,r2,r3}/",
     )
     parser.add_argument(
         "--overwrite",
@@ -412,7 +441,9 @@ def main() -> None:
     args = _parse_cli_args()
     dest_root = Path(args.dest_root) if args.dest_root is not None else None
 
-    calibration = calibrate_dollar_threshold_for_validation(args.symbol, args.start, args.end)
+    calibration = calibrate_dollar_threshold_for_validation(
+        args.symbol, args.start, args.end, resolution_id=args.resolution
+    )
     bars_df = build_dollar_bars_for_window(
         args.symbol,
         args.start,
@@ -427,6 +458,7 @@ def main() -> None:
     logger.info(
         "data.build_dollar_bars.done",
         symbol=args.symbol,
+        resolution_id=args.resolution,
         start=args.start,
         end=args.end,
         n_bars=bars_df.height,

@@ -81,3 +81,42 @@ def test_funding_grid_step_e_none_por_design() -> None:
 
 def test_agg_trades_grid_step_e_none_por_ser_event_driven() -> None:
     assert schemas.AGG_TRADES.grid_step_ms is None
+
+
+# ============================================================================
+# DOLLAR_BARS_R1/R2/R3 -- remediação completa de M1 (AG-036, 2026-08-17):
+# mesmo schema pras 3 resoluções, só o dataset name muda.
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("resolution_id", "schema", "expected_name"),
+    [
+        ("R1", schemas.DOLLAR_BARS_R1, "dollar_bars_r1"),
+        ("R2", schemas.DOLLAR_BARS_R2, "dollar_bars_r2"),
+        ("R3", schemas.DOLLAR_BARS_R3, "dollar_bars_r3"),
+    ],
+)
+def test_dollar_bars_schema_por_resolucao_tem_nome_certo(
+    resolution_id: str, schema: schemas.DatasetSchema, expected_name: str
+) -> None:
+    assert schema.name == expected_name
+    assert schema.timestamp_column == "close_time"
+    assert schema.grid_step_ms is None
+
+
+def test_dollar_bars_schema_r2_r3_tem_mesmas_colunas_que_r1() -> None:
+    # a MECÂNICA de construção da barra não muda com o threshold calibrado
+    # (só resolution_id/threshold_usdt mudam) -- as 3 resoluções precisam
+    # ser estruturalmente idênticas, exceto o nome do dataset.
+    assert schemas.DOLLAR_BARS_R2.columns == schemas.DOLLAR_BARS_R1.columns
+    assert schemas.DOLLAR_BARS_R3.columns == schemas.DOLLAR_BARS_R1.columns
+    assert schemas.DOLLAR_BARS_R2.primary_key == schemas.DOLLAR_BARS_R1.primary_key
+    assert schemas.DOLLAR_BARS_R2.non_nullable == schemas.DOLLAR_BARS_R1.non_nullable
+
+
+@pytest.mark.parametrize(
+    "name", ["dollar_bars_r1", "dollar_bars_r2", "dollar_bars_r3"]
+)
+def test_get_schema_registry_tem_as_3_resolucoes(name: str) -> None:
+    assert schemas.get_schema(name).name == name

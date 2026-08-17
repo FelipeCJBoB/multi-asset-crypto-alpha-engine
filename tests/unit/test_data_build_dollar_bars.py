@@ -344,6 +344,89 @@ def test_calibrate_dollar_threshold_for_validation_sem_trades_levanta_erro(
         )
 
 
+# ============================================================================
+# resolution_id R2/R3 -- remediação completa de M1 (AG-036, 2026-08-17):
+# mesma matemática de calibração de R1, só o TF de baseline muda
+# (CALIBRATION_TF_BY_RESOLUTION), não precisa de dado real pra provar isso.
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("resolution_id", "expected_tf"), [("R1", "15m"), ("R2", "30m"), ("R3", "1h")]
+)
+def test_calibrate_dollar_threshold_for_validation_resolution_id_usa_tf_certo(
+    monkeypatch: pytest.MonkeyPatch, resolution_id: str, expected_tf: str
+) -> None:
+    seen_tfs: list[str] = []
+
+    def _fake_query_bars(
+        symbol: str,
+        tf: str,
+        start: object,
+        end: object,
+        *,
+        source: str,
+        cast_prices: bool,
+        **_: object,
+    ) -> pl.DataFrame:
+        seen_tfs.append(tf)
+        return pl.DataFrame({"close": [1.0] * 10, "close_time": list(range(10))})
+
+    def _fake_query_agg_trades(
+        symbol: str, start: object, end: object, **_: object
+    ) -> pl.DataFrame:
+        return _trades(5, price=100.0, quantity=1.0)  # total_dollar = 500.0
+
+    monkeypatch.setattr(lake, "query_bars", _fake_query_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", _fake_query_agg_trades)
+
+    calibration = build_dollar_bars.calibrate_dollar_threshold_for_validation(
+        "BTCUSDT", "2024-01-01", "2024-01-01", resolution_id=resolution_id
+    )
+
+    assert calibration.resolution_id == resolution_id
+    assert calibration.threshold_usdt == pytest.approx(50.0)  # 500.0 / 10 barras baseline
+    # confirma que o TF de calibração passado a query_bars é o certo pra
+    # essa resolução -- não só que o campo resolution_id "de saída" bate
+    # (isso não provaria que a calibração em si usou o baseline certo)
+    assert all(tf == expected_tf for tf in seen_tfs)
+
+
+def test_calibrate_dollar_threshold_for_validation_resolution_id_invalido_levanta_erro() -> None:
+    with pytest.raises(ValueError, match="resolution_id"):
+        build_dollar_bars.calibrate_dollar_threshold_for_validation(
+            "BTCUSDT", "2024-01-01", "2024-01-01", resolution_id="R4"
+        )
+
+
+def test_write_dollar_bars_and_calibration_resolution_id_r2_escreve_em_diretorio_proprio(
+    tmp_path: Path,
+) -> None:
+    bars_df = _synthetic_bars(close_time=[_DAY1_MS + 3_600_000])
+    calibration = build_dollar_bars.DollarBarCalibration(
+        symbol="BTCUSDT",
+        resolution_id="R2",
+        threshold_usdt=1_000_000.0,
+        calibration_scope="validation",
+        calibration_window_start="2024-01-01",
+        calibration_window_end="2024-01-02",
+        n_trades=1_000,
+        calibrated_at="2024-01-01T00:00:00+00:00",
+    )
+
+    written = build_dollar_bars.write_dollar_bars_and_calibration(
+        bars_df, calibration, dest_root=tmp_path
+    )
+
+    symbol_dir = tmp_path / "dollar_bars_r2" / "BTCUSDT"
+    assert written["2024-01-01"] == symbol_dir / "2024-01-01.parquet"
+    assert (symbol_dir / "2024-01-01.parquet").exists()
+    # confirma que NÃO vazou pro diretório de R1 -- resoluções diferentes
+    # nunca compartilham diretório, senão barras de thresholds diferentes
+    # se misturariam silenciosamente na mesma leitura
+    assert not (tmp_path / "dollar_bars_r1" / "BTCUSDT").exists()
+
+
 def test_build_dollar_bars_for_window(monkeypatch: pytest.MonkeyPatch) -> None:
     # value = price*quantity = 50 por trade; cumsum=[50,100,150,200];
     # threshold=100 -> bar_id=[0,1,1,2] -> 3 barras (mesma matemática de
@@ -394,6 +477,44 @@ def test_query_dollar_bars_range_fora_de_cobertura_retorna_vazio(
     )
     out = lake.query_dollar_bars("BTCUSDT", "1900-01-01", "1900-01-02")
     assert out.height == 0
+
+
+def test_query_dollar_bars_resolution_id_r2_le_diretorio_proprio_nao_r1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resolution_id` default `"R1"` preserva bit-exato todo caller
+    existente (testes acima, sem o argumento) -- este trava que passar
+    `"R2"` explicitamente lê de `dollar_bars_r2/`, não `dollar_bars_r1/`,
+    mesmo com as duas resoluções escritas no mesmo `tmp_path`."""
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+
+    r1_bars = _synthetic_bars(close_time=[_DAY1_MS + 3_600_000])
+    build_dollar_bars.write_dollar_bars_and_calibration(
+        r1_bars, _calibration(), dest_root=tmp_path
+    )
+    r2_bars = _synthetic_bars(
+        close_time=[_DAY1_MS + 3_600_000, _DAY1_MS + _DAY_MS + 3_600_000]
+    )
+    r2_calibration = build_dollar_bars.DollarBarCalibration(
+        symbol="BTCUSDT",
+        resolution_id="R2",
+        threshold_usdt=1_000_000.0,
+        calibration_scope="validation",
+        calibration_window_start="2024-01-01",
+        calibration_window_end="2024-01-02",
+        n_trades=1_000,
+        calibrated_at="2024-01-01T00:00:00+00:00",
+    )
+    build_dollar_bars.write_dollar_bars_and_calibration(
+        r2_bars, r2_calibration, dest_root=tmp_path
+    )
+
+    out_r1 = lake.query_dollar_bars("BTCUSDT", "2024-01-01", "2024-01-02")
+    out_r2 = lake.query_dollar_bars(
+        "BTCUSDT", "2024-01-01", "2024-01-02", resolution_id="R2"
+    )
+    assert out_r1.height == 1
+    assert out_r2.height == 2
 
 
 # ============================================================================

@@ -94,9 +94,11 @@ from numpy.typing import NDArray
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.build_dollar_bars import RESOLUTION_ID as DOLLAR_BAR_RESOLUTION_ID
 from src.data.lake import DateLike
 from src.features._constants import load_constant
+from src.features.acd import fit_acd, predict_acd
 from src.features.volatility import (
     ATRWilderEstimator,
     Bars,
@@ -107,12 +109,19 @@ from src.features.volatility import (
     VolatilityEstimator,
     YangZhangEstimator,
 )
+from src.features.volatility_models import (
+    fit_egarch_coupled,
+    fit_har_rv,
+    predict_egarch_coupled,
+    predict_har_rv,
+)
 from src.validation import volatility_walkforward as vwf
 from src.validation._constants import load_constant as load_validation_constant
 
 logger = structlog.get_logger(__name__)
 
 FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
@@ -122,14 +131,17 @@ EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
 # de candidatos contra um baseline diferente (GK), não é o mesmo
 # experimento regravado por cima.
 DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "volatility_rs_yz_vs_gk_report.json"
-# Nome distinto -- comparação sob grade DOLLAR-BAR (AG-036), candidatos
-# diferentes (RealizedVol/ATRWilder/Parkinson/RogersSatchell, sem
-# YangZhang) e resolução (não timeframe) -- não é o mesmo experimento.
-DEFAULT_REPORT_PATH_DOLLAR_BAR: Final[Path] = (
-    EXPERIMENTS_DIR / "volatility_dollar_bar_r1_report.json"
-)
+# Nome distinto -- comparação sob grade DOLLAR-BAR (AG-036), 6 candidatos
+# (RealizedVol/ATRWilder/Parkinson/RogersSatchell/HAR-RV/EGARCH-acoplado,
+# sem YangZhang) e resolução (não timeframe) -- não é o mesmo experimento.
+# Nome SEM sufixo "_r1_" -- desde a remediação completa de 2026-08-17
+# (AG-036) cobre as 3 resoluções (R1/R2/R3), não só R1; o artefato antigo
+# `volatility_dollar_bar_r1_report.json` (4 candidatos, só R1, AG-065)
+# fica no disco como registro histórico, não sobrescrito por este caminho.
+DEFAULT_REPORT_PATH_DOLLAR_BAR: Final[Path] = EXPERIMENTS_DIR / "volatility_dollar_bar_report.json"
 
 TIMEFRAMES: Final[tuple[str, ...]] = ("15m", "30m", "1h")
+DOLLAR_BAR_RESOLUTIONS: Final[tuple[str, ...]] = tuple(sorted(CALIBRATION_TF_BY_RESOLUTION))
 
 # Data disponível medida do disco (ver docstring do módulo) -- não é
 # constante de domínio (§16.10), é fato de cobertura de backfill.
@@ -456,24 +468,129 @@ def run_volatility_comparison_for_symbol_tf(
 
 
 def _candidate_estimators_dollar_bar(*, window: int) -> tuple[VolatilityEstimator, ...]:
-    """Candidatos ATIVOS sob grade dollar-bar -- 4 dos 5 sobreviventes de
-    fórmula fechada (`RealizedVol`/`ATRWilder`/`Parkinson`/`RogersSatchell`,
+    """Candidatos de fórmula fechada ATIVOS sob grade dollar-bar -- 4 dos 5
+    sobreviventes (`RealizedVol`/`ATRWilder`/`Parkinson`/`RogersSatchell`,
     todos readaptados, `AG-036`) contra o mesmo baseline (`GarmanKlass`,
     também readaptado, `_baseline_estimator` já é comum aos dois grades).
     `YangZhang` FICA DE FORA aqui deliberadamente -- ainda levanta
     `NotImplementedError` sob `resolution_id` (componente overnight,
-    `AG-043`), não é esquecimento. `HAR-RV`/`EGARCH acoplado`
-    (`src.features.volatility_models`) também ficam de fora -- interface
-    `fit`/`predict` fold-aware incompatível com o loop de comparação atual
-    (`estimate()` simples, uma passada só pela série inteira); reintegrá-los
-    exige extensão de arquitetura própria, registrada como pendência
-    separada em `AG-036`, não decidida nem implementada aqui."""
+    `AG-043`), não é esquecimento.
+
+    `HAR-RV`/`EGARCH acoplado` NÃO entram aqui -- não implementam o
+    Protocol `VolatilityEstimator` (`fit`/`predict` fold-aware, não
+    `estimate()` de fórmula fechada) -- ver
+    `_har_rv_forecast_var_dollar_bar`/`_egarch_coupled_forecast_var_
+    dollar_bar`, acrescentados separadamente em
+    `compare_estimators_for_combination_dollar_bar`."""
     return (
         RealizedVolEstimator(window=window),
         ATRWilderEstimator(window=window),
         ParkinsonEstimator(window=window),
         RogersSatchellEstimator(window=window),
     )
+
+
+def _har_rv_forecast_var_dollar_bar(
+    realized_var: FloatArray,
+    close_time: IntArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+    *,
+    symbol: str,
+    resolution_id: str,
+) -> FloatArray:
+    """HAR-RV é fold-aware -- ao contrário dos `VolatilityEstimator`
+    fechados (mesmo `estimate()` pra toda a série), cada fold reajusta os
+    coeficientes só sobre o próprio treino (`fit_har_rv`) antes de prever
+    a própria região de teste. Mesmo padrão do glue code histórico
+    (`git show 50dd621::_har_rv_forecast_var`), trocado pra API atual
+    (`close_time` real, causal, não `bars_per_day` -- ver docstring de
+    `src.features.volatility_models`, readaptação AG-036). Retorna NaN
+    fora da união dos `[test_start_idx, test_end_idx)` de todos os folds.
+
+    `fit is None` (dado insuficiente no treino do fold) loga
+    `logger.warning` e pula o fold -- achado `project_assurance`
+    (`AG-066`, 2026-08-17): a versão original silenciava isso, diferente
+    da convenção já usada no resto deste arquivo (`folds_insuficientes*`)
+    e em `attribution.py`/`fill_simulator.py`/
+    `m6_common_factor_hypothesis.py`. Sem isso, um viés de seleção
+    (candidato só converge nos folds "fáceis") ficaria invisível no
+    relatório final."""
+    n = realized_var.shape[0]
+    forecast_var = np.full(n, np.nan, dtype=np.float64)
+    for split in splits:
+        fit = fit_har_rv(realized_var, close_time=close_time, train_end_idx=split.train_end_idx)
+        if fit is None:
+            logger.warning(
+                "analysis.volatility_comparison.har_rv_fold_sem_ajuste",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                fold_id=split.fold_id,
+                train_end_idx=split.train_end_idx,
+            )
+            continue
+        pred = predict_har_rv(fit, realized_var, close_time=close_time)
+        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
+            split.test_start_idx : split.test_end_idx
+        ]
+    return forecast_var
+
+
+def _egarch_coupled_forecast_var_dollar_bar(
+    close: FloatArray,
+    close_time: IntArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+    *,
+    symbol: str,
+    resolution_id: str,
+) -> FloatArray:
+    """EGARCH(1,1) acoplado a ACD (`src.features.acd`), fold-aware, sob
+    dollar bar -- estágio em CASCATA por fold: `fit_acd`/`predict_acd`
+    primeiro (produz `psi` a partir das durações reais entre barras via
+    `close_time`), só então `fit_egarch_coupled` consome esse `psi`.
+    MESMO `train_end_idx` pros 2 estágios em cada fold -- ACD nunca vê
+    teste, sem vazamento entre estágios. `psi` recomputado por fold
+    (coeficientes de ACD mudam por fold, igual a `log_var`/EGARCH em si).
+    Mais caro que os candidatos fechados (2 otimizações MLE por fold, não
+    vetorizável) -- mesma ressalva de custo do EGARCH histórico
+    (`git show 50dd621::_egarch_forecast_var`).
+
+    `acd_fit`/`egarch_fit` `None` loga e pula o fold, mesma disciplina de
+    `_har_rv_forecast_var_dollar_bar` (`AG-066`)."""
+    n = close.shape[0]
+    log_return: FloatArray = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_return[1:] = np.log(
+                close[1:] / close[:-1]  # noqa: unguarded-ratio -- preço real, sempre >0 por construção
+            )
+    forecast_var = np.full(n, np.nan, dtype=np.float64)
+    for split in splits:
+        acd_fit = fit_acd(close_time, train_end_idx=split.train_end_idx)
+        if acd_fit is None:
+            logger.warning(
+                "analysis.volatility_comparison.egarch_coupled_fold_sem_ajuste_acd",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                fold_id=split.fold_id,
+                train_end_idx=split.train_end_idx,
+            )
+            continue
+        psi = predict_acd(acd_fit, close_time)
+        egarch_fit = fit_egarch_coupled(log_return, psi, train_end_idx=split.train_end_idx)
+        if egarch_fit is None:
+            logger.warning(
+                "analysis.volatility_comparison.egarch_coupled_fold_sem_ajuste_egarch",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                fold_id=split.fold_id,
+                train_end_idx=split.train_end_idx,
+            )
+            continue
+        pred = predict_egarch_coupled(egarch_fit, log_return, psi)
+        forecast_var[split.test_start_idx : split.test_end_idx] = pred[
+            split.test_start_idx : split.test_end_idx
+        ]
+    return forecast_var
 
 
 def compare_estimators_for_combination_dollar_bar(
@@ -501,6 +618,12 @@ def compare_estimators_for_combination_dollar_bar(
     volatility`), o valor literal não tem efeito, só precisa existir pra
     bater a assinatura de `VolatilityEstimator.estimate()`.
 
+    **6 candidatos no total** (`AG-036`, remediação completa 2026-08-17):
+    os 4 de fórmula fechada de `_candidate_estimators_dollar_bar` +
+    `har_rv`/`egarch_coupled` (fold-aware, acrescentados manualmente logo
+    abaixo porque não implementam o Protocol `VolatilityEstimator`) --
+    `YangZhang` continua fora (AG-043, estrutural).
+
     `result.tf` carrega `resolution_id` (ex. `"R1"`) -- reusa o campo de
     string existente de `CombinationResult` em vez de mudar o schema pra
     um único caso de uso novo; mesma ontologia já formalizada em `AG-042`
@@ -523,6 +646,7 @@ def compare_estimators_for_combination_dollar_bar(
     oos_start, oos_end = _oos_slice(splits)
     bars = Bars(frame=bars_df, resolution_id=resolution_id)
     close = bars_df["close"].cast(pl.Float64).to_numpy()
+    close_time = bars_df["close_time"].cast(pl.Int64).to_numpy()
     realized_var = vwf.next_bar_realized_variance(close)
 
     baseline = _baseline_estimator(window=candidate_window)
@@ -542,6 +666,22 @@ def compare_estimators_for_combination_dollar_bar(
         (estimator.estimator_id, _forecast_var(estimator, bars, horizon_minutes=0))
         for estimator in _candidate_estimators_dollar_bar(window=candidate_window)
     ]
+    candidate_forecasts.append(
+        (
+            "har_rv",
+            _har_rv_forecast_var_dollar_bar(
+                realized_var, close_time, splits, symbol=symbol, resolution_id=resolution_id
+            ),
+        )
+    )
+    candidate_forecasts.append(
+        (
+            "egarch_coupled",
+            _egarch_coupled_forecast_var_dollar_bar(
+                close, close_time, splits, symbol=symbol, resolution_id=resolution_id
+            ),
+        )
+    )
 
     candidates: list[CandidateValidation] = []
     any_beats = False
@@ -621,6 +761,7 @@ def run_volatility_comparison_for_symbol_dollar_bar(
         symbol,
         resolved_start,
         resolved_end,
+        resolution_id=resolution_id,
         duckdb_memory_limit_gb=throttle.memory_limit_gb,
         duckdb_threads=throttle.threads,
     )
@@ -808,26 +949,27 @@ def run_and_save_volatility_comparison_report(
 def run_and_save_volatility_comparison_report_dollar_bar(
     *,
     symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
-    resolution_id: str = DOLLAR_BAR_RESOLUTION_ID,
+    resolutions: tuple[str, ...] = DOLLAR_BAR_RESOLUTIONS,
     dest_path: Path | None = None,
     max_workers: int | None = None,
 ) -> Path:
     """Mesmo formato/garantias de `run_and_save_volatility_comparison_
     report` (escrita atômica B29, isolamento de falha por task AG-019,
-    ordenação determinística) -- `len(symbols)` combinações (5 por
-    default, só resolução R1 existe em disco hoje), não `len(symbols) *
-    len(timeframes)` (15) -- dollar bar não tem eixo de "timeframe", só
-    `resolution_id` (`AG-042`).
+    ordenação determinística) -- `len(symbols) * len(resolutions)`
+    combinações (15 por default: 5 símbolos × R1/R2/R3, AG-036 remediação
+    completa 2026-08-17), mesmo padrão de `symbols × timeframes` da grade
+    de tempo, só que o eixo aqui é `resolution_id` (`AG-042`), não `tf`.
 
     Chame manualmente:
     `uv run python -c "from src.analysis.volatility_comparison import
     run_and_save_volatility_comparison_report_dollar_bar as r; r()"`
     ou `uv run python -m src.analysis.volatility_comparison --dollar-bar`."""
+    combos = [(symbol, res) for symbol in symbols for res in resolutions]
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
     logger.info(
         "analysis.volatility_comparison.starting_dollar_bar",
-        n_combinations=len(symbols),
-        resolution_id=resolution_id,
+        n_combinations=len(combos),
+        resolutions=resolutions,
         max_workers=workers,
     )
 
@@ -836,16 +978,16 @@ def run_and_save_volatility_comparison_report_dollar_bar(
     skipped: list[dict[str, str]] = []
     failed_tasks: list[dict[str, str]] = []
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        future_to_symbol = {
+        future_to_combo = {
             executor.submit(
                 run_volatility_comparison_for_symbol_dollar_bar,
                 symbol,
                 resolution_id=resolution_id,
-            ): symbol
-            for symbol in symbols
+            ): (symbol, resolution_id)
+            for symbol, resolution_id in combos
         }
-        for future in as_completed(future_to_symbol):
-            symbol = future_to_symbol[future]
+        for future in as_completed(future_to_combo):
+            symbol, resolution_id = future_to_combo[future]
             try:
                 result = future.result()
             except Exception as exc:
@@ -880,18 +1022,18 @@ def run_and_save_volatility_comparison_report_dollar_bar(
         logger.warning(
             "analysis.volatility_comparison.tasks_failed_dollar_bar",
             n_failed=len(failed_tasks),
-            n_combinations=len(symbols),
+            n_combinations=len(combos),
             failed=failed_tasks,
         )
 
     elapsed_s = time.perf_counter() - t0
-    results.sort(key=lambda r: r.symbol)
+    results.sort(key=lambda r: (r.symbol, r.tf))
     no_candidate_beats_gk_anywhere = stopping_criterion_1_from_results(results)
 
     payload: dict[str, Any] = {
         **report_provenance(),
-        "resolution_id": resolution_id,
-        "n_combinations_requested": len(symbols),
+        "resolutions": resolutions,
+        "n_combinations_requested": len(combos),
         "n_combinations_evaluated": len(results),
         "skipped": skipped,
         "failed": failed_tasks,
