@@ -686,9 +686,7 @@ numa narrativa de "decisão pendente" fora de contexto.
 | Sprint 10 | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
 | Sprint 11 | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
-| **V41-4 — M4, Regime (≤6 trials, ÚNICA medição paga da Camada 1)** | quantis expansivos (baseline) vs. HMM gaussiano `dynamax` (2/3/4 estados) vs. Jump Model vs. BOCPD — separação de retorno condicional, persistência, estabilidade entre folds, ortogonalidade contra volatilidade | ⬜ **não iniciado** — linha ausente do Road Map Vivo até 2026-08-17 (achado do Manager, `AG-075`). Sequenciado DELIBERADAMENTE depois de M5+M6 (decisão histórica, changelog); M6 fechado (heterogeneidade real, I²=96-98%), M5 só parcial (fill real medido em BTCUSDT, falta escopo completo 5 ativos — `predictions`/`orders` só existem pra BTC). **Não autorizado a rodar** — explora edge novo, `N_lifetime.counter=63` já excede o teto 60, exige decisão de orçamento própria do Manager, não coberta pelo override id 17 | `PRD_V4_1.md` §3.2 M4, `audit/architecture_gaps_log.yaml::AG-075` |
-| V41-6 — Barreiras rederivadas (≤4 trials) | Label Engine, metodologia de barreira | ⬜ não iniciado — mesmo achado `AG-075`, sequenciado depois de M4 fechar (Parte VIII do PRD) | `PRD_V4_1.md` Parte VIII |
-| V41-7 — Pesos + Features (≤3 trials) | `sample_weight`/uniqueness, seleção final de feature | ⬜ não iniciado — mesmo achado `AG-075`, sequenciado depois de V41-6 | `PRD_V4_1.md` Parte VIII |
+| Camadas 0-3 do `PRD_V4_1.md` (T0.1-T0.6, M1-M6, V41-6..12) | rastreio completo movido pra aba dedicada — mesmo tratamento de §11.5 pro dollar-bar | ⬜ ver **§11.6** (nova, 2026-08-17) | `PRD_V4_1.md` §3, Parte VIII; `audit/architecture_gaps_log.yaml::AG-075`/`AG-076` |
 | ~~Quando reprocessamento dollar-bar concluir~~ — **fechado 2026-08-17** | remedição de M1 (Parkinson bate GK em 12/15, Manager decidiu Parkinson canônico); engenharia + reprocessamento real de `labels/`/leakage validado pros 5 símbolos sob R1; só falta retreino real do Alpha (código pronto, `--resolution-id`/`--vol-estimator-id` no CLI, não executado por decisão do Manager) | `audit/architecture_gaps_log.yaml::AG-036`, `docs/refactor_parkinson_canonico.md`, §11.5 |
 | Decisão do Manager, sem stage travado ainda | retreino real de Alpha Camada 1 sob `resolution_id="R1"`+`vol_estimator_id="parkinson_w20"` (5 símbolos) + flip de `canonical_volatility_estimator.value` — comando pronto, agendado junto de outras mudanças já previstas no roadmap, não como run isolado | `docs/refactor_parkinson_canonico.md`, `audit/n_lifetime.yaml` id 17 |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
@@ -741,6 +739,101 @@ escrito no fim, é o estado real.
 **Regra desta aba:** nenhuma linha muda de status sem um commit real
 apontável (âncora na coluna "referência") — "planejado" não é um status
 válido aqui, só "não iniciado", "em andamento" ou "pronto".
+
+---
+
+### 11.6 `PRD_V4_1.md` Camadas 0-3 — M1-M6 + Roadmap V41-N <a name="11-6"></a>
+
+Aba dedicada (2026-08-17, achado do Manager, `AG-075`/`AG-076`) — até
+esta linha, o Road Map Vivo não tinha NENHUMA linha rastreável pra M4
+(Regime), V41-6 (Barreiras), V41-7 (Pesos+Features), V41-8..12
+(Controle 19, Calibração, Meta-Model, Walk-forward, DSR final). Existiam
+só enterrados em texto de changelog. Mesmo padrão de furo que
+`AG-051`/`AG-052` já tinham achado uma vez (§11.4 tratado como fonte
+completa sem checar contra o PRD real) — desta vez numa camada inteira
+de medições com orçamento de trial real, não achados de arquitetura
+soltos.
+
+**⚠️ Aviso de nomenclatura, leia antes de citar "M1"-"M6" ou "Parte
+VIII" em qualquer lugar deste projeto:**
+
+- **`PRD_V3_2_UNIFICADO.md` (§18.6) já usa os rótulos `M1`-`M6` pra
+  outra coisa** — mecanismos de PREVENÇÃO de erro de proveniência de
+  constante (M1=CI bloqueia `ASSUMED` classe A; M2=varredura ±50% antes
+  do Gate 3; M3=guardrails como quantis, não número redondo;
+  M4=distribuição esperada vem de simulação, nunca fabricada;
+  M5=`N_lifetime` vitalício; M6=pré-registro de valores classe A).
+  **Nada a ver** com `M1`-`M6` de `PRD_V4_1.md` §3.2 (medições
+  empíricas: Volatilidade/Barra/Timeframe/Regime/Fill/Fator comum).
+  Citar "M2" sem dizer qual PRD é ambíguo — **sempre desambiguar**:
+  `M2(V4.1)` = Barra, `M2(V3.2)` = varredura ±50%.
+- **`PRD_V3_2_UNIFICADO.md` também tem uma "Parte VIII"** — Risk Engine
+  e Position Sizing (linha 1528) — diferente da "Parte VIII — ROADMAP"
+  de `PRD_V4_1.md` (linha 707). Mesmo número romano, assuntos
+  diferentes, documentos diferentes.
+- **Dentro do próprio `PRD_V3_2_UNIFICADO.md` já existem DUAS listas
+  "Camada 1-5" colidentes** (§5.3-5.11: camadas do modelo Alpha —
+  monotônico/triagem/bagging/DoubleEnsemble/DRO; §17.3.2: camadas do
+  estudo de não-estacionariedade — estacionariedade/cost-ATR/
+  similaridade/regime/walk-forward) — dívida de nomenclatura
+  pré-existente do V3.2, não introduzida por esta aba, registrada aqui
+  só pra quem for procurar "Camada 3" saber que precisa desambiguar
+  também.
+
+**Relação Sprint-N (`PRD_V3_2_UNIFICADO.md`) ↔ V41-N (`PRD_V4_1.md`) —
+NÃO existe mapeamento formal declarado em nenhum documento** (V3.2 é
+anterior, não podia citar V4.1; V4.1 nunca declara "isto substitui o
+Sprint N"; `docs/SPRINT_LOG.md` usa numeração de Sprint de V3.2 o tempo
+todo). A tabela abaixo é uma **reconstrução com base em evidência
+indireta** (ex.: `G-WF-1..6` é literalmente o mesmo esquema de gate nos
+dois documentos, `PRD_V3_2_UNIFICADO.md` §11.4.1 linha 2154 e
+`PRD_V4_1.md` linha 515 — não coincidência, V4.1 herda por citação),
+**não uma citação de fato já escrito em algum lugar**. Tratar como
+proposta a confirmar, não como verdade estabelecida:
+
+| V3.2 Sprint/Gate | V4.1 Camada/V41-N | relação (evidência) |
+|---|---|---|
+| Sprint 1-4 (infra, dados, features) | Camada 0 (T0.1-T0.4, V41-0) | V41-0 refatora as MESMAS interfaces que Sprint 1-4 já entregou (`VolatilityEstimator`/`RegimeClassifier` são retrofit sobre `group_c.c01_atr_20`/`QuantileRegimeClassifier` do Sprint 4-5) |
+| Sprint 6 (Label Engine), Sprint 8 (Alpha) | T0.5 (V41-1, baseline janela comum) | T0.5 roda `alpha_c1_v1` (o modelo do Sprint 8) sem alteração, só reprocessado — é o MESMO artefato, janela nova |
+| Sprint 3 ("refazer ATR sobre série completa", §18.7 item 1) | M1 (V41-2) | mesma ação (remedir volatilidade), V4.1 generaliza pros 5 ativos/3 TFs |
+| — (sem equivalente direto em V3.2, dollar bar não existia na V1) | M2 (V41-3) | conceito novo do V4.1, sem precedente em V3.2 |
+| — (`decision_tf` era fixo desde §0.1 da V1, nunca varrido) | M3 (V41-3) | conceito novo (multi-TF), sem precedente em V3.2 |
+| Sprint 5 (Regime Engine) | M4 (V41-4) | Sprint 5 entregou o BASELINE (quantis expansivos); M4 testa se esse baseline é o vencedor contra HMM/Jump/BOCPD |
+| Sprint 9-10 (fill simulator, backtest) | M5 (V41-2/parcial) | `fill_reconciliation.py` do Sprint 9-10, mesmo módulo, escopo estendido pros 5 ativos |
+| — (sem equivalente — teste de proposição novo do V4.1) | M6 (V41-3) | conceito novo, sem precedente direto |
+| Sprint 6 item "varredura 2D tp×sl" (§18.7 item 2) | V41-6 (Barreiras) | mesma ação, adiada desde V3.2 pra depois de M1/M4 fecharem |
+| Sprint 6 ("similaridade", §17.3.2 camada 3) + Sprint 4 (features) | V41-7 (Pesos+Features) | mesma dívida do V3.2 ("especificado e nunca rodado", §11.3.1), agora com trial declarado |
+| Sprint 12 (Risk Engine, 18 controles) | V41-8 (Controle 19 + sizing) | controle NOVO (19º), não existia no V3.2 — I4/§5.3 do V4.1 é achado genuinamente novo da emenda multi-ativo |
+| §5.12 do V3.2 (`confidence_rank`, nunca avaliado) | V41-9 (Calibração) | mesma dívida herdada, sem sprint numerado explícito em V3.2 |
+| §6.8 do V3.2 (critério de entrada do Meta) | V41-10 (Meta-Model) | V3.2 fechou Meta com "argumento que caiu" (§0.3 do V4.1); V41-10 reabre |
+| Sprint 11 (`walk_forward.py`, DSR/PBO/Lo, Gate 4/6) | V41-11 (Walk-forward+PBO+Lo) | MESMO módulo (`G-WF-1..6` idêntico nos dois documentos, ver aviso acima) |
+| Sprint 11 (Gate 6, DSR final) | V41-12 (DSR final) | mesmo Gate 6, `N_lifetime` recalculado pro escopo multi-ativo (60, não mais o valor original de V3.2) |
+
+**Status real de cada Camada/medição do PRD_V4_1.md (fonte: `PRD_V4_1.md` §3, Parte VIII, lido integralmente em 2026-08-17):**
+
+| item | trials | status | referência |
+|---|---|---|---|
+| Camada 0 — T0.1-T0.6 (V41-0), T0.5 baseline janela comum (V41-1) | 0 | ✅ fechada — `G-C0-1..7` todos citados como cumpridos no texto do PRD | `PRD_V4_1.md` §3.1 |
+| **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
+| **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
+| **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
+| **M4(V4.1) — Regime** | ≤6 | ⬜ **não iniciado** — sequenciado deliberadamente depois de M5+M6 (decisão histórica do Manager, 2026-08-12). M6 fechou; M5 só parcial. **Não autorizado a rodar** — explora edge novo, `N_lifetime.counter=63` já excede o teto 60, exige decisão de orçamento própria, não coberta pelo override id 17 | `PRD_V4_1.md` §3.2 M4, `AG-075` |
+| **M5(V4.1) — Reconciliação de fill** | 0 | 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions`/`orders` pros 4 alts, que só existem pra BTC hoje | `PRD_V4_1.md` §3.2 M5 |
+| **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
+| V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
+| V41-6 — Barreiras rederivadas | ≤4 | ⬜ não iniciado — depende de V41-5 | `PRD_V4_1.md` §4.1 |
+| V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
+| V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | ⬜ não iniciado — achado real e crítico (§5.3): 5 posições simultâneas correlacionadas (ρ≈0,91) = 4,82x o risco declarado, cap efetivo real é 2 posições | `PRD_V4_1.md` §5.3 |
+| V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
+| V41-10 — Meta-Model + Grupo J | ≤2 | ⬜ não iniciado — reaberto (o argumento que fechou o Meta no V3.2 caiu, §0.3) | `PRD_V4_1.md` §4.5 |
+| V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
+| V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
+
+**Regra desta aba:** mesma de §11.5 — nenhuma linha muda de status sem
+commit real apontável. `N_lifetime` orçado pra V4.1 completa é 15
+trials (M4=6, V41-6=4, V41-7=3, V41-10=2) sobre a base de 45 — **já
+estourado** (`counter=63`, override id 17 cobre só a migração
+Parkinson+dollar-bar, não estas medições).
 
 ---
 

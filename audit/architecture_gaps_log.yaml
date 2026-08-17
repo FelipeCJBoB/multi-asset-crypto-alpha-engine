@@ -5418,3 +5418,81 @@ entries:
       60 -- qualquer um dos três exigiria uma NOVA decisão de orçamento
       do Manager, não coberta pela autorização existente.
     status: "aberto -- Manager avisado, decisão de quando retomar M4/V41-6/V41-7 e de orçamento de N_lifetime pendente"
+
+  - id: AG-076
+    date: "2026-08-17"
+    file: "PRD_V3_2_UNIFICADO.md, PRD_V4_1.md, PLANO_MESTRE_PRINCE2.md"
+    related_file: "audit/architecture_gaps_log.yaml::AG-051, AG-052, AG-075 (mesma família de achado)"
+    found_by: "Agent (general-purpose, discovery exaustivo delegado por Claude), a pedido do Manager ('e o que mais está no PRD mas não está no roadmap vivo? discovery liste em detalhes')"
+    gap: >
+      Levantamento exaustivo (arquivo `PRD_V3_2_UNIFICADO.md`, 3497
+      linhas, lido integral) encontrou 3 problemas de nomenclatura reais,
+      além da ausência de rastreio já registrada em `AG-075`:
+
+      (1) **Colisão de rótulo `M1`-`M6`**: `PRD_V3_2_UNIFICADO.md` §18.6
+      (linhas 3232-3287) já usa `M1`-`M6` pra mecanismos de PREVENÇÃO de
+      erro de proveniência de constante (M1=CI bloqueia ASSUMED classe
+      A, M2=varredura ±50%, M3=guardrails como quantis, M4=distribuição
+      TBD até medir, M5=N_lifetime vitalício, M6=pré-registro classe A)
+      -- nada a ver com `M1`-`M6` de `PRD_V4_1.md` §3.2 (medições
+      empíricas de Camada 1: Volatilidade/Barra/Timeframe/Regime/Fill/
+      Fator comum). Mesmos rótulos, documentos diferentes, conteúdo
+      totalmente diferente.
+
+      (2) **Colisão "Parte VIII"**: `PRD_V3_2_UNIFICADO.md` linha 1528 =
+      "RISK ENGINE E POSITION SIZING"; `PRD_V4_1.md` linha 707 = "PARTE
+      VIII — ROADMAP". Mesmo número romano, assuntos diferentes.
+
+      (3) **Nenhum mapeamento formal entre o roadmap Sprint 0-18/Gate
+      0-10 de `PRD_V3_2_UNIFICADO.md` (§14.3, linhas 2463-2487; PARTE
+      XII, linhas 2282-2359) e o roadmap V41-0..12/`G-C0/C1/C2` de
+      `PRD_V4_1.md`** existe em nenhum documento -- V3.2 é anterior
+      (não podia citar V4.1), V4.1 nunca declara "isto substitui o
+      Sprint N", e `PLANO_MESTRE_PRINCE2.md` §11.4 (o "rollup completo")
+      nunca reconciliou os dois esquemas. `docs/SPRINT_LOG.md` usa
+      numeração de Sprint de V3.2 o tempo todo (`Sprint 6`/`Sprint 8`/
+      `Sprint 9` etc. citados dezenas de vezes) -- ou seja, o registro
+      real de execução do projeto fala uma língua (Sprint-N) e o
+      roadmap mais recente (V4.1) fala outra (V41-N), sem tradução
+      escrita em lugar nenhum.
+
+      Achados colaterais, PRÉ-EXISTENTES em `PRD_V3_2_UNIFICADO.md`
+      (não introduzidos por esta investigação, registrados por
+      completude): (a) DUAS listas "Camada 1-5" colidentes dentro do
+      próprio V3.2 (§5.3-5.11, camadas do modelo Alpha; §17.3.2, camadas
+      do estudo de não-estacionariedade -- conteúdo totalmente
+      diferente sob o mesmo rótulo numérico); (b) contagem de kill
+      switch inconsistente (13 gatilhos citados no roadmap Sprint 12 e
+      DoD, mas 15 descritos nas seções §10.2+§16.3+§16.7 somadas); (c)
+      contagem de cenários de stress inconsistente (19 no roadmap
+      Sprint 11 e DoD, 18 em §15.1 e no comando `quant.stress.run`); (d)
+      o arquivo se chama `PRD_V3_2_UNIFICADO.md` mas o título interno
+      (linha 1) diz "PRD TÉCNICO V3.3", com changelog v3.2→v3.3 completo
+      já aplicado -- nome de arquivo desatualizado em relação ao próprio
+      conteúdo.
+    severity: "alto"
+    layer: "process/doc"
+    consequence: >
+      Risco concreto de miscitação: qualquer entrada futura em
+      `architecture_gaps_log.yaml`, `docs/SPRINT_LOG.md`, ou resposta ao
+      Manager que citar "M2" ou "Parte VIII" sem nomear qual PRD é
+      ambígua, e as duas interpretações levam a ações completamente
+      diferentes (varredura de constante vs. comparação de tipo de
+      barra; risk engine vs. roadmap). Sem mapeamento Sprint-N↔V41-N
+      escrito, qualquer sessão futura (inclusive esta) corre o mesmo
+      risco que already aconteceu aqui: responder "não sobra nada
+      pendente" olhando só um dos dois sistemas de numeração.
+    resolved_by_commit: null
+    resolution: >
+      PARCIALMENTE IMPLEMENTADO -- `PLANO_MESTRE_PRINCE2.md` §11.6 (nova,
+      commit desta mesma sessão) registra o aviso de colisão M1-M6/Parte
+      VIII de forma explícita e propõe uma tabela de reconciliação
+      Sprint-N↔V41-N (marcada como RECONSTRUÇÃO por evidência indireta,
+      não fato já declarado -- pendente de confirmação do Manager). Os
+      achados colaterais (a)-(d) sobre inconsistências internas do
+      PRD_V3_2_UNIFICADO.md NÃO foram corrigidos -- exigiriam editar o
+      PRD em si (recontar gatilhos/cenários reais no código, decidir
+      qual das duas listas "Camada 1-5" é a canônica, renomear o
+      arquivo), fora do escopo desta rodada de governança (documentação
+      de rollup, não o blueprint técnico em si).
+    status: "aberto -- tabela de reconciliação Sprint-N/V41-N precisa de confirmação do Manager (é proposta, não fato); achados colaterais (a)-(d) do V3.2 não corrigidos"
