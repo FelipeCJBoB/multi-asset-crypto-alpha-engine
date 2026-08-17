@@ -3285,6 +3285,28 @@ entries:
       É a medição completa que faltava para o Manager decidir com dado
       real na mão -- decisão em aberto, não tomada aqui (mesmo padrão de
       `AG-065`, agora com escopo 100% fechado em vez de parcial).
+    addendum_decisao_manager_2026_08_17: >
+      **Decisão do Manager, registrada nesta conversa: Parkinson é a
+      volatilidade canônica.** A troca deixa de estar em aberto -- o
+      Manager pediu explicitamente pra tratar isto junto com a comutação
+      real de produção pra grade dollar-bar (`resolution_id=R1`), não só
+      atualizar `constants.yaml`. Plano de migração completo em
+      `docs/refactor_parkinson_canonico.md` (renomeado de
+      `refactor_gk_canonico.md` -- GK nunca chegou a ser implantado de
+      verdade, mesma constatação que motivou tratar os dois planos
+      juntos). `constants.yaml::canonical_volatility_estimator.value`
+      só muda de `garman_klass_w20` pra `parkinson_w20` quando o Label
+      Engine estiver de fato pronto pra honrar isso (não antes -- não
+      deixar o config mentir sobre o que o pipeline faz, mesma
+      disciplina de todo o resto desta entrada). Ver
+      `docs/refactor_parkinson_canonico.md` pro blast radius completo
+      (Label/Feature/Regime Engine, orquestração `dataset.py`/
+      `pipeline.py`, `validation/leakage.py`,
+      `backtest/fill_reconciliation.py`) e pra decisão sobre
+      `N_lifetime` (orçamento de 60 já excedido, `counter=63`, Manager
+      autorizou estourar pra esta migração especificamente --
+      `audit/n_lifetime.yaml`).
+    status_final_2026_08_17: "FECHADO -- decisão tomada e registrada (Parkinson canônico). Migração de produção em andamento, ver docs/refactor_parkinson_canonico.md."
 
   - id: AG-037
     date: "2026-08-16"
@@ -3606,6 +3628,25 @@ entries:
       §6.1/§4: zero exposição financeira direta, zero caller de produção,
       complexidade baixa; decisão explícita de não comissionar revisão
       completa por enquanto, mesma lógica de `AG-050`)."
+    addendum_decisao_calibration_scope_2026_08_17: >
+      **Decisão do Manager sobre item (3) (regra formal de recalibração/
+      `calibration_version`)**: aceitar a calibração `calibration_scope=
+      "validation"` já existente (a mesma usada em M1/AG-065, threshold
+      calibrado sobre a janela completa `SYMBOL_START_DATE..END_DATE`
+      por símbolo) como BASE da migração de produção (`docs/
+      refactor_parkinson_canonico.md`) -- não é a implementação do item
+      (3) em si (a regra formal de QUANDO/COMO recalibrar no futuro
+      continua em aberto), é uma decisão de que essa ausência não
+      bloqueia a comutação real de produção agora. Mitigado pelo alarme
+      de deriva do item (2), já implementado e testado acima --
+      `measure_new_window_drift` fica disponível pra detectar se a
+      calibração aceita aqui desviar no futuro. `build_dollar_bars.py`
+      continua, por construção, nunca escrevendo `"frozen_production"`
+      literalmente (docstring do módulo preservada) -- a aceitação é no
+      nível de DECISÃO DE USO (o Label/Feature Engine de produção passam
+      a consumir essa calibração como se fosse a de fato usada), não uma
+      mudança de código em `build_dollar_bars.py` que reescreva o
+      `calibration_scope` gravado.
 
   - id: AG-043
     date: "2026-08-16"
@@ -4833,7 +4874,7 @@ entries:
       estatística) -- nuance que a medição parcial (só R1) não podia
       revelar. Ver `AG-036` pro resultado completo, `AG-074` pra ressalva
       sobre `egarch_coupled`.
-    status_final_2026_08_17: "SUPERSEDIDO -- ver AG-036::addendum_medicao_completa_2026_08_17 pro resultado completo. Decisão do Manager sobre canonical_volatility_estimator continua aberta."
+    status_final_2026_08_17: "SUPERSEDIDO -- ver AG-036::addendum_medicao_completa_2026_08_17 pro resultado completo. Decisão do Manager: Parkinson é a volatilidade canônica (AG-036::addendum_decisao_manager_2026_08_17), migração de produção em andamento."
 
   - id: AG-066
     date: "2026-08-17"

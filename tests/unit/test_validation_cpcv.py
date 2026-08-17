@@ -9,6 +9,9 @@ não só sobre sintético."""
 
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 import pytest
@@ -204,17 +207,116 @@ def test_assert_grade_consistent_aceita_grade_id_explicito_diferente_de_tf() -> 
     cpcv.assert_grade_consistent(labels, cfg)  # não deve levantar
 
 
-def test_assert_grade_consistent_grade_id_fora_de_step_ms_levanta_not_implemented() -> None:
-    """AG-037/AG-042 -- `grade_id` que não é uma grade de TEMPO conhecida
-    (ex. um `resolution_id` R1/R2/R3 de uma futura grade dollar) não tem
-    mecanismo de verificação implementado ainda -- `NotImplementedError`
-    explícito, não `CPCVError`/`KeyError` cru vazando de `step_ms`."""
+def test_assert_grade_consistent_grade_id_dollar_bar_sem_symbol_levanta_valueerror() -> None:
+    """AG-042 (2026-08-17) -- `grade_id` dollar-bar (R1/R2/R3) exige
+    `symbol` pra localizar `_calibration.json`; sem ele, `ValueError`
+    explícito, nunca pula a checagem silenciosamente (substitui o
+    `NotImplementedError` antigo -- o mecanismo agora existe de verdade)."""
     labels = _make_synthetic_labels(600, horizon_bars=1)
     cfg = cpcv.CPCVConfig(
         n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, tf="15m", grade_id="R1"
     )
-    with pytest.raises(NotImplementedError, match="AG-037"):
+    with pytest.raises(ValueError, match="symbol"):
         cpcv.assert_grade_consistent(labels, cfg)
+
+
+def test_assert_grade_consistent_dollar_bar_sem_calibracao_levanta_cpcverror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`grade_id="R1"` com `symbol` mas sem `_calibration.json` no disco --
+    CPCVError explícito, não deixa passar silenciosamente."""
+    from src.data import _paths as data_paths
+
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(cpcv, "CAPACITY_DIR", tmp_path)
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    with pytest.raises(cpcv.CPCVError, match="calibração"):
+        cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")
+
+
+def _write_fake_calibration(root: Path, symbol: str, resolution_id: str) -> None:
+    import orjson
+
+    from src.data.build_dollar_bars import DollarBarCalibration
+
+    symbol_dir = root / f"dollar_bars_{resolution_id.lower()}" / symbol
+    symbol_dir.mkdir(parents=True, exist_ok=True)
+    calibration = DollarBarCalibration(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        threshold_usdt=1_000_000.0,
+        calibration_scope="validation",
+        calibration_window_start="2020-01-01",
+        calibration_window_end="2026-08-07",
+        n_trades=1_000,
+        calibrated_at="2026-08-17T00:00:00+00:00",
+    )
+    (symbol_dir / "_calibration.json").write_bytes(orjson.dumps(dataclasses.asdict(calibration)))
+
+
+def test_assert_grade_consistent_dollar_bar_calibracao_batendo_nao_levanta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.data import _paths as data_paths
+
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(cpcv, "CAPACITY_DIR", tmp_path)
+    _write_fake_calibration(tmp_path, "BTCUSDT", "R1")
+
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")  # não deve levantar
+
+    # generate_splits também aceita e propaga symbol corretamente
+    result = cpcv.generate_splits(labels, cfg, symbol="BTCUSDT")
+    assert len(result.splits) == 15
+
+
+def test_assert_grade_consistent_dollar_bar_calibracao_resolution_id_divergente_levanta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Calibração real existe, mas foi escrita pra uma resolução diferente
+    da que o config espera -- achado de robustez, não deve passar batido."""
+    from src.data import _paths as data_paths
+
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(cpcv, "CAPACITY_DIR", tmp_path)
+    # grava a calibração no diretório de R1, mas com resolution_id="R2" DENTRO
+    # do arquivo (payload internamente inconsistente com o próprio path --
+    # cenário de corrupção/edição manual, não algo que build_dollar_bars
+    # produziria sozinho, mas a guarda precisa pegar mesmo assim).
+    symbol_dir = tmp_path / "dollar_bars_r1" / "BTCUSDT"
+    symbol_dir.mkdir(parents=True, exist_ok=True)
+    import orjson
+
+    from src.data.build_dollar_bars import DollarBarCalibration
+
+    calibration = DollarBarCalibration(
+        symbol="BTCUSDT",
+        resolution_id="R2",
+        threshold_usdt=1_000_000.0,
+        calibration_scope="validation",
+        calibration_window_start="2020-01-01",
+        calibration_window_end="2026-08-07",
+        n_trades=1_000,
+        calibrated_at="2026-08-17T00:00:00+00:00",
+    )
+    (symbol_dir / "_calibration.json").write_bytes(orjson.dumps(dataclasses.asdict(calibration)))
+
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    with pytest.raises(cpcv.CPCVError, match="divergente"):
+        cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")
+
+
+def test_config_dollar_bar_grade_id_nao_valida_step_ms_na_construcao() -> None:
+    """AG-042 -- `CPCVConfig(grade_id="R1")` não levanta na construção
+    (diferente de um `tf`/`grade_id` de tempo desconhecido) -- `tf` fica
+    vestigial nesse caso, `step_ms` nunca é chamado."""
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    assert cfg.grade_id == "R1"
+    assert cfg.tf == "15m"  # default, nunca lido/validado neste caso
 
 
 def test_assert_grade_consistent_rejeita_tf_divergente_15m_vs_30m() -> None:

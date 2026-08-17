@@ -234,11 +234,19 @@ canonical_volatility_estimator:
     baseline GarmanKlass), experiments/volatility_dollar_bar_report.json.
     Resultado: Parkinson bate GK, significativo, em 12/15 combinações;
     empate estatístico em 2/15; GK vence sem contestação em 1/15
-    (SOLUSDT×R3). Isto É evidência real na direção oposta ao `value`
-    travado aqui (GK) -- mas ainda NÃO é decisão de troca. `value`
-    permanece `garman_klass_w20` até o Manager decidir explicitamente à
-    luz deste resultado (mesma disciplina de "medir não é decidir" já
-    usada nas atualizações anteriores desta entrada).
+    (SOLUSDT×R3).
+    ATUALIZAÇÃO 2026-08-17 (decisão) -- Manager decidiu explicitamente:
+    Parkinson é a nova volatilidade canônica (AG-036::
+    addendum_decisao_manager_2026_08_17), tratada junto com a comutação
+    real de produção pra grade dollar-bar (`resolution_id=R1`) --
+    `docs/refactor_parkinson_canonico.md` (renomeado de
+    `refactor_gk_canonico.md`, mesmo racional: GK nunca chegou a ser
+    implantado de verdade em produção, mesma situação que Parkinson
+    herda agora). `value` continua `garman_klass_w20` NESTA entrada até
+    o Label Engine estar de fato pronto pra honrar a troca (Fase 5 do
+    plano de migração) -- não antes, pra não haver janela onde este
+    campo mente sobre o que o pipeline de fato faz. Ver
+    `docs/refactor_parkinson_canonico.md` pro blast radius completo.
   class: A
   sweep_required: true
   sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]

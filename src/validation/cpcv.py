@@ -76,10 +76,13 @@ from math import comb
 from typing import Final
 
 import numpy as np
+import orjson
 import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.data._paths import CAPACITY_DIR
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION, DollarBarCalibration
 from src.data.resample import step_ms
 
 from ._constants import load_constant
@@ -215,17 +218,22 @@ class CPCVConfig:
                 "max_feature_lookback_ms precisa ser >= 0, recebido "
                 f"{self.max_feature_lookback_ms}"
             )
-        # step_ms levanta KeyError/ValueError pra tf desconhecido — falha alto
-        # aqui, na construção, em vez de silenciosamente mais tarde dentro de
-        # generate_splits (mesma disciplina de "falhar cedo e alto" do resto
-        # do módulo, ver assign_time_groups).
-        step_ms(self.tf)
         # AG-037 — grade_id=None deriva pra tf (retrocompatível, bit-exato:
         # todo caller existente tem grade_id==tf). object.__setattr__ porque
         # o dataclass é frozen -- mesmo padrão que seria necessário em
         # qualquer derivação de default no __post_init__ de um frozen.
         if self.grade_id is None:
             object.__setattr__(self, "grade_id", self.tf)
+        resolved_grade_id = self.grade_id
+        assert resolved_grade_id is not None  # setattr acima sempre resolve
+        # AG-042 (2026-08-17) — grade_id dollar-bar (R1/R2/R3) não tem
+        # step_ms por desenho (sem espaçamento de relógio constante) --
+        # `tf` fica vestigial nesse caso (default "15m" nunca lido). Só
+        # valida step_ms pra grade de TEMPO, onde continua "falhar cedo e
+        # alto" (mesma disciplina de sempre, ver assign_time_groups) em vez
+        # de deixar o erro estourar mais tarde dentro de generate_splits.
+        if resolved_grade_id not in CALIBRATION_TF_BY_RESOLUTION:
+            step_ms(resolved_grade_id)
 
     @property
     def n_splits(self) -> int:
@@ -348,66 +356,79 @@ def _embargo_ms(config: CPCVConfig) -> int:
     return config.embargo_ms
 
 
-def assert_grade_consistent(labels: pl.DataFrame, config: CPCVConfig) -> None:
-    """AG-009/AG-037 (audit/architecture_gaps_log.yaml) — guarda cruzada
-    entre a grade REAL de `labels` (hoje sempre um TF — o TF em que os `t0`
-    foram gerados, ex. via `load_labels_v1(tf=...)`) e `config.grade_id`.
-    Renomeada de `assert_tf_consistent` (AG-037, 2026-08-16) -- `tf`
-    conflava dois papéis (qual grade + como converter pra ms);
-    `config.grade_id` (deriva de `config.tf` por default, retrocompatível)
-    é agora a identidade que esta guarda verifica. Os dois (`tf` de
-    `labels` e `grade_id`/`tf` de `config`) são hoje parâmetros passados
-    INDEPENDENTEMENTE pelo caller — `load_labels_v1` não conhece o
-    `CPCVConfig` que vai rodar depois — então nada os liga estruturalmente
-    sem esta checagem. Sem ela, um caller poderia escrever
-    `load_labels_v1(tf="30m")` + `CPCVConfig.from_constants()` (default
-    `tf="15m"`) e computar o embargo na unidade ERRADA silenciosamente —
-    mesma classe de bug que AG-004 fechou, um nível acima (composição de
-    duas funções em vez de uma constante única).
+def _assert_dollar_bar_grade_consistent(symbol: str, resolution_id: str) -> None:
+    """AG-042 (2026-08-17) — verificação de identidade de grade dollar-bar,
+    substitui `NotImplementedError`. `resolution_id` (R1/R2/R3) não tem
+    espaçamento de relógio constante por desenho -- comparar mediana de
+    diff de `t0` contra `step_ms` (mecanismo de grade de tempo) não se
+    aplica. `resolution_id` também não existe como coluna em NENHUM
+    `DataFrame` de labels/bars (verificado, `schemas.py`/`triple_barrier.
+    LABEL_COLUMNS`) -- a única fonte real é o sidecar `_calibration.json`
+    por símbolo (`DollarBarCalibration`, escrito por `src.data.
+    build_dollar_bars.write_dollar_bars_and_calibration`). Por isso esta
+    checagem é por SÍMBOLO (a calibração existe e bate?), não por LINHA
+    (não há como validar cada `t0` individualmente contra a grade)."""
+    calibration_path = (
+        CAPACITY_DIR / f"dollar_bars_{resolution_id.lower()}" / symbol / "_calibration.json"
+    )
+    if not calibration_path.exists():
+        raise CPCVError(
+            f"AG-042: calibração de dollar bar não encontrada em {calibration_path} -- "
+            f"não dá pra verificar identidade de grade_id={resolution_id!r} para "
+            f"{symbol} sem ela (rode src.data.build_dollar_bars primeiro)"
+        )
+    payload = orjson.loads(calibration_path.read_bytes())
+    calibration = DollarBarCalibration(**payload)
+    if calibration.resolution_id != resolution_id:
+        raise CPCVError(
+            f"AG-042: {calibration_path} tem resolution_id={calibration.resolution_id!r}, "
+            f"esperado {resolution_id!r} (config.grade_id) para {symbol} -- grade divergente"
+        )
 
-    Mede o espaçamento real de `t0` como a MEDIANA do diff entre valores
-    ordenados e deduplicados — não o mínimo, não uma checagem de
-    uniformidade estrita. Dado real tem gaps (poucos — ver `known_gaps`
-    em `constants.yaml`; item 1 da docstring do módulo: "densidade ~
-    constante ao longo dos ~6,6 anos, poucos gaps reais"), então exigir
-    espaçamento perfeitamente uniforme quebraria o caso normal; a mediana
-    é robusta a uma MINORIA de gaps maiores que o step nominal, desde que
-    a maioria das barras seja consecutiva.
 
-    Levanta `CPCVError` se a mediana do diff não bate com
-    `step_ms(config.grade_id)` dentro de `_GRADE_CONSISTENCY_RTOL` —
-    calibrada pra pegar o caso real (TF trocado por outro suportado, que
-    difere por um fator >= 2x), não pra exigir precisão maior que o
-    necessário. Não levanta se `labels` tiver menos de 2 `t0` distintos —
-    não há diff pra medir; `assign_time_groups`, chamada logo depois dentro
-    de `generate_splits`, já rejeita esse caso com uma mensagem própria.
+def assert_grade_consistent(
+    labels: pl.DataFrame, config: CPCVConfig, *, symbol: str | None = None
+) -> None:
+    """AG-009/AG-037/AG-042 (audit/architecture_gaps_log.yaml) — guarda
+    cruzada entre a grade REAL de `labels` e `config.grade_id`. Renomeada
+    de `assert_tf_consistent` (AG-037, 2026-08-16) -- `tf` conflava dois
+    papéis (qual grade + como converter pra ms); `config.grade_id` (deriva
+    de `config.tf` por default, retrocompatível) é agora a identidade que
+    esta guarda verifica.
 
-    Levanta `NotImplementedError` se `config.grade_id` não for uma grade de
-    TEMPO conhecida por `step_ms` (ex. uma futura grade dollar/`R1`/`R2`) —
-    verificar identidade de grade não-tempo por mediana de espaçamento não
-    funciona (dollar bars não têm espaçamento constante por desenho) e
-    NENHUM mecanismo alternativo existe ainda, porque não há caller de
-    produção real (`canonical_bar_type=dollar` decidido,
-    docs/refactor_dollar_bar_canonico.md, deployment não iniciado). Falhar
-    explícito aqui é mais honesto que fingir que a checagem de hoje
-    generaliza."""
+    **Sob grade de TEMPO** (`grade_id` resolvido por `step_ms`) — mede o
+    espaçamento real de `t0` como a MEDIANA do diff entre valores
+    ordenados e deduplicados (robusto a uma minoria de gaps reais, ver
+    `known_gaps` em `constants.yaml`) e compara contra `step_ms(grade_id)`
+    dentro de `_GRADE_CONSISTENCY_RTOL`. `symbol` não é usado neste ramo
+    (mantido `None` bit-exato pra todo caller existente).
+
+    **Sob grade DOLLAR-BAR** (`grade_id` em `R1`/`R2`/`R3`,
+    `CALIBRATION_TF_BY_RESOLUTION`) — mediana de espaçamento não se aplica
+    (dollar bars não têm espaçamento constante por desenho, AG-042). Em
+    vez disso verifica a calibração real (`_calibration.json`) do
+    `symbol` -- ver `_assert_dollar_bar_grade_consistent`. **`symbol` é
+    OBRIGATÓRIO neste ramo** -- levanta `ValueError` explícito se `None`,
+    nunca tenta adivinhar ou pular a checagem silenciosamente."""
+    grade_id = config.grade_id
+    assert grade_id is not None  # __post_init__ sempre resolve pra str
+
+    if grade_id in CALIBRATION_TF_BY_RESOLUTION:
+        if symbol is None:
+            raise ValueError(
+                f"assert_grade_consistent: grade_id={grade_id!r} é dollar-bar -- "
+                "symbol é obrigatório pra verificar a calibração real (_calibration.json), "
+                "não pode ser None neste ramo"
+            )
+        _assert_dollar_bar_grade_consistent(symbol, grade_id)
+        return
+
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t0_unique_sorted = np.unique(t0_ms)
     if t0_unique_sorted.shape[0] < 2:
         return
 
-    grade_id = config.grade_id
-    assert grade_id is not None  # __post_init__ sempre resolve pra str
-    try:
-        expected_ms = float(step_ms(grade_id))
-    except (KeyError, ValueError) as exc:
-        raise NotImplementedError(
-            f"assert_grade_consistent: grade_id={grade_id!r} não é uma grade de "
-            "TEMPO conhecida -- verificação de identidade pra grade dollar/volume "
-            "ainda não tem mecanismo implementado (AG-037/AG-042), porque não há "
-            "caller de produção real até dollar bar ser implantado."
-        ) from exc
-
+    expected_ms = float(step_ms(grade_id))
     median_diff_ms = float(np.median(np.diff(t0_unique_sorted)))
     if abs(median_diff_ms - expected_ms) > _GRADE_CONSISTENCY_RTOL * expected_ms:
         raise CPCVError(
@@ -447,7 +468,9 @@ class CPCVResult:
     splits: tuple[CPCVSplit, ...]
 
 
-def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> CPCVResult:
+def generate_splits(
+    labels: pl.DataFrame, config: CPCVConfig | None = None, *, symbol: str | None = None
+) -> CPCVResult:
     """Núcleo do CPCV (§11.4). `labels` precisa ter `t0`/`t1` (datetime,
     UTC) — mesmo schema de `labels/{version}/labels.parquet`
     (`src.labels.triple_barrier.LABEL_COLUMNS`). Não filtra por `side`: o
@@ -460,11 +483,17 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
     Levanta `CPCVError` se `n_test_groups != 2` (reconstrução de
     `n_backtest_paths` só implementada para pares, ver item 3 da docstring
     do módulo). Levanta `CPCVError` (AG-009) se o espaçamento real de `t0`
-    em `labels` não bater com `step_ms(config.grade_id)` — roda SEMPRE, sem
-    opt-out, porque é aqui (não em `load_labels_v1`, que não conhece o
-    `CPCVConfig` usado depois) que as duas metades da informação — dado
-    carregado e config declarada — finalmente se encontram; ver
-    `assert_grade_consistent`.
+    em `labels` não bater com `step_ms(config.grade_id)` sob grade de
+    tempo — roda SEMPRE, sem opt-out, porque é aqui (não em
+    `load_labels_v1`, que não conhece o `CPCVConfig` usado depois) que as
+    duas metades da informação — dado carregado e config declarada —
+    finalmente se encontram; ver `assert_grade_consistent`.
+
+    `symbol` (AG-042, 2026-08-17) — `None` bit-exato pra todo caller de
+    grade de tempo existente (não usado nesse ramo). **Obrigatório** se
+    `config.grade_id` for dollar-bar (`R1`/`R2`/`R3`) — `assert_grade_
+    consistent` levanta `ValueError` explícito se `None` nesse caso, nunca
+    pula a checagem silenciosamente.
 
     Purge (item 2b): fronteira direita usa `g_end_effective` (cobre o `t1`
     real de teste esticando além de `g_end`) e, se `config.max_feature_
@@ -478,7 +507,7 @@ def generate_splits(labels: pl.DataFrame, config: CPCVConfig | None = None) -> C
             "generate_splits: atribuição de n_backtest_paths só implementada para "
             f"n_test_groups=2 (1-fatoração de pares) — recebido {cfg.n_test_groups}"
         )
-    assert_grade_consistent(labels, cfg)
+    assert_grade_consistent(labels, cfg, symbol=symbol)
 
     t0_ms = labels["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t1_ms = labels["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
