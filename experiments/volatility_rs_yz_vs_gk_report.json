@@ -1,10 +1,11 @@
 {
-  "generated_at": "2026-08-12T02:10:00.665600+00:00",
-  "code_version": "2410bc1",
+  "generated_at": "2026-08-17T03:20:03.503492+00:00",
+  "code_version": "3890f20",
   "n_combinations_requested": 15,
   "n_combinations_evaluated": 15,
   "skipped": [],
-  "elapsed_seconds_total": 12.234429899603128,
+  "failed": [],
+  "elapsed_seconds_total": 11.20999109998229,
   "no_candidate_beats_gk_anywhere": false,
   "combinations": [
     {
