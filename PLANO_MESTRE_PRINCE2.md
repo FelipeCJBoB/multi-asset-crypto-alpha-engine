@@ -668,42 +668,63 @@ escrevendo este próprio documento.
 
 ### 11.4 Road Map Vivo — agenda por stage, alinhada ao PRD
 
-Rollup de tudo que já tem sprint/gatilho de revisão declarado em outro
-lugar do repo — não duplica a fonte, aponta pra ela. Criado depois de uma
-correção real do Manager (2026-08-16): "13 constantes classe A ainda
-`ASSUMED`" foi apresentado numa resposta como se fosse orçamento de
-`N_lifetime` em risco AGORA — errado. Cada uma dessas 13 já tem `review_by`
-em `config/constants.yaml`, esperado desde a decisão de ir multi-TF/
-multi-ativo (constantes atravessam mais stress de teste/reteste sob mais
-combinações — não é surpresa, é consequência já antecipada da própria
-refatoração). O lugar certo pra essa informação é aqui, por stage — não
-numa narrativa de "decisão pendente" fora de contexto.
+**Refatorado 2026-08-17 (achado do Manager: esta seção manteve a
+estrutura Sprint-N do `PRD_V3_2_UNIFICADO.md` mesmo depois do projeto
+migrar pro `PRD_V4_1.md`).** Nada foi apagado — reorganizado. Ver
+**`§11.6`** pra tabela completa de reconciliação Sprint-N↔V41-N e pro
+raciocínio de por que só PARTE do Sprint-N ficou obsoleta:
+
+> `PRD_V4_1.md` (Camadas 0-3, roadmap V41-0..12) redefine só o que
+> corresponde aproximadamente ao Sprint 1-11 do V3.2 (dados → features
+> → volatilidade → barra → timeframe → regime → barreiras → pesos →
+> calibração → Meta-Model → walk-forward → DSR, até o Gate 6). **Sprint
+> 12-18 do V3.2 (Risk Engine, Execution Engine, Testnet, Paper, Live)
+> NÃO são tocados pelo V4.1** — não estão obsoletos, só ainda não foram
+> alcançados, e continuam válidos na linguagem Sprint-N original porque
+> nenhum PRD mais novo os redefiniu.
+
+Esta tabela agora lista só o que **não tem equivalente em nenhuma aba
+dedicada** (`§11.5` dollar-bar, `§11.6` Camadas 0-3): sweeps Sprint-N
+ainda genuinamente nativos do V3.2 (não redefinidos por V4.1) + achados
+de arquitetura (`AG-NNN`) sem stage de PRD associado — categoria
+diferente de item de roadmap, mantida aqui só por não ter aba própria
+ainda.
 
 | stage | item agendado | fonte |
 |---|---|---|
-| Sprint 5 (Regime Engine) | sweep `regime_er_cutoff`, `regime_vol_cutoff`, `regime_er_cutoff_exit`, `regime_vol_cutoff_exit` | `config/constants.yaml` |
-| Sprint 6 (Label Engine) | sweep `tp_atr_mult`, `sl_atr_mult`, `time_stop_bars` (⚠️ SUPERSEDIDO por `time_stop_ms`, AG-031/AG-046 — ambas ainda classe A `ASSUMED` com `sweep_required`/`review_by: sprint_6` próprios em `constants.yaml`; decidir se o sweep mira a superseded, a canônica, ou as duas, antes do sprint tocar isto), `atr_window` | `config/constants.yaml` |
-| Sprint 10 | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
-| Sprint 11 | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
-| Sprint 16 (experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
-| Camadas 0-3 do `PRD_V4_1.md` (T0.1-T0.6, M1-M6, V41-6..12) | rastreio completo movido pra aba dedicada — mesmo tratamento de §11.5 pro dollar-bar | ⬜ ver **§11.6** (nova, 2026-08-17) | `PRD_V4_1.md` §3, Parte VIII; `audit/architecture_gaps_log.yaml::AG-075`/`AG-076` |
+| ~~Sprint 6 (Label Engine) — sweep `tp_atr_mult`/`sl_atr_mult`~~ — **SUPERSEDIDO 2026-08-17** | `V41-6` (`§11.6`) rederiva por distribuição de MFE, não por grid sweep — muda o MÉTODO, não só o valor. `time_stop_bars`/`atr_window` como constantes isoladas (fora do escopo de barreira) seguem `AG-031`/`AG-046`, seção própria | `PRD_V4_1.md` §4.1, `§11.6` |
+| Sprint 10 (não redefinido por V4.1) | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
+| Sprint 11 (não redefinido por V4.1) | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
+| Sprint 16 (não redefinido por V4.1 — Paper/experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
 | ~~Quando reprocessamento dollar-bar concluir~~ — **fechado 2026-08-17** | remedição de M1 (Parkinson bate GK em 12/15, Manager decidiu Parkinson canônico); engenharia + reprocessamento real de `labels/`/leakage validado pros 5 símbolos sob R1; só falta retreino real do Alpha (código pronto, `--resolution-id`/`--vol-estimator-id` no CLI, não executado por decisão do Manager) | `audit/architecture_gaps_log.yaml::AG-036`, `docs/refactor_parkinson_canonico.md`, §11.5 |
 | Decisão do Manager, sem stage travado ainda | retreino real de Alpha Camada 1 sob `resolution_id="R1"`+`vol_estimator_id="parkinson_w20"` (5 símbolos) + flip de `canonical_volatility_estimator.value` — comando pronto, agendado junto de outras mudanças já previstas no roadmap, não como run isolado | `docs/refactor_parkinson_canonico.md`, `audit/n_lifetime.yaml` id 17 |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — implementado, testado (94 passed), M6 desbloqueado | `audit/architecture_gaps_log.yaml::AG-030` |
-| ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — registrada em `audit/n_lifetime.yaml`, autorizada pelo Manager | `audit/architecture_gaps_log.yaml::AG-039` |
-| Decisão do Manager, sem stage travado ainda | `AG-050`: `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade | `audit/architecture_gaps_log.yaml::AG-050` |
-| Decisão do Manager, sem stage travado ainda | `AG-055`: 5 constantes `provenance: MEASURED` sem fonte verificável (`maker_fee`, `taker_fee`, `bnb_discount`, `capital_inicial_brl`, `usd_brl_ref`) — nenhuma classe A, não bloqueia build, mas rótulo semanticamente frágil | `audit/architecture_gaps_log.yaml::AG-055` |
+| ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — registrada em `audit/n_lifetime.yaml`, autorizada pelo Manager. **`N_lifetime` descontinuado 2026-08-17 como orçamento vinculante — ver nota abaixo** | `audit/architecture_gaps_log.yaml::AG-039` |
+| Decisão do Manager, sem stage travado ainda | `AG-050` (achado de arquitetura, não item de PRD): `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade | `audit/architecture_gaps_log.yaml::AG-050` |
+| Decisão do Manager, sem stage travado ainda | `AG-055` (achado de arquitetura, não item de PRD): 5 constantes `provenance: MEASURED` sem fonte verificável (`maker_fee`, `taker_fee`, `bnb_discount`, `capital_inicial_brl`, `usd_brl_ref`) — nenhuma classe A, não bloqueia build, mas rótulo semanticamente frágil | `audit/architecture_gaps_log.yaml::AG-055` |
 
-**Regra de leitura:** nenhuma linha desta tabela é orçamento de
-`N_lifetime` em risco hoje — um sweep só custa trial quando de fato roda,
-no sprint declarado, nunca antes. O único item com custo real de
-`N_lifetime` já disparado nesta rodada é `AG-036` (M1 precisa ser
-remedido) — e é diferente dos outros justamente porque não estava
-agendado, foi um achado NOVO (M2 decidir `canonical_bar_type=dollar`
-invalidou a grade sob a qual M1 tinha sido medido). Atualizar esta tabela
-quando um `review_by` mudar em `config/constants.yaml`, ou quando um
-bloqueador ganhar stage decidido.
+**`N_lifetime` DESCONTINUADO como orçamento vinculante (2026-08-17,
+decisão do Manager: "pode descontinuar, não nos será útil pra esse
+projeto, foi mal implementado desde o começo").** `audit/n_lifetime.yaml`
+mantido como registro histórico (append-only, nunca apagado), mas deixa
+de ser um GATE — nenhuma linha desta tabela nem de `§11.6` é mais
+bloqueada por `counter > 60`. **Consequência real, não resolvida
+sozinha aqui**: o próprio `PRD_V4_1.md` §6.1/§6.5 usa `N_lifetime` como
+insumo direto da fórmula de DSR (Deflated Sharpe Ratio) e do critério de
+encerramento #5 ("`N_lifetime` > 60 sem Camada 2 fechada → encerrar") —
+descontinuar o contador sem redefinir o que substitui essas duas coisas
+deixa **Gate 6 e o critério de encerramento #5 sem definição operacional
+clara**. Não inventei uma substituição aqui (decisão estatística/de
+governança que não é minha pra tomar sozinho) — registrado como
+`AG-077`, decisão pendente do Manager sobre o que (se algo) substitui a
+penalidade de multiple-testing no Gate 6.
+
+**Regra de leitura:** sweeps desta tabela (Sprint 10/11/16) não custam
+`N_lifetime` — a mecânica de "conta quando roda" segue documentada por
+completude histórica, mesmo com o contador descontinuado como gate.
+Atualizar esta tabela quando um `review_by` mudar em
+`config/constants.yaml`, ou quando um bloqueador ganhar stage decidido.
 
 ### 11.5 M1+M2 — Refactor dollar-bar canônico, ponta a ponta <a name="11-5"></a>
 
@@ -817,8 +838,8 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | ≤6 | ⬜ **não iniciado** — sequenciado deliberadamente depois de M5+M6 (decisão histórica do Manager, 2026-08-12). M6 fechou; M5 só parcial. **Não autorizado a rodar** — explora edge novo, `N_lifetime.counter=63` já excede o teto 60, exige decisão de orçamento própria, não coberta pelo override id 17 | `PRD_V4_1.md` §3.2 M4, `AG-075` |
-| **M5(V4.1) — Reconciliação de fill** | 0 | 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions`/`orders` pros 4 alts, que só existem pra BTC hoje | `PRD_V4_1.md` §3.2 M5 |
+| **M4(V4.1) — Regime** | ≤6 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)** — sequenciamento original (depois de M5+M6, decisão de 2026-08-12) ainda vale como ordem de execução (M6 fechou; M5 só parcial), mas M4 já está autorizado a ser atacado junto de M5, não mais bloqueado por orçamento (`N_lifetime` descontinuado como gate, ver §11.4). Trabalho real ainda não iniciado — candidatos vs. quantis expansivos: HMM `dynamax` (2/3/4 estados), Jump Model, BOCPD | `PRD_V4_1.md` §3.2 M4, `AG-075`, `AG-077` |
+| **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
 | V41-6 — Barreiras rederivadas | ≤4 | ⬜ não iniciado — depende de V41-5 | `PRD_V4_1.md` §4.1 |
@@ -830,10 +851,15 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
 
 **Regra desta aba:** mesma de §11.5 — nenhuma linha muda de status sem
-commit real apontável. `N_lifetime` orçado pra V4.1 completa é 15
-trials (M4=6, V41-6=4, V41-7=3, V41-10=2) sobre a base de 45 — **já
-estourado** (`counter=63`, override id 17 cobre só a migração
-Parkinson+dollar-bar, não estas medições).
+commit real apontável. `N_lifetime` orçado pra V4.1 completa era 15
+trials (M4=6, V41-6=4, V41-7=3, V41-10=2) sobre a base de 45 —
+**descontinuado como gate vinculante 2026-08-17** (decisão do Manager,
+`§11.4`) — M4/V41-6/V41-7/V41-10 não ficam mais bloqueadas por
+`counter=63 > 60`. `V41-12` (linha acima, "DSR final com
+`N_lifetime`=60") e o critério de encerramento #5 (`PRD_V4_1.md` §6.5)
+ficam **sem definição operacional clara** até o Manager decidir o que
+(se algo) substitui a penalidade de multiple-testing no Gate 6 — ver
+`AG-077`.
 
 ---
 

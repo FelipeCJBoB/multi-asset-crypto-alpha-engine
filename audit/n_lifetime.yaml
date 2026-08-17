@@ -35,7 +35,30 @@
 #   reajuste, delta=1. Aplica-se aos sweeps já agendados em §11.4 (Sprint 5/6/
 #   10/11/16) no momento em que cada um de fato rodar.
 
+# ============================================================================
+# DESCONTINUADO como orçamento vinculante -- 2026-08-17, decisão do Manager
+# ("pode descontinuar, não nos será útil pra esse projeto, foi mal
+# implementado desde o começo"). O ledger continua existindo como registro
+# HISTÓRICO (append-only preservado, nada abaixo foi apagado/editado -- mesma
+# disciplina de sempre) mas `counter` deixa de bloquear trabalho em
+# `PLANO_MESTRE_PRINCE2.md` §11.4/§11.6 (M4/V41-6/V41-7/V41-10 não ficam mais
+# presas por `counter > 60`).
+#
+# Consequência real, NÃO resolvida por esta descontinuação sozinha:
+# `PRD_V4_1.md` §6.1 usa `N_lifetime` como insumo direto da fórmula de DSR
+# (piso de significância cresce com N) e §6.5 critério de encerramento #5
+# ("N_lifetime > 60 sem Camada 2 fechada -> encerrar") depende deste contador
+# -- `src/validation/dsr.py`/`src/analysis/faixa2_dsr_and_b2_check.py` leem
+# `counter` de verdade (`_audited_n_lifetime()`). Descontinuar o CONTADOR sem
+# decidir o que substitui a penalidade de multiple-testing no cálculo de DSR
+# deixa o Gate 6 (V41-12) e o critério #5 sem definição operacional --
+# registrado como `audit/architecture_gaps_log.yaml::AG-077`, decisão
+# pendente do Manager (não inventada aqui, é decisão estatística/de
+# governança que não é do Claude tomar sozinho).
+# ============================================================================
+
 schema_version: 1
+status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
 counter: 63
 
 log:

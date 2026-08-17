@@ -5496,3 +5496,57 @@ entries:
       arquivo), fora do escopo desta rodada de governança (documentação
       de rollup, não o blueprint técnico em si).
     status: "aberto -- tabela de reconciliação Sprint-N/V41-N precisa de confirmação do Manager (é proposta, não fato); achados colaterais (a)-(d) do V3.2 não corrigidos"
+
+  - id: AG-077
+    date: "2026-08-17"
+    file: "audit/n_lifetime.yaml, PRD_V4_1.md §6.1/§6.5, src/validation/dsr.py"
+    related_file: "PLANO_MESTRE_PRINCE2.md §11.4/§11.6, audit/architecture_gaps_log.yaml::AG-039, AG-075, AG-076"
+    found_by: "Manager, decisão direta: 'N_lifetime = pode descontinuar não nos será útil para esse projeto, foi mal implementado desde o começo'."
+    gap: >
+      `N_lifetime` (`audit/n_lifetime.yaml::counter`, hoje 63) foi
+      descontinuado pelo Manager como orçamento VINCULANTE -- deixa de
+      bloquear trabalho (M4/V41-6/V41-7/V41-10 em `§11.6` não ficam mais
+      presas por `counter > 60`). Mas o contador não é decorativo no
+      resto do sistema: `PRD_V4_1.md` §6.1 usa `N_lifetime` como insumo
+      direto da fórmula de piso de significância do DSR (mais trials =
+      barra mais alta pra considerar Sharpe genuíno, não sorte de
+      multiple-testing); §6.5 critério de encerramento #5 ("N_lifetime
+      > 60 sem Camada 2 fechada -> encerrar") depende dele
+      textualmente; `src/validation/dsr.py`/`src/analysis/
+      faixa2_dsr_and_b2_check.py::_audited_n_lifetime()` leem o contador
+      de verdade em cálculo real (não só documentação). Descontinuar o
+      contador sem decidir o que substitui a penalidade de
+      multiple-testing deixa o Gate 6 (V41-12, "DSR final com
+      N_lifetime=60") e o critério de encerramento #5 sem definição
+      operacional -- não são mais calculáveis como o PRD os descreve
+      hoje.
+    severity: "alto"
+    layer: "process/doc + validation (src/validation/dsr.py tem dependência real de código, não só de prosa)"
+    consequence: >
+      Sem uma decisão explícita sobre o que substitui `N_lifetime` no
+      DSR/Gate 6, qualquer cálculo futuro de DSR usando `_audited_
+      n_lifetime()` continua lendo um número que o próprio Manager
+      classificou como "mal implementado desde o começo" -- ou o código
+      precisa ser mudado pra não depender mais dele (outra métrica de
+      controle de multiple-testing), ou o Gate 6 precisa de critério
+      novo que não seja DSR-com-N. Nenhuma das duas decisões foi tomada
+      aqui -- registrar e não fingir resolvido é o objetivo desta
+      entrada.
+    resolved_by_commit: null
+    resolution: >
+      PARCIAL -- `audit/n_lifetime.yaml` ganhou campo `status:
+      "descontinuado_2026_08_17"` (ledger preservado, append-only
+      intacto, só deixa de ser gate); `PLANO_MESTRE_PRINCE2.md` §11.4/
+      §11.6 atualizados removendo o bloqueio de orçamento das linhas
+      M4/V41-6/V41-7/V41-10. **NÃO implementado**: nenhuma substituição
+      de metodologia de controle de multiple-testing pro Gate 6/DSR foi
+      proposta nem decidida -- fica como decisão pendente do Manager,
+      não inventada unilateralmente (é escolha estatística/de
+      governança real, com consequência sobre como "pronto" é definido
+      pro projeto inteiro).
+
+      **Decisão de priorização registrada na mesma conversa**: M4
+      (Regime, `PRD_V4_1.md` §3.2) e M5 (Reconciliação de fill, escopo
+      completo 5 ativos) são a PRÓXIMA FRENTE de trabalho, por
+      instrução direta do Manager -- refletido em `§11.6`.
+    status: "aberto -- decisão do Manager pendente sobre o que (se algo) substitui N_lifetime no cálculo de DSR/Gate 6; M4+M5 priorizados, trabalho real ainda não iniciado"
