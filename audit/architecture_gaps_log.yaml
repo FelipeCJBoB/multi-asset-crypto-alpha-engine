@@ -2778,14 +2778,34 @@ entries:
       SO provavelmente começou a paginar em disco perto do pico, mais
       lento que processar mais chunks pequenos sem pressão de memória.
 
-      **Ressalva que continua real, não resolvida por este teste:** ainda
-      é 1 símbolo, 4 processos concorrentes (teto real de tasks pra 1
-      símbolo). Se a pressão de memória escalar aproximadamente linear
-      com processos concorrentes, 5 símbolos juntos (até 12 processos,
-      teto de `os.cpu_count()`) poderiam chegar perto de ~38GB -- acima
-      dos ~27GB livres da máquina. Extrapolação, não medição -- só
-      saberia de verdade rodando 5 símbolos concorrentes de fato, ainda
-      não tentado.
+      **Ressalva de escala testada e resolvida 2026-08-16 -- a extrapolação
+      linear de ~38GB para 5 símbolos NÃO se confirmou.** Usuário rodou a
+      configuração exata que travou nas 2 tentativas originais
+      (`m2_bar_comparison.py`, sem `--symbols`/`--max-workers`, 5 símbolos
+      × 4 tasks = 20 tasks, `max_workers=min(os.cpu_count()=12,20)=12`,
+      janela real de 1 mês -- 2025-01-01..2025-01-31, `chunk_days=6`):
+      **`n_failed=0, n_symbols=5`, 20/20 tasks completas, sem travamento.**
+      RSS de pico **~22,7GB**, memória disponível mínima **~4,5GB** (~17%
+      livre) -- mais apertado que o teste de 1 símbolo (chunk=6, ~53%
+      livre), mas MUITO mais folgado que o baseline original (chunk=30, 1
+      símbolo, ~400-860MB/1,5-3% livre) e bem abaixo da extrapolação linear
+      preocupada de ~38GB -- pressão de memória NÃO escala linear com nº
+      de processos concorrentes nesta carga real (provavelmente porque
+      picos individuais de processo não são perfeitamente sincronizados no
+      tempo). **Reproduz exatamente a configuração de `AG-033`/`AG-034`
+      originais, agora limpa.** Report em
+      `experiments/m2_report_5symbols_2025_01.json`, RSS em
+      `experiments/rss_sample_m2_5symbols_2025_01.csv`.
+
+      Achado lateral confirmado no caminho (não novo, mesma causa já
+      registrada em `AG-035`): todo `task_done` de `bar_type=tick_imbalance`
+      mostra `ljung_box_r_pvalue` minúsculo ou exatamente `0.0` (underflow
+      de float64 pra estatística de teste muito grande -- p-valor
+      matematicamente correto, não bug de cálculo), enquanto `dollar`/
+      `volume` do mesmo (symbol,tf) ficam normais -- consistente com a
+      miscalibração de tick_imbalance já diagnosticada (250-1000x mais
+      barras que o alvo, barras degeneradas com autocorrelação forte),
+      reaparecendo numa janela nova (jan/2025), não achado novo.
 
       **Item (1) (medir janela 2020) EXECUTADO E MEDIDO 2026-08-16 --
       resultado real, maior que qualquer coisa já conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
