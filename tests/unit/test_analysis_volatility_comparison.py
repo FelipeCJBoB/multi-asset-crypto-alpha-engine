@@ -111,7 +111,9 @@ def test_compare_estimators_forecast_var_e_o_quadrado_do_estimate() -> None:
     from src.features.volatility import Bars
 
     bars = Bars(frame=bars_df, timeframe_minutes=15)
-    forecast_var = vc._forecast_var(vc._baseline_estimator(window=20), bars)
+    forecast_var = vc._forecast_var(
+        vc._baseline_estimator(window=20), bars, horizon_minutes=15
+    )
     valid = forecast_var[~np.isnan(forecast_var)]
     assert np.all(valid >= 0.0)
 

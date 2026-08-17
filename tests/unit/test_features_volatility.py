@@ -1,20 +1,24 @@
 """Testes de `src/features/volatility.py` -- `VolatilityEstimator`
 (PRD_V4_1.md T0.1) e o lineup atual do harness de comparação (GK baseline +
 Parkinson/Rogers-Satchell/Yang-Zhang, decisão do Manager 2026-08-11 -- ver
-docstring de `src.analysis.volatility_comparison`). Eixos: (1) unit puro com
-barras sintéticas, comparando cada `*Estimator` contra a primitiva
-`support.*` chamada direto (garante que o wrapper não introduz nenhuma
-transformação além do que o docstring declara); (2) golden bit-exato de
-`ATRWilderEstimator` contra `data/labels/BTCUSDT/15m/v1/
-labels.parquet::atr_at_t0` (G-C0-1) -- recomputa ATR das mesmas `bars_15m`
-(BTCUSDT, `close_time == t0`, `triple_barrier.py:573/576-577`) que o
-Label Engine usou e compara com tolerância zero. `ATRWilderEstimator`
-continua no lineup só por causa deste golden test (é bit-idêntica ao que
-roda em produção); não é mais o baseline do harness de M1. Nenhum dos 4
-estimadores do lineup atual tem golden -- não são produção ainda, não
-existe artefato de referência pra comparar. `RealizedVolEstimator` (M1
-original, perdeu 15/15 em QLIKE) foi removido do módulo -- não tinha
-dependência de produção, mesmo tratamento de HAR-RV/EGARCH.
+docstring de `src.analysis.volatility_comparison`), mais `Bars`
+(grade de tempo vs. grade dollar-bar, AG-036) e `RealizedVolEstimator`
+(resgatado, AG-036 -- primeiro dos 3 candidatos amputados readaptado pra
+grade dollar-bar). Eixos: (1) unit puro com barras sintéticas, comparando
+cada `*Estimator` contra a primitiva `support.*` chamada direto (garante
+que o wrapper não introduz nenhuma transformação além do que o docstring
+declara); (2) golden bit-exato de `ATRWilderEstimator` contra
+`data/labels/BTCUSDT/15m/v1/labels.parquet::atr_at_t0` (G-C0-1) --
+recomputa ATR das mesmas `bars_15m` (BTCUSDT, `close_time == t0`,
+`triple_barrier.py:573/576-577`) que o Label Engine usou e compara com
+tolerância zero. `ATRWilderEstimator` continua no lineup só por causa
+deste golden test (é bit-idêntica ao que roda em produção); não é mais o
+baseline do harness de M1. Nenhum dos 4 estimadores do lineup atual tem
+golden -- não são produção ainda, não existe artefato de referência pra
+comparar; (3) `Bars.__post_init__` (exatamente 1 entre `timeframe_minutes`/
+`resolution_id`) e a guarda `NotImplementedError` que as 5 implementações
+de fórmula fechada levantam sob `resolution_id` (AG-036) -- prova que
+`RealizedVolEstimator` é a exceção documentada.
 
 Caminho migrado do legado `labels/v1/labels.parquet` pro layout chaveado
 (T0.3, PRD_V4_1.md §3.1) nesta mesma rodada -- via
@@ -33,7 +37,9 @@ from src.features.volatility import (
     Bars,
     GarmanKlassEstimator,
     ParkinsonEstimator,
+    RealizedVolEstimator,
     RogersSatchellEstimator,
+    VolatilityEstimator,
     YangZhangEstimator,
 )
 from src.validation._paths import labels_symbol_tf_dir
@@ -48,6 +54,48 @@ def _synthetic_bars(n: int = 40) -> pl.DataFrame:
     low = close - rng.uniform(0, 1, n)
     open_ = close + rng.normal(0, 0.1, n)
     return pl.DataFrame({"open": open_, "high": high, "low": low, "close": close})
+
+
+# ============================================================================
+# Bars.__post_init__ (AG-036 -- separação grade de TEMPO (timeframe_minutes)
+# vs. grade DOLLAR-BAR (resolution_id), exatamente 1 dos 2 obrigatório)
+# ============================================================================
+
+
+def test_bars_rejeita_timeframe_minutes_e_resolution_id_ambos_none() -> None:
+    with pytest.raises(ValueError, match="exatamente um"):
+        Bars(frame=_synthetic_bars())
+
+
+def test_bars_rejeita_timeframe_minutes_e_resolution_id_ambos_setados() -> None:
+    with pytest.raises(ValueError, match="exatamente um"):
+        Bars(frame=_synthetic_bars(), timeframe_minutes=15, resolution_id="R1")
+
+
+def test_bars_aceita_so_timeframe_minutes() -> None:
+    bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
+    assert bars.timeframe_minutes == 15
+    assert bars.resolution_id is None
+
+
+def test_bars_aceita_so_resolution_id() -> None:
+    bars = Bars(frame=_synthetic_bars(), resolution_id="R1")
+    assert bars.resolution_id == "R1"
+    assert bars.timeframe_minutes is None
+
+
+def test_bars_timeframe_minutes_15_continua_funcionando_identico() -> None:
+    # Regressão de retrocompatibilidade -- todo caller real de Bars(...) no
+    # repo hoje (volatility_comparison.py, triple_barrier.py,
+    # m3_timeframe_choice.py, gk_vs_wilder_econ_regime_shift.py,
+    # volatility_operational_effect.py) passa só timeframe_minutes=<int>
+    # posicionalmente equivalente a este padrão -- precisa continuar
+    # aceito sem erro, idêntico ao comportamento pré-AG-036.
+    frame = _synthetic_bars()
+    bars = Bars(frame=frame, timeframe_minutes=15)
+    estimator = ATRWilderEstimator(window=5)
+    got = estimator.estimate(bars, horizon_minutes=15)
+    assert got.shape[0] == frame.height
 
 
 def test_atr_wilder_estimator_bate_com_support_direto() -> None:
@@ -150,6 +198,60 @@ def test_garman_klass_estimator_horizonte_diferente_do_nativo_levanta() -> None:
     bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
     with pytest.raises(NotImplementedError):
         GarmanKlassEstimator(window=5).estimate(bars, horizon_minutes=30)
+
+
+# ============================================================================
+# RealizedVolEstimator (resgatado, AG-036 -- primeiro dos 3 candidatos
+# amputados readaptado pra suportar as duas grades: os 3 testes originais
+# abaixo, IDÊNTICOS ao pré-remoção (commit aec7b59), provam grade de TEMPO
+# bit-exata; o 4º teste é NOVO, prova grade DOLLAR-BAR sem erro)
+# ============================================================================
+
+
+def test_realized_vol_estimator_bate_com_support_direto() -> None:
+    frame = _synthetic_bars()
+    window = 5
+    bars = Bars(frame=frame, timeframe_minutes=15)
+    got = RealizedVolEstimator(window=window).estimate(bars, horizon_minutes=15)
+
+    close = frame["close"].to_numpy()
+    n = close.shape[0]
+    log_return = np.full(n, np.nan, dtype=np.float64)
+    log_return[1:] = np.log(close[1:] / close[:-1])
+    expected = support.realized_vol(log_return, window)
+
+    both_nan = np.isnan(got) & np.isnan(expected)
+    assert np.array_equal(got[~both_nan], expected[~both_nan])
+    assert np.array_equal(np.isnan(got), np.isnan(expected))
+
+
+def test_realized_vol_estimator_warmup_bars_e_estimator_id() -> None:
+    estimator = RealizedVolEstimator(window=20)
+    assert estimator.warmup_bars == 21  # +1: log_return[0] sempre NaN
+    assert estimator.estimator_id == "realized_vol_w20"
+
+
+def test_realized_vol_estimator_horizonte_diferente_do_nativo_levanta() -> None:
+    bars = Bars(frame=_synthetic_bars(), timeframe_minutes=15)
+    with pytest.raises(NotImplementedError):
+        RealizedVolEstimator(window=5).estimate(bars, horizon_minutes=30)
+
+
+@pytest.mark.parametrize("horizon_minutes", [1, 15, 30, 60, 9999])
+def test_realized_vol_estimator_sob_grade_dollar_bar_nao_levanta(
+    horizon_minutes: int,
+) -> None:
+    # AG-036 -- RealizedVolEstimator é a exceção documentada: sob
+    # resolution_id (grade dollar-bar), a guarda de horizon_minutes não se
+    # aplica (forecast é sempre "1 barra à frente", ver docstring da
+    # classe) -- deve retornar forecast válido pra QUALQUER horizon_minutes,
+    # sem levantar, ao contrário das 5 implementações de fórmula fechada.
+    frame = _synthetic_bars()
+    window = 5
+    bars = Bars(frame=frame, resolution_id="R1")
+    got = RealizedVolEstimator(window=window).estimate(bars, horizon_minutes=horizon_minutes)
+    assert got.shape[0] == frame.height
+    assert np.isfinite(got[~np.isnan(got)]).all()
 
 
 # ============================================================================
@@ -281,6 +383,34 @@ def test_yang_zhang_sem_gap_overnight_reduz_a_v_c_e_v_rs_ponderados() -> None:
     both_nan = np.isnan(got) & np.isnan(expected)
     assert np.array_equal(np.isnan(got), np.isnan(expected))
     assert np.allclose(got[~both_nan], expected[~both_nan], atol=1e-12)
+
+
+# ============================================================================
+# Guarda compartilhada de grade dollar-bar (AG-036) -- as 5 implementações
+# de fórmula fechada (ATRWilder/Parkinson/GarmanKlass/RogersSatchell/
+# YangZhang) ainda não foram readaptadas; devem levantar NotImplementedError
+# citando AG-036/resolution_id sob Bars(resolution_id=...). Contraste direto
+# com RealizedVolEstimator (seção acima), que NÃO levanta.
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    [
+        ATRWilderEstimator(window=5),
+        ParkinsonEstimator(window=5),
+        GarmanKlassEstimator(window=5),
+        RogersSatchellEstimator(window=5),
+        YangZhangEstimator(window=5),
+    ],
+    ids=["atr_wilder", "parkinson", "garman_klass", "rogers_satchell", "yang_zhang"],
+)
+def test_estimadores_grade_de_tempo_levantam_sob_resolution_id(
+    estimator: VolatilityEstimator,
+) -> None:
+    bars = Bars(frame=_synthetic_bars(), resolution_id="R1")
+    with pytest.raises(NotImplementedError, match="AG-036"):
+        estimator.estimate(bars, horizon_minutes=15)
 
 
 def _skip_if_labels_missing() -> None:

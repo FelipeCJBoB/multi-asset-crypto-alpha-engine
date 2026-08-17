@@ -219,8 +219,10 @@ class CombinationResult:
     any_candidate_beats_baseline: bool
 
 
-def _forecast_var(estimator: VolatilityEstimator, bars: Bars) -> FloatArray:
-    sigma_like = estimator.estimate(bars, horizon_minutes=bars.timeframe_minutes)
+def _forecast_var(
+    estimator: VolatilityEstimator, bars: Bars, *, horizon_minutes: int
+) -> FloatArray:
+    sigma_like = estimator.estimate(bars, horizon_minutes=horizon_minutes)
     forecast_var: FloatArray = sigma_like**2
     return forecast_var
 
@@ -312,7 +314,7 @@ def compare_estimators_for_combination(
     realized_var = vwf.next_bar_realized_variance(close)
 
     baseline = _baseline_estimator(window=candidate_window)
-    baseline_forecast_var = _forecast_var(baseline, bars)
+    baseline_forecast_var = _forecast_var(baseline, bars, horizon_minutes=timeframe_minutes)
     baseline_metrics, baseline_qlike_oos = _estimator_metrics(
         baseline.estimator_id,
         baseline_forecast_var,
@@ -325,7 +327,10 @@ def compare_estimators_for_combination(
     )
 
     candidate_forecasts: list[tuple[str, FloatArray]] = [
-        (estimator.estimator_id, _forecast_var(estimator, bars))
+        (
+            estimator.estimator_id,
+            _forecast_var(estimator, bars, horizon_minutes=timeframe_minutes),
+        )
         for estimator in _candidate_estimators(window=candidate_window)
     ]
 
@@ -507,7 +512,8 @@ def run_and_save_volatility_comparison_report(
     conservador. `ProcessPoolExecutor`, não threads.
 
     Chame manualmente:
-    `uv run python -c "from src.analysis.volatility_comparison import run_and_save_volatility_comparison_report as r; r()"`
+    `uv run python -c "from src.analysis.volatility_comparison import
+    run_and_save_volatility_comparison_report as r; r()"`
     ou `uv run python -m src.analysis.volatility_comparison`."""
     combos = [(symbol, tf) for symbol in symbols for tf in timeframes]
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)

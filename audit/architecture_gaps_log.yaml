@@ -4327,3 +4327,75 @@ entries:
       and not integration"`: 1139 passed (era 1138 passed + 1 failed antes
       da correção).
     status: "fechado -- corrigido e confirmado na mesma sessão do achado"
+
+  - id: AG-059
+    date: "2026-08-17"
+    file: "src/analysis/volatility_comparison.py:223 (_forecast_var)"
+    related_file: "src/features/volatility.py::Bars, audit/architecture_gaps_log.yaml::AG-036, AG-037"
+    found_by: "Agent Project Assurance (revisão independente), src/features/volatility.py"
+    gap: >
+      `Bars.timeframe_minutes` mudou de `int` (obrigatório) pra `int |
+      None` (AG-036, addendum de implementação -- suporte a grade
+      dollar-bar). `_forecast_var` (`volatility_comparison.py:223`)
+      reaproveitava `bars.timeframe_minutes` direto como argumento
+      `horizon_minutes: int` de `VolatilityEstimator.estimate()` -- dos 5
+      consumidores reais de `Bars(...)`, só este fazia isso (os outros 4
+      usam variável `int` local, `tf_minutes`/`DECISION_TF_MINUTES`).
+      `uv run mypy src` (comando exato do gate `mypy --strict` em
+      `.github/workflows/ci.yml`, NÃO `continue-on-error`) falhava:
+      "Argument horizon_minutes... has incompatible type int | None;
+      expected int". Runtime não era afetado (o caller sempre constrói
+      `Bars` com `timeframe_minutes` real, nunca `None`), mas era quebra
+      de contrato estático real -- mesma classe de risco de `AG-037`
+      (`CPCVConfig.grade_id: str | None`), que recebeu auditoria completa
+      dos ~15 callers; aqui o mesmo passo não tinha sido repetido para os
+      5 consumidores de `Bars`. `pytest` (1157 passed, confirmado antes
+      deste achado) não detecta isto -- checagens ortogonais.
+    severity: "alto"
+    layer: "features/analysis"
+    consequence: >
+      Push deste diff pra `origin/master` como estava quebraria o gate
+      obrigatório de CI (`mypy --strict`) -- contradizia a moldura
+      "retrocompatível" da entrega original, demonstrada só em nível de
+      teste/runtime, não de contrato de tipo.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17, mesma sessão do achado -- `_forecast_var`
+      ganhou `horizon_minutes: int` como parâmetro keyword-only explícito
+      em vez de ler `bars.timeframe_minutes`; os 2 call sites em
+      `compare_estimators_for_combination` passam a variável local
+      `timeframe_minutes: int` já disponível no escopo (não inventa
+      conversão nova). 3º achado da mesma leva: 1 caller de teste
+      (`tests/unit/test_analysis_volatility_comparison.py::test_compare_
+      estimators_forecast_var_e_o_quadrado_do_estimate`) chamava
+      `_forecast_var` com 2 argumentos posicionais, quebraria com
+      `TypeError` -- corrigido antes de qualquer pytest rodar (mesma
+      classe "fake/caller não atualizado quando assinatura muda", 5ª
+      ocorrência confirmada nesta sessão, ver AG-058).
+    status: "fechado -- confirmado empiricamente, uv run mypy src limpo (115 arquivos), uv run pytest -m \"not slow and not integration\" 1157 passed"
+
+  - id: AG-060
+    date: "2026-08-17"
+    file: "src/features/volatility.py::Bars.__post_init__"
+    related_file: "audit/architecture_gaps_log.yaml::AG-036, AG-042"
+    found_by: "Agent Project Assurance (revisão independente), src/features/volatility.py"
+    gap: >
+      Validação XOR de `Bars.__post_init__` checava só `is None`, não
+      falsiness -- `Bars(frame=..., resolution_id="")` passava como grade
+      dollar-bar "válida" (string vazia não é `None`). Zero caller real
+      passa `resolution_id` hoje (confirmado por Grep), risco atual zero,
+      mas o guard não defenderia contra um futuro harness dollar-bar
+      montando `resolution_id` a partir de um lookup que pode devolver
+      `""` por bug.
+    severity: "baixo"
+    layer: "features"
+    consequence: >
+      Nenhuma hoje (zero caller real). Risco futuro: aceitação silenciosa
+      de identidade de grade malformada quando o harness dollar-bar de
+      M1 for de fato escrito.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17, mesma sessão do achado -- condição trocada
+      pra `(self.timeframe_minutes is not None) == bool(self.resolution_id)`
+      (`bool()` trata `""` como falso, mesmo tratamento de `None`).
+    status: "fechado -- confirmado empiricamente, testes de Bars.__post_init__ (4) continuam passando"
