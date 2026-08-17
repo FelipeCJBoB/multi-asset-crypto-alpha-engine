@@ -128,3 +128,20 @@ Todos os 5 itens abaixo foram levados a um pacote de 10 recomendações
 3. **`aggregate_risk_max` + RPI vs. M4/M5** — `aggregate_risk_max` IMPLEMENTADO (`control_19_risco_agregado`, `AG-081`, desacoplado de V41-8 por decisão do Manager — o risco já estava quantificado). RPI segue sem linha de roadmap, correto — Sprint 16 ainda distante.
 4. **Artefato HTML de `§14`** — **CORRIGIDO nesta rodada**: a primeira execução tratou isso como "aposentar" (erro de leitura meu — o Manager pediu explicitamente pra não apagar o antigo e criar um novo, já que o objetivo de todo o sweep sempre foi REFATORAR, não abandonar). Publicado **[Road Map Vivo — v2](https://claude.ai/code/artifact/82d1a3ad-1ffd-427e-b120-a07d33a17637)** (2026-08-17), síntese visual de `§11.4-§11.6` + `§15.2/§15.4` + `AG-075..081`. v1 preservado como referência histórica, link no rodapé do v2.
 5. **`§15.4` vs. `§11.6`** — mantidas como duas lentes separadas, com tabela de cross-reference formal adicionada a `§11.6` (19 linhas).
+
+## 5. Varredura final de completude — v1 × v2 (2026-08-17)
+
+A pedido do Manager: *"garanta que não deixou nenhum sprint, V, M, gate ou qualquer outro meio do antigo roadmap vivo de fora desse novo, desde que alinhado com o que foi mapeado e validado"*.
+
+Método: `WebFetch` no artefato v1 completo (150KB), extraído pra arquivo local, todo identificador (`Sprint N`, `V41-N`, `M[1-6]`, `Gate N`, `G-C0/C1/C2/WF-N`) contado por regex e cruzado contra o v2.
+
+**Achado real no caminho:** v1 mostrava M1 como "Parkinson bate GK 5/5 símbolos" (medição parcial, só R1, `AG-065`) — divergente do "12/15" que este sweep vinha citando. Verificado contra `experiments/volatility_dollar_bar_r1_report.json` e o texto de `AG-065`/`AG-036::addendum_medicao_completa`: **"12/15" está correto** — é a medição COMPLETA (5 símbolos × 3 resoluções × 6 candidatos) que superseded a parcial de "5/5" (só R1, 4 candidatos). O v1 simplesmente parou de ser atualizado no meio dessa investigação, antes da medição completa — confirma por que precisava ser substituído.
+
+**Lacunas reais encontradas e corrigidas no v2:**
+- Trilha completa de **Sprint 0-18 + Gates 0-10** (`PRD_V3_2_UNIFICADO.md` §14.3) — v2 não tinha nenhuma, só a trilha V41-N. Adicionada como seção própria.
+- **V41-1 a V41-4** (T0.5 baseline, M1, M2+M3+M6, M4) — v2 tinha Camada 0 e V41-5 em diante, pulando esses 4. Adicionados com cross-reference explícito pros cards M1-M6.
+- **Códigos de gate** (`G-C0-1..7`, `G-C1-1..6`, `G-C2-1..3`, `G-WF-1..6`) — v2 não anotava nenhum. Adicionados em cada linha da trilha V41-N.
+
+**Confirmado, sem gap:** todo `M1`-`M6`, todo `V41-0`-`V41-12`, todo `Gate 0`-`Gate 10` do v1 tem equivalente no v2 (checagem por regex, não amostragem).
+
+**Achado secundário, não corrigido (fora do escopo desse pedido específico):** `AG-038` (baixa severidade) e `AG-040` (média severidade) — dois achados do `project_assurance` de 2026-08-16, genuinamente ainda abertos (`status: "aberto"` no ledger), não aparecem em nenhuma versão do Road Map Vivo (nem v1, nem v2) fora do próprio `architecture_gaps_log.yaml`. Diferente dos itens Sprint/V/M/Gate (checados exaustivamente acima), isto é sobre cobertura de `AG-NNN` — categoria mais ampla que o pedido original, registrada aqui por transparência, não resolvida.
