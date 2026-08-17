@@ -99,7 +99,7 @@ de fazer depois.
 11. [**Product Breakdown Structure — o mapa institucional completo**](#11)
 12. [Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund](#12)
 13. [Decisão fechada: `CLAUDE.md` "Documento mestre"](#13)
-14. [Road_Map Vivo — HTML, APOSENTADO 2026-08-17 (`AG-080`), ver §11.4-§11.6](#14)
+14. [Road_Map Vivo — v1 substituído por v2, HTML consolidado 2026-08-17 (`AG-080`)](#14)
 15. [**Descoberta de Engenharia de `src/` — o Motor Quant multi-ativo validado contra o código**](#15) — resposta ao pedido de refatoração completa
 
 ---
@@ -939,17 +939,24 @@ mudou nem podia mudar por decisão de rótulo).
 
 ---
 
-## 14. Road_Map Vivo — APOSENTADO <a name="14"></a>
+## 14. Road_Map Vivo — v1 SUBSTITUÍDO por v2 <a name="14"></a>
 
-> **🔴 APOSENTADO (`AG-080`, decisão do Manager 2026-08-17).** Não
-> republicado desde 2026-08-12 apesar da promessa "vivo" — a manutenção
-> de 2 artefatos sincronizados (este HTML + `§11.4-§11.6`) provou custar
-> mais do que valia quando adotada; `§11.4-§11.6`, ancorado em commit por
-> linha, é mais barato de manter correto e já cumpre o mesmo papel. Esta
-> seção fica como HISTÓRICO — não é mais atualizada, não é mais a fonte
-> de estado do projeto. **`§11.4-§11.6` é a fonte de estado atual.** Se
-> valor visual for necessário no futuro, gerar snapshot pontual datado
-> (não reclamar "vivo").
+> **🔵 SUBSTITUÍDO (`AG-080`, 2026-08-17) — correção de rumo do Manager:**
+> a leitura inicial desta rodada tratou "não republicar" como "aposentar
+> o conceito" — **errado**. O objetivo de todo o discovery/conciliação
+> desta sessão (Sprint-N↔V41-N, `§15.4`↔`§11.6`, `AG-075..081`) sempre
+> foi REFATORAR o Road_Map Vivo, não abandoná-lo. O artefato original
+> (link abaixo) fica como referência histórica — não é mais atualizado.
+> **O sucessor é este:**
+>
+> ➡️ **[Road Map Vivo — v2](https://claude.ai/code/artifact/82d1a3ad-1ffd-427e-b120-a07d33a17637)**
+> (publicado 2026-08-17, síntese consolidada das duas trilhas reconciliadas)
+>
+> `§11.4-§11.6` continua a fonte de estado TEXTUAL primária (o que este
+> documento versiona linha a linha); o artefato v2 é a síntese VISUAL
+> derivada dela — atualizar um dos dois sem o outro é exatamente o drift
+> que gerou esta correção, então a disciplina agora é: mudança material
+> em `§11.4-§11.6` → repassar pro v2 na mesma sessão, não depois.
 
 **https://claude.ai/code/artifact/a6335e1a-1eb1-42ae-b3af-9b43b87ea3dd**
 

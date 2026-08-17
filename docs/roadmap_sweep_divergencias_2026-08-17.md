@@ -117,10 +117,14 @@ Achados adicionais, todos validados por leitura de código:
 - `audit/architecture_gaps_log.yaml::AG-078`: itens (1)-(5) registrados, todos confirmados por código nesta rodada — nenhum urgente frente a M4/M5.
 - `audit/architecture_gaps_log.yaml::AG-079`: pergunta de escopo dos 6 itens acima, aberta, aguardando sua decisão.
 
-## 4. O que fica pendente de você
+## 4. O que ficou pendente — resolvido em rodadas seguintes desta mesma sessão
 
-1. Decisão de escopo da seção 2 (6 itens) — sim/não precisam de estudo tipo-M1.
-2. Confirmar (ou corrigir) a tabela de reconciliação Sprint-N↔V41-N do `§11.6` — segue marcada como reconstrução por evidência indireta, não fato declarado.
-3. Prioridade de `aggregate_risk_max` (sweep classe A pendente) e do experimento RPI (§9.5.1) frente a M4/M5 — nenhum dos dois é urgente hoje, mas nenhum tem linha de roadmap ainda.
-4. Republicar o artefato HTML de `§14` (ou decidir aposentá-lo formalmente, já que `§11.4-§11.6` cumprem o mesmo papel hoje) — ver `AG-080`.
-5. Decidir se `§15.4` (modelo de 15 estágios, prontidão de engenharia) e `§11.6` (M1-M6, medição) devem virar uma estrutura única, ou continuam como duas lentes complementares mantidas separadas — mesma pergunta de fundo do item 1, olhada pelo ângulo de engenharia em vez de medição.
+Todos os 5 itens abaixo foram levados a um pacote de 10 recomendações
+(`project_assurance` + Claude, convergentes em 8/10, discordância leve em
+2/10) e autorizados pelo Manager. Estado final de cada um:
+
+1. **Decisão de escopo (6 itens, `AG-079`)** — FECHADO. 6/6 não precisam de estudo tipo-M1 (motivo por item registrado em `AG-079`). `Label` ganhou proveniência escrita em `PRD_V4_1.md` §4.2; `Learner` ganhou nota sobre `N_lifetime=62` obsoleto em §4.3.
+2. **Tabela Sprint-N↔V41-N** — mantida como proposta, sem revisão formal linha-a-linha (custo real considerado maior que o benefício).
+3. **`aggregate_risk_max` + RPI vs. M4/M5** — `aggregate_risk_max` IMPLEMENTADO (`control_19_risco_agregado`, `AG-081`, desacoplado de V41-8 por decisão do Manager — o risco já estava quantificado). RPI segue sem linha de roadmap, correto — Sprint 16 ainda distante.
+4. **Artefato HTML de `§14`** — **CORRIGIDO nesta rodada**: a primeira execução tratou isso como "aposentar" (erro de leitura meu — o Manager pediu explicitamente pra não apagar o antigo e criar um novo, já que o objetivo de todo o sweep sempre foi REFATORAR, não abandonar). Publicado **[Road Map Vivo — v2](https://claude.ai/code/artifact/82d1a3ad-1ffd-427e-b120-a07d33a17637)** (2026-08-17), síntese visual de `§11.4-§11.6` + `§15.2/§15.4` + `AG-075..081`. v1 preservado como referência histórica, link no rodapé do v2.
+5. **`§15.4` vs. `§11.6`** — mantidas como duas lentes separadas, com tabela de cross-reference formal adicionada a `§11.6` (19 linhas).

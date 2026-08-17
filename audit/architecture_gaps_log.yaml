@@ -5844,19 +5844,31 @@ entries:
       informação de 2026-08-12, sem aviso de que está obsoleta.
     resolved_by_commit: null
     resolution: >
-      FECHADO (2026-08-17) -- Manager autorizou as recomendações D4/D5
-      do pacote de 10 (convergência `project_assurance`+Claude). D4:
-      `§14` formalmente APOSENTADO (não só nota-ponteiro) -- seção
-      marcada como histórico, título do Sumário atualizado, artefato
-      HTML não será mais republicado, `§11.4-§11.6` é a fonte de estado
-      única daqui pra frente. D5: tabela de cross-reference formal
-      `§15.4`↔`§11.6` adicionada (19 linhas -- 15 estágios + M3/M6/V41-5
-      sem estágio dedicado), mantendo as duas lentes SEPARADAS (não
-      fundidas -- fundir perderia a informação 2D real, ex.
-      `14_MONITORAMENTO` vermelho em engenharia + fechado em `AG-079` ao
-      mesmo tempo). `§15.2`/`§15.6`/`§15.9` mantêm as notas-ponteiro já
-      aplicadas (não precisavam de mudança adicional).
-    status: "fechado -- §14 aposentado formalmente, tabela de cross-reference §15.4↔§11.6 adicionada, autorizado pelo Manager 2026-08-17"
+      FECHADO (2026-08-17), com CORREÇÃO DE RUMO no mesmo dia -- primeira
+      passada tratou D4 como "aposentar o Road_Map Vivo" (marcou `§14`
+      histórico, sem sucessor). Manager corrigiu: o objetivo de TODO o
+      discovery/conciliação desta sessão sempre foi REFATORAR o
+      Road_Map Vivo, não abandoná-lo -- erro de leitura meu, não do
+      Manager. Corrigido: publicado
+      `https://claude.ai/code/artifact/82d1a3ad-1ffd-427e-b120-a07d33a17637`
+      ("Road Map Vivo -- v2"), síntese visual consolidando `§11.4-§11.6`
+      (medição M1-M6/V41-N) + `§15.2/§15.4` (prontidão de engenharia, 15
+      estágios) + `AG-075..081`. Artefato v1 (2026-08-12) preservado como
+      referência histórica, `§14` atualizada apontando pro v2 como
+      sucessor, não como fim de linha. `§11.4-§11.6` continua a fonte de
+      estado TEXTUAL primária; v2 é a síntese VISUAL derivada -- risco
+      real registrado explicitamente: repassar mudança material de
+      `§11.4-§11.6` pro v2 na mesma sessão, não depois (mesmo drift que
+      matou o v1 original).
+
+      D5 (tabela de cross-reference `§15.4`↔`§11.6`, 19 linhas, lentes
+      mantidas separadas) segue como estava, sem correção necessária.
+    hint_leitura_futura: >
+      "Não republicar" (achado real, v1 ficou 5 dias sem sync) e "não vale
+      a pena manter um Road_Map Vivo visual" são conclusões DIFERENTES --
+      a primeira é factual, a segunda era uma inferência minha não
+      autorizada pelo Manager. Confundir as duas foi o erro desta entrada.
+    status: "fechado -- §14 substituído por Road Map Vivo v2 (artefato visual), não aposentado sem sucessor; tabela de cross-reference §15.4↔§11.6 adicionada; correção de rumo aplicada 2026-08-17"
 
   - id: AG-081
     date: "2026-08-17"
