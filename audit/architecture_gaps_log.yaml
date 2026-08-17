@@ -3590,6 +3590,13 @@ entries:
     resolved_by_commit: null
     resolution: "NÃO IMPLEMENTADO -- achado registrado pra a lista de implementação real não perder este ponto."
     status: "aberto"
+    addendum_roadmap_2026_08_17: >
+      Manager, 2026-08-17: "Entendi, adicione ao Roadmap." Adicionado
+      como item de backlog em `PLANO_MESTRE_PRINCE2.md` §11.4 (linha de
+      "Decisão do Manager, sem stage travado ainda"), condicionado a
+      `AG-036` (extinção do T1) virar trabalho real -- não é ação
+      isolada, é checklist a não perder quando essa refatoração
+      acontecer.
 
   - id: AG-039
     date: "2026-08-16"
@@ -3656,8 +3663,21 @@ entries:
       exatamente na direção que faria a decisão de expandir T1 (AG-036)
       parecer mais segura do que é pra SOL/XRP/BNB.
     resolved_by_commit: null
-    resolution: "NÃO IMPLEMENTADO -- verificação de símbolo/qualificação por ativo pendente antes de tratar o argumento N_eff como válido pros 5 ativos."
-    status: "aberto"
+    resolution: >
+      REJEITADO (Manager, 2026-08-17) -- não vira verificação isolada.
+      Razão do Manager, verbatim: "quem vai medir a efetividade das
+      features por ativo é o ML Layer (Alpha e Meta-model
+      exclusivamente, após o treino vamos visualizar quais features
+      melhor desempenham pra explorar isso a nosso favor)". A
+      qualificação por símbolo que este gap pedia (o `N_eff` citado
+      generaliza pros 5 ativos?) é exatamente o tipo de coisa que a
+      importância de feature por ativo (HHI, DoD "código de modelo" do
+      `CLAUDE.md` -- "métricas estratificadas por regime R1..R4 e por
+      regime econômico") já vai revelar organicamente quando `09_LEARNER`
+      rodar pros 5 ativos -- não precisa de um passo de verificação
+      dedicado antes disso. Mesmo raciocínio de "medir com o instrumento
+      que já existe, não inventar um novo" já aplicado em `AG-008`/M6.
+    status: "REJEITADO 2026-08-17 -- coberto organicamente pela análise de importância de feature por ativo do ML Layer (Alpha/Meta-model) pós-treino, não precisa de verificação isolada. Não entra no roadmap."
 
   - id: AG-041
     date: "2026-08-16"
@@ -5925,4 +5945,10 @@ entries:
 
       **Pendente de execução humana** (protocolo `CLAUDE.md`, Claude não
       roda `pytest`): `uv run pytest tests/unit/test_risk_limits.py -v`.
-    status: "pronto, pendente confirmação de pytest pelo Manager -- controle é NOT_COMPUTABLE em produção até existir rastreador de posições live + série de correlação (Sprint 12+); aggregate_risk_max continua classe A ASSUMED até o sweep pré-Gate-3"
+
+      **Confirmado pelo Manager (2026-08-17): `58 passed in 0.73s`**
+      (inclui o fix do teste `test_evaluate_all_not_computable_nao_
+      impede_approved`, que ainda esperava só `{"17","18"}` -- corrigido
+      pra `{"17","18","19"}`, commit `5356199`, achado pelo próprio
+      pytest do usuário, não pelos 7 comandos mecânicos).
+    status: "FECHADO -- 58 passed confirmado pelo Manager 2026-08-17. Controle é NOT_COMPUTABLE em produção até existir rastreador de posições live + série de correlação (Sprint 12+); aggregate_risk_max continua classe A ASSUMED até o sweep pré-Gate-3 -- essas duas ressalvas não são bloqueio, são o desenho pretendido"
