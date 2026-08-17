@@ -403,7 +403,7 @@ def _test_06_contaminacao_label(
     try:
         result = cpcv.generate_splits(labels, config=config, symbol=symbol)
         cpcv.assert_no_train_t1_leaks_into_test(labels, result)
-    except (AssertionError, cpcv.CPCVError) as exc:
+    except (AssertionError, cpcv.CPCVError, ValueError) as exc:
         # `cpcv.CPCVError` (2026-08-17, Fase 4) -- achado ao abrir este
         # teste pra grade dollar-bar: `generate_splits`/`assert_grade_
         # consistent` levantam `CPCVError`, não `AssertionError`, em
@@ -412,16 +412,21 @@ def _test_06_contaminacao_label(
         # como exceção não tratada, derrubando `run_all_leakage_tests`
         # inteiro em vez de reportar FAIL com detalhe -- contrário ao
         # desenho do módulo (sentinela explícito, nunca crash silencioso).
+        # `ValueError` incluído (achado de auditoria, 2026-08-17):
+        # `assert_grade_consistent` levanta `ValueError` explícito (não
+        # `CPCVError`) quando `grade_id` é dollar-bar e `symbol=None`.
         return LeakageTestResult(6, name, "§11.5 #6", LeakageStatus.FAIL, str(exc))
 
     summary = cpcv.summarize_splits(result)
     total_purged = int(summary["n_purged"].sum())
     total_embargoed = int(summary["n_embargoed"].sum())
+    # n_splits >= n_groups >= 2 por CPCVConfig.__post_init__, nunca <= 0
+    avg_purged_per_split = round(total_purged / result.config.n_splits)  # noqa: unguarded-ratio
     detail = (
         f"CPCV real sobre labels/v1/labels.parquet ({labels.height} linhas): "
         f"{result.config.n_splits} splits combinatórios, {result.config.n_backtest_paths} "
         f"caminhos de backtest, {total_purged} linha(s)-split purgada(s) no total "
-        f"({round(total_purged / result.config.n_splits)} em média por split), "
+        f"({avg_purged_per_split} em média por split), "
         f"{total_embargoed} linha(s)-split em janela de embargo. "
         "assert_no_train_t1_leaks_into_test passou nos "
         f"{result.config.n_splits} splits — ZERO t1 de treino cruza qualquer janela de teste."
@@ -444,7 +449,16 @@ def _test_07_labels_sobrepostos(
     tolerance = 1e-6  # mesma tolerância de assert_label_invariants (§3.8)  # noqa: magic-number
     mean_ok = abs(mean_w - 1.0) < tolerance
 
-    result = cpcv.generate_splits(labels, config=config, symbol=symbol)
+    try:
+        result = cpcv.generate_splits(labels, config=config, symbol=symbol)
+    except (AssertionError, cpcv.CPCVError, ValueError) as exc:
+        # Fase 4 (2026-08-17) achou este gap em _test_06 -- achado de
+        # auditoria (audit_engineering, 2026-08-17) confirmou que _test_07
+        # e _test_12 tinham o MESMO risco (mesmo config/symbol, mesma
+        # generate_splits) sem a mesma proteção -- corrigido nos 3 juntos.
+        # ValueError incluído: assert_grade_consistent levanta ValueError
+        # (não CPCVError) quando grade dollar-bar e symbol=None.
+        return LeakageTestResult(7, name, "§11.5 #7", LeakageStatus.FAIL, str(exc))
     split0 = result.splits[0]
     threaded = weights[split0.train_idx]
     threaded_ok = threaded.shape[0] == split0.train_idx.shape[0] and bool(
@@ -618,7 +632,13 @@ def _test_12_selecao_feature_vazada(
     labels: pl.DataFrame, *, config: cpcv.CPCVConfig | None = None, symbol: str | None = None
 ) -> LeakageTestResult:
     name = "seleção de feature vazada (seleção dentro de cada fold)"
-    result = cpcv.generate_splits(labels, config=config, symbol=symbol)
+    try:
+        result = cpcv.generate_splits(labels, config=config, symbol=symbol)
+    except (AssertionError, cpcv.CPCVError, ValueError) as exc:
+        # Mesma correção de _test_06/_test_07 (achado de auditoria,
+        # 2026-08-17) -- mesmo config/symbol, mesma generate_splits, mesmo
+        # risco de crash não tratado em divergência de grade.
+        return LeakageTestResult(12, name, "§11.5 #12", LeakageStatus.FAIL, str(exc))
     violations: list[str] = []
     for split in result.splits:
         overlap = np.intersect1d(split.train_idx, split.test_idx)
@@ -864,7 +884,9 @@ def scan_feature_target_correlation(
     hard_fail_threshold = float(load_constant("feature_leakage_hard_fail_threshold"))
     n_total = df.height
     n_features = len(feature_ids)
-    bonferroni_threshold = (bonferroni_factor / math.sqrt(max(n_total, 1))) * math.sqrt(n_features)
+    # max(n_total, 1) já clampa o denominador -- nunca <= 0
+    bonferroni_ratio = bonferroni_factor / math.sqrt(max(n_total, 1))  # noqa: unguarded-ratio
+    bonferroni_threshold = bonferroni_ratio * math.sqrt(n_features)
 
     y = df[target_col].to_numpy().astype(np.float64)
     entries: list[FeatureLeakageScanEntry] = []

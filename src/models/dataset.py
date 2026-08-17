@@ -164,13 +164,40 @@ def build_modeling_frame(
     mapeado hoje (mesmo escopo de produção de M3 -- R2/R3 continuam só
     pesquisa); `resolution_id` fora do mapa levanta `ValueError` explícito
     aqui, nunca tenta um `bar_source` que `_sources.load_bars` não
-    suporta."""
+    suporta.
+
+    **Achado de auditoria corrigido aqui (`audit_engineering`, 2026-08-17):
+    a mesma garantia de UM parâmetro de grade valia só pro eixo
+    `resolution_id`, não pro eixo `tf`.** Sob `resolution_id=None`,
+    `bar_source` era hardcoded `"time_15m"` incondicionalmente -- um
+    `tf="30m"`/`"1h"` chegaria corretamente a `load_labels_v1` E a
+    `CPCVConfig.grade_id` (via `pipeline.py`), mas features/regime
+    continuariam vindo da grade de 15m, silenciosamente incoerente. Não
+    era explorável no momento do achado (`data/labels/` só tem subpasta
+    `15m/` pros 5 símbolos hoje -- `load_labels_v1(tf="30m")` levanta
+    `FileNotFoundError` antes de qualquer join), mas o projeto está
+    ativamente construindo suporte multi-TF M15/M30/H1 (M2, commits
+    recentes) -- no momento em que labels de 30m/1h existirem em disco,
+    esse caminho vira ativo. Corrigido pela mesma disciplina de falhar
+    alto: `tf` só pode ser `"15m"` quando `resolution_id is None`, porque
+    `_sources.load_bars`/Feature Engine não suportam nenhuma outra grade
+    de TEMPO ainda (só `"time_15m"`/`"dollar_r1"` existem como
+    `bar_source` válido hoje) -- estender isso é trabalho de escopo
+    multi-TF do Feature/Regime Engine, não desta migração."""
     if resolution_id is not None and resolution_id not in _BAR_SOURCE_BY_RESOLUTION:
         raise ValueError(
             f"build_modeling_frame: resolution_id={resolution_id!r} sem bar_source de "
             "Feature/Regime Engine mapeado -- suportado hoje: "
             f"{sorted(_BAR_SOURCE_BY_RESOLUTION)} (R2/R3 são só pesquisa, fora do escopo "
             "de produção desta migração)"
+        )
+    if resolution_id is None and tf != "15m":
+        raise ValueError(
+            f"build_modeling_frame: tf={tf!r} sem bar_source de Feature/Regime Engine "
+            "mapeado -- só 'time_15m' existe hoje (achado de auditoria, 2026-08-17: "
+            "labels/CPCV honrariam tf='30m'/'1h', mas features/regime ficariam presos em "
+            "15m, incoerência silenciosa). Suporte multi-TF do Feature/Regime Engine é "
+            "trabalho separado, fora do escopo desta migração."
         )
     bar_source = (
         "time_15m" if resolution_id is None else _BAR_SOURCE_BY_RESOLUTION[resolution_id]

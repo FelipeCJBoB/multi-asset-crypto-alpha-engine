@@ -377,8 +377,23 @@ def _assert_dollar_bar_grade_consistent(symbol: str, resolution_id: str) -> None
             f"não dá pra verificar identidade de grade_id={resolution_id!r} para "
             f"{symbol} sem ela (rode src.data.build_dollar_bars primeiro)"
         )
-    payload = orjson.loads(calibration_path.read_bytes())
-    calibration = DollarBarCalibration(**payload)
+    try:
+        payload = orjson.loads(calibration_path.read_bytes())
+        calibration = DollarBarCalibration(**payload)
+    except (orjson.JSONDecodeError, TypeError) as exc:
+        # Achado de auditoria (audit_engineering, 2026-08-17): arquivo
+        # PRESENTE mas corrompido (JSON malformado) ou com schema
+        # divergente (campo faltando/renomeado -- `DollarBarCalibration`
+        # é dataclass sem **kwargs, um bump de schema futuro sem
+        # recalibrar o arquivo em disco produziria TypeError cru aqui)
+        # não tinha tratamento -- só os casos "ausente"/"resolution_id
+        # divergente" abaixo eram cobertos. CPCVError explícito em vez de
+        # deixar TypeError/JSONDecodeError escaparem sem contexto
+        # acionável (mesma disciplina FCN do resto do módulo).
+        raise CPCVError(
+            f"AG-042: {calibration_path} corrompido ou schema divergente do esperado "
+            f"({exc}) -- recalibre com src.data.build_dollar_bars"
+        ) from exc
     if calibration.resolution_id != resolution_id:
         raise CPCVError(
             f"AG-042: {calibration_path} tem resolution_id={calibration.resolution_id!r}, "

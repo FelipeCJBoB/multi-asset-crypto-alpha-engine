@@ -209,6 +209,101 @@ def test_run_layer1_sprint_tf_explicito_propaga_ate_dest_dir_final(
     assert calls[1]["dest_dir"] == expected_c0
 
 
+# ============================================================================
+# run_layer1_sprint(tf=..., resolution_id=..., vol_estimator_id=...) --
+# propagação até build_modeling_frame/generate_splits (achado de auditoria,
+# audit_engineering 2026-08-17: nenhum teste existente capturava os kwargs
+# reais recebidos por esses dois -- só o roteamento de dest_dir, que não
+# prova que build_modeling_frame/CPCVConfig de fato receberam tf/
+# resolution_id/vol_estimator_id/config/symbol corretos)
+# ============================================================================
+
+
+def _run_layer1_sprint_capturing_core_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: Any
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Mesmo padrão de `_run_layer1_sprint_capturing_predictions_calls`, mas
+    captura os KWARGS reais recebidos por `build_modeling_frame`/
+    `generate_splits` (a correção-âncora desta migração, Fase 4) em vez de
+    descartá-los."""
+    bmf_calls: dict[str, Any] = {}
+    gs_calls: dict[str, Any] = {}
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+
+    def _fake_build_modeling_frame(**kwargs: Any) -> dataset.ModelingFrame:
+        bmf_calls.update(kwargs)
+        return fake_mf
+
+    monkeypatch.setattr(dataset, "build_modeling_frame", _fake_build_modeling_frame)
+
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+
+    def _fake_generate_splits(
+        labels: pl.DataFrame, config: object = None, *, symbol: str | None = None
+    ) -> object:
+        gs_calls.update(config=config, symbol=symbol)
+        return fake_cpcv_result
+
+    monkeypatch.setattr(cpcv, "generate_splits", _fake_generate_splits)
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    def _fake_write_predictions_atomic(
+        predictions: pl.DataFrame, model_id: str, *, dest_dir: Path | None = None
+    ) -> Path:
+        raise _StopAfterPredictions()
+
+    monkeypatch.setattr(pipeline, "write_predictions_atomic", _fake_write_predictions_atomic)
+
+    with pytest.raises(_StopAfterPredictions):
+        pipeline.run_layer1_sprint(**run_kwargs)
+
+    return bmf_calls, gs_calls
+
+
+def test_run_layer1_sprint_tf_explicito_propaga_ate_build_modeling_frame_e_cpcv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado de auditoria: `tf="30m"` era validado (`step_ms`) mas nunca
+    chegava a `build_modeling_frame`/`generate_splits` -- bug real corrigido
+    na Fase 4, sem teste de regressão até agora."""
+    bmf_calls, gs_calls = _run_layer1_sprint_capturing_core_calls(monkeypatch, tf="30m")
+
+    assert bmf_calls["tf"] == "30m"
+    assert bmf_calls["resolution_id"] is None
+    assert bmf_calls["vol_estimator_id"] is None
+    assert bmf_calls["symbol"] == pipeline.SYMBOL
+
+    assert gs_calls["symbol"] == pipeline.SYMBOL
+    cpcv_config = gs_calls["config"]
+    assert cpcv_config.tf == "30m"
+    assert cpcv_config.grade_id == "30m"
+
+
+def test_run_layer1_sprint_resolution_id_propaga_ate_build_modeling_frame_e_cpcv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`resolution_id="R1"` vence sobre `tf` (que fica `None`, sentinela
+    legado) na construção do `grade_id` do CPCV -- mesmo desenho de UM
+    parâmetro de grade das Fases 2-4."""
+    bmf_calls, gs_calls = _run_layer1_sprint_capturing_core_calls(
+        monkeypatch, resolution_id="R1", vol_estimator_id="parkinson_w20"
+    )
+
+    assert bmf_calls["tf"] == "15m"  # tf_effective (tf=None -> "15m")
+    assert bmf_calls["resolution_id"] == "R1"
+    assert bmf_calls["vol_estimator_id"] == "parkinson_w20"
+
+    cpcv_config = gs_calls["config"]
+    assert cpcv_config.grade_id == "R1"
+
+
 def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
     """`step_ms(tf)` valida ANTES de `build_modeling_frame`/CPCV/treino —
     nenhum monkeypatch nesta função: se a validação não fosse a primeira

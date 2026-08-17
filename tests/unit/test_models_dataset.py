@@ -83,10 +83,17 @@ def test_build_modeling_frame_roteia_symbol_version_tf_ate_load_labels_v1(
         regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
 
-    ds.build_modeling_frame(symbol="ETHUSDT", labels_version="v1", tf="30m")
+    # tf="15m" (não "30m" como em versão anterior deste teste): achado de
+    # auditoria (audit_engineering, 2026-08-17) mostrou que tf != "15m" sem
+    # resolution_id produz frame incoerente (labels/CPCV honrariam tf, mas
+    # features/regime ficariam presas em 15m) -- build_modeling_frame agora
+    # rejeita isso explicitamente (ver teste dedicado abaixo). "15m" é
+    # suficiente pra provar o roteamento de symbol/version/tf que este
+    # teste existe pra proteger (achado AG-015 original).
+    ds.build_modeling_frame(symbol="ETHUSDT", labels_version="v1", tf="15m")
 
     assert calls == [
-        {"version": "v1", "symbol": "ETHUSDT", "tf": "30m", "resolution_id": None}
+        {"version": "v1", "symbol": "ETHUSDT", "tf": "15m", "resolution_id": None}
     ]
 
 
@@ -207,6 +214,28 @@ def test_build_modeling_frame_resolution_id_nao_mapeado_levanta_valueerror() -> 
     de deixar `_sources.load_bars` levantar um erro menos claro depois."""
     with pytest.raises(ValueError, match="resolution_id"):
         ds.build_modeling_frame(resolution_id="R2")
+
+
+def test_build_modeling_frame_tf_diferente_de_15m_sem_resolution_id_levanta_valueerror() -> None:
+    """Achado de auditoria (audit_engineering, 2026-08-17): antes desta
+    correção, `bar_source` era hardcoded `"time_15m"` independente de `tf`
+    -- `tf="30m"` chegaria corretamente a `load_labels_v1`/`CPCVConfig.
+    grade_id` (via `run_layer1_sprint`) mas features/regime ficariam presas
+    em 15m, incoerência silenciosa (não explorável hoje só porque não
+    existe `labels/` de 30m/1h em disco ainda -- mas o projeto está
+    construindo suporte multi-TF ativamente). `ValueError` explícito agora,
+    mesma disciplina do guard de `resolution_id` acima."""
+    with pytest.raises(ValueError, match="tf"):
+        ds.build_modeling_frame(tf="30m", resolution_id=None)
+
+
+def test_build_modeling_frame_tf_15m_sem_resolution_id_nao_levanta() -> None:
+    """Confirma que o guard novo não é largo demais -- tf="15m" (default e
+    único suportado) continua funcionando, sem regressão."""
+    with pytest.raises(FileNotFoundError):
+        # levanta por labels reais ausentes no ambiente de teste, não pelo
+        # guard novo -- prova que tf="15m" passa da validação
+        ds.build_modeling_frame(symbol="__SYMBOL_INEXISTENTE__", tf="15m", resolution_id=None)
 
 
 def _synthetic_frame() -> pl.DataFrame:

@@ -265,6 +265,25 @@ de USO, não mudança de código nesse módulo.
    original (que previa "fechar AG-036/065 de vez, decisão MEDIDA E
    APLICADA") — decisão está MEDIDA e a ENGENHARIA está pronta, mas
    APLICAÇÃO real (Fase 5) continua deliberadamente pendente.
+7. ✅ **Auditoria final (`audit_engineering`, 4 agentes paralelos, um por
+   pacote)** sobre todos os arquivos de produção tocados — pedido
+   explícito do Manager. Zero CRITICAL. 3 HIGH encontrados e corrigidos
+   na mesma sessão: (a) `leakage.py::_test_07/_test_12` sem a mesma
+   proteção contra `CPCVError` que `_test_06` ganhou; (b) paridade
+   lote↔streaming nunca exercida sob Parkinson/dollar-bar (DoD do
+   CLAUDE.md); (c) `build_modeling_frame` amarrava `bar_source` de
+   Feature/Regime Engine só a `resolution_id`, nunca a `tf` — `tf="30m"`
+   chegaria a labels/CPCV mas não a features/regime, incoerência
+   silenciosa ainda não explorável (sem labels de 30m/1h em disco) mas
+   real. 4 MEDIUM corrigidos (gate duplicado em `pipeline.py`, teste de
+   regressão faltando pra propagação em `run_layer1_sprint`,
+   `_calibration.json` corrompido produzindo erro cru). 2 MEDIUM
+   registrados como pré-condição de Fase 5, não corrigidos agora
+   (`n_bars_held` sem guarda de overflow sob dollar-bar,
+   `median_bar_ms` sem teste do branch degenerado) — ver
+   `audit/architecture_gaps_log.yaml::AG-036::
+   addendum_audit_engineering_2026_08_17`. Suíte completa 1314/1314 após
+   as correções.
 
 ## O que NÃO é decidido aqui
 

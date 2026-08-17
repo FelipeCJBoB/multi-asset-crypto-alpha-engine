@@ -39,6 +39,12 @@ def _skip_if_missing() -> None:
         pytest.skip(f"fixture ausente no backfill local: {path}")
 
 
+def _skip_if_missing_dollar_bars() -> None:
+    path = CAPACITY_DIR / "dollar_bars_r1" / "BTCUSDT" / f"{_FIXTURE_START}.parquet"
+    if not path.exists():
+        pytest.skip(f"fixture dollar-bar ausente no backfill local: {path}")
+
+
 @pytest.mark.slow
 @pytest.mark.integration
 def test_paridade_lote_streaming_ultimas_500_barras() -> None:
@@ -101,6 +107,117 @@ def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario() -
     batch = build.compute_t1_features(bars, funding, oi, windows=windows, apply_warmup_mask=False)
 
     row_idx = 2500
+    sub_bars = bars.slice(0, row_idx + 1)
+    sub_funding = funding.slice(0, row_idx + 1)
+    sub_oi = oi.slice(0, row_idx + 1)
+    stream_row = build.compute_t1_features(
+        sub_bars, sub_funding, sub_oi, windows=windows, apply_warmup_mask=False
+    ).row(-1, named=True)
+    batch_row = batch.row(row_idx, named=True)
+
+    for col in list(build.T1_FEATURE_IDS) + list(build.SUPPORT_FEATURE_IDS):
+        a, b = stream_row[col], batch_row[col]
+        if a is None and b is None:
+            continue
+        assert a is not None and b is not None
+        assert np.isclose(a, b, atol=_TOLERANCE, rtol=0), f"{col}: streaming={a} lote={b}"
+
+
+# ============================================================================
+# vol_estimator_id="parkinson_w20" / bar_source="dollar_r1" -- Fase 2 da
+# migração Parkinson+dollar-bar (2026-08-17). Achado de auditoria
+# (audit_engineering, mesma data): o DoD de "código de feature" (CLAUDE.md,
+# §16.10) exige paridade lote<->streaming pra QUALQUER código de feature
+# novo -- `c01_atr_20_parkinson` (mecanismo diferente de `atr_wilder`,
+# `pl.Series.rolling_mean` em vez de suavização recursiva) e o carregamento
+# de dollar bar nunca tinham sido exercidos por este teste, só pela suíte
+# unitária (causal/dimensional, não full-pipeline lote<->streaming).
+# ============================================================================
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_paridade_lote_streaming_parkinson_ultimas_500_barras() -> None:
+    """Mesmo teste de `test_paridade_lote_streaming_ultimas_500_barras`,
+    só trocando `vol_estimator_id` -- mesma grade (time_15m), mesmo
+    fixture. Prova que o mecanismo de `c01_atr_20_parkinson`
+    (`rolling_mean` sobre janela fixa) é tão causal/prefix-invariante
+    quanto `atr_wilder` (recursivo), apesar de ser uma primitiva Polars
+    diferente."""
+    _skip_if_missing()
+
+    bars = _sources.load_bars_15m("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    assert bars.height > 2000 + _N_TAIL
+
+    windows = build.FeatureWindows.from_constants()
+    vol_estimator_id = f"parkinson_w{windows.atr_window}"
+    batch = build.compute_t1_features(
+        bars,
+        funding,
+        oi,
+        windows=windows,
+        apply_warmup_mask=False,
+        vol_estimator_id=vol_estimator_id,
+    )
+
+    feature_cols = list(build.T1_FEATURE_IDS) + list(build.SUPPORT_FEATURE_IDS)
+    max_abs_dev = 0.0
+    worst: tuple[str, int, float, float] | None = None
+
+    for row_idx in range(bars.height - _N_TAIL, bars.height):
+        sub_bars = bars.slice(0, row_idx + 1)
+        sub_funding = funding.slice(0, row_idx + 1)
+        sub_oi = oi.slice(0, row_idx + 1)
+        stream_row = build.compute_t1_features(
+            sub_bars,
+            sub_funding,
+            sub_oi,
+            windows=windows,
+            apply_warmup_mask=False,
+            vol_estimator_id=vol_estimator_id,
+        ).row(-1, named=True)
+        batch_row = batch.row(row_idx, named=True)
+
+        for col in feature_cols:
+            a = stream_row[col]
+            b = batch_row[col]
+            if a is None and b is None:
+                continue
+            assert a is not None and b is not None, (
+                f"{col} em row {row_idx}: streaming={a!r} vs lote={b!r} (um é null e outro não)"
+            )
+            dev = abs(float(a) - float(b))
+            if dev > max_abs_dev:
+                max_abs_dev = dev
+                worst = (col, row_idx, float(a), float(b))
+
+    assert max_abs_dev < _TOLERANCE, (
+        f"desvio máximo {max_abs_dev} >= tolerância {_TOLERANCE} (pior caso: {worst})"
+    )
+
+
+@pytest.mark.integration
+def test_paridade_streaming_bate_com_recompute_do_zero_sob_dollar_bar() -> None:
+    """Complemento pontual (mesmo padrão de `..._prefixo_arbitrario` acima)
+    -- prova que carregar via `bar_source="dollar_r1"` (fonte de barras
+    diferente, `lake.query_dollar_bars` em vez de `load_bars_15m`) não
+    quebra a invariante prefix-causal do Feature Engine. Não cobre as 500
+    barras completas (custo menor, dado dollar-bar tem volume real maior
+    por partição) -- um ponto isolado já detecta regressão de mecanismo,
+    mesmo racional do teste irmão pra grade de tempo."""
+    _skip_if_missing_dollar_bars()
+
+    bars = _sources.load_bars("BTCUSDT", _FIXTURE_START, _FIXTURE_END, bar_source="dollar_r1")
+    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    assert bars.height > 100  # margem mínima de warmup pro ponto testado abaixo
+
+    windows = build.FeatureWindows.from_constants()
+    batch = build.compute_t1_features(bars, funding, oi, windows=windows, apply_warmup_mask=False)
+
+    row_idx = min(100, bars.height - 1)
     sub_bars = bars.slice(0, row_idx + 1)
     sub_funding = funding.slice(0, row_idx + 1)
     sub_oi = oi.slice(0, row_idx + 1)

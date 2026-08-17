@@ -310,6 +310,50 @@ def test_assert_grade_consistent_dollar_bar_calibracao_resolution_id_divergente_
         cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")
 
 
+def test_assert_grade_consistent_dollar_bar_calibracao_corrompida_levanta_cpcverror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Achado de auditoria (audit_engineering, 2026-08-17): arquivo
+    PRESENTE mas corrompido (JSON malformado) não tinha tratamento --
+    `orjson.JSONDecodeError` cru escapava em vez de `CPCVError` com
+    contexto acionável (mesmo padrão dos dois casos vizinhos, arquivo
+    ausente/resolution_id divergente, que já eram cobertos)."""
+    from src.data import _paths as data_paths
+
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(cpcv, "CAPACITY_DIR", tmp_path)
+    symbol_dir = tmp_path / "dollar_bars_r1" / "BTCUSDT"
+    symbol_dir.mkdir(parents=True, exist_ok=True)
+    (symbol_dir / "_calibration.json").write_bytes(b"{not valid json")
+
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    with pytest.raises(cpcv.CPCVError, match="corrompido"):
+        cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")
+
+
+def test_assert_grade_consistent_dollar_bar_calibracao_schema_divergente_levanta_cpcverror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mesmo achado -- JSON válido, mas faltando campo obrigatório do
+    dataclass `DollarBarCalibration` (bump de schema futuro sem
+    recalibrar o arquivo em disco). `TypeError` cru escapava antes."""
+    import orjson
+
+    from src.data import _paths as data_paths
+
+    monkeypatch.setattr(data_paths, "CAPACITY_DIR", tmp_path)
+    monkeypatch.setattr(cpcv, "CAPACITY_DIR", tmp_path)
+    symbol_dir = tmp_path / "dollar_bars_r1" / "BTCUSDT"
+    symbol_dir.mkdir(parents=True, exist_ok=True)
+    (symbol_dir / "_calibration.json").write_bytes(orjson.dumps({"symbol": "BTCUSDT"}))
+
+    labels = _make_synthetic_labels(600, horizon_bars=1)
+    cfg = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=2 * _BAR_MS, grade_id="R1")
+    with pytest.raises(cpcv.CPCVError, match="corrompido"):
+        cpcv.assert_grade_consistent(labels, cfg, symbol="BTCUSDT")
+
+
 def test_config_dollar_bar_grade_id_nao_valida_step_ms_na_construcao() -> None:
     """AG-042 -- `CPCVConfig(grade_id="R1")` não levanta na construção
     (diferente de um `tf`/`grade_id` de tempo desconhecido) -- `tf` fica

@@ -195,6 +195,28 @@ def test_teste_06_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
     assert result.status == leakage.LeakageStatus.FAIL
 
 
+def test_teste_07_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
+    """Achado de auditoria (audit_engineering, 2026-08-17): `_test_07` tinha
+    o MESMO risco de `_test_06` (mesmo `config`/`symbol`, mesma
+    `generate_splits`) sem a mesma proteção -- `CPCVError` de divergência
+    de grade escapava não tratado. Corrigido junto com `_test_06`/`_test_12`."""
+    labels = _make_synthetic_labels(1200, horizon_bars=1)
+    config_errada = cpcv.CPCVConfig.from_constants(tf="30m", grade_id="30m")
+    result = leakage._test_07_labels_sobrepostos(labels, config=config_errada, symbol="BTCUSDT")
+    assert result.test_id == 7
+    assert result.status == leakage.LeakageStatus.FAIL
+
+
+def test_teste_12_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
+    labels = _make_synthetic_labels(1200, horizon_bars=1)
+    config_errada = cpcv.CPCVConfig.from_constants(tf="30m", grade_id="30m")
+    result = leakage._test_12_selecao_feature_vazada(
+        labels, config=config_errada, symbol="BTCUSDT"
+    )
+    assert result.test_id == 12
+    assert result.status == leakage.LeakageStatus.FAIL
+
+
 def test_run_all_leakage_tests_repassa_symbol_a_generate_splits_dos_testes_6_7_12(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -28,7 +28,6 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
-from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.resample import step_ms
 from src.validation import cpcv
 
@@ -390,11 +389,19 @@ def run_layer1_sprint(
     de path-collision de `labels_symbol_tf_dir`, Fase 1)."""
     if tf is not None:
         step_ms(tf)  # UnsupportedTimeframeError cedo — antes do trabalho caro abaixo
-    if resolution_id is not None and resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
-        raise ValueError(
-            f"run_layer1_sprint: resolution_id={resolution_id!r} não suportado -- esperado "
-            f"um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
-        )
+    # `resolution_id`/`tf` sem bar_source de Feature/Regime Engine mapeado:
+    # validado dentro de `ds.build_modeling_frame` (achado de auditoria,
+    # 2026-08-17) -- NÃO duplicado aqui de propósito. Um gate próprio aqui
+    # checando contra `CALIBRATION_TF_BY_RESOLUTION` (={R1,R2,R3}, mais
+    # largo que `dataset._BAR_SOURCE_BY_RESOLUTION`={R1}) permitiria
+    # resolution_id="R2"/"R3" passar por ESTE gate com mensagem de erro
+    # que lista {R1,R2,R3} como "esperado", pra só falhar depois dentro de
+    # build_modeling_frame com mensagem contraditória ("R2/R3 são só
+    # pesquisa") -- exatamente o padrão "valide largo aqui, use estreito
+    # ali" já catalogado várias vezes neste repo (AG-004/005/017/027).
+    # Nenhum trabalho caro acontece entre aqui e a chamada de
+    # build_modeling_frame abaixo, então não há custo real de fail-fast
+    # perdido ao não duplicar o check.
     t_start = time.time()
     tf_effective = tf if tf is not None else "15m"
     grade_id = resolution_id if resolution_id is not None else tf_effective

@@ -3335,6 +3335,76 @@ entries:
       deliberado pra não fazer 2 reprocessamentos onde 1 bastaria.
       `constants.yaml::value` permanece `garman_klass_w20` até essa
       rodada futura acontecer.
+    addendum_audit_engineering_2026_08_17: >
+      Skill `audit_engineering` (lente quádrupla FS/FI/FT/FCN) invocada
+      sobre os arquivos de produção tocados pelas Fases 0-4, conforme
+      pedido do Manager -- 4 agentes independentes em paralelo, um por
+      pacote (`validation/`, `labels/`, `features/+regime/`,
+      `models/+backtest/+analysis`). Nenhum CRITICAL. Achados HIGH, todos
+      corrigidos na mesma sessão:
+
+      1. `leakage.py::_test_07/_test_12` não tinham a mesma proteção
+      `except (AssertionError, CPCVError, ValueError)` que `_test_06`
+      ganhou na Fase 4 -- mesmo `config`/`symbol`, mesmo risco de crash
+      não tratado em divergência de grade. Corrigido nos 3 juntos + 2
+      testes de regressão novos.
+
+      2. `tests/parity/test_features_parity.py` (DoD "código de feature",
+      CLAUDE.md) nunca tinha sido exercido com `vol_estimator_id=
+      "parkinson_w20"` nem `bar_source="dollar_r1"` -- só a suíte unitária
+      causal/dimensional cobria os dois caminhos novos, não a prova mais
+      forte de causalidade que o repo tem por desenho. 2 testes novos
+      adicionados (500 barras sob Parkinson/time_15m; ponto isolado sob
+      dollar_r1), ambos passando contra dado real.
+
+      3. **`build_modeling_frame`: `bar_source` de Feature/Regime Engine
+      dependia só de `resolution_id`, nunca de `tf`** -- `tf="30m"`/`"1h"`
+      chegaria corretamente a `load_labels_v1`/`CPCVConfig.grade_id` (via
+      `run_layer1_sprint`, corrigido nesta mesma Fase 4), mas
+      features/regime ficariam presas em 15m, incoerência silenciosa.
+      Não explorável hoje (`data/labels/` só tem `15m/` em disco pros 5
+      símbolos, `load_labels_v1(tf="30m")` levanta `FileNotFoundError`
+      antes do join) -- mas o projeto constrói suporte multi-TF M15/M30/H1
+      ativamente (M2), então esse caminho viraria ativo assim que labels
+      de 30m/1h existirem. Corrigido: `build_modeling_frame` agora rejeita
+      `tf != "15m"` quando `resolution_id is None`, mesma disciplina de
+      falhar alto já aplicada ao guard de `resolution_id`. Este achado
+      também expôs que a docstring da Fase 4 (commit `b5760fe`)
+      overclaimava o que tinha sido corrigido ("labels/features/regime/
+      CPCV" quando só labels+CPCV honravam `tf` de verdade) -- corrigido
+      no código E na documentação.
+
+      MEDIUM corrigidos: gate duplicado em `pipeline.py` validando
+      `resolution_id` contra um conjunto mais largo (`{R1,R2,R3}`) que o
+      gate real em `dataset.py` (`{R1}`) -- removido o gate redundante,
+      única fonte de verdade agora é `build_modeling_frame`; ausência de
+      teste de regressão pra propagação `tf`/`resolution_id`/`config`/
+      `symbol` dentro de `run_layer1_sprint` -- 2 testes novos com stubs
+      capturando kwargs reais; `_calibration.json` corrompido/schema
+      divergente produzia `TypeError`/`JSONDecodeError` cru em
+      `cpcv._assert_dollar_bar_grade_consistent` -- agora `CPCVError`
+      explícito, 2 testes novos.
+
+      MEDIUM registrados, NÃO corrigidos agora (pré-condição pra Fase 5
+      ativar, não bloqueiam o estado atual "engenharia pronta, corte
+      adiado"): `n_bars_held` (`pl.Int16`, `triple_barrier.py`) sem guarda
+      de overflow sob densidade de dollar-bar -- mesmo padrão de widening
+      preventivo já aplicado a `n_funding_events`, mas não replicado aqui;
+      branches degenerados de `median_bar_ms` (`n=1`, `median<=0`, AG-061)
+      sem teste dedicado, só o caso "normal" é exercitado. Fechar os dois
+      antes de qualquer backfill real sob `resolution_id="R1"`.
+
+      LOW (documentação/cosmético, não corrigidos): 2 `# noqa: unguarded-
+      ratio` faltando em `leakage.py` (corrigidos, ver acima -- na
+      verdade viraram parte da correção); `_constants.py` labels ainda
+      cita `fill_timeout_bars` no enunciado de literais banidos (deveria
+      ser `fill_timeout_ms`, drift pré-existente não relacionado a esta
+      migração); assimetria documentada entre Feature Engine (sem bypass
+      possível do desabilita-cap) e Regime Engine (`thresholds` explícito
+      nunca sobrescrito) -- desenho deliberado e testado, não bug.
+
+      Suíte completa 1314/1314 após todas as correções (up de 1305 antes
+      da auditoria), zero regressão.
 
   - id: AG-037
     date: "2026-08-16"
