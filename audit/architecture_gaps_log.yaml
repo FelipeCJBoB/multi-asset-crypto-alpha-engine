@@ -3382,7 +3382,48 @@ entries:
       bug pré-existente de `_query_baseline`, a 3ª confirmou limpo):
       **105 passed in 167,23s**. Commitado em `982b5d4`, pushed pra
       `origin/master`.
-    status: "FECHADO PARCIALMENTE 2026-08-16 -- itens (1)/M2 implementados e testados (105 passed), commitados. Itens (2) alarme de deriva e (3) regra de calibration_version seguem abertos, fora de escopo desta leva (sem caller real até dollar bar ser implantado)."
+    status: "FECHADO PARCIALMENTE 2026-08-16 -- itens (1)/M2 implementados e testados (105 passed), commitados. Item (3) regra de calibration_version segue aberto (decisão de negócio do Manager sobre calibração congelada de produção)."
+    addendum_item2_alarme_de_deriva_2026_08_16: >
+      Item (2) IMPLEMENTADO -- `src/monitoring/dollar_bar_drift.py`
+      (novo), `DollarBarDriftResult`/`evaluate_drift` (função pura,
+      `drift_ratio = max/min` dos dois thresholds, `alarm_triggered =
+      drift_ratio > dollar_bar_drift_alarm_ratio_max`, estritamente
+      maior) + `measure_new_window_drift` (mede janela nova via
+      `src.data._chunked_scan`, mesma fórmula de `build_dollar_bars.
+      calibrate_dollar_threshold_for_validation`). Constante nova
+      `dollar_bar_drift_alarm_ratio_max` (classe C, `ASSUMED`, valor
+      3,0 -- ver `constants.yaml` pra tensão documentada com a regra
+      "guardrails classe C são quantis": não existe medição de deriva em
+      cadência operacional hoje, só entre regimes de mercado inteiros
+      distantes no tempo; 3,0 é conservador e redondo por decisão
+      explícita, não calibração estatística). Direção de import
+      `monitoring -> data` verificada contra `pyproject.toml::
+      [tool.importlinter]` inteiro (7 contratos, nenhum proíbe) antes de
+      implementar, não presumida. Zero caller de produção/live -- só CLI
+      de invocação manual, mesma disciplina de escopo de `build_dollar_
+      bars.py`. 12 testes novos (`tests/unit/test_monitoring_dollar_bar_
+      drift.py`), incluindo um com os números REAIS de BTCUSDT
+      (`drift_ratio=18,18x`, `experiments/dollar_threshold_drift.json`)
+      contra o limiar de produção de fato declarado em `constants.yaml`
+      (não um override de teste). Revisão pessoal (eu, linha a linha)
+      achou 1 problema real fora do escopo da entrega: `src/monitoring/
+      logging.py` (arquivo pré-existente, único commit desde Sprint 1-3,
+      nunca tinha sido linted/mypy-checado como parte de `src/monitoring/`
+      inteiro antes) tinha E501 (linha >100 char) e um erro real de mypy
+      strict (`_mask_secrets` tipado com `dict[str,Any]` em vez de
+      `MutableMapping[str,Any]`, incompatível com o `Processor` protocol
+      do structlog -- contravariância de parâmetro). Ambos corrigidos na
+      mesma sessão, não bloqueavam a entrega original mas eram achados
+      reais latentes desde o scaffolding inicial. Mecânicos (banned_
+      patterns/check_constants_referenced --worktree/check_unguarded_
+      ratios/ruff/mypy) limpos em `src/monitoring/` inteiro após as
+      correções. Pendente: confirmação de pytest do usuário antes de
+      considerar o item (2) validado ponta a ponta (implementação segue
+      só com meus 6 mecânicos + revisão pessoal, sem `project_assurance`
+      dedicado -- avaliado como abaixo do limiar de materialidade de
+      §6.1/§4: zero exposição financeira direta, zero caller de produção,
+      complexidade baixa; decisão explícita de não comissionar revisão
+      completa por enquanto, mesma lógica de `AG-050`)."
 
   - id: AG-043
     date: "2026-08-16"

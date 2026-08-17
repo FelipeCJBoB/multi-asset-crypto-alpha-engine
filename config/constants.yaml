@@ -1536,3 +1536,49 @@ volatility_operational_effect_duckdb_threads:
   source: "mesmo achado de volatility_operational_effect_duckdb_memory_limit_gb -- mesma disciplina de m2_duckdb_threads, aplicada a volatility_operational_effect.py."
   class: C
   sweep_required: false
+
+# ============================================================================
+# src/monitoring/dollar_bar_drift.py — AG-042 (audit/architecture_gaps_log.
+# yaml), Opção A′ ("threshold fixo por símbolo/resolução + alarme de
+# deriva"), item 2 dos 3 registrados: MECANISMO do alarme. Item 3
+# (calibration_version, regra formal de recalibração em produção) continua
+# deferido -- ver docstring do módulo.
+# ============================================================================
+
+dollar_bar_drift_alarm_ratio_max:
+  value: 3.0
+  provenance: ASSUMED
+  source: "AG-042 item 2 -- sem base medida que justifique um valor
+    específico (Regra Zero, CLAUDE.md). O único número real disponível hoje
+    é a deriva JÁ MEDIDA entre janelas de REGIME INTEIRAS e distantes no
+    tempo (tools/diagnostics/measure_dollar_threshold_drift.py,
+    experiments/dollar_threshold_drift.json, 2026-08-16): BTCUSDT
+    drift_ratio=18,18x entre 2020_h1 (2020-01) e etf (2024-03, ~4 anos de
+    intervalo); demais símbolos 2,097x (ETHUSDT, luna vs winter) a 8,191x
+    (SOLUSDT, winter vs etf) entre janelas de ~1-2 anos de intervalo. Não
+    existe medição de deriva em cadência OPERACIONAL (mês a mês/trimestre a
+    trimestre -- a escala em que um alarme de monitoramento de produção
+    dispararia de fato), só entre regimes de mercado distantes no tempo --
+    extrapolar um limiar de alarme formulaicamente a partir de números de
+    escala temporal tão maior seria inventar precisão que a medição não
+    sustenta (diferente de feature_leakage_hard_fail_threshold acima, onde
+    o multiplicador de margem é aplicado sobre uma medição na MESMA escala
+    do que está sendo guardado). 3,0x é um número redondo deliberadamente
+    conservador (bem abaixo do pior caso medido de 18,18x, próximo ao menor
+    caso medido de ~2,1x) escolhido para ter ALGUM limiar operacional em vez
+    de nenhum -- não é calibração estatística. TENSÃO CONHECIDA com a regra
+    geral do CLAUDE.md ('guardrails classe C são quantis, nunca número
+    redondo'): não há distribuição de deriva de curto prazo medida hoje
+    para derivar um quantil real -- mesma situação já aceita em
+    feature_leakage_hard_fail_threshold ('não é quantil de uma distribuição
+    ... amostra pequena demais para quantil ter sentido') e em
+    bars_threshold_leftover_safety_multiplier (também ASSUMED, também
+    número redondo, mesma família de mitigação conservadora vs. derivação
+    estatística). Classificado C (guardrail operacional de monitoramento,
+    escalação para o Manager -- não controle de risco de capital em tempo
+    real). Sinalizado aqui explicitamente para revisão do Manager, não
+    decidido silenciosamente -- reavaliar quando houver medição real de
+    deriva em cadência operacional (não só entre regimes inteiros)."
+  class: C
+  sweep_required: true
+  sweep_range: [1.5, 10.0]

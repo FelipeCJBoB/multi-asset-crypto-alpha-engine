@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import MutableMapping
 from typing import Any
 
 import orjson
@@ -28,7 +29,9 @@ _MASKED_KEYS = re.compile(r"(?i)(api[_-]?key|secret|signature|password|token)")
 _MASK = "***REDACTED***"
 
 
-def _mask_secrets(_logger: object, _method_name: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def _mask_secrets(
+    _logger: object, _method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
     """B31 — mascaramento de api_key/signature em TODA saída estruturada, sem exceção."""
     for key in list(event_dict.keys()):
         if _MASKED_KEYS.search(key):
@@ -53,7 +56,9 @@ def configure_logging(level: int = logging.INFO, *, json_output: bool = True) ->
         _mask_secrets,
     ]
     processors.append(
-        structlog.processors.JSONRenderer(serializer=_orjson_dumps) if json_output else structlog.dev.ConsoleRenderer()
+        structlog.processors.JSONRenderer(serializer=_orjson_dumps)
+        if json_output
+        else structlog.dev.ConsoleRenderer()
     )
 
     structlog.configure(
