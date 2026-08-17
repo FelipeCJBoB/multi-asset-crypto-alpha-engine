@@ -4714,3 +4714,49 @@ entries:
       censura por intervalo rigorosa). Achado (5) corrigido no registro
       (não no código -- não havia nada de errado no código).
     status: "fechado parcialmente -- (1)/(3)/(4) corrigidos e confirmados, (2) aberto (decisão do Manager), (5) refutado"
+
+  - id: AG-065
+    date: "2026-08-17"
+    file: "experiments/volatility_dollar_bar_r1_report.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-036, commit 7d50b6b"
+    found_by: "Claude, rodando run_and_save_volatility_comparison_report_dollar_bar de verdade (autorização de execução do Manager)"
+    gap: >
+      Não é gap -- é o RESULTADO REAL que motivou todo o arco de trabalho
+      de `AG-036` desde o início da sessão ("lembrei que GK pode não ser
+      mais o melhor"). Primeira comparação real de M1 sob grade
+      dollar-bar, 5 símbolos, 4 candidatos (RealizedVol/ATRWilder/
+      Parkinson/RogersSatchell) vs. baseline GarmanKlass, walk-forward
+      real (12-20 folds por símbolo, 163.762-231.552 barras). Resultado
+      **consistente nos 5/5 símbolos**: `parkinson_w20` bate
+      `garman_klass_w20` em QLIKE (margem pequena mas real, ~0,4-0,6%
+      menor) com `fold_win_rate` 0,75-1,00 e `dm_p_value≈0,0000`
+      (estatisticamente muito significativo) em TODOS os 5. Os outros 3
+      candidatos (RogersSatchell, ATRWilder, RealizedVol) perdem pra GK
+      em todos os 5 -- RealizedVol muito pior (`qlike≈3,1` vs. `~1,15-
+      1,19` de GK/Parkinson), consistente com a teoria (RealizedVol já
+      historicamente o pior candidato, 15/15 sob grade de tempo também).
+    severity: "alto"
+    layer: "features/analysis (achado estatístico, não bug)"
+    consequence: >
+      **A suspeita original está confirmada por medição real**: sob
+      dollar bar, Garman-Klass NÃO é mais estritamente o melhor -- Parkinson
+      bate ele de forma pequena mas consistente e significativa nos 5
+      símbolos testados. Isso é evidência real pra reconsiderar
+      `canonical_volatility_estimator` (hoje travado em GK, `constants.
+      yaml`, decisão de M1 sob grade de TEMPO) -- mas ainda NÃO é uma
+      comparação completa: faltam HAR-RV/EGARCH acoplado (interface
+      fold-aware não integrada ao harness ainda) e YangZhang (bloqueado,
+      AG-043) -- Parkinson vence os 4 testados, não necessariamente os 8
+      originais completos. Não é decisão de trocar o estimador canônico
+      -- é evidência forte o bastante pra essa decisão merecer ser
+      revisitada pelo Manager, com a ressalva de escopo parcial acima.
+    resolved_by_commit: null
+    resolution: >
+      MEDIDO 2026-08-17 -- resultado real, não decisão. `no_candidate_
+      beats_gk_anywhere=False` confirma que pelo menos 1 candidato venceu
+      em toda combinação. Decisão sobre o que fazer com este achado
+      (trocar `canonical_volatility_estimator`? completar a comparação
+      com HAR-RV/EGARCH/YangZhang antes de decidir? aceitar Parkinson
+      como novo candidato líder só sob dollar bar?) é do Manager -- não
+      implementada aqui.
+    status: "aberto -- achado real registrado, decisão do Manager sobre o que fazer com ele"
