@@ -62,22 +62,32 @@ def test_build_modeling_frame_roteia_symbol_version_tf_ate_load_labels_v1(
     calls: list[dict[str, Any]] = []
 
     def _fake_load_labels_v1(
-        version: str = "v1", *, symbol: str = "BTCUSDT", tf: str = "15m"
+        version: str = "v1",
+        *,
+        symbol: str = "BTCUSDT",
+        tf: str = "15m",
+        resolution_id: str | None = None,
     ) -> pl.DataFrame:
-        calls.append({"version": version, "symbol": symbol, "tf": tf})
+        calls.append(
+            {"version": version, "symbol": symbol, "tf": tf, "resolution_id": resolution_id}
+        )
         return _one_row_labels(t0)
 
     monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
     monkeypatch.setattr(
-        features_build, "build_t1_features", lambda symbol, start, end: _one_row_bar_table(t0)
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
     )
     monkeypatch.setattr(
-        regime_build, "build_regimes", lambda symbol, start, end: _one_row_regime(t0)
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
 
     ds.build_modeling_frame(symbol="ETHUSDT", labels_version="v1", tf="30m")
 
-    assert calls == [{"version": "v1", "symbol": "ETHUSDT", "tf": "30m"}]
+    assert calls == [
+        {"version": "v1", "symbol": "ETHUSDT", "tf": "30m", "resolution_id": None}
+    ]
 
 
 def test_build_modeling_frame_default_bate_com_load_labels_v1_sem_argumentos(
@@ -91,22 +101,112 @@ def test_build_modeling_frame_default_bate_com_load_labels_v1_sem_argumentos(
     calls: list[dict[str, Any]] = []
 
     def _fake_load_labels_v1(
-        version: str = "v1", *, symbol: str = "BTCUSDT", tf: str = "15m"
+        version: str = "v1",
+        *,
+        symbol: str = "BTCUSDT",
+        tf: str = "15m",
+        resolution_id: str | None = None,
     ) -> pl.DataFrame:
-        calls.append({"version": version, "symbol": symbol, "tf": tf})
+        calls.append(
+            {"version": version, "symbol": symbol, "tf": tf, "resolution_id": resolution_id}
+        )
         return _one_row_labels(t0)
 
     monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
     monkeypatch.setattr(
-        features_build, "build_t1_features", lambda symbol, start, end: _one_row_bar_table(t0)
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
     )
     monkeypatch.setattr(
-        regime_build, "build_regimes", lambda symbol, start, end: _one_row_regime(t0)
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
 
     ds.build_modeling_frame()
 
-    assert calls == [{"version": "v1", "symbol": "BTCUSDT", "tf": "15m"}]
+    assert calls == [
+        {"version": "v1", "symbol": "BTCUSDT", "tf": "15m", "resolution_id": None}
+    ]
+
+
+# ============================================================================
+# resolution_id/vol_estimator_id -- Fase 4 (2026-08-17, AG-036/065, achado
+# G2/G4 da revisão project_assurance): peça de orquestração que faltava --
+# um único parâmetro de grade, não bar_source/resolution_id independentes.
+# ============================================================================
+
+
+def test_build_modeling_frame_resolution_id_propaga_bar_source_e_vol_estimator_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`resolution_id="R1"` propaga a MESMA grade pros três: `load_labels_v1`
+    (via `resolution_id`), `build_t1_features`/`build_regimes` (via
+    `bar_source="dollar_r1"` derivado) -- prova de fiação via captura de
+    kwargs, não execução real (mesmo estilo dos dois testes acima)."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    load_labels_calls: list[dict[str, Any]] = []
+    features_calls: list[dict[str, Any]] = []
+    regime_calls: list[dict[str, Any]] = []
+
+    def _fake_load_labels_v1(
+        version: str = "v1",
+        *,
+        symbol: str = "BTCUSDT",
+        tf: str = "15m",
+        resolution_id: str | None = None,
+    ) -> pl.DataFrame:
+        load_labels_calls.append({"resolution_id": resolution_id})
+        return _one_row_labels(t0)
+
+    def _fake_build_t1_features(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        features_calls.append(kwargs)
+        return _one_row_bar_table(t0)
+
+    def _fake_build_regimes(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        regime_calls.append(kwargs)
+        return _one_row_regime(t0)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
+    monkeypatch.setattr(features_build, "build_t1_features", _fake_build_t1_features)
+    monkeypatch.setattr(regime_build, "build_regimes", _fake_build_regimes)
+
+    ds.build_modeling_frame(
+        symbol="BTCUSDT", resolution_id="R1", vol_estimator_id="parkinson_w20"
+    )
+
+    assert load_labels_calls == [{"resolution_id": "R1"}]
+    assert features_calls == [{"bar_source": "dollar_r1", "vol_estimator_id": "parkinson_w20"}]
+    assert regime_calls == [{"bar_source": "dollar_r1", "vol_estimator_id": "parkinson_w20"}]
+
+
+def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    features_calls: list[dict[str, Any]] = []
+
+    def _fake_build_t1_features(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        features_calls.append(kwargs)
+        return _one_row_bar_table(t0)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels(t0))
+    monkeypatch.setattr(features_build, "build_t1_features", _fake_build_t1_features)
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+
+    ds.build_modeling_frame()
+
+    assert features_calls == [{"bar_source": "time_15m", "vol_estimator_id": None}]
+
+
+def test_build_modeling_frame_resolution_id_nao_mapeado_levanta_valueerror() -> None:
+    """"R2"/"R3" são identidade de grade válida pro Label Engine (Fase 1),
+    mas Feature/Regime Engine não têm `bar_source` mapeado pra elas (só R1 é
+    alvo de produção, R2/R3 são pesquisa) -- `ValueError` explícito em vez
+    de deixar `_sources.load_bars` levantar um erro menos claro depois."""
+    with pytest.raises(ValueError, match="resolution_id"):
+        ds.build_modeling_frame(resolution_id="R2")
 
 
 def _synthetic_frame() -> pl.DataFrame:

@@ -28,6 +28,7 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.resample import step_ms
 from src.validation import cpcv
 
@@ -311,6 +312,8 @@ def run_layer1_sprint(
     *,
     symbol: str = SYMBOL,
     tf: str | None = None,
+    resolution_id: str | None = None,
+    vol_estimator_id: str | None = None,
     t0_start: str | None = None,
     t0_end: str | None = None,
     model_id_camada1: str = MODEL_ID_CAMADA1,
@@ -360,12 +363,52 @@ def run_layer1_sprint(
     legado continuam existindo, então eles silenciosamente leriam artefato
     cada vez mais desatualizado, sem nenhum erro. Migrar esses 7 leitores
     pro layout chaveado é um trabalho coordenado à parte, fora do escopo
-    desta mudança."""
+    desta mudança.
+
+    **Bug real corrigido aqui (2026-08-17, Fase 4 da migração
+    Parkinson+dollar-bar, achado independente de 2 rodadas de investigação
+    — `tf` era validado acima mas NUNCA repassado adiante):** antes desta
+    correção, `build_modeling_frame`/`generate_splits` eram chamados sem
+    `tf`/`config`/`symbol` — mesmo com `tf="30m"` explícito e validado,
+    labels/features/regime/CPCV caíam sempre no default `"15m"`
+    silenciosamente. Sem efeito prático até agora porque nenhum caller
+    real passava `tf` != `None`/`"15m"` (só o layout de PATH usava `tf`);
+    passa a importar de verdade a partir desta migração, que depende de
+    `generate_splits` aceitar `symbol` (Fase 0, Bloqueador 2) pra validar
+    grade dollar-bar.
+
+    `resolution_id`/`vol_estimator_id` (Fase 4, AG-030/036/065) —
+    `resolution_id=None` (default) preserva bit-exato: `tf_effective =
+    tf ou "15m"`, `grade_id = tf_effective`, mesmo caminho de sempre.
+    `resolution_id="R1"` propaga a MESMA grade pra `build_modeling_frame`
+    (que por sua vez propaga pra labels/features/regime, Fase 4 item 15) E
+    pro `CPCVConfig.grade_id` do CPCV — um único parâmetro de grade, não
+    dois que pudessem divergir. `path_tf` (destino em disco de predictions/
+    diagnostics) usa `resolution_id` quando setado, MESMO que `tf` continue
+    `None` — nunca cai no caminho legado plano que colidiria com os 5
+    `model_id` de produção já treinados sob grade de tempo (mesma guarda
+    de path-collision de `labels_symbol_tf_dir`, Fase 1)."""
     if tf is not None:
         step_ms(tf)  # UnsupportedTimeframeError cedo — antes do trabalho caro abaixo
+    if resolution_id is not None and resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+        raise ValueError(
+            f"run_layer1_sprint: resolution_id={resolution_id!r} não suportado -- esperado "
+            f"um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+        )
     t_start = time.time()
-    mf = ds.build_modeling_frame(symbol=symbol, t0_start=t0_start, t0_end=t0_end)
-    cpcv_result = cpcv.generate_splits(mf.data)
+    tf_effective = tf if tf is not None else "15m"
+    grade_id = resolution_id if resolution_id is not None else tf_effective
+    path_tf = resolution_id if resolution_id is not None else tf
+    mf = ds.build_modeling_frame(
+        symbol=symbol,
+        tf=tf_effective,
+        resolution_id=resolution_id,
+        vol_estimator_id=vol_estimator_id,
+        t0_start=t0_start,
+        t0_end=t0_end,
+    )
+    cpcv_config = cpcv.CPCVConfig.from_constants(tf=tf_effective, grade_id=grade_id)
+    cpcv_result = cpcv.generate_splits(mf.data, config=cpcv_config, symbol=symbol)
     splits = cpcv_result.splits
     logger.info(
         "models.pipeline.run_layer1_sprint_start",
@@ -400,19 +443,24 @@ def run_layer1_sprint(
     # HHI, n_trees, tamanho de amostra). Escrito para as DUAS variantes,
     # cada uma no seu próprio model_id, antes de qualquer agregação em
     # médias no relatório final.
-    # `tf=None` (default): SEM dest_dir -> caminho legado plano
-    # `MODELS_DIR/{model_id}/diagnostics/`, bit-exato (AG-013 preserva os
-    # ~30 arquivos já commitados). `tf` explícito: layout chaveado por
-    # symbol/tf (AG-016) — mesmo sentinela de `dest_dir_c1`/`dest_dir_c0`
-    # usado abaixo para `write_predictions_atomic`.
+    # `tf=None`/`resolution_id=None` (default): SEM dest_dir -> caminho
+    # legado plano `MODELS_DIR/{model_id}/diagnostics/`, bit-exato (AG-013
+    # preserva os ~30 arquivos já commitados). `tf` explícito OU
+    # `resolution_id` explícito: layout chaveado por symbol/`path_tf`
+    # (AG-016) — `path_tf` usa `resolution_id` quando setado, MESMO se
+    # `tf` continuar `None` (Fase 4, 2026-08-17): nunca deixa uma rodada
+    # dollar-bar cair no caminho legado plano que colidiria com os 5
+    # `model_id` de produção já treinados sob grade de tempo. Mesmo
+    # sentinela de `dest_dir_c1`/`dest_dir_c0` usado abaixo para
+    # `write_predictions_atomic`.
     dest_dir_diag_c1 = (
-        models_diagnostics_symbol_tf_dir(symbol, model_id_camada1, tf=tf)
-        if tf is not None
+        models_diagnostics_symbol_tf_dir(symbol, model_id_camada1, tf=path_tf)
+        if path_tf is not None
         else None
     )
     dest_dir_diag_c0 = (
-        models_diagnostics_symbol_tf_dir(symbol, model_id_camada0, tf=tf)
-        if tf is not None
+        models_diagnostics_symbol_tf_dir(symbol, model_id_camada0, tf=path_tf)
+        if path_tf is not None
         else None
     )
     write_all_fold_diagnostics(
@@ -424,15 +472,20 @@ def run_layer1_sprint(
 
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)
-    # `tf=None` (default): SEM dest_dir -> caminho legado plano, bit-exato
-    # com o comportamento anterior a esta mudança (ver docstring da função
-    # — 7 leitores de produção reais ainda dependem disso). `tf` explícito:
-    # layout chaveado por symbol/tf.
+    # `tf=None`/`resolution_id=None` (default): SEM dest_dir -> caminho
+    # legado plano, bit-exato com o comportamento anterior a esta mudança
+    # (ver docstring da função — 7 leitores de produção reais ainda
+    # dependem disso). `tf`/`resolution_id` explícito: layout chaveado por
+    # symbol/`path_tf` (mesma guarda contra colisão do bloco acima).
     dest_dir_c1 = (
-        predictions_symbol_tf_dir(symbol, model_id_camada1, tf=tf) if tf is not None else None
+        predictions_symbol_tf_dir(symbol, model_id_camada1, tf=path_tf)
+        if path_tf is not None
+        else None
     )
     dest_dir_c0 = (
-        predictions_symbol_tf_dir(symbol, model_id_camada0, tf=tf) if tf is not None else None
+        predictions_symbol_tf_dir(symbol, model_id_camada0, tf=path_tf)
+        if path_tf is not None
+        else None
     )
     write_predictions_atomic(preds_c1, model_id_camada1, dest_dir=dest_dir_c1)
     write_predictions_atomic(preds_c0, model_id_camada0, dest_dir=dest_dir_c0)
@@ -513,6 +566,9 @@ def run_layer1_sprint(
         "schema_version": 1,
         "sprint": 8,
         "symbol": symbol,
+        "tf": tf,
+        "resolution_id": resolution_id,
+        "vol_estimator_id": vol_estimator_id,
         "model_id_camada1": model_id_camada1,
         "model_id_camada0": model_id_camada0,
         "t0_start_filter": t0_start,

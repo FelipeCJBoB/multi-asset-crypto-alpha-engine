@@ -175,6 +175,79 @@ def test_teste_12_selecao_feature_vazada_passa_com_sintetico() -> None:
 
 
 # ============================================================================
+# Fase 4 (2026-08-17, migração Parkinson+dollar-bar) -- config/symbol
+# repassados a generate_splits nos testes 6/7/12, achado G6 da revisão
+# project_assurance
+# ============================================================================
+
+
+def test_teste_06_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
+    """Antes desta correção, `_test_06_contaminacao_label` só capturava
+    `AssertionError` -- `generate_splits`/`assert_grade_consistent` levantam
+    `CPCVError` (não `AssertionError`) em divergência de grade, escapando
+    como exceção não tratada em vez de virar FAIL reportado. `config`
+    deliberadamente errado (30m contra espaçamento real de 15m) força esse
+    caminho."""
+    labels = _make_synthetic_labels(1200, horizon_bars=1)
+    config_errada = cpcv.CPCVConfig.from_constants(tf="30m", grade_id="30m")
+    result = leakage._test_06_contaminacao_label(labels, config=config_errada, symbol="BTCUSDT")
+    assert result.test_id == 6
+    assert result.status == leakage.LeakageStatus.FAIL
+
+
+def test_run_all_leakage_tests_repassa_symbol_a_generate_splits_dos_testes_6_7_12(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Antes desta correção, os testes 6/7/12 chamavam `generate_splits(labels)`
+    sem `symbol`/`config` -- sempre grade `"15m"` por baixo, independente do
+    que fosse pedido. Spy sobre a função real (não um fake que pula a
+    execução) prova que `symbol` chega de fato às 3 chamadas."""
+    labels = _make_synthetic_labels(1200, horizon_bars=1)
+    real_generate_splits = cpcv.generate_splits
+    symbols_recebidos: list[str | None] = []
+
+    def _spy_generate_splits(
+        labels_arg: pl.DataFrame,
+        config: cpcv.CPCVConfig | None = None,
+        *,
+        symbol: str | None = None,
+    ) -> cpcv.CPCVResult:
+        symbols_recebidos.append(symbol)
+        return real_generate_splits(labels_arg, config=config, symbol=symbol)
+
+    monkeypatch.setattr(cpcv, "generate_splits", _spy_generate_splits)
+    leakage.run_all_leakage_tests(labels, symbol="ETHUSDT")
+    assert symbols_recebidos == ["ETHUSDT", "ETHUSDT", "ETHUSDT"]
+
+
+def test_run_all_leakage_tests_grade_id_prioriza_resolution_id_sobre_tf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`resolution_id`, quando setado, vence sobre `tf` na construção do
+    `CPCVConfig` dos testes 6/7/12 -- mesmo desenho de UM parâmetro de
+    grade (não dois independentes) usado em `build_modeling_frame`/
+    `build_regimes` (Fase 4). Monkeypatch de `CPCVConfig.from_constants`
+    pra capturar os argumentos e interromper cedo -- não precisa de
+    `_calibration.json` real nem de labels com espaçamento dollar-bar."""
+    labels = _make_synthetic_labels(60, horizon_bars=1)
+    captured: dict[str, object] = {}
+
+    class _Stop(Exception):
+        pass
+
+    def _spy_from_constants(
+        *, tf: str = "15m", grade_id: str | None = None, max_feature_lookback_ms: int = 0
+    ) -> cpcv.CPCVConfig:
+        captured.update(tf=tf, grade_id=grade_id)
+        raise _Stop
+
+    monkeypatch.setattr(cpcv.CPCVConfig, "from_constants", staticmethod(_spy_from_constants))
+    with pytest.raises(_Stop):
+        leakage.run_all_leakage_tests(labels, tf="30m", resolution_id="R1")
+    assert captured == {"tf": "30m", "grade_id": "R1"}
+
+
+# ============================================================================
 # Runner completo — os 14, na ordem, com status coerente
 # ============================================================================
 

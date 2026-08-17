@@ -396,12 +396,22 @@ def _test_05_regime_futuro() -> LeakageTestResult:
     return LeakageTestResult(5, "regime futuro", "§11.5 #5", status, detail)
 
 
-def _test_06_contaminacao_label(labels: pl.DataFrame) -> LeakageTestResult:
+def _test_06_contaminacao_label(
+    labels: pl.DataFrame, *, config: cpcv.CPCVConfig | None = None, symbol: str | None = None
+) -> LeakageTestResult:
     name = "contaminação de label (t1 de treino nunca cruza janela de teste)"
     try:
-        result = cpcv.generate_splits(labels)
+        result = cpcv.generate_splits(labels, config=config, symbol=symbol)
         cpcv.assert_no_train_t1_leaks_into_test(labels, result)
-    except AssertionError as exc:
+    except (AssertionError, cpcv.CPCVError) as exc:
+        # `cpcv.CPCVError` (2026-08-17, Fase 4) -- achado ao abrir este
+        # teste pra grade dollar-bar: `generate_splits`/`assert_grade_
+        # consistent` levantam `CPCVError`, não `AssertionError`, em
+        # qualquer divergência de grade (config vs. _calibration.json real,
+        # AG-042). Só capturar `AssertionError` deixava esse caso escapar
+        # como exceção não tratada, derrubando `run_all_leakage_tests`
+        # inteiro em vez de reportar FAIL com detalhe -- contrário ao
+        # desenho do módulo (sentinela explícito, nunca crash silencioso).
         return LeakageTestResult(6, name, "§11.5 #6", LeakageStatus.FAIL, str(exc))
 
     summary = cpcv.summarize_splits(result)
@@ -419,7 +429,9 @@ def _test_06_contaminacao_label(labels: pl.DataFrame) -> LeakageTestResult:
     return LeakageTestResult(6, name, "§11.5 #6", LeakageStatus.PASS, detail)
 
 
-def _test_07_labels_sobrepostos(labels: pl.DataFrame) -> LeakageTestResult:
+def _test_07_labels_sobrepostos(
+    labels: pl.DataFrame, *, config: cpcv.CPCVConfig | None = None, symbol: str | None = None
+) -> LeakageTestResult:
     name = "labels sobrepostos (sample_weight aplicado em todo fit)"
     if "sample_weight" not in labels.columns:
         return LeakageTestResult(
@@ -432,7 +444,7 @@ def _test_07_labels_sobrepostos(labels: pl.DataFrame) -> LeakageTestResult:
     tolerance = 1e-6  # mesma tolerância de assert_label_invariants (§3.8)  # noqa: magic-number
     mean_ok = abs(mean_w - 1.0) < tolerance
 
-    result = cpcv.generate_splits(labels)
+    result = cpcv.generate_splits(labels, config=config, symbol=symbol)
     split0 = result.splits[0]
     threaded = weights[split0.train_idx]
     threaded_ok = threaded.shape[0] == split0.train_idx.shape[0] and bool(
@@ -602,9 +614,11 @@ def _test_11_calibracao_vazada() -> LeakageTestResult:
     return LeakageTestResult(11, name, "§11.5 #11", status, detail, note)
 
 
-def _test_12_selecao_feature_vazada(labels: pl.DataFrame) -> LeakageTestResult:
+def _test_12_selecao_feature_vazada(
+    labels: pl.DataFrame, *, config: cpcv.CPCVConfig | None = None, symbol: str | None = None
+) -> LeakageTestResult:
     name = "seleção de feature vazada (seleção dentro de cada fold)"
-    result = cpcv.generate_splits(labels)
+    result = cpcv.generate_splits(labels, config=config, symbol=symbol)
     violations: list[str] = []
     for split in result.splits:
         overlap = np.intersect1d(split.train_idx, split.test_idx)
@@ -699,12 +713,45 @@ def _test_14_paridade_lote_streaming() -> LeakageTestResult:
 _TESTS_NEEDING_LABELS: frozenset[int] = frozenset({6, 7, 12})
 
 
-def run_all_leakage_tests(labels: pl.DataFrame | None = None) -> list[LeakageTestResult]:
+def run_all_leakage_tests(
+    labels: pl.DataFrame | None = None,
+    *,
+    symbol: str = "BTCUSDT",
+    tf: str = "15m",
+    resolution_id: str | None = None,
+) -> list[LeakageTestResult]:
     """Roda os 14 testes do §11.5 na ordem da tabela. `labels` é carregado
     de `labels/v1/labels.parquet` via `cpcv.load_labels_v1()` se não
     passado — só é de fato usado pelos testes 6/7/12 (`_TESTS_NEEDING_LABELS`,
-    documentando explicitamente quais dependem de dado real)."""
-    labels_df = labels if labels is not None else cpcv.load_labels_v1()
+    documentando explicitamente quais dependem de dado real).
+
+    `symbol`/`tf`/`resolution_id` (2026-08-17, Fase 4 da migração
+    Parkinson+dollar-bar, achado G6 da revisão `project_assurance`) — antes
+    desta mudança, os testes 6/7/12 chamavam `cpcv.generate_splits(labels)`
+    SEM `config`/`symbol`, sempre assumindo grade `"15m"` por baixo,
+    independente de qual `labels` fosse de fato passado. Contra `labels`
+    de grade de tempo isso é inofensivo (mesmo default de sempre); contra
+    `labels` dollar-bar, `assert_grade_consistent` falharia alto (bom,
+    não é vazamento silencioso) — mas o runner não tinha como rodar de
+    verdade contra R1, que é exatamente o que a Fase 5 desta migração
+    precisa antes de qualquer retreino real ser confiável (`CLAUDE.md`:
+    "os 14 testes de vazamento precisam rodar de verdade contra R1").
+    Defaults (`symbol="BTCUSDT"`, `tf="15m"`, `resolution_id=None`)
+    preservam bit-exato todo caller existente — `load_labels_v1()` sem
+    argumentos é idêntico a `load_labels_v1(symbol="BTCUSDT", tf="15m")`,
+    e `CPCVConfig.from_constants(tf="15m", grade_id="15m")` é idêntico ao
+    `config=None` implícito de antes. Quando `labels` é passado
+    explicitamente pelo chamador (bypassa `load_labels_v1` aqui), `symbol`/
+    `tf`/`resolution_id` continuam valendo só para construir o
+    `CPCVConfig` dos testes 6/7/12 — é responsabilidade do chamador que
+    `labels` de fato corresponda à grade declarada."""
+    labels_df = (
+        labels
+        if labels is not None
+        else cpcv.load_labels_v1(symbol=symbol, tf=tf, resolution_id=resolution_id)
+    )
+    grade_id = resolution_id if resolution_id is not None else tf
+    cpcv_config = cpcv.CPCVConfig.from_constants(tf=tf, grade_id=grade_id)
 
     results = [
         _test_01_close_futuro(),
@@ -712,13 +759,13 @@ def run_all_leakage_tests(labels: pl.DataFrame | None = None) -> list[LeakageTes
         _test_03_volume_futuro(),
         _test_04_funding_futuro(),
         _test_05_regime_futuro(),
-        _test_06_contaminacao_label(labels_df),
-        _test_07_labels_sobrepostos(labels_df),
+        _test_06_contaminacao_label(labels_df, config=cpcv_config, symbol=symbol),
+        _test_07_labels_sobrepostos(labels_df, config=cpcv_config, symbol=symbol),
         _test_08_normalizacao_global(),
         _test_09_lookahead_resample(),
         _test_10_encadeamento_modelo(),
         _test_11_calibracao_vazada(),
-        _test_12_selecao_feature_vazada(labels_df),
+        _test_12_selecao_feature_vazada(labels_df, config=cpcv_config, symbol=symbol),
         _test_13_filtros_anacronicos(),
         _test_14_paridade_lote_streaming(),
     ]
@@ -732,6 +779,9 @@ def run_all_leakage_tests(labels: pl.DataFrame | None = None) -> list[LeakageTes
     n_na = sum(1 for r in results if r.status == LeakageStatus.NOT_APPLICABLE_V1_1)
     logger.info(
         "validation.leakage.summary",
+        symbol=symbol,
+        tf=tf,
+        resolution_id=resolution_id,
         n_tests=len(results),
         n_pass=n_pass,
         n_fail=n_fail,

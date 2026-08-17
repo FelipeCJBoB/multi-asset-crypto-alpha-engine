@@ -278,6 +278,34 @@ def test_reconstruct_fold_to_path_id_levanta_erro_se_fold_desconhecido() -> None
         fr.reconstruct_fold_to_path_id(_synthetic_labels_for_cpcv(), known_fold_ids={999})
 
 
+def test_reconstruct_fold_to_path_id_repassa_config_e_symbol_a_generate_splits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fase 4 (2026-08-17): antes desta correção, `generate_splits` era
+    chamado sem `config`/`symbol` -- achado da varredura final própria,
+    item 17b do plano. Spy sobre a função real prova que os dois chegam."""
+    from src.validation import cpcv
+
+    real_generate_splits = cpcv.generate_splits
+    captured: dict[str, object] = {}
+
+    def _spy(labels_arg, config=None, *, symbol=None):
+        captured.update(config=config, symbol=symbol)
+        return real_generate_splits(labels_arg, config=config, symbol=symbol)
+
+    monkeypatch.setattr(cpcv, "generate_splits", _spy)
+    custom_config = cpcv.CPCVConfig.from_constants(tf="15m")
+    known_fold_ids = set(range(15))
+    fr.reconstruct_fold_to_path_id(
+        _synthetic_labels_for_cpcv(),
+        known_fold_ids=known_fold_ids,
+        config=custom_config,
+        symbol="ETHUSDT",
+    )
+    assert captured["config"] is custom_config
+    assert captured["symbol"] == "ETHUSDT"
+
+
 # ============================================================================
 # compute_fill_selectivity — P(TP|filled) vs P(TP|not filled), Módulo B
 # ============================================================================

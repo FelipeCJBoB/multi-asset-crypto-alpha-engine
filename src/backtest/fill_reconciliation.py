@@ -191,7 +191,11 @@ class PathReconstructionError(Exception):
 
 
 def reconstruct_fold_to_path_id(
-    labels_all: pl.DataFrame, *, known_fold_ids: set[int]
+    labels_all: pl.DataFrame,
+    *,
+    known_fold_ids: set[int],
+    config: cpcv.CPCVConfig | None = None,
+    symbol: str | None = None,
 ) -> dict[int, int]:
     """`{split_id: path_id}` via `src.validation.cpcv.generate_splits` — a
     MESMA função que gera os splits usados no treino
@@ -201,8 +205,21 @@ def reconstruct_fold_to_path_id(
     `cpcv_n_groups`) — não depende de QUAL `labels` é passado, só precisa
     ser não-vazio o bastante para `generate_splits` rodar; usar
     `labels/v1/labels.parquet` real (não um recorte) é o caminho mais
-    barato e correto, sem retreinar nada."""
-    result = cpcv.generate_splits(labels_all)
+    barato e correto, sem retreinar nada.
+
+    `config`/`symbol` (2026-08-17, Fase 4 da migração Parkinson+dollar-bar
+    — mesma classe de bug do item 17/`src.validation.leakage`, achado na
+    varredura final própria, não pego pelas 2 rodadas de investigação nem
+    pela revisão `project_assurance`): antes desta correção,
+    `generate_splits` era chamado sem os dois, sempre grade `"15m"` por
+    baixo. Defaults `None`/`None` preservam bit-exato — `load_labels`/
+    `run_fill_reconciliation` (chamador real hoje) não têm sequer um
+    parâmetro `symbol`, este módulo é BTCUSDT/15m hardcoded ponta a ponta;
+    estender pra multi-símbolo/dollar-bar é trabalho à parte, fora do
+    escopo desta migração. Os dois parâmetros existem aqui pra um futuro
+    chamador direto (não `run_fill_reconciliation`) poder reconstruir o
+    mapeamento sob outra grade sem essa mesma classe de bug."""
+    result = cpcv.generate_splits(labels_all, config=config, symbol=symbol)
     mapping = {s.split_id: s.path_id for s in result.splits}
     missing = known_fold_ids - set(mapping)
     if missing:

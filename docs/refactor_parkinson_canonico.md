@@ -165,20 +165,48 @@ de USO, não mudança de código nesse módulo.
   `min_warmup_bars` recalculado por fórmula, valor real 200) — nunca tinha
   sido re-rodado até esta migração tocar o arquivo. Corrigido.
 
-### Orquestração — peça que faltava no mapeamento original
+### Orquestração — Fase 4 IMPLEMENTADA (2026-08-17)
 
-- `src/models/dataset.py::build_modeling_frame` chama `build_t1_features`/
-  `build_regimes` **sem `bar_source`** — mesmo se `tf="R1"` chegasse até
-  aqui, o resultado seria labels R1 casados com features/regime 15m,
-  incoerente e silencioso.
-- `src/models/pipeline.py::run_layer1_sprint` — bug real: parâmetro `tf`
-  validado (`step_ms(tf)`) mas nunca repassado a `build_modeling_frame`/
-  `generate_splits` — cai sempre no default 15m.
-- `src/validation/leakage.py` — 3+ chamadas a `generate_splits`/
-  `load_labels_v1` sem `config`/`symbol`/`tf`. É o módulo de produção dos
-  "14 testes de vazamento" (`CLAUDE.md`) — precisa parametrização igual.
-- `src/backtest/fill_reconciliation.py:205` — `cpcv.generate_splits
-  (labels_all)` também sem `symbol`/`config`, mesma classe de bug.
+- `src/models/dataset.py::build_modeling_frame` ganhou `resolution_id`/
+  `vol_estimator_id` — UM parâmetro de grade (`resolution_id`), não
+  `bar_source`/`resolution_id` independentes: `bar_source` é DERIVADO de
+  `resolution_id` via `_BAR_SOURCE_BY_RESOLUTION` (`{"R1": "dollar_r1"}`,
+  fechado — só R1 é produção) e propagado pra `build_t1_features` E
+  `build_regimes` ao mesmo tempo que `resolution_id` vai pra `load_labels_
+  v1`. Decisão de desenho corrigida em relação ao texto original do plano
+  (que sugeria dois parâmetros): dois parâmetros que pudessem divergir
+  reintroduziriam a incoerência silenciosa que este item existe pra
+  fechar. `resolution_id` fora do mapa levanta `ValueError` explícito.
+- `src/models/pipeline.py::run_layer1_sprint` — bug real corrigido: `tf`
+  era validado (`step_ms(tf)`) mas nunca repassado a `build_modeling_
+  frame`/`generate_splits`, caía sempre no default 15m (sem efeito
+  prático até agora — nenhum caller real passava `tf` != `None`/`"15m"`).
+  Ganhou `resolution_id`/`vol_estimator_id` também; `path_tf` (destino em
+  disco) usa `resolution_id` quando setado MESMO com `tf=None`, pra nunca
+  cair no caminho legado plano que colidiria com os 5 `model_id` de
+  produção já treinados (mesma guarda de `labels_symbol_tf_dir`, Fase 1).
+- `src/validation/leakage.py::run_all_leakage_tests` — ganhou `symbol`/
+  `tf`/`resolution_id`; testes 6/7/12 (os que chamam `generate_splits`)
+  ganharam `config`/`symbol`. Achado extra: `_test_06_contaminacao_label`
+  só capturava `AssertionError`, mas `generate_splits`/`assert_grade_
+  consistent` levantam `CPCVError` em divergência de grade — corrigido
+  pra capturar os dois, senão escaparia como crash não tratado em vez de
+  FAIL reportado.
+- `src/backtest/fill_reconciliation.py::reconstruct_fold_to_path_id` —
+  ganhou `config`/`symbol` opcionais (mesma classe de bug do item acima,
+  achado da varredura final própria — nenhum dos 2 agentes nem a revisão
+  PA pegou este). `run_fill_reconciliation` continua BTCUSDT/15m
+  hardcoded ponta a ponta (não tem `symbol` nem em `load_labels`/
+  `load_predictions`/`load_orders`) — estender esse módulo pra multi-
+  símbolo/dollar-bar é trabalho à parte, fora do escopo desta migração;
+  os parâmetros novos existem pra um futuro chamador direto.
+- Testes novos: 3 em `test_validation_leakage.py`, 1 em
+  `test_fill_reconciliation.py`, 3 em `test_models_dataset.py` (fiação +
+  `ValueError` de `resolution_id` não mapeado) — todos via monkeypatch/spy
+  determinístico, sem depender de backfill local. 2 testes pré-existentes
+  em `test_models_dataset.py` (fakes de `load_labels_v1`/`build_t1_
+  features`/`build_regimes`) precisaram de assinatura atualizada pros
+  kwargs novos — mesma classe de manutenção mecânica das Fases 1-3.
 
 ### O que está confirmado FORA do blast radius
 

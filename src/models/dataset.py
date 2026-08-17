@@ -60,6 +60,15 @@ TRADEABLE_COL = "tradeable"
 # `src.labels.triple_barrier.build_labels_for_symbol`.
 _DATE_BUFFER_DAYS = 3  # noqa: magic-number
 
+# Fase 4 (2026-08-17, AG-036/065) — única fonte de mapeamento resolution_id
+# -> bar_source de Feature/Regime Engine, mesmo escopo de produção de
+# `src.data.build_dollar_bars.CALIBRATION_TF_BY_RESOLUTION` (só R1: R2/R3
+# são pesquisa, nunca alvo de produção, PRD_V4_1.md). Propositalmente um
+# dict FECHADO, não um `f"dollar_{resolution_id.lower()}"` genérico -- um
+# resolution_id sem bar_source mapeado aqui levanta ValueError explícito
+# em vez de tentar um bar_source que `_sources.load_bars` não suporta.
+_BAR_SOURCE_BY_RESOLUTION: dict[str, str] = {"R1": "dollar_r1"}
+
 
 def date_bounds(labels: pl.DataFrame) -> tuple[str, str]:
     """`[min(t0), max(t0)]` do frame passado, com folga de
@@ -95,6 +104,8 @@ def build_modeling_frame(
     *,
     labels_version: str = "v1",
     tf: str = "15m",
+    resolution_id: str | None = None,
+    vol_estimator_id: str | None = None,
     t0_start: str | None = None,
     t0_end: str | None = None,
 ) -> ModelingFrame:
@@ -132,12 +143,50 @@ def build_modeling_frame(
     `load_labels_v1("v1", symbol="BTCUSDT", tf="15m")` é idêntico a
     `load_labels_v1()` sem argumentos. Callers com `symbol` não-BTC
     corrigem de bug, não mudam de comportamento -- não havia comportamento
-    "correto" anterior pra preservar nesse caso."""
-    labels = cpcv.load_labels_v1(labels_version, symbol=symbol, tf=tf).with_row_index("_pos")
+    "correto" anterior pra preservar nesse caso.
+
+    `resolution_id`/`vol_estimator_id` (2026-08-17, Fase 4 da migração
+    Parkinson+dollar-bar, achado G2/G4 da revisão `project_assurance` —
+    peça de orquestração que faltava: até esta mudança, nem
+    `build_t1_features` nem `build_regimes` recebiam `bar_source` daqui,
+    então mesmo um `resolution_id` chegando até este ponto produziria
+    labels R1 casados com features/regime de 15m, incoerente e
+    silencioso). `resolution_id=None` (default) preserva bit-exato:
+    labels via `tf` (grade de tempo), features/regime via
+    `bar_source="time_15m"`. `resolution_id="R1"` propaga a MESMA grade
+    pros três -- `load_labels_v1(resolution_id=...)` pros labels,
+    `bar_source` derivado de `_BAR_SOURCE_BY_RESOLUTION` pra features E
+    regime. Deliberadamente UM parâmetro de grade, não dois independentes
+    (`resolution_id` + `bar_source` livres): dois parâmetros que pudessem
+    divergir (`resolution_id="R1"` com `bar_source` default `"time_15m"`,
+    por exemplo) reintroduziriam exatamente a incoerência silenciosa que
+    este item do plano existe pra fechar. Só `"R1"` tem `bar_source`
+    mapeado hoje (mesmo escopo de produção de M3 -- R2/R3 continuam só
+    pesquisa); `resolution_id` fora do mapa levanta `ValueError` explícito
+    aqui, nunca tenta um `bar_source` que `_sources.load_bars` não
+    suporta."""
+    if resolution_id is not None and resolution_id not in _BAR_SOURCE_BY_RESOLUTION:
+        raise ValueError(
+            f"build_modeling_frame: resolution_id={resolution_id!r} sem bar_source de "
+            "Feature/Regime Engine mapeado -- suportado hoje: "
+            f"{sorted(_BAR_SOURCE_BY_RESOLUTION)} (R2/R3 são só pesquisa, fora do escopo "
+            "de produção desta migração)"
+        )
+    bar_source = (
+        "time_15m" if resolution_id is None else _BAR_SOURCE_BY_RESOLUTION[resolution_id]
+    )
+
+    labels = cpcv.load_labels_v1(
+        labels_version, symbol=symbol, tf=tf, resolution_id=resolution_id
+    ).with_row_index("_pos")
     start, end = date_bounds(labels)
 
-    features_df = features_build.build_t1_features(symbol, start, end)
-    regimes_df = regime_build.build_regimes(symbol, start, end)
+    features_df = features_build.build_t1_features(
+        symbol, start, end, bar_source=bar_source, vol_estimator_id=vol_estimator_id
+    )
+    regimes_df = regime_build.build_regimes(
+        symbol, start, end, bar_source=bar_source, vol_estimator_id=vol_estimator_id
+    )
 
     bar_table = features_df.with_columns(
         pl.col("open_time").cast(pl.Int64).alias("_open_time_ms"),
@@ -176,6 +225,9 @@ def build_modeling_frame(
     logger.info(
         "models.dataset.build_modeling_frame",
         symbol=symbol,
+        resolution_id=resolution_id,
+        bar_source=bar_source,
+        vol_estimator_id=vol_estimator_id,
         t0_start_filter=t0_start,
         t0_end_filter=t0_end,
         start=start,
