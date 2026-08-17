@@ -3828,7 +3828,12 @@ entries:
       não é decisão que um Agent de discovery deveria tomar sozinho.
       Candidato natural pra "o que fazer enquanto outro trabalho pesado
       roda" (não toca `data/`, é leitura/análise).
-    status: "aberto -- aguarda decisão do Manager sobre comissionar revisão completa"
+
+      **Decisão do Manager, 2026-08-16 (mesmo dia do achado):** adiar,
+      ainda não. Não comissionar a revisão completa agora -- fica na fila
+      de decisões pra sessão seguinte junto com `AG-051`/`AG-055`. Achado
+      permanece registrado e válido, só o timing de execução foi adiado.
+    status: "aberto -- adiado pelo Manager, sem stage ainda; não é esquecimento, é decisão explícita"
 
   - id: AG-051
     date: "2026-08-16"
