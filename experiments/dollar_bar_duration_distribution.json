@@ -1,0 +1,244 @@
+{
+  "generated_at": "2026-08-17T03:46:09.587951+00:00",
+  "code_version": "438d665",
+  "measurement_provenance": "MEASURED -- duration_ms = close_time - open_time por barra, lido direto de data/capacity/dollar_bars_r1/{symbol}/*.parquet (schema DOLLAR_BARS_R1, já persistido pelo reprocessamento real de 2026-08-17). Responde P-2 (docs/refactor_dollar_bar_canonico.md §7), 'não foi possível determinar' na investigação original -- bloqueava AG-043 (sqrt(window)/Yang-Zhang) e a rota de desenho do EGARCH em AG-036.",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "results": [
+    {
+      "symbol": "BTCUSDT",
+      "n_bars_total_incl_leftover": 231552,
+      "n_bars_excluded_trailing_leftover": 1,
+      "overall": {
+        "n_bars": 231551,
+        "mean_ms": 899905.3,
+        "mean_minutes": 14.998,
+        "median_ms": 565862.0,
+        "median_minutes": 9.431,
+        "std_ms": 1209453.6,
+        "min_ms": 61.0,
+        "max_ms": 34966556.0,
+        "max_hours": 9.71,
+        "percentiles_minutes": {
+          "p1": 0.288,
+          "p5": 0.979,
+          "p10": 1.727,
+          "p25": 4.107,
+          "p50": 9.431,
+          "p75": 18.884,
+          "p90": 32.302,
+          "p95": 44.271,
+          "p99": 95.496
+        },
+        "skewness": 5.6871,
+        "excess_kurtosis": 60.0433
+      },
+      "time_split": {
+        "early_quartile": {
+          "n_bars": 57887,
+          "median_ms": 634526.0,
+          "mean_ms": 1130125.025066077,
+          "open_time_start": 1577750402288,
+          "open_time_end": 1643171761578
+        },
+        "recent_quartile": {
+          "n_bars": 57887,
+          "median_ms": 545199.0,
+          "mean_ms": 814557.7303712405,
+          "open_time_start": 1738982237522,
+          "open_time_end": 1786136320706
+        },
+        "median_ratio_early_vs_recent": 1.1638
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "n_bars_total_incl_leftover": 164257,
+      "n_bars_excluded_trailing_leftover": 1,
+      "overall": {
+        "n_bars": 164256,
+        "mean_ms": 899928.6,
+        "mean_minutes": 14.999,
+        "median_ms": 572556.5,
+        "median_minutes": 9.543,
+        "std_ms": 1003378.4,
+        "min_ms": 23.0,
+        "max_ms": 19478580.0,
+        "max_hours": 5.41,
+        "percentiles_minutes": {
+          "p1": 0.227,
+          "p5": 0.851,
+          "p10": 1.604,
+          "p25": 3.971,
+          "p50": 9.543,
+          "p75": 20.074,
+          "p90": 35.233,
+          "p95": 47.282,
+          "p99": 77.759
+        },
+        "skewness": 2.8163,
+        "excess_kurtosis": 15.015
+      },
+      "time_split": {
+        "early_quartile": {
+          "n_bars": 41064,
+          "median_ms": 813580.0,
+          "mean_ms": 1114614.8135349697,
+          "open_time_start": 1638316800005,
+          "open_time_end": 1684088219651
+        },
+        "recent_quartile": {
+          "n_bars": 41064,
+          "median_ms": 443040.0,
+          "mean_ms": 709650.8311172803,
+          "open_time_start": 1757003084092,
+          "open_time_end": 1786140009638
+        },
+        "median_ratio_early_vs_recent": 1.8364
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "n_bars_total_incl_leftover": 163762,
+      "n_bars_excluded_trailing_leftover": 1,
+      "overall": {
+        "n_bars": 163761,
+        "mean_ms": 902589.2,
+        "mean_minutes": 15.043,
+        "median_ms": 540150.0,
+        "median_minutes": 9.002,
+        "std_ms": 1227534.8,
+        "min_ms": 0.0,
+        "max_ms": 44993111.0,
+        "max_hours": 12.5,
+        "percentiles_minutes": {
+          "p1": 0.283,
+          "p5": 1.016,
+          "p10": 1.809,
+          "p25": 4.065,
+          "p50": 9.002,
+          "p75": 18.194,
+          "p90": 33.128,
+          "p95": 48.488,
+          "p99": 98.723
+        },
+        "skewness": 5.385,
+        "excess_kurtosis": 61.4799
+      },
+      "time_split": {
+        "early_quartile": {
+          "n_bars": 40940,
+          "median_ms": 1117270.0,
+          "mean_ms": 1737892.4471665851,
+          "open_time_start": 1638316800009,
+          "open_time_end": 1709471858943
+        },
+        "recent_quartile": {
+          "n_bars": 40940,
+          "median_ms": 465351.5,
+          "mean_ms": 715927.5925500733,
+          "open_time_start": 1756831390036,
+          "open_time_end": 1786140572049
+        },
+        "median_ratio_early_vs_recent": 2.4009
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "n_bars_total_incl_leftover": 164244,
+      "n_bars_excluded_trailing_leftover": 1,
+      "overall": {
+        "n_bars": 164243,
+        "mean_ms": 899794.2,
+        "mean_minutes": 14.997,
+        "median_ms": 594216.0,
+        "median_minutes": 9.904,
+        "std_ms": 958328.9,
+        "min_ms": 0.0,
+        "max_ms": 13215617.0,
+        "max_hours": 3.67,
+        "percentiles_minutes": {
+          "p1": 0.147,
+          "p5": 0.685,
+          "p10": 1.369,
+          "p25": 3.882,
+          "p50": 9.904,
+          "p75": 20.751,
+          "p90": 35.152,
+          "p95": 46.336,
+          "p99": 73.559
+        },
+        "skewness": 2.2951,
+        "excess_kurtosis": 8.599
+      },
+      "time_split": {
+        "early_quartile": {
+          "n_bars": 41060,
+          "median_ms": 706929.5,
+          "mean_ms": 914425.2272284462,
+          "open_time_start": 1638316800088,
+          "open_time_end": 1675870350522
+        },
+        "recent_quartile": {
+          "n_bars": 41060,
+          "median_ms": 374334.5,
+          "mean_ms": 730453.9239162202,
+          "open_time_start": 1756135635470,
+          "open_time_end": 1786128726785
+        },
+        "median_ratio_early_vs_recent": 1.8885
+      }
+    },
+    {
+      "symbol": "XRPUSDT",
+      "n_bars_total_incl_leftover": 163777,
+      "n_bars_excluded_trailing_leftover": 1,
+      "overall": {
+        "n_bars": 163776,
+        "mean_ms": 902458.4,
+        "mean_minutes": 15.041,
+        "median_ms": 452625.0,
+        "median_minutes": 7.544,
+        "std_ms": 1194724.6,
+        "min_ms": 6.0,
+        "max_ms": 15520416.0,
+        "max_hours": 4.31,
+        "percentiles_minutes": {
+          "p1": 0.124,
+          "p5": 0.48,
+          "p10": 0.963,
+          "p25": 2.735,
+          "p50": 7.544,
+          "p75": 19.021,
+          "p90": 39.218,
+          "p95": 55.91,
+          "p99": 94.209
+        },
+        "skewness": 2.7799,
+        "excess_kurtosis": 11.0666
+      },
+      "time_split": {
+        "early_quartile": {
+          "n_bars": 40944,
+          "median_ms": 918186.0,
+          "mean_ms": 1406080.1777061352,
+          "open_time_start": 1638316804073,
+          "open_time_end": 1695897283021
+        },
+        "recent_quartile": {
+          "n_bars": 40944,
+          "median_ms": 510171.5,
+          "mean_ms": 815028.3465953497,
+          "open_time_start": 1752770099880,
+          "open_time_end": 1786142344334
+        },
+        "median_ratio_early_vs_recent": 1.7998
+      }
+    }
+  ]
+}

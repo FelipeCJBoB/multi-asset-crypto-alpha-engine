@@ -4399,3 +4399,63 @@ entries:
       pra `(self.timeframe_minutes is not None) == bool(self.resolution_id)`
       (`bool()` trata `""` como falso, mesmo tratamento de `None`).
     status: "fechado -- confirmado empiricamente, testes de Bars.__post_init__ (4) continuam passando"
+
+  - id: AG-061
+    date: "2026-08-17"
+    file: "tools/diagnostics/measure_dollar_bar_duration_distribution.py (novo), experiments/dollar_bar_duration_distribution.json"
+    related_file: "src/data/bars.py, audit/architecture_gaps_log.yaml::AG-036, AG-043, docs/refactor_dollar_bar_canonico.md §7 (P-2)"
+    found_by: "Claude, escrevendo e rodando o script de medição de P-2"
+    gap: >
+      P-2 (distribuição real de duração de dollar bar) nunca foi medida --
+      "não foi possível determinar" na investigação original, bloqueando
+      `AG-043` (`sqrt(window)`/Yang-Zhang) e a rota de desenho do EGARCH em
+      `AG-036`. Script novo escrito e rodado sobre os 5 símbolos completos
+      (reprocessamento real, 2026-08-17). NO CAMINHO, 2 achados reais:
+      (1) a ÚLTIMA barra de qualquer janela finita é o "leftover"
+      incondicional de `bars.threshold_bars_finish`, não uma barra fechada
+      por threshold -- pode ter 1 trade só (`duration_ms=0`), excluída da
+      distribuição com log explícito. (2) **Mais importante -- correção de
+      uma suposição PRÓPRIA não verificada**: a 1ª versão do script
+      assumia "`bars.py` garante `close_time > open_time` por construção"
+      e falhava alto em qualquer `duration_ms<=0` fora do leftover --
+      afirmação nunca checada contra o código real (`bars.py` não
+      documenta esse invariante como estrito). SOLUSDT tinha 10 barras
+      (2025-07-16 ~17:00-17:05 UTC) com `duration_ms==0` no MEIO da série
+      -- investigado ANTES de decidir qualquer coisa: `aggTrades` bruto na
+      mesma janela (consultado direto via `lake.query_agg_trades`, fora do
+      pipeline de barras) confirma 6.653 trades reais / ~US$3,71 bilhões
+      em ~10min -- rajada de liquidez real (provável cascata de
+      liquidação), não artefato do pipeline. Com timestamp de 1ms de
+      resolução e densidade de trade tão alta, várias barras fecham dentro
+      do MESMO milissegundo -- `duration_ms==0` é o MÍNIMO real da
+      distribuição, não erro.
+    severity: "médio"
+    layer: "data/diagnostics"
+    consequence: >
+      Sem a correção, o script teria travado (ou pior, um Agent/eu
+      poderíamos ter "corrigido" filtrando os 10 pontos como se fossem
+      ruído, escondendo um evento de mercado real e distorcendo a
+      distribuição medida) toda vez que um símbolo tivesse uma rajada de
+      liquidez extrema -- SOLUSDT não é caso isolado, qualquer símbolo
+      pode ter eventos assim. Resultado real agora medido, 5 símbolos:
+      mediana 7,5-9,9min, p99 73,6-98,7min, máximo 3,7-12,5h por barra,
+      assimetria positiva forte (2,3-5,7) e curtose em excesso alta
+      (8,6-61,5) -- distribuição fortemente NÃO-normal, cauda pesada à
+      direita. Confirma quantitativamente que "N barras ≈ tempo de
+      calendário fixo" é uma suposição errada (já qualitativamente
+      esperado, agora com número real). `median_ratio_early_vs_recent`
+      (1,16-2,40x) confirma que a duração típica também MUDA ao longo do
+      tempo, consistente com a deriva de threshold já medida (P-1,
+      18,18x).
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17 -- script + medição real completos. Números
+      agora disponíveis para desbloquear: `AG-043` (`sqrt(window)`/
+      Yang-Zhang, decisão de correção real vira possível) e a escolha de
+      rota de desenho do EGARCH em `AG-036` (a forma da distribuição --
+      fortemente assimétrica e de cauda pesada, não log-normal simples --
+      é insumo direto pra decidir entre ACD-GARCH acoplado vs. heurística
+      de escala por duração). Nenhuma das duas decisões tomada AQUI --
+      só a medição que as habilita. Mecânicos limpos (ruff/mypy/
+      banned_patterns/check_unguarded_ratios).
+    status: "fechado -- medição real completa, 5 símbolos, JSON commitado"
