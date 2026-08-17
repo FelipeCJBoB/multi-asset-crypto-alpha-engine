@@ -109,7 +109,18 @@ class ATRWilderEstimator:
     `window` é explícito no construtor (nunca um literal solto no
     chamador — é exatamente isso que I-a/I-b violavam); `from_constants()`
     lê `constants.yaml::atr_window` para quem não tem motivo de passar
-    outro valor."""
+    outro valor.
+
+    **Readaptada pra grade dollar-bar (`AG-036`), mesmo racional já
+    revisado/aprovado (`project_assurance`) de `RealizedVolEstimator`**:
+    a suavização de Wilder é recursiva sobre `window` observações, sem
+    fator de anualização/√tempo na fórmula (confirmado por leitura de
+    `support.atr_wilder`) — nenhuma dependência de calendário a converter.
+    `window` continua contagem de barra sob relógio de negócio (Ané &amp;
+    Geman 2000) -- mesmo argumento de subordinação já usado pra
+    `RealizedVolEstimator`, aplica igual aqui. `horizon_minutes` não
+    validado sob dollar bar pela mesma razão -- forecast é sempre "1
+    barra à frente"."""
 
     window: int
 
@@ -118,13 +129,8 @@ class ATRWilderEstimator:
         return ATRWilderEstimator(window=int(load_constant("atr_window")))
 
     def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
-        if bars.resolution_id is not None:
-            raise NotImplementedError(
-                "ATRWilderEstimator ainda não foi readaptado pra grade "
-                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- ver "
-                "AG-036, audit/architecture_gaps_log.yaml"
-            )
-        if horizon_minutes != bars.timeframe_minutes:
+        # grade de tempo -- comportamento ORIGINAL, idêntico ao pré-AG-036
+        if bars.timeframe_minutes is not None and horizon_minutes != bars.timeframe_minutes:
             raise NotImplementedError(
                 "ATRWilderEstimator so estima no horizonte nativo da barra "
                 f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
@@ -132,6 +138,7 @@ class ATRWilderEstimator:
                 "e escopo do M1 (calibracao por TF), ainda nao implementada aqui "
                 "-- nao fabricar um numero sem base medida (Regra Zero, CLAUDE.md)."
             )
+        # grade dollar-bar: sem guarda de horizon_minutes -- ver docstring
         high = bars.frame["high"].cast(pl.Float64).to_numpy()
         low = bars.frame["low"].cast(pl.Float64).to_numpy()
         close = bars.frame["close"].cast(pl.Float64).to_numpy()
@@ -156,18 +163,16 @@ class ParkinsonEstimator:
     (symbol, tf) é exatamente o que a calibração walk-forward de M1
     decide, não algo que este módulo deveria presumir via
     `from_constants()` — não existe `atr_window`-equivalente ainda medido
-    para este estimador."""
+    para este estimador.
+
+    **Readaptada pra grade dollar-bar (`AG-036`)** — mesmo racional de
+    `ATRWilderEstimator`/`RealizedVolEstimator`: fórmula sem fator de
+    anualização, `window` continua contagem de barra."""
 
     window: int
 
     def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
-        if bars.resolution_id is not None:
-            raise NotImplementedError(
-                "ParkinsonEstimator ainda não foi readaptado pra grade "
-                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- ver "
-                "AG-036, audit/architecture_gaps_log.yaml"
-            )
-        if horizon_minutes != bars.timeframe_minutes:
+        if bars.timeframe_minutes is not None and horizon_minutes != bars.timeframe_minutes:
             raise NotImplementedError(
                 "ParkinsonEstimator so estima no horizonte nativo da barra "
                 f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
@@ -189,18 +194,16 @@ class ParkinsonEstimator:
 @dataclass(frozen=True, slots=True)
 class GarmanKlassEstimator:
     """Garman-Klass (1980) — candidato de M1. Mesmo racional de
-    `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`."""
+    `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`.
+
+    **Readaptada pra grade dollar-bar (`AG-036`)** — mesmo racional dos
+    demais estimadores de fórmula fechada já readaptados: sem fator de
+    anualização, `window` continua contagem de barra."""
 
     window: int
 
     def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
-        if bars.resolution_id is not None:
-            raise NotImplementedError(
-                "GarmanKlassEstimator ainda não foi readaptado pra grade "
-                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- ver "
-                "AG-036, audit/architecture_gaps_log.yaml"
-            )
-        if horizon_minutes != bars.timeframe_minutes:
+        if bars.timeframe_minutes is not None and horizon_minutes != bars.timeframe_minutes:
             raise NotImplementedError(
                 "GarmanKlassEstimator so estima no horizonte nativo da barra "
                 f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
@@ -281,18 +284,17 @@ class RogersSatchellEstimator:
     Manager, 2026-08-11; não é um dos 6 candidatos declarados em
     PRD_V4_1.md §3.2), avaliado contra o vencedor de M1 (Garman-Klass) na
     mesma família "fórmula fechada, sem MLE/OLS por fold". Mesmo racional
-    de `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`."""
+    de `ParkinsonEstimator` sobre `window` explícito, sem `from_constants()`.
+
+    **Readaptada pra grade dollar-bar (`AG-036`)** — sem fator de
+    anualização (nem componente de drift/overnight que quebraria sob
+    dollar bar, ao contrário de Yang-Zhang), `window` continua contagem
+    de barra."""
 
     window: int
 
     def estimate(self, bars: Bars, *, horizon_minutes: int) -> FloatArray:
-        if bars.resolution_id is not None:
-            raise NotImplementedError(
-                "RogersSatchellEstimator ainda não foi readaptado pra grade "
-                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- ver "
-                "AG-036, audit/architecture_gaps_log.yaml"
-            )
-        if horizon_minutes != bars.timeframe_minutes:
+        if bars.timeframe_minutes is not None and horizon_minutes != bars.timeframe_minutes:
             raise NotImplementedError(
                 "RogersSatchellEstimator so estima no horizonte nativo da barra "
                 f"({bars.timeframe_minutes}min); horizon_minutes={horizon_minutes} "
@@ -319,7 +321,20 @@ class YangZhangEstimator:
     `RogersSatchellEstimator` (ver docstring). `warmup_bars` é `window + 1`
     (não `window`): o componente overnight precisa de `close[i-1]`, mesmo
     tipo de +1 que `next_bar_realized_variance` (`volatility_walkforward.py`)
-    aplica por precisar de `close[t+1]`."""
+    aplica por precisar de `close[t+1]`.
+
+    **Único dos 5 estimadores de fórmula fechada AINDA bloqueado sob grade
+    dollar-bar (`AG-036`), deliberadamente, não esquecimento.** Os outros
+    4 (ATRWilder/Parkinson/GarmanKlass/RogersSatchell) foram readaptados
+    porque a fórmula fechada não tem dependência de calendário. Yang-Zhang
+    É diferente: o componente overnight é definido como o gap entre o
+    FECHAMENTO de uma sessão e a ABERTURA da próxima (`support.py`,
+    achado já registrado em `AG-043`) -- sob dollar bar, cada barra abre
+    exatamente onde a anterior fechou (barra de atividade contínua, sem
+    sessão/gap de calendário), então o componente colapsa de sentido
+    matemático, não é só "precisa de window em contagem de barra". Não
+    fabricar um substituto sem base medida (Regra Zero) -- fica bloqueado
+    até `AG-043` decidir o que fazer com o componente overnight."""
 
     window: int
 
@@ -327,8 +342,10 @@ class YangZhangEstimator:
         if bars.resolution_id is not None:
             raise NotImplementedError(
                 "YangZhangEstimator ainda não foi readaptado pra grade "
-                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- ver "
-                "AG-036, audit/architecture_gaps_log.yaml"
+                f"dollar-bar (resolution_id={bars.resolution_id!r}) -- componente "
+                "overnight colapsa de sentido sob barra de atividade contínua "
+                "(AG-043), deliberadamente ainda bloqueado -- ver AG-036, "
+                "audit/architecture_gaps_log.yaml"
             )
         if horizon_minutes != bars.timeframe_minutes:
             raise NotImplementedError(

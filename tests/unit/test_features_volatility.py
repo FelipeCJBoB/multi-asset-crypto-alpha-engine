@@ -241,11 +241,13 @@ def test_realized_vol_estimator_horizonte_diferente_do_nativo_levanta() -> None:
 def test_realized_vol_estimator_sob_grade_dollar_bar_nao_levanta(
     horizon_minutes: int,
 ) -> None:
-    # AG-036 -- RealizedVolEstimator é a exceção documentada: sob
+    # AG-036 -- RealizedVolEstimator foi a 1ª exceção documentada: sob
     # resolution_id (grade dollar-bar), a guarda de horizon_minutes não se
     # aplica (forecast é sempre "1 barra à frente", ver docstring da
     # classe) -- deve retornar forecast válido pra QUALQUER horizon_minutes,
-    # sem levantar, ao contrário das 5 implementações de fórmula fechada.
+    # sem levantar. ATRWilder/Parkinson/GarmanKlass/RogersSatchell foram
+    # readaptados do mesmo jeito depois (ver bloco de testes mais abaixo) --
+    # só YangZhang continua bloqueado (componente overnight, AG-043).
     frame = _synthetic_bars()
     window = 5
     bars = Bars(frame=frame, resolution_id="R1")
@@ -386,11 +388,12 @@ def test_yang_zhang_sem_gap_overnight_reduz_a_v_c_e_v_rs_ponderados() -> None:
 
 
 # ============================================================================
-# Guarda compartilhada de grade dollar-bar (AG-036) -- as 5 implementações
-# de fórmula fechada (ATRWilder/Parkinson/GarmanKlass/RogersSatchell/
-# YangZhang) ainda não foram readaptadas; devem levantar NotImplementedError
-# citando AG-036/resolution_id sob Bars(resolution_id=...). Contraste direto
-# com RealizedVolEstimator (seção acima), que NÃO levanta.
+# Guarda de grade dollar-bar (AG-036) -- ATRWilder/Parkinson/GarmanKlass/
+# RogersSatchell readaptados (mesmo racional de RealizedVolEstimator: sem
+# fator de anualização, window continua contagem de barra sob relógio de
+# negócio) -- NÃO levantam mais sob resolution_id. YangZhang é o ÚNICO que
+# continua bloqueado (componente overnight colapsa de sentido sob barra de
+# atividade contínua, AG-043) -- teste em bloco separado abaixo.
 # ============================================================================
 
 
@@ -401,16 +404,27 @@ def test_yang_zhang_sem_gap_overnight_reduz_a_v_c_e_v_rs_ponderados() -> None:
         ParkinsonEstimator(window=5),
         GarmanKlassEstimator(window=5),
         RogersSatchellEstimator(window=5),
-        YangZhangEstimator(window=5),
     ],
-    ids=["atr_wilder", "parkinson", "garman_klass", "rogers_satchell", "yang_zhang"],
+    ids=["atr_wilder", "parkinson", "garman_klass", "rogers_satchell"],
 )
-def test_estimadores_grade_de_tempo_levantam_sob_resolution_id(
-    estimator: VolatilityEstimator,
+@pytest.mark.parametrize("horizon_minutes", [1, 15, 30, 60, 9999])
+def test_estimadores_fechados_readaptados_sob_grade_dollar_bar_nao_levantam(
+    estimator: VolatilityEstimator, horizon_minutes: int
 ) -> None:
+    frame = _synthetic_bars()
+    bars = Bars(frame=frame, resolution_id="R1")
+    got = estimator.estimate(bars, horizon_minutes=horizon_minutes)
+    assert got.shape[0] == frame.height
+    assert np.isfinite(got[~np.isnan(got)]).all()
+
+
+def test_yang_zhang_ainda_levanta_sob_resolution_id_deliberadamente() -> None:
+    # Único dos 5 estimadores de fórmula fechada ainda bloqueado --
+    # componente overnight, AG-043, não esquecimento (ver docstring da
+    # classe).
     bars = Bars(frame=_synthetic_bars(), resolution_id="R1")
     with pytest.raises(NotImplementedError, match="AG-036"):
-        estimator.estimate(bars, horizon_minutes=15)
+        YangZhangEstimator(window=5).estimate(bars, horizon_minutes=15)
 
 
 def _skip_if_labels_missing() -> None:
