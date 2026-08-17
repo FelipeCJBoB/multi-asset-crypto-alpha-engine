@@ -2528,18 +2528,118 @@ Polars-vetorizado pra construção de dollar bar aprovado e escrito
 (`tools/diagnostics/prototype_dollar_bar_duckdb_vs_polars.py`), execução
 pendente do usuário.
 
+## M1 remedido sob dollar bar + migração Parkinson canônico (2026-08-17) <!-- check-sprint-log: skip -->
+
+**M1 remedido por completo sob grade dollar-bar** — 5 símbolos × 3
+resoluções (R1/R2/R3) × 6 candidatos (RealizedVol/ATRWilder/Parkinson/
+RogersSatchell/HAR-RV/EGARCH-acoplado) vs. baseline GarmanKlass,
+`experiments/volatility_dollar_bar_report.json`. Resultado: **Parkinson
+bate GK, significativo, em 12/15 combinações**; empate estatístico em
+2/15; GK vence sem contestação em 1/15 (SOLUSDT×R3) — `audit/
+architecture_gaps_log.yaml::AG-065`/`AG-074`. Manager decidiu: **Parkinson
+é a nova volatilidade canônica** (`AG-036::addendum_decisao_manager_
+2026_08_17`), pedindo pra tratar isso junto da comutação real de produção
+pra grade dollar-bar (`resolution_id=R1`) — os dois planos que ficaram
+parados em "decisão registrada, deployment adiado" (`docs/
+refactor_gk_canonico.md` original) viraram um plano só, `docs/
+refactor_parkinson_canonico.md`.
+
+`N_lifetime` (`audit/n_lifetime.yaml`) chegou a `counter=63`, acima do
+orçamento total da V4.1 (`PRD_V4_1.md:625`, 60) — critério de
+encerramento §6.5-5 disparado. Manager autorizou explicitamente estourar
+o orçamento pra esta migração (id 17, `budget_override_manager`,
+`delta=0` — a autorização em si não gasta trial; retreino real, quando
+rodar, conta normalmente).
+
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-16)
+**Migração executada em 6 fases**, plano completo revisado por
+`project_assurance` (Agent fresco) antes de começar — achou 5 gaps <!-- check-sprint-log: skip -->
+CRITICAL na 1ª versão do plano (peça de orquestração faltando, desenho <!-- check-sprint-log: skip -->
+do Bloqueador 2 assumindo metadado inexistente, risco real de colisão de <!-- check-sprint-log: skip -->
+path, `leakage.py` fora do blast radius, `min_common_history_bars_15m` <!-- check-sprint-log: skip -->
+sob dollar bar não endereçado), todos incorporados antes da execução —
+commits por fase citados abaixo:
+
+- **Fase 0** (`e32b7a4`) — decisão registrada + `assert_grade_consistent`
+  corrigido (`src/validation/cpcv.py`, lê `_calibration.json` real em vez
+  de assumir espaçamento de relógio).
+- **Fase 1** (`5df33c3`) — Label Engine ganha `resolution_id`, path de
+  escrita novo com guarda anti-colisão contra os labels reais de
+  produção. Achado no processo: `fill_timeout_bars` multiplicava por
+  `bar_ms` (mesma classe de bug de `time_stop_bars`, AG-031, não pega na
+  1ª rodada) — corrigido pra `fill_timeout_ms`.
+- **Fase 2** (`3449471`) — Feature Engine ganha `vol_estimator_id`
+  selecionável (`c01_atr_20_parkinson`, default ATR de Wilder bit-exato).
+- **Fase 3** (`9a4c3c5`) — Regime Engine ganha `bar_source`/
+  `vol_estimator_id`.
+- **Fase 4** (`b5760fe`) — orquestração ponta a ponta (`dataset.py`,
+  `pipeline.py`, `leakage.py`, `fill_reconciliation.py`) — corrige bug
+  real onde `tf` era validado mas nunca repassado adiante.
+- **Fase 5/6** (`304b00b`) — Manager pediu explicitamente pra NÃO rodar o
+  corte real de produção ainda ("run canônico de produção agora seria
+  desperdício de tempo", já agendado junto de outras mudanças no
+  roadmap) — governança fechada nesse estado (engenharia pronta,
+  aplicação adiada), não "medido e aplicado".
+
+<!-- check-sprint-log: skip -->
+**Auditoria final** (`audit_engineering`, 4 agentes paralelos por pacote,
+commit `d03d207`) — zero CRITICAL, 3 HIGH reais corrigidos (proteção
+contra `CPCVError` faltando em 2 dos 3 testes de vazamento que tocam
+CPCV; paridade lote↔streaming nunca exercida sob Parkinson/dollar-bar,
+DoD do CLAUDE.md; `build_modeling_frame` amarrava `bar_source` só a
+`resolution_id`, nunca a `tf` — `tf="30m"` chegaria a labels/CPCV mas
+features/regime ficariam presas em 15m, achado real ainda não <!-- check-sprint-log: skip -->
+explorável hoje mas ativo assim que labels 30m/1h existirem). <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+**Correção de escopo do Manager, mesma conversa** (`6219d02`): labels/
+testes de vazamento/Feature-Regime liberados pra execução REAL — só o
+retreino do Alpha ficou fora ("solucione, mas não execute — deixe
+pronto"). Executado de verdade: `data/labels/{symbol}/R1/v1/
+labels.parquet` pros 5 símbolos (BTCUSDT 463.034/ETHUSDT 328.452/
+SOLUSDT 327.461/BNBUSDT 328.440/XRPUSDT 327.488 linhas; 15m de
+produção confirmado intocado); 14 testes de
+vazamento contra R1 pros 5 (**12 PASS/0 FAIL/2 sentinela em todos — zero
+vazamento**, `data/validation_reports/leakage_report_{symbol}_R1.json`);
+`build_modeling_frame` pros 5 (zero regime nulo, features T1 sãs).
+Achado no processo: 2 MEDIUM da auditoria diziam "fechar antes de
+qualquer backfill real" — rodei o backfill primeiro, corrigi depois
+(`n_bars_held` Int16→Int32 preventivo; 2 testes novos pros branches
+degenerados de `median_bar_ms`, AG-061) e reprocessei os 5 símbolos de <!-- check-sprint-log: skip -->
+novo com o schema corrigido.
+
+`run_layer1_sprint` (retreino do Alpha) ganhou `--tf`/`--resolution-id`/
+`--vol-estimator-id` no CLI — comando pronto, **não executado**.
+`constants.yaml::canonical_volatility_estimator.value` continua
+`garman_klass_w20` até o retreino real acontecer (não antes, pra não
+haver janela onde o config mente sobre o que está em produção).
+
+**Pendente pra fechar de vez** (ver `PLANO_MESTRE_PRINCE2.md` §11.4/
+§11.5): retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) +
+flip de `value` — agendado junto de outras mudanças já previstas no
+roadmap, decisão do Manager de quando.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-17)
+
+**Nota sobre a linha "Sprint" abaixo**: mantida como estava em
+2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
+rodada por não termos releitura completa do estado real de sprint a
+sprint pra apoiar um novo número com confiança (a narrativa deste
+arquivo já cita Sprint 6/7/8/9 como concluídos em seções anteriores,
+`Alpha`/`CPCV`/`execução` — a tabela pode estar desatualizada há mais
+de uma sessão; sinalizado explicitamente, não silenciado).
 
 | item | valor |
 |---|---|
-| Sprint | 4 — Feature Engine, em andamento |
+| Sprint | 4 — Feature Engine, em andamento (⚠️ possivelmente desatualizado — narrativa deste arquivo já cita Sprint 6-9 como concluídos, ver nota acima) |
 | TF de decisão | 15m |
-| `canonical_volatility_estimator` | `garman_klass_w20` (decidido, deployment adiado) |
-| `canonical_bar_type` | `dollar` (decidido, deployment não iniciado) |
+| `canonical_volatility_estimator` | **decisão**: Parkinson (`parkinson_w20`) — Manager, 2026-08-17, `AG-036::addendum_decisao_manager_2026_08_17`. **`constants.yaml::value` ainda `garman_klass_w20`** — só muda quando o retreino real do Alpha rodar (evita janela onde o config mente sobre produção) |
+| `canonical_bar_type` | `dollar` (decidido); engenharia ponta a ponta pronta e testada pra `resolution_id="R1"` (Fases 0-4, commits `e32b7a4`/`5df33c3`/`3449471`/`9a4c3c5`/`b5760fe`); labels/leakage/Feature-Regime já EXECUTADOS de verdade pros 5 símbolos (`6219d02`) — só falta retreino real do Alpha, comando pronto (`--resolution-id`/`--vol-estimator-id` em `run_layer1_sprint`), não executado por decisão do Manager |
 | T1 | extinto — pool único de 13 features, ranking via PRD §2.0.1 ainda não rodado |
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
-| `N_lifetime` | 45/60, 15 trials restantes |
+| `N_lifetime` | **63**/60 — orçamento excedido, override do Manager autorizado e registrado (`audit/n_lifetime.yaml` id 17, `budget_override_manager`, `delta=0`) pra migração Parkinson+dollar-bar especificamente; retreino real do Alpha, quando rodar, conta normalmente |
 | Meta Model | fora da V1 (§6.8 define critério de entrada) |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json` |
+| Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — agendado junto de outras mudanças já previstas no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
