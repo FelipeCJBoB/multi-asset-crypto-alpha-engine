@@ -3236,6 +3236,13 @@ entries:
       recuperável nas fontes acessíveis (embora também não 100% literal
       do Engle original), mais barata, mais tratável. Nenhuma escolhida
       ainda -- decisão de negócio/pesquisa, não de engenharia.
+    addendum_decisao_final_2026_08_17: >
+      **Decisão do Manager: opção (a)** -- implementar mesmo sem
+      reprodução literal de GJ98, documentado honestamente como extensão
+      por analogia (`ASSUMED`/`DERIVED`-por-analogia, nunca `LITERATURE`,
+      sweep obrigatório). Não é o método publicado, é uma extensão
+      inspirada na ideia geral do paper (parâmetros do GARCH viram função
+      da duração), desenhada por este projeto. Implementação a seguir.
 
   - id: AG-037
     date: "2026-08-16"
