@@ -136,16 +136,34 @@ de USO, não mudança de código nesse módulo.
   `ValueError` em id inválido, e desabilitação do cap sob dollar bar via
   monkeypatch (determinístico, não depende de backfill local).
 
-### Regime Engine — precisa de código, não só teste (correção de mapeamento anterior)
+### Regime Engine — Fase 3 IMPLEMENTADA (2026-08-17)
 
 - Eixo principal (`vol_state`, R0-R5) NÃO depende de ATR — usa
   `C07_vol_pctile_expanding` (`realized_vol`), já dollar-bar-safe.
 - Eixo econômico (`econ_regime`/`cost_atr_ratio`) depende de
   `E27f_cost_atr_ratio` → herda a mudança de C01/C02.
-- **Achado real**: `src/regime/build.py::build_regimes` **não tem parâmetro
-  de grade nenhum** — chama `build_t1_features(symbol, start, end,
-  apply_warmup_mask=False)` sem `bar_source`. Sem adicionar esse parâmetro
-  não há NENHUM caminho de código pra computar regime sobre dollar bar.
+- `src/regime/build.py::build_regimes` ganhou `bar_source`/
+  `vol_estimator_id`, repassados bit-a-bit pra `build_t1_features` (mesmo
+  default `"time_15m"`/`None`, bit-exato) — sem isso não havia NENHUM
+  caminho de código pra computar regime sobre dollar bar (achado G3 da
+  revisão `project_assurance`, corrigiu a suposição original de "Regime
+  não muda").
+- `RegimeThresholds.min_common_history_bars` (mesma constante
+  compartilhada de AG-030) — mesma decisão da Fase 2: quando `bar_source
+  != "time_15m"` E o chamador NÃO passou `thresholds` explícito,
+  `build_regimes` desabilita o cap antes de repassar pro classificador.
+  Um `thresholds` explícito nunca é sobrescrito.
+- Teste de integração (`test_build_regimes_bar_source_dollar_r1_produz_
+  saida_sa`) confirma `econ_regime`/`cost_atr_ratio` e as invariantes §4.8
+  saem sãs sob a nova fonte (dado real, `data/capacity/dollar_bars_r1/`) +
+  3 testes determinísticos via monkeypatch (fiação, desabilitação do cap,
+  não-sobrescrita de `thresholds` explícito).
+- Achado colateral (não relacionado a esta migração, mesma classe de bug
+  de `test_features_build.py::test_warmup_uniforme_todas_nulas_antes_do_
+  corte`): `test_build_regimes_distribuicao_historico_completo` tinha
+  `assert counts.get("R0", 0) == 2000` obsoleto desde AG-027 (2026-08-15,
+  `min_warmup_bars` recalculado por fórmula, valor real 200) — nunca tinha
+  sido re-rodado até esta migração tocar o arquivo. Corrigido.
 
 ### Orquestração — peça que faltava no mapeamento original
 

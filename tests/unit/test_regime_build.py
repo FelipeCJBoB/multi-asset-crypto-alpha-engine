@@ -13,9 +13,11 @@ mesma classe de custo de `test_t1_ortogonalidade_spearman_2anos` em
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 from typing import cast
 
+import numpy as np
 import polars as pl
 import pytest
 
@@ -50,6 +52,28 @@ def _skip_if_missing(day: str) -> None:
     path = CAPACITY_DIR / "klines_1m" / "BTCUSDT" / f"{day}.parquet"
     if not path.exists():
         pytest.skip(f"fixture ausente no backfill local: {path}")
+
+
+def _skip_if_missing_dollar_bars(day: str) -> None:
+    path = CAPACITY_DIR / "dollar_bars_r1" / "BTCUSDT" / f"{day}.parquet"
+    if not path.exists():
+        pytest.skip(f"fixture dollar-bar ausente no backfill local: {path}")
+
+
+def _make_synthetic_regime_features(n: int, seed: int = 91) -> pl.DataFrame:
+    """Só as 5 colunas que `QuantileRegimeClassifier.classify` de fato lê
+    (`open_time`, B07/C07/E02f/E27f) — não é `build_t1_features` real, usada
+    pra testar `build_regimes` isolado de IO via monkeypatch."""
+    rng = np.random.default_rng(seed)
+    return pl.DataFrame(
+        {
+            "open_time": np.arange(n, dtype=np.int64) * 900_000,
+            "B07_efficiency_ratio_48": rng.uniform(0.0, 1.0, n),
+            "C07_vol_pctile_expanding": rng.uniform(0.0, 1.0, n),
+            "E02f_funding_z_expanding": rng.normal(0.0, 1.0, n),
+            "E27f_cost_atr_ratio": rng.uniform(0.0, 5.0, n),
+        }
+    )
 
 
 def _assert_invariantes_484(df: pl.DataFrame) -> None:
@@ -121,6 +145,113 @@ def test_build_regimes_determinismo() -> None:
 
 
 # ============================================================================
+# bar_source / vol_estimator_id — Fase 3 da migração Parkinson+dollar-bar
+# (2026-08-17, AG-030/036/065)
+# ============================================================================
+
+
+@pytest.mark.integration
+def test_build_regimes_bar_source_dollar_r1_produz_saida_sa() -> None:
+    """Item 14 do plano da Fase 3: `econ_regime`/`cost_atr_ratio` (herdam a
+    mudança de C01/C02 via E27f) e as invariantes §4.8 continuam válidas
+    sob `bar_source="dollar_r1"` — o eixo principal (`vol_state`, via
+    `C07_vol_pctile_expanding`) já era dollar-bar-safe (Fase 2), este teste
+    prova que a composição completa (Regime Engine em cima do Feature
+    Engine trocado) não degenera."""
+    _skip_if_missing_dollar_bars(_FIXTURE_START)
+    df = build.build_regimes("BTCUSDT", _FIXTURE_START, _FIXTURE_END, bar_source="dollar_r1")
+    assert df.height > 0
+    _assert_invariantes_484(df)
+    # econ_regime tem que produzir pelo menos um rótulo != UNKNOWN -- prova
+    # de que cost_atr_ratio (herdado de E27f/C01) não saiu 100% NaN
+    assert (df["econ_regime"].cast(pl.Utf8) != "ECONOMICS_UNKNOWN").any()
+    assert df["cost_atr_ratio"].is_not_null().any()
+
+
+def test_build_regimes_repassa_bar_source_e_vol_estimator_id_a_build_t1_features(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prova de fiação (achado G3 da revisão `project_assurance`): sem os
+    dois parâmetros novos em `build_t1_features`, não havia NENHUM caminho
+    de código pra computar regime sobre dollar bar -- monkeypatch de IO
+    captura os kwargs de fato repassados, não depende de backfill local."""
+    features = _make_synthetic_regime_features(60)
+    captured: dict[str, object] = {}
+
+    def _fake_build_t1_features(
+        symbol: str, start: str, end: str, **kwargs: object
+    ) -> pl.DataFrame:
+        captured.update(kwargs)
+        return features
+
+    monkeypatch.setattr(build.features_build, "build_t1_features", _fake_build_t1_features)
+    build.build_regimes(
+        "BTCUSDT",
+        "2024-01-01",
+        "2024-01-01",
+        bar_source="dollar_r1",
+        vol_estimator_id="parkinson_w20",
+    )
+    assert captured["bar_source"] == "dollar_r1"
+    assert captured["vol_estimator_id"] == "parkinson_w20"
+    assert captured["apply_warmup_mask"] is False
+
+
+def test_build_regimes_desabilita_min_common_history_bars_sob_dollar_bar_quando_thresholds_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mesma decisão da Fase 2 (`FeatureWindows`/`build_t1_features`),
+    aplicada à constante compartilhada em `RegimeThresholds` (item 13 do
+    plano): sob `bar_source != "time_15m"` e `thresholds=None` (caminho
+    default), `min_common_history_bars` é desabilitado antes de repassar
+    pro classificador -- prova observável no prefixo de `er_quantile`."""
+    n = 200
+    cap = 100
+    features = _make_synthetic_regime_features(n)
+    thresholds_com_cap = dataclasses.replace(
+        classifier.RegimeThresholds.from_constants(), min_common_history_bars=cap
+    )
+    monkeypatch.setattr(
+        classifier.RegimeThresholds, "from_constants", staticmethod(lambda: thresholds_com_cap)
+    )
+    monkeypatch.setattr(build.features_build, "build_t1_features", lambda *a, **k: features)
+
+    df_time15m = build.build_regimes(
+        "BTCUSDT", "2024-01-01", "2024-01-01", bar_source="time_15m"
+    )
+    df_dollar = build.build_regimes(
+        "BTCUSDT", "2024-01-01", "2024-01-01", bar_source="dollar_r1"
+    )
+
+    assert df_time15m.head(n - cap)["er_quantile"].is_nan().sum() == n - cap
+    assert df_dollar.head(n - cap)["er_quantile"].is_nan().sum() < n - cap
+
+
+def test_build_regimes_thresholds_explicito_nao_e_sobrescrito_sob_dollar_bar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A decisão automática (teste acima) só se aplica ao caminho default
+    -- um `thresholds` explícito do chamador nunca é sobrescrito, mesmo
+    sob dollar bar."""
+    n = 200
+    cap = 100
+    features = _make_synthetic_regime_features(n)
+    monkeypatch.setattr(build.features_build, "build_t1_features", lambda *a, **k: features)
+    thresholds_explicito = dataclasses.replace(
+        classifier.RegimeThresholds.from_constants(), min_common_history_bars=cap
+    )
+
+    df = build.build_regimes(
+        "BTCUSDT",
+        "2024-01-01",
+        "2024-01-01",
+        bar_source="dollar_r1",
+        thresholds=thresholds_explicito,
+    )
+    assert df.head(n - cap)["er_quantile"].is_nan().sum() == n - cap
+
+
+# ============================================================================
 # Escrita atômica — B29
 # ============================================================================
 
@@ -180,8 +311,13 @@ def test_build_regimes_distribuicao_historico_completo() -> None:
         print(f"  {label}: {n} barras ({n / df.height:.4%})")
 
     # R0 é exatamente min_warmup_bars — não uma medição, uma consequência
-    # direta do corte por índice.
-    assert counts.get("R0", 0) == 2000
+    # direta do corte por índice. 200, não 2000: min_warmup_bars foi
+    # recalculado por fórmula (AG-027, 2026-08-15, config/constants.yaml);
+    # esta asserção ficou hardcoded no valor antigo (mesma classe de bug já
+    # corrigida em test_features_build.py::test_warmup_uniforme_todas_
+    # nulas_antes_do_corte, achado real via pytest do usuário, 2026-08-16 —
+    # não tinha sido re-rodada aqui até esta migração tocar o arquivo).
+    assert counts.get("R0", 0) == 200
     # regimes tradeáveis (R1-R4) dominam a série — sanity check de que a
     # máquina de estado não degenerou (ex.: travada num único regime, ou
     # R5 dominando por um bug de histerese assimétrica invertida).
