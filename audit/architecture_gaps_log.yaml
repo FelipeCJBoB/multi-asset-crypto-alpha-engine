@@ -4459,3 +4459,48 @@ entries:
       só a medição que as habilita. Mecânicos limpos (ruff/mypy/
       banned_patterns/check_unguarded_ratios).
     status: "fechado -- medição real completa, 5 símbolos, JSON commitado"
+
+  - id: AG-062
+    date: "2026-08-17"
+    file: "src/features/volatility_models.py (novo), tests/unit/test_features_volatility_models.py (novo)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-036, commit 3ceb5b7 (original), 2436b33 (remoção)"
+    found_by: "Agent Project Assurance (revisão independente), src/features/volatility_models.py"
+    gap: >
+      3 achados na revisão de HAR-RV resgatado/readaptado (2º dos 3
+      candidatos amputados, `AG-036`). Revisor verificou matematicamente
+      os 5 pontos de maior risco (causalidade da janela via `searchsorted`,
+      correção F1, consistência `window_sum`/`window_count`, delegação de
+      validação de ordenação, prova de paridade contra o comportamento
+      antigo) -- todos CORRETOS, nenhum CRITICAL/HIGH. **Gap 1 (MEDIUM)**:
+      nenhum dos 9 testes originais de `_causal_window_mean` exercitava
+      `NaN`/`Inf` dentro do array `x` (só edge cases de `close_time`),
+      apesar da função ter lógica dedicada pra isso -- central pra
+      robustez sob dollar bar real (`AG-061` confirma rajadas/silêncio de
+      mercado produzindo gaps reais). **Gap 2 (LOW, pré-existente, não
+      introduzido nesta leva)**: `fit_har_rv`/`predict_har_rv` não validam
+      `train_end_idx` -- valor `<=0` produz slicing negativo silencioso em
+      vez de erro/`None`, idêntico em `git show 50dd621` (nunca testado em
+      nenhuma das duas versões). **Gap 3 (LOW, pré-existente)**:
+      `_MIN_TRAIN_OBS=10` sem comentário `# noqa: magic-number`
+      justificando (9 outros `_MIN_*` do repo têm essa justificativa
+      inline) -- lê como guardrail classe C sem entrada em
+      `constants.yaml`, mesmo padrão de convenção que outras constantes já
+      seguem.
+    severity: "médio"
+    layer: "features"
+    consequence: >
+      Gap 1: se um refactor futuro mexer em `x_filled`/`valid`/`csum`/
+      `ccount` sem preservar a separação soma-vs-contagem, nenhum teste
+      pegaria a regressão antes da reintegração ao harness de M1. Gaps
+      2/3: risco zero hoje (zero consumidor real), mas herdados sem
+      correção, ficam à espreita pro primeiro caller real.
+    resolved_by_commit: null
+    resolution: >
+      Gap 1 CORRIGIDO na mesma sessão -- 2 testes novos
+      (`test_causal_window_mean_nan_em_x_nao_entra_na_media`,
+      `test_causal_window_mean_inf_em_x_propaga_nao_e_engolido`), 17
+      passed no arquivo (era 15). Gaps 2/3 NÃO corrigidos -- débito
+      pré-existente ao código original (`50dd621`), não introduzido por
+      esta readaptação, registrado pra fechar quando o módulo ganhar o
+      primeiro caller real (reintegração ao harness de M1, `AG-036`).
+    status: "fechado parcialmente -- Gap 1 corrigido e confirmado (17 passed), Gaps 2/3 abertos como débito pré-existente"
