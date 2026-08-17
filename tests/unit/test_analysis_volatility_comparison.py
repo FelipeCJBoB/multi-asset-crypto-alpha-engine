@@ -119,6 +119,65 @@ def test_compare_estimators_forecast_var_e_o_quadrado_do_estimate() -> None:
 
 
 # ============================================================================
+# compare_estimators_for_combination_dollar_bar -- núcleo puro, grade
+# dollar-bar (AG-036). Mesmas fixtures sintéticas de open_time/close diário
+# -- Bars(resolution_id=...) não exige close_time (só os 5 estimadores de
+# fórmula fechada consomem high/low/close/open de bars.frame diretamente).
+# ============================================================================
+
+
+def test_compare_estimators_dollar_bar_dado_insuficiente_retorna_none() -> None:
+    bars_df = _synthetic_bars_df(200)
+    result = vc.compare_estimators_for_combination_dollar_bar(
+        "BTCUSDT",
+        "R1",
+        bars_df,
+        candidate_window=20,
+        initial_train_years=2,
+    )
+    assert result is None
+
+
+def test_compare_estimators_dollar_bar_estrutura_do_resultado_sem_yang_zhang() -> None:
+    bars_df = _synthetic_bars_df(1460)
+    result = vc.compare_estimators_for_combination_dollar_bar(
+        "BTCUSDT",
+        "R1",
+        bars_df,
+        candidate_window=20,
+        initial_train_years=2,
+    )
+    assert result is not None
+    assert result.symbol == "BTCUSDT"
+    assert result.tf == "R1"  # resolution_id, não relógio -- mesma ontologia AG-042
+    assert result.n_bars == 1460
+    assert result.n_folds > 0
+    assert result.baseline.estimator_id == "garman_klass_w20"
+    assert result.baseline.n_oos_obs > 0
+
+    candidate_ids = {c.metrics.estimator_id for c in result.candidates}
+    # YangZhang FORA -- ainda bloqueado sob dollar bar (AG-043, componente
+    # overnight). Os outros 4 sobreviventes de fórmula fechada, dentro.
+    assert candidate_ids == {
+        "realized_vol_w20",
+        "atr_wilder_w20",
+        "parkinson_w20",
+        "rogers_satchell_w20",
+    }
+    for c in result.candidates:
+        assert 0.0 <= c.fold_win_rate <= 1.0 or np.isnan(c.fold_win_rate)
+        assert isinstance(c.beats_baseline_qlike, bool)
+        assert c.metrics.n_oos_obs > 0
+    assert isinstance(result.any_candidate_beats_baseline, bool)
+
+
+def test_candidate_estimators_dollar_bar_nao_inclui_yang_zhang() -> None:
+    ids = {e.estimator_id for e in vc._candidate_estimators_dollar_bar(window=20)}
+    assert "yang_zhang_w20" not in ids
+    assert ids == {"realized_vol_w20", "atr_wilder_w20", "parkinson_w20", "rogers_satchell_w20"}
+
+
+# ============================================================================
 # stopping_criterion_1_from_results -- mesmo mecanismo do §6.5 critério de
 # parada #1 do PRD, reaplicado aqui contra o baseline atual (GK), não o
 # gate formal em si (já resolvido na rodada original de M1 contra

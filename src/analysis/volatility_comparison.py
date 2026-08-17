@@ -94,12 +94,15 @@ from numpy.typing import NDArray
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
+from src.data.build_dollar_bars import RESOLUTION_ID as DOLLAR_BAR_RESOLUTION_ID
 from src.data.lake import DateLike
 from src.features._constants import load_constant
 from src.features.volatility import (
+    ATRWilderEstimator,
     Bars,
     GarmanKlassEstimator,
     ParkinsonEstimator,
+    RealizedVolEstimator,
     RogersSatchellEstimator,
     VolatilityEstimator,
     YangZhangEstimator,
@@ -119,6 +122,12 @@ EXPERIMENTS_DIR: Final[Path] = _REPO_ROOT / "experiments"
 # de candidatos contra um baseline diferente (GK), não é o mesmo
 # experimento regravado por cima.
 DEFAULT_REPORT_PATH: Final[Path] = EXPERIMENTS_DIR / "volatility_rs_yz_vs_gk_report.json"
+# Nome distinto -- comparação sob grade DOLLAR-BAR (AG-036), candidatos
+# diferentes (RealizedVol/ATRWilder/Parkinson/RogersSatchell, sem
+# YangZhang) e resolução (não timeframe) -- não é o mesmo experimento.
+DEFAULT_REPORT_PATH_DOLLAR_BAR: Final[Path] = (
+    EXPERIMENTS_DIR / "volatility_dollar_bar_r1_report.json"
+)
 
 TIMEFRAMES: Final[tuple[str, ...]] = ("15m", "30m", "1h")
 
@@ -441,6 +450,197 @@ def run_volatility_comparison_for_symbol_tf(
     )
 
 
+# ============================================================================
+# Dollar bar (R1) -- AG-036, remedição de M1 sob grade dollar-bar
+# ============================================================================
+
+
+def _candidate_estimators_dollar_bar(*, window: int) -> tuple[VolatilityEstimator, ...]:
+    """Candidatos ATIVOS sob grade dollar-bar -- 4 dos 5 sobreviventes de
+    fórmula fechada (`RealizedVol`/`ATRWilder`/`Parkinson`/`RogersSatchell`,
+    todos readaptados, `AG-036`) contra o mesmo baseline (`GarmanKlass`,
+    também readaptado, `_baseline_estimator` já é comum aos dois grades).
+    `YangZhang` FICA DE FORA aqui deliberadamente -- ainda levanta
+    `NotImplementedError` sob `resolution_id` (componente overnight,
+    `AG-043`), não é esquecimento. `HAR-RV`/`EGARCH acoplado`
+    (`src.features.volatility_models`) também ficam de fora -- interface
+    `fit`/`predict` fold-aware incompatível com o loop de comparação atual
+    (`estimate()` simples, uma passada só pela série inteira); reintegrá-los
+    exige extensão de arquitetura própria, registrada como pendência
+    separada em `AG-036`, não decidida nem implementada aqui."""
+    return (
+        RealizedVolEstimator(window=window),
+        ATRWilderEstimator(window=window),
+        ParkinsonEstimator(window=window),
+        RogersSatchellEstimator(window=window),
+    )
+
+
+def compare_estimators_for_combination_dollar_bar(
+    symbol: str,
+    resolution_id: str,
+    bars_df: pl.DataFrame,
+    *,
+    candidate_window: int,
+    initial_train_years: int,
+) -> CombinationResult | None:
+    """Mesmo formato de resultado/métricas de `compare_estimators_for_
+    combination` (reusa `_forecast_var`/`_oos_slice`/`_per_fold_qlike`/
+    `_estimator_metrics` -- nenhuma lógica de métrica duplicada), núcleo
+    do LOOP mantido separado por decisão deliberada (mesma disciplina de
+    isolamento já usada em `src.data.build_dollar_bars` -- caminho
+    dollar-bar não deve arriscar o comportamento já revisado/referenciado
+    historicamente da grade de tempo por acoplamento).
+
+    `Bars(frame=bars_df, resolution_id=resolution_id)` -- construção
+    diferente de `compare_estimators_for_combination` (que usa
+    `timeframe_minutes`), `__post_init__` de `Bars` garante XOR entre os
+    dois. `horizon_minutes=0` passado a `_forecast_var` é PLACEHOLDER --
+    nenhum dos 4 candidatos/baseline aqui valida `horizon_minutes` sob
+    `resolution_id` (ver docstring de cada um em `src.features.
+    volatility`), o valor literal não tem efeito, só precisa existir pra
+    bater a assinatura de `VolatilityEstimator.estimate()`.
+
+    `result.tf` carrega `resolution_id` (ex. `"R1"`) -- reusa o campo de
+    string existente de `CombinationResult` em vez de mudar o schema pra
+    um único caso de uso novo; mesma ontologia já formalizada em `AG-042`
+    (`resolution_id` é a identidade real da grade dollar-bar, não um `tf`
+    de relógio -- o nome do campo é herdado, o valor que carrega é que
+    muda de significado, mesmo padrão que `m2_worker.py` já usa)."""
+    open_time_ms = bars_df["open_time"].cast(pl.Int64).to_numpy()
+    splits = vwf.generate_anchored_walk_forward_splits(
+        open_time_ms, initial_train_years=initial_train_years
+    )
+    if not splits:
+        logger.warning(
+            "analysis.volatility_comparison.folds_insuficientes_dollar_bar",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            n_bars=bars_df.height,
+        )
+        return None
+
+    oos_start, oos_end = _oos_slice(splits)
+    bars = Bars(frame=bars_df, resolution_id=resolution_id)
+    close = bars_df["close"].cast(pl.Float64).to_numpy()
+    realized_var = vwf.next_bar_realized_variance(close)
+
+    baseline = _baseline_estimator(window=candidate_window)
+    baseline_forecast_var = _forecast_var(baseline, bars, horizon_minutes=0)
+    baseline_metrics, baseline_qlike_oos = _estimator_metrics(
+        baseline.estimator_id,
+        baseline_forecast_var,
+        realized_var,
+        oos_start=oos_start,
+        oos_end=oos_end,
+    )
+    baseline_per_fold_qlike = _per_fold_qlike(
+        splits, vwf.qlike_loss(baseline_forecast_var, realized_var)
+    )
+
+    candidate_forecasts: list[tuple[str, FloatArray]] = [
+        (estimator.estimator_id, _forecast_var(estimator, bars, horizon_minutes=0))
+        for estimator in _candidate_estimators_dollar_bar(window=candidate_window)
+    ]
+
+    candidates: list[CandidateValidation] = []
+    any_beats = False
+    for cand_estimator_id, cand_forecast_var in candidate_forecasts:
+        cand_metrics, cand_qlike_oos = _estimator_metrics(
+            cand_estimator_id,
+            cand_forecast_var,
+            realized_var,
+            oos_start=oos_start,
+            oos_end=oos_end,
+        )
+        cand_per_fold_qlike = _per_fold_qlike(
+            splits, vwf.qlike_loss(cand_forecast_var, realized_var)
+        )
+        win_rate = vwf.fold_win_rate(cand_per_fold_qlike, baseline_per_fold_qlike)
+        dm = vwf.diebold_mariano(cand_qlike_oos, baseline_qlike_oos)
+        beats = (
+            not np.isnan(cand_metrics.qlike_mean)
+            and not np.isnan(baseline_metrics.qlike_mean)
+            and cand_metrics.qlike_mean < baseline_metrics.qlike_mean
+        )
+        any_beats = any_beats or beats
+        candidates.append(
+            CandidateValidation(
+                metrics=cand_metrics,
+                fold_win_rate=win_rate,
+                dm_stat=dm.dm_stat,
+                dm_p_value=dm.p_value,
+                beats_baseline_qlike=beats,
+            )
+        )
+
+    return CombinationResult(
+        symbol=symbol,
+        tf=resolution_id,
+        n_bars=bars_df.height,
+        n_folds=len(splits),
+        baseline=baseline_metrics,
+        candidates=tuple(candidates),
+        any_candidate_beats_baseline=any_beats,
+    )
+
+
+def run_volatility_comparison_for_symbol_dollar_bar(
+    symbol: str,
+    *,
+    resolution_id: str = DOLLAR_BAR_RESOLUTION_ID,
+    start: DateLike | None = None,
+    end: DateLike | None = None,
+    candidate_window: int | None = None,
+    initial_train_years: int | None = None,
+) -> CombinationResult | None:
+    """Carrega dollar bars reais do disco (`lake.query_dollar_bars`,
+    escritas por `src.data.build_dollar_bars`) e roda
+    `compare_estimators_for_combination_dollar_bar`. `start`/`end` default
+    para `SYMBOL_START_DATE[symbol]`/`END_DATE` -- MESMA convenção de
+    `run_volatility_comparison_for_symbol_tf`, mas note que o
+    reprocessamento real (`AG-034` addendum) cobriu exatamente essa janela
+    pra todos os 5 símbolos, então o default aqui é o histórico completo
+    de dado dollar-bar de fato disponível em disco, não uma esperança."""
+    resolved_start = start if start is not None else SYMBOL_START_DATE[symbol]
+    resolved_end = end if end is not None else END_DATE
+    window = (
+        candidate_window if candidate_window is not None else int(load_constant("atr_window"))
+    )
+    train_years = (
+        initial_train_years
+        if initial_train_years is not None
+        else int(load_validation_constant("m1_walkforward_initial_train_years"))
+    )
+
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m1_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m1_duckdb_threads")),
+    )
+    bars_df = lake.query_dollar_bars(
+        symbol,
+        resolved_start,
+        resolved_end,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
+    )
+    logger.info(
+        "analysis.volatility_comparison.bars_loaded_dollar_bar",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_bars=bars_df.height,
+        start=str(resolved_start),
+        end=str(resolved_end),
+    )
+    return compare_estimators_for_combination_dollar_bar(
+        symbol,
+        resolution_id,
+        bars_df,
+        candidate_window=window,
+        initial_train_years=train_years,
+    )
+
+
 def stopping_criterion_1_from_results(results: list[CombinationResult]) -> bool:
     """Checagem genérica "nenhum candidato bateu o baseline em QLIKE em
     NENHUMA combinação avaliada" -- mesmo mecanismo do `§6.5` critério de
@@ -595,6 +795,114 @@ def run_and_save_volatility_comparison_report(
     _atomic_write_json(payload, dest)
     logger.info(
         "analysis.volatility_comparison.done",
+        n_combinations_evaluated=len(results),
+        n_skipped=len(skipped),
+        n_failed=len(failed_tasks),
+        elapsed_seconds_total=round(elapsed_s, 1),
+        no_candidate_beats_gk_anywhere=no_candidate_beats_gk_anywhere,
+        dest=str(dest),
+    )
+    return dest
+
+
+def run_and_save_volatility_comparison_report_dollar_bar(
+    *,
+    symbols: tuple[str, ...] = tuple(SYMBOL_START_DATE),
+    resolution_id: str = DOLLAR_BAR_RESOLUTION_ID,
+    dest_path: Path | None = None,
+    max_workers: int | None = None,
+) -> Path:
+    """Mesmo formato/garantias de `run_and_save_volatility_comparison_
+    report` (escrita atômica B29, isolamento de falha por task AG-019,
+    ordenação determinística) -- `len(symbols)` combinações (5 por
+    default, só resolução R1 existe em disco hoje), não `len(symbols) *
+    len(timeframes)` (15) -- dollar bar não tem eixo de "timeframe", só
+    `resolution_id` (`AG-042`).
+
+    Chame manualmente:
+    `uv run python -c "from src.analysis.volatility_comparison import
+    run_and_save_volatility_comparison_report_dollar_bar as r; r()"`
+    ou `uv run python -m src.analysis.volatility_comparison --dollar-bar`."""
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    logger.info(
+        "analysis.volatility_comparison.starting_dollar_bar",
+        n_combinations=len(symbols),
+        resolution_id=resolution_id,
+        max_workers=workers,
+    )
+
+    t0 = time.perf_counter()
+    results: list[CombinationResult] = []
+    skipped: list[dict[str, str]] = []
+    failed_tasks: list[dict[str, str]] = []
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        future_to_symbol = {
+            executor.submit(
+                run_volatility_comparison_for_symbol_dollar_bar,
+                symbol,
+                resolution_id=resolution_id,
+            ): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                failed_tasks.append({"symbol": symbol, "resolution_id": resolution_id})
+                logger.error(
+                    "analysis.volatility_comparison.task_failed_dollar_bar",
+                    symbol=symbol,
+                    resolution_id=resolution_id,
+                    error=repr(exc),
+                )
+                continue
+            if result is None:
+                skipped.append(
+                    {
+                        "symbol": symbol,
+                        "resolution_id": resolution_id,
+                        "reason": "folds_insuficientes",
+                    }
+                )
+                continue
+            results.append(result)
+            logger.info(
+                "analysis.volatility_comparison.combination_done_dollar_bar",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                n_folds=result.n_folds,
+                baseline_qlike=round(result.baseline.qlike_mean, 6),
+                any_candidate_beats_baseline=result.any_candidate_beats_baseline,
+            )
+
+    if failed_tasks:
+        logger.warning(
+            "analysis.volatility_comparison.tasks_failed_dollar_bar",
+            n_failed=len(failed_tasks),
+            n_combinations=len(symbols),
+            failed=failed_tasks,
+        )
+
+    elapsed_s = time.perf_counter() - t0
+    results.sort(key=lambda r: r.symbol)
+    no_candidate_beats_gk_anywhere = stopping_criterion_1_from_results(results)
+
+    payload: dict[str, Any] = {
+        **report_provenance(),
+        "resolution_id": resolution_id,
+        "n_combinations_requested": len(symbols),
+        "n_combinations_evaluated": len(results),
+        "skipped": skipped,
+        "failed": failed_tasks,
+        "elapsed_seconds_total": elapsed_s,
+        "no_candidate_beats_gk_anywhere": no_candidate_beats_gk_anywhere,
+        "combinations": [_combination_to_dict(r) for r in results],
+    }
+    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH_DOLLAR_BAR
+    _atomic_write_json(payload, dest)
+    logger.info(
+        "analysis.volatility_comparison.done_dollar_bar",
         n_combinations_evaluated=len(results),
         n_skipped=len(skipped),
         n_failed=len(failed_tasks),
