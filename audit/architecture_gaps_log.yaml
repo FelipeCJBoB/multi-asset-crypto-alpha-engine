@@ -2756,13 +2756,36 @@ entries:
       **Ação tomada 2026-08-16:** `bars_streaming_chunk_days` reduzida de
       30 pra 6 (`config/constants.yaml`, cláusula de escape já registrada
       na proveniência original -- "ajustar pra baixo se ainda assim faltar
-      memória"). Próximo teste preparado (não executado por mim -- só o
-      usuário roda `.py`): MESMO cenário (BTCUSDT, 2025-01-01..2025-06-30,
-      `m2_bar_comparison.py --symbols BTCUSDT`, RSS instrumentado) pra
-      comparar pico de RSS/memória disponível contra o baseline deste
-      achado (27,1GB pico, ~400-860MB livre no pior momento) -- isola a
-      variável certa (só chunk_days muda, resto idêntico). Pendente de
-      execução e confirmação.
+      memória").
+
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16 -- redução funcionou, melhor
+      do que esperado.** Usuário rodou o mesmo cenário exato (BTCUSDT,
+      2025-01-01..2025-06-30, `m2_bar_comparison.py --symbols BTCUSDT`,
+      RSS instrumentado) com `chunk_days=6`, comparável direto contra o
+      baseline (`chunk_days=30`) porque só essa variável mudou:
+
+      | métrica | chunk=30 (baseline) | chunk=6 |
+      |---|---|---|
+      | RSS de pico | ~27,1GB | **~12,8GB** (-53%) |
+      | memória disponível mínima | ~400-860MB (1,5-3%) | **~14,2GB** (~53% livre) |
+      | tempo total | 453s (7min33s) | **296s** (4min56s) -- mais RÁPIDO |
+      | `n_bars` R3/tick_imbalance | 609.636 | 609.636 -- idêntico |
+
+      Resultado matemático idêntico entre os dois runs (confirma paridade
+      por construção -- chunk menor não muda o resultado). Ficou mais
+      RÁPIDO com chunks menores, não mais lento -- hipótese (não medida
+      diretamente, não confirmada): com ~400-860MB livres no baseline, o
+      SO provavelmente começou a paginar em disco perto do pico, mais
+      lento que processar mais chunks pequenos sem pressão de memória.
+
+      **Ressalva que continua real, não resolvida por este teste:** ainda
+      é 1 símbolo, 4 processos concorrentes (teto real de tasks pra 1
+      símbolo). Se a pressão de memória escalar aproximadamente linear
+      com processos concorrentes, 5 símbolos juntos (até 12 processos,
+      teto de `os.cpu_count()`) poderiam chegar perto de ~38GB -- acima
+      dos ~27GB livres da máquina. Extrapolação, não medição -- só
+      saberia de verdade rodando 5 símbolos concorrentes de fato, ainda
+      não tentado.
 
       **Item (1) (medir janela 2020) EXECUTADO E MEDIDO 2026-08-16 --
       resultado real, maior que qualquer coisa já conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
