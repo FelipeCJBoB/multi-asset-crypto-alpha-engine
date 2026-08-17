@@ -11,23 +11,23 @@ honesta registrada no doc é explícita: "a deriva real do threshold pode ser
 maior, menor OU DE SINAL OPOSTO" ao proxy de bytes. Este script mede a
 coisa certa, não o proxy.
 
-**Por que reusar `m2_worker._scan_trades_totals`/`_date_chunks` em vez de
-reimplementar a soma.** `_scan_trades_totals` já É exatamente essa soma —
-streaming por chunk sobre `lake.query_agg_trades`, memória limitada a 1
-chunk (nunca ao histórico inteiro), com o mesmo throttle de DuckDB
-(`_duckdb_throttle`, embutido dentro dela) que resolveu os
+**Por que reusar `src.data._chunked_scan.scan_trades_totals`/`date_chunks`
+em vez de reimplementar a soma.** `scan_trades_totals` já É exatamente
+essa soma — streaming por chunk sobre `lake.query_agg_trades`, memória
+limitada a 1 chunk (nunca ao histórico inteiro), com o mesmo throttle de
+DuckDB (`duckdb_throttle`, embutido dentro dela) que resolveu os
 `duckdb.OutOfMemoryException` reais de M2. Reimplementar a mesma soma aqui
-seria uma 2ª fonte de verdade que pode divergir da que M2 realmente usa pra
-calibrar — o objetivo deste script é ser um wrapper FINO em cima da função
-de produção de M2, não uma segunda implementação. `_scan_trades_totals`/
-`_date_chunks` são "privadas" só por convenção de nome (prefixo `_`) --
-aceitável importar de fora do módulo aqui porque isto é medição
-descritiva (mesma categoria de `src/analysis/`, fora do contrato de
-camada do `importlinter`), não código de produção que outro módulo passa
-a depender.
+seria uma 2ª fonte de verdade que pode divergir da que M2 (e o runner de
+validação de dollar bar, `src.data.build_dollar_bars`) realmente usam pra
+calibrar — o objetivo deste script é ser um wrapper FINO em cima da mesma
+função, não uma segunda implementação. `scan_trades_totals`/`date_chunks`
+viveram em `src.analysis.m2_worker` até 2026-08-16 (extraídas pra
+`src.data._chunked_scan` porque nunca foram específicas de M2) -- este
+script foi atualizado pra apontar pra fonte canônica direto, não pelo
+re-export de compatibilidade que `m2_worker.py` mantém.
 
 **O que este script NÃO faz.** Não constrói NENHUMA barra (nem dollar, nem
-volume, nem tick_imbalance) -- `_scan_trades_totals` só soma
+volume, nem tick_imbalance) -- `scan_trades_totals` só soma
 `price*quantity`/`quantity`/contagem de ticks por chunk e descarta o chunk,
 nunca chama `threshold_bars_step`/`tick_imbalance_bars_step`. Isso é muito
 mais barato que rodar M2 inteiro (a alternativa registrada no doc: 5
@@ -81,9 +81,9 @@ if str(_REPO_ROOT) not in sys.path:
 import orjson
 import structlog
 
-from src.analysis.m2_worker import _date_chunks, _scan_trades_totals
 from src.analysis.volatility_comparison import SYMBOL_START_DATE
 from src.core.provenance import report_provenance
+from src.data._chunked_scan import date_chunks, scan_trades_totals
 from src.data._constants import load_constant as load_data_constant
 
 logger = structlog.get_logger(__name__)
@@ -93,7 +93,16 @@ _DEST_PATH: Final[Path] = _REPO_ROOT / "experiments" / "dollar_threshold_drift.j
 # As mesmas 5 janelas de regime de M2 (`docs/refactor_dollar_bar_canonico.md`
 # §7 P-1, comandos exatos de `m2_bar_comparison`) -- LUNA/UST, FTX, crypto
 # winter, ETF/halving, recente. Replicadas literalmente, não reinventadas.
+# + 2 janelas novas (2026-08-16, AG-034 addendum, recomendação item 1 --
+# "estender measure_dollar_threshold_drift.py com 1-2 janelas do início real
+# da história (2020-01, 2020-06)"): as 5 janelas de M2 cobrem só 2022-2026 --
+# o início real de BTCUSDT (2019-12-31) é era de liquidez estrutural bem
+# menor, nunca medida por este script nem por M2. `2020_h1`/`2020_h2`
+# cobrem os dois lados do halving de 2020-05-11 (regime de mercado
+# distinto antes/depois), não datas arbitrárias.
 _WINDOWS: Final[tuple[tuple[str, str, str], ...]] = (
+    ("2020_h1", "2020-01-01", "2020-01-31"),
+    ("2020_h2", "2020-06-01", "2020-06-30"),
     ("luna", "2022-05-01", "2022-05-31"),
     ("ftx", "2022-11-01", "2022-11-30"),
     ("winter", "2023-06-01", "2023-06-30"),
@@ -101,7 +110,7 @@ _WINDOWS: Final[tuple[tuple[str, str, str], ...]] = (
     ("recente", "2026-07-01", "2026-07-31"),
 )
 
-# Rótulo passado a `_scan_trades_totals` no lugar de um `tf` real -- a soma
+# Rótulo passado a `scan_trades_totals` no lugar de um `tf` real -- a soma
 # NÃO depende de `tf` (ver docstring do módulo), ele só aparece nos logs
 # `analysis.m2_worker.totals_chunk_done` por chunk. Passar um `tf` de
 # verdade (ex. "15m") sugeriria uma dependência que não existe.
@@ -132,9 +141,9 @@ def _n_days(start: str, end: str) -> int:
 def _measure_symbol_window(symbol: str, window: str, start: str, end: str) -> _WindowResult:
     n_days = _n_days(start, end)
     chunk_days = int(load_data_constant("bars_streaming_chunk_days"))
-    chunks = _date_chunks(start, end, chunk_days=chunk_days)
+    chunks = date_chunks(start, end, chunk_days=chunk_days)
 
-    totals = _scan_trades_totals(symbol, _TF_LOG_LABEL, chunks)
+    totals = scan_trades_totals(symbol, _TF_LOG_LABEL, chunks)
     if totals.n_ticks == 0:
         raise ValueError(
             f"aggTrades vazio para {symbol} na janela {window} ({start}..{end}) -- "
@@ -246,9 +255,39 @@ def main() -> None:
     )
 
     results: list[_WindowResult] = []
+    skipped: list[dict[str, str]] = []
     n_done = 0
     for window, start, end in _WINDOWS:
         for symbol in symbols:
+            # As janelas 2020_h1/2020_h2 (AG-034 addendum) predatam o início
+            # real de dado dos 4 alts (SYMBOL_START_DATE=2021-12-01) -- sem
+            # esta guarda, `_measure_symbol_window` levantaria ValueError
+            # (n_ticks==0) e abortaria o script INTEIRO antes de escrever
+            # QUALQUER resultado (nem os das 5 janelas de M2 já medidas
+            # antes), porque a escrita é atômica só no fim, não incremental.
+            # Pular explicitamente, registrado no payload (não silencioso --
+            # "não escreva silenciosamente incompleto", mesma disciplina
+            # FCN do resto desta auditoria) é honesto sobre o que não pode
+            # ser medido, em vez de fingir cobertura que os dados não têm.
+            if date.fromisoformat(SYMBOL_START_DATE[symbol]) > date.fromisoformat(start):
+                logger.info(
+                    "diagnostics.measure_dollar_threshold_drift.symbol_window_skipped",
+                    symbol=symbol,
+                    window=window,
+                    reason="janela anterior ao início de dado do símbolo",
+                    symbol_start_date=SYMBOL_START_DATE[symbol],
+                    window_start=start,
+                )
+                skipped.append(
+                    {
+                        "symbol": symbol,
+                        "window": window,
+                        "reason": "janela anterior ao início de dado do símbolo "
+                        f"({SYMBOL_START_DATE[symbol]})",
+                    }
+                )
+                n_done += 1
+                continue
             results.append(_measure_symbol_window(symbol, window, start, end))
             n_done += 1
             logger.info(
@@ -263,7 +302,7 @@ def main() -> None:
         **report_provenance(),
         "measurement_provenance": (
             "MEASURED -- soma real de price*quantity (aggTrades) por (symbol, "
-            "window), via src.analysis.m2_worker._scan_trades_totals (mesma função "
+            "window), via src.data._chunked_scan.scan_trades_totals (mesma função "
             "que M2 usa para calibrar dollar_threshold, reaproveitada sem "
             "reimplementação -- ver docstring do módulo). NÃO é o proxy de bytes/"
             "contagem de trades de docs/refactor_dollar_bar_canonico.md §3.1: "
@@ -276,6 +315,7 @@ def main() -> None:
         ],
         "symbols": list(symbols),
         "results": rows,
+        "skipped": skipped,
         "drift_summary": drift_summary,
     }
     _atomic_write_json(payload, _DEST_PATH)
@@ -283,6 +323,7 @@ def main() -> None:
     logger.info(
         "diagnostics.measure_dollar_threshold_drift.done",
         n_combinations=len(results),
+        n_skipped=len(skipped),
         drift_summary=drift_summary,
         dest_path=str(_DEST_PATH),
     )

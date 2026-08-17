@@ -45,7 +45,9 @@ from src.analysis.m2_stats import BarComparisonMetrics, compute_bar_statistics
 from src.analysis.m2_stats import compute_bar_statistics as real_compute_bar_statistics
 from src.analysis.volatility_comparison import TIMEFRAMES
 from src.data import lake
+from src.data._constants import load_constant as load_data_constant
 from src.data._paths import CAPACITY_DIR
+from src.data.bars import LeftoverOverflowError
 
 
 def _bars(*, close: list[float], close_time: list[int]) -> pl.DataFrame:
@@ -112,8 +114,19 @@ def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
         dollar_threshold: float,
         volume_threshold: float,
         tib_config: object,
+        max_leftover_trades: float,
     ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+        # `max_leftover_trades` (achado MEDIUM de revisão independente,
+        # 2026-08-16 -- AG-034 addendum, circuit breaker de
+        # `ThresholdBarsCarry.leftover`): `_build_trades_dependent_bars`
+        # ganhou este parâmetro keyword-only, sem default. Sem ele aqui,
+        # `compute_trades_dependent_bars_for_symbol_tf` chamando este fake
+        # com `max_leftover_trades=...` levantaria `TypeError` -- MESMA
+        # classe de bug que este arquivo já documenta ter acontecido 2x
+        # (fake não atualizado quando a assinatura real muda), 3ª ocorrência,
+        # pega antes de rodar desta vez.
         build_calls.append((symbol, tf, dollar_threshold, volume_threshold))
+        assert max_leftover_trades > 0
         return small_bars, small_bars, small_bars
 
     monkeypatch.setattr(m2_worker, "_date_chunks", lambda start, end, *, chunk_days: [])
@@ -132,6 +145,85 @@ def test_compute_trades_dependent_bars_for_symbol_tf_e_autocontida(
     assert {metrics.resolution_id for metrics in results} == {"R2"}
     assert {metrics.bar_type for metrics in results} == set(m2_worker._TRADES_DEPENDENT_BAR_TYPES)
     assert len(results) == len(m2_worker._TRADES_DEPENDENT_BAR_TYPES)
+
+
+def test_max_leftover_trades_deriva_de_trades_medios_por_barra_vezes_multiplicador() -> None:
+    """Achado MEDIUM de revisão independente (project_assurance,
+    2026-08-16, AG-034 addendum): `_max_leftover_trades` (circuit breaker
+    de `ThresholdBarsCarry.leftover`) não tinha nenhum teste próprio -- só
+    a primitiva em `src/data/bars.py` era testada, com um valor manual
+    passado direto, nunca a fórmula real de derivação. Prova: `n_ticks /
+    target_n_bars * bars_threshold_leftover_safety_multiplier`, lendo o
+    multiplicador de verdade de `constants.yaml` (não hardcoded aqui --
+    Regra Zero do CLAUDE.md, e evita o teste divergir silenciosamente se
+    o valor da constante mudar)."""
+    safety_mult = float(load_data_constant("bars_threshold_leftover_safety_multiplier"))
+
+    result = m2_worker._max_leftover_trades(n_ticks=10_000, target_n_bars=100)
+
+    assert result == pytest.approx(100.0 * safety_mult)  # 10_000/100 * safety_mult
+
+
+def test_build_trades_dependent_bars_propaga_leftover_overflow_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado MEDIUM de revisão independente (project_assurance,
+    2026-08-16, AG-034 addendum): a mitigação central do achado MEDIUM
+    (`max_leftover_trades`/`LeftoverOverflowError`, `src/data/bars.py`)
+    não tinha NENHUM teste provando que ela de fato dispara dentro do
+    fluxo real de `_build_trades_dependent_bars` -- só a primitiva
+    isolada em `test_data_bars.py` era testada, nunca o caminho que
+    `compute_trades_dependent_bars_for_symbol_tf` de fato usa em
+    produção. `lake.query_agg_trades` monkeypatchado (achado no caminho:
+    a chamada real a `_build_trades_dependent_bars` feita por
+    `test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_curta`,
+    logo abaixo, e o fake de `test_compute_trades_dependent_bars_for_
+    symbol_tf_e_autocontida`, acima, não tinham `max_leftover_trades`
+    depois deste parâmetro virar keyword-only sem default -- MESMA
+    classe de bug de fake/caller desatualizado que este arquivo já
+    documenta 2x, 3ª ocorrência, corrigida nesta mesma rodada, não só
+    reportada)."""
+    n = 10
+    chunk = pl.DataFrame(
+        {
+            "transact_time": list(range(n)),
+            "price": [1.0] * n,
+            "quantity": [1.0] * n,
+            "is_buyer_maker": [False] * n,
+        },
+        schema={
+            "transact_time": pl.Int64,
+            "price": pl.Float64,
+            "quantity": pl.Float64,
+            "is_buyer_maker": pl.Boolean,
+        },
+    )
+
+    def _fake_query_agg_trades(
+        symbol: str,
+        start: object,
+        end: object,
+        *,
+        duckdb_memory_limit_gb: float,
+        duckdb_threads: int,
+    ) -> pl.DataFrame:
+        return chunk
+
+    monkeypatch.setattr(lake, "query_agg_trades", _fake_query_agg_trades)
+
+    chunks = m2_worker._date_chunks("2024-01-01", "2024-01-02", chunk_days=5)
+    tib_config = m2_worker._build_tick_imbalance_config(n_ticks=1_000, target_n_bars=10)
+
+    with pytest.raises(LeftoverOverflowError, match=r"len\(new_leftover\)=10"):
+        m2_worker._build_trades_dependent_bars(
+            "BTCUSDT",
+            "15m",
+            chunks,
+            dollar_threshold=1_000_000.0,  # nunca atingido pelos 10 trades de valor 1.0 cada
+            volume_threshold=1_000_000.0,
+            tib_config=tib_config,
+            max_leftover_trades=3.0,
+        )
 
 
 def test_time_stop_ms_e_invariante_entre_tfs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -274,6 +366,15 @@ def test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_curta() -> None:
     dollar_threshold = totals.total_dollar / target_n_bars
     volume_threshold = totals.total_volume / target_n_bars
     tib_config = m2_worker._build_tick_imbalance_config(totals.n_ticks, target_n_bars)
+    # Achado MEDIUM de revisão independente (project_assurance, 2026-08-16
+    # -- AG-034 addendum): `_build_trades_dependent_bars` ganhou
+    # `max_leftover_trades` keyword-only sem default -- sem isto aqui a
+    # chamada real (não um fake) levantaria `TypeError` na hora, mesma
+    # classe de bug de fake/caller desatualizado que este arquivo já
+    # documenta 2x, 3ª ocorrência, pega antes de rodar. Mesma fórmula de
+    # produção (`compute_trades_dependent_bars_for_symbol_tf`), não
+    # reimplementada -- este teste já promete "replicar a mesma lógica".
+    max_leftover_trades = m2_worker._max_leftover_trades(totals.n_ticks, target_n_bars)
 
     dollar_df, volume_df, tib_df = m2_worker._build_trades_dependent_bars(
         symbol,
@@ -282,6 +383,7 @@ def test_trades_dependent_bars_btcusdt_sobre_dado_real_janela_curta() -> None:
         dollar_threshold=dollar_threshold,
         volume_threshold=volume_threshold,
         tib_config=tib_config,
+        max_leftover_trades=max_leftover_trades,
     )
 
     resolution_id = m2_worker.RESOLUTION_ID_BY_TF[tf]

@@ -499,12 +499,26 @@ def _parse_cli_args() -> argparse.Namespace:
         default=None,
         help="default: os.cpu_count() (AG-034: considere reduzir)",
     )
+    parser.add_argument(
+        "--symbols",
+        default=None,
+        help=(
+            "lista separada por vírgula (ex. BTCUSDT), default: os 5 símbolos "
+            "(AG-034 addendum, 2026-08-16 -- reprocessamento real escalonado: "
+            "1 símbolo por vez reduz concorrência efetiva sem mudar código, "
+            "`run_and_save_bar_comparison_report` já aceitava `symbols=`, só "
+            "não estava exposto na CLI)"
+        ),
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     _args = _parse_cli_args()
     run_and_save_bar_comparison_report(
+        symbols=tuple(_args.symbols.split(",")) if _args.symbols is not None else tuple(
+            SYMBOL_START_DATE
+        ),
         dest_path=Path(_args.dest_path) if _args.dest_path is not None else None,
         max_workers=_args.max_workers,
         start=_args.start,

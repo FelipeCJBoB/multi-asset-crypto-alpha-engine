@@ -12,10 +12,12 @@ tudo de uma vez -- `test_..._streaming_bate_com_lote_*`."""
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 import pytest
 
 from src.data.bars import (
+    LeftoverOverflowError,
     TickImbalanceBarsConfig,
     dollar_bars,
     dollar_bars_carry,
@@ -388,3 +390,190 @@ def test_tick_imbalance_bars_step_chunk_vazio_e_no_op() -> None:
     tick_imbalance_bars_step(carry, empty)
     assert carry.started is False
     assert carry.bar_frames == []
+
+
+# ============================================================================
+# Redesenho AG-034 addendum (2026-08-16) -- `ThresholdBarsCarry.leftover`
+# virou arrays numpy (não mais `pl.DataFrame`) e o split fechado/leftover
+# virou busca binária (`np.searchsorted`), não mais dois `.filter()`. Os
+# testes abaixo provam especificamente essa mudança -- os testes de
+# paridade streaming<->lote acima já continuam cobrindo o comportamento
+# geral sem alteração de asserção nenhuma.
+# ============================================================================
+
+
+def test_dollar_bars_split_por_busca_binaria_bate_com_filtro_quando_varias_barras_fecham() -> None:
+    """`threshold_bars_step` trocou os dois `.filter()` (`bar_id<max_bar_id`
+    / `bar_id==max_bar_id`) por 1 busca binária (`np.searchsorted`) -- este
+    teste prova que a nova partição bate com a partição que os dois
+    filtros dariam, num caso com MAIS de 1 barra fechando no mesmo chunk
+    (os testes de traço à mão já existentes só cobrem 0 ou 1 barra
+    fechando por vez)."""
+    # value = price*quantity = 25 por trade; cumsum = [25,50,75,...,200];
+    # threshold=50 -> bar_id = floor(cumsum/50) = [0,1,1,2,2,3,3,4] --
+    # 4 barras fecham (id 0..3), 1 trade fica aberto (id 4).
+    n = 8
+    trades = _trades(price=[5.0] * n, quantity=[5.0] * n, is_buyer_maker=[False] * n)
+    threshold = 50.0
+
+    # Oracle independente: reconstrói a partição via os dois filtros que
+    # threshold_bars_step usava antes do redesenho -- polars puro, direto
+    # no teste, sem reimportar nada do algoritmo em si.
+    value = (trades["price"] * trades["quantity"]).to_numpy()
+    cum_value = value.cumsum()
+    bar_id = (cum_value // threshold).astype("int64")  # noqa: unguarded-ratio -- threshold=50.0 literal do teste, sempre >0
+    assert bar_id.tolist() == [0, 1, 1, 2, 2, 3, 3, 4]
+    max_bar_id = bar_id[-1]
+    combined = trades.with_columns(pl.Series("_bar_id", bar_id))
+    oracle_closed = combined.filter(pl.col("_bar_id") < max_bar_id)
+    oracle_leftover = combined.filter(pl.col("_bar_id") == max_bar_id)
+
+    carry = dollar_bars_carry(threshold=threshold)
+    threshold_bars_step(carry, trades)
+
+    assert len(carry.bar_frames) == 1  # 1 chunk passado -> 1 DataFrame de barras fechadas
+    closed_result = carry.bar_frames[0]
+    assert closed_result.height == 4  # bar_id 0,1,2,3
+    assert closed_result["count"].to_list() == [1, 2, 2, 2]
+    assert int(closed_result["count"].sum()) == oracle_closed.height
+    assert carry.leftover is not None
+    assert carry.leftover_trade_count == oracle_leftover.height == 1
+    assert carry.leftover.price.tolist() == oracle_leftover["price"].to_list()
+    assert carry.leftover.quantity.tolist() == oracle_leftover["quantity"].to_list()
+    assert carry.leftover.transact_time.tolist() == oracle_leftover["transact_time"].to_list()
+
+
+def test_dollar_bars_ultimo_trade_fecha_barra_exatamente_no_threshold() -> None:
+    """Caso de borda: `cum_value[-1] % threshold == 0` -- o último trade do
+    chunk cai EXATAMENTE no limiar (não só ultrapassa). Pela semântica já
+    documentada em `ThresholdBarsCarry` ("uma barra só fecha quando um
+    trade EXCEDE o threshold, não quando bate exatamente nele"), o
+    `bar_id` desse trade pertence à barra que a fronteira exata ABRE, não
+    à que fecha -- o leftover resultante tem exatamente 1 trade (o próprio
+    trade da fronteira), nunca um leftover fantasma de 0 linhas."""
+    trades = _trades(price=[1.0, 1.0], quantity=[30.0, 20.0], is_buyer_maker=[False, False])
+    threshold = 50.0  # cumsum = [30, 50]; 50 % 50 == 0 -- fronteira exata
+
+    carry = dollar_bars_carry(threshold=threshold)
+    threshold_bars_step(carry, trades)
+
+    assert carry.leftover is not None
+    assert carry.leftover_trade_count == 1
+    assert carry.leftover.quantity.tolist() == [20.0]
+    assert len(carry.bar_frames) == 1
+    assert carry.bar_frames[0].height == 1
+    assert carry.bar_frames[0]["count"].to_list() == [1]
+    assert carry.bar_frames[0]["volume"].to_list() == pytest.approx([30.0])
+
+    bars = threshold_bars_finish(carry)
+    assert carry.leftover is None
+    assert bars.height == 2
+    assert bars["count"].to_list() == [1, 1]
+    assert bars["volume"].to_list() == pytest.approx([30.0, 20.0])
+
+
+def test_threshold_bars_step_leftover_overflow_levanta_erro_com_contagem_certa() -> None:
+    """Circuit breaker novo (achado MEDIUM de AG-034 addendum): threshold
+    que nunca fecha barra nenhuma + `max_leftover_trades` pequeno ->
+    `LeftoverOverflowError`, com o número certo de trades acumulados na
+    mensagem."""
+    n = 5
+    trades = _trades(
+        price=[1.0] * n, quantity=[1.0] * n, is_buyer_maker=[False] * n
+    )
+    carry = dollar_bars_carry(threshold=1_000_000.0, max_leftover_trades=3.0)
+
+    with pytest.raises(LeftoverOverflowError, match=r"len\(new_leftover\)=5"):
+        threshold_bars_step(carry, trades)
+
+
+def test_threshold_bars_step_leftover_overflow_nao_muta_carry_quando_barras_tambem_fecham() -> None:
+    """Achado de revisão pessoal (2026-08-16, antes de considerar o
+    redesenho pronto): a ordem original checava o circuit breaker DEPOIS
+    de já ter atualizado `bar_frames`/`base_value` -- se `split_idx > 0`
+    (uma ou mais barras fecham) NO MESMO step em que o leftover também
+    excede `max_leftover_trades`, `carry` ficava num estado inconsistente
+    (barras novas já registradas, `leftover` não). O teste anterior
+    (`..._levanta_erro_com_contagem_certa`) não pegava isso porque usa um
+    threshold que nunca fecha bar nenhuma (`split_idx=0` sempre) -- este
+    teste força as duas coisas a acontecerem no mesmo chunk: 3 barras
+    fecham (7 trades com valor 25 cada, threshold=50) E o leftover final
+    (7 trades com valor 1 cada, todos ficam na mesma barra aberta) excede
+    o teto. Prova que `threshold_bars_step` é tudo-ou-nada: se levanta,
+    `carry` sai exatamente como entrou."""
+    closing = _trades(price=[5.0] * 7, quantity=[5.0] * 7, is_buyer_maker=[False] * 7)
+    tail = _trades(price=[1.0] * 5, quantity=[1.0] * 5, is_buyer_maker=[False] * 5)
+    trades = pl.concat([closing, tail])
+    # cumsum = [25,50,75,100,125,150,175,176,177,178,179,180]; threshold=50
+    # -> bar_id = [0,1,1,2,2,3,3,3,3,3,3,3] -- 3 barras fecham (id 0,1,2,
+    # 5 trades), leftover final = 7 trades (id 3), todos com bar_id==3.
+    threshold = 50.0
+
+    carry = dollar_bars_carry(threshold=threshold, max_leftover_trades=5.0)
+    assert carry.bar_frames == []
+    assert carry.base_value == 0.0
+    assert carry.leftover is None
+
+    with pytest.raises(LeftoverOverflowError, match=r"len\(new_leftover\)=7"):
+        threshold_bars_step(carry, trades)
+
+    # carry precisa sair EXATAMENTE como entrou -- nada parcialmente
+    # aplicado, mesmo com 3 barras tendo "fechado" antes do ponto de falha.
+    assert carry.bar_frames == []
+    assert carry.base_value == 0.0
+    assert carry.leftover is None
+
+
+def test_np_cumsum_bate_bit_a_bit_com_polars_cum_sum() -> None:
+    """Achado MEDIUM de revisão independente (project_assurance, 2026-08-16):
+    a prova de paridade bit-a-bit `np.cumsum` vs `pl.Series.cum_sum()`
+    (docstring de `threshold_bars_step`) é uma leitura de código-fonte do
+    Polars numa versão pinada -- sem NENHUM teste executável, um bump
+    futuro de `uv.lock` poderia mudar o algoritmo interno de `cum_sum` sem
+    nada no repo notar. Este teste é o canário: compara os dois caminhos
+    direto, sobre valores com a MESMA característica de ponto flutuante
+    de `price*quantity` real (não inteiros exatos, que mascarariam erro
+    de soma) -- se algum dia divergir, é sinal de que a alegação do
+    docstring não vale mais pra versão instalada, não é teste de
+    `threshold_bars_step` em si (que já não chama `pl.Series.cum_sum()`
+    em lugar nenhum pós-redesenho -- ver achado)."""
+    rng = np.random.default_rng(2026_08_16)
+    price = rng.uniform(20_000.0, 70_000.0, size=5_000)
+    quantity = rng.uniform(0.0001, 5.0, size=5_000)
+    value = price * quantity
+
+    numpy_cumsum = np.cumsum(value)
+    polars_cumsum = pl.Series("v", value).cum_sum().to_numpy()
+
+    assert np.array_equal(numpy_cumsum, polars_cumsum)
+
+
+def test_threshold_bars_step_leftover_no_limite_exato_nao_levanta() -> None:
+    """Caso de borda não testado (achado LOW de revisão independente,
+    2026-08-16): `max_leftover_trades` é checado com `>` (estrito) --
+    `new_leftover_size == max_leftover_trades` NÃO deve levantar. Mesmos
+    5 trades de `..._levanta_erro_com_contagem_certa`, mas com o teto
+    exatamente igual à contagem real."""
+    n = 5
+    trades = _trades(price=[1.0] * n, quantity=[1.0] * n, is_buyer_maker=[False] * n)
+    carry = dollar_bars_carry(threshold=1_000_000.0, max_leftover_trades=5.0)
+
+    threshold_bars_step(carry, trades)  # não deve levantar -- limite exato, não excedido
+
+    assert carry.leftover_trade_count == 5
+
+
+def test_threshold_bars_step_sem_max_leftover_trades_nunca_levanta() -> None:
+    """`max_leftover_trades=None` (default de `dollar_bars_carry`/
+    `volume_bars_carry`) preserva o comportamento de antes do circuit
+    breaker existir -- nunca levanta, não importa quantos trades ficam
+    acumulados no leftover."""
+    n = 500
+    trades = _trades(
+        price=[1.0] * n, quantity=[1.0] * n, is_buyer_maker=[False] * n
+    )
+    carry = dollar_bars_carry(threshold=1_000_000.0)  # max_leftover_trades default None
+
+    threshold_bars_step(carry, trades)  # não deve levantar
+
+    assert carry.leftover_trade_count == n

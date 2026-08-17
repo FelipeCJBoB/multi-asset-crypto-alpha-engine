@@ -281,6 +281,43 @@ def query_agg_trades(
     )
 
 
+def query_dollar_bars(
+    symbol: str,
+    start: DateLike | None = None,
+    end: DateLike | None = None,
+    *,
+    duckdb_memory_limit_gb: float | None = None,
+    duckdb_threads: int | None = None,
+) -> pl.DataFrame:
+    """Barras `dollar_bars_r1` (`schemas.DOLLAR_BARS_R1`) escritas por
+    `src.data.build_dollar_bars.write_dollar_bars_and_calibration` --
+    MESMO padrão de `query_agg_trades` (poda de arquivo por dia + filtro de
+    timestamp via DuckDB), sem lógica nova. Filtra/ordena por `close_time`
+    (`timestamp_column` do schema — não `open_time`, ver docstring de
+    `schemas.DOLLAR_BARS_R1`). `duckdb_memory_limit_gb`/`duckdb_threads` --
+    ver `_read_files`.
+
+    Só lê de `_paths.CAPACITY_DIR` (via `capacity_symbol_dir`, mesmo
+    caminho de todo `query_*` desta camada) — sem parâmetro de root
+    alternativo, porque nenhum outro `query_*` daqui tem um (ver docstring
+    de `_read_files`/`_list_files_in_range`). Teste que precisa ler de um
+    diretório alternativo (`tmp_path`) monkeypatcha `_paths.CAPACITY_DIR`
+    (ou, quando outras fontes reais precisam continuar acessíveis no mesmo
+    teste, `lake.capacity_symbol_dir` com um wrapper que só redireciona
+    `source="dollar_bars_r1"`) — mesmo padrão já usado em
+    `tests/unit/test_features_sources.py::metrics_dir`."""
+    files = _list_files_in_range("dollar_bars_r1", symbol, start, end)
+    start_ms, end_ms = _day_bounds_ms(start, end)
+    return _read_files(
+        files,
+        ts_col="close_time",
+        start_ms=start_ms,
+        end_ms=end_ms,
+        duckdb_memory_limit_gb=duckdb_memory_limit_gb,
+        duckdb_threads=duckdb_threads,
+    )
+
+
 def query_metrics(
     symbol: str = "BTCUSDT",
     start: DateLike | None = None,

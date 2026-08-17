@@ -35,6 +35,27 @@ def load_bars_15m(symbol: str, start: DateLike | None, end: DateLike | None) -> 
     return lake.query_bars(symbol, "15m", start, end, source="klines_1m", cast_prices=True)
 
 
+def load_bars(
+    symbol: str, start: DateLike | None, end: DateLike | None, *, bar_source: str = "time_15m"
+) -> pl.DataFrame:
+    """Dispatcher de fonte de barra pro Feature Engine T1 (validação de
+    fiação de dollar bar canônico, 2026-08-16 — `src.data.build_dollar_
+    bars`). `"time_15m"` (default) chama `load_bars_15m` sem nenhuma
+    mudança — bit-exato, mesma função, callers existentes que não passam
+    `bar_source` continuam idênticos a antes. `"dollar_r1"` chama
+    `src.data.lake.query_dollar_bars` (barras `dollar_bars_r1`, calibração
+    de VALIDAÇÃO — ver docstring de `src.data.build_dollar_bars`, não é a
+    calibração congelada de produção). Qualquer outro valor levanta
+    `ValueError` — nunca cai silenciosamente pro default."""
+    if bar_source == "time_15m":
+        return load_bars_15m(symbol, start, end)
+    if bar_source == "dollar_r1":
+        return lake.query_dollar_bars(symbol, start, end)
+    raise ValueError(
+        f"bar_source={bar_source!r} desconhecido -- valores aceitos: 'time_15m', 'dollar_r1'"
+    )
+
+
 def asof_align_backward(
     bars_15m: pl.DataFrame, aux: pl.DataFrame, aux_ts_col: str, value_col: str
 ) -> pl.Series:

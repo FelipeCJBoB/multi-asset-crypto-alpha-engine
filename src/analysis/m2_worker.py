@@ -54,8 +54,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
 import time
-from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Final
 
 import duckdb
@@ -71,6 +70,16 @@ from src.analysis.m2_stats import (
 )
 from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE, TIMEFRAMES
 from src.data import lake
+
+# `combine_as_imports` é `False` (default do ruff/isort, sem override em
+# pyproject.toml) -- múltiplos `X as Y` do MESMO módulo não combinam num
+# `import (...)` só, precisam de 1 linha por alias.
+from src.data._chunked_scan import TradesTotals as _TradesTotals
+from src.data._chunked_scan import date_chunks as _date_chunks
+from src.data._chunked_scan import duckdb_throttle as _duckdb_throttle
+from src.data._chunked_scan import query_baseline as _query_baseline
+from src.data._chunked_scan import scan_trades_totals as _scan_trades_totals
+from src.data._chunked_scan import target_n_bars as _target_n_bars
 from src.data._constants import load_constant as load_data_constant
 from src.data.bars import (
     TickImbalanceBarsCarry,
@@ -85,6 +94,38 @@ from src.data.bars import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# mypy strict (`no_implicit_reexport`, implícito em `strict = true`) só
+# considera um import RENOMEADO (`from mod import X as Y`, Y != X)
+# re-exportado se `Y` estiver em `__all__` -- sem isso,
+# `tests/unit/test_analysis_m2_worker.py` (que referencia
+# `m2_worker._TradesTotals`/`._date_chunks`/etc. diretamente, ver docstring
+# do arquivo de teste) falha mypy com `attr-defined`/`name-defined`, achado
+# real ao rodar mypy nesta sessão -- antes da extração pra `_chunked_scan`
+# essas 6 peças eram DEFINIDAS aqui (não importadas), então a restrição não
+# se aplicava. `_TradesTotals` não é usado dentro DESTE arquivo (só
+# `_date_chunks`/`_duckdb_throttle`/`_query_baseline`/`_scan_trades_totals`/
+# `_target_n_bars` são chamados aqui) -- listar em `__all__` também
+# satisfaz o F401 do ruff pra ela, sem precisar de suprimir a regra à parte.
+__all__ = [
+    "_TradesTotals",
+    "_date_chunks",
+    "_duckdb_throttle",
+    "_query_baseline",
+    "_scan_trades_totals",
+    "_target_n_bars",
+]
+
+# `_date_chunks`/`_TradesTotals`/`_scan_trades_totals`/`_query_baseline`/
+# `_target_n_bars`/`_duckdb_throttle` -- extraídos para `src.data.
+# _chunked_scan` (2026-08-16, validação de fiação de dollar bar canônico,
+# ver `src.data.build_dollar_bars`): nunca eram específicas de M2, são
+# concerns genéricos de camada `data` (chunking de aggTrades, query de
+# baseline de tempo, throttle de DuckDB). Reexportadas aqui com os NOMES
+# ORIGINAIS via import-as -- compatibilidade total, zero-diff pra todo
+# caller/teste existente que chama `m2_worker._date_chunks(...)` etc., ou
+# monkeypatcha `m2_worker._scan_trades_totals` (o resto deste arquivo
+# continua chamando pelo nome local, só a ORIGEM da definição muda).
 
 _TRADES_DEPENDENT_BAR_TYPES: Final[tuple[str, ...]] = tuple(bt for bt in BAR_TYPES if bt != "time")
 
@@ -106,65 +147,6 @@ _TRADES_DEPENDENT_BAR_TYPES: Final[tuple[str, ...]] = tuple(bt for bt in BAR_TYP
 RESOLUTION_ID_BY_TF: Final[dict[str, str]] = dict(zip(TIMEFRAMES, ("R1", "R2", "R3"), strict=True))
 
 
-def _duckdb_throttle() -> lake.DuckDBThrottle:
-    """`memory_limit`/`threads` por conexão DuckDB -- achado de auditoria
-    (2026-08-14): `duckdb.connect(":memory:")` sem `SET` explícito assume
-    até ~80% da RAM TOTAL da máquina e várias threads por conexão, achando
-    que é o único processo rodando nela. Sob `ProcessPoolExecutor` com até
-    `os.cpu_count()` processos concorrentes (`run_and_save_bar_comparison_
-    report` em `m2_bar_comparison.py`, teto real de 12 nesta máquina desde
-    o redesenho por `(symbol, tf)` de 2026-08-15 -- ver
-    `compute_trades_dependent_bars_for_symbol_tf`), cada um abrindo sua
-    própria conexão via `lake._read_files`, o orçamento otimista somado
-    estourava a RAM real disponível mesmo com `bars_streaming_chunk_days`
-    já limitando o tamanho de CADA query individual --
-    `duckdb.OutOfMemoryException` recorrente em produção (2026-08-14) não
-    era sobre tamanho de query, era sobre orçamento default assumido por
-    conexão × nº de conexões concorrentes.
-    `constants.yaml::m2_duckdb_memory_limit_gb`/`m2_duckdb_threads` foram
-    derivados com `28GB livres / 10 tasks` (provenance original) -- ainda
-    seguros no teto real de 12 (`12 × 2,0GB = 24GB < 28GB`), a margem de
-    segurança absorveu a diferença. Ver docstring de `lake._read_files`.
-
-    `lake.DuckDBThrottle` (achado de auditoria 2026-08-15,
-    `project_assurance`): tipo movido pra `lake.py` e compartilhado -- o
-    mesmo gap corrigido só aqui existia estruturalmente em M1/M3/
-    `gk_vs_wilder_econ_regime_shift`/`volatility_operational_effect`, cada
-    um com sua PRÓPRIA dataclass duplicada se não fosse isso. `load_
-    constant(...)` continua chamado aqui com literal direto (não via
-    loader genérico) -- ver docstring de `lake.DuckDBThrottle` pro porquê
-    (rastreabilidade de `check_constants_referenced.py`)."""
-    return lake.DuckDBThrottle(
-        memory_limit_gb=float(load_data_constant("m2_duckdb_memory_limit_gb")),
-        threads=int(load_data_constant("m2_duckdb_threads")),
-    )
-
-
-def _query_baseline(symbol: str, tf: str, *, start: str, end: str) -> pl.DataFrame:
-    throttle = _duckdb_throttle()
-    return lake.query_bars(
-        symbol,
-        tf,
-        start,
-        end,
-        source="klines_1m",
-        cast_prices=True,
-        duckdb_memory_limit_gb=throttle.memory_limit_gb,
-        duckdb_threads=throttle.threads,
-    )
-
-
-def _target_n_bars(symbol: str, tf: str, baseline: pl.DataFrame, *, start: str, end: str) -> int:
-    n = baseline.height
-    if n == 0:
-        raise ValueError(
-            f"baseline vazio para {symbol}/{tf} -- sem klines_1m no período "
-            f"{start}..{end}, não dá pra calibrar dollar/volume/tick "
-            "imbalance bars pra frequência média nenhuma"
-        )
-    return n
-
-
 def _build_tick_imbalance_config(n_ticks: int, target_n_bars: int) -> TickImbalanceBarsConfig:
     # target_n_bars > 0 garantido pelo caller (_target_n_bars).
     exp_num_ticks_init = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
@@ -184,83 +166,30 @@ def _build_tick_imbalance_config(n_ticks: int, target_n_bars: int) -> TickImbala
     )
 
 
-def _date_chunks(start: str, end: str, *, chunk_days: int) -> list[tuple[date, date]]:
-    """Fatia `[start, end]` em janelas de `chunk_days` dias (última pode
-    ser menor) -- `lake.query_agg_trades` já aceita `date` diretamente
-    (`DateLike = date | datetime | str`), sem precisar formatar string."""
-    if chunk_days <= 0:
-        raise ValueError(f"chunk_days precisa ser > 0, recebido {chunk_days}")
-    start_date = date.fromisoformat(start)
-    end_date = date.fromisoformat(end)
-    if start_date > end_date:
-        raise ValueError(f"start ({start}) posterior a end ({end})")
-
-    chunks: list[tuple[date, date]] = []
-    cursor = start_date
-    step = timedelta(days=chunk_days)
-    one_day = timedelta(days=1)
-    while cursor <= end_date:
-        chunk_end = min(cursor + step - one_day, end_date)
-        chunks.append((cursor, chunk_end))
-        cursor = chunk_end + one_day
-    return chunks
-
-
-@dataclass(slots=True)
-class _TradesTotals:
-    """Saída da 1ª passada (só somas, nunca materializa o histórico
-    inteiro de uma vez -- ver `_scan_trades_totals`)."""
-
-    total_dollar: float = 0.0
-    total_volume: float = 0.0
-    n_ticks: int = 0
-
-
-def _scan_trades_totals(symbol: str, tf: str, chunks: list[tuple[date, date]]) -> _TradesTotals:
-    """1ª passada: só soma `price*quantity`/`quantity`/contagem por chunk,
-    descartando cada chunk assim que somado -- memória limitada ao tamanho
-    de 1 chunk (`bars_streaming_chunk_days`), nunca ao histórico inteiro.
-    Necessária pra calibrar `threshold`/`exp_num_ticks_init` (§3.2 M2: "mesma
-    frequência média que o baseline") ANTES de construir as barras de
-    verdade na 2ª passada (`_build_trades_dependent_bars`) -- custo aceito
-    conscientemente: cada dia de `aggTrades` é lido do disco 2x, não 1x,
-    mas isso troca E/S (barata, arquivos locais) por memória (o recurso que
-    realmente estourou, ver docstring do módulo).
-
-    Achado de auditoria (2026-08-15): um run real travou 16h+ sem UMA
-    linha de log -- o único log da task pesada acontecia depois de TODOS
-    os chunks das duas passadas processados, então uma task presa em
-    qualquer chunk era invisível até terminar ou ser morta manualmente.
-    Log por chunk aqui e em `_build_trades_dependent_bars` -- não impede
-    travamento, mas garante que apareça DENTRO de minutos, não depois de
-    um dia inteiro (DoD de script novo: output autoexplicativo o
-    suficiente pra diagnosticar sem re-rodar, CLAUDE.md)."""
-    totals = _TradesTotals()
-    throttle = _duckdb_throttle()
-    n_chunks = len(chunks)
-    for i, (chunk_start, chunk_end) in enumerate(chunks, start=1):
-        chunk = lake.query_agg_trades(
-            symbol,
-            chunk_start,
-            chunk_end,
-            duckdb_memory_limit_gb=throttle.memory_limit_gb,
-            duckdb_threads=throttle.threads,
+def _max_leftover_trades(n_ticks: int, target_n_bars: int) -> float:
+    """Circuit breaker de `ThresholdBarsCarry.leftover` (`src/data/bars.py`,
+    `LeftoverOverflowError`) -- achado MEDIUM de AG-034 addendum
+    (`audit/architecture_gaps_log.yaml`, 2026-08-16): threshold único
+    global sob volume não-estacionário de 6+ anos de histórico, sem teto
+    pro leftover crescer sob um sub-período de liquidez muito mais baixa
+    que a média calibrada. `n_ticks/target_n_bars` (mesma quantidade que
+    já calibra `exp_num_ticks_init` em `_build_tick_imbalance_config`,
+    linhas acima) é a média de trades por barra MEDIDA nesta janela/
+    símbolo/TF -- Regra Zero (`CLAUDE.md`) proíbe estipular uma contagem
+    absoluta de trades; o teto é DERIVADO desse dado real, multiplicado
+    por `bars_threshold_leftover_safety_multiplier` (constants.yaml,
+    classe C, `ASSUMED` -- margem de segurança generosa, não uma
+    contagem, mesmo padrão de `bars_streaming_chunk_days`/`m2_duckdb_
+    memory_limit_gb`, guardrails desta mesma família)."""
+    # target_n_bars > 0 garantido pelo caller (_target_n_bars).
+    avg_trades_per_bar = float(n_ticks) / target_n_bars  # noqa: unguarded-ratio
+    safety_mult = float(load_data_constant("bars_threshold_leftover_safety_multiplier"))
+    if safety_mult <= 0:
+        raise ValueError(
+            "bars_threshold_leftover_safety_multiplier precisa ser > 0, constants.yaml tem "
+            f"{safety_mult}"
         )
-        if not chunk.is_empty():
-            totals.total_dollar += float((chunk["price"] * chunk["quantity"]).sum())
-            totals.total_volume += float(chunk["quantity"].sum())
-            totals.n_ticks += chunk.height
-        logger.info(
-            "analysis.m2_worker.totals_chunk_done",
-            symbol=symbol,
-            tf=tf,
-            chunk=i,
-            n_chunks=n_chunks,
-            chunk_start=str(chunk_start),
-            chunk_end=str(chunk_end),
-            n_trades=chunk.height,
-        )
-    return totals
+    return avg_trades_per_bar * safety_mult
 
 
 def _build_trades_dependent_bars(
@@ -271,15 +200,29 @@ def _build_trades_dependent_bars(
     dollar_threshold: float,
     volume_threshold: float,
     tib_config: TickImbalanceBarsConfig,
+    max_leftover_trades: float,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """2ª passada: relê os mesmos chunks e alimenta os 3 acumuladores de
     barra (`dollar`/`volume`/`tick_imbalance`) num loop só -- 1x de E/S por
     chunk aqui, não 3x (os 3 tipos compartilham o mesmo chunk já carregado
     em memória, só o estado carregado entre chunks é que é por tipo). Log
     por chunk -- ver docstring de `_scan_trades_totals` pro achado que
-    motivou (run real travado 16h+ sem nenhum log intermediário)."""
-    dollar_carry = dollar_bars_carry(threshold=dollar_threshold)
-    volume_carry = volume_bars_carry(threshold=volume_threshold)
+    motivou (run real travado 16h+ sem nenhum log intermediário).
+
+    `max_leftover_trades` (`_max_leftover_trades`, ver docstring lá) é o
+    circuit breaker de `ThresholdBarsCarry.leftover` -- mesmo teto pros
+    dois acumuladores dollar/volume (`LeftoverOverflowError` propaga pro
+    chamador de `compute_trades_dependent_bars_for_symbol_tf`, achado
+    MEDIUM de AG-034 addendum). `dollar_carry.leftover_trade_count`/
+    `volume_carry.leftover_trade_count` logados por chunk abaixo -- achado
+    MEDIUM irmão: "nenhum sinal diagnóstico pro crescimento de
+    `leftover`", mesma disciplina de `tib_bars_closed` já existente."""
+    dollar_carry = dollar_bars_carry(
+        threshold=dollar_threshold, max_leftover_trades=max_leftover_trades
+    )
+    volume_carry = volume_bars_carry(
+        threshold=volume_threshold, max_leftover_trades=max_leftover_trades
+    )
     tib_carry = tick_imbalance_bars_carry(tib_config)
 
     throttle = _duckdb_throttle()
@@ -305,6 +248,8 @@ def _build_trades_dependent_bars(
             chunk_start=str(chunk_start),
             chunk_end=str(chunk_end),
             n_trades=chunk.height,
+            dollar_leftover_trades=dollar_carry.leftover_trade_count,
+            volume_leftover_trades=volume_carry.leftover_trade_count,
             tib_bars_closed=len(tib_carry.bar_frames),
         )
 
@@ -476,6 +421,7 @@ def compute_trades_dependent_bars_for_symbol_tf(
     dollar_threshold = totals.total_dollar / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
     volume_threshold = totals.total_volume / target_n_bars  # noqa: unguarded-ratio -- target_n_bars>0 acima
     tib_config = _build_tick_imbalance_config(totals.n_ticks, target_n_bars)
+    max_leftover_trades = _max_leftover_trades(totals.n_ticks, target_n_bars)
 
     try:
         dollar_df, volume_df, tib_df = _build_trades_dependent_bars(
@@ -485,6 +431,7 @@ def compute_trades_dependent_bars_for_symbol_tf(
             dollar_threshold=dollar_threshold,
             volume_threshold=volume_threshold,
             tib_config=tib_config,
+            max_leftover_trades=max_leftover_trades,
         )
     except duckdb.OutOfMemoryException as exc:
         logger.warning(

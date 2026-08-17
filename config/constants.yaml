@@ -1460,6 +1460,13 @@ bars_streaming_chunk_days:
   class: C
   sweep_required: false
 
+bars_threshold_leftover_safety_multiplier:
+  value: 50.0
+  provenance: ASSUMED
+  source: "Circuit breaker de src/data/bars.py::ThresholdBarsCarry.leftover (LeftoverOverflowError) — audit/architecture_gaps_log.yaml::AG-034, addendum_reabertura_2026_08_16, achado MEDIUM: threshold único global sob volume não-estacionário de 6+ anos de histórico, sem teto pro leftover (trades brutos, não agregados) crescer sob um sub-período de liquidez muito mais baixa que a média calibrada. max_leftover_trades efetivo NÃO é uma contagem absoluta (Regra Zero) — é DERIVADO por src/analysis/m2_worker.py::_max_leftover_trades a partir de dado real da própria janela sendo processada (totals.n_ticks/target_n_bars = trades médios por barra medidos NESTA janela/símbolo/TF, mesma quantidade que já calibra exp_num_ticks_init em _build_tick_imbalance_config), multiplicado por este fator. 50x é margem de segurança generosa, mesmo padrão/mesma família de bars_streaming_chunk_days e m2_duckdb_memory_limit_gb acima (mitigação conservadora, não derivação estatística) — folga bem acima da deriva de 2,1x-8,9x já MEDIDA entre janelas inteiras de M2 (experiments/dollar_threshold_drift.json, 2022-2026), quando o que este multiplicador precisa absorver é só a variação de liquidez DENTRO de 1 janela (a calibração já é local à janela/símbolo/TF, não uma média de 6 anos). NÃO confirmado por execução real (nenhum código rodado nesta rodada) que o circuit breaker fica inerte nas 5 janelas de M2 já publicadas — recomendação explícita: reconfirmar rodando as 5 janelas de novo (ver audit/architecture_gaps_log.yaml::AG-034) e checar que LeftoverOverflowError nunca dispara antes de tratar como definitivo."
+  class: C
+  sweep_required: false
+
 m2_duckdb_memory_limit_gb:
   value: 2.0
   provenance: ASSUMED

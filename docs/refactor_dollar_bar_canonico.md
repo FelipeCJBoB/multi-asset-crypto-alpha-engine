@@ -519,7 +519,7 @@ Ou seja: **o threshold é (volume total em $ da janela) ÷ (nº de barras de tem
 - `dollar_bars_carry` / `threshold_bars_step` / `threshold_bars_finish` (`bars.py:219-283`) são **exatamente a forma de um agregador incremental**: estado inicial, passo sobre um chunk, finalização. Um feed WebSocket é só um chunk de tamanho 1..N.
 - `bars.py:285-293` — a versão em lote é um wrapper fino sobre o mesmo caminho, então **paridade lote↔streaming é garantida por construção, não por teste**. Para um sistema em que "mesmo código em backtest e live" é requisito declarado, isso é a peça mais valiosa que já está pronta.
 - `bars.py:22-29` — a prova de causalidade é sobre `cumsum` monotônico, válida trade-a-trade, não sobre grade.
-- O `leftover` (`bars.py:261`) nunca cresce além dos trades de uma barra aberta — footprint de memória em live é trivial.
+- ~~O `leftover` (`bars.py:261`) nunca cresce além dos trades de uma barra aberta — footprint de memória em live é trivial.~~ **Corrigido 2026-08-16 (achado LOW de revisão independente, `project_assurance`) — esta afirmação é exatamente o que o achado MEDIUM de `AG-034` (`audit/architecture_gaps_log.yaml`, campo `addendum_reabertura_2026_08_16`) refuta.** "Nunca cresce além" só vale sob liquidez estável — um threshold único calibrado pela MÉDIA de uma janela não-estacionária de 6+ anos não garante isso num sub-período de liquidez muito mais baixa (ex. início da história de BTC, 2019-2022, nunca medido). `ThresholdBarsCarry.leftover` agora tem um circuit breaker explícito (`max_leftover_trades`/`LeftoverOverflowError`, `src/data/bars.py`) exatamente porque o footprint NÃO é trivial por garantia — é trivial só empiricamente, nas janelas já medidas.
 
 **O que falta — e é tudo o resto:**
 

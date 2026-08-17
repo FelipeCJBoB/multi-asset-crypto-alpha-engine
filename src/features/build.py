@@ -200,14 +200,51 @@ def apply_min_warmup_mask(df: pl.DataFrame, *, min_warmup_bars: int) -> pl.DataF
 
 
 def build_t1_features(
-    symbol: str, start: str, end: str, *, apply_warmup_mask: bool = True
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    apply_warmup_mask: bool = True,
+    bar_source: str = "time_15m",
 ) -> pl.DataFrame:
-    """Ponto de entrada com IO: carrega barras de 15m + fontes auxiliares
+    """Ponto de entrada com IO: carrega barras + fontes auxiliares
     alinhadas e chama `compute_t1_features`. `start`/`end` devem incluir
     folga suficiente ANTES do início real de interesse para que
     `min_warmup_bars` (e, para C07/D03f/E02f, o histórico expansivo desde
     o início do dataset) tenham dado real por trás — esta função não
     estende o intervalo pedido automaticamente.
+
+    `bar_source` (validação de fiação de dollar bar canônico, 2026-08-16):
+    default `"time_15m"` preserva bit-exato TODO caller existente antes
+    desta mudança — delega pra `_sources.load_bars(..., bar_source=
+    bar_source)`, que por sua vez chama `_sources.load_bars_15m` sem
+    alteração nenhuma nesse caso (ver docstring de `_sources.load_bars`).
+    `"dollar_r1"` troca a fonte por `lake.query_dollar_bars` (calibração de
+    VALIDAÇÃO, não a congelada de produção — ver `src.data.
+    build_dollar_bars`); `funding_aligned`/`oi_aligned` (via `_sources.
+    asof_align_backward`) não precisam de nenhuma mudança pra isso — dependem
+    só de `bars["open_time"]`/`bars["close_time"]`, presentes no schema de
+    dollar bar (`schemas.DOLLAR_BARS_R1`) também. `AG-043` (`sqrt(window)`
+    em `support.realized_vol`, gap overnight do Yang-Zhang, defasagem do
+    asof-join OI/funding) continua pendente — as features saem sem
+    crashar sobre dollar bar, mas isso é teste de FIAÇÃO, não prova de
+    validade estatística.
+
+    **Achado adicional de revisão independente (`project_assurance`,
+    2026-08-16), FORA da enumeração já auditada de `AG-043`:**
+    `FeatureWindows.from_constants().min_common_history_bars` (`AG-030`,
+    `min_common_history_bars_15m=164256`) é aplicado incondicionalmente a
+    C07/D03f/E02f e à recomputação interna de `er_quantile`/`econ_quantile`
+    também sob `bar_source="dollar_r1"` — essa constante foi calibrada
+    especificamente como "nº de barras de 15m entre `SYMBOL_START_DATE` e
+    `END_DATE`" pra garantir comparabilidade cross-asset em TEMPO DE
+    RELÓGIO (AG-030). Sob dollar bar a densidade de barras/dia varia por
+    símbolo/threshold — truncar pras "últimas 164.256 barras" já não
+    corresponde ao mesmo período de calendário entre ativos, silenciosamente.
+    Mesma classe de "premissa de relógio escondida" que os 3 pontos de
+    `AG-043` já cobrem, mas não estava nomeada lá — registrar aqui até o
+    Manager decidir se entra formalmente no guarda-chuva de `AG-043` ou
+    vira entrada própria (não é decisão pra fechar sozinho em código).
 
     AG-030 (T0.5, Opção A): `windows.min_common_history_bars` (default
     `FeatureWindows.from_constants()` → `min_common_history_bars_15m`,
@@ -221,7 +258,7 @@ def build_t1_features(
     mais recente que a origem do ativo simplesmente não aciona o corte (`n`
     já cabe no orçamento), sem quebrar nada — mas também sem garantir
     comparabilidade cross-asset fora desse uso padrão."""
-    bars_15m = _sources.load_bars_15m(symbol, start, end)
+    bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
     logger.info(
@@ -229,6 +266,7 @@ def build_t1_features(
         symbol=symbol,
         start=str(start),
         end=str(end),
+        bar_source=bar_source,
         n_bars=bars_15m.height,
     )
     return compute_t1_features(

@@ -2532,6 +2532,269 @@ entries:
       reprocessamento, ainda maior que o run de M2 -- bilhões de trades por
       símbolo, não só 5 janelas de 1 mês). Reabrir nesse momento, não
       antes.
+    addendum_reabertura_2026_08_16: >
+      Reaberto -- "esse momento" chegou (sequenciamento do redesenho
+      dollar-bar, `PLANO_MESTRE_PRINCE2.md` §11.5, item "reprocessamento
+      real"). Agent (audit_engineering, contexto rico, Passo 1-5 completo,
+      peso extra em FCN por instrução) auditou `src/data/bars.py` -- não
+      implementou nada, só investigação/medição. 4 lentes limpas ou sem
+      achado forçado em FS/FI (16 testes de paridade lote↔streaming já
+      cobrem os casos reais); FT limpo (pesquisa web confirmou
+      `pola-rs/polars#18052`, memory leak em `pl.concat()` em loop -- padrão
+      usado em `threshold_bars_step` -- mas a issue afetava polars 1.4.1 e
+      está corrigida; repo usa 1.43.2, risco descartado). Achado central em
+      FCN, 5 pontos, nenhum CRITICAL:
+
+      **[HIGH] Mecanismo concreto de amplificação de memória dentro do
+      próprio `bars.py`, não quantificado até agora** -- `combined =
+      pl.concat([carry.leftover, chunk])` + `cum_sum()` + 2 `.filter()`
+      (`threshold_bars_step`, `bars.py:239-261`) mantém várias cópias
+      transientes do tamanho do CHUNK inteiro (não do estado acumulado).
+      Com `bars_streaming_chunk_days=30` e a taxa real medida de BTCUSDT
+      (3.385.807.729 trades/2.412 dias = 1.403.735 trades/dia,
+      `bars.py:76-82`), um chunk de 30 dias tem ~42 milhões de linhas --
+      ~2-3GB por cópia, várias cópias coexistindo por chamada de `step()`.
+      Sob até 12 processos concorrentes isso soma dezenas de GB -- um
+      mecanismo REAL e quantificável dentro de `bars.py`, adicional ao que
+      a hipótese original de AG-034 cobria só em termos vagos de "frames
+      Polars materializados".
+
+      **[MEDIUM] Schema não podado** -- `chunk`/`combined`/`leftover`
+      carregam as 7 colunas de `AGG_TRADES`, só 4 são necessárias
+      (`_TRADE_REQUIRED_COLUMNS`, `bars.py:112-117`) -- ~⅓ de bytes/linha
+      desperdiçados em toda cópia do mecanismo acima, mitigação direta e
+      barata do achado HIGH.
+
+      **[MEDIUM] "`bar_frames` é pequeno" não é universal** -- verdade só
+      pro caminho dollar/volume (calibração por divisão direta, `n_bars_
+      real ≈ target_n_bars`). Tick imbalance NÃO tem essa garantia (AG-035:
+      250x-1000x mais barras que o alvo). Se um orquestrador de produção
+      futuro reusar `m2_worker._build_trades_dependent_bars` (constrói os
+      3 tipos por chamada, propósito de comparação de M2, não de produção)
+      em vez de um caminho dollar-only, o risco de `bar_frames` grande
+      reabre -- não é bug em `bars.py`, é risco de reuso indevido, vale
+      documentar antes do orquestrador real ser escrito.
+
+      **[MEDIUM] Threshold único global sob volume não-estacionário de 6+
+      anos, magnitude não medida na parte mais fria da história** --
+      `experiments/dollar_threshold_drift.json` (MEDIDO) já mostra deriva
+      de 2,1x-8,9x só entre as 5 janelas de M2 (2022-2026). BTC começa em
+      2019-12-31, era de liquidez bem menor, não coberta por nenhuma
+      medição existente. Um sub-período de baixa liquidez levaria
+      proporcionalmente mais chunks pra fechar 1 barra, durante os quais
+      `ThresholdBarsCarry.leftover` (trades brutos) cresce sem teto nem
+      circuit breaker. Marcado como HIPÓTESE fundamentada, não confirmado.
+
+      **[MEDIUM] Nenhum sinal diagnóstico pro crescimento de `leftover`,
+      nenhuma blindagem fora do DuckDB** -- `m2_worker.py` loga por chunk
+      mas nunca loga `carry.leftover.height` (a quantidade que cresce sob
+      o achado anterior). Os `try/except duckdb.OutOfMemoryException`
+      existentes só cobrem exceção da QUERY -- uma falha de alocação
+      dentro de `pl.concat`/`cum_sum`/`np.empty` (pré-alocações do núcleo
+      Numba dimensionadas ao tamanho do chunk) não é capturada em lugar
+      nenhum, explicando mecanicamente o "9h sem log, sem exceção" já
+      observado.
+
+      **Recomendação final -- GO com mitigação, não "tentar de novo às
+      cegas" nem só "esperar e medir":** (1) 0 código -- estender
+      `measure_dollar_threshold_drift.py` com 1-2 janelas do início real
+      da história (2020-01/2020-06), quantifica o achado de threshold
+      fixo com dado real antes de qualquer tentativa cara; (2) se/quando
+      uma tentativa real acontecer: 1 símbolo por vez (BTC primeiro),
+      caminho dollar-only (não reusar `_build_trades_dependent_bars`),
+      `bars_streaming_chunk_days` reduzido de 30 pra ~5-7 (já autorizado
+      pela proveniência da própria constante); (3) instrumentação de RSS
+      real por processo continua sendo o passo humano central, sem
+      comando `.py` a rodar da minha parte -- PENDENTE-DE-EXECUÇÃO-HUMANA;
+      (4) mudança pequena e localizada recomendada em `bars.py` ANTES da
+      próxima tentativa (baixo risco, testável pelos 16 testes existentes):
+      podar `chunk`/`combined`/`leftover` pras 4 colunas necessárias +
+      logar `carry.leftover.height` por chunk; (5) Opção 3 original de
+      AG-034 (descarregar `bar_frames` em disco) NÃO priorizada -- esta
+      auditoria reconfirma que `bar_frames` já é pequeno pro caminho
+      dollar/volume; se a medição do passo (1)/(3) mostrar que é
+      `leftover` (não `bar_frames`) quem cresce, o alvo certo de
+      descarregamento incremental é `leftover`, distinção que o texto
+      original de AG-034 não fazia. Nenhuma implementação feita nesta
+      rodada -- decisão de executar o plano acima é do Manager.
+    implementacao_2026_08_16: >
+      Manager pediu explicitamente solução de engenharia real pros
+      achados HIGH+MEDIUM (não remediação -- "reduzir chunk_days" ficou
+      de fora de propósito) + auto-validação. Ciclo completo executado:
+      Agent implementa (contexto rico, algoritmo especificado passo a
+      passo) -> eu reviso pessoalmente o diff linha a linha, não só o
+      relato -> Agent independente (`project_assurance`, sem contexto do
+      raciocínio) revisa de novo do zero -> eu corrijo os achados reais
+      -> mecânicos rerodados. Três camadas de revisão encontraram, cada
+      uma, pelo menos 1 problema real que a anterior não via -- valida o
+      processo, não só o código final.
+
+      **HIGH resolvido:** `threshold_bars_step`/`ThresholdBarsCarry`
+      reescritos -- `leftover` vira `_TradeArrays` (4 arrays numpy, não
+      mais `pl.DataFrame` de 7 colunas), `np.concatenate`/`np.cumsum`
+      substituem `pl.concat`/`cum_sum()`, e os DOIS `.filter()` viram 1
+      busca binária (`np.searchsorted`) + 2 slices (view, não cópia) --
+      explora a monotonicidade de `bar_id` que o módulo já provava no
+      docstring e nunca usava. Reduz o pico de ~4-5x o tamanho do chunk
+      pra ~2x. Paridade bit-a-bit `np.cumsum` vs `pl.Series.cum_sum()`
+      verificada por leitura do source Rust real do Polars na tag pinada
+      (`py-1.43.2`, `cum_scan_numeric`, acumulador mutável único, sem
+      paralelismo) -- confirmada de novo, independentemente, pelo Agent
+      revisor.
+
+      **MEDIUM (schema) resolvido:** consequência direta da extração de
+      colunas em `_TradeArrays` -- as 3 colunas nunca usadas não voltam a
+      existir no `leftover`.
+
+      **MEDIUM (`bar_frames` não-universal) resolvido estruturalmente:**
+      novo contrato `import-linter` em `pyproject.toml` ("data não importa
+      analysis"), mesmo padrão de "features/models não importam analysis"
+      -- impede mecanicamente um futuro orquestrador de reprocessamento
+      real de reusar `m2_worker._build_trades_dependent_bars` por
+      conveniência.
+
+      **MEDIUM (threshold sem teto) resolvido:** circuit breaker novo --
+      `LeftoverOverflowError` (`bars.py`), `max_leftover_trades: float |
+      None = None` (default preserva bit-exato todo caller/teste sem este
+      argumento). Teto derivado, não inventado: `m2_worker._max_leftover_
+      trades(n_ticks, target_n_bars) = (n_ticks/target_n_bars) *
+      bars_threshold_leftover_safety_multiplier` (constante nova, classe
+      C, `ASSUMED`, valor 50,0 -- mesmo padrão de `bars_tick_imbalance_
+      clip_multiplier`).
+
+      **MEDIUM (sem sinal diagnóstico) resolvido:** `ThresholdBarsCarry.
+      leftover_trade_count` exposto; `m2_worker.py` loga `dollar_leftover_
+      trades`/`volume_leftover_trades` por chunk, ao lado de `tib_bars_
+      closed` já existente.
+
+      **Achado de revisão PESSOAL (antes de mandar pra revisão externa):**
+      `threshold_bars_step` mutava `carry.bar_frames`/`carry.base_value`
+      ANTES de checar o circuit breaker -- se `LeftoverOverflowError`
+      disparasse no mesmo chunk em que barras também fechavam, `carry`
+      ficava num estado inconsistente. Inofensivo hoje (único caller
+      descarta `carry` inteiro ao capturar), mas uma primitiva pública
+      deveria ser tudo-ou-nada por conta própria. Corrigido: circuit
+      breaker checado ANTES de qualquer mutação. Teste novo prova
+      atomicidade forçando as duas coisas no mesmo chunk.
+
+      **Achados de revisão INDEPENDENTE (`project_assurance`, Agent
+      fresco, 16 perguntas + 7 mecânicos rodados por conta própria) --
+      todos genuínos, endereçados:** (1) MEDIUM -- `check_constants_
+      referenced.py` falhava sem `--worktree` (nada staged); confirmado
+      OK com a flag, registrado como lembrete operacional pré-commit, não
+      bug de código. (2) MEDIUM -- zero cobertura de teste pra
+      `_max_leftover_trades` (fórmula) e pra propagação real de
+      `LeftoverOverflowError` através de `_build_trades_dependent_bars`/
+      `compute_trades_dependent_bars_for_symbol_tf` -- 2 testes novos em
+      `test_analysis_m2_worker.py`. (3) MEDIUM -- risco de overflow
+      silencioso de int64 em `.astype(np.int64)` (a versão anterior usava
+      `pl.Series.cast(pl.Int64, strict=True)`, que falha alto; numpy não)
+      -- guarda nova antes do cast. (4) MEDIUM -- a prova de paridade
+      `np.cumsum`/`pl.cum_sum()` virou leitura de código-fonte sem NENHUM
+      teste executável -- teste canário novo compara os dois direto. (5)
+      LOW -- caso de borda `new_leftover_size == max_leftover_trades`
+      nunca testado -- teste novo. (6) LOW -- `docs/refactor_dollar_bar_
+      canonico.md:522` contradizia a razão de existir deste circuit
+      breaker -- corrigido. (7) LOW, não corrigido (já documentado
+      honestamente) -- `bars_threshold_leftover_safety_multiplier=50,0` é
+      número redondo, mesmo padrão pré-existente de outras constantes
+      classe C do arquivo, não regressão nova.
+
+      **Achado de TERCEIRA revisão (minha, ao aplicar os fixes acima) --
+      o mais grave dos três, nenhuma das duas revisões anteriores pegou:**
+      `_build_trades_dependent_bars` ganhou `max_leftover_trades` como
+      parâmetro keyword-only SEM default -- 2 lugares em `tests/unit/
+      test_analysis_m2_worker.py` que chamam essa função (1 fake via
+      `monkeypatch`, 1 chamada real na suíte de integração) não tinham
+      sido atualizados, e quebrariam com `TypeError` na primeira
+      execução real. **3ª ocorrência da MESMA classe de bug que o
+      próprio arquivo de teste já documenta ter acontecido 2x antes**
+      (fake/caller não atualizado quando a assinatura real muda) --
+      corrigida antes de qualquer pytest rodar, não depois.
+
+      Mecânicos (banned_patterns/check_constants_referenced --worktree/
+      check_constants_provenance/check_unguarded_ratios/ruff/mypy)
+      rodados por mim em TODOS os 4 arquivos finais -- limpos.
+    status: >-
+      FECHADO 2026-08-16 -- solução de engenharia implementada (não
+      remediação), 3 camadas de revisão (implementador -> eu -> Agent
+      independente -> eu de novo), todos os achados reais endereçados.
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou
+      `uv run pytest tests/unit/test_data_bars.py
+      tests/unit/test_analysis_m2_worker.py -v` (junto com o resto da
+      suíte relacionada): **49 passed in 112,24s**. Os itens (1)/(3) do
+      plano de recomendação original (medir janela 2020/instrumentar RSS
+      numa tentativa real) continuam pendentes, sem prazo -- fora do
+      escopo desta rodada (era sobre o MECANISMO, não sobre executar o
+      reprocessamento em si). Item (1) parcialmente endereçado à parte --
+      ver `implementacao_2026_08_16_runner_validacao` abaixo, que também
+      estende `measure_dollar_threshold_drift.py` com as janelas de 2020.
+    implementacao_2026_08_16_runner_validacao: >
+      Pedido direto do Manager, depois de "o pipeline canônico tá sem
+      runner oficial para dollar bar? tudo em analysis/ é lixo pro
+      pipeline de execução live" -- diagnóstico confirmado (`canonical_
+      bar_type=dollar` decidido, nenhuma linha de `src/` lia essa
+      constante; único código que construía dollar bar era `m2_worker.py`,
+      medição pós-hoc, fora do contrato de camada). Autocrítica pessoal
+      registrada ANTES de implementar (achei 5 falhas no plano original de
+      arquitetura, a mais grave: `lake.query_bars` ganhando despacho por
+      `bar_type` reintroduziria a conflação `R1≈15m` que `AG-042` existe
+      pra impedir) -- escopo corrigido e confirmado pelo Manager: 1
+      resolução só (R1), calibração marcada `calibration_scope="validation"`
+      (nunca `"frozen_production"` -- decisão de negócio ainda não tomada,
+      AG-042 itens 2/3 seguem deferidos), sem checkpoint incremental
+      (janela pequena não precisa), `lake.query_dollar_bars` SEPARADA de
+      `query_bars` (zero risco de conflação), teste de FIAÇÃO não de
+      validade estatística (AG-043 segue pendente), zero treino/zero
+      N_lifetime.
+
+      **Implementado:** `src/data/_chunked_scan.py` (novo -- `date_chunks`/
+      `TradesTotals`/`scan_trades_totals`/`query_baseline`/`target_n_bars`/
+      `duckdb_throttle`, extraídos de `m2_worker.py` porque `src.data` não
+      pode importar `src.analysis`; `m2_worker.py` reexporta os 6 nomes
+      antigos via `__all__`, zero-diff pra callers/testes existentes).
+      `src/data/build_dollar_bars.py` (novo -- `DollarBarCalibration`,
+      `calibrate_dollar_threshold_for_validation`, `build_dollar_bars_for_
+      window` -- chama SÓ `bars.dollar_bars_carry`/`threshold_bars_step`/
+      `threshold_bars_finish`, nunca o helper de 3 tipos de M2, e passa
+      `max_leftover_trades` -- achado de revisão pessoal, o circuit
+      breaker do redesenho de `bars.py` não estava fiado no runner
+      inicialmente --, `write_dollar_bars_and_calibration` com guarda
+      contra threshold divergente, CLI). `schemas.DOLLAR_BARS_R1`/
+      `lake.query_dollar_bars` (fonte `"dollar_bars_r1"`, mesma convenção
+      de 2 níveis de `AGG_TRADES`, zero mudança em `_list_files_in_range`/
+      `_read_files`). `_sources.load_bars`/`build_t1_features(bar_source=
+      "time_15m"|"dollar_r1")` -- default bit-exato.
+
+      **Revisão independente (`project_assurance`, Agent fresco) achou 3
+      MEDIUM reais, todos corrigidos:** `overwrite=True` não limpava dias
+      órfãos de janela mais larga calibrada sob outro threshold (corrigido
+      -- limpa `*.parquet` do diretório antes de escrever, só nesse ramo);
+      escrita não-transacional sob `overwrite=True` (documentado como
+      limitação aceita no escopo de rodada manual); `min_common_history_
+      bars_15m` (AG-030) aplicado sem ajuste sob dollar bar, fora da
+      enumeração já auditada de AG-043 (registrado como 4º ponto da mesma
+      família, addendum em AG-043, não fechado sozinho -- decisão do
+      Manager). +1 achado LOW (circuit breaker sem teste síncrono neste
+      runner especificamente) corrigido com teste novo.
+
+      **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou
+      `uv run pytest tests/unit/test_data_chunked_scan.py tests/unit/
+      test_data_build_dollar_bars.py tests/unit/test_analysis_m2_worker.py
+      tests/unit/test_data_bars.py tests/unit/test_data_lake.py tests/
+      unit/test_data_schemas.py tests/unit/test_features_build.py -v`:
+      **107 passed in 137,26s**. Teste de integração real (`@pytest.mark.
+      integration @pytest.mark.slow`, `test_build_dollar_bars_fiacao_e2e_
+      btcusdt_janela_curta`) não incluído nesse comando -- roda separado,
+      pendente.
+    status_runner_validacao: >-
+      FECHADO 2026-08-16 -- fiação ponta a ponta (calibrar -> construir ->
+      escrever -> ler -> alimentar build_t1_features) implementada,
+      revisada (3 camadas) e confirmada (107 passed). Ainda NÃO executada
+      a rodada de validação real (1-3 meses, 1 símbolo) via CLI --
+      `uv run python -m src.data.build_dollar_bars --symbol BTCUSDT
+      --start <início> --end <fim>` -- próximo passo do usuário, não
+      deste achado.
 
   - id: AG-035
     date: "2026-08-16"
@@ -3021,13 +3284,118 @@ entries:
       só a tag e a justificativa, 0 trials. `feature_d06f_taker_imbalance_
       window` NÃO tocado (já `bar_count`, fora de escopo por desenho).
 
-      Peça (2) -- auditoria + correção de código em support.py/group_e.py/
-      _sources.py pras premissas de relógio escondidas (`std*sqrt(window)`
-      em support.py:283, gap "overnight" do Yang-Zhang em support.py:
-      252-256, defasagem do asof-join em group_e.py/_sources.py:60-65) --
-      CONTINUA NÃO IMPLEMENTADA, trabalho de código real, maior que (1),
-      deliberadamente fora desta passada.
-    status: "parcialmente fechado -- F3 (classificação pura) implementado: A13 mantido `clock` com justificativa reescrita como decisão deliberada; B01 reavaliado separadamente e RECLASSIFICADO pra `bar_count`. Auditoria de código (support.py/group_e.py/_sources.py) permanece ABERTA, não incluída nesta passada"
+      Peça (2) investigada a fundo 2026-08-16 (decisão explícita pedida
+      pelo Manager: implementar agora vs. deferir, com evidência, não
+      suposição). Veredito: DEFERIR -- mesma razão estrutural de
+      AG-042(2/3), confirmada ponto a ponto, não por analogia solta.
+
+      (a) `support.py` `realized_vol` (`out = std*np.sqrt(window)`, hoje
+      linha 299 -- a linha `:283` citada acima sofreu drift desde a
+      escrita original desta entrada, com a docstring do módulo crescendo
+      por causa de AG-030): não existe fórmula de correção óbvia.
+      `docs/refactor_dollar_bar_canonico.md` §1.3 já mapeia esta EXATA
+      linha dentro de uma decisão de 4 opções (F1-F4) que o Manager ainda
+      não tomou, e a opção F1 (não recalibrar, tratar como `bar_count`
+      puro) argumenta que `sqrt(nº de barras)` PODE JÁ SER a leitura
+      correta sob dollar bar ("erro amostral não conhece relógio",
+      `constants.yaml:686-687`) -- trocar por `sqrt(tempo decorrido)` não
+      é obviamente um conserto, pode ser uma regressão, dependendo de qual
+      leitura a arquitetura escolher. Não há contrato de tempo decorrido
+      pra consumir hoje: `_BAR_OUTPUT_SCHEMA` (`src/data/bars.py:127-138`)
+      só tem `open_time`/`close_time`, sem `duration_ms`/`n_trades`
+      normalizado; `canonical_bar_type` não é lido por nenhuma linha de
+      `src/` fora de 2 comentários em prosa (`cpcv.py:169`,
+      `m2_bar_comparison.py:9`) -- confirmado por grep, mesmo achado B de
+      `docs/refactor_dollar_bar_canonico.md`. Inventar um parâmetro
+      `elapsed_ms` agora seria adivinhar um contrato que o Bloqueador 1
+      (AG-031) e o Bloqueador 2 (AG-042) ainda vão desenhar.
+
+      (b) `support.py` `yang_zhang_vol`, gap overnight (hoje linha 272,
+      era `:252-256`): não existe fórmula substituta na literatura pra
+      "gap tick-a-tick sob barra de atividade" -- Yang-Zhang (2000)
+      pressupõe sessão de bolsa com fechamento real, não barra de
+      atividade contínua. A pergunta não é "qual a fórmula certa" (bug de
+      engenharia), é "esse estimador continua válido sob dollar bar, e se
+      não, o que substitui" (pesquisa de literatura + medição em dado
+      real). Teste sintético não resolve -- provaria só que o mecanismo
+      dispara sob espaçamento variável, o que já é sabido e não é a dúvida
+      em aberto.
+
+      (c) `group_e.py`/`_sources.py:60-65`, defasagem do asof-join OI/
+      funding: não há bug de código aqui -- `asof_align_backward` já opera
+      sobre `close_time`, já é agnóstico a tipo de barra por construção
+      (mesma conclusão que `docs/refactor_dollar_bar_canonico.md:138` já
+      registra sobre o teste de paridade equivalente: "agnóstico à
+      cadência por construção"). O achado é uma HIPÓTESE de contaminação
+      informacional (a defasagem pode carregar sinal de atividade não
+      intencional) só testável correlacionando com atividade de MERCADO
+      REAL -- fabricar isso em barras sintéticas provaria só que a
+      defasagem VARIA (trivial, já sabido por desenho), não que ela
+      CONTAMINA.
+
+      Precedente direto na mesma sessão pro mesmo padrão de decisão:
+      `src/validation/cpcv.py:387-393` já enfrentou o problema
+      estruturalmente idêntico (checar identidade de grade sob
+      espaçamento não-uniforme) e escolheu levantar `NotImplementedError`
+      explícito em vez de fingir um mecanismo -- "não há caller de
+      produção real (canonical_bar_type=dollar decidido, deployment não
+      iniciado)... falhar explícito aqui é mais honesto que fingir que a
+      checagem de hoje generaliza". Mesma lógica aplicada aqui.
+
+      Diferença de AG-030 (que FOI corrigido proativamente): lá o bug
+      afetava comportamento de PRODUÇÃO HOJE, sob a grade de tempo atual
+      (BTC acumula ~231k barras de 15m vs ~164k dos alts -- viés real e
+      mensurável sem esperar dollar bar nenhuma). Aqui, os 3 pontos
+      produzem resultado IDÊNTICO ao esperado sob barra de tempo (janela
+      uniforme -> `sqrt(bar_count)==sqrt(tempo)` a menos de constante;
+      gap overnight realmente ~0 por barras contíguas; defasagem do
+      asof-join realmente pequena e estável) -- não há caller de produção
+      afetado hoje, e não há como validar a correção proposta sem o mesmo
+      dado real que os dois Bloqueadores também esperam.
+
+      O que desbloqueia: (1) Bloqueador 1 (AG-031, horizonte do label) e
+      Bloqueador 2 (AG-042 itens 2/3, identidade de grade/threshold)
+      resolvidos -- decisão de como o Feature Engine de fato recebe uma
+      dollar bar (schema, campo de tempo decorrido se houver algum); (2)
+      `docs/refactor_dollar_bar_canonico.md` §8 item 2 medido --
+      distribuição real de duração de relógio de uma dollar bar (hoje
+      TBD; sem essa medição não dá pra saber se o erro de `sqrt(window)`
+      é desprezível ou dominante); (3) decisão explícita do Manager entre
+      as opções F1-F4 de §1.3 (a MESMA decisão que já cobre este código,
+      não uma decisão nova a criar). Só então dá pra escrever um teste
+      sintético que reflita o contrato real em vez de um inventado, e
+      código que resolve o problema de verdade em vez de codificar uma
+      suposição de design revertível. Nenhum arquivo de código alterado
+      nesta investigação.
+    status: "parcialmente fechado -- F3 (classificação pura) implementado:
+      A13 mantido `clock` com justificativa reescrita como decisão
+      deliberada; B01 reavaliado separadamente e RECLASSIFICADO pra
+      `bar_count`. Auditoria de código (support.py/group_e.py/_sources.py)
+      avaliada 2026-08-16 e DEFERIDA deliberadamente -- mesma razão
+      estrutural de AG-042(2/3), ver `resolution` acima. Não vira código
+      até Bloqueador 1 (AG-031) + Bloqueador 2 (AG-042 itens 2/3) serem
+      resolvidos e a distribuição real de duração de dollar bar ser
+      medida (docs/refactor_dollar_bar_canonico.md §8, item 2)."
+    addendum_2026_08_16_min_common_history_bars: >
+      4º ponto achado (revisão independente `project_assurance` sobre
+      `src/data/build_dollar_bars.py`/`src/features/build.py::
+      build_t1_features(bar_source=...)`, runner de validação de fiação
+      de dollar bar) -- mesma família dos 3 pontos já enumerados
+      (`sqrt(window)`, Yang-Zhang overnight, asof-lag), mas não estava
+      nomeado neles: `FeatureWindows.from_constants().min_common_history_
+      bars` (`AG-030`, `min_common_history_bars_15m=164256`) é aplicado
+      incondicionalmente a C07/D03f/E02f e à recomputação interna de
+      `er_quantile`/`econ_quantile` também sob `bar_source="dollar_r1"` --
+      essa constante foi calibrada especificamente como "nº de barras de
+      15m entre SYMBOL_START_DATE e END_DATE" pra garantir comparabilidade
+      cross-asset em TEMPO DE RELÓGIO (AG-030). Sob dollar bar a densidade
+      de barras/dia varia por símbolo/threshold -- truncar pras "últimas
+      164.256 barras" já não corresponde ao mesmo período de calendário
+      entre ativos, silenciosamente. Registrado com nota em docstring
+      (`src/features/build.py::build_t1_features`) -- decisão de entrar
+      formalmente no guarda-chuva desta entrada, ou virar entrada própria,
+      é do Manager, não fechada aqui. Não bloqueia o runner de validação
+      (que já se declara "teste de fiação, não de validade estatística").
 
   - id: AG-044
     date: "2026-08-16"

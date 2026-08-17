@@ -196,6 +196,23 @@ type = "forbidden"
 source_modules = ["src.features"]
 forbidden_modules = ["src.analysis"]
 
+[[tool.importlinter.contracts]]
+# AG-034 addendum (2026-08-16, auditoria de prontidão de src/data/bars.py):
+# m2_worker.py (src/analysis/, medição pós-hoc) constrói dollar+volume+
+# tick_imbalance bars SIMULTANEAMENTE por chunk (_build_trades_dependent_
+# bars) -- padrão correto para COMPARAR os 3 tipos, mas 3x mais caro em
+# memória que o caminho canônico single-type que uma pipeline de PRODUÇÃO
+# precisa (canonical_bar_type=dollar). Nada impedia mecanicamente um futuro
+# orquestrador de reprocessamento real (ainda não escrito, seria natural
+# viver em src/data/) de importar esse helper por conveniência e herdar o
+# mesmo custo 3x -- só convenção/prosa protegia contra isso. Este contrato
+# fecha essa lacuna mecanicamente, mesmo padrão já usado para
+# features/models não importarem analysis.
+name = "data não importa analysis"
+type = "forbidden"
+source_modules = ["src.data"]
+forbidden_modules = ["src.analysis"]
+
 # TODO(Sprint 8): "alpha não pode importar meta" — formalizar como contrato
 # forbidden (src.models.alpha -> src.models.meta) quando esses módulos
 # existirem como arquivos reais, não pacote models/ genérico.
