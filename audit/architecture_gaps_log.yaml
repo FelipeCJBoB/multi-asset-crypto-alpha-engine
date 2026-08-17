@@ -751,6 +751,26 @@ entries:
       estratificadas por regime economico), nao como troca de formula
       cosmetica -- ja era a leitura qualitativa antes, agora quantificada.
 
+    addendum_convergencia_com_migracao_parkinson_2026_08_17: >
+      **Este gap É o mesmo item que a migração Parkinson+dollar-bar
+      (`AG-036`, `docs/refactor_parkinson_canonico.md`) existe pra
+      fechar** — a medição ARI/`median_abs_relative_diff` acima (GK vs
+      Wilder) já tinha concluído "quando M2/M3 fecharem, a migração
+      precisa ser tratada como mudança real de ambiente de treino
+      (retreino + reavaliação de métricas por regime econômico), não
+      troca de fórmula cosmética" -- M2/M3 fecharam nesta sessão
+      (2026-08-16/17), e a conclusão se confirmou: `vol_estimator_id`
+      agora É selecionável em `build_t1_features`/`build_regimes`
+      (Fases 2-3, commits `3449471`/`9a4c3c5`), mas o DEFAULT continua
+      ATRWilder até o retreino real acontecer -- exatamente pelo mesmo
+      motivo que este gap já tinha previsto (retreino, não hot-swap). O
+      estimador vencedor mudou de GK (M1 original) pra Parkinson (M1
+      remedido sob dollar bar, `AG-065`), mas a mecânica do gap é
+      idêntica. Não é um item separado a autorizar -- é a MESMA pendência
+      já registrada em `PLANO_MESTRE_PRINCE2.md` §11.4 (retreino real de
+      Alpha Camada 1 sob R1+Parkinson). Fecha junto, não antes nem
+      depois.
+
   # AG-010 -- achado ao preparar contexto pra delegar AG-005/006/009 a
   # agentes (2026-08-13): a entrada acima (AG-008) tinha chaves YAML
   # DUPLICADAS -- um segundo bloco `resolved_by_commit: "e25d85c"` +
@@ -2030,6 +2050,37 @@ entries:
     # -v`: 94 passed in 3,55s. (1) deliberadamente fora deste comando --
     # só fecha depois de `uv run python -m src.analysis.calibration_
     # diagnostics` regerar o artefato.
+    # ------------------------------------------------------------------
+    addendum_reabertura_sob_dollar_bar_2026_08_17: >
+      **Reabertura parcial, escopo NOVO**: a correção acima (2026-08-16)
+      resolveu comparabilidade cross-asset SOB GRADE DE TEMPO
+      (`min_common_history_bars_15m`, contagem de barra de 15m). A
+      migração Parkinson+dollar-bar (Fases 2-3, `docs/refactor_
+      parkinson_canonico.md`) achou que essa mesma constante, sob
+      `resolution_id="R1"`, não é comparável (densidade de dollar bar
+      varia por símbolo/threshold, não é contagem de calendário fixa) --
+      decisão tomada então: DESABILITAR o cap sob dollar bar (`windows.
+      min_common_history_bars = None`) em vez de inventar um número não
+      medido, dívida registrada mas nunca virou addendum formal aqui até
+      agora (só docstring de código + `docs/refactor_parkinson_
+      canonico.md` citavam "ver AG-030" sem a entrada de fato existir).
+
+      **Manager autorizou fechar isso, 2026-08-17** ("AG-030 latente sob
+      a nova grade = autorizado"). Pendente: medir um equivalente NATIVO
+      de "histórico dollar-bar comparável cross-asset" -- candidatos a
+      investigar (não decidido ainda, por isso Lado 2, não Lado 1): (a)
+      truncar por CONTAGEM DE BARRA mínima comum entre os 5 símbolos sob
+      R1 (mesmo mecanismo do fix original, só trocando a fonte da
+      contagem — `data/labels/{symbol}/R1/v1/labels.parquet` já dá o
+      `n` real por símbolo, medido nesta sessão: BTCUSDT 463.034/ETHUSDT
+      328.452/SOLUSDT 327.461/BNBUSDT 328.440/XRPUSDT 327.488 -- mínimo
+      comum seria XRPUSDT); (b) truncar por JANELA DE CALENDÁRIO comum
+      (mesma lógica do fix de 15m, `SYMBOL_START_DATE` comum), que sob
+      dollar bar produz um `n` DIFERENTE por símbolo mesmo pro mesmo
+      calendário (densidade de barra não é constante) -- precisa decidir
+      qual das duas noções de "comparável" é a certa antes de implementar
+      qualquer uma. Nenhuma medição nova feita ainda -- só a autorização
+      de investigar está registrada aqui.
     # ------------------------------------------------------------------
 
   - id: AG-031
@@ -4370,7 +4421,7 @@ entries:
       no mesmo commit que fechou a entrada primária no ledger.
     resolved_by_commit: null
     resolution: "NÃO IMPLEMENTADO -- ver correção mecânica das 4 linhas em commit desta mesma sessão, registrada abaixo em separado por ser edição direta de doc, não decisão de escopo."
-    status: "aberto -- correção textual das 4 linhas pendente nesta mesma sessão"
+    status: "PARCIALMENTE FECHADO -- achado 2026-08-17, ao sincronizar governança pra migração Parkinson+dollar-bar: itens (1) AG-030/§7, (2) AG-039/§11.4 e (3) AG-032/§11.5 já estavam corrigidos em texto (verificado lendo as linhas reais, não presumido) -- correção tinha acontecido em sessão(ões) anteriores sem esta entrada ser atualizada pra refletir. Item (4) (Sprint 6, ambiguidade time_stop_bars superseded vs. time_stop_ms) CONTINUA aberto -- §11.4 ainda não esclarece qual constante o sweep mira, verificado nesta mesma passada."
 
   - id: AG-053
     date: "2026-08-16"
