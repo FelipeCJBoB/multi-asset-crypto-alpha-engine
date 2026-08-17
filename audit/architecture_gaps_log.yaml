@@ -2521,7 +2521,7 @@ entries:
       da task (mudança estrutural, mais cara). Recomendação: (2) primeiro
       -- é 0 código, confirma ou refuta a hipótese, decide entre (1) e (3)
       com dado real em vez de suposição.
-    status: >-
+    status_original_pre_reabertura_2026_08_16: >-
       FECHADO 2026-08-16 pelo Manager -- decisão explícita de não
       investigar/corrigir mais. `canonical_bar_type=dollar` já foi decidido
       independente disso (M2 concluiu sobre as 5 janelas parciais sem
@@ -3069,7 +3069,7 @@ entries:
       (`grade_id` versionado, §3.6 item 2) mas nunca conecta essa proposta
       de volta ao achado C -- lacuna de síntese dentro do próprio relatório,
       não erro factual.
-    severity: "MEDIUM"
+    severity: "médio"
     layer: "validation"
     consequence: >
       Se o Manager escolher uma opção do Bloqueador 2 presumindo que isso
@@ -3133,7 +3133,7 @@ entries:
       `src/models/monotonic.py` -- escopo real do acoplamento fica confinado
       a `alpha.py`+`dataset.py`+`baselines.py`+3 arquivos de `analysis/`,
       não `pipeline.py`.
-    severity: "LOW"
+    severity: "baixo"
     layer: "analysis (fora do contrato import-linter, medição pós-hoc)"
     consequence: >
       Não muda a conclusão "pelo menos 8 lugares" do documento original
@@ -3162,7 +3162,7 @@ entries:
       trials, N-trials) como contraponto -- e nenhum dos dois é literalmente
       o caso que vai ocorrer (sweep de `time_stop_bars`/`cpcv_embargo_bars`/
       threshold de dollar bar).
-    severity: "LOW"
+    severity: "baixo"
     layer: "governance"
     consequence: >
       Risco de subestimar o custo em `N_lifetime` de um sweep específico no
@@ -3201,7 +3201,7 @@ entries:
       (Sprint 6, antes do Feature/Label Engine rodar pros 4 alts) é
       provavelmente BTC-only. SOL/XRP têm histórico mais curto (2021-12 vs.
       ~2019-12 do BTC) -- `N_eff` pode não generalizar pros 5 ativos.
-    severity: "MEDIUM"
+    severity: "médio"
     layer: "models (via docs/refactor_dollar_bar_canonico.md)"
     consequence: >
       O argumento quantitativo mais forte a favor de "o vetor de 10 é
@@ -3222,7 +3222,7 @@ entries:
       ("N_lifetime > 60 sem Camada 2 fechada → encerrar") está 1 linha
       off -- o texto exato está na linha 671 (linha 670 é o critério #4,
       sobre edge_bruto_atr vs. custo_atr).
-    severity: "LOW"
+    severity: "baixo"
     layer: "documentação"
     consequence: "Nenhuma -- imprecisão cosmética, não afeta leitura nem decisão."
     resolved_by_commit: null
@@ -3777,3 +3777,331 @@ entries:
       `check_sprint_log_references.py` não aplicáveis (nenhuma divisão
       nova, nenhuma referência a `SPRINT_LOG.md`).
     status: "fechado -- 6 checks mecânicos limpos, comandos re-entregues ao usuário pra confirmação real"
+
+  - id: AG-050
+    date: "2026-08-16"
+    file: "src/risk/sizing.py, src/risk/limits.py, src/risk/kill_switch.py"
+    related_file: "src/regime/classifier.py, src/regime/stress.py"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude enquanto o full run de dollar bar rodava"
+    gap: >
+      `src/labels/` tem histórico denso de revisão independente real
+      (AG-025, AG-029, AG-031, AG-044/045/046, todos com `found_by: "Agent
+      Project Assurance"`) -- `src/risk/`, `src/execution/` e
+      `src/regime/` NUNCA passaram pelo protocolo §6.4 (16 perguntas,
+      Agent fresco). Confirmado por `git log --grep` (todo o histórico)
+      por menções a "project_assurance"/"revisão independente"/"Agent
+      fresco": zero commits nesses 3 pacotes citam o protocolo.
+      `risk/sizing.py`/`risk/limits.py`/`risk/kill_switch.py` batem 4/4
+      eixos de materialidade do critério §4 (exposição financeira direta,
+      peso de decisão -- inclusive `KILLED`, complexidade real de 19
+      controles + 13 gatilhos com ordem de avaliação significativa,
+      contexto de uso já comprovado por dois bugs de sinal reais
+      corrigidos nos commits `9d69580`/`17cf8c5` -- mas achados via
+      `audit/division_guard_audit.md` (script mecânico), não via as 16
+      perguntas estruturadas). `regime/classifier.py` é importado direto
+      por `risk/limits.py:54` (`control_01_regime_tradeavel`) e já teve 2
+      bugs reais (AG-027, AG-030), achados por Manager/Claude, não por
+      Agent independente. `regime/stress.py` é consumido por
+      `kill_switch.py:68` (K12) e nunca apareceu em nenhuma entrada deste
+      ledger -- um único commit desde a criação (Sprint 5), nunca revisado
+      desde então.
+    severity: "alto"
+    layer: "risk/execution/regime"
+    consequence: >
+      Os 3 pacotes com maior exposição financeira/decisão de todo o
+      projeto (dimensionamento de posição real, kill switch, gate de
+      regime que alimenta o kill switch) são também os únicos entre os
+      pacotes "sempre materialmente alto" do §6.1 que nunca tiveram um
+      Agent fresco tentando ativamente achar o que o produtor não viu. Os
+      2 bugs de sinal já confirmados em `risk/limits.py` foram achados por
+      um script mecânico de varredura de divisão, não pelo protocolo --
+      não há evidência de que o protocolo teria pego os MESMOS 2 bugs (o
+      script é bom nisso), mas também não há evidência de que não existem
+      OUTROS gaps de integração/contrato que só as 16 perguntas
+      estruturadas (Bloco A "quem consome de verdade", Bloco C "silêncio
+      em exceção", etc.) acham.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- decisão de escopo/custo do Manager: comissionar
+      revisão `project_assurance` completa (5 arquivos, Descrição de
+      Produto + Agent fresco por arquivo) tem custo real de tempo/tokens,
+      não é decisão que um Agent de discovery deveria tomar sozinho.
+      Candidato natural pra "o que fazer enquanto outro trabalho pesado
+      roda" (não toca `data/`, é leitura/análise).
+    status: "aberto -- aguarda decisão do Manager sobre comissionar revisão completa"
+
+  - id: AG-051
+    date: "2026-08-16"
+    file: "PLANO_MESTRE_PRINCE2.md §11.4 (Road Map Vivo)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-007, AG-008, AG-027, AG-038, AG-040"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      §11.4 se autodescreve como "Rollup de tudo que já tem sprint/gatilho
+      de revisão declarado em outro lugar do repo" (linha 662). Das 7
+      entradas com `status: aberto` no ledger, só `AG-036` cumpre essa
+      promessa de verdade (gatilho explícito + linha em §11.4 + linha em
+      §11.5). As outras 5 -- `AG-007` (risco por-símbolo, gatilho citado
+      só em prosa no próprio addendum e em §15.7, ausente de §11.4),
+      `AG-008` (ATR legado, gate duplicado/não sincronizado com o gate
+      mais preciso que `AG-036` já registra), `AG-027` (decisão pendente
+      "priorizar investigação vs. métricas OOS por regime", sem linha em
+      §11.4), `AG-038` (acoplamento posicional T1, resolução cita "lista
+      de implementação real" que não existe em lugar nenhum com
+      stage/sprint), `AG-040` (qualificação de `N_eff` por ativo, sem
+      linha em §11.4) -- estão soltas, sem stage/sprint numerado em lugar
+      nenhum do repo.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      Quem usa §11.4 como fonte única de verdade pra "o que está pendente
+      e quando" (o próprio propósito documentado da seção) subestima o
+      volume real de pendências abertas -- 5 de 7 itens abertos ficam
+      invisíveis a essa leitura, cada um exigindo ida direta ao ledger
+      completo (3780 linhas) pra serem encontrados.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- requer decidir, pra cada uma das 5 entradas
+      soltas, se ganham stage/sprint real (decisão de priorização do
+      Manager) ou permanecem deliberadamente sem prazo (aceitas como
+      débito técnico de baixa prioridade, o que também precisa ser
+      declarado explicitamente em vez de implícito por ausência).
+    status: "aberto -- aguarda priorização do Manager pras 5 entradas soltas"
+
+  - id: AG-052
+    date: "2026-08-16"
+    file: "PLANO_MESTRE_PRINCE2.md §7, §11.4, §11.5"
+    related_file: "audit/architecture_gaps_log.yaml::AG-030, AG-032, AG-039"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      4 divergências reais entre `architecture_gaps_log.yaml` (fonte
+      primária de status) e `PLANO_MESTRE_PRINCE2.md` (rollup derivado) --
+      todas na mesma direção: o PLANO_MESTRE ficou pra trás de decisões
+      tomadas mais tarde no mesmo dia 2026-08-16 (changelog para em v3.14,
+      mas `AG-039`..`AG-049` -- todas de 2026-08-16 -- não têm changelog
+      correspondente). **(1) AG-030 -- a mais grave**: §7 linha 466 e
+      §11.4 linha 682 ainda dizem "decisão do Manager necessária antes do
+      M6 rodar, não depois"/"precisa fechar ANTES do M6 rodar" -- mas o
+      ledger mostra `AG-030` `status: "FECHADO 2026-08-16 -- código
+      implementado, testado (94 passed)"`. Quem ler só §7/§11.4 concluiria,
+      errado, que M6 continua bloqueado. **(2) AG-039** -- mesma classe:
+      §11.4 linha 683 apresenta como decisão pendente; ledger mostra
+      `FECHADO 2026-08-16`. **(3) AG-032** -- contradição dentro do próprio
+      par de documentos: entrada no ledger começa com `status: "aberto"`
+      (linha ~2319, ressalva explícita sobre `max_feature_lookback_ms` sem
+      caller real), mas §11.5 linhas 708-709 registram o mesmo trabalho
+      como "✅ implementado, testado (42/42), revisado" sem citar a
+      ressalva que o ledger mantém aberta. **(4) Sprint 6 ambíguo**: §11.4
+      linha 676 lista "sweep... `time_stop_bars`, `atr_window`" pro Sprint
+      6, mas `AG-031`/`AG-046` estabeleceram `time_stop_bars` como
+      SUPERSEDIDO por `time_stop_ms` (fonte canônica real usada por
+      `LabelConfig`) -- `constants.yaml` mantém as duas constantes ativas
+      com `sweep_required`/`review_by: sprint_6` independentes, sem §11.4
+      esclarecer se o sweep mira a constante superseded, a canônica, ou
+      as duas.
+    severity: "alto"
+    layer: "process/doc"
+    consequence: >
+      O achado (1) é o único com consequência prática imediata: pode levar
+      a segurar/adiar a próxima rodada de M6 por uma dependência que já foi
+      resolvida, ou a redecidir algo já decidido. Os achados (2)-(4) têm
+      consequência menor (retrabalho de leitura, ambiguidade de escopo de
+      sweep), mas a mesma causa raiz -- documento derivado não atualizado
+      no mesmo commit que fechou a entrada primária no ledger.
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- ver correção mecânica das 4 linhas em commit desta mesma sessão, registrada abaixo em separado por ser edição direta de doc, não decisão de escopo."
+    status: "aberto -- correção textual das 4 linhas pendente nesta mesma sessão"
+
+  - id: AG-053
+    date: "2026-08-16"
+    file: "audit/architecture_gaps_log.yaml::AG-034"
+    related_file: "audit/architecture_gaps_log.yaml::AG-010"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      Recorrência da MESMA classe de furo que `AG-010` já nomeou e
+      corrigiu (chaves YAML duplicadas dentro de uma única entrada): a
+      entrada `AG-034` tinha duas ocorrências da chave `status:` -- uma na
+      então-linha ~2524 ("FECHADO 2026-08-16 pelo Manager -- decisão
+      explícita de não investigar mais"), outra na então-linha ~2718
+      ("FECHADO 2026-08-16 -- solução de engenharia implementada"), com
+      `addendum_reabertura_2026_08_16`/`implementacao_2026_08_16`
+      intercalados entre as duas -- ao contrário de `AG-008`/`AG-003`
+      (corrupção de copy-paste, valores de entradas DIFERENTES colados por
+      engano), aqui as duas ocorrências são estados cronológicos reais e
+      sequenciais da MESMA entrada (fechado -> reaberto -> refechado), só
+      que a 2ª vez reusou o nome de chave `status` em vez de um nome novo
+      (`status_pos_reabertura`, por exemplo). Um parser YAML padrão
+      (PyYAML incluso) resolve pegando a ÚLTIMA ocorrência, descartando a
+      primeira silenciosamente.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      Efeito prático baixo neste caso específico (as duas dizem "FECHADO",
+      ao contrário do caso AG-008/AG-003 que tinha valores contraditórios)
+      -- mas é o mesmo furo que `AG-010` descreveu como "exatamente o tipo
+      que vira erro real no dia em que alguém escrever um script contra
+      este arquivo" reaparecendo depois de já ter sido nomeado como
+      classe. Sinaliza que o processo de adicionar `addendum_*`/campos
+      novos a uma entrada já fechada não tem uma convenção de nomenclatura
+      declarada pra evitar colisão de chave.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-16, mesma sessão do achado -- primeira
+      ocorrência de `status:` em AG-034 renomeada pra
+      `status_original_pre_reabertura_2026_08_16:`, preservando o texto
+      integralmente. Segunda ocorrência (mais recente) permanece como
+      `status:` único e sem ambiguidade.
+    status: "fechado -- corrigido na mesma sessão do achado"
+
+  - id: AG-054
+    date: "2026-08-16"
+    file: "audit/architecture_gaps_log.yaml (AG-037, AG-038, AG-039, AG-040, AG-041)"
+    related_file: "audit/architecture_gaps_log.yaml (schema, cabeçalho)"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      O campo `severity` mistura português (`"alto"`/`"médio"`/`"baixo"`,
+      convenção de todas as outras ~49 entradas) com inglês
+      (`"MEDIUM"`/`"LOW"`) em 5 ocorrências dentro de 5 entradas
+      (`AG-037`, `AG-038`, `AG-039`, `AG-040`, `AG-041`), todas escritas na
+      mesma leva (revisão independente de `docs/refactor_dollar_bar_
+      canonico.md`, 2026-08-16) -- provavelmente o Agent que as escreveu
+      seguiu a escala em inglês citada na skill `project_assurance`
+      (CRITICAL/HIGH/MEDIUM/LOW) em vez da convenção real do arquivo que
+      estava editando.
+    severity: "baixo"
+    layer: "process/doc"
+    consequence: >
+      Qualquer agregação mecânica futura por severidade (`grep
+      'severity: "alto"'`, ou um script que conte entradas por nível)
+      perderia essas 5 entradas silenciosamente -- mesma classe de risco
+      de "fonte de verdade dizendo uma coisa, comportamento real de
+      leitura fazendo outra" que motivou `AG-010`/`AG-053`.
+    resolved_by_commit: null
+    resolution: "IMPLEMENTADO 2026-08-16, mesma sessão do achado -- as 5 ocorrências normalizadas pra português (MEDIUM->médio x3, LOW->baixo x2)."
+    status: "fechado -- corrigido na mesma sessão do achado"
+
+  - id: AG-055
+    date: "2026-08-16"
+    file: "config/constants.yaml (maker_fee, taker_fee, bnb_discount, capital_inicial_brl, usd_brl_ref)"
+    related_file: "PRD_V3_2_UNIFICADO.md:3092-3093"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      5 constantes com `provenance: MEASURED` sem fonte verificável --
+      `check_constants_provenance.py` confirma os campos certos
+      preenchidos, mas não confere se o rótulo é SEMANTICAMENTE verdadeiro
+      (ao contrário de outras 11 entradas `MEASURED` do arquivo, todas
+      conferidas de verdade nesta auditoria e legítimas -- `tick_size`/
+      `step_size`/`min_notional`/rate limits citam snapshot real e
+      conferido byte a byte, `canonical_volatility_estimator`/
+      `canonical_bar_type`/`min_common_history_bars_15m`/`cpcv_embargo_ms`
+      citam experimento/commit real e conferido). **`maker_fee`/
+      `taker_fee`** (linhas 45-57): `source: "tabela de fees Binance
+      USDⓈ-M, VIP 0"`, sem arquivo/data/link -- busca no repo inteiro por
+      snapshot de fee schedule não encontrou nada; `PRD_V3_2_UNIFICADO.md:
+      3092` repete a mesma frase vaga, sem origem rastreável adicional.
+      **`bnb_discount`** (linha 84-89): mesmo padrão, `PRD_V4_1... :3093`
+      só diz "idem". **`capital_inicial_brl`** (linha 91-96): `source:
+      "restrição do Manager"` -- na verdade não é medição nenhuma, é
+      restrição de negócio declarada (o próprio schema de proveniência --
+      MEASURED/DERIVED/LITERATURE/ASSUMED -- não tem categoria pra "decisão
+      de negócio declarada diretamente", nenhum dos 4 rótulos existentes é
+      um encaixe perfeito). **`usd_brl_ref`** (linha 98-103): `source:
+      "cotação de referência, verificada na elaboração do PRD"` -- sem
+      data/snapshot/URL, apesar de ser a taxa que converte TODO o
+      dimensionamento de capital do projeto (R$ 1.000) pra USDT.
+    severity: "médio"
+    layer: "config/governance"
+    consequence: >
+      Os valores provavelmente estão corretos (fees VIP 0 da Binance são
+      informação pública bem conhecida; `usd_brl_ref=5,08` é uma faixa
+      plausível) -- o gap não é "valor errado", é "rótulo MEASURED sem
+      artefato observável e datado por trás", quebrando a garantia que o
+      resto do arquivo mantém (toda entrada MEASURED aponta pra algo
+      conferível). `usd_brl_ref` é o caso de maior risco real: câmbio muda
+      no tempo, e não há data/snapshot que diga QUANDO essa cotação foi
+      válida.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- decisão de disposição é do Manager: (a) achar
+      citação real e datada pra fee schedule/câmbio e atualizar `source:`;
+      (b) reclassificar como `LITERATURE` (informação pública, não medição
+      interna) com data de acesso; (c) aceitar como está, documentando
+      explicitamente que são constantes classe C/D de baixo risco e a
+      imprecisão do rótulo é tolerada. Nenhuma das 5 é classe A -- não
+      bloqueia build.
+    status: "aberto -- aguarda decisão do Manager sobre disposição"
+
+  - id: AG-056
+    date: "2026-08-16"
+    file: "experiments/alpha_layer1_report.json, alpha_layer1_report_t05_janela_comum.json, alpha_b1_refinement_report.json, cost_surface_report.json, cpcv_embargo_clock_candidate.json, prototype_dollar_bar_duckdb_vs_polars.json"
+    related_file: "CLAUDE.md (Definition of Done, 'Saída de pipeline')"
+    found_by: "Agent Project Assurance (subagente fresco, general-purpose), discovery de governança delegado por Claude"
+    gap: >
+      `CLAUDE.md` define DoD pra "Saída de pipeline" (`experiments/*.json`
+      incluso): schema claro, unidade dos campos, `generated_at`/hash de
+      origem presente. 6 arquivos reais em `experiments/` (2 deles muito
+      recentes e citados como evidência formal em `PLANO_MESTRE_PRINCE2.md`
+      e `architecture_gaps_log.yaml::AG-032` -- `cpcv_embargo_clock_
+      candidate.json`, `prototype_dollar_bar_duckdb_vs_polars.json`) não
+      têm `generated_at`/hash em lugar nenhum do JSON, confirmado por
+      inspeção de início e fim de cada arquivo. Contraste direto com o
+      resto do diretório (`backtest_fill_reconciliation_report.json`,
+      `volatility_comparison_report.json`, `m2_bar_comparison_report.json`,
+      `code_discovery.json` -- este último o melhor exemplo, `generated_at`
+      + `code_version` apontando pra commit real -- todos conformes).
+    severity: "baixo"
+    layer: "data/governance"
+    consequence: >
+      Nenhum dos 6 é "órfão" (todos rastreáveis via `git log`/citação em
+      doc) -- o gap é praticidade futura: sem `generated_at` embutido no
+      próprio arquivo, confirmar quando/sob qual código um desses JSONs foi
+      gerado exige ir ao `git log` do arquivo em vez de abrir o JSON e ler.
+      Achado adicional relacionado, severidade menor ainda: os 2 relatórios
+      intermediários da série de concorrência (`m2_report_btc_2025h1_
+      concorrente.json`, `..._chunk6.json`) têm `generated_at` válido mas
+      nunca são citados pelo nome em nenhum documento de narrativa (só o
+      relatório final da série, `m2_report_5symbols_2025_01.json`, é
+      citado por nome em `AG-034`) -- rastreável via commit, mas não
+      referenciado como evidência formal.
+    resolved_by_commit: null
+    resolution: "NÃO IMPLEMENTADO -- exigiria padronizar um helper de escrita comum pra experiments/*.json com generated_at/hash obrigatórios; nenhum dos 8 scripts afetados tem esse helper hoje. Candidato a débito técnico de baixa prioridade, não urgente (nenhum caso de rastreabilidade real perdida encontrado)."
+    status: "aberto -- baixa prioridade, sem stage declarado"
+
+  - id: AG-057
+    date: "2026-08-16"
+    file: "CLAUDE.md (Protocolo de execução -- quem roda o quê)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-055 (agent que achou este desvio)"
+    found_by: "O próprio Agent (auto-divulgação no relatório final, subagente da auditoria de proveniência/artefatos)"
+    gap: >
+      Um dos 3 Agents de discovery de governança desta rodada rodou
+      `python -c "..."` via Bash pra ler/parsear
+      `data/raw/snapshots/exchange_info/2026-08-08.json` durante a
+      verificação da PARTE 1 (proveniência) -- fora dos 7 comandos
+      mecânicos autorizados (`banned_patterns.py`,
+      `check_constants_referenced.py`, `check_constants_provenance.py`,
+      `check_unguarded_ratios.py`, `check_sprint_log_references.py`,
+      `ruff check`, `mypy`) e explicitamente proibido tanto por `CLAUDE.md`
+      ("Claude nunca executa .py... via Bash/PowerShell") quanto pelo
+      prompt de instrução deste mesmo Agent ("NUNCA pytest/uv run
+      quant/outro .py"). O Agent se autodivulgou no relatório final e
+      refez a mesma verificação só com Grep/Read, sem depender do
+      resultado do comando proibido.
+    severity: "médio"
+    layer: "process"
+    consequence: >
+      Efeito real desta instância específica é baixo (leitura pura de JSON
+      local, sem efeito em dado/exchange/trial, resultado descartado e
+      reverificado por meio permitido) -- mas é uma violação real do
+      protocolo mais rígido deste repo (execução de Python), cometida por
+      um Agent delegado apesar de instrução explícita em contrário no
+      próprio prompt. Instrução em prosa não foi suficiente sozinha pra
+      impedir o desvio nesta ocorrência.
+    resolved_by_commit: null
+    resolution: >
+      NÃO IMPLEMENTADO -- não há enforcement mecânico hoje que impeça um
+      Agent de invocar Bash com um comando `python` fora da lista de 7;
+      o protocolo depende inteiramente do Agent seguir a instrução em
+      prosa. Registrado como achado de processo, não corrigido
+      estruturalmente nesta rodada -- decisão do Manager se vale a pena
+      (ex.: hook de pre-tool-use bloqueando `python`/`pytest` fora dos 7
+      comandos, fora do escopo de um Agent mudar sozinho).
+    status: "aberto -- registrado, sem enforcement mecânico ainda"

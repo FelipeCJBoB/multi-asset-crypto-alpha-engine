@@ -463,9 +463,10 @@ acumulou (BTCUSDT: até 231.552 barras de 15m desde 2019-12-31; os 4 alts: até
 vazamento temporal — é não-comparabilidade entre ativos que confunde
 diretamente H0 do M6 (`edge_bruto_atr` igual entre os 5 ativos, §15/T0.5):
 qualquer diferença medida pode ser artefato de warmup expansivo desigual, não
-edge real. **Decisão do Manager necessária antes do M6 rodar, não depois** —
-reverter uma conclusão de M6 já publicada custa mais que decidir agora. Ver
-`audit/architecture_gaps_log.yaml::AG-030`.
+edge real. **Fechado 2026-08-16** — `min_common_history_bars_15m`
+implementado e testado (94 passed), decisão do Manager já tomada e artefato
+afetado regenerado. Ver `audit/architecture_gaps_log.yaml::AG-030` (status
+real; esta seção ficou desatualizada por um dia — ver `AG-052`).
 
 ---
 
@@ -673,14 +674,16 @@ numa narrativa de "decisão pendente" fora de contexto.
 | stage | item agendado | fonte |
 |---|---|---|
 | Sprint 5 (Regime Engine) | sweep `regime_er_cutoff`, `regime_vol_cutoff`, `regime_er_cutoff_exit`, `regime_vol_cutoff_exit` | `config/constants.yaml` |
-| Sprint 6 (Label Engine) | sweep `tp_atr_mult`, `sl_atr_mult`, `time_stop_bars`, `atr_window` | `config/constants.yaml` |
+| Sprint 6 (Label Engine) | sweep `tp_atr_mult`, `sl_atr_mult`, `time_stop_bars` (⚠️ SUPERSEDIDO por `time_stop_ms`, AG-031/AG-046 — ambas ainda classe A `ASSUMED` com `sweep_required`/`review_by: sprint_6` próprios em `constants.yaml`; decidir se o sweep mira a superseded, a canônica, ou as duas, antes do sprint tocar isto), `atr_window` | `config/constants.yaml` |
 | Sprint 10 | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
 | Sprint 11 | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
 | Quando reprocessamento dollar-bar concluir | remedição de M1, 8 estimadores | `audit/architecture_gaps_log.yaml::AG-036` |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
-| Decisão do Manager, sem stage travado ainda | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — precisa fechar ANTES do M6 rodar | `audit/architecture_gaps_log.yaml::AG-030` |
-| Decisão do Manager, sem stage travado ainda | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — precisa fechar antes do Sprint 5/6 tocarem nos sweeps acima | `audit/architecture_gaps_log.yaml::AG-039` |
+| ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — implementado, testado (94 passed), M6 desbloqueado | `audit/architecture_gaps_log.yaml::AG-030` |
+| ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — registrada em `audit/n_lifetime.yaml`, autorizada pelo Manager | `audit/architecture_gaps_log.yaml::AG-039` |
+| Decisão do Manager, sem stage travado ainda | `AG-050`: `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade | `audit/architecture_gaps_log.yaml::AG-050` |
+| Decisão do Manager, sem stage travado ainda | `AG-055`: 5 constantes `provenance: MEASURED` sem fonte verificável (`maker_fee`, `taker_fee`, `bnb_discount`, `capital_inicial_brl`, `usd_brl_ref`) — nenhuma classe A, não bloqueia build, mas rótulo semanticamente frágil | `audit/architecture_gaps_log.yaml::AG-055` |
 
 **Regra de leitura:** nenhuma linha desta tabela é orçamento de
 `N_lifetime` em risco hoje — um sweep só custa trial quando de fato roda,
@@ -705,7 +708,7 @@ escrito no fim, é o estado real.
 | camada | o que muda | status | referência |
 |---|---|---|---|
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
-| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) | `AG-032`, commit `a7e7e16` |
+| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) — ⚠️ ressalva aberta em `AG-032`: `max_feature_lookback_ms` (componente 96) ainda sem nenhum caller de produção real que o wire-e, só o teste sintético prova o mecanismo; `status` do ledger começa "aberto" por causa disso, não fechado | `AG-032`, commit `a7e7e16` |
 | `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
 | `labels` (`src/labels/triple_barrier.py` + `barrier_sweep.py`/`cost_surface.py`/`backfill_multi_symbol.py`/`experiment_log.py`) | horizonte do label em relógio fixo (B1 = Opção 2), `time_stop_bars`→`time_stop_ms`, `atr_window`→`atr_window_ms` (Label Engine só), `n_bars_held` vira contagem real | ✅ pronto — confirmado empiricamente (`uv run pytest`, 121 passed), commitado e pushed | `AG-031`, `AG-044`..`048`, commit `c0ac546` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `resolution_id` (R1/R2/R3) substitui M15/M30/H1 como identidade de dollar/volume/tick_imbalance bars (B2 = A′+D, parte 1 — `threshold_usdt` como identidade formal fica pra quando dollar bar for implantado) | ✅ pronto — confirmado empiricamente (`uv run pytest`, 105 passed), commitado e pushed | `AG-042`, commit `982b5d4` |

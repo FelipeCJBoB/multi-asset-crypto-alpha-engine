@@ -394,6 +394,17 @@ def _parse_cli_args() -> argparse.Namespace:
         default=None,
         help="default: data/capacity/ (CAPACITY_DIR) -- diretório-raiz de dollar_bars_r1/",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help=(
+            "substitui _calibration.json/*.parquet já existentes no diretório do "
+            "símbolo, mesmo com threshold_usdt divergente do gravado antes -- ver "
+            "guarda de segurança em write_dollar_bars_and_calibration. Necessário "
+            "pra rodar uma janela de calibração diferente da já gravada no mesmo "
+            "(dest_root, symbol) -- ex. full-history depois de uma validação parcial."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -409,7 +420,9 @@ def main() -> None:
         threshold_usdt=calibration.threshold_usdt,
         max_leftover_trades=calibration.max_leftover_trades,
     )
-    written = write_dollar_bars_and_calibration(bars_df, calibration, dest_root=dest_root)
+    written = write_dollar_bars_and_calibration(
+        bars_df, calibration, dest_root=dest_root, overwrite=args.overwrite
+    )
 
     logger.info(
         "data.build_dollar_bars.done",
@@ -419,6 +432,7 @@ def main() -> None:
         n_bars=bars_df.height,
         threshold_usdt=calibration.threshold_usdt,
         n_files=len(written),
+        overwrite=args.overwrite,
         dest_root=str(dest_root) if dest_root is not None else str(CAPACITY_DIR),
     )
 
