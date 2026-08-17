@@ -3175,6 +3175,14 @@ entries:
       Fontes: Ané&amp;Geman (2000, JF), Dimitriadis et al. (arXiv
       2212.11833), Ghysels&amp;Jasiak (1998, SNDE), Engle&amp;Russell
       (UHF-GARCH).
+    addendum_decisao_egarch_2026_08_17: >
+      **Decisão do Manager: rota ACD-GARCH acoplado autorizada** (não a
+      heurística de escala por duração) pro 3º e último candidato
+      amputado, EGARCH(1,1). Pesquisa aprofundada da especificação exata
+      de Ghysels&amp;Jasiak (1998)/Engle&amp;Russell (1998) delegada antes de
+      qualquer implementação -- resultado a registrar em addendum
+      separado quando a pesquisa voltar. RealizedVol e HAR-RV já prontos
+      (ver addendums acima); este é o único dos 3 ainda não iniciado.
 
   - id: AG-037
     date: "2026-08-16"
