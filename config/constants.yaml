@@ -1454,9 +1454,9 @@ bars_comparison_min_obs_multiplier:
   sweep_required: false
 
 bars_streaming_chunk_days:
-  value: 30
+  value: 6
   provenance: ASSUMED
-  source: "achado de auditoria 2026-08-15: aggTrades de BTCUSDT/ETHUSDT são 27GB/20GB comprimidos em disco — não cabe em memória de uma vez, em nenhuma concorrência. 30 dias (~11,25MB/dia comprimido pro pior caso, BTC) fica bem abaixo do orçamento de RAM medido nesta máquina (~28GB livres, Get-CimInstance Win32_OperatingSystem) mesmo assumindo expansão pessimista de ~8x ao descomprimir (zstd sobre dado tick-a-tick) e vários processos concorrentes. Não é medição exata do tamanho descomprimido por chunk — é uma margem de segurança conservadora; ajustar pra baixo se ainda assim faltar memória."
+  source: "achado de auditoria 2026-08-15: aggTrades de BTCUSDT/ETHUSDT são 27GB/20GB comprimidos em disco — não cabe em memória de uma vez, em nenhuma concorrência. Valor original (30 dias) presumia margem de segurança conservadora sem medição real de RSS. AJUSTADO PRA BAIXO 2026-08-16 (mesma cláusula de escape já registrada aqui: 'ajustar pra baixo se ainda assim faltar memória') com evidência real, não suposição: `AG-034` addendum, teste de concorrência real (`m2_bar_comparison.py --symbols BTCUSDT`, 1 símbolo, 3 resoluções × 3 tipos de barra, 4 processos concorrentes, chunk_days=30) mediu RSS total de pico ~27,1GB e memória disponível do sistema caindo pra ~400-860MB (de ~26,4GB livres) — margem de ~1,5-3%, não confortável. Reduzido de 30 pra 6 (5x menos trades por chunk, reduz proporcionalmente o pico transiente por chunk que `bars.py::threshold_bars_step` materializa por task concorrente) — valor ainda ASSUMED (não há medição de qual reduction é 'suficiente', só a direção certa); reconfirmar com novo teste de RSS antes de escalar além de 1 símbolo concorrente."
   class: C
   sweep_required: false
 

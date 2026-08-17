@@ -2753,6 +2753,17 @@ entries:
       de reabertura deste achado, agora com evidência de que é necessária,
       não só prudente.
 
+      **Ação tomada 2026-08-16:** `bars_streaming_chunk_days` reduzida de
+      30 pra 6 (`config/constants.yaml`, cláusula de escape já registrada
+      na proveniência original -- "ajustar pra baixo se ainda assim faltar
+      memória"). Próximo teste preparado (não executado por mim -- só o
+      usuário roda `.py`): MESMO cenário (BTCUSDT, 2025-01-01..2025-06-30,
+      `m2_bar_comparison.py --symbols BTCUSDT`, RSS instrumentado) pra
+      comparar pico de RSS/memória disponível contra o baseline deste
+      achado (27,1GB pico, ~400-860MB livre no pior momento) -- isola a
+      variável certa (só chunk_days muda, resto idêntico). Pendente de
+      execução e confirmação.
+
       **Item (1) (medir janela 2020) EXECUTADO E MEDIDO 2026-08-16 --
       resultado real, maior que qualquer coisa já conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
       estendido (ver `implementacao_2026_08_16_runner_validacao` abaixo)
