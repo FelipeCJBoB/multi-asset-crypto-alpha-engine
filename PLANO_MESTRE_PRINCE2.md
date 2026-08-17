@@ -12,7 +12,15 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.5 · **Data:** 2026-08-16
+**Versão:** 3.15 · **Data:** 2026-08-17
+**Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
+governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
+(abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
+corrigido uma vez antes (`git log`: "PLANO_MESTRE -- v3.0 no changelog,
+faltava registrar a versao do doc"). Não é prática automática deste
+documento manter os dois sincronizados a cada entrada de changelog —
+registrado aqui pra não repetir o mesmo achado como se fosse novo numa
+sessão futura.
 **Natureza:** **base da verdade institucional do projeto** (elevação de
 status decidida pelo Manager em 2026-08-12 — v1.0 era só "camada de
 governança sobre o PRD"; v1.1 assume o papel de documento organizador de
@@ -1297,6 +1305,26 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.15 (2026-08-17)** — Migração Parkinson canônico + dollar-bar
+  (`resolution_id=R1`) ponta a ponta. M1 remedido sob dollar bar (5
+  símbolos × 3 resoluções × 6 candidatos) — Parkinson bate GK em 12/15,
+  Manager decidiu Parkinson canônico (`AG-036::addendum_decisao_
+  manager_2026_08_17`). §11.5 ganhou linhas novas pras Fases 0-4 (Label/
+  Feature/Regime Engine + orquestração, commits `e32b7a4`/`5df33c3`/
+  `3449471`/`9a4c3c5`/`b5760fe`, 1305/1305 sem regressão) + auditoria
+  final (`audit_engineering`, 4 agentes, `d03d207`, 3 HIGH corrigidos).
+  §11.4 (linha "quando reprocessamento dollar-bar concluir") fechada —
+  Manager autorizou execução real de labels/leakage/Feature-Regime pros
+  5 símbolos (`6219d02`: 12 PASS/0 FAIL/2 sentinela nos 14 testes de
+  vazamento contra R1, todos os símbolos), mas explicitamente NÃO o
+  retreino real do Alpha nem o flip de `canonical_volatility_estimator.
+  value` — nova linha registra essa pendência como decisão do Manager,
+  não esquecida. `N_lifetime` (`audit/n_lifetime.yaml`) excedeu o
+  orçamento (63/60) — override autorizado e registrado (id 17,
+  `delta=0`). `docs/SPRINT_LOG.md` (fora deste doc, mas parte da mesma
+  correção de governança) estava desatualizado desde 2026-08-16, sem
+  nenhuma menção a essa migração inteira — corrigido na mesma sessão.
 
 - **v3.14 (2026-08-16)** — `AG-042`/`AG-037` fechados (escopo M2 +
   `grade_id`). Manager escolheu o escopo completo entre 2 opções
