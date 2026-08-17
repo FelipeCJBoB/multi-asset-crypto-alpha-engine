@@ -574,8 +574,8 @@ def test_evaluate_all_rejeita_por_below_min_qty_apos_passar_controles_1_a_5() ->
 
 
 def test_evaluate_all_not_computable_nao_impede_approved() -> None:
-    """Mesmo com os controles 17/18 NOT_COMPUTABLE, o caso base (todos os
+    """Mesmo com os controles 17/18/19 NOT_COMPUTABLE, o caso base (todos os
     outros PASS) ainda aprova — NOT_COMPUTABLE nunca bloqueia."""
     decision = evaluate_all(_make_inputs())
     assert decision.approved is True
-    assert set(decision.controls_not_computable) == {"17", "18"}
+    assert set(decision.controls_not_computable) == {"17", "18", "19"}
