@@ -2722,11 +2722,39 @@ entries:
       **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou
       `uv run pytest tests/unit/test_data_bars.py
       tests/unit/test_analysis_m2_worker.py -v` (junto com o resto da
-      suíte relacionada): **49 passed in 112,24s**. Item (3) (instrumentar
-      RSS numa tentativa real) continua pendente, sem prazo -- fora do
-      escopo desta rodada. **Item (1) (medir janela 2020) EXECUTADO E
-      MEDIDO 2026-08-16 -- resultado real, maior que qualquer coisa já
-      conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
+      suíte relacionada): **49 passed in 112,24s**.
+
+      **Item (3) (instrumentar RSS numa tentativa real) EXECUTADO
+      2026-08-16 -- achado real, não "passou tranquilo":** usuário rodou
+      `tools/diagnostics/sample_rss_during_reprocessing.ps1` em paralelo a
+      `uv run python -m src.analysis.m2_bar_comparison --symbols BTCUSDT
+      --start 2025-01-01 --end 2025-06-30` (M2 -- NÃO o runner de
+      validação dollar-only; deliberado, pra testar concorrência real sob
+      carga representativa: 1 símbolo, mas as 3 resoluções × os 3 tipos de
+      barra, 4 tasks concorrentes via `ProcessPoolExecutor`). **Terminou
+      sem travar** (diferente das 2 tentativas originais AG-033/AG-034) --
+      mas o CSV de RSS (`experiments/rss_sample_m2_btc_concorrente.csv`)
+      mostra que chegou perto do limite de verdade: **RSS total de pico
+      ~27,1GB** (21:55:26, 6 processos Python), **memória disponível do
+      sistema caindo pra ~400-860MB** em vários momentos (21:53:04,
+      21:54:05, 21:54:15, 21:54:20) de um total de ~26,4GB livres no
+      início -- margem de ~1,5-3%, não folga confortável. **Leitura
+      correta:** o redesenho de `threshold_bars_step` (achado HIGH,
+      amplificação por chunk) resolveu a causa que produzia o travamento
+      de 9h+ SEM log -- por isso este run terminou. Mas concorrência real
+      (4 processos) × 3 resoluções × 3 tipos de barra, mesmo pra 1 símbolo
+      só numa janela de 6 meses, ainda consome quase toda a RAM da
+      máquina. Escalar pra 5 símbolos concorrentes, ou uma janela maior,
+      ou menos RAM livre no host, provavelmente estouraria de novo.
+      **Recomendação nova, com dado real atrás dela agora (antes era só
+      hipótese):** antes de qualquer tentativa maior, reduzir
+      `bars_streaming_chunk_days` e/ou restringir ao caminho dollar-only
+      (não os 3 tipos) -- exatamente a Opção (2) já registrada no addendum
+      de reabertura deste achado, agora com evidência de que é necessária,
+      não só prudente.
+
+      **Item (1) (medir janela 2020) EXECUTADO E MEDIDO 2026-08-16 --
+      resultado real, maior que qualquer coisa já conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
       estendido (ver `implementacao_2026_08_16_runner_validacao` abaixo)
       contra os 5 símbolos reais. **BTCUSDT: deriva de 18,18x** entre
       `2020_h1` (jan/2020, US$1,40 bi/dia) e `etf` (mar/2024, US$25,43
