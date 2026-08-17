@@ -189,6 +189,131 @@ def _make_synthetic_bars_for_cap_test(n: int) -> pl.DataFrame:
     )
 
 
+# ============================================================================
+# vol_estimator_id — C01 sob Parkinson (2026-08-17, Fase 2, AG-036/065/074)
+# ============================================================================
+
+
+def test_compute_t1_features_vol_estimator_id_none_e_atr_wilder_explicito_sao_bit_exatos() -> None:
+    """`vol_estimator_id=None` (default) e o id explícito equivalente
+    (`f"atr_wilder_w{atr_window}"`) têm que produzir o MESMO resultado --
+    o id explícito existe pra simetria com o caminho Parkinson, não pra
+    mudar comportamento."""
+    n = 200
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(71)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+    windows = build.FeatureWindows.from_constants()
+
+    out_default = build.compute_t1_features(
+        bars, funding, oi, windows=windows, apply_warmup_mask=False
+    )
+    out_explicito = build.compute_t1_features(
+        bars,
+        funding,
+        oi,
+        windows=windows,
+        apply_warmup_mask=False,
+        vol_estimator_id=f"atr_wilder_w{windows.atr_window}",
+    )
+    assert out_default.equals(out_explicito, null_equal=True)
+
+
+def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto() -> None:
+    """`vol_estimator_id="parkinson_w{N}"` muda C01_atr_20 (e, por herança,
+    C02/A05/A13/E27f -- todas dependem de `atr_20_abs`/`atr_20_pct`), mas
+    NÃO muda nenhuma outra coluna T1/T2 (B01, B07, C06, C07, D03f, D06f,
+    E02f, E10f não dependem de C01)."""
+    n = 200
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(72)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+    windows = build.FeatureWindows.from_constants()
+
+    out_wilder = build.compute_t1_features(
+        bars, funding, oi, windows=windows, apply_warmup_mask=False
+    )
+    out_parkinson = build.compute_t1_features(
+        bars,
+        funding,
+        oi,
+        windows=windows,
+        apply_warmup_mask=False,
+        vol_estimator_id=f"parkinson_w{windows.atr_window}",
+    )
+
+    cols_afetadas = {
+        "C01_atr_20",
+        "C02_atr_20_pct",
+        "A05_ret_vol_norm_4",
+        "A13_dist_ema48_atr",
+        "E27f_cost_atr_ratio",
+    }
+    for col in cols_afetadas:
+        valid = ~out_wilder[col].is_nan() & ~out_parkinson[col].is_nan()
+        assert valid.sum() > 0
+        assert not out_wilder[col].filter(valid).equals(out_parkinson[col].filter(valid)), col
+
+    outros_cols = [c for c in build.ALL_OUTPUT_COLUMNS if c not in cols_afetadas]
+    assert out_wilder.select(outros_cols).equals(
+        out_parkinson.select(outros_cols), null_equal=True
+    )
+
+
+def test_compute_t1_features_vol_estimator_id_invalido_levanta_valueerror() -> None:
+    n = 50
+    bars = _make_synthetic_bars_for_cap_test(n)
+    funding = pl.Series("f", [None] * n, dtype=pl.Float64)
+    oi = pl.Series("oi", [None] * n, dtype=pl.Float64)
+    with pytest.raises(ValueError, match="vol_estimator_id"):
+        build.compute_t1_features(
+            bars, funding, oi, apply_warmup_mask=False, vol_estimator_id="garman_klass_w20"
+        )
+
+
+def test_build_t1_features_desabilita_min_common_history_bars_sob_bar_source_nao_time15m(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fase 2 (2026-08-17), decisão registrada na docstring de
+    `build_t1_features`: `min_common_history_bars_15m` (AG-030, calibrado
+    em contagem de barra de TEMPO) não é comparável cross-asset sob dollar
+    bar -- `build_t1_features` desabilita o cap
+    (`windows.min_common_history_bars = None`) sempre que `bar_source !=
+    "time_15m"`, em vez de herdar o número silenciosamente. Monkeypatch de
+    IO (`_sources.load_bars`/etc.) e de `FeatureWindows.from_constants`
+    (cap pequeno o bastante pra ser observável em `n=200`) -- não depende
+    de backfill local nem é `integration`."""
+    n = 200
+    cap = 100
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(73)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+
+    windows_com_cap = dataclasses.replace(
+        build.FeatureWindows.from_constants(), min_common_history_bars=cap
+    )
+    monkeypatch.setattr(
+        build.FeatureWindows, "from_constants", staticmethod(lambda: windows_com_cap)
+    )
+    monkeypatch.setattr(build._sources, "load_bars", lambda *a, **k: bars)
+    monkeypatch.setattr(build._sources, "load_funding_aligned", lambda *a, **k: funding)
+    monkeypatch.setattr(build._sources, "load_oi_aligned", lambda *a, **k: oi)
+
+    out_time15m = build.build_t1_features(
+        "BTCUSDT", "2024-01-01", "2024-01-01", apply_warmup_mask=False, bar_source="time_15m"
+    )
+    out_dollar = build.build_t1_features(
+        "BTCUSDT", "2024-01-01", "2024-01-01", apply_warmup_mask=False, bar_source="dollar_r1"
+    )
+
+    for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
+        assert out_time15m.head(n - cap)[col].is_nan().sum() == n - cap, col
+        assert out_dollar.head(n - cap)[col].is_nan().sum() < n - cap, col
+
+
 def test_warmup_zero_barras_nao_quebra() -> None:
     windows = build.FeatureWindows.from_constants()
     bars = pl.DataFrame(

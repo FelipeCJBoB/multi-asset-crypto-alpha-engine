@@ -93,26 +93,48 @@ de USO, não mudança de código nesse módulo.
 - `experiment_log.py` não grava `tf`/`grade_id` no schema — perde
   rastreabilidade de qual grade gerou cada linha.
 
-### Feature Engine (`src/features/`)
+### Feature Engine (`src/features/`) — Fase 2 IMPLEMENTADA (2026-08-17)
 
-- `build_t1_features(..., bar_source: str = "time_15m")` já tem o parâmetro
-  pra trocar fonte (`"dollar_r1"` já funciona pra CARREGAR barras) — mas
-  `group_c.c01_atr_20`/`c02_atr_20_pct` chamam `support.atr_wilder`
-  hardcoded, cegas a qual fonte foi carregada e a qualquer estimador
-  configurado.
-- `support.parkinson_vol(high, low, window)` só recebe `high`/`low` (sem
-  `close`), sai em FRAÇÃO normalizada — diferente de `atr_wilder` (precisa
-  `close`, sai em preço ABSOLUTO). `A13_dist_ema48_atr` consome a forma
-  absoluta. `parkinson_vol(...) * close` é dimensionalmente correto
-  (verificado), mas muda a distribuição numérica REAL de C01/A13 — mudança
-  de verdade, não um re-rótulo cosmético.
-- `min_common_history_bars_15m` (AG-030) já auto-documentado como gap sob
-  `bar_source="dollar_r1"` — densidade de barras/dia varia por símbolo sob
-  dollar bar, corte por contagem fixa deixa de garantir comparabilidade
-  cross-asset. Mesma constante usada em `regime/classifier.py:104`.
-- `registry.yaml` C01/C02 (e A05/A13/E27f, que citam a fórmula no próprio
-  texto) precisam de atualização textual — sem detecção automática de drift
-  entre código e YAML.
+- `group_c.c01_atr_20_parkinson(high, low, close, window)` nova —
+  `support.parkinson_vol(high, low, window) * close`, denormaliza fração
+  pra preço absoluto (mesma unidade de `c01_atr_20`/ATR de Wilder,
+  confirmado dimensionalmente correto por `project_assurance`). Muda a
+  distribuição numérica REAL de C01 (e, por herança, A05/A13/C02/E27f) —
+  mudança de verdade, testada em
+  `tests/unit/test_features_groups.py::test_c01_atr_20_parkinson_diverge_de_atr_wilder`,
+  não um re-rótulo cosmético.
+- `compute_t1_features`/`build_t1_features` ganham `vol_estimator_id: str
+  | None = None` — `None` (default) preserva ATR de Wilder bit-exato
+  (`f"atr_wilder_w{atr_window}"` explícito é equivalente); `f"parkinson_w
+  {atr_window}"` troca C01 pra Parkinson. Qualquer outro valor levanta
+  `ValueError` — nunca cai num estimador não pedido silenciosamente.
+- **Correção ao plano original nesta fase**: o item "`bar_source` default
+  muda de `time_15m` pra `dollar_r1`" NÃO foi implementado como escrito —
+  flipar o default de `build_t1_features` agora trocaria a fonte de dado
+  de TODO caller existente que ainda não passa `bar_source` explicitamente
+  (`regime/build.py::build_regimes`, que hoje não tem parâmetro de grade
+  nenhum — ver Fase 3 abaixo), silenciosamente, ANTES desses callers
+  estarem prontos/testados pra dollar bar. Mesma disciplina de "default
+  bit-exato, opt-in explícito" usada em `Bars`/`CPCVConfig`/`LabelConfig`
+  nas Fases 0/1 — o flip real de produção (`bar_source`/
+  `vol_estimator_id` passados explicitamente por `dataset.py`/
+  `pipeline.py`) fica pra Fase 5, depois que Regime Engine (Fase 3) e
+  orquestração (Fase 4) também suportarem a grade nova.
+- `min_common_history_bars_15m` (AG-030) — decisão tomada: `build_t1_
+  features` desabilita o cap (`windows.min_common_history_bars = None`)
+  sempre que `bar_source != "time_15m"`, em vez de herdar silenciosamente
+  um número calibrado em contagem de barra de TEMPO. Medir um equivalente
+  nativo pra dollar bar é trabalho de medição novo, fora de escopo desta
+  migração (aplica decisão já medida, não abre uma nova) — dívida
+  registrada, não bloqueia. Mesma constante em `regime/classifier.py:104`
+  ainda usa o valor de `constants.yaml` sem branch — ver Fase 3.
+- `registry.yaml` C01/C02/A05/A13/E27f atualizados com nota sobre a
+  dependência do estimador selecionado.
+- Testes novos: `tests/unit/test_features_groups.py` (3) +
+  `tests/unit/test_features_build.py` (4) — dimensional, causal, isolamento
+  de coluna (Parkinson só muda C01/C02/A05/A13/E27f, mais nenhuma outra),
+  `ValueError` em id inválido, e desabilitação do cap sob dollar bar via
+  monkeypatch (determinístico, não depende de backfill local).
 
 ### Regime Engine — precisa de código, não só teste (correção de mapeamento anterior)
 

@@ -13,7 +13,7 @@ exatamente essa propriedade — ver o motivo detalhado lá.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import polars as pl
@@ -112,6 +112,7 @@ def compute_t1_features(
     *,
     windows: FeatureWindows | None = None,
     apply_warmup_mask: bool = True,
+    vol_estimator_id: str | None = None,
 ) -> pl.DataFrame:
     """Núcleo puro (sem IO) do Feature Engine T1.
 
@@ -123,6 +124,19 @@ def compute_t1_features(
     `_sources.asof_align_backward`, que faz o asof-join causal ANTES desta
     função ser chamada; esta função não sabe nada sobre asof-join, só
     consome os arrays já alinhados.
+
+    `vol_estimator_id` (2026-08-17, AG-036/065) escolhe qual estimador
+    calcula C01 (`atr_20_abs`, insumo de A05/A13/C02/E27f) — `None`
+    (default) preserva bit-exato todo caller existente (`group_c.
+    c01_atr_20`, ATR de Wilder). Só dois valores são aceitos hoje, ambos
+    amarrados a `windows.atr_window` (não existe conversão de janela entre
+    estimadores ainda medida — mesma disciplina de `LabelConfig.
+    estimator_id`, CLAUDE.md B23): `f"atr_wilder_w{windows.atr_window}"`
+    (equivalente explícito ao default) ou `f"parkinson_w{windows.
+    atr_window}"` (`group_c.c01_atr_20_parkinson` — muda a distribuição
+    numérica de C01 de verdade, ver docstring daquela função). Qualquer
+    outro valor levanta `ValueError` — nunca cai num estimador não
+    solicitado silenciosamente.
     """
     if windows is None:
         windows = FeatureWindows.from_constants()
@@ -141,7 +155,17 @@ def compute_t1_features(
     if n > 1:
         log_return_1[1:] = np.log(close[1:] / close[:-1])
 
-    atr_20_abs = group_c.c01_atr_20(high, low, close, windows.atr_window)
+    atr_wilder_id = f"atr_wilder_w{windows.atr_window}"
+    parkinson_id = f"parkinson_w{windows.atr_window}"
+    if vol_estimator_id is None or vol_estimator_id == atr_wilder_id:
+        atr_20_abs = group_c.c01_atr_20(high, low, close, windows.atr_window)
+    elif vol_estimator_id == parkinson_id:
+        atr_20_abs = group_c.c01_atr_20_parkinson(high, low, close, windows.atr_window)
+    else:
+        raise ValueError(
+            f"vol_estimator_id={vol_estimator_id!r} não suportado -- esperado None, "
+            f"{atr_wilder_id!r} ou {parkinson_id!r}"
+        )
     atr_20_pct = group_c.c02_atr_20_pct(atr_20_abs, close)
     ema_48 = support.ema(close, windows.ema_window)
 
@@ -206,6 +230,7 @@ def build_t1_features(
     *,
     apply_warmup_mask: bool = True,
     bar_source: str = "time_15m",
+    vol_estimator_id: str | None = None,
 ) -> pl.DataFrame:
     """Ponto de entrada com IO: carrega barras + fontes auxiliares
     alinhadas e chama `compute_t1_features`. `start`/`end` devem incluir
@@ -230,28 +255,31 @@ def build_t1_features(
     crashar sobre dollar bar, mas isso é teste de FIAÇÃO, não prova de
     validade estatística.
 
-    **Achado adicional de revisão independente (`project_assurance`,
-    2026-08-16), FORA da enumeração já auditada de `AG-043`:**
-    `FeatureWindows.from_constants().min_common_history_bars` (`AG-030`,
-    `min_common_history_bars_15m=164256`) é aplicado incondicionalmente a
-    C07/D03f/E02f e à recomputação interna de `er_quantile`/`econ_quantile`
-    também sob `bar_source="dollar_r1"` — essa constante foi calibrada
-    especificamente como "nº de barras de 15m entre `SYMBOL_START_DATE` e
-    `END_DATE`" pra garantir comparabilidade cross-asset em TEMPO DE
-    RELÓGIO (AG-030). Sob dollar bar a densidade de barras/dia varia por
-    símbolo/threshold — truncar pras "últimas 164.256 barras" já não
-    corresponde ao mesmo período de calendário entre ativos, silenciosamente.
-    Mesma classe de "premissa de relógio escondida" que os 3 pontos de
-    `AG-043` já cobrem, mas não estava nomeada lá — registrar aqui até o
-    Manager decidir se entra formalmente no guarda-chuva de `AG-043` ou
-    vira entrada própria (não é decisão pra fechar sozinho em código).
+    **Decisão registrada 2026-08-17 (Fase 2 da migração Parkinson+dollar-bar,
+    fecha o achado de revisão independente `project_assurance` de
+    2026-08-16 citado acima em versões anteriores desta docstring):**
+    `min_common_history_bars_15m=164256` (AG-030) foi calibrado como "nº de
+    barras de 15m entre `SYMBOL_START_DATE` e `END_DATE`" — uma contagem em
+    TEMPO DE RELÓGIO. Sob dollar bar a densidade de barras/dia varia por
+    símbolo/threshold, então essa contagem não corresponde ao mesmo período
+    de calendário entre ativos. Medir um equivalente nativo ("nº de dollar
+    bars comparável cross-asset") é trabalho novo de medição, não
+    estipulado (B23) — fora do escopo desta migração, que aplica uma
+    decisão já medida, não abre uma nova. Decisão: sob `bar_source !=
+    "time_15m"`, o corte é DESABILITADO (`windows.min_common_history_bars
+    = None` — ver corpo da função abaixo), explicitamente, em vez de herdar
+    silenciosamente um número calibrado pra outra grade. C07/D03f/E02f
+    ficam expansivas desde a origem do ativo sob dollar bar, sem cap —
+    dívida registrada (`audit/architecture_gaps_log.yaml`, addendum
+    AG-030), não bloqueia esta fase.
 
-    AG-030 (T0.5, Opção A): `windows.min_common_history_bars` (default
-    `FeatureWindows.from_constants()` → `min_common_history_bars_15m`,
-    `config/constants.yaml`) capa a janela expansiva de C07/D03f/E02f no
-    histórico MÍNIMO comum entre os 5 ativos, contado a partir do FIM de
-    `bars_15m` — ou seja, relativo a `start`/`end` passados aqui, não a uma
-    data absoluta hardcoded. Chamar com `start = SYMBOL_START_DATE[symbol]`
+    AG-030 (T0.5, Opção A): sob `bar_source="time_15m"`,
+    `windows.min_common_history_bars` (default `FeatureWindows.
+    from_constants()` → `min_common_history_bars_15m`, `config/
+    constants.yaml`) capa a janela expansiva de C07/D03f/E02f no histórico
+    MÍNIMO comum entre os 5 ativos, contado a partir do FIM de `bars_15m`
+    — ou seja, relativo a `start`/`end` passados aqui, não a uma data
+    absoluta hardcoded. Chamar com `start = SYMBOL_START_DATE[symbol]`
     (histórico completo do ativo, convenção já usada pelo pipeline real)
     produz o efeito pretendido (BTC trunca as barras mais antigas; os 4
     alts, já dentro do orçamento, ficam inalterados); chamar com um `start`
@@ -261,14 +289,23 @@ def build_t1_features(
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
+    windows = FeatureWindows.from_constants()
+    if bar_source != "time_15m":
+        windows = replace(windows, min_common_history_bars=None)
     logger.info(
         "features.build_t1_features",
         symbol=symbol,
         start=str(start),
         end=str(end),
         bar_source=bar_source,
+        vol_estimator_id=vol_estimator_id,
         n_bars=bars_15m.height,
     )
     return compute_t1_features(
-        bars_15m, funding_aligned, oi_aligned, apply_warmup_mask=apply_warmup_mask
+        bars_15m,
+        funding_aligned,
+        oi_aligned,
+        windows=windows,
+        apply_warmup_mask=apply_warmup_mask,
+        vol_estimator_id=vol_estimator_id,
     )

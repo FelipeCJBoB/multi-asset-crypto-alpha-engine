@@ -129,6 +129,42 @@ def test_b07_faixa_0_1() -> None:
 
 
 # ============================================================================
+# C01 — variante Parkinson (2026-08-17, AG-036/065/074)
+# ============================================================================
+
+
+def test_c01_atr_20_parkinson_denormaliza_para_unidade_de_preco() -> None:
+    """`c01_atr_20_parkinson` == `support.parkinson_vol(...) * close` --
+    fiação, não mecanismo (o mecanismo de `parkinson_vol` já é testado em
+    `test_features_support.py`). Prova a denormalização pra unidade de
+    preço absoluta que `project_assurance` (2026-08-17) confirmou."""
+    bars = _make_ohlcv(300)
+    out = group_c.c01_atr_20_parkinson(bars["high"], bars["low"], bars["close"], window=20)
+    expected = support.parkinson_vol(bars["high"], bars["low"], window=20) * bars["close"]
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_c01_atr_20_parkinson_nao_negativo() -> None:
+    bars = _make_ohlcv(300)
+    out = group_c.c01_atr_20_parkinson(bars["high"], bars["low"], bars["close"], window=20)
+    valid = out[~np.isnan(out)]
+    assert valid.size > 0
+    assert (valid >= 0.0).all()
+
+
+def test_c01_atr_20_parkinson_diverge_de_atr_wilder() -> None:
+    """Prova que a mudança de estimador é real, não um re-rótulo do mesmo
+    número (docstring de `c01_atr_20_parkinson`): sob a mesma entrada
+    sintética, Parkinson e ATR de Wilder não coincidem barra a barra."""
+    bars = _make_ohlcv(300)
+    parkinson = group_c.c01_atr_20_parkinson(bars["high"], bars["low"], bars["close"], window=20)
+    wilder = group_c.c01_atr_20(bars["high"], bars["low"], bars["close"], window=20)
+    valid = ~np.isnan(parkinson) & ~np.isnan(wilder)
+    assert valid.sum() > 0
+    assert not np.allclose(parkinson[valid], wilder[valid])
+
+
+# ============================================================================
 # C06 / C07
 # ============================================================================
 

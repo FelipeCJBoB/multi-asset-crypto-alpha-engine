@@ -74,6 +74,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-08
+  nota: "atr_20_pct herda o estimador de C01_atr_20 (2026-08-17) — sob vol_estimator_id='parkinson_w20' o valor de A05 muda, a fórmula acima não."
 
 - id: A13_dist_ema48_atr
   tier: T1
@@ -90,6 +91,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-08
+  nota: "atr_20_abs herda o estimador de C01_atr_20 (2026-08-17) — sob vol_estimator_id='parkinson_w20' o valor de A13 muda, a fórmula acima não."
 
 - id: B01_rsi_14
   tier: T1
@@ -131,19 +133,19 @@
 - id: C01_atr_20
   tier: T2
   group: C
-  formula: "ATR de Wilder (janela 20), absoluto (unidade de preço)"
+  formula: "ATR de Wilder (janela 20), absoluto (unidade de preço) — default (vol_estimator_id=None). Sob vol_estimator_id='parkinson_w20' (2026-08-17, AG-036/065/074): parkinson_vol(high, low, 20) * close, mesma unidade, distribuição numérica diferente (não cosmético — ver group_c.c01_atr_20_parkinson)"
   sources: [D03]
   lookback_bars: 20
   min_warmup_bars: 2000
   tf: 15m
   dtype: float64
   range: [0.0, .inf]
-  nan_policy: "NaN até o seed de Wilder (20 barras); null antes de min_warmup_bars"
-  causal_proof: "wilder_smooth é recursivo estritamente para trás — testado em tests/unit/test_features_support.py::test_atr_wilder_causalidade"
+  nan_policy: "NaN até o seed de Wilder (20 barras) ou até a janela de Parkinson fechar (20 barras); null antes de min_warmup_bars"
+  causal_proof: "wilder_smooth é recursivo estritamente para trás; parkinson_vol é média móvel de ln(H/L)^2 em janela <= t — testado em tests/unit/test_features_support.py::test_atr_wilder_causalidade e test_parkinson_vol_causalidade"
   parity_tested: true
   version: v1
   added: 2026-08-08
-  nota: "Não é T1 isolada — insumo de A05 (via atr_20_pct), A13, E27f. Registrada por completude de catálogo (§2.14: 'toda feature, em qualquer tier')."
+  nota: "Não é T1 isolada — insumo de A05 (via atr_20_pct), A13, E27f. Registrada por completude de catálogo (§2.14: 'toda feature, em qualquer tier'). Estimador selecionável via build_t1_features(vol_estimator_id=...) desde 2026-08-17 — default preserva ATR de Wilder bit-exato."
 
 - id: C02_atr_20_pct
   tier: T2
@@ -160,7 +162,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-08
-  nota: "Insumo de A05 e E27f. Registrada por completude de catálogo."
+  nota: "Insumo de A05 e E27f. Registrada por completude de catálogo. Fórmula não muda com o estimador de C01 (2026-08-17) — o valor numérico muda porque atr_20_abs muda, herdado, não recalculado aqui."
 
 - id: C06_vol_ratio_12_96
   tier: T1
@@ -293,6 +295,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-08
+  nota: "atr_20_pct herda o estimador de C01_atr_20 (2026-08-17) — sob vol_estimator_id='parkinson_w20' o valor de E27f muda (regime econômico, cost_atr_ratio), a fórmula acima não."
   nota: >
     Única feature de T1 já com tf=15m corretamente anotado no PRD original
     (§2.6) — ver NOTA DE TF no topo deste arquivo. custo_round_trip_bps
