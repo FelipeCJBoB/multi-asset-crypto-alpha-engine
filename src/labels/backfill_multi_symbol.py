@@ -51,6 +51,7 @@ from typing import Final
 
 import structlog
 
+from src.features.volatility import ParkinsonEstimator, VolatilityEstimator
 from src.labels._paths import labels_symbol_tf_dir
 from src.labels.triple_barrier import (
     DateLike,
@@ -71,6 +72,23 @@ ALT_SYMBOLS: Final[tuple[str, ...]] = ("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT
 ALT_START_DATE: Final[str] = "2021-12-01"
 END_DATE: Final[str] = "2026-08-07"
 
+# Fase 5 (2026-08-17, AG-036/065) -- janela real por símbolo pro
+# reprocessamento R1+Parkinson, medida contra os labels 15m REAIS já em
+# disco (`data/labels/{symbol}/15m/v1/labels.parquet`, `t0.min()`), não
+# estipulada: BTCUSDT começa em 2020-01-01 (2 anos antes dos alts),
+# confirmado dentro da cobertura real de `dollar_bars_r1` (2019-12-31 a
+# 2026-08-07). Os 4 alts reusam `ALT_START_DATE` -- mesma janela de
+# sempre, também dentro da cobertura real de `dollar_bars_r1` pra eles
+# (2021-12-01 a 2026-08-07).
+ALL_SYMBOLS: Final[tuple[str, ...]] = ("BTCUSDT", *ALT_SYMBOLS)
+SYMBOL_START_DATE: Final[dict[str, str]] = {
+    "BTCUSDT": "2020-01-01",
+    "ETHUSDT": ALT_START_DATE,
+    "SOLUSDT": ALT_START_DATE,
+    "BNBUSDT": ALT_START_DATE,
+    "XRPUSDT": ALT_START_DATE,
+}
+
 
 def build_and_write_labels_for_symbol(
     symbol: str,
@@ -79,17 +97,32 @@ def build_and_write_labels_for_symbol(
     *,
     version: str = "v1",
     tf: str = "15m",
+    resolution_id: str | None = None,
     config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
 ) -> Path:
     """Núcleo de 1 símbolo — `build_labels_for_symbol` +
     `write_labels_atomic(dest_dir=labels_symbol_tf_dir(...))`, o par que
     AG-006 encontrou sem nenhum caller de produção. `historical_filters_
     fallback=True` sempre, não exposto como parâmetro — ver item 3 da
     docstring do módulo, não é uma escolha por combinação, é a única opção
-    viável dado que só existe 1 snapshot de filtros no disco."""
+    viável dado que só existe 1 snapshot de filtros no disco.
+
+    `resolution_id`/`estimator` (2026-08-17, Fase 5 da migração
+    Parkinson+dollar-bar) — `None`/`None` (default) preserva bit-exato
+    todo caller existente (`run_and_write_labels_for_alts`, grade de
+    tempo, `ATRWilderEstimator` implícito de `LabelConfig.from_constants`).
+    Setar `resolution_id` SEM também passar `estimator` levantaria dentro
+    de `build_labels_for_symbol` (AG-036: `estimator` é obrigatório sob
+    dollar bar) — falha alto lá, não escondida aqui. `dest_dir` agora usa
+    `resolution_id` (quando setado) como segmento de grade em vez de
+    `tf` — mesma guarda anti-colisão de `labels_symbol_tf_dir` (Fase 1):
+    sem isso, escrever sob `resolution_id="R1"` com `tf` no default
+    `"15m"` colidiria com `data/labels/{symbol}/15m/v1/`, os labels REAIS
+    de produção dos 5 `model_id` já treinados."""
     cfg = config if config is not None else LabelConfig.from_constants(tf=tf)
     labels = build_labels_for_symbol(
-        symbol, start, end, config=cfg, historical_filters_fallback=True
+        symbol, start, end, config=cfg, estimator=estimator, historical_filters_fallback=True
     )
     # AG-029 (audit/architecture_gaps_log.yaml) -- assert_label_invariants
     # existia desde §3.8 mas nunca era chamada no caminho real de escrita,
@@ -106,11 +139,16 @@ def build_and_write_labels_for_symbol(
             f"build_and_write_labels_for_symbol: invariante de label violada "
             f"para {symbol}/{tf} (AG-029) -- {exc}"
         ) from exc
-    dest_dir = labels_symbol_tf_dir(symbol, version, tf=tf)
+    dest_dir = labels_symbol_tf_dir(symbol, version, tf=tf, resolution_id=resolution_id)
     dest_path = write_labels_atomic(labels, version=version, dest_dir=dest_dir)
     logger.info(
         "labels.backfill_multi_symbol.symbol_done",
-        symbol=symbol, tf=tf, version=version, n_rows=labels.height, dest=str(dest_path),
+        symbol=symbol,
+        tf=tf,
+        resolution_id=resolution_id,
+        version=version,
+        n_rows=labels.height,
+        dest=str(dest_path),
     )
     return dest_path
 
@@ -162,6 +200,83 @@ def run_and_write_labels_for_alts(
     logger.info(
         "labels.backfill_multi_symbol.done",
         n_symbols=len(results), results={k: str(v) for k, v in results.items()},
+    )
+    return results
+
+
+def run_and_write_labels_dollar_bar_parkinson(
+    *,
+    symbols: tuple[str, ...] = ALL_SYMBOLS,
+    end: DateLike = END_DATE,
+    version: str = "v1",
+    resolution_id: str = "R1",
+    vol_estimator_window: int = 20,
+    max_workers: int | None = None,
+) -> dict[str, Path]:
+    """Fase 5 (2026-08-17, `docs/refactor_parkinson_canonico.md`) --
+    reprocessa `labels/` pros 5 símbolos sob `resolution_id="R1"` +
+    `ParkinsonEstimator`, mesmo padrão de paralelização de
+    `run_and_write_labels_for_alts` (cada símbolo independente).
+
+    Cobre BTCUSDT TAMBÉM (diferente de `run_and_write_labels_for_alts`,
+    que exclui BTCUSDT de propósito -- ele já tinha `labels/` de grade de
+    TEMPO; aqui os 5 precisam da grade NOVA, nenhum tem ainda). `start`
+    por símbolo vem de `SYMBOL_START_DATE` (medido contra os labels 15m
+    reais em disco, não estipulado) -- BTCUSDT começa 2 anos antes dos
+    4 alts, cada um dentro da cobertura real de `data/capacity/
+    dollar_bars_r1/{symbol}/` (confirmado antes desta rodada).
+
+    `vol_estimator_window=20` -- mesmo `atr_window` (`constants.yaml`) e
+    mesma convenção `parkinson_w{N}` usada por M1 (`AG-036`/`AG-065`,
+    `experiments/volatility_dollar_bar_report.json`: Parkinson venceu
+    especificamente em `window=20`, não um valor novo escolhido aqui.
+
+    Escreve em `data/labels/{symbol}/R1/v1/labels.parquet` (path novo,
+    guarda anti-colisão de `labels_symbol_tf_dir` — nunca
+    `.../15m/v1/`, onde vivem os labels reais dos 5 `model_id` de
+    produção já treinados). `mark_price_klines_1m` já existe pros 5
+    símbolos (confirmado antes desta rodada, `ls data/capacity/
+    mark_price_klines_1m/{symbol}/`) — sem pré-requisito de download
+    pendente, diferente de `run_and_write_labels_for_alts` (item 1 da
+    docstring do módulo, já resolvido em 2026-08-13)."""
+    workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    logger.info(
+        "labels.backfill_multi_symbol.dollar_bar_parkinson_starting",
+        n_symbols=len(symbols),
+        end=str(end),
+        resolution_id=resolution_id,
+        vol_estimator_window=vol_estimator_window,
+        max_workers=workers,
+    )
+
+    results: dict[str, Path] = {}
+    with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
+        future_to_symbol = {}
+        for symbol in symbols:
+            start = SYMBOL_START_DATE[symbol]
+            estimator = ParkinsonEstimator(window=vol_estimator_window)
+            cfg = LabelConfig.from_constants(
+                estimator_id=estimator.estimator_id, resolution_id=resolution_id
+            )
+            future = executor.submit(
+                build_and_write_labels_for_symbol,
+                symbol,
+                start,
+                end,
+                version=version,
+                resolution_id=resolution_id,
+                config=cfg,
+                estimator=estimator,
+            )
+            future_to_symbol[future] = symbol
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            results[symbol] = future.result()
+
+    logger.info(
+        "labels.backfill_multi_symbol.dollar_bar_parkinson_done",
+        n_symbols=len(results),
+        results={k: str(v) for k, v in results.items()},
     )
     return results
 

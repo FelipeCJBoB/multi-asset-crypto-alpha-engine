@@ -702,6 +702,30 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "rodada de janela cheia (ex. t05_common_window)"
             ),
         )
+        parser.add_argument(
+            "--tf",
+            default=None,
+            help=(
+                "grade de tempo explicita (ex. 30m/1h) -- default None preserva "
+                "o caminho legado plano (mesmo sentinel de sempre, ver "
+                "docstring de run_layer1_sprint)"
+            ),
+        )
+        parser.add_argument(
+            "--resolution-id",
+            default=None,
+            help=(
+                "grade dollar-bar (ex. R1, Fase 5 da migracao "
+                "Parkinson+dollar-bar) -- vence sobre --tf quando setado, mesmo "
+                "desenho de UM parametro de grade das Fases 2-4"
+            ),
+        )
+        parser.add_argument(
+            "--vol-estimator-id",
+            default=None,
+            help='estimador de volatilidade explicito (ex. "parkinson_w20") -- '
+            "default None preserva ATRWilder bit-exato",
+        )
         return parser.parse_args()
 
     def _run_cli() -> int:
@@ -709,6 +733,9 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         tag = f"_{args.run_tag}" if args.run_tag else ""
         report = run_layer1_sprint(
             symbol=args.symbol,
+            tf=args.tf,
+            resolution_id=args.resolution_id,
+            vol_estimator_id=args.vol_estimator_id,
             t0_start=args.t0_start,
             t0_end=args.t0_end,
             model_id_camada1=f"{MODEL_ID_CAMADA1}{tag}",

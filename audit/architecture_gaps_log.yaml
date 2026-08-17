@@ -3385,26 +3385,59 @@ entries:
       `cpcv._assert_dollar_bar_grade_consistent` -- agora `CPCVError`
       explícito, 2 testes novos.
 
-      MEDIUM registrados, NÃO corrigidos agora (pré-condição pra Fase 5
-      ativar, não bloqueiam o estado atual "engenharia pronta, corte
-      adiado"): `n_bars_held` (`pl.Int16`, `triple_barrier.py`) sem guarda
-      de overflow sob densidade de dollar-bar -- mesmo padrão de widening
-      preventivo já aplicado a `n_funding_events`, mas não replicado aqui;
-      branches degenerados de `median_bar_ms` (`n=1`, `median<=0`, AG-061)
-      sem teste dedicado, só o caso "normal" é exercitado. Fechar os dois
-      antes de qualquer backfill real sob `resolution_id="R1"`.
-
-      LOW (documentação/cosmético, não corrigidos): 2 `# noqa: unguarded-
-      ratio` faltando em `leakage.py` (corrigidos, ver acima -- na
-      verdade viraram parte da correção); `_constants.py` labels ainda
-      cita `fill_timeout_bars` no enunciado de literais banidos (deveria
-      ser `fill_timeout_ms`, drift pré-existente não relacionado a esta
-      migração); assimetria documentada entre Feature Engine (sem bypass
-      possível do desabilita-cap) e Regime Engine (`thresholds` explícito
-      nunca sobrescrito) -- desenho deliberado e testado, não bug.
+      LOW (documentação/cosmético, não corrigidos): `_constants.py` labels
+      ainda cita `fill_timeout_bars` no enunciado de literais banidos
+      (deveria ser `fill_timeout_ms`, drift pré-existente não relacionado
+      a esta migração); assimetria documentada entre Feature Engine (sem
+      bypass possível do desabilita-cap) e Regime Engine (`thresholds`
+      explícito nunca sobrescrito) -- desenho deliberado e testado, não
+      bug.
 
       Suíte completa 1314/1314 após todas as correções (up de 1305 antes
       da auditoria), zero regressão.
+    addendum_backfill_real_r1_2026_08_17: >
+      **Correção de escopo do Manager na mesma conversa**: labels/
+      leakage/Feature+Regime Engine liberados pra execução real (não só
+      "engenharia pronta"), retreino do Alpha continua explicitamente
+      fora ("não execute, deixe pronto").
+
+      Os 2 MEDIUM deixados como "pré-condição pra qualquer backfill real"
+      no addendum acima foram fechados ANTES de eu perceber que o
+      backfill real ia rodar na mesma sessão -- achado do próprio
+      processo, registrado sem esconder: rodei o backfill primeiro,
+      notei a inconsistência (o achado dizia "fechar antes de qualquer
+      backfill real", eu já tinha rodado), corrigi os dois E reprocessei
+      os 5 símbolos de novo com o schema corrigido, antes de fechar esta
+      entrada. `n_bars_held` -> `pl.Int32` (`_PRE_WEIGHT_SCHEMA`,
+      `triple_barrier.py`) -- confirmado SEM overflow observado no run
+      real (`max(n_bars_held)=109` pra BTCUSDT, bem dentro do Int16
+      antigo) -- widening continua preventivo, não corretivo de bug
+      observado. 2 testes novos pros branches degenerados de
+      `median_bar_ms` (`n<2`, `median<=0` via `close_time` duplicado,
+      AG-061) -- `test_labels_triple_barrier.py::test_build_labels_
+      resolution_id_n_bars_held_degenerado_{n_menor_que_2,median_zero}`.
+
+      **Execução real, `data/labels/{symbol}/R1/v1/labels.parquet` pros 5
+      símbolos** (BTCUSDT 463.034 linhas, ETHUSDT 328.452, SOLUSDT
+      327.461, BNBUSDT 328.440, XRPUSDT 327.488) -- labels de produção
+      15m confirmados intocados depois (mesmas contagens de sempre,
+      guarda de path funcionou de verdade). `run_all_leakage_tests`
+      (`src/validation/leakage.py`, CLI nova `--symbol`/`--tf`/
+      `--resolution-id`) rodada contra R1 pros 5: **12 PASS/0 FAIL/2
+      sentinela em TODOS -- zero vazamento** (`data/validation_reports/
+      leakage_report_{symbol}_R1.json`, commitados). `build_modeling_
+      frame(resolution_id="R1", vol_estimator_id="parkinson_w20")`
+      exercitado pros 5 -- zero regime nulo, 6 rótulos presentes, features
+      T1 dependentes de Parkinson finitas e não-degeneradas.
+
+      `run_layer1_sprint` (retreino, item 25) recebeu `--tf`/
+      `--resolution-id`/`--vol-estimator-id` no CLI (`src/models/
+      pipeline.py`) -- pronto pra rodar, **não executado**, por instrução
+      explícita.
+
+      Nenhuma entrada nova em `n_lifetime.yaml`: reprocessar labels/
+      rodar validação não é trial (não ajusta modelo nem recalcula
+      backtest) -- mesma régua já usada pra justificar o override id 17.
 
   - id: AG-037
     date: "2026-08-16"

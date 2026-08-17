@@ -77,9 +77,17 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
     def _fake_write_labels_atomic(
         labels: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
     ) -> Path:
+        # Sem IO real de propósito (achado ao rodar o smoke test da Fase 5,
+        # 2026-08-17): a versão anterior deste fake fazia `dest_dir.mkdir(...)`
+        # sobre o path de PRODUÇÃO real (`data/labels/{symbol}/{grade}/v1/`),
+        # deixando diretório vazio pra trás quando o path ainda não existia --
+        # inofensivo pro grade de tempo (path já existia, mkdir virava no-op),
+        # mas poluiu `data/labels/BTCUSDT/R1/v1/` de verdade, exatamente o
+        # path que o backfill real (Fase 5) ia escrever depois. Este teste só
+        # precisa provar ROTEAMENTO (dest_dir correto), não criar nada no
+        # disco real.
         write_calls.append({"version": version, "dest_dir": dest_dir})
         assert dest_dir is not None
-        dest_dir.mkdir(parents=True, exist_ok=True)
         return dest_dir / "labels.parquet"
 
     monkeypatch.setattr(bms, "build_labels_for_symbol", _fake_build_labels_for_symbol)
@@ -142,3 +150,113 @@ def test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc(
 
     assert set(results) == set(bms.ALT_SYMBOLS)
     assert set(seen_symbols) == set(bms.ALT_SYMBOLS)
+
+
+# ============================================================================
+# Fase 5 (2026-08-17) -- resolution_id/estimator, run_and_write_labels_
+# dollar_bar_parkinson
+# ============================================================================
+
+
+def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa_estimator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`resolution_id="R1"` produz um `dest_dir` DIFERENTE de `tf="15m"`
+    (guarda anti-colisão, Fase 1) -- e `estimator` chega de fato até
+    `build_labels_for_symbol`, não é descartado."""
+    from src.features.volatility import ParkinsonEstimator
+
+    build_calls: list[dict[str, Any]] = []
+    write_calls: list[dict[str, Any]] = []
+
+    def _fake_build_labels_for_symbol(
+        symbol: str,
+        start: Any,
+        end: Any,
+        *,
+        config: tb.LabelConfig | None = None,
+        estimator: Any = None,
+        historical_filters_fallback: bool = False,
+    ) -> pl.DataFrame:
+        build_calls.append(
+            {
+                "resolution_id": config.resolution_id if config is not None else None,
+                "estimator_id": estimator.estimator_id if estimator is not None else None,
+            }
+        )
+        return _empty_labels()
+
+    def _fake_write_labels_atomic(
+        labels: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
+    ) -> Path:
+        # Sem IO real de propósito -- ver comentário do fake irmão acima
+        # (achado do smoke test da Fase 5: mkdir sobre path de produção real
+        # deixa diretório vazio pra trás).
+        write_calls.append({"dest_dir": dest_dir})
+        assert dest_dir is not None
+        return dest_dir / "labels.parquet"
+
+    monkeypatch.setattr(bms, "build_labels_for_symbol", _fake_build_labels_for_symbol)
+    monkeypatch.setattr(bms, "write_labels_atomic", _fake_write_labels_atomic)
+
+    estimator = ParkinsonEstimator(window=20)
+    cfg = tb.LabelConfig.from_constants(estimator_id=estimator.estimator_id, resolution_id="R1")
+    bms.build_and_write_labels_for_symbol(
+        "BTCUSDT", "2020-01-01", "2026-08-06", resolution_id="R1", config=cfg, estimator=estimator
+    )
+
+    assert build_calls == [{"resolution_id": "R1", "estimator_id": "parkinson_w20"}]
+    dest_dir = write_calls[0]["dest_dir"]
+    assert "R1" in dest_dir.parts
+    assert "15m" not in dest_dir.parts
+    assert dest_dir == labels_symbol_tf_dir("BTCUSDT", "v1", resolution_id="R1")
+
+
+def test_run_and_write_labels_dollar_bar_parkinson_cobre_os_5_simbolos_incluindo_btc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diferente de `run_and_write_labels_for_alts` (exclui BTCUSDT de
+    propósito), esta função cobre os 5 -- nenhum símbolo tem `labels/`
+    sob R1 ainda."""
+    assert bms.ALL_SYMBOLS == ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
+    assert set(bms.SYMBOL_START_DATE) == set(bms.ALL_SYMBOLS)
+    assert bms.SYMBOL_START_DATE["BTCUSDT"] == "2020-01-01"
+    for alt in bms.ALT_SYMBOLS:
+        assert bms.SYMBOL_START_DATE[alt] == bms.ALT_START_DATE
+
+    calls: list[dict[str, Any]] = []
+
+    def _fake_build_and_write(
+        symbol: str,
+        start: Any,
+        end: Any,
+        *,
+        version: str = "v1",
+        resolution_id: str | None = None,
+        config: Any = None,
+        estimator: Any = None,
+    ) -> Path:
+        calls.append(
+            {
+                "symbol": symbol,
+                "start": start,
+                "resolution_id": resolution_id,
+                "estimator_id": estimator.estimator_id if estimator is not None else None,
+                "grade_id": config.resolution_id if config is not None else None,
+            }
+        )
+        return Path(f"/fake/{symbol}/labels.parquet")
+
+    monkeypatch.setattr(bms, "build_and_write_labels_for_symbol", _fake_build_and_write)
+    monkeypatch.setattr(bms, "ProcessPoolExecutor", ThreadPoolExecutor)
+
+    results = bms.run_and_write_labels_dollar_bar_parkinson(max_workers=1)
+
+    assert set(results) == set(bms.ALL_SYMBOLS)
+    calls_by_symbol = {c["symbol"]: c for c in calls}
+    assert set(calls_by_symbol) == set(bms.ALL_SYMBOLS)
+    for symbol, call in calls_by_symbol.items():
+        assert call["start"] == bms.SYMBOL_START_DATE[symbol]
+        assert call["resolution_id"] == "R1"
+        assert call["grade_id"] == "R1"
+        assert call["estimator_id"] == "parkinson_w20"

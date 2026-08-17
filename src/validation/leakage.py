@@ -961,11 +961,49 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
     # `python -m src.validation.leakage`; um entry point real
     # (`scripts/run_validation_leakage.py`) chamaria `configure_logging()`
     # antes de invocar o núcleo.
+    import argparse
     import sys
 
+    def _parse_args() -> argparse.Namespace:
+        parser = argparse.ArgumentParser(
+            description=(
+                "Roda os 14 testes de vazamento (§11.5). Sem argumentos: "
+                "comportamento identico ao de sempre (BTCUSDT, grade 15m, "
+                "escreve em data/validation_reports/leakage_report.json)."
+            )
+        )
+        parser.add_argument("--symbol", default="BTCUSDT")
+        parser.add_argument("--tf", default="15m")
+        parser.add_argument(
+            "--resolution-id",
+            default=None,
+            help="grade dollar-bar (ex. R1) -- vence sobre --tf quando setado, "
+            "mesmo desenho de UM parametro de grade das Fases 2-4",
+        )
+        return parser.parse_args()
+
     def _run_cli() -> int:
-        test_results = run_all_leakage_tests()
-        write_leakage_report_atomic(test_results)
+        # `resolution_id`/`tf`/`symbol` (2026-08-17, Fase 5 da migração
+        # Parkinson+dollar-bar) -- antes desta mudança, run_all_leakage_
+        # tests() era chamada SEM argumento nenhum aqui, sempre BTCUSDT/15m
+        # -- não havia como rodar os 14 testes de verdade contra R1 pela
+        # CLI (só via chamada Python direta). Defaults preservam bit-exato:
+        # symbol="BTCUSDT"/tf="15m"/resolution_id=None reproduz a mesma
+        # chamada de sempre, mesmo dest_path default.
+        args = _parse_args()
+        test_results = run_all_leakage_tests(
+            symbol=args.symbol, tf=args.tf, resolution_id=args.resolution_id
+        )
+        is_default_run = (
+            args.symbol == "BTCUSDT" and args.tf == "15m" and args.resolution_id is None
+        )
+        grade = args.resolution_id if args.resolution_id is not None else args.tf
+        dest_path = (
+            None
+            if is_default_run
+            else VALIDATION_REPORTS_DIR / f"leakage_report_{args.symbol}_{grade}.json"
+        )
+        write_leakage_report_atomic(test_results, dest_path=dest_path)
         return 1 if any(r.status == LeakageStatus.FAIL for r in test_results) else 0
 
     sys.exit(_run_cli())

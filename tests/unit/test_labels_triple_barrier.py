@@ -484,6 +484,132 @@ def test_build_labels_resolution_id_estimator_id_divergente_levanta_valueerror()
         )
 
 
+# ============================================================================
+# n_bars_held sob resolution_id -- branches degenerados de median_bar_ms
+# (achado de auditoria, audit_engineering 2026-08-17: só o caso "normal"
+# era exercitado por test_build_labels_resolution_id_com_estimator_
+# explicito_produz_labels_reais acima, nunca n<2 nem median<=0 -- AG-061
+# já confirmou o 2º caso acontecer de verdade em SOLUSDT)
+# ============================================================================
+
+
+def _one_bar_dollar_bars() -> pl.DataFrame:
+    """1 único decision bar carregado -- t0_arr.shape[0]==1, não dá pra
+    medir `np.diff` (precisa de >= 2 pontos)."""
+    close = 99.9
+    open_time = _BASE_MS
+    close_time = open_time + _BAR_MS - 1
+    return pl.DataFrame(
+        {
+            "open_time": [open_time],
+            "close_time": [close_time],
+            "open": [close - 0.05],
+            "close": [close],
+            "high": [close + 0.2],
+            "low": [close - 0.2],
+        }
+    )
+
+
+def _one_bar_cfg() -> tb.LabelConfig:
+    return tb.LabelConfig(
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_ms=4 * _BAR_MS,
+        fill_timeout_ms=_BAR_MS,
+        atr_window_ms=1 * _BAR_MS,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        estimator_id="parkinson_w1",
+        resolution_id="R1",
+    )
+
+
+def test_build_labels_resolution_id_n_bars_held_degenerado_n_menor_que_2() -> None:
+    """`n_bars_held` (AG-061): com um único decision bar carregado (n=1),
+    `median_bar_ms` cai direto no fallback `cfg.time_stop_ms` -- sem tentar
+    `np.median` sobre um array vazio de diffs. `n_bars_held` esperado:
+    `(n-1-i) + ceil((t1-t0_arr[-1])/time_stop_ms)` = `0 + ceil(time_stop_ms/
+    time_stop_ms)` = `1` (t1 == horizon == t0 + time_stop_ms)."""
+    bars = _one_bar_dollar_bars()
+    cfg = _one_bar_cfg()
+    t0 = int(bars["close_time"][-1])
+    horizon = t0 + cfg.time_stop_ms
+    last_px = 148.0
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            (horizon, last_px, last_px, last_px, last_px),
+        ]
+    )
+    out = tb.build_labels(
+        bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=1)
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TP"
+    assert row["n_bars_held"] == 1
+
+
+def _two_bar_duplicate_close_time_dollar_bars() -> pl.DataFrame:
+    """AG-061 -- rajada real com `close_time` repetido entre 2+ barras
+    (SOLUSDT, confirmada em produção). Os dois bars compartilham o MESMO
+    `close_time` -- `np.diff(t0_arr) == [0]`, `median == 0`, aciona o
+    fallback `median_bar_ms <= 0`."""
+    t = _BASE_MS + 5 * _BAR_MS
+    closes = [100.0, 99.9]
+    return pl.DataFrame(
+        {
+            "open_time": [t - _BAR_MS, t - _BAR_MS],
+            "close_time": [t, t],
+            "open": [c - 0.05 for c in closes],
+            "close": closes,
+            "high": [c + 0.2 for c in closes],
+            "low": [c - 0.2 for c in closes],
+        }
+    )
+
+
+def _two_bar_dup_cfg() -> tb.LabelConfig:
+    return tb.LabelConfig(
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_ms=4 * _BAR_MS,
+        fill_timeout_ms=_BAR_MS,
+        atr_window_ms=2 * _BAR_MS,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        estimator_id="parkinson_w2",
+        resolution_id="R1",
+    )
+
+
+def test_build_labels_resolution_id_n_bars_held_degenerado_median_zero() -> None:
+    """`n_bars_held` sob rajada real (`close_time` duplicado, AG-061): a
+    mediana dos diffs é `0`, não negativa -- guarda `<= 0` (não só `< 0`)
+    é a que de fato protege este caso real, não uma cobertura teórica."""
+    bars = _two_bar_duplicate_close_time_dollar_bars()
+    cfg = _two_bar_dup_cfg()
+    t0 = int(bars["close_time"][-1])
+    horizon = t0 + cfg.time_stop_ms
+    last_px = 148.0
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            (horizon, last_px, last_px, last_px, last_px),
+        ]
+    )
+    out = tb.build_labels(
+        bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=2)
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TP"
+    assert row["n_bars_held"] == 1
+
+
 def test_build_labels_tp_long() -> None:
     t0 = _t0()
     mark = _mark(

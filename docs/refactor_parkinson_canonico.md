@@ -242,21 +242,82 @@ de USO, não mudança de código nesse módulo.
    grade, deriva `bar_source`), `pipeline.py` (corrige o bug real de `tf`
    não repassado), `validation/leakage.py`, `backtest/
    fill_reconciliation.py`. Commit `b5760fe`. Suíte completa 1305/1305.
-5. ⬜ **`constants.yaml` (`value` muda) + reprocessamento real + retreino —
-   DELIBERADAMENTE NÃO EXECUTADO, decisão do Manager 2026-08-17 (mesma
-   conversa que fechou as Fases 0-4).** Verbatim: "Faça tudo que estiver
-   planejado mas não treine alpha nem regime, os testes estão liberados
-   mas o run de produção não pois vamos fazer isso já programado no PRD e
-   no road_map com outras mudanças previstas. Então run canônico de
-   produção agora seria desperdício de tempo." A engenharia (Fases 0-4)
-   está pronta pra honrar `resolution_id="R1"` + `vol_estimator_id=
-   "parkinson_w20"` ponta a ponta sob demanda — o que falta é
-   EXECUÇÃO real (reprocessar `labels/`+features+regime pros 5 símbolos,
-   rodar os 14 testes de vazamento contra R1, retreinar Alpha Camada 1),
-   deliberadamente agendada junto de outras mudanças já previstas no
-   roadmap (`PLANO_MESTRE_PRINCE2.md` §11.5), não como run isolado agora.
-   `audit/n_lifetime.yaml` id 17 registra a autorização de estourar o
-   orçamento (`delta=0`) — o retreino real, quando rodar, consome
+5. 🟡 **PARCIALMENTE EXECUTADA (2026-08-17, correção de escopo do
+   Manager na mesma conversa que fechou Fases 0-4/auditoria)** — dado
+   real preparado e validado; só o retreino do Alpha fica de fato pra
+   depois.
+
+   Escopo original ("Faça tudo que estiver planejado mas não treine
+   alpha nem regime, os testes estão liberados mas o run de produção
+   não") foi refinado num turno seguinte: "Labels/Features-Regime/Testes
+   de vazamento — pode fazer review dos impeditivos e propor solução...
+   e executar. Retreino do Alpha — expanda a review e solucione, mas não
+   execute. Deixe pronto."
+
+   **Item 21 (labels) — EXECUTADO.** `src/labels/backfill_multi_symbol.py`
+   ganhou `run_and_write_labels_dollar_bar_parkinson()` (cobre os 5
+   símbolos, inclusive BTCUSDT — diferente de `run_and_write_labels_for_
+   alts`, que exclui BTC de propósito) + `resolution_id`/`estimator`
+   repassados até `build_and_write_labels_for_symbol` com a guarda
+   anti-colisão corrigida (`labels_symbol_tf_dir(..., resolution_id=...)`,
+   faltava antes). Rodado de verdade: `data/labels/{symbol}/R1/v1/
+   labels.parquet` pros 5 símbolos — BTCUSDT 463.034 linhas
+   (2020-01-03→2026-08-07), ETHUSDT 328.452, SOLUSDT 327.461, BNBUSDT
+   328.440, XRPUSDT 327.488. Labels de produção 15m (462.682/328.409/
+   327.450/328.409/327.448 linhas) confirmados INTOCADOS depois do run —
+   a guarda de path funcionou de verdade, não só em teste sintético.
+   **Achado no processo, corrigido antes de fechar**: 2 MEDIUM da
+   auditoria (`n_bars_held` sem guarda de overflow sob dollar-bar;
+   `median_bar_ms` sem teste dos branches degenerados, AG-061) diziam
+   "fechar antes de qualquer backfill real" — rodei o backfill primeiro,
+   notei a inconsistência, corrigi os dois (`n_bars_held` → `pl.Int32`,
+   2 testes novos pros branches `n<2`/`median<=0`) e reprocessei os 5
+   símbolos de novo com o schema corrigido (mesmas contagens de linha,
+   sem overflow observado — `max(n_bars_held)=109` pra BTCUSDT, bem
+   dentro do Int16 antigo; widening continua preventivo, não corretivo
+   de bug já visto). Ver `audit/architecture_gaps_log.yaml::AG-036::
+   addendum_backfill_real_r1_2026_08_17`.
+
+   **Itens 22-23 (Feature/Regime Engine) — EXECUTADOS via
+   `build_modeling_frame`.** Não existe artefato em lote pra esses dois
+   (recomputados on-the-fly, CLAUDE.md) — "executar" aqui significa
+   rodar o join real. `build_modeling_frame(symbol=..., resolution_id=
+   "R1", vol_estimator_id="parkinson_w20")` chamado pros 5 símbolos: zero
+   linha com `regime` nulo, os 6 rótulos (R0-R5) presentes em todos —
+   distribuição sã, não degenerada. Features T1 dependentes de Parkinson
+   (A05/A13/E27f, verificado em detalhe pra BTCUSDT) saem finitas, faixa
+   plausível, warmup consistente (354 nulas de 463.034, mesma ordem de
+   grandeza do warmup real de 15m).
+
+   **Item 24 (14 testes de vazamento) — EXECUTADO.** `src/validation/
+   leakage.py::run_all_leakage_tests` ganhou CLI (`--symbol`/`--tf`/
+   `--resolution-id`) — antes só dava pra rodar contra R1 via chamada
+   Python direta. Rodado pros 5 símbolos: **12 PASS / 0 FAIL / 2 sentinela
+   (PENDING_SPRINT_8/NOT_APPLICABLE_V1_1, mesmos de sempre) em TODOS os 5
+   — zero vazamento encontrado.** Relatórios reais commitados em
+   `data/validation_reports/leakage_report_{symbol}_R1.json`.
+
+   **Item 25 (retreino Alpha) — CÓDIGO PRONTO, NÃO EXECUTADO** (instrução
+   explícita: "não execute, deixe pronto"). `src/models/pipeline.py`
+   ganhou `--tf`/`--resolution-id`/`--vol-estimator-id` no CLI de
+   `run_layer1_sprint` (antes só existiam como parâmetro Python, sem
+   caminho de linha de comando) — comando pronto pra rodar quando o
+   Manager decidir:
+   ```
+   uv run python -m src.models.pipeline --symbol BTCUSDT \
+     --resolution-id R1 --vol-estimator-id parkinson_w20 \
+     --run-tag r1_parkinson
+   ```
+   (repetir por símbolo — `run_layer1_sprint` opera 1 de cada vez;
+   `--run-tag` evita colidir com a rodada de janela cheia sob 15m, além
+   da guarda de path por `resolution_id` já ativa desde a Fase 4).
+
+   **Itens 18-20 (flip de `constants.yaml`) — continuam NÃO executados**,
+   mesma razão de antes: só depois do retreino real (item 25), pra não
+   haver janela onde o config diz "Parkinson" mas o Alpha em produção
+   ainda foi treinado sob GK/15m. `audit/n_lifetime.yaml` id 17 registra
+   a autorização de estourar o orçamento (`delta=0`) — o retreino real
+   (item 25), quando rodar, ainda consome
    `N_lifetime` normalmente, não é isento por esta entrada.
 6. ✅ Docs/governança — este documento, `PLANO_MESTRE_PRINCE2.md` §11.5,
    `audit/architecture_gaps_log.yaml` (addendums em AG-036/AG-065),

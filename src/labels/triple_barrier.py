@@ -699,14 +699,28 @@ _PRE_WEIGHT_SCHEMA: dict[str, Any] = {
     "ret_net": pl.Float64,
     "atr_at_t0": pl.Float64,
     "mfe_atr_units": pl.Float64,
-    "n_bars_held": pl.Int16,
+    "n_bars_held": pl.Int32,
+    # Achado de auditoria (audit_engineering, 2026-08-17, migração
+    # Parkinson+dollar-bar): Int16 (max 32.767) é seguro sob grade de
+    # TEMPO (máximo plausível ~32-40 barras), mas sob dollar bar a
+    # densidade de barras/dia varia por ordens de grandeza em rajadas de
+    # atividade -- um threshold_usdt fino durante evento de alta atividade
+    # pode produzir mais barras num horizonte de time_stop_ms (8h) do que
+    # Int16 comporta. Widening preventivo pra Int32 (mesmo padrão já usado
+    # em n_funding_events, AG-031/B1, abaixo) -- Polars falha alto em
+    # overflow de cast (não corrompe silenciosamente), mas sem essa folga
+    # a mensagem não apontaria pra causa raiz. Confirmado sem custo: o
+    # reprocessamento real de labels/{symbol}/R1/v1/ pros 5 símbolos
+    # (2026-08-17) rodou sem overflow mesmo sob Int16 antigo -- Int32 é
+    # puramente preventivo pra reprocessamentos futuros com calibração
+    # diferente, não uma correção de bug já observado.
+    "n_funding_events": pl.Int16,
     # AG-031/B1 -- Int8 (max 127) já era risco de overflow latente se o
     # horizonte fosse reexpresso e alguém aumentado (docs/refactor_dollar_
     # bar_canonico.md). Widening preventivo, sem custo: `time_stop_ms`
     # nesta PR preserva o valor de horizonte atual (8h) bit-exato em 15m,
     # não aumenta o risco por si só -- mas já que este schema está sendo
     # tocado pela mesma correção, fechar o risco aqui é grátis.
-    "n_funding_events": pl.Int16,
     "filters_hash": pl.Utf8,
     "config_hash": pl.Utf8,
 }
