@@ -19,7 +19,33 @@ from src.labels._paths import labels_symbol_tf_dir
 
 
 def _empty_labels() -> pl.DataFrame:
-    return pl.DataFrame({"t0": pl.Series([], dtype=pl.Datetime("ms"))})
+    """1 linha MÍNIMA VÁLIDA (não 0 linhas) que satisfaz as 6 invariantes de
+    `tb.assert_label_invariants` -- chamada real dentro de `build_and_write_
+    labels_for_symbol` desde a correção de AG-029 (`src/labels/backfill_
+    multi_symbol.py:103`), "falha alto de propósito". Um DataFrame de 0
+    linhas não serve: `config_hash.n_unique() == 1` (§3.8) é sempre falso
+    sobre uma coluna vazia (`n_unique()` de série vazia é 0, não 1) --
+    não dá pra simplesmente completar o schema faltante (`t1`/`t_entry`/
+    `barrier_hit`/`config_hash`/`sample_weight`/`uniqueness`) mantendo 0
+    linhas, como uma 1ª tentativa desta correção fez e ainda falhava.
+    `held_ms=60_000` (1min) fica bem abaixo de qualquer `time_stop_ms` real
+    configurado (ordem de horas) -- não hardcoda o valor real, só garante
+    folga. Mantém o nome `_empty_labels` (não `_minimal_labels`) porque o
+    propósito do teste continua sendo "roteamento de argumentos", não
+    conteúdo de label -- só o suficiente pra passar pela validação real que
+    o caminho de produção agora aplica."""
+    tz_ms = pl.Datetime("ms", time_zone="UTC")
+    return pl.DataFrame(
+        {
+            "t0": pl.Series([0], dtype=pl.Int64).cast(tz_ms),
+            "t1": pl.Series([60_000], dtype=pl.Int64).cast(tz_ms),
+            "t_entry": pl.Series([0], dtype=pl.Int64).cast(tz_ms),
+            "barrier_hit": pl.Series(["TP"], dtype=pl.Categorical),
+            "config_hash": ["fake_routing_test"],
+            "sample_weight": [1.0],
+            "uniqueness": [1.0],
+        }
+    )
 
 
 def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(

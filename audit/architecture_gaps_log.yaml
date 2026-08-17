@@ -4212,3 +4212,46 @@ entries:
       (ex.: hook de pre-tool-use bloqueando `python`/`pytest` fora dos 7
       comandos, fora do escopo de um Agent mudar sozinho).
     status: "aberto -- registrado, sem enforcement mecânico ainda"
+
+  - id: AG-058
+    date: "2026-08-17"
+    file: "tests/unit/test_labels_backfill_multi_symbol.py"
+    related_file: "src/labels/backfill_multi_symbol.py:103 (AG-029), src/labels/triple_barrier.py::assert_label_invariants"
+    found_by: "Claude, rodando uv run pytest -m \"not slow and not integration\" diretamente (autorização explícita do Manager, acesso remoto) como varredura de regressão após AG-042 item 2"
+    gap: >
+      `_empty_labels()` (fixture do teste de roteamento) retornava um
+      `pl.DataFrame` só com a coluna `t0` -- válido quando escrito, mas
+      `AG-029` (mesmo dia, sessão anterior) passou a chamar `assert_label_
+      invariants(labels, ...)` de verdade dentro de `build_and_write_
+      labels_for_symbol` (linha 103, "falha alto de propósito"), e o
+      fixture nunca foi atualizado para incluir `t1`/`t_entry`/
+      `barrier_hit`/`config_hash`/`sample_weight`/`uniqueness` que a
+      função agora exige. Mesma classe de bug já documentada 3x nesta
+      sessão (docstring de `test_analysis_m2_worker.py` cita 2 ocorrências
+      prévias, mais a 3ª achada durante o redesenho de `bars.py`/AG-034) --
+      "fake/caller não atualizado quando a chamada real muda". Achado
+      extra, não óbvio: uma correção ingênua (só completar as colunas
+      faltantes, mantendo 0 linhas) AINDA falha -- `config_hash.n_unique()
+      == 1` (§3.8) é sempre falso sobre uma série vazia (`n_unique()` de
+      0 linhas é 0, não 1). O fixture precisa de exatamente 1 linha VÁLIDA
+      satisfazendo as 6 invariantes, não só o schema certo.
+    severity: "médio"
+    layer: "labels (teste)"
+    consequence: >
+      `uv run pytest -m "not slow and not integration"` (ciclo rápido do
+      CLAUDE.md, < 30s) falhava de verdade (`ColumnNotFoundError: "t1" not
+      found`) desde que `AG-029` foi commitado nesta mesma sessão -- só não
+      tinha sido pego porque o comando completo (`-m "not slow and not
+      integration"`, sem filtro de arquivo) não tinha sido rodado de novo
+      depois daquele commit até esta varredura. 4ª ocorrência confirmada da
+      mesma classe -- reforça que é sistêmico, não um arquivo isolado.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17, mesma sessão do achado -- `_empty_labels()`
+      reescrito para 1 linha mínima válida (`barrier_hit="TP"`,
+      `t1-t0=60_000ms`, `config_hash`/`sample_weight`/`uniqueness`
+      triviais), passa pelas 6 invariantes reais. Mecânicos (ruff/mypy)
+      limpos. **CONFIRMADO EMPIRICAMENTE** -- `uv run pytest -m "not slow
+      and not integration"`: 1139 passed (era 1138 passed + 1 failed antes
+      da correção).
+    status: "fechado -- corrigido e confirmado na mesma sessão do achado"
