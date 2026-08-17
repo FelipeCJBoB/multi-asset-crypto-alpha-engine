@@ -227,6 +227,18 @@ canonical_volatility_estimator:
     `labels/v2_gk/` (e agora também `v2_gk_dollar/`, já que os dois
     fecharam juntos) segue pendente do Manager, escopo real é grande
     (Feature/Regime/Label Engine inteiros, não só o estimador).
+    ATUALIZAÇÃO 2026-08-17 -- remediação completa de M1 SOB DOLLAR BAR
+    entregue (AG-036, AG-065, audit/architecture_gaps_log.yaml): 5
+    símbolos × 3 resoluções (R1/R2/R3) × 6 candidatos (RealizedVol/
+    ATRWilder/Parkinson/RogersSatchell/HAR-RV/EGARCH-acoplado vs.
+    baseline GarmanKlass), experiments/volatility_dollar_bar_report.json.
+    Resultado: Parkinson bate GK, significativo, em 12/15 combinações;
+    empate estatístico em 2/15; GK vence sem contestação em 1/15
+    (SOLUSDT×R3). Isto É evidência real na direção oposta ao `value`
+    travado aqui (GK) -- mas ainda NÃO é decisão de troca. `value`
+    permanece `garman_klass_w20` até o Manager decidir explicitamente à
+    luz deste resultado (mesma disciplina de "medir não é decidir" já
+    usada nas atualizações anteriores desta entrada).
   class: A
   sweep_required: true
   sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]

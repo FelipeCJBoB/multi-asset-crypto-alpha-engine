@@ -3243,6 +3243,48 @@ entries:
       sweep obrigatório). Não é o método publicado, é uma extensão
       inspirada na ideia geral do paper (parâmetros do GARCH viram função
       da duração), desenhada por este projeto. Implementação a seguir.
+    addendum_medicao_completa_2026_08_17: >
+      **Medição completa entregue -- os 8 candidatos originais, resolvidos
+      ou explicitamente excluídos, todos rodados de verdade sob as 3
+      resoluções.** RealizedVol/HAR-RV/EGARCH-acoplado resgatados +
+      readaptados (`AG-062`/`AG-063`/`AG-064`), religados ao harness
+      (`AG-070`). R2/R3 construídos do zero (`build_dollar_bars.py`
+      generalizado, 10 builds reais sobre os 62GB de `agg_trades`
+      cacheados). `YangZhang` continua fora, deliberado (`AG-043`,
+      componente overnight sem sentido sob barra contínua) -- 7 de 8
+      efetivamente testados (não 8, por decisão já registrada, não
+      esquecimento).
+
+      Comparação real completa: 5 símbolos × 3 resoluções × 6 candidatos
+      (`RealizedVol`/`ATRWilder`/`Parkinson`/`RogersSatchell`/`HAR-RV`/
+      `EGARCH-acoplado` vs. baseline `GarmanKlass`) --
+      `experiments/volatility_dollar_bar_report.json`, 15 combinações,
+      0 falhas, 0 puladas, `elapsed_seconds_total=1516,8` (~25min).
+
+      **Resultado, honesto e completo (ver `AG-065` pra detalhe por
+      combinação, `AG-074` pra ressalva sobre `egarch_coupled`):**
+      Parkinson bate GK, estatisticamente significativo (`dm_p<0,05`),
+      em 12/15 combinações. Empate estatístico (bate na média mas
+      `dm_p>0,05` -- indistinguível de ruído) em 2/15 (ETHUSDT×R3,
+      XRPUSDT×R3). GK vence sem contestação em 1/15 (SOLUSDT×R3) --
+      `any_candidate_beats_baseline=False` só nessa combinação.
+      RealizedVol/ATRWilder/RogersSatchell/HAR-RV/EGARCH-acoplado nunca
+      vencem em NENHUMA das 15 combinações -- mesmo padrão já visto sob
+      grade de tempo (GK/Parkinson dominam, complexidade extra não paga).
+      Padrão por resolução: a vantagem de Parkinson é mais forte/
+      significativa em R1 (grade mais fina, mais observações -- maior
+      poder estatístico) e mais fraca/instável em R3 (menos observações,
+      ~2-4x menos que R1 pro mesmo símbolo).
+
+      `N_lifetime` incrementado (`audit/n_lifetime.yaml`, id 16,
+      delta=18, contador 45->63) -- reabrir "qual estimador é canônico"
+      consome orçamento real, conforme a própria regra do ledger já
+      declarava (nunca contabilizada até esta entrada).
+
+      **Isto NÃO decide a troca de `canonical_volatility_estimator`.**
+      É a medição completa que faltava para o Manager decidir com dado
+      real na mão -- decisão em aberto, não tomada aqui (mesmo padrão de
+      `AG-065`, agora com escopo 100% fechado em vez de parcial).
 
   - id: AG-037
     date: "2026-08-16"
@@ -4775,6 +4817,23 @@ entries:
       como novo candidato líder só sob dollar bar?) é do Manager -- não
       implementada aqui.
     status: "aberto -- achado real registrado, decisão do Manager sobre o que fazer com ele"
+    addendum_medicao_completa_2026_08_17: >
+      SUPERSEDIDO por medição completa (ver `AG-036::
+      addendum_medicao_completa_2026_08_17`, mesma data, mais tarde na
+      sessão) -- esta entrada cobre só a 1ª passada parcial (4 candidatos,
+      só R1). Escopo fechado: `experiments/volatility_dollar_bar_report.json`
+      (nome sem sufixo `_r1_`, arquivo NOVO -- este relatório
+      `volatility_dollar_bar_r1_report.json` fica no disco como registro
+      histórico da 1ª medição, não sobrescrito) tem os 6 candidatos × 3
+      resoluções × 5 símbolos completos. Direção do achado desta entrada
+      SE CONFIRMA no escopo completo (Parkinson bate GK, robusto na
+      maioria das combinações) -- refinamento real: a robustez cai sob
+      `R3` (SOLUSDT×R3 é a única combinação onde NENHUM candidato bate
+      GK; ETHUSDT×R3/XRPUSDT×R3 batem na média mas sem significância
+      estatística) -- nuance que a medição parcial (só R1) não podia
+      revelar. Ver `AG-036` pro resultado completo, `AG-074` pra ressalva
+      sobre `egarch_coupled`.
+    status_final_2026_08_17: "SUPERSEDIDO -- ver AG-036::addendum_medicao_completa_2026_08_17 pro resultado completo. Decisão do Manager sobre canonical_volatility_estimator continua aberta."
 
   - id: AG-066
     date: "2026-08-17"
@@ -5020,3 +5079,60 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- baixa prioridade; nenhuma ferramenta de agregação cross-relatório existe ainda"
+
+  - id: AG-074
+    date: "2026-08-17"
+    file: "src/features/volatility_models.py::_egarch_log_var_recursion_coupled"
+    related_file: "experiments/volatility_dollar_bar_report.json, audit/architecture_gaps_log.yaml::AG-061 (cauda pesada de duração medida)"
+    found_by: "Claude, lendo o resultado real de experiments/volatility_dollar_bar_report.json após a rodada completa (AG-065/AG-036)"
+    gap: >
+      `egarch_coupled` produz QLIKE catastroficamente alto (fora da faixa
+      ~1,1-1,3 de todo o resto) em 12 das 15 combinações reais --
+      BNBUSDT R1/R2/R3: 40,5/6,66/6,25; BTCUSDT R1/R2: 57,4/37,2 (só R3
+      razoável, 1,31); SOLUSDT R1/R2/R3: 57,1/44,7/2,94; XRPUSDT
+      R1/R2/R3: 72,3/17,6/15,2; ETHUSDT R1: 2,35 (só R2/R3 razoáveis,
+      ~1,2). `mse_mean` confirma explosão real, não só QLIKE sensível a
+      forecast quase-zero (mecanismo já documentado/tratado em
+      `EstimatorMetrics`): valores da ordem de 1e26 a 1e40 em várias
+      combinações -- forecast de variância literalmente astronômico em
+      pelo menos alguns folds. Padrão: PIOR em `R1` (grade mais fina,
+      mais barras, mais rajadas relativas por bar_burst já medido em
+      `AG-061`), melhor em `R3`. HIPÓTESE não confirmada por instrumentação
+      (medir antes de afirmar, não implementada aqui): `log_var` na
+      recursão (`_egarch_log_var_recursion_coupled`) nunca é clipado no
+      ARMAZENAMENTO -- só é clipado (`min(lv, _EGARCH_LOG_VAR_CLIP)`) no
+      MOMENTO de computar `sigma_t` pra iteração seguinte; sob uma
+      sequência de `tau_t` próximo de 0 (rajada de barras com duração
+      curta -- ACD gera `psi_t` pequeno nesses trechos), `beta**tau_t ->
+      1` (decaimento quase nulo), e o termo aditivo `tau_t*(...)` some,
+      mas nada IMPEDE `log_var` de ir se acumulando sem decaimento
+      efetivo por muitos passos consecutivos antes de a sequência de
+      rajada terminar -- consistente com R1 (mais barras/mais rajadas
+      relativas) sofrer mais que R3.
+    severity: "alto"
+    layer: "features (achado de resultado, não bug de fiação -- AG-064 já confirmou a recursão matematicamente correta e causal)"
+    consequence: >
+      Os números de `egarch_coupled` no relatório final (`experiments/
+      volatility_dollar_bar_report.json`) NÃO são confiáveis como medida
+      de qualidade do candidato em 12/15 combinações -- `qlike_mean`/
+      `dm_stat` ali refletem explosão numérica, não desempenho genuíno
+      do modelo. Não muda a CONCLUSÃO direcional (egarch_coupled nunca
+      bate baseline em nenhuma combinação, incluindo as 3 "razoáveis"),
+      mas quem ler o JSON cru sem este contexto pode interpretar
+      "egarch_coupled é 50x pior que GK" como um resultado estatístico
+      genuíno, quando é instabilidade numérica do extension-por-analogia
+      (`AG-036` addendums, nunca `LITERATURE`) sob duração real de cauda
+      pesada -- exatamente o cenário que `AG-061` já tinha caracterizado
+      como desafio (assimetria 2,3-5,7, curtose em excesso 8,6-61,5).
+    resolved_by_commit: null
+    resolution: >
+      NÃO corrigido -- fora do escopo aprovado desta remediação (rodar a
+      comparação e reportar, não redesenhar a recursão). Se o Manager
+      decidir que `egarch_coupled` merece uma 2ª iteração, a correção
+      mais direta a investigar primeiro (não implementada, não
+      confirmada) é clipar `log_var` no PRÓPRIO armazenamento a cada
+      passo da recursão (`_EGARCH_LOG_VAR_CLIP`), não só no cálculo de
+      `sigma_t` -- mudaria o comportamento sob relógio uniforme também
+      (quebraria a prova de bit-exatidão existente, precisaria de nova
+      verificação), por isso não implementado sem decisão explícita.
+    status: "aberto -- achado real registrado, decisão do Manager sobre se/quando investigar"

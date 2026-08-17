@@ -36,7 +36,7 @@
 #   10/11/16) no momento em que cada um de fato rodar.
 
 schema_version: 1
-counter: 45
+counter: 63
 
 log:
   - id: 1
@@ -276,6 +276,41 @@ log:
       id 14).
       Artefato: experiments/faixa2_vol_accelerator_test_composed.json.
     delta: 1
+  - id: 16
+    date: "2026-08-17"
+    type: canonical_estimator_reopened
+    description: >
+      `canonical_volatility_estimator` (M1, hoje `garman_klass_w20`,
+      `constants.yaml` class A) reaberto sob grade dollar-bar (`AG-036`,
+      remediação completa aprovada pelo Manager 2026-08-16). Walk-forward
+      real, 5 símbolos × 3 resoluções (R1/R2/R3) × 6 candidatos
+      (RealizedVol/ATRWilder/Parkinson/RogersSatchell/HAR-RV/EGARCH-
+      acoplado) contra baseline GarmanKlass — `experiments/
+      volatility_dollar_bar_report.json`, `AG-065`/`AG-074`. Contagem:
+      candidatos (6) × resoluções (3) = 18 "pontos" que exigem forecast/
+      fit novo contra dado real cada um (mesmo grão de `id 10`, grade
+      tp_atr_mult×sl_atr_mult contada por PONTO DE PARÂMETRO, não por
+      símbolo) — símbolos (5) são o leito de teste OOS/robustez, não
+      contados multiplicativamente (mesmo raciocínio de "folds dentro de
+      uma combinação não multiplicam a contagem", já implícito no ledger
+      inteiro: nenhuma entrada aqui multiplica por nº de folds do
+      walk-forward). Cobre TAMBÉM a 1ª medição parcial (4 candidatos,
+      só R1, `AG-065` original, 2026-08-17 mais cedo na mesma sessão) —
+      nunca tinha sido registrada no ledger (gap confirmado por
+      `project_assurance` antes desta entrada); registrado uma vez só
+      pelo escopo final completo, não em duas entradas parciais.
+      Resultado: Parkinson bate GK (significativo, `dm_p<0,05`) em 12/15
+      combinações; empate estatístico (bate na média mas `dm_p>0,05`) em
+      2/15 (ETHUSDT×R3, XRPUSDT×R3); GK vence sem contestação em 1/15
+      (SOLUSDT×R3). Nenhuma promoção de `canonical_volatility_estimator`
+      feita aqui — decisão fica com o Manager (`AG-065`).
+      Nota de contagem, não decisão do Manager ainda validada: se o
+      Manager preferir contar por (símbolo×resolução×candidato) = 90, ou
+      só por resolução (candidatos comparados = 1 passe de ranking por
+      resolução, delta=3), ajustar numa entrada FUTURA (nunca editar
+      esta) — a regra do ledger ainda deixa espaço de julgamento aqui,
+      registrado explicitamente para não esconder a ambiguidade.
+    delta: 18
 
 # Nota de escopo (Faixa 2, F0.1, 2026-08-09): os 4 itens acima (ids 6-9,
 # delta total +18, contador 5->23) são exatamente os listados pela task
