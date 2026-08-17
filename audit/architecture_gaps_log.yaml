@@ -5496,6 +5496,48 @@ entries:
       arquivo), fora do escopo desta rodada de governança (documentação
       de rollup, não o blueprint técnico em si).
     status: "aberto -- tabela de reconciliação Sprint-N/V41-N precisa de confirmação do Manager (é proposta, não fato); achados colaterais (a)-(d) do V3.2 não corrigidos"
+    addendum_correcao_contagem_stress_e_4a_colisao_2026_08_17: >
+      CORREÇÃO a achado colateral (c) acima: estava escrito "19 no
+      roadmap Sprint 11 e DoD, 18 em §15.1 e no comando quant.stress.run"
+      -- errado sobre o DoD. Reverificado direto no arquivo (Agent
+      Project Assurance, varredura de continuação a pedido do Manager):
+      `PRD_V3_2_UNIFICADO.md` linha 2478 (roadmap Sprint 11) diz "19
+      cenários"; linha 2557 (DoD item 32) diz "18 cenários executados e
+      documentados", CONCORDANDO com o CLI (linha 2506, "18 cenários") e
+      com o changelog (linha 3468, "18 cenários"). Ou seja: só a linha do
+      roadmap Sprint 11 é o outlier em 19 -- DoD e CLI já concordam em 18.
+      Causa provável: linha 2619 registra "Cenário de stress 19 (novo)"
+      adicionado depois (naked window entre t_entry e t_sl) -- só a
+      tabela de roadmap foi atualizada pra refletir a adição, DoD/CLI
+      nunca sincronizaram.
+
+      4ª colisão de nomenclatura encontrada (não catalogada nas 3
+      originais desta entrada): rótulo `R1`-`R5` serve pra TRÊS coisas
+      no projeto, não reconhecidas entre si: (i) `PRD_V3_2_UNIFICADO.md`
+      §0.2 (linhas 68-151) -- as 5 restrições invioláveis (R1=lote,
+      R2=custo, R3=fees, R4=features, R5=alavancagem); (ii) mesmo
+      documento §4.3 (linhas 970-981) -- os regimes de mercado (R0=
+      WARMUP...R5=STRESS), usado de novo no Risk Engine (controle 1,
+      linha 1564, "regime ∈{R1..R4}"); (iii) `resolution_id="R1"` da
+      grade dollar-bar (`AG-042`, ativo em produção hoje --
+      `PLANO_MESTRE_PRINCE2.md` §11.5). Três sentidos ativos
+      simultaneamente no mesmo projeto, dois deles no mesmo documento.
+
+      CORREÇÃO a achado colateral (b) acima (contagem de kill switch):
+      validado direto em `src/risk/kill_switch.py:273` --
+      `KILL_SWITCH_TRIGGER_IDS` tem exatamente 13 elementos (K01-K13),
+      batendo com roadmap/DoD. O "15" citado na entrada original somava
+      §10.2 (13) + gatilho 14 (`listenKey` inválido, §16.3 linha 2638,
+      genuinamente novo, NÃO implementado) + gatilho 15 (§16.7 linha
+      2746). Mas o próprio texto do gatilho 15 diz "já existia como
+      gatilho 6, agora com procedimento de resposta explícito" -- ou
+      seja, gatilho 15 NÃO é um trigger novo, é K06 (`ordem inesperada,
+      client_order_id desconhecido`, `kill_switch.py:326`) redescrito.
+      Contagem real de conceitos únicos: 13 implementados + 1
+      genuinamente novo e não implementado (gatilho 14) = 14, nunca 15.
+      Ver `docs/roadmap_sweep_divergencias_2026-08-17.md` §1.2 pro
+      detalhe completo desta verificação.
+      found_by: "Agent (general-purpose), varredura de continuação, a pedido do Manager (checagem de ML Layer/Live Trading Layer 2026-08-17); contagens validadas direto no código por Claude na mesma sessão"
 
   - id: AG-077
     date: "2026-08-17"
@@ -5550,3 +5592,152 @@ entries:
       completo 5 ativos) são a PRÓXIMA FRENTE de trabalho, por
       instrução direta do Manager -- refletido em `§11.6`.
     status: "aberto -- decisão do Manager pendente sobre o que (se algo) substitui N_lifetime no cálculo de DSR/Gate 6; M4+M5 priorizados, trabalho real ainda não iniciado"
+
+  - id: AG-078
+    date: "2026-08-17"
+    file: "PRD_V3_2_UNIFICADO.md, PRD_V4_1.md, PLANO_MESTRE_PRINCE2.md §11.4/§11.5/§11.6"
+    related_file: "audit/architecture_gaps_log.yaml::AG-075, AG-076"
+    found_by: "2 Agents (general-purpose) em varredura de continuação, a pedido do Manager ('faça uma varredura... leia novamente o novo roadmap vivo e alinhe com o prd 3.2 e o prd 4.1 para garantir que nao perdemos nada' + 'nao esqueça da ML Layer... Live Trading Layer')"
+    gap: >
+      Segunda rodada de discovery (pós-refactor de `§11.4`/`§11.6` desta
+      mesma sessão) achou itens que os DOIS PRDs já definem como
+      pendentes/necessários mas que não têm NENHUMA linha no Road Map
+      Vivo -- categoria diferente de `AG-075` (que era sobre M4/V41-N
+      inteiros faltando), aqui são itens pontuais dentro de camadas já
+      parcialmente rastreadas:
+
+      (1) **Experimento RPI vs. post-only** (`PRD_V3_2_UNIFICADO.md`
+      §9.5.1, linhas 1827-1842) -- comparação real, 2 candidatos
+      (`LIMIT_GTX` vs `LIMIT_GTX_RPI`), protocolo declarado (≥60 fills/
+      braço), 1 trial, agendado pro Sprint 16/Gate 8. `§11.4` só cita
+      "§9.5.1" parentético dentro da linha de sweep de
+      `adverse_selection_bps` (item de rastreio diferente) -- sem linha
+      própria. Zero menção em `architecture_gaps_log.yaml` antes desta
+      entrada.
+
+      (2) **`aggregate_risk_max` sem sweep rastreado** (`PRD_V4_1.md`
+      §5.3, linha 581) -- constante classe A `ASSUMED`, "varredura
+      obrigatória antes do Gate 3" no próprio texto do PRD. `§11.4` lista
+      sweeps de Sprint 10/11/16 mas não este.
+
+      (3) **Controle 17 do Risk Engine, threshold pendente de revisão**
+      (`PRD_V3_2_UNIFICADO.md` §8.3, nota v3.3, linha 1584) -- "o limiar
+      3,0 deve ser revisto junto com o retorno do Grupo F a T1", TBD
+      semântico sem `AG-NNN` nem linha de roadmap.
+
+      (4) **`PRD_V4_1.md` -- 6 TBDs menores sem linha de roadmap**: I2
+      (relógio vs. barras, `atr_window` igual nos 3 TFs) segue não
+      resolvido mas M1 aparece "✅ medido" sem essa ressalva (linha 396);
+      `fatores_efetivos(TFs)` "a medir" (§6.2, linha 636), pré-requisito
+      de `G-C1-6`; D12 `min_consistent_envs` 6/6 nunca varrido (Parte
+      VII, linha 701); D14 unidade de `quote_volume` não verificada
+      (linha 703) -- Camada 0 marcada "✅ fechada" sem essa exceção; §0.2
+      `breakeven`/`trades-ano` TBD explícito (linhas 49-55); §2.4 F4
+      janela do `bookTicker` TBD (linha 152, afeta escopo de M5); §6.5
+      critério de encerramento #3 disparou 2026-08-10 e foi reavaliado
+      pelo Manager (decisão: não encerrar, reordenar M5/M6 antes de M4)
+      -- o roadmap reflete só a CONSEQUÊNCIA (status atual de M4/M5/M6),
+      não o evento/decisão em si como linha própria.
+
+      (5) **`PRD_V4_1.md` §3.2 M1 nunca foi corrigido pra citar a
+      remedição sob dollar-bar desta sessão**: o texto do PRD (linha
+      374/376) segue afirmando "Garman-Klass é o vencedor de M1" --
+      medição ORIGINAL sob grade de TEMPO (14/15, depois 10/15 vs.
+      RS/YZ), decisão do Manager de 2026-08-11. A decisão desta sessão
+      ("Parkinson canônico", `AG-036`/`AG-065`/`AG-074`) é uma medição
+      SEPARADA sob grade DOLLAR-BAR (12/15) -- as duas afirmações não se
+      contradizem (grades diferentes, vencedores diferentes é plausível),
+      mas quem lê `PRD_V4_1.md` §3.2 puro, sem o contexto desta sessão,
+      só vê GK. Falta uma nota de cross-reference no PRD apontando pra
+      `AG-036` como a decisão mais recente/canônica.
+    severity: "médio"
+    layer: "process/doc"
+    consequence: >
+      (1)-(3) são estudos/sweeps que o próprio PRD já declara
+      necessários -- sem linha de roadmap, o risco real é chegar no
+      Gate 8 (RPI) ou Gate 3 (aggregate_risk_max) sem lembrar que a
+      tarefa existe, mesmo tendo sido especificada há sprints. (4) são
+      TBDs de menor risco individual mas mesmo padrão -- acumulam como
+      furos silenciosos. (5) é risco de leitura, não de execução: uma
+      sessão futura (ou o próprio Manager, meses depois) lendo só
+      `PRD_V4_1.md` pode reverter pra GK achando que é a decisão vigente,
+      sem saber que foi remedida sob a grade nova.
+    resolved_by_commit: null
+    resolution: >
+      PARCIAL -- item (5) RESOLVIDO nesta sessão: `PRD_V4_1.md` §3.2
+      ganhou ponteiro de 1 linha pra remedição sob dollar-bar;
+      `PLANO_MESTRE_PRINCE2.md` §11.5/§11.6 ganharam nota "DECIDIDO, NÃO
+      DEPLOYADO" citando o valor literal de `constants.yaml`
+      (`project_assurance` independente revisou e validou a redação --
+      achou o mesmo padrão de ambiguidade já registrado uma vez antes em
+      `AG-003`, pra GK). Itens (1)-(3) todos CONFIRMADOS por leitura
+      direta de código (`src/execution/`, `src/risk/limits.py`,
+      `config/constants.yaml`) -- zero implementação hoje pros três,
+      nenhum urgente frente a M4/M5. (4) registrado por completude, sem
+      ação. Ver `docs/roadmap_sweep_divergencias_2026-08-17.md` pro
+      detalhe completo de cada verificação.
+    status: "parcial -- (5) fechado; (1) aggregate_risk_max e (2)/(3) RPI/controle-17 confirmados reais mas sem urgência, aguardam V41-8/Sprint 16 começar; (4) baixo risco, registrado"
+
+  - id: AG-079
+    date: "2026-08-17"
+    file: "PRD_V3_2_UNIFICADO.md, PRD_V4_1.md"
+    related_file: "PLANO_MESTRE_PRINCE2.md §11.4/§11.6, audit/architecture_gaps_log.yaml::AG-078"
+    found_by: "2 Agents (general-purpose) em varredura de continuação, a pedido do Manager"
+    gap: >
+      O Manager definiu explicitamente o padrão "comparison" (múltiplos
+      candidatos medidos contra métrica declarada antes de decidir --
+      mesmo desenho de M1-Volatilidade/M2-Barra) como o modelo de
+      referência que TODO estágio do pipeline deveria seguir (já
+      registrado em `PLANO_MESTRE_PRINCE2.md` §15.1, citação verbatim do
+      Manager: "comparison... arvore pipeline de src/, assim como fizemos
+      com volatility"), e nesta sessão listou 3 camadas completas pra
+      verificar (Data/ML/Live Trading). Achado: em nenhum dos dois PRDs
+      existe hoje um estudo de comparação DEFINIDO (nem executado, nem
+      agendado, nem citado como necessário) pros seguintes itens:
+
+      **Data Layer**: "Data check" (nenhuma comparação de método de
+      validação/qualidade de dado existe) e "Label" como conceito
+      DISTINTO de "Barreiras" (o esquema de labeling em si -- triple
+      barrier vs. alternativas -- é fixado a priori em `PRD_V4_1.md`
+      §4.2 como decisão fechada, "triple barrier permanece", não uma
+      comparação).
+
+      **ML Layer**: "Split" (método de CV -- CPCV vs. walk-forward -- é
+      decidido por CITAÇÃO DE LITERATURA em `PRD_V3_2_UNIFICADO.md`
+      §11.4/§18.4, Arian et al. 2024, NÃO por medição interna tipo M1);
+      "Learner" (XGBoost é mantido por citação de literatura em §5.1,
+      "tree ensembles > outros em tabular", NÃO por benchmark interno
+      contra LightGBM/outros).
+
+      **Live Trading Layer**: "Monitoramento" (zero menção de comparação
+      em qualquer um dos dois PRDs -- esquema único de alertas/dashboard
+      fixado sem alternativa considerada) e "Feedback pós-trade" (zero
+      menção -- decomposição de PnL e reconciliação são fórmulas/métodos
+      únicos, sem alternativa considerada em nenhum documento).
+
+      Diferente de `AG-078`: ali o PRD já definia o estudo e só faltava
+      linha de roadmap. Aqui o PRD NUNCA definiu o estudo -- não é um
+      furo de rastreio, é uma pergunta de escopo genuína: os 6 itens
+      acima precisam de rigor tipo-M1 (candidatos nomeados, métrica,
+      protocolo, orçamento de trial), ou as decisões já fixadas
+      (literatura pra Split/Learner, método único pra Monitoramento/
+      Feedback/Data check/Label) são suficientes como estão?
+    severity: "médio"
+    layer: "process/doc -- decisão de escopo, não achado de arquitetura"
+    consequence: >
+      Se o Manager decidir que sim, rigor tipo-M1 é necessário pros 6
+      itens, isso é ESCOPO NOVO real (6 estudos, cada um custando trial
+      -- ironicamente sob um `N_lifetime` recém descontinuado como gate,
+      `AG-077`, o que muda o cálculo de custo de abrir escopo novo). Se
+      decidir que as decisões já fixadas bastam, os 6 itens saem da lista
+      de pendências e isso deveria virar uma linha explícita no roadmap
+      dizendo "decisão fechada por literatura/desenho único, não
+      comparação medida" -- pra próxima sessão não reabrir a mesma
+      pergunta.
+    resolved_by_commit: null
+    resolution: >
+      NÃO resolvido unilateralmente -- é decisão estatística/de escopo
+      do Manager (mesma disciplina de `project_assurance` Passo 5:
+      "gap que revela decisão de ESCOPO/NEGÓCIO não tomada... escalona
+      pro Manager"). Reportado nesta sessão, aguardando resposta.
+    status: "aberto -- decisão do Manager pendente: os 6 itens (Data check, Label-scheme, Split, Learner, Monitoramento, Feedback pós-trade) precisam de estudo comparativo novo, ou as decisões já fixadas nos PRDs ficam como estão?"
