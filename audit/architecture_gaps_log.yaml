@@ -3183,6 +3183,59 @@ entries:
       qualquer implementação -- resultado a registrar em addendum
       separado quando a pesquisa voltar. RealizedVol e HAR-RV já prontos
       (ver addendums acima); este é o único dos 3 ainda não iniciado.
+    addendum_pesquisa_acd_garch_2026_08_17: >
+      Pesquisa aprofundada (Agent, 14 buscas + ~15 tentativas de
+      fetch/PDF) achou um problema real que muda a premissa da decisão
+      acima -- reportado antes de implementar, não escondido.
+
+      **O modelo ACD em si** (Engle&amp;Russell 1998, `ψ_i = ω + α·x_{i-1} +
+      β·ψ_{i-1}`) está bem confirmado, múltiplas fontes convergentes,
+      pronto pra implementar. Distribuições de erro candidatas
+      (Exponencial/Weibull/Gamma generalizada) também confirmadas --
+      Exponencial DESCARTADA por incompatibilidade quantitativa direta
+      com P-2 (curtose teórica=6, medida real 8,6-61,5 nos 5 símbolos);
+      Gamma generalizada recomendada por precedente de literatura
+      (Bauwens et al. 2004, Fernandes&amp;Grammig 2005) + compatibilidade
+      qualitativa com a cauda pesada medida, mas idealmente confirmada
+      por AIC/BIC nos resíduos reais antes de fixar.
+
+      **O acoplamento ACD→GARCH de Ghysels&amp;Jasiak (1998) em si -- achado
+      que muda o quadro**: abstract oficial recuperado e confirmado
+      (2 fontes independentes, texto idêntico) -- é "random coefficient
+      GARCH"/"doubly stochastic GARCH", parâmetros do GARCH viram função
+      da duração esperada, construído sobre teoria de agregação temporal
+      de Drost&amp;Nijman (1993)/Drost&amp;Werker (1996). MAS: (1) **a equação
+      fechada do acoplamento não foi recuperável** nas fontes acessíveis
+      -- paper original é scan de 1998 sem OCR, working paper CIRANO e
+      réplicas completas estão atrás de paywall/login-gate (tentativa
+      real, não desistência prematura); (2) **GJ98 acopla ACD a
+      GARCH(1,1) LINEAR, não ao EGARCH de Nelson (1991)** que é o
+      candidato real deste projeto -- achado confirmado cruzando 2 fontes
+      independentes (arxiv 2305.15343, arxiv 2211.12376). O único
+      "ACD-E*GARCH" publicado localizado (Czado&amp;Haug 2010,
+      ACD-ECOGARCH) é família matematicamente DIFERENTE (tempo contínuo,
+      processo de Lévy dirigido por Poisson composto) -- exigiria reescrever
+      o mecanismo de estimação inteiro do zero (não é extensão da recursão
+      sequencial `_egarch_log_var_recursion` já existente), maquinário
+      incompatível com `scipy.optimize.minimize` L-BFGS-B em uso hoje.
+
+      **Conclusão honesta da pesquisa**: "ACD-GARCH acoplado ao EGARCH(1,1)
+      de Nelson" NÃO é reprodução de um paper existente encontrável --
+      seria extensão NOVA deste projeto, inspirada em GJ98 por analogia,
+      não citação direta. Reúso de código estimado revisado pra baixo:
+      ~20-25% (era ~30% no addendum anterior), porque nem a estrutura do
+      acoplamento tem fonte exata a seguir, só o sub-modelo ACD em si.
+
+      **Pergunta de volta pro Manager, não resolvida aqui**: (a)
+      implementar como aproximação documentada por analogia (`ASSUMED`/
+      `DERIVED`-por-analogia, nunca `LITERATURE`, sweep obrigatório pela
+      Regra Zero) -- decisão de DESENHO desta sessão, não citação; (b)
+      pausar até acesso institucional ao PDF completo de GJ98/Czado-Haug;
+      (c) reconsiderar a rota Engle (2000)/UHF-GARCH (a "heurística de
+      escala por duração" originalmente preterida) -- tem fórmula mais
+      recuperável nas fontes acessíveis (embora também não 100% literal
+      do Engle original), mais barata, mais tratável. Nenhuma escolhida
+      ainda -- decisão de negócio/pesquisa, não de engenharia.
 
   - id: AG-037
     date: "2026-08-16"
