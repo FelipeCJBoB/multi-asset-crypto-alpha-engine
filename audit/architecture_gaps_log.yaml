@@ -2722,13 +2722,30 @@ entries:
       **CONFIRMADO EMPIRICAMENTE 2026-08-16** -- usuário rodou
       `uv run pytest tests/unit/test_data_bars.py
       tests/unit/test_analysis_m2_worker.py -v` (junto com o resto da
-      suíte relacionada): **49 passed in 112,24s**. Os itens (1)/(3) do
-      plano de recomendação original (medir janela 2020/instrumentar RSS
-      numa tentativa real) continuam pendentes, sem prazo -- fora do
-      escopo desta rodada (era sobre o MECANISMO, não sobre executar o
-      reprocessamento em si). Item (1) parcialmente endereçado à parte --
-      ver `implementacao_2026_08_16_runner_validacao` abaixo, que também
-      estende `measure_dollar_threshold_drift.py` com as janelas de 2020.
+      suíte relacionada): **49 passed in 112,24s**. Item (3) (instrumentar
+      RSS numa tentativa real) continua pendente, sem prazo -- fora do
+      escopo desta rodada. **Item (1) (medir janela 2020) EXECUTADO E
+      MEDIDO 2026-08-16 -- resultado real, maior que qualquer coisa já
+      conhecida:** usuário rodou `measure_dollar_threshold_drift.py`
+      estendido (ver `implementacao_2026_08_16_runner_validacao` abaixo)
+      contra os 5 símbolos reais. **BTCUSDT: deriva de 18,18x** entre
+      `2020_h1` (jan/2020, US$1,40 bi/dia) e `etf` (mar/2024, US$25,43
+      bi/dia) -- mais que o DOBRO da deriva conhecida até aqui (2,1x-8,9x,
+      medida só sobre as 5 janelas de M2, 2022-2026, que não alcançavam a
+      era mais fria da história). Os outros 4 símbolos ficaram em
+      2,10x-8,19x (esperado -- histórico deles só começa em 2021-12,
+      não cobre a era pré-2022). Payload completo em
+      `experiments/dollar_threshold_drift.json` (`n_combinations=27`,
+      `n_skipped=8` -- os 4 alts corretamente pulados nas 2 janelas de
+      2020, sem crash). **Implicação direta pra `AG-042` (Bloqueador 2,
+      calibração congelada de produção, itens 2/3 ainda deferidos):** um
+      threshold único calibrado sobre qualquer janela recente (ex. 2024-
+      2026) estaria ~18x fora de escala pro início real da história de
+      BTC -- este é o primeiro número REAL disponível pra calibrar o
+      próprio "alarme de deriva" da Opção A′ já decidida (antes só havia
+      a suspeita qualitativa, sem magnitude). Não fecha `AG-042` sozinho
+      (a decisão de política de calibração continua do Manager), mas
+      remove a maior lacuna de evidência que faltava pra tomá-la.
     implementacao_2026_08_16_runner_validacao: >
       Pedido direto do Manager, depois de "o pipeline canônico tá sem
       runner oficial para dollar bar? tudo em analysis/ é lixo pro
@@ -2790,11 +2807,27 @@ entries:
     status_runner_validacao: >-
       FECHADO 2026-08-16 -- fiação ponta a ponta (calibrar -> construir ->
       escrever -> ler -> alimentar build_t1_features) implementada,
-      revisada (3 camadas) e confirmada (107 passed). Ainda NÃO executada
-      a rodada de validação real (1-3 meses, 1 símbolo) via CLI --
+      revisada (3 camadas) e confirmada (107 passed). **Rodada de
+      validação real executada e confirmada** -- usuário rodou
       `uv run python -m src.data.build_dollar_bars --symbol BTCUSDT
-      --start <início> --end <fim>` -- próximo passo do usuário, não
-      deste achado.
+      --start 2025-01-01 --end 2025-03-31` (dado real, não sintético, não
+      `tmp_path`): 157.701.911 trades reais processados em 3 chunks (90
+      dias), `target_n_bars=8640` batendo exato com o baseline de 15m
+      (90×96), `threshold_usdt=202.378.600,25`, `n_bars` final também
+      8640 (esperado por construção da fórmula de calibração, não
+      coincidência). `leftover_trade_count` por chunk cresceu 2.574 ->
+      4.782 -> 22.135, sempre bem abaixo do teto do circuit breaker
+      (`max_leftover_trades=912.626,80`, pior caso a 2,4% do limite) --
+      nenhum `LeftoverOverflowError` disparado, sem repetir os
+      travamentos das 2 tentativas anteriores (AG-033/AG-034 originais).
+      91 arquivos escritos (90 dias + `_calibration.json`) em
+      `data/capacity/dollar_bars_r1/BTCUSDT/`. Primeira prova real (não
+      sintética) de que o redesenho de `bars.py` aguenta 3 meses de
+      BTCUSDT sem OOM/travamento. `features.build_t1_features(bar_source
+      ="dollar_r1")` contra este dado real específico ainda não foi
+      exercitado manualmente (só via teste de integração automatizado,
+      que roda sobre janela própria de 3 dias) -- próximo passo natural
+      se o Manager quiser, não bloqueia nada.
 
   - id: AG-035
     date: "2026-08-16"

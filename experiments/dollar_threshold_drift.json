@@ -1,8 +1,20 @@
 {
-  "generated_at": "2026-08-16T21:43:42.774831+00:00",
-  "code_version": "c719dea",
-  "measurement_provenance": "MEASURED -- soma real de price*quantity (aggTrades) por (symbol, window), via src.analysis.m2_worker._scan_trades_totals (mesma função que M2 usa para calibrar dollar_threshold, reaproveitada sem reimplementação -- ver docstring do módulo). NÃO é o proxy de bytes/contagem de trades de docs/refactor_dollar_bar_canonico.md §3.1: aquele media contagem de linhas (bytes comprimidos ∝ nº de trades), não volume em dólar. Responde P-1 (§7) do mesmo doc.",
+  "generated_at": "2026-08-17T00:41:51.516923+00:00",
+  "code_version": "7ac87d1",
+  "measurement_provenance": "MEASURED -- soma real de price*quantity (aggTrades) por (symbol, window), via src.data._chunked_scan.scan_trades_totals (mesma função que M2 usa para calibrar dollar_threshold, reaproveitada sem reimplementação -- ver docstring do módulo). NÃO é o proxy de bytes/contagem de trades de docs/refactor_dollar_bar_canonico.md §3.1: aquele media contagem de linhas (bytes comprimidos ∝ nº de trades), não volume em dólar. Responde P-1 (§7) do mesmo doc.",
   "windows": [
+    {
+      "name": "2020_h1",
+      "start": "2020-01-01",
+      "end": "2020-01-31",
+      "n_days": 31
+    },
+    {
+      "name": "2020_h2",
+      "start": "2020-06-01",
+      "end": "2020-06-30",
+      "n_days": 30
+    },
     {
       "name": "luna",
       "start": "2022-05-01",
@@ -44,6 +56,30 @@
   "results": [
     {
       "symbol": "BTCUSDT",
+      "window": "2020_h1",
+      "start": "2020-01-01",
+      "end": "2020-01-31",
+      "n_days": 31,
+      "total_dollar": 43359095812.29254,
+      "total_volume": 5165282.186,
+      "n_ticks": 7436296,
+      "dollar_per_day": 1398680510.07,
+      "vs_min_ratio": 1.0
+    },
+    {
+      "symbol": "BTCUSDT",
+      "window": "2020_h2",
+      "start": "2020-06-01",
+      "end": "2020-06-30",
+      "n_days": 30,
+      "total_dollar": 63286531728.2965,
+      "total_volume": 6684044.200999999,
+      "n_ticks": 12490166,
+      "dollar_per_day": 2109551057.61,
+      "vs_min_ratio": 1.5082
+    },
+    {
+      "symbol": "BTCUSDT",
       "window": "luna",
       "start": "2022-05-01",
       "end": "2022-05-31",
@@ -52,7 +88,7 @@
       "total_volume": 14463715.773999998,
       "n_ticks": 60764860,
       "dollar_per_day": 14676361869.53,
-      "vs_min_ratio": 1.6679
+      "vs_min_ratio": 10.493
     },
     {
       "symbol": "BTCUSDT",
@@ -64,7 +100,7 @@
       "total_volume": 18460614.012999997,
       "n_ticks": 36885751,
       "dollar_per_day": 10888304765.56,
-      "vs_min_ratio": 1.2374
+      "vs_min_ratio": 7.7847
     },
     {
       "symbol": "BTCUSDT",
@@ -76,7 +112,7 @@
       "total_volume": 14099299.272999994,
       "n_ticks": 39024962,
       "dollar_per_day": 13081869602.86,
-      "vs_min_ratio": 1.4867
+      "vs_min_ratio": 9.353
     },
     {
       "symbol": "BTCUSDT",
@@ -88,7 +124,7 @@
       "total_volume": 11717578.298,
       "n_ticks": 66512993,
       "dollar_per_day": 25426001467.08,
-      "vs_min_ratio": 2.8896
+      "vs_min_ratio": 18.1786
     },
     {
       "symbol": "BTCUSDT",
@@ -100,7 +136,7 @@
       "total_volume": 4297823.617,
       "n_ticks": 34057419,
       "dollar_per_day": 8799067679.33,
-      "vs_min_ratio": 1.0
+      "vs_min_ratio": 6.291
     },
     {
       "symbol": "ETHUSDT",
@@ -343,14 +379,56 @@
       "vs_min_ratio": 1.0
     }
   ],
+  "skipped": [
+    {
+      "symbol": "ETHUSDT",
+      "window": "2020_h1",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "2020_h1",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "2020_h1",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "2020_h1",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "window": "2020_h2",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "SOLUSDT",
+      "window": "2020_h2",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "BNBUSDT",
+      "window": "2020_h2",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "window": "2020_h2",
+      "reason": "janela anterior ao início de dado do símbolo (2021-12-01)"
+    }
+  ],
   "drift_summary": [
     {
       "symbol": "BTCUSDT",
       "max_window": "etf",
       "max_dollar_per_day": 25426001467.08,
-      "min_window": "recente",
-      "min_dollar_per_day": 8799067679.33,
-      "drift_ratio": 2.8896
+      "min_window": "2020_h1",
+      "min_dollar_per_day": 1398680510.07,
+      "drift_ratio": 18.1786
     },
     {
       "symbol": "ETHUSDT",
