@@ -1,6 +1,7 @@
-"""Testes de `src/risk/limits.py` — os 18/19 controles (§8.3), cada um
-passando e falhando isoladamente, mais a orquestração (`evaluate_all`):
-ordem fixa, parar no primeiro `FAIL`, `NOT_COMPUTABLE` nunca bloqueia."""
+"""Testes de `src/risk/limits.py` — os 19 controles (§8.3 do V3.2 + #19 de
+`AG-081`), cada um passando e falhando isoladamente, mais a orquestração
+(`evaluate_all`): ordem fixa, parar no primeiro `FAIL`, `NOT_COMPUTABLE`
+nunca bloqueia."""
 
 from __future__ import annotations
 
@@ -445,6 +446,75 @@ def test_control_18_e_sempre_not_computable() -> None:
 
 
 # ============================================================================
+# Controle 19 — risco agregado por correlação (AG-081)
+# ============================================================================
+
+
+def test_control_19_not_computable_sem_nenhum_dado() -> None:
+    result = limits.control_19_risco_agregado(position_risks=None, correlation_matrix=None)
+    assert result == ControlOutcome.NOT_COMPUTABLE
+
+
+def test_control_19_not_computable_com_position_risks_vazio() -> None:
+    result = limits.control_19_risco_agregado(position_risks=[], correlation_matrix=[])
+    assert result == ControlOutcome.NOT_COMPUTABLE
+
+
+def test_control_19_not_computable_com_matriz_de_dimensao_incompativel() -> None:
+    result = limits.control_19_risco_agregado(
+        position_risks=[Decimal("0.005"), Decimal("0.005")],
+        correlation_matrix=[[1.0, 0.91]],  # 1 linha para 2 posições -- malformado
+    )
+    assert result == ControlOutcome.NOT_COMPUTABLE
+
+
+def test_control_19_uma_posicao_passa_sigma_agg_igual_ao_risco_unitario() -> None:
+    # w=[0.005], Corr=[[1]] -> sigma_agg = 0.005, abaixo de aggregate_risk_max=0.01
+    result = limits.control_19_risco_agregado(
+        position_risks=[Decimal("0.005")], correlation_matrix=[[1.0]]
+    )
+    assert result == ControlOutcome.PASS
+
+
+def test_control_19_cinco_posicoes_correlacionadas_rho_091_falha() -> None:
+    """Reproduz a tabela do PRD_V4_1.md §5.3: 5 posições de risco unitário
+    0,50% com rho=0,91 entre todos os pares -> sigma_agg ~= 2,408% (4,82x),
+    acima de aggregate_risk_max=1,00%."""
+    n = 5
+    risk = Decimal("0.005")
+    corr = [[1.0 if i == j else 0.91 for j in range(n)] for i in range(n)]
+    result = limits.control_19_risco_agregado(
+        position_risks=[risk] * n, correlation_matrix=corr
+    )
+    assert result == ControlOutcome.FAIL
+
+
+def test_control_19_duas_posicoes_correlacionadas_rho_091_passa() -> None:
+    """Mesma tabela do PRD: 2 posições -> sigma_agg ~= 0,977%, ainda abaixo
+    de aggregate_risk_max=1,00% -- confirma o cap efetivo de 2 posições
+    citado em §5.3 ('3 já violam')."""
+    n = 2
+    risk = Decimal("0.005")
+    corr = [[1.0 if i == j else 0.91 for j in range(n)] for i in range(n)]
+    result = limits.control_19_risco_agregado(
+        position_risks=[risk] * n, correlation_matrix=corr
+    )
+    assert result == ControlOutcome.PASS
+
+
+def test_control_19_tres_posicoes_correlacionadas_rho_091_falha() -> None:
+    """§5.3: 'Três já violam' -- 3 posições -> sigma_agg ~= 1,454%, acima do
+    limite de 1,00%."""
+    n = 3
+    risk = Decimal("0.005")
+    corr = [[1.0 if i == j else 0.91 for j in range(n)] for i in range(n)]
+    result = limits.control_19_risco_agregado(
+        position_risks=[risk] * n, correlation_matrix=corr
+    )
+    assert result == ControlOutcome.FAIL
+
+
+# ============================================================================
 # Orquestração — evaluate_all
 # ============================================================================
 
@@ -472,10 +542,12 @@ def test_evaluate_all_aprova_o_caso_base() -> None:
     decision = evaluate_all(_make_inputs())
     assert decision.approved is True
     assert decision.rejection_reason is None
-    # controles 17 (spread/history None) e 18 (sempre) ficam NOT_COMPUTABLE
+    # controles 17 (spread/history None), 18 (sempre) e 19 (sem posições/Corr
+    # injetadas) ficam NOT_COMPUTABLE
     assert "17" in decision.controls_not_computable
     assert "18" in decision.controls_not_computable
-    assert decision.controls_evaluated[-1] == "18"  # rodou todos, nenhum FAIL
+    assert "19" in decision.controls_not_computable
+    assert decision.controls_evaluated[-1] == "19"  # rodou todos, nenhum FAIL
 
 
 def test_evaluate_all_para_no_primeiro_fail_regime() -> None:

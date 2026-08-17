@@ -1,11 +1,19 @@
-"""Os 18 controles do Risk Engine, em ordem de avaliação — §8.3 do PRD.
+"""Os 19 controles do Risk Engine, em ordem de avaliação — §8.3 do PRD, mais
+o controle 19 (`AGGREGATE_RISK_LIMIT`, §5.3 do `PRD_V4_1.md`, `AG-081`).
 
-O PRD numera 18 "controles" mas o #9 tem duas verificações distintas (9a
-erro de quantização, 9b resolução de sizing — §8.3 explica por que são
-separados: `quant_error` sozinho deixava passar o caso de 2h onde
+O PRD numera 18 "controles" (§8.3, V3.2) mas o #9 tem duas verificações
+distintas (9a erro de quantização, 9b resolução de sizing — §8.3 explica por
+que são separados: `quant_error` sozinho deixava passar o caso de 2h onde
 `N_req/unit = 1,14` arredondava para 1 unidade "por sorte", com erro de
-apenas 12,6%), então este módulo expõe 19 funções de controle mapeadas aos
-18 números do PRD (`9a`/`9b` sob o mesmo `9`).
+apenas 12,6%), então este módulo expõe 20 funções de controle mapeadas aos
+19 números (18 do V3.2 + o 19 do V4.1 §5.3, `9a`/`9b` sob o mesmo `9`).
+
+**Controle 19 implementado à frente da sequência de medição V41-8**
+(`PRD_V4_1.md` Parte VIII) — decisão do Manager, 2026-08-17 (`AG-081`): o
+risco que ele mitiga (5 posições correlacionadas, ρ≈0,91 medido, 4,82x o
+risco unitário declarado) já está quantificado no PRD; não precisa esperar
+V41-5/6/7 fecharem para o CÓDIGO do gate existir — só o valor de
+`aggregate_risk_max` (classe A, ASSUMED) depende do sweep antes do Gate 3.
 
 **Cada controle é uma função pura, testável isoladamente** — recebe só os
 valores de que precisa (não um blob de estado do sistema inteiro), devolve
@@ -77,8 +85,8 @@ class ControlOutcome(Enum):
 
 
 class RejectionReason(StrEnum):
-    """Motivo de rejeição nomeado — um por controle (19 valores para os 18
-    números do PRD, `9a`/`9b` distintos). `StrEnum` DELIBERADO aqui —
+    """Motivo de rejeição nomeado — um por controle (20 valores para os 19
+    números, `9a`/`9b` distintos + o 19 de `AG-081`). `StrEnum` DELIBERADO aqui —
     diferente de `stress.TriggerState`, que evita o mixin manual `(str, Enum)`
     por causa de um bug real de comparação vetorizada numpy (`np.asarray` de
     um membro `str`-mixed usa `str(member)`, truncado). `RejectionReason`
@@ -109,6 +117,7 @@ class RejectionReason(StrEnum):
     CONSECUTIVE_LOSSES = "CONSECUTIVE_LOSSES"
     LIQUIDITY_INSUFFICIENT = "LIQUIDITY_INSUFFICIENT"
     EVENT_WINDOW = "EVENT_WINDOW"
+    AGGREGATE_RISK_LIMIT = "AGGREGATE_RISK_LIMIT"
 
 
 # ============================================================================
@@ -433,13 +442,59 @@ def control_18_janela_evento() -> ControlOutcome:
 
 
 # ============================================================================
+# Controle 19 — risco agregado por correlação (PRD_V4_1.md §5.3, AG-081)
+# ============================================================================
+
+
+def control_19_risco_agregado(
+    *,
+    position_risks: Sequence[Decimal | float] | None,
+    correlation_matrix: Sequence[Sequence[Decimal | float]] | None,
+) -> ControlOutcome:
+    """#19 — `AGGREGATE_RISK_LIMIT`, `PRD_V4_1.md` §5.3 (achado I4). O Risk
+    Engine (controles 1-18) avalia cada posição isoladamente; com ρ≈0,91
+    medido entre os 5 ativos, 5 posições simultâneas entregam 4,82x o risco
+    unitário declarado — acima de `max_daily_loss` (2%) num único evento.
+
+    `sigma_agg = sqrt(w.T @ Corr @ w)`, `w` = risco fracionário de CADA
+    posição que estaria aberta SE o candidato desta avaliação fosse aceito
+    (posições já abertas + a candidata) — mesma convenção de `w` do PRD.
+    `FAIL` se `sigma_agg > aggregate_risk_max`.
+
+    **`NOT_COMPUTABLE` hoje, sempre** — mesmo padrão de "sensor pronto, sem
+    fonte de dado real ainda" dos controles 4-11/17/18: não existe ainda
+    rastreador de posições abertas ao vivo nem série de correlação
+    (`Corr`, janela expansiva causal por par de ativos, §5.3) alimentando o
+    Risk Engine. O parâmetro existe pra quando as duas fontes existirem —
+    função pura, caller injeta o dado, mesma disciplina do resto do módulo.
+
+    `position_risks` vazio ou `None`, ou `correlation_matrix` `None`, ou
+    dimensão incompatível (`len(correlation_matrix) != len(position_risks)`
+    ou alguma linha com tamanho diferente) — tudo isso é `NOT_COMPUTABLE`,
+    nunca uma exceção: a mesma incerteza de "sem dado" e "dado malformado
+    porque a fonte ainda não existe de verdade" (nenhum caller de produção
+    monta essa matriz hoje)."""
+    if not position_risks or correlation_matrix is None:
+        return ControlOutcome.NOT_COMPUTABLE
+    n = len(position_risks)
+    if len(correlation_matrix) != n or any(len(row) != n for row in correlation_matrix):
+        return ControlOutcome.NOT_COMPUTABLE
+
+    w = np.array([float(r) for r in position_risks], dtype=np.float64)
+    corr = np.array([[float(c) for c in row] for row in correlation_matrix], dtype=np.float64)
+    sigma_agg = float(np.sqrt(w @ corr @ w))
+    threshold = float(load_constant("aggregate_risk_max"))
+    return ControlOutcome.PASS if sigma_agg <= threshold else ControlOutcome.FAIL
+
+
+# ============================================================================
 # Orquestração — ordem fixa, para no primeiro FAIL (decisão documentada acima)
 # ============================================================================
 
 
 @dataclass(frozen=True, slots=True)
 class RiskEngineInputs:
-    """Todo o estado externo de que os 18 controles precisam. `sizing` é
+    """Todo o estado externo de que os 19 controles precisam. `sizing` é
     SEMPRE pré-computado pelo chamador via `src.risk.sizing` (responsabilidade
     de sizing e de controle são módulos separados) — os controles 6-11 só
     leem os campos já calculados."""
@@ -459,6 +514,8 @@ class RiskEngineInputs:
     spread_bps: Decimal | float | None = None
     spread_history_bps: Sequence[Decimal | float] | None = None
     depth_20bps_usd: Decimal | None = None
+    position_risks: Sequence[Decimal | float] | None = None
+    correlation_matrix: Sequence[Sequence[Decimal | float]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,7 +529,7 @@ class RiskDecision:
 
 # ordem fixa §8.3 — (id_pro_log, RejectionReason, thunk sem argumento)
 def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
-    """Roda os 18/19 controles NA ORDEM do PRD §8.3, parando no primeiro
+    """Roda os 19 controles NA ORDEM do PRD (§8.3 do V3.2 + #19 de `AG-081`), parando no primeiro
     `FAIL` (decisão documentada no docstring do módulo). `NOT_COMPUTABLE`
     nunca interrompe — é registrado e a avaliação continua."""
     checks: tuple[tuple[str, RejectionReason, ControlOutcome], ...] = (
@@ -540,6 +597,14 @@ def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
             ),
         ),
         ("18", RejectionReason.EVENT_WINDOW, control_18_janela_evento()),
+        (
+            "19",
+            RejectionReason.AGGREGATE_RISK_LIMIT,
+            control_19_risco_agregado(
+                position_risks=inputs.position_risks,
+                correlation_matrix=inputs.correlation_matrix,
+            ),
+        ),
     )
 
     passed: list[str] = []
@@ -606,5 +671,6 @@ __all__ = [
     "control_16_perdas_consecutivas",
     "control_17_liquidez",
     "control_18_janela_evento",
+    "control_19_risco_agregado",
     "evaluate_all",
 ]

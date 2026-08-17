@@ -99,7 +99,7 @@ de fazer depois.
 11. [**Product Breakdown Structure — o mapa institucional completo**](#11)
 12. [Referências institucionais externas: SR 26-2 e padrões de execução de hedge fund](#12)
 13. [Decisão fechada: `CLAUDE.md` "Documento mestre"](#13)
-14. [Road_Map Vivo — HTML, atualizado a cada mudança de status](#14)
+14. [Road_Map Vivo — HTML, APOSENTADO 2026-08-17 (`AG-080`), ver §11.4-§11.6](#14)
 15. [**Descoberta de Engenharia de `src/` — o Motor Quant multi-ativo validado contra o código**](#15) — resposta ao pedido de refatoração completa
 
 ---
@@ -844,7 +844,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
 | V41-6 — Barreiras rederivadas | ≤4 | ⬜ não iniciado — depende de V41-5 | `PRD_V4_1.md` §4.1 |
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
-| V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | ⬜ não iniciado — achado real e crítico (§5.3): 5 posições simultâneas correlacionadas (ρ≈0,91) = 4,82x o risco declarado, cap efetivo real é 2 posições | `PRD_V4_1.md` §5.3 |
+| V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados | `PRD_V4_1.md` §5.3, `AG-081` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
 | V41-10 — Meta-Model + Grupo J | ≤2 | ⬜ não iniciado — reaberto (o argumento que fechou o Meta no V3.2 caiu, §0.3) | `PRD_V4_1.md` §4.5 |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
@@ -939,14 +939,17 @@ mudou nem podia mudar por decisão de rótulo).
 
 ---
 
-## 14. Road_Map Vivo <a name="14"></a>
+## 14. Road_Map Vivo — APOSENTADO <a name="14"></a>
 
-> **⚠️ DESATUALIZADO (achado 2026-08-17, `AG-080`) — não republicado desde
-> 2026-08-12,** apesar da promessa "vivo" abaixo. Descreve "posição atual
-> Sprint 4" e uma Trilha de Camadas anterior à migração dollar-bar/
-> Parkinson, à descontinuação do `N_lifetime` e à priorização de M4/M5 —
-> **`§11.4-§11.6` é a fonte de estado atual**, não este artefato, até ele
-> ser republicado.
+> **🔴 APOSENTADO (`AG-080`, decisão do Manager 2026-08-17).** Não
+> republicado desde 2026-08-12 apesar da promessa "vivo" — a manutenção
+> de 2 artefatos sincronizados (este HTML + `§11.4-§11.6`) provou custar
+> mais do que valia quando adotada; `§11.4-§11.6`, ancorado em commit por
+> linha, é mais barato de manter correto e já cumpre o mesmo papel. Esta
+> seção fica como HISTÓRICO — não é mais atualizada, não é mais a fonte
+> de estado do projeto. **`§11.4-§11.6` é a fonte de estado atual.** Se
+> valor visual for necessário no futuro, gerar snapshot pontual datado
+> (não reclamar "vivo").
 
 **https://claude.ai/code/artifact/a6335e1a-1eb1-42ae-b3af-9b43b87ea3dd**
 
@@ -1084,14 +1087,16 @@ citável, não opinião:
 
 ### 15.4 Modelo de estágios corrigido
 
-> **Nunca cruzado com `§11.4-§11.6` (`AG-080`, 2026-08-17).** Os nomes
-> "Data Layer/ML Layer/Live Trading Layer" e seus itens (Data check,
-> Split, Learner, Calibração, Monitoramento, Feedback pós-trade) vêm
-> exatamente daqui. `§11.6` rastreia MEDIÇÃO (M1-M6/V41-N); esta seção
-> rastreia PRONTIDÃO DE ENGENHARIA — perguntas relacionadas, nunca
-> reconciliadas. Ver `AG-079` (pergunta de escopo: os itens abaixo sem
-> equivalente M1-M6 precisam de estudo tipo-M1?) e
-> `docs/roadmap_sweep_divergencias_2026-08-17.md`.
+> **Cross-reference formal com `§11.4-§11.6` (`AG-080`, 2026-08-17, ver
+> tabela após o modelo abaixo).** Os nomes "Data Layer/ML Layer/Live
+> Trading Layer" e seus itens (Data check, Split, Learner, Calibração,
+> Monitoramento, Feedback pós-trade) vêm exatamente daqui. `§11.6`
+> rastreia MEDIÇÃO (M1-M6/V41-N); esta seção rastreia PRONTIDÃO DE
+> ENGENHARIA — perguntas ortogonais, mantidas como duas lentes separadas
+> por decisão do Manager (2026-08-17), não fundidas (fundir perderia a
+> informação 2D — ex. `14_MONITORAMENTO` pode ser "vermelho" em
+> engenharia e "não precisa de comparação tipo-M1" ao mesmo tempo,
+> `AG-079`, fechado).
 
 ```
 DATA LAYER
@@ -1117,6 +1122,32 @@ LIVE TRADING LAYER
   14_MONITORAMENTO     src/monitoring/logging.py                       1 função, nunca chamada
   15_FEEDBACK_POST_TRADE (não existe em nenhuma forma)                 100% green-field
 ```
+
+**Tabela de cross-reference formal, `§15.4` (prontidão de engenharia) ↔
+`§11.6` (medição M1-M6/V41-N) — `AG-080`, 2026-08-17:**
+
+| estágio `§15.4` | equivalente `§11.6` | nota |
+|---|---|---|
+| `01_BARRA` | M2 (Barra) | dollar bar canônico, ✅ fechado |
+| `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1 |
+| `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro |
+| `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
+| `05_REGIME` | M4 (Regime) | 🔵 próxima frente, autorizado |
+| `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
+| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style |
+| `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
+| `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
+| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
+| `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
+| `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe |
+| `11_META_MODEL` | V41-10 (Meta-Model+Grupo J) | ⬜ não iniciado, reaberto |
+| `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não |
+| `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
+| `14_MONITORAMENTO` | sem equivalente | `AG-079` fechado — zero código, comparar antes de construir inverte a ordem |
+| `15_FEEDBACK_POST_TRADE` | sem equivalente | `AG-079` fechado — identidade contábil, não estimador com candidatos |
+| (sem estágio dedicado) | M3 (Timeframe) | `decision_tf` atravessa vários estágios, não é um estágio único |
+| (sem estágio dedicado) | M6 (Fator comum) | teste de hipótese cross-asset, não um estágio de pipeline — ✅ fechado |
+| (sem estágio dedicado) | V41-5 (PRD V4.2 escrito) | deliverable de documentação, não de código |
 
 Reduzido de 17 para 15 posições numeradas porque dois itens do Manager
 (`06_BARREIRAS`, `09b_CALIBRACAO`) não são hoje estágios separáveis sem

@@ -125,6 +125,24 @@ cost_stop_ratio_max:
   sweep_range: [0.10, 0.40]
   review_by: sprint_10
 
+aggregate_risk_max:
+  value: 0.01
+  provenance: ASSUMED
+  source: >
+    PRD_V4_1.md §5.3 -- achado I4 (falha de segurança: Risk Engine avaliava
+    cada posição isoladamente, ignorando correlação entre ativos). Controle
+    19 (AGGREGATE_RISK_LIMIT), sigma_agg = sqrt(w.T @ Corr @ w). Com rho~=0,91
+    medido (5 ativos), 5 posições simultâneas = 4,82x o risco unitário
+    declarado -- acima de max_daily_loss (2%) num único evento adverso. Valor
+    1,00% escolhido no PRD sem sweep formal ainda; implementado como gate de
+    código antes do sweep (decisão do Manager 2026-08-17, decouple de V41-8 --
+    AG-081) porque o risco já está quantificado e não depende da sequência de
+    medição M4/M5/V41-5..7.
+  class: A
+  sweep_required: true
+  sweep_range: [0.005, 0.015]
+  review_by: gate_3   # AG-081 -- controle já implementado, threshold pendente de sweep
+
 fee_budget_monthly:
   value: 0.03
   provenance: ASSUMED

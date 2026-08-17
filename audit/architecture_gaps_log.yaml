@@ -5676,7 +5676,7 @@ entries:
       nenhum urgente frente a M4/M5. (4) registrado por completude, sem
       ação. Ver `docs/roadmap_sweep_divergencias_2026-08-17.md` pro
       detalhe completo de cada verificação.
-    status: "parcial -- (5) fechado; (1) aggregate_risk_max e (2)/(3) RPI/controle-17 confirmados reais mas sem urgência, aguardam V41-8/Sprint 16 começar; (4) baixo risco, registrado"
+    status: "parcial -- (5) fechado; (1) aggregate_risk_max IMPLEMENTADO 2026-08-17, ver AG-081 (decoupled de V41-8, autorizado pelo Manager); (2)/(3) RPI/controle-17 confirmados reais mas sem urgência, aguardam Sprint 16 começar; (4) baixo risco, registrado"
 
   - id: AG-079
     date: "2026-08-17"
@@ -5736,11 +5736,38 @@ entries:
       pergunta.
     resolved_by_commit: null
     resolution: >
-      NÃO resolvido unilateralmente -- é decisão estatística/de escopo
-      do Manager (mesma disciplina de `project_assurance` Passo 5:
-      "gap que revela decisão de ESCOPO/NEGÓCIO não tomada... escalona
-      pro Manager"). Reportado nesta sessão, aguardando resposta.
-    status: "aberto -- decisão do Manager pendente: os 6 itens (Data check, Label-scheme, Split, Learner, Monitoramento, Feedback pós-trade) precisam de estudo comparativo novo, ou as decisões já fixadas nos PRDs ficam como estão?"
+      FECHADO (2026-08-17) -- Manager autorizou a recomendação conjunta
+      de `project_assurance` (Agent independente, discovery próprio) e
+      Claude, convergentes em 6/6 itens: NENHUM precisa de estudo tipo-M1
+      novo. Motivo por item, cada um verificado por leitura direta de
+      código/PRD, não só opinião:
+
+      - **Data check**: `src/data/checks.py` é checklist determinístico
+        (schema/dup/null/OHLC/outlier) -- não há candidato B concorrente a
+        medir, natureza diferente de GK-vs-Parkinson.
+      - **Label (esquema)**: não comparar, mas proveniência fechada --
+        `PRD_V4_1.md` §4.2 ganhou justificativa escrita (2026-08-17,
+        citando López de Prado 2018 cap.3 + custo de reversão real).
+      - **Split (CPCV)**: walk-forward já roda em paralelo como checagem
+        cruzada com gate de divergência (`G-WF-1..6`) -- comparação de
+        facto já existe.
+      - **Learner (XGBoost)**: `PRD_V4_1.md` §4.3 já tem gatilho de
+        reabertura declarado (Camada 2 fechar + treino virar gargalo) --
+        decisão fixada COM critério, não sem. Nota adicionada apontando
+        que a cláusula "eleva N_lifetime pra 62" está presa ao regime
+        antigo (`AG-077`).
+      - **Monitoramento**: zero código hoje (`dollar_bar_drift.py`+
+        `logging.py` só) -- comparar antes de construir inverte a ordem.
+      - **Feedback pós-trade**: `decomposition.py::decompose()` é
+        identidade contábil, não estimador com candidatos concorrentes.
+
+      Divergência residual, registrada por completude (não decisão de
+      escopo, decisão de PROCESSO): `project_assurance` recomendou D2
+      (tabela Sprint-N↔V41-N) ficar sem confirmação formal do Manager;
+      Claude recomendou um "olhar rápido" de 30s por ser barato. Manager
+      autorizou ambas as 10 recomendações do pacote -- tratado como
+      aceitas como estão, sem reabrir.
+    status: "fechado -- 6/6 itens não precisam de estudo tipo-M1, autorizado pelo Manager 2026-08-17; Label ganhou proveniência escrita em PRD_V4_1.md §4.2, Learner ganhou nota sobre N_lifetime obsoleto em §4.3"
 
   - id: AG-080
     date: "2026-08-17"
@@ -5817,12 +5844,73 @@ entries:
       informação de 2026-08-12, sem aviso de que está obsoleta.
     resolved_by_commit: null
     resolution: >
-      PARCIAL -- notas-ponteiro (não reescrita) aplicadas em `§14`,
-      `§15.2`, `§15.6` (itens 2-3), `§15.9`, apontando pra `§11.4-§11.6`
-      como fonte de estado atual e citando esta entrada. Republicação
-      real do artefato de `§14` (HTML) e reconciliação completa de
-      `§15.4` com `§11.6` (M1-M6) NÃO feitas -- fora do escopo desta
-      rodada (documentação de rollup, não reconstrução do artefato
-      externo nem fusão das duas estruturas). `AG-079` já cobre a
-      pergunta de escopo que `§15.4` deixou latente.
-    status: "aberto -- republicar §14 (HTML) e decidir se §15.4/§11.6 devem ser fundidos numa estrutura só ficam pendentes de decisão do Manager; notas-ponteiro aplicadas evitam a leitura desatualizada no meio-tempo"
+      FECHADO (2026-08-17) -- Manager autorizou as recomendações D4/D5
+      do pacote de 10 (convergência `project_assurance`+Claude). D4:
+      `§14` formalmente APOSENTADO (não só nota-ponteiro) -- seção
+      marcada como histórico, título do Sumário atualizado, artefato
+      HTML não será mais republicado, `§11.4-§11.6` é a fonte de estado
+      única daqui pra frente. D5: tabela de cross-reference formal
+      `§15.4`↔`§11.6` adicionada (19 linhas -- 15 estágios + M3/M6/V41-5
+      sem estágio dedicado), mantendo as duas lentes SEPARADAS (não
+      fundidas -- fundir perderia a informação 2D real, ex.
+      `14_MONITORAMENTO` vermelho em engenharia + fechado em `AG-079` ao
+      mesmo tempo). `§15.2`/`§15.6`/`§15.9` mantêm as notas-ponteiro já
+      aplicadas (não precisavam de mudança adicional).
+    status: "fechado -- §14 aposentado formalmente, tabela de cross-reference §15.4↔§11.6 adicionada, autorizado pelo Manager 2026-08-17"
+
+  - id: AG-081
+    date: "2026-08-17"
+    file: "src/risk/limits.py, config/constants.yaml, tests/unit/test_risk_limits.py"
+    related_file: "PLANO_MESTRE_PRINCE2.md §11.6 (V41-8), audit/architecture_gaps_log.yaml::AG-078"
+    found_by: "Claude + Agent project_assurance (recomendação D3 do pacote de 10, autorizada pelo Manager 2026-08-17)"
+    gap: >
+      `PRD_V4_1.md` §5.3 (achado I4) quantificou uma falha de segurança
+      real: o Risk Engine avalia cada posição isoladamente, ignorando
+      correlação entre ativos. Com ρ≈0,91 medido entre os 5 ativos, 5
+      posições simultâneas entregam 4,82x o risco unitário declarado --
+      acima de `max_daily_loss` (2%) num único evento adverso; 3 posições
+      já violam o limite proposto de 1,00%. O controle 19
+      (`AGGREGATE_RISK_LIMIT`) que mitiga isso estava só especificado no
+      PRD, sem entrada em `constants.yaml` nem função em `limits.py`
+      (`control_01`..`control_18` existiam, `control_19` não) --
+      `AG-078` item (2) já tinha confirmado a ausência.
+
+      `project_assurance` (recomendação D3) e Claude convergiram: o RISCO
+      já está quantificado (não depende de nenhuma medição futura de
+      M4/M5/V41-5..7) -- só o VALOR de `aggregate_risk_max` depende de
+      sweep antes do Gate 3. Faz sentido implementar o GATE de código
+      agora, desacoplado da sequência V41-8 (que empacotava "Controle 19"
+      junto com "sizing por ativo", medição).
+    severity: "alto"
+    layer: "risk (src/risk/limits.py) -- exposição financeira real, controle de posição"
+    consequence: >
+      Sem o gate, nada no código impede 3+ posições simultâneas
+      correlacionadas de serem abertas, mesmo com os controles 1-18
+      individualmente todos passando -- exatamente o cenário que §5.3
+      quantificou como violação real do orçamento de risco diário.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO (2026-08-17) -- `control_19_risco_agregado` novo em
+      `src/risk/limits.py` (`sigma_agg = sqrt(w.T @ Corr @ w)`, mesma
+      fórmula do PRD), `RejectionReason.AGGREGATE_RISK_LIMIT`, campos
+      `position_risks`/`correlation_matrix` em `RiskEngineInputs`, wired
+      em `evaluate_all` como #19. `aggregate_risk_max` adicionado a
+      `config/constants.yaml` (classe A, `ASSUMED`, `value: 0.01`,
+      `sweep_range: [0.005, 0.015]`, `review_by: gate_3`). 8 testes novos
+      em `test_risk_limits.py`, incluindo reprodução exata da tabela do
+      PRD (1/2/3/5 posições, ρ=0,91 -- confirma "3 já violam"). 7
+      comandos mecânicos autorizados rodados e limpos (`banned_patterns`,
+      `check_constants_referenced`, `check_constants_provenance`,
+      `check_unguarded_ratios`, `ruff`, `mypy`).
+
+      **`NOT_COMPUTABLE` por design, sempre, hoje** -- mesmo padrão dos
+      controles 4-11/17/18: não existe rastreador de posições abertas ao
+      vivo nem série de correlação (`Corr`, janela expansiva causal)
+      alimentando o Risk Engine ainda. O gate está pronto pro dia em que
+      essas duas fontes existirem (Sprint 12+/live) -- não é um controle
+      ativo em produção hoje, é a função pura pronta, mesma disciplina do
+      resto do módulo.
+
+      **Pendente de execução humana** (protocolo `CLAUDE.md`, Claude não
+      roda `pytest`): `uv run pytest tests/unit/test_risk_limits.py -v`.
+    status: "pronto, pendente confirmação de pytest pelo Manager -- controle é NOT_COMPUTABLE em produção até existir rastreador de posições live + série de correlação (Sprint 12+); aggregate_risk_max continua classe A ASSUMED até o sweep pré-Gate-3"

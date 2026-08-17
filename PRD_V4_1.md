@@ -484,6 +484,8 @@ Com o estimador vencedor, recalcular `tp_mult`/`sl_mult` a partir da **distribui
 
 **Meta-label:** triple barrier permanece. `time_stop` vira **relógio** (I2), não barras.
 
+> **Proveniência da decisão (achado `AG-079`/`AG-081`, 2026-08-17 — texto original só dizia "permanece", sem justificativa escrita):** triple-barrier (López de Prado, *Advances in Financial Machine Learning*, 2018, cap. 3) é mantido por dois motivos, não por inércia: (1) o rótulo espelha diretamente o mecanismo real de saída do trade (SL/TP/timeout), então trocar de esquema muda o que o modelo aprende a prever, não só a métrica de avaliação — reversão é cara (relabeling de todo `labels/` já gerado pros 5 símbolos); (2) nenhum PRD ou literatura citada no projeto propõe um esquema concorrente com evidência comparável. Decisão do Manager: não abrir estudo de comparação tipo-M1 — decisão fica fechada por proveniência de literatura, não por medição interna.
+
 **Pesos:** unicidade permanece. Decaimento temporal e ponderação por similaridade (§11.3.1 do V3.2, especificado e nunca rodado) entram como 2 trials, com controle contra peso uniforme.
 
 **Sobreposição transversal:** a unicidade é calculada por série. Com 15 combinações, o mesmo movimento aparece em quinze — a `N_eff` agregada é ~1,15× a de uma série, não 15×. A fórmula de peso precisa refletir isso.
@@ -497,6 +499,8 @@ Com o estimador vencedor, recalcular `tp_mult`/`sl_mult` a partir da **distribui
 Provavelmente dispensável. O `code_discovery` mostra que o learner é o estágio **mais bem parametrizado** do repo (19 parâmetros, todos em `constants.yaml`), e é o estágio com **0% de verde** no inventário.
 
 Só entra se a Camada 2 fechar com sinal estável e o tempo de treino virar gargalo da ablação. Exige **emenda declarada**, elevando o teto de `N_lifetime` para 62.
+
+> **Nota (`AG-077`/`AG-079`, 2026-08-17):** `N_lifetime` foi descontinuado como orçamento vinculante — a cláusula acima ("eleva o teto pra 62") pressupõe o regime antigo. O GATILHO de reabertura (Camada 2 fechar com sinal estável + treino virar gargalo) continua válido; só o mecanismo de "emenda declarada elevando N_lifetime" precisa de reinterpretação sob o regime atual quando/se este gatilho disparar — decisão não antecipada aqui, ver `AG-077`.
 
 ## 4.4 Calibração
 
