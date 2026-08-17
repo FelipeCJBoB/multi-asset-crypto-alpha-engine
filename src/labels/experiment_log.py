@@ -57,7 +57,14 @@ _SCHEMA: dict[str, Any] = {
     # fabricar uma conversão pra trás que a config não tem mais.
     "time_stop_bars": pl.Int32,
     "time_stop_ms": pl.Int64,
+    # AG-042 (2026-08-17) -- mesmo padrão de time_stop_bars/time_stop_ms
+    # acima: fill_timeout_bars (contagem de barra) aposentado como campo
+    # de LabelConfig (achado real ao dar suporte a dollar bar -- mesma
+    # classe de bug de time_stop_bars, não pega na 1ª rodada), coluna
+    # fica pro histórico, linhas novas gravam null aqui e o valor real em
+    # fill_timeout_ms.
     "fill_timeout_bars": pl.Int32,
+    "fill_timeout_ms": pl.Int64,
     # AG-031/B1 -- mesmo padrão de time_stop_bars/time_stop_ms acima:
     # atr_window (bars) aposentado como fonte de LabelConfig, coluna fica
     # pro histórico, linhas novas gravam null aqui e o valor real em
@@ -66,6 +73,15 @@ _SCHEMA: dict[str, Any] = {
     "atr_window_ms": pl.Int64,
     "maker_fee": pl.Float64,
     "taker_fee": pl.Float64,
+    # AG-042 (2026-08-17) -- rastreabilidade de qual GRADE gerou cada
+    # linha (achado de gap real: nenhuma coluna registrava isso até
+    # agora). `tf` (grade de tempo, "15m" etc.) ou `resolution_id`
+    # (dollar bar, "R1"/"R2"/"R3") -- só um dos dois é não-null por
+    # linha, mesmo XOR de `LabelConfig.tf`/`resolution_id`. Linhas
+    # antigas (antes desta coluna existir) ficam null nas duas -- não
+    # inventa retroativamente o que não foi registrado na hora.
+    "tf": pl.Utf8,
+    "resolution_id": pl.Utf8,
     "n_labels": pl.Int64,
     "n_tp": pl.Int64,
     "n_sl": pl.Int64,
@@ -182,11 +198,14 @@ def record_experiment(
         "sl_atr_mult": config.sl_atr_mult,
         "time_stop_bars": None,  # AG-031/B1 -- LabelConfig não tem mais este campo
         "time_stop_ms": config.time_stop_ms,
-        "fill_timeout_bars": config.fill_timeout_bars,
+        "fill_timeout_bars": None,  # AG-042 -- LabelConfig não tem mais este campo
+        "fill_timeout_ms": config.fill_timeout_ms,
         "atr_window": None,  # AG-031/B1 -- LabelConfig não tem mais este campo
         "atr_window_ms": config.atr_window_ms,
         "maker_fee": config.maker_fee,
         "taker_fee": config.taker_fee,
+        "tf": config.tf if config.resolution_id is None else None,
+        "resolution_id": config.resolution_id,
         "notes": notes,
         **stats,
     }

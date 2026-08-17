@@ -107,6 +107,7 @@ import structlog
 from numpy.typing import NDArray
 
 from src.data import lake
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.resample import step_ms
 from src.exchange.filters import Filters, NoFiltersAvailableError, load_filters_asof
 from src.features.volatility import ATRWilderEstimator, Bars, VolatilityEstimator
@@ -253,14 +254,39 @@ class LabelConfig:
     tp_atr_mult: float
     sl_atr_mult: float
     time_stop_ms: int
-    fill_timeout_bars: int
+    fill_timeout_ms: int
     atr_window_ms: int
     maker_fee: float
     taker_fee: float
     estimator_id: str
     tf: str = _DEFAULT_TF
+    resolution_id: str | None = None
+    """AG-042 (2026-08-17) — identidade de grade dollar-bar (`R1`/`R2`/
+    `R3`), mesmo padrão XOR de `Bars.timeframe_minutes`/`resolution_id`
+    (`src.features.volatility`). `None` (default) preserva bit-exato todo
+    caller de grade de TEMPO existente — `tf` continua governando
+    `step_ms`/`bar_ms` normalmente. Quando setado, `tf` vira vestigial
+    (nunca lido por `step_ms` dentro deste dataclass nem em `build_labels`
+    — não há `bar_ms` fixo sob dollar bar por desenho) e `build_labels`
+    constrói `Bars(frame=..., resolution_id=...)` em vez de
+    `timeframe_minutes=`, lendo bars via `lake.query_dollar_bars` em vez
+    de `source="klines_1m"`."""
 
     def __post_init__(self) -> None:
+        if self.resolution_id is not None:
+            if self.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+                raise ValueError(
+                    f"resolution_id={self.resolution_id!r} não suportado -- esperado um "
+                    f"de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+                )
+            # Sob dollar bar `step_ms`/`bar_ms` não se aplicam (sem
+            # espaçamento de relógio constante por desenho, AG-042) -- a
+            # validação de consistência de `estimator_id` abaixo depende de
+            # `bar_ms`, então também não roda neste ramo. `estimator_id`
+            # continua obrigatório (campo do dataclass), só não é
+            # cruzado-validado contra `atr_window_ms/tf` aqui.
+            return
+
         # step_ms levanta UnsupportedTimeframeError pra tf desconhecido --
         # falha alto aqui, na construção, em vez de silenciosamente mais
         # tarde dentro de build_labels (mesma disciplina de
@@ -294,7 +320,11 @@ class LabelConfig:
 
     @classmethod
     def from_constants(
-        cls, *, estimator_id: str | None = None, tf: str = _DEFAULT_TF
+        cls,
+        *,
+        estimator_id: str | None = None,
+        tf: str = _DEFAULT_TF,
+        resolution_id: str | None = None,
     ) -> LabelConfig:
         """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
         no `atr_window_ms` lido de `constants.yaml` — o estimador de
@@ -314,9 +344,22 @@ class LabelConfig:
         B1) -- mesma derivação que `build_labels` faz na hora de construir
         o estimador default, garantindo que os dois nunca divirjam (senão a
         validação `resolved_estimator.estimator_id != cfg.estimator_id`
-        dispararia até no caminho default)."""
+        dispararia até no caminho default).
+
+        `resolution_id` (AG-042) -- quando setado, `estimator_id` NÃO pode
+        ficar `None`: não há `step_ms(tf)`/`bar_ms` sob dollar bar pra
+        derivar o `window_bars` do default ATRWilder (a mesma razão de
+        `resolution_id` desligar a validação em `__post_init__`). Levanta
+        `ValueError` explícito exigindo `estimator_id` explícito nesse
+        caso, nunca inventa um default sem base pra derivar."""
+        if resolution_id is not None and estimator_id is None:
+            raise ValueError(
+                "LabelConfig.from_constants: resolution_id setado exige estimator_id "
+                "explícito -- não há bar_ms sob dollar bar pra derivar o default "
+                "ATRWilder (window_bars = atr_window_ms / step_ms(tf))"
+            )
         atr_window_ms = int(load_constant("atr_window_ms"))
-        window_bars = round(atr_window_ms / step_ms(tf))
+        window_bars = round(atr_window_ms / step_ms(tf)) if resolution_id is None else None
         resolved_estimator_id = (
             estimator_id if estimator_id is not None else f"atr_wilder_w{window_bars}"
         )
@@ -324,12 +367,13 @@ class LabelConfig:
             tp_atr_mult=float(load_constant("tp_atr_mult")),
             sl_atr_mult=float(load_constant("sl_atr_mult")),
             time_stop_ms=int(load_constant("time_stop_ms")),
-            fill_timeout_bars=int(load_constant("fill_timeout_bars")),
+            fill_timeout_ms=int(load_constant("fill_timeout_ms")),
             atr_window_ms=atr_window_ms,
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
             estimator_id=resolved_estimator_id,
             tf=tf,
+            resolution_id=resolution_id,
         )
 
     @property
@@ -358,17 +402,25 @@ class LabelConfig:
         `time_stop_bars` -> `time_stop_ms` E `atr_window` -> `atr_window_ms`,
         mesmo valor numérico em 15m — 28.800.000ms == 32 barras,
         18.000.000ms == 20 barras) — mesma categoria de mudança intencional
-        pelo mesmo motivo: já divergiria por `tf`/`estimator_id`."""
+        pelo mesmo motivo: já divergiria por `tf`/`estimator_id`.
+
+        **Muda de valor de novo com AG-042 (2026-08-17)** (payload key
+        `fill_timeout_bars` -> `fill_timeout_ms`, mesmo valor numérico em
+        15m — 900.000ms == 1 barra, achado durante a migração dollar-bar:
+        mesma classe de bug de `time_stop_bars`, não pega na 1ª rodada —
+        E `resolution_id` novo no payload) — mesma categoria de mudança
+        intencional, já divergiria por `tf`/`estimator_id`/etc."""
         payload = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
             "time_stop_ms": self.time_stop_ms,
-            "fill_timeout_bars": self.fill_timeout_bars,
+            "fill_timeout_ms": self.fill_timeout_ms,
             "atr_window_ms": self.atr_window_ms,
             "maker_fee": self.maker_fee,
             "taker_fee": self.taker_fee,
             "estimator_id": self.estimator_id,
             "tf": self.tf,
+            "resolution_id": self.resolution_id,
         }
         blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
         return hashlib.sha256(blob).hexdigest()[:16]
@@ -789,25 +841,47 @@ def build_labels(
         raise ValueError(f"side deve ser 1 (long) ou -1 (short), recebido {side}")
     cfg = config if config is not None else LabelConfig.from_constants()
 
-    # AG-005 -- `bar_ms` substitui a antiga constante de módulo `_BAR_MS`
-    # (fixa em 15m); TODA a aritmética de horizonte/fill/n_bars_held abaixo
-    # usa isto, não mais um literal. `tf_minutes` é só pra falar a
-    # linguagem (`timeframe_minutes: int`) que `Bars`/`VolatilityEstimator`
-    # exigem (src.features.volatility) -- mesmo `cfg.tf`, unidade diferente.
-    # Movido pra ANTES da resolução do estimador (AG-031/B1): o default
-    # precisa de bar_ms pra derivar window_bars de atr_window_ms.
-    bar_ms = step_ms(cfg.tf)
-    tf_minutes = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
+    # AG-042 (2026-08-17) -- sob resolution_id (dollar bar) não há bar_ms
+    # fixo (AG-042, espaçamento não é constante por desenho). `bar_ms`
+    # fica `None` nesse ramo -- cada uso downstream (default ATRWilder,
+    # horizon_minutes de Bars, extrapolação de n_bars_held na cauda) tem
+    # guarda própria, nenhum lê `bar_ms` sem checar antes.
+    if cfg.resolution_id is not None:
+        bar_ms: int | None = None
+        bars_obj_kwargs: dict[str, Any] = {"resolution_id": cfg.resolution_id}
+        # placeholder -- nenhum candidato injetável valida isso sob resolution_id
+        horizon_minutes = 0
+        if estimator is None:
+            raise ValueError(
+                "build_labels: cfg.resolution_id setado exige `estimator` explícito -- "
+                "não há bar_ms sob dollar bar pra derivar o default ATRWilder "
+                "(window = round(atr_window_ms / bar_ms))"
+            )
+        resolved_estimator = estimator
+    else:
+        # AG-005 -- `bar_ms` substitui a antiga constante de módulo `_BAR_MS`
+        # (fixa em 15m); TODA a aritmética de horizonte/fill/n_bars_held
+        # abaixo usa isto, não mais um literal. `tf_minutes` é só pra falar
+        # a linguagem (`timeframe_minutes: int`) que `Bars`/
+        # `VolatilityEstimator` exigem (src.features.volatility) -- mesmo
+        # `cfg.tf`, unidade diferente. Movido pra ANTES da resolução do
+        # estimador (AG-031/B1): o default precisa de bar_ms pra derivar
+        # window_bars de atr_window_ms.
+        bar_ms = step_ms(cfg.tf)
+        tf_minutes = bar_ms // _MINUTE_MS  # noqa: unguarded-ratio -- _MINUTE_MS é Final[int]=60_000, nunca 0
+        bars_obj_kwargs = {"timeframe_minutes": tf_minutes}
+        horizon_minutes = tf_minutes
 
-    # AG-031/B1 -- window em barras derivado do relógio (atr_window_ms),
-    # mesma derivação que LabelConfig.from_constants() usa pro estimator_id
-    # default (os dois têm que bater, senão a validação abaixo dispara até
-    # no caminho default). Bit-exato a window=20 em tf="15m".
-    resolved_estimator = (
-        estimator
-        if estimator is not None
-        else ATRWilderEstimator(window=round(cfg.atr_window_ms / bar_ms))
-    )
+        # AG-031/B1 -- window em barras derivado do relógio (atr_window_ms),
+        # mesma derivação que LabelConfig.from_constants() usa pro
+        # estimator_id default (os dois têm que bater, senão a validação
+        # abaixo dispara até no caminho default). Bit-exato a window=20 em
+        # tf="15m".
+        resolved_estimator = (
+            estimator
+            if estimator is not None
+            else ATRWilderEstimator(window=round(cfg.atr_window_ms / bar_ms))
+        )
     if resolved_estimator.estimator_id != cfg.estimator_id:
         raise ValueError(
             f"estimator.estimator_id ({resolved_estimator.estimator_id!r}) != "
@@ -822,15 +896,13 @@ def build_labels(
         return _empty_pre_weight_frame()
 
     close = bars["close"].cast(pl.Float64).to_numpy()
-    high = bars["high"].cast(pl.Float64).to_numpy()
-    low = bars["low"].cast(pl.Float64).to_numpy()
     t0_arr = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
 
     # `estimator.estimate()` já retorna fração do preço (mesma escala que
     # `atr_pct` sempre teve) -- 2026-08-12, ver docstring do módulo.
     atr_pct = resolved_estimator.estimate(
-        Bars(frame=bars, timeframe_minutes=tf_minutes),
-        horizon_minutes=tf_minutes,
+        Bars(frame=bars, **bars_obj_kwargs),
+        horizon_minutes=horizon_minutes,
     )
     valid_atr = ~np.isnan(atr_pct)
     n_warmup_dropped = int((~valid_atr).sum())
@@ -873,7 +945,7 @@ def build_labels(
         )
         limit_px = round_to_tick(entry_ref, side, resolved_filters.tick_size)
 
-        fill_horizon_ms = t_post + cfg.fill_timeout_bars * bar_ms
+        fill_horizon_ms = t_post + cfg.fill_timeout_ms  # AG-042 -- relógio fixo, não mais * bar_ms
         if fill_horizon_ms > max_mark_open_time:
             n_incomplete_tail += 1
             continue
@@ -969,8 +1041,30 @@ def build_labels(
         elif t1 <= int(t0_arr[-1]):
             idx1 = int(np.searchsorted(t0_arr, t1, side="right")) - 1
             n_bars_held = idx1 - i
-        else:
+        elif bar_ms is not None:
             n_bars_held = (n - 1 - i) + int(np.ceil((t1 - t0_arr[-1]) / bar_ms))
+        else:
+            # AG-042 -- t1 além do último decision bar carregado, sob
+            # resolution_id (dollar bar): não há bar_ms fixo pra
+            # extrapolar. Aproxima com a MEDIANA real de espaçamento
+            # observada no próprio `t0_arr` carregado -- medição, não
+            # suposição (mesmo espírito de "nunca invente número" do
+            # resto do projeto). Só afeta a CAUDA do intervalo pedido;
+            # mesma limitação de aproximação que a fórmula original já
+            # tinha pra grade de tempo ("reconstruído por aritmética a
+            # partir do último bar real"), agora medida em vez de fixa.
+            # Fallback pra `time_stop_ms` no caso degenerado de `n < 2`
+            # (sem 2 barras não há diff pra medir mediana) OU mediana
+            # não-positiva (rajada real de liquidez com `close_time`
+            # repetido pode produzir diff=0 predominante -- AG-061 já
+            # confirmou isso acontecer de verdade em SOLUSDT -- guarda de
+            # sinal explícita, não presumida).
+            median_bar_ms = float(np.median(np.diff(t0_arr))) if n >= 2 else 0.0
+            if median_bar_ms <= 0:
+                median_bar_ms = float(cfg.time_stop_ms)
+            n_bars_held = (n - 1 - i) + int(
+                np.ceil((t1 - t0_arr[-1]) / median_bar_ms)  # noqa: unguarded-ratio -- guardado acima
+            )
 
         # D3 (Faixa 2) — excursão favorável máxima, em unidades de ATR (mesma
         # normalização de tp_price/sl_price: `fill_px * mult * atr_pct_i`).
@@ -1107,33 +1201,47 @@ def build_labels_for_symbol(
     desta correção, documentado explicitamente em vez de deixado implícito.
 
     `mark_1m`/`funding` são buscados com folga ALÉM de `end` — o suficiente
-    pra cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.
-    tf))` (o maior horizonte possível no TF pedido) MAIS 1 dia de margem
-    extra. Antes do AG-005 a folga era um "1 dia" fixo, calibrado só pro
-    caso 15m — em TF maior (quando o horizonte ainda era `time_stop_bars *
-    step_ms(tf)`, crescendo com o TF) essa folga fixa seria insuficiente e
-    descartaria labels reais por "cauda incompleta" silenciosamente
-    (bloqueador real pra M2/M3, PRD_V4_1.md §3.2). **AG-031/B1** — com
-    `time_stop_ms` fixo (relógio, não mais barras), o termo dominante do
-    `max(...)` deixa de crescer com `tf`: a folga por `time_stop` agora É a
-    mesma em qualquer TF (8h, por padrão), só `fill_timeout_bars *
-    step_ms(cfg.tf)` ainda escala (e é sempre pequeno comparado a 8h). Sem
-    isso, os últimos labels do intervalo pedido seriam descartados apesar
-    do dado existir logo depois de `end`.
+    pra cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_ms)` (o maior
+    horizonte possível) MAIS 1 dia de margem extra. Antes do AG-005 a
+    folga era um "1 dia" fixo, calibrado só pro caso 15m — em TF maior
+    (quando o horizonte ainda era `time_stop_bars * step_ms(tf)`,
+    crescendo com o TF) essa folga fixa seria insuficiente e descartaria
+    labels reais por "cauda incompleta" silenciosamente (bloqueador real
+    pra M2/M3, PRD_V4_1.md §3.2). **AG-031/B1 + AG-042** — com
+    `time_stop_ms` E `fill_timeout_ms` fixos (relógio, não mais barras),
+    o `max(...)` não depende de `tf`/`bar_ms` NUNCA MAIS — `step_ms(cfg.
+    tf)` não entra mais nesta conta (achado 2026-08-17, ao dar suporte a
+    dollar bar: `fill_timeout_bars * step_ms(cfg.tf)` era a última
+    dependência de `bar_ms` nesta função).
 
     `estimator=None` (default) preserva o comportamento de produção atual
-    (`ATRWilderEstimator`, ver `build_labels`). Este é o ÚNICO ponto de
-    entrada real com IO deste módulo -- é aqui que promover GK a canônico
-    de fato aconteceria (`docs/refactor_gk_canonico.md`), passando
-    `estimator=GarmanKlassEstimator(window=round(cfg.atr_window_ms /
-    step_ms(cfg.tf)))` e um `config` com `estimator_id="garman_klass_w
-    {window}"` -- NÃO feito por padrão aqui, decisão explícita pendente de
-    quem chama."""
+    (`ATRWilderEstimator`, ver `build_labels`) -- só válido sob grade de
+    tempo (`cfg.resolution_id is None`); sob dollar bar `estimator` é
+    obrigatório (mesma exigência de `build_labels`). Este é o ÚNICO ponto
+    de entrada real com IO deste módulo -- é aqui que promover um
+    estimador novo a canônico de fato acontece (`docs/refactor_parkinson_
+    canonico.md`), passando `estimator=ParkinsonEstimator(window=...)` e
+    um `config` com `estimator_id`/`resolution_id` -- NÃO feito por
+    padrão aqui, decisão explícita pendente de quem chama.
+
+    `resolution_id` (AG-042) -- quando `cfg.resolution_id` é setado,
+    `bars_15m` carrega via `lake.query_dollar_bars` (não mais
+    `source="klines_1m"`) -- o nome do parâmetro/variável continua
+    histórico (compat com `build_labels`), não significa literalmente
+    15 minutos nesse caso (mesma ressalva já feita acima pra `tf`)."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
-    bars_15m = lake.query_bars(symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True)
+    if cfg.resolution_id is not None:
+        # query_dollar_bars não tem `cast_prices` -- dollar bars já são
+        # persistidas em Float64 (schemas.DOLLAR_BARS_R1/R2/R3), sem a
+        # ambiguidade de tipo que `cast_prices` resolve pra klines_1m.
+        bars_15m = lake.query_dollar_bars(symbol, start, end, resolution_id=cfg.resolution_id)
+    else:
+        bars_15m = lake.query_bars(
+            symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True
+        )
 
-    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_ms)
     mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True

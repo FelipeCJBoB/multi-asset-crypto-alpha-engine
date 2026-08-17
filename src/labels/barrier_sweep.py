@@ -60,7 +60,18 @@ sem depender de `bar_ms`/contagem de barra de decisão nenhuma.
 quando fornecido, vira contagem real (busca, paridade com
 `build_labels`); `None` (default) mantém a aritmética antiga, usada pelo
 único caller real hoje (`faixa2_caminho_b.py`, que não carrega `bars_15m`
-nem consome esse campo)."""
+nem consome esse campo).
+
+**AG-042 (2026-08-17) — fora do escopo da migração dollar-bar,
+explicitamente, não por esquecimento.** Confirmado por grep: o único
+caller real de `resolve_barriers_vectorized` continua sendo
+`src.analysis.faixa2_caminho_b` — `src/analysis/` não pode virar insumo
+de treino/validação (`CLAUDE.md`, contrato de camada) e está fora do
+plano de migração de produção (`docs/refactor_parkinson_canonico.md`).
+Este módulo não ganha `resolution_id`/suporte a dollar bar nesta leva —
+se um caller de produção real precisar dele sob grade dollar-bar no
+futuro, aplica-se o mesmo tratamento já dado a `triple_barrier.py`
+(`tf`/`resolution_id` XOR), não antes."""
 
 from __future__ import annotations
 

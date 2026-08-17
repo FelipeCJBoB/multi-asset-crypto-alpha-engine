@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
+
 # src/validation/_paths.py -> parents[0]=src/validation, [1]=src, [2]=raiz do repo
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -37,10 +39,24 @@ LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
 _DEFAULT_TF = "15m"
 
 
-def labels_symbol_tf_dir(symbol: str, version: str, *, tf: str = _DEFAULT_TF) -> Path:
-    """`data/labels/{symbol}/{tf}/{version}/` — mesmo layout de
-    `src.labels._paths.labels_symbol_tf_dir` (T0.3)."""
-    return DATA_ROOT / "labels" / symbol / tf / version
+def labels_symbol_tf_dir(
+    symbol: str, version: str, *, tf: str = _DEFAULT_TF, resolution_id: str | None = None
+) -> Path:
+    """`data/labels/{symbol}/{grade}/{version}/` — mesmo layout de
+    `src.labels._paths.labels_symbol_tf_dir` (T0.3), mesma guarda
+    anti-colisão de `resolution_id` (AG-042, achado de revisão
+    independente `project_assurance`, 2026-08-17) -- ver docstring
+    daquela função pro racional completo."""
+    if resolution_id is not None:
+        if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+            raise ValueError(
+                f"labels_symbol_tf_dir: resolution_id={resolution_id!r} não reconhecido -- "
+                f"esperado um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+            )
+        grade = resolution_id
+    else:
+        grade = tf
+    return DATA_ROOT / "labels" / symbol / grade / version
 
 # Saída dos relatórios deste pacote (`leakage_report.json`, resumo de splits
 # do CPCV) — irmão de `data/quality_reports/` (Data Quality Engine, Sprint

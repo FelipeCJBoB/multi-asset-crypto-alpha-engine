@@ -924,7 +924,15 @@ min_common_history_bars_15m:
 fill_timeout_bars:
   value: 1
   provenance: ASSUMED
-  source: "citado explicitamente no PRD §3.3 (fill_timeout_bars: 1) mas sem teste de sensibilidade — quanto tempo uma ordem limite fica postada antes do timeout (on_timeout: CANCEL, B13). Não invalida o desenho sozinho (NOFILL já é um desfecho de primeira classe, §3.2) — classe B, não A, mas ainda precisa de proveniência (Regra 1)."
+  source: "citado explicitamente no PRD §3.3 (fill_timeout_bars: 1) mas sem teste de sensibilidade — quanto tempo uma ordem limite fica postada antes do timeout (on_timeout: CANCEL, B13). Não invalida o desenho sozinho (NOFILL já é um desfecho de primeira classe, §3.2) — classe B, não A, mas ainda precisa de proveniência (Regra 1). Continua em uso direto por src/execution/fill_simulator.py (contagem de barra, consumidor independente de LabelConfig, fora do escopo da migração dollar-bar de 2026-08-17 -- zero acoplamento a estimador de volatilidade, sem caller de produção real ainda) e por src/labels/barrier_sweep.py -- NÃO renomear/apagar."
+  class: B
+  sweep_required: false
+  review_by: sprint_6
+
+fill_timeout_ms:
+  value: 900000
+  provenance: DERIVED
+  source: "derivado de fill_timeout_bars(1, ASSUMED) × step_ms('15m')=900000 -- mesmo valor (15min), reexpresso em relógio fixo pro Label Engine (achado 2026-08-17, ao implementar suporte a dollar bar no Label Engine -- LabelConfig.fill_timeout_bars multiplicava por bar_ms=step_ms(cfg.tf) em build_labels, mesma classe de bug já corrigida em time_stop_ms/AG-031/B1, só não tinha sido pega na 1ª rodada). LabelConfig.fill_timeout_ms substitui fill_timeout_bars NESTE dataclass só -- fill_horizon_ms = t_post + fill_timeout_ms, direto, sem depender de tf/bar_ms sob dollar bar. A constante fill_timeout_bars (acima) continua existindo, inalterada, pros outros consumidores (fill_simulator.py, barrier_sweep.py). A suposição de timeout em si (15min) permanece ASSUMED, sweep_required herdado."
   class: B
   sweep_required: false
   review_by: sprint_6

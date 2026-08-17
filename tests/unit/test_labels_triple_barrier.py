@@ -19,7 +19,7 @@ import pytest
 
 from src.data._paths import CAPACITY_DIR
 from src.exchange.filters import NoFiltersAvailableError
-from src.features.volatility import ATRWilderEstimator, GarmanKlassEstimator
+from src.features.volatility import ATRWilderEstimator, GarmanKlassEstimator, ParkinsonEstimator
 from src.labels import triple_barrier as tb
 
 _FIXTURE_START = "2024-01-01"
@@ -90,7 +90,7 @@ def test_config_hash_deterministico() -> None:
         ("tp_atr_mult", 2.5),
         ("sl_atr_mult", 1.0),
         ("time_stop_ms", 16 * 900_000),
-        ("fill_timeout_bars", 2),
+        ("fill_timeout_ms", 2 * 900_000),
         # +100_000ms (não 14*900_000) -- muda o payload do hash sem mudar
         # window_bars (round(18_100_000/900_000)==20, mesmo de _CFG), senão
         # dispararia a validação de LabelConfig.__post_init__ (AG-031/B1 --
@@ -236,7 +236,7 @@ _BASE_MS = int(datetime(2026, 8, 8, 0, 0, tzinfo=UTC).timestamp() * 1000)
 # 0+3-1=2) -- exatamente 1 linha de decisão por chamada, fixture mínima.
 _CLOSES = [100.0, 100.2, 99.9]
 _CFG = tb.LabelConfig(
-    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_ms=4 * _BAR_MS, fill_timeout_bars=1,
+    tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_ms=4 * _BAR_MS, fill_timeout_ms=_BAR_MS,
     atr_window_ms=3 * _BAR_MS, maker_fee=0.0002, taker_fee=0.0005,
     estimator_id="atr_wilder_w3",
 )
@@ -374,6 +374,114 @@ def test_build_labels_garman_klass_produz_atr_at_t0_diferente_do_wilder() -> Non
     atr_gk = out_gk.row(0, named=True)["atr_at_t0"]
     assert atr_wilder != pytest.approx(atr_gk)
     assert out_gk.row(0, named=True)["config_hash"] != out_wilder.row(0, named=True)["config_hash"]
+
+
+# ============================================================================
+# resolution_id (dollar bar, AG-042, 2026-08-17) -- mesmo XOR de
+# Bars.timeframe_minutes/resolution_id (src.features.volatility). Não há
+# bar_ms fixo sob dollar bar, então `estimator` explícito é obrigatório
+# (ATRWilder default não pode ser derivado sem bar_ms).
+# ============================================================================
+
+
+def _dollar_bar_cfg(*, estimator_id: str = "parkinson_w3") -> tb.LabelConfig:
+    return tb.LabelConfig(
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_ms=4 * _BAR_MS,
+        fill_timeout_ms=_BAR_MS,
+        atr_window_ms=3 * _BAR_MS,  # vestigial sob resolution_id -- não lido
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        estimator_id=estimator_id,
+        resolution_id="R1",
+    )
+
+
+def test_label_config_resolution_id_invalido_levanta_valueerror() -> None:
+    with pytest.raises(ValueError, match="resolution_id"):
+        tb.LabelConfig(
+            tp_atr_mult=2.0,
+            sl_atr_mult=1.5,
+            time_stop_ms=4 * _BAR_MS,
+            fill_timeout_ms=_BAR_MS,
+            atr_window_ms=3 * _BAR_MS,
+            maker_fee=0.0002,
+            taker_fee=0.0005,
+            estimator_id="parkinson_w3",
+            resolution_id="R4",
+        )
+
+
+def test_label_config_resolution_id_pula_validacao_atr_wilder() -> None:
+    """Sob `resolution_id`, `__post_init__` não chama `step_ms(tf)` --
+    `estimator_id` pode divergir da convenção `atr_wilder_w{N}` sem
+    levantar (não há `bar_ms` pra validar contra), diferente do
+    comportamento sob grade de tempo."""
+    cfg = tb.LabelConfig(
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.5,
+        time_stop_ms=4 * _BAR_MS,
+        fill_timeout_ms=_BAR_MS,
+        atr_window_ms=999 * _BAR_MS,  # deliberadamente "errado" -- não validado aqui
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        estimator_id="atr_wilder_w3",  # não bate com atr_window_ms/bar_ms, mas ok
+        resolution_id="R1",
+    )
+    assert cfg.resolution_id == "R1"
+    assert cfg.tf == "15m"  # default, vestigial
+
+
+def test_label_config_from_constants_resolution_id_sem_estimator_id_levanta_erro() -> None:
+    with pytest.raises(ValueError, match="estimator_id"):
+        tb.LabelConfig.from_constants(resolution_id="R1")
+
+
+def test_build_labels_resolution_id_sem_estimator_levanta_valueerror() -> None:
+    mark = _tp_long_mark()
+    with pytest.raises(ValueError, match=r"resolution_id.*estimator|estimator.*resolution_id"):
+        tb.build_labels(
+            _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_dollar_bar_cfg()
+        )
+
+
+def test_build_labels_resolution_id_com_estimator_explicito_produz_labels_reais() -> None:
+    """Caminho fim-a-fim sob dollar bar: `Bars(resolution_id=...)` em vez
+    de `timeframe_minutes=`, `horizon_minutes=0` placeholder,
+    `fill_horizon_ms`/`horizon_end_ms` em relógio fixo (não multiplicam
+    por `bar_ms`, que nem existe aqui) -- confirma que produz uma linha
+    de label real, não vazia/degenerada."""
+    mark = _tp_long_mark()
+    cfg = _dollar_bar_cfg()
+    out = tb.build_labels(
+        _synthetic_bars(),
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=cfg,
+        estimator=ParkinsonEstimator(window=3),
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["atr_at_t0"] is not None and row["atr_at_t0"] > 0
+    assert row["config_hash"] == cfg.config_hash
+
+
+def test_build_labels_resolution_id_estimator_id_divergente_levanta_valueerror() -> None:
+    """B15 continua valendo sob dollar bar -- `estimator.estimator_id` tem
+    que bater com `cfg.estimator_id`, mesma disciplina de grade de tempo."""
+    mark = _tp_long_mark()
+    cfg = _dollar_bar_cfg(estimator_id="garman_klass_w3")  # não bate com Parkinson abaixo
+    with pytest.raises(ValueError, match="estimator_id"):
+        tb.build_labels(
+            _synthetic_bars(),
+            mark,
+            _EMPTY_FUNDING,
+            side=1,
+            config=cfg,
+            estimator=ParkinsonEstimator(window=3),
+        )
 
 
 def test_build_labels_tp_long() -> None:

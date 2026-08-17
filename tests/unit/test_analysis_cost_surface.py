@@ -72,7 +72,7 @@ def test_default_grid_axes_usa_tp_sl_do_config_passado() -> None:
         tp_atr_mult=4.0,
         sl_atr_mult=2.0,
         time_stop_ms=32 * 900_000,
-        fill_timeout_bars=1,
+        fill_timeout_ms=_BAR_MS,
         atr_window_ms=20 * 900_000,
         maker_fee=0.0002,
         taker_fee=0.0005,
@@ -218,7 +218,7 @@ _BASE_CFG = tb.LabelConfig(
     tp_atr_mult=1.0,  # sobrescrito por célula do grid, valor aqui é irrelevante
     sl_atr_mult=1.0,
     time_stop_ms=4 * _BAR_MS,
-    fill_timeout_bars=1,
+    fill_timeout_ms=_BAR_MS,
     atr_window_ms=3 * _BAR_MS,
     maker_fee=0.0002,
     taker_fee=0.0005,
@@ -470,9 +470,10 @@ def test_build_cost_surface_grid_for_symbol_default_tf_bate_com_hardcode_anterio
 
     # mark_1m/funding: a folga MUDA de propósito (essa é a correção AG-011,
     # não um efeito colateral) -- de "+1 dia" fixo para
-    # "+ max(time_stop_ms, fill_timeout_bars*step_ms(tf)) + 1 dia", mesma
-    # fórmula do AG-005/AG-031/B1 em triple_barrier.build_labels_for_symbol.
-    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
+    # "+ max(time_stop_ms, fill_timeout_ms) + 1 dia" (AG-042 -- os dois
+    # termos são relógio fixo agora, step_ms(tf) não entra mais nesta
+    # conta), mesma fórmula de triple_barrier.build_labels_for_symbol.
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_ms)
     expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
 
     assert query_bars_calls[1][:2] == ("BTCUSDT", "1m")
@@ -507,11 +508,10 @@ def test_build_cost_surface_grid_for_symbol_tf_customizado_muda_query_bars(
 
     assert query_bars_calls[0] == ("ETHUSDT", "30m", "2024-01-01", "2024-01-02", "klines_1m", True)
 
-    # AG-031/B1 -- horizonte não escala mais com tf (time_stop_ms é o termo
-    # dominante do max(), fixo); só o componente fill_timeout ainda escala,
-    # e é pequeno demais pra dominar. A fórmula em si continua correta pra
-    # QUALQUER tf, só o valor resultante deixou de crescer com ele.
-    horizon_ms = max(base_cfg.time_stop_ms, base_cfg.fill_timeout_bars * step_ms("30m"))
+    # AG-031/B1 + AG-042 -- horizonte não escala mais com tf (time_stop_ms
+    # E fill_timeout_ms são os dois relógio fixo agora). A fórmula em si
+    # continua correta pra QUALQUER tf, só não depende mais de step_ms(tf).
+    horizon_ms = max(base_cfg.time_stop_ms, base_cfg.fill_timeout_ms)
     expected_mark_end = date(2024, 1, 2) + timedelta(milliseconds=horizon_ms, days=1)
     assert query_bars_calls[1][3] == expected_mark_end
     assert query_funding_calls[0]["end"] == expected_mark_end

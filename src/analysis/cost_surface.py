@@ -79,7 +79,6 @@ from numpy.typing import NDArray
 from src.core.metric import Metric, Unit, not_computable
 from src.core.provenance import report_provenance
 from src.data import lake
-from src.data.resample import step_ms
 from src.features.groups.group_e import round_trip_cost_bps
 from src.labels import triple_barrier
 from src.labels.triple_barrier import DateLike, LabelConfig
@@ -389,20 +388,20 @@ def build_cost_surface_grid_for_symbol(
     ponto de entrada tinha sua própria cópia independente do hardcode.
 
     `mark_1m`/`funding` buscados com folga ALÉM de `end` — o suficiente pra
-    cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))`
-    (o maior horizonte possível no TF pedido) MAIS 1 dia de margem extra,
-    mesmo padrão de `triple_barrier.build_labels_for_symbol` (AG-005/
-    AG-031/B1). Antes da correção AG-005 a folga era um "1 dia" fixo
-    calibrado só pro caso 15m — quando `time_stop_bars`/`fill_timeout_bars`
-    eram expressos em barras (crescendo com o TF), essa folga fixa podia
-    ser insuficiente e descartar labels reais por "cauda incompleta"
-    silenciosamente. **AG-031/B1** — com `time_stop_ms` fixo (relógio), o
-    termo dominante do `max(...)` deixa de crescer com `tf`."""
+    cobrir `max(cfg.time_stop_ms, cfg.fill_timeout_ms)` (o maior horizonte
+    possível) MAIS 1 dia de margem extra, mesmo padrão de
+    `triple_barrier.build_labels_for_symbol` (AG-005/AG-031/B1/AG-042).
+    Antes da correção AG-005 a folga era um "1 dia" fixo calibrado só pro
+    caso 15m — quando `time_stop_bars`/`fill_timeout_bars` eram expressos
+    em barras (crescendo com o TF), essa folga fixa podia ser insuficiente
+    e descartar labels reais por "cauda incompleta" silenciosamente.
+    **AG-031/B1 + AG-042** — com `time_stop_ms` E `fill_timeout_ms` fixos
+    (relógio), o `max(...)` não depende de `tf`/`step_ms` nunca mais."""
     cfg = base_config if base_config is not None else LabelConfig.from_constants()
 
     bars_15m = lake.query_bars(symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True)
 
-    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_bars * step_ms(cfg.tf))
+    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_ms)
     mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True
