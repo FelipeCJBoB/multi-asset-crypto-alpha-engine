@@ -4572,3 +4572,145 @@ entries:
       esta readaptação, registrado pra fechar quando o módulo ganhar o
       primeiro caller real (reintegração ao harness de M1, `AG-036`).
     status: "fechado parcialmente -- Gap 1 corrigido e confirmado (17 passed), Gaps 2/3 abertos como débito pré-existente"
+
+  - id: AG-063
+    date: "2026-08-17"
+    file: "src/features/acd.py (novo)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-061, AG-036 (addendums ACD-GARCH de 2026-08-17)"
+    found_by: "Claude, rodando pytest sobre o sub-módulo ACD (autorização temporária de execução, acesso remoto do Manager)"
+    gap: >
+      `fit_acd` retornava `None` (otimizador não convergia) sempre que os
+      dados de treino continham QUALQUER duração real `x==0` -- achado ao
+      rodar `test_predict_acd_duracao_zero_no_meio_da_serie_nao_crasha_
+      ag061`, não hipotético. Causa raiz matemática real, não bug de
+      código: a densidade Weibull em `x=0` é EXATAMENTE `0` pra `κ>1` e
+      `+∞` pra `κ<1` -- qualquer duração real exatamente zero (a rajada de
+      liquidez já documentada em `AG-061`, SOLUSDT 2025-07-16) torna a
+      log-verossimilhança TOTAL não-finita fora de uma vizinhança
+      minúscula de `κ=1` (que é justamente o `x0` do otimizador), deixando
+      o L-BFGS-B sem gradiente utilizável em qualquer direção -- não uma
+      falha rara, uma certeza matemática toda vez que `x` real contém um
+      zero exato.
+    severity: "alto"
+    layer: "features"
+    consequence: >
+      Sem a correção, `fit_acd` (e por extensão `fit_egarch_coupled`, que
+      depende de `psi`/`psi_bar` do ACD) falharia silenciosamente
+      (retornando `None`) pra QUALQUER símbolo/janela cujo dado real
+      contivesse uma rajada de liquidez com `close_time` repetido --
+      exatamente o padrão que `AG-061` já confirmou ser real (não
+      hipotético) em pelo menos 1 dos 5 símbolos medidos. O 3º e último
+      candidato amputado de M1 ficaria estruturalmente incapaz de ajustar
+      em janelas com esse padrão, sem nenhum sinal de que a causa era
+      matemática (densidade zero/infinita), não dado insuficiente.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17, mesma sessão do achado -- `close_time` tem
+      resolução de 1ms (Binance); uma duração observada `x==0` é CENSURA
+      DE QUANTIZAÇÃO (duração real está em `[0,1)ms`, só arredondada pro
+      mesmo carimbo), não zero físico verdadeiro (dois trades não ocorrem
+      no mesmo instante). `_ACD_DURATION_FLOOR_MS=0.5` (ponto médio do
+      intervalo de censura) substitui `x==0` -- e SÓ `x==0` exato, via
+      `np.where(x==0, floor, x)`, não `np.maximum` -- na avaliação da
+      verossimilhança (`_acd_weibull_log_pdf`), nunca na recursão de `ψ`
+      (`_acd_psi_recursion` usa `x` verdadeiro; `alpha*0` é aritmética
+      linear normal, sem patologia). Irrelevante pra qualquer duração real
+      não-zero (mediana medida em `AG-061`: 7,5-9,9 minutos = 450.000-
+      594.000ms -- um piso de 0,5ms é ruído desprezível fora do caso de
+      fronteira). 3 testes de fronteira reescritos pro comportamento
+      correto (finito pra qualquer κ, não mais ±∞ no limite matemático) +
+      1 teste novo confirmando que valores não-zero (inclusive
+      fracionários, usados pra provar correção geral contra
+      `scipy.stats.weibull_min`) não são afetados pelo floor. Confirmado
+      empiricamente: 43 passed (`test_features_acd.py` +
+      `test_features_volatility_models.py`), 1198 passed na suíte rápida
+      completa.
+    status: "fechado -- corrigido e confirmado na mesma sessão do achado"
+
+  - id: AG-064
+    date: "2026-08-17"
+    file: "src/features/acd.py, src/features/volatility_models.py (bloco EGARCH acoplado)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-036, AG-061, AG-062, AG-063"
+    found_by: "Agent Project Assurance (revisão independente) + Claude (correção de 1 achado do revisor)"
+    gap: >
+      Revisão do 3º e último candidato amputado de M1 (EGARCH acoplado a
+      ACD, extensão por analogia -- não reprodução de Ghysels&amp;Jasiak,
+      ver `AG-036` addendums). Verificação matemática independente
+      confirmou causalidade correta (índice de `ψ` pareado sem off-by-one,
+      derivado à mão) e prova de bit-exatidão genuína (oráculo copiado
+      literal de `git show 50dd621`, não a própria função nova
+      disfarçada) -- zero achado CRITICAL/HIGH. 4 achados reais MEDIUM/LOW
+      + 1 achado do revisor REFUTADO por verificação direta:
+
+      **(1) MEDIUM, CORRIGIDO:** zero teste de integração ponta a ponta
+      entre `acd.predict_acd` e `fit_egarch_coupled`/
+      `predict_egarch_coupled` -- todos os testes usavam `psi` construído
+      à mão. 2 testes novos: 1 de integração real (`close_time` sintético
+      irregular → `fit_acd`/`predict_acd` → `psi` real →
+      `fit_egarch_coupled`/`predict_egarch_coupled`), 1 de causalidade
+      ponta a ponta (perturbar `close_time`/`log_return` depois de
+      `t_check` não muda `log_var[t_check+1]` -- fit isolado ao prefixo
+      comum não-perturbado, pra não conflar "coeficiente diferente" com
+      "vazamento temporal").
+
+      **(2) MEDIUM, ABERTO (decisão do Manager, não corrigido):** a
+      correção de censura de quantização (`AG-063`, `x==0 →
+      _ACD_DURATION_FLOOR_MS=0,5ms`) é aproximação plug-in (densidade
+      pontual no piso), não o tratamento estatisticamente rigoroso de
+      dado censurado por intervalo (`log(F(1ms)-F(0))`). Direção de viés
+      plausível (empurra `κ` recuperado pra baixo na presença de `x==0`),
+      não medida por nenhum teste. Prevalência hoje é baixa (~0,006% em
+      SOLUSDT, `AG-061`) mas `median_ratio_early_vs_recent` (1,16-2,40x,
+      mesmo JSON) mostra durações encolhendo com o tempo -- prevalência
+      tende a crescer, não é garantia permanente de irrelevância.
+
+      **(3) MEDIUM, CORRIGIDO:** `psi_t` finito mas `&lt;=0` (violação de
+      contrato de um caller hipotético fora de `predict_acd`, que garante
+      positividade por construção) produziria `tau_t&lt;=0`, e `beta**tau_t`
+      com `beta=0.0` (extremo do bound) e expoente negativo levantaria
+      `ZeroDivisionError` não tratado em vez de falhar graciosamente.
+      Corrigido: `psi_t&lt;=0` cai no mesmo fallback `tau_t=1.0` que
+      `not isfinite(psi_t)`.
+
+      **(4) LOW, CORRIGIDO:** `check_unguarded_ratios.py` apontou
+      `acd.py:262` (divisão dentro de `np.log(kappa/lam)`) sem `# noqa`
+      na própria linha (as linhas de divisão anteriores tinham, o
+      comentário "ver acima" foi presumido cobrir a função inteira, mas
+      o script escaneia linha a linha). `noqa` adicionado.
+
+      **(5) MEDIUM alegado, REFUTADO por verificação direta:** o revisor
+      contestou a alegação "43 passed (arquivos isolados)" como
+      provavelmente testando o arquivo errado (`test_features_
+      volatility.py`, não-relacionado, 29 testes, em vez de
+      `test_features_volatility_models.py`). Reconferido por Claude
+      DIRETAMENTE (`grep -c "^def test_"` + `pytest --collect-only`):
+      `test_features_volatility_models.py` já tinha 17 testes do HAR-RV
+      (leva anterior, commit `8c41858`) + 12 novos do bloco EGARCH
+      acoplado = 29 no total -- coincidência real (não erro) que os dois
+      arquivos distintos têm 29 testes cada hoje, confundindo o revisor.
+      `14 (acd.py) + 29 (volatility_models.py, correto) = 43` bate exato
+      com o `pytest --collect-only` rodado agora. Achado do revisor NÃO
+      se sustenta -- registrado para constar, não como débito real.
+
+      **Achado à parte, auto-divulgado pelo revisor**: rodou `python -c`
+      via Bash pra inspecionar o JSON de `AG-061` -- mesma classe de
+      desvio de protocolo já registrada em `AG-057`, autocorrigido no
+      caminho (parou, usou só ferramentas permitidas dali em diante).
+    severity: "médio"
+    layer: "features"
+    consequence: >
+      (1)/(3)/(4) eram gaps reais de robustez/cobertura, corrigidos.
+      (2) é decisão de rigor estatístico pendente, não bloqueante hoje.
+      (5) não teve consequência real -- a evidência de teste genuína
+      (`43 passed`) sempre esteve correta, só a explicação do revisor
+      pra ela estava errada.
+    resolved_by_commit: null
+    resolution: >
+      IMPLEMENTADO 2026-08-17, mesma sessão -- achados (1)/(3)/(4)
+      corrigidos, confirmados: 45 passed (`test_features_acd.py` +
+      `test_features_volatility_models.py`, era 43), 1200 passed na suíte
+      rápida completa (era 1198). Achado (2) registrado como decisão
+      aberta do Manager (aceitar aproximação plug-in vs. implementar
+      censura por intervalo rigorosa). Achado (5) corrigido no registro
+      (não no código -- não havia nada de errado no código).
+    status: "fechado parcialmente -- (1)/(3)/(4) corrigidos e confirmados, (2) aberto (decisão do Manager), (5) refutado"
