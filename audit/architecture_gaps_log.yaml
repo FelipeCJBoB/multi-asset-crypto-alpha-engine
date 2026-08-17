@@ -3103,6 +3103,29 @@ entries:
       aqui, aguardando: (a) a decisão de escopo 4-vs-8 acima, (b) medição
       real de duração de dollar bar (bloqueia junto com AG-043), (c) os 5
       símbolos completos no reprocessamento.
+    addendum_decisao_escopo_2026_08_17: >
+      **Decisão do Manager: resgatar+readaptar os 8 (não só os 4
+      sobreviventes).** HAR-RV (commit `3ceb5b7`), EGARCH(1,1) (commit
+      `50dd621`), RealizedVol-como-classe (commit `caffdc6`, removida em
+      `aec7b59`) serão trazidos de volta e readaptados pra grade dollar-bar
+      -- não é resgate mecânico do git, é readaptação real (ver pesquisa
+      já registrada acima: os 3 têm a dependência mais forte de
+      espaçamento regular no tempo dos 8 candidatos). Contexto adicional
+      confirmado via `git show` dos 4 commits reais: HAR-RV usava médias
+      causais de 24h/7d/30d em CONTAGEM DE BARRAS (`volatility_models.py`,
+      convenção cripto 24/7, não 5/22 dias úteis) -- sob dollar bar essa
+      contagem deixa de corresponder a um período de calendário fixo,
+      mesmo problema já mapeado na pesquisa. EGARCH usava MLE via
+      `scipy.optimize` (L-BFGS-B), recursão sequencial de log-variância,
+      refit por fold -- mais caro que os outros, ainda mais caro se a
+      readaptação exigir extensão tipo ACD-GARCH/UHF-GARCH (dado irregular,
+      ver fontes já citadas). O próprio commit do EGARCH já documentava
+      uma limitação conhecida do HAR-RV intraday original ("falta ajuste
+      diurnal... limitação documentada") -- pré-existente à questão de
+      dollar bar, soma ao trabalho de readaptação. Próximo passo: pesquisa
+      +desenho aprofundado de como cada um dos 3 muda sob duração variável
+      (delegado a seguir), ainda sem implementar -- mesma trava de (b)/(c)
+      acima continua valendo antes de qualquer execução real.
 
   - id: AG-037
     date: "2026-08-16"
