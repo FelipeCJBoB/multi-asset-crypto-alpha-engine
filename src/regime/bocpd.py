@@ -42,7 +42,18 @@ from scipy.stats import t as student_t
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 
-_DEFAULT_PRUNE_THRESHOLD = 1e-4
+# Limiar de poda de hipótese de run-length -- prática padrão da literatura
+# de BOCPD (Adams & MacKay 2007 e implementações de referência subsequentes
+# usam epsilon ~= 1e-3 a 1e-4 pra podar run-lengths de probabilidade
+# posterior desprezível, ver docstring do módulo/pesquisa web desta
+# auditoria). Default do NÚCLEO PURO -- ASSUMED/literatura, não
+# recalibrado contra dado real do M4 (a calibração real, se algum dia
+# necessária, é responsabilidade do orquestrador via constants.yaml,
+# mesmo padrão de `bocpd_hazard_lambda` em `m4_regime_comparison.py`, que
+# hoje também não tem entrada em constants.yaml de propósito -- pendente
+# Fase 6/Manager). Mesmo estilo de hiperparâmetro-default-de-função-pura
+# de `_DEFAULT_STICKY_CONCENTRATION` em `src/regime/hmm_gaussian.py`.
+_DEFAULT_PRUNE_THRESHOLD = 1e-4  # noqa: magic-number -- ver comentário acima
 _DEFAULT_PRIOR_KAPPA0 = 1.0
 _DEFAULT_PRIOR_ALPHA0 = 1.0
 _DEFAULT_WARMUP_BARS = 100
@@ -147,7 +158,13 @@ def run_bocpd(
     warmup_slice = obs[: min(warmup_bars, n)]
     resolved_mu0 = float(np.median(warmup_slice)) if prior_mu0 is None else prior_mu0
     resolved_beta0 = (
-        prior_alpha0 * max(float(np.var(warmup_slice)), 1e-12)
+        # Piso de estabilidade numérica -- evita beta0=0/escala preditiva
+        # degenerada quando a janela de warmup tem variância (quase) nula
+        # (ex.: warmup curto sobre dado constante/quantizado). Mesmo estilo
+        # de piso já usado em `_INIT_COV_EPSILON` de
+        # `src/regime/hmm_gaussian.py`, que cita esta linha como o
+        # precedente original.
+        prior_alpha0 * max(float(np.var(warmup_slice)), 1e-12)  # noqa: magic-number -- ver comentário acima
         if prior_beta0 is None
         else prior_beta0
     )
