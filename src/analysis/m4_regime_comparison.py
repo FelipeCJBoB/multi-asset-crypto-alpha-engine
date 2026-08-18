@@ -5,12 +5,16 @@ classe de módulo que `src.analysis.volatility_comparison` (M1)/
 NUNCA dentro da suíte automatizada além de 1 smoke test `integration`/
 `slow`.
 
-**4 candidatos, 6 trials (decisão #5 do plano, confirmação pendente do
-Manager antes da Fase 6):** baseline (`QuantileRegimeClassifier`, 0 trial,
-produção) · HMM gaussiano k=2/3/4 (`src.regime.hmm_gaussian`, 3 trials) ·
-Jump Model contínuo/CJM (`src.regime.jump_model`, 1 trial) · BOCPD
-(`src.regime.bocpd`, 1 trial). Grade de símbolo (5 ativos) NÃO multiplica
-trial, mesma convenção de `AG-039`/M1.
+**4 candidatos novos + baseline, 5 trials neste harness + 1 trial da
+Terceira via (Q3, `run_q3_common_factor_regime`) = 6 trials no total do
+estudo M4 (decisão #5 do plano, confirmação pendente do Manager antes da
+Fase 6) — achado de auditoria (`project_assurance`, 2026-08-17): a
+itemização abaixo soma 5, não 6; o 6º trial é Q3, fora deste módulo, não
+um candidato a mais aqui.** baseline (`QuantileRegimeClassifier`, 0
+trial, produção) · HMM gaussiano k=2/3/4 (`src.regime.hmm_gaussian`, 3
+trials) · Jump Model contínuo/CJM (`src.regime.jump_model`, 1 trial) ·
+BOCPD (`src.regime.bocpd`, 1 trial). Grade de símbolo (5 ativos) NÃO
+multiplica trial, mesma convenção de `AG-039`/M1.
 
 **Fit por fold — só HMM/Jump Model (decisão #1 do plano, B05).** Refit
 expansivo ancorado no mesmo `WalkForwardSplit` do M1
@@ -162,11 +166,70 @@ existem em `constants.yaml` (bloqueadas de propósito, ver plano seção
 "Arquivos modificados"). Chamar esta função com valores inventados seria
 exatamente o tipo de "faixa esperada inventada" que B23/CLAUDE.md proíbe.
 `if __name__ == "__main__":` deste módulo levanta `SystemExit` com essa
-explicação em vez de rodar um report real por engano."""
+explicação em vez de rodar um report real por engano.
+
+**Throttle de threads BLAS/polars/JAX — achado HIGH de auditoria
+(`audit_engineering`, 2026-08-17), corrigido, não só reportado.**
+`run_and_save_m4_report` roda até `len(symbols)` processos concorrentes
+via `ProcessPoolExecutor`; cada um faz fits de HMM (JAX/dynamax) além de
+numpy/scipy/polars. Sem throttle, um ÚNICO processo rodando
+`fit_hmm_gaussian` sem guarda abre ~90 threads de SO nesta máquina de 12
+núcleos lógicos (medido via `Get-Process <pid> | Threads.Count` durante
+um fit real) — mesma classe de bug já confirmada em produção no M2
+(`ArrayMemoryError` sob N processos concorrentes cada um multi-thread,
+`m2_worker.py`), agora pior porque JAX/dynamax é novo neste módulo (M2/M3
+não usam JAX). Bloco `os.environ.setdefault(...)` no topo do arquivo
+(antes de qualquer import de terceiro) reduz isso pra ~6 threads/processo
+(medido) — `XLA_FLAGS` é a peça nova (`--xla_cpu_multi_thread_eigen=false
+intra_op_parallelism_threads=1`), o resto (`OMP_NUM_THREADS`/
+`MKL_NUM_THREADS`/`OPENBLAS_NUM_THREADS`/`NUMEXPR_NUM_THREADS`/
+`POLARS_MAX_THREADS`) é o mesmo bloco já usado em `m2_worker.py`.
+
+**`mp_context="spawn"` explícito no `ProcessPoolExecutor` — 2º achado HIGH
+da mesma auditoria, mesmo motivo raiz (JAX).** Sem isso, o start method é
+o padrão da PLATAFORMA -- `spawn` no Windows (onde este módulo roda hoje),
+mas `fork` no Linux (produção deste motor). JAX documenta explicitamente
+que não é fork-safe (multi-thread internamente; `fork()` depois de
+threads ativas é deadlock clássico, `jax-ml/jax#1805`). `run_and_save_m4_
+report` agora força `multiprocessing.get_context("spawn")` -- mesmo
+comportamento observável no Windows, determinístico em qualquer SO."""
 
 from __future__ import annotations
 
 import os
+
+# Oversubscription de threads BLAS/polars/JAX -- `run_and_save_m4_report`
+# paraleliza no nível de PROCESSO via `ProcessPoolExecutor` (até
+# `len(symbols)` workers, tipicamente 5). Sem isso, cada um dos N
+# processos TAMBÉM deixa numpy/scipy (BLAS), polars E JAX/dynamax
+# (`fit_hmm_gaussian`, `src.regime.hmm_gaussian`) abrirem seu próprio
+# pool de threads interno -- N processos x M threads cada competem pelos
+# mesmos núcleos. Mesma causa raiz já confirmada em `m2_worker.py`
+# (`numpy._core._exceptions._ArrayMemoryError` sob 12 processos
+# concorrentes cada um multi-thread, 2026-08-15) -- aqui medido de novo,
+# pior: um ÚNICO processo rodando `fit_hmm_gaussian` (JAX/dynamax) SEM
+# throttle abre ~90 threads de SO nesta máquina de 12 núcleos lógicos
+# (medido via `Get-Process <pid> | Threads.Count` amostrado durante um
+# fit real, sessão de auditoria 2026-08-17); com o throttle abaixo
+# (`XLA_FLAGS` + `OMP_NUM_THREADS=1` etc.) cai pra ~6. `XLA_FLAGS` é
+# NOVO aqui (M2/M3 não usam JAX) -- `--xla_cpu_multi_thread_eigen=false`
+# desliga o pool Eigen da XLA CPU backend, `intra_op_parallelism_
+# threads=1` reforça; os demais são o mesmo bloco de `m2_worker.py`
+# (numpy/scipy/polars). Precisa ser setado ANTES de importar
+# jax/numpy/polars/scipy -- no Windows (spawn, não fork) cada worker do
+# `ProcessPoolExecutor` reexecuta o módulo inteiro do zero, então isso
+# vale em CADA processo filho, não só no principal (mesmo raciocínio de
+# `m2_worker.py`, ver docstring de lá).
+os.environ.setdefault(
+    "XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+)
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
+
+import multiprocessing
 import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -1471,7 +1534,23 @@ def run_and_save_m4_report(
     Chame manualmente (só depois da autorização acima):
     `uv run python -c "from src.analysis.m4_regime_comparison import
     run_and_save_m4_report as r; r(jump_n_states=..., jump_penalty=...,
-    bocpd_hazard_lambda=..., bocpd_n_canonical_buckets=...)"`"""
+    bocpd_hazard_lambda=..., bocpd_n_canonical_buckets=...)"`
+
+    **`mp_context="spawn"` explícito -- achado HIGH de auditoria
+    (`audit_engineering`, 2026-08-17).** Sem isso, `ProcessPoolExecutor`
+    usa o start method PADRÃO da plataforma -- `spawn` no Windows (onde
+    este módulo roda hoje, `fork` inexistente), mas `fork` no Linux (até
+    Python 3.13; produção deste motor é tipicamente Linux). JAX (via
+    `src.regime.hmm_gaussian`, importado no topo deste módulo, portanto
+    já inicializado no processo PAI antes de qualquer `submit`) documenta
+    explicitamente que NÃO é fork-safe -- JAX é multi-thread internamente,
+    e `fork()` depois de threads já ativas é o padrão clássico de deadlock
+    (`jax-ml/jax#1805`, discussão `#21073`: "JAX's computational model is
+    not compatible with multiprocessing" sob fork). Forçar `spawn`
+    explicitamente elimina a dependência implícita da plataforma --
+    comportamento idêntico ao já observado no Windows, mas agora
+    determinístico em qualquer SO, sem depender de qual máquina roda o
+    comando."""
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
     logger.info(
         "analysis.m4_regime_comparison.starting",
@@ -1483,7 +1562,8 @@ def run_and_save_m4_report(
     results: list[SymbolResult] = []
     skipped: list[dict[str, str]] = []
     failed_tasks: list[dict[str, str]] = []
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    mp_context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=mp_context) as executor:
         future_to_symbol = {
             executor.submit(
                 run_regime_comparison_for_symbol,
