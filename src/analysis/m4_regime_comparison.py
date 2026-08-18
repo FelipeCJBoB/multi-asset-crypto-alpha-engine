@@ -96,24 +96,62 @@ novos", não "GK vs. candidatos novos" — `_BASELINE_VOL_ESTIMATOR_CAVEAT`
 carrega essa frase no payload persistido, pra quem só lê o JSON também
 veja.
 
-**Fase 4 (Q3, terceira via) — reuso pretendido, limitação real documentada
-aqui, não resolvida.** O plano pede que `compare_regime_candidates_for_
-symbol`/os fits fiquem reusáveis pela Fase 4 sem reescrita.
-`CandidateResult`, como está, só expõe MÉTRICAS AGREGADAS (ANOVA/
-persistência/estabilidade) — não os arrays `canonical_id` por barra nem os
-objetos de fit por fold. Q3 (classificar regime só no BTC, aplicar aos
-outros 4 via as-of join causal, comparar via Rand ajustado contra a
-classificação própria de cada ativo) precisa exatamente desses artefatos
-brutos, que este módulo hoje descarta depois de calcular as métricas.
-Duas rotas ficam abertas pra Fase 4 (nenhuma implementada aqui): (a)
-adicionar um retorno "raw" opcional (`return_raw_labels: bool = False`) a
-`_run_fold_refit_candidate`/`_bocpd_candidate_result`/`_baseline_candidate_
-result` que devolve os arrays por barra junto do `CandidateResult`
-agregado, ou (b) a Fase 4 chamar `fit_hmm_gaussian`/`fit_jump_model`/
-`run_bocpd`/`build_regimes` diretamente e reimplementar o laço de fold —
-duplicando a lógica de fatiamento já provada aqui. (a) é preferível
-(zero duplicação), mas fica pra quem implementar a Fase 4 decidir, não
-decidido sozinho aqui.
+**Fase 4 (Q3, terceira via) — IMPLEMENTADA.** Rota (a) da limitação
+documentada na Fase 3 (duas rotas foram citadas ali, nenhuma implementada)
+foi a escolhida: `_run_fold_refit_candidate`/`_bocpd_candidate_result`/
+`_baseline_candidate_result` ganharam um parâmetro `return_raw_labels:
+bool = False` (default preserva o contrato exato da Fase 3 — devolve só
+`CandidateResult`, testado por `tests/unit/test_analysis_m4_regime_
+comparison.py` sem nenhuma mudança de comportamento); quando `True`,
+devolvem `tuple[CandidateResult, RawLabels]`. `RawLabels` é um dataclass
+IRMÃO de `CandidateResult` (`open_time_ms`/`canonical_id` alinhados por
+TIMESTAMP, não por índice posicional — Q3 precisa fazer `join_asof` entre
+ativos com timestamps de dollar-bar DIFERENTES, BTC e XRP não têm as
+mesmas barras), NUNCA um array dentro do dataclass existente (quebraria a
+serialização JSON de `_candidate_to_dict`/`run_and_save_m4_report` e
+infiaria o relatório de produção com dado que ele não deveria carregar —
+decisão do plano, não decidida sozinha aqui). `RawLabels` expõe
+exatamente o subconjunto VÁLIDO usado para calcular as métricas do
+`CandidateResult` irmão (pós-exclusão de R0 no baseline, pós-compactação
+de fold falho em HMM/Jump Model) — nunca o sentinela `_FOLD_FIT_FAILURE_
+SENTINEL`/R0, que não são rótulo de regime real e não deveriam ser
+propagados por um `join_asof` como se fossem.
+
+`compare_regime_candidates_for_symbol` propaga o mesmo parâmetro —
+internamente SEMPRE chama os 3 helpers com `return_raw_labels=True`
+(custo desprezível: só fatiamento de array já calculado, não refit) e
+decide expor ou descartar o `dict[str, RawLabels]` resultante conforme o
+`return_raw_labels` recebido de fora. Hardcodar o literal internamente
+(em vez de repassar a variável `bool` recebida) também resolve um
+problema real de tipagem: os 3 helpers são `@overload`ados por
+`Literal[True]`/`Literal[False]` (pra que o tipo de retorno mude
+corretamente com o valor do parâmetro, sem quebrar `mypy --strict` nos
+callers da Fase 3 que nunca passam `return_raw_labels`), e um argumento
+de tipo `bool` puro não casa com nenhuma das duas variantes de overload —
+só um literal explícito resolve. `run_regime_comparison_for_symbol`
+propaga o mesmo parâmetro (IO real), pelo mesmo motivo com um `if/else`
+explícito em vez de repassar a variável.
+
+`run_q3_common_factor_regime` (nova): AGNÓSTICA a qual dos 4 candidatos é
+testado — recebe `classifier_id` como parâmetro (lookup no dict de
+`RawLabels`, nunca um `if classifier_id == "..."` hardcoded) porque qual
+candidato "vence" o M4 só é sabido depois da execução real (Fase 6, ainda
+não rodou — decisão de escopo do plano, não desta função). Recebe o
+resultado JÁ CALCULADO de `compare_regime_candidates_for_symbol(...,
+return_raw_labels=True)` pro BTC (reusa, não recomputa — "Terceira via Q3
+reusa fits, sem reajuste novo", plano); para cada um dos outros símbolos,
+chama `run_regime_comparison_for_symbol(..., return_raw_labels=True)` de
+novo com os MESMOS hiperparâmetros — reaproveita a MESMA função da Fase
+3/IO real, zero lógica de fold/candidato duplicada (custo aceito, não
+escondido: roda os 6 candidatos por ativo, não só o pedido — ver docstring
+da função). `_asof_join_btc_labels` faz o `join_asof(strategy="backward")`
+— prova de causalidade central do DoD do plano (Q3/as-of join): barra do
+ativo em `t` recebe o rótulo de BTC mais recente com timestamp `<= t`,
+NUNCA um timestamp futuro. Sobreposição temporal parcial (ex. ativo com
+histórico mais curto que BTC — situação REAL: BTC desde 2019-12-31, os 4
+alts só desde 2021-12-01) tratada explicitamente: barras do ativo sem
+rótulo de BTC disponível ainda são EXCLUÍDAS da métrica antes do Rand
+ajustado, nunca um crash.
 
 **`run_and_save_m4_report` NÃO É CHAMADA POR ESTE MÓDULO.** Todos os
 hiperparâmetros de candidato (`jump_n_states`, `jump_penalty`,
@@ -134,7 +172,7 @@ from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal, overload
 
 import numpy as np
 import orjson
@@ -298,6 +336,26 @@ class CandidateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RawLabels:
+    """Rótulos canônicos por barra, alinhados por TIMESTAMP (não índice
+    posicional) — Fase 4 (Q3), exposta só quando `return_raw_labels=True`
+    nas funções que constroem `CandidateResult` (ver docstring do módulo,
+    seção Fase 4). `open_time_ms`/`canonical_id` sempre mesmo shape,
+    alinhados posição-a-posição.
+
+    Representa exatamente o subconjunto VÁLIDO usado para calcular as
+    métricas do `CandidateResult` irmão (mesma barra que entrou em
+    `separation`/`orthogonality`/`persistence`) — nunca o sentinela
+    `_FOLD_FIT_FAILURE_SENTINEL` (fold sem fit bem-sucedido, HMM/Jump
+    Model) nem R0 (warmup, baseline): nenhum dos dois é um rótulo de
+    regime real, e propagá-los por um `join_asof` (Q3) como se fossem
+    inventaria um "regime" onde não houve medição."""
+
+    open_time_ms: IntArray
+    canonical_id: IntArray
+
+
+@dataclass(frozen=True, slots=True)
 class SymbolResult:
     symbol: str
     n_bars: int
@@ -439,6 +497,7 @@ def _make_hmm_fit_fn(n_states: int, seed: int) -> Callable[[Float2DArray, int], 
     return _fit
 
 
+@overload
 def _run_fold_refit_candidate(
     classifier_id: str,
     n_states: int,
@@ -449,7 +508,40 @@ def _run_fold_refit_candidate(
     predict_fn: Callable[[Any, Float2DArray], IntArray],
     forward_return: FloatArray,
     vol_pctile: FloatArray,
-) -> CandidateResult:
+    open_time_ms: IntArray | None = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> CandidateResult: ...
+
+
+@overload
+def _run_fold_refit_candidate(
+    classifier_id: str,
+    n_states: int,
+    obs_2d: Float2DArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+    *,
+    fit_fn: Callable[[Float2DArray, int], Any],
+    predict_fn: Callable[[Any, Float2DArray], IntArray],
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    open_time_ms: IntArray,
+    return_raw_labels: Literal[True],
+) -> tuple[CandidateResult, RawLabels]: ...
+
+
+def _run_fold_refit_candidate(
+    classifier_id: str,
+    n_states: int,
+    obs_2d: Float2DArray,
+    splits: tuple[vwf.WalkForwardSplit, ...],
+    *,
+    fit_fn: Callable[[Float2DArray, int], Any],
+    predict_fn: Callable[[Any, Float2DArray], IntArray],
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    open_time_ms: IntArray | None = None,
+    return_raw_labels: bool = False,
+) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """Núcleo compartilhado por HMM e Jump Model -- os dois têm o MESMO
     contrato de fold (B05: refit expansivo ancorado em `obs[:train_end_
     idx]`, decodifica só `obs[test_start_idx:test_end_idx]`), só diferem
@@ -465,7 +557,23 @@ def _run_fold_refit_candidate(
     decodifica o TESTE do fold `k` duas vezes -- com `fit[k]` e com
     `fit[k+1]` (que já viu esse trecho no treino, expansão ancorada) --
     compara via `adjusted_rand`. Mede se a fronteira de decisão muda ao
-    aprender mais dado."""
+    aprender mais dado.
+
+    **Fase 4 (Q3) -- `return_raw_labels`/`open_time_ms` (default
+    preserva o contrato exato da Fase 3):** quando `True`, devolve
+    `(CandidateResult, RawLabels)` -- `RawLabels.canonical_id` é
+    EXATAMENTE `labels_valid` (o mesmo array usado abaixo para calcular
+    `separation`/`orthogonality`/`persistence`, já sem os folds falhos) e
+    `RawLabels.open_time_ms` é o timestamp correspondente sob a MESMA
+    máscara -- nunca o sentinela `_FOLD_FIT_FAILURE_SENTINEL`.
+    `open_time_ms` (alinhado 1:1 com `obs_2d`/`forward_return`/
+    `vol_pctile`) é obrigatório (`ValueError`) quando
+    `return_raw_labels=True`; ignorado quando `False`."""
+    if return_raw_labels and open_time_ms is None:
+        raise ValueError(
+            "_run_fold_refit_candidate: open_time_ms obrigatório quando "
+            "return_raw_labels=True"
+        )
     oos_start, oos_end = _oos_slice(splits)
     canonical_oos = np.full(oos_end - oos_start, _FOLD_FIT_FAILURE_SENTINEL, dtype=np.int64)
 
@@ -497,6 +605,7 @@ def _run_fold_refit_candidate(
         labels_under_next_fold_params = predict_fn(fit_next, test_slice)
         aris.append(adjusted_rand(labels_own, labels_under_next_fold_params))
 
+    valid_mask = canonical_oos != _FOLD_FIT_FAILURE_SENTINEL
     labels_valid, (forward_return_valid, vol_pctile_valid) = _compact_valid(
         canonical_oos, forward_return[oos_start:oos_end], vol_pctile[oos_start:oos_end]
     )
@@ -504,7 +613,7 @@ def _run_fold_refit_candidate(
     orthogonality = _anova_or_degenerate(labels_valid, vol_pctile_valid)
     persistence = _persistence_or_degenerate(labels_valid)
 
-    return CandidateResult(
+    result = CandidateResult(
         classifier_id=classifier_id,
         n_states=n_states,
         separation=separation,
@@ -516,6 +625,41 @@ def _run_fold_refit_candidate(
         n_oos_obs=int(labels_valid.shape[0]),
         n_folds_evaluated=n_folds_evaluated,
     )
+    if not return_raw_labels:
+        return result
+    assert open_time_ms is not None  # checado no topo da função
+    raw_open_time_ms = open_time_ms[oos_start:oos_end][valid_mask]
+    return result, RawLabels(open_time_ms=raw_open_time_ms, canonical_id=labels_valid)
+
+
+@overload
+def _bocpd_candidate_result(
+    log_return_1: FloatArray,
+    oos_start: int,
+    oos_end: int,
+    *,
+    hazard_lambda: float,
+    n_canonical_buckets: int,
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    open_time_ms: IntArray | None = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> CandidateResult: ...
+
+
+@overload
+def _bocpd_candidate_result(
+    log_return_1: FloatArray,
+    oos_start: int,
+    oos_end: int,
+    *,
+    hazard_lambda: float,
+    n_canonical_buckets: int,
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    open_time_ms: IntArray,
+    return_raw_labels: Literal[True],
+) -> tuple[CandidateResult, RawLabels]: ...
 
 
 def _bocpd_candidate_result(
@@ -527,7 +671,9 @@ def _bocpd_candidate_result(
     n_canonical_buckets: int,
     forward_return: FloatArray,
     vol_pctile: FloatArray,
-) -> CandidateResult:
+    open_time_ms: IntArray | None = None,
+    return_raw_labels: bool = False,
+) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """BOCPD roda UMA VEZ sobre a série causal INTEIRA (`log_return_1`, já
     cortado por `_valid_start_idx` no caller) -- nunca por fold (decisão
     #1 do plano: online por construção, refazer por fold seria uma
@@ -543,7 +689,18 @@ def _bocpd_candidate_result(
     resultado passa de novo por `canonicalize_states` -- não é redundante:
     garante o MESMO critério exato (média ascendente, desempate por
     variância) usado por HMM/Jump Model, em vez de confiar no critério de
-    ordenação por quantil de segmento (que não empata do mesmo jeito)."""
+    ordenação por quantil de segmento (que não empata do mesmo jeito).
+
+    **Fase 4 (Q3) -- `return_raw_labels`/`open_time_ms`** (mesmo contrato
+    de `_run_fold_refit_candidate`, ver docstring lá): quando `True`,
+    devolve `(CandidateResult, RawLabels)` com `canonical_id=labels_oos`
+    (BOCPD não tem conceito de fold falho -- toda a janela OOS é válida
+    por construção, sem máscara/compactação) e `open_time_ms` a fatia
+    correspondente de `open_time_ms[oos_start:oos_end]`."""
+    if return_raw_labels and open_time_ms is None:
+        raise ValueError(
+            "_bocpd_candidate_result: open_time_ms obrigatório quando return_raw_labels=True"
+        )
     bocpd_out = run_bocpd(log_return_1, hazard_lambda=hazard_lambda)
     bucket_by_bar = segments_to_canonical_states(
         bocpd_out.segment_id, log_return_1, n_buckets=n_canonical_buckets
@@ -555,7 +712,7 @@ def _bocpd_candidate_result(
     orthogonality = _anova_or_degenerate(labels_oos, vol_pctile[oos_start:oos_end])
     persistence = _persistence_or_degenerate(labels_oos)
 
-    return CandidateResult(
+    result = CandidateResult(
         classifier_id=BOCPD_CLASSIFIER_ID,
         n_states=n_canonical_buckets,
         separation=separation,
@@ -568,6 +725,38 @@ def _bocpd_candidate_result(
         n_oos_obs=separation.n,
         n_folds_evaluated=0,
     )
+    if not return_raw_labels:
+        return result
+    assert open_time_ms is not None  # checado no topo da função
+    return result, RawLabels(open_time_ms=open_time_ms[oos_start:oos_end], canonical_id=labels_oos)
+
+
+@overload
+def _baseline_candidate_result(
+    regime_physical: IntArray,
+    oos_start: int,
+    oos_end: int,
+    *,
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    classifier_id: str,
+    open_time_ms: IntArray | None = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> CandidateResult: ...
+
+
+@overload
+def _baseline_candidate_result(
+    regime_physical: IntArray,
+    oos_start: int,
+    oos_end: int,
+    *,
+    forward_return: FloatArray,
+    vol_pctile: FloatArray,
+    classifier_id: str,
+    open_time_ms: IntArray,
+    return_raw_labels: Literal[True],
+) -> tuple[CandidateResult, RawLabels]: ...
 
 
 def _baseline_candidate_result(
@@ -578,12 +767,27 @@ def _baseline_candidate_result(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     classifier_id: str,
-) -> CandidateResult:
+    open_time_ms: IntArray | None = None,
+    return_raw_labels: bool = False,
+) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """`QuantileRegimeClassifier` -- state machine determinística causal,
     sem fit nenhum (mesmo raciocínio do BOCPD pra `fold_stability_by_
     construction=True`: não existe "outro fit" pra comparar). R0
     (`_BASELINE_R0_PHYSICAL_ID`) excluído das métricas -- ver docstring do
-    módulo."""
+    módulo.
+
+    **Fase 4 (Q3) -- `return_raw_labels`/`open_time_ms`** (mesmo contrato
+    dos outros 2 candidatos, ver docstring de `_run_fold_refit_candidate`):
+    quando `True`, devolve `(CandidateResult, RawLabels)` com
+    `canonical_id=labels_valid` (mesmo array pós-exclusão de R0 usado nas
+    métricas abaixo -- R0 não é um regime real, não deveria ser herdado
+    por um `join_asof` como se fosse) e `open_time_ms` a fatia
+    correspondente sob a MESMA máscara `non_r0_mask`."""
+    if return_raw_labels and open_time_ms is None:
+        raise ValueError(
+            "_baseline_candidate_result: open_time_ms obrigatório quando "
+            "return_raw_labels=True"
+        )
     regime_oos = regime_physical[oos_start:oos_end]
     forward_return_oos = forward_return[oos_start:oos_end]
     vol_pctile_oos = vol_pctile[oos_start:oos_end]
@@ -597,7 +801,7 @@ def _baseline_candidate_result(
     orthogonality = _anova_or_degenerate(labels_valid, vol_pctile_valid)
     persistence = _persistence_or_degenerate(labels_valid)
 
-    return CandidateResult(
+    result = CandidateResult(
         classifier_id=classifier_id,
         n_states=_BASELINE_N_STATES,
         separation=separation,
@@ -609,6 +813,47 @@ def _baseline_candidate_result(
         n_oos_obs=separation.n,
         n_folds_evaluated=0,
     )
+    if not return_raw_labels:
+        return result
+    assert open_time_ms is not None  # checado no topo da função
+    raw_open_time_ms = open_time_ms[oos_start:oos_end][non_r0_mask]
+    return result, RawLabels(open_time_ms=raw_open_time_ms, canonical_id=labels_valid)
+
+
+@overload
+def compare_regime_candidates_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    hmm_states_grid: tuple[int, ...] = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    bocpd_hazard_lambda: float,
+    bocpd_n_canonical_buckets: int,
+    hmm_seed: int = ...,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def compare_regime_candidates_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    hmm_states_grid: tuple[int, ...] = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    bocpd_hazard_lambda: float,
+    bocpd_n_canonical_buckets: int,
+    hmm_seed: int = ...,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
 
 
 def compare_regime_candidates_for_symbol(
@@ -624,14 +869,30 @@ def compare_regime_candidates_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = 0,
     jump_seed: int = 0,
-) -> SymbolResult | None:
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
     """Núcleo puro (sem IO) -- recebe `bars_df`/`baseline_df` já
     carregados (mesmo `(symbol, start, end)`, ver `_assert_bars_baseline_
     aligned`), monta as métricas dos 3+1 candidatos sobre os folds OOS do
     walk-forward. Retorna `None` se não houver folds suficientes (dado
     insuficiente pra `initial_train_years` de treino inicial) -- mesmo
     contrato de `volatility_comparison.compare_estimators_for_
-    combination`, sinal explícito pro chamador pular o símbolo."""
+    combination`, sinal explícito pro chamador pular o símbolo.
+
+    **Fase 4 (Q3) -- `return_raw_labels: bool = False`** (default
+    preserva o contrato exato da Fase 3, testado em `tests/unit/test_
+    analysis_m4_regime_comparison.py` sem nenhuma mudança): quando
+    `True`, devolve `(SymbolResult, dict[str, RawLabels])` -- o dict é
+    chaveado por `classifier_id` (baseline + os 3 HMM + Jump Model +
+    BOCPD, sempre as mesmas 6 chaves que `SymbolResult.baseline`/
+    `.candidates` já expõem). Internamente esta função SEMPRE chama
+    `_run_fold_refit_candidate`/`_bocpd_candidate_result`/`_baseline_
+    candidate_result` com `return_raw_labels=True` (custo desprezível --
+    só fatiamento de array já calculado, nunca refit) e decide expor ou
+    descartar o dict conforme o `return_raw_labels` recebido aqui --
+    hardcodar o literal `True` internamente (em vez de repassar esta
+    variável `bool`) é o que permite os 3 helpers `@overload`ados
+    resolverem o tipo de retorno certo sem quebrar `mypy --strict`."""
     _assert_bars_baseline_aligned(bars_df, baseline_df, symbol=symbol)
 
     log_return_1_full, obs_2d_full = _input_obs(bars_df)
@@ -660,16 +921,25 @@ def compare_regime_candidates_for_symbol(
         return None
     oos_start, oos_end = _oos_slice(splits)
 
-    baseline_result = _baseline_candidate_result(
+    # Fase 4 (Q3) -- literal True hardcoded nas 3 chamadas abaixo (não
+    # repassa `return_raw_labels`, que é só `bool`) -- ver docstring desta
+    # função/módulo: os 3 helpers são `@overload`ados por `Literal`, um
+    # `bool` puro não casaria com nenhuma das duas variantes.
+    baseline_result, baseline_raw_labels = _baseline_candidate_result(
         regime_physical,
         oos_start,
         oos_end,
         forward_return=forward_return,
         vol_pctile=vol_pctile,
         classifier_id=baseline_classifier_id,
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
     )
+    raw_labels_by_classifier_id: dict[str, RawLabels] = {
+        baseline_classifier_id: baseline_raw_labels
+    }
 
-    hmm_results = tuple(
+    hmm_pairs = [
         _run_fold_refit_candidate(
             hmm_gaussian_classifier_id(k),
             k,
@@ -679,11 +949,16 @@ def compare_regime_candidates_for_symbol(
             predict_fn=predict_hmm_gaussian,
             forward_return=forward_return,
             vol_pctile=vol_pctile,
+            open_time_ms=open_time_ms,
+            return_raw_labels=True,
         )
         for k in hmm_states_grid
-    )
+    ]
+    hmm_results = tuple(candidate_result for candidate_result, _ in hmm_pairs)
+    for k, (_, hmm_raw_labels) in zip(hmm_states_grid, hmm_pairs, strict=True):
+        raw_labels_by_classifier_id[hmm_gaussian_classifier_id(k)] = hmm_raw_labels
 
-    jump_result = _run_fold_refit_candidate(
+    jump_result, jump_raw_labels = _run_fold_refit_candidate(
         JUMP_MODEL_CLASSIFIER_ID,
         jump_n_states,
         obs_2d,
@@ -698,9 +973,12 @@ def compare_regime_candidates_for_symbol(
         predict_fn=predict_jump_model,
         forward_return=forward_return,
         vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
     )
+    raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
 
-    bocpd_result = _bocpd_candidate_result(
+    bocpd_result, bocpd_raw_labels = _bocpd_candidate_result(
         log_return_1,
         oos_start,
         oos_end,
@@ -708,20 +986,62 @@ def compare_regime_candidates_for_symbol(
         n_canonical_buckets=bocpd_n_canonical_buckets,
         forward_return=forward_return,
         vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
     )
+    raw_labels_by_classifier_id[BOCPD_CLASSIFIER_ID] = bocpd_raw_labels
 
-    return SymbolResult(
+    symbol_result = SymbolResult(
         symbol=symbol,
         n_bars=bars_df.height,
         n_folds=len(splits),
         baseline=baseline_result,
         candidates=(*hmm_results, jump_result, bocpd_result),
     )
+    if return_raw_labels:
+        return symbol_result, raw_labels_by_classifier_id
+    return symbol_result
 
 
 # ============================================================================
 # Ponto de entrada com IO -- um símbolo, ou os 5
 # ============================================================================
+
+
+@overload
+def run_regime_comparison_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    hmm_states_grid: tuple[int, ...] = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    bocpd_hazard_lambda: float,
+    bocpd_n_canonical_buckets: int,
+    hmm_seed: int = ...,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def run_regime_comparison_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    hmm_states_grid: tuple[int, ...] = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    bocpd_hazard_lambda: float,
+    bocpd_n_canonical_buckets: int,
+    hmm_seed: int = ...,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
 
 
 def run_regime_comparison_for_symbol(
@@ -737,7 +1057,8 @@ def run_regime_comparison_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = 0,
     jump_seed: int = 0,
-) -> SymbolResult | None:
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
     """Carrega `bars_df` (`lake.query_dollar_bars`) e `baseline_df`
     (`build_regimes(..., bar_source="dollar_r1")`) reais do disco, com o
     MESMO `(symbol, start, end)` nos dois (garante o alinhamento que
@@ -753,7 +1074,15 @@ def run_regime_comparison_for_symbol(
     `threads`) -- gap conhecido, herdado do módulo, não corrigido aqui
     (fora do escopo do harness M4; `bars_df` (carregado diretamente por
     esta função) É throttled via `m4_duckdb_memory_limit_gb`/`m4_duckdb_
-    threads`, mesma convenção de M1/M2/M3 sob `ProcessPoolExecutor`)."""
+    threads`, mesma convenção de M1/M2/M3 sob `ProcessPoolExecutor`).
+
+    **Fase 4 (Q3) -- `return_raw_labels: bool = False`** (default
+    preserva o contrato exato da Fase 3): propagado pra
+    `compare_regime_candidates_for_symbol`. O `if/else` explícito abaixo
+    (em vez de repassar a variável `return_raw_labels`) é o mesmo motivo
+    de tipagem documentado no módulo/em `compare_regime_candidates_for_
+    symbol`: a função de destino é `@overload`ada por `Literal`, um `bool`
+    puro não resolveria a variante certa."""
     train_years = (
         initial_train_years
         if initial_train_years is not None
@@ -782,6 +1111,21 @@ def run_regime_comparison_for_symbol(
         start=start,
         end=end,
     )
+    if return_raw_labels:
+        return compare_regime_candidates_for_symbol(
+            symbol,
+            bars_df,
+            baseline_df,
+            initial_train_years=train_years,
+            hmm_states_grid=hmm_states_grid,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            bocpd_hazard_lambda=bocpd_hazard_lambda,
+            bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
+            hmm_seed=hmm_seed,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
     return compare_regime_candidates_for_symbol(
         symbol,
         bars_df,
@@ -794,6 +1138,245 @@ def run_regime_comparison_for_symbol(
         bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
         hmm_seed=hmm_seed,
         jump_seed=jump_seed,
+        return_raw_labels=False,
+    )
+
+
+# ============================================================================
+# Fase 4 (Q3) -- terceira via: BTC como fator comum de regime
+# ============================================================================
+
+# Os ativos não-BTC, na ordem de ALL_SYMBOLS -- default de `other_symbols`
+# em `run_q3_common_factor_regime`.
+_Q3_DEFAULT_OTHER_SYMBOLS: Final[tuple[str, ...]] = tuple(s for s in ALL_SYMBOLS if s != "BTCUSDT")
+
+# Abaixo disso, adjusted_rand_score não é uma medição com sentido
+# estatístico (ARI com 0 ou 1 par comparável é degenerado/indefinido) --
+# NaN explícito em vez de um número sem base, mesma disciplina de
+# `_anova_or_degenerate`/`_persistence_or_degenerate` (ausência de
+# medição, não erro, não zero inventado).
+_Q3_MIN_BARS_COMPARED: Final[int] = 2
+
+
+@dataclass(frozen=True, slots=True)
+class Q3AssetResult:
+    """Q3, um ativo não-BTC: Rand ajustado entre a classificação PRÓPRIA
+    do ativo (mesmo `classifier_id`/hiperparâmetros de `Q3Result`, rodada
+    independentemente sobre o dado do próprio ativo) e a classificação
+    DERIVADA de BTC via as-of join causal (`_asof_join_btc_labels`,
+    `strategy="backward"`, nunca timestamp futuro). Rand ALTO -> BTC
+    basta pra este ativo; Rand baixo -> regime é idiossincrático POR
+    ATIVO **ou** a correlação BTC-ativo em si varia por regime -- os dois
+    cenários dão o mesmo sintoma por motivos diferentes (caveat de
+    interpretação já registrado no plano `wise-exploring-panda.md`, não
+    resolvido por esta função, só citado).
+
+    `n_bars_compared`: tamanho da região de SOBREPOSIÇÃO temporal entre
+    BTC e o ativo (barras do ativo com um rótulo de BTC de timestamp
+    `<=` o seu próprio já disponível) -- pode ser menor que o total de
+    barras OOS do ativo (ex. ativo com histórico mais curto que BTC),
+    nunca um crash. `adjusted_rand_own_vs_btc_derived` é `NaN` (não um
+    valor inventado) se `n_bars_compared < _Q3_MIN_BARS_COMPARED`."""
+
+    symbol: str
+    n_bars_compared: int
+    adjusted_rand_own_vs_btc_derived: float
+
+
+@dataclass(frozen=True, slots=True)
+class Q3Result:
+    """`classifier_id`: qual dos 4 candidatos do M4 (baseline/HMM k=2|3|4/
+    Jump Model CJM/BOCPD) foi testado via Q3 -- QUAL candidato usar é
+    decisão de Fase 6/7 (não desta função, que é agnóstica por design, ver
+    docstring de `run_q3_common_factor_regime`). `assets`: até
+    `len(other_symbols)` resultados (normalmente os 4 não-BTC) -- um
+    símbolo sem folds suficientes é excluído com log, não derruba os
+    outros (mesmo padrão AG-019 do resto do módulo)."""
+
+    classifier_id: str
+    btc_n_bars: int
+    assets: tuple[Q3AssetResult, ...]
+
+
+def _asof_join_btc_labels(btc_raw: RawLabels, asset_raw: RawLabels) -> tuple[IntArray, IntArray]:
+    """`join_asof` BACKWARD do rótulo de BTC nos timestamps do ativo --
+    prova de causalidade central de Q3 (DoD do plano `wise-exploring-
+    panda.md`, seção "Q3/as-of join"): cada barra do ativo recebe o
+    rótulo de BTC mais recente que já existia ATÉ aquele timestamp
+    (`open_time_ms` de BTC `<=` o do ativo), NUNCA um rótulo futuro.
+    `strategy="backward"` do `polars.DataFrame.join_asof` é exatamente
+    essa semântica -- trocar por `"nearest"`/`"forward"` vazaria rótulo
+    futuro pro ativo (o próprio DoD pede um teste que capture essa troca,
+    `test_asof_join_btc_labels_e_estritamente_backward_nunca_futuro`).
+    Mesmo primitivo já usado em produção pra alinhar dado auxiliar de
+    timestamp diferente (`src.features._sources.asof_align_backward`,
+    `src.validation.leakage._test_04_funding_futuro`) -- não uma técnica
+    nova, reaplicada aqui a rótulo de regime em vez de feature.
+
+    BTC e o ativo têm timestamps de dollar-bar DIFERENTES (dollar-bar é
+    disparada por volume negociado, não por tempo -- BTC e XRP não têm as
+    mesmas barras) -- por isso o join é por TIMESTAMP (`open_time_ms`),
+    nunca por índice posicional.
+
+    Barras do ativo ANTERIORES ao primeiro timestamp de BTC em `btc_raw`
+    não têm rótulo de BTC pra herdar (nenhum "backward" existe ainda) --
+    `join_asof` devolve `null` nessas posições, filtradas aqui
+    explicitamente (nunca tratado como um rótulo real) -- cobre o caso
+    real medido nesta sessão (BTC com dado desde 2019-12-31, os 4 alts só
+    desde 2021-12-01: nesse caso real específico a sobreposição costuma
+    ser total, mas esta função trata o caso geral, não assume isso).
+
+    Retorna `(labels_own, labels_btc_derived)` só na região de
+    sobreposição (pode ser menor que `asset_raw` inteiro) -- nunca
+    levanta por sobreposição parcial/vazia; `run_q3_common_factor_regime`
+    decide o que fazer com `n_compared` pequeno/zero (`NaN`, não crash)."""
+    btc_df = pl.DataFrame(
+        {"open_time_ms": btc_raw.open_time_ms, "btc_canonical_id": btc_raw.canonical_id}
+    ).sort("open_time_ms")
+    asset_df = pl.DataFrame(
+        {"open_time_ms": asset_raw.open_time_ms, "own_canonical_id": asset_raw.canonical_id}
+    ).sort("open_time_ms")
+
+    joined = asset_df.join_asof(btc_df, on="open_time_ms", strategy="backward")
+    overlap = joined.filter(pl.col("btc_canonical_id").is_not_null())
+
+    labels_own: IntArray = overlap["own_canonical_id"].cast(pl.Int64).to_numpy()
+    labels_btc_derived: IntArray = overlap["btc_canonical_id"].cast(pl.Int64).to_numpy()
+    return labels_own, labels_btc_derived
+
+
+def run_q3_common_factor_regime(
+    btc_result: SymbolResult,
+    btc_raw_labels: dict[str, RawLabels],
+    *,
+    classifier_id: str,
+    other_symbols: tuple[str, ...] = _Q3_DEFAULT_OTHER_SYMBOLS,
+    end: str = END_DATE,
+    initial_train_years: int | None = None,
+    hmm_states_grid: tuple[int, ...] = (2, 3, 4),
+    jump_n_states: int,
+    jump_penalty: float,
+    bocpd_hazard_lambda: float,
+    bocpd_n_canonical_buckets: int,
+    hmm_seed: int = 0,
+    jump_seed: int = 0,
+) -> Q3Result:
+    """Terceira via (Q3) do M4 (`PRD_V4_1.md` §3.2) -- com ρ≈0,91 de
+    correlação de preço entre BTC e os outros 4 ativos, testa se
+    classificar regime só no BTC e aplicar aos outros 4 (as-of, causal) é
+    suficiente, comparado contra a classificação PRÓPRIA de cada ativo
+    (mesmo candidato/config, rodado independentemente sobre o dado
+    daquele ativo).
+
+    **AGNÓSTICA a qual dos 4 candidatos do M4 (baseline/HMM/Jump Model/
+    BOCPD) é usado** -- `classifier_id` é um parâmetro (lookup no dict de
+    `RawLabels`, nunca um `if classifier_id == "..."` hardcoded aqui).
+    QUAL candidato "vence" o M4 só é sabido depois da execução real (Fase
+    6, ainda não rodou) -- decisão de escopo do plano `wise-exploring-
+    panda.md`: esta função só entrega a CAPACIDADE de rodar Q3 pra
+    qualquer candidato, não decide qual.
+
+    `btc_result`/`btc_raw_labels`: resultado JÁ CALCULADO de
+    `compare_regime_candidates_for_symbol(symbol="BTCUSDT", ...,
+    return_raw_labels=True)` -- reusa, não recomputa (mesma leitura do
+    plano: "Terceira via Q3 (reusa fits, sem reajuste novo)"). Levanta
+    `ValueError` se `btc_result.symbol != "BTCUSDT"` (Q3 testa
+    especificamente BTC como fator comum, não outro símbolo -- decisão já
+    fechada no plano/PRD, não um parâmetro livre aqui) ou se
+    `classifier_id` não estiver em `btc_raw_labels`.
+
+    Para cada um dos `other_symbols` (default os 4 não-BTC de
+    `ALL_SYMBOLS`): chama `run_regime_comparison_for_symbol(...,
+    return_raw_labels=True)` de novo, com os MESMOS hiperparâmetros
+    passados aqui (garante "mesmo candidato/config" entre BTC e o ativo,
+    exigência do desenho de Q3) -- reaproveita a MESMA função da Fase
+    3/IO real, zero lógica de fold/candidato duplicada. Decisão de
+    desenho aceita, não escondida: isso roda os 6 candidatos (baseline +
+    3 HMM + Jump Model + BOCPD) por ativo, não só o `classifier_id`
+    pedido -- o custo extra dos 5 candidatos descartados não foi medido
+    (TBD -- medir se/quando a Fase 6/7 rodar isto de verdade contra os 5
+    símbolos completos); aceitável para uma função que ainda NÃO é
+    chamada em produção (ver `run_and_save_m4_report`, que não invoca
+    Q3). Um ativo sem folds suficientes (`run_regime_comparison_for_
+    symbol` retorna `None`) é logado e EXCLUÍDO de `Q3Result.assets`, não
+    derruba os outros ativos (mesmo padrão AG-019 do resto do módulo).
+
+    Para cada ativo com dado suficiente: `_asof_join_btc_labels` (backward,
+    causal) + `adjusted_rand` na região de sobreposição -- ver
+    `Q3AssetResult`/`_asof_join_btc_labels` para o tratamento de
+    sobreposição parcial (excluída da métrica, nunca um crash) e de
+    `n_compared` pequeno/zero (`NaN`, não um valor inventado).
+
+    Hiperparâmetros de candidato sem default (mesma disciplina de
+    `run_and_save_m4_report`/`compare_regime_candidates_for_symbol`) --
+    ainda dependem de calibração/confirmação do Manager (Fase 6). Esta
+    função não é chamada por nenhum script de produção neste módulo."""
+    if btc_result.symbol != "BTCUSDT":
+        raise ValueError(
+            f"run_q3_common_factor_regime: btc_result.symbol={btc_result.symbol!r}, esperado "
+            "'BTCUSDT' -- Q3 testa BTC como fator comum de regime, não outro símbolo"
+        )
+    if classifier_id not in btc_raw_labels:
+        raise ValueError(
+            f"run_q3_common_factor_regime: classifier_id={classifier_id!r} não encontrado em "
+            f"btc_raw_labels (chaves disponíveis: {sorted(btc_raw_labels)}) -- confirme que "
+            "compare_regime_candidates_for_symbol(..., return_raw_labels=True) foi chamada com "
+            "os MESMOS hiperparâmetros passados aqui"
+        )
+    btc_raw = btc_raw_labels[classifier_id]
+
+    assets: list[Q3AssetResult] = []
+    for symbol in other_symbols:
+        asset_computed = run_regime_comparison_for_symbol(
+            symbol,
+            SYMBOL_START_DATE[symbol],
+            end,
+            initial_train_years=initial_train_years,
+            hmm_states_grid=hmm_states_grid,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            bocpd_hazard_lambda=bocpd_hazard_lambda,
+            bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
+            hmm_seed=hmm_seed,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
+        if asset_computed is None:
+            logger.warning("analysis.m4_regime_comparison.q3_folds_insuficientes", symbol=symbol)
+            continue
+        _asset_symbol_result, asset_raw_labels = asset_computed
+        if classifier_id not in asset_raw_labels:
+            raise ValueError(
+                f"run_q3_common_factor_regime: classifier_id={classifier_id!r} não encontrado "
+                f"em asset_raw_labels de {symbol!r} (chaves disponíveis: "
+                f"{sorted(asset_raw_labels)})"
+            )
+        asset_raw = asset_raw_labels[classifier_id]
+
+        labels_own, labels_btc_derived = _asof_join_btc_labels(btc_raw, asset_raw)
+        n_compared = int(labels_own.shape[0])
+        if n_compared < _Q3_MIN_BARS_COMPARED:
+            logger.warning(
+                "analysis.m4_regime_comparison.q3_sobreposicao_insuficiente",
+                symbol=symbol,
+                n_bars_compared=n_compared,
+            )
+            ari = float("nan")
+        else:
+            ari = adjusted_rand(labels_own, labels_btc_derived)
+
+        assets.append(
+            Q3AssetResult(
+                symbol=symbol,
+                n_bars_compared=n_compared,
+                adjusted_rand_own_vs_btc_derived=ari,
+            )
+        )
+
+    return Q3Result(
+        classifier_id=classifier_id,
+        btc_n_bars=int(btc_raw.open_time_ms.shape[0]),
+        assets=tuple(assets),
     )
 
 
@@ -812,11 +1395,13 @@ _BASELINE_VOL_ESTIMATOR_CAVEAT: Final[str] = (
 )
 
 _Q3_COMMON_FACTOR_NOTE: Final[str] = (
-    "Terceira via (Q3, BTC como fator comum via as-of join causal) e a Fase 4 do plano "
-    "wise-exploring-panda.md, NAO implementada neste relatorio. "
-    "compare_regime_candidates_for_symbol foi desenhada para a Fase 4 reusar, mas "
-    "CandidateResult hoje so expoe metricas agregadas (nao os arrays de canonical_id "
-    "por barra nem os objetos de fit por fold) -- ver docstring do modulo, secao Q3."
+    "Terceira via (Q3, BTC como fator comum via as-of join causal) esta implementada "
+    "(run_q3_common_factor_regime, Fase 4 do plano wise-exploring-panda.md) mas NAO e "
+    "chamada por este relatorio -- decisao de escopo (Fase 6/7 decide qual candidato "
+    "testar via Q3, nao este script). compare_regime_candidates_for_symbol/"
+    "run_regime_comparison_for_symbol expoem os rotulos brutos por barra via "
+    "return_raw_labels=True (RawLabels, dataclass irmao de CandidateResult, nunca um "
+    "array dentro dele) -- ver docstring do modulo, secao Fase 4 (Q3)."
 )
 
 

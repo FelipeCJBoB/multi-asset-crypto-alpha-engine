@@ -15,6 +15,8 @@ stability_by_construction=True`)."""
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import numpy as np
 import polars as pl
 import pytest
@@ -31,6 +33,7 @@ from src.regime.hmm_gaussian import predict_hmm_gaussian as _real_predict_hmm
 from src.regime.jump_model import fit_jump_model as _real_fit_jump
 from src.regime.jump_model import predict_jump_model as _real_predict_jump
 from src.validation import volatility_walkforward as vwf
+from src.validation.regime_utility import ANOVAResult, PersistenceMetrics
 
 _SHORT_WINDOW = int(load_feature_constant("feature_c06_vol_ratio_short_window"))
 
@@ -106,7 +109,22 @@ def _synthetic_baseline_df(
     )
 
 
-_CANDIDATE_KWARGS: dict[str, object] = {
+class _CandidateKwargs(TypedDict):
+    """`TypedDict`, não `dict[str, object]` -- Fase 4 (Q3) `@overload`ou
+    `compare_regime_candidates_for_symbol`/`run_regime_comparison_for_
+    symbol` por `Literal[True]`/`Literal[False]` em `return_raw_labels`;
+    um `**_CANDIDATE_KWARGS` tipado como `dict[str, object]` deixa de
+    casar com QUALQUER variante de overload (achado real ao rodar `mypy
+    --strict` depois da mudança) -- `TypedDict` resolve porque cada campo
+    tem o tipo exato esperado pelo parâmetro correspondente."""
+
+    jump_n_states: int
+    jump_penalty: float
+    bocpd_hazard_lambda: float
+    bocpd_n_canonical_buckets: int
+
+
+_CANDIDATE_KWARGS: _CandidateKwargs = {
     "jump_n_states": 2,
     # 0.001, não 0.01 -- achado real ao rodar este teste: com o espaço de
     # features/dado sintético deste arquivo (blocos de 30 dias, ver
@@ -427,7 +445,7 @@ def test_compare_regime_candidates_dado_insuficiente_retorna_none() -> None:
         baseline_df,
         initial_train_years=1,
         hmm_states_grid=(2,),
-        **_CANDIDATE_KWARGS,  # type: ignore[arg-type]
+        **_CANDIDATE_KWARGS,
     )
     assert result is None
 
@@ -442,7 +460,7 @@ def test_compare_regime_candidates_levanta_value_error_altura_diferente() -> Non
             baseline_df,
             initial_train_years=1,
             hmm_states_grid=(2,),
-            **_CANDIDATE_KWARGS,  # type: ignore[arg-type]
+            **_CANDIDATE_KWARGS,
         )
 
 
@@ -460,7 +478,7 @@ def test_compare_regime_candidates_levanta_value_error_timestamp_divergente() ->
             baseline_df,
             initial_train_years=1,
             hmm_states_grid=(2,),
-            **_CANDIDATE_KWARGS,  # type: ignore[arg-type]
+            **_CANDIDATE_KWARGS,
         )
 
 
@@ -475,7 +493,7 @@ def test_compare_regime_candidates_estrutura_do_resultado() -> None:
         baseline_df,
         initial_train_years=2,
         hmm_states_grid=(2, 3),
-        **_CANDIDATE_KWARGS,  # type: ignore[arg-type]
+        **_CANDIDATE_KWARGS,
     )
     assert result is not None
     assert result.symbol == "TESTUSDT"
@@ -573,7 +591,7 @@ def test_harness_nao_vaza_dado_de_fold_futuro_e_bocpd_roda_uma_vez_sobre_serie_i
         baseline_df,
         initial_train_years=2,
         hmm_states_grid=(2,),
-        **_CANDIDATE_KWARGS,  # type: ignore[arg-type]
+        **_CANDIDATE_KWARGS,
     )
     assert result is not None
 
@@ -648,3 +666,516 @@ def test_run_regime_comparison_for_symbol_btcusdt_sobre_dado_real() -> None:
     assert result.baseline.n_oos_obs > 0
     for c in result.candidates:
         assert c.n_oos_obs >= 0  # candidato pode ter todos os folds falhos em dado real ruidoso
+
+
+# ============================================================================
+# Fase 4 (Q3) -- return_raw_labels não muda CandidateResult/SymbolResult
+# agregado, só ADICIONA o array de RawLabels quando pedido.
+# ============================================================================
+
+
+def test_run_fold_refit_candidate_return_raw_labels_nao_muda_candidate_result() -> None:
+    n = 300
+    obs_2d = np.column_stack(
+        [np.arange(n, dtype=np.float64), np.arange(n, dtype=np.float64) * 2.0]
+    )
+    open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    splits = (
+        vwf.WalkForwardSplit(fold_id=0, train_end_idx=100, test_start_idx=100, test_end_idx=200),
+        vwf.WalkForwardSplit(fold_id=1, train_end_idx=200, test_start_idx=200, test_end_idx=300),
+    )
+
+    def _stub_fit(obs: np.ndarray, train_end_idx: int) -> dict[str, int]:
+        return {"train_end_idx": train_end_idx}
+
+    def _stub_predict(fit: dict[str, int], obs_slice: np.ndarray) -> np.ndarray:
+        return (np.arange(obs_slice.shape[0]) % 2).astype(np.int64)
+
+    forward_return = np.linspace(-1.0, 1.0, n)
+    vol_pctile = np.linspace(0.0, 1.0, n)
+
+    result_false = m4._run_fold_refit_candidate(
+        "stub_id",
+        2,
+        obs_2d,
+        splits,
+        fit_fn=_stub_fit,
+        predict_fn=_stub_predict,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+    )
+    result_true, raw = m4._run_fold_refit_candidate(
+        "stub_id",
+        2,
+        obs_2d,
+        splits,
+        fit_fn=_stub_fit,
+        predict_fn=_stub_predict,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
+    )
+    assert result_false == result_true
+    assert isinstance(raw, m4.RawLabels)
+    assert raw.canonical_id.shape == raw.open_time_ms.shape
+    assert raw.canonical_id.shape[0] == result_true.n_oos_obs
+    # raw_labels alinhado por timestamp -- aqui nenhum fold falhou, então
+    # é exatamente open_time_ms[oos_start:oos_end].
+    np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[100:300])
+
+
+def test_run_fold_refit_candidate_return_raw_labels_true_exige_open_time_ms() -> None:
+    n = 200
+    obs_2d = np.column_stack([np.arange(n, dtype=np.float64), np.zeros(n)])
+    splits = (
+        vwf.WalkForwardSplit(fold_id=0, train_end_idx=100, test_start_idx=100, test_end_idx=200),
+    )
+
+    def _stub_fit(obs: np.ndarray, train_end_idx: int) -> dict[str, int]:
+        return {"train_end_idx": train_end_idx}
+
+    def _stub_predict(fit: dict[str, int], obs_slice: np.ndarray) -> np.ndarray:
+        return np.zeros(obs_slice.shape[0], dtype=np.int64)
+
+    # Viola de propósito o contrato de tipo (return_raw_labels=True exige
+    # open_time_ms na assinatura @overload) pra provar que o guarda em
+    # RUNTIME (não só o tipo) também barra a chamada -- callers
+    # dinâmicos/não tipados podem bypassar mypy, o ValueError é a defesa
+    # real.
+    with pytest.raises(ValueError, match="open_time_ms obrigatório"):
+        m4._run_fold_refit_candidate(  # type: ignore[call-overload]
+            "stub_id",
+            2,
+            obs_2d,
+            splits,
+            fit_fn=_stub_fit,
+            predict_fn=_stub_predict,
+            forward_return=np.linspace(-1.0, 1.0, n),
+            vol_pctile=np.linspace(0.0, 1.0, n),
+            return_raw_labels=True,
+        )
+
+
+def test_bocpd_candidate_result_return_raw_labels_nao_muda_candidate_result() -> None:
+    rng = np.random.default_rng(3)
+    n_each = 200
+    log_return_1 = np.concatenate(
+        [rng.normal(0.0, 0.02, n_each), rng.normal(0.0, 0.08, n_each)]
+    ).astype(np.float64)
+    n = int(log_return_1.shape[0])
+    open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    forward_return = np.concatenate([log_return_1[1:], [np.nan]])
+    vol_pctile = rng.uniform(0.0, 1.0, size=n)
+
+    result_false = m4._bocpd_candidate_result(
+        log_return_1,
+        50,
+        n,
+        hazard_lambda=100.0,
+        n_canonical_buckets=2,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+    )
+    result_true, raw = m4._bocpd_candidate_result(
+        log_return_1,
+        50,
+        n,
+        hazard_lambda=100.0,
+        n_canonical_buckets=2,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
+    )
+    assert result_false == result_true
+    assert isinstance(raw, m4.RawLabels)
+    np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[50:n])
+    # `raw.canonical_id` cobre a janela OOS INTEIRA (`labels_oos`,
+    # canonical_id nunca é NaN) -- diferente de `result_true.n_oos_obs`
+    # (`separation.n`, PÓS-filtro de NaN em `forward_return` dentro de
+    # `anova_by_group`). A última barra da série tem `forward_return=NaN`
+    # por construção (`_forward_return`, sem `t+1`) -- achado real: os
+    # dois só coincidem quando a janela OOS não inclui essa barra final,
+    # ou (como em `_run_fold_refit_candidate`) quando `n_oos_obs` já é
+    # `labels_valid.shape[0]` direto, não `separation.n`. Aqui, com
+    # `oos_end=n` (última barra da série incluída), n_oos_obs = len - 1.
+    assert raw.canonical_id.shape[0] == n - 50
+    assert result_true.n_oos_obs == n - 50 - 1
+
+
+def test_baseline_candidate_result_return_raw_labels_exclui_r0() -> None:
+    n = 200
+    regime_physical = np.empty(n, dtype=np.int64)
+    regime_physical[:50] = 0  # R0
+    regime_physical[50:125] = 1
+    regime_physical[125:200] = 2
+    open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    forward_return = np.linspace(-1.0, 1.0, n)
+    vol_pctile = np.linspace(0.0, 1.0, n)
+
+    result_false = m4._baseline_candidate_result(
+        regime_physical,
+        0,
+        n,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        classifier_id="quantile_regime_v1",
+    )
+    result_true, raw = m4._baseline_candidate_result(
+        regime_physical,
+        0,
+        n,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        classifier_id="quantile_regime_v1",
+        open_time_ms=open_time_ms,
+        return_raw_labels=True,
+    )
+    assert result_false == result_true
+    assert raw.canonical_id.shape[0] == 150  # 200 - 50 barras R0 excluídas
+    assert not np.any(raw.canonical_id == m4._BASELINE_R0_PHYSICAL_ID)
+    np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[50:200])
+
+
+@pytest.mark.slow
+def test_compare_regime_candidates_return_raw_labels_nao_muda_symbol_result() -> None:
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    result_false = m4.compare_regime_candidates_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        hmm_states_grid=(2, 3),
+        **_CANDIDATE_KWARGS,
+    )
+    computed_true = m4.compare_regime_candidates_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        hmm_states_grid=(2, 3),
+        return_raw_labels=True,
+        **_CANDIDATE_KWARGS,
+    )
+    assert result_false is not None
+    assert computed_true is not None
+    result_true, raw_labels_by_id = computed_true
+    assert result_true == result_false
+
+    expected_ids = {result_false.baseline.classifier_id} | {
+        c.classifier_id for c in result_false.candidates
+    }
+    assert set(raw_labels_by_id) == expected_ids
+    for classifier_id, raw in raw_labels_by_id.items():
+        assert isinstance(raw, m4.RawLabels), classifier_id
+        assert raw.canonical_id.shape == raw.open_time_ms.shape
+
+
+# ============================================================================
+# Fase 4 (Q3) -- _asof_join_btc_labels: DoD central do plano ("Q3/as-of
+# join: prova que o join do rótulo BTC é backward, nunca timestamp futuro")
+# ============================================================================
+
+
+def test_asof_join_btc_labels_e_estritamente_backward_nunca_futuro() -> None:
+    """`t=19` do ativo fica mais perto (em distância) do timestamp `t=20`
+    de BTC do que de `t=10` -- se alguém trocar `strategy="backward"` por
+    `"nearest"` ou `"forward"` por engano, o resultado viraria o rótulo de
+    `t=20` (label=2, FUTURO em relação a `t=19`), não o de `t=10`
+    (label=1, o único correto/causal). Este teste FALHARIA sob as duas
+    trocas."""
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+        canonical_id=np.array([0, 1, 2, 3], dtype=np.int64),
+    )
+    asset_raw = m4.RawLabels(
+        open_time_ms=np.array([19], dtype=np.int64),
+        canonical_id=np.array([99], dtype=np.int64),  # rótulo próprio, irrelevante pro join em si
+    )
+    _labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
+    assert labels_btc_derived.tolist() == [1]
+
+
+def test_asof_join_btc_labels_desalinhado_valores_conhecidos_a_mao() -> None:
+    """BTC em t={0,10,20,30}, ativo em t={5,15,25} (dollar-bar tem
+    timestamps DIFERENTES entre ativos, nunca a mesma grade) -- confirma
+    o rótulo herdado em CADA barra do ativo é o de BTC vigente em
+    `t_btc <= t_ativo`, nunca `t_btc > t_ativo`."""
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+        canonical_id=np.array([0, 1, 0, 1], dtype=np.int64),
+    )
+    asset_raw = m4.RawLabels(
+        open_time_ms=np.array([5, 15, 25], dtype=np.int64),
+        canonical_id=np.array([7, 8, 9], dtype=np.int64),
+    )
+    labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
+    assert labels_own.tolist() == [7, 8, 9]
+    # t=5 -> btc@0=0 ; t=15 -> btc@10=1 ; t=25 -> btc@20=0
+    assert labels_btc_derived.tolist() == [0, 1, 0]
+
+
+def test_asof_join_btc_labels_sobreposicao_parcial_exclui_sem_crash() -> None:
+    """Ativo com histórico mais curto que BTC (situação REAL: BTC desde
+    2019-12-31, os 4 alts só desde 2021-12-01) -- barras do ativo
+    ANTERIORES ao primeiro timestamp de BTC não têm rótulo pra herdar,
+    excluídas da região de sobreposição, nunca um crash."""
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.array([100, 200, 300], dtype=np.int64),
+        canonical_id=np.array([0, 1, 0], dtype=np.int64),
+    )
+    asset_raw = m4.RawLabels(
+        open_time_ms=np.array([50, 150, 250], dtype=np.int64),  # 50 é ANTES do 1o ts de BTC
+        canonical_id=np.array([9, 8, 7], dtype=np.int64),
+    )
+    labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
+    assert labels_own.tolist() == [8, 7]
+    assert labels_btc_derived.tolist() == [0, 1]
+
+
+# ============================================================================
+# Fase 4 (Q3) -- run_q3_common_factor_regime: montagem, com
+# run_regime_comparison_for_symbol stubado via monkeypatch (sem tocar
+# disco -- mesmo padrão de causalidade da Fase 3, seção "espiona os
+# fit_*/predict_*/run_bocpd").
+# ============================================================================
+
+
+def _fake_candidate_result(classifier_id: str) -> m4.CandidateResult:
+    anova = ANOVAResult(f_stat=1.0, omega_squared=0.1, p_value=0.05, k_groups=2, n=10)
+    persistence = PersistenceMetrics(median_duration_bars=5.0, switch_rate=0.2, n_segments=2)
+    return m4.CandidateResult(
+        classifier_id=classifier_id,
+        n_states=2,
+        separation=anova,
+        orthogonality=anova,
+        persistence=persistence,
+        fold_stability_adjusted_rand_mean=1.0,
+        fold_stability_adjusted_rand_min=1.0,
+        fold_stability_by_construction=True,
+        n_oos_obs=10,
+        n_folds_evaluated=0,
+    )
+
+
+def _fake_symbol_result(symbol: str, classifier_id: str) -> m4.SymbolResult:
+    return m4.SymbolResult(
+        symbol=symbol,
+        n_bars=10,
+        n_folds=1,
+        baseline=_fake_candidate_result("baseline_stub"),
+        candidates=(_fake_candidate_result(classifier_id),),
+    )
+
+
+def test_run_q3_common_factor_regime_monta_resultado_com_stub(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    classifier_id = "bocpd_v1"
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.arange(0, 100, 10, dtype=np.int64),
+        canonical_id=np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0], dtype=np.int64),
+    )
+    btc_result = _fake_symbol_result("BTCUSDT", classifier_id)
+    btc_raw_labels = {classifier_id: btc_raw}
+
+    # ETH desenhado pra bater EXATAMENTE com o rótulo BTC derivado via
+    # backward join (t=1->btc@0=0, t=11->btc@10=0, t=21->btc@20=1,
+    # t=31->btc@30=1, t=41->btc@40=0) -- ARI=1.0 esperado, verificável
+    # sem recalcular a fórmula do Rand ajustado à mão.
+    eth_raw = m4.RawLabels(
+        open_time_ms=np.array([1, 11, 21, 31, 41], dtype=np.int64),
+        canonical_id=np.array([0, 0, 1, 1, 0], dtype=np.int64),
+    )
+    eth_symbol_result = _fake_symbol_result("ETHUSDT", classifier_id)
+
+    calls: list[str] = []
+
+    def _stub_run_regime_comparison_for_symbol(
+        symbol: str,
+        start: str,
+        end: str,
+        *,
+        return_raw_labels: bool = False,
+        **_kwargs: object,
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]] | None:
+        assert return_raw_labels is True
+        calls.append(symbol)
+        if symbol == "ETHUSDT":
+            return eth_symbol_result, {classifier_id: eth_raw}
+        return None  # SOLUSDT -- sem dado suficiente neste stub
+
+    monkeypatch.setattr(
+        m4, "run_regime_comparison_for_symbol", _stub_run_regime_comparison_for_symbol
+    )
+
+    result = m4.run_q3_common_factor_regime(
+        btc_result,
+        btc_raw_labels,
+        classifier_id=classifier_id,
+        other_symbols=("ETHUSDT", "SOLUSDT"),
+        jump_n_states=2,
+        jump_penalty=0.01,
+        bocpd_hazard_lambda=100.0,
+        bocpd_n_canonical_buckets=2,
+    )
+
+    assert calls == ["ETHUSDT", "SOLUSDT"]
+    assert result.classifier_id == classifier_id
+    assert result.btc_n_bars == 10
+    assert len(result.assets) == 1  # SOLUSDT excluído (stub devolveu None)
+    eth_result = result.assets[0]
+    assert eth_result.symbol == "ETHUSDT"
+    assert eth_result.n_bars_compared == 5
+    assert eth_result.adjusted_rand_own_vs_btc_derived == pytest.approx(1.0)
+
+
+def test_run_q3_common_factor_regime_symbol_diferente_de_btc_levanta_value_error() -> None:
+    with pytest.raises(ValueError, match="BTCUSDT"):
+        m4.run_q3_common_factor_regime(
+            _fake_symbol_result("ETHUSDT", "bocpd_v1"),
+            {
+                "bocpd_v1": m4.RawLabels(
+                    open_time_ms=np.array([0], dtype=np.int64),
+                    canonical_id=np.array([0], dtype=np.int64),
+                )
+            },
+            classifier_id="bocpd_v1",
+            other_symbols=(),
+            jump_n_states=2,
+            jump_penalty=0.01,
+            bocpd_hazard_lambda=100.0,
+            bocpd_n_canonical_buckets=2,
+        )
+
+
+def test_run_q3_common_factor_regime_classifier_id_ausente_levanta_value_error() -> None:
+    btc_result = _fake_symbol_result("BTCUSDT", "bocpd_v1")
+    with pytest.raises(ValueError, match="não encontrado"):
+        m4.run_q3_common_factor_regime(
+            btc_result,
+            {
+                "bocpd_v1": m4.RawLabels(
+                    open_time_ms=np.array([0], dtype=np.int64),
+                    canonical_id=np.array([0], dtype=np.int64),
+                )
+            },
+            classifier_id="hmm_gaussian_k2_v1",  # não está no dict
+            other_symbols=(),
+            jump_n_states=2,
+            jump_penalty=0.01,
+            bocpd_hazard_lambda=100.0,
+            bocpd_n_canonical_buckets=2,
+        )
+
+
+def test_run_q3_common_factor_regime_sobreposicao_insuficiente_da_nan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ativo cujo dado inteiro precede o primeiro timestamp de BTC --
+    sobreposição zero -- `Q3AssetResult` com `NaN`, não um crash."""
+    classifier_id = "bocpd_v1"
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.array([1000, 2000], dtype=np.int64),
+        canonical_id=np.array([0, 1], dtype=np.int64),
+    )
+    btc_result = _fake_symbol_result("BTCUSDT", classifier_id)
+    btc_raw_labels = {classifier_id: btc_raw}
+
+    eth_raw = m4.RawLabels(
+        open_time_ms=np.array([1, 2], dtype=np.int64),  # inteiramente ANTES de btc_raw
+        canonical_id=np.array([0, 1], dtype=np.int64),
+    )
+    eth_symbol_result = _fake_symbol_result("ETHUSDT", classifier_id)
+
+    def _stub(
+        symbol: str,
+        start: str,
+        end: str,
+        *,
+        return_raw_labels: bool = False,
+        **_kwargs: object,
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]] | None:
+        return eth_symbol_result, {classifier_id: eth_raw}
+
+    monkeypatch.setattr(m4, "run_regime_comparison_for_symbol", _stub)
+
+    result = m4.run_q3_common_factor_regime(
+        btc_result,
+        btc_raw_labels,
+        classifier_id=classifier_id,
+        other_symbols=("ETHUSDT",),
+        jump_n_states=2,
+        jump_penalty=0.01,
+        bocpd_hazard_lambda=100.0,
+        bocpd_n_canonical_buckets=2,
+    )
+    assert len(result.assets) == 1
+    assert result.assets[0].n_bars_compared == 0
+    assert np.isnan(result.assets[0].adjusted_rand_own_vs_btc_derived)
+
+
+# ============================================================================
+# run_q3_common_factor_regime -- IO real (integration/slow)
+# ============================================================================
+
+_Q3_INTEGRATION_START = "2022-01-01"
+_Q3_INTEGRATION_END = "2023-01-08"
+
+
+def _skip_if_no_backfill_symbol(symbol: str, start: str) -> None:
+    path = CAPACITY_DIR / "dollar_bars_r1" / symbol / f"{start}.parquet"
+    if not path.exists():
+        pytest.skip(f"backfill local de dollar_bars_r1/{symbol} ausente: {path}")
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_run_q3_common_factor_regime_btcusdt_ethusdt_sobre_dado_real() -> None:
+    """Smoke test ponta a ponta de Q3 -- prova que `compare_regime_
+    candidates_for_symbol(..., return_raw_labels=True)` + `run_regime_
+    comparison_for_symbol(..., return_raw_labels=True)` +
+    `_asof_join_btc_labels` + `adjusted_rand` não quebram sobre dado
+    real, com BTCUSDT como fator comum e 1 único outro símbolo
+    (ETHUSDT) -- não os 4 alts completos (isso é Fase 6/7, fora do
+    escopo desta função)."""
+    _skip_if_no_backfill_symbol("BTCUSDT", _Q3_INTEGRATION_START)
+    _skip_if_no_backfill_symbol("ETHUSDT", _Q3_INTEGRATION_START)
+
+    btc_computed = m4.run_regime_comparison_for_symbol(
+        "BTCUSDT",
+        _Q3_INTEGRATION_START,
+        _Q3_INTEGRATION_END,
+        initial_train_years=1,
+        hmm_states_grid=(2,),
+        jump_n_states=2,
+        jump_penalty=0.01,
+        bocpd_hazard_lambda=200.0,
+        bocpd_n_canonical_buckets=2,
+        return_raw_labels=True,
+    )
+    assert btc_computed is not None
+    btc_result, btc_raw_labels = btc_computed
+
+    result = m4.run_q3_common_factor_regime(
+        btc_result,
+        btc_raw_labels,
+        classifier_id="bocpd_v1",
+        other_symbols=("ETHUSDT",),
+        end=_Q3_INTEGRATION_END,
+        initial_train_years=1,
+        hmm_states_grid=(2,),
+        jump_n_states=2,
+        jump_penalty=0.01,
+        bocpd_hazard_lambda=200.0,
+        bocpd_n_canonical_buckets=2,
+    )
+    assert result.classifier_id == "bocpd_v1"
+    assert result.btc_n_bars > 0
+    assert len(result.assets) <= 1
+    for asset_result in result.assets:
+        assert asset_result.symbol == "ETHUSDT"
+        assert asset_result.n_bars_compared >= 0
