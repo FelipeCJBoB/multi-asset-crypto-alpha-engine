@@ -5952,3 +5952,43 @@ entries:
       pra `{"17","18","19"}`, commit `5356199`, achado pelo próprio
       pytest do usuário, não pelos 7 comandos mecânicos).
     status: "FECHADO -- 58 passed confirmado pelo Manager 2026-08-17. Controle é NOT_COMPUTABLE em produção até existir rastreador de posições live + série de correlação (Sprint 12+); aggregate_risk_max continua classe A ASSUMED até o sweep pré-Gate-3 -- essas duas ressalvas não são bloqueio, são o desenho pretendido"
+
+  - id: AG-082
+    date: "2026-08-17"
+    file: "tools/lint/banned_patterns.py, config/constants.yaml (indireto -- 7 arquivos de src/)"
+    related_file: "src/analysis/calibration_diagnostics.py, src/analysis/faixa1_5_prerequisites.py, src/analysis/feasibility.py, src/analysis/m2_stats.py, src/analysis/m3_timeframe_choice.py, src/analysis/m6_common_factor_hypothesis.py, src/features/support.py, src/validation/volatility_walkforward.py"
+    found_by: "Agent audit_engineering (M4, src/regime/bocpd.py) + Agent audit_engineering (M4, src/regime/hmm_gaussian.py), independentemente"
+    gap: >
+      Corrigido o bug de `tools/lint/banned_patterns.py::_iter_py_files`
+      (ver AG-anterior/commit `6be5960` -- `--path <arquivo único>`
+      escaneava zero arquivos silenciosamente), a varredura real de
+      `--path src --strict` revelou 25 violações genuínas de
+      `MAGIC_NUMBER` (`§16.10.2` Regra 1) em 7 arquivos não relacionados
+      ao M4, acumuladas sem detecção porque o modo de arquivo único (o
+      mesmo usado pela exceção nomeada de `CLAUDE.md` e pela skill
+      `audit_engineering`) sempre reportava "nenhuma violação
+      encontrada" pra esses arquivos individualmente. CI/pre-commit
+      chamam `--path src` (diretório, modo nunca afetado pelo bug) --
+      não houve bypass de gate de produção; o backlog simplesmente nunca
+      foi visto porque ninguém rodou o diretório inteiro contra esses
+      arquivos especificamente desde que os literais foram introduzidos.
+    severity: "baixo"
+    layer: "process/lint -- dívida pré-existente, não introduzida pelo M4"
+    consequence: >
+      25 literais numéricos fora de constants.yaml, sem provenance
+      declarada, em código de análise (não de pipeline crítico de
+      decisão de risco/execução) -- viola a Regra 1 de §16.10.2 mas não
+      é uma classe A que bloqueia build (nenhum dos 7 arquivos é
+      sizing/execução/risco).
+    resolved_by_commit: null
+    resolution: >
+      Decisão do Manager (2026-08-18): backlog ACEITO, não corrigido
+      agora (fora de escopo do M4) -- registrado aqui com a mesma
+      disciplina de review_by usada pras constantes ASSUMED classe A já
+      pendentes de sweep. Sessão dedicada de higiene de constants.yaml
+      deve varrer os 7 arquivos listados em `related_file`, mover cada
+      literal pra `config/constants.yaml` com `provenance` real ou
+      marcar `# noqa: magic-number` com justificativa (mesmo padrão já
+      usado em `src/regime/bocpd.py`/`hmm_gaussian.py` pra defaults de
+      hiperparâmetro de função pura).
+    status: "aberto -- review_by: sprint_dedicado_higiene_constants (sem sprint numerado ainda, não é gate de nenhum M/V41)"
