@@ -42,17 +42,37 @@ def load_bars(
     fiação de dollar bar canônico, 2026-08-16 — `src.data.build_dollar_
     bars`). `"time_15m"` (default) chama `load_bars_15m` sem nenhuma
     mudança — bit-exato, mesma função, callers existentes que não passam
-    `bar_source` continuam idênticos a antes. `"dollar_r1"` chama
-    `src.data.lake.query_dollar_bars` (barras `dollar_bars_r1`, calibração
-    de VALIDAÇÃO — ver docstring de `src.data.build_dollar_bars`, não é a
-    calibração congelada de produção). Qualquer outro valor levanta
-    `ValueError` — nunca cai silenciosamente pro default."""
+    `bar_source` continuam idênticos a antes. `"dollar_r1"`/`"dollar_r2"`/
+    `"dollar_r3"` chamam `src.data.lake.query_dollar_bars` com o
+    `resolution_id` correspondente (barras `dollar_bars_r1`/`_r2`/`_r3` —
+    mesma função/schema pros 3, já confirmado em
+    `src.data.lake.query_dollar_bars`; R2/R3 wireados nesta extensão,
+    2026-08-18, motivada pelo M4 rodar sob os 3 "timeframes" de produção
+    reais — R1/R2/R3 SUBSTITUÍRAM M15/M30/H1 como identidade de dollar-bar,
+    `PLANO_MESTRE_PRINCE2.md` AG-042). Qualquer outro valor levanta
+    `ValueError` — nunca cai silenciosamente pro default.
+
+    **Débito conhecido, não resolvido aqui (`AG-043`,
+    `audit/architecture_gaps_log.yaml`, "parcialmente fechado"):** todas
+    as janelas do Feature Engine (`FeatureWindows`, ex. `ema=48`) são em
+    CONTAGEM DE BARRA, não tempo de calendário — sob R2 (~30min/barra) e
+    R3 (~1h/barra) o mesmo "48 barras" representa um horizonte de tempo
+    real bem diferente do que sob R1 (~15min/barra). Wireup mecânico
+    (este dispatcher) não depende de resolver isso — mas qualquer
+    consumidor que compare features/regime ENTRE resoluções precisa
+    tratar essa limitação explicitamente (não é um bug deste dispatcher,
+    é debt já deferido em outro lugar)."""
     if bar_source == "time_15m":
         return load_bars_15m(symbol, start, end)
     if bar_source == "dollar_r1":
-        return lake.query_dollar_bars(symbol, start, end)
+        return lake.query_dollar_bars(symbol, start, end, resolution_id="R1")
+    if bar_source == "dollar_r2":
+        return lake.query_dollar_bars(symbol, start, end, resolution_id="R2")
+    if bar_source == "dollar_r3":
+        return lake.query_dollar_bars(symbol, start, end, resolution_id="R3")
     raise ValueError(
-        f"bar_source={bar_source!r} desconhecido -- valores aceitos: 'time_15m', 'dollar_r1'"
+        f"bar_source={bar_source!r} desconhecido -- valores aceitos: 'time_15m', "
+        "'dollar_r1', 'dollar_r2', 'dollar_r3'"
     )
 
 

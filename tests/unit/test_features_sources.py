@@ -1,16 +1,20 @@
 """Testes de `src/features/_sources.py`: asof-join causal (nunca usa
-evento futuro) e a resolução determinística do duplicado real de
+evento futuro), a resolução determinística do duplicado real de
 `create_time` medido em `metrics` (Sprint 3/4 — ver docstring de
-`load_oi_series_deduped`), tudo com fixtures sintéticas em `tmp_path` (não
-precisa do dado real do backfill para provar a lógica)."""
+`load_oi_series_deduped`), e o dispatcher de `bar_source` de `load_bars`
+(R2/R3 wireados 2026-08-18, extensão do M4) — tudo com fixtures
+sintéticas/monkeypatch em `tmp_path` (não precisa do dado real do
+backfill pra provar a lógica)."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
+from src.data import lake
 from src.features import _paths as features_paths
 from src.features import _sources
 
@@ -163,3 +167,56 @@ def test_load_oi_series_deduped_oi_nao_positivo_vira_null(metrics_dir: Path) -> 
 def test_load_oi_series_deduped_sem_arquivos_retorna_vazio(metrics_dir: Path) -> None:
     out = _sources.load_oi_series_deduped("BTCUSDT", "2030-01-01", "2030-01-02")
     assert out.is_empty()
+
+
+# ============================================================================
+# load_bars — dispatcher de bar_source (R1/R2/R3 wireados 2026-08-18)
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("bar_source", "expected_resolution_id"),
+    [("dollar_r1", "R1"), ("dollar_r2", "R2"), ("dollar_r3", "R3")],
+)
+def test_load_bars_dollar_resolutions_chamam_query_dollar_bars_com_resolution_id_certo(
+    monkeypatch: pytest.MonkeyPatch, bar_source: str, expected_resolution_id: str
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def _fake_query_dollar_bars(
+        symbol: str, start: object, end: object, *, resolution_id: str = "R1", **kwargs: object
+    ) -> pl.DataFrame:
+        calls.append({"symbol": symbol, "start": start, "end": end, "resolution_id": resolution_id})
+        return pl.DataFrame(schema={"open_time": pl.Int64, "close_time": pl.Int64})
+
+    monkeypatch.setattr(lake, "query_dollar_bars", _fake_query_dollar_bars)
+    _sources.load_bars("BTCUSDT", "2022-01-01", "2022-02-01", bar_source=bar_source)
+
+    assert len(calls) == 1
+    assert calls[0]["resolution_id"] == expected_resolution_id
+    assert calls[0]["symbol"] == "BTCUSDT"
+
+
+def test_load_bars_time_15m_nao_chama_query_dollar_bars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regressão: wireup de R2/R3 não pode mudar o caminho `time_15m`
+    (default, bit-exato pra todo caller existente que não passa
+    `bar_source`) -- confirma que `query_dollar_bars` nunca é chamada
+    nesse branch."""
+    called = False
+
+    def _fail_if_called(*args: object, **kwargs: object) -> pl.DataFrame:
+        nonlocal called
+        called = True
+        raise AssertionError("query_dollar_bars não deveria ser chamada sob bar_source=time_15m")
+
+    monkeypatch.setattr(lake, "query_dollar_bars", _fail_if_called)
+    monkeypatch.setattr(
+        _sources, "load_bars_15m", lambda symbol, start, end: pl.DataFrame({"open_time": [0]})
+    )
+    _sources.load_bars("BTCUSDT", "2022-01-01", "2022-02-01", bar_source="time_15m")
+    assert called is False
+
+
+def test_load_bars_bar_source_desconhecido_levanta_value_error_lista_4_opcoes() -> None:
+    with pytest.raises(ValueError, match=r"dollar_r1.*dollar_r2.*dollar_r3"):
+        _sources.load_bars("BTCUSDT", "2022-01-01", "2022-02-01", bar_source="dollar_r4")
