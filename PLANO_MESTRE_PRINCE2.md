@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.15 · **Data:** 2026-08-17
+**Versão:** 3.16 · **Data:** 2026-08-18
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -701,7 +701,7 @@ ainda.
 | ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — implementado, testado (94 passed), M6 desbloqueado | `audit/architecture_gaps_log.yaml::AG-030` |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — registrada em `audit/n_lifetime.yaml`, autorizada pelo Manager. **`N_lifetime` descontinuado 2026-08-17 como orçamento vinculante — ver nota abaixo** | `audit/architecture_gaps_log.yaml::AG-039` |
-| Decisão do Manager, sem stage travado ainda | `AG-050` (achado de arquitetura, não item de PRD): `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade | `audit/architecture_gaps_log.yaml::AG-050` |
+| Decisão do Manager, sem stage travado ainda | `AG-050` (achado de arquitetura, não item de PRD): `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade. **Parcialmente endereçado 2026-08-17/18** — os 4 módulos NOVOS de `src/regime/` criados pra M4 (`canonicalization.py`/`bocpd.py`/`jump_model.py`/`hmm_gaussian.py`) já passaram por `audit_engineering`/`project_assurance` (Fase 5 do M4, commits `6be5960`/`7486620`/`8c1ba16`/`e1e6ff4`/`b131e02`); o código PRÉ-EXISTENTE do módulo (`build.py`/`classifier.py`/`stress.py`) continua sem essa revisão — `AG-050` não fechado, só reduzido em escopo | `audit/architecture_gaps_log.yaml::AG-050` |
 | Decisão do Manager, sem stage travado ainda | `AG-055` (achado de arquitetura, não item de PRD): 5 constantes `provenance: MEASURED` sem fonte verificável (`maker_fee`, `taker_fee`, `bnb_discount`, `capital_inicial_brl`, `usd_brl_ref`) — nenhuma classe A, não bloqueia build, mas rótulo semanticamente frágil | `audit/architecture_gaps_log.yaml::AG-055` |
 | Backlog condicionado a `AG-036` (extinção do T1) virar trabalho real — **adicionado ao roadmap 2026-08-17, autorizado pelo Manager** | `AG-038`: `src/analysis/faixa2_caminho_b.py:1229` deriva índice posicional via nome→posição no vetor T1 (`idx_reduced = [T1_FEATURE_IDS.index(f)...]`) — ponto de acoplamento que a varredura original de extinção do T1 não tinha contado. Severidade baixa, não bloqueia nada hoje — só não pode faltar no checklist quando `AG-036` virar implementação real | `audit/architecture_gaps_log.yaml::AG-038` |
 
@@ -820,7 +820,7 @@ proposta a confirmar, não como verdade estabelecida:
 | Sprint 3 ("refazer ATR sobre série completa", §18.7 item 1) | M1 (V41-2) | mesma ação (remedir volatilidade), V4.1 generaliza pros 5 ativos/3 TFs |
 | — (sem equivalente direto em V3.2, dollar bar não existia na V1) | M2 (V41-3) | conceito novo do V4.1, sem precedente em V3.2 |
 | — (`decision_tf` era fixo desde §0.1 da V1, nunca varrido) | M3 (V41-3) | conceito novo (multi-TF), sem precedente em V3.2 |
-| Sprint 5 (Regime Engine) | M4 (V41-4) | Sprint 5 entregou o BASELINE (quantis expansivos); M4 testa se esse baseline é o vencedor contra HMM/Jump/BOCPD |
+| Sprint 5 (Regime Engine) | M4 (V41-4) | Sprint 5 entregou o BASELINE (quantis expansivos); M4 testa se esse baseline é o vencedor contra HMM gaussiano, Jump Model contínuo (CJM), BOCPD e a Terceira via Q3 (BTC como fator comum) — harness completo, execução real em andamento (§11.6) |
 | Sprint 9-10 (fill simulator, backtest) | M5 (V41-2/parcial) | `fill_reconciliation.py` do Sprint 9-10, mesmo módulo, escopo estendido pros 5 ativos |
 | — (sem equivalente — teste de proposição novo do V4.1) | M6 (V41-3) | conceito novo, sem precedente direto |
 | Sprint 6 item "varredura 2D tp×sl" (§18.7 item 2) | V41-6 (Barreiras) | mesma ação, adiada desde V3.2 pra depois de M1/M4 fecharem |
@@ -839,7 +839,7 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | ≤6 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)** — sequenciamento original (depois de M5+M6, decisão de 2026-08-12) ainda vale como ordem de execução (M6 fechou; M5 só parcial), mas M4 já está autorizado a ser atacado junto de M5, não mais bloqueado por orçamento (`N_lifetime` descontinuado como gate, ver §11.4). Trabalho real ainda não iniciado — candidatos vs. quantis expansivos: HMM `dynamax` (2/3/4 estados), Jump Model, BOCPD | `PRD_V4_1.md` §3.2 M4, `AG-075`, `AG-077` |
+| **M4(V4.1) — Regime** | ≤6 (desenho original) / **≤18 sob revisão** (ver nota) | 🟡 **harness completo, calibrado, auditado — execução real (Fase D) EM ANDAMENTO, resultado/candidato vencedor ainda desconhecido, não presumir** (2026-08-17/18, 19 commits `6158442`..`ccb50f1`). Candidatos: quantis expansivos (baseline) vs. HMM gaussiano `dynamax` (k=2/3/4, prior sticky), Jump Model **contínuo (CJM)**, BOCPD (vendorizado, Adams & MacKay 2007) + Terceira via Q3 (BTC como fator comum, `join_asof` causal). Auditoria (`audit_engineering`+`project_assurance`) achou e corrigiu 4 bugs CRITICAL/HIGH reais (canonicalização sob `NaN`, Jump Model sob `Inf`, bug em `tools/lint/banned_patterns.py`, oversubscription de threads BLAS/JAX). Hiperparâmetros calibrados via medição real (`jump_penalty=0,002`/`bocpd_hazard_lambda=65,0`/etc.). **Extensão 2026-08-18**: passou a rodar sob 5 janelas históricas críticas (LUNA/FTX só BTCUSDT, Crypto Winter/ETF-Halving/Recente 5/5 ativos) × 3 resoluções R1/R2/R3 (motivo: custo medido do histórico completo, várias horas) — decisão do Manager de que resolução MULTIPLICA trial (mesmo precedente de `AG-039`/M1) revisou `G-C1-2` pra `≤18` (6 candidatos-trial × 3 resoluções; janela histórica NÃO multiplica, réplica de robustez). **`≤18` ainda não ratificado como valor formal do Gate** — ver nota de `PENDENTE DECISÃO MANAGER` no próprio código (`src/analysis/m4_critical_windows.py:914-920`); linhas 855-863 abaixo (aritmética de orçamento) e §11.6 seguem citando `≤6` até essa ratificação | `PRD_V4_1.md` §3.2 M4, `AG-075`, `AG-077`, `docs/m4_regime_plano_execucao.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
@@ -861,6 +861,16 @@ trials (M4=6, V41-6=4, V41-7=3, V41-10=2) sobre a base de 45 —
 ficam **sem definição operacional clara** até o Manager decidir o que
 (se algo) substitui a penalidade de multiple-testing no Gate 6 — ver
 `AG-077`.
+
+**Nota de proveniência, 2026-08-18 (achado ao atualizar a governança):**
+a aritmética acima ("M4=6... base de 45") é texto HISTÓRICO da época em
+que M4 tinha 6 trials — não reescrita retroativamente. Desde então, a
+extensão de M4 (janelas críticas + R1/R2/R3, linha `M4(V4.1) — Regime`
+acima) mudou a leitura pra `≤18` (ainda pendente de ratificação formal,
+ver nota naquela linha) — se ratificado, a soma "base de 45" também
+mudaria pra 57. Como `N_lifetime` já está descontinuado como gate
+vinculante (não é mais aritmética operante), o impacto prático é baixo,
+mas o texto fica impreciso se lido como referência sem este ponteiro.
 
 ---
 
@@ -1140,7 +1150,7 @@ LIVE TRADING LAYER
 | `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1 |
 | `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro |
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
-| `05_REGIME` | M4 (Regime) | 🔵 próxima frente, autorizado |
+| `05_REGIME` | M4 (Regime) | 🟡 harness completo/calibrado/auditado — execução real (Fase D) em andamento, resultado ainda desconhecido (§11.6) |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
 | `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
@@ -1449,6 +1459,13 @@ restantes do orçamento (M4 sozinho ainda precisa de até 6).
 > priorizados explicitamente pelo Manager (`§11.6`). A decisão que este
 > parágrafo apresenta como pendente já foi tomada; ver `§11.4`/`§11.6`
 > pro estado real.
+>
+> **Adendo, 2026-08-18** — o número "6" de M4 no parágrafo acima também
+> foi revisado desde então (extensão de janelas críticas + R1/R2/R3,
+> resolução multiplica trial) — ver `§11.6` linha `M4(V4.1) — Regime`
+> pro valor atual (`≤18`, ainda pendente de ratificação formal). Não
+> reescrito aqui — é texto histórico do momento em que "6" era o número
+> vigente.
 
 ### 15.10 AG-017 — §15.1 previu o risco por nome, M2 caiu nele mesmo assim (2026-08-15)
 
@@ -1503,6 +1520,45 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.16 (2026-08-18)** — M4 (Regime): harness completo, calibrado,
+  auditado, estendido — execução real (Fase D) em andamento no momento
+  desta atualização, resultado ainda desconhecido. Harness ponta a ponta
+  (baseline + HMM gaussiano `dynamax` k=2/3/4 + Jump Model contínuo/CJM
+  + BOCPD vendorizado + Terceira via Q3, 19 commits `6158442`..`ccb50f1`).
+  Plano completo commitado em `docs/m4_regime_plano_execucao.md` (achado
+  `project_assurance`: só existia como doc de sessão, nunca versionado).
+  Auditoria (`audit_engineering`+`project_assurance`, 6 agentes) achou e
+  corrigiu 4 bugs CRITICAL/HIGH reais: canonicalização quebrava sob
+  `NaN`/`Inf` (defeito central que o módulo existe pra eliminar, B21);
+  Jump Model degenerava sob `Inf` silenciosamente; bug no próprio
+  `tools/lint/banned_patterns.py` (`--path <arquivo>` escaneava zero
+  arquivos, expôs `AG-082`, 25 `MAGIC_NUMBER` pré-existentes, backlog
+  aceito); oversubscription de threads BLAS/JAX sob `ProcessPoolExecutor`
+  + falta de `mp_context="spawn"` explícito (risco de deadlock por fork
+  em produção/Linux). Manager decidiu (5 itens empilhados): ANOVA F
+  clássica → Welch's F (`statsmodels`, regimes de volatilidade violam
+  homocedasticidade por construção); causalidade em bloco do Jump Model
+  documentada como caveat, `.predict()` mantido; contagem de 6 trials
+  confirmada pro desenho original. Hiperparâmetros calibrados via
+  medição real (`jump_penalty=0,002`, `bocpd_hazard_lambda=65,0`, nunca
+  inventados). **Extensão pós-calibração** (pedido do Manager, motivo
+  quantificado — histórico completo levaria várias horas): M4 passou a
+  rodar sob 5 janelas históricas críticas (LUNA/FTX só BTCUSDT, Crypto
+  Winter/ETF-Halving/Recente 5/5 ativos) × 3 resoluções R1/R2/R3 (que
+  SÃO os "3 timeframes" de produção, `AG-042`) — `src/features/
+  _sources.py` ganhou wiring de `dollar_r2`/`dollar_r3`; módulo novo
+  `src/analysis/m4_critical_windows.py` orquestra janela×resolução×
+  símbolo com agregação mediana-de-medianas. Manager decidiu (via
+  `AskUserQuestion`) que resolução MULTIPLICA trial (mesmo precedente já
+  usado em M1, `audit/n_lifetime.yaml` id16) — `G-C1-2` revisado de
+  `≤6` pra `≤18` (**ainda não ratificado formalmente em `PRD_V4_1.md`/
+  `docs/m4_regime_plano_execucao.md`, ver §11.6**); janela histórica NÃO
+  multiplica. Auditoria da extensão achou e corrigiu 1 HIGH real
+  (`AG-083`: relatório sem checkpoint incremental por resolução, mesma
+  classe de gap já corrigida no M2 — falha tardia descartaria horas de
+  fit real). `docs/SPRINT_LOG.md` ganhou seção narrativa completa +
+  tabela "Estado atual" atualizada na mesma sessão.
 
 - **v3.15 (2026-08-17)** — Migração Parkinson canônico + dollar-bar
   (`resolution_id=R1`) ponta a ponta. M1 remedido sob dollar bar (5

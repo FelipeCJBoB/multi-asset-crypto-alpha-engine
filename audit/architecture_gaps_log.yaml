@@ -5992,3 +5992,42 @@ entries:
       usado em `src/regime/bocpd.py`/`hmm_gaussian.py` pra defaults de
       hiperparâmetro de função pura).
     status: "aberto -- review_by: sprint_dedicado_higiene_constants (sem sprint numerado ainda, não é gate de nenhum M/V41)"
+
+  - id: AG-083
+    date: "2026-08-18"
+    file: "src/analysis/m4_critical_windows.py"
+    related_file: "src/analysis/m2_bar_comparison.py (precedente do mesmo padrão de correção, AG-019, emenda 2026-08-15)"
+    found_by: "Agent project_assurance (revisão independente), src/analysis/m4_critical_windows.py"
+    gap: >
+      `run_and_save_critical_windows_report` (orquestrador de janelas
+      críticas × resoluções do M4, Fase B da extensão pós-calibração)
+      iterava as 3 resoluções (R1/R2/R3) sequencialmente mas só
+      persistia o relatório combinado UMA VEZ, depois do loop inteiro --
+      reaplicava só a 1ª camada do padrão AG-019 já usado no módulo
+      (isolamento de falha por célula), não a emenda de checkpoint
+      incremental já corrigida em `m2_bar_comparison.py` (mesmo achado
+      de `project_assurance`, 2026-08-15, motivado por histórico real de
+      travamento/OOM nesta sessão).
+    severity: "alto"
+    layer: "analysis -- orquestração de execução real que consome trial"
+    consequence: >
+      Falha tardia (processo pai morto, exceção não prevista escapando
+      de `aggregate_critical_windows_results`, `KeyboardInterrupt`)
+      depois de R1+R2 já terem completado descartaria os 2 resultados
+      inteiros -- potencialmente horas de fit real de HMM/Jump Model/
+      BOCPD (1 única célula já mediu 732,8s no smoke test do commit
+      `32171f9`), nada persistido em disco pra recuperar.
+    resolved_by_commit: "ccb50f1"
+    resolution: >
+      `_build_report_payload(..., partial: bool)` extraído, chamado a
+      cada resolução concluída (checkpoint atômico B29, `partial=True`)
+      e ao final (`partial=False`) -- mesmo padrão já usado em
+      `m2_bar_comparison._build_payload`. `by_resolution` de um payload
+      parcial só contém as resoluções já concluídas --
+      `len(by_resolution) < len(resolutions_evaluated)` já sinaliza
+      estado incompleto, sem precisar do campo `partial` pra isso.
+      Teste de regressão novo (`test_run_and_save_critical_windows_
+      report_escreve_checkpoint_parcial_por_resolucao`) prova que o
+      checkpoint de R1 já está em disco antes de R2 começar. Suíte
+      completa: 1435 passed, zero regressão.
+    status: "fechado -- checkpoint incremental confirmado por teste dedicado, verificado independentemente antes do commit"

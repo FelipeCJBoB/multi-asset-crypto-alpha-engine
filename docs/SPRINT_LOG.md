@@ -2620,7 +2620,121 @@ flip de `value` — agendado junto de outras mudanças já previstas no
 roadmap, decisão do Manager de quando.
 
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-17)
+## M4 — comparação de classificadores de Regime (2026-08-17 → 2026-08-18)
+
+**Harness completo implementado e auditado** (`PRD_V4_1.md` §3.2 M4,
+único item pago da Camada 1) — baseline (`QuantileRegimeClassifier`,
+produção) vs. 3 candidatos novos: HMM gaussiano (`dynamax`, prior sticky,
+k=2/3/4), Jump Model contínuo/CJM (`jumpmodels`), BOCPD (vendorizado,
+Adams & MacKay 2007) — mais Terceira via Q3 (BTC como fator comum,
+aplicado aos outros 4 ativos via `join_asof` causal `strategy="backward"`).
+Plano completo commitado em `docs/m4_regime_plano_execucao.md` (achado
+de `project_assurance`: o plano original só existia como documento de
+sessão, nunca versionado — quebrava a disciplina "toda regra tem âncora,
+todo histórico via `git log`").
+
+<!-- check-sprint-log: skip -->
+**Fases 0-6 do desenho original** — dependências aprovadas + smoke test
+(`6158442`), primitivos puros (`canonicalization.py`/`bocpd.py`/
+`regime_utility.py`), HMM+Jump Model (`61d2ce4`/`9b945f9`, delegados a
+`Agent`s, 1 bug real corrigido — init de covariância do `dynamax` ignora
+escala do dado real), harness de orquestração (`ec370e0`), Terceira via
+(`db214aa`). **Auditoria obrigatória** (`audit_engineering`+
+`project_assurance`, 6 agentes em paralelo) — **4 bugs CRITICAL/HIGH
+reais corrigidos**: `canonicalization.py` (`NaN`/`Inf` em `response`
+quebrava a invariância a permutação de rótulo, o defeito central que o
+módulo existe pra eliminar, B21); `jump_model.py` (`Inf` degenerava o
+decode silenciosamente); `tools/lint/banned_patterns.py` (`--path
+<arquivo único>` escaneava zero arquivos silenciosamente, mesma classe
+de bug já corrigida uma vez em 2 scripts irmãos — achado por 2 agentes
+independentes em paralelo — expôs `AG-082`, 25 violações `MAGIC_NUMBER`
+pré-existentes em 7 arquivos, backlog aceito não corrigido);
+`m4_regime_comparison.py` (oversubscription de threads BLAS/JAX sob
+<!-- check-sprint-log: skip -->
+`ProcessPoolExecutor`, ~90 threads/processo medido, mesma classe do M2 — <!-- check-sprint-log: skip -->
+mais falta de `mp_context="spawn"` explícito, risco de deadlock por fork
+em produção/Linux, corrigido em `b131e02`).
+
+<!-- check-sprint-log: skip -->
+**Decisões do Manager, 2026-08-18** (5 itens empilhados, resolvidos de
+uma vez ao fim da auditoria, commits `8d92bed`/`874c21b`): (1) contagem
+<!-- check-sprint-log: skip -->
+de trials confirmada — 6 exatos (baseline=0, HMM k2/k3/k4=3, Jump
+Model=1, BOCPD=1, Q3=1); (2) ANOVA F clássica → **Welch's F**
+(`statsmodels.stats.oneway.anova_oneway`, `omega_squared` migrado pra
+fórmula "AnL" — Albers & Lakens, 2018, `J. Experimental Social <!-- check-sprint-log: skip -->
+Psychology` — com prova algébrica de equivalência ao caso clássico) —
+motivo: regimes de volatilidade violam homocedasticidade por
+construção, contradição interna usar teste que assume variância igual
+pra medir se a variância é diferente; (3) causalidade em bloco do Jump <!-- check-sprint-log: skip -->
+Model (decode Viterbi do fold inteiro, pode "ver" o próprio futuro do
+fold) — documentada como caveat explícito no relatório, `.predict()`
+mantido; (4) backlog `AG-082` aceito, não corrigido agora. <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+**Hiperparâmetros de candidato calibrados via medição real** (nunca
+<!-- check-sprint-log: skip -->
+inventados, `config/constants.yaml`, commit `93723a5`) —
+`jump_penalty=0,002` (grade manual sobre BTCUSDT real, fronteira de <!-- check-sprint-log: skip -->
+saturação da decodificação OOS medida entre 0,002 e 0,005;
+`jumpmodels` não expõe seleção via BIC/CV, confirmado por leitura do
+código-fonte); `bocpd_hazard_lambda=65,0` (5× a mediana real de duração
+de segmento do baseline, 13 barras — valor bruto é patológico, 55 mil
+segmentos, confirma achado já documentado em `bocpd.py`);
+`bocpd_n_canonical_buckets=3`/`jump_n_states=2` (DERIVED, PRD não
+especifica K pra esses 2 candidatos, escolha justificada por
+comparabilidade com o grid HMM). Commit `93723a5`.
+
+<!-- check-sprint-log: skip -->
+**Extensão pós-calibração — janelas críticas + multi-resolução**
+(pedido do Manager, 2026-08-18, motivo quantificado: smoke test de 3 <!-- check-sprint-log: skip -->
+meses/2 folds levou ~29min pro símbolo mais lento — histórico completo,
+~15-18 folds/símbolo, levaria várias horas). Plano de extensão passou
+por novo ciclo de Plan Mode + pesquisa (leitura do artefato "Biblioteca
+de Testes" pra entender a metodologia real do M2 de "5 janelas críticas
+em vez de histórico completo", `AG-034`). **Fase A** (`3f1502e`) —
+`src/features/_sources.py::load_bars` ganha `dollar_r2`/`dollar_r3`
+(R1/R2/R3 SÃO os "3 timeframes" de produção, substituíram M15/M30/H1
+como identidade, `PLANO_MESTRE_PRINCE2.md` `AG-042`) — débito conhecido
+não resolvido (`AG-043`, janelas do Feature Engine em contagem de barra,
+não tempo real, sob R2/R3). **Fase B** (`32171f9`/`ccb50f1`) — módulo
+novo `src/analysis/m4_critical_windows.py`, orquestrador de 5 janelas
+(LUNA/mai-2022, FTX/nov-2022 — só BTCUSDT, sem runway suficiente nos 4
+alts — Crypto Winter/jun-2023, ETF-Halving/mar-2024, Recente — 5/5) × 3
+resoluções, agregação mediana-de-medianas (símbolo→janela→geral).
+Aritmética das janelas verificada empiricamente contra
+`generate_anchored_walk_forward_splits` real (não presumida) — achado
+real: o evento-alvo cai sempre no fold 1 do walk-forward, não fold 0
+(efeito de fronteira de dia civil na primeira barra real devolvida).
+**Fase C** (auditoria, 3 agentes) — 1 HIGH real corrigido (`AG-083`,
+`ccb50f1`: relatório só persistia depois das 3 resoluções completarem,
+sem checkpoint incremental — mesmo padrão AG-019 já corrigido no M2 —
+falha tardia descartaria horas de fit real).
+
+<!-- check-sprint-log: skip -->
+**Decisão de trial accounting da extensão, Manager 2026-08-18** (via
+`AskUserQuestion`): resolução MULTIPLICA trial (mesmo precedente já
+usado no M1, `audit/n_lifetime.yaml` id16 — cada resolução exige refit
+novo) — `G-C1-2` revisado de `≤6` pra **`≤18 trials`** (6
+candidatos-trial × 3 resoluções); janela histórica NÃO multiplica
+(réplica de robustez, mesmo raciocínio de símbolo/fold — 5 janelas
+agregadas dentro de cada trial, não 5 trials a mais). Achado de
+`project_assurance`: essa revisão não estava sincronizada em nenhum
+documento formal (`PRD_V4_1.md`/`docs/m4_regime_plano_execucao.md`/
+`config/constants.yaml` ainda citavam `≤6`) — sincronizado nesta
+atualização de governança.
+
+<!-- check-sprint-log: skip -->
+**Fase D — execução real, autorizada explicitamente pelo Manager**
+(2026-08-18, `AskUserQuestion`, "estou em acesso remoto, execute você
+mesmo") — 18 trials, `run_and_save_critical_windows_report`, ver
+`experiments/m4_critical_windows_report.json` (checkpoint incremental
+por resolução, `AG-083`) quando fechar. Ver seção "Estado atual" abaixo
+pro status no momento desta atualização — **ainda em andamento**, não
+presumir resultado.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-18)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -2635,11 +2749,13 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | Sprint | 4 — Feature Engine, em andamento (⚠️ possivelmente desatualizado — narrativa deste arquivo já cita Sprint 6-9 como concluídos, ver nota acima) |
 | TF de decisão | 15m |
 | `canonical_volatility_estimator` | **decisão**: Parkinson (`parkinson_w20`) — Manager, 2026-08-17, `AG-036::addendum_decisao_manager_2026_08_17`. **`constants.yaml::value` ainda `garman_klass_w20`** — só muda quando o retreino real do Alpha rodar (evita janela onde o config mente sobre produção) |
-| `canonical_bar_type` | `dollar` (decidido); engenharia ponta a ponta pronta e testada pra `resolution_id="R1"` (Fases 0-4, commits `e32b7a4`/`5df33c3`/`3449471`/`9a4c3c5`/`b5760fe`); labels/leakage/Feature-Regime já EXECUTADOS de verdade pros 5 símbolos (`6219d02`) — só falta retreino real do Alpha, comando pronto (`--resolution-id`/`--vol-estimator-id` em `run_layer1_sprint`), não executado por decisão do Manager |
+| `canonical_bar_type` | `dollar` (decidido); engenharia ponta a ponta pronta e testada pra `resolution_id="R1"` (Fases 0-4, commits `e32b7a4`/`5df33c3`/`3449471`/`9a4c3c5`/`b5760fe`); labels/leakage/Feature-Regime já EXECUTADOS de verdade pros 5 símbolos (`6219d02`) — só falta retreino real do Alpha, comando pronto (`--resolution-id`/`--vol-estimator-id` em `run_layer1_sprint`), não executado por decisão do Manager. `dollar_r2`/`dollar_r3` wireados no Feature Engine 2026-08-18 (`3f1502e`, motivado pelo M4) — `_BAR_SOURCE_BY_RESOLUTION` de `src/models/dataset.py` continua fechado só em R1 pro pipeline de TREINO real (decisão de escopo separada, Fase 4/`AG-036`/`AG-065`, não alterada) |
 | T1 | extinto — pool único de 13 features, ranking via PRD §2.0.1 ainda não rodado |
-| Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
-| `N_lifetime` | **63**/60 — orçamento excedido, override do Manager autorizado e registrado (`audit/n_lifetime.yaml` id 17, `budget_override_manager`, `delta=0`) pra migração Parkinson+dollar-bar especificamente; retreino real do Alpha, quando rodar, conta normalmente |
+| Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
+| `N_lifetime` | **63**/60 — orçamento excedido, override do Manager autorizado (`audit/n_lifetime.yaml` id 17, `budget_override_manager`) pra migração Parkinson+dollar-bar; M4 (18 trials, `G-C1-2` revisado) ainda NÃO registrado aqui — Fase D (execução real) em andamento no momento desta atualização, registro fica pro fechamento |
+| **M4 — Regime** | Harness completo + auditado + calibrado + estendido (janelas críticas × R1/R2/R3), commits `6158442`..`ccb50f1` (19 commits). `G-C1-2` revisado pra `≤18 trials` (Manager 2026-08-18) — **ainda não sincronizado em `PRD_V4_1.md`/`docs/m4_regime_plano_execucao.md`** nesta atualização (ver `PLANO_MESTRE_PRINCE2.md` §11.4 pra status linha a linha). **Fase D (execução real) EM ANDAMENTO no momento desta atualização — resultado/candidato vencedor ainda desconhecido, não presumir** |
 | Meta Model | fora da V1 (§6.8 define critério de entrada) |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json` |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — agendado junto de outras mudanças já previstas no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
+| Pendente pra fechar M4 | Fase D terminar (relatório real, `experiments/m4_critical_windows_report.json`), declarar `G-C1-2`, registrar as 18 entradas em `audit/n_lifetime.yaml`, sincronizar `≤18 trials` em `PRD_V4_1.md`/`docs/m4_regime_plano_execucao.md`, decisão final (candidato vencedor) ao Manager, publicar resultados na "Biblioteca de Testes" (3ª aba) |
