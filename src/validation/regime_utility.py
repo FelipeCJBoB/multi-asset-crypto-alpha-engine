@@ -1,15 +1,24 @@
 """Primitivos de métrica de utilidade de regime — M4 (`PRD_V4_1.md` §3.2).
 Núcleo puro (sem IO), análogo a `volatility_walkforward.py` (M1) mas para
-as 4 métricas do M4: separação de retorno condicional (ANOVA F/ω²),
-persistência (duração mediana, taxa de troca), estabilidade entre folds
-(Rand ajustado) e ortogonalidade contra volatilidade — esta última reusa
-`anova_by_group` com a resposta trocada (`vol_pctile` em vez de retorno
-futuro), não é uma métrica própria.
+as 4 métricas do M4: separação de retorno condicional (ANOVA F de
+Welch/ω²), persistência (duração mediana, taxa de troca), estabilidade
+entre folds (Rand ajustado) e ortogonalidade contra volatilidade — esta
+última reusa `anova_by_group` com a resposta trocada (`vol_pctile` em vez
+de retorno futuro), não é uma métrica própria.
 
-**NaN em `response`**: filtrado antes do cálculo (não escondido — contado
-e reportado em `ANOVAResult.n`, que é o `n` PÓS-filtro). A última barra de
-uma série sempre tem `log_return_1=NaN` (não existe `close[t+1]`) — é
-esperado, não um erro de dado."""
+**ANOVA F de Welch, não a F clássica — decisão do Manager, 2026-08-18
+(auditoria `audit_engineering`).** `anova_by_group` usava
+`scipy.stats.f_oneway` (ANOVA F clássica), que assume homocedasticidade
+(variância igual entre grupos). Essa suposição é violada POR CONSTRUÇÃO
+no M4: regimes de volatilidade diferem em variância por definição, e a
+métrica de "ortogonalidade contra volatilidade" testa exatamente se a
+variância difere entre grupos de regime — usar um teste que assume
+variância igual pra medir se a variância é diferente é uma contradição
+interna do desenho. Trocado para Welch's ANOVA F (Welch 1951, "On the
+comparison of several mean values: an alternative approach", Biometrika
+38(3/4)), robusta a variância desigual entre grupos e com poder
+equivalente à F clássica quando a homocedasticidade de fato vale — ver
+docstring de `anova_by_group` pra implementação/fonte exata."""
 
 from __future__ import annotations
 
@@ -17,8 +26,8 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import stats
 from sklearn.metrics import adjusted_rand_score
+from statsmodels.stats.oneway import anova_oneway
 
 IntArray = NDArray[np.int64]
 FloatArray = NDArray[np.float64]
@@ -39,10 +48,43 @@ class ANOVAResult:
 
 
 def anova_by_group(group_labels: IntArray, response: FloatArray) -> ANOVAResult:
-    """ANOVA de 1 fator: `response` explicada por `group_labels` (grupo =
-    regime/estado canônico). `F`/`p_value` via `scipy.stats.f_oneway`
-    (referência, não reimplementada); `omega_squared` calculado à mão a
-    partir de SSB/SSW porque `scipy` não expõe isso diretamente.
+    """ANOVA de 1 fator, variante de Welch: `response` explicada por
+    `group_labels` (grupo = regime/estado canônico). `F`/`p_value` via
+    `statsmodels.stats.oneway.anova_oneway(groups, use_var="unequal",
+    welch_correction=True)` — implementação madura/testada da fórmula de
+    Welch 1951 (peso `w_i = n_i/s_i²` por grupo, graus de liberdade do
+    denominador fracionários pela aproximação de Satterthwaite), preferida
+    a reimplementar a fórmula à mão (decisão do Manager, 2026-08-18: risco
+    de bug de implementação própria > risco de uma lib madura já testada,
+    ver docstring do módulo pro motivo da troca). Assinatura/uso
+    confirmados lendo `statsmodels/stats/oneway.py` instalado (`anova_
+    generic`/`anova_oneway`, `.venv`), não só a doc.
+
+    **`omega_squared` — fórmula ajustada "AnL" (Albers & Lakens 2018),
+    não mais SSB/SSW.** ω² tradicionalmente vem de somas de quadrados
+    (SSB/SSW/SST) da ANOVA clássica — mas existe uma variante específica
+    pra F de Welch na literatura: Albers, C., & Lakens, D. (2018), "When
+    power analyses based on pilot data are biased", J. Experimental Social
+    Psychology 74, popularizada/confirmada em Kroes & Finley (2023),
+    "Demystifying omega squared", Psychological Methods — 3 métodos
+    existem (Kirk, Carroll-Nordholm, Albers-Lakens/"AnL"), e a literatura
+    recomenda AnL por ser o único que incorpora os graus de liberdade
+    CORRIGIDOS (Satterthwaite) de Welch, não só as médias ponderadas.
+    Fórmula (confirmada contra o pacote R `WAnova`, `R/wAnova.R`,
+    `welch_anova.test`, licença BSD-3, código fonte lido antes de portar):
+
+        ω²_AnL = (F − 1) / ((df_within + 1) / df_between + F)
+
+    onde `df_between`/`df_within` são os graus de liberdade DE WELCH (o
+    segundo, fracionário). **Prova de consistência (medida nesta sessão,
+    não presumida):** aplicar essa MESMA fórmula com o F/df CLÁSSICOS
+    (não os de Welch) reproduz exatamente `(ssb - df_between*msw)/(ssb+
+    ssw+msw)` — a fórmula antiga baseada em SSB/SSW — até erro de ponto
+    flutuante; ω²_AnL não é uma fórmula nova e sim a MESMA relação
+    F→ω² clássica (Fritz, Morris & Richler 2012), agora alimentada com o
+    F/df de Welch em vez do F/df clássico. Clipado em `[0, 1]` pelo mesmo
+    motivo já documentado em `ANOVAResult` (pode dar levemente negativo
+    quando o efeito real é ~0).
 
     Usada tanto para "separação de retorno condicional" (resposta = log-
     retorno futuro, ω² ALTO é o sinal BOM) quanto para "ortogonalidade
@@ -52,7 +94,32 @@ def anova_by_group(group_labels: IntArray, response: FloatArray) -> ANOVAResult:
 
     Levanta `ValueError` se sobrarem menos de 2 grupos ou `n <= k_groups`
     após filtrar NaN de `response` (graus de liberdade dentro do grupo
-    ficariam <= 0 — resultado sem sentido, não um NaN silencioso)."""
+    ficariam <= 0 — resultado sem sentido, não um NaN silencioso), OU se
+    algum grupo sobrar com < 2 observações, OU se algum grupo tiver
+    variância amostral exatamente 0 — os 2 achados reais desta sessão
+    (medidos rodando a suíte de teste existente, não hipotéticos):
+
+    1. **`n_i < 2` por grupo.** Diferente da F clássica (que só precisa da
+       variância PARTILHADA/pooled, `n_total - k` graus de liberdade),
+       Welch's F precisa da variância de CADA grupo individualmente
+       (`ddof=1`, exige `n_i>=2`); com `n_i=1`, `statsmodels` não levanta
+       erro, devolve `NaN` silencioso com `RuntimeWarning` interno
+       (confirmado rodando `anova_oneway` com um grupo de tamanho 1).
+    2. **Variância de grupo == 0 (todas as observações idênticas).**
+       Welch pondera cada grupo por `w_i = n_i/var_i` — `var_i=0` é
+       divisão por zero literal. Achado real: o teste pré-existente
+       `test_anova_filtra_nan_da_response_antes_de_calcular` (dado
+       `[1.0, 1.0]`/`[5.0, 5.0]` pós-filtro de NaN) SEMPRE foi um caso de
+       variância 0 nos 2 grupos, inofensivo pra F clássica (SSW pooled
+       ainda finito, contribuição de um grupo com variância 0 é só 0 na
+       soma) mas silenciosamente produzia `f_stat=nan`/`omega_squared=nan`
+       sob Welch (confirmado rodando a suíte após a troca, 2
+       `RuntimeWarning: divide by zero`/`invalid value` do `statsmodels`)
+       — o teste original só afirmava `result.n == 4`, nunca reparava.
+       Corrigido no teste (dado com variância > 0 nos 2 grupos) E guardado
+       aqui explicitamente — este projeto não silencia `RuntimeWarning`
+       sem achar a causa raiz (CLAUDE.md), e `NaN` sem `ValueError` aqui
+       seria exatamente isso: a causa raiz achada, mas não corrigida."""
     if group_labels.shape != response.shape:
         raise ValueError(
             "anova_by_group: group_labels/response precisam do mesmo shape "
@@ -71,22 +138,47 @@ def anova_by_group(group_labels: IntArray, response: FloatArray) -> ANOVAResult:
         raise ValueError(f"anova_by_group: n={n} <= k_groups={k}, graus de liberdade insuficientes")
 
     groups = [response[group_labels == g] for g in unique_groups]
-    f_stat, p_value = stats.f_oneway(*groups)
+    group_sizes = [g.size for g in groups]
+    undersized = {
+        int(g_id): size
+        for g_id, size in zip(unique_groups.tolist(), group_sizes, strict=True)
+        if size < 2
+    }
+    if undersized:
+        raise ValueError(
+            "anova_by_group: Welch's F precisa de >=2 observações por grupo (variância "
+            f"amostral por grupo, ddof=1) -- grupo(s) com < 2: {undersized}"
+        )
+    zero_variance = {
+        int(g_id): float(np.var(g, ddof=1))
+        for g_id, g in zip(unique_groups.tolist(), groups, strict=True)
+        if np.var(g, ddof=1) == 0.0
+    }
+    if zero_variance:
+        raise ValueError(
+            "anova_by_group: Welch's F pondera cada grupo por n_i/var_i -- var_i=0 "
+            "(todas as observações do grupo idênticas) é divisão por zero, não um "
+            f"resultado degenerado silencioso -- grupo(s) com variância 0: {list(zero_variance)}"
+        )
 
-    grand_mean = float(np.mean(response))
-    ssb = float(sum(g.size * (float(np.mean(g)) - grand_mean) ** 2 for g in groups))
-    ssw = float(sum(float(np.sum((g - np.mean(g)) ** 2)) for g in groups))
-    df_between = k - 1
-    df_within = n - k
-    msw = ssw / df_within  # noqa: unguarded-ratio -- df_within=n-k>0 checado acima (n<=k levanta ValueError)
-    denom = ssb + ssw + msw
-    omega_squared = (ssb - df_between * msw) / denom if denom != 0 else 0.0  # noqa: unguarded-ratio -- guarda inline no ternário
+    welch_result = anova_oneway(groups, use_var="unequal", welch_correction=True)
+    f_stat = float(welch_result.statistic)
+    p_value = float(welch_result.pvalue)
+    df_between = float(welch_result.df_num)  # k - 1
+    df_within = float(welch_result.df_denom)  # Satterthwaite-Welch, fracionário
+
+    # ω²_AnL -- ver docstring acima pra fórmula/fonte/prova de equivalência
+    # com SSB/SSW no caso clássico. `df_between=k-1>=1` sempre (k<2 já
+    # levantou ValueError acima); `df_within` (Satterthwaite) é sempre
+    # finito e positivo dado >=2 obs/grupo (checado acima).
+    omega_denom = (df_within + 1.0) / df_between + f_stat  # noqa: unguarded-ratio -- df_between=k-1>=1, k<2 levanta ValueError acima
+    omega_squared = (f_stat - 1.0) / omega_denom if omega_denom != 0 else 0.0  # noqa: unguarded-ratio -- guarda inline no ternário
     omega_squared = float(np.clip(omega_squared, 0.0, 1.0))
 
     return ANOVAResult(
-        f_stat=float(f_stat),
+        f_stat=f_stat,
         omega_squared=omega_squared,
-        p_value=float(p_value),
+        p_value=p_value,
         k_groups=k,
         n=n,
     )
