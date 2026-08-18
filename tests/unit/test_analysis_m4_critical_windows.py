@@ -534,6 +534,67 @@ def test_run_and_save_critical_windows_report_escreve_json_atomico(
     assert "luna_ftx_btc_only_caveat" in payload
     assert "target_fold_is_fold1_not_fold0_caveat" in payload
     assert len(payload["windows"]) == 2
+    assert payload["partial"] is False  # escrita final, não checkpoint
+
+
+def test_run_and_save_critical_windows_report_escreve_checkpoint_parcial_por_resolucao(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Achado `project_assurance` 2026-08-18 (HIGH, mesma classe de gap já
+    corrigida em `m2_bar_comparison.py`/AG-019 -- checkpoint incremental):
+    antes desta correção, uma falha entre a 2ª e a 3ª resolução descartava
+    as 2 resoluções já concluídas, porque nada era persistido até a função
+    inteira terminar. Prova: depois que a stub de R1 retorna mas ANTES de
+    R2 rodar, `dest` já existe em disco com `partial=True` e só R1 em
+    `by_resolution` -- não só no final."""
+    calls: list[str] = []
+    snapshot_before_r2: dict[str, object] = {}
+
+    def _stub_run_critical_windows_comparison(
+        resolution_id: str, **_kwargs: object
+    ) -> mcw.CriticalWindowsReport:
+        if resolution_id == "R2":
+            # Checkpoint de R1 precisa já estar no disco ANTES de R2 começar.
+            assert dest.exists(), "checkpoint de R1 deveria já ter sido escrito"
+            snapshot_before_r2.update(orjson.loads(dest.read_bytes()))
+        calls.append(resolution_id)
+        cells = (
+            mcw.CellOutcome(
+                "WIN_A",
+                "S1",
+                resolution_id,
+                _symbol_result("S1", candidate_omegas={"bocpd_v1": 0.5}),
+            ),
+        )
+        return mcw.aggregate_critical_windows_results(resolution_id, cells, windows=_TEST_WINDOWS)
+
+    monkeypatch.setattr(
+        mcw, "run_critical_windows_comparison", _stub_run_critical_windows_comparison
+    )
+
+    dest = tmp_path / "m4_critical_windows_report.json"
+    mcw.run_and_save_critical_windows_report(
+        resolutions=("R1", "R2"),
+        windows=_TEST_WINDOWS,
+        dest_path=dest,
+        jump_n_states=2,
+        jump_penalty=0.002,
+        bocpd_hazard_lambda=65.0,
+        bocpd_n_canonical_buckets=3,
+    )
+
+    assert calls == ["R1", "R2"]  # sanity -- stub chamada na ordem esperada
+    assert snapshot_before_r2["partial"] is True
+    assert snapshot_before_r2["resolutions_evaluated"] == ["R1", "R2"]  # pedido completo
+    by_resolution = snapshot_before_r2["by_resolution"]
+    assert isinstance(by_resolution, list)
+    assert len(by_resolution) == 1  # só R1 -- R2 ainda não rodou neste ponto
+    assert by_resolution[0]["resolution_id"] == "R1"
+
+    # Estado final -- partial=False, as 2 resoluções presentes.
+    final_payload = orjson.loads(dest.read_bytes())
+    assert final_payload["partial"] is False
+    assert len(final_payload["by_resolution"]) == 2
 
 
 # ============================================================================

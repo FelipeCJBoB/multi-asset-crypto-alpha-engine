@@ -850,6 +850,45 @@ def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
     logger.info("analysis.m4_critical_windows.report_written", path=str(dest_path))
 
 
+def _build_report_payload(
+    resolutions: tuple[str, ...],
+    windows: tuple[CriticalWindow, ...],
+    reports: list[CriticalWindowsReport],
+    elapsed_seconds_total: float,
+    *,
+    partial: bool,
+) -> dict[str, Any]:
+    """Payload do relatório combinado. `partial=True` é um CHECKPOINT
+    intermediário (achado `project_assurance`, 2026-08-18, HIGH -- mesma
+    classe de gap já corrigida em `m2_bar_comparison._build_payload`/
+    `run_and_save_bar_comparison_report`, AG-019, emenda 2026-08-15,
+    "isolamento de falha por task + checkpoint incremental"): antes desta
+    correção, `run_and_save_critical_windows_report` só persistia depois
+    que as 3 resoluções (`R1`/`R2`/`R3`) tivessem terminado -- uma falha
+    tardia (processo PAI morto, exceção não prevista escapando de
+    `aggregate_critical_windows_results`, `KeyboardInterrupt`) depois de
+    R1+R2 já terem rodado horas de fit real de HMM/Jump Model/BOCPD
+    (1 célula sozinha já mediu 732,8s no smoke test do commit `32171f9`)
+    descartava os 2 resultados já concluídos, nada no disco. `by_resolution`
+    de um payload parcial só contém as resoluções JÁ concluídas (lista
+    crescente) -- `resolutions_evaluated` continua a lista completa
+    pedida, então `len(by_resolution) < len(resolutions_evaluated)` já
+    sinaliza "ainda incompleto" sem precisar do campo `partial` pra isso,
+    mesmo padrão de honestidade sobre estado incompleto já usado em
+    `per_window`/`per_symbol` no resto do módulo."""
+    return {
+        **report_provenance(),
+        "partial": partial,
+        "resolutions_evaluated": list(resolutions),
+        "elapsed_seconds_total": elapsed_seconds_total,
+        "ag043_barra_vs_tempo_real_caveat": _AG043_CAVEAT,
+        "luna_ftx_btc_only_caveat": _LUNA_FTX_BTC_ONLY_CAVEAT,
+        "target_fold_is_fold1_not_fold0_caveat": _TARGET_FOLD_CAVEAT,
+        "windows": [asdict(w) for w in windows],
+        "by_resolution": [asdict(r) for r in reports],
+    }
+
+
 def run_and_save_critical_windows_report(
     *,
     resolutions: tuple[str, ...] = RESOLUTIONS,
@@ -868,11 +907,17 @@ def run_and_save_critical_windows_report(
     """Ponto de entrada real -- itera as `resolutions` (default as 3, R1/
     R2/R3) SEQUENCIALMENTE, cada uma via `run_critical_windows_comparison`
     (que paraleliza internamente por célula), persiste o relatório
-    combinado atômico (B29).
+    combinado atômico (B29) -- inclusive um CHECKPOINT parcial (`partial:
+    true`) a cada resolução concluída, não só no final (ver docstring de
+    `_build_report_payload`, achado `project_assurance` 2026-08-18, HIGH).
 
     **NÃO CHAME esta função sem autorização explícita do Manager** (Fase
     D do plano `wise-exploring-panda.md`) -- consome orçamento de trial
-    (`G-C1-2` revisado para `<=18 trials`, `audit/n_lifetime.yaml`).
+    (`G-C1-2` revisado para `<=18 trials`, `audit/n_lifetime.yaml` -- essa
+    revisão de gate NÃO está sincronizada em `PRD_V4_1.md`/`docs/m4_regime_
+    plano_execucao.md`, que ainda dizem `<=6`; achado `project_assurance`
+    2026-08-18, HIGH, `PENDENTE DECISÃO MANAGER` sobre qual número é o
+    vigente -- não corrigido aqui).
     Hiperparâmetros de candidato sem default, mesma disciplina de
     `m4_regime_comparison.run_and_save_m4_report`.
 
@@ -883,6 +928,7 @@ def run_and_save_critical_windows_report(
     "bocpd_n_canonical_buckets=3)"`"""
     t0 = time.perf_counter()
     reports: list[CriticalWindowsReport] = []
+    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
     for resolution_id in resolutions:
         logger.info(
             "analysis.m4_critical_windows.resolution_starting", resolution_id=resolution_id
@@ -907,20 +953,25 @@ def run_and_save_critical_windows_report(
             n_failed=len(report.failed_cells),
             n_skipped=len(report.skipped_cells),
         )
+        # Checkpoint -- ver docstring de _build_report_payload. Persiste o
+        # que já terminou ANTES de seguir pra próxima resolução, não só no
+        # fim da função inteira.
+        _atomic_write_json(
+            _build_report_payload(
+                resolutions, windows, reports, time.perf_counter() - t0, partial=True
+            ),
+            dest,
+        )
+        logger.info(
+            "analysis.m4_critical_windows.checkpoint",
+            n_resolutions_done=len(reports),
+            n_resolutions_requested=len(resolutions),
+        )
 
     elapsed_s = time.perf_counter() - t0
-    payload: dict[str, Any] = {
-        **report_provenance(),
-        "resolutions_evaluated": list(resolutions),
-        "elapsed_seconds_total": elapsed_s,
-        "ag043_barra_vs_tempo_real_caveat": _AG043_CAVEAT,
-        "luna_ftx_btc_only_caveat": _LUNA_FTX_BTC_ONLY_CAVEAT,
-        "target_fold_is_fold1_not_fold0_caveat": _TARGET_FOLD_CAVEAT,
-        "windows": [asdict(w) for w in windows],
-        "by_resolution": [asdict(r) for r in reports],
-    }
-    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
-    _atomic_write_json(payload, dest)
+    _atomic_write_json(
+        _build_report_payload(resolutions, windows, reports, elapsed_s, partial=False), dest
+    )
     logger.info(
         "analysis.m4_critical_windows.done",
         elapsed_seconds_total=round(elapsed_s, 1),
