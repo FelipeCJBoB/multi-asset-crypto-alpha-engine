@@ -74,3 +74,19 @@ def test_literais_triviais_permitidos(tmp_path: Path) -> None:
     (tmp_path / "mod.py").write_text("x = 0.5\ny = -1.0\n", encoding="utf-8")
     ids = {v.pattern_id for v in bp.scan(tmp_path)}
     assert "MAGIC_NUMBER" not in ids
+
+
+# --------------------------------------------------------------------------
+# --path apontando pra um arquivo único, não um diretório — Path.rglob
+# devolve vazio silenciosamente nesse caso (mesma classe de bug já corrigida
+# em check_unguarded_ratios.py/check_constants_referenced.py, commit
+# 1182146, 2026-08-09; banned_patterns.py tinha o mesmo _iter_py_files sem
+# o mesmo fix — achado real de auditoria, 2026-08-17).
+# --------------------------------------------------------------------------
+
+
+def test_detecta_print_quando_path_e_arquivo_unico(tmp_path: Path) -> None:
+    mod = tmp_path / "mod.py"
+    mod.write_text("print('debug')\n", encoding="utf-8")
+    ids = {v.pattern_id for v in bp.scan(mod)}
+    assert "B28" in ids

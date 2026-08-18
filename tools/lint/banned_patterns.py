@@ -95,6 +95,18 @@ class Violation:
 
 
 def _iter_py_files(root: Path) -> list[Path]:
+    """`root` pode ser um arquivo único ou um diretório — `Path.rglob` só
+    itera diretórios; num arquivo, devolve vazio silenciosamente (mesma classe
+    de bug já corrigida em `check_unguarded_ratios.py`/`check_constants_
+    referenced.py`, commit `1182146`, 2026-08-09: `--path <arquivo>` reportava
+    "nenhuma violação encontrada" sem nunca ler o arquivo — falso negativo,
+    não ausência real de violação. `banned_patterns.py` tem o mesmo padrão
+    `_iter_py_files` dos outros dois scripts mas nunca recebeu o mesmo fix,
+    apesar de ser invocado com `--path <arquivo>` pela mesma skill de
+    auditoria e pela exceção nomeada de `CLAUDE.md` — achado real desta
+    sessão, 2026-08-17)."""
+    if root.is_file():
+        return [root] if root.suffix == ".py" else []
     return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
 
 
