@@ -1594,6 +1594,20 @@ volatility_operational_effect_duckdb_threads:
   class: C
   sweep_required: false
 
+m4_duckdb_memory_limit_gb:
+  value: 4.0
+  provenance: ASSUMED
+  source: "M4 (PRD_V4_1.md §3.2, src/analysis/m4_regime_comparison.py) roda sob ProcessPoolExecutor(max_workers=min(os.cpu_count(), len(symbols)))=min(12,5)=5 processos concorrentes, mesma topologia de M1/M3/gk_vs_wilder/volatility_operational_effect -- mesma derivação de m3_duckdb_memory_limit_gb (28GB livres / 5 tasks ~= 5,6GB/task, 4,0GB com margem de segurança)."
+  class: C
+  sweep_required: false
+
+m4_duckdb_threads:
+  value: 1
+  provenance: ASSUMED
+  source: "mesmo achado de m4_duckdb_memory_limit_gb -- mesma disciplina de m2_duckdb_threads, aplicada a m4_regime_comparison.py."
+  class: C
+  sweep_required: false
+
 # ============================================================================
 # src/monitoring/dollar_bar_drift.py — AG-042 (audit/architecture_gaps_log.
 # yaml), Opção A′ ("threshold fixo por símbolo/resolução + alarme de
