@@ -1653,3 +1653,164 @@ dollar_bar_drift_alarm_ratio_max:
   class: C
   sweep_required: true
   sweep_range: [1.5, 10.0]
+
+# ============================================================================
+# M4 -- hiperparâmetros de candidato (PRD_V4_1.md §3.2 M4,
+# src/analysis/m4_regime_comparison.py) -- calibrados nesta sessão
+# (2026-08-18) via scripts AD-HOC de diagnóstico sobre dado REAL de
+# BTCUSDT (`src.data.lake.query_dollar_bars`/`src.regime.build.
+# build_regimes`, bar_source="dollar_r1", NÃO o harness/trial real de M4 —
+# mesma disciplina de M1 fixar janela a priori via medição sem contar como
+# trial, CLAUDE.md). `run_and_save_m4_report`/`compare_regime_candidates_
+# for_symbol` continuam SEM ler estas entradas automaticamente (decisão
+# deliberada do módulo, ver docstring — todos os hiperparâmetros de
+# candidato são obrigatórios/sem default de propósito) — quem rodar a
+# Fase 6 real passa os valores abaixo explicitamente via `-c`. Classe B
+# (hiperparâmetro de candidato em comparação, não constante que invalida
+# o desenho se errada — nenhuma destas 4 é class A) para todas as 4;
+# `sweep_required: false` em todas — orçamento de 6 trials do M4 (G-C1-2)
+# não abre espaço pra sweep dentro do próprio estudo.
+# ============================================================================
+
+m4_bocpd_hazard_lambda:
+  value: 65.0
+  provenance: MEASURED
+  source: "Metodologia de 2 passos, script(s) ad-hoc descartáveis (não
+    commitados em tools/diagnostics/), 2026-08-18. PASSO 1 -- âncora:
+    duração mediana de segmento do BASELINE real (QuantileRegimeClassifier,
+    build_regimes('BTCUSDT', '2019-12-31', '2026-08-07',
+    bar_source='dollar_r1'), 231.552 barras), regime.to_physical() com R0
+    (warmup) excluído, regime_persistence (src.validation.regime_utility)
+    sobre o restante (231.352 barras, 10.935 segmentos) --
+    median_duration_bars=13.0 (mean=21.16, std=21.8, p5=2/p10=3/p25=5/
+    p75=30/p90=50/p95=65/p99=99.66, min=1, max=185 -- distribuição
+    fortemente assimétrica à direita). PASSO 2 -- grid de hazard_lambda =
+    múltiplos dessa mediana (1x/5x/6.67x/10x = 13,0/65,0/86,71/130,0;
+    6.67x é a mesma razão já validada no teste sintético de bocpd.py,
+    hazard_lambda=2000 para segmentos de 300 barras,
+    test_detecta_changepoint_unico_injetado_no_ponto_certo), cada ponto
+    rodando run_bocpd sobre log_return_1 REAL (mesma série/corte de warmup
+    de m4_regime_comparison._valid_start_idx, 231.540 barras válidas) e
+    medindo a distribuição de duração de segmento resultante (mesma
+    metodologia de regime_persistence, à mão). hazard_lambda=13,0 (1x, o
+    valor bruto da mediana) é PATOLÓGICO -- confirma empiricamente, em
+    dado real, o achado já documentado no teste sintético de bocpd.py
+    ('hazard_lambda parecido com a duração real do segmento prejudica a
+    detecção'): 55.604 segmentos, median_duration_bars=1,0 (mean=4,16,
+    p90=1,0) -- o prior domina, MAP resetando por ruído barra-a-barra, não
+    por estrutura real. hazard_lambda=65,0 (5x) é o ponto medido que
+    melhor reproduz a ORDEM DE GRANDEZA real do fenômeno que o candidato
+    precisa detectar: median_duration_bars=14,0 (quase idêntico aos 13,0
+    do baseline), 1.196 segmentos plausíveis, mean=193,6/p90=476,0/
+    max=12.729 (cauda direita mais pesada que o baseline, mas mesma forma
+    qualitativa). hazard_lambda=86,71 (6,67x, a razão do teste sintético)
+    e hazard_lambda=130,0 (10x) já são visivelmente mais grosseiros que o
+    alvo real neste dado (median_duration_bars=99,0 e 311,0 -- 7,6x e
+    24x o alvo, 577 e 305 segmentos) -- a razão 6,67x foi calibrada num
+    cenário sintético limpo (1 único changepoint de volatilidade injetado
+    em 600 barras) e NÃO se transporta 1:1 para dado real ruidoso de
+    log-retorno de dollar-bar. Escolhido 5x (65,0): bem MAIOR que o valor
+    bruto patológico (respeita o achado real de bocpd.py), mas o ponto do
+    grid que efetivamente reproduz a duração mediana real medida do
+    fenômeno (regime da QuantileRegimeClassifier), não um múltiplo
+    inventado sem checagem contra o dado."
+  class: B
+  sweep_required: false
+
+m4_bocpd_n_canonical_buckets:
+  value: 3
+  provenance: DERIVED
+  source: "PRD_V4_1.md §3.2 especifica K só para o HMM ('2/3/4 estados') --
+    nem para BOCPD nem para Jump Model (confirmado por leitura literal da
+    linha 416 do PRD). Não é medição -- é escolha de desenho justificada.
+    Duas âncoras, como pedido: (1) comparabilidade com o candidato mais
+    simples do grid HMM (k=2) -- 3 fica adjacente a esse piso, não solto
+    numa granularidade desconectada dos outros candidatos do estudo; (2) o
+    que o desenho de segmentação por changepoint do BOCPD pede: 2 buckets
+    (só 'acima/abaixo da mediana do retorno médio de segmento') arrisca
+    dividir arbitrariamente uma massa de segmentos com retorno médio muito
+    perto de zero (log-retorno de 1 barra de dollar-bar oscila perto de 0
+    quase sempre -- não há razão para esperar 2 modos claramente separados
+    por sinal) entre os 2 lados do corte por pura mediana amostral, sem
+    nenhum bucket 'neutro' para absorver esse ruído -- SNR ruim por
+    construção. 3 buckets (tercis) cria explicitamente esse meio-termo
+    (negativo / neutro-perto-de-zero / positivo), dando ao teste de
+    separação (ANOVA/ω²) uma chance real de separar sinal de ruído em vez
+    de fragmentar o meio da distribuição ao acaso. Também espelha
+    diretamente o candidato HMM k=3 já no grid (mesmo nº de estados,
+    comparação de MODELO controlando por granularidade), sem exigir uma
+    3ª entrada nova de estado (BOCPD já usa 1 trial do orçamento de 6,
+    não ganha um K próprio para sweepar)."
+  class: B
+  sweep_required: false
+
+m4_jump_model_n_states:
+  value: 2
+  provenance: DERIVED
+  source: "Mesma lacuna do PRD que m4_bocpd_n_canonical_buckets -- K não
+    especificado para Jump Model (só para HMM). Escolha de desenho, não
+    medição. Motivo: (1) comparabilidade direta com o candidato mais
+    simples do grid HMM (k=2) -- isola o efeito de FAMÍLIA de modelo
+    (Gaussian HMM/EM vs. Continuous Jump Model/coordinate-descent +
+    penalidade de jump explícita) do efeito de granularidade (k), já que
+    o Jump Model tem só 1 trial no orçamento de 6 (não pode sweepar k
+    como o HMM faz com 3 trials). (2) achado real já documentado em
+    src/regime/jump_model.py (item 6) e confirmado nesta sessão
+    (m4_jump_model_penalty abaixo): jump_penalty já é um hiperparâmetro
+    sensível à escala e propenso a saturar (colapsar num único estado)
+    mesmo com só 2 estados pedidos -- pedir n_states>2 aumentaria ainda
+    mais o espaço de saturação possível (mais formas de um cluster ficar
+    vazio/degenerado) para um hiperparâmetro que já precisou de
+    calibração cuidadosa só para sobreviver com k=2. (3) testa a hipótese
+    mais forte primeiro: se uma única divisão binária (via CJM) já separa
+    retorno condicional tão bem quanto o baseline de 4 regimes
+    tradeable (R1-R4), a complexidade extra de mais estados fica
+    deferida para iteração futura, não presumida necessária a priori."
+  class: B
+  sweep_required: false
+
+m4_jump_model_penalty:
+  value: 0.002
+  provenance: MEASURED
+  source: "jumpmodels (.venv/Lib/site-packages/jumpmodels/{jump,base}.py)
+    lido por completo antes de varrer à mão -- NÃO expõe nenhum método de
+    seleção de jump_penalty via BIC/critério de informação/CV embutido
+    (JumpModel.fit não aceita nada do tipo, confirmado por leitura direta
+    do código-fonte, não hipótese) -- por isso a varredura manual, não um
+    método da lib. Grid ampliado além do sugerido pela task
+    ([0,0001;0,0005;0,001;0,005;0,01] -> testado
+    [0,0001;0,0005;0,001;0,002;0,005;0,01;0,02]) sobre fatia REAL recente
+    de BTCUSDT (últimas 50.000 barras válidas de obs_2d=[log_return_1,
+    realized_vol_short], mesma convenção/escala do M4; 40.000 treino +
+    10.000 teste, fit_jump_model/predict_jump_model diretos, n_states=2,
+    seed=0 -- mesmo caminho de código do harness real, não reimplementado).
+    Medido para cada ponto: nº de estados sobreviventes no FIT (treino) E
+    no DECODE do fold de teste (o que importa de verdade -- é o que
+    anova_by_group/persistence do harness M4 usariam), duração mediana de
+    segmento e switch_rate no teste. Resultado completo do grid: 0,0001 ->
+    2 estados (treino [29095,10905], teste 64 segmentos,
+    median_duration=63,5); 0,0005 -> 2 estados (treino [25460,14540],
+    teste 8 segmentos, median_duration=1180,5); 0,001 -> 2 estados (treino
+    [25202,14798], teste 4 segmentos, median_duration=2533,0); 0,002 -> 2
+    estados, resultado IDÊNTICO a 0,001 (treino [25202,14798], teste 4
+    segmentos, median_duration=2533,5 -- mesmo ótimo local do coordinate
+    descent nos dois pontos, plateau largo, não um resultado instável na
+    borda); 0,005 -> DEGENERA no teste (1 único estado, 1 segmento cobrindo
+    as 10.000 barras inteiras, switch_rate=0,0) apesar do FIT de treino
+    ainda reportar 2 estados (quase balanceados, [20105,19895]) -- a
+    saturação acontece na DECODIFICAÇÃO OOS, não no ajuste em si; 0,01 ->
+    também degenera no teste (mesmo resultado de 0,005, confirma/estende o
+    achado já registrado em tests/unit/test_analysis_m4_regime_comparison.py
+    de que jump_penalty=0,01 satura BTCUSDT real); 0,02 -> também degenera.
+    Fronteira de saturação da DECODIFICAÇÃO OOS está entre 0,002 (2 estados
+    genuínos) e 0,005 (colapsa) -- escolhido o MAIOR valor testado que
+    ainda produz >=2 estados genuínos no fold de teste (0,002), por ser o
+    mais parcimonioso dentro do lado seguro medido (jump_penalty maior =
+    menos ruído espúrio), consistente com a orientação da task. Note bem:
+    0,001 (valor usado nos testes SINTÉTICOS do harness,
+    tests/unit/test_analysis_m4_regime_comparison.py::_CANDIDATE_KWARGS)
+    funciona igualmente sobre dado real neste grid -- mas 0,002 é
+    estritamente mais parcimonioso e igualmente seguro, medido, não só
+    herdado do fixture sintético."
+  class: B
+  sweep_required: false
