@@ -317,6 +317,133 @@ def test_run_fold_refit_candidate_fold_com_fit_none_e_excluido_sem_derrubar_os_o
     assert np.isnan(result.fold_stability_adjusted_rand_min)
 
 
+def test_run_fold_refit_candidate_todos_os_folds_falham_degenera_sem_derrubar_o_simbolo() -> (
+    None
+):
+    """Lacuna de cobertura encontrada por `project_assurance`:
+    `_persistence_or_degenerate` documenta explicitamente o caso "TODOS os
+    folds falharam o fit" (`group_labels` vazio) como cenário defendido,
+    mas até este teste nenhum caso exercitava isso pra
+    `_run_fold_refit_candidate` -- só "1 de 2 folds falha" (teste acima).
+    Este harness alimenta `G-C1-2`, e dado real de cripto ruidoso pode
+    plausivelmente saturar HMM/Jump Model em TODOS os folds de um símbolo
+    -- `fit_fn` aqui retorna `None` SEMPRE (não só num fold), e
+    `predict_fn` levanta se for chamada (não deveria ser -- nenhum fit
+    bem-sucedido pra decodificar)."""
+    n = 300
+    obs_2d = np.column_stack([np.arange(n, dtype=np.float64), np.zeros(n)])
+    splits = (
+        vwf.WalkForwardSplit(fold_id=0, train_end_idx=100, test_start_idx=100, test_end_idx=200),
+        vwf.WalkForwardSplit(fold_id=1, train_end_idx=200, test_start_idx=200, test_end_idx=300),
+    )
+
+    def _stub_fit_sempre_none(obs: np.ndarray, train_end_idx: int) -> dict[str, int] | None:
+        return None  # simula TODOS os folds degenerados (dado insuficiente/convergência ruim)
+
+    def _stub_predict_nunca_deveria_ser_chamada(fit: object, obs_slice: np.ndarray) -> np.ndarray:
+        raise AssertionError(
+            "predict_fn não deveria ser chamada -- nenhum fit bem-sucedido pra decodificar"
+        )
+
+    forward_return = np.linspace(-1.0, 1.0, n)
+    vol_pctile = np.linspace(0.0, 1.0, n)
+
+    result = m4._run_fold_refit_candidate(
+        "stub_todos_falham",
+        2,
+        obs_2d,
+        splits,
+        fit_fn=_stub_fit_sempre_none,
+        predict_fn=_stub_predict_nunca_deveria_ser_chamada,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+    )
+
+    assert result.n_folds_evaluated == 0
+    assert result.n_oos_obs == 0
+    # separation/orthogonality: k_groups/n REAIS (0/0, não inventados),
+    # estatísticas NaN -- medição de "nada mediu", não erro/crash.
+    assert result.separation.k_groups == 0
+    assert result.separation.n == 0
+    assert np.isnan(result.separation.f_stat)
+    assert np.isnan(result.separation.omega_squared)
+    assert np.isnan(result.separation.p_value)
+    assert result.orthogonality.k_groups == 0
+    assert result.orthogonality.n == 0
+    assert np.isnan(result.orthogonality.f_stat)
+    assert np.isnan(result.orthogonality.omega_squared)
+    assert np.isnan(result.orthogonality.p_value)
+    # persistence degenerada -- n_segments=0, métricas NaN
+    # (_persistence_or_degenerate, group_labels vazio).
+    assert result.persistence.n_segments == 0
+    assert np.isnan(result.persistence.median_duration_bars)
+    assert np.isnan(result.persistence.switch_rate)
+    # nenhum par de fold válido (os dois fits são None) -- sem medição.
+    assert np.isnan(result.fold_stability_adjusted_rand_mean)
+    assert np.isnan(result.fold_stability_adjusted_rand_min)
+    assert result.fold_stability_by_construction is False
+
+
+def test_anova_or_degenerate_grupo_com_1_obs_e_degenerado_nao_levanta_value_error() -> None:
+    """Achado real desta sessão (troca de `anova_by_group` pra Welch's F,
+    `PRD_V4_1.md` §3.2, decisão do Manager 2026-08-18): Welch exige `n_i>=2`
+    POR GRUPO (variância amostral, `ddof=1`), precondição que a F clássica
+    não tinha. Sem alargar `_anova_or_degenerate`, um candidato cuja
+    fronteira isola um estado raro numa janela OOS com só 1 barra (mesma
+    classe de saturação já documentada pra Jump Model/HMM/BOCPD acima)
+    levantaria `ValueError` direto de dentro de `anova_by_group` -- este
+    teste prova que o wrapper trata isso como degeneração (NaN), não crash,
+    mesmo com `n_groups>=2` e `n>n_groups` (os 2 únicos critérios que a
+    versão antiga do wrapper checava)."""
+    group_labels = np.array([0, 1, 1, 1, 1, 1], dtype=np.int64)  # grupo 0 com só 1 obs
+    response = np.array([1.0, 5.0, 5.1, 4.9, 5.2, 4.8], dtype=np.float64)
+
+    result = m4._anova_or_degenerate(group_labels, response)
+
+    assert result.k_groups == 2  # real, não inventado -- 2 grupos existem no dado
+    assert result.n == 6
+    assert np.isnan(result.f_stat)
+    assert np.isnan(result.omega_squared)
+    assert np.isnan(result.p_value)
+
+
+def test_anova_or_degenerate_grupo_com_variancia_zero_e_degenerado_nao_levanta_value_error() -> (
+    None
+):
+    """Mesma extensão do teste acima, pra 2ª precondição nova do Welch:
+    variância de grupo > 0 (`w_i=n_i/var_i` -- `var_i=0` é divisão por
+    zero). Grupo 0 com 3 observações IDÊNTICAS (variância exatamente 0)."""
+    group_labels = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    response = np.array([1.0, 1.0, 1.0, 5.0, 5.3, 4.8], dtype=np.float64)
+
+    result = m4._anova_or_degenerate(group_labels, response)
+
+    assert result.k_groups == 2
+    assert result.n == 6
+    assert np.isnan(result.f_stat)
+    assert np.isnan(result.omega_squared)
+    assert np.isnan(result.p_value)
+
+
+def test_anova_or_degenerate_dado_bem_comportado_delega_pra_anova_by_group() -> None:
+    """Confirma que o alargamento do critério de degeneração não vira
+    over-triggering -- dado saudável (>=2 grupos, >=2 obs/grupo, variância
+    > 0 em todo grupo) ainda produz `f_stat`/`p_value`/`omega_squared`
+    finitos via `anova_by_group`, não NaN."""
+    rng = np.random.default_rng(11)
+    group_labels = np.concatenate([np.zeros(50, dtype=np.int64), np.ones(50, dtype=np.int64)])
+    response = np.concatenate([rng.normal(-3.0, 0.5, 50), rng.normal(3.0, 0.5, 50)])
+
+    result = m4._anova_or_degenerate(group_labels, response)
+
+    assert result.k_groups == 2
+    assert result.n == 100
+    assert np.isfinite(result.f_stat)
+    assert np.isfinite(result.omega_squared)
+    assert np.isfinite(result.p_value)
+    assert result.omega_squared > 0.5  # grupos bem separados por desenho
+
+
 # ============================================================================
 # _bocpd_candidate_result / _baseline_candidate_result -- "por construção"
 # ============================================================================

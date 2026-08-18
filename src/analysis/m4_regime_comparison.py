@@ -100,6 +100,32 @@ novos", não "GK vs. candidatos novos" — `_BASELINE_VOL_ESTIMATOR_CAVEAT`
 carrega essa frase no payload persistido, pra quem só lê o JSON também
 veja.
 
+**Caveat do Jump Model — decode em BLOCO, declarado explicitamente no
+relatório final (não escondido), mesmo padrão do débito do baseline acima
+— decisão do Manager, 2026-08-18.** `predict_jump_model`
+(`src.regime.jump_model`) decodifica o fold de teste inteiro numa única
+chamada de `fit.model.predict()` (Viterbi GLOBAL de `jumpmodels.jump.dp`)
+— o forward pass é causal, mas o traceback anda de trás pra frente a
+partir de `assign[-1]`, então o rótulo canônico numa barra `t` PODE
+depender de uma observação em `t' > t` DENTRO DO MESMO FOLD DE TESTE
+(confirmado empiricamente, não só por leitura de código — ver docstring
+de `src.regime.jump_model` e
+`test_perturbar_fim_do_fold_pode_mudar_inicio_do_mesmo_fold`). Isso NUNCA
+cruza fronteira de fold e NUNCA toca dado de treino (`fit.model` já está
+ajustado — `centers_`/`jump_penalty_mx` congelados — antes de
+`predict_jump_model` ser chamada). É DIFERENTE de HMM
+(`predict_hmm_gaussian`, via `hmm.filter`, posterior estritamente causal
+barra-a-barra mesmo dentro do fold) e de BOCPD (online por construção,
+sem noção de fold nenhuma) — os outros 2 candidatos novos nunca veem nada
+além do passado, nem dentro do próprio fold. Decisão ratificada: manter
+`.predict()` como está (não trocar para `.predict_online()`, que É causal
+barra-a-barra mas não replica o desenho real do walk-forward do M4 —
+decodificar o fold de teste inteiro de uma vez). Leia o resultado do Jump
+Model com essa ressalva: ele pode carregar uma vantagem de decodificação
+não relacionada à qualidade real de detecção de regime.
+`_JUMP_MODEL_CAUSALITY_CAVEAT` carrega essa frase no payload persistido,
+mesmo padrão de `_BASELINE_VOL_ESTIMATOR_CAVEAT`.
+
 **Fase 4 (Q3, terceira via) — IMPLEMENTADA.** Rota (a) da limitação
 documentada na Fase 3 (duas rotas foram citadas ali, nenhuma implementada)
 foi a escolhida: `_run_fold_refit_candidate`/`_bocpd_candidate_result`/
@@ -487,11 +513,35 @@ def _anova_or_degenerate(group_labels: IntArray, response: FloatArray) -> ANOVAR
     medição dos outros 4+1 candidatos daquele símbolo inteiro. Retorna
     `ANOVAResult` com `f_stat`/`omega_squared`/`p_value` = `NaN`,
     `k_groups`/`n` reais (não inventados) -- logado via `structlog`, não
-    escondido (B28)."""
+    escondido (B28).
+
+    **Extensão 2026-08-18 -- Welch's F (`src.validation.regime_utility.
+    anova_by_group`) tem 2 precondições NOVAS por grupo que a F clássica
+    não tinha** (ela só precisava de `n_total > k_groups`, já coberto pelo
+    `n <= n_groups` abaixo): `n_i>=2` (variância amostral por grupo exige
+    `ddof=1`) e variância amostral `> 0` (Welch pondera por `n_i/var_i`,
+    `var_i=0` é divisão por zero). Sem alargar o critério de degeneração
+    pra cobrir os dois, um candidato cuja fronteira de decisão isola um
+    estado raro numa janela OOS com só 1 barra (plausível -- mesma classe
+    de saturação já documentada acima pra Jump Model/HMM/BOCPD) levantaria
+    `ValueError` de dentro de `anova_by_group` e derrubaria o símbolo
+    inteiro; com Welch isso é tão "candidato degenerou, é uma medição
+    válida" quanto o caso de 1 estado só já tratado acima -- mesma
+    filosofia, não um caso novo de verdade."""
     finite_mask = np.isfinite(response)
-    n = int(np.sum(finite_mask))
-    n_groups = int(np.unique(group_labels[finite_mask]).size) if n > 0 else 0
-    if n_groups < 2 or n <= n_groups:
+    labels_valid = group_labels[finite_mask]
+    response_valid = response[finite_mask]
+    n = int(response_valid.shape[0])
+    unique_groups = np.unique(labels_valid)
+    n_groups = int(unique_groups.size)
+    degenerate = n_groups < 2 or n <= n_groups
+    if not degenerate:
+        for g in unique_groups:
+            group_response = response_valid[labels_valid == g]
+            if group_response.size < 2 or float(np.var(group_response, ddof=1)) == 0.0:
+                degenerate = True
+                break
+    if degenerate:
         logger.warning(
             "analysis.m4_regime_comparison.anova_degenerada",
             n_groups=n_groups,
@@ -1467,6 +1517,28 @@ _Q3_COMMON_FACTOR_NOTE: Final[str] = (
     "array dentro dele) -- ver docstring do modulo, secao Fase 4 (Q3)."
 )
 
+_JUMP_MODEL_CAUSALITY_CAVEAT: Final[str] = (
+    "Jump Model (jump_model_cjm_v1) decodifica o fold de teste em BLOCO via "
+    "predict_jump_model -> fit.model.predict() (Viterbi global de jumpmodels.jump.dp) -- "
+    "o forward pass e causal (values[t] so usa loss_mx[0..t]), mas o TRACEBACK anda de "
+    "tras pra frente a partir de assign[-1]=argmin(values[-1]), entao o rotulo canonico "
+    "numa barra t PODE depender de uma observacao em t' > t DENTRO DO MESMO FOLD DE "
+    "TESTE (confirmado empiricamente, nao so por leitura de codigo -- ver docstring de "
+    "src.regime.jump_model e test_perturbar_fim_do_fold_pode_mudar_inicio_do_mesmo_fold). "
+    "Isso NUNCA cruza fronteira de fold e NUNCA toca dado de treino (fit.model ja esta "
+    "ajustado -- centers_/jump_penalty_mx congelados -- antes de predict_jump_model ser "
+    "chamada; ver test_perturbar_fora_do_fold_nao_muda_decode_do_fold). E DIFERENTE de "
+    "HMM (predict_hmm_gaussian via hmm.filter, posterior estritamente causal barra-a-"
+    "barra mesmo dentro do fold) e de BOCPD (online por construcao, sem nocao de fold "
+    "nenhuma) -- os outros 2 candidatos novos nunca veem nada alem do passado, nem "
+    "dentro do proprio fold. Decisao do Manager (2026-08-18): manter .predict() como "
+    "esta (nao trocar para predict_online(), que e causal barra-a-barra mas nao replica "
+    "o desenho real do walk-forward do M4 -- decodificar o fold de teste inteiro de uma "
+    "vez); leia o resultado do Jump Model com essa ressalva -- ele pode carregar uma "
+    "vantagem de decodificacao (olhar o fold de teste inteiro de uma vez) que nao esta "
+    "relacionada a qualidade real de deteccao de regime, ao contrario de HMM/BOCPD."
+)
+
 
 def _candidate_to_dict(result: CandidateResult) -> dict[str, Any]:
     return {
@@ -1626,6 +1698,7 @@ def run_and_save_m4_report(
         "elapsed_seconds_total": elapsed_s,
         "baseline_volatility_estimator_caveat": _BASELINE_VOL_ESTIMATOR_CAVEAT,
         "q3_common_factor_note": _Q3_COMMON_FACTOR_NOTE,
+        "jump_model_causality_caveat": _JUMP_MODEL_CAUSALITY_CAVEAT,
         "symbols": [_symbol_result_to_dict(r) for r in results],
     }
     dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
