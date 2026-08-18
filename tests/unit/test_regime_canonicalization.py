@@ -90,3 +90,62 @@ def test_levanta_value_error_se_todo_input_e_ignore_value() -> None:
     response = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     with pytest.raises(ValueError, match="nenhum estado real"):
         canonicalize_states(raw, response, ignore_value=-1)
+
+
+def test_nan_em_response_nao_quebra_invariancia_a_permutacao() -> None:
+    """Regressão: achado da auditoria M4 (`PRD_V4_1.md` §3.2) -- sem
+    filtrar NaN/Inf por estado, um único NaN em `response` faz a média
+    daquele estado virar NaN, e `sorted()` com chave NaN produz ordem
+    dependente de qual rótulo bruto o NaN caiu, quebrando exatamente a
+    invariância a permutação que `test_invariante_a_permutacao_do_rotulo_
+    bruto` testa -- e que é a razão de existir deste módulo (B21). Cenário
+    realista, não hipotético: `response` = log-retorno 1 barra à frente
+    tem NaN estrutural na última barra de qualquer série/fold (mesma razão
+    documentada em `src.validation.regime_utility`)."""
+    raw_a = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    response_a = np.array([5.0, 5.0, -5.0, -5.0, 0.0, np.nan], dtype=np.float64)
+
+    # mesma partição, rótulos brutos permutados -- resposta permanece
+    # alinhada posicionalmente (mesma série observada, só a numeração do
+    # estado bruto muda, como em 2 fits diferentes do "mesmo" modelo)
+    permutation = {0: 2, 1: 0, 2: 1}
+    raw_b = np.vectorize(permutation.get)(raw_a).astype(np.int64)
+    response_b = response_a
+
+    result_a = canonicalize_states(raw_a, response_a)
+    result_b = canonicalize_states(raw_b, response_b)
+
+    assert list(result_a.canonical_id) == list(result_b.canonical_id)
+    # a posição com NaN não sai do output nem vira ignore_value -- o
+    # estado inteiro (raw=2 em raw_a) ainda é canonicalizado normalmente,
+    # só a média/variância daquele estado ignora a observação NaN
+    assert result_a.mean_by_raw_state[2] == pytest.approx(0.0)
+
+
+def test_inf_em_response_excluido_do_calculo_de_media() -> None:
+    raw = np.array([0, 0, 1, 1], dtype=np.int64)
+    response = np.array([1.0, np.inf, -1.0, -1.0], dtype=np.float64)
+    result = canonicalize_states(raw, response)
+    # média do estado 0 ignora o +inf -- só a observação finita (1.0) conta
+    assert result.mean_by_raw_state[0] == pytest.approx(1.0)
+
+
+def test_levanta_value_error_se_estado_so_tem_nan_em_response() -> None:
+    raw = np.array([0, 0, 1, 1], dtype=np.int64)
+    response = np.array([np.nan, np.nan, 1.0, 2.0], dtype=np.float64)
+    with pytest.raises(ValueError, match="nenhuma observação finita"):
+        canonicalize_states(raw, response)
+
+
+def test_levanta_value_error_se_ignore_value_nao_negativo() -> None:
+    """Regressão: `canonical_id` de estado real sempre começa em 0 -- um
+    `ignore_value` não-negativo colidiria em silêncio com um estado real
+    assim que k for grande o bastante (nenhum caller usa isso hoje, mas
+    nada impedia um caller futuro de passar `ignore_value=0`, reintroduzindo
+    a mesma ambiguidade de rótulo que este módulo existe pra eliminar)."""
+    raw = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    response = np.array([1.0, 1.0, 2.0, 2.0, 3.0, 3.0], dtype=np.float64)
+    with pytest.raises(ValueError, match="ignore_value precisa ser negativo"):
+        canonicalize_states(raw, response, ignore_value=0)
+    with pytest.raises(ValueError, match="ignore_value precisa ser negativo"):
+        canonicalize_states(raw, response, ignore_value=5)

@@ -73,6 +73,34 @@ def canonicalize_states(
     média/variância E do remapeamento — saem em `canonical_id` com o
     mesmo `ignore_value`, nunca remapeadas para um estado real (evita a
     classe de bug "warmup vira estado 0 por acidente de ordenação").
+    PRECISA ser negativo (`ValueError` caso contrário) -- `canonical_id`
+    de estado real sempre começa em `0` e vai até `k-1`; um `ignore_value
+    >= 0` colidiria em silêncio com um `canonical_id` real sempre que `k`
+    for grande o bastante (`k` é descoberto a partir do dado, varia por
+    chamada) -- a mesma ambiguidade de rótulo que este módulo existe pra
+    eliminar (B21), só que reintroduzida pelo sentinela em vez do fit.
+
+    `NaN`/`Inf` em `response`: filtrados POR ESTADO antes de calcular
+    média/variância (mesmo padrão de `anova_by_group` em
+    `src.validation.regime_utility` — `finite_mask = np.isfinite(...)`),
+    nunca propagados pro critério de ordenação. Achado real (auditoria
+    M4, `PRD_V4_1.md` §3.2): sem este filtro, um único `NaN` em
+    `response` faz a média daquele estado virar `NaN`, e comparação
+    Python (`sorted()`) com chave `NaN` não é uma ordem total válida —
+    QUEBRA a invariância a permutação do rótulo bruto (o teste central
+    deste módulo, `test_invariante_a_permutacao_do_rotulo_bruto`) de
+    forma silenciosa, sem levantar exceção. Não é hipotético: o próprio
+    docstring do módulo documenta que, "para o candidato de regime
+    real", `response` é o log-retorno de 1 barra à FRENTE — que tem
+    `NaN` estrutural na última barra de qualquer série/fold (mesma razão
+    documentada em `src.validation.regime_utility`: "não existe
+    close[t+1]"). Posições com `response` não-finito continuam presentes
+    em `raw_state_id`/`canonical_id` (não são removidas do output, só
+    excluídas do cálculo de média/variância daquele estado) — o mapeamento
+    raw->canonical se aplica a TODAS as ocorrências do estado, finitas ou
+    não. Levanta `ValueError` se algum estado ficar com zero observações
+    finitas em `response` (ordenação indefinida pra esse estado — mesmo
+    espírito de "não inventa resultado vazio silencioso" abaixo).
 
     Levanta `ValueError` se não houver nenhum estado real após excluir
     `ignore_value` (ex. `raw_state_id` inteiro é warmup) — não inventa um
@@ -81,6 +109,12 @@ def canonicalize_states(
         raise ValueError(
             "canonicalize_states: raw_state_id/response precisam do mesmo shape "
             f"(raw_state_id={raw_state_id.shape}, response={response.shape})"
+        )
+    if ignore_value is not None and ignore_value >= 0:
+        raise ValueError(
+            "canonicalize_states: ignore_value precisa ser negativo (ex. -1) -- "
+            "canonical_id de estado real sempre começa em 0, um ignore_value >= 0 "
+            f"colidiria com um canonical_id válido; recebeu ignore_value={ignore_value!r}"
         )
 
     valid_mask = raw_state_id != ignore_value if ignore_value is not None else np.ones_like(
@@ -97,11 +131,21 @@ def canonicalize_states(
     var_by_raw_state: dict[int, float] = {}
     for state in unique_states.tolist():
         state_response = response[raw_state_id == state]
-        mean_by_raw_state[state] = float(np.mean(state_response))
+        # NaN/Inf excluídos do cálculo de média/variância (não da ordenação
+        # em si -- só das ESTATÍSTICAS deste estado) -- ver docstring da
+        # função, "NaN/Inf em response". Mesma filtragem de anova_by_group.
+        finite_state_response = state_response[np.isfinite(state_response)]
+        if finite_state_response.size == 0:
+            raise ValueError(
+                f"canonicalize_states: estado bruto {state!r} não tem nenhuma "
+                "observação finita em response (todas NaN/Inf) -- ordenação "
+                "indefinida para este estado"
+            )
+        mean_by_raw_state[state] = float(np.mean(finite_state_response))
         # ddof=0 (variância populacional) -- consistente entre estados com
         # tamanhos de amostra diferentes, sem viés de correção de grau de
         # liberdade afetando o desempate.
-        var_by_raw_state[state] = float(np.var(state_response, ddof=0))
+        var_by_raw_state[state] = float(np.var(finite_state_response, ddof=0))
 
     # Ordenação estável: média ascendente, desempate por variância
     # ascendente. `sorted()` do Python é estável -- em empate exato de
