@@ -96,6 +96,60 @@ def test_predict_jump_model_levanta_value_error_shape_features_diferente() -> No
         predict_jump_model(fit, obs_test_fold_3_features)
 
 
+def test_predict_jump_model_levanta_value_error_obs_test_fold_com_nan() -> None:
+    """Achado de auditoria (2026-08-17): sem esta checagem explícita, NaN em
+    `obs_test_fold` crashava com `AssertionError` opaca de dentro de
+    `jumpmodels` (`"input numerical object contains NaNs."`, sem contexto de
+    symbol/fold/classifier_id) em vez do `ValueError` limpo que as outras
+    checagens de `predict_jump_model` já dão -- reproduzido empiricamente
+    antes da correção, não só hipotético."""
+    stub = _StubJumpModel(np.array([0, 1], dtype=np.int64), n_features=2)
+    fit = JumpFit(model=stub, n_states=2, train_end_idx=10)
+    obs_test_fold = np.array([[1.0, 0.1], [np.nan, 0.1]], dtype=np.float64)
+    with pytest.raises(ValueError, match="não-finito"):
+        predict_jump_model(fit, obs_test_fold)
+
+
+def test_predict_jump_model_levanta_value_error_obs_test_fold_com_inf() -> None:
+    """Achado de auditoria (2026-08-17), o lado mais grave: sem esta
+    checagem, Inf em `obs_test_fold` não era pego por NENHUMA validação
+    (nem deste módulo, nem de `jumpmodels` -- que só checa NaN via
+    `pd.isna`, que não cobre Inf) -- decodificava SILENCIOSAMENTE, sem
+    exceção nem log, com o Inf se propagando pra frente por todo o resto do
+    fold dentro da DP tipo Viterbi (`values[t] = loss_mx[t] + (values[t-1]
+    + penalty_mx).min(...)`), produzindo rótulos degenerados com aparência
+    normal. Reproduzido empiricamente contra o CJM real (não o stub) antes
+    da correção: 1 `inf` isolado bastava pra degenerar o resto do fold sem
+    nenhum sinal de erro."""
+    stub = _StubJumpModel(np.array([0, 1], dtype=np.int64), n_features=2)
+    fit = JumpFit(model=stub, n_states=2, train_end_idx=10)
+    obs_test_fold = np.array([[1.0, 0.1], [np.inf, 0.1]], dtype=np.float64)
+    with pytest.raises(ValueError, match="não-finito"):
+        predict_jump_model(fit, obs_test_fold)
+
+
+def test_predict_jump_model_com_cjm_real_inf_nao_degenera_silenciosamente() -> None:
+    """Mesmo achado do teste acima, mas contra o `JumpModel` REAL (não o
+    stub) -- prova que a checagem intercepta ANTES de `.predict()` ser
+    chamado na lib de verdade, não só contra um dublê que nunca exercitaria
+    o caminho real da DP/`cdist`. Sem a correção, este teste falhava
+    silenciosamente (nenhuma exceção, rótulos degenerados devolvidos como
+    se nada tivesse acontecido)."""
+    rng = np.random.default_rng(7)
+    obs, _ = _two_regime_obs(rng)
+    train_end_idx = 400
+
+    fit = fit_jump_model(
+        obs, n_states=2, jump_penalty=_TEST_JUMP_PENALTY, train_end_idx=train_end_idx, seed=3
+    )
+    assert fit is not None
+
+    test_fold = obs[train_end_idx : train_end_idx + 50].copy()
+    test_fold[10, 0] = np.inf
+    with pytest.raises(ValueError, match="não-finito"):
+        predict_jump_model(fit, test_fold)
+
+
 # ============================================================================
 # fit_jump_model -- validação estrutural vs. falha de dado (None)
 # ============================================================================

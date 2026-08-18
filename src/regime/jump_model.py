@@ -260,9 +260,29 @@ def predict_jump_model(fit: JumpFit, obs_test_fold: FloatArray) -> IntArray:
     ÚNICO dado novo que entra aqui (`test_perturbar_fora_do_fold_nao_
     muda_decode_do_fold`).
 
-    Levanta `ValueError` se `obs_test_fold` não for 2D, estiver vazio, ou
-    tiver um número de features diferente do usado no `fit` (erro cedo e
-    claro em vez de propagar um erro críptico de dentro de `scipy.cdist`)."""
+    Levanta `ValueError` se `obs_test_fold` não for 2D, estiver vazio, tiver
+    um número de features diferente do usado no `fit`, ou contiver NaN/Inf
+    (achado real de auditoria, 2026-08-17, não hipotético -- reproduzido
+    empiricamente, não só lido no código-fonte: NaN em `obs_test_fold` NÃO
+    é pego por nenhuma das 3 checagens acima -- `check_2d_array` de dentro
+    de `jumpmodels` (`assert_na=True` default) o pega DEPOIS, mas levanta
+    `AssertionError` sem contexto nenhum (`"input numerical object contains
+    NaNs."`, sem symbol/fold/classifier_id), crashando o caller de forma
+    opaca em vez do `ValueError` limpo e contextual que este módulo já usa
+    pras outras 3 checagens. Inf é ainda mais grave: `jumpmodels` só checa
+    NaN (`pd.isna`, que NÃO cobre Inf) -- Inf passa batido por TODAS as
+    checagens, entra na DP tipo Viterbi (`jumpmodels.jump.dp`), e o
+    `cdist(..., "sqeuclidean")` produz `loss_mx[t, :] = [inf, inf, ...]`
+    pra aquela barra; como `values[t] = loss_mx[t] + (values[t-1][:, None]
+    + penalty_mx).min(axis=0)`, o `inf` se propaga PRA FRENTE por TODO o
+    resto do fold (não só a barra afetada) -- rótulos completamente
+    degenerados devolvidos SEM NENHUM sinal de erro, log ou exceção
+    (confirmado rodando `predict_jump_model` com 1 valor `inf` isolado:
+    devolve um array de rótulos "normal" na aparência, sem qualquer aviso).
+    Checagem de finitude aqui, ANTES de entrar em `jumpmodels`, fecha os
+    dois buracos de uma vez: mesma classe de erro cedo e claro que as
+    outras 3 checagens já dão, e nunca depende de qual validação interna
+    da lib (se alguma) captura o quê."""
     if obs_test_fold.ndim != 2:
         raise ValueError(
             "predict_jump_model: obs_test_fold precisa ser 2D (n_bars, n_features), "
@@ -276,6 +296,16 @@ def predict_jump_model(fit: JumpFit, obs_test_fold: FloatArray) -> IntArray:
         raise ValueError(
             f"predict_jump_model: obs_test_fold tem {obs_test_fold.shape[1]} features, "
             f"fit foi treinado com {n_features_train}"
+        )
+
+    finite_mask = np.isfinite(obs_test_fold)
+    if not finite_mask.all():
+        n_non_finite = int((~finite_mask).sum())
+        raise ValueError(
+            f"predict_jump_model: obs_test_fold contém {n_non_finite} valor(es) "
+            f"não-finito(s) (NaN/Inf) de {obs_test_fold.size} -- decode silenciosamente "
+            "degenerado (Inf propaga pra frente por todo o resto do fold via a DP) ou "
+            "AssertionError sem contexto (NaN) se não barrado aqui, ver docstring desta função"
         )
 
     x_test = pd.DataFrame(obs_test_fold)
