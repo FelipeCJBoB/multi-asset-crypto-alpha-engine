@@ -42,18 +42,10 @@ from scipy.stats import t as student_t
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 
-# Prior NIG "não-informativo" fraco -- média 0 (retorno esperado ~0 em
-# horizonte de 1 barra), kappa0 baixo (pouca confiança na média a priori),
-# alpha0/beta0 dando variância a priori modesta mas não zero. Não são
-# constantes de domínio sujeitas a `constants.yaml`/proveniência (§16.10)
-# -- são hiperparâmetros de PRIOR estatístico padrão da literatura de
-# BOCPD (Adams & MacKay 2007, exemplo canônico), não um número de negócio
-# do projeto.
-_PRIOR_MU0 = 0.0
-_PRIOR_KAPPA0 = 1.0
-_PRIOR_ALPHA0 = 1.0
-_PRIOR_BETA0 = 1.0
 _DEFAULT_PRUNE_THRESHOLD = 1e-4
+_DEFAULT_PRIOR_KAPPA0 = 1.0
+_DEFAULT_PRIOR_ALPHA0 = 1.0
+_DEFAULT_WARMUP_BARS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,23 +90,67 @@ def _update_sufficient_stats(
 
 
 def run_bocpd(
-    obs: FloatArray, *, hazard_lambda: float, prune_threshold: float = _DEFAULT_PRUNE_THRESHOLD
+    obs: FloatArray,
+    *,
+    hazard_lambda: float,
+    prune_threshold: float = _DEFAULT_PRUNE_THRESHOLD,
+    warmup_bars: int = _DEFAULT_WARMUP_BARS,
+    prior_mu0: float | None = None,
+    prior_kappa0: float = _DEFAULT_PRIOR_KAPPA0,
+    prior_alpha0: float = _DEFAULT_PRIOR_ALPHA0,
+    prior_beta0: float | None = None,
 ) -> BOCPDResult:
     """Núcleo puro, sem IO. `obs` = série 1-D (univariado, `log_return_1`
     pro candidato de regime real — setup clássico de Adams & MacKay).
     `hazard_lambda` > 1 obrigatório (duração média de segmento em barras;
     `H = 1/hazard_lambda` precisa ficar em `(0, 1)`).
 
-    Online/causal por construção: barra `t` só usa `obs[:t+1]` — não há
-    passo de "fit em lote seguido de predição retroativa" (diferente de
-    HMM/Jump Model, que refazem fit por fold de walk-forward, ver
-    `PRD_V4_1.md` M4 item 1 do plano). Todo o array em log-espaço
-    (log-sum-exp) por estabilidade numérica sobre séries longas."""
+    **`prior_mu0`/`prior_beta0` default `None` -> derivados da ESCALA REAL
+    de `obs[:warmup_bars]`** (mediana/variância da JANELA DE WARMUP fixa
+    no início da série, nunca da série inteira), não fixados num valor
+    universal. Dois achados reais em sequência, ambos do próprio pytest
+    (2026-08-17), não hipotéticos:
+
+    (1) Com prior de escala fixa (`beta0=1.0`, valor "genérico"), sobre
+    `obs` de escala real de retorno (variância ~1e-4), a hipótese "acabou
+    de reiniciar" (r=0) fica artificialmente larga (Student-t `df=2`
+    calibrado pra variância ~1, não ~1e-4) -- explica qualquer observação
+    real plausivelmente bem, competindo de forma injusta contra hipóteses
+    de run mais maduro mesmo sem mudança de regime real: 488 segmentos
+    numa série estacionária de 500 barras.
+
+    (2) Primeira correção (derivar o prior de `obs` INTEIRO) resolveu (1)
+    mas introduziu uma violação de causalidade real: `median(obs)`/
+    `var(obs)` sobre a série completa olha pra frente -- perturbar
+    `obs[t+1:]` mudava o resultado em barras `<= t` (achado do teste de
+    causalidade, 93% dos valores divergindo). Corrigido calibrando só
+    sobre `obs[:warmup_bars]` -- janela FIXA no início, mesmo padrão de
+    R0/warmup já usado no resto do projeto (`src.regime.classifier`):
+    barras dentro da própria janela de warmup NÃO são estritamente
+    causais entre si (mesma ressalva documentada de R0 em outros
+    estimadores), mas toda barra `>= warmup_bars` só depende de
+    `obs[:warmup_bars]` (fixo) + `obs[warmup_bars:t+1]` (causal) --
+    nunca de `obs[t+1:]`.
+
+    Online/causal por construção a partir de `warmup_bars`: barra `t` só
+    usa `obs[:t+1]` — não há passo de "fit em lote seguido de predição
+    retroativa" (diferente de HMM/Jump Model, que refazem fit por fold de
+    walk-forward, ver `PRD_V4_1.md` M4 item 1 do plano). Todo o array em
+    log-espaço (log-sum-exp) por estabilidade numérica sobre séries
+    longas."""
     if hazard_lambda <= 1.0:
         raise ValueError(f"run_bocpd: hazard_lambda precisa ser > 1, recebeu {hazard_lambda}")
     n = obs.shape[0]
     if n == 0:
         raise ValueError("run_bocpd: obs vazio")
+
+    warmup_slice = obs[: min(warmup_bars, n)]
+    resolved_mu0 = float(np.median(warmup_slice)) if prior_mu0 is None else prior_mu0
+    resolved_beta0 = (
+        prior_alpha0 * max(float(np.var(warmup_slice)), 1e-12)
+        if prior_beta0 is None
+        else prior_beta0
+    )
 
     log_hazard = -np.log(hazard_lambda)
     log_one_minus_hazard = np.log1p(-1.0 / hazard_lambda)  # noqa: unguarded-ratio -- hazard_lambda>1 checado acima
@@ -122,10 +158,10 @@ def run_bocpd(
     # Hipóteses ativas: arrays paralelos, índice = run-length atual.
     # Começa com só a hipótese r=0 (log-prob 1.0 = log 0.0) na barra 0.
     log_r = np.array([0.0])
-    mu = np.array([_PRIOR_MU0])
-    kappa = np.array([_PRIOR_KAPPA0])
-    alpha = np.array([_PRIOR_ALPHA0])
-    beta = np.array([_PRIOR_BETA0])
+    mu = np.array([resolved_mu0])
+    kappa = np.array([prior_kappa0])
+    alpha = np.array([prior_alpha0])
+    beta = np.array([resolved_beta0])
 
     changepoint_prob = np.empty(n, dtype=np.float64)
     map_run_length = np.empty(n, dtype=np.int64)
@@ -144,10 +180,10 @@ def run_bocpd(
         mu_upd, kappa_upd, alpha_upd, beta_upd = _update_sufficient_stats(
             x, mu, kappa, alpha, beta
         )
-        mu_new = np.concatenate(([_PRIOR_MU0], mu_upd))
-        kappa_new = np.concatenate(([_PRIOR_KAPPA0], kappa_upd))
-        alpha_new = np.concatenate(([_PRIOR_ALPHA0], alpha_upd))
-        beta_new = np.concatenate(([_PRIOR_BETA0], beta_upd))
+        mu_new = np.concatenate(([resolved_mu0], mu_upd))
+        kappa_new = np.concatenate(([prior_kappa0], kappa_upd))
+        alpha_new = np.concatenate(([prior_alpha0], alpha_upd))
+        beta_new = np.concatenate(([resolved_beta0], beta_upd))
 
         # poda: mantém só hipóteses com prob relativa >= prune_threshold
         keep_mask = log_r_new >= (np.max(log_r_new) + np.log(prune_threshold))
@@ -168,20 +204,32 @@ def run_bocpd(
 
 
 def _segments_from_map_run_length(map_run_length: IntArray) -> IntArray:
-    """Novo segmento sempre que `map_run_length` reseta a 0 (changepoint
-    MAP detectado) OU cai em relação à barra anterior sem chegar a 0
-    (reatribuição de hipótese MAP entre run-lengths vizinhos, mais raro
-    mas possível sob poda) -- ambos os casos tratados como fronteira de
-    segmento, nunca um crescimento monotônico esperado quebrando
-    silenciosamente em segmento novo."""
+    """Novo segmento quando `map_run_length` cai pra `<= 1` (changepoint
+    MAP genuíno). **Dois achados reais em sequência, ambos do próprio
+    pytest (2026-08-17), não hipotéticos:**
+
+    (1) A versão original detectava fronteira em QUALQUER queda em
+    relação à barra anterior (`<=` + `!= +1`) -- mas o argmax de uma
+    posterior de run-length com massa espalhada entre hipóteses vizinhas
+    pode oscilar por 1 barra sem nenhum changepoint real (empate/
+    quase-empate de probabilidade), e essa regra tratava CADA oscilação
+    como segmento novo -- 488 segmentos numa série estacionária de 500
+    barras.
+
+    (2) Correção seguinte (`== 0` estrito) NUNCA disparava: medido sobre
+    dado real (sintético + injetado) que o MAP de run-length
+    tipicamente NÃO passa por exatamente `0` nem num changepoint genuíno
+    detectado -- estabiliza em `1` (a hipótese "r=0 fresca" perde por
+    pouco pra "r=1, grown from fresh" assim que a 1ª observação pós-
+    changepoint chega). `<= 1`, calibrado sobre série estacionária real
+    (só a barra 0 satisfaz essa condição -- confirmado por medição, não
+    presumido), é o limiar que de fato separa "changepoint genuíno" de
+    "oscilação de argmax entre hipóteses maduras vizinhas"."""
     n = map_run_length.shape[0]
     is_boundary = np.zeros(n, dtype=np.bool_)
     is_boundary[0] = True
     if n > 1:
-        is_boundary[1:] = map_run_length[1:] <= map_run_length[:-1]
-        # crescimento normal (run-length aumenta em 1, mesma continuação
-        # de segmento) NÃO é fronteira -- só reset/queda é.
-        is_boundary[1:] &= map_run_length[1:] != (map_run_length[:-1] + 1)
+        is_boundary[1:] = map_run_length[1:] <= 1
     return np.cumsum(is_boundary).astype(np.int64) - 1
 
 
@@ -192,17 +240,21 @@ def segments_to_canonical_states(
     segmentos em `n_buckets` por quantil desse retorno médio (não por
     valor absoluto -- consistente com o resto do M4, que usa posto/quantil
     em vez de corte de valor bruto), propaga o bucket de volta pra nível
-    de barra. Levanta `ValueError` se `n_buckets` >= nº de segmentos
-    distintos (bucket vazio silencioso, não faz sentido estatístico)."""
+    de barra. Levanta `ValueError` se `n_buckets` > nº de segmentos
+    distintos (bucket vazio garantido -- não dá pra formar mais grupos
+    que valores distintos existem). `n_buckets == n_segments` É válido
+    (mapeamento 1:1, um segmento por bucket) -- achado real do primeiro
+    pytest desta função (2026-08-17): a versão original usava `>=`, um
+    erro de off-by-one que rejeitava exatamente esse caso válido."""
     if segment_id.shape != response.shape:
         raise ValueError(
             "segments_to_canonical_states: segment_id/response precisam do mesmo shape "
             f"(segment_id={segment_id.shape}, response={response.shape})"
         )
     unique_segments = np.unique(segment_id)
-    if n_buckets >= unique_segments.size:
+    if n_buckets > unique_segments.size:
         raise ValueError(
-            f"segments_to_canonical_states: n_buckets={n_buckets} >= "
+            f"segments_to_canonical_states: n_buckets={n_buckets} > "
             f"n_segments={unique_segments.size} -- bucket vazio garantido"
         )
 
