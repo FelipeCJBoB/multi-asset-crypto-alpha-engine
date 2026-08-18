@@ -183,6 +183,32 @@ alts só desde 2021-12-01) tratada explicitamente: barras do ativo sem
 rótulo de BTC disponível ainda são EXCLUÍDAS da métrica antes do Rand
 ajustado, nunca um crash.
 
+**Fase B do plano `wise-exploring-panda.md` (`docs/m4_regime_plano_
+execucao.md` §"Decisões do Manager") -- `resolution_id` NOVO em
+`run_regime_comparison_for_symbol` (mudança de INTERFACE, não de
+comportamento).** Antes desta fase, `run_regime_comparison_for_symbol`
+tinha `resolution_id="R1"` implícito hardcoded em duas chamadas
+independentes (`lake.query_dollar_bars(..., resolution_id=RESOLUTION_ID)`
+e `build_regimes(..., bar_source="dollar_r1")`) -- rodar M4 sob R2/R3
+("resolução multiplica trial", decisão do Manager 2026-08-18, `AG-042`:
+R1/R2/R3 SÃO os 3 timeframes de produção) exigia editar o módulo por
+resolução. `resolution_id: str = RESOLUTION_ID` (default `"R1"`, preserva
+bit-a-bit todo caller existente que não passa o argumento -- mesmo
+protocolo já usado por `return_raw_labels` na Fase 4) agora seleciona as
+DUAS chamadas juntas: `lake.query_dollar_bars(..., resolution_id=
+resolution_id)` e `build_regimes(..., bar_source=f"dollar_{resolution_id.
+lower()}")` -- a mesma convenção `f"dollar_{resolution_id.lower()}"` já
+usada por `src.features._sources.load_bars`/`src.data.build_dollar_bars.
+_source_name`, não uma nova. `compare_regime_candidates_for_symbol`
+(núcleo puro) não muda -- já recebe `bars_df`/`baseline_df` prontos,
+agnóstico a qual resolução os produziu. `run_and_save_m4_report`/`run_q3_
+common_factor_regime` continuam sem esse parâmetro (fora de escopo desta
+fase -- ambos continuam R1-only; o orquestrador de janelas críticas que
+consome R2/R3 é `src.analysis.m4_critical_windows`, módulo companheiro
+novo, não uma extensão deste arquivo -- ver docstring de lá pro porquê de
+não ter entrado aqui: este arquivo já tinha ~1650 linhas antes desta
+fase).
+
 **`run_and_save_m4_report` NÃO É CHAMADA POR ESTE MÓDULO.** Todos os
 hiperparâmetros de candidato (`jump_n_states`, `jump_penalty`,
 `bocpd_hazard_lambda`, `bocpd_n_canonical_buckets`) são obrigatórios (sem
@@ -1128,6 +1154,7 @@ def run_regime_comparison_for_symbol(
     end: str,
     *,
     initial_train_years: int | None = ...,
+    resolution_id: str = ...,
     hmm_states_grid: tuple[int, ...] = ...,
     jump_n_states: int,
     jump_penalty: float,
@@ -1146,6 +1173,7 @@ def run_regime_comparison_for_symbol(
     end: str,
     *,
     initial_train_years: int | None = ...,
+    resolution_id: str = ...,
     hmm_states_grid: tuple[int, ...] = ...,
     jump_n_states: int,
     jump_penalty: float,
@@ -1163,6 +1191,7 @@ def run_regime_comparison_for_symbol(
     end: str,
     *,
     initial_train_years: int | None = None,
+    resolution_id: str = RESOLUTION_ID,
     hmm_states_grid: tuple[int, ...] = (2, 3, 4),
     jump_n_states: int,
     jump_penalty: float,
@@ -1173,10 +1202,16 @@ def run_regime_comparison_for_symbol(
     return_raw_labels: bool = False,
 ) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
     """Carrega `bars_df` (`lake.query_dollar_bars`) e `baseline_df`
-    (`build_regimes(..., bar_source="dollar_r1")`) reais do disco, com o
-    MESMO `(symbol, start, end)` nos dois (garante o alinhamento que
-    `_assert_bars_baseline_aligned` confirma no núcleo puro), delega o
-    resto pra `compare_regime_candidates_for_symbol`.
+    (`build_regimes(..., bar_source=f"dollar_{resolution_id.lower()}")`)
+    reais do disco, com o MESMO `(symbol, start, end)` nos dois (garante o
+    alinhamento que `_assert_bars_baseline_aligned` confirma no núcleo
+    puro), delega o resto pra `compare_regime_candidates_for_symbol`.
+
+    `resolution_id: str = RESOLUTION_ID` (default `"R1"`, Fase B do plano
+    `wise-exploring-panda.md` -- ver docstring do módulo) seleciona R1/R2/
+    R3 nas DUAS chamadas de carga juntas (`query_dollar_bars`/
+    `build_regimes`) -- nunca uma sem a outra, senão `_assert_bars_
+    baseline_aligned` levantaria por desalinhamento de fonte.
 
     `initial_train_years=None` (default) resolve pra `m1_walkforward_
     initial_train_years` (`constants.yaml`) -- mesmo protocolo do M1,
@@ -1210,15 +1245,16 @@ def run_regime_comparison_for_symbol(
         symbol,
         start,
         end,
-        resolution_id=RESOLUTION_ID,
+        resolution_id=resolution_id,
         duckdb_memory_limit_gb=throttle.memory_limit_gb,
         duckdb_threads=throttle.threads,
     )
-    baseline_df = build_regimes(symbol, start, end, bar_source="dollar_r1")
+    baseline_df = build_regimes(symbol, start, end, bar_source=f"dollar_{resolution_id.lower()}")
 
     logger.info(
         "analysis.m4_regime_comparison.bars_loaded",
         symbol=symbol,
+        resolution_id=resolution_id,
         n_bars=bars_df.height,
         n_bars_baseline=baseline_df.height,
         start=start,
