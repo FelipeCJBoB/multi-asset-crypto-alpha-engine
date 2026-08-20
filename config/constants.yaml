@@ -1814,3 +1814,41 @@ m4_jump_model_penalty:
     herdado do fixture sintético."
   class: B
   sweep_required: false
+
+m4_heterogeneity_n_permutations:
+  value: 1000
+  provenance: LITERATURE
+  source: "AG-092 (audit/architecture_gaps_log.yaml) -- Cochran's Q/I² do
+    M4 viola a premissa de estratos independentes (autocorrelação
+    intra-episódio de regime), corrigido via teste de permutação em
+    bloco por episódio (nunca quebra um episódio no meio, preserva
+    duração/ordem temporal). B=1000 é o número de permutações Monte
+    Carlo -- não é hiperparâmetro que 'invalida o desenho' se mudado
+    dentro de uma faixa razoável (500-2000), é resolução numérica do
+    p-valor empírico: `p_min = 1/(B+1)`, então B=1000 dá resolução de
+    ~0,001 -- mais que suficiente pra qualquer decisão contra alfas
+    convencionais (0,05/0,01), consistente com a prática padrão de
+    testes de permutação (Good, P.I. (2005), 'Permutation, Parametric,
+    and Bootstrap Tests of Hypotheses', 3ª ed., Springer -- recomenda
+    milhares de permutações quando computacionalmente barato, o que é o
+    caso aqui: núcleo vetorizado via np.bincount, sem refit de modelo).
+    Não é MEASURED porque não há um valor 'certo' a medir -- é escolha
+    de precisão computacional, documentada como tal."
+  class: C
+  sweep_required: false
+
+m4_heterogeneity_permutation_seed:
+  value: 42
+  provenance: ASSUMED
+  source: "Seed do gerador determinístico (numpy.random.default_rng) do
+    teste de permutação em bloco (AG-092) -- sem base de escolha além de
+    garantir reprodutibilidade bit-a-bit (mesmo padrão de hmm_seed=0/
+    jump_seed=0, parâmetros de função em m4_regime_comparison.py, não
+    constantes -- promovido a constants.yaml aqui por consistência com a
+    disciplina de proveniência do módulo, já que é usado dentro de uma
+    função pura de src/analysis/, não repassado como argumento de
+    caller). Classe D -- mudar o valor não afeta a validade estatística
+    do teste (qualquer seed fixo produz um p-valor igualmente válido),
+    só a sequência específica de permutações sorteadas."
+  class: D
+  sweep_required: false

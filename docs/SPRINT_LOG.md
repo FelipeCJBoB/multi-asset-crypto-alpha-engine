@@ -2734,7 +2734,102 @@ pro status no momento desta atualização — **ainda em andamento**, não
 presumir resultado.
 
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-18)
+## M4 — resultado real da 4ª execução, auditoria cética, pausa, e abertura da Trilha B (2026-08-19)
+
+**Antes da execução real: 4 achados metodológicos novos, propostos e
+autorizados** (`AG-090`-`AG-093`, `audit_engineering` em cada arquivo
+editado antes do run) — join causal por `close_time_ms` em vez de
+`open_time_ms` (`AG-090`); `k=1` em Cochran's Q retorna `NaN` explícito
+em vez de `Q=0` (`AG-091`, achado colateral: a citação original de
+"metafor/meta tratam k=1 como NA" era falsa, os dois pacotes hard-codam
+`Q=0` — corrigido pra justificativa própria do projeto); teste de
+permutação em bloco por episódio (`AG-092`, corrige violação de i.i.d.
+do Cochran's Q clássico sob autocorrelação intra-regime — a causa real
+de I²=70-98% "universal" em todos os candidatos); BOCPD avaliado só na
+fatia OOS real do walk-forward, não na janela crítica inteira (`AG-093`,
+~5× redução de amostra). Todos implementados, auditados de forma
+independente (0 CRITICAL/HIGH), Manager autorizou a 4ª execução.
+
+**4ª execução concluída, resultado real** (`experiments/
+m4_critical_windows_report.json`, 10029,9s, 0 falhas/skips): **os 18
+p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficam
+entre 0,30 e 0,85 — nenhuma célula estatisticamente significativa**,
+BOCPD incluso — sua liderança sob I² clássico (métrica pré-`AG-092`) era
+artefato de autocorrelação intra-regime, confirmado pela correção: seus
+próprios p-valores (0,47-0,85) estão entre os MENOS significativos.
+Jump Model com poder estatístico inexistente (mediana 4 episódios/
+célula, mínimo 1, 100% das 102 células <15) — resultado dele não
+interpretável, causa combinada de 3 problemas independentes (decode não-
+causal confinado ao fold, poder nulo, `jump_penalty` calibrado numa
+fatia só de BTC nunca retestada). Tratado como achado válido (regime
+construído sobre estas dimensões não modula o edge deste alpha, nestas
+janelas), não como estudo com bug.
+
+**2 auditorias externas brutas trazidas pelo Manager + validação cruzada
+própria** (código real + literatura: Adams & MacKay 2007 pro BOCPD,
+Nystrup/Cortese/Shu pro Jump Model, Winkler et al. pro block permutation,
+Bailey/López de Prado pro DSR/PBO) — resolveu 2 discordâncias diretas
+entre as auditorias (BOCPD "fit único" REFUTADO como look-ahead —
+matematicamente impossível dado que a recursão é estritamente
+sequencial; Jump Model λ — testar transferibilidade favorecido sobre
+BIC dinâmico, literatura confirma) e achou 7 gaps que nenhuma das duas
+tinha identificado. Resultado categorizado em redesenho/fix mecânico/
+habilitação/rejeitado — documento completo:
+`docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`.
+
+**M4 pausado por decisão do Manager** — antes de continuar refinando
+candidatos de regime, travar o contrato de quem consome regime downstream
+(Alpha/Decision Engine/Meta/Risk/Execução), porque escolher método sem
+saber o contrato mede a pergunta errada. Abre a **Trilha B**.
+
+**Trilha B — contrato Regime→Alpha→Decision Engine→Meta-Label→Risk→
+Execução.** 3 investigações independentes acharam 10 gaps de arquitetura
+(`AG-094`-`AG-100` + addenda em `AG-007`/`AG-088`) — Decision Engine
+existia no blueprint original (Parte VII) mas nunca tinha entrado no
+inventário de estágios de engenharia; gate de posição "uma por vez,
+projeto inteiro" nunca emendado contradiz o Controle 19 (que pressupõe
+posições concorrentes); nenhum mecanismo de seleção/eliminação entre
+combinações symbol×resolution existe, e o texto do próprio PRD trata
+esse cenário como violação literal de banned pattern (B20) quando
+acontece em pesquisa. 4 rodadas de contestação adversarial sobre as
+resoluções propostas — achado real em CADA rodada (`AG-101`-`AG-105`,
+incluindo um caso onde uma correção resolvia um problema diferente do
+que motivou a correção anterior, `AG-105`) — nenhuma aceita sem
+contestar. 4 mecanismos aprovados pelo Manager (2026-08-19): Decision
+Engine no PBS; gate de posição por linha, não global; convenção
+estrutural de contagem de N pra seleção de linha; gatilho de proteção
+por regime via encurtamento de `time_stop` (não aperto de SL — premissa
+original refutada por pesquisa de mercado). 7 decisões residuais ficam
+explicitamente registradas como pendentes, não decididas por omissão —
+detalhe completo em `PLANO_MESTRE_PRINCE2.md` §15.11.
+
+**Mandato do Manager corrigido nesta sessão**: não é seleção dinâmica em
+tempo real — é seleção offline, fixa por rodada, eliminação periódica
+(treina cada combinação symbol×resolução de forma independente, elimina
+o que não performa, opera em produção com o(s) vencedor(es) fixo(s) até
+a próxima rodada). **Tiering de features (T1/T2/T3) descontinuado** —
+todas as ~92 features com fonte real já wired (T1+T2 do catálogo do
+`PRD_V3_2_UNIFICADO.md` Parte II) passam a ser canônicas, seleção
+delegada ao próprio Learner/Meta-model — decisão registrada, ainda não
+implementada em código.
+
+**2 documentos de brief comissionados** (`docs/brief_auditoria_
+externa_2026-08-19_regime_alpha_execucao.md` + `..._material_de_apoio.md`)
+pro Manager levar a auditores externos — pedido de validação cética nos
+4 mecanismos aprovados, recomendação nas 7 decisões residuais, desenho
+técnico concreto nas 7 fronteiras de estágio (Features→Label→Pesos→
+Split→Learner→Calibração→Validação→Meta-Model) que ainda não têm
+contrato de dado especificado. Protocolo de triagem do retorno já
+definido: verificação independente de cada achado antes de aceitar,
+mesmo rigor das 4 rodadas adversariais internas — nenhum achado externo
+entra direto, "veio de fora" não é atalho pra pular a contestação.
+
+**Road Map Vivo v2 republicado** na mesma sessão (`AG-080`, disciplina
+de não deixar o artefato visual driftar do texto) — mesma URL, refletindo
+M4 pausado e a Trilha B aberta.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-19)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -2750,12 +2845,15 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | TF de decisão | 15m |
 | `canonical_volatility_estimator` | **decisão**: Parkinson (`parkinson_w20`) — Manager, 2026-08-17, `AG-036::addendum_decisao_manager_2026_08_17`. **`constants.yaml::value` ainda `garman_klass_w20`** — só muda quando o retreino real do Alpha rodar (evita janela onde o config mente sobre produção) |
 | `canonical_bar_type` | `dollar` (decidido); engenharia ponta a ponta pronta e testada pra `resolution_id="R1"` (Fases 0-4, commits `e32b7a4`/`5df33c3`/`3449471`/`9a4c3c5`/`b5760fe`); labels/leakage/Feature-Regime já EXECUTADOS de verdade pros 5 símbolos (`6219d02`) — só falta retreino real do Alpha, comando pronto (`--resolution-id`/`--vol-estimator-id` em `run_layer1_sprint`), não executado por decisão do Manager. `dollar_r2`/`dollar_r3` wireados no Feature Engine 2026-08-18 (`3f1502e`, motivado pelo M4) — `_BAR_SOURCE_BY_RESOLUTION` de `src/models/dataset.py` continua fechado só em R1 pro pipeline de TREINO real (decisão de escopo separada, Fase 4/`AG-036`/`AG-065`, não alterada) |
-| T1 | extinto — pool único de 13 features, ranking via PRD §2.0.1 ainda não rodado |
+| T1 (histórico, 2026-08-16) | "extinto — pool único de 13 features" registrado então; **superseded 2026-08-19** — ver linha "Tiering de features" abaixo, decisão nova e mais ampla (~92 features, catálogo inteiro do PRD Parte II), relação exata entre as duas decisões não reconciliada nesta atualização |
+| Tiering de features (T1/T2/T3) | **descontinuado como portão de entrada, 2026-08-19** — todas as features com fonte real wired (T1+T2, ~92 do catálogo `PRD_V3_2_UNIFICADO.md` Parte II) passam a ser canônicas; seleção delegada ao Learner/Meta-model. Registrado, **não implementado em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas); dependência conhecida a resolver junto: `AG-038` |
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
-| `N_lifetime` | **63**/60 — orçamento excedido, override do Manager autorizado (`audit/n_lifetime.yaml` id 17, `budget_override_manager`) pra migração Parkinson+dollar-bar; M4 (18 trials, `G-C1-2` revisado) ainda NÃO registrado aqui — Fase D (execução real) em andamento no momento desta atualização, registro fica pro fechamento |
-| **M4 — Regime** | Harness completo + auditado + calibrado + estendido (janelas críticas × R1/R2/R3), commits `6158442`..`ccb50f1` (19 commits). `G-C1-2` revisado pra `≤18 trials` (Manager 2026-08-18) — **ainda não sincronizado em `PRD_V4_1.md`/`docs/m4_regime_plano_execucao.md`** nesta atualização (ver `PLANO_MESTRE_PRINCE2.md` §11.4 pra status linha a linha). **Fase D (execução real) EM ANDAMENTO no momento desta atualização — resultado/candidato vencedor ainda desconhecido, não presumir** |
-| Meta Model | fora da V1 (§6.8 define critério de entrada) |
+| `N_lifetime` | **63**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre) |
+| **M4 — Regime** | **4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado (18/18 p-valores 0,30-0,85), tratado como achado válido**. 2 auditorias externas + validação cruzada própria processadas, categorizado redesenho/fix mecânico/habilitação/rejeitado (`docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`). **PAUSADO** — retomada só depois da Trilha B travar o contrato downstream, ver linha abaixo |
+| **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19. 10 gaps descobertos (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial (`AG-101`-`AG-105`, achado real em cada uma), 4 mecanismos aprovados pelo Manager com 7 decisões residuais explicitamente pendentes. Detalhe completo: `PLANO_MESTRE_PRINCE2.md` §15.11. Auditoria externa comissionada — 2 documentos de brief prontos (`docs/brief_auditoria_externa_2026-08-19_*.md`), retorno ainda não chegou |
+| Meta Model | fora da V1 (§6.8 define critério de entrada); Trilha B achou que o critério de entrada não menciona regime como input em nenhuma das 5 condições — decisão de desenho separada, sem urgência |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json` |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — agendado junto de outras mudanças já previstas no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
-| Pendente pra fechar M4 | Fase D terminar (relatório real, `experiments/m4_critical_windows_report.json`), declarar `G-C1-2`, registrar as 18 entradas em `audit/n_lifetime.yaml`, sincronizar `≤18 trials` em `PRD_V4_1.md`/`docs/m4_regime_plano_execucao.md`, decisão final (candidato vencedor) ao Manager, publicar resultados na "Biblioteca de Testes" (3ª aba) |
+| Pendente pra fechar M4 | resolver as 7 decisões residuais da Trilha B, congelar metodologia, rodar holdout travado uma única vez, veredito final (candidato vencedor) ao Manager, publicar resultados na "Biblioteca de Testes" |
+| Pendente pra fechar a Trilha B | retorno das 2-3 auditorias externas comissionadas, triagem/verificação independente de cada achado, síntese formal, resolução das 7 decisões residuais |

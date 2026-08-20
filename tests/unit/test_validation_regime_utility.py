@@ -20,6 +20,7 @@ from src.validation.regime_utility import (
     adjusted_rand,
     anova_by_group,
     regime_persistence,
+    segment_boundaries,
 )
 
 # ============================================================================
@@ -212,6 +213,39 @@ def test_persistence_single_bar_switch_rate_zero() -> None:
 def test_persistence_levanta_value_error_vazio() -> None:
     with pytest.raises(ValueError, match="vazio"):
         regime_persistence(np.array([], dtype=np.int64))
+
+
+# ============================================================================
+# segment_boundaries -- extraído de regime_persistence (2026-08-19, AG-092)
+# pra ser reusado pelo teste de permutação em bloco por episódio
+# (m6_common_factor_hypothesis.permutation_heterogeneity_test).
+# ============================================================================
+
+
+def test_segment_boundaries_bate_com_regime_persistence_no_mesmo_caso_conhecido() -> None:
+    """Mesmo caso de `test_persistence_segmentos_conhecidos_a_mao` -- prova
+    que a extração não mudou o resultado de `regime_persistence` (que
+    agora chama esta função internamente), e expõe os índices que
+    `regime_persistence` usava só internamente antes."""
+    labels = np.array([0, 0, 0, 0, 1, 1, 0, 0, 0], dtype=np.int64)
+    starts, ends = segment_boundaries(labels)
+    np.testing.assert_array_equal(starts, [0, 4, 6])
+    np.testing.assert_array_equal(ends, [4, 6, 9])
+    # cada fatia [start:end] é de fato um segmento (mesmo rótulo, maximal).
+    for start, end in zip(starts, ends, strict=True):
+        assert len(set(labels[start:end].tolist())) == 1
+
+
+def test_segment_boundaries_serie_constante_1_segmento() -> None:
+    labels = np.zeros(50, dtype=np.int64)
+    starts, ends = segment_boundaries(labels)
+    np.testing.assert_array_equal(starts, [0])
+    np.testing.assert_array_equal(ends, [50])
+
+
+def test_segment_boundaries_levanta_value_error_vazio() -> None:
+    with pytest.raises(ValueError, match="vazio"):
+        segment_boundaries(np.array([], dtype=np.int64))
 
 
 # ============================================================================

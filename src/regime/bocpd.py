@@ -39,6 +39,8 @@ from numpy.typing import NDArray
 from scipy.special import logsumexp
 from scipy.stats import t as student_t
 
+from src.features.support import expanding_percentile_rank_strict
+
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 
@@ -250,46 +252,89 @@ def _segments_from_map_run_length(map_run_length: IntArray) -> IntArray:
     return np.cumsum(is_boundary).astype(np.int64) - 1
 
 
+def _causal_within_segment_mean(segment_id: IntArray, response: FloatArray) -> FloatArray:
+    """Média EXPANSIVA de `response` dentro do segmento atual, avaliada
+    causalmente em cada barra `t` — usa só `response[seg_start(t) : t+1]`,
+    NUNCA uma barra `> t` (corrige AG-085: a versão anterior de
+    `segments_to_canonical_states` usava a média do segmento INTEIRO,
+    incluindo barras futuras — como o segmento médio tem ~12 barras, pra
+    a maioria das barras `t+1` ainda caía dentro do próprio segmento que
+    definia o rótulo de `t`, um leakage mecânico contra `forward_return
+    = log_return_1[t+1]`, a métrica de "separação" do M4).
+
+    Vetorizado via soma cumulativa (`O(n)`, não um laço por barra) —
+    `segment_id` é não-decrescente por construção (`run_bocpd`), então o
+    início de cada segmento é achado por detecção de fronteira +
+    forward-fill do índice de fronteira (`np.maximum.accumulate`)."""
+    n = segment_id.shape[0]
+    finite = np.isfinite(response)
+    safe_response = np.where(finite, response, 0.0)
+    cumsum = np.cumsum(safe_response)
+    cumcount = np.cumsum(finite.astype(np.int64))
+
+    is_new_segment = np.empty(n, dtype=bool)
+    is_new_segment[0] = True
+    is_new_segment[1:] = segment_id[1:] != segment_id[:-1]
+    seg_start_idx = np.where(is_new_segment, np.arange(n), 0)
+    seg_start_idx = np.maximum.accumulate(seg_start_idx)
+
+    has_prior = seg_start_idx > 0
+    prior_cumsum = np.where(has_prior, cumsum[np.maximum(seg_start_idx - 1, 0)], 0.0)
+    prior_cumcount = np.where(has_prior, cumcount[np.maximum(seg_start_idx - 1, 0)], 0)
+    within_sum = cumsum - prior_cumsum
+    within_count = cumcount - prior_cumcount
+
+    out = np.full(n, np.nan, dtype=np.float64)
+    valid = within_count > 0
+    out[valid] = within_sum[valid] / within_count[valid]  # noqa: unguarded-ratio -- guardado por within_count>0 na linha acima
+    return out
+
+
 def segments_to_canonical_states(
     segment_id: IntArray, response: FloatArray, *, n_buckets: int
 ) -> IntArray:
-    """Reduz segmento->barra: calcula retorno médio por segmento, agrupa
-    segmentos em `n_buckets` por quantil desse retorno médio (não por
-    valor absoluto -- consistente com o resto do M4, que usa posto/quantil
-    em vez de corte de valor bruto), propaga o bucket de volta pra nível
-    de barra. Levanta `ValueError` se `n_buckets` > nº de segmentos
-    distintos (bucket vazio garantido -- não dá pra formar mais grupos
-    que valores distintos existem). `n_buckets == n_segments` É válido
-    (mapeamento 1:1, um segmento por bucket) -- achado real do primeiro
-    pytest desta função (2026-08-17): a versão original usava `>=`, um
-    erro de off-by-one que rejeitava exatamente esse caso válido."""
+    """Reduz segmento->barra CAUSALMENTE: pra cada barra `t`, calcula a
+    média EXPANSIVA de `response` dentro do segmento atual até `t`
+    (`_causal_within_segment_mean`, nunca usa barra `> t`), depois rankeia
+    esse valor contra a distribuição EXPANSIVA de médias já vistas em
+    barras `< t` (`expanding_percentile_rank_strict`, o MESMO primitivo
+    causal já usado pra `C07_vol_pctile_expanding` — reuso direto, não
+    reimplementação) e converte o posto em `n_buckets` por limiar fixo
+    (`np.linspace(0,1,n_buckets+1)`).
+
+    **AG-085, corrigido 2026-08-18** (achado de auditoria cética: a versão
+    anterior bucketava por quantil do retorno médio do SEGMENTO INTEIRO —
+    incluindo barras futuras dentro do mesmo segmento — o que não é só um
+    problema de métrica, é um bug de causalidade genuíno: o bucket de uma
+    barra em produção não seria computável em tempo real sob a versão
+    antiga, porque o segmento podia continuar se estendendo pro futuro).
+    Esta versão é causal por construção — o bucket de `t` só depende de
+    `segment_id[0:t+1]`/`response[0:t+1]`.
+
+    `t=0` (sem nenhum histórico prévio) sempre cai no bucket mais baixo
+    (posto `NaN` tratado como `0.0`) — mesmo tratamento de warmup que o
+    resto do projeto usa pra série expansiva sem histórico ainda.
+
+    Diferente da versão anterior, **não exige `n_buckets <= nº de
+    segmentos distintos`** — essa restrição era um artefato do desenho
+    antigo (1 bucket fixo por segmento, escolhido de um conjunto discreto
+    de médias); aqui cada BARRA é bucketada por um posto contínuo que
+    evolui mesmo dentro de um único segmento longo, então a restrição não
+    tem mais base matemática."""
     if segment_id.shape != response.shape:
         raise ValueError(
             "segments_to_canonical_states: segment_id/response precisam do mesmo shape "
             f"(segment_id={segment_id.shape}, response={response.shape})"
         )
-    unique_segments = np.unique(segment_id)
-    if n_buckets > unique_segments.size:
-        raise ValueError(
-            f"segments_to_canonical_states: n_buckets={n_buckets} > "
-            f"n_segments={unique_segments.size} -- bucket vazio garantido"
-        )
+    if n_buckets < 1:
+        raise ValueError(f"segments_to_canonical_states: n_buckets={n_buckets} precisa ser >= 1")
 
-    finite_mask = np.isfinite(response)
-    segment_mean: dict[int, float] = {}
-    for seg in unique_segments.tolist():
-        seg_response = response[(segment_id == seg) & finite_mask]
-        segment_mean[seg] = float(np.mean(seg_response)) if seg_response.size > 0 else 0.0
-
-    means = np.array([segment_mean[s] for s in unique_segments.tolist()])
-    edges = np.quantile(means, np.linspace(0, 1, n_buckets + 1)[1:-1])
-    bucket_by_segment = {
-        seg: int(np.searchsorted(edges, segment_mean[seg], side="right"))
-        for seg in unique_segments.tolist()
-    }
-
-    result: IntArray = np.vectorize(bucket_by_segment.get)(segment_id).astype(np.int64)
-    return result
+    causal_mean = _causal_within_segment_mean(segment_id, response)
+    rank = expanding_percentile_rank_strict(causal_mean)
+    rank_filled = np.nan_to_num(rank, nan=0.0)
+    edges = np.linspace(0.0, 1.0, n_buckets + 1)[1:-1]
+    bucket: IntArray = np.searchsorted(edges, rank_filled, side="right").astype(np.int64)
+    return bucket
 
 
 __all__ = ["BOCPDResult", "run_bocpd", "segments_to_canonical_states"]

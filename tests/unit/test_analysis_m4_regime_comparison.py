@@ -56,6 +56,10 @@ def _synthetic_bars_df(n_days: int, *, seed: int = 7, block: int = 30) -> pl.Dat
     rng = np.random.default_rng(seed)
     day_ms = 86_400_000
     open_time = np.arange(n_days, dtype=np.int64) * day_ms
+    # `close_time` -- barra diária fecha 1ms antes da próxima abrir (mesma
+    # convenção de dollar-bar real: close_time < open_time da barra seguinte,
+    # nunca igual/depois). Necessário desde AG-090 (`RawLabels.close_time_ms`).
+    close_time = open_time + day_ms - 1
 
     log_returns = np.empty(n_days - 1, dtype=np.float64)
     for i in range(n_days - 1):
@@ -64,7 +68,7 @@ def _synthetic_bars_df(n_days: int, *, seed: int = 7, block: int = 30) -> pl.Dat
         else:
             log_returns[i] = rng.normal(0.01, 0.005)
     close = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(log_returns)]))
-    return pl.DataFrame({"open_time": open_time, "close": close})
+    return pl.DataFrame({"open_time": open_time, "close_time": close_time, "close": close})
 
 
 def _synthetic_baseline_df(
@@ -317,6 +321,58 @@ def test_run_fold_refit_candidate_fold_com_fit_none_e_excluido_sem_derrubar_os_o
     assert np.isnan(result.fold_stability_adjusted_rand_min)
 
 
+def test_run_fold_refit_candidate_fold_falho_com_raw_labels_mantem_open_close_alinhados() -> None:
+    """Achado de auditoria independente (AG-090, 2026-08-19, F1): o teste
+    de fold parcialmente falho acima NUNCA exercitou `return_raw_labels=
+    True` -- exatamente o caminho onde `RawLabels` passa por `_compact_
+    valid` (máscara booleana NÃO trivial). Sem este teste, um refator
+    futuro que desalinhasse `open_time_ms`/`close_time_ms`/`canonical_id`
+    sob fold falho não seria pego por nenhum teste existente (o teste
+    "sem fold falho" tem `valid_mask` todo `True`, não prova nada sobre
+    a máscara real). Fold 0 (test_start=100,test_end=200) falha, fold 1
+    (test_start=200,test_end=300) sobrevive -- só as barras absolutas
+    [200:300] deveriam sobreviver ao `RawLabels`."""
+    n = 300
+    obs_2d = np.column_stack([np.arange(n, dtype=np.float64), np.zeros(n)])
+    open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    close_time_ms = open_time_ms + 86_399_999
+    splits = (
+        vwf.WalkForwardSplit(fold_id=0, train_end_idx=100, test_start_idx=100, test_end_idx=200),
+        vwf.WalkForwardSplit(fold_id=1, train_end_idx=200, test_start_idx=200, test_end_idx=300),
+    )
+
+    def _stub_fit(obs: np.ndarray, train_end_idx: int) -> dict[str, int] | None:
+        if train_end_idx == 100:
+            return None  # simula fold 0 degenerado
+        return {"train_end_idx": train_end_idx}
+
+    def _stub_predict(fit: dict[str, int], obs_slice: np.ndarray) -> np.ndarray:
+        return (np.arange(obs_slice.shape[0]) % 2).astype(np.int64)
+
+    forward_return = np.linspace(-1.0, 1.0, n)
+    vol_pctile = np.linspace(0.0, 1.0, n)
+
+    result, raw = m4._run_fold_refit_candidate(
+        "stub_id",
+        2,
+        obs_2d,
+        splits,
+        fit_fn=_stub_fit,
+        predict_fn=_stub_predict,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
+        return_raw_labels=True,
+    )
+
+    assert result.n_folds_evaluated == 1
+    assert raw.canonical_id.shape[0] == 100  # só o fold 1 sobrevive
+    assert raw.open_time_ms.shape == raw.close_time_ms.shape == raw.canonical_id.shape
+    np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[200:300])
+    np.testing.assert_array_equal(raw.close_time_ms, close_time_ms[200:300])
+
+
 def test_run_fold_refit_candidate_todos_os_folds_falham_degenera_sem_derrubar_o_simbolo() -> (
     None
 ):
@@ -452,9 +508,10 @@ def test_anova_or_degenerate_dado_bem_comportado_delega_pra_anova_by_group() -> 
 def test_bocpd_candidate_result_fold_stability_by_construction() -> None:
     # Mudança de volatilidade a meio da série (mesmo desenho de
     # test_regime_bocpd.py::test_detecta_changepoint_unico_injetado_no_
-    # ponto_certo) -- garante >=2 segmentos reais, diferente de uma série
-    # estacionária pura (que pode colapsar em 1 segmento só e faria
-    # segments_to_canonical_states levantar ValueError pra n_buckets=2).
+    # ponto_certo) -- garante >=2 segmentos reais (AG-085: desde a
+    # correção de causalidade, segments_to_canonical_states não exige mais
+    # n_buckets <= n_segmentos, mas manter >=2 segmentos aqui continua
+    # dando um cenário mais realista que 1 segmento só).
     rng = np.random.default_rng(3)
     n_each = 200
     log_return_1 = np.concatenate(
@@ -807,6 +864,7 @@ def test_run_fold_refit_candidate_return_raw_labels_nao_muda_candidate_result() 
         [np.arange(n, dtype=np.float64), np.arange(n, dtype=np.float64) * 2.0]
     )
     open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    close_time_ms = open_time_ms + 86_399_999
     splits = (
         vwf.WalkForwardSplit(fold_id=0, train_end_idx=100, test_start_idx=100, test_end_idx=200),
         vwf.WalkForwardSplit(fold_id=1, train_end_idx=200, test_start_idx=200, test_end_idx=300),
@@ -841,15 +899,17 @@ def test_run_fold_refit_candidate_return_raw_labels_nao_muda_candidate_result() 
         forward_return=forward_return,
         vol_pctile=vol_pctile,
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     assert result_false == result_true
     assert isinstance(raw, m4.RawLabels)
-    assert raw.canonical_id.shape == raw.open_time_ms.shape
+    assert raw.canonical_id.shape == raw.open_time_ms.shape == raw.close_time_ms.shape
     assert raw.canonical_id.shape[0] == result_true.n_oos_obs
     # raw_labels alinhado por timestamp -- aqui nenhum fold falhou, então
-    # é exatamente open_time_ms[oos_start:oos_end].
+    # é exatamente open_time_ms/close_time_ms[oos_start:oos_end].
     np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[100:300])
+    np.testing.assert_array_equal(raw.close_time_ms, close_time_ms[100:300])
 
 
 def test_run_fold_refit_candidate_return_raw_labels_true_exige_open_time_ms() -> None:
@@ -866,11 +926,11 @@ def test_run_fold_refit_candidate_return_raw_labels_true_exige_open_time_ms() ->
         return np.zeros(obs_slice.shape[0], dtype=np.int64)
 
     # Viola de propósito o contrato de tipo (return_raw_labels=True exige
-    # open_time_ms na assinatura @overload) pra provar que o guarda em
-    # RUNTIME (não só o tipo) também barra a chamada -- callers
+    # open_time_ms/close_time_ms na assinatura @overload) pra provar que o
+    # guarda em RUNTIME (não só o tipo) também barra a chamada -- callers
     # dinâmicos/não tipados podem bypassar mypy, o ValueError é a defesa
     # real.
-    with pytest.raises(ValueError, match="open_time_ms obrigatório"):
+    with pytest.raises(ValueError, match="open_time_ms/close_time_ms obrigatórios"):
         m4._run_fold_refit_candidate(  # type: ignore[call-overload]
             "stub_id",
             2,
@@ -892,6 +952,7 @@ def test_bocpd_candidate_result_return_raw_labels_nao_muda_candidate_result() ->
     ).astype(np.float64)
     n = int(log_return_1.shape[0])
     open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    close_time_ms = open_time_ms + 86_399_999
     forward_return = np.concatenate([log_return_1[1:], [np.nan]])
     vol_pctile = rng.uniform(0.0, 1.0, size=n)
 
@@ -913,11 +974,13 @@ def test_bocpd_candidate_result_return_raw_labels_nao_muda_candidate_result() ->
         forward_return=forward_return,
         vol_pctile=vol_pctile,
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     assert result_false == result_true
     assert isinstance(raw, m4.RawLabels)
     np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[50:n])
+    np.testing.assert_array_equal(raw.close_time_ms, close_time_ms[50:n])
     # `raw.canonical_id` cobre a janela OOS INTEIRA (`labels_oos`,
     # canonical_id nunca é NaN) -- diferente de `result_true.n_oos_obs`
     # (`separation.n`, PÓS-filtro de NaN em `forward_return` dentro de
@@ -938,6 +1001,7 @@ def test_baseline_candidate_result_return_raw_labels_exclui_r0() -> None:
     regime_physical[50:125] = 1
     regime_physical[125:200] = 2
     open_time_ms = np.arange(n, dtype=np.int64) * 86_400_000
+    close_time_ms = open_time_ms + 86_399_999
     forward_return = np.linspace(-1.0, 1.0, n)
     vol_pctile = np.linspace(0.0, 1.0, n)
 
@@ -957,12 +1021,14 @@ def test_baseline_candidate_result_return_raw_labels_exclui_r0() -> None:
         vol_pctile=vol_pctile,
         classifier_id="quantile_regime_v1",
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     assert result_false == result_true
     assert raw.canonical_id.shape[0] == 150  # 200 - 50 barras R0 excluídas
     assert not np.any(raw.canonical_id == m4._BASELINE_R0_PHYSICAL_ID)
     np.testing.assert_array_equal(raw.open_time_ms, open_time_ms[50:200])
+    np.testing.assert_array_equal(raw.close_time_ms, close_time_ms[50:200])
 
 
 @pytest.mark.slow
@@ -998,7 +1064,84 @@ def test_compare_regime_candidates_return_raw_labels_nao_muda_symbol_result() ->
     assert set(raw_labels_by_id) == expected_ids
     for classifier_id, raw in raw_labels_by_id.items():
         assert isinstance(raw, m4.RawLabels), classifier_id
-        assert raw.canonical_id.shape == raw.open_time_ms.shape
+        assert raw.canonical_id.shape == raw.open_time_ms.shape == raw.close_time_ms.shape
+
+
+@pytest.mark.slow
+def test_compare_regime_candidates_oos_bounds_contem_todo_raw_labels_de_todo_candidato() -> None:
+    """AG-093 (`audit/architecture_gaps_log.yaml`) -- `SymbolResult.
+    oos_start_ms`/`.oos_end_ms` precisa ser um limite VÁLIDO pra todos os
+    5 candidatos, não só coincidentemente bater com um deles: todo
+    `close_time_ms` de todo `RawLabels` (baseline pós-exclusão de R0,
+    HMM x2, Jump Model, BOCPD -- cada um com sua própria máscara de
+    exclusão) precisa cair dentro de `[oos_start_ms, oos_end_ms)`. Essa
+    é a propriedade que `m4_critical_windows._bocpd_metrics_for_window`
+    depende pra alinhar a janela de avaliação do BOCPD à MESMA janela
+    que os outros candidatos usaram -- se `oos_start_ms`/`oos_end_ms`
+    fossem calculados errado (ex. índice trocado, off-by-one), algum
+    candidato teria `close_time_ms` fora do intervalo, pego aqui."""
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    computed = m4.compare_regime_candidates_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        hmm_states_grid=(2, 3),
+        return_raw_labels=True,
+        **_CANDIDATE_KWARGS,
+    )
+    assert computed is not None
+    result, raw_labels_by_id = computed
+
+    assert result.oos_start_ms < result.oos_end_ms
+    # a fronteira OOS é um subconjunto do histórico carregado -- nunca
+    # antes do primeiro bar nem depois do último (senão seria bug, não
+    # só "amplo demais").
+    all_close_time_ms = bars_df["close_time"].cast(pl.Int64).to_numpy()
+    assert result.oos_start_ms >= int(all_close_time_ms.min())
+    assert result.oos_end_ms <= int(all_close_time_ms.max()) + 1
+
+    for classifier_id, raw in raw_labels_by_id.items():
+        if raw.close_time_ms.shape[0] == 0:
+            continue  # candidato sem nenhuma barra OOS válida (ex. todos os folds falharam)
+        assert raw.close_time_ms.min() >= result.oos_start_ms, classifier_id
+        assert raw.close_time_ms.max() < result.oos_end_ms, classifier_id
+
+    # Achado de auditoria independente (AG-093, MEDIUM): as asserções
+    # acima só provam CONTAINMENT (a fronteira é um superconjunto válido
+    # dos dados reais) -- uma implementação hipotética errada
+    # (oos_start_ms/oos_end_ms = série inteira carregada, não a fatia
+    # OOS) passaria nelas sem alteração, porque todo RawLabels já é
+    # subconjunto da série inteira por construção. As 2 checagens abaixo
+    # fecham essa lacuna: (1) igualdade EXATA contra um split
+    # recomputado de forma INDEPENDENTE (mesmos primitivos que `compare_
+    # regime_candidates_for_symbol` usa internamente, mas chamados aqui
+    # do zero, não emprestados do resultado); (2) a fronteira precisa
+    # ser SIGNIFICATIVAMENTE menor que a série inteira -- pegaria uma
+    # regressão futura que voltasse a usar `close_time_ms[0]`/`[-1]+1`
+    # (a série carregada inteira) em vez da fatia OOS real.
+    open_time_ms_full = bars_df["open_time"].cast(pl.Int64).to_numpy()
+    close_time_ms_full = bars_df["close_time"].cast(pl.Int64).to_numpy()
+    log_return_1_full, obs_2d_full = m4._input_obs(bars_df)
+    valid_start_idx = m4._valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
+    open_time_ms_trimmed = open_time_ms_full[valid_start_idx:]
+    close_time_ms_trimmed = close_time_ms_full[valid_start_idx:]
+    independent_splits = vwf.generate_anchored_walk_forward_splits(
+        open_time_ms_trimmed, initial_train_years=2
+    )
+    assert len(independent_splits) >= 1
+    expected_oos_start_ms = int(close_time_ms_trimmed[independent_splits[0].test_start_idx])
+    expected_oos_end_ms = (
+        int(close_time_ms_trimmed[independent_splits[-1].test_end_idx - 1]) + 1
+    )
+    assert result.oos_start_ms == expected_oos_start_ms
+    assert result.oos_end_ms == expected_oos_end_ms
+
+    full_span_ms = int(all_close_time_ms.max()) - int(all_close_time_ms.min())
+    oos_span_ms = result.oos_end_ms - result.oos_start_ms
+    assert oos_span_ms < 0.5 * full_span_ms  # fatia OOS, nunca a série carregada inteira
 
 
 # ============================================================================
@@ -1013,13 +1156,19 @@ def test_asof_join_btc_labels_e_estritamente_backward_nunca_futuro() -> None:
     `"nearest"` ou `"forward"` por engano, o resultado viraria o rótulo de
     `t=20` (label=2, FUTURO em relação a `t=19`), não o de `t=10`
     (label=1, o único correto/causal). Este teste FALHARIA sob as duas
-    trocas."""
+    trocas.
+
+    Join chaveia em `close_time_ms` (AG-090, achado de auditoria cética)
+    -- `open_time_ms` aqui é só placeholder (campo obrigatório de
+    `RawLabels`, irrelevante pro join)."""
     btc_raw = m4.RawLabels(
         open_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+        close_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
         canonical_id=np.array([0, 1, 2, 3], dtype=np.int64),
     )
     asset_raw = m4.RawLabels(
         open_time_ms=np.array([19], dtype=np.int64),
+        close_time_ms=np.array([19], dtype=np.int64),
         canonical_id=np.array([99], dtype=np.int64),  # rótulo próprio, irrelevante pro join em si
     )
     _labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
@@ -1030,13 +1179,16 @@ def test_asof_join_btc_labels_desalinhado_valores_conhecidos_a_mao() -> None:
     """BTC em t={0,10,20,30}, ativo em t={5,15,25} (dollar-bar tem
     timestamps DIFERENTES entre ativos, nunca a mesma grade) -- confirma
     o rótulo herdado em CADA barra do ativo é o de BTC vigente em
-    `t_btc <= t_ativo`, nunca `t_btc > t_ativo`."""
+    `t_btc <= t_ativo`, nunca `t_btc > t_ativo`. Join chaveia em
+    `close_time_ms` (AG-090)."""
     btc_raw = m4.RawLabels(
         open_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+        close_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
         canonical_id=np.array([0, 1, 0, 1], dtype=np.int64),
     )
     asset_raw = m4.RawLabels(
         open_time_ms=np.array([5, 15, 25], dtype=np.int64),
+        close_time_ms=np.array([5, 15, 25], dtype=np.int64),
         canonical_id=np.array([7, 8, 9], dtype=np.int64),
     )
     labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
@@ -1049,18 +1201,57 @@ def test_asof_join_btc_labels_sobreposicao_parcial_exclui_sem_crash() -> None:
     """Ativo com histórico mais curto que BTC (situação REAL: BTC desde
     2019-12-31, os 4 alts só desde 2021-12-01) -- barras do ativo
     ANTERIORES ao primeiro timestamp de BTC não têm rótulo pra herdar,
-    excluídas da região de sobreposição, nunca um crash."""
+    excluídas da região de sobreposição, nunca um crash. Join chaveia em
+    `close_time_ms` (AG-090)."""
     btc_raw = m4.RawLabels(
         open_time_ms=np.array([100, 200, 300], dtype=np.int64),
+        close_time_ms=np.array([100, 200, 300], dtype=np.int64),
         canonical_id=np.array([0, 1, 0], dtype=np.int64),
     )
     asset_raw = m4.RawLabels(
-        open_time_ms=np.array([50, 150, 250], dtype=np.int64),  # 50 é ANTES do 1o ts de BTC
+        open_time_ms=np.array([50, 150, 250], dtype=np.int64),
+        close_time_ms=np.array([50, 150, 250], dtype=np.int64),  # 50 é ANTES do 1o ts de BTC
         canonical_id=np.array([9, 8, 7], dtype=np.int64),
     )
     labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
     assert labels_own.tolist() == [8, 7]
     assert labels_btc_derived.tolist() == [0, 1]
+
+
+def test_asof_join_btc_labels_open_close_divergentes_prova_ag090() -> None:
+    """Regressão direta de AG-090 -- caso onde `open_time_ms`/`close_time_ms`
+    DIVERGEM o suficiente pra produzir uma resposta diferente, provando que
+    a implementação atual usa `close_time_ms` de verdade (não um teste que
+    passaria com qualquer um dos dois campos, como os 3 acima -- lá
+    `open_time_ms == close_time_ms` por construção).
+
+    BTC tem 2 barras "longas": A (`open=0, close=100`, label=0) e B
+    (`open=100, close=110`, label=1). O rótulo de A só fica CONHECÍVEL em
+    `close=100`, não em `open=0`.
+
+    - Ativo@`close_time=50`: antes de A fechar -- NENHUM rótulo de BTC
+      deveria existir ainda (backward join sem match, excluído da
+      sobreposição). Se o join (por engano) chaveasse em `open_time_ms`,
+      `50 >= 0` bateria com A e vazaria o rótulo de uma barra que ainda
+      não tinha fechado -- exatamente o bug que AG-090 corrigiu.
+    - Ativo@`close_time=105`: depois de A fechar (100) mas ANTES de B
+      fechar (110) -- deve herdar o rótulo de A (0), nunca o de B (1).
+      Um join por `open_time_ms` bateria com B (`open=100 <= 105`) e
+      vazaria o rótulo de uma barra ainda aberta em `t=105`."""
+    btc_raw = m4.RawLabels(
+        open_time_ms=np.array([0, 100], dtype=np.int64),
+        close_time_ms=np.array([100, 110], dtype=np.int64),
+        canonical_id=np.array([0, 1], dtype=np.int64),
+    )
+    asset_raw = m4.RawLabels(
+        open_time_ms=np.array([50, 105], dtype=np.int64),
+        close_time_ms=np.array([50, 105], dtype=np.int64),
+        canonical_id=np.array([7, 8], dtype=np.int64),
+    )
+    labels_own, labels_btc_derived = m4._asof_join_btc_labels(btc_raw, asset_raw)
+    # Só o segundo ativo sobrevive (o primeiro não tem BTC fechado ainda).
+    assert labels_own.tolist() == [8]
+    assert labels_btc_derived.tolist() == [0]  # rótulo de A, nunca de B
 
 
 # ============================================================================
@@ -1095,6 +1286,8 @@ def _fake_symbol_result(symbol: str, classifier_id: str) -> m4.SymbolResult:
         n_folds=1,
         baseline=_fake_candidate_result("baseline_stub"),
         candidates=(_fake_candidate_result(classifier_id),),
+        oos_start_ms=0,
+        oos_end_ms=100,
     )
 
 
@@ -1102,8 +1295,10 @@ def test_run_q3_common_factor_regime_monta_resultado_com_stub(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     classifier_id = "bocpd_v1"
+    btc_ts = np.arange(0, 100, 10, dtype=np.int64)
     btc_raw = m4.RawLabels(
-        open_time_ms=np.arange(0, 100, 10, dtype=np.int64),
+        open_time_ms=btc_ts,
+        close_time_ms=btc_ts,
         canonical_id=np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0], dtype=np.int64),
     )
     btc_result = _fake_symbol_result("BTCUSDT", classifier_id)
@@ -1113,8 +1308,10 @@ def test_run_q3_common_factor_regime_monta_resultado_com_stub(
     # backward join (t=1->btc@0=0, t=11->btc@10=0, t=21->btc@20=1,
     # t=31->btc@30=1, t=41->btc@40=0) -- ARI=1.0 esperado, verificável
     # sem recalcular a fórmula do Rand ajustado à mão.
+    eth_ts = np.array([1, 11, 21, 31, 41], dtype=np.int64)
     eth_raw = m4.RawLabels(
-        open_time_ms=np.array([1, 11, 21, 31, 41], dtype=np.int64),
+        open_time_ms=eth_ts,
+        close_time_ms=eth_ts,
         canonical_id=np.array([0, 0, 1, 1, 0], dtype=np.int64),
     )
     eth_symbol_result = _fake_symbol_result("ETHUSDT", classifier_id)
@@ -1167,6 +1364,7 @@ def test_run_q3_common_factor_regime_symbol_diferente_de_btc_levanta_value_error
             {
                 "bocpd_v1": m4.RawLabels(
                     open_time_ms=np.array([0], dtype=np.int64),
+                    close_time_ms=np.array([0], dtype=np.int64),
                     canonical_id=np.array([0], dtype=np.int64),
                 )
             },
@@ -1187,6 +1385,7 @@ def test_run_q3_common_factor_regime_classifier_id_ausente_levanta_value_error()
             {
                 "bocpd_v1": m4.RawLabels(
                     open_time_ms=np.array([0], dtype=np.int64),
+                    close_time_ms=np.array([0], dtype=np.int64),
                     canonical_id=np.array([0], dtype=np.int64),
                 )
             },
@@ -1205,15 +1404,19 @@ def test_run_q3_common_factor_regime_sobreposicao_insuficiente_da_nan(
     """Ativo cujo dado inteiro precede o primeiro timestamp de BTC --
     sobreposição zero -- `Q3AssetResult` com `NaN`, não um crash."""
     classifier_id = "bocpd_v1"
+    btc_ts = np.array([1000, 2000], dtype=np.int64)
     btc_raw = m4.RawLabels(
-        open_time_ms=np.array([1000, 2000], dtype=np.int64),
+        open_time_ms=btc_ts,
+        close_time_ms=btc_ts,
         canonical_id=np.array([0, 1], dtype=np.int64),
     )
     btc_result = _fake_symbol_result("BTCUSDT", classifier_id)
     btc_raw_labels = {classifier_id: btc_raw}
 
+    eth_ts = np.array([1, 2], dtype=np.int64)  # inteiramente ANTES de btc_raw
     eth_raw = m4.RawLabels(
-        open_time_ms=np.array([1, 2], dtype=np.int64),  # inteiramente ANTES de btc_raw
+        open_time_ms=eth_ts,
+        close_time_ms=eth_ts,
         canonical_id=np.array([0, 1], dtype=np.int64),
     )
     eth_symbol_result = _fake_symbol_result("ETHUSDT", classifier_id)

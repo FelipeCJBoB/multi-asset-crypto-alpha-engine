@@ -455,8 +455,8 @@ class RawLabels:
     """Rótulos canônicos por barra, alinhados por TIMESTAMP (não índice
     posicional) — Fase 4 (Q3), exposta só quando `return_raw_labels=True`
     nas funções que constroem `CandidateResult` (ver docstring do módulo,
-    seção Fase 4). `open_time_ms`/`canonical_id` sempre mesmo shape,
-    alinhados posição-a-posição.
+    seção Fase 4). `open_time_ms`/`close_time_ms`/`canonical_id` sempre
+    mesmo shape, alinhados posição-a-posição.
 
     Representa exatamente o subconjunto VÁLIDO usado para calcular as
     métricas do `CandidateResult` irmão (mesma barra que entrou em
@@ -464,19 +464,50 @@ class RawLabels:
     `_FOLD_FIT_FAILURE_SENTINEL` (fold sem fit bem-sucedido, HMM/Jump
     Model) nem R0 (warmup, baseline): nenhum dos dois é um rótulo de
     regime real, e propagá-los por um `join_asof` (Q3) como se fossem
-    inventaria um "regime" onde não houve medição."""
+    inventaria um "regime" onde não houve medição.
+
+    **`close_time_ms` -- adicionado 2026-08-19, achado de auditoria cética
+    (AG-090):** o rótulo de regime de uma barra só é CONHECÍVEL quando a
+    barra FECHA (`log_return_1`/features derivadas dela exigem o preço de
+    fechamento) -- `open_time_ms` é identidade da barra (útil pra
+    debug/rastreio), nunca o timestamp certo pra um `join_asof` causal
+    contra outra grade. Confirmado que `t0` de `labels.parquet`
+    (`src/labels/triple_barrier.py:913`, `t0_arr = bars["close_time"]`) JÁ
+    é o `close_time` da barra -- os dois consumidores de `join_asof`
+    causal deste módulo (`_asof_join_btc_labels`/Q3,
+    `m4_critical_windows._asof_join_regime_onto_labels`/heterogeneidade)
+    precisam chavear em `close_time_ms` nos dois lados, não `open_time_ms`
+    -- usar `open_time_ms` deixaria uma barra "conhecida" antes dela
+    fechar de verdade, vazamento temporal clássico (B02, mesma classe)."""
 
     open_time_ms: IntArray
+    close_time_ms: IntArray
     canonical_id: IntArray
 
 
 @dataclass(frozen=True, slots=True)
 class SymbolResult:
+    """`oos_start_ms`/`oos_end_ms` -- adicionado 2026-08-19 (AG-093,
+    `audit/architecture_gaps_log.yaml`): fronteira `[oos_start_ms,
+    oos_end_ms)` do walk-forward ancorado desta combinação (symbol,
+    janela, resolução) -- MESMA janela temporal que baseline/HMM/Jump
+    Model usam pra suas métricas (`close_time_ms[oos_start]` até
+    `close_time_ms[oos_end-1]+1`, half-open, consistente com o resto do
+    módulo pós-AG-090). Existe pra permitir que `m4_critical_windows.
+    _bocpd_metrics_for_window` alinhe a janela de AVALIAÇÃO do BOCPD
+    (histórico causal completo, fatiado depois) a essa mesma fronteira,
+    em vez do range calendário `[window.start, window.end)` inteiro (que
+    inflava a amostra do BOCPD ~5x em relação aos outros 5 candidatos,
+    achado real que explicava boa parte de sua liderança suspeita em
+    Cochran's Q/I²)."""
+
     symbol: str
     n_bars: int
     n_folds: int
     baseline: CandidateResult
     candidates: tuple[CandidateResult, ...]
+    oos_start_ms: int
+    oos_end_ms: int
 
 
 # ============================================================================
@@ -648,6 +679,7 @@ def _run_fold_refit_candidate(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray | None = ...,
+    close_time_ms: IntArray | None = ...,
     return_raw_labels: Literal[False] = ...,
 ) -> CandidateResult: ...
 
@@ -664,6 +696,7 @@ def _run_fold_refit_candidate(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray,
+    close_time_ms: IntArray,
     return_raw_labels: Literal[True],
 ) -> tuple[CandidateResult, RawLabels]: ...
 
@@ -679,6 +712,7 @@ def _run_fold_refit_candidate(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray | None = None,
+    close_time_ms: IntArray | None = None,
     return_raw_labels: bool = False,
 ) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """Núcleo compartilhado por HMM e Jump Model -- os dois têm o MESMO
@@ -703,14 +737,15 @@ def _run_fold_refit_candidate(
     `(CandidateResult, RawLabels)` -- `RawLabels.canonical_id` é
     EXATAMENTE `labels_valid` (o mesmo array usado abaixo para calcular
     `separation`/`orthogonality`/`persistence`, já sem os folds falhos) e
-    `RawLabels.open_time_ms` é o timestamp correspondente sob a MESMA
-    máscara -- nunca o sentinela `_FOLD_FIT_FAILURE_SENTINEL`.
-    `open_time_ms` (alinhado 1:1 com `obs_2d`/`forward_return`/
-    `vol_pctile`) é obrigatório (`ValueError`) quando
-    `return_raw_labels=True`; ignorado quando `False`."""
-    if return_raw_labels and open_time_ms is None:
+    `RawLabels.open_time_ms`/`.close_time_ms` são os timestamps
+    correspondentes sob a MESMA máscara -- nunca o sentinela
+    `_FOLD_FIT_FAILURE_SENTINEL`.
+    `open_time_ms`/`close_time_ms` (alinhados 1:1 com `obs_2d`/
+    `forward_return`/`vol_pctile`) são obrigatórios (`ValueError`) quando
+    `return_raw_labels=True`; ignorados quando `False`."""
+    if return_raw_labels and (open_time_ms is None or close_time_ms is None):
         raise ValueError(
-            "_run_fold_refit_candidate: open_time_ms obrigatório quando "
+            "_run_fold_refit_candidate: open_time_ms/close_time_ms obrigatórios quando "
             "return_raw_labels=True"
         )
     oos_start, oos_end = _oos_slice(splits)
@@ -766,9 +801,12 @@ def _run_fold_refit_candidate(
     )
     if not return_raw_labels:
         return result
-    assert open_time_ms is not None  # checado no topo da função
+    assert open_time_ms is not None and close_time_ms is not None  # checado no topo da função
     raw_open_time_ms = open_time_ms[oos_start:oos_end][valid_mask]
-    return result, RawLabels(open_time_ms=raw_open_time_ms, canonical_id=labels_valid)
+    raw_close_time_ms = close_time_ms[oos_start:oos_end][valid_mask]
+    return result, RawLabels(
+        open_time_ms=raw_open_time_ms, close_time_ms=raw_close_time_ms, canonical_id=labels_valid
+    )
 
 
 @overload
@@ -782,6 +820,7 @@ def _bocpd_candidate_result(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray | None = ...,
+    close_time_ms: IntArray | None = ...,
     return_raw_labels: Literal[False] = ...,
 ) -> CandidateResult: ...
 
@@ -797,6 +836,7 @@ def _bocpd_candidate_result(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray,
+    close_time_ms: IntArray,
     return_raw_labels: Literal[True],
 ) -> tuple[CandidateResult, RawLabels]: ...
 
@@ -811,6 +851,7 @@ def _bocpd_candidate_result(
     forward_return: FloatArray,
     vol_pctile: FloatArray,
     open_time_ms: IntArray | None = None,
+    close_time_ms: IntArray | None = None,
     return_raw_labels: bool = False,
 ) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """BOCPD roda UMA VEZ sobre a série causal INTEIRA (`log_return_1`, já
@@ -834,11 +875,12 @@ def _bocpd_candidate_result(
     de `_run_fold_refit_candidate`, ver docstring lá): quando `True`,
     devolve `(CandidateResult, RawLabels)` com `canonical_id=labels_oos`
     (BOCPD não tem conceito de fold falho -- toda a janela OOS é válida
-    por construção, sem máscara/compactação) e `open_time_ms` a fatia
-    correspondente de `open_time_ms[oos_start:oos_end]`."""
-    if return_raw_labels and open_time_ms is None:
+    por construção, sem máscara/compactação) e `open_time_ms`/
+    `close_time_ms` a fatia correspondente de `[oos_start:oos_end]`."""
+    if return_raw_labels and (open_time_ms is None or close_time_ms is None):
         raise ValueError(
-            "_bocpd_candidate_result: open_time_ms obrigatório quando return_raw_labels=True"
+            "_bocpd_candidate_result: open_time_ms/close_time_ms obrigatórios quando "
+            "return_raw_labels=True"
         )
     bocpd_out = run_bocpd(log_return_1, hazard_lambda=hazard_lambda)
     bucket_by_bar = segments_to_canonical_states(
@@ -866,8 +908,12 @@ def _bocpd_candidate_result(
     )
     if not return_raw_labels:
         return result
-    assert open_time_ms is not None  # checado no topo da função
-    return result, RawLabels(open_time_ms=open_time_ms[oos_start:oos_end], canonical_id=labels_oos)
+    assert open_time_ms is not None and close_time_ms is not None  # checado no topo da função
+    return result, RawLabels(
+        open_time_ms=open_time_ms[oos_start:oos_end],
+        close_time_ms=close_time_ms[oos_start:oos_end],
+        canonical_id=labels_oos,
+    )
 
 
 @overload
@@ -880,6 +926,7 @@ def _baseline_candidate_result(
     vol_pctile: FloatArray,
     classifier_id: str,
     open_time_ms: IntArray | None = ...,
+    close_time_ms: IntArray | None = ...,
     return_raw_labels: Literal[False] = ...,
 ) -> CandidateResult: ...
 
@@ -894,6 +941,7 @@ def _baseline_candidate_result(
     vol_pctile: FloatArray,
     classifier_id: str,
     open_time_ms: IntArray,
+    close_time_ms: IntArray,
     return_raw_labels: Literal[True],
 ) -> tuple[CandidateResult, RawLabels]: ...
 
@@ -907,6 +955,7 @@ def _baseline_candidate_result(
     vol_pctile: FloatArray,
     classifier_id: str,
     open_time_ms: IntArray | None = None,
+    close_time_ms: IntArray | None = None,
     return_raw_labels: bool = False,
 ) -> CandidateResult | tuple[CandidateResult, RawLabels]:
     """`QuantileRegimeClassifier` -- state machine determinística causal,
@@ -920,11 +969,11 @@ def _baseline_candidate_result(
     quando `True`, devolve `(CandidateResult, RawLabels)` com
     `canonical_id=labels_valid` (mesmo array pós-exclusão de R0 usado nas
     métricas abaixo -- R0 não é um regime real, não deveria ser herdado
-    por um `join_asof` como se fosse) e `open_time_ms` a fatia
-    correspondente sob a MESMA máscara `non_r0_mask`."""
-    if return_raw_labels and open_time_ms is None:
+    por um `join_asof` como se fosse) e `open_time_ms`/`close_time_ms` a
+    fatia correspondente sob a MESMA máscara `non_r0_mask`."""
+    if return_raw_labels and (open_time_ms is None or close_time_ms is None):
         raise ValueError(
-            "_baseline_candidate_result: open_time_ms obrigatório quando "
+            "_baseline_candidate_result: open_time_ms/close_time_ms obrigatórios quando "
             "return_raw_labels=True"
         )
     regime_oos = regime_physical[oos_start:oos_end]
@@ -954,9 +1003,12 @@ def _baseline_candidate_result(
     )
     if not return_raw_labels:
         return result
-    assert open_time_ms is not None  # checado no topo da função
+    assert open_time_ms is not None and close_time_ms is not None  # checado no topo da função
     raw_open_time_ms = open_time_ms[oos_start:oos_end][non_r0_mask]
-    return result, RawLabels(open_time_ms=raw_open_time_ms, canonical_id=labels_valid)
+    raw_close_time_ms = close_time_ms[oos_start:oos_end][non_r0_mask]
+    return result, RawLabels(
+        open_time_ms=raw_open_time_ms, close_time_ms=raw_close_time_ms, canonical_id=labels_valid
+    )
 
 
 @overload
@@ -1038,6 +1090,7 @@ def compare_regime_candidates_for_symbol(
     valid_start_idx = _valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
 
     open_time_ms = bars_df["open_time"].cast(pl.Int64).to_numpy()[valid_start_idx:]
+    close_time_ms = bars_df["close_time"].cast(pl.Int64).to_numpy()[valid_start_idx:]
     log_return_1 = log_return_1_full[valid_start_idx:]
     obs_2d = obs_2d_full[valid_start_idx:]
     forward_return = _forward_return(log_return_1)
@@ -1072,6 +1125,7 @@ def compare_regime_candidates_for_symbol(
         vol_pctile=vol_pctile,
         classifier_id=baseline_classifier_id,
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     raw_labels_by_classifier_id: dict[str, RawLabels] = {
@@ -1089,6 +1143,7 @@ def compare_regime_candidates_for_symbol(
             forward_return=forward_return,
             vol_pctile=vol_pctile,
             open_time_ms=open_time_ms,
+            close_time_ms=close_time_ms,
             return_raw_labels=True,
         )
         for k in hmm_states_grid
@@ -1113,6 +1168,7 @@ def compare_regime_candidates_for_symbol(
         forward_return=forward_return,
         vol_pctile=vol_pctile,
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
@@ -1126,9 +1182,17 @@ def compare_regime_candidates_for_symbol(
         forward_return=forward_return,
         vol_pctile=vol_pctile,
         open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
         return_raw_labels=True,
     )
     raw_labels_by_classifier_id[BOCPD_CLASSIFIER_ID] = bocpd_raw_labels
+
+    # AG-093 -- fronteira OOS em timestamp (half-open), ver docstring de
+    # SymbolResult. close_time_ms[oos_end - 1] + 1 (não close_time_ms
+    # [oos_end], que estaria fora de índice quando o último fold cobre
+    # até o fim da série -- caso normal do walk-forward ancorado).
+    oos_start_ms = int(close_time_ms[oos_start])
+    oos_end_ms = int(close_time_ms[oos_end - 1]) + 1
 
     symbol_result = SymbolResult(
         symbol=symbol,
@@ -1136,6 +1200,8 @@ def compare_regime_candidates_for_symbol(
         n_folds=len(splits),
         baseline=baseline_result,
         candidates=(*hmm_results, jump_result, bocpd_result),
+        oos_start_ms=oos_start_ms,
+        oos_end_ms=oos_end_ms,
     )
     if return_raw_labels:
         return symbol_result, raw_labels_by_classifier_id
@@ -1352,7 +1418,7 @@ def _asof_join_btc_labels(btc_raw: RawLabels, asset_raw: RawLabels) -> tuple[Int
     prova de causalidade central de Q3 (DoD do plano `wise-exploring-
     panda.md`, seção "Q3/as-of join"): cada barra do ativo recebe o
     rótulo de BTC mais recente que já existia ATÉ aquele timestamp
-    (`open_time_ms` de BTC `<=` o do ativo), NUNCA um rótulo futuro.
+    (`close_time_ms` de BTC `<=` o do ativo), NUNCA um rótulo futuro.
     `strategy="backward"` do `polars.DataFrame.join_asof` é exatamente
     essa semântica -- trocar por `"nearest"`/`"forward"` vazaria rótulo
     futuro pro ativo (o próprio DoD pede um teste que capture essa troca,
@@ -1362,10 +1428,19 @@ def _asof_join_btc_labels(btc_raw: RawLabels, asset_raw: RawLabels) -> tuple[Int
     `src.validation.leakage._test_04_funding_futuro`) -- não uma técnica
     nova, reaplicada aqui a rótulo de regime em vez de feature.
 
+    **`close_time_ms`, não `open_time_ms` -- corrigido 2026-08-19, AG-090
+    (achado de auditoria cética):** o rótulo de BTC só é CONHECÍVEL
+    quando a barra de BTC FECHA -- chavear em `open_time_ms` deixaria o
+    ativo "herdar" um rótulo de BTC calculado sobre uma barra que ainda
+    nem tinha fechado no timestamp de referência, vazamento temporal
+    (mesma classe de B02). `close_time_ms` do ativo é o lado certo da
+    comparação também -- é quando a PRÓPRIA barra do ativo se torna
+    conhecível/comparável, ver docstring de `RawLabels`.
+
     BTC e o ativo têm timestamps de dollar-bar DIFERENTES (dollar-bar é
     disparada por volume negociado, não por tempo -- BTC e XRP não têm as
-    mesmas barras) -- por isso o join é por TIMESTAMP (`open_time_ms`),
-    nunca por índice posicional.
+    mesmas barras) -- por isso o join é por TIMESTAMP, nunca por índice
+    posicional.
 
     Barras do ativo ANTERIORES ao primeiro timestamp de BTC em `btc_raw`
     não têm rótulo de BTC pra herdar (nenhum "backward" existe ainda) --
@@ -1380,13 +1455,13 @@ def _asof_join_btc_labels(btc_raw: RawLabels, asset_raw: RawLabels) -> tuple[Int
     levanta por sobreposição parcial/vazia; `run_q3_common_factor_regime`
     decide o que fazer com `n_compared` pequeno/zero (`NaN`, não crash)."""
     btc_df = pl.DataFrame(
-        {"open_time_ms": btc_raw.open_time_ms, "btc_canonical_id": btc_raw.canonical_id}
-    ).sort("open_time_ms")
+        {"close_time_ms": btc_raw.close_time_ms, "btc_canonical_id": btc_raw.canonical_id}
+    ).sort("close_time_ms")
     asset_df = pl.DataFrame(
-        {"open_time_ms": asset_raw.open_time_ms, "own_canonical_id": asset_raw.canonical_id}
-    ).sort("open_time_ms")
+        {"close_time_ms": asset_raw.close_time_ms, "own_canonical_id": asset_raw.canonical_id}
+    ).sort("close_time_ms")
 
-    joined = asset_df.join_asof(btc_df, on="open_time_ms", strategy="backward")
+    joined = asset_df.join_asof(btc_df, on="close_time_ms", strategy="backward")
     overlap = joined.filter(pl.col("btc_canonical_id").is_not_null())
 
     labels_own: IntArray = overlap["own_canonical_id"].cast(pl.Int64).to_numpy()

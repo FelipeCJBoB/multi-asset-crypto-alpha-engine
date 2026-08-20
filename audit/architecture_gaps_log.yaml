@@ -661,6 +661,32 @@ entries:
       Nenhuma implementacao feita -- confirma a recomendacao original:
       nao redesenhar agora, guardar este addendum pro primeiro caller
       real.
+    addendum_2026-08-19: >
+      RE-CONFIRMADO de forma independente (Agent Project Assurance,
+      auditoria cética Regime→Alpha/Risk/Meta-Label/Execução sob
+      multi-ativo/multi-resolução, comissionada pelo Manager). Achado
+      original segue válido — `RiskEngineInputs`/`RiskDecision`
+      (`src/risk/limits.py:495-527`) e `KillSwitchInputs`/
+      `KillSwitchResult` (`src/risk/kill_switch.py:284-313`) confirmados
+      sem campo `symbol`, releitura direta 2026-08-19. Ponto novo: o
+      Controle 19 (`control_19_risco_agregado`, `limits.py:449-487`) É
+      desenhado multi-ativo (matriz de correlação entre posições), mas
+      permanece `NOT_COMPUTABLE` sempre hoje (sem rastreador de posição ao
+      vivo) — não oferece gate independente por linha na prática atual,
+      mesmo sendo tecnicamente multi-símbolo por desenho (consistente com
+      o addendum_2026-08-13 item 2 acima). `compute_sizing_asof`
+      (`sizing.py:189-206`) já tem `symbol: str = "BTCUSDT"` e repassa a
+      `load_filters_asof` — a dimensão symbol chega indiretamente via
+      `SizingResult.filters.symbol`, mas nunca como campo de primeira
+      classe em `RiskDecision`. Muda de "relevante só quando 14_RISK_ENGINE
+      ganhar um caller real" para "bloqueia diretamente" — a decisão fresca
+      do Manager (operar dinamicamente até 15 combinações symbol×resolution
+      simultâneas, comparando/eliminando em live) exige que o Risk Engine
+      aprove/reprove por linha de forma independente (um limite de
+      fee/drawdown/perdas-consecutivas estourado por UMA linha não pode
+      afetar o julgamento das outras 14) — isso não existe hoje em nenhuma
+      forma, nem indireta. Ver também AG-098 (seleção dinâmica
+      symbol×resolution, achado irmão desta mesma auditoria).
 
   - id: AG-008
     date: "2026-08-12"
@@ -6031,3 +6057,1282 @@ entries:
       checkpoint de R1 já está em disco antes de R2 começar. Suíte
       completa: 1435 passed, zero regressão.
     status: "fechado -- checkpoint incremental confirmado por teste dedicado, verificado independentemente antes do commit"
+
+  - id: AG-084
+    date: "2026-08-18"
+    file: "src/analysis/m4_critical_windows.py"
+    related_file: "src/regime/bocpd.py, src/analysis/m4_regime_comparison.py"
+    found_by: "Agent Auditoria cética + RAG do BOCPD (M4, extensão janelas críticas), 2026-08-18 -- reprodução direta, dado real"
+    gap: >
+      `run_and_save_critical_windows_report` chama
+      `m4.run_regime_comparison_for_symbol(symbol, window.start,
+      window.end, ...)` por janela crítica -- correto pra HMM/Jump Model
+      (já são refit por fold de qualquer forma), mas quebra o desenho do
+      BOCPD, que é online por construção e precisa de UMA série causal
+      contínua pro prior NIG amadurecer (`run_bocpd` deriva `mu0`/`beta0`
+      das 100 primeiras barras do que quer que receba). Reproduzido
+      diretamente: mesmo `hazard_lambda=65.0`, mesmo dado real (BTCUSDT),
+      persistência mediana vai de 2 barras (modo janela, como o harness
+      real roda) pra 450-462 barras (modo série contínua desde 2019,
+      como o candidato foi de fato calibrado e como a docstring do
+      próprio módulo descreve o uso pretendido) nas mesmas janelas
+      ETF_HALVING/RECENTE.
+    severity: "alto"
+    layer: "analysis -- orquestração de execução real que consome trial, contamina o único candidato com achado aparentemente positivo no M4"
+    consequence: >
+      Compõe com AG-085 pra explicar os dois números "positivos" do
+      BOCPD no relatório real (`experiments/m4_critical_windows_report.
+      json`): separação ω²=0,014-0,031 e ortogonalidade 0,15-0,60 --
+      nenhum dos dois deveria ser lido como sinal de que BOCPD captura
+      regime melhor que HMM/Jump Model/baseline até esta correção rodar.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-18 (autorização do Manager: "corrigir e rodar",
+      depois do critério de Gate já ter sido revisado pra Cochran's
+      Q/I²). `src/analysis/m4_critical_windows.py` ganhou
+      `_compute_bocpd_full_history`/`_bocpd_metrics_for_window`/
+      `_replace_bocpd_candidate` -- BOCPD agora roda 1x por (símbolo,
+      resolução) sobre `m4.SYMBOL_START_DATE[symbol]` -> `m4.END_DATE`
+      (histórico causal completo), nunca fatiado por janela crítica;
+      `run_critical_windows_comparison` SUBSTITUI o `CandidateResult`/
+      `RawLabels` do BOCPD de cada célula OK pelo fatiado desse fit único
+      (por timestamp, `[window.start, window.end)`), exatamente o
+      caminho sugerido pela auditoria. HMM/Jump Model/baseline
+      continuam vindo do cálculo por janela, intocados. Mecanicamente
+      auditado (ruff/mypy/banned_patterns/constants/unguarded-ratios
+      limpos), testes novos escritos (`_compute_bocpd_full_history`
+      testado via monkeypatch, prova que `start`/`end` usados são
+      `SYMBOL_START_DATE`/`END_DATE`, nunca datas de janela). Ainda NÃO
+      commitado nem re-executado de verdade -- pendente rodar a Fase D
+      de novo pra confirmar o efeito real na persistência/separação.
+    status: "corrigido, aguardando commit + re-execução real pra confirmar o efeito"
+
+  - id: AG-085
+    date: "2026-08-18"
+    file: "src/regime/bocpd.py"
+    related_file: "src/analysis/m4_regime_comparison.py, src/regime/hmm_gaussian.py (canonicalização sem leak, contraste), src/regime/jump_model.py (idem)"
+    found_by: "Agent Auditoria cética da orquestração e wiring do M4, 2026-08-18 -- refutou 4 hipóteses alternativas antes de isolar esta"
+    gap: >
+      `segments_to_canonical_states` (`bocpd.py:253-292`) define o bucket
+      de cada segmento por quantil da MÉDIA de `log_return_1` sobre TODO
+      o segmento (passado + futuro dentro do segmento) -- e esse rótulo é
+      depois testado contra `forward_return[t] = log_return_1[t+1]` como
+      métrica de "separação" do M4. Leakage mecânico: pra maioria das
+      barras (segmento médio de 12,4 barras, só 5,3% singleton), `t+1`
+      ainda está dentro do MESMO segmento que gerou o rótulo de `t`. Em
+      HMM (`canonicalize_states`) e Jump Model, a mesma chamada só
+      REORDENA rótulos de uma partição já decidida pelo filtro causal/
+      `fit.model.predict` -- permutação de rótulo é invariante ao F/ω² da
+      ANOVA. Em BOCPD, a chamada usa a resposta pra DEFINIR a própria
+      partição -- daí o leak.
+    severity: "alto"
+    layer: "regime -- métrica de avaliação (não é vazamento no candidato em produção, é vazamento na canonicalização usada só para avaliação/comparação do M4)"
+    consequence: >
+      Prova direta por decaimento de defasagem (BTCUSDT, LUNA, R1):
+      ω²=0,495 no lag 0 (concorrente, tautológico) -> 0,0035 no lag 1
+      (== `forward_return`, valor que bate quase exato com o real do
+      relatório: 0,003543601168177202) -> ~0 a partir do lag 3 (F<=1).
+      Essa assinatura (alto no lag 0, ruído a partir do lag 3) é marca de
+      artefato de construção, não de horizonte econômico real. Combinada
+      com AG-084 (segmentos ainda mais curtos por causa do reset de
+      prior), explica a quase totalidade do "achado positivo" do BOCPD.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-18 (mesma autorização de AG-084). `segments_to_
+      canonical_states` (`src/regime/bocpd.py`) reescrita pra ser causal
+      por construção: nova `_causal_within_segment_mean` calcula a média
+      DENTRO do segmento de forma EXPANSIVA (só `response[seg_start:t+1]`,
+      nunca barra `>t`, vetorizado via cumsum), e o bucketing usa
+      `expanding_percentile_rank_strict` (`src/features/support.py` --
+      MESMO primitivo já usado/testado pra `C07_vol_pctile_expanding`,
+      reuso direto, não reimplementação) em vez de quantil do
+      segmento inteiro. Guard antigo (`n_buckets > n_segmentos` ->
+      `ValueError`) removido -- artefato do desenho anterior (1 bucket
+      fixo por segmento), sem base matemática no desenho novo (cada
+      barra bucketada por posto contínuo). Testes novos: prova de
+      causalidade dedicada (`test_segments_to_canonical_states_e_causal_
+      perturbar_futuro_nao_muda_passado`, mesmo padrão de `run_bocpd`) +
+      2 testes de guard atualizados. Mecanicamente auditado, limpo.
+      Composto com AG-084 (série contínua) -- os dois juntos deveriam
+      eliminar tanto o reset de prior quanto o leakage que produziam o
+      "achado positivo" do BOCPD. Ainda NÃO commitado nem re-executado
+      de verdade.
+    status: "corrigido, aguardando commit + re-execução real pra confirmar o efeito"
+
+  - id: AG-086
+    date: "2026-08-18"
+    file: "src/regime/hmm_gaussian.py"
+    related_file: "tests/unit/test_regime_hmm_gaussian.py (cego a este failure mode -- gera as 2 dimensões sintéticas com a mesma escala)"
+    found_by: "Agent Auditoria cética + RAG do HMM gaussiano, 2026-08-18 -- medição em dado real + experimento causal decisivo (init real vs. init padronizado, ambos até convergência total do EM)"
+    gap: >
+      `fit_hmm_gaussian` corrigiu (sessão anterior) a inicialização de
+      COVARIÂNCIA de `hmm.initialize(method="kmeans")` (identidade,
+      descalibrada). Mas as MÉDIAS continuam vindo do k-means nativo do
+      dynamax (`sklearn.cluster.KMeans` por baixo), rodado sobre
+      `[log_return_1, realized_vol_short]` SEM padronizar escala --
+      apesar da docstring do módulo (linha 52) afirmar que os centróides
+      são "robustos à escala". Essa afirmação é FALSA (falsificada
+      empiricamente: sem padronização, o eixo de maior variância
+      absoluta domina o k-means bruto na maioria dos casos testados) --
+      é um defeito de documentação/hygiene real, não cosmético.
+    severity: "baixo"
+    layer: "regime -- inicialização de modelo, docstring incorreta; NÃO contamina o resultado comparativo do M4 (ver consequence)"
+    consequence: >
+      Experimento causal decisivo (LUNA, k=2 e k=3, BTCUSDT R1): rodei
+      EM completo (100 iterações) 2x a partir de pontos de partida
+      substancialmente diferentes (init real não-padronizado vs. init
+      z-score padronizado, mesma cov init/sticky_concentration/dado) --
+      **convergência bit-idêntica** nos dois casos (`final_log_prob`
+      idêntico, médias idênticas a menos de troca de rótulo de estado,
+      ortogonalidade idêntica: 0,7139/0,8450 pra k=2/k=3). Isso REFUTA a
+      hipótese de que a inicialização não-padronizada explica o
+      ω²≈0 de separação -- confirma que volatilidade genuinamente carrega
+      muito mais estrutura separável que retorno em termos de
+      verossimilhança gaussiana neste espaço de feature; é uma bacia de
+      atração ampla e dominante que o EM encontra a partir de qualquer
+      ponto de partida razoável, não artefato de otimização local. Some
+      a isto a checagem bar-a-bar em dado real (LUNA/RECENTE, k=2/3/4):
+      correlação com volatilidade forte e significativa (|ρ|=0,14-0,89,
+      p~0) e com retorno futuro indistinguível de zero (|ρ|<=0,012,
+      p>0,2) em todas as 6 combinações -- **confiança ALTA de que o
+      ω²≈0 do HMM é achado genuíno do código, não artefato de bug**.
+    resolved_by_commit: null
+    resolution: >
+      Bug de documentação real (docstring "robusto à escala" é falsa) --
+      correção recomendada por hygiene (padronizar antes do k-means
+      nativo do dynamax, corrigir a docstring, adicionar teste com
+      dimensões de escala diferente -- caso sintético atual é cego a
+      isso), mas SEM urgência de re-executar M4 por causa disto: a
+      causalidade foi testada e refutada, o resultado comparativo atual
+      do HMM não muda com essa correção. Ponto ainda em aberto,
+      independente deste bug: assimetria de espaço de feature entre
+      candidatos (BOCPD só vê `[log_return_1]`; HMM/Jump Model veem
+      `[log_return_1, realized_vol_short]`) -- é decisão de desenho, não
+      defeito de implementação, mas influencia a leitura de
+      ortogonalidade comparada entre eles.
+    status: "aberto -- correção de hygiene recomendada (baixa prioridade); NÃO bloqueia decisão de Gate, causalidade já testada e refutada"
+
+  - id: AG-087
+    date: "2026-08-18"
+    file: "src/regime/jump_model.py"
+    related_file: "config/constants.yaml (m4_jump_model_penalty), src/analysis/m4_critical_windows.py (agregação mediana-de-medianas não distingue célula saturada de genuína)"
+    found_by: "Agent Auditoria cética + RAG do Jump Model, 2026-08-18 -- reprodução direta sobre BTCUSDT LUNA/RECENTE, fold-a-fold batendo com o relatório real"
+    gap: >
+      `m4_jump_model_penalty=0,002` foi calibrado numa única fatia de
+      BTCUSDT (`config/constants.yaml`) e aplicado, sem re-sweep, aos 5
+      símbolos × 5 janelas críticas × 3 resoluções do M4. Medido: em
+      4-5 das 17 células por resolução (~25-29%), o Jump Model colapsa a
+      1 estado único (`switch_rate=0,0` -- toda a janela OOS vira um só
+      regime) -- algo que baseline e as 3 variantes de HMM NUNCA fazem
+      sob o mesmo dado/split, em nenhuma resolução. Nas células
+      não-degeneradas, a duração mediana varia ~3 ordens de grandeza (19
+      a 8.684 barras) com o MESMO hiperparâmetro fixo. Mesmo no próprio
+      ponto de calibração ("seguro"), reproduzir a varredura sobre as
+      últimas 50k barras de BTCUSDT já dá `median_duration=2533,5`
+      barras -- persistência extrema mesmo no caso favorável.
+    severity: "alto"
+    layer: "regime -- hiperparâmetro sensível a escala aplicado global, sem sweep_required, ao dado real de 5 símbolos/5 janelas"
+    consequence: >
+      A métrica de persistência do Jump Model no relatório real
+      (`experiments/m4_critical_windows_report.json`: 1267/415/76,5
+      barras em R1/R2/R3) mistura células genuínas com células
+      saturadas via mediana-de-medianas, sem distinguir as duas --
+      instabilidade documentada na própria literatura-fonte do método
+      (Aydınhan, Kolm, Mulvey &amp; Shu 2024, *Annals of Operations
+      Research*: colapso pra 1 cluster conforme λ sobe é propriedade
+      mecânica esperada), que recomenda calibração/CV por ativo e
+      período, não valor global fixo.
+    resolved_by_commit: null
+    resolution: >
+      PARCIALMENTE corrigido 2026-08-18 -- escolhida a "alternativa mais
+      barata" que a própria auditoria sugeriu (reportar a taxa de
+      colapso), NÃO o resweep de `jump_penalty` por símbolo/janela (esse
+      seria um novo ciclo de calibração/trial, fora do escopo de
+      "corrigir e rodar" desta autorização). `SymbolCandidateDetail`
+      ganhou `is_saturated: bool` (`persistence_switch_rate == 0.0`),
+      `WindowCandidateSummary` ganhou `n_symbols_saturated`,
+      `AggregatedCandidateResult` ganhou `n_cells_saturated_total`/
+      `saturation_rate` -- aplicável a QUALQUER candidato, não hardcoded
+      pro Jump Model. A fórmula de mediana (`persistence_median_
+      duration_bars_median`) continua EXATAMENTE igual -- isto é
+      transparência adicional, não uma correção da agregação. Testes
+      novos escritos, mecanicamente limpo. `m4_jump_model_penalty`
+      continua `sweep_required: false` em `constants.yaml` -- a
+      instabilidade em si (colapso ~25-29% das células) segue sem
+      resweep real, só visível agora no relatório em vez de escondida.
+    status: "parcialmente corrigido (transparência) -- instabilidade de jump_penalty em si segue sem resweep, decisão consciente de escopo"
+
+  - id: AG-088
+    date: "2026-08-18"
+    file: "src/models/alpha.py, src/regime/classifier.py, src/models/environments.py"
+    related_file: "src/analysis/m4_regime_comparison.py, src/analysis/m4_critical_windows.py (M4, NÃO afetado -- ver consequence)"
+    found_by: "Agent Redesenho do critério de Gate G-C1-2 do M4, 2026-08-18 -- leitura direta dos 3 arquivos citados"
+    gap: >
+      `src/models/alpha.py` (`REGIME_ONEHOT_LEVELS: tuple[str, ...] =
+      ("R2", "R3", "R4", "R5")`), `src/regime/classifier.py`
+      (`TRADEABLE_REGIMES = frozenset({"R1","R2","R3","R4"})`) e
+      `src/models/environments.py` (`RANGE_REGIMES = {"R1","R2"}`,
+      `TREND_REGIMES = {"R3","R4"}`) têm o vocabulário de rótulo do
+      baseline (`QuantileRegimeClassifier`, strings "R1".."R5")
+      hard-coded como literal Python -- nenhuma dessas 3 peças aceita o
+      `canonical_id` inteiro (0..k-1) que HMM/Jump Model/BOCPD produzem.
+      Promover qualquer um dos 3 candidatos novos do M4 pra produção
+      exigiria reescrever as 3 peças (design matrix do Alpha, veto do
+      Risk Engine, ambientes de DRO) -- trabalho de engenharia não
+      especificado hoje.
+    severity: "médio"
+    layer: "models/regime -- integração produção, não a comparação de candidatos em si"
+    consequence: >
+      CONFIRMADO (2026-08-18, decisão do Manager pediu confirmação
+      explícita antes de registrar): NÃO impacta o estudo M4 atual
+      (`src/analysis/m4_regime_comparison.py`/`m4_critical_windows.py`)
+      -- verificado por leitura direta dos imports dos 2 módulos, nenhum
+      importa `src.models.alpha`/`src.models.environments`/`src.models.
+      dataset`, e busca textual por "alpha"/"environments"/"dro"/"group_
+      dro" nos 2 arquivos não encontrou nenhuma referência. M4 é
+      autocontido -- calcula candidatos e métricas, não consome nem
+      alimenta as 3 peças citadas. O gap é real mas só bloqueia uma
+      FUTURA promoção de candidato à produção, não a comparação em si.
+    resolved_by_commit: null
+    resolution: >
+      Trabalho para depois (decisão do Manager, 2026-08-18) -- não
+      escopo desta rodada. Quando (e se) um candidato novo for promovido,
+      as 3 peças precisam de reescrita pra aceitar `canonical_id`
+      genérico em vez do vocabulário R1-R5 fixo -- escopo/design ainda
+      não especificado.
+    status: "aberto -- trabalho para depois, sem impacto confirmado no M4 atual"
+    addendum_2026-08-19: >
+      ESCALADO (Agent Project Assurance, auditoria cética comissionada pelo
+      Manager, independente do achado original). Confirma o hard-code nos
+      3 arquivos citados, mas traça uma consequência mais severa que não
+      estava registrada aqui: `src/models/environments.py:31-32`
+      (`RANGE_REGIMES = {"R1","R2"}`, `TREND_REGIMES = {"R3","R4"}`) —
+      sob uma cardinalidade de regime diferente (ex. candidato do M4 com
+      K=3 estados, rótulos "S1".."S3"), `_structural_group`
+      (`environments.py:49-56`) devolve `null` para TODA linha do
+      dataset. Isso alimenta `src/models/monotonic.py::compute_ic_by_env`
+      (`monotonic.py:128-146`): toda célula de ambiente fica com 0 linhas
+      válidas → todo IC vira `NaN` → `_assign_from_ic`
+      (`monotonic.py:149-164`) devolve `constraint=0` (sem restrição) para
+      **toda feature, todo fold, todo lado** — a Camada 1 inteira
+      (restrições monotônicas, `PRD_V3_2_UNIFICADO.md` §5.3, um controle
+      de risco de modelo) degrada silenciosamente para Camada 0 (sem
+      restrição nenhuma), sem exceção, sem warning, e nenhum teste em
+      `test_models_environments`/`test_models_monotonic` cobre um regime
+      fora de R0-R5 hoje. Recomendação: reclassificar de "médio" para
+      "crítico" — não porque o gap em si mudou, mas porque a consequência
+      completa (silenciosa, sistêmica, sobre um controle de risco de
+      modelo inteiro) só ficou visível ao traçar a cadeia
+      `environments.py → monotonic.py → screen_monotone_constraints` até o
+      fim, o que o achado original não tinha feito. Severidade original
+      preservada sem edição (`severity: "médio"`, linha acima) por
+      disciplina de log append-only — a reclassificação é uma decisão do
+      Manager, registrada aqui como recomendação, não aplicada
+      unilateralmente.
+
+  - id: AG-089
+    date: "2026-08-18"
+    file: "src/models/ (Group DRO, Camada 5, PRD_V4_1.md §3.2/PRD_V3_2_UNIFICADO.md §5.7)"
+    related_file: "src/analysis/m4_regime_comparison.py, src/analysis/m4_critical_windows.py (M4, NÃO afetado -- ver consequence)"
+    found_by: "Agent Redesenho do critério de Gate G-C1-2 do M4, 2026-08-18 -- busca textual em src/models/ por dro/DRO/w_env/softmax/V-REx"
+    gap: >
+      Group DRO (Camada 5 do pipeline, `PRD_V3_2_UNIFICADO.md` §5.7 --
+      "minimizar a perda do PIOR ambiente" entre 6 ambientes = regime ×
+      tercil de custo/ATR) é citado no PRD como a justificativa central
+      de por que M4 "gasta orçamento" (regime existe pra condicionar o
+      Alpha via DRO). Busca real em `src/models/` por
+      `dro`/`DRO`/`w_env`/`softmax`/`V-REx` não encontrou nenhuma
+      implementação -- só a Camada 2 (`stability.py`/`environments.py`,
+      triagem de estabilidade in-fold) existe hoje. O mecanismo que
+      motiva o M4 ainda não foi escrito.
+    severity: "baixo"
+    layer: "models -- mecanismo de consumo futuro, não a comparação de candidatos em si"
+    consequence: >
+      CONFIRMADO (2026-08-18, mesma verificação de AG-088): NÃO impacta
+      o estudo M4 atual -- M4 mede utilidade INTRÍNSECA de candidato de
+      regime (separação/ortogonalidade/persistência/estabilidade, e a
+      partir de agora Cochran's Q/I², ver decisão do Manager) sem
+      depender de DRO existir. A ausência de DRO no código não invalida
+      medir se um candidato de regime TEM heterogeneidade útil -- só
+      significa que o "consumidor final" desse achado ainda não existe.
+      Decisão explícita do Manager (2026-08-18): correto continuar o M4
+      mesmo assim -- "errado seria criar consumidor pra consumir o que
+      nem foi definido ainda".
+    resolved_by_commit: null
+    resolution: >
+      Trabalho para depois (decisão do Manager, 2026-08-18) -- não
+      escopo desta rodada. Group DRO (Camada 5) segue não implementado;
+      quando essa camada for escrita, ela é quem efetivamente valida
+      (via worst-group loss real) se a heterogeneidade medida por M4 se
+      traduz em robustez de modelo -- M4 mede uma condição necessária
+      (heterogeneidade existe), não a validação final (DRO usa essa
+      heterogeneidade com sucesso).
+    status: "aberto -- trabalho para depois, sem impacto confirmado no M4 atual"
+
+  - id: AG-090
+    date: "2026-08-19"
+    file: "src/analysis/m4_regime_comparison.py, src/analysis/m4_critical_windows.py"
+    related_file: "src/labels/triple_barrier.py (t0 = close_time, premissa central da correção)"
+    found_by: "Agent auditoria cética sobre a liderança suspeita do BOCPD em Cochran's Q/I², 2026-08-18 -- investigação de por que o BOCPD lidera as 3 resoluções sob a métrica nova"
+    gap: >
+      `RawLabels`/`_BocpdFullHistory` (M4) só expunham `open_time_ms`
+      (timestamp de ABERTURA da barra) como chave de todo `join_asof`
+      causal do módulo -- `_asof_join_btc_labels` (Q3, pré-existente) e
+      `_asof_join_regime_onto_labels` (heterogeneidade/Cochran's Q,
+      criado nesta sessão). Confirmado que o rótulo de regime de uma
+      barra só é CONHECÍVEL quando ela FECHA (`log_return_1`/features
+      usadas pro fit dependem do preço de fechamento) -- chavear o join
+      em `open_time_ms` deixa uma barra "disponível" antes dela ter
+      fechado de verdade, vazamento temporal (mesma classe de B01/B02).
+      Confirmado por leitura direta que `t0` de `labels.parquet`
+      (`src/labels/triple_barrier.py:913`, `t0_arr = bars["close_time"]`)
+      JÁ usa `close_time` -- o padrão correto já existia em outro canto
+      do projeto, só não tinha sido replicado aqui. Dollar bars têm
+      duração genuinamente variável (mediana ~7,5-10min, p99 74-98min,
+      máximo ~12,5h -- `experiments/dollar_bar_duration_distribution.json`,
+      medido 2026-08-17), então o gap open/close não é desprezível,
+      principalmente em R2/R3.
+    severity: "alto"
+    layer: "regime/analysis -- vazamento temporal em join causal usado por Q3 e pelo critério revisado de G-C1-2 (Cochran's Q/I²)"
+    consequence: >
+      Todo resultado de Q3 (ARI BTC-como-fator-comum) e de heterogeneidade
+      por bucket (Cochran's Q/I², usado no critério revisado de G-C1-2)
+      calculado ANTES desta correção (`experiments/m4_critical_windows_
+      report.json`, execução de 2026-08-18) está sob suspeita de viés --
+      não invalidado automaticamente (a direção/magnitude do viés não foi
+      medida antes/depois), mas não deve ser tratado como número final
+      até a re-execução pós-fix.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido 2026-08-19 -- `close_time_ms: IntArray` adicionado como
+      campo OBRIGATÓRIO (sem default) em `RawLabels` e em
+      `_BocpdFullHistory`, roteado por todos os pontos de construção
+      (`_run_fold_refit_candidate`/`_bocpd_candidate_result`/
+      `_baseline_candidate_result`/`compare_regime_candidates_for_symbol`
+      em `m4_regime_comparison.py`; `_compute_bocpd_full_history`/
+      `_bocpd_metrics_for_window` em `m4_critical_windows.py`).
+      `_asof_join_btc_labels` e `_asof_join_regime_onto_labels` agora
+      chaveiam em `close_time_ms` (não `open_time_ms`) -- `open_time_ms`
+      preservado como campo de identidade da barra, não removido. Testes
+      de regressão dedicados (`test_asof_join_btc_labels_open_close_
+      divergentes_prova_ag090`, `test_asof_join_regime_onto_labels_usa_
+      close_time_nao_open_time_ag090`) provam a diferença de resultado
+      entre as duas chaves com um caso construído a propósito. 3 scripts
+      mecânicos (ruff/mypy/banned_patterns) limpos nos arquivos tocados.
+
+      **Auditoria independente concluída 2026-08-19** -- 2 agentes
+      frescos (`audit_engineering`), 1 por arquivo tocado
+      (`m4_regime_comparison.py`/`m4_critical_windows.py`), veredito
+      "APROVADO_COM_RESSALVAS" nos dois, 0 CRITICAL/0 HIGH. Confirmaram
+      de forma independente (Grep próprio, não aceitaram meu resumo):
+      `t0` de `labels.parquet` é de fato `close_time`
+      (`src/labels/triple_barrier.py:913`, corroborado por
+      `src/data/lake.py`/`src/data/build_dollar_bars.py` também
+      particionarem por `close_time`); alinhamento posição-a-posição de
+      `close_time_ms` correto nos 3 candidatos; nenhum consumidor
+      remanescente lendo `open_time_ms` como marca de causalidade;
+      traçaram manualmente os 2 testes de regressão contra a
+      implementação hipotética antiga (`open_time_ms`) e confirmaram que
+      ambos FALHARIAM sob o bug antigo -- regressão real, não teste de
+      fachada. 2 achados MEDIUM (mesma classe nos dois arquivos: faltava
+      teste de regressão pro caso "fold parcialmente falho +
+      `return_raw_labels=True`"/"barra com open dentro da janela mas
+      close fora, e vice-versa" -- caminho onde um desalinhamento
+      posicional passaria despercebido) -- CORRIGIDOS no mesmo dia
+      (`test_run_fold_refit_candidate_fold_falho_com_raw_labels_mantem_
+      open_close_alinhados`, `test_bocpd_metrics_for_window_mascara_usa_
+      close_time_nao_open_time_ag090`), mecanicamente limpos. 3 achados
+      LOW (documentação/mensagem de erro, não corrigidos -- backlog,
+      sem urgência). Pesquisa web de um dos agentes confirmou que
+      `join_asof(strategy="backward")` usa `<=` inclusivo em timestamps
+      empatados (comportamento pré-existente, não uma regressão desta
+      correção).
+
+      Re-execução do M4 (4ª rodada) ainda NÃO disparada -- aguarda
+      também a implementação do fix de invalidade estatística do
+      Cochran's Q/I² (AG-092) antes de comprometer o custo computacional
+      de um novo run completo.
+    status: "corrigido e auditado de forma independente (0 CRITICAL/HIGH, 2 MEDIUM corrigidos, 3 LOW em backlog) -- pendente re-execução do M4 (aguarda AG-092)"
+
+  - id: AG-091
+    date: "2026-08-19"
+    file: "src/analysis/m6_common_factor_hypothesis.py"
+    related_file: "src/analysis/m4_critical_windows.py (heterogeneidade por bucket reusa cochrans_q_heterogeneity, k=1 acontece de verdade quando um candidato satura a 1 bucket só, ex. Jump Model saturado -- AG-087)"
+    found_by: "Agent auditoria cética sobre a liderança suspeita do BOCPD em Cochran's Q/I², 2026-08-18"
+    gap: >
+      `cochrans_q_heterogeneity` com `k=1` estrato (`df=k-1=0`) usava a
+      mesma fórmula do caso geral (`i_squared = max(0,(q-df)/q)*100`).
+      Matematicamente `Q`/`I²` são INDEFINIDOS com 1 grupo só (sem
+      "variância entre grupos" possível) -- a intenção implícita do
+      código era produzir `0.0` "por convenção", mas em ponto flutuante
+      `pooled = Σ(w·v)/Σw` com 1 termo não recupera `v` bit-exato (2
+      arredondamentos, erro esperado `~4u²≈4,93e-32`), e com `df=0` a
+      fórmula antiga `(q-df)/q` amplifica esse ruído de ULP pro EXTREMO
+      OPOSTO: `i_squared_pct=100,0`. Caso real medido em produção
+      (`experiments/m4_critical_windows_report.json`,
+      BTCUSDT/CRYPTO_WINTER/short): `q_statistic=3,857e-32`, não `0.0`.
+    severity: "médio"
+    layer: "analysis -- núcleo estatístico puro, consumido por M6 (nunca teve k=1 na prática) e M4 (k=1 real via saturação de candidato)"
+    consequence: >
+      Confirmado que a execução real do M6 nunca teve `k=1`
+      (`experiments/m6_common_factor_hypothesis_report.json`, `k=5`
+      sempre nos 2 lados) -- a correção NÃO muda nenhum resultado do M6
+      já auditado/validado. M4 (heterogeneidade por bucket) É afetado --
+      qualquer célula onde um candidato satura a 1 bucket só (Jump Model
+      degenerado, AG-087) produziria `i_squared_pct=100,0` fantasma sob a
+      fórmula antiga, inflando artificialmente a aparência de
+      heterogeneidade "máxima" numa célula sem informação estatística
+      nenhuma pra sustentar isso.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido 2026-08-19 -- early-return quando `df==0`, devolvendo
+      `q_statistic`/`p_value`/`i_squared_pct` = `NaN` explícito (nunca
+      `0.0`/`100.0`), preservando `pooled_edge_bruto_atr` (continua
+      computável -- é literalmente o valor do único estrato). 2 testes
+      novos (`test_cochrans_q_k1_devolve_nan_nunca_zero_ou_cem_por_
+      acaso_de_ponto_flutuante`, `test_cochrans_q_k2_valores_quase_
+      identicos_ainda_clipa_pra_zero_no_df_maior_que_zero`).
+
+      **Auditoria independente concluída 2026-08-19 -- achado HIGH real,
+      corrigido no mesmo dia.** A citação original ("precedente unânime,
+      5 fontes: `metafor::rma.uni`/pacote `meta` no R devolvem `QE=NA`/
+      `I²=NA` pra k=1; Higgins & Thompson 2002; Cochrane Handbook §9.5.2")
+      era FALSA -- o agente auditor leu o código-fonte REAL dos 2
+      pacotes R (não resumos de terceiros): `metafor::rma.uni`
+      (`R/rma.uni.r`) hard-codifica `QE=0, I2=0, QEp=1` pra `k<=p`;
+      `meta::hetcalc` (`R/hetcalc.R`) hard-codifica `Q=0` pra `k=1` com
+      dado presente -- as DUAS bibliotecas tratam `k=1` como "0% por
+      convenção" e INCLUEM na agregação, o OPOSTO da decisão `NaN`/
+      EXCLUIR tomada aqui. Nenhum texto do Cochrane Handbook (arquivado
+      ou atual) declarando `I²`/`Q` indefinidos pra `k=1` foi encontrado
+      (o link §9.5.2 citado está morto). A decisão de código (`NaN`)
+      continua válida, mas por OUTRA razão -- não precedente de
+      biblioteca, e sim decisão específica ao uso real deste repo
+      (M4: `k=1` normalmente = classificador de regime degenerado que
+      saturou a 1 bucket, AG-087 -- excluir da mediana evita recompensar
+      esse colapso com um score artificialmente "limpo"; diferente do
+      caso de meta-análise clássica onde `k=1` só significa "1 estudo
+      disponível", sem essa conotação de degenerescência). Docstring de
+      `cochrans_q_heterogeneity` e do teste `test_cochrans_q_k1_*`
+      reescritos 2026-08-19 removendo a citação falsa e substituindo pela
+      justificativa de primeiros princípios correta.
+
+      2 achados MEDIUM adicionais, ambos corrigidos no mesmo dia: (a)
+      impacto real em M4 subestimado no docstring -- confirmado 26
+      células com `n_buckets=1` em `experiments/m4_critical_windows_
+      report.json` (23 saíam `0.0` "por sorte" de ponto flutuante e
+      eram incluídas na mediana antes desta correção, 3 saíam `100.0`
+      corrompidas -- as 26 passam a `NaN`/excluídas agora, mudança
+      sistemática, não só das 3 quebradas), quantificado no docstring;
+      (b) faltava teste do cenário real (`n_buckets=1`) no consumidor
+      (`m4_critical_windows.py`) -- só `n_buckets=0`/`2` estavam
+      cobertos -- corrigido com
+      `test_heterogeneity_for_symbol_window_n_buckets_1_da_nan_nunca_
+      zero_ou_cem`, que também confirma que `_window_heterogeneity_
+      summary` conta a célula como "ok" (`n_symbols_ok`) mas exclui sua
+      contribuição `NaN` da mediana corretamente (via `_median_or_nan`).
+      2 achados LOW não corrigidos (backlog, sem urgência): `MAGIC_
+      NUMBER` pré-existente (`100.0`, linha ~241, não introduzido por
+      este diff) e mensagem de erro de `k=0` (strata vazia) que cita
+      "sides diferentes" em vez do caso real. Scripts mecânicos limpos
+      em todos os arquivos tocados.
+    status: "corrigido e auditado de forma independente (1 HIGH real corrigido -- citação falsa removida, decisão de NaN mantida por outra razão; 2 MEDIUM corrigidos; 2 LOW em backlog)"
+
+  - id: AG-092
+    date: "2026-08-19"
+    file: "src/analysis/m4_critical_windows.py, src/analysis/m6_common_factor_hypothesis.py"
+    related_file: "src/validation/regime_utility.py (regime_persistence, lógica de run-length/fronteira de episódio a ser reusada na solução)"
+    found_by: "Agent estudo profundo de engenharia sobre a liderança suspeita do BOCPD em Cochran's Q/I², 2026-08-18"
+    gap: >
+      Cochran's Q/I² (DerSimonian & Laird 1986) assume estratos
+      independentes -- premissa violada pela reutilização do M4: dentro
+      de uma janela crítica, trades do MESMO bucket de regime formam
+      episódios temporalmente contíguos e autocorrelacionados (regime
+      persistente = condições de mercado correlacionadas), então o
+      erro-padrão calculado por `stratum_metrics` (fórmula multinomial
+      assumindo trades i.i.d.) subestima a variância real, inflando `Q`/
+      `I²` artificialmente. Confirmado empiricamente: no relatório real
+      pós-AG-084/085/087, `I²` satura 70-99% quase universalmente em
+      todos os candidatos/resoluções -- padrão consistente com o
+      mecanismo previsto na literatura, não com heterogeneidade real tão
+      extrema e uniforme.
+    severity: "alto"
+    layer: "analysis -- instrumento estatístico usado como critério primário revisado de G-C1-2 (Gate ainda não emitido)"
+    consequence: >
+      Enquanto não corrigido, NENHUM valor de Cochran's Q/I² do M4 pode
+      ser usado como evidência de heterogeneidade real -- o padrão
+      universal de saturação observado é consistente com o artefato
+      estatístico, não com um sinal genuíno. G-C1-2 não pode ser emitido
+      com este instrumento sem essa correção (ou sem uma alternativa
+      equivalente).
+    resolved_by_commit: null
+    resolution: >
+      Implementado 2026-08-19 -- teste de permutação em bloco por
+      episódio. `src/validation/regime_utility.py::segment_boundaries`
+      extraído de `regime_persistence` (mesma lógica de run-length,
+      agora reusável -- devolve `(segment_starts, segment_ends)`, não só
+      a métrica agregada). `src/analysis/m6_common_factor_hypothesis.py`
+      ganhou `permutation_heterogeneity_test`/`PermutationHeterogeneity
+      Result` (+ helpers privados `_dense_bucket_codes`/`_q_statistic_
+      from_bucket_codes`, núcleo vetorizado via `np.bincount` -- reusa a
+      MESMA fórmula de `Q` de `cochrans_q_heterogeneity`, equivalência
+      provada por teste dedicado, sem custo de `StratumMetrics`/Polars
+      repetido B vezes): extrai episódios do vetor de bucket ORDENADO
+      POR TEMPO, embaralha o VETOR de bucket-por-episódio (nunca quebra
+      um episódio no meio -- prova indireta via caso analítico de `k=2`/
+      `n_episodes=2`, onde toda permutação possível dá `Q_perm==Q_
+      observado` por simetria, testado), recomputa `Q` sob cada
+      permutação, p-valor empírico = `(1+Σ[Q_perm>=Q_obs])/(1+B)`.
+      `src/analysis/m4_critical_windows.py`: `HeterogeneitySymbolDetail`
+      ganhou `p_value_permutation`/`n_episodes`/`n_permutations_
+      requested`/`n_permutations_valid`; `HeterogeneityWindowSummary`/
+      `AggregatedHeterogeneityResult` ganharam `p_value_permutation_
+      median` (mesma agregação de 2 níveis já usada pra `i_squared_pct`).
+      `_heterogeneity_for_symbol_window`/`_aggregate_heterogeneity_for_
+      classifier`/`aggregate_critical_windows_results`/`run_critical_
+      windows_comparison`/`run_and_save_critical_windows_report`
+      threaded com `n_permutations`/`permutation_seed` (parte do bundle
+      "tudo-ou-nada" de 7 params, era 5). Constantes novas em
+      `constants.yaml`: `m4_heterogeneity_n_permutations` (1000, classe
+      C, provenance LITERATURE) e `m4_heterogeneity_permutation_seed`
+      (42, classe D, provenance ASSUMED). `p_value` original (assintótico
+      `chi²(k-1)`) PRESERVADO no dataclass, não removido -- continua
+      exposto pra referência/diagnóstico, mas não deve ser usado como
+      teste de significância (documentado explicitamente no docstring).
+
+      **Não implementado ainda** (deliberadamente fora do escopo desta
+      rodada, autorização cobriu só o p-valor empírico): critério de
+      decisão combinando p-valor < α com magnitude econômica -- fica pra
+      quando o Gate G-C1-2 for de fato avaliado, não faz sentido
+      hard-codar num campo de métrica; e o t-stat de Ibragimov-Müller
+      pra agregação entre janelas (secundário, mediana-de-medianas
+      continua em uso).
+
+      Scripts mecânicos limpos (ruff/mypy/banned_patterns/
+      check_constants_referenced/check_unguarded_ratios) em todos os
+      arquivos tocados. Testes novos: equivalência Q rápido vs. lento,
+      determinismo, casos degenerados (`k=1`, array vazio), caso
+      analítico exato (`p_value==1.0`), caso de separação real com poder
+      estatístico (`p_value<0.05`, 20 episódios) -- todos em
+      `test_analysis_m6_common_factor_hypothesis.py`; teste dedicado do
+      cenário real de integração em `test_analysis_m4_critical_windows.py`
+      (`n_buckets=1` propaga `NaN` no campo de permutação também) e em
+      `test_validation_regime_utility.py` (`segment_boundaries` bate com
+      `regime_persistence` no mesmo caso conhecido).
+
+      **Auditoria independente concluída 2026-08-19** -- 2 agentes
+      frescos em paralelo (1 focado na matemática do núcleo em
+      `m6_common_factor_hypothesis.py`, 1 focado na integração/ordenação
+      temporal em `m4_critical_windows.py`), veredito
+      "APROVADO_COM_RESSALVAS" nos dois, 0 CRITICAL. Núcleo matemático:
+      0 HIGH, 3 MEDIUM, 3 LOW -- as 6 alegações centrais (equivalência
+      Q rápido vs. lento, episódio nunca quebrado, caso `k=2` analítico
+      exato, poder estatístico do teste de 20 episódios, `k` preservado
+      em toda permutação, `segment_boundaries` comportamentalmente
+      neutro) foram VERIFICADAS matematicamente pelo agente (contas à
+      mão, não só leitura), nenhum contra-exemplo encontrado. Pesquisa
+      web confirmou que permutação em bloco por cluster é método
+      estabelecido na literatura (Winkler et al. 2015) e que a correção
+      `(1+ge)/(1+B)` é a correção padrão (Phipson & Smyth 2010), não
+      convenção inventada. Achados MEDIUM corrigidos no mesmo dia: (a)
+      fórmula de `SE` multinomial estava duplicada entre `_edge_bruto_se`
+      e o núcleo vetorizado -- extraído `_edge_variance_multinomial`
+      como fonte única, compartilhada pelos 2; (b) documentado que a
+      resolução do p-valor degrada com poucos episódios (piso real pode
+      ser mais grosseiro que `1/(B+1)` quando o espaço combinatório de
+      rearranjos é pequeno); (c) viés de exclusão de permutações
+      degeneradas (`SE=0` num bucket pseudo-atribuído) fica como
+      observação registrada, não bloqueante enquanto `p_value_permutation`
+      não for critério vinculante de gate. LOW corrigidos: guard de
+      shape explícito (`ValueError`, mesma disciplina de `adjusted_rand`)
+      + teste `k=3`/3 episódios generalizando o caso analítico além da
+      troca binária.
+
+      Integração: 0 HIGH inicial virou **1 HIGH real, corrigido no
+      mesmo dia** -- a garantia de que `.filter()`/`join_asof` preservam
+      ordem cronológica (pré-requisito crítico: a extração de episódio é
+      puramente posicional) não é um contrato público do Polars com a
+      mesma força pra `join_asof` quanto é pra `.filter()` -- pesquisa
+      confirmou que o próprio Polars teve uma regressão real dessa
+      exata propriedade (corrigida jan/2026, PR #25990, escopada a
+      pipelines lazy/streaming, não ao uso eager simples daqui, mas
+      prova que não era tratada como garantia formal até então) --
+      **corrigido**: assertion de runtime em `_heterogeneity_for_
+      symbol_window` (`np.all(np.diff(t0_ms) >= 0)`, falha ruidosa em
+      vez de episódio artificial silencioso) + teste de regressão
+      dedicado com buckets intercalados cronologicamente de forma
+      NÃO-contígua (`n_episodes` esperado=4, discrimina uma reordenação
+      silenciosa que o teste antigo -- bucket já contíguo por tempo por
+      construção da fixture -- nunca pegaria). As outras 7 perguntas
+      (alinhamento posicional dos 3 arrays, mesmo `tp_mult`/`sl_mult`,
+      threading completo dos 2 params novos por toda a cadeia, bundle
+      "tudo-ou-nada" sem call site quebrado, consistência dos campos
+      novos nos 3 caminhos de construção, serialização NaN->null via
+      orjson confirmada com evidência real em disco, dataclasses
+      `frozen`/`slots` intactos) confirmadas corretas, 0 achados. 2 LOW
+      não corrigidos (backlog): teste de round-trip de serialização
+      dedicado pra `p_value_permutation=NaN`; classificação `class: C`
+      de `m4_heterogeneity_n_permutations` sendo número redondo em vez
+      de quantil (mas consistente com convenção já estabelecida em
+      outras entradas `class: C` pré-existentes do arquivo).
+
+      Scripts mecânicos limpos em todos os arquivos após os fixes
+      pós-auditoria.
+    status: "implementado e auditado de forma independente (0 CRITICAL; 1 HIGH real corrigido -- ordenação temporal agora verificada em runtime + testada; 3 MEDIUM corrigidos; 5 LOW parcialmente corrigidos/backlog) -- p-valor empírico substitui o assintótico como critério primário; critério de decisão (alfa + magnitude econômica) e t-stat de Ibragimov-Müller ficam pra quando G-C1-2 for avaliado"
+
+  - id: AG-093
+    date: "2026-08-19"
+    file: "src/analysis/m4_critical_windows.py"
+    related_file: "src/analysis/m4_regime_comparison.py (janela OOS de walk-forward que os outros 5 candidatos usam, via generate_anchored_walk_forward_splits)"
+    found_by: "Agent auditoria cética sobre a liderança suspeita do BOCPD em Cochran's Q/I², 2026-08-18 -- reprodução direta sobre dado real (~43.776 obs de BOCPD vs. ~8.736 dos outros candidatos numa mesma célula)"
+    gap: >
+      A correção AG-084 (BOCPD sobre o histórico causal completo, não
+      mais resetado por janela) trocou o escopo de AVALIAÇÃO das
+      métricas finais (`_bocpd_metrics_for_window`) para
+      `[window.start, window.end)` -- a janela crítica INTEIRA (~15
+      meses) -- em vez de `[oos_start, oos_end)`, a fatia de teste do
+      walk-forward que os outros 5 candidatos usam (~1 trimestre). Viola
+      o princípio de desenho original do próprio módulo ("mesma janela
+      temporal que HMM/Jump Model/baseline, pra comparação justa").
+    severity: "alto"
+    layer: "analysis -- comparação de candidatos não é mais apples-to-apples entre BOCPD e os outros 5"
+    consequence: >
+      Amostra ~5x maior pro BOCPD em cada célula infla artificialmente
+      seu Cochran's Q/I² (I² aumenta com precisão amostral a
+      heterogeneidade real constante, mecanismo documentado na
+      literatura) -- identificado como o principal fator explicando por
+      que o BOCPD lidera as 3 resoluções sob a métrica nova (achado que
+      disparou esta investigação inteira). Não é o único fator (AG-091
+      /AG-092 também contribuem), mas é o de maior magnitude medida.
+    resolved_by_commit: null
+    resolution: >
+      Implementado 2026-08-19 -- autorização explícita do Manager
+      ("AG-093 + 4ª re execução = aprovado"), depois de AG-090/091/092
+      já implementados e auditados de forma independente.
+      `src/analysis/m4_regime_comparison.py::SymbolResult` ganhou 2
+      campos novos, `oos_start_ms: int`/`oos_end_ms: int` -- a fronteira
+      `[oos_start_ms, oos_end_ms)` (half-open, TIMESTAMP não índice) do
+      MESMO walk-forward ancorado que já produz baseline/HMM/Jump Model
+      dentro de `compare_regime_candidates_for_symbol`, computada assim:
+      `oos_start_ms = close_time_ms[oos_start]`, `oos_end_ms = close_
+      time_ms[oos_end-1] + 1` (o `-1`/`+1` evita indexar fora dos
+      limites quando o último fold cobre até o fim da série carregada --
+      caso normal do walk-forward ancorado, confirmado lendo `generate_
+      anchored_walk_forward_splits`). Zero IO/fit adicional -- reusa
+      exatamente o mesmo `close_time_ms`/`oos_start`/`oos_end` que os
+      outros 5 candidatos já usam, computados 1x.
+      `m4_critical_windows.py::_bocpd_metrics_for_window` mudou de
+      assinatura -- recebia `window: CriticalWindow` e derivava `start_
+      ms`/`end_ms` de `window.start`/`window.end`; agora recebe `oos_
+      start_ms`/`oos_end_ms` diretamente. Caller (`run_critical_windows_
+      comparison`, loop de `patched_outcomes`) passa `outcome.symbol_
+      result.oos_start_ms`/`.oos_end_ms` -- reusa o `SymbolResult` JÁ
+      CALCULADO da mesma célula, a linha `window = next(...)` que
+      existia só pra essa chamada foi removida (não é mais necessária).
+      Teste novo (`test_compare_regime_candidates_oos_bounds_contem_
+      todo_raw_labels_de_todo_candidato`) prova que `close_time_ms` de
+      TODO `RawLabels` de TODO candidato (baseline pós-R0, HMM x2, Jump
+      Model, BOCPD-fatiado-por-janela-original) cai dentro de
+      `[oos_start_ms, oos_end_ms)` -- garante que a fronteira exposta é
+      válida pra todos, não só coincidentemente compatível com um.
+      3 testes de `_bocpd_metrics_for_window` atualizados pra passar
+      `oos_start_ms`/`oos_end_ms` diretamente. Scripts mecânicos limpos.
+
+      **Auditoria independente concluída 2026-08-19 -- 0 CRITICAL/0
+      HIGH.** Agente confirmou a pergunta mais crítica (fórmula da
+      fronteira) por leitura direta de `generate_anchored_walk_forward_
+      splits`: `oos_end == len(close_time_ms)` é GARANTIDO SEMPRE (não
+      só "no caso comum") quando `splits` não é vazio -- o último fold
+      cobre sempre o último período civil presente, por construção do
+      loop -- confirmando que `close_time_ms[oos_end-1]+1` (nunca
+      `close_time_ms[oos_end]`, que seria índice fora dos limites) é a
+      escolha correta, não uma coincidência. Rastreou variável por
+      variável dentro de `compare_regime_candidates_for_symbol` e
+      confirmou que `oos_start_ms`/`oos_end_ms` vêm exatamente do MESMO
+      `close_time_ms`/`oos_start`/`oos_end` que os outros 5 candidatos
+      usam (zero recomputação paralela). Confirmou blast radius completo
+      de `SymbolResult` (6/6 sites atualizados), zero uso órfão da linha
+      `window = next(...)` removida, `_compute_bocpd_full_history`
+      intocada (zero double-fit), consistência com `close_time_ms`
+      (AG-090) em toda a correção.
+
+      1 achado MEDIUM, corrigido no mesmo dia: o teste novo só provava
+      CONTAINMENT (a fronteira é um superconjunto válido dos dados reais
+      de cada candidato) -- uma implementação hipotética ERRADA
+      (`oos_start_ms`/`oos_end_ms` = série carregada INTEIRA, não a
+      fatia OOS -- exatamente a classe de bug que AG-093 corrige)
+      passaria no teste sem alteração, porque todo `RawLabels` já é
+      subconjunto da série inteira por construção. Corrigido com 2
+      checagens adicionais: (a) igualdade EXATA contra um split
+      recomputado de forma independente (mesmos primitivos, chamados do
+      zero, não emprestados do resultado); (b) `oos_end_ms - oos_start_
+      ms` precisa ser significativamente menor que o span da série
+      carregada inteira (`&lt; 0.5x`) -- pegaria de imediato uma regressão
+      futura pra essa classe específica de bug.
+
+      Scripts mecânicos limpos após o fix. Zero achado LOW.
+    status: "implementado e auditado de forma independente (0 CRITICAL/HIGH; 1 MEDIUM corrigido -- teste agora prova igualdade exata contra split recomputado, não só containment) -- 4ª re-execução do M4 autorizada pelo Manager, pronta pra disparar"
+
+  - id: AG-094
+    date: "2026-08-19"
+    file: "PRD_V3_2_UNIFICADO.md §6.5 (linhas 1425-1438), §6.8 (linhas 1459-1469)"
+    related_file: "PRD_V4_1.md §4.5 (Meta reaberto, não toca em regime)"
+    found_by: "Agent independente (Project Assurance), auditoria cética Regime→Alpha/Meta-Label/Risk/Execução comissionada pelo Manager"
+    gap: >
+      O Meta-Label (Parte VI do PRD) não tem nenhum campo de entrada
+      derivado de Regime -- nem estado, nem probabilidade, nem confiança.
+      A lista de INPUT (§6.5, 6 features: `alpha_confidence`,
+      `J01_p_fill_est`, `J04_cost_est_bps`, `J05_adverse_selection_est_bps`,
+      `F03f_spread_vol_ratio`, `E05f_time_to_funding_h`) e os 5 critérios
+      de entrada (§6.8: obs_efetivas≥3000, fila calibrada, ganho CPCV>5pp,
+      DSR, Brier<0,22) nunca citam `regime`. `PRD_V4_1.md` reabre o Meta
+      (§4.5) mas não adiciona nem revisa nenhum campo de entrada -- não
+      toca em regime. Sob a arquitetura multi-resolução (M4 medindo
+      regime em R1/R2/R3 simultaneamente), haverá potencialmente 3
+      classificações de regime concorrentes por (símbolo, TF), e o
+      documento que define o Meta não diz se/como ele deveria consumir
+      qualquer uma delas.
+    severity: "alto"
+    layer: "models/meta -- contrato de features, camada ainda não implementada (V41-10, não iniciado)"
+    consequence: >
+      Não bloqueia nada hoje (V41-10 é o último item do roadmap de Camada
+      2/3, critério de entrada do §6.8 não depende de regime). Mas é
+      exatamente o tipo de lacuna que gera retrabalho de desenho quando o
+      Meta for implementado -- a decisão (incluir regime como feature do
+      Meta, e de qual resolução/candidato) precisa ser tomada antes da
+      implementação, não descoberta no meio dela.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão de desenho pendente do Manager, sem urgência (Meta não iniciado)"
+
+  - id: AG-095
+    date: "2026-08-19"
+    file: "PRD_V3_2_UNIFICADO.md §4.7 (linhas 1056-1064), §7.3 (linhas 1493-1503)"
+    related_file: "PRD_V4_1.md (busca completa, zero ocorrências de 'Decision Engine'); PLANO_MESTRE_PRINCE2.md §15.4 (linhas 1119-1168, modelo de 15 estágios)"
+    found_by: "Agent independente (Project Assurance), auditoria cética Regime→Alpha/Meta-Label/Risk/Execução comissionada pelo Manager"
+    gap: >
+      O Decision Engine (Parte VII do PRD_V3_2_UNIFICADO.md, "transformar
+      saídas de modelo em intenção de trade") consome `regime.tradeable`
+      diretamente no gate 01 de sua cadeia de portões (§7.3: "01.
+      regime.tradeable == False → NO_SIGNAL (R0 ou R5)") -- mas NÃO
+      aparece na tabela de CONSUMIDORES do próprio Regime Engine (§4.7,
+      que lista só Alpha/Risk Engine/Backtest/Dashboard/Validação).
+      `PRD_V4_1.md` (emenda multi-ativo, 794 linhas, lida integralmente)
+      nunca menciona "Decision Engine" -- zero ocorrências. O modelo de 15
+      estágios de `PLANO_MESTRE_PRINCE2.md` §15.4 (produto de descoberta de
+      6 agentes Explore sobre TODO o `src/`, 2026-08-16/17) vai de
+      `11_META_MODEL` direto para `12_RISK_ENGINE` -- não há estágio para
+      Decision Engine. Confirmado também que não existe `src/decision/`
+      nem qualquer arquivo com "decision" no nome em `src/` -- camada
+      inteira sem código, sem estágio no PBS, sem menção na emenda de
+      escopo.
+    severity: "crítico"
+    layer: "decision engine -- camada inteira ausente do inventário de engenharia multi-ativo"
+    consequence: >
+      Qualquer trabalho que assuma "os consumidores de regime são
+      Alpha/Risk/Meta/Execução" (a lista usada para comissionar esta
+      própria auditoria) está incompleto por construção -- o Decision
+      Engine é um 5º consumidor real, com lógica de gate já documentada e
+      citada como autoridade de "intenção de trade", que ficou fora do
+      exercício de descoberta que gerou o modelo de 15 estágios usado para
+      planejar o resto do refactor multi-ativo. Precisa entrar no PBS e no
+      blueprint de contrato Regime→...→Execução antes de qualquer auditoria
+      externa ser comissionada com a lista de 4 camadas.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- precisa virar estágio formal no PBS (§15.4) e entrar no blueprint de contrato antes da auditoria externa"
+
+  - id: AG-096
+    date: "2026-08-19"
+    file: "PRD_V3_2_UNIFICADO.md:1499 (Decision Engine, gate 04)"
+    related_file: "PRD_V4_1.md linhas 567-591 (Risk Engine, Controle 19, §5.3)"
+    found_by: "Agent independente (Project Assurance), auditoria cética Regime→Alpha/Meta-Label/Risk/Execução comissionada pelo Manager"
+    gap: >
+      Decision Engine gate 04 (`PRD_V3_2_UNIFICADO.md`, nunca emendado):
+      "posição atual != FLAT → NO_SIGNAL (uma posição por vez, V1)" --
+      redação literal, projeto INTEIRO, não por símbolo. Controle 19 do
+      Risk Engine (`PRD_V4_1.md`, novo, introduzido pela emenda multi-ativo):
+      calcula risco agregado assumindo MÚLTIPLAS posições simultâneas
+      abertas (`sigma_agg = sqrt(w.T @ Corr @ w)`, "cap efetivo é 2
+      posições simultâneas. Três já violam.", linha 591; e "cinco long
+      simultâneos são uma posição de 4,82x", linha 218). Se o gate 04
+      continua valendo ao pé da letra, o Controle 19 é matematicamente
+      morto -- a matriz de correlação entre posições nunca tem mais de 1
+      posição pra ponderar. Nenhum documento resolve a tensão -- não está
+      declarado se "uma posição por vez" é global (V3.2, texto original,
+      nunca emendado) ou por símbolo (implícito na existência do Controle
+      19, nunca escrito).
+    severity: "crítico"
+    layer: "decision engine / risk engine -- invariante contraditória entre PRD_V3_2_UNIFICADO.md e PRD_V4_1.md"
+    consequence: >
+      Bloqueia diretamente a arquitetura que o Manager acabou de declarar
+      (operar dinamicamente várias combinações símbolo×resolução
+      simultaneamente) -- essa operação pressupõe posições concorrentes
+      por símbolo, e a única especificação escrita hoje (gate 04, nunca
+      revisado desde o V3.2) proíbe qualquer segunda posição enquanto uma
+      está aberta em QUALQUER símbolo. Precisa de decisão explícita do
+      Manager (gate 04 vira "uma posição por SÍMBOLO", com nota de
+      revisão apontando pra §5.3 do V4.1) antes de qualquer trabalho em
+      Decision Engine ou Controle 19.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão de desenho urgente do Manager (gate global vs. por símbolo)"
+
+  - id: AG-097
+    date: "2026-08-19"
+    file: "PRD_V3_2_UNIFICADO.md:228, 955, 2487"
+    related_file: "PRD_V4_1.md §0.3 (linhas 61-67, revogação medida de HMM/Meta), §0.4 (linhas 69-73, escopo multi-ativo)"
+    found_by: "Agent independente (Project Assurance), auditoria cética de divergência entre blueprint canônico e direção atual do Manager"
+    gap: >
+      `PRD_V3_2_UNIFICADO.md` declara explicitamente, em 3 linhas, "Fora
+      da V1: múltiplos pares" (228, 2487) e fecha HMM/Meta-Model por
+      argumento ("8 estados não cabem em 3.240 obs efetivas";
+      "~1.590 obs efetivas contra 11 features") que `PRD_V4_1.md` §0.3
+      revoga com medição real (`N_eff`=32.608 pro regime, ~13.000 pro
+      Meta) -- mas essa revogação existe SÓ no V4.1, nunca como nota/
+      ponteiro dentro do V3.2 nas linhas onde a contradição vive. A
+      revogação de "múltiplos pares" é ainda mais frágil -- nunca é
+      declarada como revogação formal em lugar nenhum, é só implícita ao
+      novo escopo do V4.1 §0.4. Busca no `PRD_V3_2_UNIFICADO.md` inteiro
+      (3497 linhas, incluindo o changelog/mapa de rastreabilidade Parte
+      XIX) confirma ZERO ocorrências de "V4.1" ou "multi-ativo" -- o
+      documento nunca aponta pra sua própria emenda.
+    severity: "alto"
+    layer: "documentação -- consistência entre blueprint canônico e emenda de escopo"
+    consequence: >
+      Viola a própria regra de `CLAUDE.md` ("PRD ganha correção pontual --
+      ponteiro de 1 linha -- quando um achado contradiz o texto"). A
+      contradição existe desde 2026-08-09 (data do V4.1) sem o ponteiro
+      mínimo ter sido escrito no arquivo onde ela vive -- mesma família de
+      furo que AG-051/AG-052/AG-080 já pegaram (seção tratada como fonte
+      completa sem checar contra o documento real), aqui invertido: o
+      documento real (V3.2) nunca foi checado contra a decisão nova.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix mecânico (3 ponteiros de 1 linha nas linhas 228/955/2487), não requer decisão de desenho"
+
+  - id: AG-098
+    date: "2026-08-19"
+    file: "src/validation/dsr.py:131-179, src/analysis/faixa2_dsr_and_b2_check.py:68-105, audit/n_lifetime.yaml (id 16, linhas 302-336)"
+    related_file: "PRD_V4_1.md §6.2-§6.3 (linhas 635-658), src/analysis/m6_common_factor_hypothesis.py, audit/architecture_gaps_log.yaml::AG-077"
+    found_by: "3 agents independentes convergindo pelo mesmo achado por rotas diferentes (código de validação, documentação de PRD, grep exaustivo em src/) -- auditoria cética comissionada pelo Manager sobre a decisão de operar dinamicamente 5 símbolos × 3 resoluções (até 15 linhas), promovendo pra live só as de melhor edge"
+    gap: >
+      Nenhum dos 3 documentos de blueprint (PRD_V3_2_UNIFICADO.md,
+      PRD_V4_1.md, PLANO_MESTRE_PRINCE2.md) tem um conceito arquitetural
+      NOMEADO para "operar dinamicamente a combinação (símbolo,
+      resolução) que entrega mais edge, eliminando o que não performa" --
+      nem champion/challenger (o termo existe no V3.2 linhas 2660-2669,
+      mas é sobre retreino temporal do MESMO modelo, não sobre eliminar
+      entre combinações), nem model selection, nem qualquer outro nome.
+      Pior: `PRD_V4_1.md` §6.2-§6.3 trata EXPLICITAMENTE o cenário mais
+      próximo disso -- "se a melhor combinação for escolhida após ver
+      resultado, N_trial=15" e "é B20 literal" (banned pattern -- threshold
+      escolhido por métrica OOS) -- como algo a EVITAR na fase de
+      pesquisa, não como mecanismo a construir para produção/live. No
+      código: `compute_dsr` (`dsr.py:131`) recebe `n_trials` como
+      parâmetro externo puro, sem lógica de contagem; o único caller real
+      (`faixa2_dsr_and_b2_check.py:68-105`) só lê `audit/n_lifetime.yaml
+      ::counter` (hoje 63, já descontinuado como orçamento vinculante,
+      AG-077). Grep exaustivo em `src/` por
+      symbol_ranking/line_selection/best_line/portfolio_selection/
+      universe_selection/champion/challenger/model_registry: ZERO
+      ocorrências -- nenhum mecanismo agrega métricas (edge, Sharpe, DSR)
+      por (símbolo, resolução) e decide manter/descartar. O precedente
+      mais próximo no ledger (`n_lifetime.yaml` id 16, mesma grade 5
+      símbolos × 3 resoluções) registra EXPLICITAMENTE o oposto do que
+      esta nova decisão precisa: "símbolos (5) são o leito de teste
+      OOS/robustez, não contados multiplicativamente" -- correto para
+      testar se UM estimador generaliza (robustez uniforme), mas um erro
+      de categoria se aplicado por analogia a "escolher QUAL símbolo
+      manter" (seleção diferencial, problema estatisticamente diferente).
+      `m6_common_factor_hypothesis.py` testa heterogeneidade de edge entre
+      os 5 símbolos (infraestrutura reaproveitável) mas responde "eles
+      diferem?", não "qual é o melhor, com margem segura pra eliminar os
+      outros?" -- não é um protocolo de seleção.
+    severity: "crítico"
+    layer: "arquitetura (conceito central sem home documental) + validation (src/validation/dsr.py, sem contagem) + governança (audit/n_lifetime.yaml, precedente de categoria errada disponível)"
+    consequence: >
+      A decisão fresca do Manager colide de frente com uma regra já
+      escrita e ativamente aplicada no projeto (B20, N_trial ponderado,
+      DSR com N_lifetime). Sem um mecanismo pré-registrado de
+      seleção/eliminação com orçamento estatístico próprio (cada linha
+      promovida a candidata de produção conta como 1 trial, mesmo grão de
+      id 10 do ledger -- não id 16), "os melhores 3 de 15" em live
+      reproduziria exatamente o p-hacking que o próprio projeto já
+      identificou e baniu na fase de pesquisa, só que em produção, com
+      capital real, onde é mais caro de descobrir depois. Estende AG-077
+      (já aberto) com uma dimensão nova que o texto daquela entrada não
+      cobre -- recomenda-se resolver as duas juntas, não isoladamente.
+      Literatura consultada (Bailey/Borwein/López de Prado/Zhu -- PBO/
+      CSCV; White's Reality Check; Hansen's SPA) não distingue
+      formalmente "trial = hiperparâmetro" de "trial = escolha de
+      ativo/série" -- ambos inflam `E[max SR]` sob N tentativas e exigem
+      a mesma correção; PBO/CSCV (o instrumento desenhado exatamente para
+      "várias variantes testadas sobre o mesmo dado, qual promover")
+      não está implementado neste repo (confirmado, `dsr.py` linhas 8-14
+      cita PBO como fora de escopo desta rodada).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager necessária ANTES de qualquer implementação de seleção de linha: (a) cada linha promovida conta como 1 trial no N do DSR, (b) considerar PBO/CSCV como protocolo formal de seleção, (c) resolver junto com AG-077"
+
+  - id: AG-099
+    date: "2026-08-19"
+    file: "PRD_V3_2_UNIFICADO.md §10.2 (linhas 1907-1923, Kill Switch), §10.4 (linhas 1939-1949, máquina de estados de posição)"
+    related_file: "src/regime/classifier.py (TRADEABLE_REGIMES, R5=STRESS bloqueia ENTRADA, não fecha posição aberta)"
+    found_by: "Agent independente (Project Assurance), auditoria cética Regime→Alpha/Meta-Label/Risk/Execução comissionada pelo Manager"
+    gap: >
+      Não existe, em nenhum documento, especificação de como a Execução
+      deveria reagir a uma mudança de regime EM TEMPO REAL com posição já
+      aberta. Os 13 gatilhos do Kill Switch (§10.2) não incluem nenhum
+      gatilho de regime. A máquina de estados de posição (§10.4) só sai
+      de LONG/SHORT via TP, SL, time_stop ou timeout de GTX -- nenhum
+      caminho de saída acionado por `regime → R5 (STRESS)`. R5 bloqueia
+      ENTRADA (Decision Engine gate 01, Risk Engine control_01) mas não
+      fecha posição já aberta. Esta é uma lacuna real e PRÉ-EXISTENTE ao
+      multi-ativo (já valia no V1 single-asset) -- a expansão pra 5
+      ativos correlacionados só torna o custo maior (5 posições em
+      STRESS simultâneo sem saída automática é pior que 1).
+    severity: "alto"
+    layer: "execution / kill switch -- contrato de reação a regime ausente"
+    consequence: >
+      Uma posição aberta que atravessa uma transição pra STRESS não tem
+      procedimento documentado além de deixar TP/SL/time_stop correr
+      normalmente -- nenhuma saída antecipada por regime. Sob operação
+      multi-ativo com posições concorrentes (ver AG-096), isso multiplica
+      o número de posições simultaneamente expostas a um regime adverso
+      sem mecanismo de saída dedicado.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão de desenho do Manager (adicionar gatilho de Kill Switch acionado por regime, ou aceitar o risco explicitamente)"
+
+  - id: AG-100
+    date: "2026-08-19"
+    file: "src/models/dataset.py:70, 187-193"
+    related_file: "src/features/_sources.py:67-75 (Feature Engine já aceita dollar_r2/dollar_r3), src/regime/build.py:26-95 (Regime Engine idem), data/capacity/dollar_bars_r2|r3 (dado bruto já calibrado), data/labels/*/R2|R3 (ausentes)"
+    found_by: "Agent independente (Project Assurance), auditoria cética Regime→Alpha/Meta-Label/Risk/Execução comissionada pelo Manager"
+    gap: >
+      `build_modeling_frame` (`src/models/dataset.py`) só mapeia
+      `resolution_id="R1"` para `bar_source` (`_BAR_SOURCE_BY_RESOLUTION:
+      dict[str,str] = {"R1": "dollar_r1"}`, linha 70) -- `"R2"`/`"R3"`
+      levantam `ValueError` explícito (linhas 187-193), testado e
+      deliberado, citando `PRD_V4_1.md` ("R2/R3 são só pesquisa, nunca
+      alvo de produção"). Isso contradiz diretamente o mandato novo do
+      Manager (operar dinamicamente entre R1/R2/R3). O bloqueio é RASO
+      tecnicamente -- Feature Engine (`_sources.py:67-75`) e Regime Engine
+      (`build.py:26-95`) já aceitam `bar_source="dollar_r2"/"dollar_r3"`
+      livremente, e o dado bruto já existe calibrado em disco
+      (`data/capacity/dollar_bars_r2/`, `dollar_bars_r3/`) -- mas **labels
+      não existem para R2/R3 em nenhum dos 5 símbolos**
+      (`data/labels/{BTC,ETH,SOL,BNB,XRP}USDT/` só tem `15m/` e `R1/`).
+    severity: "alto"
+    layer: "models (src/models/dataset.py) + labels (artefato ausente)"
+    consequence: >
+      Nenhuma linha (symbol, R2) ou (symbol, R3) pode ser treinada hoje --
+      `build_modeling_frame` falha rápido e labels não existem. Bloqueia
+      literalmente a arquitetura declarada pelo Manager até (a) decisão de
+      escopo formal sobre R2/R3 saírem de "pesquisa" pra "produção"
+      (revoga a citação do PRD_V4_1.md acima), e (b) rodar o pipeline de
+      labels pra R2/R3 × 5 símbolos -- trabalho de execução real, não bug.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- aguarda decisão de escopo do Manager (R2/R3 produção) antes do trabalho de execução (labels)"
+
+  - id: AG-101
+    date: "2026-08-19"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-096, parte 2); src/risk/limits.py:449-470; src/exchange/adapter.py:119-120; src/risk/kill_switch.py:17 (K05)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-007 (addendum_2026-08-19), AG-096"
+    found_by: "project_assurance (contestação adversarial independente da proposta de resolução AG-096)"
+    gap: >
+      A resolução PROPOSTA para AG-096 (cap interino "total de posições
+      abertas simultaneamente >= max_concurrent_positions -> NO_SIGNAL")
+      assume implicitamente uma fonte de dado -- contagem de posições
+      abertas em tempo real -- que hoje NÃO é consumida por nenhum módulo
+      de `src/risk/` ou `src/execution/`. O primitivo REST existe
+      (`get_position_risk`, `src/exchange/adapter.py:119-120`, `GET
+      /fapi/v2/positionRisk`), simétrico a `get_account_info` (usado por
+      AG-007/equity) -- mas nenhum caller o invoca hoje. O próprio
+      `kill_switch.py` já documenta isso para o gatilho irmão: "K05 |
+      divergência de posição crítica | não (hoje) | reconciliação
+      (Sprint 14) não existe". O texto da proposta cita a ausência do
+      "rastreador de posição ao vivo" como razão do Controle 19 ser
+      NOT_COMPUTABLE, mas não reconhecia que o cap interino proposto
+      precisa exatamente desse mesmo rastreador (versão não-ponderada).
+    severity: "alto"
+    layer: "risk / decision engine -- rastreamento de posição ao vivo"
+    consequence: >
+      Sem esse módulo, o cap interino é tão NOT_COMPUTABLE quanto o
+      Controle 19 que ele pretende substituir provisoriamente -- adotar a
+      proposta como estava deixaria a mesma lacuna de exposição agregada
+      sem teto, só que sem o aviso explícito que o Controle 19 já dá
+      (NOT_COMPUTABLE é visível; um cap "implementado" mas sem fonte real
+      de input seria um TODO disfarçado de controle ativo). Diferente de
+      AG-007 (equity, que exige reconciliação contínua e não é
+      decomponível por símbolo sob CROSSED), a contagem de posições é uma
+      leitura instantânea de estado -- estruturalmente mais simples de
+      fechar, mas igualmente inexistente hoje como módulo consumido.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- pré-requisito de implementação para a parte 2 da resolução AG-096: um módulo mínimo que consulte get_position_risk (ou consuma user data stream) e produza a contagem ao vivo antes do cap poder gatear qualquer coisa; ver AG-102 pra questão de latência/prioridade não resolvida aqui"
+
+  - id: AG-102
+    date: "2026-08-19"
+    file: "audit/architecture_gaps_log.yaml::AG-101; PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-096, parte 2)"
+    related_file: "src/exchange/rate_limit.py:36-88; src/exchange/ws.py:1-18,250-300; src/exchange/rest.py:246-249; src/models/dataset.py:70; PRD_V4_1.md:386,390"
+    found_by: "project_assurance (Rodada 2 de contestação adversarial, revisão pós-Rodada-1 de AG-096/098/099)"
+    gap: >
+      `AG-101` prescreve um módulo mínimo que "consulte get_position_risk
+      (ou consuma user data stream)" sem tratar nenhuma das duas questões
+      que determinam se isso funciona a tempo: (1) `position_risk` é
+      `Priority.P2` em `src/exchange/rate_limit.py` -- `Budget.cap_for()`
+      reserva o teto de execução (P0/P1) e explicitamente NUNCA deixa P2
+      tocar essa reserva, mesmo com orçamento sobrando (docstring do
+      módulo) -- ou seja, contagem de posição é o PRIMEIRO tipo de
+      chamada deferida quando tráfego de execução sobe, e tráfego de
+      execução sobe justamente sob STRESS, o mesmo regime em que o cap
+      interino importa mais. (2) Os `resolution_id` R1/R2/R3 do Decision
+      Engine são dollar bars (`src/models/dataset.py:70`), calibradas
+      para frequência MÉDIA (`PRD_V4_1.md:386`) -- por construção, fecham
+      mais rápido sob volume elevado, então o Decision Engine avaliaria
+      sinais com MAIS frequência exatamente durante os picos de tráfego
+      P0/P1 que já competem pelo orçamento de P2. (3) A alternativa
+      citada "user data stream" não está pronta hoje no sentido que a
+      frase sugere: `src/exchange/ws.py` implementa só ciclo de vida de
+      `listenKey`/watchdog/transporte genérico -- o próprio docstring do
+      módulo diz "parsing de mensagem por tipo (... ORDER_TRADE_UPDATE
+      ...) é Sprint 3+, quando os consumidores existirem", sem nenhum
+      parsing de `ACCOUNT_UPDATE`, e nenhuma biblioteca de WebSocket está
+      em `pyproject.toml` -- é MENOS pronta que o REST, não uma opção
+      rápida alternativa disponível hoje.
+    severity: "alto"
+    layer: "risk / exchange -- prioridade de rate limit e latência de leitura de posição ao vivo"
+    consequence: >
+      Um implementador que seguir `AG-101` ao pé da letra e escrever um
+      polling REST simples de `get_position_risk` dentro do loop de
+      avaliação de sinal do Decision Engine corre o risco de ver essas
+      chamadas deferidas/atrasadas justamente durante rajadas de tráfego
+      P0/P1 sob STRESS -- o cap interino gateria com dado potencialmente
+      desatualizado exatamente na janela em que mais precisa ser preciso.
+      Isso não invalida a ordem (a) antes de (b) já proposta, mas deixa o
+      desenho concreto de (a) subespecificado.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- refina AG-101 (mesmo pré-requisito de implementação): antes de escrever o módulo, medir/decidir orçamento de P2 sob rajada de P0/P1 (cache local com TTL curto? budget dedicado? aceitar staleness com trigger de reconciliação?) e reconhecer explicitamente que a via user data stream exige trabalho adicional (escolher lib WS + implementar parsing de ACCOUNT_UPDATE) maior que o REST, não é atalho pronto"
+
+  - id: AG-103
+    date: "2026-08-19"
+    file: "audit/n_lifetime.yaml:13-36 (regra de contagem N trials vs. 1 trial); PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-098, item 2)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-098; audit/n_lifetime.yaml id 10, id 11; src/validation/dsr.py:131-179"
+    found_by: "project_assurance (Rodada 2 de contestação adversarial, revisão pós-Rodada-1 de AG-096/098/099)"
+    gap: >
+      A regra do item 2 de AG-098 ("id-10-símil SE E SOMENTE SE pelo
+      menos 1 linha for promovida; id-11-símil se zero promoções") usa
+      RESULTADO da rodada como critério de classificação. O ledger já tem
+      uma regra FORMAL para essa distinção, escrita no próprio cabeçalho
+      de `audit/n_lifetime.yaml` (linhas 19-29): a diferença entre id-10
+      e id-11 é se cada candidata exige AJUSTE DE MODELO/BACKTEST NOVO
+      (id-10, N trials) ou reusa um artefato já ajustado sem backtest por
+      candidata (id-11, 1 trial) -- um critério ESTRUTURAL, conhecível a
+      priori pelo desenho do teste, nunca pelo resultado. Seleção de
+      linha exige, por construção, medir edge/Sharpe/DSR de CADA (symbol,
+      resolution_id) individualmente -- estruturalmente id-10 sempre,
+      goste ou não do resultado. AG-098 generalizou incorretamente um
+      detalhe incidental da narrativa do precedente id-11 ("nenhuma
+      promoção individual" foi mencionado na descrição daquele caso, mas
+      NÃO é o critério que a regra formal do arquivo declara) como se
+      fosse a regra em si. Consequência demonstrada em código:
+      `src/validation/dsr.py::compute_dsr` recebe `n_trials` que
+      alimenta diretamente `sr0_per_trade`/`dsr` (linhas 162-164) e
+      `dsr_passes_conventional_threshold` decide promoção contra 0,95 --
+      se `n_trials` da rodada depende de "alguma linha foi promovida"
+      (que inclui a própria decisão sendo tomada), a penalidade de
+      múltiplos testes de uma linha depende circularmente do resultado
+      que ela mesma ajuda a determinar, e o `delta` a registrar no
+      ledger só é conhecível DEPOIS que a rodada inteira (todas as 15
+      linhas) terminar -- inclusive linhas avaliadas depois da que está
+      sendo decidida agora.
+    severity: "alto"
+    layer: "validation (src/validation/dsr.py) + governança (audit/n_lifetime.yaml, regra de contagem)"
+    consequence: >
+      Hoje não bloqueia nada em produção porque `N_lifetime` não é gate
+      vinculante (`AG-077`) -- mas AG-098 item 4 registra a contagem
+      JUSTAMENTE para não precisar reconstruir retroativamente "se/quando
+      o DSR voltar a ser vinculante". Adotar a regra como estava deixaria
+      essa reconstrução futura presa numa definição circular -- o próprio
+      problema que o item 4 diz querer evitar.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-19, mesmo dia do achado -- `PLANO_MESTRE_PRINCE2.md`
+      §15.11 revisado: item 2 de AG-098 substituído pelo critério
+      ESTRUTURAL correto (backtest/ajuste por candidata, não resultado de
+      promoção) -- seleção de linha conta SEMPRE como id-10-símil (1
+      trial por linha avaliada, N=15 se as 15 forem avaliadas), nunca
+      colapsa a 1 trial pela rodada, eliminando a circularidade com o
+      gate de DSR.
+
+      Auditoria adversarial independente (Rodada 3, 2026-08-19) confirmou
+      a correção SEM achado novo: regra consistente com o critério "OU"
+      de `audit/n_lifetime.yaml:19-29` (recálculo de backtest OU ajuste de
+      modelo, basta um dos dois); cenário de reuso do fit de regime já
+      fixado por M4 não gera ambiguidade porque medir edge por linha
+      exige backtest novo mesmo com modelo reusado (satisfaz o "OU"
+      sozinho); regra 3 (retest pós-mudança-de-código) confirmada
+      ortogonal à regra 2, não redundante.
+    status: "fechado -- regra de contagem simplificada pra critério estrutural, confirmada por 1 rodada adversarial limpa (Rodada 3)"
+
+  - id: AG-104
+    date: "2026-08-19"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-096, parte 2, lista de 3 caminhos pós-AG-102)"
+    related_file: "src/exchange/rate_limit.py:1-13,70-96 (Budget.cap_for, docstring); PRD_V3_2_UNIFICADO.md:1779-1783 (§9.4 regra 3); audit/architecture_gaps_log.yaml::AG-101, AG-102; src/risk/kill_switch.py (K05); config/constants.yaml:544-549 (rate_limit_reserve_pct)"
+    found_by: "project_assurance (Rodada 3 de contestação adversarial, revisão pós-Rodada-2 de AG-096/098/099)"
+    gap: >
+      A opção 2 da lista de 3 caminhos ("orçamento de rate-limit dedicado
+      pra position_risk") era descrita no texto original como "reserva
+      fatia fixa mesmo sob rajada de P0/P1, ao custo de reduzir o teto de
+      execução". Isso contradizia diretamente o invariante já codificado
+      em `Budget.cap_for()` (`src/exchange/rate_limit.py:79-82`): P0/P1
+      (cancel_order, reconcile, close_position, create_order, query_order)
+      sempre recebem `self.limit` cheio como teto -- o docstring do módulo
+      (linhas 3-6) declara que `rate_limit_reserve_pct` (30%,
+      `config/constants.yaml:544`) é reservado "exclusivamente para
+      chamadas de execução (P0/P1)", nunca tocado por P2/P3 "mesmo
+      sobrando orçamento bruto". `PRD_V3_2_UNIFICADO.md:1782` (§9.4 regra
+      3) reforça: "chamadas de execução têm prioridade absoluta... quando
+      o orçamento aperta". Carve-out de uma fatia fixa PARA `position_risk`
+      (P2) DE DENTRO dessa reserva de 30% deixaria de ser "exclusivo de
+      P0/P1" por definição -- reversão do próprio invariante que o módulo
+      hoje garante sem exceção. P0 inclui especificamente
+      `close_position`/`reconcile`/`cancel_order`, os mecanismos de
+      kill-switch (K05, e o novo K15 de `AG-099`) -- exatamente as
+      chamadas que mais precisam de teto garantido sob STRESS, o mesmo
+      regime em que `AG-102` já estabeleceu que o tráfego de execução é
+      mais pesado.
+    severity: "alto"
+    layer: "risk / exchange -- invariante de prioridade de rate-limit vs. proposta de orçamento dedicado"
+    consequence: >
+      Um Manager que escolhesse "caminho 2" como estava redigido
+      autorizaria, sem perceber, uma regressão da garantia de prioridade
+      absoluta de execução que `Budget.cap_for()` hoje impõe
+      incondicionalmente -- justamente sob rajada/STRESS, quando
+      cancel_order/close_position/reconcile (mecânica de kill-switch) mais
+      precisam passar.
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-19, mesmo dia do achado -- `PLANO_MESTRE_PRINCE2.md`
+      §15.11 revisado: opção 2 agora especifica explicitamente que a fatia
+      dedicada a `position_risk` vem do pool de P2/P3
+      (`self.limit*(1-reserve_pct)`, já compartilhado por account_info/
+      backfill/research), nunca da reserva exclusiva de P0/P1 -- preserva
+      o invariante de `Budget.cap_for()` e a regra 3 do PRD §9.4.
+
+      Auditoria adversarial independente (Rodada 4, 2026-08-19) achou que,
+      mesmo corrigida, a opção não resolve o problema que a motivou --
+      ver AG-105 (achado novo, mesma rodada, mesmo dia).
+    status: "fechado -- redação corrigida quanto ao invariante que motivou o achado original; a opção em si foi removida por AG-105 (não resolvia AG-102 de nenhum jeito)"
+
+  - id: AG-105
+    date: "2026-08-19"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-096, parte 2, lista de 3 caminhos pós-AG-102, opção 2 já corrigida por AG-104)"
+    related_file: "src/exchange/rate_limit.py:70-96 (Budget.cap_for/can_admit/reserve, used compartilhado); config/constants.yaml:544-556 (rate_limit_reserve_pct=0.30, ip_weight_limit_1m=2400); audit/architecture_gaps_log.yaml::AG-101, AG-102, AG-104"
+    found_by: "project_assurance (Rodada 4 de contestação adversarial, escopo estreito: parágrafo da opção 2 pós-correção de AG-104)"
+    gap: >
+      AG-104 corrigiu corretamente a violação do invariante P0/P1
+      (confirmado por releitura de `Budget.cap_for()` -- a redação ficou
+      inequívoca: "nunca da reserva de 30% exclusiva de P0/P1"). Mas a
+      correção deixa sem tratar um problema estrutural diferente. `Budget`
+      tem um único contador `used` compartilhado por TODAS as prioridades
+      do mesmo orçamento -- `cap_for()` só reconhece dois níveis (execução
+      = `self.limit` cheio; não-execução = `self.limit*(1-reserve_pct)`),
+      sem nenhum conceito de sub-alocação DENTRO de P2/P3 por `call_type`.
+      Mesmo com essa sub-alocação implementada, ela NÃO protegeria
+      `position_risk` do cenário que o próprio `AG-102` identificou como
+      motivador -- porque `cap_for(P2)` e `cap_for(P3)` já são o MESMO
+      valor hoje, e tráfego de P0/P1 sozinho já pode esgotar esse teto
+      inteiro antes de qualquer chamada P2/P3 (dedicada ou não) ser
+      admitida: com `ip_weight_limit_1m=2400` e `rate_limit_reserve_
+      pct=0.30`, basta `used` cruzar 1680 (70% do limite total, bem
+      abaixo do teto de 2400 que P0/P1 sozinho pode consumir) para que o
+      orçamento restante de P2 vá a zero -- nenhuma fatia "dedicada"
+      dentro dos 1680 muda esse resultado, porque o corte que importa
+      (P0/P1 vs P2/P3) já aconteceu antes de qualquer subdivisão interna
+      ao P2/P3 entrar em jogo. A opção 2, mesmo corrigida por AG-104,
+      resolvia um problema que `AG-102` nunca levantou (position_risk
+      perder pra account_info/backfill/research DENTRO do P2/P3) e
+      deixava intocado o problema que `AG-102` de fato levantou (P2/P3
+      inteiro esgotado por tráfego de P0/P1 sob STRESS).
+    severity: "alto"
+    layer: "risk / exchange -- eficácia do orçamento dedicado de rate-limit contra o problema que motivou AG-102"
+    consequence: >
+      Um Manager que lesse a lista de 3 caminhos e escolhesse a opção 2
+      pensando que ela resolve a lacuna de latência de AG-102 estaria
+      escolhendo uma solução que não move a agulha nesse cenário
+      específico -- o mesmo risco de dado desatualizado durante o pico de
+      STRESS continuaria presente, só que com falsa sensação de "já
+      tratado".
+    resolved_by_commit: null
+    resolution: >
+      CORRIGIDO 2026-08-19, mesmo dia do achado -- `PLANO_MESTRE_PRINCE2.md`
+      §15.11 revisado: a opção 2 foi REMOVIDA da lista (não é um caminho
+      real dado o desenho atual de `Budget`, de 2 níveis só). Restam 2
+      caminhos honestos: cache local com TTL curto, ou aceitar staleness
+      com gatilho de reconciliação -- ambos já nomeavam seu próprio
+      trade-off residual no texto, nenhum precisou de correção adicional.
+    status: "fechado -- opção inviável removida da lista de caminhos, decisão do Manager fica entre as 2 restantes"
+
+  - id: AG-106
+    date: "2026-08-19"
+    file: "docs/brief_auditoria_externa_2026-08-19_regime_alpha_execucao.md §1; docs/brief_auditoria_externa_2026-08-19_material_de_apoio.md §4"
+    related_file: "PLANO_MESTRE_PRINCE2.md §15.11 (mandato de seleção offline de linha)"
+    found_by: "achado ao escrever o material de apoio do brief de auditoria externa da Trilha B -- nenhuma das 3 investigações anteriores (AG-094-100) nem as 4 rodadas adversariais (AG-101-105) tinham coberto isso, porque o foco delas era o CONTRATO entre camadas, não o CICLO operacional da seleção de linha em si"
+    gap: >
+      O mandato corrigido do Manager (2026-08-19) declara que a seleção de
+      combinação (symbol, resolution_id) é "offline, fixa por rodada,
+      eliminação periódica" -- mas nenhum documento do projeto especifica
+      a CADÊNCIA dessa rodada (mensal? por evento de mercado/regime cq
+      structural break? por decisão manual do Manager, sem período fixo?).
+      Sem cadência definida, "periódica" é uma palavra sem operacionalização
+      -- não há como saber quando a próxima rodada de eliminação deveria
+      rodar, nem como isso se relaciona com a cadência de retreino do
+      próprio Alpha/Meta-model (que também não tem cadência declarada em
+      nenhum lugar do projeto hoje).
+    severity: "médio"
+    layer: "arquitetura / governança -- ciclo operacional de seleção de linha, não um componente de código específico"
+    consequence: >
+      Sem essa decisão, a primeira rodada de seleção de linha não tem
+      critério de quando repetir -- risco de virar "ad-hoc, quando alguém
+      lembrar" em vez de um processo declarado, o mesmo tipo de furo que já
+      motivou correção em outras partes do projeto (ex. cadência trimestral
+      de tooling review, cron declarado). Incluído no brief de auditoria
+      externa da Trilha B como pergunta aberta (não como pedido de
+      descoberta -- já sabemos que falta).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager, possivelmente informada pela recomendação do auditor externo"
+
+  - id: AG-107
+    date: "2026-08-19"
+    file: "docs/brief_auditoria_externa_2026-08-19_regime_alpha_execucao.md §5.3(B); docs/brief_auditoria_externa_2026-08-19_material_de_apoio.md §4"
+    related_file: "audit/architecture_gaps_log.yaml::AG-096, AG-101"
+    found_by: "achado ao escrever o material de apoio do brief de auditoria externa da Trilha B -- mesma origem de AG-106"
+    gap: >
+      `AG-096` resolve o gate de posição por linha ("mesma linha não pode
+      duplicar posição") e propõe um cap de posições concorrentes TOTAIS
+      (proteção de portfólio). Nenhum dos dois resolve o caso em que MAIS
+      de uma linha aprovada pela seleção quer abrir posição no MESMO
+      instante e o cap de portfólio não comporta todas -- falta uma regra
+      de PRIORIZAÇÃO entre linhas concorrentes candidatas (maior edge
+      medido primeiro? round-robin? ordem de símbolo? tempo de chegada do
+      sinal?). Sem essa regra, o comportamento do sistema nesse cenário é
+      indefinido -- dependeria de detalhe de implementação não
+      especificado (ex. ordem de iteração de um loop), não de uma decisão
+      deliberada.
+    severity: "médio"
+    layer: "decision engine -- regra de arbitragem entre sinais concorrentes, ausente"
+    consequence: >
+      Um cenário plausível (2+ das linhas vencedoras da seleção emitem
+      sinal de entrada no mesmo instante, cap de portfólio permite só 1)
+      não tem comportamento definido -- o sistema faria algo, mas não por
+      decisão, por acidente de implementação. Incluído no brief de
+      auditoria externa da Trilha B como pergunta aberta.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager, possivelmente informada pela recomendação do auditor externo"

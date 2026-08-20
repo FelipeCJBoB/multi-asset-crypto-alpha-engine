@@ -330,22 +330,39 @@ autorização explícita pra rodar `uv`/`.py`/pytest/mecânicos diretamente
    execução do `CLAUDE.md` — eu não rodo o run real que consome trial
    (diferente do resto do plano, onde execução de desenvolvimento/teste
    já está autorizada direto).
-7. **Fase 7 — fechamento.** Revisar relatório real, spot-check da
-   canonicalização sobre saída real, declarar `G-C1-2`, registrar as 6
-   entradas em `audit/n_lifetime.yaml` (histórico, append-only, mesmo
-   descontinuado como gate), decisão final (qual candidato vence + Q3)
-   ao Manager, "Atualize governança" (os 7 arquivos já protocolados no
-   `CLAUDE.md`).
+7. **Fase 7 — fechamento.** ⏸️→🔄 **PAUSADA em 2026-08-18, RETOMADA no
+   mesmo dia.** 5 auditorias céticas + RAG encontraram 4 achados reais:
+   AG-084/AG-085 (BOCPD, 2 bugs que explicam seu único resultado
+   aparentemente positivo), AG-086 (HMM, bug de init real mas testado
+   causalmente e REFUTADO como causa do ω²≈0 — achado de HMM considerado
+   genuíno), AG-087 (Jump Model, colapso a 1 estado em ~25-29% das
+   células). Manager decidiu (mesmo dia): registrar os 4 achados agora,
+   correção de código fica pra depois; reconsiderar o critério de Gate
+   ANTES de corrigir. 2 auditorias adicionais (literatura + aplicação ao
+   desenho real) convergiram numa proposta concreta: **Cochran's Q/I²
+   de `edge_bruto_atr` por bucket de regime**, reusando
+   `m6_common_factor_hypothesis` sem fórmula nova — **AUTORIZADO e
+   IMPLEMENTADO** (`src/analysis/m4_critical_windows.py`,
+   `AggregatedHeterogeneityResult`, mecanicamente auditado, testes
+   escritos, pronto pra rodar junto da próxima execução real, zero passo
+   extra). Nota completa em `PRD_V4_1.md` §3.2, logo após a citação de
+   `C07`. Gaps adicionais (R5/stress não modelado pelos 3 candidatos
+   novos, wiring hard-coded R1-R5 em `alpha.py`/`classifier.py`/
+   `environments.py`, Group DRO inexistente) registrados como
+   `AG-088`/`AG-089`, confirmados SEM impacto no M4 atual,
+   deliberadamente deferidos. Estudo do veto de R5/stress concluiu que
+   os gatilhos S1-S10 já são independentes do classificador de regime
+   (confirmado por leitura de código) — recomenda desacoplar num módulo
+   próprio, não implementado, só desenhado. Registro em
+   `audit/n_lifetime.yaml` e decisão final de candidato/Q3 ficam
+   condicionados à RE-EXECUÇÃO com BOCPD/Jump Model corrigidos + novo
+   critério — ainda pendente, próximo passo real, não decidido nesta
+   sessão.
    **Publicar os resultados como 3ª aba do artefato "Biblioteca de
    Testes"** (`https://claude.ai/code/artifact/59a440dc-f496-4548-
    97be-d980b7786411`, republicar mesma URL — NÃO criar artefato novo)
-   — já tem `data-tab="m1"` e `data-tab="m2"`, adicionar `data-tab="m4"`
-   seguindo o MESMO padrão estrutural (botão em `.lib-tabs` +
-   `<section class="lib-panel" data-panel="m4" hidden>`, mesmos tokens
-   de cor/tipografia já definidos no `:root` do arquivo — ler o HTML
-   completo do artefato antes de editar, não só a amostra já vista,
-   pra replicar exatamente o padrão de diagrama mermaid + tabela de
-   resultado + `result-banner` que M1/M2 já usam).
+   — ✅ FEITO (2026-08-18), aba `data-tab="m4"` publicada e mantida em
+   sincronia com cada decisão desta rodada.
 
 ## Testes (DoD)
 

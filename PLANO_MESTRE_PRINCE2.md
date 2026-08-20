@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.16 · **Data:** 2026-08-18
+**Versão:** 3.22 · **Data:** 2026-08-19
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -839,7 +839,8 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | ≤6 (desenho original) / **≤18 sob revisão** (ver nota) | 🟡 **harness completo, calibrado, auditado — execução real (Fase D) EM ANDAMENTO, resultado/candidato vencedor ainda desconhecido, não presumir** (2026-08-17/18, 19 commits `6158442`..`ccb50f1`). Candidatos: quantis expansivos (baseline) vs. HMM gaussiano `dynamax` (k=2/3/4, prior sticky), Jump Model **contínuo (CJM)**, BOCPD (vendorizado, Adams & MacKay 2007) + Terceira via Q3 (BTC como fator comum, `join_asof` causal). Auditoria (`audit_engineering`+`project_assurance`) achou e corrigiu 4 bugs CRITICAL/HIGH reais (canonicalização sob `NaN`, Jump Model sob `Inf`, bug em `tools/lint/banned_patterns.py`, oversubscription de threads BLAS/JAX). Hiperparâmetros calibrados via medição real (`jump_penalty=0,002`/`bocpd_hazard_lambda=65,0`/etc.). **Extensão 2026-08-18**: passou a rodar sob 5 janelas históricas críticas (LUNA/FTX só BTCUSDT, Crypto Winter/ETF-Halving/Recente 5/5 ativos) × 3 resoluções R1/R2/R3 (motivo: custo medido do histórico completo, várias horas) — decisão do Manager de que resolução MULTIPLICA trial (mesmo precedente de `AG-039`/M1) revisou `G-C1-2` pra `≤18` (6 candidatos-trial × 3 resoluções; janela histórica NÃO multiplica, réplica de robustez). **`≤18` ainda não ratificado como valor formal do Gate** — ver nota de `PENDENTE DECISÃO MANAGER` no próprio código (`src/analysis/m4_critical_windows.py:914-920`); linhas 855-863 abaixo (aritmética de orçamento) e §11.6 seguem citando `≤6` até essa ratificação | `PRD_V4_1.md` §3.2 M4, `AG-075`, `AG-077`, `docs/m4_regime_plano_execucao.md` |
+| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada — ver §15.11 | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` |
+| **Trilha B(2026-08-19) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟡 **10 gaps descobertos (`AG-094`-`AG-100` + addenda em `AG-007`/`AG-088`), 4 rodadas de contestação adversarial sobre as resoluções propostas (achado real em cada rodada: `AG-101`-`AG-105`, todos corrigidos no mesmo dia), 4 mecanismos aprovados pelo Manager (2026-08-19) com decisões residuais explicitamente registradas como pendentes** (cache-TTL vs. staleness pro rastreador de posição; valor do cap de posições concorrentes; denominador do K01 sob posições concorrentes; adotar agora vs. adiar o gatilho de proteção por regime; valor do encurtamento de `time_stop`; R2/R3 virar produção; Meta consumir regime). Achado adicional que motivou pausa de M4: mandato do Manager tinha sido mal-entendido (seleção "dinâmica em tempo real" — errado; correto é "offline, fixa por rodada, eliminação periódica"), e a política de tiering de features (T1 fixo em 10) foi **descontinuada** — todas as ~92 features com fonte real wired (T1+T2) passam a ser canônicas, seleção delegada ao próprio Learner/Meta-model, decisão registrada mas **ainda não implementada em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas; consequência conhecida a resolver junto, `AG-038`, dependência posicional em `faixa2_caminho_b.py:1229`). 2 documentos de brief (`docs/brief_auditoria_externa_2026-08-19_regime_alpha_execucao.md` + `..._material_de_apoio.md`) comissionados pro Manager levar a auditores externos — pedido de validação cética nos 4 mecanismos aprovados, recomendação nas 7 decisões pendentes, desenho técnico concreto nas fronteiras de estágio ainda sem contrato de dado (Features→Label→Pesos→Split→Learner→Calibração→Validação→Meta-Model) | `audit/architecture_gaps_log.yaml::AG-094` a `AG-105`, `§15.11` deste documento, `docs/brief_auditoria_externa_2026-08-19_*.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
@@ -871,6 +872,19 @@ ver nota naquela linha) — se ratificado, a soma "base de 45" também
 mudaria pra 57. Como `N_lifetime` já está descontinuado como gate
 vinculante (não é mais aritmética operante), o impacto prático é baixo,
 mas o texto fica impreciso se lido como referência sem este ponteiro.
+
+**Atualização, 2026-08-19 (governança):** `≤18` de M4 agora está
+ratificado por execução real (4ª rodada, ver linha `M4(V4.1) — Regime`
+acima) — deixa de ser "sob revisão" e passa a ser fato consumado, mesmo
+com `N_lifetime` não-vinculante. `AG-077` (o que substitui a penalidade
+de multiple-testing no Gate 6) segue sem decisão do Manager — mas ganhou
+um precedente parcial relevante na Trilha B (`AG-098`, ver `§15.11`):
+seleção de linha symbol×resolution (o próximo eixo de busca do projeto,
+pós-M4) foi resolvida com uma convenção de contagem ESTRUTURAL (backtest
+individual por candidata = 1 trial, nunca colapsa por resultado da
+rodada) — não fecha `AG-077` sozinha (é sobre uma dimensão nova, não
+sobre o Gate 6 em geral), mas é o tipo de precedente que a decisão final
+de `AG-077` provavelmente vai precisar reconciliar.
 
 ---
 
@@ -1133,6 +1147,8 @@ ML LAYER
   09b_CALIBRACAO       (inline em alpha.py — não separável hoje)
   10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe, não wired em pipeline.py
   11_META_MODEL        (não existe — PRD §6.8, fora da V1)              movido de 08 pra cá, pós-learner
+  11b_DECISION_ENGINE  (não existe — PRD_V3_2 Parte VII §7.1-7.3)       AG-095 (2026-08-19): consome regime.tradeable
+                                                                        direto, ficou fora deste modelo até agora
 
 LIVE TRADING LAYER
   12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         real, zero wiring, sem dimensão symbol
@@ -1150,7 +1166,7 @@ LIVE TRADING LAYER
 | `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1 |
 | `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro |
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
-| `05_REGIME` | M4 (Regime) | 🟡 harness completo/calibrado/auditado — execução real (Fase D) em andamento, resultado ainda desconhecido (§11.6) |
+| `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6) |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
 | `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
@@ -1159,6 +1175,7 @@ LIVE TRADING LAYER
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe |
 | `11_META_MODEL` | V41-10 (Meta-Model+Grupo J) | ⬜ não iniciado, reaberto |
+| `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — 5º consumidor real de Regime, não só Alpha/Risk/Meta/Execução |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
 | `14_MONITORAMENTO` | sem equivalente | `AG-079` fechado — zero código, comparar antes de construir inverte a ordem |
@@ -1503,6 +1520,265 @@ sozinho (a skill só roda quando alguém pede auditoria — este módulo não
 foi auditado antes de "pronto"), mas registra o critério de julgamento
 num lugar que uma auditoria futura vai consultar.
 
+### 15.11 Resoluções propostas — AG-095/096/098/099 (2026-08-19, aprovado pelo Manager após 4 rodadas de contestação adversarial)
+
+Contexto: auditoria cética comissionada pelo Manager sobre o desenho de
+consumo de Regime por Alpha/Decision Engine/Meta-Label/Risk/Execução sob
+o mandato novo (operar dinamicamente a combinação símbolo×resolução que
+entregar mais edge, eliminando o resto) achou 10 gaps reais
+(`audit/architecture_gaps_log.yaml::AG-094..AG-100` + addenda em AG-007/
+AG-088). Seis deles exigem decisão do Manager antes de qualquer
+implementação — mas metade dessas seis já tem resposta tecnicamente
+informada, não é página em branco. Processo adotado (decisão do Manager,
+2026-08-19, "pode seguir"): eu rascunho a resolução técnica, ela entra
+aqui marcada **PROPOSTO**, uma auditoria adversarial independente
+(`project_assurance`, agente sem contato com este raciocínio) contesta o
+rascunho, repete até 2 rodadas seguidas sem achado CRITICAL/gap novo — só
+depois disso o Manager confirma e só depois disso (se fizer sentido) um
+auditor externo entra, pra estressar um desenho maduro, não pra descobrir
+do zero.
+
+**Rodada 1 (2026-08-19) — resultado: 1 SÓLIDO, 1 gap novo, 2 "precisa
+revisão".** AG-095 confirmado sem achado. AG-096 escondia um segundo gap
+do mesmo tipo de AG-007 (registrado como `AG-101`). AG-098 e AG-099
+tinham lacunas reais de especificação.
+
+**Rodada 2 (2026-08-19) — resultado: 1 CONVERGIU, 2 gaps novos.** AG-099
+confirmado sem ressalva (as 3 frentes atacadas — reuso de conceito vs.
+código, status "PROPOSTO" vs. dependência de Execução, literatura de
+exit por tempo — não produziram achado real). `AG-101` tinha um problema
+de latência/prioridade de rate-limit não endereçado (`AG-102`). O item 2
+de `AG-098` usava resultado da rodada como critério de contagem, quando
+o ledger já tem um critério ESTRUTURAL formal — gerava circularidade
+real com o gate de DSR (`AG-103`, já corrigido no mesmo dia, ver
+`resolution` da entrada). O loop adversarial fez de novo exatamente o
+que deveria: achar problema real numa proposta que já tinha passado por
+uma rodada — a rodada adversarial funciona precisamente porque um
+rascunho concreto expõe gap mais afiado que uma folha em branco.
+
+**Rodada 3 (2026-08-19) — resultado: 1 CONVERGIU, 1 gap novo.** AG-098
+confirmado sólido (consistente com o critério "OU" de `n_lifetime.yaml`,
+sem ambiguidade real no cenário de reuso de fit do M4). A lista de 3
+caminhos pra `AG-096`/`AG-101`/`AG-102` tinha uma opção ("orçamento
+dedicado") redigida de um jeito que reverteria a garantia de prioridade
+absoluta de execução já codificada em `Budget.cap_for()` — `AG-104`,
+corrigido no mesmo dia.
+
+**Rodada 4 (2026-08-19, escopo estreito) — resultado: 1 gap novo.** A
+correção de `AG-104` era tecnicamente correta mas resolvia um problema
+diferente do que `AG-102` tinha levantado — `Budget` só tem 2 níveis de
+prioridade, então tráfego de execução sozinho já esgota o teto de
+não-execução inteiro antes de qualquer sub-fatia interna a P2/P3
+importar. Opção removida da lista — `AG-105`, corrigido no mesmo dia.
+Loop encerrado aqui por decisão de escopo (4 rodadas, retorno
+decrescente, achados cada vez mais estreitos) — **Manager aprovou o
+consolidado em 2026-08-19** ("aprovado"), com as sub-decisões abaixo
+explicitamente registradas como ainda abertas, não decididas por
+omissão.
+
+**AG-095 (Decision Engine no PBS) — CONFIRMADO SÓLIDO (Rodada 1).**
+`11b_DECISION_ENGINE` adicionado à tabela de `§15.4` e à tabela de
+cross-reference logo abaixo, mesma convenção de sufixo `b` já usada por
+`07b_PESOS`/`09b_CALIBRACAO`. Nenhuma renumeração dos estágios 12-15 —
+inserção não-disruptiva. Revisão adversarial confirmou formatação/
+numeração íntegras, sem achado.
+
+**AG-096 (gate "uma posição por vez" vs. Controle 19) — MECANISMO APROVADO pelo Manager (2026-08-19), 3 sub-decisões seguem abertas (ver final da seção).**
+`PRD_V3_2_UNIFICADO.md:1499` nunca foi emendado pelo V4.1; o Controle 19
+(`PRD_V4_1.md` §5.3) pressupõe múltiplas posições concorrentes. Correção
+de enquadramento (achado da Rodada 1): isto NÃO é emenda pontual a um
+gate já implementado — zero código de Decision Engine existe hoje, e
+`PRD_V3_2_UNIFICADO.md` §10.4 documenta uma única máquina de estados
+GLOBAL de posição (`FLAT→LONG_PENDING→LONG→EXIT_PENDING→FLAT`), sem
+nenhuma dimensão por linha a reaproveitar. É desenho greenfield inteiro,
+não um patch — não muda a decisão, muda a expectativa de esforço.
+Resolução proposta, em duas partes:
+
+1. **Gate 04 do Decision Engine nasce por linha, não global**: "posição
+   atual no MESMO `(symbol, resolution_id)` != FLAT → NO_SIGNAL" —
+   permite candidatas concorrentes em linhas diferentes, preserva a
+   proteção original contra duplicar sinal na MESMA linha.
+2. **Cap interino de posições concorrentes, fora do Controle 19 — agora
+   com pré-requisito explícito.** Controle 19 (`sigma_agg` via matriz de
+   correlação) é `NOT_COMPUTABLE` sempre hoje — sem rastreador de posição
+   ao vivo, ele não gateia nada na prática (`AG-007`). A Rodada 1 achou
+   que o cap interino proposto ("total de posições abertas
+   simultaneamente ≥ max_concurrent_positions → NO_SIGNAL") tem
+   exatamente o mesmo problema — é, ele mesmo, um rastreador de posição
+   ao vivo (versão não-ponderada), e nenhum módulo hoje consulta
+   `get_position_risk` (`src/exchange/adapter.py:119-120`, `GET
+   /fapi/v2/positionRisk`, primitivo já existe, zero caller) — registrado
+   como **`AG-101`**. Ordem de implementação corrigida: (a) módulo mínimo
+   de contagem ao vivo de posições abertas por símbolo ANTES de (b) o cap
+   poder gatear qualquer coisa de verdade.
+   **A Rodada 2 achou que (a) como descrita em `AG-101` era subespecificada
+   até o ponto de gerar risco de latência real (`AG-102`)**: `get_position_
+   risk` é `Priority.P2` em `src/exchange/rate_limit.py`, e `Budget.
+   cap_for()` NUNCA deixa P2 tocar a reserva de orçamento de execução
+   (P0/P1) — ou seja, sob rajada de tráfego de execução (justamente o que
+   acontece sob STRESS, o mesmo regime em que o cap importa mais), a
+   consulta de posição é a primeira a ser deferida. Piora porque R1/R2/R3
+   são dollar bars calibradas por frequência MÉDIA (`PRD_V4_1.md:386`) —
+   fecham mais rápido sob volume alto, então o Decision Engine avaliaria
+   sinais com mais frequência exatamente nos mesmos picos que já disputam
+   o orçamento P0/P1. A alternativa "user data stream" citada antes não é
+   um atalho pronto — `src/exchange/ws.py` só tem ciclo de vida de
+   `listenKey`, sem parsing de `ACCOUNT_UPDATE` e sem lib de WebSocket
+   ainda em `pyproject.toml` — é MAIS trabalho que o REST, não menos.
+   **Decisão de desenho que fica aberta pra quando `AG-101` for
+   implementada — reduzida a 2 caminhos reais (Rodada 4, `AG-105`)**:
+   uma 3ª opção ("orçamento de rate-limit dedicado pra `position_risk`,
+   recortado de dentro do pool de P2/P3") foi considerada e descartada —
+   não por violar o invariante de execução (isso já tinha sido corrigido
+   em `AG-104`), mas porque `Budget` (`src/exchange/rate_limit.py:70-96`)
+   só reconhece 2 níveis (execução = teto cheio; não-execução = teto×
+   (1-reserve_pct)), com um único contador `used` COMPARTILHADO por P2 e
+   P3 — não existe sub-alocação dentro do pool de não-execução pra
+   proteger `position_risk` especificamente. Pior: tráfego de P0/P1
+   sozinho já pode esgotar o teto de não-execução inteiro (com
+   `ip_weight_limit_1m=2400`/`rate_limit_reserve_pct=0.30`, basta `used`
+   passar de 1680) ANTES de qualquer chamada P2/P3 ser sequer avaliada —
+   uma fatia "dedicada" dentro do P2/P3 não mudaria isso, porque o corte
+   que importa (P0/P1 vs. P2/P3) já aconteceu antes. Ou seja: essa opção
+   nunca resolveria o cenário que `AG-102` levantou (contagem de posição
+   deferida sob rajada de execução), só um cenário diferente (perder pra
+   `account_info`/`backfill`/`research`) que ninguém tinha pedido pra
+   resolver. Restam 2 caminhos reais: **cache local com TTL curto**
+   (aceita staleness limitada, sem tráfego extra por avaliação de sinal);
+   ou **aceitar staleness maior com um gatilho de reconciliação separado**
+   (mais simples, mas o cap gateria com dado potencialmente desatualizado
+   durante o pico de STRESS). Nenhum escolhido aqui — decisão do Manager
+   quando `AG-101` for implementada. Valor do cap em si segue
+   `TBD — medir` (B23), ponto de partida "2 posições simultâneas"
+   (`PRD_V4_1.md:591`), não valor final — precisa de sweep contra
+   correlação real entre os 5 ativos antes de virar constante em
+   `constants.yaml` (classe A).
+
+Questão de negócio que sobra pro Manager, não resolvida por este desenho:
+o denominador do K01 (`daily_loss_usd`/equity) quando há posições
+concorrentes em símbolos diferentes — equity compartilhada entre todas,
+ou algum nocional de referência por linha (addendum `2026-08-19` de
+`AG-007`).
+
+**AG-098 (N do DSR para seleção de linha) — CONFIRMADO SÓLIDO (Rodada 3).**
+
+1. **Convenção de contagem**: cada `(symbol, resolution_id)` avaliada
+   como candidata a promoção pra produção, no momento em que uma decisão
+   real de manter/descartar é tomada, conta como 1 trial em
+   `N_lifetime` — mesmo grão de `id 10` do ledger (célula que exige
+   recálculo de backtest individual), explicitamente NÃO o grão de
+   `id 16` (símbolo como leito de robustez de UMA escolha uniforme —
+   categoria diferente, não aplicável aqui porque a seleção de linha é
+   diferencial por construção).
+2. **Regra corrigida (a Rodada 1 achou o cenário-armadilha certo, mas a
+   1ª tentativa de regra estava errada — a Rodada 2 achou por quê e
+   corrigiu no mesmo dia).** Tentativa original: contar como `id-10`-símil
+   SE pelo menos 1 linha fosse promovida, `id-11`-símil se zero
+   promoções — usava o RESULTADO da rodada como critério. Errado: o
+   ledger já declara, no próprio cabeçalho (`audit/n_lifetime.yaml:
+   19-29`), que a distinção id-10/id-11 é ESTRUTURAL (exige ajuste de
+   modelo/backtest novo POR candidata, ou reusa artefato já ajustado sem
+   backtest novo) — nunca depende de quantas candidatas acabam
+   promovidas. Usar resultado como critério criava circularidade real
+   com o gate de DSR (`n_trials` da rodada dependeria de "alguma linha
+   foi promovida", que inclui a própria decisão sendo tomada —
+   `src/validation/dsr.py::compute_dsr` alimenta `n_trials` direto em
+   `sr0_per_trade`/`dsr`, então a penalidade de multiple-testing de uma
+   linha dependeria do resultado que ela mesma ajuda a decidir).
+   **Regra final: seleção de linha SEMPRE conta como `id-10`-símil — 1
+   trial POR linha efetivamente avaliada com backtest/medição individual
+   (N=15 se as 15 forem avaliadas), independente de quantas acabam
+   promovidas.** Nunca colapsa a 1 trial pela rodada — o precedente
+   `id 11` (70 features rankeadas por correlação já computada, sem
+   backtest novo por candidata) é estruturalmente diferente e não se
+   aplica aqui.
+3. **Regra nova (gap da Rodada 1): re-teste da mesma linha após mudança
+   de código conta como trial novo.** Código mudou (novo candidato de
+   regime, nova feature, novo hiperparâmetro) ⇒ é estatisticamente uma
+   linha diferente da que foi testada antes ⇒ conta de novo, mesmo se
+   `(symbol, resolution_id)` for idêntico ao já testado.
+4. **Registro segue mesmo com `N_lifetime` não-vinculante** (`AG-077`):
+   contar agora, mesmo sem gate ativo, evita o problema já confirmado de
+   reconstrução retroativa incerta (Q12 da auditoria de 2026-08-19 sobre
+   M4) se/quando o DSR voltar a ser vinculante.
+5. **Recomendação adicional, não bloqueante**: PBO/CSCV (Bailey, Borwein,
+   López de Prado & Zhu) é o instrumento formal desenhado exatamente pra
+   "várias variantes testadas sobre o mesmo dado, qual promover" — mais
+   direto que a penalidade de N do DSR pra este caso específico. Não
+   implementado neste repo hoje (`src/validation/dsr.py` já cita PBO como
+   fora de escopo). Proposta: item de backlog do V41-11 (Walk-forward+
+   PBO+Lo, `§15.4`), não pré-requisito pra começar a seleção de linha —
+   a convenção de contagem dos itens 1-3 já é uma salvaguarda mínima
+   suficiente pra não operar sem nenhum controle.
+
+**AG-099 (posição aberta sob mudança de regime) — MECANISMO APROVADO pelo Manager (2026-08-19), 2 sub-decisões seguem abertas (ver final da seção).**
+Novo gatilho de Kill Switch, `K15` (`K14` já citado como "reservado" no
+achado original — correção: o addendum `2026-08-17` da entrada de
+origem usa a contagem ordinal "gatilho 14", nunca escreve literalmente
+"K14" — extrapolação razoável pro nome, não uma citação exata; K15
+confirmado livre por busca direta em `KILL_SWITCH_TRIGGER_IDS`,
+`src/risk/kill_switch.py:273-275`, que tem exatamente 13 elementos,
+K01-K13): `REGIME_STRESS_COM_POSICAO_ABERTA` — dispara quando
+`regime_state(symbol, resolution) → R5/STRESS` E existe posição aberta
+nessa linha.
+
+**Mecanismo revisado — a Rodada 1 refutou a premissa original.** A
+versão anterior propunha apertar o stop-loss; pesquisa de mercado da
+revisão adversarial (OANDA, Optimus Futures, TradingView — práticas de
+stop sob volatilidade) mostra o oposto do que a proposta original
+assumia: apertar o stop sob alta volatilidade aumenta a chance de
+stopout prematuro por ruído sem reduzir slippage de execução (uma vez
+disparado, o stop vira ordem sujeita ao mesmo book fino independente da
+distância). **Mecanismo novo: encurtar o `time_stop` (horizonte máximo
+de holding) da posição, não tocar no preço do stop.** Reusa o conceito
+de barreira TIME já existente no Label Engine (`src.labels.
+triple_barrier::_BarrierTouch("TIME", ...)`) em vez de inventar mecânica
+de amend de preço nova — reduz a JANELA de exposição ao regime adverso
+sem alterar a distância do SL (elimina o risco de stopout prematuro por
+ruído que motivou a correção). O SL original (preço) fica intocado —
+elimina também o problema de janela-sem-proteção do amend-de-preço
+(achado (b) da Rodada 1: `PRD_V3_2_UNIFICADO.md` §16.8/
+`place_or_amend_stop` é cancela-e-reposta, sem endpoint nativo de amend
+na Binance Futures — criaria uma janela breve sem SL ativo, pior momento
+possível durante STRESS; correção também de citação — B14 rege ordem de
+postagem TP/SL pós-fill, não mecânica de amend de SL já ativo, citação
+anterior era non sequitur). **Questão mecânica residual, honesta, não
+escondida**: forçar saída num horizonte antecipado ainda exige alguma
+ação de execução real (`src/exchange/adapter.py::place_order` continua
+`NotImplementedError` — nenhum código de execução existe hoje pra
+verificar como isso se comportaria) — o desenho reduz o RISCO do
+mecanismo (não mexe no SL), mas não elimina a dependência de a camada de
+Execução existir. **Valor exato do encurtamento (ex. cortar X% do
+horizonte restante): `TBD — medir` (B23)** — não inventado aqui, precisa
+de medição de taxa de reversão-pós-stopout-prematuro vs. tamanho de
+perda evitada antes de virar parâmetro real (métrica explícita, não só
+"impacto em backtest" genérico). Decisão que sobra pro Manager: adotar o
+gatilho agora (parâmetro por medir, valor conservador provisório com
+`provenance: ASSUMED` explícito) ou aceitar o risco documentado por
+enquanto e adiar pro Estudo 2 — gap é pré-existente ao multi-ativo (já
+valia no V1 single-asset), a urgência vem só de multi-ativo multiplicar
+quantas posições ficam expostas simultaneamente.
+
+**Decisões abertas, registradas aqui pra não se perderem sob a aprovação
+do consolidado (2026-08-19) — nenhuma delas foi decidida por omissão:**
+
+1. **AG-096** — cache-local-com-TTL vs. aceitar-staleness-com-
+   reconciliação, pra quando `AG-101` (módulo de contagem de posição ao
+   vivo) for implementado.
+2. **AG-096** — valor exato do cap de posições concorrentes (`TBD —
+   medir`, ponto de partida 2).
+3. **AG-096/AG-007** — denominador do K01 (`daily_loss_usd`/equity) sob
+   posições concorrentes em símbolos diferentes — compartilhado ou por
+   linha.
+4. **AG-099** — adotar `K15` agora com valor provisório `ASSUMED`, ou
+   aceitar o risco e adiar pro Estudo 2.
+5. **AG-099** — valor exato do encurtamento de `time_stop` (`TBD —
+   medir`).
+6. **AG-100** (fora desta rodada de rascunho, ainda pendente) — R2/R3
+   virar escopo de produção agora ou depois.
+7. **AG-094** (idem, baixa urgência) — Meta-Label consome regime quando
+   for implementado, e de qual resolução/candidato.
+
 ---
 
 ## Fontes desta pesquisa
@@ -1520,6 +1796,236 @@ num lugar que uma auditoria futura vai consultar.
 ---
 
 ## Changelog
+
+- **v3.22 (2026-08-19)** — M4 (Regime), continuação da v3.21 no mesmo
+  dia: Manager autorizou "AG-093 + 4ª re execução". `AG-093` (BOCPD
+  avaliado sobre a janela crítica inteira, ~5x mais amostra que os
+  outros 5 candidatos) implementado — `SymbolResult` (`m4_regime_
+  comparison.py`) ganhou `oos_start_ms`/`oos_end_ms`, a fronteira real
+  do walk-forward que baseline/HMM/Jump Model já usam, computada de
+  graça a partir do MESMO `close_time_ms`/`oos_start`/`oos_end` já
+  calculado internamente (zero IO/fit adicional). `_bocpd_metrics_for_
+  window` (`m4_critical_windows.py`) passou a receber essa fronteira
+  diretamente em vez de derivar de `window.start`/`window.end` — o
+  BOCPD agora é avaliado sobre a mesma janela (~1 trimestre) que os
+  outros 5 candidatos.
+
+  Auditoria independente concluída no mesmo dia — 0 CRITICAL/0 HIGH. A
+  fórmula da fronteira (`close_time_ms[oos_end-1]+1`, evita índice fora
+  dos limites) foi confirmada correta por leitura direta de `generate_
+  anchored_walk_forward_splits` (o último fold SEMPRE cobre até o fim
+  da série carregada, não é caso especial). 1 achado MEDIUM corrigido
+  no mesmo dia: o teste de regressão só provava que a fronteira era um
+  superconjunto válido dos dados reais (containment), não que era a
+  fronteira EXATA — reforçado com igualdade direta contra um split
+  recomputado de forma independente + checagem de escala.
+
+  Com isso, as 4 correções desta rodada de investigação (`AG-090`/
+  `AG-091`/`AG-092`/`AG-093`) estão **todas implementadas e auditadas de
+  forma independente**, 0 CRITICAL/HIGH remanescente em qualquer uma.
+  4ª re-execução do M4 autorizada e pronta pra disparar — comando
+  entregue ao Manager pra rodar manualmente (protocolo de execução do
+  `CLAUDE.md`).
+
+- **v3.21 (2026-08-19)** — M4 (Regime), continuação da v3.20 no mesmo
+  dia: auditoria independente de `AG-092` concluída (2 agentes frescos
+  em paralelo — matemática do núcleo + integração/ordenação temporal),
+  0 CRITICAL nos dois. Núcleo: 6 alegações centrais verificadas
+  matematicamente à mão (equivalência de fórmulas, episódio nunca
+  quebrado, caso analítico `p=1.0` exato, poder estatístico, `k`
+  preservado, refatoração neutra) — nenhum contra-exemplo. Pesquisa web
+  confirmou fundamento na literatura (permutação em bloco por cluster,
+  correção `+1` de Phipson & Smyth). 3 MEDIUM corrigidos (fórmula de SE
+  duplicada extraída pra fonte única `_edge_variance_multinomial`;
+  degradação de resolução do p-valor com poucos episódios documentada;
+  viés de exclusão de permutação degenerada registrado como observação
+  não-bloqueante). Integração: **1 HIGH real** — a garantia de que
+  `join_asof` preserva ordem cronológica (pré-requisito crítico pra
+  extração de episódio, que é puramente posicional) não é um contrato
+  público do Polars tão forte quanto `.filter()` — o próprio Polars já
+  teve uma regressão real dessa propriedade (corrigida jan/2026).
+  Corrigido no mesmo dia: assertion de runtime (`np.diff(t0_ms)>=0`,
+  falha ruidosa em vez de episódio artificial silencioso) + teste de
+  regressão com buckets intercalados cronologicamente (discrimina uma
+  reordenação silenciosa que a fixture antiga nunca pegaria, por
+  bucket-contiguidade coincidir com tempo-contiguidade lá por
+  construção). As outras 7 perguntas de integração confirmadas
+  corretas, 0 achados. Mecanicamente limpo em todos os arquivos.
+
+  Com isso, as "3 propostas autorizado" (`AG-090`/`AG-091`/`AG-092`)
+  estão **implementadas e auditadas de forma independente**, 0
+  CRITICAL/HIGH remanescente em nenhuma das 3. Pendente: re-execução do
+  M4 (4ª rodada) — próxima decisão é do Manager, considerando também
+  `AG-093` (BOCPD sobre janela cheia em vez de slice OOS, achado mas
+  sem autorização de fix) antes de comprometer o custo computacional de
+  um novo run completo.
+
+- **v3.20 (2026-08-19)** — M4 (Regime), continuação da v3.19 no mesmo
+  dia. Auditoria independente de `AG-090`/`AG-091` (2 agentes frescos,
+  1 por arquivo) concluída — veredito "APROVADO_COM_RESSALVAS" nos dois,
+  **0 CRITICAL/0 HIGH** (os 2 fixes estão logicamente completos e
+  corretos nos consumidores reais). `AG-091` teve 1 achado HIGH real,
+  mas sobre PROVENIÊNCIA, não comportamento: a citação original ("
+  `metafor`/`meta` no R e Higgins & Thompson 2002 tratam `k=1` como
+  indefinido") era FALSA — os agentes leram o código-fonte real dos 2
+  pacotes R e confirmaram que ambos fazem o OPOSTO (`Q=0`/`I²=0%` por
+  convenção, incluído na agregação). A escolha `NaN`/excluir continua
+  válida, mas por razão específica a este repo (evitar recompensar
+  candidato degenerado com score "limpo"), não precedente de biblioteca
+  — docstring corrigido. 3 achados MEDIUM (testes de regressão faltando
+  nos pontos mais sensíveis a desalinhamento silencioso — fold
+  parcialmente falho, máscara de janela do BOCPD, cenário real de
+  `n_buckets=1` no consumidor) — todos corrigidos no mesmo dia. 5
+  achados LOW documentados como backlog, sem urgência.
+
+  `AG-092` (invalidade estatística do Cochran's Q/I² sob autocorrelação
+  intra-episódio) **implementado** no mesmo dia — teste de permutação em
+  bloco por episódio de regime, substituindo o p-valor assintótico
+  `chi²(k-1)` por um p-valor empírico. `src/validation/regime_utility.py`
+  ganhou `segment_boundaries` (extraído de `regime_persistence`, mesma
+  lógica de run-length, agora reusável). `src/analysis/m6_common_factor_
+  hypothesis.py` ganhou `permutation_heterogeneity_test` (núcleo
+  vetorizado via `np.bincount`, equivalência com `cochrans_q_
+  heterogeneity` provada por teste dedicado — sem custo de refit,
+  centenas/milhares de permutações por célula em milissegundos).
+  `m4_critical_windows.py` threaded com 2 constantes novas
+  (`m4_heterogeneity_n_permutations=1000`/`m4_heterogeneity_permutation_
+  seed=42`, `constants.yaml`) por toda a cadeia de agregação. Auditoria
+  independente disparada (2 agentes, 1 pra matemática do núcleo, 1 pra
+  integração/ordenação temporal no pipeline) — resultado pendente no
+  momento deste registro.
+
+  Critério de decisão combinando p-valor < α com magnitude econômica, e
+  t-stat de Ibragimov-Müller pra agregação entre janelas — deliberadamente
+  NÃO implementados nesta rodada (ficam pra quando `G-C1-2` for de fato
+  avaliado). `AG-093` (BOCPD avaliado sobre a janela crítica inteira em
+  vez do slice OOS, ~5x mais amostra que os outros candidatos) segue
+  ABERTO, sem autorização de fix ainda. Re-execução do M4 (4ª rodada)
+  segue pendente — aguarda resultado das 2 auditorias de `AG-092` antes
+  de comprometer o custo computacional de um novo run completo.
+
+- **v3.19 (2026-08-19)** — M4 (Regime), continuação da v3.18: Manager
+  autorizou auditoria cética sobre o resultado real da Fase D re-
+  executada (BOCPD liderando de novo as 3 resoluções sob Cochran's Q/I²,
+  padrão suspeito repetido). Achados novos, registrados `AG-090` a
+  `AG-093`: (1) `AG-090`, ALTO — `join_asof` causal de Q3 e de
+  heterogeneidade chaveava em `open_time_ms` (abertura da barra), não
+  `close_time_ms` (quando o rótulo de regime é de fato conhecível) —
+  vazamento temporal confirmado contra `t0` real de `labels.parquet`
+  (já é `close_time`, `src/labels/triple_barrier.py:913`); (2) `AG-091`,
+  MÉDIO — `cochrans_q_heterogeneity` com `k=1` (`df=0`) produzia
+  `i_squared_pct=100,0` por ruído de ponto flutuante em vez de `NaN`
+  explícito (caso real medido: `q_statistic=3,857e-32`, não `0,0`); (3)
+  `AG-092`, ALTO — Cochran's Q/I² assume estratos independentes,
+  violado pela autocorrelação intra-episódio de regime (`I²` satura
+  70-99% quase universalmente no relatório real, consistente com o
+  mecanismo de inflação da literatura, não com heterogeneidade real tão
+  extrema); (4) `AG-093`, ALTO — `_bocpd_metrics_for_window` (correção
+  `AG-084`) avalia métricas sobre a janela crítica INTEIRA (~15 meses)
+  em vez do slice OOS que os outros 5 candidatos usam (~1 trimestre) —
+  amostra ~5x maior infla `I²` do BOCPD artificialmente, principal fator
+  medido por trás da liderança suspeita.
+
+  Manager autorizou implementação de `AG-090`/`AG-091`/`AG-092`
+  ("3 propostas autorizado") — `AG-093` ficou de fora dessa autorização
+  (achado no mesmo round de investigação, mas não coberto pelo pedido).
+  Implementados nesta sessão: `AG-090` (`close_time_ms` como campo
+  obrigatório novo em `RawLabels`/`_BocpdFullHistory`, roteado por todos
+  os pontos de construção, `_asof_join_btc_labels`/`_asof_join_regime_
+  onto_labels` corrigidos, testes de regressão dedicados provando a
+  diferença com um caso construído) e `AG-091` (early-return `df==0` →
+  `NaN` explícito, nunca `0,0`/`100,0`). `AG-092` (teste de permutação em
+  bloco por episódio de regime, reusando `regime_persistence`) —
+  desenhado, autorizado, AINDA NÃO implementado. `AG-093` — achado,
+  fix desenhado, implementação NÃO autorizada ainda.
+
+  Mecanicamente limpo (ruff/mypy/banned_patterns/check_constants_
+  referenced/check_unguarded_ratios) nos arquivos tocados por `AG-090`/
+  `AG-091`. Auditoria independente (`audit_engineering`, agentes
+  frescos, 1 por unidade de mudança) disparada em 2026-08-19 sobre os
+  dois fixes ANTES de qualquer nova re-execução real do M4 — resultado
+  pendente no momento deste registro. Re-execução (4ª rodada) aguarda
+  tanto o resultado dessa auditoria quanto a implementação de `AG-092`
+  (o instrumento estatístico central do critério de Gate revisado não
+  pode ser considerado confiável sem essa correção).
+
+- **v3.18 (2026-08-18)** — M4 (Regime), continuação da v3.17 no mesmo
+  dia: Manager autorizou "corrigir e rodar". BOCPD corrigido nos 2 bugs
+  (`AG-084`/`AG-085` — série causal completa + canonicalização causal via
+  `expanding_percentile_rank_strict`); Jump Model (`AG-087`) recebeu
+  transparência de saturação (`is_saturated`/`saturation_rate`), não o
+  resweep completo — decisão consciente de escopo. Detalhe completo na
+  linha `M4(V4.1) — Regime` de `§11.6` (fonte canônica, não repetido
+  aqui). Mecanicamente auditado, testes novos escritos, ainda não
+  commitado nem re-executado — próximo passo real é a Fase D de novo.
+
+- **v3.17 (2026-08-18)** — M4 (Regime), continuação da v3.16 no mesmo
+  dia: Fase D (18 trials reais) concluiu com 0 falhas/pulos
+  (`elapsed_seconds_total≈9737s`, `experiments/m4_critical_windows_
+  report.json`). Manager rejeitou aceitar o resultado bruto ("não
+  confiar, auditar desde a raiz") — despachou 5 auditorias céticas + RAG
+  em paralelo (BOCPD, HMM, Jump Model, validade da métrica/baseline,
+  orquestração/wiring). Achados reais, registrados `AG-084` a `AG-087`:
+  BOCPD (único candidato com separação não-nula) tem 2 bugs empilhados —
+  `m4_critical_windows.py` reseta o prior bayesiano dele a cada janela
+  crítica (precisa de série causal contínua pra amadurecer) E
+  `segments_to_canonical_states` (`bocpd.py`) usa a média do PRÓPRIO
+  segmento (incluindo barras futuras) pra definir o rótulo, testado
+  depois contra retorno futuro — leakage mecânico, reproduzido por
+  decaimento de defasagem; Jump Model colapsa a 1 estado em ~25-29% das
+  células (hiperparâmetro `jump_penalty=0,002` calibrado numa única
+  fatia de BTC); HMM tinha bug real de k-means sem padronização de
+  escala, mas TESTADO CAUSALMENTE (EM completo, init real vs. padronizado,
+  ambos até convergência) e REFUTADO como causa do ω²≈0 — único achado
+  tratado como genuíno. Baseline (ortogonalidade≈0,94 vs. volatilidade)
+  é quase-tautológico por construção (`vol_pctile` é um dos 2 eixos que
+  definem o próprio `regime` do baseline).
+
+  Manager decidiu (via `AskUserQuestion`, "Opção 1 + Opção 3"): registrar
+  os achados agora (feito) e reconsiderar o critério de Gate ANTES de
+  corrigir código. 2 auditorias adicionais (literatura de regime-
+  switching/DRO + aplicação ao desenho real do motor) convergiram,
+  independentemente, na MESMA proposta: "separação de retorno a 1 barra
+  via ANOVA de Welch" nunca é como a literatura valida regime que
+  alimenta um modelo a jusante (DRO/veto) — substituído por **Cochran's
+  Q/I² de `edge_bruto_atr` condicionado por bucket de regime**, reusando
+  `m6_common_factor_hypothesis.cochrans_q_heterogeneity`/`stratum_
+  metrics` sem fórmula nova. **Autorizado e implementado** no mesmo dia
+  — `src/analysis/m4_critical_windows.py` ganhou `AggregatedHeterogeneity
+  Result`/`CriticalWindowsReport.heterogeneity` (as-of join causal entre
+  `labels.parquet` e o regime de cada candidato, mesma disciplina de Q3),
+  auditoria mecânica limpa (ruff/mypy/banned_patterns/constants/
+  unguarded-ratios), testes novos escritos. Q3 (Terceira via) também
+  ficou pronto pra rodar junto (decisão do Manager: "guarde Q3 pra rodar
+  junto aos demais depois que aplicarmos os 3 fix") — `_run_one_cell`
+  passou a sempre coletar `RawLabels` (custo zero, já era calculado
+  internamente) e a agregação de Q3/heterogeneidade reusa esse dado, sem
+  nenhum fit adicional.
+
+  3 gaps adicionais registrados `AG-088`/`AG-089`, ambos CONFIRMADOS sem
+  impacto no M4 atual (verificado por leitura de imports — `m4_critical_
+  windows.py`/`m4_regime_comparison.py` não importam `alpha`/
+  `environments`/`dataset`) e deliberadamente deferidos: nenhum dos 3
+  candidatos novos modela o veto de risco R5/stress (estudo dedicado
+  confirmou que os gatilhos S1-S10 já são independentes do classificador
+  de regime por leitura de código — `src/regime/stress.py` não referencia
+  nenhum estado da máquina de histerese — recomenda desacoplar num
+  módulo `veto.py` reusável por qualquer candidato, não implementado, só
+  desenhado); vocabulário R1-R5 hard-coded em `alpha.py`/`classifier.py`/
+  `environments.py` bloqueia promoção futura de candidato (`AG-088`);
+  Group DRO (Camada 5) não existe em código ainda (`AG-089`) — Manager
+  confirmou: continuar M4 mesmo assim, "errado seria criar consumidor
+  pra consumir o que nem foi definido ainda".
+
+  Correção de precisão, também nesta rodada: 2 dos 5 agentes reproduziram
+  `generate_anchored_walk_forward_splits` real e encontraram que cada
+  janela crítica produz 2 folds de teste, não 3 como documentado — o
+  mês-alvo cai no fold 0, não no fold 1 (não muda nenhum número agregado,
+  só a narrativa de cobertura) — corrigido em `_TARGET_FOLD_CAVEAT`/
+  docstring do módulo. **Próximo passo real, ainda não feito**: corrigir
+  os 3 bugs de código (BOCPD ×2, Jump Model) e re-rodar tudo junto
+  (candidatos + Q3 + heterogeneidade) numa única execução — `G-C1-2`
+  segue sem valor final ratificado.
 
 - **v3.16 (2026-08-18)** — M4 (Regime): harness completo, calibrado,
   auditado, estendido — execução real (Fase D) em andamento no momento

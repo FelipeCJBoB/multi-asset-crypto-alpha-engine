@@ -132,13 +132,34 @@ def test_run_bocpd_determinismo() -> None:
 # ============================================================================
 
 
-def test_segments_to_canonical_states_agrupa_por_quantil_do_retorno_medio() -> None:
-    # 3 segmentos com retorno médio bem distinto: -1, 0, 1
+def test_segments_to_canonical_states_agrupa_por_quantil_causal_do_retorno_medio() -> None:
+    """AG-085: bucketing agora é CAUSAL (média expansiva dentro do
+    segmento, rankeada contra o posto expansivo já visto) -- segmento 0
+    (retorno mais baixo desde o início) cai no bucket mais baixo ou
+    empatado, nunca acima do segmento 2 (retorno mais alto)."""
     segment_id = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
     response = np.array([-1.0, -1.0, 0.0, 0.0, 1.0, 1.0], dtype=np.float64)
     buckets = segments_to_canonical_states(segment_id, response, n_buckets=3)
-    # segmento 0 (retorno mais baixo) deve cair no bucket mais baixo
-    assert buckets[0] < buckets[2] < buckets[4] or buckets[0] <= buckets[2] <= buckets[4]
+    assert buckets[0] <= buckets[2] <= buckets[4]
+
+
+def test_segments_to_canonical_states_e_causal_perturbar_futuro_nao_muda_passado() -> None:
+    """Prova de causalidade central do AG-085: o bucket da barra `t` não
+    pode depender de `response`/`segment_id` em `> t` -- perturbar o
+    futuro não muda nenhum bucket já atribuído no passado."""
+    rng = np.random.default_rng(11)
+    n = 60
+    cutoff = 30
+    segment_id = np.sort(rng.integers(0, 6, size=n)).astype(np.int64)
+    response = rng.normal(0.0, 1.0, n).astype(np.float64)
+
+    buckets_base = segments_to_canonical_states(segment_id, response, n_buckets=3)
+
+    response_perturbed = response.copy()
+    response_perturbed[cutoff:] = rng.normal(50.0, 1.0, n - cutoff)
+    buckets_perturbed = segments_to_canonical_states(segment_id, response_perturbed, n_buckets=3)
+
+    np.testing.assert_array_equal(buckets_base[:cutoff], buckets_perturbed[:cutoff])
 
 
 def test_segments_to_canonical_states_levanta_value_error_shape_diferente() -> None:
@@ -148,8 +169,21 @@ def test_segments_to_canonical_states_levanta_value_error_shape_diferente() -> N
         )
 
 
-def test_segments_to_canonical_states_levanta_value_error_buckets_demais() -> None:
+def test_segments_to_canonical_states_n_buckets_maior_que_segmentos_e_valido() -> None:
+    """AG-085: diferente da versão anterior, não exige mais `n_buckets <=
+    nº de segmentos distintos` -- cada BARRA é bucketada por um posto
+    contínuo (não 1 bucket fixo por segmento), então mais buckets que
+    segmentos é válido, só produz buckets menos povoados. Não deve
+    levantar."""
+    segment_id = np.array([0, 0, 1, 1], dtype=np.int64)
+    response = np.array([1.0, 1.0, 2.0, 2.0], dtype=np.float64)
+    buckets = segments_to_canonical_states(segment_id, response, n_buckets=5)
+    assert buckets.shape == segment_id.shape
+    assert np.all(buckets >= 0)
+
+
+def test_segments_to_canonical_states_levanta_value_error_n_buckets_menor_que_1() -> None:
     segment_id = np.array([0, 0, 1, 1], dtype=np.int64)
     response = np.array([1.0, 1.0, 2.0, 2.0], dtype=np.float64)
     with pytest.raises(ValueError, match="n_buckets"):
-        segments_to_canonical_states(segment_id, response, n_buckets=5)
+        segments_to_canonical_states(segment_id, response, n_buckets=0)

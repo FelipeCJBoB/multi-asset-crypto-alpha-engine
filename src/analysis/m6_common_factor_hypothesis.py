@@ -51,6 +51,7 @@ import numpy as np
 import orjson
 import polars as pl
 import structlog
+from numpy.typing import NDArray
 from scipy.stats import chi2
 
 from src.analysis.feasibility import captura as compute_captura
@@ -62,6 +63,7 @@ from src.core.provenance import report_provenance
 from src.labels.triple_barrier import LabelConfig
 from src.models.dataset import REGIME_COL, build_modeling_frame
 from src.risk._constants import load_constant as load_risk_constant
+from src.validation.regime_utility import segment_boundaries
 
 logger = structlog.get_logger(__name__)
 
@@ -96,24 +98,57 @@ class StratumMetrics:
     captura: float
 
 
+def _edge_variance_multinomial(
+    frac_tp: NDArray[np.float64],
+    frac_sl: NDArray[np.float64],
+    n: NDArray[np.float64],
+    *,
+    tp_mult: float,
+    sl_mult: float,
+) -> NDArray[np.float64]:
+    """`Var(edge_bruto_atr)` por propagação linear da variância MULTINOMIAL
+    de `(frac_TP, frac_SL)` — as duas vêm da MESMA amostra categórica de
+    `barrier_hit` (TP/SL/TIME/NOFILL), não são independentes. Para uma
+    multinomial com proporções `p_i` sobre `n` observações:
+    `Var(frac_i) = p_i(1-p_i)/n`, `Cov(frac_i, frac_j) = -p_i*p_j/n`
+    (i≠j) — propriedade padrão da distribuição, não uma aproximação.
+    `Var(edge) = tp_mult²·Var(frac_TP) + sl_mult²·Var(frac_SL) -
+    2·tp_mult·sl_mult·Cov(frac_TP,frac_SL)`.
+
+    Núcleo VETORIZADO compartilhado entre `_edge_bruto_se` (escalar,
+    pooled/estratificado do M6 -- envolve `frac_tp`/`frac_sl`/`n` num
+    array de 1 elemento) e `_q_statistic_from_bucket_codes` (vetorizado
+    por grupo, permutação em bloco AG-092) -- extraído 2026-08-19,
+    achado de auditoria independente (a mesma fórmula existia duplicada
+    nos 2 lugares, protegida só por um teste de equivalência passivo,
+    não por uma fonte única; risco real de divergência silenciosa se
+    alguém editasse só um dos dois no futuro).
+
+    **Pré-condição -- `n > 0` em TODA posição, garantido pelos 2
+    chamadores antes de chegar aqui** (`_edge_bruto_se` retorna `NaN`
+    cedo se `n<=0`; `_q_statistic_from_bucket_codes` retorna `NaN` cedo
+    se `np.any(n_per_bucket<=0)`) -- esta função não reguarda de
+    propósito (evitaria checar 2x o mesmo invariante), então NUNCA
+    chame com `n<=0` sem repetir a guarda do lado de fora."""
+    var_tp = frac_tp * (1.0 - frac_tp) / n  # noqa: unguarded-ratio -- n>0 garantido pelos 2 chamadores, ver docstring
+    var_sl = frac_sl * (1.0 - frac_sl) / n  # noqa: unguarded-ratio -- idem
+    cov_tp_sl = -frac_tp * frac_sl / n  # noqa: unguarded-ratio -- idem
+    return (tp_mult**2) * var_tp + (sl_mult**2) * var_sl - 2.0 * tp_mult * sl_mult * cov_tp_sl
+
+
 def _edge_bruto_se(
     frac_tp: float, frac_sl: float, n: int, *, tp_mult: float, sl_mult: float
 ) -> float:
     """Erro-padrão de `edge_bruto_atr = frac_TP*tp_mult - frac_SL*sl_mult`
-    por propagação linear da variância MULTINOMIAL de `(frac_TP, frac_SL)`
-    — as duas vêm da MESMA amostra categórica de `barrier_hit`
-    (TP/SL/TIME/NOFILL), não são independentes. Para uma multinomial com
-    proporções `p_i` sobre `n` observações: `Var(frac_i) = p_i(1-p_i)/n`,
-    `Cov(frac_i, frac_j) = -p_i*p_j/n` (i≠j) — propriedade padrão da
-    distribuição, não uma aproximação. `Var(edge) = tp_mult²·Var(frac_TP)
-    + sl_mult²·Var(frac_SL) - 2·tp_mult·sl_mult·Cov(frac_TP,frac_SL)`."""
+    -- wrapper escalar de `_edge_variance_multinomial` (ver docstring
+    dela pra fórmula completa/fonte)."""
     if n <= 0 or np.isnan(frac_tp) or np.isnan(frac_sl):
         return float("nan")
-    var_tp = frac_tp * (1.0 - frac_tp) / n
-    var_sl = frac_sl * (1.0 - frac_sl) / n
-    cov_tp_sl = -frac_tp * frac_sl / n
-    var_edge = (tp_mult**2) * var_tp + (sl_mult**2) * var_sl - 2.0 * tp_mult * sl_mult * cov_tp_sl
-    return float(np.sqrt(max(var_edge, 0.0)))
+    var_edge = _edge_variance_multinomial(
+        np.array([frac_tp]), np.array([frac_sl]), np.array([float(n)]),
+        tp_mult=tp_mult, sl_mult=sl_mult,
+    )
+    return float(np.sqrt(max(float(var_edge[0]), 0.0)))
 
 
 def stratum_metrics(
@@ -185,7 +220,67 @@ def cochrans_q_heterogeneity(strata: tuple[StratumMetrics, ...]) -> Heterogeneit
     `edge_bruto_atr` verdadeiro nos `k` símbolos). `I² = max(0,
     (Q-df)/Q)·100%` — fração da variação TOTAL atribuível a
     heterogeneidade real (Higgins & Thompson 2002, instrumento padrão de
-    meta-análise, não inventado aqui)."""
+    meta-análise, não inventado aqui).
+
+    **`k=1` (`df=0`) -- corrigido 2026-08-19, achado de auditoria cética
+    (reusada pelo M4 pra heterogeneidade por bucket de regime, onde `k=1`
+    acontece de verdade quando um candidato satura a 1 bucket só, ex.
+    Jump Model degenerado -- AG-087).**
+
+    Em aritmética EXATA, `Q=0` é determinístico pra `k=1` (`x̄` é o
+    próprio único valor, `Σw_i(x_i-x̄)²` colapsa a zero por construção --
+    não é "indefinido", é trivialmente zero). O que É genuinamente
+    ambíguo é a INTERPRETAÇÃO desse zero: "0% de heterogeneidade" (uma
+    leitura válida -- não há evidência de heterogeneidade porque não há
+    comparação possível) vs. "não há amostra suficiente pra sequer
+    perguntar" (a leitura escolhida aqui). **Correção 2026-08-19, `NaN`
+    explícito, nunca `0.0`/`100.0`:**
+    1. Achado real de auditoria (verificado): em ponto flutuante,
+       `pooled = Σ(w·v)/Σw` com 1 termo deveria simplificar pra `v`
+       exatamente, mas envolve 2 arredondamentos (`fl(fl(w·v)/w)`), erro
+       esperado `~4u²≈4,93e-32` (`u`=épsilon de máquina binário64) --
+       bateu quase exato com um caso real medido
+       (`experiments/m4_critical_windows_report.json`,
+       BTCUSDT/CRYPTO_WINTER/short: `q_statistic=3,857e-32`, não zero
+       bit-exato). A fórmula antiga (`(q-df)/q` com `df=0`) amplificava
+       esse ruído de ULP pro EXTREMO OPOSTO do pretendido:
+       `i_squared_pct=100.0`. Isso sozinho já justificaria um guard
+       explícito em vez de deixar o resultado ao sabor do ruído de
+       ponto flutuante.
+    2. **Correção de proveniência, 2026-08-19 (auditoria independente):**
+       a versão anterior deste docstring citava "precedente unânime" em
+       `metafor::rma.uni`/pacote `meta` (R)/Higgins & Thompson (2002)/
+       Cochrane Handbook §9.5.2 como devolvendo `NA` pra `k=1` -- **essa
+       citação era FALSA**, refutada por leitura direta do código-fonte
+       real dos 2 pacotes R: `metafor::rma.uni` (`R/rma.uni.r`, branch
+       `master`) hard-codifica `QE=0, I2=0, QEp=1` pra `k<=p`; `meta::
+       hetcalc` (`R/hetcalc.R`) hard-codifica `Q=0` pra `k=1` com dado
+       presente. ISTO É: as duas bibliotecas de referência tratam `k=1`
+       como "0% por convenção" e INCLUEM na agregação, o oposto da
+       decisão tomada aqui. A escolha `NaN`/EXCLUIR (via `_median_or_nan`
+       em `m4_critical_windows.py`) não vem de precedente de biblioteca
+       nenhuma -- é uma decisão específica ao uso real deste repo:
+       `k=1`/`n_buckets=1` em M4 normalmente significa um classificador
+       de regime degenerado que colapsou pra 1 bucket só (AG-087),
+       excluir da mediana evita recompensar esse colapso com um score
+       artificialmente "limpo" (0% de heterogeneidade), diferente do
+       caso de meta-análise clássica (`metafor`/`meta`) onde `k=1` é só
+       "1 estudo disponível", sem essa conotação de degenerescência.
+    `pooled_edge_bruto_atr` continua computável (é literalmente o valor
+    do único estrato) -- só `q_statistic`/`p_value`/`i_squared_pct` viram
+    `NaN`. Confirmado que a execução real do M6 nunca teve `k=1`
+    (`experiments/m6_common_factor_hypothesis_report.json`, `k=5` sempre
+    nos 2 lados) -- esta correção não muda nenhum resultado do M6 já
+    auditado/validado. Impacto real medido no M4 (o consumidor onde
+    `k=1` de fato ocorre): 26 células com `n_buckets=1` em
+    `experiments/m4_critical_windows_report.json` (23 saíam `0.0` "por
+    sorte" de ponto flutuante e eram incluídas na mediana antes desta
+    correção, 3 saíam `100.0` corrompidas) -- as 26 passam a ser `NaN`/
+    excluídas agora, mudança sistemática de tratamento, não só das 3
+    quebradas. Esse relatório em disco fica desatualizado em relação a
+    este código a partir desta correção; re-execução do M4 pendente
+    (aguarda também AG-092, invalidade estatística do instrumento sob
+    autocorrelação intra-episódio)."""
     if len({s.side for s in strata}) != 1:
         raise ValueError("cochrans_q_heterogeneity: todos os strata precisam ser do mesmo side")
     side = strata[0].side
@@ -199,13 +294,217 @@ def cochrans_q_heterogeneity(strata: tuple[StratumMetrics, ...]) -> Heterogeneit
         )
     weights = 1.0 / (se**2)  # noqa: unguarded-ratio -- se>0 garantido pelo guard acima (np.any(se<=0) já retornou)
     pooled = float(np.sum(weights * values) / np.sum(weights))  # noqa: unguarded-ratio -- soma de pesos todos positivos, nunca zero
-    q = float(np.sum(weights * (values - pooled) ** 2))
     df = k - 1
-    p_value = float(chi2.sf(q, df)) if df > 0 else float("nan")
+    if df == 0:
+        # k=1 -- Q/I² indefinidos matematicamente, NaN explícito (ver
+        # docstring acima). pooled continua válido (só reflete o único
+        # estrato), não precisa virar NaN junto.
+        return HeterogeneityTest(
+            side=side, k=k, pooled_edge_bruto_atr=pooled, q_statistic=float("nan"),
+            df=df, p_value=float("nan"), i_squared_pct=float("nan"), per_symbol=strata,
+        )
+    q = float(np.sum(weights * (values - pooled) ** 2))
+    p_value = float(chi2.sf(q, df))
     i_squared = max(0.0, (q - df) / q) * 100.0 if q > 0 else 0.0  # noqa: unguarded-ratio -- guardado pelo `if q > 0 else 0.0` na mesma linha
     return HeterogeneityTest(
         side=side, k=k, pooled_edge_bruto_atr=pooled, q_statistic=q, df=df,
         p_value=p_value, i_squared_pct=i_squared, per_symbol=strata,
+    )
+
+
+# ============================================================================
+# Permutação em bloco por episódio (AG-092) — corrige a violação de
+# independência de estratos de cochrans_q_heterogeneity quando os dados
+# vêm de série TEMPORAL com regime persistente, não amostras i.i.d.
+# ============================================================================
+
+IntArray = NDArray[np.int64]
+
+
+def _dense_bucket_codes(bucket_ids: IntArray) -> tuple[IntArray, int]:
+    """Remapeia códigos de bucket arbitrários (`canonical_id` de um
+    candidato de regime, não necessariamente 0..k-1 nem contíguo) pra
+    inteiros densos 0..k-1 — `np.bincount` exige índices não-negativos e
+    densos. `k` = nº de buckets DISTINTOS presentes (não um valor fixo de
+    config — um candidato pode saturar a menos buckets que o nominal,
+    AG-087)."""
+    uniques, codes = np.unique(bucket_ids, return_inverse=True)
+    return codes.astype(np.int64), int(uniques.shape[0])
+
+
+def _q_statistic_from_bucket_codes(
+    bucket_codes: IntArray,
+    is_tp: IntArray,
+    is_sl: IntArray,
+    *,
+    tp_mult: float,
+    sl_mult: float,
+    k: int,
+) -> float:
+    """Recomputa só `Q` (não `StratumMetrics` inteiro) a partir de
+    contagens agregadas por grupo — MESMA fórmula de
+    `cochrans_q_heterogeneity` (SE multinomial de `_edge_variance_
+    multinomial`, mesmo núcleo que `_edge_bruto_se` usa, pesos `w=1/SE²`,
+    `Q=Σw(x-x̄)²`), vetorizado via `np.bincount` pra rodar centenas/
+    milhares de vezes (permutação, AG-092) sem o overhead de construir
+    `StratumMetrics`/tocar Polars a cada rodada. `Q` só depende de
+    `n`/`frac_tp`/`frac_sl` por grupo — nunca de `custo_atr`/
+    `edge_liq_atr`/`captura` (que dependem de `atr_at_t0`, fora da fórmula
+    de `Q`) — pular esses campos aqui é simplificação LEGÍTIMA, não
+    aproximação: equivalência com `cochrans_q_heterogeneity` sobre a
+    atribuição REAL (não permutada) provada por teste dedicado
+    (`test_q_statistic_from_bucket_codes_bate_com_cochrans_q_
+    heterogeneity_na_atribuicao_real`)."""
+    n_per_bucket = np.bincount(bucket_codes, minlength=k).astype(np.float64)
+    if np.any(n_per_bucket <= 0):
+        return float("nan")
+    tp_per_bucket = np.bincount(bucket_codes, weights=is_tp, minlength=k)
+    sl_per_bucket = np.bincount(bucket_codes, weights=is_sl, minlength=k)
+    frac_tp = tp_per_bucket / n_per_bucket
+    frac_sl = sl_per_bucket / n_per_bucket
+    edge = frac_tp * tp_mult - frac_sl * sl_mult
+    var_edge = _edge_variance_multinomial(
+        frac_tp, frac_sl, n_per_bucket, tp_mult=tp_mult, sl_mult=sl_mult
+    )
+    se = np.sqrt(np.maximum(var_edge, 0.0))
+    if np.any(se <= 0) or np.any(np.isnan(se)):
+        return float("nan")
+    w = 1.0 / (se**2)  # noqa: unguarded-ratio -- se>0 garantido pelo guard acima (np.any(se<=0) já retornou)
+    pooled = float(np.sum(w * edge) / np.sum(w))  # noqa: unguarded-ratio -- soma de pesos todos positivos, nunca zero
+    return float(np.sum(w * (edge - pooled) ** 2))
+
+
+@dataclass(frozen=True, slots=True)
+class PermutationHeterogeneityResult:
+    """AG-092 — p-valor EMPÍRICO pra `Q` observado de
+    `cochrans_q_heterogeneity`, válido sob autocorrelação intra-episódio
+    (premissa violada pelo p-valor assintótico `chi²(k-1)` quando os
+    estratos vêm de séries temporais com regime persistente, não amostras
+    i.i.d. — ver docstring de `permutation_heterogeneity_test`).
+    `k<2`/`n_episodes<2`/`Q` degenerado → `p_value=NaN` explícito, nunca
+    inventado. `n_permutations_valid < n_permutations_requested` é
+    esperado ocasionalmente (uma permutação pode degenerar — ex. um
+    bucket pseudo-atribuído fica só com TP ou só com SL, `SE=0` —
+    descartada, não conta pro denominador do p-valor, nunca um crash)."""
+
+    q_observed: float
+    p_value: float
+    n_episodes: int
+    n_permutations_requested: int
+    n_permutations_valid: int
+
+
+def permutation_heterogeneity_test(
+    bucket_ids: IntArray,
+    is_tp: IntArray,
+    is_sl: IntArray,
+    *,
+    tp_mult: float,
+    sl_mult: float,
+    n_permutations: int,
+    seed: int,
+) -> PermutationHeterogeneityResult:
+    """Teste de permutação em BLOCO por episódio (AG-092,
+    `audit/architecture_gaps_log.yaml`) — corrige a violação de
+    independência de estratos de `cochrans_q_heterogeneity` quando os
+    dados vêm de uma série TEMPORAL com regime persistente: trades do
+    MESMO bucket formam episódios contíguos autocorrelacionados (regime
+    persistente = condições de mercado correlacionadas), então o
+    erro-padrão multinomial de `_edge_bruto_se` (que assume trades
+    i.i.d.) subestima a variância real, inflando `Q`/`I²` artificialmente
+    — confirmado empiricamente no relatório real do M4 (`I²` satura
+    70-99% quase universalmente, padrão consistente com este mecanismo de
+    inflação, não com heterogeneidade real tão extrema).
+
+    `bucket_ids`/`is_tp`/`is_sl`: 1 linha por trade, ORDENADAS POR TEMPO
+    pelo chamador (obrigatório — a extração de episódio abaixo assume que
+    posições adjacentes no array são adjacentes no tempo).
+
+    Mecânica: extrai EPISÓDIOS (sequências máximas de linhas consecutivas
+    com o mesmo bucket, via `regime_utility.segment_boundaries` — mesma
+    lógica de run-length de `regime_persistence`). Pra cada permutação:
+    embaralha o VETOR de bucket-por-episódio (nunca quebra um episódio no
+    meio, preserva duração/ordem temporal de cada um), reatribui cada
+    linha ao bucket do seu episódio pós-embaralhamento, recomputa `Q` sob
+    essa atribuição pseudo-aleatória. `Q` observado é só mais um ponto
+    dentro dessa distribuição nula — p-valor empírico = fração de
+    permutações com `Q_perm >= Q_observado` (com correção +1, padrão de
+    teste de permutação: `(1+Σ[Q_perm>=Q_obs])/(1+B)`, nunca 0 exato
+    mesmo se NENHUMA permutação igualar/superar o observado).
+
+    Por que isso resolve a violação de i.i.d. sem precisar corrigir a
+    fórmula de `SE`: a distribuição nula é gerada com a MESMA fórmula de
+    `Q` (mesma `SE` potencialmente subestimada) aplicada a cada
+    permutação — como o embaralhamento é por EPISÓDIO inteiro (nunca por
+    linha individual), a estrutura de autocorrelação intra-episódio
+    permanece intacta em CADA permutação, então qualquer inflação de `Q`
+    causada por essa autocorrelação afeta a distribuição nula do MESMO
+    jeito que afeta o `Q` observado — comparar os dois cancela o viés,
+    mesmo sem jamais estimar a `SE` "certa". Padrão estabelecido pra
+    testar diferença de grupo sob dependência intra-cluster (permutação
+    em bloco/cluster), não uma técnica inventada aqui.
+
+    `k` (nº de buckets distintos) é PRESERVADO em toda permutação —
+    embaralhar VALORES já presentes no vetor de episódios (não
+    resortear/reamostrar com reposição) nunca remove um valor do
+    conjunto, só troca quais episódios o carregam. `df=k-1` implícito
+    continua constante entre `Q_observado` e toda `Q_perm`, comparação
+    like-for-like.
+
+    **Resolução do p-valor degrada com poucos episódios** (achado de
+    auditoria independente, 2026-08-19): `p_min` teórico é `1/(B+1)`, mas
+    isso só vale quando o nº de rearranjos DISTINTOS de episódio->bucket
+    excede `B` -- com `n_episodes` baixo (ex. 3 episódios, 2 buckets),
+    o nº de rearranjos distintos pode ser tão baixo quanto 3-6,
+    tornando o piso real de resolução muito mais grosseiro que `B`
+    sugere, independente de `B=1000` (`m4_heterogeneity_n_permutations`).
+    Não é um bug (a amostragem da distribuição nula EXATA continua
+    correta), mas `n_episodes` (exposto em `PermutationHeterogeneityResult`)
+    deve ser conferido antes de tratar um `p_value` baixo como forte --
+    poucos episódios também produzem `p_value` categoricamente granular
+    (ex. só `{1/4, 2/4, 3/4, 1.0}` possíveis com 3 episódios/2 buckets)."""
+    if bucket_ids.shape[0] == 0:
+        raise ValueError("permutation_heterogeneity_test: bucket_ids vazio")
+    if not (bucket_ids.shape == is_tp.shape == is_sl.shape):
+        raise ValueError(
+            "permutation_heterogeneity_test: bucket_ids/is_tp/is_sl precisam do mesmo shape "
+            f"(bucket_ids={bucket_ids.shape}, is_tp={is_tp.shape}, is_sl={is_sl.shape})"
+        )
+    bucket_codes, k = _dense_bucket_codes(bucket_ids)
+    segment_starts, segment_ends = segment_boundaries(bucket_codes)
+    n_episodes = int(segment_starts.shape[0])
+    q_observed = _q_statistic_from_bucket_codes(
+        bucket_codes, is_tp, is_sl, tp_mult=tp_mult, sl_mult=sl_mult, k=k
+    )
+    if k < 2 or n_episodes < 2 or np.isnan(q_observed):
+        return PermutationHeterogeneityResult(
+            q_observed=q_observed, p_value=float("nan"), n_episodes=n_episodes,
+            n_permutations_requested=n_permutations, n_permutations_valid=0,
+        )
+
+    episode_id = np.repeat(np.arange(n_episodes, dtype=np.int64), segment_ends - segment_starts)
+    episode_bucket = bucket_codes[segment_starts]
+
+    rng = np.random.default_rng(seed)
+    n_ge = 0
+    n_valid = 0
+    for _ in range(n_permutations):
+        permuted = rng.permutation(episode_bucket)
+        pseudo_codes = permuted[episode_id]
+        q_perm = _q_statistic_from_bucket_codes(
+            pseudo_codes, is_tp, is_sl, tp_mult=tp_mult, sl_mult=sl_mult, k=k
+        )
+        if np.isnan(q_perm):
+            continue
+        n_valid += 1
+        if q_perm >= q_observed:
+            n_ge += 1
+
+    empirical_p = (1.0 + n_ge) / (1.0 + n_valid)  # noqa: unguarded-ratio -- n_valid é contagem >=0, guardado pelo if abaixo
+    p_value = float("nan") if n_valid == 0 else empirical_p
+    return PermutationHeterogeneityResult(
+        q_observed=q_observed, p_value=p_value, n_episodes=n_episodes,
+        n_permutations_requested=n_permutations, n_permutations_valid=n_valid,
     )
 
 

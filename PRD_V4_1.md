@@ -419,6 +419,8 @@ Refazer o §0.5 do V3.2 com ATR da série completa e o estimador vencedor de M1,
 
 > A partição atual **é função de volatilidade**: `vol_state` deriva de `C07`, que é posto expansivo de `realized_vol(48)`. E `C07` é a feature mais robusta do projeto **com IC negativo simétrico nos dois lados** — o que aponta para custo de execução, não direção. A partição pode estar reforçando o defeito que contamina a confiança.
 
+> **Nota de auditoria, 2026-08-18** (ponteiro — registro completo é `PLANO_MESTRE_PRINCE2.md` §11.6 linha `M4(V4.1) — Regime` + changelog v3.17, fonte canônica; detalhe bruto em `audit/architecture_gaps_log.yaml` AG-084 a AG-089): Fase D (18 trials) concluiu mas 5 auditorias céticas acharam 4 bugs reais que invalidam o resultado como estava. Critério de Gate revisado — Cochran's Q/I² de `edge_bruto_atr` por bucket de regime substitui "separação a 1 barra", implementado em `src/analysis/m4_critical_windows.py`. Pendente: corrigir os bugs e re-rodar.
+
 **Terceira via, testável (Q3):** com ρ ≈ 0,91, **o BTC é o fator de mercado**. Classificar regime no BTC e aplicar aos cinco tem três vantagens — rótulos com conteúdo idêntico, elimina 4/5 do custo, e testa se regime é propriedade do mercado ou do ativo. Falha se algum ativo tiver regime idiossincrático, e isso é medível pelo Rand ajustado entre a classificação própria e a derivada. **A medição decide.**
 
 **Canonicalização obrigatória:** estados ordenados de forma determinística (média de retorno, desempate por variância) — banned pattern B21.
@@ -455,7 +457,7 @@ Não há `bookTicker` fora de 2023-05 → 2024-03 (janela real, corrigida em §2
 
 ```
 G-C1-1  M1, M2, M3, M5, M6 emitidos com 0 trials
-G-C1-2  M4 emitido com <= 6 trials, canonicalização testada
+G-C1-2  M4 emitido com <= 6 trials, canonicalização testada, heterogeneidade Cochran's Q/I² por regime (critério revisado) -- ver nota de auditoria acima (AG-084 a AG-089), pendente re-execução com BOCPD/Jump Model corrigidos
 G-C1-3  todo relatório emite edge_bruto_atr, custo_atr, edge_liq_atr e captura
 G-C1-4  todas as métricas estratificadas por (symbol, tf, lado, regime)
 G-C1-5  declaração de escopo de fill anexada

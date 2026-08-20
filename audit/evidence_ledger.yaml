@@ -2215,3 +2215,31 @@ entries:
     PRD_V4_1.md §3.2 — fill real medido 42,2% vs 97,1% assumido). carry_share inválido (denominador
     pnl_total<=0) em 3 dos 5 paths. classificado amarelo — pooled/in-sample desta rodada, não testado por
     significância formal (DSR) ainda.
+- id_curto: m4-4a-execucao-permutacao-nula-generalizada
+  fase: PRD V4.1 M4 (Regime)
+  lado: both
+  regime: all
+  janela: '5 janelas históricas críticas (LUNA, FTX, crypto winter, ETF/halving, recente)'
+  feature_ou_filtro: 6 candidatos (baseline quantil, HMM k=2/3/4, Jump Model, BOCPD) x 3 resolucoes
+    (R1/R2/R3) -- heterogeneidade de edge_bruto_atr por bucket de regime, teste de permutacao em bloco
+    por episodio (AG-092)
+  metrica_tipo: p-valor de permutacao empirica (estatistica de Cochran's Q sob H0 de bloco)
+  metrica_valor: 18/18 celulas (6 candidatos x 3 resolucoes, por lado) com p entre 0,30 e 0,85 -- nenhuma
+    significativa
+  n: 102 celulas (candidato x simbolo x janela x lado); episodios por celula: mediana 4/minimo 1 (Jump
+    Model, 100% das 102 celulas <15) vs. mediana 92-273 (demais candidatos, poder saudavel)
+  status: vermelho
+  fonte_arquivo: experiments/m4_critical_windows_report.json
+  fonte_secao: heterogeneidade agregada por (resolution_id, classifier_id, lado) -- AggregatedHeterogeneityResult
+  data: '2026-08-19'
+  nota: 4a execucao real, pos-correcao de 4 achados metodologicos (AG-090 close_time_ms, AG-091 Cochran's
+    Q k=1, AG-092 permutacao em bloco, AG-093 janela OOS do BOCPD). BOCPD, que liderava sob I2 classico
+    (metrica pre-correcao), tem p-valores entre os MENOS significativos (0,47-0,85) -- confirma que a
+    lideranca era artefato de autocorrelacao intra-regime, nao heterogeneidade real. Jump Model com poder
+    estatistico inexistente -- resultado dele nao interpretavel, tratado a parte (3 causas independentes:
+    decode nao-causal confinado ao fold, poder nulo, lambda calibrado numa fatia so de BTC nunca
+    retestada). Resultado tratado como achado valido (regime construido sobre estas dimensoes nao modula
+    o edge deste alpha, nestas janelas), nao como estudo com bug -- 2 auditorias externas brutas
+    processadas + validacao cruzada propria confirmam a leitura (docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md).
+    M4 pausado por decisao do Manager ate a Trilha B (contrato Regime->Alpha->Execucao) travar o
+    consumidor downstream -- ver PLANO_MESTRE_PRINCE2.md §15.11.

@@ -10,6 +10,7 @@ regime`); só o teste `integration`/`slow` final toca disco de verdade."""
 
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
 import numpy as np
@@ -76,6 +77,8 @@ def _symbol_result(
     baseline_omega: float = 0.3,
     candidate_omegas: dict[str, float],
     n_oos_obs: int = 100,
+    oos_start_ms: int = 0,
+    oos_end_ms: int = 1000,
 ) -> m4.SymbolResult:
     baseline = _candidate_result(
         "quantile_regime_v1",
@@ -88,7 +91,53 @@ def _symbol_result(
         for cid, omega in candidate_omegas.items()
     )
     return m4.SymbolResult(
-        symbol=symbol, n_bars=1000, n_folds=3, baseline=baseline, candidates=candidates
+        symbol=symbol,
+        n_bars=1000,
+        n_folds=3,
+        baseline=baseline,
+        candidates=candidates,
+        oos_start_ms=oos_start_ms,
+        oos_end_ms=oos_end_ms,
+    )
+
+
+def _raw_labels(open_time_ms: list[int], canonical_id: list[int]) -> m4.RawLabels:
+    """`close_time_ms == open_time_ms` aqui de propósito (AG-090) -- a
+    maioria destes testes não exercita a diferença open/close, só a
+    mecânica do join/agregação em si; `test_asof_join_regime_onto_labels_
+    usa_close_time_nao_open_time_ag090` (abaixo) é o teste dedicado que
+    prova a diferença real."""
+    ts = np.array(open_time_ms, dtype=np.int64)
+    return m4.RawLabels(
+        open_time_ms=ts,
+        close_time_ms=ts,
+        canonical_id=np.array(canonical_id, dtype=np.int64),
+    )
+
+
+def _ms(year: int, month: int, day: int) -> int:
+    return int(dt.datetime(year, month, day, tzinfo=dt.UTC).timestamp() * 1000)
+
+
+def _synthetic_labels(rows: list[tuple[int, int, str, float]]) -> pl.DataFrame:
+    """`rows`: `(t0_ms, side, barrier_hit, atr_at_t0)` -- subconjunto do
+    schema real de `load_labels_v1` que `stratum_metrics`/`frac_tp_sl_
+    from_labels` de fato consomem. `t0` timezone-aware UTC ms, mesmo
+    dtype do `labels.parquet` REAL (`Datetime('ms', 'UTC')`) -- achado
+    real (Fase D re-run, 2026-08-18): uma fixture `t0` naive não pegou
+    o `polars.exceptions.SchemaError` que só aparecia contra o dtype
+    tz-aware real, e o bug só foi descoberto depois de ~2h de fit real
+    já ter rodado. Réplica do dtype real aqui pra este tipo de bug ser
+    pego em teste, não em produção."""
+    return pl.DataFrame(
+        {
+            "t0": pl.from_epoch(
+                pl.Series([r[0] for r in rows], dtype=pl.Int64), time_unit="ms"
+            ).dt.replace_time_zone("UTC"),
+            "side": pl.Series([r[1] for r in rows], dtype=pl.Int8),
+            "barrier_hit": [r[2] for r in rows],
+            "atr_at_t0": [r[3] for r in rows],
+        }
     )
 
 
@@ -313,11 +362,16 @@ def test_aggregate_classifier_id_por_lookup_nao_por_indice_posicional() -> None:
 
 def test_run_one_cell_caminho_normal_devolve_symbol_result(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_result = _symbol_result("BTCUSDT", candidate_omegas={"bocpd_v1": 0.5})
+    fake_raw_labels: dict[str, m4.RawLabels] = {
+        "bocpd_v1": _raw_labels([0, 10], [0, 1]),
+    }
     calls: list[dict[str, object]] = []
 
-    def _stub(symbol: str, start: str, end: str, **kwargs: object) -> m4.SymbolResult:
+    def _stub(
+        symbol: str, start: str, end: str, **kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
         calls.append({"symbol": symbol, "start": start, "end": end, **kwargs})
-        return fake_result
+        return fake_result, fake_raw_labels
 
     monkeypatch.setattr(m4, "run_regime_comparison_for_symbol", _stub)
 
@@ -340,6 +394,7 @@ def test_run_one_cell_caminho_normal_devolve_symbol_result(monkeypatch: pytest.M
     assert outcome.resolution_id == "R2"
     assert outcome.symbol_result is fake_result
     assert outcome.error is None
+    assert outcome.raw_labels is fake_raw_labels
     assert calls == [
         {
             "symbol": "BTCUSDT",
@@ -354,6 +409,7 @@ def test_run_one_cell_caminho_normal_devolve_symbol_result(monkeypatch: pytest.M
             "bocpd_n_canonical_buckets": 3,
             "hmm_seed": 0,
             "jump_seed": 0,
+            "return_raw_labels": True,
         }
     ]
 
@@ -403,6 +459,7 @@ def test_run_one_cell_excecao_vira_cell_outcome_error_nunca_propaga(
     assert outcome.symbol_result is None
     assert outcome.error is not None
     assert "dado corrompido" in outcome.error
+    assert outcome.raw_labels is None
 
 
 # ============================================================================
@@ -420,9 +477,9 @@ def test_run_critical_windows_comparison_chama_cada_celula_com_a_janela_e_resolu
 
     def _stub(
         symbol: str, start: str, end: str, *, resolution_id: str, **_kwargs: object
-    ) -> m4.SymbolResult:
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
         calls.append((symbol, start, end, resolution_id))
-        return _symbol_result(symbol, candidate_omegas={"bocpd_v1": 0.5})
+        return _symbol_result(symbol, candidate_omegas={"bocpd_v1": 0.5}), {}
 
     monkeypatch.setattr(m4, "run_regime_comparison_for_symbol", _stub)
 
@@ -458,10 +515,10 @@ def test_run_critical_windows_comparison_ag019_1_simbolo_falha_outros_seguem(
 ) -> None:
     def _stub(
         symbol: str, start: str, end: str, *, resolution_id: str, **_kwargs: object
-    ) -> m4.SymbolResult:
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
         if symbol == "S2":
             raise RuntimeError("IO real falhou")
-        return _symbol_result(symbol, candidate_omegas={"bocpd_v1": 0.5})
+        return _symbol_result(symbol, candidate_omegas={"bocpd_v1": 0.5}), {}
 
     monkeypatch.setattr(m4, "run_regime_comparison_for_symbol", _stub)
 
@@ -519,6 +576,7 @@ def test_run_and_save_critical_windows_report_escreve_json_atomico(
         jump_penalty=0.002,
         bocpd_hazard_lambda=65.0,
         bocpd_n_canonical_buckets=3,
+        compute_heterogeneity=False,  # símbolos sintéticos (S1/S2/S3) -- sem labels.parquet real
     )
 
     assert result_path == dest
@@ -581,6 +639,7 @@ def test_run_and_save_critical_windows_report_escreve_checkpoint_parcial_por_res
         jump_penalty=0.002,
         bocpd_hazard_lambda=65.0,
         bocpd_n_canonical_buckets=3,
+        compute_heterogeneity=False,  # símbolos sintéticos (S1/S2/S3) -- sem labels.parquet real
     )
 
     assert calls == ["R1", "R2"]  # sanity -- stub chamada na ordem esperada
@@ -617,6 +676,7 @@ def test_run_regime_comparison_for_symbol_resolution_id_seleciona_r2_nos_dois_lo
     bars_df = pl.DataFrame(
         {
             "open_time": np.arange(n, dtype=np.int64) * 86_400_000,
+            "close_time": np.arange(n, dtype=np.int64) * 86_400_000 + 86_399_999,
             "close": 100.0 + np.arange(n, dtype=np.float64),
         }
     )
@@ -693,6 +753,7 @@ def test_run_regime_comparison_for_symbol_resolution_id_default_preserva_r1(
     bars_df = pl.DataFrame(
         {
             "open_time": np.arange(n, dtype=np.int64) * 86_400_000,
+            "close_time": np.arange(n, dtype=np.int64) * 86_400_000 + 86_399_999,
             "close": 100.0 + np.arange(n, dtype=np.float64),
         }
     )
@@ -810,3 +871,738 @@ def test_run_critical_windows_comparison_1_janela_btcusdt_r1_sobre_dado_real() -
     assert report.baseline.n_windows_ok == 1
     classifier_ids = {c.classifier_id for c in report.candidates}
     assert "bocpd_v1" in classifier_ids
+
+
+# ============================================================================
+# Q3 (Terceira via) -- agregação sobre RawLabels já coletados por
+# _run_one_cell (custo zero em fits, ver docstring de Q3AggregatedResult).
+# Núcleo puro (_q3_asset_detail/_q3_window_summary/_aggregate_q3_for_
+# classifier) exercitado com CellOutcome sintético, raw_labels conhecidos
+# à mão -- mesmo estilo dos testes de agregação de candidato acima.
+# ============================================================================
+
+_WIN_BTC_2ASSETS = mcw.CriticalWindow(
+    name="WIN_BTC2",
+    event="evento com BTC + 2 ativos (teste)",
+    start="2022-01-01",
+    end="2022-04-01",
+    symbols=("BTCUSDT", "S1", "S2"),
+    note="janela sintética de teste",
+)
+_WIN_BTC_ONLY = mcw.CriticalWindow(
+    name="WIN_BTC_ONLY",
+    event="evento só BTC, tipo LUNA/FTX (teste)",
+    start="2022-05-01",
+    end="2022-08-01",
+    symbols=("BTCUSDT",),
+    note="janela sintética de teste",
+)
+_Q3_TEST_WINDOWS = (_WIN_BTC_2ASSETS, _WIN_BTC_ONLY)
+_BTC_RAW = _raw_labels([0, 10, 20, 30], [0, 1, 0, 1])
+
+
+def test_q3_window_summary_none_quando_janela_so_tem_btc() -> None:
+    """LUNA/FTX (só BTCUSDT) não são elegíveis pra Q3 -- não existe ativo
+    não-BTC pra comparar contra o rótulo derivado de BTC."""
+    cells_by_symbol = {
+        "BTCUSDT": mcw.CellOutcome(
+            "WIN_BTC_ONLY", "BTCUSDT", "R1", None, raw_labels={"bocpd_v1": _BTC_RAW}
+        )
+    }
+    summary = mcw._q3_window_summary(_WIN_BTC_ONLY, "bocpd_v1", cells_by_symbol)
+    assert summary is None
+
+
+def test_q3_window_summary_ari_1_quando_particao_propria_bate_com_derivada() -> None:
+    """S1 tem timestamps DIFERENTES de BTC (dollar-bar real nunca
+    compartilha grade) mas o rótulo PRÓPRIO, na região de sobreposição, é
+    IDÊNTICO ao derivado de BTC via as-of backward -- propriedade
+    matemática de `adjusted_rand_score`: partições idênticas sempre dão
+    1.0, não precisa recalcular a fórmula pra saber isso."""
+    btc_raw = _raw_labels([0, 10, 20, 30], [0, 1, 0, 1])
+    # as-of backward: t=5->btc@0=0 ; t=15->btc@10=1 ; t=25->btc@20=0 -> [0,1,0]
+    s1_raw = _raw_labels([5, 15, 25], [0, 1, 0])  # == derivado -> ARI=1.0
+
+    cells_by_symbol = {
+        "BTCUSDT": mcw.CellOutcome(
+            "WIN_BTC2", "BTCUSDT", "R1", None, raw_labels={"bocpd_v1": btc_raw}
+        ),
+        "S1": mcw.CellOutcome("WIN_BTC2", "S1", "R1", None, raw_labels={"bocpd_v1": s1_raw}),
+    }
+    summary = mcw._q3_window_summary(_WIN_BTC_2ASSETS, "bocpd_v1", cells_by_symbol)
+
+    assert summary is not None
+    assert summary.n_assets_requested == 2  # S1 e S2 (S2 ausente de cells_by_symbol)
+    assert summary.n_assets_ok == 1
+    assert len(summary.per_asset) == 1
+    assert summary.per_asset[0].symbol == "S1"
+    assert summary.per_asset[0].n_bars_compared == 3
+    assert summary.per_asset[0].adjusted_rand == pytest.approx(1.0)
+    assert summary.adjusted_rand_median == pytest.approx(1.0)
+
+
+def test_q3_window_summary_ativo_sem_raw_labels_excluido_sem_derrubar_outros() -> None:
+    """AG-019 reaplicado a Q3: 1 ativo com célula falhada (`raw_labels=
+    None`, mesmo padrão de `error is not None`) não derruba os outros
+    ativos da mesma janela."""
+    btc_raw = _raw_labels([0, 10, 20, 30], [0, 1, 0, 1])
+    s1_raw = _raw_labels([5, 15, 25], [0, 1, 0])
+    cells_by_symbol = {
+        "BTCUSDT": mcw.CellOutcome(
+            "WIN_BTC2", "BTCUSDT", "R1", None, raw_labels={"bocpd_v1": btc_raw}
+        ),
+        "S1": mcw.CellOutcome("WIN_BTC2", "S1", "R1", None, raw_labels={"bocpd_v1": s1_raw}),
+        "S2": mcw.CellOutcome("WIN_BTC2", "S2", "R1", None, "boom", None),  # falhou
+    }
+    summary = mcw._q3_window_summary(_WIN_BTC_2ASSETS, "bocpd_v1", cells_by_symbol)
+
+    assert summary is not None
+    assert summary.n_assets_requested == 2
+    assert summary.n_assets_ok == 1  # S2 fora, S1 sobrevive
+    assert {d.symbol for d in summary.per_asset} == {"S1"}
+
+
+def test_q3_window_summary_btc_sem_raw_labels_zero_assets_ok_sem_crash() -> None:
+    s1_raw = _raw_labels([5, 15, 25], [0, 1, 0])
+    cells_by_symbol = {
+        "BTCUSDT": mcw.CellOutcome("WIN_BTC2", "BTCUSDT", "R1", None, "boom", None),  # falhou
+        "S1": mcw.CellOutcome("WIN_BTC2", "S1", "R1", None, raw_labels={"bocpd_v1": s1_raw}),
+    }
+    summary = mcw._q3_window_summary(_WIN_BTC_2ASSETS, "bocpd_v1", cells_by_symbol)
+
+    assert summary is not None
+    assert summary.n_assets_ok == 0
+    assert summary.per_asset == ()
+    assert np.isnan(summary.adjusted_rand_median)
+
+
+def test_q3_asset_detail_sobreposicao_pequena_da_nan_nao_crash() -> None:
+    """`n_bars_compared < m4._Q3_MIN_BARS_COMPARED` -> `NaN` explícito,
+    mesma disciplina de `_median_or_nan`/`_anova_or_degenerate` (ausência
+    de medição, não erro, não zero inventado)."""
+    btc_raw = _raw_labels([1000], [0])
+    s1_raw = _raw_labels([1001], [0])  # 1 barra de sobreposição -> n_compared=1 < 2
+    detail = mcw._q3_asset_detail(btc_raw, "S1", s1_raw)
+    assert detail.n_bars_compared == 1
+    assert np.isnan(detail.adjusted_rand)
+
+
+def test_aggregate_q3_for_classifier_ignora_janela_nao_aplicavel() -> None:
+    btc_raw_2assets = _raw_labels([0, 10, 20, 30], [0, 1, 0, 1])
+    s1_raw = _raw_labels([5, 15, 25], [0, 1, 0])
+    btc_raw_only = _raw_labels([0, 10], [0, 1])
+
+    ok_cells = [
+        mcw.CellOutcome(
+            "WIN_BTC2", "BTCUSDT", "R1", None, raw_labels={"bocpd_v1": btc_raw_2assets}
+        ),
+        mcw.CellOutcome("WIN_BTC2", "S1", "R1", None, raw_labels={"bocpd_v1": s1_raw}),
+        mcw.CellOutcome(
+            "WIN_BTC_ONLY", "BTCUSDT", "R1", None, raw_labels={"bocpd_v1": btc_raw_only}
+        ),
+    ]
+    agg = mcw._aggregate_q3_for_classifier("bocpd_v1", "R1", _Q3_TEST_WINDOWS, ok_cells)
+
+    assert agg.classifier_id == "bocpd_v1"
+    assert agg.resolution_id == "R1"
+    assert agg.n_windows_requested_total == 2  # as 2 janelas do módulo
+    assert agg.n_windows_applicable == 1  # só WIN_BTC2 -- WIN_BTC_ONLY (só BTC) excluída
+    assert agg.n_windows_ok == 1
+    assert agg.adjusted_rand_median == pytest.approx(1.0)
+    assert len(agg.per_window) == 1
+    assert agg.per_window[0].window_name == "WIN_BTC2"
+
+
+def test_aggregate_critical_windows_results_inclui_q3_para_baseline_e_candidatos() -> None:
+    """Wiring ponta-a-ponta: `aggregate_critical_windows_results` popula
+    `report.q3` -- 1 `Q3AggregatedResult` por `classifier_id` descoberto
+    em `symbol_result` (baseline + candidatos), reusando os MESMOS
+    `CellOutcome` (raw_labels + symbol_result juntos, exatamente como
+    `_run_one_cell` real produz -- não uma célula separada)."""
+    btc_raw = {
+        "quantile_regime_v1": _raw_labels([0, 10, 20, 30], [0, 1, 0, 1]),
+        "bocpd_v1": _raw_labels([0, 10, 20, 30], [1, 0, 1, 0]),
+    }
+    s1_raw = {
+        "quantile_regime_v1": _raw_labels([5, 15, 25], [0, 1, 0]),  # == derivado -> ARI=1.0
+        "bocpd_v1": _raw_labels([5, 15, 25], [1, 0, 1]),  # == derivado -> ARI=1.0
+    }
+    cells = (
+        mcw.CellOutcome(
+            "WIN_BTC2",
+            "BTCUSDT",
+            "R1",
+            _symbol_result("BTCUSDT", baseline_omega=0.0, candidate_omegas={"bocpd_v1": 0.03}),
+            None,
+            btc_raw,
+        ),
+        mcw.CellOutcome(
+            "WIN_BTC2",
+            "S1",
+            "R1",
+            _symbol_result("S1", baseline_omega=0.0, candidate_omegas={"bocpd_v1": 0.02}),
+            None,
+            s1_raw,
+        ),
+    )
+    report = mcw.aggregate_critical_windows_results("R1", cells, windows=_Q3_TEST_WINDOWS)
+
+    assert {q.classifier_id for q in report.q3} == {"quantile_regime_v1", "bocpd_v1"}
+    baseline_q3 = next(q for q in report.q3 if q.classifier_id == "quantile_regime_v1")
+    bocpd_q3 = next(q for q in report.q3 if q.classifier_id == "bocpd_v1")
+    assert baseline_q3.adjusted_rand_median == pytest.approx(1.0)
+    assert bocpd_q3.adjusted_rand_median == pytest.approx(1.0)
+    assert baseline_q3.n_windows_applicable == 1  # WIN_BTC_ONLY não tem célula nenhuma aqui
+
+
+# ============================================================================
+# AG-087 -- transparência de saturação (Jump Model colapsa a 1 estado em
+# ~25-29% das células reais, hiperparâmetro calibrado numa única fatia de
+# BTC). is_saturated/n_symbols_saturated/n_cells_saturated_total/
+# saturation_rate -- NUNCA muda a fórmula de mediana, só torna visível.
+# ============================================================================
+
+
+def test_symbol_detail_marca_is_saturated_quando_switch_rate_zero() -> None:
+    saturated = _candidate_result("jump_model_cjm_v1", persistence_switch_rate=0.0)
+    healthy = _candidate_result("jump_model_cjm_v1", persistence_switch_rate=0.2)
+    assert mcw._symbol_detail_from_candidate("S1", saturated).is_saturated is True
+    assert mcw._symbol_detail_from_candidate("S1", healthy).is_saturated is False
+
+
+def test_aggregate_saturacao_propaga_ate_o_agregado_final() -> None:
+    baseline = _candidate_result("quantile_regime_v1", fold_stability_by_construction=True)
+    saturated = _candidate_result("jump_model_cjm_v1", persistence_switch_rate=0.0)
+    healthy = _candidate_result("jump_model_cjm_v1", persistence_switch_rate=0.2)
+    s1 = m4.SymbolResult(
+        symbol="S1", n_bars=1000, n_folds=2, baseline=baseline, candidates=(saturated,),
+        oos_start_ms=0, oos_end_ms=1000,
+    )
+    s2 = m4.SymbolResult(
+        symbol="S2", n_bars=1000, n_folds=2, baseline=baseline, candidates=(healthy,),
+        oos_start_ms=0, oos_end_ms=1000,
+    )
+    cells = (
+        mcw.CellOutcome("WIN_A", "S1", "R1", s1),
+        mcw.CellOutcome("WIN_A", "S2", "R1", s2),
+    )
+    report = mcw.aggregate_critical_windows_results("R1", cells, windows=_TEST_WINDOWS)
+
+    jm_agg = report.candidates[0]
+    assert jm_agg.classifier_id == "jump_model_cjm_v1"
+    assert jm_agg.n_cells_saturated_total == 1
+    assert jm_agg.saturation_rate == pytest.approx(0.5)  # 1 de 2 células OK no total
+
+    win_a = next(w for w in jm_agg.per_window if w.window_name == "WIN_A")
+    assert win_a.n_symbols_saturated == 1
+    s1_detail = next(d for d in win_a.per_symbol if d.symbol == "S1")
+    s2_detail = next(d for d in win_a.per_symbol if d.symbol == "S2")
+    assert s1_detail.is_saturated is True
+    assert s2_detail.is_saturated is False
+
+
+def test_aggregate_sem_celula_ok_saturation_rate_e_nan_nao_crash() -> None:
+    cells = (mcw.CellOutcome("WIN_A", "S1", "R1", None, "erro"),)
+    report = mcw.aggregate_critical_windows_results("R1", cells, windows=_TEST_WINDOWS)
+    assert np.isnan(report.baseline.saturation_rate)
+    assert report.baseline.n_cells_saturated_total == 0
+
+
+# ============================================================================
+# AG-084 -- BOCPD sobre o histórico causal COMPLETO do símbolo, não
+# fatiado por janela crítica. _bocpd_metrics_for_window/_replace_bocpd_
+# candidate (núcleo puro) + _compute_bocpd_full_history (IO mockada, prova
+# que start/end usados são SYMBOL_START_DATE/END_DATE, nunca os de uma
+# janela específica -- essa é a correção central do bug).
+# ============================================================================
+
+
+def test_bocpd_metrics_for_window_fatia_por_timestamp_nao_por_fold() -> None:
+    ts = np.array(
+        [_ms(2021, 6, 1), _ms(2022, 1, 5), _ms(2022, 2, 5), _ms(2022, 5, 1)], dtype=np.int64
+    )
+    full = mcw._BocpdFullHistory(
+        open_time_ms=ts,
+        close_time_ms=ts,  # AG-090 -- filtro de janela usa close_time_ms
+        canonical_id=np.array([0, 0, 1, 1], dtype=np.int64),
+        forward_return=np.array([0.01, 0.02, -0.01, 0.03], dtype=np.float64),
+        vol_pctile=np.array([0.2, 0.3, 0.7, 0.8], dtype=np.float64),
+    )
+    result, raw = mcw._bocpd_metrics_for_window(
+        _ms(2022, 1, 1), _ms(2022, 4, 1), full, n_canonical_buckets=2
+    )
+
+    assert result.classifier_id == "bocpd_v1"
+    assert result.fold_stability_by_construction is True
+    assert result.n_folds_evaluated == 0
+    # só os 2 pontos dentro de [2022-01-01, 2022-04-01) sobrevivem -- os de
+    # 2021-06-01 (antes) e 2022-05-01 (depois) ficam de fora.
+    assert raw.open_time_ms.tolist() == [_ms(2022, 1, 5), _ms(2022, 2, 5)]
+    assert raw.close_time_ms.tolist() == [_ms(2022, 1, 5), _ms(2022, 2, 5)]
+    assert raw.canonical_id.tolist() == [0, 1]
+
+
+def test_bocpd_metrics_for_window_mascara_usa_close_time_nao_open_time_ag090() -> None:
+    """Achado de auditoria independente (AG-090, 2026-08-19, M-1): o
+    teste acima usa `open_time_ms == close_time_ms`, então nunca provou
+    que a máscara de pertencimento à janela (`_bocpd_metrics_for_window`)
+    de fato chaveia em `close_time_ms` -- um refator que revertesse a
+    máscara pra `open_time_ms` passaria despercebido. Este teste usa 4
+    barras com `open`/`close` DIVERGENTES o suficiente pra inverter a
+    decisão de pertencimento em 2 delas:
+
+    - barra 0: `open` ANTES da janela (2021-12-30), `close` DENTRO
+      (2022-01-02) -- só pertence sob `close_time_ms`.
+    - barra 1: `open`/`close` dentro da janela (controle).
+    - barra 2: `open` DENTRO da janela (2022-03-31), `close` DEPOIS
+      (2022-04-02) -- só pertenceria sob `open_time_ms` (bug antigo).
+    - barra 3: `open`/`close` depois da janela (controle, fora dos dois).
+
+    Sob `close_time_ms` (implementação atual): sobrevivem 0 e 1. Sob
+    `open_time_ms` (implementação hipotética pré-AG-090): sobreviveriam
+    1 e 2 -- conjunto DIFERENTE, prova que a máscara realmente usa
+    `close_time_ms`."""
+    full = mcw._BocpdFullHistory(
+        open_time_ms=np.array(
+            [_ms(2021, 12, 30), _ms(2022, 2, 1), _ms(2022, 3, 31), _ms(2022, 5, 1)],
+            dtype=np.int64,
+        ),
+        close_time_ms=np.array(
+            [_ms(2022, 1, 2), _ms(2022, 2, 1), _ms(2022, 4, 2), _ms(2022, 5, 1)],
+            dtype=np.int64,
+        ),
+        canonical_id=np.array([0, 1, 1, 0], dtype=np.int64),
+        forward_return=np.array([0.01, 0.02, -0.01, 0.03], dtype=np.float64),
+        vol_pctile=np.array([0.2, 0.3, 0.7, 0.8], dtype=np.float64),
+    )
+    _result, raw = mcw._bocpd_metrics_for_window(
+        _ms(2022, 1, 1), _ms(2022, 4, 1), full, n_canonical_buckets=2
+    )
+
+    assert raw.canonical_id.tolist() == [0, 1]  # barras 0 e 1, nunca 1 e 2
+    assert raw.close_time_ms.tolist() == [_ms(2022, 1, 2), _ms(2022, 2, 1)]
+
+
+def test_bocpd_metrics_for_window_sem_overlap_produz_degenerado_sem_crash() -> None:
+    ts = np.array([_ms(2021, 1, 1), _ms(2021, 2, 1)], dtype=np.int64)
+    full = mcw._BocpdFullHistory(
+        open_time_ms=ts,
+        close_time_ms=ts,
+        canonical_id=np.array([0, 0], dtype=np.int64),
+        forward_return=np.array([0.01, 0.02], dtype=np.float64),
+        vol_pctile=np.array([0.2, 0.3], dtype=np.float64),
+    )
+    result, raw = mcw._bocpd_metrics_for_window(
+        _ms(2022, 1, 1), _ms(2022, 4, 1), full, n_canonical_buckets=2
+    )
+    assert raw.open_time_ms.shape == (0,)
+    assert raw.close_time_ms.shape == (0,)
+    assert np.isnan(result.separation.omega_squared)
+
+
+def test_replace_bocpd_candidate_so_troca_bocpd_resto_intocado() -> None:
+    baseline = _candidate_result("quantile_regime_v1", fold_stability_by_construction=True)
+    old_bocpd = _candidate_result("bocpd_v1", persistence_switch_rate=0.02)
+    hmm = _candidate_result("hmm_gaussian_k2_v1")
+    symbol_result = m4.SymbolResult(
+        symbol="S1", n_bars=1000, n_folds=2, baseline=baseline, candidates=(hmm, old_bocpd),
+        oos_start_ms=0, oos_end_ms=1000,
+    )
+    old_raw = {
+        "quantile_regime_v1": _raw_labels([0, 10], [0, 1]),
+        "bocpd_v1": _raw_labels([0, 10], [0, 0]),
+        "hmm_gaussian_k2_v1": _raw_labels([0, 10], [1, 1]),
+    }
+    new_bocpd = _candidate_result("bocpd_v1", persistence_switch_rate=0.5)
+    new_bocpd_raw = _raw_labels([5, 15], [1, 0])
+
+    new_symbol_result, new_raw = mcw._replace_bocpd_candidate(
+        symbol_result, old_raw, new_bocpd, new_bocpd_raw
+    )
+
+    assert new_symbol_result.baseline is baseline
+    by_id = {c.classifier_id: c for c in new_symbol_result.candidates}
+    assert by_id["hmm_gaussian_k2_v1"] is hmm
+    assert by_id["bocpd_v1"] is new_bocpd
+    assert new_raw is not None
+    assert new_raw["bocpd_v1"] is new_bocpd_raw
+    assert new_raw["hmm_gaussian_k2_v1"] is old_raw["hmm_gaussian_k2_v1"]
+
+
+def test_replace_bocpd_candidate_raw_labels_none_permanece_none() -> None:
+    baseline = _candidate_result("quantile_regime_v1", fold_stability_by_construction=True)
+    old_bocpd = _candidate_result("bocpd_v1")
+    symbol_result = m4.SymbolResult(
+        symbol="S1", n_bars=1000, n_folds=2, baseline=baseline, candidates=(old_bocpd,),
+        oos_start_ms=0, oos_end_ms=1000,
+    )
+    new_bocpd = _candidate_result("bocpd_v1", persistence_switch_rate=0.9)
+    new_bocpd_raw = _raw_labels([5, 15], [1, 0])
+
+    _new_symbol_result, new_raw = mcw._replace_bocpd_candidate(
+        symbol_result, None, new_bocpd, new_bocpd_raw
+    )
+    assert new_raw is None
+
+
+def test_compute_bocpd_full_history_usa_historico_completo_nao_janela(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-084 -- prova central da correção: `_compute_bocpd_full_history`
+    chama `query_dollar_bars`/`build_regimes` com `SYMBOL_START_DATE
+    [symbol]`/`END_DATE` (histórico causal completo), NUNCA com datas de
+    uma janela crítica específica -- é essa mudança que corrige o reset
+    do prior bayesiano do BOCPD a cada janela (AG-084)."""
+    n = 150
+    open_time_ms = np.arange(n, dtype=np.int64) * 900_000  # grade de 15min, arbitrária
+    close_time_ms = open_time_ms + 899_999  # AG-090 -- bars_df precisa de close_time real
+    rng = np.random.default_rng(1)
+    close = 100.0 + np.cumsum(rng.normal(0.0, 0.1, n))
+    bars_df = pl.DataFrame(
+        {"open_time": open_time_ms, "close_time": close_time_ms, "close": close}
+    )
+    t0 = pl.from_epoch(pl.Series(open_time_ms, dtype=pl.Int64), time_unit="ms")
+    baseline_df = pl.DataFrame({"t0": t0, "vol_pctile": np.linspace(0.0, 1.0, n)})
+
+    calls: list[dict[str, object]] = []
+
+    def _fake_query_dollar_bars(
+        symbol: str, start: str, end: str, **_kwargs: object
+    ) -> pl.DataFrame:
+        calls.append({"fn": "query_dollar_bars", "symbol": symbol, "start": start, "end": end})
+        return bars_df
+
+    def _fake_build_regimes(symbol: str, start: str, end: str, **_kwargs: object) -> pl.DataFrame:
+        calls.append({"fn": "build_regimes", "symbol": symbol, "start": start, "end": end})
+        return baseline_df
+
+    monkeypatch.setattr(lake, "query_dollar_bars", _fake_query_dollar_bars)
+    monkeypatch.setattr(mcw, "build_regimes", _fake_build_regimes)
+    monkeypatch.setattr(mcw, "load_data_constant", lambda *_a, **_k: 1)
+
+    full = mcw._compute_bocpd_full_history(
+        "BTCUSDT", "R1", hazard_lambda=50.0, n_canonical_buckets=2
+    )
+
+    assert len(calls) == 2
+    for call in calls:
+        assert call["symbol"] == "BTCUSDT"
+        assert call["start"] == m4.SYMBOL_START_DATE["BTCUSDT"]  # NUNCA start de janela
+        assert call["end"] == m4.END_DATE  # NUNCA end de janela
+    assert isinstance(full, mcw._BocpdFullHistory)
+    assert (
+        full.open_time_ms.shape
+        == full.close_time_ms.shape
+        == full.canonical_id.shape
+        == full.forward_return.shape
+    )
+
+
+# ============================================================================
+# G-C1-2 revisado -- Cochran's Q/I² de edge_bruto_atr condicionado por
+# bucket de regime (decisão do Manager, 2026-08-18, substitui "separação
+# a 1 barra" como critério primário -- AG-084/AG-087, PRD_V4_1.md §3.2).
+# _asof_join_regime_onto_labels/_heterogeneity_for_symbol_window/
+# _aggregate_heterogeneity_for_classifier exercitados com labels
+# sintéticos (schema mínimo de load_labels_v1) -- stratum_metrics/
+# cochrans_q_heterogeneity JÁ testados em test_analysis_m6_common_factor_
+# hypothesis.py, reusados aqui sem reimplementar fórmula nenhuma.
+# ============================================================================
+
+
+def test_asof_join_regime_onto_labels_e_backward_causal() -> None:
+    """Mesma prova de causalidade central de Q3 (`_asof_join_btc_labels`),
+    reaplicada a label -- cada linha recebe o bucket de regime ATIVO no
+    seu `t0`, nunca um bucket com timestamp futuro."""
+    labels = _synthetic_labels(
+        [(5, 1, "TP", 0.01), (15, 1, "SL", 0.01), (25, 1, "TP", 0.01)]
+    )
+    regime_raw = _raw_labels([0, 10, 20, 30], [0, 1, 0, 1])
+    joined = mcw._asof_join_regime_onto_labels(labels, regime_raw)
+    # t0=5ms -> regime@0=0 ; t0=15ms -> regime@10=1 ; t0=25ms -> regime@20=0
+    assert joined["regime_bucket"].to_list() == [0, 1, 0]
+
+
+def test_asof_join_regime_onto_labels_usa_close_time_nao_open_time_ag090() -> None:
+    """Regressão de AG-090 -- mesmo raciocínio de
+    `test_asof_join_btc_labels_open_close_divergentes_prova_ag090`
+    (`test_analysis_m4_regime_comparison.py`), aplicado ao join de
+    heterogeneidade: `labels.t0` (`src/labels/triple_barrier.py:913`,
+    `t0_arr = bars["close_time"]`) precisa casar com `regime_raw.
+    close_time_ms`, nunca `.open_time_ms`.
+
+    Barra de regime A: `open=0, close=100`, bucket=0 -- só CONHECÍVEL a
+    partir de `t=100`. Barra B: `open=100, close=110`, bucket=1.
+
+    - label `t0=50` -- ANTES de A fechar -- nenhum bucket deveria
+      existir ainda (excluído). Um join por `open_time_ms` bateria com A
+      (`50 >= 0`) por engano.
+    - label `t0=105` -- DEPOIS de A fechar, ANTES de B fechar -- herda o
+      bucket de A (0), nunca o de B. Um join por `open_time_ms` bateria
+      com B (`105 >= open=100`) por engano."""
+    labels = _synthetic_labels(
+        [
+            (50, 1, "TP", 0.01),
+            (105, 1, "TP", 0.01),
+        ]
+    )
+    regime_raw = m4.RawLabels(
+        open_time_ms=np.array([0, 100], dtype=np.int64),
+        close_time_ms=np.array([100, 110], dtype=np.int64),
+        canonical_id=np.array([0, 1], dtype=np.int64),
+    )
+    joined = mcw._asof_join_regime_onto_labels(labels, regime_raw)
+    assert joined.height == 1  # só o 2o label sobrevive
+    assert joined["regime_bucket"].to_list() == [0]  # bucket de A, nunca de B
+
+
+def test_heterogeneity_for_symbol_window_filtra_periodo_e_agrupa_por_bucket() -> None:
+    labels = _synthetic_labels(
+        [
+            (_ms(2021, 6, 1), 1, "TP", 0.01),  # FORA da janela -- deve ser excluído
+            (_ms(2022, 1, 5), 1, "TP", 0.01),
+            (_ms(2022, 1, 10), 1, "TP", 0.01),
+            (_ms(2022, 1, 15), 1, "SL", 0.01),
+            (_ms(2022, 2, 5), 1, "SL", 0.01),
+            (_ms(2022, 2, 10), 1, "SL", 0.01),
+            (_ms(2022, 2, 15), 1, "TP", 0.01),
+        ]
+    )
+    regime_raw = _raw_labels([_ms(2022, 1, 1), _ms(2022, 2, 1)], [0, 1])
+
+    long_detail, short_detail = mcw._heterogeneity_for_symbol_window(
+        "S1",
+        _WIN_BTC_2ASSETS,
+        regime_raw,
+        labels,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.0,
+        maker_fee=0.0002,
+        taker_fee=0.0004,
+        n_permutations=200,
+        permutation_seed=1,
+    )
+
+    assert long_detail.symbol == "S1"
+    assert long_detail.n_obs_total == 6  # exclui o rótulo de 2021-06-01
+    assert long_detail.n_buckets == 2
+    assert not np.isnan(long_detail.i_squared_pct)
+    assert not np.isnan(long_detail.pooled_edge_bruto_atr)
+
+    # side=-1 sem nenhuma linha nesta fixture -- degenerado, NaN explícito,
+    # sem crash (guard ANTES de chamar m6.cochrans_q_heterogeneity).
+    assert short_detail.n_buckets == 0
+    assert short_detail.n_obs_total == 0
+    assert short_detail.df == -1
+    assert np.isnan(short_detail.i_squared_pct)
+
+
+def test_heterogeneity_for_symbol_window_n_episodes_reflete_intercalacao_cronologica_real() -> (
+    None
+):
+    """Achado de auditoria independente (AG-092, F1, 2026-08-19): o
+    teste acima (`n_buckets=2`) usa uma fixture onde os buckets já são
+    CONTÍGUOS por tempo (labels de janeiro inteiro = bucket 0, de
+    fevereiro inteiro = bucket 1) -- não discriminaria uma reordenação
+    silenciosa em algum ponto do pipeline (`_asof_join_regime_onto_
+    labels`/`.filter()`), porque bucket-contiguidade e
+    tempo-contiguidade coincidem por construção da fixture. Este teste
+    usa `regime_raw` com bucket INTERCALADO no tempo (0,1,0,1, 4 trocas)
+    -- se a ordenação cronológica fosse violada em algum ponto (ex.
+    linhas reagrupadas por valor de bucket em vez de posição temporal),
+    `n_episodes` sairia errado (2, não 4)."""
+    labels = _synthetic_labels(
+        [
+            (_ms(2022, 1, 5), 1, "TP", 0.01),  # bucket 0 (regime@2022-01-01)
+            (_ms(2022, 1, 15), 1, "SL", 0.01),  # bucket 1 (regime@2022-01-10)
+            (_ms(2022, 1, 25), 1, "TP", 0.01),  # bucket 0 (regime@2022-01-20)
+            (_ms(2022, 2, 5), 1, "SL", 0.01),  # bucket 1 (regime@2022-01-30)
+        ]
+    )
+    regime_raw = _raw_labels(
+        [_ms(2022, 1, 1), _ms(2022, 1, 10), _ms(2022, 1, 20), _ms(2022, 1, 30)],
+        [0, 1, 0, 1],
+    )
+
+    long_detail, _short_detail = mcw._heterogeneity_for_symbol_window(
+        "S1",
+        _WIN_BTC_2ASSETS,
+        regime_raw,
+        labels,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.0,
+        maker_fee=0.0002,
+        taker_fee=0.0004,
+        n_permutations=200,
+        permutation_seed=1,
+    )
+    assert long_detail.n_buckets == 2
+    assert long_detail.n_episodes == 4  # 4 trocas de bucket na ordem real, nunca 2
+
+
+def test_heterogeneity_for_symbol_window_n_buckets_1_da_nan_nunca_zero_ou_cem() -> None:
+    """Achado de auditoria independente (AG-091, 2026-08-19, F3): a suíte
+    já cobria `n_buckets=0` (acima) e `n_buckets=2` (acima), mas nunca o
+    cenário REAL que motivou o fix de `cochrans_q_heterogeneity` -- M4
+    onde um candidato satura a 1 bucket só (AG-087, Jump Model
+    degenerado). `regime_raw` aqui tem um ÚNICO bucket (0) durante toda
+    a janela -- todas as labels caem no mesmo grupo, `k=1`/`df=0`."""
+    labels = _synthetic_labels(
+        [
+            (_ms(2022, 1, 5), 1, "TP", 0.01),
+            (_ms(2022, 1, 10), 1, "SL", 0.01),
+            (_ms(2022, 2, 5), 1, "TP", 0.01),
+        ]
+    )
+    regime_raw = _raw_labels([_ms(2022, 1, 1), _ms(2022, 2, 1)], [0, 0])  # 1 único bucket
+
+    long_detail, _short_detail = mcw._heterogeneity_for_symbol_window(
+        "S1",
+        _WIN_BTC_2ASSETS,
+        regime_raw,
+        labels,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.0,
+        maker_fee=0.0002,
+        taker_fee=0.0004,
+        n_permutations=200,
+        permutation_seed=1,
+    )
+
+    assert long_detail.n_buckets == 1
+    assert long_detail.df == 0
+    assert np.isnan(long_detail.i_squared_pct)  # NUNCA 0.0 nem 100.0
+    assert np.isnan(long_detail.q_statistic)
+    assert not np.isnan(long_detail.pooled_edge_bruto_atr)  # continua computável
+    # AG-092 -- k=1 é degenerado pro teste de permutação também (mesmo
+    # raciocínio de k=1 em cochrans_q_heterogeneity, AG-091).
+    assert np.isnan(long_detail.p_value_permutation)
+    assert long_detail.n_episodes == 1
+    assert long_detail.n_permutations_valid == 0
+    assert long_detail.n_permutations_requested == 200
+
+    # `_window_heterogeneity_summary` conta n_buckets=1 como "ok" (n_
+    # symbols_ok inclui S1), mas `_median_or_nan` exclui a contribuição
+    # NaN da mediana -- só o S2 (n_buckets=2, valor real) sobrevive nela.
+    s2_detail = mcw.HeterogeneitySymbolDetail(
+        symbol="S2", side=1, n_buckets=2, n_obs_total=6,
+        pooled_edge_bruto_atr=0.1, q_statistic=2.0, df=1,
+        p_value=0.15, i_squared_pct=50.0,
+        p_value_permutation=0.2, n_episodes=4,
+        n_permutations_requested=200, n_permutations_valid=200,
+    )
+    summary = mcw._window_heterogeneity_summary(_WIN_BTC_2ASSETS, 1, (long_detail, s2_detail))
+    assert summary.n_symbols_ok == 2  # S1 (n_buckets=1) E S2 contam como "ok"
+    assert summary.i_squared_pct_median == pytest.approx(50.0)  # só o valor real de S2
+    assert summary.p_value_permutation_median == pytest.approx(0.2)  # idem, só S2
+
+
+def test_aggregate_heterogeneity_for_classifier_placeholder_pra_simbolo_sem_dado() -> None:
+    """AG-019 reaplicado: símbolo sem célula/raw_labels/labels nunca é
+    omitido de `per_symbol` -- vira `n_buckets=0` explícito."""
+    labels_s1 = _synthetic_labels(
+        [
+            (_ms(2022, 1, 5), 1, "TP", 0.01),
+            (_ms(2022, 1, 10), 1, "SL", 0.01),
+            (_ms(2022, 2, 5), 1, "SL", 0.01),
+            (_ms(2022, 2, 10), 1, "TP", 0.01),
+        ]
+    )
+    regime_raw = _raw_labels([_ms(2022, 1, 1), _ms(2022, 2, 1)], [0, 1])
+    ok_cells = [
+        mcw.CellOutcome("WIN_BTC2", "S1", "R1", None, raw_labels={"bocpd_v1": regime_raw}),
+    ]
+    labels_by_symbol = {"S1": labels_s1}
+
+    agg = mcw._aggregate_heterogeneity_for_classifier(
+        "bocpd_v1",
+        "R1",
+        1,
+        _Q3_TEST_WINDOWS,
+        ok_cells,
+        labels_by_symbol,
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.0,
+        maker_fee=0.0002,
+        taker_fee=0.0004,
+        n_permutations=200,
+        permutation_seed=1,
+    )
+
+    assert agg.classifier_id == "bocpd_v1"
+    assert agg.side == 1
+    assert agg.n_windows_requested == 2  # WIN_BTC2 + WIN_BTC_ONLY
+    assert agg.n_windows_ok == 1  # só WIN_BTC2 teve algum símbolo OK
+
+    win_summary = next(w for w in agg.per_window if w.window_name == "WIN_BTC2")
+    assert win_summary.n_symbols_requested == 3  # BTCUSDT, S1, S2
+    assert win_summary.n_symbols_ok == 1  # só S1
+    assert {d.symbol for d in win_summary.per_symbol} == {"BTCUSDT", "S1", "S2"}
+    btc_detail = next(d for d in win_summary.per_symbol if d.symbol == "BTCUSDT")
+    assert btc_detail.n_buckets == 0
+    assert np.isnan(btc_detail.i_squared_pct)
+
+
+def test_aggregate_critical_windows_results_heterogeneity_vazio_por_default() -> None:
+    """Contrato anterior a esta mudança preservado -- sem `labels_by_
+    symbol`, `heterogeneity` fica vazio; todo teste/chamador anterior a
+    G-C1-2 revisado continua funcionando sem alteração."""
+    cells = (
+        mcw.CellOutcome(
+            "WIN_A", "S1", "R1", _symbol_result("S1", candidate_omegas={"bocpd_v1": 0.5})
+        ),
+    )
+    report = mcw.aggregate_critical_windows_results("R1", cells, windows=_TEST_WINDOWS)
+    assert report.heterogeneity == ()
+
+
+def test_aggregate_critical_windows_results_heterogeneity_params_parciais_levanta_valueerror() -> (
+    None
+):
+    cells = (
+        mcw.CellOutcome(
+            "WIN_A", "S1", "R1", _symbol_result("S1", candidate_omegas={"bocpd_v1": 0.5})
+        ),
+    )
+    with pytest.raises(ValueError, match="TODOS juntos ou NENHUM"):
+        mcw.aggregate_critical_windows_results(
+            "R1", cells, windows=_TEST_WINDOWS, labels_by_symbol={}, tp_atr_mult=2.0
+        )
+
+
+def test_aggregate_critical_windows_results_com_heterogeneity_side_separado() -> None:
+    labels_btc = _synthetic_labels(
+        [
+            (_ms(2022, 1, 5), 1, "TP", 0.01),
+            (_ms(2022, 1, 10), 1, "SL", 0.01),
+            (_ms(2022, 2, 5), 1, "SL", 0.01),
+            (_ms(2022, 2, 10), 1, "TP", 0.01),
+        ]
+    )
+    regime_raw = {"bocpd_v1": _raw_labels([_ms(2022, 1, 1), _ms(2022, 2, 1)], [0, 1])}
+    cells = (
+        mcw.CellOutcome(
+            "WIN_BTC2",
+            "BTCUSDT",
+            "R1",
+            _symbol_result("BTCUSDT", baseline_omega=0.0, candidate_omegas={"bocpd_v1": 0.02}),
+            None,
+            regime_raw,
+        ),
+    )
+    report = mcw.aggregate_critical_windows_results(
+        "R1",
+        cells,
+        windows=_Q3_TEST_WINDOWS,
+        labels_by_symbol={"BTCUSDT": labels_btc},
+        tp_atr_mult=2.0,
+        sl_atr_mult=1.0,
+        maker_fee=0.0002,
+        taker_fee=0.0004,
+        n_permutations=200,
+        permutation_seed=1,
+    )
+    # 2 classifier_id (baseline + bocpd_v1) x 2 lados = 4 entradas
+    assert len(report.heterogeneity) == 4
+    assert {h.side for h in report.heterogeneity} == {1, -1}
+    assert {h.classifier_id for h in report.heterogeneity} == {"quantile_regime_v1", "bocpd_v1"}

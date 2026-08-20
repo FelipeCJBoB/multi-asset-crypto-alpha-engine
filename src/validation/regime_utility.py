@@ -191,6 +191,29 @@ class PersistenceMetrics:
     n_segments: int
 
 
+def segment_boundaries(group_labels: IntArray) -> tuple[IntArray, IntArray]:
+    """Fronteira de segmento (run-length) de `group_labels` — segmento =
+    sequência máxima de posições consecutivas com o mesmo rótulo, na
+    ordem em que o array já vem (nunca reordenado aqui). Extraído de
+    `regime_persistence` (2026-08-19, AG-092) pra ser reusado por
+    qualquer consumidor que precise dos ÍNDICES de fronteira, não só das
+    métricas agregadas -- ex. permutação em bloco por episódio
+    (`m6_common_factor_hypothesis.permutation_heterogeneity_test`), que
+    precisa saber onde cada episódio começa/termina pra nunca quebrar um
+    no meio ao permutar. Devolve `(segment_starts, segment_ends)`, índices
+    posicionais tais que `group_labels[start:end]` é um segmento inteiro
+    (mesmo contrato de fatiamento que `regime_persistence` já usava
+    internamente, agora exposto)."""
+    n = group_labels.shape[0]
+    if n == 0:
+        raise ValueError("segment_boundaries: group_labels vazio")
+    change_mask = group_labels[1:] != group_labels[:-1]
+    boundaries = np.flatnonzero(change_mask) + 1
+    segment_starts = np.concatenate(([0], boundaries))
+    segment_ends = np.concatenate((boundaries, [n]))
+    return segment_starts, segment_ends
+
+
 def regime_persistence(group_labels: IntArray) -> PersistenceMetrics:
     """Run-length do array `group_labels` — segmento = sequência máxima de
     barras consecutivas com o mesmo rótulo. `switch_rate` = fração de
@@ -205,9 +228,7 @@ def regime_persistence(group_labels: IntArray) -> PersistenceMetrics:
     change_mask = group_labels[1:] != group_labels[:-1]
     switch_rate = float(np.mean(change_mask)) if n > 1 else 0.0
 
-    boundaries = np.flatnonzero(change_mask) + 1
-    segment_starts = np.concatenate(([0], boundaries))
-    segment_ends = np.concatenate((boundaries, [n]))
+    segment_starts, segment_ends = segment_boundaries(group_labels)
     durations = (segment_ends - segment_starts).astype(np.float64)
 
     return PersistenceMetrics(
@@ -238,4 +259,5 @@ __all__ = [
     "adjusted_rand",
     "anova_by_group",
     "regime_persistence",
+    "segment_boundaries",
 ]
