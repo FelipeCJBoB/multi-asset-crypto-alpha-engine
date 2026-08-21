@@ -2477,6 +2477,52 @@ entries:
       da tabela `PLANO_MESTRE_PRINCE2.md` §11.5) -- não bloqueia mais
       nada, mas segue sem dono/prazo declarado.
 
+    addendum_2026-08-21: >
+      `stage_readiness_audit` (fan-out 5 clusters, cluster Split) QUANTIFICA
+      a ressalva acima pela 1ª vez, em vez de deixá-la como "sem dono/prazo"
+      genérico -- eleva de "item de trabalho subsequente" pra "bloqueador
+      real" condicional. Medição real contra as 10 features T1 ativas
+      (`T1_FEATURE_IDS`, `src/models/dataset.py`): a de maior lookback
+      declarado (`C06_vol_ratio_12_96`, 96 barras) expõe, em grade H1
+      (`step_ms=3.600.000`), `96 × 3.600.000ms = 345.600.000ms` (96h) de
+      janela de treino não protegida por purge. Contra o embargo fixo
+      `cpcv_embargo_ms=347.010.000` (96,39h) MENOS o pior-caso residual de
+      `time_stop_bars` (~8h, mesmo componente 32 já descrito acima) --
+      margem líquida **NEGATIVA de ~7,6h** em H1. Pra grade dollar-bar
+      (canônica de produção, `01_BARRA`), a exposição real é
+      **INDETERMINÁVEL** com o dado atual -- a duração de uma dollar-bar
+      nunca foi medida (`step_ms(tf)` não se aplica a `resolution_id`,
+      ver nota logo acima sobre `step_ms(tf)` sair do caminho canônico).
+
+      **Por que isso muda a classificação, não é achado novo:** o
+      mecanismo (`max_feature_lookback_ms`) já existia e já era sabido sem
+      caller (linha "RESSALVA REGISTRADA" acima, 2026-08-16) -- o que
+      faltava era saber SE a ausência de caller importa hoje. Agora sabe-se
+      que sim, condicionalmente: importa no momento em que o Alpha treinar
+      em H1 (um dos 3 timeframes obrigatórios do escopo V1, `CLAUDE.md`)
+      ou em dollar-bar sem essa proteção -- ainda não aconteceu (Alpha
+      segue gated por Data Layer 100%, `[[project_alpha_retrain_gate_data_layer]]`
+      memória de sessão), mas deixa de ser "sem urgência" no momento em
+      que acontecer.
+
+      **Tentativa de fix nesta rodada, explicitamente recusada:** o agente
+      delegado pra wireup de `max_feature_lookback_ms` em
+      `src/models/pipeline.py` (Split, Fix 3) achou que 3 das 10 features
+      T1 ativas (`C07_vol_pctile_expanding`, `D03f_volume_z_expanding`,
+      `E02f_funding_z_expanding`) têm `lookback_bars: expanding` no
+      catálogo (`features/registry.yaml`) -- sem limite finito, alcançam a
+      origem do dataset inteiro. Não existe hoje um valor honesto (medido)
+      pra `max_feature_lookback_ms` cobrir essas 3 -- o agente recusou
+      inventar uma heurística de leitura de texto (instrução explícita
+      desta rodada) e não tocou o arquivo. **Decisão pendente do Manager**
+      (Tabela 1 desta rodada, pergunta #8): "08_SPLIT 100% pronto" inclui
+      cobertura de H1/dollar-bar via `max_feature_lookback_ms`, ou só o que
+      já roda hoje (BTC/15m, 5 símbolos, R1)? Se a resposta exigir cobrir
+      as 3 features expanding, o desenho precisa decidir primeiro o que
+      "lookback" significa pra uma janela sem limite (ex.: teto artificial
+      declarado vs. exclusão dessas 3 do conjunto ativo) -- não é mais só
+      wireup mecânico.
+
   - id: AG-033
     date: "2026-08-15"
     file: "src/data/lake.py"
@@ -8565,3 +8611,332 @@ entries:
       estrutural (falta de GATILHO de sincronização, não só o sintoma
       desta vez) permanece aberto -- ver `status` abaixo.
     status: "aberto -- corrigido o sintoma pontual (nota em §15.2/§15.4), mas nenhum processo novo garante que o PRÓXIMO módulo que ganhar/perder caller dispare revisão da tabela de prontidão automaticamente. Proposta não implementada: checklist de \"Definition of Done\" de PR que toca `src/risk/`, `src/execution/`, `src/models/` ganha um item \"§15.2/§15.4 revisado?\" explícito -- decisão de processo, não de código, fica pro Manager."
+
+  - id: AG-124
+    date: "2026-08-21"
+    file: "src/data/bars.py, src/data/build_dollar_bars.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-042, config/constants.yaml::dollar_bar_threshold_usdt, experiments/dollar_threshold_drift.json"
+    found_by: "Agent (stage_readiness_audit, cluster Barra+Data Check), fan-out Data Layer 2026-08-21 -- F1"
+    gap: >
+      `calibrate_dollar_threshold_for_validation` usa `[start, end]` = a
+      MESMA janela completa que `build_dollar_bars_for_window` depois
+      constrói sobre a barra resultante -- o threshold usado pra construir
+      barras de 2020 é calibrado com volume observado até 2026, informação
+      que não existia no momento em que aquela barra teria fechado em
+      produção real (vazamento temporal na GRADE, não no conteúdo
+      construído sobre ela -- mais fundamental que `AG-100`, que é sobre
+      cobertura de símbolo/resolução). Deriva medida (já existente em
+      `AG-042`, quantificada de novo nesta rodada por leitura direta do
+      código): **18,18x** entre jan/2020 e mar/2024
+      (`experiments/dollar_threshold_drift.json`).
+    severity: "crítico"
+    layer: "data"
+    consequence: >
+      Toda estrutura construída sobre `dollar_r1/r2/r3` (features, regime,
+      labels, CPCV, nos 5 símbolos) herda a mesma dependência de
+      informação futura na própria definição de onde cada barra fecha. Se
+      o Manager decidir que isso invalida uso em treino/backtest, a
+      correção não é um patch pontual -- é recalibração causal (threshold
+      conhecido só até `t`) + reprocessamento de tudo a jusante.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager pendente (Tabela 1 desta rodada, pergunta 1): aceitar o risco documentado (usar como está, ressalva registrada) vs. exigir recalibração causal antes de qualquer retreino. Nenhum código tocado nesta rodada de fixes -- fora do escopo mecânico, é decisão de arquitetura/negócio. Ver também pergunta 2 (política de calibração congelada de produção, `calibration_scope` sempre `\"validation\"`, nunca `\"frozen_production\"` -- `AG-042` itens 2/3, mesma raiz)."
+
+  - id: AG-125
+    date: "2026-08-21"
+    file: "src/data/validate.py"
+    related_file: "src/data/schemas.py::QualityReport, data/quality_reports/*.json (5 relatórios existentes, todos BTCUSDT)"
+    found_by: "Agent (stage_readiness_audit, cluster Barra+Data Check), fan-out Data Layer 2026-08-21 -- F4"
+    gap: >
+      `QualityReport`/`write_report_atomic` não tinham campo `symbol` --
+      causa raiz de todo relatório de qualidade existente ser efetivamente
+      só de BTCUSDT (nome de arquivo fixo, sem dimensão de símbolo),
+      risco real de sobrescrita silenciosa no dia em que ETH/SOL/BNB/XRP
+      rodarem `validate_dollar_bars`/validação regular pela primeira vez.
+    severity: "alto"
+    layer: "data"
+    consequence: >
+      Sem o campo, validar os 4 alts sobrescreveria o relatório de
+      BTCUSDT (mesmo nome de arquivo) em vez de produzir 5 relatórios
+      independentes -- perda silenciosa de evidência de qualidade,
+      mesma classe de risco que motivou B29 (escrita atômica) só que na
+      camada de nomeação, não na de `.tmp`/`fsync`/`rename`.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      `QualityReport` ganha campo `symbol: str`; `write_report_atomic`
+      passa a nomear `quality_report_{dataset}_{symbol}_{version}.json`
+      (dataset inclui `dollar_bars_r1/r2/r3`, ver AG-133); guarda de
+      divergência material adicionada pra evitar sobrescrita silenciosa
+      entre símbolos. Código corrigido; ver `status` abaixo pra o que
+      fica aberto.
+    status: "parcialmente resolvido -- schema/nomeação corrigidos nesta rodada (commit d592bc6), previne o risco DAQUI PRA FRENTE. Decisão pendente do Manager (Tabela 1, pergunta 3): migrar retroativamente os 5 relatórios `data/quality_reports/*.json` já existentes (renomear pra incluir `BTCUSDT` explícito) ou deixar valer só a partir de agora, tratando os 5 antigos como registro histórico sob o formato legado."
+
+  - id: AG-126
+    date: "2026-08-21"
+    file: "PLANO_MESTRE_PRINCE2.md §11.4 (Road Map Vivo), src/features/build.py::T1_FEATURE_IDS"
+    related_file: "config/features/registry.yaml"
+    found_by: "Agent (stage_readiness_audit, cluster Features), fan-out Data Layer 2026-08-21 -- F1 + achado de processo"
+    gap: >
+      `T1_FEATURE_IDS` está travado em 10 features de ~92 catalogadas --
+      decisão do Manager de 2026-08-19 (autorizando expansão do catálogo)
+      nunca foi implementada em código. Ao mesmo tempo, `PLANO_MESTRE
+      §11.4` já mapeia `03_FEATURES`/`V41-7` como dependente de
+      `V41-6→V41-5→M4` fechar primeiro -- as duas fontes nunca foram
+      reconciliadas: não está registrado se a expansão do catálogo é uma
+      iniciativa INDEPENDENTE dessa cadeia (pode avançar já) ou é a MESMA
+      iniciativa que `V41-7` (portanto também espera M4 fechar).
+    severity: "alto"
+    layer: "features -- processo de sequenciamento, não bug de código"
+    consequence: >
+      Sem essa reconciliação, qualquer sessão futura que tente "avançar o
+      catálogo de features" corre o risco de violar a dependência já
+      mapeada em §11.4 (trabalhar em cima de M1/M4 ainda não fechados) ou,
+      no sentido oposto, de segurar trabalho que na verdade já estava
+      liberado -- ambos os erros já aconteceram nesta classe de furo
+      (`AG-080`/`AG-123`, tabela de prontidão dessincronizada da decisão
+      real).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager pendente (Tabela 1, pergunta 4). Nenhum código tocado -- é puramente uma pergunta de sequenciamento que precisa de resposta antes de qualquer expansão do catálogo (~79 features restantes) começar."
+
+  - id: AG-127
+    date: "2026-08-21"
+    file: "src/regime/build_hmm.py::build_hmm_regimes"
+    related_file: "src/regime/classifier.py (baseline, referência do padrão tradeable: bool), audit/architecture_gaps_log.yaml::AG-121, PLANO_MESTRE_PRINCE2.md §15.13"
+    found_by: "Agent (stage_readiness_audit, cluster Volatilidade+Regime), fan-out Data Layer 2026-08-21 -- F1"
+    gap: >
+      `build_hmm_regimes` computa `is_stress_state`/`tradeable` GLOBALMENTE
+      por chamada (`identify_stress_state_by_volatility` sobre o array OOS
+      concatenado do símbolo/período INTEIRO), não causal por fold/barra.
+      Isso é diferente do decode em si (que já é walk-forward ancorado,
+      por fold) -- é especificamente a identificação de QUAL estado é o
+      de stress que usa a série completa. Não bloqueia o estado atual
+      (nenhum consumidor de backtest ainda existe -- `Fase C` de §15.13
+      ligou o Risk Engine ao campo `regime_tradeable: bool`, mas nenhum
+      orquestrador vivo/histórico chama `evaluate_all` em produção hoje),
+      mas é uma armadilha esperando o primeiro walk-forward real: barras
+      do início da série teriam sua decisão de risco influenciada por
+      volatilidade observada anos depois.
+    severity: "crítico"
+    layer: "regime"
+    consequence: >
+      Se um backtest histórico consumir `build_hmm_regimes` como está
+      hoje, o campo `tradeable`/`is_stress_state` carrega vazamento
+      temporal (B01-B06) disfarçado de gate de risco -- o tipo de bug mais
+      caro já catalogado neste projeto (ver `audit_engineering/SKILL.md`,
+      referência ao projeto irmão que teve win rate inflado de 36%→83%
+      por um leak estruturalmente idêntico, invisível a purged k-fold).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager pendente (Tabela 1, pergunta 5): `build_hmm_regimes` pode ser consumido por backtest HISTÓRICO hoje (com a ressalva registrada), ou fica restrito a \"última barra, ao vivo\" até a reformulação causal (identificar stress_state por fold, não globalmente)? Deliberadamente NÃO tocado nesta rodada de fixes -- `build_hmm.py` ficou intocado por instrução explícita, only a triagem de gap (AG-132, achado F3 do mesmo cluster) foi implementada, que é uma checagem ortogonal (dado ausente, não causalidade do rótulo)."
+
+  - id: AG-128
+    date: "2026-08-21"
+    file: "src/labels/experiment_log.py, src/labels/backfill_multi_symbol.py, src/labels/triple_barrier.py"
+    related_file: "data/labels/experiments/label_engine_runs.parquet, PLANO_MESTRE_PRINCE2.md §11.6"
+    found_by: "Agent (stage_readiness_audit, cluster Barreiras+Label+Pesos), fan-out Data Layer 2026-08-21 -- F1+F2"
+    gap: >
+      `experiment_log.record_experiment` existia com schema pronto e
+      testado desde a criação do módulo (2026-08-09), mas nunca era
+      chamado no caminho real de escrita
+      (`backfill_multi_symbol.build_and_write_labels_for_symbol` ia direto
+      de `build_labels_for_symbol` pra `write_labels_atomic`, sem
+      registrar nada) -- 6 reprocessamentos reais de produção aconteceram
+      desde então (incluindo a migração Parkinson+dollar-bar) sem deixar
+      rastro consultável em `label_engine_runs.parquet`. `§11.6` exige
+      esse log pra `N` (trial_budget) ser reconstruível e o DSR (Sprint
+      11) ser calculável. Achado F2 correlato: os 3 contadores de
+      diagnóstico que `build_labels` sempre computou internamente
+      (`n_warmup_dropped`/`n_incomplete_tail`/`n_tie_break`, item 5 da
+      docstring do módulo) só saíam via `logger.info`, nunca persistidos
+      -- mesma Classe #2 já catalogada em `audit_engineering/SKILL.md`
+      (diagnóstico computado e descartado).
+    severity: "alto"
+    layer: "labels"
+    consequence: >
+      Toda auditoria de proveniência de labels de produção desde
+      2026-08-09 depende de reconstrução manual (git log + memória), não
+      de um registro consultável. Qualquer reprocessamento de R2/R3
+      (`AG-100`) repetiria o mesmo buraco se não fosse corrigido antes.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      Novo dataclass `LabelBuildStats` (`triple_barrier.py`) com os 3
+      contadores; `build_labels_with_stats`/`build_labels_both_sides_
+      with_stats`/`build_labels_for_symbol_with_stats` (siblings dos
+      originais, que viram wrappers finos, contrato 100% preservado --
+      `src.analysis.cost_surface` continua chamando as versões sem stats,
+      fora de escopo). `experiment_log._SCHEMA` ganha 3 colunas `Int64`
+      aditivas (linhas antigas ficam `null`, nunca migração destrutiva).
+      `backfill_multi_symbol.build_and_write_labels_for_symbol` chama
+      `record_experiment(..., build_stats=build_stats)` DEPOIS de
+      `write_labels_atomic` confirmar persistência (registrar um
+      "experimento" cujo artefato falhou ao escrever não faz sentido).
+      Teste real (não mockado) confirma que os 3 valores chegam
+      corretamente no log. Verificado: `uv run pytest
+      tests/unit/test_labels_*.py -m "not slow and not integration" -q`
+      + suíte completa (1576 passed), `check_unguarded_ratios.py --strict`
+      zerado em `src/labels/`.
+    status: "fechado -- experiment_log wireado no caminho real de produção, diagnósticos por-run persistidos. Reprocessamentos futuros de R2/R3 (`AG-100`) já herdam o registro corrigido."
+
+  - id: AG-129
+    date: "2026-08-21"
+    file: "src/validation/cpcv.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-009 (mesma classe, _embargo_ms)"
+    found_by: "Agent (stage_readiness_audit, cluster Split), fan-out Data Layer 2026-08-21 -- F1"
+    gap: >
+      `g_end_effective = max(g_end, max(t1 das linhas do grupo g))`
+      (item 2b da docstring do módulo, `AG-032`/E4) estava duplicada
+      LITERALMENTE (fórmula copiada, não compartilhada) em dois
+      call-sites: `generate_splits` (aplica o purge) e
+      `assert_no_train_t1_leaks_into_test` (verifica que o purge foi
+      respeitado). Mesma classe de risco que `AG-009` já corrigiu pra
+      `_embargo_ms`: se um dos dois fosse editado sem o outro (ex. trocar
+      `>=`/`>` numa fronteira), a checagem de verificação validaria contra
+      uma regra diferente da que o purge de fato aplica, e uma regressão
+      real passaria batida sem o teste acusar.
+    severity: "alto"
+    layer: "validation"
+    consequence: >
+      Risco latente de divergência silenciosa entre o que o CPCV realmente
+      purga e o que o próprio teste de verificação (`assert_no_train_t1_
+      leaks_into_test`) confirma como purgado -- exatamente o padrão que
+      motivou extrair `_embargo_ms` como função única em `AG-009`.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      Extraída `_g_end_effective(g, g_end, group_id, t1_ms) -> int` como
+      função de módulo única; os dois call-sites (`generate_splits:580`,
+      `assert_no_train_t1_leaks_into_test:675`) passam a chamar
+      literalmente a mesma função. Novo teste
+      `test_generate_splits_e_assert_no_train_t1_leaks_usam_a_mesma_g_
+      end_effective` (spy/wraps) prova que os dois call-sites invocam o
+      mesmo objeto de função, não só formulas equivalentes por
+      coincidência. `uv run pytest tests/unit/test_validation_cpcv.py -q`
+      verde.
+    status: "fechado -- mesmo padrão de correção de AG-009, agora aplicado à 2ª duplicação da mesma classe encontrada no módulo."
+
+  - id: AG-130
+    date: "2026-08-21"
+    file: "tests/unit/test_validation_cpcv.py, tests/unit/test_validation_leakage.py"
+    related_file: "data/labels/{symbol}/15m/v1/labels.parquet (5 símbolos)"
+    found_by: "Agent (stage_readiness_audit, cluster Split), fan-out Data Layer 2026-08-21 -- F2"
+    gap: >
+      Cobertura de teste automatizado (`@pytest.mark.integration`) restrita
+      a BTCUSDT × 1 grid -- evidência de que o CPCV funciona nos 5
+      símbolos existia só via execução manual de CLI (não protegida por
+      CI/suíte), então uma regressão específica de ETH/SOL/BNB/XRP (ex.
+      histórico mais curto, ~4,7 anos vs. ~6,6 de BTCUSDT) não seria pega
+      automaticamente.
+    severity: "médio"
+    layer: "validation"
+    consequence: >
+      Regressão em símbolo não-BTCUSDT só seria descoberta manualmente,
+      possivelmente só no momento de treinar o Alpha real sobre aquele
+      símbolo -- tarde demais pra ser barato de corrigir.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      Testes `@pytest.mark.integration` de `test_validation_cpcv.py`/
+      `test_validation_leakage.py` parametrizados nos 5 símbolos;
+      `_skip_if_labels_missing` estendida pra aceitar `symbol` (default
+      `\"BTCUSDT\"`, backward-compatible). Bug colateral real encontrado e
+      corrigido durante a implementação: o teste `test_cpcv_sobre_dataset_
+      real_grupos_cobrem_series_completa` tinha um limite absoluto de
+      dias (`300 < span_days < 450`) implicitamente calibrado só pro
+      histórico de BTCUSDT -- generalizado pra limite RELATIVO (±20% do
+      span medido de cada símbolo), senão quebraria para os 4 alts.
+      Verificado com dado real: \"integration and not slow\" (20 passed) +
+      \"integration and slow\" (1 passed), confirmando os 5 símbolos
+      exercitados de fato, não só parametrizados sem rodar.
+    status: "fechado -- cobertura de integração agora protege os 5 símbolos via CI/suíte normal, não só via evidência manual de CLI."
+
+  - id: AG-131
+    date: "2026-08-21"
+    file: "src/validation/leakage.py"
+    related_file: "src.core.provenance.report_provenance, ~25 módulos de src/analysis//src/backtest/ que já seguem essa convenção"
+    found_by: "Agent (stage_readiness_audit, cluster Split), fan-out Data Layer 2026-08-21 -- F5; número auto-atribuído pelo agente de implementação por extrapolação razoável (não estava na lista original de 7 propostas)"
+    gap: >
+      `write_leakage_report_atomic`/`write_correlation_scan_report_atomic`
+      escreviam `{\"schema_version\": 1, \"tests\": [...]}\"`/`{\"schema_
+      version\": 1, \"entries\": [...]}\"` sem `report_provenance()`
+      (`generated_at`/`code_version`) -- convenção já seguida por ~25
+      módulos de `src/analysis/`/`src/backtest/`, que `src/validation/
+      leakage.py` não seguia até agora, apesar de já ter a disciplina de
+      escrita atômica (`.tmp`→`fsync`→`rename`, B29) completa.
+    severity: "baixo"
+    layer: "validation"
+    consequence: >
+      Um relatório de leakage antigo, isolado do repo, não permite saber
+      QUANDO foi gerado nem sob qual versão de código -- mesma classe de
+      achado FCN #3 já catalogada (`audit_engineering/SKILL.md`, "número
+      derivado sem proveniência").
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      `report_provenance()` mesclado no payload de ambas as funções
+      (spread antes de `schema_version`/`tests`/`entries`, preservando as
+      chaves existentes). `uv run pytest
+      tests/unit/test_validation_leakage.py -q` verde.
+    status: "fechado -- src/validation/leakage.py agora segue a mesma convenção de proveniência do resto do repo."
+
+  - id: AG-132
+    date: "2026-08-21"
+    file: "src/regime/hmm_gap_check.py"
+    related_file: "src.regime.stress.s06_bar_gap (baseline, mecanismo equivalente), src.regime.build_hmm.build_hmm_regimes"
+    found_by: "Agent (stage_readiness_audit, cluster Volatilidade+Regime), fan-out Data Layer 2026-08-21 -- F3; número auto-atribuído por extrapolação (não estava na lista original de 7 propostas, mesmo padrão de AG-131)"
+    gap: >
+      O baseline (`src.regime.classifier`) já detecta gap de barra via
+      `stress.s06_bar_gap`, reusando `src.data.checks.check_grid_
+      completeness` -- mas `build_hmm_regimes` nunca rodava checagem
+      nenhuma antes de computar `log_return_1`/`realized_vol_short` sobre
+      `bars_df` (dollar-bar). `check_grid_completeness` não pode ser
+      reusada literalmente porque assume grade de TEMPO fixa (`step_ms`
+      constante), premissa que dollar-bar estruturalmente não satisfaz
+      (barra fecha por volume acumulado, não por tempo previsível).
+    severity: "médio"
+    layer: "regime"
+    consequence: >
+      Sem triagem, um gap real de dado silenciosamente entrava no HMM sem
+      nenhum sinal -- diferente do baseline, que pelo menos loga/marca o
+      gap mesmo sem bloquear o pipeline.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      Novo módulo `src/regime/hmm_gap_check.py::check_bars_gap_before_
+      hmm(bars_df) -> GapCheckResult` -- detecta gap ANÔMALO no intervalo
+      entre `close_time` de barras consecutivas, relativo à distribuição
+      empírica de intervalos da própria série (modified z-score, Iglewicz
+      & Hoaglin 1993, threshold 3,5, com fallback documentado pra MAD=0
+      -- bug real encontrado e corrigido na primeira versão da própria
+      função, onde MAD=0 escondia o outlier em vez de sinalizá-lo).
+      WARNING-only via `structlog` (nunca bloqueia, mesmo padrão de
+      `stress.py`), deliberadamente NÃO integrado dentro de
+      `build_hmm.py` (fora de escopo desta rodada -- `build_hmm_regimes`
+      em si ficou intocado, ver `AG-127`). 11 testes novos
+      (`tests/unit/test_regime_hmm_gap_check.py`), todos passando.
+    status: "fechado com ressalva -- a FUNÇÃO existe, testada e pronta, mas ainda SEM nenhum caller de produção real (mesmo estado de várias peças do Regime Engine hoje, ex. `build_hmm_regimes` em si). Fica pronta para o primeiro caller de produção de `build_hmm_regimes` chamar antes de consumir `bars_df` -- não é um item de trabalho ativo até esse caller existir."
+
+  - id: AG-133
+    date: "2026-08-21"
+    file: "src/data/validate.py"
+    related_file: "data/capacity/dollar_bars_{r1,r2,r3}/, src.data.build_dollar_bars"
+    found_by: "Agent (stage_readiness_audit, cluster Barra+Data Check), fan-out Data Layer 2026-08-21 -- F3; número auto-atribuído por extrapolação (mesmo padrão de AG-131/AG-132)"
+    gap: >
+      `validate.py` (Data Quality Engine) não tinha opção nenhuma pra
+      validar `dollar_bars_r*` -- o dataset CANÔNICO de produção (dollar
+      bar, decisão `canonical_bar_type=dollar`) nunca passou pelas mesmas
+      checagens (`check_price_deviation`, gaps, schema) que klines
+      regulares já passam via `--dataset klines`.
+    severity: "alto"
+    layer: "data"
+    consequence: >
+      O artefato mais central do pipeline (toda barra de decisão de
+      produção vem daqui) tinha MENOS cobertura de qualidade automatizada
+      que dados de entrada intermediários -- inconsistência de rigor
+      inversa à criticidade real.
+    resolved_by_commit: "d592bc6"
+    resolution: >
+      Nova função `validate_dollar_bars()` + opção de CLI `--dataset
+      dollar_bars_r1|r2|r3`. Reusa o mesmo corpo de checagem que
+      `validate_klines` já tinha (`check_price_deviation`, agora com
+      guarda de preço não-positivo antes de dividir -- achado F6 do mesmo
+      cluster, corrigido junto por ser trivial e no mesmo arquivo).
+      `QualityReport` ganha `symbol` (ver `AG-125`) na mesma mudança,
+      necessário pra rodar nos 5 símbolos sem colisão de nome de arquivo.
+    status: "fechado -- dollar bar agora tem paridade de cobertura de qualidade com klines regulares."

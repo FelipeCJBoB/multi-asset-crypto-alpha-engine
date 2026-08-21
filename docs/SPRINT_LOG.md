@@ -2955,6 +2955,75 @@ governança aberta (2 cards novos) e "Próximos passos" (lista inteira
 trocada pela fila real pós-resultado) todos atualizados.
 
 <!-- check-sprint-log: skip -->
+**Nova skill `stage_readiness_audit` (v1.1) criada e usada na mesma
+sessão** — decisão do Manager de gatear retreino do Alpha até o Data
+Layer (`01_BARRA`–`07b_PESOS`) + `08_SPLIT` estarem 100% prontos exigiu <!-- check-sprint-log: skip -->
+uma auditoria real de prontidão, não só releitura de doc. Skill combina
+as 4 lentes de `audit_engineering` (FS/FI/FT/FCN) com uma 5ª lente nova <!-- check-sprint-log: skip -->
+(System Design/Rota pra Produção), portada do "Feature Development
+Plugin" (Anthropic) fornecido pelo Manager, com 4 gaps corrigidos após <!-- check-sprint-log: skip -->
+revisão do Manager (autorização de implementação explícita no Passo 1, <!-- check-sprint-log: skip -->
+sintaxe de invocação, escala de severidade citada, tratamento de
+cluster misto código+Pendente).
+
+<!-- check-sprint-log: skip -->
+**Fan-out de 5 clusters rodado (só leitura/investigação, sem
+implementação autorizada nesta rodada)** — `Barra+Data Check`,
+`Features`, `Volatilidade+Regime`, `Barreiras+Label+Pesos`, `Split`, um
+`Agent` por cluster. Resultado: **36 achados** (3 CRITICAL / 8 HIGH / 12 <!-- check-sprint-log: skip -->
+MEDIUM / 13 LOW) em 9 estágios — **nenhum chega a 100% pronto**. 5 <!-- check-sprint-log: skip -->
+bloqueadores que cascateiam, em ordem de impacto: (1) `AG-100` (labels <!-- check-sprint-log: skip -->
+ausentes R2/R3, confirmado por 3 clusters, puramente execução); (2) <!-- check-sprint-log: skip -->
+achado NOVO mais fundamental que `AG-100` — calibração não-causal do <!-- check-sprint-log: skip -->
+threshold da dollar-bar (deriva 18,18x medida, afeta a GRADE, não só o
+threshold da dollar-bar (deriva 18,18x medida, afeta a GRADE, não só o
+conteúdo — `AG-124`); (3) `AG-032` quantificado pela 1ª vez — margem
+NEGATIVA de ~7,6h em H1 pro `max_feature_lookback_ms` nunca wireado,
+indeterminada em dollar-bar (addendum `AG-032`); (4) achado NOVO —
+`build_hmm_regimes::is_stress_state/tradeable` calculado globalmente
+por chamada, não causal por fold (`AG-127`); (5) trilha de auditoria do
+Label Engine órfã desde 2026-08-09, 6 reprocessamentos reais sem
+registro (`AG-128`). Relatório consolidado publicado como artefato
+(`stage_readiness_audit_data_layer_2026-08-21.md`).
+
+<!-- check-sprint-log: skip -->
+**21 fixes mecânicos delegados a 6 agentes paralelos + execução real
+autorizada (`uv`/`pytest`), auditados ao concluir** — commit `d592bc6`.
+Implementado: `validate_dollar_bars()` (dollar bar nunca passava pelo
+Data Quality Engine, `AG-133`); `QualityReport` ganha campo `symbol`
+(`AG-125`, parcial — migração retroativa dos 5 relatórios existentes
+segue decisão pendente); testes parametrizados nos 5 símbolos em
+Features/Split (`AG-130`); `hmm_gap_check.py` novo — triagem de gap <!-- check-sprint-log: skip -->
+antes do HMM consumir dollar-bar, baseline já tinha via `s06_bar_gap` <!-- check-sprint-log: skip -->
+(`AG-132`); `experiment_log.record_experiment` finalmente wireado no <!-- check-sprint-log: skip -->
+caminho real de produção do Label Engine + `LabelBuildStats` persistido
+(`AG-128`); `_g_end_effective` extraída em `cpcv.py`, estava duplicada <!-- check-sprint-log: skip -->
+(mesma classe `AG-009`, `AG-129`); `report_provenance()` em relatórios <!-- check-sprint-log: skip -->
+de leakage (`AG-131`). **Não implementado, por decisão correta do <!-- check-sprint-log: skip -->
+agente**: wireup de `max_feature_lookback_ms` — 3 das 10 features T1 <!-- check-sprint-log: skip -->
+ativas têm `lookback_bars: expanding` (sem limite finito honesto),
+agente recusou inventar heurística em vez de reportar o bloqueador
+(ver addendum `AG-032` acima). **Bônus**: bug pré-existente achado e
+corrigido em `test_analysis_gate_efficiency.py` (dado sintético
+ancorado em epoch 0, não relacionado a nenhum dos 6 agentes, confirmado
+via `git log`). **Risco de processo observado**: 2 dos 6 agentes
+rodaram `git stash` sem autorização (só leitura/`git log` liberado)
+durante escrita paralela — autodenunciado, sem perda de dado (verificado
+via `git status` cruzado contra os 6 relatórios); recomendação: proibir
+`git stash` explicitamente em prompts futuros de multi-agente, não só
+omitir da lista de autorizados.
+
+<!-- check-sprint-log: skip -->
+**Registro `AG-124`–`AG-133` + addendum a `AG-032`** —
+`audit/architecture_gaps_log.yaml`. 4 abertos (decisão pendente do
+Manager): `AG-124` (calibração não-causal do threshold, 18,18x),
+`AG-126` (ambiguidade de sequenciamento do catálogo de features),
+`AG-127` (`build_hmm_regimes` não-causal). `AG-125` parcial (schema
+corrigido, migração retroativa pendente). 6 fechados: `AG-128`,
+`AG-129`, `AG-130`, `AG-131`, `AG-132` (função pronta, sem caller de <!-- check-sprint-log: skip -->
+produção ainda), `AG-133`. <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-21)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -2984,3 +3053,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
 | Pendente pra fechar M4 | Manager decidir o critério operacional único do Gate 1/Gate 3 (`AG-114`) — sem isso, "k4 venceu" continua exigindo ressalva. Só depois: resolver as 7 decisões residuais da Trilha B, congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager, publicar na "Biblioteca de Testes" |
 | Pendente — governança de processo | `AG-123` (2026-08-21): `PLANO_MESTRE_PRINCE2.md §15.2/§15.4` não têm gatilho de sincronização quando um módulo ganha/perde caller — mesma classe de furo de `AG-080`, recorrente, corrigida pontualmente 2 vezes sem processo que previna a 3ª. Decisão de checklist de DoD pendente do Manager |
+| **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). **4 decisões do Manager ainda pendentes, bloqueiam fechar o Data Layer**: `AG-124` (calibração não-causal do threshold dollar-bar, deriva 18,18x — mais fundamental que `AG-100`, afeta a grade); `AG-125` (migrar retroativamente os 5 `quality_reports` existentes ou só valer daqui pra frente); `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?); `AG-127` (`build_hmm_regimes` pode ser consumido por backtest histórico já, ou só "última barra ao vivo" até reformulação causal?). Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..133` |
+| Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
