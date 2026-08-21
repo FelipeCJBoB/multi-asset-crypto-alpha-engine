@@ -177,6 +177,7 @@ from src.analysis import m4_regime_comparison as m4
 # isort: on
 
 import datetime as dt
+import io
 import multiprocessing
 import os
 import time
@@ -195,13 +196,19 @@ from src.analysis import m6_common_factor_hypothesis as m6
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
+from src.features._constants import load_constant as load_feature_constant
 from src.labels.triple_barrier import LabelConfig
 from src.regime.bocpd import run_bocpd, segments_to_canonical_states
 from src.regime.build import build_regimes
 from src.regime.canonicalization import canonicalize_states
 from src.risk._constants import load_constant as load_risk_constant
 from src.validation.cpcv import load_labels_v1
-from src.validation.regime_utility import adjusted_rand
+from src.validation.regime_utility import (
+    adjusted_rand,
+    identify_stress_state_by_volatility,
+    occupancy_metrics,
+    transition_failure_rate,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -560,6 +567,166 @@ class AggregatedHeterogeneityResult:
     per_window: tuple[HeterogeneityWindowSummary, ...]
 
 
+# ============================================================================
+# Qualidade-de-gate (AG-114, 2026-08-20, PLANO_MESTRE_PRINCE2.md §15.12.1)
+# -- ADR-001 (ratificado) decide regime como GATE de risco, não FEATURE
+# preditiva, na v1. As dataclasses acima (separation/orthogonality via
+# Welch F, heterogeneity via Cochran's Q sobre TP/SL) medem utilidade
+# como FEATURE. As duas famílias abaixo medem utilidade como GATE --
+# regra de decisão completa (3 gates + 1 métrica primária de ranking)
+# travada ANTES de qualquer execução em `audit/architecture_gaps_
+# log.yaml::AG-114`/`PLANO_MESTRE_PRINCE2.md §15.12.1`. Nenhum limiar é
+# aplicado aqui -- só medição; os 2 limiares numéricos (Gate 1/Gate 2)
+# seguem `TBD -- medir`, decisão deliberada (B20).
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class GateQualitySymbolDetail:
+    """1 (janela, símbolo, candidato) -- Gates 1/2/3 de `AG-114`, medidos,
+    nunca aplicados (sem corte/desqualificação aqui). `stress_state_rule`:
+    `"baseline_r5"` (baseline tem rótulo semântico, `m4._BASELINE_R5_
+    PHYSICAL_ID`) ou `"max_mean_realized_vol_short"` (HMM/Jump Model/
+    BOCPD, convenção de `identify_stress_state_by_volatility`) ou
+    `"no_data"` (célula sem observação -- todo o resto do detail vira
+    `NaN`/vazio, mesma disciplina AG-019 do resto do módulo).
+
+    `state_ids`/`state_occupancy`: distribuição completa (não só o estado
+    de stress) -- nunca esconde o resto atrás do número principal, mesma
+    disciplina de `per_window`/`per_symbol` no resto do arquivo.
+
+    `transition_failure_rate_n{3,5,10}`: Gate 2, grid de horizonte fixo
+    (`_TRANSITION_FAILURE_HORIZONS_BARS`, não calibrado -- menu de
+    comparação, mesmo status de `hmm_states_grid`).
+
+    `detection_delay_*`: Gate 3 (papel = DESEMPATE, decidido pelo Manager
+    2026-08-20 -- não desqualifica sozinho). `detection_delay_computable
+    =False` pra janelas sem data de evento conhecida (CRYPTO_WINTER/
+    ETF_HALVING/RECENTE -- decisão do Manager, 2026-08-20: sem instante
+    único de "início do evento", inventar seria estipular, não medir).
+    `detection_delay_detected=False` (com `computable=True`) significa
+    que o candidato NUNCA entrou no estado de stress depois do evento,
+    dentro dos dados disponíveis -- achado real, não ausência de
+    medição."""
+
+    symbol: str
+    n_obs_total: int
+    stress_state_id: int
+    stress_state_rule: str
+    n_states_present: int
+    effective_number_of_states: float
+    stress_state_occupancy: float
+    state_ids: tuple[int, ...]
+    state_occupancy: tuple[float, ...]
+    transition_failure_rate_n3: float
+    n_transitions_evaluable_n3: int
+    transition_failure_rate_n5: float
+    n_transitions_evaluable_n5: int
+    transition_failure_rate_n10: float
+    n_transitions_evaluable_n10: int
+    detection_delay_computable: bool
+    detection_delay_detected: bool
+    detection_delay_ms: float
+    detection_delay_onset_ts_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class GateQualityWindowSummary:
+    """1 (janela, resolução, candidato) -- mediana ENTRE OS SÍMBOLOS
+    válidos da janela (passo 1, mesmo padrão de `WindowCandidateSummary`/
+    `HeterogeneityWindowSummary`). `n_symbols_ok` = símbolos com
+    `n_obs_total > 0` (teve observação, não necessariamente detectou
+    stress). `n_symbols_detection_delay_computable` -- contagem separada,
+    só relevante nas janelas LUNA/FTX."""
+
+    window_name: str
+    event: str
+    n_symbols_requested: int
+    n_symbols_ok: int
+    effective_number_of_states_median: float
+    stress_state_occupancy_median: float
+    transition_failure_rate_n3_median: float
+    transition_failure_rate_n5_median: float
+    transition_failure_rate_n10_median: float
+    detection_delay_ms_median: float
+    n_symbols_detection_delay_computable: int
+    per_symbol: tuple[GateQualitySymbolDetail, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AggregatedGateQualityResult:
+    """1 (candidato, resolução) -- mediana ENTRE AS JANELAS (passo 2,
+    mesmo padrão de `AggregatedCandidateResult`). Sem dimensão de `side`
+    -- estas métricas são sobre BARRAS (occupancy/transição/detecção),
+    não sobre trades TP/SL."""
+
+    classifier_id: str
+    resolution_id: str
+    n_windows_requested: int
+    n_windows_ok: int
+    effective_number_of_states_median: float
+    stress_state_occupancy_median: float
+    transition_failure_rate_n3_median: float
+    transition_failure_rate_n5_median: float
+    transition_failure_rate_n10_median: float
+    detection_delay_ms_median: float
+    n_windows_detection_delay_computable: int
+    per_window: tuple[GateQualityWindowSummary, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class VolatilityHeterogeneitySymbolDetail:
+    """1 (janela, símbolo, candidato) -- métrica PRIMÁRIA de ranking de
+    `AG-114`: heterogeneidade de VOLATILIDADE futura entre buckets de
+    regime (não retorno -- `HeterogeneitySymbolDetail` acima continua
+    medindo retorno via TP/SL, propositalmente intocada). Mesma família
+    estatística (Cochran's Q/DerSimonian-Laird + permutação em bloco por
+    episódio, AG-092) generalizada pra resposta contínua e ponderada por
+    EPISÓDIO desde a estatística observada -- ver
+    `m6_common_factor_hypothesis.cochrans_q_heterogeneity_continuous`/
+    `permutation_heterogeneity_test_continuous` e
+    `PLANO_MESTRE_PRINCE2.md §15.12.1` item 4 pra justificativa completa
+    do peso por episódio. `p_value_permutation` é o que decide o ranking
+    -- `p_value`/`i_squared_pct` (assintóticos) ficam como diagnóstico,
+    mesma ressalva AG-092 de não confiar neles sob autocorrelação
+    intra-episódio."""
+
+    symbol: str
+    n_buckets: int
+    n_episodes: int
+    n_obs_total: int
+    pooled_forward_realized_vol: float
+    q_statistic: float
+    df: int
+    p_value: float
+    i_squared_pct: float
+    p_value_permutation: float
+    n_permutations_requested: int
+    n_permutations_valid: int
+
+
+@dataclass(frozen=True, slots=True)
+class VolatilityHeterogeneityWindowSummary:
+    window_name: str
+    event: str
+    n_symbols_requested: int
+    n_symbols_ok: int
+    i_squared_pct_median: float
+    p_value_permutation_median: float
+    per_symbol: tuple[VolatilityHeterogeneitySymbolDetail, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AggregatedVolatilityHeterogeneityResult:
+    classifier_id: str
+    resolution_id: str
+    n_windows_requested: int
+    n_windows_ok: int
+    i_squared_pct_median: float
+    p_value_permutation_median: float
+    per_window: tuple[VolatilityHeterogeneityWindowSummary, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class CellOutcome:
     """Resultado de 1 célula (janela, símbolo) sob 1 resolução --
@@ -618,7 +785,15 @@ class CriticalWindowsReport:
     `heterogeneity`: G-C1-2 revisado, 2 `AggregatedHeterogeneityResult`
     (long + short) por `classifier_id` -- vazio (`()`) se `aggregate_
     critical_windows_results` foi chamada sem `labels_by_symbol` (ver
-    docstring da função, preserva contrato antigo por default)."""
+    docstring da função, preserva contrato antigo por default).
+
+    `gate_quality`/`volatility_heterogeneity` -- extensão de qualidade-
+    de-gate (AG-114, 2026-08-20, `PLANO_MESTRE_PRINCE2.md §15.12.1`), 1
+    `AggregatedGateQualityResult`/`AggregatedVolatilityHeterogeneityResult`
+    por `classifier_id` (sem dimensão de `side` -- computados sobre
+    BARRAS, não trades). Vazios (`()`) se `aggregate_critical_windows_
+    results` foi chamada sem `forward_vol_by_symbol` (mesmo default
+    preserva-contrato de `heterogeneity`)."""
 
     resolution_id: str
     baseline: AggregatedCandidateResult
@@ -627,6 +802,8 @@ class CriticalWindowsReport:
     skipped_cells: tuple[SkippedCell, ...]
     q3: tuple[Q3AggregatedResult, ...]
     heterogeneity: tuple[AggregatedHeterogeneityResult, ...] = ()
+    gate_quality: tuple[AggregatedGateQualityResult, ...] = ()
+    volatility_heterogeneity: tuple[AggregatedVolatilityHeterogeneityResult, ...] = ()
 
 
 # ============================================================================
@@ -1196,6 +1373,509 @@ def _aggregate_heterogeneity_for_classifier(
     )
 
 
+# ============================================================================
+# Qualidade-de-gate -- núcleo de cálculo (AG-114, 2026-08-20). Bloco
+# contíguo por decisão de organização: `_compute_symbol_forward_vol_
+# history` não precisa ficar perto de `_compute_bocpd_full_history` (são
+# computações independentes -- esta não roda BOCPD nenhum, só extrai o
+# observável `realized_vol_short`, candidato-independente); manter todo o
+# bloco de AG-114 junto (núcleo -> agregação) é mais fácil de revisar como
+# unidade do que espalhado pelas seções já existentes do arquivo.
+# ============================================================================
+
+_TRANSITION_FAILURE_HORIZONS_BARS: Final[tuple[int, ...]] = (3, 5, 10)
+
+
+@dataclass(frozen=True, slots=True)
+class _SymbolForwardVolHistory:
+    """`realized_vol_short`/`forward_realized_vol` do histórico causal
+    COMPLETO do símbolo -- CANDIDATO-INDEPENDENTE (só depende do OHLC da
+    dollar-bar, não de qual dos 6 candidatos está sendo avaliado),
+    computado 1x por (símbolo, resolução) e reusado por todos eles via
+    `_join_candidate_with_vol_history` (join por `close_time_ms` contra o
+    `RawLabels` de cada candidato -- já coletado sem custo extra por
+    `_run_one_cell`, ver `Q3AggregatedResult`). Diferente de
+    `_BocpdFullHistory` (que roda BOCPD sobre o histórico completo e
+    carrega o `canonical_id` DELE especificamente) -- esta estrutura não
+    tem `canonical_id` nenhum, é pura observação de mercado."""
+
+    close_time_ms: m4.IntArray
+    realized_vol_short: m4.FloatArray
+    forward_realized_vol: m4.FloatArray
+
+
+def _compute_symbol_forward_vol_history(
+    symbol: str, resolution_id: str
+) -> _SymbolForwardVolHistory:
+    """Mesma mecânica de carga/trim de `_compute_bocpd_full_history`
+    (reusa `m4._input_obs`/`m4._valid_start_idx`, mesmos helpers PRIVADOS,
+    mesma fórmula exata -- não uma reimplementação), mas SEM rodar BOCPD:
+    só extrai `realized_vol_short` (já calculado por `m4._input_obs`) e
+    desloca pra `forward_realized_vol` via `m4._forward_realized_vol`,
+    usando o MESMO `window` que `_input_obs` já usou pra computar
+    `realized_vol_short` (`feature_c06_vol_ratio_short_window`) -- desloca
+    a mesma janela pra frente, não inventa um horizonte novo."""
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m4_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m4_duckdb_threads")),
+    )
+    start = m4.SYMBOL_START_DATE[symbol]
+    end = m4.END_DATE
+    bars_df = lake.query_dollar_bars(
+        symbol,
+        start,
+        end,
+        resolution_id=resolution_id,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
+    )
+    log_return_1_full, obs_2d_full = m4._input_obs(bars_df)
+    valid_start_idx = m4._valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
+    close_time_ms = bars_df["close_time"].cast(pl.Int64).to_numpy()[valid_start_idx:]
+    realized_vol_short = obs_2d_full[:, 1][valid_start_idx:]
+
+    short_window = int(load_feature_constant("feature_c06_vol_ratio_short_window"))
+    forward_realized_vol = m4._forward_realized_vol(realized_vol_short, short_window)
+
+    logger.info(
+        "analysis.m4_critical_windows.forward_vol_history_bars_loaded",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_bars=int(realized_vol_short.shape[0]),
+    )
+
+    return _SymbolForwardVolHistory(
+        close_time_ms=close_time_ms,
+        realized_vol_short=realized_vol_short,
+        forward_realized_vol=forward_realized_vol,
+    )
+
+
+def _join_candidate_with_vol_history(
+    regime_raw: m4.RawLabels, vol_history: _SymbolForwardVolHistory
+) -> tuple[m4.IntArray, m4.IntArray, m4.FloatArray, m4.FloatArray]:
+    """`(canonical_id, close_time_ms, realized_vol_short, forward_realized_vol)`
+    alinhados por interseção EXATA de `close_time_ms` (join, não asof) --
+    as 2 séries vêm da MESMA grade de dollar-bar (mesmo símbolo/resolução);
+    `regime_raw` é sempre um SUBCONJUNTO de barras (exclusão de R0 no
+    baseline, fold de teste específico pros demais candidatos), nunca uma
+    grade diferente, então toda barra de `regime_raw` tem exatamente 0 ou
+    1 match. `.sort("_close_ms")` explícito depois do join -- mesma
+    disciplina de `_heterogeneity_for_symbol_window` (AG-092): não confiar
+    cegamente em ordem preservada por join, os consumidores
+    (`segment_boundaries` via `permutation_heterogeneity_test_continuous`)
+    exigem ordenação cronológica estrita pra extrair episódio
+    corretamente -- verificado em runtime, não só assumido."""
+    regime_df = pl.DataFrame(
+        {"_close_ms": regime_raw.close_time_ms, "canonical_id": regime_raw.canonical_id}
+    )
+    vol_df = pl.DataFrame(
+        {
+            "_close_ms": vol_history.close_time_ms,
+            "realized_vol_short": vol_history.realized_vol_short,
+            "forward_realized_vol": vol_history.forward_realized_vol,
+        }
+    )
+    joined = regime_df.join(vol_df, on="_close_ms", how="inner").sort("_close_ms")
+    close_time_ms = joined["_close_ms"].cast(pl.Int64).to_numpy()
+    if close_time_ms.shape[0] > 0 and not np.all(np.diff(close_time_ms) >= 0):
+        raise ValueError(
+            "_join_candidate_with_vol_history: resultado não está ordenado por tempo -- "
+            "invariante violado (deveria ser garantido pelo .sort() acima, AG-092)"
+        )
+    return (
+        joined["canonical_id"].cast(pl.Int64).to_numpy(),
+        close_time_ms,
+        joined["realized_vol_short"].cast(pl.Float64).to_numpy(),
+        joined["forward_realized_vol"].cast(pl.Float64).to_numpy(),
+    )
+
+
+def _detection_delay_ms(
+    close_time_ms: m4.IntArray, canonical_id: m4.IntArray, stress_state_id: int, onset_ts_ms: int
+) -> tuple[bool, float]:
+    """`(detected, delay_ms)` -- primeira barra com `close_time_ms >=
+    onset_ts_ms` E `canonical_id == stress_state_id`. `delay_ms` sempre
+    `>=0` (mede REAÇÃO ao evento, nunca antecipação -- barras antes do
+    onset nunca contam, mesmo que já estivessem em `stress_state_id` por
+    outro motivo). `(False, NaN)` se nenhuma barra pós-onset atingir
+    stress -- achado real ("nunca detectou"), não ausência de medição.
+    Assume `close_time_ms` já ordenado (contrato do chamador, garantido
+    por `_join_candidate_with_vol_history`)."""
+    post_onset_mask = close_time_ms >= onset_ts_ms
+    stress_mask = canonical_id == stress_state_id
+    detected_mask = post_onset_mask & stress_mask
+    if not np.any(detected_mask):
+        return False, float("nan")
+    first_detected_idx = int(np.argmax(detected_mask))
+    return True, float(close_time_ms[first_detected_idx] - onset_ts_ms)
+
+
+def _gate_quality_for_symbol_window(
+    symbol: str,
+    classifier_id: str,
+    baseline_classifier_id: str,
+    canonical_id: m4.IntArray,
+    close_time_ms: m4.IntArray,
+    realized_vol_short: m4.FloatArray,
+    *,
+    onset_ts_ms: int | None,
+) -> GateQualitySymbolDetail:
+    """Gates 1/2/3 de `AG-114` pra 1 (símbolo, janela, candidato) --
+    `canonical_id`/`close_time_ms`/`realized_vol_short` já JOINADOS
+    (`_join_candidate_with_vol_history`), mesma barra em todos os 3
+    arrays."""
+    n_obs_total = int(canonical_id.shape[0])
+    if n_obs_total == 0:
+        return GateQualitySymbolDetail(
+            symbol=symbol,
+            n_obs_total=0,
+            stress_state_id=-1,
+            stress_state_rule="no_data",
+            n_states_present=0,
+            effective_number_of_states=float("nan"),
+            stress_state_occupancy=float("nan"),
+            state_ids=(),
+            state_occupancy=(),
+            transition_failure_rate_n3=float("nan"),
+            n_transitions_evaluable_n3=0,
+            transition_failure_rate_n5=float("nan"),
+            n_transitions_evaluable_n5=0,
+            transition_failure_rate_n10=float("nan"),
+            n_transitions_evaluable_n10=0,
+            detection_delay_computable=onset_ts_ms is not None,
+            detection_delay_detected=False,
+            detection_delay_ms=float("nan"),
+            detection_delay_onset_ts_ms=onset_ts_ms,
+        )
+
+    if classifier_id == baseline_classifier_id:
+        stress_state_id = m4._BASELINE_R5_PHYSICAL_ID
+        stress_state_rule = "baseline_r5"
+    else:
+        stress_state_id = identify_stress_state_by_volatility(canonical_id, realized_vol_short)
+        stress_state_rule = "max_mean_realized_vol_short"
+
+    occ = occupancy_metrics(canonical_id)
+    stress_occupancy = (
+        occ.occupancy[occ.state_ids.index(stress_state_id)]
+        if stress_state_id in occ.state_ids
+        else 0.0
+    )
+    failure = {
+        h: transition_failure_rate(canonical_id, horizon_bars=h)
+        for h in _TRANSITION_FAILURE_HORIZONS_BARS
+    }
+
+    detection_delay_computable = onset_ts_ms is not None
+    detected, delay_ms = (
+        _detection_delay_ms(close_time_ms, canonical_id, stress_state_id, onset_ts_ms)
+        if onset_ts_ms is not None
+        else (False, float("nan"))
+    )
+
+    return GateQualitySymbolDetail(
+        symbol=symbol,
+        n_obs_total=n_obs_total,
+        stress_state_id=stress_state_id,
+        stress_state_rule=stress_state_rule,
+        n_states_present=occ.n_states_present,
+        effective_number_of_states=occ.effective_number_of_states,
+        stress_state_occupancy=stress_occupancy,
+        state_ids=occ.state_ids,
+        state_occupancy=occ.occupancy,
+        transition_failure_rate_n3=failure[3].failure_rate,
+        n_transitions_evaluable_n3=failure[3].n_transitions_evaluable,
+        transition_failure_rate_n5=failure[5].failure_rate,
+        n_transitions_evaluable_n5=failure[5].n_transitions_evaluable,
+        transition_failure_rate_n10=failure[10].failure_rate,
+        n_transitions_evaluable_n10=failure[10].n_transitions_evaluable,
+        detection_delay_computable=detection_delay_computable,
+        detection_delay_detected=detected,
+        detection_delay_ms=delay_ms,
+        detection_delay_onset_ts_ms=onset_ts_ms,
+    )
+
+
+def _volatility_heterogeneity_for_symbol_window(
+    symbol: str,
+    canonical_id: m4.IntArray,
+    close_time_ms: m4.IntArray,
+    forward_realized_vol: m4.FloatArray,
+    *,
+    n_permutations: int,
+    permutation_seed: int,
+) -> VolatilityHeterogeneitySymbolDetail:
+    """Métrica PRIMÁRIA de ranking de `AG-114` pra 1 (símbolo, janela,
+    candidato) -- arrays já JOINADOS (`_join_candidate_with_vol_history`),
+    ordenados por tempo (contrato exigido por `permutation_heterogeneity_
+    test_continuous`, verificado aqui em runtime, mesma disciplina de
+    `_heterogeneity_for_symbol_window`)."""
+    n_obs_total = int(canonical_id.shape[0])
+    if n_obs_total == 0:
+        return VolatilityHeterogeneitySymbolDetail(
+            symbol=symbol,
+            n_buckets=0,
+            n_episodes=0,
+            n_obs_total=0,
+            pooled_forward_realized_vol=float("nan"),
+            q_statistic=float("nan"),
+            df=-1,
+            p_value=float("nan"),
+            i_squared_pct=float("nan"),
+            p_value_permutation=float("nan"),
+            n_permutations_requested=n_permutations,
+            n_permutations_valid=0,
+        )
+    if not np.all(np.diff(close_time_ms) >= 0):
+        raise ValueError(
+            f"_volatility_heterogeneity_for_symbol_window({symbol!r}): close_time_ms não "
+            "ordenado por tempo -- permutation_heterogeneity_test_continuous exige ordenação "
+            "cronológica estrita pra extrair episódio corretamente (AG-092)"
+        )
+
+    het = m6.cochrans_q_heterogeneity_continuous(canonical_id, forward_realized_vol)
+    perm = m6.permutation_heterogeneity_test_continuous(
+        canonical_id, forward_realized_vol, n_permutations=n_permutations, seed=permutation_seed
+    )
+
+    return VolatilityHeterogeneitySymbolDetail(
+        symbol=symbol,
+        n_buckets=het.k,
+        n_episodes=perm.n_episodes,
+        n_obs_total=n_obs_total,
+        pooled_forward_realized_vol=het.pooled_response,
+        q_statistic=het.q_statistic,
+        df=het.df,
+        p_value=het.p_value,
+        i_squared_pct=het.i_squared_pct,
+        p_value_permutation=perm.p_value,
+        n_permutations_requested=n_permutations,
+        n_permutations_valid=perm.n_permutations_valid,
+    )
+
+
+def _window_gate_quality_summary(
+    window: CriticalWindow, details: tuple[GateQualitySymbolDetail, ...]
+) -> GateQualityWindowSummary:
+    ok_details = [d for d in details if d.n_obs_total > 0]
+    return GateQualityWindowSummary(
+        window_name=window.name,
+        event=window.event,
+        n_symbols_requested=len(window.symbols),
+        n_symbols_ok=len(ok_details),
+        effective_number_of_states_median=_median_or_nan(
+            [d.effective_number_of_states for d in ok_details]
+        ),
+        stress_state_occupancy_median=_median_or_nan(
+            [d.stress_state_occupancy for d in ok_details]
+        ),
+        transition_failure_rate_n3_median=_median_or_nan(
+            [d.transition_failure_rate_n3 for d in ok_details]
+        ),
+        transition_failure_rate_n5_median=_median_or_nan(
+            [d.transition_failure_rate_n5 for d in ok_details]
+        ),
+        transition_failure_rate_n10_median=_median_or_nan(
+            [d.transition_failure_rate_n10 for d in ok_details]
+        ),
+        detection_delay_ms_median=_median_or_nan([d.detection_delay_ms for d in ok_details]),
+        n_symbols_detection_delay_computable=sum(
+            1 for d in ok_details if d.detection_delay_computable
+        ),
+        per_symbol=details,
+    )
+
+
+def _aggregate_gate_quality_for_classifier(
+    classifier_id: str,
+    baseline_classifier_id: str,
+    resolution_id: str,
+    windows: tuple[CriticalWindow, ...],
+    ok_cells: list[CellOutcome],
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory],
+    event_onset_ts_ms_by_window: dict[str, int],
+) -> AggregatedGateQualityResult:
+    """Mesma mediana-de-medianas de `_aggregate_heterogeneity_for_
+    classifier` -- reusa `CellOutcome.raw_labels` já coletado (zero fits
+    novos) + `forward_vol_by_symbol` já calculado pelo chamador (1x por
+    símbolo/resolução, fora do loop de candidato -- ver
+    `run_critical_windows_comparison`)."""
+    window_summaries: list[GateQualityWindowSummary] = []
+    for window in windows:
+        onset_ts_ms = event_onset_ts_ms_by_window.get(window.name)
+        details: list[GateQualitySymbolDetail] = []
+        for symbol in window.symbols:
+            cell = next(
+                (c for c in ok_cells if c.window_name == window.name and c.symbol == symbol),
+                None,
+            )
+            vol_history = forward_vol_by_symbol.get(symbol)
+            regime_raw = (
+                cell.raw_labels.get(classifier_id)
+                if cell is not None and cell.raw_labels is not None
+                else None
+            )
+            if regime_raw is None or vol_history is None:
+                details.append(
+                    GateQualitySymbolDetail(
+                        symbol=symbol,
+                        n_obs_total=0,
+                        stress_state_id=-1,
+                        stress_state_rule="no_data",
+                        n_states_present=0,
+                        effective_number_of_states=float("nan"),
+                        stress_state_occupancy=float("nan"),
+                        state_ids=(),
+                        state_occupancy=(),
+                        transition_failure_rate_n3=float("nan"),
+                        n_transitions_evaluable_n3=0,
+                        transition_failure_rate_n5=float("nan"),
+                        n_transitions_evaluable_n5=0,
+                        transition_failure_rate_n10=float("nan"),
+                        n_transitions_evaluable_n10=0,
+                        detection_delay_computable=onset_ts_ms is not None,
+                        detection_delay_detected=False,
+                        detection_delay_ms=float("nan"),
+                        detection_delay_onset_ts_ms=onset_ts_ms,
+                    )
+                )
+                continue
+            canonical_id, close_time_ms, realized_vol_short, _forward_vol = (
+                _join_candidate_with_vol_history(regime_raw, vol_history)
+            )
+            details.append(
+                _gate_quality_for_symbol_window(
+                    symbol,
+                    classifier_id,
+                    baseline_classifier_id,
+                    canonical_id,
+                    close_time_ms,
+                    realized_vol_short,
+                    onset_ts_ms=onset_ts_ms,
+                )
+            )
+        window_summaries.append(_window_gate_quality_summary(window, tuple(details)))
+
+    ok_summaries = [w for w in window_summaries if w.n_symbols_ok > 0]
+    return AggregatedGateQualityResult(
+        classifier_id=classifier_id,
+        resolution_id=resolution_id,
+        n_windows_requested=len(window_summaries),
+        n_windows_ok=len(ok_summaries),
+        effective_number_of_states_median=_median_or_nan(
+            [w.effective_number_of_states_median for w in ok_summaries]
+        ),
+        stress_state_occupancy_median=_median_or_nan(
+            [w.stress_state_occupancy_median for w in ok_summaries]
+        ),
+        transition_failure_rate_n3_median=_median_or_nan(
+            [w.transition_failure_rate_n3_median for w in ok_summaries]
+        ),
+        transition_failure_rate_n5_median=_median_or_nan(
+            [w.transition_failure_rate_n5_median for w in ok_summaries]
+        ),
+        transition_failure_rate_n10_median=_median_or_nan(
+            [w.transition_failure_rate_n10_median for w in ok_summaries]
+        ),
+        detection_delay_ms_median=_median_or_nan(
+            [w.detection_delay_ms_median for w in ok_summaries]
+        ),
+        n_windows_detection_delay_computable=sum(
+            1 for w in ok_summaries if w.n_symbols_detection_delay_computable > 0
+        ),
+        per_window=tuple(window_summaries),
+    )
+
+
+def _window_volatility_heterogeneity_summary(
+    window: CriticalWindow, details: tuple[VolatilityHeterogeneitySymbolDetail, ...]
+) -> VolatilityHeterogeneityWindowSummary:
+    ok_details = [d for d in details if d.n_buckets > 0]
+    return VolatilityHeterogeneityWindowSummary(
+        window_name=window.name,
+        event=window.event,
+        n_symbols_requested=len(window.symbols),
+        n_symbols_ok=len(ok_details),
+        i_squared_pct_median=_median_or_nan([d.i_squared_pct for d in ok_details]),
+        p_value_permutation_median=_median_or_nan(
+            [d.p_value_permutation for d in ok_details]
+        ),
+        per_symbol=details,
+    )
+
+
+def _aggregate_volatility_heterogeneity_for_classifier(
+    classifier_id: str,
+    resolution_id: str,
+    windows: tuple[CriticalWindow, ...],
+    ok_cells: list[CellOutcome],
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory],
+    *,
+    n_permutations: int,
+    permutation_seed: int,
+) -> AggregatedVolatilityHeterogeneityResult:
+    window_summaries: list[VolatilityHeterogeneityWindowSummary] = []
+    for window in windows:
+        details: list[VolatilityHeterogeneitySymbolDetail] = []
+        for symbol in window.symbols:
+            cell = next(
+                (c for c in ok_cells if c.window_name == window.name and c.symbol == symbol),
+                None,
+            )
+            vol_history = forward_vol_by_symbol.get(symbol)
+            regime_raw = (
+                cell.raw_labels.get(classifier_id)
+                if cell is not None and cell.raw_labels is not None
+                else None
+            )
+            if regime_raw is None or vol_history is None:
+                details.append(
+                    VolatilityHeterogeneitySymbolDetail(
+                        symbol=symbol,
+                        n_buckets=0,
+                        n_episodes=0,
+                        n_obs_total=0,
+                        pooled_forward_realized_vol=float("nan"),
+                        q_statistic=float("nan"),
+                        df=-1,
+                        p_value=float("nan"),
+                        i_squared_pct=float("nan"),
+                        p_value_permutation=float("nan"),
+                        n_permutations_requested=n_permutations,
+                        n_permutations_valid=0,
+                    )
+                )
+                continue
+            canonical_id, close_time_ms, _realized_vol, forward_vol = (
+                _join_candidate_with_vol_history(regime_raw, vol_history)
+            )
+            details.append(
+                _volatility_heterogeneity_for_symbol_window(
+                    symbol,
+                    canonical_id,
+                    close_time_ms,
+                    forward_vol,
+                    n_permutations=n_permutations,
+                    permutation_seed=permutation_seed,
+                )
+            )
+        window_summaries.append(_window_volatility_heterogeneity_summary(window, tuple(details)))
+
+    ok_summaries = [w for w in window_summaries if w.n_symbols_ok > 0]
+    return AggregatedVolatilityHeterogeneityResult(
+        classifier_id=classifier_id,
+        resolution_id=resolution_id,
+        n_windows_requested=len(window_summaries),
+        n_windows_ok=len(ok_summaries),
+        i_squared_pct_median=_median_or_nan([w.i_squared_pct_median for w in ok_summaries]),
+        p_value_permutation_median=_median_or_nan(
+            [w.p_value_permutation_median for w in ok_summaries]
+        ),
+        per_window=tuple(window_summaries),
+    )
+
+
 def aggregate_critical_windows_results(
     resolution_id: str,
     cells: tuple[CellOutcome, ...],
@@ -1208,12 +1888,28 @@ def aggregate_critical_windows_results(
     taker_fee: float | None = None,
     n_permutations: int | None = None,
     permutation_seed: int | None = None,
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory] | None = None,
+    event_onset_ts_ms_by_window: dict[str, int] | None = None,
 ) -> CriticalWindowsReport:
     """Núcleo quase-puro (SEM IO própria -- `labels_by_symbol` é
     INJETADO pelo chamador, já carregado; esta função só agrega o que
     recebeu, mesmo espírito de `CellOutcome` já vir pronto) -- recebe
     `CellOutcome` já calculados (de `run_critical_windows_comparison` ou
     de um teste com fixture sintética) e produz `CriticalWindowsReport`.
+
+    `forward_vol_by_symbol`/`event_onset_ts_ms_by_window` -- extensão de
+    qualidade-de-gate (AG-114, 2026-08-20). `forward_vol_by_symbol=None`
+    (default) preserva o contrato exato de antes -- `gate_quality=()`,
+    `volatility_heterogeneity=()`. Passar `forward_vol_by_symbol` ativa
+    os 2 blocos novos pra cada `classifier_id` descoberto -- exige
+    `n_permutations`/`permutation_seed` também (reusa o MESMO teste de
+    permutação em bloco que a heterogeneidade TP/SL, generalizado pra
+    resposta contínua). `event_onset_ts_ms_by_window` é opcional mesmo
+    com `forward_vol_by_symbol` ativo -- ausente/vazio só desativa Gate 3
+    (detection delay) por janela, nunca os outros 2 gates + métrica
+    primária (`{}`/`None` tratados igual, "nenhuma janela tem onset
+    conhecido").
+
     AG-019: células com `error is not None` viram `FailedCell`; células
     com `symbol_result is None, error is None` viram `SkippedCell`;
     nenhuma das duas classes participa da agregação (mediana só sobre
@@ -1229,19 +1925,38 @@ def aggregate_critical_windows_results(
     passada) ativa o cálculo de Cochran's Q/I² + teste de permutação em
     bloco (`heterogeneity`) pra cada `classifier_id` descoberto, nos 2
     lados."""
-    heterogeneity_params = (
-        labels_by_symbol, tp_atr_mult, sl_atr_mult, maker_fee, taker_fee,
-        n_permutations, permutation_seed,
-    )
-    if any(p is not None for p in heterogeneity_params) and any(
-        p is None for p in heterogeneity_params
+    # Achado real desta sessão (rodando a suíte pela 1ª vez): a checagem
+    # original agrupava n_permutations/permutation_seed DENTRO do grupo
+    # "tudo ou nada" da heterogeneidade TP/SL -- mas AG-114 passou a
+    # reusar os 2 pra volatility_heterogeneity TAMBÉM, independente de
+    # labels_by_symbol estar ativo. Um chamador que só quer gate_quality/
+    # volatility_heterogeneity (forward_vol_by_symbol, sem labels_by_
+    # symbol) levantava ValueError incorretamente -- corrigido separando
+    # os 2 grupos: (a) os 5 campos exclusivos da heterogeneidade TP/SL
+    # continuam "tudo ou nada" entre si; (b) n_permutations/permutation_
+    # seed são exigidos se QUALQUER UM dos 2 blocos (TP/SL OU gate-
+    # quality/volatilidade) estiver ativo, não amarrados a um só.
+    tp_sl_heterogeneity_params = (tp_atr_mult, sl_atr_mult, maker_fee, taker_fee)
+    if labels_by_symbol is not None and any(p is None for p in tp_sl_heterogeneity_params):
+        raise ValueError(
+            "aggregate_critical_windows_results: labels_by_symbol exige tp_atr_mult/"
+            "sl_atr_mult/maker_fee/taker_fee também -- G-C1-2 revisado exige os 5 pra "
+            "computar heterogeneidade TP/SL (Cochran's Q/I², AG-092), ativação parcial "
+            "seria silenciosamente incompleta"
+        )
+    if labels_by_symbol is None and any(p is not None for p in tp_sl_heterogeneity_params):
+        raise ValueError(
+            "aggregate_critical_windows_results: tp_atr_mult/sl_atr_mult/maker_fee/"
+            "taker_fee só fazem sentido junto de labels_by_symbol (heterogeneidade TP/SL)"
+        )
+    if (labels_by_symbol is not None or forward_vol_by_symbol is not None) and (
+        n_permutations is None or permutation_seed is None
     ):
         raise ValueError(
-            "aggregate_critical_windows_results: labels_by_symbol/tp_atr_mult/sl_atr_mult/"
-            "maker_fee/taker_fee/n_permutations/permutation_seed precisam ser passados TODOS "
-            "juntos ou NENHUM -- G-C1-2 revisado exige os 7 pra computar heterogeneidade "
-            "(Cochran's Q/I² + permutação em bloco, AG-092), ativação parcial seria "
-            "silenciosamente incompleta"
+            "aggregate_critical_windows_results: n_permutations/permutation_seed exigidos "
+            "quando labels_by_symbol OU forward_vol_by_symbol está ativo -- reusados pelos 2 "
+            "testes de permutação em bloco (heterogeneidade TP/SL e volatilidade contínua, "
+            "AG-092/AG-114)"
         )
     failed = tuple(
         FailedCell(
@@ -1344,6 +2059,61 @@ def aggregate_critical_windows_results(
             )
             heterogeneity_agg = ()
 
+    # Qualidade-de-gate (AG-114, 2026-08-20) -- mesmo padrão de isolamento
+    # de falha em 2 blocos independentes que heterogeneity_agg acima (uma
+    # exceção num bloco nunca destrói baseline_agg/candidates_agg/
+    # q3_agg/heterogeneity_agg já computados).
+    gate_quality_agg: tuple[AggregatedGateQualityResult, ...] = ()
+    volatility_heterogeneity_agg: tuple[AggregatedVolatilityHeterogeneityResult, ...] = ()
+    if forward_vol_by_symbol is not None:
+        if n_permutations is None or permutation_seed is None:
+            raise ValueError(
+                "aggregate_critical_windows_results: forward_vol_by_symbol exige "
+                "n_permutations/permutation_seed também (AG-114) -- volatility_heterogeneity "
+                "reusa o mesmo teste de permutação em bloco que a heterogeneidade TP/SL"
+            )
+        onset_by_window = event_onset_ts_ms_by_window or {}
+        try:
+            gate_quality_agg = tuple(
+                _aggregate_gate_quality_for_classifier(
+                    classifier_id,
+                    baseline_classifier_id,
+                    resolution_id,
+                    windows,
+                    ok_cells,
+                    forward_vol_by_symbol,
+                    onset_by_window,
+                )
+                for classifier_id in (baseline_classifier_id, *candidate_ids)
+            )
+        except Exception as exc:
+            logger.error(
+                "analysis.m4_critical_windows.gate_quality_aggregation_failed",
+                resolution_id=resolution_id,
+                error=repr(exc),
+            )
+            gate_quality_agg = ()
+        try:
+            volatility_heterogeneity_agg = tuple(
+                _aggregate_volatility_heterogeneity_for_classifier(
+                    classifier_id,
+                    resolution_id,
+                    windows,
+                    ok_cells,
+                    forward_vol_by_symbol,
+                    n_permutations=n_permutations,
+                    permutation_seed=permutation_seed,
+                )
+                for classifier_id in (baseline_classifier_id, *candidate_ids)
+            )
+        except Exception as exc:
+            logger.error(
+                "analysis.m4_critical_windows.volatility_heterogeneity_aggregation_failed",
+                resolution_id=resolution_id,
+                error=repr(exc),
+            )
+            volatility_heterogeneity_agg = ()
+
     return CriticalWindowsReport(
         resolution_id=resolution_id,
         baseline=baseline_agg,
@@ -1352,6 +2122,8 @@ def aggregate_critical_windows_results(
         skipped_cells=skipped,
         q3=q3_agg,
         heterogeneity=heterogeneity_agg,
+        gate_quality=gate_quality_agg,
+        volatility_heterogeneity=volatility_heterogeneity_agg,
     )
 
 
@@ -1584,7 +2356,19 @@ def _run_one_cell(
     motivo/custo de `m4.compare_regime_candidates_for_symbol` (a função
     interna SEMPRE calcula os rótulos brutos, expor custa só o
     fatiamento já feito, nunca um refit) -- alimenta a agregação de Q3
-    (`Q3AggregatedResult`) sem exigir nenhuma célula/fit adicional."""
+    (`Q3AggregatedResult`) sem exigir nenhuma célula/fit adicional.
+
+    **`include_jump_model = (symbol == "BTCUSDT")` -- AG-117, 2026-08-20
+    (decisão do Manager).** Experimento de transferibilidade de λ
+    (`audit/architecture_gaps_log.yaml::AG-117`) mostrou que Jump Model
+    não tem estrutura de 2 regimes detectável em NENHUM ponto de grid
+    testado pra SOLUSDT/BNBUSDT/XRPUSDT (mesmo in-sample), e recalibrar
+    λ pra ETHUSDT (único não-BTC com λ genuíno no grid) piora ou empata
+    a saturação nas janelas críticas -- nunca melhora. BTC continua
+    elegível (`m4_jump_model_penalty=0,002` é seu próprio λ local, nunca
+    transplantado). Economiza ~1/4 do tempo de fit por célula não-BTC
+    (Jump Model é 1 dos 4 candidatos que passam por refit por fold)."""
+    include_jump_model = symbol == "BTCUSDT"
     try:
         result = m4.run_regime_comparison_for_symbol(
             symbol,
@@ -1599,6 +2383,7 @@ def _run_one_cell(
             bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
             hmm_seed=hmm_seed,
             jump_seed=jump_seed,
+            include_jump_model=include_jump_model,
             return_raw_labels=True,
         )
     except Exception as exc:  # AG-019 -- 1 célula falhando não derruba as outras
@@ -1642,6 +2427,9 @@ def run_critical_windows_comparison(
     taker_fee: float | None = None,
     n_permutations: int | None = None,
     permutation_seed: int | None = None,
+    compute_gate_quality: bool = False,
+    event_onset_ts_ms_by_window: dict[str, int] | None = None,
+    persist_raw_labels: bool = False,
 ) -> CriticalWindowsReport:
     """1 resolução completa -- todas as células (janela, símbolo) de
     `windows`, agregadas. `max_workers=1` roda SEQUENCIAL (mesma função
@@ -1650,6 +2438,19 @@ def run_critical_windows_comparison(
     processos filhos gerados via `spawn`, então o caminho testável é o
     sequencial). `max_workers=None` (default) usa `os.cpu_count()`,
     mesma convenção de `m4_regime_comparison.run_and_save_m4_report`.
+
+    `compute_gate_quality=False` (default NESTA função de nível baixo --
+    o default `True` fica em `run_and_save_critical_windows_report`,
+    mesma assimetria já existente entre `labels_by_symbol=None` aqui vs.
+    `compute_heterogeneity=True` lá) -- AG-114, 2026-08-20. Quando
+    `True`, calcula `_SymbolForwardVolHistory` 1x por símbolo (união dos
+    símbolos de `windows`), mesmo padrão sequencial/paralelo do bloco
+    BOCPD logo abaixo, e repassa pra `aggregate_critical_windows_results`
+    via `forward_vol_by_symbol` -- ativa `gate_quality`/
+    `volatility_heterogeneity` no relatório. `n_permutations`/
+    `permutation_seed` (já parâmetros desta função) são reusados pro
+    teste de permutação contínuo -- exigidos se `compute_gate_quality=
+    True`, mesma checagem em `aggregate_critical_windows_results`.
 
     **Custo não medido nesta fase** (Fase D, execução real de 18 trials,
     autorização separada do Manager) -- só smoke test de 1-2 células. Ver
@@ -1676,7 +2477,16 @@ def run_critical_windows_comparison(
     MESMO walk-forward ancorado que HMM/Jump Model/baseline já usaram
     pra essa célula) -- nunca mais `[window.start, window.end)`, que
     dava ao BOCPD ~5x mais amostra que os outros 5 candidatos na mesma
-    célula, inflando artificialmente seu Cochran's Q/I²."""
+    célula, inflando artificialmente seu Cochran's Q/I².
+
+    `persist_raw_labels=False` (default) -- quando `True`, grava em disco
+    (B29, `_write_parquet_atomic`) o `CellOutcome.raw_labels` de toda
+    célula OK (`_persist_raw_labels`, `experiments/m4_raw_labels/`) e,
+    se `compute_gate_quality=True` também, o `_SymbolForwardVolHistory`
+    de cada símbolo (`_persist_forward_vol_history`, `experiments/
+    m4_forward_vol_history/`) -- follow-up de AG-114 (2026-08-20): elimina
+    a necessidade de re-rodar o fit completo (~3h) toda vez que uma
+    métrica nova precisar do mesmo rótulo bruto/observável causal."""
     all_symbols = tuple(sorted({symbol for w in windows for symbol in w.symbols}))
     bocpd_full_by_symbol: dict[str, _BocpdFullHistory] = {}
     if max_workers == 1:
@@ -1728,6 +2538,55 @@ def run_critical_windows_comparison(
         n_symbols_requested=len(all_symbols),
         n_symbols_ok=len(bocpd_full_by_symbol),
     )
+
+    # AG-114, 2026-08-20 -- mesmo padrão sequencial/paralelo do bloco
+    # BOCPD acima, computação independente (não roda BOCPD, só extrai o
+    # observável realized_vol_short/forward_realized_vol, candidato-
+    # independente).
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory] = {}
+    if compute_gate_quality:
+        if max_workers == 1:
+            for symbol in all_symbols:
+                try:
+                    forward_vol_by_symbol[symbol] = _compute_symbol_forward_vol_history(
+                        symbol, resolution_id
+                    )
+                except Exception as exc:  # AG-019 -- 1 símbolo falhando não derruba os outros
+                    logger.error(
+                        "analysis.m4_critical_windows.forward_vol_history_failed",
+                        symbol=symbol,
+                        resolution_id=resolution_id,
+                        error=repr(exc),
+                    )
+        else:
+            vol_workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+            mp_context_vol = multiprocessing.get_context("spawn")
+            with ProcessPoolExecutor(
+                max_workers=min(vol_workers, len(all_symbols)), mp_context=mp_context_vol
+            ) as executor:
+                vol_future_to_symbol = {
+                    executor.submit(
+                        _compute_symbol_forward_vol_history, symbol, resolution_id
+                    ): symbol
+                    for symbol in all_symbols
+                }
+                for vol_future in as_completed(vol_future_to_symbol):
+                    symbol = vol_future_to_symbol[vol_future]
+                    try:
+                        forward_vol_by_symbol[symbol] = vol_future.result()
+                    except Exception as exc:
+                        logger.error(
+                            "analysis.m4_critical_windows.forward_vol_history_failed",
+                            symbol=symbol,
+                            resolution_id=resolution_id,
+                            error=repr(exc),
+                        )
+        logger.info(
+            "analysis.m4_critical_windows.forward_vol_history_done",
+            resolution_id=resolution_id,
+            n_symbols_requested=len(all_symbols),
+            n_symbols_ok=len(forward_vol_by_symbol),
+        )
 
     cells_spec = list(_iter_cells(windows))
     outcomes: list[CellOutcome] = []
@@ -1824,6 +2683,11 @@ def run_critical_windows_comparison(
             )
         )
 
+    if persist_raw_labels:
+        _persist_raw_labels(tuple(patched_outcomes))
+        if forward_vol_by_symbol:
+            _persist_forward_vol_history(resolution_id, forward_vol_by_symbol)
+
     return aggregate_critical_windows_results(
         resolution_id,
         tuple(patched_outcomes),
@@ -1833,6 +2697,475 @@ def run_critical_windows_comparison(
         sl_atr_mult=sl_atr_mult,
         maker_fee=maker_fee,
         taker_fee=taker_fee,
+        n_permutations=n_permutations,
+        permutation_seed=permutation_seed,
+        forward_vol_by_symbol=forward_vol_by_symbol if compute_gate_quality else None,
+        event_onset_ts_ms_by_window=event_onset_ts_ms_by_window,
+    )
+
+
+# ============================================================================
+# AG-087 -- experimento de transferibilidade de `m4_jump_model_penalty`
+# POR ATIVO (`audit/architecture_gaps_log.yaml`, 2026-08-18/20). Condição A
+# (status quo, λ=0,002 fixo aplicado aos 5 símbolos) já existe em
+# `experiments/m4_critical_windows_report.json` -- custo zero, só lido de
+# lá pelo script de comparação (`tools/diagnostics/compare_jump_model_
+# lambda_transferability.py`). Este bloco produz a Condição B (λ calibrado
+# INDEPENDENTEMENTE por ETH/SOL/BNB/XRP -- BTC não entra, já é seu próprio
+# "λ local"): laço fino sobre `m4.compare_jump_model_only_for_symbol`/
+# `m4.run_jump_model_only_for_symbol` (só baseline + Jump Model, pula os 3
+# HMM e o BOCPD -- eles não dependem de `jump_penalty`, recomputá-los por
+# célula seria custo puro), alimentando a MESMA maquinaria de agregação já
+# usada pelo relatório principal (`aggregate_critical_windows_results`/
+# `_aggregate_one_candidate`) -- `is_saturated`/`saturation_rate` (AG-087)
+# ficam de graça, sem nenhuma fórmula nova.
+# ============================================================================
+
+#: LUNA/FTX excluídas -- só BTCUSDT (`CriticalWindow.symbols`), sem ativo
+#: não-BTC pra recalibrar nelas. As outras 3 janelas têm os 5 símbolos.
+JUMP_TRANSFERABILITY_WINDOWS: Final[tuple[CriticalWindow, ...]] = tuple(
+    w for w in CRITICAL_WINDOWS if len(w.symbols) > 1
+)
+
+#: Os 4 ativos não-BTC -- mesmo conjunto de AG-087 (BTC é seu próprio "λ
+#: local", `m4_jump_model_penalty` já foi calibrado nele).
+JUMP_TRANSFERABILITY_SYMBOLS: Final[tuple[str, ...]] = tuple(
+    s for s in m4.ALL_SYMBOLS if s != "BTCUSDT"
+)
+
+
+def _run_jump_model_only_one_cell(
+    window: CriticalWindow,
+    symbol: str,
+    resolution_id: str,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int,
+) -> CellOutcome:
+    """Variante de `_run_one_cell` pro experimento de transferibilidade de
+    λ (AG-087) -- chama `m4.run_jump_model_only_for_symbol` (baseline +
+    Jump Model, pula HMM/BOCPD) em vez de `m4.run_regime_comparison_for_
+    symbol`. Mesmo `CellOutcome` de saída (compatível com toda a
+    maquinaria de agregação já existente -- `aggregate_critical_windows_
+    results` nunca assumiu quantidade fixa de candidatos dentro de
+    `symbol_result.candidates`), mesma disciplina AG-019 (exceção vira
+    `CellOutcome.error`, nunca propaga) e mesma exigência de ser
+    module-level (picklable, `ProcessPoolExecutor(mp_context="spawn")`)."""
+    try:
+        result = m4.run_jump_model_only_for_symbol(
+            symbol,
+            window.start,
+            window.end,
+            initial_train_years=initial_train_years,
+            resolution_id=resolution_id,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
+    except Exception as exc:  # AG-019 -- 1 célula falhando não derruba as outras
+        logger.error(
+            "analysis.m4_critical_windows.jump_transferability_cell_failed",
+            window=window.name,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            error=repr(exc),
+        )
+        return CellOutcome(window.name, symbol, resolution_id, None, repr(exc), None)
+    if result is None:
+        logger.warning(
+            "analysis.m4_critical_windows.jump_transferability_cell_folds_insuficientes",
+            window=window.name,
+            symbol=symbol,
+            resolution_id=resolution_id,
+        )
+        return CellOutcome(window.name, symbol, resolution_id, None, None, None)
+    symbol_result, raw_labels = result
+    return CellOutcome(window.name, symbol, resolution_id, symbol_result, None, raw_labels)
+
+
+def run_jump_model_transferability_comparison(
+    resolution_id: str,
+    *,
+    jump_penalty_by_symbol: dict[str, float],
+    windows: tuple[CriticalWindow, ...] = JUMP_TRANSFERABILITY_WINDOWS,
+    symbols: tuple[str, ...] = JUMP_TRANSFERABILITY_SYMBOLS,
+    initial_train_years: int = 1,
+    jump_n_states: int = 2,
+    jump_seed: int = 0,
+    max_workers: int | None = None,
+    compute_volatility_heterogeneity: bool = False,
+) -> CriticalWindowsReport:
+    """Condição B do experimento de transferibilidade de λ (AG-087) -- 1
+    resolução, todas as células (janela, símbolo) de `windows` × `symbols`,
+    cada uma com o λ CALIBRADO daquele símbolo (`jump_penalty_by_symbol`,
+    saída de `tools/diagnostics/calibrate_jump_model_penalty_per_asset.py`
+    -- este módulo nunca inventa esses valores, `ValueError` se algum
+    símbolo de `symbols` não tiver entrada).
+
+    Devolve um `CriticalWindowsReport` ESTRUTURALMENTE IDÊNTICO ao do
+    relatório principal (`run_critical_windows_comparison`/`aggregate_
+    critical_windows_results`, mesmos dataclasses) -- pronto pra diff
+    direto contra a Condição A (`experiments/m4_critical_windows_report.
+    json`, λ=0,002 fixo) via `tools/diagnostics/compare_jump_model_lambda_
+    transferability.py`, sem formato novo. `baseline_classifier_id`/
+    `candidate_ids` são descobertos por `_collect_classifier_ids` a partir
+    de `SymbolResult.candidates` (que aqui só tem `jump_model_cjm_v1`, 1
+    elemento) -- mesma maquinaria, nenhuma mudança nela.
+
+    `windows` default exclui LUNA/FTX (`JUMP_TRANSFERABILITY_WINDOWS`,
+    BTC-only -- sem ativo não-BTC pra recalibrar nelas, mesma decisão do
+    desenho autorizado pelo Manager). `max_workers=1` força sequencial
+    (mesmo padrão de `run_critical_windows_comparison`, usado por testes).
+
+    `compute_volatility_heterogeneity=False` (default NESTA função de
+    nível baixo -- mesma assimetria já existente entre `run_critical_
+    windows_comparison.compute_gate_quality=False` vs. o `True` do
+    `run_and_save_critical_windows_report` que a chama; o script de
+    comparação final, `tools/diagnostics/compare_jump_model_lambda_
+    transferability.py`, passa `True` explicitamente). Quando `True`,
+    calcula `_SymbolForwardVolHistory` 1x por símbolo (candidato-
+    independente, reusa `_compute_symbol_forward_vol_history` já
+    existente, custo IO puro, sem fit) e repassa pra `aggregate_critical_
+    windows_results` via
+    `forward_vol_by_symbol` -- ativa `volatility_heterogeneity`
+    (`i_squared_pct`/`p_value_permutation`, AG-114) como sinal secundário/
+    corroborante do experimento (não o critério primário, que é
+    `is_saturated`/`saturation_rate`). **Efeito colateral aceito, não
+    escondido**: `aggregate_critical_windows_results` acopla `gate_
+    quality` (occupancy/transition-failure/detection-delay) ao mesmo
+    parâmetro `forward_vol_by_symbol` -- não há como pedir só a
+    heterogeneidade de volatilidade sem também computar gate_quality
+    sem duplicar lógica de agregação (fora do escopo desta extensão,
+    "reuse não duplique"). `gate_quality` fica no relatório B, mas
+    `compare_jump_model_lambda_transferability.py` não o consome como
+    critério -- decisão do desenho autorizado ("NÃO usar o framework de
+    gate-quality... limiares ainda TBD"), só ignorado, nunca desligado à
+    força (desligar exigiria reescrever `aggregate_critical_windows_
+    results`, não vale o custo pra um campo extra simplesmente ignorado).
+    `n_permutations`/`permutation_seed` vêm de `constants.yaml` (`m4_
+    heterogeneity_n_permutations`/`m4_heterogeneity_permutation_seed`,
+    já existentes -- nenhuma constante nova)."""
+    missing = [s for s in symbols if s not in jump_penalty_by_symbol]
+    if missing:
+        raise ValueError(
+            f"run_jump_model_transferability_comparison: jump_penalty_by_symbol não tem "
+            f"valor calibrado para {missing} -- rode tools/diagnostics/calibrate_jump_model_"
+            "penalty_per_asset.py primeiro (item 2 do experimento AG-087); este módulo nunca "
+            "inventa jump_penalty (B20)"
+        )
+
+    cells_spec = [
+        (window, symbol)
+        for window in windows
+        for symbol in symbols
+        if symbol in window.symbols
+    ]
+
+    outcomes: list[CellOutcome] = []
+    if max_workers == 1:
+        for window, symbol in cells_spec:
+            outcomes.append(
+                _run_jump_model_only_one_cell(
+                    window,
+                    symbol,
+                    resolution_id,
+                    initial_train_years=initial_train_years,
+                    jump_n_states=jump_n_states,
+                    jump_penalty=jump_penalty_by_symbol[symbol],
+                    jump_seed=jump_seed,
+                )
+            )
+    else:
+        workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+        mp_context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp_context) as executor:
+            future_to_cell = {
+                executor.submit(
+                    _run_jump_model_only_one_cell,
+                    window,
+                    symbol,
+                    resolution_id,
+                    initial_train_years=initial_train_years,
+                    jump_n_states=jump_n_states,
+                    jump_penalty=jump_penalty_by_symbol[symbol],
+                    jump_seed=jump_seed,
+                ): (window, symbol)
+                for window, symbol in cells_spec
+            }
+            for future in as_completed(future_to_cell):
+                window, symbol = future_to_cell[future]
+                try:
+                    outcomes.append(future.result())
+                except Exception as exc:
+                    # 2ª camada de defesa -- processo filho morreu antes de
+                    # _run_jump_model_only_one_cell conseguir capturar a
+                    # própria exceção (mesmo padrão AG-019 de
+                    # run_critical_windows_comparison).
+                    logger.error(
+                        "analysis.m4_critical_windows.jump_transferability_cell_process_crashed",
+                        window=window.name,
+                        symbol=symbol,
+                        resolution_id=resolution_id,
+                        error=repr(exc),
+                    )
+                    outcomes.append(
+                        CellOutcome(window.name, symbol, resolution_id, None, repr(exc))
+                    )
+
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory] = {}
+    n_permutations: int | None = None
+    permutation_seed: int | None = None
+    if compute_volatility_heterogeneity:
+        n_permutations = int(load_data_constant("m4_heterogeneity_n_permutations"))
+        permutation_seed = int(load_data_constant("m4_heterogeneity_permutation_seed"))
+        for symbol in symbols:
+            try:
+                forward_vol_by_symbol[symbol] = _compute_symbol_forward_vol_history(
+                    symbol, resolution_id
+                )
+            except Exception as exc:  # AG-019 -- 1 símbolo falhando não derruba os outros
+                logger.error(
+                    "analysis.m4_critical_windows.jump_transferability_forward_vol_failed",
+                    symbol=symbol,
+                    resolution_id=resolution_id,
+                    error=repr(exc),
+                )
+
+    logger.info(
+        "analysis.m4_critical_windows.jump_transferability_resolution_done",
+        resolution_id=resolution_id,
+        n_cells_requested=len(cells_spec),
+        n_cells_ok=sum(1 for o in outcomes if o.error is None and o.symbol_result is not None),
+        n_symbols_forward_vol_ok=len(forward_vol_by_symbol),
+    )
+
+    return aggregate_critical_windows_results(
+        resolution_id,
+        tuple(outcomes),
+        windows=windows,
+        forward_vol_by_symbol=forward_vol_by_symbol if compute_volatility_heterogeneity else None,
+        n_permutations=n_permutations,
+        permutation_seed=permutation_seed,
+    )
+
+
+# ============================================================================
+# "Condição C" -- Jump Model com espaço de observação ESTENDIDO (AG-119,
+# 2026-08-20). Reteste isolado (`tools/diagnostics/retest_jump_model_
+# extended_features_k3.py`) mostrou que SOLUSDT/BNBUSDT/XRPUSDT -- excluídos
+# do ranking do AG-114 por AG-117 (nenhum λ dava ≥2 estados OOS genuínos no
+# espaço de 2 features + K=2) -- mostram estrutura de regime genuína quando
+# testados com espaço de 4 features (log_return_1/realized_vol_short/
+# realized_vol_long/downside_deviation) + jump_n_states=3, alinhado à
+# literatura cripto-específica (Cortese/Kolm/Lindström 2023). Este bloco
+# reproduz a MESMA mecânica da Condição B (AG-087) -- laço fino sobre o
+# harness de símbolo único, mesma agregação (`aggregate_critical_windows_
+# results`), mesmo isolamento de falha por célula (AG-019) -- só troca o
+# candidato-fonte de `m4.run_jump_model_only_for_symbol` (2 features, K
+# fixo do experimento B) para `m4.run_jump_model_extended_features_for_
+# symbol` (4 features, K explícito do caller, sem hardcode -- decisão de
+# calibração Classe B, nunca decidida por este módulo).
+# ============================================================================
+
+
+def _run_jump_model_extended_features_one_cell(
+    window: CriticalWindow,
+    symbol: str,
+    resolution_id: str,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int,
+) -> CellOutcome:
+    """Variante de `_run_jump_model_only_one_cell` pra "Condição C" (AG-119)
+    -- chama `m4.run_jump_model_extended_features_for_symbol` (baseline +
+    Jump Model com observação 4D) em vez de `m4.run_jump_model_only_for_
+    symbol` (2D). Mesmo `CellOutcome` de saída, mesma disciplina AG-019
+    (exceção vira `CellOutcome.error`, nunca propaga) e mesma exigência de
+    ser module-level (picklable, `ProcessPoolExecutor(mp_context="spawn")`)."""
+    try:
+        result = m4.run_jump_model_extended_features_for_symbol(
+            symbol,
+            window.start,
+            window.end,
+            initial_train_years=initial_train_years,
+            resolution_id=resolution_id,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
+    except Exception as exc:  # AG-019 -- 1 célula falhando não derruba as outras
+        logger.error(
+            "analysis.m4_critical_windows.jump_extended_features_cell_failed",
+            window=window.name,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            error=repr(exc),
+        )
+        return CellOutcome(window.name, symbol, resolution_id, None, repr(exc), None)
+    if result is None:
+        logger.warning(
+            "analysis.m4_critical_windows.jump_extended_features_cell_folds_insuficientes",
+            window=window.name,
+            symbol=symbol,
+            resolution_id=resolution_id,
+        )
+        return CellOutcome(window.name, symbol, resolution_id, None, None, None)
+    symbol_result, raw_labels = result
+    return CellOutcome(window.name, symbol, resolution_id, symbol_result, None, raw_labels)
+
+
+def run_jump_model_extended_features_comparison(
+    resolution_id: str,
+    *,
+    jump_penalty_by_symbol: dict[str, float],
+    jump_n_states: int,
+    windows: tuple[CriticalWindow, ...] = JUMP_TRANSFERABILITY_WINDOWS,
+    symbols: tuple[str, ...] = JUMP_TRANSFERABILITY_SYMBOLS,
+    initial_train_years: int = 1,
+    jump_seed: int = 0,
+    max_workers: int | None = None,
+    compute_volatility_heterogeneity: bool = False,
+) -> CriticalWindowsReport:
+    """"Condição C" do experimento de transferibilidade de Jump Model
+    (`AG-119`, `audit/architecture_gaps_log.yaml`) -- 1 resolução, todas as
+    células (janela, símbolo) de `windows` × `symbols`, cada uma com o λ
+    CALIBRADO daquele símbolo no espaço de 4 features
+    (`jump_penalty_by_symbol`, saída de `tools/diagnostics/retest_jump_
+    model_extended_features_k3.py` -- este módulo nunca inventa esses
+    valores, `ValueError` se algum símbolo de `symbols` não tiver entrada,
+    mesma disciplina B20 de `run_jump_model_transferability_comparison`).
+
+    `jump_n_states` é OBRIGATÓRIO, sem default -- ao contrário da Condição
+    B (`jump_n_states: int = 2`), aqui não existe "padrão" já estabelecido:
+    o próprio achado do AG-119 é que K=3 (não K=2) é o que revela estrutura
+    genuína pra SOLUSDT/BNBUSDT/XRPUSDT no espaço estendido -- decisão de
+    calibração Classe B, sempre explícita do caller, nunca hardcoded aqui.
+
+    Devolve um `CriticalWindowsReport` ESTRUTURALMENTE IDÊNTICO ao da
+    Condição B/relatório principal (mesmos dataclasses) -- pronto pra diff
+    direto contra `experiments/m4_critical_windows_report.json` (Condição
+    A, Jump Model excluído dos 4 ativos não-BTC) e contra a Condição B, sem
+    formato novo.
+
+    `windows`/`symbols` default = os mesmos da Condição B
+    (`JUMP_TRANSFERABILITY_WINDOWS`/`JUMP_TRANSFERABILITY_SYMBOLS` --
+    LUNA/FTX BTC-only, os 4 ativos não-BTC) -- mesma razão: sem backfill
+    suficiente dos altcoins antes de mai/nov-2022 pra treino inicial de 1
+    ano.
+
+    `compute_volatility_heterogeneity=False` (default nesta função de
+    nível baixo, mesma assimetria de `run_jump_model_transferability_
+    comparison`) -- quando `True`, reusa `_compute_symbol_forward_vol_
+    history` (candidato-independente, custo IO puro) e ativa
+    `volatility_heterogeneity` como sinal secundário/corroborante, não o
+    critério primário do experimento (que é `is_saturated`/
+    `saturation_rate`, já embutido em `CandidateResult` por
+    `_run_fold_refit_candidate`)."""
+    missing = [s for s in symbols if s not in jump_penalty_by_symbol]
+    if missing:
+        raise ValueError(
+            f"run_jump_model_extended_features_comparison: jump_penalty_by_symbol não tem "
+            f"valor calibrado para {missing} -- rode tools/diagnostics/retest_jump_model_"
+            "extended_features_k3.py primeiro (AG-119); este módulo nunca inventa jump_penalty "
+            "(B20)"
+        )
+
+    cells_spec = [
+        (window, symbol)
+        for window in windows
+        for symbol in symbols
+        if symbol in window.symbols
+    ]
+
+    outcomes: list[CellOutcome] = []
+    if max_workers == 1:
+        for window, symbol in cells_spec:
+            outcomes.append(
+                _run_jump_model_extended_features_one_cell(
+                    window,
+                    symbol,
+                    resolution_id,
+                    initial_train_years=initial_train_years,
+                    jump_n_states=jump_n_states,
+                    jump_penalty=jump_penalty_by_symbol[symbol],
+                    jump_seed=jump_seed,
+                )
+            )
+    else:
+        workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+        mp_context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp_context) as executor:
+            future_to_cell = {
+                executor.submit(
+                    _run_jump_model_extended_features_one_cell,
+                    window,
+                    symbol,
+                    resolution_id,
+                    initial_train_years=initial_train_years,
+                    jump_n_states=jump_n_states,
+                    jump_penalty=jump_penalty_by_symbol[symbol],
+                    jump_seed=jump_seed,
+                ): (window, symbol)
+                for window, symbol in cells_spec
+            }
+            for future in as_completed(future_to_cell):
+                window, symbol = future_to_cell[future]
+                try:
+                    outcomes.append(future.result())
+                except Exception as exc:
+                    # 2ª camada de defesa -- processo filho morreu antes de
+                    # _run_jump_model_extended_features_one_cell conseguir
+                    # capturar a própria exceção (mesmo padrão AG-019).
+                    logger.error(
+                        "analysis.m4_critical_windows.jump_extended_features_cell_process_crashed",
+                        window=window.name,
+                        symbol=symbol,
+                        resolution_id=resolution_id,
+                        error=repr(exc),
+                    )
+                    outcomes.append(
+                        CellOutcome(window.name, symbol, resolution_id, None, repr(exc))
+                    )
+
+    forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory] = {}
+    n_permutations: int | None = None
+    permutation_seed: int | None = None
+    if compute_volatility_heterogeneity:
+        n_permutations = int(load_data_constant("m4_heterogeneity_n_permutations"))
+        permutation_seed = int(load_data_constant("m4_heterogeneity_permutation_seed"))
+        for symbol in symbols:
+            try:
+                forward_vol_by_symbol[symbol] = _compute_symbol_forward_vol_history(
+                    symbol, resolution_id
+                )
+            except Exception as exc:  # AG-019 -- 1 símbolo falhando não derruba os outros
+                logger.error(
+                    "analysis.m4_critical_windows.jump_extended_features_forward_vol_failed",
+                    symbol=symbol,
+                    resolution_id=resolution_id,
+                    error=repr(exc),
+                )
+
+    logger.info(
+        "analysis.m4_critical_windows.jump_extended_features_resolution_done",
+        resolution_id=resolution_id,
+        jump_n_states=jump_n_states,
+        n_cells_requested=len(cells_spec),
+        n_cells_ok=sum(1 for o in outcomes if o.error is None and o.symbol_result is not None),
+        n_symbols_forward_vol_ok=len(forward_vol_by_symbol),
+    )
+
+    return aggregate_critical_windows_results(
+        resolution_id,
+        tuple(outcomes),
+        windows=windows,
+        forward_vol_by_symbol=forward_vol_by_symbol if compute_volatility_heterogeneity else None,
         n_permutations=n_permutations,
         permutation_seed=permutation_seed,
     )
@@ -1863,6 +3196,24 @@ _LUNA_FTX_BTC_ONLY_CAVEAT: Final[str] = (
     "suficiente antes desses 2 eventos (mai/2022 e nov/2022) para initial_train_years=1 de "
     "treino inicial. Resultado dessas 2 janelas NAO tem leitura cross-asset, so valido para "
     "BTC -- nao inferir generalizacao para os outros 4 ativos a partir delas."
+)
+
+_JUMP_MODEL_EXCLUDED_FROM_RANKING_CAVEAT: Final[str] = (
+    "AG-117, 2026-08-20 (audit/architecture_gaps_log.yaml) -- jump_model_cjm_v1 roda SO pra "
+    "BTCUSDT (`_run_one_cell` seta include_jump_model=(symbol=='BTCUSDT') -- experimento de "
+    "transferibilidade de lambda mostrou ausencia de estrutura de 2 regimes detectavel em "
+    "SOLUSDT/BNBUSDT/XRPUSDT em qualquer ponto do grid testado, e recalibrar lambda pra "
+    "ETHUSDT piora/empata a saturacao nas janelas criticas). ACHADO IMPORTANTE, nao so uma "
+    "reducao de cobertura: como CRYPTO_WINTER/ETF_HALVING/RECENTE tem ate 5 simbolos pros "
+    "outros candidatos (mediana entre simbolos) mas SO 1 (BTC) pro Jump Model, o agregado de "
+    "jump_model_cjm_v1 neste relatorio NAO E COMPARAVEL ao de HMM/BOCPD -- composicao de "
+    "amostra diferente, nao so tamanho menor. Jump Model esta DESQUALIFICADO da comparacao/"
+    "ranking do AG-114 (gates + metrica primaria) por essa evidencia separada e controlada "
+    "(AG-117), nao pelo resultado deste relatorio -- qualquer implementacao futura da etapa "
+    "gates->ranking->desempate DEVE excluir jump_model_cjm_v1 da disputa pelo candidato "
+    "vencedor. Os numeros de jump_model_cjm_v1 aqui persistidos sao SO diagnostico/BTC, nunca "
+    "elegiveis pra vencer -- nao promover Jump Model a partir de um numero bom neste relatorio "
+    "sem cruzar contra AG-117 primeiro."
 )
 
 _TARGET_FOLD_CAVEAT: Final[str] = (
@@ -1934,6 +3285,117 @@ def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
     logger.info("analysis.m4_critical_windows.report_written", path=str(dest_path))
 
 
+# ============================================================================
+# Persistência de raw_labels/forward_vol_history -- follow-up de AG-114,
+# 2026-08-20 (decisão do Manager). Antes desta extensão, `CellOutcome.
+# raw_labels`/`_SymbolForwardVolHistory` só existiam em memória durante 1
+# execução de `run_critical_windows_comparison` -- QUALQUER métrica nova
+# sobre o MESMO fit (não só gate_quality/volatility_heterogeneity, já
+# cobertas por `CriticalWindowsReport`) exigiria re-rodar a extração
+# completa (~3h, refit real de HMM/Jump Model/BOCPD x 6 candidatos x 3
+# resoluções x 5 janelas) de novo -- exatamente a preocupação de
+# sequenciamento levantada pelo Manager antes de autorizar a rodada real.
+# Persistir aqui resolve isso de vez, não só para esta rodada.
+# ============================================================================
+
+RAW_LABELS_OUTPUT_DIR: Final[Path] = EXPERIMENTS_DIR / "m4_raw_labels"
+FORWARD_VOL_HISTORY_OUTPUT_DIR: Final[Path] = EXPERIMENTS_DIR / "m4_forward_vol_history"
+
+
+def _write_parquet_atomic(df: pl.DataFrame, dest_path: Path) -> None:
+    """B29 -- mesmo padrão de `src.labels.triple_barrier.write_labels_
+    atomic`: serializa pra um buffer em memória primeiro (`write_parquet`
+    não devolve um file descriptor que dê pra `fsync` diretamente), escreve
+    os bytes através de um handle `wb` normal e faz `fsync` NESSE MESMO
+    handle -- reabrir o `.tmp` como `O_RDONLY` só pra `fsync` falha no
+    Windows com "Bad file descriptor" (medido no Sprint 6)."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+    buffer = io.BytesIO()
+    df.write_parquet(buffer)
+    with tmp_path.open("wb") as fh:
+        fh.write(buffer.getvalue())
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, dest_path)
+
+
+def _raw_labels_path(
+    resolution_id: str, window_name: str, symbol: str, classifier_id: str
+) -> Path:
+    return (
+        RAW_LABELS_OUTPUT_DIR
+        / resolution_id
+        / window_name
+        / symbol
+        / f"{classifier_id}.parquet"
+    )
+
+
+def _forward_vol_history_path(resolution_id: str, symbol: str) -> Path:
+    return FORWARD_VOL_HISTORY_OUTPUT_DIR / resolution_id / f"{symbol}.parquet"
+
+
+def _persist_raw_labels(outcomes: tuple[CellOutcome, ...]) -> None:
+    """1 parquet por (`resolution_id`, `window_name`, `symbol`,
+    `classifier_id`) -- `open_time_ms`/`close_time_ms`/`canonical_id` de
+    `m4.RawLabels`, já coletado SEM custo extra por `_run_one_cell` (ver
+    docstring de `CellOutcome`, "custo desprezível"). Célula sem
+    `raw_labels` (falhou/pulada, AG-019) não escreve nada -- mesma
+    disciplina do resto do módulo, nunca inventa dado que não existe.
+    Sobrescreve em toda chamada (mesma semântica de `experiments/
+    m4_critical_windows_report.json` -- artefato experimental, não label
+    canônico versionado como `labels/{version}/labels.parquet`)."""
+    n_written = 0
+    for outcome in outcomes:
+        if outcome.raw_labels is None:
+            continue
+        for classifier_id, raw in outcome.raw_labels.items():
+            df = pl.DataFrame(
+                {
+                    "open_time_ms": raw.open_time_ms,
+                    "close_time_ms": raw.close_time_ms,
+                    "canonical_id": raw.canonical_id,
+                }
+            )
+            dest = _raw_labels_path(
+                outcome.resolution_id, outcome.window_name, outcome.symbol, classifier_id
+            )
+            _write_parquet_atomic(df, dest)
+            n_written += 1
+    logger.info(
+        "analysis.m4_critical_windows.raw_labels_persisted",
+        n_cells=len(outcomes),
+        n_files_written=n_written,
+    )
+
+
+def _persist_forward_vol_history(
+    resolution_id: str, forward_vol_by_symbol: dict[str, _SymbolForwardVolHistory]
+) -> None:
+    """1 parquet por (`resolution_id`, `symbol`) -- candidato-independente
+    (mesma observação de mercado reusada pelos 6 candidatos via
+    `_join_candidate_with_vol_history`), persistido separado de
+    `_persist_raw_labels` pra não repetir a mesma série 6x (1 por
+    classifier_id seria redundante -- `realized_vol_short`/
+    `forward_realized_vol` não dependem de qual candidato está sendo
+    avaliado)."""
+    for symbol, hist in forward_vol_by_symbol.items():
+        df = pl.DataFrame(
+            {
+                "close_time_ms": hist.close_time_ms,
+                "realized_vol_short": hist.realized_vol_short,
+                "forward_realized_vol": hist.forward_realized_vol,
+            }
+        )
+        _write_parquet_atomic(df, _forward_vol_history_path(resolution_id, symbol))
+    logger.info(
+        "analysis.m4_critical_windows.forward_vol_history_persisted",
+        resolution_id=resolution_id,
+        n_symbols=len(forward_vol_by_symbol),
+    )
+
+
 def _build_report_payload(
     resolutions: tuple[str, ...],
     windows: tuple[CriticalWindow, ...],
@@ -1967,6 +3429,7 @@ def _build_report_payload(
         "elapsed_seconds_total": elapsed_seconds_total,
         "ag043_barra_vs_tempo_real_caveat": _AG043_CAVEAT,
         "luna_ftx_btc_only_caveat": _LUNA_FTX_BTC_ONLY_CAVEAT,
+        "jump_model_excluded_from_ranking_caveat": _JUMP_MODEL_EXCLUDED_FROM_RANKING_CAVEAT,
         "target_fold_is_fold1_not_fold0_caveat": _TARGET_FOLD_CAVEAT,
         "windows": [asdict(w) for w in windows],
         "by_resolution": [asdict(r) for r in reports],
@@ -1988,6 +3451,8 @@ def run_and_save_critical_windows_report(
     jump_seed: int = 0,
     max_workers: int | None = None,
     compute_heterogeneity: bool = True,
+    compute_gate_quality: bool = True,
+    persist_raw_labels: bool = True,
 ) -> Path:
     """Ponto de entrada real -- itera as `resolutions` (default as 3, R1/
     R2/R3) SEQUENCIALMENTE, cada uma via `run_critical_windows_comparison`
@@ -1995,6 +3460,26 @@ def run_and_save_critical_windows_report(
     combinado atômico (B29) -- inclusive um CHECKPOINT parcial (`partial:
     true`) a cada resolução concluída, não só no final (ver docstring de
     `_build_report_payload`, achado `project_assurance` 2026-08-18, HIGH).
+
+    `persist_raw_labels=True` (default, follow-up de AG-114, 2026-08-20,
+    decisão do Manager) -- grava `raw_labels`/`_SymbolForwardVolHistory`
+    em `experiments/m4_raw_labels/`/`experiments/m4_forward_vol_history/`
+    a cada resolução concluída (dentro do mesmo `run_critical_windows_
+    comparison`, mesmo timing do checkpoint parcial do relatório JSON) --
+    resolve de vez a preocupação de sequenciamento levantada antes desta
+    rodada real ("não faz sentido rodar agora pra depois... rodar de
+    novo"): qualquer métrica futura sobre o MESMO fit passa a ler parquet
+    já persistido, nunca mais exige re-fit completo (~3h).
+
+    `compute_gate_quality=True` (default, AG-114, 2026-08-20) -- carrega
+    `m4_luna_event_onset_ts_ms`/`m4_ftx_event_onset_ts_ms` (independentes
+    de resolução, carregados 1x fora do loop) e propaga
+    `compute_gate_quality=True` pra cada `run_critical_windows_comparison`
+    (que calcula `_SymbolForwardVolHistory` por resolução, dentro do loop
+    -- diferente de `labels_by_symbol`, que não depende de resolução).
+    `compute_gate_quality=False` preserva `gate_quality=()`/
+    `volatility_heterogeneity=()`, mesmo espírito de
+    `compute_heterogeneity=False`.
 
     `compute_heterogeneity=True` (default, G-C1-2 revisado, decisão do
     Manager 2026-08-18) -- carrega `labels.parquet` 1x por símbolo (união
@@ -2033,6 +3518,13 @@ def run_and_save_critical_windows_report(
     het_taker_fee: float | None = None
     het_n_permutations: int | None = None
     het_permutation_seed: int | None = None
+    # AG-092 -- teste de permutação em bloco por episódio. Carregado se
+    # QUALQUER um dos 2 blocos que o usam estiver ativo (heterogeneidade
+    # TP/SL OU volatility_heterogeneity contínua, AG-114) -- os 2 podem
+    # ser ligados/desligados independentemente.
+    if compute_heterogeneity or compute_gate_quality:
+        het_n_permutations = int(load_data_constant("m4_heterogeneity_n_permutations"))
+        het_permutation_seed = int(load_data_constant("m4_heterogeneity_permutation_seed"))
     if compute_heterogeneity:
         all_symbols = tuple(sorted({symbol for w in windows for symbol in w.symbols}))
         labels_by_symbol = _load_labels_by_symbol(all_symbols)
@@ -2041,16 +3533,23 @@ def run_and_save_critical_windows_report(
         het_sl_atr_mult = het_cfg.sl_atr_mult
         het_maker_fee = float(load_risk_constant("maker_fee"))
         het_taker_fee = float(load_risk_constant("taker_fee"))
-        # AG-092 -- teste de permutação em bloco por episódio, corrige a
-        # violação de independência de estratos do Cochran's Q/I² sob
-        # autocorrelação intra-episódio de regime.
-        het_n_permutations = int(load_data_constant("m4_heterogeneity_n_permutations"))
-        het_permutation_seed = int(load_data_constant("m4_heterogeneity_permutation_seed"))
         logger.info(
             "analysis.m4_critical_windows.heterogeneity_labels_loaded",
             n_symbols_requested=len(all_symbols),
             n_symbols_ok=len(labels_by_symbol),
         )
+
+    # AG-114, 2026-08-20 -- datas de onset dos 2 eventos de colapso abrupto
+    # com instante localizável (LUNA/FTX); independentes de resolução,
+    # carregadas 1x fora do loop. Gate 3 (desempate only) fica
+    # NOT_COMPUTABLE nas outras 3 janelas (sem instante único de evento),
+    # nunca inventado -- ver docstring de GateQualitySymbolDetail.
+    event_onset_ts_ms_by_window: dict[str, int] = {}
+    if compute_gate_quality:
+        event_onset_ts_ms_by_window = {
+            "LUNA": int(load_data_constant("m4_luna_event_onset_ts_ms")),
+            "FTX": int(load_data_constant("m4_ftx_event_onset_ts_ms")),
+        }
 
     for resolution_id in resolutions:
         logger.info(
@@ -2075,6 +3574,9 @@ def run_and_save_critical_windows_report(
             taker_fee=het_taker_fee,
             n_permutations=het_n_permutations,
             permutation_seed=het_permutation_seed,
+            compute_gate_quality=compute_gate_quality,
+            event_onset_ts_ms_by_window=event_onset_ts_ms_by_window,
+            persist_raw_labels=persist_raw_labels,
         )
         reports.append(report)
         logger.info(

@@ -33,7 +33,15 @@ def _empty_labels() -> pl.DataFrame:
     folga. Mantém o nome `_empty_labels` (não `_minimal_labels`) porque o
     propósito do teste continua sendo "roteamento de argumentos", não
     conteúdo de label -- só o suficiente pra passar pela validação real que
-    o caminho de produção agora aplica."""
+    o caminho de produção agora aplica.
+
+    `n_bars_held=0` (AG-116, 2026-08-20) -- `assert_label_invariants` sob
+    `resolution_id` (dollar bar) agora lê esta coluna pro teto `n_bars_
+    held <= horizon_bars` (em vez de `held_ms <= time_stop_ms`, ver
+    `build_and_write_labels_for_symbol`). `0` é seguro contra QUALQUER
+    `horizon_bars >= 1` real (a validação de `LabelConfig.__post_init__`
+    já garante `horizon_bars >= 1`), sem hardcodar o valor real -- mesmo
+    espírito de `held_ms=60_000` acima."""
     tz_ms = pl.Datetime("ms", time_zone="UTC")
     return pl.DataFrame(
         {
@@ -43,6 +51,7 @@ def _empty_labels() -> pl.DataFrame:
             "barrier_hit": pl.Series(["TP"], dtype=pl.Categorical),
             "config_hash": ["fake_routing_test"],
             "sample_weight": [1.0],
+            "n_bars_held": [0],
             "uniqueness": [1.0],
         }
     )

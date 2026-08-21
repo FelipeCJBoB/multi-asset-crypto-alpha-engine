@@ -22,6 +22,7 @@ import polars as pl
 import pytest
 
 from src.analysis import m4_regime_comparison as m4
+from src.data import lake
 from src.data._paths import CAPACITY_DIR
 from src.features import support as features_support
 from src.features._constants import load_constant as load_feature_constant
@@ -192,6 +193,37 @@ def test_input_obs_realized_vol_short_valor_conhecido_e_min_periods_estrito() ->
     # cross-check independente: bate com a primitiva real de produção.
     expected_full = features_support.realized_vol(log_return_1, _SHORT_WINDOW)
     np.testing.assert_allclose(obs_2d[:, 1], expected_full, equal_nan=True)
+
+
+# ============================================================================
+# _forward_realized_vol -- extensão de qualidade-de-gate (AG-114,
+# 2026-08-20, PLANO_MESTRE_PRINCE2.md §15.12.1). Generalização de
+# _forward_return (h=1 -> h=window) pra métrica primária de ranking
+# (separação de volatilidade futura, não retorno).
+# ============================================================================
+
+
+def test_forward_realized_vol_deslocamento_exato_valores_conhecidos() -> None:
+    realized_vol_short = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], dtype=np.float64)
+    result = m4._forward_realized_vol(realized_vol_short, window=2)
+    # forward[t] = realized_vol_short[t+2] -- últimas 2 posições sem t+2 -> NaN
+    np.testing.assert_allclose(result[:4], [0.3, 0.4, 0.5, 0.6])
+    assert np.all(np.isnan(result[4:]))
+    assert result.shape == realized_vol_short.shape
+
+
+def test_forward_realized_vol_array_mais_curto_que_window_e_tudo_nan() -> None:
+    realized_vol_short = np.array([0.1, 0.2, 0.3], dtype=np.float64)
+    result = m4._forward_realized_vol(realized_vol_short, window=5)
+    assert result.shape == (3,)
+    assert np.all(np.isnan(result))
+
+
+def test_forward_realized_vol_window_1_bate_com_deslocamento_de_1_posicao() -> None:
+    realized_vol_short = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
+    result = m4._forward_realized_vol(realized_vol_short, window=1)
+    np.testing.assert_allclose(result[:3], [2.0, 3.0, 4.0])
+    assert np.isnan(result[3])
 
 
 def test_valid_start_idx_e_window_nao_window_menos_1() -> None:
@@ -710,6 +742,36 @@ def test_compare_regime_candidates_estrutura_do_resultado() -> None:
     assert bocpd.fold_stability_by_construction is True
     assert bocpd.fold_stability_adjusted_rand_mean == 1.0
     assert bocpd.n_folds_evaluated == 0
+
+
+@pytest.mark.slow
+def test_compare_regime_candidates_include_jump_model_false_pula_jump_model() -> None:
+    """AG-117, 2026-08-20 -- experimento de transferibilidade mostrou que
+    Jump Model não tem estrutura de 2 regimes detectável em nenhum ponto
+    de grid testado pra SOLUSDT/BNBUSDT/XRPUSDT, e recalibrar λ pra
+    ETHUSDT piora ou empata a saturação nas janelas críticas.
+    `include_jump_model=False` pula o fit inteiro -- `candidates` fica
+    com 3 elementos (2 HMM + BOCPD), não 4, e `jump_model_cjm_v1` nunca
+    aparece nem no `raw_labels_by_classifier_id` (Q3)."""
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    combined = m4.compare_regime_candidates_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        hmm_states_grid=(2, 3),
+        include_jump_model=False,
+        return_raw_labels=True,
+        **_CANDIDATE_KWARGS,
+    )
+    assert combined is not None
+    result, raw_labels = combined
+    ids = [c.classifier_id for c in result.candidates]
+    assert ids == ["hmm_gaussian_k2_v1", "hmm_gaussian_k3_v1", "bocpd_v1"]
+    assert "jump_model_cjm_v1" not in raw_labels
+    assert set(raw_labels) == {"quantile_regime_v1", "hmm_gaussian_k2_v1", "hmm_gaussian_k3_v1", "bocpd_v1"}  # noqa: E501
 
 
 # ============================================================================
@@ -1509,3 +1571,474 @@ def test_run_q3_common_factor_regime_btcusdt_ethusdt_sobre_dado_real() -> None:
     for asset_result in result.assets:
         assert asset_result.symbol == "ETHUSDT"
         assert asset_result.n_bars_compared >= 0
+
+
+# ============================================================================
+# compare_jump_model_only_for_symbol / run_jump_model_only_for_symbol --
+# IRMÃs de compare_regime_candidates_for_symbol/run_regime_comparison_for_
+# symbol, só baseline + Jump Model (AG-087, experimento de
+# transferibilidade de jump_penalty por ativo, `audit/architecture_gaps_
+# log.yaml`). Contrato central testado aqui: SymbolResult com 1 único
+# candidato, 100% compatível com o resto da agregação (m4_critical_
+# windows.py só faz lookup por classifier_id, nunca assume quantidade
+# fixa) -- e bit-a-bit idêntico ao que compare_regime_candidates_for_
+# symbol produziria pro mesmo baseline/Jump Model, prova de que isolar o
+# núcleo não muda o cálculo do que sobra.
+# ============================================================================
+
+
+def test_compare_jump_model_only_for_symbol_dado_insuficiente_retorna_none() -> None:
+    bars_df = _synthetic_bars_df(200)  # ~6.5 meses, menos que 1 ano de treino inicial
+    baseline_df = _synthetic_baseline_df(bars_df)
+    result = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=1,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is None
+
+
+def test_compare_jump_model_only_for_symbol_levanta_value_error_altura_diferente() -> None:
+    bars_df = _synthetic_bars_df(400)
+    baseline_df = _synthetic_baseline_df(bars_df).slice(1, 399)
+    with pytest.raises(ValueError, match="não alinhados"):
+        m4.compare_jump_model_only_for_symbol(
+            "TESTUSDT",
+            bars_df,
+            baseline_df,
+            initial_train_years=1,
+            jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+            jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+        )
+
+
+@pytest.mark.slow
+def test_compare_jump_model_only_for_symbol_estrutura_do_resultado() -> None:
+    bars_df = _synthetic_bars_df(1095)  # ~3 anos
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    result = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is not None
+    assert result.symbol == "TESTUSDT"
+    assert result.n_bars == 1095
+    assert result.n_folds > 0
+    assert result.oos_end_ms > result.oos_start_ms
+
+    # 1 único candidato -- nunca os 3 HMM nem o BOCPD.
+    assert [c.classifier_id for c in result.candidates] == ["jump_model_cjm_v1"]
+    assert result.candidates[0].n_oos_obs > 0
+    assert result.candidates[0].fold_stability_by_construction is False
+
+    assert result.baseline.classifier_id == "quantile_regime_v1"
+    assert result.baseline.fold_stability_by_construction is True
+    assert result.baseline.fold_stability_adjusted_rand_mean == 1.0
+    assert result.baseline.n_folds_evaluated == 0
+
+
+@pytest.mark.slow
+def test_compare_jump_model_only_for_symbol_bate_bit_a_bit_com_harness_completo() -> None:
+    """Prova a equivalência central do desenho (não só "roda sem
+    quebrar"): isolar baseline+Jump Model do harness completo (que
+    também roda 3 HMM + BOCPD) precisa produzir EXATAMENTE o mesmo
+    resultado pros 2 candidatos que sobram -- mesmo dado, mesmos
+    hiperparâmetros, mesma seed. Se este teste falhar, algo no núcleo
+    isolado divergiu do caminho compartilhado (`_run_fold_refit_
+    candidate`/`_baseline_candidate_result`), não uma diferença
+    esperada de "menos candidatos"."""
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    full_result = m4.compare_regime_candidates_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        hmm_states_grid=(2,),
+        **_CANDIDATE_KWARGS,
+    )
+    assert full_result is not None
+
+    jump_only_result = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert jump_only_result is not None
+
+    assert jump_only_result.symbol == full_result.symbol
+    assert jump_only_result.n_bars == full_result.n_bars
+    assert jump_only_result.n_folds == full_result.n_folds
+    assert jump_only_result.oos_start_ms == full_result.oos_start_ms
+    assert jump_only_result.oos_end_ms == full_result.oos_end_ms
+    assert jump_only_result.baseline == full_result.baseline
+
+    full_jump = next(c for c in full_result.candidates if c.classifier_id == "jump_model_cjm_v1")
+    assert len(jump_only_result.candidates) == 1
+    assert jump_only_result.candidates[0] == full_jump
+
+
+def test_compare_jump_model_only_for_symbol_nunca_chama_hmm_nem_bocpd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prova o motivo de existir desta função (custo ~4-6x menor por
+    célula, ver docstring): recomputar HMM/BOCPD seria puro desperdício
+    de N_lifetime/tempo num experimento que só varia `jump_penalty`."""
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("nao deveria ser chamado -- so baseline+Jump Model, nunca HMM/BOCPD")
+
+    monkeypatch.setattr(m4, "fit_hmm_gaussian", _boom)
+    monkeypatch.setattr(m4, "predict_hmm_gaussian", _boom)
+    monkeypatch.setattr(m4, "run_bocpd", _boom)
+
+    result = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is not None
+    assert [c.classifier_id for c in result.candidates] == ["jump_model_cjm_v1"]
+
+
+def test_compare_jump_model_only_for_symbol_return_raw_labels_chaves_esperadas() -> None:
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    without_raw = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    computed = m4.compare_jump_model_only_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+        return_raw_labels=True,
+    )
+    assert computed is not None
+    symbol_result, raw_labels = computed
+
+    # return_raw_labels=True não muda o SymbolResult em si (mesmo
+    # protocolo de compare_regime_candidates_for_symbol).
+    assert symbol_result == without_raw
+    assert set(raw_labels) == {"quantile_regime_v1", "jump_model_cjm_v1"}
+    for raw in raw_labels.values():
+        assert raw.open_time_ms.shape == raw.canonical_id.shape
+        assert raw.close_time_ms.shape == raw.canonical_id.shape
+
+
+def test_run_jump_model_only_for_symbol_resolution_id_seleciona_r2_nos_dois_loads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mesma prova de `run_regime_comparison_for_symbol` (Fase B) --
+    `resolution_id` precisa selecionar `lake.query_dollar_bars` E
+    `build_regimes` JUNTOS, nunca um sob R2 e o outro sob R1."""
+    n = 30
+    bars_df = pl.DataFrame(
+        {
+            "open_time": np.arange(n, dtype=np.int64) * 86_400_000,
+            "close_time": np.arange(n, dtype=np.int64) * 86_400_000 + 86_399_999,
+            "close": 100.0 + np.arange(n, dtype=np.float64),  # noqa: magic-number -- preço sintético, valor arbitrário
+        }
+    )
+    t0 = (
+        pl.from_epoch(pl.Series(bars_df["open_time"]), time_unit="ms")
+        .dt.replace_time_zone("UTC")
+        .dt.cast_time_unit("ns")
+    )
+    baseline_df = pl.DataFrame(
+        {
+            "t0": t0,
+            "regime": pl.Series(["R1"] * n).cast(pl.Enum(list(classifier.REGIME_LABELS))),
+            "vol_pctile": np.linspace(0.0, 1.0, n),
+            "classifier_id": pl.Series(["quantile_regime_v1"] * n),
+        }
+    )
+
+    query_calls: list[dict[str, object]] = []
+    build_calls: list[dict[str, object]] = []
+
+    def _stub_query_dollar_bars(
+        symbol: str, start: str, end: str, *, resolution_id: str = "R1", **_kwargs: object
+    ) -> pl.DataFrame:
+        query_calls.append(
+            {"symbol": symbol, "start": start, "end": end, "resolution_id": resolution_id}
+        )
+        return bars_df
+
+    def _stub_build_regimes(
+        symbol: str, start: str, end: str, *, bar_source: str = "time_15m", **_kwargs: object
+    ) -> pl.DataFrame:
+        build_calls.append(
+            {"symbol": symbol, "start": start, "end": end, "bar_source": bar_source}
+        )
+        return baseline_df
+
+    monkeypatch.setattr(lake, "query_dollar_bars", _stub_query_dollar_bars)
+    monkeypatch.setattr(m4, "build_regimes", _stub_build_regimes)
+
+    m4.run_jump_model_only_for_symbol(
+        "TESTUSDT",
+        "2020-01-01",
+        "2020-02-01",
+        initial_train_years=1,
+        resolution_id="R2",
+        jump_n_states=2,
+        jump_penalty=0.002,  # noqa: magic-number -- valor real de constants.yaml::m4_jump_model_penalty, citado literal em teste
+    )
+
+    assert query_calls == [
+        {"symbol": "TESTUSDT", "start": "2020-01-01", "end": "2020-02-01", "resolution_id": "R2"}
+    ]
+    assert build_calls == [
+        {
+            "symbol": "TESTUSDT",
+            "start": "2020-01-01",
+            "end": "2020-02-01",
+            "bar_source": "dollar_r2",
+        }
+    ]
+
+
+# ============================================================================
+# "Condição C" (AG-119) -- _extended_jump_model_obs /
+# compare_jump_model_extended_features_for_symbol /
+# run_jump_model_extended_features_for_symbol. Mesma disciplina de teste
+# dos irmãos *_jump_model_only_* acima -- mesmas fixtures sintéticas,
+# mesmo _CANDIDATE_KWARGS.
+# ============================================================================
+
+_LONG_WINDOW = int(load_feature_constant("feature_c06_vol_ratio_long_window"))
+
+
+def test_extended_jump_model_obs_shape_e_coluna_0_bate_com_log_return_1() -> None:
+    bars_df = _synthetic_bars_df(400)
+    log_return_1, obs_4d = m4._extended_jump_model_obs(bars_df)
+
+    assert obs_4d.shape[1] == 4
+    assert obs_4d.shape[0] == log_return_1.shape[0]
+    np.testing.assert_allclose(obs_4d[:, 0], log_return_1)
+    assert np.all(np.isfinite(obs_4d))
+
+
+def test_extended_jump_model_obs_corta_warmup_pelo_menos_tanto_quanto_o_espaco_original() -> None:
+    """Achado real do reteste isolado (AG-119): as 2 colunas novas
+    (`realized_vol_long`/`downside_deviation`) têm janela própria, que
+    pode exigir MAIS warmup que as 2 colunas originais de `_input_obs`
+    (`log_return_1`/`realized_vol_short`) -- o corte de
+    `_extended_jump_model_obs` nunca pode ser mais curto (warmup menor)
+    que o de `_valid_start_idx` sobre o espaço 2D."""
+    bars_df = _synthetic_bars_df(400)
+    log_return_1_full, obs_2d_full = m4._input_obs(bars_df)
+    valid_start_idx_2d = m4._valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
+
+    log_return_1_4d, _obs_4d = m4._extended_jump_model_obs(bars_df)
+    n_dropped_4d = bars_df.height - log_return_1_4d.shape[0]
+
+    assert n_dropped_4d >= valid_start_idx_2d
+    if _LONG_WINDOW > _SHORT_WINDOW:
+        assert n_dropped_4d > valid_start_idx_2d
+
+
+def test_extended_jump_model_obs_dado_insuficiente_levanta_value_error() -> None:
+    bars_df = _synthetic_bars_df(5)
+    with pytest.raises(ValueError, match="nenhuma barra"):
+        m4._extended_jump_model_obs(bars_df)
+
+
+def test_compare_jump_model_extended_features_for_symbol_dado_insuficiente_retorna_none() -> None:
+    bars_df = _synthetic_bars_df(200)  # ~6.5 meses, menos que 1 ano de treino inicial
+    baseline_df = _synthetic_baseline_df(bars_df)
+    result = m4.compare_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=1,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is None
+
+
+def test_compare_jump_model_extended_features_for_symbol_levanta_value_error_altura_diferente() -> (
+    None
+):
+    bars_df = _synthetic_bars_df(400)
+    baseline_df = _synthetic_baseline_df(bars_df).slice(1, 399)
+    with pytest.raises(ValueError, match="não alinhados"):
+        m4.compare_jump_model_extended_features_for_symbol(
+            "TESTUSDT",
+            bars_df,
+            baseline_df,
+            initial_train_years=1,
+            jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+            jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+        )
+
+
+@pytest.mark.slow
+def test_compare_jump_model_extended_features_for_symbol_estrutura_do_resultado() -> None:
+    bars_df = _synthetic_bars_df(1095)  # ~3 anos
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    result = m4.compare_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is not None
+    assert result.symbol == "TESTUSDT"
+    assert result.n_bars == 1095
+    assert result.n_folds > 0
+    assert result.oos_end_ms > result.oos_start_ms
+
+    # 1 único candidato -- nunca os 3 HMM nem o BOCPD.
+    assert [c.classifier_id for c in result.candidates] == ["jump_model_cjm_v1"]
+    assert result.candidates[0].n_oos_obs > 0
+    assert result.candidates[0].fold_stability_by_construction is False
+
+    assert result.baseline.classifier_id == "quantile_regime_v1"
+    assert result.baseline.fold_stability_by_construction is True
+
+
+def test_compare_jump_model_extended_features_for_symbol_nunca_chama_hmm_nem_bocpd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("nao deveria ser chamado -- so baseline+Jump Model, nunca HMM/BOCPD")
+
+    monkeypatch.setattr(m4, "fit_hmm_gaussian", _boom)
+    monkeypatch.setattr(m4, "predict_hmm_gaussian", _boom)
+    monkeypatch.setattr(m4, "run_bocpd", _boom)
+
+    result = m4.compare_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    assert result is not None
+    assert [c.classifier_id for c in result.candidates] == ["jump_model_cjm_v1"]
+
+
+def test_compare_jump_model_extended_features_for_symbol_return_raw_labels_chaves_esperadas() -> (
+    None
+):
+    bars_df = _synthetic_bars_df(1095)
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    without_raw = m4.compare_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+    )
+    computed = m4.compare_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        bars_df,
+        baseline_df,
+        initial_train_years=2,
+        jump_n_states=_CANDIDATE_KWARGS["jump_n_states"],
+        jump_penalty=_CANDIDATE_KWARGS["jump_penalty"],
+        return_raw_labels=True,
+    )
+    assert computed is not None
+    symbol_result, raw_labels = computed
+
+    assert symbol_result == without_raw
+    assert set(raw_labels) == {"quantile_regime_v1", "jump_model_cjm_v1"}
+    for raw in raw_labels.values():
+        assert raw.open_time_ms.shape == raw.canonical_id.shape
+        assert raw.close_time_ms.shape == raw.canonical_id.shape
+
+
+def test_run_jump_model_extended_features_for_symbol_resolution_id_seleciona_r2_nos_dois_loads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    n = 400
+    rng = np.random.default_rng(42)
+    day_ms = 86_400_000
+    open_time = np.arange(n, dtype=np.int64) * day_ms
+    close_time = open_time + day_ms - 1
+    log_returns = rng.normal(0.0, 0.01, size=n - 1)
+    close = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(log_returns)]))
+    bars_df = pl.DataFrame({"open_time": open_time, "close_time": close_time, "close": close})
+    baseline_df = _synthetic_baseline_df(bars_df)
+
+    query_calls: list[dict[str, object]] = []
+    build_calls: list[dict[str, object]] = []
+
+    def _stub_query_dollar_bars(
+        symbol: str, start: str, end: str, *, resolution_id: str = "R1", **_kwargs: object
+    ) -> pl.DataFrame:
+        query_calls.append(
+            {"symbol": symbol, "start": start, "end": end, "resolution_id": resolution_id}
+        )
+        return bars_df
+
+    def _stub_build_regimes(
+        symbol: str, start: str, end: str, *, bar_source: str = "time_15m", **_kwargs: object
+    ) -> pl.DataFrame:
+        build_calls.append(
+            {"symbol": symbol, "start": start, "end": end, "bar_source": bar_source}
+        )
+        return baseline_df
+
+    monkeypatch.setattr(lake, "query_dollar_bars", _stub_query_dollar_bars)
+    monkeypatch.setattr(m4, "build_regimes", _stub_build_regimes)
+
+    m4.run_jump_model_extended_features_for_symbol(
+        "TESTUSDT",
+        "2020-01-01",
+        "2020-02-01",
+        initial_train_years=1,
+        resolution_id="R2",
+        jump_n_states=3,
+        jump_penalty=0.02,  # noqa: magic-number -- valor real medido no reteste AG-119 (grid top, saturado)
+    )
+
+    assert query_calls == [
+        {"symbol": "TESTUSDT", "start": "2020-01-01", "end": "2020-02-01", "resolution_id": "R2"}
+    ]
+    assert build_calls == [
+        {
+            "symbol": "TESTUSDT",
+            "start": "2020-01-01",
+            "end": "2020-02-01",
+            "bar_source": "dollar_r2",
+        }
+    ]

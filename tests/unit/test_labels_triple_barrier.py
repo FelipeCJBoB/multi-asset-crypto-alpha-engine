@@ -384,7 +384,13 @@ def test_build_labels_garman_klass_produz_atr_at_t0_diferente_do_wilder() -> Non
 # ============================================================================
 
 
-def _dollar_bar_cfg(*, estimator_id: str = "parkinson_w3") -> tb.LabelConfig:
+def _dollar_bar_cfg(*, estimator_id: str = "parkinson_w3", horizon_bars: int = 2) -> tb.LabelConfig:
+    # AG-116 (2026-08-20) -- horizon_bars agora OBRIGATÓRIO sob
+    # resolution_id (__post_init__ levanta ValueError sem ele). Default=2
+    # é suficiente pros testes que só exercitam validação/erro ANTES do
+    # laço por índice de build_labels (raise no topo da função) -- testes
+    # que precisam de reachability real (i+horizon_bars<n) usam bars/
+    # horizon_bars dedicados, não este helper.
     return tb.LabelConfig(
         tp_atr_mult=2.0,
         sl_atr_mult=1.5,
@@ -395,7 +401,20 @@ def _dollar_bar_cfg(*, estimator_id: str = "parkinson_w3") -> tb.LabelConfig:
         taker_fee=0.0005,
         estimator_id=estimator_id,
         resolution_id="R1",
+        horizon_bars=horizon_bars,
     )
+
+
+def test_label_config_horizon_bars_sob_tf_levanta_valueerror() -> None:
+    """AG-116, item 9(iii) -- `horizon_bars` setado SEM `resolution_id`
+    (grade de tempo, `tf`) é proibido, fail-loud -- nunca ignorado em
+    silêncio (mesma disciplina de AG-031/B1 pra time_stop_bars/
+    time_stop_ms)."""
+    with pytest.raises(ValueError, match="horizon_bars"):
+        tb.LabelConfig(
+            2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005,
+            "atr_wilder_w20", horizon_bars=32,
+        )
 
 
 def test_label_config_resolution_id_invalido_levanta_valueerror() -> None:
@@ -428,6 +447,7 @@ def test_label_config_resolution_id_pula_validacao_atr_wilder() -> None:
         taker_fee=0.0005,
         estimator_id="atr_wilder_w3",  # não bate com atr_window_ms/bar_ms, mas ok
         resolution_id="R1",
+        horizon_bars=4,  # AG-116 -- obrigatório sob resolution_id, valor arbitrário aqui
     )
     assert cfg.resolution_id == "R1"
     assert cfg.tf == "15m"  # default, vestigial
@@ -438,6 +458,23 @@ def test_label_config_from_constants_resolution_id_sem_estimator_id_levanta_erro
         tb.LabelConfig.from_constants(resolution_id="R1")
 
 
+def test_label_config_from_constants_resolution_id_sem_estimator_id_e_sem_horizon_bars_erro_e_de_estimator_id() -> None:  # noqa: E501
+    """AG-116 -- 'os dois ausentes': `from_constants(resolution_id=...)` sem
+    `estimator_id` NEM `horizon_bars` (os dois `None`, seus defaults) tem
+    dois candidatos a `ValueError` desde que `horizon_bars` também passou
+    a ter uma regra especial sob `resolution_id` (decisão do Manager,
+    `PLANO_MESTRE_PRINCE2.md` §15.12.3 item 9(iv)): `estimator_id`
+    continua EXIGIDO explícito (levanta), `horizon_bars` NÃO -- carrega
+    default de `constants.yaml` em silêncio (nunca levanta por estar
+    ausente). Fixa que o erro observado é sempre o de `estimator_id`
+    (checado primeiro em `from_constants`, antes de qualquer lógica de
+    `horizon_bars`) -- nunca um erro mencionando `horizon_bars`, que não
+    existe neste caminho."""
+    with pytest.raises(ValueError, match="estimator_id") as exc_info:
+        tb.LabelConfig.from_constants(resolution_id="R1")
+    assert "horizon_bars" not in str(exc_info.value)
+
+
 def test_build_labels_resolution_id_sem_estimator_levanta_valueerror() -> None:
     mark = _tp_long_mark()
     with pytest.raises(ValueError, match=r"resolution_id.*estimator|estimator.*resolution_id"):
@@ -446,16 +483,117 @@ def test_build_labels_resolution_id_sem_estimator_levanta_valueerror() -> None:
         )
 
 
+def _dollar_bars_multi(n_total: int) -> pl.DataFrame:
+    """`n_total` dollar bars sintéticas -- mesmo padrão de preço/high/low
+    constante de `_synthetic_bars()` (`+-0.2` de faixa), só que com
+    `n_total` linhas em vez de 3. Necessário pros testes de `horizon_bars`
+    (AG-116): o horizonte da barreira TIME agora é `i + horizon_bars` em
+    ÍNDICE (não mais `t0 + time_stop_ms` em relógio), então precisa de
+    barras REAIS o suficiente à frente do índice de decisão pra não cair
+    em "cauda incompleta" por CONTAGEM de barra -- `_synthetic_bars()` (3
+    barras, só a última com ATR válido) nunca teria `i + horizon_bars <
+    n` pra nenhum `horizon_bars >= 1` (índice válido = última posição)."""
+    closes = [100.0] * n_total
+    open_time = [_BASE_MS + i * _BAR_MS for i in range(n_total)]
+    close_time = [t + _BAR_MS - 1 for t in open_time]
+    return pl.DataFrame(
+        {
+            "open_time": open_time,
+            "close_time": close_time,
+            "open": [c - 0.05 for c in closes],
+            "close": closes,
+            "high": [c + 0.2 for c in closes],
+            "low": [c - 0.2 for c in closes],
+        }
+    )
+
+
 def test_build_labels_resolution_id_com_estimator_explicito_produz_labels_reais() -> None:
     """Caminho fim-a-fim sob dollar bar: `Bars(resolution_id=...)` em vez
     de `timeframe_minutes=`, `horizon_minutes=0` placeholder,
-    `fill_horizon_ms`/`horizon_end_ms` em relógio fixo (não multiplicam
-    por `bar_ms`, que nem existe aqui) -- confirma que produz uma linha
-    de label real, não vazia/degenerada."""
-    mark = _tp_long_mark()
-    cfg = _dollar_bar_cfg()
+    `fill_horizon_ms` em relógio fixo (não multiplica por `bar_ms`, que
+    nem existe aqui), `horizon_end_ms` agora por ÍNDICE (`i +
+    horizon_bars`, AG-116) -- confirma que produz uma linha de label
+    real, não vazia/degenerada.
+
+    5 barras, `atr_window=3` (Parkinson) -> ATR válido a partir do índice
+    2 (seed_idx=window-1) -- 3 candidatos (índices 2/3/4).
+
+    **Achado real (corrigido 2026-08-20, achado ao rodar a suíte após a
+    implementação de AG-116):** o corte de `horizon_idx = i + horizon_bars
+    >= n` só é avaliado DEPOIS da entrada preencher (linhas ~1073-1122 de
+    `triple_barrier.py`) -- uma barra que NUNCA preenche emite `NOFILL`
+    (linha ~1084, `_append_nofill_row`) sem nunca alcançar aquele corte,
+    porque a resolução de `NOFILL` depende só de `fill_timeout_ms`, nunca
+    de `horizon_bars`. Não são os 3 índices igualmente sujeitos ao corte
+    por contagem, como uma versão anterior deste docstring presumia sem
+    reproduzir o cenário real:
+    - índice 2: preenche (mark cobre `t0+1min`, perto do preço de entrada)
+      e bate TP (spike em `t0+5min`) -> emite `barrier_hit=TP`.
+    - índice 3: `fill_horizon_ms = t0_arr[3] + fill_timeout_ms` cai ANTES
+      do próximo ponto de `mark` -- nunca preenche -> emite `NOFILL`
+      (linha emitida de qualquer forma, `horizon_bars` nunca entra na
+      conta pra esse desfecho).
+    - índice 4: `fill_horizon_ms` ultrapassa `max_mark_open_time` (fim da
+      cobertura de `mark_1m`) -- cauda incompleta, ANTES até de chegar no
+      corte de `horizon_idx` -- única linha de fato excluída
+      (`n_incomplete_tail=1`).
+    2 linhas de saída (TP + NOFILL), não 1 -- reproduzido rodando o
+    cenário exato via `uv run python -c ...` antes de corrigir esta
+    asserção, não presumido. O teste dedicado que prova o corte por
+    `horizon_idx` em si (sem ambiguidade de fill) é o próximo desta
+    classe, `test_build_labels_resolution_id_time_pousa_exatamente_
+    horizon_bars_a_frente` (preço achatado, nunca preenche por spike,
+    nunca cai em NOFILL)."""
+    bars = _dollar_bars_multi(5)
+    t0 = int(bars["close_time"][2])
+    horizon_end_ms = int(bars["close_time"][4])
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            # spike bem acima de qualquer TP plausível
+            (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            (horizon_end_ms, 148.0, 148.0, 148.0, 148.0),  # cobertura até o horizonte
+        ]
+    )
+    cfg = _dollar_bar_cfg(horizon_bars=2)
     out = tb.build_labels(
-        _synthetic_bars(),
+        bars,
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=cfg,
+        estimator=ParkinsonEstimator(window=3),
+    )
+    assert out.height == 2  # índice 2 (TP) + índice 3 (NOFILL) -- índice 4 é cauda incompleta
+    by_barrier = {row["barrier_hit"]: row for row in out.iter_rows(named=True)}
+    assert set(by_barrier) == {"TP", "NOFILL"}
+    tp_row = by_barrier["TP"]
+    assert tp_row["atr_at_t0"] is not None and tp_row["atr_at_t0"] > 0
+    assert tp_row["config_hash"] == cfg.config_hash
+
+
+def test_build_labels_resolution_id_time_pousa_exatamente_horizon_bars_a_frente() -> None:
+    """AG-116, teste novo pedido em `PLANO_MESTRE_PRINCE2.md` §15.12.3-A
+    item 7 -- barreira TIME sob `resolution_id` cai exatamente em
+    `horizon_bars` índices à frente da barra de decisão, não em
+    `t0 + time_stop_ms` (comportamento antigo/tf). Mesma fixture de 5
+    barras/`horizon_bars=2` do teste acima, mas com preço achatado (nunca
+    toca TP/SL) -- `t1` tem que bater exatamente com `close_time` do
+    índice `2+2=4` (a última barra do array), e `n_bars_held ==
+    horizon_bars`."""
+    bars = _dollar_bars_multi(5)
+    t0 = int(bars["close_time"][2])
+    horizon_end_ms = int(bars["close_time"][4])
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            (horizon_end_ms, 99.9, 99.95, 99.85, 99.9),
+        ]
+    )
+    cfg = _dollar_bar_cfg(horizon_bars=2)
+    out = tb.build_labels(
+        bars,
         mark,
         _EMPTY_FUNDING,
         side=1,
@@ -464,8 +602,10 @@ def test_build_labels_resolution_id_com_estimator_explicito_produz_labels_reais(
     )
     assert out.height == 1
     row = out.row(0, named=True)
-    assert row["atr_at_t0"] is not None and row["atr_at_t0"] > 0
-    assert row["config_hash"] == cfg.config_hash
+    assert row["barrier_hit"] == "TIME"
+    assert row["n_bars_held"] == cfg.horizon_bars
+    t1_ms = row["t1"].timestamp() * 1000
+    assert t1_ms == pytest.approx(horizon_end_ms, abs=1.0)
 
 
 def test_build_labels_resolution_id_estimator_id_divergente_levanta_valueerror() -> None:
@@ -522,34 +662,52 @@ def _one_bar_cfg() -> tb.LabelConfig:
         taker_fee=0.0005,
         estimator_id="parkinson_w1",
         resolution_id="R1",
+        horizon_bars=1,  # AG-116 -- obrigatório; ver docstring do teste sobre reachability
     )
 
 
 def test_build_labels_resolution_id_n_bars_held_degenerado_n_menor_que_2() -> None:
-    """`n_bars_held` (AG-061): com um único decision bar carregado (n=1),
-    `median_bar_ms` cai direto no fallback `cfg.time_stop_ms` -- sem tentar
-    `np.median` sobre um array vazio de diffs. `n_bars_held` esperado:
-    `(n-1-i) + ceil((t1-t0_arr[-1])/time_stop_ms)` = `0 + ceil(time_stop_ms/
-    time_stop_ms)` = `1` (t1 == horizon == t0 + time_stop_ms)."""
+    """`n_bars_held` (AG-061 -> reavaliado sob AG-116, 2026-08-20): ANTES
+    de AG-116, `horizon_end_ms` sob `resolution_id` vinha de `t0 +
+    cfg.time_stop_ms` (relógio, independente de quantas decision bars
+    estavam carregadas) -- com um único decision bar (n=1), isso podia
+    produzir `t1 > t0_arr[-1]`, acionando o fallback degenerado de
+    `median_bar_ms` (`np.diff` sobre array de 1 elemento é vazio).
+
+    DEPOIS de AG-116, `horizon_end_ms` sob `resolution_id` vem de
+    `t0_arr[i + horizon_bars]` -- por construção, SEMPRE `<= t0_arr[-1]`
+    quando a linha não é cortada por cauda incompleta antes (`horizon_idx
+    = i + horizon_bars >= n` -> `continue`). Com n=1 e `horizon_bars>=1`
+    (mínimo permitido por `__post_init__`), `horizon_idx = 0 +
+    horizon_bars >= 1 = n` SEMPRE -- a linha agora é excluída como cauda
+    incompleta por CONTAGEM antes de qualquer fill/toque de barreira
+    acontecer. O fallback `median_bar_ms` (`triple_barrier.py`, ramo
+    final do cálculo de `n_bars_held`) fica, na prática, inalcançável pra
+    chamadas de `build_labels` sob `resolution_id` que passam por este
+    caminho -- este teste agora prova exatamente essa exclusão (célula
+    vazia), não mais o valor degenerado de `n_bars_held`. O ramo de
+    código em si NÃO foi removido (`PLANO_MESTRE_PRINCE2.md` §15.12.3-A
+    item 2: "n_bars_held NÃO precisa mudar") -- fica como salvaguarda
+    defensiva, documentada como tal em `build_labels`."""
     bars = _one_bar_dollar_bars()
     cfg = _one_bar_cfg()
     t0 = int(bars["close_time"][-1])
-    horizon = t0 + cfg.time_stop_ms
+    old_style_horizon = t0 + cfg.time_stop_ms  # só pra dar cobertura de mark -- não é mais lido
     last_px = 148.0
     mark = _mark(
         [
             (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
             (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
-            (horizon, last_px, last_px, last_px, last_px),
+            (old_style_horizon, last_px, last_px, last_px, last_px),
         ]
     )
     out = tb.build_labels(
         bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=1)
     )
-    assert out.height == 1
-    row = out.row(0, named=True)
-    assert row["barrier_hit"] == "TP"
-    assert row["n_bars_held"] == 1
+    assert out.height == 0, (
+        "AG-116: n=1 decision bar + horizon_bars>=1 -- sempre cauda incompleta por "
+        "contagem, nunca alcança o fallback degenerado de n_bars_held"
+    )
 
 
 def _two_bar_duplicate_close_time_dollar_bars() -> pl.DataFrame:
@@ -582,32 +740,39 @@ def _two_bar_dup_cfg() -> tb.LabelConfig:
         taker_fee=0.0005,
         estimator_id="parkinson_w2",
         resolution_id="R1",
+        horizon_bars=1,  # AG-116 -- obrigatório; ver docstring do teste sobre reachability
     )
 
 
 def test_build_labels_resolution_id_n_bars_held_degenerado_median_zero() -> None:
-    """`n_bars_held` sob rajada real (`close_time` duplicado, AG-061): a
-    mediana dos diffs é `0`, não negativa -- guarda `<= 0` (não só `< 0`)
-    é a que de fato protege este caso real, não uma cobertura teórica."""
+    """`n_bars_held` sob rajada real (`close_time` duplicado, AG-061) --
+    reavaliado sob AG-116 (2026-08-20), mesmo raciocínio do teste irmão
+    acima (`..._n_menor_que_2`): com `horizon_end_ms` agora por ÍNDICE
+    (`t0_arr[i + horizon_bars]`, sempre `<= t0_arr[-1]` quando a linha
+    sobrevive ao corte de cauda incompleta), o fallback `median_bar_ms`
+    fica inalcançável sob `resolution_id` pra este fixture (n=2,
+    `horizon_bars>=1` -> `horizon_idx = 1 + horizon_bars >= 2 = n`
+    sempre). Mantido como regressão -- agora provando a EXCLUSÃO da
+    linha, não mais o valor degenerado de `n_bars_held`."""
     bars = _two_bar_duplicate_close_time_dollar_bars()
     cfg = _two_bar_dup_cfg()
     t0 = int(bars["close_time"][-1])
-    horizon = t0 + cfg.time_stop_ms
+    old_style_horizon = t0 + cfg.time_stop_ms  # só pra dar cobertura de mark -- não é mais lido
     last_px = 148.0
     mark = _mark(
         [
             (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
             (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
-            (horizon, last_px, last_px, last_px, last_px),
+            (old_style_horizon, last_px, last_px, last_px, last_px),
         ]
     )
     out = tb.build_labels(
         bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=2)
     )
-    assert out.height == 1
-    row = out.row(0, named=True)
-    assert row["barrier_hit"] == "TP"
-    assert row["n_bars_held"] == 1
+    assert out.height == 0, (
+        "AG-116: n=2 decision bars + horizon_bars>=1 -- sempre cauda incompleta por "
+        "contagem, nunca alcança o fallback degenerado de n_bars_held"
+    )
 
 
 def test_build_labels_tp_long() -> None:
@@ -955,6 +1120,70 @@ def test_assert_label_invariants_detecta_t1_menor_que_t0() -> None:
     )
     with pytest.raises(AssertionError):
         tb.assert_label_invariants(bad, time_stop_ms=28_800_000)
+
+
+def test_assert_label_invariants_xor_time_stop_ms_horizon_bars() -> None:
+    """AG-116 -- `time_stop_ms`/`horizon_bars` são mutuamente exclusivos,
+    mesmo XOR de `LabelConfig.tf`/`resolution_id`: nenhum dos dois E os
+    dois juntos levantam `ValueError` explícito, antes de qualquer
+    assert de invariante rodar."""
+    frame = pl.DataFrame(
+        {
+            "t0": _ms_utc([1000]),
+            "t1": _ms_utc([2000]),
+            "t_entry": _ms_utc([1000]),
+            "barrier_hit": pl.Series(["TP"], dtype=pl.Categorical),
+            "config_hash": ["abc"],
+            "sample_weight": [1.0],
+            "n_bars_held": [1],
+            "uniqueness": [1.0],
+        }
+    )
+    with pytest.raises(ValueError, match="XOR"):
+        tb.assert_label_invariants(frame)  # nenhum dos dois
+    with pytest.raises(ValueError, match="XOR"):
+        tb.assert_label_invariants(frame, time_stop_ms=1000, horizon_bars=3)  # os dois
+
+
+def test_assert_label_invariants_horizon_bars_passa_quando_dentro_do_teto() -> None:
+    """AG-116 -- teto correto sob `resolution_id` é `n_bars_held <=
+    horizon_bars` (contagem de barra, coluna já existe desde AG-031/B1),
+    não mais `t1 - t0 <= time_stop_ms`."""
+    ok = pl.DataFrame(
+        {
+            "t0": _ms_utc([1000]),
+            "t1": _ms_utc([2000]),
+            "t_entry": _ms_utc([1000]),
+            "barrier_hit": pl.Series(["TIME"], dtype=pl.Categorical),
+            "config_hash": ["abc"],
+            "sample_weight": [1.0],
+            "n_bars_held": [3],
+            "uniqueness": [1.0],
+        }
+    )
+    tb.assert_label_invariants(ok, horizon_bars=3)  # não levanta -- 3 <= 3
+
+
+def test_assert_label_invariants_horizon_bars_detecta_n_bars_held_acima_do_teto() -> None:
+    """AG-116 -- teste novo pedido em `PLANO_MESTRE_PRINCE2.md` §15.12.3-A
+    item 7: `n_bars_held > horizon_bars` tem que quebrar, sob
+    `resolution_id`, mesma disciplina do teto antigo em relógio
+    (`test_assert_label_invariants_detecta_t1_menor_que_t0` acima cobre o
+    caso `t1 <= t0`; este cobre o teto NOVO)."""
+    bad = pl.DataFrame(
+        {
+            "t0": _ms_utc([1000]),
+            "t1": _ms_utc([2000]),
+            "t_entry": _ms_utc([1000]),
+            "barrier_hit": pl.Series(["TIME"], dtype=pl.Categorical),
+            "config_hash": ["abc"],
+            "sample_weight": [1.0],
+            "n_bars_held": [5],
+            "uniqueness": [1.0],
+        }
+    )
+    with pytest.raises(AssertionError, match="n_bars_held"):
+        tb.assert_label_invariants(bad, horizon_bars=3)
 
 
 # ============================================================================

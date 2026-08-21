@@ -409,9 +409,49 @@ def test_run_one_cell_caminho_normal_devolve_symbol_result(monkeypatch: pytest.M
             "bocpd_n_canonical_buckets": 3,
             "hmm_seed": 0,
             "jump_seed": 0,
+            "include_jump_model": True,
             "return_raw_labels": True,
         }
     ]
+
+
+def test_run_one_cell_simbolo_nao_btc_desliga_include_jump_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-117, 2026-08-20 -- experimento de transferibilidade de λ mostrou
+    que Jump Model não tem estrutura de 2 regimes detectável em nenhum
+    ponto de grid testado pra SOLUSDT/BNBUSDT/XRPUSDT, e recalibrar λ pra
+    ETHUSDT (único não-BTC com λ genuíno) piora ou empata a saturação nas
+    janelas críticas. `_run_one_cell` passa `include_jump_model=False`
+    pra qualquer símbolo != BTCUSDT -- BTC continua elegível (λ é seu
+    próprio local, nunca transplantado)."""
+    fake_result = _symbol_result("ETHUSDT", candidate_omegas={"bocpd_v1": 0.5})
+    fake_raw_labels: dict[str, m4.RawLabels] = {"bocpd_v1": _raw_labels([0, 10], [0, 1])}
+    calls: list[dict[str, object]] = []
+
+    def _stub(
+        symbol: str, start: str, end: str, **kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        calls.append({"symbol": symbol, **kwargs})
+        return fake_result, fake_raw_labels
+
+    monkeypatch.setattr(m4, "run_regime_comparison_for_symbol", _stub)
+
+    mcw._run_one_cell(
+        _WIN_A,
+        "ETHUSDT",
+        "R1",
+        initial_train_years=1,
+        hmm_states_grid=(2,),
+        jump_n_states=2,
+        jump_penalty=0.002,
+        bocpd_hazard_lambda=65.0,
+        bocpd_n_canonical_buckets=3,
+        hmm_seed=0,
+        jump_seed=0,
+    )
+
+    assert calls[0]["include_jump_model"] is False
 
 
 def test_run_one_cell_none_e_folds_insuficientes_nao_e_erro(
@@ -538,6 +578,494 @@ def test_run_critical_windows_comparison_ag019_1_simbolo_falha_outros_seguem(
     assert report.failed_cells[0].symbol == "S2"
     # S1 (mesma janela de S2) e S3 (outra janela) não foram afetados.
     assert report.candidates[0].n_windows_ok == 2
+
+
+# ============================================================================
+# AG-087 -- experimento de transferibilidade de jump_penalty por ativo.
+# _run_jump_model_only_one_cell (variante de _run_one_cell, chama m4.
+# run_jump_model_only_for_symbol) + run_jump_model_transferability_
+# comparison (variante de run_critical_windows_comparison, roteia 1 λ por
+# símbolo e reusa a MESMA aggregate_critical_windows_results -- is_
+# saturated/saturation_rate de graça).
+# ============================================================================
+
+_WIN_ALTS = mcw.CriticalWindow(
+    name="WIN_ALTS",
+    event="evento sintético multi-ativo (teste)",
+    start="2023-01-01",
+    end="2023-04-01",
+    symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT"),
+    note="janela sintética de teste -- BTCUSDT nunca deveria ser roteada "
+    "pra run_jump_model_transferability_comparison (é BTC-only por design)",
+)
+_WIN_BTC_ONLY = mcw.CriticalWindow(
+    name="WIN_BTC_ONLY",
+    event="evento sintético BTC-only (teste)",
+    start="2022-01-01",
+    end="2022-04-01",
+    symbols=("BTCUSDT",),
+    note="janela sintética de teste -- 1 símbolo só, nunca elegível pro "
+    "experimento de transferibilidade (mesma exclusão de LUNA/FTX reais)",
+)
+_JUMP_TRANSFERABILITY_TEST_WINDOWS = (_WIN_BTC_ONLY, _WIN_ALTS)
+
+
+def test_run_jump_model_only_one_cell_caminho_normal_devolve_symbol_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_result = _symbol_result(
+        "ETHUSDT", candidate_omegas={"jump_model_cjm_v1": 0.4}  # noqa: magic-number -- fixture sintética
+    )
+    fake_raw_labels: dict[str, m4.RawLabels] = {
+        "jump_model_cjm_v1": _raw_labels([0, 10], [0, 1]),
+    }
+    calls: list[dict[str, object]] = []
+
+    def _stub(
+        symbol: str, start: str, end: str, **kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        calls.append({"symbol": symbol, "start": start, "end": end, **kwargs})
+        return fake_result, fake_raw_labels
+
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", _stub)
+
+    outcome = mcw._run_jump_model_only_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R2",
+        initial_train_years=1,
+        jump_n_states=2,
+        jump_penalty=0.0005,  # noqa: magic-number -- valor sintético de teste
+        jump_seed=0,
+    )
+
+    assert outcome.window_name == "WIN_ALTS"
+    assert outcome.symbol == "ETHUSDT"
+    assert outcome.resolution_id == "R2"
+    assert outcome.symbol_result is fake_result
+    assert outcome.error is None
+    assert outcome.raw_labels is fake_raw_labels
+    assert calls == [
+        {
+            "symbol": "ETHUSDT",
+            "start": "2023-01-01",
+            "end": "2023-04-01",
+            "initial_train_years": 1,
+            "resolution_id": "R2",
+            "jump_n_states": 2,
+            "jump_penalty": 0.0005,  # noqa: magic-number -- espelha o literal do call acima
+            "jump_seed": 0,
+            "return_raw_labels": True,
+        }
+    ]
+
+
+def test_run_jump_model_only_one_cell_none_e_folds_insuficientes_nao_e_erro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", lambda *a, **k: None)
+    outcome = mcw._run_jump_model_only_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R1",
+        initial_train_years=1,
+        jump_n_states=2,
+        jump_penalty=0.0005,  # noqa: magic-number -- valor sintético de teste
+        jump_seed=0,
+    )
+    assert outcome.symbol_result is None
+    assert outcome.error is None  # "pulado", não "falhou"
+
+
+def test_run_jump_model_only_one_cell_excecao_vira_cell_outcome_error_nunca_propaga(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _stub_raises(*_args: object, **_kwargs: object) -> m4.SymbolResult:
+        raise ValueError("dado corrompido")
+
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", _stub_raises)
+
+    outcome = mcw._run_jump_model_only_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R1",
+        initial_train_years=1,
+        jump_n_states=2,
+        jump_penalty=0.0005,  # noqa: magic-number -- valor sintético de teste
+        jump_seed=0,
+    )
+    assert outcome.symbol_result is None
+    assert outcome.error is not None
+    assert "dado corrompido" in outcome.error
+    assert outcome.raw_labels is None
+
+
+def test_jump_transferability_windows_e_symbols_excluem_btc_e_janelas_btc_only() -> None:
+    """`JUMP_TRANSFERABILITY_WINDOWS` (só janelas com >1 símbolo -- LUNA/
+    FTX ficam de fora) e `JUMP_TRANSFERABILITY_SYMBOLS` (os 4 não-BTC --
+    BTC é seu próprio "λ local", não precisa recalibração) contra o dado
+    REAL de `CRITICAL_WINDOWS`/`m4.ALL_SYMBOLS`."""
+    window_names = {w.name for w in mcw.JUMP_TRANSFERABILITY_WINDOWS}
+    assert window_names == {"CRYPTO_WINTER", "ETF_HALVING", "RECENTE"}
+    assert "LUNA" not in window_names
+    assert "FTX" not in window_names
+    assert mcw.JUMP_TRANSFERABILITY_SYMBOLS == ("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
+    assert "BTCUSDT" not in mcw.JUMP_TRANSFERABILITY_SYMBOLS
+
+
+def test_run_jump_model_transferability_comparison_jump_penalty_faltando_levanta_value_error() -> (
+    None
+):
+    with pytest.raises(ValueError, match="ETHUSDT"):
+        mcw.run_jump_model_transferability_comparison(
+            "R1",
+            jump_penalty_by_symbol={"SOLUSDT": 0.001, "BNBUSDT": 0.001, "XRPUSDT": 0.001},  # noqa: magic-number -- valores sintéticos de teste
+            windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+            symbols=("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"),
+            max_workers=1,
+        )
+
+
+def test_run_jump_model_transferability_comparison_roteia_lambda_por_ativo_e_pula_btc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prova central do laço: (a) cada célula recebe o `jump_penalty` DO
+    PRÓPRIO símbolo, nunca um valor de outro ativo; (b) `symbols=
+    ("ETHUSDT","SOLUSDT")` nunca gera célula pra BTCUSDT, mesmo BTCUSDT
+    aparecendo em `_WIN_ALTS.symbols`; (c) `_WIN_BTC_ONLY` (1 símbolo só)
+    nunca produz célula nenhuma (nenhum dos símbolos pedidos está nela)."""
+    calls: list[tuple[str, str, float]] = []  # (symbol, window_name, jump_penalty)
+
+    def _stub(
+        symbol: str, start: str, end: str, *, jump_penalty: float, **_kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        window_name = "WIN_ALTS" if start == "2023-01-01" else "WIN_BTC_ONLY"
+        calls.append((symbol, window_name, jump_penalty))
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", _stub)
+
+    report = mcw.run_jump_model_transferability_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.0005, "SOLUSDT": 0.001},  # noqa: magic-number -- valores sintéticos de teste
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+
+    assert sorted(calls) == sorted(
+        [
+            ("ETHUSDT", "WIN_ALTS", 0.0005),  # noqa: magic-number -- espelha jump_penalty_by_symbol acima
+            ("SOLUSDT", "WIN_ALTS", 0.001),  # noqa: magic-number -- espelha jump_penalty_by_symbol acima
+        ]
+    )
+    assert report.resolution_id == "R1"
+    assert report.candidates[0].classifier_id == "jump_model_cjm_v1"
+    # AG-087 de graça -- mesma agregação já existente, sem fórmula nova.
+    assert report.candidates[0].saturation_rate == pytest.approx(0.0)
+
+
+def test_run_jump_model_transferability_comparison_ag019_1_ativo_falha_outros_seguem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _stub(
+        symbol: str, start: str, end: str, *, jump_penalty: float, **_kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        if symbol == "SOLUSDT":
+            raise RuntimeError("IO real falhou")
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", _stub)
+
+    report = mcw.run_jump_model_transferability_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.0005, "SOLUSDT": 0.001},  # noqa: magic-number -- valores sintéticos de teste
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+
+    assert len(report.failed_cells) == 1
+    assert report.failed_cells[0].symbol == "SOLUSDT"
+    assert report.candidates[0].n_windows_ok == 1
+
+
+def test_run_jump_model_transferability_comparison_compute_volatility_heterogeneity_default_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default NESTA função de nível baixo é `False` (mesma assimetria de
+    `run_critical_windows_comparison.compute_gate_quality`) -- sem isso,
+    `_compute_symbol_forward_vol_history` nunca é chamada, então
+    `volatility_heterogeneity` fica vazio, mesmo contrato preservado de
+    antes desta extensão."""
+
+    def _stub(
+        symbol: str, start: str, end: str, **_kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("nao deveria ser chamado com compute_volatility_heterogeneity=False")
+
+    monkeypatch.setattr(m4, "run_jump_model_only_for_symbol", _stub)
+    monkeypatch.setattr(mcw, "_compute_symbol_forward_vol_history", _boom)
+
+    report = mcw.run_jump_model_transferability_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.0005, "SOLUSDT": 0.001},  # noqa: magic-number -- valores sintéticos de teste
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+    assert report.volatility_heterogeneity == ()
+    assert report.gate_quality == ()
+
+
+# ============================================================================
+# "Condição C" (AG-119) -- Jump Model com espaço de observação estendido.
+# _run_jump_model_extended_features_one_cell (variante de _run_jump_model_
+# only_one_cell, chama m4.run_jump_model_extended_features_for_symbol) +
+# run_jump_model_extended_features_comparison (variante de run_jump_model_
+# transferability_comparison, mesmo roteamento de λ por símbolo, mesmo
+# reuso de aggregate_critical_windows_results, só jump_n_states passa a
+# ser OBRIGATÓRIO -- sem "padrão" já estabelecido, ver docstring).
+# ============================================================================
+
+
+def test_run_jump_model_extended_features_one_cell_caminho_normal_devolve_symbol_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_result = _symbol_result(
+        "ETHUSDT", candidate_omegas={"jump_model_cjm_v1": 0.4}  # noqa: magic-number -- fixture sintética
+    )
+    fake_raw_labels: dict[str, m4.RawLabels] = {
+        "jump_model_cjm_v1": _raw_labels([0, 10], [0, 1]),
+    }
+    calls: list[dict[str, object]] = []
+
+    def _stub(
+        symbol: str, start: str, end: str, **kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        calls.append({"symbol": symbol, "start": start, "end": end, **kwargs})
+        return fake_result, fake_raw_labels
+
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", _stub)
+
+    outcome = mcw._run_jump_model_extended_features_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R2",
+        initial_train_years=1,
+        jump_n_states=3,
+        jump_penalty=0.02,  # noqa: magic-number -- valor real medido no reteste AG-119 (grid top, saturado)
+        jump_seed=0,
+    )
+
+    assert outcome.window_name == "WIN_ALTS"
+    assert outcome.symbol == "ETHUSDT"
+    assert outcome.resolution_id == "R2"
+    assert outcome.symbol_result is fake_result
+    assert outcome.error is None
+    assert outcome.raw_labels is fake_raw_labels
+    assert calls == [
+        {
+            "symbol": "ETHUSDT",
+            "start": "2023-01-01",
+            "end": "2023-04-01",
+            "initial_train_years": 1,
+            "resolution_id": "R2",
+            "jump_n_states": 3,
+            "jump_penalty": 0.02,  # noqa: magic-number -- espelha o literal do call acima
+            "jump_seed": 0,
+            "return_raw_labels": True,
+        }
+    ]
+
+
+def test_run_jump_model_extended_features_one_cell_none_e_folds_insuficientes_nao_e_erro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", lambda *a, **k: None)
+    outcome = mcw._run_jump_model_extended_features_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R1",
+        initial_train_years=1,
+        jump_n_states=3,
+        jump_penalty=0.02,  # noqa: magic-number -- valor sintético de teste
+        jump_seed=0,
+    )
+    assert outcome.symbol_result is None
+    assert outcome.error is None  # "pulado", não "falhou"
+
+
+def test_run_jump_model_extended_features_one_cell_excecao_vira_cell_outcome_error_nunca_propaga(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _stub_raises(*_args: object, **_kwargs: object) -> m4.SymbolResult:
+        raise ValueError("dado corrompido")
+
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", _stub_raises)
+
+    outcome = mcw._run_jump_model_extended_features_one_cell(
+        _WIN_ALTS,
+        "ETHUSDT",
+        "R1",
+        initial_train_years=1,
+        jump_n_states=3,
+        jump_penalty=0.02,  # noqa: magic-number -- valor sintético de teste
+        jump_seed=0,
+    )
+    assert outcome.symbol_result is None
+    assert outcome.error is not None
+    assert "dado corrompido" in outcome.error
+    assert outcome.raw_labels is None
+
+
+def test_run_jump_model_extended_features_comparison_penalty_faltando_levanta_value_error() -> (
+    None
+):
+    with pytest.raises(ValueError, match="ETHUSDT"):
+        mcw.run_jump_model_extended_features_comparison(
+            "R1",
+            jump_penalty_by_symbol={"SOLUSDT": 0.02, "BNBUSDT": 0.02, "XRPUSDT": 0.02},  # noqa: magic-number -- valores sintéticos de teste
+            jump_n_states=3,
+            windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+            symbols=("ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"),
+            max_workers=1,
+        )
+
+
+def test_run_jump_model_extended_features_comparison_roteia_lambda_por_ativo_e_pula_btc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prova central do laço: (a) cada célula recebe o `jump_penalty` DO
+    PRÓPRIO símbolo, nunca um valor de outro ativo; (b) `symbols=
+    ("ETHUSDT","SOLUSDT")` nunca gera célula pra BTCUSDT, mesmo BTCUSDT
+    aparecendo em `_WIN_ALTS.symbols`; (c) `jump_n_states` é repassado
+    intacto pra CADA célula (mesmo K pros 2 ativos aqui, mas o parâmetro
+    em si nunca é hardcoded dentro da função, só recebido do caller)."""
+    calls: list[tuple[str, str, float, int]] = []  # (symbol, window_name, jump_penalty, k)
+
+    def _stub(
+        symbol: str,
+        start: str,
+        end: str,
+        *,
+        jump_penalty: float,
+        jump_n_states: int,
+        **_kwargs: object,
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        window_name = "WIN_ALTS" if start == "2023-01-01" else "WIN_BTC_ONLY"
+        calls.append((symbol, window_name, jump_penalty, jump_n_states))
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", _stub)
+
+    report = mcw.run_jump_model_extended_features_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.02, "SOLUSDT": 0.02},  # noqa: magic-number -- valores reais medidos no reteste AG-119 (grid top, saturado)
+        jump_n_states=3,
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+
+    assert sorted(calls) == sorted(
+        [
+            ("ETHUSDT", "WIN_ALTS", 0.02, 3),  # noqa: magic-number -- espelha jump_penalty_by_symbol acima
+            ("SOLUSDT", "WIN_ALTS", 0.02, 3),  # noqa: magic-number -- espelha jump_penalty_by_symbol acima
+        ]
+    )
+    assert report.resolution_id == "R1"
+    assert report.candidates[0].classifier_id == "jump_model_cjm_v1"
+    assert report.candidates[0].saturation_rate == pytest.approx(0.0)
+
+
+def test_run_jump_model_extended_features_comparison_ag019_1_ativo_falha_outros_seguem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _stub(
+        symbol: str, start: str, end: str, *, jump_penalty: float, **_kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        if symbol == "SOLUSDT":
+            raise RuntimeError("IO real falhou")
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", _stub)
+
+    report = mcw.run_jump_model_extended_features_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.02, "SOLUSDT": 0.02},  # noqa: magic-number -- valores sintéticos de teste
+        jump_n_states=3,
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+
+    assert len(report.failed_cells) == 1
+    assert report.failed_cells[0].symbol == "SOLUSDT"
+    assert report.candidates[0].n_windows_ok == 1
+
+
+def test_run_jump_model_extended_features_comparison_compute_volatility_heterogeneity_default_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default NESTA função de nível baixo é `False` (mesma assimetria de
+    `run_jump_model_transferability_comparison`/`run_critical_windows_
+    comparison.compute_gate_quality`)."""
+
+    def _stub(
+        symbol: str, start: str, end: str, **_kwargs: object
+    ) -> tuple[m4.SymbolResult, dict[str, m4.RawLabels]]:
+        return (
+            _symbol_result(
+                symbol, candidate_omegas={"jump_model_cjm_v1": 0.3}  # noqa: magic-number -- fixture sintética
+            ),
+            {},
+        )
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("nao deveria ser chamado com compute_volatility_heterogeneity=False")
+
+    monkeypatch.setattr(m4, "run_jump_model_extended_features_for_symbol", _stub)
+    monkeypatch.setattr(mcw, "_compute_symbol_forward_vol_history", _boom)
+
+    report = mcw.run_jump_model_extended_features_comparison(
+        "R1",
+        jump_penalty_by_symbol={"ETHUSDT": 0.02, "SOLUSDT": 0.02},  # noqa: magic-number -- valores sintéticos de teste
+        jump_n_states=3,
+        windows=_JUMP_TRANSFERABILITY_TEST_WINDOWS,
+        symbols=("ETHUSDT", "SOLUSDT"),
+        max_workers=1,
+    )
+    assert report.volatility_heterogeneity == ()
+    assert report.gate_quality == ()
 
 
 # ============================================================================
@@ -1564,7 +2092,13 @@ def test_aggregate_critical_windows_results_heterogeneity_params_parciais_levant
             "WIN_A", "S1", "R1", _symbol_result("S1", candidate_omegas={"bocpd_v1": 0.5})
         ),
     )
-    with pytest.raises(ValueError, match="TODOS juntos ou NENHUM"):
+    # Mensagem refinada em 2026-08-20 (AG-114) -- a checagem original
+    # amarrava n_permutations/permutation_seed ao MESMO grupo "tudo ou
+    # nada" de labels_by_symbol, o que passou a dar falso positivo quando
+    # só gate_quality/volatility_heterogeneity (forward_vol_by_symbol)
+    # está ativo. Separado em 2 checagens -- esta cobre especificamente
+    # os 4 campos exclusivos da heterogeneidade TP/SL.
+    with pytest.raises(ValueError, match="tp_atr_mult/sl_atr_mult/maker_fee/taker_fee também"):
         mcw.aggregate_critical_windows_results(
             "R1", cells, windows=_TEST_WINDOWS, labels_by_symbol={}, tp_atr_mult=2.0
         )
@@ -1606,3 +2140,439 @@ def test_aggregate_critical_windows_results_com_heterogeneity_side_separado() ->
     assert len(report.heterogeneity) == 4
     assert {h.side for h in report.heterogeneity} == {1, -1}
     assert {h.classifier_id for h in report.heterogeneity} == {"quantile_regime_v1", "bocpd_v1"}
+
+
+# ============================================================================
+# Qualidade-de-gate (AG-114, 2026-08-20, PLANO_MESTRE_PRINCE2.md §15.12.1)
+# -- ADR-001 (ratificado) decide regime como GATE de risco, não FEATURE
+# preditiva, na v1.
+# ============================================================================
+
+
+def test_join_candidate_with_vol_history_intersecao_exata_por_close_time() -> None:
+    """`regime_raw` tem uma barra (t=40) que não existe em `vol_history` --
+    o join é INNER, essa barra some do resultado sem crash."""
+    regime_raw = _raw_labels([0, 10, 20, 30, 40], [0, 1, 0, 1, 0])
+    vol_history = mcw._SymbolForwardVolHistory(
+        close_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+        realized_vol_short=np.array([0.01, 0.02, 0.03, 0.04], dtype=np.float64),
+        forward_realized_vol=np.array([0.05, 0.06, 0.07, 0.08], dtype=np.float64),
+    )
+    canonical_id, close_time_ms, realized_vol, forward_vol = mcw._join_candidate_with_vol_history(
+        regime_raw, vol_history
+    )
+    np.testing.assert_array_equal(close_time_ms, [0, 10, 20, 30])
+    np.testing.assert_array_equal(canonical_id, [0, 1, 0, 1])
+    np.testing.assert_allclose(realized_vol, [0.01, 0.02, 0.03, 0.04])
+    np.testing.assert_allclose(forward_vol, [0.05, 0.06, 0.07, 0.08])
+
+
+def test_join_candidate_with_vol_history_vazio_sem_match_devolve_arrays_vazios() -> None:
+    regime_raw = _raw_labels([100, 200], [0, 1])
+    vol_history = mcw._SymbolForwardVolHistory(
+        close_time_ms=np.array([0, 10], dtype=np.int64),
+        realized_vol_short=np.array([0.01, 0.02], dtype=np.float64),
+        forward_realized_vol=np.array([0.03, 0.04], dtype=np.float64),
+    )
+    canonical_id, close_time_ms, _realized_vol, _forward_vol = mcw._join_candidate_with_vol_history(
+        regime_raw, vol_history
+    )
+    assert canonical_id.shape == (0,)
+    assert close_time_ms.shape == (0,)
+
+
+# ============================================================================
+# _detection_delay_ms
+# ============================================================================
+
+
+def test_detection_delay_ms_detectado_apos_onset() -> None:
+    close_time_ms = np.array([0, 10, 20, 30, 40], dtype=np.int64)
+    canonical_id = np.array([0, 0, 1, 0, 1], dtype=np.int64)
+    detected, delay_ms = mcw._detection_delay_ms(
+        close_time_ms, canonical_id, stress_state_id=1, onset_ts_ms=15
+    )
+    assert detected is True
+    # primeira barra pós-onset (t>=15) em stress: t=20 -> delay = 20-15 = 5
+    assert delay_ms == pytest.approx(5.0)
+
+
+def test_detection_delay_ms_ignora_stress_anterior_ao_onset() -> None:
+    """Mede REAÇÃO ao evento, nunca antecipação -- barra em stress ANTES
+    do onset não conta, mesmo que o candidato "acerte" cedo demais."""
+    close_time_ms = np.array([0, 10, 20, 30], dtype=np.int64)
+    canonical_id = np.array([1, 1, 0, 0], dtype=np.int64)  # já em stress antes, sai depois
+    detected, delay_ms = mcw._detection_delay_ms(
+        close_time_ms, canonical_id, stress_state_id=1, onset_ts_ms=15
+    )
+    assert detected is False
+    assert np.isnan(delay_ms)
+
+
+def test_detection_delay_ms_nunca_detectado_da_nan_nao_erro() -> None:
+    close_time_ms = np.array([0, 10, 20], dtype=np.int64)
+    canonical_id = np.array([0, 0, 0], dtype=np.int64)
+    detected, delay_ms = mcw._detection_delay_ms(
+        close_time_ms, canonical_id, stress_state_id=1, onset_ts_ms=5
+    )
+    assert detected is False
+    assert np.isnan(delay_ms)
+
+
+# ============================================================================
+# _gate_quality_for_symbol_window
+# ============================================================================
+
+
+def test_gate_quality_for_symbol_window_baseline_usa_r5_fisico() -> None:
+    n = 20
+    canonical_id = np.array([1] * 10 + [m4._BASELINE_R5_PHYSICAL_ID] * 10, dtype=np.int64)
+    close_time_ms = np.arange(n, dtype=np.int64) * 10
+    realized_vol_short = np.linspace(0.01, 0.05, n)
+
+    detail = mcw._gate_quality_for_symbol_window(
+        "BTCUSDT",
+        "quantile_regime_v1",
+        "quantile_regime_v1",
+        canonical_id,
+        close_time_ms,
+        realized_vol_short,
+        onset_ts_ms=None,
+    )
+    assert detail.stress_state_rule == "baseline_r5"
+    assert detail.stress_state_id == m4._BASELINE_R5_PHYSICAL_ID
+    assert detail.stress_state_occupancy == pytest.approx(0.5)
+    assert detail.detection_delay_computable is False
+    assert detail.detection_delay_detected is False
+
+
+def test_gate_quality_for_symbol_window_candidato_sem_rotulo_usa_maior_vol_media() -> None:
+    canonical_id = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    close_time_ms = np.arange(6, dtype=np.int64) * 10
+    realized_vol_short = np.array([0.01, 0.01, 0.01, 0.10, 0.10, 0.10], dtype=np.float64)
+
+    detail = mcw._gate_quality_for_symbol_window(
+        "BTCUSDT",
+        "hmm_gaussian_k2_v1",
+        "quantile_regime_v1",
+        canonical_id,
+        close_time_ms,
+        realized_vol_short,
+        onset_ts_ms=None,
+    )
+    assert detail.stress_state_rule == "max_mean_realized_vol_short"
+    assert detail.stress_state_id == 1
+    assert detail.stress_state_occupancy == pytest.approx(0.5)
+
+
+def test_gate_quality_for_symbol_window_sem_dado_da_detail_degenerado() -> None:
+    empty_i = np.array([], dtype=np.int64)
+    empty_f = np.array([], dtype=np.float64)
+    detail = mcw._gate_quality_for_symbol_window(
+        "BTCUSDT", "bocpd_v1", "quantile_regime_v1", empty_i, empty_i, empty_f, onset_ts_ms=None
+    )
+    assert detail.n_obs_total == 0
+    assert detail.stress_state_rule == "no_data"
+    assert detail.state_ids == ()
+    assert np.isnan(detail.effective_number_of_states)
+    assert np.isnan(detail.stress_state_occupancy)
+
+
+def test_gate_quality_for_symbol_window_detection_delay_computavel_com_onset() -> None:
+    canonical_id = np.array([0, 0, 1, 1], dtype=np.int64)
+    close_time_ms = np.array([0, 10, 20, 30], dtype=np.int64)
+    realized_vol_short = np.array([0.01, 0.01, 0.05, 0.05], dtype=np.float64)
+
+    detail = mcw._gate_quality_for_symbol_window(
+        "BTCUSDT",
+        "bocpd_v1",
+        "quantile_regime_v1",
+        canonical_id,
+        close_time_ms,
+        realized_vol_short,
+        onset_ts_ms=15,
+    )
+    assert detail.detection_delay_computable is True
+    assert detail.detection_delay_detected is True
+    assert detail.detection_delay_ms == pytest.approx(5.0)  # t=20, onset=15
+    assert detail.detection_delay_onset_ts_ms == 15
+
+
+# ============================================================================
+# _volatility_heterogeneity_for_symbol_window
+# ============================================================================
+
+
+def test_volatility_heterogeneity_for_symbol_window_sem_dado_da_detail_degenerado() -> None:
+    empty_i = np.array([], dtype=np.int64)
+    empty_f = np.array([], dtype=np.float64)
+    detail = mcw._volatility_heterogeneity_for_symbol_window(
+        "BTCUSDT", empty_i, empty_i, empty_f, n_permutations=100, permutation_seed=1
+    )
+    assert detail.n_obs_total == 0
+    assert detail.n_buckets == 0
+    assert np.isnan(detail.p_value_permutation)
+    assert detail.n_permutations_valid == 0
+
+
+def test_volatility_heterogeneity_for_symbol_window_separacao_real_da_p_baixo() -> None:
+    rng = np.random.default_rng(5)
+    bucket_chunks = []
+    vol_chunks = []
+    for i in range(20):
+        n_ep = 30
+        if i % 2 == 0:
+            bucket_chunks.append(np.zeros(n_ep, dtype=np.int64))
+            vol_chunks.append(rng.normal(0.01, 0.002, n_ep))
+        else:
+            bucket_chunks.append(np.ones(n_ep, dtype=np.int64))
+            vol_chunks.append(rng.normal(0.05, 0.002, n_ep))
+    canonical_id = np.concatenate(bucket_chunks)
+    forward_vol = np.concatenate(vol_chunks)
+    close_time_ms = np.arange(canonical_id.shape[0], dtype=np.int64) * 10
+
+    detail = mcw._volatility_heterogeneity_for_symbol_window(
+        "BTCUSDT",
+        canonical_id,
+        close_time_ms,
+        forward_vol,
+        n_permutations=500,
+        permutation_seed=3,
+    )
+    assert detail.n_episodes == 20
+    assert detail.p_value_permutation < 0.05
+
+
+# ============================================================================
+# aggregate_critical_windows_results -- wiring de gate_quality/
+# volatility_heterogeneity
+# ============================================================================
+
+
+def test_aggregate_critical_windows_results_forward_vol_by_symbol_none_preserva_contrato() -> None:
+    """Default -- mesmo contrato de antes da extensão AG-114."""
+    cells = (
+        mcw.CellOutcome(
+            "WIN_A",
+            "S1",
+            "R1",
+            _symbol_result("S1", baseline_omega=0.0, candidate_omegas={"bocpd_v1": 0.02}),
+        ),
+    )
+    report = mcw.aggregate_critical_windows_results("R1", cells, windows=_TEST_WINDOWS)
+    assert report.gate_quality == ()
+    assert report.volatility_heterogeneity == ()
+
+
+def test_aggregate_critical_windows_results_com_forward_vol_by_symbol_ativa_gate_quality() -> None:
+    regime_raw = {"bocpd_v1": _raw_labels([0, 10, 20, 30], [0, 0, 1, 1])}
+    cells = (
+        mcw.CellOutcome(
+            "WIN_BTC_ONLY",
+            "BTCUSDT",
+            "R1",
+            _symbol_result("BTCUSDT", baseline_omega=0.0, candidate_omegas={"bocpd_v1": 0.02}),
+            None,
+            regime_raw,
+        ),
+    )
+    vol_history = {
+        "BTCUSDT": mcw._SymbolForwardVolHistory(
+            close_time_ms=np.array([0, 10, 20, 30], dtype=np.int64),
+            realized_vol_short=np.array([0.01, 0.01, 0.05, 0.05], dtype=np.float64),
+            forward_realized_vol=np.array([0.02, 0.03, 0.06, 0.07], dtype=np.float64),
+        )
+    }
+    report = mcw.aggregate_critical_windows_results(
+        "R1",
+        cells,
+        windows=(_WIN_BTC_ONLY,),
+        n_permutations=100,
+        permutation_seed=1,
+        forward_vol_by_symbol=vol_history,
+    )
+    assert len(report.gate_quality) == 2  # baseline + bocpd_v1
+    assert len(report.volatility_heterogeneity) == 2
+    assert {g.classifier_id for g in report.gate_quality} == {"quantile_regime_v1", "bocpd_v1"}
+    assert {v.classifier_id for v in report.volatility_heterogeneity} == {
+        "quantile_regime_v1",
+        "bocpd_v1",
+    }
+
+
+def test_aggregate_critical_windows_results_forward_vol_by_symbol_sem_permutations_levanta_value_error() -> (  # noqa: E501
+    None
+):
+    cells = (
+        mcw.CellOutcome(
+            "WIN_A", "S1", "R1", _symbol_result("S1", baseline_omega=0.0, candidate_omegas={})
+        ),
+    )
+    with pytest.raises(ValueError, match="n_permutations"):
+        mcw.aggregate_critical_windows_results(
+            "R1", cells, windows=_TEST_WINDOWS, forward_vol_by_symbol={}
+        )
+
+
+# ============================================================================
+# Persistência de raw_labels/forward_vol_history -- follow-up de AG-114,
+# 2026-08-20
+# ============================================================================
+
+
+def test_write_parquet_atomic_grava_e_le_de_volta(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [0.1, 0.2, 0.3]})
+    dest = tmp_path / "sub" / "arquivo.parquet"
+    mcw._write_parquet_atomic(df, dest)
+
+    assert dest.exists()
+    assert not dest.with_name(dest.name + ".tmp").exists()  # .tmp não sobra
+    lido = pl.read_parquet(dest)
+    assert lido.equals(df)
+
+
+def test_write_parquet_atomic_sobrescreve_arquivo_existente(tmp_path: Path) -> None:
+    dest = tmp_path / "arquivo.parquet"
+    mcw._write_parquet_atomic(pl.DataFrame({"a": [1]}), dest)
+    mcw._write_parquet_atomic(pl.DataFrame({"a": [1, 2, 3]}), dest)
+
+    assert pl.read_parquet(dest).height == 3
+
+
+def test_persist_raw_labels_grava_1_parquet_por_classifier_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mcw, "RAW_LABELS_OUTPUT_DIR", tmp_path)
+    raw_bocpd = _raw_labels([0, 10, 20], [0, 0, 1])
+    raw_hmm = _raw_labels([0, 10, 20], [1, 1, 2])
+    outcomes = (
+        mcw.CellOutcome(
+            "WIN_A",
+            "S1",
+            "R1",
+            _symbol_result("S1", candidate_omegas={}),
+            None,
+            {"bocpd_v1": raw_bocpd, "hmm_k2": raw_hmm},
+        ),
+    )
+    mcw._persist_raw_labels(outcomes)
+
+    bocpd_path = tmp_path / "R1" / "WIN_A" / "S1" / "bocpd_v1.parquet"
+    hmm_path = tmp_path / "R1" / "WIN_A" / "S1" / "hmm_k2.parquet"
+    assert bocpd_path.exists()
+    assert hmm_path.exists()
+    lido = pl.read_parquet(bocpd_path)
+    assert lido["canonical_id"].to_list() == [0, 0, 1]
+    assert lido["close_time_ms"].to_list() == [0, 10, 20]
+
+
+def test_persist_raw_labels_celula_sem_raw_labels_nao_escreve_nada(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mcw, "RAW_LABELS_OUTPUT_DIR", tmp_path)
+    outcomes = (
+        mcw.CellOutcome("WIN_A", "S1", "R1", None, "erro"),  # falhou -- sem raw_labels
+        mcw.CellOutcome("WIN_B", "S2", "R1", None, None),  # pulado -- sem raw_labels
+    )
+    mcw._persist_raw_labels(outcomes)
+
+    assert list(tmp_path.rglob("*.parquet")) == []
+
+
+def test_persist_forward_vol_history_grava_1_parquet_por_simbolo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(mcw, "FORWARD_VOL_HISTORY_OUTPUT_DIR", tmp_path)
+    forward_vol_by_symbol = {
+        "BTCUSDT": mcw._SymbolForwardVolHistory(
+            close_time_ms=np.array([0, 10, 20], dtype=np.int64),
+            realized_vol_short=np.array([0.01, 0.02, 0.03], dtype=np.float64),
+            forward_realized_vol=np.array([0.02, 0.03, 0.04], dtype=np.float64),
+        ),
+        "ETHUSDT": mcw._SymbolForwardVolHistory(
+            close_time_ms=np.array([0, 10], dtype=np.int64),
+            realized_vol_short=np.array([0.05, 0.06], dtype=np.float64),
+            forward_realized_vol=np.array([0.06, 0.07], dtype=np.float64),
+        ),
+    }
+    mcw._persist_forward_vol_history("R2", forward_vol_by_symbol)
+
+    btc_path = tmp_path / "R2" / "BTCUSDT.parquet"
+    eth_path = tmp_path / "R2" / "ETHUSDT.parquet"
+    assert btc_path.exists()
+    assert eth_path.exists()
+    lido = pl.read_parquet(btc_path)
+    assert lido["forward_realized_vol"].to_list() == pytest.approx([0.02, 0.03, 0.04])
+
+
+def test_run_critical_windows_comparison_persist_raw_labels_grava_arquivos_reais(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`persist_raw_labels=True` fim-a-fim, no caminho sequencial
+    (`max_workers=1`, mesmo caminho testável dos outros testes deste
+    arquivo -- `monkeypatch` não alcança `ProcessPoolExecutor` via
+    `spawn`). `_run_one_cell`/`_compute_bocpd_full_history`/
+    `_compute_symbol_forward_vol_history` são substituídos por fakes --
+    o alvo deste teste é a FIAÇÃO (persistência acionada com os dados
+    certos quando `persist_raw_labels=True`), não a numérica de nenhuma
+    dessas 3 funções (já cobertas em testes dedicados próprios)."""
+    monkeypatch.setattr(mcw, "RAW_LABELS_OUTPUT_DIR", tmp_path / "raw_labels")
+    monkeypatch.setattr(mcw, "FORWARD_VOL_HISTORY_OUTPUT_DIR", tmp_path / "forward_vol")
+
+    def _fake_run_one_cell(
+        window: object, symbol: str, resolution_id: str, **_k: object
+    ) -> mcw.CellOutcome:
+        window_name = window.name  # type: ignore[attr-defined]
+        raw = _raw_labels([0, 60_000, 120_000], [0, 0, 1])
+        return mcw.CellOutcome(
+            window_name,
+            symbol,
+            resolution_id,
+            _symbol_result(symbol, candidate_omegas={"bocpd_v1": 0.1}),
+            None,
+            {"bocpd_v1": raw},
+        )
+
+    def _fake_forward_vol_history(
+        symbol: str, resolution_id: str
+    ) -> mcw._SymbolForwardVolHistory:
+        return mcw._SymbolForwardVolHistory(
+            close_time_ms=np.array([0, 60_000, 120_000], dtype=np.int64),
+            realized_vol_short=np.array([0.01, 0.02, 0.03], dtype=np.float64),
+            forward_realized_vol=np.array([0.02, 0.03, 0.04], dtype=np.float64),
+        )
+
+    monkeypatch.setattr(mcw, "_run_one_cell", _fake_run_one_cell)
+    monkeypatch.setattr(
+        mcw,
+        "_compute_bocpd_full_history",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("sem full-history no teste")),
+    )
+    monkeypatch.setattr(mcw, "_compute_symbol_forward_vol_history", _fake_forward_vol_history)
+
+    win = mcw.CriticalWindow(
+        name="WIN_A",
+        event="evento (teste)",
+        start="2022-01-01",
+        end="2022-01-02",
+        symbols=("S1",),
+        note="janela sintética de teste",
+    )
+    mcw.run_critical_windows_comparison(
+        "R1",
+        windows=(win,),
+        jump_n_states=2,
+        jump_penalty=0.01,
+        bocpd_hazard_lambda=65.0,
+        bocpd_n_canonical_buckets=3,
+        max_workers=1,
+        compute_gate_quality=True,
+        n_permutations=10,
+        permutation_seed=1,
+        persist_raw_labels=True,
+    )
+
+    raw_labels_path = tmp_path / "raw_labels" / "R1" / "WIN_A" / "S1" / "bocpd_v1.parquet"
+    forward_vol_path = tmp_path / "forward_vol" / "R1" / "S1.parquet"
+    assert raw_labels_path.exists()
+    assert forward_vol_path.exists()

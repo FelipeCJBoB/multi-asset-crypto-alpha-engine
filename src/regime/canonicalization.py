@@ -15,11 +15,28 @@ exatamente esse tipo de rótulo instável entre fits/seeds que motivou banir
 candidatos novos, garante que o defeito banido não reapareça duplicado (e
 com pequenas divergências de critério) em 3 implementações separadas.
 
-**Critério (`PRD_V4_1.md` §3.2 M4, literal):** "estados ordenados de forma
-determinística (média de retorno, desempate por variância)" — ordem
-ASCENDENTE: estado com menor retorno médio vira `0`, o de maior vira
-`k-1`; em empate exato de média, desempate por variância ASCENDENTE
-(menor variância primeiro)."""
+**Critério (`PRD_V4_1.md` §3.2 M4, literal — nota: `PRD_V4_1.md` é
+documento OBSOLETO deste projeto, só `PLANO_MESTRE_PRINCE2.md`/ADR-001
+completo são canônicos; este critério persiste em PRODUÇÃO só porque
+ainda não foi migrado, não porque o PRD ainda valha algo, `AG-121`):
+"estados ordenados de forma determinística (média de retorno, desempate
+por variância)" — ordem ASCENDENTE: estado com menor retorno médio vira
+`0`, o de maior vira `k-1`; em empate exato de média, desempate por
+variância ASCENDENTE (menor variância primeiro).
+
+**⚠️ `canonical_id` NÃO é ordenado por volatilidade — é ordenado por
+RETORNO. Não assuma que `state_id` maior = mais volátil.** (`AG-121`,
+`audit/architecture_gaps_log.yaml`, 2026-08-20) O ADR-001 (documento
+canônico de arquitetura) recomenda o oposto — canonicalizar por
+volatilidade ascendente, motivado por label switching em HMM/mistura —
+e essa recomendação nunca foi aplicada aqui. Qualquer código que precise
+saber "qual estado é o de maior risco/volatilidade" **nunca** deve ler
+essa informação da ORDEM de `canonical_id` — sempre meça diretamente
+(ver `src.validation.regime_utility.identify_stress_state_by_volatility`,
+já usado por `AG-114`/`AG-118` por este exato motivo). Migração pro
+critério do ADR-001 fica pendente do action item 3 dele
+(`src/io/artifact.py`/`regime()` formal, ainda não construído) — não
+decidida por omissão, só sequenciada."""
 
 from __future__ import annotations
 

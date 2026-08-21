@@ -7336,3 +7336,1193 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisão do Manager, possivelmente informada pela recomendação do auditor externo"
+
+  - id: AG-108
+    date: "2026-08-20"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-096, mecanismo aprovado 'gate por linha')"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.2/§4.1/§3.8b; audit/architecture_gaps_log.yaml::AG-096"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B, comissionado pelo Manager via docs/brief_auditoria_externa_2026-08-19_*.md)"
+    gap: >
+      O mecanismo aprovado em AG-096 ("posição atual no MESMO (symbol,
+      resolution_id) != FLAT -- bloqueia entrada") pressupõe que
+      (símbolo, resolução) é uma entidade portadora de posição na Binance
+      USDⓈ-M. Não é. Em One-way mode existe UMA posição por símbolo, conta
+      inteira; em Hedge mode existem duas (LONG/SHORT), nunca uma por
+      resolução -- e o modo é configurado por CONTA, não por símbolo
+      (Binance, "What Is Hedge Mode" -- "position mode is applied
+      account-wide"). Consequência concreta: se BTCUSDT:R1 e BTCUSDT:R3
+      sobreviverem ambas à seleção de linha (cenário explicitamente
+      desejado pelo mandato -- "os PARES que entregarem mais edge",
+      plural), elas compartilham UMA única posição BTCUSDT na exchange. A
+      pergunta "a posição de BTCUSDT:R3 está FLAT?" não tem resposta no
+      estado real da conta -- e quando R1 fecha, a posição de R3 fecha
+      junto, porque é a mesma posição. Problema secundário: com
+      timeInForce=GTX, uma ordem de R1 e uma ordem oposta de R3 no mesmo
+      símbolo se cancelam/rejeitam mutuamente no book (Self-Trade
+      Prevention não se aplica a GTX/FOK), produzindo cancelamentos
+      correlacionados justamente quando as resoluções discordam -- viés
+      de execução com estrutura, não ruído aleatório.
+    severity: "crítico"
+    layer: "decision engine / execução -- modelo de posição da exchange incompatível com a abstração 'linha' usada em todo o desenho aprovado"
+    consequence: >
+      Bloqueia a implementação de AG-096 como especificado. Exige
+      reescrita do gate: separar LineState (lógico, chave line_id,
+      máquina de estados FLAT|ENTRY_PENDING|OPEN|EXIT_PENDING|
+      RECONCILIATION) de SymbolExposure (físico, chave symbol, o que a
+      exchange de fato reporta), com o invariante "no máximo UMA linha
+      por símbolo em estado != FLAT" -- ou, se duas resoluções do mesmo
+      símbolo precisarem operar concorrentemente com edge
+      descorrelacionado, um SymbolAggregator que combine as intenções
+      numa posição-alvo líquida antes de qualquer ordem. Recomendação:
+      uma resolução por símbolo na primeira rodada de seleção (reduz o
+      espaço concorrente de 15 para 5 linhas, reduz multiplicidade,
+      favorável ao DSR) -- SymbolAggregator só se a seleção mostrar duas
+      resoluções do mesmo símbolo sobrevivendo com edge descorrelacionado.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager sobre reescrita do gate (uma resolução por símbolo vs. SymbolAggregator), ver docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.2"
+
+  - id: AG-109
+    date: "2026-08-20"
+    file: "PRD_V3_2_UNIFICADO.md (política de execução -- maker post-only GTX, cancela no timeout, nunca converte a mercado)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4 problema 2, §5 item 1; src/labels/triple_barrier.py (tp_atr_mult=2.0/sl_atr_mult=1.5)"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
+    gap: >
+      A política de execução declarada do projeto é maker post-only
+      (GTX), cancela no timeout, NUNCA converte a mercado. Uma ordem GTX
+      que cruzaria o book é rejeitada/expira, não executa. Isso não
+      afeta só o gatilho de proteção (AG-099/D) -- afeta o STOP-LOSS do
+      próprio triple-barrier: os rótulos assumem que tocar sl_px
+      significa sair a sl_px, mas sob post-only sem conversão a mercado,
+      tocar sl_px significa que o preço atravessou o nível enquanto a
+      ordem passiva ficava do lado errado do movimento. A geometria de
+      payoff inteira (tp_atr_mult=2.0/sl_atr_mult=1.5/time_stop=8h)
+      descreve uma estratégia que a política de execução declarada não
+      consegue executar como rotulada.
+    severity: "crítico"
+    layer: "labels / execução -- premissa de saída executável nunca verificada contra a política de execução real"
+    consequence: >
+      Toda a cadeia de payoff (labels, pesos, calibração, meta-model,
+      breakeven de custo) assume uma saída que pode não existir na
+      prática -- é premissa, não feature, e não depende de nenhuma
+      medição pra ser decidida. Recomendação, ordens de magnitude mais
+      barata: admitir reduceOnly a mercado para SAÍDAS (manter
+      post-only só para ENTRADAS) -- assimetria padrão de prática maker
+      (paciente pra entrar, impaciente pra sair), custo adicional de
+      ~3bps/perna (taker 0,05% vs maker 0,02%) contra o risco de perda
+      de cauda ilimitada por não conseguir sair. Alternativa mais cara:
+      relabelar assumindo saída passiva com modelo de fila (ret_net
+      condicional a fill). Item de maior severidade de todo o ADR, e
+      anterior a qualquer decisão sobre o gatilho D.
+    resolved_by_commit: null
+    resolution: >
+      REFUTADO 2026-08-20, ver AG-115. Achado deste entry generalizou a
+      política de ENTRADA (GTX post-only) pra toda a política de
+      execução, incluindo SAÍDAS -- erro de leitura do auditor externo,
+      que não tinha acesso ao repositório real (nota de escopo do
+      próprio ADR-001). Verificado contra PRD_V3_2_UNIFICADO.md §9.1
+      (linhas 1700-1727) e o código real (`src/labels/triple_barrier.py`,
+      comentário 8): a política já é ASSIMÉTRICA -- SL usa
+      `STOP_MARKET`/`working_type: MARK_PRICE` (garantido, taker), TIME
+      usa `MARKET reduce_only` (garantido, taker); só a ENTRADA é
+      GTX-nunca-mercado. Ou seja, a recomendação "admitir reduceOnly a
+      mercado pra saídas" já É o desenho vigente -- não decisão nova,
+      implementação já existe na Label Engine desde antes deste parecer.
+      Consequência prática: `src/exchange/adapter.py::place_order`
+      continua `NotImplementedError` (nenhum código de execução real
+      ainda existe), mas o trabalho que falta é IMPLEMENTAR uma decisão
+      já tomada, não decidir algo novo -- este item deixa de ser
+      prioridade 1 do Road Map Vivo.
+    status: "fechado -- refutado, ver AG-115 (achado do auditor externo generalizou política de ENTRADA pra toda a execução; SL/TIME já são taker-garantido no desenho real)"
+
+  - id: AG-110
+    date: "2026-08-20"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-099, mecanismo revisado 'encurtar time_stop')"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4 problema 1; src/labels/triple_barrier.py (time_stop_ms=28.800.000, 8h)"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B) -- mesmo padrão de ponto cego identificado pelo próprio parecer: a Rodada 1 interna refutou 'apertar o stop' com um argumento de execução e o substituto aprovado não reaplicou o mesmo invariante"
+    gap: >
+      O mecanismo revisado de AG-099 (encurtar o horizonte máximo de
+      holding sob regime de stress, em vez de apertar o SL) repete, numa
+      camada diferente, o defeito estrutural da versão refutada:
+      M_long/M_short foi treinado sobre rótulos com time_stop=8h fixo --
+      p = P(toca TP antes de SL, dentro de 8h). Se o motor encurta esse
+      horizonte ao vivo sob stress, ele usa p de UM evento (barreira 8h)
+      pra decidir OUTRO evento (barreira mais curta) -- não é
+      aproximação, é troca de variável aleatória. A calibração (p_cal)
+      deixa de valer, e Brier score é uma das condições de entrada do
+      Meta -- passaria a ser medido contra uma distribuição que não é a
+      operada. O efeito é assimétrico (TP=2.0/SL=1.5 -- a barreira de
+      perda é tocada mais cedo em média) e o sinal do efeito líquido é
+      desconhecido sem medição.
+    severity: "alto"
+    layer: "labels / meta-model -- paridade treino-live quebrada no rótulo, não no código de execução"
+    consequence: >
+      Adotar o gatilho revisado sem correção repete o erro que a Rodada
+      1 interna já tinha corrigido uma vez, só que deslocado pro rótulo
+      em vez do preço. Correção proposta: se o horizonte é condicional a
+      regime ao vivo, ele precisa ser condicional a regime NO RÓTULO --
+      horizon_bars(regime_t0) vira parâmetro da geometria de rotulagem,
+      o modelo é retreinado sobre esses rótulos, e o "gatilho ao vivo"
+      vira aplicação da mesma regra que gerou o rótulo (não um ajuste
+      arbitrário em produção). Sequência recomendada antes de qualquer
+      parâmetro: (1) extrair, de rótulos já existentes, a distribuição
+      empírica de tempo-até-primeira-barreira condicional a regime
+      (custo ~zero, é um groupby); (2) medir barras/hora por regime
+      (parte do efeito de "encurtar sob stress" já pode ser grátis,
+      porque dollar bars sob volume alto chegam mais rápido em tempo de
+      relógio); (3) só então decidir se sobra efeito suficiente pra
+      justificar horizon_bars(regime) na geometria de rotulagem.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager sobre relabeling condicional a regime antes de adotar o gatilho K15 (AG-099)"
+
+  - id: AG-111
+    date: "2026-08-20"
+    file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-098, convenção de contagem de trials pra seleção de linha)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.3; audit/n_lifetime.yaml; src/validation/dsr.py"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
+    gap: >
+      A convenção aprovada em AG-098 (cada (symbol, resolution_id)
+      avaliada = 1 trial, sempre, independente de promoção) corrigiu a
+      circularidade original mas tem dois problemas residuais. (1)
+      Sobre-contagem por correlação: contar 15 linhas como 15 trials
+      ignora que o DSR deveria deflacionar pelo número EFETIVO de
+      trials independentes -- com correlação equicorrelacionada entre
+      símbolos da ordem de rho~=0,8 (BTC-ETH medido ~0,94, altcoins
+      tipicamente >0,7 com BTC, convergindo pra 1 sob stress) e as 3
+      resoluções do mesmo símbolo ainda mais redundantes entre si,
+      N_eff = N/(1+(N-1)*rho) fica da ordem de 2, não 15 -- contar 15
+      deixa o DSR conservador demais e pode matar edge real. (2)
+      Resíduo de circularidade: n_trials continua sendo a CARDINALIDADE
+      DA RODADA -- se a próxima rodada incluir um 16º par, o DSR de
+      toda linha JÁ PROMOVIDA muda retroativamente (mesma família do
+      problema original, não a mesma instância). (3) N_lifetime foi
+      descomissionado como orçamento vinculante (AG-077) e nada o
+      substituiu -- a convenção define como contar um número que hoje
+      não bloqueia nada.
+    severity: "alto"
+    layer: "validation -- DSR/multiple-testing, seleção de linha"
+    consequence: >
+      Correção proposta em 3 partes: (a) n_trials vitalício e
+      cumulativo via trial_registry append-only (um arquivo por trial,
+      produto automático do pipeline, não ledger manual digitado --
+      substitui N_lifetime sem reintroduzir o problema "mal implementado
+      desde o começo"); (b) N_eff CALCULADO por decomposição espectral
+      sobre as séries de retorno OOS do registry (Li & Ji 2005, somando
+      autovalores substituindo por 1 os maiores que 1 -- determinístico,
+      sem hiperparâmetro), não contado manualmente; (c) gate primário de
+      promoção deixa de ser só DSR e passa a incluir PBO/CSCV (já
+      recomendado em AG-098 item 5 como não-bloqueante -- este achado
+      eleva a urgência: PBO mede overfitting sem depender de contagem de
+      trials). O critério estrutural de AG-098 (backtest novo = 1 trial)
+      continua válido e é preservado -- é o que torna o pré-filtro de
+      custo (AG-113) gratuito no orçamento de multiplicidade.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager sobre implementar trial_registry + N_eff espectral antes da primeira rodada de seleção de linha"
+
+  - id: AG-112
+    date: "2026-08-20"
+    file: "src/risk/sizing.py (a implementar -- Risk Engine, quantização de lote)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §4.2"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B -- achado não coberto por nenhum dos dois briefs originais)"
+    gap: >
+      Nenhum documento do projeto menciona minNotional/stepSize por
+      símbolo. Dados medidos ao vivo (2026-08-19): BTCUSDT
+      stepSize=0,001 BTC = 69,26 USDT/step; SOLUSDT stepSize=0,01 SOL =
+      0,85 USDT/step -- ~24x de diferença de granularidade de risco
+      entre os dois símbolos mais/menos granulares (1 step de risco =
+      0,19% de equity em BTC vs. 0,008% em SOL, capital R$1.000=193
+      USDT). Com risco-alvo 0,65%/trade e stop 1,5xATR, o notional
+      necessário em BTC (~239 USDT) cai numa grade de só ~3,45 steps --
+      erro de até +-15% no alvo de risco, contra precisão quase
+      contínua em SOL/XRP. Um backtest que assume sizing contínuo não é
+      reproduzível ao vivo em BTC, e a diferença de granularidade entre
+      símbolos é um VIÉS SISTEMÁTICO a favor dos símbolos de grade fina
+      numa rodada de seleção de linha, não uma diferença de edge real.
+    severity: "alto"
+    layer: "risk / execução -- quantização de lote ausente da comparação entre linhas"
+    consequence: >
+      Sem quantização aplicada ANTES da decisão (calcular qty factível,
+      recalcular o risco real dessa qty, só então aprovar/rejeitar -- e
+      o backtest replicando exatamente o mesmo código), a seleção de
+      linha mede parcialmente granularidade de lote, não só edge.
+      Adicionalmente: sob stress (ATR~1,2%), a posição BTC MÍNIMA já
+      consome ~0,65% de equity por stop -- ~3 stops de tamanho mínimo
+      esgotam o teto diário de 2%, e não existe tamanho menor. Risk
+      Engine precisa de um estado explícito "símbolo intratável no
+      orçamento atual" (hoje inexistente -- comportamento atual seria
+      rejeição no envio pela própria exchange, a pior forma de
+      descobrir isso).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager sobre priorizar quantização de lote no Risk Engine antes da 1a rodada de seleção de linha"
+
+  - id: AG-113
+    date: "2026-08-20"
+    file: "audit/n_lifetime.yaml (pré-filtro de custo, ainda não executado)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §2.6, §5 item 3; config/constants.yaml (E27f_cost_atr_ratio)"
+    found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
+    gap: >
+      n_eff (amostra rotulada independente) é aproximadamente T/H
+      (histórico / horizonte da barreira vertical) e é INVARIANTE à
+      resolução do dollar bar -- rodar em R1 (mais rápida) não dá mais
+      amostra efetiva que rodar em R3 (mais lenta), só mais linhas na
+      tabela. O que a resolução de fato compra/destrói é o HURDLE DE
+      CUSTO: win-rate de breakeven p* = (sl_mult+c)/(tp_mult+sl_mult),
+      com c em unidades de ATR. Com TP=2,0/SL=1,5 e o custo/ATR medido
+      de 19,4% (E27f_cost_atr_ratio, 2026), p*~=48,4% em R1; a mesma
+      geometria numa resolução ~4x mais lenta (ATR escala ~raiz(4)=2x)
+      devolve p*~=45,6% -- 2,8pp de hurdle de graça. Esse pré-filtro
+      (c(símbolo,resolução) = custo_bps/ATR_bps pras 15 linhas) é
+      aritmética sobre dado já existente, não exige rótulo nem backtest
+      novo -- pela própria convenção AG-098, conta como 1 trial (passe
+      de ranking que reusa artefato), não 15.
+    severity: "médio"
+    layer: "arquitetura de pesquisa -- sequenciamento da 1a rodada de seleção de linha"
+    consequence: >
+      Oportunidade, não bug: rodar o pré-filtro de custo antes de
+      investir engenharia em gerar histórico de rótulo pras 3
+      resoluções x 5 símbolos pode eliminar a maior parte do espaço de
+      busca de graça, antes de qualquer backtest custoso. Responde
+      também à decisão pendente #6 de §15.11 (resoluções lentas agora
+      ou só a rápida) -- recomendação: gerar histórico de rótulo pra
+      resolução mais LENTA também (não só a rápida, que tem o pior
+      hurdle), rodar R1+R3 primeiro (pula R2 -- interpolação, só decide
+      algo se R1/R3 divergirem em direção).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager sobre rodar o pré-filtro de custo antes de comprometer engenharia às 3 resoluções"
+
+  - id: AG-114
+    date: "2026-08-20"
+    file: "src/analysis/m4_regime_comparison.py (_anova_or_degenerate, teste de heterogeneidade de forward_return)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §2.7 (ratificado, PLANO_MESTRE_PRINCE2.md §15.12); docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md (lista 'fix mecânico' -- separação de volatilidade futura, occupancy, transition failure rate, detection delay); src/regime/regime_utility.py (só median_duration_bars/switch_rate/n_segments hoje)"
+    found_by: "Manager, ao perguntar 'qual futuro o Regime vai atender' logo após ratificar o ADR-001 -- síntese entre a decisão de arquitetura (regime = gate, não feature) e o critério estatístico já usado pra escolher candidato de regime no M4"
+    gap: >
+      A metodologia da Trilha A/M4 avalia os 6 candidatos de regime por
+      heterogeneidade do RETORNO médio futuro do Alpha entre buckets de
+      regime (Welch's F/omega^2 sobre forward_return, h=1) -- isso mede
+      utilidade como FEATURE preditiva. O ADR-001, agora ratificado
+      (§2.7), decide que regime NÃO entra como feature do Meta/Alpha na
+      v1 -- fica exclusivamente como GATE de risco, e um gate "não
+      precisa prever, precisa evitar": não exige significância
+      estatística de retorno, exige identificar corretamente períodos
+      de risco de cauda elevado. O resultado nulo generalizado do M4
+      (18/18 p-valores 0,30-0,85) prova que nenhum candidato é útil
+      como FEATURE de retorno -- mas essa deixou de ser a pergunta que
+      decide promoção, porque a arquitetura ratificada já decidiu que
+      regime não vai ocupar esse papel na v1. A pergunta que decide
+      promoção agora (heterogeneidade de VOLATILIDADE/risco de cauda
+      futura entre buckets, occupancy do estado de stress, taxa de
+      falso-positivo de transição, delay de detecção) nunca foi medida
+      -- e já está catalogada, com precedente de literatura verificado,
+      na lista "fix mecânico" da validação cruzada do M4: "separação de
+      volatilidade futura -- só retorno é testado hoje, apesar do
+      regime ser construído com log_return_1 E realized_vol_short, só
+      metade é validada"; "effective_number_of_states/occupancy por
+      estado"; "transition failure rate (N=3/5/10)"; "detection delay
+      vs. eventos econômicos independentes".
+    severity: "alto"
+    layer: "regime / validation -- critério de avaliação do M4 desalinhado do papel de consumo já ratificado pela Trilha B"
+    consequence: >
+      M4 não pode ser encerrado com "resultado nulo, nenhum candidato
+      serve" a partir só do teste de retorno -- isso responde a
+      pergunta errada pro papel que regime de fato vai ter (gate).
+      Antes do veredito final de M4 (congelar metodologia + locked
+      holdout, já planejado em docs/m4_regime_plano_execucao.md),
+      rodar os 4 diagnósticos de qualidade de GATE já catalogados como
+      "fix mecânico" -- barato, reusa infraestrutura existente, sem
+      redesenho: (1) heterogeneidade de VOLATILIDADE futura entre
+      buckets, mesmo desenho estatístico já em uso (Welch's
+      F/omega^2), trocando forward_return por volatilidade realizada
+      futura; (2) occupancy por estado + effective_number_of_states;
+      (3) transition failure rate; (4) detection delay vs. eventos
+      econômicos independentes. Só depois desses 4 rodarem "nenhum
+      candidato serve" (ou "candidato X é o melhor gate") vira
+      afirmação sustentada pela pergunta certa, não pela pergunta que
+      a arquitetura já descartou.
+    resolved_by_commit: null
+    resolution: >
+      Regra de decisão APROVADA pelo Manager (2026-08-20), registrada
+      ANTES de qualquer execução -- precondição B20 (threshold nunca
+      escolhido por métrica OOS, sempre a priori). Estrutura: 3 gates de
+      desqualificação + 1 métrica primária de ranking.
+        GATE 1 -- occupancy / effective_number_of_states: estado de
+          stress não pode ser degenerado (nem ausente, nem dominante).
+          Limiar numérico TBD -- medir contra o próprio baseline em
+          produção como referência (B23, nunca número inventado).
+        GATE 2 -- transition failure rate: candidato que oscila sem
+          parar é desqualificado independente de separação. Limiar TBD
+          -- medir.
+        GATE 3 -- detection delay vs. eventos econômicos independentes:
+          papel DECIDIDO pelo Manager (2026-08-20): DESEMPATE, não
+          desqualificante -- só entra em jogo se 2+ candidatos empatarem
+          na métrica primária (separação de volatilidade). Um candidato
+          não é eliminado por detection delay ruim sozinho.
+        MÉTRICA PRIMÁRIA -- entre os candidatos que passam nos 3 gates,
+          rank por heterogeneidade de VOLATILIDADE futura entre buckets
+          (Welch's F/ω², mesmo desenho estatístico já validado pro
+          teste de retorno original -- permutação em bloco por
+          episódio, correção de múltiplos testes já em uso no M4).
+      Nenhum limiar numérico foi fixado nesta aprovação -- ficam TBD até
+      a medição real rodar; o que foi fixado é a ESTRUTURA da regra
+      (quais métricas, que papel cada uma tem, ordem de aplicação), que
+      é o que a disciplina anti-HARKing exige travado a priori.
+    status: "REABERTO 2026-08-20, AINDA ABERTO 2026-08-21 -- ver AG-122. Auditoria externa (Manager, papel de auditor) achou que o Gate 1 foi aplicado com 2 criterios misturados (mediana de resolucao vs. maximo por janela) sem declarar qual decide -- sob o criterio literal (mediana, ja testado a 40%), hmm_gaussian_k2_v1 (34,1/34,9/39,5%) PASSA o Gate 1 e vence a metrica primaria em R1 (97,82 vs 97,44) e R2 (95,31 vs 94,98). Declaracao de vencedor 'hmm_gaussian_k4_v1' NAO deve ser tratada como definitiva ate a regra ser re-especificada com criterio operacional unico. 1 hipotese alternativa (R3 do parecer -- HMM levar vantagem em R3 por fit in-sample) CHECADA e REFUTADA (AG-122 adendo final, verificado em 2 pontos do codigo: fit usa so obs[:train_end_idx], decode so obs[test_start_idx:test_end_idx]) -- nao muda a fragilidade do Gate 1, so elimina 1 explicacao alternativa possivel. Decisao de re-especificar Gate 1/Gate 3 continua pendente do Manager. Historico preservado abaixo (o que foi decidido nesta rodada, mesmo estando sob revisao)."
+    status_historico_pre_reabertura: "FECHADO (2026-08-20) -- regra aplicada sobre o resultado real (experiments/m4_critical_windows_report.json), candidato vencedor declarado: hmm_gaussian_k4_v1. Detalhe completo, tabela de numeros e verificacao de robustez dos limiares em PLANO_MESTRE_PRINCE2.md secao 15.12.5. Resumo: Gate 1 (occupancy <=~33%) desqualifica hmm_gaussian_k2_v1 (34-44%, dominante, achado robusto entre 25%/33%/40% de limiar testados e entre janelas); Gate 2 (transition_failure_rate_n5 <= ~2-3x baseline) desqualifica bocpd_v1 (~3,3x baseline, falha em toda a faixa 2x-3x testada); sobreviventes hmm_k3/hmm_k4 nao empatam na metrica primaria (Gate 3 nao precisou entrar) -- hmm_k4 vence nas 3 resolucoes, margem maior em R3. jump_model_cjm_v1 confirmado nao-candidato nesta rodada (BTC-only, AG-117) E estruturalmente instavel nesta config (eff_n_states 1,17-1,39, occupancy variando de 1,0 degenerado a 0,04-0,56 entre janelas) -- separado do trabalho AG-119/Condicao C, que testa config nova. Achado colateral novo: BNBUSDT/RECENTE/R2 falhou por desalinhamento timestamp, isolado por AG-019, registrado como AG-120. Proximo passo: autorizacao do Manager pra implementar AG-118 (Gate Efficiency) usando hmm_gaussian_k4_v1 como candidato."
+    status_override_producao_2026_08_21: "Manager autorizou wiring de producao de hmm_gaussian_k4_v1 (src/regime/build_hmm.py::build_hmm_regimes, wiring candidato-agnostico em src/risk/limits.py) APESAR da fragilidade do Gate 1 permanecer aberta -- decisao de negocio ('seguranca extra de baixo custo', bucket de stress ocupa so ~5-12% do tempo), registrada em PLANO_MESTRE_PRINCE2.md §15.13, NAO uma re-especificacao do Gate 1 nem uma alegacao de edge medido (AG-118, resolvido, achou lift~1,0 em 90 celulas -- sem sinal economico detectavel, robusto a k). AG-114 CONTINUA tecnicamente aberto quanto a metodologia de selecao -- este campo documenta que producao seguiu em frente mesmo assim, nao que a pergunta foi respondida. Qualquer comunicacao futura sobre 'k=4 venceu o M4' continua exigindo a ressalva do Gate 1."
+
+  - id: AG-115
+    date: "2026-08-20"
+    file: "PRD_V3_2_UNIFICADO.md §9.1 (linhas 1700-1727); src/labels/triple_barrier.py (comentário 8, linhas 52-59)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-109; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4/§5 item 1; PLANO_MESTRE_PRINCE2.md §15.12"
+    found_by: "Manager, pedindo auditoria do desenho técnico de labels em ADR-001 vs. PLANO_MESTRE -- verificação direta contra PRD_V3_2_UNIFICADO.md e o código real da Label Engine"
+    gap: >
+      AG-109 (auditoria externa, ADR-001) registrou como achado de maior
+      severidade de todo o parecer que "nenhuma versão do gatilho de
+      proteção... tem saída executável sob a política post-only GTX
+      declarada" e que isso "afeta o STOP-LOSS do próprio triple-barrier"
+      -- REFUTADO por verificação direta. A política de execução real do
+      projeto (`PRD_V3_2_UNIFICADO.md` §9.1, linhas 1700-1727) é
+      ASSIMÉTRICA por desenho, não uniformemente post-only: só a ENTRADA
+      é `LIMIT/GTX/on_timeout=CANCEL` (nunca vira mercado). O STOP-LOSS é
+      `STOP_MARKET/working_type=MARK_PRICE/reduce_only` -- ordem
+      condicional nativa da Binance que, uma vez disparada, executa como
+      MARKET (taker, execução garantida). O TIME_STOP é `MARKET
+      reduce_only` explícito (também garantido). O TAKE_PROFIT é
+      `LIMIT/GTC/reduce_only` (maker, pode não encher -- mas se não
+      encher, a posição sai via TIME_STOP, que É garantido). Confirmado
+      também no código real: `src/labels/triple_barrier.py` já
+      implementa essa assimetria de custo (comentário 8, "SL e TIME caem
+      no mesmo ramo `else` porque os dois exigem execução garantida via
+      ordem agressiva") -- a Label Engine em PRODUÇÃO já assume esse
+      desenho, não é uma proposta nova. Economia já quantificada em
+      `PRD_V3_2_UNIFICADO.md` §0.3/linha 3369/3450: "Execução maker
+      assimétrica... breakeven 53,4% -> 48,1%".
+    severity: "alto"
+    layer: "governança -- correção de achado de auditoria externa, não um gap de código"
+    consequence: >
+      AG-109 fica REFUTADO como estava formulado -- não existe o furo que
+      descrevia. O item de maior prioridade do parecer do ADR-001
+      ("definir o caminho de saída executável") já estava definido no PRD
+      desde antes do parecer existir; o auditor externo não tinha essa
+      informação (nota de escopo do próprio ADR-001: "Não tenho acesso ao
+      repositório") e generalizou incorretamente a política de ENTRADA
+      (post-only, nunca-market) pra TODA a política de execução, incluindo
+      saídas. IMPORTANTE -- isso não fecha o trabalho pendente:
+      `src/exchange/adapter.py::place_order` continua `NotImplementedError`,
+      nenhum código de execução real existe ainda. A diferença é que o
+      trabalho que falta é IMPLEMENTAR uma decisão já tomada
+      (STOP_MARKET/MARKET reduce_only pras saídas), não DECIDIR algo novo
+      -- muda a natureza do próximo passo, de "resolver furo de desenho"
+      pra "implementar desenho já definido". `PLANO_MESTRE_PRINCE2.md`
+      §15.12/§11.6 e o Road Map Vivo v2 (passo "Resolver AG-109 antes de
+      qualquer outra coisa") citavam AG-109 como bloqueante máximo --
+      precisam de correção.
+    resolved_by_commit: null
+    resolution: >
+      Nenhuma ação de código necessária -- o desenho já está correto em
+      `PRD_V3_2_UNIFICADO.md` §9.1. Ação real pendente: atualizar
+      `PLANO_MESTRE_PRINCE2.md`/Road Map Vivo pra remover AG-109 da
+      posição de "maior severidade/prioridade 1" e registrar esta
+      refutação.
+    status: "fechado -- achado do auditor externo refutado por verificação direta contra PRD_V3_2_UNIFICADO.md §9.1 e código real"
+
+  - id: AG-116
+    date: "2026-08-20"
+    file: "src/labels/triple_barrier.py (linhas 152-165, 1000: horizon_end_ms = t0 + cfg.time_stop_ms, incondicional mesmo sob resolution_id/dollar-bar)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §3.1 cláusula 1, §4.3; audit/architecture_gaps_log.yaml::AG-031; PRD_V4_1.md §2.7 I2/§3.2 M1/§4.2"
+    found_by: "Manager, auditoria do desenho técnico de labels em ADR-001 vs. PLANO_MESTRE"
+    gap: >
+      ADR-001 (parecer, §3.1 cláusula 1, §4.3) recomenda `horizon_bars`
+      (contagem de barra da própria resolução) como o campo CANÔNICO da
+      barreira vertical -- "barreira vertical em milissegundos sobre
+      relógio de dollar bar é erro de unidade... cada rótulo cobre um
+      número diferente de barras... desfaz parte do motivo de usar dollar
+      bar". Verificado contra o código real: `horizon_end_ms = t0 +
+      cfg.time_stop_ms` (`triple_barrier.py:1000`) é INCONDICIONAL --
+      roda igual sob `tf` (calendário) e sob `resolution_id` (dollar-bar,
+      AG-042). Isso NÃO é uma omissão -- é decisão deliberada e já
+      registrada 3x em `PRD_V4_1.md` (§2.7 I2/§3.2 M1/§4.2, "horizonte em
+      relógio fixo") e formalizada em `AG-031`/B1 (que corrigiu uma
+      DIVERGÊNCIA entre 2 módulos que discordavam sobre qual convenção
+      usar -- resolvida em favor do relógio fixo, não do bar-count).
+      Razão original provável (não confirmada por citação direta):
+      alinhamento com o ciclo de funding de 8h da Binance, que é um
+      conceito de RELÓGIO, não de informação/volume.
+    severity: "médio"
+    layer: "labels -- tensão real entre 2 filosofias de desenho, nenhuma delas obviamente errada"
+    consequence: >
+      Isto é uma TENSÃO ABERTA entre 2 posições defensáveis, não um bug --
+      registrado como tal, não como "ADR-001 está certo, AG-031 está
+      errado". `AG-031` nunca foi revisitado à luz do paradigma dollar-bar
+      (`AG-042`, posterior) nem da recomendação do ADR-001 (posterior).
+      Decisão pendente do Manager: (a) manter relógio fixo (justificar
+      explicitamente pelo ciclo de funding, não deixar como herança
+      não-questionada); ou (b) migrar pra `horizon_bars` sob
+      `resolution_id`, mantendo `time_stop_ms` só sob `tf` (os 2 modos já
+      coexistem no dataclass via XOR) -- opção que preserva o raciocínio
+      de funding pro modo calendário E resolve a crítica do ADR-001 pro
+      modo dollar-bar sem forçar uma escolha única para os 2 mundos.
+      Nenhuma mudança de código feita aqui -- só o registro da tensão, que
+      faltava.
+    resolved_by_commit: null
+    resolution: >
+      DECIDIDO 2026-08-20 (Manager): opção (b) -- `horizon_bars` sob
+      `resolution_id`, `time_stop_ms` preservado sob `tf`. Pesquisa de
+      literatura feita antes de aplicar (`PLANO_MESTRE_PRINCE2.md
+      §15.12.3-C`, ≥12 fontes/pergunta): C.1 (horizonte compartilhado
+      entre R1/R2/R3, não por resolução -- `threshold_usdt` de cada
+      resolução já calibrado, AG-042, pra que a contagem MÉDIA de barras
+      aproxime 15m/30m/1h, vínculo medido entre bar-count e relógio já
+      existe); C.2 (prefetch via percentil alto MEDIDO, não estipulado --
+      `label_prefetch_p99_bar_duration_ms=22.506.187ms`, medido
+      2026-08-20 sobre as 15 combinações símbolo×resolução reais,
+      `experiments/dollar_bar_duration_p99_by_resolution.json`).
+      Implementado ponta a ponta em `src/labels/triple_barrier.py`
+      (`LabelConfig.horizon_bars`, `build_labels`, `_resolve_prefetch_
+      horizon_ms`, `assert_label_invariants`), `backfill_multi_symbol.py`,
+      `experiment_log.py`. `horizon_bars=32` (DERIVED, mesmo padrão de
+      `time_stop_ms`) em `constants.yaml`. Suíte completa validada:
+      1507 passed (rápida) + 13 passed (integration/slow, dado real de
+      backfill), zero falhas -- 1 bug real de TESTE achado e corrigido no
+      caminho (não de implementação, ver commit/PR).
+    status: "fechado -- opção (b) implementada e validada, ver resolution"
+
+  - id: AG-117
+    date: "2026-08-20"
+    file: "config/constants.yaml::m4_jump_model_penalty; src/analysis/m4_regime_comparison.py::compare_jump_model_only_for_symbol"
+    related_file: "audit/architecture_gaps_log.yaml::AG-087; docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md §1.2/§4; tools/diagnostics/calibrate_jump_model_penalty_per_asset.py; experiments/jump_model_ethusdt_condicao_b.json"
+    found_by: "Manager, autorizando a execução real do experimento de transferibilidade de λ do Jump Model já desenhado nesta sessão (encaminhamento de docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md §4: 'rodar o experimento de transferibilidade primeiro; só depois, se a saturação persistir com λ localmente otimizado, a leitura ausência real de regime ganha sustentação')"
+    gap: >
+      Resultado REAL e decisivo do experimento de transferibilidade,
+      medido nesta sessão (não hipotético). PASSO 1 -- calibração
+      independente de λ por ativo (`calibrate_jump_model_penalty_per_
+      asset.py`, mesma metodologia/grid de `m4_jump_model_penalty.source`,
+      grid [0,0001..0,02], 50k barras/40k treino/10k teste, critério
+      >=2 estados genuínos OOS): ETHUSDT -> λ=0,005 é o MAIOR do grid
+      que ainda produz 2 estados OOS. **SOLUSDT/BNBUSDT/XRPUSDT ->
+      NENHUM ponto do grid inteiro produz 2 estados genuínos OOS** --
+      até no ponto de penalidade quase nula (λ=0,0001) o split já sai
+      degenerado mesmo IN-SAMPLE (ex. XRPUSDT treino: [39969, 31] barras
+      -- 0,08% no 2º estado). Não é "λ do BTC não transfere" -- é
+      ausência de estrutura de 2 regimes detectável pelo CJM nesses 3
+      ativos, em qualquer ponto testado.
+
+      PASSO 2 -- Condição B rodada de verdade só pra ETHUSDT (único
+      ativo com λ genuíno; SOL/BNB/XRP não tinham valor pra plugar --
+      rodar os 4 símbolos custaria ~3h só pra reconfirmar o que o PASSO
+      1 já respondeu de forma decisiva pros 3 sem λ válido).
+      `saturation_rate` de ETHUSDT com λ PRÓPRIO (0,005) nas 3 janelas
+      com múltiplos símbolos (CRYPTO_WINTER/ETF_HALVING/RECENTE): R1=
+      66,7% (2 de 3 janelas saturam), R2=33,3%, R3=33,3% -- **PIOR ou
+      IGUAL** à Condição A (λ=0,002 transplantado de BTC): R1/R2/R3
+      todos 33,3% (só CRYPTO_WINTER satura, ETF_HALVING/RECENTE não, nas
+      3 resoluções). Recalibrar λ pro critério genérico "2 estados numa
+      janela de 50k barras qualquer" NÃO melhora a saturação nas janelas
+      críticas específicas que o M4 avalia -- os dois problemas são
+      dissociados: o critério de calibração usado (padrão da literatura,
+      já documentado em `m4_jump_model_penalty.source`) não é preditivo
+      de comportamento saudável nas janelas de interesse.
+    severity: "alto"
+    layer: "regime -- Jump Model como candidato"
+    consequence: >
+      Sustenta a leitura "ausência real de regime" pro Jump Model nos 4
+      ativos não-BTC, com evidência mais forte que a saturação original
+      de `AG-087` (que só media o efeito de transplantar λ de BTC sem
+      reteste): aqui o λ FOI recalibrado por ativo (onde havia algum
+      válido) e a saturação não melhorou. Recomendação: excluir Jump
+      Model do Estudo 1 pros 4 ativos não-BTC na rodada real do M4
+      (economiza ~1/4-1/6 do tempo de fit da extensão de gate-quality,
+      já que Jump Model é 1 dos 4 candidatos que passam por
+      `_run_fold_refit_candidate`) -- BTC continua elegível (λ=0,002 é
+      seu próprio "λ local", nunca transplantado). Decisão final
+      (excluir de vez vs. manter registrado como "avaliado, não
+      promovido") é do Manager, não decidida aqui.
+    resolved_by_commit: null
+    resolution: >
+      DECIDIDO 2026-08-20 (Manager): excluir Jump Model pra símbolo !=
+      BTCUSDT da rodada real do M4. Implementado via `include_jump_model:
+      bool = True` novo em `compare_regime_candidates_for_symbol`/
+      `run_regime_comparison_for_symbol` (`src/analysis/m4_regime_
+      comparison.py`) -- `m4_critical_windows._run_one_cell` seta
+      `include_jump_model = (symbol == "BTCUSDT")`. Suíte completa
+      validada: 1508 passed, zero falhas (mais 1 bug de docstring
+      truncada achado e corrigido no caminho, mesma classe já vista 2x
+      antes nesta sessão -- terceira ocorrência, ver nota de processo).
+
+      **ADENDO -- achado real do Manager ao revisar a implementação,
+      2026-08-20 (mesma sessão):** a exclusão por símbolo, sozinha, cria
+      um problema estrutural NOVO que a resolução original acima não
+      antecipou -- não é só "Jump Model tem menos cobertura", é
+      "Jump Model deixa de ser COMPARÁVEL aos outros candidatos na
+      comparação agregada do AG-114". `CRYPTO_WINTER`/`ETF_HALVING`/
+      `RECENTE` têm até 5 símbolos pra HMM/BOCPD (mediana entre
+      símbolos) mas só 1 (BTC) pra Jump Model -- se a etapa de ranking
+      (gates + métrica primária, ainda não implementada) comparasse os
+      agregados diretamente, Jump Model poderia "vencer" com base numa
+      composição de amostra diferente (só o ativo historicamente mais
+      limpo/líquido), mascarando o fato de que ele NUNCA foi provado
+      funcionar nos outros 4 -- o oposto do que a exclusão pretendia
+      proteger. Corrigido: `_JUMP_MODEL_EXCLUDED_FROM_RANKING_CAVEAT`
+      novo em `m4_critical_windows.py`, propagado pro payload do
+      relatório (`jump_model_excluded_from_ranking_caveat`) -- documenta
+      explicitamente que `jump_model_cjm_v1` é DESQUALIFICADO da
+      disputa pelo candidato vencedor (não só "com menos dado"), e que
+      isso vem de AG-117 (evidência separada e controlada), não do
+      resultado deste relatório. Os números de Jump Model continuam
+      persistidos (diagnóstico/BTC, custo zero adicional), mas
+      qualquer implementação futura da etapa gates->ranking->desempate
+      DEVE ler este caveat e excluir Jump Model da disputa, nunca
+      comparar o agregado dele contra os demais como se fosse
+      equivalente.
+
+      **2º ADENDO -- achado real, pesquisa de literatura dedicada,
+      2026-08-20 (mesma sessão), motivada por contestação do Manager
+      ("literaturas que li diziam que Jump Model era favorito sob dollar
+      bar").** Pesquisa multi-ângulo (Nystrup, Shu/Kolm/Mulvey, Cortese/
+      Kolm/Lindström, Aydınhan et al. -- o próprio paper que `jump_
+      model.py` cita) encontrou: (1) a literatura de Jump
+      Model/Statistical Jump Model NUNCA testou dollar bars/bars de
+      informação em nenhuma direção -- todo paper localizado usa barra
+      DIÁRIA de calendário, incluindo o único paper cripto-específico
+      (Cortese/Kolm/Lindström 2023, valida BTC/ETH/XRP/LTC/BCH). A
+      alegação "favorito sob dollar bar" é uma inferência que costura 2
+      linhas de pesquisa nunca publicadas juntas, não uma citação
+      literal -- mas (2) a literatura favorece Jump Model FORTE pra
+      cripto em geral, e acha **K=3 estados** melhor que K=2 pra dinâmica
+      cripto (mesmo paper, XRP incluso). Comparado contra essa literatura
+      bem-sucedida, nosso desenho diverge em 3 eixos SIMULTÂNEOS, não só
+      "dollar bar vs. diário": (a) espaço de features -- `obs_2d =
+      [log_return_1, realized_vol_short]` (2 features cruas, 1
+      horizonte) vs. 3-9+ features multi-horizonte na literatura (EWM
+      return/downside-deviation/Sortino em 3 escalas) -- `jumpmodels`
+      (lib já vendorizada) expõe `SparseJumpModel` pra exatamente esse
+      cenário de espaço rico, nunca usada (`fit_jump_model` só instancia
+      `JumpModel(cont=True)`, a versão densa); (b) `jump_n_states=2`
+      fixo em toda a investigação, nunca testado em 3 (diferente do HMM,
+      k=2/3/4) -- o único paper cripto-específico achou K=3 melhor; (c)
+      critério de seleção de λ (maior valor com >=2 estados numa janela
+      genérica) não bate com nenhum dos 3 métodos publicados (visual/
+      qualitativo, CV por Sharpe -- Shu/Kolm/Mulvey 2024, arXiv:2402.05272
+      --, ou FTIC -- Cortese/Kolm/Lindström, AStA 2026) -- o próprio
+      resultado de AG-117 (λ=0,005 pra ETH não generalizou pras janelas
+      críticas) já demonstra esse descompasso na prática.
+
+      **Conclusão honesta: o achado de AG-117 é real, mas CONFUNDIDO --
+      testou "Jump Model com espaço de features pobre + K forçado em 2 +
+      critério de λ caseiro", não "Jump Model" no sentido que a
+      literatura testa/recomenda. Não é prova limpa de ausência de
+      estrutura pra SOLUSDT/BNBUSDT/XRPUSDT.** Exclusão da rodada real
+      do M4 (adendo anterior) PERMANECE válida pra ESTA rodada (decisão
+      já tomada, run em andamento) -- mas deixa de ser tratada como
+      veredito definitivo. Reteste recomendado, registrado em `AG-119`,
+      NÃO bloqueia a rodada real em andamento (é item de Estudo
+      subsequente, mesmo escopo/disciplina de "Estudo 2" já usado no
+      projeto pra achados que não bloqueiam o veredito corrente).
+    status: "fechado (rodada atual) -- exclusão desta rodada MANTIDA, mas veredito de ausência-de-estrutura para SOLUSDT/BNBUSDT/XRPUSDT deixa de ser definitivo -- ver 2º adendo e AG-119 (reteste com espaço de features rico + K=3 + critério de λ alinhado à literatura, antes de fechar de vez)"
+
+  - id: AG-118
+    date: "2026-08-20"
+    file: "PLANO_MESTRE_PRINCE2.md §15.12.4 (desenho completo)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md (recomendação #7/#5 das 9 decisões pendentes); PLANO_MESTRE_PRINCE2.md §15.11 (Decisões abertas item 7, AG-094); §15.12.1 (AG-114); src/analysis/m6_common_factor_hypothesis.py::StratumMetrics; src/analysis/m4_critical_windows.py::_asof_join_regime_onto_labels"
+    found_by: "Manager -- pergunta direta sobre como Alpha/Meta leem o regime mantendo Regime=gate, propondo P(stop|regime)/P(target|regime)/E[return|regime]/tail_loss|regime/holding_time|regime + métrica de remoção assimétrica de eventos bons/ruins"
+    gap: >
+      Nenhum framework existente respondia "dado um candidato vencedor
+      do AG-114, o gate é economicamente útil pro triple-barrier real, e
+      como o Risk/Decision Engine deveria consumi-lo" -- AG-114 mede
+      ESTRUTURA do candidato (abstrato), nunca ECONOMIA real da geometria
+      de trade. Verificado por grep direto: ADR-001 trata só 1 fatia
+      disso (p80(holding_time|regime) como heurística pontual pro
+      time_stop de AG-099, recomendação #5) -- P(stop|regime)/
+      P(target|regime)/E[return|regime]/tail_loss|regime e a métrica de
+      remoção assimétrica NÃO aparecem em nenhum lugar do ADR-001. Achado
+      colateral: 3 das 5 métricas pedidas (P(target|regime)=frac_tp,
+      P(stop|regime)=frac_sl, E[return|regime]=edge_bruto_atr) JÁ
+      existem em StratumMetrics (m6_common_factor_hypothesis.py),
+      wired no bloco heterogeneity do M4 desde antes desta sessão --
+      não eram lacuna, só nunca tinham sido reconhecidas como resposta a
+      esta pergunta específica.
+    severity: "médio"
+    layer: "regime -- consumo downstream (Decision Engine/Risk), não candidato-seleção (AG-114)"
+    consequence: >
+      Sem isto, a cadeia Regime→Risk/Decision Engine ficaria sem
+      mecanismo formal de calibração -- AG-099 (encurtamento de
+      time_stop) e AG-094 (Trilha B item 7, "Meta consome regime de
+      qual candidato") ficariam pendentes indefinidamente por falta de
+      um desenho que os resolvesse junto, não separado. Resolve os 2:
+      AG-094 fecha como "Meta não consome nenhum candidato -- pergunta
+      se aplica ao GATE, não ao Meta"; AG-099 ganha a fonte real de
+      p80_holding_bars que a recomendação #5 do ADR-001 só descrevia em
+      prosa.
+    resolved_by_commit: null
+    resolution: >
+      DESENHO TRAVADO 2026-08-20 (Manager, "sim, com contexto rico") --
+      2 dataclasses novos propostos (GateEfficiencySymbolDetail,
+      GateEfficiencyResult), reusando 100% do join causal já existente
+      (_asof_join_regime_onto_labels, zero pipeline novo) e 3/5 métricas
+      já computadas (StratumMetrics). Sequenciamento travado: Fase 1
+      (AG-114) decide candidato vencedor por estrutura; Fase 2 (este
+      desenho) mede se ESSE vencedor é útil como gate econômico e
+      calibra p80_holding_bars pro time_stop. Nenhum limiar numérico
+      fixado (B23/B20) -- nem lift mínimo, nem valor de
+      p80_holding_bars, ambos TBD até medição real sobre o candidato
+      vencedor de verdade. Ver PLANO_MESTRE_PRINCE2.md §15.12.4 pro
+      desenho completo (schemas, tabela de reconciliação AG-094/AG-099,
+      diagrama de sequenciamento).
+    status: "RESOLVIDO 2026-08-21 -- fila completa de diagnosticos (D1-D5/R1/R3, AG-122) processada. Conclusao final, bem medida (IC via n_eff ponderado por uniqueness, nao so 'sem padrao' por inspecao visual): lift nao mostra desvio significativo de 1,0 em 90 celulas (k2/k3/k4 x 3 resolucoes x 5 simbolos x 2 sides), robusto ao candidato. Mecanismo entendido a fundo (D4): exit_price=preco da barreira exatamente (Label Engine, triple_barrier.py) torna QUALQUER metrica de tail-loss derivada de ret_net quase-deterministica em atr_pct -- nem ATR-normalizada (Finding A original) nem bruta (D4) conseguem medir risco condicional a regime alem do que atr_at_t0 ja captura; so frac_tp/frac_sl (=lift) depende do caminho real de preco, e e onde D3 mediu e nao achou sinal. Codigo/testes de gate_efficiency.py permanecem validos e reusaveis -- a correcao foi de INTERPRETACAO do resultado, nao do calculo. Ver AG-122 pro detalhe completo."
+
+    adendo_implementacao: >
+      IMPLEMENTADO 2026-08-20 (mesma sessao) -- novo modulo src/analysis/
+      gate_efficiency.py (GateEfficiencySymbolDetail/GateEfficiencyResult
+      exatamente como travado acima, nenhum campo novo/removido).
+      Verificacao pre-implementacao contra o ADR-001 COMPLETO (Partes I/
+      II, ~1900 linhas, colado pelo Manager em docs/ADR-001_arquitetura_
+      artefatos_e_contratos_2026-08-19_base.md -- o arquivo de 222 linhas
+      lido antes era um resumo condensado feito pela propria sessao, nao
+      o parecer original) -- 3 achados: (1) ADR-001 §3.4 Clausula 2 ja
+      antecipa este papel via um campo tradeable:Boolean no contrato
+      regime() proposto ("papel 2 -- o GATE") -- este modulo produz a
+      EVIDENCIA que justificaria ligar esse campo, nao o campo em si
+      (isso pertence a src/io/artifact.py/schema.py, ADR-001 action item
+      3, ainda nao construido); (2) confirmado que este modulo NAO e
+      bloqueado pelo action item 3 -- e analise/medicao pos-hoc
+      (src/analysis/, fora do importlinter de proposito), nunca artefato
+      de producao consumido como insumo; (3) decode_mode=filter (causal)
+      de hmm_gaussian_k4_v1 verificado direto no docstring de predict_
+      hmm_gaussian (linha 361) -- conformidade confirmada, nao assumida.
+      Achado colateral registrado como AG-121 (nao bloqueante): ADR-001
+      recomenda canonicalizar por volatilidade ascendente, a implementacao
+      real (PRD_V4_1.md §3.2) ordena por retorno ascendente -- divergencia
+      real nao reconciliada, este modulo evita o problema por construcao
+      (usa identify_stress_state_by_volatility, nunca confia em
+      canonical_id cru).
+
+      Custo zero fits novos -- RawLabels de hmm_gaussian_k4_v1 lidos dos
+      parquets ja persistidos pela rodada real do AG-114 (experiments/
+      m4_raw_labels/, persist_raw_labels=True default); _SymbolForwardVol
+      History recomputado fresco (barato, so IO+transformacao vetorizada,
+      mesma funcao ja usada pelo bloco gate_quality). Escopo: por-janela
+      (5 janelas criticas), GateEfficiencyResult agrega por POOLING de
+      contagem SL/TP atraves das janelas dentro de cada resolucao (nao
+      mediana de taxa pequena-amostra -- mesmo problema de poder
+      estatistico que afetou Jump Model, AG-119, evitado aqui por design).
+      2 constantes novas em config/constants.yaml (gate_efficiency_tail_
+      loss_percentile=5.0 ASSUMED classe D; gate_efficiency_holding_time_
+      percentile=80.0 DERIVED classe D, citando ADR-001 recomendacao #5
+      como fonte) -- achado real do banned_patterns.py, literais de
+      percentil nao podiam ficar hardcoded no modulo. 12 testes novos
+      (tests/unit/test_analysis_gate_efficiency.py) -- valor conhecido a
+      mao (lift=4,0 com contagem pooled de 2 janelas), casos degenerados
+      (n=0, atr<=0, good_event_cost_rate=0 -> lift NaN nunca inf, lista
+      vazia), IO real de leitura de parquet (tmp_path), smoke test de
+      identificacao de bucket de stress. ruff/mypy --strict/banned_
+      patterns/check_constants_referenced/check_unguarded_ratios limpos
+      no modulo novo e no arquivo de teste. Nenhum limiar de lift minimo
+      fixado (B23/B20 preservados) -- fica TBD, medicao real ainda nao
+      rodada (proximo passo: uv run python -c "from src.analysis.
+      gate_efficiency import run_and_save_gate_efficiency_report as r;
+      r(classifier_id='hmm_gaussian_k4_v1')").
+
+  - id: AG-119
+    date: "2026-08-20"
+    file: "src/regime/jump_model.py (fit_jump_model, obs_2d de 2 features); config/constants.yaml::m4_jump_model_n_states"
+    related_file: "audit/architecture_gaps_log.yaml::AG-117 (2º adendo); tools/diagnostics/calibrate_jump_model_penalty_per_asset.py"
+    found_by: "Manager, contestando a exclusão do Jump Model com base em literatura lida antes desta sessão ('literaturas que li diziam que Jump Model era favorito sob dollar bar') -- pesquisa dedicada disparada em resposta, achado real"
+    gap: >
+      AG-117 (exclusão do Jump Model pra SOLUSDT/BNBUSDT/XRPUSDT/
+      recalibração de ETHUSDT) testou um Jump Model CONFUNDIDO em 3
+      eixos simultâneos vs. toda aplicação bem-sucedida publicada: (a)
+      espaço de features pobre (2 features cruas, 1 horizonte, vs. 3-9+
+      multi-horizonte na literatura -- `SparseJumpModel` da lib já
+      vendorizada, feita pra espaço rico, nunca usada); (b) `n_states=2`
+      forçado, nunca testado em 3 (o único paper cripto-específico,
+      Cortese/Kolm/Lindström 2023, valida BTC/ETH/XRP/LTC/BCH e acha
+      K=3 melhor pra dinâmica cripto especificamente); (c) critério de
+      seleção de λ (sobrevivência de estado numa janela genérica) que
+      não bate com nenhum dos 3 métodos publicados (visual, CV por
+      Sharpe -- Shu/Kolm/Mulvey 2024 --, ou FTIC -- Cortese/Kolm/
+      Lindström AStA 2026) -- e que o próprio AG-117 já mostrou não
+      generalizar (λ de ETH não ajudou nas janelas críticas reais).
+      Detalhe completo: 2º adendo de `AG-117`.
+    severity: "médio"
+    layer: "regime -- Jump Model, desenho de features/hiperparâmetro, não arquitetura de orquestração"
+    consequence: >
+      O veredito atual "Jump Model não tem estrutura real pra
+      SOLUSDT/BNBUSDT/XRPUSDT" não pode ser tratado como definitivo --
+      é o resultado de uma configuração que diverge de toda literatura
+      de sucesso em 3 eixos ao mesmo tempo, não um teste limpo do
+      método. Fechar a questão sem reteste corre o risco de descartar
+      permanentemente um candidato genuinamente viável por causa de
+      config pobre, não por ausência real de sinal.
+    resolved_by_commit: null
+    resolution: >
+      RETESTE EXECUTADO 2026-08-20 (mesma sessão, Manager: "abra a
+      investigação agora") -- `tools/diagnostics/retest_jump_model_
+      extended_features_k3.py` (novo, isolado do harness de produção),
+      obs_2d expandido pra `[log_return_1, realized_vol_short,
+      realized_vol_long, downside_deviation]` (`realized_vol_long` reusa
+      `feature_c06_vol_ratio_long_window`, já em produção;
+      `downside_deviation` novo em `src/features/support.py`, testado),
+      `jump_n_states` testado em {2, 3} (item (c), critério de λ
+      alternativo, não precisou ser testado). SEM normalização das 4
+      colunas (isola o efeito de features+K).
+
+      **RESULTADO DECISIVO -- reversão completa do achado original:**
+      K=2 (espaço antigo) confirma AG-117 (nenhum λ do grid funciona pra
+      SOL/BNB/XRP). **K=3 (espaço novo): TODO o grid de λ (0,0001 a
+      0,02, 7 pontos) produz >=2 estados genuínos OOS pros 3 ativos --
+      SOLUSDT, BNBUSDT, XRPUSDT** (`maior_penalty_com_2_mais_estados_
+      oos=0,02` nos 3, saturando no TOPO do próprio grid -- teto real
+      pode estar acima de 0,02, não testado). Achado real no caminho
+      (não confundir com resultado): XRPUSDT retornou `NaN` em 100% do
+      grid na 1ª rodada -- bug real em `downside_deviation`
+      (`mean_sq` matematicamente não-negativa saindo `-3,16e-20` por
+      cancelamento de ponto flutuante em janelas quase-só-positivas,
+      `np.sqrt` de negativo vira `NaN` silencioso) -- corrigido na causa
+      (`np.maximum(mean_sq, 0.0)` antes do `sqrt`, `src/features/
+      support.py`, teste de invariante novo), reteste refeito só pra
+      XRPUSDT após a correção -- mesmo resultado de SOL/BNB.
+
+      **Conclusão: os 4 ativos não-BTC mostram estrutura de regime
+      genuína no Jump Model com configuração alinhada à literatura (K=3
+      + espaço de features rico) -- o achado original de AG-117
+      ("ausência de estrutura pra 3/4 ativos") era real PRA AQUELA
+      CONFIGURAÇÃO, não uma propriedade do método/dos ativos.** A
+      exclusão do Jump Model da rodada real do M4 (`experiments/
+      m4_critical_windows_report.json`, concluída 2026-08-20,
+      10.891,9s) permanece válida PRA ESSA RODADA ESPECÍFICA (decisão
+      já tomada antes deste reteste, run já concluído sem Jump Model
+      pros 4 ativos não-BTC) -- mas não pode mais ser tratada como
+      veredito definitivo sobre o candidato. Decisão pendente do
+      Manager: rodar uma "Condição C" (K=3 + espaço de features novo)
+      pros 4 ativos não-BTC no harness real do M4 (mesma infraestrutura
+      de `run_jump_model_transferability_comparison`/AG-087, adaptada
+      pro novo obs_2d), pra colocar Jump Model de volta na disputa do
+      `AG-114` com a configuração correta -- ainda não decidido/
+      agendado, é busca de hiperparâmetro classe B (novo `jump_n_
+      states`/espaço de observação), exige reconciliação de
+      `N_lifetime` se executado.
+
+      ADENDO 2026-08-20 (mesma sessao) -- ETHUSDT retestado com a MESMA
+      config nova, gap de metodologia fechado. O reteste original
+      (acima) deliberadamente excluiu ETHUSDT porque ele ja tinha um
+      lambda "genuino" conhecido no espaco ANTIGO (2 features, K=2) --
+      uma inconsistencia real: os outros 3 ativos foram medidos na
+      config nova, ETH continuava sendo julgado pela config velha.
+      Reteste isolado (calibrate_for_symbol("ETHUSDT"), mesmo script,
+      mesmo grid) rodado pra K=2 E K=3 no espaco de 4 features.
+      RESULTADO: ETHUSDT bate EXATAMENTE o mesmo padrao de SOL/BNB/XRP
+      -- os 7 pontos do grid (0,0001 a 0,02) dao is_genuine_oos=True
+      tanto pra K=2 quanto pra K=3, saturando no TOPO do grid nos 2
+      casos (maior_penalty_com_2(ou_3)_mais_estados_oos=0,02). Os 4
+      ativos nao-BTC agora tem evidencia UNIFORME e CONSISTENTE: espaco
+      de 4 features + qualquer K em {2,3} testado revela estrutura
+      genuina de regime, grid inteiro saturado (teto real acima de 0,02
+      permanece nao medido pros 4 -- achado real, nao escondido).
+
+      Implementacao de "Condicao C" no harness REAL do M4 concluida
+      nesta sessao (nao so no script de diagnostico isolado) --
+      autorizacao do Manager: "autorizado pode rodar". Novo codigo,
+      espelhando 1:1 o padrao ja auditado de AG-087/Condicao B:
+      src/analysis/m4_regime_comparison.py ganhou _extended_jump_model_obs
+      (nucleo puro, monta o obs 4D com corte de warmup proprio) e
+      compare_jump_model_extended_features_for_symbol/run_jump_model_
+      extended_features_for_symbol (@overload Literal[True]/
+      Literal[False], mesmo padrao de compare_jump_model_only_for_
+      symbol/run_jump_model_only_for_symbol); src/analysis/m4_critical_
+      windows.py ganhou _run_jump_model_extended_features_one_cell/
+      run_jump_model_extended_features_comparison (espelha _run_jump_
+      model_only_one_cell/run_jump_model_transferability_comparison,
+      mesmo isolamento de falha AG-019, mesmo reuso de aggregate_
+      critical_windows_results); tools/diagnostics/compare_jump_model_
+      extended_features_vs_condicao_a.py (novo, espelha compare_jump_
+      model_lambda_transferability.py) gera "Condicao C", persiste,
+      diff contra a Condicao A ja existente (experiments/m4_critical_
+      windows_report.json). Testes novos em test_analysis_m4_regime_
+      comparison.py e test_analysis_m4_critical_windows.py, mesma
+      disciplina dos testes irmaos de Condicao B. Checks mecanicos
+      limpos nos 5 arquivos tocados (ruff check, mypy --strict,
+      banned_patterns.py --strict, check_constants_referenced.py,
+      check_unguarded_ratios.py) -- 0 violacao automatizada em todos.
+
+      jump_penalty_by_symbol decidido pra rodada real: ETHUSDT=0,02,
+      SOLUSDT=0,02, BNBUSDT=0,02, XRPUSDT=0,02, jump_n_states=3 --
+      maior valor testado que ainda e genuino nos 4 (mais parcimonioso/
+      regularizado dentro do que foi MEDIDO), com a ressalva explicita
+      ja citada acima (grid-top-saturated, teto real desconhecido)
+      propagada pro script/log da rodada real, nunca escondida atras de
+      um numero que pareca "calibrado com folga". E busca de
+      hiperparametro classe B -- reconciliacao de N_lifetime pendente
+      de decisao do Manager quando a rodada real terminar.
+
+      ADENDO FINAL 2026-08-20 (mesmo dia) -- rodada real da Condicao C
+      concluida (experiments/m4_jump_model_extended_features_condicao_c_
+      report.json, 3 resolucoes, 12 celulas, 0 falhas). RESULTADO
+      HONESTO, mais nuancado que o reteste isolado sugeria -- 2 achados
+      distintos, nao 1:
+
+      (1) VALIDADE ESTRUTURAL reconfirmada no harness real pra
+      SOLUSDT/XRPUSDT (saturation_rate=0,0 nas 3 resolucoes -- nunca
+      colapsa a 1 estado) e majoritariamente pra BNBUSDT (0,0 em R1/R2,
+      0,333 em R3). ETHUSDT fica consistentemente pior (saturation_rate=
+      0,333 nas 3 resolucoes) -- diferente do reteste isolado, onde ETH
+      tinha passado 100% do grid. Isso bate com o achado (1) do reteste
+      isolado, na maior parte.
+
+      (2) UTILIDADE COMO GATE (metrica primaria do AG-114, heterogeneidade
+      de volatilidade futura) CONTINUA SEM DEMONSTRACAO -- e a razao e
+      medida, nao suposta: n_episodes por celula (symbol, janela,
+      resolucao) fica entre 1 e 8 pra jump_model_cjm_v1 nesta rodada
+      (vs. 37-622 pro baseline nas MESMAS celulas) -- literalmente o
+      MESMO problema de poder estatistico nulo ja documentado na 4a
+      execucao original do M4 ("mediana 4 episodios/celula"), agora por
+      um motivo DIFERENTE e mais claro: jump_penalty=0,02 (o maior valor
+      testado, escolhido por ser o mais regularizado dentro do grid
+      medido) produz poucos episodios MUITO longos (persistence_median_
+      duration_bars entre 98 e 2.230 barras) -- o candidato passa no
+      teste ESTRUTURAL (>=2 estados genuinos) exatamente por regularizar
+      bastante, o que ao mesmo tempo mata o poder estatistico do teste
+      de heterogeneidade (poucas transicoes = poucos episodios
+      independentes = teste de permutacao sem base amostral). i_squared_
+      pct_median = 0,0% pra SOLUSDT/BNBUSDT/XRPUSDT nas 3 resolucoes
+      (p_value_permutation tipicamente 0,10-1,0, nunca significativo);
+      ETHUSDT teve i2=13,3%/10,3% em R2/R3 (ainda p>0,05), unico com
+      leitura nao-trivialmente-zero.
+
+      CONCLUSAO HONESTA: "Condicao C" NAO destrona hmm_gaussian_k4_v1
+      como vencedor do AG-114 (PLANO_MESTRE_PRINCE2.md secao 15.12.5) --
+      Jump Model continua nao-competitivo na metrica primaria, mas agora
+      por um motivo bem medido (trade-off regularizacao-vs-poder-
+      estatistico no jump_penalty escolhido), nao por saturacao/
+      degenerescencia como antes. Pergunta em aberto, NAO respondida
+      aqui (evitar B20 -- nao escolher lambda novo depois de ver este
+      resultado): um lambda MENOR (mais transicoes, mais episodios,
+      talvez menos "genuino" na leitura estrutural) teria mais poder
+      estatistico pro teste de heterogeneidade? Fica registrada como
+      pergunta pro Manager decidir se vale rodar mais uma rodada, nao
+      decidida/executada nesta sessao.
+    status: "FECHADO -- reteste isolado decisivo (K=3 reverte total pros 3 ativos), rodada real da Condicao C confirma validade ESTRUTURAL pra SOL/XRP/majoritariamente-BNB mas NAO demonstra utilidade como gate (mesmo problema de poder estatistico da 4a execucao original, agora por regularizacao alta em vez de saturacao) -- hmm_gaussian_k4_v1 permanece vencedor do AG-114, Jump Model nao promovido nesta rodada. Pergunta aberta (lambda menor teria mais poder?) registrada, nao respondida."
+
+  - id: AG-120
+    date: "2026-08-20"
+    file: "experiments/m4_critical_windows_report.json (célula BNBUSDT/RECENTE/R2)"
+    related_file: "src/analysis/m4_regime_comparison.py::compare_regime_candidates_for_symbol (_assert_bars_baseline_aligned); audit/architecture_gaps_log.yaml::AG-019 (isolamento de falha por célula, funcionou como desenhado)"
+    found_by: "Claude, durante auditoria dos resultados reais do M4 (aplicação da regra AG-114) -- inspeção direta de failed_cells no JSON persistido, não presumido"
+    gap: >
+      Célula (BNBUSDT, janela RECENTE, resolução R2) falhou com
+      ValueError("bars_df/baseline_df não estão alinhados por
+      timestamp -- t0 (baseline_df) diverge de open_time (bars_df) em
+      pelo menos uma posição") -- 1 de ~90 células da rodada real
+      (5 janelas x ~5 símbolos x 3 resoluções, algumas janelas BTC-only).
+      Isolada com sucesso por AG-019 (não derrubou as outras 89 células),
+      mas é um gap de qualidade de dado real -- bars_df (query_dollar_bars)
+      e baseline_df (build_regimes) deveriam produzir a MESMA grade de
+      timestamp pro mesmo (symbol, start, end, resolution_id), e nesta
+      combinação específica não produziram.
+    severity: "médio"
+    layer: "data/regime -- alinhamento entre pipeline de dollar-bar e pipeline de regime, causa raiz não investigada"
+    consequence: >
+      Não muda o veredito do AG-114 (n_windows_ok de R2 conta 1 célula a
+      menos pros candidatos afetados por essa janela/símbolo, agregação
+      por mediana absorve isso sem viés visível) -- mas é um sintoma real
+      de que bars_df/baseline_df podem divergir sob combinações
+      específicas de (symbol, resolution_id), o que merece investigação
+      antes de qualquer uso downstream que assuma alinhamento garantido
+      por construção (ex. execução real).
+    resolved_by_commit: null
+    resolution: >
+      Não investigado nesta sessão -- fora do escopo da auditoria de
+      resultado do M4 (que é sobre os NÚMEROS agregados, não sobre esta
+      falha isolada). Aberto pra investigação futura: reproduzir
+      isoladamente (query_dollar_bars + build_regimes pra BNBUSDT/R2 no
+      intervalo da janela RECENTE), achar se é (a) gap de backfill
+      pontual pra BNBUSDT, (b) bug de fronteira em build_regimes sob R2,
+      ou (c) outra causa.
+    status: "aberto -- achado real, isolado por AG-019, não bloqueia o veredito do AG-114, causa raiz pendente de investigação"
+
+  - id: AG-121
+    date: "2026-08-20"
+    file: "src/regime/canonicalization.py::canonicalize_states; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §3.4 Cláusula 2 (Parte I do parecer completo)"
+    related_file: "PRD_V4_1.md §3.2 M4; src/validation/regime_utility.py::identify_stress_state_by_volatility (AG-114, workaround já em produção)"
+    found_by: "Claude, verificando o ADR-001 completo (Partes I/II, ~1900 linhas, colado pelo Manager nesta sessão como docs/ADR-001_..._base.md) antes de implementar AG-118 -- achado real de leitura, não hipotético"
+    gap: >
+      ADR-001 (parecer de auditoria externa, §3.4 Cláusula 2) recomenda
+      canonicalizar estado de regime ordenando por VOLATILIDADE realizada
+      média dos membros do estado no fold de treino, ASCENDENTE --
+      motivado por label switching em HMM/mistura (permutation invariance
+      dos rótulos de estado). A implementação REAL já em produção
+      (`src/regime/canonicalization.py::canonicalize_states`, usada por
+      HMM k=2/3/4, Jump Model e BOCPD) ordena por RETORNO médio
+      ascendente, desempate por variância ascendente -- critério LITERAL
+      de `PRD_V4_1.md` §3.2 M4 ("estados ordenados de forma
+      determinística (média de retorno, desempate por variância)").
+
+      CORREÇÃO 2026-08-20 (mesmo dia, Manager): `PRD_V4_1.md` é
+      documento OBSOLETO deste projeto (só `PLANO_MESTRE_PRINCE2.md` +
+      ADR-001 completo são canônicos) -- a formulação original desta
+      entrada tratava o critério do PRD como "decisão deliberada e
+      documentada do projeto, não um bug", em pé de igualdade com a
+      recomendação do ADR-001. Isso está ERRADO na hierarquia atual: não
+      é uma divergência entre 2 fontes igualmente válidas, é a
+      implementação real ainda seguindo um critério de um documento
+      DESATUALIZADO, nunca reconciliado contra o único parecer de
+      arquitetura canônico (ADR-001) que já existia quando isso foi
+      escrito. Tratamento corrigido abaixo.
+    severity: "médio"
+    layer: "regime -- convenção de canonicalização, consumida por todo candidato não-baseline"
+    consequence: >
+      Qualquer consumidor futuro que confie em `canonical_id` como PROXY
+      de volatilidade crescente (ex.: "estado K-1 é sempre o mais
+      volátil") está ERRADO -- o `canonical_id` real ordena por retorno,
+      não por volatilidade; os dois só coincidem por acaso. `AG-114`/
+      `AG-118` (Gate Efficiency) já evitam esse erro corretamente,
+      usando `identify_stress_state_by_volatility` (deriva o estado de
+      stress via `realized_vol_short` medido diretamente, nunca confia em
+      `canonical_id` cru) -- workaround já em produção, não um fix
+      pendente para ESSES 2 consumidores. Risco real é pra consumidor
+      FUTURO que reintroduza a suposição errada (ex.: implementação do
+      contrato `regime()`/`tradeable` de ADR-001 §3.4, quando
+      `src/io/artifact.py` for construído) sem repetir esse achado.
+    resolved_by_commit: null
+    resolution: >
+      Não resolvido nesta sessão -- fora de escopo da implementação de
+      `AG-118` (que já sidesteps corretamente via
+      `identify_stress_state_by_volatility`). Registrado pra decisão
+      futura do Manager, agora com a hierarquia documental correta: (a)
+      migrar `canonicalize_states` pra ordenar por volatilidade
+      (recomendação do único documento canônico de arquitetura que trata
+      disso, ADR-001) -- risco real a considerar antes de migrar: quebra
+      paridade com todo resultado já medido de M4/AG-114/AG-119, que
+      assume a ordem atual (por retorno) implicitamente em qualquer
+      código que já leia `canonical_id` bruto fora de `identify_stress_
+      state_by_volatility` -- não auditado exaustivamente nesta sessão,
+      levantamento de impacto é pré-requisito antes de migrar, não um
+      motivo pra não migrar; ou (b) manter retorno como critério por uma
+      razão TÉCNICA nova e explícita (não "porque o PRD já dizia isso" --
+      essa justificativa não vale mais). Nenhuma das 2 decidida aqui --
+      fica TBD, não decidida por omissão. Migração natural de se fazer
+      junto de `src/io/artifact.py`/`regime()` formal (ADR-001 action
+      item 3, ainda não construído) -- mesma janela de mudança de
+      `schema_version`, não precisa de 2 quebras de compatibilidade
+      separadas.
+    status: "aberto -- achado real de verificação do ADR-001 completo, não bloqueia AG-118 (workaround já em produção), decisão de reconciliação pendente do Manager -- enquadramento corrigido 2026-08-20 (PRD é obsoleto, não conta mais como justificativa igual-a-ADR-001)"
+
+  - id: AG-122
+    date: "2026-08-20"
+    file: "PLANO_MESTRE_PRINCE2.md §15.12.5 (AG-114, veredito de vencedor); audit/architecture_gaps_log.yaml::AG-118"
+    related_file: "docs/brief_auditoria_externa_2026-08-20_gate_efficiency_ag118.md; tools/diagnostics/crosscheck_stress_bucket_vs_atr_decile.py (novo, diagnóstico D1)"
+    found_by: "Manager, no papel de auditor externo -- parecer técnico completo revisando o brief acima, 4 achados que não estavam nas 12 perguntas originais. Diagnóstico D1 (o mais barato/decisivo dos 5 propostos) executado por Claude na mesma sessão, confirma o achado A do parecer com dado real."
+    gap: >
+      DOIS achados independentes e sérios sobre o trabalho de AG-114/
+      AG-118, ambos verificados contra código/dado real, não apenas
+      aceitos por autoridade do parecer:
+
+      (A) TAUTOLOGIA DE INSTRUMENTAÇÃO -- confirmado no código
+      (`src/labels/triple_barrier.py:1130-1131`): `tp_price = fill_px *
+      (1 + side * tp_atr_mult * atr_pct_i)` / `sl_price` análogo, e
+      `atr_pct_i` é EXATAMENTE a mesma quantidade persistida como
+      `atr_at_t0` (linha 1256/909). Ou seja, a barreira do triple-barrier
+      já é escalada pelo MESMO ATR usado como denominador de
+      `p05_return_atr` (AG-118) -- `ret_net/atr_at_t0` fica
+      mecanicamente próximo de `±tp_atr_mult`/`±sl_atr_mult` quando uma
+      barreira é tocada, INDEPENDENTE do regime. Medir "regime prevê
+      tail loss em unidades de ATR" é quase tautológico quando a
+      barreira já é definida nessas mesmas unidades.
+
+      (B) CONFIRMADO POR DADO REAL, diagnóstico D1 (rodado nesta sessão,
+      `tools/diagnostics/crosscheck_stress_bucket_vs_atr_decile.py`,
+      reusa 100% da mecânica de `gate_efficiency.py`, zero fit novo):
+      `is_stress_bucket` (HMM k=4) é FORTEMENTE colinear com decil de
+      `atr_at_t0` no momento da entrada. `frac_stress` por decil de ATR:
+      decil 1 (menor ATR) = 0,74%; decil 10 (maior ATR) = 23,04% --
+      relação MONOTÔNICA, ~31x de aumento do decil 1 pro 10.
+      **60,5% de todos os labels com `is_stress_bucket=True` caem nos 2
+      decis superiores de ATR** (vs. ~20% esperado sob independência,
+      pooled 3 resoluções, n=972.798 labels). Isso não é ambíguo nem
+      sutil -- é um efeito grande.
+    severity: "alto"
+    layer: "regime/labels -- interação entre a definição de stress-bucket (via realized_vol_short) e a geometria de barreira do triple-barrier (via atr_at_t0)"
+    consequence: >
+      A conclusão do AG-118 registrada anteriormente ("estrutura genuína,
+      sem utilidade econômica demonstrada" -- `lift`~1, tail loss/holding
+      time sem diferença clara) estava tecnicamente correta como
+      DESCRIÇÃO dos números, mas a INTERPRETAÇÃO estava errada: os 3
+      instrumentos usados (tail loss em unidades de ATR, pooling por
+      contagem entre janelas sem LUNA/FTX pra 4 dos 5 símbolos, k=4
+      testado sozinho com a menor cobertura entre os aprovados) não
+      conseguiriam mostrar o efeito MESMO SE ele existisse -- ver
+      resolução abaixo pra reformulação. A conclusão correta não é
+      "regime não funciona como gate" -- é **"regime, medido em unidades
+      já normalizadas por ATR, não demonstrou adicionar informação além
+      do que o ATR em t0 já captura, nesta configuração de instrumentação"
+      -- uma afirmação mais forte, mais específica, e diretamente
+      testável (não testada ainda: regime prevê algo em unidades BRUTAS,
+      não normalizadas por ATR?).**
+    resolved_by_commit: null
+    resolution: >
+      Diagnóstico D1 (o mais barato dos 5 propostos pelo parecer,
+      "minutos, dois desfechos úteis") executado e CONFIRMA o achado A
+      com folga -- não ficou em zona ambígua. `AG-114` (veredito de
+      vencedor `hmm_gaussian_k4_v1`) e `AG-118` (conclusão de `lift`
+      fraco) precisam ser REABERTOS -- não porque o processo foi
+      desonesto (não foi -- reportar `lift`~1 sem suavizar foi o
+      comportamento certo), mas porque a MEDIÇÃO não tinha poder pra
+      sustentar a conclusão que foi tirada dela.
+
+      Achado adicional do mesmo parecer, também verificado nesta sessão
+      (não apenas aceito): a seleção de `hmm_gaussian_k4_v1` no `AG-114`
+      é MENOS robusta do que registrado -- em R1 e R2, HMM k=2 tem I²
+      MAIOR que k=4 na métrica primária (R1: 97,82 vs 97,44; R2: 95,31
+      vs 94,98) e só foi desqualificado pelo Gate 1 (occupancy). Pior
+      que o parecer registrou: usando o critério que o próprio Gate 1
+      declara (mediana por resolução, não máximo por janela), a
+      occupancy de k=2 fica 34,1%/34,9%/39,5% -- TODAS abaixo do teto de
+      40% já testado nesta sessão como parte do sweep de robustez. Ou
+      seja, sob o próprio critério mediano do Gate 1, no próprio teto já
+      testado (não precisa extrapolar pra 45% como o parecer sugeriu),
+      **k=2 passa o Gate 1 e vence a métrica primária em 2 das 3
+      resoluções.** O brief original citou occupancy POR JANELA (43-44%
+      em algumas janelas de R1) como razão de desqualificar k=2 mesmo a
+      40% -- misturando 2 critérios diferentes (mediana de resolução vs.
+      máximo de janela) sem declarar qual decide. Também confirmado: em
+      R1, k=3 (97,40) e k=4 (97,44) NÃO estão literalmente empatados
+      (correção a um detalhe do parecer, que leu a tabela arredondada do
+      brief) -- mas a diferença (0,04 ponto) é claramente menor que
+      qualquer ruído de amostra plausível, então o ponto mais profundo do
+      parecer (decisão tomada sem intervalo de confiança, "empate" nunca
+      definido operacionalmente na regra travada) permanece válido
+      independente dessa correção pontual.
+
+      NÃO decidido nesta entrada (fica pro Manager, fila de trabalho
+      completa no parecer original, seção 4): (a) rodar `AG-118` em
+      k=2/k=3 (custo ~zero, `RawLabels` já persistidos); (b) redefinir
+      "empate" do Gate 3 com critério numérico explícito; (c) tail
+      loss/holding time fora de unidade de ATR (retorno bruto,
+      comparação pareada por célula); (d) intervalo de confiança em
+      `lift`/I² (bootstrap em bloco, maquinaria já existe); (e) `lift`
+      reaberto por janela (LUNA/FTX separadas das outras 3, já que são
+      as únicas com choque abrupto e são BTC-only -- hipótese "gate
+      funciona só em crise" é hoje NÃO-TESTÁVEL pra 4 dos 5 símbolos).
+
+      ADENDO FINAL 2026-08-21 -- fila completa processada (R3, D1-D5,
+      R1), auto-verificação incluída (achado real na própria verificação,
+      ver item D4 abaixo). Novo script `tools/diagnostics/gate_
+      efficiency_full_diagnostics.py`, reusa 100% da mecânica existente,
+      zero fit novo.
+
+      R3 -- CONFIRMADO, não é fit in-sample. Verificado em 2 pontos do
+      código: `m4_regime_comparison._run_fold_refit_candidate` (linha
+      ~805) decodifica só `obs_2d[test_start_idx:test_end_idx]`, e
+      `hmm_gaussian.fit_hmm_gaussian` (linha ~295) treina só sobre
+      `obs[:train_end_idx]`. A hipótese do parecer (HMM levar vantagem
+      em R3 por contaminação in-sample) está REFUTADA -- é walk-forward
+      ancorado genuíno, mesma disciplina B05 de todo o M4.
+
+      D2 -- `lift` por janela, LUNA/FTX separadas (as únicas com choque
+      abrupto, BTC-only): NENHUMA das 12 células LUNA/FTX (2 janelas x 2
+      sides x 3 resoluções) exclui 1,0 no IC, em NENHUM dos 3
+      candidatos (k2/k3/k4). A hipótese "gate funciona especialmente em
+      crise" (§7 pergunta 8), onde de fato testável (só BTC), não achou
+      suporte.
+
+      D3 -- IC de `lift` via ponderação por `uniqueness` (não bootstrap
+      em bloco -- unicidade já é infraestrutura do projeto, López de
+      Prado, reusada sem fórmula nova) + método de Katz (delta method em
+      log-razão de 2 proporções). De 90 células (30 por candidato x 3
+      candidatos), só 2 excluem 1,0 no IC 95% -- k3/R2/BNBUSDT/short
+      (lift=1,325, IC=[1,032;1,701]) e k4/R3/BTCUSDT/long (lift=0,806,
+      IC=[0,666;0,976]), ambas marginais. **Com 90 testes a 95%, ~4-5
+      falsos positivos são esperados só por acaso -- achar 2, ambos
+      limítrofes, é exatamente o padrão de RUÍDO, não de sinal
+      escondido.** Isso refuta especificamente a suspeita do parecer
+      (item D) de que `n` nominal (~15-25 mil) mostraria desvios grandes
+      de 1,0 -- usando `n_eff` real (ponderado por unicidade, ~2.000-
+      3.500 por célula, ~7-10x menor que o nominal, magnitude plausível
+      dada a sobreposição de barreira tripla em holding de ~17-20
+      barras), a leitura "sem padrão consistente" do brief original
+      estava CORRETA, só não vinha acompanhada do IC que a sustentasse.
+
+      D4 -- ACHADO MAIS IMPORTANTE desta rodada, e uma AUTOCORREÇÃO em
+      cima da própria leitura inicial. Tail loss em `ret_net` BRUTO (não
+      dividido por ATR), pareado por (símbolo, janela, side, resolução):
+      a princípio pareceu uma reversão dramática -- o bucket de stress
+      tem p05/p01/p005 sistematicamente PIOR (mais negativo) que o
+      bucket não-stress em ~96-100% das ~100 células pareadas, nos 3
+      candidatos (mediana da diferença ≈ -0,006, ou seja ~0,6pp pior).
+      **Verificação adicional (não pedida pelo parecer, achada nesta
+      auto-checagem) mostrou que essa "reversão" NÃO é evidência nova
+      -- é uma segunda manifestação do MESMO mecanismo do achado A/D1,
+      não independente dele.** Confirmado em `src/labels/triple_
+      barrier.py`: `exit_price` em TP/SL é o PRÓPRIO PREÇO DA BARREIRA
+      (linha ~1151, "convenção padrão de triple barrier"), e `ret_gross
+      = side*(exit_price/fill_px - 1)` (linha 1155) -- substituindo
+      `tp_price`/`sl_price` (linhas 1130-1131), isso dá `ret_gross ≈
+      ±mult*atr_pct` EXATAMENTE, sempre, pra qualquer trade que bate
+      barreira (maioria dos casos) -- não há overshoot/gap modelado no
+      label (o Label Engine documenta essa convenção explicitamente,
+      não é bug). Ou seja: `ret_net` de um trade TP/SL é quase-
+      deterministicamente uma função de `atr_pct` (mais custos fixos +
+      funding, variação pequena) -- NÃO importa se você normaliza por
+      ATR (Finding A original, tautológico por cancelar exatamente) ou
+      mede bruto (D4, tautológico por escalar exatamente com `atr_pct`,
+      que já é maior no bucket de stress via D1). **As DUAS versões da
+      métrica de tail loss são estruturalmente incapazes de medir risco
+      condicional a regime além do que ATR já captura -- não por escolha
+      de unidade, mas porque o Label Engine fixa `exit_price` no nível
+      da barreira por construção.** O ÚNICO canal que não é
+      mecanicamente determinado por `atr_pct` é QUAL barreira é tocada
+      primeiro (`frac_tp`/`frac_sl`, isto é, `lift`) -- que depende do
+      caminho real de preço, não do nível pré-fixado da barreira. É
+      exatamente o que D3 mediu, e D3 não achou sinal.
+
+      D5 -- `lift` por side já é dimensão nativa das tabelas de D2/D3
+      (side é chave de agrupamento desde a implementação original) --
+      inspecionado, sem padrão consistente (sinal alterna
+      inconsistentemente entre símbolo/janela/resolução, sempre dentro
+      do IC largo de D3).
+
+      R1 -- rodado pra k2/k3/k4 (não só k4): o padrão de D2-D5 (sem
+      `lift` significativo, achado D4 sobre determinismo de `ret_net`)
+      é UNIFORME nos 3 candidatos, não um artefato específico de
+      `hmm_gaussian_k4_v1`. Achado positivo de robustez: a conclusão de
+      AG-118 não depende de qual K vence o AG-114.
+
+      Fixes de baixo custo aplicados: hash de proveniência (blake2b dos
+      parquets de `RawLabels` consumidos + `generated_at`/`code_version`
+      da rodada AG-114 de origem) em `gate_efficiency_report.json`
+      (`gate_efficiency._raw_labels_provenance`, testado); docstring de
+      `src/regime/canonicalization.py` reforçada com aviso explícito
+      (mitigação AG-121, rename completo de `canonical_id` avaliado e
+      DESCARTADO -- 25 arquivos referenciam o nome, custo real de
+      refactor, não "minutos" como estimado no parecer); constante nova
+      `jump_model_min_episodes_per_cell=30` (ASSUMED, classe B, sweep
+      pendente) pré-registrada em `config/constants.yaml` ANTES de
+      qualquer novo teste de Jump Model, resolve item 5/6 do parecer.
+      Nota de processo registrada em `CLAUDE.md` (Diretrizes de
+      comportamento) -- toda regra travada a priori precisa de definição
+      operacional de cada termo, não só métrica+limiar.
+
+      CONCLUSÃO FINAL:
+      - `AG-118` (utilidade econômica do gate): agora BEM MEDIDA, não
+        subpotente -- `lift` não mostra desvio significativo de 1,0 em
+        90 células (3 candidatos x 3 resoluções x 5 símbolos x 2 sides),
+        robusto a K, e o mecanismo é entendido (barreira ATR-escalada +
+        `exit_price` determinístico tornam `frac_tp`/`frac_sl` o único
+        canal onde sinal de regime PODERIA aparecer, e não aparece).
+        Reformulação final: "regime, medido pelas métricas disponíveis
+        no desenho atual do triple-barrier, não demonstra adicionar
+        informação além do que `atr_at_t0` já captura -- não por
+        limitação de poder estatístico, e não por escolha de unidade de
+        medida, mas por uma propriedade estrutural de como o Label
+        Engine define `exit_price`."
+      - `AG-114` (candidato vencedor): CONTINUA ABERTO -- a fragilidade
+        da seleção k=4-vs-k=2 (ver adendo anterior) não foi resolvida
+        por nenhum diagnóstico desta rodada (nenhum deles reavalia o
+        Gate 1 em si). Decisão pendente do Manager: redefinir Gate 1
+        (mediana OU máximo-por-janela, nunca os dois sem critério) e
+        Gate 3 ("empate" com número) ANTES de redeclarar um vencedor --
+        não decidido aqui de propósito, seria a mesma classe de erro
+        que motivou reabrir isto.
+    status: "AG-118 resolvido -- lift bem medido (IC via n_eff/uniqueness), sem sinal em 90 células, robusto a K (k2/k3/k4), mecanismo explicado (D4, exit_price=preço da barreira torna qualquer metrica de tail-loss quase-determinística em atr_pct). AG-114 CONTINUA aberto -- redefinição operacional do Gate 1/Gate 3 pendente do Manager antes de redeclarar vencedor."

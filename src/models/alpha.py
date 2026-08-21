@@ -54,13 +54,18 @@ logger = structlog.get_logger(__name__)
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 
-# R1 é a referência (drop-first) do one-hot de regime — categoria mais
-# frequente (~46% das barras, Sprint 5), convenção padrão de codificação
-# categórica. §2.13: "one-hot de 5 níveis... consome mais 4 graus de
-# liberdade" — R1 fora, R2/R3/R4/R5 como as 4 colunas indicadoras.
-REGIME_ONEHOT_LEVELS: tuple[str, ...] = ("R2", "R3", "R4", "R5")
-REGIME_DUMMY_COLUMNS: tuple[str, ...] = tuple(f"regime_{r}" for r in REGIME_ONEHOT_LEVELS)
-DESIGN_COLUMNS: tuple[str, ...] = (*T1_FEATURE_IDS, *REGIME_DUMMY_COLUMNS)
+# Regime SAIU do vetor de treino do Alpha (2026-08-21) -- ADR-001 §2.7
+# decide "regime = gate de risco, não feature preditiva" (ratificado
+# pelo Manager); o one-hot de 4 colunas que existia aqui (R2-R5, R1
+# como referência drop-first) implementava a leitura ANTIGA (regime
+# como feature), nunca corrigida no código até este wiring de HMM k=4
+# como candidato canônico (PLANO_MESTRE_PRINCE2.md §15.13). O papel de
+# gate agora é consumido por src.risk.limits::control_01_regime_
+# tradeavel (bool pré-computado pelo builder de regime, candidato-
+# agnóstico), não por este módulo. DESIGN_COLUMNS mantém o NOME (usado
+# por src.analysis.faixa2_caminho_b e pelos testes) mas o conteúdo
+# passa a ser só as 10 features T1.
+DESIGN_COLUMNS: tuple[str, ...] = T1_FEATURE_IDS
 
 VARIANT_CAMADA1 = "camada1"
 VARIANT_CAMADA0 = "camada0"
@@ -92,16 +97,12 @@ class XGBHyperparams:
 
 
 def build_design_matrix(df: pl.DataFrame) -> FloatArray:
-    """`DESIGN_COLUMNS` = 10 features T1 + 4 dummies de regime (§2.13, 14
-    colunas). Numpy puro (sem pandas, B26) — `monotone_constraints` do
-    XGBoost aceita uma tupla posicional na mesma ordem quando o `fit` recebe
-    um array, não um DataFrame com nomes."""
-    t1_arr = df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
-    regime_col = df["regime"]
-    dummies = np.column_stack(
-        [(regime_col == level).to_numpy().astype(np.float64) for level in REGIME_ONEHOT_LEVELS]
-    )
-    return np.hstack([t1_arr, dummies])
+    """`DESIGN_COLUMNS` = 10 features T1, sem regime (regime saiu do
+    vetor de treino, ADR-001 §2.7 -- ver nota em `DESIGN_COLUMNS`).
+    Numpy puro (sem pandas, B26) — `monotone_constraints` do XGBoost
+    aceita uma tupla posicional na mesma ordem quando o `fit` recebe um
+    array, não um DataFrame com nomes."""
+    return df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
 
 
 def _t1_correlation_matrix(df: pl.DataFrame) -> FloatArray:
@@ -222,7 +223,7 @@ def fit_side_model(
         t1_constraints = tuple(0 for _ in T1_FEATURE_IDS)
     else:
         raise ValueError(f"fit_side_model: variant desconhecida {variant!r}")
-    monotone_constraints = t1_constraints + tuple(0 for _ in REGIME_DUMMY_COLUMNS)
+    monotone_constraints = t1_constraints
 
     X_all = build_design_matrix(train_side_df)
     y_all = (train_side_df["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)

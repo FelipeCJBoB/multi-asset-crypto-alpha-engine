@@ -82,6 +82,13 @@ _SCHEMA: dict[str, Any] = {
     # inventa retroativamente o que não foi registrado na hora.
     "tf": pl.Utf8,
     "resolution_id": pl.Utf8,
+    # AG-116 (2026-08-20) -- horizonte da barreira TIME em CONTAGEM DE
+    # BARRA, só sob resolution_id (mesmo XOR de tf/resolution_id acima,
+    # ver LabelConfig.horizon_bars em triple_barrier.py). Linhas antigas
+    # (antes desta coluna existir) ficam null -- não inventa
+    # retroativamente o que não foi registrado na hora, mesmo padrão de
+    # tf/resolution_id logo acima.
+    "horizon_bars": pl.Int32,
     "n_labels": pl.Int64,
     "n_tp": pl.Int64,
     "n_sl": pl.Int64,
@@ -206,6 +213,7 @@ def record_experiment(
         "taker_fee": config.taker_fee,
         "tf": config.tf if config.resolution_id is None else None,
         "resolution_id": config.resolution_id,
+        "horizon_bars": config.horizon_bars,  # AG-116 -- None sob tf, int sob resolution_id
         "notes": notes,
         **stats,
     }

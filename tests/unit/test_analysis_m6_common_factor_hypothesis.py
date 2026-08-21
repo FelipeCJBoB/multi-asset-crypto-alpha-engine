@@ -12,14 +12,18 @@ import math
 import numpy as np
 import polars as pl
 import pytest
+from scipy.stats import chi2
 
 from src.analysis.m6_common_factor_hypothesis import (
     StratumMetrics,
     _dense_bucket_codes,
     _edge_bruto_se,
+    _q_statistic_continuous_episode_weighted,
     _q_statistic_from_bucket_codes,
     cochrans_q_heterogeneity,
+    cochrans_q_heterogeneity_continuous,
     permutation_heterogeneity_test,
+    permutation_heterogeneity_test_continuous,
     stratum_metrics,
 )
 
@@ -395,5 +399,224 @@ def test_permutation_heterogeneity_test_e_deterministico_mesmo_seed_mesmo_result
     )
     result_b = permutation_heterogeneity_test(
         bucket_ids, is_tp, is_sl, tp_mult=2.0, sl_mult=1.5, n_permutations=300, seed=99
+    )
+    assert result_a == result_b
+
+
+# ============================================================================
+# Generalização contínua (AG-114, 2026-08-20, PLANO_MESTRE_PRINCE2.md
+# §15.12.1) -- mesma família Cochran's Q/permutação em bloco, resposta
+# CONTÍNUA (volatilidade futura) e ponderada por EPISÓDIO desde a
+# estatística observada, não só a distribuição nula.
+# ============================================================================
+
+
+def test_q_statistic_continuous_episode_weighted_bate_com_calculo_manual() -> None:
+    """`bucket_codes`/`response` bar-level; `n_episodes_per_bucket`
+    FORNECIDO pelo chamador (não derivado dentro da função -- ver
+    docstring). Bucket 0: barras `[1.0,1.0,2.0,2.0,1.5,1.5]` (n=6, média
+    1.5, var(ddof=1)=0.2); bucket 1: barras `[3.0,3.0,4.0,4.0]` (n=4,
+    média 3.5, var=1/3). `n_episodes_per_bucket=[3,2]` (3 episódios no
+    bucket 0, 2 no bucket 1, contando runs consecutivos reais no array).
+    `w0=3/0.2=15`, `w1=2/(1/3)=6`, `pooled=(15*1.5+6*3.5)/21=87/42=29/14`,
+    `Q=15*(1.5-29/14)²+6*(3.5-29/14)²=840/49≈17,142857` -- calculado à
+    mão de forma independente, não reusando a fórmula da função."""
+    bucket_codes = np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0], dtype=np.int64)
+    response = np.array(
+        [1.0, 1.0, 3.0, 3.0, 2.0, 2.0, 4.0, 4.0, 1.5, 1.5], dtype=np.float64
+    )
+    n_episodes_per_bucket = np.array([3.0, 2.0], dtype=np.float64)
+
+    q, pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=2
+    )
+
+    assert q == pytest.approx(840.0 / 49.0, rel=1e-9)
+    assert pooled == pytest.approx(29.0 / 14.0, rel=1e-9)
+
+
+def test_q_statistic_continuous_episode_weighted_menos_de_2_barras_da_nan() -> None:
+    """Bucket 1 tem só 1 BARRA finita -- variância amostral (ddof=1)
+    indefinida, resultado inteiro vira NaN (mesma disciplina de
+    `anova_by_group`/`_q_statistic_from_bucket_codes`: nunca 0/exceção
+    silenciosa dentro de um laço de permutação). Diferente da versão
+    anterior (episódio-mean-variance): aqui o que importa é contagem de
+    BARRA por bucket, não de episódio -- corrigido depois de achado real
+    rodando a suíte (ver comentário no módulo)."""
+    bucket_codes = np.array([0, 0, 0, 1], dtype=np.int64)
+    response = np.array([1.0, 2.0, 1.5, 5.0], dtype=np.float64)
+    n_episodes_per_bucket = np.array([1.0, 1.0], dtype=np.float64)
+
+    q, pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=2
+    )
+
+    assert math.isnan(q)
+    assert math.isnan(pooled)
+
+
+def test_q_statistic_continuous_episode_weighted_filtra_nan_antes_de_agrupar() -> None:
+    """Barra com `response=NaN` é excluída do cálculo de var/média do seu
+    bucket -- não propaga `NaN` pra tudo, mesma disciplina de
+    `anova_by_group`."""
+    bucket_codes = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    response = np.array([1.0, np.nan, 1.2, 5.0, 5.3, 4.8], dtype=np.float64)
+    n_episodes_per_bucket = np.array([1.0, 1.0], dtype=np.float64)
+
+    q, pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=2
+    )
+    assert np.isfinite(q)
+    assert np.isfinite(pooled)
+
+
+def test_q_statistic_continuous_episode_weighted_computavel_com_1_episodio_por_bucket() -> None:
+    """**Achado real desta sessão**: com `n_episodes_per_bucket=[1,1]`
+    (exatamente 1 episódio por bucket, cenário comum -- candidato entra
+    1x num estado e fica), o resultado É computável (usa variância
+    BAR-LEVEL, não variância entre médias de episódio) -- diferente do
+    desenho anterior, que dava `NaN` sempre nesse cenário mesmo com
+    centenas de barras de dado real disponíveis."""
+    bucket_codes = np.array([0, 0, 0, 0, 1, 1, 1], dtype=np.int64)
+    response = np.array([1.0, 1.1, 0.9, 1.0, 5.0, 5.2, 4.8], dtype=np.float64)
+    n_episodes_per_bucket = np.array([1.0, 1.0], dtype=np.float64)
+
+    q, pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=2
+    )
+    assert np.isfinite(q)
+    assert np.isfinite(pooled)
+    assert q > 0.0  # os 2 buckets têm média claramente diferente
+
+
+def test_cochrans_q_heterogeneity_continuous_bate_com_calculo_manual() -> None:
+    """Mesmo cenário de `test_q_statistic_continuous_episode_weighted_
+    bate_com_calculo_manual`, mas via a função pública (que deriva
+    `n_episodes_per_bucket` sozinha a partir de `segment_boundaries`)."""
+    bucket_ids = np.array([0, 0, 1, 1, 0, 0, 1, 1, 0, 0], dtype=np.int64)
+    response = np.array(
+        [1.0, 1.0, 3.0, 3.0, 2.0, 2.0, 4.0, 4.0, 1.5, 1.5], dtype=np.float64
+    )
+
+    result = cochrans_q_heterogeneity_continuous(bucket_ids, response)
+
+    assert result.k == 2
+    assert result.n_episodes == 5
+    assert result.df == 1
+    assert result.q_statistic == pytest.approx(840.0 / 49.0, rel=1e-9)
+    assert result.pooled_response == pytest.approx(29.0 / 14.0, rel=1e-9)
+    expected_p = float(chi2.sf(840.0 / 49.0, 1))
+    assert result.p_value == pytest.approx(expected_p, rel=1e-9)
+    expected_i_squared = max(0.0, (840.0 / 49.0 - 1) / (840.0 / 49.0)) * 100.0
+    assert result.i_squared_pct == pytest.approx(expected_i_squared, rel=1e-9)
+
+
+def test_cochrans_q_heterogeneity_continuous_k1_devolve_nan() -> None:
+    """1 único bucket -- mesmo caso degenerado de `cochrans_q_
+    heterogeneity` (AG-091): `Q`/`p_value`/`i_squared_pct` viram `NaN`
+    explícito (`df=0`), nunca `0.0`/`100.0` por acidente de ponto
+    flutuante."""
+    n = 100
+    bucket_ids = np.zeros(n, dtype=np.int64)
+    response = np.linspace(0.01, 0.05, n)
+    result = cochrans_q_heterogeneity_continuous(bucket_ids, response)
+    assert result.k == 1
+    assert result.df == 0
+    assert math.isnan(result.q_statistic)
+    assert math.isnan(result.p_value)
+    assert math.isnan(result.i_squared_pct)
+
+
+def test_permutation_heterogeneity_test_continuous_k1_devolve_nan() -> None:
+    n = 100
+    bucket_ids = np.zeros(n, dtype=np.int64)
+    response = np.linspace(0.01, 0.05, n)
+    result = permutation_heterogeneity_test_continuous(
+        bucket_ids, response, n_permutations=200, seed=1
+    )
+    assert math.isnan(result.p_value)
+    assert result.n_episodes == 1
+    assert result.n_permutations_valid == 0
+
+
+def test_permutation_heterogeneity_test_continuous_array_vazio_levanta_value_error() -> None:
+    empty = np.array([], dtype=np.int64)
+    empty_f = np.array([], dtype=np.float64)
+    with pytest.raises(ValueError, match="vazio"):
+        permutation_heterogeneity_test_continuous(empty, empty_f, n_permutations=200, seed=1)
+
+
+def test_permutation_heterogeneity_test_continuous_shape_desalinhado_levanta_value_error() -> (
+    None
+):
+    bucket_ids = np.zeros(100, dtype=np.int64)
+    response = np.zeros(50, dtype=np.float64)  # shape errado de propósito
+    with pytest.raises(ValueError, match="mesmo shape"):
+        permutation_heterogeneity_test_continuous(
+            bucket_ids, response, n_permutations=200, seed=1
+        )
+
+
+def test_permutation_heterogeneity_test_continuous_2_episodios_1_por_bucket_p_value_sempre_um() -> (
+    None
+):
+    """Mesmo argumento de simetria do teste análogo TP/SL
+    (`test_permutation_heterogeneity_test_2_episodios_1_por_bucket_p_
+    value_sempre_um`): com 1 episódio por bucket, `Q` é função SIMÉTRICA
+    do conjunto `{(média_i, w_i)}`, invariante a qual episódio físico
+    guarda qual valor -- `Q_perm == Q_observado` em toda permutação,
+    `p_value=1.0` exato, analiticamente previsível."""
+    rng = np.random.default_rng(11)
+    n_a, n_b = 200, 150
+    response_a = rng.normal(0.01, 0.002, n_a)
+    response_b = rng.normal(0.05, 0.01, n_b)
+    response = np.concatenate([response_a, response_b])
+    bucket_ids = np.concatenate(
+        [np.zeros(n_a, dtype=np.int64), np.ones(n_b, dtype=np.int64)]
+    )
+
+    result = permutation_heterogeneity_test_continuous(
+        bucket_ids, response, n_permutations=500, seed=1
+    )
+    assert result.n_episodes == 2
+    assert not math.isnan(result.q_observed)
+    assert result.q_observed > 0.0
+    assert result.n_permutations_valid == 500
+    assert result.p_value == pytest.approx(1.0)
+
+
+def test_permutation_heterogeneity_test_continuous_separacao_real_da_p_value_baixo() -> None:
+    rng = np.random.default_rng(23)
+    bucket_chunks = []
+    response_chunks = []
+    for i in range(20):  # 20 episódios alternando, ~50 barras cada
+        n_ep = 50
+        if i % 2 == 0:
+            bucket_chunks.append(np.zeros(n_ep, dtype=np.int64))
+            response_chunks.append(rng.normal(0.01, 0.002, n_ep))
+        else:
+            bucket_chunks.append(np.ones(n_ep, dtype=np.int64))
+            response_chunks.append(rng.normal(0.05, 0.002, n_ep))
+    bucket_ids = np.concatenate(bucket_chunks)
+    response = np.concatenate(response_chunks)
+
+    result = permutation_heterogeneity_test_continuous(
+        bucket_ids, response, n_permutations=1000, seed=5
+    )
+    assert result.n_episodes == 20
+    assert result.p_value < 0.05
+
+
+def test_permutation_heterogeneity_test_continuous_e_deterministico_mesma_seed() -> None:
+    rng = np.random.default_rng(31)
+    n = 400
+    bucket_ids = rng.integers(0, 2, size=n).astype(np.int64)
+    response = rng.normal(0.02, 0.01, n)
+
+    result_a = permutation_heterogeneity_test_continuous(
+        bucket_ids, response, n_permutations=300, seed=99
+    )
+    result_b = permutation_heterogeneity_test_continuous(
+        bucket_ids, response, n_permutations=300, seed=99
     )
     assert result_a == result_b

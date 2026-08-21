@@ -74,14 +74,17 @@ def _make_sizing(**overrides: object) -> SizingResult:
 # ============================================================================
 
 
-def test_control_01_passa_para_r1_r4() -> None:
-    for regime in ("R1", "R2", "R3", "R4"):
-        assert limits.control_01_regime_tradeavel(regime) == ControlOutcome.PASS
+def test_control_01_passa_quando_regime_tradeable() -> None:
+    """Candidato-agnóstico (2026-08-21, Fase C do plano `wise-exploring-
+    panda.md`) -- `control_01_regime_tradeavel` recebe o `bool` já
+    resolvido pelo builder de regime (baseline `R1..R4` via
+    `TRADEABLE_REGIMES`, ou HMM via `is_stress_state`), nunca decodifica
+    vocabulário aqui."""
+    assert limits.control_01_regime_tradeavel(True) == ControlOutcome.PASS
 
 
-def test_control_01_falha_para_r0_e_r5() -> None:
-    assert limits.control_01_regime_tradeavel("R0") == ControlOutcome.FAIL
-    assert limits.control_01_regime_tradeavel("R5") == ControlOutcome.FAIL
+def test_control_01_falha_quando_regime_nao_tradeable() -> None:
+    assert limits.control_01_regime_tradeavel(False) == ControlOutcome.FAIL
 
 
 # ============================================================================
@@ -521,7 +524,7 @@ def test_control_19_tres_posicoes_correlacionadas_rho_091_falha() -> None:
 
 def _make_inputs(**overrides: object) -> RiskEngineInputs:
     defaults: dict[str, object] = {
-        "regime": "R2",
+        "regime_tradeable": True,
         "system_state": SystemState.RUNNING,
         "kill_switch_active": False,
         "reconciliation_age_s": 1.0,
@@ -551,7 +554,7 @@ def test_evaluate_all_aprova_o_caso_base() -> None:
 
 
 def test_evaluate_all_para_no_primeiro_fail_regime() -> None:
-    decision = evaluate_all(_make_inputs(regime="R0"))
+    decision = evaluate_all(_make_inputs(regime_tradeable=False))
     assert decision.approved is False
     assert decision.rejection_reason == RejectionReason.REGIME_BLOCKED
     assert decision.controls_evaluated == ("1",)  # nem chegou no controle 2

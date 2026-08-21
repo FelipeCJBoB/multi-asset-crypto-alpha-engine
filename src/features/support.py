@@ -300,6 +300,38 @@ def realized_vol(log_return: FloatArray, window: int) -> FloatArray:
     return out
 
 
+def downside_deviation(log_return: FloatArray, window: int) -> FloatArray:
+    """Semi-desvio -- raiz da média dos quadrados dos retornos NEGATIVOS
+    na janela (retorno positivo conta como 0, não é descartado da
+    janela) -- mesma convenção de janela rolante fixa de `realized_vol`
+    (inclui a barra atual, B02 não se aplica). AG-119 (`audit/
+    architecture_gaps_log.yaml`) -- feature usada na literatura de Jump
+    Model (Nystrup/Shu/Kolm/Mulvey) e ausente do espaço de observação
+    estreito (`log_return_1`/`realized_vol_short`) que `AG-117` testou;
+    reteste do candidato Jump Model consome esta função diretamente,
+    fora do Feature Engine de produção (não wired em `build_t1_
+    features` -- uso hoje é só diagnóstico/pesquisa).
+
+    **Achado real (AG-119, 2026-08-20, achado ao rodar o reteste sobre
+    XRPUSDT):** `mean_sq` é matematicamente uma média de quadrados --
+    nunca pode ser negativa -- mas `rolling_mean` sobre `window` barras
+    quase todas com retorno positivo (poucos/nenhum retorno negativo na
+    janela, comum em séries reais de dollar-bar) produz valores como
+    `-3,16e-20` por cancelamento de ponto flutuante, não por qualquer
+    coisa real sobre o dado. `np.sqrt` de um negativo (mesmo artefato de
+    ULP) devolve `NaN` SILENCIOSO, sem warning -- 30 barras afetadas em
+    163.765 de XRPUSDT (R1), zero em BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT
+    nesta mesma checagem. `np.maximum(mean_sq, 0.0)` antes do `sqrt`
+    corrige a CAUSA (interpretação matematicamente correta de "média de
+    quadrados não pode ser negativa"), não um filtro de sintoma por
+    cima."""
+    downside_sq = np.minimum(log_return, 0.0) ** 2
+    s = pl.Series(downside_sq)
+    mean_sq = s.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    out: FloatArray = np.sqrt(np.maximum(mean_sq, 0.0))
+    return out
+
+
 def rolling_zscore(values: FloatArray, window: int) -> FloatArray:
     """Z-score sobre janela rolante fixa de `window` barras, incluindo a
     barra atual (D06f, E10f — o PRD declara lookback fixo "48" para essas

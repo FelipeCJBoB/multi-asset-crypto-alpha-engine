@@ -197,6 +197,75 @@ time_stop_ms:
   sweep_range: [14400000, 43200000]
   review_by: sprint_6
 
+horizon_bars:
+  value: 32
+  provenance: DERIVED
+  source: "resgata o valor DERIVED que já existia como time_stop_bars(32,
+    ASSUMED) antes da conversão pra relógio fixo (AG-031/B1, 2026-08-16) --
+    a conversão pra time_stop_ms=28.800.000 (8h @ grade 15m) foi motivada
+    SÓ pelo bug de unidade que AG-031 corrigiu (contagem de barra !=
+    contagem de barra fixa entre TFs), não por uma reavaliação do valor em
+    si. horizon_bars=32 resgata a intenção de desenho original em unidades
+    de barra, aplicada sob resolution_id (dollar bar, AG-116/
+    PLANO_MESTRE_PRINCE2.md §15.12.3), onde contagem de barra é a unidade
+    nativa (sem bar_ms fixo, AG-042) -- não um número novo, mesmo padrão
+    exato de time_stop_ms acima (unidade re-expressa, valor preservado).
+    COMPARTILHADO entre R1/R2/R3 (decisão do Manager, §15.12.3-C.1):
+    threshold_usdt de cada resolução já é calibrado (AG-042) pra que a
+    contagem MÉDIA de barras aproxime 15m/30m/1h -- vínculo MEDIDO entre
+    bar-count e relógio já existe. A suposição de horizonte em si (32
+    barras / 8h de referência) permanece ASSUMED e sem sweep de
+    sensibilidade feito -- este valor só reexpressa a unidade, não resolve
+    o sweep_required herdado de time_stop_bars/time_stop_ms."
+  class: A
+  sweep_required: true
+  sweep_range: [16, 48]
+  review_by: sprint_6
+
+label_prefetch_safety_margin_multiplier:
+  value: 1.5
+  provenance: ASSUMED
+  source: "fator de engenharia SOBRE um percentil já alto (p99) da
+    distribuição real de duração de dollar-bar -- não um 2º estipulamento
+    livre, e sim a folga de segurança padrão (percentil-alto + margem,
+    PLANO_MESTRE_PRINCE2.md §15.12.3-C.2, padrão de streaming/ETL citado
+    na pesquisa de literatura desta sessão) sobre uma estimativa histórica
+    que pode não cobrir o pior regime de liquidez futuro. 1,5x é valor de
+    engenharia, sem base estatística própria além do racional acima. Usado
+    em src/labels/triple_barrier.py::_resolve_prefetch_horizon_ms."
+  class: C
+  sweep_required: false
+
+label_prefetch_p99_bar_duration_ms:
+  value: 22506187
+  provenance: MEASURED
+  source: "MEDIDO 2026-08-20 -- tools/diagnostics/measure_dollar_bar_
+    duration_p99_by_resolution.py, rodado pelo Manager sobre dado real
+    (5 símbolos x 3 resoluções = 15 combinações, dollar bars persistidas
+    em data/capacity/dollar_bars_{r1,r2,r3}/, zero pulos). Saída completa:
+    experiments/dollar_bar_duration_p99_by_resolution.json. Valor = p99
+    MÁXIMO entre as 15 combinações -- SOLUSDT/R3, p99_ms=22.506.187,1
+    (375,1min ≈ 6,25h; max_ms real dessa combinação chega a 130.449.146ms
+    ≈ 36,2h, mas o critério de dimensionamento é p99, não max, por
+    desenho -- PLANO_MESTRE_PRINCE2.md §15.12.3-C.2). Top 5 p99 medidos,
+    todos R3 (maior threshold_usdt, bars mais lentas): SOLUSDT 375,1min,
+    BTCUSDT 363,1min, XRPUSDT 339,8min, ETHUSDT 275,9min, BNBUSDT
+    262,7min -- R1/R2 sistematicamente menores (ex. BTCUSDT R1
+    p99=95,5min, R2 p99=187,8min), confirma a hipótese de escala ~
+    proporcional a threshold_usdt (AG-042) que motivou o placeholder
+    anterior (23.693.520ms, extrapolado de R1 x4 -- ficou LIGEIRAMENTE
+    acima do valor real medido, então o placeholder nunca causou
+    sub-prefetch enquanto esteve em uso, 2026-08-20 mesma sessão). Valor
+    único COMPARTILHADO entre as 3 resoluções/5 símbolos em
+    _resolve_prefetch_horizon_ms (prefetch_ms = horizon_bars * este_valor
+    * label_prefetch_safety_margin_multiplier) -- deliberadamente
+    dimensionado pelo PIOR caso observado (R3/SOLUSDT), maior que o
+    necessário pra R1/R2/outros símbolos (custo: I/O extra de
+    mark_1m/funding, nunca corretude: sub-prefetch descartaria labels
+    reais como cauda incompleta, sobre-prefetch só custa banda/memória)."
+  class: C
+  sweep_required: false
+
 atr_window:
   value: 20
   provenance: ASSUMED
@@ -1673,47 +1742,81 @@ dollar_bar_drift_alarm_ratio_max:
 # ============================================================================
 
 m4_bocpd_hazard_lambda:
-  value: 65.0
+  value: 70.8
   provenance: MEASURED
-  source: "Metodologia de 2 passos, script(s) ad-hoc descartáveis (não
-    commitados em tools/diagnostics/), 2026-08-18. PASSO 1 -- âncora:
-    duração mediana de segmento do BASELINE real (QuantileRegimeClassifier,
-    build_regimes('BTCUSDT', '2019-12-31', '2026-08-07',
-    bar_source='dollar_r1'), 231.552 barras), regime.to_physical() com R0
-    (warmup) excluído, regime_persistence (src.validation.regime_utility)
-    sobre o restante (231.352 barras, 10.935 segmentos) --
-    median_duration_bars=13.0 (mean=21.16, std=21.8, p5=2/p10=3/p25=5/
-    p75=30/p90=50/p95=65/p99=99.66, min=1, max=185 -- distribuição
-    fortemente assimétrica à direita). PASSO 2 -- grid de hazard_lambda =
-    múltiplos dessa mediana (1x/5x/6.67x/10x = 13,0/65,0/86,71/130,0;
-    6.67x é a mesma razão já validada no teste sintético de bocpd.py,
-    hazard_lambda=2000 para segmentos de 300 barras,
-    test_detecta_changepoint_unico_injetado_no_ponto_certo), cada ponto
-    rodando run_bocpd sobre log_return_1 REAL (mesma série/corte de warmup
-    de m4_regime_comparison._valid_start_idx, 231.540 barras válidas) e
-    medindo a distribuição de duração de segmento resultante (mesma
-    metodologia de regime_persistence, à mão). hazard_lambda=13,0 (1x, o
-    valor bruto da mediana) é PATOLÓGICO -- confirma empiricamente, em
-    dado real, o achado já documentado no teste sintético de bocpd.py
-    ('hazard_lambda parecido com a duração real do segmento prejudica a
-    detecção'): 55.604 segmentos, median_duration_bars=1,0 (mean=4,16,
-    p90=1,0) -- o prior domina, MAP resetando por ruído barra-a-barra, não
-    por estrutura real. hazard_lambda=65,0 (5x) é o ponto medido que
-    melhor reproduz a ORDEM DE GRANDEZA real do fenômeno que o candidato
-    precisa detectar: median_duration_bars=14,0 (quase idêntico aos 13,0
-    do baseline), 1.196 segmentos plausíveis, mean=193,6/p90=476,0/
-    max=12.729 (cauda direita mais pesada que o baseline, mas mesma forma
-    qualitativa). hazard_lambda=86,71 (6,67x, a razão do teste sintético)
-    e hazard_lambda=130,0 (10x) já são visivelmente mais grosseiros que o
-    alvo real neste dado (median_duration_bars=99,0 e 311,0 -- 7,6x e
-    24x o alvo, 577 e 305 segmentos) -- a razão 6,67x foi calibrada num
-    cenário sintético limpo (1 único changepoint de volatilidade injetado
-    em 600 barras) e NÃO se transporta 1:1 para dado real ruidoso de
-    log-retorno de dollar-bar. Escolhido 5x (65,0): bem MAIOR que o valor
-    bruto patológico (respeita o achado real de bocpd.py), mas o ponto do
-    grid que efetivamente reproduz a duração mediana real medida do
-    fenômeno (regime da QuantileRegimeClassifier), não um múltiplo
-    inventado sem checagem contra o dado."
+  source: "RECALIBRADO 2026-08-20 (item 4 autorizado pelo Manager,
+    docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md
+    §1.1 comentário 22 / V2 P5(i)(ii)) -- SUBSTITUI o valor anterior
+    (65,0, ver histórico abaixo), calibrado sobre o histórico BTCUSDT
+    COMPLETO (2019-12-31/2026-08-07), que inclui as 5 janelas críticas
+    de teste do M4 (LUNA/FTX/CRYPTO_WINTER/ETF_HALVING/RECENTE) --
+    vazamento de informação (não B02 clássico, mas mesma classe: o valor
+    escolhido conhecia a estrutura de segmento das janelas que depois
+    avalia). Recalibrado com a MESMA metodologia de 2 passos, restrita a
+    dado PRÉ-TESTE -- [SYMBOL_START_DATE['BTCUSDT']=2019-12-31,
+    2021-04-01), corte no início da janela crítica mais antiga (LUNA) --
+    via tools/diagnostics/recalibrate_bocpd_hazard_lambda_pretest.py
+    (commitado, diferente do script ad-hoc original). PASSO 1 --
+    build_regimes('BTCUSDT','2019-12-31','2021-04-01',
+    bar_source='dollar_r1'), 18.316 barras, R0 excluído (18.116
+    pós-warmup), regime_persistence -- median_duration_bars=13,0
+    (mean=21,75, std=22,77, p5=2/p10=3/p25=5/p75=31/p90=53/p95=64,4/
+    p99=109,68, min=1, max=138, 833 segmentos) -- MESMA âncora numérica
+    do histórico completo (coincidência real, não presumida). PASSO 2 --
+    grid sobre log_return_1 real do mesmo período pré-teste (18.304
+    barras válidas), run_bocpd + regime_persistence(segment_id).
+    ACHADO REAL que motivou estender o grid original: sob dado
+    pré-teste, hazard_lambda=65,0 (5x, o valor antigo) SUB-reage --
+    median_duration_bars=4,0 (longe da âncora=13,0; 410 segmentos,
+    mean=44,6) -- diferente do histórico completo, onde 65,0 batia quase
+    exato (14,0). O cruzamento com a âncora fica ENTRE 5x e 6,67x, não
+    em 5x -- grid fino adicional (5,3x/5,6x/5,9x/6,2x/6,4x) mediu:
+    5,3x(68,9)->median=9,0(325 seg); 5,6x(72,8)->median=18,5(242 seg) --
+    a âncora (13,0) fica bracketed entre esses 2 pontos MEDIDOS.
+    70,8 = interpolação LINEAR entre os 2 pontos medidos que cercam a
+    âncora ((13-9)/(18,5-9)=0,4211; 5,3+0,4211*0,3=5,4263x; 13,0*5,4263=
+    70,54, arredondado a 70,8 pelo Manager) -- é uma ESTIMATIVA
+    interpolada, não um ponto do grid rodado diretamente (B23: se um
+    Sprint futuro quiser confirmar exato, rodar hazard_lambda=70,8
+    direto e comparar contra median_duration_bars=13,0 esperado).
+    hazard_lambda=13,0 (1x) segue PATOLÓGICO no pré-teste também
+    (median=1,0, 11.608 segmentos, mesmo mecanismo de prior dominando
+    por ruído). Critério de escolha idêntico ao valor anterior: ponto
+    que reproduz a ORDEM DE GRANDEZA real da âncora medida no MESMO
+    período usado pra avaliar os candidatos, nunca incluindo as janelas
+    de teste na calibração.
+    --- HISTÓRICO (valor anterior, 2026-08-18, SUBSTITUÍDO por
+    vazamento de janela de teste) --- Metodologia de 2 passos,
+    script(s) ad-hoc descartáveis (não commitados em tools/diagnostics/).
+    PASSO 1 -- âncora: duração mediana de segmento do BASELINE real
+    (QuantileRegimeClassifier, build_regimes('BTCUSDT', '2019-12-31',
+    '2026-08-07', bar_source='dollar_r1'), 231.552 barras),
+    regime.to_physical() com R0 (warmup) excluído, regime_persistence
+    (src.validation.regime_utility) sobre o restante (231.352 barras,
+    10.935 segmentos) -- median_duration_bars=13.0 (mean=21.16, std=21.8,
+    p5=2/p10=3/p25=5/p75=30/p90=50/p95=65/p99=99.66, min=1, max=185 --
+    distribuição fortemente assimétrica à direita). PASSO 2 -- grid de
+    hazard_lambda = múltiplos dessa mediana (1x/5x/6.67x/10x =
+    13,0/65,0/86,71/130,0; 6.67x é a mesma razão já validada no teste
+    sintético de bocpd.py, hazard_lambda=2000 para segmentos de 300
+    barras, test_detecta_changepoint_unico_injetado_no_ponto_certo),
+    cada ponto rodando run_bocpd sobre log_return_1 REAL (mesma série/
+    corte de warmup de m4_regime_comparison._valid_start_idx, 231.540
+    barras válidas) e medindo a distribuição de duração de segmento
+    resultante (mesma metodologia de regime_persistence, à mão).
+    hazard_lambda=13,0 (1x, o valor bruto da mediana) é PATOLÓGICO --
+    confirma empiricamente, em dado real, o achado já documentado no
+    teste sintético de bocpd.py ('hazard_lambda parecido com a duração
+    real do segmento prejudica a detecção'): 55.604 segmentos,
+    median_duration_bars=1,0 (mean=4,16, p90=1,0) -- o prior domina, MAP
+    resetando por ruído barra-a-barra, não por estrutura real.
+    hazard_lambda=65,0 (5x) foi o ponto medido que melhor reproduzia a
+    ORDEM DE GRANDEZA real do fenômeno NO HISTÓRICO COMPLETO --
+    median_duration_bars=14,0 (quase idêntico aos 13,0 do baseline),
+    1.196 segmentos plausíveis, mean=193,6/p90=476,0/max=12.729 (cauda
+    direita mais pesada que o baseline, mas mesma forma qualitativa) --
+    SUBSTITUÍDO 2026-08-20 por incluir vazamento das janelas de teste
+    (ver acima)."
   class: B
   sweep_required: false
 
@@ -1851,4 +1954,131 @@ m4_heterogeneity_permutation_seed:
     do teste (qualquer seed fixo produz um p-valor igualmente válido),
     só a sequência específica de permutações sorteadas."
   class: D
+  sweep_required: false
+
+# Extensão de qualidade-de-gate (AG-114, 2026-08-20,
+# PLANO_MESTRE_PRINCE2.md §15.12.1) -- ADR-001 (ratificado) decide regime
+# como GATE de risco, não FEATURE preditiva, na v1. As 2 constantes abaixo
+# alimentam Gate 3 (detection delay, papel = DESEMPATE, decidido pelo
+# Manager 2026-08-20 -- nunca desqualifica sozinho). Classe B (mesmo
+# padrão do resto do bloco M4 acima): hiperparâmetro de candidato em
+# comparação, não constante que invalida o desenho se errada dentro de
+# uma faixa razoável.
+
+m4_luna_event_onset_ts_ms:
+  value: 1651960020000
+  provenance: LITERATURE
+  source: "Onset do colapso UST/LUNA -- grandes saques do Anchor Protocol
+    às 21:47 UTC de 2022-05-07, início do despeg de UST (getblock.net/en/
+    articles/how-the-terra-ecosystem-collapsed-full-timeline-of-events;
+    corpgov.law.harvard.edu/2023/05/22/anatomy-of-a-run-the-terra-luna-
+    crash). Usado só como Gate 3 (desempate, AG-114/
+    PLANO_MESTRE_PRINCE2.md §15.12.1) -- não decide gate/ranking sozinho,
+    e as outras 3 janelas críticas (CRYPTO_WINTER/ETF_HALVING/RECENTE)
+    ficam NOT_COMPUTABLE nesta métrica por não terem um instante único de
+    início de evento (nunca estipulado)."
+  class: B
+  sweep_required: false
+
+m4_ftx_event_onset_ts_ms:
+  value: 1667692800000
+  provenance: LITERATURE
+  source: "Onset do colapso FTX/Alameda -- Binance anuncia venda de FTT
+    em 2022-11-06, gatilho de mercado observável que iniciou a corrida
+    (theblock.co/post/256106/a-complete-timeline-of-ftx-from-alamedas-
+    spiraling-debt-to-its-dramatic-implosion). Hora exata do anúncio não
+    pesquisada -- usa 00:00 UTC do dia como piso conservador (mede delay
+    incluindo, não subestimando, a barra do dia inteiro). Alternativa
+    mais inequívoca considerada e NÃO adotada: 2022-11-08T00:00:00Z
+    (1667865600000 ms, halt de saques da FTX, sinal ainda mais claro de
+    crise em curso) -- trocar se o Manager preferir esse marco. Gate 3
+    (desempate), mesma ressalva de m4_luna_event_onset_ts_ms."
+  class: B
+  sweep_required: false
+
+# AG-118 (Gate Efficiency, PLANO_MESTRE_PRINCE2.md §15.12.4/§15.12.5,
+# audit/architecture_gaps_log.yaml) -- 2 percentis de relatório
+# (src/analysis/gate_efficiency.py), nunca guardrail/threshold que
+# decide ação de pipeline (classe D, não C -- nenhum trade/gate é
+# bloqueado pelo valor exato destes 2 números, são estatística
+# descritiva reportada em GateEfficiencySymbolDetail).
+
+gate_efficiency_tail_loss_percentile:
+  value: 5.0
+  provenance: ASSUMED
+  source: "Convenção padrão de risco de cauda (VaR/CVaR ao nível 5%,
+    prática de mercado amplamente usada, ex. Basel/RiskMetrics) --
+    escolhida por convenção, não medida deste dado. Só reporta
+    p05(ret_net/atr_at_t0) como estatística descritiva por bucket de
+    regime (AG-118) -- não decide entrada/saída de trade nem gate."
+  class: D
+  sweep_required: false
+
+gate_efficiency_holding_time_percentile:
+  value: 80.0
+  provenance: DERIVED
+  source: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md,
+    recomendação #5 pras 9 decisões pendentes: 'Percentil empírico
+    p80(tempo até 1ª barreira | regime, símbolo, resolução), medido só
+    no fold de treino -- não número de relógio'. Reportado aqui como
+    p80_holding_bars (AG-118) -- estatística descritiva, resolve AG-099
+    (valor do encurtamento de time_stop) como INSUMO, não decide o
+    parâmetro sozinho."
+  class: D
+  sweep_required: false
+
+# AG-119 (Jump Model, transferibilidade) -- pré-registrado ANTES de
+# qualquer nova rodada de calibração de jump_penalty, motivado pelo
+# parecer de auditoria externa 2026-08-20
+# (docs/parecer_auditoria_externa_2026-08-20_ag114_ag118.md, item 5/6):
+# achado real da "Condição C" foi que jump_penalty=0,02 (maior valor
+# testado, mais parcimonioso) produz 1-8 episódios por célula --
+# poder estatístico nulo pro teste de heterogeneidade, mesmo passando
+# no teste ESTRUTURAL (>=2 estados genuínos). O parecer aponta que isso
+# era CALCULÁVEL a priori (n_episodes é função direta e previsível de
+# jump_penalty) -- registra aqui o piso mínimo de poder ANTES de rodar
+# qualquer novo teste, pra que a seleção de jump_penalty deixe de
+# degenerar em "pegue o maior valor do grid" e passe a ser "maior valor
+# que ainda satisfaz o piso de poder".
+jump_model_min_episodes_per_cell:
+  value: 30
+  provenance: ASSUMED
+  source: "Regra de bolso pra teste de heterogeneidade com 2-3 buckets
+    (Cochran's Q/permutação em bloco) ter poder mínimo de resolver --
+    ~10-15 episódios por bucket é o piso usual pra um teste de
+    permutação não ficar degenerado/saturado no p-valor mínimo
+    alcançável (AG-091/AG-092, mesma família de instrumento). Não é
+    medido deste dado especificamente -- é uma convenção defensável,
+    não uma calibração. Sweep de sensibilidade (15/30/50) recomendado
+    antes de usar em produção real, não feito ainda."
+  class: B
+  sweep_required: true
+  sweep_range: [15, 50]
+
+# Fase D do plano `wise-exploring-panda.md` (2026-08-21,
+# `PLANO_MESTRE_PRINCE2.md §15.13`) -- Manager autorizou hmm_gaussian_k4_v1
+# como candidato de regime canônico de produção (src.regime.build_hmm.
+# build_hmm_regimes). k=4 fixo, não um grid -- os outros valores
+# hmm_states_grid=(2,3,4) continuam existindo só como comparação no
+# harness M4 (src.analysis.m4_regime_comparison), não como alternativa de
+# produção.
+canonical_regime_hmm_n_states:
+  value: 4
+  provenance: MEASURED
+  source: >
+    AG-114 aplicou a regra de decisão de 3 gates + métrica primária
+    sobre o resultado real do M4 e declarou hmm_gaussian_k4_v1
+    vencedor. ATENÇÃO -- registra uma DECISÃO DO MANAGER DE PROSSEGUIR,
+    não uma medição limpa: auditoria externa achou que o Gate 1 foi
+    aplicado com 2 critérios misturados (mediana vs. máximo-por-janela)
+    sem declarar qual decide -- sob o critério literal (mediana),
+    hmm_gaussian_k2_v1 passaria o Gate 1 e venceria a métrica primária
+    em 2 das 3 resoluções (AG-114, status "aberto" mantido). AG-118
+    (fechado) mediu que o gate NÃO tem sinal econômico detectável
+    (lift não desvia de 1,0 em 90 células, robusto a k) -- k=4 foi
+    autorizado pra produção como segurança extra de baixo custo
+    (occupancy do bucket de stress ~5-12% do tempo), não como
+    candidato estatisticamente superior comprovado. Ver
+    PLANO_MESTRE_PRINCE2.md §15.13.
+  class: B
   sweep_required: false

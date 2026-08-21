@@ -1,0 +1,866 @@
+{
+  "R1": {
+    "resolution_id": "R1",
+    "baseline": {
+      "classifier_id": "quantile_regime_v1",
+      "resolution_id": "R1",
+      "n_states": 6,
+      "n_windows_requested": 3,
+      "n_windows_ok": 3,
+      "n_cells_saturated_total": 0,
+      "saturation_rate": 0.0,
+      "separation_omega_squared_median": 0.0,
+      "orthogonality_omega_squared_median": 0.9485559861038414,
+      "persistence_median_duration_bars_median": 13.0,
+      "persistence_switch_rate_median": 0.04905482041587902,
+      "fold_stability_adjusted_rand_mean_median": 1.0,
+      "n_oos_obs_total": 24551,
+      "per_window": [
+        {
+          "window_name": "CRYPTO_WINTER",
+          "event": "2023-06, faixa lateral prolongada",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.9895233522522161,
+          "persistence_median_duration_bars": 13.0,
+          "persistence_switch_rate": 0.04362240446693422,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 5731,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.9895233522522161,
+              "persistence_median_duration_bars": 13.0,
+              "persistence_switch_rate": 0.04362240446693422,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 5731,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "ETF_HALVING",
+          "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.00022445698716464947,
+          "orthogonality_omega_squared": 0.8414875337824198,
+          "persistence_median_duration_bars": 11.0,
+          "persistence_switch_rate": 0.050849514563106796,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 8240,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.00022445698716464947,
+              "orthogonality_omega_squared": 0.8414875337824198,
+              "persistence_median_duration_bars": 11.0,
+              "persistence_switch_rate": 0.050849514563106796,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 8240,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "RECENTE",
+          "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.9485559861038414,
+          "persistence_median_duration_bars": 13.0,
+          "persistence_switch_rate": 0.04905482041587902,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 10580,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.9485559861038414,
+              "persistence_median_duration_bars": 13.0,
+              "persistence_switch_rate": 0.04905482041587902,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 10580,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R1",
+        "n_states": 2,
+        "n_windows_requested": 3,
+        "n_windows_ok": 3,
+        "n_cells_saturated_total": 2,
+        "saturation_rate": 0.6666666666666666,
+        "separation_omega_squared_median": 0.0,
+        "orthogonality_omega_squared_median": 0.18581795606451088,
+        "persistence_median_duration_bars_median": 5732.0,
+        "persistence_switch_rate_median": 0.0,
+        "fold_stability_adjusted_rand_mean_median": 1.0,
+        "n_oos_obs_total": 24554,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 1,
+            "separation_omega_squared": null,
+            "orthogonality_omega_squared": null,
+            "persistence_median_duration_bars": 5732.0,
+            "persistence_switch_rate": 0.0,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 5732,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": null,
+                "orthogonality_omega_squared": null,
+                "persistence_median_duration_bars": 5732.0,
+                "persistence_switch_rate": 0.0,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 5732,
+                "n_folds_evaluated": 2,
+                "is_saturated": true
+              }
+            ]
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 1,
+            "separation_omega_squared": null,
+            "orthogonality_omega_squared": null,
+            "persistence_median_duration_bars": 8241.0,
+            "persistence_switch_rate": 0.0,
+            "fold_stability_adjusted_rand_mean": 0.0,
+            "n_oos_obs_total": 8241,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": null,
+                "orthogonality_omega_squared": null,
+                "persistence_median_duration_bars": 8241.0,
+                "persistence_switch_rate": 0.0,
+                "fold_stability_adjusted_rand_mean": 0.0,
+                "fold_stability_adjusted_rand_min": 0.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 8241,
+                "n_folds_evaluated": 2,
+                "is_saturated": true
+              }
+            ]
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 0,
+            "separation_omega_squared": 0.0,
+            "orthogonality_omega_squared": 0.18581795606451088,
+            "persistence_median_duration_bars": 2253.0,
+            "persistence_switch_rate": 0.00028355387523629487,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 10581,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": 0.0,
+                "orthogonality_omega_squared": 0.18581795606451088,
+                "persistence_median_duration_bars": 2253.0,
+                "persistence_switch_rate": 0.00028355387523629487,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 10581,
+                "n_folds_evaluated": 2,
+                "is_saturated": false
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "failed_cells": [],
+    "skipped_cells": [],
+    "q3": [
+      {
+        "classifier_id": "quantile_regime_v1",
+        "resolution_id": "R1",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      },
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R1",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      }
+    ],
+    "heterogeneity": [],
+    "gate_quality": [],
+    "volatility_heterogeneity": []
+  },
+  "R2": {
+    "resolution_id": "R2",
+    "baseline": {
+      "classifier_id": "quantile_regime_v1",
+      "resolution_id": "R2",
+      "n_states": 6,
+      "n_windows_requested": 3,
+      "n_windows_ok": 3,
+      "n_cells_saturated_total": 0,
+      "saturation_rate": 0.0,
+      "separation_omega_squared_median": 0.0,
+      "orthogonality_omega_squared_median": 0.9456346579990279,
+      "persistence_median_duration_bars_median": 13.0,
+      "persistence_switch_rate_median": 0.04782714251031804,
+      "fold_stability_adjusted_rand_mean_median": 1.0,
+      "n_oos_obs_total": 12273,
+      "per_window": [
+        {
+          "window_name": "CRYPTO_WINTER",
+          "event": "2023-06, faixa lateral prolongada",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.009837684124409003,
+          "orthogonality_omega_squared": 0.9815202068204447,
+          "persistence_median_duration_bars": 13.0,
+          "persistence_switch_rate": 0.04399441340782123,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 2864,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.009837684124409003,
+              "orthogonality_omega_squared": 0.9815202068204447,
+              "persistence_median_duration_bars": 13.0,
+              "persistence_switch_rate": 0.04399441340782123,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 2864,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "ETF_HALVING",
+          "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.8376145322226572,
+          "persistence_median_duration_bars": 14.0,
+          "persistence_switch_rate": 0.04782714251031804,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 4119,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.8376145322226572,
+              "persistence_median_duration_bars": 14.0,
+              "persistence_switch_rate": 0.04782714251031804,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 4119,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "RECENTE",
+          "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.9456346579990279,
+          "persistence_median_duration_bars": 11.0,
+          "persistence_switch_rate": 0.0551984877126654,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 5290,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.9456346579990279,
+              "persistence_median_duration_bars": 11.0,
+              "persistence_switch_rate": 0.0551984877126654,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 5290,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R2",
+        "n_states": 2,
+        "n_windows_requested": 3,
+        "n_windows_ok": 3,
+        "n_cells_saturated_total": 1,
+        "saturation_rate": 0.3333333333333333,
+        "separation_omega_squared_median": 0.0,
+        "orthogonality_omega_squared_median": 0.5769021315569042,
+        "persistence_median_duration_bars_median": 2645.5,
+        "persistence_switch_rate_median": 0.0001890359168241966,
+        "fold_stability_adjusted_rand_mean_median": 0.9979658742711511,
+        "n_oos_obs_total": 12276,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 1,
+            "separation_omega_squared": null,
+            "orthogonality_omega_squared": null,
+            "persistence_median_duration_bars": 2865.0,
+            "persistence_switch_rate": 0.0,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 2865,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": null,
+                "orthogonality_omega_squared": null,
+                "persistence_median_duration_bars": 2865.0,
+                "persistence_switch_rate": 0.0,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 2865,
+                "n_folds_evaluated": 2,
+                "is_saturated": true
+              }
+            ]
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 0,
+            "separation_omega_squared": 0.0,
+            "orthogonality_omega_squared": 0.8235219906521015,
+            "persistence_median_duration_bars": 79.0,
+            "persistence_switch_rate": 0.00048555474629764507,
+            "fold_stability_adjusted_rand_mean": 0.680845611427771,
+            "n_oos_obs_total": 4120,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": 0.0,
+                "orthogonality_omega_squared": 0.8235219906521015,
+                "persistence_median_duration_bars": 79.0,
+                "persistence_switch_rate": 0.00048555474629764507,
+                "fold_stability_adjusted_rand_mean": 0.680845611427771,
+                "fold_stability_adjusted_rand_min": 0.680845611427771,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 4120,
+                "n_folds_evaluated": 2,
+                "is_saturated": false
+              }
+            ]
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 0,
+            "separation_omega_squared": 0.0,
+            "orthogonality_omega_squared": 0.33028227246170677,
+            "persistence_median_duration_bars": 2645.5,
+            "persistence_switch_rate": 0.0001890359168241966,
+            "fold_stability_adjusted_rand_mean": 0.9979658742711511,
+            "n_oos_obs_total": 5291,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": 0.0,
+                "orthogonality_omega_squared": 0.33028227246170677,
+                "persistence_median_duration_bars": 2645.5,
+                "persistence_switch_rate": 0.0001890359168241966,
+                "fold_stability_adjusted_rand_mean": 0.9979658742711511,
+                "fold_stability_adjusted_rand_min": 0.9979658742711511,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 5291,
+                "n_folds_evaluated": 2,
+                "is_saturated": false
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "failed_cells": [],
+    "skipped_cells": [],
+    "q3": [
+      {
+        "classifier_id": "quantile_regime_v1",
+        "resolution_id": "R2",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      },
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R2",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      }
+    ],
+    "heterogeneity": [],
+    "gate_quality": [],
+    "volatility_heterogeneity": []
+  },
+  "R3": {
+    "resolution_id": "R3",
+    "baseline": {
+      "classifier_id": "quantile_regime_v1",
+      "resolution_id": "R3",
+      "n_states": 6,
+      "n_windows_requested": 3,
+      "n_windows_ok": 3,
+      "n_cells_saturated_total": 0,
+      "saturation_rate": 0.0,
+      "separation_omega_squared_median": 0.0,
+      "orthogonality_omega_squared_median": 0.8495985871711396,
+      "persistence_median_duration_bars_median": 13.0,
+      "persistence_switch_rate_median": 0.05539358600583091,
+      "fold_stability_adjusted_rand_mean_median": 1.0,
+      "n_oos_obs_total": 6134,
+      "per_window": [
+        {
+          "window_name": "CRYPTO_WINTER",
+          "event": "2023-06, faixa lateral prolongada",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.02071803914683419,
+          "persistence_median_duration_bars": 18.5,
+          "persistence_switch_rate": 0.04262753319357093,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 1431,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.02071803914683419,
+              "persistence_median_duration_bars": 18.5,
+              "persistence_switch_rate": 0.04262753319357093,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 1431,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "ETF_HALVING",
+          "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.0,
+          "orthogonality_omega_squared": 0.8495985871711396,
+          "persistence_median_duration_bars": 13.0,
+          "persistence_switch_rate": 0.05539358600583091,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 2058,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.0,
+              "orthogonality_omega_squared": 0.8495985871711396,
+              "persistence_median_duration_bars": 13.0,
+              "persistence_switch_rate": 0.05539358600583091,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 2058,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        },
+        {
+          "window_name": "RECENTE",
+          "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+          "n_symbols_requested": 5,
+          "n_symbols_ok": 1,
+          "n_symbols_saturated": 0,
+          "separation_omega_squared": 0.000813268058674228,
+          "orthogonality_omega_squared": 0.9383178198753622,
+          "persistence_median_duration_bars": 10.0,
+          "persistence_switch_rate": 0.05897920604914934,
+          "fold_stability_adjusted_rand_mean": 1.0,
+          "n_oos_obs_total": 2645,
+          "per_symbol": [
+            {
+              "symbol": "ETHUSDT",
+              "n_states": 6,
+              "separation_omega_squared": 0.000813268058674228,
+              "orthogonality_omega_squared": 0.9383178198753622,
+              "persistence_median_duration_bars": 10.0,
+              "persistence_switch_rate": 0.05897920604914934,
+              "fold_stability_adjusted_rand_mean": 1.0,
+              "fold_stability_adjusted_rand_min": 1.0,
+              "fold_stability_by_construction": true,
+              "n_oos_obs": 2645,
+              "n_folds_evaluated": 0,
+              "is_saturated": false
+            }
+          ]
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R3",
+        "n_states": 2,
+        "n_windows_requested": 3,
+        "n_windows_ok": 3,
+        "n_cells_saturated_total": 1,
+        "saturation_rate": 0.3333333333333333,
+        "separation_omega_squared_median": 0.0,
+        "orthogonality_omega_squared_median": 0.5069355069245275,
+        "persistence_median_duration_bars_median": 1323.0,
+        "persistence_switch_rate_median": 0.0003780718336483932,
+        "fold_stability_adjusted_rand_mean_median": 1.0,
+        "n_oos_obs_total": 6137,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 1,
+            "separation_omega_squared": null,
+            "orthogonality_omega_squared": null,
+            "persistence_median_duration_bars": 1432.0,
+            "persistence_switch_rate": 0.0,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 1432,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": null,
+                "orthogonality_omega_squared": null,
+                "persistence_median_duration_bars": 1432.0,
+                "persistence_switch_rate": 0.0,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 1432,
+                "n_folds_evaluated": 2,
+                "is_saturated": true
+              }
+            ]
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 0,
+            "separation_omega_squared": 0.0,
+            "orthogonality_omega_squared": 0.6881217404404164,
+            "persistence_median_duration_bars": 38.0,
+            "persistence_switch_rate": 0.001943634596695821,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 2059,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": 0.0,
+                "orthogonality_omega_squared": 0.6881217404404164,
+                "persistence_median_duration_bars": 38.0,
+                "persistence_switch_rate": 0.001943634596695821,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 2059,
+                "n_folds_evaluated": 2,
+                "is_saturated": false
+              }
+            ]
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_symbols_requested": 5,
+            "n_symbols_ok": 1,
+            "n_symbols_saturated": 0,
+            "separation_omega_squared": 0.0,
+            "orthogonality_omega_squared": 0.3257492734086386,
+            "persistence_median_duration_bars": 1323.0,
+            "persistence_switch_rate": 0.0003780718336483932,
+            "fold_stability_adjusted_rand_mean": 1.0,
+            "n_oos_obs_total": 2646,
+            "per_symbol": [
+              {
+                "symbol": "ETHUSDT",
+                "n_states": 2,
+                "separation_omega_squared": 0.0,
+                "orthogonality_omega_squared": 0.3257492734086386,
+                "persistence_median_duration_bars": 1323.0,
+                "persistence_switch_rate": 0.0003780718336483932,
+                "fold_stability_adjusted_rand_mean": 1.0,
+                "fold_stability_adjusted_rand_min": 1.0,
+                "fold_stability_by_construction": false,
+                "n_oos_obs": 2646,
+                "n_folds_evaluated": 2,
+                "is_saturated": false
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "failed_cells": [],
+    "skipped_cells": [],
+    "q3": [
+      {
+        "classifier_id": "quantile_regime_v1",
+        "resolution_id": "R3",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      },
+      {
+        "classifier_id": "jump_model_cjm_v1",
+        "resolution_id": "R3",
+        "n_windows_requested_total": 3,
+        "n_windows_applicable": 3,
+        "n_windows_ok": 0,
+        "adjusted_rand_median": null,
+        "per_window": [
+          {
+            "window_name": "CRYPTO_WINTER",
+            "event": "2023-06, faixa lateral prolongada",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "ETF_HALVING",
+            "event": "2024-03, ATH BTC pré-halving + aprovação ETF spot",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          },
+          {
+            "window_name": "RECENTE",
+            "event": "regime atual, sem evento único -- cobertura mais recente do backfill",
+            "n_assets_requested": 4,
+            "n_assets_ok": 0,
+            "adjusted_rand_median": null,
+            "per_asset": []
+          }
+        ]
+      }
+    ],
+    "heterogeneity": [],
+    "gate_quality": [],
+    "volatility_heterogeneity": []
+  }
+}

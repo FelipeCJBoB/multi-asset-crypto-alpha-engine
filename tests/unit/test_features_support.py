@@ -160,6 +160,54 @@ def test_realized_vol_causalidade() -> None:
 
 
 # ============================================================================
+# downside_deviation (AG-119 -- espaço de observação estendido do Jump Model)
+# ============================================================================
+
+
+def test_downside_deviation_serie_so_positiva_da_zero() -> None:
+    log_ret = np.abs(np.random.default_rng(1).normal(0, 0.01, 50)) + 0.001
+    out = support.downside_deviation(log_ret, window=10)
+    valid = out[~np.isnan(out)]
+    assert np.allclose(valid, 0.0)
+
+
+def test_downside_deviation_valor_conhecido_a_mao() -> None:
+    # janela de 4 retornos: [-0.02, 0.01, -0.01, 0.03] -- só os negativos
+    # entram no quadrado (positivos contam como 0): mean([0.02^2, 0, 0.01^2, 0]) = 0.000125
+    log_ret = np.array([-0.02, 0.01, -0.01, 0.03])
+    out = support.downside_deviation(log_ret, window=4)
+    assert out[-1] == pytest.approx(np.sqrt(0.000125))
+    assert np.isnan(out[:3]).all()  # janela incompleta antes do índice 3
+
+
+def test_downside_deviation_causalidade() -> None:
+    rng = np.random.default_rng(6)
+    log_ret = rng.normal(0, 0.01, 80)
+
+    def fn(v: np.ndarray) -> np.ndarray:
+        return support.downside_deviation(v, window=12)
+
+    _assert_causal(fn, log_ret, cutoff=40)
+
+
+def test_downside_deviation_nunca_nan_por_cancelamento_de_ponto_flutuante() -> None:
+    """AG-119, 2026-08-20 -- achado real: `mean_sq` (média de quadrados,
+    matematicamente nunca negativa) saía como `-3,16e-20` por
+    cancelamento de ponto flutuante em janelas quase todas positivas
+    (30 barras reais de XRPUSDT/R1 afetadas), e `np.sqrt` desse negativo
+    devolvia `NaN` silencioso. Reproduz com escala realista de
+    log-retorno (~1e-4, mesma ordem de grandeza de dollar-bar real) e
+    N grande o suficiente pra cancelamento de ponto flutuante ser
+    plausível -- invariante: NENHUM `NaN` fora do prefixo de warmup
+    (`window-1` primeiras posições), nunca no meio da série."""
+    rng = np.random.default_rng(42)
+    log_ret = rng.normal(0.0, 1e-4, 50_000)
+    window = 12
+    out = support.downside_deviation(log_ret, window=window)
+    assert not np.isnan(out[window - 1 :]).any()
+
+
+# ============================================================================
 # parkinson_vol / garman_klass_vol (PRD_V4_1.md §3.2 M1)
 # ============================================================================
 

@@ -59,7 +59,6 @@ import numpy as np
 import structlog
 
 from src.features.groups.group_e import round_trip_cost_bps
-from src.regime.classifier import TRADEABLE_REGIMES
 
 from ._constants import load_constant
 from .kill_switch import SystemState
@@ -125,10 +124,20 @@ class RejectionReason(StrEnum):
 # ============================================================================
 
 
-def control_01_regime_tradeavel(regime: str) -> ControlOutcome:
-    """#1 — `regime ∈ {R1..R4}`. REUSA `TRADEABLE_REGIMES` de
-    `src.regime.classifier` (Sprint 5) — não redeclara o conjunto aqui."""
-    return ControlOutcome.PASS if regime in TRADEABLE_REGIMES else ControlOutcome.FAIL
+def control_01_regime_tradeavel(regime_tradeable: bool) -> ControlOutcome:
+    """#1 — candidato-agnóstico (Fase C do plano `wise-exploring-panda.md`,
+    2026-08-21, `PLANO_MESTRE_PRINCE2.md §15.13`): recebe o `bool` já
+    resolvido pelo builder de regime (`src.regime.classifier.
+    classify_regimes` pro baseline — `regime ∈ {R1..R4}` via
+    `TRADEABLE_REGIMES` — ou `src.regime.build_hmm.build_hmm_regimes` pro
+    HMM canônico, que não tem vocabulário R1-R4), nunca decodifica
+    vocabulário de candidato aqui. Antes desta fase o parâmetro era
+    `regime: str` comparado contra `TRADEABLE_REGIMES` — isso amarrava o
+    Risk Engine ao vocabulário específico do baseline; mapear a saída do
+    HMM pros rótulos R1-R4 reintroduziria o erro que `AG-121` já documenta
+    (`canonical_id` do HMM não tem ordem semântica — tratá-lo como se
+    fosse R1-R4 seria uma segunda fonte de verdade inventada)."""
+    return ControlOutcome.PASS if regime_tradeable else ControlOutcome.FAIL
 
 
 def control_02_estado_sistema(system_state: SystemState) -> ControlOutcome:
@@ -499,7 +508,7 @@ class RiskEngineInputs:
     de sizing e de controle são módulos separados) — os controles 6-11 só
     leem os campos já calculados."""
 
-    regime: str
+    regime_tradeable: bool
     system_state: SystemState
     kill_switch_active: bool
     reconciliation_age_s: float
@@ -533,7 +542,11 @@ def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
     `FAIL` (decisão documentada no docstring do módulo). `NOT_COMPUTABLE`
     nunca interrompe — é registrado e a avaliação continua."""
     checks: tuple[tuple[str, RejectionReason, ControlOutcome], ...] = (
-        ("1", RejectionReason.REGIME_BLOCKED, control_01_regime_tradeavel(inputs.regime)),
+        (
+            "1",
+            RejectionReason.REGIME_BLOCKED,
+            control_01_regime_tradeavel(inputs.regime_tradeable),
+        ),
         ("2", RejectionReason.STATE_NOT_RUNNING, control_02_estado_sistema(inputs.system_state)),
         (
             "3",

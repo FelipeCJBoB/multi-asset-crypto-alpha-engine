@@ -300,7 +300,7 @@ from src.data import lake
 from src.data._constants import load_constant as load_data_constant
 from src.features import support as features_support
 from src.features._constants import load_constant as load_feature_constant
-from src.regime import classifier
+from src.regime import classifier, hmm_features
 from src.regime.bocpd import run_bocpd, segments_to_canonical_states
 from src.regime.build import build_regimes
 from src.regime.canonicalization import canonicalize_states
@@ -359,6 +359,16 @@ BOCPD_CLASSIFIER_ID: Final[str] = "bocpd_v1"
 _BASELINE_R0_PHYSICAL_ID: Final[int] = 0
 _BASELINE_N_STATES: Final[int] = len(classifier.REGIME_LABELS)
 
+# R5 (stress, sempre o ÚLTIMO índice do Enum REGIME_LABELS -- mesma
+# fonte/confirmação de _BASELINE_R0_PHYSICAL_ID). Extensão de qualidade-
+# de-gate (AG-114, 2026-08-20): o baseline já tem rótulo semântico de
+# stress (R5, `src.regime.classifier.TRADEABLE_REGIMES`), diferente dos
+# outros 4 candidatos que só expõem `canonical_id` cru -- ver
+# `src.validation.regime_utility.identify_stress_state_by_volatility` pra
+# convenção equivalente nesses. Usado em `m4_critical_windows.py`, não
+# neste módulo diretamente.
+_BASELINE_R5_PHYSICAL_ID: Final[int] = len(classifier.REGIME_LABELS) - 1
+
 # Sentinela de fold sem fit bem-sucedido (fit_hmm_gaussian/fit_jump_model
 # retornam None em convergência degenerada/dado insuficiente) -- nunca um
 # canonical_id real (canonicalize_states/predict_* sempre devolvem >= 0
@@ -369,45 +379,19 @@ _FOLD_FIT_FAILURE_SENTINEL: Final[int] = -1
 # ============================================================================
 # Espaço de features -- direto do OHLC da dollar-bar, sem IO
 # ============================================================================
+#
+# Extraído para `src.regime.hmm_features` (Fase B do plano
+# `wise-exploring-panda.md`, 2026-08-21) -- `src.regime.build_hmm` (builder
+# de produção do candidato HMM canônico) precisa desta extração sem
+# depender deste harness de comparação. Re-exportado aqui sob o nome
+# privado original (`_input_obs`/`_valid_start_idx`) para preservar os ~9
+# pontos de teste existentes (`tests/unit/test_analysis_m4_regime_
+# comparison.py`) sem nenhuma mudança de comportamento -- mesmo código,
+# módulo diferente.
 
 
-def _input_obs(bars_df: pl.DataFrame) -> tuple[FloatArray, Float2DArray]:
-    """`(log_return_1, [log_return_1, realized_vol_short])`, alinhados por
-    POSIÇÃO com `bars_df` (mesmo nº de linhas, mesma ordem) -- sem nenhum
-    corte/trim aqui (isso é responsabilidade do caller, ver
-    `_valid_start_idx`/docstring do módulo). `close[t-1]` inexistente pra
-    `t=0` -- `log_return_1[0]` é `NaN` por construção, não um erro de dado
-    (mesmo padrão de `src.features.build.build_t1_features`/`src.
-    validation.volatility_walkforward.next_bar_realized_variance`)."""
-    close = bars_df["close"].cast(pl.Float64).to_numpy()
-    n = close.shape[0]
-    log_return_1 = np.full(n, np.nan, dtype=np.float64)
-    if n > 1:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            log_return_1[1:] = np.log(
-                close[1:] / close[:-1]  # noqa: unguarded-ratio -- preço real, sempre >0 por construção
-            )
-
-    short_window = int(load_feature_constant("feature_c06_vol_ratio_short_window"))
-    realized_vol_short = features_support.realized_vol(log_return_1, short_window)
-
-    obs_2d: Float2DArray = np.column_stack([log_return_1, realized_vol_short]).astype(np.float64)
-    return log_return_1, obs_2d
-
-
-def _valid_start_idx(log_return_1: FloatArray, realized_vol_short: FloatArray) -> int:
-    """Primeiro índice em que `log_return_1` E `realized_vol_short` são
-    ambos finitos -- ver docstring do módulo pro achado real de que isso é
-    `window`, não `window-1` (o `NaN` estrutural de `log_return_1[0]`
-    propaga por toda janela que o contém). Levanta `ValueError` se a série
-    inteira for inválida (curta demais pra sequer 1 barra pós-warmup)."""
-    valid = np.isfinite(log_return_1) & np.isfinite(realized_vol_short)
-    if not np.any(valid):
-        raise ValueError(
-            "_valid_start_idx: nenhuma barra com log_return_1 e realized_vol_short ambos "
-            "finitos -- série curta demais (<= feature_c06_vol_ratio_short_window barras)?"
-        )
-    return int(np.argmax(valid))
+_input_obs = hmm_features.input_obs
+_valid_start_idx = hmm_features.valid_start_idx
 
 
 def _forward_return(log_return_1: FloatArray) -> FloatArray:
@@ -419,6 +403,33 @@ def _forward_return(log_return_1: FloatArray) -> FloatArray:
     out = np.full(n, np.nan, dtype=np.float64)
     if n > 1:
         out[:-1] = log_return_1[1:]
+    return out
+
+
+def _forward_realized_vol(realized_vol_short: FloatArray, window: int) -> FloatArray:
+    """`forward_realized_vol[t] = realized_vol_short[t+window]` --
+    generalização de `_forward_return` (h=1 -> h=`window`) pra métrica
+    primária de ranking da extensão de qualidade-de-gate (AG-114,
+    2026-08-20, `PLANO_MESTRE_PRINCE2.md §15.12.1`): separação de
+    VOLATILIDADE futura entre buckets de regime, não retorno -- ADR-001
+    §2.7 (ratificado) decide que regime é GATE, não feature, na v1, e um
+    gate precisa detectar risco de cauda elevado, não prever retorno
+    médio.
+
+    Reusa o array que `_input_obs` já computa (`realized_vol_short` é uma
+    janela ROLANTE BACKWARD de `window` barras terminando em `t`, mesma
+    função `features_support.realized_vol` usada por
+    `RealizedVolEstimator`) -- deslocar essa mesma série `window` posições
+    pra frente dá exatamente a volatilidade realizada sobre `(t, t+window]`
+    sem reimplementar a fórmula: `realized_vol_short[t+window]` já é "vol
+    realizada nas `window` barras que terminam em `t+window`", que é a
+    janela `(t, t+window]` quando lida a partir de `t`. Últimas `window`
+    posições -> `NaN` (mesmo padrão de `_forward_return`, sem `t+window`
+    disponível)."""
+    n = realized_vol_short.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    if n > window:
+        out[: n - window] = realized_vol_short[window:]
     return out
 
 
@@ -1025,6 +1036,7 @@ def compare_regime_candidates_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = ...,
     jump_seed: int = ...,
+    include_jump_model: bool = ...,
     return_raw_labels: Literal[False] = ...,
 ) -> SymbolResult | None: ...
 
@@ -1043,6 +1055,7 @@ def compare_regime_candidates_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = ...,
     jump_seed: int = ...,
+    include_jump_model: bool = ...,
     return_raw_labels: Literal[True],
 ) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
 
@@ -1060,6 +1073,7 @@ def compare_regime_candidates_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = 0,
     jump_seed: int = 0,
+    include_jump_model: bool = True,
     return_raw_labels: bool = False,
 ) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
     """Núcleo puro (sem IO) -- recebe `bars_df`/`baseline_df` já
@@ -1069,6 +1083,19 @@ def compare_regime_candidates_for_symbol(
     insuficiente pra `initial_train_years` de treino inicial) -- mesmo
     contrato de `volatility_comparison.compare_estimators_for_
     combination`, sinal explícito pro chamador pular o símbolo.
+
+    `include_jump_model=True` (default, preserva o contrato exato de
+    antes) -- `AG-117` (`audit/architecture_gaps_log.yaml`, 2026-08-20):
+    experimento de transferibilidade de λ mostrou que Jump Model não tem
+    estrutura de 2 regimes detectável em NENHUM ponto de grid testado
+    pra SOLUSDT/BNBUSDT/XRPUSDT (mesmo in-sample), e recalibrar λ pra
+    ETHUSDT (único não-BTC com λ genuíno) piora ou empata a saturação
+    nas janelas críticas -- nunca melhora. `include_jump_model=False`
+    pula o fit de Jump Model inteiro (não aparece em `SymbolResult.
+    candidates` nem em `raw_labels_by_classifier_id`) -- usado pelo
+    orquestrador do M4 (`m4_critical_windows._run_one_cell`) pra símbolo
+    != BTCUSDT (que continua elegível -- `m4_jump_model_penalty=0,002` é
+    seu próprio λ local, nunca transplantado).
 
     **Fase 4 (Q3) -- `return_raw_labels: bool = False`** (default
     preserva o contrato exato da Fase 3, testado em `tests/unit/test_
@@ -1152,26 +1179,33 @@ def compare_regime_candidates_for_symbol(
     for k, (_, hmm_raw_labels) in zip(hmm_states_grid, hmm_pairs, strict=True):
         raw_labels_by_classifier_id[hmm_gaussian_classifier_id(k)] = hmm_raw_labels
 
-    jump_result, jump_raw_labels = _run_fold_refit_candidate(
-        JUMP_MODEL_CLASSIFIER_ID,
-        jump_n_states,
-        obs_2d,
-        splits,
-        fit_fn=lambda obs, train_end_idx: fit_jump_model(
-            obs,
-            n_states=jump_n_states,
-            jump_penalty=jump_penalty,
-            train_end_idx=train_end_idx,
-            seed=jump_seed,
-        ),
-        predict_fn=predict_jump_model,
-        forward_return=forward_return,
-        vol_pctile=vol_pctile,
-        open_time_ms=open_time_ms,
-        close_time_ms=close_time_ms,
-        return_raw_labels=True,
-    )
-    raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
+    # AG-117, 2026-08-20 -- Jump Model pulado inteiro quando
+    # include_jump_model=False (experimento de transferibilidade mostrou
+    # ausência de estrutura de 2 regimes detectável, ver docstring desta
+    # função). Não entra em candidates/raw_labels_by_classifier_id.
+    jump_candidates: tuple[CandidateResult, ...] = ()
+    if include_jump_model:
+        jump_result, jump_raw_labels = _run_fold_refit_candidate(
+            JUMP_MODEL_CLASSIFIER_ID,
+            jump_n_states,
+            obs_2d,
+            splits,
+            fit_fn=lambda obs, train_end_idx: fit_jump_model(
+                obs,
+                n_states=jump_n_states,
+                jump_penalty=jump_penalty,
+                train_end_idx=train_end_idx,
+                seed=jump_seed,
+            ),
+            predict_fn=predict_jump_model,
+            forward_return=forward_return,
+            vol_pctile=vol_pctile,
+            open_time_ms=open_time_ms,
+            close_time_ms=close_time_ms,
+            return_raw_labels=True,
+        )
+        raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
+        jump_candidates = (jump_result,)
 
     bocpd_result, bocpd_raw_labels = _bocpd_candidate_result(
         log_return_1,
@@ -1199,7 +1233,180 @@ def compare_regime_candidates_for_symbol(
         n_bars=bars_df.height,
         n_folds=len(splits),
         baseline=baseline_result,
-        candidates=(*hmm_results, jump_result, bocpd_result),
+        candidates=(*hmm_results, *jump_candidates, bocpd_result),
+        oos_start_ms=oos_start_ms,
+        oos_end_ms=oos_end_ms,
+    )
+    if return_raw_labels:
+        return symbol_result, raw_labels_by_classifier_id
+    return symbol_result
+
+
+# ============================================================================
+# Núcleo puro -- SÓ baseline + Jump Model (experimento de transferibilidade
+# de jump_penalty por ativo, AG-087, `audit/architecture_gaps_log.yaml`).
+# IRMÃ de `compare_regime_candidates_for_symbol`, não uma variação dela --
+# pula os 3 HMM e o BOCPD de propósito (custo ~4-6x menor por célula: o
+# experimento só precisa medir `is_saturated`/`saturation_rate` do Jump
+# Model sob λ por ativo, recomputar HMM/BOCPD que não mudam com λ seria
+# desperdício puro de N_lifetime/tempo). Reusa `_run_fold_refit_candidate`
+# (núcleo genérico compartilhado com HMM) e `_baseline_candidate_result`
+# -- ZERO lógica de fold nova, mesmo padrão exato de chamada que
+# `compare_regime_candidates_for_symbol` já usa pro Jump Model (linhas
+# ~1192-1210 acima).
+# ============================================================================
+
+
+@overload
+def compare_jump_model_only_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def compare_jump_model_only_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
+
+
+def compare_jump_model_only_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = 0,
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
+    """Núcleo puro (sem IO) -- IRMÃ de `compare_regime_candidates_for_symbol`,
+    mesmo contrato de entrada/saída (`SymbolResult | None`, mesmo
+    `_assert_bars_baseline_aligned`/`_valid_start_idx`/walk-forward), mas
+    roda SÓ baseline (custo ~zero, state machine determinística) + Jump
+    Model -- nunca os 3 HMM nem o BOCPD. `SymbolResult.candidates` tem
+    exatamente 1 elemento (`(jump_result,)`), não 4 -- 100% compatível com
+    a maquinaria de agregação de `m4_critical_windows.py`
+    (`_aggregate_one_candidate`/`_collect_classifier_ids` só procuram
+    `classifier_id` dentro de `symbol_result.candidates`, nunca assumem
+    quantidade fixa de candidatos).
+
+    Existe especificamente para o experimento de transferibilidade de
+    `m4_jump_model_penalty` por ativo (AG-087): `constants.yaml::
+    m4_jump_model_penalty` (0,002) foi calibrado SÓ em BTCUSDT e é
+    transplantado sem reteste pra ETH/SOL/BNB/XRP, medindo ~25-29% de
+    saturação (`is_saturated`/`switch_rate==0.0`) nas células não-BTC.
+    Testar se um λ calibrado POR ATIVO reduz essa saturação exigiria, com
+    `compare_regime_candidates_for_symbol`, recomputar HMM k=2/3/4 e BOCPD
+    a cada célula -- candidatos que NÃO dependem de `jump_penalty`, custo
+    desperdiçado. Esta função isola só o que muda com o hiperparâmetro
+    sendo testado.
+
+    `return_raw_labels: bool = False` -- mesmo protocolo/motivo de tipagem
+    de `compare_regime_candidates_for_symbol` (`@overload` por `Literal`,
+    `RawLabels` do baseline + Jump Model, nunca um `bool` puro repassado
+    internamente). `True` alimenta a heterogeneidade de volatilidade
+    (AG-114, `m4_critical_windows.VolatilityHeterogeneitySymbolDetail`)
+    como sinal secundário/corroborante do experimento -- não custa refit
+    extra, mesmo fatiamento de array já calculado que o resto do módulo já
+    aceita como desprezível."""
+    _assert_bars_baseline_aligned(bars_df, baseline_df, symbol=symbol)
+
+    log_return_1_full, obs_2d_full = _input_obs(bars_df)
+    valid_start_idx = _valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
+
+    open_time_ms = bars_df["open_time"].cast(pl.Int64).to_numpy()[valid_start_idx:]
+    close_time_ms = bars_df["close_time"].cast(pl.Int64).to_numpy()[valid_start_idx:]
+    log_return_1 = log_return_1_full[valid_start_idx:]
+    obs_2d = obs_2d_full[valid_start_idx:]
+    forward_return = _forward_return(log_return_1)
+    vol_pctile = baseline_df["vol_pctile"].cast(pl.Float64).to_numpy()[valid_start_idx:]
+    regime_physical = (
+        baseline_df["regime"].to_physical().cast(pl.Int64).to_numpy()[valid_start_idx:]
+    )
+    baseline_classifier_id = str(baseline_df["classifier_id"][0])
+
+    splits = vwf.generate_anchored_walk_forward_splits(
+        open_time_ms, initial_train_years=initial_train_years
+    )
+    if not splits:
+        logger.warning(
+            "analysis.m4_regime_comparison.jump_only_folds_insuficientes",
+            symbol=symbol,
+            n_bars=bars_df.height,
+            n_bars_pos_trim=int(obs_2d.shape[0]),
+        )
+        return None
+    oos_start, oos_end = _oos_slice(splits)
+
+    # Literal True hardcoded (não repassa `return_raw_labels`) -- mesmo
+    # motivo de tipagem de `compare_regime_candidates_for_symbol`: os 2
+    # helpers são `@overload`ados por `Literal`, um `bool` puro não
+    # casaria com nenhuma das duas variantes.
+    baseline_result, baseline_raw_labels = _baseline_candidate_result(
+        regime_physical,
+        oos_start,
+        oos_end,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        classifier_id=baseline_classifier_id,
+        open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
+        return_raw_labels=True,
+    )
+    raw_labels_by_classifier_id: dict[str, RawLabels] = {
+        baseline_classifier_id: baseline_raw_labels
+    }
+
+    jump_result, jump_raw_labels = _run_fold_refit_candidate(
+        JUMP_MODEL_CLASSIFIER_ID,
+        jump_n_states,
+        obs_2d,
+        splits,
+        fit_fn=lambda obs, train_end_idx: fit_jump_model(
+            obs,
+            n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            train_end_idx=train_end_idx,
+            seed=jump_seed,
+        ),
+        predict_fn=predict_jump_model,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
+        return_raw_labels=True,
+    )
+    raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
+
+    # AG-093 -- mesma fronteira OOS em timestamp (half-open) que
+    # compare_regime_candidates_for_symbol já usa, ver docstring de
+    # SymbolResult.
+    oos_start_ms = int(close_time_ms[oos_start])
+    oos_end_ms = int(close_time_ms[oos_end - 1]) + 1
+
+    symbol_result = SymbolResult(
+        symbol=symbol,
+        n_bars=bars_df.height,
+        n_folds=len(splits),
+        baseline=baseline_result,
+        candidates=(jump_result,),
         oos_start_ms=oos_start_ms,
         oos_end_ms=oos_end_ms,
     )
@@ -1228,6 +1435,7 @@ def run_regime_comparison_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = ...,
     jump_seed: int = ...,
+    include_jump_model: bool = ...,
     return_raw_labels: Literal[False] = ...,
 ) -> SymbolResult | None: ...
 
@@ -1247,6 +1455,7 @@ def run_regime_comparison_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = ...,
     jump_seed: int = ...,
+    include_jump_model: bool = ...,
     return_raw_labels: Literal[True],
 ) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
 
@@ -1265,6 +1474,7 @@ def run_regime_comparison_for_symbol(
     bocpd_n_canonical_buckets: int,
     hmm_seed: int = 0,
     jump_seed: int = 0,
+    include_jump_model: bool = True,
     return_raw_labels: bool = False,
 ) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
     """Carrega `bars_df` (`lake.query_dollar_bars`) e `baseline_df`
@@ -1272,6 +1482,9 @@ def run_regime_comparison_for_symbol(
     reais do disco, com o MESMO `(symbol, start, end)` nos dois (garante o
     alinhamento que `_assert_bars_baseline_aligned` confirma no núcleo
     puro), delega o resto pra `compare_regime_candidates_for_symbol`.
+
+    `include_jump_model: bool = True` -- repassado direto, ver docstring
+    de `compare_regime_candidates_for_symbol`/`AG-117`.
 
     `resolution_id: str = RESOLUTION_ID` (default `"R1"`, Fase B do plano
     `wise-exploring-panda.md` -- ver docstring do módulo) seleciona R1/R2/
@@ -1339,6 +1552,7 @@ def run_regime_comparison_for_symbol(
             bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
             hmm_seed=hmm_seed,
             jump_seed=jump_seed,
+            include_jump_model=include_jump_model,
             return_raw_labels=True,
         )
     return compare_regime_candidates_for_symbol(
@@ -1352,6 +1566,392 @@ def run_regime_comparison_for_symbol(
         bocpd_hazard_lambda=bocpd_hazard_lambda,
         bocpd_n_canonical_buckets=bocpd_n_canonical_buckets,
         hmm_seed=hmm_seed,
+        jump_seed=jump_seed,
+        include_jump_model=include_jump_model,
+        return_raw_labels=False,
+    )
+
+
+# ============================================================================
+# Ponto de entrada com IO -- SÓ baseline + Jump Model (ver docstring de
+# compare_jump_model_only_for_symbol/AG-087, experimento de
+# transferibilidade de jump_penalty por ativo)
+# ============================================================================
+
+
+@overload
+def run_jump_model_only_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    resolution_id: str = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def run_jump_model_only_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    resolution_id: str = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
+
+
+def run_jump_model_only_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = None,
+    resolution_id: str = RESOLUTION_ID,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = 0,
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
+    """IRMÃ de `run_regime_comparison_for_symbol` -- carrega `bars_df`/
+    `baseline_df` reais do disco com o MESMO `(symbol, start, end,
+    resolution_id)`, delega pra `compare_jump_model_only_for_symbol` (só
+    baseline + Jump Model, ver docstring de lá). Usada pelo laço de
+    transferibilidade de `jump_penalty` por ativo
+    (`m4_critical_windows.run_jump_model_transferability_comparison`,
+    AG-087) -- IO isolado do harness completo de 6 candidatos pelo mesmo
+    motivo: HMM/BOCPD não mudam com `jump_penalty`, recomputá-los por
+    célula seria custo puro sem informação nova."""
+    train_years = (
+        initial_train_years
+        if initial_train_years is not None
+        else int(load_validation_constant("m1_walkforward_initial_train_years"))
+    )
+
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m4_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m4_duckdb_threads")),
+    )
+    bars_df = lake.query_dollar_bars(
+        symbol,
+        start,
+        end,
+        resolution_id=resolution_id,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
+    )
+    baseline_df = build_regimes(symbol, start, end, bar_source=f"dollar_{resolution_id.lower()}")
+
+    logger.info(
+        "analysis.m4_regime_comparison.jump_only_bars_loaded",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_bars=bars_df.height,
+        n_bars_baseline=baseline_df.height,
+        start=start,
+        end=end,
+    )
+    if return_raw_labels:
+        return compare_jump_model_only_for_symbol(
+            symbol,
+            bars_df,
+            baseline_df,
+            initial_train_years=train_years,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
+    return compare_jump_model_only_for_symbol(
+        symbol,
+        bars_df,
+        baseline_df,
+        initial_train_years=train_years,
+        jump_n_states=jump_n_states,
+        jump_penalty=jump_penalty,
+        jump_seed=jump_seed,
+        return_raw_labels=False,
+    )
+
+
+# ============================================================================
+# "Condição C" -- Jump Model com espaço de observação ESTENDIDO (AG-119,
+# 2026-08-20). Reteste isolado (tools/diagnostics/retest_jump_model_
+# extended_features_k3.py) mostrou que SOLUSDT/BNBUSDT/XRPUSDT (que
+# AG-117 tinha excluído -- nenhum λ funcionava no espaço estreito de 2
+# features) mostram estrutura de regime genuína quando testados com
+# espaço de 4 features (log_return_1/realized_vol_short/
+# realized_vol_long/downside_deviation) + jump_n_states=3, alinhado à
+# literatura (Cortese/Kolm/Lindström 2023, único paper cripto-específico,
+# acha K=3 melhor que K=2). Esta seção reproduz o MESMO espaço/K no
+# harness REAL do M4 (não no script de diagnóstico isolado), pra colocar
+# Jump Model de volta na disputa do AG-114 com essa configuração.
+# ============================================================================
+
+
+def _extended_jump_model_obs(bars_df: pl.DataFrame) -> tuple[FloatArray, FloatArray]:
+    """`(log_return_1, obs_4d)` -- MESMA mecânica de `_input_obs`, mas com
+    2 colunas extras (`realized_vol_long`/`downside_deviation`,
+    `AG-119`). Corte de warmup PRÓPRIO (não reusa `_valid_start_idx`
+    puro): as 2 colunas novas têm janela própria (`feature_c06_vol_
+    ratio_long_window`, tipicamente maior que a curta) e podem ficar
+    `NaN` além de onde `log_return_1`/`realized_vol_short` já ficariam
+    finitos -- corta na primeira posição em que as 4 colunas são finitas
+    SIMULTANEAMENTE, não só as 2 originais (achado real do reteste
+    isolado: 84 barras extras de warmup vs. o corte de 2 colunas)."""
+    log_return_1_full, obs_2d_full = _input_obs(bars_df)
+    valid_start_idx = _valid_start_idx(log_return_1_full, obs_2d_full[:, 1])
+    log_return_1 = log_return_1_full[valid_start_idx:]
+    realized_vol_short = obs_2d_full[valid_start_idx:, 1]
+
+    short_window = int(load_feature_constant("feature_c06_vol_ratio_short_window"))
+    long_window = int(load_feature_constant("feature_c06_vol_ratio_long_window"))
+    realized_vol_long_full = features_support.realized_vol(log_return_1_full, long_window)
+    realized_vol_long = realized_vol_long_full[valid_start_idx:]
+    downside_dev_full = features_support.downside_deviation(log_return_1_full, short_window)
+    downside_dev = downside_dev_full[valid_start_idx:]
+
+    obs_4d = np.column_stack(
+        [log_return_1, realized_vol_short, realized_vol_long, downside_dev]
+    ).astype(np.float64)
+
+    extra_valid = np.all(np.isfinite(obs_4d), axis=1)
+    if not np.any(extra_valid):
+        raise ValueError(
+            "_extended_jump_model_obs: nenhuma barra com as 4 colunas finitas -- "
+            "long_window/downside_deviation maiores que o histórico disponível?"
+        )
+    extra_start_idx = int(np.argmax(extra_valid))
+    return log_return_1[extra_start_idx:], obs_4d[extra_start_idx:]
+
+
+@overload
+def compare_jump_model_extended_features_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def compare_jump_model_extended_features_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
+
+
+def compare_jump_model_extended_features_for_symbol(
+    symbol: str,
+    bars_df: pl.DataFrame,
+    baseline_df: pl.DataFrame,
+    *,
+    initial_train_years: int,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = 0,
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
+    """IRMÃ de `compare_jump_model_only_for_symbol` -- mesmo contrato de
+    entrada/saída, mesmo núcleo (`_run_fold_refit_candidate`,
+    `_baseline_candidate_result`, walk-forward ancorado idêntico), mas
+    consome `_extended_jump_model_obs` (4 features) em vez de `_input_obs`
+    (2 features) -- único ponto de diferença real, tudo o resto é a
+    mesma orquestração. `AG-119` (`audit/architecture_gaps_log.yaml`) --
+    "Condição C" do experimento de transferibilidade de λ, com espaço de
+    observação alinhado à literatura de Jump Model."""
+    _assert_bars_baseline_aligned(bars_df, baseline_df, symbol=symbol)
+
+    log_return_1, obs_4d = _extended_jump_model_obs(bars_df)
+    extra_start_idx = bars_df.height - log_return_1.shape[0]
+
+    open_time_ms = bars_df["open_time"].cast(pl.Int64).to_numpy()[extra_start_idx:]
+    close_time_ms = bars_df["close_time"].cast(pl.Int64).to_numpy()[extra_start_idx:]
+    forward_return = _forward_return(log_return_1)
+    vol_pctile = baseline_df["vol_pctile"].cast(pl.Float64).to_numpy()[extra_start_idx:]
+    regime_physical = (
+        baseline_df["regime"].to_physical().cast(pl.Int64).to_numpy()[extra_start_idx:]
+    )
+    baseline_classifier_id = str(baseline_df["classifier_id"][0])
+
+    splits = vwf.generate_anchored_walk_forward_splits(
+        open_time_ms, initial_train_years=initial_train_years
+    )
+    if not splits:
+        logger.warning(
+            "analysis.m4_regime_comparison.jump_extended_folds_insuficientes",
+            symbol=symbol,
+            n_bars=bars_df.height,
+            n_bars_pos_trim=int(obs_4d.shape[0]),
+        )
+        return None
+    oos_start, oos_end = _oos_slice(splits)
+
+    baseline_result, baseline_raw_labels = _baseline_candidate_result(
+        regime_physical,
+        oos_start,
+        oos_end,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        classifier_id=baseline_classifier_id,
+        open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
+        return_raw_labels=True,
+    )
+    raw_labels_by_classifier_id: dict[str, RawLabels] = {
+        baseline_classifier_id: baseline_raw_labels
+    }
+
+    jump_result, jump_raw_labels = _run_fold_refit_candidate(
+        JUMP_MODEL_CLASSIFIER_ID,
+        jump_n_states,
+        obs_4d,
+        splits,
+        fit_fn=lambda obs, train_end_idx: fit_jump_model(
+            obs,
+            n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            train_end_idx=train_end_idx,
+            seed=jump_seed,
+        ),
+        predict_fn=predict_jump_model,
+        forward_return=forward_return,
+        vol_pctile=vol_pctile,
+        open_time_ms=open_time_ms,
+        close_time_ms=close_time_ms,
+        return_raw_labels=True,
+    )
+    raw_labels_by_classifier_id[JUMP_MODEL_CLASSIFIER_ID] = jump_raw_labels
+
+    oos_start_ms = int(close_time_ms[oos_start])
+    oos_end_ms = int(close_time_ms[oos_end - 1]) + 1
+
+    symbol_result = SymbolResult(
+        symbol=symbol,
+        n_bars=bars_df.height,
+        n_folds=len(splits),
+        baseline=baseline_result,
+        candidates=(jump_result,),
+        oos_start_ms=oos_start_ms,
+        oos_end_ms=oos_end_ms,
+    )
+    if return_raw_labels:
+        return symbol_result, raw_labels_by_classifier_id
+    return symbol_result
+
+
+@overload
+def run_jump_model_extended_features_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    resolution_id: str = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[False] = ...,
+) -> SymbolResult | None: ...
+
+
+@overload
+def run_jump_model_extended_features_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = ...,
+    resolution_id: str = ...,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = ...,
+    return_raw_labels: Literal[True],
+) -> tuple[SymbolResult, dict[str, RawLabels]] | None: ...
+
+
+def run_jump_model_extended_features_for_symbol(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    initial_train_years: int | None = None,
+    resolution_id: str = RESOLUTION_ID,
+    jump_n_states: int,
+    jump_penalty: float,
+    jump_seed: int = 0,
+    return_raw_labels: bool = False,
+) -> SymbolResult | tuple[SymbolResult, dict[str, RawLabels]] | None:
+    """IRMÃ de `run_jump_model_only_for_symbol` -- carrega `bars_df`/
+    `baseline_df` reais do disco, delega pra `compare_jump_model_
+    extended_features_for_symbol`. `AG-119` -- "Condição C"."""
+    train_years = (
+        initial_train_years
+        if initial_train_years is not None
+        else int(load_validation_constant("m1_walkforward_initial_train_years"))
+    )
+
+    throttle = lake.DuckDBThrottle(
+        memory_limit_gb=float(load_data_constant("m4_duckdb_memory_limit_gb")),
+        threads=int(load_data_constant("m4_duckdb_threads")),
+    )
+    bars_df = lake.query_dollar_bars(
+        symbol,
+        start,
+        end,
+        resolution_id=resolution_id,
+        duckdb_memory_limit_gb=throttle.memory_limit_gb,
+        duckdb_threads=throttle.threads,
+    )
+    baseline_df = build_regimes(symbol, start, end, bar_source=f"dollar_{resolution_id.lower()}")
+
+    logger.info(
+        "analysis.m4_regime_comparison.jump_extended_bars_loaded",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_bars=bars_df.height,
+        n_bars_baseline=baseline_df.height,
+        start=start,
+        end=end,
+    )
+    if return_raw_labels:
+        return compare_jump_model_extended_features_for_symbol(
+            symbol,
+            bars_df,
+            baseline_df,
+            initial_train_years=train_years,
+            jump_n_states=jump_n_states,
+            jump_penalty=jump_penalty,
+            jump_seed=jump_seed,
+            return_raw_labels=True,
+        )
+    return compare_jump_model_extended_features_for_symbol(
+        symbol,
+        bars_df,
+        baseline_df,
+        initial_train_years=train_years,
+        jump_n_states=jump_n_states,
+        jump_penalty=jump_penalty,
         jump_seed=jump_seed,
         return_raw_labels=False,
     )

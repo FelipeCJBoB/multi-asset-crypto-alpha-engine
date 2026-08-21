@@ -51,25 +51,27 @@ def _synthetic_train_frame(n: int = 60, *, seed: int = 0) -> pl.DataFrame:
 
 
 def test_build_design_matrix_shape_e_colunas() -> None:
+    """Regime SAIU do vetor de treino (2026-08-21, ADR-001 §2.7,
+    `PLANO_MESTRE_PRINCE2.md §15.13`) — `DESIGN_COLUMNS` é só as 10
+    features T1, `build_design_matrix` nunca lê a coluna `regime`."""
     df = _synthetic_train_frame()
     X = alpha.build_design_matrix(df)
     assert X.shape == (df.height, len(alpha.DESIGN_COLUMNS))
-    assert len(alpha.DESIGN_COLUMNS) == len(T1_FEATURE_IDS) + len(alpha.REGIME_ONEHOT_LEVELS)
+    assert alpha.DESIGN_COLUMNS == T1_FEATURE_IDS
 
 
-def test_build_design_matrix_dummy_de_regime_e_one_hot() -> None:
+def test_build_design_matrix_ignora_coluna_regime_se_presente() -> None:
+    """`df` pode conter uma coluna `regime` (ex. vindo do `ModelingFrame`
+    pra outros consumidores, `run_b3_regime_only`) sem afetar o design
+    matrix — `build_design_matrix` nunca a lê."""
     df = pl.DataFrame(
         {
-            **{fid: pl.Series([0.0, 0.0]) for fid in T1_FEATURE_IDS},
-            "regime": pl.Series(["R2", "R1"]),  # R1 é a referência (drop-first)
+            **{fid: pl.Series([1.0, 2.0]) for fid in T1_FEATURE_IDS},
+            "regime": pl.Series(["R2", "R1"]),
         }
     )
     X = alpha.build_design_matrix(df)
-    n_t1 = len(T1_FEATURE_IDS)
-    row_r2 = X[0, n_t1:]
-    row_r1 = X[1, n_t1:]
-    assert row_r2.tolist() == [1.0, 0.0, 0.0, 0.0]  # R2 é o 1o nível de REGIME_ONEHOT_LEVELS
-    assert row_r1.tolist() == [0.0, 0.0, 0.0, 0.0]  # referência -> todos os dummies zero
+    assert X.shape == (2, len(T1_FEATURE_IDS))
 
 
 # ============================================================================
@@ -166,6 +168,28 @@ def test_fit_side_model_expoe_gain_by_column_raw() -> None:
     # o share normalizado (`concentration.shares`) é derivado do MESMO gain
     # bruto — toda chave presente no bruto também está no share normalizado.
     assert set(result.gain_by_column_raw.keys()) <= set(result.concentration.shares.keys())
+
+
+def test_monotone_constraints_tem_exatamente_10_entradas() -> None:
+    """Fecha a lacuna deixada pela remoção de `+ tuple(0 for _ in
+    REGIME_DUMMY_COLUMNS)` (2026-08-21) — `monotone_constraints` que de
+    fato vai pro XGBoost precisa ter 1 entrada por coluna de
+    `DESIGN_COLUMNS` (10, não mais 14), nunca sobrar/faltar."""
+    df = _synthetic_train_frame(n=80, seed=5)
+    hyper = alpha.XGBHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    assert len(result.monotone_constraints) == len(T1_FEATURE_IDS)
+    assert len(result.monotone_constraints) == len(alpha.DESIGN_COLUMNS)
 
 
 # ============================================================================

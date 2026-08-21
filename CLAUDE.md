@@ -4,10 +4,17 @@
 > nada de estado ou histórico aqui.
 > Estado atual do projeto: `docs/SPRINT_LOG.md`. Histórico de mudança (o quê/por
 > quê): `git log`. Histórico deste arquivo: `git log -- CLAUDE.md`.
-> Documento mestre: `PLANO_MESTRE_PRINCE2.md` (governança + PBS, §11). Blueprint
-> técnico: `PRD_V3_2_UNIFICADO.md` (arquitetura) + `PRD_V4_1.md` (escopo
-> multi-ativo).
-> Toda regra abaixo tem âncora §X.Y do PRD. Regra sem âncora é dívida técnica.
+> **Documentos CANÔNICOS deste projeto — só 2 (decisão do Manager,
+> 2026-08-20):** `PLANO_MESTRE_PRINCE2.md` (governança, decisões, PBS, §11)
+> e o ADR-001 completo (`docs/ADR-001_arquitetura_artefatos_e_contratos_
+> 2026-08-19_base.md`, ~1900 linhas, Partes I/II — não o resumo condensado
+> de 222 linhas de sessão anterior). `PRD_V3_2_UNIFICADO.md`/`PRD_V4_1.md`
+> são **OBSOLETOS** — nunca base de decisão de produção nem justificativa
+> de desenho atual; só recebem ponteiro de 1 linha vindo do PLANO_MESTRE,
+> nunca o inverso.
+> Toda regra abaixo tem âncora §X.Y do PRD por motivo HISTÓRICO/rastreabilidade
+> de quando a regra nasceu — a âncora não torna o PRD autoritativo de novo;
+> regra sem âncora é dívida técnica de documentação, não de arquitetura.
 
 ---
 
@@ -17,8 +24,8 @@
 |---|---|
 | Estado atual do projeto, sprint a sprint | `docs/SPRINT_LOG.md` |
 | Governança, PBS, agenda por stage (Road Map Vivo §11.4) | `PLANO_MESTRE_PRINCE2.md` |
-| Blueprint — arquitetura e contratos | `PRD_V3_2_UNIFICADO.md` |
-| Blueprint — emenda de escopo multi-ativo | `PRD_V4_1.md` |
+| Arquitetura de artefatos/contratos de dado (canônico) | `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` |
+| Blueprint técnico histórico — **OBSOLETO**, não usar pra decisão de produção | `PRD_V3_2_UNIFICADO.md`/`PRD_V4_1.md` |
 | Proveniência/classe de toda constante | `config/constants.yaml` |
 | Furos de arquitetura/integração (AG-NNN) | `audit/architecture_gaps_log.yaml` |
 | Orçamento de trials (multiple-testing) | `audit/n_lifetime.yaml` |
@@ -435,3 +442,14 @@ Motivo/detalhe completo: `PLANO_MESTRE_PRINCE2.md` §11.
   (`np.errstate` em cima do sintoma é remediação, não solução). A pergunta
   é sempre "o que essa operação está tentando dizer sobre o dado". Exemplo
   real: `docs/SPRINT_LOG.md` (M1, `diebold_mariano`).
+- Toda regra de decisão travada *a priori* (gates, limiares, critério de
+  desempate) precisa incluir DEFINIÇÃO OPERACIONAL de cada termo usado
+  ("empate" = diferença menor que quanto? o limiar opera sobre mediana ou
+  sobre máximo?), não só a métrica e o valor do limiar — senão a decisão
+  real acaba sendo tomada por julgamento no momento de aplicar a regra, o
+  que é exatamente o viés que travar a priori existe pra evitar. Achado
+  real: `AG-114`/`AG-118` (2026-08-20) — Gate 1 foi especificado como
+  "occupancy ≤ limiar" sem declarar se o limiar se aplica à mediana por
+  resolução ou ao máximo por janela; aplicado com os dois critérios
+  misturados, sem que ninguém tivesse decidido qual valia, até uma
+  auditoria externa perguntar. Ver `audit/architecture_gaps_log.yaml::AG-122`.

@@ -839,8 +839,8 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada — ver §15.11 | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` |
-| **Trilha B(2026-08-19) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟡 **10 gaps descobertos (`AG-094`-`AG-100` + addenda em `AG-007`/`AG-088`), 4 rodadas de contestação adversarial sobre as resoluções propostas (achado real em cada rodada: `AG-101`-`AG-105`, todos corrigidos no mesmo dia), 4 mecanismos aprovados pelo Manager (2026-08-19) com decisões residuais explicitamente registradas como pendentes** (cache-TTL vs. staleness pro rastreador de posição; valor do cap de posições concorrentes; denominador do K01 sob posições concorrentes; adotar agora vs. adiar o gatilho de proteção por regime; valor do encurtamento de `time_stop`; R2/R3 virar produção; Meta consumir regime). Achado adicional que motivou pausa de M4: mandato do Manager tinha sido mal-entendido (seleção "dinâmica em tempo real" — errado; correto é "offline, fixa por rodada, eliminação periódica"), e a política de tiering de features (T1 fixo em 10) foi **descontinuada** — todas as ~92 features com fonte real wired (T1+T2) passam a ser canônicas, seleção delegada ao próprio Learner/Meta-model, decisão registrada mas **ainda não implementada em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas; consequência conhecida a resolver junto, `AG-038`, dependência posicional em `faixa2_caminho_b.py:1229`). 2 documentos de brief (`docs/brief_auditoria_externa_2026-08-19_regime_alpha_execucao.md` + `..._material_de_apoio.md`) comissionados pro Manager levar a auditores externos — pedido de validação cética nos 4 mecanismos aprovados, recomendação nas 7 decisões pendentes, desenho técnico concreto nas fronteiras de estágio ainda sem contrato de dado (Features→Label→Pesos→Split→Learner→Calibração→Validação→Meta-Model) | `audit/architecture_gaps_log.yaml::AG-094` a `AG-105`, `§15.11` deste documento, `docs/brief_auditoria_externa_2026-08-19_*.md` |
+| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md` §2.7 |
+| **Trilha B(2026-08-19/20) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟠 **Auditoria externa (`ADR-001`, 2026-08-20) devolveu veredito: 2 dos 4 mecanismos aprovados internamente REFUTADOS como especificados, 1 parcialmente errado, 1 ganhou os contratos que faltavam.** (B) gate por linha — refutado: `(símbolo,resolução)` não é entidade de posição na Binance (`AG-108`, N-01). (C) convenção de trials — sobre-conta por correlação e mantém resíduo de circularidade (`AG-111`). (D) gatilho de proteção — mecanismo revisado repete, deslocado, o mesmo defeito de paridade treino-live da versão já refutada (`AG-110`); e nenhuma versão de D tem saída executável sob a política post-only GTX declarada — achado **mais severo do ADR inteiro**, atinge o próprio SL do triple-barrier, anterior a qualquer decisão sobre D (`AG-109`). (A) Decision Engine — sem controvérsia no mecanismo, mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger), agora propostos. Achados novos não cobertos pelas 4 rodadas internas: granularidade de lote vs. capital (`AG-112`, viés sistemático de seleção ~24× entre símbolos) e pré-filtro de custo grátis que pode eliminar metade do espaço de busca antes de qualquer backtest (`AG-113`). Decisão de arquitetura de dados também recebida: lake local endereçado por conteúdo (4 invariantes INV-A..D), status `Proposed` — pendente de ratificação formal como `D-###` (nota do próprio ADR). Recomendações fundamentadas recebidas pras 9 decisões antes pendentes (ver `§15.12`). 10 gaps originais (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial interna (`AG-101`-`AG-105`), mandato corrigido (seleção offline, fixa por rodada, eliminação periódica) e tiering de features descontinuado (T1 fixo → todas canônicas, `~92` usáveis, ainda não implementado em código) seguem válidos como histórico — não invalidados pela auditoria externa, só o desenho de consumo em cima deles | `audit/architecture_gaps_log.yaml::AG-094` a `AG-113`, `§15.11`/`§15.12` deste documento, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md`, `docs/brief_auditoria_externa_2026-08-19_*.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
@@ -1778,6 +1778,961 @@ do consolidado (2026-08-19) — nenhuma delas foi decidida por omissão:**
    virar escopo de produção agora ou depois.
 7. **AG-094** (idem, baixa urgência) — Meta-Label consome regime quando
    for implementado, e de qual resolução/candidato.
+
+---
+
+### 15.12 ADR-001 — Auditoria externa do contrato de dado (2026-08-20) — refuta parte do §15.11, resolve as 9 decisões pendentes
+
+Contexto: os 2 briefs de auditoria externa citados no fechamento de
+`§15.11`/`§11.6` (`docs/brief_auditoria_externa_2026-08-19_*.md`) voltaram
+com um parecer completo — recebido nesta sessão como anexo, transcrito
+como `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md`. O
+veredito central: **o loop adversarial interno (4 rodadas, `§15.11`)
+funcionou pra achar furo lógico DENTRO do mecanismo escrito, mas tem um
+ponto cego sistemático** — nenhum dos 5 achados internos atravessava uma
+fronteira de SISTEMA (exchange↔motor, rótulo↔execução); os achados novos
+da auditoria externa vêm todos de fora dessa fronteira (posição real da
+Binance, política de execução declarada, granularidade de lote). É por
+isso que 4 rodadas não os pegaram — não é raciocínio superficial, é
+correlação de família de revisor.
+
+**Status: `Ratificado` pelo Manager, 2026-08-20** ("ADR-001 Ratificado.").
+O documento original marcava isso como decisão arquitetural major (toca
+fonte-canônica, gates, SPEC) e sugeria um registro formal `D-###` via
+`effective_challenge` — termo do próprio texto do parecer, não uma
+convenção que já existisse neste projeto (`§6.5` deste plano é "Quando
+escalar pra você", não um log de decisões numerado; não existe hoje
+nenhuma entrada `D-001..D-NNN` em nenhum documento do repo). Registrado
+aqui, sem inventar numeração nova: esta seção (`§15.12`) + os achados
+`AG-108` a `AG-114` (ver abaixo) SÃO o registro de decisão — vinculante a
+partir de 2026-08-20. Consequência prática da ratificação: os 4
+invariantes (INV-A..D) e a arquitetura de lake local passam a ser a
+direção oficial pra `src/io/artifact.py`/`schema.py` quando esse trabalho
+começar; e a reescrita de `AG-096`/`AG-099` (itens `AG-108`/`AG-110`) deixa
+de ser "acionável quando o Manager decidir" e passa a ser trabalho
+pendente reconhecido, na fila atrás de `AG-109` (prioridade 1, ver Action
+Items do ADR).
+
+**Decisão de arquitetura de dados proposta:** lake local endereçado por
+conteúdo, artefatos imutáveis, manifestos encadeados por hash
+(`INV-A` chave canônica local a `bars.config_hash` · `INV-B` proveniência
+por hash + escrita atômica via `_SUCCESS` · `INV-C` causalidade declarada
+por coluna · `INV-D` paridade por classe `exact`/`tolerance`) — não DVC/
+lakeFS (granularidade de linhagem é o arquivo, este projeto precisa de
+granularidade de COLUNA), não convenção leve sem manifesto (é o estado
+atual, e foi o que produziu os 10 gaps da Trilha B). Detalhe completo,
+inclusive os 12 defeitos de engenharia que a própria proposta tinha e já
+corrigiu inline (`V-01` a `V-12`): `docs/ADR-001_...md`.
+
+**As 4 propostas de `§15.11` sob o veredito externo:**
+
+| Proposta | Veredito | Rastreio |
+|---|---|---|
+| (A) Decision Engine no PBS | Sem controvérsia no mecanismo — mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger) | contratos propostos no ADR |
+| (B) Gate por linha (`AG-096`) | **Refutado como especificado** — `(símbolo, resolução)` não é entidade de posição na Binance USDⓈ-M (One-way = 1 posição/símbolo/conta; Hedge = 2 buckets/símbolo, nunca por resolução) | `AG-108` |
+| (C) Convenção de trials (`AG-098`) | **Errada nas 2 direções** — sobre-conta por correlação entre linhas (N efetivo da ordem de 2, não 15, dado ρ≈0,8) e mantém resíduo de circularidade (cardinalidade da rodada muda DSR de linha já promovida) | `AG-111` |
+| (D) Gatilho de proteção (`AG-099`) | **Mesmo defeito da versão já refutada, deslocado** — encurtar `time_stop` ao vivo usa `p` treinado sobre horizonte 8h fixo pra decidir outro evento (quebra paridade treino-live no rótulo, não no preço) | `AG-110` |
+
+**Achado mais severo de todo o ADR, anterior a (D) e a qualquer outra
+decisão:** nenhuma versão do gatilho de proteção — nem a refutada
+(apertar SL) nem a aprovada (encurtar horizonte) — tem saída executável
+sob a política declarada (maker post-only GTX, cancela no timeout, nunca
+converte a mercado). Isso não afeta só (D): afeta o **próprio SL do
+triple-barrier** — os rótulos assumem `sl_px` como preço de saída, mas
+sob GTX sem conversão a mercado, tocar `sl_px` só prova que o preço
+atravessou o nível enquanto a ordem passiva ficava do lado errado. Toda a
+geometria de payoff (TP=2,0×ATR/SL=1,5×ATR/8h) descreve uma estratégia
+que a política de execução declarada não consegue executar como rotulada.
+Registrado como `AG-109` — recomendação: admitir `reduceOnly` a mercado
+só pra SAÍDAS (mantendo post-only pra entradas), ~3bps/perna de custo
+adicional contra o risco de perda de cauda ilimitada por não sair.
+
+**As 9 decisões antes pendentes (`§15.11` "Decisões abertas" + `§2.2`) —
+todas com recomendação fundamentada agora, nenhuma decidida por este
+registro (recomendação, não ratificação):**
+
+| # | Decisão | Recomendação recebida |
+|---|---|---|
+| 1 | Cache-TTL vs. defasagem (rastreador de posição) | Nenhum dos dois — ledger local via push (`ACCOUNT_UPDATE`/`ORDER_TRADE_UPDATE`, fora do orçamento de rate-limit quente), REST só reconciliação, gate falha fechado (bloqueia entrada nova, nunca saída/kill-switch) |
+| 2 | Valor do cap de posições concorrentes | 2 como backstop, mas controle vinculante é risco agregado (`Σ notional×stop_dist ≤ R_max×equity`), não contagem pura |
+| 3 | Denominador do K01 | Equity total da conta, ancorada 00:00 UTC — atribuição por linha só como observabilidade |
+| 4 | Adotar (D) agora ou adiar | Terceira via: relabelar condicional a regime primeiro (barato), shadow mode depois; resolver `AG-109` independente de tudo, é maior e anterior |
+| 5 | Heurística de encurtamento de `time_stop` | Percentil empírico `p80(tempo até 1ª barreira \| regime, símbolo, resolução)`, medido só no fold de treino |
+| 6 | Resoluções lentas agora ou só a rápida | Pré-filtro de custo primeiro (`AG-113`, grátis, 1 trial); gerar histórico de rótulo pra resolução MAIS LENTA também — é a que tem o pior hurdle, não a que tem menos prioridade |
+| 7 | Meta consome regime, de qual candidato? | De nenhum por ora — Trilha A não deu evidência de poder condicional (18/18 p-valores nulos); como gate (não feature) não precisa de significância |
+| 8 (`§2.2`) | Redundância entre ~92 features | Clustering hierárquico + cMDA por CLUSTER dentro do CPCV — rejeita "deixar pro L1/L2 do XGBoost" (árvores diluem por substituição, não eliminam) |
+| 9 (`§2.2`) | Delegação de seleção muda contagem de trials? | Não elimina o viés, só move a busca pra dentro do modelo — precisa de busca aninhada nos folds + `N_eff` calculado (não contado) + PBO/CSCV como gate primário |
+
+**Achados novos, sem precedente nas 3 investigações/4 rodadas internas
+(fora da fronteira de sistema que o loop adversarial correlacionado não
+alcançava):**
+
+- **`AG-108`** — `(símbolo,resolução)` não é entidade de posição na
+  exchange (N-01) — refuta `AG-096` como especificado.
+- **`AG-109`** — saída executável ausente sob a política GTX declarada —
+  atinge o SL do próprio triple-barrier. Severidade máxima do conjunto.
+- **`AG-110`** — mecanismo revisado de `AG-099` repete o defeito de
+  paridade treino-live da versão refutada, deslocado pro rótulo.
+- **`AG-111`** — convenção de `AG-098` sobre-conta trials por correlação e
+  mantém resíduo de circularidade.
+- **`AG-112`** — granularidade de lote vs. capital: viés sistemático de
+  seleção ~24× entre símbolos (BTC vs. SOL/XRP), grade discreta de ~3
+  níveis em BTC quebra paridade treino-live no sizing.
+- **`AG-113`** — `n_eff` invariante à resolução (~1.095/ano/linha,
+  resolução não compra estatística); pré-filtro de custo grátis (1 trial
+  pela própria convenção `AG-098`) pode eliminar metade do espaço de
+  busca antes de qualquer backtest.
+
+**O que isto NÃO faz:** não reabre nem invalida o histórico de `§15.11`
+(as 4 rodadas internas, os 10 gaps originais `AG-094`-`AG-100`, o mandato
+corrigido, a descontinuação do tiering de features) — esse trabalho segue
+válido como registro do processo. O que muda é o VEREDITO sobre o
+CONTEÚDO de 2 das 4 propostas que saíram desse processo, mais 6 achados
+que o processo interno não tinha coberto. Consistente com o padrão já
+observado em toda a Trilha B (`§15.11`, nota de abertura): cada rodada de
+escrutínio, interna ou externa, achou algo real — nunca zero.
+
+**Próximo passo, não executado nesta sessão:** persistir a transcrição
+completa do parecer (Partes I/II do ADR — schemas por estágio,
+`manifest.json` campo a campo, algoritmo de canonicalização de estado de
+regime) como arquivo próprio, hoje só resumida em `docs/ADR-001_...md`;
+decisão de sequenciamento (`AG-109` antes de `AG-108` antes de qualquer
+código de Decision Engine, dado que 109 é premissa e não depende de
+medição).
+
+### 15.12.1 AG-114 — regra de decisão pra retomada do M4 (aprovada pelo Manager, 2026-08-20)
+
+Consequência direta da ratificação do ADR-001 §2.7 (regime = gate, não
+feature, na v1): o critério que o M4 usava pra medir os 6 candidatos
+(heterogeneidade de RETORNO futuro) deixou de ser a pergunta que decide
+promoção — regime não vai ocupar o papel de feature que esse teste
+avaliava. `AG-114` (`audit/architecture_gaps_log.yaml`) registra o achado
+completo; esta seção registra a REGRA aprovada, travada **antes** de
+qualquer execução — precondição de `B20` (threshold nunca escolhido por
+métrica OOS, sempre a priori), o mesmo motivo pelo qual `AG-098`/(C) teve
+que ser corrigida quando a 1ª tentativa usava o resultado da rodada como
+critério.
+
+**Estrutura aprovada — 3 gates de desqualificação + 1 métrica primária de ranking:**
+
+| # | Papel | Métrica | Limiar |
+|---|---|---|---|
+| Gate 1 | desqualifica | Occupancy / `effective_number_of_states` — estado de stress não pode ser degenerado (nem ausente, nem dominante) | `TBD — medir` contra o baseline em produção (B23, nunca inventado) |
+| Gate 2 | desqualifica | Transition failure rate — candidato que oscila sem parar é inoperável, independente de separação | `TBD — medir` |
+| Gate 3 | **desempate** (decidido, 2026-08-20) | Detection delay vs. eventos econômicos independentes | só entra em jogo se 2+ candidatos empatarem na métrica primária — não desqualifica sozinho |
+| Métrica primária | ranking entre sobreviventes dos gates | Heterogeneidade de **volatilidade futura** entre buckets (Welch's F/ω², mesmo desenho já validado — permutação em bloco por episódio, correção de múltiplos testes já em uso no M4) | significância + tamanho de efeito decidem o rank |
+
+**Regra completa e travada, 2026-08-20** — os 4 papéis (Gate 1/2/3 +
+métrica primária) e a ordem de aplicação (gates primeiro, ranking depois,
+desempate por último) estão fixados. **O que fica aberto, explicitamente:**
+só os valores numéricos dos 2 limiares dos Gates 1/2 (`TBD` até medição
+real) — e isso é deliberado, não pendência esquecida: fixar um número
+antes de medir seria a mesma estipulação que `B23` proíbe. Nada do que
+falta pode ser decidido depois de ver o resultado das 4 métricas nos 6
+candidatos — isso reintroduziria exatamente o viés que a ordem "regra
+antes do dado" existe pra evitar.
+
+**Próximo passo:** planejar a extensão de M4 que mede as 4 métricas
+(occupancy, transition failure rate, detection delay, separação de
+volatilidade futura) nas mesmas 5 janelas críticas × 3 resoluções já
+usadas (reusa `m4_critical_windows.py`, sem redesenho) — só depois de
+medir, preencher os limiares TBD com o valor real e aplicar a regra já
+travada, que nesse ponto vira aritmética, não escolha.
+
+### 15.12.2 Auditoria do desenho técnico de labels — ADR-001 vs. PRD real (2026-08-20)
+
+Pedido do Manager: auditar como está o desenho técnico de labels em
+ADR-001 vs. `PLANO_MESTRE_PRINCE2.md`. Verificação direta contra
+`PRD_V3_2_UNIFICADO.md` §9.1 e `src/labels/triple_barrier.py` (código
+real da Label Engine) achou 1 correção importante e 1 tensão de desenho
+genuína, nenhuma das duas presumida — as duas registradas em
+`audit/architecture_gaps_log.yaml`.
+
+**`AG-115` — `AG-109` REFUTADO.** O achado de maior severidade de todo o
+parecer do ADR-001 ("nenhuma versão do gatilho de proteção tem saída
+executável... afeta o STOP-LOSS do próprio triple-barrier") não se
+sustenta. A política de execução real (`PRD_V3_2_UNIFICADO.md` §9.1,
+linhas 1700-1727) é ASSIMÉTRICA por desenho, não uniformemente
+post-only: só a ENTRADA é `LIMIT/GTX/on_timeout=CANCEL`. O STOP-LOSS é
+`STOP_MARKET/MARK_PRICE/reduce_only` (ordem condicional nativa,
+execução GARANTIDA — taker — uma vez disparada). O TIME_STOP é `MARKET
+reduce_only` explícito (também garantido). Só o TAKE_PROFIT é
+maker/pode-não-encher — e se não encher, a posição sai via TIME_STOP, que
+é garantido. `src/labels/triple_barrier.py` (comentário 8 do módulo) já
+implementa essa assimetria de custo em produção — não é proposta nova, é
+desenho já vigente desde antes do parecer existir. Economia já
+quantificada no PRD: "Execução maker assimétrica... breakeven 53,4% →
+48,1%" (§0.3/linha 3369/3450). O auditor externo não tinha acesso ao
+repositório (nota de escopo do próprio ADR-001) e generalizou a política
+de ENTRADA pra toda a política de execução, incluindo saídas — erro de
+leitura, não achado real. **Consequência prática:** `src/exchange/
+adapter.py::place_order` continua `NotImplementedError` — nenhum código
+de execução real existe ainda —, mas o trabalho que falta é IMPLEMENTAR
+uma decisão já tomada, não decidir algo novo. O passo "Resolver AG-109
+antes de qualquer outra coisa" no Road Map Vivo v2 e a citação de AG-109
+como prioridade 1 em `§15.12` (achados/ação recomendada do ADR-001, texto
+acima) ficam desatualizados por esta correção — Road Map Vivo atualizado
+na mesma sessão (ver rodapé).
+
+**`AG-116` — tensão real, não decidida: `horizon_bars` (ADR-001) vs.
+`time_stop_ms` (`AG-031`, já em produção).** ADR-001 recomenda
+`horizon_bars` (contagem de barra da resolução) como campo canônico da
+barreira vertical — "barreira vertical em milissegundos sobre relógio de
+dollar bar é erro de unidade" (§3.1/§4.3). Verificado: `horizon_end_ms =
+t0 + cfg.time_stop_ms` (`triple_barrier.py:1000`) é INCONDICIONAL, roda
+igual sob `tf` (calendário) e sob `resolution_id` (dollar-bar, `AG-042`).
+**Isto não é omissão** — é decisão deliberada, registrada 3x em
+`PRD_V4_1.md` (§2.7 I2/§3.2 M1/§4.2, "horizonte em relógio fixo") e
+formalizada em `AG-031`/B1, provavelmente motivada pelo alinhamento com o
+ciclo de funding de 8h da Binance (conceito de relógio, não de
+informação/volume) — razão plausível, não confirmada por citação direta
+nesta auditoria. `AG-031` é anterior tanto ao paradigma dollar-bar
+(`AG-042`) quanto ao parecer do ADR-001 — nunca foi revisitado à luz de
+nenhum dos dois. **Decisão pendente do Manager, registrada sem
+inclinação:** (a) manter relógio fixo, com a justificativa de funding
+tornada explícita (hoje é inferência desta auditoria, não citação
+documentada); ou (b) migrar pra `horizon_bars` só sob `resolution_id`,
+preservando `time_stop_ms` sob `tf` — os 2 modos já coexistem via XOR no
+mesmo `LabelConfig`, então (b) não exige escolher 1 filosofia pros 2
+mundos.
+
+**Atualização 2026-08-20 — Manager autorizou a opção (b) ("horizon_bars
+Autorizado") e pediu mapeamento + pesquisa de literatura ANTES de
+aplicar, sem codar ainda.** Os 2 levantamentos completos (plano de
+migração técnico + pesquisa de literatura pras 2 ambiguidades que
+sobraram do mapeamento) ficam registrados em `§15.12.3` — nenhum código
+foi escrito, isto é só o material que a implementação futura vai
+consumir.
+
+### 15.12.3 AG-116 — plano de migração completo + pesquisa de literatura (2026-08-20)
+
+**Escopo confirmado com o Manager:** opção (b) — `horizon_bars` só sob
+`resolution_id` (dollar-bar), `time_stop_ms` preservado sob `tf`
+(calendário), sem forçar 1 filosofia única pros 2 modos.
+
+#### A. Plano de migração técnico (mapeamento por leitura integral de `triple_barrier.py`, sem editar nada)
+
+**Achado prévio relevante:** o texto integral do ADR-001 que `AG-116`
+cita ("§3.1 cláusula 1"/"§4.3") **não está persistido no repo** —
+`docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md` é um
+resumo condensado, e o próprio arquivo declara (`Action item 2`) que o
+corpo completo (Partes I/II, ~2000 linhas) ainda não foi transcrito.
+A recomendação de `horizon_bars` só existe hoje via paráfrase — não
+bloqueia o mapeamento (a direção já foi decidida pelo Manager), mas é
+lacuna de rastreabilidade a considerar quando o ADR-001 completo for
+transcrito.
+
+**1. Campo novo em `LabelConfig`:** `horizon_bars: int | None = None`,
+último campo do dataclass (default `None` preserva os ~15 callers
+posicionais existentes). Validação em `__post_init__`, acoplada ao XOR
+`tf`/`resolution_id` já existente (mesma disciplina de `estimator_id`
+sob `resolution_id`): `resolution_id is not None` exige
+`horizon_bars >= 1` explícito (`ValueError` caso contrário); e
+`horizon_bars is not None` sob `tf` (sem `resolution_id`) também levanta
+`ValueError` — proibição ativa, não ignorar em silêncio (mesma classe de
+bug que `AG-031` corrigiu para `time_stop_bars`/`time_stop_ms`; é
+escolha de estilo, não necessidade lógica — confirmar com o Manager se é
+fricção desnecessária). `from_constants()` ganha parâmetro espelhando
+`estimator_id`, com default carregável de `constants.yaml` quando
+`resolution_id` setado sem `horizon_bars` explícito.
+
+**2. `build_labels` (~linha 1000) — troca do cálculo de `horizon_end_ms`:**
+```python
+if cfg.resolution_id is not None:
+    horizon_idx = i + cfg.horizon_bars
+    if horizon_idx >= n:
+        n_incomplete_tail += 1
+        continue
+    horizon_end_ms = int(t0_arr[horizon_idx])
+else:
+    horizon_end_ms = t0 + cfg.time_stop_ms  # AG-031/B1, inalterado
+```
+`n_bars_held` (linhas 1041-1082) **não precisa mudar** — já é
+bar-count-aware desde `AG-031`/B1 e recupera `n_bars_held == horizon_bars`
+por busca posicional sem branch novo.
+
+**Consequência em cascata não trivial — prefetch de `mark_1m`/`funding`/
+`bars_15m` em `build_labels_for_symbol` (~linha 1258):** hoje
+`horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_ms)` dimensiona a
+folga de prefetch — sob `resolution_id`, `cfg.time_stop_ms` fica
+vestigial, e usá-lo pra dimensionar a folga é arbitrário/potencialmente
+incorreto (dollar bar em baixa atividade pode levar muito mais wall-clock
+que `horizon_bars` barras cobririam sob alta atividade). Ver seção C
+abaixo (pesquisa de literatura, Pergunta 2) pra abordagens.
+
+**3. `config_hash` — precisa incluir `horizon_bars`** (confirmado por
+leitura da property, linhas 379-426; mesmo padrão dos 3 precedentes já
+documentados: `AG-005`, `AG-031`/B1, `AG-042`).
+
+**4. `assert_label_invariants` (linha 456) — teto físico hoje é em ms
+(`held_ms <= time_stop_ms`), precisa virar XOR com `horizon_bars` (teto
+correto sob `resolution_id` é `n_bars_held <= horizon_bars`, coluna já
+existe). Call site que muda: `src/labels/backfill_multi_symbol.py:136`
+(hoje incondicional, precisa virar condicional em `cfg.resolution_id`).
+
+**5. `experiment_log.py`** — schema (`_SCHEMA`) precisa de coluna
+`horizon_bars: pl.Int32` nova (mesmo padrão diagonal-concat já usado
+pra `time_stop_bars→time_stop_ms`), e o helper que grava linha de config
+precisa gravar o campo.
+
+**6. Pontos que NÃO precisam mudar (confirmado por leitura, fora de
+escopo):** `barrier_sweep.py`/`cost_surface.py`/`faixa2_caminho_b.py`
+(não suportam `resolution_id`, declaração própria); `m2_worker.py`/
+`m2_bar_comparison.py`/`m2_stats.py` (conceito próprio de `time_stop_ms`,
+deliberadamente fixo entre bar types pra comparação M2, não usa
+`LabelConfig`).
+
+**7. Testes afetados** — `tests/unit/test_labels_triple_barrier.py`:
+`_dollar_bar_cfg()` (helper usado por 5+ testes) precisa de
+`horizon_bars=` novo; 3 testes novos necessários (barreira TIME sob
+`resolution_id` cai exatamente em `horizon_bars` índices à frente;
+proibição de `horizon_bars` sob `tf`; teto de `n_bars_held` em
+`assert_label_invariants`). `test_labels_backfill_multi_symbol.py:203`
+só quebra se `from_constants` não tiver default carregável (motivo a
+mais pra preferir default carregável). Golden tests (`test_features_
+volatility.py`, `test_sprint8_reproducibility.py`) — confirmado
+intocados, operam em universo `tf`/`resolution_id=None`.
+
+**8. Artefato já persistido que a migração invalida:**
+`data/labels/{BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT}/R1/v1/labels.parquet`
+— gerados sob `time_stop_ms` incondicional atual. Reprocessar muda o
+VALOR econômico de `t1`/`ret_net`/`n_bars_held`/`barrier_hit` em toda
+linha onde a barreira TIME foi tocada, não só o `config_hash`.
+Downstream real (não hipotético): `src/models/dataset.py`, o próprio M4/
+M6 em andamento (`m4_critical_windows.py`/`m4_regime_comparison.py`/
+`m6_common_factor_hypothesis.py`), `src/validation/leakage.py`/`cpcv.py`,
+`src/backtest/fill_reconciliation.py`. **Recomendação: não reprocessar
+`labels/R1/v1/` até o M4/M6 em andamento fechar**, ou coordenar
+explicitamente antes.
+
+**9. Ambiguidades reais que sobraram do mapeamento técnico puro** — as 2
+que motivaram a pesquisa de literatura da seção C, mais 2 menores de
+estilo (não bloqueiam decisão): (i) horizonte compartilhado entre
+R1/R2/R3 vs. por resolução; (ii) dimensionamento de prefetch sem teto a
+priori; (iii) proibir `horizon_bars` sob `tf` — fail-loud, ou ignorar em
+silêncio?; (iv) `from_constants(resolution_id=..., horizon_bars=None)`
+carrega default de `constants.yaml`, ou exige explícito como
+`estimator_id`? Recomendação do mapeamento original: default carregável
+(risco menor — `horizon_bars` é hiperparâmetro puro, não risco de
+"mentir sobre qual estimador rodou" que motiva a exigência em
+`estimator_id`).
+
+**10. Ordem sugerida de implementação (não implementado, só ordem):**
+decidir (i)/(ii) [seção C] → `LabelConfig` (campo+validação+
+`from_constants`+`config_hash`) → `build_labels` (horizonte por índice)
+→ implementar (ii) em `build_labels_for_symbol` → `assert_label_
+invariants`+call site → `experiment_log.py` schema → testes (item 7) →
+decidir se/quando reprocessar `labels/R1/v1/` (item 8, coordenar com
+M4/M6) → só então fechar `AG-116` com `resolved_by_commit`.
+
+#### B. Nova entrada proposta em `config/constants.yaml`
+
+```yaml
+horizon_bars:
+  value: TBD  # decisão do Manager pendente (seção C) -- não estipulado aqui, B23
+  provenance: ASSUMED  # ou DERIVED, dependendo da rota escolhida em C.1
+  source: "TBD -- ver AG-116/PLANO_MESTRE_PRINCE2.md §15.12.3"
+  class: A
+  sweep_required: true
+  sweep_range: [TBD, TBD]
+```
+
+#### C. Pesquisa de literatura (agente dedicado, ≥12 fontes/pergunta, 2026-08-20)
+
+**C.1 — `horizon_bars` compartilhado entre R1/R2/R3, ou calibrado por resolução?**
+
+*O que a literatura diz:* López de Prado, "Advances in Financial Machine
+Learning" (2018), capítulo "Labeling"/"The Triple-Barrier Method",
+trata o horizonte NATIVAMENTE em contagem de barra (citação via 2
+reproduções secundárias convergentes — RiskLab AI e QuantStrategy.io;
+PDF primário bloqueado por acesso, 403/limite de tamanho — sinalizado
+como limitação da pesquisa, não fato verificado em 1ª mão). Tensão
+interna não resolvida no próprio ecossistema AFML: o Snippet 3.4 do
+livro ("Adding a Vertical Barrier"), reproduzido por 2 portes de código
+independentes (`mlfinlab`/Hudson & Thames, `BlackArbsCEO/Adv_Fin_
+ML_Exercises`), implementa o horizonte em TEMPO DE RELÓGIO
+(`pd.Timedelta`) mesmo operando sobre séries de dollar bars — o livro
+nunca reconcilia isso. O método "Trend-Scanning" do mesmo autor
+(lecture notes AFML 3/10, `mlfinlab`) define a janela de look-forward
+`L` diretamente em número de barras — reforça, por 2ª via metodológica
+independente, a preferência conceitual do autor por horizonte
+bar-count. Fundamento estatístico de fundo (não sobre múltiplas
+resoluções): Mandelbrot (1967), Ané & Geman ("Order flow, transaction
+clock and normality of asset returns", *Journal of Finance*, 2000),
+Easley/López de Prado/O'Hara ("The Volume Clock", *Journal of Portfolio
+Management*, 2012) — retornos em tempo de atividade/informação se
+aproximam mais de i.i.d. Gaussiano que em tempo de relógio, justificando
+medir grandezas econômicas (inclusive horizontes) em unidades de
+informação. **Nenhuma fonte localizada trata múltiplas resoluções/
+thresholds simultâneas do mesmo instrumento** — o cenário deste projeto
+(R1/R2/R3 coexistindo) não aparece na literatura pesquisada. **Nenhuma
+fonte cruza bars de informação com custos periódicos de carrego
+(funding de perpétuo)** — busca multi-ângulo confirmada (volume clock +
+funding; business-time + carry cost; perpetual + event-time), gap
+genuíno, esperado (literaturas de gerações/domínios diferentes que ainda
+não se cruzaram). Perpetual futures pricing (Ackerer/Hugonnier/Jermann,
+*Mathematical Finance*, 2026; arXiv:2212.06888) confirma funding como
+mecanismo em RELÓGIO (8h, path-dependent), intrínseco ao instrumento —
+não à forma de amostragem rio abaixo.
+
+*Recomendação do agente (não é citação, é leitura dele sobre o caso
+deste projeto especificamente):* `threshold_usdt` de cada resolução já
+é calibrado (`AG-042`) pra que a contagem MÉDIA de barras aproxime
+15m/30m/1h — ou seja, já existe vínculo MEDIDO (não estipulado) entre
+bar-count e relógio, na média da população. Um `horizon_bars`
+COMPARTILHADO entre R1/R2/R3 não abre mão de comparabilidade de relógio
+tanto quanto pareceria à primeira vista, porque o horizonte de relógio
+esperado já deveria sair aproximadamente proporcional entre resoluções
+como subproduto da própria calibração de `AG-042`. Combinado com a
+preferência conceitual convergente do autor-fonte E o fato de que
+`time_stop_ms` continua disponível sob `tf` pra quem quiser preservar
+alinhamento a funding explicitamente (XOR já existente, migrar
+`resolution_id` não remove essa opção) — a leitura do agente pende para
+(a) `horizon_bars` compartilhado. **Mas isso não deveria ser aceito por
+dedução** — é afirmação empírica testável com dado que o projeto já tem:
+medir (B23) a distribuição REALIZADA de duração-em-relógio de
+`horizon_bars=N` por resolução, post-hoc, sobre o histórico de dollar
+bars já calculado. Se a proporcionalidade esperada por `AG-042` se
+confirmar, evidência a favor de (a); se divergir materialmente,
+evidência a favor de (b) — decisão final sai da medição direta, não da
+literatura sozinha.
+
+**C.2 — dimensionamento de prefetch sem teto a priori**
+
+*O que a literatura diz:* literatura financeira/quant específica
+**não existe** para este problema — motivo estrutural: todo tratamento
+publicado de dollar/volume/tick bars localizado (AFML, `mlfinlab`,
+NautilusTrader) opera em regime BATCH/offline (série de barras inteira
+já materializada a partir de fita de ticks histórica completa) — o
+problema "não sei quanto relógio N barras futuras vão cobrir" só existe
+em contexto incremental/produção, fora de onde essa literatura opera.
+Confirmado por busca multi-ângulo, gap genuíno e esperado. Literatura
+GERAL de engenharia de dados/streaming oferece 3 padrões estabelecidos
+diretamente transferíveis: (1) *guess-and-double* — estimativa de teto
+inicial, dobra ao ultrapassar, poucas correções logarítmicas até
+convergir; (2) *watermarks/allowed lateness* — Akidau et al., "The
+Dataflow Model" (VLDB 2015, paper fundacional do Google Cloud Dataflow/
+Apache Beam), Begoli et al., "Watermarks in Stream Processing Systems"
+(VLDB 2021, compara Flink/Dataflow) — limite tolerado de atraso
+declarado, estado aberto por essa janela, dado além do limite descartado
+ou desviado EXPLICITAMENTE (nunca truncamento silencioso); (3)
+*estimativa conservadora via percentil alto* (p99/p99.9 + margem, não
+média/mediana) da distribuição histórica medida de "tempo pra acumular N
+eventos" — padrão comum de ETL, sem framework específico associado.
+
+*Recomendação do agente:* para o estágio atual (pipeline de pesquisa/
+backtest, não produção ao vivo) — abordagem (3): medir, sobre o
+histórico de dollar bars já calculado, a distribuição de "ms decorridos
+para `horizon_bars` barras consecutivas" por R1/R2/R3, usar percentil
+alto + margem como folga fixa, virar constante `MEASURED` em
+`constants.yaml` (não estipulada) — com fallback explícito
+(NOFILL/não-resolvível, mesmo espírito do pipeline de labels já
+existente) para os casos de cauda que ultrapassarem o teto, nunca
+truncamento silencioso. Padrão (2)/watermark-style vale manter em mente
+para quando a execução AO VIVO for construída (`uv run quant live run`)
+— nesse momento a pergunta muda de natureza (o futuro deixa de existir
+de fato, não é só "desconhecido a priori mas já gravado em disco") —,
+mas é provavelmente over-engineering para o estágio atual (Feature/
+Regime Engine hoje é recomputado on-the-fly a cada chamada, não persiste
+em lote incremental, per `CLAUDE.md`).
+
+**Status:** decisão final de C.1/C.2 continua com o Manager — pesquisa
+completa, sem citação forçada onde a literatura é omissa (declarado
+explicitamente nos 2 gaps centrais: multi-resolução simultânea em C.1,
+prefetch incremental específico de bars em C.2). Nenhum código escrito.
+
+**Atualização 2026-08-20 (mesmo dia) — DECIDIDO e IMPLEMENTADO.** C.1:
+compartilhado entre R1/R2/R3 (`horizon_bars=32`, DERIVED, mesmo padrão de
+`time_stop_ms`). C.2: percentil alto MEDIDO, não estipulado
+(`label_prefetch_p99_bar_duration_ms=22.506.187ms`, medido sobre as 15
+combinações símbolo×resolução reais, `experiments/dollar_bar_duration_
+p99_by_resolution.json`). Ponta a ponta em `src/labels/triple_barrier.py`
+(+ `backfill_multi_symbol.py`/`experiment_log.py`), suíte completa
+validada (1508 passed). Ver `AG-116` (`audit/architecture_gaps_log.yaml`,
+status fechado) pro registro completo.
+
+---
+
+### 15.12.4 AG-118 — Gate efficiency: do candidato vencedor ao consumo real por Risk/Decision Engine (desenho travado, 2026-08-20, não implementado)
+
+**Origem:** pergunta do Manager, 2026-08-20 — "como Alpha/Meta vão ler/ver
+o regime, mantendo Alpha/Meta responsável pela seleção de oportunidades?
+Isso combina com o triple_barrier: `P(stop|regime)`, `P(target|regime)`,
+`E[return|regime]`, `tail_loss|regime`, `holding_time|regime`, e
+principalmente se o gate remove uma parte desproporcional dos eventos
+ruins sem destruir demasiadamente os bons." Duas perguntas de escopo
+levantadas antes de desenhar: (1) o ADR-001 já trata isso? (2) como isso
+concilia os 2 itens já registrados como abertos (`AG-094`/Trilha B item
+7, e o valor do encurtamento de `time_stop` de `AG-099`)?
+
+#### A. O ADR-001 trata isso? — Não, confirmado por busca direta no texto
+
+Grep no corpo persistido (`docs/ADR-001_arquitetura_artefatos_e_
+contratos_2026-08-19.md`) por `tail_loss`/`CVaR`/`holding_time`/`p80`:
+**1 único resultado** — recomendação #5 das 9 decisões pendentes:
+
+> "Heurística de partida pro encurtamento de `time_stop`: Percentil
+> empírico `p80(tempo até 1ª barreira | regime, símbolo, resolução)`,
+> medido só no fold de treino — não número de relógio."
+
+Ou seja: o ADR-001 propõe `holding_time | regime` **só** como heurística
+pontual pro valor de um parâmetro específico (`AG-099`), nunca como um
+framework de avaliação do gate como um todo. `P(stop|regime)`,
+`P(target|regime)`, `E[return|regime]`, `tail_loss|regime` e a métrica de
+"remoção assimétrica" **não aparecem em lugar nenhum do ADR-001** — não é
+lacuna de leitura, é lacuna real do parecer. Este desenho preenche essa
+lacuna.
+
+#### B. O que já existe no código (reuso, não reinvenção)
+
+`StratumMetrics`/`m6.stratum_metrics` (`src/analysis/m6_common_factor_
+hypothesis.py:92-189`), já em produção desde antes desta sessão (bloco
+`heterogeneity`, G-C1-2, `m4_critical_windows.py`), **já computa 3 das 5
+métricas pedidas**, por `(symbol, side, regime)`:
+
+| Métrica pedida | Já existe? | Campo real |
+|---|---|---|
+| `P(target\|regime)` | ✅ sim | `StratumMetrics.frac_tp` |
+| `P(stop\|regime)` | ✅ sim | `StratumMetrics.frac_sl` |
+| `E[return\|regime]` | ✅ sim (normalizado por ATR) | `StratumMetrics.edge_bruto_atr` |
+| `tail_loss\|regime` | ❌ não | — |
+| `holding_time\|regime` | ❌ não | — |
+| remoção assimétrica (recall de eventos ruins vs. custo de eventos bons) | ❌ não | — |
+
+O join causal que alimenta tudo isso (`_asof_join_regime_onto_labels`,
+`m4_critical_windows.py:1088-1122`) já existe, já é causal (as-of
+BACKWARD por `close_time_ms`, corrigido `AG-090`), e já é reusado sem
+duplicação pelo bloco `heterogeneity`. Este desenho REUSA o mesmo join —
+não cria pipeline de dado novo, só novas estatísticas sobre o resultado
+dele.
+
+#### C. Desenho técnico — 2 peças novas, nenhuma implementada ainda
+
+**C.1 — Extensão das 2 métricas que faltam.** Novo dataclass,
+`GateEfficiencySymbolDetail` (não estende `StratumMetrics` diretamente —
+`StratumMetrics` é compartilhado com `m6_common_factor_hypothesis.py`
+pra uma pergunta diferente, criar campo novo lá arriscaria escopo
+alheio; melhor um dataclass irmão, mesma fonte de dado, propósito
+próprio):
+
+```python
+@dataclass(frozen=True, slots=True)
+class GateEfficiencySymbolDetail:
+    """Por (symbol, side, bucket) -- reusa _asof_join_regime_onto_labels,
+    zero pipeline novo. Mede se o candidato VENCEDOR do AG-114 é útil
+    como GATE de risco pro triple-barrier real -- pergunta diferente de
+    AG-114 (que mede se o candidato TEM estrutura suficiente pra ser um
+    bom detector, antes de qualquer geometria de trade)."""
+    symbol: str
+    side: int
+    bucket: int              # canonical_id
+    is_stress_bucket: bool   # via identify_stress_state_by_volatility (AG-114, já travado)
+    n: int
+    p_target: float          # = frac_tp (StratumMetrics, reexposto -- não recalculado)
+    p_stop: float             # = frac_sl
+    e_return_atr: float       # = edge_bruto_atr
+    p05_return_atr: float     # NOVO -- tail loss, percentil 5 de ret_net/atr_at_t0
+    median_holding_bars: float  # NOVO -- mediana de n_bars_held
+    p80_holding_bars: float     # NOVO -- p80 de n_bars_held (ADR-001 rec#5, AG-099)
+```
+
+**C.2 — A métrica de "remoção assimétrica" (peça genuinamente nova,
+formalização da pergunta do Manager):**
+
+```python
+@dataclass(frozen=True, slots=True)
+class GateEfficiencyResult:
+    """P(bucket=stress | desfecho) -- não P(desfecho | bucket) --
+    pergunta invertida de propósito: mede o que o GATE faria (bloquear
+    entradas em bucket=stress) em termos do que isso captura/descarta."""
+    symbol: str
+    side: int
+    bad_event_capture_rate: float   # P(bucket=stress | barrier_hit=SL) -- recall dos eventos ruins
+    good_event_cost_rate: float     # P(bucket=stress | barrier_hit=TP) -- custo em eventos bons
+    lift: float                     # bad_event_capture_rate / good_event_cost_rate
+    n_sl_total: int
+    n_tp_total: int
+```
+
+`lift > 1` = o gate captura proporcionalmente mais eventos ruins do que
+bons (útil); `lift <= 1` = o gate não discrimina ou é contraproducente
+(bloqueia tanto ou mais bons quanto ruins). **Nenhum limiar de "lift
+mínimo pra valer a pena" é fixado aqui** — mesma disciplina de `B23`/
+`AG-114`: `TBD — medir`, decidido só depois da medição real, nunca
+antes.
+
+#### D. Sequenciamento — Fase 2 do funil, não um gate concorrente
+
+```
+FASE 1 (AG-114, já travada)          FASE 2 (este desenho, AG-118)
+────────────────────────────         ──────────────────────────────
+"Este candidato TEM estrutura        "O candidato VENCEDOR é útil
+ suficiente pra ser um bom            como GATE econômico pro
+ detector de regime?"                 triple-barrier real, e que
+ Gates 1/2/3 + heterogeneidade         parâmetro isso implica pro
+ de volatilidade futura                Risk/Decision Engine?"
+        │                                      │
+        ▼                                      ▼
+  escolhe 1 candidato/resolução  ──────►  GateEfficiencySymbolDetail +
+  (estrutura, abstrato)                   GateEfficiencyResult
+                                           (economia real, concreto)
+```
+
+Roda **só** sobre o candidato que já passou pelos 3 gates do `AG-114` —
+não é um 4º gate concorrente disputando o mesmo veredito, é a pergunta
+seguinte, feita só depois que a primeira já tem resposta. Reusa
+`_asof_join_regime_onto_labels` + o join já existente pro `heterogeneity`
+— custo incremental é só as estatísticas novas sobre um join que já
+acontece, não uma rodada de fit adicional.
+
+#### E. Reconciliação — os 2 itens abertos, ambos resolvidos por este desenho
+
+**`AG-094` / Trilha B §15.11, "Decisões abertas" item 7** — *"Meta-Label
+consome regime quando for implementado, e de qual resolução/candidato?"*
+**Resposta: Meta continua consumindo de NENHUM candidato — isso não
+muda** (ADR-001 recomendação #7, já travado: regime é gate, não feature,
+não precisa de significância condicional pra ser útil como gate). A
+pergunta "de qual candidato/resolução" só faz sentido pro **GATE**, não
+pro Meta — e a resposta é: do candidato vencedor do `AG-114`, na
+resolução em que ele venceu. `AG-094` fecha como "não aplicável a
+Meta; aplicável ao gate, resolvido pela cadeia AG-114→AG-118".
+
+**`AG-099`, "valor exato do encurtamento de `time_stop`"** — resolvido
+diretamente por `GateEfficiencySymbolDetail.p80_holding_bars` sob
+`bucket=stress`, exatamente a heurística que o ADR-001 recomendação #5
+já propunha (`p80(holding_time | regime, símbolo, resolução)`, medido só
+no fold de treino) — este desenho é a infraestrutura concreta que faltava
+pra essa recomendação deixar de ser só uma frase e virar número real.
+
+#### F. O que este desenho explicitamente NÃO decide (B23/B20)
+
+- Nenhum valor de `lift` mínimo pra promover o gate a produção.
+- Nenhum valor de `p80_holding_bars` — só a fórmula/fonte de onde ele
+  viria (join causal real, fold de treino), nunca um número aqui.
+- Não decide COMO o Risk/Decision Engine efetivamente consome o sinal
+  (bloqueia entrada nova? reduz nocional? só o encurtamento de
+  `time_stop` de `AG-099`?) — isso é implementação, fase posterior,
+  depois que os números de `GateEfficiencyResult` existirem de verdade.
+- Não implementado nem testado ainda — este é o passo de travar a
+  estrutura, mesmo protocolo de `AG-114`/`B20`: desenho primeiro, código
+  depois, número por último.
+
+**Status:** desenho travado, aguardando autorização do Manager pra
+implementar (`GateEfficiencySymbolDetail`/`GateEfficiencyResult` +
+testes, mesmo padrão de rigor de `AG-114`/`AG-116`) — roda depois que o
+`AG-114` tiver um candidato vencedor real (esta fase consome o
+resultado da Fase 1, não pode rodar antes dela).
+
+**Atualização 2026-08-20 (mesmo dia) — IMPLEMENTADO.** Manager autorizou
+via `redesign_workflow` ("implemente AG-118... usando
+hmm_gaussian_k4_v1"). Novo módulo `src/analysis/gate_efficiency.py` —
+os 2 dataclasses exatamente como travados acima. Verificação prévia
+contra o ADR-001 COMPLETO (não o resumo de 222 linhas — o Manager colou
+o parecer original, ~1900 linhas, `docs/ADR-001_..._base.md`) confirmou
+3 pontos: (1) o contrato `regime()` de ADR-001 §3.4 já reserva um campo
+`tradeable: Boolean` pra exatamente este papel — este módulo produz a
+EVIDÊNCIA (`lift`), não o campo formal (que espera `src/io/artifact.py`,
+ainda não construído); (2) este módulo NÃO é bloqueado pela ordem de
+implementação do ADR-001 (é análise pós-hoc, `src/analysis/`, nunca
+artefato de produção consumido a jusante); (3) `decode_mode=filter`
+(causal) de `hmm_gaussian_k4_v1` confirmado no código real, não
+assumido. Achado colateral registrado como `AG-121` (não bloqueante):
+divergência real entre a recomendação de canonicalização por
+volatilidade do ADR-001 e a implementação real por retorno
+(`PRD_V4_1.md` §3.2) — este módulo evita o problema por construção.
+Custo zero fits novos (lê `RawLabels` já persistidos pela rodada real
+do `AG-114`). Detalhe completo, incluindo as 2 constantes novas
+(`gate_efficiency_tail_loss_percentile`/`gate_efficiency_holding_time_
+percentile`) e os 12 testes: `AG-118` (adendo de implementação),
+`audit/architecture_gaps_log.yaml`.
+
+### 15.12.5 AG-114 — aplicação da regra sobre o resultado real da extensão de M4 (2026-08-20, candidato vencedor declarado)
+
+**Insumo:** `experiments/m4_critical_windows_report.json` (rodada real
+concluída 2026-08-20, 10.891,9s, `run_and_save_critical_windows_report`
+com `compute_gate_quality=True`) — 0 células falhas em R1/R3, **1 célula
+falha em R2** (`BNBUSDT`/`RECENTE`, isolada por `AG-019`, não afeta o
+agregado — ver `AG-120` abaixo, achado novo desta auditoria). Números
+abaixo são extraídos DIRETO do JSON persistido (script de extração
+`orjson`, não lidos de memória de sessão anterior nem recalculados à
+mão) — reproduzíveis por qualquer pessoa com acesso ao arquivo.
+
+#### A. Números medidos — as 4 métricas da regra `AG-114`, medianas por resolução
+
+| resolução | classificador | eff\_n\_states | stress\_occ | tfr\_n5 | i²(%) | p\_perm |
+|---|---|---:|---:|---:|---:|---:|
+| R1 | `quantile_regime_v1` (baseline) | 4,26 | 2,8% | 0,150 | 94,7 | 0,001 |
+| R1 | `hmm_gaussian_k2_v1` | 1,90 | **34,1%** | 0,196 | 97,8 | 0,001 |
+| R1 | `hmm_gaussian_k3_v1` | 2,77 | 18,3% | 0,177 | 97,4 | 0,001 |
+| R1 | `hmm_gaussian_k4_v1` | 3,44 | 12,7% | 0,224 | 97,4 | 0,001 |
+| R1 | `bocpd_v1` | 2,88 | 23,7% | **0,529** | 84,1 | 0,085 |
+| R2 | `quantile_regime_v1` | 4,12 | 3,2% | 0,162 | 91,6 | 0,002 |
+| R2 | `hmm_gaussian_k2_v1` | 1,91 | **34,9%** | 0,162 | 95,3 | 0,001 |
+| R2 | `hmm_gaussian_k3_v1` | 2,77 | 18,4% | 0,210 | 94,5 | 0,001 |
+| R2 | `hmm_gaussian_k4_v1` | 3,62 | 11,1% | 0,224 | 95,0 | 0,001 |
+| R2 | `bocpd_v1` | 2,83 | 29,7% | **0,557** | 80,0 | 0,188 |
+| R3 | `quantile_regime_v1` | 4,03 | 3,1% | 0,171 | 83,4 | 0,075 |
+| R3 | `hmm_gaussian_k2_v1` | 1,96 | **39,5%** | 0,219 | 91,7 | 0,007 |
+| R3 | `hmm_gaussian_k3_v1` | 2,79 | 21,5% | 0,195 | 85,7 | 0,005 |
+| R3 | `hmm_gaussian_k4_v1` | 3,44 | 10,5% | 0,228 | 91,8 | 0,003 |
+| R3 | `bocpd_v1` | 2,70 | 28,8% | **0,472** | 52,0 | 0,341 |
+
+`jump_model_cjm_v1` omitido desta tabela por decisão já registrada
+(`AG-117`, `jump_model_excluded_from_ranking_caveat` no próprio JSON) —
+BTC-only, composição de amostra não comparável aos outros 5 candidatos.
+Confirmação adicional nesta auditoria: `eff_n_states` de 1,17-1,39 (quase
+1 estado único) e `occupancy` variando de 1,0 (CRYPTO_WINTER, totalmente
+degenerado) a 0,04-0,56 (as outras 4 janelas) — instável demais pra ser
+lido como candidato nesta configuração, INDEPENDENTE da exclusão por
+BTC-only. Isso é sobre a config ANTIGA (2 features, K=2) — substituída
+pelo trabalho de `AG-119`/"Condição C", **concluído no mesmo dia desta
+auditoria**: rodada real (4D+K=3+λ=0,02) confirma validade ESTRUTURAL
+pra SOLUSDT/XRPUSDT (saturação 0% nas 3 resoluções) e majoritariamente
+BNBUSDT, mas **não muda o veredito de vencedor** — utilidade como gate
+continua sem demonstração, `n_episodes` por célula fica 1-8 (vs. 37-622
+do baseline nas mesmas células), mesmo problema de poder estatístico da
+execução original do M4, agora por regularização alta (`λ=0,02`
+produz poucos episódios muito longos) em vez de saturação/
+degenerescência. `i²` fica 0,0% pra SOL/BNB/XRP nas 3 resoluções.
+Detalhe completo: `AG-119` (adendo final).
+
+**Achado colateral, não hipotético:** a métrica primária (heterogeneidade
+de volatilidade) do PRÓPRIO baseline deixa de ser significativa a 5% em
+R3 (p=0,075) — os 3 HMM continuam significativos em R3 (p=0,003-0,007).
+R3 (~1h/barra dollar) é a resolução mais grosseira das 3 testadas; sob
+menos barras por episódio, o baseline (definição fixa por quantil) perde
+poder de separação, enquanto HMM (ajustado ao dado real de cada
+resolução) mantém.
+
+#### B. Gate 1 — occupancy não pode ser degenerado ("nem ausente, nem dominante")
+
+**Metodologia proposta** (nunca escolhida depois de olhar qual candidato
+ganharia — ver verificação de robustez abaixo, que é o motivo de propor
+faixa em vez de valor único): stress\_occupancy\_median não pode
+caracterizar o estado como **dominante** — mais de ~1/3 do tempo. Não é
+"deve igualar o baseline" (3%, ~11-13× menor que qualquer candidato —
+exigir isso desqualificaria os 5 candidatos de uma vez, o que
+descartaria regime-como-gate inteiro na v1, não é a leitura razoável de
+"nem ausente, nem dominante"). É ancorado na função ECONÔMICA do gate:
+um "estado de risco elevado" que ocupa >1/3 do histórico não é mais uma
+minoria identificável — usá-lo pra restringir entrada cortaria
+throughput de trade de um jeito que colide direto com R3 (§0.2,
+~55 trades/mês).
+
+Verificação de robustez (mesmo espírito do sweep ±50% de constante
+classe A, `§16.10` regra 4) — testado o limiar em 25%/33%/40%:
+
+| candidato | occ. mediana (R1-R3) | occ. por janela (min-max, R1) | passa 25%? | passa 33%? | passa 40%? |
+|---|---|---|---|---|---|
+| `hmm_k2` | 34,1-39,5% | 8,8%-43,9% | não | limítrofe/não | limítrofe |
+| `hmm_k3` | 18,3-21,5% | 4,1%-21,1% | sim | sim | sim |
+| `hmm_k4` | 10,5-12,7% | 3,0%-15,6% | sim | sim | sim |
+| `bocpd` | 23,7-29,7% | 20,8%-35,8% | limítrofe/não | sim/limítrofe | sim |
+
+`hmm_k3`/`hmm_k4` passam em QUALQUER ponto da faixa testada — decisão
+não sensível ao valor exato do limiar. `hmm_k2` falha ou fica no limite
+em toda a faixa (inclusive por janela: `ETF_HALVING`/`RECENTE` em
+R1 chegam a 44%/43%) — não é um caso limítrofe de 1 medição, é
+consistente entre janelas e resoluções.
+
+#### C. Gate 2 — transition failure rate não pode indicar oscilação sem parar
+
+**Metodologia proposta**, mesma disciplina: tfr\_n5\_mediana não pode
+exceder ~2-3× a do baseline (candidato não pode ser categoricamente
+menos estável que a referência já em produção). Baseline tfr\_n5:
+0,150/0,162/0,171 (R1/R2/R3) → banda 2×-3× = 0,30-0,51.
+
+| candidato | tfr\_n5 (R1/R2/R3) | vs. baseline (mediana across-res) | passa 2×? | passa 2,5×? | passa 3×? |
+|---|---|---|---|---|---|
+| `hmm_k2` | 0,196/0,162/0,219 | ~1,2× | sim | sim | sim |
+| `hmm_k3` | 0,177/0,210/0,195 | ~1,2× | sim | sim | sim |
+| `hmm_k4` | 0,224/0,224/0,228 | ~1,4× | sim | sim | sim |
+| `bocpd` | **0,529/0,557/0,472** | **~3,3×** | não | não | limítrofe só em R3 isolado |
+
+`bocpd` falha em QUALQUER ponto da faixa testada (2×-3×) quando avaliado
+pela mediana entre resoluções (a única janela onde um limiar de 3× quase
+passaria — R3 isolado, 0,472 vs. 0,513 — não sobrevive quando agregado
+com R1/R2, que falham por margem grande). Os 3 HMM passam com folga em
+toda a faixa. Achado consistente com a suspeita já registrada nesta
+sessão (BOCPD é bom pra detectar CHOQUE abrupto, ruim pra manter um
+label de regime sustentado sem flicker).
+
+#### D. Gate 3 (desempate) — não precisou entrar em jogo
+
+Sobreviventes dos Gates 1/2: `hmm_k3`, `hmm_k4` (baseline não é
+candidato a promover, já está em produção). Na métrica primária
+(heterogeneidade de volatilidade, i²/p\_perm), `hmm_k4` vence `hmm_k3`
+nas 3 resoluções — R1 (97,44 vs. 97,40, marginal), R2 (94,98 vs. 94,54,
+marginal), **R3 (91,77 vs. 85,65, diferença clara)**. Não é empate — não
+há necessidade de invocar detection delay (`m4_luna_event_onset_ts_ms`/
+`m4_ftx_event_onset_ts_ms`, `AG-118` prep) como desempate.
+
+**Leitura secundária, não decisória:** `bocpd` tem o menor detection
+delay das 5 (81-143M ms ≈ 1-1,7 dia, vs. 94-202M ms dos HMM e ~2,9-3,4×10⁸ ms
+do baseline) — mas já está desqualificado pelo Gate 2, então essa
+velocidade nunca chega a pesar no ranking. Registrado como leitura pra
+referência futura (ex. se algum dia BOCPD for reconfigurado pra reduzir
+o flicker), não como argumento pra reabrir o veredito agora.
+
+#### E. Veredito — candidato vencedor do AG-114
+
+**`hmm_gaussian_k4_v1` (HMM Gaussiano, K=4)** — passa os 3 gates com
+folga (robusto a ±40-50% de variação nos limiares propostos), vence a
+métrica primária nas 3 resoluções, com a maior margem justamente na
+resolução mais grosseira (R3) onde baseline/`hmm_k3` perdem poder de
+separação. `hmm_gaussian_k3_v1` é o runner-up defensável (mesma folga
+nos gates, métrica primária só ligeiramente atrás em R1/R2, atrás com
+folga em R3).
+
+Isto fecha a Fase 1 da cadeia desenhada em `§15.12.4` (AG-118) — o
+"candidato vencedor real" que a Fase 2 (Gate Efficiency,
+`GateEfficiencySymbolDetail`/`GateEfficiencyResult`) estava aguardando
+pra poder rodar. **Não decidido nesta seção:** se implementar AG-118
+agora — depende de autorização explícita do Manager (mesmo protocolo já
+usado em `AG-114`/`AG-116`/`AG-119` nesta sessão).
+
+**⚠️ ATUALIZAÇÃO 2026-08-20 (mesmo dia) — REABERTO.** AG-118 foi
+implementado e rodado (resultado original: `lift`≈1, "sem utilidade
+econômica demonstrada"). Auditoria externa (Manager, papel de auditor —
+`docs/brief_auditoria_externa_2026-08-20_gate_efficiency_ag118.md` +
+parecer de resposta) achou 2 problemas sérios, ambos VERIFICADOS contra
+código/dado real, não só aceitos por autoridade:
+
+1. **O veredito "`hmm_gaussian_k4_v1` vence" acima não é robusto.** O
+   Gate 1 foi aplicado misturando 2 critérios (mediana de resolução vs.
+   máximo por janela) sem declarar qual decide. Sob o critério literal
+   (mediana, no próprio teto de 40% já testado nesta seção) —
+   `hmm_gaussian_k2_v1` PASSA o Gate 1 (34,1/34,9/39,5%, todos <40%) e
+   VENCE a métrica primária em R1 (97,82 vs 97,44) e R2 (95,31 vs
+   94,98). A tabela de sensibilidade acima testou se k=4 SOBREVIVE à
+   faixa de limiares — não testou se k=4 CONTINUA VENCENDO, que é a
+   pergunta que importa.
+2. **A conclusão de `lift`≈1 do AG-118 está mal-instrumentada, confirmado
+   com dado real.** `p05_return_atr` divide `ret_net` pelo MESMO
+   `atr_at_t0` que já escala a largura da barreira TP/SL
+   (`triple_barrier.py:1130-1131`) — tautológico por construção.
+   Diagnóstico D1 (`tools/diagnostics/crosscheck_stress_bucket_vs_
+   atr_decile.py`, rodado nesta sessão): **60,5% dos labels com
+   `is_stress_bucket=True` caem nos 2 decis superiores de `atr_at_t0`**
+   (vs. ~20% esperado sob independência, n=972.798) — o bucket de
+   stress do HMM k=4 é fortemente colinear com ATR alto em t0.
+
+Detalhe completo, fila de diagnósticos priorizada (D1-D5/R1-R3, custo
+crescente) e reformulação da conclusão: `AG-122`
+(`audit/architecture_gaps_log.yaml`). `AG-114`/`AG-118` REABERTOS —
+`hmm_gaussian_k4_v1` não deve ser tratado como vencedor definitivo nem
+"regime não funciona como gate" como conclusão até essa fila ser
+processada.
+
+**⚠️ ATUALIZAÇÃO 2026-08-21 — fila completa processada (`AG-122`,
+adendo final).** `AG-118` **RESOLVIDO**: `lift` bem medido (IC via
+efetivo-N ponderado por `uniqueness`, método de Katz) em 90 células
+(k2/k3/k4 × 3 resoluções × 5 símbolos × 2 sides) — só 2 excluem 1,0 no
+IC 95%, ambas marginais, consistente com ruído puro (~4-5 falsos
+positivos esperados por acaso em 90 testes). Achado mecanístico mais
+profundo que o Finding A original: `exit_price` em TP/SL é o PRÓPRIO
+PREÇO DA BARREIRA (`triple_barrier.py`, convenção documentada do Label
+Engine, não bug) — isso torna QUALQUER métrica de tail-loss derivada de
+`ret_net` quase-determinística em `atr_pct`, normalizada por ATR ou não.
+Só `frac_tp`/`frac_sl` (o que `lift` mede) depende do caminho real de
+preço — e é exatamente onde a medição não achou sinal. Conclusão final:
+regime, nas métricas disponíveis no desenho atual do triple-barrier, não
+demonstra informação além de `atr_at_t0` — por propriedade estrutural do
+Label Engine, não por falta de poder estatístico.
+
+`AG-114` **CONTINUA ABERTO**: a fragilidade Gate-1 (k=2 vs. k=4) não foi
+resolvida por nenhum diagnóstico — decisão de redefinir o critério
+operacional do Gate 1 (mediana vs. máximo-por-janela) e do "empate" do
+Gate 3 segue pendente do Manager. 1 hipótese alternativa (HMM com
+vantagem em R3 por fit in-sample) foi checada e REFUTADA — fit é
+walk-forward genuíno, verificado em 2 pontos do código.
+
+**`AG-120` (achado novo desta auditoria, registrado em
+`audit/architecture_gaps_log.yaml`):** `BNBUSDT`/`RECENTE`/R2 falhou com
+`ValueError` de desalinhamento `t0`(baseline)↔`open_time`(bars) —
+isolado por `AG-019`, não muda o agregado (`n_windows_ok` de R2 conta
+uma célula a menos pros candidatos afetados), mas é um gap de qualidade
+de dado real, não investigado a fundo aqui (fora do escopo desta
+auditoria de resultado) — aberto pra investigação futura.
+
+### 15.13 HMM k=4 como candidato canônico de produção — override do Manager sobre AG-114/AG-118 (2026-08-21)
+
+**Estado real no momento desta decisão, não escondido:** `AG-114`
+continua **ABERTO** — a fragilidade do Gate 1 (§15.12.5 acima: sob o
+critério literal de mediana, `hmm_gaussian_k2_v1` passaria o Gate 1 e
+venceria a métrica primária em 2 das 3 resoluções) não foi resolvida por
+nenhum diagnóstico da fila `AG-122`; só uma hipótese alternativa (fit
+in-sample) foi checada e refutada, o que NÃO é o mesmo que validar o
+Gate 1 como especificado. `AG-118` está **RESOLVIDO**, e o resultado é
+que o gate de risco (bloquear entrada no bucket de stress do HMM) **não
+tem sinal econômico detectável** — `lift` não desvia de 1,0 em 90
+células (3 candidatos × 3 resoluções × 5 símbolos × 2 sides, IC via
+método de Katz ponderado por unicidade de label), robusto ao candidato
+(k=2/3/4 dão o mesmo resultado nulo).
+
+**Isto é um override de negócio, registrado como tal — não uma
+re-especificação do Gate 1 nem uma alegação de edge medido.** O Manager
+autorizou `hmm_gaussian_k4_v1` como candidato de regime canônico de
+produção mesmo com os dois achados acima na mesa, como "segurança extra
+de baixo custo": o bucket de stress do HMM ocupa só ~5-12% do tempo
+(medido em `AG-114`), então bloquear trade nesse bucket tem custo baixo
+de oportunidade mesmo sem prova de que reduz risco de cauda real além do
+que ATR já captura (`AG-122`, achado mecanístico: `exit_price` de
+TP/SL é o próprio preço da barreira, o que torna qualquer tail-loss
+derivado de `ret_net` quase-determinístico em `atr_pct`). Qualquer
+comunicação futura sobre "k=4 venceu o M4" precisa carregar a ressalva
+do Gate 1 — este override não fecha essa pergunta.
+
+**Escopo entregue** (plano completo, sessão 2026-08-21,
+`C:\Users\Felipe_a_Lenda\.claude\plans\wise-exploring-panda.md`):
+
+- **Fase A** — regime SAIU do vetor de treino do Alpha
+  (`src/models/alpha.py`): `DESIGN_COLUMNS` deixa de incluir o one-hot
+  de 4 colunas (`R2..R5`), passa a ser só as 10 features T1. Decisão do
+  ADR-001 §2.7 ("regime = gate de risco, não feature preditiva",
+  ratificada pelo Manager em `§15.12`) nunca tinha sido aplicada ao
+  código até agora. **Ação operacional separada, fora deste escopo:**
+  só tem efeito real depois que `src.models.pipeline.run_layer1_sprint()`
+  for reexecutado — os artefatos de predição atuais ainda refletem o
+  modelo antigo (14 colunas) até lá.
+- **Fase B** — novo builder de produção `src/regime/build_hmm.py::
+  build_hmm_regimes` (walk-forward ancorado trimestral, mesmo contrato
+  de fold de `B05`/M4), reusando `identify_stress_state_by_volatility`
+  (`src/validation/regime_utility.py`, já usado no M4 pra identificar o
+  bucket de stress sem rótulo semântico). Espaço de observação extraído
+  pra `src/regime/hmm_features.py` (antes vivia só dentro do harness
+  `src.analysis.m4_regime_comparison`, que continua funcionando
+  idêntico via re-export). Sem persistência em disco nesta fase — não
+  há orquestrador vivo consumindo ainda.
+- **Fase C** — Risk Engine candidato-agnóstico
+  (`src/risk/limits.py`): `control_01_regime_tradeavel` e
+  `RiskEngineInputs.regime_tradeable` passam a receber `bool` já
+  resolvido pelo builder de regime, não mais `regime: str` comparado
+  contra o vocabulário `TRADEABLE_REGIMES` do baseline. Tanto
+  `build_regimes()["tradeable"]` (baseline) quanto
+  `build_hmm_regimes()["tradeable"]` (HMM) alimentam o MESMO campo sem
+  tradução de vocabulário — evita reintroduzir o erro que `AG-121` já
+  documenta (mapear `canonical_id` do HMM pros rótulos R1-R4 seria uma
+  segunda fonte de verdade inventada).
+- **Constante nova** — `canonical_regime_hmm_n_states` (valor 4,
+  `config/constants.yaml`, classe B, `provenance: MEASURED` com a
+  narrativa completa do override no campo `source`, não uma medição
+  limpa).
+
+**Cadência de refit** — trimestral civil ancorado (mesmo
+`generate_anchored_walk_forward_splits` do M1/M4), declarada a priori
+por reuso de constante já existente (`m1_walkforward_initial_train_years`)
+— sem constante nova de cadência (B22: retreino em cadência fixa
+declarada, nunca reativo a sequência de perdas).
+
+**Limite de escopo explícito, não uma lacuna a preencher agora:** não
+existe nenhum caminho live/streaming no repo (`src/live/__init__.py`
+vazio) — "canônico de produção" aqui significa código pronto, testado, e
+com a interface certa, não "rodando ao vivo" (Sprint 12+, fora de
+escopo). `AG-121` (canonicalização por retorno, não volatilidade) segue
+sem resolução — `build_hmm_regimes` contorna corretamente via
+`identify_stress_state_by_volatility`, migração completa continua
+pendente do action item 3 do ADR-001.
 
 ---
 

@@ -37,7 +37,17 @@ teste de heterogeneidade em si roda POOLED por `(symbol, side)` — através
 de regime — porque estratificar por regime também fragmentaria demais a
 amostra pra estimar `SE` com confiança (R0/R5 têm poucos trades — achado
 F1 do CLAUDE.md, R0 é ~100% warmup em algumas séries) e porque a pergunta
-do M6 é sobre o ativo inteiro, não uma condicional de regime."""
+do M6 é sobre o ativo inteiro, não uma condicional de regime.
+
+**Módulo reusado pelo M4, não só pelo M6.** `permutation_heterogeneity_test`
+e `segment_boundaries` (via `src.validation.regime_utility`) já eram
+consumidos por `src.analysis.m4_critical_windows` pra heterogeneidade
+TP/SL por bucket de regime. A extensão de 2026-08-20 (`AG-114`,
+`PLANO_MESTRE_PRINCE2.md §15.12.1`) adiciona `cochrans_q_heterogeneity_continuous`/
+`permutation_heterogeneity_test_continuous` — mesma família estatística,
+resposta CONTÍNUA (volatilidade futura, não TP/SL) — pra métrica primária
+de ranking da qualidade-de-gate de regime, sem tocar nada do que já
+existia pro M6/heterogeneidade TP/SL."""
 
 from __future__ import annotations
 
@@ -319,6 +329,140 @@ def cochrans_q_heterogeneity(strata: tuple[StratumMetrics, ...]) -> Heterogeneit
 # ============================================================================
 
 IntArray = NDArray[np.int64]
+FloatArray = NDArray[np.float64]  # AG-114, 2026-08-20 -- generalização contínua precisa do alias
+
+
+# ============================================================================
+# Generalização contínua (AG-114, 2026-08-20, PLANO_MESTRE_PRINCE2.md
+# §15.12.1) — mesma família Cochran's Q/DerSimonian-Laird acima, mas pra
+# resposta CONTÍNUA (volatilidade futura, não TP/SL binário) e ponderada
+# por EPISÓDIO (não por barra) na COMPOSIÇÃO do peso -- `w_i =
+# n_episodios_i/var_i` -- não na estimativa de `var_i` em si.
+#
+# **Achado real desta sessão (rodando a suíte pela 1ª vez, não previsto no
+# desenho original): ponderar `var_i` pela variância ENTRE MÉDIAS DE
+# EPISÓDIO (não pela variância intra-bucket) exige >=2 episódios por
+# bucket pra ser computável -- com exatamente 1 episódio por bucket
+# (cenário comum: candidato entra 1x num estado e fica, dentro de 1
+# janela crítica curta), `var_i` fica indefinido e o resultado inteiro
+# vira `NaN`, mesmo com centenas de barras de dado real disponíveis.**
+# Corrigido: `var_i` usa a variância amostral (ddof=1) de TODAS as barras
+# FINITAS do bucket `i` (só precisa de >=2 barras, quase sempre verdade),
+# mas `n_i` no peso continua sendo CONTAGEM DE EPISÓDIO (não de barra) --
+# resolve o achado real (`NaN` explosivo) sem abandonar a correção da
+# auditoria 1 pt8 (peso não escala com contagem bruta de barra/trade).
+#
+# Validade estatística não depende de `var_i` ser um estimador "correto"
+# da variância entre episódios -- vem da PERMUTAÇÃO: a mesma fórmula
+# (mesmo possível viés) é aplicada ao `Q` observado E a cada `Q` permutado,
+# então qualquer viés sistemático cancela na comparação -- mesmo argumento
+# já usado pra justificar por que a permutação em bloco corrige a SE
+# multinomial subestimada da versão TP/SL (AG-092, ver docstring de
+# `permutation_heterogeneity_test`). `n_episodios_i` é INVARIANTE a
+# permutação (mesmo multiset de rótulos, só reatribuído a episódios
+# diferentes) -- calculado 1x pelo chamador, nunca recomputado por
+# permutação.
+#
+# Motivo do peso por episódio (não abandonado, só corrigido): ADR-001
+# (ratificado) repete em 3 lugares independentes a mesma disciplina --
+# nunca deixar contagem BRUTA de observação substituir contagem de
+# unidade INDEPENDENTE (§1.3, N_eff de trials via clustering; §3.2,
+# WeightBasis/concorrência por união de intervalos; §2.8, cMDA permuta o
+# cluster inteiro, não a feature). Corrige, no mesmo código, o achado da
+# auditoria 1 pt8 do documento de validação do M4 ("estatística observada
+# pondera por trade, não por episódio") sem tocar a versão TP/SL acima,
+# que permanece intocada (ainda usada por M6 e pelo bloco
+# `heterogeneity` do M4 tal como está).
+# ============================================================================
+
+
+def _q_statistic_continuous_episode_weighted(
+    bucket_codes: IntArray,
+    response: FloatArray,
+    n_episodes_per_bucket: FloatArray,
+    *,
+    k: int,
+) -> tuple[float, float]:
+    """`(q_statistic, pooled_mean)` -- `w_i = n_episodes_per_bucket[i]/var_i`,
+    `var_i` = variância amostral (`ddof=1`) de `response` sobre as barras
+    FINITAS do bucket `i` (todas as barras do bucket, não só médias de
+    episódio -- só exige `>=2` barras finitas, não `>=2` episódios, ver
+    bloco de comentário acima pro achado real que motivou isso).
+    `n_episodes_per_bucket` é responsabilidade do CHAMADOR (computado 1x
+    fora de qualquer laço de permutação -- ver
+    `permutation_heterogeneity_test_continuous`). Bucket presente com
+    `<2` barras finitas, OU `var_i<=0` -- `(NaN, NaN)`, mesma disciplina
+    de `anova_by_group`/`_q_statistic_from_bucket_codes` (nunca `0`/
+    exceção silenciosa; usada dentro de laço de permutação, então nunca
+    levanta -- devolve `NaN`)."""
+    finite_mask = np.isfinite(response)
+    bucket_codes_finite = bucket_codes[finite_mask]
+    response_finite = response[finite_mask]
+
+    n_bars_per_bucket = np.bincount(bucket_codes_finite, minlength=k).astype(np.float64)
+    present = n_bars_per_bucket > 0
+    if np.any(n_bars_per_bucket[present] < 2):
+        return float("nan"), float("nan")
+
+    means = np.full(k, np.nan, dtype=np.float64)
+    variances = np.full(k, np.nan, dtype=np.float64)
+    for b in np.flatnonzero(present):
+        bucket_values = response_finite[bucket_codes_finite == b]
+        means[b] = float(np.mean(bucket_values))
+        variances[b] = float(np.var(bucket_values, ddof=1))
+
+    active_var = variances[present]
+    if np.any(active_var <= 0) or np.any(np.isnan(active_var)):
+        return float("nan"), float("nan")
+
+    w = n_episodes_per_bucket[present] / active_var  # noqa: unguarded-ratio -- active_var>0 garantido pelo guard acima
+    active_means = means[present]
+    pooled = float(np.sum(w * active_means) / np.sum(w))  # noqa: unguarded-ratio -- soma de pesos todos positivos, nunca zero
+    q = float(np.sum(w * (active_means - pooled) ** 2))
+    return q, pooled
+
+
+@dataclass(frozen=True, slots=True)
+class ContinuousHeterogeneityResult:
+    k: int
+    n_episodes: int
+    pooled_response: float
+    q_statistic: float
+    df: int
+    p_value: float
+    i_squared_pct: float
+
+
+def cochrans_q_heterogeneity_continuous(
+    bucket_ids: IntArray, response: FloatArray
+) -> ContinuousHeterogeneityResult:
+    """Espelha `cochrans_q_heterogeneity` (mesma correção `k=1` ->
+    `q_statistic`/`p_value`/`i_squared_pct=NaN` explícito, 2026-08-19).
+    `bucket_ids`: códigos ARBITRÁRIOS (`canonical_id` cru, não precisa vir
+    denso/contíguo) -- densificado internamente via `_dense_bucket_codes`,
+    mesmo contrato de `permutation_heterogeneity_test_continuous`
+    (chamador nunca precisa pré-densificar)."""
+    bucket_codes, k = _dense_bucket_codes(bucket_ids)
+    segment_starts, _segment_ends = segment_boundaries(bucket_codes)
+    n_episodes = int(segment_starts.shape[0])
+    episode_bucket = bucket_codes[segment_starts]
+    n_episodes_per_bucket = np.bincount(episode_bucket, minlength=k).astype(np.float64)
+
+    df = k - 1
+    q, pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=k
+    )
+    if df <= 0 or np.isnan(q):
+        return ContinuousHeterogeneityResult(
+            k=k, n_episodes=n_episodes, pooled_response=pooled, q_statistic=float("nan"),
+            df=df, p_value=float("nan"), i_squared_pct=float("nan"),
+        )
+    p_value = float(chi2.sf(q, df))
+    i_squared = max(0.0, (q - df) / q) * 100.0 if q > 0 else 0.0  # noqa: unguarded-ratio -- guardado pelo `if q>0 else 0.0`
+    return ContinuousHeterogeneityResult(
+        k=k, n_episodes=n_episodes, pooled_response=pooled, q_statistic=q,
+        df=df, p_value=p_value, i_squared_pct=i_squared,
+    )
 
 
 def _dense_bucket_codes(bucket_ids: IntArray) -> tuple[IntArray, int]:
@@ -493,6 +637,77 @@ def permutation_heterogeneity_test(
         pseudo_codes = permuted[episode_id]
         q_perm = _q_statistic_from_bucket_codes(
             pseudo_codes, is_tp, is_sl, tp_mult=tp_mult, sl_mult=sl_mult, k=k
+        )
+        if np.isnan(q_perm):
+            continue
+        n_valid += 1
+        if q_perm >= q_observed:
+            n_ge += 1
+
+    empirical_p = (1.0 + n_ge) / (1.0 + n_valid)  # noqa: unguarded-ratio -- n_valid é contagem >=0, guardado pelo if abaixo
+    p_value = float("nan") if n_valid == 0 else empirical_p
+    return PermutationHeterogeneityResult(
+        q_observed=q_observed, p_value=p_value, n_episodes=n_episodes,
+        n_permutations_requested=n_permutations, n_permutations_valid=n_valid,
+    )
+
+
+def permutation_heterogeneity_test_continuous(
+    bucket_ids: IntArray, response: FloatArray, *, n_permutations: int, seed: int
+) -> PermutationHeterogeneityResult:
+    """Generalização contínua de `permutation_heterogeneity_test` (AG-092)
+    -- MESMA mecânica bar-level (`segment_boundaries`, `episode_id`
+    repetido, embaralha o vetor de bucket-por-episódio, reexpande pra
+    barra) -- resposta contínua (ex. `forward_realized_vol`) em vez de
+    TP/SL binário, estatística ponderada por CONTAGEM DE EPISÓDIO (ver
+    bloco de comentário acima, `_q_statistic_continuous_episode_weighted`).
+    Reusa `PermutationHeterogeneityResult` (campos já genéricos o
+    suficiente).
+
+    `bucket_ids`/`response`: 1 linha por BARRA, ordenadas por tempo pelo
+    chamador (mesmo contrato de `permutation_heterogeneity_test`).
+
+    **`n_episodes_per_bucket` calculado 1x, fora do laço de permutação --
+    não é aproximação, é exato.** Cada permutação embaralha o vetor
+    `episode_bucket` (`rng.permutation`, sem reposição) -- isso reordena
+    QUAIS episódios carregam qual rótulo, mas nunca muda o MULTISET de
+    rótulos em si (mesmos valores, posições diferentes). Logo
+    `bincount(permuted_episode_bucket)` é sempre idêntico a
+    `bincount(episode_bucket)` -- `n_episodes_per_bucket` é invariante a
+    permutação por construção, recalculá-lo a cada permutação seria
+    trabalho redundante, não uma correção necessária."""
+    if bucket_ids.shape[0] == 0:
+        raise ValueError("permutation_heterogeneity_test_continuous: bucket_ids vazio")
+    if bucket_ids.shape != response.shape:
+        raise ValueError(
+            "permutation_heterogeneity_test_continuous: bucket_ids/response precisam do "
+            f"mesmo shape (bucket_ids={bucket_ids.shape}, response={response.shape})"
+        )
+    bucket_codes, k = _dense_bucket_codes(bucket_ids)
+    segment_starts, segment_ends = segment_boundaries(bucket_codes)
+    n_episodes = int(segment_starts.shape[0])
+    episode_id = np.repeat(np.arange(n_episodes, dtype=np.int64), segment_ends - segment_starts)
+    episode_bucket = bucket_codes[segment_starts]
+    n_episodes_per_bucket = np.bincount(episode_bucket, minlength=k).astype(np.float64)
+
+    q_observed, _pooled = _q_statistic_continuous_episode_weighted(
+        bucket_codes, response, n_episodes_per_bucket, k=k
+    )
+
+    if k < 2 or n_episodes < 2 or np.isnan(q_observed):
+        return PermutationHeterogeneityResult(
+            q_observed=q_observed, p_value=float("nan"), n_episodes=n_episodes,
+            n_permutations_requested=n_permutations, n_permutations_valid=0,
+        )
+
+    rng = np.random.default_rng(seed)
+    n_ge = 0
+    n_valid = 0
+    for _ in range(n_permutations):
+        permuted_episode_bucket = rng.permutation(episode_bucket)
+        pseudo_codes = permuted_episode_bucket[episode_id]
+        q_perm, _ = _q_statistic_continuous_episode_weighted(
+            pseudo_codes, response, n_episodes_per_bucket, k=k
         )
         if np.isnan(q_perm):
             continue

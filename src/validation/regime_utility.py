@@ -6,6 +6,23 @@ entre folds (Rand ajustado) e ortogonalidade contra volatilidade — esta
 última reusa `anova_by_group` com a resposta trocada (`vol_pctile` em vez
 de retorno futuro), não é uma métrica própria.
 
+**Extensão de qualidade-de-gate, 2026-08-20 (`AG-114`,
+`PLANO_MESTRE_PRINCE2.md §15.12.1`).** ADR-001 (ratificado) decidiu que
+Regime não entra como feature do Meta/Alpha na v1 — fica exclusivamente
+como GATE de risco. As 4 métricas acima medem utilidade como FEATURE
+(heterogeneidade de retorno); não respondem qual candidato é o melhor
+GATE. 3 primitivos novos cobrem 2 dos 3 gates da regra de decisão já
+travada: `occupancy_metrics` (Gate 1 — estado de stress não pode ser
+degenerado), `transition_failure_rate` (Gate 2 — candidato não pode
+oscilar sem parar), `identify_stress_state_by_volatility` (convenção pra
+identificar "stress" em candidatos sem rótulo semântico). Nenhum aplica
+limiar/corte — os limiares numéricos dos 2 gates seguem `TBD — medir`,
+decisão deliberada (banned pattern B20, threshold nunca escolhido depois
+de ver resultado). O 3º gate (detection delay) e a métrica primária de
+ranking (heterogeneidade de volatilidade futura) vivem em
+`src/analysis/m4_critical_windows.py`/`m6_common_factor_hypothesis.py`
+— dependem de dado que este módulo não tem (timestamp, evento externo).
+
 **ANOVA F de Welch, não a F clássica — decisão do Manager, 2026-08-18
 (auditoria `audit_engineering`).** `anova_by_group` usava
 `scipy.stats.f_oneway` (ANOVA F clássica), que assume homocedasticidade
@@ -253,11 +270,178 @@ def adjusted_rand(labels_a: IntArray, labels_b: IntArray) -> float:
     return float(adjusted_rand_score(labels_a, labels_b))
 
 
+@dataclass(frozen=True, slots=True)
+class OccupancyMetrics:
+    """`effective_number_of_states` é o número de Hill de ordem 1
+    (entropia de Shannon exponenciada, Hill 1973, "Diversity and
+    evenness: a unifying notation and its consequences", Ecology 54(2))
+    sobre a distribuição de ocupação -- mesma disciplina de N_eff já usada
+    no projeto pra nunca deixar contagem bruta de observação substituir
+    contagem de unidade efetivamente independente (ver `docs/ADR-001_
+    arquitetura_artefatos_e_contratos_2026-08-19.md` §1.3, mesmo princípio
+    aplicado a estado de regime em vez de trial). Vale 1 quando um único
+    estado ocupa toda a série (degenerado); vale k quando os k estados são
+    igualmente ocupados (máxima diversidade)."""
+
+    state_ids: tuple[int, ...]
+    occupancy: tuple[float, ...]
+    n_states_present: int
+    effective_number_of_states: float
+    n: int
+
+
+def occupancy_metrics(group_labels: IntArray) -> OccupancyMetrics:
+    """Fração de barras por estado canônico + número efetivo de estados.
+    Gate 1 de `AG-114`/`PLANO_MESTRE_PRINCE2.md §15.12.1` -- desqualifica
+    candidato cujo estado de stress é degenerado (ausente ou dominante),
+    limiar numérico ainda `TBD -- medir` contra o baseline como
+    referência; esta função só calcula a métrica, nunca aplica corte.
+
+    Estados são identificados pelos valores ÚNICOS presentes em
+    `group_labels` (não por um range `0..k-1` assumido) -- um candidato
+    que nunca visita um estado declarado (ex. Jump Model saturado em 1
+    estado só) reporta `n_states_present=1` corretamente, sem inflar `k`
+    com estado ausente."""
+    n = group_labels.shape[0]
+    if n == 0:
+        raise ValueError("occupancy_metrics: group_labels vazio")
+
+    unique_states, counts = np.unique(group_labels, return_counts=True)
+    proportions = counts.astype(np.float64) / float(n)  # noqa: unguarded-ratio -- n>0 garantido pelo guard `if n == 0` acima
+
+    nonzero = proportions[proportions > 0.0]  # convenção 0*ln(0)=0
+    shannon_entropy = float(-np.sum(nonzero * np.log(nonzero)))
+    effective_number_of_states = float(np.exp(shannon_entropy))
+
+    return OccupancyMetrics(
+        state_ids=tuple(int(s) for s in unique_states.tolist()),
+        occupancy=tuple(float(p) for p in proportions.tolist()),
+        n_states_present=int(unique_states.size),
+        effective_number_of_states=effective_number_of_states,
+        n=n,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TransitionFailureMetrics:
+    horizon_bars: int
+    n_transitions_evaluable: int
+    n_failures: int
+    failure_rate: float
+
+
+def transition_failure_rate(
+    group_labels: IntArray, *, horizon_bars: int
+) -> TransitionFailureMetrics:
+    """Fração de transições que "falham" -- o estado de ORIGEM reaparece
+    dentro de `horizon_bars` barras após a transição (round-trip/flicker:
+    saiu do estado e voltou rápido demais pra ter sido uma mudança real,
+    não um vaivém de ruído). Gate 2 de `AG-114` -- candidato que oscila
+    sem parar é desqualificado independente de separação estatística.
+    Limiar `TBD -- medir`, esta função só mede.
+
+    Só transições com horizonte COMPLETO disponível à frente entram no
+    denominador (`b + horizon_bars <= n`) -- uma transição perto do fim da
+    série não tem como provar que não teria falhado; incluí-la
+    contaminaria a taxa com censura à direita disfarçada de sucesso.
+    `n_transitions_evaluable=0` -> `failure_rate=NaN` explícito (mesma
+    disciplina de `_median_or_nan` em `m4_critical_windows.py`: não
+    silenciar em `0.0`, que seria indistinguível de "0% de falha
+    medida")."""
+    n = group_labels.shape[0]
+    if n == 0:
+        raise ValueError("transition_failure_rate: group_labels vazio")
+    if horizon_bars < 1:
+        raise ValueError(
+            f"transition_failure_rate: horizon_bars precisa ser >=1, veio {horizon_bars}"
+        )
+
+    if n < 2:
+        return TransitionFailureMetrics(
+            horizon_bars=horizon_bars,
+            n_transitions_evaluable=0,
+            n_failures=0,
+            failure_rate=float("nan"),
+        )
+
+    transition_mask = group_labels[1:] != group_labels[:-1]
+    transition_positions = np.flatnonzero(transition_mask) + 1  # índice `b` da barra pós-transição
+
+    evaluable = transition_positions[transition_positions + horizon_bars <= n]
+    if evaluable.size == 0:
+        return TransitionFailureMetrics(
+            horizon_bars=horizon_bars,
+            n_transitions_evaluable=0,
+            n_failures=0,
+            failure_rate=float("nan"),
+        )
+
+    origin_state = group_labels[evaluable - 1]
+    n_failures = 0
+    for b, origin in zip(evaluable.tolist(), origin_state.tolist(), strict=True):
+        window = group_labels[b : b + horizon_bars]
+        if np.any(window == origin):
+            n_failures += 1
+
+    n_evaluable = int(evaluable.size)
+    return TransitionFailureMetrics(
+        horizon_bars=horizon_bars,
+        n_transitions_evaluable=n_evaluable,
+        n_failures=n_failures,
+        failure_rate=float(n_failures) / float(n_evaluable),  # noqa: unguarded-ratio -- n_evaluable>0 garantido pelo `if evaluable.size == 0: return` acima
+    )
+
+
+def identify_stress_state_by_volatility(
+    group_labels: IntArray, realized_vol_short: FloatArray
+) -> int:
+    """Estado canônico com maior `realized_vol_short` MÉDIO dentro do
+    estado -- convenção pra identificar "stress" em candidatos sem rótulo
+    semântico (HMM k=2/3/4, Jump Model, BOCPD só expõem `canonical_id` cru
+    via `src/regime/canonicalization.py`, ordenado por retorno médio
+    ascendente, não por volatilidade). Decisão do Manager, 2026-08-20
+    (`AG-114`/`PLANO_MESTRE_PRINCE2.md §15.12.1`) -- regra simétrica pros
+    4 candidatos sem rótulo, usa o observável que já entra em
+    `m4_regime_comparison._input_obs` de todo candidato (não introduz
+    fonte de dado nova).
+
+    **Não usar pro baseline** (`QuantileRegimeClassifier` já tem rótulo
+    semântico -- R5 -- via `src/regime/classifier.py::TRADEABLE_REGIMES`;
+    aplicar esta função lá seria uma segunda fonte de verdade competindo
+    com o rótulo oficial).
+
+    Filtra pares não-finitos antes de agrupar -- warmup de
+    `realized_vol_short` é NaN por construção."""
+    if group_labels.shape != realized_vol_short.shape:
+        raise ValueError(
+            "identify_stress_state_by_volatility: group_labels/realized_vol_short "
+            f"precisam do mesmo shape (group_labels={group_labels.shape}, "
+            f"realized_vol_short={realized_vol_short.shape})"
+        )
+    finite_mask = np.isfinite(realized_vol_short)
+    group_labels = group_labels[finite_mask]
+    realized_vol_short = realized_vol_short[finite_mask]
+    if group_labels.shape[0] == 0:
+        raise ValueError("identify_stress_state_by_volatility: nenhuma observação finita")
+
+    unique_states = np.unique(group_labels)
+    mean_vol_by_state = {
+        int(state): float(np.mean(realized_vol_short[group_labels == state]))
+        for state in unique_states
+    }
+    return max(mean_vol_by_state, key=lambda state: mean_vol_by_state[state])
+
+
 __all__ = [
     "ANOVAResult",
+    "OccupancyMetrics",
     "PersistenceMetrics",
+    "TransitionFailureMetrics",
     "adjusted_rand",
     "anova_by_group",
+    "identify_stress_state_by_volatility",
+    "occupancy_metrics",
     "regime_persistence",
     "segment_boundaries",
+    "transition_failure_rate",
 ]

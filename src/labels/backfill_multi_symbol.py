@@ -133,7 +133,14 @@ def build_and_write_labels_for_symbol(
     # run_and_write_labels_for_alts roda em ProcessPoolExecutor, e um
     # AssertionError sem contexto não diria qual dos 4 alts falhou.
     try:
-        assert_label_invariants(labels, time_stop_ms=cfg.time_stop_ms)
+        # AG-116 (2026-08-20) -- assert_label_invariants agora exige XOR
+        # entre time_stop_ms/horizon_bars (mesmo par tf/resolution_id de
+        # LabelConfig) -- roteado aqui pelo mesmo campo que já decide qual
+        # dos dois é a fonte de horizonte real desta config.
+        if cfg.resolution_id is not None:
+            assert_label_invariants(labels, horizon_bars=cfg.horizon_bars)
+        else:
+            assert_label_invariants(labels, time_stop_ms=cfg.time_stop_ms)
     except AssertionError as exc:
         raise AssertionError(
             f"build_and_write_labels_for_symbol: invariante de label violada "

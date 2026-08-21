@@ -371,7 +371,22 @@ def e02f_ic_carry_vs_directional(
 
 
 def confirm_regime_onehot_in_design_matrix() -> dict[str, Any]:
-    from src.models.alpha import DESIGN_COLUMNS, REGIME_DUMMY_COLUMNS, REGIME_ONEHOT_LEVELS
+    """**PRÉ-Fase-A (histórico, 2026-08-21) — quebra com `ImportError`.**
+    Esta medição documentava o estado do vetor de treino do Alpha ANTES
+    do wiring de HMM k=4 como candidato canônico (`PLANO_MESTRE_PRINCE2.md
+    §15.13`) — `REGIME_DUMMY_COLUMNS`/`REGIME_ONEHOT_LEVELS` foram
+    removidos de `src.models.alpha` nessa mudança (regime saiu do vetor
+    de treino, ADR-001 §2.7). Corpo preservado intacto como registro do
+    que foi medido na época — não reescrito, não deletado (achado já
+    reportado permanece um achado real, só deixou de ser reproduzível
+    sem checkout do commit anterior)."""
+    # mypy vê os 2 nomes como inexistentes -- correto, quebra em runtime de
+    # propósito (ver docstring acima); ignore só silencia o CHECK estático.
+    from src.models.alpha import (  # type: ignore[attr-defined]
+        DESIGN_COLUMNS,
+        REGIME_DUMMY_COLUMNS,
+        REGIME_ONEHOT_LEVELS,
+    )
 
     return {
         "presente": True,

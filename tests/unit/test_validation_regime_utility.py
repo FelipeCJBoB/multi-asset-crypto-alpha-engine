@@ -19,8 +19,11 @@ from scipy import stats as scipy_stats
 from src.validation.regime_utility import (
     adjusted_rand,
     anova_by_group,
+    identify_stress_state_by_volatility,
+    occupancy_metrics,
     regime_persistence,
     segment_boundaries,
+    transition_failure_rate,
 )
 
 # ============================================================================
@@ -269,3 +272,132 @@ def test_adjusted_rand_particoes_identicas_com_rotulo_permutado_e_1() -> None:
 def test_adjusted_rand_levanta_value_error_shape_diferente() -> None:
     with pytest.raises(ValueError, match="mesmo shape"):
         adjusted_rand(np.array([0, 1, 2]), np.array([0, 1]))
+
+
+# ============================================================================
+# occupancy_metrics -- extensão de qualidade-de-gate (AG-114, 2026-08-20,
+# PLANO_MESTRE_PRINCE2.md §15.12.1). Gate 1.
+# ============================================================================
+
+
+def test_occupancy_estados_igualmente_ocupados_effective_bate_com_k() -> None:
+    """3 estados, cada um 1/3 do tempo -- número efetivo de Hill deveria
+    bater com k=3 exatamente (máxima diversidade, caso conhecido à mão da
+    fórmula: exp(-Σp·ln p) com p_i=1/k pra todo i vira exp(ln k) = k)."""
+    labels = np.array([0, 1, 2] * 30, dtype=np.int64)
+    result = occupancy_metrics(labels)
+    assert result.state_ids == (0, 1, 2)
+    assert result.occupancy == pytest.approx((1 / 3, 1 / 3, 1 / 3))
+    assert result.n_states_present == 3
+    assert result.effective_number_of_states == pytest.approx(3.0)
+    assert result.n == 90
+
+
+def test_occupancy_degenerado_1_estado_effective_e_1() -> None:
+    """Candidato saturado (ex. Jump Model, AG-087) -- 1 único estado ocupa
+    tudo, número efetivo de estados tem que ser exatamente 1 (mínimo
+    possível), não um valor perto de 1 por acidente numérico."""
+    labels = np.zeros(50, dtype=np.int64)
+    result = occupancy_metrics(labels)
+    assert result.state_ids == (0,)
+    assert result.occupancy == (1.0,)
+    assert result.n_states_present == 1
+    assert result.effective_number_of_states == pytest.approx(1.0)
+
+
+def test_occupancy_estado_declarado_mas_nunca_visitado_nao_aparece() -> None:
+    """Só os valores ÚNICOS presentes contam -- um candidato que nunca
+    visita um estado nominal não infla n_states_present com estado
+    ausente (achado real que este teste prova: k não é um range 0..K-1
+    assumido, é o que de fato apareceu)."""
+    labels = np.array([0, 0, 2, 2, 2], dtype=np.int64)  # estado 1 nunca aparece
+    result = occupancy_metrics(labels)
+    assert result.state_ids == (0, 2)
+    assert result.n_states_present == 2
+
+
+def test_occupancy_levanta_value_error_vazio() -> None:
+    with pytest.raises(ValueError, match="vazio"):
+        occupancy_metrics(np.array([], dtype=np.int64))
+
+
+# ============================================================================
+# transition_failure_rate -- Gate 2 (AG-114)
+# ============================================================================
+
+
+def test_transition_failure_round_trip_conhecido_a_mao() -> None:
+    """`[0,0,0,0, 1,1, 0,0,0, 2,2,2,2]`, n=13 -- 3 transições: b=4 (0->1),
+    b=6 (1->0), b=9 (0->2) (índice `b` = primeira barra do novo estado).
+    Com `horizon_bars=3`: b=4 -> janela `labels[4:7]=[1,1,0]`, o estado de
+    ORIGEM (0) reaparece em b=6 -> FALHA (round-trip: saiu de 0, voltou
+    pra 0 antes de 3 barras). b=6 -> janela `labels[6:9]=[0,0,0]`, origem
+    (1) nunca reaparece -> sucesso. b=9 -> janela `labels[9:12]=[2,2,2]`,
+    origem (0) nunca reaparece -> sucesso. As 3 têm horizonte completo
+    disponível (`b+3<=13`). 1 falha em 3 transições avaliáveis."""
+    labels = np.array([0, 0, 0, 0, 1, 1, 0, 0, 0, 2, 2, 2, 2], dtype=np.int64)
+    result = transition_failure_rate(labels, horizon_bars=3)
+    assert result.horizon_bars == 3
+    assert result.n_transitions_evaluable == 3
+    assert result.n_failures == 1
+    assert result.failure_rate == pytest.approx(1.0 / 3.0)
+
+
+def test_transition_failure_transicao_perto_do_fim_excluida_do_denominador() -> None:
+    """[0,0,0,1,1] com horizon_bars=5 -- a única transição (b=3) não tem
+    horizonte completo à frente (b+horizon=8 > n=5) -- excluída do
+    denominador, nunca contaminada com censura à direita disfarçada de
+    sucesso."""
+    labels = np.array([0, 0, 0, 1, 1], dtype=np.int64)
+    result = transition_failure_rate(labels, horizon_bars=5)
+    assert result.n_transitions_evaluable == 0
+    assert result.n_failures == 0
+    assert np.isnan(result.failure_rate)
+
+
+def test_transition_failure_sem_transicao_nenhuma_da_nan_nao_zero() -> None:
+    labels = np.zeros(20, dtype=np.int64)
+    result = transition_failure_rate(labels, horizon_bars=3)
+    assert result.n_transitions_evaluable == 0
+    assert np.isnan(result.failure_rate)
+
+
+def test_transition_failure_levanta_value_error_vazio() -> None:
+    with pytest.raises(ValueError, match="vazio"):
+        transition_failure_rate(np.array([], dtype=np.int64), horizon_bars=3)
+
+
+def test_transition_failure_levanta_value_error_horizon_invalido() -> None:
+    with pytest.raises(ValueError, match="horizon_bars"):
+        transition_failure_rate(np.array([0, 1], dtype=np.int64), horizon_bars=0)
+
+
+# ============================================================================
+# identify_stress_state_by_volatility -- convenção pra HMM/Jump Model/
+# BOCPD sem rótulo semântico (AG-114)
+# ============================================================================
+
+
+def test_identify_stress_state_maior_vol_media_conhecida_a_mao() -> None:
+    labels = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    # estado 2 tem a maior média de volatilidade
+    vol = np.array([0.01, 0.01, 0.05, 0.05, 0.10, 0.12], dtype=np.float64)
+    assert identify_stress_state_by_volatility(labels, vol) == 2
+
+
+def test_identify_stress_state_filtra_nan_de_vol_antes_de_agrupar() -> None:
+    labels = np.array([0, 0, 1, 1], dtype=np.int64)
+    vol = np.array([0.01, np.nan, 0.5, 0.5], dtype=np.float64)
+    assert identify_stress_state_by_volatility(labels, vol) == 1
+
+
+def test_identify_stress_state_levanta_value_error_shape_diferente() -> None:
+    with pytest.raises(ValueError, match="mesmo shape"):
+        identify_stress_state_by_volatility(np.array([0, 1]), np.array([0.1, 0.2, 0.3]))
+
+
+def test_identify_stress_state_levanta_value_error_nenhuma_observacao_finita() -> None:
+    labels = np.array([0, 1], dtype=np.int64)
+    vol = np.array([np.nan, np.nan], dtype=np.float64)
+    with pytest.raises(ValueError, match="nenhuma observação finita"):
+        identify_stress_state_by_volatility(labels, vol)

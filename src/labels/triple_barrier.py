@@ -272,12 +272,49 @@ class LabelConfig:
     `timeframe_minutes=`, lendo bars via `lake.query_dollar_bars` em vez
     de `source="klines_1m"`."""
 
+    horizon_bars: int | None = None
+    """AG-116 (2026-08-20, `PLANO_MESTRE_PRINCE2.md` §15.12.3) —
+    horizonte da barreira TIME em CONTAGEM DE BARRA, só sob
+    `resolution_id` (dollar bar). Mutuamente exclusivo com `time_stop_ms`
+    por desenho, mesmo XOR de `tf`/`resolution_id`: sob `resolution_id` o
+    espaçamento entre barras não é uniforme (AG-042) — um horizonte em
+    RELÓGIO fixo seria arbitrário (nº de dollar-bars cobertas varia com
+    atividade do mercado); a literatura de origem do triple-barrier
+    (López de Prado, AFML, "The Triple-Barrier Method", pesquisa completa
+    em `PLANO_MESTRE_PRINCE2.md` §15.12.3-C.1) trata o horizonte
+    nativamente em contagem de barra. Sob `tf` (grade de tempo),
+    `horizon_bars` setado é PROIBIDO — `ValueError` explícito em
+    `__post_init__`, fail-loud, nunca ignorado em silêncio; `time_stop_ms`
+    continua a única fonte de horizonte nesse caso. `horizon_bars` é
+    COMPARTILHADO entre R1/R2/R3 (não 3 constantes separadas por
+    resolução) — decisão do Manager, `PLANO_MESTRE_PRINCE2.md`
+    §15.12.3-C.1: `threshold_usdt` de cada resolução já é calibrado
+    (AG-042) pra que a contagem MÉDIA de barras aproxime 15m/30m/1h,
+    então já existe vínculo MEDIDO (não estipulado) entre bar-count e
+    relógio — um horizonte compartilhado não sacrifica tanta
+    comparabilidade de relógio quanto pareceria à primeira vista. `None`
+    (default) preserva bit-exato todo caller de grade de TEMPO
+    existente."""
+
     def __post_init__(self) -> None:
         if self.resolution_id is not None:
             if self.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
                 raise ValueError(
                     f"resolution_id={self.resolution_id!r} não suportado -- esperado um "
                     f"de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+                )
+            # AG-116 -- sob resolution_id, horizon_bars é OBRIGATÓRIO (>=1
+            # explícito): não há bar_ms/relógio fixo pra derivar um
+            # horizonte a partir de time_stop_ms sob dollar bar (mesmo
+            # racional de estimator_id obrigatório sob resolution_id,
+            # acima). Checado ANTES do return abaixo -- se este check não
+            # disparar, nada mais nesta função valida horizon_bars sob
+            # resolution_id.
+            if self.horizon_bars is None or self.horizon_bars < 1:
+                raise ValueError(
+                    f"resolution_id={self.resolution_id!r} exige horizon_bars >= 1 "
+                    f"explícito -- recebido {self.horizon_bars!r} (AG-116, "
+                    "PLANO_MESTRE_PRINCE2.md §15.12.3)"
                 )
             # Sob dollar bar `step_ms`/`bar_ms` não se aplicam (sem
             # espaçamento de relógio constante por desenho, AG-042) -- a
@@ -286,6 +323,21 @@ class LabelConfig:
             # continua obrigatório (campo do dataclass), só não é
             # cruzado-validado contra `atr_window_ms/tf` aqui.
             return
+
+        # AG-116 -- sob tf (grade de tempo), horizon_bars é PROIBIDO
+        # (fail-loud, não ignorado em silêncio -- mesma disciplina de
+        # AG-031/B1 pra time_stop_bars/time_stop_ms): time_stop_ms
+        # continua a única fonte de horizonte sob grade de tempo, um
+        # horizon_bars setado ali seria lido por ninguém (build_labels só
+        # consome horizon_bars sob resolution_id) e mentiria sobre o que
+        # de fato governa o horizonte do label.
+        if self.horizon_bars is not None:
+            raise ValueError(
+                f"horizon_bars={self.horizon_bars!r} setado sob tf={self.tf!r} "
+                "(sem resolution_id) -- proibido (AG-116): horizon_bars só é válido "
+                "sob resolution_id (dollar bar); time_stop_ms é a única fonte de "
+                "horizonte sob grade de tempo"
+            )
 
         # step_ms levanta UnsupportedTimeframeError pra tf desconhecido --
         # falha alto aqui, na construção, em vez de silenciosamente mais
@@ -325,6 +377,7 @@ class LabelConfig:
         estimator_id: str | None = None,
         tf: str = _DEFAULT_TF,
         resolution_id: str | None = None,
+        horizon_bars: int | None = None,
     ) -> LabelConfig:
         """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
         no `atr_window_ms` lido de `constants.yaml` — o estimador de
@@ -351,7 +404,16 @@ class LabelConfig:
         derivar o `window_bars` do default ATRWilder (a mesma razão de
         `resolution_id` desligar a validação em `__post_init__`). Levanta
         `ValueError` explícito exigindo `estimator_id` explícito nesse
-        caso, nunca inventa um default sem base pra derivar."""
+        caso, nunca inventa um default sem base pra derivar.
+
+        `horizon_bars` (AG-116) -- diferente de `estimator_id`, NÃO exige
+        explícito sob `resolution_id`: `horizon_bars=None` (default) carrega
+        o valor de `constants.yaml::horizon_bars` (hiperparâmetro puro, não
+        risco de "mentir sobre qual estimador rodou" que motiva a exigência
+        em `estimator_id` -- decisão do Manager, `PLANO_MESTRE_PRINCE2.md`
+        §15.12.3 item 9(iv)). Passar `horizon_bars` explícito sob `tf`
+        (sem `resolution_id`) não é neutralizado aqui -- é repassado como
+        veio, e `__post_init__` levanta `ValueError` (proibição AG-116)."""
         if resolution_id is not None and estimator_id is None:
             raise ValueError(
                 "LabelConfig.from_constants: resolution_id setado exige estimator_id "
@@ -363,6 +425,13 @@ class LabelConfig:
         resolved_estimator_id = (
             estimator_id if estimator_id is not None else f"atr_wilder_w{window_bars}"
         )
+        # AG-116 -- horizon_bars explícito é repassado como veio (inclusive
+        # sob tf, onde __post_init__ vai rejeitar -- não duplicar essa
+        # validação aqui). Só o caminho "ausente sob resolution_id" ganha
+        # um default carregável; ausente sob tf continua None (correto).
+        resolved_horizon_bars = horizon_bars
+        if resolved_horizon_bars is None and resolution_id is not None:
+            resolved_horizon_bars = int(load_constant("horizon_bars"))
         return cls(
             tp_atr_mult=float(load_constant("tp_atr_mult")),
             sl_atr_mult=float(load_constant("sl_atr_mult")),
@@ -374,6 +443,7 @@ class LabelConfig:
             estimator_id=resolved_estimator_id,
             tf=tf,
             resolution_id=resolution_id,
+            horizon_bars=resolved_horizon_bars,
         )
 
     @property
@@ -409,7 +479,15 @@ class LabelConfig:
         15m — 900.000ms == 1 barra, achado durante a migração dollar-bar:
         mesma classe de bug de `time_stop_bars`, não pega na 1ª rodada —
         E `resolution_id` novo no payload) — mesma categoria de mudança
-        intencional, já divergiria por `tf`/`estimator_id`/etc."""
+        intencional, já divergiria por `tf`/`estimator_id`/etc.
+
+        **Muda de valor de novo com AG-116 (2026-08-20)** (`horizon_bars`
+        novo no payload, `PLANO_MESTRE_PRINCE2.md` §15.12.3) — mesma
+        categoria de mudança intencional pelo mesmo motivo: já divergiria
+        por `resolution_id`/`estimator_id`/etc. `horizon_bars` é `None`
+        sob `tf` (grade de tempo) e um `int >= 1` sob `resolution_id`
+        (dollar bar) -- o hash captura essa diferença como qualquer outro
+        campo do bloco de barreiras."""
         payload = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
@@ -421,6 +499,7 @@ class LabelConfig:
             "estimator_id": self.estimator_id,
             "tf": self.tf,
             "resolution_id": self.resolution_id,
+            "horizon_bars": self.horizon_bars,
         }
         blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
         return hashlib.sha256(blob).hexdigest()[:16]
@@ -453,7 +532,9 @@ def verify_config_hash(labels: pl.DataFrame, execution_config: LabelConfig) -> N
         )
 
 
-def assert_label_invariants(labels: pl.DataFrame, *, time_stop_ms: int) -> None:
+def assert_label_invariants(
+    labels: pl.DataFrame, *, time_stop_ms: int | None = None, horizon_bars: int | None = None
+) -> None:
     """§3.8 — as seis invariantes do PRD, como função reusável em vez de
     `assert` solto: chamada pelos testes E disponível para o caminho real
     (validation/backtest) validar um `labels.parquet` antes de consumir.
@@ -469,7 +550,23 @@ def assert_label_invariants(labels: pl.DataFrame, *, time_stop_ms: int) -> None:
     dollar bar tornar `n_bars_held` uma contagem real necessária (item 10 da
     tabela `PLANO_MESTRE_PRINCE2.md` §11.5, ainda não implementado).
     `NOFILL` fica de fora do teto (seu `t1` vem de `fill_timeout`, não de
-    `time_stop` — nunca esteve sob este horizonte)."""
+    `time_stop` — nunca esteve sob este horizonte).
+
+    **AG-116 (2026-08-20)** — `time_stop_ms`/`horizon_bars` viram
+    mutuamente exclusivos (`int | None` os dois, XOR explícito abaixo),
+    mesmo par `tf`/`resolution_id` de `LabelConfig`. Sob `horizon_bars`
+    (dollar bar), o teto correto NÃO é mais `t1 - t0` em relógio — item 10
+    de `PLANO_MESTRE_PRINCE2.md` §11.5 ("dollar bar tornar `n_bars_held`
+    uma contagem real necessária", citado acima) se torna realidade aqui:
+    o teto vira `n_bars_held <= horizon_bars` diretamente (coluna já
+    existe, contagem REAL desde AG-031/B1 — ver `build_labels`), sem
+    depender de `bar_ms`/espaçamento uniforme para nada."""
+    if (time_stop_ms is None) == (horizon_bars is None):
+        raise ValueError(
+            "assert_label_invariants: exatamente um de time_stop_ms/horizon_bars "
+            f"deve ser passado (XOR, AG-116) -- recebido time_stop_ms={time_stop_ms!r}, "
+            f"horizon_bars={horizon_bars!r}"
+        )
     assert bool((labels["t1"] > labels["t0"]).all()), "t1 <= t0 em alguma linha"
 
     entry_null = labels["t_entry"].is_null()
@@ -489,8 +586,17 @@ def assert_label_invariants(labels: pl.DataFrame, *, time_stop_ms: int) -> None:
 
     non_nofill = labels.filter(labels["barrier_hit"].cast(pl.Utf8) != "NOFILL")
     if non_nofill.height:
-        held_ms = (non_nofill["t1"] - non_nofill["t0"]).dt.total_milliseconds()
-        assert bool((held_ms <= time_stop_ms).all()), "t1 - t0 > time_stop_ms em alguma linha"
+        if horizon_bars is not None:
+            # AG-116 -- teto em CONTAGEM DE BARRA sob resolution_id
+            # (dollar bar), n_bars_held já é contagem real (AG-031/B1),
+            # não depende de bar_ms/espaçamento uniforme.
+            n_bars_held = non_nofill["n_bars_held"]
+            assert bool((n_bars_held <= horizon_bars).all()), (
+                "n_bars_held > horizon_bars em alguma linha"
+            )
+        else:
+            held_ms = (non_nofill["t1"] - non_nofill["t0"]).dt.total_milliseconds()
+            assert bool((held_ms <= time_stop_ms).all()), "t1 - t0 > time_stop_ms em alguma linha"
 
     uniq = labels["uniqueness"]
     assert bool(((uniq >= 0.0) & (uniq <= 1.0)).all()), "uniqueness fora de [0, 1]"
@@ -997,7 +1103,26 @@ def build_labels(
                 "fill_price None com t_entry_ms definido — contrato de FillResult quebrado"
             )
 
-        horizon_end_ms = t0 + cfg.time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
+        # AG-116 (2026-08-20, PLANO_MESTRE_PRINCE2.md §15.12.3-A item 2) --
+        # sob resolution_id, o horizonte da barreira TIME é CONTAGEM DE
+        # BARRA (horizon_bars), não relógio fixo: a i-ésima barra de
+        # decisão expira exatamente `horizon_bars` barras à frente dela
+        # mesma, por índice em t0_arr, nunca por t0 + constante_ms (que
+        # seria arbitrário sob espaçamento não-uniforme, AG-042). Se não
+        # há `horizon_bars` barras futuras carregadas (cauda do intervalo
+        # pedido), é cauda incompleta -- mesma semântica de "não sei
+        # completar o horizonte" que o ramo `else` já tinha, só que
+        # detectada por ÍNDICE em vez de por `max_mark_open_time`.
+        if cfg.resolution_id is not None:
+            assert cfg.horizon_bars is not None  # garantido por __post_init__ (AG-116, XOR)
+            horizon_idx = i + cfg.horizon_bars
+            if horizon_idx >= n:
+                n_incomplete_tail += 1
+                continue
+            horizon_end_ms = int(t0_arr[horizon_idx])
+        else:
+            horizon_end_ms = t0 + cfg.time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
+
         if horizon_end_ms > max_mark_open_time:
             n_incomplete_tail += 1
             continue
@@ -1064,6 +1189,25 @@ def build_labels(
             # observada no próprio `t0_arr` carregado -- medição, não
             # suposição (mesmo espírito de "nunca invente número" do
             # resto do projeto). Só afeta a CAUDA do intervalo pedido;
+            #
+            # AG-116 (2026-08-20) -- achado ao migrar horizon_end_ms sob
+            # resolution_id pra CONTAGEM de barra (t0_arr[i+horizon_bars],
+            # ver acima): por construção, esse valor nunca excede
+            # t0_arr[-1] quando a linha não foi cortada antes por cauda
+            # incompleta (mesmo teste de índice), então `t1` (limitado por
+            # horizon_end_ms) também nunca excede t0_arr[-1] sob
+            # resolution_id -- este ramo (t1 > t0_arr[-1] E bar_ms is
+            # None) fica, na prática, inalcançável pelo caminho público de
+            # build_labels/build_labels_for_symbol depois desta migração.
+            # Mantido intacto de propósito (PLANO_MESTRE_PRINCE2.md
+            # §15.12.3-A item 2: "n_bars_held NÃO precisa mudar") -- ainda
+            # é o comportamento CORRETO se algum chamador algum dia
+            # construir bars_15m/mark_1m/t1 de um jeito que viole esse
+            # invariante (ex. dado sintético de teste ou uso direto de
+            # build_labels fora do caminho padrão). Ver testes
+            # `test_build_labels_resolution_id_n_bars_held_degenerado_*`
+            # em tests/unit/test_labels_triple_barrier.py, que documentam
+            # essa mudança de reachability.
             # mesma limitação de aproximação que a fórmula original já
             # tinha pra grade de tempo ("reconstruído por aritmética a
             # partir do último bar real"), agora medida em vez de fixa.
@@ -1177,6 +1321,54 @@ def build_labels_both_sides(
     return weighted.select(list(LABEL_COLUMNS))
 
 
+def _resolve_prefetch_horizon_ms(cfg: LabelConfig) -> int:
+    """AG-116 (2026-08-20, `PLANO_MESTRE_PRINCE2.md` §15.12.3-A item 3 /
+    §15.12.3-C.2) — dimensiona a folga de prefetch de `mark_1m`/`funding`
+    ALÉM de `end`, usada por `build_labels_for_symbol`.
+
+    Sob `tf` (grade de tempo): inalterado, `max(cfg.time_stop_ms,
+    cfg.fill_timeout_ms)` — os dois já são relógio fixo (AG-031/B1,
+    AG-042), não dependem de `bar_ms`.
+
+    Sob `resolution_id` (dollar bar): `cfg.time_stop_ms` é vestigial (o
+    horizonte real é `cfg.horizon_bars`, contagem de barra), então a
+    abordagem aprovada (`PLANO_MESTRE_PRINCE2.md` §15.12.3-C.2, "percentil
+    alto medido, não estipulado") é:
+
+        prefetch_ms = horizon_bars * p99_bar_duration_ms * margem_de_segurança
+
+    `p99_bar_duration_ms` e a `margem_de_segurança` são constantes de
+    `constants.yaml` (`label_prefetch_p99_bar_duration_ms` /
+    `label_prefetch_safety_margin_multiplier`) — nunca literais soltos
+    aqui (Regra Zero, banned_patterns).
+
+    **`p99_bar_duration_ms`: MEDIDO 2026-08-20** (`tools/diagnostics/
+    measure_dollar_bar_duration_p99_by_resolution.py`, rodado pelo
+    Manager — `experiments/dollar_bar_duration_p99_by_resolution.json`,
+    15 combinações símbolo×resolução, todas com dado real, zero pulos).
+    Valor = MÁXIMO p99 entre as 15 combinações (SOLUSDT/R3,
+    22.506.187ms ≈ 6,25h) — piso conservador único compartilhado entre
+    as 3 resoluções/5 símbolos, deliberadamente maior que o necessário
+    pra R1/R2 (custo: mais `mark_1m`/`funding` prefetched do que
+    estritamente preciso — I/O extra, nunca corretude: prefetch
+    insuficiente silenciosamente descartaria labels reais como "cauda
+    incompleta", prefetch excessivo só custa banda/memória).
+    `margem_de_segurança` (1.5x, `label_prefetch_safety_margin_
+    multiplier`, ASSUMED) é um fator de engenharia SOBRE esse percentil
+    já alto — não um 2º estipulamento livre: cobre variância não
+    capturada por uma única estimativa histórica de percentil (ex. um
+    regime de liquidez pior que qualquer coisa já vista na amostra que
+    gerou o p99)."""
+    if cfg.resolution_id is None:
+        return max(cfg.time_stop_ms, cfg.fill_timeout_ms)
+
+    assert cfg.horizon_bars is not None  # garantido por __post_init__ (AG-116, XOR)
+    p99_bar_duration_ms = float(load_constant("label_prefetch_p99_bar_duration_ms"))
+    safety_margin = float(load_constant("label_prefetch_safety_margin_multiplier"))
+    horizon_prefetch_ms = cfg.horizon_bars * p99_bar_duration_ms * safety_margin
+    return int(max(horizon_prefetch_ms, cfg.fill_timeout_ms))
+
+
 def build_labels_for_symbol(
     symbol: str,
     start: DateLike,
@@ -1228,6 +1420,18 @@ def build_labels_for_symbol(
     dollar bar: `fill_timeout_bars * step_ms(cfg.tf)` era a última
     dependência de `bar_ms` nesta função).
 
+    **AG-116 (2026-08-20)** — sob `resolution_id`, `cfg.time_stop_ms` fica
+    VESTIGIAL (AG-116, o horizonte real é `cfg.horizon_bars`, contagem de
+    barra) e usá-lo pra dimensionar a folga seria arbitrário/potencialmente
+    incorreto: dollar bar em baixa atividade pode levar muito mais
+    wall-clock que `horizon_bars` barras cobririam sob alta atividade
+    (`PLANO_MESTRE_PRINCE2.md` §15.12.3-A item 2/§15.12.3-C.2). A folga
+    sob `resolution_id` é dimensionada por `_resolve_prefetch_horizon_ms`
+    (abaixo) — percentil alto (p99) MEDIDO da distribuição real de duração
+    de dollar-bar, com margem de segurança, não estipulado (ver docstring
+    daquela função pro racional completo e o status PENDENTE-DE-MEDIÇÃO do
+    valor atual).
+
     `estimator=None` (default) preserva o comportamento de produção atual
     (`ATRWilderEstimator`, ver `build_labels`) -- só válido sob grade de
     tempo (`cfg.resolution_id is None`); sob dollar bar `estimator` é
@@ -1255,7 +1459,7 @@ def build_labels_for_symbol(
             symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True
         )
 
-    horizon_ms = max(cfg.time_stop_ms, cfg.fill_timeout_ms)
+    horizon_ms = _resolve_prefetch_horizon_ms(cfg)  # AG-116 -- ver docstring da função
     mark_end = _as_date(end) + timedelta(milliseconds=horizon_ms, days=1)
     mark_1m = lake.query_bars(
         symbol, "1m", start, mark_end, source="mark_price_klines_1m", cast_prices=True
