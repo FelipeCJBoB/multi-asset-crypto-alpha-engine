@@ -19,9 +19,12 @@ import numpy as np
 import polars as pl
 import structlog
 
+from src.data.resample import step_ms
+
 from . import _sources, support
 from ._constants import load_constant
 from .groups import group_a, group_b, group_c, group_d, group_e
+from .registry import feature_lookback_bars
 from .support import FloatArray
 
 logger = structlog.get_logger(__name__)
@@ -103,6 +106,119 @@ class FeatureWindows:
             min_warmup_bars=int(load_constant("min_warmup_bars")),
             min_common_history_bars=int(load_constant("min_common_history_bars_15m")),
         )
+
+
+# ============================================================================
+# AG-032 item 8 (Fix A, 2026-08-21) — `max_feature_lookback_ms` compartilhado
+# entre `src.models.pipeline.run_layer1_sprint` e `src.validation.leakage.
+# run_all_leakage_tests`, mesma disciplina de `cpcv._embargo_ms`/AG-009: os
+# dois call-sites usam literalmente ESTA função, nunca duas cópias da
+# fórmula que podem divergir silenciosamente.
+# ============================================================================
+
+
+class ExpandingFeatureLookbackError(ValueError):
+    """Fail-fast (AG-032 item 8, decisão do Manager: opção A, 2026-08-21) —
+    o conjunto de features ATIVO contém pelo menos uma feature com
+    `lookback_bars: expanding` no registry (`src.features.registry`).
+    `expanding` não tem um valor finito honesto pra proteger via purge de
+    CPCV (`CPCVConfig.max_feature_lookback_ms`) — a feature listada
+    precisa ser removida do conjunto ativo (`T1_FEATURE_IDS`) OU o CPCV
+    precisa rodar CONSCIENTEMENTE sem proteção de purge pra ela (não é
+    esta exceção que decide qual das duas — só força a decisão a ser
+    tomada, opção B (exclusão automática silenciosa) foi rejeitada)."""
+
+
+_WINDOW_FIELD_NAMES: tuple[str, ...] = (
+    "atr_window",
+    "ema_window",
+    "rsi_window",
+    "ret_lookback",
+    "vol_ratio_short_window",
+    "vol_ratio_long_window",
+    "c07_window",
+    "d06f_window",
+    "e10f_window",
+    "b07_window",
+)
+"""Campos de `FeatureWindows` que são de fato janelas de lookback em barras
+(contagem finita que uma feature em `t` alcança pra trás) — exclui
+`maker_fee`/`taker_fee` (não são janela) e `min_warmup_bars`/`min_common_
+history_bars` (cortes de warmup/cap, não a distância que UMA feature em `t`
+olha pra trás; `min_common_history_bars_15m=164256`, AG-030, é justamente o
+número que uma rodada de correção anterior mediu como QUEBRANDO o CPCV
+(5/15 splits com treino vazio) se usado cru como `max_feature_lookback_ms`
+— ver addendum AG-032 item 8, "não re-meça, reuse")."""
+
+
+def assert_no_expanding_lookback_in_active_set(
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
+) -> None:
+    """Levanta `ExpandingFeatureLookbackError` se QUALQUER id em
+    `feature_ids` tiver `lookback_bars: expanding` no registry real
+    (`src.features.registry.feature_lookback_bars`). Chamada por
+    `compute_max_feature_lookback_ms` ANTES de calcular qualquer número —
+    nunca exclui a feature ofensora silenciosamente (ver docstring de
+    `ExpandingFeatureLookbackError`).
+
+    Hoje, chamada com o default `T1_FEATURE_IDS`, ISTO DISPARA:
+    `C07_vol_pctile_expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_
+    expanding` estão no conjunto ativo E têm `lookback_bars: expanding` —
+    comportamento ESPERADO e correto da opção A, não um bug a corrigir
+    mudando `T1_FEATURE_IDS` aqui. A decisão sobre o que fazer com essas 3
+    features (removê-las do conjunto ativo, ou aceitar rodar o CPCV sem
+    proteção pra elas conscientemente) é SEPARADA, não tomada por esta
+    função nem por `compute_max_feature_lookback_ms`."""
+    lookback_by_id = feature_lookback_bars()
+    offenders = sorted(fid for fid in feature_ids if lookback_by_id.get(fid) == "expanding")
+    if offenders:
+        raise ExpandingFeatureLookbackError(
+            "max_feature_lookback_ms (CPCV, AG-032 item 8) exige lookback FINITO "
+            f"para toda feature do conjunto ativo -- ofensora(s): {offenders}. Cada uma tem "
+            "lookback_bars='expanding' no registry (src/features/registry.yaml): janela "
+            "expansiva desde t0_dataset, sem valor finito honesto pra proteger via purge de "
+            "CPCV. Decisão necessária (NÃO tomada automaticamente aqui): remover essas "
+            "features do conjunto ativo (T1_FEATURE_IDS) OU rodar o CPCV conscientemente SEM "
+            "proteção de purge para elas (max_feature_lookback_ms=0 passado deliberadamente, "
+            "não por omissão)."
+        )
+
+
+def max_feature_window_bars(windows: FeatureWindows | None = None) -> int:
+    """Maior janela FINITA (em barras) entre os campos de lookback de
+    `FeatureWindows` (`_WINDOW_FIELD_NAMES`) — não olha pro registry nem
+    pro conjunto ativo de features, só pros valores já carregados de
+    `constants.yaml` (`FeatureWindows.from_constants()` se `windows` não
+    for passado). Hoje: max(20, 48, 14, 4, 12, 96, 48, 48, 48, 48) = 96
+    (`feature_c06_vol_ratio_long_window`) — medido, não hardcoded aqui."""
+    w = windows if windows is not None else FeatureWindows.from_constants()
+    window_values: tuple[int, ...] = tuple(int(getattr(w, name)) for name in _WINDOW_FIELD_NAMES)
+    return max(window_values)
+
+
+def compute_max_feature_lookback_ms(
+    tf: str,
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
+    *,
+    windows: FeatureWindows | None = None,
+) -> int:
+    """`max_feature_window_bars(windows) * step_ms(tf)` — valor pronto pra
+    `CPCVConfig.from_constants(max_feature_lookback_ms=...)` (AG-032 item
+    8, componente 96 da docstring de `src.validation.cpcv`). Helper
+    COMPARTILHADO entre `src.models.pipeline.run_layer1_sprint` e
+    `src.validation.leakage.run_all_leakage_tests` — os dois chamam
+    literalmente esta função, nunca duas cópias da fórmula (mesma
+    disciplina de `cpcv._embargo_ms`/AG-009).
+
+    Chama `assert_no_expanding_lookback_in_active_set(feature_ids)`
+    PRIMEIRO — se qualquer feature do conjunto ativo tiver `lookback_bars:
+    expanding`, levanta `ExpandingFeatureLookbackError` antes de calcular
+    qualquer número (opção A, ver docstring daquela função). `feature_ids`
+    default `T1_FEATURE_IDS` DISPARA essa exceção hoje (3 features
+    expanding conhecidas) — chamar com um subconjunto sem elas (ou vazio)
+    pula o gate."""
+    assert_no_expanding_lookback_in_active_set(feature_ids)
+    return max_feature_window_bars(windows) * step_ms(tf)
 
 
 def compute_t1_features(

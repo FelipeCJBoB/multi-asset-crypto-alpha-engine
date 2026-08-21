@@ -9,6 +9,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
+from src.features import build as features_build
 from src.validation import cpcv, leakage
 from src.validation._paths import labels_symbol_tf_dir
 
@@ -238,6 +239,14 @@ def test_run_all_leakage_tests_repassa_symbol_a_generate_splits_dos_testes_6_7_1
     que fosse pedido. Spy sobre a função real (não um fake que pula a
     execução) prova que `symbol` chega de fato às 3 chamadas."""
     labels = _make_synthetic_labels(1200, horizon_bars=1)
+    # AG-032 item 8 (Fix A) -- run_all_leakage_tests agora chama
+    # features_build.compute_max_feature_lookback_ms(tf), que dispara
+    # ExpandingFeatureLookbackError contra o T1_FEATURE_IDS real (3
+    # features expanding conhecidas) antes de chegar em generate_splits.
+    # Este teste não é sobre essa checagem -- bypassa com um valor
+    # sintético fixo, mesmo padrão de isolar a dependência que não é o
+    # objeto do teste.
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     real_generate_splits = cpcv.generate_splits
     symbols_recebidos: list[str | None] = []
 
@@ -265,6 +274,10 @@ def test_run_all_leakage_tests_grade_id_prioriza_resolution_id_sobre_tf(
     pra capturar os argumentos e interromper cedo -- não precisa de
     `_calibration.json` real nem de labels com espaçamento dollar-bar."""
     labels = _make_synthetic_labels(60, horizon_bars=1)
+    # AG-032 item 8 (Fix A) -- ver nota equivalente no teste anterior:
+    # bypassa o fail-fast de features expanding, irrelevante pro que este
+    # teste verifica (prioridade resolution_id > tf).
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     captured: dict[str, object] = {}
 
     class _Stop(Exception):
@@ -287,14 +300,24 @@ def test_run_all_leakage_tests_grade_id_prioriza_resolution_id_sobre_tf(
 # ============================================================================
 
 
-def test_run_all_leakage_tests_retorna_14_na_ordem_da_tabela() -> None:
+def test_run_all_leakage_tests_retorna_14_na_ordem_da_tabela(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # AG-032 item 8 (Fix A) -- bypassa o fail-fast de features expanding
+    # (T1_FEATURE_IDS real dispara ExpandingFeatureLookbackError), fora do
+    # que este teste verifica (contagem/ordem dos 14 testes).
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     labels = _make_synthetic_labels(1200, horizon_bars=1)
     results = leakage.run_all_leakage_tests(labels)
     assert len(results) == 14
     assert [r.test_id for r in results] == list(range(1, 15))
 
 
-def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico() -> None:
+def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # AG-032 item 8 (Fix A) -- mesmo bypass, ver nota acima.
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     labels = _make_synthetic_labels(1200, horizon_bars=1)
     results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels)}
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
@@ -317,10 +340,15 @@ def test_leakage_test_result_to_dict_serializa_status_como_string() -> None:
     assert isinstance(d["status"], str)
 
 
-def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(tmp_path: object) -> None:
+def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from pathlib import Path
 
     assert isinstance(tmp_path, Path)
+    # AG-032 item 8 (Fix A) -- bypassa o fail-fast de features expanding,
+    # irrelevante pro que este teste verifica (escrita atômica do report).
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     labels = _make_synthetic_labels(200, horizon_bars=1)
     results = leakage.run_all_leakage_tests(labels)
     dest = tmp_path / "leakage_report.json"

@@ -2523,6 +2523,38 @@ entries:
       declarado vs. exclusão dessas 3 do conjunto ativo) -- não é mais só
       wireup mecânico.
 
+    addendum_implementacao_2026-08-21: >
+      Manager decidiu (Tabela 1, item 8: "A -- incluir"; pergunta de
+      política de features `expanding`, item 10: "A -- fail-fast").
+      Redesign via `redesign_workflow` (2 rodadas -- 1ª tratou
+      `T1_FEATURE_IDS` como alvo permanente, corrigida depois de validar
+      contra ADR-001/`PLANO_MESTRE`: `T1_FEATURE_IDS` está sendo extinto
+      por decisão já tomada, `feature_manifest` é o alvo real). Fix A
+      (componente-96, 7 features de lookback fixo) e Fix B
+      (`src/features/registry.py`, leitor typed novo -- 1ª fatia do
+      módulo que o ADR-001 já reserva, linha ~1774) implementados e
+      wireados em AMBOS os call-sites (`src.models.pipeline.run_layer1_
+      sprint` E `src.validation.leakage.run_all_leakage_tests` -- mesma
+      classe de risco de duplicação que `AG-009` já corrigiu pra
+      `_embargo_ms`, os dois agora chamam o mesmo helper
+      `features_build.compute_max_feature_lookback_ms`).
+
+      Política fail-fast (opção A) implementada como `Exception`
+      explícita (`ExpandingFeatureLookbackError`), não exclusão
+      silenciosa (opção B, rejeitada) -- chamada com o `T1_FEATURE_IDS`
+      real DISPARA hoje, comportamento correto e esperado (as 3 features
+      expanding continuam no conjunto ativo, essa decisão continua
+      SEPARADA, não tomada por este fix). Consequência real, não
+      hipotética: 5 testes pré-existentes em `test_validation_leakage.py`
+      chamavam `run_all_leakage_tests()` fim-a-fim sem esperar a exceção
+      -- corrigidos com `monkeypatch` de `compute_max_feature_lookback_ms`
+      (bypass explícito, documentado, só nesses 5 testes que não são
+      sobre essa checagem). 35 testes de `test_validation_leakage.py` +
+      75 de `test_features_build.py`/`test_features_registry.py`/
+      `test_validation_cpcv.py` + 9 de `test_models_pipeline.py`, todos
+      verdes. 5 comandos mecânicos limpos em todos os arquivos tocados.
+    status_final: "fechado 2026-08-21 -- mecanismo de proteção do componente-96 wireado nos dois call-sites reais; política fail-fast pras features expanding implementada e comprovadamente disparando contra o conjunto ativo real. Decisão sobre O QUE FAZER com as 3 features expanding (excluir de T1_FEATURE_IDS/futuro feature_manifest, ou aceitar rodar sem proteção conscientemente) continua em aberto, registrada como decisão separada -- não bloqueia o fechamento deste item, que era sobre o MECANISMO existir e funcionar corretamente."
+
   - id: AG-033
     date: "2026-08-15"
     file: "src/data/lake.py"
@@ -8798,9 +8830,28 @@ entries:
       caro já catalogado neste projeto (ver `audit_engineering/SKILL.md`,
       referência ao projeto irmão que teve win rate inflado de 36%→83%
       por um leak estruturalmente idêntico, invisível a purged k-fold).
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão do Manager pendente (Tabela 1, pergunta 5): `build_hmm_regimes` pode ser consumido por backtest HISTÓRICO hoje (com a ressalva registrada), ou fica restrito a \"última barra, ao vivo\" até a reformulação causal (identificar stress_state por fold, não globalmente)? Deliberadamente NÃO tocado nesta rodada de fixes -- `build_hmm.py` ficou intocado por instrução explícita, only a triagem de gap (AG-132, achado F3 do mesmo cluster) foi implementada, que é uma checagem ortogonal (dado ausente, não causalidade do rótulo)."
+    resolved_by_commit: "36ff6fa"
+    resolution: >
+      Manager decidiu (Tabela 1, item 5: "B -- reformular já", motivo:
+      "sistema que não pode ser backtestado não é sistema"). Redesign
+      via `redesign_workflow` (Fases 1-4, dois agentes independentes --
+      1º desenho + validação contra ADR-001), Ângulo 1 aprovado e
+      implementado: `identify_stress_state_by_volatility` movida pra
+      dentro do loop de fold em `build_hmm_regimes`, rodando sobre
+      `obs_2d[:train_end_idx]` decodificado (o próprio treino do fold,
+      nunca dado de folds futuros), `stress_state_id` local aplicado só
+      na fatia de teste do mesmo fold. Mudança mínima, contida a
+      `build_hmm.py`, reusa `identify_stress_state_by_volatility` sem
+      alterá-la -- mesmo princípio que `canonicalize_states`
+      (`hmm_gaussian.py`) já usa pra `canonical_id` (ancorar no fit, não
+      no obs de predict). `tests/unit/test_regime_build_hmm.py::test_
+      causalidade_perturbar_ultimo_fold_nao_muda_canonical_id_anterior`
+      atualizado -- docstring parava de justificar o comportamento
+      antigo como "pipeline em lote, não vazamento"; asserção de
+      prefix-invariance estendida de `canonical_id` pra também cobrir
+      `is_stress_state`/`tradeable`. 20 testes verdes (6 rápidos + 14
+      slow), 5 comandos mecânicos limpos em `src/regime/`.
+    status: "fechado 2026-08-21 -- is_stress_state/tradeable agora causal por fold, mesma disciplina que já valia pro decode. Item residual, registrado separado: comparabilidade de canonical_id/stress_state_id entre folds sob deriva ESTRUTURAL (não vazamento, identificabilidade) segue só com garantia empírica -- ver AG-134. Teste novo de estabilidade de stress_state_id entre folds consecutivos, decisão explícita do Manager: \"Separado\", não entrou nesta rodada."
 
   - id: AG-128
     date: "2026-08-21"
@@ -9012,3 +9063,42 @@ entries:
       `QualityReport` ganha `symbol` (ver `AG-125`) na mesma mudança,
       necessário pra rodar nos 5 símbolos sem colisão de nome de arquivo.
     status: "fechado -- dollar bar agora tem paridade de cobertura de qualidade com klines regulares."
+
+  - id: AG-134
+    date: "2026-08-21"
+    file: "src/regime/hmm_gaussian.py::canonicalize_states, src/regime/build_hmm.py"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §3.4/§5 (canonicalize_states, linha ~1737-1750), audit/architecture_gaps_log.yaml::AG-114, AG-121, AG-127"
+    found_by: "Agent (redesign_workflow, Fases 1-4, correção de AG-127), a pedido explícito do Manager (item 7 da rodada de perguntas consolidadas: 'Sim' -- vira item de acompanhamento)"
+    gap: >
+      A comparabilidade de `canonical_id` entre folds consecutivos do
+      walk-forward do HMM tem hoje só GARANTIA EMPÍRICA, não formal.
+      `canonicalize_states` ancora a ordenação nos parâmetros ajustados do
+      FIT (`fit.params.emissions.means[:, 0]`, só viu `obs[:train_end_
+      idx]`) -- causal por construção -- e o teste `tests/unit/test_
+      regime_hmm_gaussian.py::test_canonicalizacao_estavel_entre_folds_
+      consecutivos_regime_fixo` prova, empiricamente (via `agreement` em
+      barras-probe comuns, não via ARI, que seria cego a label-switch),
+      que essa canonicalização produz `canonical_id` estável entre dois
+      cortes de janela expansiva consecutivos -- **desde que a estrutura
+      geradora seja estável**. A própria docstring do teste é explícita
+      que isso não prova robustez sob regime que muda de caráter entre
+      folds (ex. um símbolo com mudança estrutural real de volatilidade
+      entre o período de um fold e o seguinte). Não há hoje nenhuma prova
+      FORMAL (matemática, não empírica) de que `canonical_id=2` no fold N
+      e `canonical_id=2` no fold N+1 apontam pro mesmo conceito de estado
+      sob toda condição de mercado -- só sob a condição testada.
+    severity: "médio"
+    layer: "regime"
+    consequence: >
+      Se um símbolo passar por uma mudança estrutural real de regime
+      entre folds consecutivos (ex. transição de mercado lateral pra
+      tendência sustentada, mudando a composição intrínseca dos estados
+      do HMM), `canonical_id` poderia trocar de significado sem nenhum
+      sinal -- consumidores downstream (Risk Engine via `regime_
+      tradeable`, análises que agregam por `canonical_id` entre folds)
+      tratariam estados diferentes como se fossem o mesmo. Não é
+      vazamento temporal (isso já é causal) -- é um risco de
+      IDENTIFICABILIDADE sob deriva estrutural, categoria diferente.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- item de acompanhamento, não bloqueante hoje (nenhum consumidor de produção agrega por canonical_id entre folds fora do que já foi testado). Registrado a pedido do Manager pra não ficar esquecido enquanto AG-127 (identificação causal de is_stress_state por fold) é implementado -- as duas correções são relacionadas (mesma função, mesmo mecanismo de canonicalização) mas não são a mesma pergunta: AG-127 resolve CAUSALIDADE (a decisão usa só dado do passado); este resolve IDENTIFICABILIDADE (a decisão significa a mesma coisa entre folds). Rota sugerida, não decidida: um teste novo que force deliberadamente uma mudança estrutural sintética entre 2 folds (não regime fixo, como o teste existente) e meça se `canonical_id`/`stress_state_id` permanecem estáveis ou trocam de significado -- decisão de quando priorizar isso fica pro Manager."

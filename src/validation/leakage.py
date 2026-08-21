@@ -84,6 +84,8 @@ from numpy.typing import NDArray
 from scipy.stats import spearmanr
 
 from src.core.provenance import report_provenance
+from src.features import build as features_build
+from src.features import registry as features_registry
 from src.regime import classifier as regime_classifier
 from src.regime import stress as regime_stress
 
@@ -96,7 +98,6 @@ logger = structlog.get_logger(__name__)
 IntArray = NDArray[np.int64]
 
 _SRC_ROOT: Path = REPO_ROOT / "src"
-_FEATURE_REGISTRY_PATH: Path = _SRC_ROOT / "features" / "registry.yaml"
 _TRIPLE_BARRIER_PATH: Path = _SRC_ROOT / "labels" / "triple_barrier.py"
 _ALPHA_PATH: Path = _SRC_ROOT / "models" / "alpha.py"
 _FEATURES_PARITY_TEST_PATH: Path = REPO_ROOT / "tests" / "parity" / "test_features_parity.py"
@@ -188,12 +189,6 @@ _GLOBAL_SCALER_PATTERN = re.compile(
 )
 
 
-def _load_feature_registry() -> list[dict[str, Any]]:
-    with _FEATURE_REGISTRY_PATH.open(encoding="utf-8") as f:
-        entries: list[dict[str, Any]] = yaml.safe_load(f) or []
-    return entries
-
-
 def _verify_causal_proof_reference(causal_proof: str) -> tuple[bool, str]:
     """Confirma que a referência 'testado em <arquivo>.py::<função>' dentro
     de `causal_proof` aponta para um arquivo E uma função que REALMENTE
@@ -218,8 +213,14 @@ def _audit_registry_causal_proofs(
     `causal_proof`/`parity_tested` presentes no registry E a referência de
     teste citada verificada contra o arquivo real (exceto os IDs em
     `_DERIVATION_ONLY_CAUSAL_PROOF`, que documentam derivação sem teste
-    dedicado por desenho)."""
-    entries = {e["id"]: e for e in _load_feature_registry()}
+    dedicado por desenho).
+
+    AG-032 item 8 (Fix B, 2026-08-21) — antes desta correção, este módulo
+    tinha um parsing ad hoc duplicado de `registry.yaml` (`_load_feature_
+    registry`, dict cru sem validação de schema). Agora usa `src.features.
+    registry.feature_registry_by_id` (leitor typed, valida campo a campo)
+    — mesma lógica, uma única implementação."""
+    entries = features_registry.feature_registry_by_id()
     problems: list[str] = []
     evidence: list[str] = []
     for fid in feature_ids:
@@ -227,11 +228,11 @@ def _audit_registry_causal_proofs(
         if entry is None:
             problems.append(f"{fid}: ausente do registry.yaml")
             continue
-        causal_proof = str(entry.get("causal_proof") or "")
+        causal_proof = entry.causal_proof
         if not causal_proof:
             problems.append(f"{fid}: causal_proof vazio")
             continue
-        if entry.get("parity_tested") is not True:
+        if entry.parity_tested is not True:
             problems.append(f"{fid}: parity_tested != true")
         if fid in _DERIVATION_ONLY_CAUSAL_PROOF:
             evidence.append(f"{fid}: derivação documentada, sem teste dedicado (ver nota)")
@@ -778,7 +779,20 @@ def run_all_leakage_tests(
         else cpcv.load_labels_v1(symbol=symbol, tf=tf, resolution_id=resolution_id)
     )
     grade_id = resolution_id if resolution_id is not None else tf
-    cpcv_config = cpcv.CPCVConfig.from_constants(tf=tf, grade_id=grade_id)
+    # AG-032 item 8 (Fix A, 2026-08-21) -- mesmo helper compartilhado que
+    # src.models.pipeline.run_layer1_sprint usa pra max_feature_lookback_ms
+    # (componente 96, docstring de src.validation.cpcv). Corrigir só um dos
+    # dois call-sites deixaria o leakage suite reportando PASS pros testes
+    # 6/7/12 enquanto o pipeline real de treino usa proteção diferente --
+    # mesma classe de risco que AG-009 já corrigiu pra _embargo_ms. Levanta
+    # features_build.ExpandingFeatureLookbackError se o conjunto ativo
+    # (T1_FEATURE_IDS) tiver feature com lookback_bars='expanding' no
+    # registry -- hoje DISPARA (3 features expanding conhecidas); ver
+    # docstring de features_build.assert_no_expanding_lookback_in_active_set.
+    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(tf)
+    cpcv_config = cpcv.CPCVConfig.from_constants(
+        tf=tf, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms
+    )
 
     results = [
         _test_01_close_futuro(),

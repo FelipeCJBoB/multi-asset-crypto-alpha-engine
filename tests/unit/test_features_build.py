@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from src.data._paths import CAPACITY_DIR
+from src.data.resample import step_ms
 from src.features import build
 
 _FIXTURE_START = "2024-01-01"
@@ -479,3 +480,86 @@ def test_registry_parity_tested_true_em_todas_as_entradas() -> None:
     entries = _load_registry()
     for entry in entries:
         assert entry["parity_tested"] is True, entry["id"]
+
+
+# ============================================================================
+# AG-032 item 8 (Fix A, 2026-08-21) -- max_feature_lookback_ms compartilhado
+# (`compute_max_feature_lookback_ms`) + fail-fast de `lookback_bars:
+# expanding` no conjunto ativo (opção A, decisão do Manager: nunca excluir
+# a feature ofensora silenciosamente -- só forçar a decisão a ser tomada).
+# ============================================================================
+
+
+def _synthetic_windows_max_96() -> build.FeatureWindows:
+    """Janelas sintéticas com um único campo (`vol_ratio_long_window=96`)
+    maior que todos os outros -- inclusive maior que `min_warmup_bars`/
+    `min_common_history_bars`, que `max_feature_window_bars` PRECISA
+    ignorar (`min_common_history_bars=164_256`, AG-030, é justamente o
+    número que uma rodada de correção anterior mediu como QUEBRANDO o CPCV
+    -- 5/15 splits com treino vazio -- se usado cru como `max_feature_
+    lookback_ms`, addendum AG-032 item 8). Se a exclusão de campos
+    estivesse errada, este teste pegaria: 164_256 > 96."""
+    return build.FeatureWindows(
+        atr_window=1,
+        ema_window=2,
+        rsi_window=3,
+        ret_lookback=4,
+        vol_ratio_short_window=5,
+        vol_ratio_long_window=96,
+        c07_window=6,
+        d06f_window=7,
+        e10f_window=8,
+        b07_window=9,
+        maker_fee=0.0002,
+        taker_fee=0.0005,
+        min_warmup_bars=200,
+        min_common_history_bars=164_256,
+    )
+
+
+def test_max_feature_window_bars_ignora_fees_e_warmup_usa_so_janelas() -> None:
+    windows = _synthetic_windows_max_96()
+    assert build.max_feature_window_bars(windows=windows) == 96
+
+
+@pytest.mark.parametrize("tf", ["15m", "30m", "1h"])
+def test_compute_max_feature_lookback_ms_converte_bars_via_step_ms(tf: str) -> None:
+    """Valor conhecido (96 barras, ver `_synthetic_windows_max_96`) -> ms
+    correto pro `tf` testado. `feature_ids=()` (conjunto ativo vazio) pula
+    de propósito o gate fail-fast -- este teste cobre só a conversão
+    bars->ms, não o gate (ver
+    `test_compute_max_feature_lookback_ms_dispara_para_t1_feature_ids_real`
+    pro gate contra o conjunto ativo real)."""
+    windows = _synthetic_windows_max_96()
+    got = build.compute_max_feature_lookback_ms(tf, feature_ids=(), windows=windows)
+    assert got == 96 * step_ms(tf)
+
+
+def test_assert_no_expanding_lookback_passa_para_subconjunto_finito() -> None:
+    """Nenhuma das duas features abaixo é `expanding` no registry real --
+    não deve levantar."""
+    build.assert_no_expanding_lookback_in_active_set(("C06_vol_ratio_12_96", "B01_rsi_14"))
+
+
+def test_assert_no_expanding_lookback_dispara_para_feature_expanding_conhecida() -> None:
+    with pytest.raises(build.ExpandingFeatureLookbackError, match="C07_vol_pctile_expanding"):
+        build.assert_no_expanding_lookback_in_active_set(
+            ("C06_vol_ratio_12_96", "C07_vol_pctile_expanding")
+        )
+
+
+def test_compute_max_feature_lookback_ms_dispara_para_t1_feature_ids_real() -> None:
+    """AG-032 item 8 -- prova que o MECANISMO de fail-fast dispara de
+    verdade contra o conjunto ativo REAL (`T1_FEATURE_IDS`, default), não
+    só contra um cenário sintético isolado. Hoje as 3 features expanding
+    conhecidas (C07/D03f/E02f) estão em `T1_FEATURE_IDS` -- ISTO DISPARA,
+    comportamento ESPERADO da opção A (decisão do Manager, 2026-08-21). A
+    decisão de remover essas 3 de `T1_FEATURE_IDS` (ou aceitar rodar o
+    CPCV sem proteção pra elas conscientemente) é SEPARADA, não tomada
+    nesta rodada -- não "silenciar" este teste mudando `T1_FEATURE_IDS`."""
+    with pytest.raises(build.ExpandingFeatureLookbackError) as exc_info:
+        build.compute_max_feature_lookback_ms("15m")
+    msg = str(exc_info.value)
+    assert "C07_vol_pctile_expanding" in msg
+    assert "D03f_volume_z_expanding" in msg
+    assert "E02f_funding_z_expanding" in msg

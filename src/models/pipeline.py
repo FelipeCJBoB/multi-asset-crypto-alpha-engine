@@ -29,6 +29,7 @@ import structlog
 from numpy.typing import NDArray
 
 from src.data.resample import step_ms
+from src.features import build as features_build
 from src.validation import cpcv
 
 from . import alpha, backtest_lite, baselines, decomposition
@@ -414,7 +415,19 @@ def run_layer1_sprint(
         t0_start=t0_start,
         t0_end=t0_end,
     )
-    cpcv_config = cpcv.CPCVConfig.from_constants(tf=tf_effective, grade_id=grade_id)
+    # AG-032 item 8 (Fix A, 2026-08-21) -- max_feature_lookback_ms cobre o
+    # "componente 96" (janela de lookback de feature de treino alcançando
+    # pra trás através de g_end_effective, ver docstring de src.validation.
+    # cpcv) usando o mesmo helper compartilhado que src.validation.leakage.
+    # run_all_leakage_tests (evita a formula duplicar/divergir, AG-009).
+    # Levanta features_build.ExpandingFeatureLookbackError se o conjunto
+    # ativo (T1_FEATURE_IDS) tiver feature com lookback_bars='expanding'
+    # no registry -- hoje DISPARA (3 features expanding conhecidas); ver
+    # docstring de assert_no_expanding_lookback_in_active_set.
+    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(tf_effective)
+    cpcv_config = cpcv.CPCVConfig.from_constants(
+        tf=tf_effective, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms
+    )
     cpcv_result = cpcv.generate_splits(mf.data, config=cpcv_config, symbol=symbol)
     splits = cpcv_result.splits
     logger.info(
