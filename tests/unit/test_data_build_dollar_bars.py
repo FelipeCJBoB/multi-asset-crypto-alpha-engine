@@ -31,6 +31,8 @@ AG-043 continua pendente.**"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import date, timedelta
 from pathlib import Path
 
 import orjson
@@ -134,6 +136,57 @@ def test_calibration_scope_validation_constante_nunca_e_frozen_production() -> N
 
 
 # ============================================================================
+# WalkforwardCalibrationIdentity -- AG-124 (2026-08-21)
+# ============================================================================
+
+
+def _wf_identity(**overrides: object) -> build_dollar_bars.WalkforwardCalibrationIdentity:
+    defaults: dict[str, object] = {
+        "symbol": "BTCUSDT",
+        "resolution_id": "R1",
+        "trailing_window_days": 30,
+        "cadence_days": 7,
+    }
+    defaults.update(overrides)
+    return build_dollar_bars.WalkforwardCalibrationIdentity(**defaults)  # type: ignore[arg-type]
+
+
+def test_walkforward_calibration_identity_scope_e_walkforward_causal_nunca_validation() -> None:
+    identity = _wf_identity()
+    assert identity.calibration_scope == build_dollar_bars.CALIBRATION_SCOPE_WALKFORWARD_CAUSAL
+    assert identity.calibration_scope != build_dollar_bars.CALIBRATION_SCOPE_VALIDATION
+
+
+def test_walkforward_calibration_identity_config_hash_deterministico() -> None:
+    assert _wf_identity().config_hash == _wf_identity().config_hash
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("symbol", "ETHUSDT"),
+        ("resolution_id", "R2"),
+        ("trailing_window_days", 60),
+        ("cadence_days", 14),
+    ],
+)
+def test_walkforward_calibration_identity_config_hash_muda_se_campo_mudar(
+    field: str, value: object
+) -> None:
+    base = _wf_identity()
+    changed = _wf_identity(**{field: value})
+    assert base.config_hash != changed.config_hash
+
+
+def test_walkforward_calibration_identity_config_hash_e_string_hex_16() -> None:
+    config_hash = _wf_identity().config_hash
+    assert isinstance(config_hash, str)
+    assert len(config_hash) == 16
+    # levanta ValueError se não for hex -- não pytest.raises, é o próprio teste
+    int(config_hash, 16)
+
+
+# ============================================================================
 # write_dollar_bars_and_calibration
 # ============================================================================
 
@@ -171,24 +224,38 @@ def test_write_dollar_bars_and_calibration_particiona_por_dia_e_e_atomico(
     assert payload["resolution_id"] == "R1"
 
 
-def test_write_dollar_bars_and_calibration_guarda_contra_threshold_divergente(
+def test_write_dollar_bars_and_calibration_aceita_threshold_divergente_sem_overwrite(
     tmp_path: Path,
 ) -> None:
-    bars_df = _synthetic_bars(close_time=[_DAY1_MS + 3_600_000])
+    """AG-124 (2026-08-21) -- a guarda que rejeitava um 2º threshold
+    divergente no mesmo diretório sem `overwrite=True` foi removida
+    (`build_dollar_bars_walkforward` PRECISA escrever thresholds
+    diferentes, um por período, no mesmo diretório de símbolo, sem
+    `overwrite=True` -- ver docstring da função). `_calibration.json` fica
+    com o payload da ÚLTIMA chamada (nenhuma checagem de mismatch mais);
+    os dias de cada rodada continuam presentes no diretório (só
+    `overwrite=True` apaga `*.parquet` antigos, ver teste de overwrite
+    abaixo -- comportamento inalterado)."""
+    bars_df_1 = _synthetic_bars(close_time=[_DAY1_MS + 3_600_000])
     build_dollar_bars.write_dollar_bars_and_calibration(
-        bars_df, _calibration(threshold_usdt=1_000_000.0), dest_root=tmp_path
+        bars_df_1, _calibration(threshold_usdt=1_000_000.0), dest_root=tmp_path
     )
 
-    with pytest.raises(ValueError, match="threshold_usdt"):
-        build_dollar_bars.write_dollar_bars_and_calibration(
-            bars_df, _calibration(threshold_usdt=2_000_000.0), dest_root=tmp_path
-        )
+    bars_df_2 = _synthetic_bars(close_time=[_DAY1_MS + _DAY_MS + 3_600_000])
+    # não levanta -- ao contrário do comportamento pré-AG-124
+    build_dollar_bars.write_dollar_bars_and_calibration(
+        bars_df_2, _calibration(threshold_usdt=2_000_000.0), dest_root=tmp_path
+    )
 
-    # a guarda dispara ANTES de escrever qualquer coisa nova -- só o
-    # arquivo do 1º write continua lá, não um estado misto/corrompido.
     symbol_dir = tmp_path / "dollar_bars_r1" / "BTCUSDT"
+    # ambos os dias sobrevivem -- sem overwrite=True, nada é apagado entre
+    # chamadas (só _calibration.json é sobrescrito, ver abaixo)
+    assert sorted(p.name for p in symbol_dir.glob("*.parquet")) == [
+        "2024-01-01.parquet",
+        "2024-01-02.parquet",
+    ]
     payload = orjson.loads((symbol_dir / "_calibration.json").read_bytes())
-    assert payload["threshold_usdt"] == pytest.approx(1_000_000.0)
+    assert payload["threshold_usdt"] == pytest.approx(2_000_000.0)  # da última chamada
 
 
 def test_write_dollar_bars_and_calibration_mesmo_threshold_nao_levanta(
@@ -515,6 +582,345 @@ def test_query_dollar_bars_resolution_id_r2_le_diretorio_proprio_nao_r1(
     )
     assert out_r1.height == 1
     assert out_r2.height == 2
+
+
+# ============================================================================
+# build_dollar_bars_walkforward (AG-124, Camada 1) -- recalibração rolante
+# CAUSAL, dado 100% sintético (lake.query_bars/query_agg_trades mockados na
+# fronteira). Calendário sintético usado por todos os testes abaixo:
+#   P0 = 2024-01-01..2024-01-30 (30 dias) -- cold-start, DESCARTADO
+#   P1 = 2024-01-31..2024-02-29 (30 dias) -- calibrado sobre P0 (rate 1000/dia)
+#   P2 = 2024-03-01..2024-03-30 (30 dias) -- calibrado sobre P1 (rate 2000/dia)
+# `trailing_window_days=cadence_days=30` faz a janela de calibração de CADA
+# período bater EXATAMENTE com o range calendário do período anterior --
+# escolha deliberada pra tornar o threshold_usdt esperado computável à mão
+# (rate uniforme dentro de cada bucket / mesma contagem de dias na baseline
+# sintética -> threshold_usdt == rate do bucket, sem aritmética de ponto
+# flutuante escondida).
+# ============================================================================
+
+_WF_SYMBOL = "BTCUSDT"
+_WF_START = "2024-01-01"
+_WF_END = "2024-03-30"
+_WF_TRAILING_DAYS = 30
+_WF_CADENCE_DAYS = 30
+
+
+def _to_date(value: object) -> date:
+    return value if isinstance(value, date) else date.fromisoformat(str(value))
+
+
+_EPOCH = date(1970, 1, 1)
+_DAY_MS_WF = 86_400_000
+
+
+def _noon_epoch_ms(d: date) -> int:
+    """Epoch ms de meio-dia UTC de `d` -- usado como `transact_time`
+    sintético. Achado ao rodar a suíte pela 1ª vez: usar `range(n_days)`
+    como `transact_time` (0, 1, 2, ...) faz TODO trade sintético cair no
+    mesmo dia calendário (1970-01-01, perto do epoch) quando `_aggregate_
+    bars`/`_split_bars_by_day` convertem `close_time` pra data -- períodos
+    diferentes then colidem no MESMO arquivo `.parquet` e um sobrescreve o
+    outro silenciosamente (exatamente o tipo de bug que este teste deveria
+    pegar em PRODUÇÃO, não esconder no MOCK). `transact_time` precisa ser
+    epoch ms REAL da data calendário sintética, não um índice sequencial."""
+    return (d - _EPOCH).days * _DAY_MS_WF + _DAY_MS_WF // 2
+
+
+def _rate_for_date(d: date, rates: tuple[tuple[date, date, float], ...]) -> float:
+    for lo, hi, rate in rates:
+        if lo <= d <= hi:
+            return rate
+    raise AssertionError(
+        f"data sintética {d} fora de todo bucket de _rate_for_date -- calendário "
+        "do teste (P0/P1/P2) não cobre essa data, ajuste os buckets"
+    )
+
+
+def _walkforward_mocks(
+    rates: tuple[tuple[date, date, float], ...],
+) -> tuple[Callable[..., pl.DataFrame], Callable[..., pl.DataFrame]]:
+    """Constrói o par de mocks (`lake.query_bars`, `lake.query_agg_trades`)
+    usado por `calibrate_dollar_threshold_for_validation` (via
+    `_chunked_scan.query_baseline`/`scan_trades_totals`) E por
+    `build_dollar_bars_for_window` (via `lake.query_agg_trades` direto) --
+    determinístico e SÓ função de `(start, end)`, nunca de estado externo
+    mutável, então qualquer chamada com o MESMO range sempre devolve o MESMO
+    resultado, não importa quantas vezes/de que ordem é chamada -- é essa
+    propriedade que torna o teste de prefix-invariance (`test_..._prefix_
+    invariance...`) uma prova de verdade sobre a IMPLEMENTAÇÃO (que janela
+    ela de fato pergunta pra cada período), não um artefato do mock.
+
+    1 trade/1 linha de baseline por dia calendário -- `total_dollar` de
+    `scan_trades_totals` bate EXATO com `rate * n_dias` (soma robusta a
+    qualquer sub-chunking interno de `bars_streaming_chunk_days`, já que
+    soma dia a dia); `n_bars` (baseline.height) também bate `n_dias` --
+    junto, fazem `threshold_usdt = total_dollar / n_bars` colapsar pro
+    `rate` do bucket quando o bucket é uniforme dentro da janela (P0/P1/P2
+    cada um 100% dentro de 1 bucket só, por desenho)."""
+
+    def _fake_query_bars(
+        symbol: str,
+        tf: str,
+        start: object,
+        end: object,
+        *,
+        source: str,
+        cast_prices: bool,
+        **_: object,
+    ) -> pl.DataFrame:
+        n_days = (_to_date(end) - _to_date(start)).days + 1
+        return pl.DataFrame({"close": [1.0] * n_days, "close_time": list(range(n_days))})
+
+    def _fake_query_agg_trades(
+        symbol: str, start: object, end: object, **_: object
+    ) -> pl.DataFrame:
+        start_d, end_d = _to_date(start), _to_date(end)
+        n_days = (end_d - start_d).days + 1
+        days = [start_d + timedelta(days=i) for i in range(n_days)]
+        prices = [_rate_for_date(d, rates) for d in days]
+        return pl.DataFrame(
+            {
+                "transact_time": [_noon_epoch_ms(d) for d in days],
+                "price": prices,
+                "quantity": [1.0] * n_days,  # price*quantity == rate do dia, exato
+                "is_buyer_maker": [False] * n_days,
+            },
+            schema={
+                "transact_time": pl.Int64,
+                "price": pl.Float64,
+                "quantity": pl.Float64,
+                "is_buyer_maker": pl.Boolean,
+            },
+        )
+
+    return _fake_query_bars, _fake_query_agg_trades
+
+
+_WF_RATES_BASE: tuple[tuple[date, date, float], ...] = (
+    (date(2024, 1, 1), date(2024, 1, 30), 1000.0),  # P0
+    (date(2024, 1, 31), date(2024, 2, 29), 2000.0),  # P1
+    (date(2024, 3, 1), date(2024, 3, 30), 4000.0),  # P2
+)
+
+
+def test_build_dollar_bars_walkforward_cold_start_1o_periodo_nao_quebra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(c) cold-start do 1º período (P0) não levanta exceção -- é
+    descartado como warmup, contabilizado, não construído/escrito."""
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+
+    stats = build_dollar_bars.build_dollar_bars_walkforward(
+        _WF_SYMBOL,
+        _WF_START,
+        _WF_END,
+        resolution_id="R1",
+        trailing_window_days=_WF_TRAILING_DAYS,
+        cadence_days=_WF_CADENCE_DAYS,
+        dest_root=tmp_path,
+    )
+
+    assert stats.n_periods == 3
+    assert stats.n_cold_start_dropped == 1
+    assert stats.n_periods_written == 2
+    p0 = stats.periods[0]
+    assert p0.is_cold_start is True
+    assert p0.app_start == "2024-01-01"
+    assert p0.app_end == "2024-01-30"
+    assert p0.threshold_usdt is None
+    assert p0.n_bars == 0
+    assert p0.written is None
+    # nada escrito pro RANGE de P0 (2024-01-01..2024-01-30) -- 2024-01-31
+    # É esperado (é o 1º dia de P1, período real, não de P0).
+    symbol_dir = tmp_path / "dollar_bars_r1" / _WF_SYMBOL
+    written_days = sorted(p.stem for p in symbol_dir.glob("*.parquet"))
+    p0_days = {(date(2024, 1, 1) + timedelta(days=i)).isoformat() for i in range(30)}
+    assert not (p0_days & set(written_days))
+    assert "2024-01-31" in written_days  # 1º dia de P1 -- confirma que não sumiu por engano
+
+
+def test_build_dollar_bars_walkforward_cada_barra_carrega_threshold_quote_certo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(a) cada barra escrita carrega o `threshold_quote` do período em que
+    foi construída -- P1 calibrado sobre P0 (rate 1000/dia uniforme,
+    30 dias, baseline 30 linhas) -> threshold_usdt esperado == 1000.0; P2
+    calibrado sobre P1 (rate 2000/dia) -> esperado == 2000.0."""
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+
+    stats = build_dollar_bars.build_dollar_bars_walkforward(
+        _WF_SYMBOL,
+        _WF_START,
+        _WF_END,
+        resolution_id="R1",
+        trailing_window_days=_WF_TRAILING_DAYS,
+        cadence_days=_WF_CADENCE_DAYS,
+        dest_root=tmp_path,
+    )
+
+    p1, p2 = stats.periods[1], stats.periods[2]
+    assert p1.is_cold_start is False
+    assert p1.threshold_usdt == pytest.approx(1000.0)
+    assert p2.threshold_usdt == pytest.approx(2000.0)
+    assert p1.n_bars > 0
+    assert p2.n_bars > 0
+
+    # Lê os parquets diretamente pelos caminhos retornados em
+    # WalkforwardPeriodResult.written (já apontam pra tmp_path) -- mais
+    # direto que passar por lake.query_dollar_bars (que exigiria também
+    # monkeypatchar data_paths.CAPACITY_DIR pra não ler do disco real).
+    assert p1.written is not None
+    for name, path in p1.written.items():
+        if name == "calibration":
+            continue
+        day_df = pl.read_parquet(path)
+        assert day_df.height > 0
+        assert (day_df["threshold_quote"] == 1000.0).all()
+
+    assert p2.written is not None
+    for name, path in p2.written.items():
+        if name == "calibration":
+            continue
+        day_df = pl.read_parquet(path)
+        assert day_df.height > 0
+        assert (day_df["threshold_quote"] == 2000.0).all()
+
+
+def test_build_dollar_bars_walkforward_prefix_invariance_periodo_posterior_nao_afeta_anterior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(b) mudar o volume de P2 (o período MAIS RECENTE, aplicado por
+    último) não muda o threshold_usdt calibrado pra P1 nem pra P0 -- prova
+    que a calibração de cada período é estritamente causal (só olha pra
+    `[app_start - trailing_window_days, app_start)`), nunca pra frente.
+    Roda a rodada inteira 2x, com o único bucket de rate divergente entre
+    as duas rodadas sendo o de P2 (2024-03-01..2024-03-30) -- P0/P1 usam a
+    MESMA fonte de dado nas duas rodadas."""
+    rates_run_a = _WF_RATES_BASE
+    rates_run_b = (
+        _WF_RATES_BASE[0],  # P0 -- idêntico
+        _WF_RATES_BASE[1],  # P1 -- idêntico
+        (date(2024, 3, 1), date(2024, 3, 30), 999_999.0),  # P2 -- MUITO diferente
+    )
+
+    def _run(
+        rates: tuple[tuple[date, date, float], ...], dest_root: Path
+    ) -> build_dollar_bars.WalkforwardBarsStats:
+        fake_bars, fake_trades = _walkforward_mocks(rates)
+        monkeypatch.setattr(lake, "query_bars", fake_bars)
+        monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+        return build_dollar_bars.build_dollar_bars_walkforward(
+            _WF_SYMBOL,
+            _WF_START,
+            _WF_END,
+            resolution_id="R1",
+            trailing_window_days=_WF_TRAILING_DAYS,
+            cadence_days=_WF_CADENCE_DAYS,
+            dest_root=dest_root,
+        )
+
+    stats_a = _run(rates_run_a, tmp_path / "run_a")
+    stats_b = _run(rates_run_b, tmp_path / "run_b")
+
+    # P1 (calibrado sobre P0, nunca vê dado de P2) -- IDÊNTICO nas 2 rodadas
+    assert stats_a.periods[1].threshold_usdt == pytest.approx(stats_b.periods[1].threshold_usdt)
+    assert stats_a.periods[1].threshold_usdt == pytest.approx(1000.0)
+    # P2 (calibrado sobre P1, também nunca vê o PRÓPRIO dado -- só vê P1,
+    # que é idêntico nas 2 rodadas) -- também IDÊNTICO, mesmo com P2 tendo
+    # um rate MUITO diferente (4000 vs 999999) entre as rodadas
+    assert stats_a.periods[2].threshold_usdt == pytest.approx(stats_b.periods[2].threshold_usdt)
+    assert stats_a.periods[2].threshold_usdt == pytest.approx(2000.0)
+    # a mudança SÓ aparece onde é esperada: no CONTEÚDO das barras de P2
+    # (mesmo threshold_usdt=2000.0 nas 2 rodadas, mas quote_volume por
+    # barra é MUITO maior em run_b -- rate/dia 4000 vs 999999, 1 trade/dia
+    # -- n_bars não diferencia aqui porque só 1 trade/dia satura em no
+    # máximo 1 linha de bar por dia independente da magnitude do rate)
+    assert stats_a.periods[2].written is not None
+    assert stats_b.periods[2].written is not None
+    quote_volume_a = pl.concat(
+        [
+            pl.read_parquet(path)
+            for name, path in stats_a.periods[2].written.items()
+            if name != "calibration"
+        ]
+    )["quote_volume"].sum()
+    quote_volume_b = pl.concat(
+        [
+            pl.read_parquet(path)
+            for name, path in stats_b.periods[2].written.items()
+            if name != "calibration"
+        ]
+    )["quote_volume"].sum()
+    assert quote_volume_b > quote_volume_a
+
+
+def test_build_dollar_bars_walkforward_parametros_obrigatorios_rejeita_invalidos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B23 -- `trailing_window_days`/`cadence_days` não têm default; valor
+    <= 0 é rejeitado explicitamente (fail-loud), não silenciosamente
+    tratado como 'sem recalibração'."""
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+
+    with pytest.raises(ValueError, match="trailing_window_days"):
+        build_dollar_bars.build_dollar_bars_walkforward(
+            _WF_SYMBOL,
+            _WF_START,
+            _WF_END,
+            resolution_id="R1",
+            trailing_window_days=0,
+            cadence_days=_WF_CADENCE_DAYS,
+            dest_root=tmp_path,
+        )
+    with pytest.raises(ValueError, match="cadence_days"):
+        build_dollar_bars.build_dollar_bars_walkforward(
+            _WF_SYMBOL,
+            _WF_START,
+            _WF_END,
+            resolution_id="R1",
+            trailing_window_days=_WF_TRAILING_DAYS,
+            cadence_days=-1,
+            dest_root=tmp_path,
+        )
+
+
+def test_build_dollar_bars_walkforward_calibration_json_registra_identidade_do_algoritmo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_calibration.json` sob modo walk-forward registra a IDENTIDADE do
+    algoritmo (janela causal, cadência, resolution_id) -- NÃO um
+    threshold_usdt escalar (esse não existe mais como conceito de
+    diretório, ver docstring de `WalkforwardCalibrationIdentity`)."""
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+
+    stats = build_dollar_bars.build_dollar_bars_walkforward(
+        _WF_SYMBOL,
+        _WF_START,
+        _WF_END,
+        resolution_id="R1",
+        trailing_window_days=_WF_TRAILING_DAYS,
+        cadence_days=_WF_CADENCE_DAYS,
+        dest_root=tmp_path,
+    )
+
+    symbol_dir = tmp_path / "dollar_bars_r1" / _WF_SYMBOL
+    payload = orjson.loads((symbol_dir / "_calibration.json").read_bytes())
+    assert "threshold_usdt" not in payload
+    assert payload["trailing_window_days"] == _WF_TRAILING_DAYS
+    assert payload["cadence_days"] == _WF_CADENCE_DAYS
+    assert payload["resolution_id"] == "R1"
+    assert payload["calibration_scope"] == build_dollar_bars.CALIBRATION_SCOPE_WALKFORWARD_CAUSAL
+    assert isinstance(stats.calibration_identity.config_hash, str)
+    assert len(stats.calibration_identity.config_hash) == 16
 
 
 # ============================================================================

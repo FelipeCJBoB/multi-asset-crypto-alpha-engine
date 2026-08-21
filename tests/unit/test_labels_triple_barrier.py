@@ -132,6 +132,61 @@ def test_config_hash_de_constants_yaml_e_estavel() -> None:
 
 
 # ============================================================================
+# LabelConfig.bars_calibration_hash — AG-124 (2026-08-21), STOPGAP até
+# ADR-001 (upstream[].config_hash) existir.
+# ============================================================================
+
+
+def _bars_calibration_hash_base_cfg(**overrides: object) -> tb.LabelConfig:
+    kwargs: dict[str, object] = {
+        "tp_atr_mult": 2.0,
+        "sl_atr_mult": 1.5,
+        "time_stop_ms": _TIME_STOP_MS_DEFAULT,
+        "fill_timeout_ms": 1,
+        "atr_window_ms": _ATR_WINDOW_MS_DEFAULT,
+        "maker_fee": 0.0002,
+        "taker_fee": 0.0005,
+        "estimator_id": "atr_wilder_w20",
+    }
+    kwargs.update(overrides)
+    return tb.LabelConfig(**kwargs)  # type: ignore[arg-type]
+
+
+def test_bars_calibration_hash_default_none_e_omitido_do_payload() -> None:
+    """Comportamento bit-exato pra todo caller existente: sem passar
+    `bars_calibration_hash`, `config_hash` é IDÊNTICO ao de uma config
+    equivalente construída antes deste campo existir -- a chave nem entra
+    no payload hasheado quando `None` (ao contrário de `resolution_id`/
+    `horizon_bars`, que entram sempre, mesmo como `None`)."""
+    with_field_absent = _bars_calibration_hash_base_cfg()
+    explicit_none = _bars_calibration_hash_base_cfg(bars_calibration_hash=None)
+    assert with_field_absent.bars_calibration_hash is None
+    assert with_field_absent.config_hash == explicit_none.config_hash
+
+
+def test_bars_calibration_hash_setado_entra_no_config_hash_payload() -> None:
+    """Setar `bars_calibration_hash` muda `config_hash` em relação a uma
+    config idêntica em todo o resto -- B15: precisa entrar no hash, senão
+    labels gerados a partir de uma recalibração diferente passariam
+    despercebidos como se fossem a mesma config."""
+    base = _bars_calibration_hash_base_cfg()
+    with_hash = replace(base, bars_calibration_hash="a1b2c3d4e5f6a7b8")
+    assert base.config_hash != with_hash.config_hash
+
+
+def test_bars_calibration_hash_diferente_produz_config_hash_diferente() -> None:
+    base = _bars_calibration_hash_base_cfg(bars_calibration_hash="a1b2c3d4e5f6a7b8")
+    other = replace(base, bars_calibration_hash="0000000000000000")
+    assert base.config_hash != other.config_hash
+
+
+def test_bars_calibration_hash_deterministico() -> None:
+    cfg1 = _bars_calibration_hash_base_cfg(bars_calibration_hash="a1b2c3d4e5f6a7b8")
+    cfg2 = _bars_calibration_hash_base_cfg(bars_calibration_hash="a1b2c3d4e5f6a7b8")
+    assert cfg1.config_hash == cfg2.config_hash
+
+
+# ============================================================================
 # LabelConfig.tf — AG-005 (audit/architecture_gaps_log.yaml)
 # ============================================================================
 

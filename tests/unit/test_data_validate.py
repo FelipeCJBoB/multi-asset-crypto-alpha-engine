@@ -275,6 +275,10 @@ def _make_dollar_bars(n: int, *, start_time: int = 0, step_ms: int = 900_000) ->
             "count": pl.Series([1] * n, dtype=pl.UInt32),
             "taker_buy_volume": [0.5] * n,
             "taker_buy_quote_volume": [50.0] * n,
+            # AG-124 -- threshold_quote agora faz parte de
+            # schemas._DOLLAR_BARS_COLUMNS (Camada 0); fixture precisa
+            # incluir a coluna pra check_schema (1_schema) continuar PASS.
+            "threshold_quote": pl.Series([1_000_000.0] * n, dtype=pl.Float64),
         }
     )
 

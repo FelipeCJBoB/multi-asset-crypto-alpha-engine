@@ -135,6 +135,16 @@ _BAR_OUTPUT_SCHEMA: Final[pl.Schema] = pl.Schema(
         ("count", pl.UInt32()),
         ("taker_buy_volume", pl.Float64()),
         ("taker_buy_quote_volume", pl.Float64()),
+        # AG-124 (2026-08-21) -- threshold (unidade de carry.value_kind: $
+        # pra dollar bar, unidades do ativo pra volume bar) que fechou ESTA
+        # barra -- ver docstring de schemas._DOLLAR_BARS_COLUMNS pro porquê
+        # (recalibração causal rolante, threshold varia por período).
+        # Populado com `carry.threshold` em threshold_bars_step/_finish
+        # (dollar_bars/volume_bars); `None` em tick_imbalance_bars_step/
+        # _finish -- TIB fecha por EWMA de imbalance/exp_num_ticks, não por
+        # um threshold escalar fixo, então "None" é honesto (B23: não
+        # inventar um valor que não existe), não um TODO disfarçado.
+        ("threshold_quote", pl.Float64()),
     ]
 )
 
@@ -149,13 +159,24 @@ def _empty_bars() -> pl.DataFrame:
     return pl.DataFrame(schema=_BAR_OUTPUT_SCHEMA)
 
 
-def _aggregate_bars(trades: pl.DataFrame, bar_id: pl.Series | IntArray) -> pl.DataFrame:
+def _aggregate_bars(
+    trades: pl.DataFrame,
+    bar_id: pl.Series | IntArray,
+    *,
+    threshold_quote: float | None = None,
+) -> pl.DataFrame:
     """Núcleo comum de agregação OHLCV, vetorizado via `group_by` --
     `is_buyer_maker=False` é trade agredido por comprador (mesma convenção
     de "taker buy" das klines da Binance). Sempre devolve `_BAR_OUTPUT_
     SCHEMA` exato (`.cast` explícito), não o que `group_by`/`agg` inferirem
     -- garante paridade de dtype com `tick_imbalance_bars_finish`
-    (construído via dict, caminho diferente)."""
+    (construído via dict, caminho diferente).
+
+    `threshold_quote` (AG-124, 2026-08-21) -- valor único aplicado a TODAS
+    as barras produzidas por esta chamada (`threshold_bars_step`/`_finish`
+    chamam com `carry.threshold`, constante dentro de 1 janela de
+    calibração -- ver docstring de `_BAR_OUTPUT_SCHEMA`). `None` (default)
+    preserva bit-exato qualquer chamador que não passe o argumento."""
     if trades.is_empty():
         return _empty_bars()
     df = trades.with_columns(
@@ -180,6 +201,7 @@ def _aggregate_bars(trades: pl.DataFrame, bar_id: pl.Series | IntArray) -> pl.Da
         )
         .drop("_bar_id")
     )
+    agg = agg.with_columns(pl.lit(threshold_quote, dtype=pl.Float64).alias("threshold_quote"))
     return agg.select(list(_BAR_OUTPUT_SCHEMA)).cast(_BAR_OUTPUT_SCHEMA)
 
 
@@ -489,7 +511,11 @@ def threshold_bars_step(carry: ThresholdBarsCarry, chunk: pl.DataFrame) -> None:
             transact_time=transact_time[:split_idx],
             is_buyer_maker=is_buyer_maker[:split_idx],
         )
-        carry.bar_frames.append(_aggregate_bars(closed_arrays.to_frame(), bar_id[:split_idx]))
+        carry.bar_frames.append(
+            _aggregate_bars(
+                closed_arrays.to_frame(), bar_id[:split_idx], threshold_quote=carry.threshold
+            )
+        )
         # bar_id e' monotonico nao-decrescente -> a fatia [:split_idx] e'
         # sempre um prefixo; cum_value[split_idx-1] e' o valor acumulado
         # exatamente ate o fim da ultima barra fechada, o novo base_value
@@ -513,7 +539,11 @@ def threshold_bars_finish(carry: ThresholdBarsCarry) -> pl.DataFrame:
     if carry.leftover is not None and carry.leftover.n_trades > 0:
         leftover = carry.leftover
         leftover_bar_id = np.zeros(leftover.n_trades, dtype=np.int64)
-        carry.bar_frames.append(_aggregate_bars(leftover.to_frame(), leftover_bar_id))
+        carry.bar_frames.append(
+            _aggregate_bars(
+                leftover.to_frame(), leftover_bar_id, threshold_quote=carry.threshold
+            )
+        )
         carry.leftover = None
     if not carry.bar_frames:
         return _empty_bars()
@@ -913,6 +943,10 @@ def tick_imbalance_bars_step(carry: TickImbalanceBarsCarry, chunk: pl.DataFrame)
                     "count": out_count[:n_closed],
                     "taker_buy_volume": out_taker_buy_volume[:n_closed],
                     "taker_buy_quote_volume": out_taker_buy_quote_volume[:n_closed],
+                    # AG-124 -- TIB não fecha por threshold escalar fixo
+                    # (EWMA de imbalance/exp_num_ticks) -- None é honesto,
+                    # ver docstring de _BAR_OUTPUT_SCHEMA.
+                    "threshold_quote": pl.Series([None] * n_closed, dtype=pl.Float64),
                 }
             ).cast(_BAR_OUTPUT_SCHEMA)
         )
@@ -936,6 +970,8 @@ def tick_imbalance_bars_finish(carry: TickImbalanceBarsCarry) -> pl.DataFrame:
                     "count": [carry.count],
                     "taker_buy_volume": [carry.taker_buy_volume],
                     "taker_buy_quote_volume": [carry.taker_buy_quote_volume],
+                    # AG-124 -- ver nota equivalente em tick_imbalance_bars_step.
+                    "threshold_quote": pl.Series([None], dtype=pl.Float64),
                 }
             ).cast(_BAR_OUTPUT_SCHEMA)
         )

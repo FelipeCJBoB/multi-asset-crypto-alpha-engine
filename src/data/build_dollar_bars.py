@@ -43,14 +43,31 @@ decisão silenciosa):**
 estimador Yang-Zhang, defasagem do asof-join OI/funding) continua
 DELIBERADAMENTE deferido — os números que saem de `features.build` sobre
 dollar bar VÃO RODAR sem crashar, mas não devem ser tratados como
-estatisticamente válidos pra treino real até AG-043 ser resolvido."""
+estatisticamente válidos pra treino real até AG-043 ser resolvido.
+
+**AG-124 (2026-08-21) — addendum ao item 2/3 acima, não os invalida.**
+`calibrate_dollar_threshold_for_validation` continua calibrando sobre a
+MESMA janela sendo validada (item 2 continua verdadeiro PRA ELA) — o
+vazamento que isso implica quando `[start, end]` é longo (deriva de 18,18x
+medida entre 2020-01 e 2024-03, BTCUSDT,
+`experiments/dollar_threshold_drift.json`) é remediado por uma função NOVA,
+`build_dollar_bars_walkforward`, que reusa `calibrate_dollar_threshold_for_
+validation`/`build_dollar_bars_for_window` SEM modificá-las, só trocando o
+argumento de janela por período — ela SIM tem checkpoint incremental (item
+3 acima descrevia só `write_dollar_bars_and_calibration` isolada, que
+continua não-transacional dentro de 1 chamada, mas agora é chamada 1x por
+período, não 1x pro range inteiro). Continua NÃO sendo a decisão de
+calibração congelada de produção — `cadence_days`/`trailing_window_days`
+são parâmetros obrigatórios do caller, nunca um default embutido aqui (ver
+`build_dollar_bars_walkforward`)."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -84,6 +101,27 @@ RESOLUTION_ID: Final[str] = "R1"
 #: nunca aparece aqui (decisão de negócio não tomada, AG-042 itens 2/3).
 CALIBRATION_SCOPE_VALIDATION: Final[str] = "validation"
 
+#: `WalkforwardCalibrationIdentity.calibration_scope` (AG-124, 2026-08-21)
+#: -- distinto de `CALIBRATION_SCOPE_VALIDATION`: o threshold NÃO é
+#: calibrado sobre a mesma janela sendo construída (isso seria o vazamento
+#: medido em AG-124), é calibrado sobre `[app_start - trailing_window_days,
+#: app_start)`, estritamente anterior a cada período de aplicação --
+#: "causal" no sentido estrito de "nunca olha pra frente". Ainda NÃO é
+#: `"frozen_production"` (decisão de negócio de congelar UM threshold pra
+#: produção continua não tomada, AG-042 itens 2/3) -- é só a família de
+#: calibração usada por `build_dollar_bars_walkforward`.
+CALIBRATION_SCOPE_WALKFORWARD_CAUSAL: Final[str] = "walkforward_causal"
+
+#: Versão do "schema" de identidade de recalibração rolante -- entra no
+#: hash (`WalkforwardCalibrationIdentity.config_hash`) pra que uma mudança
+#: futura no ALGORITMO de recalibração (não só nos parâmetros) invalide o
+#: hash mesmo com os mesmos `trailing_window_days`/`cadence_days`. Mesmo
+#: papel que `schema_version` já cumpre em outras identidades hasheadas do
+#: projeto -- incrementar manualmente se a fórmula de `_trailing_window`/
+#: a ordem de iteração de período mudar de um jeito que reprocessamento
+#: silencioso seria incorreto.
+_WALKFORWARD_CALIBRATION_SCHEMA_VERSION: Final[int] = 1
+
 _CALIBRATION_FILENAME: Final[str] = "_calibration.json"
 
 
@@ -92,12 +130,6 @@ def _source_name(resolution_id: str) -> str:
     dataset em `data/capacity/{name}/{symbol}/*.parquet`, um por
     resolução (mesmo padrão de `schemas._dollar_bars_schema`)."""
     return f"dollar_bars_{resolution_id.lower()}"
-
-# Epsilon de comparação float pra guarda de calibração divergente (não é
-# constante de domínio -- mesma classe de `src.labels.triple_barrier.
-# tolerance = 1e-6` -- literal do §3.8 do PRD, não escolha nova; aqui é só
-# "threshold_usdt bate com o já gravado dentro do erro de ponto flutuante").
-_CALIBRATION_MISMATCH_REL_TOLERANCE: Final[float] = 1e-9  # noqa: magic-number -- epsilon de comparação float, não constante de domínio
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +160,55 @@ class DollarBarCalibration:
     n_trades: int
     calibrated_at: str  # datetime.now(UTC).isoformat()
     max_leftover_trades: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WalkforwardCalibrationIdentity:
+    """Metadado persistido ao lado das barras (`write_dollar_bars_and_
+    calibration`, `.../{symbol}/_calibration.json`) quando o diretório é
+    construído por `build_dollar_bars_walkforward` (AG-124, 2026-08-21) --
+    NÃO por `calibrate_dollar_threshold_for_validation`/`DollarBarCalibration`
+    (essa continua existindo inalterada, para o caminho de janela única).
+
+    **Por que não é `DollarBarCalibration` com um campo a mais.** Sob
+    recalibração rolante, `threshold_usdt` varia por PERÍODO de aplicação
+    (`build_dollar_bars_walkforward` chama `write_dollar_bars_and_
+    calibration` uma vez por período, todos gravando no MESMO diretório de
+    símbolo) — um único escalar `threshold_usdt` por `_calibration.json`
+    deixou de fazer sentido (é exatamente por isso que `threshold_quote`
+    passa a viver EM CADA BARRA, ver `schemas._DOLLAR_BARS_COLUMNS`). Este
+    objeto documenta a RECEITA do algoritmo (janela causal em dias,
+    cadência, `resolution_id`) — invariante entre períodos de uma mesma
+    rodada, então gravá-lo de novo a cada período é idempotente, nunca um
+    "threshold divergente" (a guarda que rejeitava isso foi removida de
+    `write_dollar_bars_and_calibration` exatamente porque deixou de haver
+    uma noção de "o" threshold do diretório).
+
+    `config_hash` é a MESMA fórmula de `src.labels.triple_barrier.
+    LabelConfig.config_hash` (sha256 truncado a 16 hex, `orjson.dumps(...,
+    OPT_SORT_KEYS)`) sobre os 5 campos que definem o algoritmo —
+    `LabelConfig.bars_calibration_hash` (AG-124, mesmo achado) é populado
+    com este valor pelo caller que sabe qual recalibração gerou as barras
+    consumidas."""
+
+    symbol: str
+    resolution_id: str  # "R1"/"R2"/"R3" -- ver CALIBRATION_TF_BY_RESOLUTION
+    trailing_window_days: int
+    cadence_days: int
+    calibration_scope: str = CALIBRATION_SCOPE_WALKFORWARD_CAUSAL
+    schema_version: int = _WALKFORWARD_CALIBRATION_SCHEMA_VERSION
+
+    @property
+    def config_hash(self) -> str:
+        payload = {
+            "resolution_id": self.resolution_id,
+            "symbol": self.symbol,
+            "trailing_window_days": self.trailing_window_days,
+            "cadence_days": self.cadence_days,
+            "schema_version": self.schema_version,
+        }
+        blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+        return hashlib.sha256(blob).hexdigest()[:16]
 
 
 def calibrate_dollar_threshold_for_validation(
@@ -308,7 +389,7 @@ def _atomic_write_json(payload: dict[str, Any], dest_path: Path) -> None:
 
 def write_dollar_bars_and_calibration(
     bars_df: pl.DataFrame,
-    calibration: DollarBarCalibration,
+    calibration: DollarBarCalibration | WalkforwardCalibrationIdentity,
     *,
     dest_root: Path | None = None,
     overwrite: bool = False,
@@ -319,26 +400,38 @@ def write_dollar_bars_and_calibration(
     (`_calibration.json`). Retorna um dict com todos os caminhos escritos
     (`{"YYYY-MM-DD": Path, ..., "calibration": Path}`).
 
-    **Guarda de segurança real, não cosmética.** Se `_calibration.json` já
-    existir com `threshold_usdt` DIFERENTE (tolerância relativa
-    `_CALIBRATION_MISMATCH_REL_TOLERANCE`) do que está sendo escrito agora,
-    levanta `ValueError` ANTES de escrever qualquer arquivo novo — sem
-    isso, rodar a validação 2x com janelas diferentes sobre o mesmo
-    `(dest_root, symbol)` misturaria barras calibradas com thresholds
-    incompatíveis no mesmo diretório, silenciosamente (um dia calibrado a
-    `threshold_A`, outro a `threshold_B`, ambos lidos de volta por
-    `lake.query_dollar_bars` como se fossem a mesma série). Passe
-    `overwrite=True` se a substituição for intencional -- quando passado,
-    TODOS os `*.parquet` já presentes no diretório do símbolo são
-    apagados ANTES de escrever o conjunto novo (achado MEDIUM de revisão
-    independente, `project_assurance`, 2026-08-16: sem isto, dias órfãos
-    de uma janela mais larga calibrada sob outro threshold ficariam
-    silenciosamente misturados com o conjunto novo, mesmo com
-    `overwrite=True` -- a guarda original só protegia o caminho SEM
-    `overwrite`, onde thresholds iguais dentro da tolerância são o único
-    jeito de passar, e nesse caso a acumulação entre rodadas É o
-    comportamento pretendido, não um bug -- por isso a limpeza acontece
-    só no ramo `overwrite=True`, não sempre).
+    **AG-124 (2026-08-21) — guarda de threshold divergente REMOVIDA.** Até
+    esta mudança, se `_calibration.json` já existisse com `threshold_usdt`
+    DIFERENTE do que estava sendo escrito agora, a função levantava
+    `ValueError` antes de escrever qualquer arquivo, a menos que
+    `overwrite=True` fosse passado — desenhada para um cenário onde
+    `threshold_usdt` é um ÚNICO escalar imutável por diretório de símbolo.
+    Isso deixou de ser verdade com `build_dollar_bars_walkforward`: cada
+    período de aplicação é calibrado com um threshold PRÓPRIO (recalibração
+    causal rolante, AG-124) e todos os períodos de uma mesma rodada
+    escrevem no MESMO diretório — múltiplas chamadas com `threshold_usdt`
+    divergente entre si são agora o caminho ESPERADO, não um erro a
+    prevenir. A proteção contra misturar séries incompatíveis não
+    desapareceu — migrou para dado: `threshold_quote` (Camada 0,
+    `schemas._DOLLAR_BARS_COLUMNS`) faz cada BARRA carregar o threshold que
+    a fechou, então "qual threshold gerou esta barra" é uma pergunta que o
+    parquet responde sozinho, sem depender de um único escalar em
+    `_calibration.json` nem de uma guarda em tempo de escrita.
+    `_calibration.json`, quando `calibration` é `WalkforwardCalibrationIdentity`,
+    passa a registrar a IDENTIDADE do algoritmo de recalibração (janela
+    causal, cadência, `resolution_id`) — invariante entre períodos da mesma
+    rodada, então sobrescrevê-lo a cada chamada é idempotente, nunca perda
+    de informação (ver docstring de `WalkforwardCalibrationIdentity`).
+
+    `overwrite=True` continua existindo e com o mesmo efeito de antes —
+    TODOS os `*.parquet` já presentes no diretório do símbolo são apagados
+    ANTES de escrever o conjunto novo (achado MEDIUM de revisão
+    independente, `project_assurance`, 2026-08-16: protege contra dias
+    órfãos de uma rodada anterior ficarem silenciosamente misturados com o
+    conjunto novo). Continua sendo o mecanismo certo para "começar do zero"
+    (ex.: re-rodar `build_dollar_bars_walkforward` inteiro sobre o mesmo
+    diretório) — só a guarda de MISMATCH entre chamadas sem `overwrite` foi
+    removida, não o `overwrite` em si.
 
     **Não é transacional.** Cada arquivo individual é atômico (B29), mas
     a operação inteira não é -- um crash no meio do loop de dias sob
@@ -358,27 +451,6 @@ def write_dollar_bars_and_calibration(
         for stale in symbol_dir.glob("*.parquet"):
             stale.unlink()
 
-    if calibration_path.exists() and not overwrite:
-        existing_payload: dict[str, Any] = orjson.loads(calibration_path.read_bytes())
-        existing_threshold = float(existing_payload["threshold_usdt"])
-        if existing_threshold <= 0:
-            raise ValueError(
-                f"{calibration_path} tem threshold_usdt não positivo "
-                f"({existing_threshold!r}) -- arquivo corrompido, não dá pra comparar "
-                "com a calibração nova"
-            )
-        rel_diff = (
-            calibration.threshold_usdt - existing_threshold
-        ) / existing_threshold  # noqa: unguarded-ratio -- existing_threshold>0 checado acima
-        if abs(rel_diff) > _CALIBRATION_MISMATCH_REL_TOLERANCE:
-            raise ValueError(
-                f"{calibration_path} já existe com threshold_usdt={existing_threshold!r}, "
-                f"divergente do novo threshold_usdt={calibration.threshold_usdt!r} "
-                f"(rel_diff={rel_diff!r}) -- rodar a validação 2x com janelas diferentes "
-                "misturaria barras calibradas com thresholds incompatíveis no mesmo "
-                "diretório; passe overwrite=True se a substituição for intencional"
-            )
-
     written: dict[str, Path] = {}
     for day, day_df in sorted(_split_bars_by_day(bars_df).items()):
         dest_path = symbol_dir / f"{day.isoformat()}.parquet"
@@ -392,10 +464,253 @@ def write_dollar_bars_and_calibration(
         "data.build_dollar_bars.written",
         symbol=calibration.symbol,
         n_days=len(written) - 1,
-        threshold_usdt=calibration.threshold_usdt,
+        calibration_scope=calibration.calibration_scope,
+        # `threshold_usdt` só existe em DollarBarCalibration (janela única) --
+        # WalkforwardCalibrationIdentity não tem "o" threshold do diretório
+        # (ver docstring, AG-124); getattr com default preserva o log de
+        # sempre pro caminho antigo sem quebrar pro caminho novo.
+        threshold_usdt=getattr(calibration, "threshold_usdt", None),
         dest_dir=str(symbol_dir),
     )
     return written
+
+
+# ============================================================================
+# build_dollar_bars_walkforward -- orquestrador de recalibração rolante
+# CAUSAL (AG-124, 2026-08-21). Camada 1 da remediação do vazamento medido em
+# `calibrate_dollar_threshold_for_validation` (threshold calibrado sobre a
+# MESMA janela sendo construída -- deriva de 18,18x medida entre 2020-01 e
+# 2024-03, BTCUSDT, `experiments/dollar_threshold_drift.json`). NÃO chamada
+# contra dado real de produção nesta leva (autorização explícita do Manager
+# limitada a código testado + medição mensal, reprocessamento real fica pra
+# um "go" separado).
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class WalkforwardPeriodResult:
+    """1 período de aplicação dentro de `build_dollar_bars_walkforward` --
+    resultado estruturado por período (mesmo padrão de `LabelBuildStats`,
+    `src.labels.triple_barrier`, AG-128), não só um `DataFrame` anônimo
+    perdido dentro do loop.
+
+    `threshold_usdt`/`written` são `None` sse `is_cold_start=True` -- o 1º
+    período de cada chamada nunca é calibrado nem construído (ver docstring
+    de `build_dollar_bars_walkforward`)."""
+
+    app_start: str
+    app_end: str
+    is_cold_start: bool
+    threshold_usdt: float | None
+    n_bars: int
+    written: dict[str, Path] | None
+
+
+@dataclass(frozen=True, slots=True)
+class WalkforwardBarsStats:
+    """Resumo estruturado de 1 rodada de `build_dollar_bars_walkforward` --
+    mesmo padrão de `LabelBuildStats` (`src.labels.triple_barrier`, AG-128):
+    contadores que o caller loga/persiste sem precisar reconstruir a rodada
+    inteira pra saber quantos períodos foram cold-start."""
+
+    symbol: str
+    resolution_id: str
+    trailing_window_days: int
+    cadence_days: int
+    n_periods: int
+    n_cold_start_dropped: int
+    n_periods_written: int
+    calibration_identity: WalkforwardCalibrationIdentity
+    periods: tuple[WalkforwardPeriodResult, ...]
+
+
+def _trailing_calibration_window(app_start: str, *, trailing_window_days: int) -> tuple[str, str]:
+    """Janela de calibração ESTRITAMENTE anterior a `app_start` (AG-124) --
+    `[app_start - trailing_window_days, app_start - 1 dia]`, ambos
+    inclusive (mesma convenção ISO-date inclusive de `calibrate_dollar_
+    threshold_for_validation`/`_chunked_scan.date_chunks`). NUNCA inclui
+    `app_start` em diante -- fazer isso seria reproduzir o vazamento medido
+    em AG-124 (threshold calibrado sobre a mesma janela sendo construída),
+    não corrigi-lo."""
+    app_start_date = date.fromisoformat(app_start)
+    calib_end = app_start_date - timedelta(days=1)
+    calib_start = app_start_date - timedelta(days=trailing_window_days)
+    return calib_start.isoformat(), calib_end.isoformat()
+
+
+def build_dollar_bars_walkforward(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    resolution_id: str,
+    trailing_window_days: int,
+    cadence_days: int,
+    dest_root: Path | None = None,
+) -> WalkforwardBarsStats:
+    """Recalibração rolante CAUSAL de `threshold_usdt` (AG-124) -- em vez de
+    UM threshold pra `[start, end]` inteiro (o vazamento medido: o
+    threshold "sabe" o volume do fim da janela ao fechar barras do início),
+    particiona `[start, end]` em períodos de aplicação de `cadence_days`
+    dias cada (`_chunked_scan.date_chunks`, REUSADA sem modificação -- mesma
+    primitiva de particionamento já usada por `calibrate_dollar_threshold_
+    for_validation`/M2, não uma segunda implementação) e calibra CADA
+    período só sobre os `trailing_window_days` dias ESTRITAMENTE ANTERIORES
+    a ele (`_trailing_calibration_window`), via `calibrate_dollar_threshold_
+    for_validation` REUSADA sem modificação (só o argumento de janela
+    muda). Constrói cada período via `build_dollar_bars_for_window`
+    REUSADA sem modificação.
+
+    `trailing_window_days`/`cadence_days` são OBRIGATÓRIOS (sem default,
+    B23 -- CLAUDE.md "não invente faixas/números") -- qual valor minimiza
+    deriva dentro de cada vintage é decisão do Manager, informada pelo
+    relatório mensal de deriva (`tools/diagnostics/measure_dollar_
+    threshold_drift_monthly.py`), não algo pra inventar aqui.
+
+    **1º período de `[start, end]` é cold-start, DESCARTADO (nunca
+    calibrado nem construído).** Não existe `trailing_window_days` de
+    histórico ANTERIOR a `start` dentro do escopo desta chamada -- tentar
+    calibrar aí seria ou uma janela mais curta que o algoritmo pede
+    (silenciosamente menos robusta que os demais períodos) ou olhar pra
+    fora de `[start, end]` (fora do contrato desta função -- o caller
+    decide `start`, não esta função). Mesmo padrão de `n_warmup_dropped`
+    do Label Engine (`LabelBuildStats`, AG-128): log estruturado
+    (`walkforward_cold_start_dropped`) + contador em `WalkforwardBarsStats.
+    n_cold_start_dropped`, NUNCA exceção -- é warmup esperado, não erro.
+
+    **`ThresholdBarsCarry` nunca cruza fronteira de período, por
+    construção.** Cada período chama `build_dollar_bars_for_window` do
+    zero -- essa função já cria seu próprio `bars.dollar_bars_carry(...)`
+    internamente a cada chamada -- então o pico de memória fica limitado
+    ao tamanho de 1 período (mais conservador que qualquer coisa já testada
+    em AG-034), não do histórico `[start, end]` inteiro.
+
+    **Checkpoint incremental.** Cada período (exceto cold-start) é escrito
+    via `write_dollar_bars_and_calibration` (guarda de mismatch já removida,
+    Camada 0) assim que construído -- não acumula todos os períodos em
+    memória antes de escrever. A `calibration` passada é sempre a MESMA
+    `WalkforwardCalibrationIdentity` (não `DollarBarCalibration`) em toda
+    chamada desta rodada -- escrevê-la de novo a cada período é idempotente
+    (mesmo conteúdo), nunca um "threshold divergente" (ver docstring da
+    classe). O `threshold_usdt` de CADA período vive em `threshold_quote`,
+    por barra (Camada 0) -- não em `_calibration.json`."""
+    if trailing_window_days <= 0:
+        raise ValueError(
+            f"trailing_window_days precisa ser > 0, recebido {trailing_window_days}"
+        )
+    if cadence_days <= 0:
+        raise ValueError(f"cadence_days precisa ser > 0, recebido {cadence_days}")
+    if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+        raise ValueError(
+            f"resolution_id={resolution_id!r} não suportado -- esperado um de "
+            f"{sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+        )
+
+    identity = WalkforwardCalibrationIdentity(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        trailing_window_days=trailing_window_days,
+        cadence_days=cadence_days,
+    )
+
+    period_chunks = _chunked_scan.date_chunks(start, end, chunk_days=cadence_days)
+    n_periods = len(period_chunks)
+    results: list[WalkforwardPeriodResult] = []
+    n_cold_start_dropped = 0
+
+    for i, (period_start, period_end) in enumerate(period_chunks):
+        app_start = period_start.isoformat()
+        app_end = period_end.isoformat()
+
+        if i == 0:
+            n_cold_start_dropped += 1
+            logger.info(
+                "data.build_dollar_bars.walkforward_cold_start_dropped",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                app_start=app_start,
+                app_end=app_end,
+                trailing_window_days=trailing_window_days,
+                reason=(
+                    "1º período de [start, end] -- sem trailing_window_days de "
+                    "histórico ANTERIOR a start dentro do escopo desta chamada pra "
+                    "calibrar causalmente; warmup descartável, mesmo padrão de "
+                    "n_warmup_dropped (LabelBuildStats, AG-128)"
+                ),
+            )
+            results.append(
+                WalkforwardPeriodResult(
+                    app_start=app_start,
+                    app_end=app_end,
+                    is_cold_start=True,
+                    threshold_usdt=None,
+                    n_bars=0,
+                    written=None,
+                )
+            )
+            continue
+
+        calib_start, calib_end = _trailing_calibration_window(
+            app_start, trailing_window_days=trailing_window_days
+        )
+        calibration = calibrate_dollar_threshold_for_validation(
+            symbol, calib_start, calib_end, resolution_id=resolution_id
+        )
+        bars_df = build_dollar_bars_for_window(
+            symbol,
+            app_start,
+            app_end,
+            threshold_usdt=calibration.threshold_usdt,
+            max_leftover_trades=calibration.max_leftover_trades,
+        )
+        written = write_dollar_bars_and_calibration(bars_df, identity, dest_root=dest_root)
+
+        results.append(
+            WalkforwardPeriodResult(
+                app_start=app_start,
+                app_end=app_end,
+                is_cold_start=False,
+                threshold_usdt=calibration.threshold_usdt,
+                n_bars=bars_df.height,
+                written=written,
+            )
+        )
+        logger.info(
+            "data.build_dollar_bars.walkforward_period_done",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            period=i + 1,
+            n_periods=n_periods,
+            app_start=app_start,
+            app_end=app_end,
+            calibration_window_start=calib_start,
+            calibration_window_end=calib_end,
+            threshold_usdt=calibration.threshold_usdt,
+            n_bars=bars_df.height,
+        )
+
+    n_periods_written = n_periods - n_cold_start_dropped
+    stats = WalkforwardBarsStats(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        trailing_window_days=trailing_window_days,
+        cadence_days=cadence_days,
+        n_periods=n_periods,
+        n_cold_start_dropped=n_cold_start_dropped,
+        n_periods_written=n_periods_written,
+        calibration_identity=identity,
+        periods=tuple(results),
+    )
+    logger.info(
+        "data.build_dollar_bars.walkforward_done",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_periods=n_periods,
+        n_cold_start_dropped=n_cold_start_dropped,
+        n_periods_written=n_periods_written,
+        calibration_hash=identity.config_hash,
+    )
+    return stats
 
 
 def _parse_cli_args() -> argparse.Namespace:

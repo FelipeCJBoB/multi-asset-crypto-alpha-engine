@@ -115,6 +115,18 @@ def test_dollar_bars_schema_r2_r3_tem_mesmas_colunas_que_r1() -> None:
     assert schemas.DOLLAR_BARS_R2.non_nullable == schemas.DOLLAR_BARS_R1.non_nullable
 
 
+def test_dollar_bars_schema_tem_threshold_quote_nao_nullable() -> None:
+    """AG-124 (2026-08-21) -- cada barra carrega o threshold que a fechou
+    (recalibração causal rolante, `build_dollar_bars_walkforward`); coluna
+    não-nullable, como todas as outras de `_DOLLAR_BARS_COLUMNS`."""
+    assert "threshold_quote" in schemas.DOLLAR_BARS_R1.columns
+    assert schemas.DOLLAR_BARS_R1.columns["threshold_quote"] == pl.Float64
+    assert "threshold_quote" in schemas.DOLLAR_BARS_R1.non_nullable
+    # última coluna -- mesma ordem em bars._BAR_OUTPUT_SCHEMA (src/data/bars.py),
+    # checada por checks.check_schema (order_matches)
+    assert list(schemas.DOLLAR_BARS_R1.columns)[-1] == "threshold_quote"
+
+
 @pytest.mark.parametrize(
     "name", ["dollar_bars_r1", "dollar_bars_r2", "dollar_bars_r3"]
 )

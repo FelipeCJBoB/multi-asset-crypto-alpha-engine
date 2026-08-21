@@ -8743,8 +8743,75 @@ entries:
       correção não é um patch pontual -- é recalibração causal (threshold
       conhecido só até `t`) + reprocessamento de tudo a jusante.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão do Manager pendente (Tabela 1 desta rodada, pergunta 1): aceitar o risco documentado (usar como está, ressalva registrada) vs. exigir recalibração causal antes de qualquer retreino. Nenhum código tocado nesta rodada de fixes -- fora do escopo mecânico, é decisão de arquitetura/negócio. Ver também pergunta 2 (política de calibração congelada de produção, `calibration_scope` sempre `\"validation\"`, nunca `\"frozen_production\"` -- `AG-042` itens 2/3, mesma raiz)."
+    resolution: >
+      Manager decidiu (Tabela 1, item 1): "B -- recalibrar causal",
+      ciente do custo de reprocessar tudo que depende de `dollar_r1`
+      depois ("não é problema"). Redesign via `redesign_workflow` (2
+      rodadas -- 1ª desenhou, 2ª validou contra ADR-001/`AG-034`,
+      corrigindo 2 erros: `AG-034` tratado como risco em aberto quando já
+      estava fechado e testado empiricamente; fronteira de vintage no
+      CPCV que se provou desnecessária, `cpcv.py` já é 100%
+      timestamp-nativo).
+
+      **Camada 0 (schema) implementada**: `threshold_quote: Float64` por
+      barra (`schemas._DOLLAR_BARS_COLUMNS`/`bars._BAR_OUTPUT_SCHEMA`,
+      populado de `carry.threshold`, honestamente `None` em tick-imbalance
+      que não tem threshold escalar); guarda de "1 threshold por
+      diretório" removida de `write_dollar_bars_and_calibration` (deixou
+      de fazer sentido sob threshold que varia por período -- a proteção
+      migrou pra dado, cada barra prova seu próprio threshold);
+      `WalkforwardCalibrationIdentity` novo (hash sobre `{resolution_id,
+      symbol, trailing_window_days, cadence_days, schema_version}`) grava
+      a IDENTIDADE do algoritmo, não mais um escalar único;
+      `LabelConfig.bars_calibration_hash` (stopgap explícito, substituído
+      quando `src/io/artifact.py` do ADR-001 existir) — omitido do
+      payload de `config_hash` quando `None`, bit-exato preservado pra
+      todo caller existente.
+
+      **Camada 1 (orquestrador) implementada**: `build_dollar_bars_
+      walkforward` (`src/data/build_dollar_bars.py`) — particiona
+      `[start, end]` em períodos de `cadence_days`, calibra cada um só
+      sobre `[app_start - trailing_window_days, app_start)` (estritamente
+      anterior), via `calibrate_dollar_threshold_for_validation`/
+      `build_dollar_bars_for_window` REUSADAS sem modificação. 1º período
+      é cold-start descartado (log + contador, nunca exceção, mesmo
+      padrão de `n_warmup_dropped`/AG-128). `ThresholdBarsCarry` nunca
+      cruza fronteira de período (pico de memória por construção menor
+      que qualquer coisa já testada em `AG-034`). `trailing_window_days`/
+      `cadence_days` são kwargs OBRIGATÓRIOS, sem default (B23) — nenhuma
+      constante nova em `constants.yaml` ainda.
+
+      **Medição real (não decisão) pra informar cadência/janela**:
+      `tools/diagnostics/measure_dollar_threshold_drift_monthly.py` →
+      `experiments/dollar_threshold_drift_monthly.json`, 309 símbolo-mês
+      completos (BTCUSDT 2019-12→2026-08, 4 alts 2021-12→2026-08).
+      Achados: (1) deriva full-history por símbolo é MAIOR que a medição
+      original de BTC sozinho — BTCUSDT 42,7x (verificado direto do JSON,
+      não só reportado), ETHUSDT 10,4x, SOLUSDT 19,5x, BNBUSDT 14,6x,
+      XRPUSDT 18,3x; (2) erro de calibração (volume real do mês ÷
+      threshold calibrado pela janela trailing) PIORA MONOTONICAMENTE
+      com janela mais longa, pra TODO símbolo testado (1/2/3/6 meses) —
+      contra-intuitivo (volume cripto tende a persistir, não reverter à
+      média, então calibração mais antiga é calibração pior, "suavizar"
+      não ajuda); XRPUSDT vai de 17,9% de meses com erro ≥2x/≤0,5x (janela
+      de 1 mês) pra 41,7% (janela de 6 meses); (3) mesmo na melhor janela
+      medida (1 mês), cauda é real pra alts menores (XRPUSDT pico 8,51x
+      num único mês) — `max_leftover_trades` (circuit breaker do `AG-034`)
+      continua necessário, nenhuma cadência razoável elimina isso.
+      **Sugestão, não decisão**: `trailing_window_days=30`,
+      `cadence_days=30` como ponto de partida (menor janela de fato
+      medida, menor erro de cauda pra todo símbolo) — granularidade
+      sub-mensal não foi medida, provável que ajude ainda mais dado o
+      padrão monotônico, mas é extrapolação, não evidência.
+
+      **Testes**: 153 requeridos + suíte rápida completa do repo (1609
+      passed, 4 falhas pré-existentes não relacionadas, confirmadas via
+      `git stash` — NÃO autorizado, mesmo padrão de risco já observado 2x
+      nesta sessão, sem dano confirmado via `git stash list` vazio +
+      histórico linear intacto). 5 comandos mecânicos limpos em todos os
+      arquivos tocados. `src/validation/cpcv.py` intocado, conforme
+      confirmado desnecessário na 2ª rodada de desenho.
+    status: "parcialmente resolvido -- mecanismo (schema + orquestrador) implementado, testado só com dado sintético, e medição real de deriva completa (309 símbolo-mês) entregue como insumo. NENHUM reprocessamento real rodou -- limite de escopo explícito, respeitado (`data/capacity/dollar_bars_r1/` real intocado). Falta: (1) Manager confirmar `trailing_window_days`/`cadence_days` (sugestão: 30/30, ver `resolution`) ou pedir medição sub-mensal antes; (2) autorização explícita separada pra rodar `build_dollar_bars_walkforward` contra dado real, símbolo por símbolo (recomendação de engenharia: sequencial, não concorrente, dado o volume de BTC sozinho -- 3,4 bilhões de trades); (3) reprocessar tudo que depende de `dollar_r1` (features/labels/regime/CPCV) nos 5 símbolos depois disso. Política de `calibration_scope=\"frozen_production\"` (`AG-042` itens 2/3) continua separada, não resolvida por este item."
 
   - id: AG-125
     date: "2026-08-21"

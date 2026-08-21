@@ -124,6 +124,84 @@ def test_dollar_bars_particao_preserva_todos_os_trades_sem_sobreposicao() -> Non
         assert open_times[i] > close_times[i - 1]
 
 
+# ============================================================================
+# threshold_quote -- AG-124 (2026-08-21): cada barra carrega o threshold
+# (unidade de carry.value_kind) que a fechou.
+# ============================================================================
+
+
+def test_dollar_bars_toda_barra_carrega_threshold_quote_igual_ao_threshold_passado() -> None:
+    trades = _trades(price=[10.0] * 4, quantity=[5.0] * 4, is_buyer_maker=[False] * 4)
+    bars = dollar_bars(trades, threshold=100.0)
+
+    assert bars.height == 3
+    assert bars["threshold_quote"].to_list() == pytest.approx([100.0, 100.0, 100.0])
+
+
+def test_volume_bars_toda_barra_carrega_threshold_quote_igual_ao_threshold_passado() -> None:
+    trades = _trades(price=[1.0, 2.0, 3.0, 4.0], quantity=[3.0] * 4, is_buyer_maker=[False] * 4)
+    bars = volume_bars(trades, threshold=5.0)
+
+    assert bars.height == 3
+    assert bars["threshold_quote"].to_list() == pytest.approx([5.0, 5.0, 5.0])
+
+
+def test_dollar_bars_streaming_threshold_quote_bate_com_lote() -> None:
+    """`_aggregate_bars` recebe `threshold_quote=carry.threshold` em AMBOS
+    os pontos de chamada (`threshold_bars_step`/`threshold_bars_finish`) --
+    trava que o valor sobrevive à passagem por streaming, não só ao
+    caminho de 1 chunk só (`dollar_bars`)."""
+    n = 20
+    trades = _trades(
+        price=[100.0 + 0.7 * ((i * 13) % 9) for i in range(n)],
+        quantity=[1.0 + (i % 4) for i in range(n)],
+        is_buyer_maker=[i % 3 == 0 for i in range(n)],
+    )
+    carry = dollar_bars_carry(threshold=37.5)
+    for chunk in _chunk(trades, [7, 5, 3, 5]):
+        threshold_bars_step(carry, chunk)
+    streamed = threshold_bars_finish(carry)
+
+    assert streamed.height > 0
+    assert streamed["threshold_quote"].drop_nulls().n_unique() == 1
+    assert streamed["threshold_quote"][0] == pytest.approx(37.5)
+
+
+def test_tick_imbalance_bars_threshold_quote_e_none_nunca_inventado() -> None:
+    """TIB fecha por EWMA de imbalance/`exp_num_ticks`, não por um
+    threshold escalar fixo -- `threshold_quote` fica `None` (honesto, B23),
+    nunca um valor fabricado (ex. `close_threshold` do fechamento, que
+    varia POR BARRA e não é o mesmo conceito de `threshold_usdt` de
+    dollar/volume bar)."""
+    trades = _trades(
+        price=[100.0, 101.0, 102.0, 99.0, 98.0, 97.0, 103.0, 104.0, 105.0, 106.0],
+        quantity=[1.0] * 10,
+        is_buyer_maker=[False, False, False, True, True, False, False, False, False, False],
+    )
+    config = TickImbalanceBarsConfig(
+        num_prev_bars=1,
+        expected_imbalance_window=1,
+        exp_num_ticks_init=3.0,
+        exp_num_ticks_min=1.0,
+        exp_num_ticks_max=100.0,
+    )
+    bars = tick_imbalance_bars(trades, config)
+
+    assert bars.height == 2
+    assert bars["threshold_quote"].is_null().all()
+
+
+def test_tick_imbalance_bars_dataframe_vazio_ainda_tem_coluna_threshold_quote() -> None:
+    trades = _trades(price=[], quantity=[], is_buyer_maker=[])
+    config = TickImbalanceBarsConfig(
+        num_prev_bars=3, expected_imbalance_window=10, exp_num_ticks_init=5.0,
+        exp_num_ticks_min=1.0, exp_num_ticks_max=100.0,
+    )
+    bars = tick_imbalance_bars(trades, config)
+    assert "threshold_quote" in bars.columns
+    assert bars.schema["threshold_quote"] == pl.Float64
+
+
 def test_tick_imbalance_bars_fecha_barra_no_limiar_esperado_tracado_a_mao() -> None:
     """expected_imbalance_window=1 -> EWMA(b_t) = b_t exato (alpha=1,0,
     sem memória); num_prev_bars=1 -> exp_num_ticks pós-fechamento também

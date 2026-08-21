@@ -296,6 +296,32 @@ class LabelConfig:
     (default) preserva bit-exato todo caller de grade de TEMPO
     existente."""
 
+    bars_calibration_hash: str | None = None
+    """AG-124 (2026-08-21) — hash determinístico do algoritmo de
+    recalibração causal rolante do threshold de dollar-bar
+    (`build_dollar_bars_walkforward`, `src.data.build_dollar_bars`) que
+    produziu as barras consumidas por este label — sha256 truncado a 16
+    hex sobre `{resolution_id, symbol, trailing_window_days, cadence_days,
+    schema_version}` (mesmos campos de `build_dollar_bars.
+    WalkforwardCalibrationIdentity.config_hash`, mesma fórmula
+    `orjson.dumps(..., OPT_SORT_KEYS)` + `sha256(...).hexdigest()[:16]`
+    deste próprio `config_hash`).
+
+    `None` (default) preserva bit-exato TODO caller existente — diferente
+    de `resolution_id`/`horizon_bars` (sempre presentes no payload de
+    `config_hash`, mesmo como `None`), a chave `"bars_calibration_hash"` é
+    OMITIDA inteiramente do payload quando este campo é `None` (ver
+    `config_hash` abaixo) — nenhum `config_hash` já persistido antes desta
+    adição muda de valor por causa dela.
+
+    **STOPGAP, não mecanismo permanente.** Quando `src/io/artifact.py`/
+    `schema.py` (arquitetura de artefatos e contratos do ADR-001, ainda
+    não implementada) existir, este campo é substituído pela referência
+    `upstream[].config_hash` própria do ADR (proveniência via grafo de
+    artefato declarado, não um hash paralelo vivendo aqui) — não deve
+    ganhar mais lógica além do necessário pra fechar o gap enquanto o
+    ADR-001 não está implementado."""
+
     def __post_init__(self) -> None:
         if self.resolution_id is not None:
             if self.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
@@ -487,8 +513,17 @@ class LabelConfig:
         por `resolution_id`/`estimator_id`/etc. `horizon_bars` é `None`
         sob `tf` (grade de tempo) e um `int >= 1` sob `resolution_id`
         (dollar bar) -- o hash captura essa diferença como qualquer outro
-        campo do bloco de barreiras."""
-        payload = {
+        campo do bloco de barreiras.
+
+        **NÃO muda de valor com AG-124 (2026-08-21) pra nenhum caller que
+        não usa `bars_calibration_hash`** — ao contrário de toda mudança
+        acima, este campo é STOPGAP (ver docstring do campo) e o payload
+        OMITE a chave `"bars_calibration_hash"` inteiramente quando o
+        campo é `None` (não inclui `None` como valor, como `resolution_id`/
+        `horizon_bars` fazem) — `config_hash` de qualquer config que não
+        passa este campo explicitamente é bit-idêntico a antes desta
+        adição."""
+        payload: dict[str, Any] = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
             "time_stop_ms": self.time_stop_ms,
@@ -501,6 +536,8 @@ class LabelConfig:
             "resolution_id": self.resolution_id,
             "horizon_bars": self.horizon_bars,
         }
+        if self.bars_calibration_hash is not None:
+            payload["bars_calibration_hash"] = self.bars_calibration_hash
         blob = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
         return hashlib.sha256(blob).hexdigest()[:16]
 

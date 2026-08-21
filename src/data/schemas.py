@@ -121,6 +121,19 @@ _DOLLAR_BARS_COLUMNS: dict[str, type[pl.DataType]] = {
     "count": pl.UInt32,
     "taker_buy_volume": pl.Float64,
     "taker_buy_quote_volume": pl.Float64,
+    # AG-124 (2026-08-21, Camada 0) -- threshold_usdt (em $) que fechou ESTA
+    # barra especificamente, não um escalar único por diretório mais.
+    # Necessário pra recalibração causal rolante (`build_dollar_bars_
+    # walkforward`, `src.data.build_dollar_bars`): sob threshold que varia
+    # por período de aplicação, "qual threshold gerou esta barra" deixa de
+    # ser uma pergunta que `_calibration.json` sozinho consegue responder --
+    # cada barra precisa carregar a própria resposta. Não-nullable (parte de
+    # `non_nullable=tuple(_DOLLAR_BARS_COLUMNS)` abaixo) -- toda barra
+    # escrita por `write_dollar_bars_and_calibration` vem de
+    # `bars.threshold_bars_step`/`threshold_bars_finish`, que sempre
+    # populam este campo com `carry.threshold` (nunca None) pro caminho de
+    # dollar/volume bar.
+    "threshold_quote": pl.Float64,
 }
 
 
