@@ -1,8 +1,18 @@
 """Testes de `src/labels/backfill_multi_symbol.py` — só o ROTEAMENTO de
 argumentos (`symbol`/`tf`/`version`/`historical_filters_fallback`) até
-`build_labels_for_symbol`/`write_labels_atomic`, via monkeypatch (sem IO
-real — `build_labels_for_symbol` já é testada a fundo em
-`test_labels_triple_barrier.py`, não precisa ser reexercitada aqui)."""
+`build_labels_for_symbol_with_stats`/`write_labels_atomic`/`record_
+experiment`, via monkeypatch (sem IO real — `build_labels_for_symbol_
+with_stats` já é testada a fundo em `test_labels_triple_barrier.py`, não
+precisa ser reexercitada aqui).
+
+AG-128 (F1, achado `audit_engineering` 2026-08-19) — `build_and_write_
+labels_for_symbol` passou a chamar `build_labels_for_symbol_with_stats`
+(em vez de `build_labels_for_symbol`) e `record_experiment` de verdade.
+Todo teste que exercita `build_and_write_labels_for_symbol` precisa
+mockar `record_experiment` OU redirecionar `experiment_log.LOG_PATH` pra
+`tmp_path` — nunca deixar a chamada real cair no `experiments/label_
+engine_runs.parquet` de produção (mesmo cuidado que `_fake_write_labels_
+atomic` já tinha com `dest_dir` de produção, ver comentário abaixo)."""
 
 from __future__ import annotations
 
@@ -41,13 +51,22 @@ def _empty_labels() -> pl.DataFrame:
     `build_and_write_labels_for_symbol`). `0` é seguro contra QUALQUER
     `horizon_bars >= 1` real (a validação de `LabelConfig.__post_init__`
     já garante `horizon_bars >= 1`), sem hardcodar o valor real -- mesmo
-    espírito de `held_ms=60_000` acima."""
+    espírito de `held_ms=60_000` acima.
+
+    `ret_net=0.001` (AG-128, F1) -- `record_experiment` (agora chamado de
+    verdade em `build_and_write_labels_for_symbol`, ver módulo) roda
+    `summarize_labels` internamente, que lê `labels["ret_net"]` -- ausente
+    até esta correção porque nenhum teste deste arquivo exercitava
+    `record_experiment` real. Valor arbitrário não-zero só pra existir a
+    coluna com o tipo certo (Float64); nenhum teste aqui afirma nada sobre
+    o VALOR de `mean_ret_net`/`std_ret_net` resultante."""
     tz_ms = pl.Datetime("ms", time_zone="UTC")
     return pl.DataFrame(
         {
             "t0": pl.Series([0], dtype=pl.Int64).cast(tz_ms),
             "t1": pl.Series([60_000], dtype=pl.Int64).cast(tz_ms),
             "t_entry": pl.Series([0], dtype=pl.Int64).cast(tz_ms),
+            "ret_net": pl.Series([0.001], dtype=pl.Float64),
             "barrier_hit": pl.Series(["TP"], dtype=pl.Categorical),
             "config_hash": ["fake_routing_test"],
             "sample_weight": [1.0],
@@ -62,8 +81,9 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
 ) -> None:
     build_calls: list[dict[str, Any]] = []
     write_calls: list[dict[str, Any]] = []
+    record_calls: list[dict[str, Any]] = []
 
-    def _fake_build_labels_for_symbol(
+    def _fake_build_labels_for_symbol_with_stats(
         symbol: str,
         start: Any,
         end: Any,
@@ -71,7 +91,7 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
         config: tb.LabelConfig | None = None,
         estimator: Any = None,
         historical_filters_fallback: bool = False,
-    ) -> pl.DataFrame:
+    ) -> tuple[pl.DataFrame, tb.LabelBuildStats]:
         build_calls.append(
             {
                 "symbol": symbol,
@@ -81,7 +101,9 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
                 "historical_filters_fallback": historical_filters_fallback,
             }
         )
-        return _empty_labels()
+        return _empty_labels(), tb.LabelBuildStats(
+            n_warmup_dropped=0, n_incomplete_tail=0, n_tie_break=0
+        )
 
     def _fake_write_labels_atomic(
         labels: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
@@ -99,8 +121,24 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
         assert dest_dir is not None
         return dest_dir / "labels.parquet"
 
-    monkeypatch.setattr(bms, "build_labels_for_symbol", _fake_build_labels_for_symbol)
+    def _fake_record_experiment(
+        labels: pl.DataFrame, config: tb.LabelConfig, **kwargs: Any
+    ) -> Path:
+        # AG-128 (F1) -- mockado de propósito, mesmo motivo de `write_labels_
+        # atomic` acima: sem isso, este teste gravaria uma linha real em
+        # `experiments/label_engine_runs.parquet` (produção) a cada rodada da
+        # suíte. Wiring de verdade (record_experiment REAL sendo chamado e
+        # persistindo os 3 campos de LabelBuildStats) é provado à parte, ver
+        # test_build_and_write_labels_for_symbol_registra_experiment_log_com_
+        # stats abaixo.
+        record_calls.append({"symbol": kwargs.get("symbol"), "config_hash": config.config_hash})
+        return tmp_path / "fake_runs.parquet"
+
+    monkeypatch.setattr(
+        bms, "build_labels_for_symbol_with_stats", _fake_build_labels_for_symbol_with_stats
+    )
     monkeypatch.setattr(bms, "write_labels_atomic", _fake_write_labels_atomic)
+    monkeypatch.setattr(bms, "record_experiment", _fake_record_experiment)
 
     bms.build_and_write_labels_for_symbol(
         "ETHUSDT", "2021-12-01", "2026-08-07", version="v1", tf="15m"
@@ -118,6 +156,8 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
     assert write_calls == [
         {"version": "v1", "dest_dir": labels_symbol_tf_dir("ETHUSDT", "v1", tf="15m")}
     ]
+    assert len(record_calls) == 1
+    assert record_calls[0]["symbol"] == "ETHUSDT"
 
 
 def test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc(
@@ -178,7 +218,7 @@ def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa
     build_calls: list[dict[str, Any]] = []
     write_calls: list[dict[str, Any]] = []
 
-    def _fake_build_labels_for_symbol(
+    def _fake_build_labels_for_symbol_with_stats(
         symbol: str,
         start: Any,
         end: Any,
@@ -186,14 +226,16 @@ def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa
         config: tb.LabelConfig | None = None,
         estimator: Any = None,
         historical_filters_fallback: bool = False,
-    ) -> pl.DataFrame:
+    ) -> tuple[pl.DataFrame, tb.LabelBuildStats]:
         build_calls.append(
             {
                 "resolution_id": config.resolution_id if config is not None else None,
                 "estimator_id": estimator.estimator_id if estimator is not None else None,
             }
         )
-        return _empty_labels()
+        return _empty_labels(), tb.LabelBuildStats(
+            n_warmup_dropped=0, n_incomplete_tail=0, n_tie_break=0
+        )
 
     def _fake_write_labels_atomic(
         labels: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
@@ -205,8 +247,19 @@ def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa
         assert dest_dir is not None
         return dest_dir / "labels.parquet"
 
-    monkeypatch.setattr(bms, "build_labels_for_symbol", _fake_build_labels_for_symbol)
+    def _fake_record_experiment(
+        labels: pl.DataFrame, config: tb.LabelConfig, **kwargs: Any
+    ) -> Path:
+        # AG-128 (F1) -- mesmo motivo do fake irmão em
+        # test_build_and_write_labels_for_symbol_roteia_ate_build_e_write:
+        # sem isso, gravaria em experiments/label_engine_runs.parquet real.
+        return Path("/fake/runs.parquet")
+
+    monkeypatch.setattr(
+        bms, "build_labels_for_symbol_with_stats", _fake_build_labels_for_symbol_with_stats
+    )
     monkeypatch.setattr(bms, "write_labels_atomic", _fake_write_labels_atomic)
+    monkeypatch.setattr(bms, "record_experiment", _fake_record_experiment)
 
     estimator = ParkinsonEstimator(window=20)
     cfg = tb.LabelConfig.from_constants(estimator_id=estimator.estimator_id, resolution_id="R1")
@@ -219,6 +272,77 @@ def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa
     assert "R1" in dest_dir.parts
     assert "15m" not in dest_dir.parts
     assert dest_dir == labels_symbol_tf_dir("BTCUSDT", "v1", resolution_id="R1")
+
+
+# ============================================================================
+# AG-128 (F1/F2) — record_experiment de verdade, wiring completo até
+# experiment_log (não mockado, diferente dos testes acima)
+# ============================================================================
+
+
+def test_build_and_write_labels_for_symbol_registra_experiment_log_com_stats(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Prova de wiring de ponta a ponta (F1+F2, AG-128): `build_and_write_
+    labels_for_symbol` chama `record_experiment` de VERDADE (a função real
+    de `src.labels.experiment_log`, não um fake) — só `build_labels_for_
+    symbol_with_stats`/`write_labels_atomic` são substituídos (sintético,
+    sem IO real de mercado, mesmo padrão dos testes acima) e `experiment_
+    log.LOG_PATH` é redirecionado pra `tmp_path` (sem isso, a chamada real
+    cairia em `experiments/label_engine_runs.parquet` de produção).
+
+    Antes desta correção, `record_experiment` NUNCA era chamado neste
+    caminho apesar do schema já existir e já ser testado isoladamente
+    (`test_labels_experiment_log.py`) -- este teste falharia (0 linhas no
+    log) contra o código pré-AG-128."""
+    from src.labels import experiment_log as experiment_log_module
+
+    log_path = tmp_path / "runs.parquet"
+    monkeypatch.setattr(experiment_log_module, "LOG_PATH", log_path)
+
+    stats = tb.LabelBuildStats(n_warmup_dropped=3, n_incomplete_tail=1, n_tie_break=2)
+
+    def _fake_build_labels_for_symbol_with_stats(
+        symbol: str,
+        start: Any,
+        end: Any,
+        *,
+        config: tb.LabelConfig | None = None,
+        estimator: Any = None,
+        historical_filters_fallback: bool = False,
+    ) -> tuple[pl.DataFrame, tb.LabelBuildStats]:
+        return _empty_labels(), stats
+
+    def _fake_write_labels_atomic(
+        labels: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
+    ) -> Path:
+        assert dest_dir is not None
+        return dest_dir / "labels.parquet"
+
+    monkeypatch.setattr(
+        bms, "build_labels_for_symbol_with_stats", _fake_build_labels_for_symbol_with_stats
+    )
+    monkeypatch.setattr(bms, "write_labels_atomic", _fake_write_labels_atomic)
+    # `record_experiment` NÃO é mockado aqui -- é a função real de
+    # `bms.record_experiment` (importada em backfill_multi_symbol.py), a
+    # mesma que test_labels_experiment_log.py exercita isoladamente. O
+    # ponto deste teste é provar que ELA é chamada, não substituí-la.
+
+    cfg = tb.LabelConfig.from_constants(tf="15m")
+    bms.build_and_write_labels_for_symbol(
+        "ETHUSDT", "2021-12-01", "2021-12-02", version="v1", tf="15m", config=cfg
+    )
+
+    out = experiment_log_module.load_experiment_log(log_path)
+    assert out.height == 1
+    assert out["symbol"][0] == "ETHUSDT"
+    assert out["period_start"][0] == "2021-12-01"
+    assert out["period_end"][0] == "2021-12-02"
+    assert out["stage"][0] == "labels_build"
+    assert out["config_hash"][0] == cfg.config_hash
+    assert out["n_warmup_dropped"][0] == 3
+    assert out["n_incomplete_tail"][0] == 1
+    assert out["n_tie_break"][0] == 2
 
 
 def test_run_and_write_labels_dollar_bar_parkinson_cobre_os_5_simbolos_incluindo_btc(

@@ -12,9 +12,22 @@ import pytest
 from src.validation import cpcv, leakage
 from src.validation._paths import labels_symbol_tf_dir
 
+# Universo de 5 símbolos do projeto (§15, PLANO_MESTRE_PRINCE2.md) — mesmo
+# tuple literal usado em tests/unit/test_validation_cpcv.py::_ALL_SYMBOLS
+# (convenção do repo: cada módulo/teste declara o próprio tuple em vez de
+# importar entre pacotes de camadas diferentes, ver
+# src/labels/backfill_multi_symbol.py::ALL_SYMBOLS/src/analysis/
+# m6_common_factor_hypothesis.py::ALL_SYMBOLS). Achado F2 (candidato a
+# AG-130, auditoria 2026-08-19): antes desta correção,
+# test_run_all_leakage_tests_sobre_dataset_real chamava
+# cpcv.load_labels_v1() sem argumento, sempre resolvendo symbol="BTCUSDT"
+# -- os outros 4 símbolos nunca eram exercitados pelo runner de leakage
+# completo de verdade.
+_ALL_SYMBOLS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
-def _skip_if_labels_missing() -> None:
-    path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
+
+def _skip_if_labels_missing(symbol: str = "BTCUSDT") -> None:
+    path = labels_symbol_tf_dir(symbol, "v1") / "labels.parquet"
     if not path.exists():
         pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
@@ -321,6 +334,11 @@ def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(tmp_path: object)
     payload = orjson.loads(path.read_bytes())
     assert payload["schema_version"] == 1
     assert len(payload["tests"]) == 14
+    # Achado F5 (candidato a AG-131, auditoria 2026-08-19): report_provenance()
+    # (src.core.provenance, mesmo padrão já usado em ~25 módulos de
+    # src/analysis/) precisa estar no payload -- generated_at/code_version.
+    assert "generated_at" in payload
+    assert "code_version" in payload
 
 
 # ============================================================================
@@ -329,16 +347,21 @@ def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(tmp_path: object)
 
 
 @pytest.mark.integration
-def test_run_all_leakage_tests_sobre_dataset_real() -> None:
+@pytest.mark.parametrize("symbol", _ALL_SYMBOLS)
+def test_run_all_leakage_tests_sobre_dataset_real(symbol: str) -> None:
     """Roda o relatório completo contra o dataset real de produção — o
     caminho que `python -m src.validation.leakage` de fato exercita. Não
     reforça um número fixo de PASS (o dataset real pode mudar de tamanho
     entre Sprints), só confirma que a orquestração não quebra e que os
     sentinelas de escopo (1/10/11) continuam corretos mesmo sobre dado
-    real."""
-    _skip_if_labels_missing()
-    labels = cpcv.load_labels_v1()
-    results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels)}
+    real.
+
+    Parametrizado pros 5 símbolos do universo (achado F2, candidato a
+    AG-130, auditoria 2026-08-19) — skip automático (`_skip_if_labels_
+    missing`) por símbolo cujo backfill local ainda não existe."""
+    _skip_if_labels_missing(symbol)
+    labels = cpcv.load_labels_v1(symbol=symbol)
+    results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels, symbol=symbol)}
     assert len(results) == 14
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
     assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
@@ -448,6 +471,10 @@ def test_write_correlation_scan_report_atomic_grava_json_sem_deixar_tmp(
     payload = orjson.loads(path.read_bytes())
     assert payload["schema_version"] == 1
     assert len(payload["entries"]) == 2
+    # Achado F5 (candidato a AG-131, auditoria 2026-08-19) -- mesma checagem
+    # de report_provenance() do teste irmão acima (write_leakage_report_atomic).
+    assert "generated_at" in payload
+    assert "code_version" in payload
 
 
 @pytest.mark.slow

@@ -191,9 +191,15 @@ def test_gate_efficiency_for_symbol_window_identifica_bucket_de_stress_correto()
     `is_stress_bucket=True` só nas linhas do bucket 1."""
     day_ms = 86_400_000
     n = 40
+    # 2023-01-01T00:00:00Z -- bug real achado em auditoria (2026-08-21): sem
+    # este offset, open_time_ms/close_time_ms caem em 1970 (epoch 0), fora
+    # da janela sintética (2023-01-01/2023-04-01) declarada no docstring
+    # acima -- window_labels ficava vazio, joined virava None, teste falhava
+    # silenciosamente antes de qualquer regressão real ser possível de notar.
+    epoch_2023_01_01_ms = 1_672_531_200_000
     # fecha 1ms antes do próximo dia
-    close_time_ms = (np.arange(n, dtype=np.int64) + 1) * day_ms - 1
-    open_time_ms = np.arange(n, dtype=np.int64) * day_ms
+    close_time_ms = epoch_2023_01_01_ms + (np.arange(n, dtype=np.int64) + 1) * day_ms - 1
+    open_time_ms = epoch_2023_01_01_ms + np.arange(n, dtype=np.int64) * day_ms
     # metade dos bars em bucket 0 (calmo), metade em bucket 1 (stress)
     canonical_id = np.array([0] * 20 + [1] * 20, dtype=np.int64)
     regime_raw = m4.RawLabels(

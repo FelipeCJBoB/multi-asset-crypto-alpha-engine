@@ -33,7 +33,7 @@ import polars as pl
 import structlog
 
 from ._paths import EXPERIMENTS_DIR
-from .triple_barrier import LabelConfig
+from .triple_barrier import LabelBuildStats, LabelConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +89,19 @@ _SCHEMA: dict[str, Any] = {
     # retroativamente o que não foi registrado na hora, mesmo padrão de
     # tf/resolution_id logo acima.
     "horizon_bars": pl.Int32,
+    # AG-128 (F2, achado `audit_engineering` 2026-08-19) -- os 3 contadores
+    # de diagnóstico que `triple_barrier.build_labels`/`build_labels_with_
+    # stats` sempre computou (warmup de ATR descartado, cauda incompleta de
+    # mark_1m/funding, desempate TP=SL no mesmo candle de 1m -- item 5 da
+    # docstring de triple_barrier.py) mas só emitia via `logger.info`,
+    # nunca persistido. Vem de `LabelBuildStats` (`triple_barrier.py`),
+    # agregado pelos dois lados (soma simples, ver `build_labels_both_
+    # sides_with_stats`). Linhas antigas (antes desta coluna existir) ficam
+    # null -- mesmo padrão aditivo, nunca migração destrutiva, de tf/
+    # resolution_id/horizon_bars acima.
+    "n_warmup_dropped": pl.Int64,
+    "n_incomplete_tail": pl.Int64,
+    "n_tie_break": pl.Int64,
     "n_labels": pl.Int64,
     "n_tp": pl.Int64,
     "n_sl": pl.Int64,
@@ -183,11 +196,20 @@ def record_experiment(
     sprint: int = 6,
     stage: str = "labels_build",
     notes: str = "",
+    build_stats: LabelBuildStats | None = None,
     path: Path | None = None,
 ) -> Path:
     """Acrescenta uma linha ao log de experimentos (§11.6) — config
     completa + hash + timestamp + métricas de distribuição de `labels`.
-    Nunca edita nem remove linhas existentes."""
+    Nunca edita nem remove linhas existentes.
+
+    `build_stats` (AG-128, F2) — os 3 contadores de diagnóstico de
+    `triple_barrier.LabelBuildStats` (n_warmup_dropped/n_incomplete_tail/
+    n_tie_break), quando o caller tem essa informação disponível (ex.
+    `build_labels_for_symbol_with_stats`). `None` (default) grava `null`
+    nas 3 colunas -- preserva todo caller existente que só tem `labels`/
+    `config` em mãos (ex. testes que constroem `labels` sinteticamente,
+    sem passar por `build_labels_with_stats`)."""
     log_path = path if path is not None else LOG_PATH
     existing = load_experiment_log(log_path)
     stats = summarize_labels(labels)
@@ -214,6 +236,9 @@ def record_experiment(
         "tf": config.tf if config.resolution_id is None else None,
         "resolution_id": config.resolution_id,
         "horizon_bars": config.horizon_bars,  # AG-116 -- None sob tf, int sob resolution_id
+        "n_warmup_dropped": build_stats.n_warmup_dropped if build_stats is not None else None,
+        "n_incomplete_tail": build_stats.n_incomplete_tail if build_stats is not None else None,
+        "n_tie_break": build_stats.n_tie_break if build_stats is not None else None,
         "notes": notes,
         **stats,
     }

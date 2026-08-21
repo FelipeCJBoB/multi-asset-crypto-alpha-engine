@@ -32,27 +32,36 @@ _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m
 _N_TAIL = 500  # §16.10 DoD: "Teste de paridade lote<->streaming < 1e-8 nas últimas 500 barras"
 _TOLERANCE = 1e-8
 
+# 5 símbolos do universo (Binance USDⓈ-M, PLANO_MESTRE_PRINCE2.md §15) --
+# mesmo conjunto de `src.labels.backfill_multi_symbol.ALL_SYMBOLS`. Testes
+# de paridade abaixo parametrizam sobre estes 5 (achado F4,
+# audit_engineering): rodam de verdade contra qualquer símbolo com backfill
+# local presente, skip individual (não a suíte inteira) pros ausentes --
+# nunca dado sintético no lugar do backfill real ausente.
+_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
-def _skip_if_missing() -> None:
-    path = CAPACITY_DIR / "klines_1m" / "BTCUSDT" / f"{_FIXTURE_START}.parquet"
+
+def _skip_if_missing(symbol: str) -> None:
+    path = CAPACITY_DIR / "klines_1m" / symbol / f"{_FIXTURE_START}.parquet"
     if not path.exists():
         pytest.skip(f"fixture ausente no backfill local: {path}")
 
 
-def _skip_if_missing_dollar_bars() -> None:
-    path = CAPACITY_DIR / "dollar_bars_r1" / "BTCUSDT" / f"{_FIXTURE_START}.parquet"
+def _skip_if_missing_dollar_bars(symbol: str) -> None:
+    path = CAPACITY_DIR / "dollar_bars_r1" / symbol / f"{_FIXTURE_START}.parquet"
     if not path.exists():
         pytest.skip(f"fixture dollar-bar ausente no backfill local: {path}")
 
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_paridade_lote_streaming_ultimas_500_barras() -> None:
-    _skip_if_missing()
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_paridade_lote_streaming_ultimas_500_barras(symbol: str) -> None:
+    _skip_if_missing(symbol)
 
-    bars = _sources.load_bars_15m("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    bars = _sources.load_bars_15m(symbol, _FIXTURE_START, _FIXTURE_END)
+    funding = _sources.load_funding_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
     assert bars.height > 2000 + _N_TAIL  # margem de warmup + cauda comparada
 
     windows = build.FeatureWindows.from_constants()
@@ -90,18 +99,19 @@ def test_paridade_lote_streaming_ultimas_500_barras() -> None:
 
 
 @pytest.mark.integration
-def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario(symbol: str) -> None:
     """Complemento pontual do teste acima, mais barato: pega UM prefixo
     arbitrário no meio da série (não só a cauda) e confirma que rodar
     `compute_t1_features` sobre ele produz exatamente a última linha que o
     lote completo produziria naquele mesmo índice — a MESMA propriedade,
     verificada num ponto isolado para detectar rápido se algo quebrou sem
     pagar o custo das 500 chamadas do teste principal."""
-    _skip_if_missing()
+    _skip_if_missing(symbol)
 
-    bars = _sources.load_bars_15m("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    bars = _sources.load_bars_15m(symbol, _FIXTURE_START, _FIXTURE_END)
+    funding = _sources.load_funding_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
 
     windows = build.FeatureWindows.from_constants()
     batch = build.compute_t1_features(bars, funding, oi, windows=windows, apply_warmup_mask=False)
@@ -137,18 +147,19 @@ def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario() -
 
 @pytest.mark.slow
 @pytest.mark.integration
-def test_paridade_lote_streaming_parkinson_ultimas_500_barras() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_paridade_lote_streaming_parkinson_ultimas_500_barras(symbol: str) -> None:
     """Mesmo teste de `test_paridade_lote_streaming_ultimas_500_barras`,
     só trocando `vol_estimator_id` -- mesma grade (time_15m), mesmo
     fixture. Prova que o mecanismo de `c01_atr_20_parkinson`
     (`rolling_mean` sobre janela fixa) é tão causal/prefix-invariante
     quanto `atr_wilder` (recursivo), apesar de ser uma primitiva Polars
     diferente."""
-    _skip_if_missing()
+    _skip_if_missing(symbol)
 
-    bars = _sources.load_bars_15m("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    bars = _sources.load_bars_15m(symbol, _FIXTURE_START, _FIXTURE_END)
+    funding = _sources.load_funding_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
     assert bars.height > 2000 + _N_TAIL
 
     windows = build.FeatureWindows.from_constants()
@@ -199,7 +210,8 @@ def test_paridade_lote_streaming_parkinson_ultimas_500_barras() -> None:
 
 
 @pytest.mark.integration
-def test_paridade_streaming_bate_com_recompute_do_zero_sob_dollar_bar() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_paridade_streaming_bate_com_recompute_do_zero_sob_dollar_bar(symbol: str) -> None:
     """Complemento pontual (mesmo padrão de `..._prefixo_arbitrario` acima)
     -- prova que carregar via `bar_source="dollar_r1"` (fonte de barras
     diferente, `lake.query_dollar_bars` em vez de `load_bars_15m`) não
@@ -207,11 +219,11 @@ def test_paridade_streaming_bate_com_recompute_do_zero_sob_dollar_bar() -> None:
     barras completas (custo menor, dado dollar-bar tem volume real maior
     por partição) -- um ponto isolado já detecta regressão de mecanismo,
     mesmo racional do teste irmão pra grade de tempo."""
-    _skip_if_missing_dollar_bars()
+    _skip_if_missing_dollar_bars(symbol)
 
-    bars = _sources.load_bars("BTCUSDT", _FIXTURE_START, _FIXTURE_END, bar_source="dollar_r1")
-    funding = _sources.load_funding_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    oi = _sources.load_oi_aligned(bars, "BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    bars = _sources.load_bars(symbol, _FIXTURE_START, _FIXTURE_END, bar_source="dollar_r1")
+    funding = _sources.load_funding_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
+    oi = _sources.load_oi_aligned(bars, symbol, _FIXTURE_START, _FIXTURE_END)
     assert bars.height > 100  # margem mínima de warmup pro ponto testado abaixo
 
     windows = build.FeatureWindows.from_constants()

@@ -356,6 +356,30 @@ def _embargo_ms(config: CPCVConfig) -> int:
     return config.embargo_ms
 
 
+def _g_end_effective(g: int, g_end: int, group_id: IntArray, t1_ms: IntArray) -> int:
+    """`max(g_end, max(t1 das linhas cujo t0 caiu no grupo g))` — item 2b
+    da docstring do módulo (AG-032/E4). Extraída em função própria (achado
+    F1, candidato a AG-129, auditoria 2026-08-19) — antes calculada inline,
+    duplicada em `generate_splits` (aplica o purge do componente 32) e
+    `assert_no_train_t1_leaks_into_test` (verifica que ele foi respeitado),
+    com a fórmula copiada em vez de compartilhada. Mesma classe de risco
+    (e mesmo padrão de correção) de `_embargo_ms`/AG-009: os dois
+    call-sites precisam usar literalmente a MESMA linha de código, não duas
+    cópias que podem divergir silenciosamente uma da outra — se um dos
+    dois fosse editado sem o outro (ex. trocar `>=`/`>` numa fronteira), a
+    checagem validaria contra uma regra diferente da que o purge de fato
+    aplica, e uma regressão real passaria batida.
+
+    `g` é o group_id de teste sendo avaliado; `g_end` é a fronteira direita
+    CRUA do grupo (antes de esticar pelo `t1` real); `group_id`/`t1_ms` são
+    os arrays completos (posição por linha de `labels`), do MESMO
+    comprimento — `group_id[i] == g` seleciona as linhas do grupo `g`."""
+    group_rows_mask = group_id == g
+    if not group_rows_mask.any():
+        return g_end
+    return max(g_end, int(t1_ms[group_rows_mask].max()))
+
+
 def _assert_dollar_bar_grade_consistent(symbol: str, resolution_id: str) -> None:
     """AG-042 (2026-08-17) — verificação de identidade de grade dollar-bar,
     substitui `NotImplementedError`. `resolution_id` (R1/R2/R3) não tem
@@ -551,11 +575,11 @@ def generate_splits(
             # grupo pode esticar além dele (horizonte do label). g_end_
             # effective fecha esse resíduo; sem ele, uma linha de treino
             # com t0 no intervalo (g_end, g_end_effective] escaparia do
-            # purge (ver item 2b da docstring do módulo).
-            group_rows_mask = group_id == g
-            g_end_effective = g_end
-            if group_rows_mask.any():
-                g_end_effective = max(g_end, int(t1_ms[group_rows_mask].max()))
+            # purge (ver item 2b da docstring do módulo). Achado F1
+            # (candidato a AG-129) — extraída em _g_end_effective, mesmo
+            # padrão de _embargo_ms/AG-009, reusada por
+            # assert_no_train_t1_leaks_into_test abaixo.
+            g_end_effective = _g_end_effective(g, g_end, group_id, t1_ms)
 
             # purge (B09) — qualquer [t0, t1] que CRUZE [g_start, g_end_effective]
             purge_mask |= (t0_ms <= g_end_effective) & (t1_ms >= g_start)
@@ -648,10 +672,7 @@ def assert_no_train_t1_leaks_into_test(labels: pl.DataFrame, result: CPCVResult)
         for g in split.test_groups:
             g_start = int(result.edges_ms[g])
             g_end = int(result.edges_ms[g + 1]) - 1
-            group_rows_mask = result.group_id == g
-            g_end_effective = g_end
-            if group_rows_mask.any():
-                g_end_effective = max(g_end, int(t1_ms[group_rows_mask].max()))
+            g_end_effective = _g_end_effective(g, g_end, result.group_id, t1_ms)
             bad = (train_t0 <= g_end_effective) & (train_t1 >= g_start)
             n_bad = int(bad.sum())
             if n_bad:

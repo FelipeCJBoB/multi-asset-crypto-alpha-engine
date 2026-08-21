@@ -53,11 +53,12 @@ import structlog
 
 from src.features.volatility import ParkinsonEstimator, VolatilityEstimator
 from src.labels._paths import labels_symbol_tf_dir
+from src.labels.experiment_log import record_experiment
 from src.labels.triple_barrier import (
     DateLike,
     LabelConfig,
     assert_label_invariants,
-    build_labels_for_symbol,
+    build_labels_for_symbol_with_stats,
     write_labels_atomic,
 )
 
@@ -119,9 +120,19 @@ def build_and_write_labels_for_symbol(
     `tf` — mesma guarda anti-colisão de `labels_symbol_tf_dir` (Fase 1):
     sem isso, escrever sob `resolution_id="R1"` com `tf` no default
     `"15m"` colidiria com `data/labels/{symbol}/15m/v1/`, os labels REAIS
-    de produção dos 5 `model_id` já treinados."""
+    de produção dos 5 `model_id` já treinados.
+
+    **AG-128 (F1, achado `audit_engineering` 2026-08-19)** — `record_
+    experiment` (`src.labels.experiment_log`) existia com schema pronto e
+    testado desde o Sprint 6, mas nunca era chamado neste caminho real de
+    escrita: `§11.6` exige um registro append-only de cada config de
+    barreira rodada pra `N` (trial_budget) ser reconstruível e o DSR
+    (Sprint 11) ser calculável — sem essa chamada, todo run de produção
+    ficava fora do log. Chamada abaixo, DEPOIS de `write_labels_atomic`
+    confirmar que os labels foram persistidos com sucesso (registrar um
+    "experimento" cujo artefato falhou ao escrever não faz sentido)."""
     cfg = config if config is not None else LabelConfig.from_constants(tf=tf)
-    labels = build_labels_for_symbol(
+    labels, build_stats = build_labels_for_symbol_with_stats(
         symbol, start, end, config=cfg, estimator=estimator, historical_filters_fallback=True
     )
     # AG-029 (audit/architecture_gaps_log.yaml) -- assert_label_invariants
@@ -148,6 +159,20 @@ def build_and_write_labels_for_symbol(
         ) from exc
     dest_dir = labels_symbol_tf_dir(symbol, version, tf=tf, resolution_id=resolution_id)
     dest_path = write_labels_atomic(labels, version=version, dest_dir=dest_dir)
+    # AG-128 (F1) -- ver docstring da função acima. `stage="labels_build"`
+    # é o default de `record_experiment`, explícito aqui por clareza (é o
+    # nome do estágio que §11.6 espera pra runs de produção do Label
+    # Engine, distinto de sweeps exploratórios registrados por outros
+    # callers, ex. `src.analysis.cost_surface`).
+    record_experiment(
+        labels,
+        cfg,
+        symbol=symbol,
+        period_start=str(start),
+        period_end=str(end),
+        stage="labels_build",
+        build_stats=build_stats,
+    )
     logger.info(
         "labels.backfill_multi_symbol.symbol_done",
         symbol=symbol,

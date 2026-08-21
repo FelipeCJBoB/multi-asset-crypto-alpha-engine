@@ -327,10 +327,22 @@ def check_price_deviation(
     joined = df_a.select([ts_col, pl.col(price_a).alias("_a")]).join(
         df_b.select([ts_col, pl.col(price_b).alias("_b")]), on=ts_col, how="inner"
     )
+    # Guarda de denominador (achado F6) — `_a` é o denominador de `_dev_pct`
+    # abaixo; preço <= 0 é dado corrompido (mesmo critério de
+    # `check_positive_prices`), nunca um denominador estruturalmente seguro.
+    # Filtra ANTES de calcular `_dev_pct`, não depois — uma linha com `_a<=0`
+    # nunca chega a entrar em `rows_compared`/`violation_count`.
+    joined = joined.filter(pl.col("_a") > 0)
     if joined.is_empty():
         return DeviationResult(0.0, 0.0, 0, 0, threshold_pct)
+    # `joined` já filtrado a `_a>0` acima — guarda estrutural via `.filter()`,
+    # não `if`/`assert`, por isso fora do heurístico AST de
+    # tools/lint/check_unguarded_ratios.py; anotação explícita na linha da
+    # divisão abaixo é o que o próprio script pede nesse caso.
     joined = joined.with_columns(
-        ((pl.col("_b") - pl.col("_a")) / pl.col("_a") * 100).abs().alias("_dev_pct")
+        ((pl.col("_b") - pl.col("_a")) / pl.col("_a") * 100)  # noqa: unguarded-ratio -- `_a`>0
+        .abs()
+        .alias("_dev_pct")
     )
     max_dev = float(joined.select(pl.col("_dev_pct").max()).item())
     mean_dev = float(joined.select(pl.col("_dev_pct").mean()).item())

@@ -37,7 +37,13 @@ esconder a lacuna.
 relatório em `data/validation_reports/leakage_report.json` com o mesmo
 padrão `.tmp -> fsync -> rename` (B29) já usado em
 `src.data.validate.write_report_atomic`/`src.labels.triple_barrier.
-write_labels_atomic`.
+write_labels_atomic`. Achado F5 (candidato a AG-131, auditoria
+2026-08-19): `write_leakage_report_atomic`/`write_correlation_scan_report_
+atomic` agora mesclam `src.core.provenance.report_provenance()`
+(`generated_at`/`code_version`) no payload — mesma convenção já em ~25
+módulos de `src/analysis/`/`src/backtest/` (ex.
+`src.analysis.m4_regime_comparison`), que este módulo não seguia até
+agora.
 
 **`scan_feature_target_correlation` — scan estatístico, não um 15º teste
 numerado.** Auditoria de um projeto irmão (Laplace_Quant_V16, 2026-08-09)
@@ -77,6 +83,7 @@ import yaml
 from numpy.typing import NDArray
 from scipy.stats import spearmanr
 
+from src.core.provenance import report_provenance
 from src.regime import classifier as regime_classifier
 from src.regime import stress as regime_stress
 
@@ -820,7 +827,11 @@ def write_leakage_report_atomic(
     default_path = VALIDATION_REPORTS_DIR / "leakage_report.json"
     out_path = dest_path if dest_path is not None else default_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": 1, "tests": [r.to_dict() for r in results]}
+    payload = {
+        **report_provenance(),
+        "schema_version": 1,
+        "tests": [r.to_dict() for r in results],
+    }
     tmp_path = out_path.with_name(out_path.name + ".tmp")
     blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
     with tmp_path.open("wb") as fh:
@@ -944,7 +955,11 @@ def write_correlation_scan_report_atomic(
     default_path = VALIDATION_REPORTS_DIR / "feature_leakage_scan_report.json"
     out_path = dest_path if dest_path is not None else default_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": 1, "entries": [e.to_dict() for e in entries]}
+    payload = {
+        **report_provenance(),
+        "schema_version": 1,
+        "entries": [e.to_dict() for e in entries],
+    }
     tmp_path = out_path.with_name(out_path.name + ".tmp")
     blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS)
     with tmp_path.open("wb") as fh:

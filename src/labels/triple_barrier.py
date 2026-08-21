@@ -357,7 +357,7 @@ class LabelConfig:
         # segue essa convenção específica -- outros estimadores (ex.
         # `"garman_klass_w20"`) não são tocados.
         if self.estimator_id.startswith("atr_wilder_w"):
-            expected_window = round(self.atr_window_ms / bar_ms)
+            expected_window = round(self.atr_window_ms / bar_ms)  # noqa: unguarded-ratio -- bar_ms=step_ms(self.tf) acima, step_ms levanta UnsupportedTimeframeError se <=0/desconhecido
             expected_id = f"atr_wilder_w{expected_window}"
             if self.estimator_id != expected_id:
                 raise ValueError(
@@ -421,7 +421,7 @@ class LabelConfig:
                 "ATRWilder (window_bars = atr_window_ms / step_ms(tf))"
             )
         atr_window_ms = int(load_constant("atr_window_ms"))
-        window_bars = round(atr_window_ms / step_ms(tf)) if resolution_id is None else None
+        window_bars = round(atr_window_ms / step_ms(tf)) if resolution_id is None else None  # noqa: unguarded-ratio -- step_ms(tf) nunca <=0
         resolved_estimator_id = (
             estimator_id if estimator_id is not None else f"atr_wilder_w{window_bars}"
         )
@@ -920,7 +920,32 @@ def _append_nofill_row(
 # ============================================================================
 
 
-def build_labels(
+@dataclass(frozen=True, slots=True)
+class LabelBuildStats:
+    """AG-128 (F2, achado `audit_engineering` 2026-08-19) — os 3 contadores
+    que `build_labels` sempre computou (`n_warmup_dropped`/`n_incomplete_
+    tail`/`n_tie_break`) e só emitia via `logger.info` no fim da função,
+    nunca persistidos em lugar nenhum — uma investigação que precisasse
+    dessa informação (ex. "quanto do histórico é descartado por warmup de
+    ATR, por símbolo?") tinha que reprocessar `labels/` do zero pra
+    reconstruí-la. Ver `record_experiment` (`src.labels.experiment_log`,
+    F1) — é o consumidor real destes 3 campos.
+
+    `n_warmup_dropped`: barras de decisão descartadas porque o `estimator`
+    ainda não tinha janela suficiente (`atr_pct` era `NaN`) — warmup, não
+    `NOFILL`/`TIME`/nenhum outro desfecho de barreira.
+    `n_incomplete_tail`: barras descartadas porque `mark_1m`/`funding`
+    carregados não cobriam o horizonte inteiro (fill timeout ou barreira) —
+    cauda do intervalo pedido, não erro de dado.
+    `n_tie_break`: item 5 da docstring do módulo — TP e SL tocados no mesmo
+    candle de 1m, resolvido por proximidade ao `open`."""
+
+    n_warmup_dropped: int
+    n_incomplete_tail: int
+    n_tie_break: int
+
+
+def build_labels_with_stats(
     bars_15m: pl.DataFrame,
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
@@ -930,9 +955,21 @@ def build_labels(
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, LabelBuildStats]:
     """Núcleo do Label Engine (§3.4) para UM lado (`side=1` long, `side=-1`
     short — ver item 1 da docstring do módulo).
+
+    **AG-128 (F2)** — variante de `build_labels` que TAMBÉM retorna
+    `LabelBuildStats` (n_warmup_dropped/n_incomplete_tail/n_tie_break),
+    além do `pl.DataFrame` de sempre. `build_labels` (sem `_with_stats`)
+    continua existindo, contrato/comportamento 100% inalterado — é um
+    wrapper fino sobre esta função que descarta o 2º elemento da tupla —
+    porque `build_labels` já tem ~30 call sites em teste e é o núcleo
+    reusado por `build_labels_both_sides`; mudar seu tipo de retorno
+    quebraria todos eles sem necessidade. Esta função é o lugar novo onde
+    o caller de produção (`backfill_multi_symbol.build_and_write_labels_
+    for_symbol`, via `build_labels_for_symbol_with_stats`) busca os 3
+    contadores pra alimentar `record_experiment` (F1).
 
     `bars_15m`: klines REGULARES (não mark) a 15m — schema de
     `src.data.resample.resample_klines` (`open_time`, `close_time`, `open`,
@@ -1000,7 +1037,7 @@ def build_labels(
         resolved_estimator = (
             estimator
             if estimator is not None
-            else ATRWilderEstimator(window=round(cfg.atr_window_ms / bar_ms))
+            else ATRWilderEstimator(window=round(cfg.atr_window_ms / bar_ms))  # noqa: unguarded-ratio -- bar_ms=step_ms(cfg.tf) acima, nunca <=0
         )
     if resolved_estimator.estimator_id != cfg.estimator_id:
         raise ValueError(
@@ -1013,7 +1050,9 @@ def build_labels(
     bars = bars_15m.sort("open_time")
     n = bars.height
     if n == 0:
-        return _empty_pre_weight_frame()
+        return _empty_pre_weight_frame(), LabelBuildStats(
+            n_warmup_dropped=0, n_incomplete_tail=0, n_tie_break=0
+        )
 
     close = bars["close"].cast(pl.Float64).to_numpy()
     t0_arr = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
@@ -1152,7 +1191,7 @@ def build_labels(
         barrier = touch.barrier
         label = _LABEL_BY_BARRIER[barrier]
 
-        ret_gross = side * (exit_price / fill_px - 1.0)
+        ret_gross = side * (exit_price / fill_px - 1.0)  # noqa: unguarded-ratio -- fill_px é preço real de mercado, nunca <=0
         cost_entry_frac = cfg.maker_fee
         cost_exit_frac = cfg.maker_fee if barrier == "TP" else cfg.taker_fee
 
@@ -1181,7 +1220,7 @@ def build_labels(
             idx1 = int(np.searchsorted(t0_arr, t1, side="right")) - 1
             n_bars_held = idx1 - i
         elif bar_ms is not None:
-            n_bars_held = (n - 1 - i) + int(np.ceil((t1 - t0_arr[-1]) / bar_ms))
+            n_bars_held = (n - 1 - i) + int(np.ceil((t1 - t0_arr[-1]) / bar_ms))  # noqa: unguarded-ratio -- bar_ms not None aqui == step_ms(cfg.tf), nunca <=0
         else:
             # AG-042 -- t1 além do último decision bar carregado, sob
             # resolution_id (dollar bar): não há bar_ms fixo pra
@@ -1230,7 +1269,7 @@ def build_labels(
         # por construção (o toque QUE definiu TP já é >= tp_price).
         atr_unit_price = fill_px * atr_pct_i
         mfe_atr_units = (
-            side * (touch.mfe_price - fill_px) / atr_unit_price
+            side * (touch.mfe_price - fill_px) / atr_unit_price  # noqa: unguarded-ratio -- guarda inline no ternário (atr_unit_price > 0) abaixo, script não enxerga IfExp
             if atr_unit_price > 0
             else float("nan")
         )
@@ -1271,7 +1310,108 @@ def build_labels(
         n_emitted=len(cols["t0"]),
     )
 
-    return _finalize_pre_weight_frame(cols)
+    stats = LabelBuildStats(
+        n_warmup_dropped=n_warmup_dropped,
+        n_incomplete_tail=n_incomplete_tail,
+        n_tie_break=n_tie_break,
+    )
+    return _finalize_pre_weight_frame(cols), stats
+
+
+def build_labels(
+    bars_15m: pl.DataFrame,
+    mark_1m: pl.DataFrame,
+    funding: pl.DataFrame,
+    *,
+    side: int,
+    symbol: str = "BTCUSDT",
+    config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
+    historical_filters_fallback: bool = False,
+) -> pl.DataFrame:
+    """Compatibilidade — mesmo contrato de sempre (só o `pl.DataFrame`, sem
+    `LabelBuildStats`), wrapper fino sobre `build_labels_with_stats`
+    (AG-128, F2) que descarta o 2º elemento da tupla. Ver aquela função
+    para os 3 contadores de diagnóstico (`n_warmup_dropped`/
+    `n_incomplete_tail`/`n_tie_break`) que antes só saíam via
+    `logger.info`, nunca persistidos."""
+    labels, _stats = build_labels_with_stats(
+        bars_15m,
+        mark_1m,
+        funding,
+        side=side,
+        symbol=symbol,
+        config=config,
+        estimator=estimator,
+        historical_filters_fallback=historical_filters_fallback,
+    )
+    return labels
+
+
+def build_labels_both_sides_with_stats(
+    bars_15m: pl.DataFrame,
+    mark_1m: pl.DataFrame,
+    funding: pl.DataFrame,
+    *,
+    symbol: str = "BTCUSDT",
+    config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
+    historical_filters_fallback: bool = False,
+) -> tuple[pl.DataFrame, LabelBuildStats]:
+    """Roda `build_labels_with_stats` para os dois lados (M_long `side=1`,
+    M_short `side=-1` — B18) e aplica `weights.apply_weights` sobre o
+    conjunto combinado (concorrência/unicidade por lado, peso normalizado
+    globalmente — item 7 da docstring do módulo). Retorna já no schema
+    final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`),
+    mais um `LabelBuildStats` agregado (soma simples dos 3 contadores dos
+    dois lados — AG-128, F2: cada contador é uma contagem de EVENTOS de
+    barra sobre o MESMO `bars_15m`/`mark_1m`/`funding`, então warmup/tail/
+    tie-break por lado conta o mesmo tipo de evento, só potencialmente em
+    índices diferentes por causa de `side` na busca de toque de barreira —
+    somar os dois lados não mistura unidades nem semânticas diferentes).
+
+    `estimator` (ver `build_labels_with_stats`) é resolvido UMA vez aqui e
+    passado IDÊNTICO aos dois lados -- long e short compartilham o mesmo
+    dimensionamento de volatilidade por construção (§3.4), nunca
+    estimadores diferentes por lado.
+
+    **AG-128 (F2)** — `build_labels_both_sides` (sem `_with_stats`)
+    continua existindo, contrato 100% inalterado (só `pl.DataFrame`) — é
+    um wrapper fino sobre esta função. Não pode virar esta função porque
+    `src.analysis.cost_surface.cost_surface_grid` (fora do escopo desta
+    correção) chama `build_labels_both_sides` esperando `pl.DataFrame` puro
+    (`labels.height` direto sobre o retorno) — mudar seu tipo de retorno
+    quebraria esse caller de produção sem necessidade."""
+    cfg = config if config is not None else LabelConfig.from_constants()
+
+    long_labels, long_stats = build_labels_with_stats(
+        bars_15m,
+        mark_1m,
+        funding,
+        side=1,
+        symbol=symbol,
+        config=cfg,
+        estimator=estimator,
+        historical_filters_fallback=historical_filters_fallback,
+    )
+    short_labels, short_stats = build_labels_with_stats(
+        bars_15m,
+        mark_1m,
+        funding,
+        side=-1,
+        symbol=symbol,
+        config=cfg,
+        estimator=estimator,
+        historical_filters_fallback=historical_filters_fallback,
+    )
+    combined = pl.concat([long_labels, short_labels], how="vertical")
+    weighted = weights.apply_weights(combined)
+    combined_stats = LabelBuildStats(
+        n_warmup_dropped=long_stats.n_warmup_dropped + short_stats.n_warmup_dropped,
+        n_incomplete_tail=long_stats.n_incomplete_tail + short_stats.n_incomplete_tail,
+        n_tie_break=long_stats.n_tie_break + short_stats.n_tie_break,
+    )
+    return weighted.select(list(LABEL_COLUMNS)), combined_stats
 
 
 def build_labels_both_sides(
@@ -1284,41 +1424,22 @@ def build_labels_both_sides(
     estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
 ) -> pl.DataFrame:
-    """Roda `build_labels` para os dois lados (M_long `side=1`, M_short
-    `side=-1` — B18) e aplica `weights.apply_weights` sobre o conjunto
-    combinado (concorrência/unicidade por lado, peso normalizado
-    globalmente — item 7 da docstring do módulo). Retorna já no schema
-    final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`).
-
-    `estimator` (ver `build_labels`) é resolvido UMA vez aqui e passado
-    IDÊNTICO aos dois lados -- long e short compartilham o mesmo
-    dimensionamento de volatilidade por construção (§3.4), nunca
-    estimadores diferentes por lado."""
-    cfg = config if config is not None else LabelConfig.from_constants()
-
-    long_labels = build_labels(
+    """Compatibilidade — mesmo contrato de sempre (só o `pl.DataFrame`, sem
+    `LabelBuildStats`), wrapper fino sobre `build_labels_both_sides_with_
+    stats` (AG-128, F2) que descarta o 2º elemento da tupla. Mantido de
+    propósito com este contrato — `src.analysis.cost_surface` (fora do
+    escopo desta correção) chama esta função esperando `pl.DataFrame`
+    puro, ver docstring de `build_labels_both_sides_with_stats`."""
+    labels, _stats = build_labels_both_sides_with_stats(
         bars_15m,
         mark_1m,
         funding,
-        side=1,
         symbol=symbol,
-        config=cfg,
+        config=config,
         estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
     )
-    short_labels = build_labels(
-        bars_15m,
-        mark_1m,
-        funding,
-        side=-1,
-        symbol=symbol,
-        config=cfg,
-        estimator=estimator,
-        historical_filters_fallback=historical_filters_fallback,
-    )
-    combined = pl.concat([long_labels, short_labels], how="vertical")
-    weighted = weights.apply_weights(combined)
-    return weighted.select(list(LABEL_COLUMNS))
+    return labels
 
 
 def _resolve_prefetch_horizon_ms(cfg: LabelConfig) -> int:
@@ -1369,7 +1490,7 @@ def _resolve_prefetch_horizon_ms(cfg: LabelConfig) -> int:
     return int(max(horizon_prefetch_ms, cfg.fill_timeout_ms))
 
 
-def build_labels_for_symbol(
+def build_labels_for_symbol_with_stats(
     symbol: str,
     start: DateLike,
     end: DateLike,
@@ -1377,7 +1498,7 @@ def build_labels_for_symbol(
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, LabelBuildStats]:
     """Ponto de entrada com IO — análogo a
     `features.build.build_t1_features(symbol, start, end)`. Carrega klines
     regulares no TF de decisão (`cfg.tf`, `entry_ref`/estimador de
@@ -1446,7 +1567,18 @@ def build_labels_for_symbol(
     `bars_15m` carrega via `lake.query_dollar_bars` (não mais
     `source="klines_1m"`) -- o nome do parâmetro/variável continua
     histórico (compat com `build_labels`), não significa literalmente
-    15 minutos nesse caso (mesma ressalva já feita acima pra `tf`)."""
+    15 minutos nesse caso (mesma ressalva já feita acima pra `tf`).
+
+    **AG-128 (F1/F2)** — variante de `build_labels_for_symbol` que TAMBÉM
+    retorna `LabelBuildStats` (ver `build_labels_with_stats`), agregado
+    pelos dois lados via `build_labels_both_sides_with_stats`. É esta
+    função que `backfill_multi_symbol.build_and_write_labels_for_symbol`
+    chama de fato — os 3 contadores alimentam `record_experiment`
+    (`src.labels.experiment_log`), que antes desta correção nunca era
+    chamado no caminho real de escrita apesar do schema já existir e já
+    ser testado. `build_labels_for_symbol` (sem `_with_stats`) continua
+    existindo, contrato 100% inalterado (só `pl.DataFrame`) — usada pelos
+    testes de integração que só precisam do DataFrame."""
     cfg = config if config is not None else LabelConfig.from_constants()
 
     if cfg.resolution_id is not None:
@@ -1476,7 +1608,7 @@ def build_labels_for_symbol(
         n_funding=funding.height,
     )
 
-    return build_labels_both_sides(
+    return build_labels_both_sides_with_stats(
         bars_15m,
         mark_1m,
         funding,
@@ -1485,6 +1617,32 @@ def build_labels_for_symbol(
         estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
     )
+
+
+def build_labels_for_symbol(
+    symbol: str,
+    start: DateLike,
+    end: DateLike,
+    *,
+    config: LabelConfig | None = None,
+    estimator: VolatilityEstimator | None = None,
+    historical_filters_fallback: bool = False,
+) -> pl.DataFrame:
+    """Compatibilidade — mesmo contrato de sempre (só o `pl.DataFrame`, sem
+    `LabelBuildStats`), wrapper fino sobre `build_labels_for_symbol_with_
+    stats` (AG-128, F1/F2) que descarta o 2º elemento da tupla. Usada
+    pelos testes de integração que só precisam do DataFrame — o caller de
+    produção (`backfill_multi_symbol.build_and_write_labels_for_symbol`)
+    usa `build_labels_for_symbol_with_stats` diretamente."""
+    labels, _stats = build_labels_for_symbol_with_stats(
+        symbol,
+        start,
+        end,
+        config=config,
+        estimator=estimator,
+        historical_filters_fallback=historical_filters_fallback,
+    )
+    return labels
 
 
 def write_labels_atomic(

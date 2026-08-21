@@ -1,10 +1,12 @@
 """Data Quality Engine — §1.3 RF-003.
 
 Orquestra as primitivas de `checks.py` por formato de dataset (klines-like,
-agg_trades, metrics, funding, bars resampled) e produz
-`quality_report_{dataset}_{version}.json` no formato do §1.3, salvo em
-`data/quality_reports/` via escrita atômica (`.tmp` -> `fsync` -> `rename`,
-B29).
+agg_trades, metrics, funding, bars resampled, dollar bars) e produz
+`quality_report_{dataset}_{symbol}_{version}.json` (achado F4 — nome default
+inclui `symbol` desde que `QualityReport` ganhou esse campo; os 5 relatórios
+gravados antes disso, sem `symbol` no nome, não foram migrados, decisão
+separada do Manager) no formato do §1.3, salvo em `data/quality_reports/`
+via escrita atômica (`.tmp` -> `fsync` -> `rename`, B29).
 
 Duas decisões de design que não estavam 100% especificadas no PRD e que
 precisaram ser resolvidas para este módulo existir — documentadas aqui, não
@@ -69,6 +71,13 @@ class QualityReport:
     estrutural grande (ex.: fonte inteira ausente por meses)."""
 
     dataset: str
+    # Achado F4 (parte "daqui pra frente" — migração retroativa dos 5
+    # relatórios antigos é decisão separada do Manager, fora deste fix):
+    # sem `symbol` no relatório, `data/quality_reports/quality_report_
+    # agg_trades_v1.json` foi citado como se fosse BTCUSDT sem o arquivo
+    # declarar isso — estimativa, não medição (ver nota em
+    # `src.data.bars`, achado de auditoria externa 2026-08-15).
+    symbol: str
     version: str
     rows: int
     start: str | None
@@ -124,7 +133,7 @@ def _quality_score(*, rows: int, missing_bars: int, duplicates: int, invalid_row
     return max(0.0, min(1.0, 1.0 - bad / denom))
 
 
-def _empty_report(dataset_name: str, *, reason: str) -> QualityReport:
+def _empty_report(dataset_name: str, *, reason: str, symbol: str = "BTCUSDT") -> QualityReport:
     """`lake.query_*` retorna um `pl.DataFrame()` sem colunas quando nenhum
     arquivo intersecta o intervalo pedido (ex.: range fora da cobertura real
     da fonte — `agg_trades` só vai até 2026-07-31, ver `known_gaps`). Um
@@ -133,6 +142,7 @@ def _empty_report(dataset_name: str, *, reason: str) -> QualityReport:
     honesto para esse caso, não um crash nem um PASS fabricado."""
     return QualityReport(
         dataset=dataset_name,
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=0,
         start=None,
@@ -154,19 +164,82 @@ def _empty_report(dataset_name: str, *, reason: str) -> QualityReport:
     )
 
 
+#: Campos comparados pra decidir se um relatório pré-existente é
+#: "materialmente diferente" do novo (achado F4) — não é a comparação
+#: campo-a-campo do dict inteiro: `diagnostics`/`checks_skipped`/`start`/`end`
+#: mudam de forma esperada a cada corrida (janela diferente, nota redigida
+#: diferente) e gerariam ruído, não sinal. Estes 5 são os que importam pra
+#: decidir "algo relevante mudou desde a última vez que este relatório foi
+#: escrito" — `gate` é o sinal primário (ex. PASS -> FAIL, o exemplo citado
+#: no achado), os outros 4 são as contagens que o sustentam.
+_MATERIAL_REPORT_FIELDS: tuple[str, ...] = (
+    "gate",
+    "rows",
+    "duplicates",
+    "invalid_rows",
+    "missing_bars",
+)
+
+
+def _material_report_diff(existing: dict[str, Any], new: dict[str, Any]) -> list[str]:
+    return [f for f in _MATERIAL_REPORT_FIELDS if existing.get(f) != new.get(f)]
+
+
 def write_report_atomic(report: QualityReport, dest_path: Path | None = None) -> Path:
-    """B29 — `.tmp` -> `fsync` -> `rename`."""
+    """B29 — `.tmp` -> `fsync` -> `rename`. Nome default inclui `symbol`
+    (achado F4, parte "daqui pra frente" — os 5 relatórios antigos em
+    `data/quality_reports/*.json` sem `symbol` no nome NÃO são migrados
+    aqui, decisão separada do Manager).
+
+    **Guarda de sobrescrita não-intencional** (mesmo espírito de
+    `build_dollar_bars.write_dollar_bars_and_calibration`, que levanta
+    `ValueError` se o threshold já gravado diverge — aqui o comportamento é
+    mais brando de propósito: um quality_report pode legitimamente mudar de
+    PASS pra FAIL entre corridas, ex. novo dado ruim chegou; isso não deveria
+    BLOQUEAR a escrita do relatório novo, só tornar a mudança VISÍVEL. Se um
+    relatório já existir pro mesmo `(dataset, symbol, version)` com
+    `_MATERIAL_REPORT_FIELDS` divergente do que está sendo escrito agora,
+    loga um warning claro (campos que mudaram, gate anterior vs novo) antes
+    de sobrescrever — nunca silencioso, mas também nunca levanta."""
     if dest_path is None:
-        dest_path = QUALITY_REPORTS_DIR / f"quality_report_{report.dataset}_{report.version}.json"
+        dest_path = (
+            QUALITY_REPORTS_DIR
+            / f"quality_report_{report.dataset}_{report.symbol}_{report.version}.json"
+        )
     dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    new_payload = report.to_dict()
+    if dest_path.exists():
+        try:
+            existing_payload: dict[str, Any] = orjson.loads(dest_path.read_bytes())
+        except orjson.JSONDecodeError:
+            existing_payload = {}
+        diff_fields = _material_report_diff(existing_payload, new_payload)
+        if diff_fields:
+            logger.warning(
+                "validate.report_overwrite_material_change",
+                dataset=report.dataset,
+                symbol=report.symbol,
+                version=report.version,
+                path=str(dest_path),
+                changed_fields=diff_fields,
+                previous_gate=existing_payload.get("gate"),
+                new_gate=report.gate,
+            )
+
     tmp_path = dest_path.with_name(dest_path.name + ".tmp")
-    payload = orjson.dumps(report.to_dict(), option=orjson.OPT_INDENT_2)
+    payload = orjson.dumps(new_payload, option=orjson.OPT_INDENT_2)
     with tmp_path.open("wb") as fh:
         fh.write(payload)
         fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp_path, dest_path)
-    logger.info("validate.report_written", dataset=report.dataset, path=str(dest_path))
+    logger.info(
+        "validate.report_written",
+        dataset=report.dataset,
+        symbol=report.symbol,
+        path=str(dest_path),
+    )
     return dest_path
 
 
@@ -217,15 +290,19 @@ def validate_klines_like(
     assert schema.grid_step_ms is not None
 
     if df.is_empty():
-        return _empty_report(dataset_name, reason=_EMPTY_DF_REASON)
+        return _empty_report(dataset_name, reason=_EMPTY_DF_REASON, symbol=symbol)
 
     checks_skipped: list[dict[str, str]] = [
         {
             "check": "2_checksum",
             "reason": (
-                "sem .CHECKSUM da Binance nem hash gravado no download_log local — "
-                "pertence à camada de download (fora do escopo deste Sprint); TODO "
-                "quando src/data/download.py existir e puder gravar SHA256 no manifest."
+                "src/data/download.py JÁ existe e já verifica checksum por download "
+                "(_verify_checksum) e grava checksum_verified no manifest "
+                "data/capacity/_download_log/multi_asset_backfill.jsonl (achado F7) — "
+                "o que falta aqui é só o WIRE-UP: este check ainda não lê esse "
+                "manifest nem cruza checksum_verified contra o dataset sendo "
+                "validado. TODO: implementar a leitura/cruzamento, não a "
+                "verificação de checksum em si (já existe)."
             ),
         },
         {
@@ -361,6 +438,7 @@ def validate_klines_like(
     missing_ts = grid_result.missing_timestamps_ms[:_MAX_MISSING_TIMESTAMPS_LISTED]
     return QualityReport(
         dataset=dataset_name,
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=rows,
         start=ms_to_iso(start_ms) if start_ms is not None else None,
@@ -401,7 +479,7 @@ def validate_resampled_bars(
 
     dataset_name = f"bars_{timeframe}"
     if df_resampled.is_empty():
-        return _empty_report(dataset_name, reason=_EMPTY_DF_REASON)
+        return _empty_report(dataset_name, reason=_EMPTY_DF_REASON, symbol=symbol)
     checks_skipped: list[dict[str, str]] = []
     failed: list[str] = []
     diagnostics: dict[str, Any] = {}
@@ -437,6 +515,7 @@ def validate_resampled_bars(
 
     return QualityReport(
         dataset=dataset_name,
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=rows,
         start=ms_to_iso(start_ms) if start_ms is not None else None,
@@ -459,14 +538,176 @@ def validate_resampled_bars(
 
 
 # ============================================================================
+# dollar bars (dollar_bars_r1/r2/r3, AG-042) — achado F3. Barra event-driven
+# (fecha quando o threshold de $ é atingido, não por relógio): `grid_step_ms`
+# é `None` no schema (`schemas._dollar_bars_schema`), mesmo motivo de
+# `AGG_TRADES` — check 9 (`check_grid_completeness`) pressupõe uma grade
+# temporal fixa a priori e não se aplica aqui (ver docstring de
+# `checks.check_grid_completeness`/`checks.GridCompletenessResult`: mede
+# timestamps ausentes contra uma grade `arange(lo, hi, step_ms)`, que não
+# existe pra uma barra calibrada por volume). Check 7 (close_time_convention)
+# tem o mesmo problema — pressupõe `close_time == open_time + step_ms - 1`
+# com `step_ms` CONSTANTE, e a duração de uma dollar bar é variável por
+# construção. `open`/`high`/`low`/`close` já chegam `Float64` no schema
+# (`schemas._DOLLAR_BARS_COLUMNS`, diferente de klines_1m que é `Utf8`) —
+# sem necessidade de `cast_price_columns` aqui.
+# ============================================================================
+
+
+def validate_dollar_bars(
+    df: pl.DataFrame,
+    *,
+    resolution_id: str,
+    symbol: str = "BTCUSDT",
+) -> QualityReport:
+    dataset_name = f"dollar_bars_{resolution_id.lower()}"
+    schema = schemas.get_schema(dataset_name)
+
+    if df.is_empty():
+        return _empty_report(dataset_name, reason=_EMPTY_DF_REASON, symbol=symbol)
+
+    checks_skipped: list[dict[str, str]] = [
+        {
+            "check": "2_checksum",
+            "reason": "ver nota em validate_klines_like",
+        },
+        {
+            "check": "7_close_time_convention",
+            "reason": (
+                "pressupõe close_time == open_time + step_ms - 1 com step_ms "
+                "CONSTANTE — dollar bar tem duração VARIÁVEL por construção "
+                "(fecha ao atingir o threshold de $, não por relógio); sem step_ms "
+                "fixo não há convenção a verificar (grid_step_ms=None no schema)."
+            ),
+        },
+        {
+            "check": "9_grid_completeness",
+            "reason": (
+                "barra event-driven — não existe grade fixa a priori "
+                f"(grid_step_ms=None em schemas.{dataset_name.upper()})"
+            ),
+        },
+        {
+            "check": "16_cross_source_30m_parity",
+            "reason": (
+                "aplica-se a bars RESAMPLED por relógio (ex.: bars_30m), não a "
+                "dollar bar calibrada por threshold de $. Ver validate_resampled_bars()."
+            ),
+        },
+        {
+            "check": "17_mark_price_deviation",
+            "reason": "sem mark_df nesta função — dollar bar não compara contra mark price aqui",
+        },
+        {
+            "check": "18_index_price_deviation",
+            "reason": "D12 index_price_1m ainda não baixado — sem fonte para comparar",
+        },
+        {
+            "check": "23_venue_semantic_break",
+            "reason": (
+                f"{dataset_name} é OHLCV agregado de aggTrades (D01), não FEATURE "
+                "derivada de bookTicker/bookDepth (Grupo F) — não se aplica."
+            ),
+        },
+    ]
+    failed: list[str] = []
+    diagnostics: dict[str, Any] = {}
+
+    schema_result = checks.check_schema(df, schema)
+    diagnostics["1_schema"] = asdict(schema_result)
+    if not schema_result.passed:
+        failed.append("1_schema")
+
+    dup_result = checks.check_duplicates(df, schema.primary_key)
+    diagnostics["3_duplicates"] = asdict(dup_result)
+    if dup_result.excess_rows:
+        failed.append("3_duplicates")
+
+    null_result = checks.check_nulls(df, schema.non_nullable)
+    diagnostics["4_nulls"] = null_result.counts
+    if null_result.total:
+        failed.append("4_nulls")
+
+    mono_result = checks.check_monotonic(df, schema.timestamp_column)
+    diagnostics["5_8_monotonic"] = asdict(mono_result)
+    if not mono_result.is_strictly_monotonic:
+        failed.append("5_8_monotonic")
+
+    diagnostics["6_utc"] = (
+        "timestamp em epoch ms (Int64) — sem ambiguidade de fuso por construção, "
+        "não há string de data/hora a interpretar."
+    )
+
+    ohlc_result = checks.check_ohlc_coherence(df)
+    diagnostics["11_ohlc_coherence"] = asdict(ohlc_result)
+    price_violations = checks.check_positive_prices(df, ("open", "high", "low", "close"))
+    diagnostics["12_positive_prices"] = {"violation_count": price_violations}
+    vol_violations = checks.check_non_negative_volume(df)
+    diagnostics["13_non_negative_volume"] = {"violation_count": vol_violations}
+    taker_violations = checks.check_taker_buy_leq_volume(df)
+    diagnostics["14_taker_buy_leq_volume"] = {"violation_count": taker_violations}
+
+    invalid_rows = (
+        ohlc_result.violation_count + price_violations + vol_violations + taker_violations
+    )
+    # nota: uma mesma linha pode violar 2+ regras simultaneamente e ser contada mais de
+    # uma vez aqui — o detalhamento por regra em diagnostics não tem esse problema.
+    if invalid_rows:
+        failed.append("11_14_value_checks")
+
+    outlier_result = checks.check_outlier_log_returns(df, schema.timestamp_column)
+    diagnostics["15_outliers"] = {
+        "sigma_threshold": outlier_result.sigma_threshold,
+        "measured_sigma": outlier_result.measured_sigma,
+        "flagged_count": outlier_result.flagged_count,
+    }
+    # check 15 é explicitamente "marca, não descarta" — nunca entra em failed_checks/invalid_rows.
+
+    rows = df.height
+    start_ms = int(df[schema.timestamp_column].min()) if rows else None  # type: ignore[arg-type]
+    end_ms = int(df[schema.timestamp_column].max()) if rows else None  # type: ignore[arg-type]
+
+    quality_score = _quality_score(
+        rows=rows,
+        missing_bars=0,  # sem grade fixa — "ausente" não é um conceito aplicável aqui
+        duplicates=dup_result.excess_rows,
+        invalid_rows=invalid_rows,
+    )
+    gate = "PASS" if not failed else "FAIL"
+
+    return QualityReport(
+        dataset=dataset_name,
+        symbol=symbol,
+        version=_REPORT_VERSION,
+        rows=rows,
+        start=ms_to_iso(start_ms) if start_ms is not None else None,
+        end=ms_to_iso(end_ms) if end_ms is not None else None,
+        missing_bars=0,
+        missing_timestamps=[],
+        gap_classification={"maintenance": 0, "collection": 0, "unknown": 0},
+        duplicates=dup_result.excess_rows,
+        invalid_rows=invalid_rows,
+        outliers_flagged=outlier_result.flagged_count,
+        cross_source_max_deviation=None,
+        coverage_by_feature={},
+        effective_start=None,
+        quality_score=quality_score,
+        gate=gate,
+        checks_skipped=checks_skipped,
+        failed_checks=failed,
+        diagnostics=diagnostics,
+    )
+
+
+# ============================================================================
 # agg_trades
 # ============================================================================
 
 
-def validate_agg_trades(df: pl.DataFrame) -> QualityReport:
+def validate_agg_trades(df: pl.DataFrame, *, symbol: str = "BTCUSDT") -> QualityReport:
     schema = schemas.get_schema("agg_trades")
     if df.is_empty():
-        return _empty_report("agg_trades", reason=_EMPTY_DF_REASON)
+        return _empty_report("agg_trades", reason=_EMPTY_DF_REASON, symbol=symbol)
     checks_skipped = [
         {"check": "2_checksum", "reason": "ver nota em validate_klines_like"},
         {
@@ -544,6 +785,7 @@ def validate_agg_trades(df: pl.DataFrame) -> QualityReport:
 
     return QualityReport(
         dataset="agg_trades",
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=rows,
         start=ms_to_iso(start_ms) if start_ms is not None else None,
@@ -575,10 +817,10 @@ def validate_agg_trades(df: pl.DataFrame) -> QualityReport:
 _THIRTY_MIN_MS = 1_800_000
 
 
-def validate_metrics(df: pl.DataFrame) -> QualityReport:
+def validate_metrics(df: pl.DataFrame, *, symbol: str = "BTCUSDT") -> QualityReport:
     schema = schemas.get_schema("metrics")
     if df.is_empty():
-        return _empty_report("metrics", reason=_EMPTY_DF_REASON)
+        return _empty_report("metrics", reason=_EMPTY_DF_REASON, symbol=symbol)
     checks_skipped = [
         {"check": "2_checksum", "reason": "ver nota em validate_klines_like"},
         {
@@ -663,6 +905,7 @@ def validate_metrics(df: pl.DataFrame) -> QualityReport:
     missing_ts = grid_5m.missing_timestamps_ms[:_MAX_MISSING_TIMESTAMPS_LISTED]
     return QualityReport(
         dataset="metrics",
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=rows,
         start=ms_to_iso(start_ms) if start_ms is not None else None,
@@ -693,10 +936,10 @@ def validate_metrics(df: pl.DataFrame) -> QualityReport:
 # ============================================================================
 
 
-def validate_funding(df: pl.DataFrame) -> QualityReport:
+def validate_funding(df: pl.DataFrame, *, symbol: str = "BTCUSDT") -> QualityReport:
     schema = schemas.get_schema("funding")
     if df.is_empty():
-        return _empty_report("funding", reason=_EMPTY_DF_REASON)
+        return _empty_report("funding", reason=_EMPTY_DF_REASON, symbol=symbol)
     checks_skipped = [
         {"check": "2_checksum", "reason": "ver nota em validate_klines_like"},
         {
@@ -757,6 +1000,7 @@ def validate_funding(df: pl.DataFrame) -> QualityReport:
 
     return QualityReport(
         dataset="funding",
+        symbol=symbol,
         version=_REPORT_VERSION,
         rows=rows,
         start=ms_to_iso(start_ms) if start_ms is not None else None,
@@ -792,7 +1036,16 @@ def _run_cli() -> int:
     parser.add_argument(
         "--dataset",
         default="klines_1m",
-        choices=["klines_1m", "agg_trades", "metrics", "funding", "bars_30m"],
+        choices=[
+            "klines_1m",
+            "agg_trades",
+            "metrics",
+            "funding",
+            "bars_30m",
+            "dollar_bars_r1",
+            "dollar_bars_r2",
+            "dollar_bars_r3",
+        ],
     )
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--start", required=True, help="yyyy-mm-dd")
@@ -816,17 +1069,23 @@ def _run_cli() -> int:
         )
     elif args.dataset == "agg_trades":
         df = lake.query_agg_trades(args.symbol, args.start, args.end)
-        report = validate_agg_trades(df)
+        report = validate_agg_trades(df, symbol=args.symbol)
     elif args.dataset == "metrics":
         df = lake.query_metrics(args.symbol, args.start, args.end)
-        report = validate_metrics(df)
+        report = validate_metrics(df, symbol=args.symbol)
     elif args.dataset == "funding":
         df = lake.query_funding(args.symbol, args.start, args.end)
-        report = validate_funding(df)
+        report = validate_funding(df, symbol=args.symbol)
     elif args.dataset == "bars_30m":
         df_1m = lake.query_bars(args.symbol, "1m", args.start, args.end, source="klines_1m")
         df_30m = resample.resample_klines(df_1m, "30m")
         report = validate_resampled_bars(df_30m, timeframe="30m", symbol=args.symbol)
+    elif args.dataset in ("dollar_bars_r1", "dollar_bars_r2", "dollar_bars_r3"):
+        resolution_id = args.dataset.removeprefix("dollar_bars_").upper()
+        df = lake.query_dollar_bars(
+            args.symbol, args.start, args.end, resolution_id=resolution_id
+        )
+        report = validate_dollar_bars(df, resolution_id=resolution_id, symbol=args.symbol)
     else:  # pragma: no cover — argparse choices já restringe
         raise ValueError(args.dataset)
 
@@ -834,6 +1093,7 @@ def _run_cli() -> int:
     logger.info(
         "validate.cli_done",
         dataset=report.dataset,
+        symbol=report.symbol,
         gate=report.gate,
         rows=report.rows,
         duplicates=report.duplicates,

@@ -161,11 +161,11 @@ def parkinson_vol(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
     a todo log-ratio de preço neste módulo (`yang_zhang_vol`/log_return
     de `E27f`/etc., achado F2 do audit_engineering, 2026-08-11)."""
     with np.errstate(divide="ignore", invalid="ignore"):
-        log_hl_sq = np.log(high / low) ** 2
+        log_hl_sq = np.log(high / low) ** 2  # noqa: unguarded-ratio -- preço real (low), sempre >0 por construção, ver docstring
     mean_sq = (
         pl.Series(log_hl_sq).rolling_mean(window_size=window, min_samples=window).to_numpy()
     )
-    var = mean_sq / (4.0 * np.log(2.0))
+    var = mean_sq / (4.0 * np.log(2.0))  # noqa: unguarded-ratio -- denominador é constante numérica (4*ln2), falso positivo do heurístico AST (não reconhece BinOp/Call como literal)
     with np.errstate(invalid="ignore"):
         out: FloatArray = np.sqrt(var)
     return out
@@ -184,8 +184,8 @@ def garman_klass_vol(
     `errstate`, mesma disciplina de `parkinson_vol` (achado F2 do
     audit_engineering, 2026-08-11)."""
     with np.errstate(divide="ignore", invalid="ignore"):
-        log_hl_sq = np.log(high / low) ** 2
-        log_co_sq = np.log(close / open_) ** 2
+        log_hl_sq = np.log(high / low) ** 2  # noqa: unguarded-ratio -- preço real (low), sempre >0 por construção, ver docstring
+        log_co_sq = np.log(close / open_) ** 2  # noqa: unguarded-ratio -- preço real (open_), sempre >0 por construção, ver docstring
     gk = 0.5 * log_hl_sq - (2.0 * np.log(2.0) - 1.0) * log_co_sq
     mean_gk = pl.Series(gk).rolling_mean(window_size=window, min_samples=window).to_numpy()
     with np.errstate(invalid="ignore"):
@@ -214,8 +214,8 @@ def rogers_satchell_vol(
     disciplina de `parkinson_vol`/`garman_klass_vol` (achado F2 do
     audit_engineering, 2026-08-11, aplicado aqui desde a origem)."""
     with np.errstate(divide="ignore", invalid="ignore"):
-        rs = np.log(high / close) * np.log(high / open_) + np.log(low / close) * np.log(
-            low / open_
+        rs = np.log(high / close) * np.log(high / open_) + np.log(low / close) * np.log(  # noqa: unguarded-ratio -- preços reais (close/open_), sempre >0 por construção, ver docstring
+            low / open_  # noqa: unguarded-ratio -- preço real (open_), sempre >0 por construção, ver docstring
         )
     mean_rs = pl.Series(rs).rolling_mean(window_size=window, min_samples=window).to_numpy()
     with np.errstate(invalid="ignore"):

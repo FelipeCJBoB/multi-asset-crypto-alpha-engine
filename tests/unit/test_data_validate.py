@@ -252,3 +252,190 @@ def test_validate_funding_dado_limpo() -> None:
 
 def test_load_constant_outlier_threshold_e_8() -> None:
     assert load_constant("outlier_log_return_sigma_threshold") == 8.0
+
+
+# ============================================================================
+# dollar bars (achado F3) — validate_dollar_bars
+# ============================================================================
+
+
+def _make_dollar_bars(n: int, *, start_time: int = 0, step_ms: int = 900_000) -> pl.DataFrame:
+    open_times = [start_time + i * step_ms for i in range(n)]
+    close_times = [t + step_ms - 1 for t in open_times]
+    return pl.DataFrame(
+        {
+            "open_time": open_times,
+            "close_time": close_times,
+            "open": [100.0 + i for i in range(n)],
+            "high": [100.5 + i for i in range(n)],
+            "low": [99.5 + i for i in range(n)],
+            "close": [100.0 + i for i in range(n)],
+            "volume": [1.0] * n,
+            "quote_volume": [100.0] * n,
+            "count": pl.Series([1] * n, dtype=pl.UInt32),
+            "taker_buy_volume": [0.5] * n,
+            "taker_buy_quote_volume": [50.0] * n,
+        }
+    )
+
+
+def test_validate_dollar_bars_dado_limpo_passa() -> None:
+    df = _make_dollar_bars(10)
+    report = validate.validate_dollar_bars(df, resolution_id="R1")
+    assert report.gate == "PASS"
+    assert report.dataset == "dollar_bars_r1"
+    assert report.duplicates == 0
+    assert report.invalid_rows == 0
+    assert report.rows == 10
+    # sem grade fixa a priori — "ausente" não é conceito aplicável (achado F3)
+    assert report.missing_bars == 0
+
+
+def test_validate_dollar_bars_nao_roda_grid_completeness() -> None:
+    # check 9 explicitamente EXCLUÍDO (barra event-driven) — precisa aparecer
+    # em checks_skipped, e não deve ter rodado check_grid_completeness de
+    # verdade (sem chave de diagnóstico "9_grid_completeness" com resultado).
+    df = _make_dollar_bars(5)
+    report = validate.validate_dollar_bars(df, resolution_id="R1")
+    skipped_checks = {c["check"] for c in report.checks_skipped}
+    assert "9_grid_completeness" in skipped_checks
+    assert "9_grid_completeness" not in report.diagnostics
+
+
+def test_validate_dollar_bars_detecta_duplicata_e_falha_gate() -> None:
+    df = _make_dollar_bars(10)
+    df = pl.concat([df, df.slice(0, 1)])  # duplica a primeira barra (open_time repetido)
+    report = validate.validate_dollar_bars(df, resolution_id="R1")
+    assert report.gate == "FAIL"
+    assert report.duplicates == 1
+    assert "3_duplicates" in report.failed_checks
+
+
+def test_validate_dollar_bars_detecta_ohlc_incoerente() -> None:
+    df = _make_dollar_bars(5)
+    df = df.with_columns(
+        pl.when(pl.col("open_time") == 0).then(1.0).otherwise(pl.col("high")).alias("high")
+    )
+    report = validate.validate_dollar_bars(df, resolution_id="R1")
+    assert report.invalid_rows >= 1
+    assert report.gate == "FAIL"
+
+
+def test_validate_dollar_bars_dataframe_vazio() -> None:
+    df = _make_dollar_bars(0)
+    report = validate.validate_dollar_bars(df, resolution_id="R1", symbol="ETHUSDT")
+    assert report.gate == "FAIL"
+    assert report.rows == 0
+    assert report.dataset == "dollar_bars_r1"
+    assert report.symbol == "ETHUSDT"
+
+
+def test_validate_dollar_bars_dataset_name_por_resolucao() -> None:
+    df = _make_dollar_bars(3)
+    for resolution_id, expected_dataset in (
+        ("R1", "dollar_bars_r1"),
+        ("R2", "dollar_bars_r2"),
+        ("R3", "dollar_bars_r3"),
+    ):
+        report = validate.validate_dollar_bars(df, resolution_id=resolution_id)
+        assert report.dataset == expected_dataset
+
+
+def test_validate_dollar_bars_symbol_propaga() -> None:
+    df = _make_dollar_bars(5)
+    report = validate.validate_dollar_bars(df, resolution_id="R1", symbol="SOLUSDT")
+    assert report.symbol == "SOLUSDT"
+
+
+# ============================================================================
+# QualityReport.symbol + write_report_atomic (achado F4)
+# ============================================================================
+
+
+def test_quality_report_tem_campo_symbol() -> None:
+    df = _make_1m_bars(10)
+    report = validate.validate_klines_like(
+        df, dataset_name="klines_1m", compute_coverage=False, symbol="ETHUSDT"
+    )
+    assert report.symbol == "ETHUSDT"
+
+
+def test_quality_report_symbol_default_btcusdt() -> None:
+    df = _make_1m_bars(10)
+    report = validate.validate_klines_like(df, dataset_name="klines_1m", compute_coverage=False)
+    assert report.symbol == "BTCUSDT"
+
+
+def test_write_report_atomic_nome_default_inclui_symbol(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(validate, "QUALITY_REPORTS_DIR", tmp_path)
+    df = _make_1m_bars(10)
+    report = validate.validate_klines_like(
+        df, dataset_name="klines_1m", compute_coverage=False, symbol="ETHUSDT"
+    )
+    path = validate.write_report_atomic(report)
+    assert path.name == "quality_report_klines_1m_ETHUSDT_v1.json"
+    assert path.exists()
+
+
+def test_write_report_atomic_loga_warning_em_mudanca_material_mas_nao_bloqueia(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    import structlog.testing
+
+    dest = tmp_path / "quality_report_klines_1m_BTCUSDT_v1.json"
+
+    df_clean = _make_1m_bars(10)
+    report_pass = validate.validate_klines_like(
+        df_clean, dataset_name="klines_1m", compute_coverage=False
+    )
+    validate.write_report_atomic(report_pass, dest)
+    assert orjson.loads(dest.read_bytes())["gate"] == "PASS"
+
+    df_dup = pl.concat([df_clean, df_clean.slice(0, 1)])
+    report_fail = validate.validate_klines_like(
+        df_dup, dataset_name="klines_1m", compute_coverage=False
+    )
+    with structlog.testing.capture_logs() as logs:
+        validate.write_report_atomic(report_fail, dest)
+
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "validate.report_overwrite_material_change"
+    assert "gate" in warnings[0]["changed_fields"]
+    assert warnings[0]["previous_gate"] == "PASS"
+    assert warnings[0]["new_gate"] == "FAIL"
+
+    # a escrita acontece de qualquer forma — warning não bloqueia (diferente
+    # da guarda de build_dollar_bars.write_dollar_bars_and_calibration, que
+    # levanta ValueError; aqui o comportamento é deliberadamente mais brando)
+    assert orjson.loads(dest.read_bytes())["gate"] == "FAIL"
+
+
+def test_write_report_atomic_sem_warning_quando_reescreve_sem_mudanca_material(  # type: ignore[no-untyped-def]
+    tmp_path,
+) -> None:
+    import structlog.testing
+
+    dest = tmp_path / "quality_report_klines_1m_BTCUSDT_v1.json"
+    df = _make_1m_bars(10)
+    report = validate.validate_klines_like(df, dataset_name="klines_1m", compute_coverage=False)
+    validate.write_report_atomic(report, dest)
+
+    with structlog.testing.capture_logs() as logs:
+        validate.write_report_atomic(report, dest)  # mesmo report, reescreve idêntico
+
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert not warnings
+
+
+# ============================================================================
+# achado F7 — texto do skip do check 2_checksum não pode afirmar que
+# src/data/download.py "não existe ainda" (já existe e já verifica checksum)
+# ============================================================================
+
+
+def test_checksum_skip_reason_nao_afirma_que_download_nao_existe() -> None:
+    df = _make_1m_bars(10)
+    report = validate.validate_klines_like(df, dataset_name="klines_1m", compute_coverage=False)
+    reason = next(c["reason"] for c in report.checks_skipped if c["check"] == "2_checksum")
+    assert "não existe ainda" not in reason
+    assert "download.py" in reason
+    assert "wire-up" in reason.lower() or "WIRE-UP" in reason

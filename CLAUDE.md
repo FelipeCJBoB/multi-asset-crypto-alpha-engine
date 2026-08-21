@@ -186,7 +186,7 @@ Lint via `tools/lint/banned_patterns.py` em pre-commit. Build quebra se violado.
 |---|---|---|---|
 | B07 | treinar Meta em predição do Alpha sem `is_oof` | `assert df_meta.is_oof.all()` | §5.12 |
 | B08 | calibrador ajustado sobre o próprio OOF | sub-split interno do treino | §5.9 passo 9 |
-| B09 | split de CV sem purge por `t1` | purge + embargo 175 barras | §11.4 |
+| B09 | split de CV sem purge por `t1` | purge + embargo 96,39h (relógio fixo, medido — `cpcv_embargo_ms`) | §11.4 |
 | B10 | treinar sem `sample_weight` de unicidade | sempre com peso | §3.5 |
 
 ### Label e execução

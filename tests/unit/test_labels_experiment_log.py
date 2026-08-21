@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 
 from src.labels import experiment_log
-from src.labels.triple_barrier import LabelConfig
+from src.labels.triple_barrier import LabelBuildStats, LabelConfig
 
 _CFG = LabelConfig(
     tp_atr_mult=2.0, sl_atr_mult=1.5, time_stop_ms=32 * 900_000, fill_timeout_ms=900_000,
@@ -272,3 +272,53 @@ def test_record_experiment_notes_e_periodo_gravados(tmp_path: Path) -> None:
     assert out["period_start"][0] == "2020-01-01"
     assert out["period_end"][0] == "2026-08-06"
     assert out["notes"][0] == "medicao de teste"
+
+
+# ============================================================================
+# build_stats (AG-128, F2) — n_warmup_dropped/n_incomplete_tail/n_tie_break
+# ============================================================================
+
+
+def test_record_experiment_build_stats_gravado_nas_3_colunas_novas(tmp_path: Path) -> None:
+    """F2 -- os 3 contadores de `triple_barrier.LabelBuildStats` (antes só
+    emitidos via `logger.info`, nunca persistidos) chegam nas colunas
+    novas do schema quando `build_stats` é passado."""
+    log_path = tmp_path / "runs.parquet"
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    stats = LabelBuildStats(n_warmup_dropped=7, n_incomplete_tail=2, n_tie_break=1)
+
+    experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol="BTCUSDT",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        build_stats=stats,
+        path=log_path,
+    )
+    out = experiment_log.load_experiment_log(log_path)
+    assert out["n_warmup_dropped"][0] == 7
+    assert out["n_incomplete_tail"][0] == 2
+    assert out["n_tie_break"][0] == 1
+
+
+def test_record_experiment_build_stats_ausente_grava_null(tmp_path: Path) -> None:
+    """`build_stats=None` (default) -- todo caller existente que só tem
+    `labels`/`config` em mãos (ex. os testes acima deste arquivo) continua
+    funcionando sem passar `build_stats`; as 3 colunas novas ficam `null`,
+    não um valor inventado."""
+    log_path = tmp_path / "runs.parquet"
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+
+    experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol="BTCUSDT",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        path=log_path,
+    )
+    out = experiment_log.load_experiment_log(log_path)
+    assert out["n_warmup_dropped"][0] is None
+    assert out["n_incomplete_tail"][0] is None
+    assert out["n_tie_break"][0] is None

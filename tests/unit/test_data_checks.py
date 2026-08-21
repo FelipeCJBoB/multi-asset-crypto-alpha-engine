@@ -249,6 +249,33 @@ def test_check_price_deviation() -> None:
     assert result.max_abs_deviation_pct == pytest.approx(5.0)
 
 
+def test_check_price_deviation_filtra_denominador_nao_positivo() -> None:
+    # achado F6 — `_a` (price_a) é o denominador de `_dev_pct`; uma linha com
+    # close<=0 (dado corrompido) precisa ser excluída ANTES da divisão, não
+    # só ter o resultado ignorado depois — denominador <=0 nunca deveria
+    # chegar a `_dev_pct`/`rows_compared`/`violation_count`.
+    df_a = pl.DataFrame({"t": [0, 1, 2], "close": [100.0, 0.0, -5.0]})
+    df_b = pl.DataFrame({"t": [0, 1, 2], "close": [100.5, 999.0, 999.0]})
+    result = checks.check_price_deviation(
+        df_a, df_b, ts_col="t", price_a="close", price_b="close", threshold_pct=2.0
+    )
+    # só a linha t=0 (close=100.0>0) sobrevive ao filtro do denominador
+    assert result.rows_compared == 1
+    assert result.violation_count == 0
+    assert result.max_abs_deviation_pct == pytest.approx(0.5)
+
+
+def test_check_price_deviation_todos_denominadores_nao_positivos() -> None:
+    df_a = pl.DataFrame({"t": [0, 1], "close": [0.0, -1.0]})
+    df_b = pl.DataFrame({"t": [0, 1], "close": [1.0, 1.0]})
+    result = checks.check_price_deviation(
+        df_a, df_b, ts_col="t", price_a="close", price_b="close", threshold_pct=2.0
+    )
+    assert result.rows_compared == 0
+    assert result.violation_count == 0
+    assert result.max_abs_deviation_pct == 0.0
+
+
 # ============================================================================
 # check 19 — intervalo de funding derivado do dado
 # ============================================================================

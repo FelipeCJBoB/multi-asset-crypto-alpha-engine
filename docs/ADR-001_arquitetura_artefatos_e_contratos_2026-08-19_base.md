@@ -733,6 +733,8 @@ Outras cláusulas:
 - **Holdout travado** é parte do artefato de split, não convenção verbal: `holdout_locked_until_ts` e um contador de desbloqueios. Todo desbloqueio é um evento no `trial_registry`.
 - **Purge cross-símbolo quando houver pool.** Se linhas de símbolos diferentes forem treinadas juntas, rótulos de BTC e ETH que se sobrepõem no tempo compartilham o mesmo choque de mercado; o purge tem de ser aplicado sobre o intervalo temporal, não por símbolo isoladamente.
 
+> **Nota factual (2026-08-21):** o desenho de embargo acima — campo `embargo_bars` no pseudocódigo de `splits(...)`, e a frase "embargo **em barras**, com piso `embargo_bars ≥ max(horizon_bars)`" — é o texto original deste parecer (2026-08-19) e ficou **SUPERSEDIDO** pela implementação real desde `AG-032`/E1 (2026-08-16): `embargo_ms`, relógio fixo **medido** (não derivado de `horizon_bars`), valor de produção `347.010.000 ms` (≈96,39h), deliberadamente invariante a `tf`/densidade de barra — ver `config/constants.yaml::cpcv_embargo_ms` e `src/validation/cpcv.py`. Mantido acima sem edição por rastreabilidade do parecer original; não é o desenho implementado.
+
 ---
 
 ### 3.4 Split → Learner (inclui o contrato de Regime, que §7 não lista)
@@ -1467,7 +1469,7 @@ E no `manifest.json` deste estágio, um bloco extra que não é coluna:
 | `symbol`, `resolution` | partição | |
 | `bar_id_start`, `bar_id_end` | `Int64!` | projeção do intervalo nesta linha |
 | `purge_basis` | `Enum!` | `t1` |
-| `embargo_bars` | `Int32!` | |
+| `embargo_bars` | `Int32!` | **[SUPERSEDIDO 2026-08-21]** campo do parecer original (Parte I §3.3); a implementação real usa `embargo_ms` (`Int64!`), relógio fixo **medido**, valor de produção `347.010.000 ms` (≈96,39h), deliberadamente invariante a `tf`/densidade de barra — desde `AG-032`/E1 (2026-08-16), ver `config/constants.yaml::cpcv_embargo_ms` |
 
 Mais, no manifest: `holdout_locked_until_ts`, `holdout_unlock_count`, `holdout_touched`, `master_calendar_hash`.
 

@@ -1152,7 +1152,13 @@ citável, não opinião:
 
 ```
 DATA LAYER
-  01_BARRA            src/data/{resample,lake,download}.py            ✅ pronto multi-ativo/TF
+  01_BARRA            src/data/{resample,lake,download,bars,build_dollar_bars}.py  🟡 parcial -- threshold da
+                                                                       dollar-bar (canônico, AG-042) calibrado
+                                                                       em janela não-causal (passado+futuro),
+                                                                       deriva medida 18,18x (BTC), recalibração
+                                                                       pendente de decisão do Manager;
+                                                                       calibration_scope sempre "validation",
+                                                                       nunca "frozen_production" (AG-042 itens 2/3)
   02_DATA_CHECK        src/data/{checks,validate,schemas}.py           parcial, symbol nunca exercitado
   03_FEATURES          src/features/{build,support,groups/*}.py        TF hardcoded, thresholds globais
   04_VOLATILIDADE      src/features/volatility.py                      ilha — só alimenta labels hoje
@@ -1162,7 +1168,8 @@ DATA LAYER
   07b_PESOS            src/labels/weights.py                           movido da ML LAYER
 
 ML LAYER
-  08_SPLIT             src/validation/cpcv.py                          embargo hardcoded em 15m
+  08_SPLIT             src/validation/cpcv.py                          embargo_ms=347010000 (96,39h,
+                                                                       MEASURED, invariante a tf) -- AG-032/E1
   09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD; stability.py órfã
   09b_CALIBRACAO       (inline em alpha.py — não separável hoje)
   10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe, não wired em pipeline.py
@@ -1184,7 +1191,7 @@ LIVE TRADING LAYER
 
 | estágio `§15.4` | equivalente `§11.6` | nota |
 |---|---|---|
-| `01_BARRA` | M2 (Barra) | dollar bar canônico, ✅ fechado |
+| `01_BARRA` | M2 (Barra) | dollar bar canônico, 🟡 parcial — threshold calibrado em janela não-causal (deriva 18,18x medida) e `calibration_scope` sempre `"validation"`, nunca `"frozen_production"`; recalibração/política pendente de decisão do Manager (`AG-042` itens 2/3) |
 | `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1 |
 | `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro |
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |

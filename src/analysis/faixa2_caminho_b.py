@@ -1226,11 +1226,25 @@ def e2_prereq_permutation_importance_and_orthogonality(
         )
 
     reduced_feature_ids = tuple(f for f in T1_FEATURE_IDS if f not in dropped)
-    idx_reduced = [T1_FEATURE_IDS.index(f) for f in reduced_feature_ids]
+    # Lookup NOMEADO (AG-038/F5): dict feature_id->posicao construido uma vez
+    # a partir de T1_FEATURE_IDS, em vez de repetir `.index()` (acoplamento
+    # posicional implicito) por elemento. `correlation_t1` (ver `alpha.
+    # _t1_correlation_matrix`) e' construido por `df.select(T1_FEATURE_IDS)`,
+    # logo suas colunas correspondem, POR CONTEUDO, a este mesmo dict -- a
+    # asserção de shape abaixo torna essa correspondência um contrato
+    # verificado, não uma suposição silenciosa entre os dois arquivos.
+    t1_position_by_feature: dict[str, int] = {feat: i for i, feat in enumerate(T1_FEATURE_IDS)}
+    idx_reduced = [t1_position_by_feature[f] for f in reduced_feature_ids]
 
     hhi_after_records: list[dict[str, Any]] = []
     for (fold_id, side), correlation_t1 in correlation_by_fold_side.items():
         gain_by_column = gain_by_fold_side[(fold_id, side)]
+        assert correlation_t1.shape == (len(T1_FEATURE_IDS), len(T1_FEATURE_IDS)), (
+            f"correlation_t1 (fold={fold_id}, side={side}) tem shape "
+            f"{correlation_t1.shape}, esperado ({len(T1_FEATURE_IDS)}, "
+            f"{len(T1_FEATURE_IDS)}) -- indica que `_t1_correlation_matrix` "
+            "parou de corresponder posicionalmente a T1_FEATURE_IDS (AG-038)."
+        )
         correlation_reduced = correlation_t1[np.ix_(idx_reduced, idx_reduced)]
         side_label = "long" if side == 1 else "short"
         hhi_after = compute_effective_concentration(

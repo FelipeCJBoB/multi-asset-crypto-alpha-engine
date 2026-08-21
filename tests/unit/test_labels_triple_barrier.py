@@ -573,6 +573,48 @@ def test_build_labels_resolution_id_com_estimator_explicito_produz_labels_reais(
     assert tp_row["config_hash"] == cfg.config_hash
 
 
+def test_build_labels_with_stats_conta_warmup_tail_e_tie_break() -> None:
+    """F2 (AG-128, achado `audit_engineering` 2026-08-19) -- `LabelBuildStats`
+    bate com os 3 contadores já documentados/reproduzidos pelo teste irmão
+    acima (mesma fixture exata, só troca `build_labels` por `build_labels_
+    with_stats`): 2 barras de warmup (`atr_window=3` via Parkinson,
+    `seed_idx=window-1=2`, índices 0/1 sem ATR válido -- "ATR válido a
+    partir do índice 2" da docstring do teste acima), 1 cauda incompleta
+    (índice 4, `mark_1m` não cobre o horizonte inteiro), 0 tie-break
+    (o spike só toca TP, nunca SL no mesmo candle de 1m). Antes desta
+    correção, estes 3 contadores só existiam como variáveis locais
+    perdidas no `return` de `build_labels` -- só saíam via `logger.info`,
+    nunca eram testáveis diretamente."""
+    bars = _dollar_bars_multi(5)
+    t0 = int(bars["close_time"][2])
+    horizon_end_ms = int(bars["close_time"][4])
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+            # spike bem acima de qualquer TP plausível
+            (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            (horizon_end_ms, 148.0, 148.0, 148.0, 148.0),  # cobertura até o horizonte
+        ]
+    )
+    cfg = _dollar_bar_cfg(horizon_bars=2)
+    out, stats = tb.build_labels_with_stats(
+        bars,
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=cfg,
+        estimator=ParkinsonEstimator(window=3),
+    )
+    assert out.height == 2
+    assert stats == tb.LabelBuildStats(n_warmup_dropped=2, n_incomplete_tail=1, n_tie_break=0)
+    # build_labels (sem _with_stats) continua bit-exato -- mesmo DataFrame,
+    # só descarta o 2º elemento da tupla (wrapper fino, ver triple_barrier.py).
+    out_compat = tb.build_labels(
+        bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=3)
+    )
+    assert out_compat.equals(out, null_equal=True)
+
+
 def test_build_labels_resolution_id_time_pousa_exatamente_horizon_bars_a_frente() -> None:
     """AG-116, teste novo pedido em `PLANO_MESTRE_PRINCE2.md` §15.12.3-A
     item 7 -- barreira TIME sob `resolution_id` cai exatamente em

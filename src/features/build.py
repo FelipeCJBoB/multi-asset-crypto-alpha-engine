@@ -153,7 +153,8 @@ def compute_t1_features(
     n = close.shape[0]
     log_return_1 = np.full(n, np.nan, dtype=np.float64)
     if n > 1:
-        log_return_1[1:] = np.log(close[1:] / close[:-1])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            log_return_1[1:] = np.log(close[1:] / close[:-1])
 
     atr_wilder_id = f"atr_wilder_w{windows.atr_window}"
     parkinson_id = f"parkinson_w{windows.atr_window}"

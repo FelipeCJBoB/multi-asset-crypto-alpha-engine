@@ -161,6 +161,79 @@ def test_classifier_id_deterministico_a_partir_de_n_states() -> None:
 
 
 # ============================================================================
+# Estabilidade de canonicalização entre folds CONSECUTIVOS (achado F2,
+# auditoria M4 2026-08-19) -- cada fold canonicaliza seus próprios estados
+# pela média AJUSTADA daquele fold (docstring do módulo, "Canonicalização
+# ancorada no FIT"); nada testava até aqui que `canonical_id=0` do fold N
+# representa o MESMO regime econômico que `canonical_id=0` do fold N+1.
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_canonicalizacao_estavel_entre_folds_consecutivos_regime_fixo() -> None:
+    """NÃO prova robustez em regime que MUDA de caráter entre folds (isso
+    seria um achado de pesquisa, não um teste de regressão, ver task
+    original) -- só confirma que, quando a estrutura GERADORA é ESTÁVEL
+    (2 clusters bem separados intercalados em blocos ao longo de TODA a
+    série -- diferente de `_two_cluster_obs`, que concatena cluster A
+    inteiro e só depois cluster B inteiro, um único changepoint, não "mesma
+    estrutura em toda a série"), a canonicalização É estável entre dois
+    cortes de janela expansiva consecutivos (mesmo contrato de fold de
+    `fit_hmm_gaussian`: `train_end_idx` cresce, ancorado em 0 -- mesmo
+    padrão de `build_hmm.build_hmm_regimes`).
+
+    Métrica: **não** `adjusted_rand_score` -- ARI é invariante a
+    permutação de rótulo por construção, então NÃO detectaria um
+    label-switch entre folds (exatamente o bug que este teste existe pra
+    pegar: um ARI=1.0 entre fold N e fold N+1 com os rótulos TROCADOS
+    ainda daria ARI=1.0). Em vez disso, decodifica um conjunto de PROBE
+    comum (presente no treino dos DOIS folds, por construção da janela
+    expansiva) com cada fit e mede a fração de `canonical_id` EXATAMENTE
+    igual entre os dois -- um label-switch faria essa fração desabar
+    (rótulos invertidos: quase toda posição discordaria), não apareceria
+    como "partição equivalente"."""
+    rng = np.random.default_rng(42)
+    n_per_block = 40
+    n_blocks = 12  # alternância cluster A/B repetida -- estrutura fixa em toda a série
+    blocks = []
+    for i in range(n_blocks):
+        center = -1.0 if i % 2 == 0 else 1.0
+        blocks.append(rng.normal(center, 0.1, size=(n_per_block, 2)))
+    obs = np.concatenate(blocks).astype(np.float64)
+
+    fold_1_end = n_per_block * 6  # fold N -- janela expansiva ancorada em 0
+    fold_2_end = n_per_block * 10  # fold N+1 -- mais dado, MESMA estrutura geradora
+    probe = obs[: n_per_block * 4]  # comum ao treino dos DOIS folds
+
+    fit_1 = fit_hmm_gaussian(obs, n_states=2, train_end_idx=fold_1_end, seed=42)
+    fit_2 = fit_hmm_gaussian(obs, n_states=2, train_end_idx=fold_2_end, seed=42)
+    assert fit_1 is not None and fit_2 is not None
+
+    canonical_probe_fit_1 = predict_hmm_gaussian(fit_1, probe)
+    canonical_probe_fit_2 = predict_hmm_gaussian(fit_2, probe)
+
+    # Sanity check -- se fit_1 nem recuperou a separação real (ex. colapsou
+    # em 1 estado dominante por acidente de seed), o teste de agreement
+    # abaixo ficaria vazio de sentido (dois fits igualmente ruins podem
+    # concordar por acaso). Mesmo limiar (`> 0.7`) de
+    # `test_recupera_separacao_de_2_clusters_bem_separados`.
+    true_state_probe = np.array(
+        [0 if (i // n_per_block) % 2 == 0 else 1 for i in range(probe.shape[0])]
+    )
+    ari_fit_1 = adjusted_rand_score(true_state_probe, canonical_probe_fit_1)
+    assert ari_fit_1 > 0.7, (
+        f"sanity check falhou -- fit_1 nem recuperou a separação real (ARI={ari_fit_1})"
+    )
+
+    agreement = float(np.mean(canonical_probe_fit_1 == canonical_probe_fit_2))
+    assert agreement > 0.9, (
+        f"agreement={agreement} -- canonical_id do fold N e do fold N+1 diverge no mesmo "
+        "conjunto de probe, apesar da estrutura geradora ser idêntica nos dois folds "
+        "(regime fixo); indica label-switch entre folds consecutivos (achado F2)"
+    )
+
+
+# ============================================================================
 # fit_hmm_gaussian -- convergência degenerada detectável (retorna None)
 # ============================================================================
 

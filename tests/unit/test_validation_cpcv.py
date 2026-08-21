@@ -159,6 +159,60 @@ def test_generate_splits_e_assert_embargo_respected_usam_o_mesmo_embargo_ms(
     cpcv.assert_embargo_respected(labels, result)  # não deve levantar
 
 
+def test_generate_splits_e_assert_no_train_t1_leaks_usam_a_mesma_g_end_effective(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`generate_splits` (que aplica o purge do componente 32, item 2b da
+    docstring do módulo, AG-032/E4) e `assert_no_train_t1_leaks_into_test`
+    (que verifica que ele foi respeitado) precisam usar a MESMA fórmula de
+    `g_end_effective` -- senão a própria checagem poderia ficar calibrada
+    para uma fronteira mais fraca que a que o purge de fato aplica, e não
+    pegaria uma regressão real (achado F1, candidato a AG-129, auditoria
+    2026-08-19). Os dois agora chamam literalmente `_g_end_effective`
+    (extraída em função própria, mesmo padrão de `_embargo_ms`/AG-009 --
+    ver `test_generate_splits_e_assert_embargo_respected_usam_o_mesmo_
+    embargo_ms` acima) em vez de duas cópias inline.
+
+    Prova ESTRUTURAL, não só comportamental (comportamento correto já é
+    coberto por `test_generate_splits_purge_cobre_lookback_de_feature_de_
+    treino_apos_g_end` e por `test_assert_no_train_t1_leaks_detecta_
+    vazamento_forjado`): spy sobre a função REAL (não um fake que pula a
+    execução -- mesmo padrão de `test_run_all_leakage_tests_repassa_
+    symbol_a_generate_splits_dos_testes_6_7_12` em
+    tests/unit/test_validation_leakage.py) prova que AMBOS os call-sites de
+    fato invocam a MESMA função. Um bug de divergência (alguém
+    reintroduzindo a fórmula inline num dos dois lugares, sem tocar no
+    outro) faria a contagem de chamadas do lado editado divergir do
+    esperado, mesmo que o resultado numérico deste cenário específico ainda
+    parecesse correto -- exatamente o tipo de regressão silenciosa que a
+    extração em AG-009 já preveniu para `embargo_ms`."""
+    n = 1200
+    labels = _make_synthetic_labels(n, horizon_bars=20)  # horizonte grande -- overlap real
+    cfg_sem_embargo = cpcv.CPCVConfig(n_groups=6, n_test_groups=2, embargo_ms=0)
+
+    real_g_end_effective = cpcv._g_end_effective
+    calls: list[int] = []
+
+    def _spy_g_end_effective(
+        g: int, g_end: int, group_id: np.ndarray, t1_ms: np.ndarray
+    ) -> int:
+        calls.append(g)
+        return real_g_end_effective(g, g_end, group_id, t1_ms)
+
+    monkeypatch.setattr(cpcv, "_g_end_effective", _spy_g_end_effective)
+
+    result = cpcv.generate_splits(labels, cfg_sem_embargo)
+    n_calls_apos_generate = len(calls)
+    assert n_calls_apos_generate > 0, "generate_splits precisa chamar _g_end_effective"
+
+    cpcv.assert_no_train_t1_leaks_into_test(labels, result)
+    assert len(calls) > n_calls_apos_generate, (
+        "assert_no_train_t1_leaks_into_test precisa chamar a MESMA _g_end_effective de "
+        "generate_splits, não uma cópia inline -- senão a checagem pode validar contra "
+        "uma fronteira diferente da que o purge de fato usou"
+    )
+
+
 # ============================================================================
 # AG-009/AG-037 — assert_grade_consistent: guarda cruzada entre a grade real
 # de `labels` e `CPCVConfig.grade_id`. `load_labels_v1(tf=...)` e
@@ -744,9 +798,21 @@ def test_summarize_splits_soma_train_test_purge_embargo_bate_com_candidato() -> 
 # load_labels_v1 + dataset REAL (labels/v1/labels.parquet, Sprint 6)
 # ============================================================================
 
+# Universo de 5 símbolos do projeto (§15, PLANO_MESTRE_PRINCE2.md) — mesmo
+# tuple literal já usado em src/labels/backfill_multi_symbol.py::ALL_SYMBOLS
+# e src/analysis/m6_common_factor_hypothesis.py::ALL_SYMBOLS (convenção do
+# repo: cada módulo declara o próprio tuple em vez de importar entre
+# pacotes de camadas diferentes — aqui é um teste, não módulo de src/, mas
+# segue a mesma convenção por consistência). Achado F2 (candidato a AG-130,
+# auditoria 2026-08-19): antes desta correção, os testes de integração
+# abaixo chamavam cpcv.load_labels_v1() sem argumento, sempre resolvendo
+# symbol="BTCUSDT" -- os outros 4 símbolos nunca eram exercitados pelo CPCV
+# de verdade, só pelo runner de leakage completo via outro caminho.
+_ALL_SYMBOLS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
-def _skip_if_labels_missing() -> None:
-    path = labels_symbol_tf_dir("BTCUSDT", "v1") / "labels.parquet"
+
+def _skip_if_labels_missing(symbol: str = "BTCUSDT") -> None:
+    path = labels_symbol_tf_dir(symbol, "v1") / "labels.parquet"
     if not path.exists():
         pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
@@ -772,14 +838,19 @@ def test_load_labels_v1_tf_explicito_muda_o_caminho_resolvido() -> None:
 
 
 @pytest.mark.integration
-def test_cpcv_sobre_dataset_real_15_splits_zero_vazamento() -> None:
-    """O teste central — §11.5 #6 rodando contra `labels/v1/labels.parquet`
-    real (462.682 linhas, ambos os lados, 2020-01→2026-08, Sprint 6), não
-    sintético. Confirma: 15 splits, 5 caminhos, e ZERO t1 de treino
-    cruzando qualquer janela de teste em qualquer split."""
-    _skip_if_labels_missing()
-    labels = cpcv.load_labels_v1()
-    result = cpcv.generate_splits(labels)
+@pytest.mark.parametrize("symbol", _ALL_SYMBOLS)
+def test_cpcv_sobre_dataset_real_15_splits_zero_vazamento(symbol: str) -> None:
+    """O teste central — §11.5 #6 rodando contra `labels/{symbol}/15m/v1/
+    labels.parquet` real, não sintético. Confirma: 15 splits, 5 caminhos, e
+    ZERO t1 de treino cruzando qualquer janela de teste em qualquer split.
+
+    Parametrizado pros 5 símbolos do universo (achado F2, candidato a
+    AG-130, auditoria 2026-08-19) — skip automático (`_skip_if_labels_
+    missing`) por símbolo cujo backfill local ainda não existe, mesmo
+    padrão de sempre, agora por símbolo em vez de só BTCUSDT."""
+    _skip_if_labels_missing(symbol)
+    labels = cpcv.load_labels_v1(symbol=symbol)
+    result = cpcv.generate_splits(labels, symbol=symbol)
 
     assert result.config.n_splits == 15
     assert result.config.n_backtest_paths == 5
@@ -800,30 +871,65 @@ def test_cpcv_sobre_dataset_real_15_splits_zero_vazamento() -> None:
 
 
 @pytest.mark.integration
-def test_cpcv_sobre_dataset_real_grupos_cobrem_series_completa() -> None:
-    _skip_if_labels_missing()
-    labels = cpcv.load_labels_v1()
-    result = cpcv.generate_splits(labels)
+@pytest.mark.parametrize("symbol", _ALL_SYMBOLS)
+def test_cpcv_sobre_dataset_real_grupos_cobrem_series_completa(symbol: str) -> None:
+    """Parametrizado pros 5 símbolos (achado F2, candidato a AG-130) —
+    ver docstring de `test_cpcv_sobre_dataset_real_15_splits_zero_vazamento`.
+
+    Bound de span por grupo é relativo ao span TOTAL medido do símbolo, não
+    um número absoluto de dias fixo -- BTCUSDT cobre ~6,6 anos
+    (2019-12-31->2026-08-07), os 4 alts cobrem só ~4,7 anos
+    (2021-12-01->2026-08-07, teto comum medido em AG-030/constants.yaml::
+    min_common_history_bars_15m) -- "~1 ano por grupo" (§11.4) é
+    CONSEQUÊNCIA do histórico de BTCUSDT sob n_groups=6, não um invariante
+    independente do símbolo. A asserção original (hardcoded em
+    [300, 450] dias) era implicitamente BTCUSDT-específica e quebraria nos
+    4 alts (~1711/6 ~= 285 dias por grupo, abaixo do piso de 300) --
+    generalizada aqui pra continuar provando o que a partição cronológica
+    de `assign_time_groups` de fato garante (grupos de largura ~igual),
+    sem herdar um número específico do calendário do BTC."""
+    _skip_if_labels_missing(symbol)
+    labels = cpcv.load_labels_v1(symbol=symbol)
+    result = cpcv.generate_splits(labels, symbol=symbol)
     assert set(np.unique(result.group_id).tolist()) == {0, 1, 2, 3, 4, 5}
-    # ~1 ano por grupo (§11.4) sobre ~6,6 anos de dataset real
+    total_span_ms = int(result.edges_ms[-1]) - int(result.edges_ms[0])
+    expected_span_days = (total_span_ms / (24 * 60 * 60 * 1000)) / 6  # noqa: magic-number
     for g in range(6):
         span_ms = int(result.edges_ms[g + 1]) - int(result.edges_ms[g])
         span_days = span_ms / (24 * 60 * 60 * 1000)  # noqa: magic-number
-        assert 300 < span_days < 450  # ~1 ano, com folga
+        # ±20% de folga em torno do span esperado (total/6) -- linspace
+        # particiona em largura ~exatamente igual por construção
+        # (assign_time_groups), a folga é pra tolerar arredondamento, não
+        # porque se espera variação real de verdade entre grupos.
+        assert expected_span_days * 0.8 < span_days < expected_span_days * 1.2  # noqa: magic-number
 
 
 @pytest.mark.integration
-def test_cpcv_sobre_dataset_real_purge_e_embargo_sao_pequenos_face_ao_dataset() -> None:
+@pytest.mark.parametrize("symbol", _ALL_SYMBOLS)
+def test_cpcv_sobre_dataset_real_purge_e_embargo_sao_pequenos_face_ao_dataset(
+    symbol: str,
+) -> None:
     """`time_stop_bars` (32 barras, 8h) e `cpcv_embargo_ms` (AG-032/E1,
     2026-08-16 -- 96,39h medido, substitui o legado embargo_bars=175/
     43,75h) são desprezíveis frente a grupos de ~1 ano — purge+embargo por
     split não deveria remover mais que uma fração pequena do treino
     candidato. embargo_ms cresceu 2,2x em relação ao valor legado -- se
     este teste falhar, é sinal real de que o limiar de 2% precisa ser
-    revisto com o número novo, não um bug de teste."""
-    _skip_if_labels_missing()
-    labels = cpcv.load_labels_v1()
-    result = cpcv.generate_splits(labels)
+    revisto com o número novo, não um bug de teste.
+
+    Parametrizado pros 5 símbolos (achado F2, candidato a AG-130). Nota
+    honesta sobre o limiar herdado: `cpcv_embargo_ms` é um valor de RELÓGIO
+    FIXO (não escala com símbolo), medido como ~1% da largura de grupo do
+    BTCUSDT (~402 dias); os 4 alts têm grupos ~29% menores (~285 dias,
+    ver `test_cpcv_sobre_dataset_real_grupos_cobrem_series_completa`), o
+    que faz a MESMA janela de embargo representar uma fração
+    proporcionalmente maior do grupo (~1,4% em vez de ~1%). Ainda assim
+    esperado ficar abaixo do limiar de 2% (mesma lógica do docstring
+    original: se não ficar, é achado real sobre o símbolo, não bug desta
+    parametrização)."""
+    _skip_if_labels_missing(symbol)
+    labels = cpcv.load_labels_v1(symbol=symbol)
+    result = cpcv.generate_splits(labels, symbol=symbol)
     summary = cpcv.summarize_splits(result)
     frac_removed = (summary["n_purged"] + summary["n_embargoed"]) / summary["n_train_candidate"]
     assert bool((frac_removed < 0.02).all())  # noqa: magic-number

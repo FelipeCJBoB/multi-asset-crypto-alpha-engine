@@ -288,7 +288,7 @@ def resolve_barriers_vectorized(
     )
     tie_break_used = tie_mask
 
-    ret_gross = side * (exit_price / fill_px - 1.0)
+    ret_gross = side * (exit_price / fill_px - 1.0)  # noqa: unguarded-ratio -- fill_px é preço real de mercado, nunca <=0
     cost_entry_frac = np.full(n, maker_fee, dtype=np.float64)
     cost_exit_frac = np.where(barrier_hit == _TP, maker_fee, taker_fee)
 
@@ -316,11 +316,12 @@ def resolve_barriers_vectorized(
         real_count = np.where(
             within_range,
             idx1_within - idx0,
-            (dbc.size - 1 - idx0) + np.ceil((t1 - last_close) / bar_ms).astype(np.int64),
+            (dbc.size - 1 - idx0)
+            + np.ceil((t1 - last_close) / bar_ms).astype(np.int64),  # noqa: unguarded-ratio -- bar_ms=step_ms(tf) no topo da função, nunca <=0
         )
         n_bars_held = np.where(t1 > t0, real_count, 0)
     else:
-        n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / bar_ms).astype(np.int64), 0)
+        n_bars_held = np.where(t1 > t0, np.ceil((t1 - t0) / bar_ms).astype(np.int64), 0)  # noqa: unguarded-ratio -- bar_ms=step_ms(tf) no topo da função, nunca <=0
 
     return ResolvedBarriers(
         barrier_hit=list(barrier_hit),

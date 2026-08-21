@@ -161,13 +161,22 @@ def apply_weights(labels: pl.DataFrame) -> pl.DataFrame:
     # linha para `sample_weight` -- exatamente o "silenciosamente NaN/inf"
     # que a docstring desta função diz querer evitar, sem na prática evitar.
     # `assert_label_invariants` (triple_barrier.py) pegaria isso via
-    # `np.mean` comum (que propaga NaN em vez de ignorar), mas NÃO é chamada
-    # no caminho real de escrita (`backfill_multi_symbol.
-    # build_and_write_labels_for_symbol` vai direto de `build_labels_for_
-    # symbol` para `write_labels_atomic`, sem checagem de invariante no
-    # meio -- achado separado, fora do escopo deste arquivo). Isso faz desta
-    # função a única linha de defesa de fato; validar TODAS as entradas
-    # antes de usar a média, não só a média agregada.
+    # `np.mean` comum (que propaga NaN em vez de ignorar) -- AG-029
+    # (commit a9d5d80, 2026-08-16) ligou essa checagem no caminho real de
+    # escrita (`backfill_multi_symbol.build_and_write_labels_for_symbol`
+    # chama `assert_label_invariants` entre `build_labels_for_symbol` e
+    # `write_labels_atomic`, "falha alto de propósito"), então esta função
+    # NÃO é mais a única linha de defesa. Continua sendo uma linha de
+    # defesa ADICIONAL que vale a pena manter: `apply_weights` roda ANTES
+    # de `assert_label_invariants` no pipeline real (calcula `sample_
+    # weight`, que a invariante depois valida) -- sem esta validação aqui,
+    # um `ret_net`/`uniqueness` corrompido upstream produziria um
+    # `sample_weight` NaN/inf que só seria pego alguns passos depois (ou,
+    # em qualquer caminho de teste/uso direto de `apply_weights` que não
+    # passe por `build_and_write_labels_for_symbol`, nunca seria pego).
+    # Validar TODAS as entradas antes de usar a média, não só a média
+    # agregada, continua sendo o comportamento certo aqui mesmo com a
+    # invariante downstream já existindo.
     if raw_weight.size and not np.isfinite(raw_weight).all():
         n_bad = int((~np.isfinite(raw_weight)).sum())
         raise ValueError(

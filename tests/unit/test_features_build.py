@@ -27,9 +27,17 @@ _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
 _CORR_START = "2024-08-08"
 _CORR_END = "2026-08-07"  # ~2 anos, janela pedida pela task para ortogonalidade real
 
+# 5 símbolos do universo (Binance USDⓈ-M, PLANO_MESTRE_PRINCE2.md §15) --
+# mesmo conjunto de `src.labels.backfill_multi_symbol.ALL_SYMBOLS`. Testes
+# de integração abaixo parametrizam sobre estes 5 (achado F4,
+# audit_engineering): rodam de verdade contra qualquer símbolo com backfill
+# local presente, skip individual (não a suíte inteira) pros ausentes --
+# nunca dado sintético no lugar do backfill real ausente.
+_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
-def _skip_if_missing(day: str) -> None:
-    path = CAPACITY_DIR / "klines_1m" / "BTCUSDT" / f"{day}.parquet"
+
+def _skip_if_missing(symbol: str, day: str) -> None:
+    path = CAPACITY_DIR / "klines_1m" / symbol / f"{day}.parquet"
     if not path.exists():
         pytest.skip(f"fixture ausente no backfill local: {path}")
 
@@ -40,20 +48,22 @@ def _skip_if_missing(day: str) -> None:
 
 
 @pytest.mark.integration
-def test_determinismo_bit_a_bit() -> None:
-    _skip_if_missing(_FIXTURE_START)
-    out1 = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    out2 = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_determinismo_bit_a_bit(symbol: str) -> None:
+    _skip_if_missing(symbol, _FIXTURE_START)
+    out1 = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
+    out2 = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
     assert out1.equals(out2, null_equal=True)
 
 
 @pytest.mark.integration
-def test_determinismo_hash() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_determinismo_hash(symbol: str) -> None:
     """`hash(build(data, cfg, v1)) == hash(build(data, cfg, v1))` — §2.15
     invariante 3, literal: hash sobre os bytes do resultado."""
-    _skip_if_missing(_FIXTURE_START)
-    out1 = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
-    out2 = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    _skip_if_missing(symbol, _FIXTURE_START)
+    out1 = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
+    out2 = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
     h1 = hash(out1.hash_rows(seed=0).to_list().__repr__())
     h2 = hash(out2.hash_rows(seed=0).to_list().__repr__())
     assert h1 == h2
@@ -65,14 +75,15 @@ def test_determinismo_hash() -> None:
 
 
 @pytest.mark.integration
-def test_warmup_uniforme_todas_nulas_antes_do_corte() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_warmup_uniforme_todas_nulas_antes_do_corte(symbol: str) -> None:
     """`warmup=200` -- `min_warmup_bars` recalculado por fórmula (AG-027,
     2026-08-15, `config/constants.yaml`), não mais os 2000 herdados do PRD
     sem justificativa. Este teste nunca tinha sido re-rodado desde essa
     mudança (achado real via pytest do usuário, 2026-08-16) -- ficou
     hardcoded no valor antigo por uma sessão inteira sem ninguém notar."""
-    _skip_if_missing(_FIXTURE_START)
-    out = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    _skip_if_missing(symbol, _FIXTURE_START)
+    out = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
     warmup = 200
     assert out.height > warmup
     feature_cols = [c for c in out.columns if c not in ("open_time", "close_time")]
@@ -82,14 +93,15 @@ def test_warmup_uniforme_todas_nulas_antes_do_corte() -> None:
 
 
 @pytest.mark.integration
-def test_warmup_uniforme_maioria_valida_depois_do_corte() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_warmup_uniforme_maioria_valida_depois_do_corte(symbol: str) -> None:
     """Depois do warmup, a esmagadora maioria das linhas deve ter todas as
     features T1 válidas — algumas poucas exceções pontuais são esperadas e
     documentadas (ex.: gap real de 45min com volume=0 em 2024-10-28,
     blips de sum_open_interest<=0 em metrics — ver relatório do Sprint 4),
     mas não devem dominar a amostra."""
-    _skip_if_missing(_FIXTURE_START)
-    out = build.build_t1_features("BTCUSDT", _FIXTURE_START, _FIXTURE_END)
+    _skip_if_missing(symbol, _FIXTURE_START)
+    out = build.build_t1_features(symbol, _FIXTURE_START, _FIXTURE_END)
     tail = out.tail(out.height - 200)  # min_warmup_bars real, ver AG-027
     t1_cols = list(build.T1_FEATURE_IDS)
     n_fully_valid = tail.select(t1_cols).drop_nulls().height
@@ -342,7 +354,8 @@ def test_warmup_zero_barras_nao_quebra() -> None:
 
 
 @pytest.mark.integration
-def test_t1_ortogonalidade_spearman_2anos() -> None:
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_t1_ortogonalidade_spearman_2anos(symbol: str) -> None:
     """§2.13: 'nenhum par em T1 pode ter |correlação de Spearman| > 0,70 na
     janela de treino'. Calculado aqui sobre ~2 anos reais (2024-08-08 a
     2026-08-07), não sintético — é exatamente o que a task pede para o
@@ -352,15 +365,18 @@ def test_t1_ortogonalidade_spearman_2anos() -> None:
     explicitamente: "Par que violar → o de menor importância por
     permutação sai e o próximo T2 candidato entra", e importância por
     permutação exige um modelo treinado (Sprint 6+, fora de escopo do
-    Sprint 4). Medido em 2026-08-08: 2 pares violam (`A13_dist_ema48_atr` x
-    `B01_rsi_14` = 0,947; `E27f_cost_atr_ratio` x `C07_vol_pctile_expanding`
-    = -0,913) — ambos plausíveis (A13/B01 são dois jeitos de medir força de
-    tendência; E27f/C07 são duas leituras do mesmo regime de volatilidade
-    por construção, custo/ATR e percentil de vol realizada). Reportado no
-    relatório do Sprint 4 como resultado, não escondido — a resolução
-    (ablação por importância de permutação) é tarefa do Sprint 6+."""
-    _skip_if_missing(_CORR_START)
-    out = build.build_t1_features("BTCUSDT", _CORR_START, _CORR_END)
+    Sprint 4). Medido em 2026-08-08 (BTCUSDT): 2 pares violam
+    (`A13_dist_ema48_atr` x `B01_rsi_14` = 0,947; `E27f_cost_atr_ratio` x
+    `C07_vol_pctile_expanding` = -0,913) — ambos plausíveis (A13/B01 são
+    dois jeitos de medir força de tendência; E27f/C07 são duas leituras do
+    mesmo regime de volatilidade por construção, custo/ATR e percentil de
+    vol realizada). Reportado no relatório do Sprint 4 como resultado, não
+    escondido — a resolução (ablação por importância de permutação) é
+    tarefa do Sprint 6+. Parametrizado pros 5 símbolos (F4,
+    audit_engineering) — violações por símbolo não são asserção travada
+    aqui, só reportadas via print, mesma disciplina do caso BTCUSDT."""
+    _skip_if_missing(symbol, _CORR_START)
+    out = build.build_t1_features(symbol, _CORR_START, _CORR_END)
     t1_cols = list(build.T1_FEATURE_IDS)
     clean = out.select(t1_cols).drop_nulls()
     assert clean.height > 10_000  # amostra grande o bastante pra correlação ser informativa
@@ -379,7 +395,7 @@ def test_t1_ortogonalidade_spearman_2anos() -> None:
     assert np.allclose(corr, corr.T)
     assert np.nanmax(np.abs(corr)) <= 1.0 + 1e-9
 
-    print("\nMatriz de correlação de Spearman — T1, 2024-08-08 a 2026-08-07:")
+    print(f"\nMatriz de correlação de Spearman — T1, {symbol}, 2024-08-08 a 2026-08-07:")
     header = "".ljust(28) + "".join(c[:10].rjust(11) for c in t1_cols)
     print(header)
     for i, ci in enumerate(t1_cols):
@@ -393,9 +409,12 @@ def test_t1_ortogonalidade_spearman_2anos() -> None:
         if abs(corr[i, j]) > 0.70
     ]
     for a, b, r in violations:
-        print(f"VIOLACAO ORTOGONALIDADE (Sprint 6+ resolve por permutacao): {a} x {b} = {r:.4f}")
+        print(
+            f"VIOLACAO ORTOGONALIDADE (Sprint 6+ resolve por permutacao) [{symbol}]: "
+            f"{a} x {b} = {r:.4f}"
+        )
     if not violations:
-        print("Nenhuma violação de ortogonalidade nesta janela.")
+        print(f"Nenhuma violação de ortogonalidade nesta janela [{symbol}].")
 
 
 # ============================================================================
