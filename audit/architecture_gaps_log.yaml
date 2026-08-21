@@ -9224,3 +9224,74 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- item de acompanhamento, não bloqueante hoje (nenhum consumidor de produção agrega por canonical_id entre folds fora do que já foi testado). Registrado a pedido do Manager pra não ficar esquecido enquanto AG-127 (identificação causal de is_stress_state por fold) é implementado -- as duas correções são relacionadas (mesma função, mesmo mecanismo de canonicalização) mas não são a mesma pergunta: AG-127 resolve CAUSALIDADE (a decisão usa só dado do passado); este resolve IDENTIFICABILIDADE (a decisão significa a mesma coisa entre folds). Rota sugerida, não decidida: um teste novo que force deliberadamente uma mudança estrutural sintética entre 2 folds (não regime fixo, como o teste existente) e meça se `canonical_id`/`stress_state_id` permanecem estáveis ou trocam de significado -- decisão de quando priorizar isso fica pro Manager."
+
+  - id: AG-135
+    date: "2026-08-21"
+    file: "research/research_t2.py, research/_sources_research.py, src/analysis/faixa2_e2_research.py, PRD_V3_2_UNIFICADO.md §2.9"
+    related_file: "data/capacity/onchain/btc_coinmetrics.csv (dado baixado, não apagado), docs/SPRINT_LOG.md (medição de lag 2026-08-09)"
+    found_by: "Agent (redesign_workflow, Fases 1-4), a pedido do Manager -- desenho de como o Grupo H (on-chain) se encaixaria no motor atual"
+    gap: >
+      Não é um gap de arquitetura no sentido usual desta ledger — é o
+      registro da DECISÃO de descontinuar uma iniciativa de catálogo
+      depois de investigação real mostrar que os requisitos não se
+      sustentam. Investigação (Fases 1-4, sem implementação) achou: só
+      5 das 11 features do Grupo H (`H01`/`H02`/`H03`/`H06`-parcial/
+      `H08`) são computáveis com o dado real disponível hoje
+      (`data/capacity/onchain/btc_coinmetrics.csv`, 7 colunas, só BTC);
+      `H04`/`H09` têm gap de métrica no CSV atual; `H05`/`H07` idem;
+      `H10`/`H11` prováveis CoinMetrics Pro-tier (clustering de
+      entidade) ou fonte inteiramente ausente (`H11` nem é métrica de
+      BTC). Cobertura BTC-only, sem dado pra ETH/SOL/BNB/XRP.
+
+      Achado colateral real, não hipotético: `research/_sources_
+      research.py::load_onchain_series`/`load_onchain_aligned` (código
+      de pesquisa já commitado, consumido por `faixa2_e2_research.py`)
+      nunca somava o lag de publicação real da CoinMetrics (~1 dia, já
+      medido neste projeto em 2026-08-09 pra outro propósito) antes do
+      join asof — look-ahead genuíno, já tinha contaminado a rejeição
+      de `H01_exchange_netflow_z` na triagem de estabilidade E3.
+    severity: "baixo -- decisão de escopo, não bug de produção; nenhum código de src/features/ (produção) chegou a existir pro Grupo H"
+    layer: "features/research"
+    consequence: >
+      Sem este registro, uma sessão futura poderia reabrir Grupo H do
+      zero (releitura do PRD §2.9 sozinho sugere 11 candidatas viáveis)
+      sem saber que a disponibilidade real de dado já foi checada e
+      reprovada — mesmo tipo de retrabalho que o protocolo de
+      "Atualize governança" existe pra evitar.
+    resolved_by_commit: null
+    resolution: >
+      Manager decidiu descontinuar ("Grupo H não entende os
+      requisitos, vamos descontinuar") — nenhuma implementação de
+      produção jamais existiu pra remover. Código de PESQUISA removido
+      na mesma sessão, não só marcado: `research/research_t2.py::
+      group_h_research` (função inteira); `research/_sources_
+      research.py::load_onchain_series`/`load_onchain_aligned`/
+      `ONCHAIN_COLUMNS`/`_ONCHAIN_CSV_PATH` (ficaram órfãos, único
+      consumidor era `group_h_research`); `src/analysis/faixa2_e2_
+      research.py::build_research_candidates_frame` — removida a
+      chamada de carregamento on-chain, o bloco que computava as 5
+      colunas H, e o diagnóstico de defasagem que gerava `coverage_
+      warnings` pras colunas H (docstring da função atualizada
+      apontando pra este registro). `PRD_V3_2_UNIFICADO.md §2.9` ganhou
+      nota de descontinuação no topo da seção — tabela das 11 features
+      mantida abaixo como registro histórico do que foi catalogado, não
+      reescrita/apagada (`PRD` é obsoleto mas não editado
+      retroativamente sem motivo, `feedback_plano_mestre_canonico`).
+
+      Bug de look-ahead em `load_onchain_series` (achado colateral
+      acima) NÃO foi corrigido — ficou moot com a remoção do código
+      inteiro, não vale a pena consertar um caminho que não existe
+      mais. Registrado aqui só pra constar, caso Grupo H seja
+      reaberto algum dia (não corrigir o mesmo bug de novo às cegas).
+
+      `data/capacity/onchain/btc_coinmetrics.csv` (dado real já
+      baixado) e o backup `.stale_2026-05-24.bak` (gitignored) NÃO
+      foram apagados — dado histórico real, harmless, custo de
+      re-baixar se descontinuação for revertida algum dia; decisão
+      deliberada de não deletar sem necessidade.
+
+      11 testes de `tests/unit/test_features_research_t2.py`
+      confirmados verdes após a remoção (nenhum testava `group_h_
+      research` especificamente). 5 comandos mecânicos limpos nos 3
+      arquivos `.py` tocados.
+    status: "fechado 2026-08-21 -- Grupo H descontinuado, código de pesquisa removido, PRD anotado, achado colateral (bug de lag) registrado pra não ser esquecido/repetido se algum dia for reaberto."

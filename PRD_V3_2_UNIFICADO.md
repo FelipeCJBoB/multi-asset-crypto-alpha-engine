@@ -644,7 +644,16 @@ Tratamento obrigatório:
 | G05 | `days_to_major_expiry` | dias até o vencimento mensal/trimestral | D14 | T3 |
 | G06 | `gamma_exposure_proxy` | Σ (OI × gamma) por strike | D14 | T3 |
 
-## 2.9 GRUPO H — On-chain
+## 2.9 GRUPO H — On-chain — **DESCONTINUADO (2026-08-21)**
+
+> Decisão do Manager, ver `audit/architecture_gaps_log.yaml::AG-135`.
+> Investigação real (`redesign_workflow`) achou: só 5/11 computáveis com
+> o dado real disponível hoje, cobertura BTC-only (sem os outros 4
+> ativos), 2 das 5 computáveis com gap de licenciamento provável pras
+> demais 6. Código de pesquisa (`research/research_t2.py::group_h_
+> research`, `research/_sources_research.py::load_onchain_*`) removido
+> na mesma sessão — mantido aqui só como registro histórico do que foi
+> catalogado, não como escopo ativo.
 
 | ID | nome | fonte | granularidade | tier |
 |---|---|---|---|---|

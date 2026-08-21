@@ -145,59 +145,16 @@ def load_bvol_aligned(bars_15m: pl.DataFrame, start: DateLike, end: DateLike) ->
 
 
 # ============================================================================
-# On-chain (E01, CoinMetrics community-api.coinmetrics.io CSV export) —
-# data/capacity/onchain/, granularidade diária. A defasagem de ~75 dias
-# medida em 2026-08-09 (arquivo terminava 2026-05-24) era staleness do
-# SNAPSHOT LOCAL, não latência estrutural da fonte -- verificado contra a
-# community API (dado publicado até 2026-08-08, ~1 dia de atraso real) e
-# corrigido no mesmo turno (Manager, "Faixa 2, E2 -- correção de vetor
-# saturado de vol"). Ainda assim granularidade diária => barras de 15m
-# dentro do mesmo dia recebem o ÚLTIMO valor conhecido via asof backward
-# (nunca um valor futuro) -- ~96 barras "congeladas" por observação diária,
-# não uma cauda congelada inteira; sinalizado no relatório de ranking.
+# On-chain (E01) -- REMOVIDO 2026-08-21, Grupo H descontinuado (decisão do
+# Manager, ver audit/architecture_gaps_log.yaml::AG-135). `load_onchain_
+# series`/`load_onchain_aligned`/`ONCHAIN_COLUMNS` removidos junto com
+# `research_t2.group_h_research` (único consumidor) -- não tinham outro
+# caller. Achado real que sobrevive no registro (AG-135, não corrigido
+# porque ficou moot): o join asof aqui nunca somava o lag de publicação
+# real da CoinMetrics (~1 dia, medido 2026-08-09) antes de alinhar às
+# barras -- look-ahead genuíno, contaminou a rejeição de H01 na triagem
+# E3. Não resgatar sem corrigir isso primeiro.
 # ============================================================================
-
-_ONCHAIN_CSV_PATH = DATA_ROOT / "capacity" / "onchain" / "btc_coinmetrics.csv"
-ONCHAIN_COLUMNS: tuple[str, ...] = (
-    "FlowInExUSD",
-    "FlowOutExUSD",
-    "AdrActCnt",
-    "CapMVRVCur",
-    "HashRate",
-    "SplyCur",
-    "SplyExNtv",
-)
-
-
-def load_onchain_series() -> pl.DataFrame:
-    if not _ONCHAIN_CSV_PATH.exists():
-        empty_schema = {"_ts_ms": pl.Int64, **dict.fromkeys(ONCHAIN_COLUMNS, pl.Float64)}
-        return pl.DataFrame(schema=empty_schema)
-    df = pl.read_csv(
-        _ONCHAIN_CSV_PATH,
-        columns=["time", *ONCHAIN_COLUMNS],
-        schema_overrides=dict.fromkeys(ONCHAIN_COLUMNS, pl.Float64),
-    )
-    ts_expr = (
-        pl.col("time")
-        .str.strptime(pl.Date, "%Y-%m-%d")
-        .cast(pl.Datetime("ms"))
-        .dt.epoch(time_unit="ms")
-        .alias("_ts_ms")
-    )
-    df = df.with_columns(ts_expr)
-    return df.sort("_ts_ms")
-
-
-def load_onchain_aligned(bars_15m: pl.DataFrame) -> pl.DataFrame:
-    onchain = load_onchain_series()
-    out: dict[str, pl.Series] = {}
-    for col in ONCHAIN_COLUMNS:
-        if onchain.is_empty():
-            out[col] = pl.Series(col, [None] * bars_15m.height, dtype=pl.Float64)
-        else:
-            out[col] = asof_align_backward(bars_15m, onchain, "_ts_ms", col)
-    return pl.DataFrame(out)
 
 
 # ============================================================================

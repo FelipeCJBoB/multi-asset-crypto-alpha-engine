@@ -428,31 +428,13 @@ def group_e_research(
 
 
 # ============================================================================
-# GRUPO H — on-chain (5 candidatas computáveis; granularidade diária,
-# constante por ~96 barras de 15m consecutivas -- mesma ressalva já
-# registrada no PRD §2.9, "features de contexto de regime, não de
-# entrada" -- computadas mesmo assim, sem curadoria).
+# GRUPO H — on-chain -- DESCONTINUADO 2026-08-21 (decisão do Manager, ver
+# audit/architecture_gaps_log.yaml::AG-135). `group_h_research` removida:
+# só 5/11 features do catálogo eram computáveis com o dado real disponível
+# (BTC-only, 2 das 5 com gap de licenciamento provável pras demais 6),
+# achado que motivou a descontinuação, não wireup incompleto. Não resgatar
+# sem revisitar essa investigação primeiro.
 # ============================================================================
-
-
-def group_h_research(onchain_aligned: pl.DataFrame) -> dict[str, FloatArray]:
-    flow_in = onchain_aligned["FlowInExUSD"].to_numpy().astype(np.float64)
-    flow_out = onchain_aligned["FlowOutExUSD"].to_numpy().astype(np.float64)
-    netflow = flow_in - flow_out
-    active_addr = onchain_aligned["AdrActCnt"].to_numpy().astype(np.float64)
-    mvrv = onchain_aligned["CapMVRVCur"].to_numpy().astype(np.float64)
-    hash_rate = onchain_aligned["HashRate"].to_numpy().astype(np.float64)
-    sply_cur = onchain_aligned["SplyCur"].to_numpy().astype(np.float64)
-    sply_ex = onchain_aligned["SplyExNtv"].to_numpy().astype(np.float64)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        exchange_balance_pct = sply_ex / sply_cur
-    return {
-        "H01_exchange_netflow_z": support.expanding_zscore_strict(netflow),
-        "H02_exchange_balance_pct": exchange_balance_pct,
-        "H03_active_addresses_z": support.expanding_zscore_strict(active_addr),
-        "H06_mvrv_z": support.expanding_zscore_strict(mvrv),
-        "H08_hash_rate_z": support.expanding_zscore_strict(hash_rate),
-    }
 
 
 # ============================================================================

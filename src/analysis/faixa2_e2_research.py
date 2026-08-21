@@ -84,16 +84,21 @@ _HIGH_VOL_CORR_FLAG_THRESHOLD = 0.60  # noqa: magic-number -- limiar de sinaliza
 def build_research_candidates_frame(
     symbol: str, start: str, end: str
 ) -> tuple[pl.DataFrame, dict[str, str]]:
-    """Carrega TODAS as fontes (bars/funding/oi/metrics-wide/bvol/onchain/
+    """Carrega TODAS as fontes (bars/funding/oi/metrics-wide/bvol/
     agg_order_flow) uma vez, computa T1-8 + todas as candidatas T2
     computáveis (`research_t2`), devolve `(frame, avisos_de_cobertura)` —
-    `frame` tem `t0` (=close_time) + uma coluna por feature."""
+    `frame` tem `t0` (=close_time) + uma coluna por feature.
+
+    Grupo H (on-chain) DESCONTINUADO (2026-08-21) -- ver
+    `audit/architecture_gaps_log.yaml::AG-135`: só 5/11 features
+    computáveis com o dado real disponível, BTC-only (sem cobertura pros
+    outros 4 ativos), 2 delas com gaps de licenciamento/dado prováveis.
+    Não é mais carregado nem computado aqui."""
     bars_15m = _sources.load_bars_15m(symbol, start, end)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
     metrics_wide = sr.load_metrics_wide_aligned(bars_15m, symbol, start, end)
     bvol_aligned = sr.load_bvol_aligned(bars_15m, start, end)
-    onchain_aligned = sr.load_onchain_aligned(bars_15m)
     agg_flow_aligned = sr.load_agg_order_flow_imbalance_aligned(bars_15m, symbol, start, end)
 
     funding_raw = lake.query_funding(symbol, start, end)
@@ -169,10 +174,6 @@ def build_research_candidates_frame(
             agg_order_flow_imb=agg_flow_aligned.to_numpy().astype(np.float64),
         )
     )
-    onchain_np = {
-        c: onchain_aligned[c].to_numpy().astype(np.float64) for c in onchain_aligned.columns
-    }
-    columns.update(r2.group_h_research(pl.DataFrame(onchain_np)))
     columns.update(r2.group_k_research(open_time_ms))
 
     frame = pl.DataFrame({"t0": bars_15m["close_time"], **columns})
@@ -184,40 +185,6 @@ def build_research_candidates_frame(
         )
         coverage_warnings["C14_bvol_z_90d"] = coverage_warnings["C13_bvol_index"]
         coverage_warnings["C15_iv_rv_spread"] = coverage_warnings["C13_bvol_index"]
-    h_group_cols = (
-        "H01_exchange_netflow_z",
-        "H02_exchange_balance_pct",
-        "H03_active_addresses_z",
-        "H06_mvrv_z",
-        "H08_hash_rate_z",
-    )
-    # Defasagem MEDIDA a cada rodada (não hardcoded) -- a versão anterior
-    # deste aviso citava uma data fixa (2026-05-24) que virou FALSA assim
-    # que o CSV local foi atualizado, sem qualquer sinal de que o texto
-    # estava desatualizado. `onchain_series` é a série RAW (não
-    # forward-filled pelo asof), então seu último `_ts_ms` real é a
-    # medida certa de defasagem -- comparado ao último `close_time` das
-    # barras carregadas.
-    onchain_series = sr.load_onchain_series()
-    hours_per_day = 24.0  # noqa: magic-number -- conversao de unidade, nao constante de dominio
-    ms_per_hour = 3_600_000  # noqa: magic-number -- conversao de unidade, nao constante de dominio
-    if onchain_series.height and bars_15m.height:
-        last_onchain_ms = int(onchain_series["_ts_ms"].max())  # type: ignore[arg-type]
-        last_bar_ms = int(bars_15m["close_time"].max())  # type: ignore[arg-type]
-        lag_days = (last_bar_ms - last_onchain_ms) / ms_per_hour / hours_per_day
-        if lag_days > 0:
-            lag_desc = f"{lag_days:.1f} dias de defasagem atras do fim da janela de bars"
-        else:
-            lag_desc = f"{abs(lag_days):.1f} dias A FRENTE do fim da janela de bars (nao e gargalo)"
-        h_group_note = (
-            f"granularidade diaria -- constante por ~96 barras de 15m; serie "
-            f"on-chain com {lag_desc} (medido nesta rodada, ultimo ponto do CSV local)"
-        )
-    else:
-        h_group_note = "granularidade diaria -- constante por ~96 barras de 15m; CSV on-chain vazio"
-    for h_col in h_group_cols:
-        coverage_warnings[h_col] = h_group_note
-
     return frame, coverage_warnings
 
 
