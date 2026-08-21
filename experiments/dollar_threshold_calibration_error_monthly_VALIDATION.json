@@ -1,0 +1,168 @@
+{
+  "generated_at": "2026-08-21T22:39:50.647353+00:00",
+  "code_version": "e02b5a2",
+  "source_report": "experiments\\dollar_threshold_drift_monthly.json",
+  "windows_periods": [
+    1,
+    2,
+    3,
+    6
+  ],
+  "error_thresholds": {
+    "high_mult": 2.0,
+    "low_mult": 0.5
+  },
+  "methodology": "error_ratio = dollar_per_day(período avaliado) / dollar_per_day_pooled(janela trailing de W períodos imediatamente anteriores) -- ver docstring do módulo pra por que dollar_per_day sozinho é equivalente à razão de threshold_usdt real. Período conta como erro ruim se error_ratio >= 2.0 ou <= 0.5.",
+  "table": {
+    "BNBUSDT": {
+      "1": {
+        "n_periods_evaluated": 56,
+        "n_error_ge2x_or_le0_5x": 8,
+        "pct_error_ge2x_or_le0_5x": 14.29,
+        "max_ratio": 2.8029,
+        "min_ratio": 0.3615
+      },
+      "2": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 8,
+        "pct_error_ge2x_or_le0_5x": 14.81,
+        "max_ratio": 3.1851,
+        "min_ratio": 0.2823
+      },
+      "3": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 10,
+        "pct_error_ge2x_or_le0_5x": 18.52,
+        "max_ratio": 4.9141,
+        "min_ratio": 0.3336
+      },
+      "6": {
+        "n_periods_evaluated": 48,
+        "n_error_ge2x_or_le0_5x": 13,
+        "pct_error_ge2x_or_le0_5x": 27.08,
+        "max_ratio": 3.919,
+        "min_ratio": 0.2902
+      }
+    },
+    "BTCUSDT": {
+      "1": {
+        "n_periods_evaluated": 80,
+        "n_error_ge2x_or_le0_5x": 3,
+        "pct_error_ge2x_or_le0_5x": 3.75,
+        "max_ratio": 2.3483,
+        "min_ratio": 0.4893
+      },
+      "2": {
+        "n_periods_evaluated": 78,
+        "n_error_ge2x_or_le0_5x": 4,
+        "pct_error_ge2x_or_le0_5x": 5.13,
+        "max_ratio": 2.8518,
+        "min_ratio": 0.4974
+      },
+      "3": {
+        "n_periods_evaluated": 78,
+        "n_error_ge2x_or_le0_5x": 6,
+        "pct_error_ge2x_or_le0_5x": 7.69,
+        "max_ratio": 3.6356,
+        "min_ratio": 0.4462
+      },
+      "6": {
+        "n_periods_evaluated": 72,
+        "n_error_ge2x_or_le0_5x": 10,
+        "pct_error_ge2x_or_le0_5x": 13.89,
+        "max_ratio": 7.6264,
+        "min_ratio": 0.4075
+      }
+    },
+    "ETHUSDT": {
+      "1": {
+        "n_periods_evaluated": 56,
+        "n_error_ge2x_or_le0_5x": 0,
+        "pct_error_ge2x_or_le0_5x": 0.0,
+        "max_ratio": 1.9898,
+        "min_ratio": 0.5137
+      },
+      "2": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 0,
+        "pct_error_ge2x_or_le0_5x": 0.0,
+        "max_ratio": 1.9851,
+        "min_ratio": 0.5508
+      },
+      "3": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 4,
+        "pct_error_ge2x_or_le0_5x": 7.41,
+        "max_ratio": 2.38,
+        "min_ratio": 0.4482
+      },
+      "6": {
+        "n_periods_evaluated": 48,
+        "n_error_ge2x_or_le0_5x": 12,
+        "pct_error_ge2x_or_le0_5x": 25.0,
+        "max_ratio": 2.7911,
+        "min_ratio": 0.3901
+      }
+    },
+    "SOLUSDT": {
+      "1": {
+        "n_periods_evaluated": 56,
+        "n_error_ge2x_or_le0_5x": 5,
+        "pct_error_ge2x_or_le0_5x": 8.93,
+        "max_ratio": 4.3041,
+        "min_ratio": 0.2158
+      },
+      "2": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 4,
+        "pct_error_ge2x_or_le0_5x": 7.41,
+        "max_ratio": 4.6011,
+        "min_ratio": 0.3153
+      },
+      "3": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 7,
+        "pct_error_ge2x_or_le0_5x": 12.96,
+        "max_ratio": 3.4261,
+        "min_ratio": 0.3296
+      },
+      "6": {
+        "n_periods_evaluated": 48,
+        "n_error_ge2x_or_le0_5x": 13,
+        "pct_error_ge2x_or_le0_5x": 27.08,
+        "max_ratio": 4.4275,
+        "min_ratio": 0.285
+      }
+    },
+    "XRPUSDT": {
+      "1": {
+        "n_periods_evaluated": 56,
+        "n_error_ge2x_or_le0_5x": 10,
+        "pct_error_ge2x_or_le0_5x": 17.86,
+        "max_ratio": 8.5102,
+        "min_ratio": 0.4386
+      },
+      "2": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 10,
+        "pct_error_ge2x_or_le0_5x": 18.52,
+        "max_ratio": 5.7446,
+        "min_ratio": 0.312
+      },
+      "3": {
+        "n_periods_evaluated": 54,
+        "n_error_ge2x_or_le0_5x": 16,
+        "pct_error_ge2x_or_le0_5x": 29.63,
+        "max_ratio": 5.4477,
+        "min_ratio": 0.3597
+      },
+      "6": {
+        "n_periods_evaluated": 48,
+        "n_error_ge2x_or_le0_5x": 20,
+        "pct_error_ge2x_or_le0_5x": 41.67,
+        "max_ratio": 5.7301,
+        "min_ratio": 0.2834
+      }
+    }
+  }
+}

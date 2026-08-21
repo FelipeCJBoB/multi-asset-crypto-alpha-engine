@@ -8813,6 +8813,61 @@ entries:
       confirmado desnecessário na 2ª rodada de desenho.
     status: "parcialmente resolvido -- mecanismo (schema + orquestrador) implementado, testado só com dado sintético, e medição real de deriva completa (309 símbolo-mês) entregue como insumo. NENHUM reprocessamento real rodou -- limite de escopo explícito, respeitado (`data/capacity/dollar_bars_r1/` real intocado). Falta: (1) Manager confirmar `trailing_window_days`/`cadence_days` (sugestão: 30/30, ver `resolution`) ou pedir medição sub-mensal antes; (2) autorização explícita separada pra rodar `build_dollar_bars_walkforward` contra dado real, símbolo por símbolo (recomendação de engenharia: sequencial, não concorrente, dado o volume de BTC sozinho -- 3,4 bilhões de trades); (3) reprocessar tudo que depende de `dollar_r1` (features/labels/regime/CPCV) nos 5 símbolos depois disso. Política de `calibration_scope=\"frozen_production\"` (`AG-042` itens 2/3) continua separada, não resolvida por este item."
 
+    addendum_medicao_semanal_2026-08-21: >
+      Manager pediu explicitamente "teste semanal" — a sugestão 30/30 dias
+      não foi aceita sem checar se o padrão monotônico (janela mais curta
+      = erro menor) continua abaixo de 1 mês. Medido:
+      `tools/diagnostics/measure_dollar_threshold_drift_weekly.py` →
+      `experiments/dollar_threshold_drift_weekly.json`, 1.325 símbolo-
+      semana completos (mesmos 5 símbolos, mesmo histórico). Metodologia
+      de análise (`tools/diagnostics/analyze_dollar_threshold_calibration_
+      error.py`, script novo e reusável — os números mensais originais
+      tinham sido calculados ad hoc, sem script commitado) validada
+      ANTES de confiar nela: reproduziu os 2 números já publicados acima
+      (XRPUSDT W=1 mês → 17,86% ~ "17,9%"; W=6 meses → 41,67% = "41,7%"
+      exato) — confirma blocos calibra/aplica NÃO sobrepostos com
+      `cadence == trailing_window` (mesmo par usado por `build_dollar_
+      bars_walkforward`), não uma variante ingênua (que daria 25,49% em
+      vez de 41,67% no mesmo W=6). Verificado por mim (auditoria
+      independente desta entrada): recomputei BTCUSDT W=1 semana direto
+      do JSON bruto sem usar o script (`n_eval=344, n_bad=8, pct=2,33%,
+      max=3,1804, min=0,3783`) — bate exato com o relatório do agente.
+
+      **Resultado — tabela de erro por janela (1/2/4 semanas), % de
+      períodos com erro ≥2x ou ≤0,5x:**
+      BTCUSDT 2,33/3,22/5,88 · ETHUSDT 2,87/2,89/3,75 · SOLUSDT
+      8,20/11,57/12,50 · BNBUSDT 8,61/12,40/18,33 · XRPUSDT
+      9,43/15,29/22,50 (todos %, n=240-344 por célula).
+
+      **Padrão monotônico CONFIRMADO até granularidade semanal, sem
+      reversão, para os 5 símbolos sem exceção** — 1 semana é a janela
+      de MENOR erro medida em toda a faixa testada (1 semana a 6 meses).
+      Responde diretamente ao pedido do Manager: não é extrapolação mais,
+      é medido.
+
+      **Achado metodológico colateral, não trivial**: comparar janelas de
+      comprimento parecido entre os dois relatórios (semanal W=4≈28 dias
+      vs. mensal W=1≈30 dias) mostra o semanal com erro MAIOR pro mesmo
+      símbolo (XRPUSDT 22,5% vs 17,86%) — não contradiz o padrão acima
+      (que compara só DENTRO de cada relatório, granularidade de
+      avaliação constante); revela que a avaliação mensal, ao medir erro
+      1x por mês, ESCONDE oscilação intra-mês que dollar-bars reais
+      (formadas continuamente, não 1x por período) sofreriam de verdade
+      — os números mensais originais provavelmente SUBESTIMAM a
+      miscalibração real de produção. Risco de cauda reforça isso: pior
+      razão observada em UMA semana (XRPUSDT, 13,22x) é pior que o pior
+      mês já medido (8,51x) — `max_leftover_trades` (circuit breaker do
+      `AG-034`) segue necessário, mais claramente ainda em granularidade
+      fina.
+
+      **Sugestão ATUALIZADA (ainda não decisão)**: `trailing_window_
+      days=7`, `cadence_days=7` — substitui a sugestão anterior de 30/30.
+      Granularidade sub-semanal (diária) NÃO foi medida — extrapolar
+      abaixo de 7 dias continua sendo suposição, não evidência. Custo
+      operacional de recalibrar 4x mais seguido que mensal (7 vs. 30
+      dias) também não foi avaliado nesta rodada — trade-off legítimo
+      pro Manager pesar contra o ganho marginal de erro.
+
   - id: AG-125
     date: "2026-08-21"
     file: "src/data/validate.py"
