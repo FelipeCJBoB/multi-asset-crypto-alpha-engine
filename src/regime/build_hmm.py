@@ -169,6 +169,7 @@ def build_hmm_regimes(
 
     canonical_id = np.full(n_bars, _NO_DECODE_SENTINEL, dtype=np.int64)
     fold_id = np.full(n_bars, _NO_DECODE_SENTINEL, dtype=np.int64)
+    is_stress_state = np.zeros(n_bars, dtype=np.bool_)
 
     splits = vwf.generate_anchored_walk_forward_splits(
         open_time_ms, initial_train_years=resolved_train_years
@@ -183,7 +184,7 @@ def build_hmm_regimes(
         return _assemble_output(
             open_time_ms=open_time_ms,
             canonical_id=canonical_id,
-            is_stress_state=np.zeros(n_bars, dtype=np.bool_),
+            is_stress_state=is_stress_state,
             tradeable=np.zeros(n_bars, dtype=np.bool_),
             fold_id=fold_id,
             classifier_id=classifier_id,
@@ -202,18 +203,29 @@ def build_hmm_regimes(
                 train_end_idx=split.train_end_idx,
             )
             continue
+        # AG-127 Ângulo 1: `stress_state_id` identificado LOCALMENTE a este
+        # fold -- a partir do próprio TREINO decodificado (`obs_2d[
+        # :train_end_idx]`, o mesmo fit já ajustado, nunca o array OOS do
+        # símbolo/período inteiro) -- e aplicado só na fatia de TESTE do
+        # mesmo fold. A canonicalização antiga (uma única
+        # `identify_stress_state_by_volatility` global, pós-loop, sobre o
+        # OOS concatenado inteiro) vazava informação de folds futuros pra
+        # dentro da rotulagem "stress" de folds passados; mover pra dentro
+        # do loop fecha o vazamento sem mudar a semântica de
+        # `is_stress_state`/`tradeable` (mesmo critério, só escopo local).
+        train_slice = slice(0, split.train_end_idx)
         test_slice = slice(split.test_start_idx, split.test_end_idx)
+        train_canonical_id = predict_hmm_gaussian(fit, obs_2d[train_slice])
         canonical_id[test_slice] = predict_hmm_gaussian(fit, obs_2d[test_slice])
         fold_id[test_slice] = split.fold_id
 
-    decoded_mask = canonical_id != _NO_DECODE_SENTINEL
-    is_stress_state = np.zeros(n_bars, dtype=np.bool_)
-    if np.any(decoded_mask):
         stress_state_id = identify_stress_state_by_volatility(
-            canonical_id[decoded_mask], obs_2d[decoded_mask, 1]
+            train_canonical_id, obs_2d[train_slice, 1]
         )
-        is_stress_state[decoded_mask] = canonical_id[decoded_mask] == stress_state_id
-    else:
+        is_stress_state[test_slice] = canonical_id[test_slice] == stress_state_id
+
+    decoded_mask = canonical_id != _NO_DECODE_SENTINEL
+    if not np.any(decoded_mask):
         logger.warning(
             "regime.build_hmm.nenhum_fold_decodificado",
             symbol=symbol,

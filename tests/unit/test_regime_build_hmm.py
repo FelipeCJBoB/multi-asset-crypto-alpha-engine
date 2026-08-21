@@ -184,15 +184,19 @@ def test_causalidade_perturbar_ultimo_fold_nao_muda_canonical_id_anterior(
     partir do início do ÚLTIMO fold não pode mudar `canonical_id` de
     nenhum fold anterior.
 
-    Escopo deliberadamente restrito a `canonical_id` (não `is_stress_
-    state`/`tradeable`): `identify_stress_state_by_volatility` é uma
-    decisão GLOBAL por chamada (1 `stress_state_id` pro símbolo/período
-    INTEIRO, decisão AG-114/`PLANO_MESTRE_PRINCE2.md §15.12.1`, mesmo
-    padrão já usado no harness M4) -- adicionar mais um fold no final
-    LEGITIMAMENTE pode mudar qual estado é "stress" pro pool inteiro; não
-    é vazamento temporal, é o comportamento de um pipeline em LOTE
-    (recomputado do zero a cada chamada, sem loop vivo -- `src/live/
-    __init__.py` vazio, confirmado no plano)."""
+    Cobre TAMBÉM `is_stress_state`/`tradeable` (não só `canonical_id`) --
+    fix de `AG-127` Ângulo 1 (`audit/architecture_gaps_log.yaml`): até
+    2026-08-21, `stress_state_id` era identificado UMA ÚNICA VEZ, pós-loop,
+    sobre o array OOS concatenado do símbolo/período INTEIRO -- vazamento
+    temporal genuíno na canonicalização (perturbar o último fold mudava a
+    rotulagem "stress" de folds passados, mesmo com `canonical_id`
+    intocado). Corrigido: `identify_stress_state_by_volatility` agora roda
+    DENTRO do loop, por fold, sobre `obs[:train_end_idx]` decodificado (o
+    próprio treino do fold, nunca o OOS de folds futuros), e o
+    `stress_state_id` resultante só é aplicado à fatia de TESTE do mesmo
+    fold -- causal de ponta a ponta, mesma disciplina de prefix-invariance
+    que já valia pra `canonical_id`, agora também pra `is_stress_state`/
+    `tradeable`."""
     n_days = 550
     bars_df, _true_regime = _synthetic_bars_df_2regime(n_days, seed=7, block=30)
 
@@ -232,6 +236,14 @@ def test_causalidade_perturbar_ultimo_fold_nao_muda_canonical_id_anterior(
     np.testing.assert_array_equal(
         result_original["canonical_id"].to_numpy()[:boundary],
         result_perturbed["canonical_id"].to_numpy()[:boundary],
+    )
+    np.testing.assert_array_equal(
+        result_original["is_stress_state"].to_numpy()[:boundary],
+        result_perturbed["is_stress_state"].to_numpy()[:boundary],
+    )
+    np.testing.assert_array_equal(
+        result_original["tradeable"].to_numpy()[:boundary],
+        result_perturbed["tradeable"].to_numpy()[:boundary],
     )
 
 
