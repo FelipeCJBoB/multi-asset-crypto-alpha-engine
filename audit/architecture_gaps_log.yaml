@@ -8868,6 +8868,57 @@ entries:
       dias) também não foi avaliado nesta rodada — trade-off legítimo
       pro Manager pesar contra o ganho marginal de erro.
 
+    addendum_medicao_diaria_2026-08-21: >
+      Manager pediu "quero Diário" — a sugestão de 7/7 dias não foi
+      travada sem checar a última fronteira antes de granularidade
+      inviável (1 dia é o mínimo que ainda produz volume suficiente pra
+      calibrar algo). Medido:
+      `tools/diagnostics/measure_dollar_threshold_drift_daily.py` →
+      `experiments/dollar_threshold_drift_daily.json`, 9.256 símbolo-
+      dia completos, os 5 símbolos. Verificado por mim (auditoria
+      independente): recomputei BTCUSDT W=7 dias direto do JSON bruto
+      (`n=2401, n_bad=389, pct=16,20%, max=8,9376, min=0,1402`) — bate
+      exato; também recomputei a média de `dollar_per_day` por dia da
+      semana pra BTCUSDT direto do JSON — sábado em 0,593x da média
+      geral, confirma o mecanismo de sazonalidade abaixo de forma
+      independente do cálculo do agente.
+
+      **Resultado — PADRÃO MONOTÔNICO PARCIALMENTE REFUTADO em
+      granularidade diária.** Pra `SOLUSDT`/`BNBUSDT`/`XRPUSDT`
+      continua monotônico (W=1 dia é o melhor). Pra `BTCUSDT`/`ETHUSDT`
+      REVERTE — erro pica em W=2-3 dias, mínimo real fica perto de
+      W=5, não W=1.
+
+      **Causa investigada e confirmada, não é ruído de amostra
+      pequena**: sazonalidade de dia-da-semana. `dollar_per_day` de
+      fim de semana cai pra ~55-70% da média (mais forte em BTC/ETH —
+      sábado ~0,57-0,59x — que em BNB/SOL/XRP — sábado ~0,70-0,73x).
+      Qualquer bloco de calibração/aplicação MAIS CURTO que o ciclo
+      semanal inteiro (7 dias) fica "sortudo" ou "azarado" dependendo
+      de quais dias da semana específicos ele contém — segunda-feira
+      (calibrada pelo domingo, volume baixo) e sábado (calibrado pela
+      sexta, volume alto) concentram quase todos os erros ruins pra
+      BTC/ETH (BTCUSDT: segunda 32,0% ruim, sábado 50,6% ruim).
+      `W=7` (e múltiplos exatos de 7) é o ponto onde todo bloco
+      garante exatamente 1 de cada dia da semana, eliminando esse
+      artefato de aliasing por construção — consistente com `W=14`/
+      `W=21` não melhorarem mais (deriva secular, o efeito já
+      conhecido, volta a dominar em janelas mais longas).
+
+      **Sugestão FINAL (ainda sugestão, não decisão)**:
+      `trailing_window_days=7`, `cadence_days=7` — REFORÇADA, não
+      enfraquecida, pela medição diária. Não é mais só "a menor janela
+      testada com menor erro" — é "a menor janela que é múltiplo
+      exato do ciclo sazonal semanal", uma razão estrutural, não só
+      empírica. Ir abaixo de 7 dias não tem sustentação em evidência
+      pra 2 dos 5 símbolos (BTC/ETH), e o ganho pros outros 3 em W=1
+      vs. W=7 é modesto contra esse risco. **Achado novo, relevante
+      pra qualquer desenho futuro de `cadence_days` diferente de 7**:
+      se algum dia fizer sentido usar cadência mais curta por outro
+      motivo de engenharia, ela deveria continuar múltiplo exato de 7
+      (7/14/21...), nunca um valor arbitrário curto — achado que as
+      rodadas mensal/semanal não tinham revelado.
+
   - id: AG-125
     date: "2026-08-21"
     file: "src/data/validate.py"
