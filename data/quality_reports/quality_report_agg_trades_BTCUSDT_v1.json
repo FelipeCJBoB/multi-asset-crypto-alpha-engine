@@ -1,24 +1,4 @@
 {
-  "dataset": "agg_trades",
-  "version": "v1",
-  "rows": 68166979,
-  "start": "2026-06-09T00:00:00Z",
-  "end": "2026-07-31T23:59:59Z",
-  "missing_bars": 0,
-  "missing_timestamps": [],
-  "gap_classification": {
-    "maintenance": 0,
-    "collection": 0,
-    "unknown": 0
-  },
-  "duplicates": 0,
-  "invalid_rows": 0,
-  "outliers_flagged": 0,
-  "cross_source_max_deviation": null,
-  "coverage_by_feature": {},
-  "effective_start": null,
-  "quality_score": 1.0,
-  "gate": "PASS",
   "checks_skipped": [
     {
       "check": "2_checksum",
@@ -53,19 +33,27 @@
       "reason": "agg_trades não deriva de bookTicker/bookDepth"
     }
   ],
-  "failed_checks": [],
+  "coverage_by_feature": {},
+  "cross_source_max_deviation": null,
+  "dataset": "agg_trades",
   "diagnostics": {
+    "12_positive_prices": {
+      "violation_count": 0
+    },
+    "13_non_negative_quantity": {
+      "violation_count": 0
+    },
     "1_schema": {
-      "passed": true,
-      "missing_columns": [],
-      "extra_columns": [],
       "dtype_mismatches": [],
-      "order_matches": true
+      "extra_columns": [],
+      "missing_columns": [],
+      "order_matches": true,
+      "passed": true
     },
     "3_duplicates": {
-      "excess_rows": 0,
       "distinct_keys_with_duplicates": 0,
-      "example_keys": []
+      "example_keys": [],
+      "excess_rows": 0
     },
     "4_nulls": {
       "agg_trade_id": 0,
@@ -76,12 +64,25 @@
     "5_8_monotonic_by_agg_trade_id": {
       "is_strictly_monotonic": true,
       "non_positive_diff_count": 0
-    },
-    "12_positive_prices": {
-      "violation_count": 0
-    },
-    "13_non_negative_quantity": {
-      "violation_count": 0
     }
-  }
+  },
+  "duplicates": 0,
+  "effective_start": null,
+  "end": "2026-07-31T23:59:59Z",
+  "failed_checks": [],
+  "gap_classification": {
+    "collection": 0,
+    "maintenance": 0,
+    "unknown": 0
+  },
+  "gate": "PASS",
+  "invalid_rows": 0,
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "outliers_flagged": 0,
+  "quality_score": 1.0,
+  "rows": 68166979,
+  "start": "2026-06-09T00:00:00Z",
+  "symbol": "BTCUSDT",
+  "version": "v1"
 }

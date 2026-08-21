@@ -7083,6 +7083,33 @@ entries:
     resolution: null
     status: "aberto -- aguarda decisão de escopo do Manager (R2/R3 produção) antes do trabalho de execução (labels)"
 
+    decisao_manager_2026-08-21: >
+      Tabela 1 desta rodada (item 7, respondido junto com AG-124): "A se
+      agrupado com 1B, senão redefina '100%'" -- Manager CONFIRMA R2/R3
+      como escopo de PRODUÇÃO (revoga a citação de PRD_V4_1.md em
+      dataset.py:191, que já é doc obsoleta por `feedback_plano_mestre_
+      canonico`), mas CONDICIONADO a rodar através do pipeline de
+      calibração CAUSAL que `AG-124` vai desenhar -- não através do
+      caminho não-causal atual (`calibrate_dollar_threshold_for_
+      validation`, mesma deriva de 18,18x que afeta R1 afeta `dollar_r2`/
+      `dollar_r3` igualmente, já calibrados hoje sob o método antigo).
+      **Consequência prática, ordem de execução**: (1) `_BAR_SOURCE_BY_
+      RESOLUTION` (`dataset.py:70`) NÃO editado ainda -- adicionar `"R2":
+      "dollar_r2"`/`"R3": "dollar_r3"` antes de `AG-124` resolver seria
+      cosmético (labels ainda não existiriam, e as barras `dollar_r2`/
+      `dollar_r3` em disco precisam ser recalibradas de qualquer forma);
+      (2) backfill de labels R2/R3 × 5 símbolos (o "trabalho de execução
+      real" citado acima) fica na fila, sequenciado DEPOIS da recalibração
+      causal de `AG-124` fechar, não antes -- rodar agora seria trabalho
+      descartável se a recalibração mudar a grade; (3) SE o desenho de
+      `AG-124` decidir que recalibração causal não é viável no prazo (ex.
+      custo de reprocessamento inteiro dos 5 símbolos inviável), a
+      alternativa é redefinir explicitamente o que "100% do Data Layer"
+      significa (ex. "100% em R1, R2/R3 seguem escopo de pesquisa") em vez
+      de deixar a métrica de conclusão inalcançável por definição -- essa
+      é a leitura alternativa "senão redefina '100%'" do verdict, ainda
+      não descartada, só adiada até `AG-124` ter desenho concreto.
+
   - id: AG-101
     date: "2026-08-19"
     file: "PLANO_MESTRE_PRINCE2.md §15.11 (proposta AG-096, parte 2); src/risk/limits.py:449-470; src/exchange/adapter.py:119-120; src/risk/kill_switch.py:17 (K05)"
@@ -7715,9 +7742,54 @@ entries:
       a medição real rodar; o que foi fixado é a ESTRUTURA da regra
       (quais métricas, que papel cada uma tem, ordem de aplicação), que
       é o que a disciplina anti-HARKing exige travado a priori.
-    status: "REABERTO 2026-08-20, AINDA ABERTO 2026-08-21 -- ver AG-122. Auditoria externa (Manager, papel de auditor) achou que o Gate 1 foi aplicado com 2 criterios misturados (mediana de resolucao vs. maximo por janela) sem declarar qual decide -- sob o criterio literal (mediana, ja testado a 40%), hmm_gaussian_k2_v1 (34,1/34,9/39,5%) PASSA o Gate 1 e vence a metrica primaria em R1 (97,82 vs 97,44) e R2 (95,31 vs 94,98). Declaracao de vencedor 'hmm_gaussian_k4_v1' NAO deve ser tratada como definitiva ate a regra ser re-especificada com criterio operacional unico. 1 hipotese alternativa (R3 do parecer -- HMM levar vantagem em R3 por fit in-sample) CHECADA e REFUTADA (AG-122 adendo final, verificado em 2 pontos do codigo: fit usa so obs[:train_end_idx], decode so obs[test_start_idx:test_end_idx]) -- nao muda a fragilidade do Gate 1, so elimina 1 explicacao alternativa possivel. Decisao de re-especificar Gate 1/Gate 3 continua pendente do Manager. Historico preservado abaixo (o que foi decidido nesta rodada, mesmo estando sob revisao)."
+    status: "REABERTO 2026-08-20, RE-FECHADO 2026-08-21 -- ver status_gate1_criterio_operacionalizado_2026_08_21 abaixo (Manager travou o criterio de Gate 1 em pior-caso/33%, hmm_gaussian_k2_v1 passa a FALHAR o Gate 1 nas 3 resolucoes sob esse criterio, veredito hmm_gaussian_k4_v1 CONFIRMADO e mais robusto que antes). Historico da fragilidade original preservado abaixo, nao apagado. Auditoria externa (Manager, papel de auditor) achou que o Gate 1 foi aplicado com 2 criterios misturados (mediana de resolucao vs. maximo por janela) sem declarar qual decide -- sob o criterio literal (mediana, ja testado a 40%), hmm_gaussian_k2_v1 (34,1/34,9/39,5%) PASSA o Gate 1 e vence a metrica primaria em R1 (97,82 vs 97,44) e R2 (95,31 vs 94,98). Declaracao de vencedor 'hmm_gaussian_k4_v1' NAO deve ser tratada como definitiva ate a regra ser re-especificada com criterio operacional unico. 1 hipotese alternativa (R3 do parecer -- HMM levar vantagem em R3 por fit in-sample) CHECADA e REFUTADA (AG-122 adendo final, verificado em 2 pontos do codigo: fit usa so obs[:train_end_idx], decode so obs[test_start_idx:test_end_idx]) -- nao muda a fragilidade do Gate 1, so elimina 1 explicacao alternativa possivel. Decisao de re-especificar Gate 1/Gate 3 continua pendente do Manager [RESOLVIDO 2026-08-21, ver campo acima -- Gate 3/'empate' permanece item residual nao-bloqueante]. Historico preservado abaixo (o que foi decidido nesta rodada, mesmo estando sob revisao)."
     status_historico_pre_reabertura: "FECHADO (2026-08-20) -- regra aplicada sobre o resultado real (experiments/m4_critical_windows_report.json), candidato vencedor declarado: hmm_gaussian_k4_v1. Detalhe completo, tabela de numeros e verificacao de robustez dos limiares em PLANO_MESTRE_PRINCE2.md secao 15.12.5. Resumo: Gate 1 (occupancy <=~33%) desqualifica hmm_gaussian_k2_v1 (34-44%, dominante, achado robusto entre 25%/33%/40% de limiar testados e entre janelas); Gate 2 (transition_failure_rate_n5 <= ~2-3x baseline) desqualifica bocpd_v1 (~3,3x baseline, falha em toda a faixa 2x-3x testada); sobreviventes hmm_k3/hmm_k4 nao empatam na metrica primaria (Gate 3 nao precisou entrar) -- hmm_k4 vence nas 3 resolucoes, margem maior em R3. jump_model_cjm_v1 confirmado nao-candidato nesta rodada (BTC-only, AG-117) E estruturalmente instavel nesta config (eff_n_states 1,17-1,39, occupancy variando de 1,0 degenerado a 0,04-0,56 entre janelas) -- separado do trabalho AG-119/Condicao C, que testa config nova. Achado colateral novo: BNBUSDT/RECENTE/R2 falhou por desalinhamento timestamp, isolado por AG-019, registrado como AG-120. Proximo passo: autorizacao do Manager pra implementar AG-118 (Gate Efficiency) usando hmm_gaussian_k4_v1 como candidato."
     status_override_producao_2026_08_21: "Manager autorizou wiring de producao de hmm_gaussian_k4_v1 (src/regime/build_hmm.py::build_hmm_regimes, wiring candidato-agnostico em src/risk/limits.py) APESAR da fragilidade do Gate 1 permanecer aberta -- decisao de negocio ('seguranca extra de baixo custo', bucket de stress ocupa so ~5-12% do tempo), registrada em PLANO_MESTRE_PRINCE2.md §15.13, NAO uma re-especificacao do Gate 1 nem uma alegacao de edge medido (AG-118, resolvido, achou lift~1,0 em 90 celulas -- sem sinal economico detectavel, robusto a k). AG-114 CONTINUA tecnicamente aberto quanto a metodologia de selecao -- este campo documenta que producao seguiu em frente mesmo assim, nao que a pergunta foi respondida. Qualquer comunicacao futura sobre 'k=4 venceu o M4' continua exigindo a ressalva do Gate 1."
+
+    status_gate1_criterio_operacionalizado_2026_08_21: >
+      RE-ESPECIFICAÇÃO do Gate 1 decidida pelo Manager (Tabela 1 desta
+      rodada, item 6: "B, documentado -- pior-caso é o critério certo pra
+      desqualificador"). Critério operacional travado por escrito:
+      **agregação por PIOR-CASO (máximo de `stress_state_occupancy` entre
+      todos os pares símbolo×janela avaliados), não por mediana**, no
+      mesmo teto de ~1/3 (33%) já documentado como racional econômico em
+      `§15.12.5` bloco B ("nem ausente, nem dominante"). Recomputado
+      direto de `experiments/m4_critical_windows_report.json::by_
+      resolution[].gate_quality[].per_window[].per_symbol[].stress_
+      state_occupancy` (25 células símbolo×janela por candidato por
+      resolução, 5 janelas × até 5 símbolos):
+        hmm_k2 -- pior caso 54,2%/55,4%/56,4% (R1/R2/R3) -- FALHA em
+          QUALQUER teto testado (25/33/40%) nas 3 resoluções, sem
+          ambiguidade (pico em RECENTE/ETF_HALVING, BTCUSDT/BNBUSDT).
+        bocpd -- pior caso 43,2%/54,3%/55,0% -- FALHA igualmente em
+          qualquer teto (já desqualificado por Gate 2 de qualquer forma).
+        hmm_k3 -- pior caso 34,9%/28,0%/28,3% -- passa a 33%/40% em
+          R2/R3, falha a 33% em R1 (marginal, 34,9% vs. 33%) -- NÃO
+          robusto à faixa inteira sob pior-caso (diferente do que a
+          tabela de sensibilidade original, calculada só sob mediana,
+          sugeria).
+        hmm_k4 -- pior caso 16,6%/17,6%/25,8% -- passa a 33%/40% nas 3
+          resoluções, único candidato robusto no teto de 33% nas 3
+          resoluções simultaneamente.
+      **Sob o critério agora travado (pior-caso, teto 33%): `hmm_gaussian_
+      k2_v1` FALHA o Gate 1 nas 3 resoluções** (nunca chega a competir na
+      métrica primária) -- resolve a fragilidade original (sob mediana,
+      k2 passava e vencia a métrica primária em R1/R2). Sobreviventes do
+      Gate 1 recalculado: `hmm_k3`/`hmm_k4` (mesmos de antes) -- `hmm_k4`
+      já vencia a métrica primária entre os dois (`§15.12.5` bloco D,
+      R1 97,44 vs 97,40 marginal; R2 94,98 vs 94,54 marginal; R3 91,77
+      vs 85,65 clara). **VEREDICTO ORIGINAL (`hmm_gaussian_k4_v1`
+      vencedor) CONFIRMADO e agora ROBUSTO ao critério de agregação do
+      Gate 1** -- não muda pelo re-cálculo, fica mais forte (k2 deixa de
+      ser sequer um competidor viável).
+      **`AG-114` considerado FECHADO quanto à fragilidade original**
+      (critério de Gate 1 estava indefinido; agora está definido e
+      re-testado com o resultado real). **Item residual, não bloqueante,
+      registrado separado**: definição operacional de "empate" pro Gate 3
+      (desempate por detection delay) continua sem definição explícita —
+      não importou nesta rodada (k4 venceu com clareza, Gate 3 nunca
+      precisou entrar), mas fica pendente pra uma futura reavaliação onde
+      a métrica primária ficar mais próxima entre 2 candidatos.
 
   - id: AG-115
     date: "2026-08-20"
@@ -8669,7 +8741,7 @@ entries:
       divergência material adicionada pra evitar sobrescrita silenciosa
       entre símbolos. Código corrigido; ver `status` abaixo pra o que
       fica aberto.
-    status: "parcialmente resolvido -- schema/nomeação corrigidos nesta rodada (commit d592bc6), previne o risco DAQUI PRA FRENTE. Decisão pendente do Manager (Tabela 1, pergunta 3): migrar retroativamente os 5 relatórios `data/quality_reports/*.json` já existentes (renomear pra incluir `BTCUSDT` explícito) ou deixar valer só a partir de agora, tratando os 5 antigos como registro histórico sob o formato legado."
+    status: "fechado 2026-08-21 -- Manager decidiu (Tabela 1, item 3: \"A -- migrar\") e a migração retroativa foi executada na mesma sessão: os 5 relatórios `data/quality_reports/*.json` renomeados via `git mv` (história preservada) para `quality_report_{dataset}_BTCUSDT_{version}.json`, campo `symbol=\"BTCUSDT\"` gravado no conteúdo de cada um. 1 caller real com path hardcoded (`tools/diagnostics/measure_btcusdt_trade_rate.py::_QUALITY_REPORT_PATH`) corrigido junto -- outras 6 referências encontradas (`src/features/_sources.py`, `src/data/bars.py`, `src/features/registry.yaml`, `docs/SPRINT_LOG.md`, `tools/diagnostics/measure_funding_cycle_oi_seasonality.py`, `experiments/code_discovery.json`) são prosa/docstring histórica sobre o achado original, não path carregado em runtime -- deixadas como estão (descrevem o que era verdade na data da observação, não o estado atual do arquivo)."
 
   - id: AG-126
     date: "2026-08-21"

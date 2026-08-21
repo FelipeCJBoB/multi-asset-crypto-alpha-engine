@@ -1,26 +1,4 @@
 {
-  "dataset": "metrics",
-  "version": "v1",
-  "rows": 17280,
-  "start": "2026-06-09T00:05:00Z",
-  "end": "2026-08-07T23:55:00Z",
-  "missing_bars": 1,
-  "missing_timestamps": [
-    "2026-06-13T00:00:00Z"
-  ],
-  "gap_classification": {
-    "maintenance": 0,
-    "collection": 0,
-    "unknown": 1
-  },
-  "duplicates": 2,
-  "invalid_rows": 0,
-  "outliers_flagged": 0,
-  "cross_source_max_deviation": null,
-  "coverage_by_feature": {},
-  "effective_start": null,
-  "quality_score": 0.9998263989352468,
-  "gate": "FAIL",
   "checks_skipped": [
     {
       "check": "2_checksum",
@@ -55,20 +33,22 @@
       "reason": "metrics (D04, openInterest/long-short ratios) não deriva de bookTicker/bookDepth"
     }
   ],
-  "failed_checks": [
-    "3_duplicates",
-    "5_8_monotonic"
-  ],
+  "coverage_by_feature": {},
+  "cross_source_max_deviation": null,
+  "dataset": "metrics",
   "diagnostics": {
     "1_schema": {
-      "passed": true,
-      "missing_columns": [],
-      "extra_columns": [],
       "dtype_mismatches": [],
-      "order_matches": true
+      "extra_columns": [],
+      "missing_columns": [],
+      "order_matches": true,
+      "passed": true
+    },
+    "20_alignment_30m_no_forward_fill": {
+      "expected_marks": 2880,
+      "marks_missing_native_point": 0
     },
     "3_duplicates": {
-      "excess_rows": 2,
       "distinct_keys_with_duplicates": 2,
       "example_keys": [
         {
@@ -77,7 +57,8 @@
         {
           "create_time": "2026-06-21 00:00:00"
         }
-      ]
+      ],
+      "excess_rows": 2
     },
     "4_nulls": {
       "create_time": 0,
@@ -89,13 +70,33 @@
     },
     "6_utc": "create_time é string 'YYYY-MM-DD HH:MM:SS' sem marcador de fuso — documentação da Binance declara UTC; não verificável a partir da string isolada (limitação registrada, não contornada).",
     "9_grid_completeness_5m": {
-      "expected_count": 17279,
       "actual_count": 17280,
+      "expected_count": 17279,
       "missing_count": 1
-    },
-    "20_alignment_30m_no_forward_fill": {
-      "expected_marks": 2880,
-      "marks_missing_native_point": 0
     }
-  }
+  },
+  "duplicates": 2,
+  "effective_start": null,
+  "end": "2026-08-07T23:55:00Z",
+  "failed_checks": [
+    "3_duplicates",
+    "5_8_monotonic"
+  ],
+  "gap_classification": {
+    "collection": 0,
+    "maintenance": 0,
+    "unknown": 1
+  },
+  "gate": "FAIL",
+  "invalid_rows": 0,
+  "missing_bars": 1,
+  "missing_timestamps": [
+    "2026-06-13T00:00:00Z"
+  ],
+  "outliers_flagged": 0,
+  "quality_score": 0.9998263989352468,
+  "rows": 17280,
+  "start": "2026-06-09T00:05:00Z",
+  "symbol": "BTCUSDT",
+  "version": "v1"
 }

@@ -71,12 +71,13 @@ class QualityReport:
     estrutural grande (ex.: fonte inteira ausente por meses)."""
 
     dataset: str
-    # Achado F4 (parte "daqui pra frente" — migração retroativa dos 5
-    # relatórios antigos é decisão separada do Manager, fora deste fix):
-    # sem `symbol` no relatório, `data/quality_reports/quality_report_
-    # agg_trades_v1.json` foi citado como se fosse BTCUSDT sem o arquivo
-    # declarar isso — estimativa, não medição (ver nota em
-    # `src.data.bars`, achado de auditoria externa 2026-08-15).
+    # Achado F4/AG-125 — sem `symbol` no relatório, `data/quality_reports/
+    # quality_report_agg_trades_v1.json` foi citado como se fosse BTCUSDT
+    # sem o arquivo declarar isso — estimativa, não medição (ver nota em
+    # `src.data.bars`, achado de auditoria externa 2026-08-15). Migração
+    # retroativa dos 5 relatórios antigos DECIDIDA pelo Manager 2026-08-21
+    # (Tabela 1, item 3: "A — migrar") e EXECUTADA (`symbol` gravado,
+    # arquivos renomeados pra `quality_report_{dataset}_BTCUSDT_{version}.json`).
     symbol: str
     version: str
     rows: int
@@ -187,9 +188,9 @@ def _material_report_diff(existing: dict[str, Any], new: dict[str, Any]) -> list
 
 def write_report_atomic(report: QualityReport, dest_path: Path | None = None) -> Path:
     """B29 — `.tmp` -> `fsync` -> `rename`. Nome default inclui `symbol`
-    (achado F4, parte "daqui pra frente" — os 5 relatórios antigos em
-    `data/quality_reports/*.json` sem `symbol` no nome NÃO são migrados
-    aqui, decisão separada do Manager).
+    (achado F4/AG-125) — os 5 relatórios antigos migrados retroativamente
+    2026-08-21 (Tabela 1, item 3: "A — migrar"), `symbol=BTCUSDT` gravado,
+    `data/quality_reports/*.json` sem `symbol` no nome não existe mais.
 
     **Guarda de sobrescrita não-intencional** (mesmo espírito de
     `build_dollar_bars.write_dollar_bars_and_calibration`, que levanta

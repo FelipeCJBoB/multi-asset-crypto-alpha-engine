@@ -1,24 +1,4 @@
 {
-  "dataset": "funding",
-  "version": "v1",
-  "rows": 636,
-  "start": "2026-01-01T00:00:00Z",
-  "end": "2026-07-31T16:00:00Z",
-  "missing_bars": 0,
-  "missing_timestamps": [],
-  "gap_classification": {
-    "maintenance": 0,
-    "collection": 0,
-    "unknown": 0
-  },
-  "duplicates": 0,
-  "invalid_rows": 0,
-  "outliers_flagged": 0,
-  "cross_source_max_deviation": null,
-  "coverage_by_feature": {},
-  "effective_start": null,
-  "quality_score": 1.0,
-  "gate": "PASS",
   "checks_skipped": [
     {
       "check": "2_checksum",
@@ -49,19 +29,29 @@
       "reason": "funding (D07) não deriva de bookTicker/bookDepth"
     }
   ],
-  "failed_checks": [],
+  "coverage_by_feature": {},
+  "cross_source_max_deviation": null,
+  "dataset": "funding",
   "diagnostics": {
+    "19_funding_interval": {
+      "declared_hours_values": [
+        8
+      ],
+      "inconsistent_rows": 0,
+      "measured_median_gap_hours": 7.999999999999999,
+      "measured_std_gap_hours": 1.308295184869107e-06
+    },
     "1_schema": {
-      "passed": true,
-      "missing_columns": [],
-      "extra_columns": [],
       "dtype_mismatches": [],
-      "order_matches": true
+      "extra_columns": [],
+      "missing_columns": [],
+      "order_matches": true,
+      "passed": true
     },
     "3_duplicates": {
-      "excess_rows": 0,
       "distinct_keys_with_duplicates": 0,
-      "example_keys": []
+      "example_keys": [],
+      "excess_rows": 0
     },
     "4_nulls": {
       "calc_time": 0,
@@ -71,14 +61,25 @@
     "5_8_monotonic": {
       "is_strictly_monotonic": true,
       "non_positive_diff_count": 0
-    },
-    "19_funding_interval": {
-      "declared_hours_values": [
-        8
-      ],
-      "measured_median_gap_hours": 7.999999999999999,
-      "measured_std_gap_hours": 1.308295184869107e-6,
-      "inconsistent_rows": 0
     }
-  }
+  },
+  "duplicates": 0,
+  "effective_start": null,
+  "end": "2026-07-31T16:00:00Z",
+  "failed_checks": [],
+  "gap_classification": {
+    "collection": 0,
+    "maintenance": 0,
+    "unknown": 0
+  },
+  "gate": "PASS",
+  "invalid_rows": 0,
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "outliers_flagged": 0,
+  "quality_score": 1.0,
+  "rows": 636,
+  "start": "2026-01-01T00:00:00Z",
+  "symbol": "BTCUSDT",
+  "version": "v1"
 }

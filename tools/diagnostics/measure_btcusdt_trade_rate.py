@@ -39,7 +39,9 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 _PARTITION_DIR = Path("data/capacity/agg_trades/BTCUSDT")
-_QUALITY_REPORT_PATH = Path("data/quality_reports/quality_report_agg_trades_v1.json")
+# AG-125 (2026-08-21) -- renomeado de quality_report_agg_trades_v1.json na
+# migração retroativa (symbol passou a fazer parte do nome do arquivo).
+_QUALITY_REPORT_PATH = Path("data/quality_reports/quality_report_agg_trades_BTCUSDT_v1.json")
 
 
 def _load_quality_report_window() -> tuple[int, str, str, int]:

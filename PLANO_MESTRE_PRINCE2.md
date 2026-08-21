@@ -839,7 +839,7 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" **Atualização 2026-08-21 — diagnósticos RODADOS, fila fechada**: `AG-118` (Gate Efficiency) implementado e **RESOLVIDO** — `lift` não desvia de 1,0 em 90 células, sem sinal econômico detectável, robusto ao candidato (k2/k3/k4). `AG-114` (candidato vencedor) foi **REABERTO** no mesmo dia por auditoria externa — Gate 1 aplicado com 2 critérios misturados (mediana vs. máximo-por-janela); sob o critério literal, `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções — **status ainda aberto**, metodologia de seleção não resolvida. Apesar disso, Manager autorizou `hmm_gaussian_k4_v1` como candidato de regime **canônico de produção** (override de negócio explícito, não resolução do Gate 1) — regime saiu do vetor de treino do Alpha, novo builder `src/regime/build_hmm.py`, Risk Engine wired de forma candidato-agnóstica. Detalhe completo: `§15.13` | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `AG-118`, `AG-122`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` §2.7, `§15.13` |
+| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" **Atualização 2026-08-21 — diagnósticos RODADOS, fila fechada**: `AG-118` (Gate Efficiency) implementado e **RESOLVIDO** — `lift` não desvia de 1,0 em 90 células, sem sinal econômico detectável, robusto ao candidato (k2/k3/k4). `AG-114` (candidato vencedor) foi **REABERTO** no mesmo dia por auditoria externa — Gate 1 aplicado com 2 critérios misturados (mediana vs. máximo-por-janela); sob o critério literal, `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções. Manager autorizou `hmm_gaussian_k4_v1` como candidato de regime **canônico de produção** (override de negócio explícito, não resolução do Gate 1 na época) — regime saiu do vetor de treino do Alpha, novo builder `src/regime/build_hmm.py`, Risk Engine wired de forma candidato-agnóstica. **Atualização 2026-08-21 — Gate 1 RE-OPERACIONALIZADO (§15.12.6)**: Manager travou o critério em pior-caso (não mediana), `hmm_gaussian_k2_v1` passa a falhar o Gate 1 nas 3 resoluções sob esse critério — veredito `hmm_gaussian_k4_v1` **CONFIRMADO e robusto**, fragilidade original do Gate 1 fechada (item residual não-bloqueante: definição de "empate" do Gate 3). Detalhe completo: `§15.12.6`, `§15.13` | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `AG-118`, `AG-122`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` §2.7, `§15.13` |
 | **Trilha B(2026-08-19/20) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟠 **Auditoria externa (`ADR-001`, 2026-08-20) devolveu veredito: 2 dos 4 mecanismos aprovados internamente REFUTADOS como especificados, 1 parcialmente errado, 1 ganhou os contratos que faltavam.** (B) gate por linha — refutado: `(símbolo,resolução)` não é entidade de posição na Binance (`AG-108`, N-01). (C) convenção de trials — sobre-conta por correlação e mantém resíduo de circularidade (`AG-111`). (D) gatilho de proteção — mecanismo revisado repete, deslocado, o mesmo defeito de paridade treino-live da versão já refutada (`AG-110`); e nenhuma versão de D tem saída executável sob a política post-only GTX declarada — achado **mais severo do ADR inteiro**, atinge o próprio SL do triple-barrier, anterior a qualquer decisão sobre D (`AG-109`). (A) Decision Engine — sem controvérsia no mecanismo, mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger), agora propostos. Achados novos não cobertos pelas 4 rodadas internas: granularidade de lote vs. capital (`AG-112`, viés sistemático de seleção ~24× entre símbolos) e pré-filtro de custo grátis que pode eliminar metade do espaço de busca antes de qualquer backtest (`AG-113`). Decisão de arquitetura de dados também recebida: lake local endereçado por conteúdo (4 invariantes INV-A..D), status `Proposed` — pendente de ratificação formal como `D-###` (nota do próprio ADR). Recomendações fundamentadas recebidas pras 9 decisões antes pendentes (ver `§15.12`). 10 gaps originais (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial interna (`AG-101`-`AG-105`), mandato corrigido (seleção offline, fixa por rodada, eliminação periódica) e tiering de features descontinuado (T1 fixo → todas canônicas, `~92` usáveis, ainda não implementado em código) seguem válidos como histórico — não invalidados pela auditoria externa, só o desenho de consumo em cima deles **Atualização 2026-08-21**: o wiring de consumo real do contrato Regime→Risk foi implementado — `src/risk/limits.py::control_01_regime_tradeavel` deixou de decodificar vocabulário `R1..R4`, passa a receber `regime_tradeable: bool` já resolvido pelo builder de regime (candidato-agnóstico, mesmo campo pra baseline ou HMM). Detalhe: `§15.13` | `audit/architecture_gaps_log.yaml::AG-094` a `AG-113`, `§15.11`/`§15.12`/`§15.13` deste documento, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md`, `docs/brief_auditoria_externa_2026-08-19_*.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
@@ -2669,12 +2669,15 @@ regime, nas métricas disponíveis no desenho atual do triple-barrier, não
 demonstra informação além de `atr_at_t0` — por propriedade estrutural do
 Label Engine, não por falta de poder estatístico.
 
-`AG-114` **CONTINUA ABERTO**: a fragilidade Gate-1 (k=2 vs. k=4) não foi
-resolvida por nenhum diagnóstico — decisão de redefinir o critério
-operacional do Gate 1 (mediana vs. máximo-por-janela) e do "empate" do
-Gate 3 segue pendente do Manager. 1 hipótese alternativa (HMM com
-vantagem em R3 por fit in-sample) foi checada e REFUTADA — fit é
-walk-forward genuíno, verificado em 2 pontos do código.
+`AG-114` **CONTINUA ABERTO** (no momento desta decisão, 2026-08-20/21):
+a fragilidade Gate-1 (k=2 vs. k=4) não foi resolvida por nenhum
+diagnóstico — decisão de redefinir o critério operacional do Gate 1
+(mediana vs. máximo-por-janela) e do "empate" do Gate 3 segue pendente
+do Manager. 1 hipótese alternativa (HMM com vantagem em R3 por fit
+in-sample) foi checada e REFUTADA — fit é walk-forward genuíno,
+verificado em 2 pontos do código. **⚠️ RESOLVIDO 2026-08-21, ver
+§15.12.6 abaixo** — Manager travou o critério (pior-caso, não mediana),
+veredito `hmm_gaussian_k4_v1` confirmado e mais robusto que antes.
 
 **`AG-120` (achado novo desta auditoria, registrado em
 `audit/architecture_gaps_log.yaml`):** `BNBUSDT`/`RECENTE`/R2 falhou com
@@ -2683,6 +2686,55 @@ isolado por `AG-019`, não muda o agregado (`n_windows_ok` de R2 conta
 uma célula a menos pros candidatos afetados), mas é um gap de qualidade
 de dado real, não investigado a fundo aqui (fora do escopo desta
 auditoria de resultado) — aberto pra investigação futura.
+
+### 15.12.6 AG-114 — Gate 1 re-operacionalizado, fragilidade resolvida (2026-08-21)
+
+**Decisão do Manager** (Tabela 1 da rodada `stage_readiness_audit`, item
+6): "B, documentado — pior-caso é o critério certo para desqualificador".
+Trava por escrito o critério que `§15.12.5` bloco B deixou ambíguo entre
+mediana-por-resolução e máximo-por-janela: **Gate 1 usa PIOR-CASO —
+`max(stress_state_occupancy)` entre TODOS os pares símbolo×janela
+avaliados** (25 células por candidato por resolução — 5 janelas × até 5
+símbolos), não a mediana. Teto mantido em ~1/3 (33%), mesmo racional
+econômico já documentado ("nem ausente, nem dominante").
+
+Recomputado direto de `experiments/m4_critical_windows_report.json`
+(`by_resolution[].gate_quality[].per_window[].per_symbol[].stress_
+state_occupancy`), sem nova execução — o dado já existia, só a
+agregação estava indefinida:
+
+| candidato | pior caso R1 | pior caso R2 | pior caso R3 | passa 33% nas 3 resoluções? |
+|---|---|---|---|---|
+| `hmm_gaussian_k2_v1` | 54,2% | 55,4% | 56,4% | **NÃO — falha nas 3** |
+| `bocpd_v1` | 43,2% | 54,3% | 55,0% | **NÃO — falha nas 3** (já desqualificado por Gate 2 de qualquer forma) |
+| `hmm_gaussian_k3_v1` | 34,9% | 28,0% | 28,3% | não — falha em R1 (34,9% > 33%), passa em R2/R3 |
+| `hmm_gaussian_k4_v1` | 16,6% | 17,6% | 25,8% | **SIM — único candidato robusto nas 3 resoluções** |
+
+**Sob o critério agora travado, `hmm_gaussian_k2_v1` FALHA o Gate 1 nas
+3 resoluções** — nunca chega a competir na métrica primária, ao
+contrário do que a leitura por mediana sugeria (§15.12.5, onde k2
+passava e vencia em R1/R2). `hmm_gaussian_k4_v1` continua vencendo a
+métrica primária contra `hmm_k3` entre os sobreviventes (mesmos números
+de `§15.12.5` bloco D — R1 97,44 vs 97,40; R2 94,98 vs 94,54; R3 91,77
+vs 85,65).
+
+**Veredito do `AG-114` (`hmm_gaussian_k4_v1`) CONFIRMADO — não muda,
+fica mais robusto**: o candidato que quase venceu sob a leitura ambígua
+(`hmm_k2`) deixa de ser sequer um competidor viável sob o critério
+corretamente especificado. `AG-114` considerado **FECHADO** quanto à
+fragilidade original do Gate 1. Qualquer comunicação futura sobre "k=4
+venceu o M4" não precisa mais da ressalva do Gate 1 — a ressalva sobre
+`AG-118`/`AG-122` (sem sinal econômico detectável do gate em si,
+questão ortogonal) continua valendo.
+
+**Item residual, não bloqueante**: definição operacional de "empate"
+pro Gate 3 (desempate por detection delay) segue sem definição
+explícita — não importou nesta rodada (Gate 3 nunca precisou entrar,
+`hmm_k4` venceu com margem clara em R3 e marginal-mas-decisiva em
+R1/R2), fica pendente pra uma futura reavaliação onde a métrica
+primária ficar mais próxima entre 2 candidatos. Detalhe completo:
+`audit/architecture_gaps_log.yaml::AG-114::status_gate1_criterio_
+operacionalizado_2026_08_21`.
 
 ### 15.13 HMM k=4 como candidato canônico de produção — override do Manager sobre AG-114/AG-118 (2026-08-21)
 

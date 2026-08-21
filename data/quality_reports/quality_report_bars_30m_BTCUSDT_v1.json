@@ -1,0 +1,36 @@
+{
+  "checks_skipped": [
+    {
+      "check": "16_cross_source_30m_parity",
+      "reason": "nenhum kline nativo de '30m' encontrado em data/capacity/ nem data/raw/ (medido, não assumido — ver resample.find_native_klines). Comparação PENDING até existir um D0x nativo desse timeframe baixado."
+    }
+  ],
+  "coverage_by_feature": {},
+  "cross_source_max_deviation": null,
+  "dataset": "bars_30m",
+  "diagnostics": {
+    "16_parity": {
+      "compared": false,
+      "reason": "sem dataset nativo no disco"
+    }
+  },
+  "duplicates": 0,
+  "effective_start": null,
+  "end": "2026-08-07T23:30:00Z",
+  "failed_checks": [],
+  "gap_classification": {
+    "collection": 0,
+    "maintenance": 0,
+    "unknown": 0
+  },
+  "gate": "PASS",
+  "invalid_rows": 0,
+  "missing_bars": 0,
+  "missing_timestamps": [],
+  "outliers_flagged": 0,
+  "quality_score": 1.0,
+  "rows": 2880,
+  "start": "2026-06-09T00:00:00Z",
+  "symbol": "BTCUSDT",
+  "version": "v1"
+}
