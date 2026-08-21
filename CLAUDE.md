@@ -251,9 +251,12 @@ quebram o build:
 ## Stack 2026
 
 **Obrigatório:** Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB ·
-Parquet+zstd · XGBoost `binary:logistic` · scikit-learn (calibração isotônica)
-· Optuna com orçamento declarado · structlog+orjson · Pydantic+YAML ·
-pytest+hypothesis · ruff · mypy strict
+Parquet+zstd · XGBoost `binary:logistic` (⚠️ decisão de migrar pra
+LightGBM registrada, `PLANO_MESTRE_PRINCE2.md §15.14`, 2026-08-21 —
+código ainda XGBoost, migração represada até o retreino do Alpha ser
+desbloqueado) · scikit-learn (calibração isotônica) · Optuna com
+orçamento declarado · structlog+orjson · Pydantic+YAML · pytest+hypothesis
+· ruff · mypy strict
 
 **Avaliar antes de escrever motor próprio:** NautilusTrader (backtest
 event-driven) · `binance-futures-connector` oficial atrás de interface própria

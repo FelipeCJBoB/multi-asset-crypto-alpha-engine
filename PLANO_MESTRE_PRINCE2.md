@@ -2756,6 +2756,40 @@ sem resolução — `build_hmm_regimes` contorna corretamente via
 `identify_stress_state_by_volatility`, migração completa continua
 pendente do action item 3 do ADR-001.
 
+### 15.14 Decisão registrada: Alpha migra de XGBoost pra LightGBM (execução represada, 2026-08-21)
+
+**Status: decisão registrada, NÃO implementada em código.** Manager
+decidiu trocar o learner do Alpha (Camada 1, `src/models/alpha.py`) de
+XGBoost (`binary:logistic`, `Stack 2026` de `CLAUDE.md`) pra LightGBM.
+Motivo não detalhado nesta sessão — registrar aqui em vez de inventar
+justificativa (§16.10, nunca estipular proveniência que não foi dada).
+
+**Execução deliberadamente represada** — mesmo motivo de
+`canonical_volatility_estimator` (§11.4/§11.5): o Manager decidiu
+separadamente (mesma sessão, 2026-08-21) que **Alpha não é retreinado
+até a Trilha de engenharia — 15 estágios, Data Layer inteiro
+(`01_BARRA` a `07b_PESOS` + `08_SPLIT`, `§15.4`) estar 100% pronto** —
+não só o item pontual que motivou uma sugestão de retreino. Ver
+mapeamento real do Data Layer nesta mesma data (achado central:
+`AG-100`, labels ausentes pra R2/R3, é o bloqueador que mais cascateia).
+`src/models/alpha.py` continua XGBoost até essa migração de código
+acontecer, junto do retreino represado — não migrar o learner ANTES do
+retreino, pra não ter 2 janelas separadas de "código não bate com o que
+está rodando".
+
+**O que muda quando a migração de código acontecer** (não decidido
+ainda, registrado aqui pra não esquecer quando chegar a hora): B18
+(`multi:softprob` proibido) e B19 (`colsample_bytree < 1.0` proibido) em
+`CLAUDE.md` usam nomenclatura ESPECÍFICA do XGBoost — o equivalente
+LightGBM de B19 é `feature_fraction` (não existe `colsample_bytree` na
+API do LightGBM); B18 (`multi:softprob`) nem existe como conceito no
+LightGBM (`multiclass`/`multiclassova` são os objectives multi-classe
+de lá) — de qualquer forma o motivo por trás de B18 (nunca usar softmax
+multi-classe, sempre 2 binários `M_long`/`M_short`) continua válido
+architeturalmente, só o literal do padrão banido muda de nome.
+`monotone_constraints` (DoD "código de modelo") tem equivalente direto
+no LightGBM (mesmo nome de parâmetro) — não precisa mudar.
+
 ---
 
 ## Fontes desta pesquisa
