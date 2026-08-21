@@ -2829,7 +2829,133 @@ de não deixar o artefato visual driftar do texto) — mesma URL, refletindo
 M4 pausado e a Trilha B aberta.
 
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-19)
+## M4 — Gate Efficiency (AG-118), reabertura do AG-114, e HMM k=4 promovido a candidato canônico de produção (2026-08-20/21)
+
+<!-- check-sprint-log: skip -->
+**ADR-001 ratificado** (2026-08-20, §2.7) — regime é GATE de risco, não
+FEATURE preditiva, na v1. Isso muda a pergunta que decide promoção de
+candidato: não mais heterogeneidade de RETORNO (resultado nulo já
+medido, ver seção anterior), e sim qualidade como GATE — occupancy do
+estado de stress, taxa de falso-positivo de transição, heterogeneidade
+de VOLATILIDADE futura entre buckets. `AG-114` trava a regra de decisão
+(3 gates de desqualificação + 1 métrica primária de ranking) ANTES de
+qualquer medição — disciplina anti-HARKing (B20).
+
+<!-- check-sprint-log: skip -->
+**Execução real da regra (2026-08-20)**, números extraídos direto de
+`experiments/m4_critical_windows_report.json` (`by_resolution[].gate_
+quality`/`.volatility_heterogeneity`): `hmm_gaussian_k4_v1` declarado
+vencedor nas 3 resoluções — Gate 1 (occupancy ≤~33%) desqualifica
+`hmm_gaussian_k2_v1` (34-40%, acima do teto testado), `hmm_gaussian_k4_v1`
+vence a métrica primária (I²) contra `hmm_gaussian_k3_v1` nas 3
+resoluções.
+
+<!-- check-sprint-log: skip -->
+**REABERTO no mesmo dia** — auditoria externa (Manager, papel de
+auditor) achou que o Gate 1 foi aplicado com 2 critérios misturados
+(mediana de resolução vs. máximo por janela) sem declarar qual decide.
+
+<!-- check-sprint-log: skip -->
+Sob o critério literal de mediana, no mesmo teto alternativo de 40%
+(já testado como sweep de sensibilidade em `experiments/m4_critical_
+windows_report.json`), `hmm_gaussian_k2_v1` PASSA o Gate 1 e VENCE a
+métrica primária em 2 das 3 resoluções (I²: 97,82 vs. 97,44 em R1;
+95,31 vs. 94,98 em R2 — só em R3 `k4` vence, 91,77 vs. 91,66, margem
+mínima).
+
+<!-- check-sprint-log: skip -->
+`AG-114` fica **status ainda aberto** quanto à metodologia de seleção
+— nenhuma decisão de re-especificar o Gate 1/Gate 3 foi tomada.
+
+<!-- check-sprint-log: skip -->
+**AG-118 (Gate Efficiency) implementado e processado ponta a ponta** —
+`src/analysis/gate_efficiency.py`, mede `P(stop|regime)`/`P(target|
+regime)`/`tail_loss`/`holding_time` + `lift` (remoção assimétrica de
+entrada no bucket de stress) com IC 95% via método de Katz ponderado por
+`n_eff` (Σuniqueness de label, reuso da infra de peso já existente no
+projeto, não bootstrap inventado). Fila de diagnósticos da auditoria
+externa processada inteira (R3, D1-D5, R1-R2) — achado central, medido
+em `experiments/gate_efficiency_full_diagnostics_report.json`: `lift`
+não desvia de 1,0 em **90 células** (3 candidatos k2/k3/k4 × 3 resoluções
+× 5 símbolos × 2 lados), só 2/90 excluem 1,0 no IC (ambas marginais,
+consistente com ruído puro), robusto ao candidato. Mecanismo (D1+D4,
+verificado direto no código do Label Engine): `exit_price` de TP/SL
+(`triple_barrier.py`) é o PRÓPRIO PREÇO DA BARREIRA — isso torna
+QUALQUER métrica de tail-loss derivada de `ret_net` quase-determinística
+em `atr_pct`, normalizada por ATR ou não; nem a métrica original
+(ATR-normalizada) nem a reversão aparente em termos brutos (que quase
+foi reportada como achado novo antes de a auto-verificação identificar
+que é o MESMO mecanismo D1) são evidência independente de risco de
+cauda além do que ATR já captura. `AG-118` **RESOLVIDO** — a pergunta
+foi respondida (sem sinal econômico), não ficou em aberto.
+
+**Manager autoriza `hmm_gaussian_k4_v1` como candidato de regime
+CANÔNICO DE PRODUÇÃO (2026-08-21) mesmo com os 2 achados acima na
+mesa** — override de negócio explícito, registrado como tal
+(`PLANO_MESTRE_PRINCE2.md §15.13`), nunca como resolução da metodologia
+ou alegação de edge medido: o bucket de stress ocupa só ~5-12% do tempo,
+então bloquear trade nele é "segurança extra de baixo custo" mesmo sem
+prova de que reduz risco de cauda além de ATR. Escopo completo
+implementado na mesma sessão:
+
+- **Fase A** — regime SAI do vetor de treino do Alpha
+  (`src/models/alpha.py::DESIGN_COLUMNS`, 14→10 colunas, só as features
+  T1) — decisão do ADR-001 §2.7 nunca tinha sido aplicada ao código até
+  agora. Efeito real represado atrás de retreino (`run_layer1_sprint()`
+  não executado nesta sessão).
+- **Fase B** — novo builder de produção `src/regime/build_hmm.py::
+  build_hmm_regimes` (walk-forward ancorado trimestral, mesmo contrato
+  de fold do M4) + `src/regime/hmm_features.py` (espaço de observação
+  extraído do harness M4 pra um módulo público em `src.regime`, sem
+  quebrar a hierarquia de camadas — `m4_regime_comparison.py` continua
+  funcionando idêntico via re-export). Sem persistência em disco ainda
+  — não há orquestrador vivo consumindo.
+- **Fase C** — Risk Engine candidato-agnóstico (`src/risk/limits.py`):
+  `control_01_regime_tradeavel`/`RiskEngineInputs` deixam de decodificar
+  vocabulário `R1..R4`, passam a receber `regime_tradeable: bool` já
+  resolvido pelo builder — mesmo campo alimentado por baseline ou HMM
+  sem tradução, evita reintroduzir o erro que `AG-121` já documenta.
+- **Fase D** — `canonical_regime_hmm_n_states=4` em `constants.yaml`,
+  classe B, `provenance: MEASURED` com a narrativa completa do override
+  (não uma medição limpa) no campo `source`.
+- **Fase E** — testes novos (`test_regime_hmm_features.py`, `test_
+  regime_build_hmm.py` — valor conhecido via ARI, caso degenerado sem
+  exceção, fold individual degenerado isolado via monkeypatch
+  determinístico, causalidade/prefix-invariance do loop de fold,
+  determinismo) + `test_risk_limits.py`/`test_models_alpha.py`
+  atualizados. 78 testes rápidos + 4 `slow` confirmados passando pelo
+  Manager.
+- **Fase F** — `PLANO_MESTRE_PRINCE2.md §15.13` documenta o override;
+  `AG-114` ganha campo `status_override_producao_2026_08_21` (append,
+  status antigo preservado) — **AG-114 continua tecnicamente aberto**.
+
+<!-- check-sprint-log: skip -->
+**Achados colaterais desta sessão**: `AG-120` (BNBUSDT/RECENTE/R2,
+desalinhamento de timestamp, isolado por `AG-019`, não investigado a
+fundo); `AG-121` (canonicalização por RETORNO, não volatilidade —
+ADR-001 recomenda volatilidade, código segue o critério do PRD
+obsoleto — mitigado via docstring, migração completa pendente do action
+item 3 do ADR-001); `AG-122` (achado mecanístico central de AG-118,
+detalhado acima); `AG-123` (rodada de "Atualize governança" desta
+sessão: `PLANO_MESTRE_PRINCE2.md §15.2/§15.4` ficaram desatualizadas no
+MESMO commit que mudou os fatos que descreviam — Risk Engine ganhou
+caller, Alpha perdeu regime — só achado porque esta rodada leu o
+documento inteiro; mesma classe de furo de `AG-080`, recorrente,
+corrigido pontualmente sem processo que previna a 3ª ocorrência). Rodada
+de governança também achou e corrigiu 2 bugs de sintaxe YAML
+PRÉ-EXISTENTES em `audit/evidence_ledger.yaml` (`#N`/`:` sem aspas
+dentro de escalar multi-linha, interpretado como comentário/nova chave
+pelo parser — nunca detectado antes porque o arquivo nunca tinha sido
+validado com `yaml.safe_load` estrito).
+
+<!-- check-sprint-log: skip -->
+**Road Map Vivo v2 republicado** na mesma sessão (mesma URL) —
+hero-meta, card M4, card AG-114/AG-118 na Trilha B, `12_RISK_ENGINE`,
+governança aberta (2 cards novos) e "Próximos passos" (lista inteira
+trocada pela fila real pós-resultado) todos atualizados.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-21)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -2849,11 +2975,12 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | Tiering de features (T1/T2/T3) | **descontinuado como portão de entrada, 2026-08-19** — todas as features com fonte real wired (T1+T2, ~92 do catálogo `PRD_V3_2_UNIFICADO.md` Parte II) passam a ser canônicas; seleção delegada ao Learner/Meta-model. Registrado, **não implementado em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas); dependência conhecida a resolver junto: `AG-038` |
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
 | `N_lifetime` | **63**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre) |
-| **M4 — Regime** | **4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado (18/18 p-valores 0,30-0,85), tratado como achado válido**. 2 auditorias externas + validação cruzada própria processadas, categorizado redesenho/fix mecânico/habilitação/rejeitado (`docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`). **PAUSADO** — retomada só depois da Trilha B travar o contrato downstream, ver linha abaixo |
-| **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19. 10 gaps descobertos (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial (`AG-101`-`AG-105`, achado real em cada uma), 4 mecanismos aprovados pelo Manager com 7 decisões residuais explicitamente pendentes. Detalhe completo: `PLANO_MESTRE_PRINCE2.md` §15.11. Auditoria externa comissionada — 2 documentos de brief prontos (`docs/brief_auditoria_externa_2026-08-19_*.md`), retorno ainda não chegou |
+| **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
+| **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais seguem explicitamente pendentes**, não resolvidas por esta rodada (granularidade de lote, `AG-116` horizon_bars vs. time_stop_ms, etc.). Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
+| Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | Meta Model | fora da V1 (§6.8 define critério de entrada); Trilha B achou que o critério de entrada não menciona regime como input em nenhuma das 5 condições — decisão de desenho separada, sem urgência |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
-| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json` |
-| Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — agendado junto de outras mudanças já previstas no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
-| Pendente pra fechar M4 | resolver as 7 decisões residuais da Trilha B, congelar metodologia, rodar holdout travado uma única vez, veredito final (candidato vencedor) ao Manager, publicar resultados na "Biblioteca de Testes" |
-| Pendente pra fechar a Trilha B | retorno das 2-3 auditorias externas comissionadas, triagem/verificação independente de cada achado, síntese formal, resolução das 7 decisões residuais |
+| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
+| Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
+| Pendente pra fechar M4 | Manager decidir o critério operacional único do Gate 1/Gate 3 (`AG-114`) — sem isso, "k4 venceu" continua exigindo ressalva. Só depois: resolver as 7 decisões residuais da Trilha B, congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager, publicar na "Biblioteca de Testes" |
+| Pendente — governança de processo | `AG-123` (2026-08-21): `PLANO_MESTRE_PRINCE2.md §15.2/§15.4` não têm gatilho de sincronização quando um módulo ganha/perde caller — mesma classe de furo de `AG-080`, recorrente, corrigida pontualmente 2 vezes sem processo que previna a 3ª. Decisão de checklist de DoD pendente do Manager |

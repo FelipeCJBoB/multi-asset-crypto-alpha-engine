@@ -8526,3 +8526,42 @@ entries:
         não decidido aqui de propósito, seria a mesma classe de erro
         que motivou reabrir isto.
     status: "AG-118 resolvido -- lift bem medido (IC via n_eff/uniqueness), sem sinal em 90 células, robusto a K (k2/k3/k4), mecanismo explicado (D4, exit_price=preço da barreira torna qualquer metrica de tail-loss quase-determinística em atr_pct). AG-114 CONTINUA aberto -- redefinição operacional do Gate 1/Gate 3 pendente do Manager antes de redeclarar vencedor."
+
+  - id: AG-123
+    date: "2026-08-21"
+    file: "PLANO_MESTRE_PRINCE2.md §15.2/§15.4 (tabela de prontidão dos 15 estágios de engenharia)"
+    related_file: "AG-080 (audit/architecture_gaps_log.yaml, mesma classe original); src/risk/limits.py; src/models/alpha.py; PLANO_MESTRE_PRINCE2.md §15.13"
+    found_by: "Agent de investigação (varredura de governança, general-purpose), \"Atualize governança completo ponta a ponta\" -- achado ao cruzar §15.2/§15.4 contra o wiring real feito nesta sessão (Fase A/C de §15.13)"
+    gap: >
+      §15.2/§15.4 descrevem `12_RISK_ENGINE` como "biblioteca real sem
+      nenhum caller de produção e sem dimensão de símbolo" e listam
+      Alpha como consumidor de `regime` no vetor de treino -- os dois
+      ficaram desatualizados no MESMO commit que resolveu exatamente
+      isso (Fase A/C de `§15.13`, 2026-08-21: `src/risk/limits.py`
+      ganhou `regime_tradeable: bool` como caller real via
+      `control_01_regime_tradeavel`; `src/models/alpha.py` PERDEU
+      regime como feature). Nenhum dos dois lados da mudança atualizou
+      a tabela de prontidão -- só foi descoberto porque esta rodada de
+      "Atualize governança" leu o documento inteiro, não só a seção
+      que a sessão tocou diretamente. Mesma classe de furo que gerou
+      `AG-080` originalmente (Road Map Vivo v1 ficou 5 dias sem sync
+      porque só a aba do roadmap era revisada) -- a causa raiz não foi
+      corrigida na ocasião, só o sintoma daquela vez.
+    severity: "médio"
+    layer: "governança -- processo de documentação, não código de pipeline"
+    consequence: >
+      Qualquer leitura futura de §15.2/§15.4 sem cruzar contra o código
+      real subestima o quanto do sistema já está conectado (ex.: um
+      leitor apressado concluiria que o Risk Engine ainda não tem
+      nenhum caller, quando já tem desde 2026-08-21). Não bloqueia
+      nada tecnicamente -- é um risco de comunicação/planejamento, não
+      de correção.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido nesta mesma rodada de governança (2026-08-21): §15.2/
+      §15.4 ganharam nota "[DESATUALIZADO, ver §15.13]" no padrão já
+      usado para `AG-080` (não reescrita retroativa da tabela original
+      -- histórico preservado, nota aponta pra seção corrente). Gap
+      estrutural (falta de GATILHO de sincronização, não só o sintoma
+      desta vez) permanece aberto -- ver `status` abaixo.
+    status: "aberto -- corrigido o sintoma pontual (nota em §15.2/§15.4), mas nenhum processo novo garante que o PRÓXIMO módulo que ganhar/perder caller dispare revisão da tabela de prontidão automaticamente. Proposta não implementada: checklist de \"Definition of Done\" de PR que toca `src/risk/`, `src/execution/`, `src/models/` ganha um item \"§15.2/§15.4 revisado?\" explícito -- decisão de processo, não de código, fica pro Manager."

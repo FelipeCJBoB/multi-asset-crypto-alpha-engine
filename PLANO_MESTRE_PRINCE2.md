@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.22 · **Data:** 2026-08-19
+**Versão:** 3.23 · **Data:** 2026-08-21
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -839,8 +839,8 @@ proposta a confirmar, não como verdade estabelecida:
 | **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
-| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md` §2.7 |
-| **Trilha B(2026-08-19/20) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟠 **Auditoria externa (`ADR-001`, 2026-08-20) devolveu veredito: 2 dos 4 mecanismos aprovados internamente REFUTADOS como especificados, 1 parcialmente errado, 1 ganhou os contratos que faltavam.** (B) gate por linha — refutado: `(símbolo,resolução)` não é entidade de posição na Binance (`AG-108`, N-01). (C) convenção de trials — sobre-conta por correlação e mantém resíduo de circularidade (`AG-111`). (D) gatilho de proteção — mecanismo revisado repete, deslocado, o mesmo defeito de paridade treino-live da versão já refutada (`AG-110`); e nenhuma versão de D tem saída executável sob a política post-only GTX declarada — achado **mais severo do ADR inteiro**, atinge o próprio SL do triple-barrier, anterior a qualquer decisão sobre D (`AG-109`). (A) Decision Engine — sem controvérsia no mecanismo, mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger), agora propostos. Achados novos não cobertos pelas 4 rodadas internas: granularidade de lote vs. capital (`AG-112`, viés sistemático de seleção ~24× entre símbolos) e pré-filtro de custo grátis que pode eliminar metade do espaço de busca antes de qualquer backtest (`AG-113`). Decisão de arquitetura de dados também recebida: lake local endereçado por conteúdo (4 invariantes INV-A..D), status `Proposed` — pendente de ratificação formal como `D-###` (nota do próprio ADR). Recomendações fundamentadas recebidas pras 9 decisões antes pendentes (ver `§15.12`). 10 gaps originais (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial interna (`AG-101`-`AG-105`), mandato corrigido (seleção offline, fixa por rodada, eliminação periódica) e tiering de features descontinuado (T1 fixo → todas canônicas, `~92` usáveis, ainda não implementado em código) seguem válidos como histórico — não invalidados pela auditoria externa, só o desenho de consumo em cima deles | `audit/architecture_gaps_log.yaml::AG-094` a `AG-113`, `§15.11`/`§15.12` deste documento, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md`, `docs/brief_auditoria_externa_2026-08-19_*.md` |
+| **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" **Atualização 2026-08-21 — diagnósticos RODADOS, fila fechada**: `AG-118` (Gate Efficiency) implementado e **RESOLVIDO** — `lift` não desvia de 1,0 em 90 células, sem sinal econômico detectável, robusto ao candidato (k2/k3/k4). `AG-114` (candidato vencedor) foi **REABERTO** no mesmo dia por auditoria externa — Gate 1 aplicado com 2 critérios misturados (mediana vs. máximo-por-janela); sob o critério literal, `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções — **status ainda aberto**, metodologia de seleção não resolvida. Apesar disso, Manager autorizou `hmm_gaussian_k4_v1` como candidato de regime **canônico de produção** (override de negócio explícito, não resolução do Gate 1) — regime saiu do vetor de treino do Alpha, novo builder `src/regime/build_hmm.py`, Risk Engine wired de forma candidato-agnóstica. Detalhe completo: `§15.13` | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `AG-118`, `AG-122`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` §2.7, `§15.13` |
+| **Trilha B(2026-08-19/20) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟠 **Auditoria externa (`ADR-001`, 2026-08-20) devolveu veredito: 2 dos 4 mecanismos aprovados internamente REFUTADOS como especificados, 1 parcialmente errado, 1 ganhou os contratos que faltavam.** (B) gate por linha — refutado: `(símbolo,resolução)` não é entidade de posição na Binance (`AG-108`, N-01). (C) convenção de trials — sobre-conta por correlação e mantém resíduo de circularidade (`AG-111`). (D) gatilho de proteção — mecanismo revisado repete, deslocado, o mesmo defeito de paridade treino-live da versão já refutada (`AG-110`); e nenhuma versão de D tem saída executável sob a política post-only GTX declarada — achado **mais severo do ADR inteiro**, atinge o próprio SL do triple-barrier, anterior a qualquer decisão sobre D (`AG-109`). (A) Decision Engine — sem controvérsia no mecanismo, mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger), agora propostos. Achados novos não cobertos pelas 4 rodadas internas: granularidade de lote vs. capital (`AG-112`, viés sistemático de seleção ~24× entre símbolos) e pré-filtro de custo grátis que pode eliminar metade do espaço de busca antes de qualquer backtest (`AG-113`). Decisão de arquitetura de dados também recebida: lake local endereçado por conteúdo (4 invariantes INV-A..D), status `Proposed` — pendente de ratificação formal como `D-###` (nota do próprio ADR). Recomendações fundamentadas recebidas pras 9 decisões antes pendentes (ver `§15.12`). 10 gaps originais (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial interna (`AG-101`-`AG-105`), mandato corrigido (seleção offline, fixa por rodada, eliminação periódica) e tiering de features descontinuado (T1 fixo → todas canônicas, `~92` usáveis, ainda não implementado em código) seguem válidos como histórico — não invalidados pela auditoria externa, só o desenho de consumo em cima deles **Atualização 2026-08-21**: o wiring de consumo real do contrato Regime→Risk foi implementado — `src/risk/limits.py::control_01_regime_tradeavel` deixou de decodificar vocabulário `R1..R4`, passa a receber `regime_tradeable: bool` já resolvido pelo builder de regime (candidato-agnóstico, mesmo campo pra baseline ou HMM). Detalhe: `§15.13` | `audit/architecture_gaps_log.yaml::AG-094` a `AG-113`, `§15.11`/`§15.12`/`§15.13` deste documento, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md`, `docs/brief_auditoria_externa_2026-08-19_*.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
 | **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
@@ -962,6 +962,18 @@ confirmada (a decisão de qual documento organiza qual continua sendo sua;
 o quê tecnicamente manda — os contratos do V3.2, a emenda do V4.1 — não
 mudou nem podia mudar por decisão de rótulo).
 
+**⚠️ [DESATUALIZADO, 2026-08-20] O trecho de `CLAUDE.md` v1.6 citado acima
+não é mais o texto real do arquivo.** Decisão posterior do Manager
+(2026-08-20, ratificação do ADR-001) reclassificou `PRD_V3_2_UNIFICADO.md`/
+`PRD_V4_1.md` de "blueprint técnico corrente" pra **OBSOLETOS** — nunca
+base de decisão de produção, só ponteiro de 1 linha vindo deste
+documento. Os 2 únicos documentos canônicos hoje são este
+(`PLANO_MESTRE_PRINCE2.md`) e o ADR-001 completo (`docs/ADR-001_
+arquitetura_artefatos_e_contratos_2026-08-19_base.md`, ~1900 linhas) —
+ver cabeçalho de `CLAUDE.md` (versão corrente) pro texto real. Esta
+seção (`§13`) fica como registro histórico de QUANDO/COMO a decisão
+original de 2026-08-12 foi aplicada, não como descrição do estado atual.
+
 ---
 
 ## 14. Road_Map Vivo — v1 SUBSTITUÍDO por v2 <a name="14"></a>
@@ -983,13 +995,21 @@ mudou nem podia mudar por decisão de rótulo).
 > que gerou esta correção, então a disciplina agora é: mudança material
 > em `§11.4-§11.6` → repassar pro v2 na mesma sessão, não depois.
 
+### Histórico — v1 (⚠️ NÃO é mais atualizado, ver callout acima)
+
+O texto abaixo descreve o artefato v1 como ele era ATÉ 2026-08-17 (tempo
+presente/"vivo" no texto original, preservado como está escrito então) —
+lido em sequência com o callout "SUBSTITUÍDO" acima, pode confundir:
+desde `AG-080` a URL corrente é a do v2 (link no callout), esta aqui
+ficou congelada.
+
 **https://claude.ai/code/artifact/a6335e1a-1eb1-42ae-b3af-9b43b87ea3dd**
 
 Mapa ponta a ponta em HTML, publicado a pedido do Manager 2026-08-12,
-**vivo** — Claude republica a mesma URL a cada mudança de status ou Área
-nova/removida (não um retrato único). Conteúdo: as duas trilhas
-reconciliadas explicitamente em vez de forçadas numa sequência única
-inventada —
+era **vivo** até 2026-08-17 — Claude republicava a mesma URL a cada
+mudança de status ou Área nova/removida (não um retrato único).
+Conteúdo à época: as duas trilhas reconciliadas explicitamente em vez de
+forçadas numa sequência única inventada —
 
 - **Trilha de Sprints** (`PRD_V3_2_UNIFICADO.md` §14.3) — arquitetura/
   infraestrutura, Sprint 0-18, posição atual marcada (Sprint 4).
@@ -1096,7 +1116,7 @@ necessária pra validar/corrigir a proposta do Manager.
 | DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf). **[DESATUALIZADO, `AG-080`]** `_sources.py:39-55` já branch por `bar_source` (`time_15m`/`dollar_r1`) desde a migração Parkinson/dollar-bar (§11.5) — `stress.py` segue com default hardcoded |
 | DATA — barreiras/label | `labels/` | Parcial. `symbol` real, **TF hardcoded em 3 lugares independentes** (`triple_barrier.py` 2x, `barrier_sweep.py` 1x) — `decision_tf_minutes` existe no config mas metade do código não o lê |
 | ML | `models/`, `validation/` | **1,5 de 5 camadas de ablação do PRD implementadas**; DSR e os 14 testes de leakage existem mas não rodam automaticamente; `model_id` sem símbolo/TF no nome |
-| LIVE TRADING | `risk/`, `execution/`, `live/`, `monitoring/` | **~5% implementado.** `risk/` é biblioteca real sem nenhum caller de produção e sem dimensão de símbolo; `execution/`≈0%; `live/`=pacote vazio; `monitoring/`=1 função nunca chamada |
+| LIVE TRADING | `risk/`, `execution/`, `live/`, `monitoring/` | **~5% implementado.** `risk/` é biblioteca real sem nenhum caller de produção e sem dimensão de símbolo; `execution/`≈0%; `live/`=pacote vazio; `monitoring/`=1 função nunca chamada. **[DESATUALIZADO, `AG-123`, ver `§15.13`]** `risk/limits.py::control_01_regime_tradeavel` ganhou caller de produção conceitual em 2026-08-21 (`regime_tradeable: bool` resolvido por `src/regime/build_hmm.py`/`src/regime/classifier.py`) — ainda sem loop vivo (`live/` continua vazio, "caller" aqui é código pronto/testado, não execução real, `§15.13` limite de escopo explícito) |
 | Suporte | `core/`, `backtest/`, `analysis/` | `core/` é contrato puro, correto como está; `backtest/` tem conteúdo real mas zero consumidor de produção; `analysis/` tem pelo menos 4 arquivos que informam `constants.yaml`/PRD mesmo excluídos do protocolo formal |
 
 ### 15.3 O pipeline de 17 estágios proposto — validado, com 6 correções justificadas
@@ -1151,7 +1171,9 @@ ML LAYER
                                                                         direto, ficou fora deste modelo até agora
 
 LIVE TRADING LAYER
-  12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         real, zero wiring, sem dimensão symbol
+  12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         real, wired a regime (2026-08-21,
+                                                                        §15.13) via regime_tradeable:bool,
+                                                                        sem dimensão symbol/loop vivo
   13_EXECUCAO          src/exchange/adapter.py, src/execution/         ~0%, place_order NotImplementedError
   14_MONITORAMENTO     src/monitoring/logging.py                       1 função, nunca chamada
   15_FEEDBACK_POST_TRADE (não existe em nenhuma forma)                 100% green-field
@@ -1175,8 +1197,8 @@ LIVE TRADING LAYER
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe |
 | `11_META_MODEL` | V41-10 (Meta-Model+Grupo J) | ⬜ não iniciado, reaberto |
-| `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — 5º consumidor real de Regime, não só Alpha/Risk/Meta/Execução |
-| `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não |
+| `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C), Decision Engine (esta linha, não implementado), Meta/Execução (não implementados) |
+| `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. Regime wired (`§15.13`, 2026-08-21) |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
 | `14_MONITORAMENTO` | sem equivalente | `AG-079` fechado — zero código, comparar antes de construir inverte a ordem |
 | `15_FEEDBACK_POST_TRADE` | sem equivalente | `AG-079` fechado — identidade contábil, não estimador com candidatos |
@@ -2751,6 +2773,37 @@ pendente do action item 3 do ADR-001.
 ---
 
 ## Changelog
+
+- **v3.23 (2026-08-21)** — Ponte de governança sobre o arco 2026-08-19→21
+  (a série v3.22 e anteriores para no meio deste arco — este item
+  fecha a lacuna, achado da rodada de "Atualize governança" desta
+  sessão, não reescreve entradas antigas). Resumo, detalhe completo em
+  `§15.12`-`§15.13`: **4ª execução real do M4 concluída** (18/18
+  p-valores de permutação 0,30-0,85, nenhuma célula significativa,
+  tratado como achado válido); **ADR-001 ratificado** (regime = gate de
+  risco, não feature, na v1); **Trilha B** (contrato Regime→Alpha→
+  Execução) aberta e fechada com 4 mecanismos aprovados + 7 decisões
+  residuais pendentes; **`AG-114`** (regra de decisão de 3 gates +
+  métrica primária) aplicada sobre resultado real, `hmm_gaussian_k4_v1`
+  declarado vencedor — **REABERTO** no mesmo dia por auditoria externa
+  (Gate 1 aplicado com 2 critérios misturados; sob o critério literal,
+  `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções) — **status ainda
+  aberto** quanto à metodologia de seleção; **`AG-118`** (Gate
+  Efficiency) implementado e **RESOLVIDO** (lift ~1,0 em 90 células, sem
+  sinal econômico detectável, robusto ao candidato — mecanismo: `exit_
+  price` de TP/SL é o próprio preço da barreira, torna tail-loss
+  quase-determinístico em `atr_pct`); Manager autoriza `hmm_gaussian_
+  k4_v1` como candidato de regime **canônico de produção** mesmo com o
+  Gate 1 ainda fragilizado (override de negócio explícito, `§15.13`) —
+  regime sai do vetor de treino do Alpha, novo builder `src/regime/
+  build_hmm.py`, Risk Engine passa a receber `regime_tradeable: bool`
+  candidato-agnóstico. Rodada de governança desta sessão também achou e
+  corrigiu 2 bugs de sintaxe YAML pré-existentes (nunca detectados
+  antes) em `audit/evidence_ledger.yaml` — `#N`/`:` sem aspas dentro de
+  escalar multi-linha é interpretado como comentário/nova chave — e
+  abriu `AG-123` (tabela de prontidão dos 15 estágios, `§15.2`/`§15.4`,
+  sem gatilho de sincronização quando um módulo ganha/perde caller —
+  mesma classe de furo que gerou `AG-080`, recorrente).
 
 - **v3.22 (2026-08-19)** — M4 (Regime), continuação da v3.21 no mesmo
   dia: Manager autorizou "AG-093 + 4ª re execução". `AG-093` (BOCPD

@@ -2192,10 +2192,10 @@ entries:
   fonte_secao: PRD_V4_1.md T0.5 — baseline reprocessado na janela comum
   data: '2026-08-10'
   supersedes: sprint8-permanence-camada1-vs-camada0
-  nota: mesma comparação de sprint8-permanence-camada1-vs-camada0 (5/5 na janela cheia 2020-01→2026-08)
+  nota: 'mesma comparação de sprint8-permanence-camada1-vs-camada0 (5/5 na janela cheia 2020-01→2026-08)
     falha (1/5) na janela comum 2021-12→2026-08, que exclui a mania 2020-2021 (I5, PRD_V4_1.md §2.10) —
     dispara critério de encerramento #3 do PRD (§6.5) — reavaliar escopo antes de gastar trials da Camada
-    1/2. Ver t05-directional-sharpe-positivo-cost-dominado para o porquê — não é ausência de sinal.
+    1/2. Ver t05-directional-sharpe-positivo-cost-dominado para o porquê — não é ausência de sinal.'
 - id_curto: t05-directional-sharpe-positivo-cost-dominado
   fase: PRD V4.1 T0.5
   lado: both
@@ -2226,13 +2226,13 @@ entries:
   metrica_tipo: p-valor de permutacao empirica (estatistica de Cochran's Q sob H0 de bloco)
   metrica_valor: 18/18 celulas (6 candidatos x 3 resolucoes, por lado) com p entre 0,30 e 0,85 -- nenhuma
     significativa
-  n: 102 celulas (candidato x simbolo x janela x lado); episodios por celula: mediana 4/minimo 1 (Jump
-    Model, 100% das 102 celulas <15) vs. mediana 92-273 (demais candidatos, poder saudavel)
+  n: '102 celulas (candidato x simbolo x janela x lado); episodios por celula: mediana 4/minimo 1 (Jump
+    Model, 100% das 102 celulas <15) vs. mediana 92-273 (demais candidatos, poder saudavel)'
   status: vermelho
   fonte_arquivo: experiments/m4_critical_windows_report.json
   fonte_secao: heterogeneidade agregada por (resolution_id, classifier_id, lado) -- AggregatedHeterogeneityResult
   data: '2026-08-19'
-  nota: 4a execucao real, pos-correcao de 4 achados metodologicos (AG-090 close_time_ms, AG-091 Cochran's
+  nota: '4a execucao real, pos-correcao de 4 achados metodologicos (AG-090 close_time_ms, AG-091 Cochran''s
     Q k=1, AG-092 permutacao em bloco, AG-093 janela OOS do BOCPD). BOCPD, que liderava sob I2 classico
     (metrica pre-correcao), tem p-valores entre os MENOS significativos (0,47-0,85) -- confirma que a
     lideranca era artefato de autocorrelacao intra-regime, nao heterogeneidade real. Jump Model com poder
@@ -2242,4 +2242,83 @@ entries:
     o edge deste alpha, nestas janelas), nao como estudo com bug -- 2 auditorias externas brutas
     processadas + validacao cruzada propria confirmam a leitura (docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md).
     M4 pausado por decisao do Manager ate a Trilha B (contrato Regime->Alpha->Execucao) travar o
-    consumidor downstream -- ver PLANO_MESTRE_PRINCE2.md §15.11.
+    consumidor downstream -- ver PLANO_MESTRE_PRINCE2.md §15.11.'
+
+- id_curto: ag114-regra-decisao-hmm-k4-vencedor-fragil
+  fase: PRD V4.1 M4 (Regime) / AG-114
+  lado: both
+  regime: all
+  janela: '5 janelas históricas críticas (LUNA, FTX, crypto winter, ETF/halving, recente)'
+  feature_ou_filtro: regra de decisao de 3 gates (occupancy, transition failure rate, detection delay
+    -- desempate only) + metrica primaria (heterogeneidade de volatilidade futura, I2/Cochran's Q em
+    permutacao) aplicada aos 6 candidatos x 3 resolucoes (R1/R2/R3)
+  metrica_tipo: stress_state_occupancy_median (Gate 1) + I2 (metrica primaria)
+  metrica_valor: 'occupancy mediana hmm_k2/k3/k4 = 34,1/18,3/12,7% (R1), 34,9/18,4/11,1% (R2), 39,5/21,5/10,5%
+    (R3). Sob o limiar ORIGINALMENTE aplicado (Gate 1 <=~33%), k2 e desqualificado nas 3 resolucoes
+    (34-40%, acima do teto) -- sobra k3 vs k4 na metrica primaria, k4 vence nas 3 (veredito original,
+    PLANO_MESTRE_PRINCE2.md §15.12.5). Sob o teto alternativo de 40% (JA testado como sweep de
+    sensibilidade do proprio limiar), k2 passa o Gate 1 nas 3 resolucoes -- e, uma vez em disputa, o I2
+    bruto de k2 vence o de k4 em 2 das 3 resolucoes: 97,82 vs 97,44 (R1), 95,31 vs 94,98 (R2); só em R3
+    k4 vence (91,77 vs 91,66, margem minima). Ou seja: o veredito "k4 vence" depende inteiramente de qual
+    dos 2 tetos de occupancy (33% vs 40%, ambos ja testados como robustez) o Gate 1 usa -- nao e robusto
+    a essa escolha, que nunca foi declarada operacionalmente antes de rodar (achado da auditoria externa).'
+  n: 'gate_quality: 5 janelas x 3 resolucoes (n_windows_ok, ver per_window); volatility_heterogeneity: episodios
+    por celula, mediana 92-273 (candidatos com poder saudavel, mesmo n de m4-4a-execucao-permutacao-nula-generalizada)'
+  status: amarelo
+  fonte_arquivo: experiments/m4_critical_windows_report.json
+  fonte_secao: by_resolution[].gate_quality (stress_state_occupancy_median/transition_failure_rate_n5_median)
+    + by_resolution[].volatility_heterogeneity (i_squared_pct_median/p_value_permutation_median)
+  data: '2026-08-20'
+  nota: 'hmm_gaussian_k4_v1 declarado vencedor do AG-114 em 2026-08-20 (PLANO_MESTRE_PRINCE2.md §15.12.5)
+    -- REABERTO no mesmo dia por auditoria externa (Manager, papel de auditor): o Gate 1 foi aplicado
+    misturando 2 criterios (mediana de resolucao vs. maximo por janela) sem declarar qual decide; sob o
+    criterio literal de mediana, k2 passa e vence a metrica primaria em 2 das 3 resolucoes (numeros exatos
+    acima, extraidos direto de experiments/m4_critical_windows_report.json em 2026-08-21). 1 hipotese
+    alternativa (HMM levar vantagem em R3 por fit in-sample) foi checada e REFUTADA (fit e walk-forward
+    genuino, verificado em 2 pontos do codigo -- AG-122 adendo final) -- nao resolve a fragilidade do Gate
+    1, so elimina 1 explicacao alternativa. status AINDA ABERTO em 2026-08-21 (audit/architecture_gaps_log.yaml::AG-114)
+    quanto a metodologia de selecao -- decisao de re-especificar o criterio operacional do Gate 1/Gate 3
+    pendente do Manager. Classificado amarelo (nao verde/vermelho) porque a "vitoria" e real sob os
+    limiares originalmente testados mas contestada/nao decidida, nao um achado limpo. Ver
+    ag118-gate-efficiency-lift-nulo-90-celulas abaixo para a pergunta seguinte (o gate tem utilidade
+    economica?) e status_override_producao_2026_08_21 em AG-114 pro override de negocio que autorizou k=4
+    em producao mesmo com este achado aberto.'
+
+- id_curto: ag118-gate-efficiency-lift-nulo-90-celulas
+  fase: PRD V4.1 M4 (Regime) / AG-118 / AG-122
+  lado: both
+  regime: bucket de stress (is_stress_bucket, identificado via identify_stress_state_by_volatility) vs.
+    resto
+  janela: '5 janelas históricas críticas (LUNA, FTX, crypto winter, ETF/halving, recente)'
+  feature_ou_filtro: remocao assimetrica de entrada no bucket de stress do HMM (k=2/3/4) -- lift =
+    razao entre frac_sl dentro e fora do bucket de stress, IC 95% via metodo de Katz ponderado por
+    n_eff (Σuniqueness de label)
+  metrica_tipo: lift (rate ratio) com IC 95%
+  metrica_valor: 'lift medio=1,016/mediana=1,012 (90 celulas: 3 candidatos k2/k3/k4 x 3 resolucoes x 5
+    simbolos x 2 lados) -- só 2/90 IC excluem 1,0 (hmm_k3/R2/BNBUSDT/-1, lift=1,32, IC[1,03; 1,70]; hmm_k4/R3/BTCUSDT/1,
+    lift=0,81, IC[0,67; 0,98]), ambos marginais e sem padrao consistente entre candidato/resolucao/simbolo
+    -- consistente com ~4-5 falsos positivos esperados por acaso em 90 testes a 95% (nao correcao FDR
+    aplicada, mas nem precisaria: 2 observados < 4-5 esperado sob ruido puro)'
+  n: '90 celulas (verificado 2026-08-21 direto de experiments/gate_efficiency_full_diagnostics_report.json);
+    diagnostico D1 (colinearidade is_stress_bucket vs. decil de ATR): n=972.798 labels'
+  status: vermelho
+  fonte_arquivo: experiments/gate_efficiency_report.json (k4 isolado) + experiments/gate_efficiency_full_diagnostics_report.json
+    (k2/k3/k4, 90 celulas) + tools/diagnostics/crosscheck_stress_bucket_vs_atr_decile.py (D1)
+  fonte_secao: GateEfficiencyResult.lift/lift_ci_lo/lift_ci_hi (pooled) + crosscheck D1 (frac_stress_in_top2_atr_decile)
+  data: '2026-08-21'
+  nota: 'AG-118 (Gate Efficiency) mede se bloquear entrada no bucket de stress do HMM tem utilidade
+    economica -- resultado: NAO, sem sinal detectavel, robusto ao candidato (k2/k3/k4 dao o mesmo nulo).
+    Achado mecanistico (D1, tools/diagnostics/crosscheck_stress_bucket_vs_atr_decile.py): 60,5% dos labels
+    com is_stress_bucket=True caem nos 2 decis superiores de atr_at_t0 (vs. ~20% esperado sob
+    independencia, decis monotonicos 0,74%->23,04% do decil 1 ao 10) -- o bucket de stress e fortemente
+    colinear com ATR alto em t0. Achado mais profundo (D4 + verificacao direta de
+    src/labels/triple_barrier.py): exit_price de TP/SL e o proprio preco da barreira por construcao, o
+    que torna QUALQUER metrica de tail-loss derivada de ret_net quase-deterministica em atr_pct,
+    normalizada por ATR ou nao -- nem a metrica original (ATR-normalizada, tautologica) nem a reversao
+    aparente em termos brutos (D4, que parecia nova evidencia mas e o MESMO mecanismo D1 por um caminho
+    aritmetico diferente) sao evidencia independente de risco de cauda alem do que ATR ja captura.
+    AG-118 marcado RESOLVIDO (audit/architecture_gaps_log.yaml) -- a pergunta foi respondida (nao ha
+    sinal), nao ficou em aberto. Apesar deste achado negativo, Manager autorizou hmm_gaussian_k4_v1 como
+    gate de producao mesmo assim, como "seguranca extra de baixo custo" (bucket de stress ocupa so
+    ~5-12% do tempo, ver ag114-regra-decisao-hmm-k4-vencedor-fragil acima) -- decisao de negocio
+    registrada em PLANO_MESTRE_PRINCE2.md §15.13, nunca como se este achado tivesse mudado de sinal.'
