@@ -3023,8 +3023,107 @@ corrigido, migração retroativa pendente). 6 fechados: `AG-128`,
 `AG-129`, `AG-130`, `AG-131`, `AG-132` (função pronta, sem caller de <!-- check-sprint-log: skip -->
 produção ainda), `AG-133`. <!-- check-sprint-log: skip -->
 
+**`AG-124` (calibração causal do threshold dollar-bar) — linha de
+investigação concluída (2026-08-21/22).** Implementação real:
+`build_dollar_bars_walkforward` (`src/data/build_dollar_bars.py`)
+recalibra causalmente por período (`[app_start-trailing_window_days,
+app_start)`, estritamente anterior); `ThresholdBarsCarry` agora
+persiste através da fronteira de período (item 14 — 1 barra
+subdimensionada por RODADA, não por período); lead-in buffer recupera
+histórico real antes de `start` pra calibração (item 15); circuit
+breaker (`max_leftover_trades`) validado com folga contra pico de
+volume ~14x medido (item 16). Semântica de troca de threshold com
+barra em aberto — antes implicitamente indefinida — formalizada e
+testada com asserts de valor exato.
+
+Decisão de parâmetro, após 6 rodadas de auditoria externa (parecer +
+adendo genuínos, mais 1 documento descartado por não-confiável —
+colisão real de numeração `AG-125`): `trailing_window_days=7` (elimina
+aliasing de sazonalidade semanal, medido). `cadence_days=7` preferido
+sobre `cadence_days=1` — `C=1` vencia a métrica de rastreio de
+calibração por margem grande nos 5 símbolos (robusto a sweep do corte
+de decisão), mas exercita 7,25x mais eventos de transição de threshold
+(365 vs. ~52/ano/símbolo — cada evento viola o invariante que define
+uma dollar-bar). Retorno `|z|` associado a evento de fronteira é maior
+sob `C=1` que sob `C=7` na mesma janela de calendário (teste decisivo
+contra confundimento de hora-do-dia, 5/5 símbolos) — elo real, modesto.
+Decisão apoiada também em 3 argumentos de engenharia de sistema:
+tipo de erro (suave em `C=7`, absorvido por feature normalizada;
+discreto em `C=1`, nada absorve, relevante com ~79 features futuras
+ainda não avaliadas); assimetria de custo de estar errado (sem métrica
+de sucesso final registrada — confirmado —, `C=7` errado é reversível/
+barato); superfície de paridade lote↔streaming ao vivo (`src/live/`
+ainda vazio, `C=1` multiplica por 7x os pontos de divergência
+backtest↔produção). Constantes registradas em `constants.yaml`
+(`dollar_bar_walkforward_trailing_window_days`/`_cadence_days`,
+`provenance: MEASURED`). **Reprocessamento real dos 5 símbolos × 3
+resoluções disparado** (`tools/diagnostics/run_ag124_production_
+reprocessing.py`, `data/capacity/dollar_bars_r{1,2,3}/`, substitui
+calibração não-causal antiga). `AG-120` (desalinhamento `t0`/
+`open_time`) — varredura completa das 51 células da amostra do M4
+confirmou escopo ISOLADO (só a célula já conhecida diverge), não
+sistêmico. Histórico completo de retratações honestas (2 achados que
+pareciam sólidos e foram corrigidos após teste decisivo proposto por
+auditoria externa) preservado em `docs/plano_acao_ag124_pos_auditoria_
+2026-08-21.md` e `audit/architecture_gaps_log.yaml::AG-124` (10
+addenda) — nada escondido, inclusive o que mudou de lado.
+
+**S1 (sweep `tp_atr_mult`/`sl_atr_mult`) aberto na sequência** — maior
+lacuna aberta do projeto (constantes classe A, `sweep_required: true`
+desde sprint_6, nunca executado; definem a variável dependente de todo
+experimento de M4/AG-114/AG-118 já medido). Desenho iniciado via skill
+`redesign_workflow` (Fase 1-4, não implementado ainda): reparametrização
+obrigatória `R=tp_atr_mult/sl_atr_mult` (controla o breakeven implícito)
+× `S=sl_atr_mult` (controla taxa de eventos/holding time) — mesmo erro
+de acoplamento que `T`/`C` do AG-124 custou 6 rodadas de auditoria pra
+descobrir, não repetido aqui por desenho. Achado real da exploração de
+código (Fase 2): **já existe um motor vetorizado quase pronto**
+(`src/labels/barrier_sweep.py` + precedente real `src/analysis/
+faixa2_caminho_b.py::run_fase2_e1`, grade 3×3 já rodada uma vez) — o
+fill não depende de `tp_atr_mult`/`sl_atr_mult`, então o sweep pode
+resolver TP/SL/TIME vetorizado sobre uma população de trades já
+preenchida, sem rodar o Label Engine escalar 9× por símbolo. Design doc
++ auditoria independente (`project_assurance`) em andamento.
+
+**Fechamento do dia seguinte (2026-08-22)** — 2 marcos concluídos:
+
+1. **Reprocessamento real do `AG-124` CONCLUÍDO**: 15/15 células (5
+   símbolos × 3 resoluções), zero erro
+   (`experiments/ag124_production_reprocessing_summary.json`). Item 22
+   do plano de ação (validação sobre dado REAL, histórico completo, não
+   amostra — script novo `tools/diagnostics/measure_ag124_post_
+   reprocessing_validation.py`) deu resultado **positivo**: curtose em
+   excesso praticamente inalterada ao excluir barras de fronteira (ex.
+   BTCUSDT/R1 53,12 vs. 53,15) — sobre a série real completa, o artefato
+   de recalibração que motivou 6 rodadas de auditoria é desprezível; a
+   curtose alta observada é 100% evento de mercado genuíno (as 5 barras
+   mais extremas por célula batem com Celsius/3AC jun/2022, Black
+   Thursday COVID mar/2020, colapso FTX nov/2022 — inclusive coincidindo
+   quase exatamente com `m4_ftx_event_onset_ts_ms` já registrado no M4).
+   Achado colateral não-bloqueante, `AG-137`: o 1º período (cold-start,
+   sem histórico causal válido) é corretamente pulado na escrita, mas o
+   arquivo `.parquet` da calibração NÃO-causal antiga que já existia
+   nesse caminho não é removido — `cadence_days` (=7) dias iniciais de
+   cada uma das 15 células ainda refletem o método antigo, excluído da
+   medição do item 22 por discriminador de schema, decisão de limpeza
+   pendente do Manager.
+2. **Design doc do S1 concluído e auditado**: síntese de 2 agentes
+   `code-architect` independentes (foco reuso mínimo / foco rigor de
+   contrato) + decisão de arquitetura própria (sem maquinária ADR-001
+   Parte II — não ratificada, não implementada em nenhum lugar do repo
+   hoje). `project_assurance` (nível meta, auditando o documento, não
+   código) achou 4 achados HIGH reais — função "promovida" que quebraria
+   por coluna ausente, 2ª célula de grade fora de faixa não capturada,
+   `assert` de identidade sem guarda de `NaN` que abortaria a execução
+   inteira, contagem de trial (9 vs. 18 vs. 1) decidida em silêncio sem
+   confrontar a regra escrita do próprio `n_lifetime.yaml` — todos
+   corrigidos no documento. Nenhum invalida a decisão de arquitetura
+   central. `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`,
+   8 riscos explícitos aguardando decisão do Manager antes da Fase 5
+   (implementação).
+
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-21)
+## Estado atual (2026-08-22)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -3045,13 +3144,16 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
 | `N_lifetime` | **63**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre) |
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
-| **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais seguem explicitamente pendentes**, não resolvidas por esta rodada (granularidade de lote, `AG-116` horizon_bars vs. time_stop_ms, etc.). Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
+| **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | Meta Model | fora da V1 (§6.8 define critério de entrada); Trilha B achou que o critério de entrada não menciona regime como input em nenhuma das 5 condições — decisão de desenho separada, sem urgência |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
-| Pendente pra fechar M4 | Manager decidir o critério operacional único do Gate 1/Gate 3 (`AG-114`) — sem isso, "k4 venceu" continua exigindo ressalva. Só depois: resolver as 7 decisões residuais da Trilha B, congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager, publicar na "Biblioteca de Testes" |
+| Pendente pra fechar M4 | Gate 1 fechado 2026-08-21/22 (pior-caso/33%, ver §15.12.6/§15.12.7). Pendente: extrair detection delay de `hmm_k3`/`hmm_k4` separadamente e rodar Gate 3 de verdade pra R1/R2 (empate detectado pelo piso do p-valor, §15.12.7) — só R3 permanece decidido pela métrica primária. Depois: resolver as 7 decisões residuais da Trilha B (§15.11, arquitetura Decision Engine — `AG-116` NÃO é uma delas, já fechado, ver correção acima), congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager |
+| Reordenação do gate de retreino do Alpha — decidido 2026-08-22 | Manager: retreino NÃO espera o Gate 1 (resolvido em horas de redação, não é o gargalo real) — espera o reprocessamento dollar-bar, que é upstream de tudo e invalida o Data Layer inteiro. `AG-124` (recalibração causal das barras RAW) concluído 2026-08-22 — mas em aberto: se "reprocessamento dollar-bar" no sentido do Manager inclui também reprocessar features/labels/regime/CPCV sobre as barras novas (que hoje ainda refletem a calibração antiga), ou se refere só à camada de barra já concluída. Pergunta feita ao Manager, não assumida. |
 | Pendente — governança de processo | `AG-123` (2026-08-21): `PLANO_MESTRE_PRINCE2.md §15.2/§15.4` não têm gatilho de sincronização quando um módulo ganha/perde caller — mesma classe de furo de `AG-080`, recorrente, corrigida pontualmente 2 vezes sem processo que previna a 3ª. Decisão de checklist de DoD pendente do Manager |
-| **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). **4 decisões do Manager ainda pendentes, bloqueiam fechar o Data Layer**: `AG-124` (calibração não-causal do threshold dollar-bar, deriva 18,18x — mais fundamental que `AG-100`, afeta a grade); `AG-125` (migrar retroativamente os 5 `quality_reports` existentes ou só valer daqui pra frente); `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?); `AG-127` (`build_hmm_regimes` pode ser consumido por backtest histórico já, ou só "última barra ao vivo" até reformulação causal?). Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..133` |
+| **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
+| `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
+| `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |

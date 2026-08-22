@@ -7774,7 +7774,7 @@ entries:
       a medição real rodar; o que foi fixado é a ESTRUTURA da regra
       (quais métricas, que papel cada uma tem, ordem de aplicação), que
       é o que a disciplina anti-HARKing exige travado a priori.
-    status: "REABERTO 2026-08-20, RE-FECHADO 2026-08-21 -- ver status_gate1_criterio_operacionalizado_2026_08_21 abaixo (Manager travou o criterio de Gate 1 em pior-caso/33%, hmm_gaussian_k2_v1 passa a FALHAR o Gate 1 nas 3 resolucoes sob esse criterio, veredito hmm_gaussian_k4_v1 CONFIRMADO e mais robusto que antes). Historico da fragilidade original preservado abaixo, nao apagado. Auditoria externa (Manager, papel de auditor) achou que o Gate 1 foi aplicado com 2 criterios misturados (mediana de resolucao vs. maximo por janela) sem declarar qual decide -- sob o criterio literal (mediana, ja testado a 40%), hmm_gaussian_k2_v1 (34,1/34,9/39,5%) PASSA o Gate 1 e vence a metrica primaria em R1 (97,82 vs 97,44) e R2 (95,31 vs 94,98). Declaracao de vencedor 'hmm_gaussian_k4_v1' NAO deve ser tratada como definitiva ate a regra ser re-especificada com criterio operacional unico. 1 hipotese alternativa (R3 do parecer -- HMM levar vantagem em R3 por fit in-sample) CHECADA e REFUTADA (AG-122 adendo final, verificado em 2 pontos do codigo: fit usa so obs[:train_end_idx], decode so obs[test_start_idx:test_end_idx]) -- nao muda a fragilidade do Gate 1, so elimina 1 explicacao alternativa possivel. Decisao de re-especificar Gate 1/Gate 3 continua pendente do Manager [RESOLVIDO 2026-08-21, ver campo acima -- Gate 3/'empate' permanece item residual nao-bloqueante]. Historico preservado abaixo (o que foi decidido nesta rodada, mesmo estando sob revisao)."
+    status: "REABERTO 2026-08-20, RE-FECHADO 2026-08-21 -- ver status_gate1_criterio_operacionalizado_2026_08_21 abaixo (Manager travou o criterio de Gate 1 em pior-caso/33%, hmm_gaussian_k2_v1 passa a FALHAR o Gate 1 nas 3 resolucoes sob esse criterio, veredito hmm_gaussian_k4_v1 CONFIRMADO e mais robusto que antes). Historico da fragilidade original preservado abaixo, nao apagado. Auditoria externa (Manager, papel de auditor) achou que o Gate 1 foi aplicado com 2 criterios misturados (mediana de resolucao vs. maximo por janela) sem declarar qual decide -- sob o criterio literal (mediana, ja testado a 40%), hmm_gaussian_k2_v1 (34,1/34,9/39,5%) PASSA o Gate 1 e vence a metrica primaria em R1 (97,82 vs 97,44) e R2 (95,31 vs 94,98). Declaracao de vencedor 'hmm_gaussian_k4_v1' NAO deve ser tratada como definitiva ate a regra ser re-especificada com criterio operacional unico. 1 hipotese alternativa (R3 do parecer -- HMM levar vantagem em R3 por fit in-sample) CHECADA e REFUTADA (AG-122 adendo final, verificado em 2 pontos do codigo: fit usa so obs[:train_end_idx], decode so obs[test_start_idx:test_end_idx]) -- nao muda a fragilidade do Gate 1, so elimina 1 explicacao alternativa possivel. Decisao de re-especificar Gate 1/Gate 3 continua pendente do Manager [RESOLVIDO 2026-08-21, ver campo acima -- Gate 3/'empate' permanece item residual nao-bloqueante]. Historico preservado abaixo (o que foi decidido nesta rodada, mesmo estando sob revisao). [2026-08-22: item residual do Gate 3/'empate' deixou de ser nao-bloqueante -- ver status_empate_gate3_definido_2026_08_22 abaixo. Criterio de empate travado; consequencia: Gate 3 rodado de verdade pra R1/R2 (k3 vs k4) -- ver status_gate3_aplicado_2026_08_22, e QUEBRA POR JANELA em status_gate3_aplicado_2026_08_22 (adendo critico): R1 'k3 vence' e artefato de 1 outlier de 104x (BTC/LUNA/R1) arrastando uma media de n=2 -- NAO deve ser tratado como decisao robusta sem investigar a causa antes. R2 empata de verdade, por janela (nao so na media). R3 tem diferenca real mas pequena (~0,5-1,6%), nas 2 janelas, mesma direcao (k4 mais lento). Veredito 'k4 vencedor robusto nas 3 resolucoes' de secao 15.12.5/15.12.6 REFUTADO -- mas 'k3 vence R1' TAMBEM nao deve substituir por outra alegacao igualmente fragil. hmm_k4 segue wireado em producao. [2026-08-22, mesmo dia: Manager RATIFICA hmm_gaussian_k4_v1 como decisao FINAL de produção -- ver status_ratificacao_final_manager_2026_08_22. AG-114 FECHADO DEFINITIVAMENTE -- override executivo explicito, nao resolucao estatistica limpa (a ambiguidade documentada acima continua verdadeira como historico, so deixa de ser pergunta aberta de qual candidato usar)."
     status_historico_pre_reabertura: "FECHADO (2026-08-20) -- regra aplicada sobre o resultado real (experiments/m4_critical_windows_report.json), candidato vencedor declarado: hmm_gaussian_k4_v1. Detalhe completo, tabela de numeros e verificacao de robustez dos limiares em PLANO_MESTRE_PRINCE2.md secao 15.12.5. Resumo: Gate 1 (occupancy <=~33%) desqualifica hmm_gaussian_k2_v1 (34-44%, dominante, achado robusto entre 25%/33%/40% de limiar testados e entre janelas); Gate 2 (transition_failure_rate_n5 <= ~2-3x baseline) desqualifica bocpd_v1 (~3,3x baseline, falha em toda a faixa 2x-3x testada); sobreviventes hmm_k3/hmm_k4 nao empatam na metrica primaria (Gate 3 nao precisou entrar) -- hmm_k4 vence nas 3 resolucoes, margem maior em R3. jump_model_cjm_v1 confirmado nao-candidato nesta rodada (BTC-only, AG-117) E estruturalmente instavel nesta config (eff_n_states 1,17-1,39, occupancy variando de 1,0 degenerado a 0,04-0,56 entre janelas) -- separado do trabalho AG-119/Condicao C, que testa config nova. Achado colateral novo: BNBUSDT/RECENTE/R2 falhou por desalinhamento timestamp, isolado por AG-019, registrado como AG-120. Proximo passo: autorizacao do Manager pra implementar AG-118 (Gate Efficiency) usando hmm_gaussian_k4_v1 como candidato."
     status_override_producao_2026_08_21: "Manager autorizou wiring de producao de hmm_gaussian_k4_v1 (src/regime/build_hmm.py::build_hmm_regimes, wiring candidato-agnostico em src/risk/limits.py) APESAR da fragilidade do Gate 1 permanecer aberta -- decisao de negocio ('seguranca extra de baixo custo', bucket de stress ocupa so ~5-12% do tempo), registrada em PLANO_MESTRE_PRINCE2.md §15.13, NAO uma re-especificacao do Gate 1 nem uma alegacao de edge medido (AG-118, resolvido, achou lift~1,0 em 90 celulas -- sem sinal economico detectavel, robusto a k). AG-114 CONTINUA tecnicamente aberto quanto a metodologia de selecao -- este campo documenta que producao seguiu em frente mesmo assim, nao que a pergunta foi respondida. Qualquer comunicacao futura sobre 'k=4 venceu o M4' continua exigindo a ressalva do Gate 1."
 
@@ -7822,6 +7822,153 @@ entries:
       não importou nesta rodada (k4 venceu com clareza, Gate 3 nunca
       precisou entrar), mas fica pendente pra uma futura reavaliação onde
       a métrica primária ficar mais próxima entre 2 candidatos.
+
+    status_empate_gate3_definido_2026_08_22: >
+      Manager apontou (2026-08-22) que o item residual acima NÃO era
+      não-bloqueante: R1 (hmm_k4 97,44 vs hmm_k3 97,40) e R2 (94,98 vs
+      94,54) foram tratados como "marginal mas decisivo" sem "empate"
+      nunca ter sido definido -- e ambos os p-valores de permutação
+      estão no MESMO piso de resolução do teste (p ~= 1/(n_permutations
+      +1) ~= 0,001, nenhuma permutação superou o observado pra nenhum
+      candidato). Critério travado A PARTIR DO ARGUMENTO (teste não tem
+      poder pra separar candidatos que atingem o mesmo piso), sem
+      reabrir a tabela antes de decidir: dois candidatos empatam na
+      métrica primária (Gate 3 obrigatório) se (a) ambos os p-valores de
+      permutação estiverem no mesmo piso de resolução do teste, OU (b)
+      os IC (bootstrap, a computar -- não existe hoje pra i²) se
+      sobrepuserem. (a) sozinho já é suficiente pra disparar Gate 3.
+      CONSEQUÊNCIA (registrada, não resolvida nesta rodada): sob esse
+      critério, R1 e provavelmente R2 (a confirmar o padrão do p-valor)
+      contam RETROATIVAMENTE como empate -- Gate 3 (detection delay vs.
+      m4_luna_event_onset_ts_ms/m4_ftx_event_onset_ts_ms) deveria ter
+      sido invocado pra decidir hmm_k3 vs hmm_k4 nessas 2 resoluções e
+      não foi. Detalhe agregado por grupo HMM já existe (94-202M ms),
+      quebra por candidato individual NÃO foi extraída nesta rodada --
+      próximo passo explícito, não feito aqui (fora do escopo de "travar
+      o critério"). Só R3 (91,77 vs 85,65, diferença clara) permanece
+      decidido pela métrica primária sem precisar de Gate 3. Veredito
+      hmm_gaussian_k4_v1 NÃO invalidado, mas não mais "decidido só pela
+      métrica primária" em R1/R2 até Gate 3 rodar de verdade nessas 2
+      resoluções. Reconciliação de registro (não recontagem): o "43-44%"
+      citado pelo Manager pra k2 é agregado POR JANELA (§15.12.5); o
+      "54,2-56,4%" travado em status_gate1_criterio_operacionalizado_
+      2026_08_21 é o máximo CÉLULA A CÉLULA (símbolo×janela individual)
+      -- a leitura correta de "pior-caso" -- k2 falha de forma AINDA MAIS
+      decisiva sob a leitura certa, resultado do Gate 1 não muda.
+      Detalhe: PLANO_MESTRE_PRINCE2.md §15.12.7.
+
+    status_gate3_aplicado_2026_08_22: >
+      Gate 3 aplicado de verdade sobre `experiments/m4_critical_windows_
+      report.json::by_resolution[].volatility_heterogeneity[]` (métrica
+      primária real, confirmada bater com §15.12.5: R1 k3=97,40/k4=97,44,
+      R2 k3=94,54/k4=94,98, R3 k3=85,65/k4=91,77) e `gate_quality[].
+      detection_delay_ms_median` (Gate 3, k3 vs k4):
+        R1 -- p_perm k3=0,000999, k4=0,000999 (IDÊNTICOS, piso do teste,
+          1000 permutações) -- EMPATE confirmado pelo critério travado.
+          Gate 3: delay k3=95.082.396ms (~26,4h), k4=197.110.181ms
+          (~54,8h) -- k3 detecta quase 2x mais rápido. **hmm_k3 VENCE
+          R1**, não hmm_k4.
+        R2 -- p_perm k3=0,000999, k4=0,000999 (IDÊNTICOS) -- EMPATE
+          confirmado. Gate 3: delay k3=200.533.413ms, k4=200.533.413ms
+          -- IDÊNTICOS até a casa decimal (n_windows_detection_delay_
+          computable=2 pra ambos -- só LUNA/FTX têm onset computável,
+          decisão original do M4). **Gate 3 TAMBÉM empata -- nenhuma
+          regra existe pra empate de 2º nível.** R2 fica SEM VENCEDOR
+          definido pela regra atual.
+        R3 -- p_perm k3=0,004995, k4=0,002997 (DIFERENTES, não no piso)
+          -- SEM empate pelo critério. **hmm_k4 vence R3** com separação
+          real (i² 85,65 vs 91,77), sem precisar de Gate 3.
+      **Consequência séria, não escondida**: a narrativa de `§15.12.5`/
+      `§15.12.6` ("hmm_k4 vence nas 3 resoluções, margem maior em R3")
+      NÃO sobrevive à aplicação honesta das regras que acabaram de ser
+      travadas (`status_empate_gate3_definido_2026_08_22`). Resultado
+      real: hmm_k3 vence R1, NINGUÉM vence R2 (regra insuficiente),
+      hmm_k4 vence R3. `hmm_gaussian_k4_v1` está WIREADO em produção
+      (`constants.yaml::canonical_regime_hmm_n_states=4`,
+      `src/regime/build_hmm.py`, `src/risk/limits.py` -- ainda que o
+      controle 1 esteja desligado desde `status_gate2_regime_desligado_
+      2026_08_22`, o builder continua instanciando k=4 por padrão) sob
+      uma justificativa ("vencedor robusto nas 3 resoluções") que não é
+      mais verdadeira.
+
+      **ADENDO CRÍTICO 2026-08-22 (mesmo dia) -- "hmm_k3 vence R1" NÃO É
+      ROBUSTO, é artefato de 1 outlier.** Quebra por janela (`gate_
+      quality[].per_window[]`, `n_symbols_detection_delay_computable=1`
+      em cada -- só BTCUSDT tem onset computável, `luna_ftx_btc_only_
+      caveat` já registrado no próprio JSON):
+        R1 LUNA -- k3=1.498.432ms (25,0 min), k4=156.066.892ms (43,4h)
+          -- k4 **104,2x** mais lento. Um único ponto de dado com essa
+          magnitude de desvio é sinal de outlier/artefato, não de
+          candidato genuinamente mais rápido -- 25 minutos pra "detectar
+          regime de stress" após um onset real é rápido a ponto de
+          merecer investigação (índice trocado? state já ativo por
+          coincidência não-causal?), não aceitação a valor de face.
+        R1 FTX -- k3=188.666.360ms (52,4h), k4=238.153.470ms (66,2h) --
+          k4 **1,262x** mais lento -- diferença real, modesta, na MESMA
+          direção que LUNA, mas ordem de grandeza completamente
+          diferente.
+        A "mediana" reportada pro candidato inteiro em R1 (95.082.396ms
+        k3 / 197.110.181ms k4) é, com n=2, a MÉDIA aritmética dos 2
+        valores acima -- confirmado por cálculo direto (bate exato). Ou
+        seja, o "k4 é 2,07x mais lento" que decidiu R1 é o outlier de
+        104x de LUNA arrastando a média pra cima, não uma propriedade
+        estável de k3 vs k4.
+        R2 LUNA -- k3=162.103.156ms = k4=162.103.156ms -- IDÊNTICOS por
+          JANELA, não só na média -- empate genuíno, mais robusto que o
+          de R1.
+        R2 FTX -- k3=238.963.670ms = k4=238.963.670ms -- idem, idêntico.
+        R3 LUNA -- k4 é 1,0165x mais lento (45,6 min de diferença).
+        R3 FTX -- k4 é 1,0050x mais lento (19,5 min de diferença).
+        R3: as 2 janelas concordam em DIREÇÃO (k4 sempre um pouco mais
+          lento) e em ORDEM DE GRANDEZA (~0,5-1,6%) -- ao contrário de
+          R1, onde as 2 janelas divergem por 2 ordens de magnitude
+          entre si (104x vs 1,26x).
+      **Correção do veredito "hmm_k3 vence R1"**: não deveria ser tratado
+      como decisão robusta -- é 1 outlier extremo (BTC/LUNA/R1) versus 1
+      diferença modesta e real (BTC/FTX/R1) sendo diluídos numa média de
+      n=2. Todo o Gate 3, como medido hoje (n=2 janelas, 1 símbolo cada,
+      BTC-only), é evidência fina demais pra decidir qual candidato de
+      regime vai pra produção -- decisão dessa magnitude não deveria se
+      apoiar nisso sem, no mínimo, investigar por que LUNA/R1/k3 registra
+      25 minutos de delay antes de aceitar o número.
+
+      Decisão pendente do Manager, urgente, ATUALIZADA:
+      (a) investigar a causa do outlier LUNA/R1/k3=25min antes de
+      qualquer decisão que dependa dele; (b) definir regra de empate de
+      2º nível pra R2 (empate genuíno, por janela, robusto); (c) dado
+      que nem R1 nem R3 têm evidência de detection-delay robusta o
+      bastante pra decidir sozinha (R1 é outlier, R3 é diferença de
+      minutos), considerar se Gate 3 como medido hoje serve pra decidir
+      qualquer coisa, ou se precisa de mais janelas/símbolos com onset
+      computável antes de ser usado pra trocar o candidato canônico de
+      produção; (d) no mínimo, corrigir a justificativa registrada em
+      `§15.13` (override de negócio) -- "vencedor robusto nas 3
+      resoluções" não é mais uma alegação sustentável enquanto essa
+      análise não for resolvida, mas "k3 vence R1" também não deveria
+      substituir por outra alegação igualmente frágil.
+
+    status_ratificacao_final_manager_2026_08_22: >
+      Manager RATIFICA `hmm_gaussian_k4_v1` como candidato canônico de
+      regime de produção -- decisão FINAL, fecha `AG-114` por completo.
+      Registrado explicitamente COMO O QUE É: override executivo, não
+      resolução técnica -- a base estatística segue exatamente como
+      documentada acima (Gate 1 pior-caso desqualifica k2 com folga,
+      métrica primária empata em R1/R2 no piso de p-valor, Gate 3 empata
+      de novo em R2 e em R1 é dominado por outlier de 104x de 1 único
+      ponto de dado ainda não investigado, R3 é o único caso limpo). A
+      ratificação NÃO torna essas ambiguidades retroativamente
+      resolvidas -- fecha a DECISÃO de produção, não a pergunta
+      estatística. Itens (a)-(d) do adendo anterior ficam formalmente
+      ENCERRADOS como itens de decisão (não há mais escolha em aberto
+      sobre qual candidato usar) -- mas o achado do outlier LUNA/R1/k3
+      permanece registrado como conhecimento adquirido nesta sessão,
+      não apagado pela ratificação. `AG-114` -- **FECHADO
+      DEFINITIVAMENTE 2026-08-22** (única fonte de verdade sobre o
+      candidato de regime de produção a partir de agora: `constants.
+      yaml::canonical_regime_hmm_n_states=4`, mantido). Qualquer
+      comunicação futura sobre "por que k=4" deve citar esta ratificação
+      como a razão de produção -- não mais alegar "vencedor robusto nas
+      3 resoluções" como se fosse conclusão estatística limpa.
 
   - id: AG-115
     date: "2026-08-20"
@@ -8392,6 +8539,31 @@ entries:
       ou (c) outra causa.
     status: "aberto -- achado real, isolado por AG-019, não bloqueia o veredito do AG-114, causa raiz pendente de investigação"
 
+    addendum_varredura_completa_2026-08-21: >
+      AG-124/item 13 (B0) -- `tools/diagnostics/measure_ag120_bars_
+      baseline_alignment.py` reproduziu `_assert_bars_baseline_aligned`
+      em TODAS as 51 células da varredura original do M4 (`CRITICAL_
+      WINDOWS` x símbolos x R1/R2/R3), não só a célula conhecida.
+      **Resultado: 50/51 alinhadas -- a ÚNICA divergência é a mesma
+      célula já registrada (BNBUSDT/RECENTE/R2). Nenhuma célula nova.**
+      Confirma escopo genuinamente ISOLADO, não sistêmico.
+
+      Diagnóstico preciso: `n_bars=26584 == n_baseline` (não é problema
+      de contagem) -- só 2 de 26584 posições divergem, ambas em
+      2026-05-04 entre 04:06:13 e 04:08:55 UTC, delta ~162s. **Verificado
+      NÃO ter relação com o achado de curtose de AG-124/item 11/§12**
+      (aquele é recorrente, 23:30-00:30 UTC, todo dia; este é evento
+      pontual único, 04:0x UTC, um único dia) -- hipótese de causa raiz
+      comum descartada por medição, não suposição.
+
+      Causa raiz exata (nível de trade bruto) não investigada mais
+      fundo -- 2 barras em 16 meses x 1 símbolo x 1 resolução, sem
+      padrão sistêmico nas outras 50 células, não justifica
+      aprofundamento antes do reprocessamento de AG-124. Full detail:
+      `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` §13, JSON em
+      `experiments/ag120_bars_baseline_alignment_sweep.json`.
+    status_atualizado: "escopo confirmado ISOLADO (50/51 células limpas) -- deixa de ser bloqueante para o reprocessamento de AG-124 (item 13/B0 do plano de ação cumprido). Causa raiz exata do trade-level ainda não investigada -- vira item de baixa prioridade, não bloqueante, não fechado por completo."
+
   - id: AG-121
     date: "2026-08-20"
     file: "src/regime/canonicalization.py::canonicalize_states; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §3.4 Cláusula 2 (Parte I do parecer completo)"
@@ -8811,7 +8983,7 @@ entries:
       histórico linear intacto). 5 comandos mecânicos limpos em todos os
       arquivos tocados. `src/validation/cpcv.py` intocado, conforme
       confirmado desnecessário na 2ª rodada de desenho.
-    status: "parcialmente resolvido -- mecanismo (schema + orquestrador) implementado, testado só com dado sintético, e medição real de deriva completa (309 símbolo-mês) entregue como insumo. NENHUM reprocessamento real rodou -- limite de escopo explícito, respeitado (`data/capacity/dollar_bars_r1/` real intocado). Falta: (1) Manager confirmar `trailing_window_days`/`cadence_days` (sugestão: 30/30, ver `resolution`) ou pedir medição sub-mensal antes; (2) autorização explícita separada pra rodar `build_dollar_bars_walkforward` contra dado real, símbolo por símbolo (recomendação de engenharia: sequencial, não concorrente, dado o volume de BTC sozinho -- 3,4 bilhões de trades); (3) reprocessar tudo que depende de `dollar_r1` (features/labels/regime/CPCV) nos 5 símbolos depois disso. Política de `calibration_scope=\"frozen_production\"` (`AG-042` itens 2/3) continua separada, não resolvida por este item."
+    status: "STATUS ATUALIZADO 2026-08-22 -- REPROCESSAMENTO REAL CONCLUÍDO: 15/15 células (5 símbolos x 3 resoluções), zero erro, histórico completo 2019-12-31/2021-12-01 a 2026-08-07 (`experiments/ag124_production_reprocessing_summary.json`, `code_version=eee33eb`, `trailing_window_days=7,cadence_days=7`, cada célula com `calibration_hash` próprio registrado). `n_cold_start_dropped=1` em toda célula -- esperado (1o período de cada símbolo genuinamente sem histórico anterior a `SYMBOL_START_DATE`, não um bug). `data/capacity/dollar_bars_r{1,2,3}/` real agora reflete a calibração causal, substitui a versão não-causal antiga. ITEM 22 CONCLUÍDO (2026-08-22, `tools/diagnostics/measure_ag124_post_reprocessing_validation.py`, `experiments/ag124_post_reprocessing_validation.json`, 15 células, histórico completo, não amostra) -- resultado POSITIVO: curtose em excesso PRATICAMENTE INALTERADA ao excluir barras de fronteira (ex. BTCUSDT/R1 53,12 vs 53,15; XRPUSDT/R1 122,46 vs 122,49) -- confirma que, sobre histórico real completo (dezenas/centenas de milhares de barras por célula), artefato de recalibração é desprezível, curtose alta é 100% evento de mercado genuíno. Autocorrelação lag-1 pequena em todas as 15 células (|r|<0,03). CV por dia-da-semana 0,19-0,27, sem distorção. As barras mais extremas (top-5 por célula) são TODAS `is_boundary_bar=False` e batem com eventos reais conhecidos: BTCUSDT 2022-06-13 (contágio Celsius/3AC), BTCUSDT 2020-03-12 (Black Thursday COVID), XRPUSDT 2022-11-08 (bate quase exatamente com `m4_ftx_event_onset_ts_ms` já registrado no M4). Achado colateral do item 22 (não do reprocessamento em si): AG-137 -- os `cadence_days` dias iniciais de cada célula ainda têm arquivo `.parquet` da calibração NÃO-causal antiga (cold-start period corretamente pulado na escrita, mas arquivo velho não removido) -- excluído da medição do item 22, decisão de limpeza pendente do Manager. Ver addenda abaixo pra histórico completo das 6 rodadas de auditoria externa que precederam a decisão de reprocessar -- linha de investigação CONCLUÍDA. `trailing_window_days=7` travado (elimina aliasing semanal). `cadence_days=7` preferido sobre `cadence_days=1` (que vencia a métrica de rastreio de calibração por margem grande, mas exercita 7,25x mais eventos de transição de threshold -- 365 vs. ~52/ano/símbolo -- cada um viola o invariante que define dollar-bar; taxa de subdimensionamento por evento é igual nos 2 braços, mas o retorno |z| associado a um evento de fronteira é maior sob C=1 na MESMA janela de calendário, 5/5 símbolos, testado contra confundimento de hora-do-dia -- elo real, modesto). Decisão apoiada também em 3 argumentos de engenharia de sistema (tipo de erro suave-vs-discreto, assimetria de custo de estar errado, superfície de paridade lote<->streaming ao vivo). Registrado em `config/constants.yaml` como candidato PREFERIDO, não mais provisório por motivo em aberto -- trava formal fica com o Manager confirmar por escrito quando conveniente. Reprocessamento real dos 5 símbolos x 3 resoluções (`tools/diagnostics/run_ag124_production_reprocessing.py`, overwrite=True sobre `data/capacity/dollar_bars_r{1,2,3}/`) DISPARADO e em execução no momento desta atualização -- item pendente pós-conclusão: item 22 do plano de ação (validação sobre dado REAL reprocessado). Achados colaterais fechados na mesma linha: item 14 (ThresholdBarsCarry persiste leftover entre períodos), item 15 (lead-in buffer), item 16 (circuit breaker validado), AG-120 (escopo confirmado isolado, 50/51 células limpas). Detalhe completo: `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`; decisão registrada em `PLANO_MESTRE_PRINCE2.md §15.15`. S1 (sweep tp_atr_mult/sl_atr_mult, R=tp/sl x S=sl) aberto na sequência, desenho em andamento (redesign_workflow)."
 
     addendum_medicao_semanal_2026-08-21: >
       Manager pediu explicitamente "teste semanal" — a sugestão 30/30 dias
@@ -8919,6 +9091,565 @@ entries:
       (7/14/21...), nunca um valor arbitrário curto — achado que as
       rodadas mensal/semanal não tinham revelado.
 
+    addendum_desacoplamento_trailing_cadence_2026-08-21: >
+      Auditoria externa (3 documentos, ver `AG-136`,
+      `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`) apontou que
+      `trailing_window_days`/`cadence_days` nunca tinham sido testados
+      desacoplados (`cadence == trailing` em toda medição até aqui) — e
+      que a sazonalidade semanal (addendum diário acima) é restrição
+      sobre a FONTE de calibração, não sobre a CADÊNCIA de aplicação.
+      `tools/diagnostics/analyze_dollar_threshold_calibration_error.py`
+      generalizado pra aceitar `--trailing`/`--cadence` separados
+      (default `cadence=trailing`, preserva bit-a-bit o comportamento
+      anterior, revalidado contra os 2 números publicados antes de
+      confiar no refactor). Medido contra `dollar_threshold_drift_
+      daily.json`:
+
+      **`T=7, C=1` (calibra com os 7 dias anteriores, recalibra TODO
+      dia) vence `T=7, C=7` (baseline até então) nos 5 símbolos, sem
+      exceção, por margem grande — não marginal:**
+      BTCUSDT 16,20%→13,35% · ETHUSDT 16,52%→12,27% · SOLUSDT
+      17,99%→11,80% · BNBUSDT 20,28%→14,44% · XRPUSDT 21,81%→16,37%
+      (Δ entre -2,85pp e -6,19pp, todos na mesma direção). Confirma com
+      dado real a previsão do parecer externo (§4, pergunta 2): a fonte
+      de calibração balanceada por dia-da-semana (`T=7`) elimina o
+      aliasing; a cadência curta (`C=1`) minimiza a exposição à deriva
+      secular — os dois efeitos são aditivos, não conflitantes, porque
+      são parâmetros genuinamente independentes.
+
+      **Preenchimento do grid (`W=5,6,8,9,13,15`, antes um buraco entre
+      4 e 14) também revela que a leitura original de "7 é mínimo local
+      do ciclo sazonal" era mais fraca do que registrado**: sob
+      `cadence==trailing`, BTCUSDT e ETHUSDT têm erro MENOR em `W=5`
+      (15,68%/15,01%) e `W=6` (16,13%/15,73%) do que em `W=7`
+      (16,20%/16,52%) — não há um mínimo local limpo exatamente em 7,
+      o padrão é mais um vale largo entre 5-9 com leve subida depois.
+      Isso não invalida a escolha de 7 (que segue sendo um bom ponto
+      dentro do vale, e a única opção com garantia estrutural de
+      balanceamento), mas remove o argumento "7 é o ótimo local
+      observado" -- não é, com o grid completo.
+
+      **Sweep do corte de erro** (`--high-mult`/`--low-mult`, itens 6/M1
+      do plano) em `1,7/0,6` e `2,5/0,4` contra `2,0/0,5` original, pra
+      `W∈{1,2,4,7}`: ranking BTC (7 vence 1) e ranking ETH (1 vence 7,
+      já no cut original) são ESTÁVEIS nos 3 cortes testados — a
+      preferência de cada símbolo não é artefato do corte estar em cima
+      da moda (achado 2.1 do parecer externo permanece uma preocupação
+      metodológica válida em geral, mas não muda a decisão neste caso
+      específico).
+
+      **Recomendação ATUALIZADA (ainda sugestão, pendente confirmação do
+      Manager)**: `trailing_window_days=7`, `cadence_days=1` — substitui
+      `7/7` como candidato a travar. **Pré-condição, não opcional sob
+      `cadence_days=1`**: preservar `ThresholdBarsCarry` através da
+      fronteira de período (item 14 do plano de ação) — sem isso,
+      cadência diária multiplica as fronteiras truncadas de ~52/ano
+      (sob `C=7`) pra ~365/ano, o que NINGUÉM mediu o custo real de
+      ignorar. Ordem de execução não muda (plano de ação, `AG-136`):
+      isso confirma que o item 14 deixa de ser "faça na mesma mudança"
+      e vira bloqueante de fato, exatamente como o parecer original
+      (doc 2) já havia sinalizado como condicional.
+
+    addendum_teste_manager_T3_C1_2026-08-21: >
+      Manager pediu teste de `T=3,C=1` (brainstorming próprio) antes de
+      confirmar `T=7,C=1`. Medido sobre `dollar_threshold_drift_daily.json`:
+      BTCUSDT 16,94% (vs. 13,35% em `T=7,C=1` -- pior, +3,59pp), ETHUSDT
+      15,87% (vs. 12,27% -- pior, +3,60pp), SOLUSDT 12,00% (vs. 11,80% --
+      marginal), BNBUSDT 14,52% (vs. 14,44% -- marginal), XRPUSDT 16,04%
+      (vs. 16,37% -- marginal, levemente melhor). `T=3` não é múltiplo do
+      ciclo semanal -- reintroduz aliasing na FONTE de calibração pros 2
+      símbolos com sazonalidade de fim de semana mais forte (BTC/ETH),
+      mesmo com `cadence=1`. Resultado NÃO muda a recomendação -- reforça
+      que a restrição de balanceamento recai sobre `trailing_window`
+      (precisa ficar em 7, ou múltiplo), independente de `cadence` (pode
+      ir a 1 sem custo, ganho grande). `T=7,C=1` permanece candidato único
+      a travar. Full detail: `docs/plano_acao_ag124_pos_auditoria_2026-08-
+      21.md` §8, JSON em `experiments/dollar_threshold_calibration_error_
+      daily_T3_C1.json`.
+
+    addendum_calibracao_casada_dia_semana_2026-08-21: >
+      Manager corrigiu o próprio brainstorming: `T=3` em bloco de dias
+      CORRIDOS não testa "menos histórico", testa "histórico
+      desbalanceado" -- reformulado como calibração casada por
+      dia-da-semana (`_calibration_errors_weekday_matched`, `--weekday-
+      matched-weeks` no script): calibra o dia `d` usando as `n_weeks`
+      ocorrências mais recentes do MESMO dia-da-semana (`d-7,d-14,...`),
+      livre de aliasing por construção. Testado `n_weeks∈{1,2,3,4}` sobre
+      `dollar_threshold_drift_daily.json`: BTCUSDT wm3=11,13%/wm4=10,95%
+      (BATE `T=7,C=1`=13,35%), ETHUSDT wm3=11,78% (bate/empata
+      `T=7,C=1`=12,27%) -- mas SOLUSDT wm1-4=17,05-19,48% (PERDE de
+      `T=7,C=1`=11,80%), BNBUSDT wm1-4=22,28-23,02% (perde de 14,44%),
+      XRPUSDT wm1-4=22,27-24,54% (perde de 16,37%). Nenhum candidato único
+      domina os 5 símbolos -- casamento por dia-da-semana troca recência
+      (informação de tendência dos últimos dias) por pureza sazonal, e o
+      trade-off só compensa pra BTC/ETH (sazonalidade de fim de semana mais
+      forte, sábado ~0,59x vs. ~0,70-0,73x nos outros 3). Dado que o
+      projeto já opera com hiperparâmetro GLOBAL rígido (decisão
+      preexistente, não revisada aqui), `T=7,C=1` em bloco continua sendo
+      a escolha única mais robusta (nunca pior caso, XRP 16,37% vs. 22-25%
+      do casado). Recomendação NÃO muda -- `T=7,C=1` permanece candidato a
+      travar. Full detail: `docs/plano_acao_ag124_pos_auditoria_2026-08-
+      21.md` §8.1, JSON em `experiments/dollar_threshold_calibration_
+      error_daily_weekday_matched.json`.
+
+    addendum_manager_aprova_e_fase2_implementada_2026-08-21: >
+      Manager: "T=7,C=1 aprovado" -- ordem de execução v2 (`AG-136`,
+      `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` §7) autorizada
+      ponta a ponta. Fase 2 (itens 14/15/16) implementada e testada nesta
+      sessão:
+
+      **Item 14 (carry através da fronteira)**: `src/data/bars.py` ganha
+      `threshold_bars_drain(carry)` (devolve barras fechadas sem tocar
+      leftover/base_value/threshold -- ao contrário de `finish`).
+      `build_dollar_bars_walkforward` reestruturado: 1 carry único criado
+      no 1º período real, reusado (só `threshold`/`max_leftover_trades`
+      mudam por período), `drain` a cada período, `finish` só no ÚLTIMO
+      -- 1 barra subdimensionada por RODADA inteira, não por período (sob
+      `C=7`: ~1 em vez de ~52/ano; sob `C=1`: ~1 em vez de ~365/ano).
+      Achado colateral documentado (não escondido): trocar threshold
+      entre períodos pode fechar cedo um trade que "estava em progresso"
+      sob o threshold antigo -- `cum_value` nunca reseta, `bar_id =
+      cum_value // threshold` reinterpreta o histórico acumulado sob o
+      threshold novo; nenhum trade perdido/duplicado, só a fronteira
+      exata pode mudar (verificado em teste).
+
+      **Item 15 (lead-in buffer)**: mesma mudança de arquivo. TODO
+      período tenta calibrar agora, incluindo o 1º -- só a leitura de
+      trades pode olhar antes de `start` (nunca a escrita de barras). Só
+      descarta (cold-start) quando `calibrate_dollar_threshold_for_
+      validation` levanta `ValueError` (sem trade algum na janela --
+      início real de histórico, não mais um `if i==0` incondicional).
+      Recupera ~1 semana real por símbolo antes perdida sem necessidade.
+
+      **Item 16 (circuit breaker vs. pico ~14x)**: validado, SEM mudança
+      de código -- achado principal: "~14x" (razão de volume em DÓLAR/dia)
+      e "50x" (`bars_threshold_leftover_safety_multiplier`, multiplicador
+      de CONTAGEM DE TRADES) são dimensões diferentes, não comparáveis
+      diretamente. Pico de volume sustentado por mais trades de tamanho
+      semelhante ao calibrado fecha MAIS barras, não faz leftover crescer.
+      O que ameaça `max_leftover_trades` de verdade é mudança de FORMA da
+      distribuição (trades muito menores que o calibrado, deslocando
+      trades-por-barra além do multiplicador de segurança) -- categoria
+      de risco ortogonal ao "~14x" medido. 2 testes sintéticos novos
+      confirmam: pico de 14x legítimo passa com folga grande (leftover
+      residual ~1/50 do teto); mudança de forma (trades 60x menores)
+      dispara `LeftoverOverflowError` corretamente.
+
+      **Testes**: 6 novos (`test_data_bars.py` x4, `test_data_build_
+      dollar_bars.py` x2), todos verdes. **Achado colateral corrigido no
+      caminho, fora do escopo de AG-124**: `test_models_pipeline_paths.py`
+      tinha 4 testes quebrados desde a implementação do AG-032 item 8
+      (sessão anterior) -- mesmo bypass já aplicado a 5 testes de
+      `test_validation_leakage.py` nunca tinha sido aplicado aqui.
+      Corrigido (2 pontos). Suíte completa: 1619 passed (1613 + 6 novos),
+      1 skip/2 xfail pré-existentes não relacionados. `banned_patterns
+      --strict`/`ruff`/`mypy --strict` limpos em todos os 6 arquivos
+      tocados. Detalhe completo: `docs/plano_acao_ag124_pos_auditoria_
+      2026-08-21.md` §9.
+
+      Fase 3 (item 11, autocorrelação/curtose sobre barras reais) é o
+      próximo passo da ordem autorizada -- ainda não iniciada nesta
+      entrada.
+
+    addendum_fase3_item11_achado_curtose_2026-08-21: >
+      **Achado real que COMPLICA a decisão já aprovada -- não confirma
+      trivialmente `T=7,C=1`.** `tools/diagnostics/measure_dollar_bar_
+      return_quality.py` (novo) rodou `build_dollar_bars_walkforward` DE
+      VERDADE (dest_root=tempdir descartável, nunca `data/capacity/`)
+      sobre amostra real de 30 dias (2026-07-01..2026-07-30), 5 símbolos,
+      `T7,C7` vs. `T7,C1`, medindo autocorrelação lag-1 e curtose em
+      excesso dos retornos de barra -- as 2 âncoras que faltavam do trio
+      do parecer externo (§2.2, dispersão por dia-da-semana já medida no
+      item 9).
+
+      Autocorrelação: sem vencedor claro, ambos < 0,035 em módulo pros 5
+      símbolos -- diferença sem relevância prática.
+
+      **Curtose: `T7,C1` PIOR que `T7,C7` em 4 dos 5 símbolos, às vezes
+      dramaticamente** -- BTCUSDT 5,02→68,49 (13,6x), SOLUSDT
+      16,33→31,46 (1,9x), BNBUSDT 15,65→33,94 (2,2x), XRPUSDT
+      34,42→56,30 (1,6x); só ETHUSDT inverte (91,38→78,38, T7,C1 um
+      pouco melhor). É o OPOSTO do que a métrica de erro de calibração
+      (item 9) sozinha sugeria -- `T7,C1` rastreia `dollar_per_day` mais
+      de perto, mas produz caudas de retorno MUITO mais pesadas, a
+      propriedade que barras por atividade deveriam reduzir (mais perto
+      de IID), não piorar.
+
+      Mecanismo plausível (não confirmado com certeza pela amostra de 30
+      dias): `T7,C1` recalibra diariamente, reage rápido a picos de
+      volume/volatilidade intra-semana, concentrando um movimento grande
+      em MENOS barras maiores (o threshold "acompanha" o pico) -- em vez
+      de espalhar o mesmo movimento por MAIS barras menores, o que
+      `T7,C7` faz por atraso (threshold parado a semana inteira), não
+      por desenho. Consistente com `T7,C1` produzir MENOS barras que
+      `T7,C7` no mesmo período (1257-1805 vs. 2302-2505).
+
+      Limitação explícita: `T7,C7` só tem 5 eventos de recalibração
+      nesta amostra de 30 dias (`n_periods=5`) contra 30 de `T7,C1` --
+      pouco pra conclusão definitiva, mas o sinal (mesma direção, 4/5
+      símbolos, magnitude não-trivial) é forte o bastante pra registrar
+      e levar ao Manager.
+
+      **Trade-off real, não decidido aqui**: `T7,C1` vence decisivamente
+      no erro de calibração (item 9, -2,85 a -6,19pp em todos os 5
+      símbolos) E perde (na maioria) em curtose (item 11, pior em 4/5,
+      até 13,6x pior). Nenhuma métrica domina a outra. Isto muda "travar
+      T7,C1" de aprovação sem ambiguidade pra uma escolha consciente de
+      trade-off (rastreio de volume mais fiel vs. caudas mais pesadas,
+      relevante pra qualquer consumidor downstream sensível a outliers).
+      Reportado ao Manager como achado que pode reabrir a decisão já
+      aprovada (item 20 do plano de ação) -- NÃO decidido
+      automaticamente aqui. Full detail: `docs/plano_acao_ag124_pos_
+      auditoria_2026-08-21.md` §10, JSON em `experiments/dollar_bar_
+      return_quality_sample.json`.
+
+    addendum_validacao_auditor_curtose_v2_2026-08-21: >
+      Manager consultou o auditor (autor do parecer/adendo) sobre o
+      achado de curtose acima. 4 pontos da resposta, cada um verificado
+      antes de aceitar:
+
+      (1) Curtose dominada por poucas barras extremas em n~1500-2500 --
+      ACEITO, conta de mistura de escala reproduzida (minoria de
+      variância menor desloca curtose de 3 pra ~3,09, não pra 68).
+
+      (2) Confundidor "5 resets de carry contra 30" -- NÃO confirmado
+      como descrito: verificado em código
+      (`src/data/build_dollar_bars.py:705,765,783`) que o item 14 (já
+      implementado ANTES desta medição rodar) já elimina reset de carry
+      por período -- 1 único carry por rodada, 1 só `finish` no fim, pros
+      2 candidatos. O auditor parece ter avaliado com modelo mental
+      pré-item-14. MAS existe mecanismo relacionado real e irredutível:
+      `carry.threshold` muda 5x (T7,C7) vs. 30x (T7,C1) com leftover
+      ainda aberto -- já documentado em teste
+      (`test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_
+      periodos`). Não é bug, é o que "cadência" significa.
+
+      (3) Curtose é ferramenta ruim pra este n -- ACEITO (fato
+      estatístico estabelecido).
+
+      (4) 3ª âncora nunca rodou sobre barras reais -- corrigido.
+
+      Script reescrito (v2, `tools/diagnostics/measure_dollar_bar_
+      return_quality.py`), rodado sobre a mesma amostra:
+      `experiments/dollar_bar_return_quality_sample_v2.json`.
+
+      **Excluir as 29 barras de fronteira (1ª de cada período
+      não-inicial) é HETEROGÊNEO, não confirma o mecanismo do auditor
+      universalmente**: melhora XRP (curtose 56,30->7,00, quase resolve
+      sozinho), melhora SOL/BNB moderadamente, mas PIORA BTC/ETH
+      (68,49->85,15 e 78,38->104,26) -- os outliers de BTC/ETH NÃO estão
+      nas barras de fronteira.
+
+      **Achado novo, não estava no plano -- mecanismo mais preciso e
+      melhor sustentado: concentração de volatilidade de horário de
+      funding (Binance USDⓈ-M funding 00:00/08:00/16:00 UTC).** As 5
+      maiores barras padronizadas de CADA um dos 5 símbolos sob `T7,C1`
+      fecham entre 23:18-23:59:59 UTC, sem exceção. Verificado
+      quantitativamente pra BTCUSDT: barras fechando nos últimos 10 min
+      do dia UTC são 1,99% do total sob `T7,C1` (uniforme esperado
+      0,69%, ~2,9x excesso) contra 0,74% sob `T7,C7` (~igual ao
+      uniforme, sem excesso). Barras menores (cadência maior) concentram
+      o pico de funding em menos barras, produzindo retornos mais
+      extremos; barras maiores diluem o mesmo pico. Não é bug do
+      pipeline -- é granularidade de barra interagindo com microestrutura
+      real de mercado.
+
+      **2 medidas ROBUSTAS (não dominadas por 1-2 outliers) confirmam
+      `T7,C1` pior nos 5 símbolos, sem exceção**: índice de cauda de
+      Hill (`T7,C1` α=2,55-3,41 vs. `T7,C7` α=4,41-5,17, calculado sobre
+      os 5% maiores `|retorno|`) e CV de barras-por-dia-da-semana sobre
+      barras reais (`T7,C1` 0,49-0,77 vs. `T7,C7` 0,36-0,51, MAIOR
+      dispersão sob `T7,C1`, oposto do esperado).
+
+      **Síntese**: hipótese específica do auditor (confundidor de carry)
+      não se sustenta -- já corrigida antes da medição rodar. Mas
+      substituir curtose por medidas robustas não faz o achado
+      desaparecer -- acha um achado DIFERENTE e melhor sustentado (Hill +
+      CV semanal, ambos robustos, ambos unânimes nos 5 símbolos, com
+      mecanismo causal identificado e verificado). **Pesa MAIS contra
+      travar `T7,C1` do que o achado frágil original.** Ainda não
+      decidido -- Manager precisa escolher entre travar `T7,C7`, travar
+      `T7,C1` conscientemente do trade-off, ou testar candidato
+      intermediário (`T7,C2`/`T7,C3`). Full detail: `docs/plano_acao_
+      ag124_pos_auditoria_2026-08-21.md` §11.
+
+    addendum_RETRATACAO_teste_decisivo_2026-08-21: >
+      **O addendum anterior (Hill+CV "confirmam T7,C1 pior de forma
+      robusta") NÃO SE SUSTENTA -- retratado, não apagado (histórico
+      preservado acima).** Segunda rodada com o auditor: aceitou a
+      correção do item 14, mas reformulou o confundidor -- não é
+      "reset", é a semântica de troca de threshold com barra em aberto
+      (documentada agora, não mais indefinida -- ver `src/data/build_
+      dollar_bars.py::build_dollar_bars_walkforward`), rodando 6x mais
+      vezes no braço `C=1` (30 vs. 5). Propôs teste decisivo: se a
+      concentração em 23:5x fosse funding (00h/08h/16h UTC), apareceria
+      nos 3 horários, nos 2 braços.
+
+      **Teste decisivo executado, BTCUSDT**: pré-00h `T7,C7`=1,06x
+      `T7,C1`=2,86x (excesso só em C1); pré-08h `T7,C7`=0,87x
+      `T7,C1`=0,80x (SEM excesso, nenhum dos 2); pré-16h `T7,C7`=1,75x
+      `T7,C1`=1,26x (excesso leve, MAIOR em C7 -- direção oposta).
+      **Refuta microestrutura de funding genérica** -- só pré-00h mostra
+      o padrão assimétrico. Confirma a leitura do auditor (fronteira de
+      calibração), refuta a minha (funding).
+
+      **Redefinição de fronteira (janela de ~1h em torno de 00h UTC, não
+      só a flag estreita "1ª barra do período") + reexecução sobre
+      Hill, não só curtose, nos 5 símbolos**: excluir essa janela
+      (menos de 4% das barras) faz a curtose colapsar pra perto de zero
+      NOS 2 BRAÇOS (ex. BTCUSDT: C7 5,02->0,18, C1 68,49->2,50) E o Hill
+      CONVERGE entre braços (ambos ficam 4,1-6,1, contra o 2,5-3,4 vs.
+      4,4-5,2 que parecia diferença estrutural robusta). **O auditor
+      estava certo: Hill e curtose não eram confirmações independentes,
+      liam a mesma janela contaminada** (~30 barras/braço sob C=1 contra
+      ~5 sob C=7, cardinalidade grande o bastante pra atravessar
+      qualquer estimador, robusto ou não).
+
+      **O achado "T7,C1 tem cauda estruturalmente mais pesada" (addendum
+      anterior) NÃO FICA REGISTRADO COMO CONFIRMADO.** Vira observação
+      pendente de desconfundir: por que retornos na janela 23:30-00:30
+      UTC são desproporcionalmente extremos, mais sob C=1 (2,86x) que
+      C=7 (~uniforme), mas presentes em algum grau nos 2 braços -- causa
+      raiz NÃO isolada (candidatos: efeito residual da transição de
+      threshold mais amplo que só a 1ª barra; fenômeno real de mercado
+      na virada de dia UTC; possível conexão com `AG-120`, desalinhamento
+      de timestamp nunca totalmente investigado -- item 13/B0 do plano).
+
+      **Decisão, seguindo a recomendação do auditor sem alteração**:
+      `T=7,C=1` NÃO travado. `T=7,C=7` fica candidato PROVISÓRIO -- não
+      porque a evidência contra `C=1` esteja estabelecida (não está),
+      mas porque `C=1` exercita 6x mais um caminho de código só agora
+      formalizado, e sua vantagem (item 9) vive numa métrica cujo corte
+      nunca passou por sweep (M1). `T7,C2`/`T7,C3` REJEITADOS --
+      interpolar entre 2 braços cuja diferença não está explicada não
+      informa nada. Semântica de troca de threshold documentada em
+      código (determinística, testada, já não "não trivial"). Full
+      detail: `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` §12.
+
+    addendum_terceira_rodada_M1_redux_e_residual_2026-08-21: >
+      3ª rodada com o auditor, 4 pontos: (1) leitura mais fina do teste
+      decisivo -- pré-08h abaixo de 1x nos 2 braços, pré-16h maior em
+      C7 (direção oposta), só pré-00h separa por 2,7x -- conclusão
+      revisada: NÃO é uma explicação única, são 2 mecanismos sobrepostos
+      (efeito modesto de virada de dia, presente nos 2 braços + amplificação
+      por transição de threshold, concentrada no braço de 30 transições).
+      (2) Teste decisivo restante (tamanho/duração de barra na janela
+      23:30-00:30 vs. resto do dia, por braço) -- RESULTADO MISTO: tamanho
+      (quote_volume) praticamente igual dentro/fora da janela nos 2
+      braços; duração maior na janela nos 2 braços, proporcionalmente
+      MAIOR em C7 (+49%) que C1 (+21%) -- oposto do que "amplificação só
+      em C1" prediria. Inspeção das 5 barras mais extremas de C1
+      individualmente: assinaturas MISTAS -- 1 barra com quote_volume a
+      0,20x da mediana (assinatura de transição), 2 barras com tamanho
+      normal mas duração 2,5-3,2x maior (assinatura de mercado real) --
+      confirma que os 2 mecanismos coexistem, não são hipóteses
+      excludentes. (3) Conexão AG-120 x janela de meia-noite -- já
+      respondida no addendum anterior de AG-120: desalinhamento real é
+      2026-05-04, 04:06-04:08 UTC, fora da janela por ~4h, evento único
+      (não recorrente como o achado de curtose) -- confirmado
+      INDEPENDENTE, B0 não precisa de redesenho. (4) M1 redux -- sweep
+      original (item 6) testou o corte 2x/0,5x sobre a grade ACOPLADA
+      (T=C), nunca especificamente sobre T7,C7 vs. T7,C1 (a comparação
+      que decide a aprovação). Refeito nos 3 cortes (2,0/0,5, 1,7/0,6,
+      2,5/0,4), 5 símbolos: C1 vence C7 em TODAS as 15 combinações,
+      sem exceção nem inversão de sinal -- a vantagem de C1 no erro de
+      calibração NÃO é artefato do corte. M1 passa -- não muda a decisão
+      de travar C7 provisório (motivo continua sendo a semântica de
+      transição, não dúvida sobre M1), mas fecha a verificação pendente.
+      Item "documentar semântica" reconfirmado como já travado -- teste
+      já asserta valores exatos derivados à mão (característica, não
+      checagem frouxa). Full detail: `docs/plano_acao_ag124_pos_
+      auditoria_2026-08-21.md` §14.
+
+    addendum_quarta_rodada_contagem_transicao_2026-08-21: >
+      4ª rodada com o auditor: (1) argumentou que M1 passar remove um
+      dos 2 pilares do "provisório" (semântica caracterizada + M1 robusto
+      = os 2 motivos originais caíram), propondo a medição final que
+      faltava -- contar, entre as 29-30 transições de threshold da
+      amostra (T7,C1), quantas produzem barra com `quote_volume < 0,5x`
+      a mediana; se poucas, custo estrutural de C=1 seria desprezível.
+      (2) Releu 14.2 como "mercado dominante, contaminação minoritária
+      de transição" (1/5 barras extremas com assinatura de transição,
+      2/5 com assinatura de mercado), não um empate entre mecanismos.
+
+      **Medição rodada -- resultado na direção OPOSTA à esperada pelo
+      auditor.** Contagem real, 5 símbolos, 29 transições cada (amostra
+      de 30 dias): BTCUSDT 12/29 (41,4%), ETHUSDT 20/29 (69,0%), SOLUSDT
+      12/29 (41,4%), BNBUSDT 16/29 (55,2%), XRPUSDT 17/29 (58,6%) --
+      **41-69% de TODAS as transições produzem barra subdimensionada,
+      não "poucas".** A barra de 0,20x achada antes (inspeção das 5
+      maiores por retorno) não era um caso raro dentro de uma amostra
+      dominada por mercado -- é uma amostra pequena de um fenômeno que,
+      medido sobre as 29 transições completas, é comum, quase
+      majoritário em alguns símbolos (ETH 69%).
+
+      **Não decide sozinho que o mecanismo de transição CAUSA a curtose**
+      (barra subdimensionada não implica automaticamente retorno maior
+      -- esse elo não foi medido aqui, só a frequência do subdimensiona-
+      mento). Mas decide a pergunta que o próprio auditor fez: o custo
+      estrutural de `C=1` em FREQUÊNCIA não é desprezível -- é uma
+      propriedade regular do desenho sob recalibração diária, não um
+      acidente raro. Pela régua que o próprio auditor propôs ("se forem
+      poucas, decisão inclina pra C1"), o resultado inclina na direção
+      contrária -- reforça, não remove, a cautela sobre `C=1`.
+
+      **`T=7,C=7` continua candidato PROVISÓRIO -- motivo atualizado**
+      (não mais "caminho não caracterizado", que de fato caiu com a
+      semântica documentada+testada, nem "corte não varrido", que caiu
+      com M1): agora é "custo de transição de `C=1` é frequente
+      (41-69% das recalibrações produzem barra subdimensionada), elo
+      exato com o achado de curtose não isolado -- não é escolha entre
+      2 opções com diferença pequena, como pareceu por um momento após
+      M1 passar."
+
+    addendum_correcao_taxa_base_e_elo_com_retorno_2026-08-21: >
+      **Correção ao addendum anterior -- a formulação "propriedade
+      regular do desenho de C=1" era mais forte do que a medição
+      sustentava.** Auditor apontou (corretamente) que 41-69% pode ser a
+      taxa-base de QUALQUER fronteira de recalibração (resíduo no
+      instante de corte é aproximadamente uniforme sob um processo de
+      acumulação por threshold, então ~50% de barras de corte abaixo de
+      0,5x da mediana é esperado mesmo sem nada patológico) -- não uma
+      severidade específica de `C=1`. Propôs 2 controles, ambos rodados:
+
+      **Controle A (taxa por evento em `C=7`, n=4 transições/símbolo)**:
+      BTCUSDT 50%, ETHUSDT 50%, SOLUSDT 50%, BNBUSDT 75%, XRPUSDT 25% --
+      média ~50%, igual à taxa de `C=1` (41-69%). **Confirmado: a taxa
+      de subdimensionamento por evento NÃO difere entre os braços --
+      não é defeito de `C=1`, é propriedade de qualquer fronteira.**
+
+      **Controle B (barras não-fronteira)**: 0,0-0,6% subdimensionadas
+      nos 2 braços -- o corte 0,5x separa fronteira de normal de
+      verdade, não está mal calibrado em geral.
+
+      **Mas o elo com retorno extremo, que faltava medir (o outro lado
+      do fork que o próprio auditor definiu -- "ou se mede o elo... ou
+      se trava C=1"), foi medido e é REAL e ASSIMÉTRICO entre os
+      braços**, diferente da taxa de subdimensionamento (que é
+      simétrica). Retorno |z| médio, barra de fronteira vs. barra
+      normal: sob `C=1` (n=29/símbolo) -- BTCUSDT 2,0x, ETHUSDT 2,7x,
+      SOLUSDT 1,6x, BNBUSDT 2,7x, XRPUSDT 3,3x (fronteira SEMPRE mais
+      extrema, 5/5 símbolos). Sob `C=7` (n=4/símbolo, mais ruidoso mas
+      direção consistente) -- BTCUSDT 0,16x, ETHUSDT 0,08x, SOLUSDT
+      0,42x, BNBUSDT 0,02x, XRPUSDT 0,25x (fronteira SEMPRE MENOS
+      extrema que o normal, 5/5 símbolos, direção oposta).
+
+      **Síntese, sobrevive aos 2 controles**: a taxa de subdimensionamento
+      por evento é base (igual nos 2 braços) -- não é defeito de `C=1`.
+      Mas a CONSEQUÊNCIA em retorno de um evento de fronteira não é base
+      -- é específica de `C=1` (elevada, 5/5 símbolos) e ausente/invertida
+      em `C=7` (5/5 símbolos). Cautela sobre `C=1` não se apoia mais em
+      "evento raro e talvez inofensivo, só mais frequente" -- se apoia em
+      frequência de evento (7,25x mais, 29 vs. 4) MULTIPLICADA por uma
+      consequência de retorno que é real e específica do braço, agora
+      medida, não presumida. `T=7,C=7` continua candidato PROVISÓRIO --
+      motivo final desta rodada (4ª formulação, cada vez mais precisa):
+      "C=1 gera 7,25x mais eventos de transição; a taxa de
+      subdimensionamento por evento é equivalente entre braços (não é
+      defeito de C=1), mas o retorno associado a um evento de fronteira é
+      1,6-3,3x maior que o normal sob C=1 (5/5 símbolos) e menor sob C=7
+      (5/5 símbolos, n pequeno) -- frequência × consequência de retorno
+      específica do braço, ambas medidas, não presumidas."
+
+    addendum_correcao_confundimento_amostral_e_desfecho_final_2026-08-21: >
+      **Correção crítica ao addendum anterior -- a comparação "fronteira
+      C=1 vs. fronteira C=7" estava confundida com hora-do-dia, e o
+      auditor identificou os 2 problemas amostrais antes de eu aceitar
+      os números.** (1) As 4 fronteiras de `C=7` são os MESMOS 4
+      instantes de calendário nos 5 símbolos -- cripto correlaciona
+      fortemente no mesmo minuto, então "5/5 símbolos concordam" sob
+      `C=7` é ~n=4, não 5 réplicas independentes. (2) Sob `C=1`,
+      "fronteira" e "meia-noite" são quase o MESMO conjunto (29 das 30
+      meia-noites são fronteira); sob `C=7`, fronteira é 1 em 7
+      meia-noites -- então comparar "fronteira C=1" contra "fronteira
+      C=7" (só 4 das 30 meia-noites) escondia o efeito de hora-do-dia já
+      confirmado no turno 14 (excluir a janela 23:30-00:30 colapsa
+      curtose NOS DOIS BRAÇOS) atrás de uma subamostragem desigual.
+
+      **Teste decisivo proposto pelo auditor, executado**: comparar
+      `|z|` médio de TODAS as barras que fecham na janela 23:30-00:30
+      (não só as 4/29 flagadas como "fronteira") contra o resto do dia,
+      nos 2 braços, mesma janela, amostra muito maior (n=71-103/braço,
+      não mais n=4):
+
+      | símbolo | razão C=7 (janela/resto) | razão C=1 (janela/resto) |
+      |---|---:|---:|
+      | BTC | 1,20x | 2,25x |
+      | ETH | 1,53x | 1,86x |
+      | SOL | 1,09x | 1,63x |
+      | BNB | 1,34x | 1,81x |
+      | XRP | 1,17x | 1,99x |
+
+      **Resultado: o efeito de hora-do-dia É REAL e aparece nos 2
+      braços** (`C=7` 1,09-1,53x, sempre >1) -- confirma a hipótese do
+      auditor, os números anteriores (0,02-0,42x "invertido" pra `C=7`)
+      estavam confundidos por amostra pequena e não-representativa, NÃO
+      REFLETEM a realidade -- retratados, não usados na decisão. **Mas
+      `C=1` mostra elevação CONSISTENTEMENTE MAIOR que `C=7` na MESMA
+      janela, nos 5 símbolos, sem exceção** (incremento de `C=1` sobre
+      `C=7` na mesma janela: BTC 1,88x, ETH 1,22x, SOL 1,50x, BNB 1,35x,
+      XRP 1,70x). **Os 2 mecanismos são reais simultaneamente**: efeito
+      de hora-do-dia (base, presente nos 2 braços) + amplificação de
+      transição (incremento específico de `C=1`, sobre a mesma base) --
+      confirma a leitura original do turno 14 (§14.1) com números agora
+      corretos e não-confundidos, não a leitura intermediária (turno
+      anterior) que atribuía toda a elevação à transição.
+
+      **Desfecho final da linha de investigação estatística**: o elo
+      transição↔retorno é real mas MENOR do que o addendum anterior
+      media (confundido) -- ainda assim positivo e unânime nos 5
+      símbolos. Não decide sozinho a escolha de cadência.
+
+      **O que decide, per reformulação do auditor (nível de sistema, não
+      estatística de cauda)**: contagem de eventos em que a barra viola o
+      próprio invariante que define uma dollar-bar (tamanho determinado
+      por troca de threshold com acumulação em voo, não por volume) --
+      `C=7` ≈52/ano/símbolo, `C=1` ≈365/ano/símbolo, contagem sem
+      ambiguidade. Mais 3 argumentos qualitativos, não dependentes de
+      medição adicional: (a) **tipo de erro** -- `C=7` erra de forma
+      SUAVE (threshold um pouco desatualizado, absorvido por feature
+      normalizada por ATR); `C=1` erra de forma DISCRETA (linha
+      individual anômala, nada absorve, ~92 features planejadas/79 não
+      escritas ainda não sabem quais são sensíveis a isso); (b)
+      **assimetria de estar errado** -- sem métrica de sucesso final
+      registrada (confirmado), escolher `C=7` errado é reversível e
+      barato (rastreamento pior, corrige no próximo reprocessamento);
+      escolher `C=1` errado significa 7x mais artefatos gravados em 6
+      anos × 5 símbolos, herdados por tudo a jusante, concentrados
+      possivelmente na cauda onde risco olha -- descobrir depois custa
+      reprocessar tudo de novo; (c) **superfície de paridade
+      lote↔streaming ao vivo** -- cada transição é um ponto onde o loop
+      ao vivo (`src/live/` ainda vazio) precisa reproduzir exatamente a
+      fronteira do backtest; `C=1` multiplica por 7x os pontos onde job
+      atrasado/janela incompleta/restart no horário errado diverge
+      grade backtest↔produção, no artefato mais fundamental do sistema.
+
+      **`T=7,C=7` -- decisão final desta linha de investigação, não mais
+      "provisório por motivo em aberto"**: preferido por evidência
+      estatística parcial (elo real mas modesto) E por 3 argumentos de
+      engenharia de sistema independentes da estatística (contagem de
+      violação de invariante, tipo de erro, assimetria de custo de estar
+      errado, superfície de paridade ao vivo) -- decisão fica com o
+      Manager formalizar, mas a linha de investigação de cadência está
+      concluída. Full detail: `docs/plano_acao_ag124_pos_auditoria_
+      2026-08-21.md` §17.
+
+      **Padrão registrado, não específico desta decisão** (pedido
+      explícito do auditor): quando 2 parâmetros são amarrados (aqui,
+      `trailing_window_days == cadence_days` até o desacoplamento desta
+      sessão), toda verificação feita sobre "o parâmetro" fica ambígua
+      sobre qual dos dois foi de fato verificado -- 2ª ocorrência
+      confirmada nesta MESMA investigação (a métrica de erro de
+      calibração original nunca tinha sido varrida especificamente para
+      `T7,C7` vs. `T7,C1`, só para a grade acoplada `T=C`, `M1 redux`
+      acima) além da 1ª (o próprio achado de aliasing semanal recaindo
+      só sobre `trailing_window`, não sobre `cadence`, addendum de
+      desacoplamento). Vale como heurística geral pra revisão futura de
+      qualquer par de parâmetros historicamente acoplado neste projeto.
+
+      Full detail: `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`
+      §15.
+
   - id: AG-125
     date: "2026-08-21"
     file: "src/data/validate.py"
@@ -8973,8 +9704,15 @@ entries:
       (`AG-080`/`AG-123`, tabela de prontidão dessincronizada da decisão
       real).
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão do Manager pendente (Tabela 1, pergunta 4). Nenhum código tocado -- é puramente uma pergunta de sequenciamento que precisa de resposta antes de qualquer expansão do catálogo (~79 features restantes) começar."
+    resolution: >
+      Manager decidiu (2026-08-22): expansão do catálogo de features
+      (~92, ~79 restantes) É a MESMA iniciativa que `03_FEATURES`/`V41-7`
+      -- não é independente. Segue portanto a dependência já mapeada em
+      `PLANO_MESTRE_PRINCE2.md §11.4`: espera `V41-6→V41-5→M4` fechar
+      primeiro. `T1_FEATURE_IDS` permanece travado nas 10 features atuais
+      até essa cadeia desbloquear -- nenhuma expansão de catálogo deve
+      começar antes disso, mesmo que pareça trabalho isolado/paralelo.
+    status: "fechado 2026-08-22 -- decisão do Manager: mesma iniciativa que V41-7, espera V41-6->V41-5->M4 fechar. Não é mais pergunta de processo em aberto -- é dependência confirmada."
 
   - id: AG-127
     date: "2026-08-21"
@@ -9346,3 +10084,129 @@ entries:
       research` especificamente). 5 comandos mecânicos limpos nos 3
       arquivos `.py` tocados.
     status: "fechado 2026-08-21 -- Grupo H descontinuado, código de pesquisa removido, PRD anotado, achado colateral (bug de lag) registrado pra não ser esquecido/repetido se algum dia for reaberto."
+
+  - id: AG-136
+    date: "2026-08-21"
+    file: "docs/plano_acao_ag124_pos_auditoria_2026-08-21.md, tools/diagnostics/analyze_dollar_threshold_calibration_error.py"
+    related_file: "docs/brief_auditoria_externa_2026-08-21_calibracao_causal_dollar_bar_ag124.md, docs/Retorno_Brief/parecer_auditoria_externa_ag124_calibracao_causal.md, docs/Retorno_Brief/adendo_pareceres_ag118_ag124_pos_respostas.md, docs/Retorno_Brief/relatorio_auditoria_externa_2026-08-21.md, audit/architecture_gaps_log.yaml::AG-124, AG-114, AG-118, AG-125"
+    found_by: "Claude, validação de engenharia sobre os 3 documentos de retorno da auditoria externa do brief AG-124, a pedido do Manager"
+    gap: >
+      Não é um gap único -- é o registro-mestre da triagem de 3 documentos
+      de retorno de auditoria externa sobre AG-124 (recalibração causal do
+      threshold dollar-bar), com 31 itens classificados (Fix Mecânico /
+      Teste de Validação / Redesenho / Descartado / decisão do Manager),
+      detalhe completo em `docs/plano_acao_ag124_pos_auditoria_2026-08-
+      21.md`. 3 achados que valem registro aqui, não só no doc:
+
+      (1) **Um dos 3 documentos (`relatorio_auditoria_externa_2026-08-
+      21.md`) não é confiável** -- cita `AG-125` pro ticket de bad
+      prints, mas `AG-125` já existe (registrado no mesmo dia, assunto
+      diferente: `QualityReport` sem campo `symbol`) -- colisão de
+      numeração real, não estilística. Também descreve uma "sabatina
+      técnica com engenharia e governança" que não ocorreu, cita
+      `zstd`/dictionary encoding sobre `threshold_quote` sem nenhuma
+      ocorrência real em `src/data/bars.py`, propõe um limiar `CV_N ≤
+      0,40` sem medição (viola B23), e conclui "RATIFICADO 7/7"
+      contradizendo de forma direta o parecer tecnicamente mais rigoroso
+      dos outros 2 documentos (que mostra W=1 vencendo a métrica bruta em
+      3/5 símbolos e `T=7/C=1` nunca medido). Tratado como não-confiável;
+      só 2 de suas 5 "insights" sobreviveram à checagem individual
+      (lead-in buffer pro cold-start; investigar mega-trades/`O=H=L=C`).
+
+      (2) `tp_atr_mult`/`sl_atr_mult` (`config/constants.yaml:164-180`)
+      JÁ SÃO classe A com `sweep_required: true` e `sweep_range`
+      declarado desde `review_by: sprint_6` -- os docs 1/2 propunham
+      "classificar como classe A" como se fosse gap de classificação; é
+      gap de EXECUÇÃO (sweep nunca rodou), não de classificação.
+
+      (3) `regime_tradeable: bool` (`src/risk/limits.py:127,511,548`,
+      `src/regime/build_hmm.py:111`) JÁ ESTÁ wireado, confirmado hoje
+      (2026-08-21, `PLANO_MESTRE_PRINCE2.md` §15.13) -- os docs tratavam
+      isso como pendência de desenho; é decisão pendente do Manager
+      (reconfirmar via AG-118 nos 3 candidatos, ou desligar), não gap de
+      código.
+    severity: "médio -- nenhum item bloqueia produção hoje (reprocessamento real dos 5 símbolos ainda não rodou), mas 2 itens (varredura de integridade AG-120, circuit breaker vs. pico ~14x) são bloqueantes ANTES do reprocessamento, per ordem de execução autorizada"
+    layer: "data/analysis (tools/diagnostics/), governança"
+    consequence: >
+      Sem este registro, o relatório não-confiável (achado 1) poderia ser
+      lido numa sessão futura como "auditoria concluiu, 7/7 ratificado"
+      e usado pra justificar pular as medições M1-M5/B0 que os outros 2
+      documentos (mais rigorosos) mostram serem necessárias antes de
+      travar o par e reprocessar 6+ anos × 5 símbolos.
+    resolved_by_commit: null
+    resolution: >
+      Plano de ação completo salvo em `docs/plano_acao_ag124_pos_
+      auditoria_2026-08-21.md` (31 itens, tabela + detalhe, ordem de
+      execução autorizada pelo Manager). Itens 1 (prosa imprecisa do
+      brief/docstring sobre o mecanismo rolling de `_calibration_errors_
+      for_window`) e 8 (desacoplar `trailing_window` de `cadence` no
+      script, habilitando medir `T=7,C=1`) implementados nesta sessão --
+      `tools/diagnostics/analyze_dollar_threshold_calibration_error.py`
+      generalizado (`trailing`/`cadence` separados, default `cadence=
+      trailing` preserva bit-a-bit o comportamento original, validado
+      contra os 2 números publicados de AG-124 antes desta mudança;
+      `--high-mult`/`--low-mult` parametrizáveis, habilitando o item 6/M1
+      -- sweep do corte de erro). Campo de saída renomeado `pct_error_
+      ge2x_or_le0_5x` -> `pct_error_bad` (nenhum consumidor programático
+      além deste script, só os 3 JSONs de experimento já existentes
+      guardam o nome antigo como dado estático -- sem quebra). Restante
+      dos 17 itens acionáveis (Teste de Validação: M1/M2/M3/M5/B0/
+      circuit breaker/S1/pós-reprocessamento; Redesenho: M4/carry/lead-
+      in) agendado na ordem do plano, execução seguindo nesta sessão.
+    status: "aberto -- plano registrado e parcialmente executado (itens 1, 8), restante em andamento"
+
+  - id: AG-137
+    date: "2026-08-22"
+    file: "tools/diagnostics/run_ag124_production_reprocessing.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-124, data/capacity/dollar_bars_r{1,2,3}/{symbol}/*.parquet, experiments/ag124_production_reprocessing_summary.json, tools/diagnostics/measure_ag124_post_reprocessing_validation.py"
+    found_by: "Claude, item 22 do plano de ação (validação sobre dado REAL reprocessado, docs/plano_acao_ag124_pos_auditoria_2026-08-21.md) -- achado ao rodar tools/diagnostics/measure_ag124_post_reprocessing_validation.py pela 1a vez, ShapeError de concat por schema divergente entre arquivos"
+    gap: >
+      O reprocessamento real do AG-124 (2026-08-22, 15/15 células, zero
+      erro) deixou os `cadence_days` (=7) dias INICIAIS de
+      `data/capacity/dollar_bars_r{1,2,3}/{symbol}/` com os arquivos
+      `.parquet` da calibração NÃO-causal ANTIGA (pré-AG-124), não
+      sobrescritos -- `overwrite=True` do reprocessamento só sobrescreve
+      os dias que o walkforward de fato produz output; o 1o período
+      (cold-start, sem histórico causal válido pra calibrar antes de
+      `SYMBOL_START_DATE`) é corretamente PULADO na escrita, mas o
+      arquivo velho que já existia nesse caminho não é removido nem
+      marcado. Confirmado em TODAS as 15 células (5 símbolos x 3
+      resoluções): exatamente 7 dias (6 pra BTCUSDT/R3, 1 dia a menos por
+      arredondamento de fronteira) no INÍCIO do histórico de cada
+      símbolo, mtime 2026-08-16 (pré-reprocessamento) vs. mtime
+      2026-08-22 (reprocessamento real) no restante, discriminável
+      programaticamente pela ausência da coluna `threshold_quote` (schema
+      antigo não a tinha). Nenhum outro ponto do histórico afetado --
+      confirmado por varredura de largura de schema em TODOS os arquivos
+      das 15 células.
+    severity: "médio"
+    layer: "data"
+    consequence: >
+      Quem ler `data/capacity/dollar_bars_r{1,2,3}/{symbol}/*.parquet`
+      pro histórico completo (sem excluir os `threshold_quote`-ausentes)
+      herda, sem saber, ~7 dias de barras calibradas com o MESMO
+      vazamento temporal que o AG-124 existe pra corrigir -- reintroduz
+      uma fatia pequena, mas real e silenciosa, do problema original.
+      Bloqueante só pra quem precisar do início exato do histórico de
+      cada símbolo (Sprint 6 original de BTCUSDT usa 2019-12-31 como
+      `SYMBOL_START_DATE` -- os 7 dias afetados são justamente
+      2019-12-31..2020-01-06). Não bloqueante pra M1-M6/S1 (nenhum usa o
+      início exato do histórico como amostra).
+    resolved_by_commit: null
+    resolution: >
+      Manager decidiu (2026-08-22): opção (a) -- deletar. Executado:
+      104 arquivos `.parquet` (7 dias x 5 símbolos x 3 resoluções, 6 em
+      BTCUSDT/R3 por já estar parcialmente ausente antes desta sessão)
+      removidos de `data/capacity/dollar_bars_r{1,2,3}/{symbol}/` via
+      script Python direto (identificados pelo mesmo discriminador de
+      schema, `threshold_quote` ausente -- não via Bash `rm` por causa
+      de um problema real de CRLF na lista intermediária, corrigido
+      antes de reexecutar). Verificado pós-deleção: 0 arquivo stale
+      restante nas 15 células; cada célula agora começa exatamente em
+      `SYMBOL_START_DATE[symbol] + cadence_days` (`2020-01-07` pra
+      BTCUSDT, `2021-12-08` pros outros 4) -- gap honesto no lugar do
+      dado com vazamento, sem barra alguma nesses dias, não um valor
+      calibrado errado. `tools/diagnostics/measure_ag124_post_
+      reprocessing_validation.py` (item 22) já excluía esses arquivos
+      da medição antes da deleção -- resultado do item 22 não muda.
+    status: "fechado 2026-08-22 -- 104 arquivos stale deletados, verificado 0 restante. Gap honesto nos cadence_days dias iniciais de cada célula, documentado, não bloqueante."

@@ -2322,3 +2322,95 @@ entries:
     gate de producao mesmo assim, como "seguranca extra de baixo custo" (bucket de stress ocupa so
     ~5-12% do tempo, ver ag114-regra-decisao-hmm-k4-vencedor-fragil acima) -- decisao de negocio
     registrada em PLANO_MESTRE_PRINCE2.md §15.13, nunca como se este achado tivesse mudado de sinal.'
+
+- id_curto: ag124-cadencia-t7c7-vs-t7c1-candidatos-recalibracao
+  fase: AG-124 (recalibracao causal do threshold dollar-bar) / Data Layer
+  lado: both
+  regime: 'nao aplicavel (comparacao de candidatos de CONSTRUCAO DE BARRA, nao de regime/alpha --
+    registrado aqui pelo mesmo motivo estrutural das entradas ag114/ag118 acima: multiplos candidatos,
+    propriedade estatistica medida, decisao tomada -- nao e edge de alpha, mas o padrao de "comparacao
+    de candidatos com decisao" e o mesmo, e o achado teria custo real de refazer se sumisse)'
+  janela: 'amostra real de 30 dias (2026-07-01..2026-07-30) pra estatisticas de retorno de barra
+    (curtose/Hill/janela horaria); historico completo (2019-12-31/2021-12-01..2026-08-07) pro sweep
+    de erro de calibracao (M1/item9)'
+  feature_ou_filtro: 'trailing_window_days=7 fixo (elimina aliasing semanal, decidido antes desta
+    entrada) -- candidatos comparados: cadence_days=7 vs. cadence_days=1, 5 simbolos'
+  metrica_tipo: 'erro de rastreio de calibracao (% periodos com razao dollar_per_day/calib_rate fora
+    de 2x/0,5x) + curtose em excesso + indice de cauda de Hill + razao |z| janela-meia-noite/resto-do-dia
+    + contagem de eventos de transicao/ano'
+  metrica_valor: 'T7,C1 vence erro de rastreio em TODOS os 5 simbolos por margem grande (-2,85 a
+    -6,19pp), robusto a sweep do corte de decisao (3 cortes testados, sem inversao de sinal -- M1
+    redux). MAS C1 gera 7,25x mais eventos de transicao de threshold que C7 (365 vs. ~52/ano/simbolo,
+    contagem exata via cadence_days). Taxa de barra subdimensionada por evento de transicao e
+    estatisticamente IGUAL entre os 2 bracos (~50%, controlado -- nao e defeito de C1, e propriedade
+    de qualquer fronteira de recalibracao). Retorno |z| medio na janela 23:30-00:30 UTC vs. resto do
+    dia: C7 1,09-1,53x (efeito de hora-do-dia real, presente nos 2 bracos), C1 1,63-2,25x (elevacao
+    CONSISTENTEMENTE maior que C7 na MESMA janela, 5/5 simbolos -- teste decisivo contra confundimento
+    de hora-do-dia, nao so fronteira-vs-fronteira que e amostra pequena/nao-independente entre
+    simbolos). Curtose/Hill originais (1a leitura) estavam parcialmente confundidos por amostra
+    pequena -- retratados e corrigidos ao longo de 6 rodadas de auditoria externa.'
+  n: '5 simbolos x histórico completo (M1/item9, milhares de periodos/simbolo); 5 simbolos x 29-30
+    dias (curtose/Hill/janela horaria, n=71-103 barras/braco na janela horaria apos correcao amostral)'
+  status: amarelo
+  fonte_arquivo: 'experiments/dollar_threshold_drift_daily.json, experiments/dollar_threshold_
+    calibration_error_daily_*.json, experiments/dollar_bar_return_quality_sample_v2.json'
+  fonte_secao: 'tools/diagnostics/analyze_dollar_threshold_calibration_error.py (M1/item9),
+    tools/diagnostics/measure_dollar_bar_return_quality.py (curtose/Hill/janela)'
+  data: '2026-08-21'
+  nota: 'Classificado amarelo (nao verde/vermelho) porque a decisao final (C7 preferido sobre C1) NAO
+    se apoia so nesta evidencia estatistica -- o elo estatistico entre transicao e retorno extremo e
+    real mas modesto, nao decisivo sozinho. A decisao efetiva se apoia em 3 argumentos de engenharia de
+    sistema, independentes desta medicao (contagem de violacao de invariante -- 52 vs 365/ano, sem
+    ambiguidade --, tipo de erro suave-vs-discreto, assimetria de custo de estar errado sem metrica de
+    sucesso final registrada, superficie de paridade lote-streaming ao vivo) -- ver PLANO_MESTRE_
+    PRINCE2.md §15.15 pra decisao completa. Historico de retratacao HONESTO preservado no detalhe
+    completo (docs/plano_acao_ag124_pos_auditoria_2026-08-21.md, audit/architecture_gaps_log.yaml::
+    AG-124, 10 addenda) -- inclusive 2 achados que pareciam solidos e foram corrigidos apos teste
+    decisivo proposto por auditoria externa (curtose/Hill "robustos" do turno 5 eram, na verdade,
+    contaminados pela mesma janela de meia-noite; comparacao fronteira-vs-fronteira do turno 6 estava
+    confundida com amostra nao-independente entre simbolos).
+
+    ADDENDUM 2026-08-22 (item 22, pos-reprocessamento real): medicao repetida sobre o dado REAL
+    reprocessado, historico completo (nao amostra de 30 dias) -- experiments/ag124_post_reprocessing_
+    validation.json, tools/diagnostics/measure_ag124_post_reprocessing_validation.py. Resultado
+    CONFIRMATORIO: curtose em excesso praticamente inalterada ao excluir barras de fronteira em TODAS
+    as 15 celulas (ex. BTCUSDT/R1 53,12 vs. 53,15; XRPUSDT/R1 122,46 vs. 122,49) -- sobre a serie real
+    completa (dezenas/centenas de milhares de barras por celula, nao mais os n=71-103 da amostra
+    horaria), o artefato de recalibracao e desprezivel; curtose alta observada e 100% evento de
+    mercado genuino (5 barras mais extremas por celula, todas nao-boundary, batem com Celsius/3AC
+    jun/2022, Black Thursday COVID mar/2020, colapso FTX nov/2022 -- esta ultima coincide quase
+    exatamente com m4_ftx_event_onset_ts_ms ja registrado no M4). Nao muda a classificacao amarelo
+    (a decisao continua apoiada nos 3 argumentos de sistema, nao so nesta estatistica), mas remove
+    a ultima duvida residual sobre se o metodo de recalibracao em si produziu dado degenerado.'
+- id_curto: s1-mfe-distribuicao-populacao-incondicional-fixture
+  fase: S1 (sweep tp_atr_mult/sl_atr_mult), item 1 da rodada 2026-08-22 -- prep de V41-6
+  lado: both
+  regime: all
+  feature_ou_filtro: 'mfe_atr_units (Maximum Favorable Excursion, ja persistido por trade em
+    labels.parquet), populacao incondicional (sem filtro do Alpha)'
+  metrica_tipo: 'mediana de mfe_atr_units, percentis (10/25/50/75/90/95/99), fracao de trades
+    com mfe_atr_units >= tp_atr_mult de producao (2,0)'
+  metrica_valor: 'mediana pooled (2 lados) notavelmente consistente entre os 5 simbolos --
+    BTCUSDT 1,363 ATR, ETHUSDT 1,387, SOLUSDT 1,412, BNBUSDT 1,418, XRPUSDT 1,405 -- bate com
+    achado historico do V3 (PRD_V4_1.md Sec4.1, "MFE mediana medida no V3: 1,27-1,40 ATR").
+    Fracao que alcanca mfe_atr_units>=2,0 (tp_atr_mult de producao): 38,7%-40,4% nos 5 simbolos,
+    uniforme.'
+  n: 'BTCUSDT 436.366, ETHUSDT 321.247, SOLUSDT 314.658, BNBUSDT 321.454, XRPUSDT 320.505
+    (trades preenchidos, populacao incondicional)'
+  status: vermelho
+  fonte_arquivo: experiments/mfe_distribution_for_barrier_derivation.json
+  fonte_secao: tools/diagnostics/measure_mfe_distribution_for_barrier_derivation.py
+  data: '2026-08-22'
+  nota: >
+    Classificado VERMELHO deliberadamente (nao amarelo/verde) -- e FIXTURE DE VALIDACAO DE
+    IMPLEMENTACAO, nao fonte de valor. Populacao incondicional e sabidamente viesada
+    (PRD_V4_1.md Sec4.1: "a rederivacao roda sobre a populacao que o Alpha dispara... a
+    varredura da Faixa 2 foi incondicional -- erro de desenho registrado", mesmo defeito que
+    esta medicao herda de proposito, por design, para validar so a logica de agregacao).
+    NENHUM numero aqui deve entrar em constants.yaml com provenance DERIVED. Confirma que
+    tp_atr_mult=2,0 de producao esta fora de alcance pra maioria da populacao (~60% dos trades
+    nunca chegam perto) -- mesmo achado do V3, agora robustecido com os 5 simbolos atuais, nao
+    um artefato antigo. Lado SL sem equivalente: mae_atr_units (Maximum Adverse Excursion) nao
+    existe persistido em labels.parquet -- derivacao simetrica MFE->TP/MAE->SL nao e possivel
+    com o dado atual, decisao pendente do Manager (adicionar coluna vs. principio alternativo
+    pro SL). Ver docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md Sec6-bis.

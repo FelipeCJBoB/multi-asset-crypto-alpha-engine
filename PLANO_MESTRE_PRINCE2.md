@@ -2736,6 +2736,123 @@ primária ficar mais próxima entre 2 candidatos. Detalhe completo:
 `audit/architecture_gaps_log.yaml::AG-114::status_gate1_criterio_
 operacionalizado_2026_08_21`.
 
+### 15.12.7 AG-114 — definição operacional de "empate" travada; consequência: Gate 3 precisa rodar de verdade (2026-08-22)
+
+**Reconciliação de registro, não recontagem**: o Manager citou k2 a
+"43-44%" em `ETF_HALVING`/`RECENTE` — número correto de `§15.12.5`
+(2026-08-20), mas que é um agregado POR JANELA (através dos 5 símbolos).
+`§15.12.6` (2026-08-21) recomputou célula a célula (25 pares
+símbolo×janela por candidato/resolução) e achou pior-caso real de
+54,2/55,4/56,4% (R1/R2/R3) — mais alto porque é o pico de UM símbolo
+específico (BTCUSDT/BNBUSDT) dentro da janela, não a agregação através
+dos 5. **O critério "máximo por janela/pior-caso" pedido agora já estava
+travado e aplicado em `§15.12.6` com o número CORRETO** (célula, não
+janela-agregada) — k2 falha o Gate 1 de forma ainda mais decisiva sob a
+leitura certa (54-56% vs. o teto de 33%), não menos. Nada muda no
+resultado do Gate 1 em si — só o registro fica reconciliado entre as 2
+seções.
+
+**O que não estava resolvido — definição operacional de "empate" pro
+Gate 3.** `§15.12.5` bloco D tratou R1 (`hmm_k4` 97,44 vs. `hmm_k3`
+97,40) e R2 (94,98 vs. 94,54) como "não é empate — margem marginal mas
+decisiva", sem nunca declarar o que separaria "marginal-decisivo" de
+"empate de verdade". Ambos os p-valores de permutação em R1/R2 estão no
+mesmo piso de resolução do teste (`p ≈ 1/(n_permutations+1) ≈ 0,001` —
+nenhuma permutação superou o valor observado, pra NENHUM dos dois
+candidatos) — o teste, pelo seu próprio desenho, não tem poder pra
+afirmar que um superou o outro com mais confiança do que "ambos
+atingiram o teto de significância que este desenho consegue medir".
+
+**Critério travado agora, a partir do argumento acima — não da tabela**:
+dois candidatos sobreviventes dos Gates 1/2 empatam na métrica primária
+(portanto Gate 3 é obrigatório) quando **qualquer uma** das condições
+vale: (a) os p-valores de permutação de ambos estão no MESMO piso de
+resolução do teste (`1/(n_permutations+1)`, nenhuma permutação superou o
+observado pra nenhum dos dois); (b) os intervalos de confiança (bootstrap
+ou método apropriado à métrica primária — a computar, não existe hoje
+pra `i²`/heterogeneidade neste código) se sobrepõem. (a) é suficiente
+sozinho pra disparar Gate 3 mesmo sem (b) computado — não decidir
+"parece próximo o bastante" por julgamento.
+
+**Consequência direta, registrada como item em aberto, não decidida
+aqui**: sob este critério, R1 (`hmm_k4` 97,44 vs. `hmm_k3` 97,40, ambos
+p≈0,001) e provavelmente R2 (94,98 vs. 94,54, mesmo padrão de p-valor a
+confirmar) RETROATIVAMENTE contam como empate — Gate 3 (detection delay
+vs. `m4_luna_event_onset_ts_ms`/`m4_ftx_event_onset_ts_ms`) deveria ter
+sido invocado pra decidir entre `hmm_k3`/`hmm_k4` nessas 2 resoluções, e
+não foi. `§15.12.5` bloco D já tem detection delay agregado pros HMM
+como grupo (94-202M ms), mas não quebrado por candidato — não
+suficiente pra resolver Gate 3 sem nova leitura dos dados já existentes
+em `experiments/m4_critical_windows_report.json`. **Não fiz essa leitura
+agora** (fora do escopo desta rodada — travar o critério, não aplicá-lo)
+— fica como próximo passo explícito: extrair detection delay de `hmm_k3`
+vs. `hmm_k4` separadamente em R1/R2 e aplicar Gate 3 de verdade. Só em
+R3 (91,77 vs. 85,65, diferença clara, `§15.12.5`) o veredito por métrica
+primária permanece sem precisar de Gate 3.
+
+Status do veredito `hmm_gaussian_k4_v1`: **não invalidado, mas não mais
+"decidido só pela métrica primária" em R1/R2** — depende de Gate 3
+rodar. Detalhe: `audit/architecture_gaps_log.yaml::AG-114::
+status_empate_gate3_definido_2026_08_22`.
+
+**Gate 3 aplicado de verdade (mesmo dia, 2026-08-22) — resultado REFUTA
+"hmm_k4 vence nas 3 resoluções".** Extraído direto de `experiments/
+m4_critical_windows_report.json` (`volatility_heterogeneity[]` pra
+métrica primária, `gate_quality[].detection_delay_ms_median` pro Gate
+3):
+
+| resolução | p_perm k3 | p_perm k4 | empate? | Gate 3 (delay) | vencedor |
+|---|---|---|---|---|---|
+| R1 | 0,000999 | 0,000999 | SIM (idênticos) | k3=95,1M ms (~26h) vs k4=197,1M ms (~55h) | **hmm_k3** |
+| R2 | 0,000999 | 0,000999 | SIM (idênticos) | k3=200,533413M ms = k4=200,533413M ms (idênticos) | **NENHUM — Gate 3 empata de novo** |
+| R3 | 0,004995 | 0,002997 | não | não precisa | **hmm_k4** (separação real) |
+
+`hmm_gaussian_k4_v1` está WIREADO em produção
+(`constants.yaml::canonical_regime_hmm_n_states=4`) sob a justificativa
+"vencedor robusto nas 3 resoluções" — **essa justificativa não é mais
+sustentável**, mesmo com o controle de risco já desligado (`§15.13`
+abaixo).
+
+**Correção crítica, mesmo dia — "hmm_k3 vence R1" NÃO é robusto.**
+Quebra por janela (`gate_quality[].per_window[]`, só BTCUSDT tem onset
+computável em LUNA/FTX):
+
+| janela | resolução | k3 delay | k4 delay | razão k4/k3 |
+|---|---|---|---|---|
+| LUNA | R1 | 25,0 min | 43,4h | **104,2x** |
+| FTX | R1 | 52,4h | 66,2h | 1,262x |
+| LUNA | R3 | — | — | 1,0165x |
+| FTX | R3 | — | — | 1,0050x |
+
+A "mediana" de R1 reportada (95,1M vs 197,1M ms) é, com `n=2`, a MÉDIA
+aritmética de LUNA+FTX — confirmado por cálculo direto. O "k4 é 2,07x
+mais lento" que decidiu R1 é o outlier de 104x de LUNA arrastando a
+média, não uma propriedade estável — 25 minutos pra detectar regime de
+stress após um onset real é rápido a ponto de merecer investigação
+(artefato de índice? coincidência não-causal?) antes de aceitar o
+número. R3, em contraste, mostra as 2 janelas concordando em direção E
+ordem de grandeza (~0,5-1,6%) — diferença real mas pequena, não um
+outlier. R2 empata IDÊNTICO por janela (não só na média) — o mais
+robusto dos 3 resultados.
+
+**Estado real**: R2 empata de verdade (regra de 2º nível ainda não
+existe). R3 tem diferença pequena mas genuína (k4 marginalmente mais
+lento). R1 não deveria decidir nada até o outlier LUNA ser investigado.
+`hmm_gaussian_k4_v1` como "vencedor robusto nas 3 resoluções" está
+refutado enquanto ALEGAÇÃO ESTATÍSTICA — mas "hmm_k3 vence" não deveria
+substituir por uma alegação igualmente frágil.
+
+**RATIFICAÇÃO FINAL, mesmo dia (2026-08-22)**: Manager ratifica
+`hmm_gaussian_k4_v1` como decisão DEFINITIVA de produção — override
+executivo explícito, não resolução técnica da ambiguidade acima (que
+continua verdadeira como registro histórico). `AG-114` **fechado
+definitivamente**. Daqui pra frente, qualquer comunicação sobre "por
+que k=4" cita esta ratificação como a razão de produção — nunca mais
+"vencedor robusto nas 3 resoluções" como se fosse conclusão estatística
+limpa. `constants.yaml::canonical_regime_hmm_n_states=4` mantido, sem
+mudança de código. Detalhe: `audit/architecture_gaps_log.yaml::AG-114::
+status_ratificacao_final_manager_2026_08_22`.
+
 ### 15.13 HMM k=4 como candidato canônico de produção — override do Manager sobre AG-114/AG-118 (2026-08-21)
 
 **Estado real no momento desta decisão, não escondido:** `AG-114`
@@ -2849,6 +2966,148 @@ architeturalmente, só o literal do padrão banido muda de nome.
 `monotone_constraints` (DoD "código de modelo") tem equivalente direto
 no LightGBM (mesmo nome de parâmetro) — não precisa mudar.
 
+### 15.15 AG-124 — recalibração causal do threshold dollar-bar: `T=7,C=7` preferido, reprocessamento em execução (2026-08-21/22)
+
+**Contexto**: `AG-124` (`§15.14` anterior nesta mesma sessão de
+"Atualize governança", achado do fan-out `stage_readiness_audit`)
+registrou vazamento temporal real na calibração do threshold dollar-bar
+(`threshold_usdt` calibrado sobre a MESMA janela sendo construída —
+deriva de até 42,7x medida, BTCUSDT, histórico completo). Remediação:
+recalibração causal rolante (`build_dollar_bars_walkforward`,
+`src/data/build_dollar_bars.py`), calibrando cada período só sobre
+`[app_start-trailing_window_days, app_start)`, estritamente anterior.
+
+**Linha de investigação concluída nesta sessão** (auditoria externa em
+6 rodadas — parecer + adendo dos mesmos 2 documentos, `docs/Retorno_
+Brief/`, mais 1 documento de auditoria descartado por não-confiável,
+colisão de numeração `AG-125` real + claims técnicos sem base no
+código): `trailing_window_days=7` travado (elimina aliasing de
+sazonalidade semanal, sábado ~0,59x a média em BTC/ETH, medido). Sobre
+`cadence_days`, testado `7` vs. `1` desacoplado (achado que os dois
+nunca tinham sido testados independentemente até esta sessão — mesmo
+padrão de furo de parâmetros acoplados, 2ª ocorrência confirmada na
+mesma investigação):
+
+- `T7,C1` vence a métrica de rastreio de calibração por margem grande
+  nos 5 símbolos, robusto a sweep do corte de decisão (M1 redux) — item
+  6/§14.4 do plano de ação.
+- Mas `C1` exercita **7,25x mais eventos de transição de threshold**
+  que `C7` (365 vs. ~52/ano/símbolo) — cada evento é um ponto onde a
+  barra viola o invariante que define uma dollar-bar (tamanho por
+  volume, não por troca de threshold com acumulação em voo). Medido:
+  taxa de barra subdimensionada por evento é estatisticamente igual
+  entre os 2 braços (~50%, controlado — não é defeito de `C1`), mas o
+  retorno `|z|` associado a um evento de fronteira é maior sob `C1` que
+  sob `C7` na MESMA janela de calendário (5/5 símbolos, teste decisivo
+  contra confundimento de hora-do-dia) — elo real, embora modesto.
+- Decisão final apoiada em 3 argumentos de engenharia de sistema,
+  independentes da estatística de cauda: **tipo de erro** (`C7` erra de
+  forma suave, absorvida por feature normalizada por ATR; `C1` erra de
+  forma discreta, nada absorve, relevante com ~79 features futuras
+  ainda não avaliadas quanto a isso); **assimetria de estar errado**
+  (sem métrica de sucesso final registrada — confirmado nesta sessão —,
+  errar com `C7` é reversível/barato, errar com `C1` significa 7x mais
+  artefato gravado em 6+ anos × 5 símbolos); **superfície de paridade
+  lote↔streaming ao vivo** (`src/live/` ainda vazio — `C1` multiplica
+  por 7x os pontos onde calibração atrasada/janela incompleta/restart
+  no horário errado diverge grade backtest↔produção).
+
+**Decisão**: `trailing_window_days=7`, `cadence_days=7` — registrados em
+`config/constants.yaml` (`dollar_bar_walkforward_trailing_window_days`/
+`dollar_bar_walkforward_cadence_days`, `provenance: MEASURED`, valor
+marcado explicitamente como candidato PREFERIDO por esta linha de
+investigação, não mais "provisório por motivo em aberto"). Trava formal
+fica com o Manager confirmar por escrito quando conveniente — a
+investigação técnica está concluída, sem pergunta em aberto identificada
+por nenhuma das 2 partes (dev + auditor externo).
+
+**Reprocessamento real CONCLUÍDO** (2026-08-22, `tools/diagnostics/
+run_ag124_production_reprocessing.py`, 5 símbolos × 3 resoluções,
+histórico completo — `SYMBOL_START_DATE`/`END_DATE`,
+`volatility_comparison.py` — `overwrite=True` sobre
+`data/capacity/dollar_bars_r{1,2,3}/` real, substitui a calibração
+não-causal antiga): **15/15 células, zero erro**
+(`experiments/ag124_production_reprocessing_summary.json`,
+`code_version=eee33eb`, isolamento de falha por célula `AG-019` não
+precisou disparar). `n_cold_start_dropped=1` em toda célula — esperado
+(1º período de cada símbolo genuinamente sem histórico antes de
+`SYMBOL_START_DATE`).
+
+**Item 22 concluído (2026-08-22) — validação sobre dado REAL
+reprocessado**: `tools/diagnostics/measure_ag124_post_reprocessing_
+validation.py`, 15 células, histórico completo (não amostra),
+`experiments/ag124_post_reprocessing_validation.json`. **Resultado
+positivo**: curtose em excesso praticamente INALTERADA ao excluir
+barras de fronteira (ex. BTCUSDT/R1 53,12 vs. 53,15; XRPUSDT/R1 122,46
+vs. 122,49) — sobre histórico real completo, o artefato de
+recalibração que motivou a investigação de 6 rodadas é desprezível;
+curtose alta observada é 100% evento de mercado genuíno, não
+metodológico. Autocorrelação lag-1 pequena em todas as 15 células
+(|r|<0,03). As 5 barras mais extremas por célula são todas não-boundary
+e batem com eventos reais conhecidos (BTCUSDT 2022-06-13 contágio
+Celsius/3AC, 2020-03-12 Black Thursday COVID; XRPUSDT 2022-11-08 —
+coincide quase exatamente com `m4_ftx_event_onset_ts_ms` já registrado
+no M4).
+
+**Achado colateral do item 22 (`AG-137`) — fechado 2026-08-22**: os
+`cadence_days` (=7) dias iniciais de cada célula ainda tinham o arquivo
+`.parquet` da calibração NÃO-causal antiga (cold-start corretamente
+pulado na escrita, arquivo velho não removido). Manager decidiu
+deletar — 104 arquivos removidos, verificado 0 restante; cada célula
+agora começa exatamente em `SYMBOL_START_DATE + cadence_days`, gap
+honesto no lugar de dado com vazamento residual.
+
+**Nota registrada (2026-08-22) — calibração causal no Live não é o
+mesmo problema que o cold-start do AG-137**: cold-start é um artefato
+de BORDA DO HISTÓRICO (não existe trade antes de `SYMBOL_START_DATE`
+pra calibrar contra) — não recorre no lançamento do Live pros 5
+símbolos já existentes, porque nessa data já existirão anos de
+histórico real disponível pra calibrar o 1º período causalmente. O gap
+real, genuíno e ainda NÃO desenhado: `build_dollar_bars_walkforward`
+hoje é uma função de LOTE (intervalo `[start,end]` finito, processado
+período a período em memória) — não existe um processo CONTÍNUO
+equivalente pro Live (recalibrar a cada `cadence_days` de forma
+perpétua, com recovery de restart/downtime bem definido, e teste de
+paridade lote↔streaming provando que o resultado é idêntico ao que o
+builder de backtest produziria pra mesma janela — DoD já exigido pra
+"código de feature" no `CLAUDE.md`). `src/live/` está vazio por
+desenho (Sprint 12+, fora do escopo atual) — não é um bug a corrigir
+agora, é um item de arquitetura a desenhar quando o Live entrar em
+pauta, registrado aqui pra não ser silenciosamente assumido como
+"já resolvido" quando chegar a hora.
+
+**Achados colaterais fechados na mesma linha**: item 14 (`Threshold
+BarsCarry` agora persiste através da fronteira de período — 1 barra
+subdimensionada por RODADA, não por período — pré-condição pra `C=1`
+ter sido sequer viável de medir), item 15 (lead-in buffer recupera ~1
+semana real por símbolo antes descartada sem necessidade), item 16
+(circuit breaker validado com folga contra pico de volume ~14x medido),
+`AG-120` (varredura de integridade em todas as 51 células da amostra do
+M4 — só a célula já conhecida diverge, confirmado ISOLADO, não
+sistêmico, causa raiz do trade-level ainda pendente mas não bloqueante).
+Semântica de troca de threshold com barra em aberto — antes "não
+trivial"/implicitamente indefinida — formalizada e testada com asserts
+de valor exato (`src/data/build_dollar_bars.py::build_dollar_bars_
+walkforward`, docstring + `tests/unit/test_data_bars.py`).
+
+Detalhe completo (7 rodadas de auditoria, todos os números, todas as
+retratações honestas registradas): `docs/plano_acao_ag124_pos_
+auditoria_2026-08-21.md`; ledger completo:
+`audit/architecture_gaps_log.yaml::AG-124` (10 addenda).
+
+**S1 aberto na sequência — maior lacuna aberta do projeto, independente
+de tudo acima**: `tp_atr_mult`/`sl_atr_mult` (constantes classe A,
+`sweep_required: true` desde sprint_6, nunca executado) — define a
+variável dependente de todo experimento de M4/AG-114/AG-118 já medido.
+Desenho iniciado (`redesign_workflow`, Fase 1-4, não implementado
+ainda): reparametrização `R=tp/sl` (breakeven implícito) × `S=sl` (taxa
+de eventos/holding time) — não os 2 crus, mesmo erro de acoplamento que
+`T`/`C` acima já custou 6 rodadas de auditoria pra descobrir. Grade
+candidata `R∈{1,0;1,33;2,0}×S∈{0,75;1,5;2,25}`, EV por evento em
+unidades de ATR como leitura primária. Design doc + auditoria
+independente (`project_assurance`) em andamento no momento desta
+atualização.
+
 ---
 
 ## Fontes desta pesquisa
@@ -2866,6 +3125,41 @@ no LightGBM (mesmo nome de parâmetro) — não precisa mudar.
 ---
 
 ## Changelog
+
+- **v3.25 (2026-08-22)** — `AG-124` reprocessamento real CONCLUÍDO: 15/15
+  células (5 símbolos × 3 resoluções), zero erro. Item 22 (validação
+  sobre dado real) concluído com resultado POSITIVO — curtose alta é
+  100% evento de mercado genuíno (Celsius/3AC, Black Thursday, FTX),
+  artefato de recalibração desprezível sobre histórico completo. Achado
+  colateral não-bloqueante `AG-137` (arquivo stale pré-causal nos
+  primeiros `cadence_days` dias de cada célula, decisão de limpeza
+  pendente). Design doc do S1 (`docs/s1_design_doc_sweep_tp_sl_
+  reward_risk_2026-08-22.md`) produzido via `redesign_workflow` (2
+  agentes `code-architect` + síntese própria) e auditado por
+  `project_assurance` — 4 achados HIGH corrigidos no documento antes de
+  qualquer implementação, decisão de arquitetura central preservada.
+  Road Map Vivo v2 republicado refletindo todo o estado acima.
+- **v3.24 (2026-08-21/22)** — `AG-124` (calibração causal do threshold
+  dollar-bar): linha de investigação CONCLUÍDA após 6 rodadas de
+  auditoria externa (parecer+adendo genuínos, docs/Retorno_Brief/, mais
+  1 documento descartado por não-confiável — colisão de numeração
+  `AG-125` real, claims sem base no código). `trailing_window_days=7`
+  travado (elimina aliasing semanal). `cadence_days=7` preferido sobre
+  `cadence_days=1` (que vencia a métrica de rastreio por margem grande,
+  mas exercita 7,25x mais eventos de transição de threshold — cada um
+  viola o invariante que define dollar-bar; taxa de subdimensionamento
+  por evento é igual nos 2 braços, mas retorno associado é maior sob
+  `C=1` na mesma janela de calendário, testado contra confundimento de
+  hora-do-dia) — decisão apoiada também em 3 argumentos de sistema
+  (tipo de erro suave vs. discreto, assimetria de custo de estar
+  errado, superfície de paridade lote↔streaming ao vivo). Detalhe:
+  `§15.15`. Reprocessamento real dos 5 símbolos × 3 resoluções
+  disparado (`data/capacity/dollar_bars_r{1,2,3}/`, substitui
+  calibração não-causal antiga). Achados colaterais fechados: carry
+  persistente através de fronteira de período, lead-in buffer, circuit
+  breaker validado, varredura completa de `AG-120` (isolado, confirmado
+  não-sistêmico). S1 (sweep `tp_atr_mult`/`sl_atr_mult`, reparametrizado
+  `R=tp/sl`×`S=sl`) aberto na sequência, desenho em andamento.
 
 - **v3.23 (2026-08-21)** — Ponte de governança sobre o arco 2026-08-19→21
   (a série v3.22 e anteriores para no meio deste arco — este item
