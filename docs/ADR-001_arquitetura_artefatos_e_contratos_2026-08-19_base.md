@@ -1552,6 +1552,18 @@ if calibrator_id == "isotonic" and n_cal_eff < ISOTONIC_MIN_NEFF:
     raise CalibratorNotPermitted(n_cal_eff=n_cal_eff, min=ISOTONIC_MIN_NEFF)
 ```
 
+> **[PONTEIRO, 2026-08-22, `AG-141`/`PLANO_MESTRE_PRINCE2.md §15.18`]**
+> O código real (`src.models.alpha.fit_side_model`) usa
+> `sklearn.isotonic.IsotonicRegression`, não Platt — não reduz a 2
+> coeficientes `{A, B}`. `src/models/persistence.py` persiste como os
+> arrays `X_thresholds_`/`y_thresholds_` fitted, reconstrução em
+> produção via `np.interp` — verificado empiricamente bit-exato contra
+> `IsotonicRegression.predict`, ainda sem sklearn no runtime. O gate
+> `ISOTONIC_MIN_NEFF`/`CalibratorNotPermitted` acima segue **não
+> implementado** em nenhum lugar do repo — decisão de escopo/negócio
+> ainda não ratificada, não bug de `persistence.py`. Texto original
+> acima preservado como registro do desenho proposto.
+
 ### 4.10 `validation/`
 
 ```

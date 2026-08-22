@@ -848,7 +848,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
-| V41-10 — Meta-Model + Grupo J | ≤2 | ⬜ não iniciado — reaberto (o argumento que fechou o Meta no V3.2 caiu, §0.3) | `PRD_V4_1.md` §4.5 |
+| V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v2, auditado, ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
 
@@ -1220,7 +1220,7 @@ ML LAYER
                                                                        não são gate de nada) -- ver linha 1205
                                                                        da tabela de cross-reference abaixo,
                                                                        as duas se complementam, não contradizem
-  11_META_MODEL        (não existe — PRD §6.8, fora da V1)              movido de 08 pra cá, pós-learner
+  11_META_MODEL        (não existe em código — desenho travado v2, §15.19)  movido de 08 pra cá, pós-learner
   11b_DECISION_ENGINE  (não existe — PRD_V3_2 Parte VII §7.1-7.3)       AG-095 (2026-08-19): consome regime.tradeable
                                                                         direto, ficou fora deste modelo até agora.
                                                                         AG-143 (2026-08-22, aberto): o Gate 01
@@ -1279,7 +1279,7 @@ LIVE TRADING LAYER
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
-| `11_META_MODEL` | V41-10 (Meta-Model+Grupo J) | ⬜ não iniciado, reaberto |
+| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟡 desenho travado v2 + auditado, ZERO implementado; gated no E0 e no retreino do Alpha |
 | `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
@@ -3468,6 +3468,231 @@ produção real (15 folds × 2 variantes × 2 lados, 7 leitores
 downstream reais) e essa integração merece sua própria rodada,
 depois de revisão independente da infraestrutura em si.
 
+**Revisão independente `project_assurance` (2026-08-22) — "aprovado
+com ressalvas", 3 achados MEDIUM, todos corrigidos no mesmo lote:**
+
+1. **`AG-146`** — `predict_proba_calibrated` não tinha guarda de
+   ordem/contagem de coluna. **Autocorreção descoberta durante o
+   próprio fix**: a 1ª tentativa (setar `feature_names` no booster +
+   `DMatrix(feature_names=...)`) não funcionava de verdade — o
+   `DMatrix` sempre era rotulado com o MESMO `manifest.feature_ids`,
+   nunca podia divergir de si mesmo, guarda morta. Fix real: a função
+   passa a receber `pl.DataFrame` (não `NDArray`), seleciona por NOME
+   (`df.select(feature_ids)`) — ordem do `df` do caller nunca importa,
+   coluna faltando levanta `ColumnNotFoundError` explícito.
+2. **`AG-147`** — `write_model_bundle` omitia `os.getpid()` no nome do
+   `tmp_dir` (só `write_artifact` tinha), mesma classe de risco de
+   `AG-145` reintroduzida mais fraca no mesmo commit. Fix de 1 linha.
+3. **`AG-148`** — docstring alegava "verificado empiricamente" pra
+   casos de borda do calibrador isotônico (fora do range treinado,
+   degenerado) que o teste original não exercitava — eram DEDUÇÃO por
+   leitura do sklearn, não medição. 2 testes novos fecham a lacuna,
+   docstring corrigido pra distinguir os dois.
+
+Achado colateral descoberto durante a correção do achado 1 (não pela
+revisão original): `write_model_bundle` mutava o `booster` do CALLER
+como efeito colateral — corrigido com `booster.copy()` antes de mutar.
+Ponteiro de correção adicionado em `docs/ADR-001_..._base.md §4.9`
+(doc canônico — Platt scaling vs. Isotonic real, achado 4 da revisão).
+12 testes (6 novos/reescritos), suíte completa (1662 testes) verde.
+
+---
+
+### 15.19 Meta-model — arquitetura ponta a ponta travada, ADR-001 §3.7/§2.7 revogado pelo Manager (2026-08-22)
+
+**Origem:** pedido do Manager, verbatim — *"Além de Risk Engine e Decision
+Engine que vão consumir Regime, Meta-model também precisa consumir da
+maneira correta para nosso motor. Meta-model será LightGBM ou Catboost, o
+que melhor se aplicar. Seu desafio é desenhar a arquitetura tecnica ponta a
+ponta de Meta-model."* Conduzido via skill `redesign_workflow` (7 fases).
+Documento completo: `docs/meta_model_design_doc_2026-08-22.md` (v2).
+
+#### A. A revogação — e por que ela se sustenta
+
+Confrontado com o fato de que o ADR-001 §2.7 (ratificado por ele mesmo em
+2026-08-20) dizia o **oposto** do que pedia — *"regime NÃO entra como
+feature do Meta na primeira versão... as 5 condições de entrada do Meta não
+mencionarem regime está certo, não é lacuna"* — o Manager respondeu,
+verbatim: *"Vou revogar o contrato canônico do Meta-Labeling pois não me
+convenceu, pesquise sobre Meta-Labeling no AFML depois pesquise casos de uso
+recente modernos"*.
+
+A pesquisa subsequente **sustentou a revogação**, por três vias
+independentes:
+
+1. O experimento canônico do framework formal de meta-labeling (Joubert,
+   `theory_and_framework/fp_modeling.py`, código aberto) implementa três
+   braços, e o terceiro é explicitamente **regime-aware** (retornos +
+   informação de regime) sobre dado sintético bi-regime; `bet_sizing.py`
+   condiciona o sizing a `pred_regime == 1`.
+2. *Ensemble Meta-Labeling* (Thumm, Barucca & Joubert, JFDS 5(1):10-26,
+   2022) lista "identificação de regime" como um dos três eixos
+   experimentais e conclui que o ganho aparece **quando o dado tem múltiplos
+   regimes**.
+3. Um co-autor de *Meta-Labeling Architecture* (JFDS 4(4):10-24), diante de
+   um resultado negativo público, recomenda incluir features de regime
+   **exclusivas do meta-model**.
+
+**O argumento que fecha, e que é próprio deste motor:** sem uma vantagem
+informacional — um input que o primário não tem — meta-labeling não tem
+mecanismo; cai na regressão infinita e só adiciona variância. Aqui isso não
+é hipótese: **regime saiu do vetor de treino do Alpha em 2026-08-21**
+(`src/models/alpha.py:57-68`, Fase A do `§15.13`). A remoção do one-hot
+criou, como efeito colateral não planejado, exatamente a vantagem
+informacional que o Meta precisa para existir.
+
+**A evidência contrária permanece registrada, não silenciada:** `AG-118`
+mediu `lift ≈ 1,0` em 90 células, sem sinal econômico do regime como gate.
+Mas `AG-118` mede o lift **incondicional**; o Meta opera sobre a
+subpopulação **condicional** (só as barras em que o Alpha disparou). Essa é
+a única hipótese que `AG-118` não fechou, e virou o Gate E0 do desenho.
+
+**A revogação não é retroativa** sobre o resto do ADR-001, que segue
+canônico naquilo que não toca o Meta.
+
+#### B. Decisão revertida na mesma sessão — Grupo J sai da frente do Meta
+
+O Manager havia decidido construir o modelo de fila (Grupo J) **antes** do
+Meta, apoiado no `PRD_V3_2_UNIFICADO.md` §6.4 (restrição de marginalidade).
+Após medição, reverteu. Os três argumentos, todos verificados no código:
+
+1. **A marginalidade de PnL de `p_fill` é exatamente zero, por construção do
+   label.** `NOFILL ⟹ ret_net = 0.0` literal
+   (`src/labels/triple_barrier.py:961`; `_append_nofill_row` é o único
+   emissor de NOFILL em todo `src/`). `fill_rate` medido: 0,9665–0,9769 (10
+   caminhos). Um `p_fill` **perfeito** filtraria 2,3–3,4% dos sinais, cada
+   um contribuindo `ret_net = 0`. **ΔPnL = 0.**
+2. **`cost_est_bps` é redundante com o alvo**, não marginal a ele —
+   `ret_net` já é líquido (`triple_barrier.py:1317`). Sobra
+   `adverse_selection_bps`, que é `ASSUMED`/classe A/`review_by: sprint_16`.
+3. **Dependência circular:** `calibrate_against_real_fills` levanta
+   `NotImplementedError` porque fills reais só existem em Testnet/Paper
+   (Sprints 15-16) — **depois** do Decision Engine que consome `p_meta`.
+
+Somado: a cobertura do Grupo J é de **10,5 meses num bloco contíguo de
+calendário** (`bookTicker` 2023-05-16→2024-03-30), ~13% do histórico de
+labels. Sob CPCV, missingness colinear com época — o modelo aprenderia
+*"estou em 2023-2024"*, não física de fila. **Carimbo de data disfarçado de
+feature.**
+
+**Ressalva que impede o argumento de provar demais:** a marginalidade zero
+vale para PnL-por-trade, **não** para rotação de capital — com lote mínimo =
+33% do equity, um NOFILL que ocupa margem tem custo de oportunidade real.
+Isso é Risk/Decision Engine, não Meta. O Grupo J foi **realocado** (feature
+do Meta v2, pós-calibração real), não desqualificado.
+
+#### C. As 17 decisões travadas
+
+`D-01` regime como feature (condicionada a prova de estabilidade cross-fold)
+· `D-02` learner plugável, logística L2 default, LightGBM atrás de guarda,
+**CatBoost descartado** · `D-03` Grupo J depois · `D-04`
+`y_meta = 1[ret_net > 0]` · `D-05` veta ou dimensiona, **nunca inverte
+lado** · `D-06` `p_meta` é filtro, não tamanho · `D-07` sem calibrador no
+v1 · `D-08` dois braços de CV · `D-09` seleção posicional · `D-10`
+unicidade na subpopulação com grão `(symbol, side)` · `D-11` join exato ·
+`D-12` ablation com nulo que replica a busca · `D-13` B07/B08 em 5 camadas ·
+`D-14` Gate E0 · `D-15` `tau` persistido · `D-16` purge cross-símbolo
+bloqueante · `D-17` reusar `src/models/persistence.py`.
+
+Duas escolhas que merecem registro aqui por contrariarem o cânone ou o
+pedido original:
+
+- **CatBoost descartado** apesar de nomeado pelo Manager. O argumento a
+  favor era *ordered boosting* contra target leakage em amostra pequena. Mas
+  o ganho isolado em função de `n` nunca foi replicado independentemente (os
+  revisores do NeurIPS 2018 suspeitaram de tuning assimétrico das
+  baselines), e **em CPU o default do CatBoost é `Plain`, não `Ordered`** —
+  o mecanismo não vem ligado.
+- **AFML §6.6 prefere bagging a boosting em finanças.** Nosso GBM contraria.
+  Registrado: se o gate de amostra abrir, `RandomForest` com
+  `max_samples = unicidade média` é mais defensável pelo cânone que
+  LightGBM. Decisão do Manager quando chegar a hora.
+
+#### D. Auditoria adversarial de 3 flancos — 40 correções
+
+O desenho v1 foi submetido a três auditores independentes (corretude factual
+contra o código; rigor estatístico; trade-offs e alternativas), via
+`/engineering:architecture` em modo *evaluate a design*. Resultado: **6
+CRITICAL, ~20 HIGH**, 95 afirmações verificadas (73 corretas). O changelog
+completo v1→v2 está em `§19` do design doc. As quatro que mudaram decisões:
+
+1. **Uma prova de impossibilidade do v1 era FALSA.** O v1 afirmava que não
+   existe fold doador simultaneamente OOF e cego, e que cegueira total
+   exigiria CV aninhada a ~6× o custo. **Ambas falsas.** A prova tinha dois
+   quantificadores escondidos: assumia um doador *global* (quando o
+   requisito é por linha) e fixava `|T_s| = 2` silenciosamente (quando é
+   escolha, não fato). Com bloco de teste do Meta = 1 grupo, o fold cujo
+   teste é `{g,h}` é OOF **e totalmente cego**, e existe sempre —
+   `C(6,2) = 15` folds cobrem todos os pares, e as predições já estão em
+   disco. **Custo real: zero retreino**; o custo é 1 caminho OOS em vez de 5.
+2. **`score_raw` fora do design matrix por argumento falso** — monotônico
+   ⇏ colinear; `IsotonicRegression` é *many-to-one* e **destrói**
+   informação. Como `tau` é o quantil 98,11% da distribuição calibrada, o
+   Meta vive no topo da escada, onde `p_alpha` pode ser literalmente
+   constante.
+3. **Purge cross-símbolo não é fraco — é ausente.** `assign_time_groups` faz
+   `linspace` sobre o `t0` **de cada símbolo**; históricos diferentes ⟹
+   fronteiras de grupo em datas diferentes ⟹ uma linha de treino de BTC pode
+   ser contemporânea de uma de teste de ETH e o purge nunca a vê. Com ρ
+   cross-asset de 0,70–0,83 (`AG-144`), é quase o mesmo evento.
+   Vira `AG-151`, pré-requisito bloqueante.
+4. **Os gates do v1 não gateavam.** Cinco defeitos somados inclinavam a
+   decisão a PASS: nulo sem busca replicada, paths não-independentes tratados
+   como replicações, Gate E0 com 50 células e nenhuma regra de agregação
+   (literalmente `AG-114`/`AG-122` reproduzido), pass-through contaminando a
+   estatística, e nenhum gate contra "só apertar o `tau` do Alpha".
+
+**O padrão da falha, nomeado no §16-R11 do design doc para não repetir:** os
+riscos eram identificados com precisão e depois **mitigados por declaração
+em vez de mecanismo** — o FLAG que só imprime, a escrita "condicionada" sem
+enforcement, o "bit-exato" operacionalizado como "os testes passam". Regra
+adotada: toda mitigação aponta para um objeto que levanta, um teste que
+falha, ou um campo que o gate lê.
+
+#### E. Correção factual desta rodada de governança (protocolo item 1)
+
+O design doc afirmava, em três versões, que *"não existe
+`save_model`/`joblib`/`pickle` em lugar nenhum de `src/`"* e propunha abrir
+um AG novo para persistência. **Errado no momento da escrita** — `AG-141`,
+`src/models/persistence.py` e `src/io/artifact.py` foram construídos no
+**mesmo dia**, em paralelo a este desenho (commits `2866f2e`/`36862eb`,
+`§15.16`/`§15.18`). O levantamento foi feito antes desses commits.
+
+Corrigido no design doc §14.4: o Meta **reusa** `src/models/persistence.py`,
+nenhum AG de persistência é aberto (seria duplicata de `AG-141`), e o que se
+registra é a **dependência** — F5 do Meta depende da integração do `AG-141`
+no Alpha, porque um Meta serializado consumindo um Alpha não serializado
+continua sendo um sistema meio-serializado.
+
+É exatamente o furo que o item 1 do comando "Atualize governança" (`commits
+ANTES de tocar em docs`) existe para prevenir, e desta vez preveniu.
+
+#### F. Status e o que vem antes de qualquer código
+
+**Desenho travado, ZERO linhas implementadas.** O caminho declarado antes de
+`meta.py` existir — tudo sobre artefato já em disco, zero treino, zero
+`N_lifetime`:
+
+1. `tau_alpha` no schema de predições (`AG-150`) — 1 coluna.
+2. Diagnóstico de saturação isotônica (`n_distinct(p_alpha)` na
+   subpopulação, massa de empate em `tau`).
+3. **Gate E0** — inventário de falsos positivos + separabilidade condicional
+   do regime, com regra de agregação declarada e candidato único.
+
+**E0 tem duas execuções distintas e rotuladas:** E0-piloto (sobre o artefato
+legado 15m — provisório, não vinculante) e E0-vinculante (sobre o Alpha novo
+sob R1/LightGBM, pós-retreino). Falha em ≥2 dos 5 paths ⟹ registro em
+`audit/evidence_ledger.yaml` e **o Meta sai do roadmap**.
+
+**Sobre o Alpha legado:** `auc_real_pooled = 0,49776` contra
+`auc_permuted_pooled = 0,49998` (baseline B4, 1,6M avaliações),
+`permanence_pass: false`. O Manager qualificou, verbatim: *"alpha atual é
+obsoleto pois foi desenho de um motor antigo btc only barras casuais time
+frame single de 15m"* — confirmado pela ausência da chave `resolution_id` no
+relatório. Registrado em `audit/evidence_ledger.yaml` **com a qualificação**,
+por ser medição estatística real que não pode desaparecer, e por definir o
+que o retreino precisa superar.
+
 ---
 
 ## Fontes desta pesquisa
@@ -3486,6 +3711,39 @@ depois de revisão independente da infraestrutura em si.
 
 ## Changelog
 
+- **v3.26 (2026-08-22)** — **Meta-model: arquitetura ponta a ponta travada,
+  `ADR-001 §3.7/§2.7` REVOGADO pelo Manager.** Detalhe completo em `§15.19`.
+  Regime passa a entrar como FEATURE do Meta (one-hot, nunca ordinal),
+  revertendo a recomendação #7 do ADR-001 — sustentado por 3 fontes
+  independentes e pelo fato de que regime saiu do vetor do Alpha em
+  2026-08-21 (`§15.13` Fase A), criando a vantagem informacional sem a qual
+  meta-labeling não tem mecanismo. **Grupo J revertido na mesma sessão** —
+  sai da frente do Meta: `NOFILL ⟹ ret_net = 0.0`
+  (`triple_barrier.py:961`) torna a marginalidade de PnL de `p_fill`
+  exatamente zero; mais dependência circular (`calibrate_against_real_fills`
+  precisa de Testnet/Paper, que vem depois do Decision Engine) e cobertura
+  de 13% em bloco contíguo de calendário (carimbo de data disfarçado de
+  feature). **CatBoost descartado** apesar de nomeado pelo Manager (ganho do
+  ordered boosting nunca replicado independentemente; em CPU o default é
+  `Plain`). 17 decisões travadas (`D-01`..`D-17`), ZERO linhas
+  implementadas. **Auditoria adversarial de 3 flancos via
+  `/engineering:architecture`: 6 CRITICAL, ~20 HIGH, 40 correções** — entre
+  elas uma **prova de impossibilidade FALSA** no desenho v1 (existe doador
+  OOF e totalmente cego com zero retreino; o custo é 1 caminho OOS em vez de
+  5), `score_raw` excluído por argumento de colinearidade errado
+  (isotônica é *many-to-one*), e cinco defeitos que inclinavam os gates a
+  PASS. Padrão da falha nomeado para não repetir: riscos identificados com
+  precisão e mitigados **por declaração em vez de mecanismo**. AGs novos:
+  `AG-149` (referência órfã a `AG-148`), `AG-150` (`tau` calculado e
+  descartado), `AG-151` (purge cross-símbolo ausente — `linspace`
+  per-símbolo desalinha fronteiras entre símbolos, pré-requisito
+  bloqueante), `AG-152` (`join_asof` cross-grade sem `tolerance`).
+  `AG-094` FECHADO com **reversão explícita** da resolução que `AG-118`
+  havia antecipado. Correção factual capturada pelo item 1 do protocolo
+  (commits antes de docs): o design doc afirmava que nada era persistido em
+  `src/` — `AG-141`/`persistence.py`/`src/io/artifact.py` foram construídos
+  no mesmo dia; o Meta **reusa**, não constrói, e nenhum AG duplicado foi
+  aberto. Doc: `docs/meta_model_design_doc_2026-08-22.md` (v2).
 - **v3.25 (2026-08-22)** — `AG-124` reprocessamento real CONCLUÍDO: 15/15
   células (5 símbolos × 3 resoluções), zero erro. Item 22 (validação
   sobre dado real) concluído com resultado POSITIVO — curtose alta é

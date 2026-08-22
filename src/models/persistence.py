@@ -10,8 +10,9 @@ construção qualquer inferência fora do processo de treino
 artifact` (`atomic_write_bytes`/`atomic_rename_dir`/`sha256_bytes`,
 mesma disciplina de proveniência-por-hash e imutabilidade — V-05) sem
 forçar o formato DataFrame-centric de `write_artifact` (esse fica como
-está, escopo do action item 2 do ADR-001 preservado). Só
-`_serialize_booster`/`_deserialize_booster` conhecem o formato binário
+está, escopo do action item 2 do ADR-001 preservado). Só as chamadas
+`booster.save_raw(raw_format="ubj")`/`xgb.Booster().load_model(...)`
+em `write_model_bundle`/`read_model_bundle` conhecem o formato binário
 específico do learner (`.ubj` do XGBoost hoje) — quando a migração pra
 LightGBM (`§15.14`, represada) acontecer, é a ÚNICA peça que muda; o
 resto (calibrador, manifest, escrita atômica, `ModelBundleManifest.
@@ -27,14 +28,33 @@ sem sklearn no runtime"). O código real (`src.models.alpha.
 fit_side_model`) usa `sklearn.isotonic.IsotonicRegression`, não Platt —
 não reduz a 2 coeficientes. Persistido como os dois arrays fitted
 (`X_thresholds_`/`y_thresholds_`); reconstrução em produção via
-`np.interp(x, X_thresholds_, y_thresholds_)` — verificado empiricamente
-bit-exato contra `IsotonicRegression.predict` (`out_of_bounds="clip"`
-tem a mesma semântica de extrapolação constante nas pontas que
-`np.interp` já faz por padrão). Ainda sem sklearn no runtime de
-inferência, só o MECANISMO difere do que o ADR previu — divergência
-registrada aqui e em `PLANO_MESTRE_PRINCE2.md`, não escondida.
+`np.interp(x, X_thresholds_, y_thresholds_)`. Ainda sem sklearn no
+runtime de inferência, só o MECANISMO difere do que o ADR previu —
+divergência registrada aqui e em `PLANO_MESTRE_PRINCE2.md`, não
+escondida.
 
-Booster reload também verificado bit-exato: `Booster.save_raw(raw_
+**Precisão de proveniência (achado de revisão `project_assurance`,
+AG-148 — o texto anterior desta docstring dizia "verificado
+empiricamente" para tudo, o que era impreciso):** MEDIDO
+empiricamente, com teste real (`tests/unit/test_models_persistence.py`)
+— pontos DENTRO do range de treino (nos próprios `X_thresholds_` e nos
+patamares entre eles): `np.interp` reproduz `IsotonicRegression.
+predict` com `max abs diff = 0.0`. DEDUZIDO por leitura do código-fonte
+do sklearn (não medido por teste dedicado) — comportamento nas PONTAS
+(`x` fora de `[X_thresholds_[0], X_thresholds_[-1]]`) e no caso
+degenerado (calibrador com 1 único threshold): `IsotonicRegression.
+fit` define `X_min_`/`X_max_` como os extremos do array já deduplicado
+(que também vira `X_thresholds_`), e `predict()` faz `clip(T, X_min_,
+X_max_)` ANTES de interpolar sob `out_of_bounds="clip"` — semântica
+idêntica à extrapolação constante que `np.interp` já aplica por
+padrão fora de `[xp[0], xp[-1]]`; para 1 único threshold, sklearn usa
+`lambda x: y.repeat(x.shape)` e `np.interp` com `xp` de tamanho 1
+também devolve sempre `fp[0]` — equivalente. Testes de caso de borda
+(`test_write_read_round_trip_calibrador_fora_do_range_treinado`,
+`test_write_read_round_trip_calibrador_degenerado`) MEDEM essa dedução
+diretamente, fechando a lacuna entre alegação e prova.
+
+Booster reload também MEDIDO bit-exato: `Booster.save_raw(raw_
 format="ubj")` → `Booster().load_model(bytearray(...))` reproduz
 `predict()` idêntico (`max abs diff = 0.0`, testado com dado
 sintético). `booster.predict(DMatrix(X))` também bate bit-exato com
@@ -44,6 +64,7 @@ logistic"` — a classe wrapper não é necessária pra inferência, só o
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 from dataclasses import dataclass
@@ -52,6 +73,7 @@ from typing import Any
 
 import numpy as np
 import orjson
+import polars as pl
 import xgboost as xgb
 from numpy.typing import NDArray
 from sklearn.isotonic import IsotonicRegression
@@ -186,22 +208,34 @@ class IsotonicCalibratorView:
 class LoadedSideModel:
     """Devolvido por `read_model_bundle` -- tudo que é necessário pra
     inferência fora do processo de treino, sem `XGBClassifier` nem
-    sklearn no runtime (só `xgb.Booster` cru + `IsotonicCalibratorView`).
-    `feature_ids` é a ordem EXATA de coluna que `booster` espera --
-    caller precisa montar a matriz de design nessa ordem, nunca
-    reordenar."""
+    sklearn no runtime (só `xgb.Booster` cru + `IsotonicCalibratorView`)."""
 
     manifest: ModelBundleManifest
     booster: xgb.Booster
     calibrator: IsotonicCalibratorView
 
-    def predict_proba_calibrated(self, x: FloatArray) -> FloatArray:
-        """`x` já na ordem de `manifest.feature_ids`. Reproduz
-        `calibrator.predict(model.predict_proba(x)[:, 1])` do treino,
-        sem `XGBClassifier`/sklearn -- `Booster.predict(DMatrix(x))`
-        bate bit-exato com `predict_proba(x)[:, 1]` pra
-        `objective="binary:logistic"` (verificado empiricamente)."""
-        raw = self.booster.predict(xgb.DMatrix(x))
+    def predict_proba_calibrated(self, df: pl.DataFrame) -> FloatArray:
+        """`df` precisa conter todas as colunas de `manifest.feature_ids`
+        -- em QUALQUER ordem. Reproduz `calibrator.predict(model.
+        predict_proba(x)[:, 1])` do treino, sem `XGBClassifier`/sklearn
+        no runtime (verificado empiricamente com os pontos do fit -- ver
+        ressalva de `AG-148` no docstring do módulo).
+
+        **Achado real de revisão (`project_assurance`, `AG-146`), e
+        AUTOCORREÇÃO no mesmo achado**: a primeira versão desta função
+        recebia `NDArray` cru e tentava validar ordem via
+        `xgb.DMatrix(x, feature_names=...)` -- não funcionava de
+        verdade (o `DMatrix` sempre era rotulado com o MESMO
+        `manifest.feature_ids`, então nunca podia divergir de si mesmo
+        -- guarda morta, achado durante a correção, não pela revisão
+        original). Fix real: `df.select(feature_ids)` -- seleciona por
+        NOME, não por posição, então a ORDEM de `df` nunca importa, e
+        uma coluna faltando/com nome errado levanta
+        `polars.exceptions.ColumnNotFoundError` explícito, nunca produz
+        predição sobre dado errado em silêncio."""
+        x = df.select(list(self.manifest.feature_ids)).to_numpy().astype(np.float64)
+        dmatrix = xgb.DMatrix(x, feature_names=list(self.manifest.feature_ids))
+        raw = self.booster.predict(dmatrix)
         return self.calibrator.predict(raw)
 
 
@@ -247,11 +281,37 @@ def write_model_bundle(
             f"bundle de modelo já existe em {dest_dir} -- imutável, nunca sobrescrito"
         )
 
-    tmp_dir = dest_dir.parent / f".tmp-{dest_dir.name}-{time.monotonic_ns()}"
+    # os.getpid() no nome -- achado de revisão (project_assurance, AG-147):
+    # sem pid, time.monotonic_ns() sozinho pode colidir entre PROCESSOS no
+    # Windows (contador de sistema compartilhado, resolução real pode não
+    # ser nanossegundo) -- mesma classe de risco que AG-145 corrigiu nesta
+    # mesma sessão, aqui reintroduzida de forma mais fraca. Mesmo padrão de
+    # `src.io.artifact.write_artifact`.
+    tmp_dir = dest_dir.parent / f".tmp-{dest_dir.name}-{os.getpid()}-{time.monotonic_ns()}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        booster_bytes = bytes(booster.save_raw(raw_format="ubj"))
+        # feature_names gravado no booster ANTES de serializar -- metadado
+        # útil pra quem inspecionar o .ubj fora deste módulo (ex.
+        # ferramenta externa, dump manual). A garantia REAL de ordem
+        # correta vem de LoadedSideModel.predict_proba_calibrated
+        # selecionar por NOME via `pl.DataFrame.select` (AG-146) -- não
+        # deste atributo isoladamente (achado de revisão: uma versão
+        # anterior confiava só no `DMatrix(feature_names=...)` pra
+        # detectar mismatch, mas isso nunca dispara sozinho porque o
+        # DMatrix é rotulado com o MESMO `manifest.feature_ids`,
+        # não pode divergir de si mesmo -- guarda morta, corrigida).
+        #
+        # `booster.copy()` -- NUNCA mutar o objeto do caller. `model.fit`
+        # (XGBClassifier, achado de revisão) não seta feature_names
+        # sozinho quando X é NDArray puro (é o caso real de
+        # `fit_side_model`), então setar aqui é necessário -- mas fazer
+        # isso no booster ORIGINAL do caller seria efeito colateral
+        # surpreendente (quem chama write_model_bundle e continua usando
+        # `booster` depois não deveria ver o objeto mudar de estado).
+        booster_to_save = booster.copy()
+        booster_to_save.feature_names = list(feature_ids)
+        booster_bytes = bytes(booster_to_save.save_raw(raw_format="ubj"))
         atomic_write_bytes(tmp_dir / _BOOSTER_NAME, booster_bytes)
 
         calibrator_bytes = _serialize_calibrator(calibrator)

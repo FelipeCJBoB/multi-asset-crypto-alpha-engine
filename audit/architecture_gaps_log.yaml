@@ -6934,9 +6934,74 @@ entries:
       Meta for implementado -- a decisão (incluir regime como feature do
       Meta, e de qual resolução/candidato) precisa ser tomada antes da
       implementação, não descoberta no meio dela.
+    addendum_reversao_2026-08-22: >
+      **AG-094 FECHADO -- com REVERSÃO EXPLÍCITA da resolução que AG-118
+      havia antecipado.** Este addendum existe porque `AG-118`
+      (`consequence`) registrou, em 2026-08-20, a resolução OPOSTA como
+      já decidida: "Resolve os 2: AG-094 fecha como 'Meta não consome
+      nenhum candidato -- pergunta se aplica ao GATE, não ao Meta'".
+      Fechar agora sem nomear essa posição anterior deixaria o log
+      internamente contraditório -- o leitor futuro encontraria duas
+      resoluções incompatíveis sem saber qual venceu nem por quê.
+
+      **Decisão que prevalece (Manager, 2026-08-22): regime ENTRA como
+      feature do Meta**, one-hot com níveis fixos, nunca ordinal
+      (`AG-121`: canonicalização é por RETORNO, "R2 < R3" não significa
+      volatilidade). Isso revoga a recomendação #7 do ADR-001 §2.7 --
+      revogação explícita do Manager, verbatim: "Vou revogar o contrato
+      canônico do Meta-Labeling pois não me convenceu, pesquise sobre
+      Meta-Labeling no AFML depois pesquise casos de uso recente
+      modernos".
+
+      **Por que a posição mudou** (não foi preferência, foi evidência
+      nova em 3 vias independentes): (a) o experimento canônico do
+      framework formal de meta-labeling (Joubert,
+      `theory_and_framework/fp_modeling.py`, código aberto) implementa
+      um braço explicitamente regime-aware sobre dado bi-regime; (b)
+      `Ensemble Meta-Labeling` (Thumm/Barucca/Joubert, JFDS 5(1):10-26,
+      2022) lista identificação de regime como 1 dos 3 eixos e conclui
+      que o ganho aparece QUANDO há múltiplos regimes; (c) um co-autor
+      de `Meta-Labeling Architecture` (JFDS 4(4):10-24) recomenda
+      publicamente features de regime exclusivas do meta-model.
+
+      **E o argumento próprio deste motor, que é o decisivo:** sem uma
+      vantagem informacional -- um input que o primário não tem --
+      meta-labeling não tem MECANISMO (regressão infinita) e só adiciona
+      variância. Regime SAIU do vetor de treino do Alpha em 2026-08-21
+      (`src/models/alpha.py:57-68`, Fase A do `PLANO_MESTRE §15.13`), o
+      que criou como efeito colateral não planejado exatamente essa
+      vantagem.
+
+      **A evidência contrária de AG-118 NÃO é descartada:** `lift ~ 1,0`
+      em 90 células mede o lift INCONDICIONAL (universo inteiro,
+      estratificado por stress). O Meta opera sobre a subpopulação
+      CONDICIONAL (só as barras em que o Alpha disparou). É logicamente
+      possível que regime separe TP de SL dentro dos sinais sem separar
+      no universo -- e essa é a ÚNICA hipótese que AG-118 não fechou.
+      Ela virou o Gate E0 do desenho, com consequência declarada antes
+      de rodar: falha em >=2 dos 5 paths -> registro em
+      `evidence_ledger.yaml` e o Meta sai do roadmap.
+
+      **A pergunta original de AG-094 ("de qual resolução/candidato?")
+      também é respondida:** mesmo (símbolo, resolução) e mesmo
+      `method_id` do Alpha que ele filtra, `decode_mode = filter`,
+      identidade de estado canonicalizada -- e, na v1 do Meta,
+      concretamente a coluna `regime` (Utf8) que
+      `build_modeling_frame` já entrega, não `canonical_id` (que não
+      chega por esse caminho; ver design doc §6.1).
+
+      Detalhe completo: `docs/meta_model_design_doc_2026-08-22.md` (v2,
+      auditado) e `PLANO_MESTRE_PRINCE2.md §15.19`.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão de desenho pendente do Manager, sem urgência (Meta não iniciado)"
+    resolution: >
+      Regime entra como FEATURE do Meta (one-hot, níveis fixos, nunca
+      ordinal), revogando ADR-001 §2.7 recomendação #7. Decisão do
+      Manager 2026-08-22, com evidência de literatura e o argumento de
+      vantagem informacional. Reverte explicitamente a resolução
+      antecipada em AG-118. Condicionada ao Gate E0 (separabilidade
+      condicional) -- se E0 falhar, o Meta sai do roadmap e esta
+      decisão fica sem objeto.
+    status: "fechado -- decisão de desenho tomada pelo Manager (2026-08-22), com reversão explícita da posição antecipada em AG-118; implementação gated no Gate E0 e no retreino do Alpha"
 
   - id: AG-095
     date: "2026-08-19"
@@ -10923,3 +10988,281 @@ entries:
       Lock entre processos (criação exclusiva de arquivo) em
       src/labels/experiment_log.py -- ver fechamento_2026-08-22 acima
       pra decisão completa e validação.
+
+  # NOTA DE NUMERAÇÃO (2026-08-22): as entradas abaixo começam em AG-149,
+  # não em AG-146. Motivo: `src/models/persistence.py` (working tree, não
+  # commitado no momento desta escrita) referencia `AG-148` em sua
+  # docstring, e AG-146/147/148 não existem neste log. Numerar a partir de
+  # 149 deixa 146-148 reservados ao trabalho em voo, em vez de arriscar
+  # colisão -- o repo já teve uma colisão real de numeração (`AG-125`,
+  # ver §15.15 do PLANO_MESTRE). Ver AG-149 abaixo.
+
+  - id: AG-149
+    date: "2026-08-22"
+    file: "src/models/persistence.py (docstring do módulo, working tree não commitado)"
+    related_file: "audit/architecture_gaps_log.yaml (numeração termina em AG-145); PLANO_MESTRE_PRINCE2.md §15.18"
+    found_by: "Claude, item 1 do comando 'Atualize governança' (commits/estado real ANTES de tocar em docs), durante registro do design doc do Meta-model"
+    gap: >
+      `src/models/persistence.py` referencia `AG-148` em sua docstring
+      ("achado de revisão `project_assurance`, AG-148 -- o texto anterior
+      desta docstring dizia 'verificado empiricamente' para tudo, o que
+      era impreciso"), mas `AG-148` NÃO EXISTE em
+      `audit/architecture_gaps_log.yaml` -- a numeração do log termina em
+      `AG-145`, e AG-146/147/148 não têm entrada. Referência órfã: ou o
+      AG está por criar numa sessão em andamento, ou houve colisão de
+      numeração.
+    severity: "baixo"
+    layer: "governança -- rastreabilidade de referência cruzada código->log"
+    consequence: >
+      Não bloqueia nada funcionalmente. Mas é a mesma classe de furo que
+      `AG-080`/`AG-123` (dessincronização entre doc e realidade) e que a
+      colisão real de `AG-125` (§15.15): uma referência de código a um
+      identificador de governança que não resolve. Quem ler
+      `persistence.py` e for procurar `AG-148` no log não encontra nada,
+      e não tem como saber se o achado foi perdido, renumerado, ou ainda
+      não registrado. O custo de deixar assim cresce com o tempo, porque
+      a memória de qual era o achado se perde.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- ação recomendada: quem escreveu a docstring de persistence.py cria a entrada AG-148 (ou corrige a referência para o número real). Este AG existe só para que a referência órfã não passe despercebida; fecha assim que AG-148 existir ou a docstring for corrigida. Numeração deste bloco começa em 149 justamente para não colidir com 146-148 em voo."
+
+  - id: AG-150
+    date: "2026-08-22"
+    file: "src/models/alpha.py:265-267 (tau calculado), :501-519 (PREDICTIONS_SCHEMA_COLUMNS), src/models/pipeline.py:168-210 (_fold_diagnostics_payload)"
+    related_file: "docs/meta_model_design_doc_2026-08-22.md §3.5 (D-15), §16-R3"
+    found_by: "Agent (feature-dev:code-architect, auditoria de trade-offs do design doc do Meta) + Agent (auditoria estatística), achado convergente e independente"
+    gap: >
+      `tau` (limiar de decisão do Alpha, quantil `1 - target_signal_rate`
+      da distribuição calibrada do treino daquele fold e lado,
+      `alpha.py:265-267`) é CALCULADO e DESCARTADO. Não está em
+      `PREDICTIONS_SCHEMA_COLUMNS` (`alpha.py:501-519`, 17 colunas) nem
+      no payload de diagnóstico por fold (`pipeline.py:168-210`). Vive
+      só em `SideModelResult.tau`, em memória, durante a execução.
+    severity: "medio"
+    layer: "models -- contrato de artefato incompleto; a informação existe e é jogada fora"
+    consequence: >
+      Três consequências, todas de custo desproporcional ao do fix (uma
+      coluna). (1) A feature de margem `p_alpha - tau` -- a forma natural
+      de o Meta saber QUÃO acima do limiar o Alpha estava -- é
+      inconstruível; o design doc do Meta a declara bloqueada por isso
+      (§16-R3). (2) `tau` varia por fold E por lado, logo o ponto de
+      truncamento de `p_alpha` NÃO é comparável entre folds; sem `tau`
+      persistido não há como corrigir nem sequer diagnosticar isso. (3)
+      Impede o diagnóstico de massa de empate em `tau`: como a
+      calibração é isotônica (função escada), se um bloco plano cair
+      exatamente no valor de `tau`, a comparação ESTRITA de
+      `alpha.py:382-383` inclui ou exclui uma massa inteira de uma vez,
+      e a taxa de sinal realizada salta de forma descontínua sem igualar
+      `target_signal_rate` -- o orçamento de fees (R3) passaria a ser
+      cumprido por acidente do empate, não por desenho. Nenhum dos três é
+      detectável hoje.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado: coluna `tau_alpha` (Float64) em PREDICTIONS_SCHEMA_COLUMNS, preenchida com o tau do lado efetivamente sinalizado (`side_hat`), mais `tau` no payload de diagnóstico por (fold, lado). Exige bump de schema_version do artefato (ver §14.3 do design doc do Meta). Custo: 1 coluna + 1 campo. Sequenciamento natural: junto do retreino do Alpha já represado (PLANO_MESTRE §15.14), para não abrir uma janela de artefatos com schema misto."
+
+  - id: AG-151
+    date: "2026-08-22"
+    file: "src/validation/cpcv.py:259-292 (assign_time_groups), :753-787 (load_labels_v1)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-144 (correlação cross-asset real 0,70-0,83); docs/meta_model_design_doc_2026-08-22.md §4.5 (D-16)"
+    found_by: "Agent independente (auditoria estatística adversarial do design doc do Meta-model)"
+    gap: >
+      `assign_time_groups` (`cpcv.py:270-278`) particiona por
+      `np.linspace(min(t0), max(t0), n_groups+1)` sobre o `t0` do frame
+      RECEBIDO, e `load_labels_v1` (`cpcv.py:753-787`) lê
+      `data/labels/{symbol}/{grade}/{version}/labels.parquet` -- UM FRAME
+      POR SÍMBOLO. Símbolos com históricos de comprimento diferente (BTC
+      desde 2020-01 vs. SOL/XRP/BNB, listagens posteriores) produzem
+      FRONTEIRAS DE GRUPO EM DATAS DIFERENTES. Consequência direta: o
+      grupo 3 do BTC e o grupo 3 do ETH NÃO cobrem a mesma janela de
+      calendário, e `fold_id == s` não designa a mesma janela em símbolos
+      diferentes.
+    severity: "alto"
+    layer: "validation -- pré-requisito estrutural de qualquer pooling cross-símbolo; não é refinamento"
+    consequence: >
+      Hoje NÃO se manifesta, porque todo pipeline de treino real roda um
+      símbolo por vez. Manifesta-se no instante em que existir pooling
+      cross-símbolo -- que é premissa do motor-alvo (5 símbolos) e é o que
+      sustenta a viabilidade de amostra do Meta-model. Sob pooling: uma
+      linha de TREINO de BTC pode ser EXATAMENTE CONTEMPORÂNEA de uma
+      linha de TESTE de ETH, e o purge -- que opera por `t1` dentro do
+      array passado a `generate_splits` -- nunca a vê. Com correlação
+      cross-asset medida em 0,70-0,83 (`AG-144`, medição real, não
+      assumida), é quase o mesmo evento. O purge não fica FRACO: fica
+      AUSENTE entre séries, e nenhum dos 14 testes de leakage olha para
+      tempo cross-símbolo. Classe B09 (split de CV sem purge por `t1`),
+      mas por um caminho que o B09 como escrito não descreve.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- BLOQUEANTE para qualquer pooling cross-símbolo (declarado como pré-requisito de F1 no design doc do Meta, §4.5). Fix recomendado: calcular `edges_ms` UMA VEZ sobre a UNIÃO dos `t0` dos símbolos do pool e reaplicar a cada símbolo, em vez de `linspace` per-símbolo. Custo em amostra: TBD -- medir (grupos alinhados por calendário deixam os símbolos de histórico curto com grupos iniciais vazios). Alternativa conservadora enquanto não existir: rodar POR SÍMBOLO, nunca pooled, e exigir permanência cross-símbolo em vez de cross-path."
+
+  - id: AG-152
+    date: "2026-08-22"
+    file: "src/analysis/m4_critical_windows.py:1119-1121 (_asof_join_regime_onto_labels)"
+    related_file: "src/analysis/gate_efficiency.py:245; tools/diagnostics/crosscheck_stress_bucket_vs_atr_decile.py:70; tools/diagnostics/gate_efficiency_full_diagnostics.py:100"
+    found_by: "Agent (feature-dev:code-explorer), Fase 2 de redesign_workflow sobre o Meta-model"
+    gap: >
+      `_asof_join_regime_onto_labels` faz
+      `labels_sorted.join_asof(regime_df, left_on="_t0_ms",
+      right_on="_regime_close_ms", strategy="backward")` SEM passar
+      `tolerance`. A direção BACKWARD garante causalidade (nunca casa com
+      bucket futuro -- é o fix de `AG-090`), mas sem tolerância a busca
+      para trás é ILIMITADA: um label pode herdar um bucket de regime
+      arbitrariamente antigo através de um gap de dado ou após o fim da
+      série do candidato, silenciosamente, sem nenhum sinal.
+    severity: "medio"
+    layer: "analysis -- medição pós-hoc (fora do contrato importlinter de propósito), não artefato de produção"
+    consequence: >
+      Escopo limitado por natureza: `src/analysis/` é medição pós-hoc e
+      nunca insumo de treino ou seleção de feature, então isto não
+      contamina modelo. Mas contamina MEDIÇÃO -- e duas medições que já
+      pesaram em decisão real consomem este join: o bloco `heterogeneity`
+      do M4 (`m4_critical_windows.py:1172`) e o `lift` de `AG-118`
+      (`gate_efficiency.py:245`), que foi a evidência que DESLIGOU o gate
+      de regime de `evaluate_all()` em 2026-08-22. Um bucket herdado
+      através de um gap entra na contagem de `bad_event_capture_rate`/
+      `good_event_cost_rate` como se fosse observação legítima. Não há
+      indício de que isso tenha alterado o veredito de `AG-118` (`lift ~
+      1,0` é robusto e o filtro de `is_not_null` já descarta labels
+      anteriores à primeira barra do candidato), mas a quantidade de
+      linhas afetadas nunca foi medida.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado em duas partes: (1) `tolerance` explícita no `join_asof`, derivada da duração esperada da barra da grade em questão (nunca número redondo -- sob dollar-bar a duração é variável, então o valor precisa vir de quantil medido da distribuição real de duração, p.ex. p99, não estipulado); (2) contar e REPORTAR quantas linhas casariam fora da tolerância, em vez de descartá-las em silêncio. Regra geral recomendada para o repo (candidata a banned pattern ou a 15º teste de leakage): todo `join_asof` sobre grade diferente da dos labels exige `tolerance` declarada."
+
+  - id: AG-146
+    date: "2026-08-22"
+    file: "src/models/persistence.py::LoadedSideModel.predict_proba_calibrated"
+    related_file: "src/models/alpha.py::run_fold (linha 337, ponto de integração futuro)"
+    found_by: "Agent (project_assurance independente), revisão de src/models/persistence.py (AG-141)"
+    gap: >
+      `predict_proba_calibrated(x)` recebia `x` como `NDArray` puro, sem
+      nomes de coluna, sem checagem de `x.shape[1] == len(manifest.
+      feature_ids)`, sem `feature_names` anexado ao `DMatrix`. Contagem
+      errada de coluna falhava alto (erro de dimensão do XGBoost) --
+      ORDEM errada com a MESMA contagem nunca falhava, produzia predição
+      numericamente válida e silenciosamente errada.
+    severity: "medium"
+    layer: "models"
+    consequence: >
+      Dormant no momento do achado (zero consumidor real). Viraria
+      bloqueante no momento em que src/models/alpha.py::run_fold
+      passasse a chamar write_model_bundle/read_model_bundle -- um
+      refactor futuro em build_design_matrix/T1_FEATURE_IDS que
+      reordenasse colunas sem atualizar o bundle produziria inferência
+      silenciosamente errada em produção/paper-trading, sem sintoma
+      visível.
+    status: "fechado -- ver addendum_correcao_2026-08-22 (fix real diferente da 1ª tentativa)"
+
+    addendum_correcao_2026-08-22: >
+      Corrigido, com AUTOCORREÇÃO no meio do processo (acidente feliz:
+      a 1ª tentativa de fix não funcionava de verdade, achado durante a
+      própria correção, não pela revisão original). Tentativa 1: setar
+      `booster.feature_names` + `DMatrix(x, feature_names=manifest.
+      feature_ids)` -- não detecta ordem trocada porque o DMatrix
+      SEMPRE é rotulado com o MESMO `manifest.feature_ids`, não importa
+      a ordem real dos dados em `x` -- guarda morta, nunca dispara.
+      Confirmado pelo próprio teste de regressão escrito pra provar o
+      fix falhando ("DID NOT RAISE ValueError").
+
+      Fix real: `predict_proba_calibrated` agora recebe `pl.DataFrame`
+      (não `NDArray`), seleciona por NOME
+      (`df.select(list(manifest.feature_ids))`) -- ordem do `df` do
+      caller nunca importa, coluna faltando/nome errado levanta
+      `polars.exceptions.ColumnNotFoundError` explícito. Confirmado por
+      teste que embaralha as colunas do DataFrame e prova predição
+      IDÊNTICA à ordem original (`test_predict_proba_calibrated_
+      ignora_ordem_de_coluna_do_dataframe`).
+
+      Achado colateral descoberto durante a correção, mesmo commit:
+      `write_model_bundle` mutava o objeto `booster` do CALLER como
+      efeito colateral (`booster.feature_names = ...` no objeto
+      recebido, não numa cópia) -- corrigido com `booster.copy()` antes
+      de mutar, testado (`test_write_model_bundle_nao_muta_booster_do_
+      caller`).
+
+      6 testes novos/reescritos, suíte completa do projeto (1662
+      testes) verde, checks mecânicos limpos.
+    resolved_by_commit: null
+    resolution: >
+      Fix real (seleção por nome via pl.DataFrame.select, não
+      feature_names do DMatrix sozinho) -- ver addendum_correcao_
+      2026-08-22 acima. resolved_by_commit preenchido após o commit.
+
+  - id: AG-147
+    date: "2026-08-22"
+    file: "src/models/persistence.py::write_model_bundle"
+    related_file: "src/io/artifact.py::write_artifact, audit/architecture_gaps_log.yaml::AG-145"
+    found_by: "Agent (project_assurance independente), revisão de src/models/persistence.py (AG-141)"
+    gap: >
+      `write_artifact` nomeia seu diretório temporário com
+      `f'.tmp-{dest_dir.name}-{os.getpid()}-{time.monotonic_ns()}'` (pid
+      + clock monotônico). `write_model_bundle` -- que o docstring do
+      módulo alega seguir "mesmo padrão .tmp->fsync->os.rename de
+      src.io.artifact.write_artifact (V-05)" -- omitia `os.getpid()`,
+      usando só `f'.tmp-{dest_dir.name}-{time.monotonic_ns()}'`.
+      `time.monotonic_ns()` no Windows tipicamente deriva de um contador
+      de sistema compartilhado entre processos, com resolução real que
+      pode não ser de fato nanossegundo -- dois processos chamando
+      write_model_bundle em torno do mesmo tick podiam colidir no MESMO
+      nome de tmp_dir.
+    severity: "medium"
+    layer: "models"
+    consequence: >
+      Se dois processos algum dia escreverem a MESMA chave de partição
+      (model_id, fold_id, side, variant) concorrentemente -- cenário
+      plausível se folds de CPCV forem paralelizados via
+      ProcessPoolExecutor no futuro, mesmo padrão já usado em
+      src/labels/backfill_multi_symbol.py -- ambos processos criariam o
+      MESMO tmp_dir (mkdir com exist_ok=True não falha), escreveriam
+      arquivos entrelaçados no mesmo diretório, e o dest_dir final
+      poderia acabar com o booster de um processo pareado com o
+      calibrador de outro -- dado silenciosamente CORROMPIDO, não um
+      erro. Classe de bug estruturalmente idêntica à corrigida em
+      AG-145 (mesma sessão), reintroduzida de forma mais fraca no mesmo
+      commit.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido -- `os.getpid()` adicionado ao nome do `tmp_dir` de
+      `write_model_bundle`, igualando o padrão de `write_artifact` (1
+      linha). resolved_by_commit preenchido após o commit.
+    status: "fechado -- fix de 1 linha aplicado no mesmo lote que AG-146/AG-148"
+
+  - id: AG-148
+    date: "2026-08-22"
+    file: "src/models/persistence.py (docstring do módulo) + tests/unit/test_models_persistence.py"
+    related_file: "src/models/persistence.py::IsotonicCalibratorView.predict"
+    found_by: "Agent (project_assurance independente), revisão de src/models/persistence.py (AG-141)"
+    gap: >
+      O docstring do módulo e o commit message afirmavam "verificado
+      empiricamente bit-exato" para a equivalência np.interp vs.
+      IsotonicRegression.predict(out_of_bounds="clip"), incluindo a
+      semântica de extrapolação nas pontas. O único teste que provava
+      isso usava como query de predição o MESMO array usado pra treinar
+      o calibrador -- todo ponto consultado era, por construção, um dos
+      pontos originais do fit. Nenhum ponto fora de [X_thresholds_[0],
+      X_thresholds_[-1]] era consultado; nenhum calibrador degenerado (1
+      threshold) era construído ativamente. A equivalência nas pontas é
+      teoricamente correta (confirmado por leitura do source do
+      sklearn), mas isso é DEDUÇÃO, não medição -- a alegação estava
+      desalinhada com o que o teste de fato exercitava.
+    severity: "medium"
+    layer: "models"
+    consequence: >
+      Se uma versão futura do sklearn mudar a semântica interna de clip,
+      nada no CI pegaria a regressão nas pontas -- só o comportamento no
+      interior do range treinado estava sob teste. Risco real baixo
+      (probabilidades calibradas do Alpha tendem a ficar dentro do range
+      visto em treino), mas a lacuna entre alegação e prova é o tipo de
+      furo que motivou o protocolo de project_assurance (AG-001).
+    resolved_by_commit: null
+    resolution: >
+      Corrigido -- 2 testes novos construindo ATIVAMENTE casos de borda
+      reais (x fora do range treinado nos dois sentidos; calibrador
+      degenerado com 1 único threshold), ambos confirmando
+      `np.interp`/`IsotonicCalibratorView.predict` bit-exato contra
+      `IsotonicRegression.predict` original. Docstring do módulo
+      reescrito pra distinguir explicitamente MEDIDO (pontos do fit,
+      agora também pontas/degenerado) de DEDUZIDO (não se aplica mais --
+      tudo agora é medido). resolved_by_commit preenchido após o
+      commit.
+    status: "fechado -- 2 testes de caso de borda adicionados no mesmo lote que AG-146/AG-147"
