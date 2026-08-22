@@ -191,11 +191,11 @@ def compute_config_hash(config: dict[str, Any], *, schema_version: str) -> str:
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
-def _sha256_bytes(data: bytes) -> str:
+def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
+def atomic_write_bytes(path: Path, data: bytes) -> None:
     """Handle único `wb`, `fsync` NESSE MESMO handle — mesmo padrão de
     `write_labels_atomic` (`src/labels/triple_barrier.py:1782-1807`),
     aplicado uniformemente aos 4 arquivos pequenos do bundle (`schema.
@@ -218,7 +218,7 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 _ENOSPC = 28
 
 
-def _atomic_rename_dir(tmp_dir: Path, dest_dir: Path) -> None:
+def atomic_rename_dir(tmp_dir: Path, dest_dir: Path) -> None:
     """V-05 — imutabilidade sem TOCTOU. `os.rename` (não `os.replace`)
     levanta `FileExistsError` nativamente no Windows se `dest_dir` já
     existir — não precisa checar `exists()` antes (checagem + rename
@@ -299,8 +299,8 @@ def write_artifact(
         data_buffer = io.BytesIO()
         df.write_parquet(data_buffer)
         data_bytes = data_buffer.getvalue()
-        _atomic_write_bytes(tmp_dir / _DATA_NAME, data_bytes)
-        data_sha256 = _sha256_bytes(data_bytes)
+        atomic_write_bytes(tmp_dir / _DATA_NAME, data_bytes)
+        data_sha256 = sha256_bytes(data_bytes)
         file_entry = FileEntry(
             name=_DATA_NAME, rows=df.height, bytes=len(data_bytes), sha256=data_sha256
         )
@@ -316,7 +316,7 @@ def write_artifact(
         if upstream:
             upstream_payload = [asdict(u) for u in sorted(upstream, key=lambda u: u.stage)]
             upstream_blob = orjson.dumps(upstream_payload, option=orjson.OPT_SORT_KEYS)
-            input_manifest_hash = _sha256_bytes(upstream_blob)[:16]
+            input_manifest_hash = sha256_bytes(upstream_blob)[:16]
 
         manifest = ArtifactManifest(
             stage=stage,
@@ -332,15 +332,15 @@ def write_artifact(
             n_rows=df.height,
             primary_key=schema.primary_key,
             files=(file_entry,),
-            content_hash=_sha256_bytes(f"{file_entry.name}:{file_entry.sha256}".encode())[:16],
+            content_hash=sha256_bytes(f"{file_entry.name}:{file_entry.sha256}".encode())[:16],
         )
 
-        _atomic_write_bytes(tmp_dir / _SCHEMA_NAME, schema_to_json_bytes(schema))
-        _atomic_write_bytes(
+        atomic_write_bytes(tmp_dir / _SCHEMA_NAME, schema_to_json_bytes(schema))
+        atomic_write_bytes(
             tmp_dir / _CONFIG_NAME,
             orjson.dumps(config, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2),
         )
-        _atomic_write_bytes(tmp_dir / _MANIFEST_NAME, manifest.to_json_bytes())
+        atomic_write_bytes(tmp_dir / _MANIFEST_NAME, manifest.to_json_bytes())
 
         # _SUCCESS por último -- é a autoridade (V-05); leitor ignora
         # diretório sem ele.
@@ -360,7 +360,7 @@ def write_artifact(
         shutil.rmtree(dest_dir)
 
     dest_dir.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_rename_dir(tmp_dir, dest_dir)
+    atomic_rename_dir(tmp_dir, dest_dir)
 
     logger.info(
         "io.artifact.written",
@@ -508,10 +508,13 @@ __all__ = [
     "UpstreamRef",
     "artifact_dir",
     "artifact_exists",
+    "atomic_rename_dir",
+    "atomic_write_bytes",
     "compute_config_hash",
     "gc_incomplete",
     "read_artifact",
     "read_manifest",
     "scan_artifact",
+    "sha256_bytes",
     "write_artifact",
 ]

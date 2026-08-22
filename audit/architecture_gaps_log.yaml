@@ -10567,6 +10567,40 @@ entries:
     resolution: null
     status: "aberto -- correção recomendada: persistir booster (.ubj) + calibrador (coeficientes, não pickle sklearn) por fold x lado x variante ao final de fit_side_model/write_all_fold_diagnostics, .tmp->fsync->rename (B29, já padrão do módulo). Sequenciamento sugerido pelo agente: junto da migração LightGBM (PLANO_MESTRE §15.14, já represada) para não abrir 2 janelas separadas de 'código não bate com o que está rodando'. Decisão de quando fica pro Manager."
 
+    infraestrutura_pronta_2026-08-22: >
+      **Sequenciamento revisto pelo Manager** -- em vez de esperar a
+      migração LightGBM, desenho AGNÓSTICO AO LEARNER (detalhe completo
+      em `PLANO_MESTRE_PRINCE2.md §15.18`): novo
+      `src/models/persistence.py`, reusa as primitivas de `src.io.
+      artifact` (`§15.16`) promovidas de privadas pra públicas nesta
+      rodada. Só a serialização do booster muda quando o LightGBM
+      chegar -- calibrador/manifest/escrita atômica são 100%
+      reusáveis, resolvendo o motivo original do adiamento sem esperar
+      a migração acontecer primeiro.
+
+      Achado real: ADR-001 §4.9 assumia calibração Platt (2
+      coeficientes); código real usa `IsotonicRegression`
+      não-paramétrico. Persistido como `X_thresholds_`/`y_thresholds_`
+      fitted, reconstrução via `np.interp` -- verificado EMPIRICAMENTE
+      bit-exato (`max abs diff = 0,0`) contra `IsotonicRegression.
+      predict`, não assumido. Booster (`save_raw("ubj")`/
+      `load_model`) e `Booster.predict(DMatrix)` vs.
+      `XGBClassifier.predict_proba()` também verificados bit-exatos.
+
+      6 testes novos com objetos XGBoost/IsotonicRegression REAIS (não
+      mocks), suíte completa (1656 testes) verde, todos os checks
+      mecânicos limpos.
+
+      **NÃO fecha o AG-141 -- só a metade "infraestrutura pronta e
+      testada".** Falta a integração real: `src/models/alpha.py::
+      run_fold` (linha 337) precisaria de `persist_root: Path | None =
+      None` e chamar `write_model_bundle` após cada `fit_side_model`
+      (side=1/side=-1) -- não feito nesta rodada, decisão deliberada de
+      não integrar num pipeline de produção real (15 folds × 2
+      variantes × 2 lados, 7 leitores downstream) sem revisão
+      independente da infraestrutura primeiro. Status permanece
+      ABERTO."
+
   - id: AG-142
     date: "2026-08-22"
     file: "src/models/monotonic.py::FeatureICResult.ic_by_env, src/models/alpha.py::fit_side_model"

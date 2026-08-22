@@ -3415,6 +3415,59 @@ de read-modify-write sem lock, sobre arquivo diferente
 paralela hoje (parece invocado como script sequencial). Mesma classe
 de risco, prioridade menor por falta de evidência de exposição.
 
+### 15.18 AG-141 — persistência de modelo/calibrador, desenho agnóstico ao learner (2026-08-22)
+
+**Decisão de sequenciamento revista.** `AG-141` (`audit/architecture_
+gaps_log.yaml`) estava registrado como "decisão de quando fica pro
+Manager" — a recomendação original era esperar a migração XGBoost→
+LightGBM (`§15.14`, represada) pra não construir a persistência duas
+vezes. Manager autorizou reformulação: desenhar a persistência de
+forma **agnóstica ao learner**, reusando as primitivas de `src.io.
+artifact` (item `§15.16`) — `atomic_write_bytes`/`atomic_rename_dir`/
+`sha256_bytes` promovidas de privadas pra públicas nesta rodada,
+exatamente pra serem reusáveis fora do writer DataFrame-centric.
+Isso resolve o motivo original do adiamento sem esperar a migração
+acontecer primeiro: só a serialização do booster (`.ubj` hoje) muda
+quando o LightGBM chegar — calibrador, manifest, escrita atômica são
+100% reusáveis.
+
+**Novo módulo `src/models/persistence.py`** — `write_model_bundle`/
+`read_model_bundle` por `(model_id, fold_id, side, variant)`, formato
+versionado no manifest (`booster_format`/`calibrator_format`, um
+formato desconhecido levanta erro explícito em vez de desserializar às
+cegas). `LoadedSideModel.predict_proba_calibrated(x)` reproduz a
+inferência de treino sem `XGBClassifier` nem sklearn no runtime.
+
+**Achado real durante o desenho**: o `ADR-001` §4.9 assume calibração
+via Platt scaling (`1/(1+exp(A*p+B))`, 3 linhas). O código real usa
+`IsotonicRegression` (não-paramétrico, não reduz a 2 coeficientes) —
+persistido como os arrays `X_thresholds_`/`y_thresholds_` fitted,
+reconstrução via `np.interp`. **Verificado empiricamente, não
+assumido**: `np.interp(x, X_thresholds_, y_thresholds_)` reproduz
+`IsotonicRegression.predict(x)` com `max abs diff = 0,0` (`out_of_
+bounds="clip"` tem a mesma semântica de `np.interp` nas pontas).
+Booster: `Booster.save_raw("ubj")` → `Booster().load_model(...)`
+também bit-exato (`max abs diff = 0,0`), e `Booster.predict(DMatrix)`
+bate bit-exato com `XGBClassifier.predict_proba()[:,1]` pra
+`objective="binary:logistic"` — não precisa da classe wrapper pra
+inferência.
+
+**Escopo explícito desta rodada — infraestrutura, NÃO wiring**: 6
+testes novos (round-trip real com XGBoost/IsotonicRegression, não
+mocks), suíte completa (1656 testes) verde, `banned_patterns`/`ruff`/
+`mypy`/`import-linter` limpos. **NÃO integrado ao pipeline de produção
+ainda** — ponto de integração identificado e documentado, não
+executado: `src/models/alpha.py::run_fold` (linha 337), logo após cada
+chamada de `fit_side_model` (side=1 e side=-1), precisaria de um
+parâmetro novo (`persist_root: Path | None = None`, default
+preservando comportamento atual) pra chamar `persistence.
+write_model_bundle` com `fold_id=str(split.split_id)`/`model_id`/
+`side`/`variant` já disponíveis no escopo. Decisão deliberada de não
+integrar nesta mesma rodada — `run_layer1_sprint` é pipeline de
+produção real (15 folds × 2 variantes × 2 lados, 7 leitores
+downstream reais) e essa integração merece sua própria rodada,
+depois de revisão independente da infraestrutura em si.
+
 ---
 
 ## Fontes desta pesquisa

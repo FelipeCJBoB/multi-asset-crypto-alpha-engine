@@ -32,11 +32,14 @@ from .artifact import (
     UpstreamRef,
     artifact_dir,
     artifact_exists,
+    atomic_rename_dir,
+    atomic_write_bytes,
     compute_config_hash,
     gc_incomplete,
     read_artifact,
     read_manifest,
     scan_artifact,
+    sha256_bytes,
     write_artifact,
 )
 from .schema import (
@@ -66,6 +69,8 @@ __all__ = [
     "UpstreamRef",
     "artifact_dir",
     "artifact_exists",
+    "atomic_rename_dir",
+    "atomic_write_bytes",
     "compute_config_hash",
     "gc_incomplete",
     "read_artifact",
@@ -73,6 +78,7 @@ __all__ = [
     "scan_artifact",
     "schema_from_json_bytes",
     "schema_to_json_bytes",
+    "sha256_bytes",
     "validate_schema",
     "write_artifact",
 ]
