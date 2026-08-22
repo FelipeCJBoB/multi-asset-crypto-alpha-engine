@@ -848,7 +848,8 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
-| V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v2, auditado, ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
+| V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
+| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.20`) — multi-símbolo/multi-resolução (R1/R2/R3) já prontos em produção; migração real = learner + orquestração + GPU (D-18) + schema. 2 pendências escaladas ao Manager (`AG-162` CRITICAL, `AG-163` HIGH). Bloqueado pelo gate "Data Layer 100%" | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
 
@@ -1279,7 +1280,7 @@ LIVE TRADING LAYER
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
-| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟡 desenho travado v2 + auditado, ZERO implementado; gated no E0 e no retreino do Alpha |
+| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟡 desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado; gated no E0 e no retreino do Alpha |
 | `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
@@ -3763,6 +3764,108 @@ documento que parecia pronto de um que estava.**
 
 ---
 
+### 15.20 Alpha multi-ativo × multi-resolução (LightGBM + GPU) — arquitetura ponta a ponta travada (2026-08-22)
+
+**Origem:** pedido do Manager, verbatim — *"Alpha atual é um legado do motor
+antigo BTC only e single time-frame M15, além de ser XGBoost. Seu desafio é
+desenhar a arquitetura tecnica ponta a ponta do Alpha multi ativo, multi
+time-frame R1, R2 e R3 com LightGBM ou Catboost."* Documento completo:
+`docs/alpha_model_design_doc_2026-08-22.md` (v3).
+
+#### A. Três decisões de escopo travadas antes do desenho
+
+1. Só desenho (Fase 4), mesmo padrão do Meta-model v3 — sem implementação.
+2. Learner = LightGBM, mantendo `§15.14` (não reaberto; CatBoost descartado).
+3. Grão de treino = modelos independentes por (símbolo, resolução) — sem
+   pooling cross-ativo em v1, pesquisa AFML (`§8.5`, pooling/stacked feature
+   importance) + caso de uso 2026 (arXiv:2505.08180, ganho de R² medido sob
+   XGBoost) citada para justificar pooling como via de evolução **gated**
+   em `AG-151` fechado, não como decisão silenciosa.
+
+#### B. O achado central — infraestrutura já pronta
+
+Multi-símbolo (5 ativos) e multi-resolução (R1/R2/R3, dollar-bar) **já
+estavam prontos em produção** quando o desenho começou — a frente que
+faltava de verdade era só o learner. `_BAR_SOURCE_BY_RESOLUTION`
+(`src/models/dataset.py:80-84`) mapeia as 3 grades desde `AG-100`/`AG-124`
+(trabalho de engenharia concluído no mesmo dia deste desenho, commit
+`7924f2c`); regime e features já despacham corretamente via `bar_source`.
+Consequência: o redesenho é cirúrgico — trocar o learner, estender o loop
+de orquestração de 5 para 15 combinações (função já aceita
+`resolution_id`), e corrigir débitos estruturais de schema encontrados pelo
+caminho (18 decisões, D-01..D-18).
+
+#### C. Duas rodadas de revisão independente — mesmo padrão do Meta-model v3
+
+**Auditoria adversarial (`/engineering:architecture`, 3 revisores
+paralelos — precisão de citação, ataque aos argumentos centrais, lacunas de
+completude), v1→v2:** 1 CRITICAL — D-05 (`tau_long`/`tau_short`) não
+verificado contra o nome `tau_alpha` que o Meta-model v3 trava
+literalmente, o que produziria `LegacyPredictionsError` **permanente** em
+produção. 6 IMPORTANT/MODERATE: compatibilidade retroativa de
+`predictions.parquet` nunca tratada (5 artefatos reais em disco,
+consumidores hardcoded); nenhuma seção de Definition-of-Done/testes
+afetados; purge do CPCV medido sempre em wall-clock, sub-protegendo R2/R3;
+sweep de hiperparâmetro compartilhado como canal de vazamento cross-símbolo
+que `AG-151`/D-02 não cobrem; determinismo bit-exato do LightGBM tratado
+como herdado do XGBoost sem verificação (não é — `deterministic=False` é o
+default).
+
+**`project_assurance` (PRINCE2 §6.4, foco de integração — não qualidade),
+v2→v3:** achou que o problema de `tau_alpha` era maior do que a v2
+resolveu. O nome/formato "`tau_alpha`, 1 coluna derivada por seleção de
+lado" já estava travado em **mais dois** artefatos que a v2 não tinha visto
+— o próprio texto desta seção antes da correção (então alínea F, item 1) e
+o campo `status` de `AG-150` — ambos mais próximos da correção que a v3
+propõe para o Meta do que da decisão real de D-05. **Não é um patch de 2
+documentos, é 3 artefatos de governança que já diziam uma coisa enquanto
+D-05 decidia outra — escalado ao Manager (`AG-162`, CRITICAL), não fechado
+por revisão.** Achado adicional: o design doc citava `AG-100`/`AG-124`
+como "fechados" 3×, mas o status formal de ambos continua `"aberto"`, e
+`SPRINT_LOG.md` tem pergunta ainda não respondida sobre se o
+reprocessamento cobre features/regime/CPCV — corrigido para refletir
+status real (`AG-163`, HIGH). Também achou que o próprio documento estava
+não commitado e sem âncora de governança (`AG-161`) — esta seção fecha
+essa lacuna.
+
+#### D. GPU — pedido do Manager, aplicado aos dois motores com ressalvas declaradas
+
+*"garanta que Alpha e Meta vai usar GPU"* — para o Alpha, direto (D-18,
+`device_type="cuda"`, learner já travado). Para o Meta, o pedido colidia
+com uma decisão já travada (D-02 do Meta v3: LightGBM é braço **bloqueado**
+por padrão, `MetaLearnerBlockedError` incondicional — default real é
+regressão logística L2, porque boosting exige 2-3× mais amostra que
+logística pra mesma calibração). Esclarecido com o Manager: GPU configurado
+no braço bloqueado para quando/se o gate estatístico abrir, sem desbloquear
+nada agora — nota adicionada em `docs/meta_model_design_doc_2026-08-22.md`
+§7.2, D-02 do Meta não reaberto. Três ressalvas declaradas no D-18 do
+Alpha, não escondidas: pré-requisito de build GPU-enabled via `uv` não
+verificado; tensão real com a garantia de reload bit-exato (`deterministic`
+do LightGBM é mais forte em CPU que em GPU); payoff de desempenho não
+medido (`TBD`, ~230k barras/10 features é porte moderado, não presumido
+como vitória automática).
+
+#### E. Status e pendências escaladas ao Manager
+
+**Status: v3, 18 decisões travadas, ZERO linhas implementadas.** Duas
+pendências não são fecháveis por revisão, escaladas per `§6.5`:
+
+- **`AG-162` (CRITICAL):** decidir entre D-05 (`tau_long`/`tau_short`, 2
+  colunas cruas) e o já registrado em `AG-150` (`tau_alpha`, 1 coluna
+  derivada por seleção de lado) — propagar a mesma escolha a esta seção,
+  `AG-150` e `docs/meta_model_design_doc_2026-08-22.md §3.5` no mesmo
+  commit.
+- **`AG-163` (HIGH):** confirmar por escrito o fechamento formal de
+  `AG-124`; atualizar `AG-100.status` para `"fechado"`; responder a
+  pergunta pendente em `SPRINT_LOG.md` sobre escopo do reprocessamento
+  (features/regime/CPCV inclusos ou não — afeta a premissa central da
+  alínea B acima).
+
+AGs novos da revisão: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer
+100%" (0/9 estágios livres de gap conhecido, inalterado por este desenho).
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -3779,6 +3882,23 @@ documento que parecia pronto de um que estava.**
 
 ## Changelog
 
+- **v3.28 (2026-08-22)** — **Alpha multi-ativo × multi-resolução (LightGBM +
+  GPU): arquitetura ponta a ponta travada v3, 2 rodadas de revisão
+  independente.** Detalhe: `§15.20`. Achado central: multi-símbolo e
+  multi-resolução (R1/R2/R3) já estavam prontos em produção — o redesenho
+  real é o learner (XGBoost→LightGBM) + orquestração (5→15 combinações) +
+  4 débitos de schema. Auditoria adversarial (v1→v2): 1 CRITICAL
+  (`tau_long`/`tau_short` não verificado contra o `tau_alpha` que o Meta v3
+  trava — `LegacyPredictionsError` permanente se implementado sem
+  correção) + 6 IMPORTANT/MODERATE. `project_assurance` (v2→v3): o problema
+  de `tau_alpha` é maior — já travado em 3 artefatos de governança
+  divergentes, não 2; escalado ao Manager (`AG-162`, CRITICAL), não
+  fechado por revisão. `AG-100`/`AG-124` citados como "fechados" quando o
+  status formal segue "aberto" — corrigido, também escalado (`AG-163`,
+  HIGH). GPU (D-18) adicionado a pedido do Manager nos dois motores, com 3
+  ressalvas declaradas (build via `uv`, tensão com determinismo bit-exato,
+  payoff não medido); para o Meta, aplicado só ao braço LightGBM já
+  bloqueado por D-02, sem desbloquear o gate. AGs novos: `AG-157`-`AG-164`.
 - **v3.27 (2026-08-22)** — **`project_assurance` sobre o design doc v2 do
   Meta-model: 3 CRITICAL + 4 HIGH, veredito "não é base sólida para
   implementar". v3 escrita.** Detalhe: `§15.19` alínea G. Os três CRITICAL:

@@ -3252,6 +3252,79 @@ dentro do processo de treino, então popular exige **retreinar**, e a v2
 afirmava custo zero. Falha do E0 ⟹ o Meta sai do roadmap com evidência em
 `audit/evidence_ledger.yaml`. AGs novos da revisão: `AG-153` a `AG-156`.
 
+## Alpha multi-ativo × multi-resolução (LightGBM + GPU) — arquitetura ponta a ponta travada (2026-08-22) <!-- check-sprint-log: skip -->
+
+Pedido do Manager: *"Alpha atual é um legado do motor antigo BTC only e
+single time-frame M15, além de ser XGBoost. Seu desafio é desenhar a
+arquitetura tecnica ponta a ponta do Alpha multi ativo, multi time-frame R1,
+R2 e R3 com LightGBM ou Catboost."* Documento completo:
+`docs/alpha_model_design_doc_2026-08-22.md` (v3), governança em
+`PLANO_MESTRE_PRINCE2.md` §15.20.
+
+**O achado central não era onde a pergunta apontava.** Multi-símbolo (5
+ativos) e multi-resolução (R1/R2/R3, dollar-bar) já estavam prontos em
+produção — `_BAR_SOURCE_BY_RESOLUTION` (`src/models/dataset.py:80-84`)
+mapeia as 3 grades desde `AG-100`/`AG-124` (trabalho de engenharia
+concluído no mesmo dia deste desenho, commit `7924f2c`). A frente que
+faltava de verdade era só o learner. Consequência: 18 decisões (D-01..D-18)
+cirúrgicas — trocar XGBoost por LightGBM, estender a orquestração de 5 para
+15 combinações (função já aceita `resolution_id`), corrigir débitos
+estruturais de schema pelo caminho.
+
+**Três decisões de escopo travadas antes do desenho:** só desenho (Fase 4,
+mesmo padrão do Meta-model v3); learner = LightGBM, mantendo `§15.14` (não
+reaberto, CatBoost descartado); grão de treino = modelos independentes por
+(símbolo, resolução), sem pooling em v1 — pesquisa AFML (`§8.5`) + caso de
+uso 2026 (arXiv:2505.08180, ganho de R² medido sob boosted trees) citados
+para justificar pooling como evolução **gated** em `AG-151`, não decisão
+silenciosa.
+
+**Duas rodadas de revisão independente** sobre
+`docs/alpha_model_design_doc_2026-08-22.md`, mesmo padrão do Meta-model v3.
+Auditoria adversarial (3 revisores, v1→v2): 1 CRITICAL — `tau_long`/
+`tau_short` (D-05) não verificado contra o `tau_alpha` que o Meta-model v3
+trava literalmente, produziria `LegacyPredictionsError` **permanente** em
+produção — mais 6 IMPORTANT/MODERATE (compatibilidade retroativa de
+`predictions.parquet` nunca tratada, nenhuma seção de DoD/testes, purge do
+CPCV medido em wall-clock sub-protegendo R2/R3, sweep de hiperparâmetro <!-- check-sprint-log: skip -->
+compartilhado como canal de vazamento cross-símbolo, determinismo bit-exato
+do LightGBM tratado como herdado sem verificação).
+
+`project_assurance` (foco de integração, v2→v3, mesmo
+`docs/alpha_model_design_doc_2026-08-22.md`) achou que o problema de
+`tau_alpha` era maior do que a v2 resolveu: o nome/formato já estava travado
+em **mais dois** artefatos de governança (`PLANO_MESTRE_PRINCE2.md`, campo
+`status` de `AG-150` em `audit/architecture_gaps_log.yaml`) que a v2 não
+tinha visto, ambos mais próximos da correção proposta para o Meta do que da
+decisão real de D-05 — **não é um patch de 2 documentos, é 3 artefatos que
+já diziam uma coisa enquanto D-05 decidia outra, escalado ao Manager
+(`AG-162`, CRITICAL)**. Achou também que o documento citava `AG-100`/
+`AG-124` como "fechados" 3× quando o status formal de ambos continua
+`"aberto"` em `audit/architecture_gaps_log.yaml` — corrigido, também
+escalado (`AG-163`, HIGH). E que o documento em si estava não commitado e
+sem âncora de governança (`AG-161` — esta seção e `PLANO_MESTRE_PRINCE2.md`
+§15.20 fecham essa lacuna).
+
+**GPU (D-18 de `docs/alpha_model_design_doc_2026-08-22.md`), pedido direto
+do Manager, aplicado aos dois motores.** Para o Alpha, direto (learner já
+travado). Para o Meta (`docs/meta_model_design_doc_2026-08-22.md`), colidia
+com uma decisão já travada — LightGBM é braço **bloqueado** por padrão no
+Meta v3 (`D-02`, `MetaLearnerBlockedError` incondicional, default real é
+logística L2, porque boosting exige amostra 2-3× maior pra mesma
+calibração). Esclarecido: GPU configurado no braço bloqueado para quando/se
+o gate abrir, sem desbloquear nada agora. Três ressalvas declaradas no
+D-18, não escondidas: pré-requisito de build GPU-enabled via `uv` não <!-- check-sprint-log: skip -->
+verificado, tensão real com o determinismo bit-exato de reload já exigido
+(`deterministic` do LightGBM é mais forte em CPU que em GPU), payoff de
+desempenho não medido (`TBD`).
+
+**Status: v3, 18 decisões travadas, ZERO linhas implementadas.** AGs novos
+da revisão: `AG-157` a `AG-164`. Duas pendências escaladas ao Manager, não
+fecháveis por revisão: `AG-162` (qual desenho de `tau_alpha` vale) e
+`AG-163` (confirmar fechamento formal de `AG-100`/`AG-124`, responder se o
+reprocessamento cobre features/regime/CPCV). Bloqueado por: gate "Data Layer
+100%" (0/9 estágios livres de gap conhecido, inalterado por este desenho).
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-22)
 
@@ -3276,7 +3349,8 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
-| **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra. Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
+| **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
+| **Alpha multi-ativo × multi-resolução** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. Achado central: multi-símbolo e multi-resolução (R1/R2/R3) já estavam prontos em produção (`AG-100`/`AG-124`, commit `7924f2c`) — o redesenho real é learner (XGBoost→LightGBM, D-01) + orquestração (5→15 combinações, D-13) + GPU (D-18, pedido do Manager, 3 ressalvas declaradas: build via `uv`, tensão com determinismo bit-exato, payoff não medido) + 4 débitos de schema. Auditoria adversarial (v1→v2): 1 CRITICAL (`tau_long`/`tau_short` não verificado contra `tau_alpha` do Meta v3) + 6 IMPORTANT/MODERATE. `project_assurance` (v2→v3): `tau_alpha` já travado em **3** artefatos de governança divergentes, não 2 — **escalado ao Manager, `AG-162` CRITICAL, não fechado por revisão**. `AG-100`/`AG-124` citados como "fechados" quando status formal segue "aberto" — corrigido, **escalado, `AG-163` HIGH**. AGs novos: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer 100%" (0/9 estágios). Detalhe: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |

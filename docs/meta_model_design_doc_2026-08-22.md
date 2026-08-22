@@ -981,6 +981,18 @@ class MetaLearner(Protocol):
 - **`BlockedGBMMeta`** (LightGBM) — `fit()` levanta
   `MetaLearnerBlockedError` incondicionalmente na v1.
 
+  **Nota adicionada 2026-08-22 (pedido do Manager, "garanta que Alpha e Meta
+  vai usar GPU" — esclarecido em conversa: aplica-se ao braço LightGBM
+  quando/se o gate estatístico de §7.3 abrir, NÃO desbloqueia o gate agora;
+  `LogitL2Meta` continua o único default habilitado, CPU, trivial, não se
+  beneficia de GPU).** Quando `BlockedGBMMeta` deixar de levantar
+  `MetaLearnerBlockedError`, o construtor `LGBMClassifier` interno usa
+  `device_type="cuda"` (ou `"gpu"`/OpenCL como fallback, dependendo do
+  hardware disponível — `TBD`, mesmo par de opções do Alpha,
+  `docs/alpha_model_design_doc_2026-08-22.md` D-18). Mesma tensão do Alpha
+  entre GPU e determinismo bit-exato de reload se aplica aqui, sem solução
+  nova — ver D-18 do Alpha, que este item referencia em vez de duplicar.
+
 ### 7.3 Guarda de amostra — corrigida
 
 ```python
