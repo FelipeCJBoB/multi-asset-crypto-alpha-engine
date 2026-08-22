@@ -688,6 +688,27 @@ entries:
       forma, nem indireta. Ver também AG-098 (seleção dinâmica
       symbol×resolution, achado irmão desta mesma auditoria).
 
+    ratificacao_manager_2026-08-22: >
+      RATIFICADO — Manager confirma por escrito a recomendação técnica
+      do `ADR-001` §2.3 (`docs/ADR-001_arquitetura_artefatos_e_
+      contratos_2026-08-19_base.md:413-424`, já citada em
+      `PLANO_MESTRE_PRINCE2.md` §15.12 tabela item 3, mas nunca
+      formalmente ratificada até agora): **denominador do K01 =
+      equity total da conta (`wallet_balance + unrealized_pnl`),
+      ancorada em 00:00 UTC** (mesmo relógio do settlement de funding
+      — evita que um pagamento de funding caia em dois dias contábeis
+      conforme a hora do corte). Atribuição por linha (`pnl_attrib
+      (line_id)`) mantém-se só como OBSERVABILIDADE ("qual linha está
+      sangrando"), nunca como denominador de controle — a exchange
+      liquida a conta, não a linha; margem cruzada é fungível por
+      construção, um denominador por linha seria número que nenhum
+      evento da exchange pode validar. Fecha o item 3 dos "7 decisões
+      residuais" (`PLANO_MESTRE_PRINCE2.md` §15.11). Sem efeito
+      prático hoje — `RiskEngineInputs`/`KillSwitchInputs` continuam
+      sem caller de produção (`src/live/` vazio); esta ratificação
+      trava o desenho ANTES do 1º caller existir, não corrige um bug
+      ativo.
+
   - id: AG-008
     date: "2026-08-12"
     file: "src/features/groups/group_c.py, src/features/build.py"
@@ -6990,6 +7011,32 @@ entries:
     resolution: null
     status: "aberto -- decisão de desenho urgente do Manager (gate global vs. por símbolo)"
 
+    ratificacao_manager_2026-08-22: >
+      RATIFICADO — a tensão "gate global vs. por símbolo" é respondida
+      pela síntese N-01+X-04 do `ADR-001` (já ratificado 2026-08-20,
+      `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_
+      base.md:165-183`, ver também `AG-108`): a resposta correta não é
+      "global" nem "por linha" (`symbol×resolution`) — é **por
+      SÍMBOLO**, porque é essa a entidade que a Binance de fato reporta
+      posição. Desenho final: `LineState` (lógico, chave `line_id`, 5
+      estados `FLAT|ENTRY_PENDING|OPEN|EXIT_PENDING|RECONCILIATION`)
+      + `SymbolExposure` (físico, chave `symbol`) com o invariante "no
+      máximo UMA linha por símbolo em estado ≠ FLAT, salvo
+      `SymbolAggregator` explícito". Fecha os itens 1 e 2 dos "7
+      decisões residuais" (`PLANO_MESTRE_PRINCE2.md` §15.11) na parte
+      ARQUITETURAL: teto simples (valor inicial 2, robusto à remedição
+      de ρ — `AG-144`) e controle 19 (correlação-ponderado) tratados
+      como controles COMPLEMENTARES, não fundidos em 1 — decisão
+      ratificada pelo Manager 2026-08-22. **O que segue pendente,
+      explicitamente não fechado aqui**: (a) valor numérico final do
+      cap nunca passou por sweep formal contra correlação real (§16.10,
+      classe A) — "2" é ponto de partida robusto, não constante
+      varrida; (b) política de alocação de PnL entre linhas sobre
+      posição física compartilhada (FIFO/LIFO/pro-rata) — pré-requisito
+      de qualquer código de `LineState`/`SymbolExposure`, ainda não
+      decidida; (c) implementação em si (`src/decision/line_state.py`,
+      ADR-001 action item 10) — zero código ainda, ver `AG-108`.
+
   - id: AG-097
     date: "2026-08-19"
     file: "PRD_V3_2_UNIFICADO.md:228, 955, 2487"
@@ -10723,6 +10770,15 @@ entries:
       vs. 2") CONTINUA aberta, mas é um item distinto -- não é mais
       bloqueada por falta de dado, só aguarda julgamento do Manager
       com o número real em mãos. Fechar este AG não fecha essa decisão.
+
+    decisao_ratificada_2026-08-22: >
+      A decisão "1 controle vs. 2" foi tomada -- ver `AG-096`
+      (addendum `ratificacao_manager_2026-08-22`, texto completo lá,
+      não duplicado aqui): teto simples (valor inicial 2) e controle
+      19 (correlação-ponderado) são controles COMPLEMENTARES, não
+      fundidos em 1. Valor numérico final do cap segue sem sweep
+      formal (classe A, §16.10) -- "2" é ponto de partida robusto à
+      remedição de ρ, não constante varrida.
     resolved_by_commit: "fd09850"
     resolution: >
       Remedido (Manager autorizou "§4.2 = pode medir"), registrado em

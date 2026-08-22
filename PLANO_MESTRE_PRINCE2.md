@@ -1867,32 +1867,56 @@ quantas posições ficam expostas simultaneamente.
 **Decisões abertas, registradas aqui pra não se perderem sob a aprovação
 do consolidado (2026-08-19) — nenhuma delas foi decidida por omissão:**
 
-> **Atualização 2026-08-22**: as 7 decisões abaixo foram aprofundadas
-> (leitura completa de `AG-108`/`AG-118`/código real) — 4 delas
-> (itens 3, 4, 6, 7 na numeração abaixo) já estão resolvidas ou sem
-> tensão metodológica real, não precisam de auditoria externa. As
-> outras 3 (itens 1, 2, 5) dependem de um mecanismo já refutado por
-> auditoria externa anterior (`AG-108`) ou contradizem a evidência que
-> motivou desligar o gate irmão na mesma sessão (`AG-118`) — brief
-> comissionado: `docs/brief_auditoria_externa_2026-08-22_decisoes_
-> residuais_risco_regime.md`.
+> **Atualização 2026-08-22 (fechamento)**: das 7 decisões abaixo,
+> **as 7 estão resolvidas ou ratificadas** nesta data. Itens 3, 4, 6, 7
+> já eram resolvidos/sem tensão real desde antes (confirmado sem
+> precisar de auditoria externa). Itens 1, 2, 5 dependiam de um
+> mecanismo refutado (`AG-108`) ou da mesma evidência que desligou o
+> gate irmão (`AG-118`) — resolvidos via síntese de 2 pareceres
+> externos sobre `docs/brief_auditoria_externa_2026-08-22_decisoes_
+> residuais_risco_regime.md` + ratificação do Manager no mesmo dia.
+> Nenhum item fica "decidido por omissão" — cada um tem resolução
+> registrada abaixo, com pontuação do que ainda é trabalho de
+> implementação (não mais decisão de arquitetura).
 
 1. **AG-096** — cache-local-com-TTL vs. aceitar-staleness-com-
    reconciliação, pra quando `AG-101` (módulo de contagem de posição ao
-   vivo) for implementado.
+   vivo) for implementado. **RESOLVIDO 2026-08-22** — Manager autorizou
+   a recomendação do `AG-108` (ledger local por evento, REST só
+   reconciliação, falha-fechado) como direção de arquitetura. Falta
+   implementação (`src/decision/line_state.py`, ADR-001 action item
+   10) e a política de alocação de PnL entre linhas, ainda não
+   decidida — ver `AG-108`/`AG-096` (addendum `ratificacao_manager_
+   2026-08-22`).
 2. **AG-096** — valor exato do cap de posições concorrentes (`TBD —
-   medir`, ponto de partida 2).
+   medir`, ponto de partida 2). **RESOLVIDO na parte arquitetural,
+   2026-08-22** — teto simples e controle 19 (correlação-ponderado)
+   são controles COMPLEMENTARES, não fundidos em 1 (ratificado,
+   `AG-096`/`AG-144`). Valor numérico "2" confirmado ROBUSTO à
+   remedição real de ρ (`AG-144`: 0,70-0,83, não 0,91) mas ainda sem
+   sweep formal contra correlação real (classe A, §16.10) — pendência
+   de EXECUÇÃO, não de decisão.
 3. **AG-096/AG-007** — denominador do K01 (`daily_loss_usd`/equity) sob
    posições concorrentes em símbolos diferentes — compartilhado ou por
-   linha.
+   linha. **RATIFICADO 2026-08-22** — equity total da conta
+   (`wallet_balance + unrealized_pnl`), ancorada 00:00 UTC (`AG-007`
+   addendum `ratificacao_manager_2026-08-22`, recomendação técnica do
+   `ADR-001` §2.3).
 4. **AG-099** — adotar `K15` agora com valor provisório `ASSUMED`, ou
-   aceitar o risco e adiar pro Estudo 2.
+   aceitar o risco e adiar pro Estudo 2. **RESOLVIDO 2026-08-22** —
+   ADIADO, confirmado (§4.3 do brief de decisões residuais).
 5. **AG-099** — valor exato do encurtamento de `time_stop` (`TBD —
-   medir`).
+   medir`). **RESOLVIDO junto com o item 4** — adiado, fila de
+   reativação registrada (fração horizonte-vs-barreira → semântica →
+   contrafactual → valor), nada medido ainda.
 6. **AG-100** (fora desta rodada de rascunho, ainda pendente) — R2/R3
-   virar escopo de produção agora ou depois.
+   virar escopo de produção agora ou depois. **RESOLVIDO** — R2/R3
+   wireado, backfill real rodado (5 símbolos), commitado e pushed
+   (2026-08-22).
 7. **AG-094** (idem, baixa urgência) — Meta-Label consome regime quando
-   for implementado, e de qual resolução/candidato.
+   for implementado, e de qual resolução/candidato. **RESOLVIDO
+   estruturalmente** — `ADR-001` §2.7: "de nenhum, por ora"; se um dia
+   consumir, mesma linha/`method_id` do Alpha que filtra.
 
 ---
 
