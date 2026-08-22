@@ -3254,7 +3254,127 @@ fixture de validação (não fonte de valor).
 
 ---
 
-## Fontes desta pesquisa
+### 15.16 ADR-001 action item 2 — `src/io/artifact.py`/`src/io/schema.py` implementados (2026-08-22)
+
+**Autorização**: Manager, mesma sessão — "autorizado e ratifico as
+recomendações, pode mapear o código e implementar tudo via skill
+recomendada" (`redesign_workflow`, 7 fases). Escopo desta rodada: só o
+action item 2 do ADR-001 ("`src/io/artifact.py`/`src/io/schema.py`...
+antes de qualquer outro módulo") — os outros 12 action items ficam
+sequenciados atrás, não tentados de uma vez.
+
+**Fase 2 (exploração)**, 3 agentes paralelos mapeando `labels/`,
+`features/registry.yaml`, `weights.py`/`regime/`/`importlinter`: achado
+colateral novo registrado como `AG-145` (`audit/architecture_gaps_log.
+yaml`) — corrida de leitura-modificação-escrita real em
+`experiment_log.py::record_experiment` sob `ProcessPoolExecutor`, sem
+lock (verificado contra dado real: não perdeu linha no backfill de
+`AG-100`, mas o risco é real, não travado — exatamente o problema que
+V-06 do ADR resolve).
+
+**Fase 4 (desenho)**, 3 propostas (`code-architect`, mudança mínima/
+arquitetura limpa/equilíbrio pragmático) — decisões finais, com
+divergência explícita do texto literal do ADR onde há razão real:
+
+1. **`config_hash`: sha256+orjson+16-hex, NÃO blake2b** (o ADR cita
+   blake2b em pseudocódigo). Reusa o padrão já em produção em 3 lugares
+   (`LabelConfig.config_hash`, `bars_calibration_hash`, `_hash_filters`)
+   — introduzir um segundo primitivo de hash sem benefício medido seria
+   inconsistência gratuita.
+2. **Funções livres, não classes** (`write_artifact`/`read_artifact`/
+   `scan_artifact`, não `ArtifactWriter`/`ArtifactReader`) — consistente
+   com o resto do repo (`write_labels_atomic`, `write_regimes_atomic`
+   já são funções livres, não há precedente de classe com estado pra
+   I/O neste projeto).
+3. **`bar_id` (INV-A) é OPCIONAL, não fabricado.** Nenhum artefato real
+   hoje tem `bar_id` monótono — tudo é timestamp. `ArtifactSchema`
+   aceita qualquer `primary_key`; SE um schema futuro declarar `bar_id`
+   na chave, a validação já exige uma coluna `*_ts_ns` companheira
+   (V-01) — pronta pra quando o primeiro produtor de `bar_id` existir,
+   sem forçar migração de nada hoje.
+4. **Writer de 1 tabela (DataFrame) por artefato, NÃO a abstração
+   genérica "bundle multi-arquivo"** que uma das 3 propostas
+   sugeria para já suportar `snapshot/`/`promotion/`/`bundle/` (action
+   items 5/9) de forma unificada. Decisão: construir isso quando esses
+   estágios realmente começarem — a abstração genérica é uma ideia
+   real, mas construir agora pra estágio que não existe é desenho para
+   requisito hipotético (CLAUDE.md). Registrado aqui pra não se perder
+   quando os action items 5/9 chegarem.
+5. **`scratch=True` incluído nesta rodada** — mitigação nomeada
+   explicitamente no próprio texto do ADR ("Consequências": "iterar
+   rápido... modo scratch/ fora do lake, explicitamente
+   não-promovível"). Escreve em `{root}/scratch/...`, permite
+   sobrescrita, nunca aparece em `scan_artifact` do lake real.
+6. **`gc_incomplete()` incluído nesta rodada** — metade autocontida de
+   V-11 (action item 3): remove/lista diretórios sem `_SUCCESS` (lixo
+   de escrita interrompida). A outra metade (GC por referência de
+   `trial_registry`/`promotion/`) fica pendente dos action items 5/9.
+7. **`os.rename` (não `os.replace`) pra imutabilidade** — no Windows,
+   `os.rename` levanta `FileExistsError` nativamente se o destino já
+   existe, dando guarda TOCTOU-livre sem checagem `exists()` prévia
+   separada do rename.
+
+**Fase 5 (implementação)**: `src/io/__init__.py`, `src/io/schema.py`,
+`src/io/artifact.py`, `tests/unit/test_io_schema.py`,
+`tests/unit/test_io_artifact.py`. `src/io/` segue o mesmo padrão de
+`src/core/` (infra transversal, sem restrição de import —
+`pyproject.toml::[tool.importlinter]` confirmado com os 7 contratos
+mantidos, 0 quebrado, depois da adição). `banned_patterns`/`ruff`/
+`mypy` limpos nos arquivos.
+
+**Fase 6 (revisão, `audit_engineering`, lente FCN)**: achados reais, 4
+corrigidos nesta mesma rodada (não deixados como TODO):
+
+1. **HIGH — durabilidade inconsistente entre os 5 arquivos do bundle.**
+   `schema.json`/`config.json` eram escritos sem `fsync` (só
+   `manifest.json`/parquet tinham). Cenário real: crash logo depois do
+   `os.rename()` retornar sucesso, antes do write-back do SO persistir
+   `schema.json`/`config.json` — artefato marcado completo (`_SUCCESS`
+   presente) com 2 dos 5 arquivos potencialmente truncados. Corrigido:
+   `_atomic_write_bytes` único, aplicado uniformemente aos 4 arquivos
+   pequenos do bundle.
+2. **MEDIUM-HIGH — `input_manifest_hash` por concatenação de string sem
+   separador seguro, E 0% de cobertura de teste no caminho de
+   `upstream=`** (núcleo de INV-B). Corrigido: mesmo primitivo de
+   `compute_config_hash` (orjson + `OPT_SORT_KEYS` sobre lista
+   estruturada, não concat ad hoc) + teste novo cobrindo `upstream`
+   não-vazio e determinismo sob reordenação.
+3. **MEDIUM — `tmp_dir` órfão sem `try/finally` se a escrita falhar no
+   meio.** Corrigido: corpo de `write_artifact` envolto em
+   `try/except Exception: shutil.rmtree(tmp_dir); raise` + teste com
+   `monkeypatch` forçando falha real depois de `tmp_dir` já existir.
+4. **MEDIUM — retry genérico em `OSError` sem log e sem distinguir
+   `ENOSPC` (disco cheio).** Corrigido: log de cada tentativa +
+   fail-fast imediato em `ENOSPC` (retry nunca libera espaço em disco).
+
+Não corrigido nesta rodada, aceito como escopo (documentado no achado
+original, não esquecido): janela não-atômica em `scratch=True`
+(`rmtree` antes do `rename`) — `scratch/` é explicitamente exploratório/
+não-promovível, dado recriável rerodando o pipeline, LOW-MEDIUM.
+
+**Resultado final**: 27 testes em `src/io/` (2 novos desta revisão),
+suíte completa do projeto (1647 testes) verde — nenhuma regressão.
+`banned_patterns`/`ruff`/`mypy`/`check_unguarded_ratios`/`import-linter`
+todos limpos (3 achados de `check_unguarded_ratios` confirmados falsos
+positivos — junção de `Path`, não divisão aritmética).
+
+**Nenhuma constante nova em `config/constants.yaml`** — parâmetros de
+retry de I/O (`_WRITE_RETRIES=5`, `_WRITE_RETRY_BACKOFF_S=0.1`) ficam
+como constante de módulo, mesma categoria de `_DATE_BUFFER_DAYS`
+(`src/models/dataset.py:61`) — infraestrutura de engenharia, não
+parâmetro de domínio quant sujeito a `§16.10`.
+
+**Escopo explicitamente NÃO coberto nesta rodada** — fica sequenciado
+atrás, action items do ADR-001 ainda pendentes: 1 (ratificação formal
+`D-###`), 3 (`impact --dry-run` + GC por referência), 4 (migrar
+`weights.py`/`features/build.py`/`experiment_log.py` pro writer novo —
+inclui o fix real de `AG-145`), 5 (`trial_registry/` um-arquivo-por-
+trial), 6 (`pbo.py`), 7 (`parity_class` retrofit no registry existente
+de features), 8 (pré-filtro de custo, independente, pode rodar em
+paralelo), 9 (`snapshot/`/`promotion/`/`bundle/`), 11
+(`barrier_collision_rule`), 12 (`dropped_signals.jsonl`), 13 (ρ em
+relógio comum — parcialmente atendido por `AG-144` já, ver addendum
+lá).
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
 - [Axelos — Tailoring PRINCE2 projects](https://www.axelos.com/resource-hub/blog/tailoring_prince2_projects)
