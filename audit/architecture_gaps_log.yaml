@@ -7113,7 +7113,7 @@ entries:
       labels pra R2/R3 × 5 símbolos -- trabalho de execução real, não bug.
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- aguarda decisão de escopo do Manager (R2/R3 produção) antes do trabalho de execução (labels)"
+    status: "aberto -- decisão de escopo JÁ TOMADA (ver decisao_manager_2026-08-21 abaixo), condição (recalibração causal AG-124) JÁ CUMPRIDA 2026-08-22 -- resta só o trabalho de execução: (1) adicionar R2/R3 a _BAR_SOURCE_BY_RESOLUTION (dataset.py:70), (2) backfill de labels R2/R3 x 5 símbolos. Não é mais item bloqueado por decisão, é item pronto pra execução."
 
     decisao_manager_2026-08-21: >
       Tabela 1 desta rodada (item 7, respondido junto com AG-124): "A se
