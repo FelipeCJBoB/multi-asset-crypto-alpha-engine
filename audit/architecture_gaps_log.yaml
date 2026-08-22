@@ -10658,3 +10658,76 @@ entries:
       mas a convergência entre os dois desenhos de §4.2 não está tão
       garantida quanto a síntese assumiu. Status permanece ABERTO --
       medição feita, decisão de "1 controle vs. 2" ainda não tomada."
+
+    rastro_de_impacto_2026_08_22: >
+      Pergunta do Manager ("onde isso impacta?") respondida por recálculo
+      direto contra o texto original de `PRD_V4_1.md` (§2.8/§2.9/§5.3),
+      não por inferência solta:
+
+      **Muda, mas conclusão qualitativa sobrevive** -- `PRD_V4_1.md §2.9/
+      §5.3` (I4, `σ_agg = 0,50% × √(N + N(N-1)×ρ)`): multiplicador de 5
+      posições recalculado com ρ real -- 4,359x (ρ=0,70, histórica) a
+      4,648x (ρ=0,83, 180d), nunca 4,82x. Mas mesmo no ponto mais baixo
+      medido, 5 posições simultâneas ainda produzem σ_agg=2,179% --
+      continua acima de `max_daily_loss` (2%). O achado de segurança que
+      motivou o controle 19 NÃO é revertido pela correção.
+
+      **NÃO muda -- robusto** -- "cap efetivo de 2 posições simultâneas"
+      (`PRD_V4_1.md §5.3` linha 591, também citado independentemente em
+      `PLANO_MESTRE_PRINCE2.md` tabela `§15.12` item 2, "2 como
+      backstop"): pra N=3 caber no limite de 1,00% precisaria ρ≤0,167 --
+      nenhuma das 4 janelas medidas (0,70-0,83) chega perto. O número
+      operacional que duas fontes independentes já citavam como
+      recomendação não muda com a correção.
+
+      **Não recomputado, direção provável conservadora** --
+      `PRD_V4_1.md §2.8` ("N_eff agregada ~1,15x", participation ratio
+      dos autovalores, cálculo diferente de média pairwise) -- não
+      recalculado nesta rodada (exigiria decomposição em autovalores da
+      matriz 5x5, não só os 10 pares). Direção esperada: correlação real
+      mais baixa -> mais diversificação real -> N_eff verdadeiro
+      provavelmente MAIOR que 1,15. Nenhuma constante viva em
+      `config/constants.yaml` usa esse valor hoje (confirmado por busca)
+      -- sem uso vivo, sem urgência de recomputar agora.
+
+      **Achado colateral, convergência com M6** -- `PRD_V4_1.md §4`
+      linha 424 (Q3, "classificar regime só no BTC e aplicar aos 5,
+      porque com ρ≈0,91 BTC é o fator de mercado") fica mais fraco sob
+      correlação real mais baixa/instável -- e isso CONVERGE com uma
+      medição independente já fechada deste projeto: `M6` (Fator Comum,
+      `PLANO_MESTRE_PRINCE2.md` tabela, H0 rejeitada nos 2 lados,
+      I²=96-98%, componente idiossincrático real por ativo). Duas
+      medições diferentes, metodologias diferentes, mesma direção.
+
+      **Onde realmente importa agora** -- decisão §4.2 (síntese do brief,
+      "1 controle vs. 2"): correlação mais baixa e instável faz o teto
+      simples e o controle 19 ponderado por correlação DIVERGIREM mais
+      do que a síntese assumiu, não convergirem -- pesa a favor de
+      tratá-los como complementares (teto simples = backstop sempre
+      ativo, controle 19 = eficiência de capital quando correlação
+      cair), não como redundantes. Decisão final ainda do Manager.
+
+      Ponteiros de correção adicionados em `PRD_V4_1.md` §2.8/§2.9/§5.3
+      (1 linha cada, texto original preservado) e correção completa em
+      `PLANO_MESTRE_PRINCE2.md` (tabela `§11.6`/V41-8, documento
+      canônico, não só ponteiro).
+
+    fechamento_2026_08_22: >
+      **AG-144 FECHADO.** O gap original (ρ~0,91 sem janela/período/
+      evidence_ledger/proveniência §16.10) está integralmente
+      remediado: medido com janela declarada (4 janelas), registrado em
+      `evidence_ledger.yaml` com proveniência MEASURED, rastro de
+      impacto completo traçado e documentado (addendum acima),
+      `constants.yaml`/`PLANO_MESTRE`/`PRD_V4_1.md` corrigidos ou
+      apontados. A decisão arquitetural downstream (§4.2, "1 controle
+      vs. 2") CONTINUA aberta, mas é um item distinto -- não é mais
+      bloqueada por falta de dado, só aguarda julgamento do Manager
+      com o número real em mãos. Fechar este AG não fecha essa decisão.
+    resolved_by_commit: "fd09850"
+    resolution: >
+      Remedido (Manager autorizou "§4.2 = pode medir"), registrado em
+      evidence_ledger.yaml com proveniência MEASURED, rastro de impacto
+      traçado e documentado, constants.yaml/PLANO_MESTRE/PRD_V4_1.md
+      corrigidos. Ver rastro_de_impacto_2026_08_22/fechamento_2026_08_22
+      acima -- campo status original preservado por disciplina
+      append-only, não reescrito.

@@ -205,6 +205,8 @@ XRP   0.912   0.936   0.912   0.931   1.000
 
 **Consequência 3 — a `N_eff` agregada é ~1,15×, não 5×.** O teto de features e o DSR usam isso.
 
+> **[PONTEIRO, 2026-08-22]** `ρ≈0,91` acima remedido — real fica entre 0,70 e 0,83 conforme janela, instável. Ver `PLANO_MESTRE_PRINCE2.md` (tabela V41-8) e `audit/architecture_gaps_log.yaml::AG-144`. `N_eff≈1,15` (participation ratio) não recomputado ainda, mas nenhuma constante viva usa esse valor hoje.
+
 ## 2.9 I4 — Cinco posições correlacionadas não são cinco riscos
 
 ```
@@ -216,6 +218,8 @@ eficiência de diversificação:            46,4%
 ```
 
 **Cinco long simultâneos são uma posição de 4,82x o risco declarado**, e 2,41% de risco efetivo quase esgota o `max_daily_loss` de 2% num único evento.
+
+> **[PONTEIRO, 2026-08-22]** `ρ=0,91` remedido — real 0,70-0,83. Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x (conclusão qualitativa — excede `max_daily_loss` mesmo assim — não muda). Ver `AG-144`.
 
 O Risk Engine hoje avalia cada posição isoladamente contra 0,50%. **Isso é falha de segurança, não de medição.** Ver §5.3.
 
@@ -423,6 +427,8 @@ Refazer o §0.5 do V3.2 com ATR da série completa e o estimador vencedor de M1,
 
 **Terceira via, testável (Q3):** com ρ ≈ 0,91, **o BTC é o fator de mercado**. Classificar regime no BTC e aplicar aos cinco tem três vantagens — rótulos com conteúdo idêntico, elimina 4/5 do custo, e testa se regime é propriedade do mercado ou do ativo. Falha se algum ativo tiver regime idiossincrático, e isso é medível pelo Rand ajustado entre a classificação própria e a derivada. **A medição decide.**
 
+> **[PONTEIRO, 2026-08-22]** `ρ≈0,91` remedido — real 0,70-0,83, instável (`AG-144`). Premissa de Q3 mais fraca do que assumido aqui; converge com `M6` (H0 rejeitada, I²=96-98%, componente idiossincrático real já confirmado por medição independente).
+
 **Canonicalização obrigatória:** estados ordenados de forma determinística (média de retorno, desempate por variância) — banned pattern B21.
 
 ### M5 — Reconciliação de fill (0 trials)
@@ -589,6 +595,8 @@ if sigma_agg > aggregate_risk_max:
 `aggregate_risk_max` = **1,00%** (classe A, ASSUMED, varredura obrigatória antes do Gate 3).
 
 **Consequência imediata:** com ρ = 0,91 e limite de 1,00%, o **cap efetivo é 2 posições simultâneas**. Três já violam.
+
+> **[PONTEIRO, 2026-08-22]** `ρ=0,91` remedido — real 0,70-0,83 (`AG-144`). **Cap efetivo de 2 posições é ROBUSTO à correção**: precisaria ρ≤0,167 pra N=3 caber no limite, nenhuma janela medida chega perto disso.
 
 ## 5.4 Sizing por ativo
 
