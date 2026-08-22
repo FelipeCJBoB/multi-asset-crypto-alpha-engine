@@ -62,12 +62,26 @@ _DATE_BUFFER_DAYS = 3  # noqa: magic-number
 
 # Fase 4 (2026-08-17, AG-036/065) — única fonte de mapeamento resolution_id
 # -> bar_source de Feature/Regime Engine, mesmo escopo de produção de
-# `src.data.build_dollar_bars.CALIBRATION_TF_BY_RESOLUTION` (só R1: R2/R3
-# são pesquisa, nunca alvo de produção, PRD_V4_1.md). Propositalmente um
-# dict FECHADO, não um `f"dollar_{resolution_id.lower()}"` genérico -- um
+# `src.data.build_dollar_bars.CALIBRATION_TF_BY_RESOLUTION`. Propositalmente
+# um dict FECHADO, não um `f"dollar_{resolution_id.lower()}"` genérico -- um
 # resolution_id sem bar_source mapeado aqui levanta ValueError explícito
 # em vez de tentar um bar_source que `_sources.load_bars` não suporta.
-_BAR_SOURCE_BY_RESOLUTION: dict[str, str] = {"R1": "dollar_r1"}
+#
+# R2/R3 adicionados 2026-08-22 (AG-100, decisao_manager_2026-08-21):
+# Manager confirmou R2/R3 como escopo de PRODUÇÃO (revoga a citação de
+# PRD_V4_1.md "R2/R3 são pesquisa, nunca alvo de produção" -- doc já
+# obsoleto por decisão canônica do projeto), condicionado à recalibração
+# CAUSAL do threshold dollar-bar (`AG-124`) ter fechado -- fechou
+# 2026-08-22 (15/15 células reprocessadas, validação item 22 positiva).
+# Editar este dict ANTES disso teria sido cosmético (labels não
+# existiam ainda, e as barras `dollar_r2`/`dollar_r3` em disco
+# precisavam ser recalibradas de qualquer forma) -- por isso ficou
+# represado até agora, não esquecido.
+_BAR_SOURCE_BY_RESOLUTION: dict[str, str] = {
+    "R1": "dollar_r1",
+    "R2": "dollar_r2",
+    "R3": "dollar_r3",
+}
 
 
 def date_bounds(labels: pl.DataFrame) -> tuple[str, str]:

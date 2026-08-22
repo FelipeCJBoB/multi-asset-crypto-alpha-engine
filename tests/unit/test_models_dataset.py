@@ -208,12 +208,18 @@ def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
 
 
 def test_build_modeling_frame_resolution_id_nao_mapeado_levanta_valueerror() -> None:
-    """"R2"/"R3" são identidade de grade válida pro Label Engine (Fase 1),
-    mas Feature/Regime Engine não têm `bar_source` mapeado pra elas (só R1 é
-    alvo de produção, R2/R3 são pesquisa) -- `ValueError` explícito em vez
-    de deixar `_sources.load_bars` levantar um erro menos claro depois."""
+    """Qualquer `resolution_id` fora de `_BAR_SOURCE_BY_RESOLUTION` (hoje
+    R1/R2/R3, dict FECHADO por desenho) levanta `ValueError` explícito em
+    vez de deixar `_sources.load_bars` levantar um erro menos claro depois.
+
+    `R2`/`R3` foram promovidas de "pesquisa, sem bar_source mapeado" pra
+    "escopo de produção" em 2026-08-22 (`AG-100`, condicionado à
+    recalibração causal do `AG-124` ter fechado -- fechou) -- este teste
+    usa `R99` (identidade que nunca existiu em nenhuma camada) pra
+    continuar testando o caminho de erro sem depender de R2/R3
+    especificamente."""
     with pytest.raises(ValueError, match="resolution_id"):
-        ds.build_modeling_frame(resolution_id="R2")
+        ds.build_modeling_frame(resolution_id="R99")
 
 
 def test_build_modeling_frame_tf_diferente_de_15m_sem_resolution_id_levanta_valueerror() -> None:
