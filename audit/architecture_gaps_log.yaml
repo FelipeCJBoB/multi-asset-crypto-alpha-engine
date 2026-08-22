@@ -7608,6 +7608,53 @@ entries:
       os 5 ativos, que sustenta a decisão de §4.2, não tem proveniência
       declarada nem entrada no evidence_ledger.
 
+    decisao_manager_2026-08-22_3_decisoes_residuais: >
+      Manager decidiu as 3 pendências do brief
+      docs/brief_auditoria_externa_2026-08-22_decisoes_residuais_risco_regime.md
+      (§9, itens 1-2), depois da síntese de 2 pareceres externos e da
+      verificação contra código real desta sessão (addendum acima):
+
+      **§4.1 (cache/consulta de posição) = AUTORIZADO.** Ratifica a
+      recomendação do AG-108 §10.1 (ledger local por evento
+      `ACCOUNT_UPDATE`/`ORDER_TRADE_UPDATE`, REST só para
+      reconciliação periódica, gate falha-fechado) como direção de
+      arquitetura -- não como autorização de implementação imediata.
+      Desbloqueia especificar o modelo de domínio (3 entidades
+      `logical_trade`/`execution`/`physical_position`, tipos
+      `LineState`/`SymbolExposure` não intercambiáveis, ver síntese
+      §4.2/§10 do parecer B) -- mas a POLÍTICA DE ALOCAÇÃO DE PNL entre
+      linhas lógicas sobre posição física compartilhada (FIFO/LIFO/
+      pro-rata) segue como decisão separada, ainda não tomada, e é
+      pré-requisito de qualquer código real desse modelo (sem ela,
+      atribuição/stops/kill-switches ficam indefinidos, mesmo achado
+      já registrado na síntese §4.1/achados-colaterais). O runtime do
+      ledger (stream, keepalive, reconciliação, máquina de freshness)
+      permanece sequenciado com o caminho ao vivo (`src/live/` vazio
+      hoje), não priorizado agora.
+
+      **§4.2 (teto de posições) = PODE MEDIR.** Autoriza a remedição
+      de ρ (achado `AG-144`) -- descritiva, 0 trials, sobre OHLC já
+      existente, mesma disciplina da Lente FE de `audit_engineering`.
+      NÃO autoriza sweep/otimização nem decisão de "1 controle vs. 2"
+      ainda -- essa decisão segue condicionada ao resultado da
+      remedição. Script de diagnóstico:
+      `tools/diagnostics/measure_cross_asset_correlation_stability.py`
+      (criado nesta sessão, comando de execução no PR/commit).
+
+      **§4.3 (kill switch de saída por regime) = ADIADO, confirmado.**
+      Mesma leitura de ambos os pareceres e desta síntese -- zero
+      código do 14º gatilho, quebra de consistência treino/execução
+      (modelo aprende sobre 8h fixo) não resolvida, evidência de
+      `AG-118` (lift≈1,0 no gate irmão) pesa contra adotar agora com
+      valor `ASSUMED`. Fila de reativação (quando decidida): (i)
+      fração de desfechos por horizonte vs. barreira no universo R1-R4
+      atual (medido só pra grade legada BTCUSDT hoje, ~6,5-7%, ver
+      addendum acima) -- (ii) semântica de horizonte -- (iii)
+      contrafactual condicional a onset de stress -- (iv) valor
+      numérico. Nenhum item desta fila iniciado agora -- fica
+      registrado como fila, não como trabalho em andamento.
+      Refletido no Road Map Vivo v2 (mesma sessão).
+
   - id: AG-109
     date: "2026-08-20"
     file: "PRD_V3_2_UNIFICADO.md (política de execução -- maker post-only GTX, cancela no timeout, nunca converte a mercado)"
