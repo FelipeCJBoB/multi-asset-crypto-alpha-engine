@@ -11026,6 +11026,22 @@ entries:
     resolution: null
     status: "aberto -- ação recomendada: quem escreveu a docstring de persistence.py cria a entrada AG-148 (ou corrige a referência para o número real). Este AG existe só para que a referência órfã não passe despercebida; fecha assim que AG-148 existir ou a docstring for corrigida. Numeração deste bloco começa em 149 justamente para não colidir com 146-148 em voo."
 
+    addendum_resolucao_2026-08-22: >
+      Confirmado que a referência órfã já é resolvida. AG-146/AG-147/
+      AG-148 (ver acima, mesmo arquivo) foram registrados e fechados no
+      commit `96b3c3a`, junto com o resto da correção dos 3 achados
+      MEDIUM da revisão project_assurance de AG-141 -- o mesmo commit
+      que a docstring de `persistence.py` já referenciava quando esta
+      entrada (AG-149) foi escrita. A causa provável é sobreposição de
+      escrita concorrente no mesmo arquivo entre duas sessões: quando
+      AG-149 foi registrado, a leitura de `architecture_gaps_log.yaml`
+      capturou a docstring já atualizada (referenciando AG-148) num
+      instante em que a própria entrada AG-148 ainda não tinha sido
+      persistida no ledger por esta sessão -- não uma referência
+      inventada, só uma janela de leitura intermediária. Nenhuma ação
+      adicional necessária; entrada mantida (não editada, append-only)
+      como registro de como o achado surgiu e como confirmado.
+
   - id: AG-150
     date: "2026-08-22"
     file: "src/models/alpha.py:265-267 (tau calculado), :501-519 (PREDICTIONS_SCHEMA_COLUMNS), src/models/pipeline.py:168-210 (_fold_diagnostics_payload)"
@@ -11182,11 +11198,11 @@ entries:
 
       6 testes novos/reescritos, suíte completa do projeto (1662
       testes) verde, checks mecânicos limpos.
-    resolved_by_commit: null
+    resolved_by_commit: "96b3c3a"
     resolution: >
       Fix real (seleção por nome via pl.DataFrame.select, não
       feature_names do DMatrix sozinho) -- ver addendum_correcao_
-      2026-08-22 acima. resolved_by_commit preenchido após o commit.
+      2026-08-22 acima.
 
   - id: AG-147
     date: "2026-08-22"
@@ -11220,11 +11236,11 @@ entries:
       erro. Classe de bug estruturalmente idêntica à corrigida em
       AG-145 (mesma sessão), reintroduzida de forma mais fraca no mesmo
       commit.
-    resolved_by_commit: null
+    resolved_by_commit: "96b3c3a"
     resolution: >
       Corrigido -- `os.getpid()` adicionado ao nome do `tmp_dir` de
       `write_model_bundle`, igualando o padrão de `write_artifact` (1
-      linha). resolved_by_commit preenchido após o commit.
+      linha).
     status: "fechado -- fix de 1 linha aplicado no mesmo lote que AG-146/AG-148"
 
   - id: AG-148
@@ -11254,7 +11270,7 @@ entries:
       (probabilidades calibradas do Alpha tendem a ficar dentro do range
       visto em treino), mas a lacuna entre alegação e prova é o tipo de
       furo que motivou o protocolo de project_assurance (AG-001).
-    resolved_by_commit: null
+    resolved_by_commit: "96b3c3a"
     resolution: >
       Corrigido -- 2 testes novos construindo ATIVAMENTE casos de borda
       reais (x fora do range treinado nos dois sentidos; calibrador
@@ -11263,6 +11279,5 @@ entries:
       `IsotonicRegression.predict` original. Docstring do módulo
       reescrito pra distinguir explicitamente MEDIDO (pontos do fit,
       agora também pontas/degenerado) de DEDUZIDO (não se aplica mais --
-      tudo agora é medido). resolved_by_commit preenchido após o
-      commit.
+      tudo agora é medido).
     status: "fechado -- 2 testes de caso de borda adicionados no mesmo lote que AG-146/AG-147"
