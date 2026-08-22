@@ -3376,6 +3376,49 @@ paralelo), 9 (`snapshot/`/`promotion/`/`bundle/`), 11
 relógio comum — parcialmente atendido por `AG-144` já, ver addendum
 lá).
 
+### 15.17 AG-145 fechado — lock entre processos em `experiment_log.py` (2026-08-22)
+
+**Fix aplicado, não o padrão completo V-06.** `record_experiment`
+(`src/labels/experiment_log.py`) ganhou um mutex entre PROCESSOS via
+criação exclusiva de arquivo (`os.open(lock_path, O_CREAT|O_EXCL|
+O_WRONLY)`, portátil Windows/POSIX, zero dependência nova) envolvendo
+todo o corpo de leitura-modificação-escrita — fecha a corrida que
+`AG-145` documentou. Lock stale (>60s) é removido à força; timeout de
+30s levanta erro explícito em vez de travar pra sempre.
+
+**Decisão deliberada de escopo, registrada aqui**: NÃO implementei
+V-06 (um-arquivo-por-trial + compactação, `src/registry/trials.py`,
+action item 5 do ADR-001) para este log específico. Volume real
+medido é ~dezenas de linhas/ano (21 desde 2026-08-09) — não é escala
+de trial do Optuna que V-06 resolve. Migrar o formato de 21 linhas
+históricas com 35 colunas tipadas pra JSON individual agora seria mais
+risco (serialização correta de tipos, principalmente `Datetime("ms",
+"UTC")`) do que benefício nessa escala. Um lock simples é proporcional
+ao risco medido — mesma disciplina de não desenhar pra requisito
+hipotético que guiou as decisões do `§15.16`. `src/registry/trials.py`
+fica pra quando um consumidor de volume real existir (V41-11/PBO).
+
+**Validado com o mecanismo EXATO do bug real**, não só unitariamente:
+novo teste roda 8 chamadas de `record_experiment` em 8 PROCESSOS
+separados (`ProcessPoolExecutor`, não threads) contra o mesmo
+`log_path` — confirma 8 linhas, `experiment_id` 1-8, sem duplicata nem
+lacuna. Mais 2 testes (lock stale recupera sozinho; timeout falha
+explícito). 12/12 testes de `experiment_log.py`, suíte completa do
+projeto (1650 testes) verde — zero regressão.
+`backfill_multi_symbol.py` não muda nenhuma linha — migração
+transparente pro caller.
+
+**Achado relacionado, registrado mas NÃO corrigido** (fora de escopo):
+`src/execution/fill_simulator.py::record_experiment` tem a MESMA forma
+de read-modify-write sem lock, sobre arquivo diferente
+(`EXPERIMENT_LOG_PATH`) — sem confirmação de exposição real a execução
+paralela hoje (parece invocado como script sequencial). Mesma classe
+de risco, prioridade menor por falta de evidência de exposição.
+
+---
+
+## Fontes desta pesquisa
+
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
 - [Axelos — Tailoring PRINCE2 projects](https://www.axelos.com/resource-hub/blog/tailoring_prince2_projects)
 - [Projex Academy — Tailoring PRINCE2 para projetos pequenos/simples](https://www.projex.com/tailoring-prince2-for-simple-projects/)

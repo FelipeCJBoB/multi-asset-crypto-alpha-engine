@@ -10843,3 +10843,49 @@ entries:
       determinística "não aconteceu agora" não é "não pode acontecer").
       Severidade mantida em "alto" -- é risco latente, não ativo, mas
       real e sem proteção nenhuma hoje.
+
+    fechamento_2026-08-22: >
+      **AG-145 FECHADO.** Fix aplicado em `src/labels/experiment_log.py`
+      -- mutex entre PROCESSOS via criação exclusiva de arquivo
+      (`os.open(lock_path, O_CREAT|O_EXCL|O_WRONLY)`, portátil Windows/
+      POSIX, sem dependência nova), envolvendo TODO o corpo de leitura-
+      modificação-escrita de `record_experiment` (não só a escrita
+      final). Lock stale (>60s, processo morto segurando) é removido à
+      força; timeout de 30s levanta `TimeoutError` explícito em vez de
+      travar pra sempre. **Decisão deliberada, registrada aqui**: NÃO
+      implementei o padrão completo V-06 (um-arquivo-por-trial +
+      compactação, que exigiria migrar as 21 linhas históricas pro
+      formato novo) -- volume real deste log é ~dezenas de linhas/ano
+      (confirmado: 21 linhas desde 2026-08-09), não escala de trial do
+      Optuna que V-06 foi desenhado para resolver; um lock simples é
+      proporcional ao risco medido, migrar o formato de dado histórico
+      agora seria mais risco (serialização JSON de 35 colunas tipadas)
+      do que benefício nesta escala. V-06/`src/registry/trials.py`
+      (action item 5 do ADR-001) fica pra quando um consumidor de
+      volume real existir (V41-11/PBO, Optuna).
+
+      **Validado com o mecanismo EXATO do bug real**: teste novo
+      (`tests/unit/test_labels_experiment_log.py::test_record_
+      experiment_sob_process_pool_nao_perde_linha`) roda 8 chamadas de
+      `record_experiment` em 8 PROCESSOS separados de verdade
+      (`ProcessPoolExecutor`, não threads) contra o mesmo `log_path` --
+      confirma 8 linhas, `experiment_id` 1-8 sem duplicata nem lacuna.
+      Mais 2 testes cobrindo lock stale (recuperação automática) e
+      timeout (falha explícita, não trava). 12/12 testes de
+      `experiment_log.py` passam, suíte completa do projeto (1650
+      testes) verde -- zero regressão. `backfill_multi_symbol.py`
+      continua chamando `record_experiment` sem nenhuma mudança de
+      assinatura -- migração transparente pro caller.
+
+      Achado relacionado, NÃO corrigido aqui (fora de escopo,
+      registrado por transparência): `src/execution/fill_simulator.py::
+      record_experiment` tem a MESMA forma de read-modify-write sem
+      lock, sobre um arquivo diferente (`EXPERIMENT_LOG_PATH`) -- não
+      confirmado se é chamado sob execução paralela real hoje (parece
+      invocado como script `__main__` sequencial). Mesma classe de
+      risco, prioridade menor por não ter evidência de exposição real.
+    resolved_by_commit: "86a9730"
+    resolution: >
+      Lock entre processos (criação exclusiva de arquivo) em
+      src/labels/experiment_log.py -- ver fechamento_2026-08-22 acima
+      pra decisão completa e validação.
