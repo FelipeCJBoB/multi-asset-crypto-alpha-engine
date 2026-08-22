@@ -3128,6 +3128,93 @@ preenchida, sem rodar o Label Engine escalar 9× por símbolo. Design doc
    8 riscos explícitos aguardando decisão do Manager antes da Fase 5
    (implementação).
 
+**Meta-model — arquitetura ponta a ponta travada, e um contrato canônico
+revogado (2026-08-22).** Pedido do Manager: desenhar o Meta-model ponta a
+ponta, incluindo como ele consome Regime. Conduzido via `redesign_workflow`
+(7 fases). Logo na Fase 3 apareceu uma contradição direta entre o pedido e o
+documento canônico: o **ADR-001 §2.7**, ratificado pelo próprio Manager em
+2026-08-20, diz que *regime NÃO entra como feature do Meta* e que "as 5
+condições de entrada não mencionarem regime está certo, não é lacuna".
+Apresentada a contradição, o Manager **revogou o contrato canônico do
+Meta-Labeling** (§3.7/§2.7 do ADR-001) e pediu base nova: AFML primeiro,
+literatura moderna depois.
+
+A pesquisa **sustentou a revogação**. Três fontes independentes tratam regime
+como input do secundário — inclusive o **código aberto do experimento
+canônico** do framework formal de meta-labeling (Joubert, `fp_modeling.py`),
+que implementa um braço explicitamente regime-aware. E o argumento decisivo é
+deste motor, não da literatura: sem uma vantagem informacional — um input que
+o primário não tem — meta-labeling não tem mecanismo, cai na regressão
+infinita e só adiciona variância. **Regime saiu do vetor de treino do Alpha em
+2026-08-21** (Fase A do §15.13): a remoção do one-hot criou, sem querer,
+exatamente a vantagem que o Meta precisa. A evidência contrária de `AG-118`
+(`lift ≈ 1,0` em 90 células) não foi descartada — ela mede o lift
+**incondicional**, e a única hipótese que ela não fecha (regime separa TP de
+SL *dentro dos sinais do Alpha*?) virou o Gate E0 do desenho.
+
+**Uma segunda decisão do Manager foi revertida na mesma sessão, por medição.**
+Ele havia decidido construir o modelo de fila (Grupo J) antes do Meta. Três
+fatos verificados em `src/labels/triple_barrier.py` e
+`src/execution/fill_simulator.py` derrubaram a ordem: `NOFILL ⟹ ret_net = 0.0`
+literal (`src/labels/triple_barrier.py:961`) torna a marginalidade de PnL de
+`p_fill` **exatamente zero** — um `p_fill` perfeito filtraria ~3% dos sinais,
+cada um contribuindo zero; `cost_est_bps` é redundante com o alvo
+(`src/labels/triple_barrier.py:1317`), não marginal a ele; e
+`calibrate_against_real_fills` (`src/execution/fill_simulator.py:851`) depende
+de fills de Testnet/Paper que vêm **depois** do Decision Engine que consome
+`p_meta` — circular. Somado à cobertura de 10,5 meses em bloco contíguo de
+calendário (`src/execution/fill_simulator.py:148-149` — carimbo de data
+disfarçado de feature), o Grupo J foi **realocado** para depois do Meta, não
+desqualificado (segue valioso para rotação de capital, no Risk/Decision
+Engine).
+
+**A auditoria adversarial de 3 flancos foi o passo mais produtivo da sessão.**
+Rodada via `/engineering:architecture` em modo *evaluate a design*: corretude
+factual contra o código, rigor estatístico, e trade-offs/alternativas.
+Resultado sobre o desenho v1: **6 CRITICAL, ~20 HIGH**, 95 afirmações
+verificadas (73 corretas), **40 correções** incorporadas numa v2. As quatro
+que mudaram decisões, todas verificadas em `src/validation/cpcv.py` e
+`src/models/alpha.py`: (1) **uma prova de impossibilidade do v1 era FALSA** —
+o documento afirmava que não existe fold doador simultaneamente OOF e cego e
+que cegueira total custaria ~6× o treino; ambas falsas, a prova tinha dois
+quantificadores escondidos, e como `src/validation/cpcv.py:329-337` gera
+C(6,2)=15 folds (todos os pares), a construção blindada custa **zero
+retreino** — o custo real é 1 caminho OOS em vez de 5; (2) `score_raw` fora
+do design matrix por argumento de colinearidade errado —
+`IsotonicRegression` (`src/models/alpha.py:262-263`) é *many-to-one* e
+**destrói** informação, e o Meta vive no topo da escada onde `p_alpha` pode
+ser constante; (3) o purge cross-símbolo **não é fraco, é ausente** —
+`assign_time_groups` (`src/validation/cpcv.py:259-292`) faz `linspace`
+per-símbolo, logo históricos diferentes produzem fronteiras de grupo em datas
+diferentes e uma linha de treino de BTC pode ser contemporânea de uma de
+teste de ETH sem o purge ver (`AG-151`, bloqueante); (4) **os gates não
+gateavam** — cinco defeitos somados inclinavam a decisão a PASS, incluindo o
+Gate E0 com 50 células e nenhuma regra de agregação, que é literalmente
+`AG-114`/`AG-122` reproduzido no gate mais consequente do documento.
+
+O padrão da falha foi nomeado no próprio documento para não se repetir: *os
+riscos eram identificados com precisão e depois **mitigados por declaração em
+vez de mecanismo*** — o FLAG que só imprime, a escrita "condicionada" sem
+enforcement, o "bit-exato" operacionalizado como "os testes passam".
+
+**E o item 1 do protocolo de governança preveniu um erro real.** O design doc
+afirmava, em três versões, que "não existe `save_model` em lugar nenhum de
+`src/`" e propunha abrir um AG novo para persistência. Errado: `AG-141`,
+`src/models/persistence.py` e `src/io/artifact.py` foram construídos no
+**mesmo dia**, em paralelo. O levantamento fora feito antes desses commits.
+Corrigido: o Meta **reusa** a infraestrutura, nenhum AG duplicado foi aberto,
+e o que se registra é a dependência (F5 do Meta depende da integração do
+`AG-141` no Alpha). É exatamente o furo que "commits ANTES de tocar em docs"
+existe para prevenir.
+
+**Status: 17 decisões travadas, ZERO linhas implementadas**
+(`docs/meta_model_design_doc_2026-08-22.md` v2, `PLANO_MESTRE_PRINCE2.md`
+§15.19). Antes de `src/models/meta.py` existir: persistir `tau` (`AG-150`, 1
+coluna em `src/models/alpha.py`), diagnóstico de saturação isotônica, e o
+**Gate E0** — tudo sobre artefato já em disco, zero treino, zero
+`N_lifetime`. Falha do E0 em ≥2 dos 5 paths ⟹ o Meta sai do roadmap com
+evidência registrada em `audit/evidence_ledger.yaml`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-22)
 
@@ -3152,7 +3239,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
-| Meta Model | fora da V1 (§6.8 define critério de entrada); Trilha B achou que o critério de entrada não menciona regime como input em nenhuma das 5 condições — decisão de desenho separada, sem urgência |
+| **Meta Model** | **Desenho ponta a ponta TRAVADO e AUDITADO (v2), ZERO implementado** — 2026-08-22. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra. Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |

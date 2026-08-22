@@ -2456,3 +2456,55 @@ entries:
     ~0,91 em config/constants.yaml::aggregate_risk_max precisa de nota de correcao
     (nao reescrita), decisao de qual janela adotar (recente ~0,83 vs. historica
     0,70) ainda em aberto, do Manager.
+- id_curto: alpha-legado-auc-abaixo-do-nulo-permutado
+  fase: 'Registro durante desenho do Meta-model (redesign_workflow Fase 1-4, 2026-08-22)'
+  symbol: BTCUSDT
+  tf: '15m (grade LEGADA de tempo -- NAO dollar-bar R1)'
+  janela: 't0 2021-12-01 -> 2026-08-01 (janela comum)'
+  lado: 'ambos (long e short, mais o pooled)'
+  regime: all
+  feature_ou_filtro: 'Alpha Camada 1 (alpha_c1_v1_t05_janela_comum, XGBoost binary:logistic,
+    10 features T1) vs. baseline B4 (as MESMAS features embaralhadas)'
+  metrica_tipo: 'AUC real vs. AUC sob permutacao de features (B4), pooled e por lado'
+  metrica_valor: >
+    auc_real_pooled=0,49776 vs. auc_permuted_pooled=0,49998 (n_eval_long=785.740 +
+    n_eval_short=811.295). Por lado: auc_real_long=0,49220 vs.
+    auc_permuted_long=0,49837; auc_real_short=0,50254 vs. auc_permuted_short=0,50132.
+    Criterio de permanencia Sec5.11 no mesmo run: camada1_sharpe_mean=-0,3646 vs.
+    camada0_sharpe_mean=-0,0950; n_paths_camada1_supera_camada0=1 de
+    min_paths_required=4; permanence_pass=false.
+  n: 1597035
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report_t05_janela_comum.json
+  fonte_secao: 'b4_feature_shuffle (linhas 27-36); permanencia (linhas 704-716); janela (831-833)'
+  data: '2026-08-22'
+  nota: >
+    Classificado VERMELHO: o AUC real do Alpha esta ABAIXO do AUC das PROPRIAS
+    features embaralhadas, no pooled e no lado long, sobre ~1,6M avaliacoes -- amostra
+    grande o bastante para nao ser ruido de amostragem. Nao e "edge fraco": e ausencia
+    de sinal direcional mensuravel neste run.
+
+    **QUALIFICACAO OBRIGATORIA -- este achado mede um motor DESCONTINUADO, nao o
+    motor-alvo.** Manager, 2026-08-22, verbatim: "alpha atual e obsoleto pois foi
+    desenho de um motor antigo btc only barras casuais time frame single de 15m".
+    Confirmado no proprio artefato: o relatorio NAO contem a chave `resolution_id`
+    (que src/models/pipeline.py:590 grava), logo e anterior a esse campo e rodou na
+    grade legada de tempo 15m, BTCUSDT apenas. O motor-alvo e 5 simbolos x dollar-bar
+    R1 x LightGBM (PLANO_MESTRE Sec15.14), ainda nao treinado -- retreino represado
+    ate o Data Layer 15 estagios estar 100%.
+
+    Registrado assim mesmo, e nao descartado, por tres motivos: (1) e medicao real
+    e o ledger e append-only -- evidencia negativa que some e evidencia perdida; (2)
+    define a barra que o retreino precisa superar -- se o Alpha novo repetir
+    AUC ~ permutada, o problema nao era a grade nem o learner; (3) e o insumo do
+    Gate E0 do Meta-model (docs/meta_model_design_doc_2026-08-22.md Sec2.6), que
+    tem execucao PILOTO sobre exatamente este artefato (provisoria, nao vinculante)
+    e execucao VINCULANTE sobre o Alpha novo.
+
+    Consequencia declarada a priori para o Meta: meta-labeling sobre um primario sem
+    sinal direcional e reducao de exposicao, nao selecao -- AFML Sec3.6 estabelece que
+    o ganho do Meta e funcao do estoque de falsos positivos do primario, mas isso e
+    condicao NECESSARIA, nao suficiente: os FPs precisam ser SEPARAVEIS. Com AUC ~ 0,50
+    o primario produz uma subamostra aproximadamente aleatoria, e filtrar amostra
+    aleatoria devolve amostra aleatoria menor. Por isso o ablation do Meta e contra
+    "filtro aleatorio na mesma taxa", nunca contra "sem Meta".

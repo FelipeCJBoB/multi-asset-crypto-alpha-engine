@@ -1384,6 +1384,8 @@ assert len(set(m.features) for m in ensemble) == 12     # 12 conjuntos distintos
 
 # PARTE VI — META MODEL
 
+> ⚠️ **SUPERSEDED (2026-08-22).** Esta Parte VI **não é mais base de desenho do Meta-model** — ver `docs/meta_model_design_doc_2026-08-22.md` (v2, auditado) e `PLANO_MESTRE_PRINCE2.md §15.19`. Divergem daqui, por decisão do Manager e por medição: (a) `y_meta` é `1[ret_net > 0]` (PnL líquida), não `barrier_hit == "TP"` (§6.2); (b) **regime ENTRA como feature** do Meta (§6.5 não o lista — `AG-094` fechado com reversão explícita); (c) o **Grupo J foi DESACOPLADO** e movido para depois do Meta, porque `NOFILL ⟹ ret_net = 0.0` (`src/labels/triple_barrier.py:961`) torna a marginalidade de PnL de `p_fill` exatamente zero — o que contradiz o argumento de §6.4; (d) as 5 condições de entrada de §6.8 são substituídas pelo **Gate E0** (separabilidade condicional). Mantido aqui como registro histórico, sem reescrita.
+
 ## 6.1 Decisão: o Meta sai do MVP
 
 O Meta entra na **V1.1**, não na V1. A justificativa é aritmética.
