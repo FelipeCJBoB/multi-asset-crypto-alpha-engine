@@ -10787,3 +10787,59 @@ entries:
       corrigidos. Ver rastro_de_impacto_2026_08_22/fechamento_2026_08_22
       acima -- campo status original preservado por disciplina
       append-only, não reescrito.
+
+  - id: AG-145
+    date: "2026-08-22"
+    file: "src/labels/experiment_log.py:1-21, 260-297 (record_experiment)"
+    related_file: "src/labels/backfill_multi_symbol.py (ProcessPoolExecutor, run_and_write_labels_for_alts/run_and_write_labels_dollar_bar_parkinson)"
+    found_by: "Agent (feature-dev:code-explorer), Fase 2 de redesign_workflow sobre implementação do ADR-001 (src/io/artifact.py), verificado por leitura direta"
+    gap: >
+      `record_experiment` (`experiment_log.py:260-297`) faz read-modify-
+      write ATÔMICO DO ARQUIVO (lê `label_engine_runs.parquet` inteiro,
+      empilha 1 linha, escreve `.tmp`→`fsync`→`os.replace`) -- atômico
+      por ESCRITA individual (B29), mas SEM lock entre o read e o write.
+      O próprio docstring do módulo (`experiment_log.py:16-21`) declara
+      a premissa explicitamente: "seguro para... um único desenvolvedor
+      solo, sem escritores concorrentes -- não é desenhado como log
+      distribuído." Essa premissa é violada por código que já existe no
+      MESMO pacote: `backfill_multi_symbol.py::run_and_write_labels_for_
+      alts`/`run_and_write_labels_dollar_bar_parkinson` paralelizam via
+      `ProcessPoolExecutor` (um processo por símbolo), e cada processo
+      chama `record_experiment` sobre o MESMO arquivo. Clássica corrida
+      de leitura-modificação-escrita: processo A lê N linhas, processo B
+      lê as mesmas N linhas antes de A escrever, A escreve N+1, B escreve
+      N+1 (a partir da SUA leitura, sem a linha de A) -- a linha de A é
+      perdida silenciosamente, sem erro, sem log.
+    severity: "alto"
+    layer: "labels -- concorrência não travada num módulo cuja própria docstring declara a premissa de single-writer, violada por outro módulo do mesmo pacote"
+    consequence: >
+      O backfill real de `AG-100` desta sessão (R2/R3, 5 símbolos, via
+      `ProcessPoolExecutor`) rodou exatamente sob essa condição --
+      `n_ok=2/2` no resumo do driver não garante que TODAS as 10 chamadas
+      de `record_experiment` (5 símbolos × 2 resoluções) foram
+      persistidas em `label_engine_runs.parquet` sem perda; a corrida é
+      silenciosa, não haveria sintoma visível se 1+ linha tivesse sido
+      perdida. `label_engine_runs.parquet` é o que torna `N` (trial
+      budget, §11.6) reconstruível pro DSR -- perda silenciosa de linha
+      corrompe a contagem de trials sem detecção. O desenho V-06 do
+      `ADR-001` (já ratificado, `docs/ADR-001_arquitetura_artefatos_e_
+      contratos_2026-08-19_base.md:118`: "um arquivo por trial +
+      compactação periódica, zero lock, zero corrupção") já é o fix
+      correto -- este achado é evidência de que o problema que V-06
+      resolve já está se manifestando na prática, não é hipotético.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado é o mesmo desenho já ratificado do ADR-001 (V-06, 1 arquivo por trial) quando src/io/artifact.py existir; mitigação de curto prazo (lock de arquivo ou serializar as chamadas de record_experiment fora do ProcessPoolExecutor) não implementada, decisão do Manager se vale a pena antes do writer novo existir. Recomendo VERIFICAR label_engine_runs.parquet quanto a experiment_id faltante/duplicado no backfill de AG-100 desta sessão antes de confiar cegamente na contagem de trials dele."
+    verificacao_2026-08-22: >
+      VERIFICADO contra o dado real (`uv run python`, autorizado pelo
+      Manager nesta sessão): `data/label_engine_runs/label_engine_runs.
+      parquet` tem 21 linhas, `experiment_id` de 1 a 21, ZERO duplicado,
+      ZERO lacuna na sequência. **O backfill real de AG-100 desta sessão
+      NÃO perdeu nenhuma linha** -- a corrida de leitura-modificação-
+      escrita é um risco real confirmado no CÓDIGO (achado acima
+      permanece válido), mas não se manifestou nesta execução
+      específica (provavelmente por timing -- 5 processos, mas E/S
+      rápida o bastante pra não colidir desta vez; corrida não-
+      determinística "não aconteceu agora" não é "não pode acontecer").
+      Severidade mantida em "alto" -- é risco latente, não ativo, mas
+      real e sem proteção nenhuma hoje.
