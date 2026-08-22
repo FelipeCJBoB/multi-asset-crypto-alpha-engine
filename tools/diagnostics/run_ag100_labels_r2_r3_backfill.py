@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Final
 
@@ -98,11 +99,21 @@ def backfill_all(*, dry_run: bool = False) -> dict[str, Any]:
             )
         except Exception as exc:  # isolamento de falha por resolução, mesmo padrão AG-019
             elapsed_s = time.monotonic() - t0
+            # AG-100 F3 (achado `project_assurance`, 2026-08-22) -- str(exc)
+            # sozinho descartava o traceback inteiro (símbolo/linha de
+            # origem), forçando reprodução manual pra diagnosticar o crash
+            # real do R2/R3. traceback.format_exc() carrega o traceback
+            # completo, incluindo qualquer nota anexada via exc.add_note
+            # (PEP 678) por build_and_write_labels_for_symbol (AG-100 F3
+            # companion fix, backfill_multi_symbol.py) -- symbol/resolution_id
+            # agora sobrevivem no próprio traceback, não só na mensagem.
+            tb = traceback.format_exc()
             results.append(
                 {
                     "resolution_id": resolution_id,
                     "status": "error",
                     "error": str(exc),
+                    "traceback": tb,
                     "elapsed_s": elapsed_s,
                 }
             )
@@ -110,6 +121,7 @@ def backfill_all(*, dry_run: bool = False) -> dict[str, Any]:
                 "diagnostics.run_ag100_labels_r2_r3_backfill.resolution_failed",
                 resolution_id=resolution_id,
                 error=str(exc),
+                traceback=tb,
                 elapsed_s=elapsed_s,
             )
 

@@ -132,9 +132,25 @@ def build_and_write_labels_for_symbol(
     confirmar que os labels foram persistidos com sucesso (registrar um
     "experimento" cujo artefato falhou ao escrever não faz sentido)."""
     cfg = config if config is not None else LabelConfig.from_constants(tf=tf)
-    labels, build_stats = build_labels_for_symbol_with_stats(
-        symbol, start, end, config=cfg, estimator=estimator, historical_filters_fallback=True
-    )
+    # AG-100 F3 (achado `project_assurance`, 2026-08-22) -- o try/except de
+    # AssertionError logo abaixo só cobria assert_label_invariants; o crash
+    # real do backfill R2/R3 (ValueError em _mfe_price, AG-100 F1) vinha
+    # DAQUI, sem nenhum contexto de symbol/resolution_id anexado -- nem o
+    # traceback completo (driver só logava str(exc)) nem o símbolo
+    # sobreviviam pra fora do ProcessPoolExecutor. exc.add_note (PEP 678)
+    # preserva o tipo/traceback originais intactos, só anexa contexto —
+    # sobrevive a pickling entre processos (mesmo padrão do resto do
+    # arquivo, symbol/tf reinjetados na mensagem pelo mesmo motivo).
+    try:
+        labels, build_stats = build_labels_for_symbol_with_stats(
+            symbol, start, end, config=cfg, estimator=estimator, historical_filters_fallback=True
+        )
+    except Exception as exc:
+        exc.add_note(
+            f"build_and_write_labels_for_symbol: falha ao construir labels para "
+            f"{symbol}/tf={tf}/resolution_id={resolution_id!r} (AG-100 F3)"
+        )
+        raise
     # AG-029 (audit/architecture_gaps_log.yaml) -- assert_label_invariants
     # existia desde §3.8 mas nunca era chamada no caminho real de escrita,
     # só em teste sobre dado sintético; sample_weight/n_bars_held/uniqueness

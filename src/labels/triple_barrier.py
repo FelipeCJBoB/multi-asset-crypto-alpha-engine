@@ -716,17 +716,33 @@ def _resolve_filters_cached(
         if not historical_filters_fallback:
             raise
         fallback_filters = _earliest_available_filters(symbol)
-        logger.warning(
-            "labels.filters_fallback_used",
-            symbol=symbol,
-            requested_date=t0_date.isoformat(),
-            fallback_snapshot_date=fallback_filters.snapshot_date.isoformat(),
-            reason=(
-                "nenhum snapshot exchangeInfo cobre esta data (B01/§1.4) — ver "
-                "known_gaps.exchange_info_snapshot_coverage_gap em constants.yaml. "
-                "Fallback explícito, só ativo com historical_filters_fallback=True."
-            ),
-        )
+        # AG-100 (achado real de operação, 2026-08-22) -- `cache` é por
+        # (symbol, side) dentro de UMA chamada de build_labels_with_stats
+        # (fresco por lado, não compartilhado). Sem esta guarda, o warning
+        # dispara uma vez por DATA CALENDÁRIO nova vista -- sob backfill de
+        # história completa (anos), com só 1 snapshot cobrindo tudo (§1.4,
+        # known_gaps.exchange_info_snapshot_coverage_gap), TODA data cai em
+        # fallback, produzindo dezenas de milhares de linhas pra um run
+        # real (5 símbolos x 2 lados x ~anos de datas) -- observado ao
+        # rodar o AG-100 R2/R3, log inundado ao ponto de precisar Ctrl+C.
+        # O fato relevante é "este período inteiro usa fallback", um
+        # evento por (symbol, side), não por data -- `any(...)` sobre o
+        # cache já acumulado detecta se já avisamos nesta mesma chamada
+        # (curto-circuita na 1ª entrada, O(1) amortizado após o 1º aviso).
+        if not any(v.is_fallback for v in cache.values()):
+            logger.warning(
+                "labels.filters_fallback_used",
+                symbol=symbol,
+                requested_date=t0_date.isoformat(),
+                fallback_snapshot_date=fallback_filters.snapshot_date.isoformat(),
+                reason=(
+                    "nenhum snapshot exchangeInfo cobre esta data (B01/§1.4) — ver "
+                    "known_gaps.exchange_info_snapshot_coverage_gap em constants.yaml. "
+                    "Fallback explícito, só ativo com historical_filters_fallback=True. "
+                    "1º aviso desta chamada (symbol/side) -- datas subsequentes que "
+                    "também caem em fallback não repetem este log (AG-100)."
+                ),
+            )
         resolved = _ResolvedFilters(
             tick_size=fallback_filters.tick_size,
             filters_hash=_hash_filters(
@@ -971,15 +987,52 @@ class LabelBuildStats:
     `n_warmup_dropped`: barras de decisão descartadas porque o `estimator`
     ainda não tinha janela suficiente (`atr_pct` era `NaN`) — warmup, não
     `NOFILL`/`TIME`/nenhum outro desfecho de barreira.
-    `n_incomplete_tail`: barras descartadas porque `mark_1m`/`funding`
-    carregados não cobriam o horizonte inteiro (fill timeout ou barreira) —
-    cauda do intervalo pedido, não erro de dado.
+    `n_incomplete_tail`: SOMA dos 3 campos `n_incomplete_tail_*` abaixo —
+    mantido por compat com `experiment_log.py` (coluna já persistida desde
+    Sprint 6). Barras descartadas porque `mark_1m`/barras de decisão
+    carregadas não cobriam o horizonte inteiro — cauda do intervalo pedido,
+    não erro de dado.
     `n_tie_break`: item 5 da docstring do módulo — TP e SL tocados no mesmo
-    candle de 1m, resolvido por proximidade ao `open`."""
+    candle de 1m, resolvido por proximidade ao `open`.
+
+    **Achado `project_assurance`/AG-100 F2 (2026-08-22)** — `n_incomplete_
+    tail` conflava 3 causas de cauda incompleta com diagnóstico MUITO
+    diferente (uma é config/prefetch, outra é dado real de rajada de
+    mercado) sob uma única coluna — mesma Classe #4 já catalogada em
+    `audit_engineering` ("zero medido vs nunca medido conflados"). Os 3
+    campos abaixo são a quebra granular, aditiva (não substituem
+    `n_incomplete_tail`, que continua a soma dos 3):
+    `n_incomplete_tail_fill`: `fill_horizon_ms` além do último `mark_1m`
+    carregado — cauda no PREENCHIMENTO da ordem, antes de qualquer fill.
+    `n_incomplete_tail_decision_bars`: só sob `resolution_id` — não havia
+    `cfg.horizon_bars` barras de DECISÃO futuras carregadas (índice `i +
+    horizon_bars >= n`), cauda do próprio dollar-bar, não de `mark_1m`.
+    `n_incomplete_tail_barrier`: `horizon_end_ms` além do último `mark_1m`
+    carregado — cauda no HORIZONTE da barreira TIME.
+
+    **Achado `project_assurance`/AG-100 F1 (2026-08-22, CRITICAL)** —
+    `n_empty_mark_window`: a janela `mark_1m[t_entry:horizon_end_ms]`
+    resolveu vazia (`hi_idx <= lo_idx` em `build_labels_with_stats`) —
+    NUNCA `n_incomplete_tail` (há dado carregado cobrindo o horizonte
+    inteiro, `max_mark_open_time` passa). Sob `resolution_id`, `horizon_
+    end_ms` é contagem de barra (`t0_arr[i + horizon_bars]`), desacoplado
+    do relógio de preenchimento (`t_entry`, até `fill_timeout_ms` depois de
+    `t_post`) — numa rajada de dollar-bar (confirmado em produção real,
+    SOLUSDT/XRPUSDT sob R2/R3, AG-061), `horizon_bars` barras podem se
+    formar em MENOS relógio do que o preenchimento leva, e `horizon_end_ms
+    < t_entry` na hora em que a entrada de fato ocorre. Sem esta guarda,
+    `_first_barrier_touch` recebe arrays vazios e crasha em `_mfe_price`
+    (`np.max`/`np.min` sem elementos) — trade genuinamente NÃO-COMPUTÁVEL
+    (a barreira de tempo já "expirou" antes da entrada existir), correto
+    excluir do dataset, não um bug de dado a esconder."""
 
     n_warmup_dropped: int
     n_incomplete_tail: int
     n_tie_break: int
+    n_incomplete_tail_fill: int = 0
+    n_incomplete_tail_decision_bars: int = 0
+    n_incomplete_tail_barrier: int = 0
+    n_empty_mark_window: int = 0
 
 
 def build_labels_with_stats(
@@ -1122,6 +1175,13 @@ def build_labels_with_stats(
 
     n_incomplete_tail = 0
     n_tie_break = 0
+    # AG-100 F2 (2026-08-22) -- quebra granular de n_incomplete_tail, ver
+    # docstring de LabelBuildStats.
+    n_incomplete_tail_fill = 0
+    n_incomplete_tail_decision_bars = 0
+    n_incomplete_tail_barrier = 0
+    # AG-100 F1 (2026-08-22, CRITICAL) -- ver docstring de LabelBuildStats.
+    n_empty_mark_window = 0
 
     for i in range(n):
         if not valid_atr[i]:
@@ -1144,6 +1204,7 @@ def build_labels_with_stats(
         fill_horizon_ms = t_post + cfg.fill_timeout_ms  # AG-042 -- relógio fixo, não mais * bar_ms
         if fill_horizon_ms > max_mark_open_time:
             n_incomplete_tail += 1
+            n_incomplete_tail_fill += 1
             continue
 
         fill = fill_model.simulate_fill_arrays(
@@ -1194,6 +1255,7 @@ def build_labels_with_stats(
             horizon_idx = i + cfg.horizon_bars
             if horizon_idx >= n:
                 n_incomplete_tail += 1
+                n_incomplete_tail_decision_bars += 1
                 continue
             horizon_end_ms = int(t0_arr[horizon_idx])
         else:
@@ -1201,6 +1263,7 @@ def build_labels_with_stats(
 
         if horizon_end_ms > max_mark_open_time:
             n_incomplete_tail += 1
+            n_incomplete_tail_barrier += 1
             continue
 
         tp_price = fill_px * (1 + side * cfg.tp_atr_mult * atr_pct_i)
@@ -1208,6 +1271,19 @@ def build_labels_with_stats(
 
         lo_idx = int(np.searchsorted(mark_open_time, t_entry, side="left"))
         hi_idx = int(np.searchsorted(mark_open_time, horizon_end_ms, side="right"))
+
+        # AG-100 F1 (2026-08-22, CRITICAL) -- ver docstring de
+        # LabelBuildStats. Sob resolution_id, horizon_end_ms é contagem de
+        # barra, desacoplada do relógio de t_entry -- numa rajada de
+        # dollar-bar, horizon_end_ms pode preceder t_entry (confirmado em
+        # produção real, SOLUSDT/XRPUSDT sob R2/R3), deixando a janela
+        # mark_open_time[lo_idx:hi_idx] vazia. Trade não-computável --
+        # nem TP nem SL são buscáveis numa janela vazia, correto excluir
+        # aqui, não deixar _first_barrier_touch/_mfe_price crashar em
+        # np.max/np.min sem elementos.
+        if hi_idx <= lo_idx:
+            n_empty_mark_window += 1
+            continue
 
         touch = _first_barrier_touch(
             mark_open_time[lo_idx:hi_idx],
@@ -1343,7 +1419,11 @@ def build_labels_with_stats(
         n_input_bars=n,
         n_warmup_dropped=n_warmup_dropped,
         n_incomplete_tail=n_incomplete_tail,
+        n_incomplete_tail_fill=n_incomplete_tail_fill,
+        n_incomplete_tail_decision_bars=n_incomplete_tail_decision_bars,
+        n_incomplete_tail_barrier=n_incomplete_tail_barrier,
         n_tie_break=n_tie_break,
+        n_empty_mark_window=n_empty_mark_window,
         n_emitted=len(cols["t0"]),
     )
 
@@ -1351,6 +1431,10 @@ def build_labels_with_stats(
         n_warmup_dropped=n_warmup_dropped,
         n_incomplete_tail=n_incomplete_tail,
         n_tie_break=n_tie_break,
+        n_incomplete_tail_fill=n_incomplete_tail_fill,
+        n_incomplete_tail_decision_bars=n_incomplete_tail_decision_bars,
+        n_incomplete_tail_barrier=n_incomplete_tail_barrier,
+        n_empty_mark_window=n_empty_mark_window,
     )
     return _finalize_pre_weight_frame(cols), stats
 
@@ -1447,6 +1531,19 @@ def build_labels_both_sides_with_stats(
         n_warmup_dropped=long_stats.n_warmup_dropped + short_stats.n_warmup_dropped,
         n_incomplete_tail=long_stats.n_incomplete_tail + short_stats.n_incomplete_tail,
         n_tie_break=long_stats.n_tie_break + short_stats.n_tie_break,
+        n_incomplete_tail_fill=(
+            long_stats.n_incomplete_tail_fill + short_stats.n_incomplete_tail_fill
+        ),
+        n_incomplete_tail_decision_bars=(
+            long_stats.n_incomplete_tail_decision_bars
+            + short_stats.n_incomplete_tail_decision_bars
+        ),
+        n_incomplete_tail_barrier=(
+            long_stats.n_incomplete_tail_barrier + short_stats.n_incomplete_tail_barrier
+        ),
+        n_empty_mark_window=(
+            long_stats.n_empty_mark_window + short_stats.n_empty_mark_window
+        ),
     )
     return weighted.select(list(LABEL_COLUMNS)), combined_stats
 

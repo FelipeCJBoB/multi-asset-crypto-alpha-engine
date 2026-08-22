@@ -160,6 +160,47 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
     assert record_calls[0]["symbol"] == "ETHUSDT"
 
 
+def test_build_and_write_labels_for_symbol_anexa_contexto_em_qualquer_excecao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-100 F3 (achado `project_assurance`, 2026-08-22) -- o único
+    try/except pré-existente (AG-029) só cobria `AssertionError` de
+    `assert_label_invariants`; o crash real do backfill R2/R3 (`ValueError`
+    em `_mfe_price`, AG-100 F1) vinha de `build_labels_for_symbol_with_
+    stats`, ANTES daquele bloco -- `symbol`/`resolution_id` não sobreviviam
+    nem no traceback nem na mensagem, só via reprodução manual fora do
+    `ProcessPoolExecutor`. Prova que QUALQUER exceção (não só
+    `AssertionError`) agora carrega `symbol`/`tf`/`resolution_id` via
+    `exc.add_note` (PEP 678) -- tipo/mensagem originais preservados
+    intactos (nunca reconstruídos), `raise` simples re-levanta a MESMA
+    exceção."""
+
+    def _raising_build(
+        symbol: str,
+        start: Any,
+        end: Any,
+        *,
+        config: tb.LabelConfig | None = None,
+        estimator: Any = None,
+        historical_filters_fallback: bool = False,
+    ) -> tuple[pl.DataFrame, tb.LabelBuildStats]:
+        raise ValueError("zero-size array to reduction operation maximum which has no identity")
+
+    monkeypatch.setattr(bms, "build_labels_for_symbol_with_stats", _raising_build)
+
+    with pytest.raises(ValueError) as exc_info:
+        bms.build_and_write_labels_for_symbol(
+            "SOLUSDT", "2021-12-01", "2026-08-07", version="v1", resolution_id="R2"
+        )
+
+    exc = exc_info.value
+    assert "zero-size array" in str(exc)  # mensagem original preservada, não reconstruída
+    notes = getattr(exc, "__notes__", [])
+    assert len(notes) == 1
+    assert "SOLUSDT" in notes[0]
+    assert "R2" in notes[0]
+
+
 def test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

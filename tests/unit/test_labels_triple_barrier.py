@@ -661,13 +661,93 @@ def test_build_labels_with_stats_conta_warmup_tail_e_tie_break() -> None:
         estimator=ParkinsonEstimator(window=3),
     )
     assert out.height == 2
-    assert stats == tb.LabelBuildStats(n_warmup_dropped=2, n_incomplete_tail=1, n_tie_break=0)
+    # AG-100 F2 (2026-08-22) -- índice 4 cai em fill_horizon_ms >
+    # max_mark_open_time (ver docstring do teste irmão acima, "única linha
+    # de fato excluída"), ou seja n_incomplete_tail_fill=1 especificamente,
+    # não n_incomplete_tail_decision_bars/n_incomplete_tail_barrier.
+    assert stats == tb.LabelBuildStats(
+        n_warmup_dropped=2, n_incomplete_tail=1, n_tie_break=0, n_incomplete_tail_fill=1
+    )
     # build_labels (sem _with_stats) continua bit-exato -- mesmo DataFrame,
     # só descarta o 2º elemento da tupla (wrapper fino, ver triple_barrier.py).
     out_compat = tb.build_labels(
         bars, mark, _EMPTY_FUNDING, side=1, config=cfg, estimator=ParkinsonEstimator(window=3)
     )
     assert out_compat.equals(out, null_equal=True)
+
+
+def _dollar_bars_horizon_before_entry() -> pl.DataFrame:
+    """4 dollar bars -- índices 0/1 pra warmup do ATR (Parkinson window=3,
+    seed_idx=2), índice 2 é a barra de decisão sob teste, índice 3
+    (horizon_bars=1 à frente) fecha só 1 SEGUNDO depois do índice 2 -- uma
+    rajada de dollar-bar, não os `_BAR_MS` (15min) "normais" dos índices
+    anteriores. Reproduz o mecanismo real de AG-100 F1: a barra que define
+    `horizon_end_ms` chega rápido demais, em relógio, pra cobrir o tempo
+    que o preenchimento da ordem de fato leva."""
+    closes = [100.0, 100.0, 100.0, 100.0]
+    open_time = [_BASE_MS, _BASE_MS + _BAR_MS, _BASE_MS + 2 * _BAR_MS]
+    close_time = [t + _BAR_MS - 1 for t in open_time]
+    t0 = close_time[-1]  # close_time do índice 2
+    open_time.append(t0 + 1)
+    close_time.append(t0 + 1_000)  # índice 3 -- rajada: fecha 1s depois, não 15min
+    return pl.DataFrame(
+        {
+            "open_time": open_time,
+            "close_time": close_time,
+            "open": [c - 0.05 for c in closes],
+            "close": closes,
+            "high": [c + 0.2 for c in closes],
+            "low": [c - 0.2 for c in closes],
+        }
+    )
+
+
+def test_build_labels_resolution_id_horizon_end_antes_de_t_entry_nao_crasha() -> None:
+    """AG-100 F1 (2026-08-22, CRITICAL) -- achado real do backfill de
+    produção R2/R3 (SOLUSDT/XRPUSDT), confirmado com dado real via
+    instrumentação: delta horizon_end_ms - t_entry_ms = -95.471ms numa
+    rajada de dollar-bar. Sob `resolution_id`, `horizon_end_ms` é contagem
+    de BARRA (`t0_arr[i+horizon_bars]`), desacoplada do relógio de
+    preenchimento (`t_entry`, até `fill_timeout_ms` depois de `t_post`) --
+    numa rajada, a barra `horizon_bars` à frente pode fechar muito ANTES
+    do preenchimento real ocorrer.
+
+    Fixture: índice 2 (decisão sob teste) preenche só em `t0+5min` (mark_1m
+    só toca o limite ali), mas `horizon_end_ms` (índice 3, rajada) fecha em
+    `t0+1s` -- `t_entry > horizon_end_ms`, janela `mark_open_time[lo_idx:
+    hi_idx]` vazia. **Sem a guarda `hi_idx <= lo_idx` (triple_barrier.py,
+    logo após computar `lo_idx`/`hi_idx`), isto crashava de verdade em
+    produção** com `ValueError: zero-size array to reduction operation
+    maximum which has no identity` dentro de `_mfe_price` -- reproduzido
+    via instrumentação contra dado real antes desta correção existir."""
+    bars = _dollar_bars_horizon_before_entry()
+    t0 = int(bars["close_time"][2])
+    mark = _mark(
+        [
+            (t0 + 1 * 60_000, 100.3, 100.4, 100.2, 100.3),  # não toca o limite (long)
+            (t0 + 5 * 60_000, 96.0, 96.5, 95.0, 95.5),  # toca -- fill aqui
+            (t0 + 905_000, 95.5, 95.6, 95.4, 95.5),  # cobertura até fill_timeout_ms dos 2 índices
+        ]
+    )
+    cfg = _dollar_bar_cfg(horizon_bars=1)
+    out, stats = tb.build_labels_with_stats(
+        bars,
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=cfg,
+        estimator=ParkinsonEstimator(window=3),
+    )
+    # índice 2: janela vazia (excluído). índice 3: preenche no mesmo toque
+    # (mesmo t_entry físico), mas horizon_idx=3+1=4>=n=4 -- cauda de barras
+    # de decisão esgotadas, excluído também. 0 linhas emitidas.
+    assert out.height == 0
+    assert stats.n_empty_mark_window == 1
+    assert stats.n_warmup_dropped == 2
+    assert stats.n_incomplete_tail_decision_bars == 1
+    assert stats.n_incomplete_tail == 1  # soma dos 3 n_incomplete_tail_* -- só decision_bars aqui
+    assert stats.n_incomplete_tail_fill == 0
+    assert stats.n_incomplete_tail_barrier == 0
 
 
 def test_build_labels_resolution_id_time_pousa_exatamente_horizon_bars_a_frente() -> None:

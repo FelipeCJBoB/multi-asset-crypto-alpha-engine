@@ -102,6 +102,18 @@ _SCHEMA: dict[str, Any] = {
     "n_warmup_dropped": pl.Int64,
     "n_incomplete_tail": pl.Int64,
     "n_tie_break": pl.Int64,
+    # AG-100 F1/F2 (achado `project_assurance`, 2026-08-22) -- quebra
+    # granular de n_incomplete_tail (3 causas distintas antes conflacionadas
+    # sob 1 coluna, ver docstring de LabelBuildStats em triple_barrier.py)
+    # + n_empty_mark_window (janela mark_1m[t_entry:horizon_end_ms] vazia --
+    # trade não-computável sob rajada de dollar-bar, achado que causou o
+    # crash real do backfill AG-100 R2/R3 em SOLUSDT/XRPUSDT). Linhas
+    # antigas (antes desta coluna existir) ficam null -- mesmo padrão
+    # aditivo, nunca migração destrutiva, de tf/resolution_id/horizon_bars.
+    "n_incomplete_tail_fill": pl.Int64,
+    "n_incomplete_tail_decision_bars": pl.Int64,
+    "n_incomplete_tail_barrier": pl.Int64,
+    "n_empty_mark_window": pl.Int64,
     "n_labels": pl.Int64,
     "n_tp": pl.Int64,
     "n_sl": pl.Int64,
@@ -239,6 +251,18 @@ def record_experiment(
         "n_warmup_dropped": build_stats.n_warmup_dropped if build_stats is not None else None,
         "n_incomplete_tail": build_stats.n_incomplete_tail if build_stats is not None else None,
         "n_tie_break": build_stats.n_tie_break if build_stats is not None else None,
+        "n_incomplete_tail_fill": (
+            build_stats.n_incomplete_tail_fill if build_stats is not None else None
+        ),
+        "n_incomplete_tail_decision_bars": (
+            build_stats.n_incomplete_tail_decision_bars if build_stats is not None else None
+        ),
+        "n_incomplete_tail_barrier": (
+            build_stats.n_incomplete_tail_barrier if build_stats is not None else None
+        ),
+        "n_empty_mark_window": (
+            build_stats.n_empty_mark_window if build_stats is not None else None
+        ),
         "notes": notes,
         **stats,
     }

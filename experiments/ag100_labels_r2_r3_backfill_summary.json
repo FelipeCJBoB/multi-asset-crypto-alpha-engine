@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-08-22T12:46:59.107244+00:00",
+  "code_version": "7924f2c",
+  "task": "ag100_labels_r2_r3_backfill",
+  "dry_run": false,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "resolutions": [
+    "R2",
+    "R3"
+  ],
+  "n_total": 2,
+  "n_ok": 2,
+  "n_error": 0,
+  "results": [
+    {
+      "resolution_id": "R2",
+      "status": "ok",
+      "symbols_written": {
+        "ETHUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\ETHUSDT\\R2\\v1\\labels.parquet",
+        "BNBUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\BNBUSDT\\R2\\v1\\labels.parquet",
+        "SOLUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\SOLUSDT\\R2\\v1\\labels.parquet",
+        "XRPUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\XRPUSDT\\R2\\v1\\labels.parquet",
+        "BTCUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\BTCUSDT\\R2\\v1\\labels.parquet"
+      },
+      "elapsed_s": 73.35899999993853
+    },
+    {
+      "resolution_id": "R3",
+      "status": "ok",
+      "symbols_written": {
+        "ETHUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\ETHUSDT\\R3\\v1\\labels.parquet",
+        "BNBUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\BNBUSDT\\R3\\v1\\labels.parquet",
+        "XRPUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\XRPUSDT\\R3\\v1\\labels.parquet",
+        "SOLUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\SOLUSDT\\R3\\v1\\labels.parquet",
+        "BTCUSDT": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\data\\labels\\BTCUSDT\\R3\\v1\\labels.parquet"
+      },
+      "elapsed_s": 66.98499999998603
+    }
+  ]
+}
