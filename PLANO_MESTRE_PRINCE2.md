@@ -1791,6 +1791,16 @@ quantas posições ficam expostas simultaneamente.
 **Decisões abertas, registradas aqui pra não se perderem sob a aprovação
 do consolidado (2026-08-19) — nenhuma delas foi decidida por omissão:**
 
+> **Atualização 2026-08-22**: as 7 decisões abaixo foram aprofundadas
+> (leitura completa de `AG-108`/`AG-118`/código real) — 4 delas
+> (itens 3, 4, 6, 7 na numeração abaixo) já estão resolvidas ou sem
+> tensão metodológica real, não precisam de auditoria externa. As
+> outras 3 (itens 1, 2, 5) dependem de um mecanismo já refutado por
+> auditoria externa anterior (`AG-108`) ou contradizem a evidência que
+> motivou desligar o gate irmão na mesma sessão (`AG-118`) — brief
+> comissionado: `docs/brief_auditoria_externa_2026-08-22_decisoes_
+> residuais_risco_regime.md`.
+
 1. **AG-096** — cache-local-com-TTL vs. aceitar-staleness-com-
    reconciliação, pra quando `AG-101` (módulo de contagem de posição ao
    vivo) for implementado.
