@@ -11548,9 +11548,13 @@ entries:
       Se a sessão terminasse sem commit, o desenho -- incluindo o achado
       CRITICAL de AG-162 -- desapareceria sem rastro; ninguém lendo
       PLANO_MESTRE ou SPRINT_LOG descobriria que este trabalho existe.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix aplicado na mesma rodada de governança que registra este AG: commit do documento + PLANO_MESTRE_PRINCE2.md §15.20 (criado) + linha 'Alpha multi-ativo' em SPRINT_LOG.md (Estado atual). Fechamento formal (resolved_by_commit) numa rodada de governança subsequente, mesmo padrão já usado para AG-146/147/148."
+    resolved_by_commit: "aeca034"
+    resolution: >
+      Documento commitado; PLANO_MESTRE_PRINCE2.md §15.20 criado; linha
+      "Alpha multi-ativo x multi-resolução" adicionada à tabela "Estado
+      atual" de SPRINT_LOG.md; Road Map Vivo republicado. Âncora de
+      governança completa.
+    status: "fechado"
 
   - id: AG-162
     date: "2026-08-22"
