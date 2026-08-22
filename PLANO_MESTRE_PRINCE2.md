@@ -597,7 +597,7 @@ qualquer número. Três camadas:
 | Diagnósticos descartados catalogados | `docs/audit_discarded_diagnostics.md` | Issue Register especializado |
 | Catálogo de fan-in/consumidores | `docs/CODE_DISCOVERY.md` | mapa de Dependencies (RAID) |
 | Triagem de 54 divergências PRD↔código (T0.4) | `docs/T0_4_TRIAGEM.md` | Issue Register especializado — omitido da PBS v1.1 por descuido, corrigido agora (ver nota abaixo) |
-| Mapa de blast radius de uma migração específica | `docs/refactor_gk_canonico.md` | Product Description de um Pacote de Trabalho em curso |
+| Mapa de blast radius de uma migração específica | `docs/refactor_parkinson_canonico.md` | Product Description de um Pacote de Trabalho em curso |
 | Rastreabilidade de requisitos + lições de elaboração do blueprint | `PRD_V3_2_UNIFICADO.md` Parte XIX (54 requisitos rastreados, 9 erros corrigidos, 2 registros de mudança V2→V3/v3.2→v3.3) | Lessons Log — 4º tipo de log do projeto, distinto de SPRINT_LOG (execução)/evidence_ledger (achado estatístico)/architecture_gaps_log (integração); este é sobre o TEXTO do blueprint em si |
 | Changelog de semântica de venue | `config/venue_changelog.yaml` | Risk Register especializado — alimenta o check 23 (Data Quality Engine, §1.3 do V3.2) que detecta quebra semântica de fonte sem quebra de schema (ex. rollout de RPI em 2025-11-20) |
 | Métodos de Quality Review | `.claude/skills/audit_engineering/`, `.claude/skills/project_assurance/` | Quality Management Approach |
