@@ -516,3 +516,69 @@ collision_rate/holding mediano (colunas), por símbolo + agregado pooled.
   princípio de "produção só carrega o que foi congelado offline").
 - Qualquer alteração em `V41-6` (rederivação por MFE) — trilha
   independente, não tocada aqui.
+
+## 13. Fase 4-bis — recomendação de forma exata da otimização ADR-001 (2026-08-22)
+
+> **`[EM ABERTO — decisão adiada, Manager 2026-08-22]`** Isto é uma
+> RECOMENDAÇÃO de um agente de desenho, não uma decisão travada. Fica
+> registrada aqui e no Road Map Vivo como pendência explícita, pra
+> retomar quando a cadeia Data Layer→Alpha→V41-6 destravar — não decidir
+> por omissão, não fechar por default.
+
+**Forma da razão a maximizar** — não `edge_bruto_atr / custo_atr` cru
+(achado do agente: `custo_atr` não depende de `tp_atr_mult`/
+`sl_atr_mult`, é constante em relação às variáveis de decisão pra um
+ATR/população fixos — dividir por uma constante degeneraria a razão em
+maximizar só o numerador). Recomendação: construir numerador e
+denominador dos campos REALIZADOS de `ResolvedBarriers`
+(`resolve_barriers_vectorized`), não das fórmulas fechadas —
+`cost_exit_bps` já varia por outcome (`maker` se TP, `taker` se
+SL/TIME), então o hurdle de custo genuinamente muda com a geometria:
+
+```
+edge_liq_atr    = mean(ret_gross_i/atr_at_t0_i) - mean(custo_i/atr_at_t0_i)
+cost_hurdle_atr = mean(custo_i/atr_at_t0_i)          # REALIZADO, não custo_atr() fixo
+objetivo(tp,sl) = edge_liq_atr / cost_hurdle_atr      # 0=breakeven exato
+```
+
+**Papel de `n_bars_held`** (distribuição de tempo-até-barreira) — não
+funde num único escalar com o edge (mesma classe de erro que gerou
+`AG-114`/`AG-118`, critério misturado sem definição operacional).
+Entra como RESTRIÇÃO de viabilidade (mesmo papel que R1/R2 já ocupam no
+risco #3 acima): throughput implícito de `n_bars_held` testado contra
+R3 (`fee_budget_monthly`), do mesmo jeito que ATR mediano já testa
+R1/R2. Candidato que viola R1, R2 OU R3 é penalizado (rejeitado), nunca
+aceito com edge alto às custas de holding time inviável.
+
+**Método**: `scipy.optimize.minimize(method="Nelder-Mead")` sobre
+`(reward_risk_ratio, sl_mult)` — `frac_tp`/`frac_sl` mudam em DEGRAUS
+conforme `(tp,sl)` cruza o caminho de preço de cada trade (função não-
+diferenciável), descarta métodos baseados em gradiente. Bounds reusam
+`sl_atr_mult.sweep_range`/`tp_atr_mult.sweep_range` já declarados (zero
+número novo). Multi-start (produção atual + 2-3 cantos da caixa) como
+verificação interna de ótimo local — 1 procedimento declarado a priori,
+não N hipóteses candidatas.
+
+**Onde viveria**: 3 funções puras novas em `feasibility.py`
+(`edge_liq_atr_realized`/`cost_hurdle_atr_realized`/
+`net_edge_to_cost_ratio`) + módulo novo
+`src/analysis/barrier_geometry_derivation.py`. `n_lifetime.yaml`: nada
+registrado ao escrever/testar contra fixture — só ao rodar contra
+população real (gated pela mesma cadeia).
+
+**5 riscos que o agente não resolveu sozinho** (delegados de volta):
+1. Contagem de trial da execução real — Nelder-Mead chama a resolução
+   de barreira dezenas de vezes por convergência; não está claro se
+   conta como "1 fit iterativo" ou "N trials" pela regra mecânica do
+   `n_lifetime.yaml` — mesma tensão do risco #8 acima, agora também
+   aqui.
+2. Definição de consenso entre símbolos se o objetivo roda pooled mas o
+   gate R1/R2/R3 é por símbolo (mesmo achado do risco #3: `sl=0,75`
+   inviável só pra BTCUSDT/BNBUSDT).
+3. Funding excluído do hurdle de custo por desenho — tem sinal
+   (pode ser receita, não custo, dependendo do lado), não resolvido.
+4. Nenhum guardrail técnico impede alguém de rodar isto sobre a
+   população incondicional e gravar `provenance: DERIVED` como se
+   fosse examinado — falta um campo tipo `population_kind` obrigatório.
+5. Nelder-Mead não garante ótimo global — mitigado por multi-start, não
+   eliminado.
