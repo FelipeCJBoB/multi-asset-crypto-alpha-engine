@@ -2893,10 +2893,16 @@ foi respondida (sem sinal econômico), não ficou em aberto.
 CANÔNICO DE PRODUÇÃO (2026-08-21) mesmo com os 2 achados acima na
 mesa** — override de negócio explícito, registrado como tal
 (`PLANO_MESTRE_PRINCE2.md §15.13`), nunca como resolução da metodologia
-ou alegação de edge medido: o bucket de stress ocupa só ~5-12% do tempo,
-então bloquear trade nele é "segurança extra de baixo custo" mesmo sem
-prova de que reduz risco de cauda além de ATR. Escopo completo
-implementado na mesma sessão:
+ou alegação de edge medido. **Correção 2026-08-22**: o gate de risco
+citado abaixo foi DESLIGADO nesta mesma data (`control_01_regime_
+tradeavel` removido de `evaluate_all()`, commit `3c0d83d`) — a mesma
+evidência negativa (`lift`≈1,0) que justificava "bloquear é barato
+mesmo sem prova" acabou sendo lida, no mesmo dia, como razão pra
+desligar de vez (manter ligado sob evidência negativa custava
+opcionalidade, era o erro maior). `hmm_gaussian_k4_v1` segue candidato
+canônico do BUILDER (ratificado, `AG-114` fechado definitivamente,
+mesmo dia) — só o CONSUMO como gate mudou. Escopo completo implementado
+na sessão de 2026-08-21:
 
 - **Fase A** — regime SAI do vetor de treino do Alpha
   (`src/models/alpha.py::DESIGN_COLUMNS`, 14→10 colunas, só as features

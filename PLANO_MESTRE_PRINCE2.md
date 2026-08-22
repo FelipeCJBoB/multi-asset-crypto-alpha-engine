@@ -2855,6 +2855,26 @@ status_ratificacao_final_manager_2026_08_22`.
 
 ### 15.13 HMM k=4 como candidato canônico de produção — override do Manager sobre AG-114/AG-118 (2026-08-21)
 
+> **`[CORREÇÃO DE SINCRONIZAÇÃO, 2026-08-22 — achado por agente de
+> pesquisa, mesma classe de furo que `AG-123` existe pra pegar]`** O
+> texto abaixo (escrito 2026-08-21) descreve o gate de risco como
+> LIGADO ("bloquear trade nesse bucket tem custo baixo de
+> oportunidade"). **Isso deixou de ser verdade em 2026-08-22** —
+> `control_01_regime_tradeavel` foi DESLIGADO de `evaluate_all()`
+> (commit `3c0d83d`, `src/risk/limits.py`) na mesma sessão, por decisão
+> do Manager: `AG-118` mediu evidência negativa e definitiva
+> (`lift`≈1,0 em 90 células), o gate tinha sido wireado ANTES dessa
+> medição existir, e manter ligado sob evidência negativa custava
+> opcionalidade — pior erro que desligar. Ver
+> `audit/architecture_gaps_log.yaml::AG-114::status_gate2_regime_
+> desligado_2026_08_22` e `§15.12.7` acima (ratificação final de
+> `hmm_gaussian_k4_v1`, mesmo dia). **O que continua verdade do texto
+> abaixo**: `hmm_gaussian_k4_v1` segue como candidato canônico do
+> BUILDER de regime (`build_hmm_regimes`, `canonical_regime_hmm_n_
+> states=4`) — só o CONSUMO desse regime como gate de risco em
+> `evaluate_all()` que mudou. Corrigir aqui em vez de reescrever a
+> seção inteira (histórico preservado, não apagado).
+
 **Estado real no momento desta decisão, não escondido:** `AG-114`
 continua **ABERTO** — a fragilidade do Gate 1 (§15.12.5 acima: sob o
 critério literal de mediana, `hmm_gaussian_k2_v1` passaria o Gate 1 e
@@ -3095,18 +3115,32 @@ retratações honestas registradas): `docs/plano_acao_ag124_pos_
 auditoria_2026-08-21.md`; ledger completo:
 `audit/architecture_gaps_log.yaml::AG-124` (10 addenda).
 
-**S1 aberto na sequência — maior lacuna aberta do projeto, independente
-de tudo acima**: `tp_atr_mult`/`sl_atr_mult` (constantes classe A,
-`sweep_required: true` desde sprint_6, nunca executado) — define a
-variável dependente de todo experimento de M4/AG-114/AG-118 já medido.
-Desenho iniciado (`redesign_workflow`, Fase 1-4, não implementado
-ainda): reparametrização `R=tp/sl` (breakeven implícito) × `S=sl` (taxa
-de eventos/holding time) — não os 2 crus, mesmo erro de acoplamento que
-`T`/`C` acima já custou 6 rodadas de auditoria pra descobrir. Grade
-candidata `R∈{1,0;1,33;2,0}×S∈{0,75;1,5;2,25}`, EV por evento em
-unidades de ATR como leitura primária. Design doc + auditoria
-independente (`project_assurance`) em andamento no momento desta
-atualização.
+**S1 — maior lacuna aberta do projeto, independente de tudo acima**:
+`tp_atr_mult`/`sl_atr_mult` (constantes classe A, `provenance: ASSUMED`,
+"herdado do PRD V2, nunca questionado") — define a variável dependente
+de todo experimento de M4/AG-114/AG-118 já medido. **Estado atual
+(2026-08-22)**: design doc completo e auditado (`docs/s1_design_doc_
+sweep_tp_sl_reward_risk_2026-08-22.md`), Fase 5 (implementação) NÃO
+iniciada — Manager decidiu que não é acionável agora (cadeia real:
+Data Layer 100% → retreino do Alpha, represado até refatoração pra
+LightGBM → V41-6 condicionado na população que o Alpha dispara).
+
+Metodologia decidida: seguir `ADR-001 §5` item 10 (maximizar razão
+payoff esperado/hurdle de custo via distribuição empírica de tempo-até-
+barreira), não o percentil de MFE do `PRD_V4_1.md §4.1` — reusa
+`feasibility.py`/`barrier_sweep.py` existentes, sem precisar de coluna
+nova (`mae_atr_units`) no Label Engine.
+
+**`[ABERTO, decisão adiada — 2026-08-22]` Forma exata da otimização
+(razão precisa a maximizar, papel da distribuição de tempo-até-barreira
+na função objetivo, método de otimização concreto)**: delegado a agente
+de desenho (`redesign_workflow` Fase 4), recomendação em andamento no
+momento desta atualização — decisão final fica pro Manager quando a
+cadeia acima destravar. Trabalho feito enquanto isso, sem depender da
+população do Alpha: filtro R2 aplicado ao espaço de `sl` (ATR% mediano
+medido nos 5 símbolos — `S=0,75` viola R2 pra BTCUSDT/BNBUSDT
+especificamente), diagnóstico de distribuição de MFE rodado como
+fixture de validação (não fonte de valor).
 
 ---
 
