@@ -22,8 +22,11 @@ escritores concorrentes) — não é desenhado como log distribuído."""
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
+import time
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +41,20 @@ from .triple_barrier import LabelBuildStats, LabelConfig
 logger = structlog.get_logger(__name__)
 
 LOG_PATH: Path = LABEL_ENGINE_RUNS_DIR / "label_engine_runs.parquet"
+
+# AG-145 (audit/architecture_gaps_log.yaml) -- record_experiment fazia
+# read-modify-write do arquivo inteiro sem lock; sob ProcessPoolExecutor
+# real (src.labels.backfill_multi_symbol), 2+ processos podiam ler o
+# mesmo estado e a ultima escrita vencer, perdendo a linha do outro em
+# silencio. Timeout/poll de engenharia (nao dominio quant, mesmo
+# precedente de _DATE_BUFFER_DAYS em src/models/dataset.py:61) -- volume
+# real deste log e ~dezenas de linhas/ano (nao escala de trial do
+# Optuna), entao um lock simples e proporcional; o padrao
+# um-arquivo-por-trial (V-06 do ADR-001, action item 5) fica pra quando
+# um consumidor de volume real existir.
+_LOCK_TIMEOUT_S = 30.0  # noqa: magic-number -- engenharia, não domínio quant
+_LOCK_POLL_S = 0.05  # noqa: magic-number -- engenharia, não domínio quant
+_LOCK_STALE_S = 60.0  # noqa: magic-number -- engenharia, não domínio quant
 
 _SCHEMA: dict[str, Any] = {
     "experiment_id": pl.Int64,
@@ -128,6 +145,46 @@ _SCHEMA: dict[str, Any] = {
     "sum_uniqueness": pl.Float64,  # N_eff medido (B24) — §0.2 R4
     "notes": pl.Utf8,
 }
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: Path) -> Iterator[None]:
+    """Mutex entre processos via criação exclusiva de arquivo
+    (`O_CREAT | O_EXCL`) — portátil (Windows/POSIX), sem dependência
+    nova. `open` com `O_EXCL` falha com `FileExistsError` se o lock já
+    existir; poll com backoff fixo até `_LOCK_TIMEOUT_S`. Lock mais
+    velho que `_LOCK_STALE_S` é removido à força antes de tentar de
+    novo — um processo que morreu segurando o lock (crash, `SIGKILL`)
+    não deveria travar o log pra sempre."""
+    deadline = time.monotonic() + _LOCK_TIMEOUT_S
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            try:
+                age_s = time.time() - lock_path.stat().st_mtime
+            except FileNotFoundError:
+                continue  # lock sumiu entre o open e o stat -- tenta de novo
+            if age_s > _LOCK_STALE_S:
+                logger.warning(
+                    "labels.experiment_log.lock_stale_removed",
+                    lock_path=str(lock_path),
+                    age_s=age_s,
+                )
+                lock_path.unlink(missing_ok=True)
+                continue
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"labels.experiment_log: lock {lock_path} não liberado em "
+                    f"{_LOCK_TIMEOUT_S}s -- outro processo pode estar preso"
+                ) from None
+            time.sleep(_LOCK_POLL_S)
+    try:
+        yield
+    finally:
+        lock_path.unlink(missing_ok=True)
 
 
 def load_experiment_log(path: Path | None = None) -> pl.DataFrame:
@@ -223,6 +280,40 @@ def record_experiment(
     `config` em mãos (ex. testes que constroem `labels` sinteticamente,
     sem passar por `build_labels_with_stats`)."""
     log_path = path if path is not None else LOG_PATH
+    lock_path = log_path.with_name(log_path.name + ".lock")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with _file_lock(lock_path):
+        return _record_experiment_locked(
+            labels,
+            config,
+            symbol=symbol,
+            period_start=period_start,
+            period_end=period_end,
+            sprint=sprint,
+            stage=stage,
+            notes=notes,
+            build_stats=build_stats,
+            log_path=log_path,
+        )
+
+
+def _record_experiment_locked(
+    labels: pl.DataFrame,
+    config: LabelConfig,
+    *,
+    symbol: str,
+    period_start: str,
+    period_end: str,
+    sprint: int,
+    stage: str,
+    notes: str,
+    build_stats: LabelBuildStats | None,
+    log_path: Path,
+) -> Path:
+    """Corpo real de `record_experiment` — só chamado com `_file_lock`
+    de `log_path` já adquirido pelo caller (AG-145: read-modify-write
+    do arquivo inteiro precisa ser atômico entre PROCESSOS, não só
+    entre threads do mesmo processo)."""
     existing = load_experiment_log(log_path)
     stats = summarize_labels(labels)
 

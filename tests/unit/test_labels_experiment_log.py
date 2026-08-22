@@ -8,6 +8,8 @@ pela suíte de testes — path corrigido 2026-08-22, morava antes em
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -86,7 +88,7 @@ def test_summarize_labels_dataset_vazio() -> None:
 
 def test_record_experiment_cria_arquivo_com_id_1(tmp_path: Path) -> None:
     log_path = tmp_path / "runs.parquet"
-    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
 
     written = experiment_log.record_experiment(
         labels,
@@ -230,7 +232,7 @@ def test_record_experiment_tolera_arquivo_real_com_schema_antigo_sem_time_stop_m
     log_path = tmp_path / "runs_legado.parquet"
     _legacy_schema_row(log_path)
 
-    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
     experiment_log.record_experiment(
         labels,
         _CFG,
@@ -286,7 +288,7 @@ def test_record_experiment_build_stats_gravado_nas_3_colunas_novas(tmp_path: Pat
     emitidos via `logger.info`, nunca persistidos) chegam nas colunas
     novas do schema quando `build_stats` é passado."""
     log_path = tmp_path / "runs.parquet"
-    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
     stats = LabelBuildStats(n_warmup_dropped=7, n_incomplete_tail=2, n_tie_break=1)
 
     experiment_log.record_experiment(
@@ -310,7 +312,7 @@ def test_record_experiment_build_stats_ausente_grava_null(tmp_path: Path) -> Non
     funcionando sem passar `build_stats`; as 3 colunas novas ficam `null`,
     não um valor inventado."""
     log_path = tmp_path / "runs.parquet"
-    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
 
     experiment_log.record_experiment(
         labels,
@@ -324,3 +326,102 @@ def test_record_experiment_build_stats_ausente_grava_null(tmp_path: Path) -> Non
     assert out["n_warmup_dropped"][0] is None
     assert out["n_incomplete_tail"][0] is None
     assert out["n_tie_break"][0] is None
+
+
+# ============================================================================
+# AG-145 -- record_experiment sob ProcessPoolExecutor real, sem perda de
+# linha nem experiment_id duplicado (regressão do achado de
+# audit_engineering, 2026-08-22)
+# ============================================================================
+
+
+def _worker_record_one(args: tuple[Path, int]) -> int:
+    """Nível de módulo (não closure/lambda) -- `ProcessPoolExecutor`
+    exige picklable. Cada chamada de processo separado grava 1 linha no
+    MESMO `log_path`, disputando o mesmo lock de verdade (não threads do
+    mesmo processo -- é o mecanismo exato de
+    `backfill_multi_symbol.py::run_and_write_labels_for_alts`)."""
+    log_path, worker_idx = args
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
+    written = experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol=f"SYM{worker_idx}",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        path=log_path,
+    )
+    return int(experiment_log.load_experiment_log(written).height)
+
+
+def test_record_experiment_sob_process_pool_nao_perde_linha(tmp_path: Path) -> None:
+    """AG-145 -- antes do lock, N processos gravando no mesmo log_path
+    perdiam linha silenciosamente (leitura-modificação-escrita sem
+    exclusão mútua). Com o lock, N chamadas concorrentes reais (processos
+    de verdade, não threads) produzem N linhas, `experiment_id` de 1 a N
+    sem duplicata nem lacuna."""
+    log_path = tmp_path / "runs.parquet"
+    n_workers = 8
+    args = [(log_path, i) for i in range(n_workers)]
+
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        list(pool.map(_worker_record_one, args))
+
+    out = experiment_log.load_experiment_log(log_path)
+    assert out.height == n_workers
+
+    ids = sorted(out["experiment_id"].to_list())
+    assert ids == list(range(1, n_workers + 1))  # sem duplicata, sem lacuna
+
+
+def test_file_lock_remove_lock_stale_e_nao_trava_pra_sempre(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simula um processo que morreu segurando o lock (arquivo `.lock`
+    órfão, mais velho que `_LOCK_STALE_S`) -- a próxima chamada precisa
+    remover o lock stale e seguir, não travar pra sempre."""
+    log_path = tmp_path / "runs.parquet"
+    lock_path = log_path.with_name(log_path.name + ".lock")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.touch()
+    old_time = (
+        datetime.now(UTC).timestamp() - (experiment_log._LOCK_STALE_S + 5.0)  # noqa: magic-number
+    )
+    os.utime(lock_path, (old_time, old_time))
+
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
+    written = experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol="BTCUSDT",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        path=log_path,
+    )
+    assert experiment_log.load_experiment_log(written).height == 1
+    assert not lock_path.exists()  # lock liberado ao final da chamada
+
+
+def test_file_lock_timeout_se_lock_nao_liberar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lock recente (não-stale) que nunca é liberado -- `record_experiment`
+    precisa desistir com `TimeoutError`, não travar pra sempre."""
+    log_path = tmp_path / "runs.parquet"
+    lock_path = log_path.with_name(log_path.name + ".lock")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.touch()  # lock "fresco" -- nunca vai ficar stale durante o teste
+
+    monkeypatch.setattr(experiment_log, "_LOCK_TIMEOUT_S", 0.2)  # noqa: magic-number
+    monkeypatch.setattr(experiment_log, "_LOCK_POLL_S", 0.02)  # noqa: magic-number
+
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
+    with pytest.raises(TimeoutError, match="lock"):
+        experiment_log.record_experiment(
+            labels,
+            _CFG,
+            symbol="BTCUSDT",
+            period_start="2024-01-01",
+            period_end="2024-01-02",
+            path=log_path,
+        )
