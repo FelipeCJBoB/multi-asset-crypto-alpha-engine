@@ -1152,38 +1152,114 @@ citável, não opinião:
 
 ```
 DATA LAYER
-  01_BARRA            src/data/{resample,lake,download,bars,build_dollar_bars}.py  🟡 parcial -- threshold da
-                                                                       dollar-bar (canônico, AG-042) calibrado
-                                                                       em janela não-causal (passado+futuro),
-                                                                       deriva medida 18,18x (BTC), recalibração
-                                                                       pendente de decisão do Manager;
-                                                                       calibration_scope sempre "validation",
-                                                                       nunca "frozen_production" (AG-042 itens 2/3)
-  02_DATA_CHECK        src/data/{checks,validate,schemas}.py           parcial, symbol nunca exercitado
-  03_FEATURES          src/features/{build,support,groups/*}.py        TF hardcoded, thresholds globais
+  01_BARRA            src/data/{resample,lake,download,bars,build_dollar_bars}.py  🟡 parcial -- [DESATUALIZADO,
+                                                                       ver §15.15] recalibração causal FECHADA
+                                                                       2026-08-22 (AG-124, 15/15 células
+                                                                       reprocessadas, zero vazamento residual
+                                                                       real -- AG-137 limpou os 7 dias stale
+                                                                       remanescentes). Gap real hoje: CLI legado
+                                                                       de build_dollar_bars.py::main() continua
+                                                                       produzindo calibração NÃO-causal por
+                                                                       padrão -- AG-138 (aberto, severidade alta)
+  02_DATA_CHECK        src/data/{checks,validate,schemas}.py           [DESATUALIZADO] symbol JÁ exercitado
+                                                                       desde 2026-08-21 (AG-125/AG-133,
+                                                                       validate_dollar_bars() + campo symbol
+                                                                       em QualityReport, testado p/ ETH/SOL)
+  03_FEATURES          src/features/{build,support,groups/*}.py        [DESATUALIZADO] "TF hardcoded" obsoleto
+                                                                       desde 2026-08-18 (dispatcher multi-grade
+                                                                       real, _sources.load_bars). "thresholds
+                                                                       globais" segue correto (AG-043). Gap
+                                                                       real hoje: banned_patterns.py --strict
+                                                                       FALHA de fato (2 magic numbers sem
+                                                                       noqa) -- AG-139 (aberto, alta)
   04_VOLATILIDADE      src/features/volatility.py                      ilha — só alimenta labels hoje
-  05_REGIME            src/regime/{build,classifier,stress}.py         depende de 03, corrigido de posição
-  06_BARREIRAS         (não existe separado — dentro de labels/)       refatoração real necessária
-  07_LABEL             src/labels/{triple_barrier,fill_model}.py       TF hardcoded 3x
+  05_REGIME            src/regime/{build,classifier,stress}.py         [DESATUALIZADO, ver §15.13] HMM k=4
+                                                                       ratificado por override executivo do
+                                                                       Manager (AG-114, 2026-08-22) como
+                                                                       candidato canônico, builder de produção
+                                                                       real (build_hmm.py) pronto e causal --
+                                                                       mas SEM consumidor real hoje (nem
+                                                                       backtest nem live; o gate no Risk
+                                                                       Engine que o consumiria foi desligado
+                                                                       no mesmo dia, ver 12_RISK_ENGINE abaixo)
+  06_BARREIRAS         (não existe separado — dentro de labels/)       refatoração real necessária, represada
+                                                                       deliberadamente pós-Data-Layer-100%
+                                                                       (confirmado ainda correto, 2026-08-22)
+  07_LABEL             src/labels/{triple_barrier,fill_model}.py       [DESATUALIZADO] "TF hardcoded 3x"
+                                                                       obsoleto desde AG-005 (2026-08-15) --
+                                                                       resolution_id/dollar-bar suportado
+                                                                       ponta a ponta desde AG-042/AG-116/
+                                                                       AG-124. Bug CRITICAL real encontrado E
+                                                                       corrigido 2026-08-22 (AG-100 F1: janela
+                                                                       mark_1m vazia sob rajada de dollar-bar,
+                                                                       crashava SOLUSDT/XRPUSDT R2/R3 --
+                                                                       backfill real re-rodado com sucesso,
+                                                                       5 símbolos x 2 resoluções). Gap real
+                                                                       hoje: verify_config_hash (B15) sem
+                                                                       caller no caminho real de consumo --
+                                                                       AG-140 (aberto, alta)
   07b_PESOS            src/labels/weights.py                           movido da ML LAYER
 
 ML LAYER
   08_SPLIT             src/validation/cpcv.py                          embargo_ms=347010000 (96,39h,
-                                                                       MEASURED, invariante a tf) -- AG-032/E1
-  09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD; stability.py órfã
-  09b_CALIBRACAO       (inline em alpha.py — não separável hoje)
-  10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe, não wired em pipeline.py
+                                                                       MEASURED, invariante a tf) -- AG-032/E1.
+                                                                       Gap real: 3 features expanding (T1_
+                                                                       FEATURE_IDS) quebram leakage.py/
+                                                                       pipeline.py sem bypass manual --
+                                                                       decisão de política pendente do Manager
+  09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD; stability.py órfã;
+                                                                       regime CONFIRMADO removido do vetor de
+                                                                       treino (Fase A, §15.13, 2026-08-21).
+                                                                       Gap real: zero persistência de
+                                                                       modelo/calibrador treinado -- AG-141
+                                                                       (aberto, alta, bloqueia qualquer
+                                                                       inferência sem retreino)
+  09b_CALIBRACAO       (inline em alpha.py — não separável hoje)       sem gate de amostra pequena (n_cal_eff)
+  10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe (CPCV wired em produção real via
+                                                                       pipeline.py; DSR/leakage existem mas
+                                                                       não são gate de nada) -- ver linha 1205
+                                                                       da tabela de cross-reference abaixo,
+                                                                       as duas se complementam, não contradizem
   11_META_MODEL        (não existe — PRD §6.8, fora da V1)              movido de 08 pra cá, pós-learner
   11b_DECISION_ENGINE  (não existe — PRD_V3_2 Parte VII §7.1-7.3)       AG-095 (2026-08-19): consome regime.tradeable
-                                                                        direto, ficou fora deste modelo até agora
+                                                                        direto, ficou fora deste modelo até agora.
+                                                                        AG-143 (2026-08-22, aberto): o Gate 01
+                                                                        especificado (§7.3) replicaria o mesmo
+                                                                        regime.tradeable recém-desligado do Risk
+                                                                        Engine por falta de sinal econômico --
+                                                                        decisão do Manager necessária ANTES do
+                                                                        1º commit deste estágio
 
 LIVE TRADING LAYER
-  12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         real, wired a regime (2026-08-21,
-                                                                        §15.13) via regime_tradeable:bool,
-                                                                        sem dimensão symbol/loop vivo
+  12_RISK_ENGINE       src/risk/{sizing,limits,kill_switch}.py         [DESATUALIZADO, ver §15.13] gate de
+                                                                        regime (control_01_regime_tradeavel)
+                                                                        DESLIGADO de evaluate_all() em
+                                                                        2026-08-22 (AG-114/AG-118, commit
+                                                                        3c0d83d) -- lift≈1,0 em 90 células,
+                                                                        sem sinal econômico detectável. Função
+                                                                        mantida definida/testada/exportada,
+                                                                        não removida. Sizing por ativo segue
+                                                                        ausente (nota antiga confirmada correta)
   13_EXECUCAO          src/exchange/adapter.py, src/execution/         ~0%, place_order NotImplementedError
-  14_MONITORAMENTO     src/monitoring/logging.py                       1 função, nunca chamada
-  15_FEEDBACK_POST_TRADE (não existe em nenhuma forma)                 100% green-field
+                                                                        (confirmado ainda correto, 2026-08-22)
+  14_MONITORAMENTO     src/monitoring/{logging,dollar_bar_drift}.py    [DESATUALIZADO] omite dollar_bar_drift.py
+                                                                        (315 linhas, 16 testes, existe desde
+                                                                        2026-08-16) -- real/testado mas sem
+                                                                        caller de produção, cobre só 1 alarme
+                                                                        auto-inventado (AG-042), não os 12
+                                                                        alertas/6 páginas de §13.1/§13.2.
+                                                                        logging.py continua "1 função nunca
+                                                                        chamada" (essa parte seguia correta)
+  15_FEEDBACK_POST_TRADE src/models/decomposition.py                  [DESATUALIZADO] "não existe em nenhuma
+                                                                        forma" era FALSO desde a criação da
+                                                                        própria tabela -- decomposition.py
+                                                                        existe desde 2026-08-09 (3 dias antes
+                                                                        desta tabela ter sido escrita), 3
+                                                                        famílias de caller real, decomposição
+                                                                        por trade individual ainda não exposta
+                                                                        (só agregada/por-path). Opera só sobre
+                                                                        trade SIMULADO de backtest -- versão
+                                                                        "live" gated por 13_EXECUCAO
 ```
 
 **Tabela de cross-reference formal, `§15.4` (prontidão de engenharia) ↔
@@ -1191,24 +1267,24 @@ LIVE TRADING LAYER
 
 | estágio `§15.4` | equivalente `§11.6` | nota |
 |---|---|---|
-| `01_BARRA` | M2 (Barra) | dollar bar canônico, 🟡 parcial — threshold calibrado em janela não-causal (deriva 18,18x medida) e `calibration_scope` sempre `"validation"`, nunca `"frozen_production"`; recalibração/política pendente de decisão do Manager (`AG-042` itens 2/3) |
-| `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1 |
-| `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro |
+| `01_BARRA` | M2 (Barra) | dollar bar canônico. **[DESATUALIZADO, ver linha `01_BARRA` da tabela ASCII acima]** recalibração causal FECHADA 2026-08-22 (`AG-124`); gap real hoje é `AG-138` (CLI legado não-causal por padrão) |
+| `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1. **[DESATUALIZADO]** `symbol` já exercitado desde 2026-08-21 (`AG-125`/`AG-133`) |
+| `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro. **[DESATUALIZADO]** "TF hardcoded" da tabela ASCII acima é obsoleto desde 2026-08-18 — gap real hoje é `AG-139` |
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
-| `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6) |
+| `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6). **[ATUALIZAÇÃO 2026-08-22]** resultado final: `hmm_gaussian_k4_v1` ratificado por override executivo (`AG-114`/`§15.13`), não por resolução estatística limpa — Gate 1/Gate 3 permanecem tecnicamente frágeis, registrado |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
-| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style |
+| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
 | `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
-| `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe |
+| `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
 | `11_META_MODEL` | V41-10 (Meta-Model+Grupo J) | ⬜ não iniciado, reaberto |
-| `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C), Decision Engine (esta linha, não implementado), Meta/Execução (não implementados) |
-| `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. Regime wired (`§15.13`, 2026-08-21) |
+| `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
+| `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
-| `14_MONITORAMENTO` | sem equivalente | `AG-079` fechado — zero código, comparar antes de construir inverte a ordem |
-| `15_FEEDBACK_POST_TRADE` | sem equivalente | `AG-079` fechado — identidade contábil, não estimador com candidatos |
+| `14_MONITORAMENTO` | sem equivalente | `AG-079` fechado — zero código digno de comparação tipo-M1 (continua correto), **não** zero código tout court — ver linha `14_MONITORAMENTO` da tabela ASCII acima (`dollar_bar_drift.py` real desde 2026-08-16), addendum `AG-080` 2026-08-22 |
+| `15_FEEDBACK_POST_TRADE` | sem equivalente | `AG-079` fechado — identidade contábil, não estimador com candidatos (continua correto). **[DESATUALIZADO]** "sem equivalente" refere-se à ausência de medição M-style, não à ausência de código — ver linha `15_FEEDBACK_POST_TRADE` da tabela ASCII acima (`decomposition.py` real desde 2026-08-09), addendum `AG-080` 2026-08-22 |
 | (sem estágio dedicado) | M3 (Timeframe) | `decision_tf` atravessa vários estágios, não é um estágio único |
 | (sem estágio dedicado) | M6 (Fator comum) | teste de hipótese cross-asset, não um estágio de pipeline — ✅ fechado |
 | (sem estágio dedicado) | V41-5 (PRD V4.2 escrito) | deliverable de documentação, não de código |

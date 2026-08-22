@@ -5993,6 +5993,40 @@ entries:
       a primeira é factual, a segunda era uma inferência minha não
       autorizada pelo Manager. Confundir as duas foi o erro desta entrada.
     status: "fechado -- §14 substituído por Road Map Vivo v2 (artefato visual), não aposentado sem sucessor; tabela de cross-reference §15.4↔§11.6 adicionada; correção de rumo aplicada 2026-08-17"
+    addendum_sweep_stage_readiness_audit_2026_08_22: >
+      Fan-out completo dos 15 estágios (skill `stage_readiness_audit`, 9
+      agentes independentes) achou `§15.4`/tabela cross-reference com
+      linhas desatualizadas em PELO MENOS 6 dos 9 clusters — o gap
+      estrutural que o `status` acima já apontava (nenhum processo força
+      revisão de `§15.4` quando um módulo ganha/perde caller) continua
+      real, 5 dias depois de `AG-123` reconfirmar o mesmo padrão pela 2ª
+      vez. Instâncias confirmadas por código nesta rodada:
+      `01_BARRA`/`02_DATA_CHECK` (linhas ~1155-1162/1194-1195) ainda
+      descrevem o estado PRÉ-`AG-124`/`AG-125`/`AG-133`/`AG-137`
+      (recalibração causal do dollar-bar já fechada 2026-08-22, mas a
+      tabela ainda cita deriva 18,18x como problema atual);
+      `03_FEATURES` (linha 1163) ainda diz "TF hardcoded", obsoleto desde
+      o dispatcher multi-grade de `3f1502e` (2026-08-18); `07_LABEL`
+      (linha 1167) idem, obsoleto desde `AG-005`/2026-08-15;
+      `05_REGIME`/`12_RISK_ENGINE` (linhas 1165/1181/1198/1208) ainda
+      dizem "regime wired" sem nota de que `control_01_regime_tradeavel`
+      foi desligado de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`,
+      commit `3c0d83d`) — mesmo achado que `AG-123` registra
+      separadamente (addendum lá, 3ª ocorrência confirmada);
+      `14_MONITORAMENTO`/`15_FEEDBACK_POST_TRADE` (linhas 1185-1186/
+      1210-1211) seguem dizendo "1 função nunca chamada"/"não existe em
+      nenhuma forma", omitindo `dollar_bar_drift.py` (existe desde
+      2026-08-16) e `decomposition.py` (existe desde 2026-08-09, ANTES
+      da própria tabela ter sido escrita). Nenhuma dessas 6 divergências
+      inverte uma decisão de negócio — todas são leitura desatualizada
+      de estado já avançado. Texto de correção sugerido por cada agente
+      está nos relatórios completos (não persistidos individualmente,
+      só nesta síntese) — aplicado diretamente em `§15.4` na mesma
+      sessão (ver commit desta rodada). `status` acima ("nenhum processo
+      novo garante...") permanece a leitura correta: a causa raiz segue
+      sem checklist de DoD que force a revisão — proposta não
+      implementada, decisão de processo pendente do Manager, agora com
+      3 ocorrências documentadas (`AG-080` → `AG-123` → esta).
 
   - id: AG-081
     date: "2026-08-17"
@@ -7115,6 +7149,53 @@ entries:
     resolution: null
     status: "aberto -- decisão de escopo JÁ TOMADA (ver decisao_manager_2026-08-21 abaixo), condição (recalibração causal AG-124) JÁ CUMPRIDA 2026-08-22 -- resta só o trabalho de execução: (1) adicionar R2/R3 a _BAR_SOURCE_BY_RESOLUTION (dataset.py:70), (2) backfill de labels R2/R3 x 5 símbolos. Não é mais item bloqueado por decisão, é item pronto pra execução."
 
+    addendum_backfill_real_2026_08_22: >
+      Item (2) do status acima CONCLUÍDO nesta sessão: backfill de
+      labels R2/R3 x 5 símbolos rodou até o fim, limpo, sobre dado real
+      -- confirmado via experiments/ag100_labels_r2_r3_backfill_summary.json
+      (generated_at 2026-08-22T12:46:59Z, code_version 7924f2c,
+      dry_run=false): n_total=2 (R2, R3), n_ok=2, n_error=0,
+      labels.parquet escrito para os 5 símbolos em ambas resoluções,
+      incluindo SOLUSDT/XRPUSDT (os 2 símbolos que crashavam antes do
+      fix F1 desta sessão -- janela mark_1m vazia sob rajada de
+      dollar-bar, guard `if hi_idx <= lo_idx: continue` em
+      src/labels/triple_barrier.py). Corrida anterior no mesmo dia
+      tinha sido cancelada pelo usuário (Ctrl+C) por spam de warning
+      (`labels.filters_fallback_used` disparando por data histórica em
+      vez de por chamada symbol/side) -- corrigido no mesmo lote (guard
+      `if not any(v.is_fallback for v in cache.values())`), sem
+      recorrência nesta corrida. Item (1) (`_BAR_SOURCE_BY_RESOLUTION`
+      em dataset.py:70) segue NÃO editado -- fora do escopo desta
+      sessão, seguinte da fila. F1/F2/F3 (guard de janela vazia,
+      contadores granulares de cauda incompleta, exc.add_note de
+      contexto) e o fix de log spam seguem TODOS não commitados no
+      working tree -- pendente de decisão do Manager sobre quando
+      commitar (CLAUDE.md: só commita quando pedido explicitamente)."
+
+    correcao_addendum_anterior_2026_08_22: >
+      CORREÇÃO ao addendum acima ("Item (1) ... segue NÃO editado"):
+      FALSO -- verificado agora contra `git log`/`git diff` reais, não
+      contra o texto do campo `status` deste registro (que estava
+      desatualizado). `_BAR_SOURCE_BY_RESOLUTION` (`src/models/
+      dataset.py:70`) JÁ FOI editado E JÁ ESTÁ COMMITADO -- commit
+      `7924f2c` ("AG-100 -- wireia R2/R3 no Feature/Regime Engine,
+      dispara backfill real de labels", 2026-08-22 08:59:41 -03:00,
+      ANTES da corrida de backfill que gerou
+      `ag100_labels_r2_r3_backfill_summary.json` -- mesmo
+      `code_version` citado nesse JSON). O commit já inclui o teste
+      atualizado (`test_build_modeling_frame_resolution_id_nao_
+      mapeado_levanta_valueerror`, trocado de R2 pra R99) e a versão
+      original do driver de diagnóstico (antes das correções F1/F2/F3
+      desta sessão, que seguem sim não commitadas). R2/R3 já está
+      desbloqueado ponta a ponta, dado real gerado, nada pendente no
+      item (1). Mesma classe de bug (`AG-080`/`AG-123`, prosa
+      dessincronizada do código) que esta sessão já documentou 3 vezes
+      em outros lugares -- aqui a fonte foi o campo `status` original
+      deste registro (escrito 2026-08-21, nunca atualizado após o
+      commit do dia seguinte) sendo citado sem reverificar contra
+      `git log` primeiro. Corrigido por addendum append-only, texto
+      original acima preservado."
+
     decisao_manager_2026-08-21: >
       Tabela 1 desta rodada (item 7, respondido junto com AG-124): "A se
       agrupado com 1B, senão redefina '100%'" -- Manager CONFIRMA R2/R3
@@ -7486,6 +7567,46 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisão do Manager sobre reescrita do gate (uma resolução por símbolo vs. SymbolAggregator), ver docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.2"
+    addendum_verificacao_brief_decisoes_residuais_2026_08_22: >
+      Duas sínteses externas independentes sobre
+      docs/brief_auditoria_externa_2026-08-22_decisoes_residuais_risco_regime.md
+      (§4.1 cache/consulta de posição, §4.2 teto de posições, §4.3 kill
+      switch de saída por regime) convergiram em tratar este gap como
+      pré-condição de ambas §4.1 e §4.2. Uma delas levantou um achado
+      adicional -- não coberto pelas 2 sínteses originais -- de que o
+      motor de BACKTEST atual estaria simulando linhas do mesmo símbolo
+      como posições independentes, herdando o mesmo defeito, e que isso
+      já estaria distorcendo resultados de backtest sendo gerados hoje
+      (tratado como o achado mais urgente da síntese, "P1").
+      **Verificado contra o código real nesta sessão e REFUTADO**: não
+      existe nenhum motor de backtest com estado de posição/margem/
+      equity hoje, nem acoplado nem independente. `src/backtest/`
+      contém só `fill_reconciliation.py` (877 linhas, hardcoded
+      BTCUSDT/15m ponta a ponta, sem suporte multi-símbolo) e
+      `_paths.py`; o harness real usado para avaliação
+      (`src/models/backtest_lite.py`) tem docstring próprio afirmando
+      "NÃO é o motor de backtest do projeto" -- só agrega `ret_net` já
+      calculado por `src.labels.triple_barrier` por `path_id` de CPCV,
+      zero modelagem de posição/conta. Não há, portanto, divergência
+      backtest-vs-produção hoje sobre este ponto -- o risco é
+      PROSPECTIVO: se/quando um motor de backtest com estado de conta
+      for construído, ele herda o mesmo erro de design do AG-096/AG-108
+      caso implemente o gate "por linha" em vez de "por símbolo". Ação
+      recomendada: quando esse motor for especificado, a correção
+      arquitetural deste AG-108 (LineState/SymbolExposure separados)
+      precisa valer para ele também, carimbada no design doc antes do
+      1º commit -- não é um bloqueio ativo hoje.
+      Achado irmão sobre K01 (`src/risk/kill_switch.py:102-108`,
+      `k01_daily_loss`): o denominador (`equity`) é parâmetro injetado
+      pelo chamador, não computado internamente, e não existe hoje
+      nenhum orquestrador de produção (`src/live/` vazio) que o
+      alimente -- logo K01 também não está "somando errado por linha"
+      hoje; é o mesmo risco latente, sem wiring pra se materializar
+      ainda. Ver novo achado AG-144 (`config/constants.yaml`/
+      `audit/evidence_ledger.yaml`) para o gap real e independente
+      encontrado no mesmo lote de verificação: a correlação ~0,91 entre
+      os 5 ativos, que sustenta a decisão de §4.2, não tem proveniência
+      declarada nem entrada no evidence_ledger.
 
   - id: AG-109
     date: "2026-08-20"
@@ -8887,6 +9008,31 @@ entries:
       estrutural (falta de GATILHO de sincronização, não só o sintoma
       desta vez) permanece aberto -- ver `status` abaixo.
     status: "aberto -- corrigido o sintoma pontual (nota em §15.2/§15.4), mas nenhum processo novo garante que o PRÓXIMO módulo que ganhar/perder caller dispare revisão da tabela de prontidão automaticamente. Proposta não implementada: checklist de \"Definition of Done\" de PR que toca `src/risk/`, `src/execution/`, `src/models/` ganha um item \"§15.2/§15.4 revisado?\" explícito -- decisão de processo, não de código, fica pro Manager."
+    addendum_3a_ocorrencia_2026_08_22: >
+      Confirmado pela 3ª vez, mesma classe exata: `Agent (stage_readiness_
+      audit, cluster Risk+Execução, fan-out 15 estágios 2026-08-22)`
+      achou `§15.4` linhas 1181-1182/1208 e `docs/SPRINT_LOG.md:3153-3154`
+      ainda dizendo "Regime wired (§15.13, 2026-08-21)" — o gate foi
+      DESLIGADO no mesmo dia desta auditoria (`control_01_regime_
+      tradeavel` removido de `evaluate_all()`, commit `3c0d83d`,
+      2026-08-22, por evidência de `AG-118` — lift≈1,0, sem sinal
+      econômico). O código está correto e bem documentado (`§15.13` do
+      próprio `PLANO_MESTRE` já tem a caixa de correção certa) — só o
+      resumo de topo (`§15.4`) e a tabela "Estado atual" do SPRINT_LOG,
+      exatamente os 2 lugares que um leitor apressado consultaria
+      primeiro, não foram sincronizados. `AG-080` (achado 1) → `AG-123`
+      (achado 2, este registro) → esta 3ª ocorrência, exatamente como
+      `AG-123::status` já havia previsto ("nenhum processo garante que o
+      PRÓXIMO módulo... dispare revisão"). Corrigido nesta mesma sessão
+      (ver commit). Achado colateral do mesmo agente: link morto dentro
+      da própria ledger — `§15.13`/`AG-114::status_gate3_aplicado_
+      2026_08_22` cita `AG-114::status_gate2_regime_desligado_2026_08_22`
+      como fonte, campo que não existe dentro do bloco `AG-114` (os
+      status reais são outros, ver entrada `AG-114`) — corrigir a
+      referência para apontar ao commit `3c0d83d` diretamente ou a um
+      campo real. A causa raiz (falta de checklist de DoD) segue sem
+      decisão do Manager, agora com 3 instâncias reais como evidência do
+      custo de não decidir.
 
   - id: AG-124
     date: "2026-08-21"
@@ -10210,3 +10356,228 @@ entries:
       reprocessing_validation.py` (item 22) já excluía esses arquivos
       da medição antes da deleção -- resultado do item 22 não muda.
     status: "fechado 2026-08-22 -- 104 arquivos stale deletados, verificado 0 restante. Gap honesto nos cadence_days dias iniciais de cada célula, documentado, não bloqueante."
+
+  - id: AG-138
+    date: "2026-08-22"
+    file: "src/data/build_dollar_bars.py::main (CLI, linha ~917), calibrate_dollar_threshold_for_validation"
+    related_file: "audit/architecture_gaps_log.yaml::AG-124, tools/diagnostics/run_ag124_production_reprocessing.py"
+    found_by: "Agent (stage_readiness_audit, cluster Barra+Data Check), fan-out 15 estágios 2026-08-22 -- F1"
+    gap: >
+      O módulo tem hoje 2 famílias de calibração: a legada (calibra
+      threshold sobre a MESMA janela que constrói -- o vazamento de
+      18,18x que AG-124 mediu e corrigiu) e a causal nova
+      (build_dollar_bars_walkforward, calibra só sobre janela
+      estritamente anterior). A causal é a que de fato gerou
+      data/capacity/dollar_bars_r{1,2,3}/ real em disco hoje -- mas só é
+      acionada por tools/diagnostics/run_ag124_production_
+      reprocessing.py, um script à parte. O próprio `if __name__ ==
+      "__main__"` de build_dollar_bars.py (main()) continua chamando
+      exclusivamente a família legada -- nenhuma opção de CLI aciona o
+      modo causal, e o --help não menciona AG-124 nem a alternativa.
+    severity: "alto"
+    layer: "data"
+    consequence: >
+      Um operador que rode `python -m src.data.build_dollar_bars
+      --symbol X --start Y --end Z` (o comando mais óbvio e documentado
+      do módulo) para regenerar/estender uma janela reintroduz
+      silenciosamente o mesmo vazamento temporal de 18,18x que levou 6
+      rodadas de auditoria externa para fechar -- sem nenhum aviso.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção recomendada pelo agente: subcomando --mode walkforward (exigindo --trailing-window-days/--cadence-days) que aciona build_dollar_bars_walkforward dentro do próprio módulo, e/ou logger.warning explícito no modo legado apontando pra AG-124/o modo causal. Decisão de prioridade e implementação ficam pro Manager -- achado de leitura, não implementado nesta rodada (auditoria só-leitura)."
+
+  - id: AG-139
+    date: "2026-08-22"
+    file: "src/features/support.py:168,285"
+    related_file: "tools/lint/banned_patterns.py"
+    found_by: "Agent (stage_readiness_audit, cluster Features), fan-out 15 estágios 2026-08-22 -- F1"
+    gap: >
+      banned_patterns.py --strict FALHA DE VERDADE hoje para
+      src/features/ -- 2 violações MAGIC_NUMBER reais (4.0 em
+      parkinson_vol, linha 168; 0.34/1.34 em yang_zhang_vol, linha 285).
+      Ambas são constantes de fórmula fechada da literatura (Parkinson
+      1980, Yang-Zhang 2000), mesma classe já isenta em código vizinho
+      do mesmo arquivo (garman_klass_vol, rogers_satchell_vol) via `#
+      noqa: magic-number -- <justificativa>`. A docstring de
+      yang_zhang_vol já documenta a isenção pretendida em prosa -- só
+      falta a anotação mecânica que o lint de fato lê. git blame: linha
+      285 é original de 2436b339 (2026-08-11), 11 dias sem a supressão
+      apesar do padrão já estabelecido ao lado; linha 168 foi tocada por
+      último em d592bc6 (2026-08-21, "fix mecânico 6 clusters") e ganhou
+      noqa:unguarded-ratio mas não noqa:magic-number.
+    severity: "alto"
+    layer: "features"
+    consequence: >
+      CLAUDE.md, Banned patterns: "Build quebra se violado." §16.10 item
+      1: "Nenhum literal numérico em código de pipeline." O gate de
+      pre-commit que deveria travar isso está, na prática, falhando
+      silenciosamente até alguém tocar o arquivo por outro motivo.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção trivial, 0 trials: adicionar `# noqa: magic-number -- constante de fórmula da literatura (Yang-Zhang 2000/Parkinson 1980), mesma classe de garman_klass_vol` nas 2 linhas, mesmo padrão já usado 6x no restante do pacote. Não implementado nesta rodada (auditoria só-leitura) -- fica pro Manager decidir se corrige na hora ou agrupa com outros achados mecânicos."
+
+  - id: AG-140
+    date: "2026-08-22"
+    file: "src/labels/triple_barrier.py::verify_config_hash (linha ~550)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-029, AG-128; src/models/dataset.py"
+    found_by: "Agent (stage_readiness_audit, cluster Barreiras+Label+Pesos), fan-out 15 estágios 2026-08-22 -- F1"
+    gap: >
+      verify_config_hash(labels, execution_config) implementa
+      literalmente o enforcement de B15 ("config_hash do label difere do
+      hash da execução"). Corretamente implementado e testado em
+      isolamento (4 testes unitários, tudo passa contra dado sintético).
+      Busca full-repo por qualquer chamador fora de src/labels/: ZERO
+      resultados -- em particular src/models/dataset.py (o módulo que de
+      fato carrega labels.parquet para montar o frame de treino/execução,
+      build_modeling_frame) não referencia config_hash em lugar nenhum.
+      3ª instância confirmada do mesmo padrão neste exato pacote:
+      AG-029 (assert_label_invariants nunca chamada no caminho real até
+      corrigido) e AG-128 (record_experiment nunca chamado até
+      corrigido) -- ambas já resolvidas; esta é a 3ª, ainda aberta.
+    severity: "alto"
+    layer: "labels/models"
+    consequence: >
+      Um mismatch de config_hash entre o labels.parquet consumido e o
+      LabelConfig que o pipeline de features/execução assume passaria
+      hoje despercebido para o treino do Alpha -- exatamente o cenário
+      que B15 (banned pattern) existe para impedir, com a correção
+      prescrita já escrita e testada, só não conectada.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção recomendada: wireup em src/models/dataset.py (ou onde o consumo real de labels.parquet para treino/backtest acontece) chamando verify_config_hash(labels, execution_config) antes de montar o frame, mesma disciplina de falha-alto já usada em assert_label_invariants/apply_weights. Não implementado nesta rodada (auditoria só-leitura)."
+
+  - id: AG-141
+    date: "2026-08-22"
+    file: "src/models/alpha.py::SideModelResult, src/models/pipeline.py::run_layer1_sprint"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §4.8/§4.9 (Status: Proposed)"
+    found_by: "Agent (stage_readiness_audit, cluster Learner+Calibração), fan-out 15 estágios 2026-08-22 -- F1"
+    gap: >
+      Nenhuma persistência de booster XGBoost nem calibrador isotônico
+      treinados -- busca full-repo por .ubj/save_model/pickle.dump/
+      joblib.dump/calibrator.json em src/: zero ocorrências. O modelo/
+      calibrador de cada fold existe só durante a execução de
+      run_layer1_sprint; ao final só predictions.parquet (probabilidades
+      já calibradas de um conjunto de teste fixo) e JSONs de diagnóstico
+      sobrevivem. Não há caminho de código para recarregar
+      modelo/calibrador de um fold sem retreinar do zero.
+    severity: "alto"
+    layer: "models"
+    consequence: >
+      Bloqueia por construção qualquer inferência fora do processo de
+      treino -- 13_EXECUCAO ao vivo e qualquer paper-trading não têm
+      caminho possível sem isso, independente de qualquer outra decisão
+      de escopo. ADR-001 §4.8/§4.9 já especifica o artefato (Status:
+      Proposed, não ratificado formalmente, mas é requisito básico de
+      produção-readiness genérico, não só uma proposta específica).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção recomendada: persistir booster (.ubj) + calibrador (coeficientes, não pickle sklearn) por fold x lado x variante ao final de fit_side_model/write_all_fold_diagnostics, .tmp->fsync->rename (B29, já padrão do módulo). Sequenciamento sugerido pelo agente: junto da migração LightGBM (PLANO_MESTRE §15.14, já represada) para não abrir 2 janelas separadas de 'código não bate com o que está rodando'. Decisão de quando fica pro Manager."
+
+  - id: AG-142
+    date: "2026-08-22"
+    file: "src/models/monotonic.py::FeatureICResult.ic_by_env, src/models/alpha.py::fit_side_model"
+    related_file: "docs/audit_discarded_diagnostics.md, src/models/pipeline.py::run_layer1_sprint (linha ~658-675)"
+    found_by: "Agent (stage_readiness_audit, cluster Learner+Calibração), fan-out 15 estágios 2026-08-22 -- F2, reconfirmação de docs/audit_discarded_diagnostics.md achado #1"
+    gap: >
+      ic_by_env (IC por ambiente, por fold x lado x feature) de 30
+      side-models (15 folds x 2 lados) nunca sai de memória -- só um
+      resumo parcial (constraint/mean_ic/n_consistent, sem ic_by_env/
+      n_envs_with_data/forced_economic) do FOLD 0 APENAS é escrito em
+      alpha_layer1_report.json. Já catalogado em docs/audit_discarded_
+      diagnostics.md (prioridade ALTA, "decisão de corrigir é de outra
+      rodada") -- reconfirmado nesta auditoria: estrutura não mudou,
+      ainda 1 de 30 side-models. Recuperar essa informação hoje exige
+      retreino completo do CPCV (~117s medido).
+    severity: "alto"
+    layer: "models"
+    consequence: >
+      Mesma classe #2 já catalogada em audit_engineering (diagnóstico
+      calculado e descartado, nunca persistido) -- exatamente o irmão do
+      bug já corrigido em gain_by_column. Qualquer investigação futura
+      de "por que a Camada 1 zerou restrição em X" exige retreino
+      completo em vez de leitura de artefato.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção recomendada: escrever models/{model_id}/diagnostics/fold_{fold_id}_{side_label}_ic_by_env.json (mesmo padrão atômico de write_fold_diagnostics_atomic) com o FeatureICResult completo dos 30 side-models. Não implementado nesta rodada (auditoria só-leitura)."
+
+  - id: AG-143
+    date: "2026-08-22"
+    file: "(código ainda não existe -- src/decision/ ou equivalente, 11b_DECISION_ENGINE)"
+    related_file: "PRD_V3_2_UNIFICADO.md Parte VII §7.1-7.5; audit/architecture_gaps_log.yaml::AG-095, AG-114, AG-118; src/risk/limits.py (commit 3c0d83d)"
+    found_by: "Agent (stage_readiness_audit, cluster Validação+Meta+Decision), fan-out 15 estágios 2026-08-22 -- Lente 5.C, achado novo não coberto por AG-095"
+    gap: >
+      O Gate 01 do Decision Engine especificado em PRD_V3_2_UNIFICADO.md
+      §7.3 ("regime.tradeable == False -> NO_SIGNAL") é estruturalmente
+      IDÊNTICO ao control_01_regime_tradeavel que acabou de ser
+      desligado do Risk Engine no mesmo dia desta auditoria (commit
+      3c0d83d, 2026-08-22), por AG-118 ter medido lift≈1,0 em 90 células
+      -- evidência negativa e definitiva de que gatear por bucket de
+      stress do HMM não tem sinal econômico detectável. O Decision
+      Engine ainda não existe (0% código, confirmado por busca ampla) --
+      mas se implementado seguindo o §7.3 original literalmente, nasceria
+      repetindo, do zero, um mecanismo já medido como sem efeito no gate
+      irmão.
+    severity: "alto"
+    layer: "risk/decision -- especificação, não código (código não existe ainda)"
+    consequence: >
+      Risco de reintroduzir, 2 sprints depois, o mesmo erro que AG-114
+      já levou a Trilha B inteira para corrigir uma vez -- exatamente o
+      padrão que a "predição pré-declarada" no docstring de
+      src/risk/limits.py já pede para nunca repetir sem investigação
+      prévia (se um Sharpe melhorar depois que um gate de regime for
+      religado sem nova evidência, é red flag de leakage, não
+      vindicação).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager necessária ANTES do primeiro commit do módulo, não depois: manter o Gate 01 conforme §7.3 original (repetindo o mecanismo já desligado), remover até uma metodologia de regime genuinamente validada existir (espelhando a decisão já tomada no Risk Engine), ou implementar mas deixar desligado por padrão (mesmo padrão de control_01_regime_tradeavel: função definida/testada/exportada, não chamada). Nenhuma linha de código do Decision Engine deveria ser escrita antes desta decisão."
+
+  - id: AG-144
+    date: "2026-08-22"
+    file: "PRD_V4_1.md §2.8 (I3, correlação de log-retornos 15m entre os 5 ativos); config/constants.yaml::aggregate_risk_max"
+    related_file: "src/risk/limits.py::control_19_risco_agregado; audit/evidence_ledger.yaml"
+    found_by: "Verificação de código sob Fase 5 de audit_brief, processando síntese de 2 pareceres externos sobre docs/brief_auditoria_externa_2026-08-22_decisoes_residuais_risco_regime.md"
+    gap: >
+      A correlação ~0,91 entre os 5 ativos do universo (pares de
+      0,861 a 0,951, PRD_V4_1.md §2.8 "I3") é o número que sustenta
+      TODA a justificativa de existência do controle 19
+      (`control_19_risco_agregado`, risco agregado ponderado por
+      correlação) e é citado repetidamente como premissa em decisões de
+      risco (`config/constants.yaml:128-144`, `PRD_V4_1.md:202,212,
+      424,569,591`). Verificado nesta sessão: (a) a janela/período de
+      medição NUNCA é declarado na própria seção que o cita -- §2.8 não
+      reafirma a janela comum do documento (2021-12-01→2026-08-01)
+      citada alhures, é inferência, não fato registrado; (b) nenhuma
+      entrada em `audit/evidence_ledger.yaml` (achado estatístico
+      medido, que é exatamente o que este número é); (c) nenhum
+      `experiments/*.json` nem script em `src/analysis/` reproduz essa
+      matriz -- não há como remedir/confirmar sem reconstruir do zero;
+      (d) o valor ~0,91 em si NÃO passa pelo regime de proveniência
+      §16.10 -- `config/constants.yaml:128-144` declara
+      `sweep_required: true` só para o LIMIAR derivado
+      (`aggregate_risk_max`), nunca para ρ, que segue sem
+      `provenance`/`class`/`review_by` próprios; (e) nenhuma evidência
+      de estabilidade (múltiplas janelas, teste de robustez) -- é um
+      número único embutido em prosa.
+    severity: "alto"
+    layer: "risk -- constante numérica que gate um controle de produção sem proveniência declarada, violando a disciplina que CLAUDE.md §Proveniência exige de toda constante nova"
+    consequence: >
+      `control_19_risco_agregado` está hoje sempre `NOT_COMPUTABLE` em
+      produção (confirmado, `src/risk/limits.py:486-524`, sem
+      `position_risks`/`correlation_matrix` de entrada), então este gap
+      não é um bloqueio ativo agora. Mas é pré-condição real da decisão
+      residual §4.2 do brief 2026-08-22 (teto de posições simultâneas
+      vs. controle de correlação) -- uma das 2 sínteses externas propôs
+      que "com correlação ~0,91, teto simples e teto ponderado
+      convergem" como argumento central para tratar §4.2 como um único
+      controle; esse argumento depende inteiramente de um número que
+      hoje não teria proveniência suficiente pra passar no próprio gate
+      de CI do projeto (`check_constants_provenance.py`) se fosse
+      declarado como constante nova agora. Decidir a arquitetura de
+      §4.2 sobre esse número sem antes remedir com janela declarada e
+      registrar em `evidence_ledger.yaml` repete o padrão que este
+      projeto já foi mordido por (B23, "faixa esperada inventada").
+      Remedição é barata -- 0 trials, contagem direta sobre OHLC já
+      existente, mesma disciplina da Lente FE de audit_engineering.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- recomendação: remedir ρ com janela declarada (ex. últimos 90d/180d/365d, reportar as 3) sobre dado já existente antes de decidir §4.2 sobre 1 controle vs. 2; registrar resultado em audit/evidence_ledger.yaml com proveniência MEASURED; só então avaliar se '1 controle agregado' ainda se sustenta. Não bloqueia nada hoje (controle 19 inerte), mas bloqueia decidir §4.2 com confiança."
