@@ -3207,13 +3207,50 @@ e o que se registra é a dependência (F5 do Meta depende da integração do
 `AG-141` no Alpha). É exatamente o furo que "commits ANTES de tocar em docs"
 existe para prevenir.
 
-**Status: 17 decisões travadas, ZERO linhas implementadas**
-(`docs/meta_model_design_doc_2026-08-22.md` v2, `PLANO_MESTRE_PRINCE2.md`
-§15.19). Antes de `src/models/meta.py` existir: persistir `tau` (`AG-150`, 1
-coluna em `src/models/alpha.py`), diagnóstico de saturação isotônica, e o
-**Gate E0** — tudo sobre artefato já em disco, zero treino, zero
-`N_lifetime`. Falha do E0 em ≥2 dos 5 paths ⟹ o Meta sai do roadmap com
-evidência registrada em `audit/evidence_ledger.yaml`.
+**E então a v2 foi submetida a `project_assurance` — e não passou.** A
+auditoria adversarial de 3 flancos tinha elevado muito o nível factual, mas a
+v2 que nasceu dela **nunca foi revisada por ninguém**. Dois revisores
+independentes (PRINCE2 §6.4, sem acesso ao raciocínio do produtor)
+re-derivaram ~110 alegações `arquivo:linha`: **~102 corretas** — a acurácia
+factual se sustentou — e **3 CRITICAL + 4 HIGH** estruturais. Veredito: *"não
+é base sólida para implementar"*.
+
+O pior deles: **`group_matched`, o braço de CV que a v2 apresentava como
+"estritamente melhor, cegueira total", não tinha purge nem embargo — era o
+único dos dois sem B09.** `generate_splits` rejeita `n_test_groups != 2`
+(`src/validation/cpcv.py:544-548`), logo sob 1 grupo de teste não existe
+`CPCVSplit` nem `train_idx` — o único objeto que carrega purge; e as linhas de
+treino do Meta ficam no `test_mask` do fold doador
+(`src/validation/cpcv.py:565`). A v2 ainda fechara a porta para a correção ao
+declarar que `edges_ms` seria a "única mudança em `cpcv.py`". O segundo: o
+**Gate E0 não tinha esquema de permutação declarado**, e o único precedente do
+repo é i.i.d. linha a linha (`src/models/baselines.py:819`) — com rótulos
+sobrepostos e regimes em blocos contíguos, isso faria **o gate que decide se o
+Meta existe ser o mais fácil de passar do documento inteiro**. O terceiro: o
+nulo A2 replicava **1 de 5** fontes de otimismo, com o problema declarado
+resolvido.
+
+**A lição de processo vale mais que os achados.** Em
+`docs/meta_model_design_doc_2026-08-22.md`, a versão anterior diagnosticou o
+próprio padrão de falha com precisão cirúrgica — *"riscos identificados com
+precisão e depois mitigados por declaração em vez de mecanismo"* — e
+**repetiu o padrão exatamente nas três peças que apresentava como suas
+maiores conquistas**. Uma
+auditoria adversarial genérica não pegou isso; foi preciso uma segunda rodada,
+com skill diferente e mandato diferente (integração, não qualidade). Duas
+lentes distintas não foram redundância — foram o que separou um documento que
+parecia pronto de um que estava.
+
+**Status: v3, 17 decisões travadas, ZERO linhas implementadas**
+(`docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md`
+§15.19). O caminho antes de `src/models/meta.py` existir foi **reordenado pela
+revisão**: travar e **validar** o nulo do E0 primeiro, depois o purge
+cross-símbolo (`AG-151`), depois o diagnóstico de saturação isotônica, e só
+então E0-piloto — rodar o gate antes de o nulo estar calibrado é gastar o
+gate. `AG-150` (persistir `tau`) saiu do "caminho de 20%": `tau` só existe
+dentro do processo de treino, então popular exige **retreinar**, e a v2
+afirmava custo zero. Falha do E0 ⟹ o Meta sai do roadmap com evidência em
+`audit/evidence_ledger.yaml`. AGs novos da revisão: `AG-153` a `AG-156`.
 
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-22)
@@ -3239,7 +3276,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
-| **Meta Model** | **Desenho ponta a ponta TRAVADO e AUDITADO (v2), ZERO implementado** — 2026-08-22. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra. Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
+| **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra. Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |

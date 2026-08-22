@@ -11281,3 +11281,140 @@ entries:
       agora também pontas/degenerado) de DEDUZIDO (não se aplica mais --
       tudo agora é medido).
     status: "fechado -- 2 testes de caso de borda adicionados no mesmo lote que AG-146/AG-147"
+
+  # AG-153..AG-156: abertos pela revisão `project_assurance` do design doc v2
+  # do Meta-model (2026-08-22, 2 revisores independentes). NENHUM é gap do
+  # documento -- esses foram corrigidos na v3. Todos são gaps do CÓDIGO/
+  # PROJETO, que existiriam mesmo sem o Meta.
+
+  - id: AG-153
+    date: "2026-08-22"
+    file: "src/validation/cpcv.py:544-548 (generate_splits), :303-337 (_round_robin_1_factorization/_path_assignment), :562-606 (construção de purge/embargo)"
+    related_file: "docs/meta_model_design_doc_2026-08-22.md §4.3 (v3)"
+    found_by: "Agent Project Assurance (revisão independente do design doc v2 do Meta-model), PRINCE2 §6.4"
+    gap: >
+      Todo o purge/embargo do projeto está ACOPLADO à geometria de PARES de
+      grupos de teste. `generate_splits` levanta `CPCVError` incondicionalmente
+      se `n_test_groups != 2` (`:544-548`); `_path_assignment` é um dict
+      chaveado por pares (`:329-337`); `_round_robin_1_factorization` exige
+      `n` par e devolve pares (`:311-326`). O purge por `t1` e o embargo só
+      existem dentro de `CPCVSplit.train_idx`, que só é construído nessa
+      geometria. NÃO existe primitiva reusável de "purgar em torno de um bloco
+      temporal arbitrário" independente do esquema de split.
+    severity: "medio"
+    layer: "validation -- limita o espaço de desenho de CV do projeto inteiro"
+    consequence: >
+      Qualquer esquema de validação que não seja exatamente "2 grupos de teste"
+      fica SEM purge e SEM embargo, e sem aviso -- não há erro, não há warning;
+      o código simplesmente não tem onde buscar as linhas purgadas. Foi
+      exatamente o que quase entrou em produção pelo Meta-model: o desenho v2
+      propunha um braço de CV com 1 grupo de teste (`group_matched`),
+      apresentado como "estritamente melhor / cegueira total", e que teria sido
+      o ÚNICO dos dois braços sem B09 -- o banned pattern que o próprio
+      documento chamava de "a correção mais importante" da seção de
+      enforcement. Detectado só pela revisão independente. O custo real não é o
+      Meta (que removeu o braço); é que qualquer CV futura fora de pares
+      (walk-forward com purge, leave-one-block-out, CV aninhada) esbarra na
+      mesma ausência.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado: extrair `purge_around_block(t0_ms, t1_ms, block_start_ms, block_end_ms, embargo_ms) -> mask` das linhas 578-606 de generate_splits, deixando generate_splits como um CALLER dela em vez de dono da lógica. Refator puro, testável contra os splits atuais por igualdade bit-a-bit (marcador `golden`). Não é urgente enquanto todo CV do projeto for CPCV de pares -- vira pré-requisito no instante em que qualquer outro esquema for proposto."
+
+  - id: AG-154
+    date: "2026-08-22"
+    file: "src/models/pipeline.py:72-98 (write_predictions_atomic), src/models/alpha.py:501-519 (PREDICTIONS_SCHEMA_COLUMNS)"
+    related_file: "src/io/schema.py, src/io/artifact.py (§15.16 -- writer versionado que EXISTE e não é usado aqui); AG-150 (tau descartado)"
+    found_by: "Agent Project Assurance (revisão independente do design doc v2 do Meta-model), PRINCE2 §6.4"
+    gap: >
+      `predictions.parquet` é escrito como parquet PURO, sem manifesto e sem
+      campo de versão de schema (`write_predictions_atomic`,
+      `pipeline.py:72-98`). O `schema_version: 1` que existe no projeto vive no
+      JSON de diagnóstico por fold (`pipeline.py:169`) e no relatório da rodada
+      (`:829`) -- NÃO no artefato de predições. Há 5 `predictions.parquet` em
+      disco hoje (`predictions/alpha/{alpha_c0_baseline_v1,
+      alpha_c0_baseline_v1_t05_janela_comum, alpha_c1_e02f_short_unforced_v1,
+      alpha_c1_v1, alpha_c1_v1_t05_janela_comum}`), todos sem qualquer
+      marcador de versão.
+    severity: "medio"
+    layer: "models -- contrato de artefato sem versionamento, num artefato consumido por 7 leitores"
+    consequence: >
+      Qualquer evolução de schema do artefato de predições é insegura por
+      construção: um leitor não consegue distinguir "arquivo de uma versão
+      anterior" de "arquivo corrompido" nem de "arquivo de uma versão futura".
+      Bloqueia AG-150 (adicionar `tau_alpha`) de ser uma mudança segura -- e
+      esse é o caso concreto e imediato. O desenho v2 do Meta-model chegou a
+      especificar "requer bump de `schema_version` do artefato", o que era
+      inexecutável: não há o que bumpar. Nota: a infraestrutura correta JÁ
+      EXISTE no repo (`src/io/schema.py`/`artifact.py`, ADR-001 action item 2,
+      §15.16) e simplesmente não é usada por este writer -- é caso de adotar,
+      não de construir.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado: `write_predictions_atomic` passa a emitir manifesto ao lado do parquet (ou migra para `src.io.artifact.write_artifact`), com `schema_version`, `model_id`, `code_version`, `config_hash`. Regra de leitura correspondente: manifesto AUSENTE levanta erro DISTINTO de versão desconhecida -- um contrato que só trata 'versão desconhecida' deixa 'versão ausente' cair no ramo default, que é a degradação silenciosa que ele existe pra impedir. Sequenciar junto do retreino do Alpha já represado, pra não criar uma 2ª janela de artefatos de schema misto."
+
+  - id: AG-155
+    date: "2026-08-22"
+    file: "config/constants.yaml (busca por cadência de retreino -- ausente), src/models/pipeline.py::run_layer1_sprint"
+    related_file: "CLAUDE.md banned pattern B22; docs/meta_model_design_doc_2026-08-22.md §14.1 (v3)"
+    found_by: "Agent Project Assurance (revisão independente do design doc v2 do Meta-model), PRINCE2 §6.4"
+    gap: >
+      B22 (`CLAUDE.md`) proíbe "retreinar após sequência de perdas" e exige
+      "cadência fixa declarada a priori". NÃO EXISTE cadência de retreino de
+      modelo declarada em lugar nenhum do repositório: busca por `cadence` em
+      `config/constants.yaml` devolve apenas `dollar_bar_walkforward_cadence_
+      days` (calibração de threshold de barra, outra coisa), e não há constante
+      nem campo de config que governe quando o Alpha é retreinado. O que existe
+      é ad hoc -- o retreino acontece quando alguém decide rodar
+      `run_layer1_sprint`.
+    severity: "medio"
+    layer: "models -- B22 sem enforcement nem declaração; afeta Alpha hoje, Meta quando existir"
+    consequence: >
+      B22 é um banned pattern sem contraparte declarada: não há como violá-lo
+      formalmente porque não há regra escrita, e também não há como cumpri-lo
+      de forma auditável. Enquanto o retreino for manual e infrequente o risco
+      é latente; ele se materializa quando houver P&L real e a tentação de
+      "retreinar porque as últimas semanas foram ruins" -- exatamente o cenário
+      que B22 nomeia. Achado colateral relevante: o design doc v2 do Meta-model
+      afirmava ter RESOLVIDO B22 por desenho, acoplando o retreino do Meta ao
+      do Alpha. Não resolve -- acoplamento propaga o gatilho, não o disciplina;
+      se o Alpha retreinar por sequência de perdas, os dois violam B22 juntos.
+      A afirmação foi revertida na v3 do documento.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- aguarda decisão do Manager (escopo/negócio, PLANO_MESTRE §6.5): declarar a cadência de retreino do Alpha como constante com proveniência (calendário fixo? por N barras? por evento de dado?), e o gatilho permitido. O enforcement de coerência Alpha<->Meta desenhado em §14.1 do design doc (gravar `alpha_model_id` no artefato do Meta e o consumidor comparar) é bom e independente desta decisão -- resolve a janela de inconsistência, não a cadência."
+
+  - id: AG-156
+    date: "2026-08-22"
+    file: "src/models/baselines.py:819 (run_b4_feature_shuffle)"
+    related_file: "audit/evidence_ledger.yaml::alpha-legado-auc-abaixo-do-nulo-permutado; src/labels/weights.py:40-116 (concurrency/uniqueness)"
+    found_by: "Agent Project Assurance (revisão independente do design doc v2 do Meta-model), PRINCE2 §6.4"
+    gap: >
+      `run_b4_feature_shuffle` permuta as features com
+      `rng.permutation(X_perm.shape[0])` -- i.i.d., linha a linha -- sobre um
+      dataset cujos rótulos triple-barrier SE SOBREPÕEM (é o motivo de
+      existirem `concurrency`/`uniqueness` em `weights.py` e purge/embargo em
+      `cpcv.py`) e cujas features têm autocorrelação temporal forte por
+      construção (janelas móveis, quantis expansivos). A permutação i.i.d.
+      destrói a estrutura temporal de ambos os lados.
+    severity: "baixo"
+    layer: "models/baselines -- nulo estatístico com esquema de permutação que não preserva a estrutura de dependência do dado"
+    consequence: >
+      QUALIFICAÇÃO QUE MUDA A LEITURA, e por isso a severidade é baixa: para o
+      B4 especificamente, o viés vai na direção CONSERVADORA. Features
+      permutadas i.i.d. perdem a autocorrelação que um modelo poderia explorar,
+      então o nulo fica MAIS FÁCIL de bater que um nulo com estrutura
+      preservada. Logo o achado registrado em `evidence_ledger.yaml`
+      (`auc_real_pooled = 0,49776` < `auc_permuted_pooled = 0,49998`) NÃO é
+      invalidado -- ao contrário, é reforçado: o Alpha ficou abaixo de um nulo
+      otimista. O que importa aqui é o PRECEDENTE: este é o único esquema de
+      permutação implementado no repo, e é o que seria copiado por qualquer
+      teste de permutação futuro. O design doc v2 do Meta-model especificou um
+      Gate E0 baseado em nulo permutado sem declarar o esquema -- herdar este
+      teria produzido um nulo de variância governada por linhas em vez de
+      blocos, com p95 estreito demais, fazendo o gate mais consequente do
+      desenho passar praticamente qualquer coisa. Corrigido na v3 do documento
+      (circular-shift por bloco + validação obrigatória do nulo); este AG
+      registra a fonte do padrão.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- prioridade baixa. Fix recomendado quando alguém tocar em B4: permutação por BLOCO (circular-shift com comprimento derivado da escala de dependência já usada no projeto -- largura de grupo do CPCV ou `cpcv_embargo_ms`), e reportar que o valor de `auc_permuted` muda com o fix. NÃO refazer a medição do Alpha legado só por isso (motor descontinuado, §15.19). Regra geral recomendada: todo teste de permutação sobre dado com rótulo sobreposto declara o esquema explicitamente."

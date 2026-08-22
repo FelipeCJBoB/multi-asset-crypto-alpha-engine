@@ -3693,6 +3693,74 @@ relatório. Registrado em `audit/evidence_ledger.yaml` **com a qualificação**,
 por ser medição estatística real que não pode desaparecer, e por definir o
 que o retreino precisa superar.
 
+#### G. `project_assurance` sobre a v2 — a revisão que a auditoria não substituiu (v3)
+
+A v2 incorporou 40 correções de uma auditoria adversarial e **nunca foi
+revisada**. Rodada `project_assurance` (PRINCE2 §6.4, 2 revisores
+independentes sem acesso ao raciocínio do produtor, ~110 alegações
+`arquivo:linha` re-derivadas): **~102 corretas** — a acurácia factual da v2 se
+sustentou —, mas **3 CRITICAL + 4 HIGH** estruturais. Veredito: *"não é base
+sólida para implementar"*. A v3 é a correção. Detalhe: §20 do design doc.
+
+**Os três CRITICAL:**
+
+1. **`group_matched` não tinha purge nem embargo.** O braço que a v2
+   apresentava como "estritamente melhor, cegueira total" era o **único dos
+   dois sem B09**. Motivo verificado no código: `generate_splits` levanta
+   `CPCVError` incondicionalmente se `n_test_groups != 2`
+   (`src/validation/cpcv.py:544-548`) ⟹ sob `|T_s| = 1` não existe
+   `CPCVSplit`, e com ele não existe `train_idx` — o único objeto que carrega
+   purge + embargo; e as linhas de treino do Meta ficam no `test_mask` do
+   fold doador, excluídas de `train_candidate_mask` (`:565`). A v2 ainda
+   fechou a porta para a correção ao declarar que `edges_ms` seria a "única
+   mudança em `cpcv.py`". **Removido do caminho crítico**; vira item opcional
+   com custo declarado (primitiva de purge nova + regra de doador do lado do
+   teste + contabilidade de caminhos refeita).
+2. **O Gate E0 não tinha esquema de permutação declarado** — só *que* o
+   estimador é reajustado dentro da permutação. O único precedente do repo é
+   i.i.d. linha a linha (`src/models/baselines.py:819`); com rótulos
+   sobrepostos e regimes que o próprio documento descreve como blocos
+   contíguos de calendário, o nulo teria variância governada pelo número de
+   **linhas** em vez de **blocos** ⟹ p95 estreito demais ⟹ **o gate que
+   decide se o Meta existe seria o mais fácil de passar do documento**.
+   Travado: circular-shift por bloco, comprimento = largura de grupo do CPCV,
+   **mais validação obrigatória do próprio nulo** (rodar sobre feature sem
+   sinal mas com a mesma estrutura de blocos; taxa de PASS ≈ 5%, senão E0 não
+   roda).
+3. **O nulo A2 replicava 1 de 5 fontes de otimismo**, e a v2 declarava o
+   problema resolvido. Enumeração exaustiva das 5, com enforcement por
+   **função de busca compartilhada** entre A1 e A2 — uma escolha nova entra
+   no nulo automaticamente, sem depender de alguém lembrar.
+
+**Reversão de uma decisão registrada na alínea anterior desta seção:** a v2
+concluiu que a cadência de retreino Alpha↔Meta "não vira AG, foi resolvida por
+desenho". **Errado.** Acoplar o Meta ao Alpha é restrição de *acoplamento*,
+não *cadência* — se o gatilho do Alpha for sequência de perdas, B22 é violado
+nos dois. E não existe cadência de retreino de modelo declarada em lugar
+nenhum do repo (`grep` por `cadence` em `constants.yaml` devolve só
+calibração de barra). **O Alpha tem a mesma lacuna.** Vira `AG-155`,
+escalado ao Manager como decisão de escopo.
+
+**AGs abertos pela revisão** — nenhum é gap do documento (corrigidos na v3);
+todos são do código/projeto: `AG-153` (não existe primitiva de purge por
+bloco arbitrário — todo purge está acoplado à geometria de pares, limita o
+espaço de desenho de CV do projeto), `AG-154` (`predictions.parquet` sem
+manifesto nem versão — bloqueia `AG-150` de ser mudança segura),
+`AG-155` (cadência de retreino), `AG-156` (nulo i.i.d. em B4 — **com a
+qualificação de que o viés vai na direção conservadora**, logo o achado do
+Alpha legado no `evidence_ledger` não é invalidado, é reforçado).
+
+**O achado que vale registrar como lição de processo:** a v2 diagnosticou o
+padrão de falha da v1 com precisão — *"riscos identificados com precisão e
+depois mitigados por declaração em vez de mecanismo"* — e **repetiu o padrão
+exatamente nas três peças que apresentava como suas maiores conquistas**. Uma
+auditoria adversarial genérica elevou muito o nível factual e **não** aplicou
+o critério que o próprio documento havia estabelecido às peças que ela mesma
+motivou. Foi preciso uma segunda rodada, com skill diferente e mandato
+diferente (integração, não qualidade), para pegar isso. **Duas rodadas de
+revisão com lentes distintas não foi redundância — foi o que separou um
+documento que parecia pronto de um que estava.**
+
 ---
 
 ## Fontes desta pesquisa
@@ -3711,6 +3779,33 @@ que o retreino precisa superar.
 
 ## Changelog
 
+- **v3.27 (2026-08-22)** — **`project_assurance` sobre o design doc v2 do
+  Meta-model: 3 CRITICAL + 4 HIGH, veredito "não é base sólida para
+  implementar". v3 escrita.** Detalhe: `§15.19` alínea G. Os três CRITICAL:
+  (1) **`group_matched` não tinha purge nem embargo** — o braço anunciado
+  como "estritamente melhor, cegueira total" era o único dos dois **sem
+  B09**, porque `generate_splits` rejeita `n_test_groups != 2`
+  (`cpcv.py:544-548`) e as linhas de treino do Meta ficam no `test_mask` do
+  doador; removido do caminho crítico; (2) **Gate E0 sem esquema de
+  permutação declarado** — o precedente do repo é i.i.d.
+  (`baselines.py:819`), que com rótulos sobrepostos e regimes em blocos
+  contíguos faria o gate mais consequente do desenho passar praticamente
+  qualquer coisa; travado circular-shift por bloco + validação obrigatória do
+  próprio nulo; (3) **nulo A2 replicava 1 de 5 fontes de otimismo** com o
+  problema declarado resolvido; enumeração exaustiva + enforcement por função
+  compartilhada. HIGH: lado do teste de `group_matched` nunca definido; D-15
+  com plano de migração inexecutável (`predictions.parquet` **não tem**
+  `schema_version`) e custo mal declarado (`tau` não está em disco — popular
+  exige retreinar); §14.1 **não** resolve B22. **Reversão explícita** de
+  decisão da v3.26: cadência Alpha↔Meta **vira AG** (`AG-155`), não foi
+  resolvida por desenho. AGs novos: `AG-153` (não existe primitiva de purge
+  por bloco arbitrário — todo purge acoplado à geometria de pares), `AG-154`
+  (predições sem manifesto/versão), `AG-155`, `AG-156` (nulo i.i.d. em B4,
+  com a qualificação de que o viés é conservador e **não** invalida o achado
+  do Alpha legado). Lição de processo registrada: a v2 diagnosticou o padrão
+  "mitigado por declaração em vez de mecanismo" e **repetiu o padrão nas três
+  peças que apresentava como suas maiores conquistas** — duas rodadas de
+  revisão com lentes distintas não foi redundância.
 - **v3.26 (2026-08-22)** — **Meta-model: arquitetura ponta a ponta travada,
   `ADR-001 §3.7/§2.7` REVOGADO pelo Manager.** Detalhe completo em `§15.19`.
   Regime passa a entrar como FEATURE do Meta (one-hot, nunca ordinal),

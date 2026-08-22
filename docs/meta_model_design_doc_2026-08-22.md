@@ -1,8 +1,32 @@
 # Design doc — Meta-model (camada 2, meta-labeling): arquitetura técnica ponta a ponta
 
-**Versão:** v2 (2026-08-22) — reescrita após auditoria adversarial de 3 flancos.
+**Versão:** v3 (2026-08-22) — após `project_assurance` sobre a v2.
 **Status:** desenho travado, **não implementado**. Fase 4 de `redesign_workflow`.
 **Autorização:** Manager, 2026-08-22.
+
+**v2 → v3 — o que a revisão independente derrubou.** A v2 foi escrita
+incorporando 40 correções de uma auditoria adversarial de 3 flancos sobre a
+v1, e **nunca foi revisada**. `project_assurance` (2 revisores independentes,
+~110 alegações `arquivo:linha` re-derivadas) confirmou que a **acurácia
+factual da v2 é alta** — ~102 corretas — e encontrou **3 CRITICAL + 4 HIGH**
+de natureza estrutural. Changelog completo em §20. Os três que mudaram o
+desenho:
+
+1. **`group_matched` não tinha purge nem embargo.** O braço que a v2
+   apresentava como "estritamente melhor" era o único dos dois **sem B09** —
+   e a v2 fechou a porta para a correção ao declarar que `edges_ms` seria a
+   única mudança em `cpcv.py`. **Removido do caminho crítico** (§4.3).
+2. **O Gate E0 não tinha esquema de permutação declarado.** Com o único
+   precedente do repo sendo permutação i.i.d. e regimes em blocos contíguos,
+   o gate que decide se o Meta existe seria **o mais fácil de passar do
+   documento**. Nulo de bloco travado, com validação obrigatória (§2.6).
+3. **O nulo A2 replicava 1 de 5 fontes de otimismo**, e a v2 declarava o
+   problema resolvido. Enumeração exaustiva + enforcement por função
+   compartilhada (§9).
+
+E o achado que dói: **a v2 diagnosticou o padrão de falha da v1 em R11 —
+"mitigados por declaração em vez de mecanismo" — e repetiu o padrão nas três
+peças que apresentava como suas maiores conquistas.**
 
 **v1 → v2 — o que a auditoria derrubou.** Três auditores independentes
 (corretude factual contra o código; rigor estatístico; trade-offs e
@@ -43,7 +67,7 @@ do ADR-001.
 | **D-05** | Meta **veta ou dimensiona; nunca inverte lado**. Veto-em-zero contra AFML §10.3 | mantida |
 | **D-06** | `p_meta` é **filtro binário**, não tamanho | mantida |
 | **D-07** | **Sem calibrador no v1** — `tau_meta` por quantil in-fold. **Contrato restrito** (§8.3) | qualificada |
-| **D-08** | **Dois braços de CV: `path_matched` (primário, 5 caminhos) e `group_matched` (blindado, 1 caminho)** | **reescrita** |
+| **D-08** | **`path_matched` é o único braço no caminho crítico.** `group_matched` sai (não tem purge/embargo — §4.3); a mitigação de R1 passa a ser o **controle positivo sintético**, bloqueante | **v3** |
 | **D-09** | Splits gerados no frame **denso**; seleção do subconjunto é **posicional** | mantida |
 | **D-10** | Unicidade recalculada na subpopulação, **com grão `(symbol, side)` declarado** | corrigida |
 | **D-11** | Regime entra por **join exato**; **o v1 usa a coluna `regime` (Utf8)**, não `canonical_id` | corrigida |
@@ -259,6 +283,46 @@ pós-hoc, fora do `importlinter` de propósito, mesmo precedente de
   > A decomposição por `(symbol, side)` é **diagnóstico obrigatório**, para
   > expor "passou só porque BTC-long carregou".
 
+- **ESQUEMA DE PERMUTAÇÃO — travado na v3.** A v2 especificou *que* o
+  estimador é reajustado dentro da permutação, mas **não o que é permutado nem
+  com que estrutura**. Isso não é detalhe: o único precedente de permutação no
+  repo é `run_b4_feature_shuffle` (`src/models/baselines.py:777-826`), que usa
+  `rng.permutation(n)` — **i.i.d., linha a linha**. Herdar esse padrão
+  invalidaria o gate inteiro, por duas razões que o próprio documento
+  estabelece em outras seções:
+
+  - os rótulos triple-barrier **se sobrepõem** (é o motivo de existirem
+    `concurrency`/`uniqueness` e purge/embargo);
+  - regimes são **persistentes e formam blocos contíguos de calendário**
+    (§2.4, o argumento do carimbo de data).
+
+  Sob o nulo real, a variância amostral de `P̂(bin | estado)` é governada pelo
+  número de **blocos**, não de linhas. Uma permutação i.i.d. produz um nulo
+  com variância governada pelo número de **linhas** — ordens de magnitude mais
+  estreito. O p95 fica colado no valor central e **qualquer associação
+  ultrapassa, inclusive puro carimbo de data**. Ponderar por
+  `uniqueness_subpop` corrige o *estimador*, não a *variância do nulo*.
+
+  > **Regra travada:** o nulo é **circular-shift por bloco** sobre o eixo
+  > temporal, aplicado ao vetor da feature (`regime`), preservando a estrutura
+  > de blocos contíguos de ambos os lados. O deslocamento é sorteado uniforme
+  > sobre o comprimento da série do `(symbol, path)`; a série é tratada como
+  > circular. **Comprimento de bloco declarado a priori: a largura de grupo do
+  > CPCV** (`edges_ms[g+1] − edges_ms[g]`), por ser a mesma escala em que o
+  > purge/embargo já operam — não um parâmetro novo, e não um número redondo.
+  > `n_seeds = alpha_b1_n_seeds` (constante existente).
+  >
+  > **Validação obrigatória do próprio nulo, bloqueante:** rodar o
+  > procedimento com uma feature **sabidamente sem sinal mas com a mesma
+  > estrutura de blocos** (ex.: o próprio `regime` de um símbolo diferente,
+  > alinhado por posição). A taxa de PASS observada deve ficar próxima de 5%.
+  > **Se ficar materialmente acima, o nulo está mal calibrado e E0 não roda** —
+  > o gate não pode ser aplicado antes de provar que rejeita ruído estruturado.
+
+  Nota de coerência: o §4.6 constrói o argumento de dependência contra o
+  critério "≥4/5 paths" e a v2 **não o virou para o nulo**. Esta regra é a
+  aplicação do mesmo raciocínio ao lugar onde ele mais importa.
+
 - **Métricas por path:** `n_fp`, `n_tp`, `n_nofill`,
   `fp_rate = n_fp/(n_fp+n_tp)`; `pnl_fp_total = Σ ret_net | FP` (o **teto
   teórico** de um filtro perfeito é `−pnl_fp_total`; se for menor que o custo
@@ -381,17 +445,51 @@ lado** (a escala do score cru não é comparável entre folds). A exclusão vira
 número de blocos isotônicos (`TBD — medir` em E0), **`p_alpha` sai e
 `score_raw` fica sozinho**.
 
-*Alternativa registrada, não adotada:* `rank(score_raw)` dentro do fold —
-invariante a escala, imune ao achatamento, resolve comparabilidade sem exigir
-`tau`. Fica como segundo braço de ablação.
+> **Correção da v3 — a hierarquia estava invertida.** A v2 adotou
+> `score_alpha_raw` **padronizado por fold** e rebaixou `rank(score_raw)` a
+> "segundo braço de ablação", sem argumento. Mas `score_*_raw` é
+> `predict_proba(...)[:, 1]` (`alpha.py:377,379`) — já é uma probabilidade em
+> `[0,1]`, **a escala é a mesma entre folds**. A não-comparabilidade não é de
+> escala: é do **mapeamento score→P(y)**, que difere por fold porque cada fold
+> treinou um booster diferente. Z-score é transformação linear — iguala média
+> e variância, **não iguala o mapeamento**. A padronização **mascara, não
+> resolve**.
+>
+> Pior, sob `path_matched`: os parâmetros de padronização são estimados sobre
+> linhas de doadores **diferentes** do doador das linhas de teste (TREINO =
+> folds ≠ s; TESTE = fold s). Ajustar no treino do fold é o que B03 exige, e
+> ao mesmo tempo garante que o teste seja padronizado por constantes de um
+> modelo que não o produziu. Não viola B03; é apenas **ineficaz**.
+>
+> **`rank(score_raw)` dentro do fold vira o DEFAULT** — invariante a qualquer
+> transformação monótona, portanto imune tanto ao achatamento isotônico quanto
+> à heterogeneidade de mapeamento entre folds. A padronização z-score passa a
+> ser o braço de ablação. Coerência: §8.3 já argumenta que o consumo por
+> quantil é invariante a monótona — o mesmo raciocínio se aplica aqui e a v2
+> não o aplicou.
 
 **Erro 2 da v1 — features não projetadas no lado enquanto o alvo é.**
-`side_hat = +1 ⟺ p_long > p_short ⟺ spread > 0`, exatamente
-(`alpha.py:382-383`) — logo `sign(p_alpha_spread) ≡ side_hat`, e um
-coeficiente único em `spread` imporia efeito de sinal **oposto** em long e
-short. Mas "margem grande a favor do lado escolhido" deve ser bom nos
-**dois**. Correção: `margin = side_hat × (p_long − p_short) = |spread|`, com
-`side_hat` como intercepto por lado.
+`is_long = (p_long > long_result.tau) & (p_long > p_short)` (`alpha.py:382`).
+**Atenção ao enunciado — a v2 escreveu `side_hat = +1 ⟺ spread > 0`
+"exatamente", e isso é falso**: `spread > 0` não implica `side_hat = +1`,
+porque o corte por `tau` pode zerar o sinal. Só a implicação direta vale.
+**Restrito à subpopulação do Meta** (`side_hat != 0`, §2.6) a equivalência se
+sustenta — inclusive contra empates, já que `p_long == p_short` ⟹
+`side_hat = 0`, excluído. A conclusão sobrevive; o enunciado foi corrigido.
+
+Logo, dentro da subpopulação, `sign(spread) ≡ side_hat`, e um coeficiente
+único em `spread` imporia efeito de sinal **oposto** em long e short — quando
+"margem grande a favor do lado escolhido" deve ser bom nos **dois**.
+Correção: `margin = side_hat × (p_long − p_short) = |spread|`, com `side_hat`
+como intercepto por lado.
+
+**Acoplamento residual, não registrado pela v2:** na subpopulação
+`p_alpha = max(p_long, p_short)` e `p_alpha > tau_side` por construção, com
+`tau` variando por fold **e por lado** (`alpha.py:389-390`). Um coeficiente
+único sobre `p_alpha` mistura truncamentos heterogêneos. Não é colinearidade
+exata (a guarda de posto não dispara), mas é a razão pela qual **D-15 importa
+mais do que a v2 disse**: com `tau_alpha` disponível, a quantidade certa no
+conjunto aceito é `p_alpha − tau`, não `|spread|`.
 
 **Erro 3 da v1 — `regime_tradeable` no design matrix.**
 `tradeable = decoded_mask & ~is_stress_state` (`src/regime/build_hmm.py:235`),
@@ -418,12 +516,42 @@ de predições (`alpha.py:501-519`) nem no payload de diagnóstico
 (`pipeline.py:168-210`). Uma coluna `tau_alpha` no schema destrava **três**
 coisas de uma vez:
 
-1. a feature de margem `p_alpha − tau` (que a v1 declarou bloqueada em R3);
-2. a comparabilidade de `p_alpha` entre folds (o ponto de truncamento passa a
-   ser observável);
+1. a feature de margem `p_alpha − tau` (que a v1 declarou bloqueada em R3) —
+   e essa é a quantidade que de fato morde no conjunto aceito, mais que
+   `margin` (§3.4);
+2. a comparabilidade de `p_alpha` entre folds **e entre lados** (há dois `tau`
+   por fold, um por lado — `alpha.py:389-390`);
 3. o diagnóstico de massa de empate em `tau` (§3.4).
 
-Custo: um campo. **Requer bump de `schema_version` do artefato** (§14.3).
+**Migração — corrigido na v3.** A v2 dizia *"requer bump de `schema_version`
+do artefato"*. **`predictions.parquet` não tem `schema_version`**:
+`write_predictions_atomic` (`pipeline.py:72-98`) escreve parquet puro, sem
+manifesto. O `schema_version: 1` existente está no JSON de diagnóstico
+(`pipeline.py:169`) e no relatório, não no artefato de predições — o §14.3
+reconhece isso e a v2 mesmo assim especificou um bump inexistente. **Não há o
+que bumpar.**
+
+Os 5 `predictions.parquet` em disco (`predictions/alpha/{alpha_c0_baseline_v1,
+alpha_c0_baseline_v1_t05_janela_comum, alpha_c1_e02f_short_unforced_v1,
+alpha_c1_v1, alpha_c1_v1_t05_janela_comum}`) não têm a coluna. O contrato do
+§14.3 dizia "leitor com `schema_version` desconhecido levanta" — mas esses
+arquivos não têm versão **desconhecida**, têm versão **inexistente**. O
+contrato não cobria o único caso que vai acontecer.
+
+> **Regra travada:** a ausência da coluna `tau_alpha` é o discriminador
+> explícito de "artefato pré-D-15". O leitor do Meta **levanta
+> `LegacyPredictionsError`** com o caminho do arquivo e a instrução de
+> retreinar — nunca imputa, nunca assume um `tau`, nunca degrada em silêncio.
+> Junto com a coluna nasce o manifesto de §14.3, para que o próximo bump
+> tenha onde acontecer.
+
+**Custo — corrigido na v3: NÃO é zero, e D-15 sai do "caminho de 20%".** A v2
+listava D-15 como P1, "sobre artefato em disco, zero treino". Falso: `tau` só
+existe dentro do processo de treino, em `SideModelResult.tau` (`alpha.py:298`)
+— **não está em disco em lugar nenhum**. Popular `tau_alpha` para os artefatos
+existentes **exige retreinar o Alpha**. Logo D-15 é uma mudança de 1 coluna no
+código que só produz efeito **no próximo retreino** (E2), e o diagnóstico de
+empate em `tau` (§3.4) não pode ser feito antes disso.
 
 ---
 
@@ -440,43 +568,47 @@ modelos treinados em conjuntos diferentes. Vazamento por agregação.
 **Armadilha 2 — nunca treine pooled sobre folds sobrepostos.** O mesmo
 `ret_net` contaria até 5 vezes.
 
-### 4.2 A prova de impossibilidade da v1 era falsa
+### 4.2 A prova de impossibilidade da v1: falsa nas hipóteses, certa na conclusão prática
+
+> **Reescrito na v3** após `project_assurance`. A v2 declarou a prova "falsa"
+> e apresentou `group_matched` como construção pronta. A matemática está
+> certa; **a construção é inexecutável com a infraestrutura atual**, e a v2
+> não viu isso. Ver §4.3.
 
 A v1 afirmava: *"com 6 grupos e `n_test_groups=2` não existe fold doador
 simultaneamente OOF e cego... cegueira total exigiria CV aninhada com refit do
-Alpha (~6× o custo)"*. **Ambas as afirmações são falsas.** Dois quantificadores
-escondidos:
+Alpha (~6× o custo)"*. Dois quantificadores estavam escondidos:
 
-- **A prova assumia UM doador global por split.** Ela quantificava `∃f` que
-  servisse *todas* as linhas. O requisito é **por linha**: cada linha `r`
-  precisa de *algum* `f(r)`. Nada exige que seja o mesmo — e `path_matched`
-  já usa doadores múltiplos.
+- **A prova assumia UM doador global por split.** Ela quantificava `∃f ∀r`
+  quando o requisito é `∀r ∃f(r)`. Nada exige que o doador seja o mesmo para
+  todas as linhas — e `path_matched` já usa doadores múltiplos.
 - **A prova fixava `|T_s| = 2` silenciosamente.** O passo "`T_s ⊆ test(f)`
-  força `f = s`" só vale porque as cardinalidades são iguais. **Isso é uma
-  escolha** (reusar `n_test_groups=2` do CPCV do Alpha), não um fato.
+  força `f = s`" só vale porque as cardinalidades são iguais. Isso é uma
+  **escolha** (reusar `n_test_groups=2` do CPCV do Alpha), não um fato.
 
-**A construção blindada (`group_matched`):**
+**Sob `|T_s| = 2`, porém, a prova está CORRETA.** Se `T_s = {a,b}` e
+`|test(f)| = 2`, então `{a,b} ⊆ test(f)` ⟹ `test(f) = {a,b}` ⟹ `f = s` ⟹ as
+linhas de treino do Meta (que estão em `train_idx[s]`) não estão em `test(f)`.
+Contradição. **Cegueira total exige `|T_s| = 1`** — e é exatamente essa
+mudança que quebra a infraestrutura (§4.3).
+
+**A construção blindada, em teoria (`group_matched`):**
 
 > Bloco de teste do Meta = **1 grupo**, `T_s = {g}`.
 > Para cada linha de treino no grupo `h ≠ g`: doador `f(r)` = o fold cujo
 > `test = {g,h}`.
-> - **OOF:** `r ∈ h ⊆ test(f(r))` ✔
-> - **Cegueira TOTAL:** `test(f(r)) = {g,h} ⊇ {g} = T_s` ⟹ o doador treinou
->   em `todos \ {g,h}`, que **exclui `g` inteiro** ✔
+> - **OOF:** `r ∈ h ⊆ test(f(r))` — verificado: `test_mask = np.isin(group_id,
+>   test_groups)` (`cpcv.py:563`) inclui *todas* as linhas dos 2 grupos ✔
+> - **Cegueira TOTAL:** `test(f(r)) = {g,h} ⊇ {g}` ⟹ o doador treinou em
+>   `todos \ {g,h}` (`cpcv.py:564-565`), que **exclui `g` inteiro** ✔
 
-Esse fold sempre existe: `cpcv_n_groups: 6` × `cpcv_n_test_groups: 2` ⟹
-**`C(6,2) = 15` folds — todos os pares** (`constants.yaml:1141-1152`;
-confirmado no artefato, `"n_cpcv_splits": 15`). Para `g` fixo há 5
-candidatos. E as predições **já estão em disco**.
+Esse fold sempre existe: `combinations(range(6), 2)` (`cpcv.py:562`) ⟹
+**`C(6,2) = 15` folds, todos os pares**. Para `g` fixo há 5 candidatos.
 
-**Custo real: zero retreino. O custo é poder estatístico** — com `|T_s| = 1`
-os 6 blocos ladrilham o dataset **uma vez** ⟹ **1 caminho OOS, não 5** ⟹
-perde-se o critério ≥4/5 paths. Por isso `group_matched` não é o braço
-primário; é o braço de verificação.
+### 4.3 Os dois braços (D-08) — reescrito na v3
 
-### 4.3 Os dois braços (D-08)
-
-**Braço primário — `path_matched`** (5 caminhos, permite o critério ≥4/5):
+**Braço primário e ÚNICO no caminho crítico — `path_matched`** (5 caminhos,
+permite o critério ≥4/5):
 
 > Para o meta-fold `s` (split `s` do Alpha, path `p`):
 > **TESTE** = `fold_id == s` e `_pos ∈ splits[s].test_idx`.
@@ -484,32 +616,74 @@ primário; é o braço de verificação.
 
 `_path_assignment` (`cpcv.py:329-337`) usa 1-fatoração round-robin ⟹ dentro
 de um `path_id` os blocos de teste **particionam** os grupos ⟹ `(symbol, t0)`
-é único no path. Confirmado em auditoria contra a implementação, não só a
-docstring. `train_idx` já traz purge + embargo (`cpcv.py:495`).
+é único no path. `train_idx` já traz purge + embargo (`cpcv.py:495`).
 
-**Exposição do doador, quantificada corretamente:** a v1 dizia que o melhor
-alcançável era "meio-cego" (`|test(f) ∩ T_s| = 1`). **Errado** — dentro do
-path a interseção é **0**: o doador é *totalmente vidente* sobre `T_s`. Um
-doador com interseção 1 exige `path(f) ≠ p`, o que reintroduz a
-pseudo-replicação. **Por isso `half_blind` foi descartado e substituído por
-`group_matched`**, que é estritamente melhor: cegueira total em vez de
-parcial, e sem cross-path.
+**Exposição do doador, quantificada:** dentro do path a interseção
+`|test(f) ∩ T_s|` é **0** — o doador é *totalmente vidente* sobre `T_s`. Um
+doador com interseção 1 exigiria `path(f) ≠ p`, reintroduzindo
+pseudo-replicação. Por isso `half_blind` (v1) foi descartado.
 
-**Braço de verificação — `group_matched`** (1 caminho, cegueira total).
+#### `group_matched` — POR QUE NÃO ESTÁ NO CAMINHO CRÍTICO
 
-**Ordem de leitura travada a priori:**
-- concordam ⟹ exposição do doador não é o mecanismo;
-- discordam ⟹ `path_matched` está contaminado e **`group_matched` manda**,
-  apesar do caminho único.
-- **"Discordar" definido operacionalmente:** o veredito binário do gate F6
-  muda em ≥1 path, **ou** `|ΔSharpe|` excede o desvio-padrão entre paths do
-  braço `path_matched`.
+A v2 anunciou `group_matched` como "estritamente melhor: cegueira total em vez
+de parcial". **Ele é o único dos dois braços SEM purge e SEM embargo** — o
+banned pattern B09, que §10.1(b) chama de "a correção mais importante desta
+seção". Três fatos verificados no código:
 
-**Controle positivo obrigatório** (a v1 não tinha, e sem ele "não virou" é
-ininterpretável): injetar vazamento calibrável em `p_alpha`
-(`p_alpha' = (1−λ)·p_alpha + λ·y_meta`, λ pequeno) e **verificar que o
-contraste entre braços detecta λ**. Mesma disciplina que §10.2 já exige do
-teste #10.
+1. `generate_splits` levanta `CPCVError` **incondicionalmente** se
+   `n_test_groups != 2` (`cpcv.py:544-548`) ⟹ sob `|T_s| = 1`,
+   **`splits[s]` não existe**, e com ele não existe `train_idx` — o único
+   objeto que carrega purge + embargo.
+2. `_path_assignment` é um dict chaveado por **pares** (`cpcv.py:329-337`);
+   `_round_robin_1_factorization` exige `n` par e devolve pares
+   (`cpcv.py:311-326`). `path_by_pair[(g,)]` daria `KeyError`.
+3. As linhas de treino do Meta estão no grupo `h`, que em `split({g,h})` é
+   **grupo de teste** — `train_candidate_mask = np.isin(group_id,
+   train_groups)` (`cpcv.py:565`) as **exclui**. Não há como extraí-las do
+   `train_idx` de fold nenhum.
+
+Consequência concreta: uma linha de treino em `h` cujo `[t0,t1]` cruza a
+fronteira com `g` entraria **sem purge**, e o embargo de 96,39 h
+(`cpcv_embargo_ms`) não se aplicaria em borda nenhuma.
+
+**E a v2 fechou a porta para a correção:** §12 afirmava que `edges_ms` seria a
+*"única mudança em `cpcv.py`"*. Falso. `group_matched` exige uma **primitiva
+nova de purge por bloco arbitrário** (`purge_around_block(t0, t1, block_edges,
+embargo_ms)`), independente da geometria de pares do CPCV.
+
+**Segundo defeito, não visto pela v2: o lado do TESTE nunca foi definido.**
+Para uma linha de teste `r ∈ g`, `p_alpha` vem de qual dos 5 folds `{g,k}`? A
+escolha não é neutra — cada um tem `tau` próprio (`alpha.py:267`) e calibrador
+próprio (`alpha.py:262-263`), logo **um conjunto de sinais diferente**
+(`side_hat != 0` depende de `tau`, `alpha.py:382-383`). A população de teste
+do Meta muda com a escolha. Isso derruba a contabilidade de custo da v2:
+**"1 caminho OOS em vez de 5" não é um fato da construção — é consequência de
+uma escolha não declarada.** Fixar `k` a priori introduz um grau de liberdade
+não registrado; varrer os 5 dá 5 avaliações ainda mais dependentes que as de
+`path_matched`, porque compartilham as mesmas linhas de teste.
+
+**Decisão da v3:** `group_matched` sai do caminho crítico e vira **item
+opcional de trabalho futuro (F9)**, com o custo real declarado — primitiva de
+purge nova + regra de doador do lado do teste + contabilidade de caminhos
+refeita. Não é implementado como parte do Meta v1.
+
+#### A mitigação de R1 passa a ser mecanismo, não comparação entre braços
+
+Com `group_matched` fora, a exposição do doador (§16-R1) fica sem o braço
+comparativo. **O que a substitui é o controle positivo sintético** — e ele é
+superior, porque é falsificável por construção em vez de depender de dois
+braços concordarem:
+
+> **Controle positivo obrigatório, bloqueante de F6.** Injetar vazamento
+> calibrável em `p_alpha` — `p_alpha' = (1−λ)·p_alpha + λ·y_meta`, com λ numa
+> grade declarada a priori — e **verificar que o pipeline detecta λ**: o
+> Sharpe OOS de A1 deve crescer monotonicamente em λ, e o gate F6 deve passar
+> para λ grande. **Se o pipeline NÃO detecta um vazamento injetado, ele
+> também não detectaria um vazamento real**, e nenhum resultado dele é
+> interpretável. Falha ⟹ F6 não roda.
+
+Isso aponta para um objeto que levanta (o harness falha), não para uma
+declaração — o critério que §16-R11 exige de toda mitigação desta v3.
 
 **Colisão residual — `variant`:** construído para um `variant` por vez;
 `variant` na chave torna a mistura impossível por engano.
@@ -988,12 +1162,38 @@ ver §17.)*
 | **A2** | Alpha + **filtro aleatório com a MESMA BUSCA** (correção crítica) |
 | **A3** | Alpha + filtro por `p_alpha` top-k, pareado em pass-rate no mesmo estrato |
 
-**Correção 1 — o nulo A2 da v1 estava enviesado a favor de passar.** A1
-escolhe `tau_meta` maximizando PnL in-fold sobre 5 quantis; a A2 da v1 apenas
-sorteava com probabilidade fixa, **sem busca**. O nulo media a pergunta errada.
-**Cada réplica de A2 deve executar a mesma busca:** sortear scores aleatórios,
-aplicar `meta_tau_grid_quantiles`, escolher o quantil de maior PnL in-fold, e
-só então medir OOS. É a única forma de o nulo carregar o mesmo otimismo.
+**Correção 1 — o nulo A2 precisa replicar TODAS as fontes de otimismo, não
+uma.** A v1 sorteava com probabilidade fixa, sem busca nenhuma. A v2 corrigiu
+para replicar a busca de `tau_meta` — e **declarou o problema resolvido**. Não
+estava: a v2 replicava **1 de 5** escolhas feitas sobre o dado, e as outras 4
+estão enumeradas no próprio §11 duas páginas adiante.
+
+> **Regra travada na v3 — enumeração exaustiva.** Cada réplica de A2 executa,
+> na mesma ordem e sobre os mesmos folds, **toda escolha que A1 faz olhando
+> para o dado**:
+>
+> | # | escolha de A1 | replicada em A2? |
+> |---|---|---|
+> | 1 | `tau_meta` sobre `meta_tau_grid_quantiles`, por argmax de PnL in-fold | **sim** |
+> | 2 | `meta_logit_c` (`sweep_required: true`, §11) | **sim** — mesma grade, mesmo critério |
+> | 3 | `meta_include_nofill_in_training` (booleano com sweep, §11) | **sim** |
+> | 4 | `p_alpha` vs. `score_alpha_raw` (a regra de §3.4) | **sim** |
+> | 5 | descarte de coluna categórica por posto/variância (§6.4) | **sim** |
+>
+> **O que NÃO é replicado, e por quê:** escolhas fixadas *a priori, antes de
+> ver dado* — o candidato de regime (um só, §2.6), a arquitetura do design
+> matrix, o critério ≥4/5. Replicá-las não faria sentido: elas não consomem
+> graus de liberdade contra este dado.
+>
+> **Enforcement:** A1 e A2 compartilham **a mesma função de busca**
+> (`_search_and_fit(scores, ...)`), chamada com `scores` reais em A1 e com
+> `scores` sorteados em A2. Uma escolha nova que alguém acrescente a A1 entra
+> automaticamente no nulo — o nulo não pode ficar para trás por esquecimento.
+> Isso é mecanismo, não disciplina.
+
+Sem os 5, o nulo mede "e se eu filtrasse aleatoriamente com **um** grau de
+liberdade", enquanto A1 gastou cinco — e a distribuição nula fica deslocada
+para baixo por omissão do máximo.
 
 **Correção 2 — pareamento por estrato**, não por path: `(path_id, fold_id,
 symbol, side_hat)`. `tau_meta` é escolhido por fold, e o pool é multi-símbolo
@@ -1012,10 +1212,22 @@ aceitasse barras que preenchem.
 
 **Critério de aprovação, travado a priori:**
 
+> **Pré-condição bloqueante (v3):** o **controle positivo sintético** (§4.3)
+> passou — o pipeline detecta vazamento injetado. Se não detecta λ conhecido,
+> nada do que ele reporta é interpretável e F6 não roda.
+>
 > F6 passa sse `sharpe(A1) > p95(nulo A2)` **E** `sharpe(A1) > sharpe(A3)`,
 > em **≥4 dos 5 paths** — contando **apenas paths cujos folds têm todos
 > `meta_status == OK`**. Paths com qualquer pass-through são reportados em
 > separado e contam como "não superou".
+>
+> **Critério primário sobre eixos independentes (v3, aplicando §4.6):** os 5
+> paths **não são replicações independentes** — veem as mesmas linhas. O
+> critério ≥4/5 sobre paths é **secundário**. O primário é permanência sobre
+> os **5 símbolos** (genuinamente independentes na dimensão que importa) e
+> sobre as janelas de walk-forward de F6b. Um resultado que passe em paths e
+> falhe em símbolos é reprovado.
+>
 > **F6b:** o mesmo, replicado sobre walk-forward ancorado (§4.4).
 
 **Correção 4 — pass-through contaminava a estatística do gate.** §7.3 diz
@@ -1091,10 +1303,23 @@ que o próprio `leakage.py:562-564` já faz.
 
 ### 10.3 Camada 3 — teste #11 estendido
 
-`_META_PATH` em `leakage.py:102`; verificar no fonte que (a) o fit recebe só
-`X_train/y_train/w_train`; (b) o `StandardScaler` é ajustado no treino do
-fold (reusa `_GLOBAL_SCALER_PATTERN`, `leakage.py:187-189`); (c) `tau_meta` é
-derivado do treino.
+> **Precisão corrigida na v3.** A v2 afirmava que o teste #11 é regex *"só
+> sobre `_ALPHA_PATH`"*. Verificado: das 5 checagens de
+> `_test_11_calibracao_vazada`, **uma já varre o pacote inteiro** —
+> `only_called_with_train` usa `_grep_source(..., (_SRC_ROOT / "models",))`
+> (`leakage.py:603-605`), logo `fit_*(test...)` num `meta.py` futuro **já
+> seria pego de graça**. As outras 4 (`def_match`, `no_test_param`,
+> `calib_split_from_train`, `calibrator_fits_on_calib_split`) operam sobre
+> `source`, que é o fonte de `_ALPHA_PATH` (`leakage.py:102`) — essas **não**
+> cobrem `meta.py`. Nota adicional: `_ALPHA_PATH` é um `Path`, não um regex;
+> os padrões são inline em `:599-609`.
+
+Trabalho real, portanto: adicionar `_META_PATH` (**não existe hoje** em lugar
+nenhum do código) e estender as **4 checagens específicas de arquivo** —
+verificar no fonte do Meta que (a) o fit recebe só `X_train/y_train/w_train`;
+(b) o `StandardScaler`/`rank` é ajustado no treino do fold (reusa
+`_GLOBAL_SCALER_PATTERN`, `leakage.py:187-189`); (c) `tau_meta` é derivado do
+treino.
 
 ### 10.4 Camada 4 — lint, com allowlist
 
@@ -1180,16 +1405,24 @@ trial, não uma vez por fase.**
 
 | arquivo | mudança |
 |---|---|
-| `src/models/alpha.py:407-430, 501-519` | **`tau_alpha` no schema** (D-15); bump de `schema_version` |
+| `src/models/alpha.py:407-430, 501-519` | **`tau_alpha` no schema** (D-15) + manifesto de versão, que **não existe hoje** (§3.5). Só produz efeito no próximo retreino |
 | `src/models/backtest_lite.py:79-130` | extrair `join_signals_to_labels(signals, df_all, *, carry=())`; `realize_trades` delega. **Critério: teste `golden` de igualdade bit-a-bit** (§14.5), não "os testes passam" |
 | `src/models/pipeline.py:72-98` | `write_predictions_atomic(..., family=, schema_columns=)` |
 | `src/models/_paths.py` | criar `predictions_meta_symbol_tf_dir()`. **`predictions/meta/` não está reservado em código** — é prosa em docstring (`:82`) |
-| `src/validation/cpcv.py` | `edges_ms` sobre união temporal (§4.5) — **única mudança em `cpcv.py`, e é pré-requisito** |
-| `src/models/baselines.py` | `run_b6_random_filter` com busca replicada (§9) |
-| `src/validation/leakage.py:102,554-566,569-636` | `_META_PATH`; teste #10 real + controle positivo; #11 estendido |
+| `src/validation/cpcv.py` | **(a)** `edges_ms` sobre união temporal (§4.5), pré-requisito bloqueante. **(b)** SE `group_matched` for implementado algum dia: primitiva nova `purge_around_block()` — ver correção abaixo |
+| `src/models/baselines.py` | `run_b6_random_filter` compartilhando `_search_and_fit` com A1 (§9) |
+| `src/validation/leakage.py:102,554-566,569-636` | `_META_PATH`; teste #10 real + controle positivo; **4 das 5 checagens** do #11 estendidas (a 5ª já cobre, §10.3) |
 | `pyproject.toml:228-230` | ativar `alpha ↛ meta` |
 | `config/constants.yaml` | 5 constantes (§11) |
 | `tools/lint/banned_patterns.py:55` | B07 `automated=True` **com allowlist** |
+
+> **Correção da v3.** A v2 afirmava que `edges_ms` seria a *"única mudança em
+> `cpcv.py`"*. Isso era incompatível com o próprio D-08 da v2: `group_matched`
+> exige `|T_s| = 1`, que `generate_splits` rejeita (`cpcv.py:544-548`), e
+> exige purge por bloco arbitrário — uma primitiva que não existe. A v3
+> resolve tirando `group_matched` do caminho crítico (§4.3), o que torna a
+> afirmação "única mudança" verdadeira **de novo** — mas por remoção de
+> escopo, não por acerto original.
 
 ---
 
@@ -1208,34 +1441,66 @@ trial, não uma vez por fase.**
 
 ## §14 — Ciclo de vida *(seção nova — 5 lacunas da v1)*
 
-### 14.1 Cadência de retreino e o acoplamento Alpha↔Meta
+### 14.1 Acoplamento Alpha↔Meta — e o que ele NÃO resolve (corrigido na v3)
 
 **B22 proíbe retreino por sequência de perdas e exige cadência fixa declarada
-a priori.** A v1 não declarava nada — **violação de B22 esperando acontecer**.
+a priori.**
 
-**Regra travada:** o Meta é **sempre retreinado junto com o Alpha**, no mesmo
-evento, sobre as predições OOF do Alpha novo. **Nunca em cadência própria.**
-Motivo: `p_alpha` é feature do Meta; um Alpha retreinado muda a distribuição
-da feature, e um Meta calibrado sobre a distribuição antiga é um modelo
-aplicado fora do domínio.
+**O que esta seção entrega, e é real — enforcement de coerência:** o Meta é
+**sempre retreinado junto com o Alpha**, no mesmo evento, sobre as predições
+OOF do Alpha novo; **nunca em cadência própria**. Motivo: `p_alpha` é feature
+do Meta; um Alpha retreinado muda a distribuição da feature, e um Meta
+ajustado sobre a distribuição antiga é um modelo aplicado fora do domínio.
 
-**Janela de inconsistência:** entre o retreino do Alpha e o do Meta, o par é
-incoerente. Política: **o Meta é desligado (pass-through) até ser retreinado**
-— nunca aplicado a predições de um Alpha que ele não viu. Enforcement:
-`model_id` do Alpha é gravado no artefato do Meta, e o consumidor **compara**;
-divergência ⟹ pass-through com `WARNING`, nunca aplicação silenciosa.
+**Janela de inconsistência:** entre o retreino do Alpha e o do Meta o par é
+incoerente. Política: **o Meta é desligado (pass-through) até ser
+retreinado**. Enforcement mecânico: `alpha_model_id` é gravado no artefato do
+Meta, e o consumidor **compara**; divergência ⟹ pass-through com `WARNING`,
+nunca aplicação silenciosa. Isso aponta para um campo que o consumidor lê —
+é mecanismo.
 
-### 14.2 Rollback
+> **Correção da v3 — isto NÃO resolve B22, e a v2 afirmava que sim.**
+> "Retreina junto com o Alpha" é uma **restrição de acoplamento**, não uma
+> **cadência**. Se o gatilho de retreino do Alpha for uma sequência de perdas,
+> o Meta retreina junto e B22 é violado **nos dois modelos**. O acoplamento
+> propaga o gatilho; não o disciplina.
+>
+> Verificado: **não existe cadência de retreino de modelo declarada em lugar
+> nenhum do repo.** `grep` por `cadence` em `config/constants.yaml` devolve só
+> `dollar_bar_walkforward_cadence_days` — calibração de barra, outra coisa.
+> Isso é um gap **do projeto**, não do Meta: o Alpha tem exatamente a mesma
+> lacuna. Registrado como **`AG-155`**, não fechado por desenho.
+>
+> A v2 concluía em §18 que "cadência Alpha↔Meta não vira AG — foi resolvida
+> por desenho". **Errado, e revertido aqui.**
+
+### 14.2 Rollback — critério declarado, não adiado (corrigido na v3)
 
 Precedente que mostra a falta: o gate de regime foi desligado de
 `evaluate_all()` em 2026-08-22 **ad hoc** (`src/risk/limits.py:575-581`).
 
-**Regra travada:** `meta_enabled` é flag de configuração, não de código.
+**Mecanismo:** `meta_enabled` é flag de configuração, não de código.
 Desligado ⟹ pass-through (`accept = True` para todo sinal), idêntico ao
-comportamento de `INSUFFICIENT_SAMPLE`. **Critério de desligamento declarado a
-priori:** `TBD — declarar antes de F6`, junto com quem decide e em quanto
-tempo. O padrão é que o critério de desligamento seja **o mesmo do gate de
-entrada**, medido em janela móvel.
+comportamento de `INSUFFICIENT_SAMPLE` — um caminho já exercitado, não um
+ramo especial que só roda em emergência.
+
+> **Correção da v3.** A v2 escrevia *"critério de desligamento declarado a
+> priori: `TBD — declarar antes de F6`"* — que é, literalmente, um critério
+> **não** declarado a priori, num documento cujo R10 diz que a defesa é "o
+> gate declarado **antes** de medir". Adiamento vestido de regra.
+>
+> **Critério travado agora, sem inventar número:** o desligamento usa **o
+> mesmo critério do gate de entrada F6**, aplicado em janela móvel — se, sobre
+> as últimas `N` decisões, o Meta deixa de superar o nulo A2 **e** o A3 pelo
+> critério de ≥4/5 estratos, ele desliga. Reusa a função de gate, não uma
+> segunda regra. `N` é o único parâmetro livre e é `TBD — medir` junto com
+> `n_eff_subpop` em F2 (a janela precisa conter amostra efetiva suficiente
+> para o gate ser computável — é derivação, não estipulação).
+>
+> **Quem decide:** o desligamento por critério é **automático** (o gate
+> reavalia e a flag cai); o **religamento** exige decisão do Manager e um
+> novo F6 aprovado. Assimetria deliberada — desligar é barato, religar é o
+> que precisa de prova.
 
 ### 14.3 Versionamento de artefato
 
@@ -1243,8 +1508,18 @@ O relatório do Alpha já tem `schema_version` (`:829`); o artefato de prediçõ
 não herda isso. **Regra:** `predictions/meta/` carrega `schema_version`,
 `meta_model_id`, `alpha_model_id`, `alpha_schema_version`,
 `config_hash`, `code_version`. Leitor com `schema_version` desconhecido
-**levanta**, nunca degrada. O bump de D-15 (`tau_alpha`) é o primeiro
-exercício desse contrato.
+**levanta**, nunca degrada.
+
+**Correção da v3 — o contrato não cobria o caso real.** "Versão desconhecida"
+pressupõe que exista uma versão. Os artefatos que vão ser encontrados na
+prática são os de `predictions/alpha/`, que **não têm campo de versão nenhum**
+(§3.5). Um contrato que só trata versão desconhecida deixa o caso de versão
+**ausente** cair no ramo default — exatamente a degradação silenciosa que ele
+existe para impedir. Regra completa: **ausência de manifesto ⟹
+`LegacyArtifactError`**, tratada como erro distinto de versão desconhecida,
+com mensagem que diz qual é o caminho de migração (retreinar). Reusar
+`src/io/schema.py`, que já resolve versionamento para os artefatos novos, em
+vez de inventar um mecanismo paralelo.
 
 ### 14.4 Persistência para scoring ao vivo (D-17) — reusar, não construir
 
@@ -1288,13 +1563,13 @@ O que se registra é a **dependência**: F5 do Meta depende da integração do
 `AG-141` no Alpha, porque um Meta serializado consumindo um Alpha não
 serializado continua sendo um sistema meio-serializado.
 
-**Achado colateral, registrado como `AG-149`:** `src/models/persistence.py`
-(working tree, não commitado no momento desta escrita) referencia **`AG-148`**
-em sua docstring, e `AG-148` **não existe** em
-`audit/architecture_gaps_log.yaml` — a numeração do log termina em `AG-145`.
-Referência órfã: ou o AG está por criar, ou houve colisão de numeração (o
-repo já teve uma real, `AG-125`). Este documento numera a partir de `AG-149`
-justamente para não colidir com 146-148 em voo.
+**Achado colateral `AG-149` — RESOLVIDO enquanto este documento era escrito.**
+A v2 registrou que `src/models/persistence.py` referenciava um `AG-148`
+inexistente no log. Isso era verdade **num instante intermediário de leitura
+concorrente**: a sessão paralela criou `AG-146`/`AG-147`/`AG-148` no commit
+`96b3c3a`, e `AG-149` foi fechado com addendum em `10b61be`. A decisão de
+numerar a partir de 149 evitou uma colisão real. Mantido aqui como registro de
+que a flag era legítima e já resolve.
 
 ### 14.5 Critério de "refator puro"
 
@@ -1311,56 +1586,87 @@ e o critério passa a ser um teste `golden` de igualdade bit-a-bit.
 
 ## §15 — Sequência
 
-### 15.1 O caminho de 20% — roda sobre artefato em disco, zero treino
+### 15.1 O caminho de 20% — corrigido na v3
+
+> **A v2 errou aqui de duas formas.** (a) Listava D-15 como P1 "sobre artefato
+> em disco, zero treino" — **falso**, `tau` só existe dentro do processo de
+> treino (§3.5), popular exige retreinar. (b) Colocava E0-piloto antes de o
+> esquema de permutação estar travado — **rodar o gate antes de o nulo estar
+> calibrado é gastar o gate**: o resultado não seria interpretável e a primeira
+> impressão sobre o Meta ficaria ancorada num número sem significado.
 
 ```
-P1. tau_alpha no schema de predições (D-15) — 1 coluna
-    -> destrava a feature de margem, a comparabilidade entre folds,
-       e o diagnóstico de empate. Custo trivial.
+P0. [NOVO, PRÉ-REQUISITO] Travar o esquema de permutação do E0 (§2.6):
+    circular-shift por bloco, comprimento = largura de grupo do CPCV.
+    + VALIDAÇÃO DO NULO: rodar sobre feature sabidamente sem sinal mas com
+      a mesma estrutura de blocos; taxa de PASS deve ficar ~5%.
+    -> se o nulo não rejeita ruído estruturado, E0 não roda. Bloqueante.
 
-P2. Diagnóstico de saturação isotônica sobre os predictions.parquet existentes:
-    n_distinct(p_alpha) na subpopulação, massa de empate em tau,
-    variância p_alpha vs score_raw, n de blocos isotônicos.
+P1. [NOVO, PRÉ-REQUISITO] edges_ms sobre união temporal (D-16, AG-151).
+    -> sem isto, qualquer medição pooled é sobre purge ausente.
+    Bit-exato para BTCUSDT (é o símbolo de maior extensão), logo não
+    invalida medições single-symbol já feitas.
+
+P2. Diagnóstico de saturação isotônica sobre os predictions.parquet
+    existentes: n_distinct(p_alpha) na subpopulação, variância
+    p_alpha vs score_raw, n de blocos isotônicos.
     -> responde §3.4 empiricamente, sem treinar nada.
+    RESSALVA: a massa de empate em `tau` NÃO é computável aqui — depende
+    de D-15, que depende de retreino.
 
 P3. E0-piloto (FP inventory + separabilidade condicional + V de Cramér
     regime×group_id + estabilidade cross-fold do regime).
-    -> ordens de grandeza; PROVISÓRIO, grade 15m legada.
+    -> ordens de grandeza; PROVISÓRIO, grade 15m legada, single-symbol.
 ```
 
-**P1+P2+P3 respondem as três perguntas caras** — o Meta deve existir?
-`p_alpha` carrega informação? regime é um carimbo de data? — **antes de
-escrever uma linha de `meta.py`.**
+**P0+P1 são pré-requisitos, não escolhas.** P2+P3 respondem as perguntas caras
+— `p_alpha` carrega informação? regime é um carimbo de data? — **antes de
+escrever uma linha de `meta.py`.** A pergunta "o Meta deve existir?" só é
+respondida por E0-**vinculante** (E3), sobre o Alpha novo.
+
+**D-15 sai do caminho de 20%** e passa para E2 (junto do retreino), porque é
+onde ele pode de fato produzir efeito.
 
 ### 15.2 Sequência completa
 
 ```
+P0  Esquema de permutação travado + VALIDAÇÃO DO NULO (§2.6)  [bloqueante]
+P1  edges_ms sobre união temporal (D-16, AG-151)              [bloqueante]
+P2  Diagnóstico de saturação isotônica
+P3  E0-piloto (provisório, single-symbol, grade legada)
+
 E1  Data Layer 15 estágios -> 100%                    (gate do Manager)
 E2  Retreino do Alpha em R1 + migração LightGBM       (§15.14, represada)
+    + `tau_alpha` no schema + manifesto de versão (D-15)
     + decisão sobre as 3 features `expanding`
 E3  E0-VINCULANTE sobre o Alpha novo (§2.6)
     >>> GATE: falha em >=2 paths -> evidence_ledger + Meta sai do roadmap <<<
 
-F-1 PRÉ-REQUISITO BLOQUEANTE: edges_ms sobre união temporal (§4.5)
-    Sem isto, F1..F6 rodam POR SÍMBOLO, nunca pooled.
 F0  Refator puro com teste `golden` (§14.5); write_predictions_atomic
     parametrizado; predictions_meta_symbol_tf_dir
-F1  meta_dataset.py — build_meta_signal_table + donor_fold_for
+F1  meta_dataset.py — build_meta_signal_table + donor_fold_for(path_matched)
     + META_FORBIDDEN_FEATURES + as 4 asserções de §10.1
 F2  Unicidade com grão (symbol, side) + UniquenessDivergenceDiagnostic (§5)
-    >>> entrega n_eff_subpop medido — decide o gate de GBM <<<
-F3  Seleção posicional + os DOIS braços de doador (§4.3)
-    + controle positivo sintético de vazamento
+    >>> entrega n_eff_subpop medido — decide o gate de GBM e o N de §14.2 <<<
+F3  Seleção posicional (§4.7) + CONTROLE POSITIVO sintético de vazamento
+    >>> GATE bloqueante: se o pipeline não detecta lambda injetado,
+        nada que ele reporte e interpretavel — F6 nao roda <<<
 F4  MetaLearner + LogitL2Meta + BlockedGBMMeta + assert_sample_sufficient
     + guarda de posto do bloco categórico (§3.4)
-F5  tau_meta in-fold (§8.3) + serialização (D-17) + escrita atômica
-F6  meta_ablation.py — A0/A1/A2(com busca)/A3 + mecanismo de gate (§9)
-    >>> GATE: A1 > p95(A2) E A1 > A3, em >=4/5 paths, só folds OK <<<
+F5  tau_meta in-fold (§8.3) + serialização (D-17, reusa persistence.py)
+    + escrita atômica
+F6  meta_ablation.py — A0/A1/A2(5 buscas replicadas)/A3 + mecanismo (§9)
+    >>> GATE: A1 > p95(A2) E A1 > A3; primário sobre SÍMBOLOS,
+        paths como critério secundário; só folds meta_status==OK <<<
 F6b Replicação sobre walk-forward ancorado (§4.4)
     >>> GATE bloqueante: se CPCV passa e WF não, o resultado é artefato <<<
-F7  Enforcement: teste #10 + controle positivo; #11 estendido;
+F7  Enforcement: teste #10 + controle positivo; 4 das 5 checagens do #11;
     import-linter; B07 automated=True com allowlist   [paralelo a F4-F6]
 F8  constants.yaml — preencher TBD com valores MEDIDOS. N_lifetime++.
+
+F9  [OPCIONAL, fora do caminho crítico] group_matched (§4.3) — exige
+    primitiva purge_around_block() nova em cpcv.py + regra de doador do
+    lado do teste + contabilidade de caminhos refeita. NÃO é Meta v1.
 ```
 
 **Comandos para o Manager colar** (Claude não executa `.py`):
@@ -1381,15 +1687,22 @@ uv run pytest -m golden -q
 
 ## §16 — Riscos
 
-**R1 — Exposição do doador.** Sob `path_matched` o doador é **totalmente
-vidente** sobre o bloco de teste do Meta (interseção 0, não 1 — correção da
-v1). **Mitigação real:** braço `group_matched` (cegueira total, zero
-retreino) + controle positivo calibrável. Regra de leitura em §4.3.
+**R1 — Exposição do doador. Risco ACEITO, não mitigado por braço
+comparativo.** Sob `path_matched` o doador é **totalmente vidente** sobre o
+bloco de teste do Meta (interseção 0). A v2 propunha `group_matched` como
+mitigação; ele saiu (§4.3), e **a v3 não finge que o substituiu por
+equivalente**. O que existe é o **controle positivo sintético** (bloqueante,
+F3): ele não elimina a exposição — prova que o pipeline *detecta* vazamento
+quando há. É um teste de sensibilidade do instrumento, não uma correção do
+viés. Consequência declarada: **um resultado positivo do Meta sob
+`path_matched` é compatível com exposição do doador**, e o relatório precisa
+dizer isso em vez de apresentar o número como limpo. A eliminação real exige
+F9 (`group_matched` com purge próprio) ou CV aninhada com refit.
 
 **R2 — `p_alpha` degenerado.** Provável, não hipotético (§3.4). Mitigação:
-`score_raw` no design matrix + diagnóstico em E0. Se o Meta virar um modelo
-puramente de regime, isso é **legítimo** — mas o relatório tem de **dizer
-isso**, não vender "meta-labeling".
+`rank(score_raw)` como default no design matrix + diagnóstico em P2. Se o Meta
+virar um modelo puramente de regime, isso é **legítimo** — mas o relatório tem
+de **dizer isso**, não vender "meta-labeling".
 
 **R3 — `tau` varia por fold e por lado.** Resolvido por D-15 (`tau_alpha`
 persistido) + `margin` invariante.
@@ -1484,9 +1797,46 @@ reservados ao trabalho em voo que `src/models/persistence.py` referencia
      (`m4_critical_windows.py:1119-1121`).
    - **NENHUM AG de persistência** — seria duplicata de `AG-141`, que já
      existe e está aberto (§14.4).
-   - **Cadência Alpha↔Meta** não vira AG — era violação de B22 *esperando
-     acontecer*, e foi **resolvida por desenho** (§14.1). Registra-se no
-     PLANO_MESTRE como decisão, não no log como gap.
+
+### 18-bis — AGs abertos pela revisão `project_assurance` da v2 (v3)
+
+Numeração verificada: o último AG do log é **AG-152**; os novos começam em
+**AG-153**. Nenhum destes é gap do *documento* (esses foram corrigidos na v3)
+— todos são gaps do **código/projeto**, que existiriam mesmo sem o Meta.
+
+- **`AG-153` — não existe primitiva de purge por bloco arbitrário em
+  `cpcv.py`.** Todo o purge/embargo está acoplado à geometria de **pares**
+  (`generate_splits` rejeita `n_test_groups != 2`, `cpcv.py:544-548`;
+  `_path_assignment` é chaveado por pares, `:329-337`). Qualquer esquema de
+  validação que não seja "2 grupos de teste" fica **sem purge**, sem aviso.
+  Foi o que quase entrou no Meta via `group_matched`. Severidade média —
+  limita o espaço de desenho de CV do projeto inteiro.
+- **`AG-154` — `predictions.parquet` não tem manifesto nem versão.**
+  `write_predictions_atomic` (`pipeline.py:72-98`) escreve parquet puro. O
+  `schema_version` existente vive no JSON de diagnóstico, não no artefato. Os
+  5 artefatos em disco são indistinguíveis de artefatos futuros com schema
+  diferente. Bloqueia D-15 de ser uma mudança segura, e vale para o Alpha
+  independentemente do Meta.
+- **`AG-155` — não existe cadência de retreino de modelo declarada em lugar
+  nenhum do repo.** B22 exige "cadência fixa declarada a priori"; `grep` por
+  `cadence` em `constants.yaml` devolve só `dollar_bar_walkforward_cadence_days`
+  (calibração de barra, outra coisa). **O Alpha tem a mesma lacuna.** A v2
+  afirmava que §14.1 resolvia isso por desenho — **errado e revertido** (§14.1):
+  acoplar o Meta ao Alpha propaga o gatilho, não o disciplina.
+- **`AG-156` — `run_b4_feature_shuffle` usa permutação i.i.d. sobre dado com
+  rótulos sobrepostos.** `rng.permutation(X_perm.shape[0])`
+  (`src/models/baselines.py:819`) destrói a estrutura temporal das features.
+  **Qualificação importante, que muda a leitura:** para B4 isso torna o nulo
+  *mais fácil de bater* (features sem autocorrelação não sustentam modelo
+  nenhum), logo **não invalida** o achado registrado no `evidence_ledger` — ao
+  contrário, o reforça: o Alpha ficou **abaixo** de um nulo otimista. Mas é a
+  mesma classe de defeito que quase entrou no Gate E0, e o precedente de
+  código é o que teria sido copiado. Severidade baixa-média, com nota de que o
+  fix muda o valor de `auc_permuted` reportado.
+
+**Cadência Alpha↔Meta:** ao contrário do que a v2 registrou, **vira AG**
+(`AG-155`). O que §14.1 entrega e é real é o *enforcement de coerência*
+(`alpha_model_id` comparado pelo consumidor), não a cadência.
 4. `config/constants.yaml` — **nada a adicionar nesta rodada.** As 5
    constantes de §11 só nascem com o código que as lê; criá-las agora
    produziria constantes órfãs que `check_constants_referenced.py` reprova.
@@ -1555,4 +1905,44 @@ CRITICAL, 12 HIGH); trade-offs e alternativas.
 
 **Veredito da auditoria sobre a v1:** §10 (enforcement B07/B08) aprovado e
 independente; E0 aprovável após correções de texto; **F1–F6 exigiam
-retrabalho estrutural**. Esta v2 é esse retrabalho.
+retrabalho estrutural**. A v2 foi esse retrabalho.
+
+---
+
+## §20 — Changelog da revisão independente (v2 → v3)
+
+`project_assurance` (PRINCE2 §6.4), 2 revisores independentes sem acesso ao
+raciocínio do produtor, ~110 alegações `arquivo:linha` re-derivadas contra o
+código. **~102 corretas** — a acurácia factual da v2 se sustentou, e as
+correções de maior peso do §19 (isotônica *many-to-one*, `calibrator_id` ×2
+por fold, `regime_tradeable` colinear, `linspace` per-símbolo, EPV
+transplantado, `_path_assignment` particiona) foram todas confirmadas. Os
+achados abaixo são estruturais.
+
+| # | sev. | v2 | v3 | § |
+|---|---|---|---|---|
+| 1 | **CRITICAL** | `group_matched` "estritamente melhor, cegueira total" | **Não tem purge nem embargo.** `generate_splits` rejeita `n_test_groups != 2` (`cpcv.py:544-548`) ⟹ `splits[s]` não existe ⟹ não há `train_idx`; e as linhas de treino do Meta estão no `test_mask` de `split({g,h})`, excluídas de `train_candidate_mask` (`:565`). **Removido do caminho crítico**; vira F9 opcional com custo declarado | §4.3 |
+| 2 | **CRITICAL** | Gate E0 com estimador reajustado na permutação | **Faltava o esquema de permutação.** Precedente do repo é i.i.d. (`baselines.py:819`); com rótulos sobrepostos e regimes em blocos contíguos, o nulo teria variância governada por linhas, não blocos ⟹ p95 estreito ⟹ **qualquer coisa passa**. Nulo de **circular-shift por bloco** travado + **validação obrigatória do próprio nulo** | §2.6 |
+| 3 | **CRITICAL** | "Nulo A2 com a mesma busca" | Replicava **1 de 5** escolhas feitas sobre o dado. Enumeração exaustiva das 5 + **enforcement por função compartilhada** (`_search_and_fit`), para o nulo não ficar para trás por esquecimento | §9 |
+| 4 | HIGH | `group_matched`: "1 caminho em vez de 5" | **O lado do TESTE nunca foi definido** — 5 doadores candidatos, cada um com `tau` e calibrador próprios ⟹ população de teste diferente. "1 caminho" não é fato da construção, é consequência de escolha não declarada | §4.3 |
+| 5 | HIGH | D-15 "requer bump de `schema_version`" | **`predictions.parquet` não tem `schema_version`** — não há o que bumpar. Contrato completo: ausência de manifesto ⟹ `LegacyArtifactError`, distinto de versão desconhecida. Vira `AG-154` | §3.5, §14.3 |
+| 6 | HIGH | D-15 como P1, "zero treino" | **Falso** — `tau` só existe dentro do treino (`SideModelResult.tau`). Popular exige **retreinar**. D-15 sai do caminho de 20% e vai para E2 | §15.1 |
+| 7 | HIGH | §14.1 "resolve B22" | **Não resolve.** Acoplar Meta ao Alpha é restrição de *acoplamento*, não *cadência* — se o gatilho do Alpha for sequência de perdas, B22 cai nos dois. **Não existe cadência de retreino no repo.** Vira `AG-155` | §14.1 |
+| 8 | MEDIUM | §14.2 "critério a priori: `TBD` antes de F6" | Adiamento vestido de regra. Critério travado: **o mesmo do gate F6, em janela móvel**; desligar é automático, religar exige Manager + novo F6 | §14.2 |
+| 9 | MEDIUM | `score_raw` padronizado; `rank()` como ablação | **Hierarquia invertida.** `score_raw` já é probabilidade em [0,1] — a escala é a mesma; o que difere é o *mapeamento*, e z-score não iguala mapeamento. **`rank()` vira default** | §3.4 |
+| 10 | MEDIUM | `side_hat = +1 ⟺ spread > 0` "exatamente" | **Falso** — omite `tau` (`alpha.py:382`). Vale só restrito à subpopulação. Conclusão sobrevive, enunciado corrigido | §3.4 |
+| 11 | MEDIUM | Teste #11 "só sobre `_ALPHA_PATH`" | **1 das 5 checagens já varre `src/models/`** (`leakage.py:603-605`) — vem de graça. As outras 4 é que precisam de `_META_PATH` | §10.3 |
+| 12 | MEDIUM | §12 "`edges_ms` é a única mudança em `cpcv.py`" | Era incompatível com o próprio D-08 da v2. Verdadeiro de novo na v3 — **por remoção de escopo**, não por acerto original | §12 |
+| 13 | — | R1 mitigado por comparação entre braços | **Risco ACEITO e declarado.** O controle positivo testa a sensibilidade do instrumento, não corrige o viés. Um resultado positivo sob `path_matched` é compatível com exposição do doador, e o relatório precisa dizer isso | §16-R1 |
+| 14 | — | Critério ≥4/5 paths como primário | Paths não são independentes (§4.6, argumento que a v2 construiu e não aplicou). **Primário passa a ser os 5 símbolos + janelas WF**; paths viram secundário | §9 |
+
+**AGs abertos:** `AG-153` (purge por bloco arbitrário inexistente),
+`AG-154` (predições sem manifesto), `AG-155` (cadência de retreino ausente no
+repo), `AG-156` (nulo i.i.d. em B4 — com a qualificação de que torna o nulo
+*mais fácil*, logo não invalida o achado do Alpha).
+
+**Veredito da revisão sobre a v2:** *"não é base sólida para implementar"* —
+os dois gates que decidem tudo estavam inclinados a PASS, e o braço anunciado
+como blindado era o único sem B09. **Esta v3 é a correção.** Ordem
+recomendada e adotada: nulo travado e validado → purge cross-símbolo →
+E0-piloto → só então F0/F1.
