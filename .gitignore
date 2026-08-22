@@ -26,6 +26,17 @@ data/*
 # Mesma categoria/motivo de data/quality_reports/ acima — leakage_report.json
 # (§11.5, Gate 2) é evidência de auditoria pequena e legível, não dado bruto.
 !data/validation_reports/
+
+# Mesma categoria/motivo de data/quality_reports/ acima — registro append-only
+# PEQUENO de rodadas reais de produção (Label Engine / Fill Simulator), lido de
+# volta pelo próprio pipeline — não é dado bruto reconstrutível, é log de
+# execução. Corrigido 2026-08-22: morava em experiments/, nome incompatível
+# com log de produção (`src/labels/experiment_log.py`,
+# `src/execution/fill_simulator.py`).
+!data/label_engine_runs/
+!data/label_engine_runs/*.parquet
+!data/execution_runs/
+!data/execution_runs/*.parquet
 !data/validation_reports/*.json
 
 # Saída em massa de pipeline — reconstrutível a partir de código+config+dado

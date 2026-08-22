@@ -496,7 +496,7 @@ adverse_selection_gate0_break_bps:
 # placeholder de 1,5bps acima. `p_fill` medido no mesmo run: 37,3% (buy 36,7%,
 # sell 37,9%) — LIMITE INFERIOR pessimista (cancelamento de fila não modelado,
 # ver docstring do módulo), abaixo do piso de 60% citado no §9.6. Detalhe completo
-# em `experiments/fill_simulator_runs.parquet` (run_id=1) e
+# em `data/execution_runs/fill_simulator_runs.parquet` (run_id=1) e
 # `execution/fill_simulator/v1/summary.json` (bulk, gitignored).
 # ============================================================================
 # Riscos de dados registrados (não são hiperparâmetros — são lacunas medidas

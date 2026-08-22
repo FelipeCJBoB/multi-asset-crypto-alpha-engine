@@ -32,12 +32,12 @@ import numpy as np
 import polars as pl
 import structlog
 
-from ._paths import EXPERIMENTS_DIR
+from ._paths import LABEL_ENGINE_RUNS_DIR
 from .triple_barrier import LabelBuildStats, LabelConfig
 
 logger = structlog.get_logger(__name__)
 
-LOG_PATH: Path = EXPERIMENTS_DIR / "label_engine_runs.parquet"
+LOG_PATH: Path = LABEL_ENGINE_RUNS_DIR / "label_engine_runs.parquet"
 
 _SCHEMA: dict[str, Any] = {
     "experiment_id": pl.Int64,

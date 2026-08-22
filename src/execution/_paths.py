@@ -37,9 +37,19 @@ BOOK_TICKER_DIR: Path = RAW_DIR / "book_ticker"
 # confundir com o pacote de CÓDIGO `src/execution/`.
 FILL_SIMULATOR_OUTPUT_DIR: Path = REPO_ROOT / "execution" / "fill_simulator"
 
-# Registro append-only PEQUENO (mesmo padrão de
-# `src/labels/experiment_log.py` — config+métricas, não dado bruto) —
-# versionado, não cai no .gitignore.
+# Registro append-only PEQUENO de RODADAS REAIS do simulador de fill
+# (mesmo padrão de `src/labels/experiment_log.py` — config+métricas, não
+# dado bruto) — versionado, não cai no .gitignore. Corrigido 2026-08-22:
+# morava em `experiments/` (nome sinaliza exploratório/descartável,
+# incompatível com log de produção lido de volta pelo próprio pipeline).
+# NÃO pode virar `execution/fill_simulator_runs.parquet` (irmão de
+# FILL_SIMULATOR_OUTPUT_DIR acima) -- `/execution/` é ignorado por
+# DIRETÓRIO inteiro em .gitignore, e git não permite re-incluir um
+# arquivo dentro de diretório ignorado (mesmo motivo de `data/*` em vez
+# de `data/` no .gitignore) -- por isso vai pra `data/execution_runs/`,
+# com exceção explícita, mesmo padrão de `data/quality_reports/`.
+EXECUTION_RUNS_DIR: Path = DATA_ROOT / "execution_runs"
+
 EXPERIMENTS_DIR: Path = REPO_ROOT / "experiments"
 
 

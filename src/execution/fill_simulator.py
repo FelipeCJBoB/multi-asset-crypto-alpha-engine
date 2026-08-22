@@ -132,7 +132,7 @@ from src.data import lake
 from src.data.resample import step_ms
 
 from ._constants import load_constant
-from ._paths import EXPERIMENTS_DIR, FILL_SIMULATOR_OUTPUT_DIR, book_ticker_symbol_dir
+from ._paths import EXECUTION_RUNS_DIR, FILL_SIMULATOR_OUTPUT_DIR, book_ticker_symbol_dir
 
 logger = structlog.get_logger(__name__)
 
@@ -898,10 +898,11 @@ def write_summary_atomic(
 
 # ============================================================================
 # Registro append-only PEQUENO (§11.6, mesmo padrão de
-# src/labels/experiment_log.py) — experiments/fill_simulator_runs.parquet
+# src/labels/experiment_log.py) — data/execution_runs/fill_simulator_runs.
+# parquet (corrigido 2026-08-22, morava em experiments/ -- ver _paths.py)
 # ============================================================================
 
-EXPERIMENT_LOG_PATH: Path = EXPERIMENTS_DIR / "fill_simulator_runs.parquet"
+EXPERIMENT_LOG_PATH: Path = EXECUTION_RUNS_DIR / "fill_simulator_runs.parquet"
 
 _EXPERIMENT_SCHEMA: dict[str, Any] = {
     "run_id": pl.Int64,

@@ -73,5 +73,13 @@ def labels_symbol_tf_dir(
     return DATA_ROOT / "labels" / symbol / grade / version
 
 
-# Registro append-only de experimentos (§11.6) — `experiments/label_engine_runs.parquet`.
+# Registro append-only de RODADAS REAIS de produção do Label Engine (§11.6)
+# -- não é resultado de experimento/exploração, é log de execução (toda
+# rodada real de build de labels grava aqui via backfill_multi_symbol) --
+# corrigido 2026-08-22 pra sair de experiments/ (nome do diretório sinaliza
+# "descartável/exploratório", incompatível com um log de produção lido de
+# volta pelo próprio pipeline). Histórico preservado via `git mv`, não
+# recriado do zero.
+LABEL_ENGINE_RUNS_DIR: Path = DATA_ROOT / "label_engine_runs"
+
 EXPERIMENTS_DIR: Path = REPO_ROOT / "experiments"

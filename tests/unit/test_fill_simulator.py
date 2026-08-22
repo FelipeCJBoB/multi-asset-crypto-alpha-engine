@@ -3,7 +3,7 @@ Sprint 9). Cobre o núcleo numérico puro (`_simulate_one_order`,
 `_asof_index`, `_day_grid_ms`) com fixtures sintéticas pequenas primeiro
 (sem IO — a janela real 2023-05-16..2024-03-30 NÃO é varrida aqui, isso é
 feito por uma execução separada, fora da suíte de testes, que produz
-`experiments/fill_simulator_runs.parquet`), depois `summarize`/escrita
+`data/execution_runs/fill_simulator_runs.parquet`), depois `summarize`/escrita
 atômica/log de experimentos com `tmp_path`, e por fim um teste de integração
 leve (skip se o backfill local não existir) confirmando o schema real de
 `data/raw/book_ticker/BTCUSDT/`."""

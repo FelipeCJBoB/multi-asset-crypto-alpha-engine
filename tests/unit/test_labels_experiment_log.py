@@ -1,8 +1,10 @@
 """Testes de `src/labels/experiment_log.py` — registro append-only de
 variantes de barreira (§11.6, Sprint 6 explícito no roadmap). Todos usam
 `tmp_path`/`path=` explícito — NUNCA escrevem no
-`experiments/label_engine_runs.parquet` real do repo (esse arquivo é
-populado pelo run de medição real do Sprint 6, não pela suíte de testes)."""
+`data/label_engine_runs/label_engine_runs.parquet` real do repo (esse
+arquivo é populado pelas rodadas reais de produção do Label Engine, não
+pela suíte de testes — path corrigido 2026-08-22, morava antes em
+`experiments/`, nome incompatível com log de produção lido de volta)."""
 
 from __future__ import annotations
 
@@ -144,8 +146,8 @@ def test_record_experiment_acrescenta_sem_apagar_anterior(tmp_path: Path) -> Non
 
 
 def _legacy_schema_row(log_path: Path) -> None:
-    """Simula o arquivo REAL em disco (`experiments/label_engine_runs.
-    parquet`, existe desde 2026-08-09) escrito sob o `_SCHEMA` de ANTES do
+    """Simula o arquivo REAL em disco (`data/label_engine_runs/label_
+    engine_runs.parquet`, existe desde 2026-08-09) escrito sob o `_SCHEMA` de ANTES do
     AG-031/B1 -- sem a coluna `time_stop_ms`, `time_stop_bars` como fonte
     única (Int32, populado). Bypassa `record_experiment` de propósito: o
     objetivo é criar em disco exatamente o schema antigo, não o schema
@@ -218,7 +220,7 @@ def test_record_experiment_tolera_arquivo_real_com_schema_antigo_sem_time_stop_m
 ) -> None:
     """AG-044 (achado de `project_assurance`) -- o `how="diagonal"` em
     `record_experiment` existe especificamente pra tolerar o schema do
-    arquivo REAL (`experiments/label_engine_runs.parquet`, sem
+    arquivo REAL (`data/label_engine_runs/label_engine_runs.parquet`, sem
     `time_stop_ms` nem `atr_window_ms`), mas nenhum teste exercitava esse
     caminho contra um frame de schema DIFERENTE -- só contra dois frames já
     no schema atual. Este teste escreve o schema antigo de verdade em disco

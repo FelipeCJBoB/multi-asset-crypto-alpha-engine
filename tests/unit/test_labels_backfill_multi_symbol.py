@@ -126,7 +126,7 @@ def test_build_and_write_labels_for_symbol_roteia_ate_build_e_write(
     ) -> Path:
         # AG-128 (F1) -- mockado de propósito, mesmo motivo de `write_labels_
         # atomic` acima: sem isso, este teste gravaria uma linha real em
-        # `experiments/label_engine_runs.parquet` (produção) a cada rodada da
+        # `data/label_engine_runs/label_engine_runs.parquet` (produção) a cada rodada da
         # suíte. Wiring de verdade (record_experiment REAL sendo chamado e
         # persistindo os 3 campos de LabelBuildStats) é provado à parte, ver
         # test_build_and_write_labels_for_symbol_registra_experiment_log_com_
@@ -252,7 +252,7 @@ def test_build_and_write_labels_for_symbol_resolution_id_usa_path_novo_e_repassa
     ) -> Path:
         # AG-128 (F1) -- mesmo motivo do fake irmão em
         # test_build_and_write_labels_for_symbol_roteia_ate_build_e_write:
-        # sem isso, gravaria em experiments/label_engine_runs.parquet real.
+        # sem isso, gravaria em data/label_engine_runs/label_engine_runs.parquet real.
         return Path("/fake/runs.parquet")
 
     monkeypatch.setattr(
@@ -289,7 +289,7 @@ def test_build_and_write_labels_for_symbol_registra_experiment_log_com_stats(
     symbol_with_stats`/`write_labels_atomic` são substituídos (sintético,
     sem IO real de mercado, mesmo padrão dos testes acima) e `experiment_
     log.LOG_PATH` é redirecionado pra `tmp_path` (sem isso, a chamada real
-    cairia em `experiments/label_engine_runs.parquet` de produção).
+    cairia em `data/label_engine_runs/label_engine_runs.parquet` de produção).
 
     Antes desta correção, `record_experiment` NUNCA era chamado neste
     caminho apesar do schema já existir e já ser testado isoladamente
