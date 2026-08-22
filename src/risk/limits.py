@@ -136,7 +136,35 @@ def control_01_regime_tradeavel(regime_tradeable: bool) -> ControlOutcome:
     Risk Engine ao vocabulário específico do baseline; mapear a saída do
     HMM pros rótulos R1-R4 reintroduziria o erro que `AG-121` já documenta
     (`canonical_id` do HMM não tem ordem semântica — tratá-lo como se
-    fosse R1-R4 seria uma segunda fonte de verdade inventada)."""
+    fosse R1-R4 seria uma segunda fonte de verdade inventada).
+
+    **DESLIGADO de `evaluate_all()` desde 2026-08-22 (decisão do Manager,
+    `AG-114`/`AG-118`) — função mantida, testada e exportada, mas NÃO
+    consultada no caminho de decisão real.** Motivo: `AG-118` mediu
+    `lift` (IC de Katz ponderado por unicidade) em 90 células (k2/k3/k4 ×
+    3 resoluções × 5 símbolos × 2 lados) e não achou desvio de 1,0 em
+    NENHUMA — evidência negativa e definitiva de que gatear entrada pelo
+    bucket de stress do HMM não tem sinal econômico detectável. O
+    controle foi wireado em produção (`§15.13`, 2026-08-21) ANTES dessa
+    medição existir, como "segurança extra de baixo custo" — sob mandato
+    de infraestrutura (nunca manter em produção o que já foi medido como
+    sem efeito, só porque custa pouco), manter ligado era o erro maior:
+    custa opcionalidade e arrisca contaminar qualquer backtest futuro que
+    rode com o gate ativo. Só volta a `evaluate_all()` se uma metodologia
+    de regime genuinamente derivada e validada (não a atual, herdada/
+    `ASSUMED`-adjacent via override de negócio) mostrar sinal econômico
+    real — não é um flag reversível por preferência, é uma remoção
+    motivada por medição.
+
+    **Predição pré-declarada, registrada AGORA, não para lembrar depois**
+    (`PLANO_MESTRE_PRINCE2.md §15.13`, `AG-114`): se algum backtest
+    futuro, com este gate reativado manualmente para teste, mostrar
+    melhora de Sharpe correlacionada com o gate estar ativo, isso deve
+    ser tratado como bandeira vermelha de vazamento/overfitting — não
+    como confirmação tardia de que o gate funciona. `AG-118` já mediu
+    ausência de efeito; uma melhora aparente depois seria evidência
+    CONTRA a medição, não a favor do gate, e precisa de investigação de
+    vazamento antes de qualquer outra interpretação."""
     return ControlOutcome.PASS if regime_tradeable else ControlOutcome.FAIL
 
 
@@ -538,15 +566,20 @@ class RiskDecision:
 
 # ordem fixa §8.3 — (id_pro_log, RejectionReason, thunk sem argumento)
 def evaluate_all(inputs: RiskEngineInputs) -> RiskDecision:
-    """Roda os 19 controles NA ORDEM do PRD (§8.3 do V3.2 + #19 de `AG-081`), parando no primeiro
-    `FAIL` (decisão documentada no docstring do módulo). `NOT_COMPUTABLE`
-    nunca interrompe — é registrado e a avaliação continua."""
+    """Roda os 18 controles ATIVOS NA ORDEM do PRD (§8.3 do V3.2 + #19 de
+    `AG-081`), parando no primeiro `FAIL` (decisão documentada no
+    docstring do módulo). `NOT_COMPUTABLE` nunca interrompe — é
+    registrado e a avaliação continua.
+
+    **Controle #1 (`control_01_regime_tradeavel`) DESLIGADO desde
+    2026-08-22** — ver docstring da função pro motivo completo
+    (`AG-114`/`AG-118`, evidência negativa e definitiva de sinal
+    econômico, gate wireado antes da medição que o justificaria). A
+    função continua definida, testada e exportada — só não entra no
+    tuple `checks` abaixo. `inputs.regime_tradeable` segue como campo
+    obrigatório de `RiskEngineInputs` (não removido — reversão futura,
+    se justificada por metodologia derivada e validada, é 1 linha)."""
     checks: tuple[tuple[str, RejectionReason, ControlOutcome], ...] = (
-        (
-            "1",
-            RejectionReason.REGIME_BLOCKED,
-            control_01_regime_tradeavel(inputs.regime_tradeable),
-        ),
         ("2", RejectionReason.STATE_NOT_RUNNING, control_02_estado_sistema(inputs.system_state)),
         (
             "3",

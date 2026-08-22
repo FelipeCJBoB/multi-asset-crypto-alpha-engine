@@ -553,27 +553,33 @@ def test_evaluate_all_aprova_o_caso_base() -> None:
     assert decision.controls_evaluated[-1] == "19"  # rodou todos, nenhum FAIL
 
 
-def test_evaluate_all_para_no_primeiro_fail_regime() -> None:
+def test_evaluate_all_ignora_regime_tradeavel_false_controle_1_desligado() -> None:
+    """Controle #1 desligado de `evaluate_all()` desde 2026-08-22
+    (`AG-114`/`AG-118`, evidência negativa e definitiva de sinal
+    econômico -- ver docstring de `control_01_regime_tradeavel`).
+    `regime_tradeable=False` NÃO bloqueia mais a decisão -- o campo
+    continua obrigatório em `RiskEngineInputs` (reversão futura barata),
+    mas não é consultado no caminho de decisão real."""
     decision = evaluate_all(_make_inputs(regime_tradeable=False))
-    assert decision.approved is False
-    assert decision.rejection_reason == RejectionReason.REGIME_BLOCKED
-    assert decision.controls_evaluated == ("1",)  # nem chegou no controle 2
+    assert decision.approved is True
+    assert decision.rejection_reason is None
+    assert "1" not in decision.controls_evaluated
 
 
-def test_evaluate_all_para_no_primeiro_fail_kill_switch_mesmo_com_regime_ok() -> None:
+def test_evaluate_all_para_no_primeiro_fail_kill_switch() -> None:
     decision = evaluate_all(_make_inputs(kill_switch_active=True))
     assert decision.approved is False
     assert decision.rejection_reason == RejectionReason.KILL_SWITCH_ACTIVE
-    assert decision.controls_evaluated == ("1", "2", "3")
-    assert decision.controls_passed == ("1", "2")
+    assert decision.controls_evaluated == ("2", "3")
+    assert decision.controls_passed == ("2",)
 
 
-def test_evaluate_all_rejeita_por_below_min_qty_apos_passar_controles_1_a_5() -> None:
+def test_evaluate_all_rejeita_por_below_min_qty_apos_passar_controles_2_a_5() -> None:
     sizing = _make_sizing(qty=Decimal("0.0005"))
     decision = evaluate_all(_make_inputs(sizing=sizing))
     assert decision.approved is False
     assert decision.rejection_reason == RejectionReason.BELOW_MIN_QTY
-    assert decision.controls_passed == ("1", "2", "3", "4", "5")
+    assert decision.controls_passed == ("2", "3", "4", "5")
 
 
 def test_evaluate_all_not_computable_nao_impede_approved() -> None:
