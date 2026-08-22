@@ -2414,3 +2414,45 @@ entries:
     existe persistido em labels.parquet -- derivacao simetrica MFE->TP/MAE->SL nao e possivel
     com o dado atual, decisao pendente do Manager (adicionar coluna vs. principio alternativo
     pro SL). Ver docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md Sec6-bis.
+- id_curto: ag144-correlacao-cross-asset-15m-4-janelas
+  fase: Verificacao AG-144 (sintese brief decisoes residuais Sec4.2, 2026-08-22)
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT (10 pares, matriz 5x5)'
+  tf: 15m
+  janela: 'historica comum 2021-12-01 -> 2026-08-07 (n=163.775) + 3 janelas moveis
+    terminando em 2026-08-07: 90d (n=8.735), 180d (n=17.375), 365d (n=35.135)'
+  lado: n/a
+  regime: all
+  feature_ou_filtro: correlacao de Pearson entre log-retornos 15m dos 5 ativos do universo
+  metrica_tipo: 'correlacao pairwise -- mean/min/max por janela + range por par entre as
+    4 janelas'
+  metrica_valor: >
+    Janela historica comum: mean=0,7028 (min SOLUSDT-XRPUSDT=0,6122, max
+    BTCUSDT-ETHUSDT=0,8448). 90d: mean=0,8165 (min BNBUSDT-XRPUSDT=0,7392, max
+    BTCUSDT-ETHUSDT=0,8901). 180d: mean=0,8324 (min BNBUSDT-XRPUSDT=0,7730, max
+    BTCUSDT-ETHUSDT=0,8977). 365d: mean=0,7914 (min BTCUSDT-BNBUSDT=0,7416, max
+    BTCUSDT-ETHUSDT=0,8639). NENHUMA das 4 janelas atinge ~0,91 como MEDIA entre os
+    10 pares -- so o par isolado BTCUSDT-ETHUSDT chega perto (0,89-0,90) nas janelas
+    mais curtas. Range por par entre as 4 janelas: ate 0,2339 (SOLUSDT-XRPUSDT,
+    0,6122 a 0,8461) -- instavel, nao constante.
+  n: 163775
+  status: vermelho
+  fonte_arquivo: experiments/cross_asset_correlation_stability.json
+  fonte_secao: windows[] (4 janelas, script tools/diagnostics/measure_cross_asset_correlation_stability.py)
+  data: '2026-08-22'
+  nota: >
+    Classificado VERMELHO -- a premissa "correlacao ~0,91 entre os 5 ativos"
+    (PRD_V4_1.md Sec2.8 "I3", citada em config/constants.yaml::aggregate_risk_max
+    source e usada por uma das 2 sinteses externas do brief Sec4.2 para argumentar
+    que "teto simples e teto ponderado por correlacao convergem") NAO se sustenta
+    como valor medio estavel -- medicao real da media entre os 10 pares fica entre
+    0,70 e 0,83 conforme a janela, nunca ~0,91, e o range entre janelas (ate 0,23
+    por par) mostra que o numero e sensivel a janela escolhida, nao deveria ser
+    citado sem ela. Nao invalida a EXISTENCIA de correlacao alta o bastante pra
+    justificar control_19_risco_agregado (0,70 pooled ja e materialmente alto pra
+    5 ativos supostamente diversificados) -- mas enfraquece o argumento especifico
+    de "convergencia" entre os dois desenhos de Sec4.2 (teto simples vs. controle
+    por correlacao), que assumia ~0,91. Resolve AG-144
+    (audit/architecture_gaps_log.yaml) -- proveniencia agora MEASURED, mas o valor
+    ~0,91 em config/constants.yaml::aggregate_risk_max precisa de nota de correcao
+    (nao reescrita), decisao de qual janela adotar (recente ~0,83 vs. historica
+    0,70) ainda em aberto, do Manager.

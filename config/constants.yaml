@@ -138,6 +138,20 @@ aggregate_risk_max:
     código antes do sweep (decisão do Manager 2026-08-17, decouple de V41-8 --
     AG-081) porque o risco já está quantificado e não depende da sequência de
     medição M4/M5/V41-5..7.
+
+    [CORREÇÃO 2026-08-22, AG-144] "rho~=0,91" acima nunca teve janela/período
+    declarados e não tinha entrada em evidence_ledger.yaml. Remedido
+    (tools/diagnostics/measure_cross_asset_correlation_stability.py,
+    audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas):
+    a MÉDIA real entre os 10 pares fica entre 0,70 (janela histórica completa)
+    e 0,83 (últimos 180d), nunca ~0,91 -- só o par BTCUSDT-ETHUSDT isolado
+    chega perto disso (0,89-0,90) nas janelas mais curtas. Instável entre
+    janelas (range até 0,23 por par). Não invalida a existência de correlação
+    alta o bastante pra justificar este controle (0,70 pooled já é material
+    pra 5 ativos supostamente diversificados) -- mas o fator "4,82x" acima,
+    calculado sobre 0,91, está superestimado; recalcular com o valor
+    correto (janela a decidir pelo Manager) fica pendente, sem mudar o
+    `value` nem o `sweep_required` desta constante.
   class: A
   sweep_required: true
   sweep_range: [0.005, 0.015]

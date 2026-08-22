@@ -1,0 +1,122 @@
+{
+  "generated_at": "2026-08-22T13:42:10.928001+00:00",
+  "code_version": "1611597",
+  "measurement_provenance": "MEASURED -- log-retornos 15m (src.data.lake.query_bars, reamostrado de klines_1m) dos 5 símbolos do universo, alinhados por open_time (inner join), correlação de Pearson 5x5 sobre 4 janelas (histórica comum 2021-12-01..END_DATE + 3 janelas móveis 90/180/365d). Responde AG-144 (audit/architecture_gaps_log.yaml): proveniência/janela/estabilidade do valor ~0,91 citado em PRD_V4_1.md §2.8 'I3', que sustenta control_19_risco_agregado (src/risk/limits.py) e a decisão residual §4.2 (docs/brief_auditoria_externa_2026-08-22_decisoes_residuais_risco_regime.md). Medição descritiva, 0 trials -- não decide '1 controle vs. 2' nem abre sweep.",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "windows": [
+    {
+      "window_id": "common_full",
+      "start": "2021-12-01",
+      "end": "2026-08-07",
+      "n_obs": 163775,
+      "pairs": {
+        "BTCUSDT-ETHUSDT": 0.8448,
+        "BTCUSDT-SOLUSDT": 0.7173,
+        "BTCUSDT-BNBUSDT": 0.7312,
+        "BTCUSDT-XRPUSDT": 0.6511,
+        "ETHUSDT-SOLUSDT": 0.7313,
+        "ETHUSDT-BNBUSDT": 0.7555,
+        "ETHUSDT-XRPUSDT": 0.6709,
+        "SOLUSDT-BNBUSDT": 0.6853,
+        "SOLUSDT-XRPUSDT": 0.6122,
+        "BNBUSDT-XRPUSDT": 0.6287
+      },
+      "mean_pairwise": 0.7028,
+      "min_pairwise": 0.6122,
+      "max_pairwise": 0.8448,
+      "min_pair": "SOLUSDT-XRPUSDT",
+      "max_pair": "BTCUSDT-ETHUSDT"
+    },
+    {
+      "window_id": "last_90d",
+      "start": "2026-05-09",
+      "end": "2026-08-07",
+      "n_obs": 8735,
+      "pairs": {
+        "BTCUSDT-ETHUSDT": 0.8901,
+        "BTCUSDT-SOLUSDT": 0.8506,
+        "BTCUSDT-BNBUSDT": 0.7761,
+        "BTCUSDT-XRPUSDT": 0.8159,
+        "ETHUSDT-SOLUSDT": 0.874,
+        "ETHUSDT-BNBUSDT": 0.7749,
+        "ETHUSDT-XRPUSDT": 0.8258,
+        "SOLUSDT-BNBUSDT": 0.7727,
+        "SOLUSDT-XRPUSDT": 0.8461,
+        "BNBUSDT-XRPUSDT": 0.7392
+      },
+      "mean_pairwise": 0.8165,
+      "min_pairwise": 0.7392,
+      "max_pairwise": 0.8901,
+      "min_pair": "BNBUSDT-XRPUSDT",
+      "max_pair": "BTCUSDT-ETHUSDT"
+    },
+    {
+      "window_id": "last_180d",
+      "start": "2026-02-08",
+      "end": "2026-08-07",
+      "n_obs": 17375,
+      "pairs": {
+        "BTCUSDT-ETHUSDT": 0.8977,
+        "BTCUSDT-SOLUSDT": 0.8583,
+        "BTCUSDT-BNBUSDT": 0.8163,
+        "BTCUSDT-XRPUSDT": 0.818,
+        "ETHUSDT-SOLUSDT": 0.8768,
+        "ETHUSDT-BNBUSDT": 0.8176,
+        "ETHUSDT-XRPUSDT": 0.8237,
+        "SOLUSDT-BNBUSDT": 0.8099,
+        "SOLUSDT-XRPUSDT": 0.8332,
+        "BNBUSDT-XRPUSDT": 0.773
+      },
+      "mean_pairwise": 0.8324,
+      "min_pairwise": 0.773,
+      "max_pairwise": 0.8977,
+      "min_pair": "BNBUSDT-XRPUSDT",
+      "max_pair": "BTCUSDT-ETHUSDT"
+    },
+    {
+      "window_id": "last_365d",
+      "start": "2025-08-07",
+      "end": "2026-08-07",
+      "n_obs": 35135,
+      "pairs": {
+        "BTCUSDT-ETHUSDT": 0.8639,
+        "BTCUSDT-SOLUSDT": 0.8147,
+        "BTCUSDT-BNBUSDT": 0.7416,
+        "BTCUSDT-XRPUSDT": 0.7622,
+        "ETHUSDT-SOLUSDT": 0.8485,
+        "ETHUSDT-BNBUSDT": 0.761,
+        "ETHUSDT-XRPUSDT": 0.7794,
+        "SOLUSDT-BNBUSDT": 0.7689,
+        "SOLUSDT-XRPUSDT": 0.8103,
+        "BNBUSDT-XRPUSDT": 0.7631
+      },
+      "mean_pairwise": 0.7914,
+      "min_pairwise": 0.7416,
+      "max_pairwise": 0.8639,
+      "min_pair": "BTCUSDT-BNBUSDT",
+      "max_pair": "BTCUSDT-ETHUSDT"
+    }
+  ],
+  "stability_across_windows": {
+    "range_per_pair": {
+      "BTCUSDT-ETHUSDT": 0.0529,
+      "BTCUSDT-SOLUSDT": 0.141,
+      "BTCUSDT-BNBUSDT": 0.0851,
+      "BTCUSDT-XRPUSDT": 0.1669,
+      "ETHUSDT-SOLUSDT": 0.1455,
+      "ETHUSDT-BNBUSDT": 0.0621,
+      "ETHUSDT-XRPUSDT": 0.1549,
+      "SOLUSDT-BNBUSDT": 0.1246,
+      "SOLUSDT-XRPUSDT": 0.2339,
+      "BNBUSDT-XRPUSDT": 0.1443
+    },
+    "max_range": 0.2339,
+    "interpretation": "range = max(corr) - min(corr) do mesmo par entre as 4 janelas. range pequeno (ex. < 0.05) sustenta tratar ~0,91 como estável; range grande sugere que o número é sensível à janela escolhida e não deveria ser citado sem a janela junto."
+  }
+}

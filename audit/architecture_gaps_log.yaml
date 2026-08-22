@@ -10628,3 +10628,33 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- recomendação: remedir ρ com janela declarada (ex. últimos 90d/180d/365d, reportar as 3) sobre dado já existente antes de decidir §4.2 sobre 1 controle vs. 2; registrar resultado em audit/evidence_ledger.yaml com proveniência MEASURED; só então avaliar se '1 controle agregado' ainda se sustenta. Não bloqueia nada hoje (controle 19 inerte), mas bloqueia decidir §4.2 com confiança."
+
+    remedicao_2026_08_22: >
+      Remedido -- Manager autorizou (§4.2 = "pode medir"),
+      `tools/diagnostics/measure_cross_asset_correlation_stability.py`
+      rodado sobre dado real (5 símbolos, log-retornos 15m, 4 janelas),
+      resultado em `experiments/cross_asset_correlation_stability.json`
+      e registrado em `audit/evidence_ledger.yaml::ag144-correlacao-
+      cross-asset-15m-4-janelas` com proveniência MEASURED.
+      **Achado: o valor citado (~0,91) NÃO se sustenta como média
+      estável.** Média real entre os 10 pares: 0,7028 (janela histórica
+      completa, 2021-12-01→2026-08-07, n=163.775) / 0,8165 (90d) /
+      0,8324 (180d) / 0,7914 (365d) -- nenhuma janela chega a 0,91 como
+      MÉDIA; só o par isolado BTCUSDT-ETHUSDT chega perto (0,89-0,90)
+      nas janelas curtas. Instável: range até 0,2339 por par entre as
+      4 janelas (SOLUSDT-XRPUSDT vai de 0,6122 a 0,8461 dependendo da
+      janela). `config/constants.yaml::aggregate_risk_max` ganhou nota
+      de correção (preservando o texto original, não reescrito) -- o
+      fator "4,82x o risco unitário" citado lá foi calculado sobre
+      0,91 e está superestimado; recalcular com o valor correto (qual
+      janela adotar -- pendente, decisão do Manager) fica como próximo
+      passo, sem mudar `value`/`sweep_required` da constante. Efeito
+      sobre a decisão §3.1 da síntese do brief (`docs/brief_auditoria_
+      externa_2026-08-22_decisoes_residuais_risco_regime.md`, "teto
+      simples ≈ teto ponderado convergem sob ρ~0,91"): argumento
+      enfraquecido -- a correlação real é mais baixa e variável do que
+      a premissa usada, não elimina a existência de correlação material
+      (0,70 pooled já é alto pra 5 ativos supostamente diversificados),
+      mas a convergência entre os dois desenhos de §4.2 não está tão
+      garantida quanto a síntese assumiu. Status permanece ABERTO --
+      medição feita, decisão de "1 controle vs. 2" ainda não tomada."
