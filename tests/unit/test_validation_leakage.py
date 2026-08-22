@@ -376,7 +376,9 @@ def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("symbol", _ALL_SYMBOLS)
-def test_run_all_leakage_tests_sobre_dataset_real(symbol: str) -> None:
+def test_run_all_leakage_tests_sobre_dataset_real(
+    symbol: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Roda o relatório completo contra o dataset real de produção — o
     caminho que `python -m src.validation.leakage` de fato exercita. Não
     reforça um número fixo de PASS (o dataset real pode mudar de tamanho
@@ -386,7 +388,19 @@ def test_run_all_leakage_tests_sobre_dataset_real(symbol: str) -> None:
 
     Parametrizado pros 5 símbolos do universo (achado F2, candidato a
     AG-130, auditoria 2026-08-19) — skip automático (`_skip_if_labels_
-    missing`) por símbolo cujo backfill local ainda não existe."""
+    missing`) por símbolo cujo backfill local ainda não existe.
+
+    **Achado 2026-08-22 (verificação incidental, não relacionada à
+    migração de path que motivou rodar a suíte completa)**: mesmo gap do
+    AG-032 item 8 já corrigido nos testes sintéticos acima e em
+    `tests/unit/test_models_pipeline_paths.py` nesta mesma sessão, nunca
+    tinha sido propagado pra este teste especificamente (o único que
+    roda contra dataset REAL, não sintético) — `run_all_leakage_tests`
+    chama `features_build.compute_max_feature_lookback_ms(tf)` internamente,
+    que dispara `ExpandingFeatureLookbackError` contra o `T1_FEATURE_IDS`
+    real (3 features `expanding` conhecidas) antes de chegar na lógica
+    que este teste de fato exercita. Mesmo bypass, mesmo motivo."""
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     _skip_if_labels_missing(symbol)
     labels = cpcv.load_labels_v1(symbol=symbol)
     results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels, symbol=symbol)}
