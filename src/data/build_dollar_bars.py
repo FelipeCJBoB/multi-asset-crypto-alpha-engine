@@ -343,6 +343,67 @@ def build_dollar_bars_for_window(
     return result
 
 
+def _build_dollar_bars_for_period_carried(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    carry: bars.ThresholdBarsCarry,
+) -> pl.DataFrame:
+    """Mesmo loop de chunks de `build_dollar_bars_for_window`, mas reusa um
+    `ThresholdBarsCarry` já existente (caller já setou `carry.threshold`/
+    `carry.max_leftover_trades` pro período atual antes de chamar) e NUNCA
+    fecha o stream (`bars.threshold_bars_drain`, não `threshold_bars_
+    finish`) -- usado só por `build_dollar_bars_walkforward` (AG-124/item
+    14) pra manter `leftover`/`base_value` vivos através da fronteira de
+    período, em vez de cada período fechar sua própria barra final
+    truncada.
+
+    Duplica ~15 linhas do loop de chunks de `build_dollar_bars_for_window`
+    deliberadamente -- generalizar uma função pra servir os dois contratos
+    (cria-carry-e-finish vs. reusa-carry-e-drena) trocaria o tipo de
+    retorno de `build_dollar_bars_for_window` (usada por `main()`/CLI e
+    testada isoladamente há várias sessões) por algo condicional, maior
+    risco que uma duplicação pequena e documentada -- mesmo precedente já
+    usado no repo (`_paths.py`/`_constants.py`)."""
+    chunk_days = int(load_constant("bars_streaming_chunk_days"))
+    chunks = _chunked_scan.date_chunks(start, end, chunk_days=chunk_days)
+    throttle = _chunked_scan.duckdb_throttle()
+
+    n_chunks = len(chunks)
+    for i, (chunk_start, chunk_end) in enumerate(chunks, start=1):
+        chunk = lake.query_agg_trades(
+            symbol,
+            chunk_start,
+            chunk_end,
+            duckdb_memory_limit_gb=throttle.memory_limit_gb,
+            duckdb_threads=throttle.threads,
+        )
+        if not chunk.is_empty():
+            bars.threshold_bars_step(carry, chunk)
+        logger.info(
+            "data.build_dollar_bars.period_carried_chunk_done",
+            symbol=symbol,
+            chunk=i,
+            n_chunks=n_chunks,
+            chunk_start=str(chunk_start),
+            chunk_end=str(chunk_end),
+            n_trades=chunk.height,
+            leftover_trade_count=carry.leftover_trade_count,
+        )
+
+    result = bars.threshold_bars_drain(carry)
+    logger.info(
+        "data.build_dollar_bars.period_carried_built",
+        symbol=symbol,
+        start=start,
+        end=end,
+        threshold_usdt=carry.threshold,
+        n_bars=result.height,
+    )
+    return result
+
+
 def _split_bars_by_day(bars_df: pl.DataFrame) -> dict[date, pl.DataFrame]:
     """Particiona por dia CALENDÁRIO de `close_time` (não `open_time` --
     `schemas.DOLLAR_BARS_R1.timestamp_column`) -- mesmo padrão de
@@ -567,23 +628,88 @@ def build_dollar_bars_walkforward(
     relatório mensal de deriva (`tools/diagnostics/measure_dollar_
     threshold_drift_monthly.py`), não algo pra inventar aqui.
 
-    **1º período de `[start, end]` é cold-start, DESCARTADO (nunca
-    calibrado nem construído).** Não existe `trailing_window_days` de
-    histórico ANTERIOR a `start` dentro do escopo desta chamada -- tentar
-    calibrar aí seria ou uma janela mais curta que o algoritmo pede
-    (silenciosamente menos robusta que os demais períodos) ou olhar pra
-    fora de `[start, end]` (fora do contrato desta função -- o caller
-    decide `start`, não esta função). Mesmo padrão de `n_warmup_dropped`
-    do Label Engine (`LabelBuildStats`, AG-128): log estruturado
-    (`walkforward_cold_start_dropped`) + contador em `WalkforwardBarsStats.
-    n_cold_start_dropped`, NUNCA exceção -- é warmup esperado, não erro.
+    **Lead-in buffer -- todo período TENTA ser calibrado, mesmo o 1º
+    (AG-124/item 15, 2026-08-21, corrige o desenho original).** A janela
+    de calibração de qualquer período pode cair ANTES de `start` (`_
+    trailing_calibration_window`) -- isso é permitido: só a leitura de
+    TRADES pra calibração pode olhar antes de `start` (histórico real do
+    símbolo no lake), a escrita de BARRAS continua estritamente dentro de
+    `[start, end]`. O desenho original (até 2026-08-21) descartava o 1º
+    período incondicionalmente, mesmo quando havia trade real disponível
+    antes de `start` pra calibrá-lo -- descartava ~1 semana real por
+    símbolo sem necessidade (medido: recuperável sem violar causalidade,
+    já que ler ANTES de `t` pra decidir o threshold de `t` continua sendo
+    só passado). Um período só é descartado (cold-start) quando não existe
+    trade NENHUM no lake pra sua janela de calibração -- início genuíno de
+    histórico do símbolo (ou um gap real de dado no meio da série, tratado
+    igual). Mesmo padrão de `n_warmup_dropped` do Label Engine
+    (`LabelBuildStats`, AG-128): log estruturado (`walkforward_cold_start_
+    dropped`) + contador em `WalkforwardBarsStats.n_cold_start_dropped`,
+    NUNCA exceção não-tratada -- é warmup esperado, não erro.
 
-    **`ThresholdBarsCarry` nunca cruza fronteira de período, por
-    construção.** Cada período chama `build_dollar_bars_for_window` do
-    zero -- essa função já cria seu próprio `bars.dollar_bars_carry(...)`
-    internamente a cada chamada -- então o pico de memória fica limitado
-    ao tamanho de 1 período (mais conservador que qualquer coisa já testada
-    em AG-034), não do histórico `[start, end]` inteiro.
+    **`ThresholdBarsCarry` PERSISTE através da fronteira de período
+    (AG-124/item 14, 2026-08-21 -- corrige o desenho original desta
+    função, que recriava o carry a cada período e fechava/truncava a
+    barra em aberto em toda fronteira).** Um único `ThresholdBarsCarry` é
+    criado no 1º período real (pós cold-start) e reusado por
+    `_build_dollar_bars_for_period_carried` em todos os períodos
+    seguintes -- só `threshold`/`max_leftover_trades` são atualizados por
+    período (a nova calibração), `leftover`/`base_value` continuam vivos.
+    `threshold_bars_drain` (não `finish`) é chamado a cada período --
+    devolve as barras fechadas, sem tocar o leftover em aberto. Só o
+    ÚLTIMO período chama `threshold_bars_finish` (flush final, concatenado
+    ao `bars_df` desse período antes de escrever) -- resultado: **1 barra
+    subdimensionada por rodada inteira** (símbolo × resolução), não 1 por
+    período. Sob `cadence_days=1`, isso é a diferença entre ~365
+    fronteiras truncadas/ano (desenho original) e ~1 barra parcial no fim
+    de todo o range medido (achado de auditoria externa 2026-08-21,
+    `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` item 14 -- pré-
+    condição pra `T=7,C=1`, ver `AG-124` addendum de desacoplamento).
+    Pico de memória continua limitado (leftover é só o "resto" de UMA
+    barra em aberto, nunca o histórico `[start, end]` inteiro) -- o que
+    mudou é só o fechamento/truncamento por período, não o volume de dado
+    retido.
+
+    **Semântica de troca de threshold com barra em aberto -- formalizada
+    aqui (AG-124, 2026-08-21), antes tratada como "não trivial"/
+    implicitamente indefinida em discussão de auditoria externa.**
+    `carry.threshold` muda a cada período (linha ~770 abaixo) ENQUANTO o
+    carry pode já conter `leftover` do período anterior -- comportamento
+    determinístico, verificado em teste
+    (`tests/unit/test_data_bars.py::
+    test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_periodos`),
+    não mais "undefined":
+
+    1. `cum_value` (valor bruto acumulado desde a criação do carry) NUNCA
+       reseta na troca de threshold -- só o DIVISOR (`threshold`) muda.
+    2. `bar_id = cum_value // threshold` é recalculado do zero a cada
+       `threshold_bars_step`, usando o `threshold` ATUAL -- ou seja, a
+       troca de threshold REINTERPRETA retroativamente todo o `leftover`
+       acumulado sob o threshold ANTERIOR, não só o valor futuro.
+    3. Consequência prática: um trade "em progresso" rumo ao threshold
+       ANTIGO pode fechar como sua própria barra, menor que o threshold
+       NOVO, assim que o primeiro trade do período seguinte chega e
+       `cum_value` cruza um múltiplo do threshold novo. Nenhum trade é
+       perdido ou duplicado (conservação de valor provada no teste) -- só
+       a fronteira exata de onde uma barra fecha pode mudar em função de
+       QUANDO a recalibração acontece, não só de QUANTO volume real
+       ocorreu.
+    4. Isto acontece 1x por período não-inicial -- `cadence_days` menor
+       significa mais recalibrações, logo mais vezes que este caminho de
+       código roda (5x sob `cadence_days=7` vs. 30x sob `cadence_days=1`
+       numa janela de 30 dias) -- um caminho de código pouco exercitado
+       historicamente (o desenho de janela única, pré-AG-124, nunca trocava
+       threshold em produção) rodando proporcionalmente mais sob cadência
+       curta. **Efeito estatístico agregado na cauda de distribuição de
+       retornos de barra permanece objeto de investigação aberta** --
+       ver `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` §11/§12: uma
+       medição real encontrou concentração de retornos extremos numa janela
+       estreita (~1h) em torno de 00:00 UTC, mais pronunciada sob
+       `cadence_days=1`, mas descartou microestrutura de funding genérica
+       como explicação única (não há excesso comparável às 08h/16h UTC,
+       outros horários de funding da Binance) -- causa raiz exata (dado vs.
+       algoritmo vs. mercado) NÃO isolada, tratar como achado confundido,
+       não como propriedade estabelecida de `cadence_days` curto.
 
     **Checkpoint incremental.** Cada período (exceto cold-start) é escrito
     via `write_dollar_bars_and_calibration` (guarda de mismatch já removida,
@@ -617,12 +743,36 @@ def build_dollar_bars_walkforward(
     n_periods = len(period_chunks)
     results: list[WalkforwardPeriodResult] = []
     n_cold_start_dropped = 0
+    carry: bars.ThresholdBarsCarry | None = None
 
     for i, (period_start, period_end) in enumerate(period_chunks):
         app_start = period_start.isoformat()
         app_end = period_end.isoformat()
 
-        if i == 0:
+        calib_start, calib_end = _trailing_calibration_window(
+            app_start, trailing_window_days=trailing_window_days
+        )
+        try:
+            calibration = calibrate_dollar_threshold_for_validation(
+                symbol, calib_start, calib_end, resolution_id=resolution_id
+            )
+        except ValueError:
+            # AG-124/item 15 (lead-in buffer, 2026-08-21) -- tenta calibrar
+            # TODO período, mesmo quando calib_start cai ANTES de `start`
+            # (histórico real do símbolo dentro do lake, nunca fora dele --
+            # só fora do range [start,end] que o CALLER pediu pra
+            # CONSTRUIR). Antes desta mudança, só o 1º período (i==0) era
+            # descartado incondicionalmente, mesmo quando havia trade real
+            # disponível antes de `start` pra calibrá-lo -- desenho
+            # original tratava "olhar antes de start" como fora do
+            # contrato; medição confirmou que isso descartava ~1 semana
+            # real por símbolo sem necessidade (a leitura de calibração
+            # nunca escreve barra fora de [start,end], só LÊ trade de antes
+            # pra calibrar o 1º período real). Só cai neste except quando
+            # não há trade NENHUM no lake pra [calib_start, calib_end] --
+            # início genuíno de histórico do símbolo (usualmente só possível
+            # no 1º período; um gap real no meio do histórico também cai
+            # aqui, tratado da mesma forma -- warmup descartável, não erro).
             n_cold_start_dropped += 1
             logger.info(
                 "data.build_dollar_bars.walkforward_cold_start_dropped",
@@ -630,12 +780,14 @@ def build_dollar_bars_walkforward(
                 resolution_id=resolution_id,
                 app_start=app_start,
                 app_end=app_end,
+                calib_start=calib_start,
+                calib_end=calib_end,
                 trailing_window_days=trailing_window_days,
                 reason=(
-                    "1º período de [start, end] -- sem trailing_window_days de "
-                    "histórico ANTERIOR a start dentro do escopo desta chamada pra "
-                    "calibrar causalmente; warmup descartável, mesmo padrão de "
-                    "n_warmup_dropped (LabelBuildStats, AG-128)"
+                    "sem trade algum no lake para [calib_start, calib_end] -- "
+                    "início real de histórico do símbolo (ou gap real de dado) "
+                    "dentro da janela de calibração; warmup descartável, mesmo "
+                    "padrão de n_warmup_dropped (LabelBuildStats, AG-128)"
                 ),
             )
             results.append(
@@ -650,19 +802,29 @@ def build_dollar_bars_walkforward(
             )
             continue
 
-        calib_start, calib_end = _trailing_calibration_window(
-            app_start, trailing_window_days=trailing_window_days
+        if carry is None:
+            carry = bars.dollar_bars_carry(
+                threshold=calibration.threshold_usdt,
+                max_leftover_trades=calibration.max_leftover_trades,
+            )
+        else:
+            carry.threshold = calibration.threshold_usdt
+            carry.max_leftover_trades = calibration.max_leftover_trades
+
+        bars_df = _build_dollar_bars_for_period_carried(
+            symbol, app_start, app_end, carry=carry
         )
-        calibration = calibrate_dollar_threshold_for_validation(
-            symbol, calib_start, calib_end, resolution_id=resolution_id
-        )
-        bars_df = build_dollar_bars_for_window(
-            symbol,
-            app_start,
-            app_end,
-            threshold_usdt=calibration.threshold_usdt,
-            max_leftover_trades=calibration.max_leftover_trades,
-        )
+
+        is_last_period = i == n_periods - 1
+        if is_last_period:
+            # Único ponto da rodada inteira que fecha o stream (AG-124/item
+            # 14) -- flush do leftover em aberto vira 1 barra parcial,
+            # concatenada ao bars_df deste período antes de escrever, em
+            # vez de cada período truncar a própria barra final.
+            final_leftover_df = bars.threshold_bars_finish(carry)
+            if not final_leftover_df.is_empty():
+                bars_df = pl.concat([bars_df, final_leftover_df])
+
         written = write_dollar_bars_and_calibration(bars_df, identity, dest_root=dest_root)
 
         results.append(

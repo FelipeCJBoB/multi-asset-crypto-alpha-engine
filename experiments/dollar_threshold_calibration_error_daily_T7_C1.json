@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-08-22T01:26:28.211063+00:00",
+  "code_version": "eee33eb",
+  "source_report": "experiments\\dollar_threshold_drift_daily.json",
+  "trailing_windows_periods": [
+    7
+  ],
+  "cadence_override_periods": 1,
+  "error_thresholds": {
+    "high_mult": 2.0,
+    "low_mult": 0.5
+  },
+  "methodology": "error_ratio = dollar_per_day(período avaliado) / dollar_per_day_pooled(janela trailing de `trailing` períodos imediatamente anteriores) -- esquema ROLLING, cadência de avanço = `cadence` (default = trailing). Ver docstring do módulo pra por que dollar_per_day sozinho é equivalente à razão de threshold_usdt real. Período conta como erro ruim se error_ratio >= high_mult ou <= low_mult.",
+  "table": {
+    "BNBUSDT": {
+      "7": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 246,
+        "pct_error_bad": 14.44,
+        "max_ratio": 6.6425,
+        "min_ratio": 0.2066
+      }
+    },
+    "BTCUSDT": {
+      "7": {
+        "n_periods_evaluated": 2405,
+        "n_error_bad": 321,
+        "pct_error_bad": 13.35,
+        "max_ratio": 5.3728,
+        "min_ratio": 0.1809
+      }
+    },
+    "ETHUSDT": {
+      "7": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 209,
+        "pct_error_bad": 12.27,
+        "max_ratio": 4.9973,
+        "min_ratio": 0.1891
+      }
+    },
+    "SOLUSDT": {
+      "7": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 201,
+        "pct_error_bad": 11.8,
+        "max_ratio": 7.2985,
+        "min_ratio": 0.1646
+      }
+    },
+    "XRPUSDT": {
+      "7": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 279,
+        "pct_error_bad": 16.37,
+        "max_ratio": 35.8083,
+        "min_ratio": 0.2043
+      }
+    }
+  }
+}

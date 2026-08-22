@@ -1593,6 +1593,20 @@ bars_threshold_leftover_safety_multiplier:
   class: C
   sweep_required: false
 
+dollar_bar_walkforward_trailing_window_days:
+  value: 7
+  provenance: MEASURED
+  source: "AG-124 (audit/architecture_gaps_log.yaml), recalibração causal do threshold dollar-bar. Medido em 3 granularidades (mensal/semanal/diária) sobre histórico real dos 5 símbolos: erro de calibração PIORA monotonicamente com janela mais longa (deriva secular), mas janela mais curta que 7 dias sofre aliasing de sazonalidade de fim de semana (sábado ~0,59x a média em BTC/ETH) -- 7 dias é o menor múltiplo exato do ciclo semanal, elimina o aliasing por construção. Auditoria externa (parecer + adendo, docs/Retorno_Brief/) propôs e o time mediu desacoplar de cadence_days (ver dollar_bar_walkforward_cadence_days) -- a restrição de balanceamento de dia-da-semana recai sobre ESTA janela, confirmada por teste T=3,C=1 (pior que T=7,C=1 em BTC/ETH, neutro nos outros 3 -- addendum_teste_manager_T3_C1_2026-08-21) e T=1..4 semanas casado por dia-da-semana (nenhum bate T=7 nos 5 símbolos ao mesmo tempo, addendum_calibracao_casada_dia_semana_2026-08-21)."
+  class: B
+  sweep_required: false
+
+dollar_bar_walkforward_cadence_days:
+  value: 7
+  provenance: MEASURED
+  source: "AG-124 -- PROVISÓRIO, ver addendum_RETRATACAO_teste_decisivo_2026-08-21. T=7,C=1 (recalibração diária) venceu a métrica de erro de calibração por margem grande nos 5 símbolos (item 9), mas 2ª rodada de auditoria externa (docs/plano_acao_ag124_pos_auditoria_2026-08-21.md §12) achou que essa vantagem roda 6x mais um caminho de código (troca de threshold com barra em aberto, formalizado em src/data/build_dollar_bars.py::build_dollar_bars_walkforward) cuja semântica só foi caracterizada nesta sessão -- teste decisivo (concentração de retorno extremo nos 3 horários de funding Binance, só ~00h UTC mostra padrão assimétrico entre C=7/C=1) refutou microestrutura de mercado genérica como explicação, e excluir a janela de ~1h em torno da meia-noite UTC colapsa quase toda a diferença de curtose/Hill entre os 2 braços -- causa raiz não isolada. Decisão do Manager: travar C=7 (mesmo valor que trailing_window_days, JÁ SEM aliasing) como candidato PROVISÓRIO até a causa raiz da janela de meia-noite ser entendida -- C=1 permanece candidato mais forte no rastreio de volume, não descartado, só não travado ainda. C=2/C=3 (interpolação) explicitamente REJEITADOS -- interpolar entre 2 braços cuja diferença não está explicada não informa nada."
+  class: B
+  sweep_required: false
+
 m2_duckdb_memory_limit_gb:
   value: 2.0
   provenance: ASSUMED

@@ -27,6 +27,7 @@ import polars as pl
 import pytest
 
 from src.data.resample import UnsupportedTimeframeError
+from src.features import build as features_build
 from src.models import alpha, dataset, pipeline
 from src.models._paths import (
     MODELS_DIR,
@@ -149,6 +150,12 @@ def _run_layer1_sprint_capturing_predictions_calls(
         splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
     )
     monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    # AG-032 item 8 -- run_layer1_sprint wireou compute_max_feature_lookback_ms
+    # (fail-fast contra lookback_bars="expanding" em T1_FEATURE_IDS) no
+    # CPCVConfig real; este teste não é sobre essa checagem (é sobre
+    # roteamento de dest_dir), mesmo bypass já usado em
+    # test_validation_leakage.py.
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
 
     monkeypatch.setattr(
         alpha,
@@ -250,6 +257,9 @@ def _run_layer1_sprint_capturing_core_calls(
         return fake_cpcv_result
 
     monkeypatch.setattr(cpcv, "generate_splits", _fake_generate_splits)
+    # AG-032 item 8 -- ver comentário equivalente em
+    # _run_layer1_sprint_capturing_predictions_calls acima.
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
     monkeypatch.setattr(
         alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
     )

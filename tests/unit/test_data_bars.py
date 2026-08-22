@@ -16,11 +16,13 @@ import numpy as np
 import polars as pl
 import pytest
 
+from src.data._constants import load_constant as load_data_constant
 from src.data.bars import (
     LeftoverOverflowError,
     TickImbalanceBarsConfig,
     dollar_bars,
     dollar_bars_carry,
+    threshold_bars_drain,
     threshold_bars_finish,
     threshold_bars_step,
     tick_imbalance_bars,
@@ -84,6 +86,81 @@ def test_dollar_bars_particao_bate_com_calculo_manual() -> None:
     assert bars["volume"].to_list() == pytest.approx([5.0, 10.0, 5.0])
     assert bars["open"].to_list() == pytest.approx([10.0, 10.0, 10.0])
     assert bars["close"].to_list() == pytest.approx([10.0, 10.0, 10.0])
+
+
+def test_threshold_bars_drain_preserva_leftover_e_produz_mesmo_resultado_que_lote() -> None:
+    """AG-124/item 14 -- `threshold_bars_drain` (ao contrário de `finish`)
+    NÃO fecha o stream: o leftover em aberto continua vivo pro próximo
+    `step()`. Processar em 2 partes com um `drain()` no meio (em vez de
+    processar tudo de 1 vez) precisa produzir EXATAMENTE o mesmo resultado
+    -- mesma disciplina de equivalência já usada pra chunking dentro de
+    `threshold_bars_step` (docstring do módulo), agora estendida através
+    de uma fronteira de drain/período (ex. `build_dollar_bars_walkforward`
+    recalibrando a cada `cadence_days`)."""
+    trades = _trades(price=[10.0] * 4, quantity=[5.0] * 4, is_buyer_maker=[False] * 4)
+    # value=50/trade; cumsum=[50,100,150,200]; threshold=100 -> bar_id=[0,1,1,2]
+    # -> lote inteiro: 3 barras (tamanhos 1,2,1). Split após o 1º trade
+    # (cumsum=50, nenhuma barra fechada ainda -- leftover=1 trade) prova
+    # que o drain NÃO descarta esse trade em aberto.
+    reference = dollar_bars(trades, threshold=100.0)
+
+    carry = dollar_bars_carry(threshold=100.0)
+    threshold_bars_step(carry, trades.slice(0, 1))
+    drained = threshold_bars_drain(carry)
+    assert drained.is_empty()  # nenhuma barra fechou ainda no 1º trade
+    assert carry.leftover is not None and carry.leftover.n_trades == 1  # NÃO descartado
+    assert carry.bar_frames == []  # drain limpou bar_frames, sem tocar leftover
+
+    threshold_bars_step(carry, trades.slice(1, 3))
+    finished = threshold_bars_finish(carry)
+
+    combined = pl.concat([drained, finished]) if not drained.is_empty() else finished
+    assert combined.height == reference.height == 3
+    assert combined["count"].to_list() == reference["count"].to_list() == [1, 2, 1]
+    assert combined["volume"].to_list() == pytest.approx(reference["volume"].to_list())
+
+
+def test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_periodos() -> None:
+    """`build_dollar_bars_walkforward` muda `carry.threshold` a cada
+    período (nova calibração) sem perder leftover/base_value -- nenhum
+    trade é perdido nem duplicado quando o threshold muda entre um
+    `drain()` e o próximo `step()`. `cum_value` é acumulação bruta de
+    valor DESDE A ORIGEM do carry, nunca resetada -- então `bar_id =
+    cum_value // threshold` reinterpreta TODO o histórico acumulado sob o
+    threshold NOVO, não só o valor futuro. Consequência real, não-óbvia,
+    documentada aqui em vez de escondida: um trade que estava "em
+    progresso" rumo a um threshold ANTIGO maior pode fechar como sua
+    própria barra, com volume MENOR que o threshold_quote atual, assim
+    que o próximo trade cruza o múltiplo do threshold NOVO -- ver conta
+    abaixo."""
+    # 1º trade: value=50, não fecha nada sob threshold=100 (fica leftover,
+    # base_value continua 0 -- só é atualizado quando uma barra FECHA)
+    p1 = _trades(price=[10.0], quantity=[5.0], is_buyer_maker=[False])
+    carry = dollar_bars_carry(threshold=100.0)
+    threshold_bars_step(carry, p1)
+    drained1 = threshold_bars_drain(carry)
+    assert drained1.is_empty()
+
+    # troca de threshold (nova calibração do período seguinte) -- baixa pra
+    # 60: cum_value = [50 (leftover), 70 (leftover+p2 value=20)] // 60 =
+    # [0, 1] -- bar_id SOBE entre os 2 elementos, então o algoritmo fecha
+    # o elemento 0 (só o trade de p1, cum_value=50) como bar 0 -- mesmo
+    # sendo MENOR que o threshold_quote=60 atual -- e deixa o elemento 1
+    # (só o trade de p2, value=20) como novo leftover em aberto.
+    carry.threshold = 60.0
+    p2 = _trades(price=[10.0], quantity=[2.0], is_buyer_maker=[False])  # value=20
+    threshold_bars_step(carry, p2)
+    result = threshold_bars_finish(carry)
+
+    # 2 barras (não 1) -- nenhum trade perdido/duplicado: volumes [5, 2],
+    # soma 7 == 5(p1)+2(p2). A 1ª barra é o "resto" do threshold antigo
+    # fechando cedo sob o threshold novo -- comportamento real, verificado
+    # à mão, não um bug a esconder.
+    assert result.height == 2
+    assert result["volume"].to_list() == pytest.approx([5.0, 2.0])
+    assert result["count"].to_list() == [1, 1]
+    assert (result["threshold_quote"] == 60.0).all()  # threshold NOVO em ambas, não o antigo (100)
+    assert sum(result["volume"].to_list()) == pytest.approx(7.0)  # conservação: nada perdido
 
 
 def test_volume_bars_particao_bate_com_calculo_manual() -> None:
@@ -600,6 +677,78 @@ def test_threshold_bars_step_leftover_overflow_nao_muta_carry_quando_barras_tamb
     assert carry.bar_frames == []
     assert carry.base_value == 0.0
     assert carry.leftover is None
+
+
+def test_threshold_bars_step_circuit_breaker_cobre_pico_de_volume_14x_legitimo() -> None:
+    """AG-124/item 16 (2026-08-21) -- a auditoria externa mediu picos de
+    até ~14x o volume/dia calibrado (addendum diário de `AG-124`) e
+    perguntou se `max_leftover_trades` ainda cobre isso. Resposta medida
+    aqui: SIM, folgadamente, e por um motivo estrutural -- um pico de
+    volume EM DÓLAR, sustentado por trades de tamanho médio SEMELHANTE ao
+    da calibração (só mais trades, não trades menores), fecha barras MAIS
+    RÁPIDO (mais barras/dia), não faz o leftover CRESCER -- `leftover` é
+    contagem de trades no bar ainda ABERTO, que continua perto de `avg_
+    trades_per_bar` a qualquer instante, nunca do dia inteiro. Usa o
+    multiplicador REAL de produção (`bars_threshold_leftover_safety_
+    multiplier`, `config/constants.yaml`), não um valor arbitrário de
+    teste."""
+    safety_mult = float(load_data_constant("bars_threshold_leftover_safety_multiplier"))
+    avg_trades_per_bar_calibrated = 10
+    trade_value = 100.0
+    threshold = avg_trades_per_bar_calibrated * trade_value  # 1000.0
+    max_leftover_trades = avg_trades_per_bar_calibrated * safety_mult
+
+    # "pico de 14x": 14x mais trades que num dia normal (140 vs 10), MESMO
+    # tamanho médio por trade -- simula volume em dólar 14x maior sustentado
+    # por mais atividade, não por trades individualmente maiores.
+    n_trades_spike_day = avg_trades_per_bar_calibrated * 14
+    trades = _trades(
+        price=[10.0] * n_trades_spike_day,
+        quantity=[10.0] * n_trades_spike_day,  # value=100/trade, igual à calibração
+        is_buyer_maker=[False] * n_trades_spike_day,
+    )
+    carry = dollar_bars_carry(threshold=threshold, max_leftover_trades=max_leftover_trades)
+
+    threshold_bars_step(carry, trades)  # não deve levantar
+
+    # ~14 barras fecharam (140 trades / 10 por barra, todas dentro do ÚNICO
+    # DataFrame de bar_frames -- _aggregate_bars agrupa por bar_id numa
+    # chamada só); leftover residual fica muito abaixo do teto (500 =
+    # 10*50), nunca perto de estourar.
+    assert len(carry.bar_frames) == 1
+    assert carry.bar_frames[0].height >= 13
+    assert carry.leftover_trade_count < max_leftover_trades / 10
+
+
+def test_threshold_bars_step_circuit_breaker_dispara_sob_mudanca_real_de_forma_nao_so_volume() -> (
+    None
+):
+    """Contraponto ao teste acima -- o que REALMENTE ameaça
+    `max_leftover_trades` não é volume em dólar alto, é uma MUDANÇA DE
+    FORMA da distribuição de trades (muitos trades pequenos em vez de
+    poucos grandes, deslocando trades-por-barra pra além do multiplicador
+    de segurança) -- categoria de risco DIFERENTE do "~14x" medido em
+    dólar/dia, e o motivo de não tratar os dois como comparáveis (ver
+    `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`, item 16)."""
+    safety_mult = float(load_data_constant("bars_threshold_leftover_safety_multiplier"))
+    avg_trades_per_bar_calibrated = 10
+    threshold = avg_trades_per_bar_calibrated * 100.0  # 1000.0
+    max_leftover_trades = avg_trades_per_bar_calibrated * safety_mult  # 500.0
+
+    # mesmo VALOR total que fecharia 1 barra normalmente (1000.0), mas
+    # fatiado em trades 60x menores -- precisaria de 600 trades pra fechar
+    # 1 barra (60x avg_trades_per_bar_calibrated), acima do teto de 50x.
+    n_tiny_trades = int(max_leftover_trades) + 1  # 501 -- já excede o teto sem fechar 1 barra
+    tiny_value = 1000.0 / (avg_trades_per_bar_calibrated * 60)
+    trades = _trades(
+        price=[tiny_value] * n_tiny_trades,
+        quantity=[1.0] * n_tiny_trades,
+        is_buyer_maker=[False] * n_tiny_trades,
+    )
+    carry = dollar_bars_carry(threshold=threshold, max_leftover_trades=max_leftover_trades)
+
+    with pytest.raises(LeftoverOverflowError):
+        threshold_bars_step(carry, trades)
 
 
 def test_np_cumsum_bate_bit_a_bit_com_polars_cum_sum() -> None:

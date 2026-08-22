@@ -550,6 +550,30 @@ def threshold_bars_finish(carry: ThresholdBarsCarry) -> pl.DataFrame:
     return pl.concat(carry.bar_frames)
 
 
+def threshold_bars_drain(carry: ThresholdBarsCarry) -> pl.DataFrame:
+    """Devolve as barras FECHADAS desde o último drain/finish, SEM fechar o
+    stream -- ao contrário de `threshold_bars_finish`, `carry.leftover`/
+    `carry.base_value`/`carry.threshold` continuam intactos, prontos pra
+    receber mais chunks (inclusive sob um `carry.threshold` diferente,
+    trocado pelo caller entre chamadas -- `cum_value` é acumulação bruta de
+    valor, independente de qual threshold decide onde a barra fecha, então
+    trocar o threshold entre chamadas não invalida o `base_value`/`leftover`
+    já acumulado). Só limpa `carry.bar_frames` (as barras já devolvidas não
+    ficam retidas em memória pra sempre).
+
+    Existe pra callers que processam em PERÍODOS (ex.
+    `build_dollar_bars_walkforward`, AG-124/item 14) e querem manter o
+    MESMO carry vivo através da fronteira de período -- sem isso, cada
+    período fecharia sua própria barra final truncada (`threshold_bars_
+    finish`), multiplicando barras subdimensionadas por Nº de períodos em
+    vez de gerar só 1 barra parcial no fim do range inteiro."""
+    if not carry.bar_frames:
+        return _empty_bars()
+    result = pl.concat(carry.bar_frames)
+    carry.bar_frames = []
+    return result
+
+
 def dollar_bars(trades: pl.DataFrame, *, threshold: float) -> pl.DataFrame:
     """Conveniência pra um `DataFrame` só (testes, uso manual pequeno) --
     wrapper fino sobre `dollar_bars_carry`/`threshold_bars_step`/`finish`

@@ -1,0 +1,1143 @@
+{
+  "generated_at": "2026-08-22T06:28:19.246257+00:00",
+  "code_version": "eee33eb",
+  "task": "ag124_item22_post_reprocessing_validation",
+  "source": "data/capacity/dollar_bars_r{1,2,3}/ REAL, histórico inteiro (não amostra)",
+  "reprocessing_summary_ref": "experiments/ag124_production_reprocessing_summary.json",
+  "cadence_days": 7,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "resolutions": [
+    "R1",
+    "R2",
+    "R3"
+  ],
+  "methodology": "Leitura direta do parquet persistido em produção (não rebuild via build_dollar_bars_walkforward). all_bars = todas as barras do histórico completo; excluding_boundary_bars = exclui a 1ª barra de cada período de calendário não-inicial (candidata a artefato de troca de threshold com leftover em aberto, ver docstring do módulo v2 measure_dollar_bar_return_quality.py, ponto 2). top_extreme_bars = maiores |retorno padronizado|, com flag de boundary. weekday_dispersion = CV(contagem de barras por dia-da-semana), medida direto sobre as barras reais persistidas. None = NOT_COMPUTABLE (amostra pequena ou variância/mediana zero), nunca 0.0 silencioso.",
+  "table": {
+    "BTCUSDT": {
+      "R1": {
+        "symbol": "BTCUSDT",
+        "resolution_id": "R1",
+        "start_date": "2019-12-31",
+        "cadence_days": 7,
+        "n_bars": 223172,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 223171,
+        "n_boundary_bars_excluded": 343,
+        "all_bars": {
+          "autocorr_lag1": -0.02142360160987597,
+          "excess_kurtosis": 53.12391019488065,
+          "p99_p50_ratio": 6.088054434931762,
+          "frac_beyond_5x_median": 0.018649376487088375,
+          "hill_tail_index": 2.979313177199986
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 222828,
+          "autocorr_lag1": -0.02244165355673547,
+          "excess_kurtosis": 53.14583628706776,
+          "p99_p50_ratio": 6.089223677132829,
+          "frac_beyond_5x_median": 0.01864218141346689,
+          "hill_tail_index": 2.978874168442879
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 84819,
+            "close_time_iso": "2022-06-13T23:59:43.957000+00:00",
+            "log_return": -0.16739009690662776,
+            "standardized_return": -47.08989261674564,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 42728,
+            "close_time_iso": "2021-03-01T23:47:07.330000+00:00",
+            "log_return": 0.10016435450206629,
+            "standardized_return": 28.173793450051036,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 47829,
+            "close_time_iso": "2021-04-26T23:48:48.840000+00:00",
+            "log_return": 0.09513047065686742,
+            "standardized_return": 26.7577502804196,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 6941,
+            "close_time_iso": "2020-03-12T11:02:24.244000+00:00",
+            "log_return": 0.0903485252268581,
+            "standardized_return": 25.412577969744753,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 50078,
+            "close_time_iso": "2021-05-19T13:10:39.416000+00:00",
+            "log_return": -0.08478754599044791,
+            "standardized_return": -23.85360397441834,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.26763190631734923,
+          "bars_per_weekday": {
+            "1": 20710,
+            "2": 38996,
+            "3": 39975,
+            "4": 39371,
+            "5": 38457,
+            "6": 21162,
+            "7": 24501
+          }
+        }
+      },
+      "R2": {
+        "symbol": "BTCUSDT",
+        "resolution_id": "R2",
+        "start_date": "2019-12-31",
+        "cadence_days": 7,
+        "n_bars": 112264,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 112263,
+        "n_boundary_bars_excluded": 343,
+        "all_bars": {
+          "autocorr_lag1": -0.028710539239523304,
+          "excess_kurtosis": 41.96136872063135,
+          "p99_p50_ratio": 6.448055050238962,
+          "frac_beyond_5x_median": 0.020826095864176088,
+          "hill_tail_index": 2.830506459708301
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 111920,
+          "autocorr_lag1": -0.02597104435806979,
+          "excess_kurtosis": 41.98550657549556,
+          "p99_p50_ratio": 6.445920366045122,
+          "frac_beyond_5x_median": 0.02076483202287348,
+          "hill_tail_index": 2.829696861132673
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 42086,
+            "close_time_iso": "2022-06-13T23:59:43.957000+00:00",
+            "log_return": -0.16739009690662776,
+            "standardized_return": -33.47071549055582,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 37774,
+            "close_time_iso": "2022-02-28T23:54:18.377000+00:00",
+            "log_return": 0.13695268283488105,
+            "standardized_return": 27.377695273541452,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 25000,
+            "close_time_iso": "2021-05-19T13:51:57.724000+00:00",
+            "log_return": 0.12505162271302517,
+            "standardized_return": 24.998271009105263,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 40549,
+            "close_time_iso": "2022-05-09T23:58:14.522000+00:00",
+            "log_return": -0.11979307623417945,
+            "standardized_return": -23.954461917909107,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 3270,
+            "close_time_iso": "2020-03-12T10:49:48.103000+00:00",
+            "log_return": 0.10417200564454454,
+            "standardized_return": 20.823729667730095,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.258357439180644,
+          "bars_per_weekday": {
+            "1": 11035,
+            "2": 19495,
+            "3": 19986,
+            "4": 19689,
+            "5": 19228,
+            "6": 10588,
+            "7": 12243
+          }
+        }
+      },
+      "R3": {
+        "symbol": "BTCUSDT",
+        "resolution_id": "R3",
+        "start_date": "2019-12-31",
+        "cadence_days": 7,
+        "n_bars": 55934,
+        "n_stale_pre_causal_files_excluded": 6,
+        "n_returns": 55933,
+        "n_boundary_bars_excluded": 343,
+        "all_bars": {
+          "autocorr_lag1": -0.020969345562486297,
+          "excess_kurtosis": 39.72614190806252,
+          "p99_p50_ratio": 6.49611672054487,
+          "frac_beyond_5x_median": 0.021865446158797132,
+          "hill_tail_index": 2.8802065560970247
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 55590,
+          "autocorr_lag1": -0.018194021090171625,
+          "excess_kurtosis": 39.82629144418568,
+          "p99_p50_ratio": 6.494166778534868,
+          "frac_beyond_5x_median": 0.02187443784853391,
+          "hill_tail_index": 2.878093610692634
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 21140,
+            "close_time_iso": "2022-06-13T23:39:06.053000+00:00",
+            "log_return": -0.19163191400211232,
+            "standardized_return": -27.227486372075717,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 10181,
+            "close_time_iso": "2021-02-08T23:54:06.204000+00:00",
+            "log_return": 0.1758176708510355,
+            "standardized_return": 24.97027804300384,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 12502,
+            "close_time_iso": "2021-05-19T14:09:02.683000+00:00",
+            "log_return": 0.15832366942073506,
+            "standardized_return": 22.485181303267886,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 12501,
+            "close_time_iso": "2021-05-19T13:10:39.416000+00:00",
+            "log_return": -0.14872674331914304,
+            "standardized_return": -21.132625787613627,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 1667,
+            "close_time_iso": "2020-03-13T02:31:08.522000+00:00",
+            "log_return": 0.12074978975056183,
+            "standardized_return": 17.14765310884068,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.26309955514815764,
+          "bars_per_weekday": {
+            "1": 5331,
+            "2": 9732,
+            "3": 9984,
+            "4": 9853,
+            "5": 9617,
+            "6": 5303,
+            "7": 6114
+          }
+        }
+      }
+    },
+    "ETHUSDT": {
+      "R1": {
+        "symbol": "ETHUSDT",
+        "resolution_id": "R1",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 158439,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 158438,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.009296992440169417,
+          "excess_kurtosis": 22.273739111563813,
+          "p99_p50_ratio": 5.220954778459597,
+          "frac_beyond_5x_median": 0.011493454853002436,
+          "hill_tail_index": 3.53502542161621
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 158195,
+          "autocorr_lag1": -0.009095429076804247,
+          "excess_kurtosis": 22.269625700989998,
+          "p99_p50_ratio": 5.219665213150286,
+          "frac_beyond_5x_median": 0.011479503144852871,
+          "hill_tail_index": 3.534733450857533
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 77211,
+            "close_time_iso": "2024-03-19T23:57:57.536000+00:00",
+            "log_return": -0.10846176768274951,
+            "standardized_return": -28.486730115017608,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 133866,
+            "close_time_iso": "2025-11-04T23:59:54.130000+00:00",
+            "log_return": -0.09239660495727975,
+            "standardized_return": -24.267128579005625,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 91904,
+            "close_time_iso": "2024-08-27T23:51:58.641000+00:00",
+            "log_return": -0.09012484626459294,
+            "standardized_return": -23.670438919963935,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 126347,
+            "close_time_iso": "2025-08-12T23:56:56.738000+00:00",
+            "log_return": 0.0839621039263374,
+            "standardized_return": 22.05443638806449,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 29776,
+            "close_time_iso": "2022-10-25T23:58:25.168000+00:00",
+            "log_return": 0.08139104508094785,
+            "standardized_return": 21.379133931527083,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.26182623096819413,
+          "bars_per_weekday": {
+            "1": 28762,
+            "2": 15166,
+            "3": 27538,
+            "4": 27298,
+            "5": 27243,
+            "6": 14973,
+            "7": 17459
+          }
+        }
+      },
+      "R2": {
+        "symbol": "ETHUSDT",
+        "resolution_id": "R2",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 80276,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 80275,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.011862079745203164,
+          "excess_kurtosis": 14.24133235760279,
+          "p99_p50_ratio": 5.234387961937348,
+          "frac_beyond_5x_median": 0.011859233883525382,
+          "hill_tail_index": 3.419916655256388
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 80032,
+          "autocorr_lag1": -0.009523646666256304,
+          "excess_kurtosis": 14.237798930982713,
+          "p99_p50_ratio": 5.233088944958383,
+          "frac_beyond_5x_median": 0.011832766893242704,
+          "hill_tail_index": 3.421353107309533
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 58183,
+            "close_time_iso": "2025-04-22T23:49:06.526000+00:00",
+            "log_return": 0.11126269703452696,
+            "standardized_return": 20.86662697765134,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 39019,
+            "close_time_iso": "2024-03-19T23:57:57.536000+00:00",
+            "log_return": -0.10846176768274951,
+            "standardized_return": -20.337552212466772,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 67946,
+            "close_time_iso": "2025-11-04T23:59:54.130000+00:00",
+            "log_return": -0.09156060874695093,
+            "standardized_return": -17.168135542332298,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 13047,
+            "close_time_iso": "2022-09-13T23:42:03.383000+00:00",
+            "log_return": -0.08600351590647026,
+            "standardized_return": -16.126032882212428,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 77409,
+            "close_time_iso": "2026-06-02T23:54:12.824000+00:00",
+            "log_return": -0.07601319785697047,
+            "standardized_return": -14.2525826243746,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.24329780863598577,
+          "bars_per_weekday": {
+            "1": 14377,
+            "2": 8640,
+            "3": 13766,
+            "4": 13653,
+            "5": 13622,
+            "6": 7487,
+            "7": 8731
+          }
+        }
+      },
+      "R3": {
+        "symbol": "ETHUSDT",
+        "resolution_id": "R3",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 40035,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 40034,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.008417185587929688,
+          "excess_kurtosis": 8.062470647516601,
+          "p99_p50_ratio": 5.47362493702175,
+          "frac_beyond_5x_median": 0.014113003946645351,
+          "hill_tail_index": 3.4686312105740087
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 39791,
+          "autocorr_lag1": -0.005003615476820294,
+          "excess_kurtosis": 8.070023267426944,
+          "p99_p50_ratio": 5.471758189707499,
+          "frac_beyond_5x_median": 0.014148928149581564,
+          "hill_tail_index": 3.4649436981046695
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 29035,
+            "close_time_iso": "2025-04-22T23:29:10.165000+00:00",
+            "log_return": 0.10893209708253249,
+            "standardized_return": 14.491984587126485,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 19489,
+            "close_time_iso": "2024-03-19T23:57:57.536000+00:00",
+            "log_return": -0.10846176768274951,
+            "standardized_return": -14.424024514338944,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 4453,
+            "close_time_iso": "2022-06-15T18:45:43.807000+00:00",
+            "log_return": 0.08936132421811305,
+            "standardized_return": 11.888835473966042,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 31916,
+            "close_time_iso": "2025-08-12T23:51:22.116000+00:00",
+            "log_return": 0.08914949243445314,
+            "standardized_return": 11.860659288815173,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 33805,
+            "close_time_iso": "2025-11-04T23:59:54.130000+00:00",
+            "log_return": -0.08728361137979057,
+            "standardized_return": -11.607073994278007,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.24641773836684092,
+          "bars_per_weekday": {
+            "1": 7184,
+            "2": 4220,
+            "3": 6886,
+            "4": 6826,
+            "5": 6810,
+            "6": 3745,
+            "7": 4364
+          }
+        }
+      }
+    },
+    "SOLUSDT": {
+      "R1": {
+        "symbol": "SOLUSDT",
+        "resolution_id": "R1",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 166813,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 166812,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.01117304312316291,
+          "excess_kurtosis": 34.885354328616536,
+          "p99_p50_ratio": 5.55298489510133,
+          "frac_beyond_5x_median": 0.013704050068340407,
+          "hill_tail_index": 3.152162352176321
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 166569,
+          "autocorr_lag1": -0.01181663072265077,
+          "excess_kurtosis": 34.893182536554434,
+          "p99_p50_ratio": 5.551989823971777,
+          "frac_beyond_5x_median": 0.013706031734596474,
+          "hill_tail_index": 3.1544229305629976
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 32005,
+            "close_time_iso": "2022-11-08T23:59:55.672000+00:00",
+            "log_return": -0.21496233923350072,
+            "standardized_return": -39.04433743372773,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 32358,
+            "close_time_iso": "2022-11-09T18:48:45.513000+00:00",
+            "log_return": -0.12348060429779117,
+            "standardized_return": -22.42776118497673,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 32883,
+            "close_time_iso": "2022-11-14T06:42:09.916000+00:00",
+            "log_return": 0.11569894305134065,
+            "standardized_return": 21.016377565361175,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 32427,
+            "close_time_iso": "2022-11-10T00:13:17.756000+00:00",
+            "log_return": 0.10655429775273006,
+            "standardized_return": 19.355360795413244,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 140126,
+            "close_time_iso": "2025-10-10T21:22:39.702000+00:00",
+            "log_return": 0.10593882402668608,
+            "standardized_return": 19.243567265206366,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.18949325763061206,
+          "bars_per_weekday": {
+            "1": 28749,
+            "2": 17804,
+            "3": 27522,
+            "4": 27014,
+            "5": 27470,
+            "6": 18428,
+            "7": 19826
+          }
+        }
+      },
+      "R2": {
+        "symbol": "SOLUSDT",
+        "resolution_id": "R2",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 83258,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 83257,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.02536376042383788,
+          "excess_kurtosis": 24.692336175851665,
+          "p99_p50_ratio": 5.7074582468666994,
+          "frac_beyond_5x_median": 0.014509290510107258,
+          "hill_tail_index": 3.09600253120601
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 83014,
+          "autocorr_lag1": -0.025824369337983242,
+          "excess_kurtosis": 24.69267245610114,
+          "p99_p50_ratio": 5.708571960135402,
+          "frac_beyond_5x_median": 0.014539716192449465,
+          "hill_tail_index": 3.0927604082613422
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 16274,
+            "close_time_iso": "2022-11-08T23:59:55.672000+00:00",
+            "log_return": -0.21122909206713247,
+            "standardized_return": -27.038046391099222,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 16713,
+            "close_time_iso": "2022-11-14T06:42:09.916000+00:00",
+            "log_return": 0.16798682671789678,
+            "standardized_return": 21.50553239609902,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 16485,
+            "close_time_iso": "2022-11-10T00:13:17.756000+00:00",
+            "log_return": 0.15487716006262398,
+            "standardized_return": 19.827358815746507,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 16467,
+            "close_time_iso": "2022-11-09T20:42:51.606000+00:00",
+            "log_return": -0.13043222939668153,
+            "standardized_return": -16.69520824926246,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 16332,
+            "close_time_iso": "2022-11-09T09:22:13.089000+00:00",
+            "log_return": 0.1262438736330629,
+            "standardized_return": 16.16200056764575,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.19217948266615764,
+          "bars_per_weekday": {
+            "1": 14375,
+            "2": 8746,
+            "3": 13769,
+            "4": 13501,
+            "5": 13728,
+            "6": 9223,
+            "7": 9916
+          }
+        }
+      },
+      "R3": {
+        "symbol": "SOLUSDT",
+        "resolution_id": "R3",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 41616,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 41615,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.025719399869055148,
+          "excess_kurtosis": 18.882843180151855,
+          "p99_p50_ratio": 5.817315960280377,
+          "frac_beyond_5x_median": 0.016292202330890303,
+          "hill_tail_index": 3.0116800562975894
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 41372,
+          "autocorr_lag1": -0.024034440887937398,
+          "excess_kurtosis": 18.889642386040688,
+          "p99_p50_ratio": 5.834356867945984,
+          "frac_beyond_5x_median": 0.01636372425795224,
+          "hill_tail_index": 3.0060148288825257
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 8129,
+            "close_time_iso": "2022-11-09T18:48:13.957000+00:00",
+            "log_return": 0.2385237130568103,
+            "standardized_return": 21.839379739294127,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 8041,
+            "close_time_iso": "2022-11-08T23:59:55.672000+00:00",
+            "log_return": -0.21122909206713247,
+            "standardized_return": -19.336322268390226,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 8153,
+            "close_time_iso": "2022-11-10T03:17:42.315000+00:00",
+            "log_return": 0.15261934362571505,
+            "standardized_return": 13.974675669515099,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 8150,
+            "close_time_iso": "2022-11-10T01:30:37.256000+00:00",
+            "log_return": -0.14331886802912175,
+            "standardized_return": -13.119015524758861,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 8130,
+            "close_time_iso": "2022-11-09T18:52:06.192000+00:00",
+            "log_return": -0.1279701512119904,
+            "standardized_return": -11.713812082640542,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.1919223436372921,
+          "bars_per_weekday": {
+            "1": 7178,
+            "2": 4367,
+            "3": 6879,
+            "4": 6745,
+            "5": 6869,
+            "6": 4610,
+            "7": 4968
+          }
+        }
+      }
+    },
+    "BNBUSDT": {
+      "R1": {
+        "symbol": "BNBUSDT",
+        "resolution_id": "R1",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 164742,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 164741,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": 0.0009743604136634592,
+          "excess_kurtosis": 22.37537019341033,
+          "p99_p50_ratio": 5.525025428752581,
+          "frac_beyond_5x_median": 0.014537971725314281,
+          "hill_tail_index": 3.476407187367487
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 164498,
+          "autocorr_lag1": 0.0015965420868625936,
+          "excess_kurtosis": 22.379303917226476,
+          "p99_p50_ratio": 5.526401200357393,
+          "frac_beyond_5x_median": 0.014547289328745638,
+          "hill_tail_index": 3.4757005976723097
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 86003,
+            "close_time_iso": "2024-06-04T23:55:29.572000+00:00",
+            "log_return": 0.09299896649240047,
+            "standardized_return": 28.96345074660527,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 137194,
+            "close_time_iso": "2025-10-10T21:22:06.307000+00:00",
+            "log_return": 0.08763661164362802,
+            "standardized_return": 27.29340389183809,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 110739,
+            "close_time_iso": "2025-02-04T23:55:03.492000+00:00",
+            "log_return": -0.06854462689118712,
+            "standardized_return": -21.347537176882838,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 5867,
+            "close_time_iso": "2022-02-15T23:57:50.012000+00:00",
+            "log_return": 0.06761160438921099,
+            "standardized_return": 21.056834077816024,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 77829,
+            "close_time_iso": "2024-03-05T23:56:24.307000+00:00",
+            "log_return": -0.05993529075357529,
+            "standardized_return": -18.666253460356042,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.20232820330019913,
+          "bars_per_weekday": {
+            "1": 30330,
+            "2": 17433,
+            "3": 26742,
+            "4": 27278,
+            "5": 25520,
+            "6": 18129,
+            "7": 19310
+          }
+        }
+      },
+      "R2": {
+        "symbol": "BNBUSDT",
+        "resolution_id": "R2",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 82159,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 82158,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": 0.002872185936435058,
+          "excess_kurtosis": 22.176796689099707,
+          "p99_p50_ratio": 5.582128233346164,
+          "frac_beyond_5x_median": 0.01505635482850118,
+          "hill_tail_index": 3.399513040943423
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 81915,
+          "autocorr_lag1": 0.003906598386017308,
+          "excess_kurtosis": 22.184492327323934,
+          "p99_p50_ratio": 5.580529233127011,
+          "frac_beyond_5x_median": 0.015039980467557834,
+          "hill_tail_index": 3.3942747193257845
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 68371,
+            "close_time_iso": "2025-10-10T21:22:39.124000+00:00",
+            "log_return": 0.14236571582902702,
+            "standardized_return": 31.310169676536077,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 68368,
+            "close_time_iso": "2025-10-10T21:19:20.126000+00:00",
+            "log_return": -0.07962591375636396,
+            "standardized_return": -17.51207040905875,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 68143,
+            "close_time_iso": "2025-10-07T23:53:43.970000+00:00",
+            "log_return": 0.07144033271939332,
+            "standardized_return": 15.711671261039031,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 2936,
+            "close_time_iso": "2022-02-15T23:57:50.012000+00:00",
+            "log_return": 0.06761160438921099,
+            "standardized_return": 14.869625576218391,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 38785,
+            "close_time_iso": "2024-03-05T23:56:24.307000+00:00",
+            "log_return": -0.05993529075357529,
+            "standardized_return": -13.181545310105427,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.20614750989127542,
+          "bars_per_weekday": {
+            "1": 15165,
+            "2": 8506,
+            "3": 13367,
+            "4": 13640,
+            "5": 12760,
+            "6": 9070,
+            "7": 9651
+          }
+        }
+      },
+      "R3": {
+        "symbol": "BNBUSDT",
+        "resolution_id": "R3",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 40686,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 40685,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.006686895068091346,
+          "excess_kurtosis": 26.280534394557858,
+          "p99_p50_ratio": 5.692801037588816,
+          "frac_beyond_5x_median": 0.016345090328130762,
+          "hill_tail_index": 3.326949751757108
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 40442,
+          "autocorr_lag1": -0.003291411472435306,
+          "excess_kurtosis": 26.317369184322896,
+          "p99_p50_ratio": 5.69235880636765,
+          "frac_beyond_5x_median": 0.016319667672221948,
+          "hill_tail_index": 3.3214906409916316
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 33752,
+            "close_time_iso": "2025-10-10T21:22:39.124000+00:00",
+            "log_return": 0.17640025441925555,
+            "standardized_return": 27.283107586744062,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 25818,
+            "close_time_iso": "2024-12-03T23:57:40.298000+00:00",
+            "log_return": 0.13787132608252683,
+            "standardized_return": 21.32397039619237,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 27186,
+            "close_time_iso": "2025-02-03T02:07:57.136000+00:00",
+            "log_return": -0.08095401181273765,
+            "standardized_return": -12.52099403910517,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 27256,
+            "close_time_iso": "2025-02-04T23:25:03.600000+00:00",
+            "log_return": -0.07749511464825254,
+            "standardized_return": -11.986018278787228,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 33749,
+            "close_time_iso": "2025-10-10T21:17:27.798000+00:00",
+            "log_return": -0.07656424539698214,
+            "standardized_return": -11.842043924600521,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.22130641090526845,
+          "bars_per_weekday": {
+            "1": 7578,
+            "2": 3871,
+            "3": 6680,
+            "4": 6827,
+            "5": 6369,
+            "6": 4537,
+            "7": 4824
+          }
+        }
+      }
+    },
+    "XRPUSDT": {
+      "R1": {
+        "symbol": "XRPUSDT",
+        "resolution_id": "R1",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 173228,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 173227,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.008130508093949693,
+          "excess_kurtosis": 122.46106264352154,
+          "p99_p50_ratio": 5.706794495717522,
+          "frac_beyond_5x_median": 0.016423536746581077,
+          "hill_tail_index": 3.291596362101876
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 172984,
+          "autocorr_lag1": -0.0074263827047721664,
+          "excess_kurtosis": 122.48542238020474,
+          "p99_p50_ratio": 5.705688604910525,
+          "frac_beyond_5x_median": 0.01642348425287888,
+          "hill_tail_index": 3.2921731322282297
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 145645,
+            "close_time_iso": "2025-10-10T21:21:49.478000+00:00",
+            "log_return": 0.2769357003762969,
+            "standardized_return": 62.150943658347394,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 145648,
+            "close_time_iso": "2025-10-10T21:23:01.570000+00:00",
+            "log_return": 0.17543861243551062,
+            "standardized_return": 39.37247867021143,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 31644,
+            "close_time_iso": "2022-11-08T23:55:31.548000+00:00",
+            "log_return": -0.13996604483530184,
+            "standardized_return": -31.412152578811686,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 145647,
+            "close_time_iso": "2025-10-10T21:22:21.916000+00:00",
+            "log_return": -0.10490237489280274,
+            "standardized_return": -23.5429950064611,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 85961,
+            "close_time_iso": "2024-03-19T23:51:24.461000+00:00",
+            "log_return": -0.10221725569857609,
+            "standardized_return": -22.94038763322941,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.1961983092035724,
+          "bars_per_weekday": {
+            "1": 30275,
+            "2": 18406,
+            "3": 26250,
+            "4": 29073,
+            "5": 29633,
+            "6": 19366,
+            "7": 20225
+          }
+        }
+      },
+      "R2": {
+        "symbol": "XRPUSDT",
+        "resolution_id": "R2",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 86534,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 86533,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": -0.017346019627692583,
+          "excess_kurtosis": 53.299190422858416,
+          "p99_p50_ratio": 5.885485718029543,
+          "frac_beyond_5x_median": 0.01724197704921822,
+          "hill_tail_index": 3.275634154739114
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 86290,
+          "autocorr_lag1": -0.01741333246599609,
+          "excess_kurtosis": 53.28801496595406,
+          "p99_p50_ratio": 5.8818623664340945,
+          "frac_beyond_5x_median": 0.017232587785374898,
+          "hill_tail_index": 3.27228564913302
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 72883,
+            "close_time_iso": "2025-10-10T21:21:49.478000+00:00",
+            "log_return": 0.22539698875843328,
+            "standardized_return": 35.896400970744885,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 72885,
+            "close_time_iso": "2025-10-10T21:23:27.216000+00:00",
+            "log_return": 0.21727969978027317,
+            "standardized_return": 34.60363850029869,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 16015,
+            "close_time_iso": "2022-11-08T23:55:31.548000+00:00",
+            "log_return": -0.13716944195851677,
+            "standardized_return": -21.846064024106465,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 72882,
+            "close_time_iso": "2025-10-10T21:21:01.761000+00:00",
+            "log_return": -0.13328696510076665,
+            "standardized_return": -21.22773931156027,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 72880,
+            "close_time_iso": "2025-10-10T21:19:33.187000+00:00",
+            "log_return": -0.11699507564398082,
+            "standardized_return": -18.63308691972629,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.197588224588537,
+          "bars_per_weekday": {
+            "1": 15135,
+            "2": 9115,
+            "3": 13130,
+            "4": 14526,
+            "5": 14823,
+            "6": 9675,
+            "7": 10130
+          }
+        }
+      },
+      "R3": {
+        "symbol": "XRPUSDT",
+        "resolution_id": "R3",
+        "start_date": "2021-12-01",
+        "cadence_days": 7,
+        "n_bars": 43011,
+        "n_stale_pre_causal_files_excluded": 7,
+        "n_returns": 43010,
+        "n_boundary_bars_excluded": 243,
+        "all_bars": {
+          "autocorr_lag1": 0.007537089731973145,
+          "excess_kurtosis": 35.65138019073318,
+          "p99_p50_ratio": 6.035751782100559,
+          "frac_beyond_5x_median": 0.018925831202046037,
+          "hill_tail_index": 3.2002514867301817
+        },
+        "excluding_boundary_bars": {
+          "n_returns": 42767,
+          "autocorr_lag1": 0.012023882772714878,
+          "excess_kurtosis": 35.66641036568403,
+          "p99_p50_ratio": 6.043087370015409,
+          "frac_beyond_5x_median": 0.018893071760937172,
+          "hill_tail_index": 3.201580660285407
+        },
+        "top_extreme_bars": [
+          {
+            "bar_index": 36118,
+            "close_time_iso": "2025-10-10T21:21:01.761000+00:00",
+            "log_return": -0.2413554076956257,
+            "standardized_return": -27.180898385485396,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 36120,
+            "close_time_iso": "2025-10-10T21:24:21.806000+00:00",
+            "log_return": 0.22063468128219288,
+            "standardized_return": 24.846242212762988,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 36117,
+            "close_time_iso": "2025-10-10T21:19:33.187000+00:00",
+            "log_return": -0.18519235334646922,
+            "standardized_return": -20.856080613927265,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 7968,
+            "close_time_iso": "2022-11-08T23:55:31.548000+00:00",
+            "log_return": -0.13760019794191647,
+            "standardized_return": -15.496476978089882,
+            "is_boundary_bar": false
+          },
+          {
+            "bar_index": 21401,
+            "close_time_iso": "2024-03-19T23:51:24.461000+00:00",
+            "log_return": -0.12082953973931204,
+            "standardized_return": -13.60784470426212,
+            "is_boundary_bar": false
+          }
+        ],
+        "weekday_dispersion": {
+          "cv_by_weekday": 0.2063858692298385,
+          "bars_per_weekday": {
+            "1": 7560,
+            "2": 4309,
+            "3": 6559,
+            "4": 7265,
+            "5": 7409,
+            "6": 4841,
+            "7": 5068
+          }
+        }
+      }
+    }
+  }
+}

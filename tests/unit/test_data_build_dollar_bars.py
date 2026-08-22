@@ -40,6 +40,7 @@ import polars as pl
 import pytest
 
 from src.data import _paths as data_paths
+from src.data import bars as bars_module
 from src.data import build_dollar_bars, lake
 from src.data._constants import load_constant as load_data_constant
 from src.data.bars import LeftoverOverflowError
@@ -601,6 +602,7 @@ def test_query_dollar_bars_resolution_id_r2_le_diretorio_proprio_nao_r1(
 
 _WF_SYMBOL = "BTCUSDT"
 _WF_START = "2024-01-01"
+_WF_START_DATE = date(2024, 1, 1)
 _WF_END = "2024-03-30"
 _WF_TRAILING_DAYS = 30
 _WF_CADENCE_DAYS = 30
@@ -637,8 +639,18 @@ def _rate_for_date(d: date, rates: tuple[tuple[date, date, float], ...]) -> floa
     )
 
 
+_WF_TRADES_EMPTY_SCHEMA: dict[str, pl.DataType] = {
+    "transact_time": pl.Int64(),
+    "price": pl.Float64(),
+    "quantity": pl.Float64(),
+    "is_buyer_maker": pl.Boolean(),
+}
+
+
 def _walkforward_mocks(
     rates: tuple[tuple[date, date, float], ...],
+    *,
+    history_start: date | None = None,
 ) -> tuple[Callable[..., pl.DataFrame], Callable[..., pl.DataFrame]]:
     """Constrói o par de mocks (`lake.query_bars`, `lake.query_agg_trades`)
     usado por `calibrate_dollar_threshold_for_validation` (via
@@ -657,7 +669,20 @@ def _walkforward_mocks(
     soma dia a dia); `n_bars` (baseline.height) também bate `n_dias` --
     junto, fazem `threshold_usdt = total_dollar / n_bars` colapsar pro
     `rate` do bucket quando o bucket é uniforme dentro da janela (P0/P1/P2
-    cada um 100% dentro de 1 bucket só, por desenho)."""
+    cada um 100% dentro de 1 bucket só, por desenho).
+
+    `history_start` (AG-124/item 15, 2026-08-21) -- quando informado,
+    simula o INÍCIO real de histórico do símbolo: qualquer `start < history_
+    start` devolve DataFrame VAZIO (zero trades/zero linhas de baseline),
+    mesma superfície de `lake.query_agg_trades`/`query_bars` reais quando
+    não há dado antes do listing do símbolo -- é o que faz `calibrate_
+    dollar_threshold_for_validation` levantar `ValueError` (`totals.n_ticks
+    == 0`) pra uma janela de calibração genuinamente sem histórico, em vez
+    de um `AssertionError` de `_rate_for_date` (que só cobre os buckets
+    definidos em `rates`, não é uma fronteira de história de verdade).
+    `None` (default) preserva o comportamento anterior -- sempre devolve
+    dado sintético, nenhuma fronteira de história (usado pelos testes que
+    não tocam a janela de lead-in)."""
 
     def _fake_query_bars(
         symbol: str,
@@ -669,6 +694,10 @@ def _walkforward_mocks(
         cast_prices: bool,
         **_: object,
     ) -> pl.DataFrame:
+        if history_start is not None and _to_date(start) < history_start:
+            return pl.DataFrame({"close": [], "close_time": []}).cast(
+                {"close": pl.Float64, "close_time": pl.Int64}
+            )
         n_days = (_to_date(end) - _to_date(start)).days + 1
         return pl.DataFrame({"close": [1.0] * n_days, "close_time": list(range(n_days))})
 
@@ -676,6 +705,8 @@ def _walkforward_mocks(
         symbol: str, start: object, end: object, **_: object
     ) -> pl.DataFrame:
         start_d, end_d = _to_date(start), _to_date(end)
+        if history_start is not None and start_d < history_start:
+            return pl.DataFrame(schema=_WF_TRADES_EMPTY_SCHEMA)
         n_days = (end_d - start_d).days + 1
         days = [start_d + timedelta(days=i) for i in range(n_days)]
         prices = [_rate_for_date(d, rates) for d in days]
@@ -686,12 +717,7 @@ def _walkforward_mocks(
                 "quantity": [1.0] * n_days,  # price*quantity == rate do dia, exato
                 "is_buyer_maker": [False] * n_days,
             },
-            schema={
-                "transact_time": pl.Int64,
-                "price": pl.Float64,
-                "quantity": pl.Float64,
-                "is_buyer_maker": pl.Boolean,
-            },
+            schema=_WF_TRADES_EMPTY_SCHEMA,
         )
 
     return _fake_query_bars, _fake_query_agg_trades
@@ -708,8 +734,15 @@ def test_build_dollar_bars_walkforward_cold_start_1o_periodo_nao_quebra(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """(c) cold-start do 1º período (P0) não levanta exceção -- é
-    descartado como warmup, contabilizado, não construído/escrito."""
-    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    descartado como warmup, contabilizado, não construído/escrito.
+    `history_start=_WF_START` -- simula que NÃO há trade algum antes do
+    início do range pedido (início real de histórico do símbolo), então
+    mesmo com o lead-in (AG-124/item 15) tentando calibrar P0, não há
+    dado disponível e ele continua sendo descartado -- este teste cobre
+    o caminho onde o lead-in genuinamente não tem o que recuperar; ver
+    `test_build_dollar_bars_walkforward_lead_in_recupera_1o_periodo_
+    quando_ha_historico_antes` para o caminho onde ele recupera."""
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE, history_start=_WF_START_DATE)
     monkeypatch.setattr(lake, "query_bars", fake_bars)
     monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
 
@@ -742,6 +775,95 @@ def test_build_dollar_bars_walkforward_cold_start_1o_periodo_nao_quebra(
     assert "2024-01-31" in written_days  # 1º dia de P1 -- confirma que não sumiu por engano
 
 
+def test_build_dollar_bars_walkforward_lead_in_recupera_1o_periodo_quando_ha_historico_antes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AG-124/item 15 (lead-in buffer, 2026-08-21) -- quando HÁ trade real
+    disponível antes de `start` (histórico genuíno do símbolo, não fora do
+    domínio), o 1º período deixa de ser descartado incondicionalmente. Só
+    a LEITURA de calibração olha antes de `start` -- a escrita de barras
+    continua começando em `start` (bars de antes de `start` nunca são
+    construídas/escritas por esta chamada, só usadas pra calibrar)."""
+    lead_in_rate = 500.0
+    rates_with_lead_in: tuple[tuple[date, date, float], ...] = (
+        (date(2023, 12, 2), date(2023, 12, 31), lead_in_rate),  # cobre a janela de calib de P0
+        *_WF_RATES_BASE,
+    )
+    fake_bars, fake_trades = _walkforward_mocks(
+        rates_with_lead_in, history_start=date(2023, 12, 2)
+    )
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+
+    stats = build_dollar_bars.build_dollar_bars_walkforward(
+        _WF_SYMBOL,
+        _WF_START,
+        _WF_END,
+        resolution_id="R1",
+        trailing_window_days=_WF_TRAILING_DAYS,
+        cadence_days=_WF_CADENCE_DAYS,
+        dest_root=tmp_path,
+    )
+
+    assert stats.n_periods == 3
+    assert stats.n_cold_start_dropped == 0  # NADA descartado -- lead-in recuperou P0
+    assert stats.n_periods_written == 3
+    p0 = stats.periods[0]
+    assert p0.is_cold_start is False
+    assert p0.app_start == "2024-01-01"  # escrita continua começando em start, não antes
+    assert p0.threshold_usdt == pytest.approx(lead_in_rate)
+    assert p0.n_bars > 0
+    assert p0.written is not None
+    for name, path in p0.written.items():
+        if name == "calibration":
+            continue
+        day_df = pl.read_parquet(path)
+        assert day_df["threshold_quote"].to_list() == pytest.approx(
+            [lead_in_rate] * day_df.height
+        )
+        # dia escrito é sempre >= start -- lead-in nunca produz barra ANTES do range pedido
+        assert name >= _WF_START
+
+
+def test_build_dollar_bars_walkforward_finish_chamado_1x_por_rodada_nao_por_periodo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AG-124/item 14 -- `threshold_bars_finish` (que trunca/fecha o
+    leftover em aberto como barra parcial) só roda 1x pra TODA a rodada
+    (no último período), não 1x por período -- é essa mudança que reduz
+    o nº de barras subdimensionadas de ~1/período pra ~1/rodada inteira."""
+    finish_calls = 0
+    original_finish = bars_module.threshold_bars_finish
+
+    def _counting_finish(carry: object) -> pl.DataFrame:
+        nonlocal finish_calls
+        finish_calls += 1
+        return original_finish(carry)  # type: ignore[arg-type]
+
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE, history_start=_WF_START_DATE)
+    monkeypatch.setattr(lake, "query_bars", fake_bars)
+    monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
+    # `build_dollar_bars.py` faz `from . import bars` -- `bars_module` (import
+    # direto abaixo) é o MESMO objeto de módulo em memória, então patchar
+    # aqui tem efeito idêntico a patchar via `build_dollar_bars.bars`, sem
+    # acessar o atributo implícito (mypy strict rejeita `build_dollar_bars.
+    # bars` -- "does not explicitly export attribute").
+    monkeypatch.setattr(bars_module, "threshold_bars_finish", _counting_finish)
+
+    stats = build_dollar_bars.build_dollar_bars_walkforward(
+        _WF_SYMBOL,
+        _WF_START,
+        _WF_END,
+        resolution_id="R1",
+        trailing_window_days=_WF_TRAILING_DAYS,
+        cadence_days=_WF_CADENCE_DAYS,
+        dest_root=tmp_path,
+    )
+
+    assert stats.n_periods_written == 2  # P1, P2 (P0 segue cold-start sem lead-in)
+    assert finish_calls == 1  # não 2 -- só o ÚLTIMO período fecha o stream
+
+
 def test_build_dollar_bars_walkforward_cada_barra_carrega_threshold_quote_certo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -749,7 +871,7 @@ def test_build_dollar_bars_walkforward_cada_barra_carrega_threshold_quote_certo(
     foi construída -- P1 calibrado sobre P0 (rate 1000/dia uniforme,
     30 dias, baseline 30 linhas) -> threshold_usdt esperado == 1000.0; P2
     calibrado sobre P1 (rate 2000/dia) -> esperado == 2000.0."""
-    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE, history_start=_WF_START_DATE)
     monkeypatch.setattr(lake, "query_bars", fake_bars)
     monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
 
@@ -811,7 +933,7 @@ def test_build_dollar_bars_walkforward_prefix_invariance_periodo_posterior_nao_a
     def _run(
         rates: tuple[tuple[date, date, float], ...], dest_root: Path
     ) -> build_dollar_bars.WalkforwardBarsStats:
-        fake_bars, fake_trades = _walkforward_mocks(rates)
+        fake_bars, fake_trades = _walkforward_mocks(rates, history_start=_WF_START_DATE)
         monkeypatch.setattr(lake, "query_bars", fake_bars)
         monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
         return build_dollar_bars.build_dollar_bars_walkforward(
@@ -865,7 +987,7 @@ def test_build_dollar_bars_walkforward_parametros_obrigatorios_rejeita_invalidos
     """B23 -- `trailing_window_days`/`cadence_days` não têm default; valor
     <= 0 é rejeitado explicitamente (fail-loud), não silenciosamente
     tratado como 'sem recalibração'."""
-    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE, history_start=_WF_START_DATE)
     monkeypatch.setattr(lake, "query_bars", fake_bars)
     monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
 
@@ -898,7 +1020,7 @@ def test_build_dollar_bars_walkforward_calibration_json_registra_identidade_do_a
     algoritmo (janela causal, cadência, resolution_id) -- NÃO um
     threshold_usdt escalar (esse não existe mais como conceito de
     diretório, ver docstring de `WalkforwardCalibrationIdentity`)."""
-    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE)
+    fake_bars, fake_trades = _walkforward_mocks(_WF_RATES_BASE, history_start=_WF_START_DATE)
     monkeypatch.setattr(lake, "query_bars", fake_bars)
     monkeypatch.setattr(lake, "query_agg_trades", fake_trades)
 

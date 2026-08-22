@@ -1,0 +1,170 @@
+{
+  "generated_at": "2026-08-22T01:39:42.406145+00:00",
+  "code_version": "eee33eb",
+  "source_report": "experiments\\dollar_threshold_drift_daily.json",
+  "trailing_windows_periods": [],
+  "cadence_override_periods": null,
+  "weekday_matched_weeks": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "error_thresholds": {
+    "high_mult": 2.0,
+    "low_mult": 0.5
+  },
+  "methodology": "error_ratio = dollar_per_day(período avaliado) / dollar_per_day_pooled(janela trailing de `trailing` períodos imediatamente anteriores) -- esquema ROLLING, cadência de avanço = `cadence` (default = trailing). Chaves `wm<n>` usam o modo casado por dia-da-semana (ver docstring do módulo). Ver docstring do módulo pra por que dollar_per_day sozinho é equivalente à razão de threshold_usdt real. Período conta como erro ruim se error_ratio >= high_mult ou <= low_mult.",
+  "table": {
+    "BNBUSDT": {
+      "wm1": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 388,
+        "pct_error_bad": 22.77,
+        "max_ratio": 12.2337,
+        "min_ratio": 0.1013
+      },
+      "wm2": {
+        "n_periods_evaluated": 1697,
+        "n_error_bad": 380,
+        "pct_error_bad": 22.39,
+        "max_ratio": 10.6315,
+        "min_ratio": 0.1751
+      },
+      "wm3": {
+        "n_periods_evaluated": 1690,
+        "n_error_bad": 389,
+        "pct_error_bad": 23.02,
+        "max_ratio": 11.023,
+        "min_ratio": 0.1963
+      },
+      "wm4": {
+        "n_periods_evaluated": 1683,
+        "n_error_bad": 375,
+        "pct_error_bad": 22.28,
+        "max_ratio": 9.8672,
+        "min_ratio": 0.1815
+      }
+    },
+    "BTCUSDT": {
+      "wm1": {
+        "n_periods_evaluated": 2405,
+        "n_error_bad": 347,
+        "pct_error_bad": 14.43,
+        "max_ratio": 15.9073,
+        "min_ratio": 0.1924
+      },
+      "wm2": {
+        "n_periods_evaluated": 2398,
+        "n_error_bad": 283,
+        "pct_error_bad": 11.8,
+        "max_ratio": 11.8392,
+        "min_ratio": 0.1741
+      },
+      "wm3": {
+        "n_periods_evaluated": 2391,
+        "n_error_bad": 266,
+        "pct_error_bad": 11.13,
+        "max_ratio": 12.7687,
+        "min_ratio": 0.1931
+      },
+      "wm4": {
+        "n_periods_evaluated": 2384,
+        "n_error_bad": 261,
+        "pct_error_bad": 10.95,
+        "max_ratio": 9.2505,
+        "min_ratio": 0.2206
+      }
+    },
+    "ETHUSDT": {
+      "wm1": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 254,
+        "pct_error_bad": 14.91,
+        "max_ratio": 10.3154,
+        "min_ratio": 0.2016
+      },
+      "wm2": {
+        "n_periods_evaluated": 1697,
+        "n_error_bad": 211,
+        "pct_error_bad": 12.43,
+        "max_ratio": 7.8116,
+        "min_ratio": 0.2473
+      },
+      "wm3": {
+        "n_periods_evaluated": 1690,
+        "n_error_bad": 199,
+        "pct_error_bad": 11.78,
+        "max_ratio": 8.686,
+        "min_ratio": 0.2398
+      },
+      "wm4": {
+        "n_periods_evaluated": 1683,
+        "n_error_bad": 203,
+        "pct_error_bad": 12.06,
+        "max_ratio": 7.4608,
+        "min_ratio": 0.2294
+      }
+    },
+    "SOLUSDT": {
+      "wm1": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 332,
+        "pct_error_bad": 19.48,
+        "max_ratio": 16.3357,
+        "min_ratio": 0.0543
+      },
+      "wm2": {
+        "n_periods_evaluated": 1697,
+        "n_error_bad": 302,
+        "pct_error_bad": 17.8,
+        "max_ratio": 14.0469,
+        "min_ratio": 0.0996
+      },
+      "wm3": {
+        "n_periods_evaluated": 1690,
+        "n_error_bad": 294,
+        "pct_error_bad": 17.4,
+        "max_ratio": 12.9785,
+        "min_ratio": 0.1012
+      },
+      "wm4": {
+        "n_periods_evaluated": 1683,
+        "n_error_bad": 287,
+        "pct_error_bad": 17.05,
+        "max_ratio": 14.4019,
+        "min_ratio": 0.0703
+      }
+    },
+    "XRPUSDT": {
+      "wm1": {
+        "n_periods_evaluated": 1704,
+        "n_error_bad": 414,
+        "pct_error_bad": 24.3,
+        "max_ratio": 26.0593,
+        "min_ratio": 0.1488
+      },
+      "wm2": {
+        "n_periods_evaluated": 1697,
+        "n_error_bad": 378,
+        "pct_error_bad": 22.27,
+        "max_ratio": 38.7549,
+        "min_ratio": 0.1444
+      },
+      "wm3": {
+        "n_periods_evaluated": 1690,
+        "n_error_bad": 386,
+        "pct_error_bad": 22.84,
+        "max_ratio": 42.2858,
+        "min_ratio": 0.1719
+      },
+      "wm4": {
+        "n_periods_evaluated": 1683,
+        "n_error_bad": 413,
+        "pct_error_bad": 24.54,
+        "max_ratio": 46.1544,
+        "min_ratio": 0.1829
+      }
+    }
+  }
+}

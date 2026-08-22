@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-08-22T02:08:12.478315+00:00",
+  "code_version": "eee33eb",
+  "start": "2026-07-01",
+  "end": "2026-07-30",
+  "candidates": [
+    "T7_C7",
+    "T7_C1"
+  ],
+  "min_bars_for_stats": 30,
+  "methodology": "build_dollar_bars_walkforward real (dest_root=tempdir descartável, nunca data/capacity/) sobre uma amostra [start,end] -- autocorr_lag1 e excess_kurtosis dos retornos log(close/close.shift(1)) das barras resultantes. None = NOT_COMPUTABLE (amostra < min_bars_for_stats ou variância zero), nunca 0.0 silencioso.",
+  "table": {
+    "BTCUSDT": {
+      "T7_C7": {
+        "symbol": "BTCUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 7,
+        "n_periods": 5,
+        "n_cold_start_dropped": 0,
+        "n_bars": 2306,
+        "n_returns": 2305,
+        "autocorr_lag1": 0.002923360167959664,
+        "excess_kurtosis": 5.017618202866046
+      },
+      "T7_C1": {
+        "symbol": "BTCUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 1,
+        "n_periods": 30,
+        "n_cold_start_dropped": 0,
+        "n_bars": 1257,
+        "n_returns": 1256,
+        "autocorr_lag1": 0.0032716251579219245,
+        "excess_kurtosis": 68.4934051256417
+      }
+    },
+    "ETHUSDT": {
+      "T7_C7": {
+        "symbol": "ETHUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 7,
+        "n_periods": 5,
+        "n_cold_start_dropped": 0,
+        "n_bars": 2456,
+        "n_returns": 2455,
+        "autocorr_lag1": 0.006474787479403265,
+        "excess_kurtosis": 91.3806369802881
+      },
+      "T7_C1": {
+        "symbol": "ETHUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 1,
+        "n_periods": 30,
+        "n_cold_start_dropped": 0,
+        "n_bars": 1499,
+        "n_returns": 1498,
+        "autocorr_lag1": -0.015383697941755555,
+        "excess_kurtosis": 78.38176949046581
+      }
+    },
+    "SOLUSDT": {
+      "T7_C7": {
+        "symbol": "SOLUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 7,
+        "n_periods": 5,
+        "n_cold_start_dropped": 0,
+        "n_bars": 2318,
+        "n_returns": 2317,
+        "autocorr_lag1": 0.014189696381146798,
+        "excess_kurtosis": 16.33438521818215
+      },
+      "T7_C1": {
+        "symbol": "SOLUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 1,
+        "n_periods": 30,
+        "n_cold_start_dropped": 0,
+        "n_bars": 1412,
+        "n_returns": 1411,
+        "autocorr_lag1": 0.0012546183081423984,
+        "excess_kurtosis": 31.464996137333856
+      }
+    },
+    "BNBUSDT": {
+      "T7_C7": {
+        "symbol": "BNBUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 7,
+        "n_periods": 5,
+        "n_cold_start_dropped": 0,
+        "n_bars": 2302,
+        "n_returns": 2301,
+        "autocorr_lag1": 0.007306303449713728,
+        "excess_kurtosis": 15.645922766819591
+      },
+      "T7_C1": {
+        "symbol": "BNBUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 1,
+        "n_periods": 30,
+        "n_cold_start_dropped": 0,
+        "n_bars": 1805,
+        "n_returns": 1804,
+        "autocorr_lag1": 0.016396932415054775,
+        "excess_kurtosis": 33.93873156743539
+      }
+    },
+    "XRPUSDT": {
+      "T7_C7": {
+        "symbol": "XRPUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 7,
+        "n_periods": 5,
+        "n_cold_start_dropped": 0,
+        "n_bars": 2505,
+        "n_returns": 2504,
+        "autocorr_lag1": -0.03480834441427939,
+        "excess_kurtosis": 34.41700141823273
+      },
+      "T7_C1": {
+        "symbol": "XRPUSDT",
+        "trailing_window_days": 7,
+        "cadence_days": 1,
+        "n_periods": 30,
+        "n_cold_start_dropped": 0,
+        "n_bars": 1430,
+        "n_returns": 1429,
+        "autocorr_lag1": -0.0016504004588243724,
+        "excess_kurtosis": 56.30134931707124
+      }
+    }
+  }
+}
