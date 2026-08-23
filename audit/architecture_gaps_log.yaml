@@ -9215,6 +9215,70 @@ entries:
       campo real. A causa raiz (falta de checklist de DoD) segue sem
       decisão do Manager, agora com 3 instâncias reais como evidência do
       custo de não decidir.
+    addendum_4a_ocorrencia_2026_08_23: >
+      Confirmado pela 4ª vez, mesma classe exata -- desta vez achada por
+      pedido explícito do Manager ("mapeie ponta a ponta o roadmap vivo,
+      tem vários falsos positivos"), não por acidente de uma auditoria
+      com outro objetivo. Fan-out de 9 `Agent` (um por cluster de pacote
+      real, `stage_readiness_audit`-style, só-leitura) cobriu os 15
+      estágios de engenharia; 6 clusters vieram limpos (Barra+Data
+      Check, Features, Barreiras+Label+Pesos, Validação+Meta+Decision,
+      Risk+Execução, Monitoramento+Feedback -- já corrigidos em rodadas
+      anteriores e resistiram à reverificação), 3 clusters tinham
+      falsos positivos REAIS, todos do mesmo padrão (dependência
+      downstream ou infraestrutura pronta descrita como "não existe"):
+
+      1. `§15.4` linha `09_LEARNER` -- "zero persistência de modelo/
+      calibrador treinado" (AG-141): FALSO desde 2026-08-22 --
+      `src/models/persistence.py` existe, testado (12 testes), revisado
+      por `project_assurance` (`AG-146`/`147`/`148`, commit `96b3c3a`).
+      Gap real é INTEGRAÇÃO faltante (`alpha.py::run_fold` não chama
+      `write_model_bundle`), não ausência de infraestrutura -- `AG-141`
+      segue aberto, mas por motivo diferente do texto antigo.
+      2. `§15.4` linha `09_LEARNER` -- "stability.py órfã": FALSO
+      desde a ORIGEM (escrito 2026-08-12, 3 dias depois do caller real
+      já existir, mesmo commit de criação `b02087b`, 2026-08-09).
+      Implementa a Camada 2 formal do PRD (§5.4), já rodada sobre 15
+      splits reais de CPCV x 2 lados via `faixa2_e3_stability.py`.
+      3. `§15.4` linha `08_SPLIT` + `§11.5` linha da tabela
+      `validation` -- "decisão de política pendente do Manager"/"sem
+      nenhum caller de produção real": FALSO desde 2026-08-21 --
+      `max_feature_lookback_ms` tem 2 callers reais (`pipeline.py:432`,
+      `leakage.py:798`, commit `f4e2307`), `AG-032` fechado no mesmo
+      dia. Agravante: o commit de governança `ebe6c928` (2026-08-22)
+      RETOCOU essas linhas e manteve o texto stale, apesar da correção
+      já ter acontecido no dia anterior -- não é esquecimento antigo, é
+      staleness reconfirmada por uma rodada de sync posterior.
+      4. `§15.4` linha `05_REGIME` + artefato Road Map Vivo v2 --
+      "SEM consumidor real hoje": verdadeiro só pro CANDIDATO HMM
+      (`build_hmm_regimes`, de fato sem caller além do gate de Risk
+      Engine desligado). Framing omitia que o classificador BASELINE
+      (mesmos arquivos `build.py`/`classifier.py`) é consumido em
+      produção desde o Sprint 8 via `environments.py`->`monotonic.py`->
+      `alpha.py::fit_side_model` -- o próprio artefato publicado já se
+      autocontradizia (linha 701 já dizia "consumidor de produção
+      confirmado" pro mesmo caminho, 200 linhas depois da linha "sem
+      consumidor").
+      5. Artefato Road Map Vivo v2 publicado (não o `.md`) -- card
+      `AG-180` mostrado como "pendente-de-execução-humana" quando o
+      achado já estava fechado (`3c3ed14`, mesmo dia) -- artefato nunca
+      republicado após `§15.21.4` fechar. Violação direta do próprio
+      protocolo de "Atualize governança" item 3 (republicar na MESMA
+      sessão, não depois).
+
+      As 4 correções de `PLANO_MESTRE_PRINCE2.md` (`§11.5`, `§15.4`
+      linhas `05_REGIME`/`08_SPLIT`/`09_LEARNER`) foram aplicadas nesta
+      mesma rodada -- ver diff do commit. O artefato Road Map Vivo v2
+      foi republicado na mesma sessão (item 5 corrigido junto).
+      Padrão consolidado após 4 ocorrências: toda vez que uma seção do
+      `PLANO_MESTRE`/Road Map Vivo é editada, só a área diretamente
+      tocada é revisada -- o resto do documento não recebe sync
+      automático. A causa raiz (checklist de DoD "§15.2/§15.4/Road Map
+      Vivo revisado?" em todo PR que fecha um `AG-NNN` citado nessas
+      seções) segue sem decisão do Manager, agora com 4 instâncias
+      reais confirmadas, 2 delas afetando texto que já tinha sido
+      "corrigido" numa rodada de governança anterior e mesmo assim ficou
+      stale de novo.
 
   - id: AG-124
     date: "2026-08-21"

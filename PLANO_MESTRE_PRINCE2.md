@@ -740,7 +740,7 @@ escrito no fim, é o estado real.
 | camada | o que muda | status | referência |
 |---|---|---|---|
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
-| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) — ⚠️ ressalva aberta em `AG-032`: `max_feature_lookback_ms` (componente 96) ainda sem nenhum caller de produção real que o wire-e, só o teste sintético prova o mecanismo; `status` do ledger começa "aberto" por causa disso, não fechado | `AG-032`, commit `a7e7e16` |
+| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`) — **[CORRIGIDO 2026-08-23, achado de `stage_readiness_audit`]** `max_feature_lookback_ms` (componente 96) tem 2 callers de produção reais desde 2026-08-21 (`src/models/pipeline.py:432`, `src/validation/leakage.py:798`, commit `f4e2307`) — a ressalva "sem nenhum caller real" estava desatualizada desde então. `AG-032` fechado 2026-08-21 (mecanismo/política de enforcement decididos e implementados); resta só uma decisão mais estreita e separada (incluir/excluir as 3 features expanding de `T1_FEATURE_IDS`) e a ressalva de magnitude de `AG-159`/D-02 (2026-08-23, proxy p99 sob `resolution_id` — ver `§15.21.2`) | `AG-032`, commit `a7e7e16`/`f4e2307` |
 | `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
 | `labels` (`src/labels/triple_barrier.py` + `barrier_sweep.py`/`cost_surface.py`/`backfill_multi_symbol.py`/`experiment_log.py`) | horizonte do label em relógio fixo (B1 = Opção 2), `time_stop_bars`→`time_stop_ms`, `atr_window`→`atr_window_ms` (Label Engine só), `n_bars_held` vira contagem real | ✅ pronto — confirmado empiricamente (`uv run pytest`, 121 passed), commitado e pushed | `AG-031`, `AG-044`..`048`, commit `c0ac546` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `resolution_id` (R1/R2/R3) substitui M15/M30/H1 como identidade de dollar/volume/tick_imbalance bars (B2 = A′+D, parte 1 — `threshold_usdt` como identidade formal fica pra quando dollar bar for implantado) | ✅ pronto — confirmado empiricamente (`uv run pytest`, 105 passed), commitado e pushed | `AG-042`, commit `982b5d4` |
@@ -1179,10 +1179,25 @@ DATA LAYER
                                                                        Manager (AG-114, 2026-08-22) como
                                                                        candidato canônico, builder de produção
                                                                        real (build_hmm.py) pronto e causal --
-                                                                       mas SEM consumidor real hoje (nem
-                                                                       backtest nem live; o gate no Risk
-                                                                       Engine que o consumiria foi desligado
-                                                                       no mesmo dia, ver 12_RISK_ENGINE abaixo)
+                                                                       SEM consumidor real hoje ESPECIFICAMENTE
+                                                                       pro CANDIDATO HMM (nem backtest nem
+                                                                       live; o gate no Risk Engine que o
+                                                                       consumiria foi desligado no mesmo dia,
+                                                                       ver 12_RISK_ENGINE abaixo). [CORRIGIDO
+                                                                       2026-08-23, achado de
+                                                                       stage_readiness_audit] Isso NÃO significa
+                                                                       "Regime Engine sem consumidor real" --
+                                                                       o classificador BASELINE (build.py/
+                                                                       classifier.py, mesmos arquivos desta
+                                                                       linha) é consumido em produção desde o
+                                                                       Sprint 8 via environments.py ->
+                                                                       monotonic.py -> alpha.py::fit_side_model
+                                                                       (monotone_constraints do Alpha derivados
+                                                                       de IC estratificado por regime) --
+                                                                       consumidor real, não downstream
+                                                                       hipotético. D-01 (AG-177/183, 2026-08-23)
+                                                                       já confirmou esse mesmo caminho de
+                                                                       consumo
   06_BARREIRAS         (não existe separado — dentro de labels/)       refatoração real necessária, represada
                                                                        deliberadamente pós-Data-Layer-100%
                                                                        (confirmado ainda correto, 2026-08-22)
@@ -1204,17 +1219,49 @@ DATA LAYER
 ML LAYER
   08_SPLIT             src/validation/cpcv.py                          embargo_ms=347010000 (96,39h,
                                                                        MEASURED, invariante a tf) -- AG-032/E1.
-                                                                       Gap real: 3 features expanding (T1_
-                                                                       FEATURE_IDS) quebram leakage.py/
-                                                                       pipeline.py sem bypass manual --
-                                                                       decisão de política pendente do Manager
-  09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD; stability.py órfã;
+                                                                       [CORRIGIDO 2026-08-23] mecanismo/
+                                                                       política de proteção do componente-96
+                                                                       (max_feature_lookback_ms) FECHADO
+                                                                       2026-08-21 (AG-032), wireado nos 2
+                                                                       call-sites reais (pipeline.py:432,
+                                                                       leakage.py:798, fail-fast por desenho).
+                                                                       Restam 2 decisões SEPARADAS, ambas
+                                                                       genuinamente abertas: (a) incluir/
+                                                                       excluir as 3 features expanding de
+                                                                       T1_FEATURE_IDS -- decisão de política
+                                                                       do Manager; (b) AG-159/D-02
+                                                                       (2026-08-23) -- ressalva de MAGNITUDE
+                                                                       do proxy p99 sob resolution_id (medido
+                                                                       até 5,8x sob-cobertura em SOLUSDT/R3),
+                                                                       ver §15.21.2
+  09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD wired em produção
+                                                                       (run_layer1_sprint só chama Camada 0/1);
                                                                        regime CONFIRMADO removido do vetor de
                                                                        treino (Fase A, §15.13, 2026-08-21).
-                                                                       Gap real: zero persistência de
-                                                                       modelo/calibrador treinado -- AG-141
-                                                                       (aberto, alta, bloqueia qualquer
-                                                                       inferência sem retreino)
+                                                                       [CORRIGIDO 2026-08-23, achado de
+                                                                       stage_readiness_audit] "stability.py
+                                                                       órfã" era FALSO desde a origem (2026-
+                                                                       08-12) -- tem caller real desde a
+                                                                       própria criação (faixa2_e3_stability.py,
+                                                                       mesmo commit b02087b, 2026-08-09),
+                                                                       implementa a Camada 2 formal do PRD
+                                                                       (§5.4), já rodada sobre 15 splits reais
+                                                                       de CPCV x 2 lados. O que falta não é
+                                                                       uso -- é PROMOÇÃO A PRODUÇÃO (resultado
+                                                                       é ranking, T1_FEATURE_IDS intocado;
+                                                                       threshold alpha_stability_screen_limiar
+                                                                       segue ASSUMED, sweep pendente). Gap real
+                                                                       de AG-141: NÃO é "zero persistência" --
+                                                                       src/models/persistence.py existe,
+                                                                       testado (12 testes, booster/calibrador
+                                                                       bit-exatos), revisado por
+                                                                       project_assurance (3 MEDIUM corrigidos,
+                                                                       AG-146/147/148, commit 96b3c3a) desde
+                                                                       2026-08-22. Falta só a INTEGRAÇÃO ao
+                                                                       pipeline real: alpha.py::run_fold não
+                                                                       chama write_model_bundle (confirmado,
+                                                                       zero ocorrências hoje) -- AG-141 segue
+                                                                       aberto, por esse motivo específico
   09b_CALIBRACAO       (inline em alpha.py — não separável hoje)       sem gate de amostra pequena (n_cal_eff)
   10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe (CPCV wired em produção real via
                                                                        pipeline.py; DSR/leakage existem mas
