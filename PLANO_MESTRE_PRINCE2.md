@@ -4099,6 +4099,75 @@ arquivos tocados. Nenhuma constante nova em `constants.yaml` (reuso de
 
 ---
 
+### 15.21.3 Fecha `AG-174`/`175`/`176`, entrega script de medição para `AG-180` (2026-08-23)
+
+**Origem:** pedido direto do Manager, resposta a "o que falta pra esses 5
+pontos fecharem?" sobre os achados residuais do mapa de dívida técnica
+(`§15.21`). Decisão por item: `AG-180` = medir; `AG-174`/`AG-175` =
+desenhar checagem real + testes (com pesquisa de metodologia); `AG-176` =
+opção B (aceitar duplicação, guarda mecânica); `§11`/ressalva de
+magnitude de `AG-159` = próxima sessão.
+
+**A. `AG-174`/`AG-175` — `validate_resampled_bars` finge PASS, fechado.**
+Causa raiz: `missing_bars`/`duplicates`/`invalid_rows`/`gap_
+classification` eram literais hardcoded em `0`, `gate`/`quality_score`
+nunca refletiam defeito real — diferente de toda outra função `validate_*`
+do mesmo arquivo. Correção: `bars_{timeframe}` (saída de `resample_
+klines`) tem a MESMA forma que `klines_1m` (OHLCV + grade de relógio
+fixa) — schemas `BARS_15M`/`BARS_30M`/`BARS_1H` registrados
+(`src/data/schemas.py`, `grid_step_ms` derivado de `resample.step_ms`,
+não duplicado — mesma fonte de verdade que `resample_klines` já usa,
+evita a classe de bug de TF hardcoded já vista 3× no repo, `AG-004`/
+`AG-005`/`AG-017`), e `validate_resampled_bars` passou a reusar
+`validate_klines_like` por inteiro — os mesmos 12 checks reais rodam,
+com o check 16 (paridade cross-source, específico de dado resampled)
+sobreposto por cima. 11 testes novos.
+
+**B. `AG-176` — guarda `resolution_id` duplicada em 4 pacotes, opção B
+aplicada.** Decisão do Manager: aceitar a duplicação (dentro da convenção
+já documentada do repo), só adicionar verificação mecânica. `tools/lint/
+check_resolution_id_guard_parity.py` — varre `**/_paths.py` via AST,
+confirma que toda guarda contra `CALIBRATION_TF_BY_RESOLUTION` levanta
+`ValueError` e tem a MESMA forma de condição em todo site (mesmo
+espírito de `check_unguarded_ratios.py`). Rodado contra o repo real:
+achou exatamente os 4 sites conhecidos (`models`/`regime`/`labels`/
+`validation`), todos consistentes. 15 testes, incluindo 1 de integração
+que trava esse estado (4 sites, 1 forma) como regressão.
+
+**C. `AG-180` — histerese do Regime Engine sob dollar-bar, medição
+entregue, não decidida.** `tools/diagnostics/measure_regime_hysteresis_
+bar_window_duration.py` mede a duração real de janelas de N barras
+CONSECUTIVAS (não percentil de 1 barra extrapolado — barras rápidas se
+agrupam em rajada, extrapolação assumiria independência que não está
+confirmada), pros 3 N's que a histerese usa hoje
+(`regime_confirmation_bars`/`regime_stress_exit_confirmation_bars`/
+`min_warmup_bars`, lidos de `constants.yaml`, nunca hardcoded), por
+símbolo×resolução, sobre o dado já persistido.
+**PENDENTE-DE-EXECUÇÃO-HUMANA** — script ainda não rodado, não decide a
+fórmula de conversão (B23/B20). `AG-180` continua `aberto`.
+
+**D. Achado real durante a implementação, corrigido antes do commit.**
+`BARS_15M`/`BARS_30M`/`BARS_1H` foram definidos em `schemas.py` mas
+esquecidos do dict `REGISTRY` — os 8 testes novos de `validate_
+resampled_bars` pegaram isso na primeira rodada (`KeyError` em toda
+chamada), corrigido antes de qualquer commit.
+
+**E. Sessão paralela ativa detectada durante o trabalho.** `git status`
+revelou edições concorrentes em `CLAUDE.md` + `src/analysis/
+attribution.py`/`faixa1_5_prerequisites.py`/`faixa2_caminho_b.py` +
+`src/labels/triple_barrier.py` + `src/models/baselines.py`/`hhi.py`/
+`pipeline.py`/`src/execution/fill_simulator.py` — princípio novo "Núcleo
+funcional, casca imperativa" (`docs/nucleo_casca_design_doc_2026-08-23.md`).
+Nada tocado; confirmado sem conflito com este trabalho (diff de
+`pipeline.py` não se sobrepõe).
+
+**F. Verificação.** `1732 passed, 4 skipped, 0 failed` (`-m "not slow and
+not integration"`, suíte completa). `ruff`/`mypy`/`banned_patterns.py`/
+`check_constants_referenced.py`/`check_unguarded_ratios.py` limpos nos
+arquivos tocados. Commit `d44c7f9`; governança nesta mesma rodada.
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

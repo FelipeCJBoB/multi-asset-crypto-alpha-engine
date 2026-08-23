@@ -3418,6 +3418,43 @@ de fixture pré-existente (`test_regime_build.py`, faltava coluna
 escopo, como previsto: `AG-180` (D-04) e §11 do design doc (caminho HMM)
 seguem sem código. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.21.2`.
 
+**Fecha `AG-174`/`AG-175`/`AG-176`, entrega medição pra `AG-180` (commit
+`d44c7f9`, 2026-08-23).** `validate_resampled_bars` (`src/data/
+validate.py`) tinha `missing_bars`/`duplicates`/`invalid_rows` literais
+hardcoded em `0` — corrigido reusando `validate_klines_like` por inteiro
+(schemas novos `BARS_15M`/`BARS_30M`/`BARS_1H` em `schemas.py`, `grid_
+step_ms` via `resample.step_ms`, fecha `AG-174`/`AG-175`). `AG-176`
+(guarda `resolution_id` duplicada em 4 pacotes) fechado com a opção B do
+Manager — script mecânico novo (`tools/lint/check_resolution_id_guard_
+parity.py`) confirma as 4 cópias comportamentalmente idênticas, sem
+remover a duplicação. `AG-180` (histerese sob dollar-bar) ganhou script
+de medição (`tools/diagnostics/measure_regime_hysteresis_bar_window_
+duration.py`, mede janela real de N barras consecutivas, não percentil
+<!-- check-sprint-log: skip -->
+de 1 barra extrapolado) — **rodado pelo Manager no mesmo dia**
+(`experiments/regime_hysteresis_bar_window_duration.json`, 45/45
+combinações). Achado real: pra `min_warmup_bars=200`, a mediana da
+janela sob R1 fica próxima do equivalente de 15m (~50h), mas R2 sai
+~2× maior e R3 ~4× maior — o warmup fica MAIS longo em resolução mais
+grosseira, não mais curto como a suspeita original ("40 segundos numa
+rajada") isoladamente sugeria; as duas coisas coexistem (mediana cresce
+<!-- check-sprint-log: skip -->
+com a resolução, mas o pior caso de rajada — `p1` — ainda produz janelas
+<!-- check-sprint-log: skip -->
+de 25min a poucas horas dependendo do símbolo). `AG-180` segue `aberto`
+— medição não decide a fórmula de conversão, decisão fica com o
+<!-- check-sprint-log: skip -->
+Manager. Achado real durante a implementação: os 3 schemas novos foram
+<!-- check-sprint-log: skip -->
+esquecidos do dict `REGISTRY`, pego pelos 8 testes de `validate_
+<!-- check-sprint-log: skip -->
+resampled_bars` na primeira rodada, corrigido antes do commit. `1732
+passed, 0 failed` (confirmado independentemente pelo Manager: `1734
+passed`, mesma suíte, +2 pela sessão paralela ativa).
+Sessão paralela detectada no mesmo working tree (`CLAUDE.md`+vários
+módulos, princípio "Núcleo funcional, casca imperativa") — não tocada,
+sem conflito. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.21.3`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3453,5 +3490,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
-| **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1 (fill_simulator.py, models/regime `_paths.py`, dataset.py, fill_model.py) + Grupo 2 parcial (validate.py) implementados, commit `72e02c7` — 2 CRITICAL corrigidos via `audit_engineering`. **D-01/D-02 (`stress.py`/`classifier.py`/`build.py` — S6 dollar-bar causal; purge do CPCV resolution-aware) implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23). Revisão `project_assurance` corrigiu 1 achado real antes do commit (`AG-183` — critério de S6 era bilateral, deveria ser unilateral) + 2 menores (`AG-181`/`AG-182`). `1695 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente, não implementado: `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" sem checar), `AG-176` (guarda `resolution_id` duplicada em 4 pacotes), `AG-179` (`faixa1_7_edge_or_beta.py`, fora de escopo por desenho), `AG-180` (histerese em contagem de barra sob dollar-bar, sem correção medida), §11 do design doc (caminho de troca pro HMM, não iniciado) |
+| **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1+2 parcial implementados, commit `72e02c7`. **D-01/D-02 implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23); revisão `project_assurance` corrigiu 1 achado real pré-commit (`AG-183`) + 2 menores (`AG-181`/`AG-182`). **`AG-174`/`AG-175`/`AG-176` fechados, commit `d44c7f9`** — `validate_resampled_bars` reescrita (schemas `BARS_15M`/`30M`/`1H` novos, reusa `validate_klines_like`); guarda `check_resolution_id_guard_parity.py` nova (opção B, duplicação mantida). **`AG-180` ganhou script de medição** (`measure_regime_hysteresis_bar_window_duration.py`), PENDENTE-DE-EXECUÇÃO-HUMANA, entrada segue aberta. `1732 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`/`§15.21.3`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente: `AG-179` (fora de escopo por desenho), `AG-180` (medição entregue, fórmula não decidida), ressalva de magnitude de `AG-159`, §11 do design doc (caminho HMM) — os 2 últimos represados pro Manager pra próxima sessão |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |

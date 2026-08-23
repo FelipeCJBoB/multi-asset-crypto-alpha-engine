@@ -12019,9 +12019,19 @@ entries:
       de AG-168 triplicou a superfície de 1 pra 3 timeframes
       alcançáveis), o "PASS" autorizaria dado que nunca foi de fato
       verificado quanto a gaps/duplicatas/coerência OHLC.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- PRÉ-EXISTENTE (não introduzido pela correção de AG-168, que só generalizou o CLI de 1 pra 3 timeframes -- a fraqueza em validate_resampled_bars já existia antes, exposta antes só via bars_30m). Fix recomendado: validate_resampled_bars rodar os mesmos checks reais que as outras validate_* já rodam sobre df_resampled, ou gate refletir explicitamente 'checks reais = 0' quando nenhum rodou. Não corrigido nesta rodada -- fora do escopo (achado colateral da auditoria, não do achado original AG-168)."
+    resolved_by_commit: "d44c7f9"
+    resolution: >
+      `validate_resampled_bars` reescrita pra reusar `validate_klines_
+      like` por inteiro -- `bars_{timeframe}` tem a mesma forma (OHLCV +
+      grade fixa) que `klines_1m`, então roda os mesmos 12 checks reais
+      (schema/duplicatas/nulls/monotonicidade/close_time/grid/gaps/OHLC/
+      preço/volume/taker/outliers) em vez de retornar literais hardcoded.
+      Schemas `BARS_15M`/`BARS_30M`/`BARS_1H` registrados em
+      `schemas.py` (`grid_step_ms` via `resample.step_ms`, não duplicado
+      -- mesma fonte de verdade que `resample_klines` usa). Check 16
+      (paridade cross-source) continua específico de dado resampled,
+      sobreposto por cima do resultado de `validate_klines_like`.
+    status: "fechado 2026-08-23 -- commit d44c7f9"
 
   - id: AG-175
     date: "2026-08-22"
@@ -12035,9 +12045,18 @@ entries:
     severity: "medio"
     layer: "tests -- materialidade real baixa hoje (ferramenta de investigação manual, zero consumidor automatizado confirmado por grep), mas relevante se AG-174 for corrigido"
     consequence: "Nenhuma regressão futura em validate_resampled_bars/_run_cli seria pega pela suíte."
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- baixa prioridade isolada (materialidade baixa), mas deveria ser feito junto de AG-174 se/quando aquele for corrigido."
+    resolved_by_commit: "d44c7f9"
+    resolution: >
+      Feito junto de `AG-174`, como esta entrada já previa. 11 testes
+      novos pra `validate_resampled_bars` em `tests/unit/
+      test_data_validate.py` -- cobrem dado limpo, gap na grade
+      (`missing_bars`, a correção central de `AG-174`), duplicata, OHLC
+      incoerente, DataFrame vazio, os dois caminhos do check 16 (sem
+      kline nativo / com kline nativo idêntico / divergente), e a razão
+      corrigida do check 2. `_run_cli()` segue sem teste dedicado --
+      fora de escopo desta rodada (CLI wrapper fino, baixa materialidade
+      isolada, mesmo julgamento desta entrada original).
+    status: "fechado 2026-08-23 -- commit d44c7f9 (validate_resampled_bars coberta; _run_cli segue sem teste, materialidade baixa isolada)"
 
   - id: AG-176
     date: "2026-08-22"
@@ -12058,9 +12077,20 @@ entries:
       Dentro da convenção já aceita do repo (cada pacote minimiza
       acoplamento entre si) -- não é achado de correção, é achado de
       acompanhamento de manutenção.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- sugestão da auditoria (não implementada): um script mecânico (`tools/lint/`) que verifique que as N cópias permanecem comportamentalmente idênticas, mesmo espírito de check_unguarded_ratios.py pra outra classe de bug. Baixa prioridade, dentro da convenção existente."
+    resolved_by_commit: "d44c7f9"
+    resolution: >
+      `tools/lint/check_resolution_id_guard_parity.py` -- varre
+      `**/_paths.py` via AST, confirma que toda guarda contra
+      `CALIBRATION_TF_BY_RESOLUTION` levanta `ValueError` e tem a MESMA
+      forma de condição em todo site (mesmo espírito de
+      `check_unguarded_ratios.py`, como esta entrada já sugeria). Rodado
+      contra o repo real: achou exatamente os 4 sites conhecidos, todos
+      consistentes. 15 testes, incluindo 1 de integração que trava esse
+      estado (4 sites, 1 forma) como regressão -- se uma cópia futura
+      divergir, o teste quebra antes de virar bug em produção. A
+      duplicação em si NÃO foi removida (decisão do Manager mantida --
+      "B", aceitar a duplicação dentro da convenção do repo).
+    status: "fechado 2026-08-23 -- commit d44c7f9 (guarda mecânica adicionada; duplicação mantida por decisão, não é regressão)"
 
   - id: AG-177
     date: "2026-08-22"
@@ -12245,6 +12275,42 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisão do Manager necessária, mesma disciplina de B23: não inventar conversão numérica não medida. docs/regime_feature_engine_design_doc_2026-08-23.md D-04 reconhece o gap e não o resolve (nem 'desabilitar' é neutro aqui, ao contrário de AG-030 -- confirmation_bars=0 muda semântica da histerese). Requer medição de equivalente nativo sob dollar-bar antes de qualquer correção."
+
+    addendum_script_de_medicao_2026-08-23: >
+      `tools/diagnostics/measure_regime_hysteresis_bar_window_duration.py`
+      (commit `d44c7f9`) entrega a MEDIÇÃO que esta entrada pedia --
+      janela real de N barras CONSECUTIVAS (não percentil de 1 barra
+      extrapolado, que assumiria independência entre barras que rajadas
+      de liquidez violam por natureza), pros 3 N's reais lidos de
+      `constants.yaml` (`regime_confirmation_bars`/`regime_stress_exit_
+      confirmation_bars`/`min_warmup_bars`, nunca hardcoded no script),
+      por símbolo×resolução, sobre `data/capacity/dollar_bars_
+      {r1,r2,r3}/`.
+
+    addendum_resultado_medido_2026-08-23: >
+      Rodado pelo Manager -- `experiments/regime_hysteresis_bar_window_
+      duration.json` (45/45 combinações, 0 skipped, `code_version:
+      d44c7f9`). Achado real: pra `min_warmup_bars=200`, a MEDIANA da
+      janela real diverge sistematicamente do equivalente sob 15m (50h) --
+      R1 fica PRÓXIMO (mediana ~44,7h-49,0h entre os 5 símbolos, ~90-98%
+      do valor sob 15m), mas R2 sai ~2× maior (mediana ~95,1h-103,6h) e
+      R3 ~4× maior (mediana ~202,1h-209,2h) -- o warmup fica bem mais
+      longo que a intenção original de 200 barras=50h conforme a
+      resolução fica mais grosseira, não mais curto como a suspeita
+      original de `docs/refactor_dollar_bar_canonico.md` (rajada faz
+      janela CURTA) previa isoladamente. As DUAS coisas são reais e
+      convivem: no CASO TÍPICO (mediana), a janela cresce com a
+      resolução; no CASO DE RAJADA (p1, pior caso de confirmação RÁPIDA
+      demais), `min_warmup_bars=200` pode fechar em pouco mais de 25min
+      (XRPUSDT/R1, `p1=1552s`) até ~2h (XRPUSDT/R3, `p1=7087s`) --
+      XRPUSDT consistentemente mostra os p1 mais curtos entre os 5
+      símbolos, BTCUSDT/ETHUSDT os mais longos mesmo no pior caso
+      (`p1` de 34-267 mil segundos = 9,5h-74h). Decisão de fórmula de
+      conversão SEGUE COM O MANAGER (B20/B23 -- não decidida aqui,
+      medição só confirma que nem "sempre mais curto" nem "sempre mais
+      longo" descreve o comportamento real; depende de symbol/N/regime
+      de liquidez). `AG-180` permanece formalmente `aberto` até essa
+      decisão."
 
   - id: AG-181
     date: "2026-08-23"
