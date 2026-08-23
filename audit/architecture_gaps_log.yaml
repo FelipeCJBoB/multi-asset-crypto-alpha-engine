@@ -10706,9 +10706,35 @@ entries:
       do módulo) para regenerar/estender uma janela reintroduz
       silenciosamente o mesmo vazamento temporal de 18,18x que levou 6
       rodadas de auditoria externa para fechar -- sem nenhum aviso.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- correção recomendada pelo agente: subcomando --mode walkforward (exigindo --trailing-window-days/--cadence-days) que aciona build_dollar_bars_walkforward dentro do próprio módulo, e/ou logger.warning explícito no modo legado apontando pra AG-124/o modo causal. Decisão de prioridade e implementação ficam pro Manager -- achado de leitura, não implementado nesta rodada (auditoria só-leitura)."
+    resolved_by_commit: "ef7f5d3"
+    resolution: >
+      Implementadas as 2 correções recomendadas pelo agente, não só uma
+      ("e/ou" resolvido como "e"). `_parse_cli_args`/`main` (build_dollar_bars.py)
+      ganharam `--mode {single_window,walkforward}` (default `single_window`
+      -- preserva 100% retrocompatibilidade, nenhum caller/doc existente
+      quebra) + `--trailing-window-days`/`--cadence-days` (obrigatórios sob
+      `--mode walkforward`, validados via `parser.error(...)` -- sem default,
+      B23). `--mode walkforward` aciona `build_dollar_bars_walkforward`
+      dentro do próprio módulo (antes só acessível via script separado,
+      `tools/diagnostics/run_ag124_production_reprocessing.py`). `--mode
+      single_window` (o caminho legado, agora não mais silencioso) emite
+      `logger.warning` explícito citando o vazamento de 18,18x medido e a
+      alternativa causal, a cada execução. `--help`/descrição do parser
+      agora citam AG-124/AG-138 (a lacuna original: "--help não menciona
+      AG-124 nem a alternativa"). Zero mudança de comportamento default --
+      só torna o caminho causal alcançável pelo CLI E o caminho legado
+      auditável via log estruturado. 4 testes novos de `_parse_cli_args`
+      (`tests/unit/test_data_build_dollar_bars.py`) cobrem: default
+      `single_window`, `walkforward` sem `--trailing-window-days` levanta
+      `SystemExit`, sem `--cadence-days` levanta `SystemExit`, com ambos
+      parseia corretamente. Verificado: `banned_patterns.py --strict` (0
+      violações, novo e no arquivo de teste -- 43 MAGIC_NUMBER pré-existentes
+      no teste confirmadas via baseline `git stash`, nenhuma nova),
+      `check_constants_referenced.py`/`check_unguarded_ratios.py` (0
+      achados novos), `ruff check` (limpo), `mypy` (0 issues, baseline
+      idêntico via `git stash`). Não executado empiricamente por Claude
+      (protocolo de execução, CLAUDE.md) -- pytest não roda sozinho aqui.
+    status: "fechado 2026-08-23 -- ambas as correções recomendadas implementadas (subcomando causal + warning no legado), testado (lint/mypy/banned_patterns), execução real do pytest pendente do usuário"
 
   - id: AG-139
     date: "2026-08-22"
@@ -10736,9 +10762,26 @@ entries:
       1: "Nenhum literal numérico em código de pipeline." O gate de
       pre-commit que deveria travar isso está, na prática, falhando
       silenciosamente até alguém tocar o arquivo por outro motivo.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- correção trivial, 0 trials: adicionar `# noqa: magic-number -- constante de fórmula da literatura (Yang-Zhang 2000/Parkinson 1980), mesma classe de garman_klass_vol` nas 2 linhas, mesmo padrão já usado 6x no restante do pacote. Não implementado nesta rodada (auditoria só-leitura) -- fica pro Manager decidir se corrige na hora ou agrupa com outros achados mecânicos."
+    resolved_by_commit: "ef7f5d3"
+    resolution: >
+      Adicionado `# noqa: magic-number -- <justificativa>` nas 2 linhas
+      (168, 285) -- mesmo padrão já usado 6x no restante do pacote.
+      Achado colateral: `banned_patterns.py` busca a SUBSTRING literal
+      `"noqa: magic-number"` na linha (`_NOQA_MAGIC_NUMBER`, linha 34 do
+      script) -- combinar `# noqa: unguarded-ratio, magic-number -- ...`
+      numa tag só (1ª tentativa) NÃO satisfaz a checagem, porque a
+      substring exata `"noqa: magic-number"` não aparece (fica `"noqa:
+      unguarded-ratio, magic-number"`). Corrigido usando 2 tags `# noqa:`
+      separadas na mesma linha (mesmo padrão que `check_unguarded_ratios.py`
+      já usa isoladamente) -- ambas substrings aparecem literalmente.
+      `banned_patterns.py --strict --path src/features/support.py` confirma
+      0 violações (era 1, linha 168). `check_unguarded_ratios.py` mostra 17
+      divisões pré-existentes sem noqa (incluindo a linha 285, ratio, não
+      magic-number) -- fora do escopo de AG-139 (que é especificamente
+      sobre o gate MAGIC_NUMBER de `banned_patterns.py`), não tocado.
+      Verificado: `ruff check` limpo (`All checks passed!`), `mypy` sem
+      mudança de baseline (não aplicável -- arquivo sem tipo novo).
+    status: "fechado 2026-08-23 -- banned_patterns.py --strict confirma 0 violações em src/features/support.py (era 1)"
 
   - id: AG-140
     date: "2026-08-22"

@@ -1153,26 +1153,32 @@ citável, não opinião:
 
 ```
 DATA LAYER
-  01_BARRA            src/data/{resample,lake,download,bars,build_dollar_bars}.py  🟡 parcial -- [DESATUALIZADO,
-                                                                       ver §15.15] recalibração causal FECHADA
-                                                                       2026-08-22 (AG-124, 15/15 células
+  01_BARRA            src/data/{resample,lake,download,bars,build_dollar_bars}.py  🟢 pronto -- [CORRIGIDO
+                                                                       2026-08-23, AG-138] recalibração causal
+                                                                       FECHADA 2026-08-22 (AG-124, 15/15 células
                                                                        reprocessadas, zero vazamento residual
                                                                        real -- AG-137 limpou os 7 dias stale
-                                                                       remanescentes). Gap real hoje: CLI legado
-                                                                       de build_dollar_bars.py::main() continua
-                                                                       produzindo calibração NÃO-causal por
-                                                                       padrão -- AG-138 (aberto, severidade alta)
+                                                                       remanescentes). CLI (build_dollar_bars.py)
+                                                                       ganhou --mode {single_window,walkforward}
+                                                                       -- walkforward aciona o modo causal direto
+                                                                       do CLI (antes só via script separado);
+                                                                       single_window (legado) emite
+                                                                       logger.warning explícito. AG-138 fechado,
+                                                                       commit ef7f5d3
   02_DATA_CHECK        src/data/{checks,validate,schemas}.py           [DESATUALIZADO] symbol JÁ exercitado
                                                                        desde 2026-08-21 (AG-125/AG-133,
                                                                        validate_dollar_bars() + campo symbol
                                                                        em QualityReport, testado p/ ETH/SOL)
-  03_FEATURES          src/features/{build,support,groups/*}.py        [DESATUALIZADO] "TF hardcoded" obsoleto
-                                                                       desde 2026-08-18 (dispatcher multi-grade
-                                                                       real, _sources.load_bars). "thresholds
-                                                                       globais" segue correto (AG-043). Gap
-                                                                       real hoje: banned_patterns.py --strict
-                                                                       FALHA de fato (2 magic numbers sem
-                                                                       noqa) -- AG-139 (aberto, alta)
+  03_FEATURES          src/features/{build,support,groups/*}.py        [CORRIGIDO 2026-08-23, AG-139] "TF
+                                                                       hardcoded" obsoleto desde 2026-08-18
+                                                                       (dispatcher multi-grade real,
+                                                                       _sources.load_bars). "thresholds
+                                                                       globais" segue correto (AG-043).
+                                                                       banned_patterns.py --strict voltou a
+                                                                       passar limpo (2 magic numbers sem noqa
+                                                                       em support.py, linhas 168/285,
+                                                                       corrigidos) -- AG-139 fechado, commit
+                                                                       ef7f5d3
   04_VOLATILIDADE      src/features/volatility.py                      ilha — só alimenta labels hoje
   05_REGIME            src/regime/{build,classifier,stress}.py         [DESATUALIZADO, ver §15.13] HMM k=4
                                                                        ratificado por override executivo do
@@ -1321,9 +1327,9 @@ LIVE TRADING LAYER
 
 | estágio `§15.4` | equivalente `§11.6` | nota |
 |---|---|---|
-| `01_BARRA` | M2 (Barra) | dollar bar canônico. **[DESATUALIZADO, ver linha `01_BARRA` da tabela ASCII acima]** recalibração causal FECHADA 2026-08-22 (`AG-124`); gap real hoje é `AG-138` (CLI legado não-causal por padrão) |
+| `01_BARRA` | M2 (Barra) | dollar bar canônico. **[CORRIGIDO 2026-08-23]** recalibração causal FECHADA 2026-08-22 (`AG-124`); `AG-138` (CLI legado não-causal por padrão) fechado 2026-08-23, ver linha `01_BARRA` da tabela ASCII acima |
 | `02_DATA_CHECK` | sem equivalente | `AG-079` fechado — checklist determinístico, não precisa de comparação tipo-M1. **[DESATUALIZADO]** `symbol` já exercitado desde 2026-08-21 (`AG-125`/`AG-133`) |
-| `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro. **[DESATUALIZADO]** "TF hardcoded" da tabela ASCII acima é obsoleto desde 2026-08-18 — gap real hoje é `AG-139` |
+| `03_FEATURES` | V41-7 (Pesos+Features, parcial) | depende de V41-6 primeiro. **[CORRIGIDO 2026-08-23]** "TF hardcoded" da tabela ASCII acima é obsoleto desde 2026-08-18; `AG-139` (banned_patterns --strict falhando) fechado 2026-08-23 |
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
 | `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6). **[ATUALIZAÇÃO 2026-08-22]** resultado final: `hmm_gaussian_k4_v1` ratificado por override executivo (`AG-114`/`§15.13`), não por resolução estatística limpa — Gate 1/Gate 3 permanecem tecnicamente frágeis, registrado |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
@@ -4569,11 +4575,81 @@ necessária. `AG-140` fechado.
 
 **G. Fila do roadmap, não atacados nesta rodada** — mesmo fan-out do
 `stage_readiness_audit`, mesma severidade "alto", sem bloqueio de decisão
-do Manager: `AG-138` (CLI `build_dollar_bars.py` sem subcomando
-walkforward), `AG-139` (2 anotações `# noqa: magic-number` faltando em
-`support.py`, correção trivial 0 trials), `AG-141` (persistência de
-booster/calibrador — `persistence.py` já existe, falta integração ao
-pipeline), `AG-142` (diagnóstico de IC-por-ambiente não persistido).
+do Manager: ~~`AG-138`~~/~~`AG-139`~~ **fechados a seguir, mesma sessão —
+ver `§15.25`**, `AG-141` (persistência de booster/calibrador —
+`persistence.py` já existe, falta integração ao pipeline), `AG-142`
+(diagnóstico de IC-por-ambiente não persistido).
+
+### 15.25 `AG-138`/`AG-139` fechados — últimos 2 achados "alto" do fan-out de 15 estágios sem decisão pendente do Manager (2026-08-23)
+
+**Origem.** Continuação direta de `§15.24-G` — os únicos 2 itens do
+`stage_readiness_audit` (2026-08-22) com severidade "alto" que não
+dependiam de decisão do Manager pra implementar (diferente de `AG-141`/
+`AG-142`, que ficam pra depois: persistência de modelo/diagnóstico são
+trabalho de integração maior, não correção pontual).
+
+**`AG-138` — CLI de `build_dollar_bars.py` reproduzia o vazamento de
+18,18x silenciosamente.** O módulo tinha 2 famílias de calibração (legada,
+vazamento medido/corrigido por `AG-124`; causal nova,
+`build_dollar_bars_walkforward`) mas só a causal gerava dado real em
+disco — via um script SEPARADO
+(`tools/diagnostics/run_ag124_production_reprocessing.py`). O `main()` do
+próprio módulo, o comando mais óbvio e documentado
+(`python -m src.data.build_dollar_bars ...`), continuava chamando só a
+família legada, sem aviso. Implementadas as 2 correções que o agente
+recomendou ("e/ou" resolvido como "e", não escolhido um só):
+`--mode {single_window,walkforward}` (default `single_window` — zero
+mudança de comportamento pra quem já usa o comando hoje) +
+`--trailing-window-days`/`--cadence-days` obrigatórios sob `walkforward`
+(`parser.error`, sem default — B23); `--mode walkforward` aciona
+`build_dollar_bars_walkforward` direto do CLI; `--mode single_window`
+(legado) ganhou `logger.warning` explícito citando o vazamento medido e a
+alternativa, a cada execução; `--help` agora cita `AG-124`/`AG-138`. 4
+testes novos de `_parse_cli_args` (default, `walkforward` sem cada um dos
+2 argumentos obrigatórios levanta `SystemExit`, com ambos parseia
+corretamente).
+
+**`AG-139` — `banned_patterns.py --strict` falhava de fato em
+`src/features/support.py`.** 2 magic numbers sem `# noqa: magic-number`
+(`4.0` em `parkinson_vol` linha 168, `0.34`/`1.34` em `yang_zhang_vol`
+linha 285) — mesma classe de constante de fórmula fechada da literatura
+já isenta 6x no resto do pacote (`garman_klass_vol`/`rogers_satchell_vol`).
+Correção trivial, mas achado colateral real na aplicação: `banned_
+patterns.py` busca a SUBSTRING literal `"noqa: magic-number"` — combinar
+`# noqa: unguarded-ratio, magic-number -- ...` numa tag só (1ª tentativa)
+NÃO satisfaz a checagem (a substring exata não aparece). Corrigido com 2
+tags `# noqa:` separadas na mesma linha.
+
+**Verificação mecânica (ambos).** `banned_patterns.py --strict`: 0
+violações em `src/features/support.py` (era 1) e em
+`src/data/build_dollar_bars.py`/`tests/unit/test_data_build_dollar_bars.py`
+(43 `MAGIC_NUMBER` pré-existentes no arquivo de teste, todos em fixtures
+de dado sintético anteriores a esta mudança, confirmados via baseline
+`git stash` — zero novos). `check_constants_referenced.py`/`check_
+unguarded_ratios.py`: 0 achados novos. `ruff check`: limpo nos 3 arquivos
+(1 `E501` introduzido e corrigido nesta mesma rodada, antes de commitar).
+`mypy`: 0 issues, baseline idêntico via `git stash` nos 3 arquivos. Não
+executado empiricamente por Claude (protocolo de execução, `CLAUDE.md`) —
+os 4 testes novos de CLI são só parsing de `argv`, sem IO, mas pytest em
+si continua rodado pelo usuário.
+
+Commit: `ef7f5d3`.
+
+**Consequência pro gate "Data Layer 100%" (`§15.14`).** Dos 3 achados
+"alto" do fan-out de 15 estágios (2026-08-22) que travavam esse gate,
+todos os 3 agora estão fechados: `AG-138`/`AG-139` (esta seção) +
+`AG-140` (`§15.24`, sessão anterior a esta). O que resta explicitamente
+aberto no gate, por estágio (`§15.4`): `08_SPLIT` tem 2 decisões
+genuinamente pendentes do Manager, não gap de implementação (incluir/
+excluir as 3 features expanding de `T1_FEATURE_IDS`; ressalva de
+magnitude de `AG-159`/D-02); `06_BARREIRAS` continua deliberadamente sem
+extração própria (vive dentro de `labels/`, refatoração represada pós-
+Data-Layer-100% por decisão já confirmada 2026-08-22 — débito
+organizacional, não gap funcional, a lógica de barreira já roda dentro de
+`07_LABEL`). Não verificado nesta rodada se algum outro achado "médio"/
+"baixo" do mesmo fan-out ainda está aberto em algum dos 15 estágios — só
+os 3 "alto" foram varridos. Não afirmar "Data Layer 100%" sem essa
+varredura completa.
 
 ---
 
@@ -4593,6 +4669,23 @@ pipeline), `AG-142` (diagnóstico de IC-por-ambiente não persistido).
 
 ## Changelog
 
+- **v3.36 (2026-08-23)** — **`AG-138`/`AG-139` fechados — últimos 2
+  achados "alto" do fan-out de 15 estágios sem decisão do Manager
+  pendente.** Detalhe: `§15.25`. `AG-138`: CLI de `build_dollar_bars.py`
+  ganhou `--mode {single_window,walkforward}` — `walkforward` aciona a
+  recalibração causal (`build_dollar_bars_walkforward`, `AG-124`) direto
+  do CLI, antes só acessível via script separado; `single_window`
+  (legado) ganhou `logger.warning` explícito sobre o vazamento de 18,18x
+  medido. `AG-139`: 2 magic numbers sem `# noqa` em `support.py`
+  corrigidos, `banned_patterns.py --strict` volta a passar limpo. 4
+  testes novos de CLI, verificação mecânica completa (lint/mypy/
+  banned_patterns, baseline `git stash`, zero regressão). Commit
+  `ef7f5d3`. Consequência: dos 3 achados "alto" que travavam o gate
+  "Data Layer 100%" (`§15.14`), os 3 agora estão fechados
+  (`AG-138`/`AG-139`/`AG-140`) — resta só `08_SPLIT` (2 decisões do
+  Manager, não gap de implementação) e o débito organizacional já aceito
+  de `06_BARREIRAS`; nenhuma varredura de achados "médio"/"baixo" feita
+  nesta rodada.
 - **v3.35 (2026-08-23)** — **`AG-140` fechado — confirmação empírica
   achou drift real (schema de hash, não parâmetro) contra
   `labels/v1` de produção, reprocessado.** Detalhe: `§15.24-F`. Os 2

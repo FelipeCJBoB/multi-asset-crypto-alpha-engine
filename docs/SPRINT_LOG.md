@@ -3655,6 +3655,36 @@ narrados), "Próximos passos" item 2 (6→5 achados restantes), footer.
 Conteúdo puramente aditivo/factual sobre o já publicado — nenhum
 redesenho.
 
+**`AG-138`/`AG-139` fechados — continuação da varredura de prioridades do
+roadmap (2026-08-23)** — pedido do usuário ("avança pra próxima
+prioridade do roadmap"), mesmo padrão de sessão anterior que fechou
+`AG-140`. Últimos 2 achados "alto" do fan-out de 15 estágios
+(`stage_readiness_audit`, 2026-08-22) sem decisão do Manager pendente
+(diferente de `AG-141`/`AG-142`, que ficam pra depois). `AG-138`: CLI de
+`build_dollar_bars.py` reproduzia o vazamento de 18,18x (`AG-124`)
+silenciosamente — o único caminho causal (`build_dollar_bars_
+walkforward`) só era acionável via script separado
+(`tools/diagnostics/run_ag124_production_reprocessing.py`), nunca pelo
+`main()` do próprio módulo. Ganhou `--mode {single_window,walkforward}`
+(default `single_window`, zero mudança de comportamento pra quem já usa
+o comando) + `--trailing-window-days`/`--cadence-days` obrigatórios sob
+`walkforward` (`parser.error`, sem default — B23); modo legado emite
+`logger.warning` explícito a cada execução. `AG-139`: 2 magic numbers
+sem `# noqa` em `support.py` (linha 168 `parkinson_vol`, linha 285
+`yang_zhang_vol`) faziam `banned_patterns.py --strict` falhar de fato —
+corrigido (achado colateral: o script busca a substring exata `"noqa:
+magic-number"`, combinar 2 justificativas numa tag só não satisfaz a
+checagem — corrigido com 2 tags `# noqa:` separadas). 4 testes novos de
+`_parse_cli_args`. Verificado: `banned_patterns.py --strict`/`check_
+constants_referenced.py`/`check_unguarded_ratios.py`/`ruff check`/`mypy`
+— todos limpos ou idênticos ao baseline (`git stash`), zero regressão.
+Commit `ef7f5d3`. Dos 3 achados "alto" que travavam o gate "Data Layer
+100%", os 3 agora estão fechados (`AG-138`/`AG-139`/`AG-140`) — resta só
+`08_SPLIT` (2 decisões do Manager) e o débito organizacional já aceito
+de `06_BARREIRAS`; nenhuma varredura de achados "médio"/"baixo" feita.
+Detalhe: `PLANO_MESTRE_PRINCE2.md §15.25`,
+`audit/architecture_gaps_log.yaml::AG-138`/`AG-139`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3695,4 +3725,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |
 | **`feature_a13_ema_window` — clock↔bar-count em código** | `AG-043` addendum, `§15.23`. Único campo `scaling_invariant: clock` do Feature Engine ganhou implementação real (`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`, `src/features/build.py`) — 48/24/12 barras sob R1/R2/R3, bit-exato sob `time_15m`. Correção de rumo registrada: 2 propostas de reclassificar A13 pra `bar_count` (apoiadas em literatura real) descartadas após releitura de `AG-043` mostrar que a exceção já era deliberada e justificada. `E27f_cost_atr_ratio`/`atr_window` confirmados como separação correta, não gap. Doc-drift `registry.yaml::min_warmup_bars` (2000→200) corrigido junto. 9 testes novos, mecânicos limpos. **`triple_barrier.py`**: `bars_15m`→`bars_df` renomeado (cosmético, delegado, commit `1734d96`) — `71 passed` confirmado pelo usuário |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
-| **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` FECHADO, `§15.24`. `src/models/dataset.py::build_modeling_frame` verifica `config_hash` dos labels contra a config de execução antes de montar o frame. `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). Confirmação empírica achou drift REAL contra `labels/v1` de produção — investigado (git log: nenhum parâmetro mudou, é o FORMATO do hash que migrou 5x historicamente, `AG-005`/`031`/`042`/`116`) — usuário reprocessou os 5 símbolos (`build_and_write_labels_for_symbol`/`run_and_write_labels_for_alts`), `2 passed` (era `2 failed`). Fila pra próxima rodada: `AG-138`/`139`/`141`/`142` (mesmo fan-out, mesma severidade) |
+| **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` FECHADO, `§15.24`. `src/models/dataset.py::build_modeling_frame` verifica `config_hash` dos labels contra a config de execução antes de montar o frame. `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). Confirmação empírica achou drift REAL contra `labels/v1` de produção — investigado (git log: nenhum parâmetro mudou, é o FORMATO do hash que migrou 5x historicamente, `AG-005`/`031`/`042`/`116`) — usuário reprocessou os 5 símbolos (`build_and_write_labels_for_symbol`/`run_and_write_labels_for_alts`), `2 passed` (era `2 failed`). `AG-138`/`AG-139` (mesmo fan-out, mesma severidade "alto") **fechados na sessão seguinte, mesmo dia** — ver linha "CLI causal + magic-number lint" abaixo. Fila real restante: `AG-141`/`142` (persistência de modelo/diagnóstico, trabalho de integração maior, não correção pontual) |
+| **CLI causal + magic-number lint (`AG-138`/`AG-139`)** | Ambos FECHADOS, `§15.25`, commit `ef7f5d3`. `build_dollar_bars.py` ganhou `--mode {single_window,walkforward}` — `walkforward` aciona `build_dollar_bars_walkforward` (recalibração causal, `AG-124`) direto do CLI, antes só via script separado; `single_window` (legado) emite `logger.warning` explícito sobre o vazamento de 18,18x. `support.py` ganhou os 2 `# noqa: magic-number` faltando — `banned_patterns.py --strict` volta a passar limpo. 4 testes novos de CLI. Dos 3 achados "alto" que travavam o gate "Data Layer 100%" (`§15.14`), os 3 estão fechados agora (`AG-138`/`139`/`140`) — resta só `08_SPLIT` (2 decisões do Manager) e o débito já aceito de `06_BARREIRAS`; achados "médio"/"baixo" do mesmo fan-out não varridos |
