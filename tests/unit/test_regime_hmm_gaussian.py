@@ -233,6 +233,91 @@ def test_canonicalizacao_estavel_entre_folds_consecutivos_regime_fixo() -> None:
     )
 
 
+@pytest.mark.slow
+def test_canonicalizacao_pode_trocar_de_significado_sob_mudanca_estrutural_entre_folds() -> None:
+    """AG-134 (2026-08-21): o teste irmão acima só prova estabilidade
+    quando a estrutura GERADORA é FIXA entre os 2 folds -- não diz nada
+    sobre o risco real que AG-134 registra (mudança estrutural genuína,
+    ex. transição de mercado lateral pra tendência sustentada mudando a
+    composição intrínseca dos estados do HMM). Este teste CARACTERIZA
+    esse risco -- não é uma correção de bug (não há bug de código; é um
+    limite de identificabilidade do MÉTODO, mesma classe do achado
+    original) -- não fecha AG-134 sozinho, só prova que o cenário de
+    risco é alcançável de verdade, conforme a rota sugerida no próprio
+    registro.
+
+    Desenho: fold N vê só a estrutura alternada de 2 clusters moderados
+    (idêntica ao teste irmão, mesmo `probe`). Fold N+1 vê a MESMA
+    estrutura ATÉ o corte do fold N (nada muda ANTES do corte -- nunca
+    contamina o `probe`) mais um 3º modo estruturalmente extremo (10,0,
+    ~10x mais distante da origem que os 2 clusters originais) SÓ na
+    porção exclusiva do fold N+1, com massa amostral comparável ao resto
+    da série (não um blip). Um HMM de 2 estados forçado a reparticionar
+    TODA a série tende, por construção do EM, a devotar 1 estado ao modo
+    extremo novo e fundir os 2 clusters moderados originais no outro
+    estado (ficam "próximos" um do outro relativo ao modo extremo) --
+    isso faria o `probe` (que sob estrutura fixa split ~50/50 entre
+    canonical_id 0/1, teste irmão) colapsar pra quase um único
+    canonical_id sob o fold N+1: MESMOS pontos físicos, canonical_id
+    diferente -- o risco de troca de SIGNIFICADO que AG-134 nomeia,
+    distinto de label-switch (F2, teste irmão).
+
+    Limiar abaixo (`<= 0.9`) reusa o MESMO valor que o teste irmão usa
+    como piso de estabilidade (`> 0.9`) -- não um número novo inventado
+    (B23). A asserção é "o piso de estabilidade do caso fixo NÃO se
+    sustenta sob mudança estrutural real", não uma magnitude de
+    degradação específica -- não medida antes de este teste rodar de
+    verdade (protocolo de execução, `CLAUDE.md`: escrito, não executado
+    por Claude). **Se este teste FALHAR ao rodar** (agreement > 0.9
+    mesmo sob a mudança estrutural desenhada), é um achado real -- o
+    método é mais robusto do que AG-134 supõe sob este cenário
+    específico -- reportar e registrar, não afrouxar o limiar sem
+    remedir."""
+    rng = np.random.default_rng(77)
+    n_per_block = 40
+    n_blocks_moderate = 6  # mesma estrutura fixa do teste irmão, toda ela vista pelo fold N
+    blocks = []
+    for i in range(n_blocks_moderate):
+        center = -1.0 if i % 2 == 0 else 1.0
+        blocks.append(rng.normal(center, 0.1, size=(n_per_block, 2)))
+    fold_1_end = n_per_block * n_blocks_moderate
+    probe = np.concatenate(blocks)[: n_per_block * 4]  # comum aos 2 folds, igual ao teste irmão
+
+    # Fold N+1 -- MESMOS blocos do fold N (nada muda ANTES do corte) + um
+    # 3º modo estruturalmente extremo DEPOIS do corte, massa amostral
+    # comparável (não um blip) -- mudança estrutural real, não label-switch
+    # por acaso de seed (esse já é coberto pelo teste irmão em cenário fixo).
+    extreme_block = rng.normal(10.0, 0.1, size=(n_per_block * n_blocks_moderate, 2))
+    obs = np.concatenate([*blocks, extreme_block]).astype(np.float64)
+    fold_2_end = obs.shape[0]
+
+    fit_1 = fit_hmm_gaussian(obs, n_states=2, train_end_idx=fold_1_end, seed=77)
+    fit_2 = fit_hmm_gaussian(obs, n_states=2, train_end_idx=fold_2_end, seed=77)
+    assert fit_1 is not None and fit_2 is not None
+
+    canonical_probe_fit_1 = predict_hmm_gaussian(fit_1, probe)
+    canonical_probe_fit_2 = predict_hmm_gaussian(fit_2, probe)
+
+    # Mesmo sanity check do teste irmão -- se fit_1 nem recuperou a
+    # separação real, o teste de agreement abaixo ficaria vazio de sentido.
+    true_state_probe = np.array(
+        [0 if (i // n_per_block) % 2 == 0 else 1 for i in range(probe.shape[0])]
+    )
+    ari_fit_1 = adjusted_rand_score(true_state_probe, canonical_probe_fit_1)
+    assert ari_fit_1 > 0.7, (
+        f"sanity check falhou -- fit_1 nem recuperou a separação real (ARI={ari_fit_1})"
+    )
+
+    agreement = float(np.mean(canonical_probe_fit_1 == canonical_probe_fit_2))
+    assert agreement <= 0.9, (
+        f"agreement={agreement} -- esperava que a mudança estrutural real (3º modo "
+        "extremo, massa comparável, na porção exclusiva do fold N+1) quebrasse o piso "
+        "de estabilidade (> 0.9) que o teste irmão mede sob regime fixo -- se isso NÃO "
+        "aconteceu, é achado real (AG-134): reportar a magnitude medida, não afrouxar "
+        "este limiar sem remedir o cenário."
+    )
+
+
 # ============================================================================
 # fit_hmm_gaussian -- convergência degenerada detectável (retorna None)
 # ============================================================================
