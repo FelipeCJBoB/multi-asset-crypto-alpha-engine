@@ -19,12 +19,21 @@ import pytest
 
 from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
+from src.labels.triple_barrier import ConfigHashMismatchError, LabelConfig
 from src.models import dataset as ds
 from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA1
 from src.regime import build as regime_build
 from src.validation import cpcv
 from src.validation._paths import labels_symbol_tf_dir
+
+
+def _noop_verify_config_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """As rotas testadas abaixo (roteamento symbol/version/tf/resolution_id
+    até `load_labels_v1`) usam `_one_row_labels`, que não tem coluna
+    `config_hash` real -- não é o que esses testes existem pra provar (ver
+    `AG-140` abaixo pros testes dedicados de `verify_config_hash`)."""
+    monkeypatch.setattr(ds, "verify_config_hash", lambda *a, **k: None)
 
 # ============================================================================
 # build_modeling_frame -- roteamento symbol/version/tf até load_labels_v1
@@ -82,6 +91,7 @@ def test_build_modeling_frame_roteia_symbol_version_tf_ate_load_labels_v1(
     monkeypatch.setattr(
         regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
+    _noop_verify_config_hash(monkeypatch)
 
     # tf="15m" (não "30m" como em versão anterior deste teste): achado de
     # auditoria (audit_engineering, 2026-08-17) mostrou que tf != "15m" sem
@@ -128,6 +138,7 @@ def test_build_modeling_frame_default_bate_com_load_labels_v1_sem_argumentos(
     monkeypatch.setattr(
         regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
+    _noop_verify_config_hash(monkeypatch)
 
     ds.build_modeling_frame()
 
@@ -176,6 +187,7 @@ def test_build_modeling_frame_resolution_id_propaga_bar_source_e_vol_estimator_i
     monkeypatch.setattr(cpcv, "load_labels_v1", _fake_load_labels_v1)
     monkeypatch.setattr(features_build, "build_t1_features", _fake_build_t1_features)
     monkeypatch.setattr(regime_build, "build_regimes", _fake_build_regimes)
+    _noop_verify_config_hash(monkeypatch)
 
     ds.build_modeling_frame(
         symbol="BTCUSDT", resolution_id="R1", vol_estimator_id="parkinson_w20"
@@ -201,6 +213,7 @@ def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
     monkeypatch.setattr(
         regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
     )
+    _noop_verify_config_hash(monkeypatch)
 
     ds.build_modeling_frame()
 
@@ -242,6 +255,116 @@ def test_build_modeling_frame_tf_15m_sem_resolution_id_nao_levanta() -> None:
         # levanta por labels reais ausentes no ambiente de teste, não pelo
         # guard novo -- prova que tf="15m" passa da validação
         ds.build_modeling_frame(symbol="__SYMBOL_INEXISTENTE__", tf="15m", resolution_id=None)
+
+
+# ============================================================================
+# verify_config_hash (B15) -- AG-140, 2026-08-23: wireado no caminho real de
+# build_modeling_frame, o único ponto onde labels.parquet é carregado pra
+# montar o frame de treino/backtest. Testes abaixo NÃO mockam
+# verify_config_hash (exceto o último, que precisa capturar o argumento) --
+# provam a função real integrada, não só que ela foi chamada.
+# ============================================================================
+
+
+def _one_row_labels_with_hash(t0: datetime, config_hash: str) -> pl.DataFrame:
+    return _one_row_labels(t0).with_columns(pl.lit(config_hash).alias("config_hash"))
+
+
+def test_build_modeling_frame_resolution_id_sem_vol_estimator_id_levanta_valueerror() -> None:
+    """AG-140: sob resolution_id, vol_estimator_id=None computaria
+    features/regime com o estimador default enquanto os labels reais de
+    R1/R2/R3 foram gerados com Parkinson explícito (`run_and_write_labels_
+    dollar_bar_parkinson`) -- mesma exigência que `LabelConfig.
+    from_constants` já impõe, agora também aqui, antes de qualquer IO."""
+    with pytest.raises(ValueError, match="vol_estimator_id"):
+        ds.build_modeling_frame(resolution_id="R1", vol_estimator_id=None)
+
+
+def test_build_modeling_frame_config_hash_match_nao_levanta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`labels.config_hash` batendo com `LabelConfig.from_constants` (grade
+    default, tf=15m) não levanta nada -- caso são."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    expected_hash = LabelConfig.from_constants(estimator_id=None, tf="15m").config_hash
+
+    monkeypatch.setattr(
+        cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels_with_hash(t0, expected_hash)
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+
+    ds.build_modeling_frame()  # não levanta
+
+
+def test_build_modeling_frame_config_hash_mismatch_levanta_confighashmismatcherror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-140 -- o achado central: um `labels.parquet` gerado sob uma
+    config diferente da atual (`constants.yaml` mudou depois do backfill,
+    ou `tf`/`resolution_id`/`vol_estimator_id` pedido aqui não bate com o
+    que os labels reais assumem) precisa travar o build do frame de
+    treino, não passar silencioso -- B15."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        cpcv,
+        "load_labels_v1",
+        lambda *a, **k: _one_row_labels_with_hash(t0, "hash_de_uma_config_diferente"),
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+
+    with pytest.raises(ConfigHashMismatchError, match="config_hash"):
+        ds.build_modeling_frame()
+
+
+def test_build_modeling_frame_verify_config_hash_usa_mesmo_vol_estimator_id_do_resto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-140 -- `execution_config` precisa usar o MESMO `vol_estimator_id`
+    já propagado pra features/regime (nunca um estimador divergente pra
+    label vs. feature -- mesmo princípio de "uma grade só" já documentado
+    em `build_modeling_frame`). Prova capturando o `execution_config` real
+    passado a `verify_config_hash`."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    captured: list[LabelConfig] = []
+
+    def _capturing_verify_config_hash(
+        labels: pl.DataFrame, execution_config: LabelConfig
+    ) -> None:
+        captured.append(execution_config)
+
+    monkeypatch.setattr(
+        cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels_with_hash(t0, "irrelevante")
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+    monkeypatch.setattr(ds, "verify_config_hash", _capturing_verify_config_hash)
+
+    ds.build_modeling_frame(symbol="BTCUSDT", resolution_id="R1", vol_estimator_id="parkinson_w20")
+
+    assert len(captured) == 1
+    assert captured[0].estimator_id == "parkinson_w20"
+    assert captured[0].resolution_id == "R1"
 
 
 def _synthetic_frame() -> pl.DataFrame:

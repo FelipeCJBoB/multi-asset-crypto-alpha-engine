@@ -42,6 +42,7 @@ import structlog
 
 from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
+from src.labels.triple_barrier import LabelConfig, verify_config_hash
 from src.regime import build as regime_build
 from src.validation import cpcv
 
@@ -183,6 +184,39 @@ def build_modeling_frame(
     explícito aqui, nunca tenta um `bar_source` que `_sources.load_bars`
     não suporta.
 
+    **`verify_config_hash` (B15) wireado no caminho real, 2026-08-23,
+    `AG-140`.** Achado do `stage_readiness_audit` (2026-08-22): a função já
+    existia, testada isoladamente (`src/labels/triple_barrier.py`), mas
+    nenhum chamador fora de `src/labels/` a invocava — em particular, este
+    módulo (o único ponto real onde `labels.parquet` é carregado pra
+    montar o frame de treino/backtest) não checava `config_hash` nenhum.
+    Um `labels.parquet` gerado sob uma config antiga (`tp_atr_mult`/
+    `sl_atr_mult`/`time_stop_ms`/`atr_window_ms`/`fill_timeout_ms`/fees
+    mudados em `constants.yaml` depois do backfill) passaria hoje
+    despercebido pro treino — exatamente o cenário que B15 existe pra
+    impedir. Agora: logo após carregar `labels`, `execution_config =
+    LabelConfig.from_constants(estimator_id=vol_estimator_id, tf=tf,
+    resolution_id=resolution_id)` — MESMO `vol_estimator_id` já recebido
+    aqui (nunca um estimador separado/divergente pra label vs. feature/
+    regime, mesmo princípio de "uma grade só" já documentado acima —
+    também por isso `resolution_id` setado agora EXIGE `vol_estimator_id`
+    explícito, mesma regra que `LabelConfig.from_constants` já impunha:
+    sem essa exigência, `vol_estimator_id=None` computaria features com o
+    estimador default enquanto os labels reais de R1/R2/R3 foram gerados
+    com Parkinson explícito — inconsistência silenciosa, não coberta por
+    nenhum teste até este achado). `verify_config_hash(labels,
+    execution_config)` levanta `ConfigHashMismatchError` (falha alta,
+    mesma disciplina de `assert_label_invariants`) se o hash embutido no
+    arquivo divergir. **Não executado empiricamente contra os
+    `labels.parquet` reais nesta sessão** (Claude não roda `.py` — ver
+    `CLAUDE.md`, protocolo de execução): se `constants.yaml` de fato
+    divergiu de quando os labels tf=15m foram gerados, este wireup vai
+    revelar isso na primeira chamada real — um achado genuíno a registrar,
+    não um bug desta correção. Rode `uv run pytest tests/unit/
+    test_models_dataset.py -k config_hash` e, se disponível, `python -c
+    "from src.models import dataset; dataset.build_modeling_frame()"` pra
+    confirmar contra dado real.
+
     **Achado de auditoria corrigido aqui (`audit_engineering`, 2026-08-17):
     a mesma garantia de UM parâmetro de grade valia só pro eixo
     `resolution_id`, não pro eixo `tf`.** Sob `resolution_id=None`,
@@ -208,6 +242,16 @@ def build_modeling_frame(
             f"{sorted(_BAR_SOURCE_BY_RESOLUTION)} (dict FECHADO por desenho, ver "
             "_BAR_SOURCE_BY_RESOLUTION -- AG-100, 2026-08-22)"
         )
+    if resolution_id is not None and vol_estimator_id is None:
+        raise ValueError(
+            f"build_modeling_frame: resolution_id={resolution_id!r} exige vol_estimator_id "
+            "explícito -- mesma exigência de LabelConfig.from_constants (não há bar_ms sob "
+            "dollar bar pra derivar um estimador default). Os labels reais de produção sob "
+            "resolution_id foram gerados com estimator_id explícito (ex. 'parkinson_w20', "
+            "run_and_write_labels_dollar_bar_parkinson) -- deixar vol_estimator_id=None aqui "
+            "computaria features/regime com um estimador diferente do que os labels assumem, "
+            "silenciosamente (AG-140)."
+        )
     if resolution_id is None and tf != "15m":
         raise ValueError(
             f"build_modeling_frame: tf={tf!r} sem bar_source de Feature/Regime Engine "
@@ -220,9 +264,12 @@ def build_modeling_frame(
         "time_15m" if resolution_id is None else _BAR_SOURCE_BY_RESOLUTION[resolution_id]
     )
 
-    labels = cpcv.load_labels_v1(
-        labels_version, symbol=symbol, tf=tf, resolution_id=resolution_id
-    ).with_row_index("_pos")
+    labels = cpcv.load_labels_v1(labels_version, symbol=symbol, tf=tf, resolution_id=resolution_id)
+    execution_config = LabelConfig.from_constants(
+        estimator_id=vol_estimator_id, tf=tf, resolution_id=resolution_id
+    )
+    verify_config_hash(labels, execution_config)
+    labels = labels.with_row_index("_pos")
     start, end = date_bounds(labels)
 
     features_df = features_build.build_t1_features(
