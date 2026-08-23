@@ -1237,15 +1237,20 @@ ML LAYER
                                                                        2026-08-21 (AG-032), wireado nos 2
                                                                        call-sites reais (pipeline.py:432,
                                                                        leakage.py:798, fail-fast por desenho).
-                                                                       Restam 2 decisões SEPARADAS, ambas
-                                                                       genuinamente abertas: (a) incluir/
-                                                                       excluir as 3 features expanding de
-                                                                       T1_FEATURE_IDS -- decisão de política
-                                                                       do Manager; (b) AG-159/D-02
-                                                                       (2026-08-23) -- ressalva de MAGNITUDE
-                                                                       do proxy p99 sob resolution_id (medido
-                                                                       até 5,8x sob-cobertura em SOLUSDT/R3),
-                                                                       ver §15.21.2
+                                                                       [DECIDIDO E IMPLEMENTADO 2026-08-23]
+                                                                       decisão (a) -- as 3 features expanding
+                                                                       SAEM de T1_FEATURE_IDS (commit 78169df,
+                                                                       AG-032 addendum). Consequência: o gate
+                                                                       que mascarava (b) foi removido -- AG-159/
+                                                                       D-02 (ressalva de MAGNITUDE do proxy
+                                                                       p99, até 5,8x sob-cobertura em
+                                                                       SOLUSDT/R3) deixa de ser dormente, vira
+                                                                       pré-requisito real antes do 1º treino
+                                                                       sob R2/R3 com purge ativo. Diagnóstico
+                                                                       novo escrito (tools/diagnostics/
+                                                                       measure_max_consecutive_bar_window_
+                                                                       duration.py), resultado pendente do
+                                                                       usuário rodar. Ver §15.21.2/§15.26
   09_LEARNER           src/models/{alpha,monotonic}.py                 1,5/5 camadas PRD wired em produção
                                                                        (run_layer1_sprint só chama Camada 0/1);
                                                                        regime CONFIRMADO removido do vetor de
@@ -4642,7 +4647,11 @@ todos os 3 agora estão fechados: `AG-138`/`AG-139` (esta seção) +
 aberto no gate, por estágio (`§15.4`): `08_SPLIT` tem 2 decisões
 genuinamente pendentes do Manager, não gap de implementação (incluir/
 excluir as 3 features expanding de `T1_FEATURE_IDS`; ressalva de
-magnitude de `AG-159`/D-02); `06_BARREIRAS` continua deliberadamente sem
+magnitude de `AG-159`/D-02) — **[DECIDIDO 2026-08-23, ver §15.4 linha
+`08_SPLIT` e `§15.27`]** a 1ª decisão foi tomada (excluir) e implementada
+(commit `78169df`); a 2ª (`AG-159`) deixou de ser dormente por causa
+disso, diagnóstico novo escrito, resultado pendente do usuário rodar;
+`06_BARREIRAS` continua deliberadamente sem
 extração própria (vive dentro de `labels/`, refatoração represada pós-
 Data-Layer-100% por decisão já confirmada 2026-08-22 — débito
 organizacional, não gap funcional, a lógica de barreira já roda dentro de
@@ -4787,6 +4796,66 @@ feito, zero linha implementada.
 Detalhe completo por arquivo/camada: `docs/nucleo_casca_design_doc_
 2026-08-23.md`; tabela de status por estágio: `§15.4`.
 
+### 15.27 `08_SPLIT` — decisão 1 tomada e implementada, decisão 2 (`AG-159`) deixa de ser dormente (2026-08-23)
+
+Continuação direta de `§15.25`/`§15.26` — usuário decidiu os 3 achados
+médio/baixo que precisavam de decisão real (não mecânica).
+
+**Decisão 1 — as 3 features expanding SAEM de `T1_FEATURE_IDS`.**
+`C07_vol_pctile_expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_
+expanding` removidas do conjunto ativo de treino do Alpha (`AG-032`
+addendum, commit `78169df`). As 3 continuam sendo CALCULADAS
+(`compute_t1_features` não filtra por `T1_FEATURE_IDS`) — `C07` segue
+como insumo real do Regime Engine (`src.regime.classifier`, leitura
+direta da coluna); análise pós-hoc ganha caminho oficial pra ler as 3
+sobre `ModelingFrame` real (`build_modeling_frame(...,
+extra_feature_ids=(...))`, novo parâmetro, default preserva
+comportamento anterior byte a byte). `registry.yaml` tier das 3: T1→T2.
+`monotonic.py::_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` esvaziado (E02f era
+o único exemplo real da restrição side-dependent) — mecanismo mantido
+pra feature futura da mesma categoria (funding/basis/custo de carrego,
+comum em cripto).
+
+**Pendente, registrado, não corrigido nesta rodada**: 6 scripts de
+análise pós-hoc (`calibration_diagnostics.py` — módulo compartilhado,
+maior risco; `faixa1_5/6/7_*`; `faixa2_caminho_b.py`;
+`faixa2_vol_accelerator_test.py`) hardcodam `C07`/`E02f` lendo direto de
+`mf.data`, não via `extra_feature_ids` (que não existia antes desta
+mudança) — vão quebrar (`ColumnNotFoundError`, falha visível, não
+silenciosa) na próxima execução real até migrarem. Não é gap de
+produção — são scripts `pós-hoc, exploratório, zero trials`, fora do
+caminho de treino real.
+
+**Decisão 2 — consequência direta da Decisão 1, não uma escolha nova.**
+O gate que mascarava a ressalva de magnitude de `AG-159`/D-02
+(`assert_no_expanding_lookback_in_active_set` bloqueando
+incondicionalmente) deixa de disparar no caminho default —
+`compute_max_feature_lookback_ms` agora EXECUTA de verdade sob
+`resolution_id` (R2/R3), usando um proxy (`label_prefetch_p99_bar_
+duration_ms`) medido pra um modelo de custo diferente (prefetch, não
+purge) — o risco deixou de ser dormente, é pré-requisito real antes do
+1º treino sob R2/R3 com purge ativo. Ação tomada: `structlog.warning`
+explícito adicionado em `compute_max_feature_lookback_ms` (dispara toda
+vez que roda sob `resolution_id`, sem inventar número novo, B23);
+`tools/diagnostics/measure_max_consecutive_bar_window_duration.py`
+(novo) mede o máximo real de janela de `max_feature_window_bars()`
+barras consecutivas, por símbolo × resolução, sobre os parquets já
+persistidos — comando pra rodar:
+
+```bash
+uv run python tools/diagnostics/measure_max_consecutive_bar_window_duration.py
+```
+
+Resultado pendente — decisão de como registrar a constante `MEASURED`
+e a guarda de runtime definitiva fica pro Manager revisar depois de
+rodar (B20).
+
+Verificação mecânica completa (`banned_patterns`/`ruff`/`mypy`/
+`check_constants_referenced`, baseline via `git stash`) em todos os
+arquivos tocados — zero regressão. Detalhe: `audit/architecture_gaps_
+log.yaml::AG-032` addendum `addendum_decisao_08_split_2026-08-23`,
+`AG-159` addendum `addendum_decisao_exclusao_expanding_2026-08-23`.
+
 ---
 
 ## Fontes desta pesquisa
@@ -4805,6 +4874,14 @@ Detalhe completo por arquivo/camada: `docs/nucleo_casca_design_doc_
 
 ## Changelog
 
+- **v3.39 (2026-08-23)** — `08_SPLIT` decisão 1 implementada: 3 features
+  expanding saem de `T1_FEATURE_IDS` (`AG-032`, commit `78169df`).
+  Detalhe: `§15.27`. Consequência direta: `AG-159` (magnitude do purge
+  sob R2/R3) deixa de ser dormente — `structlog.warning` adicionado,
+  diagnóstico novo escrito (`measure_max_consecutive_bar_window_
+  duration.py`), resultado pendente do usuário rodar. Pendente,
+  registrado: 6 scripts de análise pós-hoc vão quebrar até migrarem pra
+  `extra_feature_ids` (novo parâmetro de `build_modeling_frame`).
 - **v3.38 (2026-08-23)** — Nova seção `§15.26`, árvore de arquivos
   canônicos de produção ponta a ponta (pedido do usuário) — mapeamento
   por leitura de código real (`grep "if __name__"`), cruzado com `§15.4`

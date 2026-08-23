@@ -3729,6 +3729,29 @@ zero caller de produção a partir de `12_RISK_ENGINE`. Detalhe:
 AG-159` addendum.
 
 <!-- check-sprint-log: skip -->
+**`08_SPLIT` decisão 1 implementada — 3 features expanding excluídas de
+`T1_FEATURE_IDS` (2026-08-23)** — `AG-032` addendum, commit `78169df`.
+`C07_vol_pctile_expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_
+expanding` saem do conjunto de treino do Alpha (continuam calculadas;
+`C07` segue insumo real do Regime Engine). `registry.yaml` tier T1→T2;
+`build_modeling_frame` ganha `extra_feature_ids` (caminho oficial pra
+análise pós-hoc ler as 3 sem reintroduzi-las no treino);
+`monotonic.py::_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` esvaziado. 7
+arquivos verificados (`banned_patterns`/`ruff`/`mypy`/`check_constants_
+referenced`, zero regressão via `git stash`). Pendente, registrado: 6
+scripts de análise pós-hoc (`calibration_diagnostics.py` e mais 5) vão
+quebrar até migrarem pra `extra_feature_ids`.
+
+Consequência direta pra `AG-159`: o gate que mascarava a ressalva de
+magnitude do proxy p99 deixa de disparar — `structlog.warning`
+adicionado em `compute_max_feature_lookback_ms`;
+`tools/diagnostics/measure_max_consecutive_bar_window_duration.py`
+(novo) mede o máximo real de janela consecutiva sobre parquets já
+persistidos, resultado pendente do usuário rodar. Detalhe:
+`PLANO_MESTRE_PRINCE2.md §15.27`, `audit/architecture_gaps_log.yaml::
+AG-032`/`AG-159` addenda.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em

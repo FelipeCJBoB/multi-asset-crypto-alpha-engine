@@ -2576,6 +2576,58 @@ entries:
       verdes. 5 comandos mecânicos limpos em todos os arquivos tocados.
     status_final: "fechado 2026-08-21 -- mecanismo de proteção do componente-96 wireado nos dois call-sites reais; política fail-fast pras features expanding implementada e comprovadamente disparando contra o conjunto ativo real. Decisão sobre O QUE FAZER com as 3 features expanding (excluir de T1_FEATURE_IDS/futuro feature_manifest, ou aceitar rodar sem proteção conscientemente) continua em aberto, registrada como decisão separada -- não bloqueia o fechamento deste item, que era sobre o MECANISMO existir e funcionar corretamente."
 
+    addendum_decisao_08_split_2026-08-23: >
+      Manager decidiu (08_SPLIT, decisão separada nomeada acima): as 3
+      features expanding (`C07_vol_pctile_expanding`/`D03f_volume_z_
+      expanding`/`E02f_funding_z_expanding`) SAEM de `T1_FEATURE_IDS`.
+      Implementado no mesmo dia, commit `78169df`: `T1_FEATURE_IDS`
+      (`src/features/build.py`) perde as 3 (10→7 entradas);
+      `registry.yaml` tier das 3 T1→T2 (reflete o estado real, fecha
+      `test_registry_cobre_todo_o_vetor_t1` automaticamente);
+      `build_modeling_frame` (`src/models/dataset.py`) ganha
+      `extra_feature_ids: tuple[str,...] = ()` -- caminho oficial pra
+      análise pós-hoc ler essas colunas sobre `ModelingFrame` real sem
+      reintroduzi-las no conjunto de treino (as 3 continuam sendo
+      CALCULADAS por `compute_t1_features`, que não filtra por
+      `T1_FEATURE_IDS` -- só pararam de entrar no `join_cols` default);
+      `monotonic.py::_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` esvaziado
+      (E02f era o único exemplo real da restrição side-dependent,
+      mecanismo mantido pra feature futura da mesma categoria).
+
+      **Consequência direta pra `AG-159`** (magnitude do purge sob
+      R2/R3): o gate que mascarava aquele risco (`assert_no_expanding_
+      lookback_in_active_set` bloqueando incondicionalmente) deixa de
+      disparar no caminho default -- ver `AG-159` addendum
+      `addendum_decisao_exclusao_expanding_2026-08-23` pro detalhe
+      completo (diagnóstico novo escrito, risco deixou de ser dormente).
+
+      **Pendente, registrado, não corrigido nesta rodada**: 6 scripts de
+      análise pós-hoc hardcodam `C07`/`E02f` lendo direto de
+      `ModelingFrame`/`mf.data` (não via `extra_feature_ids`, que não
+      existia antes desta mudança) -- vão quebrar com
+      `ColumnNotFoundError` na próxima execução real, até serem
+      migrados: `src/analysis/calibration_diagnostics.py` (módulo
+      COMPARTILHADO, maior risco -- citado por `faixa1_7_edge_or_beta.py`),
+      `faixa1_5_prerequisites.py`, `faixa1_6_reconciliation.py`,
+      `faixa1_7_edge_or_beta.py`, `faixa2_caminho_b.py` (`_D2_FEATURES`,
+      cópia hardcoded de `T1_FEATURE_IDS` que não importa dinamicamente),
+      `faixa2_vol_accelerator_test.py`. Fix recomendado, uniforme pros
+      6: trocar a chamada de `build_modeling_frame(...)` por
+      `build_modeling_frame(..., extra_feature_ids=(...))` com a(s)
+      coluna(s) específica(s) que cada script precisa, em vez de
+      depender de `T1_FEATURE_IDS`/`mf.data` conter tudo. Não é gap de
+      produção (são scripts `pós-hoc, exploratório, zero trials`, fora
+      do caminho de treino real do Alpha) -- falha visível
+      (`ColumnNotFoundError`), não silenciosa, mas real. `src/features/
+      registry.yaml::faixa2_e2_research.py::CURRENT_T1`/`faixa2_e3_
+      stability.py::_ROBUST_SURVIVORS` são snapshots HISTÓRICOS
+      congelados (registram achado de uma rodada passada) -- deliberadamente
+      NÃO tocados, ficam desatualizados por desenho, não por omissão.
+
+      Verificação mecânica completa (`banned_patterns`/`ruff`/`mypy`/
+      `check_constants_referenced`, baseline via `git stash`) nos 7
+      arquivos tocados -- zero regressão. Commit: `78169df`.
+
   - id: AG-033
     date: "2026-08-15"
     file: "src/data/lake.py"
