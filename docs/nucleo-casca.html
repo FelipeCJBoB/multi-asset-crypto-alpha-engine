@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Núcleo Funcional, Casca Imperativa</title>
+<style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { margin: 0; }
+    img, svg { max-width: 100%; height: auto; }
+</style>
+<style>
+  :root {
+    --paper: #E9E9E3; --surface: #F5F5F0; --sunk: #DFDFD8;
+    --ink: #15181C; --graphite: #5B626B; --rule: #C9C9C0; --rule-soft: #D8D8D0;
+    --pencil: #A8342A; --pencil-wash: rgba(168, 52, 42, 0.075);
+    --ok: #3E6B4F; --ok-wash: rgba(62, 107, 79, 0.09);
+
+    --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Sitka Text", Cambria, Georgia, "Times New Roman", serif;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --col: 40rem; --rail: 8.5rem; --gap: 2.25rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #131519; --surface: #1B1E23; --sunk: #0E1013;
+      --ink: #E2E3E0; --graphite: #8F98A2; --rule: #2C3138; --rule-soft: #23272D;
+      --pencil: #E27665; --pencil-wash: rgba(226, 118, 101, 0.10);
+      --ok: #7FB894; --ok-wash: rgba(127, 184, 148, 0.10);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #131519; --surface: #1B1E23; --sunk: #0E1013;
+    --ink: #E2E3E0; --graphite: #8F98A2; --rule: #2C3138; --rule-soft: #23272D;
+    --pencil: #E27665; --pencil-wash: rgba(226, 118, 101, 0.10);
+    --ok: #7FB894; --ok-wash: rgba(127, 184, 148, 0.10);
+  }
+  :root[data-theme="light"] {
+    --paper: #E9E9E3; --surface: #F5F5F0; --sunk: #DFDFD8;
+    --ink: #15181C; --graphite: #5B626B; --rule: #C9C9C0; --rule-soft: #D8D8D0;
+    --pencil: #A8342A; --pencil-wash: rgba(168, 52, 42, 0.075);
+    --ok: #3E6B4F; --ok-wash: rgba(62, 107, 79, 0.09);
+  }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--serif); font-size: 1.0625rem; line-height: 1.62;
+    -webkit-font-smoothing: antialiased; padding: 0 1.5rem 6rem;
+  }
+  .sheet { max-width: calc(var(--rail) + var(--gap) + var(--col)); margin: 0 auto; }
+
+  .row {
+    display: grid; grid-template-columns: var(--rail) var(--col);
+    column-gap: var(--gap); align-items: start;
+  }
+  .row > .rail {
+    font-family: var(--sans); font-size: 0.6875rem; line-height: 1.5;
+    letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--graphite); text-align: right; padding-top: 0.45rem;
+  }
+  .rail .num {
+    display: block; font-variant-numeric: tabular-nums;
+    color: var(--pencil); font-weight: 600; letter-spacing: 0.12em;
+  }
+  .rail .note {
+    display: block; margin-top: 0.5rem; text-transform: none;
+    letter-spacing: 0.01em; font-size: 0.6875rem;
+    color: var(--pencil); font-style: italic;
+  }
+  .body { min-width: 0; }
+
+  @media (max-width: 56rem) {
+    .row { grid-template-columns: 1fr; row-gap: 0.4rem; }
+    .row > .rail { text-align: left; padding-top: 0; }
+    .rail .num { display: inline; margin-right: 0.6rem; }
+    .rail .note { display: none; }
+    :root { --col: 100%; }
+    .sheet { max-width: 40rem; }
+  }
+
+  .masthead { padding: 4.5rem 0 0; border-bottom: 1px solid var(--ink); margin-bottom: 3.25rem; }
+  .stamp {
+    font-family: var(--sans); font-size: 0.6875rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--pencil);
+    display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-bottom: 1.75rem;
+  }
+  .stamp span:not(:first-child) { color: var(--graphite); }
+
+  h1 {
+    font-size: clamp(2.1rem, 6vw, 3.35rem); line-height: 1.05;
+    letter-spacing: -0.02em; font-weight: 600; text-wrap: balance; margin: 0 0 1.5rem;
+  }
+  h1 em { font-style: italic; color: var(--pencil); }
+  .standfirst {
+    font-size: 1.1875rem; line-height: 1.55; color: var(--graphite);
+    max-width: 34rem; margin: 0 0 3rem;
+  }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-size: 1.625rem; line-height: 1.2; letter-spacing: -0.012em;
+    font-weight: 600; text-wrap: balance; margin: 0 0 1.1rem;
+  }
+  h3 {
+    font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.004em;
+    margin: 2rem 0 0.7rem; text-wrap: balance;
+  }
+  h4 {
+    font-family: var(--sans); font-size: 0.6875rem; font-weight: 600;
+    letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--graphite); margin: 0 0 0.7rem;
+  }
+
+  section { padding: 3.25rem 0; border-top: 1px solid var(--rule-soft); }
+  section:first-of-type { border-top: none; padding-top: 0; }
+
+  p { margin: 0 0 1.05rem; }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 600; }
+  a { color: var(--pencil); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--pencil); outline-offset: 3px; border-radius: 2px; }
+
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.15rem; }
+  li { margin-bottom: 0.5rem; }
+  li::marker { color: var(--pencil); }
+  ol { padding-left: 1.35rem; }
+  ol li::marker { font-variant-numeric: tabular-nums; font-size: 0.9em; }
+
+  code {
+    font-family: var(--mono); font-size: 0.855em; background: var(--pencil-wash);
+    padding: 0.1em 0.34em; border-radius: 2px; word-break: break-word;
+  }
+
+  pre {
+    background: var(--sunk); border-left: 2px solid var(--pencil);
+    margin: 0.9rem 0 0; padding: 0.9rem 1.05rem; overflow-x: auto;
+    font-size: 0.78125rem; line-height: 1.62;
+  }
+  pre code {
+    background: none; padding: 0; font-size: inherit;
+    word-break: normal; white-space: pre; color: var(--ink);
+  }
+
+  .thesis {
+    background: var(--surface); border-top: 2px solid var(--pencil);
+    padding: 1.6rem 1.5rem; margin: 2rem 0; font-size: 1.125rem; line-height: 1.5;
+  }
+  .thesis p:first-child { margin-top: 0; }
+  .thesis strong { color: var(--pencil); }
+
+  .aside {
+    border: 1px solid var(--rule); padding: 1.15rem 1.25rem; margin: 1.75rem 0;
+    font-size: 0.9375rem; line-height: 1.55; background: var(--surface);
+  }
+  .aside h4 { color: var(--pencil); }
+  .aside p:last-child { margin-bottom: 0; }
+
+  .scroll { overflow-x: auto; margin: 1.5rem 0; }
+  table {
+    border-collapse: collapse; width: 100%;
+    font-size: 0.875rem; line-height: 1.45; min-width: 28rem;
+  }
+  th, td {
+    text-align: left; padding: 0.6rem 0.9rem 0.6rem 0;
+    border-bottom: 1px solid var(--rule-soft); vertical-align: top;
+  }
+  th {
+    font-family: var(--sans); font-size: 0.6875rem; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--graphite);
+    border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+
+  /* ---- diagram box ---- */
+  .diagram {
+    border: 1px solid var(--rule); background: var(--surface);
+    padding: 1.5rem; margin: 1.75rem 0; font-family: var(--mono);
+    font-size: 0.8125rem; line-height: 1.7; overflow-x: auto;
+  }
+  .diagram .lib { color: var(--ok); font-weight: 600; }
+  .diagram .shell { color: var(--pencil); font-weight: 600; }
+  .diagram .dim { color: var(--graphite); }
+
+  /* ---- problem cards ---- */
+  .problem {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 1.4rem 0;
+  }
+  .problem:last-of-type { border-bottom: none; padding-bottom: 0.4rem; }
+  .problem .hd { display: flex; align-items: baseline; gap: 0.65rem; }
+  .problem .k {
+    font-family: var(--sans); font-size: 0.75rem; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--pencil);
+  }
+  .problem .nm { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.004em; }
+  .problem p { margin-top: 0.55rem; font-size: 0.9375rem; }
+
+  /* ---- literature cards ---- */
+  .lit {
+    border: 1px solid var(--rule); background: var(--surface);
+    padding: 1.3rem 1.4rem; margin: 1.5rem 0;
+  }
+  .lit .yr {
+    font-family: var(--sans); font-size: 0.6875rem; font-weight: 600;
+    letter-spacing: 0.1em; color: var(--pencil);
+  }
+  .lit h3 { margin: 0.3rem 0 0.15rem; font-size: 1.0625rem; }
+  .lit .who {
+    font-family: var(--sans); font-size: 0.8125rem; color: var(--graphite);
+    margin-bottom: 0.8rem;
+  }
+  .lit p { font-size: 0.9375rem; }
+  .lit .term {
+    display: inline-block; font-family: var(--sans); font-size: 0.6875rem;
+    font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--pencil); background: var(--pencil-wash);
+    padding: 0.15rem 0.5rem; border-radius: 2px; margin-top: 0.6rem;
+  }
+  .lit .link { margin-top: 0.7rem; font-size: 0.8125rem; }
+
+  .proof {
+    border-left: 2px solid var(--ok); background: var(--ok-wash);
+    padding: 1.2rem 1.4rem; margin: 1.75rem 0; font-size: 0.9375rem; line-height: 1.55;
+  }
+  .proof h4 { color: var(--ok); }
+
+  .closer {
+    border-top: 2px solid var(--pencil); padding-top: 2rem; margin-top: 1rem;
+    font-size: 1.1875rem; line-height: 1.5;
+  }
+
+  footer {
+    font-family: var(--sans); font-size: 0.75rem; color: var(--graphite);
+    line-height: 1.6; padding-top: 2rem;
+    border-top: 1px solid var(--rule-soft); margin-top: 3.25rem;
+  }
+  footer a { color: var(--graphite); }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead row">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="body">
+      <div class="stamp">
+        <span>Arquitetura</span>
+        <span>Motores quant</span>
+        <span>Ago 2026</span>
+      </div>
+      <h1>Núcleo funcional, <em>casca imperativa</em></h1>
+      <p class="standfirst">
+        Por que um motor que treina e opera ao vivo sobre o mesmo código precisa separar a
+        <strong>conta</strong> de quem <strong>executa</strong> a conta — e onde essa ideia
+        já está publicada, com nome próprio, há mais de uma década.
+      </p>
+    </div>
+  </header>
+
+  <section class="row">
+    <div class="rail"><span class="num">00</span> O sintoma<span class="note">antes do nome</span></div>
+    <div class="body">
+      <h2>O bug que não é bug — é arquitetura.</h2>
+
+      <p>
+        Todo motor quant sério calcula a mesma coisa duas vezes: uma vez <strong>em lote</strong>, sobre
+        o histórico inteiro, para treinar ou testar; e uma vez <strong>incremental</strong>, barra a
+        barra, ao vivo. Se essas duas execuções são dois trechos de código diferentes — um
+        script de treino de um lado, o motor de live do outro — elas vão divergir. Não é
+        risco, é <strong>garantia estatística</strong>: dois textos independentes que
+        deveriam computar a mesma fórmula sempre acabam computando fórmulas ligeiramente
+        diferentes, cedo ou tarde, por causa de um ajuste que só foi feito num dos lados.
+      </p>
+
+      <p>
+        A correção não é revisão de código mais cuidadosa. É <strong>estrutural</strong>: existir só um
+        lugar onde a conta é definida, e dois pontos de entrada que a chamam — nunca duas
+        contas.
+      </p>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="rail"><span class="num">01</span> A arquitetura<span class="note">o desenho</span></div>
+    <div class="body">
+      <h2>Um pacote que não sabe rodar sozinho.</h2>
+
+      <p>
+        A regra: o código que calcula é <strong>100% biblioteca</strong> — zero leitura de
+        disco, zero rede, zero paralelismo, zero ponto de entrada. Recebe dado em memória,
+        devolve dado em memória. Tudo que toca o mundo externo — CLI, iteração sobre o
+        universo de ativos, paralelismo, persistência, relatório — vive numa casca fina,
+        separada, um arquivo por etapa do pipeline.
+      </p>
+
+      <div class="diagram">core/<br>
+├── features/<br>
+│&nbsp;&nbsp; └── volatility.py&nbsp;&nbsp;<span class="dim"># def compute(df) -> Series</span><br>
+├── labeling/<br>
+│&nbsp;&nbsp; └── triple_barrier.py<br>
+└── models/<br>
+&nbsp;&nbsp;&nbsp;&nbsp; └── ...<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="lib">↑ núcleo funcional — importável sem efeito colateral</span><br>
+<br>
+scripts/<br>
+├── run_features_build.py&nbsp;&nbsp;<span class="dim"># --pairs --jobs --force</span><br>
+├── run_labeling.py<br>
+└── run_train.py<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="shell">↑ casca imperativa — CLI, I/O, paralelismo</span></div>
+
+      <p>
+        O ponto de disciplina é o método duplo dentro do núcleo: a mesma conta ganha um
+        método <code>.batch(df)</code> — usado pelo treino/backtest — e um método
+        <code>.streaming(buffer, novo_ponto)</code> — usado pelo motor ao vivo. Um teste
+        único afirma que os dois dão o mesmo número dentro de uma tolerância fixa. O runner
+        de treino chama <code>.batch()</code>; o motor de live chama <code>.streaming()</code>;
+        nenhum dos dois reimplementa a fórmula.
+      </p>
+
+      <div class="thesis">
+        <p>
+          O sinal de que a arquitetura está certa: <strong>"a lógica está pronta"</strong> e
+          <strong>"existe uma execução de produção que gerou este resultado"</strong> viram
+          dois fatos que se pode checar separadamente. Sem essa separação, um módulo só pode
+          estar tudo-ou-nada — e é exatamente aí que "testei localmente" vira, sem ninguém
+          decidir isso, "está em produção".
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="rail"><span class="num">02</span> Os quatro problemas<span class="note">o motivo, não o gosto</span></div>
+    <div class="body">
+      <h2>O que essa separação evita, concretamente.</h2>
+
+      <div class="problem">
+        <div class="hd"><span class="k">1</span><span class="nm">Testar sem I/O real</span></div>
+        <p>
+          Lógica presa dentro de um script arrasta leitura de disco pra dentro de todo teste
+          unitário. Lógica pura testa com um DataFrame sintético de 20 linhas em memória —
+          milissegundos, não segundos, e sem depender de dado real existir.
+        </p>
+      </div>
+
+      <div class="problem">
+        <div class="hd"><span class="k">2</span><span class="nm">A mesma conta em dois mundos</span></div>
+        <p>
+          O par <code>.batch()</code>/<code>.streaming()</code> com teste de paridade
+          numérica é o que impede o motor de live de silenciosamente calcular uma coisa
+          ligeiramente diferente do que foi validado no backtest.
+        </p>
+      </div>
+
+      <div class="problem">
+        <div class="hd"><span class="k">3</span><span class="nm">"Pronto" ≠ "em produção"</span></div>
+        <p>
+          A separação cria um terceiro estado real: módulo implementado, testado, correto —
+          e ainda sem runner porque ninguém rodou em escala. Isso precisa ficar visível em
+          algum lugar, não implícito.
+        </p>
+      </div>
+
+      <div class="problem">
+        <div class="hd"><span class="k">4</span><span class="nm">Onde mora a evidência</span></div>
+        <p>
+          "O algoritmo está certo" e "existe uma execução reproduzível que gerou este
+          artefato" são fatos independentes. Só a separação permite representar os dois
+          separadamente — e evita publicar um resultado de bancada como se fosse resultado
+          de produção.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="rail"><span class="num">03</span> A literatura<span class="note">sim, tem nome</span></div>
+    <div class="body">
+      <h2>Isto não é invenção de projeto — tem três décadas de linhagem.</h2>
+
+      <p>
+        A pergunta tem resposta direta: <strong>sim</strong>, existe literatura publicada, em
+        três camadas — engenharia de software geral, engenharia de ML especificamente, e um
+        motor quant open-source que implementa exatamente este desenho como objetivo de
+        projeto declarado.
+      </p>
+
+      <div class="lit">
+        <span class="yr">2012 · Software design</span>
+        <h3>Functional Core, Imperative Shell</h3>
+        <div class="who">Gary Bernhardt — Destroy All Software (screencast + talk "Boundaries", SCNA 2012)</div>
+        <p>
+          O nome exato do padrão usado neste documento. Bernhardt descreve um núcleo que
+          manipula só valores — sem tocar rede, disco ou stdin/stdout — cercado por uma casca
+          fina que faz exatamente essas coisas, a partir dos valores que o núcleo produziu. O
+          ganho citado é literal: o núcleo testa sem dublês de teste (<em>test doubles</em>),
+          e a casca, por ter poucos condicionais, fica fácil de raciocinar sobre o estado ao
+          longo do tempo.
+        </p>
+        <span class="term">termo de origem</span>
+        <div class="link">
+          <a href="https://www.destroyallsoftware.com/talks/boundaries">destroyallsoftware.com/talks/boundaries</a> ·
+          <a href="https://www.destroyallsoftware.com/screencasts/catalog/functional-core-imperative-shell">screencast</a>
+        </div>
+      </div>
+
+      <div class="lit">
+        <span class="yr">2005 · Software architecture</span>
+        <h3>Hexagonal Architecture (Ports &amp; Adapters)</h3>
+        <div class="who">Alistair Cockburn</div>
+        <p>
+          Um padrão irmão, mais antigo e mais geral: isolar a lógica de domínio de toda
+          infraestrutura (banco, API externa, fila) via interfaces (<em>ports</em>), com
+          implementações concretas (<em>adapters</em>) do lado de fora. O núcleo de domínio
+          não depende de infraestrutura nenhuma; as dependências apontam para dentro. É a
+          formulação da mesma ideia em vocabulário de arquitetura corporativa, anterior ao
+          termo de Bernhardt.
+        </p>
+        <span class="term">padrão irmão, mais amplo</span>
+        <div class="link"><a href="https://alistair.cockburn.us/hexagonal-architecture">alistair.cockburn.us/hexagonal-architecture</a></div>
+      </div>
+
+      <div class="lit">
+        <span class="yr">2015 · Machine learning, NeurIPS</span>
+        <h3>Hidden Technical Debt in Machine Learning Systems</h3>
+        <div class="who">D. Sculley, G. Holt, D. Golovin et al. — Google, NeurIPS 2015</div>
+        <p>
+          A formulação específica de ML do Problema 2 acima. O paper cataloga
+          <strong><em>training-serving skew</em></strong> como um dos riscos sistêmicos de
+          sistemas de ML em produção: a distribuição/representação usada no treino diverge da
+          disponível em serving, e o sintoma clássico é métrica offline melhorando enquanto a
+          métrica online estagna ou piora — o modelo foi treinado sobre uma distribuição que
+          ele nunca vê em produção.
+        </p>
+        <span class="term">nomeia o Problema 2</span>
+        <div class="link"><a href="https://papers.nips.cc/paper/5656-hidden-technical-debt-in-machine-learning-systems">papers.nips.cc/paper/5656</a></div>
+      </div>
+
+      <div class="proof">
+        <h4>A prova de existência no domínio quant</h4>
+        <p>
+          <strong>NautilusTrader</strong> — motor de trading algorítmico open-source,
+          Rust-nativo — declara este desenho como objetivo explícito de arquitetura: motor
+          determinístico, orientado a eventos, onde <em>a mesma implementação de estratégia,
+          usando a mesma semântica de execução, roda inalterada da simulação para a
+          produção</em>. É o Problema 2 resolvido dentro do domínio exato deste documento —
+          não engenharia de software genérica, motor quant de verdade, com a mesma tese:
+          backtest e live compartilham o núcleo, nunca duas implementações.
+        </p>
+        <p style="margin-top:0.7rem;font-size:0.8125rem">
+          <a href="https://nautilustrader.io">nautilustrader.io</a> ·
+          <a href="https://github.com/nautechsystems/nautilus_trader">github.com/nautechsystems/nautilus_trader</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row">
+    <div class="rail"><span class="num">04</span> Fecho</div>
+    <div class="body">
+      <div class="closer">
+        <p>
+          A convenção <code>core/</code> puro + <code>scripts/run_*.py</code> como casca não
+          é estilo pessoal de um projeto — é a aplicação de um padrão de 2012
+          (<strong>Bernhardt</strong>), sobre um problema catalogado em 2015
+          (<strong>Sculley et al.</strong>), que um motor quant real
+          (<strong>NautilusTrader</strong>) já declara como o motivo de existir.
+        </p>
+        <p style="margin-top:1rem;font-size:1rem;color:var(--graphite)">
+          Isso é o que separa "convenção que copiei" de "engenharia que eu sei defender": a
+          primeira pergunta que qualquer revisor sério vai fazer — <em>"isso é padrão
+          reconhecido ou gosto pessoal?"</em> — já tem resposta, com nome e link.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="row">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="body">
+      <p>
+        Fontes verificadas em ago/2026 — Bernhardt (destroyallsoftware.com), Cockburn
+        (alistair.cockburn.us), Sculley et al. 2015 (papers.nips.cc/paper/5656), NautilusTrader
+        (nautilustrader.io + github.com/nautechsystems/nautilus_trader).
+      </p>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
