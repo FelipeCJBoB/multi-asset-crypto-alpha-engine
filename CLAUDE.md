@@ -111,6 +111,15 @@ sentido.
 - Motor quant multi-timeframe (M15/M30/H1), multi-par (BTC/ETH/SOL/BNB/XRP),
   bidirecional (long/short), Binance USDⓈ-M, capital R$ 1.000, execução maker
   post-only. Definição completa: `PLANO_MESTRE_PRINCE2.md` §15.
+  **[PRECISÃO 2026-08-23, `AG-042`, decidido 2026-08-16]** "M15/M30/H1" é a
+  identidade de MISSÃO do projeto (§15.1, Manager verbatim), não o tipo de
+  barra em produção — `canonical_bar_type: dollar` (não relógio fixo);
+  `resolution_id` R1/R2/R3 substitui os nomes M15/M30/H1 como identidade de
+  grade em produção (`symbol + resolution_id + threshold_usdt +
+  calibration_version`). Tratar "R1 = 15m equivalente" é explicitamente
+  chamado de "mentira operacional" pelo próprio achado — não presuma
+  equivalência de tempo entre resolução e TF de relógio. Detalhe:
+  `PLANO_MESTRE_PRINCE2.md` §11.5, `audit/architecture_gaps_log.yaml::AG-042`.
 - V1 existe pra construir infraestrutura de hipótese → teste → validação →
   execução → auditoria — não pra provar que BTC é previsível. Motivo:
   `PLANO_MESTRE_PRINCE2.md` §15.
@@ -133,6 +142,26 @@ Código que as viole é rejeitado mesmo passando nos testes.
 
 Janela viável de stop: [0,275% ; 0,758%]. Teto de preço do BTC: US$ 107.568
 (acima disso, Gate 0 contínuo bloqueia, §16.11).
+
+**[DESATUALIZADO 2026-08-23]** Os 4 valores operacionais acima (janela de
+stop, ~55 trades/mês, teto de preço BTC) vêm literalmente de
+`PRD_V3_2_UNIFICADO.md` §0.2-0.4 — documento que o topo deste arquivo já
+declara OBSOLETO — calculados **BTC-único, sob barra de relógio 15m**
+(`unit_notional_usd` deriva de `step_size`×preço do BTC especificamente;
+teto de preço vem de ATR mediano medido em barra de relógio). Desde então:
+(a) o escopo virou 5 ativos com `step_size`/tick_size muito diferentes
+entre si (ex. `AG-165`: razão de 1000x entre BTC e XRP), sem recálculo
+registrado por ativo; (b) `canonical_bar_type: dollar` (`AG-042`,
+2026-08-16) mudou a unidade sobre a qual ATR é medido, sem remediação do
+teto de preço sob o regime novo. Busca em `audit/evidence_ledger.yaml`/
+`architecture_gaps_log.yaml` não encontra nenhuma remediação desses 3
+números — diferente de `canonical_bar_type`/`canonical_volatility_
+estimator`, que têm M-equivalente medido e registrado. O Gate 0 real hoje
+já reconhece isso na prática (`src/analysis/feasibility.py` é uma função
+POR ATIVO, não uma tabela fixa de 1 ativo) — a tabela acima é a fórmula/
+estrutura de decisão (ainda válida como FORMA), os NÚMEROS específicos
+não são generalizados nem remedidos sob o regime atual. Não trate os
+valores como atuais sem medir de novo por ativo/regime de barra.
 
 ---
 
@@ -208,7 +237,7 @@ Lint via `tools/lint/banned_patterns.py` em pre-commit. Build quebra se violado.
 | B18 | `multi:softprob` | dois binários `M_long`/`M_short` | §5.2 |
 | B19 | `colsample_bytree < 1.0` com bagging por grupo ativo | `1.0` — camada 3 substitui | §5.10 |
 | B20 | threshold escolhido por métrica OOS | a priori pelo orçamento de fees | §5.6 |
-| B21 | `hmmlearn` | determinístico por quantis; `dynamax` na V1.1 | §14.1 |
+| B21 | `hmmlearn` | `dynamax.GaussianHMM` (k=4, `hmm_gaussian_k4_v1`) — **[CORREÇÃO 2026-08-23]** canônico de produção desde 2026-08-21 (override do Manager sobre `AG-114`/`AG-118`, `PLANO_MESTRE_PRINCE2.md` §15.13, `src/regime/build_hmm.py`), não mais hipótese de "V1.1". Classificador determinístico por quantis (`src/regime/classifier.py`) segue existindo como caminho legado, não o candidato ativo. Mudança correlata: regime saiu do vetor de features do Alpha, atua só como GATE (ADR-001 §2.7) — o diagrama de `## Layer hierarchy` abaixo (`regime → models`) descreve fluxo de módulo, não implica regime como feature-input. | §14.1 |
 | B22 | retreinar após sequência de perdas | cadência fixa declarada a priori | §16.4 |
 | B23 | faixa esperada inventada em doc ou teste | `TBD — medir no Sprint N` | §16.10 M4 |
 | B24 | `N_eff = n/h` ou `1+s(2h−1)` como constante | medir `Σ uniqueness` | §0.2 R4 |
