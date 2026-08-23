@@ -1,0 +1,4297 @@
+{
+  "generated_at": "2026-08-23T22:17:10.415276+00:00",
+  "code_version": "3a83467",
+  "measurement_provenance": "MEASURED -- mean/std de realized_vol_short por canonical_id, lido de experiments/m4_raw_labels/ (canonical_id ja persistido pela varredura real do M4) joinado com experiments/m4_forward_vol_history/ (realized_vol_short, candidato-independente) por close_time_ms. Sem re-fit, sem medicao nova (B23). Responde AG-121 -- qual estatistica usar na migracao de canonicalize_states (media, convencao ja em producao via identify_stress_state_by_volatility, vs. desvio-padrao, pseudocodigo literal do ADR-001 SS5).",
+  "excluded_classifier_ids": [
+    "quantile_regime_v1"
+  ],
+  "min_bars_per_state": 30,
+  "n_cells_compared": 205,
+  "agreement_summary_by_classifier_id": {
+    "bocpd_v1": {
+      "n_cells": 50,
+      "n_agree": 45,
+      "pct_agree": 90.0
+    },
+    "hmm_gaussian_k2_v1": {
+      "n_cells": 50,
+      "n_agree": 49,
+      "pct_agree": 98.0
+    },
+    "hmm_gaussian_k3_v1": {
+      "n_cells": 47,
+      "n_agree": 46,
+      "pct_agree": 97.9
+    },
+    "hmm_gaussian_k4_v1": {
+      "n_cells": 44,
+      "n_agree": 40,
+      "pct_agree": 90.9
+    },
+    "jump_model_cjm_v1": {
+      "n_cells": 14,
+      "n_agree": 14,
+      "pct_agree": 100.0
+    }
+  },
+  "results": [
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 7002,
+      "mean_vol_by_state": {
+        "0": 0.010452,
+        "1": 0.00823,
+        "2": 0.008897
+      },
+      "std_vol_by_state": {
+        "0": 0.004654,
+        "1": 0.00285,
+        "2": 0.003163
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 7002,
+      "mean_vol_by_state": {
+        "0": 0.016404,
+        "1": 0.00825
+      },
+      "std_vol_by_state": {
+        "0": 0.005094,
+        "1": 0.002261
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 7002,
+      "mean_vol_by_state": {
+        "0": 0.007377,
+        "1": 0.019111,
+        "2": 0.012077
+      },
+      "std_vol_by_state": {
+        "0": 0.001629,
+        "1": 0.006383,
+        "2": 0.001558
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 7002,
+      "mean_vol_by_state": {
+        "0": 0.019849,
+        "1": 0.010164,
+        "2": 0.006848,
+        "3": 0.013539
+      },
+      "std_vol_by_state": {
+        "0": 0.007895,
+        "1": 0.000991,
+        "2": 0.001386,
+        "3": 0.001642
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 8684,
+      "mean_vol_by_state": {
+        "0": 0.008212,
+        "1": 0.007088,
+        "2": 0.00847
+      },
+      "std_vol_by_state": {
+        "0": 0.002608,
+        "1": 0.001847,
+        "2": 0.002095
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 8684,
+      "mean_vol_by_state": {
+        "0": 0.014358,
+        "1": 0.00747
+      },
+      "std_vol_by_state": {
+        "0": 0.002631,
+        "1": 0.001918
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 8684,
+      "mean_vol_by_state": {
+        "0": 0.01081,
+        "1": 0.016644,
+        "2": 0.006936
+      },
+      "std_vol_by_state": {
+        "0": 0.001304,
+        "1": 0.002895,
+        "2": 0.001489
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 8684,
+      "mean_vol_by_state": {
+        "0": 0.012192,
+        "1": 0.017235,
+        "2": 0.00916,
+        "3": 0.006378
+      },
+      "std_vol_by_state": {
+        "0": 0.001087,
+        "1": 0.003005,
+        "2": 0.000945,
+        "3": 0.001189
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 1,
+      "n_bars_joined": 8684,
+      "mean_vol_by_state": {
+        "0": 0.007681
+      },
+      "std_vol_by_state": {
+        "0": 0.002277
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 5732,
+      "mean_vol_by_state": {
+        "0": 0.011551,
+        "1": 0.009478,
+        "2": 0.010421
+      },
+      "std_vol_by_state": {
+        "0": 0.003693,
+        "1": 0.002565,
+        "2": 0.003554
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 5732,
+      "mean_vol_by_state": {
+        "0": 0.019927,
+        "1": 0.009838
+      },
+      "std_vol_by_state": {
+        "0": 0.003839,
+        "1": 0.002648
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 5732,
+      "mean_vol_by_state": {
+        "0": 0.022192,
+        "1": 0.013836,
+        "2": 0.008858
+      },
+      "std_vol_by_state": {
+        "0": 0.003664,
+        "1": 0.00165,
+        "2": 0.001914
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1988,
+      "mean_vol_by_state": {
+        "0": 0.036274,
+        "1": 0.026429,
+        "2": 0.027992
+      },
+      "std_vol_by_state": {
+        "0": 0.017665,
+        "1": 0.009109,
+        "2": 0.008394
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1988,
+      "mean_vol_by_state": {
+        "0": 0.026387,
+        "1": 0.055597
+      },
+      "std_vol_by_state": {
+        "0": 0.006414,
+        "1": 0.019953
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1988,
+      "mean_vol_by_state": {
+        "0": 0.023211,
+        "1": 0.03527,
+        "2": 0.063421
+      },
+      "std_vol_by_state": {
+        "0": 0.004289,
+        "1": 0.004696,
+        "2": 0.021934
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1988,
+      "mean_vol_by_state": {
+        "0": 0.021157,
+        "1": 0.029614,
+        "2": 0.040224,
+        "3": 0.070298
+      },
+      "std_vol_by_state": {
+        "0": 0.003465,
+        "1": 0.003173,
+        "2": 0.004933,
+        "3": 0.023144
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 5264,
+      "mean_vol_by_state": {
+        "0": 0.017371,
+        "1": 0.01366,
+        "2": 0.01382
+      },
+      "std_vol_by_state": {
+        "0": 0.007787,
+        "1": 0.003784,
+        "2": 0.004159
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 5264,
+      "mean_vol_by_state": {
+        "0": 0.026639,
+        "1": 0.013381
+      },
+      "std_vol_by_state": {
+        "0": 0.007741,
+        "1": 0.003086
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 5264,
+      "mean_vol_by_state": {
+        "0": 0.03186,
+        "1": 0.018294,
+        "2": 0.012141
+      },
+      "std_vol_by_state": {
+        "0": 0.008412,
+        "1": 0.002565,
+        "2": 0.002201
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 5264,
+      "mean_vol_by_state": {
+        "0": 0.034266,
+        "1": 0.020975,
+        "2": 0.015326,
+        "3": 0.011058
+      },
+      "std_vol_by_state": {
+        "0": 0.008552,
+        "1": 0.002484,
+        "2": 0.001556,
+        "3": 0.001725
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 10181,
+      "mean_vol_by_state": {
+        "0": 0.012647,
+        "1": 0.010621,
+        "2": 0.010746
+      },
+      "std_vol_by_state": {
+        "0": 0.0047,
+        "1": 0.003241,
+        "2": 0.003148
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 10181,
+      "mean_vol_by_state": {
+        "0": 0.013851,
+        "1": 0.008534
+      },
+      "std_vol_by_state": {
+        "0": 0.003522,
+        "1": 0.00158
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 10181,
+      "mean_vol_by_state": {
+        "0": 0.007236,
+        "1": 0.010278,
+        "2": 0.015047
+      },
+      "std_vol_by_state": {
+        "0": 0.001218,
+        "1": 0.001271,
+        "2": 0.003779
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 10181,
+      "mean_vol_by_state": {
+        "0": 0.006907,
+        "1": 0.012319,
+        "2": 0.017427,
+        "3": 0.009419
+      },
+      "std_vol_by_state": {
+        "0": 0.001181,
+        "1": 0.001472,
+        "2": 0.004222,
+        "3": 0.001053
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 12435,
+      "mean_vol_by_state": {
+        "0": 0.010033,
+        "1": 0.008465,
+        "2": 0.009743
+      },
+      "std_vol_by_state": {
+        "0": 0.003535,
+        "1": 0.00254,
+        "2": 0.003891
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 12435,
+      "mean_vol_by_state": {
+        "0": 0.00721,
+        "1": 0.011318
+      },
+      "std_vol_by_state": {
+        "0": 0.001315,
+        "1": 0.003181
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 12435,
+      "mean_vol_by_state": {
+        "0": 0.006294,
+        "1": 0.008884,
+        "2": 0.012909
+      },
+      "std_vol_by_state": {
+        "0": 0.001015,
+        "1": 0.001029,
+        "2": 0.003751
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 12435,
+      "mean_vol_by_state": {
+        "0": 0.007374,
+        "1": 0.005536,
+        "2": 0.013841,
+        "3": 0.009541
+      },
+      "std_vol_by_state": {
+        "0": 0.000659,
+        "1": 0.000818,
+        "2": 0.003814,
+        "3": 0.001033
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 12435,
+      "mean_vol_by_state": {
+        "0": 0.010934,
+        "1": 0.008986
+      },
+      "std_vol_by_state": {
+        "0": 0.009091,
+        "1": 0.002915
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 8241,
+      "mean_vol_by_state": {
+        "0": 0.012918,
+        "1": 0.011825,
+        "2": 0.011531
+      },
+      "std_vol_by_state": {
+        "0": 0.00466,
+        "1": 0.003799,
+        "2": 0.003459
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 8241,
+      "mean_vol_by_state": {
+        "0": 0.009576,
+        "1": 0.015095
+      },
+      "std_vol_by_state": {
+        "0": 0.001694,
+        "1": 0.003898
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 8241,
+      "mean_vol_by_state": {
+        "0": 0.017859,
+        "1": 0.008463,
+        "2": 0.012101
+      },
+      "std_vol_by_state": {
+        "0": 0.004538,
+        "1": 0.001267,
+        "2": 0.001426
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 8241,
+      "mean_vol_by_state": {
+        "0": 0.010167,
+        "1": 0.018816,
+        "2": 0.00758,
+        "3": 0.013183
+      },
+      "std_vol_by_state": {
+        "0": 0.000898,
+        "1": 0.004861,
+        "2": 0.000973,
+        "3": 0.001309
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 13269,
+      "mean_vol_by_state": {
+        "0": 0.018074,
+        "1": 0.015573,
+        "2": 0.016533
+      },
+      "std_vol_by_state": {
+        "0": 0.00876,
+        "1": 0.004648,
+        "2": 0.006263
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 13269,
+      "mean_vol_by_state": {
+        "0": 0.015799,
+        "1": 0.027606
+      },
+      "std_vol_by_state": {
+        "0": 0.004036,
+        "1": 0.019159
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 13269,
+      "mean_vol_by_state": {
+        "0": 0.015331,
+        "1": 0.026435,
+        "2": 0.032442
+      },
+      "std_vol_by_state": {
+        "0": 0.003621,
+        "1": 0.003171,
+        "2": 0.027356
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 13269,
+      "mean_vol_by_state": {
+        "0": 0.014474,
+        "1": 0.022106,
+        "2": 0.028865,
+        "3": 0.030094
+      },
+      "std_vol_by_state": {
+        "0": 0.0029,
+        "1": 0.00189,
+        "2": 0.00282,
+        "3": 0.027532
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 6053,
+      "mean_vol_by_state": {
+        "0": 0.019407,
+        "1": 0.014324,
+        "2": 0.016026
+      },
+      "std_vol_by_state": {
+        "0": 0.011654,
+        "1": 0.004211,
+        "2": 0.004835
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 6053,
+      "mean_vol_by_state": {
+        "0": 0.023568,
+        "1": 0.01345
+      },
+      "std_vol_by_state": {
+        "0": 0.01035,
+        "1": 0.002746
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 6053,
+      "mean_vol_by_state": {
+        "0": 0.027232,
+        "1": 0.01639,
+        "2": 0.011172
+      },
+      "std_vol_by_state": {
+        "0": 0.012629,
+        "1": 0.002169,
+        "2": 0.001851
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 6053,
+      "mean_vol_by_state": {
+        "0": 0.030613,
+        "1": 0.013717,
+        "2": 0.018387,
+        "3": 0.009944
+      },
+      "std_vol_by_state": {
+        "0": 0.014826,
+        "1": 0.001247,
+        "2": 0.002111,
+        "3": 0.001465
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 6003,
+      "mean_vol_by_state": {
+        "0": 0.009557,
+        "1": 0.009691,
+        "2": 0.012595
+      },
+      "std_vol_by_state": {
+        "0": 0.005183,
+        "1": 0.00449,
+        "2": 0.007733
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 6003,
+      "mean_vol_by_state": {
+        "0": 0.00795,
+        "1": 0.019685
+      },
+      "std_vol_by_state": {
+        "0": 0.00205,
+        "1": 0.006303
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 6003,
+      "mean_vol_by_state": {
+        "0": 0.012213,
+        "1": 0.007451,
+        "2": 0.021352
+      },
+      "std_vol_by_state": {
+        "0": 0.001468,
+        "1": 0.001608,
+        "2": 0.006145
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 6003,
+      "mean_vol_by_state": {
+        "0": 0.007171,
+        "1": 0.01052,
+        "2": 0.013834,
+        "3": 0.022513
+      },
+      "std_vol_by_state": {
+        "0": 0.001421,
+        "1": 0.000927,
+        "2": 0.002018,
+        "3": 0.0061
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 6003,
+      "mean_vol_by_state": {
+        "0": 0.020399,
+        "1": 0.008514
+      },
+      "std_vol_by_state": {
+        "0": 0.006746,
+        "1": 0.003178
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 9525,
+      "mean_vol_by_state": {
+        "0": 0.012923,
+        "1": 0.011028,
+        "2": 0.016749
+      },
+      "std_vol_by_state": {
+        "0": 0.004907,
+        "1": 0.00389,
+        "2": 0.006636
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 9525,
+      "mean_vol_by_state": {
+        "0": 0.019284,
+        "1": 0.010298
+      },
+      "std_vol_by_state": {
+        "0": 0.005048,
+        "1": 0.002438
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 9525,
+      "mean_vol_by_state": {
+        "0": 0.013458,
+        "1": 0.008794,
+        "2": 0.021856
+      },
+      "std_vol_by_state": {
+        "0": 0.001887,
+        "1": 0.00162,
+        "2": 0.004747
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 9525,
+      "mean_vol_by_state": {
+        "0": 0.015234,
+        "1": 0.0111,
+        "2": 0.007928,
+        "3": 0.023272
+      },
+      "std_vol_by_state": {
+        "0": 0.001911,
+        "1": 0.001054,
+        "2": 0.001283,
+        "3": 0.004699
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 9525,
+      "mean_vol_by_state": {
+        "0": 0.012796,
+        "1": 0.028727
+      },
+      "std_vol_by_state": {
+        "0": 0.004676,
+        "1": 0.005191
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 7469,
+      "mean_vol_by_state": {
+        "0": 0.00917,
+        "1": 0.008968,
+        "2": 0.008842
+      },
+      "std_vol_by_state": {
+        "0": 0.002805,
+        "1": 0.002631,
+        "2": 0.002616
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 7469,
+      "mean_vol_by_state": {
+        "0": 0.00748,
+        "1": 0.011712
+      },
+      "std_vol_by_state": {
+        "0": 0.00143,
+        "1": 0.002255
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 7469,
+      "mean_vol_by_state": {
+        "0": 0.006328,
+        "1": 0.00935,
+        "2": 0.014238
+      },
+      "std_vol_by_state": {
+        "0": 0.001017,
+        "1": 0.001341,
+        "2": 0.002048
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 7469,
+      "mean_vol_by_state": {
+        "0": 0.007574,
+        "1": 0.005467,
+        "2": 0.010292,
+        "3": 0.015008
+      },
+      "std_vol_by_state": {
+        "0": 0.000769,
+        "1": 0.00084,
+        "2": 0.001213,
+        "3": 0.001933
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 9733,
+      "mean_vol_by_state": {
+        "0": 0.00795,
+        "1": 0.007494,
+        "2": 0.008276
+      },
+      "std_vol_by_state": {
+        "0": 0.002519,
+        "1": 0.002166,
+        "2": 0.002355
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 9733,
+      "mean_vol_by_state": {
+        "0": 0.006694,
+        "1": 0.008724
+      },
+      "std_vol_by_state": {
+        "0": 0.001719,
+        "1": 0.002361
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 9733,
+      "mean_vol_by_state": {
+        "0": 0.004981,
+        "1": 0.007159,
+        "2": 0.010263
+      },
+      "std_vol_by_state": {
+        "0": 0.000724,
+        "1": 0.000885,
+        "2": 0.00186
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 9733,
+      "mean_vol_by_state": {
+        "0": 0.006715,
+        "1": 0.008167,
+        "2": 0.006323,
+        "3": 0.011738
+      },
+      "std_vol_by_state": {
+        "0": 0.002069,
+        "1": 0.001434,
+        "2": 0.000657,
+        "3": 0.00188
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 9733,
+      "mean_vol_by_state": {
+        "0": 0.006675,
+        "1": 0.00868
+      },
+      "std_vol_by_state": {
+        "0": 0.001694,
+        "1": 0.002371
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 10581,
+      "mean_vol_by_state": {
+        "0": 0.010219,
+        "1": 0.009391,
+        "2": 0.009878
+      },
+      "std_vol_by_state": {
+        "0": 0.003027,
+        "1": 0.002779,
+        "2": 0.002781
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 10581,
+      "mean_vol_by_state": {
+        "0": 0.007976,
+        "1": 0.012376
+      },
+      "std_vol_by_state": {
+        "0": 0.001399,
+        "1": 0.002438
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 10581,
+      "mean_vol_by_state": {
+        "0": 0.007012,
+        "1": 0.010004,
+        "2": 0.014367
+      },
+      "std_vol_by_state": {
+        "0": 0.001008,
+        "1": 0.001269,
+        "2": 0.002362
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 10581,
+      "mean_vol_by_state": {
+        "0": 0.008734,
+        "1": 0.006445,
+        "2": 0.011761,
+        "3": 0.016446
+      },
+      "std_vol_by_state": {
+        "0": 0.000891,
+        "1": 0.00083,
+        "2": 0.001288,
+        "3": 0.002376
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 8635,
+      "mean_vol_by_state": {
+        "0": 0.012434,
+        "1": 0.010962,
+        "2": 0.013492
+      },
+      "std_vol_by_state": {
+        "0": 0.004245,
+        "1": 0.003109,
+        "2": 0.004534
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 8635,
+      "mean_vol_by_state": {
+        "0": 0.009185,
+        "1": 0.015124
+      },
+      "std_vol_by_state": {
+        "0": 0.00171,
+        "1": 0.003522
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 8635,
+      "mean_vol_by_state": {
+        "0": 0.007916,
+        "1": 0.011714,
+        "2": 0.017788
+      },
+      "std_vol_by_state": {
+        "0": 0.001252,
+        "1": 0.0016,
+        "2": 0.003389
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 8635,
+      "mean_vol_by_state": {
+        "0": 0.009597,
+        "1": 0.009702,
+        "2": 0.012744,
+        "3": 0.019202
+      },
+      "std_vol_by_state": {
+        "0": 0.00095,
+        "1": 0.003331,
+        "2": 0.002049,
+        "3": 0.003298
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 5982,
+      "mean_vol_by_state": {
+        "0": 0.012935,
+        "1": 0.01145,
+        "2": 0.012705
+      },
+      "std_vol_by_state": {
+        "0": 0.0045,
+        "1": 0.0035,
+        "2": 0.003929
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 5982,
+      "mean_vol_by_state": {
+        "0": 0.010543,
+        "1": 0.017936
+      },
+      "std_vol_by_state": {
+        "0": 0.002267,
+        "1": 0.003444
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 5982,
+      "mean_vol_by_state": {
+        "0": 0.008632,
+        "1": 0.013219,
+        "2": 0.021389
+      },
+      "std_vol_by_state": {
+        "0": 0.001339,
+        "1": 0.002197,
+        "2": 0.00311
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 5982,
+      "mean_vol_by_state": {
+        "0": 0.010278,
+        "1": 0.00751,
+        "2": 0.014805,
+        "3": 0.023332
+      },
+      "std_vol_by_state": {
+        "0": 0.001121,
+        "1": 0.001059,
+        "2": 0.002266,
+        "3": 0.002897
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 3500,
+      "mean_vol_by_state": {
+        "0": 0.014688,
+        "1": 0.011119,
+        "2": 0.011666
+      },
+      "std_vol_by_state": {
+        "0": 0.006063,
+        "1": 0.003403,
+        "2": 0.00394
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 3500,
+      "mean_vol_by_state": {
+        "0": 0.024193,
+        "1": 0.011837
+      },
+      "std_vol_by_state": {
+        "0": 0.007274,
+        "1": 0.003146
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 3500,
+      "mean_vol_by_state": {
+        "0": 0.027772,
+        "1": 0.010439,
+        "2": 0.016467
+      },
+      "std_vol_by_state": {
+        "0": 0.007794,
+        "1": 0.002199,
+        "2": 0.002022
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 3500,
+      "mean_vol_by_state": {
+        "0": 0.03026,
+        "1": 0.009852,
+        "2": 0.014603,
+        "3": 0.019085
+      },
+      "std_vol_by_state": {
+        "0": 0.007938,
+        "1": 0.001866,
+        "2": 0.001384,
+        "3": 0.001944
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 4342,
+      "mean_vol_by_state": {
+        "0": 0.011697,
+        "1": 0.010119,
+        "2": 0.011477
+      },
+      "std_vol_by_state": {
+        "0": 0.003644,
+        "1": 0.002684,
+        "2": 0.003183
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 4342,
+      "mean_vol_by_state": {
+        "0": 0.019585,
+        "1": 0.01051
+      },
+      "std_vol_by_state": {
+        "0": 0.002722,
+        "1": 0.002719
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 4342,
+      "mean_vol_by_state": {
+        "0": 0.021504,
+        "1": 0.014656,
+        "2": 0.009583
+      },
+      "std_vol_by_state": {
+        "0": 0.002636,
+        "1": 0.001988,
+        "2": 0.001996
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 4342,
+      "mean_vol_by_state": {
+        "0": 0.023097,
+        "1": 0.008927,
+        "2": 0.013119,
+        "3": 0.017344
+      },
+      "std_vol_by_state": {
+        "0": 0.00298,
+        "1": 0.001649,
+        "2": 0.00122,
+        "3": 0.001628
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 1,
+      "n_bars_joined": 4342,
+      "mean_vol_by_state": {
+        "0": 0.010798
+      },
+      "std_vol_by_state": {
+        "0": 0.003151
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2865,
+      "mean_vol_by_state": {
+        "0": 0.01565,
+        "1": 0.013269,
+        "2": 0.014192
+      },
+      "std_vol_by_state": {
+        "0": 0.005013,
+        "1": 0.003754,
+        "2": 0.004177
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2865,
+      "mean_vol_by_state": {
+        "0": 0.027072,
+        "1": 0.013605
+      },
+      "std_vol_by_state": {
+        "0": 0.003805,
+        "1": 0.003477
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2865,
+      "mean_vol_by_state": {
+        "0": 0.029411,
+        "1": 0.019719,
+        "2": 0.012496
+      },
+      "std_vol_by_state": {
+        "0": 0.003206,
+        "1": 0.002495,
+        "2": 0.002491
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 993,
+      "mean_vol_by_state": {
+        "0": 0.047437,
+        "1": 0.04159,
+        "2": 0.035634
+      },
+      "std_vol_by_state": {
+        "0": 0.025897,
+        "1": 0.011572,
+        "2": 0.005739
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 993,
+      "mean_vol_by_state": {
+        "0": 0.038511,
+        "1": 0.077578
+      },
+      "std_vol_by_state": {
+        "0": 0.008468,
+        "1": 0.036113
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 993,
+      "mean_vol_by_state": {
+        "0": 0.034038,
+        "1": 0.103054,
+        "2": 0.051035
+      },
+      "std_vol_by_state": {
+        "0": 0.005325,
+        "1": 0.048596,
+        "2": 0.007354
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2632,
+      "mean_vol_by_state": {
+        "0": 0.022369,
+        "1": 0.018339,
+        "2": 0.020491
+      },
+      "std_vol_by_state": {
+        "0": 0.00926,
+        "1": 0.00464,
+        "2": 0.004704
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2632,
+      "mean_vol_by_state": {
+        "0": 0.035654,
+        "1": 0.01855
+      },
+      "std_vol_by_state": {
+        "0": 0.011578,
+        "1": 0.003846
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2632,
+      "mean_vol_by_state": {
+        "0": 0.047758,
+        "1": 0.02632,
+        "2": 0.017287
+      },
+      "std_vol_by_state": {
+        "0": 0.015811,
+        "1": 0.004218,
+        "2": 0.002967
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2632,
+      "mean_vol_by_state": {
+        "0": 0.049066,
+        "1": 0.030865,
+        "2": 0.021736,
+        "3": 0.016018
+      },
+      "std_vol_by_state": {
+        "0": 0.017157,
+        "1": 0.003151,
+        "2": 0.002027,
+        "3": 0.002396
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 5090,
+      "mean_vol_by_state": {
+        "0": 0.017333,
+        "1": 0.016243,
+        "2": 0.015771
+      },
+      "std_vol_by_state": {
+        "0": 0.005693,
+        "1": 0.005356,
+        "2": 0.005229
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 5090,
+      "mean_vol_by_state": {
+        "0": 0.012272,
+        "1": 0.019683
+      },
+      "std_vol_by_state": {
+        "0": 0.002371,
+        "1": 0.004966
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 5090,
+      "mean_vol_by_state": {
+        "0": 0.010679,
+        "1": 0.015487,
+        "2": 0.02303
+      },
+      "std_vol_by_state": {
+        "0": 0.00172,
+        "1": 0.002097,
+        "2": 0.004927
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 5090,
+      "mean_vol_by_state": {
+        "0": 0.025269,
+        "1": 0.013277,
+        "2": 0.009817,
+        "3": 0.017785
+      },
+      "std_vol_by_state": {
+        "0": 0.00514,
+        "1": 0.001509,
+        "2": 0.001593,
+        "3": 0.001826
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 6217,
+      "mean_vol_by_state": {
+        "0": 0.014817,
+        "1": 0.012984,
+        "2": 0.011618
+      },
+      "std_vol_by_state": {
+        "0": 0.005415,
+        "1": 0.004088,
+        "2": 0.003586
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 6217,
+      "mean_vol_by_state": {
+        "0": 0.016542,
+        "1": 0.010251
+      },
+      "std_vol_by_state": {
+        "0": 0.004157,
+        "1": 0.001937
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 6217,
+      "mean_vol_by_state": {
+        "0": 0.008753,
+        "1": 0.012514,
+        "2": 0.018072
+      },
+      "std_vol_by_state": {
+        "0": 0.001342,
+        "1": 0.001475,
+        "2": 0.004781
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 6217,
+      "mean_vol_by_state": {
+        "0": 0.014738,
+        "1": 0.01111,
+        "2": 0.008224,
+        "3": 0.02084
+      },
+      "std_vol_by_state": {
+        "0": 0.001525,
+        "1": 0.001076,
+        "2": 0.001224,
+        "3": 0.0061
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 6217,
+      "mean_vol_by_state": {
+        "0": 0.018293,
+        "1": 0.01264
+      },
+      "std_vol_by_state": {
+        "0": 0.013684,
+        "1": 0.003895
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 4120,
+      "mean_vol_by_state": {
+        "0": 0.017928,
+        "1": 0.016442,
+        "2": 0.016592
+      },
+      "std_vol_by_state": {
+        "0": 0.007053,
+        "1": 0.004897,
+        "2": 0.00511
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 4120,
+      "mean_vol_by_state": {
+        "0": 0.021736,
+        "1": 0.013817
+      },
+      "std_vol_by_state": {
+        "0": 0.006274,
+        "1": 0.002281
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 4120,
+      "mean_vol_by_state": {
+        "0": 0.026048,
+        "1": 0.012229,
+        "2": 0.017022
+      },
+      "std_vol_by_state": {
+        "0": 0.007487,
+        "1": 0.001672,
+        "2": 0.001989
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 4120,
+      "mean_vol_by_state": {
+        "0": 0.028439,
+        "1": 0.014753,
+        "2": 0.011196,
+        "3": 0.019152
+      },
+      "std_vol_by_state": {
+        "0": 0.008466,
+        "1": 0.001295,
+        "2": 0.001356,
+        "3": 0.002036
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 6634,
+      "mean_vol_by_state": {
+        "0": 0.023845,
+        "1": 0.022468,
+        "2": 0.022973
+      },
+      "std_vol_by_state": {
+        "0": 0.009913,
+        "1": 0.007277,
+        "2": 0.009048
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 6634,
+      "mean_vol_by_state": {
+        "0": 0.022354,
+        "1": 0.04593
+      },
+      "std_vol_by_state": {
+        "0": 0.005867,
+        "1": 0.029094
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 6634,
+      "mean_vol_by_state": {
+        "0": 0.021477,
+        "1": 0.036088,
+        "2": 0.045605
+      },
+      "std_vol_by_state": {
+        "0": 0.004907,
+        "1": 0.003889,
+        "2": 0.03779
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 6634,
+      "mean_vol_by_state": {
+        "0": 0.03079,
+        "1": 0.049969,
+        "2": 0.020648,
+        "3": 0.042115
+      },
+      "std_vol_by_state": {
+        "0": 0.005198,
+        "1": 0.041321,
+        "2": 0.004207,
+        "3": 0.003871
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 3026,
+      "mean_vol_by_state": {
+        "0": 0.026978,
+        "1": 0.020996,
+        "2": 0.024942
+      },
+      "std_vol_by_state": {
+        "0": 0.016323,
+        "1": 0.007183,
+        "2": 0.005422
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 3026,
+      "mean_vol_by_state": {
+        "0": 0.034101,
+        "1": 0.019346
+      },
+      "std_vol_by_state": {
+        "0": 0.01598,
+        "1": 0.003988
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 3026,
+      "mean_vol_by_state": {
+        "0": 0.038505,
+        "1": 0.023049,
+        "2": 0.015658
+      },
+      "std_vol_by_state": {
+        "0": 0.01857,
+        "1": 0.002749,
+        "2": 0.002516
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 3026,
+      "mean_vol_by_state": {
+        "0": 0.052812,
+        "1": 0.028029,
+        "2": 0.020988,
+        "3": 0.014894
+      },
+      "std_vol_by_state": {
+        "0": 0.026203,
+        "1": 0.003364,
+        "2": 0.002045,
+        "3": 0.002237
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 3001,
+      "mean_vol_by_state": {
+        "0": 0.015727,
+        "1": 0.011379,
+        "2": 0.018072
+      },
+      "std_vol_by_state": {
+        "0": 0.007784,
+        "1": 0.005217,
+        "2": 0.011561
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 3001,
+      "mean_vol_by_state": {
+        "0": 0.011071,
+        "1": 0.026981
+      },
+      "std_vol_by_state": {
+        "0": 0.002852,
+        "1": 0.008931
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 3001,
+      "mean_vol_by_state": {
+        "0": 0.030076,
+        "1": 0.010539,
+        "2": 0.017432
+      },
+      "std_vol_by_state": {
+        "0": 0.008513,
+        "1": 0.002427,
+        "2": 0.002096
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 3001,
+      "mean_vol_by_state": {
+        "0": 0.031065,
+        "1": 0.014388,
+        "2": 0.019107,
+        "3": 0.009719
+      },
+      "std_vol_by_state": {
+        "0": 0.008434,
+        "1": 0.00116,
+        "2": 0.002538,
+        "3": 0.001911
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 3001,
+      "mean_vol_by_state": {
+        "0": 0.028201,
+        "1": 0.011713
+      },
+      "std_vol_by_state": {
+        "0": 0.009716,
+        "1": 0.003959
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 4762,
+      "mean_vol_by_state": {
+        "0": 0.019278,
+        "1": 0.015178,
+        "2": 0.023673
+      },
+      "std_vol_by_state": {
+        "0": 0.007468,
+        "1": 0.004933,
+        "2": 0.008789
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 4762,
+      "mean_vol_by_state": {
+        "0": 0.014278,
+        "1": 0.027249
+      },
+      "std_vol_by_state": {
+        "0": 0.003259,
+        "1": 0.006804
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 4762,
+      "mean_vol_by_state": {
+        "0": 0.01235,
+        "1": 0.018909,
+        "2": 0.030374
+      },
+      "std_vol_by_state": {
+        "0": 0.00225,
+        "1": 0.002626,
+        "2": 0.006689
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 4762,
+      "mean_vol_by_state": {
+        "0": 0.015616,
+        "1": 0.021774,
+        "2": 0.011392,
+        "3": 0.032992
+      },
+      "std_vol_by_state": {
+        "0": 0.001509,
+        "1": 0.002662,
+        "2": 0.002299,
+        "3": 0.006582
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 4762,
+      "mean_vol_by_state": {
+        "0": 0.017435,
+        "1": 0.036076
+      },
+      "std_vol_by_state": {
+        "0": 0.006059,
+        "1": 0.007026
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 4866,
+      "mean_vol_by_state": {
+        "0": 0.011189,
+        "1": 0.010574,
+        "2": 0.012351
+      },
+      "std_vol_by_state": {
+        "0": 0.003351,
+        "1": 0.002934,
+        "2": 0.003805
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 4866,
+      "mean_vol_by_state": {
+        "0": 0.008501,
+        "1": 0.013209
+      },
+      "std_vol_by_state": {
+        "0": 0.001409,
+        "1": 0.002828
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 4866,
+      "mean_vol_by_state": {
+        "0": 0.007338,
+        "1": 0.010345,
+        "2": 0.015036
+      },
+      "std_vol_by_state": {
+        "0": 0.001079,
+        "1": 0.001295,
+        "2": 0.002741
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 4866,
+      "mean_vol_by_state": {
+        "0": 0.009078,
+        "1": 0.009796,
+        "2": 0.011724,
+        "3": 0.017226
+      },
+      "std_vol_by_state": {
+        "0": 0.000913,
+        "1": 0.003001,
+        "2": 0.002082,
+        "3": 0.00278
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 4866,
+      "mean_vol_by_state": {
+        "0": 0.009398,
+        "1": 0.012416
+      },
+      "std_vol_by_state": {
+        "0": 0.002324,
+        "1": 0.003325
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 5291,
+      "mean_vol_by_state": {
+        "0": 0.014322,
+        "1": 0.012858,
+        "2": 0.014654
+      },
+      "std_vol_by_state": {
+        "0": 0.004029,
+        "1": 0.003658,
+        "2": 0.004331
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 5291,
+      "mean_vol_by_state": {
+        "0": 0.011194,
+        "1": 0.017184
+      },
+      "std_vol_by_state": {
+        "0": 0.001977,
+        "1": 0.003494
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 5291,
+      "mean_vol_by_state": {
+        "0": 0.009937,
+        "1": 0.014183,
+        "2": 0.020418
+      },
+      "std_vol_by_state": {
+        "0": 0.001474,
+        "1": 0.00168,
+        "2": 0.00337
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 5291,
+      "mean_vol_by_state": {
+        "0": 0.012181,
+        "1": 0.009016,
+        "2": 0.015924,
+        "3": 0.0223
+      },
+      "std_vol_by_state": {
+        "0": 0.00118,
+        "1": 0.00122,
+        "2": 0.001622,
+        "3": 0.003208
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 4318,
+      "mean_vol_by_state": {
+        "0": 0.017529,
+        "1": 0.014733,
+        "2": 0.019853
+      },
+      "std_vol_by_state": {
+        "0": 0.005515,
+        "1": 0.004172,
+        "2": 0.006485
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 4318,
+      "mean_vol_by_state": {
+        "0": 0.012927,
+        "1": 0.02125
+      },
+      "std_vol_by_state": {
+        "0": 0.002454,
+        "1": 0.004861
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 4318,
+      "mean_vol_by_state": {
+        "0": 0.013127,
+        "1": 0.015424,
+        "2": 0.024424
+      },
+      "std_vol_by_state": {
+        "0": 0.003207,
+        "1": 0.002756,
+        "2": 0.004695
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 4318,
+      "mean_vol_by_state": {
+        "0": 0.013446,
+        "1": 0.009819,
+        "2": 0.017952,
+        "3": 0.026027
+      },
+      "std_vol_by_state": {
+        "0": 0.00126,
+        "1": 0.00131,
+        "2": 0.00192,
+        "3": 0.004592
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2991,
+      "mean_vol_by_state": {
+        "0": 0.017477,
+        "1": 0.016034,
+        "2": 0.019337
+      },
+      "std_vol_by_state": {
+        "0": 0.006459,
+        "1": 0.005227,
+        "2": 0.005296
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2991,
+      "mean_vol_by_state": {
+        "0": 0.014691,
+        "1": 0.025282
+      },
+      "std_vol_by_state": {
+        "0": 0.003158,
+        "1": 0.005136
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2991,
+      "mean_vol_by_state": {
+        "0": 0.012288,
+        "1": 0.018826,
+        "2": 0.031187
+      },
+      "std_vol_by_state": {
+        "0": 0.001964,
+        "1": 0.003105,
+        "2": 0.004333
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2991,
+      "mean_vol_by_state": {
+        "0": 0.014356,
+        "1": 0.010599,
+        "2": 0.020582,
+        "3": 0.033073
+      },
+      "std_vol_by_state": {
+        "0": 0.001499,
+        "1": 0.001469,
+        "2": 0.003062,
+        "3": 0.003826
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1749,
+      "mean_vol_by_state": {
+        "0": 0.018786,
+        "1": 0.017307,
+        "2": 0.019037
+      },
+      "std_vol_by_state": {
+        "0": 0.005625,
+        "1": 0.005274,
+        "2": 0.008734
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1749,
+      "mean_vol_by_state": {
+        "0": 0.033911,
+        "1": 0.017018
+      },
+      "std_vol_by_state": {
+        "0": 0.008652,
+        "1": 0.004679
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1749,
+      "mean_vol_by_state": {
+        "0": 0.037615,
+        "1": 0.015082,
+        "2": 0.023869
+      },
+      "std_vol_by_state": {
+        "0": 0.009708,
+        "1": 0.00336,
+        "2": 0.002756
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1749,
+      "mean_vol_by_state": {
+        "0": 0.041216,
+        "1": 0.014311,
+        "2": 0.02163,
+        "3": 0.028568
+      },
+      "std_vol_by_state": {
+        "0": 0.009344,
+        "1": 0.00299,
+        "2": 0.002202,
+        "3": 0.002789
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2171,
+      "mean_vol_by_state": {
+        "0": 0.016924,
+        "1": 0.014628,
+        "2": 0.015503
+      },
+      "std_vol_by_state": {
+        "0": 0.005583,
+        "1": 0.004052,
+        "2": 0.003831
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2171,
+      "mean_vol_by_state": {
+        "0": 0.027035,
+        "1": 0.014682
+      },
+      "std_vol_by_state": {
+        "0": 0.002783,
+        "1": 0.003661
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2171,
+      "mean_vol_by_state": {
+        "0": 0.028207,
+        "1": 0.013818,
+        "2": 0.021738
+      },
+      "std_vol_by_state": {
+        "0": 0.002744,
+        "1": 0.002936,
+        "2": 0.002757
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 3,
+      "n_bars_joined": 2171,
+      "mean_vol_by_state": {
+        "1": 0.013038,
+        "2": 0.018492,
+        "3": 0.025364
+      },
+      "std_vol_by_state": {
+        "1": 0.002541,
+        "2": 0.002133,
+        "3": 0.002815
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 1,
+      "n_bars_joined": 2171,
+      "mean_vol_by_state": {
+        "0": 0.015131
+      },
+      "std_vol_by_state": {
+        "0": 0.004307
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1432,
+      "mean_vol_by_state": {
+        "0": 0.020077,
+        "1": 0.019627,
+        "2": 0.021139
+      },
+      "std_vol_by_state": {
+        "0": 0.00579,
+        "1": 0.006239,
+        "2": 0.004248
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1432,
+      "mean_vol_by_state": {
+        "0": 0.038899,
+        "1": 0.019301
+      },
+      "std_vol_by_state": {
+        "0": 0.005684,
+        "1": 0.005053
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 496,
+      "mean_vol_by_state": {
+        "0": 0.076987,
+        "1": 0.058257,
+        "2": 0.052284
+      },
+      "std_vol_by_state": {
+        "0": 0.030322,
+        "1": 0.014105,
+        "2": 0.009894
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 496,
+      "mean_vol_by_state": {
+        "0": 0.056953,
+        "1": 0.108895
+      },
+      "std_vol_by_state": {
+        "0": 0.012607,
+        "1": 0.032467
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1315,
+      "mean_vol_by_state": {
+        "0": 0.031771,
+        "1": 0.026239,
+        "2": 0.02589
+      },
+      "std_vol_by_state": {
+        "0": 0.013299,
+        "1": 0.007408,
+        "2": 0.006676
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1315,
+      "mean_vol_by_state": {
+        "0": 0.04865,
+        "1": 0.026083
+      },
+      "std_vol_by_state": {
+        "0": 0.015809,
+        "1": 0.006138
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1315,
+      "mean_vol_by_state": {
+        "0": 0.074973,
+        "1": 0.023727,
+        "2": 0.037755
+      },
+      "std_vol_by_state": {
+        "0": 0.023607,
+        "1": 0.004379,
+        "2": 0.005892
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1315,
+      "mean_vol_by_state": {
+        "0": 0.074652,
+        "1": 0.04167,
+        "2": 0.02191,
+        "3": 0.029927
+      },
+      "std_vol_by_state": {
+        "0": 0.025052,
+        "1": 0.004259,
+        "2": 0.003507,
+        "3": 0.002594
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2545,
+      "mean_vol_by_state": {
+        "0": 0.027388,
+        "1": 0.021818,
+        "2": 0.022508
+      },
+      "std_vol_by_state": {
+        "0": 0.009752,
+        "1": 0.006927,
+        "2": 0.006907
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2545,
+      "mean_vol_by_state": {
+        "0": 0.017208,
+        "1": 0.028337
+      },
+      "std_vol_by_state": {
+        "0": 0.003002,
+        "1": 0.007336
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2545,
+      "mean_vol_by_state": {
+        "0": 0.015767,
+        "1": 0.022071,
+        "2": 0.033482
+      },
+      "std_vol_by_state": {
+        "0": 0.002518,
+        "1": 0.002873,
+        "2": 0.007254
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2545,
+      "mean_vol_by_state": {
+        "0": 0.013098,
+        "1": 0.01744,
+        "2": 0.0232,
+        "3": 0.033939
+      },
+      "std_vol_by_state": {
+        "0": 0.002434,
+        "1": 0.001861,
+        "2": 0.00235,
+        "3": 0.007258
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 3108,
+      "mean_vol_by_state": {
+        "0": 0.021122,
+        "1": 0.016798,
+        "2": 0.018188
+      },
+      "std_vol_by_state": {
+        "0": 0.009119,
+        "1": 0.004325,
+        "2": 0.005524
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 3108,
+      "mean_vol_by_state": {
+        "0": 0.014363,
+        "1": 0.022567
+      },
+      "std_vol_by_state": {
+        "0": 0.002471,
+        "1": 0.005848
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 3108,
+      "mean_vol_by_state": {
+        "0": 0.016915,
+        "1": 0.012281,
+        "2": 0.025015
+      },
+      "std_vol_by_state": {
+        "0": 0.001804,
+        "1": 0.001734,
+        "2": 0.006102
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 3108,
+      "mean_vol_by_state": {
+        "0": 0.01581,
+        "1": 0.011809,
+        "2": 0.029693,
+        "3": 0.020687
+      },
+      "std_vol_by_state": {
+        "0": 0.001463,
+        "1": 0.00164,
+        "2": 0.00783,
+        "3": 0.002133
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2059,
+      "mean_vol_by_state": {
+        "0": 0.029668,
+        "1": 0.02378,
+        "2": 0.023146
+      },
+      "std_vol_by_state": {
+        "0": 0.012659,
+        "1": 0.007917,
+        "2": 0.005927
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2059,
+      "mean_vol_by_state": {
+        "0": 0.030641,
+        "1": 0.019498
+      },
+      "std_vol_by_state": {
+        "0": 0.00818,
+        "1": 0.002956
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2059,
+      "mean_vol_by_state": {
+        "0": 0.016526,
+        "1": 0.033565,
+        "2": 0.022137
+      },
+      "std_vol_by_state": {
+        "0": 0.001853,
+        "1": 0.008406,
+        "2": 0.002276
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2059,
+      "mean_vol_by_state": {
+        "0": 0.026786,
+        "1": 0.015907,
+        "2": 0.020813,
+        "3": 0.039423
+      },
+      "std_vol_by_state": {
+        "0": 0.002499,
+        "1": 0.001644,
+        "2": 0.001848,
+        "3": 0.008968
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 3316,
+      "mean_vol_by_state": {
+        "0": 0.043937,
+        "1": 0.029772,
+        "2": 0.035462
+      },
+      "std_vol_by_state": {
+        "0": 0.019934,
+        "1": 0.007787,
+        "2": 0.015352
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 3316,
+      "mean_vol_by_state": {
+        "0": 0.031449,
+        "1": 0.075106
+      },
+      "std_vol_by_state": {
+        "0": 0.008237,
+        "1": 0.033119
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 3316,
+      "mean_vol_by_state": {
+        "0": 0.0488,
+        "1": 0.029583,
+        "2": 0.097388
+      },
+      "std_vol_by_state": {
+        "0": 0.005111,
+        "1": 0.006401,
+        "2": 0.037028
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 3316,
+      "mean_vol_by_state": {
+        "0": 0.028251,
+        "1": 0.053224,
+        "2": 0.041944,
+        "3": 0.104679
+      },
+      "std_vol_by_state": {
+        "0": 0.005485,
+        "1": 0.004335,
+        "2": 0.003621,
+        "3": 0.035981
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1513,
+      "mean_vol_by_state": {
+        "0": 0.038959,
+        "1": 0.029465,
+        "2": 0.034883
+      },
+      "std_vol_by_state": {
+        "0": 0.022797,
+        "1": 0.007799,
+        "2": 0.008665
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "ETF_HALVING",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1513,
+      "mean_vol_by_state": {
+        "0": 0.051406,
+        "1": 0.028367
+      },
+      "std_vol_by_state": {
+        "0": 0.021924,
+        "1": 0.006263
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1500,
+      "mean_vol_by_state": {
+        "0": 0.02164,
+        "1": 0.016736,
+        "2": 0.025848
+      },
+      "std_vol_by_state": {
+        "0": 0.009396,
+        "1": 0.006005,
+        "2": 0.014637
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1500,
+      "mean_vol_by_state": {
+        "0": 0.01573,
+        "1": 0.035667
+      },
+      "std_vol_by_state": {
+        "0": 0.004207,
+        "1": 0.009815
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1500,
+      "mean_vol_by_state": {
+        "0": 0.04,
+        "1": 0.014696,
+        "2": 0.024949
+      },
+      "std_vol_by_state": {
+        "0": 0.009478,
+        "1": 0.003232,
+        "2": 0.002841
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1500,
+      "mean_vol_by_state": {
+        "0": 0.013756,
+        "1": 0.041154,
+        "2": 0.020129,
+        "3": 0.02682
+      },
+      "std_vol_by_state": {
+        "0": 0.00262,
+        "1": 0.009385,
+        "2": 0.001771,
+        "3": 0.002402
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "FTX",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 1500,
+      "mean_vol_by_state": {
+        "0": 0.040193,
+        "1": 0.016883
+      },
+      "std_vol_by_state": {
+        "0": 0.010549,
+        "1": 0.005613
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2380,
+      "mean_vol_by_state": {
+        "0": 0.033274,
+        "1": 0.022568,
+        "2": 0.026146
+      },
+      "std_vol_by_state": {
+        "0": 0.013005,
+        "1": 0.007406,
+        "2": 0.010177
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2380,
+      "mean_vol_by_state": {
+        "0": 0.036924,
+        "1": 0.0197
+      },
+      "std_vol_by_state": {
+        "0": 0.009929,
+        "1": 0.004266
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2380,
+      "mean_vol_by_state": {
+        "0": 0.017037,
+        "1": 0.02561,
+        "2": 0.042251
+      },
+      "std_vol_by_state": {
+        "0": 0.002911,
+        "1": 0.003076,
+        "2": 0.009068
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2380,
+      "mean_vol_by_state": {
+        "0": 0.046088,
+        "1": 0.016337,
+        "2": 0.029585,
+        "3": 0.022946
+      },
+      "std_vol_by_state": {
+        "0": 0.008091,
+        "1": 0.003096,
+        "2": 0.00315,
+        "3": 0.00415
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "LUNA",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 2380,
+      "mean_vol_by_state": {
+        "0": 0.023612,
+        "1": 0.047833
+      },
+      "std_vol_by_state": {
+        "0": 0.007474,
+        "1": 0.009159
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1868,
+      "mean_vol_by_state": {
+        "0": 0.02073,
+        "1": 0.016595,
+        "2": 0.016322
+      },
+      "std_vol_by_state": {
+        "0": 0.005744,
+        "1": 0.003693,
+        "2": 0.003701
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1868,
+      "mean_vol_by_state": {
+        "0": 0.016275,
+        "1": 0.021267
+      },
+      "std_vol_by_state": {
+        "0": 0.003569,
+        "1": 0.005527
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1868,
+      "mean_vol_by_state": {
+        "0": 0.018274,
+        "1": 0.013068,
+        "2": 0.026699
+      },
+      "std_vol_by_state": {
+        "0": 0.002293,
+        "1": 0.001751,
+        "2": 0.003795
+      },
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1868,
+      "mean_vol_by_state": {
+        "0": 0.016207,
+        "1": 0.019274,
+        "2": 0.011452,
+        "3": 0.028193
+      },
+      "std_vol_by_state": {
+        "0": 0.002642,
+        "1": 0.002624,
+        "2": 0.001266,
+        "3": 0.003554
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2433,
+      "mean_vol_by_state": {
+        "0": 0.016535,
+        "1": 0.015032,
+        "2": 0.015057
+      },
+      "std_vol_by_state": {
+        "0": 0.004915,
+        "1": 0.004229,
+        "2": 0.004376
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2433,
+      "mean_vol_by_state": {
+        "0": 0.018278,
+        "1": 0.012076
+      },
+      "std_vol_by_state": {
+        "0": 0.004227,
+        "1": 0.001849
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2433,
+      "mean_vol_by_state": {
+        "0": 0.02162,
+        "1": 0.012715,
+        "2": 0.014123
+      },
+      "std_vol_by_state": {
+        "0": 0.0044,
+        "1": 0.002726,
+        "2": 0.002254
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2433,
+      "mean_vol_by_state": {
+        "0": 0.023582,
+        "1": 0.015652,
+        "2": 0.013606,
+        "3": 0.009508
+      },
+      "std_vol_by_state": {
+        "0": 0.004441,
+        "1": 0.002211,
+        "2": 0.002146,
+        "3": 0.001145
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "n_states": 2,
+      "n_bars_joined": 2433,
+      "mean_vol_by_state": {
+        "0": 0.016681,
+        "1": 0.013917
+      },
+      "std_vol_by_state": {
+        "0": 0.005001,
+        "1": 0.003275
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2646,
+      "mean_vol_by_state": {
+        "0": 0.023432,
+        "1": 0.017596,
+        "2": 0.023233
+      },
+      "std_vol_by_state": {
+        "0": 0.006247,
+        "1": 0.004438,
+        "2": 0.005871
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2646,
+      "mean_vol_by_state": {
+        "0": 0.024284,
+        "1": 0.015789
+      },
+      "std_vol_by_state": {
+        "0": 0.005033,
+        "1": 0.002716
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2646,
+      "mean_vol_by_state": {
+        "0": 0.029764,
+        "1": 0.014478,
+        "2": 0.020449
+      },
+      "std_vol_by_state": {
+        "0": 0.004448,
+        "1": 0.002235,
+        "2": 0.002417
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2646,
+      "mean_vol_by_state": {
+        "0": 0.014704,
+        "1": 0.028027,
+        "2": 0.02179,
+        "3": 0.016628
+      },
+      "std_vol_by_state": {
+        "0": 0.006443,
+        "1": 0.008039,
+        "2": 0.002277,
+        "3": 0.001484
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 2159,
+      "mean_vol_by_state": {
+        "0": 0.028911,
+        "1": 0.022086,
+        "2": 0.022218
+      },
+      "std_vol_by_state": {
+        "0": 0.01075,
+        "1": 0.006058,
+        "2": 0.006906
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 2159,
+      "mean_vol_by_state": {
+        "0": 0.018026,
+        "1": 0.029533
+      },
+      "std_vol_by_state": {
+        "0": 0.003226,
+        "1": 0.007977
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 2159,
+      "mean_vol_by_state": {
+        "0": 0.036414,
+        "1": 0.015833,
+        "2": 0.023212
+      },
+      "std_vol_by_state": {
+        "0": 0.008166,
+        "1": 0.002301,
+        "2": 0.002888
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 2159,
+      "mean_vol_by_state": {
+        "0": 0.032324,
+        "1": 0.01982,
+        "2": 0.014304,
+        "3": 0.02608
+      },
+      "std_vol_by_state": {
+        "0": 0.0122,
+        "1": 0.002924,
+        "2": 0.001723,
+        "3": 0.003061
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "n_states": 3,
+      "n_bars_joined": 1496,
+      "mean_vol_by_state": {
+        "0": 0.025993,
+        "1": 0.020837,
+        "2": 0.024873
+      },
+      "std_vol_by_state": {
+        "0": 0.009281,
+        "1": 0.005011,
+        "2": 0.006193
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "n_states": 2,
+      "n_bars_joined": 1496,
+      "mean_vol_by_state": {
+        "0": 0.020637,
+        "1": 0.035263
+      },
+      "std_vol_by_state": {
+        "0": 0.004092,
+        "1": 0.007244
+      },
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "n_states": 3,
+      "n_bars_joined": 1496,
+      "mean_vol_by_state": {
+        "0": 0.031513,
+        "1": 0.016326,
+        "2": 0.023163
+      },
+      "std_vol_by_state": {
+        "0": 0.009412,
+        "1": 0.002292,
+        "2": 0.004275
+      },
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "n_states": 4,
+      "n_bars_joined": 1496,
+      "mean_vol_by_state": {
+        "0": 0.02107,
+        "1": 0.015651,
+        "2": 0.028933,
+        "3": 0.044879
+      },
+      "std_vol_by_state": {
+        "0": 0.002226,
+        "1": 0.001897,
+        "2": 0.004294,
+        "3": 0.00399
+      },
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false
+    }
+  ],
+  "next_step": "Manager revisa agreement_summary_by_classifier_id -- se os 2 criterios concordarem na esmagadora maioria das celulas, a escolha entre media/desvio-padrao e de baixo risco pratico (qualquer um produz a mesma migracao); se discordarem com frequencia real, a escolha do criterio muda o resultado de verdade e precisa de justificativa tecnica explicita, nao so conveniencia. B20: criterio final nao escolhido programaticamente aqui."
+}

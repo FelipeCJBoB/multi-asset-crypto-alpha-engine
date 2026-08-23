@@ -7791,7 +7791,7 @@ entries:
   - id: AG-108
     date: "2026-08-20"
     file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-096, mecanismo aprovado 'gate por linha')"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.2/§4.1/§3.8b; audit/architecture_gaps_log.yaml::AG-096"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.2/§4.1/§3.8b; audit/architecture_gaps_log.yaml::AG-096"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B, comissionado pelo Manager via docs/brief_auditoria_externa_2026-08-19_*.md)"
     gap: >
       O mecanismo aprovado em AG-096 ("posição atual no MESMO (symbol,
@@ -7831,7 +7831,7 @@ entries:
       resoluções do mesmo símbolo sobrevivendo com edge descorrelacionado.
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- decisão do Manager sobre reescrita do gate (uma resolução por símbolo vs. SymbolAggregator), ver docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.2"
+    status: "aberto -- decisão do Manager sobre reescrita do gate (uma resolução por símbolo vs. SymbolAggregator), ver docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.2"
     addendum_verificacao_brief_decisoes_residuais_2026_08_22: >
       Duas sínteses externas independentes sobre
       docs/brief_auditoria_externa_2026-08-22_decisoes_residuais_risco_regime.md
@@ -7923,7 +7923,7 @@ entries:
   - id: AG-109
     date: "2026-08-20"
     file: "PRD_V3_2_UNIFICADO.md (política de execução -- maker post-only GTX, cancela no timeout, nunca converte a mercado)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4 problema 2, §5 item 1; src/labels/triple_barrier.py (tp_atr_mult=2.0/sl_atr_mult=1.5)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.4 problema 2, §5 item 1; src/labels/triple_barrier.py (tp_atr_mult=2.0/sl_atr_mult=1.5)"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
     gap: >
       A política de execução declarada do projeto é maker post-only
@@ -7976,7 +7976,7 @@ entries:
   - id: AG-110
     date: "2026-08-20"
     file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-099, mecanismo revisado 'encurtar time_stop')"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4 problema 1; src/labels/triple_barrier.py (time_stop_ms=28.800.000, 8h)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.4 problema 1; src/labels/triple_barrier.py (time_stop_ms=28.800.000, 8h)"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B) -- mesmo padrão de ponto cego identificado pelo próprio parecer: a Rodada 1 interna refutou 'apertar o stop' com um argumento de execução e o substituto aprovado não reaplicou o mesmo invariante"
     gap: >
       O mecanismo revisado de AG-099 (encurtar o horizonte máximo de
@@ -8017,7 +8017,7 @@ entries:
   - id: AG-111
     date: "2026-08-20"
     file: "PLANO_MESTRE_PRINCE2.md §15.11 (AG-098, convenção de contagem de trials pra seleção de linha)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.3; audit/n_lifetime.yaml; src/validation/dsr.py"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.3; audit/n_lifetime.yaml; src/validation/dsr.py"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
     gap: >
       A convenção aprovada em AG-098 (cada (symbol, resolution_id)
@@ -8062,7 +8062,7 @@ entries:
   - id: AG-112
     date: "2026-08-20"
     file: "src/risk/sizing.py (a implementar -- Risk Engine, quantização de lote)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §4.2"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §4.2"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B -- achado não coberto por nenhum dos dois briefs originais)"
     gap: >
       Nenhum documento do projeto menciona minNotional/stepSize por
@@ -8099,7 +8099,7 @@ entries:
   - id: AG-113
     date: "2026-08-20"
     file: "audit/n_lifetime.yaml (pré-filtro de custo, ainda não executado)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §2.6, §5 item 3; config/constants.yaml (E27f_cost_atr_ratio)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §2.6, §5 item 3; config/constants.yaml (E27f_cost_atr_ratio)"
     found_by: "Auditoria externa (ADR-001, parecer sobre a Trilha B)"
     gap: >
       n_eff (amostra rotulada independente) é aproximadamente T/H
@@ -8135,7 +8135,7 @@ entries:
   - id: AG-114
     date: "2026-08-20"
     file: "src/analysis/m4_regime_comparison.py (_anova_or_degenerate, teste de heterogeneidade de forward_return)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §2.7 (ratificado, PLANO_MESTRE_PRINCE2.md §15.12); docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md (lista 'fix mecânico' -- separação de volatilidade futura, occupancy, transition failure rate, detection delay); src/regime/regime_utility.py (só median_duration_bars/switch_rate/n_segments hoje)"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §2.7 (ratificado, PLANO_MESTRE_PRINCE2.md §15.12); docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md (lista 'fix mecânico' -- separação de volatilidade futura, occupancy, transition failure rate, detection delay); src/regime/regime_utility.py (só median_duration_bars/switch_rate/n_segments hoje)"
     found_by: "Manager, ao perguntar 'qual futuro o Regime vai atender' logo após ratificar o ADR-001 -- síntese entre a decisão de arquitetura (regime = gate, não feature) e o critério estatístico já usado pra escolher candidato de regime no M4"
     gap: >
       A metodologia da Trilha A/M4 avalia os 6 candidatos de regime por
@@ -8406,7 +8406,7 @@ entries:
   - id: AG-115
     date: "2026-08-20"
     file: "PRD_V3_2_UNIFICADO.md §9.1 (linhas 1700-1727); src/labels/triple_barrier.py (comentário 8, linhas 52-59)"
-    related_file: "audit/architecture_gaps_log.yaml::AG-109; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §1.4/§5 item 1; PLANO_MESTRE_PRINCE2.md §15.12"
+    related_file: "audit/architecture_gaps_log.yaml::AG-109; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §1.4/§5 item 1; PLANO_MESTRE_PRINCE2.md §15.12"
     found_by: "Manager, pedindo auditoria do desenho técnico de labels em ADR-001 vs. PLANO_MESTRE -- verificação direta contra PRD_V3_2_UNIFICADO.md e o código real da Label Engine"
     gap: >
       AG-109 (auditoria externa, ADR-001) registrou como achado de maior
@@ -8462,7 +8462,7 @@ entries:
   - id: AG-116
     date: "2026-08-20"
     file: "src/labels/triple_barrier.py (linhas 152-165, 1000: horizon_end_ms = t0 + cfg.time_stop_ms, incondicional mesmo sob resolution_id/dollar-bar)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md §3.1 cláusula 1, §4.3; audit/architecture_gaps_log.yaml::AG-031; PRD_V4_1.md §2.7 I2/§3.2 M1/§4.2"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §3.1 cláusula 1, §4.3; audit/architecture_gaps_log.yaml::AG-031; PRD_V4_1.md §2.7 I2/§3.2 M1/§4.2"
     found_by: "Manager, auditoria do desenho técnico de labels em ADR-001 vs. PLANO_MESTRE"
     gap: >
       ADR-001 (parecer, §3.1 cláusula 1, §4.3) recomenda `horizon_bars`
@@ -8656,7 +8656,7 @@ entries:
   - id: AG-118
     date: "2026-08-20"
     file: "PLANO_MESTRE_PRINCE2.md §15.12.4 (desenho completo)"
-    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19.md (recomendação #7/#5 das 9 decisões pendentes); PLANO_MESTRE_PRINCE2.md §15.11 (Decisões abertas item 7, AG-094); §15.12.1 (AG-114); src/analysis/m6_common_factor_hypothesis.py::StratumMetrics; src/analysis/m4_critical_windows.py::_asof_join_regime_onto_labels"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md (recomendação #7/#5 das 9 decisões pendentes); PLANO_MESTRE_PRINCE2.md §15.11 (Decisões abertas item 7, AG-094); §15.12.1 (AG-114); src/analysis/m6_common_factor_hypothesis.py::StratumMetrics; src/analysis/m4_critical_windows.py::_asof_join_regime_onto_labels"
     found_by: "Manager -- pergunta direta sobre como Alpha/Meta leem o regime mantendo Regime=gate, propondo P(stop|regime)/P(target|regime)/E[return|regime]/tail_loss|regime/holding_time|regime + métrica de remoção assimétrica de eventos bons/ruins"
     gap: >
       Nenhum framework existente respondia "dado um candidato vencedor
