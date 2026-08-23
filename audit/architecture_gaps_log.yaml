@@ -9080,6 +9080,63 @@ entries:
       separadas.
     status: "aberto -- achado real de verificação do ADR-001 completo, não bloqueia AG-118 (workaround já em produção), decisão de reconciliação pendente do Manager -- enquadramento corrigido 2026-08-20 (PRD é obsoleto, não conta mais como justificativa igual-a-ADR-001)"
 
+    addendum_redesign_workflow_2026-08-23: >
+      Manager aprovou migrar (opção A) -- via `redesign_workflow` (skill
+      `/engineering:system-design` pedida indisponível nesta sessão/conta,
+      usado o equivalente real deste repo). Fase 2 (exploração, 2 agentes
+      `feature-dev:code-explorer`) achou: (1) HMM (`predict_hmm_gaussian`)
+      é migração de baixo risco -- `obs` já é `[log_return_1,
+      realized_vol_short]`, troca só `fit.params.emissions.means[:,0]`
+      por `[:,1]`, mantém a garantia causal train-anchored já testada;
+      (2) Jump Model ordena hoje pelo response do FOLD DE TESTE (não do
+      treino, assimetria vs. HMM) -- decisão de âncora ainda aberta
+      (`obs_test_fold[:,1]`, simples mas mantém a assimetria, vs.
+      `fit.model.centers_[:,1]`, mais análogo ao HMM, não verificado em
+      profundidade); (3) BOCPD roda sobre `obs` 1D (só `log_return_1`,
+      nunca viu volatilidade) e o próprio ADR-001 §5 recomenda run-length
+      média pra ele, não volatilidade -- **decisão: BOCPD fica FORA desta
+      migração** (não é candidato canônico de produção desde `AG-114`,
+      call-site permanece intocado alimentando `log_return_1`); (4) busca
+      exaustiva de consumidores reais de `canonical_id` bruto -- ZERO
+      assume ordem semântica (todo consumidor real já trata `canonical_
+      id` como rótulo arbitrário, efeito colateral do próprio `AG-121`
+      já ter avisado o repo); (5) `identify_stress_state_by_volatility`
+      fica redundante pro HMM só SE o critério final for MÉDIA (mesma
+      estatística que ela já usa) -- ver próximo addendum; (6) M4/AG-114/
+      AG-118/AG-119 NÃO precisam ser re-rodados (métricas persistidas são
+      agregadas, invariantes a permutação de rótulo -- só a tabela de
+      quebra por bucket de `AG-118` fica semanticamente deslocada,
+      re-derivável sem re-fit a partir de `experiments/m4_raw_labels/` +
+      `m4_forward_vol_history/` já persistidos); (7) sem precedente de
+      sufixo `_v2` em `classifier_id` -- bump da string sinalizaria
+      "candidato novo, medir do zero" quando não é preciso; campo de
+      identidade separado (padrão `_WALKFORWARD_CALIBRATION_SCHEMA_
+      VERSION`) é a alavanca certa, pendurado no futuro `regime()`/
+      `manifest.json` do ADR-001 (action item 3, ainda não construído).
+
+    addendum_medicao_media_vs_desvio_2026-08-23: >
+      Fase 3 (pergunta de esclarecimento via `AskUserQuestion`) --
+      Manager pediu medição comparativa antes de travar MÉDIA vs.
+      DESVIO-PADRÃO. `tools/diagnostics/compare_canonicalization_
+      criterion_media_vs_desvio.py` escrito e rodado pelo usuário: junta
+      `canonical_id` já persistido (`experiments/m4_raw_labels/`) com
+      `realized_vol_short` (`experiments/m4_forward_vol_history/`) por
+      `close_time_ms`, sem re-fit. **Resultado, 205 células comparadas**:
+      concordância entre os 2 critérios (qual estado é "o mais volátil")
+      alta em todos os candidatos relevantes -- `hmm_gaussian_k2_v1`
+      98,0% (49/50), `hmm_gaussian_k3_v1` 97,9% (46/47),
+      `hmm_gaussian_k4_v1` (candidato canônico de produção) 90,9%
+      (40/44), `jump_model_cjm_v1` 100,0% (14/14); `bocpd_v1` 90,0%
+      (45/50, fora de escopo desta migração, medido por completude).
+      **Conclusão**: critério de baixo risco prático (>90% de
+      concordância no candidato que importa) -- MÉDIA recomendada
+      (consistente com `identify_stress_state_by_volatility`, já em
+      produção; torna a função redundante pro HMM sob este critério,
+      simplificação real). Decisão final de qual estatística travar
+      segue com o Manager (B20) -- medição entregue, não decidida aqui.
+      Dado completo: `experiments/canonicalization_criterion_media_vs_
+      desvio.json`.
+
   - id: AG-122
     date: "2026-08-20"
     file: "PLANO_MESTRE_PRINCE2.md §15.12.5 (AG-114, veredito de vencedor); audit/architecture_gaps_log.yaml::AG-118"
@@ -12019,6 +12076,39 @@ entries:
       (constante MEASURED + guarda de runtime) fechar de verdade --
       mesma condição já registrada no addendum anterior, agora mais
       urgente.
+
+    addendum_medicao_real_2026-08-23: >
+      Usuário rodou `tools/diagnostics/measure_max_consecutive_bar_
+      window_duration.py` -- 15/15 combinações, 0 skipped.
+      **Resultado contradiz a leitura anterior de "~5,8x sub-cobertura"**:
+      `worst_case_ratio_max_over_proxy = 0,472` -- em TODAS as 15
+      combinações, a duração real máxima de uma janela de 96 barras
+      consecutivas fica ABAIXO (não acima) do proxy usado hoje. Pior caso
+      real: SOLUSDT/R3, 283,44h reais vs. 600,16h de proxy (ratio 0,472).
+      Causa raiz da contradição, investigada: `label_prefetch_p99_bar_
+      duration_ms` é uma constante ÚNICA, definida como o MÁXIMO entre as
+      15 combinações símbolo×resolução (não um valor por-símbolo) -- o
+      achado original de "5,8x" comparava o máximo real de SOLUSDT/R3
+      contra o p99 LOCAL daquele mesmo símbolo/resolução (base menor,
+      específica), não contra a constante cross-symbol que `compute_max_
+      feature_lookback_ms` de fato usa em produção. A proteção real
+      (constante = pior caso global, não por símbolo) já embute a folga
+      que o achado original media como ausente.
+
+      **Consequência**: o proxy usado hoje É seguro na prática, com folga
+      real (~2,1x no pior caso) -- mas por CONSTRUÇÃO INCIDENTAL (a
+      constante feliz ser o máximo global), não por garantia estrutural
+      declarada. Se `max_feature_window_bars()` crescer no futuro (nova
+      feature com lookback > 96) ou a constante for redefinida como
+      por-símbolo, a folga pode encolher sem aviso. `structlog.warning`
+      (addendum anterior) permanece como visibilidade barata,
+      independente desta medição. Dado completo: `experiments/max_
+      consecutive_bar_window_duration.json`. Decisão de fechar esta
+      ressalva (aceitar a folga incidental como suficiente) ou
+      formalizar a garantia (registrar `label_prefetch_p99_bar_
+      duration_ms` explicitamente como "MEASURED, definição = máximo
+      cross-symbol, garantia de folga documentada") fica pro Manager --
+      não fechada automaticamente aqui (B20).
 
   - id: AG-160
     date: "2026-08-22"
