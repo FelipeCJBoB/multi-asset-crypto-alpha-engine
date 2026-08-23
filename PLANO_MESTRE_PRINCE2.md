@@ -4192,6 +4192,79 @@ arquivos tocados. Commit `d44c7f9`; governança nesta mesma rodada.
 
 ---
 
+### 15.21.4 D-04 (`AG-180`) fechado — piso de tempo real híbrido na histerese do Regime Engine (2026-08-23)
+
+**Origem:** decisão do Manager sobre os 2 cenários que a medição real de
+`AG-180` (§15.21.3) deixou em aberto — pedido explícito de recomendação
+técnica, seguido de autorização pra desenhar e aplicar.
+
+**A. Recomendação apresentada e autorizada — NÃO uma resposta única pras
+3 constantes.** `min_warmup_bars=200`, `regime_confirmation_bars=2` e
+`regime_stress_exit_confirmation_bars=4` protegem coisas diferentes, com
+proveniências diferentes (`constants.yaml`):
+
+- **`min_warmup_bars` — mantido em contagem de barra pura.** A fórmula
+  que o originou (`DERIVED`: `max` lookback fixo de qualquer feature T1/
+  T2 + convergência de suavização exponencial, ~3 meias-vidas além do
+  maior span EMA/Wilder ativo) é nativamente em unidade de BARRA — as
+  features que protege (C06, janela de 96 barras; A13, EMA de 48 barras)
+  operam em contagem de barra, não em tempo. Manter fixo é consistente
+  com o que está sendo protegido; o efeito colateral medido (mais tempo
+  real de warmup sob R2/R3 — mediana ~2×/~4× o equivalente de 15m,
+  §15.21.3) é o lado CONSERVADOR do erro, não o arriscado, dado o perfil
+  de risco do motor (capital pequeno, ainda validando infraestrutura).
+- **`regime_confirmation_bars`/`regime_stress_exit_confirmation_bars` —
+  migradas pra piso híbrido.** Proveniência `LITERATURE` (PRD §4.5,
+  "mudança de regime só é efetivada após 2 barras consecutivas"),
+  escrito num mundo só-15m — a intenção real por trás de "N barras
+  consecutivas" é confirmação de mercado por um intervalo real de
+  relógio, não N observações discretas independente de quanto tempo
+  isso leva sob dollar-bar. O dado medido (§15.21.3, p1 de
+  `min_warmup_bars`) já mostrava o risco concreto: mantendo só contagem
+  de barra, uma rajada de liquidez confirmaria a troca de regime em
+  minutos — exatamente no momento de MAIOR incerteza do mercado, o
+  oposto do que um filtro de ruído deveria fazer.
+
+**B. Implementação (commit `3c3ed14`).** `RegimeThresholds`
+(`src/regime/classifier.py`) ganhou 2 properties —
+`confirmation_min_real_ms`/`stress_exit_confirmation_min_real_ms`,
+`(N_barras - 1) * step_ms("15m")`. **Não** `N_barras * step_ms(...)`: N
+barras consecutivas cobrem exatamente `N-1` intervalos de `open_time` a
+`open_time`, não N — essa é a forma matematicamente exata que reduz a
+condição híbrida a BIT-EXATA sob `bar_source="time_15m"` (grade fixa de
+relógio: a barra que confirma por contagem pura sempre satisfaz a
+igualdade exata `open_time[confirma] - open_time[primeira_pendente] ==
+(N-1)*step_ms("15m")`). Consequência: `regime_confirmation_bars=2` →
+piso de 15min reais; `regime_stress_exit_confirmation_bars=4` → piso de
+45min reais (correção de precisão sobre a conversa que motivou a
+decisão, que citou "~30min"/"~1h" de cabeça — a conta exata usa `N-1`,
+não `N`). `_run_state_machine` ganhou parâmetro `open_time_ms`; a
+confirmação de troca de eixo (tendência/volatilidade/saída de stress)
+agora exige `pending >= N_barras` **E** `tempo_real_decorrido >=
+piso_ms` — o mais restritivo dos dois, nos 3 eixos. `min_warmup_bars`
+não foi alterado (segue índice puro, como já era).
+
+**C. Verificação.** 11 testes novos: bit-exatidão sob grade de 15m
+(regressão direta contra o comportamento antigo), burst de barras
+rápidas (confirmação atrasada pelo piso mesmo com contagem de barra já
+satisfeita), barras lentas (piso nunca atrasa além do que a contagem de
+barra já exigia — sem regressão de sensibilidade quando dollar-bar
+acontece ser mais devagar que 15m), equivalente pro eixo de saída de
+stress. `1741 passed, 0 failed` (suíte completa, confirmado
+independentemente pelo Manager). Confirmado que os 3 commits da sessão
+paralela ativa (`d0a0764`/`db62daf`/`aae6bbc`, "núcleo funcional, casca
+imperativa", §15.22 abaixo) não tocam `src/regime/classifier.py` nem seu
+teste — sem conflito.
+
+**D. `AG-180` fechado**, `resolved_by_commit: 3c3ed14`. Fecha o item 4
+dos 5 pontos que motivaram esta sequência de sessões (medir → desenhar →
+autorizar → aplicar). Restam represados pra próxima sessão: ressalva de
+magnitude do proxy p99 em `AG-159`, e §11 do design doc
+(`docs/regime_feature_engine_design_doc_2026-08-23.md`, caminho
+legado→HMM).
+
+---
+
 ### 15.22 Núcleo funcional, casca imperativa — princípio formalizado, 5 violações reais fechadas (2026-08-23)
 
 **Origem:** `docs/nucleo-casca.html` (documento externo trazido pelo

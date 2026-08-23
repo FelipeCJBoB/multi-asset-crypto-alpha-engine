@@ -12272,9 +12272,17 @@ entries:
       real" no sentido de tempo de mercado que a constante original
       pretendia, mesmo problema por trás de AG-030, agora confirmado
       numa peça diferente do Regime Engine.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão do Manager necessária, mesma disciplina de B23: não inventar conversão numérica não medida. docs/regime_feature_engine_design_doc_2026-08-23.md D-04 reconhece o gap e não o resolve (nem 'desabilitar' é neutro aqui, ao contrário de AG-030 -- confirmation_bars=0 muda semântica da histerese). Requer medição de equivalente nativo sob dollar-bar antes de qualquer correção."
+    resolved_by_commit: "3c3ed14"
+    resolution: >
+      Ver `addendum_decisao_e_implementacao_2026-08-23` abaixo pro
+      racional completo -- resumo: `min_warmup_bars` mantido em contagem
+      de barra pura (opção A); `regime_confirmation_bars`/
+      `regime_stress_exit_confirmation_bars` migrados pra piso híbrido
+      de tempo real (opção B), `RegimeThresholds.confirmation_min_
+      real_ms`/`stress_exit_confirmation_min_real_ms` em
+      `src/regime/classifier.py`, decisão do Manager sobre o achado
+      medido em `addendum_resultado_medido_2026-08-23`.
+    status: "fechado 2026-08-23 -- commit 3c3ed14 (decisão tomada e implementada; ver addendum_decisao_e_implementacao_2026-08-23 pro racional completo -- min_warmup_bars mantido, confirmation_bars/stress_exit_confirmation_bars migrados pra piso híbrido)"
 
     addendum_script_de_medicao_2026-08-23: >
       `tools/diagnostics/measure_regime_hysteresis_bar_window_duration.py`
@@ -12311,6 +12319,37 @@ entries:
       longo" descreve o comportamento real; depende de symbol/N/regime
       de liquidez). `AG-180` permanece formalmente `aberto` até essa
       decisão."
+
+    addendum_decisao_e_implementacao_2026-08-23: >
+      Decisão do Manager sobre os 2 cenários que a medição real deixou em
+      aberto -- confirmada e implementada, commit `3c3ed14`.
+      **`min_warmup_bars` mantido em contagem de barra pura** (opção A) --
+      a fórmula que o originou (`constants.yaml::min_warmup_bars`, `max`
+      lookback fixo de feature T1/T2 + convergência de suavização
+      exponencial) é nativamente em unidade de barra, as features que
+      protege (C06 janela de 96 barras, A13 EMA de 48 barras) operam em
+      contagem de barra, não em tempo -- manter fixo é consistente com o
+      que está sendo protegido, e o efeito colateral (mais tempo real de
+      warmup sob R2/R3) é o lado conservador do erro, não o arriscado.
+      **`regime_confirmation_bars`/`regime_stress_exit_confirmation_bars`
+      migrados pra piso híbrido** (opção B) -- `RegimeThresholds.
+      confirmation_min_real_ms`/`stress_exit_confirmation_min_real_ms`
+      (`src/regime/classifier.py`), `(N_barras-1) * step_ms("15m")` --
+      confirmação de troca de eixo agora exige `pending >= N_barras` E
+      `tempo_real_decorrido >= piso_ms`, o mais restritivo dos dois.
+      Racional: a proveniência dessas duas é `LITERATURE` (PRD §4.5,
+      escrito num mundo só-15m) -- a intenção real por trás de "N barras
+      consecutivas" é confirmação de mercado por N-1 intervalos de
+      relógio, não N observações discretas independente de quanto tempo
+      isso leva sob dollar-bar; sem o piso, uma rajada de liquidez
+      confirmaria em minutos, exatamente no momento de MAIOR incerteza --
+      o oposto do que um filtro de ruído deveria fazer. Sob
+      `bar_source="time_15m"` a condição híbrida reduz a bit-exata (grade
+      fixa: N barras sempre cobrem exatamente `(N-1)*step_ms` de
+      `open_time` a `open_time`) -- zero mudança de comportamento em
+      produção real hoje, confirmado por teste de regressão dedicado. 11
+      testes novos, `1741 passed, 0 failed` (suíte completa, confirmado
+      pelo Manager). `AG-180` fechado."
 
   - id: AG-181
     date: "2026-08-23"
