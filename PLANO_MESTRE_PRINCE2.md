@@ -4681,6 +4681,112 @@ só 3 itens já registrados que precisavam de correção/complemento:
 documentação) seguem exatamente como descrito acima — nenhuma mudança,
 todos precisam de decisão real do Manager, não de correção mecânica.
 
+### 15.26 Árvore de arquivos canônicos de produção, ponta a ponta (2026-08-23)
+
+Pedido do usuário — mapeamento por leitura de código real (`grep -rn "if
+__name__" src tools`), não por citação de doc, cruzado com a tabela de
+15 estágios (`§15.4`) e o achado de `docs/nucleo_casca_design_doc_
+2026-08-23.md`. **`docs/nucleo-casca.html` confirmado genérico** — único
+hit de qualquer termo do projeto é uma coincidência de nome
+(`triple_barrier.py` na árvore hipotética `core/`+`scripts/` do ensaio
+original de Gary Bernhardt) — é leitura de apoio, não spec deste repo
+(já dito em `CLAUDE.md`, confirmado aqui por varredura real).
+
+**Vocabulário** (`CLAUDE.md`, "Núcleo funcional, casca imperativa"):
+🟢 = tem runner de produção real (`if __name__ == "__main__":` que
+orquestra IO real, não script de análise pontual); 📚 = núcleo pronto
+(Idioma A/B), mas consumido só como biblioteca — sem CLI/runner próprio;
+⬜ = não existe (nem núcleo nem casca).
+
+```
+exchange ─┐
+data      │  01_BARRA          src/data/{resample,lake,download,bars,   🟢
+          │                    build_dollar_bars}.py -- build_dollar_
+          │                    bars.py::main é o runner canônico
+          │                    (--mode single_window|walkforward,
+          │                    AG-138); download.py/validate.py também
+          │                    têm runner próprio (ingestão/quality
+          │                    report)
+          │  02_DATA_CHECK     src/data/{checks,validate,schemas}.py    🟢 (validate.py::main)
+features  │  03_FEATURES       src/features/{build,support,groups/*}.py 📚 -- núcleo Idioma A
+          │                    pronto (compute_t1_features), SEM CLI
+          │                    própria -- consumido via
+          │                    models/dataset.py::build_modeling_frame
+          │  04_VOLATILIDADE   src/features/volatility.py               📚 -- ilha, só alimenta labels
+regime    │  05_REGIME         src/regime/{build,classifier,build_hmm,  📚 -- build_hmm.py é builder de
+          │                    stress}.py                               produção real (causal), SEM CLI
+          │                    própria; classificador baseline
+          │                    consumido via environments.py→
+          │                    monotonic.py→alpha.py; candidato HMM
+          │                    sem consumidor real (gate desligado,
+          │                    AG-114/118)
+labels    │  06_BARREIRAS      (não existe separado -- dentro de        ⬜ (represado pós-Data-Layer-100%)
+          │                    labels/, decisão já confirmada)
+          │  07_LABEL          src/labels/{triple_barrier,fill_model,   🟢 (backfill_multi_symbol.py::main)
+          │                    backfill_multi_symbol}.py
+          │  07b_PESOS         src/labels/weights.py                    📚
+models    │  08_SPLIT          src/validation/cpcv.py                   🟢 (wired em pipeline.py, sem CLI
+          │                                                             própria -- roda dentro do runner
+          │                                                             do Learner)
+          │  09_LEARNER        src/models/{pipeline,alpha,monotonic,    🟢 (pipeline.py::run_layer1_sprint)
+          │                    persistence}.py                          -- persistence.py pronto/testado,
+          │                                                             NÃO integrado (AG-141)
+          │  09b_CALIBRAÇÃO    inline em alpha.py -- não separável hoje ⬜ (sem gate de amostra pequena)
+validation│  10_VALIDAÇÃO      src/validation/{dsr,leakage}.py           🟢 (leakage.py::main, 14 testes) --
+          │                                                             maduro, mas NÃO é gate de nada
+          │  11_META_MODEL     não existe -- desenho travado v3         ⬜ (§15.19, ZERO implementado)
+          │  11b_DECISION_     não existe                               ⬜ (§11.6, AG-143 -- decisão do
+          │  ENGINE                                                     Manager necessária antes do 1º
+          │                                                             commit)
+backtest  │  --                src/backtest/fill_reconciliation.py      🟢
+          │                    src/execution/fill_simulator.py          🟢 (simulação, não live)
+risk      │  12_RISK_ENGINE    src/risk/{sizing,limits,kill_switch}.py  ⬜ ZERO caller de produção -- funções
+          │                                                             puras testadas, nada as invoca;
+          │                                                             gate de regime desligado de
+          │                                                             evaluate_all() (AG-114/118)
+execution │  13_EXECUÇÃO       src/exchange/adapter.py                  ⬜ place_order = NotImplementedError
+live      │  --                src/live/                                ⬜ vazio (docstring só, 3 linhas)
+monitor.  │  14_MONITORAMENTO  src/monitoring/{logging,dollar_bar_      ⬜ dollar_bar_drift.py real/testado
+          │                    drift}.py                                (315 linhas, 16 testes), SEM caller
+          │                                                             de produção; logging.py "1 função
+          │                                                             nunca chamada"
+feedback  │  15_FEEDBACK_      src/models/decomposition.py              🟢 -- só sobre trade SIMULADO de
+          │  POST_TRADE                                                 backtest, versão live gated por 13
+```
+
+**Leitura honesta do estado real** (achado do mapeamento, não só uma
+listagem): runners de produção que de fato orquestram IO real existem
+ponta a ponta só até `models`/`validation`/`backtest` (estágios 01-10,
+mais 15 no modo simulado) — **a partir de `12_RISK_ENGINE` em diante
+(Risk/Execução/Live, metade do Monitoramento), não existe NENHUM caller
+de produção**, confirmado por `grep` direto (zero `__main__`/`argparse`/
+`def main(` nesses módulos). `features`/`regime` (03/04/05), apesar de
+terem núcleo pronto e testado (Idioma A, `build_hmm.py` causal), também
+não têm CLI própria — rodam só como biblioteca dentro de
+`models/dataset.py::build_modeling_frame` (o próprio `CLAUDE.md`, seção
+"Comandos", já registra isso: "Feature/Regime Engine não persistem
+artefato em lote... recomputados on-the-fly").
+
+**2 execuções reais de produção fora de `src/` (não confundir com os
+~40 scripts de diagnóstico read-only de `tools/diagnostics/`, todos
+"leitura-only sobre amostra/tempdir", nunca escrevem em produção):**
+`tools/diagnostics/run_ag124_production_reprocessing.py` (reprocessa
+`data/capacity/dollar_bars_r{1,2,3}/` completo) e
+`tools/diagnostics/run_ag100_labels_r2_r3_backfill.py` (backfill real de
+labels R2/R3) — nomeados `run_*`, não `measure_*`/`compare_*`, de
+propósito.
+
+**5 violações núcleo/casca já catalogadas** (`docs/nucleo_casca_
+design_doc_2026-08-23.md`, não duplicadas aqui) — mais grave:
+`triple_barrier.py::build_labels_with_stats` mistura IO (`load_filters_
+asof`) dentro do loop de barreira, sem ponto de injeção; padrão de
+correção sancionado (D-03) reusa o par `compute_sizing`/
+`compute_sizing_asof` de `src/risk/sizing.py` como referência — desenho
+feito, zero linha implementada.
+
+Detalhe completo por arquivo/camada: `docs/nucleo_casca_design_doc_
+2026-08-23.md`; tabela de status por estágio: `§15.4`.
+
 ---
 
 ## Fontes desta pesquisa
@@ -4699,6 +4805,16 @@ todos precisam de decisão real do Manager, não de correção mecânica.
 
 ## Changelog
 
+- **v3.38 (2026-08-23)** — Nova seção `§15.26`, árvore de arquivos
+  canônicos de produção ponta a ponta (pedido do usuário) — mapeamento
+  por leitura de código real (`grep "if __name__"`), cruzado com `§15.4`
+  e `docs/nucleo_casca_design_doc_2026-08-23.md`. Confirma
+  `docs/nucleo-casca.html` como leitura de apoio genérica (Gary
+  Bernhardt), não spec deste repo. Achado central: runners de produção
+  reais existem ponta a ponta só até `models`/`validation`/`backtest`
+  (01-10, +15 em modo simulado) — a partir de `12_RISK_ENGINE` em
+  diante, zero caller de produção; `features`/`regime` (03/04/05) têm
+  núcleo pronto mas rodam só como biblioteca, sem CLI própria.
 - **v3.37 (2026-08-23)** — **Varredura de achados médio/baixo do gate
   "Data Layer 100%", 3 correções mecânicas.** Detalhe: `§15.25`.
   `AG-134` ganhou teste de caracterização (risco de troca de significado

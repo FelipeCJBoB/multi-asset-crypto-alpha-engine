@@ -11927,6 +11927,47 @@ entries:
       sub-protegido silenciosamente) só é mitigado quando essa ressalva
       fechar, não antes.
 
+    addendum_decisao_exclusao_expanding_2026-08-23: >
+      Manager decidiu `08_SPLIT`/`AG-032` item pendente (as 3 features
+      `expanding` SAEM do conjunto ativo `T1_FEATURE_IDS`) --
+      implementação em andamento nesta mesma sessão. **Consequência
+      direta pra esta entrada**: o gate que mascarava este risco
+      (`assert_no_expanding_lookback_in_active_set` levantando
+      incondicionalmente enquanto as 3 features expanding estavam
+      ativas) deixa de bloquear o caminho -- `compute_max_feature_
+      lookback_ms` passa a EXECUTAR de verdade sob `resolution_id`
+      (R2/R3), usando o proxy `label_prefetch_p99_bar_duration_ms` cuja
+      magnitude segue não-validada pra purge (ressalva 3/4 acima). **Isto
+      NÃO é mais um risco dormente/preparação futura -- é pré-requisito
+      real antes do primeiro treino sob R2/R3 com purge ativo.**
+      Severidade reavaliada de "média" pra "alta" na prática (o texto do
+      campo `severity` acima não foi reescrito -- ledger não edita
+      campos fechados retroativamente sem necessidade; a reavaliação
+      fica registrada aqui).
+
+      Ação tomada: `tools/diagnostics/measure_max_consecutive_bar_
+      window_duration.py` escrito (novo) -- mede, sobre os parquets JÁ
+      PERSISTIDOS (`data/capacity/dollar_bars_r{1,2,3}/`), a duração
+      REAL máxima de qualquer janela de `max_feature_window_bars()`
+      (hoje 96) barras consecutivas, por símbolo × resolução -- responde
+      a ressalva 3 (medição do máximo real) sem coletar dado novo (B23).
+      Reporta também o ratio contra o proxy usado hoje, generalizando a
+      medição pontual de SOLUSDT/R3 (~5,8x, achado do `project_
+      assurance`) pras 15 combinações reais. Não escreve em
+      `constants.yaml` nem altera `compute_max_feature_lookback_ms`
+      sozinho (B20) -- decisão de como registrar a constante MEASURED e
+      como a guarda de runtime (ressalva 4) usa esse número fica pro
+      Manager revisar depois de rodar. Comando (Claude não executa,
+      protocolo de execução):
+      `uv run python tools/diagnostics/measure_max_consecutive_bar_
+      window_duration.py`. Verificado: `ruff check`/`mypy`/
+      `banned_patterns.py --strict` limpos.
+
+      **Não fechar esta entrada** até a ressalva de magnitude
+      (constante MEASURED + guarda de runtime) fechar de verdade --
+      mesma condição já registrada no addendum anterior, agora mais
+      urgente.
+
   - id: AG-160
     date: "2026-08-22"
     file: "src/models/pipeline.py:101-104,321,756 (report_path default)"

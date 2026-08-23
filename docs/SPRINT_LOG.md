@@ -3705,6 +3705,30 @@ estavam, todos precisando de decisão real do Manager. Detalhe:
 AG-134`/`AG-136`/`AG-120`.
 
 <!-- check-sprint-log: skip -->
+**Decisões sobre os 4 achados do sweep + árvore canônica de produção
+(2026-08-23)** — usuário decidiu: (1) as 3 features `expanding` SAEM de
+`T1_FEATURE_IDS` (implementação em andamento); (2) consequência
+registrada em `AG-159` — o gate que mascarava a ressalva de magnitude do
+proxy p99 deixa de bloquear, risco vira real antes do 1º treino sob
+R2/R3; `tools/diagnostics/measure_max_consecutive_bar_window_duration.py`
+escrito pra medir o máximo real sobre parquets já persistidos (B23, sem
+coleta nova); (3) migração de `canonicalize_states` (retorno→
+volatilidade, `AG-121`) aprovada via `redesign_workflow` (skill
+`/engineering:system-design` pedida pelo usuário não está disponível
+nesta sessão/conta — usado o equivalente real deste repo) — Fase 2
+(exploração) revelou 2 sub-decisões genuínas não previstas
+originalmente (estatística MÉDIA vs. DESVIO-PADRÃO; BOCPD recomendado
+pelo próprio ADR-001 a usar run-length média, não volatilidade — critério
+não é uniforme entre os 3 candidatos), Fase 3 (perguntas) em andamento;
+(4) varredura+limpeza real do `PLANO_MESTRE` (não só anotação
+`[DESATUALIZADO]`) desenhada, aguardando confirmação pra executar. Nova
+seção `§15.26` (árvore de arquivos canônicos de produção ponta a ponta) —
+achado central: runners reais só até `models`/`validation`/`backtest`,
+zero caller de produção a partir de `12_RISK_ENGINE`. Detalhe:
+`PLANO_MESTRE_PRINCE2.md §15.26`, `audit/architecture_gaps_log.yaml::
+AG-159` addendum.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
