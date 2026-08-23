@@ -4134,15 +4134,20 @@ entries:
       código que resolve o problema de verdade em vez de codificar uma
       suposição de design revertível. Nenhum arquivo de código alterado
       nesta investigação.
-    status: "parcialmente fechado -- F3 (classificação pura) implementado:
-      A13 mantido `clock` com justificativa reescrita como decisão
-      deliberada; B01 reavaliado separadamente e RECLASSIFICADO pra
-      `bar_count`. Auditoria de código (support.py/group_e.py/_sources.py)
+    status: "parcialmente fechado -- F3 (classificação pura, 2026-08-16) E
+      aplicação em código da conversão de A13 (2026-08-23, ver addendum
+      abaixo) implementados. A13 mantido `clock`, justificativa
+      reconfirmada por pesquisa de literatura (addendum 2026-08-23), não
+      revertida; B01 RECLASSIFICADO pra `bar_count` (2026-08-16).
+      `atr_window`/`atr_window_ms` confirmados como separação deliberada
+      correta, não gap (addendum 2026-08-23). Auditoria de código
+      (support.py `sqrt(window)`/Yang-Zhang overnight/asof-lag OI-funding)
       avaliada 2026-08-16 e DEFERIDA deliberadamente -- mesma razão
       estrutural de AG-042(2/3), ver `resolution` acima. Não vira código
       até Bloqueador 1 (AG-031) + Bloqueador 2 (AG-042 itens 2/3) serem
       resolvidos e a distribuição real de duração de dollar bar ser
-      medida (docs/refactor_dollar_bar_canonico.md §8, item 2)."
+      medida (docs/refactor_dollar_bar_canonico.md §8, item 2) -- isso
+      continua em aberto, o addendum de 2026-08-23 NÃO o resolve."
     addendum_2026_08_16_min_common_history_bars: >
       4º ponto achado (revisão independente `project_assurance` sobre
       `src/data/build_dollar_bars.py`/`src/features/build.py::
@@ -4163,6 +4168,79 @@ entries:
       formalmente no guarda-chuva desta entrada, ou virar entrada própria,
       é do Manager, não fechada aqui. Não bloqueia o runner de validação
       (que já se declara "teste de fiação, não de validade estatística").
+    addendum_2026_08_23_aplicacao_em_codigo_de_a13: >
+      Achado no contexto de `/feature-dev` sobre arquitetura de
+      `src/features/`/`src/labels/triple_barrier.py` (sessão 2026-08-23,
+      hipótese: "Feature Engine preso ao motor antigo BTC-only/15m-only").
+      Investigação confirmou: a "peça (1), F3" (classificação de tag,
+      2026-08-16, ver `resolution` acima) ficou só em `constants.yaml` --
+      `FeatureWindows.from_constants()`/`build_t1_features` NUNCA leram a
+      tag `scaling_invariant` nem aplicaram nenhuma conversão pra
+      `feature_a13_ema_window` (o único campo `clock`). Sob
+      `bar_source="dollar_r2"/"dollar_r3"` (já wireados em produção pelo
+      D-02 desta mesma semana, `AG-159`), `ema_window` continuava
+      hardcoded em 48 -- exatamente o risco que a classificação `clock`
+      existe pra evitar, sem rede de proteção em código.
+
+      Duas propostas de arquitetura completas foram descartadas antes de
+      implementar (Proposta A: espelhar `LabelConfig`, nova constante
+      MEASURED de duração p50 por símbolo×resolução -- rejeitada por se
+      aproximar do mecanismo F2 já rejeitado nesta mesma entrada, "reintroduz
+      a não-estacionariedade do Bloqueador 2 dentro da própria feature";
+      Proposta B: mesma ideia, mas usando `CALIBRATION_TF_BY_RESOLUTION`
+      como referência FIXA -- aceita em princípio, mas ambas assumiam que
+      A13 deveria ser RECLASSIFICADO pra `bar_count`, sem reler a
+      justificativa específica já registrada nesta entrada). Releitura
+      completa desta entrada + pesquisa de literatura (López de Prado 2018;
+      Grądzki/Wójcik/Lessmann, *Financial Innovation* 2025, "Algorithmic
+      crypto trading using information-driven bars, triple barrier labeling
+      and deep learning" -- mesmo desenho deste repo: cripto, dollar/volume
+      bars, triple-barrier) corrigiu o rumo: a literatura confirma que
+      indicadores técnicos GENÉRICOS sobre barras de informação devem ficar
+      `bar_count` (mesma leitura já usada aqui pra RSI/B07/vol_ratio/C07/
+      D06f/E10f) -- mas A13 NÃO é genérico, é deliberadamente ancorado ao
+      horizonte real do label (`time_stop_ms`), a MESMA distinção que esta
+      entrada já tinha feito ao separar A13 de B01 em 2026-08-16. Reverteu
+      a leitura errada, não a decisão original.
+
+      **Implementado** (`src/features/build.py`, commit `6a0fa08`):
+      `_clock_reference_bar_duration_ms(bar_source)` +
+      `_scale_clock_window_bars(window_bars_at_15m, bar_duration_ms)` --
+      usa `CALIBRATION_TF_BY_RESOLUTION` (`src.data.build_dollar_bars`,
+      alvo FIXO de calibração), NUNCA duração medida (evita reabrir F2).
+      `FeatureWindows.from_constants(*, bar_source="time_15m")` escala só
+      `ema_window` (prova por teste que os outros 9 campos ficam
+      bit-idênticos sob qualquer `bar_source`). Sob R1/R2/R3: 48/24/12
+      barras (a fórmula "96@15m->48@30m->24@1h" já escrita nesta entrada
+      desde 2026-08-16, generalizada -- valor real de A13 é 48, não 96).
+      `bar_source="time_15m"` (default, todo caller de produção hoje)
+      preserva `ema_window=48` bit-exato -- zero mudança de comportamento
+      onde já se treina.
+
+      **`atr_window`/`atr_window_ms` (E27f_cost_atr_ratio vs. ATR do
+      label) -- achado irmão da mesma investigação, NÃO um bug:** a mesma
+      pesquisa de literatura confirma que a separação deliberada já feita
+      por `AG-031`/F1 (feature = bar-count/estável; label = clock/
+      restrição econômica real) é a leitura correta, não um gap de
+      reconciliação -- decisão de NÃO tocar `E27f`/`atr_window`, só
+      documentar a justificativa com a citação (`constants.yaml::
+      atr_window`/`atr_window_ms`, comentários novos).
+
+      **Doc-drift ortogonal corrigido na mesma leva** (achado durante a
+      mesma investigação, não relacionado a `scaling_invariant`):
+      `src/features/registry.yaml::min_warmup_bars` dizia `2000` (herdado
+      do PRD) nas 13 entradas -- campo puramente documental (nunca lido em
+      runtime, `registry.py`), valor real é `200` desde `AG-027`
+      (2026-08-15). Corrigido pras 13 entradas + teste de guarda novo
+      (`test_registry_min_warmup_bars_bate_com_constants_yaml`) pra não
+      repetir.
+
+      **O que continua deferido** (peça 2 original desta entrada,
+      inalterada por este achado): `sqrt(window)` de `realized_vol`, gap
+      overnight do Yang-Zhang, defasagem do asof-join OI/funding --
+      nenhum dos 3 foi tocado, seguem bloqueados pelas mesmas 3 pré-
+      condições já registradas em `resolution` acima (distribuição real de
+      duração de dollar bar ainda não medida).
 
   - id: AG-044
     date: "2026-08-16"

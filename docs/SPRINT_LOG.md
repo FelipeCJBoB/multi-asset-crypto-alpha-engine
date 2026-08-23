@@ -3539,6 +3539,44 @@ por Agent dedicado, não exaustiva — `## Layer hierarchy` (falta menção a
 em `AG-155`) ficam como pendência de menor severidade. Detalhe:
 `audit/architecture_gaps_log.yaml::AG-190`.
 
+**`feature_a13_ema_window` — conversão clock↔bar-count aplicada em
+código, achados irmãos confirmados por pesquisa de literatura
+(2026-08-23, `AG-043` addendum).** Continuação da mesma sessão de
+`/feature-dev`: a hipótese sobre `src/features/` estar "presa ao motor
+antigo" foi confirmada nesse ponto específico — `AG-043` (2026-08-16) já
+classificava `feature_a13_ema_window` como `scaling_invariant: clock` (a
+única das 8 janelas), mas nenhum código lia essa tag. Duas propostas de
+arquitetura completas foram descartadas antes de implementar: ambas
+propunham RECLASSIFICAR A13 pra `bar_count`, apoiadas em pesquisa de <!-- check-sprint-log: skip -->
+literatura real (López de Prado 2018; Grądzki/Wójcik/Lessmann, *Financial <!-- check-sprint-log: skip -->
+Innovation* 2025 — cripto + dollar/volume bars + triple-barrier, mesmo <!-- check-sprint-log: skip -->
+desenho deste repo) que confirma que indicadores técnicos genéricos sobre
+barras de informação devem ficar `bar_count`. Releitura completa de
+`AG-043` (a pedido do Manager, "aprofunde definitivamente" antes de <!-- check-sprint-log: skip -->
+implementar) revelou que essa conclusão contradizia uma decisão já
+tomada e já justificada especificamente pra A13: seu span é
+deliberadamente ancorado ao horizonte REAL do label (`time_stop_ms`), não
+é um indicador genérico — a literatura confirma a REGRA (as outras 7
+janelas), não a exceção. Implementado (`src/features/build.py`):
+`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`, usando
+`CALIBRATION_TF_BY_RESOLUTION` (alvo fixo de calibração) como referência
+— nunca uma duração medida (evita reabrir o mecanismo F2, já rejeitado em
+`AG-043`). Sob R1/R2/R3: 48/24/12 barras; sob `time_15m` (produção real
+hoje): 48, bit-exato. `E27f_cost_atr_ratio`/`atr_window` confirmados
+como separação deliberada correta (não gap) pela mesma pesquisa — não
+tocados. Doc-drift ortogonal corrigido na mesma leva:
+`registry.yaml::min_warmup_bars` (2000→200, 13 entradas, valor real
+desde `AG-027`) + teste de guarda novo. 9 testes novos.
+`ruff`/`mypy`/`banned_patterns`/`check_constants_referenced`/
+`check_unguarded_ratios`/`check_constants_provenance` limpos —
+achados pré-existentes (4 mypy, 39 banned_patterns em fixtures
+sintéticas) cross-checados via `git stash`, mesma contagem antes/depois.
+Pendente, não resolvido aqui: `sqrt(window)` de `realized_vol`, gap
+overnight do Yang-Zhang, defasagem do asof-join OI/funding (peça 2
+original de `AG-043`) — mesmas 3 pré-condições, nenhuma resolvida.
+Detalhe: `PLANO_MESTRE_PRINCE2.md §15.23`,
+`audit/architecture_gaps_log.yaml::AG-043`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3577,4 +3615,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1+2 parcial implementados, commit `72e02c7`. **D-01/D-02 implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23); revisão `project_assurance` corrigiu 1 achado real pré-commit (`AG-183`) + 2 menores (`AG-181`/`AG-182`). **`AG-174`/`AG-175`/`AG-176` fechados, commit `d44c7f9`** — `validate_resampled_bars` reescrita (schemas `BARS_15M`/`30M`/`1H` novos, reusa `validate_klines_like`); guarda `check_resolution_id_guard_parity.py` nova (opção B, duplicação mantida). **`AG-180` FECHADO, commit `3c3ed14`** — D-04 aplicado: `min_warmup_bars` mantido em contagem de barra (fórmula nativa em barra), `regime_confirmation_bars`/`regime_stress_exit_confirmation_bars` migradas pra piso híbrido (contagem de barra E tempo real mínimo, `(N-1)*step_ms("15m")`, bit-exato sob 15m). `1741 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`/`§15.21.3`/`§15.21.4`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente: `AG-179` (fora de escopo por desenho), ressalva de magnitude de `AG-159`, §11 do design doc (caminho HMM) — represados pro Manager |
 | **Núcleo funcional, casca imperativa** | Princípio formalizado (`CLAUDE.md`), 5 violações reais + 1 achado extra (HIGH, `project_assurance`) fechados. `triple_barrier.py`/`fill_simulator.py` (ponto de injeção `filters_by_date`/`tick_size_by_date`), `faixa1_5_prerequisites.py` (`hhi_df`), `attribution.py` (split `_load_payloads`/`_aggregate_payloads`), `pipeline.py`+`hhi.py`+`baselines.py` (`gate3_4_passes`/`gate3_4_max_share_passes`/`b1_sample_size`). `1734 passed` + `7 passed` de integração. Pendente: teste sintético completo pra `compute_fase2_e1` (18 células) — arquitetura fechada, cobertura parcial, registrado como pendência explícita. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.22`, `docs/nucleo_casca_design_doc_2026-08-23.md`, `AG-184`–`AG-189` |
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |
+| **`feature_a13_ema_window` — clock↔bar-count em código** | `AG-043` addendum, `§15.23`. Único campo `scaling_invariant: clock` do Feature Engine ganhou implementação real (`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`, `src/features/build.py`) — 48/24/12 barras sob R1/R2/R3, bit-exato sob `time_15m`. Correção de rumo registrada: 2 propostas de reclassificar A13 pra `bar_count` (apoiadas em literatura real) descartadas após releitura de `AG-043` mostrar que a exceção já era deliberada e justificada. `E27f_cost_atr_ratio`/`atr_window` confirmados como separação correta, não gap. Doc-drift `registry.yaml::min_warmup_bars` (2000→200) corrigido junto. 9 testes novos, mecânicos limpos |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |

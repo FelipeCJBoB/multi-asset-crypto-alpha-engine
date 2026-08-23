@@ -4399,6 +4399,77 @@ trabalho.
 
 ---
 
+### 15.23 `feature_a13_ema_window` — conversão clock↔bar-count aplicada em código, achados irmãos confirmados por pesquisa de literatura (2026-08-23)
+
+**A. Origem.** `/feature-dev` sobre a arquitetura de `src/features/`/
+`src/labels/triple_barrier.py` (hipótese do Manager: "Feature Engine
+preso ao motor antigo BTC-only/15m-only, impacta Alpha/Meta-model
+diretamente"). Exploração confirmou a hipótese SÓ parcialmente:
+`triple_barrier.py` já estava bem desenhado (4 correções documentadas,
+`AG-005`/`AG-031`/`AG-042`/`AG-116`); o gap real estava em
+`src/features/` — `AG-043` (2026-08-16) já tinha classificado
+`feature_a13_ema_window` como `scaling_invariant: clock` (a única das 8
+janelas), mas NENHUM código lia essa tag nem aplicava conversão.
+
+**B. Correção de rumo, não escondida.** As duas primeiras propostas de
+arquitetura (espelhar `LabelConfig` da `triple_barrier.py`, ou uma
+versão minimalista equivalente) assumiam, sem reler `AG-043` a fundo,
+que A13 deveria ser RECLASSIFICADO pra `bar_count` — baseado em pesquisa
+de literatura mostrando que indicadores técnicos genéricos sobre barras
+de informação (dollar/volume bars) devem manter contagem de barra fixa
+(López de Prado 2018; Grądzki/Wójcik/Lessmann, *Financial Innovation*
+2025, mesmo desenho deste repo: cripto + dollar/volume bars +
+triple-barrier). Releitura completa de `AG-043` revelou que essa
+conclusão contradizia uma decisão JÁ TOMADA e JÁ JUSTIFICADA
+especificamente pra A13 (2026-08-15/16): seu span é deliberadamente
+ancorado ao horizonte REAL do label (`time_stop_ms`), não é um
+indicador técnico genérico — a mesma distinção que já separou A13 de
+B01 (reclassificado `bar_count`) na sessão original. A literatura
+confirma a REGRA (7 das 8 janelas ficam `bar_count`), não a exceção —
+A13 continua `clock`, só ganhou implementação.
+
+**C. Implementado** (`src/features/build.py`):
+`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars` escalam só
+`ema_window`, usando `CALIBRATION_TF_BY_RESOLUTION`
+(`src.data.build_dollar_bars`, alvo FIXO de calibração) como referência
+— nunca uma duração medida (evitaria reabrir o mecanismo F2, já
+rejeitado em `AG-043`, "reintroduz a não-estacionariedade do Bloqueador
+2 dentro da própria feature"). Sob R1/R2/R3: 48/24/12 barras; sob
+`bar_source="time_15m"` (todo caller de produção hoje): 48, bit-exato.
+9 testes novos provam que as outras 9 janelas de `FeatureWindows` ficam
+intocadas sob qualquer `bar_source`.
+
+**D. Achado irmão, confirmado como correto e não um bug:**
+`E27f_cost_atr_ratio` (feature, `atr_window` bar-count) segue
+deliberadamente separado do ATR que dimensiona TP/SL no label
+(`atr_window_ms`, clock — `AG-031`). A mesma pesquisa de literatura
+confirma esta separação (feature = estimador estatístico estável; label
+= restrição econômica real de tempo) — decisão de NÃO reconciliar,
+documentada com citação em `constants.yaml`.
+
+**E. Doc-drift ortogonal, corrigido na mesma leva:**
+`src/features/registry.yaml::min_warmup_bars` dizia `2000` (herdado do
+PRD, nunca lido em runtime) nas 13 entradas — valor real é `200` desde
+`AG-027` (2026-08-15). Corrigido + teste de guarda novo.
+
+**F. Verificação.** `ruff`/`mypy`/`banned_patterns.py`/`check_constants_
+referenced.py`/`check_unguarded_ratios.py`/`check_constants_
+provenance.py` limpos nos arquivos tocados — achados pré-existentes
+cross-checados via `git stash` e confirmados não-introduzidos (4 erros
+de mypy pré-existentes em `test_features_build.py`, 39 violações
+`banned_patterns` pré-existentes em fixtures sintéticas — mesma contagem
+antes/depois).
+
+**G. Pendências explícitas, não resolvidas aqui.** `support.py`'s
+`sqrt(window)` de `realized_vol`, gap overnight do Yang-Zhang, defasagem
+do asof-join OI/funding (peça 2 original de `AG-043`) seguem deferidos —
+bloqueados pelas mesmas 3 pré-condições já registradas (distribuição
+real de duração de dollar bar ainda não medida). Detalhe completo:
+`audit/architecture_gaps_log.yaml::AG-043` (addendum
+`addendum_2026_08_23_aplicacao_em_codigo_de_a13`), `docs/SPRINT_LOG.md`.
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -4415,6 +4486,22 @@ trabalho.
 
 ## Changelog
 
+- **v3.33 (2026-08-23)** — **`feature_a13_ema_window` — conversão
+  clock↔bar-count aplicada em código, achados irmãos confirmados por
+  pesquisa de literatura.** Detalhe: `§15.23`. `AG-043` (2026-08-16) já
+  classificava A13 como `scaling_invariant: clock`, mas nenhum código
+  aplicava a conversão — `src/features/build.py` ganhou
+  `_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`
+  (48/24/12 barras sob R1/R2/R3, bit-exato sob `time_15m`). Correção de
+  rumo registrada: duas propostas de arquitetura iniciais propunham
+  RECLASSIFICAR A13 pra `bar_count` com base em pesquisa de literatura
+  (López de Prado 2018; Grądzki/Wójcik/Lessmann 2025) — releitura de
+  `AG-043` mostrou que isso contradizia uma decisão já tomada e
+  justificada (A13 ancorado ao horizonte real do label, diferente de
+  RSI/B07/vol_ratio/C07/D06f/E10f). `E27f_cost_atr_ratio`/`atr_window`
+  confirmados como separação deliberada correta (não gap) pela mesma
+  pesquisa. Doc-drift `registry.yaml::min_warmup_bars` (2000→200, 13
+  entradas) corrigido na mesma leva. 9 testes novos.
 - **v3.32 (2026-08-23)** — **Núcleo funcional, casca imperativa —
   princípio formalizado (`CLAUDE.md`), 5 violações reais fechadas + 1
   achado HIGH extra do `project_assurance`.** Detalhe: `§15.22`. Achado
