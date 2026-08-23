@@ -823,13 +823,17 @@ def run_b4_feature_shuffle(
                 continue
             X = build_design_matrix(test_side)
             y = (test_side["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
-            p_real = model.predict_proba(X)[:, 1]
+            # `np.asarray(...)` explícito -- stubs do LightGBM tipam
+            # `predict_proba` como `list` (imprecisão da biblioteca), quebra
+            # mypy --strict no fancy-indexing `[:, 1]`. Sem mudança de valor
+            # em runtime (já era ndarray).
+            p_real = np.asarray(model.predict_proba(X))[:, 1]
 
             X_perm = X.copy()
             for j in range(n_t1):
                 perm_idx = rng.permutation(X_perm.shape[0])
                 X_perm[:, j] = X_perm[perm_idx, j]
-            p_perm = model.predict_proba(X_perm)[:, 1]
+            p_perm = np.asarray(model.predict_proba(X_perm))[:, 1]
 
             y_acc.append(y)
             sreal_acc.append(p_real)

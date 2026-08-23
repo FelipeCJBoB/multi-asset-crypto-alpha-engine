@@ -719,7 +719,7 @@ def run_e02f_short_unforced_variant(
     splits = cpcv_result.splits
     fold_to_path = f15.fold_to_path_map(splits)
 
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     seed = int(load_constant("alpha_random_seed"))
     unforce = {_E02F_FEATURE: frozenset({-1})}
 
@@ -732,6 +732,7 @@ def run_e02f_short_unforced_variant(
         splits,
         variant=alpha.VARIANT_CAMADA1,
         model_id=VARIANT_MODEL_ID_E02F_SHORT_UNFORCED,
+        symbol=symbol,
         hyper=hyper,
         seed=seed,
         unforce_features_by_side=unforce,

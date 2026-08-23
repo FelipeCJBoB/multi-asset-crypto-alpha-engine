@@ -9,7 +9,7 @@ dependencies = [
     "polars>=1.9",
     "duckdb>=1.1",
     "pyarrow>=17.0",
-    "xgboost>=2.1",
+    "lightgbm>=4.5",
     "scikit-learn>=1.5",
     "optuna>=4.0",
     "structlog>=24.4",
@@ -127,7 +127,7 @@ exclude = ["^data/", "^\\.venv/"]
 # usam as 3, nenhuma publica stubs. "pandas" entra pelo mesmo smoke test
 # (jumpmodels espera pandas.DataFrame na fronteira, B26 -- interop de borda).
 module = [
-    "xgboost.*",
+    "lightgbm.*",
     "optuna.*",
     "duckdb.*",
     "yaml",

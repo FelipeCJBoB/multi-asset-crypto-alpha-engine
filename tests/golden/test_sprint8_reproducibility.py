@@ -2,11 +2,11 @@
 de engenharia pós-Sprint 8).
 
 **Achado que motivou isto**: uma investigação retreinou a Camada 1 do
-Alpha assumindo que XGBoost com `random_state` fixo reproduziria os
+Alpha assumindo que o learner com `random_state` fixo reproduziria os
 números do Sprint 8 original — sem nunca conferir isso linha a linha
 contra o `hhi.mean_hhi` já persistido em `experiments/alpha_layer1_report.json`.
 A suposição estava certa, mas era uma suposição, não um teste. Se uma
-troca de versão do XGBoost/numpy quebrar determinismo no futuro, este
+troca de versão do learner/numpy quebrar determinismo no futuro, este
 teste avisa em vez de a próxima investigação descobrir por acaso.
 
 **Escopo deliberadamente reduzido**: reproduz o fold 0 (long+short) das
@@ -15,13 +15,22 @@ usa a MESMA config real (mesmo `build_modeling_frame()`, mesmo
 `generate_splits()`, mesmos hiperparâmetros/seed de `constants.yaml`),
 só não paga o custo de treinar os outros 14 folds. Compara contra os
 arquivos já commitados em `models/{model_id}/diagnostics/fold_0_*.json`
-(gerados por um run completo real, Fase A) com TOLERÂNCIA ZERO em
-`hhi`, `gain_by_column`, `concentration_shares`, `n_trees`,
+(gerados por um run completo real) com TOLERÂNCIA ZERO em `hhi`,
+`gain_by_column`, `concentration_shares`, `n_trees`,
 `n_features_over_1pct` — não é um teste de "está na mesma ordem de
 grandeza", é bit-a-bit (float compara por `==`, não por `pytest.approx`,
-de propósito: XGBoost com `tree_method="hist"`/`random_state` fixo em
-CPU é determinístico, uma diferença de ponto flutuante aqui É o sinal
-que este teste existe para capturar)."""
+de propósito).
+
+**Migração XGBoost -> LightGBM (D-12, `docs/alpha_model_design_doc_
+2026-08-22.md`, §11): baseline "Fase A" abaixo é PRÉ-migração (XGBoost) e
+FICA INVÁLIDO por construção** -- `deterministic=True` (ver
+`src.models.alpha.fit_side_model`) garante reprodutibilidade bit-a-bit
+DENTRO do LightGBM, mas não entre learners diferentes (árvores/splits
+diferentes por desenho). Este teste vai FALHAR (não `skip`) contra o
+baseline XGBoost commitado até alguém rodar `pipeline.run_layer1_sprint()`
+sob o código novo e commitar um baseline "Fase A2" LightGBM substituindo
+os `models/{model_id}/diagnostics/fold_0_*.json` atuais -- consequência
+esperada da migração (D-12/§11), não uma regressão deste commit."""
 
 from __future__ import annotations
 
@@ -82,7 +91,7 @@ def test_fold_0_reproduz_diagnostico_commitado_bit_a_bit(
 ) -> None:
     _skip_if_golden_missing()
     df_all, splits = modeling_frame_and_splits
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     seed = int(load_constant("alpha_random_seed"))
 
     # Escreve num diretório temporário — este teste NUNCA sobrescreve o
@@ -97,6 +106,7 @@ def test_fold_0_reproduz_diagnostico_commitado_bit_a_bit(
             hyper=hyper,
             model_id=model_id,
             seed=seed,
+            symbol=ds.SYMBOL_DEFAULT,
         )
         pipeline.write_fold_diagnostics_atomic(
             fresh_fold, model_id=model_id, expected_n_trees=hyper.n_estimators

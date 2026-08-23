@@ -1115,7 +1115,7 @@ def _permutation_importance_auc_drop(
 def e2_prereq_permutation_importance_and_orthogonality(
     mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]
 ) -> dict[str, Any]:
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     seed = int(load_constant("alpha_random_seed"))
 
     logger.info("analysis.faixa2_e2prereq.retrain_start")
@@ -1124,6 +1124,7 @@ def e2_prereq_permutation_importance_and_orthogonality(
         splits,
         variant=alpha.VARIANT_CAMADA1,
         model_id="e2_prereq_verification_not_persisted",
+        symbol=ds.SYMBOL_DEFAULT,
         hyper=hyper,
         seed=seed,
     )

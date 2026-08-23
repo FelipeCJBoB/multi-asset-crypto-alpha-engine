@@ -9,7 +9,7 @@ Recuperar isso para uma investigação custou um retreino completo (~117s).
 Dois blocos, mesmo padrão de `tests/unit/test_models_alpha.py`:
 
 1. Mecânica com dado sintético pequeno — barato (poucos segundos), mas
-   REAL: `alpha.fit_side_model` treina um XGBoost de verdade, não um mock.
+   REAL: `alpha.fit_side_model` treina um LightGBM de verdade, não um mock.
    Evita pagar o custo do CPCV completo (15 splits x 2 variantes) só para
    testar a escrita do JSON.
 2. Integração real — `skip`-a-menos-que os `n_splits * 2` arquivos já
@@ -65,7 +65,7 @@ def _fake_fold_result(*, fold_id: int, path_id: int, variant: str, seed: int) ->
     as três contagens de `n_test_bars`/`n_train_*` não são lidas por
     `write_fold_diagnostics_atomic` (só `long_result`/`short_result`/
     `fold_id`/`path_id`/`variant`), então ficam com valores mínimos."""
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     target_signal_rate = float(load_constant("target_signal_rate"))
     train_long = _synthetic_side_frame(seed=seed)
     train_short = _synthetic_side_frame(seed=seed + 1)
@@ -124,7 +124,7 @@ def test_write_fold_diagnostics_atomic_escreve_dois_json_validos(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path)
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     fold = _fake_fold_result(fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=7)
 
     written = pipeline.write_fold_diagnostics_atomic(
@@ -170,7 +170,7 @@ def test_write_fold_diagnostics_atomic_escreve_dois_json_validos(
         assert len(payload["concentration_effective_eigenvalues"]) == len(T1_FEATURE_IDS)
 
         # sem early stopping nesta rodada (§5.10/docstring alpha.py) — deve
-        # bater exatamente com alpha_xgb_n_estimators.
+        # bater exatamente com alpha_lgbm_n_estimators.
         assert payload["n_trees"] == hyper.n_estimators
         assert payload["best_iteration"] is None
         assert payload["best_iteration_note"] == pipeline._BEST_ITERATION_NOTE
@@ -202,7 +202,7 @@ def test_write_all_fold_diagnostics_um_arquivo_por_fold_x_lado(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path)
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     folds = [
         _fake_fold_result(fold_id=i, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=100 + i)
         for i in range(3)
@@ -232,7 +232,7 @@ def test_write_fold_diagnostics_atomic_dest_dir_override_usa_layout_chaveado(
     num subdiretório dele — prova de que o parâmetro substitui o destino em
     vez de só compor com o legado."""
     monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path / "nao_deveria_ser_usado")
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     fold = _fake_fold_result(fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=21)
     keyed_dir = tmp_path / "ETHUSDT" / "15m" / _TEST_MODEL_ID / "diagnostics"
 
@@ -251,7 +251,7 @@ def test_write_all_fold_diagnostics_propaga_dest_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(pipeline, "MODELS_DIR", tmp_path / "nao_deveria_ser_usado")
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     folds = [
         _fake_fold_result(fold_id=i, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=200 + i)
         for i in range(2)

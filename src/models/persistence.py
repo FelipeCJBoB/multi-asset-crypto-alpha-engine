@@ -1,8 +1,8 @@
-"""Persistência de modelo/calibrador por fold × lado × variante — AG-141
-(`audit/architecture_gaps_log.yaml`). Sem isto, `run_layer1_sprint`
-produzia só `predictions.parquet` (probabilidades já calibradas de um
-conjunto de teste fixo) + JSONs de diagnóstico — bloqueava por
-construção qualquer inferência fora do processo de treino
+"""Persistência de modelo/calibrador por (symbol, resolution_id) × fold ×
+lado × variante — AG-141 (`audit/architecture_gaps_log.yaml`). Sem isto,
+`run_layer1_sprint` produzia só `predictions.parquet` (probabilidades já
+calibradas de um conjunto de teste fixo) + JSONs de diagnóstico —
+bloqueava por construção qualquer inferência fora do processo de treino
 (`13_EXECUCAO` ao vivo, paper-trading).
 
 **Desenho AGNÓSTICO AO LEARNER** (decisão registrada em
@@ -10,28 +10,49 @@ construção qualquer inferência fora do processo de treino
 artifact` (`atomic_write_bytes`/`atomic_rename_dir`/`sha256_bytes`,
 mesma disciplina de proveniência-por-hash e imutabilidade — V-05) sem
 forçar o formato DataFrame-centric de `write_artifact` (esse fica como
-está, escopo do action item 2 do ADR-001 preservado). Só as chamadas
-`booster.save_raw(raw_format="ubj")`/`xgb.Booster().load_model(...)`
-em `write_model_bundle`/`read_model_bundle` conhecem o formato binário
-específico do learner (`.ubj` do XGBoost hoje) — quando a migração pra
-LightGBM (`§15.14`, represada) acontecer, é a ÚNICA peça que muda; o
-resto (calibrador, manifest, escrita atômica, `ModelBundleManifest.
-booster_format` já versionado) é 100% reusável. Isso resolve o motivo
-original do adiamento de `AG-141` ("junto da migração LightGBM, pra não
-abrir 2 janelas de código não bate com o que está rodando") sem
-precisar esperar a migração acontecer primeiro.
+está, escopo do action item 2 do ADR-001 preservado). Só as chamadas de
+(des)serialização do booster em `write_model_bundle`/`read_model_bundle`
+conhecem o formato específico do learner — quando a migração pra
+LightGBM (`§15.14`) aconteceu (D-12, `docs/alpha_model_design_doc_
+2026-08-22.md`), foi exatamente essa a ÚNICA peça que mudou; o resto
+(calibrador, manifest, escrita atômica, `ModelBundleManifest.
+booster_format` já versionado) foi 100% reusado.
 
-**Achado real durante o desenho**: `docs/ADR-001_arquitetura_
-artefatos_e_contratos_2026-08-19_base.md` §4.9 assume calibração via
-Platt scaling ("aplicação ao vivo é `1/(1+exp(A*p+B))`, três linhas,
-sem sklearn no runtime"). O código real (`src.models.alpha.
+**`model_dir` chaveado por `(symbol, resolution_id, model_id, fold_id,
+side, variant)`** (D-12, fecha `AG-158`) — antes só `(model_id, fold_id,
+side, variant)`, sem eixo de grade/ativo, inconsistente com `_paths.py`
+(`predictions_symbol_tf_dir`/`models_diagnostics_symbol_tf_dir`, que já
+usavam esse eixo) e com risco real de colisão sob as 15 combinações
+(5 símbolos × 3 resoluções) que a migração LightGBM introduz.
+
+**Formato do booster: texto, não binário** (D-12) — `booster_.
+save_model(path)`/`booster_.model_to_string()` (LightGBM) em vez de
+`.save_raw(raw_format="ubj")` (XGBoost). `_BOOSTER_FORMAT =
+"lightgbm_txt_v1"` versiona o MECANISMO, não só o schema de dado —
+`read_model_bundle` recusa desserializar um formato desconhecido às
+cegas, nunca tenta.
+
+**Tensão declarada, não resolvida aqui (D-12/D-18):** a garantia de
+reload bit-exato (`test_write_read_round_trip_reproduz_inferencia_
+bit_exata`, `golden`) depende de `deterministic=True` no construtor do
+`LGBMClassifier` (ver `src.models.alpha.fit_side_model`) — sem isso, soma
+de gradiente em histograma multi-thread não é bit-exata por padrão. Sob
+GPU (D-18, não implementado nesta unidade — pendente de confirmação de
+infraestrutura), essa garantia é mais fraca; decisão de como o teste
+`golden` se comporta sob treino GPU fica para quando D-18 for
+implementado, não antecipada aqui.
+
+**Achado real durante o desenho original (AG-141)**: `docs/ADR-001_
+arquitetura_artefatos_e_contratos_2026-08-19_base.md` §4.9 assume
+calibração via Platt scaling ("aplicação ao vivo é `1/(1+exp(A*p+B))`,
+três linhas, sem sklearn no runtime"). O código real (`src.models.alpha.
 fit_side_model`) usa `sklearn.isotonic.IsotonicRegression`, não Platt —
 não reduz a 2 coeficientes. Persistido como os dois arrays fitted
 (`X_thresholds_`/`y_thresholds_`); reconstrução em produção via
 `np.interp(x, X_thresholds_, y_thresholds_)`. Ainda sem sklearn no
 runtime de inferência, só o MECANISMO difere do que o ADR previu —
 divergência registrada aqui e em `PLANO_MESTRE_PRINCE2.md`, não
-escondida.
+escondida. Este mecanismo é agnóstico ao learner e não mudou com D-12.
 
 **Precisão de proveniência (achado de revisão `project_assurance`,
 AG-148 — o texto anterior desta docstring dizia "verificado
@@ -52,15 +73,7 @@ padrão fora de `[xp[0], xp[-1]]`; para 1 único threshold, sklearn usa
 também devolve sempre `fp[0]` — equivalente. Testes de caso de borda
 (`test_write_read_round_trip_calibrador_fora_do_range_treinado`,
 `test_write_read_round_trip_calibrador_degenerado`) MEDEM essa dedução
-diretamente, fechando a lacuna entre alegação e prova.
-
-Booster reload também MEDIDO bit-exato: `Booster.save_raw(raw_
-format="ubj")` → `Booster().load_model(bytearray(...))` reproduz
-`predict()` idêntico (`max abs diff = 0.0`, testado com dado
-sintético). `booster.predict(DMatrix(X))` também bate bit-exato com
-`XGBClassifier.predict_proba(X)[:, 1]` pra `objective="binary:
-logistic"` — a classe wrapper não é necessária pra inferência, só o
-`Booster` cru + `DMatrix`."""
+diretamente, fechando a lacuna entre alegação e prova."""
 
 from __future__ import annotations
 
@@ -71,10 +84,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import lightgbm as lgb
 import numpy as np
 import orjson
 import polars as pl
-import xgboost as xgb
 from numpy.typing import NDArray
 from sklearn.isotonic import IsotonicRegression
 
@@ -89,27 +102,46 @@ from src.io.artifact import (
 
 FloatArray = NDArray[np.float64]
 
-_BOOSTER_NAME = "booster.ubj"
+_BOOSTER_NAME = "booster.txt"
 _CALIBRATOR_NAME = "calibrator.json"
 _MANIFEST_NAME = "manifest.json"
 _SUCCESS_NAME = "_SUCCESS"
 
 # Tag de formato versionada -- não o formato em si (isso é o que muda
-# quando o learner mudar, ex. "xgboost_ubj_v1" -> "lightgbm_txt_v1").
-# read_model_bundle despacha por este campo; um formato desconhecido
-# levanta erro explícito, nunca tenta desserializar às cegas.
-_BOOSTER_FORMAT = "xgboost_ubj_v1"
+# quando o learner mudar de novo). read_model_bundle despacha por este
+# campo; um formato desconhecido levanta erro explícito, nunca tenta
+# desserializar às cegas. "xgboost_ubj_v1" (formato anterior, pré-D-12)
+# não é mais produzido por este código -- um bundle nesse formato agora
+# levanta UnsupportedBundleFormatError, mesmo tratamento que qualquer
+# outro formato desconhecido.
+_BOOSTER_FORMAT = "lightgbm_txt_v1"
 _CALIBRATOR_FORMAT = "isotonic_interp_v1"
 
 
-def model_dir(root: Path, *, model_id: str, fold_id: str, side: int, variant: str) -> Path:
-    """`{root}/models/{model_id}/fold={fold_id}/side={side}/variant={variant}/`
-    -- `side{N}` (não "long"/"short") pra bater com a convenção já em
-    produção de `calibrator_id` (`src/models/alpha.py`:
-    `f"{model_id}_side1_fold{split.split_id}_calibrator"`)."""
+def model_dir(
+    root: Path,
+    *,
+    symbol: str,
+    resolution_id: str,
+    model_id: str,
+    fold_id: str,
+    side: int,
+    variant: str,
+) -> Path:
+    """`{root}/models/{symbol}/{resolution_id}/{model_id}/fold={fold_id}/
+    side={side}/variant={variant}/` -- `side{N}` (não "long"/"short") pra
+    bater com a convenção já em produção de `calibrator_id`
+    (`src/models/alpha.py`: `f"{model_id}_side1_fold{split.split_id}_
+    calibrator"`). `symbol`/`resolution_id` (D-12, fecha `AG-158`) --
+    mesma convenção de segmento de path que `_paths.py` já usa para
+    `predictions_symbol_tf_dir`/`models_diagnostics_symbol_tf_dir`;
+    sem esses dois eixos, (BTC, R1) e (ETH, R1) treinados com o mesmo
+    `model_id` textual colidiriam no mesmo diretório."""
     return (
         root
         / "models"
+        / symbol
+        / resolution_id
         / model_id
         / f"fold={fold_id}"
         / f"side={side}"
@@ -133,10 +165,13 @@ class UnsupportedBundleFormatError(Exception):
 @dataclass(frozen=True, slots=True)
 class ModelBundleManifest:
     """Proveniência do bundle (mesma disciplina de `src.io.artifact.
-    ArtifactManifest`, INV-B) -- `model_id`/`fold_id`/`side`/`variant`
-    identificam a partição; `booster_format`/`calibrator_format`
-    versionam o MECANISMO de serialização, não só o schema de dado."""
+    ArtifactManifest`, INV-B) -- `symbol`/`resolution_id`/`model_id`/
+    `fold_id`/`side`/`variant` identificam a partição; `booster_format`/
+    `calibrator_format` versionam o MECANISMO de serialização, não só o
+    schema de dado."""
 
+    symbol: str
+    resolution_id: str
     model_id: str
     fold_id: str
     side: int
@@ -153,6 +188,8 @@ class ModelBundleManifest:
 
     def to_json_bytes(self) -> bytes:
         payload: dict[str, Any] = {
+            "symbol": self.symbol,
+            "resolution_id": self.resolution_id,
             "model_id": self.model_id,
             "fold_id": self.fold_id,
             "side": self.side,
@@ -173,6 +210,8 @@ class ModelBundleManifest:
     def from_json_bytes(cls, raw: bytes) -> ModelBundleManifest:
         payload = orjson.loads(raw)
         return cls(
+            symbol=payload["symbol"],
+            resolution_id=payload["resolution_id"],
             model_id=payload["model_id"],
             fold_id=payload["fold_id"],
             side=payload["side"],
@@ -207,36 +246,33 @@ class IsotonicCalibratorView:
 @dataclass(frozen=True, slots=True)
 class LoadedSideModel:
     """Devolvido por `read_model_bundle` -- tudo que é necessário pra
-    inferência fora do processo de treino, sem `XGBClassifier` nem
-    sklearn no runtime (só `xgb.Booster` cru + `IsotonicCalibratorView`)."""
+    inferência fora do processo de treino, sem `LGBMClassifier` nem
+    sklearn no runtime (só `lgb.Booster` cru + `IsotonicCalibratorView`)."""
 
     manifest: ModelBundleManifest
-    booster: xgb.Booster
+    booster: lgb.Booster
     calibrator: IsotonicCalibratorView
 
     def predict_proba_calibrated(self, df: pl.DataFrame) -> FloatArray:
         """`df` precisa conter todas as colunas de `manifest.feature_ids`
         -- em QUALQUER ordem. Reproduz `calibrator.predict(model.
-        predict_proba(x)[:, 1])` do treino, sem `XGBClassifier`/sklearn
+        predict_proba(x)[:, 1])` do treino, sem `LGBMClassifier`/sklearn
         no runtime (verificado empiricamente com os pontos do fit -- ver
         ressalva de `AG-148` no docstring do módulo).
 
-        **Achado real de revisão (`project_assurance`, `AG-146`), e
-        AUTOCORREÇÃO no mesmo achado**: a primeira versão desta função
-        recebia `NDArray` cru e tentava validar ordem via
-        `xgb.DMatrix(x, feature_names=...)` -- não funcionava de
-        verdade (o `DMatrix` sempre era rotulado com o MESMO
-        `manifest.feature_ids`, então nunca podia divergir de si mesmo
-        -- guarda morta, achado durante a correção, não pela revisão
-        original). Fix real: `df.select(feature_ids)` -- seleciona por
-        NOME, não por posição, então a ORDEM de `df` nunca importa, e
-        uma coluna faltando/com nome errado levanta
-        `polars.exceptions.ColumnNotFoundError` explícito, nunca produz
-        predição sobre dado errado em silêncio."""
+        **Herdado de `AG-146` (era XGBoost, mesma disciplina sob
+        LightGBM):** seleção por NOME via `df.select(feature_ids)` --
+        garante que a ORDEM de `df` nunca importa (o `lgb.Booster.
+        predict` cru sobre um array numpy só respeita ORDEM POSICIONAL,
+        não nomes -- ao contrário do `XGBClassifier`/`DMatrix` anterior,
+        não há guarda de nome embutida no `Booster` na hora de prever;
+        a correção vem inteira de selecionar as colunas de `df` nesta
+        ordem, ANTES de virar array). Coluna faltando/com nome errado
+        levanta `polars.exceptions.ColumnNotFoundError` explícito, nunca
+        produz predição sobre dado errado em silêncio."""
         x = df.select(list(self.manifest.feature_ids)).to_numpy().astype(np.float64)
-        dmatrix = xgb.DMatrix(x, feature_names=list(self.manifest.feature_ids))
-        raw = self.booster.predict(dmatrix)
-        return self.calibrator.predict(raw)
+        raw = self.booster.predict(x)
+        return self.calibrator.predict(np.asarray(raw, dtype=np.float64))
 
 
 def _serialize_calibrator(calibrator: IsotonicRegression) -> bytes:
@@ -258,11 +294,13 @@ def _deserialize_calibrator(raw: bytes) -> IsotonicCalibratorView:
 def write_model_bundle(
     *,
     root: Path,
+    symbol: str,
+    resolution_id: str,
     model_id: str,
     fold_id: str,
     side: int,
     variant: str,
-    booster: xgb.Booster,
+    booster: lgb.Booster,
     calibrator: IsotonicRegression,
     tau: float,
     feature_ids: tuple[str, ...],
@@ -274,8 +312,26 @@ def write_model_bundle(
     lá em vez de reimplementar. Levanta `ModelBundleExistsError` se a
     partição já existir (booster/calibrador de um fold treinado não são
     sobrescritos silenciosamente -- reduz o risco de "código não bate
-    com o que está rodando" que motivou adiar este item originalmente)."""
-    dest_dir = model_dir(root, model_id=model_id, fold_id=fold_id, side=side, variant=variant)
+    com o que está rodando" que motivou adiar este item originalmente).
+
+    `booster` é o `lgb.Booster` cru (`LGBMClassifier.booster_`) -- já
+    carrega `feature_name` real (D-08/D-12: `src.models.alpha.
+    fit_side_model` passa `feature_name=list(DESIGN_COLUMNS)` no `.fit`),
+    então, ao contrário do XGBoost anterior, esta função NÃO precisa
+    copiar/mutar o booster para injetar nomes de feature antes de
+    serializar -- `model_to_string()` já embute o que foi passado no
+    treino. A garantia de ORDEM correta na inferência continua vindo de
+    `LoadedSideModel.predict_proba_calibrated` selecionar por NOME via
+    `pl.DataFrame.select` (AG-146), não deste embutimento isoladamente."""
+    dest_dir = model_dir(
+        root,
+        symbol=symbol,
+        resolution_id=resolution_id,
+        model_id=model_id,
+        fold_id=fold_id,
+        side=side,
+        variant=variant,
+    )
     if (dest_dir / _SUCCESS_NAME).exists():
         raise ModelBundleExistsError(
             f"bundle de modelo já existe em {dest_dir} -- imutável, nunca sobrescrito"
@@ -291,33 +347,15 @@ def write_model_bundle(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # feature_names gravado no booster ANTES de serializar -- metadado
-        # útil pra quem inspecionar o .ubj fora deste módulo (ex.
-        # ferramenta externa, dump manual). A garantia REAL de ordem
-        # correta vem de LoadedSideModel.predict_proba_calibrated
-        # selecionar por NOME via `pl.DataFrame.select` (AG-146) -- não
-        # deste atributo isoladamente (achado de revisão: uma versão
-        # anterior confiava só no `DMatrix(feature_names=...)` pra
-        # detectar mismatch, mas isso nunca dispara sozinho porque o
-        # DMatrix é rotulado com o MESMO `manifest.feature_ids`,
-        # não pode divergir de si mesmo -- guarda morta, corrigida).
-        #
-        # `booster.copy()` -- NUNCA mutar o objeto do caller. `model.fit`
-        # (XGBClassifier, achado de revisão) não seta feature_names
-        # sozinho quando X é NDArray puro (é o caso real de
-        # `fit_side_model`), então setar aqui é necessário -- mas fazer
-        # isso no booster ORIGINAL do caller seria efeito colateral
-        # surpreendente (quem chama write_model_bundle e continua usando
-        # `booster` depois não deveria ver o objeto mudar de estado).
-        booster_to_save = booster.copy()
-        booster_to_save.feature_names = list(feature_ids)
-        booster_bytes = bytes(booster_to_save.save_raw(raw_format="ubj"))
+        booster_bytes = booster.model_to_string().encode("utf-8")
         atomic_write_bytes(tmp_dir / _BOOSTER_NAME, booster_bytes)
 
         calibrator_bytes = _serialize_calibrator(calibrator)
         atomic_write_bytes(tmp_dir / _CALIBRATOR_NAME, calibrator_bytes)
 
         manifest = ModelBundleManifest(
+            symbol=symbol,
+            resolution_id=resolution_id,
             model_id=model_id,
             fold_id=fold_id,
             side=side,
@@ -347,13 +385,28 @@ def write_model_bundle(
 
 
 def read_model_bundle(
-    root: Path, *, model_id: str, fold_id: str, side: int, variant: str
+    root: Path,
+    *,
+    symbol: str,
+    resolution_id: str,
+    model_id: str,
+    fold_id: str,
+    side: int,
+    variant: str,
 ) -> LoadedSideModel:
     """Carrega o bundle de 1 partição -- falha alto (`Unsupported
     BundleFormatError`) se `booster_format`/`calibrator_format` do
     manifest não forem reconhecidos por esta versão do código, nunca
     tenta desserializar um formato desconhecido às cegas."""
-    dest_dir = model_dir(root, model_id=model_id, fold_id=fold_id, side=side, variant=variant)
+    dest_dir = model_dir(
+        root,
+        symbol=symbol,
+        resolution_id=resolution_id,
+        model_id=model_id,
+        fold_id=fold_id,
+        side=side,
+        variant=variant,
+    )
     if not (dest_dir / _SUCCESS_NAME).exists():
         raise ModelBundleNotFoundError(f"nenhum bundle completo em {dest_dir} (sem _SUCCESS)")
 
@@ -371,8 +424,7 @@ def read_model_bundle(
         )
 
     booster_bytes = (dest_dir / _BOOSTER_NAME).read_bytes()
-    booster = xgb.Booster()
-    booster.load_model(bytearray(booster_bytes))
+    booster = lgb.Booster(model_str=booster_bytes.decode("utf-8"))
 
     calibrator = _deserialize_calibrator((dest_dir / _CALIBRATOR_NAME).read_bytes())
 
@@ -380,9 +432,24 @@ def read_model_bundle(
 
 
 def model_bundle_exists(
-    root: Path, *, model_id: str, fold_id: str, side: int, variant: str
+    root: Path,
+    *,
+    symbol: str,
+    resolution_id: str,
+    model_id: str,
+    fold_id: str,
+    side: int,
+    variant: str,
 ) -> bool:
-    dest_dir = model_dir(root, model_id=model_id, fold_id=fold_id, side=side, variant=variant)
+    dest_dir = model_dir(
+        root,
+        symbol=symbol,
+        resolution_id=resolution_id,
+        model_id=model_id,
+        fold_id=fold_id,
+        side=side,
+        variant=variant,
+    )
     return (dest_dir / _SUCCESS_NAME).exists()
 
 

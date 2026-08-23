@@ -1407,68 +1407,86 @@ unknown_order_state_kill_switch_s:
 # (Sprint 7, reuso — walk-forward de 14 janelas fica para o Sprint 11, §5.9).
 # ============================================================================
 
-# --- hiperparâmetros do modelo-base XGBoost (§5.10) ---
-# Citados TEXTUALMENTE no bloco YAML do PRD §5.10, e o próprio §18.5.2 os
-# lista nominalmente entre "hiperparâmetros nunca testados" (mesma classe de
-# proveniência que as janelas de feature `feature_*` acima) — nenhum sweep
-# rodado nesta rodada (Camada 1 é sobre restrições monotônicas, não sobre
-# busca de hiperparâmetro; um sweep de hiperparâmetro seria um trial novo no
-# `audit/n_lifetime.yaml`, fora do escopo desta rodada).
+# --- hiperparâmetros do modelo-base LightGBM (§5.10) ---
+# D-01/D-11 (docs/alpha_model_design_doc_2026-08-22.md): migração
+# XGBoost->LightGBM substitui o bloco `alpha_xgb_*` (removido, órfão pós-
+# migração -- nenhum bundle XGBoost persistido em produção, sem risco de
+# perda de artefato, achado MODERATE do próprio design doc) por
+# `alpha_lgbm_*`. `max_depth`/`n_estimators`/`learning_rate`/`subsample`/
+# `feature_fraction`/`lambda_l2` são renomeações DIRETAS (mesmo conceito,
+# mesmo valor numérico, `provenance: DERIVED` apontando pro original) --
+# `min_child_samples`/`num_leaves` são conceitos NOVOS sem conversão 1:1
+# do XGBoost (`min_child_weight` era soma de hessian; `min_child_samples`
+# é contagem), `provenance: ASSUMED`, `sweep_required: true`. Nenhum
+# sweep rodado nesta rodada (é migração de learner, não busca de
+# hiperparâmetro; um sweep seria trial novo no `audit/n_lifetime.yaml`,
+# fora do escopo desta unidade — D-14 declara o multiplicador 15x quando
+# o sweep acontecer).
 
-alpha_xgb_max_depth:
+alpha_lgbm_max_depth:
   value: 3
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.max_depth — citado como 'classe B — varrer' no próprio bloco, e listado em §18.5.2 entre os hiperparâmetros nunca testados. Nenhuma busca rodada neste sprint."
+  provenance: DERIVED
+  source: "Renomeação direta de alpha_xgb_max_depth (removida) -- LightGBM usa o mesmo nome/semântica de parâmetro, sem mudança de valor (D-11). Proveniência original: PRD §5.10 xgboost_base.max_depth, citado como 'classe B — varrer', nunca varrido."
   class: B
   sweep_required: false
   review_by: sprint_10
 
-alpha_xgb_n_estimators:
+alpha_lgbm_n_estimators:
   value: 300
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.n_estimators — 'early stopping no fold' citado no mesmo bloco, mas early stopping não está implementado nesta rodada (não pedido pela task; ver docstring de src/models/alpha.py). §18.5.2 lista o hiperparâmetro-base como nunca testado."
+  provenance: DERIVED
+  source: "Renomeação direta de alpha_xgb_n_estimators (removida), mesmo nome/semântica no LightGBM (D-11). Proveniência original: PRD §5.10, 'early stopping no fold' citado mas não implementado (ver docstring de src/models/alpha.py)."
   class: B
   sweep_required: false
   review_by: sprint_10
 
-alpha_xgb_learning_rate:
+alpha_lgbm_learning_rate:
   value: 0.03
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.learning_rate — §18.5.2, hiperparâmetro-base nunca testado."
+  provenance: DERIVED
+  source: "Renomeação direta de alpha_xgb_learning_rate (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.learning_rate, nunca testado."
   class: B
   sweep_required: false
   review_by: sprint_10
 
-alpha_xgb_subsample:
+alpha_lgbm_subsample:
   value: 0.8
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.subsample — §18.5.2, hiperparâmetro-base nunca testado."
+  provenance: DERIVED
+  source: "Renomeação direta de alpha_xgb_subsample (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.subsample, nunca testado."
   class: B
   sweep_required: false
   review_by: sprint_10
 
-alpha_xgb_colsample_bytree:
+alpha_lgbm_feature_fraction:
   value: 1.0
   provenance: DERIVED
-  source: "PRD §5.10 — DESATIVADO deliberadamente (não ASSUMED): amostragem aleatória de colunas conflita com o bagging estruturado da Camada 3 (§5.5), que não está implementada nesta rodada, mas o valor 1.0 já é a escolha correta desde já (B19 — colsample_bytree < 1.0 é banned pattern quando bagging por grupo está ativo; aqui nem bagging por grupo existe ainda, então 1.0 é simplesmente 'sem amostragem de coluna', não uma antecipação da Camada 3)."
+  source: "Renomeação direta de alpha_xgb_colsample_bytree (removida) -- LightGBM chama o mesmo conceito de feature_fraction (D-11/§4 do design doc do Alpha). 1.0 = sem amostragem de coluna, mesma razão original: bagging por grupo (Camada 3) ainda não implementado, <1.0 só seria banned pattern (B19) se estivesse."
   class: B
   sweep_required: false
   review_by: sprint_10
 
-alpha_xgb_min_child_weight:
-  value: 30
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.min_child_weight — §18.5.2, hiperparâmetro-base nunca testado."
-  class: B
-  sweep_required: false
-  review_by: sprint_10
-
-alpha_xgb_reg_lambda:
+alpha_lgbm_lambda_l2:
   value: 5.0
-  provenance: ASSUMED
-  source: "PRD §5.10 xgboost_base.reg_lambda — §18.5.2, hiperparâmetro-base nunca testado."
+  provenance: DERIVED
+  source: "Renomeação direta de alpha_xgb_reg_lambda (removida), LightGBM chama lambda_l2 (D-11/§4 do design doc do Alpha)."
   class: B
   sweep_required: false
+  review_by: sprint_10
+
+alpha_lgbm_min_child_samples:
+  value: 20
+  provenance: ASSUMED
+  source: "NÃO é conversão numérica de alpha_xgb_min_child_weight (soma de hessian) -- semântica diferente (contagem de amostras); herdar o valor tunado do XGBoost pra este nome novo seria exatamente o erro de proveniência que esta disciplina existe pra impedir (D-11, docs/alpha_model_design_doc_2026-08-22.md §3 D-11). Valor = default de biblioteca do LightGBM, ponto de partida neutro até sweep."
+  class: B
+  sweep_required: true
+  sweep_range: [10, 100]
+  review_by: sprint_10
+
+alpha_lgbm_num_leaves:
+  value: 8
+  provenance: ASSUMED
+  source: "Hiperparâmetro novo, sem equivalente no vetor XGBoost anterior (D-11). Valor segue a regra prática citada no design doc (num_leaves <= 2^max_depth, max_depth=3 -> 8) -- o default de biblioteca do LightGBM (31) violaria essa regra e tornaria max_depth inefetivo numa árvore de crescimento leaf-wise. Não medido -- TBD sweep."
+  class: B
+  sweep_required: true
+  sweep_range: [4, 64]
   review_by: sprint_10
 
 # --- Camada 1 — restrições monotônicas (§5.3) ---

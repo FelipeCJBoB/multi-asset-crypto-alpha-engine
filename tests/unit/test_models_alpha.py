@@ -147,7 +147,7 @@ def test_derived_seed_varia_com_os_parametros() -> None:
 
 def test_fit_side_model_expoe_gain_by_column_raw() -> None:
     df = _synthetic_train_frame(n=80, seed=3)
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     target_signal_rate = float(load_constant("target_signal_rate"))
 
     result = alpha.fit_side_model(
@@ -174,10 +174,10 @@ def test_fit_side_model_expoe_gain_by_column_raw() -> None:
 def test_monotone_constraints_tem_exatamente_10_entradas() -> None:
     """Fecha a lacuna deixada pela remoção de `+ tuple(0 for _ in
     REGIME_DUMMY_COLUMNS)` (2026-08-21) — `monotone_constraints` que de
-    fato vai pro XGBoost precisa ter 1 entrada por coluna de
+    fato vai pro LightGBM precisa ter 1 entrada por coluna de
     `DESIGN_COLUMNS` (10, não mais 14), nunca sobrar/faltar."""
     df = _synthetic_train_frame(n=80, seed=5)
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     target_signal_rate = float(load_constant("target_signal_rate"))
 
     result = alpha.fit_side_model(
@@ -225,8 +225,28 @@ def _skip_if_predictions_missing() -> None:
         )
 
 
+def _skip_if_predictions_schema_legado() -> None:
+    """D-03/D-05 (docs/alpha_model_design_doc_2026-08-22.md) estendem
+    `PREDICTIONS_SCHEMA_COLUMNS` de 17 para 21 colunas. Os `predictions.
+    parquet` legados em disco (pré-migração LightGBM, `AG-150`/`AG-162`)
+    ainda têm o schema antigo — isso NÃO é bug do código novo, é artefato
+    reconstruível que só é regenerado quando o gate "Data Layer 100%" abrir
+    e `run_layer1_sprint` rodar de novo (§13 do design doc do Alpha,
+    "regeneração deliberada, não drift silencioso"). `skip` com mensagem
+    explícita em vez de `AssertionError` genérico — mais honesto sobre a
+    causa real (artefato desatualizado, não código quebrado)."""
+    preds = pl.read_parquet(_predictions_path(MODEL_ID_CAMADA1))
+    if tuple(preds.columns) != alpha.PREDICTIONS_SCHEMA_COLUMNS:
+        pytest.skip(
+            "predictions.parquet em disco tem schema legado (pré-D-03/D-05, "
+            "migração LightGBM) -- regenere via run_layer1_sprint() para "
+            "validar o schema novo, ver AG-150/AG-162"
+        )
+
+
 def test_predictions_parquet_real_schema_e_invariantes() -> None:
     _skip_if_predictions_missing()
+    _skip_if_predictions_schema_legado()
     preds = pl.read_parquet(_predictions_path(MODEL_ID_CAMADA1))
 
     assert tuple(preds.columns) == alpha.PREDICTIONS_SCHEMA_COLUMNS

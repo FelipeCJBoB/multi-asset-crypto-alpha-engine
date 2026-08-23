@@ -1,8 +1,16 @@
-"""Núcleo de treino do Alpha (§5.2, §5.9, §5.10) — dois binários XGBoost
+"""Núcleo de treino do Alpha (§5.2, §5.9, §5.10) — dois binários LightGBM
 por fold do CPCV (Sprint 7, reusado como harness desta rodada — walk-
 forward de 14 janelas é Sprint 11, §5.9), Camada 1 (restrições
 monotônicas, §5.3) e a variante Camada 0 conceitual (mesmo pipeline, sem
 `monotone_constraints`) para o critério de permanência do §5.11.
+
+**Migração XGBoost -> LightGBM (D-01, `docs/alpha_model_design_doc_
+2026-08-22.md`)**: learner trocado por decisão já travada com o Manager
+(`PLANO_MESTRE_PRINCE2.md §15.14`), não reaberta aqui. `monotone_
+constraints`/calibração isotônica/CPCV reusados sem mudança de arquitetura
+(D-07/D-09/D-10); extração de importância reescrita para a API do
+LightGBM (D-08, ver `fit_side_model`); hiperparâmetros novos declarados em
+`constants.yaml::alpha_lgbm_*` (D-11).
 
 **Design decisivo, resolvido aqui e documentado (§5.12 exige `p_long` E
 `p_short` na MESMA linha por `t0`):** `M_long` e `M_short` são treinados
@@ -22,16 +30,18 @@ para `predictions.parquet`) é feito à parte, em `src.models.backtest_lite`.
 orçada (`target_signal_rate`, já existente em `constants.yaml`, §0.2 R3) —
 nunca escolhido por métrica OOS (B20): é o quantil `1 - target_signal_rate`
 da distribuição de probabilidade calibrada do PRÓPRIO conjunto de treino
-daquele lado."""
+daquele lado. `tau_long`/`tau_short` agora são persistidos em
+`predictions.parquet` (D-05, fecha `AG-150`) — antes calculados e
+descartados."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import lightgbm as lgb
 import numpy as np
 import polars as pl
 import structlog
-import xgboost as xgb
 from numpy.typing import NDArray
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import train_test_split
@@ -64,44 +74,64 @@ IntArray = NDArray[np.int64]
 # tradeavel (bool pré-computado pelo builder de regime, candidato-
 # agnóstico), não por este módulo. DESIGN_COLUMNS mantém o NOME (usado
 # por src.analysis.faixa2_caminho_b e pelos testes) mas o conteúdo
-# passa a ser só as 10 features T1.
+# passa a ser só as 10 features T1. D-04 (design doc do Alpha,
+# 2026-08-22): esta remoção NÃO é reaberta pela migração LightGBM --
+# o Meta-model v3 depende estruturalmente dela (§2.2 do doc do Meta).
 DESIGN_COLUMNS: tuple[str, ...] = T1_FEATURE_IDS
 
 VARIANT_CAMADA1 = "camada1"
 VARIANT_CAMADA0 = "camada0"
 
+# Legado de path/schema (D-03/D-05, `predictions.parquet`) -- valor da
+# coluna `resolution_id` quando o caller não passa uma grade dollar-bar
+# explícita (mesmo sentinela `None` que `pipeline.run_layer1_sprint` já
+# usa para `tf`/`resolution_id`, ver docstring de lá).
+_LEGACY_RESOLUTION_LABEL = "time_15m"
+
 
 @dataclass(frozen=True, slots=True)
-class XGBHyperparams:
-    """§5.10, todos ASSUMED/citados textualmente — ver `constants.yaml`."""
+class LGBMHyperparams:
+    """§5.10, todos ASSUMED/citados textualmente — ver `constants.yaml`.
+
+    D-11 (`docs/alpha_model_design_doc_2026-08-22.md`): `max_depth`/
+    `n_estimators`/`learning_rate`/`subsample`/`feature_fraction`/
+    `lambda_l2` são renomeações diretas dos hiperparâmetros XGBoost
+    equivalentes (mesmo valor, `provenance: DERIVED` em `constants.yaml`
+    -- ver `alpha_xgb_*`, removidas, órfãs pós-migração). `min_child_
+    samples`/`num_leaves` são conceitos NOVOS sem conversão numérica 1:1
+    do XGBoost (`min_child_weight` é soma de hessian; `min_child_samples`
+    é contagem) -- `provenance: ASSUMED`, `sweep_required: true`."""
 
     max_depth: int
     n_estimators: int
     learning_rate: float
     subsample: float
-    colsample_bytree: float
-    min_child_weight: int
-    reg_lambda: float
+    feature_fraction: float
+    lambda_l2: float
+    min_child_samples: int
+    num_leaves: int
 
     @classmethod
-    def from_constants(cls) -> XGBHyperparams:
+    def from_constants(cls) -> LGBMHyperparams:
         return cls(
-            max_depth=int(load_constant("alpha_xgb_max_depth")),
-            n_estimators=int(load_constant("alpha_xgb_n_estimators")),
-            learning_rate=float(load_constant("alpha_xgb_learning_rate")),
-            subsample=float(load_constant("alpha_xgb_subsample")),
-            colsample_bytree=float(load_constant("alpha_xgb_colsample_bytree")),
-            min_child_weight=int(load_constant("alpha_xgb_min_child_weight")),
-            reg_lambda=float(load_constant("alpha_xgb_reg_lambda")),
+            max_depth=int(load_constant("alpha_lgbm_max_depth")),
+            n_estimators=int(load_constant("alpha_lgbm_n_estimators")),
+            learning_rate=float(load_constant("alpha_lgbm_learning_rate")),
+            subsample=float(load_constant("alpha_lgbm_subsample")),
+            feature_fraction=float(load_constant("alpha_lgbm_feature_fraction")),
+            lambda_l2=float(load_constant("alpha_lgbm_lambda_l2")),
+            min_child_samples=int(load_constant("alpha_lgbm_min_child_samples")),
+            num_leaves=int(load_constant("alpha_lgbm_num_leaves")),
         )
 
 
 def build_design_matrix(df: pl.DataFrame) -> FloatArray:
     """`DESIGN_COLUMNS` = 10 features T1, sem regime (regime saiu do
     vetor de treino, ADR-001 §2.7 -- ver nota em `DESIGN_COLUMNS`).
-    Numpy puro (sem pandas, B26) — `monotone_constraints` do XGBoost
-    aceita uma tupla posicional na mesma ordem quando o `fit` recebe um
-    array, não um DataFrame com nomes."""
+    Numpy puro (sem pandas, B26) — `monotone_constraints` do LightGBM
+    aceita uma lista posicional na mesma ordem quando o `fit` recebe um
+    array, não um DataFrame com nomes (D-07, mesma convenção do XGBoost
+    anterior)."""
     return df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
 
 
@@ -161,7 +191,7 @@ def _stratified_calib_split(
 class SideModelResult:
     side: int
     variant: str
-    model: xgb.XGBClassifier
+    model: lgb.LGBMClassifier
     calibrator: IsotonicRegression
     monotone: dict[str, monotonic.FeatureICResult]
     monotone_constraints: tuple[int, ...]
@@ -174,15 +204,16 @@ class SideModelResult:
     # calculado sobre a matriz de correlação das 10 features T1 do MESMO
     # `train_side_df` deste fold/lado (in-fold, nunca vazando).
     concentration_effective: EffectiveConcentrationDiagnostics
-    # `total_gain` bruto por coluna (`booster.get_score(importance_type=
-    # "total_gain")` remapeado para nome real de coluna), ANTES da
-    # normalização que `compute_concentration` aplica em `concentration.
-    # shares`. Persistido à parte porque a investigação de auditoria que deu
-    # origem a este campo (ver `models/{model_id}/diagnostics/`, escrito por
-    # `src.models.pipeline`) precisa do gain bruto, não só do share — colunas
-    # sem nenhuma divisão pelo booster ficam ausentes deste dict (mesma
-    # convenção de `gain_by_column` em `fit_side_model`), não aparecem como
-    # `0.0` como acontece em `concentration.shares`.
+    # gain BRUTO por coluna (`booster_.feature_importance(importance_type=
+    # "gain")` remapeado por nome real via `booster_.feature_name()`, D-08),
+    # ANTES da normalização que `compute_concentration` aplica em
+    # `concentration.shares`. Persistido à parte porque a investigação de
+    # auditoria que deu origem a este campo (ver `models/{model_id}/
+    # diagnostics/`, escrito por `src.models.pipeline`) precisa do gain
+    # bruto, não só do share — colunas sem nenhuma divisão pelo booster
+    # (gain 0.0) ficam ausentes deste dict (mesma convenção do XGBoost
+    # anterior, `booster.get_score` também só devolvia colunas usadas),
+    # não aparecem como `0.0` como acontece em `concentration.shares`.
     gain_by_column_raw: dict[str, float]
     n_train_fit: int
     n_train_calib: int
@@ -193,7 +224,7 @@ def fit_side_model(
     *,
     side: int,
     variant: str,
-    hyper: XGBHyperparams,
+    hyper: LGBMHyperparams,
     seed: int,
     target_signal_rate: float,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
@@ -240,42 +271,70 @@ def fit_side_model(
     n_neg = int(y_fit.shape[0] - n_pos)
     scale_pos_weight = float(n_neg) / float(n_pos) if n_pos > 0 else 1.0
 
-    model = xgb.XGBClassifier(
-        objective="binary:logistic",
+    model = lgb.LGBMClassifier(
+        objective="binary",
         max_depth=hyper.max_depth,
+        num_leaves=hyper.num_leaves,
         n_estimators=hyper.n_estimators,
         learning_rate=hyper.learning_rate,
         subsample=hyper.subsample,
-        colsample_bytree=hyper.colsample_bytree,
-        min_child_weight=hyper.min_child_weight,
-        reg_lambda=hyper.reg_lambda,
-        monotone_constraints=monotone_constraints,
+        feature_fraction=hyper.feature_fraction,
+        min_child_samples=hyper.min_child_samples,
+        lambda_l2=hyper.lambda_l2,
+        monotone_constraints=list(monotone_constraints),
         scale_pos_weight=scale_pos_weight,
-        tree_method="hist",
-        eval_metric="logloss",
         random_state=_derived_seed(seed, side, 2),
         n_jobs=-1,
+        # D-12 (docs/alpha_model_design_doc_2026-08-22.md): default do
+        # LightGBM é `deterministic=False` -- soma de gradiente em
+        # histograma multi-thread não é bit-exata por padrão (soma de
+        # ponto flutuante não é associativa sob paralelismo). Exigido
+        # explicitamente para o teste de reload bit-a-bit (`golden`,
+        # `test_write_read_round_trip_reproduz_inferencia_bit_exata`) ter
+        # garantia teórica de passar -- não opcional, mesma disciplina de
+        # B29/determinismo global do projeto.
+        deterministic=True,
+        # Suprime log nativo do LightGBM em stdout/stderr (B28 -- só
+        # structlog, nunca print()/output de biblioteca não estruturado).
+        verbosity=-1,
     )
-    model.fit(X_fit, y_fit, sample_weight=w_fit)
+    # `feature_name=` explícito -- achado de implementação (não estava no
+    # design doc): sem isso, `LGBMClassifier.fit` sobre um `NDArray` puro
+    # (sem nomes de coluna) grava `booster_.feature_name()` como
+    # "Column_0", "Column_1", ... em vez do nome real da feature --
+    # `fit_side_model` abaixo (D-08) precisaria desses nomes reais para
+    # remapear `gain_by_column`/`concentration`/`monotone_constraints`
+    # corretamente. Ordem idêntica a `DESIGN_COLUMNS`/`T1_FEATURE_IDS`
+    # (mesma que `build_design_matrix` usa para montar `X_fit`).
+    model.fit(X_fit, y_fit, sample_weight=w_fit, feature_name=list(DESIGN_COLUMNS))
 
-    raw_calib = model.predict_proba(X_calib)[:, 1]
+    # `np.asarray(...)` explícito -- os stubs do LightGBM tipam
+    # `predict_proba` como `list` (imprecisão conhecida da biblioteca, não
+    # do nosso código), o que quebra `mypy --strict` no fancy-indexing
+    # `[:, 1]` (só `ndarray` suporta). Runtime já devolvia `ndarray`
+    # sempre; a conversão é só correção de tipo estático, sem mudança de
+    # valor.
+    raw_calib = np.asarray(model.predict_proba(X_calib))[:, 1]
     calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
     calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)
 
-    raw_train_all = model.predict_proba(X_all)[:, 1]
+    raw_train_all = np.asarray(model.predict_proba(X_all))[:, 1]
     calibrated_train_all = calibrator.predict(raw_train_all)
     tau = float(np.quantile(calibrated_train_all, 1.0 - target_signal_rate))
 
-    booster = model.get_booster()
-    # `importance_type="total_gain"` sempre devolve `dict[str, float]` — o
-    # stub do xgboost declara `dict[str, float | list[float]]` porque
-    # outros `importance_type` (ex. SHAP) podem devolver lista; `float()`
-    # explícito satisfaz o mypy sem mascarar um erro real.
-    gain_by_fidx = booster.get_score(importance_type="total_gain")
+    # D-08 (docs/alpha_model_design_doc_2026-08-22.md §4): API do LightGBM
+    # substitui `booster.get_score(importance_type="total_gain")` (parsing
+    # de "f0"/"f1"/... específico do XGBoost). `feature_importance()`/
+    # `feature_name()` devolvem arrays PARALELOS de tamanho fixo (uma
+    # entrada por feature, mesmo as não usadas, gain=0.0) -- diferente do
+    # XGBoost, que só incluía features com split real no dict. Filtro
+    # `> 0.0` explícito preserva a convenção "só colunas realmente usadas"
+    # que `gain_by_column_raw`/`compute_concentration` já assumiam.
+    booster_ = model.booster_
+    names = booster_.feature_name()
+    gains = booster_.feature_importance(importance_type="gain")
     gain_by_column = {
-        DESIGN_COLUMNS[int(k[1:])]: float(v)  # type: ignore[arg-type]
-        for k, v in gain_by_fidx.items()
-        if k.startswith("f")
+        name: float(gain) for name, gain in zip(names, gains, strict=True) if gain > 0.0
     }
     concentration = compute_concentration(gain_by_column, DESIGN_COLUMNS)
 
@@ -310,7 +369,7 @@ class FoldResult:
     path_id: int
     variant: str
     model_id: str
-    predictions: pl.DataFrame  # schema oficial §5.12 (colunas OFICIAIS)
+    predictions: pl.DataFrame  # schema oficial §5.12/D-03/D-05 (colunas OFICIAIS)
     long_result: SideModelResult
     short_result: SideModelResult
     n_train_long: int
@@ -339,12 +398,23 @@ def run_fold(
     split: CPCVSplit,
     *,
     variant: str,
-    hyper: XGBHyperparams,
+    hyper: LGBMHyperparams,
     model_id: str,
     seed: int,
+    symbol: str,
+    resolution_id: str | None = None,
     feature_version: str = "t1_v1",
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> FoldResult:
+    """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
+    2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
+    de risco já corrigida uma vez em `dataset.py:138-160` (features de um
+    ativo casadas com label de outro), agora endereçada por construção em
+    vez de convenção de nome/caminho. `symbol` é obrigatório (sem default
+    -- sempre conhecido no call site real, `pipeline.run_layer1_sprint`).
+    `resolution_id=None` (default) grava `"time_15m"` na coluna (grade de
+    relógio legada), mesmo sentinela que `pipeline.py` já usa para `tf`/
+    `resolution_id`."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -374,9 +444,9 @@ def run_fold(
     test_bars_unique = _unique_test_bars(test_bars)
     X_test = build_design_matrix(test_bars_unique)
 
-    raw_long = long_result.model.predict_proba(X_test)[:, 1]
+    raw_long = np.asarray(long_result.model.predict_proba(X_test))[:, 1]
     p_long = long_result.calibrator.predict(raw_long)
-    raw_short = short_result.model.predict_proba(X_test)[:, 1]
+    raw_short = np.asarray(short_result.model.predict_proba(X_test))[:, 1]
     p_short = short_result.calibrator.predict(raw_short)
 
     is_long = (p_long > long_result.tau) & (p_long > p_short)
@@ -404,28 +474,35 @@ def run_fold(
         long_result.concentration.hhi.value + short_result.concentration.hhi.value
     ) / 2
 
+    resolution_id_value = resolution_id if resolution_id is not None else _LEGACY_RESOLUTION_LABEL
+    n_rows = len(p_long)
+
     predictions = pl.DataFrame(
         {
             "t0": test_bars_unique["t0"],
+            "symbol": pl.Series([symbol] * n_rows, dtype=pl.Utf8),
+            "resolution_id": pl.Series([resolution_id_value] * n_rows, dtype=pl.Utf8),
             "p_long": p_long,
             "p_short": p_short,
+            "tau_long": pl.Series([long_result.tau] * n_rows, dtype=pl.Float64),
+            "tau_short": pl.Series([short_result.tau] * n_rows, dtype=pl.Float64),
             "score_long_raw": raw_long,
             "score_short_raw": raw_short,
             "side_hat": side_hat,
             "confidence": confidence,
-            "ensemble_std": pl.Series([None] * len(p_long), dtype=pl.Float64),
-            "n_models_agree": pl.Series([1] * len(p_long), dtype=pl.Int8),
-            "model_id": pl.Series([model_id] * len(p_long), dtype=pl.Utf8),
+            "ensemble_std": pl.Series([None] * n_rows, dtype=pl.Float64),
+            "n_models_agree": pl.Series([1] * n_rows, dtype=pl.Int8),
+            "model_id": pl.Series([model_id] * n_rows, dtype=pl.Utf8),
             "calibrator_id": pl.Series(calibrator_id),
-            "feature_version": pl.Series([feature_version] * len(p_long), dtype=pl.Utf8),
-            "features_selecionadas": pl.Series([list(T1_FEATURE_IDS)] * len(p_long)),
+            "feature_version": pl.Series([feature_version] * n_rows, dtype=pl.Utf8),
+            "features_selecionadas": pl.Series([list(T1_FEATURE_IDS)] * n_rows),
             "hhi_importancia": pl.Series(
-                [hhi_importancia_fold] * len(p_long),
+                [hhi_importancia_fold] * n_rows,
                 dtype=pl.Float64,
             ),
-            "wf_window_id": pl.Series([None] * len(p_long), dtype=pl.Int16),
-            "fold_id": pl.Series([split.split_id] * len(p_long), dtype=pl.Int16),
-            "is_oof": pl.Series([True] * len(p_long), dtype=pl.Boolean),
+            "wf_window_id": pl.Series([None] * n_rows, dtype=pl.Int16),
+            "fold_id": pl.Series([split.split_id] * n_rows, dtype=pl.Int16),
+            "is_oof": pl.Series([True] * n_rows, dtype=pl.Boolean),
         }
     )
 
@@ -449,11 +526,13 @@ def run_all_folds(
     *,
     variant: str,
     model_id: str,
-    hyper: XGBHyperparams | None = None,
+    symbol: str,
+    resolution_id: str | None = None,
+    hyper: LGBMHyperparams | None = None,
     seed: int | None = None,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
 ) -> list[FoldResult]:
-    hyper = hyper if hyper is not None else XGBHyperparams.from_constants()
+    hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 
     results: list[FoldResult] = []
@@ -463,6 +542,8 @@ def run_all_folds(
             split_id=split.split_id,
             path_id=split.path_id,
             variant=variant,
+            symbol=symbol,
+            resolution_id=resolution_id,
         )
         result = run_fold(
             df_all,
@@ -471,6 +552,8 @@ def run_all_folds(
             hyper=hyper,
             model_id=model_id,
             seed=seed,
+            symbol=symbol,
+            resolution_id=resolution_id,
             unforce_features_by_side=unforce_features_by_side,
         )
         logger.info(
@@ -500,8 +583,12 @@ def assemble_predictions_table(fold_results: list[FoldResult]) -> pl.DataFrame:
 
 PREDICTIONS_SCHEMA_COLUMNS: tuple[str, ...] = (
     "t0",
+    "symbol",  # D-03 -- novo
+    "resolution_id",  # D-03 -- novo
     "p_long",
     "p_short",
+    "tau_long",  # D-05 -- novo, fecha AG-150 (ver AG-162: tau_alpha vira
+    "tau_short",  # derivada no Meta, não física aqui -- reconciliação)
     "score_long_raw",
     "score_short_raw",
     "side_hat",

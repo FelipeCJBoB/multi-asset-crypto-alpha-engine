@@ -145,16 +145,17 @@ def _fold_diagnostics_payload(
     serializado 1:1 em `models/{model_id}/diagnostics/fold_{fold_id}_
     {side_label}.json` por `write_fold_diagnostics_atomic`.
 
-    `n_trees` vem de `booster.num_boosted_rounds()` — como early stopping
+    `n_trees` vem de `booster.num_trees()` (LightGBM, D-12 -- era
+    `booster.num_boosted_rounds()` do XGBoost) — como early stopping
     não está implementado nesta rodada (ver docstring do módulo
-    `src.models.alpha` e `constants.yaml:alpha_xgb_n_estimators`), o
-    esperado é `n_trees == alpha_xgb_n_estimators` (300) sempre; um desvio é
-    logado como warning aqui em vez de silenciosamente ignorado.
+    `src.models.alpha` e `constants.yaml:alpha_lgbm_n_estimators`), o
+    esperado é `n_trees == alpha_lgbm_n_estimators` (300) sempre; um desvio
+    é logado como warning aqui em vez de silenciosamente ignorado.
     `best_iteration` não tem significado sem early stopping — reportado
     como `null` com uma nota explícita, nunca inventado (mesma disciplina
     de `TBD — medir no Sprint N`, B23)."""
-    booster = side_result.model.get_booster()
-    n_trees = int(booster.num_boosted_rounds())
+    booster = side_result.model.booster_
+    n_trees = int(booster.num_trees())
     if n_trees != expected_n_trees:
         logger.warning(
             "models.pipeline.diagnostics_n_trees_diverge_de_n_estimators",
@@ -269,7 +270,7 @@ def write_all_fold_diagnostics(
     fold_results: list[alpha.FoldResult],
     *,
     model_id: str,
-    hyper: alpha.XGBHyperparams,
+    hyper: alpha.LGBMHyperparams,
     dest_dir: Path | None = None,
 ) -> list[Path]:
     """Escreve o diagnóstico de todos os folds de uma variante (Camada 1 OU
@@ -444,7 +445,7 @@ def run_layer1_sprint(
         n_backtest_paths=cpcv_result.config.n_backtest_paths,
     )
 
-    hyper = alpha.XGBHyperparams.from_constants()
+    hyper = alpha.LGBMHyperparams.from_constants()
     seed = int(load_constant("alpha_random_seed"))
 
     camada1_folds = alpha.run_all_folds(
@@ -452,6 +453,8 @@ def run_layer1_sprint(
         splits,
         variant=alpha.VARIANT_CAMADA1,
         model_id=model_id_camada1,
+        symbol=symbol,
+        resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
     )
@@ -460,6 +463,8 @@ def run_layer1_sprint(
         splits,
         variant=alpha.VARIANT_CAMADA0,
         model_id=model_id_camada0,
+        symbol=symbol,
+        resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
     )
