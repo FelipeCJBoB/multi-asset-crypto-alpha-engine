@@ -1213,10 +1213,13 @@ DATA LAYER
                                                                        5 símbolos x 2 resoluções). [CORRIGIDO
                                                                        2026-08-23] verify_config_hash (B15)
                                                                        wireado em src/models/dataset.py::
-                                                                       build_modeling_frame -- AG-140. Não
-                                                                       executado empiricamente contra
-                                                                       labels.parquet real ainda (Claude não
-                                                                       roda .py); ver §15.23 addendum
+                                                                       build_modeling_frame -- AG-140,
+                                                                       FECHADO. Confirmação empírica achou
+                                                                       drift real de schema de hash (não de
+                                                                       parâmetro -- git log confirma) contra
+                                                                       labels/v1 de produção; reprocessado
+                                                                       pelo usuário, 2 testes slow/integration
+                                                                       confirmam. Ver §15.24-F
   07b_PESOS            src/labels/weights.py                           movido da ML LAYER
 
 ML LAYER
@@ -4538,7 +4541,33 @@ novos dedicados à lógica de `AG-140` (guarda `vol_estimator_id`, match,
 mismatch propagando `ConfigHashMismatchError`, `execution_config` usando
 o `vol_estimator_id` correto).
 
-**F. Fila do roadmap, não atacados nesta rodada** — mesmo fan-out do
+**F. Confirmação empírica — o risco nomeado em D se concretizou, causa
+raiz investigada e resolvida (mesma sessão).** Os 2 testes `slow`/
+`integration` falharam de verdade contra `data/labels/BTCUSDT/15m/v1/
+labels.parquet` real: `config_hash` do arquivo `b281a18954e224ef` ≠
+`config_hash` da execução `2122d433edb4fd3a`. Investigado ANTES de
+qualquer ação (`git log -p` completo nos 7 campos que compõem o hash):
+NENHUM valor de `constants.yaml` mudou desde criado — a divergência é o
+FORMATO do payload, que migrou 5 vezes historicamente (`estimator_id`,
+`AG-005`, `AG-031`, `AG-042`, `AG-116`, cada uma já documentada na
+docstring de `config_hash`, "mesmo valor numérico" a cada vez). Os
+labels reais predatam essas migrações e nunca foram reprocessados —
+`b281a18954e224ef` é literalmente o mesmo hash já citado em
+`docs/SPRINT_LOG.md` (achado D3, sessão anterior) como referência
+estável, sem que ninguém tivesse cruzado contra o schema atual porque
+nada chamava `verify_config_hash` antes de hoje.
+
+Usuário escolheu reprocessar (das 3 opções oferecidas: reprocessar /
+reverter a checagem / só registrar e escalar). `build_and_write_labels_
+for_symbol('BTCUSDT', ...)` + `run_and_write_labels_for_alts()` rodados
+pelo usuário — reescreve os 5 `labels.parquet` com o `config_hash` do
+schema atual, mesmos valores de barreira (nenhum parâmetro mudou, só o
+hash). Confirmado: `uv run pytest tests/unit/test_models_dataset.py -m
+"slow and integration"` — **2 passed** (antes: 2 failed). Zero teste do
+repo tinha o hash antigo hardcoded — nenhuma outra reconciliação
+necessária. `AG-140` fechado.
+
+**G. Fila do roadmap, não atacados nesta rodada** — mesmo fan-out do
 `stage_readiness_audit`, mesma severidade "alto", sem bloqueio de decisão
 do Manager: `AG-138` (CLI `build_dollar_bars.py` sem subcomando
 walkforward), `AG-139` (2 anotações `# noqa: magic-number` faltando em
@@ -4564,6 +4593,20 @@ pipeline), `AG-142` (diagnóstico de IC-por-ambiente não persistido).
 
 ## Changelog
 
+- **v3.35 (2026-08-23)** — **`AG-140` fechado — confirmação empírica
+  achou drift real (schema de hash, não parâmetro) contra
+  `labels/v1` de produção, reprocessado.** Detalhe: `§15.24-F`. Os 2
+  testes `slow`/`integration` (v3.34 pedia essa confirmação) falharam de
+  verdade: `config_hash` do `labels.parquet` real (`b281a18954e224ef`)
+  divergia do da execução atual. Investigado ANTES de agir (`git log -p`
+  nos 7 campos do hash): nenhum valor mudou — a divergência é o FORMATO
+  do payload, que migrou 5x historicamente (`AG-005`/`031`/`042`/`116`,
+  já documentado na docstring de `config_hash`), e os labels reais
+  predatam essas migrações. Usuário escolheu reprocessar (de 3 opções
+  oferecidas). `build_and_write_labels_for_symbol`/`run_and_write_
+  labels_for_alts` rodados — 5 `labels.parquet` reescritos com o hash do
+  schema atual, mesmos valores de barreira. Confirmado: `2 passed` (era
+  `2 failed`). Zero teste do repo tinha o hash antigo hardcoded.
 - **v3.34 (2026-08-23)** — **`verify_config_hash` (B15) wireado no
   caminho real de consumo.** Detalhe: `§15.24`. `AG-140` — a função já
   existia, testada isoladamente, mas `src/models/dataset.py::

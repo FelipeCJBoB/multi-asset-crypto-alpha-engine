@@ -10803,7 +10803,52 @@ entries:
       ajustados com mock de `verify_config_hash`, já que testavam
       roteamento, não esta lógica). Mecânicos limpos (`git stash`
       confirma zero achado novo). Ver `PLANO_MESTRE_PRINCE2.md §15.24`.
-    status: "parcialmente fechado -- implementado e testado (mock), mas NÃO confirmado empiricamente contra labels.parquet real. Pedido explícito ao usuário: `uv run pytest tests/unit/test_models_dataset.py -k config_hash` primeiro, depois `-m \"slow and integration\"` (os 2 testes F1 que já chamam build_modeling_frame() sobre dado real) pra confirmar contra produção de verdade -- ou rodar build_modeling_frame() direto. Se revelar mismatch real, registrar como novo achado (não reabrir esta entrada silenciosamente -- addendum)."
+    status: "fechado 2026-08-23 -- implementado (commit 79f380f), achado real de reprocessamento confirmado e resolvido (addendum abaixo), 71 testes confirmados pelo usuário incluindo os 2 slow/integration sobre dado real."
+    addendum_2026_08_23_confirmacao_empirica_revelou_reprocessamento_necessario: >
+      A confirmação empírica pedida (`status` acima, versão anterior desta
+      entrada) ACONTECEU e o risco nomeado se concretizou: os 2 testes
+      `slow`/`integration` (`test_regime_r0_e_100_por_cento_warmup_sem_t1_
+      valido`, `test_predictions_reais_do_alpha_zero_sinais_em_r0`)
+      falharam com `ConfigHashMismatchError` real contra
+      `data/labels/BTCUSDT/15m/v1/labels.parquet` (462.682 linhas) --
+      `config_hash` do arquivo = `b281a18954e224ef`, `config_hash` da
+      execução atual = `2122d433edb4fd3a`.
+
+      **Causa raiz investigada e confirmada, não presumida:** `git log -p`
+      completo em `config/constants.yaml` pros 7 campos que compõem
+      `LabelConfig.config_hash` (`tp_atr_mult`, `sl_atr_mult`, `maker_fee`,
+      `taker_fee`, `time_stop_ms`, `atr_window_ms`, `fill_timeout_ms`) --
+      NENHUM mudou de valor desde que foi criado (exatamente 1 adição cada
+      no histórico inteiro, zero edição posterior). A divergência não é
+      parâmetro que mudou -- é o FORMATO do payload que mudou: a própria
+      docstring de `config_hash` (`triple_barrier.py:477-526`) já
+      documenta 5 migrações históricas de chave (estimator_id novo
+      2026-08-12; `decision_tf_minutes`->`tf` `AG-005`; `time_stop_bars`->
+      `time_stop_ms` + `atr_window`->`atr_window_ms` `AG-031`;
+      `fill_timeout_bars`->`fill_timeout_ms` + `resolution_id` novo
+      `AG-042`; `horizon_bars` novo `AG-116`) -- cada uma "mesmo valor
+      numérico", mas o JSON serializado muda, logo o hash muda. Os labels
+      reais de produção (`b281a18954e224ef`) foram gerados ANTES dessas
+      migrações e nunca foram reprocessados -- fato já citado em
+      `docs/SPRINT_LOG.md` (achado D3, "config_hash idêntico ao anterior,
+      b281a18954e224ef") como o hash "estável" de referência, sem que
+      ninguém tivesse notado que ele predatava o schema atual porque
+      nenhum caller comparava os dois antes de `AG-140`.
+
+      **Decisão do usuário** (`AskUserQuestion`, 3 opções: reprocessar
+      agora / reverter a checagem / registrar e escalar): reprocessar
+      agora. `build_and_write_labels_for_symbol('BTCUSDT', ...)` +
+      `run_and_write_labels_for_alts()` rodados pelo usuário --
+      `write_labels_atomic` (B29, `.tmp`->`fsync`->`os.replace`)
+      sobrescreveu os 5 `data/labels/{symbol}/15m/v1/labels.parquet` com o
+      `config_hash` do schema atual, mesmos valores de barreira (nenhum
+      campo mudou, só o hash). Confirmado: `uv run pytest tests/unit/
+      test_models_dataset.py -m "slow and integration"` -- **2 passed**
+      (antes: 2 failed com `ConfigHashMismatchError`). Nenhum teste do
+      repo tinha o hash antigo hardcoded (`grep -r b281a18954e224ef` só
+      achava `docs/SPRINT_LOG.md` -- narrativa histórica, não asserção --
+      e `experiments/cost_surface_report.json`, artefato gerado) -- zero
+      regressão pra reconciliar fora desta entrada.
 
   - id: AG-141
     date: "2026-08-22"

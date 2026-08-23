@@ -1404,7 +1404,12 @@ aqui.
 **D3 — MFE por regime e lado** (`mfe_atr_units`, coluna nova persistida em
 `labels/v1/labels.parquet` — `src/labels/triple_barrier.py` estendido no
 mesmo laço que já varria `path_high`/`path_low`, `config_hash` idêntico ao
-anterior, `b281a18954e224ef`, 462.682 linhas, nada mais mudou). **Achado
+anterior, `b281a18954e224ef`, 462.682 linhas, nada mais mudou).
+**[DESATUALIZADO 2026-08-23]** `b281a18954e224ef` deixou de ser o
+`config_hash` real de `labels/v1` — predatava 5 migrações de schema do
+hash (`AG-005`/`031`/`042`/`116`) e foi reprocessado, ver `AG-140`
+adiante nesta mesma tabela cronológica e `PLANO_MESTRE_PRINCE2.md
+§15.24-F`. **Achado
 que refuta a hipótese original da task**: a mediana de MFE fica em
 1,27-1,40 ATR em TODOS os 8 blocos lado×regime — R2 NÃO é
 sistematicamente pior que os outros regimes nesta dimensão (long-R2:
@@ -3615,6 +3620,28 @@ sobre dado real. Mecânicos limpos, zero achado novo (`git stash`
 confirmado). Fila do roadmap pra próxima rodada, mesma severidade,
 sem bloqueio de Manager: `AG-138`/`AG-139`/`AG-141`/`AG-142`.
 
+**O risco se concretizou — e foi resolvido, na mesma sessão.** Os 2
+testes `slow`/`integration` falharam de verdade:
+`ConfigHashMismatchError`, `config_hash` do `labels.parquet` real
+(`b281a18954e224ef`) ≠ da execução (`2122d433edb4fd3a`). Investigado
+ANTES de qualquer ação: `git log -p` completo nos 7 campos que compõem o
+hash — nenhum valor de `constants.yaml` mudou desde criado. A
+divergência é o FORMATO do payload (5 migrações históricas de chave já
+documentadas na docstring de `config_hash` — `AG-005`/`AG-031`/`AG-042`/
+`AG-116`, "mesmo valor numérico" a cada vez), não um parâmetro real
+mudado. `b281a18954e224ef` é o MESMO hash já citado no achado D3 desta
+mesma seção (acima, "MFE por regime e lado") — os labels reais predatam
+essas migrações, nunca foram reprocessados, e nada comparava os dois
+antes de hoje.
+
+Pergunta feita ao usuário (3 opções: reprocessar / reverter a checagem / <!-- check-sprint-log: skip -->
+só registrar e escalar) — escolheu reprocessar. `build_and_write_labels_
+for_symbol('BTCUSDT', ...)` + `run_and_write_labels_for_alts()` rodados
+— 5 `labels.parquet` reescritos com o hash do schema atual, mesmos
+valores de barreira. Confirmado: `2 passed` (era `2 failed`). `AG-140`
+fechado. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.24-F`,
+`audit/architecture_gaps_log.yaml::AG-140` addendum.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3655,4 +3682,4 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |
 | **`feature_a13_ema_window` — clock↔bar-count em código** | `AG-043` addendum, `§15.23`. Único campo `scaling_invariant: clock` do Feature Engine ganhou implementação real (`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`, `src/features/build.py`) — 48/24/12 barras sob R1/R2/R3, bit-exato sob `time_15m`. Correção de rumo registrada: 2 propostas de reclassificar A13 pra `bar_count` (apoiadas em literatura real) descartadas após releitura de `AG-043` mostrar que a exceção já era deliberada e justificada. `E27f_cost_atr_ratio`/`atr_window` confirmados como separação correta, não gap. Doc-drift `registry.yaml::min_warmup_bars` (2000→200) corrigido junto. 9 testes novos, mecânicos limpos. **`triple_barrier.py`**: `bars_15m`→`bars_df` renomeado (cosmético, delegado, commit `1734d96`) — `71 passed` confirmado pelo usuário |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
-| **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` parcialmente fechado, `§15.24`. `src/models/dataset.py::build_modeling_frame` passa a verificar `config_hash` dos labels contra a config de execução atual antes de montar o frame — gap real (função existia, testada isolada, nunca chamada no caminho de produção). `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). **NÃO confirmado empiricamente contra `labels.parquet` real** — pedido explícito ao usuário: `uv run pytest tests/unit/test_models_dataset.py -k config_hash` primeiro. 8 testes (4 novos + 4 ajustados), mecânicos limpos. Fila pra próxima rodada: `AG-138`/`139`/`141`/`142` (mesmo fan-out, mesma severidade) |
+| **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` FECHADO, `§15.24`. `src/models/dataset.py::build_modeling_frame` verifica `config_hash` dos labels contra a config de execução antes de montar o frame. `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). Confirmação empírica achou drift REAL contra `labels/v1` de produção — investigado (git log: nenhum parâmetro mudou, é o FORMATO do hash que migrou 5x historicamente, `AG-005`/`031`/`042`/`116`) — usuário reprocessou os 5 símbolos (`build_and_write_labels_for_symbol`/`run_and_write_labels_for_alts`), `2 passed` (era `2 failed`). Fila pra próxima rodada: `AG-138`/`139`/`141`/`142` (mesmo fan-out, mesma severidade) |
