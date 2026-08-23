@@ -9,10 +9,14 @@ modela profundidade do book, não distingue um único trade de 0,001 BTC de
 um movimento substancial de mercado no mesmo nível.
 
 **O que isto É:** dado que uma ordem limite foi postada em `t_post` a
-`limit_price`, percorre `mark_1m` de `t_post` até `t_post +
-fill_timeout_bars` barras de 15m (= `fill_timeout_bars * 15` candles de 1
-minuto) e considera a ordem preenchida se o INTERVALO `[low, high]` de
-algum candle de 1m tocou `limit_price` — não compara só contra `close`.
+`limit_price`, percorre `mark_1m` de `t_post` (exclusive) até `horizon_ms`
+(inclusive) — janela em relógio fixo, TF-agnóstica, definida pelo chamador
+(hoje `LabelConfig.fill_timeout_ms`, ver `triple_barrier.py`, AG-042; a
+prosa antiga desta docstring falava em "barras de 15m"/`fill_timeout_bars`,
+terminologia de antes da migração — o campo não existe mais em
+`LabelConfig`, o código abaixo sempre foi ms-agnóstico) — e considera a
+ordem preenchida se o INTERVALO `[low, high]` de algum candle de 1m tocou
+`limit_price` — não compara só contra `close`.
 
 **ISTO SUPERESTIMA O FILL RATE REAL** — é um LIMITE SUPERIOR otimista, não
 uma estimativa não-enviesada. Qualquer toque do intervalo `[low, high]` de
@@ -74,8 +78,8 @@ def simulate_fill_arrays(
     e também pela versão de conveniência `simulate_fill` abaixo.
 
     Janela de busca: candles de 1m com `open_time` estritamente posterior a
-    `t_post_ms` e até `horizon_ms` inclusive — `fill_timeout_bars=1` produz
-    exatamente 15 candles de 1m nessa janela (uma barra de 15m).
+    `t_post_ms` e até `horizon_ms` inclusive — ex.: `horizon_ms - t_post_ms
+    = 900_000` (15 min) produz até 15 candles de 1m nessa janela.
 
     `side=1` (compra/long): preenche se `low <= limit_price` em algum
     candle da janela — o mark tocou ou cruzou o limite por baixo.

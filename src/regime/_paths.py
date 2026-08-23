@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
+
 # src/regime/_paths.py -> parents[0]=src/regime, [1]=src, [2]=raiz do repo
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -33,9 +35,29 @@ REGIME_OUTPUT_DIR: Path = DATA_ROOT / "regimes"
 _DEFAULT_TF = "15m"
 
 
-def regime_symbol_tf_dir(symbol: str, version: str, *, tf: str = _DEFAULT_TF) -> Path:
-    """`data/regimes/{symbol}/{tf}/{version}/`."""
-    return DATA_ROOT / "regimes" / symbol / tf / version
+def regime_symbol_tf_dir(
+    symbol: str, version: str, *, tf: str = _DEFAULT_TF, resolution_id: str | None = None
+) -> Path:
+    """`data/regimes/{symbol}/{grade}/{version}/` — `grade` é `tf` (grade
+    de tempo) OU `resolution_id` (dollar bar) quando setado. Mesma guarda
+    anti-colisão de `src.labels._paths.labels_symbol_tf_dir`/
+    `src.validation._paths.labels_symbol_tf_dir` (AG-042, `project_
+    assurance`, 2026-08-17) -- `resolution_id` sempre vence sobre `tf`,
+    nunca combina os dois, `ValueError` explícito se não reconhecido.
+    Achado real (mapa de dívida técnica multi-ativo, 2026-08-22): este
+    pacote nunca tinha ganhado esta guarda, ao contrário de
+    `labels`/`validation` — regime sob dollar-bar cairia silenciosamente
+    em `.../15m/...` sem isto."""
+    if resolution_id is not None:
+        if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+            raise ValueError(
+                f"regime_symbol_tf_dir: resolution_id={resolution_id!r} não reconhecido -- "
+                f"esperado um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+            )
+        grade = resolution_id
+    else:
+        grade = tf
+    return DATA_ROOT / "regimes" / symbol / grade / version
 
 # Duplicado de `src/exchange/_paths.py::DEFAULT_SNAPSHOTS_DIR` — mesma tática
 # de duplicação tática já usada por `data`/`features` para não cruzar a

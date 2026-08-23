@@ -130,6 +130,7 @@ from numpy.typing import NDArray
 
 from src.data import lake
 from src.data.resample import step_ms
+from src.exchange.filters import NoFiltersAvailableError, load_filters_asof
 
 from ._constants import load_constant
 from ._paths import EXECUTION_RUNS_DIR, FILL_SIMULATOR_OUTPUT_DIR, book_ticker_symbol_dir
@@ -462,15 +463,157 @@ def _simulate_one_order_price_improved(
 
 
 # ============================================================================
-# Grade de decisão a 15m (mesma grade da decisão real do sistema, §0.1)
+# Grade de decisão — clock (15m/30m/1h) ou dollar-bar (R1/R2/R3). Achado real
+# (mapa de dívida técnica multi-ativo, 2026-08-22): a grade era sempre
+# `step_ms("15m")` fixo, mesmo sob resolução dollar-bar, onde não existe
+# cadência de relógio pra sintetizar — mesmo princípio de correção já
+# ratificado em `src.regime.hmm_gap_check`/no desenho de `stress.py`
+# (S6): sob dollar-bar, usa o `close_time` REAL de cada barra, nunca um step
+# inventado.
 # ============================================================================
 
 
 def _day_grid_ms(day: date, bar_ms: int) -> IntArray:
-    """Pontos de grade `[00:00, 24:00)` UTC do dia, a cada `bar_ms`."""
+    """Pontos de grade `[00:00, 24:00)` UTC do dia, a cada `bar_ms` —
+    caminho de grade de TEMPO (`resolution_id is None`, `tf` em uso)."""
     start_ms = int(datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp() * 1000)
     n_bars = _MS_PER_DAY // bar_ms
     return (start_ms + np.arange(n_bars, dtype=np.int64) * bar_ms).astype(np.int64)
+
+
+def _dollar_bar_grid_ms(symbol: str, day: date, resolution_id: str) -> IntArray:
+    """Pontos de grade do dia sob dollar-bar — `close_time` real de cada
+    barra emitida por `lake.query_dollar_bars` nesse dia, nunca um `step_ms`
+    sintetizado (dollar bars fecham por volume acumulado, cadência
+    irregular por desenho). Array vazio se nenhuma barra existir no dia
+    (dia sem atividade suficiente pra fechar uma barra, ou dia fora da
+    cobertura de backfill dentro de um symbol/resolução que EXISTE em
+    disco) — chamador trata como ausência de grade, mesmo padrão de
+    `book_df.is_empty()` já usado no loop de `simulate_window` (conta,
+    loga, não finge sucesso silencioso — achado real, revisão
+    `audit_engineering`: "zero medido" precisa continuar visível, não só
+    "não crashar").
+
+    **Achado CRITICAL corrigido aqui (revisão `audit_engineering`,
+    2026-08-22): `lake.query_dollar_bars` levanta `FileNotFoundError` se o
+    DIRETÓRIO do symbol não existir** (`data/capacity/dollar_bars_r{N}/
+    {symbol}/` ausente por inteiro — hoje só `BTCUSDT` tem esse diretório
+    pras 3 resoluções; ETH/SOL/BNB/XRP não têm nenhuma). Isso é
+    estruturalmente diferente de "dia sem barra" (symbol/resolução
+    existem, backfill só não cobre aquele dia específico) — é "esta
+    combinação symbol×resolução nunca foi processada", erro de SETUP, não
+    de dado ausente pontual. Re-levanta com mensagem acionável em vez de
+    deixar o `FileNotFoundError` cru de `src/data/_paths.py` subir sem
+    contexto -- comportamento continua sendo falhar alto (nunca finge um
+    resultado vazio "de sucesso" pra uma combinação nunca processada)."""
+    try:
+        bars = lake.query_dollar_bars(
+            symbol, day, day + timedelta(days=1), resolution_id=resolution_id
+        )
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"_dollar_bar_grid_ms: nenhum dollar bar em disco para symbol={symbol!r} "
+            f"resolution_id={resolution_id!r} -- data/capacity/"
+            f"dollar_bars_{resolution_id.lower()}/{symbol}/ não existe. Backfill "
+            "(src.data.build_dollar_bars) precisa rodar pra este symbol/resolução "
+            "antes de simular fill sob dollar-bar."
+        ) from exc
+    if bars.is_empty():
+        return np.array([], dtype=np.int64)
+    close_time = bars["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
+    day_start_ms = int(datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp() * 1000)
+    day_end_ms = day_start_ms + _MS_PER_DAY
+    # query_dollar_bars(day, day+1) devolve barras cujo close_time cai em
+    # QUALQUER ponto de [day 00:00, day+1 24:00) por causa de como a poda
+    # por dia é feita rio abaixo — filtra pro dia pedido explicitamente,
+    # mesmo contrato que _day_grid_ms já cumpre pro caminho de tempo.
+    return close_time[(close_time >= day_start_ms) & (close_time < day_end_ms)]
+
+
+def _resolve_tick_size_cached(
+    day: date,
+    symbol: str,
+    cache: dict[date, float],
+    warned: list[bool],
+    *,
+    historical_filters_fallback: bool,
+) -> float:
+    """`tick_size` por `symbol`+dia via `Filters` (B01 — nunca "o filtro de
+    hoje" pra barra histórica), mesmo padrão de
+    `src.labels.triple_barrier._resolve_filters_cached`/
+    `_earliest_available_filters`.
+
+    **Achado CRITICAL corrigido aqui (revisão `audit_engineering`,
+    2026-08-22): `load_filters_asof` levanta `NoFiltersAvailableError` pra
+    QUALQUER data anterior ao único snapshot em disco
+    (`data/raw/snapshots/exchange_info/2026-08-08.json`) — a janela
+    default inteira deste módulo (`BOOK_TICKER_WINDOW_START/END`,
+    2023-05-16..2024-03-30) é inteiramente anterior a esse snapshot.**
+    Sem fallback, `simulate_window()` sem argumentos (o uso mais comum,
+    inclusive `_run_cli` default) crashava no 1º dia do loop, 100% da
+    janela, sempre. `historical_filters_fallback=False` (default,
+    preserva a disciplina B01 de nunca substituir silenciosamente) exige
+    opt-in explícito do chamador pra usar o snapshot mais recente
+    disponível como proxy — mesmo texto de aviso/mesma semântica de
+    `known_gaps.exchange_info_snapshot_coverage_gap` (`constants.yaml`).
+    Cache por dia dentro da chamada (mesmo motivo de performance de
+    `triple_barrier` — evita reparsear o snapshot a cada ordem)."""
+    if day in cache:
+        return cache[day]
+    try:
+        tick_size = float(load_filters_asof(day, symbol=symbol).tick_size)
+    except NoFiltersAvailableError:
+        if not historical_filters_fallback:
+            raise
+        fallback_filters = load_filters_asof(datetime.now(tz=UTC), symbol=symbol)
+        if not warned[0]:
+            warned[0] = True
+            logger.warning(
+                "fill_simulator.filters_fallback_used",
+                symbol=symbol,
+                requested_date=day.isoformat(),
+                fallback_snapshot_date=fallback_filters.snapshot_date.isoformat(),
+                reason=(
+                    "nenhum snapshot exchangeInfo cobre esta data (B01/§1.4) -- ver "
+                    "known_gaps.exchange_info_snapshot_coverage_gap em constants.yaml. "
+                    "Fallback explícito, só ativo com historical_filters_fallback=True. "
+                    "1º aviso desta chamada -- dias subsequentes que também caem em "
+                    "fallback não repetem este log."
+                ),
+            )
+        tick_size = float(fallback_filters.tick_size)
+    cache[day] = tick_size
+    return tick_size
+
+
+def _resolve_day_grid_and_timeout(
+    symbol: str,
+    day: date,
+    *,
+    tf: str,
+    resolution_id: str | None,
+    fill_timeout_bars: int | None,
+) -> tuple[IntArray, int]:
+    """`(grade de decisão em ms do dia, fill_timeout_ms)`. `fill_timeout_ms`
+    é SEMPRE calibrado em unidade de relógio de 15m
+    (`fill_timeout_bars * step_ms("15m")`) — não escala com `tf`/
+    `resolution_id`. Isto é uma decisão explícita, não um resíduo de
+    hardcode: `fill_timeout_bars` (Sprint 9, `constants.yaml`) foi
+    calibrado como uma DURAÇÃO de espera por preenchimento, não como
+    contagem de barras da grade de decisão — os dois são conceitos
+    diferentes que hoje coincidem só porque a grade também era 15m.
+    Reabrir essa calibração para escalar por `tf`/`resolution_id` é
+    decisão de negócio (não uma correção de bug), fora do escopo deste
+    achado — sinalizado aqui, não decidido silenciosamente."""
+    timeout_bars = (
+        fill_timeout_bars
+        if fill_timeout_bars is not None
+        else int(load_constant("fill_timeout_bars"))
+    )
+    fill_timeout_ms = timeout_bars * step_ms("15m")
+    if resolution_id is not None:
+        return _dollar_bar_grid_ms(symbol, day, resolution_id), fill_timeout_ms
+    return _day_grid_ms(day, step_ms(tf)), fill_timeout_ms
 
 
 # ============================================================================
@@ -581,6 +724,12 @@ class SimulationRunResult:
     orders: pl.DataFrame
     n_skipped_no_book_state: int
     n_days_no_data: int
+    # "zero medido" (dia sem barra dollar-bar, contado/logado) -- distinto
+    # de "nunca medido" (symbol/resolução inteiros ausentes, FileNotFoundError
+    # explícito de _dollar_bar_grid_ms). Default 0 preserva bit-exato toda
+    # construção existente sob grade de tempo (achado real, revisão
+    # audit_engineering, 2026-08-22: zero/nunca medido conflados).
+    n_days_no_dollar_bar_grid: int = 0
 
 
 _OrderSimulator = Callable[..., SimulatedOrder | None]
@@ -591,16 +740,48 @@ def simulate_window(
     start: date = BOOK_TICKER_WINDOW_START,
     end: date = BOOK_TICKER_WINDOW_END,
     *,
+    tf: str = "15m",
+    resolution_id: str | None = None,
     sides: tuple[int, ...] = (1, -1),
     fill_timeout_bars: int | None = None,
+    historical_filters_fallback: bool = False,
     _order_simulator: _OrderSimulator = _simulate_one_order,
 ) -> SimulationRunResult:
     """Percorre `[start, end]` dia a dia, dia útil de calendário (não
     apenas dias com dado — dias sem arquivo de bookTicker são contados em
     `n_days_no_data` e pulados). Para cada dia carrega o par
-    `(dia, dia+1)` de bookTicker + `aggTrades` (via `src.data.lake`), gera a
-    grade de 15m do dia e simula UMA ordem por lado por ponto de grade
-    (ambos os lados por padrão — ver docstring do módulo, item 2).
+    `(dia, dia+1)` de bookTicker + `aggTrades` (via `src.data.lake`), resolve
+    a grade de decisão do dia e simula UMA ordem por lado por ponto de
+    grade (ambos os lados por padrão — ver docstring do módulo, item 2).
+
+    `tf`/`resolution_id` — mesma disciplina de "um parâmetro de grade só"
+    de `src.models.dataset.build_modeling_frame` (achado real, mapa de
+    dívida técnica multi-ativo, 2026-08-22: a grade era sempre `15m`
+    hardcoded, inclusive sob resolução dollar-bar, onde não existe cadência
+    de relógio pra sintetizar). `resolution_id=None` (default) preserva
+    bit-exato: grade de tempo via `step_ms(tf)`, `tf="15m"` por padrão,
+    idêntico ao comportamento anterior desta função sem estes argumentos.
+    `resolution_id="R1"/"R2"/"R3"` usa o `close_time` REAL de cada dollar
+    bar do dia como grade (`_dollar_bar_grid_ms`), nunca um step
+    sintetizado. `tick_size` passa a ser resolvido por `symbol`+dia via
+    `Filters` (`load_filters_asof`, B01 — nunca "o filtro de hoje" pra
+    barra histórica), não mais de uma constante global calibrada em
+    BTCUSDT (achado real: tick size varia até 1000x entre os 5 símbolos —
+    usar o de BTC pra ETH/SOL/BNB/XRP produz `p_fill`/`markout`
+    sistematicamente enviesados, silenciosamente).
+
+    `historical_filters_fallback` (default `False`, mesma semântica de
+    `src.labels.triple_barrier.build_labels_with_stats`): a janela default
+    deste módulo (`BOOK_TICKER_WINDOW_START`..`_END`, 2023-05-16..2024-03-30)
+    é inteiramente anterior ao único snapshot de `exchangeInfo` em disco
+    (2026-08-08) — `load_filters_asof` levanta `NoFiltersAvailableError`
+    pra qualquer dia dessa janela sem fallback (achado CRITICAL corrigido
+    aqui, revisão `audit_engineering`, 2026-08-22: sem isto,
+    `simulate_window()` sem argumentos crashava no 1º dia, 100% da janela
+    default, sempre). `False` (default) preserva a disciplina B01 (nunca
+    substituir silenciosamente); `True` usa o snapshot mais recente
+    disponível como proxy, mesmo padrão/aviso de
+    `known_gaps.exchange_info_snapshot_coverage_gap` (`constants.yaml`).
 
     `_order_simulator`: hook interno (prefixo `_` deliberado — não é API
     pública nova) que troca o núcleo numérico por ordem simulada, mantendo
@@ -614,6 +795,13 @@ def simulate_window(
             f"end={end.isoformat()} >= {RPI_BREAK_DATE.isoformat()} (quebra RPI, §9.5 v3.3) — "
             "este simulador não é válido depois desta data (ver docstring do módulo)"
         )
+    if resolution_id is not None and tf != "15m":
+        raise ValueError(
+            f"simulate_window: resolution_id={resolution_id!r} e tf={tf!r} setados "
+            "simultaneamente — escolha um eixo de grade só (mesma disciplina de "
+            "build_modeling_frame: dois parâmetros que pudessem divergir reintroduziriam "
+            "incoerência silenciosa)"
+        )
     if start < BOOK_TICKER_WINDOW_START or end > BOOK_TICKER_WINDOW_END:
         logger.warning(
             "fill_simulator.window_outside_measured_coverage",
@@ -623,17 +811,12 @@ def simulate_window(
             coverage_end=BOOK_TICKER_WINDOW_END.isoformat(),
         )
 
-    bar_ms = step_ms("15m")
-    if fill_timeout_bars is not None:
-        timeout_bars = fill_timeout_bars
-    else:
-        timeout_bars = int(load_constant("fill_timeout_bars"))
-    fill_timeout_ms = timeout_bars * bar_ms
-    tick_size = float(load_constant("tick_size"))
-
     cols: dict[str, list[Any]] = {c: [] for c in _ORDERS_SCHEMA}
     n_skipped_no_book_state = 0
     n_days_no_data = 0
+    n_days_no_dollar_bar_grid = 0
+    tick_size_cache: dict[date, float] = {}
+    tick_size_warned = [False]
 
     day = start
     while day <= end:
@@ -648,7 +831,30 @@ def simulate_window(
         book_arr = _book_arrays(book_df)
         trade_arr = _trade_arrays(trades_df) if not trades_df.is_empty() else _empty_trade_arrays()
 
-        grid = _day_grid_ms(day, bar_ms).tolist()
+        tick_size = _resolve_tick_size_cached(
+            day,
+            symbol,
+            tick_size_cache,
+            tick_size_warned,
+            historical_filters_fallback=historical_filters_fallback,
+        )
+        grid_arr, fill_timeout_ms = _resolve_day_grid_and_timeout(
+            symbol, day, tf=tf, resolution_id=resolution_id, fill_timeout_bars=fill_timeout_bars
+        )
+        if resolution_id is not None and grid_arr.shape[0] == 0:
+            # "zero medido" (dia sem dollar-bar fechada -- symbol/resolução
+            # existem em disco, achado HIGH corrigido aqui, revisão
+            # audit_engineering, 2026-08-22) -- distinto de "nunca medido"
+            # (symbol/resolução inteiros ausentes, FileNotFoundError
+            # explícito de _dollar_bar_grid_ms, não chega aqui).
+            n_days_no_dollar_bar_grid += 1
+            logger.warning(
+                "fill_simulator.day_no_dollar_bar_grid",
+                day=day.isoformat(),
+                symbol=symbol,
+                resolution_id=resolution_id,
+            )
+        grid = grid_arr.tolist()
         n_before = len(cols["t_post"])
         for side in sides:
             for t_post_ms in grid:
@@ -681,11 +887,13 @@ def simulate_window(
         n_orders=df.height,
         n_skipped_no_book_state=n_skipped_no_book_state,
         n_days_no_data=n_days_no_data,
+        n_days_no_dollar_bar_grid=n_days_no_dollar_bar_grid,
     )
     return SimulationRunResult(
         orders=df,
         n_skipped_no_book_state=n_skipped_no_book_state,
         n_days_no_data=n_days_no_data,
+        n_days_no_dollar_bar_grid=n_days_no_dollar_bar_grid,
     )
 
 
@@ -694,8 +902,11 @@ def simulate_window_price_improved(
     start: date = BOOK_TICKER_WINDOW_START,
     end: date = BOOK_TICKER_WINDOW_END,
     *,
+    tf: str = "15m",
+    resolution_id: str | None = None,
     sides: tuple[int, ...] = (1, -1),
     fill_timeout_bars: int | None = None,
+    historical_filters_fallback: bool = False,
 ) -> SimulationRunResult:
     """Variante de SENSIBILIDADE (investigação pós-Sprint 9, item 4) —
     mesma orquestração de `simulate_window`, núcleo trocado para
@@ -704,13 +915,18 @@ def simulate_window_price_improved(
     módulo/relatório de análise desta investigação e por testes. Linhas com
     `queue_ahead_initial == -1.0` no resultado são pontos de grade onde a
     melhora de 1 tick cruzaria o lado oposto (spread observado <= 1 tick) —
-    não postáveis como GTX; ver docstring de `_simulate_one_order_price_improved`."""
+    não postáveis como GTX; ver docstring de `_simulate_one_order_price_improved`.
+    `tf`/`resolution_id`/`historical_filters_fallback` — mesmo contrato de
+    `simulate_window`, repassado sem mudança de comportamento."""
     return simulate_window(
         symbol,
         start,
         end,
+        tf=tf,
+        resolution_id=resolution_id,
         sides=sides,
         fill_timeout_bars=fill_timeout_bars,
+        historical_filters_fallback=historical_filters_fallback,
         _order_simulator=_simulate_one_order_price_improved,
     )
 
@@ -1026,6 +1242,17 @@ def _run_cli() -> int:
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--start", default=BOOK_TICKER_WINDOW_START.isoformat(), help="yyyy-mm-dd")
     parser.add_argument("--end", default=BOOK_TICKER_WINDOW_END.isoformat(), help="yyyy-mm-dd")
+    parser.add_argument("--tf", default="15m", choices=["15m", "30m", "1h"])
+    parser.add_argument("--resolution-id", default=None, choices=[None, "R1", "R2", "R3"])
+    parser.add_argument(
+        "--historical-filters-fallback",
+        action="store_true",
+        help=(
+            "usa o snapshot de exchangeInfo mais recente disponível como proxy pra "
+            "tick_size quando a janela pedida é anterior ao único snapshot em disco "
+            "(B01 -- opt-in explícito, nunca default; ver docstring de simulate_window)"
+        ),
+    )
     parser.add_argument("--version", default="v1")
     parser.add_argument("--notes", default="")
     args = parser.parse_args()
@@ -1033,7 +1260,14 @@ def _run_cli() -> int:
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
 
-    result = simulate_window(args.symbol, start, end)
+    result = simulate_window(
+        args.symbol,
+        start,
+        end,
+        tf=args.tf,
+        resolution_id=args.resolution_id,
+        historical_filters_fallback=args.historical_filters_fallback,
+    )
     summary = summarize(
         result.orders,
         symbol=args.symbol,
@@ -1045,10 +1279,17 @@ def _run_cli() -> int:
 
     write_orders_atomic(result.orders, version=args.version)
     write_summary_atomic(summary, version=args.version)
+    tick_size_used = _resolve_tick_size_cached(
+        end,
+        args.symbol,
+        {},
+        [False],
+        historical_filters_fallback=args.historical_filters_fallback,
+    )
     record_experiment(
         summary,
         fill_timeout_bars_used=int(load_constant("fill_timeout_bars")),
-        tick_size_used=float(load_constant("tick_size")),
+        tick_size_used=tick_size_used,
         notes=args.notes,
     )
 

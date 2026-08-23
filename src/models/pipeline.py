@@ -474,12 +474,16 @@ def run_layer1_sprint(
     # sentinela de `dest_dir_c1`/`dest_dir_c0` usado abaixo para
     # `write_predictions_atomic`.
     dest_dir_diag_c1 = (
-        models_diagnostics_symbol_tf_dir(symbol, model_id_camada1, tf=path_tf)
+        models_diagnostics_symbol_tf_dir(
+            symbol, model_id_camada1, tf=tf_effective, resolution_id=resolution_id
+        )
         if path_tf is not None
         else None
     )
     dest_dir_diag_c0 = (
-        models_diagnostics_symbol_tf_dir(symbol, model_id_camada0, tf=path_tf)
+        models_diagnostics_symbol_tf_dir(
+            symbol, model_id_camada0, tf=tf_effective, resolution_id=resolution_id
+        )
         if path_tf is not None
         else None
     )
@@ -498,12 +502,16 @@ def run_layer1_sprint(
     # dependem disso). `tf`/`resolution_id` explícito: layout chaveado por
     # symbol/`path_tf` (mesma guarda contra colisão do bloco acima).
     dest_dir_c1 = (
-        predictions_symbol_tf_dir(symbol, model_id_camada1, tf=path_tf)
+        predictions_symbol_tf_dir(
+            symbol, model_id_camada1, tf=tf_effective, resolution_id=resolution_id
+        )
         if path_tf is not None
         else None
     )
     dest_dir_c0 = (
-        predictions_symbol_tf_dir(symbol, model_id_camada0, tf=path_tf)
+        predictions_symbol_tf_dir(
+            symbol, model_id_camada0, tf=tf_effective, resolution_id=resolution_id
+        )
         if path_tf is not None
         else None
     )

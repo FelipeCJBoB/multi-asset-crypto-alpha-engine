@@ -1042,7 +1042,9 @@ def _run_cli() -> int:
             "agg_trades",
             "metrics",
             "funding",
+            "bars_15m",
             "bars_30m",
+            "bars_1h",
             "dollar_bars_r1",
             "dollar_bars_r2",
             "dollar_bars_r3",
@@ -1077,10 +1079,22 @@ def _run_cli() -> int:
     elif args.dataset == "funding":
         df = lake.query_funding(args.symbol, args.start, args.end)
         report = validate_funding(df, symbol=args.symbol)
-    elif args.dataset == "bars_30m":
+    elif args.dataset.startswith("bars_"):
+        # Generaliza pras 3 grades de tempo (15m/30m/1h), mesma convenção
+        # de src.data.build_dollar_bars.CALIBRATION_TF_BY_RESOLUTION —
+        # achado real (mapa de dívida técnica multi-ativo, 2026-08-22):
+        # o CLI só cobria 30m com valor cravado, apesar de
+        # validate_resampled_bars/resample_klines já serem genéricos por
+        # tf. NOTA: mesmo com as 3 grades disponíveis aqui, o check 16
+        # (paridade cross-source) só produz resultado real se houver kline
+        # NATIVO de 15m/30m/1h em disco — hoje só klines_1m nativo existe;
+        # sem isso o gate cai em PENDING (ver validate_resampled_bars) —
+        # baixar kline nativo é decisão de escopo/custo separada, fora
+        # deste achado.
+        tf = args.dataset.removeprefix("bars_")
         df_1m = lake.query_bars(args.symbol, "1m", args.start, args.end, source="klines_1m")
-        df_30m = resample.resample_klines(df_1m, "30m")
-        report = validate_resampled_bars(df_30m, timeframe="30m", symbol=args.symbol)
+        df_resampled = resample.resample_klines(df_1m, tf)
+        report = validate_resampled_bars(df_resampled, timeframe=tf, symbol=args.symbol)
     elif args.dataset in ("dollar_bars_r1", "dollar_bars_r2", "dollar_bars_r3"):
         resolution_id = args.dataset.removeprefix("dollar_bars_").upper()
         df = lake.query_dollar_bars(

@@ -10,10 +10,11 @@ leve (skip se o backfill local não existir) confirmando o schema real de
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 
 from src.execution import fill_simulator as fs
@@ -487,6 +488,242 @@ def test_day_grid_tem_96_pontos_de_15_minutos() -> None:
 
 
 # ============================================================================
+# _dollar_bar_grid_ms / _resolve_day_grid_and_timeout — achado real (mapa de
+# dívida técnica multi-ativo, 2026-08-22): a grade era sempre step_ms("15m")
+# fixo, mesmo sob resolução dollar-bar, onde não existe cadência de relógio
+# pra sintetizar. Sob dollar-bar, usa close_time REAL de cada barra.
+# ============================================================================
+
+_DAY_START_MS = 1705276800000  # 2024-01-15T00:00:00Z
+
+
+def test_dollar_bar_grid_ms_usa_close_time_real(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_bars = pl.DataFrame(
+        {"close_time": [_DAY_START_MS + 1_000, _DAY_START_MS + 500_000]},
+        schema={"close_time": pl.Int64},
+    )
+
+    def _fake_query_dollar_bars(
+        symbol: str, start: object, end: object, *, resolution_id: str, **kwargs: object
+    ) -> pl.DataFrame:
+        assert symbol == "BTCUSDT"
+        assert resolution_id == "R1"
+        return fake_bars
+
+    monkeypatch.setattr(fs.lake, "query_dollar_bars", _fake_query_dollar_bars)
+    grid = fs._dollar_bar_grid_ms("BTCUSDT", date(2024, 1, 15), "R1")
+    assert grid.tolist() == [_DAY_START_MS + 1_000, _DAY_START_MS + 500_000]
+
+
+def test_dollar_bar_grid_ms_filtra_barras_fora_do_dia_pedido(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`query_dollar_bars(day, day+1)` pode devolver barras de fora do dia
+    exato (poda por arquivo, não por timestamp) -- filtra explicitamente."""
+    fake_bars = pl.DataFrame(
+        {"close_time": [_DAY_START_MS - 1, _DAY_START_MS + 1_000, _DAY_START_MS + 86_400_000]},
+        schema={"close_time": pl.Int64},
+    )
+    monkeypatch.setattr(fs.lake, "query_dollar_bars", lambda *a, **k: fake_bars)
+    grid = fs._dollar_bar_grid_ms("BTCUSDT", date(2024, 1, 15), "R1")
+    assert grid.tolist() == [_DAY_START_MS + 1_000]
+
+
+def test_dollar_bar_grid_ms_vazio_quando_sem_barra(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        fs.lake,
+        "query_dollar_bars",
+        lambda *a, **k: pl.DataFrame(schema={"close_time": pl.Int64}),
+    )
+    grid = fs._dollar_bar_grid_ms("BTCUSDT", date(2024, 1, 15), "R1")
+    assert grid.shape[0] == 0
+
+
+def test_dollar_bar_grid_ms_symbol_ausente_levanta_erro_claro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado CRITICAL corrigido (revisão `audit_engineering`, 2026-08-22):
+    `lake.query_dollar_bars` levanta `FileNotFoundError` cru (sem
+    contexto) se o diretório do symbol não existir em
+    `data/capacity/dollar_bars_r{N}/` -- hoje só BTCUSDT tem esse
+    diretório pras 3 resoluções. Re-levanta com mensagem acionável."""
+
+    def _raise(*args: object, **kwargs: object) -> pl.DataFrame:
+        raise FileNotFoundError("dir ausente")
+
+    monkeypatch.setattr(fs.lake, "query_dollar_bars", _raise)
+    with pytest.raises(FileNotFoundError, match="Backfill"):
+        fs._dollar_bar_grid_ms("ETHUSDT", date(2024, 1, 15), "R1")
+
+
+# ============================================================================
+# _resolve_tick_size_cached — achado CRITICAL corrigido (revisão
+# audit_engineering, 2026-08-22): load_filters_asof levanta
+# NoFiltersAvailableError pra QUALQUER data anterior ao único snapshot em
+# disco -- a janela default inteira do módulo (2023-2024) é anterior ao
+# snapshot (2026-08-08). Sem fallback, simulate_window() sem argumentos
+# crashava no 1º dia, 100% da janela, sempre.
+# ============================================================================
+
+
+def test_resolve_tick_size_cached_sem_fallback_propaga_erro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`historical_filters_fallback=False` (default) preserva B01 -- nunca
+    substitui silenciosamente, propaga o erro."""
+
+    def _raise(*args: object, **kwargs: object) -> object:
+        raise fs.NoFiltersAvailableError("sem snapshot pra esta data")
+
+    monkeypatch.setattr(fs, "load_filters_asof", _raise)
+    with pytest.raises(fs.NoFiltersAvailableError):
+        fs._resolve_tick_size_cached(
+            date(2023, 6, 1), "BTCUSDT", {}, [False], historical_filters_fallback=False
+        )
+
+
+def test_resolve_tick_size_cached_com_fallback_usa_snapshot_mais_recente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeFilters:
+        def __init__(self, tick_size: float, snapshot_date: date) -> None:
+            self.tick_size = tick_size
+            self.snapshot_date = snapshot_date
+
+    def _fake_load_filters_asof(t: object, *, symbol: str, **kwargs: object) -> _FakeFilters:
+        # `datetime` é subtipo de `date` (isinstance(t, date) seria True
+        # pros dois), mas comparar datetime < date levanta TypeError em
+        # Python -- normaliza pra date antes de comparar. `t` chega como
+        # `date` puro na 1ª tentativa (linha do teste abaixo) e como
+        # `datetime.now(tz=UTC)` no caminho de fallback real
+        # (`_resolve_tick_size_cached`, mesmo padrão de
+        # `triple_barrier._earliest_available_filters`).
+        t_date = t.date() if isinstance(t, datetime) else t
+        if t_date < date(2025, 1, 1):
+            raise fs.NoFiltersAvailableError("sem snapshot histórico")
+        return _FakeFilters(tick_size=0.05, snapshot_date=date(2026, 8, 8))
+
+    monkeypatch.setattr(fs, "load_filters_asof", _fake_load_filters_asof)
+    tick_size = fs._resolve_tick_size_cached(
+        date(2023, 6, 1), "BTCUSDT", {}, [False], historical_filters_fallback=True
+    )
+    assert tick_size == pytest.approx(0.05)
+
+
+def test_resolve_tick_size_cached_usa_cache_por_dia(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[date] = []
+
+    class _FakeFilters:
+        tick_size = 0.10
+
+    def _fake_load_filters_asof(t: date, *, symbol: str, **kwargs: object) -> _FakeFilters:
+        calls.append(t)
+        return _FakeFilters()
+
+    monkeypatch.setattr(fs, "load_filters_asof", _fake_load_filters_asof)
+    cache: dict[date, float] = {}
+    warned = [False]
+    fs._resolve_tick_size_cached(
+        date(2024, 1, 15), "BTCUSDT", cache, warned, historical_filters_fallback=False
+    )
+    fs._resolve_tick_size_cached(
+        date(2024, 1, 15), "BTCUSDT", cache, warned, historical_filters_fallback=False
+    )
+    assert len(calls) == 1  # 2ª chamada usa o cache, não reconsulta
+
+
+def test_simulate_window_sem_fallback_propaga_erro_de_filtro_ausente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ponta a ponta: `simulate_window` sem `historical_filters_fallback`
+    propaga `NoFiltersAvailableError` em vez de crashar com traceback
+    genérico ou (pior) produzir resultado silenciosamente errado."""
+
+    def _fake_load_book_ticker_pair(symbol: str, day: date) -> pl.DataFrame:
+        t0 = int(fs._day_grid_ms(day, 900_000)[0])
+        return pl.DataFrame(
+            {
+                "transaction_time": [t0],
+                "best_bid_price": [100.0],
+                "best_bid_qty": [0.0],
+                "best_ask_price": [100.1],
+                "best_ask_qty": [0.0],
+            }
+        )
+
+    def _raise(*args: object, **kwargs: object) -> object:
+        raise fs.NoFiltersAvailableError("sem snapshot")
+
+    monkeypatch.setattr(fs, "load_book_ticker_pair", _fake_load_book_ticker_pair)
+    monkeypatch.setattr(fs, "load_filters_asof", _raise)
+    monkeypatch.setattr(fs.lake, "query_agg_trades", lambda *a, **k: pl.DataFrame())
+
+    with pytest.raises(fs.NoFiltersAvailableError):
+        fs.simulate_window("BTCUSDT", date(2024, 1, 15), date(2024, 1, 15))
+
+
+# ============================================================================
+# n_days_no_dollar_bar_grid — achado HIGH corrigido (revisão
+# audit_engineering, 2026-08-22): "zero medido" (dia sem barra, symbol/
+# resolução existem) precisa ficar visível, não conflar com sucesso.
+# ============================================================================
+
+
+def test_simulate_window_conta_dias_sem_dollar_bar_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeFilters:
+        tick_size = 0.10
+
+    def _fake_load_book_ticker_pair(symbol: str, day: date) -> pl.DataFrame:
+        t0 = int(fs._day_grid_ms(day, 900_000)[0])
+        return pl.DataFrame(
+            {
+                "transaction_time": [t0],
+                "best_bid_price": [100.0],
+                "best_bid_qty": [0.0],
+                "best_ask_price": [100.1],
+                "best_ask_qty": [0.0],
+            }
+        )
+
+    monkeypatch.setattr(fs, "load_book_ticker_pair", _fake_load_book_ticker_pair)
+    monkeypatch.setattr(fs, "load_filters_asof", lambda day, *, symbol, **k: _FakeFilters())
+    monkeypatch.setattr(fs.lake, "query_agg_trades", lambda *a, **k: pl.DataFrame())
+    monkeypatch.setattr(
+        fs.lake,
+        "query_dollar_bars",
+        lambda *a, **k: pl.DataFrame(schema={"close_time": pl.Int64}),
+    )
+
+    result = fs.simulate_window(
+        "BTCUSDT", date(2024, 1, 15), date(2024, 1, 15), resolution_id="R1"
+    )
+    assert result.n_days_no_dollar_bar_grid == 1
+    assert result.orders.height == 0  # grade vazia -> nenhuma ordem simulada
+
+
+def test_resolve_day_grid_and_timeout_grade_de_tempo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(fs, "load_constant", lambda name: 1)
+    grid, timeout_ms = fs._resolve_day_grid_and_timeout(
+        "BTCUSDT", date(2024, 1, 15), tf="15m", resolution_id=None, fill_timeout_bars=None
+    )
+    assert grid.shape[0] == 96
+    assert timeout_ms == 900_000
+
+
+def test_resolve_day_grid_and_timeout_grade_dollar_bar(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_bars = pl.DataFrame({"close_time": [_DAY_START_MS + 42]}, schema={"close_time": pl.Int64})
+    monkeypatch.setattr(fs.lake, "query_dollar_bars", lambda *a, **k: fake_bars)
+    grid, timeout_ms = fs._resolve_day_grid_and_timeout(
+        "BTCUSDT", date(2024, 1, 15), tf="15m", resolution_id="R1", fill_timeout_bars=2
+    )
+    assert grid.tolist() == [_DAY_START_MS + 42]
+    # fill_timeout_ms fica ancorado em 15m-clock mesmo sob dollar-bar --
+    # decisão explícita (ver docstring de _resolve_day_grid_and_timeout),
+    # não escala com a grade de decisão.
+    assert timeout_ms == 2 * 900_000
+
+
+# ============================================================================
 # summarize
 # ============================================================================
 
@@ -553,6 +790,56 @@ def test_calibrate_against_real_fills_levanta_not_implemented() -> None:
 def test_simulate_window_recusa_janela_pos_quebra_rpi() -> None:
     with pytest.raises(ValueError, match="RPI"):
         fs.simulate_window("BTCUSDT", date(2025, 11, 1), date(2025, 12, 1))
+
+
+def test_simulate_window_recusa_tf_e_resolution_id_simultaneos() -> None:
+    """Mesma disciplina de `src.models.dataset.build_modeling_frame` — um
+    parâmetro de grade só, dois que pudessem divergir reintroduziriam
+    incoerência silenciosa."""
+    with pytest.raises(ValueError, match="resolution_id"):
+        fs.simulate_window(
+            "BTCUSDT", date(2023, 6, 1), date(2023, 6, 2), tf="30m", resolution_id="R1"
+        )
+
+
+def test_simulate_window_resolve_tick_size_via_filters_nao_constante_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado real (mapa de dívida técnica multi-ativo, 2026-08-22):
+    `tick_size` vinha de uma constante global calibrada em BTCUSDT
+    (`exchangeInfo BTCUSDT`), usada pra QUALQUER símbolo — tick size varia
+    até 1000x entre os 5 símbolos (BTC=0.10, XRP=0.0001). Confirma que
+    agora resolve via `Filters` por symbol+dia (`load_filters_asof`, mesmo
+    padrão de `src.risk.sizing`), nunca `load_constant("tick_size")`."""
+    calls: list[tuple[object, str]] = []
+
+    class _FakeFilters:
+        tick_size = 0.01  # ETHUSDT real -- != 0.10 (constante global de BTC)
+
+    def _fake_load_filters_asof(day: object, *, symbol: str, **kwargs: object) -> _FakeFilters:
+        calls.append((day, symbol))
+        return _FakeFilters()
+
+    def _fake_load_book_ticker_pair(symbol: str, day: date) -> pl.DataFrame:
+        t0 = int(fs._day_grid_ms(day, 900_000)[0])
+        return pl.DataFrame(
+            {
+                "transaction_time": [t0],
+                "best_bid_price": [100.0],
+                "best_bid_qty": [0.0],  # queue_ahead=0 -> preenche no post, sem IO de trades
+                "best_ask_price": [100.1],
+                "best_ask_qty": [0.0],
+            }
+        )
+
+    monkeypatch.setattr(fs, "load_filters_asof", _fake_load_filters_asof)
+    monkeypatch.setattr(fs, "load_book_ticker_pair", _fake_load_book_ticker_pair)
+    monkeypatch.setattr(fs.lake, "query_agg_trades", lambda *a, **k: pl.DataFrame())
+
+    result = fs.simulate_window("ETHUSDT", date(2024, 1, 15), date(2024, 1, 15))
+
+    assert calls == [(date(2024, 1, 15), "ETHUSDT")]
+    assert result.orders.height > 0
 
 
 # ============================================================================

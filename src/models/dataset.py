@@ -174,11 +174,14 @@ def build_modeling_frame(
     (`resolution_id` + `bar_source` livres): dois parâmetros que pudessem
     divergir (`resolution_id="R1"` com `bar_source` default `"time_15m"`,
     por exemplo) reintroduziriam exatamente a incoerência silenciosa que
-    este item do plano existe pra fechar. Só `"R1"` tem `bar_source`
-    mapeado hoje (mesmo escopo de produção de M3 -- R2/R3 continuam só
-    pesquisa); `resolution_id` fora do mapa levanta `ValueError` explícito
-    aqui, nunca tenta um `bar_source` que `_sources.load_bars` não
-    suporta.
+    este item do plano existe pra fechar. `"R1"`/`"R2"`/`"R3"` têm
+    `bar_source` mapeado hoje (`AG-100`, 2026-08-22 -- R2/R3 promovidas a
+    escopo de PRODUÇÃO pelo Manager, condicionado à recalibração causal do
+    threshold dollar-bar, `AG-124`, fechada no mesmo dia -- revoga a citação
+    de `PRD_V4_1.md` "R2/R3 são pesquisa", doc já obsoleto por decisão
+    canônica do projeto); `resolution_id` fora do mapa levanta `ValueError`
+    explícito aqui, nunca tenta um `bar_source` que `_sources.load_bars`
+    não suporta.
 
     **Achado de auditoria corrigido aqui (`audit_engineering`, 2026-08-17):
     a mesma garantia de UM parâmetro de grade valia só pro eixo
@@ -202,8 +205,8 @@ def build_modeling_frame(
         raise ValueError(
             f"build_modeling_frame: resolution_id={resolution_id!r} sem bar_source de "
             "Feature/Regime Engine mapeado -- suportado hoje: "
-            f"{sorted(_BAR_SOURCE_BY_RESOLUTION)} (R2/R3 são só pesquisa, fora do escopo "
-            "de produção desta migração)"
+            f"{sorted(_BAR_SOURCE_BY_RESOLUTION)} (dict FECHADO por desenho, ver "
+            "_BAR_SOURCE_BY_RESOLUTION -- AG-100, 2026-08-22)"
         )
     if resolution_id is None and tf != "15m":
         raise ValueError(

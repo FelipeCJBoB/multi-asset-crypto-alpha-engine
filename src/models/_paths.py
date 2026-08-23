@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
+
 # src/models/_paths.py -> parents[0]=src/models, [1]=src, [2]=raiz do repo
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -39,9 +41,34 @@ PREDICTIONS_OUTPUT_DIR: Path = REPO_ROOT / "predictions"
 _DEFAULT_TF = "15m"
 
 
-def predictions_symbol_tf_dir(symbol: str, model_id: str, *, tf: str = _DEFAULT_TF) -> Path:
-    """`predictions/alpha/{symbol}/{tf}/{model_id}/`."""
-    return PREDICTIONS_OUTPUT_DIR / "alpha" / symbol / tf / model_id
+def _resolve_grade(*, tf: str, resolution_id: str | None) -> str:
+    """`tf` (grade de tempo) OU `resolution_id` (dollar bar) — mesma guarda
+    anti-colisão de `src.labels._paths.labels_symbol_tf_dir`/
+    `src.validation._paths.labels_symbol_tf_dir` (AG-042, achado real de
+    `project_assurance`, 2026-08-17): `resolution_id`, quando presente,
+    SEMPRE vence sobre `tf` (nunca combina os dois no mesmo path) e precisa
+    ser uma resolução dollar-bar reconhecida — levanta `ValueError`
+    explícito caso contrário, nunca aceita string livre que pudesse colidir
+    com um `tf` de grade de tempo real. Achado real (mapa de dívida técnica
+    multi-ativo, 2026-08-22): este pacote nunca tinha ganhado esta guarda,
+    ao contrário de `labels`/`validation` — produções/diagnósticos sob
+    dollar-bar cairiam silenciosamente em `.../15m/...` sem isto."""
+    if resolution_id is not None:
+        if resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
+            raise ValueError(
+                f"resolution_id={resolution_id!r} não reconhecido -- "
+                f"esperado um de {sorted(CALIBRATION_TF_BY_RESOLUTION)}"
+            )
+        return resolution_id
+    return tf
+
+
+def predictions_symbol_tf_dir(
+    symbol: str, model_id: str, *, tf: str = _DEFAULT_TF, resolution_id: str | None = None
+) -> Path:
+    """`predictions/alpha/{symbol}/{grade}/{model_id}/` — ver `_resolve_grade`."""
+    grade = _resolve_grade(tf=tf, resolution_id=resolution_id)
+    return PREDICTIONS_OUTPUT_DIR / "alpha" / symbol / grade / model_id
 
 # Registro append-only de experimentos (§11.6) — mesmo diretório que
 # `src/labels/_paths.py::EXPERIMENTS_DIR` resolve; este pacote grava
@@ -65,8 +92,10 @@ EXPERIMENTS_DIR: Path = REPO_ROOT / "experiments"
 MODELS_DIR: Path = REPO_ROOT / "models"
 
 
-def models_diagnostics_symbol_tf_dir(symbol: str, model_id: str, *, tf: str = _DEFAULT_TF) -> Path:
-    """`models/{symbol}/{tf}/{model_id}/diagnostics/` (AG-013) — layout
+def models_diagnostics_symbol_tf_dir(
+    symbol: str, model_id: str, *, tf: str = _DEFAULT_TF, resolution_id: str | None = None
+) -> Path:
+    """`models/{symbol}/{grade}/{model_id}/diagnostics/` (AG-013) — layout
     chaveado para `src.models.pipeline.write_fold_diagnostics_atomic`/
     `write_all_fold_diagnostics` e `src.analysis.faixa1_5_prerequisites.
     _hhi_by_fold_side`, mesmo padrão `{symbol}/{tf}/{model_id}` de
@@ -103,5 +132,7 @@ def models_diagnostics_symbol_tf_dir(symbol: str, model_id: str, *, tf: str = _D
     `_hhi_by_fold_side` continuam com `dest_dir: Path | None = None`
     preservando `models/{model_id}/diagnostics/` bit-exato por default;
     este helper só é usado quando um chamador passa `dest_dir=
-    models_diagnostics_symbol_tf_dir(...)` explicitamente."""
-    return MODELS_DIR / symbol / tf / model_id / "diagnostics"
+    models_diagnostics_symbol_tf_dir(...)` explicitamente. `resolution_id`
+    — ver `_resolve_grade`."""
+    grade = _resolve_grade(tf=tf, resolution_id=resolution_id)
+    return MODELS_DIR / symbol / grade / model_id / "diagnostics"

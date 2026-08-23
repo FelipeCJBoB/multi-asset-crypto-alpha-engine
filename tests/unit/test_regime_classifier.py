@@ -140,6 +140,24 @@ def test_regime_symbol_tf_dir_layout_chaveado() -> None:
     assert path == DATA_ROOT / "regimes" / "ETHUSDT" / "15m" / classifier.ENGINE_VERSION
 
 
+def test_regime_symbol_tf_dir_aceita_resolution_id() -> None:
+    """Achado real (mapa de dívida técnica multi-ativo, 2026-08-22):
+    `regime_symbol_tf_dir` nunca tinha suporte a `resolution_id`
+    (dollar-bar), ao contrário de `labels_symbol_tf_dir` (AG-042).
+    `resolution_id` vence sobre `tf` -- mesma guarda anti-colisão."""
+    from src.regime._paths import DATA_ROOT, regime_symbol_tf_dir
+
+    path = regime_symbol_tf_dir("ETHUSDT", classifier.ENGINE_VERSION, resolution_id="R3")
+    assert path == DATA_ROOT / "regimes" / "ETHUSDT" / "R3" / classifier.ENGINE_VERSION
+
+
+def test_regime_symbol_tf_dir_resolution_id_nao_reconhecido_levanta_valueerror() -> None:
+    from src.regime._paths import regime_symbol_tf_dir
+
+    with pytest.raises(ValueError, match="resolution_id"):
+        regime_symbol_tf_dir("ETHUSDT", classifier.ENGINE_VERSION, resolution_id="R99")
+
+
 # ============================================================================
 # I-d (PRD_V4_1.md T0.2) — ponto de injeção para er_quantile/econ_quantile
 # ============================================================================

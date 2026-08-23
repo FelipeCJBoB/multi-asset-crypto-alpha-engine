@@ -99,6 +99,26 @@ def test_models_diagnostics_symbol_tf_dir_aceita_tf_explicito() -> None:
     assert path == MODELS_DIR / "ETHUSDT" / "30m" / "alpha_c1_v1" / "diagnostics"
 
 
+def test_predictions_symbol_tf_dir_aceita_resolution_id() -> None:
+    """Achado real (mapa de dívida técnica multi-ativo, 2026-08-22):
+    `predictions_symbol_tf_dir` nunca tinha suporte a `resolution_id`
+    (dollar-bar), ao contrário de `labels_symbol_tf_dir`
+    (`src.labels._paths`/`src.validation._paths`, AG-042). `resolution_id`
+    vence sobre `tf` -- mesma guarda anti-colisão."""
+    path = predictions_symbol_tf_dir("ETHUSDT", "alpha_c1_v1", tf="30m", resolution_id="R1")
+    assert path == PREDICTIONS_OUTPUT_DIR / "alpha" / "ETHUSDT" / "R1" / "alpha_c1_v1"
+
+
+def test_predictions_symbol_tf_dir_resolution_id_nao_reconhecido_levanta_valueerror() -> None:
+    with pytest.raises(ValueError, match="resolution_id"):
+        predictions_symbol_tf_dir("ETHUSDT", "alpha_c1_v1", resolution_id="R99")
+
+
+def test_models_diagnostics_symbol_tf_dir_aceita_resolution_id() -> None:
+    path = models_diagnostics_symbol_tf_dir("ETHUSDT", "alpha_c1_v1", resolution_id="R2")
+    assert path == MODELS_DIR / "ETHUSDT" / "R2" / "alpha_c1_v1" / "diagnostics"
+
+
 def test_models_diagnostics_symbol_tf_dir_sem_segmento_alpha() -> None:
     """Diferença deliberada em relação a `predictions_symbol_tf_dir` (ver
     docstring do helper em `_paths.py`): o layout LEGADO de diagnóstico
@@ -312,6 +332,106 @@ def test_run_layer1_sprint_resolution_id_propaga_ate_build_modeling_frame_e_cpcv
 
     cpcv_config = gs_calls["config"]
     assert cpcv_config.grade_id == "R1"
+
+
+class _StopAfterDiagnostics(Exception):
+    """Sentinela pra interromper `run_layer1_sprint` logo após os dois
+    `write_all_fold_diagnostics` terem sido chamados — mesma disciplina de
+    `_StopAfterPredictions`, mas pro roteamento de diagnósticos.
+
+    Achado real (revisão `audit_engineering`, 2026-08-22): o helper de
+    predictions (`_run_layer1_sprint_capturing_predictions_calls`) NUNCA
+    exercitava `models_diagnostics_symbol_tf_dir` de verdade —
+    `write_all_fold_diagnostics` itera `fold_results` internamente
+    (`write_fold_diagnostics_atomic` por fold), e como `splits=()` produz
+    `fold_results=[]`, o loop interno nunca roda; só o `dest_dir` PASSADO
+    pra `write_all_fold_diagnostics` importa pro roteamento, então
+    monkeypatch direto nela (como já feito pra `write_predictions_atomic`)
+    é suficiente e não precisa de fold real."""
+
+
+def _run_layer1_sprint_capturing_diagnostics_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: Any
+) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
+
+    def _fake_write_all_fold_diagnostics(
+        fold_results: list[Any], *, model_id: str, hyper: Any, dest_dir: Path | None = None
+    ) -> None:
+        calls.append({"model_id": model_id, "dest_dir": dest_dir})
+        if len(calls) >= 2:
+            raise _StopAfterDiagnostics()
+
+    monkeypatch.setattr(
+        pipeline, "write_all_fold_diagnostics", _fake_write_all_fold_diagnostics
+    )
+
+    with pytest.raises(_StopAfterDiagnostics):
+        pipeline.run_layer1_sprint(**run_kwargs)
+
+    assert len(calls) == 2
+    return calls
+
+
+def test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_diagnosticos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado real (revisão `audit_engineering`, 2026-08-22): o teste
+    irmão (`..._dest_dir_final`, abaixo) só provava o roteamento de
+    `predictions_symbol_tf_dir` — `models_diagnostics_symbol_tf_dir` (os
+    outros 2 dos 4 call sites corrigidos em `pipeline.py`) nunca era
+    exercitado, nem implicitamente (uma regressão isolada nos 2 call
+    sites de diagnóstico não seria pega por nenhum teste existente)."""
+    calls = _run_layer1_sprint_capturing_diagnostics_calls(monkeypatch, resolution_id="R1")
+
+    for call in calls:
+        assert call["dest_dir"] is not None
+        assert "R1" in call["dest_dir"].parts
+        assert "15m" not in call["dest_dir"].parts
+    expected_c1 = models_diagnostics_symbol_tf_dir(
+        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA1, resolution_id="R1"
+    )
+    expected_c0 = models_diagnostics_symbol_tf_dir(
+        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA0, resolution_id="R1"
+    )
+    assert calls[0] == {"model_id": pipeline.MODEL_ID_CAMADA1, "dest_dir": expected_c1}
+    assert calls[1] == {"model_id": pipeline.MODEL_ID_CAMADA0, "dest_dir": expected_c0}
+
+
+def test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_final(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`resolution_id="R1"` propaga até o `dest_dir` FINAL de
+    `write_predictions_atomic` (não só até `build_modeling_frame`/CPCV,
+    já coberto acima) -- achado real (mapa de dívida técnica multi-ativo,
+    2026-08-22): antes desta correção, `pipeline.py` contornava a falta de
+    suporte a `resolution_id` em `predictions_symbol_tf_dir` sobrecarregando
+    o parâmetro `tf=` com o valor de `resolution_id` (`path_tf`) -- agora
+    usa o parâmetro real."""
+    calls = _run_layer1_sprint_capturing_predictions_calls(monkeypatch, resolution_id="R1")
+
+    for call in calls:
+        assert "R1" in call["dest_dir"].parts
+        assert "15m" not in call["dest_dir"].parts
+    expected_c1 = predictions_symbol_tf_dir(
+        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA1, resolution_id="R1"
+    )
+    expected_c0 = predictions_symbol_tf_dir(
+        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA0, resolution_id="R1"
+    )
+    assert calls[0]["dest_dir"] == expected_c1
+    assert calls[1]["dest_dir"] == expected_c0
 
 
 def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
