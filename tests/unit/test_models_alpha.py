@@ -52,8 +52,9 @@ def _synthetic_train_frame(n: int = 60, *, seed: int = 0) -> pl.DataFrame:
 
 def test_build_design_matrix_shape_e_colunas() -> None:
     """Regime SAIU do vetor de treino (2026-08-21, ADR-001 §2.7,
-    `PLANO_MESTRE_PRINCE2.md §15.13`) — `DESIGN_COLUMNS` é só as 10
-    features T1, `build_design_matrix` nunca lê a coluna `regime`."""
+    `PLANO_MESTRE_PRINCE2.md §15.13`) — `DESIGN_COLUMNS` é só as features
+    T1 ativas (`T1_FEATURE_IDS`), `build_design_matrix` nunca lê a coluna
+    `regime`."""
     df = _synthetic_train_frame()
     X = alpha.build_design_matrix(df)
     assert X.shape == (df.height, len(alpha.DESIGN_COLUMNS))
@@ -193,81 +194,18 @@ def test_monotone_constraints_tem_exatamente_10_entradas() -> None:
 
 
 # ============================================================================
-# Restrição forçada por lado — `E02f_funding_z_expanding` (extensão de
-# `_ECONOMIC_FORCED_CONSTRAINT` para `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`,
-# ver `src.models.monotonic`). Fim a fim via `fit_side_model` — não só
-# `screen_monotone_constraints` isolado (esse já é coberto em
-# `tests/unit/test_models_monotonic.py`) — para provar que `side` chega
-# corretamente até o `monotone_constraints` que o XGBoost de fato recebe.
-# `_synthetic_train_frame` gera `E02f_funding_z_expanding` como ruído normal
-# independente de `ret_net` (sem sinal de IC nenhum) — a restrição só pode
-# vir da força econômica, nunca da triagem estatística.
+# Restrição forçada por lado (`_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`,
+# `src.models.monotonic`) fim a fim via `fit_side_model` -- REMOVIDO
+# 2026-08-23, AG-032: o único exemplo real que este bloco testava,
+# `E02f_funding_z_expanding`, saiu do conjunto ativo de treino
+# (`T1_FEATURE_IDS`). O mecanismo em si (dict vazio hoje, pronto pra
+# feature futura com a mesma assinatura contábil) continua coberto
+# isoladamente em `tests/unit/test_models_monotonic.py` (nome de feature
+# sintético via `monkeypatch`) -- cobertura fim a fim via `fit_side_model`
+# fica pendente até uma feature real dessa categoria voltar ao conjunto
+# ativo (não recriar um teste fim a fim contra `monkeypatch` só pra manter
+# a cobertura -- B23, não inventar cenário sem feature real por trás).
 # ============================================================================
-
-_E02F_IDX = T1_FEATURE_IDS.index("E02f_funding_z_expanding")
-
-
-def test_fit_side_model_e02f_forcado_menos_1_no_long() -> None:
-    df = _synthetic_train_frame(n=80, seed=4)
-    hyper = alpha.XGBHyperparams.from_constants()
-    target_signal_rate = float(load_constant("target_signal_rate"))
-
-    result = alpha.fit_side_model(
-        df,
-        side=1,
-        variant=alpha.VARIANT_CAMADA1,
-        hyper=hyper,
-        seed=0,
-        target_signal_rate=target_signal_rate,
-    )
-
-    assert result.monotone["E02f_funding_z_expanding"].constraint == -1
-    assert result.monotone["E02f_funding_z_expanding"].forced_economic is True
-    assert result.monotone_constraints[_E02F_IDX] == -1
-
-
-def test_fit_side_model_e02f_forcado_mais_1_no_short() -> None:
-    df = _synthetic_train_frame(n=80, seed=4)
-    hyper = alpha.XGBHyperparams.from_constants()
-    target_signal_rate = float(load_constant("target_signal_rate"))
-
-    result = alpha.fit_side_model(
-        df,
-        side=-1,
-        variant=alpha.VARIANT_CAMADA1,
-        hyper=hyper,
-        seed=0,
-        target_signal_rate=target_signal_rate,
-    )
-
-    assert result.monotone["E02f_funding_z_expanding"].constraint == 1
-    assert result.monotone["E02f_funding_z_expanding"].forced_economic is True
-    assert result.monotone_constraints[_E02F_IDX] == 1
-
-
-def test_fit_side_model_e02f_forcado_independente_do_variant_camada0() -> None:
-    """Camada 0 (`VARIANT_CAMADA0`) zera TODAS as restrições T1 por
-    desenho (`fit_side_model`: `t1_constraints = tuple(0 for _ in
-    T1_FEATURE_IDS)`), inclusive as forçadas — a força econômica só se
-    aplica à Camada 1. `monotone["E02f_..."].constraint` (o resultado bruto
-    de `screen_monotone_constraints`, sempre calculado) continua forçado;
-    só o `monotone_constraints` (o que de fato vai para o XGBoost) é zerado
-    pela variante Camada 0."""
-    df = _synthetic_train_frame(n=80, seed=4)
-    hyper = alpha.XGBHyperparams.from_constants()
-    target_signal_rate = float(load_constant("target_signal_rate"))
-
-    result = alpha.fit_side_model(
-        df,
-        side=1,
-        variant=alpha.VARIANT_CAMADA0,
-        hyper=hyper,
-        seed=0,
-        target_signal_rate=target_signal_rate,
-    )
-
-    assert result.monotone["E02f_funding_z_expanding"].constraint == -1
-    assert result.monotone_constraints[_E02F_IDX] == 0
 
 
 # ============================================================================

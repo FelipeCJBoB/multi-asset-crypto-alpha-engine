@@ -127,8 +127,8 @@ def test_screen_monotone_constraints_e27f_forcado_menos_1_mesmo_sem_sinal() -> N
 
 def test_screen_monotone_constraints_e27f_forcado_menos_1_no_short_tambem() -> None:
     """`E27f_cost_atr_ratio` é MESMO sinal nos dois lados (§5.3) — -1
-    independente de `side`, ao contrário de `E02f_funding_z_expanding`
-    (side-dependent, ver teste dedicado abaixo)."""
+    independente de `side`, ao contrário do mecanismo side-dependent
+    (ver testes dedicados abaixo, `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`)."""
     df = _synthetic_screen_df("E27f_cost_atr_ratio", n_envs_consistent=0)
     results = monotonic.screen_monotone_constraints(
         df, ("E27f_cost_atr_ratio",), side=-1, min_consistent_envs=6
@@ -137,81 +137,111 @@ def test_screen_monotone_constraints_e27f_forcado_menos_1_no_short_tambem() -> N
     assert results["E27f_cost_atr_ratio"].forced_economic is True
 
 
-def test_screen_monotone_constraints_e02f_forcado_por_lado_long_menos_1() -> None:
-    """`E02f_funding_z_expanding` (funding rate) é identidade contábil de
-    custo de carregamento COM SINAL DEPENDENTE DE LADO (não um padrão a
-    aprender por consistência de IC, mesma categoria de `E27f_cost_atr_
-    ratio`): funding alto penaliza quem está comprado. Construído aqui
+# ============================================================================
+# _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE -- mecanismo genérico (feature com
+# identidade contábil de sinal OPOSTO por lado). `E02f_funding_z_expanding`
+# era o único exemplo real (funding: custo pro long, receita pro short) --
+# saiu do conjunto ativo de treino (AG-032, 2026-08-23), dict vazio hoje em
+# `monotonic.py`. Testes abaixo usam um nome de feature SINTÉTICO,
+# injetado via `monkeypatch` diretamente no dict do módulo -- testam o
+# MECANISMO (side-dependent forcing funciona corretamente), não uma
+# instância específica que pode não existir mais no conjunto ativo real.
+# ============================================================================
+
+_SYNTH_SIDE_FEATURE = "SYNTH_side_dependent_cost"
+
+
+def test_screen_monotone_constraints_side_dependente_forcado_no_long(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Identidade contábil de sinal OPOSTO por lado (mesma categoria de
+    `E27f_cost_atr_ratio`, mas o sinal inverte por `side`). Construído aqui
     SEM controle de sinal (n_envs_consistent=0, todo mundo "inconsistente"
     do ponto de vista estatístico) — a restrição forçada -1 no long
     prevalece mesmo assim."""
-    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
-    results = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=1, min_consistent_envs=6
+    monkeypatch.setattr(
+        monotonic, "_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE", {_SYNTH_SIDE_FEATURE: {1: -1, -1: 1}}
     )
-    assert results["E02f_funding_z_expanding"].constraint == -1
-    assert results["E02f_funding_z_expanding"].forced_economic is True
-
-
-def test_screen_monotone_constraints_e02f_forcado_por_lado_short_mais_1() -> None:
-    """Mesma identidade contábil do teste acima, lado oposto: funding alto
-    é receita para quem está vendido — restrição forçada +1 no short,
-    também independente do IC medido nos dados sintéticos (sem sinal
-    controlado)."""
-    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
+    df = _synthetic_screen_df(_SYNTH_SIDE_FEATURE, n_envs_consistent=0)
     results = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6
+        df, (_SYNTH_SIDE_FEATURE,), side=1, min_consistent_envs=6
     )
-    assert results["E02f_funding_z_expanding"].constraint == 1
-    assert results["E02f_funding_z_expanding"].forced_economic is True
+    assert results[_SYNTH_SIDE_FEATURE].constraint == -1
+    assert results[_SYNTH_SIDE_FEATURE].forced_economic is True
 
 
-def test_unforce_features_by_side_libera_so_o_lado_pedido() -> None:
+def test_screen_monotone_constraints_side_dependente_forcado_no_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mesma identidade contábil do teste acima, lado oposto: restrição
+    forçada +1 no short, também independente do IC medido nos dados
+    sintéticos (sem sinal controlado)."""
+    monkeypatch.setattr(
+        monotonic, "_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE", {_SYNTH_SIDE_FEATURE: {1: -1, -1: 1}}
+    )
+    df = _synthetic_screen_df(_SYNTH_SIDE_FEATURE, n_envs_consistent=0)
+    results = monotonic.screen_monotone_constraints(
+        df, (_SYNTH_SIDE_FEATURE,), side=-1, min_consistent_envs=6
+    )
+    assert results[_SYNTH_SIDE_FEATURE].constraint == 1
+    assert results[_SYNTH_SIDE_FEATURE].forced_economic is True
+
+
+def test_unforce_features_by_side_libera_so_o_lado_pedido(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Faixa 1.6, Bloco 4 — `unforce_features_by_side` remove a restrição
-    forçada de E02f SÓ no lado passado; a triagem estatística normal
-    decide. `n_envs_consistent=3` (3 de 6 blocos com sinal oposto) —
-    diferente de `n_envs_consistent=0` (que dá sinal UNÂNIME nos 6
-    blocos, só invertido, e portanto constraint estatístico igual ao
-    forçado por coincidência), aqui a consistência não bate >= 6 e a
-    triagem estatística cai em `constraint=0` — o único jeito de
-    discriminar "caiu pra estatística" de "o forçado ainda valia de
-    qualquer jeito". O long, fora do override, continua forçado -1 —
-    exatamente a garantia que o Bloco 4 precisa (variante experimental
-    isolada por lado, produção intocada)."""
-    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=3)
-    unforce = {"E02f_funding_z_expanding": frozenset({-1})}
+    forçada SÓ no lado passado; a triagem estatística normal decide.
+    `n_envs_consistent=3` (3 de 6 blocos com sinal oposto) — diferente de
+    `n_envs_consistent=0` (que dá sinal UNÂNIME nos 6 blocos, só invertido,
+    e portanto constraint estatístico igual ao forçado por coincidência),
+    aqui a consistência não bate >= 6 e a triagem estatística cai em
+    `constraint=0` — o único jeito de discriminar "caiu pra estatística" de
+    "o forçado ainda valia de qualquer jeito". O long, fora do override,
+    continua forçado -1 — exatamente a garantia que o Bloco 4 precisa
+    (variante experimental isolada por lado, produção intocada)."""
+    monkeypatch.setattr(
+        monotonic, "_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE", {_SYNTH_SIDE_FEATURE: {1: -1, -1: 1}}
+    )
+    df = _synthetic_screen_df(_SYNTH_SIDE_FEATURE, n_envs_consistent=3)
+    unforce = {_SYNTH_SIDE_FEATURE: frozenset({-1})}
 
     short_results = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6,
+        df, (_SYNTH_SIDE_FEATURE,), side=-1, min_consistent_envs=6,
         unforce_features_by_side=unforce,
     )
-    assert short_results["E02f_funding_z_expanding"].constraint == 0
-    assert short_results["E02f_funding_z_expanding"].forced_economic is False
+    assert short_results[_SYNTH_SIDE_FEATURE].constraint == 0
+    assert short_results[_SYNTH_SIDE_FEATURE].forced_economic is False
 
     long_results = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=1, min_consistent_envs=6,
+        df, (_SYNTH_SIDE_FEATURE,), side=1, min_consistent_envs=6,
         unforce_features_by_side=unforce,
     )
-    assert long_results["E02f_funding_z_expanding"].constraint == -1
-    assert long_results["E02f_funding_z_expanding"].forced_economic is True
+    assert long_results[_SYNTH_SIDE_FEATURE].constraint == -1
+    assert long_results[_SYNTH_SIDE_FEATURE].forced_economic is True
 
 
-def test_unforce_features_by_side_default_none_preserva_producao() -> None:
+def test_unforce_features_by_side_default_none_preserva_producao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Default `None` -- comportamento idêntico a antes do parâmetro
     existir (regressão contra o Bloco 4 mudar produção por acidente)."""
-    df = _synthetic_screen_df("E02f_funding_z_expanding", n_envs_consistent=0)
+    monkeypatch.setattr(
+        monotonic, "_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE", {_SYNTH_SIDE_FEATURE: {1: -1, -1: 1}}
+    )
+    df = _synthetic_screen_df(_SYNTH_SIDE_FEATURE, n_envs_consistent=0)
     with_default = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6
+        df, (_SYNTH_SIDE_FEATURE,), side=-1, min_consistent_envs=6
     )
     with_explicit_none = monotonic.screen_monotone_constraints(
-        df, ("E02f_funding_z_expanding",), side=-1, min_consistent_envs=6,
+        df, (_SYNTH_SIDE_FEATURE,), side=-1, min_consistent_envs=6,
         unforce_features_by_side=None,
     )
-    assert with_default["E02f_funding_z_expanding"].constraint == 1
-    assert with_default["E02f_funding_z_expanding"].forced_economic is True
+    assert with_default[_SYNTH_SIDE_FEATURE].constraint == 1
+    assert with_default[_SYNTH_SIDE_FEATURE].forced_economic is True
     assert (
-        with_explicit_none["E02f_funding_z_expanding"].constraint
-        == with_default["E02f_funding_z_expanding"].constraint
+        with_explicit_none[_SYNTH_SIDE_FEATURE].constraint
+        == with_default[_SYNTH_SIDE_FEATURE].constraint
     )
 
 

@@ -181,7 +181,7 @@
   added: 2026-08-08
 
 - id: C07_vol_pctile_expanding
-  tier: T1
+  tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge). Continua calculada, consumida direto pelo Regime Engine (src.regime.classifier)
   group: C
   formula: "posto percentil de realized_vol_48_t na distribuição EXPANSIVA de realized_vol_48 em [t0_dataset, t-1] (estrito, nunca inclui t)"
   sources: [D03]
@@ -197,7 +197,7 @@
   added: 2026-08-08
 
 - id: D03f_volume_z_expanding
-  tier: T1
+  tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge)
   group: D
   formula: "z-score EXPANSIVO estrito de log(1+V_t) em [t0_dataset, t-1]"
   sources: [D03]
@@ -239,7 +239,7 @@
   added: 2026-08-08
 
 - id: E02f_funding_z_expanding
-  tier: T1
+  tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge)
   group: E
   formula: "z-score EXPANSIVO estrito de funding_last_t (alinhado ao grid de 15m por asof-join backward) em [t0_dataset, t-1]"
   sources: [D07]

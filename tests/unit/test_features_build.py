@@ -658,13 +658,20 @@ def test_compute_max_feature_lookback_ms_resolution_id_usa_p99_bar_duration() ->
 def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:
     """Achado do `project_assurance` independente (2026-08-23, AG-181):
     nenhum teste provava que `assert_no_expanding_lookback_in_active_set`
-    ainda dispara PRIMEIRO quando `resolution_id` é passado junto com o
-    conjunto ativo REAL (`T1_FEATURE_IDS`, default -- a combinação exata
-    que `pipeline.py`/`leakage.py` usam de verdade). Um refactor futuro que
+    ainda dispara PRIMEIRO quando `resolution_id` é passado junto com um
+    conjunto ativo que contém feature expanding. Um refactor futuro que
     reordenasse o cálculo de `bar_duration_ms` pra antes do gate passaria
-    despercebido sem este teste."""
+    despercebido sem este teste. **Atualizado 2026-08-23 (AG-032):** o
+    conjunto ativo REAL (`T1_FEATURE_IDS`, default) deixou de conter
+    features expanding -- passa explicitamente um `feature_ids` que
+    contém uma (mesmo padrão de `test_assert_no_expanding_lookback_
+    dispara_para_feature_expanding_conhecida`) pra continuar provando a
+    ORDEM (gate antes do cálculo de unidade), não mais o estado do
+    default."""
     with pytest.raises(build.ExpandingFeatureLookbackError):
-        build.compute_max_feature_lookback_ms("15m", resolution_id="R2")
+        build.compute_max_feature_lookback_ms(
+            "15m", feature_ids=("C07_vol_pctile_expanding",), resolution_id="R2"
+        )
 
 
 def test_assert_no_expanding_lookback_passa_para_subconjunto_finito() -> None:
@@ -680,18 +687,27 @@ def test_assert_no_expanding_lookback_dispara_para_feature_expanding_conhecida()
         )
 
 
-def test_compute_max_feature_lookback_ms_dispara_para_t1_feature_ids_real() -> None:
-    """AG-032 item 8 -- prova que o MECANISMO de fail-fast dispara de
-    verdade contra o conjunto ativo REAL (`T1_FEATURE_IDS`, default), não
-    só contra um cenário sintético isolado. Hoje as 3 features expanding
-    conhecidas (C07/D03f/E02f) estão em `T1_FEATURE_IDS` -- ISTO DISPARA,
-    comportamento ESPERADO da opção A (decisão do Manager, 2026-08-21). A
-    decisão de remover essas 3 de `T1_FEATURE_IDS` (ou aceitar rodar o
-    CPCV sem proteção pra elas conscientemente) é SEPARADA, não tomada
-    nesta rodada -- não "silenciar" este teste mudando `T1_FEATURE_IDS`."""
+def test_compute_max_feature_lookback_ms_nao_dispara_para_t1_feature_ids_real() -> None:
+    """AG-032 item 8 -- **invertido 2026-08-23** (decisão do Manager: as 3
+    features expanding conhecidas, C07/D03f/E02f, SAÍRAM de
+    `T1_FEATURE_IDS`). Até 2026-08-23 este teste provava o oposto (que o
+    mecanismo disparava contra o default) -- comportamento ANTIGO,
+    intencionalmente mudado, não regressão. Prova agora que o conjunto
+    ativo REAL (`T1_FEATURE_IDS`, default) roda de verdade sem levantar
+    `ExpandingFeatureLookbackError` -- o caminho que `pipeline.py`/
+    `leakage.py` usam de verdade deixou de estar bloqueado."""
+    got = build.compute_max_feature_lookback_ms("15m")
+    assert got == build.max_feature_window_bars() * step_ms("15m")
+
+
+def test_compute_max_feature_lookback_ms_dispara_para_feature_ids_customizado_expanding() -> None:
+    """O gate continua protegendo qualquer chamador que passe um
+    `feature_ids` customizado incluindo uma das 3 expanding (ex. análise
+    pós-hoc via `extra_feature_ids`, `src.models.dataset.
+    build_modeling_frame`) -- só o caminho DEFAULT parou de disparar."""
     with pytest.raises(build.ExpandingFeatureLookbackError) as exc_info:
-        build.compute_max_feature_lookback_ms("15m")
+        build.compute_max_feature_lookback_ms(
+            "15m", feature_ids=(*build.T1_FEATURE_IDS, "E02f_funding_z_expanding")
+        )
     msg = str(exc_info.value)
-    assert "C07_vol_pctile_expanding" in msg
-    assert "D03f_volume_z_expanding" in msg
     assert "E02f_funding_z_expanding" in msg

@@ -30,16 +30,26 @@ from .support import FloatArray
 
 logger = structlog.get_logger(__name__)
 
+#: AG-032 (2026-08-23, decisão do Manager): `C07_vol_pctile_expanding`/
+#: `D03f_volume_z_expanding`/`E02f_funding_z_expanding` SAÍRAM do conjunto
+#: ativo -- têm `lookback_bars: expanding` no registry (sem valor finito
+#: honesto pra proteger via purge de CPCV, `ExpandingFeatureLookbackError`,
+#: ver `assert_no_expanding_lookback_in_active_set` abaixo). As 3 CONTINUAM
+#: sendo calculadas por `compute_t1_features` (núcleo não filtra por esta
+#: tupla) e continuam disponíveis pra quem precisar delas fora do papel de
+#: feature de treino do Alpha -- `C07_vol_pctile_expanding` é insumo real
+#: do Regime Engine (`src.regime.classifier.QuantileRegimeClassifier`,
+#: leitura direta da coluna, independente desta tupla). Consumidor de
+#: análise pós-hoc que precise ler as 3 sobre `ModelingFrame` real usa
+#: `build_modeling_frame(..., extra_feature_ids=(...))`
+#: (`src.models.dataset`), nunca reintroduzindo-as aqui.
 T1_FEATURE_IDS: tuple[str, ...] = (
     "A05_ret_vol_norm_4",
     "A13_dist_ema48_atr",
     "B01_rsi_14",
     "E27f_cost_atr_ratio",
     "C06_vol_ratio_12_96",
-    "C07_vol_pctile_expanding",
-    "D03f_volume_z_expanding",
     "D06f_taker_imbalance_z_48",
-    "E02f_funding_z_expanding",
     "E10f_oi_change_z_48",
 )
 
@@ -229,14 +239,15 @@ def assert_no_expanding_lookback_in_active_set(
     nunca exclui a feature ofensora silenciosamente (ver docstring de
     `ExpandingFeatureLookbackError`).
 
-    Hoje, chamada com o default `T1_FEATURE_IDS`, ISTO DISPARA:
-    `C07_vol_pctile_expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_
-    expanding` estão no conjunto ativo E têm `lookback_bars: expanding` —
-    comportamento ESPERADO e correto da opção A, não um bug a corrigir
-    mudando `T1_FEATURE_IDS` aqui. A decisão sobre o que fazer com essas 3
-    features (removê-las do conjunto ativo, ou aceitar rodar o CPCV sem
-    proteção pra elas conscientemente) é SEPARADA, não tomada por esta
-    função nem por `compute_max_feature_lookback_ms`."""
+    **Decisão tomada 2026-08-23** (Manager, `AG-032` item pendente/`08_SPLIT`):
+    as 3 features expanding SAÍRAM de `T1_FEATURE_IDS` — chamada com o
+    default hoje NÃO dispara mais. Continua existindo (não é código morto)
+    porque `feature_ids` é parametrizável — qualquer chamador que passe um
+    subconjunto customizado incluindo `C07_vol_pctile_expanding`/`D03f_
+    volume_z_expanding`/`E02f_funding_z_expanding` (ex. análise pós-hoc via
+    `extra_feature_ids`, `src.models.dataset.build_modeling_frame`) segue
+    protegido pelo mesmo fail-fast — a opção B (exclusão automática
+    silenciosa) continua rejeitada."""
     lookback_by_id = feature_lookback_bars()
     offenders = sorted(fid for fid in feature_ids if lookback_by_id.get(fid) == "expanding")
     if offenders:
@@ -287,29 +298,32 @@ def compute_max_feature_lookback_ms(
     (`config/constants.yaml`, `MEASURED`, p99 máximo entre as 15
     combinações símbolo×resolução) — `step_ms(tf)` não tem significado sob
     dollar-bar (cadência de barra é irregular por construção, §4.4 do
-    design doc). Efeito prático hoje é ZERO em produção:
-    `assert_no_expanding_lookback_in_active_set` já bloqueia
-    incondicionalmente pro conjunto ativo T1 (C07/D03f/E02f são
-    `expanding`) — este parâmetro deixa a UNIDADE correta pronta pra
-    quando esse gate for resolvido pelo Manager, não é usado por nenhum
-    caller de produção real ainda. **Ressalva não resolvida aqui
+    design doc). **Efeito prático mudou 2026-08-23** (Manager excluiu as 3
+    features expanding de `T1_FEATURE_IDS`, AG-032): este caminho agora
+    EXECUTA de verdade em produção sob `resolution_id` setado — deixou de
+    ser preparação dormente. **Ressalva de MAGNITUDE segue não resolvida
     (`AG-159` addendum, achado do `project_assurance`, 2026-08-23):**
     "unidade correta" não é "magnitude garantidamente suficiente" —
     `label_prefetch_p99_bar_duration_ms` foi medido/justificado pro
     modelo de custo de PREFETCH (sub-cobertura tolerável, falha visível),
     não pro de PURGE (sub-cobertura = vazamento silencioso B02/B09); o
-    `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado. Sem guarda de
-    runtime — D-02 ressalva 4 do design doc, não implementada (B23, a
-    medição do máximo real de janela consecutiva ainda não existe).
+    `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado
+    (`tools/diagnostics/measure_max_consecutive_bar_window_duration.py`
+    mede o máximo real das 15 combinações, resultado pendente do usuário
+    rodar). Até essa medição existir e uma constante `MEASURED` substituir/
+    multiplicar o proxy, um `structlog.warning` explícito é emitido toda
+    vez que este caminho roda sob `resolution_id` — não inventa nenhum
+    número novo (B23), só torna o gap visível a cada execução real em vez
+    de silencioso.
 
     Chama `assert_no_expanding_lookback_in_active_set(feature_ids)`
     PRIMEIRO, mesmo quando `resolution_id` é passado — se qualquer
     feature do conjunto ativo tiver `lookback_bars: expanding`, levanta
     `ExpandingFeatureLookbackError` antes de calcular qualquer número
-    (opção A, ver docstring daquela função). `feature_ids` default
-    `T1_FEATURE_IDS` DISPARA essa exceção hoje (3 features expanding
-    conhecidas) — chamar com um subconjunto sem elas (ou vazio) pula o
-    gate. Ordem verificada em
+    (opção A, ver docstring daquela função) — protege qualquer chamador
+    que passe um `feature_ids` customizado incluindo as 3 expanding, não
+    só o caminho default (que não dispara mais desde 2026-08-23). Ordem
+    verificada em
     `test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_
     resolution_id_setado` (`tests/unit/test_features_build.py`, AG-181):
     um refactor que trocasse essa ordem reintroduziria silenciosamente o
@@ -320,6 +334,21 @@ def compute_max_feature_lookback_ms(
         if resolution_id is None
         else int(load_constant("label_prefetch_p99_bar_duration_ms"))
     )
+    if resolution_id is not None:
+        logger.warning(
+            "features.build.compute_max_feature_lookback_ms.purge_magnitude_unvalidated",
+            resolution_id=resolution_id,
+            tf=tf,
+            reason=(
+                "max_feature_lookback_ms sob resolution_id usa label_prefetch_p99_bar_"
+                "duration_ms -- proxy medido pro modelo de custo de PREFETCH (sub-cobertura "
+                "tolera'vel), nao pro de PURGE (sub-cobertura = vazamento silencioso B02/B09). "
+                "max_ms real de SOLUSDT/R3 chega a ~5,8x o p99 usado (AG-159). Medir com "
+                "tools/diagnostics/measure_max_consecutive_bar_window_duration.py antes de "
+                "treinar sob R2/R3 com purge ativo."
+            ),
+            see="AG-159",
+        )
     return max_feature_window_bars(windows) * bar_duration_ms
 
 

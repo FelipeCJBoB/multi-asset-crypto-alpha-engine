@@ -20,12 +20,13 @@ consistência acima — o IC medido ainda é calculado e reportado em
 
 - `E27f_cost_atr_ratio` — custo alto nunca pode melhorar o resultado
   esperado, MESMO sinal (-1) nos dois lados (`_ECONOMIC_FORCED_CONSTRAINT`).
-- `E02f_funding_z_expanding` — funding rate alto (z positivo) é custo de
-  carregamento para quem está COMPRADO (paga funding -> prejudica o long,
-  -1) e é receita para quem está VENDIDO (recebe funding -> favorece o
-  short, +1) — sinal OPOSTO por lado (`_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE`).
-  Por isso `screen_monotone_constraints` agora recebe `side` explicitamente:
-  a restrição forçada de uma feature side-dependent só pode ser resolvida
+- Mecanismo `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` (sinal OPOSTO por lado,
+  ex. funding rate: custo de carregamento pro long, receita pro short) —
+  vazio hoje (`E02f_funding_z_expanding`, o único exemplo real, saiu do
+  conjunto ativo de treino, `AG-032`, 2026-08-23), pronto pra qualquer
+  feature futura com essa mesma assinatura contábil. `screen_monotone_
+  constraints` recebe `side` explicitamente por causa deste mecanismo: a
+  restrição forçada de uma feature side-dependent só pode ser resolvida
   sabendo de qual binário (M_long ou M_short) se trata."""
 
 from __future__ import annotations
@@ -61,15 +62,14 @@ _ECONOMIC_FORCED_CONSTRAINT: dict[str, int] = {"E27f_cost_atr_ratio": -1}
 # aquela entrada tem. Custa uma segunda constante de módulo; ganha em
 # legibilidade no call site — trade-off intencional, não descuido.
 #
-# `E02f_funding_z_expanding`: funding alto (z positivo) é custo de
-# carregamento para quem está COMPRADO (paga funding — prejudica o long,
-# -1) e é receita para quem está VENDIDO (recebe funding — favorece o
-# short, +1). Mesma categoria de `E27f_cost_atr_ratio` (aritmética de custo,
-# não padrão a aprender/testar por consistência de IC) — só que aqui a
-# identidade contábil inverte de sinal conforme o lado.
-_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE: dict[str, dict[int, int]] = {
-    "E02f_funding_z_expanding": {1: -1, -1: 1},
-}
+# `E02f_funding_z_expanding` (funding alto = custo de carregamento pro long,
+# receita pro short) era a única entrada real deste dict -- saiu do conjunto
+# ativo de treino (AG-032, 2026-08-23, `T1_FEATURE_IDS`). Vazio por ora, não
+# removido -- mecanismo genérico (`_forced_constraint_for` abaixo), pronto
+# pra qualquer feature FUTURA cuja identidade contábil inverta por lado
+# (padrão comum em cripto: funding, basis, custo de carrego), sem precisar
+# reintroduzir o dict duplo se/quando isso acontecer.
+_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE: dict[str, dict[int, int]] = {}
 
 
 def _forced_constraint_for(

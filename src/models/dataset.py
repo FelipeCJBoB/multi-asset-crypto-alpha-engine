@@ -123,8 +123,26 @@ def build_modeling_frame(
     vol_estimator_id: str | None = None,
     t0_start: str | None = None,
     t0_end: str | None = None,
+    extra_feature_ids: tuple[str, ...] = (),
 ) -> ModelingFrame:
-    """`t0_start`/`t0_end` (ISO date, inclusive, ex. "2021-12-01") filtram o
+    """`extra_feature_ids` (AG-032, 2026-08-23) — colunas de feature ALÉM
+    de `T1_FEATURE_IDS` a incluir em `mf.data`, ex. `C07_vol_pctile_
+    expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_expanding` (saíram
+    do conjunto de treino do Alpha, mas `compute_t1_features` continua
+    calculando as 3 — só não entram no `join_cols` default). Uso
+    EXCLUSIVAMENTE de análise pós-hoc (`src/analysis/`, nunca insumo de
+    treino/seleção de feature, mesma fronteira de `importlinter` já
+    documentada em `CLAUDE.md`) que precise ler essas colunas sobre um
+    `ModelingFrame` real, sem reintroduzi-las em `T1_FEATURE_IDS`. Default
+    `()` preserva o comportamento anterior byte a byte — nenhum caller
+    existente passa este argumento. Não interage com a proteção de purge
+    do CPCV (`features_build.compute_max_feature_lookback_ms` é chamada
+    separadamente por `pipeline.py`/`leakage.py`, sempre com
+    `T1_FEATURE_IDS`, nunca com `extra_feature_ids`) — pedir uma das 3
+    features expanding aqui é seguro justamente porque `mf.data` não é
+    insumo de CPCV, só de análise pós-hoc.
+
+    `t0_start`/`t0_end` (ISO date, inclusive, ex. "2021-12-01") filtram o
     frame FINAL por `t0`, DEPOIS de features/regime terem sido computados
     sobre o histórico COMPLETO de `labels` — nunca antes. `build_t1_features`/
     `build_regimes` não estendem a janela pedida automaticamente
@@ -263,6 +281,13 @@ def build_modeling_frame(
     bar_source = (
         "time_15m" if resolution_id is None else _BAR_SOURCE_BY_RESOLUTION[resolution_id]
     )
+    _overlap = set(extra_feature_ids) & set(T1_FEATURE_IDS)
+    if _overlap:
+        raise ValueError(
+            f"build_modeling_frame: extra_feature_ids={sorted(_overlap)} já está em "
+            "T1_FEATURE_IDS -- passaria coluna duplicada pro join, sinal de uso incorreto "
+            "(extra_feature_ids é só pra colunas FORA do conjunto de treino do Alpha)"
+        )
 
     labels = cpcv.load_labels_v1(labels_version, symbol=symbol, tf=tf, resolution_id=resolution_id)
     execution_config = LabelConfig.from_constants(
@@ -291,7 +316,13 @@ def build_modeling_frame(
     bar_table = bar_table.join(regime_small, on="_open_time_ms", how="left")
 
     labels2 = labels.with_columns(pl.col("t0").dt.epoch(time_unit="ms").alias("_close_time_ms"))
-    join_cols = ["_close_time_ms", *T1_FEATURE_IDS, REGIME_COL, TRADEABLE_COL]
+    join_cols = [
+        "_close_time_ms",
+        *T1_FEATURE_IDS,
+        *extra_feature_ids,
+        REGIME_COL,
+        TRADEABLE_COL,
+    ]
     merged = labels2.join(bar_table.select(join_cols), on="_close_time_ms", how="left")
     merged = merged.sort("_pos").drop(["_pos", "_close_time_ms"])
 
