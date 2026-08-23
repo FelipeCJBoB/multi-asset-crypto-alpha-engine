@@ -43,6 +43,7 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.data import resample as data_resample
 from src.features import support
 from src.features.support import FloatArray
 
@@ -104,12 +105,51 @@ class RegimeThresholds:
             min_common_history_bars=int(load_constant("min_common_history_bars_15m")),
         )
 
+    @property
+    def confirmation_min_real_ms(self) -> int:
+        """Piso de tempo real pra confirmação do eixo tendência/
+        volatilidade (D-04, `AG-180`, decisão do Manager 2026-08-23) —
+        `regime_confirmation_bars` (`provenance: LITERATURE`, PRD §4.5,
+        "mudança de regime só é efetivada após 2 barras consecutivas")
+        foi escrito num mundo só-15m; sob dollar-bar, N barras podem
+        fechar em segundos numa rajada de liquidez (medido,
+        `experiments/regime_hysteresis_bar_window_duration.json`,
+        p1≈25min-2h dependendo do símbolo pra `min_warmup_bars`, mesma
+        ordem de grandeza de risco pras constantes menores) — o
+        contrário do que um filtro de ruído deveria fazer (confirmar
+        MAIS rápido exatamente na hora de MAIS incerteza). A confirmação
+        agora exige `pending >= confirmation_bars` **E**
+        `tempo_real_decorrido >= confirmation_min_real_ms` (o mais
+        restritivo dos dois, nunca só um).
+
+        `(confirmation_bars - 1) * step_ms("15m")`, não
+        `confirmation_bars * step_ms(...)`: o cronômetro mede
+        `open_time` da barra que primeiro propôs a troca até `open_time`
+        da barra que a confirma — N barras consecutivas cobrem
+        exatamente `N-1` intervalos entre `open_time`s sucessivos, não
+        N. Essa é a forma que reduz a condição híbrida a bit-exata sob
+        `bar_source="time_15m"`: sob grade fixa de 15m, a barra que
+        confirma por contagem pura SEMPRE satisfaz `open_time[confirma]
+        - open_time[primeira_pendente] == (confirmation_bars-1) *
+        step_ms("15m")` exatamente (igualdade, não aproximação) — usar
+        `confirmation_bars * step_ms(...)` atrasaria a confirmação em 1
+        barra mesmo sob 15m, quebrando o caminho de produção existente."""
+        return max(0, self.confirmation_bars - 1) * data_resample.step_ms("15m")
+
+    @property
+    def stress_exit_confirmation_min_real_ms(self) -> int:
+        """Mesmo racional de `confirmation_min_real_ms`, pro eixo de
+        saída de stress (`regime_stress_exit_confirmation_bars`,
+        também `provenance: LITERATURE`, PRD §4.5)."""
+        return max(0, self.stress_exit_confirmation_bars - 1) * data_resample.step_ms("15m")
+
 
 def _run_state_machine(
     er_quantile: FloatArray,
     vol_pctile: FloatArray,
     stress_triggered: NDArray[np.bool_],
     thresholds: RegimeThresholds,
+    open_time_ms: stress_mod.TimeArray,
 ) -> tuple[StrArray, StrArray]:
     """Laço sequencial explícito — mesma justificativa de
     `wilder_smooth`/`expanding_zscore_strict` em `src/features/support.py`:
@@ -131,7 +171,20 @@ def _run_state_machine(
     Os TRÊS estados de histerese (`trend_state`, `vol_state`,
     `stress_state`) são atualizados em TODA barra (inclusive durante o
     warmup) para não sofrerem cold start artificial na barra em que R0
-    termina — só a LABEL final respeita `is_warmup`."""
+    termina — só a LABEL final respeita `is_warmup`.
+
+    `open_time_ms` (D-04, `AG-180`, decisão do Manager 2026-08-23) —
+    confirmação de troca de eixo (tendência/volatilidade/saída de
+    stress) agora exige `pending >= N_bars` **E**
+    `tempo_real_decorrido >= piso_ms` (`RegimeThresholds.
+    confirmation_min_real_ms`/`stress_exit_confirmation_min_real_ms`) —
+    o mais restritivo dos dois. Sob `bar_source="time_15m"` os dois
+    critérios coincidem exatamente (grade de relógio fixa: N barras
+    consecutivas SEMPRE cobrem `(N-1)*step_ms("15m")` de `open_time` a
+    `open_time`), então o comportamento de produção existente é
+    preservado bit-a-bit — o piso de tempo só passa a ser o fator
+    limitante sob dollar-bar, quando barras fecham mais rápido que a
+    grade de 15m teria produzido."""
     n = er_quantile.shape[0]
     regime = np.empty(n, dtype=object)
     regime_raw = np.empty(n, dtype=object)
@@ -142,6 +195,9 @@ def _run_state_machine(
     trend_pending = 0
     vol_pending = 0
     stress_exit_pending = 0
+    trend_pending_start_ms = 0
+    vol_pending_start_ms = 0
+    stress_exit_pending_start_ms = 0
 
     for t in range(n):
         is_warmup = t < thresholds.min_warmup_bars
@@ -149,6 +205,7 @@ def _run_state_machine(
         vol_p = vol_pctile[t]
         is_stress_instant = bool(stress_triggered[t])
         has_signal = not (np.isnan(er_q) or np.isnan(vol_p))
+        current_ms = int(open_time_ms[t])
 
         # --- regime_raw: classificação instantânea, sem estado ---
         if is_warmup:
@@ -179,8 +236,13 @@ def _run_state_machine(
             trend_cutoff = thresholds.er_cutoff_exit if trend_state else thresholds.er_cutoff_enter
             candidate_trend = er_q >= trend_cutoff
             if candidate_trend != trend_state:
+                if trend_pending == 0:
+                    trend_pending_start_ms = current_ms
                 trend_pending += 1
-                if trend_pending >= thresholds.confirmation_bars:
+                trend_elapsed_ok = (
+                    current_ms - trend_pending_start_ms
+                ) >= thresholds.confirmation_min_real_ms
+                if trend_pending >= thresholds.confirmation_bars and trend_elapsed_ok:
                     trend_state = candidate_trend
                     trend_pending = 0
             else:
@@ -190,22 +252,38 @@ def _run_state_machine(
             vol_cutoff = thresholds.vol_cutoff_exit if vol_state else thresholds.vol_cutoff_enter
             candidate_vol = vol_p >= vol_cutoff
             if candidate_vol != vol_state:
+                if vol_pending == 0:
+                    vol_pending_start_ms = current_ms
                 vol_pending += 1
-                if vol_pending >= thresholds.confirmation_bars:
+                vol_elapsed_ok = (
+                    current_ms - vol_pending_start_ms
+                ) >= thresholds.confirmation_min_real_ms
+                if vol_pending >= thresholds.confirmation_bars and vol_elapsed_ok:
                     vol_state = candidate_vol
                     vol_pending = 0
             else:
                 vol_pending = 0
         # sem sinal (NaN pontual): estado dos dois eixos fica congelado
-        # nesta barra — nem propõe troca, nem reseta o contador pendente.
+        # nesta barra — nem propõe troca, nem reseta o contador pendente
+        # (nem o cronômetro de tempo real, que só é lido quando pending
+        # volta a incrementar).
 
-        # --- eixo stress: entrada IMEDIATA, saída com N barras de confirmação (§4.5 assimetria) ---
+        # --- eixo stress: entrada IMEDIATA, saída com N barras de
+        # confirmação E piso de tempo real (§4.5 assimetria, D-04) ---
         if is_stress_instant:
             stress_state = True
             stress_exit_pending = 0
         elif stress_state:
+            if stress_exit_pending == 0:
+                stress_exit_pending_start_ms = current_ms
             stress_exit_pending += 1
-            if stress_exit_pending >= thresholds.stress_exit_confirmation_bars:
+            stress_exit_elapsed_ok = (
+                current_ms - stress_exit_pending_start_ms
+            ) >= thresholds.stress_exit_confirmation_min_real_ms
+            if (
+                stress_exit_pending >= thresholds.stress_exit_confirmation_bars
+                and stress_exit_elapsed_ok
+            ):
                 stress_state = False
                 stress_exit_pending = 0
         else:
@@ -340,7 +418,7 @@ def classify_regimes(
         )
 
     regime, regime_raw = _run_state_machine(
-        er_quantile, vol_pctile, stress_result.triggered_mask, thresholds
+        er_quantile, vol_pctile, stress_result.triggered_mask, thresholds, open_time_ms
     )
     bars_in_regime = _bars_in_regime(regime)
     econ_regime = _economics_regime(econ_quantile)

@@ -9,6 +9,8 @@ contra dado real via `src.regime.build`)."""
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import polars as pl
 import pytest
@@ -352,7 +354,7 @@ def test_troca_de_1_barra_isolada_nao_efetiva_mudanca_de_regime() -> None:
     vol_pctile[spike_idx] = 0.90  # 1 barra isolada acima de 0.70, depois volta
     stress_triggered = np.zeros(n, dtype=bool)
     regime, regime_raw = classifier._run_state_machine(
-        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, _open_time(n)
     )
     assert (regime[_THRESHOLDS.min_warmup_bars :] == "R1").all()  # confirmado nunca sai de R1
     assert regime_raw[spike_idx] == "R2"  # mas o raw reage na hora
@@ -367,7 +369,9 @@ def test_troca_persistente_por_confirmation_bars_efetiva_mudanca() -> None:
     start = 10
     vol_pctile[start:] = 0.90  # 6 barras consecutivas acima do corte de entrada
     stress_triggered = np.zeros(n, dtype=bool)
-    regime, _ = _run_state_machine(er_quantile, vol_pctile, stress_triggered, _THRESHOLDS)
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, _open_time(n)
+    )
     regimes = regime[_THRESHOLDS.min_warmup_bars :].tolist()
     rel_start = start - _THRESHOLDS.min_warmup_bars
     assert regimes[: rel_start - 1] == ["R1"] * (rel_start - 1)
@@ -387,9 +391,126 @@ def test_histerese_impede_saida_prematura_na_zona_morta() -> None:
     vol_pctile = np.full(n, 0.90)  # já confirmado em HIGH_VOL bem antes do fim
     vol_pctile[-5:] = 0.68  # dentro da zona morta [0.65, 0.70) -- não é saída nem entrada
     stress_triggered = np.zeros(n, dtype=bool)
-    regime, _ = _run_state_machine(er_quantile, vol_pctile, stress_triggered, _THRESHOLDS)
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, _open_time(n)
+    )
     post_warmup = regime[_THRESHOLDS.min_warmup_bars :]
     assert (post_warmup == "R2").all()  # nunca sai de HIGH_VOL dentro da zona morta
+
+
+# ============================================================================
+# D-04 (AG-180, decisão do Manager 2026-08-23) — piso de tempo real híbrido:
+# confirmação exige `pending >= confirmation_bars` E `tempo_real_decorrido >=
+# confirmation_min_real_ms` (o mais restritivo dos dois). Sob dollar-bar,
+# barras podem fechar em segundos numa rajada de liquidez -- sem o piso, a
+# histerese confirmaria rápido demais exatamente na hora de mais incerteza
+# (medido, experiments/regime_hysteresis_bar_window_duration.json).
+# ============================================================================
+
+
+def test_confirmation_min_real_ms_deriva_de_confirmation_bars_menos_1() -> None:
+    """`(confirmation_bars - 1) * step_ms("15m")`, não `confirmation_bars *
+    step_ms(...)` -- N barras consecutivas cobrem N-1 intervalos de
+    open_time a open_time, não N (ver docstring da property)."""
+    assert _THRESHOLDS.confirmation_min_real_ms == 900_000  # (2-1) * 15min
+    assert _THRESHOLDS.stress_exit_confirmation_min_real_ms == 2_700_000  # (4-1) * 15min
+
+
+def test_confirmation_min_real_ms_nao_fica_negativo_com_confirmation_bars_1() -> None:
+    th = dataclasses.replace(_THRESHOLDS, confirmation_bars=1, stress_exit_confirmation_bars=1)
+    assert th.confirmation_min_real_ms == 0
+    assert th.stress_exit_confirmation_min_real_ms == 0
+
+
+def test_confirmation_min_real_ms_a_partir_de_constants_reais() -> None:
+    from src.data.resample import step_ms
+
+    th = classifier.RegimeThresholds.from_constants()
+    assert th.confirmation_min_real_ms == (th.confirmation_bars - 1) * step_ms("15m")
+    assert th.stress_exit_confirmation_min_real_ms == (
+        th.stress_exit_confirmation_bars - 1
+    ) * step_ms("15m")
+
+
+def _burst_open_time(n: int, warmup: int, *, burst_step_ms: int) -> stress.TimeArray:
+    """Grade de 15m até `warmup` (o que acontece antes não importa --
+    histerese só começa a contar depois do warmup nestes testes), depois
+    passo `burst_step_ms` constante -- simula dollar-bar fechando muito
+    mais rápido (rajada) ou mais devagar (baixa liquidez) que 15m."""
+    return np.array(
+        [i * 900_000 for i in range(warmup)]
+        + [warmup * 900_000 + k * burst_step_ms for k in range(n - warmup)],
+        dtype=np.int64,
+    )
+
+
+def test_confirmacao_atrasada_pelo_piso_de_tempo_real_sob_burst_de_barras_rapidas() -> None:
+    """Burst sintético de barras espaçadas 100s -- contagem de barra (2)
+    seria satisfeita já na 2ª barra do burst, mas o piso de tempo real
+    (900_000ms, `_THRESHOLDS.confirmation_bars=2`) só é atingido 9
+    intervalos de 100_000ms depois do início do burst."""
+    warmup = _THRESHOLDS.min_warmup_bars
+    n = warmup + 12
+    er_quantile = np.full(n, 0.30)
+    vol_pctile = np.full(n, 0.30)
+    vol_pctile[warmup:] = 0.90  # HIGH_VOL a partir do fim do warmup
+    stress_triggered = np.zeros(n, dtype=bool)
+    open_time = _burst_open_time(n, warmup, burst_step_ms=100_000)
+
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, open_time
+    )
+    post_warmup = regime[warmup:].tolist()
+    assert post_warmup[0] == "R1"  # k=0: pending=1<2
+    assert post_warmup[1] == "R1"  # k=1: pending=2>=2, mas elapsed=100_000<900_000
+    assert post_warmup[8] == "R1"  # k=8: elapsed=800_000<900_000 -- ainda não confirma
+    assert post_warmup[9] == "R2"  # k=9: elapsed=900_000>=900_000 -- confirma aqui
+    assert all(r == "R2" for r in post_warmup[9:])
+
+
+def test_confirmacao_nao_atrasa_alem_da_contagem_de_barra_sob_barras_lentas() -> None:
+    """Sob barras mais ESPAÇADAS que 15m (dollar-bar em baixa liquidez), o
+    piso de tempo real já está satisfeito muito antes da contagem de
+    barra -- confirma exatamente quando `pending` atinge
+    `confirmation_bars`, sem atraso adicional (mesmo comportamento do
+    bar-count puro, preservado)."""
+    warmup = _THRESHOLDS.min_warmup_bars
+    n = warmup + 4
+    er_quantile = np.full(n, 0.30)
+    vol_pctile = np.full(n, 0.30)
+    vol_pctile[warmup:] = 0.90
+    stress_triggered = np.zeros(n, dtype=bool)
+    open_time = _burst_open_time(n, warmup, burst_step_ms=3_600_000)  # 1h -- mais devagar que 15m
+
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, open_time
+    )
+    post_warmup = regime[warmup:].tolist()
+    assert post_warmup[0] == "R1"  # pending=1<2
+    assert post_warmup[1] == "R2"  # pending=2>=2 E elapsed=3_600_000>=900_000 -- sem atraso extra
+
+
+def test_bit_exato_sob_grade_de_15m_com_a_logica_hibrida() -> None:
+    """Prova de regressão direta: sob grade de 15m real (`_open_time`), a
+    lógica híbrida confirma NO MESMO índice que a lógica antiga (só
+    contagem de barra) confirmava -- o piso de tempo real nunca é o
+    fator limitante quando a barra já tem duração fixa de 15m, por
+    construção (ver docstring de `confirmation_min_real_ms`)."""
+    n = 16
+    er_quantile = np.full(n, 0.30)
+    vol_pctile = np.full(n, 0.30)
+    start = 10
+    vol_pctile[start:] = 0.90
+    stress_triggered = np.zeros(n, dtype=bool)
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, _open_time(n)
+    )
+    regimes = regime[_THRESHOLDS.min_warmup_bars :].tolist()
+    rel_start = start - _THRESHOLDS.min_warmup_bars
+    # idêntico ao teste original test_troca_persistente_por_confirmation_
+    # bars_efetiva_mudanca -- mesma asserção, mesmo índice de confirmação
+    assert regimes[rel_start] == "R1"
+    assert regimes[rel_start + 1] == "R2"
 
 
 # ============================================================================
@@ -428,6 +549,39 @@ def test_r5_so_sai_apos_stress_exit_confirmation_bars_barras_sem_gatilho() -> No
     for k in range(_THRESHOLDS.stress_exit_confirmation_bars):
         assert regimes[trigger_idx + k] == "R5", f"k={k}"
     assert regimes[trigger_idx + _THRESHOLDS.stress_exit_confirmation_bars] != "R5"
+
+
+def test_r5_saida_atrasada_pelo_piso_de_tempo_real_sob_burst_de_barras_rapidas() -> None:
+    """D-04 (AG-180) -- mesmo racional dos testes de tendência/
+    volatilidade, pro eixo de stress: sob burst de barras rápidas (100s),
+    a saída de R5 exige TAMBÉM `stress_exit_confirmation_min_real_ms`
+    decorrido (2_700_000ms, `_THRESHOLDS.stress_exit_confirmation_bars=4`),
+    não só as 4 barras -- que sob o burst passariam em 400_000ms, bem
+    antes do piso de tempo real."""
+    warmup = _THRESHOLDS.min_warmup_bars
+    n_burst = 35
+    n = warmup + 1 + n_burst
+    er_quantile = np.full(n, 0.30)
+    vol_pctile = np.full(n, 0.30)
+    stress_triggered = np.zeros(n, dtype=bool)
+    trigger_idx = warmup
+    stress_triggered[trigger_idx] = True
+
+    burst_step_ms = 100_000
+    open_time = np.array(
+        [i * 900_000 for i in range(trigger_idx + 1)]
+        + [(trigger_idx + 1) * 900_000 + k * burst_step_ms for k in range(n_burst)],
+        dtype=np.int64,
+    )
+    regime, _ = _run_state_machine(
+        er_quantile, vol_pctile, stress_triggered, _THRESHOLDS, open_time
+    )
+    regimes = regime.tolist()
+    assert regimes[trigger_idx] == "R5"  # entrada imediata
+    # bar-count(4) sozinho já teria saído aqui (k=3) -- não sai mais
+    assert regimes[trigger_idx + 4] == "R5"
+    assert regimes[trigger_idx + 1 + 26] == "R5"  # k=26: elapsed=2_600_000 < 2_700_000
+    assert regimes[trigger_idx + 1 + 27] != "R5"  # k=27: elapsed=2_700_000 >= piso -- sai
 
 
 def test_r5_tem_precedencia_sobre_trend_e_vol() -> None:
