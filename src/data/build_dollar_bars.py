@@ -878,11 +878,14 @@ def build_dollar_bars_walkforward(
 def _parse_cli_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Runner de VALIDAÇÃO de dollar bar canônico -- calibra sobre a "
-            "própria janela, constrói, escreve. NÃO é a decisão de calibração "
-            "congelada de produção (AG-042 itens 2/3 continuam deferidos); NÃO "
-            "prova validade estatística (AG-043 continua pendente) -- ver "
-            "docstring do módulo."
+            "Runner de VALIDAÇÃO de dollar bar canônico. NÃO é a decisão de "
+            "calibração congelada de produção (AG-042 itens 2/3 continuam "
+            "deferidos); NÃO prova validade estatística (AG-043 continua "
+            "pendente) -- ver docstring do módulo. --mode single_window "
+            "(default, LEGADO) calibra threshold sobre a MESMA janela sendo "
+            "construída -- vazamento de 18,18x medido (AG-124). --mode "
+            "walkforward aciona a recalibração causal rolante "
+            "(build_dollar_bars_walkforward) -- ver AG-138."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -896,6 +899,40 @@ def _parse_cli_args() -> argparse.Namespace:
         help="resolution_id da grade dollar-bar -- R1=15m/R2=30m/R3=1h (AG-042)",
     )
     parser.add_argument(
+        "--mode",
+        default="single_window",
+        choices=["single_window", "walkforward"],
+        help=(
+            "single_window (default, LEGADO): calibra threshold sobre a MESMA "
+            "janela [--start, --end] -- vazamento medido de 18,18x, AG-124. "
+            "Emite logger.warning ao rodar. walkforward: recalibração causal "
+            "rolante (AG-124) -- threshold de cada período calibrado só sobre "
+            "dado ESTRITAMENTE anterior a ele; exige --trailing-window-days e "
+            "--cadence-days. Ver AG-138."
+        ),
+    )
+    parser.add_argument(
+        "--trailing-window-days",
+        type=int,
+        default=None,
+        help=(
+            "obrigatório sob --mode walkforward -- dias de histórico ANTES de "
+            "cada período de aplicação usados pra calibrar o threshold desse "
+            "período (AG-124). Sem default (B23) -- decisão do Manager, "
+            "informada pelo relatório mensal de deriva."
+        ),
+    )
+    parser.add_argument(
+        "--cadence-days",
+        type=int,
+        default=None,
+        help=(
+            "obrigatório sob --mode walkforward -- tamanho em dias de cada "
+            "período de aplicação (recalibração a cada N dias). Sem default "
+            "(B23)."
+        ),
+    )
+    parser.add_argument(
         "--dest-root",
         default=None,
         help="default: data/capacity/ (CAPACITY_DIR) -- diretório-raiz de dollar_bars_{r1,r2,r3}/",
@@ -904,19 +941,72 @@ def _parse_cli_args() -> argparse.Namespace:
         "--overwrite",
         action="store_true",
         help=(
-            "substitui _calibration.json/*.parquet já existentes no diretório do "
-            "símbolo, mesmo com threshold_usdt divergente do gravado antes -- ver "
-            "guarda de segurança em write_dollar_bars_and_calibration. Necessário "
-            "pra rodar uma janela de calibração diferente da já gravada no mesmo "
-            "(dest_root, symbol) -- ex. full-history depois de uma validação parcial."
+            "só se aplica a --mode single_window (build_dollar_bars_walkforward "
+            "não aceita este parâmetro -- cada período escreve incrementalmente "
+            "por desenho). Substitui _calibration.json/*.parquet já existentes "
+            "no diretório do símbolo, mesmo com threshold_usdt divergente do "
+            "gravado antes -- ver guarda de segurança em "
+            "write_dollar_bars_and_calibration."
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.mode == "walkforward" and (
+        args.trailing_window_days is None or args.cadence_days is None
+    ):
+        parser.error(
+            "--mode walkforward exige --trailing-window-days e --cadence-days "
+            "(AG-124/AG-138 -- sem default, B23)"
+        )
+    return args
 
 
 def main() -> None:
     args = _parse_cli_args()
     dest_root = Path(args.dest_root) if args.dest_root is not None else None
+
+    if args.mode == "walkforward":
+        stats = build_dollar_bars_walkforward(
+            args.symbol,
+            args.start,
+            args.end,
+            resolution_id=args.resolution,
+            trailing_window_days=args.trailing_window_days,
+            cadence_days=args.cadence_days,
+            dest_root=dest_root,
+        )
+        logger.info(
+            "data.build_dollar_bars.done",
+            mode="walkforward",
+            symbol=args.symbol,
+            resolution_id=args.resolution,
+            start=args.start,
+            end=args.end,
+            trailing_window_days=args.trailing_window_days,
+            cadence_days=args.cadence_days,
+            n_periods=stats.n_periods,
+            n_periods_written=stats.n_periods_written,
+            n_cold_start_dropped=stats.n_cold_start_dropped,
+            calibration_hash=stats.calibration_identity.config_hash,
+            dest_root=str(dest_root) if dest_root is not None else str(CAPACITY_DIR),
+        )
+        return
+
+    logger.warning(
+        "data.build_dollar_bars.legacy_non_causal_calibration",
+        symbol=args.symbol,
+        resolution_id=args.resolution,
+        start=args.start,
+        end=args.end,
+        reason=(
+            "--mode single_window calibra threshold sobre a MESMA janela sendo "
+            "construída -- vazamento de 18,18x medido entre 2020-01 e 2024-03, "
+            "BTCUSDT (AG-124). Uso pretendido: validação pontual de janela curta "
+            "(ver docstring do módulo). Para regenerar/estender uma janela real, "
+            "use --mode walkforward."
+        ),
+        alternative="--mode walkforward --trailing-window-days N --cadence-days M",
+        see="AG-124, AG-138",
+    )
 
     calibration = calibrate_dollar_threshold_for_validation(
         args.symbol, args.start, args.end, resolution_id=args.resolution
@@ -934,6 +1024,7 @@ def main() -> None:
 
     logger.info(
         "data.build_dollar_bars.done",
+        mode="single_window",
         symbol=args.symbol,
         resolution_id=args.resolution,
         start=args.start,

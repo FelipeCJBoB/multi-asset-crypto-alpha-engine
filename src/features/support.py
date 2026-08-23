@@ -165,7 +165,7 @@ def parkinson_vol(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
     mean_sq = (
         pl.Series(log_hl_sq).rolling_mean(window_size=window, min_samples=window).to_numpy()
     )
-    var = mean_sq / (4.0 * np.log(2.0))  # noqa: unguarded-ratio -- denominador é constante numérica (4*ln2), falso positivo do heurístico AST (não reconhece BinOp/Call como literal)
+    var = mean_sq / (4.0 * np.log(2.0))  # noqa: unguarded-ratio -- denominador é constante numérica (4*ln2), falso positivo do heurístico AST (não reconhece BinOp/Call como literal) # noqa: magic-number -- constante de fórmula fechada da literatura (Parkinson 1980), mesma classe de garman_klass_vol
     with np.errstate(invalid="ignore"):
         out: FloatArray = np.sqrt(var)
     return out
@@ -282,7 +282,7 @@ def yang_zhang_vol(
     )
     v_rs = pl.Series(rs).rolling_mean(window_size=window, min_samples=window).to_numpy()
 
-    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))  # noqa: magic-number -- constante de fórmula fechada da literatura (Yang-Zhang 2000), mesma classe de garman_klass_vol; ver derivação completa na docstring acima
     sigma_sq = v_o + k * v_c + (1.0 - k) * v_rs
     with np.errstate(invalid="ignore"):
         out: FloatArray = np.sqrt(np.where(sigma_sq >= 0, sigma_sq, np.nan))

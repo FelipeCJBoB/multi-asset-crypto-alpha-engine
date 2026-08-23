@@ -1126,3 +1126,87 @@ def test_build_dollar_bars_fiacao_e2e_btcusdt_janela_curta(
     assert features_df.height > 0
     for col in features_build.T1_FEATURE_IDS:
         assert col in features_df.columns
+
+
+# ============================================================================
+# _parse_cli_args -- wiring do modo causal no CLI (AG-138, 2026-08-23). O
+# gap real era o operador rodando `python -m src.data.build_dollar_bars` (o
+# comando mais óbvio) sem nenhum aviso de que reproduz o vazamento de
+# 18,18x medido em AG-124 -- estes testes cobrem só o parsing/validação de
+# argv, não IO real (mesma fronteira dos testes síncronos acima do arquivo).
+# ============================================================================
+
+
+def test_parse_cli_args_default_mode_e_single_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "build_dollar_bars.py",
+            "--symbol", "BTCUSDT",
+            "--start", "2024-01-01",
+            "--end", "2024-01-02",
+        ],
+    )
+    args = build_dollar_bars._parse_cli_args()
+    assert args.mode == "single_window"
+    assert args.trailing_window_days is None
+    assert args.cadence_days is None
+
+
+def test_parse_cli_args_walkforward_sem_trailing_window_days_levanta_systemexit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "build_dollar_bars.py",
+            "--symbol", "BTCUSDT",
+            "--start", "2024-01-01",
+            "--end", "2024-01-02",
+            "--mode", "walkforward",
+            "--cadence-days", "7",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        build_dollar_bars._parse_cli_args()
+
+
+def test_parse_cli_args_walkforward_sem_cadence_days_levanta_systemexit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "build_dollar_bars.py",
+            "--symbol", "BTCUSDT",
+            "--start", "2024-01-01",
+            "--end", "2024-01-02",
+            "--mode", "walkforward",
+            "--trailing-window-days", "30",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        build_dollar_bars._parse_cli_args()
+
+
+def test_parse_cli_args_walkforward_com_ambos_parseia_corretamente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "build_dollar_bars.py",
+            "--symbol", "BTCUSDT",
+            "--start", "2024-01-01",
+            "--end", "2024-01-02",
+            "--mode", "walkforward",
+            "--trailing-window-days", "30",
+            "--cadence-days", "7",
+        ],
+    )
+    args = build_dollar_bars._parse_cli_args()
+    assert args.mode == "walkforward"
+    assert args.trailing_window_days == 30
+    assert args.cadence_days == 7
