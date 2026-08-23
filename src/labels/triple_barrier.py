@@ -94,6 +94,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
@@ -754,6 +755,48 @@ def _resolve_filters_cached(
     return resolved
 
 
+def _resolve_filters_from_mapping(
+    t0_date: date,
+    symbol: str,
+    filters_by_date: Mapping[date, Filters],
+    cache: dict[date, _ResolvedFilters],
+) -> _ResolvedFilters:
+    """Núcleo funcional, casca imperativa (2026-08-23, ver `docs/
+    nucleo_casca_design_doc_2026-08-23.md`) — versão de
+    `_resolve_filters_cached` SEM IO nenhuma: recebe os filtros já
+    resolvidos em memória (`filters_by_date`), nunca chama
+    `load_filters_asof`/lê disco. Existe pra dar a `build_labels_with_
+    stats` um ponto de injeção real -- antes desta função, testar a lógica
+    de barreira exigia que a data sintética do fixture batesse com o único
+    snapshot real em disco (`tests/unit/test_labels_triple_barrier.py`
+    fixava `_BASE_MS` em 2026-08-08 por causa disso). Mesmo esquema de
+    hash/estrutura de `_ResolvedFilters` que o caminho com IO produz —
+    `is_fallback=False` sempre aqui (filtro injetado não é fallback, é
+    conhecido). Fail-fast, nunca escolhe outra data silenciosamente: data
+    ausente em `filters_by_date` levanta `KeyError` com contexto."""
+    cached = cache.get(t0_date)
+    if cached is not None:
+        return cached
+    try:
+        filters = filters_by_date[t0_date]
+    except KeyError as exc:
+        raise KeyError(
+            f"build_labels_with_stats: filters_by_date não cobre a data "
+            f"{t0_date.isoformat()} (symbol={symbol!r}) -- todo t0_date "
+            "presente em bars_15m (barras com ATR válido) precisa de uma "
+            "entrada correspondente em filters_by_date."
+        ) from exc
+    resolved = _ResolvedFilters(
+        tick_size=filters.tick_size,
+        filters_hash=_hash_filters(
+            symbol, filters.snapshot_date, filters.tick_size, fallback=False
+        ),
+        is_fallback=False,
+    )
+    cache[t0_date] = resolved
+    return resolved
+
+
 # ============================================================================
 # Primeiro toque de barreira (§3.4, B11) — mark_1m, ordem cronológica real
 # ============================================================================
@@ -1045,9 +1088,20 @@ def build_labels_with_stats(
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
+    filters_by_date: Mapping[date, Filters] | None = None,
 ) -> tuple[pl.DataFrame, LabelBuildStats]:
     """Núcleo do Label Engine (§3.4) para UM lado (`side=1` long, `side=-1`
     short — ver item 1 da docstring do módulo).
+
+    `filters_by_date` (`None` default, núcleo funcional/casca imperativa,
+    2026-08-23 — `docs/nucleo_casca_design_doc_2026-08-23.md`): preserva
+    bit-exato todo caller existente. Quando `None`, filtros de exchange são
+    resolvidos por IO real (`_resolve_filters_cached`/`load_filters_asof`)
+    dentro do laço principal, como sempre foi. Passar um mapeamento
+    `{date: Filters}` já resolvido substitui esse caminho por
+    `_resolve_filters_from_mapping` — zero IO, ponto de injeção real pra
+    testar a lógica de barreira com filtro arbitrário, sem depender do
+    snapshot real em disco bater com a data do fixture.
 
     **AG-128 (F2)** — variante de `build_labels` que TAMBÉM retorna
     `LabelBuildStats` (n_warmup_dropped/n_incomplete_tail/n_tie_break),
@@ -1171,6 +1225,25 @@ def build_labels_with_stats(
     adverse_selection_bps_const = float(load_constant("adverse_selection_bps"))
 
     filters_cache: dict[date, _ResolvedFilters] = {}
+    # Núcleo funcional, casca imperativa (2026-08-23) -- decidido UMA vez
+    # fora do laço, não a cada barra: qual dos dois caminhos de resolução
+    # de filtro o laço abaixo usa. `filters_by_date` setado -> zero IO no
+    # laço inteiro (núcleo puro de verdade); `None` -> comportamento
+    # original, bit-exato.
+    if filters_by_date is not None:
+
+        def _get_resolved_filters(t0_date: date) -> _ResolvedFilters:
+            return _resolve_filters_from_mapping(t0_date, symbol, filters_by_date, filters_cache)
+    else:
+
+        def _get_resolved_filters(t0_date: date) -> _ResolvedFilters:
+            return _resolve_filters_cached(
+                t0_date,
+                symbol,
+                filters_cache,
+                historical_filters_fallback=historical_filters_fallback,
+            )
+
     cols: dict[str, list[Any]] = {c: [] for c in _PRE_WEIGHT_SCHEMA}
 
     n_incomplete_tail = 0
@@ -1193,12 +1266,7 @@ def build_labels_with_stats(
         atr_pct_i = float(atr_pct[i])
 
         t0_date = _ms_to_date(t0)
-        resolved_filters = _resolve_filters_cached(
-            t0_date,
-            symbol,
-            filters_cache,
-            historical_filters_fallback=historical_filters_fallback,
-        )
+        resolved_filters = _get_resolved_filters(t0_date)
         limit_px = round_to_tick(entry_ref, side, resolved_filters.tick_size)
 
         fill_horizon_ms = t_post + cfg.fill_timeout_ms  # AG-042 -- relógio fixo, não mais * bar_ms

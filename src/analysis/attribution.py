@@ -384,7 +384,12 @@ def gain_by_side(diagnostics_dir: Path, model_id: str) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=_GAIN_OUTPUT_SCHEMA)
 
 
-def _aggregate_side(files: list[Path], *, side_label: str, model_id: str) -> list[dict[str, Any]]:
+def _load_payloads(files: list[Path], *, model_id: str) -> list[dict[str, Any]]:
+    """Ponto de entrada com IO (2026-08-23, núcleo funcional/casca
+    imperativa — `docs/nucleo_casca_design_doc_2026-08-23.md`): só lê e
+    valida `model_id` — zero agregação/estatística. Separado de
+    `_aggregate_payloads` (núcleo puro) pra que a agregação seja testável
+    com `list[dict]` em memória, sem escrever JSON em disco."""
     payloads: list[dict[str, Any]] = []
     for path in files:
         payload: dict[str, Any] = orjson.loads(path.read_bytes())
@@ -394,7 +399,23 @@ def _aggregate_side(files: list[Path], *, side_label: str, model_id: str) -> lis
                 f"esperado {model_id!r} — diagnostics_dir provavelmente errado"
             )
         payloads.append(payload)
+    return payloads
 
+
+def _aggregate_side(files: list[Path], *, side_label: str, model_id: str) -> list[dict[str, Any]]:
+    """Ponto de entrada com IO — resolve `payloads` via `_load_payloads` e
+    delega a agregação pro núcleo puro `_aggregate_payloads`. Assinatura/
+    comportamento 100% preservados frente a antes desta separação."""
+    payloads = _load_payloads(files, model_id=model_id)
+    return _aggregate_payloads(payloads, side_label=side_label, model_id=model_id)
+
+
+def _aggregate_payloads(
+    payloads: list[dict[str, Any]], *, side_label: str, model_id: str
+) -> list[dict[str, Any]]:
+    """Núcleo funcional (2026-08-23) — agregação cross-fold pura
+    (`gain_mean`/`gain_std`/`share_mean`/`share_std`), zero IO. Recebe
+    `payloads` já carregados/validados por `_load_payloads`."""
     all_columns: set[str] = set()
     for payload in payloads:
         all_columns.update(payload["gain_by_column"].keys())

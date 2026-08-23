@@ -44,6 +44,35 @@ _N_SEEDS_TEST = 300  # noqa: magic-number
 _BASE_SEED_TEST = 7
 
 
+# ============================================================================
+# b1_sample_size (2026-08-23, núcleo funcional/casca imperativa -- docs/
+# nucleo_casca_design_doc_2026-08-23.md) -- extraída de src/models/
+# pipeline.py::run_layer1_sprint pra virar testável sem rodar o pipeline
+# CPCV/XGBoost inteiro.
+# ============================================================================
+
+
+def test_b1_sample_size_divide_pooled_por_n_paths() -> None:
+    assert baselines.b1_sample_size(100, 5) == 20
+
+
+def test_b1_sample_size_arredonda() -> None:
+    assert baselines.b1_sample_size(101, 5) == 20  # 20.2 -> 20
+    assert baselines.b1_sample_size(103, 5) == 21  # 20.6 -> 21
+
+
+def test_b1_sample_size_piso_1_nunca_amostra_vazia() -> None:
+    assert baselines.b1_sample_size(0, 5) == 1
+    assert baselines.b1_sample_size(0, 0) == 1
+
+
+def test_b1_sample_size_n_paths_zero_cai_no_piso_do_denominador() -> None:
+    """`n_paths=0` (caso degenerado) não levanta ZeroDivisionError -- cai
+    no mesmo piso 1 do denominador que o código de produção já aplicava
+    (`max(len(c1_by_path), 1)`)."""
+    assert baselines.b1_sample_size(50, 0) == 50
+
+
 def _synthetic_pool(
     n: int = 2000,
     *,

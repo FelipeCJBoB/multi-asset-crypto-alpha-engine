@@ -779,11 +779,23 @@ def e02f_in_fold(mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) -> d
 
 
 def run_faixa1_5(
-    predictions: pl.DataFrame, mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]
+    predictions: pl.DataFrame,
+    mf_data: pl.DataFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    *,
+    hhi_df: pl.DataFrame | None = None,
 ) -> dict[str, Any]:
+    """`hhi_df` (`None` default, núcleo funcional/casca imperativa,
+    2026-08-23 — `docs/nucleo_casca_design_doc_2026-08-23.md`): preserva
+    bit-exato o único caller de produção (`run_and_save_faixa1_5`), que
+    não passava nada aqui e dependia de `_hhi_by_fold_side()` resolver
+    disco por dentro desta função -- IO invisível na assinatura. Passar um
+    `hhi_df` já carregado (ex. `_hhi_by_fold_side()` chamado pelo TESTE com
+    `tmp_path`, ou pelo chamador de produção antes de invocar esta função)
+    elimina essa IO escondida -- zero glob/leitura de disco quando setado."""
     fold_to_path = fold_to_path_map(splits)
     realized = build_realized_trades(predictions, mf_data, fold_to_path)
-    hhi_df = _hhi_by_fold_side()
+    resolved_hhi_df = hhi_df if hhi_df is not None else _hhi_by_fold_side()
 
     predictions_with_rank = add_confidence_rank(predictions)
 
@@ -791,7 +803,7 @@ def run_faixa1_5(
         "schema_version": 1,
         "task": "faixa1_5_prerequisites",
         "fee_budget_sweep": fee_budget_sweep(realized),
-        "stratified_headlines": stratified_headlines(realized, hhi_df),
+        "stratified_headlines": stratified_headlines(realized, resolved_hhi_df),
         "path_dispersion": path_dispersion(realized, splits, predictions),
         "confidence_variants": confidence_variants_analysis(predictions_with_rank, mf_data),
         "e02f_in_fold": e02f_in_fold(mf_data, splits),

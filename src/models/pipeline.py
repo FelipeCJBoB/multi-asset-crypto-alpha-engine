@@ -32,7 +32,7 @@ from src.data.resample import step_ms
 from src.features import build as features_build
 from src.validation import cpcv
 
-from . import alpha, backtest_lite, baselines, decomposition
+from . import alpha, backtest_lite, baselines, decomposition, hhi
 from . import dataset as ds
 from ._constants import load_constant
 from ._paths import (
@@ -576,7 +576,7 @@ def run_layer1_sprint(
     # --- baselines nulos (§16.1) ---
     realized_c1 = backtest_lite.realize_trades(camada1_folds, mf.data)
     n_filled_c1 = realized_c1.filter(pl.col("barrier_hit") != "NOFILL").height
-    sample_size_b1 = max(1, round(n_filled_c1 / max(len(c1_by_path), 1)))
+    sample_size_b1 = baselines.b1_sample_size(n_filled_c1, len(c1_by_path))
 
     b1 = baselines.run_b1_random_entry(
         mf.data, sample_size=sample_size_b1, alpha_sharpe=alpha_sharpe_headline
@@ -643,13 +643,15 @@ def run_layer1_sprint(
             # (o nominal subestima concentração real quando features do
             # top-gain são correlacionadas — ver
             # src.models.hhi.compute_effective_concentration para a prova).
-            "gate3_4_hhi_lt_025": mean_hhi_effective < 0.25,  # noqa: magic-number
+            "gate3_4_hhi_lt_025": hhi.gate3_4_passes(mean_hhi_effective),
             # Referência histórica/comparação — o veredito que o HHI
             # NOMINAL sozinho teria dado, mantido visível mas NUNCA usado
             # pelo gate (D3: "mantenha o nominal no relatório também, chave
             # separada, não sobrescrita").
-            "gate3_4_hhi_nominal_lt_025_reference": mean_hhi_nominal < 0.25,  # noqa: magic-number
-            "gate3_4_max_share_lt_030": _mean_finite(max_share_values) < 0.30,  # noqa: magic-number
+            "gate3_4_hhi_nominal_lt_025_reference": hhi.gate3_4_passes(mean_hhi_nominal),
+            "gate3_4_max_share_lt_030": hhi.gate3_4_max_share_passes(
+                _mean_finite(max_share_values)
+            ),
         },
         "baselines": {
             "b1_random_entry": {

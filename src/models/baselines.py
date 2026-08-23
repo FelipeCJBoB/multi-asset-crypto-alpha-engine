@@ -135,6 +135,17 @@ def _draw_sample_sharpe(
     return sharpe
 
 
+def b1_sample_size(n_filled_c1: int, n_paths: int) -> int:
+    """Núcleo funcional (2026-08-23, `docs/nucleo_casca_design_doc_
+    2026-08-23.md`) — fórmula de tamanho de amostra do baseline B1,
+    extraída de `pipeline.py::run_layer1_sprint` pra virar testável sem
+    rodar o pipeline CPCV/XGBoost inteiro: trades preenchidos da Camada 1
+    (pooled sobre todos os paths) divididos pelo nº de paths, arredondado,
+    piso 1 (nunca amostra vazia). `n_paths=0` (nenhum path, caso
+    degenerado) cai no mesmo piso via `max(n_paths, 1)` no denominador."""
+    return max(1, round(n_filled_c1 / max(n_paths, 1)))  # noqa: unguarded-ratio -- denominador clampado a >=1 na própria expressão
+
+
 def run_b1_random_entry(
     df_all: pl.DataFrame,
     *,

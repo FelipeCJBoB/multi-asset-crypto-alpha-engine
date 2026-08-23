@@ -248,6 +248,74 @@ quebram o build:
 
 ---
 
+## Núcleo funcional, casca imperativa
+
+Princípio formal (2026-08-23) — já era a norma dominante do repo antes de
+virar regra escrita (~25+ módulos já seguiam isto organicamente); esta
+seção só nomeia o que já existia e fecha as exceções reais encontradas.
+Detalhe/motivo completo, achados e violações fechadas:
+`docs/nucleo_casca_design_doc_2026-08-23.md`. Origem do termo: Gary
+Bernhardt, *Functional Core, Imperative Shell* (2012) — leitura de apoio
+em `docs/nucleo-casca.html`, não spec de implementação (a árvore
+`core/`+`scripts/` do texto não corresponde a este repo; os 2 idiomas
+abaixo, não um par `.batch()`/`.streaming()` genérico, são o que este
+projeto usa de verdade).
+
+**Vocabulário fixado** (corrige uso inconsistente encontrado no achado
+acima): **núcleo** = zero I/O, zero rede, zero paralelismo — recebe dado
+em memória, devolve dado em memória. Nunca usado pra descrever uma camada
+que toca disco. **Ponto de entrada com IO** (ou "casca") = a camada fina
+que resolve símbolo/data/arquivo e delega a computação real pro núcleo —
+termo já em uso real (`features/build.py`, `labels/triple_barrier.py`,
+`analysis/cost_surface.py`, `analysis/m4_regime_comparison.py`).
+
+**Dois idiomas sancionados** — nenhum dos dois é o par `.batch()`/
+`.streaming()` genérico do texto de apoio:
+
+- **Idioma A — recompute sobre prefixo crescente** (default; exemplo:
+  `features/build.py::compute_t1_features`). Uma função pura só, causal
+  por construção; "lote" = 1 chamada sobre a série inteira, "streaming" =
+  N chamadas sobre prefixos crescentes. Use quando a computação é barata
+  o suficiente pra recomputar do zero, ou quando ainda não existe
+  requisito de latência medido que justifique manter estado.
+- **Idioma B — carry/step/finish** (exemplo, padrão-ouro do repo:
+  `data/bars.py`). `<algo>_carry()` (estado inicial) +
+  `<algo>_step(carry, chunk)` (muta `carry`) + `<algo>_finish(carry)`
+  (fecha). A função de lote é um wrapper fino que chama os 3 com 1 chunk
+  só — lote e streaming são o MESMO caminho de código, não duas coisas
+  testadas iguais. Use quando a computação é genuinamente estatal/
+  acumulativa por natureza, ou quando um requisito de latência real
+  (medido) tornar o custo O(n) do Idioma A proibitivo.
+
+**Correção-relâmpago via ponto de injeção — quando o split completo NÃO
+compensa (achado do `project_assurance`, 2026-08-23, sobre a 1ª aplicação
+deste princípio em `triple_barrier.py`/`fill_simulator.py`):** extrair um
+núcleo 100% separado (Idiomas A/B) de uma função já grande e madura (com
+dezenas de call sites de teste) é um refactor caro e arriscado sem
+cobertura de execução própria. Alternativa aceita, mais barata: um
+parâmetro opcional (`Mapping[chave, valor] | None = None`) que, quando
+setado, substitui a resolução por IO por uma função-irmã zero-IO
+(`_resolve_X_from_mapping`, `KeyError` fail-fast se a chave não estiver
+coberta) — a função original continua HÍBRIDA (não vira um núcleo puro de
+verdade), mas ganha um ponto de injeção real e testável sem IO, com
+comportamento default 100% preservado. Não confunda as duas coisas: isto
+fecha a TESTABILIDADE do núcleo, não o torna puro — dizer "núcleo
+separado" quando o padrão real é este seria overclaim.
+
+**Regra prática:** todo núcleo novo (função de cálculo real — fórmula,
+decisão, transformação de dado) precisa ser 100% puro (Idioma A/B) ou, se
+for extração cara demais numa função já grande, ganhar o ponto de injeção
+acima — nunca ficar com IO impossível de contornar em teste. Mesmo em
+módulos sem consumidor streaming hoje (`regime/`, `labels/`, `models/` já
+seguem isto — só `features/` e `data/bars.py` têm um segundo ponto de
+entrada real hoje, honestamente registrado como PASS-por-ausência-de-escopo em
+`src/validation/leakage.py::_test_14_paridade_lote_streaming`, não como
+lacuna escondida). Teste de paridade formal só é exigido quando um
+segundo caminho de cálculo (streaming) realmente existir — não invente um
+teste pra um caminho que não existe (B23).
+
+---
+
 ## Stack 2026
 
 **Obrigatório:** Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB ·
@@ -280,6 +348,9 @@ event-driven) · `binance-futures-connector` oficial atrás de interface própri
 - [ ] `monotone_constraints` derivadas in-fold
 - [ ] HHI de importância < 0,25, maior share < 0,30
 - [ ] Métricas estratificadas por regime R1..R4 e por regime econômico
+- [ ] Núcleo de cálculo testável sem IO — separado (Idioma A/B) ou, se
+  extração cara demais, com ponto de injeção zero-IO (§Núcleo funcional,
+  casca imperativa)
 
 ### Código de execução
 - [ ] `time_in_force: GTX` na entrada
@@ -287,6 +358,9 @@ event-driven) · `binance-futures-connector` oficial atrás de interface própri
 - [ ] `client_order_id` determinístico e idempotente
 - [ ] Teste de fill parcial na entrada e na saída
 - [ ] Teste de reinício com posição aberta
+- [ ] Núcleo de simulação/decisão testável sem IO — separado (Idioma A/B)
+  ou, se extração cara demais, com ponto de injeção zero-IO (§Núcleo
+  funcional, casca imperativa)
 
 ### Qualquer PR
 - [ ] Nenhum literal numérico novo fora de `constants.yaml`

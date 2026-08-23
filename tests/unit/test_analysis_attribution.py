@@ -333,6 +333,30 @@ def test_gain_by_side_media_e_desvio_conferidos_a_mao(tmp_path: Path) -> None:
     assert row["model_id"] == model_id
 
 
+def test_aggregate_payloads_media_e_desvio_sem_nenhuma_io(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Núcleo funcional (2026-08-23, `docs/nucleo_casca_design_doc_
+    2026-08-23.md`) — mesmo cenário numérico de
+    `test_gain_by_side_media_e_desvio_conferidos_a_mao`, mas via
+    `_aggregate_payloads` com `list[dict]` em memória, zero `tmp_path`/
+    disco. Bloqueia qualquer leitura de arquivo (`Path.read_bytes`) pra
+    provar que o núcleo não toca IO."""
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda self: (_ for _ in ()).throw(AssertionError("núcleo não deveria ler disco")),
+    )
+    payloads = [
+        {"gain_by_column": {"featA": gain}, "concentration_shares": {"featA": gain / 60.0}}
+        for gain in (10.0, 20.0, 30.0)
+    ]
+    rows = attr._aggregate_payloads(payloads, side_label="long", model_id="test_model")
+    row = next(r for r in rows if r["feature"] == "featA")
+    assert row["gain_mean"] == pytest.approx(20.0)
+    assert row["gain_std"] == pytest.approx(10.0)
+    assert row["n_folds"] == 3
+    assert row["model_id"] == "test_model"
+
+
 def test_gain_by_side_coluna_ausente_em_um_fold_vira_zero(tmp_path: Path) -> None:
     """`gain_by_column` só precisa conter as colunas que o booster de fato
     usou (mesma convenção de `src.models.hhi.compute_concentration`) —

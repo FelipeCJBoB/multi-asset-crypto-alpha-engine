@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -466,3 +467,72 @@ def test_hhi_by_fold_side_dest_dir_override_usa_layout_chaveado(
     assert out.height == 2
     assert sorted(out["hhi"].to_list()) == [0.6, 0.7]
     assert not (tmp_path / "nao_deveria_ser_lido").exists()
+
+
+# ============================================================================
+# run_faixa1_5 — plumbing de orquestração (2026-08-23, núcleo funcional/
+# casca imperativa -- docs/nucleo_casca_design_doc_2026-08-23.md). Mesmo
+# foco do resto deste arquivo (PLUMBING, não as funções estatísticas em si,
+# já testadas nos próprios blocos acima) -- as 6 sub-análises são
+# substituídas por stubs, só a FIAÇÃO de run_faixa1_5 está sob teste aqui:
+# `hhi_df` injetado precisa chegar em `stratified_headlines` sem
+# `_hhi_by_fold_side` (IO) ser chamada.
+# ============================================================================
+
+
+def test_run_faixa1_5_hhi_df_injetado_pula_io_e_chega_em_stratified_headlines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel_hhi_df = pl.DataFrame({"fold_id": [0], "side": [1], "hhi": [0.42]})
+    received: dict[str, object] = {}
+
+    def _hhi_by_fold_side_nao_deveria_ser_chamada(*args: object, **kwargs: object) -> pl.DataFrame:
+        raise AssertionError(
+            "_hhi_by_fold_side não deveria ser chamada -- hhi_df foi injetado"
+        )
+
+    def _stub_stratified_headlines(realized: pl.DataFrame, hhi_df: pl.DataFrame) -> dict[str, Any]:
+        received["hhi_df"] = hhi_df
+        return {}
+
+    monkeypatch.setattr(f15, "_hhi_by_fold_side", _hhi_by_fold_side_nao_deveria_ser_chamada)
+    monkeypatch.setattr(f15, "build_realized_trades", lambda *a, **k: pl.DataFrame())
+    monkeypatch.setattr(f15, "add_confidence_rank", lambda preds: preds)
+    monkeypatch.setattr(f15, "fee_budget_sweep", lambda realized: {})
+    monkeypatch.setattr(f15, "stratified_headlines", _stub_stratified_headlines)
+    monkeypatch.setattr(f15, "path_dispersion", lambda *a, **k: {})
+    monkeypatch.setattr(f15, "confidence_variants_analysis", lambda *a, **k: {})
+    monkeypatch.setattr(f15, "e02f_in_fold", lambda *a, **k: {})
+
+    out = f15.run_faixa1_5(
+        _fake_predictions(), _fake_mf_data(), (), hhi_df=sentinel_hhi_df
+    )
+
+    assert received["hhi_df"] is sentinel_hhi_df
+    assert out["stratified_headlines"] == {}
+
+
+def test_run_faixa1_5_sem_hhi_df_chama_hhi_by_fold_side(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Contraste com o teste acima -- confirma que o default (`hhi_df=
+    None`) genuinamente resolve via `_hhi_by_fold_side` (IO), preservando
+    o comportamento anterior à injeção, bit-exato pro único caller de
+    produção (`run_and_save_faixa1_5`, que não passa `hhi_df`)."""
+    sentinel_hhi_df = pl.DataFrame({"fold_id": [0], "side": [1], "hhi": [0.42]})
+    called: dict[str, bool] = {"hhi": False}
+
+    def _fake_hhi_by_fold_side(*args: object, **kwargs: object) -> pl.DataFrame:
+        called["hhi"] = True
+        return sentinel_hhi_df
+
+    monkeypatch.setattr(f15, "_hhi_by_fold_side", _fake_hhi_by_fold_side)
+    monkeypatch.setattr(f15, "build_realized_trades", lambda *a, **k: pl.DataFrame())
+    monkeypatch.setattr(f15, "add_confidence_rank", lambda preds: preds)
+    monkeypatch.setattr(f15, "fee_budget_sweep", lambda realized: {})
+    monkeypatch.setattr(f15, "stratified_headlines", lambda realized, hhi_df: {})
+    monkeypatch.setattr(f15, "path_dispersion", lambda *a, **k: {})
+    monkeypatch.setattr(f15, "confidence_variants_analysis", lambda *a, **k: {})
+    monkeypatch.setattr(f15, "e02f_in_fold", lambda *a, **k: {})
+
+    f15.run_faixa1_5(_fake_predictions(), _fake_mf_data(), ())
+
+    assert called["hhi"] is True

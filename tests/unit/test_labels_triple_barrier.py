@@ -10,7 +10,7 @@ as seis invariantes do §3.8."""
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -18,7 +18,7 @@ import polars as pl
 import pytest
 
 from src.data._paths import CAPACITY_DIR
-from src.exchange.filters import NoFiltersAvailableError
+from src.exchange.filters import Filters, NoFiltersAvailableError
 from src.features.volatility import ATRWilderEstimator, GarmanKlassEstimator, ParkinsonEstimator
 from src.labels import triple_barrier as tb
 
@@ -339,14 +339,20 @@ def _mark(rows: list[_Row]) -> pl.DataFrame:
     )
 
 
-def _with_horizon_coverage(rows: list[_Row]) -> list[_Row]:
+def _with_horizon_coverage(rows: list[_Row], *, t0: int | None = None) -> list[_Row]:
     """Garante que `mark_1m` cobre até `horizon_end_ms` — sem isso
     `build_labels` descarta a linha por "cauda incompleta" mesmo quando o
     evento de interesse acontece bem antes do fim do horizonte (medido no
     Sprint 6 prototipando este teste — comportamento correto e
     intencional: não dá pra saber de antemão que o resto do horizonte não
-    importava)."""
-    horizon = _t0() + _CFG.time_stop_ms
+    importava). `t0` (`None` default, achado do `project_assurance`,
+    2026-08-23 — preserva bit-exato todo caller existente, que usava
+    implicitamente `_t0()`/2026-08-08): passar o `t0` real do cenário
+    (ex. `_distant_t0()`) evita que a linha de cobertura extra caia numa
+    data diferente da série sendo testada -- antes desta correção, os
+    testes de `filters_by_date` (2019) só passavam porque 2026 > 2019
+    (coincidência de magnitude, não por desenho)."""
+    horizon = (t0 if t0 is not None else _t0()) + _CFG.time_stop_ms
     last_px = rows[-1][4]
     return [*rows, (horizon, last_px, last_px, last_px, last_px)]
 
@@ -973,6 +979,116 @@ def test_build_labels_tp_long() -> None:
     assert row["ret_gross"] == pytest.approx(_CFG.tp_atr_mult * row["atr_at_t0"], rel=1e-9)
     expected_net = row["ret_gross"] - _CFG.maker_fee - _CFG.maker_fee
     assert row["ret_net"] == pytest.approx(expected_net, rel=1e-9)
+
+
+def _injected_filters(*, snapshot_date: date, tick_size: str = "0.10") -> Filters:
+    return Filters(
+        symbol="BTCUSDT",
+        snapshot_date=snapshot_date,
+        is_reconstructed=False,
+        status="TRADING",
+        tick_size=Decimal(tick_size),
+        min_price=Decimal("1"),
+        max_price=Decimal("1000000"),
+        step_size=Decimal("0.001"),
+        min_qty=Decimal("0.001"),
+        max_qty=Decimal("1000"),
+        market_step_size=Decimal("0.001"),
+        market_min_qty=Decimal("0.001"),
+        market_max_qty=Decimal("1000"),
+        min_notional=Decimal("5"),
+        max_num_orders=200,
+        price_precision=2,
+        quantity_precision=3,
+        multiplier_up=Decimal("1.05"),
+        multiplier_down=Decimal("0.95"),
+    )
+
+
+# ============================================================================
+# `filters_by_date` (2026-08-23, núcleo funcional/casca imperativa — ver
+# docs/nucleo_casca_design_doc_2026-08-23.md) -- ponto de injeção que
+# elimina a dependência do único snapshot real em disco (2026-08-08) pra
+# testar a lógica de barreira. Data deliberadamente distante de qualquer
+# snapshot real (2019, fora da cobertura de `data/raw/snapshots/
+# exchange_info/`) -- prova que o caminho `filters_by_date` não toca disco.
+# ============================================================================
+
+_DISTANT_BASE_MS = int(datetime(2019, 1, 1, 0, 0, tzinfo=UTC).timestamp() * 1000)
+
+
+def _distant_synthetic_bars() -> pl.DataFrame:
+    open_time = [_DISTANT_BASE_MS + i * _BAR_MS for i in range(len(_CLOSES))]
+    close_time = [t + _BAR_MS - 1 for t in open_time]
+    high = [c + 0.2 for c in _CLOSES]
+    low = [c - 0.2 for c in _CLOSES]
+    open_ = [c - 0.05 for c in _CLOSES]
+    return pl.DataFrame(
+        {
+            "open_time": open_time,
+            "close_time": close_time,
+            "open": open_,
+            "close": _CLOSES,
+            "high": high,
+            "low": low,
+        }
+    )
+
+
+def _distant_t0() -> int:
+    return int(_distant_synthetic_bars()["close_time"][-1])
+
+
+def test_build_labels_with_stats_filters_by_date_evita_io_de_disco() -> None:
+    """`filters_by_date` resolve o filtro pra uma data (2019) sem nenhum
+    snapshot real em disco e SEM `historical_filters_fallback=True` --
+    prova que o núcleo não precisa mais que a data sintética do fixture
+    bata com o único snapshot real (2026-08-08) pra funcionar."""
+    t0 = _distant_t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ],
+            t0=t0,
+        )
+    )
+    decision_date = datetime.fromtimestamp(t0 / 1000, tz=UTC).date()
+    injected = _injected_filters(snapshot_date=decision_date)
+    out, stats = tb.build_labels_with_stats(
+        _distant_synthetic_bars(),
+        mark,
+        _EMPTY_FUNDING,
+        side=1,
+        config=_CFG,
+        filters_by_date={decision_date: injected},
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TP"
+    assert stats.n_warmup_dropped == 2
+
+
+def test_build_labels_with_stats_sem_filters_by_date_levanta_erro_pra_data_distante() -> None:
+    """Contraste com o teste acima -- confirma que o comportamento default
+    (sem `filters_by_date`, sem fallback) genuinamente precisa de IO real e
+    falha alto pra uma data sem snapshot, em vez do teste anterior passar
+    por acidente/coincidência."""
+    t0 = _distant_t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ],
+            t0=t0,
+        )
+    )
+    with pytest.raises(NoFiltersAvailableError):
+        tb.build_labels_with_stats(
+            _distant_synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG
+        )
 
 
 def test_build_labels_mfe_atr_units_tp_long_bate_ao_menos_tp_atr_mult() -> None:

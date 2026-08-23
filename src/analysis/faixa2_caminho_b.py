@@ -788,15 +788,11 @@ def run_fase2_e1(
     predictions: pl.DataFrame,
     splits: tuple[cpcv.CPCVSplit, ...],
 ) -> dict[str, Any]:
-    """FASE 2, E1 — roda o grid 3x3 DECLARADO (`E1_TP_GRID`/`E1_SL_GRID`)
-    independente por lado (9 células/lado, 18 total). Carrega
-    `mark_1m`/`funding` da série completa UMA VEZ (mesmo padrão de
-    `cost_surface.build_cost_surface_grid_for_symbol`), reusa para as 18
-    células. NÃO decide/escolhe -- só emite, mesmo padrão de todo o resto
-    da Faixa 2."""
-    cfg = tb.LabelConfig.from_constants()
-    fold_to_path = f15.fold_to_path_map(splits)
-
+    """Ponto de entrada com IO de `compute_fase2_e1` (núcleo funcional,
+    2026-08-23) — carrega `mark_1m`/`funding` da série completa UMA VEZ
+    (mesmo padrão de `cost_surface.build_cost_surface_grid_for_symbol`) a
+    partir dos bounds de `mf_data`, e delega. Assinatura/comportamento
+    100% preservados frente a antes desta separação."""
     t0_min, t0_max = mf_data["t0"].min(), mf_data["t0"].max()
     start = (t0_min.date() - timedelta(days=3)).isoformat()  # type: ignore[union-attr]
     end = (t0_max.date() + timedelta(days=3)).isoformat()  # type: ignore[union-attr]
@@ -807,6 +803,25 @@ def run_fase2_e1(
     logger.info(
         "analysis.faixa2_e1.data_loaded", n_mark_1m=mark_1m.height, n_funding=funding.height
     )
+    return compute_fase2_e1(mf_data, predictions, splits, mark_1m, funding)
+
+
+def compute_fase2_e1(
+    mf_data: pl.DataFrame,
+    predictions: pl.DataFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    mark_1m: pl.DataFrame,
+    funding: pl.DataFrame,
+) -> dict[str, Any]:
+    """Núcleo funcional (2026-08-23, ver `docs/nucleo_casca_design_doc_
+    2026-08-23.md`) — FASE 2, E1: roda o grid 3x3 DECLARADO
+    (`E1_TP_GRID`/`E1_SL_GRID`) independente por lado (9 células/lado, 18
+    total). `mark_1m`/`funding` já resolvidos em memória pelo chamador
+    (`run_fase2_e1`, ponto de entrada com IO) — reusa para as 18 células.
+    Zero IO aqui, testável com dado sintético sem lake real. NÃO decide/
+    escolhe -- só emite, mesmo padrão de todo o resto da Faixa 2."""
+    cfg = tb.LabelConfig.from_constants()
+    fold_to_path = f15.fold_to_path_map(splits)
 
     payload: dict[str, Any] = {
         "grid_declared_before_search": {

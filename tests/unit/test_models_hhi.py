@@ -226,3 +226,34 @@ def test_effective_concentration_campos_metric_unit_e_source() -> None:
     assert result.n_eff_factors.source == "fold3::long"
     assert result.hhi_effective.n == 2
     assert result.hhi_effective.n_semantics == "features"
+
+
+# ============================================================================
+# gate3_4_passes / gate3_4_max_share_passes (2026-08-23, núcleo funcional/
+# casca imperativa -- docs/nucleo_casca_design_doc_2026-08-23.md) --
+# extraídas de src/models/pipeline.py::run_layer1_sprint pra virarem
+# testáveis sem rodar o pipeline CPCV/XGBoost inteiro. Mesmos literais
+# (0.25/0.30) já aceitos lá.
+# ============================================================================
+
+
+def test_gate3_4_passes_abaixo_do_threshold_default() -> None:
+    assert hhi.gate3_4_passes(0.24) is True
+
+
+def test_gate3_4_passes_igual_ou_acima_do_threshold_default() -> None:
+    assert hhi.gate3_4_passes(0.25) is False
+    assert hhi.gate3_4_passes(0.30) is False
+
+
+def test_gate3_4_passes_threshold_customizado() -> None:
+    assert hhi.gate3_4_passes(0.15, threshold=0.10) is False
+    assert hhi.gate3_4_passes(0.05, threshold=0.10) is True
+
+
+def test_gate3_4_max_share_passes_abaixo_do_threshold_default() -> None:
+    assert hhi.gate3_4_max_share_passes(0.29) is True
+
+
+def test_gate3_4_max_share_passes_igual_ou_acima_do_threshold_default() -> None:
+    assert hhi.gate3_4_max_share_passes(0.30) is False

@@ -347,3 +347,22 @@ def compute_effective_concentration(
         weights=weights,
         eigenvalues=eigenvalues_sorted,
     )
+
+
+def gate3_4_passes(mean_hhi_effective: float, *, threshold: float = 0.25) -> bool:  # noqa: magic-number
+    """Núcleo funcional (2026-08-23, `docs/nucleo_casca_design_doc_
+    2026-08-23.md`) — regra de decisão do Gate 3.4 (D3), extraída de
+    `pipeline.py::run_layer1_sprint` pra virar testável sem rodar o
+    pipeline CPCV/XGBoost inteiro. `threshold=0.25` é o mesmo literal já
+    aceito (`noqa: magic-number`) em `pipeline.py` — decide sobre o HHI
+    EFETIVO, não o nominal (D3: o nominal subestima concentração real
+    quando features do top-gain são correlacionadas, ver
+    `compute_effective_concentration`)."""
+    return mean_hhi_effective < threshold
+
+
+def gate3_4_max_share_passes(mean_max_share: float, *, threshold: float = 0.30) -> bool:  # noqa: magic-number
+    """Companheira de `gate3_4_passes` — mesma extração, mesmo literal já
+    aceito em `pipeline.py`. Decide sobre `max_share` (maior participação
+    individual de feature), não sobre o HHI agregado."""
+    return mean_max_share < threshold

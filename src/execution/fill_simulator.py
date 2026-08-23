@@ -116,7 +116,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -586,6 +586,34 @@ def _resolve_tick_size_cached(
     return tick_size
 
 
+def _resolve_tick_size_from_mapping(
+    day: date,
+    symbol: str,
+    tick_size_by_date: Mapping[date, float],
+    cache: dict[date, float],
+) -> float:
+    """Núcleo funcional, casca imperativa (2026-08-23, ver `docs/
+    nucleo_casca_design_doc_2026-08-23.md` -- achado do `project_assurance`
+    sobre a correção irmã em `src.labels.triple_barrier`: mesma classe de
+    entrelaçamento IO+cálculo encontrada aqui, mesmo fix) -- versão de
+    `_resolve_tick_size_cached` SEM IO: recebe os tick sizes já resolvidos
+    em memória, nunca chama `load_filters_asof`/lê disco. Fail-fast: dia
+    ausente em `tick_size_by_date` levanta `KeyError` com contexto, nunca
+    cai silenciosamente noutro dia."""
+    if day in cache:
+        return cache[day]
+    try:
+        tick_size = tick_size_by_date[day]
+    except KeyError as exc:
+        raise KeyError(
+            f"simulate_window: tick_size_by_date não cobre o dia {day.isoformat()} "
+            f"(symbol={symbol!r}) -- todo dia visitado pelo laço precisa de uma "
+            "entrada correspondente em tick_size_by_date."
+        ) from exc
+    cache[day] = tick_size
+    return tick_size
+
+
 def _resolve_day_grid_and_timeout(
     symbol: str,
     day: date,
@@ -745,6 +773,7 @@ def simulate_window(
     sides: tuple[int, ...] = (1, -1),
     fill_timeout_bars: int | None = None,
     historical_filters_fallback: bool = False,
+    tick_size_by_date: Mapping[date, float] | None = None,
     _order_simulator: _OrderSimulator = _simulate_one_order,
 ) -> SimulationRunResult:
     """Percorre `[start, end]` dia a dia, dia útil de calendário (não
@@ -783,6 +812,14 @@ def simulate_window(
     disponível como proxy, mesmo padrão/aviso de
     `known_gaps.exchange_info_snapshot_coverage_gap` (`constants.yaml`).
 
+    `tick_size_by_date` (`None` default, núcleo funcional/casca imperativa,
+    2026-08-23 — `docs/nucleo_casca_design_doc_2026-08-23.md`): preserva
+    bit-exato todo caller existente (resolve via `_resolve_tick_size_cached`/
+    `load_filters_asof`, como sempre). Passar um mapeamento `{date: float}`
+    já resolvido substitui esse caminho por `_resolve_tick_size_from_mapping`
+    — zero IO dentro do laço principal, ponto de injeção real pra testar a
+    lógica de simulação sem depender do único snapshot real em disco.
+
     `_order_simulator`: hook interno (prefixo `_` deliberado — não é API
     pública nova) que troca o núcleo numérico por ordem simulada, mantendo
     IO/orquestração/agregação idênticos. Default `_simulate_one_order`
@@ -817,6 +854,23 @@ def simulate_window(
     n_days_no_dollar_bar_grid = 0
     tick_size_cache: dict[date, float] = {}
     tick_size_warned = [False]
+    # Núcleo funcional, casca imperativa (2026-08-23) -- decidido UMA vez
+    # fora do laço: `tick_size_by_date` setado -> zero IO no laço inteiro;
+    # `None` -> comportamento original, bit-exato.
+    if tick_size_by_date is not None:
+
+        def _get_tick_size(day: date) -> float:
+            return _resolve_tick_size_from_mapping(day, symbol, tick_size_by_date, tick_size_cache)
+    else:
+
+        def _get_tick_size(day: date) -> float:
+            return _resolve_tick_size_cached(
+                day,
+                symbol,
+                tick_size_cache,
+                tick_size_warned,
+                historical_filters_fallback=historical_filters_fallback,
+            )
 
     day = start
     while day <= end:
@@ -831,13 +885,7 @@ def simulate_window(
         book_arr = _book_arrays(book_df)
         trade_arr = _trade_arrays(trades_df) if not trades_df.is_empty() else _empty_trade_arrays()
 
-        tick_size = _resolve_tick_size_cached(
-            day,
-            symbol,
-            tick_size_cache,
-            tick_size_warned,
-            historical_filters_fallback=historical_filters_fallback,
-        )
+        tick_size = _get_tick_size(day)
         grid_arr, fill_timeout_ms = _resolve_day_grid_and_timeout(
             symbol, day, tf=tf, resolution_id=resolution_id, fill_timeout_bars=fill_timeout_bars
         )
@@ -907,6 +955,7 @@ def simulate_window_price_improved(
     sides: tuple[int, ...] = (1, -1),
     fill_timeout_bars: int | None = None,
     historical_filters_fallback: bool = False,
+    tick_size_by_date: Mapping[date, float] | None = None,
 ) -> SimulationRunResult:
     """Variante de SENSIBILIDADE (investigação pós-Sprint 9, item 4) —
     mesma orquestração de `simulate_window`, núcleo trocado para
@@ -916,8 +965,9 @@ def simulate_window_price_improved(
     `queue_ahead_initial == -1.0` no resultado são pontos de grade onde a
     melhora de 1 tick cruzaria o lado oposto (spread observado <= 1 tick) —
     não postáveis como GTX; ver docstring de `_simulate_one_order_price_improved`.
-    `tf`/`resolution_id`/`historical_filters_fallback` — mesmo contrato de
-    `simulate_window`, repassado sem mudança de comportamento."""
+    `tf`/`resolution_id`/`historical_filters_fallback`/`tick_size_by_date`
+    — mesmo contrato de `simulate_window`, repassado sem mudança de
+    comportamento."""
     return simulate_window(
         symbol,
         start,
@@ -927,6 +977,7 @@ def simulate_window_price_improved(
         sides=sides,
         fill_timeout_bars=fill_timeout_bars,
         historical_filters_fallback=historical_filters_fallback,
+        tick_size_by_date=tick_size_by_date,
         _order_simulator=_simulate_one_order_price_improved,
     )
 

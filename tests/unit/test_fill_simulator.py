@@ -632,6 +632,66 @@ def test_resolve_tick_size_cached_usa_cache_por_dia(monkeypatch: pytest.MonkeyPa
     assert len(calls) == 1  # 2ª chamada usa o cache, não reconsulta
 
 
+def test_resolve_tick_size_from_mapping_evita_io_e_e_fail_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Núcleo funcional/casca imperativa (2026-08-23, `docs/nucleo_casca_
+    design_doc_2026-08-23.md`) -- `_resolve_tick_size_from_mapping` nunca
+    chama `load_filters_asof`. Bloqueia a função ativamente pra provar
+    isso, e confirma fail-fast (KeyError, não silêncio) pra dia ausente
+    do mapeamento."""
+
+    def _raise_se_chamado(*args: object, **kwargs: object) -> object:
+        raise AssertionError("_resolve_tick_size_from_mapping não deveria tocar disco")
+
+    monkeypatch.setattr(fs, "load_filters_asof", _raise_se_chamado)
+    tick_size = fs._resolve_tick_size_from_mapping(
+        date(2019, 1, 1), "BTCUSDT", {date(2019, 1, 1): 0.05}, {}
+    )
+    assert tick_size == pytest.approx(0.05)
+
+    with pytest.raises(KeyError):
+        fs._resolve_tick_size_from_mapping(
+            date(2019, 1, 2), "BTCUSDT", {date(2019, 1, 1): 0.05}, {}
+        )
+
+
+def test_simulate_window_tick_size_by_date_evita_io_de_disco_de_filtro(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ponta a ponta -- `tick_size_by_date` injetado substitui inteiramente
+    `_resolve_tick_size_cached`/`load_filters_asof` dentro do laço
+    principal de `simulate_window`, mesmo pra um dia (2019) sem nenhum
+    snapshot real em disco."""
+
+    def _fake_load_book_ticker_pair(symbol: str, day: date) -> pl.DataFrame:
+        t0 = int(fs._day_grid_ms(day, 900_000)[0])
+        return pl.DataFrame(
+            {
+                "transaction_time": [t0],
+                "best_bid_price": [100.0],
+                "best_bid_qty": [0.0],
+                "best_ask_price": [100.1],
+                "best_ask_qty": [0.0],
+            }
+        )
+
+    def _raise_se_chamado(*args: object, **kwargs: object) -> object:
+        raise AssertionError(
+            "load_filters_asof não deveria ser chamada -- tick_size_by_date foi injetado"
+        )
+
+    monkeypatch.setattr(fs, "load_book_ticker_pair", _fake_load_book_ticker_pair)
+    monkeypatch.setattr(fs, "load_filters_asof", _raise_se_chamado)
+    monkeypatch.setattr(fs.lake, "query_agg_trades", lambda *a, **k: pl.DataFrame())
+
+    day = date(2019, 1, 15)
+    result = fs.simulate_window(
+        "BTCUSDT", day, day, tick_size_by_date={day: 0.05}
+    )
+    assert result.n_days_no_data == 0
+
+
 def test_simulate_window_sem_fallback_propaga_erro_de_filtro_ausente(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
