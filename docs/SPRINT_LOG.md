@@ -3752,6 +3752,26 @@ persistidos, resultado pendente do usuário rodar. Detalhe:
 AG-032`/`AG-159` addenda.
 
 <!-- check-sprint-log: skip -->
+**Medições rodadas + limpeza real do PLANO_MESTRE (2026-08-23)** <!-- check-sprint-log: skip --> —
+usuário rodou os 2 diagnósticos: `AG-159` (`worst_case_ratio=0,472`, <!-- check-sprint-log: skip -->
+contradiz o achado anterior de "~5,8x sub-cobertura" — causa raiz era <!-- check-sprint-log: skip -->
+comparar contra p99 local em vez do proxy cross-symbol real usado em <!-- check-sprint-log: skip -->
+produção) e `AG-121` média-vs-desvio-padrão (205 células, concordância
+>90% em todo candidato relevante, MÉDIA recomendada). Em seguida, fan-out
+de 8 agentes só-leitura varreu o `PLANO_MESTRE_PRINCE2.md` inteiro
+(5887 linhas) — pedido explícito do usuário por limpeza real, não mais
+anotação `[DESATUALIZADO]` por cima do texto antigo. ~30 achados
+aplicados (net -46 linhas): 2 conclusões da tabela `§11.6` já revertidas
+por seções posteriores sem ponteiro; 3 mecanismos em `§15.11` rotulados
+"APROVADO"/"CONFIRMADO SÓLIDO" refutados por auditoria externa sem
+correção local (`AG-098` é risco operacional real, não só documental —
+convenção de trial ativamente errada, `AG-111` ainda aberto); `AG-094`
+revertido pelo Manager sem ponteiro; referências a arquivo renomeado/
+nunca-existente corrigidas (também no ledger, 11 ocorrências). `§14` e a
+maior parte de `§15.7`-`§15.21` mantidos deliberadamente — trilhas de
+decisão genuínas. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.28`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
