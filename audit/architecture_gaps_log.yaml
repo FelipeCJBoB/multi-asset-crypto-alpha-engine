@@ -12613,3 +12613,72 @@ entries:
       só extraídos pra funções nomeadas. `pipeline.py` passa a chamá-las
       em vez de inline. 7 testes novos.
     status: "fechado 2026-08-23 -- commit db62daf"
+
+  - id: AG-190
+    date: "2026-08-23"
+    file: "CLAUDE.md (## Projeto, ## As 5 restrições invioláveis §0.2, B21 da tabela de banned patterns)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-042, AG-114, AG-118; PLANO_MESTRE_PRINCE2.md §11.5, §15.13; PRD_V3_2_UNIFICADO.md §0.2-0.4"
+    found_by: "Manager, em resposta a Claude perguntar (via AskUserQuestion) qual eixo de TF o Feature Engine deveria visar -- a pergunta em si expôs que CLAUDE.md não deixa o status canônico de R1/R2/R3 explícito. Verificado por Agent dedicado a pedido do Manager."
+    gap: >
+      `CLAUDE.md` -- arquivo carregado automaticamente em TODA sessão --
+      ficou dessincronizado de pelo menos 2 decisões de arquitetura
+      travadas/decididas pelo Manager, mesma classe de defeito já
+      catalogada em `AG-080`/`AG-123` ("prosa dessincronizada do código"),
+      agora confirmada no próprio arquivo de instruções, não só em
+      PLANO_MESTRE:
+      (1) `## Projeto` descrevia o motor só como "multi-timeframe
+      (M15/M30/H1)" sem nenhuma menção a `canonical_bar_type: dollar`
+      nem a `resolution_id` R1/R2/R3 (`AG-042`, decidido 2026-08-16) --
+      zero ocorrência real de "R1/R2/R3"/"dollar bar" no arquivo inteiro.
+      (2) `## As 5 restrições invioláveis (§0.2)` apresentava valores
+      operacionais (stop ≤0,758%/≥0,275%, ~55 trades/mês, teto de preço
+      BTC US$107.568) como se fossem atuais -- são, na verdade, citação
+      literal de `PRD_V3_2_UNIFICADO.md` (documento que o próprio topo do
+      CLAUDE.md já declara OBSOLETO), calculados BTC-único sob barra de
+      relógio 15m, nunca remedidos sob o escopo multi-ativo real (5
+      símbolos, `step_size`/tick_size com razão de até 1000x entre si,
+      `AG-165`) nem sob `canonical_bar_type: dollar`.
+      (3) B21 da tabela de banned patterns dizia "determinístico por
+      quantis; `dynamax` na V1.1" -- falso desde 2026-08-21:
+      `dynamax.GaussianHMM` (k=4, `hmm_gaussian_k4_v1`) é candidato
+      canônico de produção por override do Manager (`AG-114`/`AG-118`,
+      `PLANO_MESTRE_PRINCE2.md` §15.13), com builder real já commitado
+      (`src/regime/build_hmm.py`) e já wireado no Risk Engine.
+    severity: "alto"
+    layer: "governança -- CLAUDE.md é o único artefato deste repo carregado em TODA sessão futura sem pedido explícito; uma lacuna aqui se propaga silenciosamente pra qualquer trabalho de arquitetura que dependa de saber qual é o estado real do motor"
+    consequence: >
+      Uma sessão nova (ou um agente fresco) que confiasse literalmente em
+      `CLAUDE.md` chegaria a conclusões erradas sobre 2 eixos reais do
+      motor: trataria M15/M30/H1 wall-clock como o único caminho de
+      "multi-timeframe" válido (quando R1/R2/R3 dollar-bar é o canônico de
+      produção) e trataria os números do Gate 0/§0.2 como vigentes
+      (quando são citação de doc obsoleto, nunca remedidos pro escopo
+      atual). Foi exatamente o que aconteceu nesta sessão: a exploração
+      inicial do Feature Engine multi-TF chegou a 3 leituras divergentes
+      de qual eixo "TF" o projeto realmente visa, forçando uma pergunta ao
+      Manager que não deveria ter sido necessária se CLAUDE.md já
+      apontasse pra `AG-042`.
+    resolved_by_commit: "e5395fb"
+    resolution: >
+      `CLAUDE.md` corrigido nos 3 pontos, com anotação visível
+      `[PRECISÃO]`/`[DESATUALIZADO]`/`[CORREÇÃO]` (convenção já usada em
+      PLANO_MESTRE, nunca reescrita silenciosa): `## Projeto` ganhou nota
+      apontando pra `AG-042`/§11.5, deixando explícito que "R1 = 15m
+      equivalente" é uma leitura errada (o próprio achado original chama
+      isso de "mentira operacional"); `## As 5 restrições invioláveis`
+      ganhou nota `[DESATUALIZADO]` completa citando a origem obsoleta dos
+      4 números e a ausência de remediação registrada; B21 reescrito para
+      refletir `dynamax.GaussianHMM` k=4 como candidato real de produção,
+      com nota lateral sobre regime ter saído do vetor de features do
+      Alpha (agora só GATE, ADR-001 §2.7) para não deixar o diagrama de
+      `## Layer hierarchy` mal-lido por analogia. Verificação de
+      completude: NÃO foi uma varredura exaustiva de todo CLAUDE.md contra
+      toda decisão já tomada -- foi um Agent dedicado, escopo
+      correspondência entre as afirmações técnicas do arquivo (não regras
+      de processo) e PLANO_MESTRE/ledger, achando os itens de maior
+      severidade. `## Layer hierarchy` (falta menção a `monitoring/`/
+      `core/`/`io/` no diagrama) e a ausência de cadência declarada pra
+      B22 (retreino após sequência de perdas, `AG-155`, já aberto e
+      escalado) ficam registrados como pendência de menor severidade, não
+      corrigidos nesta rodada.
+    status: "fechado 2026-08-23 -- commit e5395fb"

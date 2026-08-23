@@ -3516,6 +3516,29 @@ Restam represados pra próxima sessão: ressalva de magnitude do proxy p99
 em `AG-159`, §11 do design doc (caminho legado→HMM). Detalhe completo:
 `PLANO_MESTRE_PRINCE2.md §15.21.4`.
 
+**`CLAUDE.md` corrigido — 2 desatualizações reais vs. decisão travada do
+Manager (`AG-190`, commit `e5395fb`).** Achado a partir de uma sessão de
+`/feature-dev` sobre arquitetura de `src/features/`/`triple_barrier.py`:
+ao perguntar ao Manager qual eixo de TF o Feature Engine deveria visar,
+o Manager reagiu com alarme — a pergunta em si expôs que `CLAUDE.md` (o
+único arquivo carregado automaticamente em TODA sessão) não deixava o
+status canônico de `resolution_id` R1/R2/R3 explícito. Auditoria dedicada
+confirmou 2 desatualizações reais: `## Projeto` não mencionava
+`canonical_bar_type: dollar`/R1/R2/R3 (`AG-042`, 2026-08-16) em lugar
+nenhum; `## As 5 restrições invioláveis` citava valores operacionais do
+`PRD_V3_2_UNIFICADO.md` (já declarado obsoleto no topo do próprio
+`CLAUDE.md`) como se fossem atuais — calculados BTC-único sob barra de
+relógio 15m, nunca remedidos pro escopo multi-ativo real nem pra
+`canonical_bar_type: dollar`; B21 (banned patterns) tratava `dynamax`
+como hipótese de "V1.1" quando é candidato canônico de produção desde
+2026-08-21 (`AG-114`/`AG-118`, `PLANO_MESTRE_PRINCE2.md` §15.13).
+Corrigido com anotação visível (`[PRECISÃO]`/`[DESATUALIZADO]`/
+`[CORREÇÃO]`), nunca reescrita silenciosa. Verificação de completude foi
+por Agent dedicado, não exaustiva — `## Layer hierarchy` (falta menção a
+`monitoring/`/`core/`/`io/`) e a cadência de retreino do B22 (já aberta
+em `AG-155`) ficam como pendência de menor severidade. Detalhe:
+`audit/architecture_gaps_log.yaml::AG-190`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3553,4 +3576,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
 | **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1+2 parcial implementados, commit `72e02c7`. **D-01/D-02 implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23); revisão `project_assurance` corrigiu 1 achado real pré-commit (`AG-183`) + 2 menores (`AG-181`/`AG-182`). **`AG-174`/`AG-175`/`AG-176` fechados, commit `d44c7f9`** — `validate_resampled_bars` reescrita (schemas `BARS_15M`/`30M`/`1H` novos, reusa `validate_klines_like`); guarda `check_resolution_id_guard_parity.py` nova (opção B, duplicação mantida). **`AG-180` FECHADO, commit `3c3ed14`** — D-04 aplicado: `min_warmup_bars` mantido em contagem de barra (fórmula nativa em barra), `regime_confirmation_bars`/`regime_stress_exit_confirmation_bars` migradas pra piso híbrido (contagem de barra E tempo real mínimo, `(N-1)*step_ms("15m")`, bit-exato sob 15m). `1741 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`/`§15.21.3`/`§15.21.4`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente: `AG-179` (fora de escopo por desenho), ressalva de magnitude de `AG-159`, §11 do design doc (caminho HMM) — represados pro Manager |
 | **Núcleo funcional, casca imperativa** | Princípio formalizado (`CLAUDE.md`), 5 violações reais + 1 achado extra (HIGH, `project_assurance`) fechados. `triple_barrier.py`/`fill_simulator.py` (ponto de injeção `filters_by_date`/`tick_size_by_date`), `faixa1_5_prerequisites.py` (`hhi_df`), `attribution.py` (split `_load_payloads`/`_aggregate_payloads`), `pipeline.py`+`hhi.py`+`baselines.py` (`gate3_4_passes`/`gate3_4_max_share_passes`/`b1_sample_size`). `1734 passed` + `7 passed` de integração. Pendente: teste sintético completo pra `compute_fase2_e1` (18 células) — arquitetura fechada, cobertura parcial, registrado como pendência explícita. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.22`, `docs/nucleo_casca_design_doc_2026-08-23.md`, `AG-184`–`AG-189` |
+| **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
