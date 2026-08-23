@@ -13306,3 +13306,80 @@ entries:
       escalado) ficam registrados como pendência de menor severidade, não
       corrigidos nesta rodada.
     status: "fechado 2026-08-23 -- commit e5395fb"
+
+  - id: AG-191
+    date: "2026-08-23"
+    file: "tools/diagnostics/measure_ag121_trend_efficiency_by_state.py; experiments/m4_raw_labels/; experiments/m4_forward_vol_history/; data/capacity/dollar_bars_r{1,2,3}/"
+    related_file: "audit/architecture_gaps_log.yaml::AG-121, AG-124, AG-137; experiments/ag121_trend_efficiency_by_state.json"
+    found_by: "Claude, ao investigar um resultado suspeito (n_disagreement_cells=0, 34 células computadas contra 205 do script irmão) em vez de reportar como se fosse conclusão válida (B23/'nunca remediar sem achar causa raiz')"
+    gap: >
+      `experiments/m4_raw_labels/` e `experiments/m4_forward_vol_history/`
+      (mtime 2026-08-20, gerados pelo M4 critical-windows sweep,
+      `AG-114`) são um SNAPSHOT congelado de `canonical_id`/`close_time_
+      ms` sobre a série de dollar bars de ENTÃO. `data/capacity/
+      dollar_bars_r{1,2,3}/` foi inteiramente reprocessado em 2026-08-22
+      (`AG-124` -- recalibração causal, `trailing_window_days=7`/
+      `cadence_days=7`), o que desloca as fronteiras de TODA a série de
+      barras (não só o período inicial que `AG-137` limpou). Qualquer
+      script que junte um artefato do M4 sweep (labels/canonical_id) com
+      os dollar bars ATUAIS por `close_time_ms` perde a esmagadora
+      maioria das linhas silenciosamente -- não erro, `inner join` vazio
+      por timestamp, cada célula perdida vira `None`/pulada sem
+      levantar nada.
+    severity: "medio"
+    layer: "analysis -- artefato de experimento tratado implicitamente como se fosse válido contra o dado de produção atual, sem contrato de versão/consistência declarado entre os dois"
+    consequence: >
+      Medido no achado que expôs isto: `tools/diagnostics/measure_
+      ag121_trend_efficiency_by_state.py` (junta `m4_raw_labels` +
+      `m4_forward_vol_history`, ambos de 2026-08-20, com `log_return`
+      derivado dos dollar bars ATUAIS, pós-`AG-124`) computou só 34
+      células (contra 205 do script irmão, que só junta os dois
+      artefatos de 2026-08-20 entre si, mutuamente consistentes) e a
+      maioria das células sobreviventes ficou com 1 único estado após o
+      piso de `_MIN_BARS_PER_STATE=30` -- o resultado `n_disagreement_
+      cells=0` reportado pelo script é um ARTEFATO de perda de join, não
+      evidência de que a hipótese de "tendência ordeira vs. caótica"
+      (levantada pelo usuário sobre `AG-121`) seja falsa. Sem este achado,
+      o resultado teria sido reportado como conclusão real.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- não bloqueante. Fix real exigiria ou (a) reconstruir a série de bars PRÉ-`AG-124` (não recuperável -- `dollar_bars_r{1,2,3}/` foi reprocessado por inteiro, sem backup do estado anterior) ou (b) re-rodar o M4 critical-windows sweep completo sobre os bars atuais (`run_and_save_critical_windows_report`, ~3h, consome orçamento de trial `G-C1-2` (`audit/n_lifetime.yaml`), EXIGE autorização explícita do Manager por design -- não chamável sem isso). Nenhum caminho barato de re-scoring encontrado (o sweep não persiste parâmetros fitados separados da saída final pra re-score sem re-fit). Teste da hipótese de trend-efficiency de `AG-121` fica genuinamente TBD até o próximo M4 sweep real tocar os bars atuais -- não é gate de nada (a decisão MÉDIA vs. DESVIO-PADRÃO já foi tomada), só registrado pra não confundir com resultado válido se alguém ler `experiments/ag121_trend_efficiency_by_state.json` no futuro sem este contexto. Recomendação de fix estrutural, se/quando algum consumidor real precisar cruzar artefato de experimento com dado de produção: `report_provenance()` (já usado nesses scripts) ganhar um campo `source_bars_reprocessing_version`/equivalente, e um guard que avisa (não bloqueia) quando o mtime dos dois lados diverge."
+
+  - id: AG-192
+    date: "2026-08-23"
+    file: "src/models/alpha.py::fit_side_model (M_long/M_short já são 2 binários LightGBM separados, B18)"
+    related_file: "docs/alpha_model_design_doc_2026-08-22.md; audit/architecture_gaps_log.yaml::AG-162"
+    found_by: "Usuário, brainstorm: 'dividir o alpha único entre 2 alpha um especializado Long e outro especializado Short tende a ser melhor' -- pesquisado e validado por Agent (WebSearch) a pedido do Manager"
+    gap: >
+      O Alpha já treina `M_long`/`M_short` como 2 modelos LightGBM
+      totalmente separados (população de treino por lado via
+      `side_subset`, calibrador isotônico próprio, `tau` próprio,
+      `monotone_constraints` com direção avaliada por lado). O que NÃO é
+      separado hoje: o CONJUNTO DE FEATURES (`T1_FEATURE_IDS`/
+      `DESIGN_COLUMNS`, mesmas ~10 pros dois lados) e os HIPERPARÂMETROS
+      do LightGBM (`hyper: LGBMHyperparams`, mesmo objeto passado pra
+      `fit_side_model` nos dois lados em `run_fold`, sem tuning
+      independente). Manager perguntou se ir além (feature-set e/ou
+      espaço de busca de hiperparâmetro tunados independentemente por
+      lado) vale a pena.
+    severity: "baixo"
+    layer: "models -- decisão de escopo de arquitetura, não bug"
+    consequence: >
+      Pesquisa (literatura AFML/meta-labeling, assimetria momentum/
+      reversal em equities, funding rate em perpétuos -- BIS Working
+      Paper 1087) não encontrou sustentação forte o bastante pra
+      justificar o custo agora: (1) a fricção de short-selling que
+      justifica boa parte da literatura de "long/short são
+      estruturalmente diferentes" em equities (borrow cost, recall risk)
+      NÃO existe em perpétuos cripto -- abrir short é mecanicamente
+      idêntico a abrir long; (2) a assimetria mais forte e específica de
+      perpétuos encontrada (funding rate, BIS 2023/2025) **já está
+      incorporada** ao label -- `src/labels/triple_barrier.py:1383`,
+      `funding_frac = Σ(funding_rate) * side`, entra no `ret_net` por
+      lado; (3) tuning separado por lado dobraria trials rastreados em
+      `audit/n_lifetime.yaml` (orçamento vitalício, nunca decrementa)
+      sobre um dataset já menor por lado, com o Alpha ainda ZERO em
+      produção real.
+    resolved_by_commit: null
+    resolution: null
+    status: "adiado pra v2+, não fechado -- critério de reabertura declarado: depois do Alpha rodar de verdade em produção (retreino real, `AG-100`/`AG-124` fechados, gate 'Data Layer 100%' liberado), medir (sem sweep novo, custo zero de N_lifetime) se `gain_by_column_raw` de `M_long` vs. `M_short` (já persistido em `SideModelResult`/`models/{model_id}/diagnostics/`, D-08) converge pras mesmas features top-N nos dois lados. Convergência ALTA (mesmas features dominam os dois lados) = feature-set/hiperparâmetro compartilhado provavelmente já captura o que importa, não reabrir. Convergência BAIXA (lados dependem de features bem diferentes) = evidência real de que compartilhar está deixando edge na mesa, reabrir como candidato de sweep formal (com orçamento declarado a priori, B20)."

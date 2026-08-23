@@ -3785,6 +3785,40 @@ completa sem regressão. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.27`,
 `audit/architecture_gaps_log.yaml::AG-159`.
 
 <!-- check-sprint-log: skip -->
+**`AG-162`/`AG-150` fechados, `AG-121` trend-efficiency tentado (achado
+de dado obsoleto), `AG-192` Long/Short especializado adiado (2026-08-23)**
+<!-- check-sprint-log: skip --> — reconciliação do schema `tau_alpha`:
+D-05 do Alpha (`tau_long`/`tau_short` crus) prevalece sobre o que
+`AG-150`/PLANO_MESTRE tinham travado antes; `tau_alpha` vira coluna
+DERIVADA no Meta, mesmo padrão já usado no doc pra `p_alpha`. Detalhe:
+`docs/meta_model_design_doc_2026-08-22.md §21`. Usuário pediu
+aprofundar a hipótese "estado de maior retorno em `RECENTE` é tendência
+ordeira, não caótica" sobre a divergência MÉDIA×DESVIO-PADRÃO de
+`AG-121` — script novo (`measure_ag121_trend_efficiency_by_state.py`,
+Efficiency Ratio de Kaufman) rodou, mas o resultado (`n_disagreement_
+cells=0`, 34 células contra 205 do script irmão) é ARTEFATO, não
+achado: `experiments/m4_raw_labels`/`m4_forward_vol_history` (mtime
+2026-08-20) ficaram obsoletos contra `data/capacity/dollar_bars_r{1,2,
+3}/` reprocessado inteiro por `AG-124` em 2026-08-22 — join por
+`close_time_ms` perde quase tudo silenciosamente. Registrado como
+`AG-191`, não bloqueante — teste da hipótese fica genuinamente `TBD`
+até o próximo M4 sweep real tocar os bars atuais <!-- check-sprint-log: skip --> (~3h, consome
+`N_lifetime`, exige autorização do Manager — não é decisão pontual).
+Separadamente, brainstorm do usuário (Alpha dividido em modelo
+especializado Long e modelo especializado Short) pesquisado — o Alpha
+já treina 2 binários totalmente separados <!-- check-sprint-log: skip --> (`B18`); o que faltaria é
+feature-set/hiperparâmetro tunados independentemente por lado. Pesquisa
+(AFML, assimetria momentum/reversal, funding rate em perpétuos — BIS
+Working Paper 1087) <!-- check-sprint-log: skip --> não sustenta o custo agora: fricção de
+short-selling que justifica a literatura em equities não existe em
+perpétuos; funding (a assimetria real e específica de perpétuos) já
+está no `ret_net` via `side` em `triple_barrier.py:1383`. Adiado pra
+v2+ (`AG-192`), critério de reabertura declarado: convergência de
+`gain_by_column_raw` entre `M_long`/`M_short` pós-retreino real, sem
+sweep novo. Detalhe: `audit/architecture_gaps_log.yaml::AG-191`/
+`AG-192`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -3811,7 +3845,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
 | **Alpha multi-ativo × multi-resolução** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. Achado central: multi-símbolo e multi-resolução (R1/R2/R3) já estavam prontos em produção (`AG-100`/`AG-124`, commit `7924f2c`) — o redesenho real é learner (XGBoost→LightGBM, D-01) + orquestração (5→15 combinações, D-13) + GPU (D-18, pedido do Manager, 3 ressalvas declaradas: build via `uv`, tensão com determinismo bit-exato, payoff não medido) + 4 débitos de schema. Auditoria adversarial (v1→v2): 1 CRITICAL (`tau_long`/`tau_short` não verificado contra `tau_alpha` do Meta v3) + 6 IMPORTANT/MODERATE. `project_assurance` (v2→v3): `tau_alpha` já travado em **3** artefatos de governança divergentes, não 2 — escalado ao Manager, **`AG-162` CRITICAL FECHADO 2026-08-23**: D-05 (`tau_long`/`tau_short` crus) prevalece, `tau_alpha` vira coluna derivada no Meta (mesmo padrão de `p_alpha`), `AG-150`/PLANO_MESTRE atualizados no mesmo commit — ver `docs/meta_model_design_doc_2026-08-22.md §21`. `AG-100`/`AG-124` citados como "fechados" quando status formal segue "aberto" — corrigido, **escalado, `AG-163` HIGH** (item 3 segue aberto com ressalva, ver `AG-163` no ledger). AGs novos: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer 100%" — os 4 achados "alto" que travavam (`AG-138`/`139`/`140`/decisão `08_SPLIT`) estão fechados 2026-08-23, mas isso não confirma automaticamente o gate inteiro livre (`06_BARREIRAS` segue represado por decisão aceita, não bloqueante; ver `PLANO_MESTRE_PRINCE2.md §15.4`/`§15.27`/`§15.28` pro estado real antes de assumir). Detalhe: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
-| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) e `AG-121` (canonicalização por retorno vs. volatilidade, ADR-001 §3.4) seguem abertos, não investigados a fundo |
+| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA, ver seção narrativa acima); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` fica `TBD` (`AG-191`, dado obsoleto pro teste) |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
 | Pendente pra fechar M4 | Gate 1 fechado 2026-08-21/22 (pior-caso/33%, ver §15.12.6/§15.12.7). Pendente: extrair detection delay de `hmm_k3`/`hmm_k4` separadamente e rodar Gate 3 de verdade pra R1/R2 (empate detectado pelo piso do p-valor, §15.12.7) — só R3 permanece decidido pela métrica primária. Depois: resolver as 7 decisões residuais da Trilha B (§15.11, arquitetura Decision Engine — `AG-116` NÃO é uma delas, já fechado, ver correção acima), congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager |
 | Reordenação do gate de retreino do Alpha — decidido 2026-08-22 | Manager: retreino NÃO espera o Gate 1 (resolvido em horas de redação, não é o gargalo real) — espera o reprocessamento dollar-bar, que é upstream de tudo e invalida o Data Layer inteiro. `AG-124` (recalibração causal das barras RAW) concluído 2026-08-22 — mas em aberto: se "reprocessamento dollar-bar" no sentido do Manager inclui também reprocessar features/labels/regime/CPCV sobre as barras novas (que hoje ainda refletem a calibração antiga), ou se refere só à camada de barra já concluída. Pergunta feita ao Manager, não assumida. |
