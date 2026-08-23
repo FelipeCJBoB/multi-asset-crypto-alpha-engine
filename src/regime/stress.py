@@ -90,6 +90,24 @@ TimeArray = NDArray[np.int64]
 # `src.data.resample`), por isso não entra em `constants.yaml`.
 _MS_PER_HOUR = 3_600_000
 
+# Iglewicz & Hoaglin (1993) -- mesma citação/constantes de
+# `src.regime.hmm_gap_check` (decisão de design #2 lá: constante de
+# MÓDULO, não `constants.yaml` -- threshold de detecção robusta de
+# outlier estabelecido na literatura, não hiperparâmetro do projeto).
+# Duplicado aqui em vez de importado de `hmm_gap_check` -- mesmo
+# precedente já usado no repo de duplicação deliberada pra não acoplar
+# módulos (`src/regime/_paths.py`/`_constants.py`, citado em D-01 de
+# `docs/regime_feature_engine_design_doc_2026-08-23.md` §3).
+_S6_MODIFIED_Z_SCORE_CONSTANT = 0.6745  # noqa: magic-number -- Iglewicz & Hoaglin 1993, ver src.regime.hmm_gap_check
+_S6_MODIFIED_Z_SCORE_ANOMALY_THRESHOLD = 3.5  # noqa: magic-number -- Iglewicz & Hoaglin 1993, ver src.regime.hmm_gap_check
+
+# Mínimo de gaps POSITIVOS estritamente anteriores pra mediana/MAD
+# expansiva de `s06_bar_gap_dollar` terem sentido estatístico -- mesmo
+# valor/raciocínio de `hmm_gap_check._MIN_BARS_FOR_GAP_CHECK`, adaptado
+# pra "gaps anteriores" (checagem causal por-barra) em vez de "barras na
+# série" (diagnóstico único não-causal).
+_S6_MIN_PRIOR_POSITIVE_GAPS = 3
+
 
 def _not_computable(n: int) -> TriggerArray:
     return np.full(n, TriggerState.NOT_COMPUTABLE, dtype=object)
@@ -252,6 +270,137 @@ def s06_bar_gap(open_time_ms: TimeArray, step_ms: int) -> TriggerArray:
         expected_prev = ts_list[i] - step_ms
         if expected_prev in missing:
             out[i] = TriggerState.TRIGGERED
+    return out
+
+
+def s06_bar_gap_dollar(close_time_ms: TimeArray) -> TriggerArray:
+    """S6 sob `bar_source != "time_15m"` (D-01,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3, correção
+    crítica v2→v3 do design doc, achado do `project_assurance`).
+    `s06_bar_gap` (grade de tempo fixa) não se aplica sob dollar-bar —
+    cadência irregular por construção (uma dollar-bar fecha quando o
+    volume nocional acumulado atinge o alvo, não em um `close_time`
+    previsível a priori). Reusa a mesma técnica de
+    `src.regime.hmm_gap_check.check_bars_gap_before_hmm` (mediana + MAD,
+    modified z-score de Iglewicz & Hoaglin 1993) mas **CAUSAL/EXPANSIVA**:
+    lá é diagnóstico único WARNING-only sobre a série inteira, correto por
+    natureza; aqui a mesma computação sobre a série inteira, se portada
+    sem adaptação, violaria o contrato explícito do `RegimeClassifier`
+    Protocol (`classifier.py:419-420`, "barra t usa apenas índices < t")
+    ao ser plugada por-barra em `compute_stress_triggers →
+    _run_state_machine → regime[t]` — um gap FUTURO mudaria
+    retroativamente a mediana/MAD e, portanto, a classificação de uma
+    barra PASSADA: nova instância do banned pattern B02, introduzida pelo
+    próprio fix que deveria fechar o gap original.
+
+    Na barra que fecha o gap de índice `i` (`gaps = diff(close_time_ms)`),
+    a mediana/MAD de referência usa só os gaps POSITIVOS
+    (`non-monotonic` excluídos, mesma convenção de `hmm_gap_check.py`:
+    problema de integridade de dado não deveria contaminar a noção de
+    "cadência típica") que fecharam ESTRITAMENTE ANTES do índice `i` —
+    mesma disciplina causal de `support.expanding_percentile_rank_strict`.
+
+    Implementação: `pl.Series.rolling_median(window_size=len(série),
+    min_samples=1)` produz, em cada posição, a mediana EXPANSIVA
+    (inclusive) desde o índice 0 — a janela nunca consegue olhar pra trás
+    mais do que os elementos já disponíveis quando `window_size >=
+    len(série)`, então um window_size igual ao comprimento total faz o
+    rolling se comportar como expansivo por construção, sem estrutura de
+    dados customizada (reusa a implementação nativa do Polars, mesmo
+    espírito de reuso já praticado neste módulo pra `rolling_mean`/
+    `rolling_std` em janela FIXA — aqui a janela é maior que a série, não
+    fixa). Deslocada em 1 posição (índice `k-1`, `k` = nº de gaps
+    positivos estritamente anteriores) pra virar EXCLUSIVA. MAD via
+    segunda passada análoga sobre os desvios absolutos `|gap −
+    mediana_inclusive_naquele_ponto|` — cada desvio usa a mediana CORRENTE
+    naquele ponto (não a mediana final), preservando causalidade também
+    na passada de MAD (o desvio na posição `j` depende só de
+    `gaps_positivos[0:j+1]`, nunca de `j' > j`).
+
+    Casos de borda: gap com < `_S6_MIN_PRIOR_POSITIVE_GAPS` gaps positivos
+    anteriores disponíveis → `NOT_COMPUTABLE` (sem distribuição de
+    referência com sentido estatístico). Gap não-monotônico (`<=0`) →
+    `TRIGGERED` incondicional, independente da mediana/MAD — inclusive
+    quando ainda não há gaps positivos anteriores suficientes (problema de
+    integridade de dado é ortogonal ao julgamento estatístico, mesma
+    semântica de `hmm_gap_check.py`). `MAD==0` (cadência quase
+    perfeitamente regular) usa o mesmo fallback de `hmm_gap_check.py`:
+    desvio absoluto MÉDIO como escala alternativa; se também `==0`,
+    qualquer gap MAIOR que o valor típico é `TRIGGERED` por definição
+    (variância estruturalmente zero). `n < 2` (0 ou 1 barra) →
+    `NOT_COMPUTABLE` em toda a série, sem gap nenhum pra avaliar. Barra 0
+    nunca fecha gap (mesma convenção de `s06_bar_gap`) — fica
+    `NOT_TRIGGERED`, nunca tocada por este cálculo.
+
+    **Critério UNILATERAL, não bilateral (achado do `project_assurance`
+    independente, 2026-08-23 — correção pós-implementação):** dispara só
+    quando o gap é MAIOR que o esperado (`modified_z > threshold`, nunca
+    `abs(modified_z) > threshold`) — mesma convenção de
+    `hmm_gap_check.check_bars_gap_before_hmm`. S6 existe pra detectar
+    AUSÊNCIA de barra (gap = "buraco" na grade); um intervalo
+    anomalamente CURTO entre dollar-bars é o oposto disso — atividade/
+    liquidez densa, não problema de dado. Um critério bilateral dispararia
+    stress (R5, `tradeable=False`) numa rajada de alta liquidez sem
+    nenhum problema real de coleta, alterando `regime`/`monotone_
+    constraints` sem motivo."""
+    n = close_time_ms.shape[0]
+    if n < 2:
+        return _not_computable(n)
+
+    gaps = np.diff(close_time_ms).astype(np.float64)
+    n_gaps = gaps.shape[0]
+    non_monotonic_mask = gaps <= 0.0
+    positive_idx = np.flatnonzero(~non_monotonic_mask)
+    positive_gaps = gaps[positive_idx]
+
+    # nº de gaps POSITIVOS com índice ORIGINAL estritamente anterior a cada
+    # gaps[i] -- positive_idx já ordenado (mesma ordem temporal de gaps),
+    # searchsorted vetorizado dá a contagem em O(log n) por elemento.
+    n_prior_positive = np.searchsorted(positive_idx, np.arange(n_gaps), side="left")
+    computable_mask = n_prior_positive >= _S6_MIN_PRIOR_POSITIVE_GAPS
+
+    if positive_gaps.size > 0:
+        med_pos_inclusive = (
+            pl.Series(positive_gaps)
+            .rolling_median(window_size=positive_gaps.size, min_samples=1)
+            .to_numpy()
+        )
+        dev_pos = np.abs(positive_gaps - med_pos_inclusive)
+        mad_pos_inclusive = (
+            pl.Series(dev_pos)
+            .rolling_median(window_size=positive_gaps.size, min_samples=1)
+            .to_numpy()
+        )
+        mean_dev_pos_inclusive = (
+            pl.Series(dev_pos)
+            .rolling_mean(window_size=positive_gaps.size, min_samples=1)
+            .to_numpy()
+        )
+        safe_k = np.clip(n_prior_positive - 1, 0, positive_gaps.size - 1)
+        ref_median = med_pos_inclusive[safe_k]
+        ref_mad = mad_pos_inclusive[safe_k]
+        ref_mean_dev = mean_dev_pos_inclusive[safe_k]
+    else:
+        ref_median = np.zeros(n_gaps, dtype=np.float64)
+        ref_mad = np.zeros(n_gaps, dtype=np.float64)
+        ref_mean_dev = np.zeros(n_gaps, dtype=np.float64)
+
+    scale = np.where(ref_mad > 0.0, ref_mad, ref_mean_dev)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        modified_z = _S6_MODIFIED_Z_SCORE_CONSTANT * (gaps - ref_median) / scale  # noqa: unguarded-ratio -- guardado por `scale > 0.0` no mask z_anomalous abaixo, ver docstring
+
+    z_anomalous = (
+        computable_mask
+        & (scale > 0.0)
+        & (modified_z > _S6_MODIFIED_Z_SCORE_ANOMALY_THRESHOLD)  # unilateral -- ver docstring
+    )
+    zero_scale_anomalous = computable_mask & (scale <= 0.0) & (gaps > ref_median)
+    anomalous_mask = non_monotonic_mask | z_anomalous | zero_scale_anomalous
+    not_computable_mask = (~non_monotonic_mask) & (~computable_mask)
+
+    out = np.full(n, TriggerState.NOT_TRIGGERED, dtype=object)
+    out[1:][not_computable_mask] = TriggerState.NOT_COMPUTABLE
+    out[1:][anomalous_mask] = TriggerState.TRIGGERED
     return out
 
 
@@ -433,7 +582,15 @@ class StressInputs:
     """Entradas dos 10 gatilhos. Os campos `| None` correspondem aos
     gatilhos dependentes de dado que não existe hoje no pipeline padrão
     (S2, S10) — passar `None` (o default de `build.py`) produz
-    `NOT_COMPUTABLE`, documentado em cada função `sXX_*` acima."""
+    `NOT_COMPUTABLE`, documentado em cada função `sXX_*` acima.
+
+    `bar_source`/`close_time_ms` (D-01,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) — default
+    `bar_source="time_15m"`/`close_time_ms=None` preserva bit-exato todo
+    caller existente (S6 despacha pra `s06_bar_gap`, grade de tempo fixa).
+    `bar_source != "time_15m"` exige `close_time_ms` (validado em
+    `compute_stress_triggers`, fail-fast) — S6 despacha pra
+    `s06_bar_gap_dollar`, causal/expansiva, ver docstring lá."""
 
     n: int
     open_time_ms: TimeArray
@@ -442,6 +599,8 @@ class StressInputs:
     step_ms: int = 0  # 0 -> resolvido para o passo de 15m em compute_stress_triggers
     spread_pctile_expanding: FloatArray | None = None
     filters_hash_snapshots: tuple[tuple[int, str], ...] | None = None
+    bar_source: str = "time_15m"
+    close_time_ms: TimeArray | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,8 +614,27 @@ def compute_stress_triggers(inputs: StressInputs) -> StressResult:
     """Roda os 10 gatilhos e agrega. `step_ms` default (0) resolve para o
     passo de 15m via `src.data.resample.step_ms("15m")` — decision_tf do
     projeto (§0.1); um chamador de outro TF passaria `step_ms` explícito
-    em `StressInputs`."""
+    em `StressInputs`.
+
+    `bar_source` (D-01) — `"time_15m"` (default) despacha S6 pra
+    `s06_bar_gap` (grade fixa, inalterado); qualquer outro valor despacha
+    pra `s06_bar_gap_dollar` (causal/expansiva) e EXIGE `close_time_ms`
+    — fail-fast (`ValueError`) se ausente, nunca um fallback silencioso
+    pra grade de tempo sob dado que não é grade de tempo."""
+    if inputs.bar_source != "time_15m" and inputs.close_time_ms is None:
+        raise ValueError(
+            "compute_stress_triggers: bar_source="
+            f"{inputs.bar_source!r} != 'time_15m' exige close_time_ms -- S6 sob "
+            "dollar-bar (s06_bar_gap_dollar) precisa da grade real de fechamento, não "
+            "step_ms sintético (D-01, docs/regime_feature_engine_design_doc_2026-08-23.md §3)."
+        )
     step_ms = inputs.step_ms or data_resample.step_ms("15m")
+
+    if inputs.bar_source != "time_15m":
+        assert inputs.close_time_ms is not None  # narrowed pela validação acima
+        s6_trigger = s06_bar_gap_dollar(inputs.close_time_ms)
+    else:
+        s6_trigger = s06_bar_gap(inputs.open_time_ms, step_ms)
 
     triggers: dict[str, TriggerArray] = {
         "S1": s01_vol_extreme(inputs.vol_pctile_expanding),
@@ -464,7 +642,7 @@ def compute_stress_triggers(inputs: StressInputs) -> StressResult:
         "S3": s03_funding_extreme(inputs.funding_z_expanding),
         "S4": s04_basis_break(inputs.n),
         "S5": s05_stale_data(inputs.n),
-        "S6": s06_bar_gap(inputs.open_time_ms, step_ms),
+        "S6": s6_trigger,
         "S7": s07_shallow_liquidity(inputs.n),
         "S8": s08_event_window(inputs.n),
         "S9": s09_liquidation_cascade(inputs.n),

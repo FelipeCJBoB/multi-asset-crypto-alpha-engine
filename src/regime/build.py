@@ -58,6 +58,14 @@ def build_regimes(
     (`project_assurance`, G3, 2026-08-16) que contradisse a suposição
     original de "Regime Engine não muda".
 
+    `bar_source` também é repassado pro `QuantileRegimeClassifier` (D-01,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) — até esta
+    mudança, `bar_source` chegava até aqui mas nunca ia além de
+    `build_t1_features`: S6 (`stress.s06_bar_gap`) rodava incondicionalmente
+    contra grade fixa de 15m mesmo sob dollar-bar (§2.2 item 1 do design
+    doc). Agora S6 despacha pra `s06_bar_gap_dollar` (causal/expansiva)
+    quando `bar_source != "time_15m"`.
+
     `min_common_history_bars_15m` (AG-030) — mesma decisão da Fase 2
     (`src.features.build.build_t1_features`): a constante foi calibrada em
     contagem de barra de TEMPO, não é comparável cross-asset sob dollar
@@ -85,7 +93,7 @@ def build_regimes(
         )
 
     regimes = classifier.QuantileRegimeClassifier(
-        symbol=symbol, thresholds=resolved_thresholds
+        symbol=symbol, thresholds=resolved_thresholds, bar_source=bar_source
     ).classify(features_df)
     logger.info(
         "regime.build.build_regimes",

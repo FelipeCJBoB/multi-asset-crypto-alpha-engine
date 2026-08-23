@@ -201,24 +201,58 @@ def compute_max_feature_lookback_ms(
     feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
     *,
     windows: FeatureWindows | None = None,
+    resolution_id: str | None = None,
 ) -> int:
-    """`max_feature_window_bars(windows) * step_ms(tf)` — valor pronto pra
-    `CPCVConfig.from_constants(max_feature_lookback_ms=...)` (AG-032 item
-    8, componente 96 da docstring de `src.validation.cpcv`). Helper
+    """`max_feature_window_bars(windows) * bar_duration_ms` — valor pronto
+    pra `CPCVConfig.from_constants(max_feature_lookback_ms=...)` (AG-032
+    item 8, componente 96 da docstring de `src.validation.cpcv`). Helper
     COMPARTILHADO entre `src.models.pipeline.run_layer1_sprint` e
     `src.validation.leakage.run_all_leakage_tests` — os dois chamam
     literalmente esta função, nunca duas cópias da fórmula (mesma
     disciplina de `cpcv._embargo_ms`/AG-009).
 
+    `resolution_id` (D-02, `AG-159`,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) —
+    `None` (default) preserva bit-exato `bar_duration_ms = step_ms(tf)`.
+    Setado (dollar-bar, `tf` deixa de ser uma grade de relógio), a duração
+    de barra usada vira `label_prefetch_p99_bar_duration_ms`
+    (`config/constants.yaml`, `MEASURED`, p99 máximo entre as 15
+    combinações símbolo×resolução) — `step_ms(tf)` não tem significado sob
+    dollar-bar (cadência de barra é irregular por construção, §4.4 do
+    design doc). Efeito prático hoje é ZERO em produção:
+    `assert_no_expanding_lookback_in_active_set` já bloqueia
+    incondicionalmente pro conjunto ativo T1 (C07/D03f/E02f são
+    `expanding`) — este parâmetro deixa a UNIDADE correta pronta pra
+    quando esse gate for resolvido pelo Manager, não é usado por nenhum
+    caller de produção real ainda. **Ressalva não resolvida aqui
+    (`AG-159` addendum, achado do `project_assurance`, 2026-08-23):**
+    "unidade correta" não é "magnitude garantidamente suficiente" —
+    `label_prefetch_p99_bar_duration_ms` foi medido/justificado pro
+    modelo de custo de PREFETCH (sub-cobertura tolerável, falha visível),
+    não pro de PURGE (sub-cobertura = vazamento silencioso B02/B09); o
+    `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado. Sem guarda de
+    runtime — D-02 ressalva 4 do design doc, não implementada (B23, a
+    medição do máximo real de janela consecutiva ainda não existe).
+
     Chama `assert_no_expanding_lookback_in_active_set(feature_ids)`
-    PRIMEIRO — se qualquer feature do conjunto ativo tiver `lookback_bars:
-    expanding`, levanta `ExpandingFeatureLookbackError` antes de calcular
-    qualquer número (opção A, ver docstring daquela função). `feature_ids`
-    default `T1_FEATURE_IDS` DISPARA essa exceção hoje (3 features
-    expanding conhecidas) — chamar com um subconjunto sem elas (ou vazio)
-    pula o gate."""
+    PRIMEIRO, mesmo quando `resolution_id` é passado — se qualquer
+    feature do conjunto ativo tiver `lookback_bars: expanding`, levanta
+    `ExpandingFeatureLookbackError` antes de calcular qualquer número
+    (opção A, ver docstring daquela função). `feature_ids` default
+    `T1_FEATURE_IDS` DISPARA essa exceção hoje (3 features expanding
+    conhecidas) — chamar com um subconjunto sem elas (ou vazio) pula o
+    gate. Ordem verificada em
+    `test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_
+    resolution_id_setado` (`tests/unit/test_features_build.py`, AG-181):
+    um refactor que trocasse essa ordem reintroduziria silenciosamente o
+    risco que o gate existe pra prevenir."""
     assert_no_expanding_lookback_in_active_set(feature_ids)
-    return max_feature_window_bars(windows) * step_ms(tf)
+    bar_duration_ms = (
+        step_ms(tf)
+        if resolution_id is None
+        else int(load_constant("label_prefetch_p99_bar_duration_ms"))
+    )
+    return max_feature_window_bars(windows) * bar_duration_ms
 
 
 def compute_t1_features(

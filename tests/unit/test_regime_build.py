@@ -61,13 +61,25 @@ def _skip_if_missing_dollar_bars(day: str) -> None:
 
 
 def _make_synthetic_regime_features(n: int, seed: int = 91) -> pl.DataFrame:
-    """Só as 5 colunas que `QuantileRegimeClassifier.classify` de fato lê
-    (`open_time`, B07/C07/E02f/E27f) — não é `build_t1_features` real, usada
-    pra testar `build_regimes` isolado de IO via monkeypatch."""
+    """Só as 6 colunas que `QuantileRegimeClassifier.classify` de fato lê
+    (`open_time`/`close_time`, B07/C07/E02f/E27f) — não é `build_t1_features`
+    real, usada pra testar `build_regimes` isolado de IO via monkeypatch.
+
+    `close_time` (D-01,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) — grade
+    uniforme (`open_time + 900_000`, sem gap nenhum) só pra satisfazer o
+    contrato de `classify()` quando `bar_source != "time_15m"`
+    (`s06_bar_gap_dollar` exige `close_time_ms`); nenhum dos testes deste
+    módulo verifica `stress_triggers`/S6 especificamente (isso é coberto em
+    `tests/unit/test_regime_stress.py`/`test_regime_classifier.py`), então
+    uma grade sem gap (nunca dispara S6) preserva o comportamento que os
+    testes de fato verificam (`er_quantile`, kwargs repassados)."""
     rng = np.random.default_rng(seed)
+    open_time = np.arange(n, dtype=np.int64) * 900_000
     return pl.DataFrame(
         {
-            "open_time": np.arange(n, dtype=np.int64) * 900_000,
+            "open_time": open_time,
+            "close_time": open_time + 900_000,
             "B07_efficiency_ratio_48": rng.uniform(0.0, 1.0, n),
             "C07_vol_pctile_expanding": rng.uniform(0.0, 1.0, n),
             "E02f_funding_z_expanding": rng.normal(0.0, 1.0, n),

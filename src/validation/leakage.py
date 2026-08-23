@@ -789,7 +789,15 @@ def run_all_leakage_tests(
     # (T1_FEATURE_IDS) tiver feature com lookback_bars='expanding' no
     # registry -- hoje DISPARA (3 features expanding conhecidas); ver
     # docstring de features_build.assert_no_expanding_lookback_in_active_set.
-    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(tf)
+    # D-02 (AG-159, docs/regime_feature_engine_design_doc_2026-08-23.md
+    # §3) -- resolution_id propagado pra usar bar_duration_ms correto sob
+    # dollar-bar (label_prefetch_p99_bar_duration_ms), não step_ms(tf).
+    # models.pipeline.run_layer1_sprint precisa do MESMO resolution_id --
+    # os dois call sites mudam juntos, senão a suíte de vazamento reporta
+    # PASS falso sob R2/R3 enquanto o pipeline real usa proteção diferente.
+    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
+        tf, resolution_id=resolution_id
+    )
     cpcv_config = cpcv.CPCVConfig.from_constants(
         tf=tf, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms
     )

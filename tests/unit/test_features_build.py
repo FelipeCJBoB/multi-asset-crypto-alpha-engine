@@ -535,6 +535,36 @@ def test_compute_max_feature_lookback_ms_converte_bars_via_step_ms(tf: str) -> N
     assert got == 96 * step_ms(tf)
 
 
+def test_compute_max_feature_lookback_ms_resolution_id_usa_p99_bar_duration() -> None:
+    """D-02 (`AG-159`,
+    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) --
+    `resolution_id` setado troca `step_ms(tf)` por
+    `label_prefetch_p99_bar_duration_ms` (`constants.yaml`, MEASURED).
+    `tf` continua presente na assinatura (não usado pra conversão de
+    unidade sob dollar-bar) -- passar um `tf` de grade de tempo real não
+    deveria mudar o resultado, prova de que o parâmetro correto é
+    `resolution_id`, não `tf`."""
+    windows = _synthetic_windows_max_96()
+    p99_bar_duration_ms = int(build.load_constant("label_prefetch_p99_bar_duration_ms"))
+    got = build.compute_max_feature_lookback_ms(
+        "15m", feature_ids=(), windows=windows, resolution_id="R2"
+    )
+    assert got == 96 * p99_bar_duration_ms
+    assert got != 96 * step_ms("15m")
+
+
+def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:
+    """Achado do `project_assurance` independente (2026-08-23, AG-181):
+    nenhum teste provava que `assert_no_expanding_lookback_in_active_set`
+    ainda dispara PRIMEIRO quando `resolution_id` é passado junto com o
+    conjunto ativo REAL (`T1_FEATURE_IDS`, default -- a combinação exata
+    que `pipeline.py`/`leakage.py` usam de verdade). Um refactor futuro que
+    reordenasse o cálculo de `bar_duration_ms` pra antes do gate passaria
+    despercebido sem este teste."""
+    with pytest.raises(build.ExpandingFeatureLookbackError):
+        build.compute_max_feature_lookback_ms("15m", resolution_id="R2")
+
+
 def test_assert_no_expanding_lookback_passa_para_subconjunto_finito() -> None:
     """Nenhuma das duas features abaixo é `expanding` no registry real --
     não deve levantar."""

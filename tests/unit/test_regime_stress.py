@@ -182,6 +182,193 @@ def test_s06_serie_real_klines_15m_nao_tem_gap() -> None:
 
 
 # ============================================================================
+# S6 dollar-bar (D-01, causal/expansiva,
+# docs/regime_feature_engine_design_doc_2026-08-23.md §3)
+# ============================================================================
+
+_S6_DOLLAR_STEP = 900_000
+
+
+def test_s06_bar_gap_dollar_serie_curta_e_not_computable() -> None:
+    out0 = stress.s06_bar_gap_dollar(np.array([], dtype=np.int64))
+    out1 = stress.s06_bar_gap_dollar(np.array([0], dtype=np.int64))
+    assert len(out0) == 0
+    assert list(out1) == [stress.TriggerState.NOT_COMPUTABLE]
+
+
+def test_s06_bar_gap_dollar_menos_de_3_gaps_anteriores_e_not_computable() -> None:
+    step = _S6_DOLLAR_STEP
+    ts = np.array([i * step for i in range(5)], dtype=np.int64)  # 4 gaps uniformes
+    out = stress.s06_bar_gap_dollar(ts)
+    assert out[0] == stress.TriggerState.NOT_TRIGGERED  # barra 0 nunca fecha gap
+    assert out[1] == stress.TriggerState.NOT_COMPUTABLE  # gap idx0 -- 0 priors
+    assert out[2] == stress.TriggerState.NOT_COMPUTABLE  # gap idx1 -- 1 prior
+    assert out[3] == stress.TriggerState.NOT_COMPUTABLE  # gap idx2 -- 2 priors
+    assert out[4] == stress.TriggerState.NOT_TRIGGERED  # gap idx3 -- 3 priors, igual à mediana
+
+
+def test_s06_bar_gap_dollar_nao_monotonico_e_triggered_mesmo_sem_3_priors() -> None:
+    """Gap `<=0` dispara incondicional -- inclusive quando ainda não há
+    `_S6_MIN_PRIOR_POSITIVE_GAPS` gaps positivos anteriores (problema de
+    integridade de dado é ortogonal ao julgamento estatístico, mesma
+    semântica de `hmm_gap_check.py`)."""
+    step = _S6_DOLLAR_STEP
+    ts = np.array([0, step, 2 * step, step, 4 * step, 5 * step], dtype=np.int64)
+    # gaps: [step, step, -step, 3*step, step] -- gap idx2 (<=0) fecha na barra 3
+    out = stress.s06_bar_gap_dollar(ts)
+    assert out[3] == stress.TriggerState.TRIGGERED  # não-monotônico, só 2 priors positivos
+
+
+def test_s06_bar_gap_dollar_mad_zero_cadencia_quase_toda_identica_detecta_outlier() -> None:
+    """Mesmo achado real documentado em `hmm_gap_check.py`
+    (`test_gap_anomalo_detectado_com_cadencia_quase_toda_identica`):
+    cadência quase perfeitamente regular -> MAD expansivo cai pra 0 antes
+    do outlier aparecer -- fallback pro desvio absoluto MÉDIO não pode
+    "esconder" o outlier. Valores calculados à mão (ver comentário
+    inline)."""
+    step = _S6_DOLLAR_STEP
+    close_time = [0, step, 2 * step, 3 * step, 4 * step, 5 * step]
+    close_time.append(close_time[-1] + 5 * step)  # gap idx5 = 5*step (outlier)
+    close_time += [close_time[-1] + step, close_time[-1] + 2 * step, close_time[-1] + 3 * step]
+    ts = np.array(close_time, dtype=np.int64)
+    out = stress.s06_bar_gap_dollar(ts)
+
+    # gap idx0..2 (barras 1-3): <3 priors -> NOT_COMPUTABLE
+    assert out[1] == stress.TriggerState.NOT_COMPUTABLE
+    assert out[2] == stress.TriggerState.NOT_COMPUTABLE
+    assert out[3] == stress.TriggerState.NOT_COMPUTABLE
+    # gap idx3,4 (barras 4,5): 3-4 priors, todos == step -> scale=0, gap==mediana -> NOT_TRIGGERED
+    assert out[4] == stress.TriggerState.NOT_TRIGGERED
+    assert out[5] == stress.TriggerState.NOT_TRIGGERED
+    # gap idx5 (barra 6): 5 priors, todos == step -> scale=0, gap=5*step != mediana -> TRIGGERED
+    assert out[6] == stress.TriggerState.TRIGGERED
+    # gap idx6,7,8 (barras 7,8,9): outlier já incorporado à referência (1 entre 6/7/8
+    # positivos), mediana continua == step, MAD continua 0 (outlier não afeta a mediana
+    # com >=6 elementos), fallback pro desvio médio (>0) -- gap==mediana -> z=0 -> NOT_TRIGGERED
+    assert out[7] == stress.TriggerState.NOT_TRIGGERED
+    assert out[8] == stress.TriggerState.NOT_TRIGGERED
+    assert out[9] == stress.TriggerState.NOT_TRIGGERED
+
+
+def test_s06_bar_gap_dollar_gap_curto_nao_dispara_criterio_unilateral() -> None:
+    """Achado do `project_assurance` independente (2026-08-23): critério é
+    UNILATERAL (só gap MAIOR que o esperado dispara), não bilateral -- S6
+    detecta AUSÊNCIA de barra; um intervalo anomalamente CURTO é o oposto
+    disso (atividade/liquidez densa, não problema de dado). Valores
+    calculados à mão -- mesma estrutura de
+    `test_s06_bar_gap_dollar_mad_zero_cadencia_quase_toda_identica_detecta_outlier`,
+    mas o outlier aqui é 10x MENOR que o típico, não 5x maior."""
+    step = _S6_DOLLAR_STEP
+    close_time = [0, step, 2 * step, 3 * step, 4 * step, 5 * step]
+    close_time.append(close_time[-1] + step // 10)  # gap idx5 = 0,1*step (curto, não longo)
+    close_time += [close_time[-1] + step, close_time[-1] + 2 * step, close_time[-1] + 3 * step]
+    ts = np.array(close_time, dtype=np.int64)
+    out = stress.s06_bar_gap_dollar(ts)
+
+    assert out[4] == stress.TriggerState.NOT_TRIGGERED
+    assert out[5] == stress.TriggerState.NOT_TRIGGERED
+    # gap curto (idx5): scale=0 (cadência uniforme até aqui), gap < mediana
+    # -- critério bilateral antigo dispararia aqui (gap != mediana); o
+    # critério unilateral correto não dispara (gap não é MAIOR, não indica
+    # ausência de barra)
+    assert out[6] == stress.TriggerState.NOT_TRIGGERED
+    assert out[7] == stress.TriggerState.NOT_TRIGGERED
+    assert out[8] == stress.TriggerState.NOT_TRIGGERED
+    assert out[9] == stress.TriggerState.NOT_TRIGGERED
+
+
+def test_s06_bar_gap_dollar_determinismo() -> None:
+    step = _S6_DOLLAR_STEP
+    rng_gaps = [step, step, step, 4 * step, step, step, step, 2 * step, step]
+    ts = np.cumsum(np.array([0, *rng_gaps], dtype=np.int64))
+    out1 = stress.s06_bar_gap_dollar(ts)
+    out2 = stress.s06_bar_gap_dollar(ts)
+    assert list(out1) == list(out2)
+
+
+def test_s06_bar_gap_dollar_prova_causalidade_gap_futuro_nao_muda_passado() -> None:
+    """Prova direta de causalidade (§10 do design doc,
+    docs/regime_feature_engine_design_doc_2026-08-23.md): um gap anômalo
+    que aparece SÓ no futuro (barras tardias) não pode mudar a
+    classificação de nenhuma barra ANTERIOR a ele -- a saída pro prefixo
+    comum entre as duas séries tem que ser bit-idêntica."""
+    step = _S6_DOLLAR_STEP
+    close_time_sem_futuro = [i * step for i in range(8)]
+    close_time_com_futuro_anomalo = [*close_time_sem_futuro, close_time_sem_futuro[-1] + 5 * step]
+
+    ts_sem = np.array(close_time_sem_futuro, dtype=np.int64)
+    ts_com = np.array(close_time_com_futuro_anomalo, dtype=np.int64)
+
+    out_sem = stress.s06_bar_gap_dollar(ts_sem)
+    out_com = stress.s06_bar_gap_dollar(ts_com)
+
+    assert len(out_sem) == 8
+    assert len(out_com) == 9
+    assert list(out_sem) == list(out_com[:8])
+
+
+# ============================================================================
+# compute_stress_triggers — despacho de S6 por bar_source (D-01)
+# ============================================================================
+
+
+def test_compute_stress_triggers_bar_source_dollar_sem_close_time_ms_levanta_valueerror() -> None:
+    n = 5
+    ts = np.arange(0, n * 900_000, 900_000, dtype=np.int64)
+    inputs = stress.StressInputs(
+        n=n,
+        open_time_ms=ts,
+        vol_pctile_expanding=np.full(n, 0.1),
+        funding_z_expanding=np.full(n, 0.0),
+        bar_source="dollar_r1",
+        close_time_ms=None,
+    )
+    with pytest.raises(ValueError, match="close_time_ms"):
+        stress.compute_stress_triggers(inputs)
+
+
+def test_compute_stress_triggers_bar_source_dollar_despacha_s06_dollar() -> None:
+    """Grade IRREGULAR (dollar-bar real) faria `s06_bar_gap` (grade fixa)
+    disparar em quase toda barra -- `bar_source='dollar_r1'` precisa
+    despachar pra `s06_bar_gap_dollar` (que não assume `step_ms` fixo) e
+    NÃO disparar nas mesmas barras, provando que o despacho real
+    aconteceu, não só que o default (`s06_bar_gap`) continuou rodando."""
+    n = 6
+    close_time_ms = np.array(
+        [0, 900_000, 2_100_000, 2_400_000, 3_600_000, 5_400_000], dtype=np.int64
+    )  # gaps irregulares por construção (dollar-bar real nunca tem step_ms fixo)
+    inputs = stress.StressInputs(
+        n=n,
+        open_time_ms=close_time_ms,
+        vol_pctile_expanding=np.full(n, 0.1),
+        funding_z_expanding=np.full(n, 0.0),
+        bar_source="dollar_r1",
+        close_time_ms=close_time_ms,
+    )
+    result = stress.compute_stress_triggers(inputs)
+    expected = stress.s06_bar_gap_dollar(close_time_ms)
+    assert list(result.triggers["S6"]) == list(expected)
+
+
+def test_compute_stress_triggers_bar_source_time_15m_continua_usando_s06_bar_gap() -> None:
+    """`bar_source='time_15m'` (default) preserva bit-exato o caminho
+    legado -- S6 despacha pra `s06_bar_gap`, não `s06_bar_gap_dollar`,
+    mesmo se `close_time_ms` for passado por acidente."""
+    n = 5
+    ts = np.arange(0, n * 900_000, 900_000, dtype=np.int64)
+    inputs = stress.StressInputs(
+        n=n,
+        open_time_ms=ts,
+        vol_pctile_expanding=np.full(n, 0.1),
+        funding_z_expanding=np.full(n, 0.0),
+        bar_source="time_15m",
+        close_time_ms=ts,
+    )
+    result = stress.compute_stress_triggers(inputs)
+    assert all(s == stress.TriggerState.NOT_TRIGGERED for s in result.triggers["S6"])
+
+
+# ============================================================================
 # S10 — filters_hash mudou nas últimas 24h (precisa >= 2 snapshots)
 # ============================================================================
 

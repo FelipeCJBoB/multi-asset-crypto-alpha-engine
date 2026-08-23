@@ -439,10 +439,18 @@ class QuantileRegimeClassifier:
     um glob + parse de JSON, não a carga pesada de features — precisa
     saber de qual símbolo. A IO pesada (`build_t1_features`) fica de fora
     do Protocol, no chamador, que monta `features` antes de chamar
-    `classify()`."""
+    `classify()`.
+
+    `bar_source` (D-01, `docs/regime_feature_engine_design_doc_2026-08-23.md`
+    §3) — default `"time_15m"` preserva bit-exato todo caller existente
+    (S6 despacha pra `s06_bar_gap`). Qualquer outro valor propaga
+    `bar_source`/`close_time` (já presente em `features`,
+    `src.features.build.ALL_OUTPUT_COLUMNS`) pra `stress.StressInputs` —
+    S6 despacha pra `s06_bar_gap_dollar` (causal/expansiva)."""
 
     symbol: str
     thresholds: RegimeThresholds | None = None
+    bar_source: str = "time_15m"
 
     def classify(self, features: pl.DataFrame) -> pl.DataFrame:
         open_time_ms = features["open_time"].cast(pl.Int64).to_numpy()
@@ -450,6 +458,11 @@ class QuantileRegimeClassifier:
         vol_pctile = features["C07_vol_pctile_expanding"].cast(pl.Float64).to_numpy()
         funding_z = features["E02f_funding_z_expanding"].cast(pl.Float64).to_numpy()
         cost_atr_ratio = features["E27f_cost_atr_ratio"].cast(pl.Float64).to_numpy()
+        close_time_ms = (
+            features["close_time"].cast(pl.Int64).to_numpy()
+            if self.bar_source != "time_15m"
+            else None
+        )
 
         filters_snapshots = stress_mod.discover_filters_hash_snapshots(self.symbol)
         stress_inputs = stress_mod.StressInputs(
@@ -459,6 +472,8 @@ class QuantileRegimeClassifier:
             funding_z_expanding=funding_z,
             spread_pctile_expanding=None,
             filters_hash_snapshots=filters_snapshots,
+            bar_source=self.bar_source,
+            close_time_ms=close_time_ms,
         )
         stress_result = stress_mod.compute_stress_triggers(stress_inputs)
 

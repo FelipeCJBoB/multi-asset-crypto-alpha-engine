@@ -133,6 +133,64 @@ def test_quantile_regime_classifier_n_states_e_classifier_id() -> None:
     assert qrc.classifier_id == "quantile_regime_v1"
 
 
+def test_quantile_regime_classifier_bar_source_dollar_inspeciona_stress_regime_e_raw() -> None:
+    """D-01 (`docs/regime_feature_engine_design_doc_2026-08-23.md` §3) --
+    `QuantileRegimeClassifier(bar_source="dollar_r1")` precisa propagar
+    `close_time` (já presente em `features`,
+    `src.features.build.ALL_OUTPUT_COLUMNS`) pra `StressInputs` e S6
+    precisa de fato mudar `stress_triggers`/`regime`/`regime_raw` sob um
+    gap real conhecido -- não só `tradeable` (achado do design doc §7
+    item 6: `regime` alimenta `monotone_constraints` do Alpha em produção
+    real via `environments.py`/`monotonic.py`, precisa estar CORRETO, não
+    só "não quebrar"). `er_48` estritamente decrescente mantém
+    `er_quantile == 0` (abaixo do cutoff de tendência) em toda a série --
+    isola o efeito de S6 sem interferência do eixo tendência/volatilidade."""
+    step = 900_000
+    close_time = [
+        0, step, 2 * step, 3 * step, 4 * step, 5 * step,
+        10 * step, 11 * step, 12 * step, 13 * step,
+    ]  # fmt: skip -- gap idx5 (fecha na barra 6) = 5*step, o resto uniforme
+    n = len(close_time)
+    close_time_ms = np.array(close_time, dtype=np.int64)
+    er_48 = np.array([1.0 - 0.1 * i for i in range(n)])  # estritamente decrescente
+    features = pl.DataFrame(
+        {
+            "open_time": close_time_ms,
+            "close_time": close_time_ms,
+            "B07_efficiency_ratio_48": er_48,
+            "C07_vol_pctile_expanding": np.full(n, 0.1),
+            "E02f_funding_z_expanding": np.full(n, 0.0),
+            "E27f_cost_atr_ratio": np.full(n, 0.1),
+        }
+    )
+    qrc = classifier.QuantileRegimeClassifier(
+        symbol="BTCUSDT", thresholds=_THRESHOLDS, bar_source="dollar_r1"
+    )
+    df = qrc.classify(features)
+
+    regime = df["regime"].to_list()
+    regime_raw = df["regime_raw"].to_list()
+    tradeable = df["tradeable"].to_list()
+    stress_triggers = df["stress_triggers"].to_list()
+
+    assert regime[:5] == ["R0"] * 5  # warmup (min_warmup_bars=5)
+    assert regime_raw[:5] == ["R0"] * 5
+    assert regime[5] == "R1"  # não-warmup, sem stress, trend/vol raw ambos baixos
+    assert regime_raw[5] == "R1"
+    assert stress_triggers[5] == []
+    assert regime[6] == "R5"  # S6 dispara aqui -- gap 5x o típico
+    assert regime_raw[6] == "R5"
+    assert stress_triggers[6] == ["S6"]
+    # entrada em R5 é imediata; saída exige stress_exit_confirmation_bars
+    # (4) barras consecutivas sem stress -- só restam 3 barras após a
+    # entrada, então o regime CONFIRMADO nunca sai de R5 até o fim da série
+    assert regime[7:] == ["R5", "R5", "R5"]
+    assert regime_raw[7:] == ["R1", "R1", "R1"]  # raw não tem histerese -- S6 não dispara mais
+    assert not any(tradeable[:5])
+    assert tradeable[5]
+    assert not any(tradeable[6:])
+
+
 def test_regime_symbol_tf_dir_layout_chaveado() -> None:
     from src.regime._paths import DATA_ROOT, regime_symbol_tf_dir
 

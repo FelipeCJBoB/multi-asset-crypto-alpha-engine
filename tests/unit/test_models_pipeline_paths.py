@@ -175,7 +175,7 @@ def _run_layer1_sprint_capturing_predictions_calls(
     # CPCVConfig real; este teste não é sobre essa checagem (é sobre
     # roteamento de dest_dir), mesmo bypass já usado em
     # test_validation_leakage.py.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
 
     monkeypatch.setattr(
         alpha,
@@ -279,7 +279,7 @@ def _run_layer1_sprint_capturing_core_calls(
     monkeypatch.setattr(cpcv, "generate_splits", _fake_generate_splits)
     # AG-032 item 8 -- ver comentário equivalente em
     # _run_layer1_sprint_capturing_predictions_calls acima.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
     monkeypatch.setattr(
         alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
     )
@@ -364,7 +364,7 @@ def _run_layer1_sprint_capturing_diagnostics_calls(
         splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
     )
     monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf: 0)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
 
     def _fake_write_all_fold_diagnostics(
         fold_results: list[Any], *, model_id: str, hyper: Any, dest_dir: Path | None = None

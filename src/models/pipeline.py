@@ -424,7 +424,14 @@ def run_layer1_sprint(
     # ativo (T1_FEATURE_IDS) tiver feature com lookback_bars='expanding'
     # no registry -- hoje DISPARA (3 features expanding conhecidas); ver
     # docstring de assert_no_expanding_lookback_in_active_set.
-    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(tf_effective)
+    # D-02 (AG-159, docs/regime_feature_engine_design_doc_2026-08-23.md
+    # §3) -- resolution_id propagado pra usar bar_duration_ms correto sob
+    # dollar-bar (label_prefetch_p99_bar_duration_ms), não step_ms(tf).
+    # leakage.run_all_leakage_tests precisa do MESMO resolution_id -- ver
+    # comentário equivalente lá, os dois call sites mudam juntos.
+    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
+        tf_effective, resolution_id=resolution_id
+    )
     cpcv_config = cpcv.CPCVConfig.from_constants(
         tf=tf_effective, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms
     )
