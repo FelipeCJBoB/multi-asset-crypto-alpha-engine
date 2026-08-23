@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import pytest
+import structlog
 import yaml
 
 from src.data._paths import CAPACITY_DIR
@@ -637,22 +638,58 @@ def test_compute_max_feature_lookback_ms_converte_bars_via_step_ms(tf: str) -> N
     assert got == 96 * step_ms(tf)
 
 
-def test_compute_max_feature_lookback_ms_resolution_id_usa_p99_bar_duration() -> None:
-    """D-02 (`AG-159`,
-    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) --
-    `resolution_id` setado troca `step_ms(tf)` por
-    `label_prefetch_p99_bar_duration_ms` (`constants.yaml`, MEASURED).
-    `tf` continua presente na assinatura (não usado pra conversão de
-    unidade sob dollar-bar) -- passar um `tf` de grade de tempo real não
-    deveria mudar o resultado, prova de que o parâmetro correto é
-    `resolution_id`, não `tf`."""
+def test_compute_max_feature_lookback_ms_resolution_id_usa_max_consecutive_constant() -> None:
+    """D-02 (`AG-159`) -- `resolution_id` setado retorna
+    `max_consecutive_bar_window_duration_ms` (`constants.yaml`, MEASURED
+    direto, não multiplicado por barras -- já é a duração TOTAL medida
+    da janela). `tf` continua presente na assinatura (não usado pra
+    conversão de unidade sob dollar-bar) -- passar um `tf` de grade de
+    tempo real não deveria mudar o resultado, prova de que o parâmetro
+    correto é `resolution_id`, não `tf`. Corrigido 2026-08-23 -- antes
+    reaproveitava `label_prefetch_p99_bar_duration_ms` (proxy calibrado
+    pra outro modelo de custo, prefetch não purge); agora usa constante
+    dedicada, medida especificamente pra este uso (máximo real, não
+    p99)."""
     windows = _synthetic_windows_max_96()
-    p99_bar_duration_ms = int(build.load_constant("label_prefetch_p99_bar_duration_ms"))
+    max_window_duration_ms = int(
+        build.load_constant("max_consecutive_bar_window_duration_ms")
+    )
     got = build.compute_max_feature_lookback_ms(
         "15m", feature_ids=(), windows=windows, resolution_id="R2"
     )
-    assert got == 96 * p99_bar_duration_ms
+    assert got == max_window_duration_ms
     assert got != 96 * step_ms("15m")
+
+
+def test_compute_max_feature_lookback_ms_sem_warning_quando_window_bars_bate() -> None:
+    """`max_consecutive_bar_window_duration_ms` foi medido pra
+    `window_bars=96` -- `_synthetic_windows_max_96` produz exatamente
+    isso, não deveria disparar o warning de staleness."""
+    windows = _synthetic_windows_max_96()
+    with structlog.testing.capture_logs() as logs:
+        build.compute_max_feature_lookback_ms(
+            "15m", feature_ids=(), windows=windows, resolution_id="R2"
+        )
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert not warnings
+
+
+def test_compute_max_feature_lookback_ms_warning_quando_window_bars_diverge() -> None:
+    """Se o conjunto ativo de features mudar de forma que `max_feature_
+    window_bars()` deixe de ser 96 (o valor sob o qual `max_consecutive_
+    bar_window_duration_ms` foi medido), a constante persistida fica
+    desatualizada -- não falha (ainda protege), mas emite warning
+    explícito (AG-159)."""
+    windows = dataclasses.replace(_synthetic_windows_max_96(), vol_ratio_long_window=100)
+    with structlog.testing.capture_logs() as logs:
+        got = build.compute_max_feature_lookback_ms(
+            "15m", feature_ids=(), windows=windows, resolution_id="R2"
+        )
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "features.build.compute_max_feature_lookback_ms.constant_stale"
+    # a constante ainda é retornada (proteção real, só não garantida exata)
+    assert got == int(build.load_constant("max_consecutive_bar_window_duration_ms"))
 
 
 def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:

@@ -740,7 +740,7 @@ escrito no fim, é o estado real.
 | camada | o que muda | status | referência |
 |---|---|---|---|
 | `data` (`src/data/bars.py`) | dollar bar já vetorizada (`cumsum`/`floor`), paridade lote↔streaming por construção | ✅ pronto (já existia antes de M2 decidir) | `bars.py:222` |
-| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`), wireado nos 2 call-sites reais (`pipeline.py:432`, `leakage.py:798`). Decisão sobre as 3 features expanding: EXCLUÍDAS de `T1_FEATURE_IDS` (commit `78169df`, `AG-032`, 2026-08-23) — ressalva de magnitude do proxy p99 (`AG-159`/D-02) medida (`worst_case_ratio=0,472`, folga real ~2,1x), decisão de fechar formalmente com o Manager (`§15.27`) | `AG-032`, commit `78169df` |
+| `validation` (`src/validation/cpcv.py`) | purge cobre componente 32 (`t1` real de teste) + componente 96 (lookback de feature de treino) | ✅ implementado, testado (42/42), revisado (`project_assurance`), wireado nos 2 call-sites reais (`pipeline.py:432`, `leakage.py:798`). Decisão sobre as 3 features expanding: EXCLUÍDAS de `T1_FEATURE_IDS` (commit `78169df`, `AG-032`, 2026-08-23) — ressalva de magnitude do proxy p99 (`AG-159`/D-02) FECHADA com constante dedicada MEASURED (`§15.27`) | `AG-032`, `AG-159`, commit `78169df` |
 | `validation` (`src/validation/cpcv.py`) | embargo (E1) em relógio fixo, `cpcv_embargo_bars` aposentado | ✅ implementado, testado (42/42), commitado | `AG-032`, commit `3b19c20` |
 | `labels` (`src/labels/triple_barrier.py` + `barrier_sweep.py`/`cost_surface.py`/`backfill_multi_symbol.py`/`experiment_log.py`) | horizonte do label em relógio fixo (B1 = Opção 2), `time_stop_bars`→`time_stop_ms`, `atr_window`→`atr_window_ms` (Label Engine só), `n_bars_held` vira contagem real | ✅ pronto — confirmado empiricamente (`uv run pytest`, 121 passed), commitado e pushed | `AG-031`, `AG-044`..`048`, commit `c0ac546` |
 | `analysis`/`config` (`m2_worker.py`, `constants.yaml`) | ontologia `resolution_id` (R1/R2/R3) substitui M15/M30/H1 como identidade de dollar/volume/tick_imbalance bars (B2 = A′+D, parte 1 — `threshold_usdt` como identidade formal fica pra quando dollar bar for implantado) | ✅ pronto — confirmado empiricamente (`uv run pytest`, 105 passed), commitado e pushed | `AG-042`, commit `982b5d4` |
@@ -4103,14 +4103,12 @@ test_regime_build.py::_make_synthetic_regime_features`, faltava coluna
 `close_time`) também foi corrigido — não era bug de produção, a fixture
 sintética é que estava incompleta frente ao novo contrato de `classify()`.
 
-**E. `AG-159` — fechado só o componente de UNIDADE, não a entrada
-inteira.** A ressalva de MAGNITUDE do proxy `label_prefetch_p99_bar_
-duration_ms` (medido/justificado pro modelo de custo de PREFETCH, não pro
-de PURGE — `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado) segue
-sem guarda de runtime, deliberadamente não implementada (B23 — a medição
-do máximo real de janela consecutiva ainda não existe). `AG-159` continua
-`status: "aberto"` no ledger — o addendum desta rodada documenta a
-resolução parcial.
+**E. `AG-159` — fechado só o componente de UNIDADE nesta rodada, não a
+entrada inteira.** [FECHADO 2026-08-23, ver `§15.27`] A ressalva de
+MAGNITUDE fechou de vez com uma constante dedicada MEASURED
+(`max_consecutive_bar_window_duration_ms`), substituindo o
+reaproveitamento do proxy de prefetch — `AG-159` está `status:
+"fechado"` no ledger hoje.
 
 **F. O que fica de fora, como previsto.** `AG-180` (D-04, histerese em
 contagem de barra) e §11 do design doc (caminho de troca pro HMM)
@@ -4800,15 +4798,30 @@ persistidos — comando pra rodar:
 uv run python tools/diagnostics/measure_max_consecutive_bar_window_duration.py
 ```
 
-Resultado pendente — decisão de como registrar a constante `MEASURED`
-e a guarda de runtime definitiva fica pro Manager revisar depois de
-rodar (B20).
+**[FECHADO 2026-08-23]** Usuário rodou o diagnóstico e perguntou
+explicitamente: refatorar pra engenharia robusta, ou remediação barata
+(aceitar a folga incidental) basta? Decisão: garantia formal.
+Resultado real (`worst_case_ratio=0,472` — contradiz a leitura anterior
+de "~5,8x sub-cobertura", causa raiz era comparar contra p99 LOCAL em
+vez do proxy cross-symbol real) mostrou que o proxy já era seguro na
+prática, mas por construção incidental. `max_consecutive_bar_window_
+duration_ms` (constante nova, `MEASURED` direto, `config/constants.yaml`)
+substitui o reaproveitamento do proxy de prefetch —
+`compute_max_feature_lookback_ms` retorna o máximo real medido
+diretamente sob `resolution_id`, com guarda de staleness (`structlog.
+warning` se `max_feature_window_bars()` divergir do valor medido, 96).
+Per-símbolo/resolução avaliado e descartado — variância é dominada pela
+RESOLUÇÃO, não pelo símbolo (fator ~1,8x dentro de cada resolução vs.
+~3,4x cross-tudo); um único valor global segue o mesmo precedente já
+estabelecido pra este tipo de constante de segurança neste projeto
+(`label_prefetch_p99_bar_duration_ms`, mesma filosofia). `AG-159`
+fechado no ledger.
 
 Verificação mecânica completa (`banned_patterns`/`ruff`/`mypy`/
-`check_constants_referenced`, baseline via `git stash`) em todos os
+`check_constants_referenced`/`check_constants_provenance`) em todos os
 arquivos tocados — zero regressão. Detalhe: `audit/architecture_gaps_
 log.yaml::AG-032` addendum `addendum_decisao_08_split_2026-08-23`,
-`AG-159` addendum `addendum_decisao_exclusao_expanding_2026-08-23`.
+`AG-159` addendum `addendum_solucao_definitiva_2026-08-23`.
 
 ### 15.28 Varredura de acurácia + limpeza real do documento inteiro (2026-08-23)
 
@@ -4896,6 +4909,15 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.41 (2026-08-23)** — `AG-159` FECHADO — constante dedicada
+  `max_consecutive_bar_window_duration_ms` (MEASURED) substitui o
+  reaproveitamento do proxy de prefetch em `compute_max_feature_
+  lookback_ms`. Detalhe: `§15.27`. Usuário pediu engenharia robusta em
+  vez de remediação barata; per-símbolo/resolução avaliado e
+  descartado (variância dominada por resolução, não símbolo — mesmo
+  precedente de `label_prefetch_p99_bar_duration_ms`). Guarda de
+  staleness nova se `max_feature_window_bars()` divergir do valor
+  medido (96).
 - **v3.40 (2026-08-23)** — Limpeza real do documento inteiro (não só
   anotação), fan-out de 8 agentes só-leitura cobrindo as 5887 linhas
   então existentes. Detalhe: `§15.28`. ~30 achados aplicados (net -46

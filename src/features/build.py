@@ -14,6 +14,7 @@ exatamente essa propriedade — ver o motivo detalhado lá.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Final
 
 import numpy as np
 import polars as pl
@@ -275,6 +276,15 @@ def max_feature_window_bars(windows: FeatureWindows | None = None) -> int:
     return max(window_values)
 
 
+#: `window_bars` sob o qual `max_consecutive_bar_window_duration_ms`
+#: (`config/constants.yaml`) foi medido -- metadado do PRÓPRIO valor
+#: MEASURED daquela constante (ver `source` completo no yaml), não uma
+#: constante de negócio nova. `96` == `max_feature_window_bars()` hoje
+#: (`C06_vol_ratio_12_96`) -- duplicado aqui só pra permitir a checagem
+#: de staleness sem reabrir constants.yaml em runtime.
+_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS: Final[int] = 96  # noqa: magic-number -- metadado de proveniência da constante MEASURED, não constante de negócio
+
+
 def compute_max_feature_lookback_ms(
     tf: str,
     feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
@@ -282,39 +292,39 @@ def compute_max_feature_lookback_ms(
     windows: FeatureWindows | None = None,
     resolution_id: str | None = None,
 ) -> int:
-    """`max_feature_window_bars(windows) * bar_duration_ms` — valor pronto
-    pra `CPCVConfig.from_constants(max_feature_lookback_ms=...)` (AG-032
+    """`None` (default de `resolution_id`) preserva bit-exato
+    `max_feature_window_bars(windows) * step_ms(tf)` — valor pronto pra
+    `CPCVConfig.from_constants(max_feature_lookback_ms=...)` (AG-032
     item 8, componente 96 da docstring de `src.validation.cpcv`). Helper
     COMPARTILHADO entre `src.models.pipeline.run_layer1_sprint` e
     `src.validation.leakage.run_all_leakage_tests` — os dois chamam
     literalmente esta função, nunca duas cópias da fórmula (mesma
     disciplina de `cpcv._embargo_ms`/AG-009).
 
-    `resolution_id` (D-02, `AG-159`,
-    `docs/regime_feature_engine_design_doc_2026-08-23.md` §3) —
-    `None` (default) preserva bit-exato `bar_duration_ms = step_ms(tf)`.
-    Setado (dollar-bar, `tf` deixa de ser uma grade de relógio), a duração
-    de barra usada vira `label_prefetch_p99_bar_duration_ms`
-    (`config/constants.yaml`, `MEASURED`, p99 máximo entre as 15
-    combinações símbolo×resolução) — `step_ms(tf)` não tem significado sob
-    dollar-bar (cadência de barra é irregular por construção, §4.4 do
-    design doc). **Efeito prático mudou 2026-08-23** (Manager excluiu as 3
-    features expanding de `T1_FEATURE_IDS`, AG-032): este caminho agora
-    EXECUTA de verdade em produção sob `resolution_id` setado — deixou de
-    ser preparação dormente. **Ressalva de MAGNITUDE segue não resolvida
-    (`AG-159` addendum, achado do `project_assurance`, 2026-08-23):**
-    "unidade correta" não é "magnitude garantidamente suficiente" —
-    `label_prefetch_p99_bar_duration_ms` foi medido/justificado pro
-    modelo de custo de PREFETCH (sub-cobertura tolerável, falha visível),
-    não pro de PURGE (sub-cobertura = vazamento silencioso B02/B09); o
-    `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado
-    (`tools/diagnostics/measure_max_consecutive_bar_window_duration.py`
-    mede o máximo real das 15 combinações, resultado pendente do usuário
-    rodar). Até essa medição existir e uma constante `MEASURED` substituir/
-    multiplicar o proxy, um `structlog.warning` explícito é emitido toda
-    vez que este caminho roda sob `resolution_id` — não inventa nenhum
-    número novo (B23), só torna o gap visível a cada execução real em vez
-    de silencioso.
+    **`resolution_id` setado (D-02, `AG-159`) — solução corrigida
+    2026-08-23, não mais o proxy de prefetch reaproveitado.** Retorna
+    `max_consecutive_bar_window_duration_ms` (`config/constants.yaml`,
+    `MEASURED` direto — máximo REAL, não p99, das 15 combinações
+    símbolo×resolução, medido especificamente pra este uso). Achado do
+    `project_assurance` (2026-08-23) que motivou a correção:
+    `label_prefetch_p99_bar_duration_ms` (usado antes aqui) foi medido
+    pro modelo de custo de PREFETCH (sub-cobertura tolerável, falha
+    visível) — reaproveitá-lo pro PURGE (sub-cobertura = vazamento
+    silencioso, B02/B09) era emprestar uma constante calibrada pra outro
+    propósito, funcionando hoje só por coincidência (medição real,
+    2026-08-23: proxy de prefetch cobria com folga de ~2,1x no pior
+    caso — seguro na prática, mas não por garantia declarada). Constante
+    dedicada fecha essa lacuna formalmente, sem inventar número novo
+    (B23 — é o máximo já medido).
+
+    **Guarda de staleness**: `max_consecutive_bar_window_duration_ms` foi
+    medido pra `max_feature_window_bars()=96`. Se o conjunto ativo de
+    features mudar de forma que essa janela cresça (nova feature com
+    lookback maior), a constante persistida fica desatualizada — esta
+    função detecta isso e emite `structlog.warning` (não falha, a
+    constante ainda é uma proteção real, só deixa de ser o máximo exato)
+    pedindo remedição via
+    `tools/diagnostics/measure_max_consecutive_bar_window_duration.py`.
 
     Chama `assert_no_expanding_lookback_in_active_set(feature_ids)`
     PRIMEIRO, mesmo quando `resolution_id` é passado — se qualquer
@@ -329,27 +339,28 @@ def compute_max_feature_lookback_ms(
     um refactor que trocasse essa ordem reintroduziria silenciosamente o
     risco que o gate existe pra prevenir."""
     assert_no_expanding_lookback_in_active_set(feature_ids)
-    bar_duration_ms = (
-        step_ms(tf)
-        if resolution_id is None
-        else int(load_constant("label_prefetch_p99_bar_duration_ms"))
-    )
-    if resolution_id is not None:
+    if resolution_id is None:
+        return max_feature_window_bars(windows) * step_ms(tf)
+
+    window_bars = max_feature_window_bars(windows)
+    if window_bars != _MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS:
         logger.warning(
-            "features.build.compute_max_feature_lookback_ms.purge_magnitude_unvalidated",
+            "features.build.compute_max_feature_lookback_ms.constant_stale",
             resolution_id=resolution_id,
             tf=tf,
+            window_bars_atual=window_bars,
+            window_bars_medido=_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS,
             reason=(
-                "max_feature_lookback_ms sob resolution_id usa label_prefetch_p99_bar_"
-                "duration_ms -- proxy medido pro modelo de custo de PREFETCH (sub-cobertura "
-                "tolera'vel), nao pro de PURGE (sub-cobertura = vazamento silencioso B02/B09). "
-                "max_ms real de SOLUSDT/R3 chega a ~5,8x o p99 usado (AG-159). Medir com "
-                "tools/diagnostics/measure_max_consecutive_bar_window_duration.py antes de "
-                "treinar sob R2/R3 com purge ativo."
+                "max_consecutive_bar_window_duration_ms foi medido para "
+                f"window_bars={_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS}, mas o "
+                f"conjunto ativo de features hoje produz window_bars={window_bars} -- a "
+                "constante persistida nao reflete mais o maximo exato (ainda protege, so "
+                "nao com garantia formal). Remedir com tools/diagnostics/measure_max_"
+                "consecutive_bar_window_duration.py."
             ),
             see="AG-159",
         )
-    return max_feature_window_bars(windows) * bar_duration_ms
+    return int(load_constant("max_consecutive_bar_window_duration_ms"))
 
 
 def compute_t1_features(

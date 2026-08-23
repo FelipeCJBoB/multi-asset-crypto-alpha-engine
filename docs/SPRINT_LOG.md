@@ -3772,6 +3772,19 @@ maior parte de `§15.7`-`§15.21` mantidos deliberadamente — trilhas de
 decisão genuínas. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.28`.
 
 <!-- check-sprint-log: skip -->
+**`AG-159` fechado — engenharia robusta em vez de remediação barata
+(2026-08-23)** <!-- check-sprint-log: skip --> — usuário perguntou
+explicitamente se valia refatorar em vez de aceitar a folga incidental.
+Constante nova `max_consecutive_bar_window_duration_ms` (`MEASURED`
+direto) substitui o reaproveitamento do proxy de prefetch em
+`compute_max_feature_lookback_ms`; guarda de staleness se
+`max_feature_window_bars()` divergir de 96 (o valor medido).
+Per-símbolo/resolução avaliado e descartado — variância dominada pela
+resolução, não pelo símbolo. 3 testes novos, verificação mecânica
+completa sem regressão. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.27`,
+`audit/architecture_gaps_log.yaml::AG-159`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em

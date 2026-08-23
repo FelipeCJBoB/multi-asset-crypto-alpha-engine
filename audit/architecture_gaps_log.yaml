@@ -11989,7 +11989,7 @@ entries:
       resolvido, o bug de unidade fica ativo silenciosamente.
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- fix: compute_max_feature_lookback_ms precisa receber resolution_id (não só tf_effective) e derivar a janela real em ms a partir da densidade de barra da resolução, não do wall-clock. Bloqueante antes do primeiro treino real sob R2/R3 com purge ativo -- não bloqueante hoje porque o gate de features expanding já bloqueia o caminho inteiro."
+    status: "fechado 2026-08-23 -- ver addendum_solucao_definitiva_2026-08-23 abaixo. compute_max_feature_lookback_ms recebe resolution_id desde a implementação original; a ressalva de MAGNITUDE (o que ficou aberto por mais tempo) fechou com constante dedicada MEASURED (max_consecutive_bar_window_duration_ms), não mais reaproveitamento do proxy de prefetch."
 
     addendum_convergencia_2026-08-22: >
       Achado de forma totalmente independente uma 2ª vez, mesmo dia, por
@@ -12128,6 +12128,50 @@ entries:
       duration_ms` explicitamente como "MEASURED, definição = máximo
       cross-symbol, garantia de folga documentada") fica pro Manager --
       não fechada automaticamente aqui (B20).
+
+    addendum_solucao_definitiva_2026-08-23: >
+      Usuário perguntou explicitamente: "refatorar pra engenharia mais
+      robusta, ou remediação barata basta?" -- decisão: garantia
+      FORMAL, não aceitar a folga incidental. Constante dedicada nova,
+      `max_consecutive_bar_window_duration_ms` (`config/constants.yaml`,
+      `MEASURED` direto, valor = máximo real medido, 1.020.378.446ms,
+      SOLUSDT/R3) substitui o reaproveitamento de `label_prefetch_p99_
+      bar_duration_ms` (que segue existindo, intocada, servindo só seu
+      propósito original de PREFETCH). `compute_max_feature_lookback_ms`
+      (`src/features/build.py`) reescrita: sob `resolution_id`, retorna
+      a constante dedicada DIRETO (já é duração TOTAL da janela medida,
+      não "por barra" -- multiplicar por `window_bars` reintroduziria a
+      suposição de linearidade que uma dollar-bar irregular não garante).
+
+      **Por que per-resolução/per-símbolo NÃO foi escolhido** (opção
+      mais granular considerada e descartada): dado medido mostra que a
+      variância é dominada pela RESOLUÇÃO (R1: ratio 0,14-0,255; R2:
+      0,221-0,347; R3: 0,379-0,472 -- fator ~1,8x dentro de cada
+      resolução) muito mais que pelo SÍMBOLO dentro da mesma resolução.
+      Um único valor global (máximo cross-tudo) segue o MESMO padrão já
+      estabelecido neste projeto pra este tipo de constante de segurança
+      (`label_prefetch_p99_bar_duration_ms`, mesma filosofia
+      documentada: "dimensionado pelo PIOR caso... custo é só folga
+      extra, nunca corretude") -- consistente com o precedente real do
+      repo, não inventado. Per-símbolo/resolução ficaria mais preciso
+      mas exigiria threading de `symbol` por toda a cadeia de chamada
+      (`pipeline.py`/`leakage.py`) sem ganho prático adicional dado que
+      a folga já é generosa (~2,1x) mesmo no formato mais simples.
+
+      **Guarda de staleness nova**: a constante foi medida pra
+      `window_bars=96` -- se o conjunto ativo de features crescer essa
+      janela, a função detecta a divergência e emite `structlog.warning`
+      (não falha -- a constante ainda protege, só deixa de ser o máximo
+      exato), pedindo remedição via o mesmo diagnóstico.
+
+      3 testes novos (`tests/unit/test_features_build.py`): usa a
+      constante dedicada corretamente, sem warning quando `window_bars`
+      bate com o medido, com warning quando diverge. Verificado:
+      `banned_patterns.py --strict`/`check_constants_referenced.py`/
+      `check_constants_provenance.py`/`ruff`/`mypy` limpos (mypy: 1 erro
+      novo, mesma classe pré-existente de "atributo não exportado
+      explicitamente" já presente 4x no mesmo arquivo antes desta
+      mudança -- não uma classe nova de problema).
 
   - id: AG-160
     date: "2026-08-22"

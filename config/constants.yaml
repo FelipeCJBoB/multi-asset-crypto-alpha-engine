@@ -280,6 +280,34 @@ label_prefetch_p99_bar_duration_ms:
   class: C
   sweep_required: false
 
+max_consecutive_bar_window_duration_ms:
+  value: 1020378446
+  provenance: MEASURED
+  source: "MEDIDO 2026-08-23 -- tools/diagnostics/measure_max_
+    consecutive_bar_window_duration.py, rodado pelo usuário sobre dado
+    real (5 símbolos x 3 resoluções, 15/15 combinações, dollar bars
+    persistidas). Saída completa:
+    experiments/max_consecutive_bar_window_duration.json. Valor = MÁXIMO
+    real (não p99) da duração de qualquer janela de
+    src.features.build.max_feature_window_bars() (96 barras no momento
+    da medição) barras CONSECUTIVAS entre as 15 combinações --
+    SOLUSDT/R3, 1.020.378.446ms (283,44h). AG-159 (D-02): dedicado
+    especificamente pra proteção de purge do CPCV
+    (compute_max_feature_lookback_ms), separado de
+    label_prefetch_p99_bar_duration_ms (que é p99, não max, calibrado
+    pro modelo de custo DIFERENTE de prefetch -- sub-cobertura tolerável
+    lá, vazamento silencioso aqui, B02/B09). Reusar o proxy de prefetch
+    media 0,472x deste valor no pior caso -- confirmado seguro na
+    prática antes desta constante existir, mas por coincidência, não
+    garantia; esta constante fecha a garantia formalmente. **Válido
+    apenas para window_bars=96** -- se
+    max_feature_window_bars() mudar (nova feature no conjunto ativo com
+    lookback maior), esta constante fica desatualizada e precisa ser
+    remedida (compute_max_feature_lookback_ms emite warning se detectar
+    essa divergência, não falha silenciosamente)."
+  class: C
+  sweep_required: false
+
 atr_window:
   value: 20
   provenance: ASSUMED
