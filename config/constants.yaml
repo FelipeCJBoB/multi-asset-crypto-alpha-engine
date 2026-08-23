@@ -285,14 +285,36 @@ atr_window:
   provenance: ASSUMED
   source: "SUPERSEDIDO 2026-08-16 (só pro Label Engine) por atr_window_ms (AG-031/B1) -- LabelConfig.atr_window_ms passa a ser a fonte canônica de janela do ATRWilderEstimator que dimensiona TP/SL. Esta entrada CONTINUA em uso direto e inalterado pelo Feature Engine (src/features/build.py:90,142, c01_atr_20/c02_atr_20_pct -- scaling_invariant: bar_count, decisão deliberada e separada, ver AG-043/F1) e por scripts de pesquisa em src/analysis/ -- não renomear/apagar. Justificativa original: convenção de mercado, sem teste (§18.5.1) — define a própria medida de volatilidade que dimensiona barreiras."
   class: A
+  scaling_invariant: bar_count
   sweep_required: true
   sweep_range: [10, 30]
   review_by: sprint_6
+  # scaling_invariant (2026-08-23, formaliza como campo YAML real o que já
+  # estava só em prosa acima desde AG-043/F1 -- decisão em si NÃO muda,
+  # só ganha o mesmo formato estrutural das outras 8 janelas com tag).
+  # E27f_cost_atr_ratio (Feature Engine) usa este ATR (bar-count,
+  # estável/estacionário entre grades), DELIBERADAMENTE separado do ATR
+  # que dimensiona TP/SL no Label Engine (atr_window_ms, clock-based, ver
+  # abaixo) -- não reconciliar os dois. Pesquisa de literatura 2026-08-23
+  # (AG-043 addendum, López de Prado 2018; Grądzki/Wójcik/Lessmann,
+  # Financial Innovation 2025, "Algorithmic crypto trading using
+  # information-driven bars, triple barrier labeling and deep learning")
+  # confirma esta separação: (a) indicadores técnicos genéricos sobre
+  # barras de informação (dollar/volume) devem manter contagem de barra
+  # fixa -- cada barra carrega peso de informação ~igual, converter pra
+  # preservar tempo de calendário reintroduziria a heterocedasticidade
+  # que motivou adotar dollar-bar; (b) a implementação de referência do
+  # triple-barrier (mlfinlab::add_vertical_barrier) usa tempo de relógio
+  # pra barreira de horizonte independente do tipo de barra -- confirma
+  # que atr_window_ms (label, restrição econômica real) deve ser
+  # clock-based, e que isso é uma categoria DIFERENTE de atr_window
+  # (feature, estimador estatístico). Ver docs/regime_feature_engine_
+  # design_doc_2026-08-23.md.
 
 atr_window_ms:
   value: 18000000
   provenance: DERIVED
-  source: "derivado de atr_window(20, ASSUMED) × step_ms('15m')=900000 -- mesmo valor (5h), reexpresso em relógio fixo pro Label Engine (AG-031/B1), mesmo padrão de time_stop_ms. Usado só por LabelConfig/build_labels (src/labels/triple_barrier.py) pra derivar o window em barras do ATRWilderEstimator default via round(atr_window_ms / step_ms(cfg.tf)) -- bit-exato a 20 barras em tf='15m' (todo caller de produção hoje). NÃO usado pelo Feature Engine -- atr_window (acima) continua sendo a fonte dele, deliberadamente em contagem de barra. A suposição de janela em si (5h) permanece ASSUMED, sweep_required herdado."
+  source: "derivado de atr_window(20, ASSUMED) × step_ms('15m')=900000 -- mesmo valor (5h), reexpresso em relógio fixo pro Label Engine (AG-031/B1), mesmo padrão de time_stop_ms. Usado só por LabelConfig/build_labels (src/labels/triple_barrier.py) pra derivar o window em barras do ATRWilderEstimator default via round(atr_window_ms / step_ms(cfg.tf)) -- bit-exato a 20 barras em tf='15m' (todo caller de produção hoje). NÃO usado pelo Feature Engine -- atr_window (acima) continua sendo a fonte dele, deliberadamente em contagem de barra (ver nota de literatura na entrada atr_window acima, 2026-08-23 -- a separação é intencional e permanece assim, não é um gap a fechar). A suposição de janela em si (5h) permanece ASSUMED, sweep_required herdado."
   class: A
   sweep_required: true
   sweep_range: [9000000, 27000000]
@@ -827,6 +849,25 @@ feature_a13_ema_window:
   # addendum (2026-08-15). Decisão do Manager (2026-08-15): manter valor
   # 48. Autorização anterior de testar EMA(24)/EMA(96) REVOGADA no mesmo
   # dia -- não gastar N_lifetime nisso por ora. Ver AG-027 e AG-043.
+  #
+  # IMPLEMENTADO 2026-08-23 (fecha o débito de F3 que faltava: a
+  # classificação existia aqui desde 2026-08-16, mas nenhum código a
+  # aplicava -- src/features/build.py::FeatureWindows.from_constants
+  # ganhou parâmetro bar_source, escala ema_window via
+  # _scale_clock_window_bars/_clock_reference_bar_duration_ms usando
+  # CALIBRATION_TF_BY_RESOLUTION (src.data.build_dollar_bars) como
+  # referência FIXA de calibração -- NUNCA uma duração medida (isso
+  # reabriria F2, já rejeitado, ver histórico acima). Sob R1/R2/R3:
+  # 48/24/12 barras (não 96/48/24 -- o valor real de A13 é 48, o "96" do
+  # parágrafo acima é só o exemplo ilustrativo original). Pesquisa de
+  # literatura que fundamenta a decisão de NÃO generalizar essa conversão
+  # pras outras 8 janelas (permanecem bar_count): López de Prado (2018,
+  # Advances in Financial ML) e Grądzki/Wójcik/Lessmann (Financial
+  # Innovation 2025, cripto + dollar/volume bars + triple-barrier —
+  # praticamente o mesmo desenho deste repo) — indicadores técnicos
+  # computados sobre barras de informação mantêm contagem de barra fixa
+  # entre resoluções, por desenho (cada barra ~mesmo peso de informação).
+  # A13 é a exceção deliberada, não a regra.
 
 feature_b01_rsi_window:
   value: 14

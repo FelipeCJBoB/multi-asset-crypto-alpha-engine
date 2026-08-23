@@ -65,7 +65,7 @@
   formula: "ln(C_t / C_{t-4}) / (atr_20_pct_t * 2)"
   sources: [D03]
   lookback_bars: 4
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -82,7 +82,7 @@
   formula: "(C_t - EMA_48_t) / atr_20_abs_t"
   sources: [D03]
   lookback_bars: 48
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -99,7 +99,7 @@
   formula: "(RSI_wilder_14_t - 50) / 50"
   sources: [D03]
   lookback_bars: 14
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-1.0, 1.0]
@@ -115,7 +115,7 @@
   formula: "abs(C_t - C_{t-48}) / sum(abs(C_i - C_{i-1}) for i in [t-47, t])"
   sources: [D03]
   lookback_bars: 48
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, 1.0]
@@ -136,7 +136,7 @@
   formula: "ATR de Wilder (janela 20), absoluto (unidade de preço) — default (vol_estimator_id=None). Sob vol_estimator_id='parkinson_w20' (2026-08-17, AG-036/065/074): parkinson_vol(high, low, 20) * close, mesma unidade, distribuição numérica diferente (não cosmético — ver group_c.c01_atr_20_parkinson)"
   sources: [D03]
   lookback_bars: 20
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, .inf]
@@ -153,7 +153,7 @@
   formula: "atr_20_abs_t / C_t"
   sources: [D03]
   lookback_bars: 20
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, .inf]
@@ -170,7 +170,7 @@
   formula: "realized_vol_12_t / realized_vol_96_t"
   sources: [D03]
   lookback_bars: 96
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, .inf]
@@ -186,7 +186,7 @@
   formula: "posto percentil de realized_vol_48_t na distribuição EXPANSIVA de realized_vol_48 em [t0_dataset, t-1] (estrito, nunca inclui t)"
   sources: [D03]
   lookback_bars: expanding
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, 1.0]
@@ -202,7 +202,7 @@
   formula: "z-score EXPANSIVO estrito de log(1+V_t) em [t0_dataset, t-1]"
   sources: [D03]
   lookback_bars: expanding
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -228,7 +228,7 @@
   formula: "z-score ROLANTE (janela 48) de (2*taker_buy_ratio_t - 1), taker_buy_ratio = taker_buy_volume/volume"
   sources: [D03]
   lookback_bars: 48
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -244,7 +244,7 @@
   formula: "z-score EXPANSIVO estrito de funding_last_t (alinhado ao grid de 15m por asof-join backward) em [t0_dataset, t-1]"
   sources: [D07]
   lookback_bars: expanding
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -260,7 +260,7 @@
   formula: "z-score ROLANTE (janela 48) de delta_ln(oi_contracts_t), oi_contracts alinhado ao grid de 15m por asof-join backward sobre metrics/sum_open_interest deduplicado"
   sources: [D04]
   lookback_bars: 48
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
@@ -286,7 +286,7 @@
   formula: "custo_round_trip_bps / (atr_20_pct_t * 10000), custo_round_trip_bps = (maker_fee + 0.5*maker_fee + 0.5*taker_fee) * 10000"
   sources: [derivado, constants.yaml:maker_fee, constants.yaml:taker_fee]
   lookback_bars: 20
-  min_warmup_bars: 2000
+  min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, .inf]

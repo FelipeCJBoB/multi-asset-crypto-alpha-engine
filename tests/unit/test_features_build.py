@@ -118,6 +118,90 @@ def test_feature_windows_min_common_history_bars_from_constants() -> None:
     assert windows.min_common_history_bars == 164256
 
 
+# ============================================================================
+# `feature_a13_ema_window` (`scaling_invariant: clock`, AG-043 F3) --
+# conversão clock<->bar-count, único campo de `FeatureWindows` afetado por
+# `bar_source`. 2026-08-23.
+# ============================================================================
+
+
+def test_clock_reference_bar_duration_ms_time_15m_e_bit_exato() -> None:
+    assert build._clock_reference_bar_duration_ms("time_15m") == step_ms("15m")
+
+
+@pytest.mark.parametrize(
+    ("bar_source", "calibration_tf"),
+    [("dollar_r1", "15m"), ("dollar_r2", "30m"), ("dollar_r3", "1h")],
+)
+def test_clock_reference_bar_duration_ms_usa_calibration_tf_by_resolution(
+    bar_source: str, calibration_tf: str
+) -> None:
+    """Usa `CALIBRATION_TF_BY_RESOLUTION` (alvo FIXO de calibração) -- NUNCA
+    uma duração medida (AG-043 F2, rejeitado pelo Manager). Cross-checa
+    contra o mesmo dict que `src.data.build_dollar_bars` já expõe, não
+    duplica o valor esperado como literal solto."""
+    assert build._clock_reference_bar_duration_ms(bar_source) == step_ms(calibration_tf)
+
+
+def test_clock_reference_bar_duration_ms_bar_source_desconhecido_levanta_valueerror() -> None:
+    with pytest.raises(ValueError, match="time_15m"):
+        build._clock_reference_bar_duration_ms("dollar_r4")
+
+
+def test_scale_clock_window_bars_ratio_1_e_bit_exato() -> None:
+    assert build._scale_clock_window_bars(48, step_ms("15m")) == 48
+
+
+def test_scale_clock_window_bars_escala_conforme_formula_do_manager() -> None:
+    """`96@15m -> 48@30m -> 24@1h` (constants.yaml::feature_a13_ema_window,
+    2026-08-16) -- aqui com o valor real de A13 (48, não o 96 ilustrativo
+    do comentário original): 48@15m -> 24@30m -> 12@1h."""
+    assert build._scale_clock_window_bars(48, step_ms("30m")) == 24
+    assert build._scale_clock_window_bars(48, step_ms("1h")) == 12
+
+
+def test_scale_clock_window_bars_piso_de_1_barra() -> None:
+    assert build._scale_clock_window_bars(1, step_ms("1h") * 100) == 1
+
+
+def test_feature_windows_from_constants_bar_source_time_15m_ema_window_bit_exato() -> None:
+    windows = build.FeatureWindows.from_constants(bar_source="time_15m")
+    assert windows.ema_window == 48
+
+
+@pytest.mark.parametrize(
+    ("bar_source", "expected_ema_window"),
+    [("dollar_r1", 48), ("dollar_r2", 24), ("dollar_r3", 12)],
+)
+def test_feature_windows_from_constants_escala_ema_window_sob_resolution(
+    bar_source: str, expected_ema_window: int
+) -> None:
+    windows = build.FeatureWindows.from_constants(bar_source=bar_source)
+    assert windows.ema_window == expected_ema_window
+
+
+@pytest.mark.parametrize("bar_source", ["dollar_r1", "dollar_r2", "dollar_r3"])
+def test_feature_windows_from_constants_so_ema_window_muda_sob_resolution(
+    bar_source: str,
+) -> None:
+    """As outras 9 janelas de `FeatureWindows` são `scaling_invariant:
+    bar_count`/normalização -- decisão deliberada e específica de cada uma
+    (AG-043), não escalam com `bar_source`. Prova campo a campo, não só
+    `ema_window`, pra pegar regressão se um refactor futuro generalizar a
+    conversão sem querer."""
+    baseline = build.FeatureWindows.from_constants(bar_source="time_15m")
+    scaled = build.FeatureWindows.from_constants(bar_source=bar_source)
+    for field in dataclasses.fields(build.FeatureWindows):
+        if field.name == "ema_window":
+            continue
+        assert getattr(scaled, field.name) == getattr(baseline, field.name), field.name
+
+
+def test_feature_windows_from_constants_bar_source_desconhecido_levanta_valueerror() -> None:
+    with pytest.raises(ValueError, match="time_15m"):
+        build.FeatureWindows.from_constants(bar_source="dollar_r4")
+
+
 def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> None:
     """AG-030 (T0.5): com um cap menor que `n`, as primeiras `n - cap`
     barras de C07/D03f/E02f ficam nulas (janela expansiva recomeça no novo
@@ -309,7 +393,9 @@ def test_build_t1_features_desabilita_min_common_history_bars_sob_bar_source_nao
         build.FeatureWindows.from_constants(), min_common_history_bars=cap
     )
     monkeypatch.setattr(
-        build.FeatureWindows, "from_constants", staticmethod(lambda: windows_com_cap)
+        build.FeatureWindows,
+        "from_constants",
+        staticmethod(lambda *, bar_source="time_15m": windows_com_cap),
     )
     monkeypatch.setattr(build._sources, "load_bars", lambda *a, **k: bars)
     monkeypatch.setattr(build._sources, "load_funding_aligned", lambda *a, **k: funding)
@@ -480,6 +566,22 @@ def test_registry_parity_tested_true_em_todas_as_entradas() -> None:
     entries = _load_registry()
     for entry in entries:
         assert entry["parity_tested"] is True, entry["id"]
+
+
+def test_registry_min_warmup_bars_bate_com_constants_yaml() -> None:
+    """Doc-drift real corrigido 2026-08-23: as 13 entradas diziam
+    `min_warmup_bars: 2000` (valor herdado do PRD, nunca lido em runtime --
+    ver `registry.py::FeatureRegistryEntry.min_warmup_bars`, campo
+    puramente documental), enquanto o valor real usado por
+    `FeatureWindows.from_constants` é 200 (`constants.yaml`, recalculado
+    por fórmula, AG-027 2026-08-15) desde antes do registry ter sido
+    atualizado. Guarda mecânica pra não repetir -- se `min_warmup_bars` em
+    `constants.yaml` mudar de novo sem atualizar `registry.yaml`, este
+    teste pega."""
+    entries = _load_registry()
+    real_min_warmup_bars = build.FeatureWindows.from_constants().min_warmup_bars
+    for entry in entries:
+        assert entry["min_warmup_bars"] == real_min_warmup_bars, entry["id"]
 
 
 # ============================================================================

@@ -19,6 +19,7 @@ import numpy as np
 import polars as pl
 import structlog
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.resample import step_ms
 
 from . import _sources, support
@@ -67,11 +68,69 @@ def _to_numpy(series: pl.Series | FloatArray) -> FloatArray:
     return series
 
 
+#: `bar_source` (`_sources.load_bars`) -> `resolution_id` (`CALIBRATION_TF_
+#: BY_RESOLUTION`) -- só as 3 variantes dollar-bar precisam de tradução;
+#: `"time_15m"` é tratado à parte (ver `_clock_reference_bar_duration_ms`).
+_RESOLUTION_ID_BY_BAR_SOURCE: dict[str, str] = {
+    "dollar_r1": "R1",
+    "dollar_r2": "R2",
+    "dollar_r3": "R3",
+}
+
+
+def _clock_reference_bar_duration_ms(bar_source: str) -> int:
+    """Duração de referência usada SÓ pra escalar `feature_a13_ema_window`
+    (`scaling_invariant: clock`, `AG-043` F3) — as outras 9 janelas de
+    `FeatureWindows` são `bar_count`/normalização e ficam intocadas sob
+    qualquer `bar_source` (decisão deliberada e específica por feature,
+    `config/constants.yaml`, não generalizável).
+
+    Usa `CALIBRATION_TF_BY_RESOLUTION` — o alvo FIXO de calibração
+    (`R1->"15m"`, já importado por 10+ módulos do repo), NUNCA uma duração
+    MEDIDA. `AG-043` já registra que um mecanismo automático dirigido por
+    duração medida (F2) foi avaliado e REJEITADO pelo Manager ("reintroduz
+    a não-estacionariedade do Bloqueador 2 dentro da própria feature") —
+    usar uma constante nova MEASURED aqui repetiria esse erro. `bar_source
+    ="time_15m"` retorna `step_ms("15m")` (ratio=1 em `_scale_clock_
+    window_bars`) — bit-exato, nenhum caller existente muda de
+    comportamento."""
+    if bar_source == "time_15m":
+        return step_ms("15m")
+    resolution_id = _RESOLUTION_ID_BY_BAR_SOURCE.get(bar_source)
+    if resolution_id is None:
+        raise ValueError(
+            f"bar_source={bar_source!r} sem duração de referência para escalar "
+            f"janelas clock -- esperado 'time_15m' ou um de "
+            f"{sorted(_RESOLUTION_ID_BY_BAR_SOURCE)}"
+        )
+    return step_ms(CALIBRATION_TF_BY_RESOLUTION[resolution_id])
+
+
+def _scale_clock_window_bars(window_bars_at_15m: int, bar_duration_ms: int) -> int:
+    """`96@15m -> 48@30m -> 24@1h` — fórmula já especificada pelo Manager
+    no comentário de `feature_a13_ema_window` (`config/constants.yaml`,
+    2026-08-16), generalizada pra qualquer duração de referência (`bar_
+    duration_ms`, de `_clock_reference_bar_duration_ms`). `bar_duration_ms
+    = step_ms('15m')` -> ratio=1, bit-exato. Piso de 1 barra."""
+    ratio = step_ms("15m") / bar_duration_ms  # noqa: unguarded-ratio -- bar_duration_ms vem só de step_ms(tf real) (_clock_reference_bar_duration_ms), sempre > 0 por construção
+    return max(1, round(window_bars_at_15m * ratio))
+
+
 @dataclass(frozen=True, slots=True)
 class FeatureWindows:
     """Todas as janelas de lookback de `constants.yaml` lidas uma única vez
     — evita 10 chamadas repetidas a `load_constant` espalhadas pelo corpo
-    de `compute_t1_features`."""
+    de `compute_t1_features`.
+
+    `ema_window` é o ÚNICO campo `scaling_invariant: clock` do vetor T1
+    (`feature_a13_ema_window`, `AG-043` F3 — A13 é deliberadamente
+    ancorado ao horizonte real do Label Engine (`time_stop_ms`), não é um
+    indicador técnico genérico; ver `constants.yaml` pra justificativa
+    completa e por que os outros 9 campos NÃO recebem esse tratamento).
+    Todos os outros 9 são `bar_count`/normalização, fixos entre grades por
+    decisão própria e separada de cada um (RSI/B07/vol_ratio/C07/D06f/E10f
+    já foram reclassificados de `clock` para `bar_count` em 2026-08-16 com
+    justificativa individual — não são omissão)."""
 
     atr_window: int
     ema_window: int
@@ -89,10 +148,19 @@ class FeatureWindows:
     min_common_history_bars: int | None = None
 
     @classmethod
-    def from_constants(cls) -> FeatureWindows:
+    def from_constants(cls, *, bar_source: str = "time_15m") -> FeatureWindows:
+        """`bar_source` (2026-08-23, fecha o débito de `AG-043` sobre
+        `feature_a13_ema_window`) escala só `ema_window` — via `_scale_
+        clock_window_bars`/`_clock_reference_bar_duration_ms`, nunca uma
+        medição nova (ver docstring de `_clock_reference_bar_duration_
+        ms` sobre por que F2 foi rejeitado). Default `"time_15m"` produz
+        `ema_window=48` bit-exato, idêntico a todo caller anterior a esta
+        mudança."""
+        ema_window_at_15m = int(load_constant("feature_a13_ema_window"))
+        bar_duration_ms = _clock_reference_bar_duration_ms(bar_source)
         return cls(
             atr_window=int(load_constant("atr_window")),
-            ema_window=int(load_constant("feature_a13_ema_window")),
+            ema_window=_scale_clock_window_bars(ema_window_at_15m, bar_duration_ms),
             rsi_window=int(load_constant("feature_b01_rsi_window")),
             ret_lookback=int(load_constant("feature_a05_ret_lookback_bars")),
             vol_ratio_short_window=int(load_constant("feature_c06_vol_ratio_short_window")),
@@ -436,11 +504,29 @@ def build_t1_features(
     alts, já dentro do orçamento, ficam inalterados); chamar com um `start`
     mais recente que a origem do ativo simplesmente não aciona o corte (`n`
     já cabe no orçamento), sem quebrar nada — mas também sem garantir
-    comparabilidade cross-asset fora desse uso padrão."""
+    comparabilidade cross-asset fora desse uso padrão.
+
+    **Decisão registrada 2026-08-23 (fecha o débito de `AG-043` sobre
+    `feature_a13_ema_window`, pesquisa de literatura em `AG-043` addendum
+    — López de Prado 2018, Grądzki/Wójcik/Lessmann 2025):** `windows`
+    passa a ser resolvido via `FeatureWindows.from_constants(bar_source=
+    bar_source)`, não mais `from_constants()` sem argumento — escala só
+    `ema_window` (A13), a ÚNICA janela `scaling_invariant: clock` do vetor
+    T1. As outras 9 janelas (RSI/B07/vol_ratio/C07/D06f/E10f/ATR)
+    permanecem `bar_count` fixo entre `bar_source` — decisão deliberada e
+    específica de cada uma, não omissão (ver `constants.yaml`): a
+    literatura sobre barras de informação (dollar/volume bars) confirma
+    que manter contagem de barra fixa é o comportamento correto para
+    indicadores técnicos genéricos nesse contexto — cada barra carrega
+    peso de informação aproximadamente igual, não tempo igual. A13 é
+    exceção deliberada porque sua intenção declarada amarra o span ao
+    horizonte REAL do label (`time_stop_ms`), não a uma janela de
+    estimação genérica. Sob `bar_source="time_15m"`, `ema_window=48`
+    continua bit-exato."""
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
-    windows = FeatureWindows.from_constants()
+    windows = FeatureWindows.from_constants(bar_source=bar_source)
     if bar_source != "time_15m":
         windows = replace(windows, min_common_history_bars=None)
     logger.info(
