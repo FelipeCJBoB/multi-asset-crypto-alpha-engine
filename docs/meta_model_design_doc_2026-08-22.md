@@ -371,7 +371,7 @@ de dois runs do Alpha misturaria escalas de probabilidade **sem erro**.
 | `side_hat` | `Int8` ∈ {−1,+1} | `predictions.side_hat` | ✔ | **lado é DADO, nunca aprendido** |
 | `p_alpha` | `Float64` | `p_long`/`p_short` calibrados | ✔ | OOF estrutural (§10.1) |
 | `score_alpha_raw` | `Float64` | `score_{long,short}_raw` | ✔ | **entra no design matrix** (§3.4) |
-| `tau_alpha` | `Float64` | **coluna nova** (D-15) | ✔ | §3.5 |
+| `tau_alpha` | `Float64` | `tau_long`/`tau_short` calibrados (mesmo padrão de derivação de `p_alpha`/`score_alpha_raw` acima) | ✔ | §3.5 |
 | `margin` | `Float64` | `side_hat × (p_long − p_short)` | ✔ | §3.4 |
 | `regime` | `Utf8` | `mf.data.regime` (`dataset.py:236-240`) | ✔ | §6.1 |
 | `regime_ohe_*` | `Int8` | one-hot drop-first, níveis fixos a priori | ✔ | §6.3 |
@@ -511,10 +511,19 @@ variância-zero da v1, que era insuficiente.
 
 ### 3.5 `tau` persistido (D-15) — a correção de maior retorno por custo
 
-`tau` é calculado (`alpha.py:265-267`) e **descartado** — não está no schema
-de predições (`alpha.py:501-519`) nem no payload de diagnóstico
-(`pipeline.py:168-210`). Uma coluna `tau_alpha` no schema destrava **três**
-coisas de uma vez:
+**[RECONCILIADO 2026-08-23, `AG-162` fechado]** `tau` é calculado
+(`alpha.py:265-267`) e **descartado** — não está no schema de predições
+(`alpha.py:501-519`) nem no payload de diagnóstico (`pipeline.py:168-210`).
+O design doc do Alpha (`docs/alpha_model_design_doc_2026-08-22.md`, D-05)
+trava as colunas RAW que `predictions.parquet` de fato ganha:
+`tau_long`/`tau_short` (`Float64` cada, um por lado — schema fiel à
+estrutura real de dois calibradores por fold, `alpha.py:389-392`), não uma
+coluna `tau_alpha` única. `tau_alpha` continua existindo, mas como coluna
+DERIVADA do `meta_training_set` (mesmo padrão que `p_alpha`/
+`score_alpha_raw` já usam nesta seção — ver §3.2, "origem: p_long/p_short
+calibrados"): `tau_alpha = tau_long if side_hat == 1 else tau_short`,
+calculado em `meta_dataset.py::build_meta_signal_table`. Destrava as
+mesmas **três** coisas de uma vez:
 
 1. a feature de margem `p_alpha − tau` (que a v1 declarou bloqueada em R3) —
    e essa é a quantidade que de fato morde no conjunto aceito, mais que
@@ -533,17 +542,18 @@ que bumpar.**
 
 Os 5 `predictions.parquet` em disco (`predictions/alpha/{alpha_c0_baseline_v1,
 alpha_c0_baseline_v1_t05_janela_comum, alpha_c1_e02f_short_unforced_v1,
-alpha_c1_v1, alpha_c1_v1_t05_janela_comum}`) não têm a coluna. O contrato do
+alpha_c1_v1, alpha_c1_v1_t05_janela_comum}`) não têm as colunas. O contrato do
 §14.3 dizia "leitor com `schema_version` desconhecido levanta" — mas esses
 arquivos não têm versão **desconhecida**, têm versão **inexistente**. O
 contrato não cobria o único caso que vai acontecer.
 
-> **Regra travada:** a ausência da coluna `tau_alpha` é o discriminador
-> explícito de "artefato pré-D-15". O leitor do Meta **levanta
-> `LegacyPredictionsError`** com o caminho do arquivo e a instrução de
-> retreinar — nunca imputa, nunca assume um `tau`, nunca degrada em silêncio.
-> Junto com a coluna nasce o manifesto de §14.3, para que o próximo bump
-> tenha onde acontecer.
+> **Regra travada (reconciliada 2026-08-23, `AG-162`):** a ausência das
+> colunas `tau_long`/`tau_short` (não mais `tau_alpha`, que passou a ser
+> derivada, não física) é o discriminador explícito de "artefato pré-D-15".
+> O leitor do Meta **levanta `LegacyPredictionsError`** com o caminho do
+> arquivo e a instrução de retreinar — nunca imputa, nunca assume um `tau`,
+> nunca degrada em silêncio. Junto com as colunas nasce o manifesto de
+> §14.3, para que o próximo bump tenha onde acontecer.
 
 **Custo — corrigido na v3: NÃO é zero, e D-15 sai do "caminho de 20%".** A v2
 listava D-15 como P1, "sobre artefato em disco, zero treino". Falso: `tau` só
@@ -1417,7 +1427,7 @@ trial, não uma vez por fase.**
 
 | arquivo | mudança |
 |---|---|
-| `src/models/alpha.py:407-430, 501-519` | **`tau_alpha` no schema** (D-15) + manifesto de versão, que **não existe hoje** (§3.5). Só produz efeito no próximo retreino |
+| `src/models/alpha.py:407-430, 501-519` | **`tau_long`/`tau_short` no schema** (D-15/D-05 do Alpha, reconciliado `AG-162`) + manifesto de versão, que **não existe hoje** (§3.5). `tau_alpha` é derivada no Meta (`meta_dataset.py`), não física em `alpha.py`. Só produz efeito no próximo retreino |
 | `src/models/backtest_lite.py:79-130` | extrair `join_signals_to_labels(signals, df_all, *, carry=())`; `realize_trades` delega. **Critério: teste `golden` de igualdade bit-a-bit** (§14.5), não "os testes passam" |
 | `src/models/pipeline.py:72-98` | `write_predictions_atomic(..., family=, schema_columns=)` |
 | `src/models/_paths.py` | criar `predictions_meta_symbol_tf_dir()`. **`predictions/meta/` não está reservado em código** — é prosa em docstring (`:82`) |
@@ -1647,10 +1657,15 @@ P1  edges_ms sobre união temporal (D-16, AG-151)              [bloqueante]
 P2  Diagnóstico de saturação isotônica
 P3  E0-piloto (provisório, single-symbol, grade legada)
 
-E1  Data Layer 15 estágios -> 100%                    (gate do Manager)
+E1  Data Layer 15 estágios -> 100%          (gate do Manager -- ATUALIZADO
+                                              2026-08-23: os 3 achados "alto"
+                                              que travavam fecharam, ver
+                                              PLANO_MESTRE §15.27/§15.28)
 E2  Retreino do Alpha em R1 + migração LightGBM       (§15.14, represada)
-    + `tau_alpha` no schema + manifesto de versão (D-15)
-    + decisão sobre as 3 features `expanding`
+    + `tau_long`/`tau_short` no schema + manifesto de versão (D-15,
+      reconciliado AG-162 -- tau_alpha vira derivada no Meta, não física)
+    + 3 features `expanding` EXCLUÍDAS de T1_FEATURE_IDS (decidido,
+      commit 78169df, AG-032)
 E3  E0-VINCULANTE sobre o Alpha novo (§2.6)
     >>> GATE: falha em >=2 paths -> evidence_ledger + Meta sai do roadmap <<<
 
@@ -1716,8 +1731,9 @@ F9 (`group_matched` com purge próprio) ou CV aninhada com refit.
 virar um modelo puramente de regime, isso é **legítimo** — mas o relatório tem
 de **dizer isso**, não vender "meta-labeling".
 
-**R3 — `tau` varia por fold e por lado.** Resolvido por D-15 (`tau_alpha`
-persistido) + `margin` invariante.
+**R3 — `tau` varia por fold e por lado.** Resolvido por D-15
+(`tau_long`/`tau_short` persistidos, `tau_alpha` derivado por seleção de
+lado no Meta) + `margin` invariante.
 
 **R4 — A amostra pode matar o desenho, e isso é um resultado.** Risco
 simétrico nomeado: o EPV pode estar **errado por transplante** e matar o
@@ -1958,3 +1974,42 @@ os dois gates que decidem tudo estavam inclinados a PASS, e o braço anunciado
 como blindado era o único sem B09. **Esta v3 é a correção.** Ordem
 recomendada e adotada: nulo travado e validado → purge cross-símbolo →
 E0-piloto → só então F0/F1.
+
+---
+
+## §21 — Reconciliação `tau_alpha` × `tau_long`/`tau_short` (`AG-162`, 2026-08-23)
+
+`AG-162` (CRITICAL, achado #5 do §20) apontou que D-05 do design doc do
+Alpha (`docs/alpha_model_design_doc_2026-08-22.md` §12) decide
+`tau_long`/`tau_short` crus — 2 colunas, uma por calibrador/lado — enquanto
+este documento (§3.2, §3.5) e `AG-150` já tinham `tau_alpha` (1 coluna,
+derivada por seleção de lado) travado como decisão de schema. Três
+artefatos de governança divergentes da mesma decisão, escalado ao Manager.
+
+**Decisão (Manager, 2026-08-23): D-05 prevalece.** `predictions.parquet`
+ganha `tau_long`/`tau_short` crus, não `tau_alpha`. Este documento é quem
+cede — `tau_alpha` deixa de ser coluna física do Alpha e vira coluna
+DERIVADA dentro de `meta_dataset.py::build_meta_signal_table`:
+
+```
+tau_alpha = tau_long if side_hat == 1 else tau_short
+```
+
+**Por que isso não é um patch ad-hoc:** este mesmo documento já deriva
+outras quantidades exatamente dessa forma — `p_alpha` e `score_alpha_raw`
+(§3.2) vêm de `p_long`/`p_short`/`score_long_raw`/`score_short_raw`
+calibrados, selecionados por `side_hat`, nunca colunas físicas do Alpha.
+`tau_alpha` passa a seguir o mesmo padrão já provado, em vez de introduzir
+um segundo mecanismo de derivação só para si.
+
+**Pontos do documento atualizados no mesmo commit:** tabela de schema
+(§3.2), prosa de abertura do §3.5, callout "regra travada" (discriminador
+passa a ser a ausência de `tau_long`/`tau_short`, não de `tau_alpha`),
+checklist de implementação, diagrama de sequência (§15), resumo de risco
+R3. `AG-150` e `AG-162` fechados em `audit/architecture_gaps_log.yaml`;
+`PLANO_MESTRE_PRINCE2.md` §15.19-F/§15.20-C/§15.20-E atualizados.
+
+**Custo de migração:** zero — nem o Alpha nem o Meta tinham código real
+implementado no momento da decisão (`§0` deste documento), logo não existe
+`predictions.parquet` legado a migrar nem `LegacyPredictionsError` a
+tratar retroativamente.

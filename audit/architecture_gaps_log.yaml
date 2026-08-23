@@ -11562,8 +11562,24 @@ entries:
       cumprido por acidente do empate, não por desenho. Nenhum dos três é
       detectável hoje.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix recomendado: coluna `tau_alpha` (Float64) em PREDICTIONS_SCHEMA_COLUMNS, preenchida com o tau do lado efetivamente sinalizado (`side_hat`), mais `tau` no payload de diagnóstico por (fold, lado). Exige bump de schema_version do artefato (ver §14.3 do design doc do Meta). Custo: 1 coluna + 1 campo. Sequenciamento natural: junto do retreino do Alpha já represado (PLANO_MESTRE §15.14), para não abrir uma janela de artefatos com schema misto."
+    resolution: >
+      [RECONCILIADO 2026-08-23, junto de `AG-162`] Fix recomendado aqui
+      (`tau_alpha` única, derivada por seleção de lado, física em
+      `predictions.parquet`) NÃO é o que foi implementado -- D-05 do
+      design doc do Alpha (`docs/alpha_model_design_doc_2026-08-22.md`
+      §12) decide `tau_long`/`tau_short` CRUS (2 colunas, uma por lado,
+      sem seleção), e essa é a versão que prevalece (ver `AG-162`).
+      `tau_alpha` passa a existir só como coluna DERIVADA dentro do
+      Meta (`meta_dataset.py::build_meta_signal_table`, `tau_alpha =
+      tau_long if side_hat == 1 else tau_short`), espelhando o padrão
+      já em uso no mesmo doc para `p_alpha`/`score_alpha_raw` (§3.2).
+      As 3 consequências originais deste achado seguem endereçadas por
+      essa forma: margem `p_alpha - tau_alpha` computável no Meta;
+      `tau` (agora 2 valores, um por lado) persistido e comparável por
+      fold; diagnóstico de massa de empate possível com `tau_long`/
+      `tau_short` disponíveis por fold. `PREDICTIONS_SCHEMA_COLUMNS`
+      ganha `tau_long`/`tau_short` (não `tau_alpha`).
+    status: "fechado 2026-08-23 -- reconciliado com AG-162, ver resolution"
 
   - id: AG-151
     date: "2026-08-22"
@@ -12254,8 +12270,32 @@ entries:
       gerado pela migração LightGBM seria classificado como "pré-D-15" pelo
       leitor do Meta e rejeitado (`LegacyPredictionsError`) permanentemente.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- decisão de escopo/negócio, ESCALAR PRO MANAGER (PLANO_MESTRE §6.5): qual dos dois desenhos vale -- D-05 (tau_long/tau_short crus) ou o já registrado em AG-150/PLANO_MESTRE (tau_alpha único, derivado por seleção de lado) -- precisa ser decidido uma vez e propagado aos 3 lugares (AG-150, PLANO_MESTRE §15.20, docs/meta_model_design_doc_2026-08-22.md §3.5) no mesmo commit. Não fechável por esta revisão."
+    resolution: >
+      Reconciliado 2026-08-23. Decisão: D-05 do Alpha PREVALECE como
+      escrito -- `tau_long`/`tau_short` crus (2 colunas, uma por
+      calibrador/lado) em `PREDICTIONS_SCHEMA_COLUMNS`, sem seleção de
+      lado no Alpha. `AG-150` e o PLANO_MESTRE §15.20 são os que
+      cedem, não o design doc do Alpha. `tau_alpha` deixa de ser
+      física em `predictions.parquet` e vira coluna DERIVADA dentro do
+      Meta (`src/models/meta_dataset.py::build_meta_signal_table`,
+      `tau_alpha = tau_long if side_hat == 1 else tau_short`).
+      Justificativa arquitetural: o design doc do Meta v3 já usa
+      EXATAMENTE esse padrão -- raw-em-2-colunas-no-Alpha,
+      derivado-por-seleção-de-lado-no-Meta -- para `p_alpha` e
+      `score_alpha_raw` (§3.2, linha ~372-373: "origem: p_long/p_short
+      calibrados"). Aplicar o mesmo padrão a `tau_alpha` não introduz
+      mecanismo novo, só estende um já provado no mesmo documento.
+      Custo de migração baixo -- nem Alpha nem Meta têm código real
+      implementado ainda (ambos "zero implementado" no momento da
+      decisão), então não há artefato `predictions.parquet` legado a
+      migrar. 4 lugares atualizados no mesmo commit: `AG-150` (acima),
+      `PLANO_MESTRE_PRINCE2.md` §15.19-F e §15.20-E,
+      `docs/meta_model_design_doc_2026-08-22.md` (schema §3.2, prosa
+      §3.5, callout de regra travada, checklist de implementação,
+      diagrama §15, resumo de risco R3), `docs/prompts/
+      execucao_alpha_model_design_doc_2026-08-22.md` (pré-requisito
+      que bloqueava em "decisão pendente").
+    status: "fechado 2026-08-23 -- D-05 (tau_long/tau_short crus) prevalece; tau_alpha derivado no Meta, ver resolution"
 
   - id: AG-163
     date: "2026-08-22"

@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.39 · **Data:** 2026-08-23
+**Versão:** 3.42 · **Data:** 2026-08-23
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -849,7 +849,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
 | V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
-| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.20`) — multi-símbolo/multi-resolução (R1/R2/R3) já prontos em produção; migração real = learner + orquestração + GPU (D-18) + schema. 2 pendências escaladas ao Manager (`AG-162` CRITICAL, `AG-163` HIGH). Bloqueado pelo gate "Data Layer 100%" | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20` |
+| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.20`) — multi-símbolo/multi-resolução (R1/R2/R3) já prontos em produção; migração real = learner + orquestração + GPU (D-18) + schema. `AG-162` CRITICAL fechado 2026-08-23 (D-05 prevalece, `tau_alpha` derivado no Meta); `AG-163` HIGH segue com ressalva. Gate "Data Layer 100%" já fechado (§15.27/§15.28) | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
 
@@ -3697,7 +3697,9 @@ ANTES de tocar em docs`) existe para prevenir, e desta vez preveniu.
 `meta.py` existir — tudo sobre artefato já em disco, zero treino, zero
 `N_lifetime`:
 
-1. `tau_alpha` no schema de predições (`AG-150`) — 1 coluna.
+1. `tau_long`/`tau_short` no schema de predições (`AG-150`, reconciliado
+   com `AG-162` em 2026-08-23) — 2 colunas cruas, uma por lado; `tau_alpha`
+   deixa de ser física e vira coluna derivada no Meta (§15.20-C/-E).
 2. Diagnóstico de saturação isotônica (`n_distinct(p_alpha)` na
    subpopulação, massa de empate em `tau`).
 3. **Gate E0** — inventário de falsos positivos + separabilidade condicional
@@ -3842,8 +3844,22 @@ lado" já estava travado em **mais dois** artefatos que a v2 não tinha visto
 o campo `status` de `AG-150` — ambos mais próximos da correção que a v3
 propõe para o Meta do que da decisão real de D-05. **Não é um patch de 2
 documentos, é 3 artefatos de governança que já diziam uma coisa enquanto
-D-05 decidia outra — escalado ao Manager (`AG-162`, CRITICAL), não fechado
-por revisão.** Achado adicional: o design doc citava `AG-100`/`AG-124`
+D-05 decidia outra — escalado ao Manager (`AG-162`, CRITICAL).**
+
+**[RECONCILIADO 2026-08-23]** D-05 do Alpha PREVALECE como escrito —
+`tau_long`/`tau_short` crus (2 colunas). `AG-150` e esta seção são os que
+cedem, não o design doc do Alpha. `tau_alpha` deixa de ser física em
+`predictions.parquet` e vira coluna DERIVADA dentro do Meta
+(`src/models/meta_dataset.py::build_meta_signal_table`, `tau_alpha =
+tau_long if side_hat == 1 else tau_short`). Justificativa: o design doc do
+Meta v3 já usa exatamente esse padrão — raw-em-2-colunas-no-Alpha,
+derivado-por-seleção-de-lado-no-Meta — para `p_alpha`/`score_alpha_raw`
+(`docs/meta_model_design_doc_2026-08-22.md` §3.2); estender o mesmo padrão
+a `tau_alpha` não introduz mecanismo novo. Custo de migração zero — nem
+Alpha nem Meta tinham código real implementado no momento da decisão, sem
+artefato legado a migrar. `AG-150`/`AG-162` fechados, ver
+`audit/architecture_gaps_log.yaml`. Achado adicional: o design doc citava
+`AG-100`/`AG-124`
 como "fechados" 3×, mas o status formal de ambos continua `"aberto"`, e
 `SPRINT_LOG.md` tem pergunta ainda não respondida sobre se o
 reprocessamento cobre features/regime/CPCV — corrigido para refletir
@@ -3870,14 +3886,16 @@ como vitória automática).
 
 #### E. Status e pendências escaladas ao Manager
 
-**Status: v3, 18 decisões travadas, ZERO linhas implementadas.** Duas
-pendências não são fecháveis por revisão, escaladas per `§6.5`:
+**Status: v3, 18 decisões travadas, ZERO linhas implementadas.** Uma
+pendência fechada, uma segue aberta com ressalva — escaladas per `§6.5`:
 
-- **`AG-162` (CRITICAL):** decidir entre D-05 (`tau_long`/`tau_short`, 2
-  colunas cruas) e o já registrado em `AG-150` (`tau_alpha`, 1 coluna
-  derivada por seleção de lado) — propagar a mesma escolha a esta seção,
-  `AG-150` e `docs/meta_model_design_doc_2026-08-22.md §3.5` no mesmo
-  commit.
+- **`AG-162` (CRITICAL) — [FECHADO 2026-08-23]:** D-05
+  (`tau_long`/`tau_short`, 2 colunas cruas) prevalece sobre o que
+  `AG-150`/esta seção tinham travado antes (`tau_alpha`, 1 coluna
+  derivada). `tau_alpha` vira coluna DERIVADA no Meta
+  (`meta_dataset.py::build_meta_signal_table`), mesmo padrão já usado no
+  próprio doc do Meta para `p_alpha`/`score_alpha_raw`. Detalhe completo:
+  alínea C acima; `audit/architecture_gaps_log.yaml::AG-150`/`AG-162`.
 - **`AG-163` (HIGH):** confirmar por escrito o fechamento formal de
   `AG-124`; atualizar `AG-100.status` para `"fechado"`; responder a
   pergunta pendente em `SPRINT_LOG.md` sobre escopo do reprocessamento
@@ -4909,6 +4927,17 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.42 (2026-08-23)** — `AG-162` (CRITICAL) e `AG-150` FECHADOS —
+  reconciliação do schema `tau_alpha`. D-05 do Alpha (`tau_long`/
+  `tau_short` crus, 2 colunas) prevalece sobre o que `AG-150`/`§15.20-E`
+  tinham travado antes (`tau_alpha`, 1 coluna derivada). `tau_alpha` deixa
+  de ser física em `predictions.parquet` e vira coluna DERIVADA no Meta
+  (`meta_dataset.py::build_meta_signal_table`), espelhando o padrão já
+  usado no mesmo doc para `p_alpha`/`score_alpha_raw` (§3.2). Custo de
+  migração zero — nem Alpha nem Meta tinham código implementado.
+  `docs/meta_model_design_doc_2026-08-22.md` atualizado em 6 pontos
+  (schema, prosa §3.5, regra travada, checklist, diagrama, risco R3).
+  Detalhe: `§15.19-F`, `§15.20-C`, `§15.20-E`.
 - **v3.41 (2026-08-23)** — `AG-159` FECHADO — constante dedicada
   `max_consecutive_bar_window_duration_ms` (MEASURED) substitui o
   reaproveitamento do proxy de prefetch em `compute_max_feature_
