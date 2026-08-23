@@ -3642,6 +3642,19 @@ valores de barreira. Confirmado: `2 passed` (era `2 failed`). `AG-140`
 fechado. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.24-F`,
 `audit/architecture_gaps_log.yaml::AG-140` addendum.
 
+**Road Map Vivo v2 republicado (2026-08-23)** — pedido explícito do
+usuário, disciplina do `§14` do `PLANO_MESTRE_PRINCE2.md` ("mudança
+material → repassar pro v2 na mesma sessão, não depois"). Mesma URL
+(`https://claude.ai/code/artifact/82d1a3ad-1ffd-427e-b120-a07d33a17637`).
+Atualizado: hero (fechamentos de hoje — `AG-140`, `AG-043` parcial,
+`AG-190`), stage `07_LABEL` (`AG-140` fechado), stage `03_FEATURES`
+(A13 código fechado, `E27f`/`atr_window` confirmados corretos), card
+"FeatureWindows/AG-027" (A13 não mais totalmente dormente em código),
+card dedicado `AG-140` (aberto→fechado, causa raiz + reprocessamento
+narrados), "Próximos passos" item 2 (6→5 achados restantes), footer.
+Conteúdo puramente aditivo/factual sobre o já publicado — nenhum
+redesenho.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
