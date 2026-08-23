@@ -11502,6 +11502,23 @@ entries:
     resolution: null
     status: "aberto -- fix: compute_max_feature_lookback_ms precisa receber resolution_id (não só tf_effective) e derivar a janela real em ms a partir da densidade de barra da resolução, não do wall-clock. Bloqueante antes do primeiro treino real sob R2/R3 com purge ativo -- não bloqueante hoje porque o gate de features expanding já bloqueia o caminho inteiro."
 
+    addendum_convergencia_2026-08-22: >
+      Achado de forma totalmente independente uma 2ª vez, mesmo dia, por
+      outra sessão (mapa de dívida técnica multi-ativo BTC/M15, sem
+      contato com a auditoria adversarial do design doc do Alpha que
+      gerou este registro) -- registrado por engano como `AG-178` antes
+      de perceber a duplicata; `AG-178` virou só um ponteiro pra cá.
+      Convergência de 2 investigações independentes no mesmo achado é
+      sinal de que é real e vale priorizar, não uma correção nova ao
+      texto acima. Recomendação adicional da 2ª investigação, não
+      conflitante com o fix já proposto: antes de resolver de vez
+      (precisa da distribuição real de duração de dollar-bar por
+      símbolo/resolução, computável hoje sem trial -- close_time -
+      open_time já existe no schema), considerar fail-fast (
+      compute_max_feature_lookback_ms recusar resolution_id não-None com
+      erro explícito) como mitigação de curto prazo caso o gate de
+      features expanding seja resolvido antes da medição acontecer.
+
   - id: AG-160
     date: "2026-08-22"
     file: "src/models/pipeline.py:101-104,321,756 (report_path default)"
@@ -11640,3 +11657,409 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- fix recomendado: quando o Meta v3 for revisitado (junto da correção de tau_alpha, AG-162), adicionar 1 linha declarando resolution_id como parâmetro fixo de build_meta_signal_table (provavelmente 'R1' por enquanto, ecoando D-15 do Alpha), não deixar implícito."
+
+  - id: AG-165
+    date: "2026-08-22"
+    file: "src/execution/fill_simulator.py::simulate_window (linha ~626 bar_ms, ~632 tick_size, antes da correção)"
+    related_file: "src/exchange/filters.py::Filters/load_filters_asof, src/risk/sizing.py (mesmo padrão já correto)"
+    found_by: "Claude (sweep de 10 agentes, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      `tick_size` vinha de `load_constant("tick_size")` (constante global,
+      `source: "exchangeInfo BTCUSDT"`), usada pra QUALQUER `symbol`
+      passado à função -- medido no snapshot real: BTCUSDT=0,10,
+      XRPUSDT=0,0001, razão de 1000x. `bar_ms = step_ms("15m")` hardcoded
+      incondicionalmente, mesmo sob futura extensão pra dollar-bar.
+    severity: "alto"
+    layer: "execution -- estruturalmente idêntico a AG-015 (mesma classe: parâmetro symbol chega na função mas não se propaga até a constante que deveria ser resolvida por símbolo)"
+    consequence: >
+      Bloqueava M5 (fill nos 4 alts) de verdade -- rodar com ETH/SOL/BNB/
+      XRP produziria `p_fill`/`markout` sistematicamente enviesados,
+      silenciosamente, sem erro nem warning.
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `simulate_window`/`simulate_window_price_improved` ganharam
+      `tf`/`resolution_id`; `tick_size` passou a ser resolvido via
+      `Filters` por symbol+dia (`load_filters_asof`, B01). Ver também
+      AG-170 (achado colateral CRITICAL descoberto durante a correção --
+      `load_filters_asof` sem tratamento crashava a janela default
+      inteira).
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-166
+    date: "2026-08-22"
+    file: "src/models/_paths.py::predictions_symbol_tf_dir/models_diagnostics_symbol_tf_dir, src/regime/_paths.py::regime_symbol_tf_dir"
+    related_file: "src/labels/_paths.py::labels_symbol_tf_dir, src/validation/_paths.py::labels_symbol_tf_dir (já tinham o padrão correto, AG-042)"
+    found_by: "Claude (sweep de 10 agentes, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      3 helpers de path só aceitavam `tf` (grade de tempo), sem
+      `resolution_id` (dollar-bar) -- ao contrário de
+      `labels_symbol_tf_dir`/`validation._paths.labels_symbol_tf_dir`, que
+      já tinham a guarda anti-colisão desde AG-042 (2026-08-17). Um
+      chamador sob dollar-bar cairia silenciosamente em `.../15m/...`.
+    severity: "medio"
+    layer: "models/regime -- gap de paridade entre os 4 pacotes _paths.py do repo"
+    consequence: >
+      `src/models/pipeline.py::run_layer1_sprint` contornava a ausência
+      sobrecarregando o parâmetro `tf=` com o valor de `resolution_id`
+      (variável `path_tf`) -- funcional, mas gambiarra que escondia a
+      lacuna real da API.
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `resolution_id: str | None = None` adicionado aos 3 helpers, mesma
+      guarda anti-colisão de `labels_symbol_tf_dir` (resolution_id sempre
+      vence sobre tf, ValueError se não reconhecido). `pipeline.py`
+      atualizado pra passar `resolution_id=` de verdade em vez do
+      contorno `path_tf`. Achado colateral (revisão `audit_engineering`,
+      MEDIUM, não corrigido): agora há 4 cópias independentes da mesma
+      guarda em 4 pacotes -- ver AG-176.
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-167
+    date: "2026-08-22"
+    file: "src/models/dataset.py::build_modeling_frame (docstring linhas ~177-179, ValueError linha ~205, antes da correção)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-100, AG-080/AG-123 (mesma classe: prosa dessincronizada do código)"
+    found_by: "Claude (sweep de 10 agentes, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      Docstring e mensagem de `ValueError` diziam "R2/R3 são só pesquisa,
+      fora do escopo de produção" -- já falso desde AG-100 (2026-08-22,
+      R2/R3 promovidas a produção). `_BAR_SOURCE_BY_RESOLUTION` (o dict
+      real) já mapeava R1/R2/R3 corretamente; só a prosa nunca foi
+      sincronizada no mesmo commit que corrigiu o dict.
+    severity: "baixo"
+    layer: "models -- risco de leitura errada (autocontraditório: a própria mensagem de erro listava R2/R3 como suportadas na mesma frase que dizia 'só pesquisa'), nunca disparava em runtime pra R2/R3 de fato"
+    consequence: >
+      Um humano/agente lendo só a docstring/erro podia concluir
+      erradamente que R2/R3 não estavam disponíveis.
+    resolved_by_commit: "72e02c7"
+    resolution: "Prosa sincronizada com o dict real, referência a AG-100 adicionada."
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-168
+    date: "2026-08-22"
+    file: "src/data/validate.py::_run_cli (--dataset choices + branch, antes da correção)"
+    related_file: "src/data/build_dollar_bars.py::CALIBRATION_TF_BY_RESOLUTION (convenção espelhada)"
+    found_by: "Claude (sweep de 10 agentes, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      CLI só oferecia `bars_30m`, com branch cravado
+      (`resample.resample_klines(df_1m, "30m")`), apesar de
+      `validate_resampled_bars`/`resample_klines` já serem 100% genéricos
+      por `tf`. O CLI irmão (`build_dollar_bars.py`) já cobria as 3
+      resoluções corretamente.
+    severity: "baixo"
+    layer: "data -- ferramenta de investigação manual, zero consumidor automatizado (confirmado por grep exaustivo)"
+    consequence: >
+      Achado adicional da auditoria independente (`audit_engineering`,
+      2026-08-22): mesmo a resolução já suportada (30m) nunca produzia
+      resultado real do check 16 -- nenhum kline nativo de 15m/30m/1h
+      existe em disco (só klines_1m nativo), o gate cai sempre em
+      PENDING. Generalizar o CLI não resolve isso sozinho -- falta o
+      dado, decisão de custo/escopo separada, não tomada aqui.
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `choices` generalizado pra `bars_15m`/`bars_30m`/`bars_1h`, branch
+      genérico por `tf` extraído do nome do dataset. Achado NOVO,
+      pré-existente, descoberto pela auditoria e NÃO corrigido aqui (fora
+      do escopo desta correção -- é sobre honestidade de
+      `gate`/`quality_score` de `validate_resampled_bars`, não sobre o
+      CLI): ver AG-174.
+    status: "fechado 2026-08-22 -- commit 72e02c7 (só a generalização do CLI; achados colaterais AG-174/AG-175 continuam abertos)"
+
+  - id: AG-169
+    date: "2026-08-22"
+    file: "src/labels/fill_model.py (docstring do módulo + docstring de simulate_fill_arrays, antes da correção)"
+    related_file: "src/labels/triple_barrier.py, audit/architecture_gaps_log.yaml::AG-042 (LabelConfig.fill_timeout_bars -> fill_timeout_ms)"
+    found_by: "Claude (sweep de 10 agentes, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      Docstring descrevia a janela de fill em "fill_timeout_bars barras de
+      15m" -- campo `fill_timeout_bars` não existe mais em `LabelConfig`
+      desde a migração AG-042 (2026-08-17); o código real
+      (`simulate_fill_arrays`) sempre foi `horizon_ms`-based, TF-agnóstico
+      desde a origem (Sprint 6) -- só a prosa nunca foi atualizada.
+    severity: "baixo"
+    layer: "labels -- drift puro de docstring, zero mudança de comportamento"
+    consequence: >
+      Risco teórico de leitura errada; risco REALIZADO confirmado como
+      zero pela auditoria (a única vez que alguém precisou do contrato
+      real, `docs/refactor_dollar_bar_canonico.md`, leu o código e
+      ignorou a docstring corretamente).
+    resolved_by_commit: "72e02c7"
+    resolution: "Docstring reescrita pra descrever o contrato real (horizon_ms, TF-agnóstico)."
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-170
+    date: "2026-08-22"
+    file: "src/execution/fill_simulator.py::simulate_window (achado durante a correção de AG-165, não na implementação original)"
+    related_file: "src/labels/triple_barrier.py::_resolve_filters_cached/_earliest_available_filters (padrão replicado), config/constants.yaml::known_gaps.exchange_info_snapshot_coverage_gap"
+    found_by: "Agent (audit_engineering independente, fan-out de 3 auditores, revisão da correção de AG-165, 2026-08-22)"
+    gap: >
+      Ao corrigir AG-165 (tick_size global -> Filters por symbol+dia), a
+      1ª versão chamava `load_filters_asof(day, symbol=symbol)` sem
+      tratamento de exceção. Só existe 1 snapshot de `exchangeInfo` em
+      disco (`data/raw/snapshots/exchange_info/2026-08-08.json`) --
+      `BOOK_TICKER_WINDOW_START/END` (janela default do módulo,
+      2023-05-16..2024-03-30) é INTEIRAMENTE anterior a esse snapshot.
+      `load_filters_asof` levanta `NoFiltersAvailableError` pra todo dia
+      dessa janela.
+    severity: "critical"
+    layer: "execution -- simulate_window() sem argumentos (uso mais comum, inclusive _run_cli default) crashava no 1º dia do loop, 100% da janela default, sempre"
+    consequence: >
+      "Terminar" não seria honesto sobre edge real -- o código
+      simplesmente não rodava pra nenhuma invocação default. Mesmo gap já
+      medido/documentado em `known_gaps.
+      exchange_info_snapshot_coverage_gap`, que `triple_barrier.py` já
+      resolve com fallback explícito opt-in -- o fix de AG-165 reusou
+      `load_filters_asof` mas não replicou esse padrão já existente no
+      mesmo repo pro mesmo problema.
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `historical_filters_fallback: bool = False` adicionado a
+      `simulate_window`/`simulate_window_price_improved`/`_run_cli`
+      (`--historical-filters-fallback`), replicando EXATAMENTE o padrão
+      de `triple_barrier._resolve_filters_cached`/
+      `_earliest_available_filters` (cache por dia, fallback pro snapshot
+      mais recente via `load_filters_asof(datetime.now(tz=UTC), ...)`,
+      aviso 1x, nunca default -- B01). Achado descoberto e corrigido na
+      MESMA sessão que introduziu o bug, antes de qualquer uso real
+      externo.
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-171
+    date: "2026-08-22"
+    file: "src/execution/fill_simulator.py::_dollar_bar_grid_ms (achado durante a correção de AG-165)"
+    related_file: "src/data/lake.py::query_dollar_bars, src/data/_paths.py::capacity_symbol_dir, audit/architecture_gaps_log.yaml::AG-100 (mesma lacuna multi-ativo em outro módulo)"
+    found_by: "Agent (audit_engineering independente, fan-out de 3 auditores, revisão da correção de AG-165, 2026-08-22)"
+    gap: >
+      `lake.query_dollar_bars` levanta `FileNotFoundError` cru (sem
+      contexto) se o diretório do symbol não existir em
+      `data/capacity/dollar_bars_r{1,2,3}/`. Confirmado por listagem de
+      disco: só `BTCUSDT/` existe nas 3 resoluções -- ETH/SOL/BNB/XRP não
+      têm nenhum diretório. `resolution_id="R1"` com symbol != BTCUSDT, ou
+      `resolution_id="R2"/"R3"` mesmo com BTCUSDT, crashava sem mensagem
+      acionável -- exatamente a combinação (multi-ativo) que a correção de
+      AG-165 foi escrita para habilitar.
+    severity: "critical"
+    layer: "execution -- mesma lacuna de dado multi-ativo já registrada em AG-100 (dataset.py), agora confirmada também em fill_simulator.py"
+    consequence: >
+      Falha alto é o comportamento CORRETO aqui (não inventar fallback
+      pra dado que genuinamente não existe) -- o achado é que o erro
+      chegava ao chamador sem contexto nenhum sobre o que fazer a
+      respeito (traceback cru de `src/data/_paths.py`, sem menção a
+      "backfill precisa rodar pra este symbol/resolução").
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `_dollar_bar_grid_ms` captura `FileNotFoundError` e re-levanta com
+      mensagem explícita apontando o backfill (`src.data.build_dollar_bars`)
+      como próximo passo. Comportamento de falhar alto preservado --
+      nunca finge sucesso pra combinação symbol/resolução nunca
+      processada.
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-172
+    date: "2026-08-22"
+    file: "src/execution/fill_simulator.py::_dollar_bar_grid_ms (achado durante a correção de AG-165)"
+    related_file: "src/execution/fill_simulator.py::simulate_window (n_days_no_data, mesmo padrão já usado pro caminho bookTicker)"
+    found_by: "Agent (audit_engineering independente, fan-out de 3 auditores, revisão da correção de AG-165, 2026-08-22)"
+    gap: >
+      Dia sem dollar-bar fechada (symbol/resolução existem em disco, mas
+      aquele dia específico não fechou nenhuma barra -- "zero medido")
+      retornava array vazio silenciosamente de `_dollar_bar_grid_ms`, sem
+      contador nem log equivalente ao `n_days_no_data` já usado pro
+      caminho de bookTicker 40 linhas acima. Classe #4 já catalogada neste
+      projeto (zero medido vs. nunca medido conflados).
+    severity: "high"
+    layer: "execution -- uma comparação de p_fill entre resoluções/símbolos podia excluir silenciosamente trechos inteiros da janela sem nenhuma visibilidade sobre quanto foi de fato medido"
+    consequence: >
+      Sem o contador, um run real produziria `n_orders` menor que o
+      esperado sem nenhum sinal de por quê -- indistinguível de "grade
+      calculada normalmente, só que com poucos pontos naquele dia".
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      `SimulationRunResult.n_days_no_dollar_bar_grid` (novo campo,
+      default 0, preserva bit-exato toda construção existente) + contador
+      + `logger.warning("fill_simulator.day_no_dollar_bar_grid", ...)`,
+      mesmo padrão do caminho bookTicker.
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-173
+    date: "2026-08-22"
+    file: "tests/unit/test_models_pipeline_paths.py (achado durante a correção de AG-166)"
+    related_file: "src/models/pipeline.py::run_layer1_sprint (4 call sites: 2x models_diagnostics_symbol_tf_dir, 2x predictions_symbol_tf_dir)"
+    found_by: "Agent (audit_engineering independente, fan-out de 3 auditores, revisão da correção de AG-166, 2026-08-22)"
+    gap: >
+      O teste ponta-a-ponta novo pra roteamento de `resolution_id`
+      (`test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_final`)
+      só monkeypatcha `write_predictions_atomic` -- cobre 2 dos 4 call
+      sites corrigidos em `pipeline.py`. Os 2 call sites de
+      `models_diagnostics_symbol_tf_dir` nunca eram exercitados, nem
+      implicitamente (`write_all_fold_diagnostics` itera `fold_results`
+      internamente, que é sempre `[]` no harness de teste com
+      `splits=()` -- o `dest_dir` passado nunca é consumido por I/O real
+      nem por asserção).
+    severity: "medio"
+    layer: "tests -- uma regressão isolada nos 2 call sites de diagnóstico não seria pega por nenhum teste existente"
+    consequence: >
+      Cobertura de teste dava falsa confiança de que os 4 call sites
+      estavam protegidos contra regressão quando só 2 estavam.
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      Novo teste `test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_diagnosticos`
+      + helper `_run_layer1_sprint_capturing_diagnostics_calls`
+      (monkeypatch direto de `write_all_fold_diagnostics`, mesmo padrão
+      do helper de predictions). Achado colateral corrigido no mesmo
+      commit: teste irmão de predictions (Camada 0) também passou a
+      comparar por igualdade exata (antes só checava substring do path).
+    status: "fechado 2026-08-22 -- commit 72e02c7"
+
+  - id: AG-174
+    date: "2026-08-22"
+    file: "src/data/validate.py::validate_resampled_bars (linhas ~510-537)"
+    related_file: "data/quality_reports/quality_report_bars_30m_BTCUSDT_v1.json (artefato real já no repo demonstrando o problema)"
+    found_by: "Agent (audit_engineering independente, revisão da correção de AG-168, 2026-08-22)"
+    gap: >
+      `missing_bars=0`, `duplicates=0`, `invalid_rows=0`,
+      `outliers_flagged=0` são LITERAIS hardcoded em
+      `validate_resampled_bars`, não resultado de nenhum check real --
+      diferente de TODA outra função `validate_*` do mesmo arquivo (que
+      rodam ~10 checks reais). O único check real (16, paridade
+      cross-source) fica `SKIPPED` (honesto) quando não há kline nativo
+      -- mas `gate`/`quality_score` não propagam essa nuance: `gate` sai
+      "PASS" mesmo sem nenhuma validação substantiva ter rodado
+      (confirmado no artefato real já commitado no repo).
+    severity: "high"
+    layer: "data -- classe #4 já catalogada (zero medido vs. nunca medido conflados), mas no nível agregado do relatório, não só num campo isolado"
+    consequence: >
+      `assert_ready_for_training` (`validate.py:112`) faz literalmente
+      `assert report.gate == "PASS"` -- hoje sem caller real, mas
+      projetado pra confiar em `gate` como invariante de treino. Se/quando
+      alguém o chamar sobre um relatório `bars_15m`/`bars_1h` (a correção
+      de AG-168 triplicou a superfície de 1 pra 3 timeframes
+      alcançáveis), o "PASS" autorizaria dado que nunca foi de fato
+      verificado quanto a gaps/duplicatas/coerência OHLC.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- PRÉ-EXISTENTE (não introduzido pela correção de AG-168, que só generalizou o CLI de 1 pra 3 timeframes -- a fraqueza em validate_resampled_bars já existia antes, exposta antes só via bars_30m). Fix recomendado: validate_resampled_bars rodar os mesmos checks reais que as outras validate_* já rodam sobre df_resampled, ou gate refletir explicitamente 'checks reais = 0' quando nenhum rodou. Não corrigido nesta rodada -- fora do escopo (achado colateral da auditoria, não do achado original AG-168)."
+
+  - id: AG-175
+    date: "2026-08-22"
+    file: "tests/unit/test_data_validate.py (ausência confirmada, arquivo lido por completo)"
+    related_file: "src/data/validate.py::validate_resampled_bars, _run_cli"
+    found_by: "Agent (audit_engineering independente, revisão da correção de AG-168, 2026-08-22)"
+    gap: >
+      Zero teste cobre `validate_resampled_bars` (nem o `bars_30m`
+      pré-existente, nem os `bars_15m`/`bars_1h` novos de AG-168) nem
+      `_run_cli()` (nenhum dataset, incluindo `klines_1m`).
+    severity: "medio"
+    layer: "tests -- materialidade real baixa hoje (ferramenta de investigação manual, zero consumidor automatizado confirmado por grep), mas relevante se AG-174 for corrigido"
+    consequence: "Nenhuma regressão futura em validate_resampled_bars/_run_cli seria pega pela suíte."
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- baixa prioridade isolada (materialidade baixa), mas deveria ser feito junto de AG-174 se/quando aquele for corrigido."
+
+  - id: AG-176
+    date: "2026-08-22"
+    file: "src/models/_paths.py::_resolve_grade, src/regime/_paths.py (inline), src/labels/_paths.py::labels_symbol_tf_dir, src/validation/_paths.py::labels_symbol_tf_dir"
+    related_file: "audit/architecture_gaps_log.yaml::AG-042 (origem do padrão), AG-166 (adicionou as cópias 3 e 4)"
+    found_by: "Agent (audit_engineering independente, revisão da correção de AG-166, 2026-08-22)"
+    gap: >
+      A guarda anti-colisão `resolution_id` (resolution_id sempre vence
+      sobre tf, ValueError se não reconhecido contra
+      CALIBRATION_TF_BY_RESOLUTION) agora existe em 4 cópias
+      comportamentalmente idênticas, espalhadas em 4 pacotes
+      independentes -- nenhuma reusa a outra (mesma tática de "duplicação
+      deliberada entre pacotes" já documentada nos cabeçalhos de cada
+      arquivo, não é violação de convenção).
+    severity: "medio"
+    layer: "models/regime/labels/validation -- risco de manutenção: uma correção futura na guarda (ex. mensagem de erro, extensão pra mais resoluções) precisa ser replicada manualmente em 4 lugares"
+    consequence: >
+      Dentro da convenção já aceita do repo (cada pacote minimiza
+      acoplamento entre si) -- não é achado de correção, é achado de
+      acompanhamento de manutenção.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- sugestão da auditoria (não implementada): um script mecânico (`tools/lint/`) que verifique que as N cópias permanecem comportamentalmente idênticas, mesmo espírito de check_unguarded_ratios.py pra outra classe de bug. Baixa prioridade, dentro da convenção existente."
+
+  - id: AG-177
+    date: "2026-08-22"
+    file: "src/regime/stress.py::compute_stress_triggers/StressInputs, src/regime/classifier.py::QuantileRegimeClassifier.classify"
+    related_file: "src/regime/build_hmm.py, src/regime/hmm_gap_check.py (padrão já ratificado pro mesmo problema, AG-132), src/models/dataset.py::build_modeling_frame (caller real de produção), config/constants.yaml::canonical_regime_hmm_n_states"
+    found_by: "Agent (desenho de arquitetura ponta a ponta, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      `StressInputs.step_ms` (default=0) resolve incondicionalmente pra
+      `step_ms("15m")` dentro de `compute_stress_triggers`, mesmo sob
+      dollar-bar -- o gatilho S6 (`s06_bar_gap`) roda contra grade de
+      TEMPO fixa mesmo quando `open_time_ms` recebidos são de dollar-bar
+      (cadência irregular por desenho). `classifier.py::classify()` monta
+      `StressInputs(...)` sem NUNCA passar `step_ms`/conhecer
+      `bar_source`. `AG-132` (fechado) já corrigiu o MESMO problema
+      estrutural, mas só pro caminho `build_hmm_regimes` -- nunca
+      retroagiu pro caminho antigo (`QuantileRegimeClassifier`/`stress.py`).
+    severity: "medio"
+    layer: "regime -- ATIVO e JÁ REALIZADO no braço baseline do estudo M4 (contaminou as métricas de referência que alimentaram a decisão AG-114/canonical_regime_hmm_n_states=4, via src/analysis/m4_regime_comparison.py) -- DORMENTE mas ARMADO no treino real do Alpha (gated por Data Layer 100%) -- IRRELEVANTE hoje no Risk Engine (controle desligado, AG-118) e no kill_switch.py (não consome esta função, ao contrário do que a entrada AG-050 sugere)"
+    consequence: >
+      Fica MAIS crítico, não menos, com o tempo: o Meta-model v2 (D-01/
+      §6.1, `docs/meta_model_design_doc_2026-08-22.md`) planeja consumir
+      a coluna `regime` (que inclui R5, que inclui S6) como FEATURE
+      one-hot, não só gate -- um R5 mal-atribuído sob dollar-bar vira
+      ruído sistemático numa feature de treino, não só um gate frouxo já
+      desligado.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- desenho de arquitetura ponta a ponta proposto, NÃO implementado (fora do escopo do Grupo 1/Grupo 2 desta rodada, que cobriu só os 6 achados 'ausentes do Plano Mestre'). Recomendação: propagar bar_source até StressInputs, S6 vira NOT_COMPUTABLE explícito sob dollar-bar -- mesmo padrão já ratificado em AG-132/hmm_gap_check.py, diff mínimo, sem tocar schema publicado (§4.6), sem constante nova."
+
+    addendum_convergencia_2026-08-23: >
+      Achado de forma totalmente independente uma 2ª vez (sessão
+      paralela, sem contato com o raciocínio desta entrada), 1 dia
+      depois, com desenho MAIS completo e já com decisão de escopo
+      travada via AskUserQuestion: `docs/regime_feature_engine_design_
+      doc_2026-08-23.md` ("Arquitetura Técnica -- Regime Engine +
+      Feature Engine Multi-Ativo × Multi-Resolução v1"), cobrindo o
+      MESMO bug (`stress.compute_stress_triggers`/`QuantileRegimeClassifier.
+      classify()` cegos a `bar_source`) E também `features/build.py`
+      (mesmo território de AG-027/AG-178→AG-159). Documento da sessão
+      paralela é a referência PRIMÁRIA a partir de agora -- mais recente,
+      mais completo, com decisão de escopo já tomada ("Legado + caminho
+      de troca pro HMM"). Esta entrada (AG-177) fica como confirmação
+      independente do mesmo achado, não como desenho concorrente --
+      convergência de 2 investigações reforça que é real, não motivo pra
+      reabrir a proposta de desenho daqui."
+
+  - id: AG-178
+    date: "2026-08-22"
+    file: "src/models/pipeline.py::run_layer1_sprint (linha ~427, compute_max_feature_lookback_ms)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-159 (DUPLICATA -- mesmo achado, registrado antes por outra sessão no mesmo dia)"
+    found_by: "Agent (desenho de arquitetura ponta a ponta, mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      DUPLICATA CONFIRMADA de `AG-159` -- achado de forma totalmente
+      independente (sessão diferente, sem contato com o raciocínio da
+      outra), no mesmo dia: `compute_max_feature_lookback_ms(tf_effective)`
+      nunca recebe `resolution_id`, purge do CPCV medido sempre em
+      wall-clock. Ver `AG-159` para o registro completo/canônico deste
+      achado -- este ID fica reservado só como ponteiro, pra não
+      renumerar o restante desta rodada.
+    severity: "medio"
+    layer: "models/validation -- ver AG-159"
+    consequence: "Ver AG-159 -- registro completo lá."
+    resolved_by_commit: null
+    resolution: null
+    status: "duplicata de AG-159 -- não é achado próprio, ver addendum_convergencia_2026-08-22 em AG-159."
+
+  - id: AG-179
+    date: "2026-08-22"
+    file: "src/analysis/faixa1_7_edge_or_beta.py (cabeçalho do módulo linhas 1-28, run_faixa1_7() linha ~576)"
+    related_file: "src/analysis/faixa1_7_edge_or_beta.py::confirm_regime_onehot_in_design_matrix (linha ~373, onde a nota de quebra já existe)"
+    found_by: "Agent (mapa de dívida técnica multi-ativo BTC/M15, 2026-08-22)"
+    gap: >
+      Nota explicando que `run_faixa1_7()` quebra com `ImportError` desde
+      a Fase A (2026-08-21, regime saiu do vetor do Alpha) existe SÓ na
+      docstring da função interna `confirm_regime_onehot_in_design_matrix`
+      -- NÃO existe no docstring de cabeçalho do módulo nem no docstring
+      de `run_faixa1_7()` (que chama a função quebrada incondicionalmente).
+    severity: "baixo"
+    layer: "analysis -- fora da hierarquia de camadas por desenho (CLAUDE.md: 'nunca pode virar insumo de treino'), investigação CONCLUÍDA e arquivada (veredito fechado em docs/SPRINT_LOG.md), zero teste cobre o orquestrador"
+    consequence: >
+      Risco baixo-moderado: se alguém reabrir esta pergunta no futuro
+      (auditoria de decisão antiga, pergunta nova de mesma família),
+      bateria no ImportError sem contexto nos 2 pontos de entrada óbvios.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- correção trivial recomendada (2 blocos de docstring apontando pro texto já existente, não duplicando), não implementada nesta rodada (deliberadamente fora de escopo -- não é produção, é investigação arquivada)."

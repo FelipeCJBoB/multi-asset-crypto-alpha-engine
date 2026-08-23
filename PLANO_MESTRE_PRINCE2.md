@@ -3866,6 +3866,92 @@ AGs novos da revisão: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer
 
 ---
 
+### 15.21 Motor multi-timeframe R1/R2/R3 — mapa de dívida técnica BTC/M15 residual, Grupo 1+2 implementados (2026-08-22)
+
+**Origem:** sweep de 10 agentes paralelos varrendo `src/` inteiro (130
+arquivos) atrás de código que ainda travava em BTC-only/M15 quando deveria
+ser multi-ativo/multi-resolução (dollar-bar R1/R2/R3) — 10 achados reais, 3
+já tinham rastro em prosa não-formalizada no Plano Mestre, 7 genuinamente
+ausentes de qualquer documento do projeto. Trabalho registrado como
+`AG-165`–`AG-179` (`audit/architecture_gaps_log.yaml`).
+
+#### A. Classificação — 3 grupos por materialidade e pré-requisito
+
+1. **Grupo 1 — vira canônico com esforço pequeno, sem pré-requisito
+   externo:** `src/execution/fill_simulator.py` (tick_size/bar_ms),
+   `src/models/_paths.py`+`src/regime/_paths.py` (resolution_id ausente),
+   `src/models/dataset.py`+`src/labels/fill_model.py` (prosa
+   dessincronizada). **Implementado nesta rodada.**
+2. **Grupo 2 — código pode virar canônico, valor real depende de algo fora
+   de controle imediato:** `src/data/validate.py` (código generalizado
+   agora; dado nativo 15m/1h continua ausente, decisão de custo/escopo
+   separada) — **implementado**. `src/features/registry.yaml` — **NÃO
+   tocado**, freeze ativo (`AG-126`, aguarda `V41-6→V41-5→M4` fechar por
+   completo; só M4 fechou até agora).
+3. **Grupo 3 — não deveria virar "canônico de produção", categoria
+   diferente por desenho:** `src/analysis/faixa1_7_edge_or_beta.py` (fora
+   da hierarquia de camadas por CLAUDE.md, investigação arquivada) — **NÃO
+   implementado**, só achado registrado (`AG-179`).
+
+Achados adicionais fora dos 10 originais, mapeados em desenho profundo
+(camada, uso offline/live, governança, arquitetura ponta a ponta) mas
+**não implementados**: `src/regime/stress.py`/`classifier.py`
+(`AG-177` — convergência confirmada com
+`docs/regime_feature_engine_design_doc_2026-08-23.md`, sessão paralela,
+que passa a ser a referência primária) e o purge do CPCV em
+`pipeline.py:427` (`AG-178`, duplicata confirmada de `AG-159`, já
+registrado pela auditoria adversarial do Alpha).
+
+#### B. Implementação (commit `72e02c7`) — validada por 3 auditores independentes
+
+Fan-out `audit_engineering` (3 agentes paralelos, sem contato com o
+raciocínio da implementação) achou e a mesma rodada corrigiu **2 CRITICAL
+reais** que a implementação original não previu:
+
+- **`AG-170`:** `load_filters_asof` sem tratamento crashava a JANELA
+  DEFAULT INTEIRA de `simulate_window()` — único snapshot de `exchangeInfo`
+  em disco é de 2026-08-08, inteiramente posterior à janela histórica do
+  módulo (2023-05-16..2024-03-30). Corrigido replicando
+  `historical_filters_fallback` (opt-in explícito, B01), mesmo padrão já
+  provado em `triple_barrier._resolve_filters_cached`.
+- **`AG-171`:** `resolution_id` fora de BTCUSDT/R1 crashava com
+  `FileNotFoundError` sem contexto (só BTC tem `dollar_bars_r{1,2,3}/` no
+  disco) — mensagem reescrita, comportamento de falhar alto preservado.
+
+Mais 1 HIGH (`AG-172`, zero medido vs. nunca medido conflados) e 1 MEDIUM
+(`AG-173`, teste ponta-a-ponta cobria só metade dos 4 call sites de
+`pipeline.py`) corrigidos no mesmo commit. 2 achados HIGH/MEDIUM
+pré-existentes em `validate_resampled_bars` (`AG-174`, `AG-175`) foram
+descobertos pela auditoria mas **não corrigidos** — fora do escopo do
+achado original (`validate.py` só generalizou o CLI, não tocou a função
+de validação em si).
+
+#### C. Verificação
+
+1682 testes (suíte completa, `not slow`/`not integration`) verdes, mesmos
+4 skips pré-existentes, sem regressão. `lint-imports` 7/7 contratos
+mantidos (3 imports novos: `models`/`regime → src.data.build_dollar_bars`,
+`execution → src.exchange.filters`, nenhum viola a hierarquia real de
+camadas). `ruff`/`mypy`/`banned_patterns.py`/`check_constants_referenced.py`/
+`check_unguarded_ratios.py` limpos — as 3 divisões sem guarda já
+existentes em `fill_simulator.py` são pré-existentes, confirmadas via
+`git show HEAD`, não introduzidas por este trabalho.
+
+#### D. Pendências explícitas, não esquecidas
+
+- `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" mesmo sem
+  checar nada de fato) — aberto, pré-existente.
+- `AG-176` (4 cópias independentes da mesma guarda `resolution_id` em 4
+  pacotes `_paths.py`) — aberto, risco de manutenção, dentro da convenção
+  já aceita do repo.
+- `AG-177` (`stress.py`/`classifier.py` cegos a `bar_source`) — desenho
+  proposto, implementação em `docs/regime_feature_engine_design_doc_
+  2026-08-23.md` (sessão paralela, referência primária).
+- `AG-179` (`faixa1_7_edge_or_beta.py`, docstring de quebra incompleta) —
+  aberto, baixa prioridade, fora do escopo de produção por desenho.
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

@@ -3325,8 +3325,46 @@ fecháveis por revisão: `AG-162` (qual desenho de `tau_alpha` vale) e
 reprocessamento cobre features/regime/CPCV). Bloqueado por: gate "Data Layer
 100%" (0/9 estágios livres de gap conhecido, inalterado por este desenho).
 
+**Motor multi-timeframe R1/R2/R3 — mapa de dívida técnica BTC/M15 residual,
+Grupo 1+2 implementados e validados (2026-08-22).** Sweep de 10 agentes
+paralelos varrendo `src/` inteiro (130 arquivos) atrás de código que ainda
+travava em BTC-only/M15 — 10 achados reais (`AG-165`–`AG-179`). Grupo 1
+(sem pré-requisito externo: `fill_simulator.py`, `models/_paths.py`+
+`regime/_paths.py`, `dataset.py`, `fill_model.py`) e Grupo 2 parcial
+(`validate.py` — código generalizado; `registry.yaml` deliberadamente NÃO
+tocado, freeze ativo `AG-126`) implementados, commit `72e02c7`.
+
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-22)
+Revisão independente (`audit_engineering`, `AG-170`-`AG-173`, fan-out de 3
+auditores paralelos, sem contato com o raciocínio da implementação) achou
+<!-- check-sprint-log: skip -->
+e a mesma rodada corrigiu **2 CRITICAL reais** (`AG-170`, `AG-171`) que a
+implementação original não previu:
+`load_filters_asof` sem tratamento
+crashava a JANELA DEFAULT INTEIRA de `simulate_window()` (único snapshot
+de `exchangeInfo` em disco é posterior a toda a janela histórica do
+módulo, `AG-170`) — corrigido com `historical_filters_fallback` opt-in, <!-- check-sprint-log: skip -->
+mesmo padrão já provado em `triple_barrier.py`; e `resolution_id` fora de
+BTCUSDT/R1 crashava com `FileNotFoundError` sem contexto acionável
+(`AG-171`). Mais 1 HIGH (`AG-172`, zero medido vs. nunca medido
+conflados) e 1 MEDIUM (`AG-173`, cobertura de teste incompleta)
+corrigidos no mesmo commit; 2 achados HIGH/MEDIUM pré-existentes em
+`validate_resampled_bars` (`AG-174`/`AG-175`, finge "PASS" sem checar
+nada de fato) ficaram registrados, não corrigidos (fora do escopo do
+achado original).
+
+1682 testes (suíte completa) verdes, sem regressão, `lint-imports` 7/7
+mantidos. Achados fora do escopo desta rodada, mapeados em desenho
+profundo mas não implementados: `src/regime/stress.py`/`classifier.py`
+(`AG-177` — convergência confirmada com investigação independente da
+sessão paralela, `docs/regime_feature_engine_design_doc_2026-08-23.md`,
+que passa a ser a referência primária) e o purge do CPCV em
+`pipeline.py:427` (`AG-178`, duplicata confirmada de `AG-159`, já
+registrado pela auditoria adversarial do Alpha). Detalhe completo:
+`PLANO_MESTRE_PRINCE2.md §15.21`.
+
+<!-- check-sprint-log: skip -->
+## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -3360,4 +3398,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
+| **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-179`. Grupo 1 (fill_simulator.py, models/regime `_paths.py`, dataset.py, fill_model.py) + Grupo 2 parcial (validate.py) **implementados e testados**, commit `72e02c7` — 2 CRITICAL reais corrigidos via revisão `audit_engineering` independente (`load_filters_asof` sem fallback crashava a janela default inteira; `resolution_id` fora de BTCUSDT/R1 crashava sem contexto). `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente, não implementado: `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" sem checar), `AG-176` (guarda `resolution_id` duplicada em 4 pacotes), `AG-177` (`stress.py`/`classifier.py`, referência primária passa a ser `docs/regime_feature_engine_design_doc_2026-08-23.md` da sessão paralela), `AG-179` (`faixa1_7_edge_or_beta.py`, fora de escopo por desenho) |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
