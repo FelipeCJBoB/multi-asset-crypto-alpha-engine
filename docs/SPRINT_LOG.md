@@ -3385,6 +3385,39 @@ classe de `AG-030`, achado prévio (`docs/refactor_dollar_bar_
 canonico.md:206-207`) nunca antes fechado por nenhum AG. Zero linhas de
 código implementadas. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.21.1`.
 
+**D-01/D-02 implementados, commit `6902352` (2026-08-23).** S6
+(`stress.s06_bar_gap_dollar`, nova) ganhou versão causal/expansiva via
+`pl.Series.rolling_median` deslocada em 1 posição — reusa a implementação
+nativa do Polars pra manter O(n log n) em vez de custódia de estrutura de
+dados própria, sem abrir mão da causalidade que a v3 do design doc exigia.
+`StressInputs`/`compute_stress_triggers`/`QuantileRegimeClassifier`/
+`build_regimes` propagam `bar_source` ponta a ponta (fecha `AG-177`).
+`compute_max_feature_lookback_ms` ganhou `resolution_id`, os 2 call sites
+(`pipeline.py`/`leakage.py`) mudaram juntos (fecha o componente de UNIDADE
+de `AG-159` — a ressalva de MAGNITUDE do proxy p99 segue aberta, sem
+guarda de runtime, B23). Revisão independente (`project_assurance`, 2
+agentes paralelos, um por decisão de desenho) achou e a mesma rodada
+corrigiu **1 achado real antes do commit** (`AG-183`): a primeira versão
+<!-- check-sprint-log: skip -->
+de `s06_bar_gap_dollar` usava critério BILATERAL de anomalia
+(`abs(modified_z) > threshold`), divergente do precedente citado
+<!-- check-sprint-log: skip -->
+(`hmm_gap_check.py`, unilateral) e semanticamente errado — S6 detecta
+AUSÊNCIA de barra, não excesso de atividade; uma rajada de liquidez sob
+dollar-bar dispararia stress sem motivo real, mudando `monotone_
+constraints` do Alpha via `environments.py`→`monotonic.py`→`alpha.py`.
+Corrigido pra unilateral antes de qualquer treino real rodar sob o
+<!-- check-sprint-log: skip -->
+comportamento incorreto. Mais 2 achados menores corrigidos no mesmo ciclo
+<!-- check-sprint-log: skip -->
+(`AG-181`, cobertura de teste do gate de segurança sob a combinação real
+`resolution_id`+`feature_ids`; `AG-182`, docstring overclaiming). Um bug
+de fixture pré-existente (`test_regime_build.py`, faltava coluna
+`close_time`) também corrigido — não era bug de produção. `1695 passed,
+0 failed` (suíte completa `-m "not slow and not integration"`). Fora de
+escopo, como previsto: `AG-180` (D-04) e §11 do design doc (caminho HMM)
+seguem sem código. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.21.2`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3420,5 +3453,5 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
-| **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-179`. Grupo 1 (fill_simulator.py, models/regime `_paths.py`, dataset.py, fill_model.py) + Grupo 2 parcial (validate.py) **implementados e testados**, commit `72e02c7` — 2 CRITICAL reais corrigidos via revisão `audit_engineering` independente (`load_filters_asof` sem fallback crashava a janela default inteira; `resolution_id` fora de BTCUSDT/R1 crashava sem contexto). `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente, não implementado: `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" sem checar), `AG-176` (guarda `resolution_id` duplicada em 4 pacotes), `AG-177` (`stress.py`/`classifier.py`, referência primária é `docs/regime_feature_engine_design_doc_2026-08-23.md` — evoluiu v1→v3, achado crítico de vazamento temporal corrigido antes de virar código, ver §15.21.1), `AG-179` (`faixa1_7_edge_or_beta.py`, fora de escopo por desenho), `AG-180` (novo — histerese em contagem de barra sob dollar-bar, sem correção medida) |
+| **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1 (fill_simulator.py, models/regime `_paths.py`, dataset.py, fill_model.py) + Grupo 2 parcial (validate.py) implementados, commit `72e02c7` — 2 CRITICAL corrigidos via `audit_engineering`. **D-01/D-02 (`stress.py`/`classifier.py`/`build.py` — S6 dollar-bar causal; purge do CPCV resolution-aware) implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23). Revisão `project_assurance` corrigiu 1 achado real antes do commit (`AG-183` — critério de S6 era bilateral, deveria ser unilateral) + 2 menores (`AG-181`/`AG-182`). `1695 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente, não implementado: `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" sem checar), `AG-176` (guarda `resolution_id` duplicada em 4 pacotes), `AG-179` (`faixa1_7_edge_or_beta.py`, fora de escopo por desenho), `AG-180` (histerese em contagem de barra sob dollar-bar, sem correção medida), §11 do design doc (caminho de troca pro HMM, não iniciado) |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |

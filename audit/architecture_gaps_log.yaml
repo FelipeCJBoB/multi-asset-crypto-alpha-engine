@@ -11568,6 +11568,27 @@ entries:
       desenho. Ver `docs/regime_feature_engine_design_doc_2026-08-23.md`
       D-02 pro texto completo.
 
+    addendum_implementacao_2026-08-23: >
+      Componente de UNIDADE implementado (commit `6902352`, 2026-08-23):
+      `compute_max_feature_lookback_ms` ganhou `resolution_id` -- quando
+      setado, usa `label_prefetch_p99_bar_duration_ms` em vez de
+      `step_ms(tf)`. Os DOIS call sites (`pipeline.py:427`,
+      `leakage.py:792`) mudaram na mesma unidade de trabalho, como esta
+      entrada exigia. Deliberadamente NÃO implementado (B23 -- decisão já
+      tomada, não inventar threshold sem medir): a ressalva de MAGNITUDE
+      do proxy p99 (2ª metade do `addendum_v3` acima) -- o proxy foi
+      medido/justificado pro modelo de custo de PREFETCH, não pro de
+      PURGE, e não há guarda de runtime nem medição do máximo real de
+      janela de 96 barras consecutivas. Revisão independente
+      (`project_assurance`, 2026-08-23) confirma que isso segue real e
+      sem mitigação em código -- ver `AG-181`/docstring de
+      `compute_max_feature_lookback_ms`. **Não fechar esta entrada como
+      `resolved_by_commit` até a guarda de runtime (ressalva 4) existir ou
+      o máximo real ser medido (ressalva 3)** -- o bug de UNIDADE original
+      que esta entrada nomeia está corrigido, mas o risco de fundo (purge
+      sub-protegido silenciosamente) só é mitigado quando essa ressalva
+      fechar, não antes.
+
   - id: AG-160
     date: "2026-08-22"
     file: "src/models/pipeline.py:101-104,321,756 (report_path default)"
@@ -12065,9 +12086,28 @@ entries:
       one-hot, não só gate -- um R5 mal-atribuído sob dollar-bar vira
       ruído sistemático numa feature de treino, não só um gate frouxo já
       desligado.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- desenho de arquitetura ponta a ponta proposto, NÃO implementado (fora do escopo do Grupo 1/Grupo 2 desta rodada, que cobriu só os 6 achados 'ausentes do Plano Mestre'). Recomendação: propagar bar_source até StressInputs, S6 vira NOT_COMPUTABLE explícito sob dollar-bar -- mesmo padrão já ratificado em AG-132/hmm_gap_check.py, diff mínimo, sem tocar schema publicado (§4.6), sem constante nova."
+    resolved_by_commit: "6902352"
+    resolution: >
+      Implementado (commit `6902352`, 2026-08-23) seguindo o desenho da v3
+      do design doc, não a recomendação original desta entrada (que
+      previa `NOT_COMPUTABLE` explícito -- a v3 corrigiu pra uma detecção
+      CAUSAL/expansiva real, ver `addendum_v3_2026-08-23` abaixo).
+      `StressInputs` ganhou `bar_source`/`close_time_ms`;
+      `compute_stress_triggers` valida fail-fast (`ValueError` se
+      `bar_source != "time_15m"` e `close_time_ms is None`) e despacha S6
+      pra `s06_bar_gap_dollar` (nova, causal/expansiva via
+      `pl.Series.rolling_median` deslocada em 1 posição) ou `s06_bar_gap`
+      (legado, inalterado) por `bar_source`. `QuantileRegimeClassifier`
+      ganhou campo `bar_source`, extrai `close_time` de `features` e
+      propaga; `build_regimes` passa `bar_source` no construtor -- antes
+      desta mudança o parâmetro chegava até `build_t1_features` mas nunca
+      ia além. Revisão independente (`project_assurance`, 2026-08-23)
+      encontrou 1 achado real corrigido antes do commit: o critério de
+      anomalia era BILATERAL (`abs(z)>threshold`), disparando também em
+      gaps CURTOS -- semanticamente errado (S6 detecta ausência de barra,
+      não excesso de atividade) e divergente do precedente citado. Ver
+      `AG-183` pro registro completo desse achado."
+    status: "fechado 2026-08-23 -- commit 6902352 (implementado conforme a v3 do design doc, não a recomendação original desta entrada -- ver `resolution`). Consumidores downstream confirmados pela revisão independente: `environments.py`/`monotonic.py`/`alpha.py::fit_side_model`, cadeia real de produção -- `monotone_constraints` do Alpha podem mudar sob R1/R2/R3 a partir deste commit, efeito esperado/correto, não regressão."
 
     addendum_convergencia_2026-08-23: >
       Achado de forma totalmente independente uma 2ª vez (sessão
@@ -12205,3 +12245,97 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisão do Manager necessária, mesma disciplina de B23: não inventar conversão numérica não medida. docs/regime_feature_engine_design_doc_2026-08-23.md D-04 reconhece o gap e não o resolve (nem 'desabilitar' é neutro aqui, ao contrário de AG-030 -- confirmation_bars=0 muda semântica da histerese). Requer medição de equivalente nativo sob dollar-bar antes de qualquer correção."
+
+  - id: AG-181
+    date: "2026-08-23"
+    file: "tests/unit/test_features_build.py"
+    related_file: "src/features/build.py::compute_max_feature_lookback_ms; audit/architecture_gaps_log.yaml::AG-159"
+    found_by: "Agent Project Assurance independente (PRINCE2 §6.4, revisor sem acesso ao raciocínio da implementação)"
+    gap: >
+      Nenhum teste chamava `compute_max_feature_lookback_ms(tf,
+      resolution_id="R2")` com `feature_ids` no default
+      (`T1_FEATURE_IDS`, o conjunto ativo REAL) pra provar que
+      `ExpandingFeatureLookbackError` ainda dispara ANTES do cálculo de
+      `bar_duration_ms` sob a combinação exata que os 2 call sites de
+      produção (`pipeline.py`/`leakage.py`) usam de verdade. Os testes
+      existentes cobriam os dois comportamentos isoladamente (gate real
+      sem `resolution_id`; `resolution_id` sem o gate real, via
+      `feature_ids=()`), nunca a combinação.
+    severity: "media"
+    layer: "features -- cobertura de teste do caminho de segurança"
+    consequence: >
+      Uma regressão futura que reordenasse
+      `assert_no_expanding_lookback_in_active_set` pra depois do branch de
+      `resolution_id` passaria verde na suíte, apesar de reintroduzir
+      exatamente o risco que o gate existe pra prevenir (purge sem
+      proteção sob R2/R3 sem nenhum erro visível).
+    resolved_by_commit: "6902352"
+    resolution: >
+      `test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_
+      resolution_id_setado` adicionado (`tests/unit/test_features_build.py`)
+      -- chama `compute_max_feature_lookback_ms("15m", resolution_id="R2")`
+      com `feature_ids` no default real, espera
+      `ExpandingFeatureLookbackError`.
+    status: "fechado 2026-08-23 -- commit 6902352"
+
+  - id: AG-182
+    date: "2026-08-23"
+    file: "src/features/build.py::compute_max_feature_lookback_ms (docstring)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-159 (addendum_v3_regime_feature_engine_design_doc_2026-08-23)"
+    found_by: "Agent Project Assurance independente (PRINCE2 §6.4, revisor sem acesso ao raciocínio da implementação)"
+    gap: >
+      Docstring de `compute_max_feature_lookback_ms` afirmava que o
+      parâmetro `resolution_id` deixa "a unidade correta pronta" sem
+      qualificar que a MAGNITUDE do proxy (`label_prefetch_p99_bar_
+      duration_ms`) segue sem guarda de runtime para o caso de uso de
+      purge (ressalva 3/4 de `AG-159`) -- um leitor que não abrir o
+      design doc/ledger poderia concluir que o parâmetro está pronto sem
+      ressalva.
+    severity: "baixa"
+    layer: "features -- documentação"
+    consequence: >
+      Risco de um futuro caller remover o gate de features `expanding`
+      confiando só no docstring local, sem revisitar a ressalva de
+      magnitude registrada em `AG-159`.
+    resolved_by_commit: "6902352"
+    resolution: >
+      Docstring atualizado com um parágrafo explícito citando `AG-159`
+      addendum e a distinção entre "unidade correta" (resolvido) e
+      "magnitude garantidamente suficiente" (não resolvido, B23).
+    status: "fechado 2026-08-23 -- commit 6902352"
+
+  - id: AG-183
+    date: "2026-08-23"
+    file: "src/regime/stress.py::s06_bar_gap_dollar"
+    related_file: "src/regime/hmm_gap_check.py::check_bars_gap_before_hmm (precedente citado); audit/architecture_gaps_log.yaml::AG-177"
+    found_by: "Agent Project Assurance independente (PRINCE2 §6.4, revisor sem acesso ao raciocínio da implementação) -- corrigido antes do commit de implementação"
+    gap: >
+      `s06_bar_gap_dollar` (primeira versão, pré-commit) usava critério
+      BILATERAL de anomalia (`abs(modified_z) > threshold`, disparando
+      tanto em gap MAIOR quanto MENOR que o típico) -- divergente do
+      precedente que o próprio docstring alegava reusar
+      (`hmm_gap_check.check_bars_gap_before_hmm`, unilateral, só
+      `modified_z > threshold`), sem justificativa nem teste que
+      exercitasse o caso de gap CURTO. S6 existe pra detectar AUSÊNCIA de
+      barra (gap = "buraco" na grade); um intervalo anomalamente curto
+      entre dollar-bars é o oposto disso -- atividade/liquidez densa, não
+      problema de dado.
+    severity: "media"
+    layer: "regime -- S6, achado corrigido no mesmo ciclo de implementação, antes de qualquer treino real consumir o comportamento incorreto"
+    consequence: >
+      Se não corrigido, uma rajada de alta liquidez sob dollar-bar (R2/R3)
+      dispararia S6 incorretamente (regime=R5, tradeable=False) sem
+      nenhum problema real de coleta -- alterando `regime`/`regime_raw` e,
+      por consequência, `monotone_constraints` via
+      `environments.py`→`monotonic.py`→`alpha.py::fit_side_model` (cadeia
+      de produção real, confirmada por Grep independente), no primeiro
+      treino sob essas resoluções.
+    resolved_by_commit: "6902352"
+    resolution: >
+      Critério corrigido pra unilateral (`modified_z > threshold`,
+      `gaps > ref_median` no fallback de escala zero) antes do commit de
+      implementação -- nenhum treino real chegou a rodar sob o
+      comportamento incorreto. Teste novo
+      `test_s06_bar_gap_dollar_gap_curto_nao_dispara_criterio_unilateral`
+      trava o comportamento correto.
+    status: "fechado 2026-08-23 -- commit 6902352"

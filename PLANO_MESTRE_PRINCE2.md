@@ -4025,6 +4025,80 @@ concorrentes").
 
 ---
 
+### 15.21.2 D-01/D-02 implementados — S6 dollar-bar causal + purge CPCV resolution-aware (2026-08-23)
+
+**Origem:** implementação do desenho travado em `§15.21.1` (v3 do design
+doc), commit `6902352`. Sequência: implementação → revisão independente
+(`project_assurance`, 2 agentes paralelos, um por decisão de desenho) →
+1 achado real corrigido antes do commit → testes (1695 passed, 0 failed) →
+governança.
+
+**A. D-01 — S6 dollar-bar-aware, causal/expansiva (fecha `AG-177`).**
+`src/regime/stress.py` ganhou `s06_bar_gap_dollar` — mediana/MAD
+calculadas via `pl.Series.rolling_median(window_size=len(série),
+min_samples=1)` deslocada em 1 posição (janela ≥ comprimento total se
+comporta como expansiva por construção — reusa a implementação nativa do
+Polars em vez de estrutura de dados customizada, técnica não prevista
+literalmente no design doc mas que satisfaz a mesma exigência de
+causalidade da v3 com custo O(n log n), não O(n²)). `StressInputs` ganhou
+`bar_source`/`close_time_ms`; `compute_stress_triggers` valida fail-fast
+(`ValueError`) e despacha S6 pelo `bar_source`. `QuantileRegimeClassifier`/
+`build_regimes` propagam `bar_source` ponta a ponta — antes desta mudança
+o parâmetro chegava até `build_t1_features` mas nunca ia além.
+
+**B. D-02 — purge do CPCV resolution-aware (fecha o componente de UNIDADE
+de `AG-159`).** `compute_max_feature_lookback_ms` ganhou `resolution_id` —
+sob dollar-bar usa `label_prefetch_p99_bar_duration_ms` em vez de
+`step_ms(tf)`. Os 2 call sites (`pipeline.py:427`, `leakage.py:792`)
+mudaram na mesma unidade de trabalho, como `AG-159` exigia.
+
+**C. 1 achado real da revisão independente, corrigido antes do commit —
+critério de S6 era bilateral, deveria ser unilateral (`AG-183`).**
+`s06_bar_gap_dollar`, como implementada inicialmente, disparava tanto em
+gap MAIOR quanto MENOR que o típico (`abs(modified_z) > threshold`) —
+divergente do precedente citado (`hmm_gap_check.py`, unilateral) e
+semanticamente errado: S6 detecta AUSÊNCIA de barra, um intervalo
+anomalamente curto é o oposto disso (atividade densa, não problema de
+dado). Cenário de falha real que o revisor identificou: uma rajada de
+liquidez sob dollar-bar dispararia stress (R5, `tradeable=False`) sem
+motivo, alterando `monotone_constraints` do Alpha via a cadeia
+`environments.py`→`monotonic.py`→`alpha.py::fit_side_model` (confirmada
+como consumidor de produção real pela revisão, não só análise). Corrigido
+pra unilateral antes do commit — nenhum treino real rodou sob o
+comportamento incorreto.
+
+**D. Achados menores, também corrigidos no mesmo ciclo.** `AG-181`
+(faltava teste provando que `assert_no_expanding_lookback_in_active_set`
+dispara primeiro mesmo com `resolution_id` setado, sob o conjunto ativo
+REAL — cobertura fechada). `AG-182` (docstring de
+`compute_max_feature_lookback_ms` overclaimava "unidade correta" sem
+qualificar que a ressalva de MAGNITUDE do proxy p99 segue aberta —
+corrigido). Um bug pré-existente de fixture (`tests/unit/
+test_regime_build.py::_make_synthetic_regime_features`, faltava coluna
+`close_time`) também foi corrigido — não era bug de produção, a fixture
+sintética é que estava incompleta frente ao novo contrato de `classify()`.
+
+**E. `AG-159` — fechado só o componente de UNIDADE, não a entrada
+inteira.** A ressalva de MAGNITUDE do proxy `label_prefetch_p99_bar_
+duration_ms` (medido/justificado pro modelo de custo de PREFETCH, não pro
+de PURGE — `max_ms` real de SOLUSDT/R3 chega a ~5,8× o `p99` usado) segue
+sem guarda de runtime, deliberadamente não implementada (B23 — a medição
+do máximo real de janela consecutiva ainda não existe). `AG-159` continua
+`status: "aberto"` no ledger — o addendum desta rodada documenta a
+resolução parcial.
+
+**F. O que fica de fora, como previsto.** `AG-180` (D-04, histerese em
+contagem de barra) e §11 do design doc (caminho de troca pro HMM)
+continuam abertos, sem código novo — decisão explícita, não esquecimento.
+
+**G. Verificação.** `1695 passed, 4 skipped, 0 failed` (`-m "not slow and
+not integration"`, suíte completa). `ruff`/`mypy`/`banned_patterns.py`/
+`check_constants_referenced.py`/`check_unguarded_ratios.py` limpos nos
+arquivos tocados. Nenhuma constante nova em `constants.yaml` (reuso de
+`label_prefetch_p99_bar_duration_ms`, já `MEASURED`).
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
