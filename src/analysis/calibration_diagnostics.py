@@ -67,7 +67,7 @@ from numpy.typing import NDArray
 from scipy.stats import chi2_contingency, kendalltau, norm, spearmanr
 
 from src.core.provenance import report_provenance
-from src.models.monotonic import _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE
+from src.models.monotonic import _forced_constraint_for
 
 from . import attribution as attr
 
@@ -473,19 +473,31 @@ def congruent_incongruent_subsets(
     incongruent: dict[str, Any] = {"e02f_ic_by_regime": ic_by_regime_measured}
 
     for side, side_label in _SIDE_LABEL_BY_HAT.items():
-        forced_sign = _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE[E02F_FEATURE][side]
+        # `_forced_constraint_for` (lookup SEGURO, `.get()`-based, já usado
+        # por `screen_monotone_constraints`) em vez de indexar
+        # `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE[...]` direto -- essa entrada
+        # ficou vazia (AG-032, 2026-08-23: `E02f_funding_z_expanding` saiu
+        # de `T1_FEATURE_IDS`), então `forced_sign` é HOJE sempre `None`
+        # pra este feature. Não é bug a esconder: o mecanismo continua
+        # genérico (pronto pra qualquer feature futura reocupar o dict),
+        # só reporta honestamente "não aplicável" em vez de KeyError ou de
+        # classificar tudo como incongruente por engano.
+        forced_sign = _forced_constraint_for(E02F_FEATURE, side=side)
         congruent_regimes: list[str] = []
         incongruent_regimes: list[str] = []
-        for regime in STRUCTURAL_REGIMES:
-            entry = ic_by_regime_measured.get(regime)
-            if entry is None or not entry["ic_valid"] or entry["ic_value"] is None:
-                continue
-            measured_sign = 1 if entry["ic_value"] > 0 else (-1 if entry["ic_value"] < 0 else 0)
-            if measured_sign == 0:
-                continue
-            (congruent_regimes if measured_sign == forced_sign else incongruent_regimes).append(
-                regime
-            )
+        if forced_sign is not None:
+            for regime in STRUCTURAL_REGIMES:
+                entry = ic_by_regime_measured.get(regime)
+                if entry is None or not entry["ic_valid"] or entry["ic_value"] is None:
+                    continue
+                measured_sign = (
+                    1 if entry["ic_value"] > 0 else (-1 if entry["ic_value"] < 0 else 0)
+                )
+                if measured_sign == 0:
+                    continue
+                (
+                    congruent_regimes if measured_sign == forced_sign else incongruent_regimes
+                ).append(regime)
 
         pop = populations_by_side[side]
         congruent_sub = (
@@ -501,8 +513,18 @@ def congruent_incongruent_subsets(
 
         congruent_profile = decile_profile(congruent_sub)
         incongruent_profile = decile_profile(incongruent_sub)
+        not_applicable_reason = (
+            None
+            if forced_sign is not None
+            else (
+                f"{E02F_FEATURE} não tem restrição forçada por lado desde AG-032 "
+                "(2026-08-23, saiu de T1_FEATURE_IDS) -- classificação congruente/"
+                "incongruente não aplicável, nada pra comparar"
+            )
+        )
         congruent[side_label] = {
             "forced_constraint_sign": forced_sign,
+            "not_applicable_reason": not_applicable_reason,
             "regimes_included": congruent_regimes,
             "n_total": congruent_sub.height,
             "decile_profile": congruent_profile,
@@ -510,6 +532,7 @@ def congruent_incongruent_subsets(
         }
         incongruent[side_label] = {
             "forced_constraint_sign": forced_sign,
+            "not_applicable_reason": not_applicable_reason,
             "regimes_included": incongruent_regimes,
             "n_total": incongruent_sub.height,
             "decile_profile": incongruent_profile,
@@ -912,7 +935,14 @@ def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
     # T0.3 -- via cpcv.load_labels_v1() em vez de reconstruir o caminho
     # (que migrou de labels/v1/ pro layout chaveado data/labels/BTCUSDT/15m/v1/).
     labels = cpcv.load_labels_v1()
-    mf = ds.build_modeling_frame()
+    # `extra_feature_ids=(E02F_FEATURE,)` -- AG-032 (2026-08-23) tirou
+    # `E02f_funding_z_expanding` de `T1_FEATURE_IDS`; `build_modeling_
+    # frame` não inclui mais a coluna por padrão (mesmo cálculo, só não
+    # entra no join default). Sem isso, a seleção abaixo levantaria
+    # `ColumnNotFoundError` -- achado real durante a migração LightGBM do
+    # Alpha, `E02F_FEATURE` nunca tinha sido testado ponta a ponta contra
+    # dado real desde AG-032.
+    mf = ds.build_modeling_frame(extra_feature_ids=(E02F_FEATURE,))
     regimes = mf.data.select(["t0", "regime", COST_FEATURE, E02F_FEATURE])
 
     payload = run_faixa1_diagnostic(predictions, labels, regimes)

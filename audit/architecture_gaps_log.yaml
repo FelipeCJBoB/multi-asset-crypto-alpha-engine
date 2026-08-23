@@ -13383,3 +13383,73 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "adiado pra v2+, não fechado -- critério de reabertura declarado: depois do Alpha rodar de verdade em produção (retreino real, `AG-100`/`AG-124` fechados, gate 'Data Layer 100%' liberado), medir (sem sweep novo, custo zero de N_lifetime) se `gain_by_column_raw` de `M_long` vs. `M_short` (já persistido em `SideModelResult`/`models/{model_id}/diagnostics/`, D-08) converge pras mesmas features top-N nos dois lados. Convergência ALTA (mesmas features dominam os dois lados) = feature-set/hiperparâmetro compartilhado provavelmente já captura o que importa, não reabrir. Convergência BAIXA (lados dependem de features bem diferentes) = evidência real de que compartilhar está deixando edge na mesa, reabrir como candidato de sweep formal (com orçamento declarado a priori, B20)."
+
+  - id: AG-193
+    date: "2026-08-23"
+    file: "src/analysis/calibration_diagnostics.py::congruent_incongruent_subsets (:476), src/analysis/faixa1_5_prerequisites.py::e02f_in_fold (:750), + as 2 chamadas de ds.build_modeling_frame() em run_and_save_faixa1_report/run_and_save_faixa1_5"
+    related_file: "src/models/monotonic.py::_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE (AG-032, commit 78169df); tests/unit/test_analysis_calibration_diagnostics.py; tests/unit/test_analysis_faixa1_5_prerequisites.py"
+    found_by: "Claude (migração LightGBM do Alpha, rodada de testes -m \"not slow and not integration and not golden\" -- 3 falhas reais reportadas pelo usuário como \"falhou, encontre solução robusta sem remediação barata\")"
+    gap: >
+      `AG-032` (commit `78169df`, 2026-08-23, decisão do Manager) esvaziou
+      `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` (`E02f_funding_z_expanding`
+      saiu de `T1_FEATURE_IDS`) mas 2 módulos de análise pós-hoc
+      indexavam esse dict DIRETO (`_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE
+      [E02F_FEATURE][side]`, sem `.get()`), em vez de usar o mesmo
+      acessor seguro que `screen_monotone_constraints` já usa
+      internamente (`_forced_constraint_for`). Ficou silenciosamente
+      quebrado desde `78169df` -- 3 testes unitários levantavam
+      `KeyError`/`ColumnNotFoundError` (não pego antes porque ninguém
+      rodou esses arquivos de teste específicos depois de `78169df`) e
+      1 teste de integração (`test_integracao_real_run_faixa1_diagnostic`)
+      tinha uma asserção invertida (`assert E02F_FEATURE in
+      T1_FEATURE_IDS`, virou falso). Consequência mais séria: os 2 PONTOS
+      DE ENTRADA MANUAIS reais (`run_and_save_faixa1_report`,
+      `run_and_save_faixa1_5`) chamavam `ds.build_modeling_frame()` SEM
+      `extra_feature_ids=(E02F_FEATURE,)` -- quebrariam com
+      `ColumnNotFoundError` se alguém de fato os rodasse hoje, não só em
+      teste. Achado durante trabalho não relacionado (migração LightGBM
+      do Alpha, `docs/alpha_model_design_doc_2026-08-22.md`) -- confirmado
+      pré-existente via `git stash` (falhas idênticas em `master` antes de
+      qualquer mudança desta sessão).
+    severity: "medio"
+    layer: "analysis -- acoplamento direto (não via acessor seguro) a um dict de produção que mudou de forma incompatível; 2 pontos de entrada manuais reais quebrados, não só testes"
+    consequence: >
+      Sem fix: `run_and_save_faixa1_report`/`run_and_save_faixa1_5`
+      (`uv run python -m src.analysis.calibration_diagnostics`/
+      `faixa1_5_prerequisites`) levantariam `ColumnNotFoundError` se
+      chamados hoje -- diagnóstico Faixa 1/1.5 inteiro (D1-D4, ECE,
+      NOFILL por decil, etc., não só a parte de E02f) ficaria inacessível
+      por causa de uma sub-medição que não é mais aplicável.
+    resolved_by_commit: null
+    resolution: >
+      Trocado `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE[feature][side]` (raise
+      cru) por `_forced_constraint_for(feature, side=side)` (acessor
+      seguro já existente, `.get()`-based) nos 2 módulos.
+      `congruent_incongruent_subsets` ganhou branch explícito quando
+      `forced_sign is None`: reporta `forced_constraint_sign: None` +
+      `not_applicable_reason` (string explicando AG-032), listas de
+      regime vazias -- nunca falso-classifica tudo como incongruente
+      (comparar contra `None` seria sempre falso) nem esconde a causa.
+      `e02f_in_fold` já reportava `forced_sign_actual` como campo de
+      dado (não decisão) -- passa a ser `None` honestamente, sem crash;
+      o próprio docstring da função já antecipava esse cenário ("o sinal
+      que _assign_from_ic atribuiria SE E02f não estivesse forçado",
+      deixou de ser hipotético). Os 2 `ds.build_modeling_frame()` sem
+      `extra_feature_ids` ganharam `extra_feature_ids=(E02F_FEATURE,)`
+      (mecanismo já existente, construído pra exatamente este caso,
+      `AG-032`). Testes: 3 arquivos corrigidos -- schema de teste
+      completado (`_E02F_FEATURE` no `mf_data` sintético de
+      `test_e02f_in_fold_...`), asserção invertida corrigida
+      (`test_integracao_real_run_faixa1_diagnostic`), e o teste original
+      de classificação congruente/incongruente preservado via
+      `monkeypatch` de `_forced_constraint_for` (mantém cobertura do
+      MECANISMO, que continua genérico pra feature futura) + 1 teste novo
+      cobrindo o estado REAL de hoje (dict vazio, sem monkeypatch).
+      Não abrange os outros ~29 arquivos que citam `C07_vol_pctile_
+      expanding`/`D03f_volume_z_expanding`/`E02f_funding_z_expanding`
+      fora deste cluster (a maioria usa os nomes como string de fixture
+      ou lê a feature fora do papel de `T1_FEATURE_IDS`, não pareceu
+      ter o mesmo padrão de bug numa varredura rápida, mas não foi
+      auditado exaustivamente -- se alguém for mexer em análise Faixa 1/
+      1.5/1.6/1.7/2.x que toque nessas 3 features, vale conferir).
+    status: "fechado -- 4 testes confirmados verdes (3 originais + integração), ruff/mypy/banned_patterns limpos nos arquivos tocados."

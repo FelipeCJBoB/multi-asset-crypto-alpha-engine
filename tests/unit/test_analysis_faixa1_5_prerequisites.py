@@ -324,6 +324,11 @@ def test_e02f_in_fold_roda_um_fold_pequeno_sem_levantar(monkeypatch: pytest.Monk
     }
     for fid in T1_FEATURE_IDS:
         columns[fid] = rng.normal(size=n)
+    # `_E02F_FEATURE` (AG-032, 2026-08-23) saiu de `T1_FEATURE_IDS` -- não
+    # entra no loop acima, mas `e02f_in_fold` lê a coluna diretamente
+    # (mesmo padrão que produção agora exige via `build_modeling_frame(
+    # extra_feature_ids=(f15._E02F_FEATURE,))`, ver `run_and_save_faixa1_5`).
+    columns[f15._E02F_FEATURE] = rng.normal(size=n)
     mf_data = pl.DataFrame(columns).with_columns(pl.col("t0").cast(pl.Int64).cast(_T0_DTYPE))
     split = CPCVSplit(
         split_id=0,
@@ -342,7 +347,12 @@ def test_e02f_in_fold_roda_um_fold_pequeno_sem_levantar(monkeypatch: pytest.Monk
     for side_label in ("long", "short"):
         entry = out["0"][side_label]
         assert set(entry["ic_by_env"].keys()) == set(f15.ENVIRONMENTS)
-        assert entry["forced_sign_actual"] in (1, -1)
+        # `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` está vazio desde AG-032
+        # (2026-08-23, E02f saiu de T1_FEATURE_IDS) -- `forced_sign_actual`
+        # reflete a produção real hoje: `None`, não mais {1, -1}. Achado
+        # real durante a migração LightGBM do Alpha (2026-08-23) -- este
+        # teste levantava `KeyError` antes do fix em `e02f_in_fold`.
+        assert entry["forced_sign_actual"] is None
 
 
 # ============================================================================

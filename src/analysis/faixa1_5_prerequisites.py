@@ -51,8 +51,8 @@ from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.decomposition import decompose
 from src.models.environments import ENVIRONMENTS, assign_environments
 from src.models.monotonic import (
-    _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE,
     _assign_from_ic,
+    _forced_constraint_for,
     compute_ic_by_env,
 )
 from src.models.pipeline import MODEL_ID_CAMADA1, MODELS_DIR
@@ -747,7 +747,15 @@ def e02f_in_fold(mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) -> d
             screen_sign, mean_ic, n_consistent, n_with_data = _assign_from_ic(
                 ic_by_env, min_consistent_envs=min_consistent_envs
             )
-            forced_sign = _ECONOMIC_FORCED_CONSTRAINT_BY_SIDE[_E02F_FEATURE][side]
+            # `_forced_constraint_for` (lookup SEGURO, `.get()`-based) em vez
+            # de indexar `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE[...]` direto --
+            # essa entrada ficou vazia (AG-032, 2026-08-23: `E02f` saiu de
+            # `T1_FEATURE_IDS`), `forced_sign` é HOJE sempre `None` -- exatamente
+            # o cenário que este `fold_entry["forced_sign_actual"]` já existia
+            # pra reportar (docstring da função: "o sinal que _assign_from_ic
+            # atribuiria SE E02f não estivesse forçado" -- deixou de ser
+            # hipotético).
+            forced_sign = _forced_constraint_for(_E02F_FEATURE, side=side)
             n_by_env = {
                 env: int(
                     df_env.filter(pl.col("env") == env)
@@ -815,7 +823,11 @@ def run_and_save_faixa1_5(*, dest_path: Path | None = None) -> Path:
     """Ponto de entrada MANUAL (mesmo padrão de `run_and_save_cost_
     surface_report`/`run_and_save_faixa1_report`). Chame:
     `uv run python -m src.analysis.faixa1_5_prerequisites`."""
-    mf = ds.build_modeling_frame()
+    # `extra_feature_ids=(_E02F_FEATURE,)` -- AG-032 (2026-08-23) tirou
+    # `E02f_funding_z_expanding` de `T1_FEATURE_IDS`; sem isso `e02f_in_fold`
+    # (via `run_faixa1_5`) levantaria `ColumnNotFoundError` -- mesmo achado
+    # de `calibration_diagnostics.run_and_save_faixa1_report`.
+    mf = ds.build_modeling_frame(extra_feature_ids=(_E02F_FEATURE,))
     cpcv_result = cpcv.generate_splits(mf.data)
     predictions = load_predictions()
 

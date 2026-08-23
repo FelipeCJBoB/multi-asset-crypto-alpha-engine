@@ -345,14 +345,32 @@ def _regimes_df(rows: list[dict[str, object]]) -> pl.DataFrame:
     )
 
 
-def test_congruent_incongruent_classifica_por_sinal_do_ic_medido() -> None:
+def test_congruent_incongruent_classifica_por_sinal_do_ic_medido(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """R1: `E02f` cresce junto com `ret_net` (IC > 0). R3: `E02f` cresce,
     `ret_net` cai (IC < 0) — mesma estrutura do achado real (Fase E,
     funding inverte entre faixa e tendência). Restrição forçada do long é
     -1: congruente é onde IC medido é NEGATIVO (R3); do short é +1:
     congruente é onde IC medido é POSITIVO (R1). Cada `t0` carrega sinal
     dos dois lados (mesmo `ret_net` nos dois — não muda o sinal pooled de
-    `ic_by_regime`, só popula `build_side_population` para os dois lados)."""
+    `ic_by_regime`, só popula `build_side_population` para os dois lados).
+
+    `E02f_funding_z_expanding` não tem mais entrada em
+    `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` desde `AG-032` (2026-08-23, saiu
+    de `T1_FEATURE_IDS`) — `monkeypatch` em `cd._forced_constraint_for`
+    reproduz o cenário de QUANDO havia restrição forçada (long=-1,
+    short=+1, valor real pré-AG-032), pra manter a cobertura do mecanismo
+    de classificação em si (`congruent_incongruent_subsets`), que continua
+    genérico e será reusado se uma feature futura reocupar o dict. O
+    estado REAL de hoje (sem monkeypatch, dict vazio) é coberto por
+    `test_congruent_incongruent_reporta_nao_aplicavel_quando_sem_restricao_forcada`
+    abaixo."""
+    monkeypatch.setattr(
+        cd,
+        "_forced_constraint_for",
+        lambda feature, *, side: {1: -1, -1: 1}[side] if feature == cd.E02F_FEATURE else None,
+    )
     n = 10
     t0_r1 = _t0s(n, offset_days=0)
     t0_r3 = _t0s(n, offset_days=100)
@@ -392,6 +410,53 @@ def test_congruent_incongruent_classifica_por_sinal_do_ic_medido() -> None:
     assert incongruent["long"]["regimes_included"] == ["R1"]
     assert congruent["short"]["regimes_included"] == ["R1"]
     assert incongruent["short"]["regimes_included"] == ["R3"]
+    assert congruent["long"]["not_applicable_reason"] is None
+    assert incongruent["short"]["not_applicable_reason"] is None
+
+
+def test_congruent_incongruent_reporta_nao_aplicavel_quando_sem_restricao_forcada() -> None:
+    """Estado REAL de produção hoje (`AG-032`, 2026-08-23):
+    `_ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` está vazio (`E02f_funding_z_
+    expanding` saiu de `T1_FEATURE_IDS`) — `_forced_constraint_for` (não
+    monkeypatchado, lido direto da produção real) devolve `None` pros dois
+    lados. `congruent_incongruent_subsets` precisa reportar isso
+    honestamente (`forced_constraint_sign=None` + `not_applicable_reason`
+    explicando o porquê), NUNCA classificar tudo como incongruente por
+    engano (comparar sinal medido contra `None` seria sempre falso) nem
+    levantar `KeyError` (achado real durante a migração LightGBM do Alpha,
+    2026-08-23 — este teste falhava com `KeyError` antes do fix)."""
+    n = 4
+    t0s = _t0s(n)
+    pred_rows: list[dict[str, object]] = []
+    label_rows: list[dict[str, object]] = []
+    regime_rows: list[dict[str, object]] = []
+    for i in range(n):
+        for side in (1, -1):
+            pred_rows.append({"t0": t0s[i], "side_hat": side})
+            label_rows.append(
+                {"t0": t0s[i], "side": side, "barrier_hit": "TP", "ret_net": 0.01 * (i + 1)}
+            )
+        regime_rows.append({"t0": t0s[i], "regime": "R1", cd.E02F_FEATURE: float(i + 1)})
+
+    predictions = _predictions_df(pred_rows)
+    labels = _labels_df(label_rows)
+    regimes = _regimes_df(regime_rows)
+    populations = {
+        1: cd.build_side_population(predictions, labels, regimes, side=1),
+        -1: cd.build_side_population(predictions, labels, regimes, side=-1),
+    }
+
+    congruent, incongruent = cd.congruent_incongruent_subsets(
+        predictions, labels, regimes, populations
+    )
+
+    for side_label in ("long", "short"):
+        assert congruent[side_label]["forced_constraint_sign"] is None
+        assert incongruent[side_label]["forced_constraint_sign"] is None
+        assert congruent[side_label]["not_applicable_reason"] is not None
+        assert "AG-032" in congruent[side_label]["not_applicable_reason"]
+        assert congruent[side_label]["regimes_included"] == []
+        assert incongruent[side_label]["regimes_included"] == []
 
 
 # ============================================================================
@@ -823,8 +888,15 @@ def test_integracao_real_run_faixa1_diagnostic() -> None:
     )
     labels = cpcv.load_labels_v1()
     assert cd.COST_FEATURE in T1_FEATURE_IDS
-    assert cd.E02F_FEATURE in T1_FEATURE_IDS
-    mf = ds.build_modeling_frame()
+    # `E02F_FEATURE` SAIU de `T1_FEATURE_IDS` (AG-032, 2026-08-23) --
+    # `compute_t1_features` continua calculando a coluna, só não entra
+    # mais no join default de `build_modeling_frame` (precisa de
+    # `extra_feature_ids` explícito, ver abaixo). Achado real durante a
+    # migração LightGBM do Alpha (2026-08-23) -- esta asserção (e a
+    # ausência de `extra_feature_ids` abaixo) já estava desatualizada
+    # desde `AG-032`, nunca exercitada porque este teste é `integration`.
+    assert cd.E02F_FEATURE not in T1_FEATURE_IDS
+    mf = ds.build_modeling_frame(extra_feature_ids=(cd.E02F_FEATURE,))
     regimes = mf.data.select(["t0", "regime", cd.COST_FEATURE, cd.E02F_FEATURE])
 
     payload = cd.run_faixa1_diagnostic(predictions, labels, regimes)
