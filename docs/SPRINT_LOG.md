@@ -3686,6 +3686,25 @@ Detalhe: `PLANO_MESTRE_PRINCE2.md §15.25`,
 `audit/architecture_gaps_log.yaml::AG-138`/`AG-139`.
 
 <!-- check-sprint-log: skip -->
+**Varredura de achados médio/baixo do gate (2026-08-23), 3 correções**
+— pedido do usuário. <!-- check-sprint-log: skip --> `AG-134` (05_REGIME) ganhou teste de
+caracterização do risco de `canonical_id` trocar de significado sob
+mudança estrutural real entre folds — não fecha o achado, só prova que o
+cenário é alcançável; resultado real pendente do usuário rodar
+(`uv run pytest tests/unit/test_regime_hmm_gaussian.py -k
+mudanca_estrutural -v`). `AG-136` (registro-mestre do plano de ação
+pós-`AG-124`) teve o `status` corrigido — dizia "restante em andamento"
+genérico, mas as Fases 1-6/8 já fecharam via `AG-124`/`AG-137`/`AG-118`/
+`AG-120`, só Fase 7 (sweep `tp_atr_mult`/`sl_atr_mult`) segue aberta, já
+rastreada à parte no roadmap. `AG-120` revisado — texto já estava
+preciso, nada a corrigir (causa raiz exige inspecionar trades reais,
+investigação que só o usuário pode executar). Nenhum achado médio/baixo
+NOVO encontrado; `08_SPLIT`/`AG-159`/`AG-121`/`AG-123` seguem como
+estavam, todos precisando de decisão real do Manager. Detalhe:
+`PLANO_MESTRE_PRINCE2.md §15.25`, `audit/architecture_gaps_log.yaml::
+AG-134`/`AG-136`/`AG-120`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em

@@ -4651,6 +4651,36 @@ organizacional, não gap funcional, a lógica de barreira já roda dentro de
 os 3 "alto" foram varridos. Não afirmar "Data Layer 100%" sem essa
 varredura completa.
 
+**Varredura médio/baixo do gate (2026-08-23, pedido do usuário).**
+Cobriu os 2 fan-outs (`stage_readiness_audit` 2026-08-21/2026-08-22) +
+itens cruzados de `05_REGIME` — não achou nenhum achado médio/baixo NOVO,
+só 3 itens já registrados que precisavam de correção/complemento:
+
+- **`AG-134`** (05_REGIME, identificabilidade de `canonical_id` entre
+  folds sob mudança estrutural real) — não bloqueante, decisão de QUANDO
+  priorizar fica com o Manager. Ganhou o teste de caracterização sugerido
+  na própria entrada (`test_canonicalizacao_pode_trocar_de_significado_
+  sob_mudanca_estrutural_entre_folds`, commit `bed805e`) — não fecha o
+  achado (prova que o cenário de risco é alcançável, não resolve
+  identificabilidade formalmente), resultado real pendente do usuário
+  rodar.
+- **`AG-136`** (registro-mestre do plano de ação de 31 itens pós-AG-124)
+  — status corrigido: dizia "restante em andamento" de forma genérica;
+  na prática as Fases 1-6/8 já fecharam via `AG-124`/`AG-137`/`AG-118`/
+  `AG-120`, só Fase 7 (sweep `tp_atr_mult`/`sl_atr_mult`) segue aberta —
+  e já tem rastro próprio no roadmap (`§11.4`, Sprint 10/V41-6), não
+  precisa de 2 ponteiros. Mesma classe de furo de `AG-123` (status
+  desatualizado), não código.
+- **`AG-120`** (BNBUSDT/RECENTE/R2, 2 posições de timestamp divergentes)
+  — revisado, confirmado que o texto já estava preciso (nada a
+  corrigir). Causa raiz exata exige inspecionar trades reais na janela —
+  investigação empírica que só o usuário pode executar (protocolo de
+  execução), não um fix de código.
+
+`08_SPLIT`/`AG-159`/`AG-121`/`AG-123` (causa raiz do processo de
+documentação) seguem exatamente como descrito acima — nenhuma mudança,
+todos precisam de decisão real do Manager, não de correção mecânica.
+
 ---
 
 ## Fontes desta pesquisa
@@ -4669,6 +4699,17 @@ varredura completa.
 
 ## Changelog
 
+- **v3.37 (2026-08-23)** — **Varredura de achados médio/baixo do gate
+  "Data Layer 100%", 3 correções mecânicas.** Detalhe: `§15.25`.
+  `AG-134` ganhou teste de caracterização (risco de troca de significado
+  de `canonical_id` sob mudança estrutural, não fecha o achado, commit
+  `bed805e`); `AG-136` teve o `status` corrigido (dizia "em andamento"
+  genérico, na prática só Fase 7/sweep tp-sl segue aberta, já rastreada
+  à parte); `AG-120` revisado, texto já estava preciso, nada a corrigir
+  (causa raiz exige investigação empírica que só o usuário executa).
+  Nenhum achado médio/baixo NOVO encontrado. `08_SPLIT`/`AG-159`/
+  `AG-121`/`AG-123` seguem precisando de decisão real do Manager, sem
+  mudança.
 - **v3.36 (2026-08-23)** — **`AG-138`/`AG-139` fechados — últimos 2
   achados "alto" do fan-out de 15 estágios sem decisão do Manager
   pendente.** Detalhe: `§15.25`. `AG-138`: CLI de `build_dollar_bars.py`

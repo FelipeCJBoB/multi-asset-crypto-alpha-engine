@@ -8945,6 +8945,22 @@ entries:
       `experiments/ag120_bars_baseline_alignment_sweep.json`.
     status_atualizado: "escopo confirmado ISOLADO (50/51 células limpas) -- deixa de ser bloqueante para o reprocessamento de AG-124 (item 13/B0 do plano de ação cumprido). Causa raiz exata do trade-level ainda não investigada -- vira item de baixa prioridade, não bloqueante, não fechado por completo."
 
+    addendum_revisao_2026-08-23: >
+      Revisado ao varrer achados médio/baixo do gate "Data Layer 100%" a
+      pedido do usuário, junto de `AG-134`/`AG-136`. Diferente daqueles
+      dois, este item NÃO tinha texto desatualizado -- `status_atualizado`
+      acima já reflete o estado real com precisão. Não corrigido porque
+      não havia nada pra corrigir: a causa raiz exata (nível de trade
+      bruto, BNBUSDT R2, 2 posições divergentes em 2026-05-04
+      04:06:13-04:08:55 UTC) exige inspecionar trades reais do lake
+      (`lake.query_agg_trades`) na janela exata -- é investigação
+      empírica sobre dado real, não um fix de código com resultado
+      conhecido de antemão. Fora do que Claude pode executar (protocolo
+      de execução, `CLAUDE.md` -- Claude não roda `.py`). Registrado como
+      revisado e confirmado, não como fechado -- continua item de baixa
+      prioridade, não bloqueante, sem decisão pendente (só investigação,
+      quando alguém rodar).
+
   - id: AG-121
     date: "2026-08-20"
     file: "src/regime/canonicalization.py::canonicalize_states; docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §3.4 Cláusula 2 (Parte I do parecer completo)"
@@ -10484,6 +10500,33 @@ entries:
     resolution: null
     status: "aberto -- item de acompanhamento, não bloqueante hoje (nenhum consumidor de produção agrega por canonical_id entre folds fora do que já foi testado). Registrado a pedido do Manager pra não ficar esquecido enquanto AG-127 (identificação causal de is_stress_state por fold) é implementado -- as duas correções são relacionadas (mesma função, mesmo mecanismo de canonicalização) mas não são a mesma pergunta: AG-127 resolve CAUSALIDADE (a decisão usa só dado do passado); este resolve IDENTIFICABILIDADE (a decisão significa a mesma coisa entre folds). Rota sugerida, não decidida: um teste novo que force deliberadamente uma mudança estrutural sintética entre 2 folds (não regime fixo, como o teste existente) e meça se `canonical_id`/`stress_state_id` permanecem estáveis ou trocam de significado -- decisão de quando priorizar isso fica pro Manager."
 
+    addendum_teste_caracterizacao_2026-08-23: >
+      Rota sugerida (linha acima) implementada como teste --
+      `tests/unit/test_regime_hmm_gaussian.py::test_canonicalizacao_pode_
+      trocar_de_significado_sob_mudanca_estrutural_entre_folds`. Fold N vê
+      só a estrutura alternada de 2 clusters moderados (mesma do teste
+      irmão de estabilidade); fold N+1 vê a MESMA estrutura até o corte
+      (nunca contamina o `probe`) mais um 3º modo estruturalmente extremo
+      SÓ na porção exclusiva do fold N+1, massa amostral comparável ao
+      resto da série. Mede se o `probe` (que sob estrutura fixa split
+      ~50/50 entre canonical_id 0/1) colapsa pra quase um único
+      canonical_id sob o fold N+1 -- mesmos pontos físicos, significado
+      diferente. Limiar reusa o mesmo valor (`0,9`) que o teste irmão usa
+      como piso de estabilidade -- não um número novo (B23). **NÃO FECHA
+      esta entrada** -- caracteriza o risco (prova que o cenário é
+      alcançável), não o resolve (nem prova formal, nem mitigação de
+      produção); a "decisão de quando priorizar" nomeada no `status`
+      acima segue igualmente pendente. Verificado: `ruff check` limpo,
+      `mypy` sem mudança de baseline (`git stash`), `banned_patterns.py
+      --strict` sem violação de CLASSE nova (5 magic numbers de fixture
+      novos, mesmo padrão não-anotado dos 18 já pré-existentes no mesmo
+      arquivo -- débito já aceito, não introduzido por este teste). **Não
+      executado empiricamente por Claude** (protocolo de execução,
+      `CLAUDE.md`) -- o resultado real (o teste passa com a margem
+      esperada, ou o método é mais robusto do que este cenário supõe)
+      depende do usuário rodar `uv run pytest tests/unit/test_regime_
+      hmm_gaussian.py -k mudanca_estrutural -v`. Commit: `bed805e`.
+
   - id: AG-135
     date: "2026-08-21"
     file: "research/research_t2.py, research/_sources_research.py, src/analysis/faixa2_e2_research.py, PRD_V3_2_UNIFICADO.md §2.9"
@@ -10623,7 +10666,37 @@ entries:
       dos 17 itens acionáveis (Teste de Validação: M1/M2/M3/M5/B0/
       circuit breaker/S1/pós-reprocessamento; Redesenho: M4/carry/lead-
       in) agendado na ordem do plano, execução seguindo nesta sessão.
-    status: "aberto -- plano registrado e parcialmente executado (itens 1, 8), restante em andamento"
+    status: "aberto com ressalva -- status desatualizado corrigido 2026-08-23 (ver addendum abaixo); texto anterior ('restante em andamento') lia como se um volume grande de trabalho seguisse pendente, quando as Fases 1-6/8 do plano de 31 itens já fecharam via outros AG-NNN, só Fase 7 (item 17/S1, sweep tp_atr_mult/sl_atr_mult) segue genuinamente não iniciada -- e é item de escopo maior já rastreado à parte no roadmap (Sprint 10/V41-6, PLANO_MESTRE_PRINCE2.md §11.4), não pertence a este item."
+
+    addendum_status_desatualizado_2026-08-23: >
+      Achado ao varrer achados médio/baixo do gate "Data Layer 100%" a
+      pedido do usuário -- mesma classe de furo que `AG-123` já rastreia
+      recorrentemente (texto de status não sincronizado com o fechamento
+      real de trabalho relacionado). Evidência, por fase do plano de 31
+      itens (`docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`): Fases
+      1-5 (calibração causal, reprocessamento, validação pós-
+      reprocessamento) fecharam via `AG-124`/`AG-137`, ambos `fechado`;
+      Fase 4/item 13 (B0, varredura de integridade AG-120) fechou via
+      `AG-120::addendum_varredura_completa_2026-08-21` (50/51 células
+      limpas, escopo confirmado isolado); Fase 6 (item 12 M5/AG-118 em
+      k2/k3, item 18 decisão sobre `regime_tradeable`) fechou via `AG-118`
+      (Gate Efficiency, RESOLVIDO) e a decisão real tomada em
+      `PLANO_MESTRE_PRINCE2.md §15.13` (`regime_tradeable` DESLIGADO por
+      falta de sinal econômico, não o resultado que o plano antecipava,
+      mas uma decisão real, não uma pendência); Fase 8 (documentação) é
+      justamente este tipo de sync, endereçado agora. **Não reverificado
+      item a item nesta rodada** (31 itens, checklist completo não
+      re-auditado um a um) -- a correção acima é uma leitura de alto
+      nível contra evidência já registrada no ledger, não uma nova
+      varredura exaustiva do documento inteiro. Fase 7 (item 17/S1, sweep
+      2D `tp_atr_mult`/`sl_atr_mult`) confirmada como a ÚNICA fase
+      genuinamente não iniciada -- e já tem seu próprio rastro
+      (`PLANO_MESTRE_PRINCE2.md §11.4`, linha "Sprint 6 (Label Engine) --
+      sweep tp_atr_mult/sl_atr_mult", supersedido por V41-6), não precisa
+      de um segundo ponteiro aqui. Não fechar `AG-136` como
+      `resolved_by_commit` -- não houve commit de código nesta correção,
+      só de texto de status, e Fase 7 continua genuinamente aberta sob
+      outro rastro.
 
   - id: AG-137
     date: "2026-08-22"
