@@ -6463,6 +6463,29 @@ entries:
       Manager, registrada aqui como recomendação, não aplicada
       unilateralmente.
 
+    addendum_v3_regime_feature_engine_design_doc_2026-08-23: >
+      Achado relacionado, mas DISTINTO do vazamento de vocabulário já
+      documentado acima (`addendum_2026-08-19`): a cadeia real
+      `environments.py -> monotonic.py -> screen_monotone_constraints`
+      (confirmada por leitura de código, `environments.py:31-32,49-60`,
+      `monotonic.py:42,196`) não quebra por mudança de VOCABULÁRIO aqui
+      -- quebra por mudança de ATRIBUIÇÃO. `docs/regime_feature_engine_
+      design_doc_2026-08-23.md` (D-01) propõe corrigir um defeito ativo
+      em `src/regime/stress.py`/`classifier.py` (ver `AG-177`) que faz o
+      gatilho S6 classificar barras erradas sob dollar-bar -- corrigir
+      isso muda QUAIS barras caem em `regime="R1".."R5"` sob R2/R3 (mesmo
+      vocabulário, atribuição diferente), o que se propaga por esta MESMA
+      cadeia até `monotone_constraints` de qualquer treino real do Alpha
+      sob essas resoluções -- não só os relatórios M4 já publicados que
+      `AG-177` cita. Não é o cenário "vocabulário incompatível -> NaN
+      sistêmico" já registrado acima -- é "correção de bug muda valor
+      derivado", risco menor mas real. Recomendação do design doc: teste
+      de estabilidade de `environments.py`/`monotonic.py` sob
+      `resolution_id="R2"/"R3"`, antes/depois da correção de D-01, antes
+      do primeiro treino real sob essas resoluções pós-fix. Nenhuma linha
+      implementada ainda -- ver `docs/regime_feature_engine_design_doc_
+      2026-08-23.md` §7 item 6 / §10.
+
   - id: AG-089
     date: "2026-08-18"
     file: "src/models/ (Group DRO, Camada 5, PRD_V4_1.md §3.2/PRD_V3_2_UNIFICADO.md §5.7)"
@@ -11519,6 +11542,32 @@ entries:
       erro explícito) como mitigação de curto prazo caso o gate de
       features expanding seja resolvido antes da medição acontecer.
 
+    addendum_v3_regime_feature_engine_design_doc_2026-08-23: >
+      `docs/regime_feature_engine_design_doc_2026-08-23.md` (v1->v2->v3,
+      auditoria adversarial + project_assurance) fecha o desenho completo
+      de D-02 sobre este achado, com 2 correções ao escopo que a entrada
+      original não tinha: (1) existe um SEGUNDO call site de produção,
+      `src/validation/leakage.py:792` (dentro de `run_all_leakage_tests`,
+      já recebe `resolution_id` sem repassá-lo pra
+      `compute_max_feature_lookback_ms`) -- os DOIS call sites
+      (`pipeline.py:427` e `leakage.py:792`) precisam mudar na MESMA
+      unidade de trabalho, ou a suíte de vazamento (testes 6/7/12) reporta
+      PASS falso sob R2/R3 enquanto o pipeline real de treino já usa purge
+      corrigido (mesmo padrão de risco de `AG-032`/`AG-009`, comentário já
+      presente no próprio código de `leakage.py`); (2) o proxy proposto
+      (`label_prefetch_p99_bar_duration_ms`, já `MEASURED` em
+      `constants.yaml`, reusado sem medição nova) resolve um modelo de
+      custo (prefetch tolera sub-cobertura) diferente do que o purge
+      precisa (sub-cobertura = vazamento, B02/B09) -- `max_ms` real de
+      SOLUSDT/R3 chega a ~6x o `p99` usado. Design doc propõe fórmula
+      corrigida + verificação adicional (agregar máximo real de janela de
+      96 barras consecutivas sobre os parquets já persistidos, sem
+      medição nova) + guarda de runtime (`structlog.warning` quando o
+      lookback calculado for menor que o máximo medido, uma vez essa
+      medição existir). Nenhuma linha implementada ainda -- Fase 4, só
+      desenho. Ver `docs/regime_feature_engine_design_doc_2026-08-23.md`
+      D-02 pro texto completo.
+
   - id: AG-160
     date: "2026-08-22"
     file: "src/models/pipeline.py:101-104,321,756 (report_path default)"
@@ -11633,6 +11682,20 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- ESCALAR PRO MANAGER: (1) confirmar por escrito o fechamento de AG-124 (trava formal pendente, texto já pronto); (2) atualizar status de AG-100 pra 'fechado', referenciando commit 7924f2c; (3) responder a pergunta pendente em SPRINT_LOG sobre escopo do reprocessamento (features/regime/CPCV incluídos ou não). Design doc do Alpha já corrigido na v3 para não citar os dois como fechados."
+
+    addendum_recorrencia_2026-08-23: >
+      Mesmo padrão de erro de citação recorreu, de forma independente,
+      no design doc irmão `docs/regime_feature_engine_design_doc_
+      2026-08-23.md` (v1/v2 generalizavam "AG-100 E AG-124 têm status
+      'aberto' literal" -- impreciso pra AG-124, cujo campo `status`
+      real começa com "STATUS ATUALIZADO 2026-08-22", não com a palavra
+      "aberto", embora descreva a mesma situação de fundo: trabalho de
+      engenharia concluído, confirmação formal do Manager pendente).
+      Corrigido na v3 desse documento antes de commitar. Segunda
+      ocorrência do mesmo padrão em 2 documentos de design diferentes na
+      mesma semana reforça a pendência (1)/(2) acima -- decisão do
+      Manager sobre atualizar os campos `status` reais de AG-100/AG-124
+      fecharia a causa raiz de ambas as recorrências, não só os sintomas.
 
   - id: AG-164
     date: "2026-08-22"
@@ -12023,6 +12086,35 @@ entries:
       convergência de 2 investigações reforça que é real, não motivo pra
       reabrir a proposta de desenho daqui."
 
+    addendum_v3_2026-08-23: >
+      Atualização do addendum acima -- o v1 citado lá evoluiu pra v3
+      (`docs/regime_feature_engine_design_doc_2026-08-23.md`), via
+      auditoria adversarial (3 revisores paralelos) + `project_assurance`
+      (PRINCE2 §6.4, revisor independente sem acesso ao raciocínio de
+      quem escreveu). Achado mais importante da 2ª rodada, CRÍTICO:
+      **a correção de S6 proposta na v1/v2, se implementada como
+      especificada, teria introduzido uma NOVA instância de B02**. A
+      técnica citada como precedente (`hmm_gap_check.
+      check_bars_gap_before_hmm`, já ratificada por `AG-132`) calcula
+      mediana/MAD sobre a SÉRIE INTEIRA -- correto lá (diagnóstico
+      WARNING-only, rodado uma vez, nunca embutido numa decisão por
+      barra), mas inválido se portado direto pra uma função por-barra
+      plugada em `compute_stress_triggers -> _run_state_machine ->
+      regime[t]`, que viola o contrato causal explícito do
+      `RegimeClassifier` Protocol (`classifier.py:419-420`, "barra t usa
+      apenas índices < t") -- um gap FUTURO mudaria retroativamente a
+      classificação de uma barra PASSADA. Corrigido na v3: a nova função
+      (`s06_bar_gap_dollar`) calcula mediana/MAD de forma EXPANSIVA
+      (só gaps estritamente anteriores a t), mesma disciplina causal já
+      usada por `support.expanding_percentile_rank_strict` no mesmo
+      módulo. Registrado aqui como lição de implementação -- quem for
+      codificar D-01 não deve portar `hmm_gap_check.py` literalmente.
+      Demais achados da v2/v3 (2º call site do purge, histerese em
+      contagem de barra, mapeamento de consumidores via
+      `environments.py`/`monotonic.py`) -- ver `AG-159`/`AG-088`
+      (addenda desta mesma rodada) e o novo `AG-180` (histerese). Design
+      doc v3 segue como referência primária; nenhuma linha implementada.
+
   - id: AG-178
     date: "2026-08-22"
     file: "src/models/pipeline.py::run_layer1_sprint (linha ~427, compute_max_feature_lookback_ms)"
@@ -12063,3 +12155,53 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- correção trivial recomendada (2 blocos de docstring apontando pro texto já existente, não duplicando), não implementada nesta rodada (deliberadamente fora de escopo -- não é produção, é investigação arquivada)."
+
+    addendum_instancia_irma_2026-08-23: >
+      `project_assurance` sobre `docs/regime_feature_engine_design_doc_
+      2026-08-23.md` (v2->v3) encontrou uma instância IRMÃ do mesmo
+      padrão de doc-drift em arquivo diferente: `src/models/dataset.
+      py::side_subset` (docstring, linhas ~290-300) ainda afirma que
+      `regime` entra como variável categórica one-hot no vetor de treino
+      do Alpha -- removido na Fase A (`PLANO_MESTRE_PRINCE2.md §15.13`,
+      2026-08-21, `DESIGN_COLUMNS` ficou só com as 10 features T1,
+      confirmado por leitura direta). Mesma classe de achado desta
+      entrada (nota de quebra/mudança que existe num lugar do código mas
+      não se propagou pro docstring mais visível), arquivo diferente.
+      Não corrigido nesta rodada (Fase 4 do design doc, só desenho) --
+      registrado pra não ser esquecido, mesmo racional desta entrada.
+
+  - id: AG-180
+    date: "2026-08-23"
+    file: "src/regime/classifier.py:183,194,208 (regime_confirmation_bars/regime_stress_exit_confirmation_bars), :147 (min_warmup_bars)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-030 (mesma classe de problema, constante diferente); docs/refactor_dollar_bar_canonico.md:206-207 (achado prévio, nunca fechado); docs/regime_feature_engine_design_doc_2026-08-23.md D-04"
+    found_by: "Agent auditoria adversarial (/engineering:architecture, revisão do design doc v1 do Regime/Feature Engine), ataque de raciocínio -- confirma achado prévio de docs/refactor_dollar_bar_canonico.md nunca fechado por nenhum AG"
+    gap: >
+      `regime_confirmation_bars=2`, `regime_stress_exit_confirmation_
+      bars=4` e `min_warmup_bars=200` são contagens de barra, consumidas
+      diretamente na máquina de histerese de `_run_state_machine`. Sob
+      grade de 15m, 2 barras ~= 30min. Sob dollar-bar, a mesma contagem
+      representa uma janela de tempo real VARIÁVEL, potencialmente muito
+      menor em rajadas de atividade -- `docs/refactor_dollar_bar_
+      canonico.md:206-207` (2026-08-16) já mediu isso: "regime_
+      confirmation_bars=2 ... 30 min a 15m; sob dollar bar pode ser 40
+      segundos numa rajada". Confirmado por grep: nenhuma entrada
+      AG-NNN até esta menciona `confirmation_bars`. Mesma classe
+      estrutural de `AG-030` (`min_common_history_bars_15m`, amarrado a
+      relógio), mas constante diferente -- `AG-030` já tem tratamento
+      (cap desabilitado sob dollar-bar); estas três não têm um valor
+      "desabilitado" neutro: `confirmation_bars=0` significa "qualquer
+      troca de sinal confirma instantaneamente", mudança comportamental
+      real, não ausência de comportamento.
+    severity: "media"
+    layer: "regime -- histerese da máquina de estado, não um cap de janela expansiva"
+    consequence: >
+      Sob dollar-bar (R1/R2/R3 já em produção desde AG-100), a suavização
+      pretendida pela histerese (§4.5 do PRD, evitar troca de regime por
+      ruído de 1 barra) pode não ter efeito prático em rajadas de
+      atividade -- 2 barras deixam de ser "2 barras de evidência causal
+      real" no sentido de tempo de mercado que a constante original
+      pretendia, mesmo problema por trás de AG-030, agora confirmado
+      numa peça diferente do Regime Engine.
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- decisão do Manager necessária, mesma disciplina de B23: não inventar conversão numérica não medida. docs/regime_feature_engine_design_doc_2026-08-23.md D-04 reconhece o gap e não o resolve (nem 'desabilitar' é neutro aqui, ao contrário de AG-030 -- confirmation_bars=0 muda semântica da histerese). Requer medição de equivalente nativo sob dollar-bar antes de qualquer correção."

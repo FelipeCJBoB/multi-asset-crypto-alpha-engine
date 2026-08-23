@@ -3950,6 +3950,79 @@ existentes em `fill_simulator.py` são pré-existentes, confirmadas via
 - `AG-179` (`faixa1_7_edge_or_beta.py`, docstring de quebra incompleta) —
   aberto, baixa prioridade, fora do escopo de produção por desenho.
 
+### 15.21.1 `docs/regime_feature_engine_design_doc_2026-08-23.md` — v1→v3, achado crítico corrigido antes da implementação (2026-08-23)
+
+**Origem:** o documento citado em `§15.21`-D como referência primária de
+`AG-177` (`stress.py`/`classifier.py` cegos a `bar_source`) passou pelo
+mesmo processo de revisão em duas camadas já usado pro Alpha (`§15.20`):
+auditoria adversarial (3 revisores paralelos, sem acesso ao raciocínio de
+quem escreveu) seguida de `project_assurance` (PRINCE2 §6.4, revisor
+independente). Zero linhas de código implementadas — Fase 4, só desenho.
+
+**A. Achado mais importante — `project_assurance` pegou um bug ANTES dele
+existir.** A correção proposta na v1/v2 pro gatilho S6 (`stress.
+s06_bar_gap`, cego a `bar_source` desde a Fase 3 da migração dollar-bar,
+2026-08-17) portava a técnica de `hmm_gap_check.check_bars_gap_before_hmm`
+(já ratificada por `AG-132`) sem adaptação: mediana/MAD calculadas sobre a
+SÉRIE INTEIRA — correto lá (diagnóstico único, não-causal por natureza),
+mas uma nova instância de **B02** se plugada como estava numa função
+por-barra dentro de `compute_stress_triggers → _run_state_machine →
+regime[t]`, que viola o contrato causal explícito do `RegimeClassifier`
+Protocol ("barra t usa apenas índices < t"). Corrigido na v3: computação
+EXPANSIVA (só gaps estritamente anteriores a cada barra), mesma disciplina
+já usada por `expanding_percentile_rank_strict` no mesmo módulo. Nenhum
+código chegou a ser escrito com o defeito — achado de desenho, não de
+implementação, mas registrado com a mesma disciplina de um achado real
+(`audit/architecture_gaps_log.yaml::AG-177`, addendum v3).
+
+**B. Escopo de `AG-159` (purge do CPCV) ampliado — 2 call sites, não 1.**
+`src/validation/leakage.py:792` (suíte de vazamento, testes 6/7/12) chama
+a mesma função (`compute_max_feature_lookback_ms`) que `pipeline.py:427`
+— corrigir só um dos dois deixaria a suíte de vazamento reportando PASS
+falso sob R2/R3 enquanto o treino real já usaria purge diferente. Achado
+por completude na auditoria adversarial, incorporado ao desenho (`AG-159`,
+addendum v3).
+
+**C. `regime` tem um consumidor de produção real, não só diagnóstico —
+correção de escopo.** v1/v2 caracterizavam `regime` como "hoje só filtro/
+análise" pra fins da pergunta "ainda é necessário sob um eventual swap pro
+HMM?" (§11 do design doc). `project_assurance` confirmou por leitura de
+código: `src/models/environments.py::assign_environments` →
+`src/models/monotonic.py::screen_monotone_constraints` já consome `regime`
+em produção real, via `pipeline.py::run_layer1_sprint`, pra derivar
+`monotone_constraints` do Alpha — achado relacionado mas distinto do
+vazamento de vocabulário já registrado em `AG-088` (esse é sobre
+ATRIBUIÇÃO de barra a regime mudar sob a correção de S6, não sobre
+incompatibilidade de vocabulário). Consequência prática: a correção de S6
+(item A) pode mudar `monotone_constraints` derivadas em qualquer treino
+real sob R2/R3, não só nos 2 relatórios M4 já publicados que `AG-177`
+cita — comportamento CORRIGIDO, não um novo bug, mas recomendação de um
+teste de estabilidade dedicado antes do primeiro treino real sob essas
+resoluções pós-fix.
+
+**D. Um gap genuinamente novo — D-04, histerese em contagem de barra.**
+`regime_confirmation_bars`/`regime_stress_exit_confirmation_bars`/
+`min_warmup_bars` são contagens de barra amarradas implicitamente a
+relógio, mesma classe estrutural de `AG-030`, mas nunca registradas como
+tal — achado prévio real (`docs/refactor_dollar_bar_canonico.md:206-207`,
+2026-08-16) nunca virou entrada no ledger até esta rodada. Registrado como
+`AG-180`; não resolvido (B23 — sem medição de equivalente nativo sob
+dollar-bar, nenhuma conversão numérica é inventada).
+
+**E. Status e pendências.** AGs desta rodada: addenda em `AG-159`,
+`AG-088`, `AG-177`, `AG-163`, `AG-179`; nova entrada `AG-180`. Nenhuma
+decisão do Manager tomada nesta seção — apenas o desenho evoluiu e as
+correções foram registradas. Pendências que seguem do design doc: política
+de features `expanding` no conjunto T1 ativo (pré-requisito de `AG-159`
+ter efeito prático); sanity check de magnitude do purge; destino dos 2
+relatórios M4 já publicados sob o S6 hoje incorreto; teste de estabilidade
+de `monotone_constraints` (item C). Road Map Vivo **não republicado nesta
+rodada** — atualização é de materialidade baixa (o status "desenhado, não
+implementado" de `AG-177` não muda) frente a uma republicação extensa e
+recente da mesma sessão paralela no mesmo dia; mesma disciplina já
+registrada no próprio artefato ("Nota de transparência — sessões
+concorrentes").
+
 ---
 
 ## Fontes desta pesquisa
@@ -3968,6 +4041,26 @@ existentes em `fill_simulator.py` são pré-existentes, confirmadas via
 
 ## Changelog
 
+- **v3.29 (2026-08-23)** — **Regime/Feature Engine multi-ativo × multi-
+  resolução: design doc v1→v3, achado crítico corrigido antes de virar
+  código.** Detalhe: `§15.21.1` (`§15.21`, dívida técnica BTC/M15, foi
+  registrado por sessão paralela mais cedo no mesmo dia — commit
+  `9719031`). `docs/regime_feature_engine_design_doc_2026-08-23.md`
+  redesenha `src/regime/stress.py`/`classifier.py` (S6 cego a
+  `bar_source`, `AG-177`) e o purge do CPCV (`AG-159`). Auditoria
+  adversarial (v1→v2): 2º call site de `AG-159` esquecido
+  (`src/validation/leakage.py:792`) + histerese em contagem de barra
+  reclassificada de "sem mudança" pra gap real (`AG-180`, novo).
+  `project_assurance` (v2→v3): achado CRÍTICO — a correção de S6 proposta
+  na v1/v2 introduziria B02 se implementada como estava (mediana/MAD
+  sobre série inteira, portada sem adaptação causal de
+  `hmm_gap_check.py`) — corrigido pra computação expansiva antes de
+  qualquer linha de código existir. Mapeamento de consumidores de
+  `regime` corrigido (`environments.py`/`monotonic.py`/
+  `monotone_constraints`, produção real — `AG-088` addendum). Zero linhas
+  implementadas. Road Map Vivo deliberadamente não republicado nesta
+  rodada (baixa materialidade frente à republicação extensa e recente da
+  sessão paralela no mesmo dia).
 - **v3.28 (2026-08-22)** — **Alpha multi-ativo × multi-resolução (LightGBM +
   GPU): arquitetura ponta a ponta travada v3, 2 rodadas de revisão
   independente.** Detalhe: `§15.20`. Achado central: multi-símbolo e
