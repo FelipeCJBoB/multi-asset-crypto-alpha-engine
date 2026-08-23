@@ -783,7 +783,7 @@ def _resolve_filters_from_mapping(
         raise KeyError(
             f"build_labels_with_stats: filters_by_date não cobre a data "
             f"{t0_date.isoformat()} (symbol={symbol!r}) -- todo t0_date "
-            "presente em bars_15m (barras com ATR válido) precisa de uma "
+            "presente em bars_df (barras com ATR válido) precisa de uma "
             "entrada correspondente em filters_by_date."
         ) from exc
     resolved = _ResolvedFilters(
@@ -1079,7 +1079,7 @@ class LabelBuildStats:
 
 
 def build_labels_with_stats(
-    bars_15m: pl.DataFrame,
+    bars_df: pl.DataFrame,
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
@@ -1115,7 +1115,7 @@ def build_labels_with_stats(
     for_symbol`, via `build_labels_for_symbol_with_stats`) busca os 3
     contadores pra alimentar `record_experiment` (F1).
 
-    `bars_15m`: klines REGULARES (não mark) a 15m — schema de
+    `bars_df`: klines REGULARES (não mark) a 15m — schema de
     `src.data.resample.resample_klines` (`open_time`, `close_time`, `open`,
     `high`, `low`, `close`, ...). `close` vira `entry_ref`; `open`/`high`/
     `low`/`close` alimentam o `estimator` (§0.2 R1/R2) que dimensiona TP/SL
@@ -1191,7 +1191,7 @@ def build_labels_with_stats(
             "LabelConfig com estimator_id igual ao de `estimator`."
         )
 
-    bars = bars_15m.sort("open_time")
+    bars = bars_df.sort("open_time")
     n = bars.height
     if n == 0:
         return _empty_pre_weight_frame(), LabelBuildStats(
@@ -1422,7 +1422,7 @@ def build_labels_with_stats(
             # Mantido intacto de propósito (PLANO_MESTRE_PRINCE2.md
             # §15.12.3-A item 2: "n_bars_held NÃO precisa mudar") -- ainda
             # é o comportamento CORRETO se algum chamador algum dia
-            # construir bars_15m/mark_1m/t1 de um jeito que viole esse
+            # construir bars_df/mark_1m/t1 de um jeito que viole esse
             # invariante (ex. dado sintético de teste ou uso direto de
             # build_labels fora do caminho padrão). Ver testes
             # `test_build_labels_resolution_id_n_bars_held_degenerado_*`
@@ -1508,7 +1508,7 @@ def build_labels_with_stats(
 
 
 def build_labels(
-    bars_15m: pl.DataFrame,
+    bars_df: pl.DataFrame,
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
@@ -1525,7 +1525,7 @@ def build_labels(
     `n_incomplete_tail`/`n_tie_break`) que antes só saíam via
     `logger.info`, nunca persistidos."""
     labels, _stats = build_labels_with_stats(
-        bars_15m,
+        bars_df,
         mark_1m,
         funding,
         side=side,
@@ -1538,7 +1538,7 @@ def build_labels(
 
 
 def build_labels_both_sides_with_stats(
-    bars_15m: pl.DataFrame,
+    bars_df: pl.DataFrame,
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
@@ -1554,7 +1554,7 @@ def build_labels_both_sides_with_stats(
     final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`),
     mais um `LabelBuildStats` agregado (soma simples dos 3 contadores dos
     dois lados — AG-128, F2: cada contador é uma contagem de EVENTOS de
-    barra sobre o MESMO `bars_15m`/`mark_1m`/`funding`, então warmup/tail/
+    barra sobre o MESMO `bars_df`/`mark_1m`/`funding`, então warmup/tail/
     tie-break por lado conta o mesmo tipo de evento, só potencialmente em
     índices diferentes por causa de `side` na busca de toque de barreira —
     somar os dois lados não mistura unidades nem semânticas diferentes).
@@ -1574,7 +1574,7 @@ def build_labels_both_sides_with_stats(
     cfg = config if config is not None else LabelConfig.from_constants()
 
     long_labels, long_stats = build_labels_with_stats(
-        bars_15m,
+        bars_df,
         mark_1m,
         funding,
         side=1,
@@ -1584,7 +1584,7 @@ def build_labels_both_sides_with_stats(
         historical_filters_fallback=historical_filters_fallback,
     )
     short_labels, short_stats = build_labels_with_stats(
-        bars_15m,
+        bars_df,
         mark_1m,
         funding,
         side=-1,
@@ -1617,7 +1617,7 @@ def build_labels_both_sides_with_stats(
 
 
 def build_labels_both_sides(
-    bars_15m: pl.DataFrame,
+    bars_df: pl.DataFrame,
     mark_1m: pl.DataFrame,
     funding: pl.DataFrame,
     *,
@@ -1633,7 +1633,7 @@ def build_labels_both_sides(
     escopo desta correção) chama esta função esperando `pl.DataFrame`
     puro, ver docstring de `build_labels_both_sides_with_stats`."""
     labels, _stats = build_labels_both_sides_with_stats(
-        bars_15m,
+        bars_df,
         mark_1m,
         funding,
         symbol=symbol,
@@ -1715,10 +1715,7 @@ def build_labels_for_symbol_with_stats(
     podem divergir) — `lake.query_bars(symbol, cfg.tf, ...)` usa
     `cfg.tf` diretamente, não mais `"15m"` literal.
 
-    `bars_15m` continua carregado no TF de DECISÃO (`cfg.tf`) — o nome do
-    parâmetro é histórico (mantido por compat com `build_labels`/
-    `build_labels_both_sides`, que também o chamam assim), não significa
-    literalmente 15 minutos.
+    `bars_df` continua carregado no TF de DECISÃO (`cfg.tf`).
 
     `mark_1m` continua SEMPRE carregado em granularidade nativa de 1
     minuto, independente de `cfg.tf` — isto NÃO é o mesmo hardcode do
@@ -1766,10 +1763,8 @@ def build_labels_for_symbol_with_stats(
     padrão aqui, decisão explícita pendente de quem chama.
 
     `resolution_id` (AG-042) -- quando `cfg.resolution_id` é setado,
-    `bars_15m` carrega via `lake.query_dollar_bars` (não mais
-    `source="klines_1m"`) -- o nome do parâmetro/variável continua
-    histórico (compat com `build_labels`), não significa literalmente
-    15 minutos nesse caso (mesma ressalva já feita acima pra `tf`).
+    `bars_df` carrega via `lake.query_dollar_bars` (não mais
+    `source="klines_1m"`).
 
     **AG-128 (F1/F2)** — variante de `build_labels_for_symbol` que TAMBÉM
     retorna `LabelBuildStats` (ver `build_labels_with_stats`), agregado
@@ -1787,9 +1782,9 @@ def build_labels_for_symbol_with_stats(
         # query_dollar_bars não tem `cast_prices` -- dollar bars já são
         # persistidas em Float64 (schemas.DOLLAR_BARS_R1/R2/R3), sem a
         # ambiguidade de tipo que `cast_prices` resolve pra klines_1m.
-        bars_15m = lake.query_dollar_bars(symbol, start, end, resolution_id=cfg.resolution_id)
+        bars_df = lake.query_dollar_bars(symbol, start, end, resolution_id=cfg.resolution_id)
     else:
-        bars_15m = lake.query_bars(
+        bars_df = lake.query_bars(
             symbol, cfg.tf, start, end, source="klines_1m", cast_prices=True
         )
 
@@ -1805,13 +1800,13 @@ def build_labels_for_symbol_with_stats(
         symbol=symbol,
         start=str(start),
         end=str(end),
-        n_bars_15m=bars_15m.height,
+        n_bars_15m=bars_df.height,
         n_mark_1m=mark_1m.height,
         n_funding=funding.height,
     )
 
     return build_labels_both_sides_with_stats(
-        bars_15m,
+        bars_df,
         mark_1m,
         funding,
         symbol=symbol,
