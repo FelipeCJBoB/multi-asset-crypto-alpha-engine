@@ -165,6 +165,55 @@ DOLLAR_BARS_R1 = _dollar_bars_schema("R1")
 DOLLAR_BARS_R2 = _dollar_bars_schema("R2")
 DOLLAR_BARS_R3 = _dollar_bars_schema("R3")
 
+_RESAMPLED_BARS_COLUMNS: dict[str, type[pl.DataType]] = {
+    "open_time": pl.Int64,
+    "open": pl.Float64,
+    "high": pl.Float64,
+    "low": pl.Float64,
+    "close": pl.Float64,
+    "volume": pl.Float64,
+    "close_time": pl.Int64,
+    "quote_volume": pl.Float64,
+    "count": pl.Int64,
+    "taker_buy_volume": pl.Float64,
+    "taker_buy_quote_volume": pl.Float64,
+}
+"""Schema real de `resample.resample_klines` -- `_OHLCV_COLUMN_ORDER` de
+`src/data/resample.py`, cast pra `Float64` (`cast_price_columns`) ANTES
+da agregação, diferente de `_KLINES_LIKE_COLUMNS` (fonte crua, `open`/
+`high`/`low`/`close` em `Utf8` por decisão de preservar a string decimal
+original da Binance, §11 do docstring do módulo). Também sem a coluna
+`ignore` (não sobrevive à agregação -- `_OHLCV_COLUMN_ORDER` nunca a
+incluiu)."""
+
+
+def _resampled_bars_schema(timeframe: str) -> DatasetSchema:
+    """Schema de `bars_{timeframe}` (resampled -- `resample.resample_
+    klines`, AG-174/AG-175) -- `grid_step_ms` derivado de
+    `resample.step_ms(timeframe)`, a mesma função que `resample_klines`
+    usa pra bucketizar, em vez de duplicar `_TIMEFRAME_MINUTES` aqui:
+    a duplicação de "quanto tempo tem um TF" já causou drift real neste
+    projeto por 3 vezes (`AG-004`/`AG-005`/`AG-017`) -- schemas.py importa
+    de resample.py de propósito, não o contrário, sem ciclo (`resample.py`
+    não importa `schemas.py`, confirmado por leitura direta)."""
+    from .resample import step_ms
+
+    return DatasetSchema(
+        name=f"bars_{timeframe}",
+        columns=dict(_RESAMPLED_BARS_COLUMNS),
+        primary_key=("open_time",),
+        timestamp_column="open_time",
+        timestamp_unit="ms_epoch",
+        non_nullable=tuple(_RESAMPLED_BARS_COLUMNS),
+        grid_step_ms=step_ms(timeframe),
+        is_klines_like=True,
+    )
+
+
+BARS_15M = _resampled_bars_schema("15m")
+BARS_30M = _resampled_bars_schema("30m")
+BARS_1H = _resampled_bars_schema("1h")
+
 METRICS = DatasetSchema(
     name="metrics",
     columns={
@@ -216,6 +265,9 @@ REGISTRY: dict[str, DatasetSchema] = {
         DOLLAR_BARS_R1,
         DOLLAR_BARS_R2,
         DOLLAR_BARS_R3,
+        BARS_15M,
+        BARS_30M,
+        BARS_1H,
         METRICS,
         FUNDING,
     )

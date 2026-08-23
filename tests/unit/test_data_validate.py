@@ -9,6 +9,7 @@ import orjson
 import polars as pl
 import pytest
 
+from src.data import resample as resample_mod
 from src.data import validate
 from src.data._constants import load_constant
 
@@ -113,6 +114,154 @@ def test_validate_klines_like_dataframe_vazio() -> None:
     assert report.gate == "FAIL"
     assert report.rows == 0
     assert report.dataset == "klines_1m"
+
+
+# ============================================================================
+# validate_resampled_bars (AG-174/AG-175) — antes desta correção,
+# missing_bars/duplicates/invalid_rows/gap_classification eram literais
+# hardcoded em 0 e gate/quality_score "passavam" sem checar nada de fato.
+# Reusa validate_klines_like por inteiro (mesma forma OHLCV + grade fixa),
+# então os testes abaixo replicam os cenários já provados pra
+# validate_klines_like — a pergunta aqui não é "os checks 1/3/4/5/8/7/9/
+# 10-15 funcionam" (já provado acima), é "validate_resampled_bars de fato
+# os aciona e não finge resultado". `find_native_klines` é sempre
+# monkeypatchado -- os testes não podem depender do estado real do
+# backfill local (disco pode ou não ter kline nativo de 15m/30m/1h).
+# ============================================================================
+
+
+def _make_resampled_bars(
+    n: int, *, step_ms: int = 900_000, start_open_time: int = 0
+) -> pl.DataFrame:
+    open_times = [start_open_time + i * step_ms for i in range(n)]
+    return pl.DataFrame(
+        {
+            "open_time": open_times,
+            "open": [100.0 + i for i in range(n)],
+            "high": [100.5 + i for i in range(n)],
+            "low": [99.5 + i for i in range(n)],
+            "close": [100.0 + i for i in range(n)],
+            "volume": [1.0] * n,
+            "close_time": [t + step_ms - 1 for t in open_times],
+            "quote_volume": [1.0] * n,
+            "count": [1] * n,
+            "taker_buy_volume": [0.5] * n,
+            "taker_buy_quote_volume": [0.5] * n,
+        }
+    )
+
+
+def test_validate_resampled_bars_dado_limpo_sem_kline_nativo_passa(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(10)
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.gate == "PASS"
+    assert report.dataset == "bars_15m"
+    assert report.duplicates == 0
+    assert report.missing_bars == 0
+    assert report.invalid_rows == 0
+    assert report.rows == 10
+
+
+def test_validate_resampled_bars_detecta_gap_na_grade(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A correção real de AG-174 -- antes, `missing_bars` era literal `0`
+    incondicional, mesmo com barra ausente de verdade na grade."""
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(10)
+    df = df.filter(pl.col("open_time") != 5 * 900_000)  # remove a barra do índice 5
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.missing_bars == 1
+    assert len(report.missing_timestamps) == 1
+
+
+def test_validate_resampled_bars_detecta_duplicata_e_falha_gate(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(10)
+    df = pl.concat([df, df.slice(0, 1)])
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.gate == "FAIL"
+    assert report.duplicates == 1
+    assert "3_duplicates" in report.failed_checks
+
+
+def test_validate_resampled_bars_detecta_ohlc_incoerente(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(5)
+    df = df.with_columns(
+        pl.when(pl.col("open_time") == 0).then(1.0).otherwise(pl.col("high")).alias("high")
+    )
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.invalid_rows >= 1
+    assert report.gate == "FAIL"
+
+
+def test_validate_resampled_bars_dataframe_vazio(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(0)
+    report = validate.validate_resampled_bars(df, timeframe="30m", symbol="ETHUSDT")
+    assert report.gate == "FAIL"
+    assert report.rows == 0
+    assert report.dataset == "bars_30m"
+    assert report.symbol == "ETHUSDT"
+
+
+def test_validate_resampled_bars_sem_kline_nativo_marca_check_16_pending(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(10)
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    skipped_checks = {c["check"] for c in report.checks_skipped}
+    assert "16_cross_source_30m_parity" in skipped_checks
+    assert report.diagnostics["16_parity"] == {
+        "compared": False,
+        "reason": "sem dataset nativo no disco",
+    }
+    assert report.cross_source_max_deviation is None
+
+
+def test_validate_resampled_bars_com_kline_nativo_identico_passa_parity(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch
+) -> None:
+    df = _make_resampled_bars(10)
+    native_dir = tmp_path / "klines_15m" / "BTCUSDT"
+    native_dir.mkdir(parents=True)
+    df.write_parquet(native_dir / "part.parquet")
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: native_dir)
+
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.diagnostics["16_parity"]["compared"] is True
+    assert report.cross_source_max_deviation == pytest.approx(0.0)
+    assert "16_cross_source_parity" not in report.failed_checks
+    assert "16_cross_source_30m_parity" not in {c["check"] for c in report.checks_skipped}
+    assert report.gate == "PASS"
+
+
+def test_validate_resampled_bars_com_kline_nativo_divergente_falha_check_16(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch
+) -> None:
+    df = _make_resampled_bars(10)
+    native = df.with_columns((pl.col("close") + 1.0).alias("close"))  # diverge > tolerância
+    native_dir = tmp_path / "klines_15m" / "BTCUSDT"
+    native_dir.mkdir(parents=True)
+    native.write_parquet(native_dir / "part.parquet")
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: native_dir)
+
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    assert report.diagnostics["16_parity"]["compared"] is True
+    assert report.cross_source_max_deviation == pytest.approx(1.0)
+    assert "16_cross_source_parity" in report.failed_checks
+    assert report.gate == "FAIL"
+
+
+def test_validate_resampled_bars_reason_do_check_2_e_especifica_de_resample(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A razão herdada de `validate_klines_like` pro check 2 (checksum de
+    DOWNLOAD) não faz sentido pra um dataset derivado -- corrigida pra
+    citar `resample_klines`, não a razão genérica de fonte crua."""
+    monkeypatch.setattr(resample_mod, "find_native_klines", lambda symbol, timeframe: None)
+    df = _make_resampled_bars(5)
+    report = validate.validate_resampled_bars(df, timeframe="15m")
+    checksum_entries = [c for c in report.checks_skipped if c["check"] == "2_checksum"]
+    assert len(checksum_entries) == 1
+    assert "resample_klines" in checksum_entries[0]["reason"]
 
 
 def test_quality_score_zero_rows_e_zero_missing() -> None:

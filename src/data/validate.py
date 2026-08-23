@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -476,14 +476,50 @@ def validate_resampled_bars(
     timeframe: str,
     symbol: str = "BTCUSDT",
 ) -> QualityReport:
+    """§1.3 check 16 (paridade cross-source) MAIS os checks 1/3/4/5/8/7/9/
+    10/11/12/13/14/15 reais — `bars_{timeframe}` tem a MESMA forma que
+    `klines_1m`/`mark_price_klines_1m` (OHLCV + grade de relógio fixa,
+    `schemas.BARS_15M`/`BARS_30M`/`BARS_1H`), então reusa
+    `validate_klines_like` por inteiro em vez de reimplementar as mesmas
+    12 primitivas de `checks.py` (fecha `AG-174`: antes desta correção,
+    `missing_bars`/`duplicates`/`invalid_rows`/`gap_classification` eram
+    literais hardcoded em `0` — `gate`/`quality_score` "passavam" sem
+    checar nada de fato, achado real do `audit_engineering`, 2026-08-22).
+
+    Só o check 16 (paridade cross-source contra kline NATIVO do mesmo
+    `timeframe`) é específico de dado resampled — `validate_klines_like`
+    sempre marca esse check como `checks_skipped` (correto pra uma fonte
+    crua, errado aqui) — este wrapper substitui essa entrada pelo
+    resultado REAL do check 16, e recalcula `gate`/`failed_checks` se ele
+    falhar. Também reescreve a razão do check 2 (checksum) herdada de
+    `validate_klines_like` — aquela é sobre checksum de DOWNLOAD, que não
+    se aplica a um dataset derivado por `resample_klines` (nunca baixado
+    da Binance como arquivo próprio; a integridade de origem já é checada
+    em `validate_klines_like(klines_1m)`)."""
     from . import resample
 
     dataset_name = f"bars_{timeframe}"
     if df_resampled.is_empty():
         return _empty_report(dataset_name, reason=_EMPTY_DF_REASON, symbol=symbol)
-    checks_skipped: list[dict[str, str]] = []
-    failed: list[str] = []
-    diagnostics: dict[str, Any] = {}
+
+    base_report = validate_klines_like(
+        df_resampled, dataset_name=dataset_name, compute_coverage=False, symbol=symbol
+    )
+
+    _resampled_checksum_reason = (
+        f"{dataset_name} é derivado de klines_1m via resample.resample_klines, nunca "
+        "baixado da Binance como arquivo próprio — não há checksum de download a "
+        "verificar aqui; a integridade da fonte crua já é checada em "
+        "validate_klines_like(klines_1m)."
+    )
+    checks_skipped = [
+        {**c, "reason": _resampled_checksum_reason} if c["check"] == "2_checksum" else dict(c)
+        for c in base_report.checks_skipped
+        if c["check"] != "16_cross_source_30m_parity"
+    ]
+
+    diagnostics = dict(base_report.diagnostics)
+    failed = list(base_report.failed_checks)
 
     native_dir = resample.find_native_klines(symbol, timeframe)
     cross_source_max_deviation: float | None = None
@@ -507,34 +543,20 @@ def validate_resampled_bars(
             if not parity.passed:
                 failed.append("16_cross_source_parity")
 
-    rows = df_resampled.height
-    start_ms = int(df_resampled["open_time"].min()) if rows else None  # type: ignore[arg-type]
-    end_ms = int(df_resampled["open_time"].max()) if rows else None  # type: ignore[arg-type]
-
-    quality_score = _quality_score(rows=rows, missing_bars=0, duplicates=0, invalid_rows=0)
     gate = "PASS" if not failed else "FAIL"
 
-    return QualityReport(
-        dataset=dataset_name,
-        symbol=symbol,
-        version=_REPORT_VERSION,
-        rows=rows,
-        start=ms_to_iso(start_ms) if start_ms is not None else None,
-        end=ms_to_iso(end_ms) if end_ms is not None else None,
-        missing_bars=0,
-        missing_timestamps=[],
-        gap_classification={"maintenance": 0, "collection": 0, "unknown": 0},
-        duplicates=0,
-        invalid_rows=0,
-        outliers_flagged=0,
+    # quality_score NÃO é recalculado aqui -- check 16 (paridade
+    # cross-source) nunca entrou na fórmula de _quality_score (rows/
+    # missing_bars/duplicates/invalid_rows, ver docstring daquela função),
+    # nem na versão original desta função nem em validate_klines_like — só
+    # `gate`/`failed_checks` precisam refletir um check 16 que falhou.
+    return replace(
+        base_report,
         cross_source_max_deviation=cross_source_max_deviation,
-        coverage_by_feature={},
-        effective_start=None,
-        quality_score=quality_score,
-        gate=gate,
         checks_skipped=checks_skipped,
         failed_checks=failed,
         diagnostics=diagnostics,
+        gate=gate,
     )
 
 
