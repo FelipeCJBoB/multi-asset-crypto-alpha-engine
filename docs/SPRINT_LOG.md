@@ -3587,6 +3587,34 @@ zero mudança de comportamento. `banned_patterns`/`ruff`/`mypy` limpos,
 sem achado novo. Confirmado pelo usuário: `uv run pytest tests/unit/
 test_labels_triple_barrier.py` — `71 passed`.
 
+**`verify_config_hash` (B15) wireado no caminho real de consumo —
+`AG-140` (2026-08-23, `§15.24`).** Próxima prioridade do roadmap depois
+do trabalho de A13: levantamento dos itens abertos do
+`stage_readiness_audit` (2026-08-22) não bloqueados por decisão do
+Manager — `AG-140` era o de maior consequência real (severidade alta).
+A função já existia, testada isoladamente, mas
+`src/models/dataset.py::build_modeling_frame` (único ponto real onde
+`labels.parquet` é carregado pra montar o frame de treino/backtest)
+nunca a chamava — um `labels.parquet` gerado sob config antiga
+passaria despercebido pro treino. Implementado: `execution_config =
+LabelConfig.from_constants(estimator_id=vol_estimator_id, tf=tf,
+resolution_id=resolution_id)` logo após carregar `labels`, seguido de
+`verify_config_hash(labels, execution_config)`. Achado colateral
+corrigido junto: `resolution_id` agora exige `vol_estimator_id`
+explícito (mesma regra que `LabelConfig.from_constants` já impunha,
+`build_modeling_frame` não replicava — sob dollar-bar os labels reais
+foram gerados com Parkinson explícito, não o estimador default).
+**Pendência explícita, não escondida: NÃO executado empiricamente**
+contra `labels.parquet` real (Claude não roda `.py`) — risco real de
+revelar drift já existente entre `constants.yaml` e os labels de
+produção tf=15m, o que interromperia boa parte de `src/analysis/` até
+ser investigado. Pedido ao usuário: rodar `uv run pytest tests/unit/
+test_models_dataset.py -k config_hash` (8 testes) e, quando conveniente,
+os 2 testes `slow`/`integration` que já chamam `build_modeling_frame()`
+sobre dado real. Mecânicos limpos, zero achado novo (`git stash`
+confirmado). Fila do roadmap pra próxima rodada, mesma severidade,
+sem bloqueio de Manager: `AG-138`/`AG-139`/`AG-141`/`AG-142`.
+
 <!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
@@ -3627,3 +3655,4 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |
 | **`feature_a13_ema_window` — clock↔bar-count em código** | `AG-043` addendum, `§15.23`. Único campo `scaling_invariant: clock` do Feature Engine ganhou implementação real (`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`, `src/features/build.py`) — 48/24/12 barras sob R1/R2/R3, bit-exato sob `time_15m`. Correção de rumo registrada: 2 propostas de reclassificar A13 pra `bar_count` (apoiadas em literatura real) descartadas após releitura de `AG-043` mostrar que a exceção já era deliberada e justificada. `E27f_cost_atr_ratio`/`atr_window` confirmados como separação correta, não gap. Doc-drift `registry.yaml::min_warmup_bars` (2000→200) corrigido junto. 9 testes novos, mecânicos limpos. **`triple_barrier.py`**: `bars_15m`→`bars_df` renomeado (cosmético, delegado, commit `1734d96`) — `71 passed` confirmado pelo usuário |
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
+| **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` parcialmente fechado, `§15.24`. `src/models/dataset.py::build_modeling_frame` passa a verificar `config_hash` dos labels contra a config de execução atual antes de montar o frame — gap real (função existia, testada isolada, nunca chamada no caminho de produção). `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). **NÃO confirmado empiricamente contra `labels.parquet` real** — pedido explícito ao usuário: `uv run pytest tests/unit/test_models_dataset.py -k config_hash` primeiro. 8 testes (4 novos + 4 ajustados), mecânicos limpos. Fila pra próxima rodada: `AG-138`/`139`/`141`/`142` (mesmo fan-out, mesma severidade) |

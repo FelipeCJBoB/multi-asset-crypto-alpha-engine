@@ -1210,10 +1210,13 @@ DATA LAYER
                                                                        mark_1m vazia sob rajada de dollar-bar,
                                                                        crashava SOLUSDT/XRPUSDT R2/R3 --
                                                                        backfill real re-rodado com sucesso,
-                                                                       5 símbolos x 2 resoluções). Gap real
-                                                                       hoje: verify_config_hash (B15) sem
-                                                                       caller no caminho real de consumo --
-                                                                       AG-140 (aberto, alta)
+                                                                       5 símbolos x 2 resoluções). [CORRIGIDO
+                                                                       2026-08-23] verify_config_hash (B15)
+                                                                       wireado em src/models/dataset.py::
+                                                                       build_modeling_frame -- AG-140. Não
+                                                                       executado empiricamente contra
+                                                                       labels.parquet real ainda (Claude não
+                                                                       roda .py); ver §15.23 addendum
   07b_PESOS            src/labels/weights.py                           movido da ML LAYER
 
 ML LAYER
@@ -1321,7 +1324,7 @@ LIVE TRADING LAYER
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
 | `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6). **[ATUALIZAÇÃO 2026-08-22]** resultado final: `hmm_gaussian_k4_v1` ratificado por override executivo (`AG-114`/`§15.13`), não por resolução estatística limpa — Gate 1/Gate 3 permanecem tecnicamente frágeis, registrado |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
-| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` |
+| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO 2026-08-23]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` (`AG-140` corrigido, ver §15.24) |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
 | `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
@@ -4470,6 +4473,81 @@ real de duração de dollar bar ainda não medida). Detalhe completo:
 
 ---
 
+### 15.24 `verify_config_hash` (B15) wireado no caminho real de consumo — `AG-140` (2026-08-23)
+
+**A. Origem.** Continuação da varredura de prioridades do roadmap depois
+do trabalho de `§15.23`: levantamento dos itens abertos, não bloqueados
+por decisão do Manager, do `stage_readiness_audit` (fan-out 15 estágios,
+2026-08-22) que ainda travam o gate "Data Layer 100%". `AG-140` era o de
+maior consequência real: `verify_config_hash` (B15 — "config_hash do
+label difere do hash da execução") já existia, testado isoladamente (4
+testes), mas `src/models/dataset.py::build_modeling_frame` — o único
+ponto real onde `labels.parquet` é carregado pra montar o frame de
+treino/backtest — nunca a chamava. Um `labels.parquet` gerado sob uma
+config antiga (`tp_atr_mult`/`sl_atr_mult`/`time_stop_ms`/`atr_window_ms`/
+fees mudados em `constants.yaml` depois do backfill) passaria despercebido
+para o treino do Alpha.
+
+**B. Implementado** (`src/models/dataset.py`): logo após carregar
+`labels`, `execution_config = LabelConfig.from_constants(estimator_id=
+vol_estimator_id, tf=tf, resolution_id=resolution_id)` — MESMO
+`vol_estimator_id` já propagado pra `build_t1_features`/`build_regimes`
+(nunca um estimador separado/divergente pra label vs. feature, mesmo
+princípio de "uma grade só" já documentado na função). `verify_config_
+hash(labels, execution_config)` levanta `ConfigHashMismatchError` (falha
+alta) se o hash divergir.
+
+**C. Guarda nova, achado colateral da implementação:** `resolution_id`
+setado agora EXIGE `vol_estimator_id` explícito em `build_modeling_frame`
+— mesma regra que `LabelConfig.from_constants` já impunha, mas que
+`build_modeling_frame` não replicava. Sem essa exigência, `vol_estimator_
+id=None` computaria features/regime com o estimador default (ATR-Wilder)
+enquanto os labels reais de R1/R2/R3 foram gerados com Parkinson explícito
+(`run_and_write_labels_dollar_bar_parkinson`, `vol_estimator_window=20`)
+— inconsistência silenciosa que nenhum teste cobria até este achado.
+Confirmado sem regressão: nenhum caller real do repo passa `resolution_id`
+sem `vol_estimator_id` hoje (`src/models/pipeline.py` é o único caller com
+`resolution_id`, já propaga os dois juntos).
+
+**D. Não executado empiricamente — pendência explícita, não escondida.**
+Claude não roda `.py` (`CLAUDE.md`, protocolo de execução). Existe um
+risco real, não hipotético: se `constants.yaml` já divergiu de quando os
+labels `tf=15m` de produção foram gerados (BTC + 4 alts), esta correção
+vai revelar isso na primeira chamada real de `build_modeling_frame()` —
+usado por praticamente todo o pipeline de `src/analysis/` (`faixa1_5`,
+`faixa1_6`, `faixa1_7`, `faixa2_*`, `calibration_diagnostics`,
+`m6_common_factor_hypothesis`) além do treino real do Alpha
+(`run_layer1_sprint`). Se isso acontecer, é um achado genuíno a registrar
+(a correção estaria fazendo exatamente o que B15 existe pra fazer), não
+um bug desta implementação — mas é uma mudança que pode interromper
+scripts de análise que hoje rodam sem erro. **Ação pedida ao usuário:**
+rodar `uv run pytest tests/unit/test_models_dataset.py -k config_hash` (7
+testes novos, mock — confirma a lógica) e, quando conveniente, `uv run
+pytest tests/unit/test_models_dataset.py -m "slow and integration"` (os 2
+testes F1 que já chamam `build_modeling_frame()` sobre dado real) pra
+confirmar contra produção de verdade.
+
+**E. Verificação mecânica.** `banned_patterns`/`check_constants_
+referenced`/`check_unguarded_ratios`/`ruff`/`mypy` limpos em
+`src/models/dataset.py` e `tests/unit/test_models_dataset.py` — achado
+pré-existente (1 erro mypy, 0 banned_patterns novos) cross-checado via
+`git stash`, mesma contagem antes/depois. 4 testes existentes ganharam
+mock de `verify_config_hash` (não testavam essa lógica, testavam
+roteamento — `_one_row_labels` não tem `config_hash` real); 4 testes
+novos dedicados à lógica de `AG-140` (guarda `vol_estimator_id`, match,
+mismatch propagando `ConfigHashMismatchError`, `execution_config` usando
+o `vol_estimator_id` correto).
+
+**F. Fila do roadmap, não atacados nesta rodada** — mesmo fan-out do
+`stage_readiness_audit`, mesma severidade "alto", sem bloqueio de decisão
+do Manager: `AG-138` (CLI `build_dollar_bars.py` sem subcomando
+walkforward), `AG-139` (2 anotações `# noqa: magic-number` faltando em
+`support.py`, correção trivial 0 trials), `AG-141` (persistência de
+booster/calibrador — `persistence.py` já existe, falta integração ao
+pipeline), `AG-142` (diagnóstico de IC-por-ambiente não persistido).
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -4486,6 +4564,17 @@ real de duração de dollar bar ainda não medida). Detalhe completo:
 
 ## Changelog
 
+- **v3.34 (2026-08-23)** — **`verify_config_hash` (B15) wireado no
+  caminho real de consumo.** Detalhe: `§15.24`. `AG-140` — a função já
+  existia, testada isoladamente, mas `src/models/dataset.py::
+  build_modeling_frame` (único ponto real de consumo de
+  `labels.parquet`) nunca a chamava. Achado colateral: `resolution_id`
+  agora exige `vol_estimator_id` explícito (mesma regra que
+  `LabelConfig.from_constants` já impunha). **Não executado
+  empiricamente** contra `labels.parquet` real — risco real de revelar
+  drift já existente entre `constants.yaml` e os labels de produção;
+  pedido explícito ao usuário pra rodar os testes e confirmar. 4 testes
+  novos + 4 existentes ajustados.
 - **v3.33 (2026-08-23)** — **`feature_a13_ema_window` — conversão
   clock↔bar-count aplicada em código, achados irmãos confirmados por
   pesquisa de literatura.** Detalhe: `§15.23`. `AG-043` (2026-08-16) já

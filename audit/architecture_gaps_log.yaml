@@ -10766,9 +10766,44 @@ entries:
       hoje despercebido para o treino do Alpha -- exatamente o cenário
       que B15 (banned pattern) existe para impedir, com a correção
       prescrita já escrita e testada, só não conectada.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- correção recomendada: wireup em src/models/dataset.py (ou onde o consumo real de labels.parquet para treino/backtest acontece) chamando verify_config_hash(labels, execution_config) antes de montar o frame, mesma disciplina de falha-alto já usada em assert_label_invariants/apply_weights. Não implementado nesta rodada (auditoria só-leitura)."
+    resolved_by_commit: "79f380f"
+    resolution: >
+      IMPLEMENTADO 2026-08-23 (varredura de prioridades do roadmap, pós
+      `AG-043`/`§15.23`). `src/models/dataset.py::build_modeling_frame`
+      passa a construir `execution_config = LabelConfig.from_constants(
+      estimator_id=vol_estimator_id, tf=tf, resolution_id=resolution_id)`
+      logo após carregar `labels` (mesmo `vol_estimator_id` já propagado
+      pra features/regime -- nunca um estimador divergente) e chamar
+      `verify_config_hash(labels, execution_config)` -- levanta
+      `ConfigHashMismatchError` (falha alta) se o hash divergir.
+
+      Achado colateral, corrigido junto: `resolution_id` setado agora
+      EXIGE `vol_estimator_id` explícito em `build_modeling_frame` (mesma
+      regra que `LabelConfig.from_constants` já impunha, que
+      `build_modeling_frame` não replicava) -- sem isso, `vol_estimator_
+      id=None` computaria features/regime com o estimador default
+      enquanto os labels reais de R1/R2/R3 foram gerados com Parkinson
+      explícito (`run_and_write_labels_dollar_bar_parkinson`), incoerência
+      silenciosa não coberta por nenhum teste até este achado. Confirmado
+      sem regressão: nenhum caller real do repo passa `resolution_id` sem
+      `vol_estimator_id` hoje (`src/models/pipeline.py` é o único, já
+      propaga os dois juntos).
+
+      **NÃO EXECUTADO EMPIRICAMENTE contra `labels.parquet` real** (Claude
+      não roda `.py`, `CLAUDE.md` protocolo de execução) -- risco real,
+      não hipotético: se `constants.yaml` já divergiu de quando os labels
+      `tf=15m` de produção (BTC + 4 alts) foram gerados, esta correção vai
+      revelar isso na primeira chamada real de `build_modeling_frame()`
+      (usado por praticamente todo `src/analysis/` + `run_layer1_sprint`).
+      Se acontecer, é achado genuíno (B15 fazendo o que existe pra fazer),
+      não bug desta implementação -- mas pode interromper scripts que hoje
+      rodam sem erro. 8 testes (4 novos dedicados: guarda `vol_estimator_
+      id`, match, mismatch propagando `ConfigHashMismatchError`,
+      `execution_config` usando o `vol_estimator_id` correto; 4 existentes
+      ajustados com mock de `verify_config_hash`, já que testavam
+      roteamento, não esta lógica). Mecânicos limpos (`git stash`
+      confirma zero achado novo). Ver `PLANO_MESTRE_PRINCE2.md §15.24`.
+    status: "parcialmente fechado -- implementado e testado (mock), mas NÃO confirmado empiricamente contra labels.parquet real. Pedido explícito ao usuário: `uv run pytest tests/unit/test_models_dataset.py -k config_hash` primeiro, depois `-m \"slow and integration\"` (os 2 testes F1 que já chamam build_modeling_frame() sobre dado real) pra confirmar contra produção de verdade -- ou rodar build_modeling_frame() direto. Se revelar mismatch real, registrar como novo achado (não reabrir esta entrada silenciosamente -- addendum)."
 
   - id: AG-141
     date: "2026-08-22"
