@@ -396,6 +396,18 @@ event-driven) · `binance-futures-connector` oficial atrás de interface própri
 - [ ] `provenance` declarada para toda constante nova
 - [ ] `N_lifetime` incrementado se houve otimização
 - [ ] Âncora §X.Y do PRD no commit message
+- [ ] Se este PR fecha/reverte um `AG-NNN` citado em `PLANO_MESTRE_
+  PRINCE2.md` (`§11.4`-`§11.6`, `§15.4`, ou qualquer seção `§15.x`) —
+  toda OUTRA seção que cita o mesmo `AG-NNN`/conclusão foi revisada, não
+  só a seção onde a mudança aconteceu de fato. Motivo: mesmo furo de
+  sincronização recorreu 4 vezes registradas (`AG-123`) — o achado mais
+  sério que ele já causou não foi cosmético: um mecanismo rotulado
+  "CONFIRMADO SÓLIDO" (`AG-098`, §15.11) tinha sido refutado no dia
+  seguinte por auditoria externa (`AG-111`, ainda aberto), sem nenhuma
+  anotação no local original — se aplicado por engano, contaminaria
+  `N_lifetime`/DSR sem detecção. "Revisar a outra seção" não precisa ser
+  reescrevê-la — um ponteiro de 1 linha ("ver §X, revertido/corrigido")
+  já fecha o requisito.
 
 ---
 

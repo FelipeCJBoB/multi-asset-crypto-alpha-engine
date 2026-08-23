@@ -9392,7 +9392,7 @@ entries:
       -- histórico preservado, nota aponta pra seção corrente). Gap
       estrutural (falta de GATILHO de sincronização, não só o sintoma
       desta vez) permanece aberto -- ver `status` abaixo.
-    status: "aberto -- corrigido o sintoma pontual (nota em §15.2/§15.4), mas nenhum processo novo garante que o PRÓXIMO módulo que ganhar/perder caller dispare revisão da tabela de prontidão automaticamente. Proposta não implementada: checklist de \"Definition of Done\" de PR que toca `src/risk/`, `src/execution/`, `src/models/` ganha um item \"§15.2/§15.4 revisado?\" explícito -- decisão de processo, não de código, fica pro Manager."
+    status: "fechado 2026-08-23 -- checklist de DoD criado (CLAUDE.md, seção Qualquer PR, ver addendum_5a_ocorrencia_e_checklist_criado_2026_08_23) depois de varredura real do PLANO_MESTRE inteiro (§15.28) + o achado mais sério das 5 ocorrências (AG-098, risco operacional real, não só documental). Sintoma pontual corrigido nas 5 ocorrências; causa raiz (falta de checklist) agora endereçada em processo, não só em prosa."
     addendum_3a_ocorrencia_2026_08_22: >
       Confirmado pela 3ª vez, mesma classe exata: `Agent (stage_readiness_
       audit, cluster Risk+Execução, fan-out 15 estágios 2026-08-22)`
@@ -9476,12 +9476,31 @@ entries:
       Padrão consolidado após 4 ocorrências: toda vez que uma seção do
       `PLANO_MESTRE`/Road Map Vivo é editada, só a área diretamente
       tocada é revisada -- o resto do documento não recebe sync
-      automático. A causa raiz (checklist de DoD "§15.2/§15.4/Road Map
-      Vivo revisado?" em todo PR que fecha um `AG-NNN` citado nessas
-      seções) segue sem decisão do Manager, agora com 4 instâncias
-      reais confirmadas, 2 delas afetando texto que já tinha sido
-      "corrigido" numa rodada de governança anterior e mesmo assim ficou
-      stale de novo.
+      automático.
+
+    addendum_5a_ocorrencia_e_checklist_criado_2026_08_23: >
+      5ª ocorrência confirmada, achada pela varredura real (não
+      pontual) que o próprio Manager pediu em resposta a esta entrada --
+      fan-out de 8 agentes só-leitura cobrindo o `PLANO_MESTRE_PRINCE2.md`
+      inteiro (5887 linhas, `§15.28`). Achado mais sério de todas as 5
+      ocorrências: `§15.11` (AG-096/AG-098/AG-099) rotulava 3 mecanismos
+      "MECANISMO APROVADO"/"CONFIRMADO SÓLIDO" que `§15.12` (auditoria
+      externa, escrita depois) refutou como especificados -- sem nenhum
+      ponteiro no local original. `AG-098` é o caso grave: a convenção
+      de contagem de trial que ele "confirma" está ATIVAMENTE ERRADA
+      (`AG-111`, sobre-conta por correlação entre linhas, N efetivo ~2
+      não 15, ainda aberto hoje) -- não é mais só um documento
+      desatualizado, é um risco operacional real (contaminaria
+      `N_lifetime`/DSR sem detecção se seguido por engano). Corrigido
+      nesta mesma rodada (aviso explícito no local, `§15.28`).
+
+      **Checklist de DoD criado** (`CLAUDE.md`, seção "Qualquer PR"):
+      todo PR que fecha/reverte um `AG-NNN` citado em `PLANO_MESTRE_
+      PRINCE2.md` precisa revisar toda OUTRA seção que cita o mesmo
+      achado, não só onde a mudança aconteceu -- ponteiro de 1 linha já
+      satisfaz, não precisa reescrever. Decisão do Manager que faltava
+      nas 4 ocorrências anteriores, agora tomada e registrada em código
+      de processo, não só em prosa deste ledger.
 
   - id: AG-124
     date: "2026-08-21"
