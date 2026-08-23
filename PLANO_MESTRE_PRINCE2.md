@@ -1114,7 +1114,7 @@ necessária pra validar/corrigir a proposta do Manager.
 | camada | pacotes | prontidão real |
 |---|---|---|
 | DATA — ingestão/checagem | `exchange/`, `data/` | **A mais pronta.** `symbol`/`tf` são parâmetros de primeira classe já exercitados em `lake.py`/`resample.py`/`download.py` (`DEFAULT_SYMBOLS` cobre os 5 desde o Sprint 3) |
-| DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf). **[DESATUALIZADO, `AG-080`]** `_sources.py:39-55` já branch por `bar_source` (`time_15m`/`dollar_r1`) desde a migração Parkinson/dollar-bar (§11.5) — `stress.py` segue com default hardcoded |
+| DATA — vol/regime/features | `features/`, `regime/` | Parcial. Infra de path multi-TF existe mas TF hardcoded em 2 pontos-chave (`_sources.py`, `stress.py`); thresholds globais, não por (symbol,tf). **[DESATUALIZADO, `AG-080`]** `_sources.py:39-55` já branch por `bar_source` (`time_15m`/`dollar_r1`) desde a migração Parkinson/dollar-bar (§11.5). **[DESATUALIZADO 2026-08-23, `AG-177` fechado por D-01, `§15.21.2`]** `stress.py` não usa mais default hardcoded — `s06_bar_gap_dollar` despacha por `bar_source`, causal/expansivo (commit `6902352`) |
 | DATA — barreiras/label | `labels/` | Parcial. `symbol` real, **TF hardcoded em 3 lugares independentes** (`triple_barrier.py` 2x, `barrier_sweep.py` 1x) — `decision_tf_minutes` existe no config mas metade do código não o lê |
 | ML | `models/`, `validation/` | **1,5 de 5 camadas de ablação do PRD implementadas**; DSR e os 14 testes de leakage existem mas não rodam automaticamente; `model_id` sem símbolo/TF no nome |
 | LIVE TRADING | `risk/`, `execution/`, `live/`, `monitoring/` | **~5% implementado.** `risk/` é biblioteca real sem nenhum caller de produção e sem dimensão de símbolo; `execution/`≈0%; `live/`=pacote vazio; `monitoring/`=1 função nunca chamada. **[DESATUALIZADO, `AG-123`, ver `§15.13`]** `risk/limits.py::control_01_regime_tradeavel` ganhou caller de produção conceitual em 2026-08-21 (`regime_tradeable: bool` resolvido por `src/regime/build_hmm.py`/`src/regime/classifier.py`) — ainda sem loop vivo (`live/` continua vazio, "caller" aqui é código pronto/testado, não execução real, `§15.13` limite de escopo explícito) |
@@ -3894,11 +3894,13 @@ ausentes de qualquer documento do projeto. Trabalho registrado como
    implementado**, só achado registrado (`AG-179`).
 
 Achados adicionais fora dos 10 originais, mapeados em desenho profundo
-(camada, uso offline/live, governança, arquitetura ponta a ponta) mas
-**não implementados**: `src/regime/stress.py`/`classifier.py`
+(camada, uso offline/live, governança, arquitetura ponta a ponta) — **na
+época desta seção, não implementados**: `src/regime/stress.py`/`classifier.py`
 (`AG-177` — convergência confirmada com
 `docs/regime_feature_engine_design_doc_2026-08-23.md`, sessão paralela,
-que passa a ser a referência primária) e o purge do CPCV em
+que passa a ser a referência primária). **[DESATUALIZADO 2026-08-23, ver
+`§15.21.2`]** Ambos os achados desta lista JÁ FORAM implementados no mesmo
+dia: `AG-177` fechado por D-01 (commit `6902352`); o purge do CPCV em
 `pipeline.py:427` (`AG-178`, duplicata confirmada de `AG-159`, já
 registrado pela auditoria adversarial do Alpha).
 
@@ -3940,15 +3942,20 @@ existentes em `fill_simulator.py` são pré-existentes, confirmadas via
 #### D. Pendências explícitas, não esquecidas
 
 - `AG-174`/`AG-175` (`validate_resampled_bars` finge "PASS" mesmo sem
-  checar nada de fato) — aberto, pré-existente.
+  checar nada de fato) — na época desta seção, aberto/pré-existente.
+  **[DESATUALIZADO 2026-08-23, fechado — ver `§15.21.3`-A, commit `d44c7f9`.]**
 - `AG-176` (4 cópias independentes da mesma guarda `resolution_id` em 4
-  pacotes `_paths.py`) — aberto, risco de manutenção, dentro da convenção
-  já aceita do repo.
-- `AG-177` (`stress.py`/`classifier.py` cegos a `bar_source`) — desenho
-  proposto, implementação em `docs/regime_feature_engine_design_doc_
-  2026-08-23.md` (sessão paralela, referência primária).
+  pacotes `_paths.py`) — na época desta seção, aberto, risco de manutenção
+  dentro da convenção já aceita do repo. **[DESATUALIZADO 2026-08-23,
+  fechado — opção B aplicada (guarda mecânica, `check_resolution_id_
+  guard_parity.py`), ver `§15.21.3`-B, commit `d44c7f9`.]**
+- `AG-177` (`stress.py`/`classifier.py` cegos a `bar_source`) — na época
+  desta seção, desenho proposto em `docs/regime_feature_engine_design_doc_
+  2026-08-23.md` (sessão paralela, referência primária). **[DESATUALIZADO
+  2026-08-23, fechado por D-01 — ver `§15.21.2`, commit `6902352`.]**
 - `AG-179` (`faixa1_7_edge_or_beta.py`, docstring de quebra incompleta) —
-  aberto, baixa prioridade, fora do escopo de produção por desenho.
+  aberto, baixa prioridade, fora do escopo de produção por desenho. Ainda
+  correto, não fechado por nenhuma das rodadas subsequentes.
 
 ### 15.21.1 `docs/regime_feature_engine_design_doc_2026-08-23.md` — v1→v3, achado crítico corrigido antes da implementação (2026-08-23)
 
@@ -4135,16 +4142,33 @@ achou exatamente os 4 sites conhecidos (`models`/`regime`/`labels`/
 que trava esse estado (4 sites, 1 forma) como regressão.
 
 **C. `AG-180` — histerese do Regime Engine sob dollar-bar, medição
-entregue, não decidida.** `tools/diagnostics/measure_regime_hysteresis_
+entregue E rodada, resultado real medido, fórmula ainda não decidida.**
+**[CORREÇÃO 2026-08-23 — esta seção citava o script como "ainda não
+rodado" apesar do commit que a escreveu já registrar o resultado real no
+ledger (`audit/architecture_gaps_log.yaml::AG-180::addendum_resultado_
+medido_2026-08-23`) — texto desta alínea C corrigido pra bater com o que
+já estava commitado.]** `tools/diagnostics/measure_regime_hysteresis_
 bar_window_duration.py` mede a duração real de janelas de N barras
 CONSECUTIVAS (não percentil de 1 barra extrapolado — barras rápidas se
 agrupam em rajada, extrapolação assumiria independência que não está
 confirmada), pros 3 N's que a histerese usa hoje
 (`regime_confirmation_bars`/`regime_stress_exit_confirmation_bars`/
 `min_warmup_bars`, lidos de `constants.yaml`, nunca hardcoded), por
-símbolo×resolução, sobre o dado já persistido.
-**PENDENTE-DE-EXECUÇÃO-HUMANA** — script ainda não rodado, não decide a
-fórmula de conversão (B23/B20). `AG-180` continua `aberto`.
+símbolo×resolução, sobre o dado já persistido. Rodado pelo Manager —
+`experiments/regime_hysteresis_bar_window_duration.json` (45/45
+combinações, 0 skipped). Achado real: pra `min_warmup_bars=200`, a
+MEDIANA da janela real diverge sistematicamente do equivalente sob 15m
+(50h) — R1 fica próximo (~45-49h, 90-98% do valor sob 15m), R2 sai ~2×
+maior (~95-104h), R3 ~4× maior (~202-209h) — warmup fica MAIS longo em
+resolução mais grosseira, não mais curto como a suspeita original isolada
+de `docs/refactor_dollar_bar_canonico.md` sugeria. As duas coisas
+coexistem: no caso TÍPICO (mediana), a janela cresce com a resolução; no
+caso de RAJADA (pior caso p1), janelas continuam curtas (25min-2h,
+dependendo do símbolo — XRPUSDT consistentemente o mais curto).
+**PENDENTE ainda é só a decisão de fórmula de conversão** (B20/B23 — não
+inventada aqui, medição só descarta "sempre mais curto"/"sempre mais
+longo" como descrição completa). `AG-180` permanece `aberto` até essa
+decisão do Manager.
 
 **D. Achado real durante a implementação, corrigido antes do commit.**
 `BARS_15M`/`BARS_30M`/`BARS_1H` foram definidos em `schemas.py` mas
@@ -4168,6 +4192,93 @@ arquivos tocados. Commit `d44c7f9`; governança nesta mesma rodada.
 
 ---
 
+### 15.22 Núcleo funcional, casca imperativa — princípio formalizado, 5 violações reais fechadas (2026-08-23)
+
+**Origem:** `docs/nucleo-casca.html` (documento externo trazido pelo
+Manager) validado via `/engineering:system-design` — cita Bernhardt 2012
+(*Functional Core, Imperative Shell*), Cockburn 2005 (Hexagonal
+Architecture) e Sculley et al. 2015 NeurIPS (*training-serving skew*)
+como base teórica; NautilusTrader como prova de existência no domínio
+quant. Investigação de código (3 agentes paralelos) achou que o padrão
+**já era a norma dominante do repo** (~25+ módulos, `data/bars.py` como
+padrão-ouro), nunca formalizado nos documentos canônicos — não era
+decisão de adotar algo novo, era fechar doc-drift + as violações reais
+encontradas. Desenho completo: `docs/nucleo_casca_design_doc_
+2026-08-23.md`.
+
+**A. Formalização.** Nova seção em `CLAUDE.md` ("Núcleo funcional, casca
+imperativa") — vocabulário fixado (núcleo = zero IO; casca/"ponto de
+entrada com IO" = camada de resolução+delegação), 2 idiomas sancionados
+(A — recompute sobre prefixo crescente, default; B — carry/step/finish,
+`data/bars.py`), mais um 3º padrão aceito achado pelo `project_assurance`
+durante a implementação: **correção-relâmpago via ponto de injeção**
+(parâmetro `Mapping | None = None` que substitui IO por lookup em memória
+numa função já grande demais pra separar com segurança) — DoD de "Código
+de modelo"/"Código de execução" ampliado.
+
+**B. 5 violações reais fechadas + 1 achado extra do `project_assurance`
+(6 no total).**
+
+1. `src/labels/triple_barrier.py::build_labels_with_stats` — parâmetro
+   `filters_by_date`, elimina IO do laço principal de cálculo de
+   barreira. 2 testes novos.
+2. `src/analysis/faixa2_caminho_b.py::run_fase2_e1` — split em
+   `compute_fase2_e1` (núcleo puro) + `run_fase2_e1` (casca IO). **Sem
+   teste sintético completo** — reconstruir fixtures pras 18 células
+   (`CPCVSplit`, `predictions`, 4 regimes) sem poder rodar pytest tornava
+   o risco de teste sutilmente quebrado maior que o valor; registrado
+   como item de acompanhamento, não escondido.
+3. `src/analysis/faixa1_5_prerequisites.py::run_faixa1_5` — parâmetro
+   `hhi_df`, elimina IO invisível (`_hhi_by_fold_side()` chamada sem
+   argumento, fora da assinatura). 2 testes de plumbing via stub.
+4. `src/analysis/attribution.py::_aggregate_side` — split em
+   `_load_payloads` (IO) + `_aggregate_payloads` (núcleo puro). 1 teste
+   que bloqueia leitura de disco ativamente.
+5. `src/models/pipeline.py` — 2 fórmulas de decisão inline (tamanho de
+   amostra B1, gates 3.4) viram funções nomeadas testáveis
+   (`baselines.b1_sample_size`, `hhi.gate3_4_passes`/
+   `gate3_4_max_share_passes`). 7 testes novos.
+6. **Achado extra do `project_assurance` (HIGH, não estava nas 5
+   originais):** `src/execution/fill_simulator.py::_resolve_tick_size_
+   cached` — mesma classe de entrelaçamento IO+cálculo, dentro do laço
+   principal de `simulate_window`. Mesma correção (`tick_size_by_date`),
+   2 testes novos.
+
+**C. Revisão independente (`project_assurance`, obrigatória em
+`src/labels/`).** Achados reais, nenhum CRITICAL: (1) descrição do
+produtor overclaimava "fecha uma violação arquitetural" quando o padrão
+entregue (item 1 acima) é o 3º idioma — injeção, não núcleo separado de
+verdade — corrigido na própria redação do princípio (§A); (2) achado HIGH
+extra — `fill_simulator.py`, item 6 acima, corrigido antes desta seção;
+(3) bug real no fixture de teste (`_with_horizon_coverage` usava a data
+errada, funcionava por coincidência de magnitude, não por desenho) —
+corrigido; (4) nenhum caller de produção passa os novos parâmetros
+opcionais hoje — comportamento de produção 100% inalterado, só a
+testabilidade muda; achados MEDIUM de comunicação/rastreabilidade
+(governança pendente, teste de regressão bit-exata) — este item, e os
+testes de integração (7 passed, dado real de `triple_barrier.py`
+confirmando bit-exatidão do caminho default), fecham ambos.
+
+**D. Verificação.** `1734 passed, 4 skipped, 0 failed` (`-m "not slow and
+not integration"`) + `7 passed` (testes de integração dos 4 arquivos com
+dado real). `ruff`/`mypy`/`banned_patterns.py`/`check_constants_
+referenced.py`/`check_unguarded_ratios.py` limpos nos 8 arquivos
+tocados — achados pré-existentes de linters cross-checados contra o
+arquivo original (`git stash`) e confirmados não-introduzidos por este
+trabalho.
+
+**E. Pendências explícitas, não esquecidas.**
+
+- Teste sintético completo pra `compute_fase2_e1` (item B.2) — deferido,
+  risco > valor sem poder rodar pytest iterativamente.
+- Caso de borda `filters_by_date`/`tick_size_by_date` PARCIAL (cobre só
+  algumas datas, não todas) — comportamento correto por leitura de
+  código (`KeyError` fail-fast), não coberto por teste dedicado.
+- Nenhum caller de produção usa os 3 novos parâmetros de injeção hoje —
+  são pontos de teste, não mudança de comportamento real.
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -4184,6 +4295,54 @@ arquivos tocados. Commit `d44c7f9`; governança nesta mesma rodada.
 
 ## Changelog
 
+- **v3.32 (2026-08-23)** — **Núcleo funcional, casca imperativa —
+  princípio formalizado (`CLAUDE.md`), 5 violações reais fechadas + 1
+  achado HIGH extra do `project_assurance`.** Detalhe: `§15.22`. Achado
+  central: o padrão (Bernhardt 2012) já era a norma dominante do repo
+  (~25+ módulos), nunca formalizado — não é adoção nova, é fechar
+  doc-drift + violações reais. `triple_barrier.py`/`fill_simulator.py`/
+  `faixa1_5_prerequisites.py`/`attribution.py`/`pipeline.py`+`hhi.py`+
+  `baselines.py` corrigidos, todos com teste novo exceto
+  `faixa2_caminho_b.py` (split feito, teste sintético completo deferido
+  — risco>valor sem execução iterativa de pytest). `project_assurance`
+  achou `fill_simulator.py::_resolve_tick_size_cached` como 2ª instância
+  real HIGH da mesma classe de bug, não catalogada no desenho original —
+  corrigida antes desta seção. `1734 passed` + `7 passed` de integração
+  (bit-exatidão do caminho default confirmada com dado real). Nenhum
+  caller de produção usa os novos parâmetros de injeção ainda —
+  comportamento de produção 100% inalterado.
+- **v3.31 (2026-08-23)** — **Fecha `AG-174`/`175`/`176`, entrega + roda
+  script de medição para `AG-180`.** Detalhe: `§15.21.3`. `validate_
+  resampled_bars` parava de fingir PASS (schemas `BARS_15M`/`30M`/`1H`
+  registrados, reusa `validate_klines_like` por inteiro, 11 testes) —
+  fecha `AG-174`/`AG-175`. Guarda mecânica nova
+  (`check_resolution_id_guard_parity.py`) confirma os 4 sites de
+  `resolution_id` consistentes (opção B do Manager, aceitar duplicação) —
+  fecha `AG-176`. `AG-180`: script de medição entregue E rodado pelo
+  Manager (45/45 combinações) — resultado real registrado no ledger e
+  corrigido nesta mesma rodada de limpeza em `§15.21.3`-C (a versão
+  original do commit `c0f4038` citava o script como "não rodado" apesar
+  do próprio commit já ter o resultado no ledger — inconsistência
+  interna corrigida). `min_warmup_bars=200`: mediana da janela real sob
+  R1 fica próxima do equivalente 15m, mas R2/R3 saem 2×/4× MAIORES, não
+  menores como a suspeita original previa isoladamente — fórmula de
+  conversão segue pendente do Manager, `AG-180` continua `aberto`.
+  Commits `d44c7f9` (implementação) + `c0f4038` (governança).
+- **v3.30 (2026-08-23)** — **Regime/Feature Engine — D-01/D-02
+  implementados, fecham `AG-159`/`AG-177`.** Detalhe: `§15.21.2`. `src/
+  regime/stress.py` ganha `s06_bar_gap_dollar` (mediana/MAD via `pl.
+  Series.rolling_median` deslocada, expansiva por construção — reusa
+  primitiva nativa do Polars, não estrutura customizada). `bar_source`
+  propagado ponta a ponta (`QuantileRegimeClassifier`/`build_regimes`).
+  `compute_max_feature_lookback_ms` ganha `resolution_id`, os 2 call
+  sites (`pipeline.py`/`leakage.py`) corrigidos juntos. Revisão
+  independente (`project_assurance`, 2 agentes) achou e corrigiu 1
+  achado real antes do commit: critério de S6 era bilateral, deveria ser
+  unilateral (`AG-183`) — rajada de liquidez dispararia stress sem
+  motivo, mudando `monotone_constraints` via `environments.py`→
+  `monotonic.py`→`alpha.py::fit_side_model` (confirmado consumidor de
+  produção real, não só análise). 1695 passed. Commits `6902352`
+  (implementação) + `2905f16` (governança).
 - **v3.29 (2026-08-23)** — **Regime/Feature Engine multi-ativo × multi-
   resolução: design doc v1→v3, achado crítico corrigido antes de virar
   código.** Detalhe: `§15.21.1` (`§15.21`, dívida técnica BTC/M15, foi

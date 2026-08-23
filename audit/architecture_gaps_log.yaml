@@ -12405,3 +12405,172 @@ entries:
       `test_s06_bar_gap_dollar_gap_curto_nao_dispara_criterio_unilateral`
       trava o comportamento correto.
     status: "fechado 2026-08-23 -- commit 6902352"
+
+  - id: AG-184
+    date: "2026-08-23"
+    file: "src/labels/triple_barrier.py::build_labels_with_stats (laço principal, ~linha 1190-1200 antes da correção)"
+    related_file: "docs/nucleo_casca_design_doc_2026-08-23.md §2.4 item 1; src/risk/sizing.py::compute_sizing/compute_sizing_asof (padrão de referência citado no desenho)"
+    found_by: "Agent auditoria adversarial (docs/nucleo_casca_design_doc_2026-08-23.md), confirmado pelo produtor por leitura de código"
+    gap: >
+      O "núcleo" do Label Engine (`build_labels_with_stats`, docstring
+      literal "Núcleo do Label Engine") chamava `_resolve_filters_cached`
+      → `load_filters_asof` (leitura real de disco de snapshots de
+      `exchangeInfo`) DENTRO do laço principal de cálculo de TP/SL/toque
+      de barreira, sem nenhum ponto de injeção -- diferente de
+      `src/risk/sizing.py`, que separa `compute_sizing` (puro) de
+      `compute_sizing_asof` (wrapper IO). Custo real já pago: os testes
+      unitários precisavam fixar a data sintética (`_BASE_MS`) pra bater
+      com o único snapshot real em disco (2026-08-08).
+    severity: "media"
+    layer: "labels -- núcleo de cálculo com IO entrelaçada, código de segurança de label (dimensiona TP/SL real)"
+    consequence: >
+      Testar a lógica de barreira com um filtro arbitrário (tick_size
+      diferente, data fora do único snapshot real) era impossível sem
+      tocar disco -- se o snapshot real mudasse de lugar/fosse removido,
+      toda a suíte "sintética" de `test_labels_triple_barrier.py`
+      quebraria por uma razão não relacionada à lógica sendo testada.
+    resolved_by_commit: "db62daf"
+    resolution: >
+      Novo parâmetro keyword-only `filters_by_date: Mapping[date, Filters]
+      | None = None` (achado do `project_assurance`: NÃO é o mesmo padrão
+      de `sizing.py` -- a função continua híbrida, não vira núcleo
+      separado; ver CLAUDE.md §Núcleo funcional, "3º padrão aceito"). Nova
+      função pura `_resolve_filters_from_mapping` (zero IO, `KeyError`
+      fail-fast se a data não estiver coberta). `None` (default) preserva
+      bit-exato todo caller existente. 2 testes novos + 4 testes de
+      integração (dado real) confirmam bit-exatidão do caminho default.
+    status: "fechado 2026-08-23 -- commit db62daf, revisado por project_assurance (achados MEDIUM/LOW de comunicação/cobertura, não de correção de código, corrigidos na mesma rodada -- ver AG-185/PLANO_MESTRE §15.22-C)"
+
+  - id: AG-185
+    date: "2026-08-23"
+    file: "src/execution/fill_simulator.py::_resolve_tick_size_cached (chamada dentro do laço de simulate_window, ~linha 834 antes da correção)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-184 (mesma classe de bug, achado irmão); docs/nucleo_casca_design_doc_2026-08-23.md (não catalogou este arquivo -- gap do próprio desenho)"
+    found_by: "Agent Project Assurance independente (PRINCE2 §6.4), revisão da correção de AG-184 -- achado NÃO estava nas 5 violações originais do desenho"
+    gap: >
+      Mesma classe de entrelaçamento IO+cálculo que `AG-184` (a própria
+      docstring de `_resolve_tick_size_cached` já dizia "mesmo padrão de
+      `triple_barrier._resolve_filters_cached`") -- chamada dentro do
+      laço principal de `simulate_window`, sem ponto de injeção. O
+      levantamento original de `docs/nucleo_casca_design_doc_
+      2026-08-23.md` classificou `fill_simulator.py` como "reference-
+      quality separation" (achado sobre `_simulate_one_order`/
+      `_compute_markouts`, corretos) sem notar esta função específica --
+      gap de cobertura do próprio desenho, não do código.
+    severity: "high"
+    layer: "execution -- simulação de fill real, mesma criticidade que motivou classificar AG-184 como a violação mais grave do levantamento"
+    consequence: >
+      Mesma consequência de AG-184: impossível testar a lógica de
+      simulação de ordem com tick_size arbitrário sem tocar disco real.
+    resolved_by_commit: "db62daf"
+    resolution: >
+      Mesmo padrão de AG-184 -- novo parâmetro `tick_size_by_date:
+      Mapping[date, float] | None = None` em `simulate_window` (e
+      repassado por `simulate_window_price_improved`), nova função pura
+      `_resolve_tick_size_from_mapping` (zero IO, `KeyError` fail-fast).
+      2 testes novos (unidade da função pura + ponta a ponta bloqueando
+      `load_filters_asof` ativamente).
+    status: "fechado 2026-08-23 -- commit db62daf"
+
+  - id: AG-186
+    date: "2026-08-23"
+    file: "src/analysis/faixa2_caminho_b.py::run_fase2_e1 (antes da correção)"
+    related_file: "docs/nucleo_casca_design_doc_2026-08-23.md §2.4 item 2"
+    found_by: "Agent sweep de violações (docs/nucleo_casca_design_doc_2026-08-23.md), confirmado pelo produtor"
+    gap: >
+      `run_fase2_e1` misturava `lake.query_bars`/`lake.query_funding`
+      (IO real) com um grid search de 18 células (TP×SL×lado) chamando
+      `resolve_barriers_vectorized` (cálculo genuíno) na MESMA função.
+      Zero teste cobria `run_fase2_e1` como unidade -- só suas
+      sub-peças, isoladamente.
+    severity: "alta (achado), média (correção -- arquitetura fechada, cobertura de teste ainda parcial)"
+    layer: "analysis -- fora da hierarquia de camadas por desenho (CLAUDE.md), mas ainda assim zero cobertura é um risco real de regressão silenciosa"
+    consequence: >
+      Qualquer mudança na grade de TP/SL ou na lógica de mapeamento de
+      trades pra path não tinha nenhum teste automatizado pra pegar
+      regressão -- só o self-check embutido no próprio relatório
+      (`sanidade_centro_da_grade`, contra referência do Sprint 6).
+    resolved_by_commit: "db62daf"
+    resolution: >
+      Split em `compute_fase2_e1` (núcleo puro, recebe `mark_1m`/
+      `funding` já em memória) + `run_fase2_e1` (casca IO, resolve os
+      dois via `lake.query_bars`/`query_funding` a partir dos bounds de
+      `mf_data`, delega). Assinatura/comportamento de `run_fase2_e1`
+      100% preservados.
+    status: "fechado parcialmente 2026-08-23 -- commit db62daf. Arquitetura fechada (núcleo puro testável existe); teste sintético completo pras 18 células NÃO entregue nesta rodada -- reconstruir fixtures (CPCVSplit, predictions, 4 regimes) sem poder rodar pytest iterativamente tornava o risco de teste sutilmente quebrado maior que o valor. Registrado como pendência explícita, não escondida -- PLANO_MESTRE §15.22-E."
+
+  - id: AG-187
+    date: "2026-08-23"
+    file: "src/analysis/faixa1_5_prerequisites.py::run_faixa1_5 (antes da correção)"
+    related_file: "docs/nucleo_casca_design_doc_2026-08-23.md §2.4 item 3"
+    found_by: "Agent sweep de violações (docs/nucleo_casca_design_doc_2026-08-23.md), confirmado pelo produtor"
+    gap: >
+      `run_faixa1_5(predictions, mf_data, splits)` chamava
+      `_hhi_by_fold_side()` (zero-arg, glob+leitura de disco de
+      `models/{model_id}/diagnostics/*.json`) por dentro -- IO invisível
+      na própria assinatura da função.
+    severity: "media"
+    layer: "analysis -- mesma ressalva de escopo de AG-186"
+    consequence: >
+      Mesma classe de AG-186 -- `run_faixa1_5` nunca era testada como
+      unidade completa, só suas sub-peças isoladamente.
+    resolved_by_commit: "db62daf"
+    resolution: >
+      Novo parâmetro keyword-only `hhi_df: pl.DataFrame | None = None`.
+      `None` (default) preserva bit-exato o único caller de produção. 2
+      testes novos de plumbing (via stub nas 6 sub-análises, mesma
+      filosofia já declarada pelo próprio arquivo de teste: focar em
+      mecânica de orquestração, não redundar as funções estatísticas já
+      testadas nos próprios blocos).
+    status: "fechado 2026-08-23 -- commit db62daf"
+
+  - id: AG-188
+    date: "2026-08-23"
+    file: "src/analysis/attribution.py::_aggregate_side (antes da correção)"
+    related_file: "docs/nucleo_casca_design_doc_2026-08-23.md §2.4 item 4"
+    found_by: "Agent sweep de violações (docs/nucleo_casca_design_doc_2026-08-23.md), confirmado pelo produtor"
+    gap: >
+      Leitura de disco (`orjson.loads(path.read_bytes())`) e a agregação
+      estatística real (`gain_mean`/`gain_std`/`share_mean`/`share_std`
+      via numpy) na mesma função.
+    severity: "baixa-media"
+    layer: "analysis -- mesma ressalva de escopo de AG-186; testável via tmp_path hoje, menos grave que AG-184/185/186/187"
+    consequence: >
+      Testar a agregação exigia sempre escrever JSON em disco
+      (`tmp_path`), mesmo pra casos puramente aritméticos.
+    resolved_by_commit: "db62daf"
+    resolution: >
+      Split em `_load_payloads` (IO) + `_aggregate_payloads` (núcleo
+      puro). 1 teste novo que bloqueia `Path.read_bytes` ativamente
+      (`monkeypatch`) pra provar que o núcleo não toca disco, mesmo
+      cenário numérico de um teste já existente do arquivo (conferido à
+      mão).
+    status: "fechado 2026-08-23 -- commit db62daf"
+
+  - id: AG-189
+    date: "2026-08-23"
+    file: "src/models/pipeline.py::run_layer1_sprint (fórmula B1 e gates 3.4, inline antes da correção)"
+    related_file: "docs/nucleo_casca_design_doc_2026-08-23.md §2.4 item 5; src/models/baselines.py (novo b1_sample_size); src/models/hhi.py (novos gate3_4_passes/gate3_4_max_share_passes)"
+    found_by: "Agent sweep de violações (docs/nucleo_casca_design_doc_2026-08-23.md), confirmado pelo produtor"
+    gap: >
+      Duas decisões reais inline em `run_layer1_sprint`, sem função
+      nomeada testável fora do pipeline CPCV/XGBoost completo: fórmula de
+      tamanho de amostra do baseline B1 (`max(1, round(n_filled_c1 /
+      max(len(c1_by_path), 1)))`) e a regra de pass/fail do Gate 3.4
+      (`mean_hhi_effective < 0.25`, `mean_max_share < 0.30`). Mesmo tipo
+      de achado que `AG-114`/`AG-118` já ensinaram sobre critério de gate
+      precisar de definição operacional independente do momento de
+      aplicação.
+    severity: "baixa"
+    layer: "models -- observação, não violação dura (pipeline.py é o orquestrador esperado, IO é o papel dele)"
+    consequence: >
+      Nenhuma decisão de gate podia ser testada isoladamente -- só
+      indiretamente, rodando o pipeline CPCV/XGBoost inteiro.
+    resolved_by_commit: "db62daf"
+    resolution: >
+      `baselines.b1_sample_size(n_filled_c1, n_paths)` e
+      `hhi.gate3_4_passes(mean_hhi_effective, threshold=0.25)`/
+      `hhi.gate3_4_max_share_passes(mean_max_share, threshold=0.30)` --
+      mesmos literais já aceitos (`noqa: magic-number`) em `pipeline.py`,
+      só extraídos pra funções nomeadas. `pipeline.py` passa a chamá-las
+      em vez de inline. 7 testes novos.
+    status: "fechado 2026-08-23 -- commit db62daf"
