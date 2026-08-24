@@ -82,7 +82,11 @@ import structlog
 from numpy.typing import NDArray
 
 from src.data._paths import CAPACITY_DIR
-from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION, DollarBarCalibration
+from src.data.build_dollar_bars import (
+    CALIBRATION_TF_BY_RESOLUTION,
+    DollarBarCalibration,
+    WalkforwardCalibrationIdentity,
+)
 from src.data.resample import step_ms
 
 from ._constants import load_constant
@@ -388,10 +392,29 @@ def _assert_dollar_bar_grade_consistent(symbol: str, resolution_id: str) -> None
     aplica. `resolution_id` também não existe como coluna em NENHUM
     `DataFrame` de labels/bars (verificado, `schemas.py`/`triple_barrier.
     LABEL_COLUMNS`) -- a única fonte real é o sidecar `_calibration.json`
-    por símbolo (`DollarBarCalibration`, escrito por `src.data.
-    build_dollar_bars.write_dollar_bars_and_calibration`). Por isso esta
-    checagem é por SÍMBOLO (a calibração existe e bate?), não por LINHA
-    (não há como validar cada `t0` individualmente contra a grade)."""
+    por símbolo, escrito por `src.data.build_dollar_bars.
+    write_dollar_bars_and_calibration`. Por isso esta checagem é por
+    SÍMBOLO (a calibração existe e bate?), não por LINHA (não há como
+    validar cada `t0` individualmente contra a grade).
+
+    **2 schemas legítimos no mesmo sidecar (achado real, 2026-08-23, 1ª
+    execução real de `run_layer1_sprint` contra R1 pós-`AG-124`).**
+    `DollarBarCalibration` (janela única, `calibrate_dollar_threshold_
+    for_validation`) e `WalkforwardCalibrationIdentity` (recalibração
+    causal rolante, `AG-124`, `build_dollar_bars_walkforward`) escrevem no
+    MESMO nome de arquivo (`_calibration.json`) com campos DIFERENTES
+    (`threshold_usdt`/`calibration_window_start` vs. `trailing_window_
+    days`/`cadence_days`/`schema_version` -- ver docstrings das 2 classes
+    em `build_dollar_bars.py`). Todo dado real de produção sob R1/R2/R3
+    foi reprocessado via `AG-124` (walkforward) -- esta checagem nunca
+    tinha sido exercitada contra um arquivo real desse formato até agora
+    (só contra `DollarBarCalibration` sintética em teste), por isso o
+    `TypeError` sobre `trailing_window_days` nunca apareceu antes. Tenta
+    `DollarBarCalibration` primeiro (formato mais antigo/comum em teste),
+    cai pra `WalkforwardCalibrationIdentity` no `TypeError` -- os dois
+    têm `symbol`/`resolution_id` como campos reais (o que esta função
+    precisa), nenhum dos dois é mais "correto" que o outro, são famílias
+    de calibração genuinamente diferentes."""
     calibration_path = (
         CAPACITY_DIR / f"dollar_bars_{resolution_id.lower()}" / symbol / "_calibration.json"
     )
@@ -403,21 +426,32 @@ def _assert_dollar_bar_grade_consistent(symbol: str, resolution_id: str) -> None
         )
     try:
         payload = orjson.loads(calibration_path.read_bytes())
-        calibration = DollarBarCalibration(**payload)
-    except (orjson.JSONDecodeError, TypeError) as exc:
-        # Achado de auditoria (audit_engineering, 2026-08-17): arquivo
-        # PRESENTE mas corrompido (JSON malformado) ou com schema
-        # divergente (campo faltando/renomeado -- `DollarBarCalibration`
-        # é dataclass sem **kwargs, um bump de schema futuro sem
-        # recalibrar o arquivo em disco produziria TypeError cru aqui)
-        # não tinha tratamento -- só os casos "ausente"/"resolution_id
-        # divergente" abaixo eram cobertos. CPCVError explícito em vez de
-        # deixar TypeError/JSONDecodeError escaparem sem contexto
-        # acionável (mesma disciplina FCN do resto do módulo).
+    except orjson.JSONDecodeError as exc:
         raise CPCVError(
             f"AG-042: {calibration_path} corrompido ou schema divergente do esperado "
             f"({exc}) -- recalibre com src.data.build_dollar_bars"
         ) from exc
+    calibration: DollarBarCalibration | WalkforwardCalibrationIdentity
+    try:
+        calibration = DollarBarCalibration(**payload)
+    except TypeError:
+        try:
+            calibration = WalkforwardCalibrationIdentity(**payload)
+        except TypeError as exc:
+            # Achado de auditoria (audit_engineering, 2026-08-17): arquivo
+            # PRESENTE mas com schema divergente de AMBAS as famílias
+            # conhecidas (campo faltando/renomeado -- as 2 classes são
+            # dataclass sem **kwargs, um bump de schema futuro sem
+            # recalibrar o arquivo em disco produziria TypeError cru
+            # aqui) não tinha tratamento -- só os casos "ausente"/
+            # "resolution_id divergente" abaixo eram cobertos. CPCVError
+            # explícito em vez de deixar TypeError escapar sem contexto
+            # acionável (mesma disciplina FCN do resto do módulo).
+            raise CPCVError(
+                f"AG-042: {calibration_path} corrompido ou schema divergente de "
+                f"DollarBarCalibration E WalkforwardCalibrationIdentity ({exc}) -- "
+                "recalibre com src.data.build_dollar_bars"
+            ) from exc
     if calibration.resolution_id != resolution_id:
         raise CPCVError(
             f"AG-042: {calibration_path} tem resolution_id={calibration.resolution_id!r}, "

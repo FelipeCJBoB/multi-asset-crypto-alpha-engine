@@ -13843,3 +13843,49 @@ entries:
       gerados apos AG-116/AG-124) -- nao reprocessados nesta rodada, so
       R1 (o unico com evidencia real de mismatch).
     status: "fechado 2026-08-23 -- confirmado real (nao falso positivo) e corrigido, ver resolution"
+
+  - id: AG-200
+    date: "2026-08-23"
+    file: "src/validation/cpcv.py::_assert_dollar_bar_grade_consistent (linha ~404-420, antes do fix)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-042 (checagem original, 2026-08-17), AG-124 (WalkforwardCalibrationIdentity, 2026-08-21); src/data/build_dollar_bars.py::DollarBarCalibration, WalkforwardCalibrationIdentity"
+    found_by: "Claude, 1a execucao real de run_layer1_sprint(resolution_id='R1') contra dado de producao (smoke test antes do retreino real completo, autorizado pelo usuario)"
+    gap: >
+      `_assert_dollar_bar_grade_consistent` (AG-042, 2026-08-17) so sabia
+      desserializar `_calibration.json` como `DollarBarCalibration`
+      (janela unica, campos `threshold_usdt`/`calibration_window_start`/
+      etc). `AG-124` (2026-08-21) introduziu `WalkforwardCalibrationIdentity`
+      (recalibracao causal rolante, campos `trailing_window_days`/
+      `cadence_days`/`schema_version`) escrevendo no MESMO nome de
+      arquivo -- ninguem atualizou esta checagem pra aceitar o schema
+      novo. Nunca detectado antes porque `run_layer1_sprint` nunca tinha
+      rodado de verdade contra R1/R2/R3 (todo dado real sob essas
+      resolucoes foi reprocessado via `AG-124`/walkforward, entao TODO
+      `_calibration.json` real tem o schema novo -- o antigo so existia
+      em fixture de teste sintetico).
+    severity: "alto"
+    layer: "validation -- bloqueava TODAS as 15 combinacoes reais (5 simbolos x R1/R2/R3), nao so 1"
+    consequence: >
+      `TypeError: DollarBarCalibration.__init__() got an unexpected
+      keyword argument 'trailing_window_days'` -- crash real, confirmado
+      contra `data/capacity/dollar_bars_r1/BTCUSDT/_calibration.json`
+      (conteudo real: symbol/resolution_id/trailing_window_days=7/
+      cadence_days=7/calibration_scope=walkforward_causal/
+      schema_version=1, bate exato com WalkforwardCalibrationIdentity).
+      Bloquearia o retreino real completo do Alpha na PRIMEIRA chamada
+      de generate_splits pra qualquer simbolo sob R1/R2/R3 -- achado
+      exatamente no smoke test que existe pra pegar isso antes de
+      queimar a rodada completa.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido no mesmo dia. `_assert_dollar_bar_grade_consistent` tenta
+      `DollarBarCalibration(**payload)` primeiro, cai pra
+      `WalkforwardCalibrationIdentity(**payload)` no `TypeError` -- os
+      2 schemas sao familias legitimas e distintas (nao um substitui o
+      outro), ambos tem `symbol`/`resolution_id` reais (o que a checagem
+      precisa). `TypeError` de AMBAS as tentativas ainda levanta
+      `CPCVError` explicito (disciplina FCN preservada, so a mensagem
+      cita as 2 familias agora). Mecanico limpo (ruff/mypy/
+      banned_patterns), `tests/unit/test_validation_cpcv.py` -- 63
+      passed, zero regressao. Verificado contra o arquivo real (conteudo
+      colado acima) antes de commitar, nao so teoricamente.
+    status: "fechado 2026-08-23"
