@@ -14,6 +14,7 @@ exatamente essa propriedade — ver o motivo detalhado lá.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Final
 
 import numpy as np
@@ -25,7 +26,7 @@ from src.data.resample import step_ms
 
 from . import _sources, support
 from ._constants import load_constant
-from .groups import group_a, group_b, group_c, group_d, group_e
+from .groups import group_a, group_b, group_c, group_d, group_e, group_k
 from .registry import feature_lookback_bars
 from .support import FloatArray
 
@@ -61,6 +62,59 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "C01_atr_20",
     "C02_atr_20_pct",
     "B07_efficiency_ratio_48",
+    # Lote A da liberação de features (H5, 2026-08-24) -- 47 T2, nenhuma
+    # promovida a T1 por esta implementação (§0.2 R4/§2.13). Entrar aqui
+    # (não só em ALL_OUTPUT_COLUMNS) é o que dá a cada uma cobertura
+    # AUTOMÁTICA do teste de paridade lote<->streaming global (tests/
+    # parity/test_features_parity.py) -- é a mesma razão de B07/C01/C02
+    # estarem nesta tupla acima.
+    "A01_log_return_1",
+    "A02_log_return_2",
+    "A03_log_return_4",
+    "A04_log_return_12",
+    "A06_ret_vol_norm_12",
+    "A07_body_ratio",
+    "A08_upper_wick_ratio",
+    "A09_lower_wick_ratio",
+    "A10_close_location",
+    "A11_true_range_pct",
+    "A12_gap_pct",
+    "A14_dist_ema12_atr",
+    "B02_rsi_48",
+    "B03_roc_12",
+    "B04_macd_hist_norm",
+    "B05_ema_slope_24",
+    "B06_momentum_accel",
+    "B08_efficiency_ratio_16",
+    "B09_zscore_close_48",
+    "B11_bb_position_20",
+    "C03_realized_vol_48",
+    "C04_parkinson_vol_48",
+    "C05_garman_klass_48",
+    "C09_range_pctile_expanding",
+    "C10_vol_expansion_flag",
+    "C11_vol_compression_flag",
+    "C12_vol_of_vol_48",
+    "D01f_volume_z_96",
+    "D02f_rel_volume_48",
+    "D04f_volume_accel",
+    "D05f_taker_buy_ratio",
+    "D08f_trade_count_z_48",
+    "D09f_avg_trade_size_z",
+    "E01f_funding_last",
+    "E05f_time_to_funding_h",
+    "E09f_oi_contracts",
+    "E11f_oi_change_1d",
+    "E12f_price_oi_divergence",
+    "K01_hour_sin",
+    "K01_hour_cos",
+    "K02_dow_sin",
+    "K02_dow_cos",
+    "K03_is_weekend",
+    "K04_session_asia",
+    "K04_session_europe",
+    "K04_session_us",
+    "K08_days_since_halving",
 )
 
 ALL_OUTPUT_COLUMNS: tuple[str, ...] = (
@@ -184,6 +238,127 @@ class FeatureWindows:
             taker_fee=float(load_constant("taker_fee")),
             min_warmup_bars=int(load_constant("min_warmup_bars")),
             min_common_history_bars=int(load_constant("min_common_history_bars_15m")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LoteAWindows:
+    """Janelas/parâmetros das 47 features T2 do Lote A da liberação de
+    features (H5, 2026-08-24) — carregadas uma única vez, mesmo padrão de
+    `FeatureWindows`. Deliberadamente uma dataclass SEPARADA (não um
+    apêndice de `FeatureWindows`): `FeatureWindows` é o vetor T1 ATIVO
+    (histórico, Sprint 4, consumido pelo Alpha hoje); estas 47 são T2
+    (nenhuma promovida a T1 por esta implementação, §0.2 R4/§2.13) —
+    misturar as duas infla `FeatureWindows` sem necessidade e confunde o
+    que é de fato consumido pelo Alpha hoje vs. o que é candidato T2
+    disponível para ablação futura."""
+
+    a01_log_return_lag: int
+    a02_log_return_lag: int
+    a03_log_return_lag: int
+    a04_log_return_lag: int
+    a05_vol_norm_divisor: float
+    a06_ret_lookback_bars: int
+    a14_ema_window: int
+    b02_rsi_window: int
+    b03_roc_lookback_bars: int
+    b04_macd_fast_window: int
+    b04_macd_slow_window: int
+    b04_macd_signal_window: int
+    b05_ema_window: int
+    b05_slope_lag_bars: int
+    b06_momentum_lookback_bars: int
+    b08_efficiency_ratio_window: int
+    b09_zscore_close_window: int
+    b11_bb_window: int
+    b11_bb_std_multiplier: float
+    c03_realized_vol_window: int
+    c04_parkinson_vol_window: int
+    c05_garman_klass_window: int
+    c10_vol_expansion_threshold: float
+    c11_vol_compression_threshold: float
+    c12_vol_of_vol_inner_window: int
+    c12_vol_of_vol_outer_window: int
+    d01f_volume_z_window: int
+    d02f_rel_volume_window: int
+    d04f_rel_volume_window: int
+    d08f_trade_count_z_window: int
+    d09f_avg_trade_size_z_window: int
+    e05f_funding_interval_hours: int
+    e11f_oi_change_lag_bars: int
+    e12f_oi_change_lag_bars: int
+    k04_asia_start_hour: float
+    k04_asia_end_hour: float
+    k04_europe_start_hour: float
+    k04_europe_end_hour: float
+    k04_us_start_hour: float
+    k04_us_end_hour: float
+    k08_halving_dates_ms: tuple[int, ...]
+
+    @classmethod
+    def from_constants(cls) -> LoteAWindows:
+        halving_date_names = (
+            "feature_k08_halving_1_date_utc",
+            "feature_k08_halving_2_date_utc",
+            "feature_k08_halving_3_date_utc",
+            "feature_k08_halving_4_date_utc",
+        )
+        ms_per_second = 1000.0  # noqa: magic-number -- conversão de unidade (s -> ms), não hiperparâmetro de negócio
+        halving_dates_ms = tuple(
+            int(
+                datetime.strptime(load_constant(name), "%Y-%m-%d")
+                .replace(tzinfo=UTC)
+                .timestamp()
+                * ms_per_second
+            )
+            for name in halving_date_names
+        )
+        return cls(
+            a01_log_return_lag=int(load_constant("feature_a01_log_return_lag")),
+            a02_log_return_lag=int(load_constant("feature_a02_log_return_lag")),
+            a03_log_return_lag=int(load_constant("feature_a03_log_return_lag")),
+            a04_log_return_lag=int(load_constant("feature_a04_log_return_lag")),
+            a05_vol_norm_divisor=float(load_constant("feature_a05_vol_norm_divisor")),
+            a06_ret_lookback_bars=int(load_constant("feature_a06_ret_lookback_bars")),
+            a14_ema_window=int(load_constant("feature_a14_ema_window")),
+            b02_rsi_window=int(load_constant("feature_b02_rsi_window")),
+            b03_roc_lookback_bars=int(load_constant("feature_b03_roc_lookback_bars")),
+            b04_macd_fast_window=int(load_constant("feature_b04_macd_fast_window")),
+            b04_macd_slow_window=int(load_constant("feature_b04_macd_slow_window")),
+            b04_macd_signal_window=int(load_constant("feature_b04_macd_signal_window")),
+            b05_ema_window=int(load_constant("feature_b05_ema_window")),
+            b05_slope_lag_bars=int(load_constant("feature_b05_slope_lag_bars")),
+            b06_momentum_lookback_bars=int(load_constant("feature_b06_momentum_lookback_bars")),
+            b08_efficiency_ratio_window=int(load_constant("feature_b08_efficiency_ratio_window")),
+            b09_zscore_close_window=int(load_constant("feature_b09_zscore_close_window")),
+            b11_bb_window=int(load_constant("feature_b11_bb_window")),
+            b11_bb_std_multiplier=float(load_constant("feature_b11_bb_std_multiplier")),
+            c03_realized_vol_window=int(load_constant("feature_c03_realized_vol_window")),
+            c04_parkinson_vol_window=int(load_constant("feature_c04_parkinson_vol_window")),
+            c05_garman_klass_window=int(load_constant("feature_c05_garman_klass_window")),
+            c10_vol_expansion_threshold=float(load_constant("feature_c10_vol_expansion_threshold")),
+            c11_vol_compression_threshold=float(
+                load_constant("feature_c11_vol_compression_threshold")
+            ),
+            c12_vol_of_vol_inner_window=int(load_constant("feature_c12_vol_of_vol_inner_window")),
+            c12_vol_of_vol_outer_window=int(load_constant("feature_c12_vol_of_vol_outer_window")),
+            d01f_volume_z_window=int(load_constant("feature_d01f_volume_z_window")),
+            d02f_rel_volume_window=int(load_constant("feature_d02f_rel_volume_window")),
+            d04f_rel_volume_window=int(load_constant("feature_d04f_rel_volume_window")),
+            d08f_trade_count_z_window=int(load_constant("feature_d08f_trade_count_z_window")),
+            d09f_avg_trade_size_z_window=int(
+                load_constant("feature_d09f_avg_trade_size_z_window")
+            ),
+            e05f_funding_interval_hours=int(load_constant("feature_e05f_funding_interval_hours")),
+            e11f_oi_change_lag_bars=int(load_constant("feature_e11f_oi_change_lag_bars")),
+            e12f_oi_change_lag_bars=int(load_constant("feature_e12f_oi_change_lag_bars")),
+            k04_asia_start_hour=float(load_constant("feature_k04_asia_start_hour")),
+            k04_asia_end_hour=float(load_constant("feature_k04_asia_end_hour")),
+            k04_europe_start_hour=float(load_constant("feature_k04_europe_start_hour")),
+            k04_europe_end_hour=float(load_constant("feature_k04_europe_end_hour")),
+            k04_us_start_hour=float(load_constant("feature_k04_us_start_hour")),
+            k04_us_end_hour=float(load_constant("feature_k04_us_end_hour")),
+            k08_halving_dates_ms=halving_dates_ms,
         )
 
 
@@ -375,8 +550,11 @@ def compute_t1_features(
     """Núcleo puro (sem IO) do Feature Engine T1.
 
     `bars_15m` precisa estar ordenado por `open_time` e conter
-    `open/high/low/close/volume/taker_buy_volume/open_time/close_time`
-    (schema de `src.data.resample.resample_klines`). `funding_last_aligned`
+    `open/high/low/close/volume/taker_buy_volume/count/open_time/close_time`
+    (schema de `src.data.resample.resample_klines` — `count` = número de
+    trades da barra, exigido desde o Lote A da liberação de features,
+    H5/2026-08-24, insumo de `D08f_trade_count_z_48`/`D09f_avg_trade_
+    size_z`). `funding_last_aligned`
     e `oi_contracts_aligned` já vêm alinhados barra a barra (mesmo
     comprimento de `bars_15m`) — tipicamente produzidos por
     `_sources.asof_align_backward`, que faz o asof-join causal ANTES desta
@@ -402,11 +580,15 @@ def compute_t1_features(
     close = bars_15m["close"].cast(pl.Float64).to_numpy()
     high = bars_15m["high"].cast(pl.Float64).to_numpy()
     low = bars_15m["low"].cast(pl.Float64).to_numpy()
+    open_ = bars_15m["open"].cast(pl.Float64).to_numpy()
     volume = bars_15m["volume"].cast(pl.Float64).to_numpy()
     taker_buy_volume = bars_15m["taker_buy_volume"].cast(pl.Float64).to_numpy()
+    trade_count = bars_15m["count"].cast(pl.Float64).to_numpy()
+    close_time_ms = bars_15m["close_time"].cast(pl.Float64).to_numpy()
 
     funding_arr = _to_numpy(funding_last_aligned)
     oi_arr = _to_numpy(oi_contracts_aligned)
+    lote_a = LoteAWindows.from_constants()
 
     n = close.shape[0]
     log_return_1 = np.full(n, np.nan, dtype=np.float64)
@@ -428,6 +610,16 @@ def compute_t1_features(
     atr_20_pct = group_c.c02_atr_20_pct(atr_20_abs, close)
     ema_48 = support.ema(close, windows.ema_window)
 
+    # Lote A da liberação de features (H5, 2026-08-24) -- intermediários
+    # reaproveitados por mais de uma coluna abaixo (evita recomputar):
+    # A04/A11/C06 são, respectivamente, insumo direto de E12f/C09/C10+C11.
+    a14_ema_12 = support.ema(close, lote_a.a14_ema_window)
+    a04_log_return_12 = group_a.a04_log_return_12(close, lote_a.a04_log_return_lag)
+    a11_true_range_pct = group_a.a11_true_range_pct(high, low, close)
+    c06_vol_ratio_12_96 = group_c.c06_vol_ratio_12_96(
+        log_return_1, windows.vol_ratio_short_window, windows.vol_ratio_long_window
+    )
+
     columns: dict[str, object] = {
         "open_time": bars_15m["open_time"],
         "close_time": bars_15m["close_time"],
@@ -437,9 +629,7 @@ def compute_t1_features(
         "E27f_cost_atr_ratio": group_e.e27f_cost_atr_ratio(
             atr_20_pct, windows.maker_fee, windows.taker_fee
         ),
-        "C06_vol_ratio_12_96": group_c.c06_vol_ratio_12_96(
-            log_return_1, windows.vol_ratio_short_window, windows.vol_ratio_long_window
-        ),
+        "C06_vol_ratio_12_96": c06_vol_ratio_12_96,
         "C07_vol_pctile_expanding": group_c.c07_vol_pctile_expanding(
             log_return_1,
             windows.c07_window,
@@ -458,6 +648,109 @@ def compute_t1_features(
         "C01_atr_20": atr_20_abs,
         "C02_atr_20_pct": atr_20_pct,
         "B07_efficiency_ratio_48": group_b.b07_efficiency_ratio_48(close, windows.b07_window),
+        # Lote A da liberação de features (H5, 2026-08-24) -- 47 T2,
+        # nenhuma promovida a T1 por esta implementação (§0.2 R4/§2.13).
+        "A01_log_return_1": group_a.a01_log_return_1(close, lote_a.a01_log_return_lag),
+        "A02_log_return_2": group_a.a02_log_return_2(close, lote_a.a02_log_return_lag),
+        "A03_log_return_4": group_a.a03_log_return_4(close, lote_a.a03_log_return_lag),
+        "A04_log_return_12": a04_log_return_12,
+        "A06_ret_vol_norm_12": group_a.a06_ret_vol_norm_12(
+            close,
+            atr_20_pct,
+            lote_a.a06_ret_lookback_bars,
+            variance_ref_lookback_bars=windows.ret_lookback,
+            vol_norm_divisor=lote_a.a05_vol_norm_divisor,
+        ),
+        "A07_body_ratio": group_a.a07_body_ratio(open_, high, low, close),
+        "A08_upper_wick_ratio": group_a.a08_upper_wick_ratio(open_, high, low, close),
+        "A09_lower_wick_ratio": group_a.a09_lower_wick_ratio(open_, high, low, close),
+        "A10_close_location": group_a.a10_close_location(high, low, close),
+        "A11_true_range_pct": a11_true_range_pct,
+        "A12_gap_pct": group_a.a12_gap_pct(open_, close),
+        "A14_dist_ema12_atr": group_a.a14_dist_ema12_atr(close, a14_ema_12, atr_20_abs),
+        "B02_rsi_48": group_b.b02_rsi_48(close, lote_a.b02_rsi_window),
+        "B03_roc_12": group_b.b03_roc_12(close, lote_a.b03_roc_lookback_bars),
+        "B04_macd_hist_norm": group_b.b04_macd_hist_norm(
+            close,
+            atr_20_abs,
+            lote_a.b04_macd_fast_window,
+            lote_a.b04_macd_slow_window,
+            lote_a.b04_macd_signal_window,
+        ),
+        "B05_ema_slope_24": group_b.b05_ema_slope_24(
+            close, atr_20_abs, lote_a.b05_ema_window, lote_a.b05_slope_lag_bars
+        ),
+        "B06_momentum_accel": group_b.b06_momentum_accel(
+            close, atr_20_pct, lote_a.b06_momentum_lookback_bars
+        ),
+        "B08_efficiency_ratio_16": group_b.b08_efficiency_ratio_16(
+            close, lote_a.b08_efficiency_ratio_window
+        ),
+        "B09_zscore_close_48": group_b.b09_zscore_close_48(close, lote_a.b09_zscore_close_window),
+        "B11_bb_position_20": group_b.b11_bb_position_20(
+            close, lote_a.b11_bb_window, lote_a.b11_bb_std_multiplier
+        ),
+        "C03_realized_vol_48": group_c.c03_realized_vol_48(
+            log_return_1, lote_a.c03_realized_vol_window
+        ),
+        "C04_parkinson_vol_48": group_c.c04_parkinson_vol_48(
+            high, low, lote_a.c04_parkinson_vol_window
+        ),
+        "C05_garman_klass_48": group_c.c05_garman_klass_48(
+            high, low, open_, close, lote_a.c05_garman_klass_window
+        ),
+        "C09_range_pctile_expanding": group_c.c09_range_pctile_expanding(
+            a11_true_range_pct, min_common_history_bars=windows.min_common_history_bars
+        ),
+        "C10_vol_expansion_flag": group_c.c10_vol_expansion_flag(
+            c06_vol_ratio_12_96,
+            lote_a.c10_vol_expansion_threshold,
+            min_common_history_bars=windows.min_common_history_bars,
+        ),
+        "C11_vol_compression_flag": group_c.c11_vol_compression_flag(
+            c06_vol_ratio_12_96,
+            lote_a.c11_vol_compression_threshold,
+            min_common_history_bars=windows.min_common_history_bars,
+        ),
+        "C12_vol_of_vol_48": group_c.c12_vol_of_vol_48(
+            log_return_1, lote_a.c12_vol_of_vol_inner_window, lote_a.c12_vol_of_vol_outer_window
+        ),
+        "D01f_volume_z_96": group_d.d01f_volume_z_96(volume, lote_a.d01f_volume_z_window),
+        "D02f_rel_volume_48": group_d.d02f_rel_volume_48(volume, lote_a.d02f_rel_volume_window),
+        "D04f_volume_accel": group_d.d04f_volume_accel(volume, lote_a.d04f_rel_volume_window),
+        "D05f_taker_buy_ratio": group_d.d05f_taker_buy_ratio(taker_buy_volume, volume),
+        "D08f_trade_count_z_48": group_d.d08f_trade_count_z_48(
+            trade_count, lote_a.d08f_trade_count_z_window
+        ),
+        "D09f_avg_trade_size_z": group_d.d09f_avg_trade_size_z(
+            volume, trade_count, lote_a.d09f_avg_trade_size_z_window
+        ),
+        "E01f_funding_last": group_e.e01f_funding_last(funding_arr),
+        "E05f_time_to_funding_h": group_e.e05f_time_to_funding_h(
+            close_time_ms, lote_a.e05f_funding_interval_hours
+        ),
+        "E09f_oi_contracts": group_e.e09f_oi_contracts(oi_arr),
+        "E11f_oi_change_1d": group_e.e11f_oi_change_1d(oi_arr, lote_a.e11f_oi_change_lag_bars),
+        "E12f_price_oi_divergence": group_e.e12f_price_oi_divergence(
+            a04_log_return_12, oi_arr, lote_a.e12f_oi_change_lag_bars
+        ),
+        "K01_hour_sin": group_k.k01_hour_sin(close_time_ms),
+        "K01_hour_cos": group_k.k01_hour_cos(close_time_ms),
+        "K02_dow_sin": group_k.k02_dow_sin(close_time_ms),
+        "K02_dow_cos": group_k.k02_dow_cos(close_time_ms),
+        "K03_is_weekend": group_k.k03_is_weekend(close_time_ms),
+        "K04_session_asia": group_k.k04_session_asia(
+            close_time_ms, lote_a.k04_asia_start_hour, lote_a.k04_asia_end_hour
+        ),
+        "K04_session_europe": group_k.k04_session_europe(
+            close_time_ms, lote_a.k04_europe_start_hour, lote_a.k04_europe_end_hour
+        ),
+        "K04_session_us": group_k.k04_session_us(
+            close_time_ms, lote_a.k04_us_start_hour, lote_a.k04_us_end_hour
+        ),
+        "K08_days_since_halving": group_k.k08_days_since_halving(
+            close_time_ms, lote_a.k08_halving_dates_ms
+        ),
     }
     df = pl.DataFrame(columns)
 

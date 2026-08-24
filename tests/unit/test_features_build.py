@@ -109,6 +109,16 @@ def test_warmup_uniforme_maioria_valida_depois_do_corte(symbol: str) -> None:
     n_fully_valid = tail.select(t1_cols).drop_nulls().height
     assert n_fully_valid / tail.height > 0.95
 
+    # Lote A (H5, 2026-08-24, achado do audit_engineering): este teste só
+    # cobria T1_FEATURE_IDS -- as 47 T2 novas (e as 3 T2 pré-existentes,
+    # C01/C02/B07) nunca tinham essa checagem, mesmo warmup-mask sendo
+    # aplicado uniformemente (build.py::apply_min_warmup_mask) a TODA
+    # coluna de feature, não só T1. Reusa o mesmo agrupamento do teste de
+    # paridade (tests/parity/test_features_parity.py), não uma tupla nova.
+    support_cols = list(build.SUPPORT_FEATURE_IDS)
+    n_fully_valid_support = tail.select(support_cols).drop_nulls().height
+    assert n_fully_valid_support / tail.height > 0.95
+
 
 def test_feature_windows_min_common_history_bars_from_constants() -> None:
     """AG-030 (T0.5): min_common_history_bars_15m, config/constants.yaml --
@@ -258,6 +268,12 @@ def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> Non
         "C07_vol_pctile_expanding",
         "D03f_volume_z_expanding",
         "E02f_funding_z_expanding",
+        # Lote A (H5, 2026-08-24) -- C09/C10/C11 também repassam
+        # min_common_history_bars pra expanding_percentile_rank_strict
+        # (mesmo mecanismo de C07), ver build.py::compute_t1_features.
+        "C09_range_pctile_expanding",
+        "C10_vol_expansion_flag",
+        "C11_vol_compression_flag",
     }
     outros_cols = [c for c in build.ALL_OUTPUT_COLUMNS if c not in cols_afetadas]
     assert out_sem_cap.select(outros_cols).equals(out_com_cap.select(outros_cols), null_equal=True)
@@ -271,6 +287,7 @@ def _make_synthetic_bars_for_cap_test(n: int) -> pl.DataFrame:
     open_ = close + rng.normal(0, 0.5, n)
     volume = rng.uniform(10, 100, n)
     taker_buy_volume = volume * rng.uniform(0.3, 0.7, n)
+    count = rng.uniform(10, 100, n)  # Lote A (H5, 2026-08-24) -- D08f/D09f exigem number_of_trades
     open_time = np.arange(n, dtype=np.int64) * 900_000
     close_time = open_time + 899_999
     return pl.DataFrame(
@@ -283,6 +300,7 @@ def _make_synthetic_bars_for_cap_test(n: int) -> pl.DataFrame:
             "close": close,
             "volume": volume,
             "taker_buy_volume": taker_buy_volume,
+            "count": count,
         }
     )
 
@@ -320,7 +338,8 @@ def test_compute_t1_features_vol_estimator_id_none_e_atr_wilder_explicito_sao_bi
 
 def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto() -> None:
     """`vol_estimator_id="parkinson_w{N}"` muda C01_atr_20 (e, por herança,
-    C02/A05/A13/E27f -- todas dependem de `atr_20_abs`/`atr_20_pct`), mas
+    toda feature que consome `atr_20_abs`/`atr_20_pct` -- C02/A05/A13/E27f
+    do vetor T1, mais A06/A14/B04/B05/B06 do Lote A, H5/2026-08-24), mas
     NÃO muda nenhuma outra coluna T1/T2 (B01, B07, C06, C07, D03f, D06f,
     E02f, E10f não dependem de C01)."""
     n = 200
@@ -348,6 +367,12 @@ def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto(
         "A05_ret_vol_norm_4",
         "A13_dist_ema48_atr",
         "E27f_cost_atr_ratio",
+        # Lote A (H5, 2026-08-24) -- também consomem atr_20_abs/atr_20_pct
+        "A06_ret_vol_norm_12",
+        "A14_dist_ema12_atr",
+        "B04_macd_hist_norm",
+        "B05_ema_slope_24",
+        "B06_momentum_accel",
     }
     for col in cols_afetadas:
         valid = ~out_wilder[col].is_nan() & ~out_parkinson[col].is_nan()
@@ -426,6 +451,7 @@ def test_warmup_zero_barras_nao_quebra() -> None:
             "close": [100.5, 101.5],
             "volume": [10.0, 12.0],
             "taker_buy_volume": [5.0, 6.0],
+            "count": [7.0, 8.0],
         }
     )
     funding = pl.Series("f", [None, None], dtype=pl.Float64)

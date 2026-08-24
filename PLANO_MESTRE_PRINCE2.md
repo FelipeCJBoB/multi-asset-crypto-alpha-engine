@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.46 · **Data:** 2026-08-24
+**Versão:** 3.47 · **Data:** 2026-08-24
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -4993,7 +4993,10 @@ data      │  01_BARRA          src/data/{resample,lake,download,bars,   🟢
 features  │  03_FEATURES       src/features/{build,support,groups/*}.py 📚 -- núcleo Idioma A
           │                    pronto (compute_t1_features), SEM CLI
           │                    própria -- consumido via
-          │                    models/dataset.py::build_modeling_frame
+          │                    models/dataset.py::build_modeling_frame.
+          │                    `groups/*` ganhou `group_k.py` (2026-08-24,
+          │                    Lote A da liberação de features/H5) --
+          │                    status 📚 inalterado, ver nota abaixo
           │  04_VOLATILIDADE   src/features/volatility.py               📚 -- ilha, só alimenta labels
 regime    │  05_REGIME         src/regime/{build,classifier,build_hmm,  📚 -- build_hmm.py é builder de
           │                    stress}.py                               produção real (causal), SEM CLI
@@ -5068,6 +5071,34 @@ feito, zero linha implementada.
 
 Detalhe completo por arquivo/camada: `docs/nucleo_casca_design_doc_
 2026-08-23.md`; tabela de status por estágio: `§15.4`.
+
+**Atualização 2026-08-24 (Lote A da liberação de features, H5) — `03_
+FEATURES` ganhou arquivo novo, status do estágio não muda.**
+`src/features/groups/group_k.py` (Grupo K — temporal/calendário) é o
+único arquivo novo desta leva; as outras 47 features T2 (`A01-A04`/
+`A06-A12`/`A14`, `B02-B06`/`B08`/`B09`/`B11`, `C03-C05`/`C09-C12`,
+`D01f`/`D02f`/`D04f`/`D05f`/`D08f`/`D09f`, `E01f`/`E05f`/`E09f`/`E11f`/
+`E12f`) foram apendadas aos 5 arquivos `group_{a,b,c,d,e}.py` já
+existentes — nenhuma T1, nenhuma fonte/primitiva nova (zero mudança de
+`02_DATA_CHECK`/`01_BARRA`). `03_FEATURES` continua 📚 (núcleo pronto,
+sem CLI própria) — a natureza do estágio não mudou, só o tamanho do
+catálogo T2 disponível (`SUPPORT_FEATURE_IDS`: 3→50). Verificado via
+`audit_engineering` (lente FS/FI/FT/FCN completa, pedido do usuário,
+2026-08-24): nenhum CRITICAL/HIGH. Um achado MEDIUM real (`test_warmup_
+uniforme_maioria_valida_depois_do_corte`, `tests/unit/test_features_
+build.py`, só cobria `T1_FEATURE_IDS` — as 50 T2 nunca tinham essa
+checagem em dado real) foi corrigido na própria sessão da auditoria, já
+verificado passando nos 5 símbolos reais. Suíte completa 1904 passed +
+paridade lote↔streaming completa (`tests/parity/test_features_parity.py`,
+20/20, `<1e-8`, 5 símbolos × 4 variantes) rodadas de verdade — ambas
+cobrem as 50 T2 automaticamente (iteram `T1_FEATURE_IDS +
+SUPPORT_FEATURE_IDS`), não é alegação sem medição. Lote B (features que
+exigem primitiva nova: `A15`/`B10`/`C08`/`D07f`/`D10f`/`E03f`) e Lote C
+(extensão de `_sources.py` pra OI-notional/long-short-ratio) ficam pra
+depois — plano de 3 lotes com checkpoint entre cada um, aprovado pelo
+usuário. Detalhe completo: `docs/SPRINT_LOG.md` (seção "H5 — liberação
+de features, Lote A"), `src/features/registry.yaml`, `config/
+constants.yaml` (seção "Lote A da liberação de features").
 
 ### 15.27 `08_SPLIT` — decisão 1 tomada e implementada, decisão 2 (`AG-159`) deixa de ser dormente (2026-08-23)
 
@@ -5230,6 +5261,18 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.47 (2026-08-24)** — H5, Lote A da liberação de features
+  IMPLEMENTADO — 47 features T2 novas (Grupos A/B/C/D/E/K, arquivo novo
+  `group_k.py`), zero fonte/primitiva nova, nenhuma promovida a T1. 40
+  constantes novas em `constants.yaml` (`provenance` dedicada — MACD/
+  Bollinger/funding-8h/halvings do Bitcoin validados via pesquisa web,
+  não só herdados do PRD), 47 entradas em `registry.yaml`. Auditado via
+  `audit_engineering` (lente FS/FI/FT/FCN completa) a pedido do usuário
+  — 0 CRITICAL/HIGH; 1 MEDIUM real (cobertura de warmup só em
+  `T1_FEATURE_IDS`) corrigido na mesma sessão. Suíte completa (1904
+  passed) e paridade lote↔streaming completa (20/20, `<1e-8`, 5 símbolos
+  reais) rodadas de verdade. `§15.26` atualizado (árvore de arquivos).
+  Detalhe: `docs/SPRINT_LOG.md`, `§15.26` acima.
 - **v3.46 (2026-08-24)** — S1 (sweep de sensibilidade `tp_atr_mult`/
   `sl_atr_mult`) EXECUTADO — retomado após retratação do Manager de
   2026-08-22 (Alpha retreinado de verdade com LightGBM nesta sessão

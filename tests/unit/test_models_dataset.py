@@ -485,7 +485,7 @@ def _synthetic_frame() -> pl.DataFrame:
         # última linha do lado long (índice 2, que já é NOFILL) e uma
         # extra (índice 0) com feature nula para provar o filtro de warmup
         # independente do filtro de NOFILL.
-        values = [0.1 * i + j for j in range(n)]  # noqa: magic-number
+        values: list[float | None] = [0.1 * i + j for j in range(n)]  # noqa: magic-number
         if i == 0:
             values[0] = None
         cols[fid] = pl.Series(values, dtype=pl.Float64)

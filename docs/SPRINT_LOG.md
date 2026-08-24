@@ -3979,6 +3979,48 @@ counter 78→96). Detalhe completo: `PLANO_MESTRE_PRINCE2.md §11.4`
 s1-tp-sl-sensitivity-2026-08-24`.
 
 <!-- check-sprint-log: skip -->
+**H5 — liberação de features, Lote A implementado (47 T2 novas,
+2026-08-24)** <!-- check-sprint-log: skip --> — decisão explícita do
+usuário ("antes do re-treino tem que liberar todas as features para
+Alpha"), escopo investigado e proposto (`feature-dev:feature-dev`),
+3 lotes com checkpoint entre cada um. Lote A = tudo computável com
+fontes JÁ ativas (D03/D04/D07) e primitivas JÁ existentes em `support.py`
+— zero fonte nova, zero primitiva nova (deferido pro Lote B/C).
+**47 features T2** (12 Grupo A, 8 B, 7 C, 6 D, 5 E, 9 K — nenhuma
+promovida a T1, §0.2 R4/§2.13): `A01-A04`/`A06-A12`/`A14`, `B02-B06`/
+`B08`/`B09`/`B11`, `C03-C05`/`C09-C12`, `D01f`/`D02f`/`D04f`/`D05f`/
+`D08f`/`D09f`, `E01f`/`E05f`/`E09f`/`E11f`/`E12f`, `K01-K04`/`K08`
+(Grupo K — novo `src/features/groups/group_k.py`, núcleo 100% puro,
+só timestamp da própria barra, zero dependência de OHLCV/funding/OI).
+Por instrução explícita do usuário ("sem remediação, validação web
+research"), fórmulas validadas contra literatura pública além do PRD:
+MACD(12,26,9) padrão Appel, Bollinger 2σ, funding Binance 8h fixo
+(00:00/08:00/16:00 UTC), datas reais dos 4 halvings do Bitcoin —
+todas com `provenance: LITERATURE` dedicada em `constants.yaml`
+(vs. `ASSUMED` pras janelas puramente herdadas do PRD sem base
+testada, mesmo padrão das 13 features T1/T2 já existentes). 40 novas
+entradas em `constants.yaml`, 47 em `registry.yaml`, `LoteAWindows`
+nova em `build.py` (dataclass separada de `FeatureWindows` — T1 ativo
+vs. T2 candidato, não misturar). Achado real durante a implementação
+(não silenciado): `support.ema()` nunca tinha sido exercitada com
+entrada já contendo NaN líder (todo caller existente até então
+passava `close`, sem NaN) — `B04_macd_hist_norm` precisa disso pro
+sinal (EMA9 do MACD, que carrega o warmup NaN de `EMA_26`); em vez de
+confiar em semântica NaN-vs-null do `polars.ewm_mean` não verificada
+neste repo, escrito `_ema_skip_leading_nan` (mesma técnica de
+`support.wilder_smooth::_first_valid_index`) — corrigido ANTES de
+qualquer teste rodar, não descoberto depois. Lint mecânico dos 7
+comandos autorizados 100% limpo: `banned_patterns.py --strict` (0
+violação, 3 `MAGIC_NUMBER` reais achados e corrigidos — conversões de
+unidade sem `noqa` na mesma linha física do literal), `check_constants_
+referenced.py` (56/56 batem contra o índice staged), `check_constants_
+provenance.py` (nenhuma classe A nova ASSUMED), `ruff check` (limpo),
+`mypy` (limpo, `src/features/` + testes tocados). Suíte de teste real
+(`pytest`) **NÃO executada por Claude** (protocolo de execução,
+`CLAUDE.md`) — pendente de rodada do usuário antes do checkpoint de
+Lote B ser considerado fechado.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -4013,6 +4055,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
+| **H5 — liberação de features, Lote A (2026-08-24)** | **Implementado, lint mecânico limpo, `pytest` PENDENTE do usuário.** 47 features T2 novas (Grupos A/B/C/D/E/K), zero fonte/primitiva nova, todas com `provenance` dedicada em `constants.yaml` (40 entradas novas) e `registry.yaml` (47 entradas). `T1_FEATURE_IDS` intocado (13→60 em `SUPPORT_FEATURE_IDS`, cobertura automática do teste de paridade lote↔streaming) — nenhuma promoção a T1, mesma trava de `AG-126` acima. Comando pra rodar: `uv run pytest tests/unit/test_features_groups.py tests/unit/test_features_build.py tests/parity/test_features_parity.py -m "not slow" -q`. Lote B (features que precisam de primitiva nova: `A15`/`B10`/`C08`/`D07f`/`D10f`/`E03f`) e Lote C (extensão de `_sources.py` pra `oi_notional`/long-short ratios) aguardam este checkpoint. |
 | **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1+2 parcial implementados, commit `72e02c7`. **D-01/D-02 implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23); revisão `project_assurance` corrigiu 1 achado real pré-commit (`AG-183`) + 2 menores (`AG-181`/`AG-182`). **`AG-174`/`AG-175`/`AG-176` fechados, commit `d44c7f9`** — `validate_resampled_bars` reescrita (schemas `BARS_15M`/`30M`/`1H` novos, reusa `validate_klines_like`); guarda `check_resolution_id_guard_parity.py` nova (opção B, duplicação mantida). **`AG-180` FECHADO, commit `3c3ed14`** — D-04 aplicado: `min_warmup_bars` mantido em contagem de barra (fórmula nativa em barra), `regime_confirmation_bars`/`regime_stress_exit_confirmation_bars` migradas pra piso híbrido (contagem de barra E tempo real mínimo, `(N-1)*step_ms("15m")`, bit-exato sob 15m). `1741 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`/`§15.21.3`/`§15.21.4`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente: `AG-179` (fora de escopo por desenho), ressalva de magnitude de `AG-159`, §11 do design doc (caminho HMM) — represados pro Manager |
 | **Núcleo funcional, casca imperativa** | Princípio formalizado (`CLAUDE.md`), 5 violações reais + 1 achado extra (HIGH, `project_assurance`) fechados. `triple_barrier.py`/`fill_simulator.py` (ponto de injeção `filters_by_date`/`tick_size_by_date`), `faixa1_5_prerequisites.py` (`hhi_df`), `attribution.py` (split `_load_payloads`/`_aggregate_payloads`), `pipeline.py`+`hhi.py`+`baselines.py` (`gate3_4_passes`/`gate3_4_max_share_passes`/`b1_sample_size`). `1734 passed` + `7 passed` de integração. Pendente: teste sintético completo pra `compute_fase2_e1` (18 células) — arquitetura fechada, cobertura parcial, registrado como pendência explícita. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.22`, `docs/nucleo_casca_design_doc_2026-08-23.md`, `AG-184`–`AG-189` |
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |

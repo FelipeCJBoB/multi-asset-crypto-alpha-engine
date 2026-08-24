@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 
 from .. import support
 from ..support import FloatArray
@@ -74,3 +75,88 @@ def c07_vol_pctile_expanding(
     return support.expanding_percentile_rank_strict(
         rv, min_common_history_bars=min_common_history_bars
     )
+
+
+# ============================================================================
+# Lote A da liberação de features (H5, 2026-08-24) — C03-C05, C09-C12.
+# Todas T2 (nenhuma promovida a T1 por esta implementação, §0.2 R4/§2.13).
+# ============================================================================
+
+
+def c03_realized_vol_48(log_return_1: FloatArray, window: int) -> FloatArray:
+    """`σ(log_return) × √window` — §2.4 C03."""
+    return support.realized_vol(log_return_1, window)
+
+
+def c04_parkinson_vol_48(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
+    """Estimador de Parkinson (1980), fração do preço — §2.4 C04."""
+    return support.parkinson_vol(high, low, window)
+
+
+def c05_garman_klass_48(
+    high: FloatArray, low: FloatArray, open_: FloatArray, close: FloatArray, window: int
+) -> FloatArray:
+    """Estimador de Garman-Klass (1980), fração do preço — §2.4 C05."""
+    return support.garman_klass_vol(high, low, open_, close, window)
+
+
+def c09_range_pctile_expanding(
+    true_range_pct: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
+    """Posto expansivo estrito de `true_range_pct` (A11) — §2.4 C09.
+    Mesma primitiva de C07 (`support.expanding_percentile_rank_strict`),
+    sobre um sinal de entrada diferente."""
+    return support.expanding_percentile_rank_strict(
+        true_range_pct, min_common_history_bars=min_common_history_bars
+    )
+
+
+def c10_vol_expansion_flag(
+    vol_ratio_12_96: FloatArray,
+    threshold: float,
+    *,
+    min_common_history_bars: int | None = None,
+) -> FloatArray:
+    """`1.0` se `vol_ratio_12_96` está acima do quantil `threshold`
+    EXPANSIVO (posto percentil estrito > threshold), senão `0.0` — §2.4
+    C10. "Posto percentil > q" é equivalente por definição a "valor > q-
+    ésimo percentil expansivo" — reaproveita `expanding_percentile_rank_
+    strict` (mesma primitiva de C07/C09) em vez de uma nova função de
+    quantil expansivo. NaN se o posto ainda não está definido (warmup)."""
+    rank = support.expanding_percentile_rank_strict(
+        vol_ratio_12_96, min_common_history_bars=min_common_history_bars
+    )
+    out: FloatArray = np.where(np.isnan(rank), np.nan, (rank > threshold).astype(np.float64))
+    return out
+
+
+def c11_vol_compression_flag(
+    vol_ratio_12_96: FloatArray,
+    threshold: float,
+    *,
+    min_common_history_bars: int | None = None,
+) -> FloatArray:
+    """`1.0` se `vol_ratio_12_96` está abaixo do quantil `threshold`
+    EXPANSIVO, senão `0.0` — §2.4 C11. Mesma técnica de `c10_vol_
+    expansion_flag`, comparação invertida."""
+    rank = support.expanding_percentile_rank_strict(
+        vol_ratio_12_96, min_common_history_bars=min_common_history_bars
+    )
+    out: FloatArray = np.where(np.isnan(rank), np.nan, (rank < threshold).astype(np.float64))
+    return out
+
+
+def c12_vol_of_vol_48(log_return_1: FloatArray, inner_window: int, outer_window: int) -> FloatArray:
+    """`σ(realized_vol_{inner_window})` sobre `outer_window` barras —
+    §2.4 C12. `realized_vol_12` (`inner_window`) via `support.
+    realized_vol`; desvio-padrão rolante (`outer_window`, ddof=1, mesma
+    convenção de `rolling_zscore`/`realized_vol`) calculado diretamente
+    via `polars.rolling_std` — mesmo padrão já usado inline em
+    `support.yang_zhang_vol`, não precisa de primitiva nova."""
+    rv_inner = support.realized_vol(log_return_1, inner_window)
+    out: FloatArray = (
+        pl.Series(rv_inner)
+        .rolling_std(window_size=outer_window, min_samples=outer_window, ddof=1)
+        .to_numpy()
+    )
+    return out

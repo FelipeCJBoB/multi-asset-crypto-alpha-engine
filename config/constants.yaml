@@ -1096,6 +1096,383 @@ min_common_history_bars_15m:
   # cru via `load_constant("min_common_history_bars_15m")`.
 
 # ============================================================================
+# Camada features — Lote A da liberação de features (H5, §0.2 R4: teto de
+# features é MEDIDO, nunca estipulado -- estas 47 entram como T2, nenhuma
+# promovida a T1 automaticamente; promoção só por ablação dentro do CPCV,
+# §2.0.1/§2.13 do PRD). Todas as janelas/lookbacks seguem a MESMA
+# proveniência das constantes T1 acima (`provenance: ASSUMED`, `class: B`
+# -- "convenção herdada do PRD §2.2-2.6/2.12, nunca testada") salvo onde
+# anotado `LITERATURE` (fórmula/convenção pública verificada por pesquisa
+# web nesta sessão, não invenção do PRD) -- ver `src/features/groups/
+# group_a.py` a `group_k.py` para a fórmula exata que cada uma alimenta e
+# `src/features/registry.yaml` pra entrada completa por feature. Nenhum
+# `sweep_required` (classe B, mesma regra das constantes T1 -- ablação
+# real acontece por outro mecanismo, não por sweep isolado de janela).
+# ============================================================================
+
+feature_a01_log_return_lag:
+  value: 1
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A01 log_return_1), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a02_log_return_lag:
+  value: 2
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A02 log_return_2), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a03_log_return_lag:
+  value: 4
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A03 log_return_4), nunca testada -- mesmo valor de feature_a05_ret_lookback_bars, constante DEDICADA (não reaproveitada) por consistência com o padrão já usado no repo (feature_a13_ema_window/feature_d06f_taker_imbalance_window/feature_e10f_oi_change_window/feature_b07_efficiency_ratio_window são 4 constantes distintas todas =48)"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a04_log_return_lag:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A04 log_return_12), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a06_ret_lookback_bars:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A06 ret_vol_norm_12), nunca testada. O fator √3 da fórmula do PRD (ATR_20×√3×2) é CALCULADO em runtime como sqrt(este valor / feature_a05_ret_lookback_bars) = sqrt(12/4) -- não é uma constante própria, ver group_a.py::a06_ret_vol_norm_12"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_a14_ema_window:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.2, A14 dist_ema12_atr), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+  # scaling_invariant: bar_count, NÃO clock -- diferente de feature_a13_ema_window
+  # (AG-043 F3): A14 não tem a mesma amarração declarada ao horizonte do
+  # Label Engine que justifica a exceção de A13. Default mais honesto na
+  # ausência de intenção declarada (mesma lógica de feature_b01_rsi_window).
+
+feature_b02_rsi_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B02 rsi_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b03_roc_lookback_bars:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B03 roc_12), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b04_macd_fast_window:
+  value: 12
+  provenance: LITERATURE
+  source: "MACD padrão (Gerald Appel, anos 1970) -- EMA rápida=12, confirmado via pesquisa web nesta sessão (convenção pública universal, não parâmetro específico deste projeto)"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b04_macd_slow_window:
+  value: 26
+  provenance: LITERATURE
+  source: "MACD padrão (Appel) -- EMA lenta=26, mesma fonte de feature_b04_macd_fast_window"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b04_macd_signal_window:
+  value: 9
+  provenance: LITERATURE
+  source: "MACD padrão (Appel) -- linha de sinal=EMA9 do MACD, mesma fonte de feature_b04_macd_fast_window"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b05_ema_window:
+  value: 24
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B05 ema_slope_24), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b05_slope_lag_bars:
+  value: 6
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B05 ema_slope_24, lookback tabulado '24+6'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b06_momentum_lookback_bars:
+  value: 4
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B06 momentum_accel, lookback tabulado '8+20' = 4+4 barras de retorno), nunca testada -- mesmo valor usado 2x (ret_4 e o deslocamento de 4 barras), ver group_b.py::b06_momentum_accel"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b08_efficiency_ratio_window:
+  value: 16
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B08 efficiency_ratio_16), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b09_zscore_close_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B09 zscore_close_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b11_bb_window:
+  value: 20
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B11 bb_position_20), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_b11_bb_std_multiplier:
+  value: 2.0
+  provenance: LITERATURE
+  source: "Bollinger Bands padrão (John Bollinger) -- bandas a 2 desvios-padrão, confirmado via pesquisa web nesta sessão (convenção pública universal)"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c03_realized_vol_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C03 realized_vol_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c04_parkinson_vol_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C04 parkinson_vol_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c05_garman_klass_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C05 garman_klass_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c10_vol_expansion_threshold:
+  value: 0.80
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C10 vol_expansion_flag, 'q_0.80'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c11_vol_compression_threshold:
+  value: 0.20
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C11 vol_compression_flag, 'q_0.20'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c12_vol_of_vol_inner_window:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C12 vol_of_vol_48, 'σ(realized_vol_12)'), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c12_vol_of_vol_outer_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C12 vol_of_vol_48, janela externa de desvio-padrão), nunca testada -- lookback tabulado '60' no PRD = inner(12)+outer(48)"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d01f_volume_z_window:
+  value: 96
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D01f volume_z_96), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d02f_rel_volume_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D02f rel_volume_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d04f_rel_volume_window:
+  value: 4
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D04f volume_accel, lookback tabulado '8' = 4+4), nunca testada -- mesmo valor usado 2x (rel_volume_4 e o deslocamento de 4 barras), ver group_d.py::d04f_volume_accel"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d08f_trade_count_z_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D08f trade_count_z_48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d09f_avg_trade_size_z_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D09f avg_trade_size_z, lookback tabulado '48'), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_e05f_funding_interval_hours:
+  value: 8
+  provenance: LITERATURE
+  source: "Binance USDⓈ-M Perpetual -- settlement de funding a cada 8h, horários fixos 00:00/08:00/16:00 UTC, confirmado via pesquisa web nesta sessão (Binance Futures, 'Important Updates on Funding Rate Settlement Frequency of USDⓈ-M Perpetual Contracts'). Ressalva: Binance pode mudar a frequência para 4h/1h em cenários extremos (funding no cap/floor) -- este valor assume o regime padrão de 8h, não um piso garantido em todo momento histórico; não medido linha a linha contra o histórico real do projeto."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_e11f_oi_change_lag_bars:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.6, E11f oi_change_1d, lookback tabulado 48 barras) -- nome '1d' herdado do PRD original a 30m (48×30m=24h); mantido em CONTAGEM DE BARRAS sob a migração pra 15m, mesma convenção da NOTA DE TF em registry.yaml (não recalibrado pra 96 barras=24h reais a 15m)"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_e12f_oi_change_lag_bars:
+  value: 12
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.6, E12f price_oi_divergence, lookback tabulado 12 barras), nunca testada -- dedicada, não reaproveita feature_e11f_oi_change_lag_bars (48, propósito diferente)"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_asia_start_hour:
+  value: 0.0
+  provenance: LITERATURE
+  source: "Simplificação de partição MUTUAMENTE EXCLUSIVA das 24h UTC entre 3 sessões (K04 pede 'sessão dominante', 1 por barra) -- convenção real de mercado (pesquisa web) tem sessões SOBREPOSTAS e deslocadas por horário de verão (Tóquio 00:00-09:00 UTC ano todo; Londres 07:00/08:00-16:00/17:00 UTC; Nova York 12:00/13:00-21:00/22:00 UTC). Partição fixa 00-08/08-16/16-24 UTC adotada aqui é uma simplificação DELIBERADA e documentada, não a convenção literal de mercado -- ver group_k.py::k04_session_asia."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_asia_end_hour:
+  value: 8.0
+  provenance: LITERATURE
+  source: "ver feature_k04_asia_start_hour"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_europe_start_hour:
+  value: 8.0
+  provenance: LITERATURE
+  source: "ver feature_k04_asia_start_hour"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_europe_end_hour:
+  value: 16.0
+  provenance: LITERATURE
+  source: "ver feature_k04_asia_start_hour"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_us_start_hour:
+  value: 16.0
+  provenance: LITERATURE
+  source: "ver feature_k04_asia_start_hour"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k04_us_end_hour:
+  value: 24.0
+  provenance: LITERATURE
+  source: "ver feature_k04_asia_start_hour"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k08_halving_1_date_utc:
+  value: "2012-11-28"
+  provenance: LITERATURE
+  source: "1º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 210.000). Data de calendário -- halving é definido por ALTURA DE BLOCO, não horário de relógio exato; granularidade de dia é a precisão real disponível (consistente com o nome 'days_since' da feature)."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k08_halving_2_date_utc:
+  value: "2016-07-09"
+  provenance: LITERATURE
+  source: "2º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 420.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k08_halving_3_date_utc:
+  value: "2020-05-11"
+  provenance: LITERATURE
+  source: "3º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 630.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_k08_halving_4_date_utc:
+  value: "2024-04-20"
+  provenance: LITERATURE
+  source: "4º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 840.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+# ============================================================================
 # Camada labels — Label Engine (Sprint 6, §3). tp_atr_mult/sl_atr_mult/
 # time_stop_bars/atr_window/maker_fee/taker_fee/adverse_selection_bps já
 # existem acima (§0.2 R1/R2, execução) e são REUSADOS aqui, não duplicados.

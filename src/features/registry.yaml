@@ -303,3 +303,786 @@
     dado maker_fee=0,0002/taker_fee=0,0005 (peso 50/50 entre cenário
     TP-tocado e SL-tocado — ver docstring de
     src/features/groups/group_e.py::round_trip_cost_bps).
+
+# ============================================================================
+# LOTE A — liberação de features (H5, 2026-08-24). 47 features T2 novas
+# dos Grupos A/B/C/D/E/K, todas usando fontes JÁ ativas (D03/D04/D07, mesmas
+# de A05/A13/B01/B07/C01/C02/C06/C07/D03f/D06f/E02f/E10f/E27f acima) e
+# primitivas JÁ existentes em src/features/support.py — nenhuma fonte nova,
+# nenhuma primitiva nova. Nenhuma promovida a T1 por esta implementação
+# (§0.2 R4 do CLAUDE.md: teto de features é medido, nunca estipulado;
+# promoção só por ablação dentro do CPCV, §2.0.1/§2.13 do PRD). Formulas
+# validadas contra literatura pública (MACD/Bollinger/RSI/ATR/Parkinson/
+# Garman-Klass/Stochastic — pesquisa web, 2026-08-24) além do PRD, por
+# instrução explícita da task ("sem remediação, validação web research").
+# Todas as janelas/lookbacks têm entrada dedicada em constants.yaml
+# (seção "Lote A da liberação de features"). Grupo K é núcleo 100% puro
+# (Idioma A) sem qualquer dependência de OHLCV/funding/OI — só o
+# timestamp da própria barra.
+# ============================================================================
+
+- id: A01_log_return_1
+  tier: T2
+  group: A
+  formula: "ln(C_t / C_{t-1})"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN na primeira barra (sem C_{t-1}); null antes de min_warmup_bars"
+  causal_proof: "janela [t-1,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_a01_a04_log_return_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: A02_log_return_2
+  tier: T2
+  group: A
+  formula: "ln(C_t / C_{t-2})"
+  sources: [D03]
+  lookback_bars: 2
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas 2 primeiras barras; null antes de min_warmup_bars"
+  causal_proof: "janela [t-2,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_a01_a04_log_return_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: A03_log_return_4
+  tier: T2
+  group: A
+  formula: "ln(C_t / C_{t-4})"
+  sources: [D03]
+  lookback_bars: 4
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas 4 primeiras barras; null antes de min_warmup_bars"
+  causal_proof: "janela [t-4,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_a01_a04_log_return_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "lag=4 é o mesmo valor de feature_a05_ret_lookback_bars, mas constante DEDICADA (feature_a03_log_return_lag) — não reaproveitada entre ids, mesmo padrão do repo (ver constants.yaml)."
+
+- id: A04_log_return_12
+  tier: T2
+  group: A
+  formula: "ln(C_t / C_{t-12})"
+  sources: [D03]
+  lookback_bars: 12
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas 12 primeiras barras; null antes de min_warmup_bars"
+  causal_proof: "janela [t-12,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_a01_a04_log_return_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "insumo direto de E12f_price_oi_divergence (reaproveitado, não recomputado — ver build.py::compute_t1_features)."
+
+- id: A06_ret_vol_norm_12
+  tier: T2
+  group: A
+  formula: "ln(C_t/C_{t-12}) / (atr_20_pct * sqrt(12/4) * feature_a05_vol_norm_divisor)"
+  sources: [D03]
+  lookback_bars: 12
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até warmup completo (precisa de atr_20_pct); null antes de min_warmup_bars"
+  causal_proof: "log-retorno em janela [t-12,t] + atr_20_pct causal, sem lookahead — testado em tests/unit/test_features_groups.py::test_a06_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "Mesma resolução dimensional de A05 (numerador adimensional -> atr_20_pct, não ATR absoluto). Fator sqrt(3) do PRD ('ATR_20×√3×2') CALCULADO em runtime como sqrt(lookback_A06/lookback_A05)=sqrt(12/4), não hardcoded — ver group_a.py::a06_ret_vol_norm_12 e tests/unit/test_features_groups.py::test_a06_variance_scale_reproduz_sqrt3."
+
+- id: A07_body_ratio
+  tier: T2
+  group: A
+  formula: "(C-O)/(H-L); 0 se H=L"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "nunca NaN (H=L tratado explicitamente); null antes de min_warmup_bars"
+  causal_proof: "só usa O/H/L/C da própria barra t, sem lookahead — trivialmente causal (sem janela)"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: A08_upper_wick_ratio
+  tier: T2
+  group: A
+  formula: "(H - max(O,C))/(H-L); 0 se H=L"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN (H=L tratado explicitamente); null antes de min_warmup_bars"
+  causal_proof: "só usa O/H/L/C da própria barra t, sem lookahead — trivialmente causal (sem janela)"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "PRD não declara o caso degenerado H=L para A08-A10; convenção '0' aplicada por consistência com A07 (decisão explícita, testada em tests/unit/test_features_groups.py::test_a07_a10_h_eq_l_produz_zero, não herança silenciosa)."
+
+- id: A09_lower_wick_ratio
+  tier: T2
+  group: A
+  formula: "(min(O,C) - L)/(H-L); 0 se H=L"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN (H=L tratado explicitamente); null antes de min_warmup_bars"
+  causal_proof: "só usa O/H/L/C da própria barra t, sem lookahead — trivialmente causal (sem janela)"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "ver nota de A08 sobre a convenção H=L."
+
+- id: A10_close_location
+  tier: T2
+  group: A
+  formula: "(C-L)/(H-L); 0 se H=L"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN (H=L tratado explicitamente); null antes de min_warmup_bars"
+  causal_proof: "só usa H/L/C da própria barra t, sem lookahead — trivialmente causal (sem janela)"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "ver nota de A08 sobre a convenção H=L."
+
+- id: A11_true_range_pct
+  tier: T2
+  group: A
+  formula: "TR_t / C_{t-1}, TR_t = max(H-L, |H-C_{t-1}|, |L-C_{t-1}|)"
+  sources: [D03]
+  lookback_bars: 2
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN na primeira barra (sem C_{t-1}); null antes de min_warmup_bars"
+  causal_proof: "TR via support.true_range (mesma primitiva causal de C01/ATR) — testado em tests/unit/test_features_groups.py::test_a11_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "insumo direto de C09_range_pctile_expanding (reaproveitado, não recomputado — ver build.py::compute_t1_features)."
+
+- id: A12_gap_pct
+  tier: T2
+  group: A
+  formula: "(O_t - C_{t-1}) / C_{t-1}"
+  sources: [D03]
+  lookback_bars: 2
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN na primeira barra (sem C_{t-1}); null antes de min_warmup_bars"
+  causal_proof: "usa só O_t e C_{t-1}, sem lookahead — testado em tests/unit/test_features_groups.py::test_a12_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: A14_dist_ema12_atr
+  tier: T2
+  group: A
+  formula: "(C_t - EMA_12) / ATR_20 (absoluto)"
+  sources: [D03]
+  lookback_bars: 12
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até EMA_12/ATR_20 convergirem; null antes de min_warmup_bars"
+  causal_proof: "EMA/ATR são recursivos causais (mesmas primitivas de A13) — testado em tests/unit/test_features_groups.py::test_a14_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "Mesma resolução dimensional de A13 (numerador em unidade de preço -> ATR absoluto, não atr_20_pct)."
+
+- id: B02_rsi_48
+  tier: T2
+  group: B
+  formula: "(RSI_wilder_48_t - 50) / 50"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN até o seed de Wilder (48 barras); null antes de min_warmup_bars"
+  causal_proof: "mesma função de B01 (wilder_smooth recursivo), janela diferente — testado em tests/unit/test_features_groups.py::test_b02_faixa_menos1_1"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B03_roc_12
+  tier: T2
+  group: B
+  formula: "(C_t - C_{t-12}) / C_{t-12}"
+  sources: [D03]
+  lookback_bars: 12
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas 12 primeiras barras; null antes de min_warmup_bars"
+  causal_proof: "janela [t-12,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_b03_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B04_macd_hist_norm
+  tier: T2
+  group: B
+  formula: "(MACD_{12,26} - sinal_9) / ATR_20 (absoluto), MACD=EMA_12-EMA_26, sinal=EMA_9(MACD)"
+  sources: [D03]
+  lookback_bars: 35
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até EMA_26/sinal convergirem; null antes de min_warmup_bars"
+  causal_proof: "3 EMAs recursivas causais (mesma primitiva de A13) — testado em tests/unit/test_features_groups.py::test_b04_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "MACD(12,26,9) é convenção pública universal (Gerald Appel, anos 1970), validada via pesquisa web nesta sessão — feature_b04_macd_{fast,slow,signal}_window em constants.yaml, provenance LITERATURE."
+
+- id: B05_ema_slope_24
+  tier: T2
+  group: B
+  formula: "(EMA_24_t - EMA_24_{t-6}) / ATR_20 (absoluto)"
+  sources: [D03]
+  lookback_bars: 30
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN até EMA_24 convergir + 6 barras pro deslocamento; null antes de min_warmup_bars"
+  causal_proof: "EMA recursiva causal + deslocamento fixo [t-6,t] — testado em tests/unit/test_features_groups.py::test_b05_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B06_momentum_accel
+  tier: T2
+  group: B
+  formula: "ret_4_t - ret_4_{t-4}, normalizado por atr_20_pct"
+  sources: [D03]
+  lookback_bars: 8
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas 8 primeiras barras; null antes de min_warmup_bars"
+  causal_proof: "log-retorno em janela fixa + deslocamento fixo, sem lookahead — testado em tests/unit/test_features_groups.py::test_b06_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B08_efficiency_ratio_16
+  tier: T2
+  group: B
+  formula: "|C_t - C_{t-16}| / Σ|C_i - C_{i-1}| (i em [t-15,t])"
+  sources: [D03]
+  lookback_bars: 16
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN nas primeiras 16 barras; null antes de min_warmup_bars"
+  causal_proof: "mesma função de B07 (janela rolante fixa [t-15,t]), janela diferente — testado em tests/unit/test_features_groups.py::test_b08_faixa_0_1"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B09_zscore_close_48
+  tier: T2
+  group: B
+  formula: "(C_t - μ_48) / σ_48"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (support.rolling_zscore) — testado em tests/unit/test_features_groups.py::test_b09_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: B11_bb_position_20
+  tier: T2
+  group: B
+  formula: "(C - MA_20) / (2 * σ_20)"
+  sources: [D03]
+  lookback_bars: 20
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 20 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-19,t] (support.rolling_zscore) — testado em tests/unit/test_features_groups.py::test_b11_eh_metade_do_zscore"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "std_multiplier=2.0 é a convenção padrão de Bollinger Bands (John Bollinger), validada via pesquisa web nesta sessão — feature_b11_bb_std_multiplier em constants.yaml, provenance LITERATURE."
+
+- id: C03_realized_vol_48
+  tier: T2
+  group: C
+  formula: "σ(log_return) * sqrt(48)"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (support.realized_vol, mesma primitiva de C06) — testado em tests/unit/test_features_support.py"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C04_parkinson_vol_48
+  tier: T2
+  group: C
+  formula: "Parkinson (1980): sqrt(mean_48(ln(H/L)^2) / (4*ln2))"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (support.parkinson_vol, mesma primitiva de C01 sob vol_estimator_id='parkinson_w20') — testado em tests/unit/test_features_support.py"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C05_garman_klass_48
+  tier: T2
+  group: C
+  formula: "Garman-Klass (1980): sqrt(mean_48(0.5*ln(H/L)^2 - (2*ln2-1)*ln(C/O)^2))"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; NaN se a média da janela for negativa (ruído numérico); null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (support.garman_klass_vol, mesma primitiva de canonical_volatility_estimator) — testado em tests/unit/test_features_support.py"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C09_range_pctile_expanding
+  tier: T2
+  group: C
+  formula: "posto percentil de true_range_pct_t (A11) na distribuição EXPANSIVA em [t0_dataset, t-1] (estrito, nunca inclui t)"
+  sources: [D03]
+  lookback_bars: expanding
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN até haver >= 1 ponto prévio de true_range_pct não-NaN; null antes de min_warmup_bars"
+  causal_proof: "mesma primitiva de C07 (support.expanding_percentile_rank_strict, Fenwick tree, só índices < t) — testado em tests/unit/test_features_groups.py::test_c09_faixa_0_1_e_nao_usa_indice_t"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C10_vol_expansion_flag
+  tier: T2
+  group: C
+  formula: "1.0 se posto percentil EXPANSIVO de vol_ratio_12_96 (C06) > 0.80, senão 0.0"
+  sources: [D03]
+  lookback_bars: expanding
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN onde o posto expansivo de C06 ainda é NaN (warmup); null antes de min_warmup_bars"
+  causal_proof: "'posto percentil > q' é equivalente por definição a 'valor > q-ésimo percentil expansivo' — mesma primitiva de C07/C09 (só índices < t) — testado em tests/unit/test_features_groups.py::test_c10_c11_flags_consistentes_com_rank"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C11_vol_compression_flag
+  tier: T2
+  group: C
+  formula: "1.0 se posto percentil EXPANSIVO de vol_ratio_12_96 (C06) < 0.20, senão 0.0"
+  sources: [D03]
+  lookback_bars: expanding
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN onde o posto expansivo de C06 ainda é NaN (warmup); null antes de min_warmup_bars"
+  causal_proof: "mesma técnica de C10, comparação invertida — testado em tests/unit/test_features_groups.py::test_c10_c11_flags_consistentes_com_rank"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: C12_vol_of_vol_48
+  tier: T2
+  group: C
+  formula: "σ(realized_vol_12) sobre janela rolante de 48 barras"
+  sources: [D03]
+  lookback_bars: 60
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN nas primeiras ~60 barras (12 de realized_vol interno + 48 do desvio-padrão externo); null antes de min_warmup_bars"
+  causal_proof: "duas janelas rolantes fixas encadeadas (support.realized_vol + polars.rolling_std), ambas <= t — testado em tests/unit/test_features_groups.py::test_c12_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D01f_volume_z_96
+  tier: T2
+  group: D
+  formula: "(V_t - μ_96) / σ_96"
+  sources: [D03]
+  lookback_bars: 96
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 96 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-95,t] (support.rolling_zscore, mesma primitiva de D06f) — testado em tests/unit/test_features_groups.py::test_d01f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D02f_rel_volume_48
+  tier: T2
+  group: D
+  formula: "V_t / mediana(V)_48"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (polars.rolling_median, mesma família de janela de C06/D01f) — testado em tests/unit/test_features_groups.py::test_d02f_positivo_e_causal"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D04f_volume_accel
+  tier: T2
+  group: D
+  formula: "rel_volume_4_t - rel_volume_4_{t-4}, rel_volume_4 = V_t/mediana(V)_4"
+  sources: [D03]
+  lookback_bars: 8
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 8 barras; null antes de min_warmup_bars"
+  causal_proof: "mediana rolante fixa + deslocamento fixo, sem lookahead — testado em tests/unit/test_features_groups.py::test_d04f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D05f_taker_buy_ratio
+  tier: T2
+  group: D
+  formula: "taker_buy_volume / volume"
+  sources: [D03]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN se volume=0; null antes de min_warmup_bars"
+  causal_proof: "razão ponto a ponto da própria barra t, sem lookahead — trivialmente causal (sem janela), insumo direto de D06f já causal"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D08f_trade_count_z_48
+  tier: T2
+  group: D
+  formula: "z-score rolante (janela 48) de number_of_trades (count, klines Binance)"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-47,t] (support.rolling_zscore) — testado em tests/unit/test_features_groups.py::test_d08f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D09f_avg_trade_size_z
+  tier: T2
+  group: D
+  formula: "z-score rolante (janela 48) de volume/number_of_trades"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "razão ponto a ponto + janela rolante fixa (support.rolling_zscore) — testado em tests/unit/test_features_groups.py::test_d09f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: E01f_funding_last
+  tier: T2
+  group: E
+  formula: "último funding liquidado, já alinhado ao grid de 15m por asof-join backward"
+  sources: [D07]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro evento de funding conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough de funding_last_aligned, cuja causalidade já é testada em tests/unit/test_features_sources.py::test_asof_align_backward_nunca_usa_evento_futuro — testado em tests/unit/test_features_groups.py::test_e01f_e09f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: E05f_time_to_funding_h
+  tier: T2
+  group: E
+  formula: "horas até o próximo settlement de funding (fronteiras fixas UTC a cada 8h, alinhadas à época Unix)"
+  sources: [derivado, close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 8.0]
+  nan_policy: "nunca NaN (matemática pura de timestamp); null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra, sem depender de nenhuma barra vizinha nem de dado futuro — testado em tests/unit/test_features_groups.py::test_e05f_tempo_ate_funding_em_fronteiras_conhecidas"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "intervalo de funding=8h (00:00/08:00/16:00 UTC) confirmado via pesquisa web nesta sessão (Binance USDⓈ-M) — feature_e05f_funding_interval_hours em constants.yaml, provenance LITERATURE. Equivalente a K05_hours_to_funding do PRD (§2.12, 'ver E05f') — não duplicado em group_k.py."
+
+- id: E09f_oi_contracts
+  tier: T2
+  group: E
+  formula: "sum_open_interest, já alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro OI conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough de oi_contracts_aligned, mesma causalidade de E01f — testado em tests/unit/test_features_groups.py::test_e01f_e09f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: E11f_oi_change_1d
+  tier: T2
+  group: E
+  formula: "Δln(oi_contracts) sobre 48 barras (Δln = ln(oi_t) - ln(oi_{t-48}))"
+  sources: [D04]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN nas primeiras 48 barras após o primeiro OI conhecido; null antes de min_warmup_bars"
+  causal_proof: "asof-join backward (já testado) + deslocamento fixo [t-48,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_e11f_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "nome '1d' herdado do PRD original a 30m (48 barras=24h); mantido em CONTAGEM DE BARRAS sob 15m (não recalibrado pra 96), mesma convenção da NOTA DE TF no topo deste arquivo."
+
+- id: E12f_price_oi_divergence
+  tier: T2
+  group: E
+  formula: "sign(ret_12) * sign(Δln(oi_contracts) sobre 12 barras), ∈ {-1,0,1}"
+  sources: [D04, D03]
+  lookback_bars: 12
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN nas primeiras 12 barras; null antes de min_warmup_bars"
+  causal_proof: "reaproveita A04_log_return_12 (já causal) + Δln(oi) em janela fixa [t-12,t] — testado em tests/unit/test_features_groups.py::test_e12f_sinais_em_menos1_0_1"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K01_hour_sin
+  tier: T2
+  group: K
+  formula: "sin(2*pi * hora_UTC_fracionaria / 24)"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "nunca NaN (matemática pura de timestamp); null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra, sem janela — testado em tests/unit/test_features_groups.py::test_k01_valores_conhecidos"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K01_hour_cos
+  tier: T2
+  group: K
+  formula: "cos(2*pi * hora_UTC_fracionaria / 24)"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "mesma prova de K01_hour_sin — testado em tests/unit/test_features_groups.py::test_k01_valores_conhecidos"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K02_dow_sin
+  tier: T2
+  group: K
+  formula: "sin(2*pi * dia_da_semana_UTC / 7), dow=0 em 1970-01-01 (quinta)"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra, sem janela — testado em tests/unit/test_features_groups.py::test_k02_dow_valores_conhecidos"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K02_dow_cos
+  tier: T2
+  group: K
+  formula: "cos(2*pi * dia_da_semana_UTC / 7)"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "mesma prova de K02_dow_sin — testado em tests/unit/test_features_groups.py::test_k02_dow_valores_conhecidos"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K03_is_weekend
+  tier: T2
+  group: K
+  formula: "1.0 se sábado ou domingo UTC, senão 0.0"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra, sem janela — testado em tests/unit/test_features_groups.py::test_k03_is_weekend"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K04_session_asia
+  tier: T2
+  group: K
+  formula: "1.0 se hora UTC em [0,8), senão 0.0"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra, sem janela — testado em tests/unit/test_features_groups.py::test_k04_sessions_particionam_o_dia"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "Partição fixa 00-08/08-16/16-24 UTC é simplificação DELIBERADA da convenção real de mercado (sessões sobrepostas, deslocadas por horário de verão) — ver group_k.py::k04_session_asia e feature_k04_asia_start_hour em constants.yaml (provenance LITERATURE com ressalva)."
+
+- id: K04_session_europe
+  tier: T2
+  group: K
+  formula: "1.0 se hora UTC em [8,16), senão 0.0"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "mesma prova de K04_session_asia — testado em tests/unit/test_features_groups.py::test_k04_sessions_particionam_o_dia"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K04_session_us
+  tier: T2
+  group: K
+  formula: "1.0 se hora UTC em [16,24), senão 0.0"
+  sources: [close_time]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "nunca NaN; null antes de min_warmup_bars"
+  causal_proof: "mesma prova de K04_session_asia — testado em tests/unit/test_features_groups.py::test_k04_sessions_particionam_o_dia"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: K08_days_since_halving
+  tier: T2
+  group: K
+  formula: "dias corridos desde o halving do Bitcoin mais recente <= t0 (datas: 2012-11-28/2016-07-09/2020-05-11/2024-04-20)"
+  sources: [close_time, "constants.yaml:feature_k08_halving_{1..4}_date_utc"]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao 1º halving da tupla (fora do domínio conhecido); null antes de min_warmup_bars"
+  causal_proof: "função só do PRÓPRIO timestamp da barra + datas fixas conhecidas a priori (não medidas do dado), sem lookahead — testado em tests/unit/test_features_groups.py::test_k08_days_since_halving_correto"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "datas de halving confirmadas via pesquisa web nesta sessão — halving é definido por altura de bloco, não horário exato; granularidade de dia é a precisão real disponível."
