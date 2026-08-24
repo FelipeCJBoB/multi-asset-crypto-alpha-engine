@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 63
+counter: 78
 
 log:
   - id: 1
@@ -381,3 +381,21 @@ log:
 # reconstrução parcial, não um registro contemporâneo — o histórico completo
 # anterior a este repo (V2 → V3.0 → V3.1 → V3.2) não é auditável linha a linha.
 # Tratar `counter` como PISO, não como valor exato.
+  - id: 18
+    date: "2026-08-23"
+    type: retreino_real
+    description: >
+      Primeiro retreino real do Alpha pos-migracao LightGBM (D-01 a D-18),
+      gate "Data Layer 100%" fechado -- 15 combinacoes (5 simbolos x
+      {R1,R2,R3}), cada uma um AJUSTE DE MODELO real (Camada1 + Camada0,
+      LightGBM, CPCV de 5 paths) + BACKTEST novo por combinacao -- conta
+      como N trials (regra de contagem deste ledger, nao 1 passe de
+      ranking). Resultado: 3 de 15 (20%) passam o gate de permanencia
+      (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) -- detalhe completo em
+      `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-
+      2026-08-23`. Contador nao e mais gate vinculante desde 2026-08-17
+      (AG-077, status deste arquivo) mas continua incrementado -- DSR
+      (`src/validation/dsr.py`) le `counter` de verdade, decisao do que
+      substitui a penalidade de multiple-testing segue pendente do
+      Manager (AG-077, nao resolvida por este incremento).
+    delta: 15

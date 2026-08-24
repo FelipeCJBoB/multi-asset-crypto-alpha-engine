@@ -367,6 +367,114 @@ def test_build_modeling_frame_verify_config_hash_usa_mesmo_vol_estimator_id_do_r
     assert captured[0].resolution_id == "R1"
 
 
+# ============================================================================
+# AG-202 (2026-08-24) -- open_time duplicado colide no join de regime.
+#
+# Causa real (nao um bug em src/data/bars.py -- ver
+# audit/architecture_gaps_log.yaml::AG-202, addendum_correcao_diagnostico):
+# 2 trades da Binance no mesmo milissegundo, caindo numa fronteira de
+# recalibracao do walk-forward, produzem 2 barras dollar com o MESMO
+# open_time -- uma "fantasma" (duracao zero, 1 trade, fecha sozinha, mesmo
+# comportamento ja testado e deliberado de
+# threshold_bars_step) e uma real (duracao > 0, fecha no threshold
+# recalibrado). `build_t1_features` devolve as 2; `build_regimes` reusa
+# `build_t1_features` internamente e tambem devolve 2 avaliacoes de regime
+# (o classificador tem histerese -- processa as 2 linhas em sequencia,
+# cada uma avanca o estado). O join `bar_table.join(regime_small, on=
+# "_open_time_ms")` (dataset.py) assumia open_time unico -- nunca era
+# garantido por bars.py -- e produzia fan-out (2 linhas por t0 x side em
+# vez de 1) na tabela final.
+# ============================================================================
+
+
+def _two_row_labels(t0_a: datetime, t0_b: datetime) -> pl.DataFrame:
+    return pl.DataFrame({"t0": [t0_a, t0_b]}).with_columns(
+        pl.col("t0").dt.replace_time_zone("UTC")
+    )
+
+
+def _bar_table_open_time_duplicado(t0_open: datetime, t0_close_real: datetime) -> pl.DataFrame:
+    """2 linhas de `build_t1_features` -- barra-fantasma (`open_time ==
+    close_time == t0_open`, valores de feature=0.0) e barra real
+    (`open_time=t0_open`, `close_time=t0_close_real`, valores de
+    feature=1.0 -- distintos de propósito, pra provar qual sobrevive)."""
+    ms_open = int(t0_open.timestamp() * 1000)
+    ms_close_real = int(t0_close_real.timestamp() * 1000)
+    cols: dict[str, Any] = {
+        "open_time": [ms_open, ms_open],
+        "close_time": [ms_open, ms_close_real],
+    }
+    for fid in T1_FEATURE_IDS:
+        cols[fid] = [0.0, 1.0]
+    return pl.DataFrame(cols)
+
+
+def _regime_open_time_duplicado(t0_open: datetime) -> pl.DataFrame:
+    """2 avaliações de regime pro MESMO `open_time` (histerese processando
+    a barra-fantasma e depois a real em sequência) -- `regime`/`tradeable`
+    distintos de propósito ("R1"/primeira tick vs. "R2"/estado assentado),
+    pra provar que a ÚLTIMA (estado assentado) sobrevive, não a primeira."""
+    return pl.DataFrame(
+        {
+            "t0": [t0_open, t0_open],
+            "regime": ["R1", "R2"],
+            "tradeable": [False, True],
+        }
+    ).with_columns(pl.col("t0").dt.replace_time_zone("UTC"))
+
+
+def test_build_modeling_frame_open_time_duplicado_nao_produz_linha_fantasma(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-202 -- reprodução mínima e sintética da colisão real (2 trades no
+    mesmo ms numa fronteira de recalibração). Sem o fix, o label cujo `t0`
+    bate com o `close_time` da barra REAL sairia DUPLICADO (2 linhas, uma
+    por avaliação de regime) em vez de 1. O label cujo `t0` bate com o
+    `close_time` da barra FANTASMA (que é o próprio `open_time`, já que a
+    fantasma tem duração zero) fica com feature/regime NULOS após o fix --
+    consequência aceita e já tratada pelo filtro de nulos existente
+    (`side_subset`), não uma duplicata."""
+    t0_open = datetime(2024, 1, 1, 0, 0, tzinfo=UTC)
+    t0_close_real = datetime(2024, 1, 1, 0, 20, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        cpcv, "load_labels_v1", lambda *a, **k: _two_row_labels(t0_open, t0_close_real)
+    )
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _bar_table_open_time_duplicado(
+            t0_open, t0_close_real
+        ),
+    )
+    monkeypatch.setattr(
+        regime_build,
+        "build_regimes",
+        lambda symbol, start, end, **kwargs: _regime_open_time_duplicado(t0_open),
+    )
+    _noop_verify_config_hash(monkeypatch)
+
+    mf = ds.build_modeling_frame()
+
+    # 2 labels de entrada -> 2 linhas de saida, nunca 3 ou 4 (fan-out do
+    # join de regime).
+    assert mf.data.height == 2
+
+    row_real = mf.data.filter(pl.col("t0") == t0_close_real)
+    assert row_real.height == 1
+    assert row_real[T1_FEATURE_IDS[0]][0] == 1.0  # feature da barra REAL, nao da fantasma (0.0)
+    assert row_real["regime"][0] == "R2"  # ultima avaliacao (estado assentado), nao a 1a ("R1")
+    assert row_real["tradeable"][0] is True
+
+    row_phantom = mf.data.filter(pl.col("t0") == t0_open)
+    assert row_phantom.height == 1
+    # barra fantasma foi descartada do bar_table (mantida so a com maior
+    # close_time) -- o close_time dela (== proprio open_time) nao acha mais
+    # par no join, entao a feature fica nula (filtrada depois por
+    # side_subset), NUNCA duplicada.
+    assert row_phantom[T1_FEATURE_IDS[0]][0] is None
+
+
 def _synthetic_frame() -> pl.DataFrame:
     n = 6
     cols: dict[str, object] = {

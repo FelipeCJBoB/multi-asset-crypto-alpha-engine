@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.42 · **Data:** 2026-08-23
+**Versão:** 3.45 · **Data:** 2026-08-24
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -849,7 +849,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
 | V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
-| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.20`) — multi-símbolo/multi-resolução (R1/R2/R3) já prontos em produção; migração real = learner + orquestração + GPU (D-18) + schema. `AG-162` CRITICAL fechado 2026-08-23 (D-05 prevalece, `tau_alpha` derivado no Meta); `AG-163` HIGH segue com ressalva. Gate "Data Layer 100%" já fechado (§15.27/§15.28) | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20` |
+| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
 
@@ -1335,7 +1335,7 @@ LIVE TRADING LAYER
 | `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO 2026-08-23]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` (`AG-140` corrigido, ver §15.24) |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
 | `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
-| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério |
+| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
 | `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟡 desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado; gated no E0 e no retreino do Alpha |
@@ -4036,9 +4036,181 @@ Cutover de produção de D-06 (alínea B) explicitamente adiado.
 **H. Revisão independente (`project_assurance`, PRINCE2 §6.4).**
 Disparada sobre `alpha.py`/`persistence.py`/`pipeline.py` (+ `io/
 schema.py`/`baselines.py`/`faixa1_6_reconciliation.py`/
-`faixa2_caminho_b.py`) — achados a registrar em adendo a esta seção
-quando concluída, mesmo padrão de duas camadas já usado no desenho
-(alínea C).
+`faixa2_caminho_b.py`) — 3 achados reais fechados (commit `ac3eb5d`).
+
+---
+
+### 15.20.2 D-06 integrado (escopo estreito) + primeiro treino real do Alpha — 4 bugs achados e fechados, sweep completo de 15 combinações (2026-08-23)
+
+**Origem.** Continuação direta de `§15.20.1` — usuário autorizou destravar
+o gate "Data Layer 100%" (já fechado, `§15.27`/`§15.28`) e rodar o
+primeiro retreino real. Sequência: validação de prontidão → fix de
+`AG-199` → integração de D-06 → smoke test → 3 bugs reais achados rodando
+contra dado de produção pela primeira vez → sweep completo autorizado
+("dispare o retreino completo").
+
+**A. D-06 integrado, escopo ESTREITO (fecha `AG-154` de fato).**
+`write_predictions_versioned` investigado antes de integrar: o "cutover
+completo" que o achado original descrevia (trocar o writer de produção +
+atualizar 2 consumidores incondicionais + descartar 5 `predictions.
+parquet` legados) partia de premissa errada — `write_predictions_versioned`
+exige `resolution_id: str` não-opcional (só serve o ramo dollar-bar) e os
+2 consumidores citados (`fill_reconciliation.py::load_predictions`,
+`calibration_diagnostics.py`) não aceitam `symbol`/`resolution_id` —
+nunca liam o ramo novo, independente do writer. Escopo real implementado:
+`pipeline.py::run_layer1_sprint` chama `write_predictions_versioned`
+sempre que `resolution_id is not None` (as 2 variantes, Camada1/Camada0,
+`config_hash` distinto via `variant`); ramo legado intocado, zero risco
+aos consumidores existentes. Commit `9adf356`. `AG-154` fechado (o campo
+`status` do ledger tinha ficado "parcial" mesmo depois do commit dizer
+"fecha" — mesmo furo doc-vs-código que `AG-123` cataloga, desta vez pego
+na própria varredura de governança que gerou esta seção).
+
+**B. `AG-199` (alto, fechado) — `config_hash` mismatch real em labels R1.**
+Confirmado empiricamente (não falso positivo, como o usuário suspeitava
+que pudesse ser confundido com o achado de D-06): `ConfigHashMismatchError`
+real, labels R1 (mtime 2026-08-17) predatavam `AG-116` (2026-08-20,
+`horizon_bars` no payload). Reprocessados os 5 símbolos via
+`run_and_write_labels_dollar_bar_parkinson(resolution_id='R1')`.
+
+**C. `AG-200` (alto, fechado) — 2º schema de calibração não reconhecido.**
+`_assert_dollar_bar_grade_consistent` (`cpcv.py`) só sabia parsear
+`DollarBarCalibration` (schema de janela única); `AG-124` (2026-08-21)
+introduziu `WalkforwardCalibrationIdentity` no MESMO arquivo
+`_calibration.json` — bloquearia as 15 combinações reais na primeira
+chamada de `generate_splits`. Corrigido com tentativa dupla de schema.
+
+**D. `AG-201` (alto, ABERTO) — GPU/CUDA inviável no Windows nativo.**
+D-18 (GPU obrigatória em produção) investigado a fundo: CUDA Toolkit
+13.3 instalado e funcional (RTX 4060 Ti confirmada via `nvidia-smi`), CMake
++ Visual Studio Build Tools 2022 (2026 falhou — sem integração MSBuild-CUDA
+ainda) chegaram a compilar e detectar o compilador CUDA com sucesso.
+Bloqueio final, estrutural: LightGBM 4.7.0 exige `NCCL` incondicionalmente
+sob `USE_CUDA=ON` (`CMakeLists.txt:243`, sem flag de escape) — NCCL é
+biblioteca nativa de Linux, sem build oficial pra Windows (só via WSL2).
+Decisão do usuário: treinar em CPU agora, GPU real fica pra projeto de
+infraestrutura separado (WSL2), sem prazo definido.
+
+**E. `AG-202` (médio, sintoma mitigado, causa raiz ABERTA) — `t0` duplicado.**
+2 de 223.172 barras de BTCUSDT/R1 (0,0009%) produzem linhas duplicadas em
+`mf.data`, rastreado até o join de features/regime dentro de
+`build_modeling_frame` (bars/labels limpos antes do join, sujo depois) —
+causa raiz exata não localizada. Só detectado porque D-06 (alínea A) foi a
+PRIMEIRA vez que `predictions.parquet` passou por validação real de schema
+(`primary_key=(t0,fold_id)`) — o writer legado nunca teria pego isto.
+Sintoma fechado (`_unique_test_bars` deduplica de verdade, aviso alto se
+acontecer), causa raiz recomendada como investigação futura (não bloqueia
+produção, taxa ínfima).
+
+**F. Sweep completo — primeiro resultado real do Alpha novo.** 15
+combinações (5 símbolos × R1/R2/R3), cada uma treino+backtest completo e
+independente (CPU, `n_jobs=-1`). **3 de 15 (20%) passam o gate de
+permanência** — ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3; SOLUSDT é o único
+símbolo com maioria de aprovações (2 de 3 resoluções); BTCUSDT/BNBUSDT/
+XRPUSDT não passam em nenhuma resolução. Detalhe completo, limitações da
+medição (AUC por combinação não capturado, limiar do gate não é constante
+nomeada, `AG-202` não auditado nas outras 14 combinações) e comparação
+com a barra do motor legado: `audit/evidence_ledger.yaml::alpha-lightgbm-
+sweep-15-combinacoes-2026-08-23`. `N_lifetime` incrementado em +15
+(`audit/n_lifetime.yaml`, id 18) — 15 treinos+backtests reais, não 1 passe
+de ranking. **Não é decisão de promoção pra produção** — achado misto
+registrado, decisão de investigar a causa da divergência por símbolo
+(ou aceitar como esperado dado o tamanho pequeno da amostra de paths)
+fica com o Manager.
+
+---
+
+### 15.20.3 Análise profunda do Alpha — decomposição de PnL, AUC real, taxa-base com significância, AG-202 causa raiz (com autocorreção), metodologia H0-H6 e estratégia de testes (2026-08-24)
+
+**Origem.** Continuação direta de `§15.20.2` — usuário pediu detalhamento
+extensivo do resultado ("ranking de features, quantidade de trades,
+taxas de assertividade em horários/períodos/long×short") e depois
+aprofundamento explícito ("continuar nessa direção... metodologia
+própria ponta a ponta"), seguido de `/engineering:testing-strategy`
+aplicado ao achado do dia. Toda a análise abaixo reconstruída dos
+artefatos já gravados pelo sweep de `§15.20.2` — **zero retreino, zero
+custo de `N_lifetime`** — validada bit-a-bit contra o único relatório
+completo sobrevivente (XRPUSDT/R3) antes de aplicar às outras 14.
+
+**A. Ranking de features + decomposição de PnL + AUC real + calibração.**
+450 diagnósticos por fold×lado já em disco deram o ranking de features
+sem retreino: `E10f_oi_change_z_48` (17,1% do gain) > `C06_vol_ratio_
+12_96` (14,8%) > `E27f_cost_atr_ratio` (14,5%, maior variância entre
+combinações) > `A05_ret_vol_norm_4` > `B01_rsi_14` > `D06f_taker_
+imbalance_z_48` > `A13_dist_ema48_atr` — concentração saudável, HHI
+médio ≈0,155. Decomposição de PnL (`src.models.decomposition.decompose`
+chamado sobre trades reconstruídos): **63,2% da perda agregada é
+direcional, 38,9% execução** — `gate3_directional_positive=False` nas
+15 combinações, sem exceção. AUC real (score pré-calibração vs. label,
+mesmo filtro `side_subset` do B4 oficial): média 0,509, faixa
+0,505-0,513 — validado bit-exato (`auc_long`) contra XRPUSDT/R3.
+Calibração (correlação probabilidade×acerto por quintil): média −0,177,
+9 de 15 negativas — amostra pequena, reportado como hipótese, não
+conclusão fechada. Detalhe: `audit/evidence_ledger.yaml::alpha-lightgbm-
+decomposicao-pnl-auc-calibracao-2026-08-24`.
+
+**B. Taxa-base ingênua vs. taxa de acerto real (achado que reenquadra
+"win rate ~40%").** O label bruto (sem NENHUM modelo) já tem TP como
+classe minoritária (38,7%-41,0%) em TODAS as 15 combinações — a taxa de
+acerto medida antes não era tão dramática isoladamente quanto parecia.
+O que importa é o delta (Alpha vs. taxa-base), testado com significância
+(z, sem correção multiple-testing pras 15 comparações): **7 de 15
+significativas** — positivas em BTCUSDT/R1, ETHUSDT/R1, XRPUSDT/R1/R2/R3
+(XRPUSDT é o ÚNICO símbolo positivo nas 3 resoluções); negativas em
+`SOLUSDT/R3` (z=−2,18) e `BNBUSDT/R3` (z=−2,83) — **seleção adversa
+real, não ruído**, confirmada estatisticamente. `BTCUSDT/R3` (pior
+percentil do baseline B1 de entrada aleatória, 2,4) NÃO tem delta
+significativo — mecanismo DIFERENTE de BNB/SOL-R3, provavelmente
+tamanho/variância de trade, não taxa de acerto. Detalhe: `audit/
+evidence_ledger.yaml::alpha-basetate-significancia-ag202-2026-08-24`.
+
+**C. `AG-202` — causa raiz confirmada, COM AUTOCORREÇÃO na mesma sessão.**
+1ª hipótese (bug em `bars.py::threshold_bars_step`, `carry.base_value`
+nunca resetado ao trocar de threshold) foi proposta, mas antes de
+qualquer código ser alterado — disciplina de "ler os testes existentes
+primeiro" (skill `testing-strategy`) — achado `tests/unit/test_data_
+bars.py::test_threshold_bars_drain_sobrevive_a_troca_de_threshold_
+entre_periodos` (já existente, não escrito nesta sessão): esse teste
+já documenta e testa o EXATO comportamento suspeitado como **correto e
+deliberado** ("comportamento real, verificado à mão, não um bug a
+esconder", docstring literal). Hipótese descartada, corrigida no mesmo
+dia, registrada por transparência (não apagada). **Causa real**:
+confirmada no trade lake bruto — 2 trades da Binance caem no mesmo
+milissegundo (`transact_time=1738626900274`, `agg_trade_id` 2559075427/
+2559075428) exatamente numa fronteira de recalibração; o comportamento
+testado/correto de `bars.py` fecha o 1º como barra-fantasma e o 2º abre
+a barra seguinte — como os dois compartilham `transact_time`, as barras
+adjacentes compartilham `open_time`. `src/models/dataset.py:316`
+(`bar_table.join(regime_small, on="_open_time_ms")`) assume implicitamente
+que `open_time` identifica barra de forma única — contrato que `bars.py`
+nunca garantiu. **O bug real está no consumidor (`dataset.py`), não no
+núcleo de barras** — `close_time` permanece único nas 15 combinações,
+candidato de chave/tie-break mais seguro. Fix proposto (não aplicado):
+tornar o join de regime robusto a `open_time` duplicado — `bars.py`
+fica intocado, escopo e custo MENORES que a 1ª hipótese (não precisa
+reprocessar o lake de barras dollar, só `build_modeling_frame`). Detalhe
+completo, incluindo os 2 addenda (hipótese descartada + correção):
+`audit/architecture_gaps_log.yaml::AG-202`.
+
+**D. Metodologia de pesquisa proposta (H0-H6) + estratégia de testes.**
+7 hipóteses priorizadas por custo pra achar a causa do AUC~0,51 e
+melhorar winrate/edge antes da versão final do Alpha: H0 (AG-202,
+confirmado) → H1 (seleção adversa BNB/SOL-R3, confirmado, causa exata
+aberta) → H2 (XRPUSDT como único sinal positivo consistente, não
+iniciado) → H3 (sweep S1 tp_atr_mult×sl_atr_mult, design doc já existe,
+"maior lacuna aberta do projeto") → H4 (variar `target_signal_rate`,
+depende de H6) → H5 (conjunto de features raso — só 7 de ~92
+catalogadas, maior custo) → H6 (integrar `persistence.py`, zero
+integração hoje, pré-requisito de H4 e de qualquer AUC sob features
+embaralhadas real). Estratégia de testes (skill `testing-strategy`)
+aplicada ao H0: plano de 5 camadas (caracterização → unidade → não-
+regressão do teste existente → integração nas 15 combinações →
+sentinela no `_unique_test_bars`); aos H1-H6: disciplina de teste
+mapeada pro DoD já existente do `CLAUDE.md` (feature/modelo/execução),
+sem reinventar. Tudo consolidado no artefato **"Alpha — Base de
+Pesquisa"** (reestruturado em 2 abas: Retreino = resultado do gate;
+Calibrações = investigação viva, atualizada a cada rodada até a versão
+final).
 
 ---
 
@@ -5057,6 +5229,41 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.45 (2026-08-24)** — Análise profunda do Alpha (sem retreino):
+  ranking de features, decomposição de PnL (63,2% da perda é direcional,
+  não custo), AUC real (0,509 médio, quase nulo), calibração (média
+  −0,177, fragilidade declarada). Taxa-base ingênua vs. taxa de acerto
+  real com significância — 7/15 combinações significativas: XRPUSDT
+  único símbolo positivo nas 3 resoluções, `SOLUSDT/R3`/`BNBUSDT/R3` com
+  seleção adversa confirmada. `AG-202` — causa raiz encontrada E
+  autocorrigida na mesma sessão: 1ª hipótese (bug em `bars.py`) foi
+  descartada ao ler um teste existente que já provava esse comportamento
+  como deliberado; causa real é o join de regime em `dataset.py:316`
+  assumir `open_time` único, que `bars.py` nunca garantiu — 2 trades no
+  mesmo milissegundo numa fronteira de recalibração colidem. Fix real
+  não toca `bars.py`, custo menor que a hipótese inicial. Metodologia de
+  pesquisa H0-H6 proposta + estratégia de testes (skill
+  `testing-strategy`) por hipótese. Artefato "Alpha — Base de Pesquisa"
+  reestruturado em 2 abas (Retreino/Calibrações). Nova seção `§15.20.3`.
+  Detalhe: `audit/evidence_ledger.yaml::alpha-lightgbm-decomposicao-pnl-
+  auc-calibracao-2026-08-24`/`alpha-basetate-significancia-ag202-
+  2026-08-24`, `audit/architecture_gaps_log.yaml::AG-202`.
+- **v3.44 (2026-08-23)** — Primeiro treino real do Alpha pós-migração
+  LightGBM. D-06 integrado em escopo estreito (fecha `AG-154` de fato,
+  o `status` do ledger tinha ficado desatualizado apesar do commit
+  dizer "fecha" — mesmo furo doc-vs-código de sempre, pego na própria
+  varredura de governança). 4 bugs reais achados e fechados rodando
+  pela 1ª vez contra dado de produção: `AG-199` (config_hash mismatch
+  em labels R1), `AG-200` (2º schema de calibração não reconhecido),
+  `AG-202` (t0 duplicado no join features/regime, sintoma mitigado,
+  causa raiz aberta); `AG-201` (GPU/CUDA inviável no Windows nativo,
+  NCCL é dependência Linux-only) permanece aberto, treino real rodou em
+  CPU por decisão do usuário. Sweep completo: 5 símbolos × R1/R2/R3 (15
+  combinações), **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1,
+  SOLUSDT/R2, SOLUSDT/R3) — achado misto real, não decisão de promoção.
+  `N_lifetime` +15 (id 18, counter 63→78). Nova seção `§15.20.2`.
+  Detalhe completo: `audit/evidence_ledger.yaml::alpha-lightgbm-
+  sweep-15-combinacoes-2026-08-23`.
 - **v3.43 (2026-08-23)** — Implementação real do Alpha multi-ativo ×
   multi-resolução, D-01 a D-18 (commits `d15ff73`/`321c414`/`1c6f1b3`/
   `4781920`) — `§15.20.1` nova. Learner XGBoost→LightGBM;

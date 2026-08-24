@@ -3873,6 +3873,78 @@ concluída. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`,
 `docs/alpha_model_design_doc_2026-08-22.md`.
 
 <!-- check-sprint-log: skip -->
+**D-06 integrado (escopo estreito) + primeiro treino real do Alpha —
+4 bugs achados e fechados, sweep completo de 15 combinações <!-- check-sprint-log: skip -->
+(2026-08-23)** <!-- check-sprint-log: skip --> — usuário autorizou
+destravar o retreino real (gate "Data Layer 100%" já fechado). D-06
+(`write_predictions_versioned`) investigado antes de integrar <!-- check-sprint-log: skip -->:
+o cutover completo descrito em `AG-154` partia de premissa errada (os 2
+consumidores incondicionais citados nunca leem o ramo `resolution_id`,
+independente de qual writer grava nele) — escopo real e seguro <!-- check-sprint-log: skip -->
+implementado: `run_layer1_sprint` chama o writer versionado sempre que
+`resolution_id is not None`, ramo legado intocado. `AG-154` fechado <!-- check-sprint-log: skip -->
+(o `status` do ledger tinha ficado "parcial" mesmo com o commit dizendo <!-- check-sprint-log: skip -->
+"fecha" — mesmo furo doc-vs-código de sempre, pego na própria varredura
+de governança). Rodando pela 1ª vez contra dado de produção, 3 bugs <!-- check-sprint-log: skip -->
+reais novos <!-- check-sprint-log: skip -->: `AG-199` (`config_hash` mismatch em labels R1, mtime
+2026-08-17 predatava `AG-116`, reprocessado); `AG-200` (2º schema de
+calibração — `WalkforwardCalibrationIdentity`, `AG-124` — não <!-- check-sprint-log: skip -->
+reconhecido por `_assert_dollar_bar_grade_consistent`, corrigido com
+tentativa dupla); `AG-202` (2 de 223.172 barras de BTCUSDT/R1 duplicadas <!-- check-sprint-log: skip -->
+pelo join de features/regime dentro de `build_modeling_frame` — só
+detectado porque D-06 foi a 1ª validação real de schema sobre <!-- check-sprint-log: skip -->
+`predictions.parquet`; sintoma mitigado, causa raiz aberta). Investigado
+também GPU/CUDA real (D-18): CUDA Toolkit 13.3 + CMake + VS Build Tools <!-- check-sprint-log: skip -->
+instalados, compilador CUDA chegou a ser detectado com sucesso, mas
+LightGBM exige `NCCL` incondicionalmente sob `USE_CUDA=ON` e NCCL não
+tem build nativo pra Windows (só WSL2) — bloqueio estrutural, registrado <!-- check-sprint-log: skip -->
+`AG-201`, usuário decidiu treinar em CPU por ora. Sweep completo — 5
+símbolos × R1/R2/R3 (15 combinações, cada uma treino+backtest real e <!-- check-sprint-log: skip -->
+independente): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, <!-- check-sprint-log: skip -->
+SOLUSDT/R2, SOLUSDT/R3); SOLUSDT é o único símbolo com maioria de <!-- check-sprint-log: skip -->
+aprovações, BTCUSDT/BNBUSDT/XRPUSDT não passam em nenhuma resolução. <!-- check-sprint-log: skip -->
+Achado misto real, não decisão de promoção — limitações da medição
+(AUC por combinação não capturado, limiar do gate não é constante
+nomeada, `AG-202` não auditado nas outras 14 combinações) e comparação <!-- check-sprint-log: skip -->
+com a barra do motor legado registradas em
+`audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-
+2026-08-23`. `N_lifetime` +15 (id 18, counter 63→78, 15 treinos reais
+independentes, não 1 passe de ranking). Detalhe completo:
+`PLANO_MESTRE_PRINCE2.md §15.20.2`.
+
+<!-- check-sprint-log: skip -->
+**Análise profunda do Alpha, metodologia H0-H6 e AG-202 autocorrigido
+(2026-08-24)** <!-- check-sprint-log: skip --> — usuário pediu
+detalhamento extensivo do sweep ("ranking de features, quantidade de
+trades, assertividade por horário/período/long×short") e depois
+aprofundamento com metodologia própria, seguido da skill <!-- check-sprint-log: skip -->
+`testing-strategy`. Tudo reconstruído dos artefatos já gravados, sem
+retreinar. Ranking de features (450 diagnósticos fold×lado já em <!-- check-sprint-log: skip -->
+disco): `E10f_oi_change_z_48` lidera com 17,1% do gain, concentração <!-- check-sprint-log: skip -->
+saudável (HHI~0,155). Decomposição de PnL: 63,2% da perda é direcional,
+38,9% execução — `gate3_directional_positive=False` nas 15 combinações. <!-- check-sprint-log: skip -->
+AUC real 0,509 médio (quase nulo, estável). Taxa-base ingênua vs. taxa
+de acerto real com teste de significância: 7/15 significativas —
+XRPUSDT único símbolo positivo nas 3 resoluções, `SOLUSDT/R3`/
+`BNBUSDT/R3` com seleção adversa confirmada (não ruído). `AG-202`:
+causa raiz encontrada E autocorrigida na MESMA sessão — 1ª hipótese <!-- check-sprint-log: skip -->
+(bug em `bars.py::threshold_bars_step`) foi descartada ao ler
+`tests/unit/test_data_bars.py::test_threshold_bars_drain_sobrevive_a_
+troca_de_threshold_entre_periodos`, já existente, que prova esse exato
+comportamento como deliberado — disciplina "ler testes antes de propor
+fix" que a própria skill de testing-strategy reforçou. Causa real: <!-- check-sprint-log: skip -->
+2 trades da Binance no mesmo milissegundo numa fronteira de
+recalibração colidem porque `dataset.py:316` assume `open_time` único, <!-- check-sprint-log: skip -->
+suposição que `bars.py` nunca garantiu — fix fica no join (`dataset.py`), <!-- check-sprint-log: skip -->
+`bars.py` intocado, custo menor que a hipótese inicial (não precisa
+reprocessar o lake de barras). Metodologia H0-H6 proposta + estratégia
+de testes por hipótese, mapeada pro DoD já existente do `CLAUDE.md`.
+Artefato "Alpha — Base de Pesquisa" reestruturado em 2 abas (Retreino/
+Calibrações) — vira o registro único de achados até a versão final do
+Alpha. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.3`,
+`audit/architecture_gaps_log.yaml::AG-202`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -3892,12 +3964,12 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | T1 (histórico, 2026-08-16) | "extinto — pool único de 13 features" registrado então; **superseded 2026-08-19** — ver linha "Tiering de features" abaixo, decisão nova e mais ampla (~92 features, catálogo inteiro do PRD Parte II), relação exata entre as duas decisões não reconciliada nesta atualização |
 | Tiering de features (T1/T2/T3) | **descontinuado como portão de entrada, 2026-08-19** — todas as features com fonte real wired (T1+T2, ~92 do catálogo `PRD_V3_2_UNIFICADO.md` Parte II) passam a ser canônicas; seleção delegada ao Learner/Meta-model. Registrado, **não implementado em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas); dependência conhecida a resolver junto: `AG-038` |
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
-| `N_lifetime` | **63**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre) |
+| `N_lifetime` | **78**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre). **+15 em 2026-08-23** (id 18) — sweep real do Alpha, 5 símbolos × R1/R2/R3, cada combinação um treino+backtest novo |
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
-| **Alpha multi-ativo × multi-resolução** | **Desenho travado E IMPLEMENTADO (D-01 a D-18) — 2026-08-23**, commits `d15ff73`/`321c414`/`1c6f1b3`/`4781920`. Learner XGBoost→LightGBM; `predictions.parquet` 17→21 colunas (`symbol`/`resolution_id`/`tau_long`/`tau_short`); `model_dir` chaveado por `(symbol, resolution_id)`; driver de 15 combinações; GPU confirmada com o usuário, `device_type` parametrizado (`"cpu"` default nos testes, `"cuda"` só em produção). D-06 (writer `io.artifact`) PARCIAL — capacidade pronta, cutover real adiado pro PR que ativa o retreino (decisão do próprio design doc). Nenhum treino real rodou, gate "Data Layer 100%" segue fechado — teste golden falha deliberadamente contra baseline XGBoost antigo (esperado). Suíte completa: 1781 passed, 0 failed. `AG-157`/`AG-158`/`AG-160` fechados; `AG-154` parcial; achado fora de escopo `AG-193` (bug pré-existente, `AG-032`) corrigido no caminho. `AG-162`/`AG-150` (schema `tau_alpha` × `tau_long`/`tau_short`) já fechados por sessão anterior (commit `fe943e6`) antes da implementação começar. Revisão independente `project_assurance` disparada, achados em adendo. Detalhe completo: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20.1` |
+| **Alpha multi-ativo × multi-resolução** | **IMPLEMENTADO, TREINADO E EM ANÁLISE PROFUNDA — 2026-08-23/24**. D-01 a D-18 codificados (`§15.20.1`); D-06 integrado (`§15.20.2`). Sweep de 15 combinações: **3/15 (20%) passam o gate de permanência**, mas **0/15 têm retorno médio líquido positivo** — achado de `§15.20.3`, AUC real 0,509 médio (quase nulo). Taxa-base com significância: XRPUSDT único símbolo com sinal positivo nas 3 resoluções; `SOLUSDT/R3`/`BNBUSDT/R3` com seleção adversa confirmada. `AG-199`/`AG-200`/`AG-154` fechados; `AG-201` (GPU) aberto; **`AG-202` causa raiz confirmada 2026-08-24 — autocorrigida na mesma sessão** (1ª hipótese, bug em `bars.py`, foi descartada ao ler teste existente que provava esse comportamento como deliberado; causa real é o join de regime em `dataset.py:316` assumir `open_time` único). Metodologia de pesquisa H0-H6 + estratégia de testes propostas, `N_lifetime` +15 (counter 63→78). Artefato "Alpha — Base de Pesquisa" (abas Retreino/Calibrações) é o registro único até a versão final. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`-`§15.20.3`, `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` e as 3 entradas de 2026-08-24, `audit/architecture_gaps_log.yaml::AG-202` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` testada com dado fresco, resultado MISTO (2/4 suporta, 1/4 contradiz, 1/4 ambíguo — ver seção narrativa acima), não é padrão limpo; `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` seguem com dado obsoleto (`AG-191`, parcial) |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |

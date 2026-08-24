@@ -11949,7 +11949,7 @@ entries:
       não antes -- o gate "Data Layer 100%" segue fechado. Reabrir
       quando esse PR acontecer, não fechar como se o cutover tivesse
       sido feito.
-    status: "parcial -- capacidade nova (write_predictions_versioned) pronta e testada; cutover de produção (run_layer1_sprint + 2 consumidores reais + descarte dos 5 legados) fica pro PR que ativa o retreino, gate ainda fechado."
+    status: "fechado 2026-08-23 -- ESCOPO ESTREITO, nao o cutover completo descrito acima. Corrigido pelo commit 9adf356 (mensagem dizia 'fecha AG-154' mas o campo status deste ledger nao tinha sido atualizado -- mesmo furo doc-vs-codigo que AG-123 cataloga, desta vez pego na propria varredura de governanca). Investigacao antes de implementar: write_predictions_versioned exige resolution_id: str nao-opcional -- so pode servir o ramo dollar-bar; os '2 consumidores reais incondicionais' citados acima (fill_reconciliation.py::load_predictions, calibration_diagnostics.py) nao aceitam parametro symbol/resolution_id nenhum -- nunca liam o ramo resolution_id-keyed, logo o cutover completo (trocar os 2 consumidores, descartar os 5 legados) NAO SE APLICA como descrito -- premissa do achado original estava errada nesse ponto especifico. Escopo real, seguro e correto: pipeline.py::run_layer1_sprint passa a chamar write_predictions_versioned SEMPRE que resolution_id is not None (ambas variantes, camada1 e camada0, config_hash distinto via variant no config); ramo legado (resolution_id is None) mantem write_predictions_atomic intocado, zero risco aos consumidores existentes. Validado com dado REAL, nao so teste sintetico: sweep completo de 2026-08-23 (5 simbolos x R1/R2/R3, ver evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23) escreveu 14 pares de artefatos versionados reais em artifacts/predictions_alpha/ com manifest/schema/_SUCCESS -- escritor funciona ponta a ponta em producao, nao so em teste unitario."
 
   - id: AG-155
     date: "2026-08-22"
@@ -13977,4 +13977,133 @@ entries:
       (qual join exato no Feature/Regime Engine produz o fan-out)
       permanece aberta, registrada explicitamente aqui pra nao ser
       confundida com "resolvido".
-    status: "aberto -- sintoma mitigado com aviso, causa raiz pendente de investigacao futura (nao bloqueia o retreino real). Recomendacao: quando investigar, comecar por build_t1_features/build_regimes em torno de close_time correspondente aos 2 t0 medidos, cruzar com o warning ja conhecido features.metrics_duplicate_create_time (mesma familia de problema, tie-break pode ser incompleto); rodar a mesma auditoria (raw bars limpo / labels limpo / mf.data sujo) pras outras 14 combinacoes pra medir se a taxa de 0,0009% generaliza ou eh especifica desta janela de BTCUSDT/R1."
+    status: "fechado 2026-08-24 -- fix real aplicado em src/models/dataset.py::build_modeling_frame (dedup explicito de bar_table por maior close_time + regime_small por ultima avaliacao, ambos por open_time, ANTES do join). bars.py intocado, teste existente (test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_periodos) continua verde sem alteracao. Teste novo (TDD, RED antes/GREEN depois): tests/unit/test_models_dataset.py::test_build_modeling_frame_open_time_duplicado_nao_produz_linha_fantasma. Suite completa: 1786 passed, 0 failed (uv run pytest -m 'not slow and not integration'). ruff/mypy/banned_patterns limpos no arquivo tocado. Verificado contra dado real: 6 de 9 combinacoes previamente afetadas (BTCUSDT/R1, ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R1, XRPUSDT/R2) ficaram 100% limpas (0 duplicata t0×side). 3 continuaram com duplicata residual (SOLUSDT/R1, BNBUSDT/R1, BNBUSDT/R2) -- investigado, causa DIFERENTE (labels.parquet ja chega duplicado, upstream deste join) -- registrado separado como AG-203, nao confundir com este achado. Ver addenda abaixo (causa raiz + autocorrecao) para o historico completo da investigacao, preservado integralmente."
+    addendum_correcao_diagnostico_2026-08-24: >
+      CORRECAO do addendum anterior (mesma sessao, poucas horas depois) --
+      erro proprio, corrigido antes de qualquer fix ser aplicado, registrado
+      por transparencia, nao apagado. O addendum abaixo propunha resetar
+      `carry.base_value` em `bars.py::threshold_bars_step` como o fix --
+      ERRADO. `tests/unit/test_data_bars.py::
+      test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_
+      periodos` (ja existente, nao escrito nesta sessao) documenta e
+      TESTA esse exato comportamento (trade "em progresso" fechando como
+      barra propria, menor que o threshold novo, ao trocar de threshold)
+      como CORRETO E DELIBERADO -- "comportamento real, verificado a mao,
+      nao um bug a esconder" (docstring literal do teste). Resetar
+      base_value teria alterado um comportamento testado/aceito de
+      proposito, exigindo REESCREVER esse teste, nao so estende-lo.
+
+      CAUSA REAL, confirmada por leitura do trade lake bruto: 2 trades da
+      Binance caem no MESMO milissegundo (`transact_time=1738626900274`,
+      `agg_trade_id` 2559075427 quantity=0.197 e 2559075428 quantity=0.86)
+      exatamente na fronteira de recalibracao -- o 1o fecha a barra-
+      fantasma sozinho (comportamento testado/correto de bars.py), o 2o
+      vira o 1o trade da barra nova, e por COMPARTILHAR o mesmo
+      transact_time bruto, as 2 barras adjacentes acabam com o MESMO
+      open_time. `src/models/dataset.py:316` (`bar_table.join(regime_
+      small, on="_open_time_ms")`) assume implicitamente que open_time
+      identifica uma barra de forma unica -- suposicao que `bars.py`
+      NUNCA garantiu (contrato nao documentado entre produtor e
+      consumidor). O bug real esta no CONSUMIDOR (`dataset.py`), nao no
+      nucleo de barras (`bars.py`) -- `close_time` permanece unico (0
+      duplicatas confirmado em todas as 15 combinacoes), candidato mais
+      seguro de chave de join ou de criterio de tie-break explicito.
+      Fix real a propor: ajustar o join de regime em `build_modeling_
+      frame` pra ser robusto a `open_time` duplicado (chave composta
+      open_time+close_time, ou dedup com tie-break explicito e testado
+      antes do join, mesmo padrao ja usado em `features.metrics_
+      duplicate_create_time`) -- NAO tocar `bars.py`. `bars.py` fica
+      correto como esta, teste existente preservado sem alteracao."
+    addendum_causa_raiz_confirmada_2026-08-24: >
+      Investigacao pedida pelo usuario ("precisa de investigacao profunda").
+      A suspeita original (join de features/regime dentro de build_modeling_
+      frame) estava PARCIALMENTE certa quanto ao LOCAL mas errada quanto a
+      CAMADA -- a duplicacao nao nasce no join em si, nasce ANTES, em
+      build_t1_features (chamado 2x por combinacao: 1x direto em build_
+      modeling_frame, 1x dentro de build_regimes, "reuso" documentado) --
+      que por sua vez herda a duplicacao das BARRAS DOLLAR CRUAS (`data/
+      capacity/dollar_bars_r1/BTCUSDT/*.parquet`). A checagem original
+      ("raw bars limpo, ZERO close_time duplicado") estava correta mas
+      incompleta -- nunca checou OPEN_TIME duplicado, que eh a chave real
+      do join regime->features (`bar_table.join(regime_small, on=
+      "_open_time_ms")`, src/models/dataset.py:316).
+
+      MECANISMO CONFIRMADO: existe 1 barra de DURACAO ZERO
+      (open_time==close_time==1738626900274, 2025-02-03T23:55:00.274Z,
+      count=1 trade, US$19.947 de volume, MUITO abaixo do threshold_quote=
+      213.063.025) imediatamente seguida por uma barra NORMAL que abre no
+      MESMO open_time (mesmo threshold_quote, 20.798 trades, US$213M --
+      bate quase exato com o threshold, barra genuina). Rastreado ate
+      src/data/bars.py::threshold_bars_step: build_dollar_bars_walkforward
+      reusa o mesmo `carry` (leftover + base_value) atraves das fronteiras
+      de cadencia (cadence_days=7, deliberado -- evita truncar barra a cada
+      fronteira), mas so troca `carry.threshold`/`carry.max_leftover_
+      trades` a cada periodo (linha ~811) -- `carry.base_value` NUNCA e
+      resetado. `bar_id = cum_value // carry.threshold` (linha 457) passa a
+      dividir um `cum_value` MISTO (base_value acumulado sob o threshold
+      ANTIGO + valor novo) pelo threshold NOVO -- se o resto nao for
+      multiplo exato do novo threshold, o(s) primeiro(s) trade(s) do novo
+      periodo fecham sozinhos uma barra-fantasma quase vazia.
+
+      EXTENSAO MEDIDA (sweep das 15 combinacoes, raw bars): 10 de 15 tem
+      pelo menos 1 barra-fantasma -- BTCUSDT/R1=1, ETHUSDT/R1=1, SOLUSDT/
+      R1=5, SOLUSDT/R2=2, SOLUSDT/R3=1, BNBUSDT/R1=2, BNBUSDT/R2=1,
+      XRPUSDT/R1=1, XRPUSDT/R2=1 (BTCUSDT/R2/R3, ETHUSDT/R2/R3, BNBUSDT/R3,
+      XRPUSDT/R3 = 0). Concentrado em R1 (mais fronteiras de recalibracao
+      relativas ao numero de barras) -- sistematico, nao acidente isolado
+      do BTCUSDT/R1. SOLUSDT e o mais afetado (5+2+1=8 ocorrencias).
+
+      FIX PROPOSTO (nao implementado): resetar `carry.base_value = 0.0`
+      sempre que `carry.threshold` mudar entre periodos (em build_dollar_
+      bars_walkforward, junto da linha que atualiza carry.threshold).
+      Seguranca confirmada por leitura de codigo: `bar_id` e usado so como
+      agrupador interno de `_aggregate_bars` (`group_by`), nunca sai pro
+      schema de saida (`open_time`/`close_time` identificam a barra) --
+      resetar nao tem efeito colateral downstream conhecido. Aplicar exige
+      reprocessar as barras dollar das 5 simbolos x 3 resolucoes (todo o
+      lake `data/capacity/dollar_bars_r{1,2,3}/`) -- destrutivo o
+      suficiente pra exigir autorizacao explicita antes de rodar, nao feito
+      nesta rodada de investigacao. Detalhe completo, achados derivados
+      (taxa-base vs win-rate, seletividade adversa BNB/SOL-R3): audit/
+      evidence_ledger.yaml::alpha-basetate-significancia-ag202-2026-08-24."
+  - id: AG-203
+    date: "2026-08-24"
+    file: "labels/v1/labels.parquet (SOLUSDT/R1, BNBUSDT/R1, BNBUSDT/R2 confirmados) -- origem exata (triple_barrier.py ou fonte de bars que ele consome) NAO isolada nesta rodada"
+    related_file: "audit/architecture_gaps_log.yaml::AG-202 (achado irmao, mesma sessao de verificacao pos-fix, causa raiz DIFERENTE)"
+    found_by: "Claude, verificacao contra dado real pos-fix do AG-202 (usuario autorizou 'proximos passos recomendados... pode executar') -- 6 de 9 combinacoes previamente afetadas ficaram limpas (0 duplicatas) apos o fix de AG-202, mas 3 continuaram com duplicata -- investigado ate a origem, achado que NAO eh o mesmo bug"
+    gap: >
+      `labels/v1/labels.parquet` tem linhas DUPLICADAS de verdade -- mesmo
+      `(t0, side)` aparecendo 2x, com valores identicos de t0 mas
+      presumivelmente label/ret_net/etc. tambem duplicados (nao verificado
+      se os VALORES batem ou divergem entre as 2 copias, so que a CHAVE
+      colide). Confirmado em 3 combinacoes: SOLUSDT/R1 (8 linhas
+      duplicadas, 2 t0 distintos: 2025-07-16T17:04:45.024Z e
+      2025-07-16T17:04:57.985Z, ambos numa janela de ~13s com bars
+      fechando a cada 1-3ms -- provavel cascata de liquidacao/alta
+      volatilidade); BNBUSDT/R1 (8 linhas, 2 t0: 2026-05-04T04:08:55.085Z
+      e 2025-05-08T17:49:05.542Z); BNBUSDT/R2 (4 linhas, mesmo t0
+      2026-05-04T04:08:55.085Z que BNBUSDT/R1 -- sugere que a causa raiz
+      esta na fonte de barras COMPARTILHADA entre R1/R2 pra esse simbolo
+      naquele instante, nao em algo especifico da resolucao). Achado
+      DIFERENTE de AG-202: nao eh open_time colidindo no join de regime
+      (essas 3 combinacoes ja ficaram limpas quanto a ISSO apos o fix) --
+      eh o proprio `labels.parquet`, upstream de qualquer join deste
+      modulo, que ja chega com a chave (t0, side) duplicada. Causa raiz
+      exata (triple_barrier.py processando bars duplicados na entrada, ou
+      um bug proprio da construcao do label) NAO isolada nesta rodada --
+      prioridade era fechar o escopo do AG-202/H0 antes de abrir nova
+      investigacao.
+    severity: "medio"
+    layer: "labels -- upstream de features/regime/CPCV, afeta 3 de 15 combinacoes confirmadas (outras 12 nao auditadas ainda pra esse padrao especifico)"
+    consequence: >
+      Sem investigacao/fix, essas 3 combinacoes continuam produzindo um
+      numero pequeno de linhas duplicadas em build_modeling_frame (12, 8,
+      4 respectivamente) -- vies pequeno mas real no treino/backtest,
+      mesma classe de risco que AG-202 media antes do fix (peso 2x pra
+      poucas barras). Nao bloqueia o fix do AG-202 nem a metodologia
+      H0-H6 -- registrado como achado separado, nao urgente, mas real e
+      nao deve ser confundido com AG-202 (mecanismo diferente, mesmo
+      sintoma superficial).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- descoberto durante verificacao pos-fix do AG-202, nao investigado a fundo (fora do escopo autorizado desta rodada, H0 especifico). Extensao real MEDIDA nas 15 combinacoes (2026-08-24): so 3 de 15 afetadas -- SOLUSDT/R1 (8 linhas), BNBUSDT/R1 (8 linhas), BNBUSDT/R2 (4 linhas), total 20 linhas duplicadas em 2.070.902 linhas de label somadas -- achado pequeno e contido, nao generalizado. Recomendacao pra quando investigar: comecar por triple_barrier.py, checar se ele consome a MESMA fonte de bars que build_t1_features (dollar_bars_r{1,2}/{symbol}) e se tem sua PROPRIA logica de carregamento/dedup diferente; cruzar os t0 exatos das duplicatas com o raw bar file (abrir open_time/close_time ao redor de cada, mesmo metodo usado pra confirmar AG-202) pra ver se e a mesma classe de colisao de milissegundo ou algo novo."

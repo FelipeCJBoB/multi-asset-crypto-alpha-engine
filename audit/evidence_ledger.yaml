@@ -2508,3 +2508,362 @@ entries:
     o primario produz uma subamostra aproximadamente aleatoria, e filtrar amostra
     aleatoria devolve amostra aleatoria menor. Por isso o ablation do Meta e contra
     "filtro aleatorio na mesma taxa", nunca contra "sem Meta".
+- id_curto: alpha-lightgbm-sweep-15-combinacoes-2026-08-23
+  fase: 'Primeiro retreino real pos-migracao LightGBM (D-01 a D-18 implementados,
+    D-06 integrado no ramo resolution_id -- AG-154), autorizado pelo usuario
+    ("dispare o retreino completo")'
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT (5 simbolos x 3 resolucoes
+    = 15 combinacoes independentes)'
+  tf: 'dollar-bar R1/R2/R3 (canonical_bar_type=dollar, NAO clock 15m/30m/1h --
+    resolution_id substitui TF de relogio como identidade de grade, AG-042)'
+  janela: 'dado de producao atual em disco -- labels R1 reprocessados 2026-08-23
+    (AG-199, config_hash 67d2193fff4a1fae); R2/R3 gerados 2026-08-22 (pos-AG-116/
+    AG-124, nao reprocessados nesta rodada)'
+  lado: 'pooled -- criterio de permanencia agrega long+short por path de backtest'
+  regime: all
+  feature_ou_filtro: 'Camada 1 (LightGBM binary, monotone_constraints por feature
+    economica, D-01/D-09) vs Camada 0 (baseline, sem restricao monotona) -- mesmas
+    10 features T1, mesmo split CPCV (5 paths train/test por combinacao)'
+  metrica_tipo: 'gate de permanencia -- n_better = numero de paths (de 5) onde
+    Sharpe de backtest da Camada1 supera Camada0; permanence_pass = criterio
+    binario sobre n_better (limiar exato NAO esta declarado como constante em
+    config/constants.yaml -- inferido empiricamente dos 15 resultados: todo
+    n_better>=4 passou, todo n_better<=3 falhou -- ver nota)'
+  metrica_valor: >
+    BTCUSDT/R1: n_better=2/5, permanence_pass=False (resultado do smoke test
+    anterior, reaproveitado -- escritor de artefato imutavel recusou re-treinar
+    o mesmo config_hash nesta rodada, AG-154/D-06 funcionando como desenhado).
+    BTCUSDT/R2: 1/5, False. BTCUSDT/R3: 2/5, False. ETHUSDT/R1: 5/5, **True**.
+    ETHUSDT/R2: 3/5, False. ETHUSDT/R3: 1/5, False. SOLUSDT/R1: 0/5, False.
+    SOLUSDT/R2: 4/5, **True**. SOLUSDT/R3: 4/5, **True**. BNBUSDT/R1: 3/5, False.
+    BNBUSDT/R2: 1/5, False. BNBUSDT/R3: 0/5, False. XRPUSDT/R1: 3/5, False.
+    XRPUSDT/R2: 2/5, False. XRPUSDT/R3: 1/5, False.
+    Agregado: 3 de 15 combinacoes (20%) passam o gate de permanencia (ETHUSDT/R1,
+    SOLUSDT/R2, SOLUSDT/R3). SOLUSDT e o unico simbolo com maioria de aprovacoes
+    (2 de 3 resolucoes); BTCUSDT e BNBUSDT nao passam em nenhuma das 3; XRPUSDT
+    nao passa em nenhuma; ETHUSDT so passa em R1.
+  n: 15
+  status: amarelo
+  fonte_arquivo: 'experiments/alpha_full_sweep_2026-08-23.json (14 de 15
+    combinacoes, rodadas nesta sessao) + log estruturado da execucao
+    (models.pipeline.run_layer1_sprint_done, 14 linhas grep-adas e cruzadas por
+    elapsed_seconds pra confirmar pareamento com o JSON); BTCUSDT/R1 reusa
+    n_better/permanence_pass do smoke test anterior na mesma sessao (mesmo
+    config_hash, resultado ja medido, nao re-executado)'
+  fonte_secao: 'report["layer1_vs_layer0"] por combinacao (n_better, n_total,
+    permanence_pass)'
+  data: '2026-08-23'
+  nota: >
+    Classificado AMARELO, nao vermelho nem verde -- resultado misto real, nao
+    ausencia total de sinal nem confirmacao robusta. Comparacao com a barra
+    ja registrada em alpha-legado-auc-abaixo-do-nulo-permutado (motor
+    DESCONTINUADO -- BTC-only, clock 15m, XGBoost): aquele resultado era
+    permanence_pass=false com n_paths_camada1_supera_camada0=1 de
+    min_paths_required=4 (limiar antigo, 4 paths) -- o motor-alvo atual usa
+    5 paths, limiar empirico observado aqui e >=4/5, nao diretamente
+    comparavel por causa da mudanca na cardinalidade de paths (nao registrada
+    como decisao explicita em nenhum lugar -- risco de doc-vs-codigo se o
+    limiar real do gate mudou sem constante dedicada, ver arquitetura abaixo).
+    3 de 15 (20%) passando eh estritamente MELHOR que o motor legado (que
+    falhava 100% das vezes medidas), mas a base de comparacao e fraca (1
+    combinacao legada vs. 15 novas, learners e grades diferentes) -- nao
+    tratar como "migracao provou o edge", so como "nao repetiu o pior caso
+    do motor antigo em toda a superficie".
+
+    Limitacoes desta medicao, declaradas explicitamente (nao escondidas):
+    (1) AUC/metricas de classificacao por combinacao NAO foram capturadas --
+    o script do sweep so persistiu n_better/n_total/permanence_pass/
+    elapsed_seconds, o relatorio completo (`alpha_layer1_report.json`) foi
+    sobrescrito a cada combinacao (path fixo, nao versionado por symbol/
+    resolution) e so sobrevive o da ULTIMA combinacao rodada (XRPUSDT/R3).
+    Se investigar por que SOL destoa, os relatorios completos das outras 14
+    combinacoes precisam ser regenerados (re-rodar cada uma, ou mudar o
+    script pra persistir report_path por combinacao). (2) o limiar exato de
+    permanence_pass (>=4/5 observado empiricamente) nao esta declarado como
+    constante nomeada em config/constants.yaml com provenance -- risco de
+    banned pattern (literal implicito no codigo de decisao, nunca conferido
+    contra constants.yaml nesta rodada) -- verificar em auditoria futura.
+    (3) `AG-202` (t0 duplicado no join de features/regime, medido so em
+    BTCUSDT/R1, 0,0009%) nao foi auditado nas outras 14 combinacoes -- se a
+    taxa for maior em algum par, pode enviesar o resultado dessa combinacao
+    especifica, nao investigado aqui. (4) `n_lifetime` incrementado em +15
+    por este sweep (audit/n_lifetime.yaml, id novo) -- cada combinacao e um
+    treino+backtest real e independente, nao 1 passe de ranking.
+
+    Nenhuma causa proposta para por que SOL/ETH-R1 passam e o resto nao --
+    seria especulacao sem medicao adicional (B23). Pergunta em aberto para
+    o Manager: vale investir em investigar a causa (feature importance por
+    combinacao, distribuicao de regime, liquidez/volume por par) antes de
+    promover qualquer combinacao a producao, ou tratar como esperado dado
+    o tamanho pequeno da amostra de paths (5) e revisar apos mais dado.
+- id_curto: alpha-lightgbm-sweep-trade-level-reconstrucao-2026-08-24
+  fase: 'Analise estendida pedida pelo usuario apos o sweep de 15 combinacoes --
+    ranking de features, long x short, horario, periodo. Reconstruido dos
+    artefatos JA GRAVADOS (predictions.parquet D-06 + 450 diagnosticos por
+    fold/lado), SEM retreinar -- metodologia validada bit-exato contra
+    experiments/alpha_layer1_report.json (XRPUSDT/R3, unico com relatorio
+    completo sobrevivente) antes de aplicar as outras 14 combinacoes. Zero
+    custo de N_lifetime (nao e novo trial, so releitura+recomputo barato).'
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT x R1/R2/R3 (15 combinacoes,
+    ambas variantes Camada1/Camada0)'
+  tf: dollar-bar R1/R2/R3
+  janela: 'mesma janela do sweep original (2026-08-23), t0 completo por combinacao'
+  lado: 'long e short separados + pooled'
+  regime: all
+  feature_ou_filtro: 'trades reconstruidos (side_hat != 0, join contra barrier_hit/
+    ret_net real de build_modeling_frame) + gain_by_column agregado dos 450
+    diagnosticos fold x lado'
+  metrica_tipo: 'taxa de acerto (win_rate = fracao de trades preenchidos com
+    ret_net>0) e retorno medio liquido (bps) por trade -- pooled, por lado,
+    por hora UTC, por trimestre; ranking de features por gain medio do LightGBM'
+  metrica_valor: >
+    ACHADO CENTRAL: 0 de 15 combinacoes (nenhuma variante) tem retorno medio
+    liquido positivo. Pooled Camada1: win_rate=39,98%, mean_ret=-14,99bps,
+    n=153.611 trades preenchidos. Pooled Camada0: win_rate=40,28%,
+    mean_ret=-13,60bps, n=159.545 -- Camada0 (baseline) e ATE marginalmente
+    menos negativa que Camada1 no pooled simples (metodologia diferente do
+    gate oficial, que compara Sharpe por path CPCV, nao trade pooled bruto --
+    nao contradiz o gate, so mostra que "passar o gate" nao implica edge
+    absoluto). Nas 3 combinacoes que passam o gate de permanencia: ETHUSDT/R1
+    mean_ret=-6,58bps, SOLUSDT/R2=-18,97bps, SOLUSDT/R3=-20,48bps -- todas
+    negativas. Long: win=40,26%, ret=-12,47bps, n=88.529. Short: win=39,60%,
+    ret=-18,43bps, n=65.082 -- long marginalmente menos ruim, diferenca
+    pequena. Por hora UTC: win_rate varia 37,78% (16h) a 43,98% (02h), ~6pp
+    de amplitude, dentro do que se espera de ruido de amostragem por hora
+    (n~5-8mil/hora). Por trimestre (3 combinacoes vencedoras): sem padrao
+    temporal limpo, trimestres positivos e negativos alternam sem tendencia,
+    amostra pequena por trimestre. Ranking de features (Camada1, gain medio
+    das 15 combinacoes): E10f_oi_change_z_48 (17,1% do gain total) >
+    C06_vol_ratio_12_96 (14,8%) > E27f_cost_atr_ratio (14,5%, MAIOR VARIANCIA
+    entre combinacoes -- 1.681 a 8.548 de gain bruto) > A05_ret_vol_norm_4
+    (14,4%) > B01_rsi_14 (13,5%) > D06f_taker_imbalance_z_48 (13,0%) >
+    A13_dist_ema48_atr (12,7%) -- concentracao saudavel, HHI medio ~0,155,
+    nenhuma feature domina (dentro do limite DoD 0,25/0,30).
+  n: 153611
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_full_analysis_2026-08-24.json (script
+    tools/diagnostics ad-hoc, nao commitado ainda -- rodou do scratchpad da
+    sessao) + models/{symbol}/{resolution}/{model_id}/diagnostics/fold_*_
+    {long,short}.json (450 arquivos ja gravados pelo sweep original) +
+    artifacts/predictions_alpha/ (D-06)'
+  fonte_secao: 'por combinacao: variants.{camada1,camada0}.{overall,by_side,
+    by_hour_utc,by_period,feature_gain}'
+  data: '2026-08-24'
+  nota: >
+    Classificado VERMELHO -- reenquadra alpha-lightgbm-sweep-15-combinacoes-
+    2026-08-23 (o achado do gate de permanencia, 3/15=20% pass): passar o
+    gate mede Sharpe RELATIVO entre Camada1 e Camada0 por path CPCV, nunca
+    testou se qualquer uma das duas variantes tem retorno absoluto positivo.
+    Esta medicao fecha esse buraco -- resposta e nao, em nenhuma das 15
+    combinacoes. Levanta uma pergunta de DESENHO, nao so de resultado: o
+    gate de permanencia como definido hoje (config/constants.yaml, criterio
+    de decisao em src/models/pipeline.py::layer1_vs_layer0) nao tem piso de
+    retorno absoluto -- um motor pode "passar" sendo relativamente menos
+    ruim que o baseline enquanto ambos perdem dinheiro. Nao decidido aqui se
+    isso e um defeito do gate ou um sintoma de barreira/custo mal calibrados
+    (S1 -- sweep tp_atr_mult/sl_atr_mult, ja registrado como "maior lacuna
+    aberta do projeto", nunca varrido desde Sprint 6) -- as duas hipoteses
+    sao compativeis e nao mutuamente exclusivas. Ranking de features nao
+    aponta patologia obvia (HHI saudavel, sem feature dominante) -- o
+    problema nao parece ser overfitting em 1 feature. Metodologia de
+    reconstrucao (sem retreino) documentada e validada -- reaproveitavel
+    para as proximas rodadas sem custo de N_lifetime.
+- id_curto: alpha-lightgbm-decomposicao-pnl-auc-calibracao-2026-08-24
+  fase: 'Continuacao da analise estendida (pedido do usuario: "quais outros
+    numeros podemos extrair para chegar aos minimos detalhes") -- decomposicao
+    de PnL, AUC real, calibracao e baseline B1, reconstruidos SEM retreinar
+    (models.decomposition.decompose/models.baselines.run_b1_random_entry
+    chamados sobre trades reconstruidos dos artefatos ja gravados). Validado
+    bit-exato (auc_long) e quase-exato (auc_short, n dentro de 0,05%) contra
+    o unico relatorio oficial sobrevivente (XRPUSDT/R3) antes de aplicar as
+    outras 14. Zero custo de N_lifetime.'
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT x R1/R2/R3 (15 combinacoes,
+    Camada1)'
+  tf: dollar-bar R1/R2/R3
+  janela: mesma janela do sweep original (2026-08-23)
+  lado: 'long e short separados (AUC/decomposicao) + pooled (B1)'
+  regime: all
+  feature_ou_filtro: 'score_long_raw/score_short_raw (pre-calibracao) vs label
+    real (AUC); trades executados vs ret_gross/funding_bps/cost_entry_bps/
+    cost_exit_bps (decomposicao); p_long/p_short em 5 quantis vs taxa de
+    acerto realizada (calibracao); Sharpe pooled do Alpha vs 1000 draws de
+    entrada aleatoria mesmo tamanho de amostra (B1)'
+  metrica_tipo: 'pnl_direcional/pnl_carry/pnl_execucao (decompose(), Metric),
+    roc_auc_score, correlacao de Pearson(pred_prob, win_rate) por quintil,
+    percentil do Sharpe real vs distribuicao nula (B1)'
+  metrica_valor: >
+    DECOMPOSICAO (soma das 15): pnl_direcional=-145,47 (63,2% da perda total),
+    pnl_execucao=-89,56 (38,9%), pnl_carry=+4,70 (compensa -2,0%) --
+    gate3_directional_positive=False nas 15 combinacoes, SEM excecao. A perda
+    e majoritariamente de PREDICAO DIRECIONAL, nao de custo de execucao
+    (execucao e o 2o fator, nao o dominante). AUC REAL (score pre-calibracao,
+    mesmo filtro side_subset do B4 oficial): media=0,5086, min=0,5050
+    (BTCUSDT/R2), max=0,5131 (XRPUSDT/R3) -- poder discriminativo quase nulo
+    E ESTAVEL em toda a superficie, nao e um problema de 1-2 combinacoes.
+    B1 (percentil do Sharpe real vs 1000 sorteios de entrada aleatoria, mesmo
+    n): maioria das combinacoes bate a aleatoria (percentil 84-100, porque
+    entrada aleatoria opera com volume/custo muito maior) -- MAS 2 excecoes
+    reais: BTCUSDT/R3 percentil=2,4 e BNBUSDT/R3 percentil=24,1 -- o Alpha e
+    PIOR que sorteio aleatorio nessas 2, sinal de problema especifico (nao so
+    "falta de edge"). CALIBRACAO (correlacao pred_prob x win_rate realizado
+    por quintil, long+short pooled por combinacao): media=-0,177, 9 de 15
+    NEGATIVAS (probabilidade mais alta associada a taxa de acerto MENOR) --
+    amostra pequena por quintil (5-10 pontos por correlacao, ruidoso), mas
+    consistente com AUC~0,51 (se o modelo quase nao discrimina, ordenacao por
+    probabilidade tambem nao deveria ser confiavel).
+  n: 153611
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_deep_analysis_2026-08-24.json (script
+    ad-hoc, rodou do scratchpad da sessao, nao commitado) -- reusa
+    src.models.decomposition.decompose, src.models.baselines.
+    run_b1_random_entry/run_b3_regime_only/run_b5_short_permanent chamados
+    sobre trades/mf.data reconstruidos'
+  fonte_secao: 'por combinacao: decomposition, auc_real, calibration, 
+    b1_random_entry, b3_regime_only, b5_short_permanent'
+  data: '2026-08-24'
+  nota: >
+    Aprofunda alpha-lightgbm-sweep-trade-level-reconstrucao-2026-08-24 (que
+    ja tinha achado retorno negativo em toda a superficie) respondendo POR
+    QUE: nao e custo de execucao dominando um sinal bom (execucao e so 39%
+    da perda), e o componente DIRECIONAL que e negativo -- o modelo erra a
+    direcao mais do que acerta, de forma sistematica e estavel (AUC~0,51 em
+    toda parte, nao concentrado num simbolo/resolucao). BTCUSDT/R3 e
+    BNBUSDT/R3 merecem atencao separada -- sao as unicas 2 onde o Alpha
+    perde ATE de entrada aleatoria (B1), o que e um sinal mais forte que
+    "sem edge": sugere overfitting ou instabilidade especifica dessas 2
+    combinacoes (n_rows menor sob R3, ou efeito especifico do bar_source),
+    nao investigado a fundo aqui. Achado de calibracao invertida (9/15
+    negativas) e o mais fragil desta rodada -- amostra pequena por quintil,
+    reportado como hipotese a confirmar com mais dado, nao conclusao
+    fechada (B23). Nenhuma causa raiz proposta para o AUC baixo em si
+    (features insuficientes? horizonte de label errado? ruido estrutural
+    do dado?) -- seria especulacao sem medicao adicional.
+- id_curto: alpha-basetate-significancia-ag202-2026-08-24
+  fase: 'Continuacao da analise profunda pedida pelo usuario ("continuar
+    nessa direcao... metodologia propria ponta a ponta") -- taxa-base
+    ingenua do label vs taxa de acerto real do Alpha, com teste de
+    significancia por combinacao. Reconstruido sem retreinar.'
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT x R1/R2/R3 (15
+    combinacoes, Camada1)'
+  tf: dollar-bar R1/R2/R3
+  janela: mesma janela do sweep original (2026-08-23)
+  lado: pooled (long+short)
+  regime: all
+  feature_ou_filtro: 'barrier_hit==TP sobre trades preenchidos (taxa-base,
+    SEM modelo) vs win_rate real dos trades sinalizados pelo Alpha (mesma
+    definicao de alpha-lightgbm-sweep-15-combinacoes-2026-08-23)'
+  metrica_tipo: 'delta percentual + teste z (proporcao, n=trades preenchidos
+    por combinacao, sem correcao para 15 comparacoes multiplas)'
+  metrica_valor: >
+    Taxa-base (TP) varia 38,67%-41,04% em TODAS as 15 combinacoes --
+    proximo do que a "taxa de acerto ~40%" ja sugeria, ou seja o achado
+    anterior nao era tao dramatico quanto parecia isoladamente: o label
+    bruto (sem NENHUM modelo) ja tem TP como classe minoritaria em toda
+    parte. O que importa e o DELTA entre o que o Alpha seleciona e essa
+    base. 7 de 15 combinacoes tem |z|>1,96 (95% CI, sem correcao
+    multiple-testing): POSITIVOS significativos -- BTCUSDT/R1 (z=+3,18),
+    ETHUSDT/R1 (z=+5,84), XRPUSDT/R1 (z=+2,18), XRPUSDT/R2 (z=+3,16),
+    XRPUSDT/R3 (z=+2,04) -- XRPUSDT e o UNICO simbolo positivo
+    significativo nas 3 resolucoes. NEGATIVOS significativos --
+    SOLUSDT/R3 (z=-2,18), BNBUSDT/R3 (z=-2,83) -- selecao adversa real
+    (o Alpha escolhe trades PIORES que a media do proprio label), nao
+    ruido. BTCUSDT/R3 (pior percentil do baseline B1 de entrada aleatoria,
+    2,4 -- ver alpha-lightgbm-decomposicao-pnl-auc-calibracao-2026-08-24)
+    NAO tem delta significativo (z=-0,74) -- seu problema com entrada
+    aleatoria NAO e taxa de acerto, e outro mecanismo (provavelmente
+    tamanho/variancia de trade), nao deve ser confundido com o padrao de
+    BNB/SOL-R3.
+  n: 153611
+  status: amarelo
+  fonte_arquivo: 'script ad-hoc (scratchpad da sessao, nao commitado) sobre
+    src.models.dataset.build_modeling_frame (taxa-base) + experiments/
+    alpha_full_analysis_2026-08-24.json (win_rate real)'
+  fonte_secao: 'por combinacao: barrier_hit=="TP" fraction vs
+    variants.camada1.overall.win_rate'
+  data: '2026-08-24'
+  nota: >
+    Reenquadra alpha-lightgbm-sweep-trade-level-reconstrucao-2026-08-24:
+    "win_rate~40%" isolado nao era o achado certo pra julgar o modelo --
+    o label ja tem esse formato de base. O achado real e o PADRAO dos
+    deltas: XRPUSDT como unico simbolo com sinal positivo robusto nas 3
+    resolucoes (candidato mais forte pra entender mecanismo de sinal real,
+    H2 da metodologia em audit/architecture_gaps_log.yaml::AG-202
+    addendum_causa_raiz_confirmada_2026-08-24), e BNBUSDT/R3+SOLUSDT/R3
+    com selecao adversa confirmada estatisticamente (H1 da mesma
+    metodologia). Limitacao explicita: 15 testes sem correcao de
+    Bonferroni/FDR -- a 5% de falso-positivo esperariamos ~0,75 por
+    acaso, 7/15 e claramente mais que ruido no agregado, mas cada
+    combinacao individual merece cautela antes de agir sozinha sobre ela.
+    Metodologia completa de proximos passos (H0-H6, ordem de prioridade
+    por custo) registrada no artefato "Alpha -- Base de Pesquisa"
+    (aba Calibracoes), nao neste ledger -- este entry so registra o dado
+    medido.
+- id_curto: alpha-h0-h1-h2-execucao-2026-08-24
+  fase: 'Execucao autorizada pelo usuario ("proximos passos recomendados
+    autorizado pode executar") -- H0 (fix real do AG-202, TDD), H1
+    (decompor selecao adversa BNB/SOL-R3 por regime), H2 (caracterizar
+    XRPUSDT como unico sinal positivo).'
+  symbol: 'BNBUSDT+SOLUSDT (H1, R3) e BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+
+    XRPUSDT (H2, R1/R2/R3)'
+  tf: dollar-bar R1/R2/R3
+  janela: mesma janela do sweep original (2026-08-23)
+  lado: pooled
+  regime: 'H1: quebrado por R1-R5. H2: all'
+  feature_ou_filtro: 'H1: taxa-base vs win_rate do Alpha por regime. H2:
+    feature de maior gain por simbolo (agregado R1-R3) + liquidez media
+    (quote_volume/trade count por barra, R1)'
+  metrica_tipo: 'delta percentual por regime (H1); ranking categorico +
+    medias (H2)'
+  metrica_valor: >
+    H0 (AG-202, CODIGO ALTERADO): fix real implementado em src/models/
+    dataset.py::build_modeling_frame -- dedup de bar_table (mantem maior
+    close_time por open_time) + regime_small (mantem ultima avaliacao por
+    open_time) ANTES do join, bars.py intocado. TDD: teste novo (RED antes/
+    GREEN depois) tests/unit/test_models_dataset.py::test_build_modeling_
+    frame_open_time_duplicado_nao_produz_linha_fantasma. Suite completa:
+    1786 passed, 0 failed. Verificado contra dado real: 6 de 9 combinacoes
+    previamente afetadas ficaram 100% limpas; 3 (SOLUSDT/R1, BNBUSDT/R1,
+    BNBUSDT/R2) tem duplicata RESIDUAL de causa DIFERENTE, registrada
+    separada como AG-203 (labels.parquet ja duplicado upstream, 20 linhas
+    em 2.070.902, achado pequeno e contido).
+
+    H1: seleção adversa NAO e uniforme por regime -- BNBUSDT/R3 pior em R1
+    (delta=-6,5pp, mean_ret=-27,5bps, tambem o regime mais frequente,
+    n=31.117); SOLUSDT/R3 pior em R4 (delta=-4,6pp, mean_ret=-35,0bps) --
+    regimes DIFERENTES entre os 2 simbolos, sem padrao universal de "regime
+    ruim" que explique os dois de uma vez.
+
+    H2: XRPUSDT e ETHUSDT (os 2 unicos simbolos com sinal positivo
+    significativo medido) COMPARTILHAM a mesma feature de maior gain --
+    E10f_oi_change_z_48 (open interest). BTCUSDT/SOLUSDT/BNBUSDT tem top
+    features diferentes entre si (cost_atr_ratio/vol_ratio/ret_vol_norm).
+    Liquidez NAO explica a diferenca -- XRPUSDT (quote_volume medio
+    10,5M, 2.852 trades/barra) e BNBUSDT (5,2M, 2.932 trades/barra) sao
+    SIMILARMENTE ilíquidos mas tem resultado oposto (XRP positivo, BNB
+    com selecao adversa em R3) -- hipotese "mais liquido = mais sinal"
+    REFUTADA por este dado.
+  n: 2070902
+  status: amarelo
+  fonte_arquivo: 'src/models/dataset.py (fix); tests/unit/test_models_
+    dataset.py (teste novo); script ad-hoc scratchpad (H1/H2, nao
+    commitado) sobre experiments/alpha_full_analysis_2026-08-24.json +
+    data/capacity/dollar_bars_r1/*/'
+  fonte_secao: 'H1: mf.data.group_by("regime") vs realized trades. H2:
+    feature_gain.mean_gain.pooled por combinacao + estatisticas de bars
+    cruas'
+  data: '2026-08-24'
+  nota: >
+    H0 fecha o loop do AG-202 (achado 2026-08-23, causa raiz + autocorrecao
+    2026-08-24, fix aplicado e verificado no mesmo dia) -- ciclo completo
+    de investigacao->correcao->verificacao numa unica sessao, com um
+    achado NOVO (AG-203) descoberto honestamente durante a propria
+    verificacao, nao escondido. H1 nao produziu uma causa unica e limpa --
+    e um resultado negativo parcial (a hipotese de "1 regime universal
+    culpado" nao se sustenta), registrado como tal, nao forcado a caber
+    numa narrativa. H2 produziu o achado mais acionavel da rodada:
+    E10f_oi_change_z_48 (open interest) como possivel fonte de sinal real,
+    compartilhada pelos 2 unicos simbolos com resultado positivo -- proximo
+    passo natural (nao executado aqui) seria isolar o poder preditivo
+    univariado de E10f especificamente, comparando XRP/ETH vs BTC/SOL/BNB.
+    Liquidez como hipotese explicativa FICOU REFUTADA (nao so "nao
+    confirmada") -- economiza tempo de investigacao futura nessa direcao.

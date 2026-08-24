@@ -1,0 +1,2479 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "resolution": "R1",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 30552,
+      "pnl_total": {
+        "value": -38.008643359575935,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -20.183849469575932,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.029406109999999985,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -17.8542,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 30552,
+        "valid": false,
+        "invalid_reason": "denominador -38.008643359575935 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -5.815529134505551,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -3.116356022198914,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -1.7574037511721853e-05,
+        "n": 30552,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5031059311123667,
+      "auc_short": 0.5139917737079946,
+      "auc_pooled": 0.5088136751295016,
+      "n_eval_long": 988340,
+      "n_eval_short": 1001655
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.45961031953539416,
+          "n_filled": 3014,
+          "realized_win_rate": 0.41207697412076977,
+          "mean_ret_bps": -4.5487454972110175
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4686338572630743,
+          "n_filled": 2731,
+          "realized_win_rate": 0.364335408275357,
+          "mean_ret_bps": -18.931064020838395
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.48121532108008874,
+          "n_filled": 3529,
+          "realized_win_rate": 0.3751771039954661,
+          "mean_ret_bps": -18.913561947391514
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.526412159212486,
+          "n_filled": 2216,
+          "realized_win_rate": 0.4074909747292419,
+          "mean_ret_bps": -4.887014408544213
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6570076489875712,
+          "n_filled": 2861,
+          "realized_win_rate": 0.42292904578818596,
+          "mean_ret_bps": -7.641493578997806
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4388360800675091,
+          "n_filled": 4092,
+          "realized_win_rate": 0.3895405669599218,
+          "mean_ret_bps": -12.278108419040102
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4562687488265125,
+          "n_filled": 2537,
+          "realized_win_rate": 0.40756799369333857,
+          "mean_ret_bps": -11.110797601083014
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.482371376286623,
+          "n_filled": 3679,
+          "realized_win_rate": 0.3916825224245719,
+          "mean_ret_bps": -14.323413948936219
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5407281122638207,
+          "n_filled": 2285,
+          "realized_win_rate": 0.3851203501094092,
+          "mean_ret_bps": -17.88415473263064
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8159930016142327,
+          "n_filled": 3608,
+          "realized_win_rate": 0.40521064301552107,
+          "mean_ret_bps": -11.986317906931047
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -5.815529134505551,
+      "n_seeds": 1000,
+      "sample_size": 30552,
+      "percentile": 100.0,
+      "null_mean": -11.716497371894587,
+      "null_p95": -11.0645106023705
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 44815,
+      "n_filled_trades": 40140,
+      "fill_rate": 0.895682249246904,
+      "sharpe_naive": -14.972207593251277,
+      "mean_trade_ret": -0.0009998620347431125,
+      "trades_per_year": 6099.381008275249
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 223126,
+      "n_filled_trades": 200499,
+      "fill_rate": 0.8985909306849045,
+      "sharpe_naive": -30.405414186497826,
+      "mean_trade_ret": -0.0010053845060541322,
+      "trades_per_year": 30455.535239739078
+    }
+  },
+  {
+    "symbol": "BTCUSDT",
+    "resolution": "R2",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 18068,
+      "pnl_total": {
+        "value": -34.26391432126552,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -23.256910431265528,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": -0.44410389,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -10.5629,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 18068,
+        "valid": false,
+        "invalid_reason": "denominador -34.26391432126552 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -5.505062208935957,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -3.763259256816155,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -5.136710177105345e-05,
+        "n": 18068,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.49869193963815966,
+      "auc_short": 0.5109363755059014,
+      "auc_pooled": 0.5050721605965401,
+      "n_eval_long": 497015,
+      "n_eval_short": 503940
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4692432301131883,
+          "n_filled": 9233,
+          "realized_win_rate": 0.39467128777212174,
+          "mean_ret_bps": -14.621008368406255
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.4858637306255955,
+          "n_filled": 1830,
+          "realized_win_rate": 0.3983606557377049,
+          "mean_ret_bps": -19.906160882897186
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6927962480942021,
+          "n_filled": 2073,
+          "realized_win_rate": 0.37530149541726965,
+          "mean_ret_bps": -43.532766968402655
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.46233579314803813,
+          "n_filled": 1006,
+          "realized_win_rate": 0.37773359840954274,
+          "mean_ret_bps": -26.77731351332977
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4831065584956128,
+          "n_filled": 1088,
+          "realized_win_rate": 0.4172794117647059,
+          "mean_ret_bps": -9.505872955227296
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5211788958967772,
+          "n_filled": 898,
+          "realized_win_rate": 0.42538975501113585,
+          "mean_ret_bps": -8.043809910119576
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5676711419945272,
+          "n_filled": 1074,
+          "realized_win_rate": 0.3743016759776536,
+          "mean_ret_bps": -30.633256059149744
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.768703836531912,
+          "n_filled": 866,
+          "realized_win_rate": 0.4214780600461894,
+          "mean_ret_bps": -4.119915853866563
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -5.505062208935957,
+      "n_seeds": 1000,
+      "sample_size": 18068,
+      "percentile": 99.8,
+      "null_mean": -6.601088198867097,
+      "null_p95": -5.997003524764722
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 23216,
+      "n_filled_trades": 20772,
+      "fill_rate": 0.8947277739490007,
+      "sharpe_naive": -7.364801489782156,
+      "mean_trade_ret": -0.0009728446531048546,
+      "trades_per_year": 3161.3183789692193
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 112215,
+      "n_filled_trades": 100932,
+      "fill_rate": 0.8994519449271487,
+      "sharpe_naive": -15.701690517935122,
+      "mean_trade_ret": -0.0010348064516069895,
+      "trades_per_year": 15332.748222943583
+    }
+  },
+  {
+    "symbol": "BTCUSDT",
+    "resolution": "R3",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 3884,
+      "pnl_total": {
+        "value": -12.280421918680908,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -10.110634588680908,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.09751267,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -2.2672999999999996,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 3884,
+        "valid": false,
+        "invalid_reason": "denominador -12.280421918680908 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -2.886414733022929,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -2.390538675552647,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -9.496374844426055e-05,
+        "n": 3884,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5041748520056246,
+      "auc_short": 0.513504517521789,
+      "auc_pooled": 0.5088779847062036,
+      "n_eval_long": 247580,
+      "n_eval_short": 251085
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4953383259859355,
+          "n_filled": 422,
+          "realized_win_rate": 0.3862559241706161,
+          "mean_ret_bps": -33.61838678785757
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5672316649662348,
+          "n_filled": 435,
+          "realized_win_rate": 0.4666666666666667,
+          "mean_ret_bps": -1.2142851049909897
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.6292653775708155,
+          "n_filled": 737,
+          "realized_win_rate": 0.4097693351424695,
+          "mean_ret_bps": -17.734772312311197
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6847599681695886,
+          "n_filled": 100,
+          "realized_win_rate": 0.44,
+          "mean_ret_bps": -25.956620528232026
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8501049641081008,
+          "n_filled": 392,
+          "realized_win_rate": 0.3903061224489796,
+          "mean_ret_bps": -68.97686778690637
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.49840224838210717,
+          "n_filled": 496,
+          "realized_win_rate": 0.3629032258064516,
+          "mean_ret_bps": -49.374647258728395
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.530853832304314,
+          "n_filled": 343,
+          "realized_win_rate": 0.43440233236151604,
+          "mean_ret_bps": -7.062368416466523
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5667343133562005,
+          "n_filled": 252,
+          "realized_win_rate": 0.42857142857142855,
+          "mean_ret_bps": -3.119868865247065
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6379383458895619,
+          "n_filled": 437,
+          "realized_win_rate": 0.37757437070938216,
+          "mean_ret_bps": -38.67802290446059
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8896970503951968,
+          "n_filled": 270,
+          "realized_win_rate": 0.32592592592592595,
+          "mean_ret_bps": -76.97483019159036
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -2.886414733022929,
+      "n_seeds": 1000,
+      "sample_size": 3884,
+      "percentile": 2.4,
+      "null_mean": -2.0794020329646288,
+      "null_p95": -1.4555621193451538
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 11237,
+      "n_filled_trades": 10129,
+      "fill_rate": 0.9013971700631841,
+      "sharpe_naive": -3.1661802617397643,
+      "mean_trade_ret": -0.0008826366246036799,
+      "trades_per_year": 1541.930865701484
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 55886,
+      "n_filled_trades": 50368,
+      "fill_rate": 0.9012632859750206,
+      "sharpe_naive": -7.218358469447251,
+      "mean_trade_ret": -0.0009619032196449594,
+      "trades_per_year": 7655.4645230653605
+    }
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution": "R1",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 13475,
+      "pnl_total": {
+        "value": -8.861664082994917,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -1.0801100329949165,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.01684595,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -7.798400000000001,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 13475,
+        "valid": false,
+        "invalid_reason": "denominador -8.861664082994917 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -3.079211775199654,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -0.3795323779064136,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -2.4988646787265958e-08,
+        "n": 13475,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.510789724325741,
+      "auc_short": 0.5136217698644372,
+      "auc_pooled": 0.5121372469436558,
+      "n_eval_long": 715335,
+      "n_eval_short": 731550
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.44544062259257644,
+          "n_filled": 1118,
+          "realized_win_rate": 0.4257602862254025,
+          "mean_ret_bps": -5.639397029126672
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.47958388882556524,
+          "n_filled": 1374,
+          "realized_win_rate": 0.4039301310043668,
+          "mean_ret_bps": -11.397147692031693
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5215441547003317,
+          "n_filled": 1280,
+          "realized_win_rate": 0.42421875,
+          "mean_ret_bps": -1.5277292600885577
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5708026127201794,
+          "n_filled": 515,
+          "realized_win_rate": 0.4621359223300971,
+          "mean_ret_bps": 12.112213228585874
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6842253596041914,
+          "n_filled": 978,
+          "realized_win_rate": 0.4601226993865031,
+          "mean_ret_bps": 8.33076804735564
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4696946760623255,
+          "n_filled": 1772,
+          "realized_win_rate": 0.41252821670428896,
+          "mean_ret_bps": -8.073078490528111
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5099633153724755,
+          "n_filled": 1667,
+          "realized_win_rate": 0.4013197360527894,
+          "mean_ret_bps": -10.193431120825862
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5314370479749034,
+          "n_filled": 1632,
+          "realized_win_rate": 0.4185049019607843,
+          "mean_ret_bps": -7.5478543228493775
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5490846220362254,
+          "n_filled": 1598,
+          "realized_win_rate": 0.41051314142678347,
+          "mean_ret_bps": -8.984054232077133
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.5866338346493261,
+          "n_filled": 1541,
+          "realized_win_rate": 0.3848150551589877,
+          "mean_ret_bps": -13.698468430418067
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -3.079211775199654,
+      "n_seeds": 1000,
+      "sample_size": 13475,
+      "percentile": 100.0,
+      "null_mean": -8.63351217597716,
+      "null_p95": -7.8421641216539415
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 28811,
+      "n_filled_trades": 26409,
+      "fill_rate": 0.9166290652875638,
+      "sharpe_naive": -13.795574564264202,
+      "mean_trade_ret": -0.0010607479910017118,
+      "trades_per_year": 5674.180471052435
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 158393,
+      "n_filled_trades": 146475,
+      "fill_rate": 0.9247567758676204,
+      "sharpe_naive": -29.05127508191996,
+      "mean_trade_ret": -0.001029497246358772,
+      "trades_per_year": 31412.559582024845
+    }
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution": "R2",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 6319,
+      "pnl_total": {
+        "value": -7.653034033629271,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -4.049195813629272,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.058661780000000004,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -3.6625000000000005,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 6319,
+        "valid": false,
+        "invalid_reason": "denominador -7.653034033629271 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -2.4531060443034907,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -1.307510780413462,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 9.566830879933743e-06,
+        "n": 6319,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5069627629293766,
+      "auc_short": 0.5122069503231198,
+      "auc_pooled": 0.5094144713482441,
+      "n_eval_long": 362045,
+      "n_eval_short": 370235
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5033723797829737,
+          "n_filled": 861,
+          "realized_win_rate": 0.4367015098722416,
+          "mean_ret_bps": -8.77438323558368
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5495782925563287,
+          "n_filled": 801,
+          "realized_win_rate": 0.42197253433208487,
+          "mean_ret_bps": -6.681636883636731
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5680453192104408,
+          "n_filled": 699,
+          "realized_win_rate": 0.3776824034334764,
+          "mean_ret_bps": -26.980690549300927
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6168172876730902,
+          "n_filled": 763,
+          "realized_win_rate": 0.39580602883355176,
+          "mean_ret_bps": -17.52730381161639
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7651063678285275,
+          "n_filled": 625,
+          "realized_win_rate": 0.3952,
+          "mean_ret_bps": -16.181982982187535
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5032557738329048,
+          "n_filled": 649,
+          "realized_win_rate": 0.39599383667180277,
+          "mean_ret_bps": -16.78393463416837
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5317927897924214,
+          "n_filled": 564,
+          "realized_win_rate": 0.40602836879432624,
+          "mean_ret_bps": -10.517243301227516
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5368216718742678,
+          "n_filled": 340,
+          "realized_win_rate": 0.47352941176470587,
+          "mean_ret_bps": 5.467686468661375
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6054821312258888,
+          "n_filled": 699,
+          "realized_win_rate": 0.43204577968526464,
+          "mean_ret_bps": -0.898719411369675
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6870661485008045,
+          "n_filled": 318,
+          "realized_win_rate": 0.3805031446540881,
+          "mean_ret_bps": -17.87213865377407
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -2.4531060443034907,
+      "n_seeds": 1000,
+      "sample_size": 6319,
+      "percentile": 100.0,
+      "null_mean": -4.150243946483974,
+      "null_p95": -3.357243712870431
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 15269,
+      "n_filled_trades": 14029,
+      "fill_rate": 0.9187897046302966,
+      "sharpe_naive": -6.153405868418746,
+      "mean_trade_ret": -0.0009400997485164104,
+      "trades_per_year": 3022.6199174713356
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 80231,
+      "n_filled_trades": 74212,
+      "fill_rate": 0.9249791227829642,
+      "sharpe_naive": -14.41098051201537,
+      "mean_trade_ret": -0.0010176233981190439,
+      "trades_per_year": 15918.600181131751
+    }
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution": "R3",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 3229,
+      "pnl_total": {
+        "value": -4.086822955806426,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -2.2297558558064274,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": -0.0008670999999999991,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -1.8562000000000003,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 3229,
+        "valid": false,
+        "invalid_reason": "denominador -4.086822955806426 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -1.6031685040102945,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -0.8802373989552186,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -3.0682886313148174e-06,
+        "n": 3229,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5054291274465228,
+      "auc_short": 0.5047379278744754,
+      "auc_pooled": 0.5049789923366719,
+      "n_eval_long": 180310,
+      "n_eval_short": 184060
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5251131716130001,
+          "n_filled": 353,
+          "realized_win_rate": 0.40509915014164305,
+          "mean_ret_bps": -15.750408723083735
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5503276231849901,
+          "n_filled": 315,
+          "realized_win_rate": 0.3904761904761905,
+          "mean_ret_bps": -24.4193615468616
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.6185454124966364,
+          "n_filled": 351,
+          "realized_win_rate": 0.4131054131054131,
+          "mean_ret_bps": -17.88076070769357
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6346939024209174,
+          "n_filled": 299,
+          "realized_win_rate": 0.38127090301003347,
+          "mean_ret_bps": -31.008685194021222
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8408126338518943,
+          "n_filled": 312,
+          "realized_win_rate": 0.3685897435897436,
+          "mean_ret_bps": -35.66428841675681
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.49727286575255036,
+          "n_filled": 381,
+          "realized_win_rate": 0.45144356955380577,
+          "mean_ret_bps": 1.0830374515750936
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5163828361604308,
+          "n_filled": 447,
+          "realized_win_rate": 0.46756152125279643,
+          "mean_ret_bps": 8.845827064766832
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5463394443393694,
+          "n_filled": 230,
+          "realized_win_rate": 0.46956521739130436,
+          "mean_ret_bps": 5.009611703388068
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5668548658692748,
+          "n_filled": 217,
+          "realized_win_rate": 0.4147465437788018,
+          "mean_ret_bps": -12.496692087751503
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7060918181799423,
+          "n_filled": 324,
+          "realized_win_rate": 0.44753086419753085,
+          "mean_ret_bps": -11.569089505714333
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -1.6031685040102945,
+      "n_seeds": 1000,
+      "sample_size": 3229,
+      "percentile": 91.9,
+      "null_mean": -2.2406522467848182,
+      "null_p95": -1.4679531650390798
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 7602,
+      "n_filled_trades": 6974,
+      "fill_rate": 0.9173901604840832,
+      "sharpe_naive": -3.174706198015534,
+      "mean_trade_ret": -0.000988825222685972,
+      "trades_per_year": 1506.908277989339
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 39985,
+      "n_filled_trades": 36981,
+      "fill_rate": 0.9248718269351006,
+      "sharpe_naive": -6.85552529821315,
+      "mean_trade_ret": -0.0009774903763684459,
+      "trades_per_year": 7939.797915522466
+    }
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution": "R1",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 18628,
+      "pnl_total": {
+        "value": -35.678570220754715,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -26.03859650075472,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 1.20932628,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -10.8493,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 18628,
+        "valid": false,
+        "invalid_reason": "denominador -35.678570220754715 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -5.34580662344446,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -3.9087927826847255,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 0.0007569229429244322,
+        "n": 18628,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5066729764836378,
+      "auc_short": 0.5087565700832308,
+      "auc_pooled": 0.5078046424903313,
+      "n_eval_long": 753260,
+      "n_eval_short": 768310
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4607090084182647,
+          "n_filled": 2484,
+          "realized_win_rate": 0.4146537842190016,
+          "mean_ret_bps": -2.9565290899112515
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.47598745494791284,
+          "n_filled": 2463,
+          "realized_win_rate": 0.390580592773041,
+          "mean_ret_bps": -18.70238612583634
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5152909077452092,
+          "n_filled": 2718,
+          "realized_win_rate": 0.41758646063281823,
+          "mean_ret_bps": -7.507291074400619
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5642191327186876,
+          "n_filled": 2132,
+          "realized_win_rate": 0.4075984990619137,
+          "mean_ret_bps": -13.699189335717925
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6515029021073335,
+          "n_filled": 2273,
+          "realized_win_rate": 0.39683238011438626,
+          "mean_ret_bps": -14.300631483670518
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.46518627301570553,
+          "n_filled": 1330,
+          "realized_win_rate": 0.3902255639097744,
+          "mean_ret_bps": -12.38625522714075
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4833169581349559,
+          "n_filled": 1760,
+          "realized_win_rate": 0.3789772727272727,
+          "mean_ret_bps": -19.06921860570032
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5007590662800029,
+          "n_filled": 1076,
+          "realized_win_rate": 0.42100371747211895,
+          "mean_ret_bps": -17.319440593738527
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5364989545354275,
+          "n_filled": 1313,
+          "realized_win_rate": 0.3648134044173648,
+          "mean_ret_bps": -54.76917355266578
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6740880353385453,
+          "n_filled": 1079,
+          "realized_win_rate": 0.35125115848007415,
+          "mean_ret_bps": -74.77080222639064
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -5.34580662344446,
+      "n_seeds": 1000,
+      "sample_size": 18628,
+      "percentile": 100.0,
+      "null_mean": -7.998906334009406,
+      "null_p95": -7.236679967907289
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 31454,
+      "n_filled_trades": 28833,
+      "fill_rate": 0.9166719654098048,
+      "sharpe_naive": -11.543852850399533,
+      "mean_trade_ret": -0.0011891206344098611,
+      "trades_per_year": 6203.497877964585
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 166761,
+      "n_filled_trades": 153868,
+      "fill_rate": 0.9226857598599193,
+      "sharpe_naive": -23.272603639794195,
+      "mean_trade_ret": -0.0011630573436117856,
+      "trades_per_year": 32998.68262404993
+    }
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution": "R2",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 6032,
+      "pnl_total": {
+        "value": -11.442091390796973,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -9.240045200796974,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 1.30635381,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -3.5084000000000004,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 6032,
+        "valid": false,
+        "invalid_reason": "denominador -11.442091390796973 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -2.312155301494151,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -1.9000808900654307,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 0.0010221810975697605,
+        "n": 6032,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.507243312158302,
+      "auc_short": 0.5079927301344823,
+      "auc_pooled": 0.5071781380834242,
+      "n_eval_long": 375185,
+      "n_eval_short": 383245
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.48348857111774196,
+          "n_filled": 797,
+          "realized_win_rate": 0.4366373902132999,
+          "mean_ret_bps": 9.351471578851665
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5062181168358418,
+          "n_filled": 878,
+          "realized_win_rate": 0.4043280182232346,
+          "mean_ret_bps": -25.168964073417627
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5281563986520423,
+          "n_filled": 655,
+          "realized_win_rate": 0.35725190839694654,
+          "mean_ret_bps": -27.382064024929328
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6036870983387117,
+          "n_filled": 1094,
+          "realized_win_rate": 0.4076782449725777,
+          "mean_ret_bps": -7.193185348491313
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8509008129984517,
+          "n_filled": 402,
+          "realized_win_rate": 0.43283582089552236,
+          "mean_ret_bps": 29.156090579584895
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.48930154802176595,
+          "n_filled": 510,
+          "realized_win_rate": 0.41568627450980394,
+          "mean_ret_bps": -18.483063255682925
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5102041585774981,
+          "n_filled": 394,
+          "realized_win_rate": 0.42385786802030456,
+          "mean_ret_bps": -26.36046347747487
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5251531149533488,
+          "n_filled": 508,
+          "realized_win_rate": 0.37401574803149606,
+          "mean_ret_bps": -28.508195862565174
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5594784711790537,
+          "n_filled": 384,
+          "realized_win_rate": 0.3671875,
+          "mean_ret_bps": -40.81570745699592
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7268705310568581,
+          "n_filled": 410,
+          "realized_win_rate": 0.33170731707317075,
+          "mean_ret_bps": -87.13184871481913
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -2.312155301494151,
+      "n_seeds": 1000,
+      "sample_size": 6032,
+      "percentile": 97.1,
+      "null_mean": -3.1800865268392724,
+      "null_p95": -2.4487811934231463
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 15695,
+      "n_filled_trades": 14386,
+      "fill_rate": 0.9165976425613253,
+      "sharpe_naive": -6.752348942325269,
+      "mean_trade_ret": -0.0014134101051585812,
+      "trades_per_year": 3099.350998405577
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 83211,
+      "n_filled_trades": 76823,
+      "fill_rate": 0.9232313035536167,
+      "sharpe_naive": -11.08980534055209,
+      "mean_trade_ret": -0.001122413658148272,
+      "trades_per_year": 16480.625693992875
+    }
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution": "R3",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 2774,
+      "pnl_total": {
+        "value": -5.682495037346227,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -6.240115777346226,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 2.1787207399999997,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -1.6211000000000002,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 2774,
+        "valid": false,
+        "invalid_reason": "denominador -5.682495037346227 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -1.081482870301976,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -1.2013948261116725,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 0.002649708771801141,
+        "n": 2774,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5073547419165273,
+      "auc_short": 0.5100690929903788,
+      "auc_pooled": 0.5083288290331235,
+      "n_eval_long": 187135,
+      "n_eval_short": 191180
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5364690529965012,
+          "n_filled": 497,
+          "realized_win_rate": 0.4044265593561368,
+          "mean_ret_bps": -10.02477363800722
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5756337558592761,
+          "n_filled": 541,
+          "realized_win_rate": 0.39926062846580407,
+          "mean_ret_bps": -5.319317860293666
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.6024723476749909,
+          "n_filled": 464,
+          "realized_win_rate": 0.3900862068965517,
+          "mean_ret_bps": -19.619803281960394
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6741541534551893,
+          "n_filled": 479,
+          "realized_win_rate": 0.4112734864300626,
+          "mean_ret_bps": -13.498234254138174
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7838248774051372,
+          "n_filled": 473,
+          "realized_win_rate": 0.3699788583509514,
+          "mean_ret_bps": -14.249986627825482
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5832621414298704,
+          "n_filled": 131,
+          "realized_win_rate": 0.37404580152671757,
+          "mean_ret_bps": -67.13887519551164
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.6993896473029048,
+          "n_filled": 131,
+          "realized_win_rate": 0.3511450381679389,
+          "mean_ret_bps": -51.13506121077713
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.8439910277822452,
+          "n_filled": 58,
+          "realized_win_rate": 0.29310344827586204,
+          "mean_ret_bps": -192.43990755528827
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -1.081482870301976,
+      "n_seeds": 1000,
+      "sample_size": 2774,
+      "percentile": 84.1,
+      "null_mean": -1.5364338556781307,
+      "null_p95": -0.7438690201051441
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 8049,
+      "n_filled_trades": 7381,
+      "fill_rate": 0.9170083240154057,
+      "sharpe_naive": -3.4467154427443996,
+      "mean_trade_ret": -0.0014641814397101493,
+      "trades_per_year": 1596.4621095996727
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 41566,
+      "n_filled_trades": 38403,
+      "fill_rate": 0.9239041524322764,
+      "sharpe_naive": -5.489582520467341,
+      "mean_trade_ret": -0.0011147882462498604,
+      "trades_per_year": 8247.807217733052
+    }
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution": "R1",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 16168,
+      "pnl_total": {
+        "value": -24.37667626721617,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -15.028807847216163,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.10883158000000001,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -9.456699999999998,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 16168,
+        "valid": false,
+        "invalid_reason": "denominador -24.37667626721617 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -7.957974086591417,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -4.963487903083142,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 3.133934635121285e-05,
+        "n": 16168,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5081349322181328,
+      "auc_short": 0.5075717224992926,
+      "auc_pooled": 0.5078881077865505,
+      "n_eval_long": 750925,
+      "n_eval_short": 755770
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4622413807080111,
+          "n_filled": 2976,
+          "realized_win_rate": 0.41868279569892475,
+          "mean_ret_bps": -7.026792032617213
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4848293813854567,
+          "n_filled": 2161,
+          "realized_win_rate": 0.3813049514113836,
+          "mean_ret_bps": -16.02995528419708
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.49727789560579205,
+          "n_filled": 853,
+          "realized_win_rate": 0.39859320046893315,
+          "mean_ret_bps": -13.780152933058755
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5153872038197422,
+          "n_filled": 1830,
+          "realized_win_rate": 0.36885245901639346,
+          "mean_ret_bps": -22.19400745195049
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6053426070472316,
+          "n_filled": 1767,
+          "realized_win_rate": 0.388228636106395,
+          "mean_ret_bps": -15.961215231479807
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.44303344046912807,
+          "n_filled": 1465,
+          "realized_win_rate": 0.4232081911262799,
+          "mean_ret_bps": -7.2650650545718545
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.45277477018276996,
+          "n_filled": 1281,
+          "realized_win_rate": 0.41139734582357534,
+          "mean_ret_bps": -11.424424518428413
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.48016438026063796,
+          "n_filled": 1254,
+          "realized_win_rate": 0.386762360446571,
+          "mean_ret_bps": -17.62025187837529
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.49942105057672065,
+          "n_filled": 1264,
+          "realized_win_rate": 0.39082278481012656,
+          "mean_ret_bps": -18.898613436710782
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6778939780699722,
+          "n_filled": 1317,
+          "realized_win_rate": 0.3477600607441154,
+          "mean_ret_bps": -27.623138540933954
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -7.957974086591417,
+      "n_seeds": 1000,
+      "sample_size": 16168,
+      "percentile": 100.0,
+      "null_mean": -10.532352135849859,
+      "null_p95": -9.763280344148573
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 31212,
+      "n_filled_trades": 28779,
+      "fill_rate": 0.9220492118415994,
+      "sharpe_naive": -17.331790147144023,
+      "mean_trade_ret": -0.0010314843550017802,
+      "trades_per_year": 6191.466520484947
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 164674,
+      "n_filled_trades": 151333,
+      "fill_rate": 0.9189853893146459,
+      "sharpe_naive": -32.77773930208068,
+      "mean_trade_ret": -0.0009614649182048026,
+      "trades_per_year": 32455.75629074703
+    }
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution": "R2",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 7925,
+      "pnl_total": {
+        "value": -12.994306124405625,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -8.452094714405625,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.09178859,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -4.634,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 7925,
+        "valid": false,
+        "invalid_reason": "denominador -12.994306124405625 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -4.571100407947557,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -2.9990500113751355,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 5.2865480311218346e-05,
+        "n": 7925,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5048087886156452,
+      "auc_short": 0.5108553698166436,
+      "auc_pooled": 0.5078675052656866,
+      "n_eval_long": 373930,
+      "n_eval_short": 376455
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4869318609408158,
+          "n_filled": 1151,
+          "realized_win_rate": 0.39183318853171156,
+          "mean_ret_bps": -16.051810459863404
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5157470246016692,
+          "n_filled": 1404,
+          "realized_win_rate": 0.4031339031339031,
+          "mean_ret_bps": -14.149891960638275
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5280403737531177,
+          "n_filled": 1012,
+          "realized_win_rate": 0.38735177865612647,
+          "mean_ret_bps": -15.39088641871247
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5404623165077133,
+          "n_filled": 727,
+          "realized_win_rate": 0.3878954607977992,
+          "mean_ret_bps": -14.234861387962127
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6540252384258872,
+          "n_filled": 1003,
+          "realized_win_rate": 0.39282153539381853,
+          "mean_ret_bps": -15.456842276887352
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.47224021835248187,
+          "n_filled": 770,
+          "realized_win_rate": 0.3961038961038961,
+          "mean_ret_bps": -14.89724306312545
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4834068605287202,
+          "n_filled": 451,
+          "realized_win_rate": 0.44789356984478934,
+          "mean_ret_bps": -2.458801239058197
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.4945870021762086,
+          "n_filled": 362,
+          "realized_win_rate": 0.3674033149171271,
+          "mean_ret_bps": -31.069009100912076
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5305651431739379,
+          "n_filled": 519,
+          "realized_win_rate": 0.37957610789980734,
+          "mean_ret_bps": -20.373188026325604
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6887354291816109,
+          "n_filled": 526,
+          "realized_win_rate": 0.3574144486692015,
+          "mean_ret_bps": -29.986658946575716
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -4.571100407947557,
+      "n_seeds": 1000,
+      "sample_size": 7925,
+      "percentile": 91.60000000000001,
+      "null_mean": -5.208781709648625,
+      "null_p95": -4.441220908007686
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 16070,
+      "n_filled_trades": 14822,
+      "fill_rate": 0.9223397635345364,
+      "sharpe_naive": -8.588470437928716,
+      "mean_trade_ret": -0.0010295240642480693,
+      "trades_per_year": 3192.738410804979
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 82117,
+      "n_filled_trades": 75460,
+      "fill_rate": 0.9189327423067087,
+      "sharpe_naive": -16.25314843744949,
+      "mean_trade_ret": -0.0009583136397517016,
+      "trades_per_year": 16188.034050736698
+    }
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution": "R3",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 4601,
+      "pnl_total": {
+        "value": -9.037543856050467,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -6.4063592960504705,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.055215440000000005,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -2.6864,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 4601,
+        "valid": false,
+        "invalid_reason": "denominador -9.037543856050467 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -3.1053571026381896,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -2.2174759283150873,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": 0.00010068161136363983,
+        "n": 4601,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5018773381348266,
+      "auc_short": 0.5098107066183064,
+      "auc_pooled": 0.5060793368734182,
+      "n_eval_long": 184685,
+      "n_eval_short": 185760
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5258412499022644,
+          "n_filled": 675,
+          "realized_win_rate": 0.36444444444444446,
+          "mean_ret_bps": -17.66265937081226
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5634223847450263,
+          "n_filled": 512,
+          "realized_win_rate": 0.408203125,
+          "mean_ret_bps": -7.47506303123999
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5845303517413015,
+          "n_filled": 505,
+          "realized_win_rate": 0.4158415841584158,
+          "mean_ret_bps": -8.87180095535236
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6062768924563386,
+          "n_filled": 337,
+          "realized_win_rate": 0.39465875370919884,
+          "mean_ret_bps": -15.47566055953068
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7963333202528957,
+          "n_filled": 475,
+          "realized_win_rate": 0.3642105263157895,
+          "mean_ret_bps": -31.40900004978912
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5099143379475205,
+          "n_filled": 453,
+          "realized_win_rate": 0.4282560706401766,
+          "mean_ret_bps": -5.362363605770226
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5395062681010627,
+          "n_filled": 453,
+          "realized_win_rate": 0.4216335540838852,
+          "mean_ret_bps": -5.490156661410955
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5830747087355306,
+          "n_filled": 380,
+          "realized_win_rate": 0.3368421052631579,
+          "mean_ret_bps": -38.82520331039726
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6040606203081028,
+          "n_filled": 396,
+          "realized_win_rate": 0.40404040404040403,
+          "mean_ret_bps": -32.244226345394544
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7907674605595417,
+          "n_filled": 415,
+          "realized_win_rate": 0.3493975903614458,
+          "mean_ret_bps": -42.343606088642545
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -3.1053571026381896,
+      "n_seeds": 1000,
+      "sample_size": 4601,
+      "percentile": 24.099999999999998,
+      "null_mean": -2.7897352160924003,
+      "null_p95": -2.0983324304308812
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 8157,
+      "n_filled_trades": 7513,
+      "fill_rate": 0.9210494054186589,
+      "sharpe_naive": -4.786835809526062,
+      "mean_trade_ret": -0.001154599960383345,
+      "trades_per_year": 1626.9970147256338
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 40639,
+      "n_filled_trades": 37318,
+      "fill_rate": 0.9182804694997416,
+      "sharpe_naive": -8.190333290667558,
+      "mean_trade_ret": -0.00097014988865947,
+      "trades_per_year": 8011.862630625869
+    }
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution": "R1",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 11693,
+      "pnl_total": {
+        "value": -15.678210957725787,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -8.837969177725785,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.0029582199999999975,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -6.843200000000001,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 11693,
+        "valid": false,
+        "invalid_reason": "denominador -15.678210957725787 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -3.7491767156876463,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -2.1275554430242503,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -7.652941091492882e-06,
+        "n": 11693,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5070774184668517,
+      "auc_short": 0.5136226739767357,
+      "auc_pooled": 0.5107890821819698,
+      "n_eval_long": 785420,
+      "n_eval_short": 804575
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.4422529667236522,
+          "n_filled": 1639,
+          "realized_win_rate": 0.4203782794386821,
+          "mean_ret_bps": -7.693824037420534
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4743693504188488,
+          "n_filled": 1439,
+          "realized_win_rate": 0.4107018763029882,
+          "mean_ret_bps": -10.451144061958662
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.49602205106425373,
+          "n_filled": 1771,
+          "realized_win_rate": 0.39073969508752115,
+          "mean_ret_bps": -13.709748675854742
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5431941001678322,
+          "n_filled": 1897,
+          "realized_win_rate": 0.3827095413811281,
+          "mean_ret_bps": -6.973129866851801
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7133975738591798,
+          "n_filled": 927,
+          "realized_win_rate": 0.42394822006472493,
+          "mean_ret_bps": -11.40851335545249
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.446434105097672,
+          "n_filled": 841,
+          "realized_win_rate": 0.37098692033293695,
+          "mean_ret_bps": -31.655316949241357
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.4758034534237689,
+          "n_filled": 1012,
+          "realized_win_rate": 0.36462450592885376,
+          "mean_ret_bps": -22.23312098149776
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.48629816286950844,
+          "n_filled": 731,
+          "realized_win_rate": 0.4076607387140903,
+          "mean_ret_bps": -13.84388749260189
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.49608688358939823,
+          "n_filled": 732,
+          "realized_win_rate": 0.3797814207650273,
+          "mean_ret_bps": -18.080039887391408
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.5837634247654832,
+          "n_filled": 704,
+          "realized_win_rate": 0.4247159090909091,
+          "mean_ret_bps": -12.176904246670214
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -3.7491767156876463,
+      "n_seeds": 1000,
+      "sample_size": 11693,
+      "percentile": 100.0,
+      "null_mean": -7.594180330344427,
+      "null_p95": -6.828545162555012
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 30357,
+      "n_filled_trades": 28045,
+      "fill_rate": 0.9238396415983134,
+      "sharpe_naive": -13.75967059943986,
+      "mean_trade_ret": -0.0011602351246657394,
+      "trades_per_year": 6019.588429183183
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 173028,
+      "n_filled_trades": 161351,
+      "fill_rate": 0.9325138127933051,
+      "sharpe_naive": -28.849757815576478,
+      "mean_trade_ret": -0.0011342613035612483,
+      "trades_per_year": 34598.87582977249
+    }
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution": "R2",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 6666,
+      "pnl_total": {
+        "value": -6.844079203813565,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -2.971355013813568,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": 0.007775809999999998,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -3.8805000000000005,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 6666,
+        "valid": false,
+        "invalid_reason": "denominador -6.844079203813565 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -1.831617814248469,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -0.7998167517752223,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -1.0083015095672974e-05,
+        "n": 6666,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5052612704171718,
+      "auc_short": 0.5137874748886112,
+      "auc_pooled": 0.5108699615238916,
+      "n_eval_long": 392275,
+      "n_eval_short": 402175
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.49214084958721116,
+          "n_filled": 665,
+          "realized_win_rate": 0.44661654135338347,
+          "mean_ret_bps": 5.61036334188471
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5225706595585053,
+          "n_filled": 832,
+          "realized_win_rate": 0.453125,
+          "mean_ret_bps": 7.236365059325159
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.563525943995612,
+          "n_filled": 354,
+          "realized_win_rate": 0.4745762711864407,
+          "mean_ret_bps": 10.102126413728792
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.6207904256647097,
+          "n_filled": 622,
+          "realized_win_rate": 0.4855305466237942,
+          "mean_ret_bps": 21.622157881626727
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7969887515888232,
+          "n_filled": 593,
+          "realized_win_rate": 0.42833052276559863,
+          "mean_ret_bps": -19.6022325736482
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.48013489536933224,
+          "n_filled": 920,
+          "realized_win_rate": 0.40652173913043477,
+          "mean_ret_bps": -12.163169433702617
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5104621646318218,
+          "n_filled": 727,
+          "realized_win_rate": 0.3782668500687758,
+          "mean_ret_bps": -26.707466590707998
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5415425494393262,
+          "n_filled": 531,
+          "realized_win_rate": 0.3935969868173258,
+          "mean_ret_bps": -15.728816852509349
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.5597825867719838,
+          "n_filled": 725,
+          "realized_win_rate": 0.41379310344827586,
+          "mean_ret_bps": -11.257367046781457
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.6263732297041615,
+          "n_filled": 697,
+          "realized_win_rate": 0.32568149210903874,
+          "mean_ret_bps": -52.329000686450215
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -1.831617814248469,
+      "n_seeds": 1000,
+      "sample_size": 6666,
+      "percentile": 100.0,
+      "null_mean": -4.059598556217144,
+      "null_p95": -3.3134838294607825
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 15905,
+      "n_filled_trades": 14709,
+      "fill_rate": 0.9248035209053757,
+      "sharpe_naive": -6.111151967206567,
+      "mean_trade_ret": -0.0010436937594977028,
+      "trades_per_year": 3162.8846717365436
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 86461,
+      "n_filled_trades": 80664,
+      "fill_rate": 0.9329524294190444,
+      "sharpe_naive": -14.491554488349118,
+      "mean_trade_ret": -0.0011389397166883736,
+      "trades_per_year": 17300.74435581457
+    }
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution": "R3",
+    "status": "OK",
+    "decomposition": {
+      "n_trades": 3597,
+      "pnl_total": {
+        "value": -3.4432477933321013,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_direcional": {
+        "value": -1.3479845033321038,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_carry": {
+        "value": -0.014163290000000009,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "pnl_execucao": {
+        "value": -2.0811,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "carry_share": {
+        "value": NaN,
+        "n": 3597,
+        "valid": false,
+        "invalid_reason": "denominador -3.4432477933321013 <= 0 (ou não-finito)"
+      },
+      "total_sharpe": {
+        "value": -0.9368584424052653,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "directional_sharpe": {
+        "value": -0.36839281986490596,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "side_carry_asymmetry": {
+        "value": -3.6785943750444595e-05,
+        "n": 3597,
+        "valid": true,
+        "invalid_reason": null
+      },
+      "gate3_directional_positive": false,
+      "gate3_carry_share_ok": false
+    },
+    "auc_real": {
+      "auc_long": 0.5087333403486675,
+      "auc_short": 0.5159917667255783,
+      "auc_pooled": 0.5131117178022073,
+      "n_eval_long": 194600,
+      "n_eval_short": 199340
+    },
+    "calibration": {
+      "long": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.5237185655376247,
+          "n_filled": 642,
+          "realized_win_rate": 0.4174454828660436,
+          "mean_ret_bps": -13.920754566114438
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.5394097988785288,
+          "n_filled": 106,
+          "realized_win_rate": 0.3584905660377358,
+          "mean_ret_bps": -62.126470239710976
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5627382496269316,
+          "n_filled": 527,
+          "realized_win_rate": 0.43453510436432635,
+          "mean_ret_bps": 22.37855518449204
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.59058593555443,
+          "n_filled": 328,
+          "realized_win_rate": 0.4298780487804878,
+          "mean_ret_bps": -14.188555119981949
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7426179321267217,
+          "n_filled": 232,
+          "realized_win_rate": 0.45689655172413796,
+          "mean_ret_bps": 20.316050178683017
+        }
+      ],
+      "short": [
+        {
+          "bucket": 0,
+          "mean_pred_prob": 0.49191929207321733,
+          "n_filled": 362,
+          "realized_win_rate": 0.430939226519337,
+          "mean_ret_bps": -16.932228285560942
+        },
+        {
+          "bucket": 1,
+          "mean_pred_prob": 0.535033449994696,
+          "n_filled": 537,
+          "realized_win_rate": 0.4227188081936685,
+          "mean_ret_bps": -9.992847289348209
+        },
+        {
+          "bucket": 2,
+          "mean_pred_prob": 0.5570611677803743,
+          "n_filled": 157,
+          "realized_win_rate": 0.4012738853503185,
+          "mean_ret_bps": -9.130630152000307
+        },
+        {
+          "bucket": 3,
+          "mean_pred_prob": 0.616903964543295,
+          "n_filled": 451,
+          "realized_win_rate": 0.4146341463414634,
+          "mean_ret_bps": -14.278869417421697
+        },
+        {
+          "bucket": 4,
+          "mean_pred_prob": 0.7849707294307221,
+          "n_filled": 255,
+          "realized_win_rate": 0.42745098039215684,
+          "mean_ret_bps": -44.68242794478271
+        }
+      ]
+    },
+    "b1_random_entry": {
+      "alpha_sharpe_pooled": -0.9368584424052653,
+      "n_seeds": 1000,
+      "sample_size": 3597,
+      "percentile": 99.8,
+      "null_mean": -2.1474152157889614,
+      "null_p95": -1.3712683190799924
+    },
+    "b3_regime_only": {
+      "name": "B3_regime_only",
+      "n_signals": 8181,
+      "n_filled_trades": 7587,
+      "fill_rate": 0.9273927392739274,
+      "sharpe_naive": -2.5956211682402444,
+      "mean_trade_ret": -0.0009086923261256959,
+      "trades_per_year": 1638.375219974026
+    },
+    "b5_short_permanent": {
+      "name": "B5_short_permanent",
+      "n_signals": 42961,
+      "n_filled_trades": 40058,
+      "fill_rate": 0.9324270850306091,
+      "sharpe_naive": -7.190600125235674,
+      "mean_trade_ret": -0.0011407028247453046,
+      "trades_per_year": 8594.808163781136
+    }
+  }
+]

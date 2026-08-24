@@ -50,6 +50,12 @@ data/*
 /backtests/
 /execution/
 
+# D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha AG-154) -- lake de
+# artefatos versionados (src.io.artifact.write_artifact), sucessor
+# arquitetural de /predictions/ acima -- mesmo tratamento: dado binário
+# grande (parquet + manifest), não git.
+/artifacts/
+
 # Artefatos de modelo — versionados por outro mecanismo (registry), não git
 models/*.bin
 models/*.json

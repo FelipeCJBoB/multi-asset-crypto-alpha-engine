@@ -1,0 +1,152 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "resolution_id": "R1",
+    "status": "FAILED",
+    "elapsed_seconds": 85.2475221157074,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": null,
+    "error": "ArtifactExistsError: artefato já existe em C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\artifacts\\predictions_alpha\\config_hash=4979fd69f0a404d2\\symbol=BTCUSDT\\resolution=R1 -- imutável, nunca sobrescrito (use scratch=True para iteração exploratória)"
+  },
+  {
+    "symbol": "BTCUSDT",
+    "resolution_id": "R2",
+    "status": "OK",
+    "elapsed_seconds": 59.63868498802185,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "BTCUSDT",
+    "resolution_id": "R3",
+    "status": "OK",
+    "elapsed_seconds": 39.29273176193237,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution_id": "R1",
+    "status": "OK",
+    "elapsed_seconds": 86.77236747741699,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": true,
+    "error": null
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution_id": "R2",
+    "status": "OK",
+    "elapsed_seconds": 46.83775019645691,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "ETHUSDT",
+    "resolution_id": "R3",
+    "status": "OK",
+    "elapsed_seconds": 31.732033491134644,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution_id": "R1",
+    "status": "OK",
+    "elapsed_seconds": 90.8416919708252,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution_id": "R2",
+    "status": "OK",
+    "elapsed_seconds": 49.22753405570984,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": true,
+    "error": null
+  },
+  {
+    "symbol": "SOLUSDT",
+    "resolution_id": "R3",
+    "status": "OK",
+    "elapsed_seconds": 32.82524085044861,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": true,
+    "error": null
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution_id": "R1",
+    "status": "OK",
+    "elapsed_seconds": 90.46080374717712,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution_id": "R2",
+    "status": "OK",
+    "elapsed_seconds": 48.923049211502075,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "BNBUSDT",
+    "resolution_id": "R3",
+    "status": "OK",
+    "elapsed_seconds": 32.59778308868408,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution_id": "R1",
+    "status": "OK",
+    "elapsed_seconds": 94.31735825538635,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution_id": "R2",
+    "status": "OK",
+    "elapsed_seconds": 50.46645545959473,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  },
+  {
+    "symbol": "XRPUSDT",
+    "resolution_id": "R3",
+    "status": "OK",
+    "elapsed_seconds": 33.46358609199524,
+    "n_better": null,
+    "n_total": null,
+    "permanence_pass": false,
+    "error": null
+  }
+]

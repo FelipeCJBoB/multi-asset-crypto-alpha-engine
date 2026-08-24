@@ -308,11 +308,63 @@ def build_modeling_frame(
         pl.col("open_time").cast(pl.Int64).alias("_open_time_ms"),
         pl.col("close_time").cast(pl.Int64).alias("_close_time_ms"),
     )
+    # AG-202 (2026-08-24) -- `open_time` duplicado colide neste join. Causa
+    # real (não um bug em `src.data.bars` -- ver `audit/architecture_gaps_
+    # log.yaml::AG-202`, addendum_correcao_diagnostico): raríssimo, 2 trades
+    # da Binance no mesmo milissegundo caindo numa fronteira de
+    # recalibração do walk-forward produzem 2 barras dollar com o MESMO
+    # `open_time` -- uma "fantasma" (duração zero, 1 trade, fecha sozinha;
+    # comportamento JÁ TESTADO e deliberado de `bars.threshold_bars_step`,
+    # ver `tests/unit/test_data_bars.py::
+    # test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_
+    # periodos`) e uma real (duração > 0). `build_regimes` reusa `build_t1_
+    # features` internamente e herda a mesma duplicata -- o classificador
+    # de regime tem histerese (estado com memória), então processa as 2
+    # linhas em sequência e produz 2 avaliações distintas pro mesmo
+    # `open_time`. Este join assumia `open_time` único -- nunca foi um
+    # contrato garantido por `bars.py`. Dedup explícito, 2 partes:
+    n_bar_rows_before = bar_table.height
+    # (1) bar_table por open_time, mantendo a barra com MAIOR close_time --
+    # a fantasma tem close_time==open_time (duração zero, sempre o MENOR
+    # close_time do grupo); a real tem duração > 0. Ordenar (open_time,
+    # close_time) ascendente e manter o ÚLTIMO por open_time (mesmo idioma
+    # de `alpha.py::_unique_test_bars`, AG-202 irmão) garante a barra real.
+    bar_table = bar_table.sort(["_open_time_ms", "_close_time_ms"]).unique(
+        subset=["_open_time_ms"], keep="last", maintain_order=True
+    )
+    n_bar_dropped = n_bar_rows_before - bar_table.height
+    if n_bar_dropped > 0:
+        logger.warning(
+            "models.dataset.build_modeling_frame_open_time_duplicado",
+            n_dropped=n_bar_dropped,
+            detail="AG-202 -- barra-fantasma (duração zero) descartada, "
+            "mantida a barra real (maior close_time) por open_time",
+        )
+
     regime_small = regimes_df.select(
         pl.col("t0").dt.epoch(time_unit="ms").alias("_open_time_ms"),
         pl.col("regime").cast(pl.Utf8).alias(REGIME_COL),
         pl.col("tradeable"),
     )
+    # (2) regime_small por open_time, mantendo a ÚLTIMA avaliação na ordem
+    # sequencial original (sem reordenar) -- o classificador processa
+    # barra a barra com histerese, então a última avaliação pro mesmo
+    # open_time reflete o estado ASSENTADO depois de já ter visto as 2
+    # linhas (não a intermediária, que só existiu por causa da fantasma).
+    n_regime_rows_before = regime_small.height
+    regime_small = regime_small.unique(
+        subset=["_open_time_ms"], keep="last", maintain_order=True
+    )
+    n_regime_dropped = n_regime_rows_before - regime_small.height
+    if n_regime_dropped > 0:
+        logger.warning(
+            "models.dataset.build_modeling_frame_regime_open_time_duplicado",
+            n_dropped=n_regime_dropped,
+            detail="AG-202 -- avaliação de regime extra pro mesmo open_time "
+            "(causada pela barra-fantasma), mantida a ÚLTIMA "
+            "(estado assentado após histerese)",
+        )
+
     bar_table = bar_table.join(regime_small, on="_open_time_ms", how="left")
 
     labels2 = labels.with_columns(pl.col("t0").dt.epoch(time_unit="ms").alias("_close_time_ms"))

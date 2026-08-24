@@ -1,0 +1,57 @@
+{
+  "best_iteration": null,
+  "best_iteration_note": "early stopping nao implementado nesta rodada, ver docstring alpha.py",
+  "concentration_effective_eigenvalues": [
+    0.34049845145024055,
+    0.3074314572976603,
+    0.10944131698771321,
+    0.09797937169273913,
+    0.09497484132977536,
+    0.04478096238382819,
+    0.004893598858043711
+  ],
+  "concentration_effective_weights": {
+    "A05_ret_vol_norm_4": 0.1161161300683626,
+    "A13_dist_ema48_atr": 0.14642659838954136,
+    "B01_rsi_14": 0.11546102980355413,
+    "C06_vol_ratio_12_96": 0.11173293672364792,
+    "D06f_taker_imbalance_z_48": 0.09336310743260512,
+    "E10f_oi_change_z_48": 0.09797937169273911,
+    "E27f_cost_atr_ratio": 0.3189208258895498
+  },
+  "concentration_shares": {
+    "A05_ret_vol_norm_4": 0.1161161300683626,
+    "A13_dist_ema48_atr": 0.14642659838954136,
+    "B01_rsi_14": 0.11546102980355413,
+    "C06_vol_ratio_12_96": 0.11173293672364792,
+    "D06f_taker_imbalance_z_48": 0.09336310743260512,
+    "E10f_oi_change_z_48": 0.09797937169273911,
+    "E27f_cost_atr_ratio": 0.3189208258895498
+  },
+  "fold_id": 9,
+  "gain_by_column": {
+    "A05_ret_vol_norm_4": 6227.611541509628,
+    "A13_dist_ema48_atr": 7853.241178274155,
+    "B01_rsi_14": 6192.476802110672,
+    "C06_vol_ratio_12_96": 5992.529426336288,
+    "D06f_taker_imbalance_z_48": 5007.307469308376,
+    "E10f_oi_change_z_48": 5254.889786839485,
+    "E27f_cost_atr_ratio": 17104.557437181473
+  },
+  "hhi": 0.1807663232230215,
+  "hhi_effective": 0.24308015790490506,
+  "max_share": 0.3189208258895498,
+  "model_id": "alpha_c0_baseline_v1",
+  "n_amostras": {
+    "n_train_calib": 32764,
+    "n_train_fit": 98289
+  },
+  "n_eff_factors_t1": 4.113869303932278,
+  "n_features_over_1pct": 7,
+  "n_trees": 300,
+  "path_id": 4,
+  "schema_version": 1,
+  "side": -1,
+  "side_label": "short",
+  "variant": "camada0"
+}
