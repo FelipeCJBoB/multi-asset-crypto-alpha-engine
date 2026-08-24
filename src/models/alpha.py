@@ -229,6 +229,7 @@ def fit_side_model(
     seed: int,
     target_signal_rate: float,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+    device_type: str = "cpu",
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -242,7 +243,19 @@ def fit_side_model(
     screen_monotone_constraints` sem alteração; default `None` (produção,
     ver `src.models.monotonic._forced_constraint_for`). Existe só para
     `src.analysis.faixa1_6_reconciliation` (Bloco 4) treinar uma variante
-    experimental sem restrição forçada de uma feature num lado."""
+    experimental sem restrição forçada de uma feature num lado.
+
+    `device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`) --
+    default `"cpu"` preserva bit-exato o comportamento de toda chamada
+    existente (testes com dado sintético pequeno não precisam de GPU, e
+    não devem quebrar numa máquina/CI sem uma disponível). `src.models.
+    pipeline.run_layer1_sprint` (o ÚNICO caller de produção real) passa
+    `"cuda"` explicitamente -- GPU é obrigatória em produção (pedido do
+    Manager), mas opt-in por parâmetro, não hardcoded aqui, pelo mesmo
+    motivo que `tf`/`resolution_id`/`dest_dir` em outros pontos do
+    pipeline usam sentinela de default: uma mudança de comportamento real
+    (aqui, requisito de hardware) nunca deve ser silenciosa pra quem já
+    chama a função hoje."""
     ic_results = monotonic.screen_monotone_constraints(
         train_side_df,
         T1_FEATURE_IDS,
@@ -286,14 +299,29 @@ def fit_side_model(
         scale_pos_weight=scale_pos_weight,
         random_state=_derived_seed(seed, side, 2),
         n_jobs=-1,
+        # D-18: GPU obrigatória em produção (device_type="cuda", passado
+        # por run_layer1_sprint) -- CUDA preferido sobre o backend "gpu"
+        # (OpenCL, mais antigo) por desempenho. Testes usam o default
+        # "cpu" (ver docstring do parâmetro acima).
+        device_type=device_type,
         # D-12 (docs/alpha_model_design_doc_2026-08-22.md): default do
         # LightGBM é `deterministic=False` -- soma de gradiente em
         # histograma multi-thread não é bit-exata por padrão (soma de
         # ponto flutuante não é associativa sob paralelismo). Exigido
         # explicitamente para o teste de reload bit-a-bit (`golden`,
         # `test_write_read_round_trip_reproduz_inferencia_bit_exata`) ter
-        # garantia teórica de passar -- não opcional, mesma disciplina de
-        # B29/determinismo global do projeto.
+        # garantia teórica de passar sob CPU -- não opcional, mesma
+        # disciplina de B29/determinismo global do projeto. **Ressalva D-18
+        # não resolvida aqui, TBD medir**: a literatura do próprio LightGBM
+        # trata `deterministic=True` como garantia mais forte pra histograma
+        # CPU; redução paralela de histograma em GPU não segue
+        # necessariamente a mesma disciplina -- se o teste golden
+        # (`test_sprint8_reproducibility.py`, que treina via `run_fold` e
+        # herdaria `device_type="cuda"` se chamado através de `run_layer1_
+        # sprint`) deixar de reproduzir bit-a-bit especificamente sob GPU,
+        # a saída já está nomeada no design doc (§3 D-18): trocar a
+        # igualdade exata por tolerância numérica pequena, documentando a
+        # mudança de garantia -- não presumir bit-exato sob GPU sem medir.
         deterministic=True,
         # Suprime log nativo do LightGBM em stdout/stderr (B28 -- só
         # structlog, nunca print()/output de biblioteca não estruturado).
@@ -406,6 +434,7 @@ def run_fold(
     resolution_id: str | None = None,
     feature_version: str = "t1_v1",
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+    device_type: str = "cpu",
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -431,6 +460,7 @@ def run_fold(
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
         unforce_features_by_side=unforce_features_by_side,
+        device_type=device_type,
     )
     short_result = fit_side_model(
         train_short,
@@ -440,6 +470,7 @@ def run_fold(
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
         unforce_features_by_side=unforce_features_by_side,
+        device_type=device_type,
     )
 
     test_bars_unique = _unique_test_bars(test_bars)
@@ -532,6 +563,7 @@ def run_all_folds(
     hyper: LGBMHyperparams | None = None,
     seed: int | None = None,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+    device_type: str = "cpu",
 ) -> list[FoldResult]:
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
@@ -556,6 +588,7 @@ def run_all_folds(
             symbol=symbol,
             resolution_id=resolution_id,
             unforce_features_by_side=unforce_features_by_side,
+            device_type=device_type,
         )
         logger.info(
             "models.alpha.run_fold_done",

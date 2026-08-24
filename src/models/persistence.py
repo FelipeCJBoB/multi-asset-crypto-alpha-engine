@@ -36,11 +36,16 @@ cegas, nunca tenta.
 reload bit-exato (`test_write_read_round_trip_reproduz_inferencia_
 bit_exata`, `golden`) depende de `deterministic=True` no construtor do
 `LGBMClassifier` (ver `src.models.alpha.fit_side_model`) — sem isso, soma
-de gradiente em histograma multi-thread não é bit-exata por padrão. Sob
-GPU (D-18, não implementado nesta unidade — pendente de confirmação de
-infraestrutura), essa garantia é mais fraca; decisão de como o teste
-`golden` se comporta sob treino GPU fica para quando D-18 for
-implementado, não antecipada aqui.
+de gradiente em histograma multi-thread não é bit-exata por padrão. D-18
+implementado (`device_type`, default `"cpu"` em `fit_side_model`/
+`run_fold`/`run_all_folds`, `"cuda"` só no caller de produção real,
+`pipeline.run_layer1_sprint`) -- mas se `deterministic=True` também
+garante bit-exato sob GPU (redução paralela de histograma pode não seguir
+a mesma disciplina do caminho CPU) **não foi medido** (TBD -- design doc
+§3 D-18 já nomeia a saída se não garantir: trocar a igualdade exata por
+tolerância numérica, documentando a mudança). Os testes deste módulo
+(`_fit_real_side_model`) treinam sob `device_type="cpu"` (default) --
+não exercitam GPU, então não provam nem refutam essa garantia.
 
 **Achado real durante o desenho original (AG-141)**: `docs/ADR-001_
 arquitetura_artefatos_e_contratos_2026-08-19_base.md` §4.9 assume

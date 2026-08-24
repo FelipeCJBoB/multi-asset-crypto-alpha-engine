@@ -500,6 +500,69 @@ def test_run_layer1_sprint_all_combinations_symbols_resolutions_customizados(
     }
 
 
+def _run_layer1_sprint_capturing_run_all_folds_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: Any
+) -> list[dict[str, Any]]:
+    """Mesmo padrão de `_run_layer1_sprint_capturing_predictions_calls`,
+    mas captura os kwargs de `alpha.run_all_folds` em vez de `dest_dir` --
+    `splits=()` (via `cpcv.generate_splits` stubado) faria o loop INTERNO
+    de `run_all_folds` não rodar nenhuma vez, então esse teste precisa
+    stubar `run_all_folds` diretamente pra exercitar o argumento passado
+    a ele (D-18, `device_type`), não o que ele faz por dentro."""
+    calls: list[dict[str, Any]] = []
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+
+    def _fake_run_all_folds(*_args: Any, **kwargs: Any) -> list[Any]:
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(alpha, "run_all_folds", _fake_run_all_folds)
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    def _fake_write_predictions_atomic(
+        predictions: pl.DataFrame, model_id: str, *, dest_dir: Path | None = None
+    ) -> Path:
+        if len(calls) >= 2:
+            raise _StopAfterPredictions()
+        return Path("unused")
+
+    monkeypatch.setattr(pipeline, "write_predictions_atomic", _fake_write_predictions_atomic)
+
+    with pytest.raises(_StopAfterPredictions):
+        pipeline.run_layer1_sprint(**run_kwargs)
+
+    assert len(calls) == 2  # camada1 + camada0
+    return calls
+
+
+def test_run_layer1_sprint_device_type_default_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-18 -- `run_layer1_sprint` é o único caller de produção real, tem
+    que passar `device_type="cuda"` por default -- diferente do default
+    `"cpu"` de `alpha.run_all_folds`/`fit_side_model`, que existe pra
+    preservar testes sem GPU (a maioria dos testes deste repo, inclusive
+    este)."""
+    calls = _run_layer1_sprint_capturing_run_all_folds_calls(monkeypatch)
+    assert all(c["device_type"] == "cuda" for c in calls)
+
+
+def test_run_layer1_sprint_device_type_explicito_sobrescreve_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _run_layer1_sprint_capturing_run_all_folds_calls(monkeypatch, device_type="cpu")
+    assert all(c["device_type"] == "cpu" for c in calls)
+
+
 def test_all_symbols_e_all_resolutions_universo_esperado() -> None:
     """`ALL_SYMBOLS`/`ALL_RESOLUTIONS` -- 5 símbolos (BTC + os 4 alts de
     `src.data.download.DEFAULT_SYMBOLS`), 3 resoluções (R1/R2/R3, D-02/

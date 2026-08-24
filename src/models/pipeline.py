@@ -363,8 +363,17 @@ def run_layer1_sprint(
     model_id_camada1: str = MODEL_ID_CAMADA1,
     model_id_camada0: str = MODEL_ID_CAMADA0,
     report_path: Path | None = None,
+    device_type: str = "cuda",
 ) -> dict[str, Any]:
-    """`t0_start`/`t0_end`/`model_id_camada{0,1}`/`report_path` default para
+    """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`) --
+    `"cuda"` default AQUI (diferente do default `"cpu"` de `alpha.
+    fit_side_model`/`run_fold`/`run_all_folds`, que preserva testes sem
+    GPU) porque esta função é o ÚNICO caller de produção real -- GPU
+    obrigatória em produção é decisão do Manager, não opt-in por acidente
+    de esquecer um argumento. Passe `device_type="cpu"` explicitamente
+    pra depurar localmente sem GPU.
+
+    `t0_start`/`t0_end`/`model_id_camada{0,1}`/`report_path` default para
     o comportamento anterior byte a byte (janela cheia, `MODEL_ID_CAMADA1`/
     `MODEL_ID_CAMADA0`, `experiments/alpha_layer1_report.json`). Passados
     explicitamente, permitem reprocessar um subintervalo (PRD_V4_1.md T0.5)
@@ -500,6 +509,7 @@ def run_layer1_sprint(
         resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
+        device_type=device_type,
     )
     camada0_folds = alpha.run_all_folds(
         mf.data,
@@ -510,6 +520,7 @@ def run_layer1_sprint(
         resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
+        device_type=device_type,
     )
 
     # --- diagnóstico por fold x lado (task A1 do CLAUDE.md) — persiste o
@@ -762,6 +773,7 @@ def run_layer1_sprint_all_combinations(
     symbols: tuple[str, ...] = ALL_SYMBOLS,
     resolutions: tuple[str, ...] = ALL_RESOLUTIONS,
     vol_estimator_id: str | None = None,
+    device_type: str = "cuda",
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
@@ -812,6 +824,7 @@ def run_layer1_sprint_all_combinations(
                 resolution_id=resolution_id,
                 vol_estimator_id=vol_estimator_id,
                 report_path=report_path,
+                device_type=device_type,
             )
             reports[(symbol, resolution_id)] = report
     logger.info(
@@ -883,12 +896,23 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "unica; ignora --symbol/--resolution-id/--tf/--run-tag"
             ),
         )
+        parser.add_argument(
+            "--device-type",
+            default="cuda",
+            choices=["cuda", "cpu", "gpu"],
+            help=(
+                "D-18 -- GPU obrigatoria em producao (default cuda); passe "
+                "cpu para depurar localmente sem GPU disponivel"
+            ),
+        )
         return parser.parse_args()
 
     def _run_cli() -> int:
         args = _parse_args()
         if args.all_combinations:
-            reports = run_layer1_sprint_all_combinations(vol_estimator_id=args.vol_estimator_id)
+            reports = run_layer1_sprint_all_combinations(
+                vol_estimator_id=args.vol_estimator_id, device_type=args.device_type
+            )
             logger.info(
                 "models.pipeline.cli_all_combinations_done",
                 n_combinations=len(reports),
@@ -905,6 +929,7 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             model_id_camada1=f"{MODEL_ID_CAMADA1}{tag}",
             model_id_camada0=f"{MODEL_ID_CAMADA0}{tag}",
             report_path=(EXPERIMENTS_DIR / f"alpha_layer1_report{tag}.json") if tag else None,
+            device_type=args.device_type,
         )
         logger.info(
             "models.pipeline.cli_done",
