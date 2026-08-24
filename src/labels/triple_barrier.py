@@ -22,11 +22,27 @@ deixadas implícitas** (task explícita: reportar toda interpretação):
    Simplificação Sprint 6, documentada, não escondida: latência assumida
    zero. Quando uma medição real de latência existir (execução real,
    Sprints 12+), isto muda para `t0 + measured_latency`.
-3. **`exit_price` em TP/SL = o próprio preço da barreira** (`tp_price`/
-   `sl_price`), não o close do candle de 1m que tocou — convenção padrão de
-   triple barrier (o stop/take-profit executa no nível, não no OHLC do
-   candle que o disparou). Para `TIME`, não há nível — `exit_price` é o
-   `close` do candle de mark_1m em `horizon_end`.
+3. **`exit_price` em TP = o próprio nível da barreira (`tp_price`); em SL,
+   nível OU o `open` do candle de `mark_1m` que tocou, o que for mais
+   adverso — nunca o close do candle. Para `TIME`, não há nível —
+   `exit_price` é o `close` do candle de `mark_1m` em `horizon_end`.**
+   Assimetria intencional (D4, AG-205, 2026-08-24), não a convenção
+   simétrica de triple barrier de manual: TP é ordem passiva (`LIMIT`/
+   `GTC`/`reduce_only`, item 8 abaixo) — executa exatamente no preço de
+   repouso quando tocada, não importa quão longe o mercado viaje dentro do
+   mesmo candle depois disso, então gap-through é irrelevante para TP. SL é
+   `STOP_MARKET`/`MARK_PRICE` (taker, item 8 abaixo) — uma ordem que
+   DISPARA e executa a mercado; se o candle que tocou o gatilho já abriu
+   além do nível (gap — preço já passou o stop antes do candle começar), o
+   fill real é no preço de mercado do disparo, não no nível nominal, e é
+   estritamente MAIS adverso, nunca melhor (`min`/`max` entre nível e
+   `open`, nunca o inverso — ver `_gap_aware_sl_fill`). Achado motivado por
+   comparação com padrão D4 de outro projeto de referência (V17 TBM) E
+   confirmado neste próprio repo: a fixture `test_build_labels_sl_long`
+   ("crash bem abaixo de qualquer SL plausível") já simulava exatamente
+   este cenário e, antes desta correção, afirmava que o fill acontecia no
+   nível nominal apesar do crash — auditável em
+   `audit/architecture_gaps_log.yaml::AG-205`.
 4. **`adverse_selection_bps` é reportado, NÃO subtraído de `ret_net`.** A
    fórmula literal do §3.4 (`ret_net = ret_gross - c_entry - c_exit -
    funding/notional`) não tem termo de seleção adversa; o §3.5 chama
@@ -809,6 +825,7 @@ class _BarrierTouch:
     exit_price: float
     tie_break_used: bool
     mfe_price: float  # melhor preço favorável até o toque (inclusive) — ver mfe_atr_units
+    gap_fill_used: bool  # D4/AG-205 — só pode ser True quando barrier == "SL"
 
 
 def _mfe_price(
@@ -823,6 +840,38 @@ def _mfe_price(
     if side == 1:
         return float(np.max(path_high[: end_idx_inclusive + 1]))
     return float(np.min(path_low[: end_idx_inclusive + 1]))
+
+
+def _gap_aware_sl_fill(open_at_touch: float, sl_price: float, side: int) -> tuple[float, bool]:
+    """D4/AG-205 (2026-08-24, `audit/architecture_gaps_log.yaml`) — fill
+    realista de SL sob gap. SL é `STOP_MARKET`/`working_type: MARK_PRICE`
+    (item 8 da docstring do módulo) — ordem que DISPARA e executa a
+    mercado quando o gatilho é tocado, ao contrário de TP (`LIMIT`/`GTC`,
+    ordem passiva que sempre executa exatamente no seu preço de repouso).
+    Se o candle de `mark_1m` que tocou o SL já abriu ALÉM do nível (preço
+    gapou antes mesmo do candle começar — cenário real de crash/cascata de
+    liquidação, não hipotético: cripto perp tem esse risco mesmo em
+    granularidade de 1 minuto), o fill de um stop-market real acontece no
+    preço de mercado do disparo, não no nível nominal — estritamente mais
+    adverso, nunca melhor. Escolhe sempre o PIOR dos dois lados (nível vs.
+    `open` do candle que tocou):
+
+    - `side=1` (long, SL abaixo do entry): gap para BAIXO é adverso — fill
+      é o MENOR entre nível e `open`.
+    - `side=-1` (short, SL acima do entry): gap para CIMA é adverso — fill
+      é o MAIOR entre nível e `open`.
+
+    Não escaneia o candle inteiro (high/low) em busca de um fill pior
+    ainda — só compara nível vs. `open`, mesmo escopo do padrão de
+    referência (V17 TBM, pattern D4) que motivou este achado: modelar gap
+    NO INÍCIO do candle é a fonte dominante de erro de slippage; modelar
+    profundidade de pavio intra-candle exigiria simular liquidez de book,
+    fora de escopo aqui. Retorna `(fill, gap_usado)` — `gap_usado=False`
+    quando `open_at_touch` já está do lado seguro do nível (`fill ==
+    sl_price` bit-exato, comportamento anterior a esta correção
+    preservado)."""
+    fill = min(sl_price, open_at_touch) if side == 1 else max(sl_price, open_at_touch)
+    return fill, fill != sl_price
 
 
 def _first_barrier_touch(
@@ -840,7 +889,10 @@ def _first_barrier_touch(
     """`path_*` são o recorte de `mark_1m` de `t_entry` (inclusive) até
     `horizon_end_ms` (inclusive), já em ordem cronológica. `np.argmax` sobre
     um array booleano devolve o índice do primeiro `True` — "primeiro toque
-    em ordem cronológica real", não high/low de uma barra maior (B11)."""
+    em ordem cronológica real", não high/low de uma barra maior (B11).
+
+    Fill de SL passa por `_gap_aware_sl_fill` (D4/AG-205) — TP nunca, ver
+    docstring daquela função e item 3 da docstring do módulo."""
     if side == 1:
         tp_touch = path_high >= tp_price
         sl_touch = path_low <= sl_price
@@ -853,15 +905,16 @@ def _first_barrier_touch(
 
     if tp_idx == -1 and sl_idx == -1:
         mfe = _mfe_price(path_high, path_low, side, path_high.shape[0] - 1)
-        return _BarrierTouch("TIME", horizon_end_ms, float(path_close[-1]), False, mfe)
+        return _BarrierTouch("TIME", horizon_end_ms, float(path_close[-1]), False, mfe, False)
 
     if sl_idx == -1 or (tp_idx != -1 and tp_idx < sl_idx):
         mfe = _mfe_price(path_high, path_low, side, tp_idx)
-        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False, mfe)
+        return _BarrierTouch("TP", int(path_time[tp_idx]), tp_price, False, mfe, False)
 
     if tp_idx == -1 or (sl_idx != -1 and sl_idx < tp_idx):
         mfe = _mfe_price(path_high, path_low, side, sl_idx)
-        return _BarrierTouch("SL", int(path_time[sl_idx]), sl_price, False, mfe)
+        fill, gap_used = _gap_aware_sl_fill(path_open[sl_idx], sl_price, side)
+        return _BarrierTouch("SL", int(path_time[sl_idx]), fill, False, mfe, gap_used)
 
     # tp_idx == sl_idx: TP e SL tocados no MESMO candle de 1m — resíduo de
     # B11 em escala menor (ver docstring do módulo, item 5). Resolvido por
@@ -871,8 +924,9 @@ def _first_barrier_touch(
     dist_sl = abs(path_open[k] - sl_price)
     mfe = _mfe_price(path_high, path_low, side, k)
     if dist_tp <= dist_sl:
-        return _BarrierTouch("TP", int(path_time[k]), tp_price, True, mfe)
-    return _BarrierTouch("SL", int(path_time[k]), sl_price, True, mfe)
+        return _BarrierTouch("TP", int(path_time[k]), tp_price, True, mfe, False)
+    fill, gap_used = _gap_aware_sl_fill(path_open[k], sl_price, side)
+    return _BarrierTouch("SL", int(path_time[k]), fill, True, mfe, gap_used)
 
 
 # ============================================================================
@@ -1076,6 +1130,16 @@ class LabelBuildStats:
     n_incomplete_tail_decision_bars: int = 0
     n_incomplete_tail_barrier: int = 0
     n_empty_mark_window: int = 0
+    n_gap_fill_sl: int = 0
+    """D4/AG-205 (2026-08-24, audit/architecture_gaps_log.yaml, achado por
+    comparação com padrão de outro projeto de referência de Triple Barrier
+    Method) -- quantos SL de um lado tiveram fill ajustado por gap
+    (`_gap_aware_sl_fill`, `_first_barrier_touch`): o candle de `mark_1m`
+    que tocou o SL já tinha aberto além do nível nominal, então o fill
+    real ficou no `open` do candle (mais adverso), não em `sl_price`.
+    Contado pela mesma razão de `n_tie_break` -- mede QUÃO FREQUENTE é o
+    cenário, informação que se perderia se só o resultado final fosse
+    persistido."""
 
 
 def build_labels_with_stats(
@@ -1255,6 +1319,8 @@ def build_labels_with_stats(
     n_incomplete_tail_barrier = 0
     # AG-100 F1 (2026-08-22, CRITICAL) -- ver docstring de LabelBuildStats.
     n_empty_mark_window = 0
+    # D4/AG-205 (2026-08-24) -- ver docstring de LabelBuildStats.
+    n_gap_fill_sl = 0
 
     for i in range(n):
         if not valid_atr[i]:
@@ -1366,6 +1432,8 @@ def build_labels_with_stats(
         )
         if touch.tie_break_used:
             n_tie_break += 1
+        if touch.gap_fill_used:
+            n_gap_fill_sl += 1
 
         t1 = touch.t1_ms
         exit_price = touch.exit_price
@@ -1492,6 +1560,7 @@ def build_labels_with_stats(
         n_incomplete_tail_barrier=n_incomplete_tail_barrier,
         n_tie_break=n_tie_break,
         n_empty_mark_window=n_empty_mark_window,
+        n_gap_fill_sl=n_gap_fill_sl,
         n_emitted=len(cols["t0"]),
     )
 
@@ -1503,6 +1572,7 @@ def build_labels_with_stats(
         n_incomplete_tail_decision_bars=n_incomplete_tail_decision_bars,
         n_incomplete_tail_barrier=n_incomplete_tail_barrier,
         n_empty_mark_window=n_empty_mark_window,
+        n_gap_fill_sl=n_gap_fill_sl,
     )
     return _finalize_pre_weight_frame(cols), stats
 
@@ -1552,11 +1622,12 @@ def build_labels_both_sides_with_stats(
     conjunto combinado (concorrência/unicidade por lado, peso normalizado
     globalmente — item 7 da docstring do módulo). Retorna já no schema
     final exato de `labels/{version}/labels.parquet` (`LABEL_COLUMNS`),
-    mais um `LabelBuildStats` agregado (soma simples dos 3 contadores dos
-    dois lados — AG-128, F2: cada contador é uma contagem de EVENTOS de
-    barra sobre o MESMO `bars_df`/`mark_1m`/`funding`, então warmup/tail/
-    tie-break por lado conta o mesmo tipo de evento, só potencialmente em
-    índices diferentes por causa de `side` na busca de toque de barreira —
+    mais um `LabelBuildStats` agregado (soma simples de todos os contadores
+    dos dois lados — AG-128, F2, estendido por AG-205: cada contador é uma
+    contagem de EVENTOS de barra sobre o MESMO `bars_df`/`mark_1m`/
+    `funding`, então warmup/tail/tie-break/gap-fill por lado conta o mesmo
+    tipo de evento, só potencialmente em índices diferentes por causa de
+    `side` na busca de toque de barreira —
     somar os dois lados não mistura unidades nem semânticas diferentes).
 
     `estimator` (ver `build_labels_with_stats`) é resolvido UMA vez aqui e
@@ -1612,6 +1683,7 @@ def build_labels_both_sides_with_stats(
         n_empty_mark_window=(
             long_stats.n_empty_mark_window + short_stats.n_empty_mark_window
         ),
+        n_gap_fill_sl=long_stats.n_gap_fill_sl + short_stats.n_gap_fill_sl,
     )
     return weighted.select(list(LABEL_COLUMNS)), combined_stats
 

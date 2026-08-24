@@ -131,6 +131,12 @@ _SCHEMA: dict[str, Any] = {
     "n_incomplete_tail_decision_bars": pl.Int64,
     "n_incomplete_tail_barrier": pl.Int64,
     "n_empty_mark_window": pl.Int64,
+    # D4/AG-205 (2026-08-24) -- quantos SL de fill ajustado por gap
+    # (`_gap_aware_sl_fill`, `triple_barrier._first_barrier_touch`): candle
+    # de mark_1m que tocou o SL já tinha aberto além do nível nominal.
+    # Linhas antigas (antes desta coluna existir) ficam null -- mesmo
+    # padrão aditivo, nunca migração destrutiva, das colunas acima.
+    "n_gap_fill_sl": pl.Int64,
     "n_labels": pl.Int64,
     "n_tp": pl.Int64,
     "n_sl": pl.Int64,
@@ -353,6 +359,9 @@ def _record_experiment_locked(
         ),
         "n_empty_mark_window": (
             build_stats.n_empty_mark_window if build_stats is not None else None
+        ),
+        "n_gap_fill_sl": (
+            build_stats.n_gap_fill_sl if build_stats is not None else None
         ),
         "notes": notes,
         **stats,

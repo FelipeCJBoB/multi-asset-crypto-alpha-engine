@@ -1159,7 +1159,9 @@ def test_build_labels_sl_long() -> None:
         _with_horizon_coverage(
             [
                 (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
-                # crash bem abaixo de qualquer SL plausível
+                # crash bem abaixo de qualquer SL plausível -- D4/AG-205
+                # (2026-08-24): candle abriu (open=60.0) já além do SL,
+                # fill tem que refletir isso, não o nível nominal
                 (t0 + 5 * 60_000, 60.0, 65.0, 50.0, 55.0),
             ]
         )
@@ -1169,8 +1171,16 @@ def test_build_labels_sl_long() -> None:
     row = out.row(0, named=True)
     assert row["barrier_hit"] == "SL"
     assert row["label"] == -1
-    assert row["exit_price"] == pytest.approx(row["sl_price"])
-    assert row["ret_gross"] == pytest.approx(-_CFG.sl_atr_mult * row["atr_at_t0"], rel=1e-9)
+    # D4/AG-205 -- fill gap-aware: o candle que tocou o SL abriu em 60.0,
+    # já além do sl_price nominal (crash) -- exit_price tem que refletir o
+    # open real do candle (mais adverso), nunca fingir execução no nível.
+    assert row["exit_price"] == pytest.approx(60.0)
+    assert row["exit_price"] < row["sl_price"], (
+        "fixture-sanity: o crash tem que gapar além do nível nominal, senão "
+        "este teste não exercita o caminho gap-aware"
+    )
+    expected_ret_gross = 60.0 / row["entry_price_fill"] - 1.0
+    assert row["ret_gross"] == pytest.approx(expected_ret_gross, rel=1e-9)
     # SL sai a mercado -> taker na saída (§3.4 regra dura 3)
     expected_net = row["ret_gross"] - _CFG.maker_fee - _CFG.taker_fee
     assert row["ret_net"] == pytest.approx(expected_net, rel=1e-9)
@@ -1204,6 +1214,115 @@ def test_build_labels_sl_short_quando_preco_sobe() -> None:
     row = out.row(0, named=True)
     assert row["barrier_hit"] == "SL"
     assert row["label"] == -1
+    # D4/AG-205 -- espelha test_build_labels_sl_long pra side=-1: o candle
+    # que tocou o SL abriu em 145.0, já além do sl_price nominal (spike pra
+    # cima é adverso pro short) -- exit_price reflete o open real do candle.
+    assert row["exit_price"] == pytest.approx(145.0)
+    assert row["exit_price"] > row["sl_price"], (
+        "fixture-sanity: o spike tem que gapar além do nível nominal, senão "
+        "este teste não exercita o caminho gap-aware"
+    )
+    expected_ret_gross = row["side"] * (145.0 / row["entry_price_fill"] - 1.0)
+    assert row["ret_gross"] == pytest.approx(expected_ret_gross, rel=1e-9)
+
+
+def test_build_labels_sl_long_sem_gap_mantem_exit_price_no_nivel_nominal() -> None:
+    """D4/AG-205 -- contraponto de `test_build_labels_sl_long`: quando o
+    candle que toca o SL NÃO abriu além do nível (só o `low`/pavio rompe
+    dentro do próprio candle), `exit_price` continua bit-exato ao nível
+    nominal -- comportamento anterior a esta correção preservado, não uma
+    regressão de todo SL virar gap."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                # open (99.85) fica do lado seguro do SL nominal -- só o
+                # low (pavio) rompe o nível dentro do próprio candle.
+                (t0 + 5 * 60_000, 99.85, 99.9, 90.0, 91.0),
+            ]
+        )
+    )
+    out, stats = tb.build_labels_with_stats(
+        _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "SL"
+    assert row["sl_price"] < 99.85, "fixture-sanity: open tem que ficar do lado seguro do nível"
+    assert row["exit_price"] == pytest.approx(row["sl_price"])
+    assert stats.n_gap_fill_sl == 0
+
+
+def test_build_labels_tp_nao_recebe_ajuste_de_gap_mesmo_com_abertura_alem_do_nivel() -> None:
+    """D4/AG-205 -- assimetria intencional: TP é ordem passiva (maker/GTX,
+    item 8 da docstring do módulo), executa sempre no nível de repouso,
+    mesmo quando o candle que tocou abriu muito além dele (spike). Só SL
+    (stop-market/taker) recebe o ajuste de gap -- ver `_gap_aware_sl_fill`."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                # spike bem acima de qualquer TP plausível
+                (t0 + 5 * 60_000, 145.0, 150.0, 140.0, 148.0),
+            ]
+        )
+    )
+    out, stats = tb.build_labels_with_stats(
+        _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG
+    )
+    assert out.height == 1
+    row = out.row(0, named=True)
+    assert row["barrier_hit"] == "TP"
+    assert row["tp_price"] < 145.0, "fixture-sanity: o spike tem que gapar além do nível nominal"
+    assert row["exit_price"] == pytest.approx(row["tp_price"])
+    assert stats.n_gap_fill_sl == 0
+
+
+def test_build_labels_with_stats_conta_n_gap_fill_sl() -> None:
+    """D4/AG-205 -- mesma fixture de `test_build_labels_sl_long` (crash bem
+    abaixo de qualquer SL plausível, candle abre em 60.0):
+    `LabelBuildStats.n_gap_fill_sl` tem que contar esse evento, mesmo
+    padrão de `n_tie_break`/`n_empty_mark_window` -- diagnóstico contado,
+    não só corrigido em silêncio."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 60.0, 65.0, 50.0, 55.0),
+            ]
+        )
+    )
+    _out, stats = tb.build_labels_with_stats(
+        _synthetic_bars(), mark, _EMPTY_FUNDING, side=1, config=_CFG
+    )
+    assert stats.n_gap_fill_sl == 1
+    assert stats.n_tie_break == 0
+
+
+def test_build_labels_both_sides_with_stats_soma_n_gap_fill_sl_dos_dois_lados() -> None:
+    """D4/AG-205 -- `build_labels_both_sides_with_stats` soma o contador
+    dos dois lados, mesmo padrão já usado pelos outros 6 contadores de
+    `LabelBuildStats` (ver docstring da função)."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                # crash long: gap-aware do lado long (side=1)
+                (t0 + 5 * 60_000, 60.0, 65.0, 50.0, 55.0),
+            ]
+        )
+    )
+    _out, combined_stats = tb.build_labels_both_sides_with_stats(
+        _synthetic_bars(), mark, _EMPTY_FUNDING, config=_CFG
+    )
+    # side=1 (long) toca SL via gap (crash); side=-1 (short) toca TP nesse
+    # mesmo candle (preço caiu, favorável ao short) -- só o lado long
+    # incrementa n_gap_fill_sl.
+    assert combined_stats.n_gap_fill_sl == 1
 
 
 def test_build_labels_time_quando_nunca_toca_barreira() -> None:

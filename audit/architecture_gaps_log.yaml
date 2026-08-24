@@ -1723,6 +1723,65 @@ entries:
       dois ângulos. Cruzar os dois eixos (6 ambientes × 4 horizontes) NÃO
       seria redundante se algum dia for priorizado -- mas nenhuma decisão
       de fazer isso foi tomada, só a suspeita de redundância foi removida.
+    correcao_round_trip_cost_bps_maker_prob_2026_08_24: >
+      Achado do usuário (validação de governança em sessão, não deste
+      Claude), 2026-08-24: `round_trip_cost_bps_maker_prob` já estava
+      declarada em `constants.yaml` desde este AG-027 (2026-08-15), mas
+      `round_trip_cost_bps` (`src/features/groups/group_e.py`) nunca a lia
+      -- permanecia com `0,5`/`0,5` literal no corpo, isento do lint via
+      `_ALLOWED_NUMERIC_LITERALS`. Achado que eleva a severidade: `E27f_
+      cost_atr_ratio` (consumidor direto) É uma das 7 features `T1_
+      FEATURE_IDS` de PRODUÇÃO (`src/features/build.py:53`), não T2 -- o
+      viés já contaminava o Alpha treinado de verdade em 2026-08-23
+      (`evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-
+      23`), o Gate 0 (`src/analysis/feasibility.py`) e o Risk Engine
+      (`src/risk/limits.py`) -- não só uma feature isolada de pesquisa.
+      Recontagem de call sites: 7 reais, não 6 como este texto original
+      registrava (`s1_tp_sl_sensitivity.py` é um 7º, criado 2026-08-22,
+      depois deste AG-027 ter sido escrito).
+
+      Corrigido: `round_trip_cost_bps` agora lê `maker_prob = float(load_
+      constant("round_trip_cost_bps_maker_prob"))` via `src.features.
+      _constants.load_constant` (import já existente no pacote, layer-
+      correto -- `features/` não pode importar `models/`) em vez do
+      literal. `constants.yaml::round_trip_cost_bps_maker_prob` atualizada
+      `value: 0,5->0,4206`, `provenance: ASSUMED->MEASURED`, `class: B->A`
+      (efeito direto em T1/Gate 0/Risk, mesma severidade de tp_atr_mult/
+      sl_atr_mult), `sweep_required: false` + `derived_from: [tp_atr_mult,
+      sl_atr_mult]` (mesmo tratamento de `adverse_selection_wr_cost_per_
+      bp` -- medição condicionada à geometria atual, refazer se S1 mudar
+      tp/sl). Nenhuma assinatura mudou -- os 7 call sites herdam a
+      correção automaticamente. 2 testes que reimplementavam a fórmula com
+      `half=Decimal("0.5")`/`pytest.approx(5.5)` hardcoded corrigidos
+      (`tests/unit/test_features_groups.py`,
+      `tests/unit/test_risk_limits.py` -- valor novo do exemplo do PRD
+      §8.5 recalculado, 0,143->0,149 USD, PRD já obsoleto por outros
+      motivos, ver topo do CLAUDE.md). `tools/lint/banned_patterns.py
+      --strict`, `ruff check`, `mypy`, 168 testes unitários relevantes --
+      todos verdes.
+
+      Achado colateral corrigido junto (não relacionado ao 50/50):
+      `check_constants_provenance.py` acusava `alpha_t2_orthogonality_
+      spearman_max` (constante desta MESMA sessão, Fase 1 da ablação T2->
+      T1) com `sweep_required: false` sem `derived_from` -- violação da
+      Regra 4 pra classe A. Corrigido pra `sweep_required: true` +
+      `sweep_range: [0,50; 0,90]` (faixa não calibrada, mesmo estado das
+      outras 14 constantes classe A ainda ASSUMED, Sprint 10).
+
+      NÃO EXECUTADO nesta correção, decisão pendente do Manager: (a)
+      recomputar Gate 0 (`feasibility.py`) com o custo corrigido -- a
+      correção é um deslocamento de ESCALA (~+4,3% no `round_trip_cost_
+      bps` absoluto), pode empurrar algum símbolo perto da fronteira de
+      `cost_stop_ratio_max`; (b) retreinar o Alpha (15 combinações
+      2026-08-23) -- hipótese não testada empiricamente: como `cost_bps`
+      é CONSTANTE por trial (não varia por barra, só `atr_20_pct` varia),
+      a correção é um rescale MULTIPLICATIVO uniforme de `E27f_cost_atr_
+      ratio` em toda barra -- preserva a ORDEM relativa entre barras, o
+      que sugere (não confirma) que os splits de árvore do LightGBM
+      (histograma sobre limiares) não mudam de fato, só o valor numérico
+      do limiar interno. Não verificado empiricamente -- testável barato
+      (1 combinação retreinada e diff'd contra o modelo já existente)
+      antes de comprometer as 15 combinações inteiras.
     status: >-
       aberto -- decisões consolidadas 2026-08-15 (ver decisoes_manager_
       2026_08_15 acima). Pendências: (1) A13 sweep autorizado mas não
@@ -1741,8 +1800,13 @@ entries:
       regime (já recomendado); (5) RESOLVIDA
       2026-08-15 -- sazonalidade de E10f medida e refutada, ver
       resolucao_e10f acima; (6) anchor/embargo já viraram AG-031/AG-032
-      próprios. Ver PLANO_MESTRE_PRINCE2.md §6.1/§7 (lente FE v1.5) e
-      AG-030 (confundimento do M6, mais urgente, prazo antes do M6 rodar)
+      próprios; (7) RESOLVIDA 2026-08-24 -- round_trip_cost_bps_maker_prob
+      corrigida de 50/50 ASSUMED pra 42,06% MEASURED e wireada de verdade
+      em round_trip_cost_bps, ver correcao_round_trip_cost_bps_maker_prob_
+      2026_08_24 acima -- retreino do Alpha/recompute do Gate 0 ainda
+      pendentes, decisão do Manager. Ver PLANO_MESTRE_PRINCE2.md §6.1/§7
+      (lente FE v1.5) e AG-030 (confundimento do M6, mais urgente, prazo
+      antes do M6 rodar)
 
   - id: AG-028
     date: "2026-08-15"
@@ -13928,7 +13992,22 @@ entries:
       this build` (wheel padrao) ou, apos compilar com CUDA local, com
       a falta de NCCL se alguem tentar de novo sem saber deste achado.
     resolved_by_commit: null
-    resolution: null
+    resolution: >
+      CORRIGIDO 2026-08-24 (achado da varredura de gaps do usuario, decisao
+      explicita "Alterar para CPU"). Default de `device_type` trocado
+      `"cuda"->"cpu"` nos 2 entry points reais (`run_layer1_sprint`,
+      `run_layer1_sprint_all_combinations`, `src/models/pipeline.py`) e no
+      CLI (`--device-type default="cuda"->"cpu"`) -- toda execucao real
+      desta sessao (Fase 0/1/2 da ablacao T2->T1, ranking) ja precisava
+      passar `cpu` manualmente, o default continuava um risco de falha
+      silenciosa/ruidosa toda vez que alguem esquecesse o override. Nao e
+      reversao da decisao "GPU obrigatoria em producao" (D-18) -- e
+      reconhecer que essa decisao nao se sustenta NESTE ambiente (Windows
+      nativo, bloqueio estrutural do NCCL confirmado acima) ate uma
+      migracao real pra Linux/cloud acontecer; docstrings/help do CLI
+      documentam isso explicitamente, pra ninguem reflipar por engano.
+      `ruff`/`mypy`/12 testes de `test_models_pipeline.py` verdes.
+    status: "fechado 2026-08-24 -- default corrigido pro ambiente real; reabre se/quando migracao Linux/cloud com CUDA+NCCL funcionais acontecer"
     status: "aberto -- decisao do usuario 2026-08-23: rodar com device_type='cpu' explicito por enquanto (retreino real nao fica bloqueado), D-18/GPU real fica pendente de projeto de infraestrutura separado (WSL2 + Linux + CUDA Toolkit + LightGBM recompilado la dentro -- ordem de grandeza maior que o toolchain ja instalado nesta sessao, que fica reaproveitavel: driver GPU/CUDA Toolkit do Windows nao precisam ser refeitos, WSL2 usa passthrough do driver do host). Nao decidido aqui QUANDO esse projeto de WSL2 acontece -- fica com o Manager."
 
   - id: AG-202
@@ -14107,3 +14186,181 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- descoberto durante verificacao pos-fix do AG-202, nao investigado a fundo (fora do escopo autorizado desta rodada, H0 especifico). Extensao real MEDIDA nas 15 combinacoes (2026-08-24): so 3 de 15 afetadas -- SOLUSDT/R1 (8 linhas), BNBUSDT/R1 (8 linhas), BNBUSDT/R2 (4 linhas), total 20 linhas duplicadas em 2.070.902 linhas de label somadas -- achado pequeno e contido, nao generalizado. Recomendacao pra quando investigar: comecar por triple_barrier.py, checar se ele consome a MESMA fonte de bars que build_t1_features (dollar_bars_r{1,2}/{symbol}) e se tem sua PROPRIA logica de carregamento/dedup diferente; cruzar os t0 exatos das duplicatas com o raw bar file (abrir open_time/close_time ao redor de cada, mesmo metodo usado pra confirmar AG-202) pra ver se e a mesma classe de colisao de milissegundo ou algo novo."
+
+  - id: AG-204
+    date: "2026-08-24"
+    file: "config/constants.yaml::tp_atr_mult/sl_atr_mult"
+    related_file: "experiments/s1_tp_sl_sensitivity_report.json, docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md, audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24, audit/n_lifetime.yaml id=19"
+    found_by: "Manager (Felipe) -- decisao explicita apos varios turnos pedindo a mudanca ('muda a porra do tp_atr_mult'), Claude tinha ficado so registrando o achado sem agir"
+    gap: >
+      tp_atr_mult=2,0/sl_atr_mult=1,5 (herdados do PRD V2, nunca
+      questionados) eram class A/ASSUMED havia muito tempo, com o sweep
+      S1 ja medido (2026-08-24, N_lifetime id=19) mostrando que produção
+      NAO era a melhor celula da grade testada -- 3a de 7, edge_atr_units
+      medio -0,02555. Decisao de trocar pela celula validada como melhor
+      ficou parada em varios turnos de conversa sem ser executada.
+    severity: "alto -- parametro fundacional (geometria de toda barreira TP/SL), efeito em cascata sobre labels/Alpha/Gate0/Risk"
+    consequence: >
+      Producao continuava rodando sob geometria pior que uma alternativa
+      ja medida e validada -- mesmo que "menos pior" ainda seja negativo
+      em termos brutos, deixar de aplicar uma melhoria ja comprovada nao
+      tem justificativa quando "re-rodar nao e problema" (autorizacao
+      explicita do Manager).
+    resolved_by_commit: null
+    resolution: >
+      `tp_atr_mult` 2,0->1,5, `sl_atr_mult` permanece 1,5 (numero nao
+      mudou, so a proveniencia -- validado pelo S1 como parte da celula
+      escolhida). Celula escolhida: `R=1, S=3/2` (reward:risk 1:1) --
+      `edge_atr_units` medio -0,01686 (34% menos negativo que producao),
+      unica entre as celulas com edge menos negativo que producao que e
+      viavel pros 5 simbolos (n_estratos_symbol_side=10, sem exclusao
+      pelo piso R2). As 2 celulas nominalmente melhores (tp=1,0/sl=0,75,
+      -0,01284; tp=1,5/sl=0,75, -0,01054) foram DESCARTADAS -- violam o piso R2
+      (`cost_stop_ratio_max`x stop) especificamente pra BTCUSDT/BNBUSDT,
+      nao existem como constante GLOBAL viavel pros 5 simbolos sem
+      redesenho de geometria por-simbolo (fora de escopo desta decisao).
+      Ambas as constantes viram `provenance: MEASURED`, `class: A`,
+      `sweep_required: false`, `derived_from: [round_trip_cost_bps_
+      maker_prob]` (piso R2 usado na exclusao depende deste valor
+      medido). Metodologia REAL do S1 usa `edge_atr_units` (geometria
+      BRUTA, sem custo, `feasibility.edge_bruto_atr`) -- `edge_liq_atr`
+      (liquido) nunca foi calculado por este sweep; ressalva explicita
+      registrada em `constants.yaml`: continua edge NEGATIVO, e "menos
+      pior medido", nao "edge positivo encontrado". Veredito formal de
+      "sobrevive a faixa" (design doc SS11 risco #1) segue TBD -- a
+      troca de valor foi decidida apesar disso, nao porque isso tenha
+      sido resolvido.
+
+      **Consequencia em cascata, nao resolvida nesta entrada**: TODO
+      `labels.parquet` existente (5 simbolos x {15m clock, R1, R2, R3})
+      foi gerado sob a geometria ANTIGA (tp=2,0) -- precisa reprocessar
+      via `run_and_write_labels_dollar_bar_parkinson`/
+      `build_and_write_labels_for_symbol` pra `config_hash` bater com a
+      config nova (o mesmo mecanismo AG-140/B15 vai rejeitar com
+      `ConfigHashMismatchError` ate isso acontecer). TODA entrada de
+      `audit/evidence_ledger.yaml` que usa `labels.parquet` (decomposicao
+      PnL/AUC/calibracao do Alpha, sweep de 15 combinacoes, M4 regime
+      comparison, cost_surface, etc.) foi medida sob a geometria ANTIGA
+      -- valida como registro HISTORICO (nao editado, append-only), mas
+      NAO reflete mais a configuracao real de producao a partir desta
+      entrada. Retreino do Alpha e reprocessamento de labels sao passos
+      SEPARADOS desta decisao, ainda pendentes de execucao real nesta
+      sessao.
+    status: >-
+      fechado 2026-08-24 -- constante corrigida e validada. Reprocessamento
+      de labels R1 (5 simbolos) EXECUTADO no mesmo dia:
+      run_and_write_labels_dollar_bar_parkinson(resolution_id='R1'),
+      config_hash novo 4bfdaf7a0f3603a9 (experiment_id=36), BTCUSDT
+      n_rows=446223, 0 erro, 5/5 simbolos. R2 (config_hash
+      6f65824bc7d9582e, experiment_id=46) e R3 (config_hash
+      b539768ace7c65e0, experiment_id=45) reprocessados na sequencia, 0
+      erro, 5/5 simbolos cada. Grade de relogio 15m tambem reprocessada
+      (BTCUSDT via build_and_write_labels_for_symbol +
+      ETH/SOL/BNB/XRP via run_and_write_labels_for_alts,
+      config_hash 19f682a4e95a2750, 0 erro, 5/5 simbolos). **Todas as 4
+      grades (R1/R2/R3/15m) regeneradas pros 5 simbolos, decisao do
+      Manager "termine ponta a ponta" cumprida.** Retreino real do Alpha
+      (15 combinacoes) disparado na sequencia -- 1a tentativa falhou
+      rapido (esqueci `vol_estimator_id='parkinson_w20'` na chamada,
+      guarda do AG-140 pegou certo, zero treino desperdicado), relancada
+      com o parametro correto.
+
+  - id: AG-205
+    date: "2026-08-24"
+    file: "src/labels/triple_barrier.py::_first_barrier_touch, src/labels/barrier_sweep.py::resolve_barriers_vectorized"
+    related_file: "tests/unit/test_labels_triple_barrier.py, tests/unit/test_labels_barrier_sweep.py, src/labels/experiment_log.py"
+    found_by: "Claude -- comparacao de engenharia com 2 implementacoes de Triple Barrier Method de outros projetos (padrao D4/exit_fill_price gap-aware do TBM V17, pedido explicito do usuario), confirmado como cenario JA SIMULADO neste repo pela propria fixture test_build_labels_sl_long ('crash bem abaixo de qualquer SL plausivel')"
+    gap: >
+      exit_price de SL sempre usava o nivel nominal (sl_price), mesmo
+      quando o candle de mark_1m que tocou o gatilho ja tinha aberto ALEM
+      do nivel (gap/crash/cascata de liquidacao) -- SL e STOP_MARKET/
+      working_type: MARK_PRICE (item 8 da docstring do modulo, ordem que
+      dispara e executa a mercado quando tocada), entao sob gap o fill
+      real de um stop-market e no preco de mercado do disparo, nao no
+      nivel nominal -- estritamente mais adverso. A propria fixture de
+      teste ja simulava um crash de ~40% no candle de toque (open=60.0
+      contra sl_price~99,x) e afirmava, antes desta correcao, que o fill
+      acontecia exatamente no nivel nominal apesar do crash.
+    severity: "medio -- nao e vazamento temporal/estrutural (nao muda QUANDO/SE um SL e tocado, so o PRECO de saida registrado), mas subestima sistematicamente o custo realizado em todo evento de SL sob gap, no lado que mais importa para risco de capital real"
+    layer: "labels (Label Engine, Sprint 6) -- geometria de payoff/custo do triple barrier"
+    consequence: >
+      ret_net/ret_gross de todo SL tocado sob gap fica otimista (subestima
+      a perda real), inflando win-rate/edge economico aparente exatamente
+      no cenario de cauda que mais importa pra risco de capital real
+      (crash/cascata de liquidacao em cripto perp). TP nao e afetado --
+      ordem passiva/maker executa sempre no nivel de repouso, gap-through
+      e economicamente irrelevante para TP sob a politica de execucao
+      real deste projeto (maker/GTX).
+    resolved_by_commit: null
+    resolution: >
+      _gap_aware_sl_fill (novo helper, triple_barrier.py) -- fill de SL
+      vira min(sl_price, open_do_candle_que_tocou) para long, max(...)
+      para short (sempre o mais adverso dos dois, nunca melhor). Aplicado
+      nos 2 ramos de SL de _first_barrier_touch (toque limpo e desempate
+      no mesmo candle) -- TP nunca recebe o ajuste, em nenhum dos 2
+      motores. Mesma correcao replicada, vetorizada, em
+      barrier_sweep.resolve_barriers_vectorized (np.minimum/np.maximum
+      sobre open_w[idx_range, touch_idx]) -- os dois motores tem suite de
+      paridade propria (test_reproduz_build_labels_*) que teria quebrado
+      se so um dos dois fosse corrigido. Novo contador
+      LabelBuildStats.n_gap_fill_sl (mesmo padrao de n_tie_break/
+      n_empty_mark_window, AG-100/AG-128) propagado ate
+      experiment_log.py::_SCHEMA/_record_experiment_locked -- medido, nao
+      so corrigido em silencio (classe #2 do audit_engineering:
+      diagnostico computado e descartado). 8 testes novos/atualizados:
+      no-gap (regressao, exit_price bit-exato ao nivel), gap long, gap
+      short, TP-imune-a-gap (assimetria explicita), 2 testes de contador,
+      2 de paridade vetorizada (gap e no-gap). Nenhuma constante nova em
+      constants.yaml -- logica puramente deterministica (min/max), sem
+      parametro/threshold.
+    status: "corrigido, aguardando pytest do usuario pra confirmar (protocolo de execucao, CLAUDE.md) antes de commit"
+
+  - id: AG-206
+    date: "2026-08-24"
+    file: "src/features/volatility.py::ATRWilderEstimator.estimate"
+    related_file: "tools/diagnostics/measure_atr_at_t0_near_zero.py (novo), data/labels/*/*/v1/labels.parquet (medicao sobre dado ja persistido)"
+    found_by: "Claude -- comparacao com padrao TBM_VOL_FLOOR de outro projeto de referencia (V17 TBM), verificado por leitura direta que ATRWilderEstimator.estimate() nao aplica nenhum piso (atr_abs / close, direto) apesar do Protocol VolatilityEstimator.estimate documentar 'nunca zero' como contrato -- contrato nao enforced em codigo, so aspiracional"
+    gap: >
+      atr_pct_i (ATR de Wilder / close) alimenta tp_price/sl_price sem
+      nenhum piso contra valor real proximo de zero (nao-NaN, entao nao
+      cai no filtro de warmup valid_atr) -- um ATR quase-zero produz
+      tp_price~sl_price~fill_px, barreira patologicamente estreita.
+      Mecanismo plausivel ja confirmado neste projeto: AG-061 documenta
+      candles de dollar-bar REPETIDOS/degenerados em producao real
+      (SOLUSDT/XRPUSDT sob R2/R3) -- true range zero ao longo da janela
+      de Wilder e a consequencia direta disso.
+    severity: "baixo -- mecanismo teorico plausivel (AG-061), mas NAO confirmado no dado real medido (ver resolution). Reclassificado apos medicao, 2026-08-24"
+    layer: "features (Volatility Engine) -- estimador consumido por labels/execucao real"
+    consequence: >
+      Nenhuma na pratica atual -- atr_at_t0 medido no dado real persistido
+      nunca chega perto de zero (minimo pooled 1,92e-4, ~1,9 bps, sobre
+      4.539.159 linhas). Risco permanece TEORICO: nao foi refutado que
+      PODERIA acontecer sob um regime de mercado ainda nao observado nestes
+      ~6,5 anos de historico, so que nao aconteceu ate agora.
+    resolved_by_commit: null
+    resolution: >
+      MEDIDO (2026-08-24, tools/diagnostics/measure_atr_at_t0_near_zero.py,
+      0 trials, contagem direta sobre os 20 labels.parquet reais -- 5
+      simbolos x {15m, R1, R2, R3}, 4.539.159 linhas nao-NOFILL pooled).
+      Resultado: atr_at_t0 NUNCA chega perto de zero em nenhum
+      simbolo/grade -- minimo pooled 0,000191918 (~1,92 bps, SOLUSDT/R1),
+      zero linhas <= 1e-4/1e-5/1e-6, zero linhas exatamente 0.0. As 20
+      linhas de menor atr_at_t0 do pool inteiro (todas SOLUSDT/R1,
+      ~2,0-2,15 bps) nao mostram nenhuma assinatura de patologia
+      (n_bars_held varia 0-30, sem padrao de gatilho instantaneo
+      sistematico). O mecanismo de AG-061 (candles degenerados/repetidos)
+      e plausivel EM TESE mas nao se manifesta como atr_at_t0 proximo de
+      zero no dado real ja persistido -- possivelmente porque a janela de
+      Wilder (media movel) dilui candles individuais degenerados, ou
+      porque a frequencia real desses candles e baixa demais pra dominar
+      a janela inteira.
+
+      NAO IMPLEMENTADO -- decisao explicita do usuario (2026-08-24): medir
+      antes de implementar (disciplina FE do audit_engineering, 0 trials).
+      Medicao nao confirma o achado -- por Regra Zero (CLAUDE.md, nao
+      adicionar guarda pra cenario que nao acontece de verdade), o piso
+      TBM_VOL_FLOOR do projeto de referencia NAO e portado pra este repo
+      nesta unidade de trabalho. Reabrir se uma medicao futura (mais
+      historico, mais simbolos, ou apos algum evento de mercado extremo
+      real) encontrar atr_at_t0 proximo de zero de fato.
+    status: "fechado 2026-08-24 -- medido, achado nao confirmado no dado real. Nao implementado por decisao (Regra Zero)."

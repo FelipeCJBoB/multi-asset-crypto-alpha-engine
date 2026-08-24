@@ -31,8 +31,13 @@ fill, qualquer tp/sl), não recalculados aqui.
 `triple_barrier._first_barrier_touch`, verificada por
 `tests/unit/test_labels_barrier_sweep.py::test_reproduz_build_labels_*`):
 primeiro toque em ORDEM CRONOLÓGICA real (B11), desempate TP=SL no mesmo
-candle por proximidade ao `open`, `TIME` quando nenhum toca, `t1` de
-`TIME` é `horizon_end_ms` exato (não o último bar da janela).
+candle por proximidade ao `open`, `TIME` quando nenhum toca, `t1` de `TIME`
+sendo `horizon_end_ms` exato (não o último bar da janela). Fill de SL
+ajustado por gap quando o candle que tocou já abriu além do nível
+(D4/AG-205, 2026-08-24, `audit/architecture_gaps_log.yaml` --
+`_gap_aware_sl_fill` em `triple_barrier.py`, mesma fórmula vetorizada
+abaixo via `np.minimum`/`np.maximum`; TP nunca ganha este ajuste, é ordem
+passiva que executa sempre no nível de repouso).
 
 **AG-005 (audit/architecture_gaps_log.yaml)** — até esta correção, `_BAR_MS`
 era uma constante de MÓDULO fixa em `15 * 60_000` (15m), CÓPIA independente
@@ -122,6 +127,7 @@ class ResolvedBarriers:
     ret_net: FloatArray
     n_bars_held: IntArray
     tie_break_used: BoolArray
+    gap_fill_used: BoolArray  # D4/AG-205 -- só True em posições com barrier_hit == "SL"
 
 
 def _pad_for_windows(arr: FloatArray, *, pad_bars: int, fill_value: float) -> FloatArray:
@@ -282,11 +288,26 @@ def resolve_barriers_vectorized(
     )
 
     t1 = np.where(time_mask, horizon_end, time_w[idx_range, touch_idx])
+
+    # D4/AG-205 (2026-08-24) -- mesma correção de
+    # `triple_barrier._gap_aware_sl_fill`, vetorizada: se o candle de
+    # mark_1m que tocou o SL já abriu além do nível nominal (gap -- preço
+    # já passou o stop antes do candle começar), o fill real de um
+    # stop-market é o `open` daquele candle, sempre mais adverso, nunca
+    # melhor -- `side=1` (long, SL abaixo) usa o MENOR entre nível e open;
+    # `side=-1` (short, SL acima) usa o MAIOR. TP não passa por este
+    # ajuste (ordem passiva/maker, executa sempre no nível de repouso).
+    open_at_touch = open_w[idx_range, touch_idx]
+    sl_exit_price = np.minimum(sl_price, open_at_touch) if side == 1 else np.maximum(
+        sl_price, open_at_touch
+    )
+
     exit_price = np.select(
         [barrier_code == 0, barrier_code == 1, barrier_code == 2],
-        [close_w[idx_range, touch_idx], tp_price, sl_price],
+        [close_w[idx_range, touch_idx], tp_price, sl_exit_price],
     )
     tie_break_used = tie_mask
+    gap_fill_used = (barrier_code == 2) & (sl_exit_price != sl_price)
 
     ret_gross = side * (exit_price / fill_px - 1.0)  # noqa: unguarded-ratio -- fill_px é preço real de mercado, nunca <=0
     cost_entry_frac = np.full(n, maker_fee, dtype=np.float64)
@@ -334,4 +355,5 @@ def resolve_barriers_vectorized(
         ret_net=ret_net,
         n_bars_held=n_bars_held,
         tie_break_used=tie_break_used,
+        gap_fill_used=gap_fill_used,
     )

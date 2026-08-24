@@ -138,6 +138,12 @@ def test_reproduz_build_labels_tp_long() -> None:
     scalar_row, vec = _scalar_and_vectorized(mark, side=1)
     assert scalar_row["barrier_hit"] == "TP"
     _assert_reproduces(scalar_row, vec)
+    # D4/AG-205 (2026-08-24) -- candle que tocou abriu em 145.0, muito além
+    # do tp_price nominal (spike) -- TP nunca ganha ajuste de gap (ordem
+    # passiva/maker), então o nível nominal continua o fill em ambos os
+    # motores.
+    assert vec.exit_price[0] == pytest.approx(scalar_row["tp_price"])
+    assert not bool(vec.gap_fill_used[0])
 
 
 def test_reproduz_build_labels_sl_long() -> None:
@@ -153,6 +159,36 @@ def test_reproduz_build_labels_sl_long() -> None:
     scalar_row, vec = _scalar_and_vectorized(mark, side=1)
     assert scalar_row["barrier_hit"] == "SL"
     _assert_reproduces(scalar_row, vec)
+    # D4/AG-205 (2026-08-24) -- candle que tocou abriu em 60.0, já além do
+    # sl_price nominal (crash) -- os dois motores (escalar e vetorizado)
+    # têm que concordar no fill gap-aware, não só concordar entre si (daí o
+    # valor numérico travado, não só a paridade via _assert_reproduces).
+    assert vec.exit_price[0] == pytest.approx(60.0)
+    assert bool(vec.gap_fill_used[0])
+
+
+def test_reproduz_build_labels_sl_long_sem_gap() -> None:
+    """D4/AG-205 -- contraponto vetorizado de `test_reproduz_build_labels_
+    sl_long`: candle que toca o SL NÃO abriu além do nível (só o `low`
+    rompe intra-candle) -- os dois motores concordam no fill nominal
+    (comportamento anterior a esta correção preservado), `gap_fill_used`
+    fica `False` nos dois."""
+    t0 = _t0()
+    mark = _mark(
+        _with_horizon_coverage(
+            [
+                (t0 + 1 * 60_000, 99.9, 100.0, 99.8, 99.9),
+                (t0 + 5 * 60_000, 99.85, 99.9, 90.0, 91.0),
+            ]
+        )
+    )
+    scalar_row, vec = _scalar_and_vectorized(mark, side=1)
+    assert scalar_row["barrier_hit"] == "SL"
+    assert scalar_row["sl_price"] < 99.85, (
+        "fixture-sanity: open tem que ficar do lado seguro do nível"
+    )
+    _assert_reproduces(scalar_row, vec)
+    assert not bool(vec.gap_fill_used[0])
 
 
 def test_reproduz_build_labels_tp_short() -> None:
