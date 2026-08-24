@@ -13565,3 +13565,49 @@ entries:
       auditado exaustivamente -- se alguém for mexer em análise Faixa 1/
       1.5/1.6/1.7/2.x que toque nessas 3 features, vale conferir).
     status: "fechado -- 4 testes confirmados verdes (3 originais + integração), ruff/mypy/banned_patterns limpos nos arquivos tocados."
+
+  - id: AG-194
+    date: "2026-08-23"
+    file: "src/models/pipeline.py::write_predictions_atomic (:74-122), src/models/alpha.py::PREDICTIONS_SCHEMA_COLUMNS (:585-607)"
+    related_file: "docs/alpha_model_design_doc_2026-08-22.md §13 (D-06); audit/architecture_gaps_log.yaml::AG-154"
+    found_by: "Agent Project Assurance (revisão independente da migração LightGBM do Alpha), PRINCE2 §6.4"
+    gap: >
+      D-03/D-05 (schema de `predictions.parquet`, 17->21 colunas) foram
+      aplicados direto em `PREDICTIONS_SCHEMA_COLUMNS`, usado
+      incondicionalmente por `write_predictions_atomic` -- inclusive no
+      caminho LEGADO (`dest_dir=None`, `predictions/alpha/{model_id}/
+      predictions.parquet`). D-06 descreve um cutover COORDENADO
+      (regenerar as 15 combinações + atualizar os 2 consumidores reais
+      incondicionais + descartar os 5 artefatos legados, "no mesmo PR
+      que ativa o retreino") mas não existe NENHUMA trava técnica que
+      force essa coordenação -- é só texto de design doc. Se
+      `run_layer1_sprint()` rodasse hoje (antes desse PR coordenado), o
+      parquet no caminho legado teria o schema novo, potencialmente
+      incompatível com o que os 2 consumidores reais incondicionais
+      (`src/backtest/fill_reconciliation.py`,
+      `src/analysis/calibration_diagnostics.py`) esperam.
+    severity: "medio"
+    layer: "models -- promessa de coordenação documental sem enforcement em código"
+    consequence: >
+      Risco mecanicamente pequeno hoje (nenhum dos 2 consumidores reais
+      lê por posição/contagem de coluna, ambos selecionam por nome —
+      não verificado exaustivamente contra todo o código dos dois) mas
+      é uma dependência de DISCIPLINA HUMANA (lembrar de fazer as 3
+      coisas juntas), não de garantia de código — exatamente o tipo de
+      lacuna que already causou incidentes registrados neste projeto
+      (`AG-080`, doc que se autodeclara "vivo" mas não sincroniza).
+    resolved_by_commit: null
+    resolution: >
+      Decisão: NÃO adicionar trava técnica nova (ex. flag booleana de
+      "gate aberto" em `constants.yaml` checada por `write_predictions_
+      atomic`/`run_layer1_sprint`) -- o gate real ("Data Layer 100%") é
+      uma questão de DADO ausente (labels/features R2/R3 não existem
+      pros 5 símbolos ainda), não algo que travar só em código evitaria;
+      inventar um mecanismo de enforcement novo pra um risco que já é
+      mecanicamente pequeno seria overengineering sem benefício medido
+      (mesma disciplina de não desenhar pra requisito hipotético,
+      CLAUDE.md). Aceito como risco residual EXPLÍCITO, não escondido:
+      docstring de `write_predictions_atomic` (`pipeline.py`) documenta
+      isso na íntegra, com instrução de revisitar aqui primeiro se o
+      gate abrir sem o PR coordenado de D-06 acontecer junto.
+    status: "fechado -- risco residual aceito e documentado, não silencioso; ver docstring de write_predictions_atomic"

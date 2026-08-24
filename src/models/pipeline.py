@@ -81,7 +81,27 @@ def write_predictions_atomic(
     `dest_dir` (T0.3): default `None` preserva o caminho legado
     `PREDICTIONS_OUTPUT_DIR/alpha/{model_id}`. Passar
     `_paths.predictions_symbol_tf_dir(symbol, model_id)` grava no layout
-    chaveado novo."""
+    chaveado novo.
+
+    **Risco residual aceito, registrado (`AG-194`, achado `project_
+    assurance` da migração LightGBM, 2026-08-23):** esta função já
+    escreve o schema NOVO de 21 colunas (`alpha.PREDICTIONS_SCHEMA_
+    COLUMNS`, D-03/D-05) incondicionalmente, inclusive no CAMINHO
+    legado (`dest_dir=None`) — sem trava técnica que force o cutover
+    coordenado que D-06 (`docs/alpha_model_design_doc_2026-08-22.md
+    §13`) descreve ("regenerar as 15 combinações + atualizar os 2
+    consumidores reais + descartar os 5 legados, no mesmo PR"). Se
+    `run_layer1_sprint()` rodar antes desse PR coordenado, o parquet
+    resultante no caminho legado teria 21 colunas onde os 2 consumidores
+    reais incondicionais (`src/backtest/fill_reconciliation.py`,
+    `src/analysis/calibration_diagnostics.py`) esperam 17 -- risco
+    mecanicamente pequeno hoje (nenhum lê por posição/contagem de
+    coluna, ambos selecionam por nome) mas não verificado
+    exaustivamente. Aceito sem trava de código porque o gate real
+    ("Data Layer 100%") é uma questão de DADO ausente (labels/features
+    R2/R3), não algo que só um lock em código evitaria -- ninguém roda
+    isto sem querer. Não escondido: se o gate abrir e este PR coordenado
+    não acontecer junto, revisitar aqui primeiro."""
     out_dir = dest_dir if dest_dir is not None else (PREDICTIONS_OUTPUT_DIR / "alpha" / model_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_path = out_dir / "predictions.parquet"
@@ -203,7 +223,7 @@ def _fold_diagnostics_payload(
         logger.warning(
             "models.pipeline.diagnostics_n_trees_diverge_de_n_estimators",
             n_trees=n_trees,
-            alpha_xgb_n_estimators=expected_n_trees,
+            alpha_lgbm_n_estimators=expected_n_trees,
             fold_id=fold_result.fold_id,
             side=side_result.side,
             model_id=model_id,

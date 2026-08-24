@@ -3116,6 +3116,22 @@ architeturalmente, só o literal do padrão banido muda de nome.
 `monotone_constraints` (DoD "código de modelo") tem equivalente direto
 no LightGBM (mesmo nome de parâmetro) — não precisa mudar.
 
+**[ATUALIZADO 2026-08-23, achado `project_assurance` sobre a migração
+LightGBM do Alpha — ver `§15.20.1`]** Esta seção dizia "não migrar o
+learner ANTES do retreino, pra não ter 2 janelas separadas". Isso
+mudou: o usuário pediu explicitamente a implementação completa do
+design doc do Alpha (D-01 a D-18, `docs/alpha_model_design_doc_
+2026-08-22.md`) nesta sessão, ANTES do retreino real (que segue
+bloqueado pelo gate "Data Layer 100%") — `src/models/alpha.py` já é
+LightGBM em `master` (commits `d15ff73`/`321c414`/`1c6f1b3`/`4781920`),
+não mais XGBoost. A janela que este parágrafo queria evitar ("código
+não bate com o que está rodando") existe agora deliberadamente: o
+learner mudou, mas nenhum modelo foi retreinado com ele ainda — os 5
+`predictions.parquet`/artefatos de modelo em disco continuam do
+XGBoost antigo até o retreino real acontecer. B18/B19 de `CLAUDE.md` e
+o `Stack 2026` (linha "XGBoost `binary:logistic`") também desatualizados
+por esta mudança, corrigidos no mesmo commit desta nota.
+
 ### 15.15 AG-124 — recalibração causal do threshold dollar-bar: `T=7,C=7` preferido, reprocessamento em execução (2026-08-21/22)
 
 **Contexto**: `AG-124` (`§15.14` anterior nesta mesma sessão de

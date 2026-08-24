@@ -65,8 +65,8 @@ PATTERNS: tuple[Pattern, ...] = (
     Pattern("B16", "label_execucao", "ordem enviada com outra em UNKNOWN", "§9.7", False),
     Pattern("B17", "label_execucao", "cache local de equity — reconciliação é a única fonte", "§8.7", True),
     # Modelo
-    Pattern("B18", "modelo", "multi:softprob — usar dois binários M_long/M_short", "§5.2", True),
-    Pattern("B19", "modelo", "colsample_bytree < 1.0 com bagging por grupo ativo — usar 1.0", "§5.10", True),
+    Pattern("B18", "modelo", "multi:softprob/multiclass(ova) — usar M_long/M_short", "§5.2", True),
+    Pattern("B19", "modelo", "colsample_bytree/feature_fraction < 1.0 c/ bagging", "§5.10", True),
     Pattern("B20", "modelo", "threshold escolhido por métrica OOS — a priori pelo orçamento de fees", "§5.6", False),
     Pattern("B21", "modelo", "hmmlearn — determinístico por quantis; dynamax na V1.1", "§14.1", True),
     Pattern("B22", "modelo", "retreinar após sequência de perdas — cadência fixa declarada a priori", "§16.4", False),
@@ -147,10 +147,12 @@ def _check_text(path: Path, source: str) -> list[Violation]:
     for lineno, line in enumerate(source.splitlines(), start=1):
         if re.search(r"CONTRACT_PRICE", line):
             violations.append(Violation("B12", path, lineno, "working_type: CONTRACT_PRICE — deve ser MARK_PRICE"))
-        if re.search(r"multi:softprob", line):
-            violations.append(Violation("B18", path, lineno, "multi:softprob — usar dois binários M_long/M_short"))
-        if re.search(r"colsample_bytree[\"']?\s*[:=]\s*0\.\d", line):
-            violations.append(Violation("B19", path, lineno, "colsample_bytree < 1.0 — deve ser 1.0 (camada 3 substitui)"))
+        if re.search(r"multi:softprob|multiclass(ova)?[\"']", line):
+            violations.append(Violation("B18", path, lineno, "multi:softprob/multiclass(ova) — usar M_long/M_short"))
+        if re.search(r"(colsample_bytree|feature_fraction)[\"']?\s*[:=]\s*0\.\d", line):
+            violations.append(
+                Violation("B19", path, lineno, "colsample_bytree/feature_fraction < 1.0 — usar 1.0")
+            )
         if re.search(r"on_timeout[\"']?\s*[:=]\s*[\"']?MARKET(?!_reduce_only)", line):
             violations.append(Violation("B13", path, lineno, "on_timeout convertendo para MARKET na entrada — deve ser CANCEL"))
         if re.search(r"enable_withdraw[\"']?\s*[:=]\s*true", line, re.IGNORECASE):

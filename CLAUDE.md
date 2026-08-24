@@ -234,8 +234,8 @@ Lint via `tools/lint/banned_patterns.py` em pre-commit. Build quebra se violado.
 
 | # | proibido | correto | âncora |
 |---|---|---|---|
-| B18 | `multi:softprob` | dois binários `M_long`/`M_short` | §5.2 |
-| B19 | `colsample_bytree < 1.0` com bagging por grupo ativo | `1.0` — camada 3 substitui | §5.10 |
+| B18 | `multi:softprob` / `multiclass`\`multiclassova` (LightGBM) | dois binários `M_long`/`M_short` | §5.2 |
+| B19 | `colsample_bytree`/`feature_fraction` (LightGBM) `< 1.0` com bagging por grupo ativo | `1.0` — camada 3 substitui | §5.10 |
 | B20 | threshold escolhido por métrica OOS | a priori pelo orçamento de fees | §5.6 |
 | B21 | `hmmlearn` | `dynamax.GaussianHMM` (k=4, `hmm_gaussian_k4_v1`) — **[CORREÇÃO 2026-08-23]** canônico de produção desde 2026-08-21 (override do Manager sobre `AG-114`/`AG-118`, `PLANO_MESTRE_PRINCE2.md` §15.13, `src/regime/build_hmm.py`), não mais hipótese de "V1.1". Classificador determinístico por quantis (`src/regime/classifier.py`) segue existindo como caminho legado, não o candidato ativo. Mudança correlata: regime saiu do vetor de features do Alpha, atua só como GATE (ADR-001 §2.7) — o diagrama de `## Layer hierarchy` abaixo (`regime → models`) descreve fluxo de módulo, não implica regime como feature-input. | §14.1 |
 | B22 | retreinar após sequência de perdas | cadência fixa declarada a priori | §16.4 |
@@ -348,12 +348,13 @@ teste pra um caminho que não existe (B23).
 ## Stack 2026
 
 **Obrigatório:** Python 3.12+ · `uv` · Polars (lazy, Arrow) · DuckDB ·
-Parquet+zstd · XGBoost `binary:logistic` (⚠️ decisão de migrar pra
-LightGBM registrada, `PLANO_MESTRE_PRINCE2.md §15.14`, 2026-08-21 —
-código ainda XGBoost, migração represada até o retreino do Alpha ser
-desbloqueado) · scikit-learn (calibração isotônica) · Optuna com
-orçamento declarado · structlog+orjson · Pydantic+YAML · pytest+hypothesis
-· ruff · mypy strict
+Parquet+zstd · LightGBM `objective="binary"` (**[ATUALIZADO 2026-08-23]**
+migração de XGBoost concluída em código — `PLANO_MESTRE_PRINCE2.md
+§15.14`/`§15.20.1` —, `src/models/alpha.py` já é LightGBM; o RETREINO
+real segue represado até o gate "Data Layer 100%" abrir, artefatos de
+modelo em disco continuam do XGBoost antigo até isso acontecer) ·
+scikit-learn (calibração isotônica) · Optuna com orçamento declarado ·
+structlog+orjson · Pydantic+YAML · pytest+hypothesis · ruff · mypy strict
 
 **Avaliar antes de escrever motor próprio:** NautilusTrader (backtest
 event-driven) · `binance-futures-connector` oficial atrás de interface própria
