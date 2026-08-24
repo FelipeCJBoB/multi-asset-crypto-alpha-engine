@@ -171,11 +171,46 @@ def test_fit_side_model_expoe_gain_by_column_raw() -> None:
     assert set(result.gain_by_column_raw.keys()) <= set(result.concentration.shares.keys())
 
 
+def test_fit_side_model_subsample_freq_realmente_ativa_o_bagging() -> None:
+    """Achado real (`audit_engineering`, 2026-08-23): `subsample` sozinho
+    é um no-op silencioso no LightGBM -- só tem efeito com
+    `subsample_freq` (alias `bagging_freq`) como inteiro positivo
+    (default da lib é 0 = desabilitado). Este teste prova que o
+    parâmetro chega de fato no `LGBMClassifier` construído (não só que
+    `LGBMHyperparams.from_constants()` carrega um valor), lendo de volta
+    via `get_params()` -- a mesma classe de falha (`subsample` sozinho,
+    "renomeação direta, sem mudança de valor") passaria por qualquer
+    teste que só checasse `hyper.subsample_freq > 0` sem verificar que o
+    valor realmente chega no objeto treinado."""
+    df = _synthetic_train_frame(n=80, seed=7)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    assert hyper.subsample_freq >= 1  # 0 desabilitaria o bagging silenciosamente
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+
+    params = result.model.get_params()
+    assert params["subsample_freq"] == hyper.subsample_freq
+    assert params["subsample"] == hyper.subsample
+    # force_row_wise -- recomendação da doc oficial do LightGBM junto de
+    # deterministic=True, achado real da mesma auditoria.
+    assert params["force_row_wise"] is True
+    assert params["deterministic"] is True
+
+
 def test_monotone_constraints_tem_exatamente_10_entradas() -> None:
     """Fecha a lacuna deixada pela remoção de `+ tuple(0 for _ in
     REGIME_DUMMY_COLUMNS)` (2026-08-21) — `monotone_constraints` que de
     fato vai pro LightGBM precisa ter 1 entrada por coluna de
-    `DESIGN_COLUMNS` (10, não mais 14), nunca sobrar/faltar."""
+    `DESIGN_COLUMNS` (7 -- T1_FEATURE_IDS, após AG-032 excluir as 3
+    expanding --, não mais 14), nunca sobrar/faltar."""
     df = _synthetic_train_frame(n=80, seed=5)
     hyper = alpha.LGBMHyperparams.from_constants()
     target_signal_rate = float(load_constant("target_signal_rate"))

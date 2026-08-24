@@ -457,6 +457,31 @@ def test_congruent_incongruent_reporta_nao_aplicavel_quando_sem_restricao_forcad
         assert "AG-032" in congruent[side_label]["not_applicable_reason"]
         assert congruent[side_label]["regimes_included"] == []
         assert incongruent[side_label]["regimes_included"] == []
+        # Achado real (`audit_engineering`, 2026-08-23): `decile_profile`/
+        # `correlations`/`n_total`, construídos sobre `pop.head(0)` neste
+        # branch, precisam ter o MESMO shape que o branch populado --
+        # `decile_profile` sempre devolve `FAIXA1_N_DECILES` células
+        # (mesmo vazia, `n=0`/`insufficient_n=True`), `correlations`
+        # colapsa pro dict all-NaN que `_rank_correlations` já devolve
+        # com menos de 3 decis usáveis (nunca `None`/erro/shape diferente
+        # que quebraria um consumidor downstream que espera o schema
+        # populado).
+        for entry in (congruent[side_label], incongruent[side_label]):
+            assert entry["n_total"] == 0
+            assert len(entry["decile_profile"]) == cd.FAIXA1_N_DECILES
+            assert all(cell["n"] == 0 for cell in entry["decile_profile"])
+            assert set(entry["correlations"].keys()) == {
+                "spearman_rho",
+                "spearman_p",
+                "kendall_tau",
+                "kendall_p",
+                "monotonic_increasing_p",
+                "monotonic_decreasing_p",
+                "n_usable_deciles",
+            }
+            assert entry["correlations"]["n_usable_deciles"] == 0
+            nan_fields = set(entry["correlations"]) - {"n_usable_deciles"}
+            assert all(math.isnan(entry["correlations"][k]) for k in nan_fields)
 
 
 # ============================================================================

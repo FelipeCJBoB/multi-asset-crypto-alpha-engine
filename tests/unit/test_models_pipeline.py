@@ -171,9 +171,20 @@ def test_write_fold_diagnostics_atomic_escreve_dois_json_validos(
         assert isinstance(payload["concentration_effective_eigenvalues"], list)
         assert len(payload["concentration_effective_eigenvalues"]) == len(T1_FEATURE_IDS)
 
-        # sem early stopping nesta rodada (§5.10/docstring alpha.py) — deve
-        # bater exatamente com alpha_lgbm_n_estimators.
-        assert payload["n_trees"] == hyper.n_estimators
+        # Sem early stopping (§5.10/docstring alpha.py) -- mas `n_trees`
+        # não é sempre EXATAMENTE `alpha_lgbm_n_estimators` desde que
+        # `subsample_freq` passou a ativar bagging de verdade (AG-195,
+        # 2026-08-23): num round de boosting sobre uma amostra bagged
+        # PODE não achar nenhum split que melhore a loss -- LightGBM pula
+        # a árvore desse round (comportamento padrão de GBM sob
+        # subsampling, não early stopping por critério de validação).
+        # Em dado sintético pequeno (n=80/fold aqui) isso é raro mas real
+        # (~1-2 árvores de 300); em produção (~230k barras/símbolo) é
+        # essencialmente nunca. `<=`, não `==` -- `_fold_diagnostics_
+        # payload` já loga warning quando diverge (visibilidade, não
+        # crash), este teste só confirma que nunca EXCEDE o nominal.
+        assert payload["n_trees"] <= hyper.n_estimators
+        assert payload["n_trees"] >= hyper.n_estimators - 5  # noqa: magic-number -- folga generosa, não limiar de domínio
         assert payload["best_iteration"] is None
         assert payload["best_iteration_note"] == pipeline._BEST_ITERATION_NOTE
 

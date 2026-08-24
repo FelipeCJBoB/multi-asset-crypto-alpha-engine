@@ -41,12 +41,27 @@ _DTYPE_BY_NAME: dict[str, type[pl.DataType]] = {
 # comparável diretamente do mesmo jeito que `pl.Int64`). Achado real,
 # migração LightGBM do Alpha (D-06): `io/artifact.py`/`io/schema.py`
 # (ADR-001) nunca tinham um consumidor real até agora -- `v1` só cobria
-# tipos escalares simples, nunca exercitado contra os 2 padrões que TODO
-# artefato real do projeto de fato usa: `t0` é sempre `pl.Datetime(time_
-# unit="ms", time_zone="UTC")` (nunca Int64 nanoseconds, ao contrário do
-# que a convenção `bar_id`/`*_ts_ns` do docstring do módulo sugeria), e
-# `predictions.parquet::features_selecionadas` é `List[Utf8]`. `Struct`
-# genérico continua fora -- nenhum artefato real precisa.
+# tipos escalares simples, nunca exercitado contra os 2 padrões que
+# `labels.parquet`/`predictions.parquet` de fato usam: `t0` é
+# `pl.Datetime(time_unit="ms", time_zone="UTC")` (nunca Int64
+# nanoseconds, ao contrário do que a convenção `bar_id`/`*_ts_ns` do
+# docstring do módulo sugeria), e
+# `predictions.parquet::features_selecionadas` é `List[Utf8]`.
+#
+# CORREÇÃO 2026-08-23 (achado `audit_engineering`): a versão anterior
+# deste comentário dizia "os 2 padrões que TODO artefato real do
+# projeto usa" -- FALSO, verificado por leitura de código.
+# `regimes.parquet` (`src/regime/classifier.py::classify_regimes`) usa
+# `t0` como `Datetime(time_unit="ns", time_zone="UTC")` (não ms) e 3
+# colunas (`regime`/`regime_raw`/`econ_regime`) como `pl.Enum(...)`;
+# `labels.parquet` usa `pl.Categorical` pra `barrier_hit`. Nenhum dos 3
+# (`Datetime[ns,UTC]`, `Enum`, `Categorical`) está coberto aqui --
+# extensão MÍNIMA pro caso de uso real de hoje (`predictions.parquet`),
+# não "todo tipo que qualquer artefato do projeto usa". Quem migrar
+# `regimes.parquet`/`labels.parquet` pra este writer no futuro (`io/
+# artifact.py:17-22` já nomeia os dois como candidatos) vai precisar
+# estender `_PARAMETRIZED_DTYPE_BY_NAME` de novo. `Struct` genérico
+# continua fora -- nenhum artefato real precisa.
 _PARAMETRIZED_DTYPE_BY_NAME: dict[str, pl.DataType] = {
     "List[Utf8]": pl.List(pl.Utf8),
     "Datetime[ms,UTC]": pl.Datetime(time_unit="ms", time_zone="UTC"),

@@ -57,11 +57,14 @@ def test_validate_schema_aceita_coluna_list_utf8() -> None:
 
 
 def test_column_spec_datetime_ms_utc_aceito_e_polars_dtype_correto() -> None:
-    """D-06 -- `t0` é `pl.Datetime(time_unit="ms", time_zone="UTC")` em
-    TODO artefato real do projeto (nunca Int64 nanoseconds, ao contrário
-    do que a convenção `*_ts_ns` do módulo `io/artifact.py` sugeria) --
-    `io/schema.py` nunca teve um consumidor real até D-06, esse gap nunca
-    tinha sido exercitado."""
+    """D-06 -- `t0` de `labels.parquet`/`predictions.parquet` é
+    `pl.Datetime(time_unit="ms", time_zone="UTC")` (nunca Int64
+    nanoseconds, ao contrário do que a convenção `*_ts_ns` do módulo
+    `io/artifact.py` sugeria) -- `io/schema.py` nunca teve um consumidor
+    real até D-06, esse gap nunca tinha sido exercitado. NÃO é o padrão
+    de TODO artefato do projeto (achado `audit_engineering`,
+    2026-08-23) -- `regimes.parquet` usa `Datetime[ns,UTC]`, fora do
+    escopo desta extensão mínima."""
     col = ColumnSpec(name="t0", dtype="Datetime[ms,UTC]")
     assert col.polars_dtype() == pl.Datetime(time_unit="ms", time_zone="UTC")
 
@@ -79,6 +82,36 @@ def test_validate_schema_aceita_coluna_datetime_ms_utc() -> None:
         schema={"t0": pl.Datetime(time_unit="ms", time_zone="UTC")},
     )
     validate_schema(df, schema)  # não levanta
+
+
+def test_validate_schema_datetime_pega_time_unit_diferente() -> None:
+    """Achado real (`audit_engineering`, 2026-08-23): `Datetime` é o
+    único tipo parametrizado do módulo com 2 parâmetros simultâneos
+    (`time_unit`+`time_zone`) -- só o caso feliz e um mismatch de CLASSE
+    inteira (List vs Int64) eram testados antes, nunca um mismatch de
+    PARÂMETRO dentro da mesma classe. Verificado por leitura do
+    código-fonte do polars que a comparação de instância já pega isso
+    corretamente hoje (`Datetime.__eq__` compara `time_unit` E
+    `time_zone`) -- este teste trava essa invariante como regressão."""
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(ColumnSpec(name="t0", dtype="Datetime[ms,UTC]", nullable=False, role="key"),),
+    )
+    df = pl.DataFrame({"t0": [1, 2]}, schema={"t0": pl.Datetime(time_unit="us", time_zone="UTC")})
+    with pytest.raises(SchemaValidationError, match="dtype"):
+        validate_schema(df, schema)
+
+
+def test_validate_schema_datetime_pega_time_zone_ausente() -> None:
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(ColumnSpec(name="t0", dtype="Datetime[ms,UTC]", nullable=False, role="key"),),
+    )
+    df = pl.DataFrame({"t0": [1, 2]}, schema={"t0": pl.Datetime(time_unit="ms", time_zone=None)})
+    with pytest.raises(SchemaValidationError, match="dtype"):
+        validate_schema(df, schema)
 
 
 def test_validate_schema_list_utf8_pega_dtype_errado() -> None:

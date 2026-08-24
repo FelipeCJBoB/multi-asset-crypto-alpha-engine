@@ -75,7 +75,7 @@ IntArray = NDArray[np.int64]
 # tradeavel (bool pré-computado pelo builder de regime, candidato-
 # agnóstico), não por este módulo. DESIGN_COLUMNS mantém o NOME (usado
 # por src.analysis.faixa2_caminho_b e pelos testes) mas o conteúdo
-# passa a ser só as 10 features T1. D-04 (design doc do Alpha,
+# passa a ser só as 7 features T1. D-04 (design doc do Alpha,
 # 2026-08-22): esta remoção NÃO é reaberta pela migração LightGBM --
 # o Meta-model v3 depende estruturalmente dela (§2.2 do doc do Meta).
 DESIGN_COLUMNS: tuple[str, ...] = T1_FEATURE_IDS
@@ -101,12 +101,24 @@ class LGBMHyperparams:
     -- ver `alpha_xgb_*`, removidas, órfãs pós-migração). `min_child_
     samples`/`num_leaves` são conceitos NOVOS sem conversão numérica 1:1
     do XGBoost (`min_child_weight` é soma de hessian; `min_child_samples`
-    é contagem) -- `provenance: ASSUMED`, `sweep_required: true`."""
+    é contagem) -- `provenance: ASSUMED`, `sweep_required: true`.
+
+    **`subsample_freq` (achado real, `audit_engineering`, 2026-08-23):**
+    o design doc/D-11 tratava `subsample` como renomeação direta e
+    completa do `subsample` do XGBoost -- FALSO. No LightGBM,
+    `subsample` (alias `bagging_fraction`) só tem efeito quando
+    `subsample_freq` (alias `bagging_freq`) é um inteiro positivo
+    (default `0` = "no enable", confirmado na doc oficial do LightGBM)
+    -- sem essa peça companheira, `subsample=0.8` era um no-op
+    silencioso, toda árvore treinava sobre 100% dos dados. `subsample_
+    freq=1` (bag a cada iteração, mesmo espírito do row-subsampling
+    por árvore que o XGBoost já fazia) ativa o parâmetro de verdade."""
 
     max_depth: int
     n_estimators: int
     learning_rate: float
     subsample: float
+    subsample_freq: int
     feature_fraction: float
     lambda_l2: float
     min_child_samples: int
@@ -119,6 +131,7 @@ class LGBMHyperparams:
             n_estimators=int(load_constant("alpha_lgbm_n_estimators")),
             learning_rate=float(load_constant("alpha_lgbm_learning_rate")),
             subsample=float(load_constant("alpha_lgbm_subsample")),
+            subsample_freq=int(load_constant("alpha_lgbm_subsample_freq")),
             feature_fraction=float(load_constant("alpha_lgbm_feature_fraction")),
             lambda_l2=float(load_constant("alpha_lgbm_lambda_l2")),
             min_child_samples=int(load_constant("alpha_lgbm_min_child_samples")),
@@ -127,7 +140,7 @@ class LGBMHyperparams:
 
 
 def build_design_matrix(df: pl.DataFrame) -> FloatArray:
-    """`DESIGN_COLUMNS` = 10 features T1, sem regime (regime saiu do
+    """`DESIGN_COLUMNS` = 7 features T1, sem regime (regime saiu do
     vetor de treino, ADR-001 §2.7 -- ver nota em `DESIGN_COLUMNS`).
     Numpy puro (sem pandas, B26) — `monotone_constraints` do LightGBM
     aceita uma lista posicional na mesma ordem quando o `fit` recebe um
@@ -137,7 +150,7 @@ def build_design_matrix(df: pl.DataFrame) -> FloatArray:
 
 
 def _t1_correlation_matrix(df: pl.DataFrame) -> FloatArray:
-    """Matriz de correlação de Pearson das 10 features T1 (`T1_FEATURE_IDS`,
+    """Matriz de correlação de Pearson das 7 features T1 (`T1_FEATURE_IDS`,
     NUNCA `DESIGN_COLUMNS` — exclui as 4 dummies de regime por padrão, ver
     `src.models.hhi.compute_effective_concentration`) — insumo de D1 (task
     HHI efetivo, CLAUDE.md). `df` PRECISA já ser o subconjunto de TREINO do
@@ -202,7 +215,7 @@ class SideModelResult:
     # `concentration`, NUNCA a substitui. Mede concentração no espaço de
     # FATORES DE INFORMAÇÃO (após remover redundância de features
     # correlacionadas — ver `src.models.hhi.compute_effective_concentration`),
-    # calculado sobre a matriz de correlação das 10 features T1 do MESMO
+    # calculado sobre a matriz de correlação das 7 features T1 do MESMO
     # `train_side_df` deste fold/lado (in-fold, nunca vazando).
     concentration_effective: EffectiveConcentrationDiagnostics
     # gain BRUTO por coluna (`booster_.feature_importance(importance_type=
@@ -285,6 +298,27 @@ def fit_side_model(
     n_neg = int(y_fit.shape[0] - n_pos)
     scale_pos_weight = float(n_neg) / float(n_pos) if n_pos > 0 else 1.0
 
+    if device_type != "cpu":
+        # Achado real (`audit_engineering`, 2026-08-23): a doc oficial do
+        # LightGBM restringe `deterministic=True` a "works only with CPU
+        # device type" -- não é uma incógnita empírica (B23/TBD), é um
+        # FATO já documentado pela biblioteca, verificável sem treinar
+        # nada (construção de histograma sob CUDA usa atomicAdd, soma de
+        # ponto flutuante não-associativa sob paralelismo). O LightGBM
+        # emite um warning nativo nesse cenário, mas `verbosity=-1`
+        # (abaixo) suprime esse warning junto com todo o resto -- este
+        # log explícito via structlog substitui esse sinal perdido, não
+        # deixa a lacuna silenciosa.
+        logger.warning(
+            "models.alpha.deterministic_sem_garantia_sob_gpu",
+            device_type=device_type,
+            detail=(
+                "deterministic=True só garante bit-exatidão sob CPU "
+                "(doc oficial LightGBM) -- reload bit-a-bit não é "
+                "garantido neste device_type; ver D-18 §3 do design doc "
+                "para o plano de tolerância numérica se isso quebrar"
+            ),
+        )
     model = lgb.LGBMClassifier(
         objective="binary",
         max_depth=hyper.max_depth,
@@ -292,6 +326,13 @@ def fit_side_model(
         n_estimators=hyper.n_estimators,
         learning_rate=hyper.learning_rate,
         subsample=hyper.subsample,
+        # Achado real (`audit_engineering`, 2026-08-23): `subsample`
+        # (alias `bagging_fraction`) só tem efeito quando `subsample_freq`
+        # (alias `bagging_freq`) é inteiro positivo -- default `0` da
+        # própria lib = "no enable" (confirmado na doc oficial). Sem
+        # isso, `subsample=0.8` era um no-op silencioso (ver docstring de
+        # `LGBMHyperparams`). `subsample_freq=1` bag a cada iteração.
+        subsample_freq=hyper.subsample_freq,
         feature_fraction=hyper.feature_fraction,
         min_child_samples=hyper.min_child_samples,
         lambda_l2=hyper.lambda_l2,
@@ -302,7 +343,8 @@ def fit_side_model(
         # D-18: GPU obrigatória em produção (device_type="cuda", passado
         # por run_layer1_sprint) -- CUDA preferido sobre o backend "gpu"
         # (OpenCL, mais antigo) por desempenho. Testes usam o default
-        # "cpu" (ver docstring do parâmetro acima).
+        # "cpu" (ver docstring do parâmetro acima). A garantia de reload
+        # bit-exato SÓ vale sob "cpu" -- ver warning explícito acima.
         device_type=device_type,
         # D-12 (docs/alpha_model_design_doc_2026-08-22.md): default do
         # LightGBM é `deterministic=False` -- soma de gradiente em
@@ -311,18 +353,18 @@ def fit_side_model(
         # explicitamente para o teste de reload bit-a-bit (`golden`,
         # `test_write_read_round_trip_reproduz_inferencia_bit_exata`) ter
         # garantia teórica de passar sob CPU -- não opcional, mesma
-        # disciplina de B29/determinismo global do projeto. **Ressalva D-18
-        # não resolvida aqui, TBD medir**: a literatura do próprio LightGBM
-        # trata `deterministic=True` como garantia mais forte pra histograma
-        # CPU; redução paralela de histograma em GPU não segue
-        # necessariamente a mesma disciplina -- se o teste golden
-        # (`test_sprint8_reproducibility.py`, que treina via `run_fold` e
-        # herdaria `device_type="cuda"` se chamado através de `run_layer1_
-        # sprint`) deixar de reproduzir bit-a-bit especificamente sob GPU,
-        # a saída já está nomeada no design doc (§3 D-18): trocar a
-        # igualdade exata por tolerância numérica pequena, documentando a
-        # mudança de garantia -- não presumir bit-exato sob GPU sem medir.
+        # disciplina de B29/determinismo global do projeto.
         deterministic=True,
+        # Achado real (`audit_engineering`, 2026-08-23): a doc oficial do
+        # LightGBM recomenda explicitamente setar `force_row_wise` OU
+        # `force_col_wise` junto de `deterministic=True` -- sem um dos
+        # dois, a lib testa os dois modos de construção de histograma e
+        # escolhe o mais rápido a cada treino, reintroduzindo a mesma
+        # instabilidade numérica que `deterministic=True` existe pra
+        # eliminar. `force_row_wise=True`: dataset é "alto e magro" (7
+        # features T1, centenas de milhares de barras) -- exatamente o
+        # perfil que a doc do LightGBM recomenda row-wise.
+        force_row_wise=True,
         # Suprime log nativo do LightGBM em stdout/stderr (B28 -- só
         # structlog, nunca print()/output de biblioteca não estruturado).
         verbosity=-1,
@@ -367,7 +409,7 @@ def fit_side_model(
     }
     concentration = compute_concentration(gain_by_column, DESIGN_COLUMNS)
 
-    # HHI efetivo (D1/D2, CLAUDE.md) — matriz de correlação das 10 features
+    # HHI efetivo (D1/D2, CLAUDE.md) — matriz de correlação das 7 features
     # T1 sobre o MESMO `train_side_df` deste fold/lado (in-fold, nunca o
     # dataset inteiro — mesma disciplina de `monotonic.screen_monotone_
     # constraints` logo acima, que também recebe só `train_side_df`).
