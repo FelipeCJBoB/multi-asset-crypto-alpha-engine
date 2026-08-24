@@ -906,6 +906,7 @@ def build_t1_features(
     bar_source: str = "time_15m",
     vol_estimator_id: str | None = None,
     load_taker_imbalance_1m: bool = True,
+    load_futures_positioning: bool = True,
 ) -> pl.DataFrame:
     """Ponto de entrada com IO: carrega barras + fontes auxiliares
     alinhadas e chama `compute_t1_features`. `start`/`end` devem incluir
@@ -1003,7 +1004,28 @@ def build_t1_features(
     mecanismo causal de funding/OI, seguro sob qualquer `bar_source`
     (diferente de `load_taker_imbalance_1m_agg_aligned`, que depende de
     grid de relógio fixo). Custo de IO comparável ao de OI (mesmo
-    arquivo `metrics`, colunas adicionais), já sempre pago."""
+    arquivo `metrics`, colunas adicionais), carregado quando
+    `load_futures_positioning=True` (default abaixo).
+
+    **Achado real (audit_engineering, 2026-08-24, pedido do usuario --
+    "auditar se o LightGBM esta pronto pra receber a totalidade das
+    features"): `load_taker_imbalance_1m`/`load_futures_positioning`
+    DEFAULT `True` aqui, combinado com `src.models.dataset.build_
+    modeling_frame` chamando `build_t1_features` SEM passar nenhum dos
+    dois (e `src.regime.build.build_regimes` reusando `build_t1_
+    features` internamente, MESMA omissao) -- o caminho real de treino
+    do Alpha pagava o custo de IO de D07f (`klines_1m` bruto, ~15-96x
+    mais linhas que `bars_15m`) e das 4 colunas de `metrics` de E08f-
+    E18f DUAS VEZES por chamada (uma na chamada direta aqui dentro de
+    `build_modeling_frame`, outra dentro de `build_regimes`), pra
+    features que nem `T1_FEATURE_IDS` (so 7) nem o Regime Engine (B07/
+    C07/E02f/E27f) consomem -- descartadas no `join_cols` de `build_
+    modeling_frame` a menos que pedidas via `extra_feature_ids`.
+    Corrigido: `build_modeling_frame` so ativa os dois carregamentos
+    quando `extra_feature_ids` de fato referencia D07f/alguma das 4
+    futures-positioning; `build_regimes` passa `False` pros dois
+    SEMPRE (nunca precisa) -- ver docstring/corpo dos dois
+    chamadores."""
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
@@ -1015,9 +1037,11 @@ def build_t1_features(
         taker_imbalance_1m_agg_aligned = _sources.load_taker_imbalance_1m_agg_aligned(
             bars_15m, symbol, start, end
         )
-    futures_positioning_aligned = _sources.load_futures_positioning_aligned(
-        bars_15m, symbol, start, end
-    )
+    futures_positioning_aligned = None
+    if load_futures_positioning:
+        futures_positioning_aligned = _sources.load_futures_positioning_aligned(
+            bars_15m, symbol, start, end
+        )
     logger.info(
         "features.build_t1_features",
         symbol=symbol,
@@ -1027,6 +1051,7 @@ def build_t1_features(
         vol_estimator_id=vol_estimator_id,
         n_bars=bars_15m.height,
         load_taker_imbalance_1m=load_taker_imbalance_1m,
+        load_futures_positioning=load_futures_positioning,
     )
     return compute_t1_features(
         bars_15m,

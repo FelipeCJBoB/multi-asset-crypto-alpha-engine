@@ -84,6 +84,25 @@ _BAR_SOURCE_BY_RESOLUTION: dict[str, str] = {
     "R3": "dollar_r3",
 }
 
+# Achado real (audit_engineering, 2026-08-24) -- ids das 4 features T2 de
+# futures-positioning (Lote C, H5) que exigem `load_futures_positioning=
+# True` em `features_build.build_t1_features`. Mesmos ids de `src.features.
+# build.SUPPORT_FEATURE_IDS`, duplicado aqui só como um `frozenset` pra
+# checagem O(1) de interseção com `extra_feature_ids` -- não é uma segunda
+# fonte de verdade sobre QUAIS features existem (`build.SUPPORT_FEATURE_
+# IDS` continua sendo isso), só sobre quais delas precisam desse
+# carregamento específico.
+_FUTURES_POSITIONING_FEATURE_IDS: frozenset[str] = frozenset(
+    {
+        "E08f_oi_notional",
+        "E14f_toptrader_ls_ratio",
+        "E15f_toptrader_ls_z",
+        "E16f_global_ls_ratio",
+        "E17f_retail_vs_top_spread",
+        "E18f_taker_ls_vol_ratio",
+    }
+)
+
 
 def date_bounds(labels: pl.DataFrame) -> tuple[str, str]:
     """`[min(t0), max(t0)]` do frame passado, com folga de
@@ -297,11 +316,43 @@ def build_modeling_frame(
     labels = labels.with_row_index("_pos")
     start, end = date_bounds(labels)
 
+    # Achado real (audit_engineering, 2026-08-24, pedido do usuário --
+    # "auditar se o LightGBM está pronto pra receber a totalidade das
+    # features"): `build_t1_features` carregava D07f (klines_1m bruto,
+    # ~15-96x mais linhas que bars_15m) e as 4 colunas de metrics de
+    # E08f-E18f por padrão, SEM NENHUM caller aqui pedir -- T1_FEATURE_
+    # IDS (só 7) não usa nenhuma das duas, e ambas eram descartadas no
+    # join_cols abaixo a menos que extra_feature_ids as pedisse
+    # explicitamente. Custo de IO real pago à toa em TODO treino real
+    # do Alpha. Agora só ativado quando extra_feature_ids de fato
+    # referencia uma dessas colunas -- análise pós-hoc que precise
+    # delas continua funcionando (`extra_feature_ids=(...)`), o
+    # caminho comum (só T1_FEATURE_IDS) não paga o custo.
+    _needs_d07f = "D07f_taker_imbalance_1m_agg" in extra_feature_ids
+    _needs_futures_positioning = bool(set(extra_feature_ids) & _FUTURES_POSITIONING_FEATURE_IDS)
+
     features_df = features_build.build_t1_features(
-        symbol, start, end, bar_source=bar_source, vol_estimator_id=vol_estimator_id
+        symbol,
+        start,
+        end,
+        bar_source=bar_source,
+        vol_estimator_id=vol_estimator_id,
+        load_taker_imbalance_1m=_needs_d07f,
+        load_futures_positioning=_needs_futures_positioning,
     )
+    # `build_regimes` reusa `build_t1_features` internamente pra B07/C07/
+    # E02f/E27f (Regime Engine) -- NUNCA precisa de D07f nem das 4
+    # colunas de futures-positioning, incondicionalmente (não depende de
+    # `extra_feature_ids`, que é escopo só do frame de FEATURES, não do
+    # de regime). `False`/`False` explícitos, mesmo achado acima.
     regimes_df = regime_build.build_regimes(
-        symbol, start, end, bar_source=bar_source, vol_estimator_id=vol_estimator_id
+        symbol,
+        start,
+        end,
+        bar_source=bar_source,
+        vol_estimator_id=vol_estimator_id,
+        load_taker_imbalance_1m=False,
+        load_futures_positioning=False,
     )
 
     bar_table = features_df.with_columns(

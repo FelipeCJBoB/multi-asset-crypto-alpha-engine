@@ -31,6 +31,8 @@ def build_regimes(
     thresholds: classifier.RegimeThresholds | None = None,
     bar_source: str = "time_15m",
     vol_estimator_id: str | None = None,
+    load_taker_imbalance_1m: bool = False,
+    load_futures_positioning: bool = False,
 ) -> pl.DataFrame:
     """Núcleo com IO: carrega `B07_efficiency_ratio_48`,
     `C07_vol_pctile_expanding`, `E02f_funding_z_expanding` e
@@ -76,7 +78,24 @@ def build_regimes(
     (`classifier.classify_regimes`) ficam expansivos desde a origem do
     ativo sob dollar bar, sem cap, mesma dívida registrada da Fase 2. Um
     `thresholds` explícito do chamador NUNCA é sobrescrito — a decisão
-    automática só se aplica ao caminho default."""
+    automática só se aplica ao caminho default.
+
+    `load_taker_imbalance_1m`/`load_futures_positioning` (achado real,
+    `audit_engineering`, 2026-08-24) — default `False` nos dois,
+    DIFERENTE do default `True` de `build_t1_features` em si: o
+    classificador de regime só lê `B07_efficiency_ratio_48`/`C07_vol_
+    pctile_expanding`/`E02f_funding_z_expanding`/`E27f_cost_atr_ratio`
+    (ver `classifier.py`) — nunca D07f (klines_1m bruto, ~15-96× mais
+    linhas que `bars_15m`) nem as 4 colunas de futures-positioning
+    (E08f/E14f/E16f/E18f). Antes desta correção, `build_regimes`
+    carregava as duas incondicionalmente (herdando o default de `build_
+    t1_features`) — custo de IO real pago à toa em TODO chamador
+    (`src.models.dataset.build_modeling_frame` e os scripts de
+    `src.analysis` que chamam esta função). Os dois parâmetros existem
+    aqui (em vez de simplesmente nunca repassar nada) só para o caso
+    raro de um chamador FUTURO genuinamente precisar de D07f/futures-
+    positioning alinhados ao mesmo `bars_15m` que o regime usa — hoje
+    nenhum precisa."""
     features_df = features_build.build_t1_features(
         symbol,
         start,
@@ -84,6 +103,8 @@ def build_regimes(
         apply_warmup_mask=False,
         bar_source=bar_source,
         vol_estimator_id=vol_estimator_id,
+        load_taker_imbalance_1m=load_taker_imbalance_1m,
+        load_futures_positioning=load_futures_positioning,
     )
 
     resolved_thresholds = thresholds

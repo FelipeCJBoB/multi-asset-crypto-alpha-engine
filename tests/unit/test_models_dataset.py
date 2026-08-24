@@ -58,6 +58,16 @@ def _one_row_bar_table(t0: datetime) -> pl.DataFrame:
     return pl.DataFrame(cols)
 
 
+def _one_row_bar_table_with(t0: datetime, extra_ids: tuple[str, ...]) -> pl.DataFrame:
+    """`_one_row_bar_table` + colunas extras dummy — pro `join_cols` de
+    `build_modeling_frame` (T1_FEATURE_IDS + extra_feature_ids) não
+    quebrar com `ColumnNotFoundError` quando o teste passa
+    `extra_feature_ids` não coberto pela fixture mínima."""
+    base = _one_row_bar_table(t0)
+    extra_cols = {fid: [0.0] for fid in extra_ids if fid not in base.columns}
+    return base.with_columns(**{k: pl.lit(v[0]) for k, v in extra_cols.items()})
+
+
 def _one_row_regime(t0: datetime) -> pl.DataFrame:
     return pl.DataFrame(
         {"t0": [t0], "regime": ["R1"], "tradeable": [True]}
@@ -194,8 +204,28 @@ def test_build_modeling_frame_resolution_id_propaga_bar_source_e_vol_estimator_i
     )
 
     assert load_labels_calls == [{"resolution_id": "R1"}]
-    assert features_calls == [{"bar_source": "dollar_r1", "vol_estimator_id": "parkinson_w20"}]
-    assert regime_calls == [{"bar_source": "dollar_r1", "vol_estimator_id": "parkinson_w20"}]
+    # load_taker_imbalance_1m/load_futures_positioning (achado real,
+    # audit_engineering, 2026-08-24): build_modeling_frame só ativa os
+    # dois quando extra_feature_ids pede D07f/futures-positioning (aqui
+    # não pede, extra_feature_ids=() por default -- ambos False);
+    # build_regimes SEMPRE passa False pros dois (nunca precisa, ver
+    # docstring de src/regime/build.py).
+    assert features_calls == [
+        {
+            "bar_source": "dollar_r1",
+            "vol_estimator_id": "parkinson_w20",
+            "load_taker_imbalance_1m": False,
+            "load_futures_positioning": False,
+        }
+    ]
+    assert regime_calls == [
+        {
+            "bar_source": "dollar_r1",
+            "vol_estimator_id": "parkinson_w20",
+            "load_taker_imbalance_1m": False,
+            "load_futures_positioning": False,
+        }
+    ]
 
 
 def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
@@ -217,7 +247,85 @@ def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
 
     ds.build_modeling_frame()
 
-    assert features_calls == [{"bar_source": "time_15m", "vol_estimator_id": None}]
+    assert features_calls == [
+        {
+            "bar_source": "time_15m",
+            "vol_estimator_id": None,
+            "load_taker_imbalance_1m": False,
+            "load_futures_positioning": False,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("extra_feature_ids", "expected_d07f", "expected_futures_positioning"),
+    [
+        ((), False, False),
+        (("D07f_taker_imbalance_1m_agg",), True, False),
+        (("E14f_toptrader_ls_ratio",), False, True),
+        (("D07f_taker_imbalance_1m_agg", "E17f_retail_vs_top_spread"), True, True),
+    ],
+)
+def test_build_modeling_frame_ativa_d07f_futures_positioning_so_quando_pedido(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_feature_ids: tuple[str, ...],
+    expected_d07f: bool,
+    expected_futures_positioning: bool,
+) -> None:
+    """Achado real (`audit_engineering`, 2026-08-24): `build_t1_features`
+    default `load_taker_imbalance_1m=True`/`load_futures_positioning=
+    True` pagava custo de IO real (D07f = klines_1m bruto) em TODO
+    treino do Alpha, mesmo `extra_feature_ids` não pedindo nenhuma das
+    duas -- corrigido, `build_modeling_frame` só ativa quando de fato
+    pedido."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    features_calls: list[dict[str, Any]] = []
+
+    def _fake_build_t1_features(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        features_calls.append(kwargs)
+        return _one_row_bar_table_with(t0, extra_feature_ids)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels(t0))
+    monkeypatch.setattr(features_build, "build_t1_features", _fake_build_t1_features)
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+    _noop_verify_config_hash(monkeypatch)
+
+    ds.build_modeling_frame(extra_feature_ids=extra_feature_ids)
+
+    assert features_calls[0]["load_taker_imbalance_1m"] is expected_d07f
+    assert features_calls[0]["load_futures_positioning"] is expected_futures_positioning
+
+
+def test_build_modeling_frame_regime_nunca_pede_d07f_futures_positioning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build_regimes` (via `build_modeling_frame`) SEMPRE recebe `False`
+    pros dois, independente de `extra_feature_ids` -- regime nunca usa
+    D07f/futures-positioning, o parâmetro é escopo só do frame de
+    FEATURES."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    regime_calls: list[dict[str, Any]] = []
+
+    def _fake_build_regimes(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        regime_calls.append(kwargs)
+        return _one_row_regime(t0)
+
+    extra_feature_ids = ("D07f_taker_imbalance_1m_agg", "E17f_retail_vs_top_spread")
+    monkeypatch.setattr(cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels(t0))
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **k: _one_row_bar_table_with(t0, extra_feature_ids),
+    )
+    monkeypatch.setattr(regime_build, "build_regimes", _fake_build_regimes)
+    _noop_verify_config_hash(monkeypatch)
+
+    ds.build_modeling_frame(extra_feature_ids=extra_feature_ids)
+
+    assert regime_calls[0]["load_taker_imbalance_1m"] is False
+    assert regime_calls[0]["load_futures_positioning"] is False
 
 
 def test_build_modeling_frame_resolution_id_nao_mapeado_levanta_valueerror() -> None:
