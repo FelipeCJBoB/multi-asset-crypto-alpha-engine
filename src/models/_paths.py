@@ -36,6 +36,17 @@ LABELS_OUTPUT_DIR: Path = REPO_ROOT / "labels"
 # `src/models/`.
 PREDICTIONS_OUTPUT_DIR: Path = REPO_ROOT / "predictions"
 
+# D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha AG-154) — raiz do
+# lake de artefatos versionados (`src.io.artifact.write_artifact`/
+# `scan_artifact`), irmão de `predictions/`/`data/`/`models/`/`experiments/`
+# no topo do repo. Namespaced por `stage` dentro (`predictions_alpha` é o
+# primeiro consumidor real, `pipeline.PREDICTIONS_ARTIFACT_STAGE`) — sem
+# precedente anterior no repo pra nomear (`grep write_artifact` antes desta
+# mudança só achava a definição/1 teste), escolha nova: "artifacts", não
+# "lake" (ADR-001 não trava um nome literal pra raiz, só o layout interno
+# de `artifact_dir`).
+ARTIFACT_ROOT: Path = REPO_ROOT / "artifacts"
+
 # Layout chaveado do PRD_V4_1.md T0.3 (§3.1): `predictions/alpha/{symbol}/
 # {tf}/{model_id}/`.
 _DEFAULT_TF = "15m"

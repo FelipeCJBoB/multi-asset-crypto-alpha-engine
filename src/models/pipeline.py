@@ -37,19 +37,21 @@ from src.validation import cpcv
 from . import alpha, backtest_lite, baselines, decomposition, hhi
 from . import dataset as ds
 from ._constants import load_constant
+
+# Reexport explícito (`as ARTIFACT_ROOT`/`as MODELS_DIR`, não só `import
+# ARTIFACT_ROOT`/`import MODELS_DIR`) — `mypy --strict`/`no_implicit_
+# reexport` (`pyproject.toml`) trata um import simples como privado ao
+# módulo; testes/chamadores fazem `pipeline.ARTIFACT_ROOT` (D-06,
+# 2026-08-23, fecha AG-154) e `from src.models.pipeline import MODELS_DIR`
+# (`faixa1_5_prerequisites.py`, ver AG-013) e precisam continuar
+# funcionando sob checagem estrita, não só em runtime.
+from ._paths import ARTIFACT_ROOT as ARTIFACT_ROOT
 from ._paths import (
     EXPERIMENTS_DIR,
     PREDICTIONS_OUTPUT_DIR,
     models_diagnostics_symbol_tf_dir,
     predictions_symbol_tf_dir,
 )
-
-# Reexport explícito (`as MODELS_DIR`, não só `import MODELS_DIR`) —
-# `mypy --strict`/`no_implicit_reexport` (`pyproject.toml`) trata um import
-# simples como privado ao módulo; vários chamadores fazem
-# `from src.models.pipeline import MODELS_DIR` (`faixa1_5_prerequisites.py`
-# e testes, ver AG-013) e precisam continuar funcionando sob checagem
-# estrita, não só em runtime.
 from ._paths import MODELS_DIR as MODELS_DIR
 
 logger = structlog.get_logger(__name__)
@@ -139,16 +141,22 @@ def write_predictions_versioned(
     deve incluir pelo menos `model_id`/`variant` (o `stage` sozinho não
     distingue Camada 1 de Camada 0 -- `config_hash` distingue).
 
-    **NÃO integrado em `run_layer1_sprint` nesta unidade.** D-06 decide
-    explicitamente que o cutover real -- trocar o writer de PRODUÇÃO,
-    regenerar as 15 combinações sob este schema, atualizar os 2
-    consumidores reais incondicionais (`src/backtest/fill_reconciliation.
-    py`, `src/analysis/calibration_diagnostics.py`) pro caminho novo, e
-    descartar/arquivar os 5 `predictions.parquet` legados -- acontece "no
-    mesmo PR que ativa o retreino" (§13 do design doc), não antes (o gate
-    'Data Layer 100%' segue fechado). Esta função é a capacidade nova,
-    testada e pronta pra ser chamada quando isso acontecer -- ver
-    `AG-154`."""
+    **INTEGRADA em `run_layer1_sprint` 2026-08-23 (fecha `AG-154`), escopo
+    ESTREITO -- correção do plano original acima.** Chamada só quando
+    `resolution_id` é setado (o ramo dollar-bar, as 15 combinações reais) --
+    esta função EXIGE `resolution_id: str` (não opcional), então nunca
+    poderia servir o ramo legado (`tf`/`resolution_id=None`) de qualquer
+    forma. Achado ao investigar o cutover completo que o parágrafo anterior
+    descrevia: os "2 consumidores reais incondicionais" (`fill_
+    reconciliation.py::load_predictions`, `calibration_diagnostics.py`) NEM
+    ACEITAM `symbol`/`resolution_id` como parâmetro -- são cegos ao
+    multi-resolução com QUALQUER writer, sempre foram, e só leem o caminho
+    legado plano (nunca tocado por esta função). Não há, portanto,
+    "atualizar os 2 consumidores"/"descartar os 5 legados" como
+    pré-requisito de correção -- o caminho legado não muda, os consumidores
+    que dependem dele não são afetados. Dar a esses 2 consumidores
+    capacidade de ler predições multi-resolução fica registrado como
+    trabalho ADITIVO separado (não bloqueante), não parte deste fechamento."""
     return io_artifact.write_artifact(
         predictions.select(list(alpha.PREDICTIONS_SCHEMA_COLUMNS)),
         root=root,
@@ -587,22 +595,59 @@ def run_layer1_sprint(
     # (ver docstring da função — 7 leitores de produção reais ainda
     # dependem disso). `tf`/`resolution_id` explícito: layout chaveado por
     # symbol/`path_tf` (mesma guarda contra colisão do bloco acima).
-    dest_dir_c1 = (
-        predictions_symbol_tf_dir(
-            symbol, model_id_camada1, tf=tf_effective, resolution_id=resolution_id
+    if resolution_id is not None:
+        # D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha AG-154) --
+        # grade dollar-bar grava via write_artifact (schema versionado +
+        # manifest, ADR-001) em vez do writer ad-hoc. Escopo deliberadamente
+        # ESTREITO (achado desta rodada, 2026-08-23, não a leitura literal
+        # do docstring de write_predictions_versioned abaixo):
+        # write_predictions_versioned exige resolution_id: str (não
+        # opcional) -- só pode servir ESTE ramo, nunca o legado (tf/
+        # resolution_id=None) que os 2 consumidores reais incondicionais
+        # (src/backtest/fill_reconciliation.py::load_predictions,
+        # src/analysis/calibration_diagnostics.py) leem. Esses 2 nem aceitam
+        # symbol/resolution_id como parâmetro -- são cegos ao multi-
+        # resolução com QUALQUER writer, sempre foram -- esta troca não os
+        # afeta (nunca leram este ramo). Caminho legado abaixo (`else`)
+        # continua intocado, mesmo writer de sempre. Dar a esses 2
+        # consumidores capacidade de ler o multi-resolução é trabalho
+        # aditivo separado, não pré-requisito de correção desta troca.
+        write_predictions_versioned(
+            preds_c1,
+            root=ARTIFACT_ROOT,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            model_id=model_id_camada1,
+            config={"variant": alpha.VARIANT_CAMADA1},
         )
-        if path_tf is not None
-        else None
-    )
-    dest_dir_c0 = (
-        predictions_symbol_tf_dir(
-            symbol, model_id_camada0, tf=tf_effective, resolution_id=resolution_id
+        write_predictions_versioned(
+            preds_c0,
+            root=ARTIFACT_ROOT,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            model_id=model_id_camada0,
+            config={"variant": alpha.VARIANT_CAMADA0},
         )
-        if path_tf is not None
-        else None
-    )
-    write_predictions_atomic(preds_c1, model_id_camada1, dest_dir=dest_dir_c1)
-    write_predictions_atomic(preds_c0, model_id_camada0, dest_dir=dest_dir_c0)
+    else:
+        # tf=None (legado, caminho plano) ou tf explícito sob grade de
+        # TEMPO (resolution_id continua None) -- write_predictions_versioned
+        # não se aplica (exige resolution_id: str), writer ad-hoc de sempre.
+        dest_dir_c1 = (
+            predictions_symbol_tf_dir(
+                symbol, model_id_camada1, tf=tf_effective, resolution_id=resolution_id
+            )
+            if path_tf is not None
+            else None
+        )
+        dest_dir_c0 = (
+            predictions_symbol_tf_dir(
+                symbol, model_id_camada0, tf=tf_effective, resolution_id=resolution_id
+            )
+            if path_tf is not None
+            else None
+        )
+        write_predictions_atomic(preds_c1, model_id_camada1, dest_dir=dest_dir_c1)
+        write_predictions_atomic(preds_c0, model_id_camada0, dest_dir=dest_dir_c0)
 
     # --- backtest por caminho + critério de permanência (§5.11 adaptado) ---
     c1_by_path = backtest_lite.backtest_by_path(camada1_folds, mf.data)

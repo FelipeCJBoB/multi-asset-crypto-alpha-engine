@@ -291,6 +291,19 @@ def _run_layer1_sprint_capturing_core_calls(
 
     monkeypatch.setattr(pipeline, "write_predictions_atomic", _fake_write_predictions_atomic)
 
+    # D-06 (2026-08-23, fecha AG-154) -- resolution_id setado agora roteia
+    # pra write_predictions_versioned, não write_predictions_atomic (ver
+    # docstring de write_predictions_versioned). Este helper é usado tanto
+    # pro ramo legado (tf="30m", resolution_id=None) quanto pro ramo novo
+    # (resolution_id="R1") -- precisa do sentinela nos DOIS writers pra
+    # parar cedo em qualquer um dos dois, sem se importar qual é chamado.
+    def _fake_write_predictions_versioned(*args: Any, **kwargs: Any) -> Any:
+        raise _StopAfterPredictions()
+
+    monkeypatch.setattr(
+        pipeline, "write_predictions_versioned", _fake_write_predictions_versioned
+    )
+
     with pytest.raises(_StopAfterPredictions):
         pipeline.run_layer1_sprint(**run_kwargs)
 
@@ -409,29 +422,90 @@ def test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_diagnosticos(
     assert calls[1] == {"model_id": pipeline.MODEL_ID_CAMADA0, "dest_dir": expected_c0}
 
 
-def test_run_layer1_sprint_resolution_id_propaga_ate_dest_dir_final(
+def _run_layer1_sprint_capturing_versioned_predictions_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: Any
+) -> list[dict[str, Any]]:
+    """Mesmo padrão de `_run_layer1_sprint_capturing_predictions_calls`,
+    pro ramo `resolution_id is not None` (D-06, 2026-08-23, fecha
+    `AG-154`) -- captura os kwargs reais passados a
+    `write_predictions_versioned` (`root`/`symbol`/`resolution_id`/
+    `model_id`/`config`), não `dest_dir` (que não existe mais nesse
+    ramo -- `io.artifact.write_artifact` deriva o caminho de
+    `root`+`stage`+`config_hash`+`symbol`+`resolution`, não recebe um
+    `Path` explícito)."""
+    calls: list[dict[str, Any]] = []
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    def _fake_write_predictions_versioned(
+        predictions: pl.DataFrame,
+        *,
+        root: Path,
+        symbol: str,
+        resolution_id: str,
+        model_id: str,
+        config: dict[str, Any],
+    ) -> Any:
+        calls.append(
+            {
+                "root": root,
+                "symbol": symbol,
+                "resolution_id": resolution_id,
+                "model_id": model_id,
+                "config": config,
+            }
+        )
+        if len(calls) >= 2:
+            raise _StopAfterPredictions()
+        return None
+
+    monkeypatch.setattr(
+        pipeline, "write_predictions_versioned", _fake_write_predictions_versioned
+    )
+
+    with pytest.raises(_StopAfterPredictions):
+        pipeline.run_layer1_sprint(**run_kwargs)
+
+    assert len(calls) == 2
+    return calls
+
+
+def test_run_layer1_sprint_resolution_id_propaga_ate_write_predictions_versioned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`resolution_id="R1"` propaga até o `dest_dir` FINAL de
-    `write_predictions_atomic` (não só até `build_modeling_frame`/CPCV,
-    já coberto acima) -- achado real (mapa de dívida técnica multi-ativo,
-    2026-08-22): antes desta correção, `pipeline.py` contornava a falta de
-    suporte a `resolution_id` em `predictions_symbol_tf_dir` sobrecarregando
-    o parâmetro `tf=` com o valor de `resolution_id` (`path_tf`) -- agora
-    usa o parâmetro real."""
-    calls = _run_layer1_sprint_capturing_predictions_calls(monkeypatch, resolution_id="R1")
+    """`resolution_id="R1"` propaga até `write_predictions_versioned`
+    (D-06, 2026-08-23, fecha `AG-154`) pras DUAS variantes (Camada 1 e
+    Camada 0), com `root=ARTIFACT_ROOT` e `config["variant"]` distinguindo
+    as duas -- não mais `write_predictions_atomic`/`dest_dir` pra este
+    ramo (achado desta rodada: `write_predictions_versioned` exige
+    `resolution_id: str`, não opcional, só pode servir este ramo mesmo)."""
+    calls = _run_layer1_sprint_capturing_versioned_predictions_calls(
+        monkeypatch, resolution_id="R1"
+    )
 
-    for call in calls:
-        assert "R1" in call["dest_dir"].parts
-        assert "15m" not in call["dest_dir"].parts
-    expected_c1 = predictions_symbol_tf_dir(
-        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA1, resolution_id="R1"
-    )
-    expected_c0 = predictions_symbol_tf_dir(
-        pipeline.SYMBOL, pipeline.MODEL_ID_CAMADA0, resolution_id="R1"
-    )
-    assert calls[0]["dest_dir"] == expected_c1
-    assert calls[1]["dest_dir"] == expected_c0
+    assert calls[0]["symbol"] == pipeline.SYMBOL
+    assert calls[0]["resolution_id"] == "R1"
+    assert calls[0]["model_id"] == pipeline.MODEL_ID_CAMADA1
+    assert calls[0]["config"] == {"variant": alpha.VARIANT_CAMADA1}
+    assert calls[0]["root"] == pipeline.ARTIFACT_ROOT
+
+    assert calls[1]["symbol"] == pipeline.SYMBOL
+    assert calls[1]["resolution_id"] == "R1"
+    assert calls[1]["model_id"] == pipeline.MODEL_ID_CAMADA0
+    assert calls[1]["config"] == {"variant": alpha.VARIANT_CAMADA0}
+    assert calls[1]["root"] == pipeline.ARTIFACT_ROOT
 
 
 def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
