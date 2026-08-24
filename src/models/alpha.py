@@ -455,13 +455,40 @@ def _unique_test_bars(test_bars_all_sides: pl.DataFrame) -> pl.DataFrame:
     `src.labels.triple_barrier.build_labels_both_sides`), mantém só barras
     com T1 válido (fora do warmup) — NÃO filtra por NOFILL (ver docstring
     do módulo: inferência roda em toda barra, NOFILL só importa para
-    treino/backtest)."""
+    treino/backtest).
+
+    **`t0` genuinamente único, não só assumido (achado real, 2026-08-23,
+    1ª execução real de `run_layer1_sprint` contra R1).** O filtro
+    `side == 1` sozinho SUPUNHA 1 linha por `t0` (a garantia real de
+    `labels.parquet`, confirmada), mas `test_bars_all_sides` já passou
+    pelo JOIN de features/regime em `build_modeling_frame` -- e esse join
+    duplicou 2 de 223.172 barras de BTCUSDT/R1 (`t0` idêntico, todas as
+    colunas idênticas, causa raiz upstream não fechada aqui, ver
+    `AG-202`). `verify_config_hash`/`write_predictions_versioned` só
+    detectaram isso na PRIMEIRA vez que `predictions.parquet` foi
+    validado contra schema real (`primary_key=(t0, fold_id)` duplicado) --
+    o writer antigo nunca validava nada. `.unique(subset=["t0"], keep=
+    "first")` fecha o sintoma aqui (join de feature é determinístico,
+    "first" é estável) COM aviso alto -- nunca silencioso -- pra não
+    mascarar `AG-202` se a taxa de duplicação crescer."""
     out = test_bars_all_sides.filter(
         (pl.col("side") == 1) & pl.col(T1_FEATURE_IDS[0]).is_not_null()
     )
     for fid in T1_FEATURE_IDS[1:]:
         out = out.filter(pl.col(fid).is_not_null())
-    return out.sort("t0")
+    out = out.sort("t0")
+    n_before = out.height
+    out = out.unique(subset=["t0"], keep="first", maintain_order=True)
+    n_duplicates = n_before - out.height
+    if n_duplicates > 0:
+        logger.warning(
+            "models.alpha.unique_test_bars_t0_duplicado",
+            n_duplicates=n_duplicates,
+            n_before=n_before,
+            detail="AG-202 -- join de feature/regime upstream produziu t0 "
+            "duplicado, causa raiz nao fechada",
+        )
+    return out
 
 
 def run_fold(

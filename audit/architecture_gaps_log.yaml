@@ -13930,3 +13930,51 @@ entries:
     resolved_by_commit: null
     resolution: null
     status: "aberto -- decisao do usuario 2026-08-23: rodar com device_type='cpu' explicito por enquanto (retreino real nao fica bloqueado), D-18/GPU real fica pendente de projeto de infraestrutura separado (WSL2 + Linux + CUDA Toolkit + LightGBM recompilado la dentro -- ordem de grandeza maior que o toolchain ja instalado nesta sessao, que fica reaproveitavel: driver GPU/CUDA Toolkit do Windows nao precisam ser refeitos, WSL2 usa passthrough do driver do host). Nao decidido aqui QUANDO esse projeto de WSL2 acontece -- fica com o Manager."
+
+  - id: AG-202
+    date: "2026-08-23"
+    file: "src/models/alpha.py::_unique_test_bars (sintoma fechado com .unique()); origem real em build_modeling_frame -- join de features/regime, causa raiz NAO localizada nesta rodada"
+    related_file: "audit/architecture_gaps_log.yaml::AG-199, AG-200 (mesma sessao de retreino real, mesma classe de achado -- so aparece rodando de verdade)"
+    found_by: "Claude, smoke test real de run_layer1_sprint(resolution_id='R1', device_type='cpu') -- SchemaValidationError primary_key (t0,fold_id) duplicado em write_predictions_versioned, investigado ate a origem"
+    gap: >
+      2 de 223.172 barras de BTCUSDT/R1 (`t0`=2025-02-03T23:55:00.274Z e
+      2025-02-04T00:15:22.094Z) produzem linhas DUPLICADAS em `mf.data`
+      (`build_modeling_frame`). Investigado sistematicamente, cada
+      camada verificada isoladamente: `data/capacity/dollar_bars_r1/
+      BTCUSDT/*.parquet` (223.172 linhas, ZERO `close_time` duplicado,
+      confirmado) -- limpo. `data/labels/BTCUSDT/R1/v1/labels.parquet`
+      (4 linhas na janela dos 2 t0 -- exatamente 1 por t0×side, esperado)
+      -- limpo. `mf.data` (pos-join) -- 8 linhas na mesma janela (2 por
+      t0×side) -- DUPLICADO. Ou seja: a duplicacao nasce especificamente
+      no JOIN de features (`build_t1_features`)/regime (`build_regimes`)
+      dentro de `build_modeling_frame`, nao antes. Causa raiz exata (qual
+      fonte auxiliar do Feature Engine tem o duplicado -- suspeita nao
+      confirmada: mesma familia do warning ja conhecido `features.
+      metrics_duplicate_create_time`, resolvido por tie-break de nome de
+      arquivo que pode nao cobrir 100% dos casos) NAO fechada nesta
+      rodada -- prioridade era destravar o retreino real, nao esgotar
+      a investigacao.
+    severity: "medio"
+    layer: "features/regime -- join upstream de build_modeling_frame produz fan-out de linha pra uma fracao ínfima de barras (0,0009% medido em BTCUSDT/R1)"
+    consequence: >
+      Sem seu proprio mecanismo de deteccao, cada bar duplicado entra
+      no treino/backtest com peso 2x (2 linhas identicas), viés
+      pequeno mas real. `verify_config_hash`/`write_predictions_
+      versioned` (D-06, AG-154, fechado nesta mesma sessao) foi o que
+      REVELOU isto -- e a PRIMEIRA vez que `predictions.parquet` passou
+      por validacao de schema real (`primary_key=(t0,fold_id)`); o
+      writer legado (`write_predictions_atomic`) nunca teria pego isso,
+      nem em producao. Taxa medida so pra BTCUSDT/R1 -- as outras 14
+      combinacoes (4 simbolos + R2/R3) nao foram auditadas pra essa
+      mesma classe de duplicata nesta rodada.
+    resolved_by_commit: null
+    resolution: >
+      SINTOMA fechado (nao a causa raiz): `_unique_test_bars` (`alpha.py`)
+      passou a `.unique(subset=["t0"], keep="first", maintain_order=True)`
+      de verdade, com `structlog.warning` alto se algum duplicado for
+      removido (nunca silencioso) -- fecha o `SchemaValidationError` de
+      `write_predictions_versioned` sem mascarar o achado. CAUSA RAIZ
+      (qual join exato no Feature/Regime Engine produz o fan-out)
+      permanece aberta, registrada explicitamente aqui pra nao ser
+      confundida com "resolvido".
+    status: "aberto -- sintoma mitigado com aviso, causa raiz pendente de investigacao futura (nao bloqueia o retreino real). Recomendacao: quando investigar, comecar por build_t1_features/build_regimes em torno de close_time correspondente aos 2 t0 medidos, cruzar com o warning ja conhecido features.metrics_duplicate_create_time (mesma familia de problema, tie-break pode ser incompleto); rodar a mesma auditoria (raw bars limpo / labels limpo / mf.data sujo) pras outras 14 combinacoes pra medir se a taxa de 0,0009% generaliza ou eh especifica desta janela de BTCUSDT/R1."
