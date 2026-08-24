@@ -12250,9 +12250,18 @@ entries:
       2026-08-22.md) se sobrescreveriam sequencialmente sem `--run-tag`
       explícito. Não afeta os artefatos científicos (predições, modelos), que
       já são corretamente chaveados por symbol/tf.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix: o driver do loop de 15 combinações passa report_path/run_tag únicos por combinação ({symbol}_{resolution_id}), não usa o default compartilhado. Sequenciar junto da implementação do Alpha (D-13 do design doc)."
+    resolved_by_commit: "321c414"
+    resolution: >
+      `run_layer1_sprint_all_combinations` (D-13, `src.models.pipeline`)
+      passa `report_path` único por combinação
+      (`experiments/alpha_layer1_report_{symbol}_{resolution_id}.json`),
+      nunca o default compartilhado -- testado
+      (`test_run_layer1_sprint_all_combinations_roda_5x3_com_report_
+      path_unico`, confirma 15 paths distintos). O default de
+      `run_layer1_sprint` sozinho (1 chamada isolada, fora do driver de
+      15) continua compartilhado por desenho -- não é o caso que este
+      achado cobria.
+    status: "fechado 2026-08-23"
 
   # AG-161..AG-164: achados da revisão `project_assurance` (PRINCE2 §6.4,
   # foco de integração) sobre o design doc v2 do Alpha (2026-08-22).
