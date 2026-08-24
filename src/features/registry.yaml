@@ -1199,3 +1199,111 @@
   version: v1
   added: 2026-08-24
   nota: "Soma ingenua sobre janela de BARRAS contaria o mesmo valor de funding repetido ~32x (asof-join backward repete o ultimo valor conhecido em toda barra de 15m dentro do periodo de 8h) -- errado por construcao. Deteccao por timestamp (nao por mudanca de valor) e robusta ao caso raro de 2 eventos consecutivos com o MESMO valor numerico (ex. funding no cap/floor). lookback_bars=288 = 9 eventos x 32 barras/evento (8h a 15m) -- derivado, nao um numero solto; e o pior caso real usado pra proteger CPCV/purge (AG-032 item 8), nao um valor tipico."
+
+# ============================================================================
+# LOTE C — liberação de features (H5, 2026-08-24). 6 features T2 novas
+# (E08f, E14f-E18f) via extensão fina de _sources.py (mesmo arquivo
+# `metrics` de E08f/E09f/E10f, colunas antes não lidas) — zero primitiva
+# nova, zero constante nova (reusa support.expanding_zscore_strict, já
+# usada por D03f/E02f, e o mecanismo de min_common_history_bars/AG-030).
+# Nenhuma promovida a T1 (§0.2 R4 do CLAUDE.md; §2.0.1/§2.13 do PRD).
+# ============================================================================
+
+- id: E08f_oi_notional
+  tier: T2
+  group: E
+  formula: "sum_open_interest_value, ja alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro ponto de metrics conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough de oi_notional_aligned, mesma causalidade de E09f/E10f (asof-join backward, ja testado) -- testado em tests/unit/test_features_groups.py::test_e08f_e14f_e16f_e18f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: E14f_toptrader_ls_ratio
+  tier: T2
+  group: E
+  formula: "sum_toptrader_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro ponto de metrics conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough, mesma causalidade de E08f -- testado em tests/unit/test_features_groups.py::test_e08f_e14f_e16f_e18f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "variante SUM (baseada em soma de posicoes/notional), nao COUNT (baseada em numero de contas) -- decisao do Manager, 2026-08-24, consistente com E09f_oi_contracts/E18f_taker_ls_vol_ratio, que ja usam colunas sum_ neste projeto. schemas.METRICS tem AMBAS as colunas (count_toptrader_long_short_ratio tambem existe); a nao usada fica sem feature dedicada nesta leva."
+
+- id: E15f_toptrader_ls_z
+  tier: T2
+  group: E
+  formula: "z-score EXPANSIVO estrito de toptrader_ls_ratio_t (E14f) em [t0_dataset, t-1] (estrito, nunca inclui t)"
+  sources: [D04]
+  lookback_bars: expanding
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN ate 2 pontos previos validos (desvio amostral ddof=1); null antes de min_warmup_bars"
+  causal_proof: "mesma primitiva de D03f/E02f (support.expanding_zscore_strict, Welford online, B02) -- testado em tests/unit/test_features_support.py::test_expanding_zscore_strict_nao_usa_indice_t"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: E16f_global_ls_ratio
+  tier: T2
+  group: E
+  formula: "count_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro ponto de metrics conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough, mesma causalidade de E08f -- testado em tests/unit/test_features_groups.py::test_e08f_e14f_e16f_e18f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "razao de long/short do MERCADO GERAL (baseada em contagem de contas) -- diferente de E14f, que e dos TOP TRADERS (baseada em soma de posicoes). schemas.METRICS so tem uma coluna de long/short 'geral' (count_long_short_ratio); as duas colunas top-trader (count_/sum_toptrader_long_short_ratio) sao ambas especificas de top traders, nao do mercado geral."
+
+- id: E17f_retail_vs_top_spread
+  tier: T2
+  group: E
+  formula: "global_ls_z - toptrader_ls_z, global_ls_z = z-score expansivo estrito de global_ls_ratio (E16f) computado internamente"
+  sources: [D04]
+  lookback_bars: expanding
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN ate 2 pontos previos validos dos dois lados; null antes de min_warmup_bars"
+  causal_proof: "dois z-scores expansivos estritos (support.expanding_zscore_strict), um interno (global_ls_z) e um reaproveitado (E15f_toptrader_ls_z, ja causal) -- testado em tests/unit/test_features_groups.py::test_e17f_reproduz_diferenca_de_dois_zscores"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "global_ls_z nao e uma feature propria cadastrada (PRD so usa 'global_ls_z' dentro da formula de E17f, nunca como E16f_z) -- computado internamente em group_e.py::e17f_retail_vs_top_spread, nao recomputado fora dali."
+
+- id: E18f_taker_ls_vol_ratio
+  tier: T2
+  group: E
+  formula: "sum_taker_long_short_vol_ratio, ja alinhado ao grid de 15m por asof-join backward"
+  sources: [D04]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, .inf]
+  nan_policy: "NaN se a barra for anterior ao primeiro ponto de metrics conhecido; null antes de min_warmup_bars"
+  causal_proof: "passthrough, mesma causalidade de E08f -- testado em tests/unit/test_features_groups.py::test_e08f_e14f_e16f_e18f_sao_passthrough"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24

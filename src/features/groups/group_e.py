@@ -185,6 +185,80 @@ def e03f_funding_cum_3d(
     return out
 
 
+# ============================================================================
+# Lote C da liberação de features (H5, 2026-08-24) — E08f, E14f-E18f.
+# Todas T2 (§0.2 R4/§2.13, nenhuma promovida a T1). Zero primitiva nova
+# (reusa support.expanding_zscore_strict, já usada por D03f/E02f) — só
+# fonte já exposta por _sources.load_futures_positioning_aligned
+# (mesmo arquivo `metrics` de E08f/E09f/E10f, colunas antes não lidas).
+# ============================================================================
+
+
+def e08f_oi_notional(oi_notional_aligned: FloatArray) -> FloatArray:
+    """`sum_open_interest_value`, já alinhado ao grid causal — §2.6
+    E08f. Passthrough puro, mesma convenção de `e01f_funding_last`/
+    `e09f_oi_contracts`."""
+    return oi_notional_aligned
+
+
+def e14f_toptrader_ls_ratio(toptrader_ls_ratio_aligned: FloatArray) -> FloatArray:
+    """`sum_toptrader_long_short_ratio` (variante baseada em SOMA de
+    posições/notional, não `count_` baseada em número de contas —
+    decisão do Manager, 2026-08-24, consistente com E09f/E18f), já
+    alinhado ao grid causal — §2.6 E14f. Passthrough puro."""
+    return toptrader_ls_ratio_aligned
+
+
+def e15f_toptrader_ls_z(
+    toptrader_ls_ratio_aligned: FloatArray, *, min_common_history_bars: int | None = None
+) -> FloatArray:
+    """Z-score EXPANSIVO estrito de `toptrader_ls_ratio` (E14f) — §2.6
+    E15f. Mesma primitiva de D03f/E02f (`support.expanding_zscore_
+    strict`, B02) e mesmo mecanismo de `min_common_history_bars`
+    (AG-030) das 3 já ativas."""
+    return support.expanding_zscore_strict(
+        toptrader_ls_ratio_aligned, min_common_history_bars=min_common_history_bars
+    )
+
+
+def e16f_global_ls_ratio(global_ls_ratio_aligned: FloatArray) -> FloatArray:
+    """`count_long_short_ratio` (razão de long/short do MERCADO geral,
+    baseada em contagem de contas — diferente de `toptrader_ls_ratio`,
+    que é dos top traders, baseada em soma de posições; PRD declara
+    fontes distintas pras duas, `count_` aqui não é escolha — é a única
+    coluna de long/short "geral" disponível no schema de `metrics`,
+    `sum_toptrader_long_short_ratio`/`count_toptrader_long_short_ratio`
+    são AMBAS específicas de top traders), já alinhado ao grid causal —
+    §2.6 E16f. Passthrough puro."""
+    return global_ls_ratio_aligned
+
+
+def e17f_retail_vs_top_spread(
+    global_ls_ratio_aligned: FloatArray,
+    toptrader_ls_z: FloatArray,
+    *,
+    min_common_history_bars: int | None = None,
+) -> FloatArray:
+    """`global_ls_z - toptrader_ls_z` — §2.6 E17f, proxy de
+    posicionamento contrário (retail vs. top traders). `global_ls_z`
+    calculado INTERNAMENTE (mesma primitiva `expanding_zscore_strict`
+    de E15f, aplicada a `global_ls_ratio_aligned`) — o PRD não cataloga
+    "E16f_z" como feature própria, só usa "global_ls_z" dentro da
+    fórmula de E17f. `toptrader_ls_z` é reaproveitado (já calculado
+    como E15f pelo chamador), não recomputado aqui."""
+    global_ls_z = support.expanding_zscore_strict(
+        global_ls_ratio_aligned, min_common_history_bars=min_common_history_bars
+    )
+    out: FloatArray = global_ls_z - toptrader_ls_z
+    return out
+
+
+def e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_aligned: FloatArray) -> FloatArray:
+    """`sum_taker_long_short_vol_ratio`, já alinhado ao grid causal —
+    §2.6 E18f. Passthrough puro."""
+    return taker_ls_vol_ratio_aligned
+
+
 def e12f_price_oi_divergence(
     ret_lag: FloatArray, oi_contracts_aligned: FloatArray, oi_lag_bars: int
 ) -> FloatArray:

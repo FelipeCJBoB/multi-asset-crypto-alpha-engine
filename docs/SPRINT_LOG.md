@@ -4090,6 +4090,41 @@ de D07f contra dado real dos 5 símbolos. Detalhe completo:
 da liberação de features").
 
 <!-- check-sprint-log: skip -->
+**H5 — Lote C implementado, os 3 lotes da liberação de features
+FECHADOS (2026-08-24)** <!-- check-sprint-log: skip --> — 6 features
+T2 finais: `E08f_oi_notional`, `E14f_toptrader_ls_ratio`, `E15f_
+toptrader_ls_z`, `E16f_global_ls_ratio`, `E17f_retail_vs_top_spread`,
+`E18f_taker_ls_vol_ratio`. Zero primitiva nova (reusa `support.
+expanding_zscore_strict`, já usada por D03f/E02f) — extensão fina de
+`_sources.py` pro MESMO arquivo `metrics` que já alimenta E09f/E10f,
+só lendo colunas antes ignoradas (`sum_open_interest_value`, `sum_
+toptrader_long_short_ratio`, `count_long_short_ratio`, `sum_taker_
+long_short_vol_ratio`). Achado de pesquisa web pré-implementação:
+`schemas.METRICS` tem DUAS colunas de razão dos top traders
+(`count_toptrader_long_short_ratio`, baseada em número de contas, e
+`sum_toptrader_long_short_ratio`, baseada em soma de posições/
+notional) — ambiguidade real que o PRD não resolve; usuário confirmou
+a variante `sum_` (consistente com `E09f`/`E18f`, que já usam colunas
+`sum_` neste projeto). Refactor real, não aditivo: `_load_and_dedupe_
+metrics_rows` extraído de dentro de `load_oi_series_deduped` (resolução
+de `create_time` duplicado, achado Sprint 3/4) pra ser reaproveitado
+por `load_metrics_series_deduped` (novo, colunas arbitrárias) sem
+duplicar a lógica — `load_oi_series_deduped` preserva comportamento
+externo bit-a-bit (4 testes pré-existentes confirmados passando sem
+alteração). `SUPPORT_FEATURE_IDS`: 56→62.
+
+Lint mecânico limpo, suíte completa 1934 passed, paridade lote↔streaming
+completa 20/20 (dado real, 5 símbolos) e cobertura de warmup em dado
+real (`test_warmup_uniforme_maioria_valida_depois_do_corte`) confirmando
+que as 6 novas recebem valor de verdade via `build_t1_features` (default,
+sem flag de opt-out — diferente de D07f, este carregamento usa `asof_
+align_backward`, seguro sob qualquer `bar_source`). **Fecha o plano de
+3 lotes (H5) aprovado pelo usuário** — 59 features T2 novas no total
+(Lote A 47 + Lote B 6 + Lote C 6), `T1_FEATURE_IDS` intocado (nenhuma
+promoção — decisão fica pra ablação dentro do CPCV, §2.0.1/§2.13 do
+PRD, tarefa futura separada).
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -4124,7 +4159,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Data Layer (01_BARRA–07b_PESOS+08_SPLIT) — prontidão real** | Alpha (Camada 1) segue gated até os 9 estágios estarem 100% prontos (decisão do Manager, 2026-08-21). `stage_readiness_audit` (fan-out 5 clusters, mesma data): **0/9 em 100%**, 36 achados (3C/8H/12M/13L). 6 fechados nesta sessão (`AG-128`-`AG-131`, `AG-133`, commit `d592bc6`); `AG-132` fechado com ressalva (função pronta, sem caller). `AG-125`/`AG-127` **fechados** (migração retroativa de `quality_reports` executada; `build_hmm_regimes`/`is_stress_state` causal por fold, commit `36ff6fa`). **`AG-124` — investigação CONCLUÍDA e REPROCESSADA 2026-08-22** (6 rodadas de auditoria externa, ver seção narrativa e `PLANO_MESTRE_PRINCE2.md §15.15`): `trailing_window_days=7`/`cadence_days=7` preferido sobre `cadence_days=1` — reprocessamento real dos 5 símbolos × 3 resoluções **CONCLUÍDO** (15/15 células, zero erro, `experiments/ag124_production_reprocessing_summary.json`). Item 22 (validação sobre dado real, histórico completo) **resultado POSITIVO** — curtose alta é evento de mercado genuíno (Celsius/3AC, Black Thursday COVID, FTX), artefato de recalibração desprezível sobre a série real (`experiments/ag124_post_reprocessing_validation.json`). Achado colateral não-bloqueante `AG-137` (arquivo `.parquet` da calibração antiga ainda presente nos `cadence_days` dias iniciais de cada célula — cold-start corretamente pulado na escrita, arquivo velho não removido; decisão de limpeza pendente). **1 decisão do Manager ainda pendente**: `AG-126` (expansão do catálogo de features é independente de `V41-6→V41-5→M4`, ou espera junto?) — única pendência real restante do fan-out original. Detalhe completo: `audit/architecture_gaps_log.yaml::AG-124..137`, `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` |
 | Pendente — Data Layer (execução, sem decisão pendente) | `AG-100` (labels R2/R3 ausentes nos 5 símbolos — puro escopo/execução, zero engenharia nova, já confirmado por 3 clusters); `max_feature_lookback_ms` sem wireup real (addendum `AG-032`, 2026-08-21) — bloqueado até o Manager decidir o que "lookback" significa pras 3 features `expanding` (`AG-032` acima, não Data Layer em si) |
 | `AG-126` — decidido 2026-08-22 | Manager confirmou: expansão do catálogo de features (~92, ~79 restantes) É a mesma iniciativa que `03_FEATURES`/`V41-7` — segue a dependência já mapeada em `§11.4` (`V41-6→V41-5→M4` fechar primeiro), não é independente. `T1_FEATURE_IDS` permanece travado nas 10 atuais até a cadeia desbloquear. |
-| **H5 — liberação de features, Lote A+B (2026-08-24)** | **Ambos implementados, testados de verdade (`pytest` rodado pelo próprio Claude, autorização explícita do usuário), commitados.** Lote A: 47 T2 (Grupos A/B/C/D/E/K), zero fonte/primitiva nova. Lote B: 6 T2 (`A15`/`B10`/`C08`/`D07f`/`D10f`/`E03f`), cada uma com primitiva nova (`support.rolling_correlation`/`rolling_percentile_rank_strict`, mín/máx rolante, reset por dia, soma por evento) ou fonte nova (`D07f`, `klines_1m` bruto). `SUPPORT_FEATURE_IDS`: 3→56. `audit_engineering` (lente FS/FI/FT/FCN) rodada sobre o Lote A: 0 CRITICAL/HIGH, 1 MEDIUM real corrigido na sessão. Suíte completa 1924 passed + paridade lote↔streaming completa 20/20 (`<1e-8`, 5 símbolos reais, inclui caminho real de D07f) — tudo executado, não só redigido. Nenhuma promoção a T1, mesma trava de `AG-126` acima. Lote C (extensão de `_sources.py` pra `oi_notional`/long-short ratios) é o único pendente. |
+| **H5 — liberação de features — PLANO DE 3 LOTES FECHADO (2026-08-24)** | **Lote A (47 T2) + Lote B (6 T2, cada uma com primitiva nova: `support.rolling_correlation`/`rolling_percentile_rank_strict`, mín/máx rolante, reset por dia, soma por evento, ou fonte nova — `D07f`, `klines_1m` bruto) + Lote C (6 T2, extensão fina de `_sources.py` pro mesmo arquivo `metrics` de E09f/E10f — `E08f`/`E14f`-`E18f`, zero primitiva nova) — todos implementados, testados de verdade (`pytest` rodado pelo próprio Claude, autorização explícita do usuário) e commitados.** 59 features T2 novas no total. `SUPPORT_FEATURE_IDS`: 3→62. `audit_engineering` (lente FS/FI/FT/FCN) rodada sobre o Lote A: 0 CRITICAL/HIGH, 1 MEDIUM real corrigido na sessão. Suíte completa 1934 passed + paridade lote↔streaming completa 20/20 (`<1e-8`, 5 símbolos reais) + cobertura de warmup em dado real confirmando valores de verdade — tudo executado, não só redigido. Nenhuma promoção a T1, mesma trava de `AG-126` acima — decisão fica pra ablação dentro do CPCV (§2.0.1/§2.13 do PRD), tarefa futura separada. |
 | **Motor multi-timeframe R1/R2/R3 — dívida técnica BTC/M15** | Mapa completo (10 agentes, 130 arquivos), `AG-165`–`AG-183`. Grupo 1+2 parcial implementados, commit `72e02c7`. **D-01/D-02 implementados 2026-08-23, commit `6902352`** — fecha `AG-177` e o componente de UNIDADE de `AG-159` (ressalva de MAGNITUDE do proxy p99 segue aberta, B23); revisão `project_assurance` corrigiu 1 achado real pré-commit (`AG-183`) + 2 menores (`AG-181`/`AG-182`). **`AG-174`/`AG-175`/`AG-176` fechados, commit `d44c7f9`** — `validate_resampled_bars` reescrita (schemas `BARS_15M`/`30M`/`1H` novos, reusa `validate_klines_like`); guarda `check_resolution_id_guard_parity.py` nova (opção B, duplicação mantida). **`AG-180` FECHADO, commit `3c3ed14`** — D-04 aplicado: `min_warmup_bars` mantido em contagem de barra (fórmula nativa em barra), `regime_confirmation_bars`/`regime_stress_exit_confirmation_bars` migradas pra piso híbrido (contagem de barra E tempo real mínimo, `(N-1)*step_ms("15m")`, bit-exato sob 15m). `1741 passed, 0 failed`. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.21.2`/`§15.21.3`/`§15.21.4`. `registry.yaml` NÃO tocado (freeze `AG-126` ativo). Pendente: `AG-179` (fora de escopo por desenho), ressalva de magnitude de `AG-159`, §11 do design doc (caminho HMM) — represados pro Manager |
 | **Núcleo funcional, casca imperativa** | Princípio formalizado (`CLAUDE.md`), 5 violações reais + 1 achado extra (HIGH, `project_assurance`) fechados. `triple_barrier.py`/`fill_simulator.py` (ponto de injeção `filters_by_date`/`tick_size_by_date`), `faixa1_5_prerequisites.py` (`hhi_df`), `attribution.py` (split `_load_payloads`/`_aggregate_payloads`), `pipeline.py`+`hhi.py`+`baselines.py` (`gate3_4_passes`/`gate3_4_max_share_passes`/`b1_sample_size`). `1734 passed` + `7 passed` de integração. Pendente: teste sintético completo pra `compute_fase2_e1` (18 células) — arquitetura fechada, cobertura parcial, registrado como pendência explícita. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.22`, `docs/nucleo_casca_design_doc_2026-08-23.md`, `AG-184`–`AG-189` |
 | **`CLAUDE.md` — governança do próprio arquivo de instruções** | `AG-190` fechado, commit `e5395fb`. `## Projeto` ganhou nota `[PRECISÃO]` apontando pra `AG-042`/`canonical_bar_type: dollar`/R1/R2/R3 (deixa explícito que "R1 = 15m equivalente" é leitura errada); `## As 5 restrições invioláveis` ganhou nota `[DESATUALIZADO]` (valores vêm do PRD_V3_2 obsoleto, BTC-único, nunca remedidos multi-ativo/dollar-bar); B21 reescrito pra refletir `dynamax.GaussianHMM` k=4 como candidato canônico de produção real (não mais "V1.1" hipotético). Verificação não-exaustiva — `## Layer hierarchy` (falta `monitoring/`/`core/`/`io/`) e cadência de B22 (`AG-155`, já aberto) ficam como pendência menor |

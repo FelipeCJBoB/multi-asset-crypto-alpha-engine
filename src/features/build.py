@@ -13,6 +13,7 @@ exatamente essa propriedade — ver o motivo detalhado lá.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Final
@@ -126,6 +127,15 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "D07f_taker_imbalance_1m_agg",
     "D10f_vol_price_divergence",
     "E03f_funding_cum_3d",
+    # Lote C da liberação de features (H5, 2026-08-24) -- 6 T2, extensão
+    # fina de _sources.py (mesmo arquivo `metrics` de E08f/E09f/E10f,
+    # colunas antes não lidas) -- zero primitiva nova.
+    "E08f_oi_notional",
+    "E14f_toptrader_ls_ratio",
+    "E15f_toptrader_ls_z",
+    "E16f_global_ls_ratio",
+    "E17f_retail_vs_top_spread",
+    "E18f_taker_ls_vol_ratio",
 )
 
 ALL_OUTPUT_COLUMNS: tuple[str, ...] = (
@@ -586,6 +596,7 @@ def compute_t1_features(
     apply_warmup_mask: bool = True,
     vol_estimator_id: str | None = None,
     taker_imbalance_1m_agg_aligned: pl.Series | FloatArray | None = None,
+    futures_positioning_aligned: Mapping[str, pl.Series | FloatArray] | None = None,
 ) -> pl.DataFrame:
     """Núcleo puro (sem IO) do Feature Engine T1.
 
@@ -614,6 +625,17 @@ def compute_t1_features(
     produz a coluna inteira `NaN` (warmup-masked igual a qualquer outra,
     nunca um valor inventado) — `build_t1_features` (casca de IO) passa
     o array real por padrão.
+
+    `futures_positioning_aligned` (Lote C, H5, 2026-08-24) — E08f_oi_
+    notional/E14f_toptrader_ls_ratio/E16f_global_ls_ratio/E18f_taker_
+    ls_vol_ratio, mesmo contrato de `taker_imbalance_1m_agg_aligned`
+    (dict com 4 arrays já alinhados, produzido por `_sources.load_
+    futures_positioning_aligned`; `None` por default). Diferente de
+    D07f, não precisa de `bar_source` especial — usa `asof_align_
+    backward` (mesmo mecanismo causal de funding/OI), que funciona sob
+    qualquer grid de barra, não só `time_15m`. `build_t1_features`
+    passa o dict real por padrão, sem flag de opt-out (custo de IO
+    comparável ao de OI, que já é sempre carregado).
 
     `vol_estimator_id` (2026-08-17, AG-036/065) escolhe qual estimador
     calcula C01 (`atr_20_abs`, insumo de A05/A13/C02/E27f) — `None`
@@ -648,6 +670,16 @@ def compute_t1_features(
         if taker_imbalance_1m_agg_aligned is None
         else _to_numpy(taker_imbalance_1m_agg_aligned)
     )
+    if futures_positioning_aligned is None:
+        oi_notional_arr = np.full(n_bars, np.nan, dtype=np.float64)
+        toptrader_ls_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
+        global_ls_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
+        taker_ls_vol_ratio_arr = np.full(n_bars, np.nan, dtype=np.float64)
+    else:
+        oi_notional_arr = _to_numpy(futures_positioning_aligned["oi_notional"])
+        toptrader_ls_ratio_arr = _to_numpy(futures_positioning_aligned["toptrader_ls_ratio"])
+        global_ls_ratio_arr = _to_numpy(futures_positioning_aligned["global_ls_ratio"])
+        taker_ls_vol_ratio_arr = _to_numpy(futures_positioning_aligned["taker_ls_vol_ratio"])
     lote_a = LoteAWindows.from_constants()
     lote_b = LoteBWindows.from_constants()
 
@@ -679,6 +711,9 @@ def compute_t1_features(
     a11_true_range_pct = group_a.a11_true_range_pct(high, low, close)
     c06_vol_ratio_12_96 = group_c.c06_vol_ratio_12_96(
         log_return_1, windows.vol_ratio_short_window, windows.vol_ratio_long_window
+    )
+    e15f_toptrader_ls_z = group_e.e15f_toptrader_ls_z(
+        toptrader_ls_ratio_arr, min_common_history_bars=windows.min_common_history_bars
     )
 
     columns: dict[str, object] = {
@@ -827,6 +862,17 @@ def compute_t1_features(
         "E03f_funding_cum_3d": group_e.e03f_funding_cum_3d(
             funding_arr, close_time_ms, lote_a.e05f_funding_interval_hours, lote_b.e03f_n_events
         ),
+        # Lote C da liberação de features (H5, 2026-08-24) -- 6 T2.
+        "E08f_oi_notional": group_e.e08f_oi_notional(oi_notional_arr),
+        "E14f_toptrader_ls_ratio": group_e.e14f_toptrader_ls_ratio(toptrader_ls_ratio_arr),
+        "E15f_toptrader_ls_z": e15f_toptrader_ls_z,
+        "E16f_global_ls_ratio": group_e.e16f_global_ls_ratio(global_ls_ratio_arr),
+        "E17f_retail_vs_top_spread": group_e.e17f_retail_vs_top_spread(
+            global_ls_ratio_arr,
+            e15f_toptrader_ls_z,
+            min_common_history_bars=windows.min_common_history_bars,
+        ),
+        "E18f_taker_ls_vol_ratio": group_e.e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_arr),
     }
     df = pl.DataFrame(columns)
 
@@ -949,7 +995,15 @@ def build_t1_features(
     ("15m")`) assume grid de relógio FIXO — sob dollar bar, `bars_15m`
     não tem essa propriedade (barras irregulares, disparadas por
     threshold), o bucket sairia incorreto silenciosamente se calculado
-    do mesmo jeito; `NaN` honesto é preferível a um número errado."""
+    do mesmo jeito; `NaN` honesto é preferível a um número errado.
+
+    `futures_positioning_aligned` (Lote C, H5, 2026-08-24) — E08f/E14f/
+    E16f/E18f, sempre carregado (`_sources.load_futures_positioning_
+    aligned`, sem flag de opt-out) — usa `asof_align_backward`, mesmo
+    mecanismo causal de funding/OI, seguro sob qualquer `bar_source`
+    (diferente de `load_taker_imbalance_1m_agg_aligned`, que depende de
+    grid de relógio fixo). Custo de IO comparável ao de OI (mesmo
+    arquivo `metrics`, colunas adicionais), já sempre pago."""
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
@@ -961,6 +1015,9 @@ def build_t1_features(
         taker_imbalance_1m_agg_aligned = _sources.load_taker_imbalance_1m_agg_aligned(
             bars_15m, symbol, start, end
         )
+    futures_positioning_aligned = _sources.load_futures_positioning_aligned(
+        bars_15m, symbol, start, end
+    )
     logger.info(
         "features.build_t1_features",
         symbol=symbol,
@@ -979,4 +1036,5 @@ def build_t1_features(
         apply_warmup_mask=apply_warmup_mask,
         vol_estimator_id=vol_estimator_id,
         taker_imbalance_1m_agg_aligned=taker_imbalance_1m_agg_aligned,
+        futures_positioning_aligned=futures_positioning_aligned,
     )

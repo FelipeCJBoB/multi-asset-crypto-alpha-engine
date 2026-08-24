@@ -933,3 +933,66 @@ def test_e03f_soma_por_evento_nao_por_barra() -> None:
     assert out[95] == pytest.approx(expected_events_012)  # última barra do 3º evento
     expected_events_123 = funding_values[1] + funding_values[2] + funding_values[3]
     assert out[96] == pytest.approx(expected_events_123)  # 4º evento -- 1º evento cai da janela
+
+
+# ============================================================================
+# Lote C da liberação de features (H5, 2026-08-24) — E08f, E14f-E18f.
+# Todas T2 (§0.2 R4/§2.13, nenhuma promovida a T1).
+# ============================================================================
+
+
+def test_e08f_e14f_e16f_e18f_sao_passthrough() -> None:
+    rng = np.random.default_rng(83)
+    values = rng.normal(0, 1, 50)
+    np.testing.assert_array_equal(group_e.e08f_oi_notional(values), values)
+    np.testing.assert_array_equal(group_e.e14f_toptrader_ls_ratio(values), values)
+    np.testing.assert_array_equal(group_e.e16f_global_ls_ratio(values), values)
+    np.testing.assert_array_equal(group_e.e18f_taker_ls_vol_ratio(values), values)
+
+
+def test_e15f_reproduz_expanding_zscore_strict() -> None:
+    rng = np.random.default_rng(89)
+    values = rng.uniform(1.0, 3.0, 150)
+    out = group_e.e15f_toptrader_ls_z(values)
+    expected = support.expanding_zscore_strict(values)
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_e15f_min_common_history_bars_e_repassado_a_primitiva() -> None:
+    rng = np.random.default_rng(91)
+    values = rng.uniform(1.0, 3.0, 150)
+    cap = 80
+    out = group_e.e15f_toptrader_ls_z(values, min_common_history_bars=cap)
+    expected = support.expanding_zscore_strict(values, min_common_history_bars=cap)
+    np.testing.assert_array_equal(out, expected)
+    assert np.isnan(out[: 150 - cap]).all()
+
+
+def test_e17f_reproduz_diferenca_de_dois_zscores() -> None:
+    rng = np.random.default_rng(97)
+    global_ls_ratio = rng.uniform(0.5, 2.0, 150)
+    toptrader_ls_ratio = rng.uniform(0.5, 2.0, 150)
+    toptrader_ls_z = support.expanding_zscore_strict(toptrader_ls_ratio)
+
+    out = group_e.e17f_retail_vs_top_spread(global_ls_ratio, toptrader_ls_z)
+    expected_global_z = support.expanding_zscore_strict(global_ls_ratio)
+    np.testing.assert_array_equal(out, expected_global_z - toptrader_ls_z)
+
+
+def test_e17f_min_common_history_bars_afeta_so_o_lado_global() -> None:
+    """`min_common_history_bars` só é repassado pro z-score INTERNO
+    (`global_ls_z`) — `toptrader_ls_z` chega já pronto do chamador
+    (`E15f`, calculado com seu próprio cap, se houver), não é
+    recalculado aqui."""
+    rng = np.random.default_rng(101)
+    global_ls_ratio = rng.uniform(0.5, 2.0, 150)
+    toptrader_ls_z = rng.normal(0, 1, 150)  # já "pronto", valor arbitrário pro teste
+    cap = 90
+
+    out = group_e.e17f_retail_vs_top_spread(
+        global_ls_ratio, toptrader_ls_z, min_common_history_bars=cap
+    )
+    expected_global_z = support.expanding_zscore_strict(
+        global_ls_ratio, min_common_history_bars=cap
+    )
+    np.testing.assert_array_equal(out, expected_global_z - toptrader_ls_z)

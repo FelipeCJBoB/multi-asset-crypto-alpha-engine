@@ -137,6 +137,94 @@ def _list_metrics_day_files(symbol: str, start: date, end: date) -> list[Path]:
     return files
 
 
+def _load_and_dedupe_metrics_rows(
+    symbol: str, start: date, end: date, value_cols: tuple[str, ...]
+) -> pl.DataFrame:
+    """Núcleo COMPARTILHADO de `load_oi_series_deduped` (Sprint 3/4) e
+    `load_metrics_series_deduped` (Lote C da liberação de features, H5,
+    2026-08-24) — extraído aqui pra não duplicar a resolução de
+    `create_time` duplicado (achado real, ver docstring de `load_oi_
+    series_deduped`) quando um segundo chamador precisou ler OUTRAS
+    colunas do mesmo arquivo `metrics`. `value_cols` é lido de `frames`
+    junto de `create_time`/`_file_date`; devolve só `create_time` +
+    `value_cols` deduplicados, SEM nenhuma limpeza de domínio específica
+    de coluna (isso fica pro chamador — `sum_open_interest<=0 -> null`
+    é uma regra física de OI, não generalizável às demais métricas sem
+    medir separadamente se cada uma tem o mesmo tipo de leitura
+    inválida; `load_oi_series_deduped` aplica essa limpeza DEPOIS de
+    chamar esta função, `load_metrics_series_deduped` não aplica
+    nenhuma)."""
+    files = _list_metrics_day_files(symbol, start, end)
+    if not files:
+        schema = {"create_time": pl.Utf8, **dict.fromkeys(value_cols, pl.Float64)}
+        return pl.DataFrame(schema=schema)
+
+    frames = []
+    for f in files:
+        df = pl.read_parquet(f, columns=["create_time", *value_cols])
+        df = df.with_columns(pl.lit(f.stem).alias("_file_date"))
+        frames.append(df)
+    raw = pl.concat(frames, how="vertical")
+
+    raw = raw.with_columns(pl.col("create_time").str.slice(0, 10).alias("_create_date"))
+
+    dup_keys = (
+        raw.filter(pl.col("create_time").is_duplicated())
+        .select("create_time")
+        .unique()
+        .sort("create_time")
+        .to_series()
+        .to_list()
+    )
+    if dup_keys:
+        logger.warning(
+            "features.metrics_duplicate_create_time",
+            symbol=symbol,
+            value_cols=value_cols,
+            n_duplicate_keys=len(dup_keys),
+            example_keys=dup_keys[:10],
+            resolution="mantida a linha do arquivo cujo nome bate com a data do create_time",
+        )
+
+    raw = raw.with_columns((pl.col("_file_date") == pl.col("_create_date")).alias("_is_native"))
+    deduped = (
+        raw.sort(["create_time", "_is_native"], descending=[False, True], maintain_order=True)
+        .unique(subset=["create_time"], keep="first", maintain_order=True)
+        .sort("create_time")
+        .drop(["_file_date", "_create_date", "_is_native"])
+    )
+    return deduped
+
+
+def load_metrics_series_deduped(
+    symbol: str, start: DateLike, end: DateLike, value_cols: tuple[str, ...]
+) -> pl.DataFrame:
+    """Lote C da liberação de features (H5, 2026-08-24) — E08f/E14f/
+    E16f/E18f. Generalização de `load_oi_series_deduped` (mesma
+    resolução de `create_time` duplicado, `_load_and_dedupe_metrics_
+    rows`) pra QUALQUER subconjunto das colunas de `schemas.METRICS`
+    além de `sum_open_interest` — `sum_open_interest_value`
+    (E08f_oi_notional), `sum_toptrader_long_short_ratio`
+    (E14f_toptrader_ls_ratio), `count_long_short_ratio`
+    (E16f_global_ls_ratio), `sum_taker_long_short_vol_ratio`
+    (E18f_taker_ls_vol_ratio). Sem limpeza de domínio (diferente de
+    `load_oi_series_deduped`, que trata `sum_open_interest<=0` como
+    leitura inválida) — nenhuma medição própria feita ainda pras
+    outras colunas sobre o que conta como valor inválido nelas."""
+    start_d = _as_date(start)
+    end_d = _as_date(end)
+    deduped = _load_and_dedupe_metrics_rows(symbol, start_d, end_d, value_cols)
+    if deduped.is_empty():
+        empty_schema = {
+            "create_time": pl.Utf8,
+            **dict.fromkeys(value_cols, pl.Float64),
+            "_ts_ms": pl.Int64,
+        }
+        return pl.DataFrame(schema=empty_schema)
+    result: pl.DataFrame = metrics_timestamp_to_ms(deduped, create_time_col="create_time")
+    return result
+
+
 def load_oi_series_deduped(symbol: str, start: DateLike, end: DateLike) -> pl.DataFrame:
     """`sum_open_interest` (D04/`metrics`) por `create_time`, sem
     duplicatas cross-arquivo.
@@ -165,44 +253,11 @@ def load_oi_series_deduped(symbol: str, start: DateLike, end: DateLike) -> pl.Da
     pega."""
     start_d = _as_date(start)
     end_d = _as_date(end)
-    files = _list_metrics_day_files(symbol, start_d, end_d)
-    empty_schema = {"create_time": pl.Utf8, "sum_open_interest": pl.Float64, "_ts_ms": pl.Int64}
-    if not files:
+    value_cols = ("sum_open_interest",)
+    deduped = _load_and_dedupe_metrics_rows(symbol, start_d, end_d, value_cols)
+    if deduped.is_empty():
+        empty_schema = {"create_time": pl.Utf8, "sum_open_interest": pl.Float64, "_ts_ms": pl.Int64}
         return pl.DataFrame(schema=empty_schema)
-
-    frames = []
-    for f in files:
-        df = pl.read_parquet(f, columns=["create_time", "sum_open_interest"])
-        df = df.with_columns(pl.lit(f.stem).alias("_file_date"))
-        frames.append(df)
-    raw = pl.concat(frames, how="vertical")
-
-    raw = raw.with_columns(pl.col("create_time").str.slice(0, 10).alias("_create_date"))
-
-    dup_keys = (
-        raw.filter(pl.col("create_time").is_duplicated())
-        .select("create_time")
-        .unique()
-        .sort("create_time")
-        .to_series()
-        .to_list()
-    )
-    if dup_keys:
-        logger.warning(
-            "features.metrics_duplicate_create_time",
-            symbol=symbol,
-            n_duplicate_keys=len(dup_keys),
-            example_keys=dup_keys[:10],
-            resolution="mantida a linha do arquivo cujo nome bate com a data do create_time",
-        )
-
-    raw = raw.with_columns((pl.col("_file_date") == pl.col("_create_date")).alias("_is_native"))
-    deduped = (
-        raw.sort(["create_time", "_is_native"], descending=[False, True], maintain_order=True)
-        .unique(subset=["create_time"], keep="first", maintain_order=True)
-        .sort("create_time")
-        .drop(["_file_date", "_create_date", "_is_native"])
-    )
 
     # Achado adicional do Sprint 4, fora dos 2 dias já conhecidos pelo Data
     # Quality Engine (Sprint 3): pontos ISOLADOS de sum_open_interest == 0.0
@@ -277,4 +332,42 @@ def load_taker_imbalance_1m_agg_aligned(
         bucket_id_1m,
         bucket_id_15m,
     )
+    return out
+
+
+#: Lote C da liberação de features (H5, 2026-08-24) — mapeamento feature ->
+#: coluna real de `schemas.METRICS`. `toptrader_ls_ratio` usa a variante
+#: `sum_` (baseada em SOMA de posições/notional, não `count_` baseada em
+#: número de contas) — decisão do Manager, 2026-08-24: consistente com
+#: `E09f_oi_contracts`/`E18f_taker_ls_vol_ratio`, que já usam colunas
+#: `sum_` neste projeto (peso de capital, não contagem de contas).
+_FUTURES_POSITIONING_COLS: dict[str, str] = {
+    "oi_notional": "sum_open_interest_value",
+    "toptrader_ls_ratio": "sum_toptrader_long_short_ratio",
+    "global_ls_ratio": "count_long_short_ratio",
+    "taker_ls_vol_ratio": "sum_taker_long_short_vol_ratio",
+}
+
+
+def load_futures_positioning_aligned(
+    bars_15m: pl.DataFrame, symbol: str, start: DateLike, end: DateLike
+) -> dict[str, pl.Series]:
+    """Lote C da liberação de features (H5, 2026-08-24) — E08f_oi_
+    notional/E14f_toptrader_ls_ratio/E16f_global_ls_ratio/E18f_taker_ls_
+    vol_ratio, cada uma alinhada ao grid de 15m por asof-join backward
+    (mesmo contrato causal de `load_oi_aligned`/`load_funding_aligned`).
+    1 leitura/dedup só dos arquivos de `metrics`
+    (`load_metrics_series_deduped`, as 4 colunas de uma vez) — evita
+    reler e rededuplicar o MESMO parquet 4× pra 4 asof-joins separados
+    (mesmos arquivos que `load_oi_series_deduped` já lê pra `sum_open_
+    interest`)."""
+    metrics = load_metrics_series_deduped(
+        symbol, start, end, value_cols=tuple(_FUTURES_POSITIONING_COLS.values())
+    )
+    out: dict[str, pl.Series] = {}
+    for feature_name, raw_col in _FUTURES_POSITIONING_COLS.items():
+        if metrics.is_empty():
+            out[feature_name] = pl.Series(feature_name, [None] * bars_15m.height, dtype=pl.Float64)
+        else:
+            out[feature_name] = asof_align_backward(bars_15m, metrics, "_ts_ms", raw_col)
     return out

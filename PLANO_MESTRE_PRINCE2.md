@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.48 · **Data:** 2026-08-24
+**Versão:** 3.49 · **Data:** 2026-08-24
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -5261,6 +5261,30 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.49 (2026-08-24)** — Lote C IMPLEMENTADO — fecha o plano de 3
+  lotes da liberação de features (H5). 6 features T2 finais (`E08f_
+  oi_notional`, `E14f_toptrader_ls_ratio`, `E15f_toptrader_ls_z`,
+  `E16f_global_ls_ratio`, `E17f_retail_vs_top_spread`, `E18f_taker_ls_
+  vol_ratio`), zero primitiva nova — extensão fina de `_sources.py` pro
+  MESMO arquivo `metrics` que já alimenta `E09f`/`E10f`. Refactor real:
+  `_load_and_dedupe_metrics_rows` extraído de `load_oi_series_deduped`
+  (resolução de `create_time` duplicado, Sprint 3/4) pra ser
+  reaproveitado por `load_metrics_series_deduped` (colunas
+  arbitrárias) sem duplicar a lógica — comportamento externo de
+  `load_oi_series_deduped` preservado bit-a-bit (4 testes
+  pré-existentes confirmados sem alteração). Achado de pesquisa web:
+  `schemas.METRICS` tem 2 colunas de razão dos top traders (`count_`
+  baseada em contas, `sum_` baseada em posições/notional) —
+  ambiguidade real que o PRD não resolve; Manager confirmou `sum_`
+  (consistente com `E09f`/`E18f`, que já usam colunas `sum_` neste
+  projeto). `SUPPORT_FEATURE_IDS`: 56→62 (59 T2 novas no total nos 3
+  lotes). Suíte completa 1934 passed + paridade completa 20/20 (dado
+  real) + cobertura de warmup em dado real confirmando as 6 novas com
+  valor de verdade via `build_t1_features` (default, sem flag de
+  opt-out). **Plano de 3 lotes (H5) fechado** — próximo passo real é a
+  ablação dentro do CPCV (§2.0.1/§2.13 do PRD) pra decidir promoção
+  T2→T1, tarefa futura separada, não decidida aqui. Detalhe:
+  `docs/SPRINT_LOG.md`.
 - **v3.48 (2026-08-24)** — `audit_engineering` rodada sobre o Lote A
   (0 CRITICAL/HIGH, 1 MEDIUM real corrigido na sessão — cobertura de
   warmup só em `T1_FEATURE_IDS`, estendida pra `SUPPORT_FEATURE_IDS`).
