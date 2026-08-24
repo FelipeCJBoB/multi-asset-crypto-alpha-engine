@@ -159,11 +159,46 @@ def _load_and_dedupe_metrics_rows(
         schema = {"create_time": pl.Utf8, **dict.fromkeys(value_cols, pl.Float64)}
         return pl.DataFrame(schema=schema)
 
+    # Achado real (2026-08-24, 1ª carga completa dos 62 candidatos T2 —
+    # pré-requisito da Fase 1 da ablação T2→T1): schema por-arquivo
+    # INCONSISTENTE em `data/capacity/metrics/{symbol}/*.parquet` — sem
+    # dtype declarado na escrita original, `pl.read_parquet` infere o
+    # dtype de cada arquivo diário isoladamente, e alguns dias sérializam
+    # `value_cols` como String em vez de Float64 (valores numéricos
+    # legítimos, ex. "1.31481877" — não corrupção, só serialização
+    # diferente naquele dia). Sistêmico nos 5 símbolos (1-3 arquivos de
+    # ~1700-2200 cada, confirmado por varredura antes desta correção),
+    # não um caso isolado de ETHUSDT. `pl.concat(..., how="vertical")`
+    # sem normalizar o dtype por arquivo falha com `SchemaError` assim
+    # que o primeiro arquivo "torto" aparece na lista — cast explícito
+    # aqui, por arquivo, ANTES do concat, é o ponto certo (a função já é
+    # o núcleo compartilhado de leitura, não duplicar a normalização em
+    # cada chamador). `strict=False` converte string numérica válida;
+    # qualquer valor genuinamente não-numérico vira `null` (mesmo
+    # tratamento de leitura inválida que `sum_open_interest<=0` já
+    # recebe no chamador `load_oi_series_deduped`), nunca decidido aqui
+    # em silêncio — contagem de casts reais logada.
     frames = []
+    n_files_recast = 0
     for f in files:
         df = pl.read_parquet(f, columns=["create_time", *value_cols])
+        needs_cast = [c for c in value_cols if df.schema[c] != pl.Float64]
+        if needs_cast:
+            n_files_recast += 1
+            df = df.with_columns(
+                [pl.col(c).cast(pl.Float64, strict=False) for c in needs_cast]
+            )
         df = df.with_columns(pl.lit(f.stem).alias("_file_date"))
         frames.append(df)
+    if n_files_recast > 0:
+        logger.warning(
+            "features.metrics_schema_inconsistente_por_arquivo",
+            symbol=symbol,
+            n_files_total=len(files),
+            n_files_recast=n_files_recast,
+            detail="schema inferido por arquivo diario inconsistente (String em vez de "
+            "Float64) -- recast explicito aplicado, valores numericos preservados",
+        )
     raw = pl.concat(frames, how="vertical")
 
     raw = raw.with_columns(pl.col("create_time").str.slice(0, 10).alias("_create_date"))

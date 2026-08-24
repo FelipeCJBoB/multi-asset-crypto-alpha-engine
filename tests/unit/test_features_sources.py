@@ -241,6 +241,44 @@ def test_load_metrics_series_deduped_resolve_conflito_pelo_arquivo_nativo(
     assert row["sum_open_interest_value"][0] == pytest.approx(111.0)
 
 
+def test_load_metrics_series_deduped_normaliza_schema_inconsistente_por_arquivo(
+    metrics_dir: Path,
+) -> None:
+    """Achado real (2026-08-24, 1ª carga completa dos 62 candidatos T2 --
+    varredura pré-Fase 1 encontrou isso em produção, 1-3 de ~1700-2200
+    arquivos diários por símbolo, sistêmico nos 5 símbolos): sem dtype
+    declarado na escrita, `pl.read_parquet` infere o schema por arquivo
+    isoladamente -- um dia com valores numéricos serializados como String
+    (não corrompidos, só um dtype diferente naquele dia) faz `pl.concat`
+    levantar `SchemaError` assim que aparece na lista. Reproduz o caso
+    real (`sum_toptrader_long_short_ratio` String num arquivo, Float64
+    no outro) e prova que o cast explícito por arquivo resolve sem
+    perder nem distorcer o valor."""
+    df_day1 = pl.DataFrame(
+        {
+            "create_time": ["2024-01-01 00:00:00"],
+            "sum_toptrader_long_short_ratio": ["1.31481877"],  # String -- o schema torto real
+        }
+    )
+    df_day2 = pl.DataFrame(
+        {
+            "create_time": ["2024-01-02 00:00:00"],
+            "sum_toptrader_long_short_ratio": [1.32],  # Float64 -- schema normal
+        }
+    )
+    df_day1.write_parquet(metrics_dir / "2024-01-01.parquet")
+    df_day2.write_parquet(metrics_dir / "2024-01-02.parquet")
+
+    out = _sources.load_metrics_series_deduped(
+        "BTCUSDT", "2024-01-01", "2024-01-02", value_cols=("sum_toptrader_long_short_ratio",)
+    )
+
+    assert out.height == 2
+    assert out["sum_toptrader_long_short_ratio"].dtype == pl.Float64
+    values = out.sort("create_time")["sum_toptrader_long_short_ratio"].to_list()
+    assert values == pytest.approx([1.31481877, 1.32])
+
+
 def test_load_metrics_series_deduped_sem_arquivos_retorna_vazio_com_schema(
     metrics_dir: Path,
 ) -> None:

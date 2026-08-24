@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 156
+counter: 157
 
 log:
   - id: 1
@@ -479,3 +479,34 @@ log:
       execucoes ja tinha terminado corretamente antes disso; corrigido
       em src/validation/noise_floor_diagnostics.py::_pooled_sharpe).
     delta: 60
+  - id: 21
+    date: "2026-08-24"
+    type: feature_orthogonality_research_pass
+    description: >
+      Pré-requisito da Fase 1 da ablação T2->T1 (`docs/t2_t1_ablation_
+      veredito_duas_analises_2026-08-24.md` SS4) -- ranking dos 62
+      candidatos T2 (`SUPPORT_FEATURE_IDS`) por estabilidade
+      (`src.models.stability.stability_screen`, IN-FOLD, 15 splits x 2
+      lados REAIS do CPCV = 30 celulas por feature, mesmo precedente do
+      E3/id 13) + filtro de ortogonalidade (|Spearman|<=0,70, novo
+      `alpha_t2_orthogonality_spearman_max`, `config/constants.yaml`).
+      Nenhum modelo retreinado, nenhuma promocao a T1_FEATURE_IDS/
+      registry.yaml -- passe de ranking/triagem, mesmo criterio de
+      contagem dos ids 11/13 ("medicao pra a triagem in-fold decidir",
+      1 trial nao 62). ETHUSDT/R1. Resultado: 39 de 62 sobrevivem ao
+      filtro de ortogonalidade; conjuntos k=6,9,12,16,24 construidos
+      (top-k da lista ordenada por estabilidade, ja filtrada) -- usados
+      como grade de features da Fase 1 (mapa de capacidade).
+      Achado real corrigido no processo (nao remediado, causa raiz):
+      schema por-arquivo inconsistente em `data/capacity/metrics/
+      {symbol}/*.parquet` -- alguns arquivos diarios serializam colunas
+      de futures-positioning como String em vez de Float64 (valores
+      numericos legitimos, so dtype inconsistente entre arquivos,
+      inferencia por-arquivo sem schema declarado). Sistemico nos 5
+      simbolos (1-3 arquivos de ~1700-2200 cada por simbolo, confirmado
+      por varredura), nao so ETHUSDT -- corrigido em
+      `src/features/_sources.py::_load_and_dedupe_metrics_rows` (cast
+      explicito por arquivo antes do concat, com warning estruturado se
+      algum arquivo precisou de recast). Artefato: experiments/
+      t2_ranking_ortogonalidade_ETHUSDT_R1.json.
+    delta: 1

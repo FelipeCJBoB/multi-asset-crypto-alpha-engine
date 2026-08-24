@@ -1983,6 +1983,25 @@ alpha_stability_screen_limiar:
   sweep_range: [0.01, 0.03]
   review_by: sprint_11
 
+alpha_t2_orthogonality_spearman_max:
+  value: 0.70
+  provenance: ASSUMED
+  source: >
+    Regra de governança fixada no CLAUDE.md ("nenhum par em T1 pode ter
+    |correlação de Spearman| > 0,70") -- não é medição, é limiar
+    declarado a priori pela mesma disciplina de "ortogonalidade" que
+    motivou o achado do Sprint 4 (HHI efetivo, D1/D2/D3 -- pares reais já
+    medidos com ρ=-0,913 e ρ=0,947 entre features do T1 atual). Usado
+    pela primeira vez em código real em `src.analysis.t2_
+    ranking_ortogonalidade` (pré-requisito da Fase 1 da ablação T2→T1,
+    `docs/t2_t1_ablation_veredito_duas_analises_2026-08-24.md` §4) --
+    antes disso só existia como texto de regra, nunca parametrizava
+    nenhum filtro de código. Nenhuma varredura de sensibilidade rodada
+    -- é uma regra de governança, não um hiperparâmetro de modelo.
+  class: A
+  sweep_required: false
+  review_by: sprint_11
+
 alpha_calibration_holdout_frac:
   value: 0.25
   provenance: ASSUMED

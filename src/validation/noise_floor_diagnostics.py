@@ -60,18 +60,28 @@ def _mean_finite(values: FloatList) -> float:
 
 
 def _build_mf_and_splits(
-    symbol: str, resolution_id: str, vol_estimator_id: str | None
+    symbol: str,
+    resolution_id: str,
+    vol_estimator_id: str | None,
+    extra_feature_ids: tuple[str, ...] = (),
 ) -> tuple[ds.ModelingFrame, tuple[cpcv.CPCVSplit, ...]]:
     """Mesma sequência de `pipeline.run_layer1_sprint` (linhas 488-520) —
     reusada aqui, não reimplementada, pra qualquer correção futura do
     caminho de produção (ex. AG-032 componente 96) valer automaticamente
-    pra este diagnóstico também."""
+    pra este diagnóstico também.
+
+    `extra_feature_ids` (2026-08-24, pré-requisito da Fase 1 — `src.
+    analysis.t2_ranking_ortogonalidade`) — default `()` preserva bit-
+    exato o uso da Fase 0 (só T1). Repassado pra `build_modeling_frame`
+    quando o chamador precisa das candidatas T2 presentes em `mf.data`
+    (ranking de estabilidade/ortogonalidade), sem duplicar esta função."""
     tf_effective = "15m"
     mf = ds.build_modeling_frame(
         symbol=symbol,
         tf=tf_effective,
         resolution_id=resolution_id,
         vol_estimator_id=vol_estimator_id,
+        extra_feature_ids=extra_feature_ids,
     )
     max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
         tf_effective, resolution_id=resolution_id
