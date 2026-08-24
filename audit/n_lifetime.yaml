@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 96
+counter: 156
 
 log:
   - id: 1
@@ -430,3 +430,52 @@ log:
       fica TBD (SS11 risco #1, decisao do Manager, nao computada). Detalhe:
       audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24.
     delta: 18
+  - id: 20
+    date: "2026-08-24"
+    type: fase0_diagnostico_ruido
+    description: >
+      Fase 0 da ablacao T2->T1 (docs/t2_t1_ablation_veredito_duas_
+      analises_2026-08-24.md SS4) -- diagnostico de ruido ANTES de
+      qualquer sweep de k/hiperparametro, ETHUSDT/R1, k=7 (T1 atual)
+      travado, hiperparametro PROD travado (nao e busca, e medicao de
+      ruido de execucao). 0a -- repeticao de seed: 10 execucoes
+      completas (15 splits x 2 lados = 30 fits cada), so `seed` varia.
+      0b -- nulo por permutacao de rotulo: 50 execucoes, `label`+
+      `ret_net` permutados juntos (mesmo indice), Camada1 E Camada0
+      recebendo a MESMA permutacao por repeticao (mesmo criterio de
+      contagem do id=18 -- par Camada1+Camada0 = 1 trial por
+      combinacao, nao 2). delta = 10+50 = 60, cada execucao um
+      retreino real completo (recalculo de backtest por combinacao,
+      mesmo criterio mecanico do cabecalho deste arquivo).
+      Resultado 0a: pooled_sharpe mean=-1,3658 std=0,3060 (n=10) --
+      ruido de seed puro (k/hiperparametro fixos) ja produz desvio-
+      padrao de ~0,31 em unidades de Sharpe; qualquer comparacao futura
+      de configuracao precisa superar essa ordem de grandeza pra nao
+      ser ruido. Resultado 0b: distribuicao empirica de n_better sob
+      nulo verdadeiro (5 paths, correlacao real do CPCV embutida, sem
+      assumir Binomial) = {0:1, 1:13, 2:21, 3:10, 4:4, 5:1} (n=50),
+      media=2,12 (ABAIXO do 2,5 que Binomial(5;0,5) preveria --
+      Camada1 com monotone_constraints tende a perder MAIS que 50% das
+      vezes sob ruido puro, achado novo). P(n_better>=4 | nulo) empirico
+      = 5/50 = 0,10 -- limiar atual (`alpha_layer1_permanence_min_paths`)
+      tem falso-positivo medido de ~10% nesta combinacao especifica, nao
+      calibrado antes. Achado adicional: o resultado REAL de producao
+      ETHUSDT/R1 (2026-08-23) foi 5/5 -- só 1/50 (2%) das repeticoes do
+      nulo bateram 5/5, mais extremo que o limiar >=4 sozinho sugeria --
+      evidencia mais forte de sinal real nesta combinacao especifica do
+      que a leitura agregada "3/15 e ruido" (SS2.4 do design doc) tinha
+      capturado. NAO decide limiar de producao sozinho -- achado bruto
+      pro AG-NNN, decisao do Manager (3 razoes registradas no design
+      doc: limiar condicionado a k=7 caduca na Fase 1; resultado
+      provavel e "criterio errado", nao "numero errado"; mudar gate por
+      experimento proprio e decisao de graus de liberdade do projeto).
+      Achado de infraestrutura, sem custo de trial: LightGBM deste
+      ambiente sem CUDA compilado, rodado em `device_type=cpu` (~29s por
+      execucao completa, medido -- nao os ~2min sinteticos citados antes
+      da medicao real). Artefato: experiments/noise_floor_diagnostics_
+      ETHUSDT_R1.json (reconstruido do log estruturado apos achado real
+      de bug -- orjson exige chave dict str, backtest_by_path devolve
+      dict[int,float] -- descoberto so na escrita final, compute das 60
+      execucoes ja tinha terminado corretamente antes disso; corrigido
+      em src/validation/noise_floor_diagnostics.py::_pooled_sharpe).
+    delta: 60

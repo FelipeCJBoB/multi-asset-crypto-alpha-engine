@@ -1,0 +1,336 @@
+{
+  "0a_seed_repetition": {
+    "experiment": "0a_seed_repetition",
+    "n_repeats": 10,
+    "nota_reconstrucao": "Recuperado do log apos bug de serializacao (orjson exige chave str, backtest_by_path devolve dict[int, float]) descoberto so na escrita final -- o compute real (60 execucoes) ja tinha terminado com sucesso quando o bug quebrou write_report_atomic. Detalhe por-path de cada repeticao individual NAO foi logado (so o pooled_sharpe agregado), portanto nao recuperavel aqui -- limitacao real, nao omissao.",
+    "per_repeat": [
+      {
+        "elapsed_seconds": 29.200037240982056,
+        "pooled_sharpe": -1.6826739516804445,
+        "repeat": 0
+      },
+      {
+        "elapsed_seconds": 28.4859721660614,
+        "pooled_sharpe": -1.1978216142609426,
+        "repeat": 1
+      },
+      {
+        "elapsed_seconds": 28.574339151382446,
+        "pooled_sharpe": -1.4362006709635384,
+        "repeat": 2
+      },
+      {
+        "elapsed_seconds": 28.551513671875,
+        "pooled_sharpe": -1.0807114152082038,
+        "repeat": 3
+      },
+      {
+        "elapsed_seconds": 28.743796825408936,
+        "pooled_sharpe": -1.1349149072929179,
+        "repeat": 4
+      },
+      {
+        "elapsed_seconds": 28.71283793449402,
+        "pooled_sharpe": -1.7339870891482179,
+        "repeat": 5
+      },
+      {
+        "elapsed_seconds": 28.927268981933594,
+        "pooled_sharpe": -1.6398985427402901,
+        "repeat": 6
+      },
+      {
+        "elapsed_seconds": 29.050764799118042,
+        "pooled_sharpe": -1.5242427836578074,
+        "repeat": 7
+      },
+      {
+        "elapsed_seconds": 29.1954083442688,
+        "pooled_sharpe": -0.7883180101484425,
+        "repeat": 8
+      },
+      {
+        "elapsed_seconds": 28.900299787521362,
+        "pooled_sharpe": -1.438925775541029,
+        "repeat": 9
+      }
+    ],
+    "pooled_sharpe_mean": -1.3657694760641834,
+    "pooled_sharpe_std": 0.3060127446128586,
+    "resolution_id": "R1",
+    "symbol": "ETHUSDT"
+  },
+  "0b_permutation_null": {
+    "experiment": "0b_permutation_null",
+    "n_better_distribution": {
+      "0": 1,
+      "1": 13,
+      "2": 21,
+      "3": 10,
+      "4": 4,
+      "5": 1
+    },
+    "n_better_ge_4_count": 5,
+    "n_better_ge_4_empirical_p": 0.1,
+    "n_better_mean": 2.12,
+    "n_repeats": 50,
+    "nota_reconstrucao": "Mesma limitacao de 0a -- sharpe_by_path individual por repeticao nao foi logado, so n_better agregado por repeticao. Distribuicao completa de n_better (o dado que importa pro AG-NNN) esta integra.",
+    "per_repeat": [
+      {
+        "elapsed_seconds": 58.140355825424194,
+        "n_better": 3,
+        "repeat": 0
+      },
+      {
+        "elapsed_seconds": 58.19718527793884,
+        "n_better": 2,
+        "repeat": 1
+      },
+      {
+        "elapsed_seconds": 58.344443559646606,
+        "n_better": 3,
+        "repeat": 2
+      },
+      {
+        "elapsed_seconds": 58.933836221694946,
+        "n_better": 2,
+        "repeat": 3
+      },
+      {
+        "elapsed_seconds": 58.51740789413452,
+        "n_better": 2,
+        "repeat": 4
+      },
+      {
+        "elapsed_seconds": 58.6398651599884,
+        "n_better": 3,
+        "repeat": 5
+      },
+      {
+        "elapsed_seconds": 58.664313316345215,
+        "n_better": 4,
+        "repeat": 6
+      },
+      {
+        "elapsed_seconds": 58.7284517288208,
+        "n_better": 4,
+        "repeat": 7
+      },
+      {
+        "elapsed_seconds": 58.70708465576172,
+        "n_better": 1,
+        "repeat": 8
+      },
+      {
+        "elapsed_seconds": 58.62528467178345,
+        "n_better": 2,
+        "repeat": 9
+      },
+      {
+        "elapsed_seconds": 58.71597599983215,
+        "n_better": 2,
+        "repeat": 10
+      },
+      {
+        "elapsed_seconds": 58.87843608856201,
+        "n_better": 2,
+        "repeat": 11
+      },
+      {
+        "elapsed_seconds": 58.613192319869995,
+        "n_better": 2,
+        "repeat": 12
+      },
+      {
+        "elapsed_seconds": 59.04939794540405,
+        "n_better": 2,
+        "repeat": 13
+      },
+      {
+        "elapsed_seconds": 58.623692989349365,
+        "n_better": 3,
+        "repeat": 14
+      },
+      {
+        "elapsed_seconds": 58.50247669219971,
+        "n_better": 1,
+        "repeat": 15
+      },
+      {
+        "elapsed_seconds": 58.430054664611816,
+        "n_better": 3,
+        "repeat": 16
+      },
+      {
+        "elapsed_seconds": 58.76078152656555,
+        "n_better": 3,
+        "repeat": 17
+      },
+      {
+        "elapsed_seconds": 58.971837520599365,
+        "n_better": 3,
+        "repeat": 18
+      },
+      {
+        "elapsed_seconds": 58.71702289581299,
+        "n_better": 0,
+        "repeat": 19
+      },
+      {
+        "elapsed_seconds": 59.007288455963135,
+        "n_better": 2,
+        "repeat": 20
+      },
+      {
+        "elapsed_seconds": 59.804365396499634,
+        "n_better": 1,
+        "repeat": 21
+      },
+      {
+        "elapsed_seconds": 60.171226978302,
+        "n_better": 2,
+        "repeat": 22
+      },
+      {
+        "elapsed_seconds": 60.07253408432007,
+        "n_better": 1,
+        "repeat": 23
+      },
+      {
+        "elapsed_seconds": 59.859036684036255,
+        "n_better": 2,
+        "repeat": 24
+      },
+      {
+        "elapsed_seconds": 60.026830196380615,
+        "n_better": 1,
+        "repeat": 25
+      },
+      {
+        "elapsed_seconds": 59.9652464389801,
+        "n_better": 1,
+        "repeat": 26
+      },
+      {
+        "elapsed_seconds": 59.89838171005249,
+        "n_better": 1,
+        "repeat": 27
+      },
+      {
+        "elapsed_seconds": 60.1396758556366,
+        "n_better": 2,
+        "repeat": 28
+      },
+      {
+        "elapsed_seconds": 60.03530931472778,
+        "n_better": 1,
+        "repeat": 29
+      },
+      {
+        "elapsed_seconds": 60.146998167037964,
+        "n_better": 3,
+        "repeat": 30
+      },
+      {
+        "elapsed_seconds": 59.83910346031189,
+        "n_better": 2,
+        "repeat": 31
+      },
+      {
+        "elapsed_seconds": 59.899717807769775,
+        "n_better": 1,
+        "repeat": 32
+      },
+      {
+        "elapsed_seconds": 60.14112854003906,
+        "n_better": 2,
+        "repeat": 33
+      },
+      {
+        "elapsed_seconds": 60.009368658065796,
+        "n_better": 1,
+        "repeat": 34
+      },
+      {
+        "elapsed_seconds": 60.17178249359131,
+        "n_better": 2,
+        "repeat": 35
+      },
+      {
+        "elapsed_seconds": 59.93368124961853,
+        "n_better": 4,
+        "repeat": 36
+      },
+      {
+        "elapsed_seconds": 60.180997371673584,
+        "n_better": 1,
+        "repeat": 37
+      },
+      {
+        "elapsed_seconds": 60.61186766624451,
+        "n_better": 2,
+        "repeat": 38
+      },
+      {
+        "elapsed_seconds": 60.23112154006958,
+        "n_better": 4,
+        "repeat": 39
+      },
+      {
+        "elapsed_seconds": 59.968114137649536,
+        "n_better": 2,
+        "repeat": 40
+      },
+      {
+        "elapsed_seconds": 59.98910307884216,
+        "n_better": 1,
+        "repeat": 41
+      },
+      {
+        "elapsed_seconds": 59.84850716590881,
+        "n_better": 2,
+        "repeat": 42
+      },
+      {
+        "elapsed_seconds": 60.269371032714844,
+        "n_better": 3,
+        "repeat": 43
+      },
+      {
+        "elapsed_seconds": 60.25392413139343,
+        "n_better": 2,
+        "repeat": 44
+      },
+      {
+        "elapsed_seconds": 60.11139130592346,
+        "n_better": 3,
+        "repeat": 45
+      },
+      {
+        "elapsed_seconds": 60.082130432128906,
+        "n_better": 5,
+        "repeat": 46
+      },
+      {
+        "elapsed_seconds": 60.08268451690674,
+        "n_better": 2,
+        "repeat": 47
+      },
+      {
+        "elapsed_seconds": 60.294339656829834,
+        "n_better": 2,
+        "repeat": 48
+      },
+      {
+        "elapsed_seconds": 59.96479296684265,
+        "n_better": 1,
+        "repeat": 49
+      }
+    ],
+    "permutation_scheme": "iid_per_split_per_side",
+    "resolution_id": "R1",
+    "symbol": "ETHUSDT"
+  },
+  "resolution_id": "R1",
+  "symbol": "ETHUSDT"
+}

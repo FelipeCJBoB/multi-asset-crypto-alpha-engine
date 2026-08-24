@@ -31,7 +31,9 @@ from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1
 
 
-def _synthetic_train_frame(n: int = 60, *, seed: int = 0) -> pl.DataFrame:
+def _synthetic_train_frame(
+    n: int = 60, *, seed: int = 0, extra_feature_ids: tuple[str, ...] = ()
+) -> pl.DataFrame:
     rng = np.random.default_rng(seed)
     cols: dict[str, object] = {
         "t0": pl.Series(list(range(n))).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
@@ -41,6 +43,12 @@ def _synthetic_train_frame(n: int = 60, *, seed: int = 0) -> pl.DataFrame:
         "sample_weight": pl.Series(np.abs(rng.normal(loc=1.0, scale=0.1, size=n))),
     }
     for fid in T1_FEATURE_IDS:
+        cols[fid] = pl.Series(rng.normal(size=n))
+    # `extra_feature_ids` (2026-08-24) — colunas T2 sintéticas, pros testes
+    # de `feature_ids` parametrizável (ablação T2→T1) poderem montar um
+    # vetor de treino DIFERENTE de `T1_FEATURE_IDS` sem inventar um fixture
+    # novo. Vazio por padrão -- preserva todo call site existente.
+    for fid in extra_feature_ids:
         cols[fid] = pl.Series(rng.normal(size=n))
     return pl.DataFrame(cols)
 
@@ -73,6 +81,21 @@ def test_build_design_matrix_ignora_coluna_regime_se_presente() -> None:
     )
     X = alpha.build_design_matrix(df)
     assert X.shape == (2, len(T1_FEATURE_IDS))
+
+
+def test_build_design_matrix_feature_ids_customizado() -> None:
+    """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_
+    doc_2026-08-24.md` §5.2) — passar um vetor diferente de
+    `T1_FEATURE_IDS` monta a matriz sobre ESSAS colunas, na mesma ordem,
+    não sobre `DESIGN_COLUMNS`."""
+    extra = ("T2_CANDIDATE_A", "T2_CANDIDATE_B")
+    df = _synthetic_train_frame(n=10, extra_feature_ids=extra)
+    k_features = T1_FEATURE_IDS[:3] + extra
+    X = alpha.build_design_matrix(df, feature_ids=k_features)
+    assert X.shape == (10, len(k_features))
+    # ordem importa (D-07 -- mesma ordem de `feature_name=` no fit) --
+    # coluna 3 do array tem que bater com a coluna `T2_CANDIDATE_A` do df.
+    np.testing.assert_array_equal(X[:, 3], df["T2_CANDIDATE_A"].to_numpy())
 
 
 # ============================================================================
@@ -203,6 +226,216 @@ def test_fit_side_model_subsample_freq_realmente_ativa_o_bagging() -> None:
     # deterministic=True, achado real da mesma auditoria.
     assert params["force_row_wise"] is True
     assert params["deterministic"] is True
+
+
+# ============================================================================
+# `feature_ids` parametrizável (2026-08-24, `docs/t2_t1_promotion_ablation_
+# design_doc_2026-08-24.md` §5.2) — achado de auditoria: o vetor de
+# features estava hardcoded em 5 pontos de `fit_side_model` (screening de
+# monotonicidade, matriz de desenho, `feature_name` do booster, HHI/HHI-
+# efetivo), não era parâmetro em lugar nenhum, apesar de `hyper` já ser
+# injetável. Os testes abaixo provam que passar um vetor DIFERENTE de
+# `T1_FEATURE_IDS` de fato treina sobre esse vetor -- não só que a
+# assinatura aceita o argumento.
+# ============================================================================
+
+
+def test_fit_side_model_feature_ids_customizado_treina_no_vetor_certo() -> None:
+    extra = ("T2_CANDIDATE_A", "T2_CANDIDATE_B")
+    k_features = T1_FEATURE_IDS[:3] + extra
+    df = _synthetic_train_frame(n=120, seed=11, extra_feature_ids=extra)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+        feature_ids=k_features,
+    )
+
+    # o booster só conhece as 5 colunas de `k_features` -- nunca as 4
+    # T1 excluídas (T1_FEATURE_IDS[3:]), nunca inventa nome novo.
+    assert set(result.model.booster_.feature_name()) == set(k_features)
+    assert set(result.gain_by_column_raw.keys()) <= set(k_features)
+    assert set(result.monotone.keys()) <= set(k_features)
+    assert len(result.monotone_constraints) == len(k_features)
+    # HHI/HHI-efetivo também avaliados sobre `k_features`, não T1 fixo.
+    assert set(result.concentration.shares.keys()) == set(k_features)
+
+
+def test_fit_side_model_default_preserva_comportamento_t1() -> None:
+    """Sem `feature_ids`, o comportamento é bit-idêntico ao de antes desta
+    mudança -- mesma seed, dado sintético igual, `feature_name()` bate
+    exatamente com `T1_FEATURE_IDS`."""
+    df = _synthetic_train_frame(n=80, seed=5)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+    assert set(result.model.booster_.feature_name()) <= set(T1_FEATURE_IDS)
+
+
+def test_unique_test_bars_feature_ids_filtra_warmup_pelo_vetor_certo() -> None:
+    """Achado de correção (não só plumbing, §5.2 do design doc): uma barra
+    NULL numa feature T2 candidata, mas válida nas 7 T1, tem que ser
+    excluída quando `feature_ids` inclui essa T2 -- senão `build_design_
+    matrix` receberia `NaN` silencioso na inferência."""
+    extra = ("T2_CANDIDATE_A",)
+    df = _synthetic_train_frame(n=5, extra_feature_ids=extra)
+    df = df.with_columns(side=pl.Series([1, 1, 1, 1, 1], dtype=pl.Int8))
+    # barra de índice 2 fica NULL só na T2 candidata -- válida em T1.
+    t2_values = df["T2_CANDIDATE_A"].to_list()
+    t2_values[2] = None
+    df = df.with_columns(pl.Series("T2_CANDIDATE_A", t2_values, dtype=pl.Float64))
+
+    out_t1_only = alpha._unique_test_bars(df)
+    assert out_t1_only.height == 5  # T1 sozinho não vê o NULL da T2
+
+    out_com_t2 = alpha._unique_test_bars(df, feature_ids=T1_FEATURE_IDS + extra)
+    assert out_com_t2.height == 4  # exclui a barra NULL na T2 candidata
+
+
+# ============================================================================
+# `null_permutation_seed` / `_permute_label_and_ret_net` (2026-08-24,
+# `docs/t2_t1_ablation_veredito_duas_analises_2026-08-24.md` §4, Fase 0b) --
+# nulo por permutação de rótulo, usado pra calibrar o gate de permanência
+# (`n_better>=4/5`) sem assumir Binomial.
+# ============================================================================
+
+
+def test_permute_label_e_ret_net_move_juntos_mesmo_indice() -> None:
+    """`label`/`ret_net` têm que se mover pela MESMA permutação -- a
+    relação interna entre os dois (daquela linha original) sobrevive, só a
+    relação com as features quebra."""
+    df = _synthetic_train_frame(n=40, seed=3)
+    original_pairs = set(zip(df["label"].to_list(), df["ret_net"].to_list(), strict=True))
+
+    out = alpha._permute_label_and_ret_net(df, seed=123)
+
+    permuted_pairs = set(zip(out["label"].to_list(), out["ret_net"].to_list(), strict=True))
+    assert permuted_pairs == original_pairs  # mesmos pares (label, ret_net), só reordenados
+    # a ordem de pelo menos uma das duas colunas realmente mudou -- não é
+    # a identidade disfarçada de permutação (n=40, chance de identidade
+    # verdadeira sob rng real é desprezível).
+    assert out["label"].to_list() != df["label"].to_list()
+
+
+def test_permute_label_e_ret_net_nao_toca_outras_colunas() -> None:
+    """Features, `sample_weight`, `t0` ficam intocados na linha original --
+    só `label`/`ret_net` mudam de linha."""
+    df = _synthetic_train_frame(n=40, seed=4)
+    out = alpha._permute_label_and_ret_net(df, seed=7)
+
+    assert out["sample_weight"].to_list() == df["sample_weight"].to_list()
+    assert out["t0"].to_list() == df["t0"].to_list()
+    for fid in T1_FEATURE_IDS:
+        assert out[fid].to_list() == df[fid].to_list()
+
+
+def test_permute_label_e_ret_net_e_deterministica() -> None:
+    df = _synthetic_train_frame(n=40, seed=5)
+    out_a = alpha._permute_label_and_ret_net(df, seed=99)
+    out_b = alpha._permute_label_and_ret_net(df, seed=99)
+    assert out_a["label"].to_list() == out_b["label"].to_list()
+    assert out_a["ret_net"].to_list() == out_b["ret_net"].to_list()
+
+
+def test_fit_side_model_null_permutation_seed_none_preserva_producao() -> None:
+    """Default `None` -- comportamento bit-idêntico ao de antes desta
+    extensão (mesma seed, mesmo dado sintético -- resultado igual com ou
+    sem o parâmetro explícito)."""
+    df = _synthetic_train_frame(n=80, seed=6)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result_default = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+    )
+    result_explicit_none = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+        null_permutation_seed=None,
+    )
+
+    assert result_default.gain_by_column_raw == result_explicit_none.gain_by_column_raw
+    assert result_default.monotone_constraints == result_explicit_none.monotone_constraints
+
+
+def test_fit_side_model_null_permutation_seed_muda_monotone_constraints() -> None:
+    """Achado central da Fase 0b: sob permutação, `screen_monotone_
+    constraints` (que lê `ret_net`, não `label`) opera sobre um `ret_net`
+    embaralhado -- as restrições monotônicas resultantes não podem mais
+    refletir a relação econômica real feature->retorno. Prova indireta de
+    que `ret_net` de fato está sendo permutado (não só `label`): rodar com
+    `null_permutation_seed` fixo é determinístico (mesma seed -> mesmo
+    resultado), igual ao teste de determinismo acima, mas usando uma seed
+    de permutação DIFERENTE da run sem permutação alguma."""
+    df = _synthetic_train_frame(n=150, seed=8)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result_a = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+        null_permutation_seed=11,
+    )
+    result_b = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+        null_permutation_seed=11,
+    )
+    # mesma seed de permutação -> mesmo resultado (determinismo).
+    assert result_a.monotone_constraints == result_b.monotone_constraints
+    assert result_a.gain_by_column_raw == result_b.gain_by_column_raw
+
+
+def test_fit_side_model_null_permutation_seed_preserva_sample_weight() -> None:
+    """`sample_weight` nunca é permutado -- reflete unicidade temporal do
+    label, não o resultado econômico. `n_train_fit + n_train_calib` (a
+    partição interna que `sample_weight` ajuda a definir via estratificação
+    por `y`) tem que somar ao total de linhas, permutado ou não."""
+    df = _synthetic_train_frame(n=80, seed=9)
+    hyper = alpha.LGBMHyperparams.from_constants()
+    target_signal_rate = float(load_constant("target_signal_rate"))
+
+    result = alpha.fit_side_model(
+        df,
+        side=1,
+        variant=alpha.VARIANT_CAMADA1,
+        hyper=hyper,
+        seed=0,
+        target_signal_rate=target_signal_rate,
+        null_permutation_seed=42,
+    )
+    assert result.n_train_fit + result.n_train_calib == df.height
 
 
 def test_monotone_constraints_tem_exatamente_10_entradas() -> None:

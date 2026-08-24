@@ -139,19 +139,30 @@ class LGBMHyperparams:
         )
 
 
-def build_design_matrix(df: pl.DataFrame) -> FloatArray:
+def build_design_matrix(
+    df: pl.DataFrame, *, feature_ids: tuple[str, ...] = T1_FEATURE_IDS
+) -> FloatArray:
     """`DESIGN_COLUMNS` = 7 features T1, sem regime (regime saiu do
     vetor de treino, ADR-001 §2.7 -- ver nota em `DESIGN_COLUMNS`).
     Numpy puro (sem pandas, B26) — `monotone_constraints` do LightGBM
     aceita uma lista posicional na mesma ordem quando o `fit` recebe um
     array, não um DataFrame com nomes (D-07, mesma convenção do XGBoost
-    anterior)."""
-    return df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
+    anterior).
+
+    `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
+    todo call site existente. Existe pra ablação T2→T1 poder montar a
+    matriz sobre um vetor de k features candidatas em vez do T1 fixo, sem
+    duplicar esta função."""
+    return df.select(feature_ids).to_numpy().astype(np.float64)
 
 
-def _t1_correlation_matrix(df: pl.DataFrame) -> FloatArray:
-    """Matriz de correlação de Pearson das 7 features T1 (`T1_FEATURE_IDS`,
-    NUNCA `DESIGN_COLUMNS` — exclui as 4 dummies de regime por padrão, ver
+def _t1_correlation_matrix(
+    df: pl.DataFrame, *, feature_ids: tuple[str, ...] = T1_FEATURE_IDS
+) -> FloatArray:
+    """Matriz de correlação de Pearson das features de treino
+    (`feature_ids`, default `T1_FEATURE_IDS` — NUNCA `DESIGN_COLUMNS`,
+    exclui as 4 dummies de regime por padrão, ver
     `src.models.hhi.compute_effective_concentration`) — insumo de D1 (task
     HHI efetivo, CLAUDE.md). `df` PRECISA já ser o subconjunto de TREINO do
     fold (`train_side_df` em `fit_side_model`, já filtrado por
@@ -164,8 +175,13 @@ def _t1_correlation_matrix(df: pl.DataFrame) -> FloatArray:
     (deixado passar); a sanitização (`NaN` -> `0.0` fora da diagonal, `1.0`
     na diagonal) é responsabilidade de `compute_effective_concentration`,
     não desta função (mantém esta função uma leitura direta do dado, sem
-    decisão de negócio embutida)."""
-    t1_arr = df.select(T1_FEATURE_IDS).to_numpy().astype(np.float64)
+    decisão de negócio embutida).
+
+    `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default preserva bit-exato o nome/uso atual
+    ("matriz T1"); ablação T2→T1 passa o vetor de k features candidatas do
+    trial em vez do T1 fixo."""
+    t1_arr = df.select(feature_ids).to_numpy().astype(np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
         corr = np.corrcoef(t1_arr, rowvar=False)
     return np.asarray(corr, dtype=np.float64)
@@ -180,6 +196,23 @@ def _derived_seed(base_seed: int, *parts: int) -> int:
     for i, p in enumerate(parts):
         seed = (seed * 1_000_003 + (p + 1) * (i + 7)) % 2_147_483_647  # noqa: magic-number
     return seed
+
+
+def _permute_label_and_ret_net(df: pl.DataFrame, seed: int) -> pl.DataFrame:
+    """Núcleo puro (sem IO) da Fase 0b (`docs/t2_t1_ablation_veredito_
+    duas_analises_2026-08-24.md` §4) — embaralha `label` e `ret_net`
+    JUNTOS, mesmo índice de permutação por linha: quebra o pareamento
+    X↔y, preserva a relação interna label↔ret_net daquela linha original
+    (o que o nulo testa é "o modelo aprende algo real da relação X→
+    resultado", não "label e ret_net deixam de fazer sentido juntos").
+    Todas as outras colunas (features, `sample_weight`, `t0`) ficam
+    intocadas na linha original — só o CONTEÚDO de `label`/`ret_net` se
+    move entre linhas, não a ordem das linhas em si."""
+    perm = np.random.default_rng(seed).permutation(df.height)
+    return df.with_columns(
+        pl.Series("label", df["label"].to_numpy()[perm]),
+        pl.Series("ret_net", df["ret_net"].to_numpy()[perm]),
+    )
 
 
 def _stratified_calib_split(
@@ -241,8 +274,10 @@ def fit_side_model(
     hyper: LGBMHyperparams,
     seed: int,
     target_signal_rate: float,
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
+    null_permutation_seed: int | None = None,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -251,6 +286,17 @@ def fit_side_model(
     §5.2 "P(TP antes de SL)" — SL e TIME viram `y=0`, ver docstring do
     módulo `dataset.py` e o relatório do Sprint 8 para a justificativa
     completa desta escolha).
+
+    `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
+    todo call site de produção existente. Substitui as 7 referências
+    hardcoded a `T1_FEATURE_IDS`/`DESIGN_COLUMNS` que existiam neste corpo
+    (screening de monotonicidade ×2 -- CAMADA1 e CAMADA0 --, matriz de
+    desenho, `feature_name` do booster, HHI, HHI-efetivo ×2) — achado real
+    de auditoria: o conjunto de features estava fixo dentro desta função,
+    não era parâmetro em lugar nenhum, apesar de `hyper: LGBMHyperparams`
+    já ser injetável. Existe pra ablação T2→T1 treinar sobre um vetor de k
+    features candidatas sem duplicar esta função.
 
     `unforce_features_by_side` — repassado a `monotonic.
     screen_monotone_constraints` sem alteração; default `None` (produção,
@@ -268,22 +314,47 @@ def fit_side_model(
     motivo que `tf`/`resolution_id`/`dest_dir` em outros pontos do
     pipeline usam sentinela de default: uma mudança de comportamento real
     (aqui, requisito de hardware) nunca deve ser silenciosa pra quem já
-    chama a função hoje."""
+    chama a função hoje.
+
+    `null_permutation_seed` (2026-08-24, `docs/t2_t1_ablation_veredito_
+    duas_analises_2026-08-24.md` §4, Fase 0b) — default `None` preserva
+    produção bit-exato. Quando setado, embaralha `label` E `ret_net`
+    JUNTOS (mesmo índice de permutação por linha) dentro de `train_side_
+    df` antes de qualquer uso — quebra o pareamento X↔y, preserva a
+    relação interna label↔ret_net daquela linha original. As DUAS
+    colunas precisam mover juntas: `screen_monotone_constraints` deriva a
+    direção de cada restrição monotônica de `ret_net` (`target_col`
+    default), não de `label` — permutar só `label` deixaria a Camada1
+    "trapacear" com informação econômica real via `monotone_constraints`
+    mesmo treinada sobre rótulo de classificação puro ruído, contaminando
+    o nulo que este parâmetro existe pra construir. `sample_weight` NUNCA
+    é permutado — reflete unicidade/sobreposição temporal de `t1`
+    (propriedade estrutural do label, não do resultado econômico),
+    ortogonal ao que o nulo testa. Ponto de injeção único (aqui, não em
+    `run_fold`/`run_all_folds`) porque `train_side_df` já chega aqui
+    filtrado por `side_subset` — permutar depois disso é o que garante
+    permutação POR LADO independente (a proporção de cada lado, e por
+    consequência `scale_pos_weight` computado abaixo, sai igual ao run
+    real). Escopo é só TREINO — o lado de teste de `run_fold` nunca passa
+    por esta função, preservando o resultado econômico real na
+    inferência/backtest por construção, não por caso especial."""
+    if null_permutation_seed is not None:
+        train_side_df = _permute_label_and_ret_net(train_side_df, null_permutation_seed)
     ic_results = monotonic.screen_monotone_constraints(
         train_side_df,
-        T1_FEATURE_IDS,
+        feature_ids,
         side=side,
         unforce_features_by_side=unforce_features_by_side,
     )
     if variant == VARIANT_CAMADA1:
-        t1_constraints = tuple(ic_results[f].constraint for f in T1_FEATURE_IDS)
+        t1_constraints = tuple(ic_results[f].constraint for f in feature_ids)
     elif variant == VARIANT_CAMADA0:
-        t1_constraints = tuple(0 for _ in T1_FEATURE_IDS)
+        t1_constraints = tuple(0 for _ in feature_ids)
     else:
         raise ValueError(f"fit_side_model: variant desconhecida {variant!r}")
     monotone_constraints = t1_constraints
 
-    X_all = build_design_matrix(train_side_df)
+    X_all = build_design_matrix(train_side_df, feature_ids=feature_ids)
     y_all = (train_side_df["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
     w_all = train_side_df["sample_weight"].to_numpy().astype(np.float64)
 
@@ -375,9 +446,9 @@ def fit_side_model(
     # "Column_0", "Column_1", ... em vez do nome real da feature --
     # `fit_side_model` abaixo (D-08) precisaria desses nomes reais para
     # remapear `gain_by_column`/`concentration`/`monotone_constraints`
-    # corretamente. Ordem idêntica a `DESIGN_COLUMNS`/`T1_FEATURE_IDS`
-    # (mesma que `build_design_matrix` usa para montar `X_fit`).
-    model.fit(X_fit, y_fit, sample_weight=w_fit, feature_name=list(DESIGN_COLUMNS))
+    # corretamente. Ordem idêntica a `feature_ids` (mesma que
+    # `build_design_matrix` usa para montar `X_fit`).
+    model.fit(X_fit, y_fit, sample_weight=w_fit, feature_name=list(feature_ids))
 
     # `np.asarray(...)` explícito -- os stubs do LightGBM tipam
     # `predict_proba` como `list` (imprecisão conhecida da biblioteca, não
@@ -407,15 +478,19 @@ def fit_side_model(
     gain_by_column = {
         name: float(gain) for name, gain in zip(names, gains, strict=True) if gain > 0.0
     }
-    concentration = compute_concentration(gain_by_column, DESIGN_COLUMNS)
+    concentration = compute_concentration(gain_by_column, feature_ids)
 
-    # HHI efetivo (D1/D2, CLAUDE.md) — matriz de correlação das 7 features
-    # T1 sobre o MESMO `train_side_df` deste fold/lado (in-fold, nunca o
-    # dataset inteiro — mesma disciplina de `monotonic.screen_monotone_
-    # constraints` logo acima, que também recebe só `train_side_df`).
-    correlation_t1 = _t1_correlation_matrix(train_side_df)
+    # HHI efetivo (D1/D2, CLAUDE.md) — matriz de correlação das
+    # `feature_ids` deste trial sobre o MESMO `train_side_df` deste
+    # fold/lado (in-fold, nunca o dataset inteiro — mesma disciplina de
+    # `monotonic.screen_monotone_constraints` logo acima, que também
+    # recebe só `train_side_df`). Sob ablação T2→T1 isso mede concentração
+    # no vetor de k features REALMENTE treinado neste trial, não sempre no
+    # T1 de produção — é o mesmo critério do CLAUDE.md (HHI efetivo <0,25)
+    # aplicado ao vetor que está sendo avaliado.
+    correlation_t1 = _t1_correlation_matrix(train_side_df, feature_ids=feature_ids)
     concentration_effective = compute_effective_concentration(
-        correlation_t1, gain_by_column, T1_FEATURE_IDS
+        correlation_t1, gain_by_column, feature_ids
     )
 
     return SideModelResult(
@@ -448,14 +523,25 @@ class FoldResult:
     n_test_bars: int
 
 
-def _unique_test_bars(test_bars_all_sides: pl.DataFrame) -> pl.DataFrame:
+def _unique_test_bars(
+    test_bars_all_sides: pl.DataFrame, *, feature_ids: tuple[str, ...] = T1_FEATURE_IDS
+) -> pl.DataFrame:
     """Uma linha por `t0` (feature não depende de lado) — usa as linhas de
     `side=1` como referência de deduplicação (toda barra tem exatamente uma
     linha `side=1` E uma `side=-1` em `labels.parquet`, ver
     `src.labels.triple_barrier.build_labels_both_sides`), mantém só barras
-    com T1 válido (fora do warmup) — NÃO filtra por NOFILL (ver docstring
-    do módulo: inferência roda em toda barra, NOFILL só importa para
-    treino/backtest).
+    com `feature_ids` válido (fora do warmup) — NÃO filtra por NOFILL (ver
+    docstring do módulo: inferência roda em toda barra, NOFILL só importa
+    para treino/backtest).
+
+    `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato o
+    comportamento atual. Achado de correção (não só plumbing): sob ablação
+    T2→T1, filtrar warmup pelas 7 features T1 fixas deixaria passar barras
+    ainda NULL numa feature T2 candidata com lookback mais longo — o
+    `build_design_matrix` do trial receberia `NaN` silencioso. Por isso o
+    filtro de warmup usa as MESMAS `feature_ids` que o trial vai treinar,
+    nunca um conjunto fixo diferente do que está sendo avaliado.
 
     **`t0` genuinamente único, não só assumido (achado real, 2026-08-23,
     1ª execução real de `run_layer1_sprint` contra R1).** O filtro
@@ -472,9 +558,9 @@ def _unique_test_bars(test_bars_all_sides: pl.DataFrame) -> pl.DataFrame:
     "first" é estável) COM aviso alto -- nunca silencioso -- pra não
     mascarar `AG-202` se a taxa de duplicação crescer."""
     out = test_bars_all_sides.filter(
-        (pl.col("side") == 1) & pl.col(T1_FEATURE_IDS[0]).is_not_null()
+        (pl.col("side") == 1) & pl.col(feature_ids[0]).is_not_null()
     )
-    for fid in T1_FEATURE_IDS[1:]:
+    for fid in feature_ids[1:]:
         out = out.filter(pl.col(fid).is_not_null())
     out = out.sort("t0")
     n_before = out.height
@@ -502,8 +588,10 @@ def run_fold(
     symbol: str,
     resolution_id: str | None = None,
     feature_version: str = "t1_v1",
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
+    null_permutation_seed: int | None = None,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -513,13 +601,40 @@ def run_fold(
     -- sempre conhecido no call site real, `pipeline.run_layer1_sprint`).
     `resolution_id=None` (default) grava `"time_15m"` na coluna (grade de
     relógio legada), mesmo sentinela que `pipeline.py` já usa para `tf`/
-    `resolution_id`."""
+    `resolution_id`.
+
+    `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
+    todo call site de produção; repassado sem alteração pros dois
+    `fit_side_model` (treino) E pro filtro de warmup/`build_design_matrix`
+    do lado de TESTE (`_unique_test_bars`/`X_test` abaixo) — os dois lados
+    (treino/teste) têm que usar o MESMO vetor de features, senão o modelo
+    treinado com k colunas recebe um `X_test` de shape errado na
+    inferência.
+
+    `null_permutation_seed` (2026-08-24, Fase 0b) — default `None`
+    preserva produção bit-exato; repassado a `fit_side_model` (ver
+    docstring de lá pro desenho completo), derivado por (`split.split_id`,
+    `side`) via `_derived_seed` — permutação INDEPENDENTE por split E por
+    lado a partir de um único seed base, nunca embaralhado antes do split
+    (vazaria estrutura entre folds do CPCV, quebraria o purge)."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
     train_long = ds.side_subset(train_bars, side=1)
     train_short = ds.side_subset(train_bars, side=-1)
     target_signal_rate = float(load_constant("target_signal_rate"))
+
+    perm_seed_long = (
+        _derived_seed(null_permutation_seed, split.split_id, 1)
+        if null_permutation_seed is not None
+        else None
+    )
+    perm_seed_short = (
+        _derived_seed(null_permutation_seed, split.split_id, -1)
+        if null_permutation_seed is not None
+        else None
+    )
 
     long_result = fit_side_model(
         train_long,
@@ -528,8 +643,10 @@ def run_fold(
         hyper=hyper,
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
+        feature_ids=feature_ids,
         unforce_features_by_side=unforce_features_by_side,
         device_type=device_type,
+        null_permutation_seed=perm_seed_long,
     )
     short_result = fit_side_model(
         train_short,
@@ -538,12 +655,14 @@ def run_fold(
         hyper=hyper,
         seed=_derived_seed(seed, split.split_id),
         target_signal_rate=target_signal_rate,
+        feature_ids=feature_ids,
         unforce_features_by_side=unforce_features_by_side,
         device_type=device_type,
+        null_permutation_seed=perm_seed_short,
     )
 
-    test_bars_unique = _unique_test_bars(test_bars)
-    X_test = build_design_matrix(test_bars_unique)
+    test_bars_unique = _unique_test_bars(test_bars, feature_ids=feature_ids)
+    X_test = build_design_matrix(test_bars_unique, feature_ids=feature_ids)
 
     raw_long = np.asarray(long_result.model.predict_proba(X_test))[:, 1]
     p_long = long_result.calibrator.predict(raw_long)
@@ -596,7 +715,7 @@ def run_fold(
             "model_id": pl.Series([model_id] * n_rows, dtype=pl.Utf8),
             "calibrator_id": pl.Series(calibrator_id),
             "feature_version": pl.Series([feature_version] * n_rows, dtype=pl.Utf8),
-            "features_selecionadas": pl.Series([list(T1_FEATURE_IDS)] * n_rows),
+            "features_selecionadas": pl.Series([list(feature_ids)] * n_rows),
             "hhi_importancia": pl.Series(
                 [hhi_importancia_fold] * n_rows,
                 dtype=pl.Float64,
@@ -631,9 +750,27 @@ def run_all_folds(
     resolution_id: str | None = None,
     hyper: LGBMHyperparams | None = None,
     seed: int | None = None,
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
+    null_permutation_seed: int | None = None,
 ) -> list[FoldResult]:
+    """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
+    2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
+    todo call site de produção (`pipeline.run_layer1_sprint`); repassado
+    sem alteração pra `run_fold` em cada split. Ponto de entrada real do
+    harness de ablação T2→T1 (`src/validation/t2_t1_ablation.py`, ainda
+    não implementado) pra treinar os 15 splits do CPCV sobre um vetor de
+    k features candidatas em vez do T1 fixo.
+
+    `null_permutation_seed` (2026-08-24, `docs/t2_t1_ablation_veredito_
+    duas_analises_2026-08-24.md` §4, Fase 0b) — default `None` preserva
+    produção bit-exato; repassado sem alteração pra `run_fold` em cada
+    split, que deriva o seed real por (split, lado). Chamar esta função
+    2× com o MESMO `null_permutation_seed` (uma vez `variant=
+    VARIANT_CAMADA1`, outra `variant=VARIANT_CAMADA0`) produz a MESMA
+    permutação nos dois braços — condição necessária pro nulo testar "as
+    duas camadas são equivalentes", não "uma é lixo, a outra é real"."""
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 
@@ -656,8 +793,10 @@ def run_all_folds(
             seed=seed,
             symbol=symbol,
             resolution_id=resolution_id,
+            feature_ids=feature_ids,
             unforce_features_by_side=unforce_features_by_side,
             device_type=device_type,
+            null_permutation_seed=null_permutation_seed,
         )
         logger.info(
             "models.alpha.run_fold_done",
