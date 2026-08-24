@@ -3920,11 +3920,20 @@ pendência fechada, uma segue aberta com ressalva — escaladas per `§6.5`:
 
 AGs novos da revisão: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer
 100%" — **[ATUALIZADO 2026-08-23]** dos 3 achados "alto" que travavam o
-gate, os 3 fecharam (`AG-138`/`AG-139`/`AG-140`, `§15.25`); resta
-`08_SPLIT` (decisão 1 implementada, `§15.27`; decisão 2/`AG-159` medida,
-fechamento formal pendente) e o débito organizacional já aceito de
-`06_BARREIRAS`. Gate ainda não fechado, mas não mais "0/9" — ver `§15.4`
-pro estado real por estágio.
+gate, os 3 fecharam (`AG-138`/`AG-139`/`AG-140`, `§15.25`); `08_SPLIT`
+tinha 2 decisões pendentes -- **ambas fechadas agora** (decisão 1
+implementada, `§15.27`; decisão 2/`AG-159`, ressalva de MAGNITUDE do
+proxy de purge, fechada com constante MEASURED dedicada,
+`max_consecutive_bar_window_duration_ms`, mesmo dia -- **[CORRIGIDO
+2026-08-23]** esta linha dizia "fechamento formal pendente", estava
+desatualizada contra `audit/architecture_gaps_log.yaml::AG-159::status`,
+que já dizia "fechado"). Resta só o débito organizacional já aceito de
+`06_BARREIRAS` (represado por decisão, não bloqueante) -- ver `§15.4`
+pro estado real por estágio antes de tratar o gate como automaticamente
+livre (não reconciliado aqui contra os itens `alto` residuais `AG-141`/
+`AG-142` do mesmo fan-out original, que podem ou não estar dentro do
+escopo formal "01_BARRA..07b_PESOS+08_SPLIT" deste gate -- verificar
+antes de consumir orçamento de trial num retreino real).
 
 ### 15.20.1 Implementação — código real, D-01 a D-18 (2026-08-23)
 
