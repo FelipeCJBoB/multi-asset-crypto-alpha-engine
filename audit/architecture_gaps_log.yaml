@@ -9078,7 +9078,7 @@ entries:
       item 3, ainda não construído) -- mesma janela de mudança de
       `schema_version`, não precisa de 2 quebras de compatibilidade
       separadas.
-    status: "aberto -- achado real de verificação do ADR-001 completo, não bloqueia AG-118 (workaround já em produção), decisão de reconciliação pendente do Manager -- enquadramento corrigido 2026-08-20 (PRD é obsoleto, não conta mais como justificativa igual-a-ADR-001)"
+    status: "decidido 2026-08-23 (migrar, opção A + estatística MÉDIA) -- implementação em código de canonicalize_states permanece TBD, natural de fazer junto de src/io/artifact.py/regime() formal (ADR-001 action item 3, ver resolution). Não bloqueia AG-118 (workaround já em produção via identify_stress_state_by_volatility)."
 
     addendum_redesign_workflow_2026-08-23: >
       Manager aprovou migrar (opção A) -- via `redesign_workflow` (skill
@@ -9136,6 +9136,69 @@ entries:
       segue com o Manager (B20) -- medição entregue, não decidida aqui.
       Dado completo: `experiments/canonicalization_criterion_media_vs_
       desvio.json`.
+
+    addendum_decisao_media_2026-08-23: >
+      Manager decidiu: MÉDIA (opção A do addendum acima já estava
+      aprovada; esta decisão fecha qual estatística usar dentro da
+      migração). Migração real de `canonicalize_states` (implementação
+      em código) permanece TBD, natural de fazer junto de
+      `src/io/artifact.py`/`regime()` formal (ADR-001 action item 3,
+      ainda não construído) -- ver `resolution` acima, não alterado por
+      esta decisão.
+
+    addendum_trend_efficiency_recente_2026-08-23: >
+      Manager pediu aprofundar a hipótese "estado de maior retorno em
+      `RECENTE` é tendência ordeira (não caótica)" sobre a divergência
+      MÉDIA×DESVIO-PADRÃO especificamente em `hmm_gaussian_k4_v1`
+      (candidato canônico de produção). Tentativa inicial
+      (`tools/diagnostics/measure_ag121_trend_efficiency_by_state.py`)
+      colidiu com dado obsoleto (`AG-191`) -- Manager autorizou refresh
+      escopado de `RECENTE` (`run_and_save_critical_windows_report`,
+      `windows=(RECENTE,)`, `hmm_states_grid=(4,)`, ~29min, 0 falhas,
+      `experiments/m4_critical_windows_report_ag121_recente_k4_
+      refresh.json`), executado por Claude com autorização explícita do
+      Manager. Diagnóstico recomputado sobre dado fresco (pós-`AG-124`):
+      **4 células de discordância `hmm_gaussian_k4_v1`/`RECENTE` no
+      dado atual são DIFERENTES das 4 do dado obsoleto** (agora
+      `BNBUSDT/R1`, `BNBUSDT/R2`, `XRPUSDT/R2`, `XRPUSDT/R3` -- antes
+      era `BTCUSDT/R1`, `SOLUSDT/R1`, `BTCUSDT/R2`, `XRPUSDT/R3`) --
+      esperado, o refit sobre bars recalibrados naturalmente muda quais
+      estados colidem.
+
+      **Resultado da hipótese, Efficiency Ratio de Kaufman por estado
+      (`ER = |Σretorno| / Σ|retorno|`), MISTO -- não confirma nem
+      refuta de forma limpa:**
+      - `BNBUSDT/R2`: SUPORTA claramente -- estado selecionado por MÉDIA
+        (ER=0,062, retorno médio -0,0225%) é ordens de grandeza mais
+        "ordeiro" que o selecionado por DESVIO-PADRÃO (ER=0,002,
+        essencialmente ruído puro, `std_vol` 2,9x maior -- o mais
+        errático dos 4 estados).
+      - `XRPUSDT/R3`: SUPORTA -- MÉDIA (ER=0,061, retorno +0,036%,
+        único estado com retorno claramente positivo) vs. DESVIO-PADRÃO
+        (ER=0,048, retorno -0,020%, `std_vol` quase 3x maior).
+      - `XRPUSDT/R2`: AMBÍGUO -- ER quase empatado (0,038 vs. 0,035),
+        sem diferença prática.
+      - `BNBUSDT/R1`: CONTRADIZ -- o estado selecionado por DESVIO-
+        PADRÃO tem ER MAIOR (0,021) que o selecionado por MÉDIA
+        (0,009); e o estado de retorno médio mais alto dos 4 nem é o
+        selecionado por MÉDIA (é outro estado, `canonical_id=3`,
+        0,0000253 vs. 0,0000199) -- a suposição "MÉDIA sempre pega o
+        estado de maior retorno" (do achado original sobre dado
+        obsoleto) não se sustenta aqui.
+
+      **Conclusão honesta**: a hipótese tem suporte parcial (2 de 4),
+      não é um padrão limpo o bastante pra virar afirmação no doc de
+      arquitetura -- fica registrada como observação qualificada, não
+      como achado fechado. Não muda a decisão já tomada (MÉDIA,
+      addendum acima) -- só documenta que o "porquê" da divergência não
+      tem uma explicação econômica única e confiável. Dado completo:
+      `experiments/ag121_trend_efficiency_by_state.json` (58 células,
+      10 discordâncias no total incluindo `bocpd_v1`/`jump_model_
+      cjm_v1`, fora do escopo desta hipótese). Nota: a estatística de
+      concordância "90,9%" do addendum anterior segue baseada em dado
+      PARCIALMENTE obsoleto (só `RECENTE` foi refrescada; `LUNA`/`FTX`/
+      `CRYPTO_WINTER`/`ETF_HALVING` continuam no snapshot de
+      2026-08-20) -- não recalculada aqui, ver `AG-191`.
 
   - id: AG-122
     date: "2026-08-20"
@@ -13392,7 +13455,7 @@ entries:
       o resultado teria sido reportado como conclusão real.
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- não bloqueante. Fix real exigiria ou (a) reconstruir a série de bars PRÉ-`AG-124` (não recuperável -- `dollar_bars_r{1,2,3}/` foi reprocessado por inteiro, sem backup do estado anterior) ou (b) re-rodar o M4 critical-windows sweep completo sobre os bars atuais (`run_and_save_critical_windows_report`, ~3h, consome orçamento de trial `G-C1-2` (`audit/n_lifetime.yaml`), EXIGE autorização explícita do Manager por design -- não chamável sem isso). Nenhum caminho barato de re-scoring encontrado (o sweep não persiste parâmetros fitados separados da saída final pra re-score sem re-fit). Teste da hipótese de trend-efficiency de `AG-121` fica genuinamente TBD até o próximo M4 sweep real tocar os bars atuais -- não é gate de nada (a decisão MÉDIA vs. DESVIO-PADRÃO já foi tomada), só registrado pra não confundir com resultado válido se alguém ler `experiments/ag121_trend_efficiency_by_state.json` no futuro sem este contexto. Recomendação de fix estrutural, se/quando algum consumidor real precisar cruzar artefato de experimento com dado de produção: `report_provenance()` (já usado nesses scripts) ganhar um campo `source_bars_reprocessing_version`/equivalente, e um guard que avisa (não bloqueia) quando o mtime dos dois lados diverge."
+    status: "parcialmente endereçado 2026-08-23 -- Manager autorizou refresh escopado (`windows=(RECENTE,)`, `hmm_states_grid=(4,)`, ~29min, dentro do próprio `run_and_save_critical_windows_report`, ver `AG-121::addendum_trend_efficiency_recente_2026-08-23`). `RECENTE` está consistente/atual agora nos 2 artefatos (`m4_raw_labels`/`m4_forward_vol_history`) para os 3 resolutions. `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` CONTINUAM no snapshot de 2026-08-20, obsoletos contra `dollar_bars_r{1,2,3}/` -- qualquer script que cruze essas 4 janelas com bars atuais ainda cai no mesmo problema. Recomendação de fix estrutural (campo de proveniência + guard de mtime divergente) segue não implementada, não bloqueante."
 
   - id: AG-192
     date: "2026-08-23"

@@ -1,0 +1,1998 @@
+{
+  "generated_at": "2026-08-24T00:22:17.824982+00:00",
+  "code_version": "2cdcb14",
+  "measurement_provenance": "MEASURED -- Efficiency Ratio (Kaufman) por canonical_id, log_return derivado de data/capacity/dollar_bars_r{N}/{symbol}/*.parquet (close bruto, sem re-fit), realized_vol_short rejuntado de experiments/m4_forward_vol_history/ (mesma fonte do script irmao compare_canonicalization_criterion_media_vs_desvio.py). Testa a hipotese 'estado de maior retorno em RECENTE eh tendencia ordeira, estado de maior desvio-padrao de vol eh chop/erratico' levantada sobre o achado de AG-121. Nao decide o criterio final (ja decidido -- MEDIA), so caracteriza a divergencia MEDIA x DESVIO-PADRAO onde ela existe (B23: nada presumido, nada inventado).",
+  "min_bars_per_state": 30,
+  "n_cells_computed": 58,
+  "disagreement_cells": [
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "mean_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 989,
+        "mean_log_return": 0.00001993,
+        "efficiency_ratio": 0.0087,
+        "mean_vol": 0.010441,
+        "std_vol": 0.001401
+      },
+      "std_selected_state": {
+        "canonical_id": 1,
+        "n_bars": 1396,
+        "mean_log_return": -0.00004913,
+        "efficiency_ratio": 0.0209,
+        "mean_vol": 0.010213,
+        "std_vol": 0.005646
+      }
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "mean_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 3350,
+        "mean_log_return": 0.00067104,
+        "efficiency_ratio": 0.3678,
+        "mean_vol": 0.007642,
+        "std_vol": 0.002713
+      },
+      "std_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 3888,
+        "mean_log_return": -0.0005815,
+        "efficiency_ratio": 0.3256,
+        "mean_vol": 0.007546,
+        "std_vol": 0.002861
+      }
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "mean_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 495,
+        "mean_log_return": -0.00022511,
+        "efficiency_ratio": 0.0618,
+        "mean_vol": 0.015866,
+        "std_vol": 0.002548
+      },
+      "std_selected_state": {
+        "canonical_id": 3,
+        "n_bars": 1246,
+        "mean_log_return": -3.63e-6,
+        "efficiency_ratio": 0.0017,
+        "mean_vol": 0.008778,
+        "std_vol": 0.007306
+      }
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "mean_selected_state": {
+        "canonical_id": 1,
+        "n_bars": 526,
+        "mean_log_return": 0.00007778,
+        "efficiency_ratio": 0.0225,
+        "mean_vol": 0.014104,
+        "std_vol": 0.002848
+      },
+      "std_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 5290,
+        "mean_log_return": -0.00001637,
+        "efficiency_ratio": 0.0074,
+        "mean_vol": 0.009333,
+        "std_vol": 0.002946
+      }
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "mean_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 1431,
+        "mean_log_return": -0.00040153,
+        "efficiency_ratio": 0.0883,
+        "mean_vol": 0.019411,
+        "std_vol": 0.008814
+      },
+      "std_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 436,
+        "mean_log_return": 0.00075337,
+        "efficiency_ratio": 0.2224,
+        "mean_vol": 0.015606,
+        "std_vol": 0.009848
+      }
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "mean_selected_state": {
+        "canonical_id": 3,
+        "n_bars": 448,
+        "mean_log_return": -0.00019482,
+        "efficiency_ratio": 0.0378,
+        "mean_vol": 0.022771,
+        "std_vol": 0.003422
+      },
+      "std_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 1439,
+        "mean_log_return": -0.00008377,
+        "efficiency_ratio": 0.0354,
+        "mean_vol": 0.009768,
+        "std_vol": 0.006172
+      }
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "mean_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 1016,
+        "mean_log_return": 0.00094921,
+        "efficiency_ratio": 0.2712,
+        "mean_vol": 0.014674,
+        "std_vol": 0.004311
+      },
+      "std_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 772,
+        "mean_log_return": -0.00127104,
+        "efficiency_ratio": 0.3754,
+        "mean_vol": 0.014268,
+        "std_vol": 0.005349
+      }
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "mean_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 962,
+        "mean_log_return": -0.00061345,
+        "efficiency_ratio": 0.1013,
+        "mean_vol": 0.026189,
+        "std_vol": 0.011133
+      },
+      "std_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 399,
+        "mean_log_return": 0.00095406,
+        "efficiency_ratio": 0.1686,
+        "mean_vol": 0.025918,
+        "std_vol": 0.012432
+      }
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "mean_selected_state": {
+        "canonical_id": 0,
+        "n_bars": 1063,
+        "mean_log_return": -0.00083352,
+        "efficiency_ratio": 0.1796,
+        "mean_vol": 0.019558,
+        "std_vol": 0.007133
+      },
+      "std_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 591,
+        "mean_log_return": 0.00087062,
+        "efficiency_ratio": 0.1932,
+        "mean_vol": 0.01902,
+        "std_vol": 0.008381
+      }
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "mean_selected_state": {
+        "canonical_id": 3,
+        "n_bars": 385,
+        "mean_log_return": 0.00035831,
+        "efficiency_ratio": 0.061,
+        "mean_vol": 0.024808,
+        "std_vol": 0.003172
+      },
+      "std_selected_state": {
+        "canonical_id": 2,
+        "n_bars": 845,
+        "mean_log_return": -0.00020002,
+        "efficiency_ratio": 0.0481,
+        "mean_vol": 0.017916,
+        "std_vol": 0.009225
+      }
+    }
+  ],
+  "results": [
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 47,
+          "mean_log_return": -0.00026671,
+          "efficiency_ratio": 0.1417,
+          "mean_vol": 0.007123,
+          "std_vol": 0.003102
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 41,
+          "mean_log_return": -0.00026913,
+          "efficiency_ratio": 0.1396,
+          "mean_vol": 0.006991,
+          "std_vol": 0.003248
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 2,
+          "n_bars": 34,
+          "mean_log_return": -0.00002762,
+          "efficiency_ratio": 0.0145,
+          "mean_vol": 0.006904,
+          "std_vol": 0.00333
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 36,
+          "mean_log_return": -0.00039196,
+          "efficiency_ratio": 0.1997,
+          "mean_vol": 0.007289,
+          "std_vol": 0.002354
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 2,
+          "n_bars": 32,
+          "mean_log_return": -0.0001977,
+          "efficiency_ratio": 0.1046,
+          "mean_vol": 0.006736,
+          "std_vol": 0.001809
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "CRYPTO_WINTER",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 37,
+          "mean_log_return": -0.00031759,
+          "efficiency_ratio": 0.161,
+          "mean_vol": 0.007469,
+          "std_vol": 0.002566
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 2,
+          "n_bars": 44,
+          "mean_log_return": 0.00162348,
+          "efficiency_ratio": 0.5247,
+          "mean_vol": 0.012042,
+          "std_vol": 0.005107
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 42,
+          "mean_log_return": -0.00120217,
+          "efficiency_ratio": 0.2407,
+          "mean_vol": 0.015829,
+          "std_vol": 0.005803
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 48,
+          "mean_log_return": 0.00031865,
+          "efficiency_ratio": 0.1402,
+          "mean_vol": 0.00912,
+          "std_vol": 0.004
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 37,
+          "mean_log_return": 0.00016428,
+          "efficiency_ratio": 0.059,
+          "mean_vol": 0.010741,
+          "std_vol": 0.004262
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 30,
+          "mean_log_return": -0.00159351,
+          "efficiency_ratio": 0.2823,
+          "mean_vol": 0.017382,
+          "std_vol": 0.005883
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 30,
+          "mean_log_return": 0.00049692,
+          "efficiency_ratio": 0.1261,
+          "mean_vol": 0.014902,
+          "std_vol": 0.005167
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 32,
+          "mean_log_return": -0.00007889,
+          "efficiency_ratio": 0.0315,
+          "mean_vol": 0.009876,
+          "std_vol": 0.004429
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 31,
+          "mean_log_return": 0.00013919,
+          "efficiency_ratio": 0.0404,
+          "mean_vol": 0.010878,
+          "std_vol": 0.004889
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 45,
+          "mean_log_return": -0.00037631,
+          "efficiency_ratio": 0.1077,
+          "mean_vol": 0.011442,
+          "std_vol": 0.005388
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 40,
+          "mean_log_return": 0.00106946,
+          "efficiency_ratio": 0.2039,
+          "mean_vol": 0.019237,
+          "std_vol": 0.005593
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 37,
+          "mean_log_return": 0.00067692,
+          "efficiency_ratio": 0.1316,
+          "mean_vol": 0.018689,
+          "std_vol": 0.005347
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "ETF_HALVING",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 32,
+          "mean_log_return": 0.0002365,
+          "efficiency_ratio": 0.0478,
+          "mean_vol": 0.018714,
+          "std_vol": 0.00571
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 3304,
+          "mean_log_return": -0.00030871,
+          "efficiency_ratio": 0.1785,
+          "mean_vol": 0.007263,
+          "std_vol": 0.003643
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 7003,
+          "mean_log_return": 0.00003707,
+          "efficiency_ratio": 0.0272,
+          "mean_vol": 0.005726,
+          "std_vol": 0.001862
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 2346,
+          "mean_log_return": 0.00030763,
+          "efficiency_ratio": 0.1731,
+          "mean_vol": 0.007648,
+          "std_vol": 0.003798
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 155,
+          "mean_log_return": 0.00006593,
+          "efficiency_ratio": 0.0599,
+          "mean_vol": 0.005265,
+          "std_vol": 0.001519
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 55,
+          "mean_log_return": 0.00024233,
+          "efficiency_ratio": 0.1174,
+          "mean_vol": 0.008084,
+          "std_vol": 0.003535
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 74,
+          "mean_log_return": 0.00033649,
+          "efficiency_ratio": 0.3125,
+          "mean_vol": 0.004895,
+          "std_vol": 0.001569
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 126,
+          "mean_log_return": 0.00003252,
+          "efficiency_ratio": 0.0231,
+          "mean_vol": 0.006149,
+          "std_vol": 0.001818
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 3483,
+          "mean_log_return": -0.00004628,
+          "efficiency_ratio": 0.0279,
+          "mean_vol": 0.007187,
+          "std_vol": 0.000884
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1396,
+          "mean_log_return": -0.00004913,
+          "efficiency_ratio": 0.0209,
+          "mean_vol": 0.010213,
+          "std_vol": 0.005646
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 989,
+          "mean_log_return": 0.00001993,
+          "efficiency_ratio": 0.0087,
+          "mean_vol": 0.010441,
+          "std_vol": 0.001401
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 6785,
+          "mean_log_return": 0.00002526,
+          "efficiency_ratio": 0.0212,
+          "mean_vol": 0.004778,
+          "std_vol": 0.000914
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 3888,
+          "mean_log_return": -0.0005815,
+          "efficiency_ratio": 0.3256,
+          "mean_vol": 0.007546,
+          "std_vol": 0.002861
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 3907,
+          "mean_log_return": -8.82e-6,
+          "efficiency_ratio": 0.0063,
+          "mean_vol": 0.005823,
+          "std_vol": 0.001875
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 3350,
+          "mean_log_return": 0.00067104,
+          "efficiency_ratio": 0.3678,
+          "mean_vol": 0.007642,
+          "std_vol": 0.002713
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 41,
+          "mean_log_return": -0.00014076,
+          "efficiency_ratio": 0.098,
+          "mean_vol": 0.006055,
+          "std_vol": 0.001792
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 39,
+          "mean_log_return": -0.00071725,
+          "efficiency_ratio": 0.4696,
+          "mean_vol": 0.007735,
+          "std_vol": 0.003207
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 34,
+          "mean_log_return": 0.00021547,
+          "efficiency_ratio": 0.1594,
+          "mean_vol": 0.006735,
+          "std_vol": 0.002746
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 4319,
+          "mean_log_return": -0.00003291,
+          "efficiency_ratio": 0.02,
+          "mean_vol": 0.006826,
+          "std_vol": 0.000757
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2585,
+          "mean_log_return": 0.00003797,
+          "efficiency_ratio": 0.0174,
+          "mean_vol": 0.009524,
+          "std_vol": 0.001143
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 3907,
+          "mean_log_return": 6.82e-6,
+          "efficiency_ratio": 0.0056,
+          "mean_vol": 0.004713,
+          "std_vol": 0.000811
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 334,
+          "mean_log_return": -0.00008976,
+          "efficiency_ratio": 0.0298,
+          "mean_vol": 0.015488,
+          "std_vol": 0.005099
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 5072,
+          "mean_log_return": -6.52e-6,
+          "efficiency_ratio": 0.0037,
+          "mean_vol": 0.007468,
+          "std_vol": 0.003139
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 6073,
+          "mean_log_return": -2.35e-6,
+          "efficiency_ratio": 0.0015,
+          "mean_vol": 0.006556,
+          "std_vol": 0.002066
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 3014,
+          "mean_log_return": -0.00056683,
+          "efficiency_ratio": 0.2326,
+          "mean_vol": 0.010235,
+          "std_vol": 0.005866
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 4431,
+          "mean_log_return": -8.23e-6,
+          "efficiency_ratio": 0.0041,
+          "mean_vol": 0.008285,
+          "std_vol": 0.002417
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 3742,
+          "mean_log_return": 0.00044086,
+          "efficiency_ratio": 0.196,
+          "mean_vol": 0.009769,
+          "std_vol": 0.005235
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 42,
+          "mean_log_return": -0.00056572,
+          "efficiency_ratio": 0.2466,
+          "mean_vol": 0.008053,
+          "std_vol": 0.001853
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 30,
+          "mean_log_return": -0.00002079,
+          "efficiency_ratio": 0.0086,
+          "mean_vol": 0.009584,
+          "std_vol": 0.002013
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 6992,
+          "mean_log_return": -0.00002731,
+          "efficiency_ratio": 0.015,
+          "mean_vol": 0.007287,
+          "std_vol": 0.001362
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2951,
+          "mean_log_return": -0.00001231,
+          "efficiency_ratio": 0.0048,
+          "mean_vol": 0.010856,
+          "std_vol": 0.001119
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1073,
+          "mean_log_return": 0.00018492,
+          "efficiency_ratio": 0.0571,
+          "mean_vol": 0.014758,
+          "std_vol": 0.00163
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 171,
+          "mean_log_return": -0.00038779,
+          "efficiency_ratio": 0.0828,
+          "mean_vol": 0.030954,
+          "std_vol": 0.02072
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1767,
+          "mean_log_return": -0.00075014,
+          "efficiency_ratio": 0.2516,
+          "mean_vol": 0.012749,
+          "std_vol": 0.007973
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 7260,
+          "mean_log_return": -0.00002082,
+          "efficiency_ratio": 0.0098,
+          "mean_vol": 0.008956,
+          "std_vol": 0.003097
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 2455,
+          "mean_log_return": 0.00055185,
+          "efficiency_ratio": 0.1921,
+          "mean_vol": 0.012149,
+          "std_vol": 0.005497
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 53,
+          "mean_log_return": -0.00002883,
+          "efficiency_ratio": 0.0151,
+          "mean_vol": 0.008993,
+          "std_vol": 0.008918
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 35,
+          "mean_log_return": -0.00005476,
+          "efficiency_ratio": 0.0155,
+          "mean_vol": 0.013758,
+          "std_vol": 0.010531
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 45,
+          "mean_log_return": -0.00035743,
+          "efficiency_ratio": 0.1409,
+          "mean_vol": 0.011562,
+          "std_vol": 0.013141
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 5056,
+          "mean_log_return": 2.93e-6,
+          "efficiency_ratio": 0.0014,
+          "mean_vol": 0.008384,
+          "std_vol": 0.002059
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1832,
+          "mean_log_return": -0.00008951,
+          "efficiency_ratio": 0.0268,
+          "mean_vol": 0.014948,
+          "std_vol": 0.002919
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 4426,
+          "mean_log_return": -8.49e-6,
+          "efficiency_ratio": 0.0036,
+          "mean_vol": 0.009845,
+          "std_vol": 0.002929
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 168,
+          "mean_log_return": 0.00038641,
+          "efficiency_ratio": 0.0909,
+          "mean_vol": 0.023953,
+          "std_vol": 0.027117
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 3323,
+          "mean_log_return": -0.00030866,
+          "efficiency_ratio": 0.1252,
+          "mean_vol": 0.010438,
+          "std_vol": 0.005438
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 6156,
+          "mean_log_return": 6.89e-6,
+          "efficiency_ratio": 0.004,
+          "mean_vol": 0.007349,
+          "std_vol": 0.002354
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 2205,
+          "mean_log_return": 0.0003224,
+          "efficiency_ratio": 0.1366,
+          "mean_vol": 0.010062,
+          "std_vol": 0.004264
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k2_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 56,
+          "mean_log_return": -0.00041229,
+          "efficiency_ratio": 0.2589,
+          "mean_vol": 0.007635,
+          "std_vol": 0.002598
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k3_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 41,
+          "mean_log_return": -0.00064546,
+          "efficiency_ratio": 0.3775,
+          "mean_vol": 0.008784,
+          "std_vol": 0.002637
+        }
+      ]
+    },
+    {
+      "resolution_id": "R1",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 2215,
+          "mean_log_return": 0.00007103,
+          "efficiency_ratio": 0.0269,
+          "mean_vol": 0.011464,
+          "std_vol": 0.001347
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 8595,
+          "mean_log_return": -0.00003947,
+          "efficiency_ratio": 0.0228,
+          "mean_vol": 0.007073,
+          "std_vol": 0.001637
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 808,
+          "mean_log_return": 4.36e-6,
+          "efficiency_ratio": 0.0012,
+          "mean_vol": 0.016998,
+          "std_vol": 0.002326
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 66,
+          "mean_log_return": -0.001424,
+          "efficiency_ratio": 0.285,
+          "mean_vol": 0.033186,
+          "std_vol": 0.022008
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1686,
+          "mean_log_return": -0.0004719,
+          "efficiency_ratio": 0.1988,
+          "mean_vol": 0.009835,
+          "std_vol": 0.003525
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 3190,
+          "mean_log_return": -0.00002211,
+          "efficiency_ratio": 0.012,
+          "mean_vol": 0.007699,
+          "std_vol": 0.003131
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1672,
+          "mean_log_return": 0.00049986,
+          "efficiency_ratio": 0.1944,
+          "mean_vol": 0.010873,
+          "std_vol": 0.005441
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 495,
+          "mean_log_return": -0.00022511,
+          "efficiency_ratio": 0.0618,
+          "mean_vol": 0.015866,
+          "std_vol": 0.002548
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2312,
+          "mean_log_return": -0.00001315,
+          "efficiency_ratio": 0.0057,
+          "mean_vol": 0.010066,
+          "std_vol": 0.001278
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 2495,
+          "mean_log_return": 0.00004648,
+          "efficiency_ratio": 0.026,
+          "mean_vol": 0.006917,
+          "std_vol": 0.001236
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 1246,
+          "mean_log_return": -3.63e-6,
+          "efficiency_ratio": 0.0017,
+          "mean_vol": 0.008778,
+          "std_vol": 0.007306
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1886,
+          "mean_log_return": -0.00079544,
+          "efficiency_ratio": 0.3044,
+          "mean_vol": 0.01096,
+          "std_vol": 0.003484
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2241,
+          "mean_log_return": -0.00006994,
+          "efficiency_ratio": 0.0359,
+          "mean_vol": 0.008243,
+          "std_vol": 0.002475
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1689,
+          "mean_log_return": 0.00095395,
+          "efficiency_ratio": 0.3788,
+          "mean_vol": 0.010448,
+          "std_vol": 0.003057
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 2396,
+          "mean_log_return": -0.0000266,
+          "efficiency_ratio": 0.012,
+          "mean_vol": 0.009159,
+          "std_vol": 0.000997
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1620,
+          "mean_log_return": -9.78e-6,
+          "efficiency_ratio": 0.0059,
+          "mean_vol": 0.00653,
+          "std_vol": 0.001077
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1517,
+          "mean_log_return": 9.35e-6,
+          "efficiency_ratio": 0.0032,
+          "mean_vol": 0.012638,
+          "std_vol": 0.00141
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 283,
+          "mean_log_return": 0.00006959,
+          "efficiency_ratio": 0.0185,
+          "mean_vol": 0.017999,
+          "std_vol": 0.003868
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 5290,
+          "mean_log_return": -0.00001637,
+          "efficiency_ratio": 0.0074,
+          "mean_vol": 0.009333,
+          "std_vol": 0.002946
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 526,
+          "mean_log_return": 0.00007778,
+          "efficiency_ratio": 0.0225,
+          "mean_vol": 0.014104,
+          "std_vol": 0.002848
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1686,
+          "mean_log_return": -0.00088511,
+          "efficiency_ratio": 0.2657,
+          "mean_vol": 0.013826,
+          "std_vol": 0.007483
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2181,
+          "mean_log_return": -0.00004613,
+          "efficiency_ratio": 0.0164,
+          "mean_vol": 0.012106,
+          "std_vol": 0.003647
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1865,
+          "mean_log_return": 0.00080308,
+          "efficiency_ratio": 0.2491,
+          "mean_vol": 0.01347,
+          "std_vol": 0.004342
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 2184,
+          "mean_log_return": 0.00010457,
+          "efficiency_ratio": 0.0344,
+          "mean_vol": 0.012523,
+          "std_vol": 0.003091
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2760,
+          "mean_log_return": -0.00009733,
+          "efficiency_ratio": 0.036,
+          "mean_vol": 0.010964,
+          "std_vol": 0.002471
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 691,
+          "mean_log_return": 0.00010473,
+          "efficiency_ratio": 0.0236,
+          "mean_vol": 0.019962,
+          "std_vol": 0.002044
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 97,
+          "mean_log_return": -0.00131202,
+          "efficiency_ratio": 0.2075,
+          "mean_vol": 0.035365,
+          "std_vol": 0.016849
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1431,
+          "mean_log_return": -0.00040153,
+          "efficiency_ratio": 0.0883,
+          "mean_vol": 0.019411,
+          "std_vol": 0.008814
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 3929,
+          "mean_log_return": 0.00003163,
+          "efficiency_ratio": 0.0104,
+          "mean_vol": 0.012686,
+          "std_vol": 0.004129
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 436,
+          "mean_log_return": 0.00075337,
+          "efficiency_ratio": 0.2224,
+          "mean_vol": 0.015606,
+          "std_vol": 0.009848
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1473,
+          "mean_log_return": 4.9e-6,
+          "efficiency_ratio": 0.0012,
+          "mean_vol": 0.017727,
+          "std_vol": 0.001824
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 3719,
+          "mean_log_return": -0.00004859,
+          "efficiency_ratio": 0.0173,
+          "mean_vol": 0.011397,
+          "std_vol": 0.002611
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 482,
+          "mean_log_return": 0.00024347,
+          "efficiency_ratio": 0.0442,
+          "mean_vol": 0.024992,
+          "std_vol": 0.002958
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 122,
+          "mean_log_return": -0.0005387,
+          "efficiency_ratio": 0.1024,
+          "mean_vol": 0.031809,
+          "std_vol": 0.027725
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1821,
+          "mean_log_return": -0.00043526,
+          "efficiency_ratio": 0.1252,
+          "mean_vol": 0.014777,
+          "std_vol": 0.00709
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 3204,
+          "mean_log_return": 9.87e-6,
+          "efficiency_ratio": 0.0039,
+          "mean_vol": 0.010523,
+          "std_vol": 0.003556
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 823,
+          "mean_log_return": 0.00059367,
+          "efficiency_ratio": 0.1946,
+          "mean_vol": 0.013184,
+          "std_vol": 0.005466
+        }
+      ]
+    },
+    {
+      "resolution_id": "R2",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 967,
+          "mean_log_return": 0.00022802,
+          "efficiency_ratio": 0.0625,
+          "mean_vol": 0.016316,
+          "std_vol": 0.003744
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 2994,
+          "mean_log_return": -0.00009521,
+          "efficiency_ratio": 0.0372,
+          "mean_vol": 0.010501,
+          "std_vol": 0.002667
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1439,
+          "mean_log_return": -0.00008377,
+          "efficiency_ratio": 0.0354,
+          "mean_vol": 0.009768,
+          "std_vol": 0.006172
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 448,
+          "mean_log_return": -0.00019482,
+          "efficiency_ratio": 0.0378,
+          "mean_vol": 0.022771,
+          "std_vol": 0.003422
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1261,
+          "mean_log_return": -0.00045071,
+          "efficiency_ratio": 0.1189,
+          "mean_vol": 0.015892,
+          "std_vol": 0.007512
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1494,
+          "mean_log_return": 0.00020017,
+          "efficiency_ratio": 0.0744,
+          "mean_vol": 0.011202,
+          "std_vol": 0.003096
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 533,
+          "mean_log_return": 0.00043058,
+          "efficiency_ratio": 0.1676,
+          "mean_vol": 0.01107,
+          "std_vol": 0.003489
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BNBUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 223,
+          "mean_log_return": -0.0007178,
+          "efficiency_ratio": 0.1053,
+          "mean_vol": 0.029055,
+          "std_vol": 0.008199
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1304,
+          "mean_log_return": 0.00005946,
+          "efficiency_ratio": 0.0178,
+          "mean_vol": 0.014777,
+          "std_vol": 0.002107
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1761,
+          "mean_log_return": 0.00002427,
+          "efficiency_ratio": 0.0099,
+          "mean_vol": 0.009613,
+          "std_vol": 0.001958
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 2,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 772,
+          "mean_log_return": -0.00127104,
+          "efficiency_ratio": 0.3754,
+          "mean_vol": 0.014268,
+          "std_vol": 0.005349
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1102,
+          "mean_log_return": -0.00002618,
+          "efficiency_ratio": 0.0086,
+          "mean_vol": 0.013106,
+          "std_vol": 0.004221
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1016,
+          "mean_log_return": 0.00094921,
+          "efficiency_ratio": 0.2712,
+          "mean_vol": 0.014674,
+          "std_vol": 0.004311
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 144,
+          "mean_log_return": -0.00021196,
+          "efficiency_ratio": 0.0393,
+          "mean_vol": 0.026188,
+          "std_vol": 0.005339
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1005,
+          "mean_log_return": -0.00010685,
+          "efficiency_ratio": 0.0332,
+          "mean_vol": 0.013437,
+          "std_vol": 0.001865
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 909,
+          "mean_log_return": 0.00009248,
+          "efficiency_ratio": 0.0241,
+          "mean_vol": 0.01666,
+          "std_vol": 0.003058
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 832,
+          "mean_log_return": 9.8e-6,
+          "efficiency_ratio": 0.004,
+          "mean_vol": 0.009552,
+          "std_vol": 0.001237
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "BTCUSDT",
+      "classifier_id": "jump_model_cjm_v1",
+      "highest_vol_state_by_mean": 1,
+      "highest_vol_state_by_std": 1,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 2587,
+          "mean_log_return": -0.00003888,
+          "efficiency_ratio": 0.0125,
+          "mean_vol": 0.013199,
+          "std_vol": 0.004044
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 303,
+          "mean_log_return": 0.00018113,
+          "efficiency_ratio": 0.0373,
+          "mean_vol": 0.02053,
+          "std_vol": 0.004094
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 0,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 319,
+          "mean_log_return": -0.00169627,
+          "efficiency_ratio": 0.3247,
+          "mean_vol": 0.021758,
+          "std_vol": 0.009064
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1337,
+          "mean_log_return": -0.00021884,
+          "efficiency_ratio": 0.0562,
+          "mean_vol": 0.01637,
+          "std_vol": 0.005301
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1218,
+          "mean_log_return": 0.00060635,
+          "efficiency_ratio": 0.1258,
+          "mean_vol": 0.020779,
+          "std_vol": 0.007871
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "ETHUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 591,
+          "mean_log_return": 0.00008129,
+          "efficiency_ratio": 0.0163,
+          "mean_vol": 0.021772,
+          "std_vol": 0.002441
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 526,
+          "mean_log_return": 0.0002168,
+          "efficiency_ratio": 0.0379,
+          "mean_vol": 0.024824,
+          "std_vol": 0.005057
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1665,
+          "mean_log_return": -0.00019978,
+          "efficiency_ratio": 0.055,
+          "mean_vol": 0.01448,
+          "std_vol": 0.002807
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 92,
+          "mean_log_return": 0.00081956,
+          "efficiency_ratio": 0.1027,
+          "mean_vol": 0.044609,
+          "std_vol": 0.009263
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 962,
+          "mean_log_return": -0.00061345,
+          "efficiency_ratio": 0.1013,
+          "mean_vol": 0.026189,
+          "std_vol": 0.011133
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1469,
+          "mean_log_return": 0.00005964,
+          "efficiency_ratio": 0.015,
+          "mean_vol": 0.01666,
+          "std_vol": 0.005172
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 399,
+          "mean_log_return": 0.00095406,
+          "efficiency_ratio": 0.1686,
+          "mean_vol": 0.025918,
+          "std_vol": 0.012432
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "SOLUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 3,
+      "criteria_agree": true,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 513,
+          "mean_log_return": 0.00015836,
+          "efficiency_ratio": 0.023,
+          "mean_vol": 0.03044,
+          "std_vol": 0.005932
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 529,
+          "mean_log_return": -0.00030892,
+          "efficiency_ratio": 0.0527,
+          "mean_vol": 0.025006,
+          "std_vol": 0.002467
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 1722,
+          "mean_log_return": -0.00004614,
+          "efficiency_ratio": 0.012,
+          "mean_vol": 0.015848,
+          "std_vol": 0.00353
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 66,
+          "mean_log_return": 0.0006027,
+          "efficiency_ratio": 0.0619,
+          "mean_vol": 0.058694,
+          "std_vol": 0.026814
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "bocpd_v1",
+      "highest_vol_state_by_mean": 0,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 0,
+          "n_bars": 1063,
+          "mean_log_return": -0.00083352,
+          "efficiency_ratio": 0.1796,
+          "mean_vol": 0.019558,
+          "std_vol": 0.007133
+        },
+        {
+          "canonical_id": 1,
+          "n_bars": 1256,
+          "mean_log_return": 0.00007595,
+          "efficiency_ratio": 0.022,
+          "mean_vol": 0.014812,
+          "std_vol": 0.005121
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 591,
+          "mean_log_return": 0.00087062,
+          "efficiency_ratio": 0.1932,
+          "mean_vol": 0.01902,
+          "std_vol": 0.008381
+        }
+      ]
+    },
+    {
+      "resolution_id": "R3",
+      "window_name": "RECENTE",
+      "symbol": "XRPUSDT",
+      "classifier_id": "hmm_gaussian_k4_v1",
+      "highest_vol_state_by_mean": 3,
+      "highest_vol_state_by_std": 2,
+      "criteria_agree": false,
+      "per_state": [
+        {
+          "canonical_id": 1,
+          "n_bars": 1657,
+          "mean_log_return": -0.00018183,
+          "efficiency_ratio": 0.0499,
+          "mean_vol": 0.015228,
+          "std_vol": 0.003682
+        },
+        {
+          "canonical_id": 2,
+          "n_bars": 845,
+          "mean_log_return": -0.00020002,
+          "efficiency_ratio": 0.0481,
+          "mean_vol": 0.017916,
+          "std_vol": 0.009225
+        },
+        {
+          "canonical_id": 3,
+          "n_bars": 385,
+          "mean_log_return": 0.00035831,
+          "efficiency_ratio": 0.061,
+          "mean_vol": 0.024808,
+          "std_vol": 0.003172
+        }
+      ]
+    }
+  ],
+  "next_step": "Comparar efficiency_ratio do mean_selected_state vs. std_selected_state em cada linha de disagreement_cells (buscar o canonical_id correspondente em 'results' -> per_state). Se mean_selected_state tiver efficiency_ratio sistematicamente maior (mais perto de 1) que std_selected_state nas celulas RECENTE, a hipotese de 'tendencia ordeira vs. caotica' tem suporte empirico; se nao houver padrao claro, a divergencia fica registrada como nao-explicada, nao inventar explicacao."
+}

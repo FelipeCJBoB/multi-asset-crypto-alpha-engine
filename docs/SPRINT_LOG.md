@@ -3819,6 +3819,28 @@ sweep novo. Detalhe: `audit/architecture_gaps_log.yaml::AG-191`/
 `AG-192`.
 
 <!-- check-sprint-log: skip -->
+**`AG-191` parcialmente endereçado — refresh escopado de `RECENTE`,
+resultado da hipótese trend-efficiency é MISTO (2026-08-23)**
+<!-- check-sprint-log: skip --> — usuário autorizou Claude a rodar
+`run_and_save_critical_windows_report(windows=(RECENTE,),
+hmm_states_grid=(4,))` diretamente (verificado antes: só lê bars,
+único write é `experiments/`, sem toque em `data/`/`models/`/
+`n_lifetime.yaml`) — <!-- check-sprint-log: skip --> ~29min, 0 falhas,
+3/3 resoluções. Diagnóstico recomputado: **58 células, 10
+discordâncias no total**; as 4 células de `hmm_gaussian_k4_v1`/
+`RECENTE` mudaram contra o dado obsoleto anterior (`BNBUSDT/R1`,
+`BNBUSDT/R2`, `XRPUSDT/R2`, `XRPUSDT/R3`, não mais as 4 antigas — <!-- check-sprint-log: skip -->
+esperado, refit sobre bars recalibrados). Hipótese "tendência ordeira
+vs. caótica": suporta em 2/4 (`BNBUSDT/R2`, `XRPUSDT/R3` — estado
+MÉDIA nitidamente mais eficiente/direcional que o estado DESVIO-
+PADRÃO), ambíguo em 1/4, contradiz em 1/4 (`BNBUSDT/R1`). Não é padrão
+limpo — registrado como observação qualificada, não muda a decisão já
+travada (MÉDIA). `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` continuam
+obsoletos (só `RECENTE` foi refrescada) — `AG-191` fica parcialmente
+aberto por isso. Detalhe: `audit/architecture_gaps_log.yaml::AG-121`
+addendum `trend_efficiency_recente_2026-08-23`, `AG-191`.
+
+<!-- check-sprint-log: skip -->
 **Alpha multi-ativo × multi-resolução — implementação real, D-01 a D-18
 (2026-08-23)** <!-- check-sprint-log: skip --> — desenho de `§15.20`
 sai de "ZERO implementado" pras 18 decisões codificadas e testadas
@@ -3877,7 +3899,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
 | **Alpha multi-ativo × multi-resolução** | **Desenho travado E IMPLEMENTADO (D-01 a D-18) — 2026-08-23**, commits `d15ff73`/`321c414`/`1c6f1b3`/`4781920`. Learner XGBoost→LightGBM; `predictions.parquet` 17→21 colunas (`symbol`/`resolution_id`/`tau_long`/`tau_short`); `model_dir` chaveado por `(symbol, resolution_id)`; driver de 15 combinações; GPU confirmada com o usuário, `device_type` parametrizado (`"cpu"` default nos testes, `"cuda"` só em produção). D-06 (writer `io.artifact`) PARCIAL — capacidade pronta, cutover real adiado pro PR que ativa o retreino (decisão do próprio design doc). Nenhum treino real rodou, gate "Data Layer 100%" segue fechado — teste golden falha deliberadamente contra baseline XGBoost antigo (esperado). Suíte completa: 1781 passed, 0 failed. `AG-157`/`AG-158`/`AG-160` fechados; `AG-154` parcial; achado fora de escopo `AG-193` (bug pré-existente, `AG-032`) corrigido no caminho. `AG-162`/`AG-150` (schema `tau_alpha` × `tau_long`/`tau_short`) já fechados por sessão anterior (commit `fe943e6`) antes da implementação começar. Revisão independente `project_assurance` disparada, achados em adendo. Detalhe completo: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20.1` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
-| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA, ver seção narrativa acima); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` fica `TBD` (`AG-191`, dado obsoleto pro teste) |
+| Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` testada com dado fresco, resultado MISTO (2/4 suporta, 1/4 contradiz, 1/4 ambíguo — ver seção narrativa acima), não é padrão limpo; `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` seguem com dado obsoleto (`AG-191`, parcial) |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
 | Pendente pra fechar M4 | Gate 1 fechado 2026-08-21/22 (pior-caso/33%, ver §15.12.6/§15.12.7). Pendente: extrair detection delay de `hmm_k3`/`hmm_k4` separadamente e rodar Gate 3 de verdade pra R1/R2 (empate detectado pelo piso do p-valor, §15.12.7) — só R3 permanece decidido pela métrica primária. Depois: resolver as 7 decisões residuais da Trilha B (§15.11, arquitetura Decision Engine — `AG-116` NÃO é uma delas, já fechado, ver correção acima), congelar metodologia, rodar holdout travado uma única vez, veredito final ao Manager |
 | Reordenação do gate de retreino do Alpha — decidido 2026-08-22 | Manager: retreino NÃO espera o Gate 1 (resolvido em horas de redação, não é o gargalo real) — espera o reprocessamento dollar-bar, que é upstream de tudo e invalida o Data Layer inteiro. `AG-124` (recalibração causal das barras RAW) concluído 2026-08-22 — mas em aberto: se "reprocessamento dollar-bar" no sentido do Manager inclui também reprocessar features/labels/regime/CPCV sobre as barras novas (que hoje ainda refletem a calibração antiga), ou se refere só à camada de barra já concluída. Pergunta feita ao Manager, não assumida. |
