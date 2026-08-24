@@ -115,6 +115,17 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "K04_session_europe",
     "K04_session_us",
     "K08_days_since_halving",
+    # Lote B da liberação de features (H5, 2026-08-24) -- 6 T2, cada uma
+    # precisando de primitiva nova (support.rolling_correlation/rolling_
+    # percentile_rank_strict, min/max rolante, reset por dia, soma por
+    # evento) ou fonte nova (D07f, klines_1m bruto) -- nenhuma promovida
+    # a T1.
+    "A15_dist_vwap_d_atr",
+    "B10_stoch_k_14",
+    "C08_vol_pctile_rolling_1y",
+    "D07f_taker_imbalance_1m_agg",
+    "D10f_vol_price_divergence",
+    "E03f_funding_cum_3d",
 )
 
 ALL_OUTPUT_COLUMNS: tuple[str, ...] = (
@@ -362,6 +373,34 @@ class LoteAWindows:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class LoteBWindows:
+    """Janelas/parâmetros das 6 features T2 do Lote B da liberação de
+    features (H5, 2026-08-24) — mesmo padrão de `LoteAWindows`/
+    `FeatureWindows`, dataclass SEPARADA (motivo idêntico ao de
+    `LoteAWindows`). A15/D07f não têm campo aqui: A15 (VWAP) não usa
+    janela, só reset por fronteira de dia; D07f usa `step_ms("15m")`
+    (infraestrutura de grid, não hiperparâmetro de negócio — mesmo
+    tratamento que `step_ms(...)` já recebe em outros pontos de
+    `build.py`), não uma constante de `constants.yaml`."""
+
+    b10_stoch_window: int
+    c08_inner_window: int
+    c08_outer_window: int
+    d10f_window: int
+    e03f_n_events: int
+
+    @classmethod
+    def from_constants(cls) -> LoteBWindows:
+        return cls(
+            b10_stoch_window=int(load_constant("feature_b10_stoch_window")),
+            c08_inner_window=int(load_constant("feature_c08_vol_pctile_inner_window")),
+            c08_outer_window=int(load_constant("feature_c08_vol_pctile_outer_window")),
+            d10f_window=int(load_constant("feature_d10f_window")),
+            e03f_n_events=int(load_constant("feature_e03f_funding_cum_n_events")),
+        )
+
+
 # ============================================================================
 # AG-032 item 8 (Fix A, 2026-08-21) — `max_feature_lookback_ms` compartilhado
 # entre `src.models.pipeline.run_layer1_sprint` e `src.validation.leakage.
@@ -546,6 +585,7 @@ def compute_t1_features(
     windows: FeatureWindows | None = None,
     apply_warmup_mask: bool = True,
     vol_estimator_id: str | None = None,
+    taker_imbalance_1m_agg_aligned: pl.Series | FloatArray | None = None,
 ) -> pl.DataFrame:
     """Núcleo puro (sem IO) do Feature Engine T1.
 
@@ -560,6 +600,20 @@ def compute_t1_features(
     `_sources.asof_align_backward`, que faz o asof-join causal ANTES desta
     função ser chamada; esta função não sabe nada sobre asof-join, só
     consome os arrays já alinhados.
+
+    `taker_imbalance_1m_agg_aligned` (Lote B, H5, 2026-08-24) — mesmo
+    contrato de `funding_last_aligned`/`oi_contracts_aligned` (array já
+    alinhado, produzido por `_sources.load_taker_imbalance_1m_agg_
+    aligned`), mas OPCIONAL (`None` por default) — diferente das duas
+    acima, que são exigidas desde o Sprint 4 (T1 depende delas).
+    `D07f_taker_imbalance_1m_agg` é T2 e exige uma fonte de dado NOVA
+    (`klines_1m` bruto, não o já-resampled-pra-15m que todo o resto do
+    Feature Engine consome) — tornar isso obrigatório quebraria TODO
+    chamador existente (testes com `bars_15m` sintético, sem klines_1m
+    correspondente) sem necessidade real, já que D07f não é T1. `None`
+    produz a coluna inteira `NaN` (warmup-masked igual a qualquer outra,
+    nunca um valor inventado) — `build_t1_features` (casca de IO) passa
+    o array real por padrão.
 
     `vol_estimator_id` (2026-08-17, AG-036/065) escolhe qual estimador
     calcula C01 (`atr_20_abs`, insumo de A05/A13/C02/E27f) — `None`
@@ -588,7 +642,14 @@ def compute_t1_features(
 
     funding_arr = _to_numpy(funding_last_aligned)
     oi_arr = _to_numpy(oi_contracts_aligned)
+    n_bars = close.shape[0]
+    taker_imbalance_1m_agg_arr = (
+        np.full(n_bars, np.nan, dtype=np.float64)
+        if taker_imbalance_1m_agg_aligned is None
+        else _to_numpy(taker_imbalance_1m_agg_aligned)
+    )
     lote_a = LoteAWindows.from_constants()
+    lote_b = LoteBWindows.from_constants()
 
     n = close.shape[0]
     log_return_1 = np.full(n, np.nan, dtype=np.float64)
@@ -751,6 +812,21 @@ def compute_t1_features(
         "K08_days_since_halving": group_k.k08_days_since_halving(
             close_time_ms, lote_a.k08_halving_dates_ms
         ),
+        # Lote B da liberação de features (H5, 2026-08-24) -- 6 T2.
+        "A15_dist_vwap_d_atr": group_a.a15_dist_vwap_d_atr(
+            high, low, close, volume, close_time_ms, atr_20_abs
+        ),
+        "B10_stoch_k_14": group_b.b10_stoch_k_14(high, low, close, lote_b.b10_stoch_window),
+        "C08_vol_pctile_rolling_1y": group_c.c08_vol_pctile_rolling_1y(
+            log_return_1, lote_b.c08_inner_window, lote_b.c08_outer_window
+        ),
+        "D07f_taker_imbalance_1m_agg": taker_imbalance_1m_agg_arr,
+        "D10f_vol_price_divergence": group_d.d10f_vol_price_divergence(
+            log_return_1, volume, lote_b.d10f_window
+        ),
+        "E03f_funding_cum_3d": group_e.e03f_funding_cum_3d(
+            funding_arr, close_time_ms, lote_a.e05f_funding_interval_hours, lote_b.e03f_n_events
+        ),
     }
     df = pl.DataFrame(columns)
 
@@ -783,6 +859,7 @@ def build_t1_features(
     apply_warmup_mask: bool = True,
     bar_source: str = "time_15m",
     vol_estimator_id: str | None = None,
+    load_taker_imbalance_1m: bool = True,
 ) -> pl.DataFrame:
     """Ponto de entrada com IO: carrega barras + fontes auxiliares
     alinhadas e chama `compute_t1_features`. `start`/`end` devem incluir
@@ -855,13 +932,35 @@ def build_t1_features(
     exceção deliberada porque sua intenção declarada amarra o span ao
     horizonte REAL do label (`time_stop_ms`), não a uma janela de
     estimação genérica. Sob `bar_source="time_15m"`, `ema_window=48`
-    continua bit-exato."""
+    continua bit-exato.
+
+    `load_taker_imbalance_1m` (Lote B, H5, 2026-08-24, default `True`):
+    carrega `klines_1m` bruto e agrega `D07f_taker_imbalance_1m_agg`
+    (`_sources.load_taker_imbalance_1m_agg_aligned`) — real custo de IO
+    extra (~15-60x mais linhas que `bars_15m`, dependendo de `bar_
+    source`), pago por padrão porque é o comportamento de PRODUÇÃO
+    correto (T2 disponível de verdade, não uma coluna sempre-NaN por
+    omissão). `False` pula esse carregamento (coluna sai `NaN`, mesmo
+    efeito de não passar o argumento em `compute_t1_features`) — usar
+    quando o custo extra não se justifica (ex. teste rápido que não
+    toca D07f). Sob `bar_source != "time_15m"` o carregamento é SEMPRE
+    pulado, independente deste argumento: o mapeamento de `bucket_id`
+    de `load_taker_imbalance_1m_agg_aligned` (`open_time // step_ms
+    ("15m")`) assume grid de relógio FIXO — sob dollar bar, `bars_15m`
+    não tem essa propriedade (barras irregulares, disparadas por
+    threshold), o bucket sairia incorreto silenciosamente se calculado
+    do mesmo jeito; `NaN` honesto é preferível a um número errado."""
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
     windows = FeatureWindows.from_constants(bar_source=bar_source)
     if bar_source != "time_15m":
         windows = replace(windows, min_common_history_bars=None)
+    taker_imbalance_1m_agg_aligned = None
+    if load_taker_imbalance_1m and bar_source == "time_15m":
+        taker_imbalance_1m_agg_aligned = _sources.load_taker_imbalance_1m_agg_aligned(
+            bars_15m, symbol, start, end
+        )
     logger.info(
         "features.build_t1_features",
         symbol=symbol,
@@ -870,6 +969,7 @@ def build_t1_features(
         bar_source=bar_source,
         vol_estimator_id=vol_estimator_id,
         n_bars=bars_15m.height,
+        load_taker_imbalance_1m=load_taker_imbalance_1m,
     )
     return compute_t1_features(
         bars_15m,
@@ -878,4 +978,5 @@ def build_t1_features(
         windows=windows,
         apply_warmup_mask=apply_warmup_mask,
         vol_estimator_id=vol_estimator_id,
+        taker_imbalance_1m_agg_aligned=taker_imbalance_1m_agg_aligned,
     )

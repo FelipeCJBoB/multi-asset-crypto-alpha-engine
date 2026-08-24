@@ -25,6 +25,7 @@ estética, é a única leitura que faz a feature ter escala utilizável.
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 
 from .. import support
 from ..support import FloatArray
@@ -209,4 +210,48 @@ def a14_dist_ema12_atr(close: FloatArray, ema_12: FloatArray, atr_20_abs: FloatA
     absoluto, não `atr_20_pct`)."""
     with np.errstate(divide="ignore", invalid="ignore"):
         out: FloatArray = (close - ema_12) / atr_20_abs
+    return out
+
+
+# ============================================================================
+# Lote B da liberação de features (H5, 2026-08-24) — A15, única do grupo A
+# nesta leva (precisa de primitiva nova: reset por fronteira de dia).
+# ============================================================================
+
+
+def a15_dist_vwap_d_atr(
+    high: FloatArray,
+    low: FloatArray,
+    close: FloatArray,
+    volume: FloatArray,
+    close_time_ms: FloatArray,
+    atr_20_abs: FloatArray,
+) -> FloatArray:
+    """`(C_t - VWAP_dia) / ATR_20` (absoluto) — §2.2 A15. `VWAP_dia =
+    cumulative(preço_típico × volume) / cumulative(volume)` DESDE o
+    início do dia UTC contendo a barra `t` — `preço_típico = (H+L+C)/3`,
+    convenção pública padrão (validada via pesquisa web: Investing.com/
+    StockCharts/QuantInsti — "the industry standard for VWAP uses...
+    (High + Low + Close) / 3"). Cripto negocia 24/7, sem "abertura de
+    sessão" tradicional (ações/futuros) — reset à meia-noite UTC é a
+    adaptação natural pra um mercado contínuo, mesma convenção de
+    fronteira de dia já usada em `group_k.py` (K03/K08) deste repo.
+
+    `polars.cum_sum().over("day_id")` reseta a soma acumulada a cada
+    novo `day_id` (partição), preservando a ORDEM de aparição dentro de
+    cada dia — como `close_time_ms` chega estritamente crescente
+    (barras em ordem cronológica), isso reproduz exatamente "acumula
+    desde o início do dia, nunca olha pra frente" (B02: a barra `t` só
+    soma até si mesma dentro do próprio dia, nunca além). Mesma leitura
+    dimensional de A13/A14 (numerador em unidade de preço → ATR
+    absoluto, não `atr_20_pct`)."""
+    typical_price = (high + low + close) / 3.0  # noqa: magic-number -- média de 3 (H+L+C), definicional da fórmula pública de VWAP, não hiperparâmetro
+    day_id = close_time_ms.astype(np.int64) // 86_400_000  # noqa: magic-number -- ms/dia, conversão de unidade, não hiperparâmetro (mesma constante de group_k.py::_MS_PER_DAY)
+    pv = typical_price * volume
+    df = pl.DataFrame({"day_id": day_id, "pv": pv, "v": volume})
+    cum_pv = df.select(pl.col("pv").cum_sum().over("day_id")).to_series().to_numpy()
+    cum_v = df.select(pl.col("v").cum_sum().over("day_id")).to_series().to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        vwap = cum_pv / cum_v
+        out: FloatArray = (close - vwap) / atr_20_abs
     return out

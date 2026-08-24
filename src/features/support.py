@@ -425,6 +425,107 @@ def _expanding_zscore_strict_core(values: FloatArray) -> FloatArray:
     return out
 
 
+def rolling_correlation(x: FloatArray, y: FloatArray, window: int) -> FloatArray:
+    """Correlação de Pearson em janela ROLANTE fixa de `window` barras —
+    D10f (§2.5). Janela rolante fixa, mesma família de `rolling_zscore`/
+    `realized_vol` (a barra `t` entra na própria janela, B02 não se
+    aplica). Fórmula fechada clássica via somas rolantes:
+    `corr_t = (E[xy] - E[x]E[y]) / sqrt((E[x^2]-E[x]^2) * (E[y^2]-E[y]^2))`
+    sobre `[t-window+1, t]` — mesma técnica de `polars.rolling_mean`
+    encadeada já usada por `garman_klass_vol`/`rogers_satchell_vol` neste
+    módulo, não um segundo algoritmo. `np.maximum(..., 0.0)` no produto de
+    variâncias antes da raiz evita `NaN` de cancelamento de ponto
+    flutuante levemente negativo (mesma disciplina de `downside_
+    deviation`, achado AG-119) — correlação verdadeiramente indefinida
+    (variância zero de fato) ainda produz `NaN` via `errstate`, só não por
+    causa de ruído de ponto flutuante."""
+    sx = pl.Series(x)
+    sy = pl.Series(y)
+    sxy = sx * sy
+    sx2 = sx * sx
+    sy2 = sy * sy
+    mean_x = sx.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    mean_y = sy.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    mean_xy = sxy.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    mean_x2 = sx2.rolling_mean(window_size=window, min_samples=window).to_numpy()
+    mean_y2 = sy2.rolling_mean(window_size=window, min_samples=window).to_numpy()
+
+    cov = mean_xy - mean_x * mean_y
+    var_x = mean_x2 - mean_x * mean_x
+    var_y = mean_y2 - mean_y * mean_y
+    denom = np.sqrt(np.maximum(var_x * var_y, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = cov / denom
+    return out
+
+
+def rolling_percentile_rank_strict(values: FloatArray, window: int) -> FloatArray:
+    """Posto percentil em janela ROLANTE estrita de tamanho `window` — C08
+    (§2.4, "idem [C07_vol_pctile_expanding], janela rolante de 1 ano"):
+    `rank_t = #{i em [t-window, t-1] : x_i "<" x_t} / #{i em [t-window,
+    t-1] não-NaN}` — mesma convenção de "nunca inclui `t`" de `expanding_
+    percentile_rank_strict` (B02), só que a distribuição de referência é
+    uma JANELA FINITA deslizante, não expansiva desde a origem do dataset.
+
+    Implementado com a MESMA compressão de coordenadas + Fenwick tree de
+    `expanding_percentile_rank_strict`, com uma diferença: elementos que
+    saem da janela são REMOVIDOS da árvore (`_update(pos, -1)`), não só
+    inseridos — Fenwick tree suporta delta negativo tão bem quanto
+    positivo, não precisa de estrutura nova. A compressão de coordenadas
+    (posto denso GLOBAL, calculado uma vez sobre a série inteira) é só um
+    mapeamento ESTÁTICO valor->índice de árvore — não viola causalidade
+    (B02): a consulta em `t` só enxerga o ESTADO da árvore naquele
+    momento, que reflete exatamente `[t-window, t-1]`, nunca `t` nem além
+    (prova por indução: a árvore só recebe `_update(+1)` do índice `t`
+    IMEDIATAMENTE DEPOIS de `out[t]` já ter sido calculado, nunca antes)."""
+    n = values.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    finite_mask = ~np.isnan(values)
+    idx_finite = np.flatnonzero(finite_mask)
+    m = idx_finite.shape[0]
+    if m == 0:
+        return out
+
+    vals_finite = values[idx_finite]
+    order = np.argsort(vals_finite, kind="stable")
+    dense_rank = np.empty(m, dtype=np.int64)
+    dense_rank[order] = np.arange(m)
+    dense_rank_by_idx = np.full(n, -1, dtype=np.int64)
+    dense_rank_by_idx[idx_finite] = dense_rank
+
+    tree = np.zeros(m + 1, dtype=np.int64)
+
+    def _update(i: int, delta: int) -> None:
+        i += 1
+        while i <= m:
+            tree[i] += delta
+            i += i & (-i)
+
+    def _query_prefix(i: int) -> int:
+        s = 0
+        while i > 0:
+            s += int(tree[i])
+            i -= i & (-i)
+        return s
+
+    count_in_window = 0
+    for t in range(n):
+        r_t = int(dense_rank_by_idx[t])
+        if count_in_window > 0 and r_t >= 0:
+            less = _query_prefix(r_t)
+            out[t] = less / count_in_window
+        if r_t >= 0:
+            _update(r_t, 1)
+            count_in_window += 1
+        remove_idx = t - window
+        if remove_idx >= 0:
+            r_remove = int(dense_rank_by_idx[remove_idx])
+            if r_remove >= 0:
+                _update(r_remove, -1)
+                count_in_window -= 1
+    return out
+
+
 def expanding_percentile_rank_strict(
     values: FloatArray, *, min_common_history_bars: int | None = None
 ) -> FloatArray:

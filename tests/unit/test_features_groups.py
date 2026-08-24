@@ -795,3 +795,141 @@ def test_k08_days_since_halving_antes_do_1o_halving_e_nan() -> None:
     halving_dates_ms = (1_000_000_000_000,)
     out = group_k.k08_days_since_halving(np.array([0.0, 999_999_999_999.0]), halving_dates_ms)
     assert np.isnan(out).all()
+
+
+# ============================================================================
+# Lote B da liberação de features (H5, 2026-08-24) — A15, B10, C08, D07f,
+# D10f, E03f. Todas T2 (§0.2 R4/§2.13, nenhuma promovida a T1).
+# ============================================================================
+
+
+def test_a15_causalidade_e_reset_diario() -> None:
+    n = 150
+    bars = _make_ohlcv(n)
+    # barras de 15m consecutivas reais -- 96 barras/dia (24h), então a
+    # barra de índice 96 é a 1ª do 2º dia UTC.
+    close_time_ms = np.arange(n, dtype=np.float64) * 900_000.0 + 899_999.0
+    atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
+    out = group_a.a15_dist_vwap_d_atr(
+        bars["high"], bars["low"], bars["close"], bars["volume"], close_time_ms, atr_abs
+    )
+
+    boundary = 96
+    day_id = close_time_ms.astype(np.int64) // 86_400_000
+    assert day_id[boundary] != day_id[boundary - 1]  # confirma que É de fato a fronteira
+    # na 1ª barra do dia novo, VWAP == preço típico DELA MESMA (acumulação
+    # reiniciada, não carrega nada do dia anterior) -- reconstrói VWAP
+    # invertendo (C-VWAP)/ATR = out.
+    typical_price_boundary = (
+        bars["high"][boundary] + bars["low"][boundary] + bars["close"][boundary]
+    ) / 3.0
+    vwap_boundary = bars["close"][boundary] - out[boundary] * atr_abs[boundary]
+    assert vwap_boundary == pytest.approx(typical_price_boundary)
+
+    cutoff = 100  # dentro do 2º dia (>= 96), perturbação não cruza fronteira de dia
+    high2, low2, close2 = bars["high"].copy(), bars["low"].copy(), bars["close"].copy()
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    atr_abs2 = support.atr_wilder(high2, low2, close2, window=20)
+    out_perturbed = group_a.a15_dist_vwap_d_atr(
+        high2, low2, close2, bars["volume"], close_time_ms, atr_abs2
+    )
+    np.testing.assert_allclose(out[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_b10_faixa_0_100_e_causalidade() -> None:
+    bars = _make_ohlcv(200)
+    out = group_b.b10_stoch_k_14(bars["high"], bars["low"], bars["close"], window=14)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= -1e-9).all() and (valid <= 100.0 + 1e-9).all()
+
+    cutoff = 100
+    high2, low2, close2 = bars["high"].copy(), bars["low"].copy(), bars["close"].copy()
+    high2[cutoff + 1 :] *= 1.5
+    low2[cutoff + 1 :] *= 1.5
+    close2[cutoff + 1 :] *= 1.5
+    out_perturbed = group_b.b10_stoch_k_14(high2, low2, close2, window=14)
+    np.testing.assert_allclose(out[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_c08_reproduz_realized_vol_mais_rolling_rank() -> None:
+    bars = _make_ohlcv(300)
+    log_ret = _log_return_1(bars["close"])
+    out = group_c.c08_vol_pctile_rolling_1y(log_ret, inner_window=12, outer_window=48)
+    rv = support.realized_vol(log_ret, 12)
+    expected = support.rolling_percentile_rank_strict(rv, 48)
+    np.testing.assert_array_equal(out, expected)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= 0.0).all() and (valid <= 1.0).all()
+
+
+def test_d07f_causalidade_e_agregacao() -> None:
+    """Núcleo puro (groupby-mean por bucket) — causalidade é estrutural
+    por construção (cada bucket de 15m só agrega barras de 1m com o
+    MESMO bucket_id, nunca outro), não uma propriedade de janela
+    perturbável — prova aqui é de FÓRMULA (valor calculado à mão), não
+    de perturbação como as demais."""
+    bucket_id_1m = np.array([0, 0, 0, 1, 1], dtype=np.int64)
+    taker_buy_volume_1m = np.array([4.0, 3.0, 4.0, 1.0, 1.0])
+    volume_1m = np.array([4.0, 4.0, 4.0, 4.0, 2.0])
+    bucket_id_15m = np.array([0, 1, 2], dtype=np.int64)
+
+    out = group_d.d07f_taker_imbalance_1m_agg(
+        taker_buy_volume_1m, volume_1m, bucket_id_1m, bucket_id_15m
+    )
+    # bucket 0: ratios=[1.0,0.75,1.0] -> imbalance=[1.0,0.5,1.0] -> média
+    assert out[0] == pytest.approx((1.0 + 0.5 + 1.0) / 3.0)
+    # bucket 1: ratios=[0.25,0.5] -> imbalance=[-0.5,0.0] -> média
+    assert out[1] == pytest.approx((-0.5 + 0.0) / 2.0)
+    assert np.isnan(out[2])  # bucket sem nenhuma barra de 1m correspondente -> NaN, não inventado
+
+
+def test_d10f_causalidade() -> None:
+    bars = _make_ohlcv(300)
+    log_ret = _log_return_1(bars["close"])
+    cutoff = 150
+    out_base = group_d.d10f_vol_price_divergence(log_ret, bars["volume"], window=48)
+
+    log_ret2 = log_ret.copy()
+    volume2 = bars["volume"].copy()
+    log_ret2[cutoff + 1 :] = log_ret2[cutoff + 1 :] * 5.0 + 0.1
+    volume2[cutoff + 1 :] *= 3.0
+    out_perturbed = group_d.d10f_vol_price_divergence(log_ret2, volume2, window=48)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_d10f_faixa_menos1_1() -> None:
+    bars = _make_ohlcv(300)
+    log_ret = _log_return_1(bars["close"])
+    out = group_d.d10f_vol_price_divergence(log_ret, bars["volume"], window=48)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= -1.0 - 1e-9).all() and (valid <= 1.0 + 1e-9).all()
+
+
+def test_e03f_soma_por_evento_nao_por_barra() -> None:
+    """3 eventos de funding DISTINTOS, cada um "visível" por 32 barras de
+    15m consecutivas (mesma repetição que o asof-join backward real
+    produz, 8h/32 barras) -- uma soma ingênua sobre janela de BARRAS
+    contaria o mesmo valor repetidas vezes; a soma por EVENTO não pode
+    (prova direta do bug que este núcleo existe pra evitar)."""
+    n_bars_per_event = 32
+    n_events_total = 4
+    n = n_bars_per_event * n_events_total
+    close_time_ms = np.arange(n, dtype=np.float64) * 900_000.0 + 899_999.0
+    funding_values = [0.0001, 0.0002, -0.0001, 0.0003]
+    funding_last_aligned = np.repeat(funding_values, n_bars_per_event)
+
+    out = group_e.e03f_funding_cum_3d(
+        funding_last_aligned, close_time_ms, funding_interval_hours=8, n_events=3
+    )
+    # só 2 eventos distintos vistos até a barra 63 (0..63) -- indefinido
+    assert np.isnan(out[:64]).all()
+    expected_events_012 = funding_values[0] + funding_values[1] + funding_values[2]
+    assert out[64] == pytest.approx(expected_events_012)
+    assert out[95] == pytest.approx(expected_events_012)  # última barra do 3º evento
+    expected_events_123 = funding_values[1] + funding_values[2] + funding_values[3]
+    assert out[96] == pytest.approx(expected_events_123)  # 4º evento -- 1º evento cai da janela

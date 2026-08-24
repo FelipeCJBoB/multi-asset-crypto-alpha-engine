@@ -4,6 +4,7 @@ B07 (T2, mas implementado agora — insumo do Regime Engine, §4.2, Sprint 5).""
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 
 from .. import support
 from ..support import FloatArray
@@ -157,4 +158,31 @@ def b11_bb_position_20(close: FloatArray, window: int, std_multiplier: float) ->
     duplica o cálculo de z-score."""
     z = support.rolling_zscore(close, window)
     out: FloatArray = z / std_multiplier
+    return out
+
+
+# ============================================================================
+# Lote B da liberação de features (H5, 2026-08-24) — B10, única do grupo B
+# nesta leva (precisa de primitiva nova: mínimo/máximo rolante).
+# ============================================================================
+
+
+def b10_stoch_k_14(high: FloatArray, low: FloatArray, close: FloatArray, window: int) -> FloatArray:
+    """`(C - min(L)_window) / (max(H)_window - min(L)_window) × 100` —
+    §2.3 B10 (Stochastic %K padrão, George Lane, validado via pesquisa
+    web). Janela rolante fixa (a barra `t` entra na própria janela —
+    `min(L)`/`max(H)` incluem `L_t`/`H_t`, B02 não se aplica).
+    `min`/`max` rolantes via `polars.rolling_min`/`rolling_max`
+    diretamente — mesmo padrão de uso direto de primitiva polars já
+    presente no módulo (`rolling_median` em D02f/D04f), não precisa de
+    wrapper novo em `support.py`. `range_=0` (preço flat na janela
+    inteira, caso degenerado raro) produz `NaN` via `errstate` — o PRD
+    não declara uma convenção pra esse caso (diferente de A07-A10, que
+    declaram "0 se H=L" explicitamente), então nenhuma é inventada
+    aqui."""
+    lowest_low = pl.Series(low).rolling_min(window_size=window, min_samples=window).to_numpy()
+    highest_high = pl.Series(high).rolling_max(window_size=window, min_samples=window).to_numpy()
+    pct_scale = 100.0  # noqa: magic-number -- escala percentual padrão do Stochastic %K, definicional (mesma classe do 50.0/100.0 de rsi_wilder), não hiperparâmetro
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out: FloatArray = (close - lowest_low) / (highest_high - lowest_low) * pct_scale
     return out

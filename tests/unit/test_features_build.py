@@ -21,7 +21,7 @@ import yaml
 
 from src.data._paths import CAPACITY_DIR
 from src.data.resample import step_ms
-from src.features import build
+from src.features import _sources, build
 
 _FIXTURE_START = "2024-01-01"
 _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
@@ -373,6 +373,8 @@ def test_compute_t1_features_vol_estimator_id_parkinson_muda_c01_preserva_resto(
         "B04_macd_hist_norm",
         "B05_ema_slope_24",
         "B06_momentum_accel",
+        # Lote B (H5, 2026-08-24) -- idem
+        "A15_dist_vwap_d_atr",
     }
     for col in cols_afetadas:
         valid = ~out_wilder[col].is_nan() & ~out_parkinson[col].is_nan()
@@ -437,6 +439,56 @@ def test_build_t1_features_desabilita_min_common_history_bars_sob_bar_source_nao
     for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
         assert out_time15m.head(n - cap)[col].is_nan().sum() == n - cap, col
         assert out_dollar.head(n - cap)[col].is_nan().sum() < n - cap, col
+
+
+# ============================================================================
+# D07f_taker_imbalance_1m_agg -- Lote B da liberação de features (H5,
+# 2026-08-24), única feature de SUPPORT_FEATURE_IDS com fonte de dado
+# PRÓPRIA (klines_1m bruto). Os testes de paridade gerais (tests/parity/
+# test_features_parity.py) chamam compute_t1_features SEM passar
+# taker_imbalance_1m_agg_aligned (a coluna sai NaN o tempo todo ali, de
+# propósito) -- este teste, escopo menor, exercita o caminho REAL
+# (build_t1_features com load_taker_imbalance_1m=True, default de
+# produção) contra dado real.
+# ============================================================================
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("symbol", _SYMBOLS)
+def test_d07f_paridade_lote_streaming_prefixo_arbitrario(symbol: str) -> None:
+    """Mesma técnica de `test_paridade_streaming_bate_com_recompute_do_
+    zero_em_prefixo_arbitrario` (tests/parity/test_features_parity.py),
+    escopo reduzido só a D07f -- janela curta (5 dias) pra controlar o
+    custo real de IO de klines_1m (~15-60× mais linhas que bars_15m)."""
+    _skip_if_missing(symbol, _FIXTURE_START)
+    start, end = _FIXTURE_START, "2024-01-05"
+
+    batch = build.build_t1_features(symbol, start, end, apply_warmup_mask=False)
+
+    bars = _sources.load_bars(symbol, start, end, bar_source="time_15m")
+    row_idx = min(300, bars.height - 1)
+    assert row_idx > 200  # margem real de warmup
+
+    sub_bars = bars.slice(0, row_idx + 1)
+    funding = _sources.load_funding_aligned(sub_bars, symbol, start, end)
+    oi = _sources.load_oi_aligned(sub_bars, symbol, start, end)
+    taker_1m = _sources.load_taker_imbalance_1m_agg_aligned(sub_bars, symbol, start, end)
+    windows = build.FeatureWindows.from_constants()
+    stream_row = build.compute_t1_features(
+        sub_bars,
+        funding,
+        oi,
+        windows=windows,
+        apply_warmup_mask=False,
+        taker_imbalance_1m_agg_aligned=taker_1m,
+    ).row(-1, named=True)
+    batch_row = batch.row(row_idx, named=True)
+
+    a = stream_row["D07f_taker_imbalance_1m_agg"]
+    b = batch_row["D07f_taker_imbalance_1m_agg"]
+    assert a is not None and b is not None
+    assert not np.isnan(a)  # prova que o caminho real (klines_1m carregado) produz valor de verdade
+    assert np.isclose(a, b, atol=1e-8, rtol=0), f"streaming={a} lote={b}"
 
 
 def test_warmup_zero_barras_nao_quebra() -> None:

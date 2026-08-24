@@ -88,6 +88,22 @@ def test_paridade_lote_streaming_ultimas_500_barras(symbol: str) -> None:
             assert a is not None and b is not None, (
                 f"{col} em row {row_idx}: streaming={a!r} vs lote={b!r} (um é null e outro não)"
             )
+            # achado Lote B (H5, 2026-08-24): `dev = abs(nan - nan)` é NaN,
+            # e `nan > max_abs_dev` é sempre False -- SEM esta checagem
+            # explícita, um par (NaN, NaN) legítimo (D07f_taker_imbalance_
+            # 1m_agg sem `taker_imbalance_1m_agg_aligned` passado, como
+            # aqui) e um par (NaN, valor_real) genuinamente DIVERGENTE
+            # ficariam indistinguíveis -- os dois silenciosamente nunca
+            # atualizam `max_abs_dev`. Trata NaN explicitamente: os dois
+            # lados NaN é OK (mesmo espírito do `is None`, "nenhum dos
+            # dois tem valor"); só um lado NaN é falha real, não silenciada.
+            a_is_nan = isinstance(a, float) and np.isnan(a)
+            b_is_nan = isinstance(b, float) and np.isnan(b)
+            if a_is_nan or b_is_nan:
+                assert a_is_nan and b_is_nan, (
+                    f"{col} em row {row_idx}: streaming={a!r} vs lote={b!r} (um é NaN e outro não)"
+                )
+                continue
             dev = abs(float(a) - float(b))
             if dev > max_abs_dev:
                 max_abs_dev = dev
@@ -130,7 +146,15 @@ def test_paridade_streaming_bate_com_recompute_do_zero_em_prefixo_arbitrario(sym
         if a is None and b is None:
             continue
         assert a is not None and b is not None
-        assert np.isclose(a, b, atol=_TOLERANCE, rtol=0), f"{col}: streaming={a} lote={b}"
+        # equal_nan=True (achado Lote B, H5, 2026-08-24): D07f_taker_
+        # imbalance_1m_agg é a 1ª feature de SUPPORT_FEATURE_IDS que fica
+        # NaN o tempo TODO quando compute_t1_features é chamada sem
+        # taker_imbalance_1m_agg_aligned (aqui não é passado) -- NaN
+        # legítimo dos dois lados não é divergência de paridade, mas
+        # np.isclose(nan, nan) sem equal_nan retorna False por padrão.
+        assert np.isclose(a, b, atol=_TOLERANCE, rtol=0, equal_nan=True), (
+            f"{col}: streaming={a} lote={b}"
+        )
 
 
 # ============================================================================
@@ -199,6 +223,22 @@ def test_paridade_lote_streaming_parkinson_ultimas_500_barras(symbol: str) -> No
             assert a is not None and b is not None, (
                 f"{col} em row {row_idx}: streaming={a!r} vs lote={b!r} (um é null e outro não)"
             )
+            # achado Lote B (H5, 2026-08-24): `dev = abs(nan - nan)` é NaN,
+            # e `nan > max_abs_dev` é sempre False -- SEM esta checagem
+            # explícita, um par (NaN, NaN) legítimo (D07f_taker_imbalance_
+            # 1m_agg sem `taker_imbalance_1m_agg_aligned` passado, como
+            # aqui) e um par (NaN, valor_real) genuinamente DIVERGENTE
+            # ficariam indistinguíveis -- os dois silenciosamente nunca
+            # atualizam `max_abs_dev`. Trata NaN explicitamente: os dois
+            # lados NaN é OK (mesmo espírito do `is None`, "nenhum dos
+            # dois tem valor"); só um lado NaN é falha real, não silenciada.
+            a_is_nan = isinstance(a, float) and np.isnan(a)
+            b_is_nan = isinstance(b, float) and np.isnan(b)
+            if a_is_nan or b_is_nan:
+                assert a_is_nan and b_is_nan, (
+                    f"{col} em row {row_idx}: streaming={a!r} vs lote={b!r} (um é NaN e outro não)"
+                )
+                continue
             dev = abs(float(a) - float(b))
             if dev > max_abs_dev:
                 max_abs_dev = dev
@@ -243,4 +283,12 @@ def test_paridade_streaming_bate_com_recompute_do_zero_sob_dollar_bar(symbol: st
         if a is None and b is None:
             continue
         assert a is not None and b is not None
-        assert np.isclose(a, b, atol=_TOLERANCE, rtol=0), f"{col}: streaming={a} lote={b}"
+        # equal_nan=True (achado Lote B, H5, 2026-08-24): D07f_taker_
+        # imbalance_1m_agg é a 1ª feature de SUPPORT_FEATURE_IDS que fica
+        # NaN o tempo TODO quando compute_t1_features é chamada sem
+        # taker_imbalance_1m_agg_aligned (aqui não é passado) -- NaN
+        # legítimo dos dois lados não é divergência de paridade, mas
+        # np.isclose(nan, nan) sem equal_nan retorna False por padrão.
+        assert np.isclose(a, b, atol=_TOLERANCE, rtol=0, equal_nan=True), (
+            f"{col}: streaming={a} lote={b}"
+        )

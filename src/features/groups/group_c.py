@@ -146,6 +146,26 @@ def c11_vol_compression_flag(
     return out
 
 
+# ============================================================================
+# Lote B da liberação de features (H5, 2026-08-24) — C08, única do grupo C
+# nesta leva (precisa de primitiva nova: posto percentil ROLANTE, não
+# expansivo — support.rolling_percentile_rank_strict).
+# ============================================================================
+
+
+def c08_vol_pctile_rolling_1y(
+    log_return_1: FloatArray, inner_window: int, outer_window: int
+) -> FloatArray:
+    """Posto percentil ROLANTE (janela `outer_window`, ~1 ano) de
+    `realized_vol_{inner_window}` — §2.4 C08 ("idem [C07_vol_pctile_
+    expanding], janela rolante de 1 ano"). Mesmo núcleo de C07
+    (`support.realized_vol`), trocando `expanding_percentile_rank_strict`
+    por `rolling_percentile_rank_strict` (`support.py`) — a diferença
+    entre C07 e C08 é só isso, não uma fórmula nova."""
+    rv = support.realized_vol(log_return_1, inner_window)
+    return support.rolling_percentile_rank_strict(rv, outer_window)
+
+
 def c12_vol_of_vol_48(log_return_1: FloatArray, inner_window: int, outer_window: int) -> FloatArray:
     """`σ(realized_vol_{inner_window})` sobre `outer_window` barras —
     §2.4 C12. `realized_vol_12` (`inner_window`) via `support.

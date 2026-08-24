@@ -564,3 +564,101 @@ def test_expanding_percentile_rank_strict_min_common_history_bars_determinismo()
     out1 = support.expanding_percentile_rank_strict(values, min_common_history_bars=5)
     out2 = support.expanding_percentile_rank_strict(values, min_common_history_bars=5)
     np.testing.assert_array_equal(out1, out2)
+
+
+# ============================================================================
+# rolling_correlation / rolling_percentile_rank_strict -- Lote B da
+# liberação de features (H5, 2026-08-24), D10f/C08.
+# ============================================================================
+
+
+def test_rolling_correlation_correlacao_perfeita_positiva_e_negativa() -> None:
+    n = 40
+    window = 10
+    x = np.arange(n, dtype=np.float64)
+    y_pos = 2.0 * x + 5.0  # correlação perfeita +1
+    y_neg = -3.0 * x + 1.0  # correlação perfeita -1
+    out_pos = support.rolling_correlation(x, y_pos, window)
+    out_neg = support.rolling_correlation(x, y_neg, window)
+    valid_pos = out_pos[~np.isnan(out_pos)]
+    valid_neg = out_neg[~np.isnan(out_neg)]
+    assert valid_pos.shape[0] > 0
+    np.testing.assert_allclose(valid_pos, 1.0, atol=1e-9)
+    np.testing.assert_allclose(valid_neg, -1.0, atol=1e-9)
+
+
+def test_rolling_correlation_faixa_menos1_1() -> None:
+    rng = np.random.default_rng(41)
+    x = rng.normal(0, 1, 200)
+    y = rng.normal(0, 1, 200)
+    out = support.rolling_correlation(x, y, window=20)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= -1.0 - 1e-9).all() and (valid <= 1.0 + 1e-9).all()
+
+
+def test_rolling_correlation_causalidade() -> None:
+    rng = np.random.default_rng(43)
+    x = rng.normal(0, 1, 100)
+    y = rng.normal(0, 1, 100)
+    cutoff = 50
+    out_base = support.rolling_correlation(x, y, window=20)
+
+    x2, y2 = x.copy(), y.copy()
+    x2[cutoff + 1 :] = x2[cutoff + 1 :] * 3.7 + 991.0
+    y2[cutoff + 1 :] = y2[cutoff + 1 :] * 2.1 - 47.0
+    out_perturbed = support.rolling_correlation(x2, y2, window=20)
+    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_rolling_percentile_rank_strict_nao_usa_indice_t() -> None:
+    rng = np.random.default_rng(47)
+    values = rng.normal(0, 1, 60)
+    window = 15
+    out = support.rolling_percentile_rank_strict(values, window)
+    for t in range(window + 1, 60, 7):  # amostra alguns índices, não todos (custo)
+        prior = values[t - window : t]
+        expected = float(np.mean(prior < values[t]))
+        assert out[t] == pytest.approx(expected), f"t={t}"
+
+
+def test_rolling_percentile_rank_strict_faixa_0_1() -> None:
+    rng = np.random.default_rng(53)
+    values = rng.normal(0, 1, 100)
+    out = support.rolling_percentile_rank_strict(values, window=20)
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= 0.0).all() and (valid <= 1.0).all()
+
+
+def test_rolling_percentile_rank_strict_causalidade() -> None:
+    rng = np.random.default_rng(59)
+    values = rng.normal(0, 1, 100)
+
+    def fn(v: np.ndarray) -> np.ndarray:
+        return support.rolling_percentile_rank_strict(v, window=20)
+
+    _assert_causal(fn, values, cutoff=60)
+
+
+def test_rolling_percentile_rank_strict_janela_menor_produz_nan_antes() -> None:
+    """Diferente de `expanding_percentile_rank_strict`, a janela é FINITA
+    -- `out[t]` só é definido depois que a janela `[t-window, t-1]` tem
+    pelo menos 1 ponto (`t >= 1` já basta pro primeiro ponto válido, mas
+    o teste real é que `out[0]` é sempre NaN, mesma convenção de "nunca
+    inclui t" das duas primitivas de posto percentil)."""
+    values = np.array([5.0, 1.0, 9.0, 2.0, 7.0])
+    out = support.rolling_percentile_rank_strict(values, window=3)
+    assert np.isnan(out[0])
+
+
+def test_rolling_percentile_rank_strict_bate_com_expanding_quando_window_e_grande() -> None:
+    """`window >= n` faz a janela rolante nunca "esquecer" nenhum ponto
+    prévio -- degenerando pra exatamente o mesmo comportamento de
+    `expanding_percentile_rank_strict` (mesma distribuição de referência
+    em todo `t`, já que a janela nunca precisa remover nada)."""
+    rng = np.random.default_rng(61)
+    values = rng.normal(0, 1, 30)
+    out_rolling = support.rolling_percentile_rank_strict(values, window=30)
+    out_expanding = support.expanding_percentile_rank_strict(values)
+    np.testing.assert_array_equal(out_rolling, out_expanding)

@@ -1473,6 +1473,58 @@ feature_k08_halving_4_date_utc:
   review_by: sprint_8
 
 # ============================================================================
+# Camada features — Lote B da liberação de features (H5, 2026-08-24) —
+# 6 T2 que precisam de primitiva/fonte nova (support.rolling_correlation/
+# rolling_percentile_rank_strict, min/max rolante, reset por dia, soma
+# por evento de funding, klines_1m bruto). Mesma proveniência/classe das
+# constantes do Lote A acima -- ver aquela seção pro racional completo.
+# A15/D07f não têm constante própria aqui (A15 não usa janela; D07f usa
+# step_ms("15m"), infraestrutura de grid, não hiperparâmetro).
+# ============================================================================
+
+feature_b10_stoch_window:
+  value: 14
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.3, B10 stoch_k_14), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c08_vol_pctile_inner_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C08 vol_pctile_rolling_1y, 'idem C07' -- realized_vol_48 é o mesmo insumo de C07/C03), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_c08_vol_pctile_outer_window:
+  value: 17520
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.4, C08 vol_pctile_rolling_1y, lookback tabulado 17520 barras = 1 ano a 15m), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+feature_d10f_window:
+  value: 48
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.5, D10f vol_price_divergence, lookback tabulado 48), nunca testada"
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: false
+  review_by: sprint_8
+
+feature_e03f_funding_cum_n_events:
+  value: 9
+  provenance: ASSUMED
+  source: "convenção do PRD (§2.6, E03f funding_cum_3d, 'soma dos fundings das últimas 72h' = '9 eventos', 72h/8h=9), nunca testada"
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
+# ============================================================================
 # Camada labels — Label Engine (Sprint 6, §3). tp_atr_mult/sl_atr_mult/
 # time_stop_bars/atr_window/maker_fee/taker_fee/adverse_selection_bps já
 # existem acima (§0.2 R1/R2, execução) e são REUSADOS aqui, não duplicados.

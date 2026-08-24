@@ -129,6 +129,62 @@ def e11f_oi_change_1d(oi_contracts_aligned: FloatArray, lag_bars: int) -> FloatA
     return out
 
 
+# ============================================================================
+# Lote B da liberação de features (H5, 2026-08-24) — E03f, única do grupo
+# E nesta leva (precisa de primitiva nova: soma por EVENTO de funding,
+# não por barra -- ver docstring de e03f_funding_cum_3d).
+# ============================================================================
+
+
+def e03f_funding_cum_3d(
+    funding_last_aligned: FloatArray,
+    close_time_ms: FloatArray,
+    funding_interval_hours: int,
+    n_events: int,
+) -> FloatArray:
+    """Soma dos últimos `n_events` (=9, ~72h/8h) valores de funding
+    CONHECIDOS até a barra `t` — §2.6 E03f. Soma por EVENTO, não por
+    barra: uma soma ingênua sobre janela de barras (ex. `rolling_sum`
+    de `funding_last_aligned` sobre N barras) contaria o MESMO valor
+    repetido ~32× (todas as barras de 15m dentro de um período de 8h
+    carregam o mesmo `funding_last_aligned`, por construção do
+    asof-join backward que já o alinhou) — errado por construção, não é
+    o que "soma dos últimos 9 eventos" significa.
+
+    Fronteira de evento detectada por TIMESTAMP (`close_time_ms //
+    (funding_interval_hours em ms)`, mesma técnica de `e05f_time_to_
+    funding_h`), NÃO por mudança de VALOR — robusto ao caso raro mas
+    real (ex. funding no cap/floor, `feature_e05f_funding_interval_
+    hours` nota) de dois eventos consecutivos terem o MESMO valor
+    numérico, o que uma detecção por "valor mudou" perderia
+    silenciosamente (fundiria 2 eventos distintos em 1).
+
+    Implementado com laço explícito de estado (mesma classe de
+    `support.wilder_smooth`: acumulação causal com transição de
+    fronteira, não vetorizável de forma direta em `polars.rolling_*`) —
+    mantém só os últimos `n_events` valores conhecidos; `out[t]` só é
+    definido quando já há `n_events` eventos vistos."""
+    n = funding_last_aligned.shape[0]
+    interval_ms = funding_interval_hours * 3_600_000  # noqa: magic-number -- ms/hora, conversão de unidade, mesma constante de e05f_time_to_funding_h
+    epoch = close_time_ms.astype(np.int64) // interval_ms
+    out = np.full(n, np.nan, dtype=np.float64)
+
+    recent_values: list[float] = []
+    last_epoch_seen: int | None = None
+    for t in range(n):
+        e = int(epoch[t])
+        if last_epoch_seen is None or e != last_epoch_seen:
+            v = funding_last_aligned[t]
+            if not np.isnan(v):
+                recent_values.append(float(v))
+                if len(recent_values) > n_events:
+                    recent_values.pop(0)
+            last_epoch_seen = e
+        if len(recent_values) == n_events:
+            out[t] = sum(recent_values)
+    return out
+
+
 def e12f_price_oi_divergence(
     ret_lag: FloatArray, oi_contracts_aligned: FloatArray, oi_lag_bars: int
 ) -> FloatArray:

@@ -11,13 +11,17 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 import structlog
 
 from src.data import lake
 from src.data._util import metrics_timestamp_to_ms
+from src.data.resample import step_ms
 
 from ._paths import capacity_symbol_dir
+from .groups import group_d
+from .support import FloatArray
 
 logger = structlog.get_logger(__name__)
 
@@ -241,3 +245,36 @@ def load_oi_aligned(
     if oi.is_empty():
         return pl.Series("sum_open_interest", [None] * bars_15m.height, dtype=pl.Float64)
     return asof_align_backward(bars_15m, oi, "_ts_ms", "sum_open_interest")
+
+
+def load_taker_imbalance_1m_agg_aligned(
+    bars_15m: pl.DataFrame, symbol: str, start: DateLike | None, end: DateLike | None
+) -> FloatArray:
+    """D07f (§2.5) — Lote B da liberação de features (H5, 2026-08-24).
+    Única feature deste lote que precisa de fonte NOVA: `klines_1m`
+    BRUTO (não o já-resampled-pra-15m que o resto do Feature Engine
+    consome) — via `lake.query_bars(..., tf="1m")`, mesma função/mesmo
+    dataset em disco que `load_bars_15m` já usa (`tf="15m"` reamostra;
+    `tf="1m"` devolve cru, sem reamostragem — `lake.query_bars` linha
+    "if tf == '1m': return df").
+
+    Ponto de entrada com IO (casca) — carrega o dado bruto, resolve
+    `bucket_id` em AMBOS os grids (`open_time // step_ms("15m")`, mesma
+    fronteira de relógio fixa nos dois lados, causal por construção) e
+    delega o cálculo em si pro núcleo puro `group_d.d07f_taker_
+    imbalance_1m_agg` — esta função não faz nenhuma aritmética de
+    feature, só resolve os buckets."""
+    bucket_ms = step_ms("15m")
+    bars_1m = lake.query_bars(symbol, "1m", start, end, source="klines_1m", cast_prices=True)
+    if bars_1m.is_empty():
+        return np.full(bars_15m.height, np.nan, dtype=np.float64)
+
+    bucket_id_1m = (bars_1m["open_time"].cast(pl.Int64) // bucket_ms).to_numpy()
+    bucket_id_15m = (bars_15m["open_time"].cast(pl.Int64) // bucket_ms).to_numpy()
+    out: FloatArray = group_d.d07f_taker_imbalance_1m_agg(
+        bars_1m["taker_buy_volume"].cast(pl.Float64).to_numpy(),
+        bars_1m["volume"].cast(pl.Float64).to_numpy(),
+        bucket_id_1m,
+        bucket_id_15m,
+    )
+    return out

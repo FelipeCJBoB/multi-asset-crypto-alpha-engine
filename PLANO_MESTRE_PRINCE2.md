@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.47 · **Data:** 2026-08-24
+**Versão:** 3.48 · **Data:** 2026-08-24
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -5261,6 +5261,24 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.48 (2026-08-24)** — `audit_engineering` rodada sobre o Lote A
+  (0 CRITICAL/HIGH, 1 MEDIUM real corrigido na sessão — cobertura de
+  warmup só em `T1_FEATURE_IDS`, estendida pra `SUPPORT_FEATURE_IDS`).
+  Lote B IMPLEMENTADO — 6 features T2 (`A15_dist_vwap_d_atr`,
+  `B10_stoch_k_14`, `C08_vol_pctile_rolling_1y`, `D07f_taker_
+  imbalance_1m_agg`, `D10f_vol_price_divergence`, `E03f_funding_
+  cum_3d`), cada uma com primitiva nova (`support.rolling_correlation`/
+  `rolling_percentile_rank_strict`) ou fonte nova (`D07f`, `klines_1m`
+  bruto, casca de IO dedicada em `_sources.py`). `SUPPORT_FEATURE_IDS`:
+  50→56. 2 achados reais fechados durante a implementação: 2 testes de
+  paridade sem `equal_nan=True` (D07f é a 1ª feature que fica NaN o
+  tempo todo sem fonte opcional carregada) e uma checagem de NaN
+  estruturalmente fraca no teste PRINCIPAL de paridade (mesma classe de
+  bug, corrigida nos 2 lugares). Suíte completa 1924 passed + paridade
+  completa 20/20 rodadas de verdade pelo próprio Claude (autorização
+  explícita do usuário pra execução direta). `§15.26` (árvore de
+  arquivos) e Changelog v3.47 seguem válidos, sem alteração estrutural
+  nesta versão. Detalhe: `docs/SPRINT_LOG.md`.
 - **v3.47 (2026-08-24)** — H5, Lote A da liberação de features
   IMPLEMENTADO — 47 features T2 novas (Grupos A/B/C/D/E/K, arquivo novo
   `group_k.py`), zero fonte/primitiva nova, nenhuma promovida a T1. 40

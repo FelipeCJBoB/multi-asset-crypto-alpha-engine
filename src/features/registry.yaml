@@ -1086,3 +1086,116 @@
   version: v1
   added: 2026-08-24
   nota: "datas de halving confirmadas via pesquisa web nesta sessão — halving é definido por altura de bloco, não horário exato; granularidade de dia é a precisão real disponível."
+
+# ============================================================================
+# LOTE B — liberação de features (H5, 2026-08-24). 6 features T2 novas
+# que precisam de primitiva ou fonte nova: A15 (reset por fronteira de
+# dia), B10 (mín/máx rolante), C08 (posto percentil ROLANTE, não
+# expansivo — support.rolling_percentile_rank_strict), D07f (fonte nova:
+# klines_1m bruto), D10f (correlação rolante — support.rolling_
+# correlation), E03f (soma por EVENTO de funding, não por barra). Nenhuma
+# promovida a T1 (§0.2 R4 do CLAUDE.md; §2.0.1/§2.13 do PRD). Fórmulas
+# validadas contra literatura pública (VWAP/Stochastic — pesquisa web,
+# 2026-08-24) além do PRD, mesma instrução do Lote A.
+# ============================================================================
+
+- id: A15_dist_vwap_d_atr
+  tier: T2
+  group: A
+  formula: "(C_t - VWAP_dia) / ATR_20 (absoluto), VWAP_dia = cumsum(preco_tipico*volume)/cumsum(volume) desde 00:00 UTC do dia da barra t, preco_tipico=(H+L+C)/3"
+  sources: [D03, close_time]
+  lookback_bars: 96
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "nunca NaN por warmup de janela (acumula desde a 1a barra do dia); null antes de min_warmup_bars"
+  causal_proof: "polars cum_sum().over(day_id) reseta a soma acumulada a cada dia UTC novo, preservando ordem de aparicao -- barra t so acumula ate si mesma dentro do proprio dia, nunca alem -- testado em tests/unit/test_features_groups.py::test_a15_causalidade_e_reset_diario"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "preco_tipico=(H+L+C)/3 e a convencao publica padrao de VWAP (validada via pesquisa web nesta sessao). Reset a meia-noite UTC e adaptacao pra cripto 24/7 (sem 'abertura de sessao' tradicional), mesma convencao de fronteira de dia de K03/K08. lookback_bars=96 e o TETO (barra final do dia, 24h/15min) -- na pratica a maioria das barras acumula menos, mas o registry exige um int (nao ha valor 'variavel', so 'expanding'/int fixo, §2.14), e 96 e o limite superior real usado pra proteger CPCV/purge (AG-032 item 8)."
+
+- id: B10_stoch_k_14
+  tier: T2
+  group: B
+  formula: "(C - min(L)_14) / (max(H)_14 - min(L)_14) * 100"
+  sources: [D03]
+  lookback_bars: 14
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 100.0]
+  nan_policy: "NaN nas primeiras 14 barras; NaN se a janela inteira for flat (range=0, caso degenerado sem convencao declarada no PRD); null antes de min_warmup_bars"
+  causal_proof: "janela rolante fixa [t-13,t] (polars.rolling_min/rolling_max) -- testado em tests/unit/test_features_groups.py::test_b10_faixa_0_100_e_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "Stochastic %K padrao (George Lane), validado via pesquisa web nesta sessao."
+
+- id: C08_vol_pctile_rolling_1y
+  tier: T2
+  group: C
+  formula: "posto percentil de realized_vol_48_t na distribuicao ROLANTE (ultimas 17520 barras, ~1 ano) em [t-17520, t-1] (estrito, nunca inclui t)"
+  sources: [D03]
+  lookback_bars: 17520
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [0.0, 1.0]
+  nan_policy: "NaN ate haver >= 1 ponto previo de realized_vol_48 nao-NaN dentro da janela; null antes de min_warmup_bars"
+  causal_proof: "support.rolling_percentile_rank_strict -- Fenwick tree com insercao E remocao conforme a janela desliza, so indices < t -- testado em tests/unit/test_features_support.py::test_rolling_percentile_rank_strict_nao_usa_indice_t"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+
+- id: D07f_taker_imbalance_1m_agg
+  tier: T2
+  group: D
+  formula: "media de (2*taker_buy_ratio_1m - 1) das barras de 1m dentro da barra de 15m (bucket_id = open_time // step_ms('15m'), mesmo grid dos dois lados)"
+  sources: [D03, "klines_1m bruto (fonte NOVA, mesmo dataset em disco que resample_klines ja usa pra produzir bars_15m)"]
+  lookback_bars: 1
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN se klines_1m nao foi carregado (load_taker_imbalance_1m=False ou bar_source != 'time_15m' em build_t1_features) ou se o bucket_id nao tem nenhuma barra de 1m correspondente; null antes de min_warmup_bars"
+  causal_proof: "cada bucket de 15m so agrega as barras de 1m que ele mesmo contem (bucket_id identico calculado do mesmo jeito nos dois grids), nunca uma barra de outro bucket -- testado em tests/unit/test_features_groups.py::test_d07f_causalidade_e_agregacao"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "PRD original (a 30m) cita '30 barras de 1m'; sob 15m real, sao as barras de 1m do mesmo bucket de 15min -- contagem natural=15, nao recalibrada/hardcoded. Nucleo puro em group_d.py::d07f_taker_imbalance_1m_agg; ponto de entrada com IO em _sources.py::load_taker_imbalance_1m_agg_aligned (parametro opcional, default True, em build_t1_features -- ver docstring)."
+
+- id: D10f_vol_price_divergence
+  tier: T2
+  group: D
+  formula: "correlacao de Pearson rolante (janela 48) de |log_return_1| x volume_z_48 (volume_z_48 computado internamente, mesma janela)"
+  sources: [D03]
+  lookback_bars: 48
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-1.0, 1.0]
+  nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
+  causal_proof: "support.rolling_correlation -- janela rolante fixa [t-47,t], sem lookahead -- testado em tests/unit/test_features_support.py::test_rolling_correlation_causalidade"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "volume_z interno (rolling_zscore(volume,48)) -- PRD nao referencia nenhuma feature D0Xf existente com janela=48 pra volume_z (D01f=96, D03f=expansiva), self-contido evita ambiguidade."
+
+- id: E03f_funding_cum_3d
+  tier: T2
+  group: E
+  formula: "soma dos ultimos 9 valores de funding CONHECIDOS ate a barra t (fronteira de evento por timestamp, close_time_ms // (funding_interval_hours em ms), nao por mudanca de valor)"
+  sources: [D07, close_time]
+  lookback_bars: 288
+  min_warmup_bars: 200
+  tf: 15m
+  dtype: float64
+  range: [-.inf, .inf]
+  nan_policy: "NaN ate 9 eventos distintos terem sido vistos; null antes de min_warmup_bars"
+  causal_proof: "fronteira de evento detectada por epoch de timestamp (mesma tecnica de E05f), so acumula eventos ja conhecidos ate t -- testado em tests/unit/test_features_groups.py::test_e03f_soma_por_evento_nao_por_barra"
+  parity_tested: true
+  version: v1
+  added: 2026-08-24
+  nota: "Soma ingenua sobre janela de BARRAS contaria o mesmo valor de funding repetido ~32x (asof-join backward repete o ultimo valor conhecido em toda barra de 15m dentro do periodo de 8h) -- errado por construcao. Deteccao por timestamp (nao por mudanca de valor) e robusta ao caso raro de 2 eventos consecutivos com o MESMO valor numerico (ex. funding no cap/floor). lookback_bars=288 = 9 eventos x 32 barras/evento (8h a 15m) -- derivado, nao um numero solto; e o pior caso real usado pra proteger CPCV/purge (AG-032 item 8), nao um valor tipico."
