@@ -11927,11 +11927,16 @@ entries:
       `io/schema.py`/`io/artifact.py` (ADR-001) nunca tinham um
       consumidor real até agora -- `v1` só cobria tipos escalares,
       nunca exercitado contra `List[Utf8]` (`features_selecionadas`)
-      nem contra `pl.Datetime(time_unit="ms", time_zone="UTC")` (`t0`,
-      convenção real de TODO artefato do projeto -- não Int64
+      nem contra `pl.Datetime(time_unit="ms", time_zone="UTC")` (`t0`
+      de `labels.parquet`/`predictions.parquet` -- não Int64
       nanoseconds como a convenção `*_ts_ns` do docstring de
-      `io/artifact.py` sugeria); os dois foram adicionados a
-      `_PARAMETRIZED_DTYPE_BY_NAME`, testados isoladamente em
+      `io/artifact.py` sugeria; CORREÇÃO 2026-08-23, achado
+      `audit_engineering`: "convenção real de TODO artefato do
+      projeto" era FALSO -- `regimes.parquet` usa `Datetime[ns,UTC]` +
+      `pl.Enum`, cobertura é extensão mínima pro caso de uso real de
+      hoje, não universal; ver `src/io/schema.py` corrigido); os dois
+      foram adicionados a `_PARAMETRIZED_DTYPE_BY_NAME`, testados
+      isoladamente em
       `test_io_schema.py`.
 
       NÃO integrado em `run_layer1_sprint` -- decisão explícita, não
@@ -13611,3 +13616,213 @@ entries:
       isso na íntegra, com instrução de revisitar aqui primeiro se o
       gate abrir sem o PR coordenado de D-06 acontecer junto.
     status: "fechado -- risco residual aceito e documentado, não silencioso; ver docstring de write_predictions_atomic"
+
+  - id: AG-195
+    date: "2026-08-23"
+    file: "src/models/alpha.py::fit_side_model (:301-330), src/models/alpha.py::LGBMHyperparams, config/constants.yaml::alpha_lgbm_subsample"
+    related_file: "docs/alpha_model_design_doc_2026-08-22.md §4 (tabela de mapeamento XGBoost->LightGBM, D-11)"
+    found_by: "Workflow audit_engineering (auditoria de engenharia, lente FI, 4 lentes + verificação adversarial), 2026-08-23"
+    gap: >
+      D-11/design doc tratou `subsample` como renomeação direta e
+      COMPLETA do `subsample` do XGBoost -- FALSO. No LightGBM,
+      `subsample` (alias `bagging_fraction`) só tem efeito quando
+      `subsample_freq` (alias `bagging_freq`) é um inteiro positivo --
+      default da própria lib é `0` = "no enable" (confirmado na doc
+      oficial, `LGBMClassifier` constructor). `fit_side_model` passava
+      `subsample=hyper.subsample` (0.8) sem nunca passar `subsample_
+      freq`/`bagging_freq` -- grep no repo inteiro confirmou 0
+      ocorrências desses 2 nomes antes do fix. `config/constants.yaml::
+      alpha_lgbm_subsample` declarava `provenance: DERIVED`,
+      "renomeação direta... sem mudança de valor" -- proveniência
+      factualmente incorreta dado que o EFEITO real era zero (bagging
+      totalmente desabilitado), não idêntico ao XGBoost.
+    severity: "alto"
+    layer: "models -- hiperparâmetro de regularização inerte por parâmetro companheiro ausente, não pego por nenhum teste"
+    consequence: >
+      Todo modelo treinado sob a migração LightGBM (Camada 1 e Camada 0,
+      as 15 combinações símbolo x resolução quando o gate abrir) treinaria
+      SEM row-subsampling -- toda árvore sobre 100% dos dados de treino,
+      não os 80% que `constants.yaml`/o design doc afirmavam. Nenhum
+      teste em `test_models_alpha.py` exercitava bagging/subsample antes
+      deste achado -- passaria despercebido até um retreino real, quando
+      a diferença de regularização já teria contaminado Sharpe/HHI/
+      decisão de permanência (§5.11) sem ninguém saber que o parâmetro
+      nunca esteve ativo.
+    resolved_by_commit: null
+    resolution: >
+      `LGBMHyperparams` ganha campo `subsample_freq: int`; nova constante
+      `alpha_lgbm_subsample_freq` (ASSUMED, valor 1 = bag a cada
+      iteração, `sweep_required: true`, `class: B`) -- não é conversão
+      de nenhum valor XGBoost (não existe parâmetro equivalente lá).
+      `fit_side_model` passa `subsample_freq=hyper.subsample_freq` ao
+      `LGBMClassifier`. `alpha_lgbm_subsample.source` corrigido pra não
+      mais alegar "sem mudança de valor" isoladamente. Teste novo
+      (`test_fit_side_model_subsample_freq_realmente_ativa_o_bagging`)
+      lê de volta via `model.get_params()` -- prova que o valor chega no
+      objeto treinado, não só que `LGBMHyperparams.from_constants()`
+      carrega um número.
+    status: "fechado -- ver commit desta rodada, testado"
+
+  - id: AG-196
+    date: "2026-08-23"
+    file: "src/models/alpha.py::fit_side_model (:301-345), src/models/persistence.py (docstring do módulo)"
+    related_file: "docs/alpha_model_design_doc_2026-08-22.md §3 D-18, D-12; src/models/pipeline.py::run_layer1_sprint (device_type default cuda)"
+    found_by: "Workflow audit_engineering (lente FI + pesquisa web dedicada, doc oficial LightGBM), 2026-08-23"
+    gap: >
+      A doc oficial do LightGBM (`Parameters.html#deterministic`) afirma
+      textualmente que `deterministic=True` "works only with CPU device
+      type". Confirmado por pesquisa independente: histograma sob CUDA
+      usa `atomicAdd` (soma não-associativa, não-determinística por
+      natureza), e o LightGBM emite um WARNING nativo nesse cenário --
+      suprimido por `verbosity=-1` (B28, structlog-only). O único caller
+      de produção real (`pipeline.run_layer1_sprint`) usa `device_type=
+      "cuda"` por default; o teste golden bit-a-bit
+      (`test_sprint8_reproducibility.py`) chama `run_fold` SEM passar
+      `device_type`, então roda sempre sob `"cpu"` -- NUNCA exercita o
+      caminho real de produção. A docstring de `persistence.py`
+      registrava isso como "TBD -- não foi medido", o que subestimava a
+      certeza real do problema: não é incógnita empírica pendente de
+      trial, é fato já documentado pela própria biblioteca, verificável
+      sem treinar nada.
+    severity: "alto"
+    layer: "models -- garantia de determinismo testada só no caminho que nunca roda em produção"
+    consequence: >
+      A arquitetura de persistência de modelo (`persistence.py`, reload
+      de booster pra paper/live trading) depende de reload bit-exato.
+      Se CUDA de fato quebrar essa garantia (o que a doc oficial já
+      sugere ao restringir a `deterministic` a device CPU), a suíte de
+      testes passaria silenciosamente para sempre -- o mecanismo de
+      segurança (teste golden) é estruturalmente incapaz de capturar
+      essa regressão, dando falsa confiança à garantia.
+    resolved_by_commit: null
+    resolution: >
+      Não é possível medir determinismo real sob GPU sem treinar de
+      verdade (fora do escopo desta sessão, sem GPU disponível pra
+      Claude rodar nada). Fix aplicado: (1) `fit_side_model` emite
+      `logger.warning` explícito via structlog quando `device_type !=
+      "cpu"`, substituindo o sinal nativo do LightGBM que `verbosity=-1`
+      suprime -- não fica mais silencioso; (2) comentário no código e
+      docstring de `persistence.py` reescritos pra declarar isso como
+      FATO documentado pela lib, não incógnita empírica ("TBD" undersold
+      a certeza real). Saída de contingência (tolerância numérica em vez
+      de igualdade bit-a-bit) já nomeada no design doc (§3 D-18), decisão
+      de quando aplicá-la fica para quando o retreino real acontecer sob
+      GPU e alguém puder de fato medir.
+    status: "aberto -- visibilidade corrigida (warning explícito, doc honesta), mas a garantia em si permanece não verificada sob GPU real; reabrir/fechar quando o primeiro retreino real sob device_type=cuda acontecer e o teste golden puder ser comparado CPU vs GPU."
+
+  - id: AG-197
+    date: "2026-08-23"
+    file: "src/models/alpha.py::fit_side_model (:301-345)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-196 (mesma garantia de determinismo, achado irmão)"
+    found_by: "Workflow audit_engineering (lente FI + pesquisa web dedicada, doc oficial LightGBM), 2026-08-23"
+    gap: >
+      A doc oficial do LightGBM instrui explicitamente: "To avoid
+      potential instability due to numerical issues, please set
+      force_col_wise=true or force_row_wise=true when setting
+      deterministic=true". Nenhum dos dois parâmetros aparecia em
+      `fit_side_model` -- sem eles, a lib testa os dois modos de
+      construção de histograma e escolhe o mais rápido a cada treino,
+      podendo produzir escolha diferente entre máquinas/contagens de
+      thread/versões da lib -- exatamente a instabilidade numérica que
+      `deterministic=True` existe pra eliminar.
+    severity: "medio"
+    layer: "models -- lacuna de configuração documentada e não honrada, risco latente não confirmado"
+    consequence: >
+      Risco latente (o teste golden commitado passava no ambiente
+      testado, então o heurístico tem sido estável até agora) -- se o
+      heurístico escolher modos diferentes entre execuções, o teste
+      golden bit-a-bit pode começar a falhar de forma intermitente e
+      difícil de diagnosticar (não determinístico em qual ambiente
+      falha), minando a mesma garantia que `deterministic=True` (D-12)
+      trata como não-opcional.
+    resolved_by_commit: null
+    resolution: >
+      `fit_side_model` ganha `force_row_wise=True` explícito -- dataset
+      é "alto e magro" (7 features T1, centenas de milhares de barras),
+      exatamente o perfil que a doc do LightGBM recomenda row-wise.
+      Teste novo verifica `model.get_params()["force_row_wise"] is True`.
+    status: "fechado -- ver commit desta rodada, testado"
+
+  - id: AG-198
+    date: "2026-08-23"
+    file: "src/models/alpha.py (5 comentários), config/constants.yaml::alpha_lgbm_max_depth, src/io/schema.py, audit/architecture_gaps_log.yaml::AG-154, tests/unit/test_io_schema.py, tests/unit/test_analysis_calibration_diagnostics.py, src/models/persistence.py::write_model_bundle"
+    related_file: "audit/architecture_gaps_log.yaml::AG-193/AG-194 (achados irmãos da mesma auditoria)"
+    found_by: "Workflow audit_engineering (5 achados LOW, aceitos sem verificação adversarial por desenho -- severidade baixa não justifica o custo de refutação, ver script da rodada)"
+    gap: >
+      5 achados de baixa severidade, cada um pequeno isoladamente,
+      agrupados por conveniência de registro: (1) 5 comentários/
+      docstrings em `alpha.py` afirmavam "10 features T1" quando
+      `T1_FEATURE_IDS` tem 7 desde `AG-032` (`78169df`, ANTES desta
+      migração) -- nasceram incorretos, não é drift; (2)
+      `alpha_lgbm_max_depth.source` overclaimava equivalência de
+      semântica entre crescimento level-wise (XGBoost) e leaf-wise
+      (LightGBM) -- `max_depth` é teto SECUNDÁRIO no LightGBM, `num_
+      leaves` é o controle primário; (3) `io/schema.py`/`alpha.py`/
+      `AG-154` (ledger) afirmavam "Datetime[ms,UTC] é o padrão que TODO
+      artefato do projeto usa" -- falso, `regimes.parquet` usa
+      `Datetime[ns,UTC]` + `pl.Enum`; (4) `test_io_schema.py` não tinha
+      teste negativo pra `Datetime` com `time_unit`/`time_zone`
+      diferente do declarado (só mismatch de classe inteira); (5)
+      `test_congruent_incongruent_reporta_nao_aplicavel_...` não
+      verificava o shape de `decile_profile`/`correlations`/`n_total`
+      no branch `not_applicable` de `congruent_incongruent_subsets`
+      (AG-193). Um 6º achado LOW (`persistence.py::write_model_bundle`,
+      diretórios `.tmp-*` órfãos de crash não cobertos por `gc_
+      incomplete`'s glob, desenhado pro layout de `write_artifact` não
+      pro de `model_dir`) fica ABERTO -- sem consumidor de produção
+      hoje, risco de higiene operacional adiado, não urgente.
+    severity: "baixo"
+    layer: "models/io -- precisão de documentação/proveniência + cobertura de teste, sem impacto funcional confirmado em nenhum dos 5 fechados"
+    consequence: >
+      (1)/(2)/(3) podiam enganar leitura futura (HHI de baseline 1/7 vs
+      1/10 implícito; decisão de valor de max_depth isolada da de num_
+      leaves; migração futura de regimes.parquet pra io.schema herdando
+      a alegação errada). (4)/(5) eram lacunas de regressão sem defeito
+      live confirmado.
+    resolved_by_commit: null
+    resolution: >
+      (1)-(5) corrigidos nesta rodada (texto/comentário/proveniência
+      atualizados, 2 testes novos). (6) registrado como item aberto
+      separado -- não implementado (baixa prioridade, sem consumidor
+      real, cobertura de `gc_incomplete` pro layout de `model_dir` fica
+      pra quando `persistence.py` ganhar um caller de produção real
+      (`AG-141`, ainda aberto) e a higiene de disco importar de verdade.
+    status: "fechado (1-5) -- item (6) permanece aberto, registrado, não escondido"
+
+  - id: AG-199
+    date: "2026-08-23"
+    file: "data/labels/{symbol}/R1/v1/labels.parquet (mtime 2026-08-17); src/labels/triple_barrier.py::config_hash (linhas 300-316, campo horizon_bars 'sempre presente no payload, mesmo como None')"
+    related_file: "audit/architecture_gaps_log.yaml::AG-116 (horizon_bars, implementado 2026-08-20), AG-140 (verify_config_hash wireado em build_modeling_frame, mesmo achado JA CONFIRMADO real pra tf=15m -- este achado eh o MESMO risco pro grid resolution_id=R1, nunca verificado)"
+    found_by: "Agent (verificacao de prontidao do Alpha antes do retreino real, pedido do usuario), confirmado por Claude via leitura direta de mtime real + codigo (nao confiou no relato do agente sem checar)"
+    gap: >
+      `data/labels/{BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT}/R1/v1/
+      labels.parquet` tem mtime **2026-08-17** (confirmado via `ls -la`
+      real) -- gerados ANTES de `AG-116` (2026-08-20), que adicionou
+      `horizon_bars` como campo obrigatorio sob `resolution_id` e
+      "sempre presente no payload de `config_hash`, mesmo como `None`"
+      (docstring literal, `triple_barrier.py:311-313`). O `config_hash`
+      payload ja migrou de formato 5x historicamente (docstring do
+      proprio campo lista as 5, `AG-116` eh a mais recente) -- `AG-140`
+      ja confirmou EMPIRICAMENTE que exatamente esse tipo de migracao
+      quebra `verify_config_hash` mesmo sem nenhum parametro numerico
+      ter mudado (achado real contra `tf=15m`, `ConfigHashMismatchError`,
+      reprocessado). **Essa mesma confirmacao empirica nunca aconteceu
+      pro grid `resolution_id=R1`** -- os labels R1 nunca foram
+      reprocessados nem exercitados contra `verify_config_hash` desde
+      que `AG-140`/`AG-116` foram implementados. `R2`/`R3` (mtime
+      2026-08-22, gerados DEPOIS de `AG-116`/`AG-124`) tem risco muito
+      menor, mas tambem nunca exercitados diretamente.
+    severity: "alto"
+    layer: "labels/models -- mesma classe de AG-140, grid diferente (resolution_id em vez de tf)"
+    consequence: >
+      Se o hash realmente divergir (nao confirmado empiricamente --
+      Claude nao executa `.py`), `run_layer1_sprint`/`run_layer1_sprint_
+      all_combinations` levantaria `ConfigHashMismatchError` na PRIMEIRA
+      chamada de `build_modeling_frame` pra qualquer simbolo sob R1 --
+      travaria a sprint completa de retreino real logo no inicio, depois
+      de ja ter consumido setup/tempo. Achar isso ANTES de rodar evita
+      queimar uma tentativa real de retreino (a primeira que consumiria
+      orcamento de trial de verdade nesta migracao).
+    resolved_by_commit: null
+    resolution: null
+    status: "aberto -- fix recomendado: reprocessar os 5 labels.parquet de R1 ANTES do retreino real (`build_and_write_labels_for_symbol`/equivalente sob `resolution_id='R1'`, mesmo padrao ja usado pra `AG-140`/`tf=15m`), ou rodar `verify_config_hash` isolado contra R1 primeiro (mais barato, so confirma o diagnostico sem reescrever nada se o hash bater). Comando exato fica pendente de decisao de qual das 2 abordagens o usuario prefere -- nao decidido aqui."

@@ -1426,7 +1426,7 @@ unknown_order_state_kill_switch_s:
 alpha_lgbm_max_depth:
   value: 3
   provenance: DERIVED
-  source: "Renomeação direta de alpha_xgb_max_depth (removida) -- LightGBM usa o mesmo nome/semântica de parâmetro, sem mudança de valor (D-11). Proveniência original: PRD §5.10 xgboost_base.max_depth, citado como 'classe B — varrer', nunca varrido."
+  source: "Renomeação direta de alpha_xgb_max_depth (removida) -- mesmo NOME de parâmetro no LightGBM, sem mudança de VALOR (D-11). Proveniência original: PRD §5.10 xgboost_base.max_depth, citado como 'classe B — varrer', nunca varrido. RESSALVA 2026-08-23 (achado audit_engineering): 'mesma semântica' overclaima -- sob crescimento leaf-wise (LightGBM) max_depth é um teto SECUNDÁRIO (default -1 = sem limite), diferente do papel primário que tinha sob crescimento level-wise (XGBoost); o controle primário de complexidade no LightGBM é num_leaves, calibrado deliberadamente como 2^max_depth=8 (ver alpha_lgbm_num_leaves) exatamente pra emular o teto que max_depth sozinho dava no XGBoost -- os dois valores precisam ser lidos JUNTOS, não max_depth isolado."
   class: B
   sweep_required: false
   review_by: sprint_10
@@ -1450,9 +1450,18 @@ alpha_lgbm_learning_rate:
 alpha_lgbm_subsample:
   value: 0.8
   provenance: DERIVED
-  source: "Renomeação direta de alpha_xgb_subsample (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.subsample, nunca testado."
+  source: "Renomeação direta de alpha_xgb_subsample (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.subsample, nunca testado. CORREÇÃO 2026-08-23 (achado audit_engineering): 'mesmo nome, sem mudança de valor' descrevia só o nome -- o EFEITO só é idêntico ao XGBoost com alpha_lgbm_subsample_freq >= 1 também setado (LightGBM exige o parâmetro companheiro pra ativar bagging; default da lib é 0 = desabilitado). Ver alpha_lgbm_subsample_freq abaixo."
   class: B
   sweep_required: false
+  review_by: sprint_10
+
+alpha_lgbm_subsample_freq:
+  value: 1
+  provenance: ASSUMED
+  source: "Achado real durante a migração LightGBM do Alpha (audit_engineering, 2026-08-23) -- D-11/design doc tratou 'subsample' como renomeação direta e completa do XGBoost, mas o LightGBM exige este parâmetro companheiro (alias bagging_freq) pra bagging ter QUALQUER efeito (default da lib é 0 = 'no enable', confirmado na doc oficial). Sem ele, alpha_lgbm_subsample era um no-op silencioso -- toda árvore treinava sobre 100% dos dados. Valor 1 = bag a cada iteração, mesmo espírito do row-subsampling por árvore que o XGBoost já fazia; não é conversão de nenhum valor XGBoost (não existe parâmetro equivalente lá), escolha de convenção padrão, não medida."
+  class: B
+  sweep_required: true
+  sweep_range: [1, 10]
   review_by: sprint_10
 
 alpha_lgbm_feature_fraction:
