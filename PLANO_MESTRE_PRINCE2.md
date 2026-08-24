@@ -12,7 +12,7 @@ modelos/métodos concorrentes** — o padrão que `volatility.py` (M1, 6
 candidatos comparados) já estabeleceu, generalizado pra toda a árvore.
 Definição registrada pelo Manager, verbatim (§15.1). O rótulo "BTCUSDT
 Quant Engine" não aparece mais neste documento a partir daqui.
-**Versão:** 3.45 · **Data:** 2026-08-24
+**Versão:** 3.46 · **Data:** 2026-08-24
 **Nota de proveniência desta linha (2026-08-17):** achado ao atualizar a
 governança — este cabeçalho estava em "3.5" enquanto o `## Changelog`
 (abaixo) já tinha chegado a v3.14; o mesmo tipo de drift já tinha sido
@@ -693,6 +693,7 @@ ainda.
 | stage | item agendado | fonte |
 |---|---|---|
 | ~~Sprint 6 (Label Engine) — sweep `tp_atr_mult`/`sl_atr_mult`~~ — **SUPERSEDIDO 2026-08-17** | `V41-6` (`§11.6`) rederiva por distribuição de MFE, não por grid sweep — muda o MÉTODO, não só o valor. `time_stop_bars`/`atr_window` como constantes isoladas (fora do escopo de barreira) seguem `AG-031`/`AG-046`, seção própria | `PRD_V4_1.md` §4.1, `§11.6` |
+| **S1 — verificação de robustez de `tp_atr_mult`/`sl_atr_mult` (§16.10 regra 4) — EXECUTADO 2026-08-24** | Linha NOVA, não substitui a de cima — propósito diferente (robustez do valor JÁ escolhido, nunca busca de novo ótimo, ver design doc §2). Retomado após retratação do Manager de 2026-08-22 (motivo: Alpha retreinado de verdade com LightGBM nesta sessão). Resultado: célula de produção reproduz exato (sanidade OK); **TODAS as 7 células válidas têm `edge_atr_units` médio negativo**, inclusive a produção — achado convergente com AUC~0,51 do Alpha (metodologia independente, população incondicional, sem modelo). `veredito` de "sobrevive à faixa" fica `TBD` (decisão do Manager, não computada). `N_lifetime` +18 (counter 78→96) | `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`, `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24` |
 | Sprint 10 (não redefinido por V4.1) | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
 | Sprint 11 (não redefinido por V4.1) | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (não redefinido por V4.1 — Paper/experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
@@ -5229,6 +5230,24 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.46 (2026-08-24)** — S1 (sweep de sensibilidade `tp_atr_mult`/
+  `sl_atr_mult`) EXECUTADO — retomado após retratação do Manager de
+  2026-08-22 (Alpha retreinado de verdade com LightGBM nesta sessão
+  resolveu a condição que motivou a retratação). Implementado exatamente
+  como o design doc já aprovado especifica (`src/labels/barrier_
+  geometry.py`, `src/analysis/s1_tp_sl_sensitivity.py`), veredito de
+  "sobrevive à faixa" deixado `TBD` por decisão explícita (Manager).
+  Resultado: sanidade OK (célula central reproduz produção exato);
+  **todas as 7 células válidas da grade têm `edge_atr_units` médio
+  negativo, inclusive a produção** — confirmação por metodologia
+  independente (população incondicional, sem Alpha) do mesmo achado geral
+  da análise do Alpha (AUC~0,51). Achado novo: long sistematicamente pior
+  que short na geometria de produção, nas 5 moedas — não reconciliado com
+  o achado oposto (marginal) da análise do Alpha, registrado como
+  pergunta aberta. `N_lifetime` +18 (id 19, counter 78→96, seguindo o
+  critério mecânico já escrito no ledger, mesma leitura do precedente
+  `id=10`). Linha nova em `§11.4` (não reescreve a linha "SUPERSEDIDO").
+  Detalhe: `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24`.
 - **v3.45 (2026-08-24)** — Análise profunda do Alpha (sem retreino):
   ranking de features, decomposição de PnL (63,2% da perda é direcional,
   não custo), AUC real (0,509 médio, quase nulo), calibração (média

@@ -2867,3 +2867,66 @@ entries:
     univariado de E10f especificamente, comparando XRP/ETH vs BTC/SOL/BNB.
     Liquidez como hipotese explicativa FICOU REFUTADA (nao so "nao
     confirmada") -- economiza tempo de investigacao futura nessa direcao.
+- id_curto: s1-tp-sl-sensitivity-2026-08-24
+  fase: 'S1 -- sweep de sensibilidade tp_atr_mult/sl_atr_mult, Fase 5 do
+    design doc (docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md),
+    retomada 2026-08-24 apos retratacao do Manager de 2026-08-22 (motivo:
+    Alpha foi retreinado de verdade com LightGBM nesta mesma sessao,
+    resolvendo a condicao que motivou a retratacao original). Bypassa
+    Feature/Regime Engine/CPCV/build_modeling_frame de proposito (populacao
+    INCONDICIONAL de labels.parquet, nao a que o Alpha dispara -- ressalva
+    do design doc SS11 risco #4, nao resolvida aqui).'
+  symbol: 'BTCUSDT+ETHUSDT+SOLUSDT+BNBUSDT+XRPUSDT'
+  tf: 15m (grade de decisao de producao -- S1 nao usa dollar-bar/resolution_id)
+  janela: 'labels/v1/labels.parquet completo por simbolo (populacao incondicional)'
+  lado: 'long e short separados'
+  regime: all (S1 nao estratifica por regime, deliberado)
+  feature_ou_filtro: 'reward_risk_ratio (R) x sl_mult (S), grade 3x3 =
+    9 celulas, reparametrizacao de tp_atr_mult/sl_atr_mult -- Fraction exata,
+    celula central R=4/3,S=3/2 = producao atual (tp=2,0,sl=1,5)'
+  metrica_tipo: 'edge_atr_units = frac_tp*tp_mult - frac_sl*sl_mult (geometria
+    de acerto normalizada por ATR, sem custo, PRD_V4_1.md SS1.2) -- leitura
+    primaria declarada a priori (SS2 do design doc)'
+  metrica_valor: >
+    Sanidade: celula central reproduz producao EXATO (tp=2,0, sl=1,5,
+    resolucao Fraction exata, sem tolerancia de float) --
+    sanidade_centro_da_grade.reproduz_producao_exato=true. TODAS as 7
+    celulas validas (2 das 9 excluidas por tp_atr_mult fora do sweep_range
+    declarado; BTCUSDT/BNBUSDT perdem mais 2 cada por violar o piso R2 com
+    sl_mult=3/4) tem edge_atr_units MEDIO NEGATIVO entre os 10 estratos
+    (5 simbolos x 2 lados, ou 6 estratos nas 2 celulas restritas a
+    ETH/SOL/XRP): pior celula R=2,S=3/2 (tp=3,sl=1,5, edge_mean=-0,0845);
+    melhor celula R=2,S=3/4 (tp=1,5,sl=0,75, edge_mean=-0,0105, so ETH/SOL/
+    XRP). Celula de PRODUCAO (R=4/3,S=3/2): edge_mean=-0,0255 (3a melhor
+    das 7, nem a pior nem a melhor). Por simbolo x lado na celula de
+    producao: 0 de 5 LONGS positivos (BTC=-0,040, ETH=-0,026, SOL=-0,054,
+    BNB=-0,045, XRP=-0,082); 3 de 5 SHORTS positivos (SOL=+0,0068,
+    BNB=+0,0060, XRP=+0,0299; BTC=-0,040 e ETH=-0,011 negativos) -- long
+    sistematicamente pior que short nas 5 moedas, achado novo nao
+    investigado a fundo aqui.
+  n: 1568741
+  status: vermelho
+  fonte_arquivo: experiments/s1_tp_sl_sensitivity_report.json
+  fonte_secao: aggregate_by_cell + by_symbol.{symbol}.by_side.{long,short}.cells.R4_3_S3_2
+  data: '2026-08-24'
+  nota: >
+    Confirma, por metodologia INDEPENDENTE (populacao incondicional de
+    labels.parquet, sem nenhum modelo treinado) e SEM overlap de dado com
+    a analise do Alpha (que usa trades SELECIONADOS pelo LightGBM), a
+    mesma conclusao geral: nao ha edge robusto capturavel com uma barreira
+    TP/SL fixa nesta janela historica/timeframe -- nao e um problema do
+    Alpha especificamente, o proprio label bruto ja nao mostra edge
+    positivo consistente em NENHUM ponto da grade testada, nem no ponto de
+    producao nem nos 6 pontos alternativos. Achado convergente com AUC~0,51
+    do Alpha (audit/evidence_ledger.yaml::alpha-lightgbm-decomposicao-pnl-
+    auc-calibracao-2026-08-24) -- duas medicoes independentes apontando na
+    mesma direcao fortalece a confianca no achado, nao e coincidencia de
+    um metodo so. Achado NOVO (long sistematicamente pior que short na
+    populacao incondicional) diverge em superficie do achado do Alpha
+    (onde long era marginalmente MELHOR que short nos trades SELECIONADOS)
+    -- populacoes e metricas diferentes (win_rate pos-selecao vs.
+    edge_atr_units pre-selecao), nao necessariamente contraditorio, mas
+    nao reconciliado aqui -- proxima pergunta em aberto, nao respondida.
+    Veredito de "producao sobrevive a faixa testada" fica deliberadamente
+    TBD (design doc SS11 risco #1) -- decisao do Manager, nao computada
+    unilateralmente. `n_lifetime` +18 (id 19, counter 78->96).

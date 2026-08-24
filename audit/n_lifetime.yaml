@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 78
+counter: 96
 
 log:
   - id: 1
@@ -399,3 +399,34 @@ log:
       substitui a penalidade de multiple-testing segue pendente do
       Manager (AG-077, nao resolvida por este incremento).
     delta: 15
+  - id: 19
+    date: "2026-08-24"
+    type: sweep_sensibilidade_classe_a
+    description: >
+      S1 -- sweep de sensibilidade tp_atr_mult/sl_atr_mult (reparametrizado
+      R=reward_risk_ratio x S=sl_mult, docs/s1_design_doc_sweep_tp_sl_
+      reward_risk_ratio_2026-08-22.md), CLAUDE.md SS16.10 regra 4 (constante
+      classe A com sweep_required=true, nunca varrida desde Sprint 6).
+      Verificacao de robustez ao redor do ponto ja escolhido (celula central
+      R=4/3,S=3/2 -> tp=2.0,sl=1.5 = producao, reproducao exata confirmada
+      -- sanidade_centro_da_grade.reproduz_producao_exato=true), NUNCA busca
+      de novo otimo. Grade declarada a priori, 9 celulas, 2 universalmente
+      excluidas (fora do sweep_range de tp_atr_mult), 7 celulas x 5 simbolos
+      x 2 lados -- BTCUSDT/BNBUSDT perdem mais 2 celulas cada (sl_mult=3/4
+      viola o piso R2 pra esses 2 simbolos especificamente, medido com ATR
+      fresco). Delta aplicado seguindo o CRITERIO MECANICO ja escrito no
+      cabecalho deste arquivo (recalculo de backtest por combinacao) --
+      resolve_barriers_vectorized chamado separadamente por (celula,lado):
+      9 celulas x 2 lados = 18, mesmo criterio usado no precedente id=10.
+      3 leituras concorrentes ficaram registradas no design doc (9/18/1,
+      SS11 risco #8) sem reconciliacao pelo autor -- delta=18 aplicado aqui
+      por ser a leitura que bate com o criterio ja escrito, nao por
+      reconciliar a favor de uma das 3 por julgamento novo. Resultado:
+      TODAS as 7 celulas tem edge_atr_units medio NEGATIVO entre os
+      estratos symbol x lado -- inclusive a celula de producao
+      (edge_mean=-0,0255). Achado adicional: long e sistematicamente pior
+      que short na geometria de producao nas 5 moedas (0 de 5 longs
+      positivos, 3 de 5 shorts positivos). Veredito de "sobrevive a faixa"
+      fica TBD (SS11 risco #1, decisao do Manager, nao computada). Detalhe:
+      audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24.
+    delta: 18

@@ -3945,6 +3945,40 @@ Alpha. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.3`,
 `audit/architecture_gaps_log.yaml::AG-202`.
 
 <!-- check-sprint-log: skip -->
+**H0 fechado de fato (fix real + TDD), AG-203 achado, H1/H2 executados,
+S1 retomado e executado (2026-08-24)** <!-- check-sprint-log: skip -->
+— usuário autorizou "próximos passos... pode executar". H0: fix real do
+AG-202 aplicado em `src/models/dataset.py::build_modeling_frame` (dedup
+de `bar_table`/`regime_small` por `open_time`, `bars.py` intocado) — TDD
+(teste RED->GREEN), suíte completa 1786 passed. Verificado contra dado <!-- check-sprint-log: skip -->
+real: 6 de 9 combinações 100% limpas; 3 tinham duplicata de causa
+DIFERENTE, registrada como `AG-203` (labels.parquet já duplicado
+upstream, achado pequeno). H1 (BNB/SOL-R3): decomposto por regime, sem <!-- check-sprint-log: skip -->
+causa única. H2 (XRPUSDT): XRP e ETH compartilham a mesma feature de
+maior gain (`E10f_oi_change_z_48`, open interest) — pista concreta;
+liquidez REFUTADA como explicação. Tudo commitado (`7bc7d72`). <!-- check-sprint-log: skip -->
+
+Depois, retomado o S1 (sweep de sensibilidade `tp_atr_mult`/ <!-- check-sprint-log: skip -->
+`sl_atr_mult`) — design doc já aprovado tinha uma RETRATAÇÃO do Manager <!-- check-sprint-log: skip -->
+(2026-08-22, "Fase 5 não prossegue") que eu quase executei por cima sem <!-- check-sprint-log: skip -->
+ver; parei e perguntei antes de rodar. Usuário confirmou retomar (Alpha <!-- check-sprint-log: skip -->
+retreinado com LightGBM resolve a condição que motivou a retratação) e
+deixar o veredito de "sobrevive à faixa" como `TBD` (decisão do Manager, <!-- check-sprint-log: skip -->
+não computada). Implementado exatamente como o design doc especifica
+(`src/labels/barrier_geometry.py`, `src/analysis/s1_tp_sl_sensitivity.py`),
+lint limpo. Resultado real: sanidade OK (célula central reproduz
+produção exato); **todas as 7 células válidas da grade têm `edge_atr_
+units` médio negativo, inclusive a produção** — confirmação por
+metodologia independente (população incondicional, sem Alpha) do mesmo
+achado geral já visto na análise do Alpha (AUC~0,51). Achado novo: long
+sistematicamente pior que short na geometria de produção, nas 5 moedas
+— diverge em superfície do achado (marginal, oposto) do Alpha, não
+reconciliado, registrado como pergunta aberta. `N_lifetime` +18 (id 19, <!-- check-sprint-log: skip -->
+counter 78→96). Detalhe completo: `PLANO_MESTRE_PRINCE2.md §11.4`
+(linha S1 nova) e changelog v3.46, `audit/evidence_ledger.yaml::
+s1-tp-sl-sensitivity-2026-08-24`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
