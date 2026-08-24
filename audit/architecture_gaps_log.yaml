@@ -13824,5 +13824,22 @@ entries:
       queimar uma tentativa real de retreino (a primeira que consumiria
       orcamento de trial de verdade nesta migracao).
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix recomendado: reprocessar os 5 labels.parquet de R1 ANTES do retreino real (`build_and_write_labels_for_symbol`/equivalente sob `resolution_id='R1'`, mesmo padrao ja usado pra `AG-140`/`tf=15m`), ou rodar `verify_config_hash` isolado contra R1 primeiro (mais barato, so confirma o diagnostico sem reescrever nada se o hash bater). Comando exato fica pendente de decisao de qual das 2 abordagens o usuario prefere -- nao decidido aqui."
+    resolution: >
+      CONFIRMADO EMPIRICAMENTE 2026-08-23, usuario autorizou execucao
+      real: `build_modeling_frame(symbol='BTCUSDT', resolution_id='R1',
+      vol_estimator_id='parkinson_w20')` levantou `ConfigHashMismatchError`
+      real -- `config_hash` do label `865763cc50f8d507` != execucao
+      `67d2193fff4a1fae`. Nao era falso positivo. Fix aplicado:
+      `run_and_write_labels_dollar_bar_parkinson(resolution_id='R1')`
+      (mesma funcao que gerou os R1 originais em 2026-08-17, mesmos
+      parametros/valores -- so o FORMATO do config_hash mudou, nenhum
+      campo de barreira foi alterado) reprocessou os 5 simbolos --
+      `experiment_id=31`, `config_hash=67d2193fff4a1fae` (bate exato
+      com o esperado pela execucao atual). Verificacao pos-fix: `build_
+      modeling_frame` rodado de verdade pros 5 simbolos sob R1 --
+      **BTCUSDT 446227, ETHUSDT 316783, SOLUSDT 333497, BNBUSDT 329365,
+      XRPUSDT 345924 linhas, zero erro, regimes presentes (R0-R5) em
+      todos**. `R2`/`R3` seguem nao-verificados diretamente (risco menor,
+      gerados apos AG-116/AG-124) -- nao reprocessados nesta rodada, so
+      R1 (o unico com evidencia real de mismatch).
+    status: "fechado 2026-08-23 -- confirmado real (nao falso positivo) e corrigido, ver resolution"
