@@ -5032,6 +5032,19 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.43 (2026-08-23)** — Implementação real do Alpha multi-ativo ×
+  multi-resolução, D-01 a D-18 (commits `d15ff73`/`321c414`/`1c6f1b3`/
+  `4781920`) — `§15.20.1` nova. Learner XGBoost→LightGBM;
+  `predictions.parquet` 17→21 colunas; `model_dir` chaveado por
+  `(symbol, resolution_id)`; driver de 15 combinações; GPU confirmada
+  com o usuário, `device_type` parametrizado. D-06 parcial (cutover
+  de produção adiado pro PR do retreino real, decisão do próprio design
+  doc). Achado fora de escopo corrigido no caminho: `AG-193` (bug
+  pré-existente em `AG-032`, indexação insegura de restrição econômica
+  esvaziada). 1781 testes verdes. `AG-157`/`AG-158`/`AG-160` fechados.
+  Road Map Vivo v2 republicado (edição cirúrgica do card Alpha). Revisão
+  independente `project_assurance` disparada, resultado em adendo
+  separado. Detalhe: `§15.20.1`, `docs/SPRINT_LOG.md`.
 - **v3.42 (2026-08-23)** — `AG-162` (CRITICAL) e `AG-150` FECHADOS —
   reconciliação do schema `tau_alpha`. D-05 do Alpha (`tau_long`/
   `tau_short` crus, 2 colunas) prevalece sobre o que `AG-150`/`§15.20-E`
