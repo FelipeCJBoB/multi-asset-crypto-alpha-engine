@@ -30,6 +30,68 @@ def test_column_spec_tolerance_com_ulp_budget_ok() -> None:
     assert col.ulp_budget == 4
 
 
+def test_column_spec_list_utf8_aceito_e_polars_dtype_correto() -> None:
+    """D-06 (docs/alpha_model_design_doc_2026-08-22.md) -- achado real:
+    `predictions.parquet::features_selecionadas` é `List[Utf8]`, primeiro
+    artefato real do projeto a precisar de coluna não-escalar. `v1` só
+    aceitava tipos escalares (docstring do módulo) -- extensão mínima,
+    não `Struct` genérico."""
+    col = ColumnSpec(name="features_selecionadas", dtype="List[Utf8]")
+    assert col.polars_dtype() == pl.List(pl.Utf8)
+
+
+def test_validate_schema_aceita_coluna_list_utf8() -> None:
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(
+            ColumnSpec(name="t0", dtype="Int64", nullable=False, role="key"),
+            ColumnSpec(name="features_selecionadas", dtype="List[Utf8]"),
+        ),
+    )
+    df = pl.DataFrame(
+        {"t0": [1, 2], "features_selecionadas": [["A", "B"], ["A", "B"]]},
+        schema={"t0": pl.Int64, "features_selecionadas": pl.List(pl.Utf8)},
+    )
+    validate_schema(df, schema)  # não levanta
+
+
+def test_column_spec_datetime_ms_utc_aceito_e_polars_dtype_correto() -> None:
+    """D-06 -- `t0` é `pl.Datetime(time_unit="ms", time_zone="UTC")` em
+    TODO artefato real do projeto (nunca Int64 nanoseconds, ao contrário
+    do que a convenção `*_ts_ns` do módulo `io/artifact.py` sugeria) --
+    `io/schema.py` nunca teve um consumidor real até D-06, esse gap nunca
+    tinha sido exercitado."""
+    col = ColumnSpec(name="t0", dtype="Datetime[ms,UTC]")
+    assert col.polars_dtype() == pl.Datetime(time_unit="ms", time_zone="UTC")
+
+
+def test_validate_schema_aceita_coluna_datetime_ms_utc() -> None:
+    import datetime as dt
+
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(ColumnSpec(name="t0", dtype="Datetime[ms,UTC]", nullable=False, role="key"),),
+    )
+    df = pl.DataFrame(
+        {"t0": [dt.datetime(2024, 1, 1, tzinfo=dt.UTC), dt.datetime(2024, 1, 2, tzinfo=dt.UTC)]},
+        schema={"t0": pl.Datetime(time_unit="ms", time_zone="UTC")},
+    )
+    validate_schema(df, schema)  # não levanta
+
+
+def test_validate_schema_list_utf8_pega_dtype_errado() -> None:
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(ColumnSpec(name="t0", dtype="List[Utf8]"),),
+    )
+    df = pl.DataFrame({"t0": [1, 2, 3]})  # Int64, não List[Utf8]
+    with pytest.raises(SchemaValidationError, match="dtype"):
+        validate_schema(df, schema)
+
+
 def test_artifact_schema_rejeita_coluna_duplicada() -> None:
     with pytest.raises(ValueError, match="duplicados"):
         ArtifactSchema(
@@ -166,3 +228,18 @@ def test_schema_json_round_trip_preserva_tudo() -> None:
     raw = schema_to_json_bytes(schema)
     restored = schema_from_json_bytes(raw)
     assert restored == schema
+
+
+def test_schema_json_round_trip_preserva_list_utf8() -> None:
+    schema = ArtifactSchema(
+        schema_version="1.0.0",
+        primary_key=("t0",),
+        columns=(
+            ColumnSpec(name="t0", dtype="Int64", nullable=False, role="key"),
+            ColumnSpec(name="features_selecionadas", dtype="List[Utf8]"),
+        ),
+    )
+    raw = schema_to_json_bytes(schema)
+    restored = schema_from_json_bytes(raw)
+    assert restored == schema
+    assert restored.columns[1].polars_dtype() == pl.List(pl.Utf8)

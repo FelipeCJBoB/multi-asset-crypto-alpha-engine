@@ -28,8 +28,10 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.data import download
 from src.data.resample import step_ms
 from src.features import build as features_build
+from src.io import artifact as io_artifact
 from src.validation import cpcv
 
 from . import alpha, backtest_lite, baselines, decomposition, hhi
@@ -96,6 +98,47 @@ def write_predictions_atomic(
         "models.pipeline.predictions_written", path=str(dest_path), n_rows=predictions.height
     )
     return dest_path
+
+
+PREDICTIONS_ARTIFACT_STAGE = "predictions_alpha"
+
+
+def write_predictions_versioned(
+    predictions: pl.DataFrame,
+    *,
+    root: Path,
+    symbol: str,
+    resolution_id: str,
+    model_id: str,
+    config: dict[str, Any],
+) -> io_artifact.ArtifactManifest:
+    """D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha `AG-154`) --
+    escreve `predictions.parquet` via `src.io.artifact.write_artifact`
+    (schema versionado + manifest com `config_hash`, camada ADR-001) em
+    vez do caminho ad-hoc de `write_predictions_atomic` acima. `config`
+    deve incluir pelo menos `model_id`/`variant` (o `stage` sozinho não
+    distingue Camada 1 de Camada 0 -- `config_hash` distingue).
+
+    **NÃO integrado em `run_layer1_sprint` nesta unidade.** D-06 decide
+    explicitamente que o cutover real -- trocar o writer de PRODUÇÃO,
+    regenerar as 15 combinações sob este schema, atualizar os 2
+    consumidores reais incondicionais (`src/backtest/fill_reconciliation.
+    py`, `src/analysis/calibration_diagnostics.py`) pro caminho novo, e
+    descartar/arquivar os 5 `predictions.parquet` legados -- acontece "no
+    mesmo PR que ativa o retreino" (§13 do design doc), não antes (o gate
+    'Data Layer 100%' segue fechado). Esta função é a capacidade nova,
+    testada e pronta pra ser chamada quando isso acontecer -- ver
+    `AG-154`."""
+    return io_artifact.write_artifact(
+        predictions.select(list(alpha.PREDICTIONS_SCHEMA_COLUMNS)),
+        root=root,
+        stage=PREDICTIONS_ARTIFACT_STAGE,
+        symbol=symbol,
+        resolution=resolution_id,
+        config={"model_id": model_id, **config},
+        schema=alpha.PREDICTIONS_ARTIFACT_SCHEMA,
+        producer_entrypoint="src.models.pipeline.run_layer1_sprint",
+    )
 
 
 def write_report_atomic(payload: dict[str, Any], dest_path: Path | None = None) -> Path:
@@ -710,6 +753,76 @@ def run_layer1_sprint(
     return report
 
 
+ALL_SYMBOLS: tuple[str, ...] = (ds.SYMBOL_DEFAULT, *download.DEFAULT_SYMBOLS)
+ALL_RESOLUTIONS: tuple[str, ...] = ("R1", "R2", "R3")
+
+
+def run_layer1_sprint_all_combinations(
+    *,
+    symbols: tuple[str, ...] = ALL_SYMBOLS,
+    resolutions: tuple[str, ...] = ALL_RESOLUTIONS,
+    vol_estimator_id: str | None = None,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
+    que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
+    vezes por default (5 símbolos x {R1, R2, R3}). `run_layer1_sprint` já
+    aceita os dois parâmetros e o CLI já expõe `--resolution-id`
+    (Fase 4/5 da migração anterior) -- nenhuma mudança de assinatura foi
+    necessária, só orquestração.
+
+    `report_path`/`run_tag` únicos por combinação (`{symbol}_
+    {resolution_id}`) -- fecha `AG-160`: o default de `run_layer1_sprint`
+    (`experiments/alpha_layer1_report.json`, sem chave por symbol/
+    resolution) faz cada uma das 15 chamadas SOBRESCREVER o relatório da
+    anterior (bug de sobrescrita já existente mesmo em execução puramente
+    sequencial, agravado 15x pela expansão deste driver). `model_id_
+    camada{0,1}` continuam o texto default (`alpha_c1_v1`/`alpha_c0_
+    baseline_v1`, SEM sufixo por combinação) -- D-03 já resolveu a
+    colisão de artefato via `symbol`/`resolution_id` como colunas/
+    segmentos de path explícitos, não é preciso duplicar essa proteção no
+    nome do modelo.
+
+    **D-14 -- custo de `N_lifetime` declarado, não escondido.** Nenhum
+    trial roda nesta função em si (é orquestração, decide QUANTAS vezes
+    chamar `run_layer1_sprint`, não SE deve chamar -- isso é decisão do
+    Manager, gate 'Data Layer 100%'). Quando o gate abrir e isto rodar de
+    verdade: rodar as 15 combinações de UM desenho já fixado (D-11:
+    hiperparâmetro único v1, não uma busca por combinação) não é, por
+    definição do ledger (`audit/n_lifetime.yaml`, "N trials = combinações
+    de parâmetro que exigem ajuste de modelo NOVO testado contra dado
+    real"), automaticamente 15 trials -- é uma leitura genuinamente aberta
+    (treinar em 15 mercados vs. buscar parâmetro 15 vezes são coisas
+    diferentes). Registrar em `audit/n_lifetime.yaml` (append-only, só
+    quando o trial de fato acontecer) exige essa decisão do Manager
+    primeiro -- não inventada aqui (B23, mesma disciplina de nunca
+    estipular faixa/contagem sem medir)."""
+    reports: dict[tuple[str, str], dict[str, Any]] = {}
+    for symbol in symbols:
+        for resolution_id in resolutions:
+            run_tag = f"{symbol}_{resolution_id}"
+            report_path = EXPERIMENTS_DIR / f"alpha_layer1_report_{run_tag}.json"
+            logger.info(
+                "models.pipeline.run_layer1_sprint_all_combinations_start",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                run_tag=run_tag,
+            )
+            report = run_layer1_sprint(
+                symbol=symbol,
+                resolution_id=resolution_id,
+                vol_estimator_id=vol_estimator_id,
+                report_path=report_path,
+            )
+            reports[(symbol, resolution_id)] = report
+    logger.info(
+        "models.pipeline.run_layer1_sprint_all_combinations_done",
+        n_combinations=len(reports),
+        symbols=symbols,
+        resolutions=resolutions,
+    )
+    return reports
+
+
 if __name__ == "__main__":  # pragma: no cover — execução manual
     import argparse
     import sys
@@ -761,10 +874,26 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             help='estimador de volatilidade explicito (ex. "parkinson_w20") -- '
             "default None preserva ATRWilder bit-exato",
         )
+        parser.add_argument(
+            "--all-combinations",
+            action="store_true",
+            help=(
+                "D-13 -- roda as 15 combinacoes (5 simbolos x {R1,R2,R3}) via "
+                "run_layer1_sprint_all_combinations() em vez de uma rodada "
+                "unica; ignora --symbol/--resolution-id/--tf/--run-tag"
+            ),
+        )
         return parser.parse_args()
 
     def _run_cli() -> int:
         args = _parse_args()
+        if args.all_combinations:
+            reports = run_layer1_sprint_all_combinations(vol_estimator_id=args.vol_estimator_id)
+            logger.info(
+                "models.pipeline.cli_all_combinations_done",
+                n_combinations=len(reports),
+            )
+            return 0
         tag = f"_{args.run_tag}" if args.run_tag else ""
         report = run_layer1_sprint(
             symbol=args.symbol,

@@ -24,9 +24,7 @@ CausalityClass = Literal["strict_past", "at_close", "forward_looking"]
 ParityClass = Literal["exact", "tolerance"]
 ColumnRole = Literal["key", "payload", "partition"]
 
-# Só tipos escalares em v1 -- `List`/`Struct` ficam de fora, nenhum
-# artefato real do projeto precisa deles hoje (labels/regimes/weights são
-# todos colunas escalares).
+# Tipos escalares desde v1.
 _DTYPE_BY_NAME: dict[str, type[pl.DataType]] = {
     "Int8": pl.Int8,
     "Int16": pl.Int16,
@@ -36,6 +34,22 @@ _DTYPE_BY_NAME: dict[str, type[pl.DataType]] = {
     "Float64": pl.Float64,
     "Utf8": pl.Utf8,
     "Boolean": pl.Boolean,
+}
+
+# Tipos PARAMETRIZADOS (instância, não classe -- `_DTYPE_BY_NAME` não
+# serve, `pl.List(pl.Utf8)`/`pl.Datetime(...)` não são `type[pl.DataType]`
+# comparável diretamente do mesmo jeito que `pl.Int64`). Achado real,
+# migração LightGBM do Alpha (D-06): `io/artifact.py`/`io/schema.py`
+# (ADR-001) nunca tinham um consumidor real até agora -- `v1` só cobria
+# tipos escalares simples, nunca exercitado contra os 2 padrões que TODO
+# artefato real do projeto de fato usa: `t0` é sempre `pl.Datetime(time_
+# unit="ms", time_zone="UTC")` (nunca Int64 nanoseconds, ao contrário do
+# que a convenção `bar_id`/`*_ts_ns` do docstring do módulo sugeria), e
+# `predictions.parquet::features_selecionadas` é `List[Utf8]`. `Struct`
+# genérico continua fora -- nenhum artefato real precisa.
+_PARAMETRIZED_DTYPE_BY_NAME: dict[str, pl.DataType] = {
+    "List[Utf8]": pl.List(pl.Utf8),
+    "Datetime[ms,UTC]": pl.Datetime(time_unit="ms", time_zone="UTC"),
 }
 
 
@@ -58,10 +72,10 @@ class ColumnSpec:
     ulp_budget: int | None = None
 
     def __post_init__(self) -> None:
-        if self.dtype not in _DTYPE_BY_NAME:
+        if self.dtype not in _DTYPE_BY_NAME and self.dtype not in _PARAMETRIZED_DTYPE_BY_NAME:
             raise ValueError(
                 f"ColumnSpec({self.name!r}): dtype={self.dtype!r} não suportado -- "
-                f"esperado um de {sorted(_DTYPE_BY_NAME)}"
+                f"esperado um de {sorted({*_DTYPE_BY_NAME, *_PARAMETRIZED_DTYPE_BY_NAME})}"
             )
         if self.parity_class == "tolerance" and self.ulp_budget is None:
             raise ValueError(
@@ -70,7 +84,10 @@ class ColumnSpec:
                 "teste de paridade não sabe quanto de erro de ponto flutuante é aceitável"
             )
 
-    def polars_dtype(self) -> type[pl.DataType]:
+    def polars_dtype(self) -> pl.DataType | type[pl.DataType]:
+        parametrized = _PARAMETRIZED_DTYPE_BY_NAME.get(self.dtype)
+        if parametrized is not None:
+            return parametrized
         return _DTYPE_BY_NAME[self.dtype]
 
 
@@ -146,7 +163,7 @@ class ArtifactSchema:
     def column_names(self) -> tuple[str, ...]:
         return tuple(c.name for c in self.columns)
 
-    def polars_schema(self) -> dict[str, type[pl.DataType]]:
+    def polars_schema(self) -> dict[str, pl.DataType | type[pl.DataType]]:
         return {c.name: c.polars_dtype() for c in self.columns}
 
 

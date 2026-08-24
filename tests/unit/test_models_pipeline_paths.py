@@ -442,3 +442,67 @@ def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
     inválido."""
     with pytest.raises(UnsupportedTimeframeError):
         pipeline.run_layer1_sprint(tf="7m")
+
+
+# ============================================================================
+# run_layer1_sprint_all_combinations — D-13 (docs/alpha_model_design_doc_
+# 2026-08-22.md §7). Monkeypatcha run_layer1_sprint INTEIRO (não seus
+# internos) -- orquestração, não repete a cobertura de treino já testada
+# em outro lugar.
+# ============================================================================
+
+
+def test_run_layer1_sprint_all_combinations_roda_5x3_com_report_path_unico(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def _fake_run_layer1_sprint(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {"layer1_vs_layer0": {"permanence_pass": True}}
+
+    monkeypatch.setattr(pipeline, "run_layer1_sprint", _fake_run_layer1_sprint)
+
+    reports = pipeline.run_layer1_sprint_all_combinations()
+
+    assert len(calls) == 15  # 5 símbolos x {R1, R2, R3}
+    assert len(reports) == 15
+    pairs = [(c["symbol"], c["resolution_id"]) for c in calls]
+    assert len(set(pairs)) == 15  # nenhuma combinação repetida
+
+    # AG-160 -- report_path único por combinação, nunca o default
+    # compartilhado (experiments/alpha_layer1_report.json).
+    report_paths = [c["report_path"] for c in calls]
+    assert len(set(report_paths)) == 15
+    for symbol, resolution_id in pairs:
+        expected = pipeline.EXPERIMENTS_DIR / f"alpha_layer1_report_{symbol}_{resolution_id}.json"
+        assert expected in report_paths
+
+
+def test_run_layer1_sprint_all_combinations_symbols_resolutions_customizados(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        pipeline,
+        "run_layer1_sprint",
+        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {"permanence_pass": True}},
+    )
+
+    pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT", "ETHUSDT"), resolutions=("R1",)
+    )
+
+    assert len(calls) == 2
+    assert {(c["symbol"], c["resolution_id"]) for c in calls} == {
+        ("BTCUSDT", "R1"),
+        ("ETHUSDT", "R1"),
+    }
+
+
+def test_all_symbols_e_all_resolutions_universo_esperado() -> None:
+    """`ALL_SYMBOLS`/`ALL_RESOLUTIONS` -- 5 símbolos (BTC + os 4 alts de
+    `src.data.download.DEFAULT_SYMBOLS`), 3 resoluções (R1/R2/R3, D-02/
+    AG-100/AG-124 -- todas produção)."""
+    assert set(pipeline.ALL_SYMBOLS) == {"BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"}
+    assert pipeline.ALL_RESOLUTIONS == ("R1", "R2", "R3")

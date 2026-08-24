@@ -47,6 +47,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import train_test_split
 
 from src.features.build import T1_FEATURE_IDS
+from src.io.schema import ArtifactSchema, ColumnSpec
 from src.validation.cpcv import CPCVSplit
 
 from . import dataset as ds
@@ -603,4 +604,56 @@ PREDICTIONS_SCHEMA_COLUMNS: tuple[str, ...] = (
     "wf_window_id",
     "fold_id",
     "is_oof",
+)
+
+# D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha AG-154) --
+# contrato de schema versionado (ADR-001, `src.io.schema`) pra
+# `predictions.parquet`, usado por `src.models.pipeline.
+# write_predictions_versioned`. `primary_key=(t0, fold_id)`: uma barra
+# aparece em até 5 folds (`assemble_predictions_table`), então `t0`
+# sozinho não é único -- (t0, fold_id) é. `symbol`/`resolution_id` já são
+# o segmento de partição de `io.artifact.artifact_dir` (redundante com o
+# path por desenho, D-03 quer os dois como coluna explícita TAMBÉM, não
+# só implícito no path -- mesma razão que motivou D-03: convenção de
+# path sozinha já causou 1 bug real de symbol-mismatch, `dataset.py:
+# 138-160`). Achado real durante esta implementação: `io.schema` nunca
+# tinha um consumidor real antes de D-06 -- precisou ganhar suporte a
+# `List[Utf8]` (`features_selecionadas`) e `Datetime[ms,UTC]` (`t0`,
+# NUNCA Int64 nanoseconds como a convenção `*_ts_ns` do docstring de
+# `io/artifact.py` sugeria) que `v1` não cobria (nenhum artefato real
+# tinha exercitado isso ainda).
+PREDICTIONS_ARTIFACT_SCHEMA = ArtifactSchema(
+    schema_version="1.0.0",
+    primary_key=("t0", "fold_id"),
+    columns=(
+        ColumnSpec(name="t0", dtype="Datetime[ms,UTC]", nullable=False, role="key"),
+        ColumnSpec(name="symbol", dtype="Utf8", nullable=False, role="partition"),
+        ColumnSpec(name="resolution_id", dtype="Utf8", nullable=False, role="partition"),
+        ColumnSpec(name="p_long", dtype="Float64", nullable=False),
+        ColumnSpec(name="p_short", dtype="Float64", nullable=False),
+        ColumnSpec(name="tau_long", dtype="Float64", nullable=False),
+        ColumnSpec(name="tau_short", dtype="Float64", nullable=False),
+        ColumnSpec(name="score_long_raw", dtype="Float64", nullable=False),
+        ColumnSpec(name="score_short_raw", dtype="Float64", nullable=False),
+        ColumnSpec(name="side_hat", dtype="Int8", nullable=False),
+        ColumnSpec(name="confidence", dtype="Float64", nullable=False),
+        # `ensemble_std`/`wf_window_id` sempre `None` hoje (sem ensemble
+        # multi-seed nem walk-forward implementados nesta rodada, ver
+        # `run_fold`) -- nullable=True reflete o dado real, não estipula
+        # um valor que ainda não existe.
+        ColumnSpec(name="ensemble_std", dtype="Float64", nullable=True),
+        ColumnSpec(name="n_models_agree", dtype="Int8", nullable=False),
+        # `model_id` é constante dentro de UM write (uma chamada cobre só
+        # `camada1` OU `camada0`) -- mesmo papel de `symbol`/`resolution_id`
+        # (broadcast por partição, não identidade por linha), não faz parte
+        # de `primary_key`.
+        ColumnSpec(name="model_id", dtype="Utf8", nullable=False, role="partition"),
+        ColumnSpec(name="calibrator_id", dtype="Utf8", nullable=False),
+        ColumnSpec(name="feature_version", dtype="Utf8", nullable=False),
+        ColumnSpec(name="features_selecionadas", dtype="List[Utf8]", nullable=False),
+        ColumnSpec(name="hhi_importancia", dtype="Float64", nullable=False),
+        ColumnSpec(name="wf_window_id", dtype="Int16", nullable=True),
+        ColumnSpec(name="fold_id", dtype="Int16", nullable=False, role="key"),
+        ColumnSpec(name="is_oof", dtype="Boolean", nullable=False),
+    ),
 )

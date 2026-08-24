@@ -21,6 +21,7 @@ Dois blocos, mesmo padrão de `tests/unit/test_models_alpha.py`:
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +29,7 @@ import polars as pl
 import pytest
 
 from src.features.build import T1_FEATURE_IDS
+from src.io import artifact as io_artifact
 from src.models import alpha, pipeline
 from src.models._constants import load_constant
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1, MODELS_DIR
@@ -335,3 +337,115 @@ def test_diagnostics_reais_contagem_e_schema(model_id: str) -> None:
         assert payload["model_id"] == model_id
         assert payload["side_label"] in ("long", "short")
         assert payload["best_iteration"] is None
+
+
+# ============================================================================
+# write_predictions_versioned — D-06 (docs/alpha_model_design_doc_
+# 2026-08-22.md, fecha AG-154). NÃO integrado em run_layer1_sprint nesta
+# unidade (cutover real fica pro PR que ativa o retreino, ver docstring
+# da função) -- testes cobrem a capacidade nova isolada.
+# ============================================================================
+
+
+def _typed_predictions_df(n: int = 2, *, model_id: str = "alpha_c1_v1") -> pl.DataFrame:
+    """Schema real de `alpha.PREDICTIONS_ARTIFACT_SCHEMA` -- diferente de
+    `test_models_pipeline_paths.py::_empty_predictions_df` (tudo Float64,
+    serve pra `write_predictions_atomic` que não valida dtype),
+    `write_predictions_versioned` valida contra o schema de verdade
+    (`io.schema.validate_schema`)."""
+    t0 = [datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=15 * i) for i in range(n)]
+    return pl.DataFrame(
+        {
+            "t0": pl.Series(t0, dtype=pl.Datetime(time_unit="ms", time_zone="UTC")),
+            "symbol": pl.Series(["BTCUSDT"] * n, dtype=pl.Utf8),
+            "resolution_id": pl.Series(["R1"] * n, dtype=pl.Utf8),
+            "p_long": pl.Series([0.5] * n, dtype=pl.Float64),
+            "p_short": pl.Series([0.4] * n, dtype=pl.Float64),
+            "tau_long": pl.Series([0.6] * n, dtype=pl.Float64),
+            "tau_short": pl.Series([0.6] * n, dtype=pl.Float64),
+            "score_long_raw": pl.Series([0.5] * n, dtype=pl.Float64),
+            "score_short_raw": pl.Series([0.4] * n, dtype=pl.Float64),
+            "side_hat": pl.Series([0] * n, dtype=pl.Int8),
+            "confidence": pl.Series([0.5] * n, dtype=pl.Float64),
+            "ensemble_std": pl.Series([None] * n, dtype=pl.Float64),
+            "n_models_agree": pl.Series([1] * n, dtype=pl.Int8),
+            "model_id": pl.Series([model_id] * n, dtype=pl.Utf8),
+            "calibrator_id": pl.Series(["n/a"] * n, dtype=pl.Utf8),
+            "feature_version": pl.Series(["t1_v1"] * n, dtype=pl.Utf8),
+            "features_selecionadas": pl.Series([list(T1_FEATURE_IDS)] * n),
+            "hhi_importancia": pl.Series([0.2] * n, dtype=pl.Float64),  # noqa: magic-number
+            "wf_window_id": pl.Series([None] * n, dtype=pl.Int16),
+            "fold_id": pl.Series(list(range(n)), dtype=pl.Int16),
+            "is_oof": pl.Series([True] * n, dtype=pl.Boolean),
+        }
+    )
+
+
+def test_write_predictions_versioned_round_trip(tmp_path: Path) -> None:
+    predictions = _typed_predictions_df()
+    manifest = pipeline.write_predictions_versioned(
+        predictions,
+        root=tmp_path,
+        symbol="BTCUSDT",
+        resolution_id="R1",
+        model_id="alpha_c1_v1",
+        config={"variant": alpha.VARIANT_CAMADA1},
+    )
+    assert manifest.symbol == "BTCUSDT"
+    assert manifest.resolution == "R1"
+    assert manifest.n_rows == 2
+
+    loaded, loaded_manifest = io_artifact.read_artifact(
+        root=tmp_path,
+        stage=pipeline.PREDICTIONS_ARTIFACT_STAGE,
+        config_hash=manifest.config_hash,
+        symbol="BTCUSDT",
+        resolution="R1",
+    )
+    assert loaded.height == 2
+    assert loaded_manifest == manifest
+    assert tuple(loaded.columns) == alpha.PREDICTIONS_SCHEMA_COLUMNS
+    assert loaded["features_selecionadas"][0].to_list() == list(T1_FEATURE_IDS)
+
+
+def test_write_predictions_versioned_camada1_vs_camada0_nao_colidem(tmp_path: Path) -> None:
+    """`config={"variant": ...}` entra no `config_hash` (junto de
+    `model_id`, sempre incluído por `write_predictions_versioned`) --
+    Camada 1 e Camada 0 do MESMO (symbol, resolution) não se sobrescrevem,
+    mesma classe de risco de colisão que motivou D-12/AG-158 na
+    persistência de modelo."""
+    m1 = pipeline.write_predictions_versioned(
+        _typed_predictions_df(model_id="alpha_c1_v1"),
+        root=tmp_path,
+        symbol="BTCUSDT",
+        resolution_id="R1",
+        model_id="alpha_c1_v1",
+        config={"variant": alpha.VARIANT_CAMADA1},
+    )
+    m0 = pipeline.write_predictions_versioned(
+        _typed_predictions_df(model_id="alpha_c0_baseline_v1"),
+        root=tmp_path,
+        symbol="BTCUSDT",
+        resolution_id="R1",
+        model_id="alpha_c0_baseline_v1",
+        config={"variant": alpha.VARIANT_CAMADA0},
+    )
+    assert m1.config_hash != m0.config_hash
+
+
+def test_write_predictions_versioned_rejeita_dtype_invalido(tmp_path: Path) -> None:
+    """`write_artifact` valida contra `PREDICTIONS_ARTIFACT_SCHEMA` ANTES
+    de tocar disco (`io.schema.validate_schema`) -- ao contrário de
+    `write_predictions_atomic`, que grava qualquer schema sem checar."""
+    from src.io.schema import SchemaValidationError
+
+    bad = _typed_predictions_df().with_columns(pl.col("side_hat").cast(pl.Int64))
+    with pytest.raises(SchemaValidationError, match="dtype"):
+        pipeline.write_predictions_versioned(
+            bad,
+            root=tmp_path,
+            symbol="BTCUSDT",
+            resolution_id="R1",
+            model_id="alpha_c1_v1",
+            config={"variant": alpha.VARIANT_CAMADA1},
+        )

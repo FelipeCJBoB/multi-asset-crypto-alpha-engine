@@ -11854,8 +11854,34 @@ entries:
       §15.16) e simplesmente não é usada por este writer -- é caso de adotar,
       não de construir.
     resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix recomendado: `write_predictions_atomic` passa a emitir manifesto ao lado do parquet (ou migra para `src.io.artifact.write_artifact`), com `schema_version`, `model_id`, `code_version`, `config_hash`. Regra de leitura correspondente: manifesto AUSENTE levanta erro DISTINTO de versão desconhecida -- um contrato que só trata 'versão desconhecida' deixa 'versão ausente' cair no ramo default, que é a degradação silenciosa que ele existe pra impedir. Sequenciar junto do retreino do Alpha já represado, pra não criar uma 2ª janela de artefatos de schema misto."
+    resolution: >
+      PARCIAL, deliberado. `src.models.pipeline.write_predictions_
+      versioned` implementado (chama `io.artifact.write_artifact` de
+      verdade, schema/manifest/config_hash reais) + `alpha.
+      PREDICTIONS_ARTIFACT_SCHEMA` (21 colunas, D-03/D-05) + testado
+      (round-trip, dtype inválido rejeitado, Camada 1 x Camada 0 não
+      colidem via config_hash). Achado real durante a implementação:
+      `io/schema.py`/`io/artifact.py` (ADR-001) nunca tinham um
+      consumidor real até agora -- `v1` só cobria tipos escalares,
+      nunca exercitado contra `List[Utf8]` (`features_selecionadas`)
+      nem contra `pl.Datetime(time_unit="ms", time_zone="UTC")` (`t0`,
+      convenção real de TODO artefato do projeto -- não Int64
+      nanoseconds como a convenção `*_ts_ns` do docstring de
+      `io/artifact.py` sugeria); os dois foram adicionados a
+      `_PARAMETRIZED_DTYPE_BY_NAME`, testados isoladamente em
+      `test_io_schema.py`.
+
+      NÃO integrado em `run_layer1_sprint` -- decisão explícita, não
+      esquecimento: D-06 (docs/alpha_model_design_doc_2026-08-22.md
+      §13) já dizia que o cutover real (trocar o writer de produção,
+      regenerar as 15 combinações, atualizar os 2 consumidores reais
+      incondicionais -- `fill_reconciliation.py`, `calibration_
+      diagnostics.py` -- pro caminho novo, descartar os 5 `predictions.
+      parquet` legados) acontece "no mesmo PR que ativa o retreino",
+      não antes -- o gate "Data Layer 100%" segue fechado. Reabrir
+      quando esse PR acontecer, não fechar como se o cutover tivesse
+      sido feito.
+    status: "parcial -- capacidade nova (write_predictions_versioned) pronta e testada; cutover de produção (run_layer1_sprint + 2 consumidores reais + descarte dos 5 legados) fica pro PR que ativa o retreino, gate ainda fechado."
 
   - id: AG-155
     date: "2026-08-22"
@@ -11951,9 +11977,16 @@ entries:
       `resolution_id` inválido (ex. "R4") disparar a ValueError, a mensagem
       citaria R2/R3 como "só pesquisa" de forma falsa -- confunde quem
       debugar o erro.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix trivial (só texto): atualizar as duas docstrings e a mensagem de erro pra refletir que R1/R2/R3 são todos produção hoje. Sequenciar junto da implementação do Alpha multi-resolução (docs/alpha_model_design_doc_2026-08-22.md), não urgente isoladamente."
+    resolved_by_commit: "72e02c7"
+    resolution: >
+      Texto de docstring/ValueError de `dataset.py`/`pipeline.py`
+      atualizado pra refletir R1/R2/R3 como produção -- feito como parte
+      do commit `72e02c7` ("Motor multi-timeframe R1/R2/R3"), ANTES da
+      migração LightGBM do Alpha (que só encontrou, ao verificar, que o
+      texto já batia). Achado real ao fechar esta entrada: o `status`
+      ficou "aberto" por 1 dia mesmo com o fix já commitado -- mesma
+      classe de furo doc-vs-código que `AG-123` já tinha catalogado.
+    status: "fechado 2026-08-23"
 
   - id: AG-158
     date: "2026-08-22"
@@ -11976,9 +12009,16 @@ entries:
       mesmo `model_id` textual é risco real, não hipotético -- mesma classe
       de bug já corrigida uma vez em `dataset.py` (features de um símbolo
       casadas com label de outro), agora na camada de persistência.
-    resolved_by_commit: null
-    resolution: null
-    status: "aberto -- fix: model_dir passa a incluir symbol e resolution_id como segmentos de caminho, mesma convenção de _paths.py. Sequenciar junto da implementação do Alpha (D-12 do design doc)."
+    resolved_by_commit: "d15ff73"
+    resolution: >
+      `model_dir` (`persistence.py`) passa a exigir `symbol`/
+      `resolution_id` como kwargs obrigatórios, incluídos como segmentos
+      de caminho (`{root}/models/{symbol}/{resolution_id}/{model_id}/
+      fold={fold_id}/side={side}/variant={variant}/`), mesma convenção de
+      `_paths.py`. `write_model_bundle`/`read_model_bundle`/`model_bundle_
+      exists`/`ModelBundleManifest` propagam os dois campos. Implementado
+      junto de D-12 (migração LightGBM do Alpha).
+    status: "fechado 2026-08-23"
 
   - id: AG-159
     date: "2026-08-22"
