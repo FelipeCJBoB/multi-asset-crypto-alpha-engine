@@ -3910,6 +3910,111 @@ fechamento formal pendente) e o débito organizacional já aceito de
 `06_BARREIRAS`. Gate ainda não fechado, mas não mais "0/9" — ver `§15.4`
 pro estado real por estágio.
 
+### 15.20.1 Implementação — código real, D-01 a D-18 (2026-08-23)
+
+**Status muda de "ZERO linhas implementadas" (alínea E) para as 18
+decisões codificadas e testadas** — commits `d15ff73` (D-01/03/04/05/07/
+08/09/11/12, troca de learner + schema), `321c414` (D-06 parcial/D-13/
+D-14), `1c6f1b3` (fecha `AG-160` de fato), `4781920` (D-18, GPU). Nenhum
+treino real rodou — o gate "Data Layer 100%" segue fechado (alínea E
+acima); tudo abaixo é código, verificado com dado sintético e com o teste
+golden pré-existente (que falha deliberadamente, ver "O que NÃO foi
+feito" abaixo).
+
+**A. `alpha.py`/`persistence.py` — learner + schema.** `LGBMClassifier`
+substitui `XGBClassifier`; `PREDICTIONS_SCHEMA_COLUMNS` de 17 para 21
+colunas (`symbol`, `resolution_id`, `tau_long`, `tau_short`); `model_dir`
+(`persistence.py`) chaveado também por `(symbol, resolution_id)`, fecha
+`AG-158`. Dois bugs reais do próprio design doc corrigidos durante a
+implementação (não estavam previstos em D-08): (1) `LGBMClassifier.fit`
+sobre `NDArray` puro grava `booster_.feature_name()` como `"Column_N"`
+sem `feature_name=` explícito — quebraria `gain_by_column`/HHI
+silenciosamente; (2) `feature_importance()` do LightGBM devolve array
+DENSO (inclui `gain=0.0`), diferente do dict esparso do XGBoost — sem
+filtro explícito, quebraria a garantia "só colunas usadas" que os testes
+já exigiam. Um terceiro achado na verificação mecânica (`mypy --strict`):
+stubs do LightGBM tipam `predict_proba` como `list`, não `ndarray` —
+corrigido com `np.asarray(...)` explícito em `alpha.py` e `baselines.py`
+(que reusa `SideModelResult.model`).
+
+**B. D-06 (writer versionado) — PARCIAL, deliberado.**
+`write_predictions_versioned` (`pipeline.py`) usa `src.io.artifact.
+write_artifact` de verdade — mas achado real: `io/schema.py`/
+`io/artifact.py` (ADR-001, `§15.16`) nunca tinham consumidor real até
+agora, e `v1` só cobria tipos escalares — quebrava contra `List[Utf8]`
+(`features_selecionadas`) e contra `pl.Datetime(time_unit="ms",
+time_zone="UTC")` (`t0` — convenção real de TODO artefato do projeto,
+não `Int64` nanoseconds como a convenção `*_ts_ns` do docstring de
+`io/artifact.py` sugeria). Estendido `_PARAMETRIZED_DTYPE_BY_NAME` pros
+dois, testado isolado antes de usar em predições. **NÃO integrado em
+`run_layer1_sprint`** — decisão do próprio design doc (§13): cutover real
+(trocar writer de produção, regenerar as 15 combinações, atualizar os 2
+consumidores reais incondicionais — `fill_reconciliation.py`,
+`calibration_diagnostics.py` —, descartar os 5 `predictions.parquet`
+legados) acontece "no mesmo PR que ativa o retreino", gate ainda fechado.
+`AG-154` fica `status: "parcial"`, não fechado.
+
+**C. D-13/D-14 — orquestração + N_lifetime declarado.**
+`run_layer1_sprint_all_combinations` (driver fino, 15 chamadas — 5
+símbolos × {R1,R2,R3}) com `report_path`/`run_tag` único por combinação
+(fecha `AG-160` de fato — o commit `321c414` já dizia isso, mas o campo
+`status` do ledger só foi atualizado em `1c6f1b3`, mesmo furo doc-vs-
+código que `AG-123`/`AG-157` catalogam, desta vez cometido pelo próprio
+Claude). D-14: custo de `N_lifetime` (15× vs. hoje) declarado na
+docstring do driver, decisão de contagem real (15 trials vs. 1 desenho ×
+15 mercados) deixada explicitamente para o Manager quando o gate abrir —
+não inventada (B23).
+
+**D. D-18 — GPU, confirmado com o usuário.** GPU NVIDIA/CUDA disponível
+no ambiente de treino, confirmado por escrito. `device_type` parametrizado
+(`fit_side_model`→`run_fold`→`run_all_folds`, default `"cpu"` preserva
+todo teste existente sem depender de GPU na máquina/CI) — só
+`run_layer1_sprint` (único caller de produção real) tem default `"cuda"`.
+Ressalva de determinismo (tensão com D-12) permanece TBD — nenhum treino
+real sob GPU rodou nesta sessão pra confirmar se `deterministic=True`
+garante bit-exato lá também; saída já nomeada no design doc (§3 D-18) se
+não garantir.
+
+**E. Achado fora de escopo, corrigido no caminho — `AG-193`.** Rodar a
+suíte completa expôs 3 testes falhando por causa de `AG-032` (commit
+`78169df`, ANTERIOR a esta migração, não relacionado a ela):
+`monotonic._ECONOMIC_FORCED_CONSTRAINT_BY_SIDE` ficou vazio quando
+`E02f_funding_z_expanding` saiu de `T1_FEATURE_IDS`, mas 2 módulos de
+análise (`calibration_diagnostics.py`, `faixa1_5_prerequisites.py`)
+indexavam o dict direto (sem `.get()`) em vez do acessor seguro já
+existente — quebrado silenciosamente desde `78169df`, confirmado
+pré-existente via `git stash`. Achado mais sério que os testes: os 2
+pontos de entrada MANUAIS reais (`run_and_save_faixa1_report`,
+`run_and_save_faixa1_5`) quebrariam com `ColumnNotFoundError` se alguém
+rodasse o diagnóstico Faixa 1/1.5 hoje. Corrigido (acessor seguro +
+`extra_feature_ids`), registrado como `AG-193`, fechado.
+
+**F. Verificação.** Suíte completa (`-m "not slow and not integration
+and not golden"`) — 1781 testes verdes, 5 skips legítimos (2 sobre
+artefato real ausente, 1 sobre schema legado pré-migração, esperado, ver
+alínea G), zero falhas. `ruff`/`mypy --strict`/`banned_patterns.py`/
+`check_constants_referenced.py`/`check_unguarded_ratios.py` limpos em
+todo arquivo tocado (violações remanescentes em `src/analysis/*` são
+pré-existentes, confirmadas contra o estado do repo antes desta
+migração). `AG-157`/`AG-158`/`AG-160` fechados; `AG-154` parcial (alínea
+B); `AG-150`/`AG-162` já fechados por sessão anterior (commit `fe943e6`).
+
+**G. O que NÃO foi feito, deliberadamente.** Nenhum treino real (gate
+fechado). Teste golden (`tests/golden/test_sprint8_reproducibility.py`)
+FALHA (não pula) contra o baseline XGBoost antigo commitado — esperado,
+consequência já prevista pelo design doc (§11): só regenera "Fase A2"
+LightGBM quando o gate abrir e o retreino real acontecer. 2 testes de
+integração (`test_models_alpha.py`) fazem skip graceful contra os 5
+`predictions.parquet` legados (schema 17 colunas) em vez de falhar.
+Cutover de produção de D-06 (alínea B) explicitamente adiado.
+
+**H. Revisão independente (`project_assurance`, PRINCE2 §6.4).**
+Disparada sobre `alpha.py`/`persistence.py`/`pipeline.py` (+ `io/
+schema.py`/`baselines.py`/`faixa1_6_reconciliation.py`/
+`faixa2_caminho_b.py`) — achados a registrar em adendo a esta seção
+quando concluída, mesmo padrão de duas camadas já usado no desenho
+(alínea C).
+
 ---
 
 ### 15.21 Motor multi-timeframe R1/R2/R3 — mapa de dívida técnica BTC/M15 residual, Grupo 1+2 implementados (2026-08-22)

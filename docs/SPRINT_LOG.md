@@ -3819,6 +3819,38 @@ sweep novo. Detalhe: `audit/architecture_gaps_log.yaml::AG-191`/
 `AG-192`.
 
 <!-- check-sprint-log: skip -->
+**Alpha multi-ativo × multi-resolução — implementação real, D-01 a D-18
+(2026-08-23)** <!-- check-sprint-log: skip --> — desenho de `§15.20`
+sai de "ZERO implementado" pras 18 decisões codificadas e testadas
+(commits `d15ff73`/`321c414`/`1c6f1b3`/`4781920`). `LGBMClassifier`
+substitui `XGBClassifier`; `predictions.parquet` ganha `symbol`/
+`resolution_id`/`tau_long`/`tau_short` (17→21 colunas); `model_dir`
+chaveado por `(symbol, resolution_id)`; driver de 15 combinações
+(`run_layer1_sprint_all_combinations`); GPU confirmada com o usuário,
+`device_type` parametrizado (default `"cpu"` nos testes, `"cuda"` só no
+caller de produção real). 2 bugs reais do próprio design doc corrigidos
+na implementação (`feature_name=` ausente quebraria `gain_by_column`;
+`feature_importance()` do LightGBM é densa, não esparsa como o XGBoost).
+D-06 (writer versionado via `io.artifact`) fica PARCIAL de propósito —
+capacidade nova pronta e testada, mas não integrada em
+`run_layer1_sprint` (cutover real é decisão do próprio design doc,
+"no mesmo PR que ativa o retreino"); achado no caminho: `io/schema.py`
+nunca tinha consumidor real, precisou ganhar suporte a `List[Utf8]`/
+`Datetime(ms,UTC)`. Nenhum treino real rodou (gate "Data Layer 100%"
+segue fechado) — teste golden (`test_sprint8_reproducibility.py`) FALHA
+deliberadamente contra o baseline XGBoost antigo, consequência já
+prevista pelo design doc, não regressão. Suíte completa: **1781 passed**,
+5 skips legítimos, zero falhas. Achado fora de escopo no caminho,
+corrigido: `AG-193` (`AG-032`, commit `78169df`, ANTERIOR a esta
+migração, esvaziou uma restrição econômica que 2 módulos de análise
+indexavam sem `.get()` — quebrado silenciosamente há dias, 2 pontos de
+entrada manuais reais também quebrariam se rodados). `AG-157`/`AG-158`/
+`AG-160` fechados; `AG-154` parcial. Revisão independente
+(`project_assurance`) disparada, achados em adendo separado quando
+concluída. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`,
+`docs/alpha_model_design_doc_2026-08-22.md`.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -3843,7 +3875,7 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
-| **Alpha multi-ativo × multi-resolução** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. Achado central: multi-símbolo e multi-resolução (R1/R2/R3) já estavam prontos em produção (`AG-100`/`AG-124`, commit `7924f2c`) — o redesenho real é learner (XGBoost→LightGBM, D-01) + orquestração (5→15 combinações, D-13) + GPU (D-18, pedido do Manager, 3 ressalvas declaradas: build via `uv`, tensão com determinismo bit-exato, payoff não medido) + 4 débitos de schema. Auditoria adversarial (v1→v2): 1 CRITICAL (`tau_long`/`tau_short` não verificado contra `tau_alpha` do Meta v3) + 6 IMPORTANT/MODERATE. `project_assurance` (v2→v3): `tau_alpha` já travado em **3** artefatos de governança divergentes, não 2 — escalado ao Manager, **`AG-162` CRITICAL FECHADO 2026-08-23**: D-05 (`tau_long`/`tau_short` crus) prevalece, `tau_alpha` vira coluna derivada no Meta (mesmo padrão de `p_alpha`), `AG-150`/PLANO_MESTRE atualizados no mesmo commit — ver `docs/meta_model_design_doc_2026-08-22.md §21`. `AG-100`/`AG-124` citados como "fechados" quando status formal segue "aberto" — corrigido, **escalado, `AG-163` HIGH** (item 3 segue aberto com ressalva, ver `AG-163` no ledger). AGs novos: `AG-157`-`AG-164`. Bloqueado por: gate "Data Layer 100%" — os 4 achados "alto" que travavam (`AG-138`/`139`/`140`/decisão `08_SPLIT`) estão fechados 2026-08-23, mas isso não confirma automaticamente o gate inteiro livre (`06_BARREIRAS` segue represado por decisão aceita, não bloqueante; ver `PLANO_MESTRE_PRINCE2.md §15.4`/`§15.27`/`§15.28` pro estado real antes de assumir). Detalhe: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20` |
+| **Alpha multi-ativo × multi-resolução** | **Desenho travado E IMPLEMENTADO (D-01 a D-18) — 2026-08-23**, commits `d15ff73`/`321c414`/`1c6f1b3`/`4781920`. Learner XGBoost→LightGBM; `predictions.parquet` 17→21 colunas (`symbol`/`resolution_id`/`tau_long`/`tau_short`); `model_dir` chaveado por `(symbol, resolution_id)`; driver de 15 combinações; GPU confirmada com o usuário, `device_type` parametrizado (`"cpu"` default nos testes, `"cuda"` só em produção). D-06 (writer `io.artifact`) PARCIAL — capacidade pronta, cutover real adiado pro PR que ativa o retreino (decisão do próprio design doc). Nenhum treino real rodou, gate "Data Layer 100%" segue fechado — teste golden falha deliberadamente contra baseline XGBoost antigo (esperado). Suíte completa: 1781 passed, 0 failed. `AG-157`/`AG-158`/`AG-160` fechados; `AG-154` parcial; achado fora de escopo `AG-193` (bug pré-existente, `AG-032`) corrigido no caminho. `AG-162`/`AG-150` (schema `tau_alpha` × `tau_long`/`tau_short`) já fechados por sessão anterior (commit `fe943e6`) antes da implementação começar. Revisão independente `project_assurance` disparada, achados em adendo. Detalhe completo: `docs/alpha_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.20.1` |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA, ver seção narrativa acima); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` fica `TBD` (`AG-191`, dado obsoleto pro teste) |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |
