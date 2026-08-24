@@ -76,7 +76,18 @@ def run_capacity_map(
             "rode src.analysis.t2_ranking_ortogonalidade primeiro"
         )
 
-    mf, splits = _build_mf_and_splits(symbol, resolution_id, vol_estimator_id)
+    # Achado real (2026-08-24, 1ª execução deste harness): sem isso, `mf.
+    # data` nunca carrega as colunas T2 -- `ColumnNotFoundError` assim que
+    # `fit_side_model` tenta ler `feature_ids`. `build_k_feature_sets`
+    # (`src.analysis.t2_ranking_ortogonalidade`) constrói cada k como
+    # PREFIXO da mesma lista ordenada por estabilidade (k=6⊂9⊂12⊂16⊂24) --
+    # o conjunto de k=24 (o maior) já é superset de todos os outros,
+    # union() explícito só por robustez caso essa invariante mude no
+    # ranking sem este harness ser atualizado junto.
+    all_t2_needed = tuple(sorted(set().union(*k_feature_sets.values())))
+    mf, splits = _build_mf_and_splits(
+        symbol, resolution_id, vol_estimator_id, all_t2_needed
+    )
     base_hyper = alpha.LGBMHyperparams.from_constants()
 
     trials: list[dict[str, Any]] = []

@@ -368,6 +368,21 @@ levam a ações diferentes na Fase 1.
 
 ### Fase 1 — Mapa de capacidade (auditoria externa, com a correção de §2.1)
 
+**Pré-requisito executado (2026-08-24)**: ranking dos 62 candidatos T2
+por estabilidade (IN-FOLD, 15×2 células reais do CPCV) + filtro de
+ortogonalidade (`alpha_t2_orthogonality_spearman_max=0,70`, nova
+constante). Resultado: **39 de 62 sobrevivem** ao filtro; conjuntos
+k=6,9,12,16,24 construídos como prefixos da mesma lista ordenada
+(k=6⊂9⊂12⊂16⊂24). `N_lifetime` 156→157 (id 21, 1 trial — passe de
+ranking, mesmo critério dos precedentes E2/E3). Artefato: `experiments/
+t2_ranking_ortogonalidade_ETHUSDT_R1.json`. Achado real corrigido no
+processo (não remediado): schema por-arquivo inconsistente em `data/
+capacity/metrics/{symbol}/*.parquet` (algumas colunas de futures-
+positioning serializadas como String em vez de Float64 em 1-3 arquivos
+de ~1700-2200 por símbolo, sistêmico nos 5 símbolos) — corrigido em
+`src/features/_sources.py::_load_and_dedupe_metrics_rows`, cast
+explícito por arquivo antes do concat.
+
 Só roda se Fase 0 não matar a hipótese. Grid enumerado, não Optuna — na
 escala orçada (§3), TPE não tem vantagem. 1 ativo de referência (ETHUSDT/
 R1, mesmo escolhido antes), demais hiperparâmetros travados em PROD:
@@ -381,17 +396,63 @@ R1, mesmo escolhido antes), demais hiperparâmetros travados em PROD:
 | 6 | {8, 16, 32} | 3 |
 
 13 pares (depth, leaves) × 5 valores de `k` (6,9,12,16,24) = **65
-trials**. `N_lifetime` 156 → 221. Objetivo: existe relação
-`k`↔capacidade consistente (ex. "k=6 melhor em depth 2-3, k=24 instável em
-qualquer depth")? Não é achar "o melhor modelo".
+trials**. Objetivo: existe relação `k`↔capacidade consistente (ex. "k=6
+melhor em depth 2-3, k=24 instável em qualquer depth")? Não é achar "o
+melhor modelo". Só Camada1 é treinada (mapa de capacidade é sobre a
+FORMA da superfície de Sharpe, não uma comparação de permanência).
 
 `min_child_samples`: 1 ponto adicional testado nesta fase, no valor mais
-alto sugerido em §2.5 (ex. 200) contra o valor de produção (20), SÓ na
+alto sugerido em §2.5 (200) contra o valor de produção (20), SÓ na
 combinação (k, depth, leaves) que sair melhor do grid acima — não
 multiplica a grade inteira por 2. +1 trial. **Total Fase 1: 66 trials,
-`N_lifetime` 156 → 222.**
+`N_lifetime` 157 → 223.** Harness: `src/validation/t2_t1_capacity_map.py`.
 
-### Fase 2 — Busca dirigida (condicional — só se Fase 0 E Fase 1 mostrarem sinal real)
+### Resultado real da Fase 1 (2026-08-24) — padrão limpo, sem exceção, contra a promoção
+
+`audit/n_lifetime.yaml` id 22, `experiments/t2_t1_capacity_map_
+ETHUSDT_R1.json`. As 65 combinações do grid mostram **2 padrões
+monotônicos, sem UMA exceção sequer**:
+
+1. **`k` maior sempre melhora Sharpe** — em todas as 13 linhas
+   (`max_depth`,`num_leaves`) do grid, k=24 bate k=16 bate k=12... sem
+   exceção.
+2. **Mais complexidade de árvore sempre piora** — `max_depth`/`num_
+   leaves` maiores pioram o Sharpe, também sem exceção. Exemplo mais
+   extremo: `k=9, depth=5, leaves=32` chega a -8,92; `k=9, depth=2,
+   leaves=2` fica em -4,05 — mais que o dobro de diferença só por
+   complexidade de árvore, mesmo k.
+
+**Melhor combinação do grid inteiro: `k=24, max_depth=2, num_leaves=2`
+— os MENORES valores testados dos dois, `pooled_sharpe=-2,2073`.**
+Confirma empiricamente, com dado real, o que as duas análises críticas
+(usuário + auditoria externa) previram sem ainda ter visto o resultado:
+"aumentar `max_depth` pode só transformar 0,51 de AUC em overfitting
+mais sofisticado" (auditoria externa) — é exatamente isso que aconteceu,
+sem ambiguidade nos 65 pontos testados.
+
+**Trial extra** (`min_child_samples=200` vs. 20 PROD, na melhor
+combinação): `pooled_sharpe=-1,9762`, delta=+0,2311 — mais regularização
+ajuda ainda mais, mesma direção do padrão (menos complexidade, mais
+conservador, melhor).
+
+**Achado que pesa contra a promoção, precisa ficar registrado com
+destaque**: mesmo a MELHOR combinação (-1,9762, já com a regularização
+extra) fica **pior** que a média do piso de ruído medido na Fase 0a
+(`k=7`, T1 atual, hiperparâmetro PROD: `pooled_sharpe` mean=-1,3658,
+std=0,3060) — a diferença é de ~2 desvios-padrão do ruído de seed puro
+medido, não está dentro do ruído. **Nenhuma das 65+1 combinações
+testadas com features T2 (nunca usadas em produção) supera o T1 atual
+de 7 features**, nesta combinação símbolo/resolução.
+
+A regra de parada declarada em §4 ("sem região consistente até o fim da
+Fase 1, não escala pra Fase 2") não se aplica pela LETRA — existe, sim,
+uma região consistente (`k` alto + árvore rasa). Mas o ESPÍRITO da regra
+(usar Fase 1 pra decidir se vale investir mais em busca) aponta na mesma
+direção que a letra apontaria num resultado ambíguo: escalar pra Fase 2
+buscaria dentro de uma região que já JAMAIS bateu o baseline em 65
+tentativas — não há evidência de que mais busca dentro dessa mesma
+região (features T2, mesmo ativo) mude essa conclusão. **Decisão de
+escalar ou não fica pro Manager** — não decidida aqui.
 
 Se a Fase 1 apontar uma região (k, depth, leaves) consistentemente
 melhor: refinar ao redor dela, grid pequeno ou Optuna (decisão adiada

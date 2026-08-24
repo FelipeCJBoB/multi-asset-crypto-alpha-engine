@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 157
+counter: 223
 
 log:
   - id: 1
@@ -510,3 +510,42 @@ log:
       algum arquivo precisou de recast). Artefato: experiments/
       t2_ranking_ortogonalidade_ETHUSDT_R1.json.
     delta: 1
+  - id: 22
+    date: "2026-08-24"
+    type: fase1_mapa_capacidade
+    description: >
+      Fase 1 da ablacao T2->T1 (`docs/t2_t1_ablation_veredito_duas_
+      analises_2026-08-24.md` SS4) -- mapa de capacidade, ETHUSDT/R1, grid
+      enumerado max_depth={2,3,4,5,6} x num_leaves condicionado (nunca
+      >2^max_depth, nunca so no teto) x k={6,9,12,16,24} (conjuntos do
+      ranking id=21) = 65 combinacoes, so Camada1 (mapa de FORMA da
+      superficie de Sharpe, nao comparacao de permanencia) + 1 trial
+      extra (min_child_samples=200 na melhor combinacao do grid).
+      delta=66, cada combinacao um retreino real completo (15 splits do
+      CPCV, recalculo de backtest -- mesmo criterio mecanico do
+      cabecalho deste arquivo).
+      Resultado -- padrao limpo e SEM excecao nas 65 combinacoes: (1) `k`
+      maior sempre melhora Sharpe, monotonico em TODAS as 13 linhas do
+      grid (nenhuma excecao); (2) mais complexidade de arvore (max_depth/
+      num_leaves maiores) sempre piora, tambem monotonico e sem excecao
+      -- confirma empiricamente o que as 2 analises criticas (usuario +
+      auditoria externa) preveram ("aumentar max_depth pode so
+      transformar 0,51 de AUC em overfitting mais sofisticado"). Melhor
+      combinacao do grid inteiro: k=24, max_depth=2, num_leaves=2 (os
+      MENORES valores testados de ambos), pooled_sharpe=-2,2073. Trial
+      extra (min_child_samples=200 vs 20 PROD, mesma combinacao):
+      pooled_sharpe=-1,9762, delta=+0,2311 -- mais regularizacao ajuda
+      ainda mais, mesma direcao do padrao.
+      Achado que pesa contra promocao: MESMO a melhor combinacao
+      (-1,9762) fica pior que a media do piso de ruido medido na Fase 0a
+      (k=7 T1 atual, hiperparametro PROD, pooled_sharpe mean=-1,3658
+      std=0,3060) -- cerca de 2 desvios-padrao do ruido de seed puro
+      medido, nao dentro do ruido. Nenhuma das 65+1 combinacoes testadas
+      com features T2 (nunca usadas em producao) supera o T1 atual de 7
+      features neste ativo/resolucao. Regra de parada do design doc
+      (SS4, "sem regiao consistente ate o fim da Fase 1, nao escala pra
+      Fase 2") tecnicamente NAO se aplica pela letra (existe relacao
+      k/depth CONSISTENTE, so nao favoravel a promocao) -- decisao sobre
+      escalar pra Fase 2 ou nao fica pro Manager, nao decidida aqui.
+      Artefato: experiments/t2_t1_capacity_map_ETHUSDT_R1.json.
+    delta: 66
