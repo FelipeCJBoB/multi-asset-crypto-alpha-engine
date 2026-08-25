@@ -14007,8 +14007,7 @@ entries:
       migracao real pra Linux/cloud acontecer; docstrings/help do CLI
       documentam isso explicitamente, pra ninguem reflipar por engano.
       `ruff`/`mypy`/12 testes de `test_models_pipeline.py` verdes.
-    status: "fechado 2026-08-24 -- default corrigido pro ambiente real; reabre se/quando migracao Linux/cloud com CUDA+NCCL funcionais acontecer"
-    status: "aberto -- decisao do usuario 2026-08-23: rodar com device_type='cpu' explicito por enquanto (retreino real nao fica bloqueado), D-18/GPU real fica pendente de projeto de infraestrutura separado (WSL2 + Linux + CUDA Toolkit + LightGBM recompilado la dentro -- ordem de grandeza maior que o toolchain ja instalado nesta sessao, que fica reaproveitavel: driver GPU/CUDA Toolkit do Windows nao precisam ser refeitos, WSL2 usa passthrough do driver do host). Nao decidido aqui QUANDO esse projeto de WSL2 acontece -- fica com o Manager."
+    status: "fechado 2026-08-24 -- default corrigido pro ambiente real; reabre se/quando migracao Linux/cloud com CUDA+NCCL funcionais acontecer. Correcao de governanca 2026-08-24: este entry tinha 2 chaves `status:` (YAML mapping so honra a ULTIMA na leitura programatica -- a linha 'aberto' de 2026-08-23, texto preservado abaixo, sobrescrevia silenciosamente esta) -- achado ao rodar 'atualize governanca', linha duplicada removida, nao o conteudo histórico: 'decisao do usuario 2026-08-23: rodar com device_type=cpu explicito por enquanto (retreino real nao fica bloqueado), D-18/GPU real fica pendente de projeto de infraestrutura separado (WSL2 + Linux + CUDA Toolkit + LightGBM recompilado la dentro -- ordem de grandeza maior que o toolchain ja instalado nesta sessao, que fica reaproveitavel: driver GPU/CUDA Toolkit do Windows nao precisam ser refeitos, WSL2 usa passthrough do driver do host). Nao decidido aqui QUANDO esse projeto de WSL2 acontece -- fica com o Manager.'"
 
   - id: AG-202
     date: "2026-08-23"

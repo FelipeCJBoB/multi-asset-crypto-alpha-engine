@@ -4125,6 +4125,144 @@ promoção — decisão fica pra ablação dentro do CPCV, §2.0.1/§2.13 do
 PRD, tarefa futura separada).
 
 <!-- check-sprint-log: skip -->
+## Pós-retreino do Alpha — GPU inviável em Windows nativo, S1 corrige tp_atr_mult, ablação T2→T1 refuta promoção na Fase 1, TBM ganha fill gap-aware no SL (2026-08-23 → 2026-08-24)
+
+Narrativa cobrindo os commits desde o último sync de governança completo
+(`26db3ee`) — sessão anterior deixou o retreino real do Alpha (15
+combinações) rodando; esta seção cobre o que aconteceu DEPOIS disso rodar
+de verdade, mais uma investigação separada de promoção de features e uma
+correção de engenharia no Label Engine.
+
+**GPU/CUDA (D-18) — inviável no ambiente atual, `AG-201` fechado.**
+Confirmado por leitura do toolchain: NCCL é dependência NATIVA de Linux
+(`FindNCCL.cmake` procura `.so`/`.a`, nunca teve build oficial da NVIDIA
+pra Windows nativo). `device_type='cuda'` (default real de produção)
+nunca funcionaria nesta máquina. Corrigido: default trocado
+`"cuda"→"cpu"` nos 2 entry points reais (`run_layer1_sprint`,
+`run_layer1_sprint_all_combinations`, `src/models/pipeline.py`) e no CLI
+— não é reversão de D-18 ("GPU obrigatória em produção"), é reconhecer
+que a decisão não se sustenta NESTE ambiente até uma migração real pra
+Linux/cloud (WSL2 é o caminho mais barato — driver/CUDA Toolkit do
+Windows já instalados são reaproveitáveis via passthrough).
+
+**Rodar o retreino de verdade encontrou 2 bugs reais de duplicação de
+linha, classes diferentes (`AG-202`/`AG-203`).** `AG-202` (fechado):
+2 de 223.172 barras de BTCUSDT/R1 produziam linhas duplicadas em
+`build_modeling_frame` — causa raiz confirmada por investigação profunda
+(pedida pelo usuário): `build_dollar_bars_walkforward` reusa o mesmo
+`carry` através das fronteiras de recalibração (`cadence_days=7`,
+deliberado), mas nunca reseta `carry.base_value` ao trocar de threshold —
+quando 2 trades caem no mesmo milissegundo exatamente numa fronteira, o
+primeiro fecha uma barra-fantasma de duração zero, e a barra seguinte
+herda o mesmo `open_time`, quebrando a suposição implícita de
+`dataset.py:316` de que `open_time` identifica uma barra unicamente.
+Sintoma fechado (dedup explícito por maior `close_time`/última avaliação
+de regime, antes do join, em `build_modeling_frame`) — causa raiz
+(`bars.py::threshold_bars_step`, resetar `carry.base_value` a cada troca
+de threshold) **proposta mas NÃO implementada**, exigiria reprocessar
+todo o lake de dollar bars. Extensão medida: 10 de 15 combinações têm
+pelo menos 1 barra-fantasma (SOLUSDT o mais afetado, 8 ocorrências).
+`AG-203` (aberto): 3 das 15 combinações (SOLUSDT/R1, BNBUSDT/R1,
+BNBUSDT/R2) continuaram com duplicata residual mesmo após o fix acima —
+20 linhas em 2.070.902, causa DIFERENTE não isolada nesta rodada,
+recomendação registrada pra quando investigar (checar se `triple_barrier.py`
+tem lógica própria de carregamento de bars divergente de `build_t1_features`).
+
+**S1 — sweep de sensibilidade `tp_atr_mult`/`sl_atr_mult`, `AG-204`
+corrige a constante.** Grade completa varrida (`experiments/
+s1_tp_sl_sensitivity_report.json`) — **todas as células com edge
+negativo**, mas produção (tp=2,0/sl=1,5, herdado do PRD V2 sem nunca ter
+sido questionado) não era a melhor mesmo assim: 3ª de 7,
+`edge_atr_units` médio -0,02555. Decisão do Manager: trocar pela célula
+`R=1,S=3/2` (tp=1,5/sl=1,5, reward:risk 1:1), `edge_atr_units` médio
+-0,01686 (34% menos negativo) — única entre as células com edge menos
+negativo que é viável pros 5 símbolos sem violar o piso R2
+(`cost_stop_ratio_max`×stop) especificamente em BTCUSDT/BNBUSDT. **Ainda
+edge NEGATIVO** — "menos pior medido", não "edge positivo encontrado";
+veredito formal de "sobrevive à faixa" (design doc §11 risco #1)
+permanece TBD. `tp_atr_mult`/`sl_atr_mult` promovidas a `provenance:
+MEASURED` em `constants.yaml`. Consequência em cascata: todo
+`labels.parquet` existente foi gerado sob a geometria antiga —
+reprocessado no mesmo dia pros 5 símbolos × 4 grades (15m/R1/R2/R3, 0
+erro), retreino do Alpha (15 combinações) disparado na sequência.
+
+**Ablação T2→T1 (H7) — plano de 3 fases substitui a proposta inicial de
+grade Optuna.** Síntese crítica de 2 análises (usuário + auditoria
+externa) sobre o próximo passo pós-retreino real: dado o AUC~0,509
+uniforme medido na superfície inteira do sweep de 15 combinações, uma
+grade de hiperparâmetro direta seria prematura sem primeiro medir o piso
+de ruído. **Fase 0** (ETHUSDT/R1, 60/60 execuções reais, `N_lifetime`
+96→156): 0a mede σ=0,306 de ruído puro no Sharpe pooled; 0b calibra a
+distribuição real do nulo por permutação (permuta `label`+`ret_net`
+JUNTOS — achado: `screen_monotone_constraints` deriva a restrição de
+`ret_net`, permutar só `label` deixaria a Camada 1 trapacear com
+informação econômica real) — média=2,12 de 5 (abaixo do 2,5 ingênuo),
+P(n_better≥4|nulo)=0,10. O resultado REAL do sweep original (5/5) tem
+P=0,02 sob esse nulo calibrado — mais extremo do que o gate empírico
+sugeria, evidência individual de sinal mais forte do que a leitura
+agregada capturava. **Fase 1** (ranking dos 62 candidatos T2 por
+estabilidade IN-FOLD + filtro de ortogonalidade |Spearman|≤0,70 — nova
+constante `alpha_t2_orthogonality_spearman_max`, 39/62 sobrevivem;
+depois mapa de capacidade completo, grade `max_depth×num_leaves×k`, 66
+execuções reais, `N_lifetime` 156→223): padrão limpo sem exceção — `k`
+maior sempre melhora Sharpe, mais complexidade de árvore sempre piora.
+**Mas mesmo a melhor combinação do grid inteiro (k=24, max_depth=2,
+num_leaves=2) fica pior que o piso de ruído medido na Fase 0a** (~2
+desvios-padrão abaixo) — nenhuma das 65+ combinações com features T2
+supera o T1 atual (7 features) neste ativo/resolução. Achado colateral
+corrigido no processo: schema inconsistente por-arquivo em
+`data/capacity/metrics/{symbol}/*.parquet` (algumas colunas de
+futures-positioning serializadas como `String` em vez de `Float64` em
+dias específicos — 5 símbolos afetados, corrigido com cast explícito +
+warning estruturado). Decisão de escalar pra Fase 2 ou generalizar pros
+outros 14 pares símbolo×resolução fica pendente do Manager — não
+decidida nesta rodada. Detalhe: `docs/t2_t1_ablation_veredito_duas_
+analises_2026-08-24.md`.
+
+**Label Engine — fill gap-aware no SL, `AG-205` (2026-08-24), pedido
+explícito do usuário.** Comparação de engenharia com 2 implementações de
+Triple Barrier Method de outros projetos de referência: `exit_price` de
+SL sempre usava o nível nominal (`sl_price`), mesmo quando o candle de
+`mark_1m` que tocou o gatilho já tinha aberto além dele (gap/crash/
+cascata de liquidação) — SL é `STOP_MARKET`/`MARK_PRICE` (taker, dispara
+e executa a mercado), então sob gap o fill real é no preço de mercado do
+disparo, estritamente mais adverso. A própria fixture de teste do repo
+(`test_build_labels_sl_long`, "crash bem abaixo de qualquer SL
+plausível") já simulava esse cenário e afirmava, antes da correção, fill
+no nível nominal apesar do crash. Corrigido: `_gap_aware_sl_fill`
+(`triple_barrier.py`) escolhe sempre o pior entre nível e `open` do
+candle que tocou — **TP nunca recebe o ajuste** (ordem passiva/maker,
+executa sempre no nível de repouso, assimetria intencional, não a
+convenção simétrica de manual de triple barrier). Mesma correção
+replicada, vetorizada, em `barrier_sweep.resolve_barriers_vectorized`
+(suite de paridade própria protegeu contra as 2 implementações
+divergirem). Novo contador `LabelBuildStats.n_gap_fill_sl` medido, não
+só corrigido em silêncio. **Achado colateral fechando um ponto cego real
+do B15**: `config_hash` (`LabelConfig`) só capturava campos de CONFIG,
+nunca a lógica de geração em si — essa correção muda CÓDIGO, então
+`verify_config_hash` (`build_modeling_frame`, `AG-140`) aceitaria os 20
+`labels.parquet` já persistidos (lógica antiga) como se nada tivesse
+mudado. Fechado com novo campo `LabelConfig.barrier_fill_policy_id`
+(mesma técnica já usada 4x neste campo — `AG-005`/`031`/`042`/`116` —
+adicionar campo novo ao payload pra forçar divergência de hash quando a
+semântica muda): todo `labels.parquet` persistido antes desta correção
+diverge agora, força `ConfigHashMismatchError` na próxima chamada real
+de `build_modeling_frame` até reprocessar. **`AG-206`** (item relacionado
+da mesma investigação — piso de volatilidade em `atr_at_t0`, padrão
+`TBM_VOL_FLOOR` de projeto de referência): medido sobre os 4.539.159
+registros reais já persistidos (5 símbolos × 4 grades) antes de decidir
+implementar — mínimo pooled 0,000192 (~1,9 bps), zero linha próxima de
+zero em qualquer símbolo/grade. Achado teórico (mecanismo plausível via
+`AG-061`, candles de dollar-bar degenerados) **não confirmado no dado
+real** — piso NÃO implementado, por Regra Zero. Commits `ac8190a`/
+`77cfbbc`, 99+77 testes confirmados pelo usuário. **Reprocessamento dos
+20 `labels.parquet` sob a lógica gap-aware NÃO disparado nesta sessão** —
+comandos exatos entregues ao usuário (`build_and_write_labels_for_symbol`/
+`run_and_write_labels_for_alts`/`run_and_write_labels_dollar_bar_
+parkinson`, `src/labels/backfill_multi_symbol.py`), decisão de quando
+rodar fica com o usuário.
+
+<!-- check-sprint-log: skip -->
 ## Estado atual (2026-08-23)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -4149,7 +4287,10 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
-| **Alpha multi-ativo × multi-resolução** | **IMPLEMENTADO, TREINADO E EM ANÁLISE PROFUNDA — 2026-08-23/24**. D-01 a D-18 codificados (`§15.20.1`); D-06 integrado (`§15.20.2`). Sweep de 15 combinações: **3/15 (20%) passam o gate de permanência**, mas **0/15 têm retorno médio líquido positivo** — achado de `§15.20.3`, AUC real 0,509 médio (quase nulo). Taxa-base com significância: XRPUSDT único símbolo com sinal positivo nas 3 resoluções; `SOLUSDT/R3`/`BNBUSDT/R3` com seleção adversa confirmada. `AG-199`/`AG-200`/`AG-154` fechados; `AG-201` (GPU) aberto; **`AG-202` causa raiz confirmada 2026-08-24 — autocorrigida na mesma sessão** (1ª hipótese, bug em `bars.py`, foi descartada ao ler teste existente que provava esse comportamento como deliberado; causa real é o join de regime em `dataset.py:316` assumir `open_time` único). Metodologia de pesquisa H0-H6 + estratégia de testes propostas, `N_lifetime` +15 (counter 63→78). Artefato "Alpha — Base de Pesquisa" (abas Retreino/Calibrações) é o registro único até a versão final. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`-`§15.20.3`, `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` e as 3 entradas de 2026-08-24, `audit/architecture_gaps_log.yaml::AG-202` |
+| **Alpha multi-ativo × multi-resolução** | **IMPLEMENTADO, TREINADO E EM ANÁLISE PROFUNDA — 2026-08-23/24**. D-01 a D-18 codificados (`§15.20.1`); D-06 integrado (`§15.20.2`). Sweep de 15 combinações: **3/15 (20%) passam o gate de permanência**, mas **0/15 têm retorno médio líquido positivo** — achado de `§15.20.3`, AUC real 0,509 médio (quase nulo). Taxa-base com significância: XRPUSDT único símbolo com sinal positivo nas 3 resoluções; `SOLUSDT/R3`/`BNBUSDT/R3` com seleção adversa confirmada. `AG-199`/`AG-200`/`AG-154` fechados; **`AG-201` (GPU) FECHADO 2026-08-24** — NCCL inviável em Windows nativo, `device_type` default `cuda→cpu` nos entry points reais, não é reversão de D-18, é reconhecer o ambiente atual (ver seção narrativa "Pós-retreino do Alpha" abaixo); **`AG-202` causa raiz confirmada 2026-08-24, FECHADO** (1ª hipótese, bug em `bars.py`, foi descartada ao ler teste existente que provava esse comportamento como deliberado; causa real é `build_dollar_bars_walkforward` nunca resetar `carry.base_value` entre fronteiras de recalibração, sintoma fechado em `dataset.py`, causa raiz em `bars.py` NÃO implementada — reprocessar todo o lake); **`AG-203` novo, ABERTO** — 3/15 combinações com duplicata residual, causa diferente de AG-202, não investigada a fundo. Metodologia de pesquisa H0-H6 + estratégia de testes propostas, `N_lifetime` +15 (counter 63→78). Artefato "Alpha — Base de Pesquisa" (abas Retreino/Calibrações) é o registro único até a versão final. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`-`§15.20.3`, `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` e as 3 entradas de 2026-08-24, `audit/architecture_gaps_log.yaml::AG-202`/`AG-203` |
+| **S1 — correção de `tp_atr_mult`/`sl_atr_mult` (`AG-204`)** | Sweep completo de sensibilidade (`experiments/s1_tp_sl_sensitivity_report.json`) — todas as células com edge negativo, mas produção (tp=2,0/sl=1,5) não era a melhor (3ª de 7). Manager decidiu trocar pela célula `R=1,S=3/2` (tp=1,5/sl=1,5) — `edge_atr_units` médio -0,01686 (34% menos negativo, ainda NEGATIVO — "menos pior medido", não "edge positivo"). `constants.yaml` atualizado (`provenance: MEASURED`). Todos os 20 `labels.parquet` (5 símbolos × 4 grades) reprocessados no mesmo dia, retreino do Alpha (15 combinações) disparado na sequência. Detalhe: `audit/architecture_gaps_log.yaml::AG-204`, seção narrativa "Pós-retreino do Alpha" abaixo |
+| **Ablação T2→T1 (H7) — promoção de features refutada na Fase 1** | Plano de 3 fases (substitui grade Optuna direta) pra decidir se os 62 candidatos T2 (Lote A/B/C, ver linha H5 acima) devem promover além do T1 atual (7 features). Fase 0 (ETHUSDT/R1, `N_lifetime` 96→156): piso de ruído medido (σ=0,306), nulo por permutação calibrado (P(n_better≥4)=0,10 — o 5/5 real do sweep original tem P=0,02, sinal mais forte do que a leitura agregada sugeria). Fase 1 (ranking + ortogonalidade, 39/62 sobrevivem, mapa de capacidade completo, `N_lifetime` 156→223): padrão limpo — k maior sempre melhora, árvore mais complexa sempre piora — **mas mesmo a melhor combinação fica ~2 desvios-padrão pior que o piso de ruído da Fase 0a**, T2 não supera T1 neste ativo/resolução. Decisão de escalar pra Fase 2 ou generalizar pendente do Manager. Detalhe: `docs/t2_t1_ablation_veredito_duas_analises_2026-08-24.md`, seção narrativa abaixo |
+| **TBM — fill gap-aware no SL (`AG-205`/`AG-206`)** | `exit_price` de SL deixa de assumir o nível nominal quando o candle que tocou já abriu além dele (gap/crash) — SL é taker/stop-market, TP nunca recebe o ajuste (maker/passivo). Corrigido nos 2 motores (escalar + vetorizado, paridade preservada). Achado colateral: `config_hash`/B15 estava cego a essa mudança de CÓDIGO (só capturava config) — novo campo `barrier_fill_policy_id` fecha o gap, força reprocessamento antes do próximo treino real. `AG-206` (piso de ATR) medido e fechado SEM implementação — 4,5M linhas reais, mínimo 1,9 bps, achado teórico não confirmado. Commits `ac8190a`/`77cfbbc`. **Labels ainda não reprocessados sob a lógica nova** — decisão do usuário, comandos prontos. Detalhe: seção narrativa "Pós-retreino do Alpha" abaixo |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` testada com dado fresco, resultado MISTO (2/4 suporta, 1/4 contradiz, 1/4 ambíguo — ver seção narrativa acima), não é padrão limpo; `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` seguem com dado obsoleto (`AG-191`, parcial) |
 | Pendente pra fechar a migração Parkinson+dollar-bar | retreino real de Alpha Camada 1 sob R1+Parkinson (5 símbolos) + flip de `canonical_volatility_estimator.value` — **mesmo retreino que destrava a Fase A de `§15.13` (linha acima)**, represam juntos, agendado no roadmap, `PLANO_MESTRE_PRINCE2.md` §11.4/§11.5 |

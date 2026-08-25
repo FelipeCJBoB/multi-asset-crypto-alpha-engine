@@ -693,7 +693,7 @@ ainda.
 | stage | item agendado | fonte |
 |---|---|---|
 | ~~Sprint 6 (Label Engine) — sweep `tp_atr_mult`/`sl_atr_mult`~~ — **SUPERSEDIDO 2026-08-17** | `V41-6` (`§11.6`) rederiva por distribuição de MFE, não por grid sweep — muda o MÉTODO, não só o valor. `time_stop_bars`/`atr_window` como constantes isoladas (fora do escopo de barreira) seguem `AG-031`/`AG-046`, seção própria | `PRD_V4_1.md` §4.1, `§11.6` |
-| **S1 — verificação de robustez de `tp_atr_mult`/`sl_atr_mult` (§16.10 regra 4) — EXECUTADO 2026-08-24** | Linha NOVA, não substitui a de cima — propósito diferente (robustez do valor JÁ escolhido, nunca busca de novo ótimo, ver design doc §2). Retomado após retratação do Manager de 2026-08-22 (motivo: Alpha retreinado de verdade com LightGBM nesta sessão). Resultado: célula de produção reproduz exato (sanidade OK); **TODAS as 7 células válidas têm `edge_atr_units` médio negativo**, inclusive a produção — achado convergente com AUC~0,51 do Alpha (metodologia independente, população incondicional, sem modelo). `veredito` de "sobrevive à faixa" fica `TBD` (decisão do Manager, não computada). `N_lifetime` +18 (counter 78→96) | `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`, `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24` |
+| **S1 — verificação de robustez de `tp_atr_mult`/`sl_atr_mult` (§16.10 regra 4) — EXECUTADO 2026-08-24** | Linha NOVA, não substitui a de cima — propósito diferente (robustez do valor JÁ escolhido, nunca busca de novo ótimo, ver design doc §2). Retomado após retratação do Manager de 2026-08-22 (motivo: Alpha retreinado de verdade com LightGBM nesta sessão). Resultado: célula de produção reproduz exato (sanidade OK); **TODAS as 7 células válidas têm `edge_atr_units` médio negativo**, inclusive a produção — achado convergente com AUC~0,51 do Alpha (metodologia independente, população incondicional, sem modelo). `veredito` de "sobrevive à faixa" fica `TBD` (decisão do Manager, não computada). `N_lifetime` +18 (counter 78→96). **[CORREÇÃO 2026-08-24, Changelog v3.51, `AG-204`]** apesar do veredito formal continuar `TBD`, o Manager decidiu trocar a constante de produção pela célula `R=1,S=3/2` (tp=1,5/sl=1,5) — "menos pior medido", não "edge positivo" — 20 `labels.parquet` reprocessados, retreino do Alpha redisparado | `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`, `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24`, `audit/architecture_gaps_log.yaml::AG-204` |
 | Sprint 10 (não redefinido por V4.1) | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
 | Sprint 11 (não redefinido por V4.1) | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (não redefinido por V4.1 — Paper/experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
@@ -1227,6 +1227,15 @@ DATA LAYER
                                                                        labels/v1 de produção; reprocessado
                                                                        pelo usuário, 2 testes slow/integration
                                                                        confirmam. Ver §15.24-F
+                                                                       [NOVO 2026-08-24, `AG-205`] fill de SL
+                                                                       ganhou ajuste gap-aware (D4) --
+                                                                       `config_hash` ganhou campo `barrier_
+                                                                       fill_policy_id` pra fechar ponto cego
+                                                                       do B15 (mudança de CÓDIGO não invalidava
+                                                                       hash antes). Todo labels.parquet
+                                                                       persistido diverge agora, reprocessamento
+                                                                       NÃO disparado. Ver §15.24-H, Changelog
+                                                                       v3.53
   07b_PESOS            src/labels/weights.py                           movido da ML LAYER
 
 ML LAYER
@@ -1280,6 +1289,20 @@ ML LAYER
                                                                        chama write_model_bundle (confirmado,
                                                                        zero ocorrências hoje) -- AG-141 segue
                                                                        aberto, por esse motivo específico
+                                                                       [NOVO 2026-08-24, H7, Changelog v3.52]
+                                                                       ablação T2->T1 deixou de ser "tarefa
+                                                                       futura" (ver linha 09_LEARNER acima, nota
+                                                                       antiga) -- Fase 0 (piso de ruído, nulo
+                                                                       calibrado) + Fase 1 (mapa de capacidade,
+                                                                       ETHUSDT/R1) EXECUTADAS. Resultado: T2
+                                                                       NÃO supera T1 (7 features) nesta rodada
+                                                                       -- mesmo a melhor combinação do grid
+                                                                       fica ~2 desvios-padrão pior que o piso
+                                                                       de ruído medido. T1_FEATURE_IDS
+                                                                       permanece intocado. Escalar pra Fase 2
+                                                                       ou generalizar pendente do Manager. Ver
+                                                                       `docs/t2_t1_ablation_veredito_duas_
+                                                                       analises_2026-08-24.md`
   09b_CALIBRACAO       (inline em alpha.py — não separável hoje)       sem gate de amostra pequena (n_cal_eff)
   10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe (CPCV wired em produção real via
                                                                        pipeline.py; DSR/leakage existem mas
@@ -1333,10 +1356,10 @@ LIVE TRADING LAYER
 | `04_VOLATILIDADE` | M1 (Volatilidade) | ✅ medido, Parkinson decidido — DECIDIDO, NÃO DEPLOYADO (§11.5) |
 | `05_REGIME` | M4 (Regime) | 🟡 Fase D re-executada (2026-08-18) com `AG-084`-`AG-087` corrigidos, mas BOCPD liderando de novo sob Cochran's Q/I² disparou auditoria cética nova — `AG-090`/`AG-091`/`AG-092`/`AG-093` TODAS implementadas E auditadas de forma independente (0 CRITICAL/HIGH remanescente, 2026-08-19) — 4ª re-execução autorizada, comando entregue ao Manager (§11.6). **[ATUALIZAÇÃO 2026-08-22]** resultado final: `hmm_gaussian_k4_v1` ratificado por override executivo (`AG-114`/`§15.13`), não por resolução estatística limpa — Gate 1/Gate 3 permanecem tecnicamente frágeis, registrado |
 | `06_BARREIRAS` | V41-6 (Barreiras) | ⬜ não iniciado, depende de V41-5 |
-| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO 2026-08-23]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` (`AG-140` corrigido, ver §15.24) |
+| `07_LABEL` | sem equivalente de medição | `AG-079` fechado — proveniência de literatura fechada em `PRD_V4_1.md` §4.2, não estudo M-style. **[DESATUALIZADO 2026-08-23]** "sem equivalente" segue correto, mas ver linha `07_LABEL` da tabela ASCII acima — `AG-100`/`AG-140` (`AG-140` corrigido, ver §15.24). **[NOVO 2026-08-24]** fill gap-aware de SL (`AG-205`) + `config_hash` fechando ponto cego do B15 (§15.24-H) |
 | `07b_PESOS` | V41-7 (Pesos+Features) | mesmo item de `03_FEATURES` |
 | `08_SPLIT` | sem equivalente de medição | `AG-079` fechado — `G-WF-1..6` (CPCV↔walk-forward) já é comparação de facto |
-| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` |
+| `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
 | `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟡 desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado; gated no E0 e no retreino do Alpha |
@@ -4092,6 +4115,15 @@ biblioteca nativa de Linux, sem build oficial pra Windows (só via WSL2).
 Decisão do usuário: treinar em CPU agora, GPU real fica pra projeto de
 infraestrutura separado (WSL2), sem prazo definido.
 
+**[CORREÇÃO 2026-08-24, Changelog v3.50] `AG-201` FECHADO** — narrativa
+acima preservada como estava no momento do achado (histórico, não
+reescrita), mas o status "ABERTO" está desatualizado: `device_type`
+default trocado `cuda→cpu` nos 2 entry points reais (`run_layer1_sprint`,
+`run_layer1_sprint_all_combinations`, CLI), não é reversão de D-18, é
+reconhecer que a decisão não se sustenta neste ambiente até migração
+Linux/cloud. Ver `audit/architecture_gaps_log.yaml::AG-201`, Changelog
+v3.50.
+
 **E. `AG-202` (médio, sintoma mitigado, causa raiz ABERTA) — `t0` duplicado.**
 2 de 223.172 barras de BTCUSDT/R1 (0,0009%) produzem linhas duplicadas em
 `mf.data`, rastreado até o join de features/regime dentro de
@@ -4192,6 +4224,21 @@ fica intocado, escopo e custo MENORES que a 1ª hipótese (não precisa
 reprocessar o lake de barras dollar, só `build_modeling_frame`). Detalhe
 completo, incluindo os 2 addenda (hipótese descartada + correção):
 `audit/architecture_gaps_log.yaml::AG-202`.
+
+**[NOVO 2026-08-24, Changelog v3.50] `AG-203` (médio, ABERTO) — duplicata
+residual, causa DIFERENTE de `AG-202`.** Achado ao verificar dado real
+pós-fix de `AG-202`: 6 de 9 combinações previamente afetadas ficaram
+limpas (0 duplicatas), mas 3 continuaram com duplicata residual
+(SOLUSDT/R1, BNBUSDT/R1, BNBUSDT/R2 — 20 linhas em 2.070.902 linhas de
+label somadas, achado pequeno e contido, não generalizado). Investigado
+até confirmar que NÃO é o mesmo bug de `AG-202` (`labels.parquet` já
+chega duplicado, upstream do join de regime) — origem exata (`triple_
+barrier.py` ou a fonte de bars que ele consome) não isolada nesta
+rodada, fora do escopo autorizado (H0 específico). Recomendação
+registrada pra quando investigar: checar se `triple_barrier.py` consome
+a MESMA fonte de bars que `build_t1_features` e se tem lógica própria de
+carregamento/dedup divergente. Detalhe: `audit/architecture_gaps_log.
+yaml::AG-203`.
 
 **D. Metodologia de pesquisa proposta (H0-H6) + estratégia de testes.**
 7 hipóteses priorizadas por custo pra achar a causa do AUC~0,51 e
@@ -4858,6 +4905,28 @@ ver `§15.25`**, `AG-141` (persistência de booster/calibrador —
 `persistence.py` já existe, falta integração ao pipeline), `AG-142`
 (diagnóstico de IC-por-ambiente não persistido).
 
+**H. [NOVO 2026-08-24, `AG-205` addendum, Changelog v3.53] `config_hash`
+tinha ponto cego real: só capturava campos de CONFIG, nunca a lógica de
+geração em si.** Achado ao responder pergunta do usuário sobre o fill
+gap-aware de SL (D4, ver `§11.4`/`docs/SPRINT_LOG.md`): a correção mudou
+CÓDIGO (`triple_barrier._first_barrier_touch`), não nenhum campo de
+`LabelConfig` — `config_hash` de qualquer config antes/depois da correção
+seria IDÊNTICO, então `verify_config_hash` (`B`/`C` acima) aceitaria os 20
+`labels.parquet` já persistidos (lógica antiga) como se nada tivesse
+mudado. Fechado com novo campo `LabelConfig.barrier_fill_policy_id`
+(default `"gap_aware_sl_v1"`), sempre presente no payload do hash — mesma
+técnica já usada 4x neste campo (`AG-005`/`031`/`042`/`116`): adicionar
+campo novo ao payload força divergência quando a semântica de geração
+muda. Efeito: todo `labels.parquet` persistido antes desta correção
+diverge agora do `config_hash` que `LabelConfig.from_constants()` produz
+— `ConfigHashMismatchError` na próxima chamada real de
+`build_modeling_frame` até reprocessar. **Reprocessamento NÃO disparado
+nesta rodada** — decisão do usuário, comandos prontos (`build_and_write_
+labels_for_symbol`/`run_and_write_labels_for_alts`/`run_and_write_labels_
+dollar_bar_parkinson`, `src/labels/backfill_multi_symbol.py`). Detalhe:
+`audit/architecture_gaps_log.yaml::AG-205` (addendum), 2 testes novos em
+`tests/unit/test_labels_triple_barrier.py`.
+
 ### 15.25 `AG-138`/`AG-139` fechados — últimos 2 achados "alto" do fan-out de 15 estágios sem decisão pendente do Manager (2026-08-23)
 
 **Origem.** Continuação direta de `§15.24-G` — os únicos 2 itens do
@@ -5261,6 +5330,103 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.53 (2026-08-24)** — Label Engine: fill gap-aware no SL (D4,
+  `AG-205`), pedido explícito do usuário, comparação de engenharia com 2
+  implementações de Triple Barrier Method de outros projetos de
+  referência. `exit_price` de SL deixa de assumir sempre o nível nominal
+  — quando o candle de `mark_1m` que tocou o gatilho já abriu além dele
+  (gap/crash/cascata de liquidação), o fill reflete o `open` real do
+  candle (mais adverso), nunca o inverso. **TP nunca recebe o ajuste**
+  (ordem passiva/maker, executa sempre no nível de repouso; SL é
+  `STOP_MARKET`/`MARK_PRICE`, taker, dispara e executa a mercado — a
+  assimetria é intencional, não a convenção simétrica de manual de
+  triple barrier). Corrigido nos 2 motores (`triple_barrier.
+  _first_barrier_touch` escalar + `barrier_sweep.resolve_barriers_
+  vectorized`), suíte de paridade própria preservada. Novo contador
+  `LabelBuildStats.n_gap_fill_sl` medido, propagado a `experiment_log.py`.
+  **Achado colateral fechando ponto cego real do B15**: `config_hash`
+  (`LabelConfig`) só capturava campos de CONFIG, nunca a lógica de
+  geração em si — mudança de CÓDIGO não invalidava hash nenhum,
+  `verify_config_hash` (`build_modeling_frame`, `AG-140`) aceitaria os 20
+  `labels.parquet` já persistidos (lógica antiga) sem detectar nada.
+  Fechado com novo campo `LabelConfig.barrier_fill_policy_id` (mesma
+  técnica já usada 4x neste campo — `AG-005`/`031`/`042`/`116`, adicionar
+  campo ao payload força divergência de hash quando a semântica muda) —
+  todo `labels.parquet` persistido antes desta correção diverge agora,
+  força `ConfigHashMismatchError` na próxima chamada real de
+  `build_modeling_frame` até reprocessar (comandos prontos, não
+  disparados — decisão do usuário). `AG-206` (item relacionado, mesma
+  investigação): piso de volatilidade estilo `TBM_VOL_FLOOR` medido sobre
+  4.539.159 registros reais (5 símbolos × {15m,R1,R2,R3}) ANTES de
+  implementar (disciplina FE, 0 trials) — mínimo pooled 0,000192 (~1,9
+  bps), zero linha próxima de zero. Achado teórico (`AG-061`) NÃO
+  confirmado no dado real — piso não implementado, Regra Zero. Commits
+  `ac8190a`/`77cfbbc`, 99+77 testes confirmados pelo usuário. Detalhe:
+  `docs/SPRINT_LOG.md`, `audit/architecture_gaps_log.yaml::AG-205`/
+  `AG-206`.
+- **v3.52 (2026-08-24)** — Ablação T2→T1 (H7): plano de 3 fases
+  substitui a proposta inicial de grade Optuna direta, síntese crítica de
+  2 análises (usuário + auditoria externa) sobre o próximo passo
+  pós-retreino real do Alpha (dado AUC~0,509 uniforme medido em toda a
+  superfície do sweep de 15 combinações). Fase 0 (ETHUSDT/R1, 60/60
+  execuções reais, `N_lifetime` 96→156, id 20): piso de ruído medido
+  (σ=0,306 no Sharpe pooled); nulo por permutação calibrado (permuta
+  `label`+`ret_net` JUNTOS — achado: `screen_monotone_constraints` deriva
+  a restrição de `ret_net`, permutar só `label` deixaria a Camada 1
+  trapacear com informação econômica real) — P(n_better≥4|nulo)=0,10; o
+  resultado REAL do sweep original (5/5) tem P=0,02 sob esse nulo, sinal
+  mais forte do que a leitura agregada capturava. Fase 1 (ranking dos 62
+  candidatos T2 por estabilidade IN-FOLD + filtro de ortogonalidade
+  |Spearman|≤0,70 — nova constante `alpha_t2_orthogonality_spearman_max`,
+  39/62 sobrevivem; mapa de capacidade completo, grade `max_depth×
+  num_leaves×k`, 66 execuções reais, `N_lifetime` 156→223, id 21/22):
+  padrão limpo sem exceção — k maior sempre melhora Sharpe, mais
+  complexidade de árvore sempre piora — **mas mesmo a melhor combinação
+  do grid inteiro fica ~2 desvios-padrão pior que o piso de ruído da Fase
+  0a**, nenhuma das 65+ combinações com T2 supera o T1 atual (7
+  features) neste ativo/resolução. Decisão de escalar pra Fase 2 ou
+  generalizar pros outros 14 pares símbolo×resolução fica pendente do
+  Manager. Detalhe: `docs/t2_t1_ablation_veredito_duas_analises_2026-08-
+  24.md`, `docs/SPRINT_LOG.md`.
+- **v3.51 (2026-08-24)** — `AG-204`: decisão real sobre `tp_atr_mult`/
+  `sl_atr_mult` a partir do S1 (v3.46) — produção (tp=2,0/sl=1,5) não era
+  a melhor célula medida (3ª de 7, `edge_atr_units` médio -0,02555).
+  Manager decidiu trocar pela célula `R=1,S=3/2` (tp=1,5/sl=1,5,
+  reward:risk 1:1) — `edge_atr_units` médio -0,01686 (34% menos
+  negativo, ÚNICA entre as células com edge menos negativo viável pros 5
+  símbolos sem violar o piso R2 `cost_stop_ratio_max`×stop em BTCUSDT/
+  BNBUSDT). **Ainda edge NEGATIVO** — "menos pior medido", não "edge
+  positivo encontrado"; veredito formal de "sobrevive à faixa" (§11
+  risco #1) segue TBD. `tp_atr_mult`/`sl_atr_mult` promovidas a
+  `provenance: MEASURED` em `constants.yaml`. Consequência em cascata:
+  todos os 20 `labels.parquet` (5 símbolos × 4 grades) reprocessados no
+  mesmo dia, 0 erro; retreino do Alpha (15 combinações) disparado na
+  sequência (já finalizado, análise pendente de registro formal).
+  Detalhe: `audit/architecture_gaps_log.yaml::AG-204`, `docs/SPRINT_
+  LOG.md`.
+- **v3.50 (2026-08-24)** — Rodar o retreino real do Alpha encontrou 3
+  achados novos. `AG-201` FECHADO — GPU/CUDA (D-18) confirmado INVIÁVEL
+  em Windows nativo (NCCL é dependência nativa de Linux, nunca teve build
+  oficial da NVIDIA pra Windows); `device_type` default trocado
+  `cuda→cpu` nos 2 entry points reais (`run_layer1_sprint`, `run_
+  layer1_sprint_all_combinations`) e no CLI — não é reversão de D-18, é
+  reconhecer que a decisão não se sustenta NESTE ambiente até migração
+  real pra Linux/cloud (WSL2 mais barato, driver/CUDA Toolkit do Windows
+  reaproveitáveis via passthrough). `AG-202` FECHADO — causa raiz de
+  linhas duplicadas em `build_modeling_frame` confirmada (não em
+  `bars.py`, 1ª hipótese descartada por teste existente que já provava
+  esse comportamento como deliberado): `build_dollar_bars_walkforward`
+  nunca reseta `carry.base_value` entre fronteiras de recalibração
+  (`cadence_days=7`) — 2 trades no mesmo milissegundo numa fronteira
+  produzem barra-fantasma de duração zero com `open_time` repetido,
+  quebrando a suposição implícita de `dataset.py:316` de que `open_time`
+  identifica uma barra unicamente. Sintoma fechado (dedup explícito
+  pré-join); causa raiz (resetar `carry.base_value` em `bars.py`)
+  proposta, NÃO implementada — exige reprocessar todo o lake de dollar
+  bars. `AG-203` ABERTO — 3 de 15 combinações com duplicata residual
+  (20 linhas em 2.070.902), causa DIFERENTE de `AG-202`, não investigada
+  a fundo. Detalhe: `audit/architecture_gaps_log.yaml::AG-201`/`AG-202`/
+  `AG-203`, `docs/SPRINT_LOG.md`.
 - **v3.49 (2026-08-24)** — Lote C IMPLEMENTADO — fecha o plano de 3
   lotes da liberação de features (H5). 6 features T2 finais (`E08f_
   oi_notional`, `E14f_toptrader_ls_ratio`, `E15f_toptrader_ls_z`,
