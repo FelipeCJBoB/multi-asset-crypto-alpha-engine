@@ -16400,3 +16400,277 @@ entries:
       tp=sl=3,0) PERDE prioridade: se a ordenacao ja e instavel dentro da
       grade atual, ampliar a grade adiciona celulas para ranquear com ruido,
       nao informacao.
+
+  - id: AG-243
+    date: "2026-08-25"
+    file: "docs/AVALIACAO_EXPURGO_GRADE_15M_2026-08-25.md §6 Fases 4, src/analysis/faixa2_e2_research.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-233, ::AG-236, tests/unit/test_governanca_grade_producao.py"
+    found_by: "Claude -- ao executar o passo 5 dos proximos passos (Fase 4 do expurgo + migrar faixa2), medindo o risco real antes de agir em vez de executar o plano que eu mesmo tinha escrito"
+    gap: >
+      REVERSAO DE DUAS RECOMENDACOES MINHAS, por medicao. O plano de expurgo
+      (AVALIACAO §6) previa Fase 4 -- mover os labels da grade 15m para
+      data/labels_pre_ag221_relabel/ -- e a migracao de
+      faixa2_e2_research. Medido o estado real, nenhuma das duas se
+      justifica agora, e executa-las adicionaria risco sem adicionar
+      protecao.
+      (1) FASE 4 -- MOVER OS ARTEFATOS 15m. Quando propus, o expurgo
+          dependia de tirar o dado do caminho. Deixou de depender:
+          AG-236 fez o config_hash de producao parar de bater com o dos
+          labels 15m, entao QUALQUER consumidor que os leia por
+          from_constants ja falha alto em B15. O expurgo aconteceu por
+          MECANISMO. Mover os arquivos agora nao fecha nada que ainda
+          esteja aberto, e custa: ONZE modulos de src/ ainda resolvem
+          caminhos contendo /15m/ -- incluindo core (labels/_paths.py,
+          models/_paths.py, models/dataset.py, validation/cpcv.py,
+          regime/_paths.py, labels/backfill_multi_symbol.py,
+          data/resample.py, backtest/fill_reconciliation.py) --, e
+          tests/unit/test_labels_backfill_multi_symbol.py referencia
+          labels sem skip-if-ausente, entao quebraria de fato.
+      (2) MIGRAR faixa2_e2_research. Ele NAO le labels -- le BARRAS
+          (load_bars_15m como base de features, funding, OI, metrics
+          alinhados). Logo o relabel de AG-221 nao o afeta: migrar nao
+          corrigiria nenhum numero contaminado pelo relabel. Ele mede a
+          grade errada, isso e verdade, mas: e pesquisa exploratoria de
+          features candidatas (E2), nao decisao de producao, e uma busca
+          em src/, docs/ e audit/ nao encontra NENHUM documento de
+          governanca ou entrada de ledger que o cite como fonte. Migrar
+          custaria propagar resolution_id por 376 linhas mais os dois
+          modulos irmaos (faixa2_caminho_b, faixa2_e3_stability) --
+          ~1000 linhas -- para corrigir uma medicao que nao sustenta
+          decisao nenhuma hoje.
+    severity: "n/a -- e uma decisao de escopo apoiada em medicao, nao um defeito"
+    layer: "analysis / governanca de plano"
+    consequence: >
+      O risco de NAO fazer as duas e que a grade 15m volte a ser lida sem
+      ninguem perceber. Esse risco ja esta coberto, e por um mecanismo mais
+      forte que mover arquivo: o guardrail
+      tests/unit/test_governanca_grade_producao.py quebra o build se um
+      modulo de analysis/ fora da whitelist passar a le-la, e
+      faixa2_e2_research esta la explicitamente marcado "DEBITO ABERTO --
+      esta aqui para o build nao quebrar, NAO porque seja legitimo".
+      Um leitor futuro nao pode confundi-lo com codigo sancionado.
+      Registro honesto de autocorrecao: as duas fases foram propostas por
+      mim no mesmo documento, com o plano parecendo completo. O que mudou
+      nao foi a informacao disponivel -- foi eu ter medido em vez de
+      executar o proprio plano por inercia. Um plano de 4 fases onde as 2
+      ultimas viram "nao fazer, e aqui esta o porque" e um plano melhor que
+      um de 4 fases executado inteiro.
+    status: >-
+      DECIDIDO 2026-08-25 -- NAO executar nenhuma das duas agora.
+      FASE 4: cancelada enquanto o mecanismo de AG-236 estiver de pe. Os
+      140 MB ficam onde estao; o custo de guarda-los e desprezivel frente a
+      perder a capacidade de reconstruir a comparacao historica que m2/m3
+      precisam. REABRIR SE: alguem remover ou afrouxar a verificacao de
+      config_hash em build_modeling_frame, ou se a suite passar a acusar
+      leitura de 15m em caminho de producao.
+      faixa2_e2_research: fica como DEBITO ABERTO com GATILHO declarado --
+      migrar quando (e se) alguma feature saida desta pesquisa for proposta
+      para promocao a T1/T2 de producao, porque nesse momento a grade em que
+      ela foi caracterizada passa a importar. Ate la, nenhuma conclusao dele
+      pode ser citada em decisao sem ser relida sob R1/R2/R3 -- o que ja
+      esta escrito na propria whitelist.
+      PENDENCIA REAL QUE SOBRA (nao coberta por nenhum dos dois acima): os
+      ONZE modulos de src/ que resolvem caminhos /15m/ nunca foram
+      auditados um a um para separar "caminho legado legitimo, em XOR com
+      resolution_id" de "default que silenciosamente cai em 15m". AG-233
+      auditou analysis/; o core nao. Nao e urgente -- B15 barra o consumo
+      errado --, mas e uma auditoria que ninguem fez.
+
+  - id: AG-252
+    date: "2026-08-25"
+    file: "src/models/backtest_lite.py::camada_diff_series/permanence_significance_by_path"
+    related_file: "docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md Passo 2 risco 1, C:/Users/.../scratchpad/adr004_fase0_risco1_zero_fill.py (script ad-hoc, nao commitado)"
+    found_by: "Claude -- medicao real pedida pelo prompt de execucao do ADR-004 (BTCUSDT/R1, treino real Camada1/Camada0 em memoria, 5 caminhos do CPCV)"
+    gap: >
+      O prompt de execucao pedia medir se o zero-filling da serie pareada
+      (barra sem sinal = 0.0) ENCURTA o block_length medido (ACF decai
+      mais rapido numa serie majoritariamente zero) a ponto de produzir
+      IC estreito demais e FALSO POSITIVO -- o erro que a propria Fase 0
+      existe para evitar.
+    severity: "medio -- nao invalida os resultados ja lidos (verdicts concordaram), mas exigia medicao, nao suposicao (Regra Zero)"
+    layer: "models (harness de avaliacao) / validation (nucleo estatistico)"
+    consequence: >
+      MEDIDO (apos corrigir AG-253, ver entrada irma abaixo), BTCUSDT/R1,
+      5 caminhos reais, block_length zero-filled vs. signal-only:
+        path 0: zf=25  so=7   | path 1: zf=42  so=8
+        path 2: zf=10  so=11  | path 3: zf=5   so=4
+        path 4: zf=50  so=10
+      MECANISMO HIPOTETIZADO NAO CONFIRMADO -- na direcao REAL medida,
+      zero-filled tem block_length IGUAL OU MAIOR que signal-only em 4
+      dos 5 caminhos (so 1 caminho, path 2, teve zf ligeiramente MENOR
+      que so, 10 vs 11 -- direcao oposta a hipotese, nao a favor dela).
+      Isso e o CONTRARIO do que o risco hipotetizava (bloco mais CURTO,
+      IC mais ESTREITO, falso positivo) -- zero-filling nesta serie real
+      tende a INFLAR a dependencia medida (series com sinal esparso em
+      rajadas correlacionadas no tempo), nao encolhe-la.
+      ACHADO REAL DIFERENTE, nao hipotetico: o `point_estimate` da versao
+      zero-filled fica DILUIDO 14-22x contra a versao signal-only (ex.
+      path0: -0.000013 vs -0.000182; path1: -0.000025 vs -0.000559;
+      path3: -0.000015 vs -0.000286) -- consequencia aritmetica direta de
+      92-97% das barras entrarem como 0.0 no calculo da media. O veredito
+      `significant` (True/False) CONCORDOU nos 5 caminhos entre as duas
+      versoes -- mas a MAGNITUDE do zero-filled NUNCA deveria ser lida
+      como efeito economico por trade, so como efeito por barra do
+      backtest inteiro.
+    status: >
+      MEDIDO 2026-08-25, sem alterar codigo de decisao nenhum -- a
+      correcao aplicada foi ADITIVA: `permanence_significance_by_path`
+      agora retorna `PermanenceSignificanceResult` (zero_filled +
+      signal_only lado a lado, `src/models/backtest_lite.py`), wireado
+      em `pipeline.py::run_layer1_sprint` (campo `n_paths_significant_
+      signal_only` novo no relatorio, ao lado do `n_paths_significant`
+      existente). Teste unitario dedicado
+      (`test_camada_diff_series_zero_filling_e_has_signal_mask`,
+      `tests/unit/test_models_backtest_lite.py`). Suite completa
+      permanece verde (ver AG-253 para a contagem final). NAO decidido:
+      qual dos dois (zero_filled/signal_only) deveria decidir
+      `permanence_pass` -- fica registrado como leitura dupla, decisao
+      de criterio e do Manager.
+
+  - id: AG-253
+    date: "2026-08-25"
+    file: "src/models/backtest_lite.py::camada_diff_series"
+    related_file: "src/models/alpha.py::_unique_test_bars (mesmo padrao ja existente, nao seguido na 1a versao de camada_diff_series)"
+    found_by: "Claude -- achado ao escrever o teste unitario de camada_diff_series (AG-241/AG-252), nao a auditoria"
+    gap: >
+      `camada_diff_series` (introduzida em `AG-241`, mesma sessao) usava
+      `bar_idx` (de `path_bar_indices`, que vem de `CPCVSplit.test_idx`)
+      direto contra `df_all` sem deduplicar por `t0`. `df_all` (mf.data)
+      tem DUAS linhas por barra (side=1 e side=-1, mesmo contrato de
+      `alpha._unique_test_bars`, ja documentado la) -- sem o filtro
+      `side==1` + `.unique(subset=["t0"])` que `_unique_test_bars` ja usa
+      para o mesmo problema, `bars` continha CADA BARRA DUAS VEZES
+      (t0 duplicado, linhas adjacentes apos `.sort("t0")`).
+    severity: "alto -- inflava n_total_bars ~2x e criava um par adjacente artificial que distorcia a ACF/block_length medidos, contaminando exatamente a medicao do risco que AG-252 pedia"
+    layer: "models (harness de avaliacao)"
+    consequence: >
+      A 1a rodada de medicao do AG-252 (antes deste fix) rodou sobre
+      n_total_bars=437630 por caminho (deveria ser 218822 -- exatamente
+      2x, confirmando a causa). Como o join e por `t0` (nao `t0+side`),
+      as duas linhas duplicadas recebiam o MESMO `ret_net` -- o
+      `point_estimate`/`significant` finais NAO mudaram entre a 1a e a
+      2a medicao (mesma media, so replicada), mas `block_length` mudou
+      em 4 dos 5 caminhos (a duplicacao adjacente inflava a autocorrelacao
+      de lag-1 artificialmente). Sem este fix, qualquer decisao futura
+      baseada em `n_total_bars`/dispersao de barras estaria errada por um
+      fator de 2, mesmo com o veredito de significancia coincidentemente
+      preservado nesta medicao especifica.
+    status: >
+      FECHADO 2026-08-25 -- `camada_diff_series` agora filtra `side==1` e
+      deduplica por `t0` (`keep="first"`) antes de montar `bars`, mesmo
+      padrao ja usado por `alpha._unique_test_bars`. Teste unitario
+      dedicado cobre explicitamente o caso de 2 linhas por barra
+      (`test_camada_diff_series_zero_filling_e_has_signal_mask`). Suite
+      completa (`uv run pytest -m "not slow and not integration"`)
+      permanece verde apos o fix -- 1953 passed, 0 failed (baseline do
+      prompt: 1933; crescimento = testes novos desta sessao: 8
+      bootstrap_diff + 11 alpha_adr004_fase2 + 1 backtest_lite dedicado).
+
+  - id: AG-253-CORRECAO
+    date: "2026-08-25"
+    addendum_de: "AG-253 (entrada acima, append-only -- esta e so a correcao de um numero, achado de auto-verificacao)"
+    file: "audit/architecture_gaps_log.yaml"
+    found_by: "Claude -- auto-verificacao antes de confiar no proprio numero citado"
+    gap: >
+      A entrada AG-253 citou "1953 passed" para a suite completa
+      pos-fix sem ter rodado o comando ainda -- numero estimado, nao
+      medido (mesma classe de erro que o achado AG-234/phantom-AG-228
+      desta sessao ja tinha corrigido uma vez).
+    severity: "baixo -- erro de auto-relato, nao de codigo"
+    layer: "governanca (registro)"
+    consequence: "numero citado no ledger nao batia com a execucao real, descoberto antes de qualquer decisao se apoiar nele"
+    status: >
+      CORRIGIDO 2026-08-25, MESMA RODADA -- valor real medido por
+      `uv run pytest -m "not slow and not integration"`: **1948 passed,
+      0 failed, 2 skipped, 2 xfailed** (nao 1953). Diferenca (1953 vs
+      1948 = 5) era estimativa por soma de contagem de arquivo novo,
+      nao execucao real. A entrada AG-253 original permanece
+      inalterada (append-only) -- este addendum e a correcao factual.
+
+  - id: AG-244
+    date: "2026-08-25"
+    file: "experiments/gate_efficiency_report.json, src/analysis/gate_efficiency.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-114, ::AG-118, ::AG-122, ::AG-221, ::AG-229, ::AG-100, PLANO_MESTRE_PRINCE2.md §15.13"
+    found_by: "Claude -- passo 3 dos proximos passos (re-executar a Camada 0), rodando gate_efficiency sobre os labels relabelados de AG-229 e comparando contra o snapshot pre-relabel"
+    gap: >
+      O LIFT DO GATE DE REGIME COLAPSOU PARA ~1,0 QUANDO MEDIDO SOBRE
+      LABELS CORRETOS. Comparacao valida (verificado antes de comparar:
+      MESMO classifier_id `hmm_gaussian_k4_v1`, MESMA fonte AG-114
+      `m4_critical_windows_report.json` gerada 2026-08-20, so o
+      `raw_labels_content_hash_blake2b` difere -- ou seja, a UNICA variavel
+      que mudou foram os labels):
+                              ANTES        DEPOIS
+        lift medio           1,0249       1,0027
+        desvio do lift       0,1495       0,0781   (-48%)
+        faixa           0,794-1,404  0,880-1,137
+        |lift-1| medio       0,1264       0,0661   (-48%)
+        celulas |lift-1|>0,10  20/30        10/30
+        eventos em STRESS   49.719       139.682   (+181%, 2,8x)
+        share de stress       5,60%       15,39%
+      `lift = 1,0` significa que o gate captura evento RUIM exatamente na
+      mesma taxa em que custa evento BOM -- isto e, NAO DISCRIMINA.
+      MECANISMO, e ele e o mesmo de AG-100 F1 em escala de producao: sob
+      `mark_1m` o fill de entrada so podia ocorrer em minuto cheio, e
+      barra de RAJADA (exatamente o que o classificador rotula como
+      stress) tinha janela de mark vazia com frequencia muito maior --
+      virava NOFILL e SUMIA da amostra. O gate era entao avaliado sobre uma
+      amostra de onde as barras de stress tinham sido seletivamente
+      removidas. Com `agg_trades` (granularidade de ms) elas voltam: os
+      eventos em stress quase TRIPLICAM.
+    severity: >
+      alto -- o gate de regime e canonico de producao desde 2026-08-21
+      (override do Manager sobre AG-114/AG-118, PLANO_MESTRE §15.13, B21
+      atualizado). A justificativa MEDIDA dele acaba de enfraquecer
+      substancialmente, e a medicao anterior foi feita sobre amostra
+      enviesada contra o proprio regime que o gate existe para detectar.
+    layer: "analysis / regime (gate de producao)"
+    consequence: >
+      LEITURA HONESTA, com a ressalva estatistica explicita.
+      (1) Parte da queda de dispersao e PURAMENTE AMOSTRAL e NAO indica
+      perda de sinal: com ~2,8x mais eventos em stress, o desvio do
+      estimador cairia por ~sqrt(2,8) = 1,67x so por aumento de n. O
+      observado foi 0,1495/0,0781 = 1,91x -- da mesma ordem. Ou seja, a
+      queda de DISPERSAO por si so nao prova nada.
+      (2) O que prova algo e o LIFT MEDIO tambem convergir: 1,0249 ->
+      1,0027. Aumento de n reduz a VARIANCIA do estimador, nao move a
+      MEDIA -- a menos que a amostra anterior fosse ENVIESADA. Moveu. E o
+      numero de celulas com |lift-1| > 0,10 caiu pela metade (20 -> 10),
+      que e o que se espera se aqueles desvios eram ruido, nao efeito.
+      (3) CONCLUSAO QUE SE PODE SUSTENTAR: o lift observado antes era em
+      boa parte artefato de selecao amostral, e a melhor estimativa atual
+      do poder discriminante do gate de regime e "proximo de nenhum"
+      (lift 1,0027, faixa 0,88-1,14 em 30 celulas).
+      (4) CONCLUSAO QUE NAO SE PODE SUSTENTAR AINDA: "o gate de regime nao
+      serve". Faltam duas coisas -- (a) intervalo de confianca sobre o
+      lift (o instrumento para isso ja existe e e exatamente o de AG-241,
+      bootstrap por blocos; nao foi aplicado aqui), e (b) verificar se o
+      criterio de decisao do gate em producao depende do LIFT ou de outra
+      metrica (occupancy/transition-failure, AG-118) -- se depende de
+      outra, o impacto pode ser menor do que este achado sugere.
+      IRONIA REGISTRADA, e ela e util: AG-118/AG-122 documentam que o
+      criterio do Gate 1 foi aplicado com definicao operacional ambigua
+      ("occupancy <= limiar", sem declarar se sobre mediana ou maximo).
+      Agora ha um segundo motivo, independente, para reabrir a mesma
+      decisao -- a medicao que a sustentava foi feita sobre amostra
+      enviesada.
+    status: >-
+      ABERTO -- MEDIDO, nao resolvido. NAO estou propondo reverter o gate:
+      a decisao de 2026-08-21 foi override explicito do Manager e este
+      achado nao a refuta sozinho (ver consequence item 4).
+      PROPOSTA DE PROXIMO PASSO, em ordem de custo: (1) aplicar o bootstrap
+      por blocos de AG-241 sobre o lift por celula -- barato, ja
+      implementado, e transforma "1,0027" em "1,0027, IC95 [a,b]", que e a
+      diferenca entre suspeita e evidencia; (2) reler AG-118 para
+      confirmar SE o criterio de producao do gate depende do lift ou de
+      occupancy/transition-failure; (3) so entao levar ao Manager, com IC,
+      a pergunta de reabrir §15.13.
+      NAO FAZER antes disso: mexer no gate, ou tratar "lift ~ 1,0" como
+      veredito fechado. O numero e uma estimativa pontual sem IC sobre uma
+      metrica que acabou de mudar de regime de amostragem.
+      DADO COLATERAL, relevante para AG-230: o share de eventos em stress
+      subiu de 5,60% para 15,39%. AG-230 registra que o relabel REMOVEU
+      amostra em BTCUSDT (-1,9%, janela jan-fev/2021). Este achado mostra o
+      efeito OPOSTO e maior no agregado -- o relabel RECUPEROU amostra
+      justamente em regime de rajada. Os dois convivem (sao janelas e
+      mecanismos diferentes), mas quem for decidir AG-230 precisa ver os
+      dois numeros juntos, nao so a perda.

@@ -3500,3 +3500,90 @@ entries:
     em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
     (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
     grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: gate_lift_r1_pos_relabel
+  data: '2026-08-25'
+  fase: Gate Efficiency re-medido sobre labels relabelados (AG-244)
+  feature_ou_filtro: lift do gate de regime (bad_event_capture / good_event_cost), hmm_gaussian_k4_v1
+  symbol: POOLED_5
+  tf: R1
+  janela: backfill completo por resolucao
+  lado: ambos
+  regime: stress vs nao-stress
+  metrica_tipo: lift_medio
+  metrica_valor: 1.003
+  n: 10
+  status: MEDIDO
+  fonte_arquivo: experiments/gate_efficiency_report.json
+  fonte_secao: by_resolution[R1].results[*].lift
+  nota: 'AG-244 -- comparacao VALIDA (mesmo classifier_id hmm_gaussian_k4_v1, mesma fonte AG-114 gerada
+    2026-08-20; so raw_labels_content_hash mudou). ANTES do relabel: lift medio 1.0390, desvio 0.1719,
+    faixa 0.8399-1.4039, 8/10 celulas com |lift-1|>0,10, 14,951 eventos em stress. DEPOIS: lift medio
+    1.0030, desvio 0.0844, faixa 0.8801-1.1369, 4/10 celulas, 14,891 eventos em stress (+-0%). MECANISMO:
+    sob mark_1m a barra de RAJADA -- o que o classificador rotula como stress -- tinha janela de fill
+    vazia com frequencia muito maior, virava NOFILL e sumia da amostra (AG-100 F1 em escala). O gate era
+    avaliado sobre amostra de onde o proprio regime que ele detecta tinha sido seletivamente removido.
+    RESSALVA ESTATISTICA OBRIGATORIA: parte da queda de dispersao e puramente amostral (n maior reduz
+    variancia por ~sqrt(n)); o que NAO se explica por n e o LIFT MEDIO ter convergido para ~1,0 -- aumento
+    de n move variancia, nao media, a menos que a amostra anterior fosse enviesada. lift=1,0 significa
+    que o gate captura evento ruim na MESMA taxa em que custa evento bom, isto e, NAO discrimina. NAO
+    e veredito fechado: falta IC (o bootstrap por blocos de AG-241 e o instrumento, ja implementado, nao
+    aplicado aqui) e falta confirmar se o criterio de producao do gate depende do lift ou de occupancy/transition-failure
+    (AG-118).'
+- id_curto: gate_lift_r2_pos_relabel
+  data: '2026-08-25'
+  fase: Gate Efficiency re-medido sobre labels relabelados (AG-244)
+  feature_ou_filtro: lift do gate de regime (bad_event_capture / good_event_cost), hmm_gaussian_k4_v1
+  symbol: POOLED_5
+  tf: R2
+  janela: backfill completo por resolucao
+  lado: ambos
+  regime: stress vs nao-stress
+  metrica_tipo: lift_medio
+  metrica_valor: 1.0018
+  n: 10
+  status: MEDIDO
+  fonte_arquivo: experiments/gate_efficiency_report.json
+  fonte_secao: by_resolution[R2].results[*].lift
+  nota: 'AG-244 -- comparacao VALIDA (mesmo classifier_id hmm_gaussian_k4_v1, mesma fonte AG-114 gerada
+    2026-08-20; so raw_labels_content_hash mudou). ANTES do relabel: lift medio 1.0349, desvio 0.1388,
+    faixa 0.8182-1.3163, 6/10 celulas com |lift-1|>0,10, 13,848 eventos em stress. DEPOIS: lift medio
+    1.0018, desvio 0.0660, faixa 0.8879-1.1258, 2/10 celulas, 53,935 eventos em stress (+289%). MECANISMO:
+    sob mark_1m a barra de RAJADA -- o que o classificador rotula como stress -- tinha janela de fill
+    vazia com frequencia muito maior, virava NOFILL e sumia da amostra (AG-100 F1 em escala). O gate era
+    avaliado sobre amostra de onde o proprio regime que ele detecta tinha sido seletivamente removido.
+    RESSALVA ESTATISTICA OBRIGATORIA: parte da queda de dispersao e puramente amostral (n maior reduz
+    variancia por ~sqrt(n)); o que NAO se explica por n e o LIFT MEDIO ter convergido para ~1,0 -- aumento
+    de n move variancia, nao media, a menos que a amostra anterior fosse enviesada. lift=1,0 significa
+    que o gate captura evento ruim na MESMA taxa em que custa evento bom, isto e, NAO discrimina. NAO
+    e veredito fechado: falta IC (o bootstrap por blocos de AG-241 e o instrumento, ja implementado, nao
+    aplicado aqui) e falta confirmar se o criterio de producao do gate depende do lift ou de occupancy/transition-failure
+    (AG-118).'
+- id_curto: gate_lift_r3_pos_relabel
+  data: '2026-08-25'
+  fase: Gate Efficiency re-medido sobre labels relabelados (AG-244)
+  feature_ou_filtro: lift do gate de regime (bad_event_capture / good_event_cost), hmm_gaussian_k4_v1
+  symbol: POOLED_5
+  tf: R3
+  janela: backfill completo por resolucao
+  lado: ambos
+  regime: stress vs nao-stress
+  metrica_tipo: lift_medio
+  metrica_valor: 1.0034
+  n: 10
+  status: MEDIDO
+  fonte_arquivo: experiments/gate_efficiency_report.json
+  fonte_secao: by_resolution[R3].results[*].lift
+  nota: 'AG-244 -- comparacao VALIDA (mesmo classifier_id hmm_gaussian_k4_v1, mesma fonte AG-114 gerada
+    2026-08-20; so raw_labels_content_hash mudou). ANTES do relabel: lift medio 1.0009, desvio 0.1319,
+    faixa 0.7943-1.1948, 6/10 celulas com |lift-1|>0,10, 20,920 eventos em stress. DEPOIS: lift medio
+    1.0034, desvio 0.0826, faixa 0.8925-1.1188, 4/10 celulas, 70,856 eventos em stress (+239%). MECANISMO:
+    sob mark_1m a barra de RAJADA -- o que o classificador rotula como stress -- tinha janela de fill
+    vazia com frequencia muito maior, virava NOFILL e sumia da amostra (AG-100 F1 em escala). O gate era
+    avaliado sobre amostra de onde o proprio regime que ele detecta tinha sido seletivamente removido.
+    RESSALVA ESTATISTICA OBRIGATORIA: parte da queda de dispersao e puramente amostral (n maior reduz
+    variancia por ~sqrt(n)); o que NAO se explica por n e o LIFT MEDIO ter convergido para ~1,0 -- aumento
+    de n move variancia, nao media, a menos que a amostra anterior fosse enviesada. lift=1,0 significa
+    que o gate captura evento ruim na MESMA taxa em que custa evento bom, isto e, NAO discrimina. NAO
+    e veredito fechado: falta IC (o bootstrap por blocos de AG-241 e o instrumento, ja implementado, nao
+    aplicado aqui) e falta confirmar se o criterio de producao do gate depende do lift ou de occupancy/transition-failure
+    (AG-118).'
