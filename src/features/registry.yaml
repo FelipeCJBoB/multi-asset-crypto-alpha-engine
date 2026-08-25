@@ -298,11 +298,13 @@
   nota: "atr_20_pct herda o estimador de C01_atr_20 (2026-08-17) — sob vol_estimator_id='parkinson_w20' o valor de E27f muda (regime econômico, cost_atr_ratio), a fórmula acima não."
   nota: >
     Única feature de T1 já com tf=15m corretamente anotado no PRD original
-    (§2.6) — ver NOTA DE TF no topo deste arquivo. custo_round_trip_bps
-    reproduz o c_médio(assimétrico)=0,055% citado textualmente em §0.2 R2
-    dado maker_fee=0,0002/taker_fee=0,0005 (peso 50/50 entre cenário
-    TP-tocado e SL-tocado — ver docstring de
-    src/features/groups/group_e.py::round_trip_cost_bps).
+    (§2.6) — ver NOTA DE TF no topo deste arquivo. **[CORRIGIDO 2026-08-24,
+    AG-027]** custo_round_trip_bps NÃO reproduz mais o c_médio(assimétrico)
+    =0,055% citado textualmente em §0.2 R2 (esse número assumia peso 50/50
+    entre cenário TP-tocado e SL-tocado, premissa refutada por medição
+    real). Peso real hoje: 42,06%/57,94% (`round_trip_cost_bps_maker_prob`,
+    `constants.yaml`, MEASURED) — ver docstring de
+    src/features/groups/group_e.py::round_trip_cost_bps.
 
 # ============================================================================
 # LOTE A — liberação de features (H5, 2026-08-24). 47 features T2 novas

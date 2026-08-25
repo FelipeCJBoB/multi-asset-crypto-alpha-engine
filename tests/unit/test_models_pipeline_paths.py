@@ -620,21 +620,42 @@ def _run_layer1_sprint_capturing_run_all_folds_calls(
     return calls
 
 
-def test_run_layer1_sprint_device_type_default_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
-    """D-18 -- `run_layer1_sprint` é o único caller de produção real, tem
-    que passar `device_type="cuda"` por default -- diferente do default
-    `"cpu"` de `alpha.run_all_folds`/`fit_side_model`, que existe pra
-    preservar testes sem GPU (a maioria dos testes deste repo, inclusive
-    este)."""
+def test_run_layer1_sprint_device_type_default_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**ATUALIZADO 2026-08-25 -- este teste estava VERMELHO e afirmava o
+    oposto do codigo.** Chamava-se `..._default_cuda` e exigia
+    `device_type == "cuda"`, ancorado em D-18 ("GPU obrigatoria em
+    producao"). `AG-201` (2026-08-24) trocou o default de
+    `run_layer1_sprint` para `"cpu"` por bloqueio ESTRUTURAL, nao por
+    preferencia: LightGBM 4.7.0 exige NCCL incondicionalmente sob
+    `USE_CUDA=ON` (`CMakeLists.txt:243`) e NCCL nao tem build nativo
+    Windows -- toda chamada real ja precisava passar `"cpu"` a mao. O
+    teste nao foi revisado junto da correcao, entao a suite ficou
+    quebrada com um teste que codificava o comportamento ANTIGO como se
+    fosse contrato.
+
+    Achado colateral (persona `lgbm-crypto-quant`, 2026-08-25): e
+    exatamente o padrao de dessincronizacao que `AG-123` cataloga
+    (correcao aplicada num lugar, referencias ao mesmo `AG-NNN` nao
+    revisadas) -- aqui entre codigo e teste, nao entre secoes de doc.
+
+    O contrato que este teste passa a codificar: o default e `"cpu"`
+    NESTE AMBIENTE, e mudar isso e decisao explicita do Manager quando/se
+    o treino migrar para Linux/cloud com CUDA+NCCL funcionais -- nunca um
+    reflip por engano."""
     calls = _run_layer1_sprint_capturing_run_all_folds_calls(monkeypatch)
-    assert all(c["device_type"] == "cuda" for c in calls)
+    assert all(c["device_type"] == "cpu" for c in calls)
 
 
 def test_run_layer1_sprint_device_type_explicito_sobrescreve_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls = _run_layer1_sprint_capturing_run_all_folds_calls(monkeypatch, device_type="cpu")
-    assert all(c["device_type"] == "cpu" for c in calls)
+    """`"cuda"` explicito continua chegando intacto a `run_all_folds` -- o
+    mecanismo de opt-in de D-18 sobreviveu a `AG-201`, so o DEFAULT mudou.
+    Trocado de `"cpu"` para `"cuda"` junto da atualizacao acima: com o
+    default agora `"cpu"`, passar `"cpu"` explicito nao provava mais nada
+    (o teste passaria mesmo se o parametro fosse ignorado)."""
+    calls = _run_layer1_sprint_capturing_run_all_folds_calls(monkeypatch, device_type="cuda")
+    assert all(c["device_type"] == "cuda" for c in calls)
 
 
 def test_all_symbols_e_all_resolutions_universo_esperado() -> None:

@@ -791,17 +791,25 @@ def run_b4_feature_shuffle(
     camada1_fold_results: list[FoldResult],
     *,
     seed: int | None = None,
+    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
 ) -> B4Result:
     """Reusa os modelos JÁ TREINADOS da Camada 1 (nenhum retreino — B4 é um
     teste de AVALIAÇÃO, não um variante de treino) — embaralha cada uma das
-    10 colunas T1 INDEPENDENTEMENTE, dentro do conjunto de teste de cada
-    fold (mantém a marginal de cada coluna, destrói a associação linha a
-    linha entre feature e alvo, texto literal do §16.1). Colunas de regime
-    (one-hot) NÃO são embaralhadas — não são "as features" no sentido do
-    vetor T1 (§2.13), são o estado conhecido da barra."""
+    colunas de `feature_ids` INDEPENDENTEMENTE, dentro do conjunto de teste
+    de cada fold (mantém a marginal de cada coluna, destrói a associação
+    linha a linha entre feature e alvo, texto literal do §16.1). Colunas de
+    regime (one-hot) NÃO são embaralhadas — não são "as features" no
+    sentido do vetor de treino (§2.13), são o estado conhecido da barra.
+
+    `feature_ids` (2026-08-25, `AG-207`/`ADR-003`) — default `T1_FEATURE_
+    IDS` preserva bit-exato todo call site existente. Precisa ser
+    EXATAMENTE o vetor usado pra treinar `camada1_fold_results` — os
+    modelos já treinados esperam essa forma de entrada (`predict_proba`
+    levanta `ValueError` de shape se divergir), não é opcional em par com
+    `run_all_folds(feature_ids=...)` do mesmo treino."""
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
     rng = np.random.default_rng(seed)
-    n_t1 = len(T1_FEATURE_IDS)
+    n_features = len(feature_ids)
 
     split_by_id = {s.split_id: s for s in splits}
     y_real_long: list[IntArray] = []
@@ -821,7 +829,7 @@ def run_b4_feature_shuffle(
             test_side = ds.side_subset(test_bars, side=side)
             if test_side.height == 0:
                 continue
-            X = build_design_matrix(test_side)
+            X = build_design_matrix(test_side, feature_ids=feature_ids)
             y = (test_side["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
             # `np.asarray(...)` explícito -- stubs do LightGBM tipam
             # `predict_proba` como `list` (imprecisão da biblioteca), quebra
@@ -830,7 +838,7 @@ def run_b4_feature_shuffle(
             p_real = np.asarray(model.predict_proba(X))[:, 1]
 
             X_perm = X.copy()
-            for j in range(n_t1):
+            for j in range(n_features):
                 perm_idx = rng.permutation(X_perm.shape[0])
                 X_perm[:, j] = X_perm[perm_idx, j]
             p_perm = np.asarray(model.predict_proba(X_perm))[:, 1]

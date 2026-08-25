@@ -33,8 +33,9 @@ from src.data.resample import step_ms
 from src.features import build as features_build
 from src.io import artifact as io_artifact
 from src.validation import cpcv
+from src.validation import dsr as dsr_mod
 
-from . import alpha, backtest_lite, baselines, decomposition, hhi
+from . import alpha, backtest_lite, baselines, decomposition, hhi, hyperparams_by_combo, monotonic
 from . import dataset as ds
 from ._constants import load_constant
 
@@ -391,15 +392,27 @@ def run_layer1_sprint(
     model_id_camada1: str = MODEL_ID_CAMADA1,
     model_id_camada0: str = MODEL_ID_CAMADA0,
     report_path: Path | None = None,
-    device_type: str = "cuda",
+    device_type: str = "cpu",
+    tau_policy: str = alpha.TAU_POLICY_LEGACY_PER_SIDE,
+    calib_split_mode: str = alpha.CALIB_SPLIT_LEGACY_RANDOM,
+    class_balance_basis: str = alpha.CLASS_BALANCE_COUNT,
+    dsr_n_trials: int | None = None,
+    feature_ids: tuple[str, ...] | None = None,
+    hyper: alpha.LGBMHyperparams | None = None,
 ) -> dict[str, Any]:
-    """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`) --
-    `"cuda"` default AQUI (diferente do default `"cpu"` de `alpha.
-    fit_side_model`/`run_fold`/`run_all_folds`, que preserva testes sem
-    GPU) porque esta função é o ÚNICO caller de produção real -- GPU
-    obrigatória em produção é decisão do Manager, não opt-in por acidente
-    de esquecer um argumento. Passe `device_type="cpu"` explicitamente
-    pra depurar localmente sem GPU.
+    """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
+    **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
+    obrigatória em produção é decisão real do Manager, mas `AG-201`
+    confirmou bloqueio ESTRUTURAL, não contornável: LightGBM 4.7.0 exige
+    NCCL incondicionalmente sob `USE_CUDA=ON` (`CMakeLists.txt:243`), e
+    NCCL não tem build nativo Windows -- toda chamada real desta sessão já
+    precisava passar `device_type="cpu"` manualmente pra não quebrar com
+    `LightGBMError`. Default agora `"cpu"` NESTE AMBIENTE (Windows nativo)
+    -- se o treino de produção migrar pra um ambiente Linux/cloud onde
+    LightGBM+CUDA+NCCL de fato compila, este default precisa ser
+    revisitado por decisão explícita do Manager, não reflipado por
+    engano. Passe `device_type="cuda"` explicitamente se/quando essa
+    migração acontecer.
 
     `t0_start`/`t0_end`/`model_id_camada{0,1}`/`report_path` default para
     o comportamento anterior byte a byte (janela cheia, `MODEL_ID_CAMADA1`/
@@ -468,7 +481,23 @@ def run_layer1_sprint(
     diagnostics) usa `resolution_id` quando setado, MESMO que `tf` continue
     `None` — nunca cai no caminho legado plano que colidiria com os 5
     `model_id` de produção já treinados sob grade de tempo (mesma guarda
-    de path-collision de `labels_symbol_tf_dir`, Fase 1)."""
+    de path-collision de `labels_symbol_tf_dir`, Fase 1).
+
+    `feature_ids`/`hyper` (2026-08-25, `AG-207`/`AG-234`/`ADR-003`) —
+    sentinela `None` em ambos preserva bit-exato o comportamento de
+    sempre (`T1_FEATURE_IDS`, `LGBMHyperparams.from_constants()`) pra
+    todo call site/teste existente. `feature_ids`, quando não-`None`, é o
+    vetor de treino COMPLETO desejado — em produção, `T1_FEATURE_IDS +
+    features_build.SUPPORT_FEATURE_IDS` (69), ADITIVO ("T2 promove a T1"
+    é literal: T2 ganha o status de T1, T1 não sai do vetor — `AG-234`
+    corrige a leitura substitutiva que a campanha de pesquisa T2→T1
+    (Fase 1/Fase 2/ADR-002/ADR-003, `run_all_folds`/`build_design_
+    matrix`) sempre usou, mas que era metodologia de PESQUISA
+    exploratória, nunca mandato de produção). Internamente,
+    `extra_feature_ids` pra `build_modeling_frame` é calculado por
+    DIFERENÇA (`feature_ids` menos o que já está em `T1_FEATURE_IDS`,
+    que `mf.data` sempre inclui) — o chamador passa o vetor completo que
+    quer treinar, não precisa saber dessa distinção interna."""
     if tf is not None:
         step_ms(tf)  # UnsupportedTimeframeError cedo — antes do trabalho caro abaixo
     # `resolution_id`/`tf` sem bar_source de Feature/Regime Engine mapeado:
@@ -488,6 +517,19 @@ def run_layer1_sprint(
     tf_effective = tf if tf is not None else "15m"
     grade_id = resolution_id if resolution_id is not None else tf_effective
     path_tf = resolution_id if resolution_id is not None else tf
+    # `feature_ids` (quando setado) é o vetor de treino COMPLETO desejado
+    # (ex. T1_FEATURE_IDS + SUPPORT_FEATURE_IDS, 69 -- AG-207/AG-234: "T2
+    # promove a T1" é ADITIVO, T1 nunca sai do vetor de treino, correção
+    # sobre a convenção da campanha de pesquisa T2->T1, que era
+    # deliberadamente substitutiva e nunca foi mandato de produção).
+    # `build_modeling_frame` já inclui T1 sempre -- `extra_feature_ids`
+    # só pode conter o que FALTA (T1 causaria `ValueError` de coluna
+    # duplicada), calculado aqui por diferença de conjunto.
+    extra_feature_ids = (
+        tuple(f for f in feature_ids if f not in features_build.T1_FEATURE_IDS)
+        if feature_ids is not None
+        else ()
+    )
     mf = ds.build_modeling_frame(
         symbol=symbol,
         tf=tf_effective,
@@ -495,6 +537,10 @@ def run_layer1_sprint(
         vol_estimator_id=vol_estimator_id,
         t0_start=t0_start,
         t0_end=t0_end,
+        extra_feature_ids=extra_feature_ids,
+    )
+    feature_ids_effective = (
+        feature_ids if feature_ids is not None else features_build.T1_FEATURE_IDS
     )
     # AG-032 item 8 (Fix A, 2026-08-21) -- max_feature_lookback_ms cobre o
     # "componente 96" (janela de lookback de feature de treino alcançando
@@ -525,7 +571,8 @@ def run_layer1_sprint(
         n_backtest_paths=cpcv_result.config.n_backtest_paths,
     )
 
-    hyper = alpha.LGBMHyperparams.from_constants()
+    hyper_explicit = hyper is not None
+    hyper = hyper if hyper is not None else alpha.LGBMHyperparams.from_constants()
     seed = int(load_constant("alpha_random_seed"))
 
     camada1_folds = alpha.run_all_folds(
@@ -537,7 +584,11 @@ def run_layer1_sprint(
         resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
+        feature_ids=feature_ids_effective,
         device_type=device_type,
+        tau_policy=tau_policy,
+        calib_split_mode=calib_split_mode,
+        class_balance_basis=class_balance_basis,
     )
     camada0_folds = alpha.run_all_folds(
         mf.data,
@@ -548,7 +599,11 @@ def run_layer1_sprint(
         resolution_id=resolution_id,
         hyper=hyper,
         seed=seed,
+        feature_ids=feature_ids_effective,
         device_type=device_type,
+        tau_policy=tau_policy,
+        calib_split_mode=calib_split_mode,
+        class_balance_basis=class_balance_basis,
     )
 
     # --- diagnóstico por fold x lado (task A1 do CLAUDE.md) — persiste o
@@ -612,13 +667,31 @@ def run_layer1_sprint(
         # continua intocado, mesmo writer de sempre. Dar a esses 2
         # consumidores capacidade de ler o multi-resolução é trabalho
         # aditivo separado, não pré-requisito de correção desta troca.
+        # AG-207/ADR-003 (2026-08-25) -- `config_hash` (src.io.artifact.
+        # write_artifact) precisa capturar a config de treino do PRÓPRIO
+        # Alpha (feature_ids/hyper), não só `variant` -- senão um retreino
+        # real sob `SUPPORT_FEATURE_IDS`/hiperparâmetro por combo colide no
+        # MESMO caminho de artefato do treino legado (T1/hiperparâmetro
+        # global) e `ArtifactExistsError` bloqueia a escrita (medido: smoke
+        # test real, BTCUSDT/R3, achado ao integrar). Mesma disciplina já
+        # usada em `LabelConfig.config_hash`/`AG-140`/B15 -- todo campo que
+        # muda a lógica de geração entra no hash. `feature_ids`/`hyper_
+        # explicit` (sentinelas `None`/`False`) preservam bit-exato
+        # `config={"variant": ...}` -- e portanto o MESMO `config_hash` dos
+        # 15 artefatos já persistidos -- pra todo caller que não passa os
+        # 2 parâmetros novos.
+        alpha_train_config_extra: dict[str, Any] = {}
+        if feature_ids is not None:
+            alpha_train_config_extra["feature_ids"] = sorted(feature_ids)
+        if hyper_explicit:
+            alpha_train_config_extra["hyper"] = asdict(hyper)
         write_predictions_versioned(
             preds_c1,
             root=ARTIFACT_ROOT,
             symbol=symbol,
             resolution_id=resolution_id,
             model_id=model_id_camada1,
-            config={"variant": alpha.VARIANT_CAMADA1},
+            config={"variant": alpha.VARIANT_CAMADA1, **alpha_train_config_extra},
         )
         write_predictions_versioned(
             preds_c0,
@@ -626,7 +699,7 @@ def run_layer1_sprint(
             symbol=symbol,
             resolution_id=resolution_id,
             model_id=model_id_camada0,
-            config={"variant": alpha.VARIANT_CAMADA0},
+            config={"variant": alpha.VARIANT_CAMADA0, **alpha_train_config_extra},
         )
     else:
         # tf=None (legado, caminho plano) ou tf explícito sob grade de
@@ -659,6 +732,97 @@ def run_layer1_sprint(
     c1_sharpes = [r.sharpe_naive for r in c1_by_path.values()]
     c0_sharpes = [r.sharpe_naive for r in c0_by_path.values()]
     alpha_sharpe_headline = _mean_finite(c1_sharpes)
+
+    # --- AG-214: dispersão ENTRE caminhos. Sem isto, "4 de 5 caminhos"
+    # não tem escala de leitura -- toda diferença menor que sigma é ruído, e sigma
+    # não era calculado em lugar nenhum. Ver `PathDispersionStats` para a
+    # ressalva obrigatória: os 5 caminhos reconstroem o MESMO dataset
+    # (`src.validation.cpcv`, item 3), então sigma aqui mede sensibilidade à
+    # PARTIÇÃO de treino, não erro amostral do dado.
+    c1_dispersion = backtest_lite.path_dispersion_stats(c1_by_path)
+    c0_dispersion = backtest_lite.path_dispersion_stats(c0_by_path)
+
+    # --- AG-220/ADR-004 Fase 0: companion do gate de permanencia acima --
+    # "quantos caminhos venceram" (permanence_count) nao responde "a
+    # diferenca e distinguivel de ruido". IC bootstrap por blocos sobre
+    # os ret_net JA MATERIALIZADOS nesta rodada, zero retreino extra.
+    permanence_significance = backtest_lite.permanence_significance_by_path(
+        camada1_folds,
+        camada0_folds,
+        mf.data,
+        splits,
+        n_boot=int(load_constant("alpha_permanence_bootstrap_n_boot")),
+        confidence_level=float(load_constant("alpha_permanence_bootstrap_confidence_level")),
+        seed=seed,
+    )
+    n_paths_significant = sum(1 for r in permanence_significance.values() if r.significant)
+
+    # --- AG-211: ESS (Σ uniqueness) por fold x lado, agregado. O número
+    # que faltava para qualquer leitura honesta do Sharpe acima: `n_rows`
+    # do frame não é o `n` estatístico quando os rótulos se sobrepõem
+    # (B24/§0.2 R4). Já era calculado no repo
+    # (`src.labels.experiment_log.summarize_labels`) e não tinha nenhum
+    # consumidor -- agora chega ao relatório onde a decisão acontece.
+    ess_long = [fr.long_result.sum_uniqueness_train for fr in camada1_folds]
+    ess_short = [fr.short_result.sum_uniqueness_train for fr in camada1_folds]
+    n_rows_train_long = [fr.n_train_long for fr in camada1_folds]
+    n_rows_train_short = [fr.n_train_short for fr in camada1_folds]
+
+    # --- AG-212: os dois balanceamentos de classe lado a lado. A razão
+    # entre eles é o desalinhamento efetivo (1,0 = alinhados).
+    spw_count = [fr.long_result.scale_pos_weight_count for fr in camada1_folds] + [
+        fr.short_result.scale_pos_weight_count for fr in camada1_folds
+    ]
+    spw_weight = [fr.long_result.scale_pos_weight_weight for fr in camada1_folds] + [
+        fr.short_result.scale_pos_weight_weight for fr in camada1_folds
+    ]
+
+    # --- AG-213: concordância entre os dois alvos, medida no fold 0 (o
+    # mesmo fold que o relatório já usa como amostra para
+    # `monotone_constraints_example_fold0`). Diagnóstico puro -- não muda
+    # nenhuma restrição, não realimenta nada.
+    target_agreement: dict[str, Any] = {}
+    try:
+        fold0 = camada1_folds[0]
+        train_bars_fold0 = mf.data[splits[fold0.fold_id].train_idx]
+        for side_value, side_label in ((1, "long"), (-1, "short")):
+            agreement = monotonic.screen_target_agreement(
+                ds.side_subset(train_bars_fold0, side=side_value),
+                features_build.T1_FEATURE_IDS,
+                side=side_value,
+            )
+            target_agreement[side_label] = {
+                f: {
+                    "constraint_ret_net": r.constraint_ret_net,
+                    "constraint_tp": r.constraint_tp,
+                    "mean_ic_ret_net": r.mean_ic_ret_net,
+                    "mean_ic_tp": r.mean_ic_tp,
+                    "agree": r.agree,
+                    "forced_economic": r.forced_economic,
+                }
+                for f, r in agreement.items()
+            }
+            target_agreement[f"{side_label}_n_disagree_nao_forcadas"] = sum(
+                1 for r in agreement.values() if not r.agree and not r.forced_economic
+            )
+    except (KeyError, ValueError) as exc:
+        # Diagnóstico nunca derruba a rodada de treino -- mas a falha
+        # aparece no relatório, jamais como campo silenciosamente ausente.
+        logger.warning("models.pipeline.target_agreement_falhou", error=str(exc))
+        target_agreement = {"erro": str(exc)}
+
+    # --- AG-215: DSR sobre os trades reais da Camada 1. `dsr_n_trials`
+    # é OBRIGATORIAMENTE explícito (default `None` = não calcula): o `N`
+    # correto é `N_lifetime` auditado (`audit/n_lifetime.yaml`), decisão
+    # do Manager -- inventar um número aqui produziria um DSR
+    # tranquilizador e falso, que é pior que DSR nenhum.
+    dsr_block: dict[str, Any] = {
+        "computed": False,
+        "reason": (
+            "dsr_n_trials nao informado -- N_lifetime auditado e decisao do Manager "
+            "(audit/n_lifetime.yaml), nunca inventado aqui (B23/AG-215)"
+        ),
+    }
 
     # --- HHI agregado (§5.8) — média por fold, camada 1 ---
     # `.value` — `ConcentrationDiagnostics.hhi`/`.max_share` viraram
@@ -708,11 +872,51 @@ def run_layer1_sprint(
     start_bound, end_bound = ds.date_bounds(mf.data)
     b2 = baselines.run_b2_buy_and_hold(symbol, start_bound, end_bound)
     b3 = baselines.run_b3_regime_only(mf.data)
-    b4 = baselines.run_b4_feature_shuffle(mf.data, splits, camada1_folds)
+    b4 = baselines.run_b4_feature_shuffle(
+        mf.data, splits, camada1_folds, feature_ids=feature_ids_effective
+    )
     b5 = baselines.run_b5_short_permanent(mf.data)
 
     # --- decomposição de PnL (§16.6) — pooled sobre as OOF de todos os 15 splits ---
     filled_c1 = realized_c1.filter(pl.col("barrier_hit") != "NOFILL")
+
+    # AG-215 -- DSR sobre os trades pooled da Camada 1, se e somente se o
+    # Manager informou `N_lifetime`. `compute_dsr` já existia
+    # (`src.validation.dsr`, Bailey & Lopez de Prado) e era chamado APENAS
+    # por `src/analysis/faixa2_dsr_and_b2_check.py` -- nunca pelo
+    # relatório do treino, que reportava Sharpe cru. Com
+    # `run_layer1_sprint_all_combinations` rodando 15 combinações, relatar
+    # o Sharpe da melhor sem deflacionar é o erro clássico de maldição do
+    # vencedor.
+    if dsr_n_trials is not None and filled_c1.height >= 2:  # noqa: magic-number -- >=2 p/ desvio amostral
+        _rets = filled_c1["ret_net"].to_numpy().astype(np.float64)
+        _span = backtest_lite.span_seconds(filled_c1.sort("t0")["t0"])
+        _, _tpy = backtest_lite.sharpe_naive(_rets, span_seconds=_span)
+        _dsr = dsr_mod.compute_dsr(_rets, n_trials=dsr_n_trials, trades_per_year=_tpy)
+        dsr_block = {
+            "computed": True,
+            **asdict(_dsr),
+            "passes_conventional_threshold": dsr_mod.dsr_passes_conventional_threshold(_dsr.dsr),
+            # Ressalva estrutural, não rodapé: `trades_per_year` vem de
+            # `sharpe_naive`, que anualiza por `sqrt(trades/ano)` assumindo
+            # trades INDEPENDENTES. Os trades deste projeto são sobrepostos
+            # por construção (é o que `uniqueness` mede) -- a anualização,
+            # e portanto `sr_annualized`/`sr0_annualized`, está inflada por
+            # um fator não medido. A correção correta é Lo (2002), §16.5,
+            # registrada como pendente. `dsr`/`sr_per_trade` (escala
+            # per-trade) não dependem dessa anualização.
+            "caveat_anualizacao": (
+                "trades_per_year assume trades independentes; os trades sao sobrepostos "
+                "(ver uniqueness/ESS). sr_annualized inflado por fator nao medido -- "
+                "correcao Lo(2002)/§16.5 pendente. Leia dsr e sr_per_trade, nao o anualizado."
+            ),
+        }
+    elif dsr_n_trials is not None:
+        dsr_block = {
+            "computed": False,
+            "reason": f"filled_c1.height={filled_c1.height} < 2 -- sem trades para momentos",
+        }
+
     decomp_pooled = decomposition.decompose(filled_c1)
     decomp_by_path: dict[str, Any] = {}
     for pid in sorted({fr.path_id for fr in camada1_folds}):
@@ -721,12 +925,27 @@ def run_layer1_sprint(
 
     elapsed_s = time.time() - t_start
 
+    # AG-226 -- IDENTIDADE DE REGIME no proprio artefato. Medido
+    # 2026-08-25: dos 112 JSON de experiments/, ZERO embutem config_hash,
+    # e 67 deles carregam metrica economica derivada de labels.parquet.
+    # Sem isso, depois de um relabel e impossivel distinguir por inspecao
+    # qual arquivo e de qual regime -- foi exatamente o que AG-218 mostrou
+    # na pratica (alpha_layer1_report.json continha XRPUSDT/R3 e foi lido
+    # como "o" resultado da Camada 1). O hash vem do labels.parquet que de
+    # fato alimentou esta rodada, ja verificado por build_modeling_frame.
+    labels_config_hash = (
+        str(mf.data["config_hash"][0])
+        if "config_hash" in mf.data.columns and mf.data.height > 0
+        else None
+    )
+
     report: dict[str, Any] = {
         "schema_version": 1,
         "sprint": 8,
         "symbol": symbol,
         "tf": tf,
         "resolution_id": resolution_id,
+        "labels_config_hash": labels_config_hash,
         "vol_estimator_id": vol_estimator_id,
         "model_id_camada1": model_id_camada1,
         "model_id_camada0": model_id_camada0,
@@ -745,6 +964,85 @@ def run_layer1_sprint(
             "permanence_pass": permanence_pass,
             "camada1_sharpe_mean": alpha_sharpe_headline,
             "camada0_sharpe_mean": _mean_finite(c0_sharpes),
+            # AG-214 -- sigma entre caminhos. Sem isto, `n_paths_camada1_
+            # supera_camada0` não tem escala: diferença menor que sigma é
+            # ruído. LEIA JUNTO com a ressalva de `PathDispersionStats`:
+            # os 5 caminhos reconstroem o MESMO dataset, então sigma mede
+            # sensibilidade à partição de treino, não erro amostral.
+            "camada1_sharpe_dispersion": asdict(c1_dispersion),
+            "camada0_sharpe_dispersion": asdict(c0_dispersion),
+            "delta_sharpe_mean": alpha_sharpe_headline - _mean_finite(c0_sharpes),
+            "tie_policy": backtest_lite.TIE_LEGACY_COUNTS_AS_BETTER,
+            "tie_policy_caveat": (
+                "politica legada: empate exato (s1 == s0) conta como 'Camada 1 melhor'. "
+                "Viés aponta sempre para manter a Camada 1 (o desfecho que custa mais "
+                "N_lifetime). Margem defensavel = derivada de camada1_sharpe_dispersion."
+                "std_between_paths, ainda nao decidida (B23/AG-214)"
+            ),
+            # AG-220/ADR-004 Fase 0 -- IC bootstrap por blocos da diferenca
+            # Camada1-Camada0 POR CAMINHO, sobre o universo completo de
+            # barras (zero-filled fora de sinal). Companion de
+            # n_paths_camada1_supera_camada0 acima, NAO substituto: aquele
+            # conta vitorias por sharpe_naive, este responde se cada
+            # diferenca e distinguivel de ruido. AG-220 mediu |delta| <
+            # sigma em BTCUSDT/R1 nas 3 variantes de calibracao testadas --
+            # leia os dois numeros juntos, nunca so o primeiro.
+            "permanence_significance_bootstrap": {
+                str(pid): asdict(r) for pid, r in permanence_significance.items()
+            },
+            "n_paths_significant": n_paths_significant,
+        },
+        # --- AG-211: o `n` estatístico, não o `n` do `shape`. -------------
+        "sample_size_efetivo": {
+            "ess_sum_uniqueness_long_by_fold": ess_long,
+            "ess_sum_uniqueness_short_by_fold": ess_short,
+            "n_rows_train_long_by_fold": n_rows_train_long,
+            "n_rows_train_short_by_fold": n_rows_train_short,
+            "mean_ess_long": _mean_finite(ess_long),
+            "mean_ess_short": _mean_finite(ess_short),
+            # razão ESS/linhas: quanto do `n` aparente é informação nova.
+            # 1,0 = rótulos disjuntos; << 1,0 = sobreposição dominante.
+            "mean_ratio_ess_por_linha_long": _mean_finite(
+                [e / n for e, n in zip(ess_long, n_rows_train_long, strict=True) if n > 0]  # noqa: unguarded-ratio -- `if n > 0` na propria comprehension
+            ),
+            "mean_ratio_ess_por_linha_short": _mean_finite(
+                [e / n for e, n in zip(ess_short, n_rows_train_short, strict=True) if n > 0]  # noqa: unguarded-ratio -- `if n > 0` na propria comprehension
+            ),
+            "nota": (
+                "B24/§0.2 R4 -- N_eff MEDIDO (soma de uniqueness), nunca uma das duas "
+                "formulas fechadas que B24 proibe. "
+                "ESS TRANSVERSAL (entre os 5 simbolos correlacionados) NAO esta medido "
+                "aqui: M6 (experiments/m6_common_factor_hypothesis_report.json) testa "
+                "heterogeneidade de edge MEDIO por simbolo via Cochran's Q/I2, que e uma "
+                "pergunta diferente de correlacao de ret_net barra a barra -- ver AG-216"
+            ),
+        },
+        # --- AG-212: desalinhamento contagem x massa no balanceamento ----
+        "class_balance": {
+            "basis_usado": class_balance_basis,
+            "mean_scale_pos_weight_count": _mean_finite(spw_count),
+            "mean_scale_pos_weight_weight": _mean_finite(spw_weight),
+            "mean_razao_weight_sobre_count": _mean_finite(
+                [w / c for w, c in zip(spw_weight, spw_count, strict=True) if c > 0]  # noqa: unguarded-ratio -- `if c > 0` na propria comprehension
+            ),
+            "nota": (
+                "razao != 1,0 mede o desalinhamento: scale_pos_weight entra em CONTAGEM, "
+                "mas o gradiente do LightGBM ja e ponderado por sample_weight (MASSA). "
+                "A isotonica corrige o NIVEL da probabilidade, nao a forma aprendida "
+                "durante o crescimento da arvore (ganho de split, min_child_samples, "
+                "min_sum_hessian_in_leaf)"
+            ),
+        },
+        # --- AG-213: os dois alvos concordam? -----------------------------
+        "target_agreement_fold0": target_agreement,
+        # --- AG-215: Sharpe deflacionado --------------------------------
+        "dsr": dsr_block,
+        # Proveniência da rodada -- quais políticas estavam ativas.
+        "policies": {
+            "tau_policy": tau_policy,
+            "calib_split_mode": calib_split_mode,
+            "class_balance_basis": class_balance_basis,
+            "dsr_n_trials": dsr_n_trials,
         },
         "camada1_backtest_by_path": _path_results_to_dict(c1_by_path),
         "camada0_backtest_by_path": _path_results_to_dict(c0_by_path),
@@ -767,14 +1065,24 @@ def run_layer1_sprint(
             # (o nominal subestima concentração real quando features do
             # top-gain são correlacionadas — ver
             # src.models.hhi.compute_effective_concentration para a prova).
-            "gate3_4_hhi_lt_025": hhi.gate3_4_passes(mean_hhi_effective),
+            # Thresholds agora lidos de constants.yaml (achado 2026-08-24 --
+            # gate3_4_passes/gate3_4_max_share_passes viviam só como default
+            # de parâmetro Python, sem entrada de proveniência) -- valores
+            # inalterados (0,25/0,30), só a fonte mudou de literal implícito
+            # pra constante explícita.
+            "gate3_4_hhi_lt_025": hhi.gate3_4_passes(
+                mean_hhi_effective, threshold=float(load_constant("alpha_gate3_hhi_effective_max"))
+            ),
             # Referência histórica/comparação — o veredito que o HHI
             # NOMINAL sozinho teria dado, mantido visível mas NUNCA usado
             # pelo gate (D3: "mantenha o nominal no relatório também, chave
             # separada, não sobrescrita").
-            "gate3_4_hhi_nominal_lt_025_reference": hhi.gate3_4_passes(mean_hhi_nominal),
+            "gate3_4_hhi_nominal_lt_025_reference": hhi.gate3_4_passes(
+                mean_hhi_nominal, threshold=float(load_constant("alpha_gate3_hhi_effective_max"))
+            ),
             "gate3_4_max_share_lt_030": hhi.gate3_4_max_share_passes(
-                _mean_finite(max_share_values)
+                _mean_finite(max_share_values),
+                threshold=float(load_constant("alpha_gate3_max_share_max")),
             ),
         },
         "baselines": {
@@ -838,14 +1146,17 @@ def run_layer1_sprint_all_combinations(
     symbols: tuple[str, ...] = ALL_SYMBOLS,
     resolutions: tuple[str, ...] = ALL_RESOLUTIONS,
     vol_estimator_id: str | None = None,
-    device_type: str = "cuda",
+    device_type: str = "cpu",
+    feature_ids: tuple[str, ...] | None = None,
+    use_hyperparams_by_combo: bool = False,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
     vezes por default (5 símbolos x {R1, R2, R3}). `run_layer1_sprint` já
     aceita os dois parâmetros e o CLI já expõe `--resolution-id`
     (Fase 4/5 da migração anterior) -- nenhuma mudança de assinatura foi
-    necessária, só orquestração.
+    necessária, só orquestração. `device_type` default `"cpu"` -- mesma
+    correção/motivo de `run_layer1_sprint` (AG-201, 2026-08-24).
 
     `report_path`/`run_tag` únicos por combinação (`{symbol}_
     {resolution_id}`) -- fecha `AG-160`: o default de `run_layer1_sprint`
@@ -872,17 +1183,41 @@ def run_layer1_sprint_all_combinations(
     diferentes). Registrar em `audit/n_lifetime.yaml` (append-only, só
     quando o trial de fato acontecer) exige essa decisão do Manager
     primeiro -- não inventada aqui (B23, mesma disciplina de nunca
-    estipular faixa/contagem sem medir)."""
+    estipular faixa/contagem sem medir).
+
+    `feature_ids`/`use_hyperparams_by_combo` (2026-08-25, `AG-207`/
+    `ADR-003`) -- sentinelas `None`/`False` preservam bit-exato o
+    comportamento de sempre (T1_FEATURE_IDS, hiperparâmetro único global
+    de `constants.yaml`, D-11) pra todo call site/teste existente.
+    `feature_ids` explícito (ex. `features_build.SUPPORT_FEATURE_IDS`) é
+    repassado IDÊNTICO às 15 chamadas -- mesmo vetor de treino em toda
+    combinação. `use_hyperparams_by_combo=True` faz cada chamada
+    consultar `hyperparams_by_combo.load_hyperparams_by_combo(symbol,
+    resolution_id)`; combinação sem calibração própria (5 das 15, ver
+    `config/alpha_hyperparams_by_combo.yaml`) cai pro hiperparâmetro
+    global -- com warning explícito, nunca silencioso."""
     reports: dict[tuple[str, str], dict[str, Any]] = {}
     for symbol in symbols:
         for resolution_id in resolutions:
             run_tag = f"{symbol}_{resolution_id}"
             report_path = EXPERIMENTS_DIR / f"alpha_layer1_report_{run_tag}.json"
+            hyper: alpha.LGBMHyperparams | None = None
+            if use_hyperparams_by_combo:
+                hyper = hyperparams_by_combo.load_hyperparams_by_combo(symbol, resolution_id)
+                if hyper is None:
+                    logger.warning(
+                        "models.pipeline.hyperparams_by_combo_ausente",
+                        symbol=symbol,
+                        resolution_id=resolution_id,
+                        fallback="hiperparametro global de constants.yaml",
+                    )
             logger.info(
                 "models.pipeline.run_layer1_sprint_all_combinations_start",
                 symbol=symbol,
                 resolution_id=resolution_id,
                 run_tag=run_tag,
+                feature_ids_n=len(feature_ids) if feature_ids is not None else None,
+                hyper_por_combo=hyper is not None,
             )
             report = run_layer1_sprint(
                 symbol=symbol,
@@ -890,6 +1225,8 @@ def run_layer1_sprint_all_combinations(
                 vol_estimator_id=vol_estimator_id,
                 report_path=report_path,
                 device_type=device_type,
+                feature_ids=feature_ids,
+                hyper=hyper,
             )
             reports[(symbol, resolution_id)] = report
     logger.info(
@@ -961,13 +1298,64 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "unica; ignora --symbol/--resolution-id/--tf/--run-tag"
             ),
         )
+        # --- AG-208..AG-215: politicas de correcao, todas OPT-IN. Os
+        # defaults abaixo reproduzem o comportamento legado bit-a-bit --
+        # rodar sem nenhuma destas flags produz exatamente o artefato de
+        # sempre, so com o relatorio mais rico (ESS, dispersao entre
+        # caminhos, concordancia de alvos, balanceamento medido).
+        parser.add_argument(
+            "--tau-policy",
+            default=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+            choices=[alpha.TAU_POLICY_LEGACY_PER_SIDE, alpha.TAU_POLICY_TOTAL_COMMON_OOF],
+            help=(
+                "AG-210 -- legacy_per_side aplica o quantil (1-target_signal_rate) a "
+                "CADA lado (comportamento atual); total_common_oof resolve o par "
+                "(tau_long, tau_short) para que a taxa TOTAL bata o orcamento, sobre a "
+                "populacao comum de barras de treino fora do fit. Ver "
+                "constants.yaml::fee_budget_is_per_side (value: false)"
+            ),
+        )
+        parser.add_argument(
+            "--calib-split-mode",
+            default=alpha.CALIB_SPLIT_LEGACY_RANDOM,
+            choices=[alpha.CALIB_SPLIT_LEGACY_RANDOM, alpha.CALIB_SPLIT_TEMPORAL_PURGED],
+            help=(
+                "AG-209 -- legacy_random_stratified usa train_test_split aleatorio "
+                "(rotulos sobrepostos caem dos dois lados do split); temporal_purged "
+                "usa bloco temporal contiguo + purge por t1 (B09 aplicado ao sub-split "
+                "interno, nao so ao CPCV externo)"
+            ),
+        )
+        parser.add_argument(
+            "--class-balance-basis",
+            default=alpha.CLASS_BALANCE_COUNT,
+            choices=[alpha.CLASS_BALANCE_COUNT, alpha.CLASS_BALANCE_WEIGHT],
+            help=(
+                "AG-212 -- count usa n_neg/n_pos (contagem, comportamento atual); "
+                "weight usa a razao de MASSA, coerente com o gradiente ja ponderado "
+                "por sample_weight. Os DOIS sao sempre medidos e reportados"
+            ),
+        )
+        parser.add_argument(
+            "--dsr-n-trials",
+            type=int,
+            default=None,
+            help=(
+                "AG-215 -- N_lifetime auditado (audit/n_lifetime.yaml) para deflacionar "
+                "o Sharpe (Bailey & Lopez de Prado). SEM default: nao informado = DSR "
+                "nao calculado, com a razao declarada no proprio relatorio. Inventar um "
+                "N aqui produziria um DSR tranquilizador e falso (B23)"
+            ),
+        )
         parser.add_argument(
             "--device-type",
-            default="cuda",
+            default="cpu",
             choices=["cuda", "cpu", "gpu"],
             help=(
-                "D-18 -- GPU obrigatoria em producao (default cuda); passe "
-                "cpu para depurar localmente sem GPU disponivel"
+                "AG-201 (2026-08-24) -- default cpu: CUDA bloqueado "
+                "estruturalmente neste ambiente (LightGBM exige NCCL, sem "
+                "build Windows nativo). Passe cuda explicitamente se/quando "
+                "migrar para ambiente Linux/cloud com CUDA+NCCL funcionais"
             ),
         )
         return parser.parse_args()
@@ -995,6 +1383,10 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             model_id_camada0=f"{MODEL_ID_CAMADA0}{tag}",
             report_path=(EXPERIMENTS_DIR / f"alpha_layer1_report{tag}.json") if tag else None,
             device_type=args.device_type,
+            tau_policy=args.tau_policy,
+            calib_split_mode=args.calib_split_mode,
+            class_balance_basis=args.class_balance_basis,
+            dsr_n_trials=args.dsr_n_trials,
         )
         logger.info(
             "models.pipeline.cli_done",

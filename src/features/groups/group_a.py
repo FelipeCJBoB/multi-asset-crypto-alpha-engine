@@ -31,19 +31,26 @@ from .. import support
 from ..support import FloatArray
 
 
-def a05_ret_vol_norm_4(close: FloatArray, atr_20_pct: FloatArray, lookback_bars: int) -> FloatArray:
-    """`ln(C_t/C_{t-lookback_bars}) / (atr_20_pct × 2)` — §2.2 A05."""
+def a05_ret_vol_norm_4(
+    close: FloatArray, atr_20_pct: FloatArray, lookback_bars: int, vol_norm_divisor: float
+) -> FloatArray:
+    """`ln(C_t/C_{t-lookback_bars}) / (atr_20_pct × vol_norm_divisor)` — §2.2 A05.
+
+    **Corrigido 2026-08-24** (achado da varredura de gaps, mesmo padrão do
+    `round_trip_cost_bps_maker_prob`): `feature_a05_vol_norm_divisor`
+    (`constants.yaml`, AG-027) já existia declarada e já era lida
+    corretamente por `a06_ret_vol_norm_12` (`vol_norm_divisor=lote_a.
+    a05_vol_norm_divisor`, `build.py`) — só A05 continuava com `2.0`
+    hardcoded no corpo, isento do lint via `_ALLOWED_NUMERIC_LITERALS`.
+    Valor da constante já era `2.0` (idêntico ao literal) -- correção é
+    só de fiação, comportamento atual bit-exato preservado."""
     n = close.shape[0]
     log_ret = np.full(n, np.nan, dtype=np.float64)
     if n > lookback_bars:
         with np.errstate(divide="ignore", invalid="ignore"):
             log_ret[lookback_bars:] = np.log(close[lookback_bars:] / close[:-lookback_bars])
-    # 2.0 = feature_a05_vol_norm_divisor em config/constants.yaml (AG-027,
-    # 2026-08-15) -- valor ASSUMED, propósito não documentado em lugar
-    # nenhum encontrado; não lido dinamicamente ainda (ver ressalva de
-    # escopo na entrada do yaml).
     with np.errstate(divide="ignore", invalid="ignore"):
-        out: FloatArray = log_ret / (atr_20_pct * 2.0)  # noqa: magic-number -- ver comentário acima
+        out: FloatArray = log_ret / (atr_20_pct * vol_norm_divisor)
     return out
 
 

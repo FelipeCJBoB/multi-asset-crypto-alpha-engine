@@ -719,7 +719,9 @@ def compute_t1_features(
     columns: dict[str, object] = {
         "open_time": bars_15m["open_time"],
         "close_time": bars_15m["close_time"],
-        "A05_ret_vol_norm_4": group_a.a05_ret_vol_norm_4(close, atr_20_pct, windows.ret_lookback),
+        "A05_ret_vol_norm_4": group_a.a05_ret_vol_norm_4(
+            close, atr_20_pct, windows.ret_lookback, vol_norm_divisor=lote_a.a05_vol_norm_divisor
+        ),
         "A13_dist_ema48_atr": group_a.a13_dist_ema48_atr(close, ema_48, atr_20_abs),
         "B01_rsi_14": group_b.b01_rsi_14(close, windows.rsi_window),
         "E27f_cost_atr_ratio": group_e.e27f_cost_atr_ratio(

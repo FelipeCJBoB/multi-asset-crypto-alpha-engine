@@ -4219,6 +4219,44 @@ outros 14 pares símbolo×resolução fica pendente do Manager — não
 decidida nesta rodada. Detalhe: `docs/t2_t1_ablation_veredito_duas_
 analises_2026-08-24.md`.
 
+**Ablação T2→T1 — Fase 2 + confirmação + ADR-002 (2026-08-24, mesmo
+dia).** Fase 2 (extensão de fronteira ao redor do vencedor da Fase 1,
+16 execuções, `N_lifetime` 223→239): achou um ponto interior (k=32,
+num_leaves=3, min_child_samples=500) que quebrou os 2 padrões "limpos"
+da Fase 1 (k maior nem sempre melhor, menos complexidade nem sempre
+melhor) e chegou perto do piso de ruído (-0,75σ vs ~-2,0σ da Fase 1).
+Confirmação (repetição de seed + gate de permanência real, `N_lifetime`
+239→250) refutou esse ponto: `pooled_sharpe` médio de 10 seeds caiu pra
+-1,9212 (de volta ao patamar da Fase 1) e o gate de permanência deu 0/5
+— era sorte de 1 seed, não sinal. **O Manager apontou, corretamente,
+que essa conclusão era prematura**: nenhuma das Fases 0-2 tinha tocado
+`learning_rate`/`subsample`/`feature_fraction`/`lambda_l2`/
+`n_estimators` (travados no valor de produção o tempo todo), e a
+seleção de "vencedor" em cada fase usava `argmax` de 1 seed só, nunca a
+mediana de top-5 que o design doc original já previa e nunca
+implementou — o mesmo viés de seleção (winner's-curse) que
+`dsr.py::expected_max_sharpe_under_n_trials` já modela, nunca aplicado
+à própria busca. Invocado `/engineering:architecture`, produzido
+`docs/ADR-002_busca_hiperparametro_robusta_a_ruido_2026-08-24.md` —
+arquitetura de 3 estágios (screen 1 seed → confirma top-5 por mediana
+de 5 seeds → gate de permanência repetido 5×), implementada
+(`src/validation/t2_t1_stage1_hyperparam_screen.py`,
+`t2_t1_stage2_3_robust_confirm.py`) e executada sobre ETHUSDT/R1 no
+mesmo dia (`N_lifetime` 250→288, ids 25-27). Estágio 1b achou o número
+mais chamativo de toda a campanha (`n_estimators=150`,
+`pooled_sharpe=-0,8478` em 1 seed) — Estágio 2 confirmou que era o
+MAIOR viés de seleção medido no projeto até agora
+(`selection_bias_estimate=+0,772`); o vencedor real por mediana
+(`learning_rate=0,01`, `n_estimators=300`) não sofreu esse viés mas
+ainda assim ficou fortemente negativo (`median_pooled_sharpe=-1,1355`)
+e falhou o Estágio 3 (gate de permanência repetido 5×:
+`n_better=[2,3,0,1,0]`, mediana 1,0, muito abaixo do limiar `≥4`).
+**Veredito final, agora com metodologia completa cobrindo os 9
+hiperparâmetros do LightGBM**: T2 não sobrevive em ETHUSDT/R1 — mesmo
+resultado direcional que a confirmação apontava, mas sem a lacuna
+metodológica que o tornava contestável. Detalhe:
+`audit/evidence_ledger.yaml::adr002-t2-t1-stage2-3-veredito-robusto-2026-08-24`.
+
 **Label Engine — fill gap-aware no SL, `AG-205` (2026-08-24), pedido
 explícito do usuário.** Comparação de engenharia com 2 implementações de
 Triple Barrier Method de outros projetos de referência: `exit_price` de
@@ -4262,8 +4300,150 @@ comandos exatos entregues ao usuário (`build_and_write_labels_for_symbol`/
 parkinson`, `src/labels/backfill_multi_symbol.py`), decisão de quando
 rodar fica com o usuário.
 
+## Alpha — override de negócio T2→T1 (AG-207), ADR-003, ortogonalidade T1+T2 combinada, e 2 achados que questionam a própria régua de medição (2026-08-24 → 2026-08-25)
+
+Continuação direta da seção anterior — o veredito de `ADR-002` (T2 não
+sobrevive em ETHUSDT/R1 nem com metodologia robusta completa) foi levado
+ao Manager como recomendação, não como decisão final.
+
+**`AG-207` — override executivo: T2 promovido a T1 apesar da evidência
+negativa, violação de R4 reconhecida explicitamente.** Decisão do
+Manager: "Autorizado e ratificado pelo Manager" — a promoção acontece
+mesmo com `ADR-002` medindo resultado negativo, e o próprio registro
+reconhece que isso viola R4 (§0.2, "teto de features = medido, nunca
+estipulado"). É decisão de NEGÓCIO documentada como tal, não resolução
+estatística — a violação fica visível no log, não escondida atrás de uma
+releitura favorável do dado.
+
+**Correção crítica de escopo — aditivo, não substitutivo.** A 1ª
+implementação de "promover T2 a T1" herdou a convenção da campanha de
+pesquisa original (`build_design_matrix` faz `df.select(feature_ids)`
+puro — em `ADR-002`, k=32 SUBSTITUÍA os 7 de T1). O Manager corrigiu
+verbatim: "não mandei remover T1, mandei promover T2 a T1... não faz
+sentido remover T1 se era as melhores features, quero que somem".
+Corrigido em `src/models/pipeline.py::run_layer1_sprint`:
+`feature_ids` passa a significar o VETOR COMPLETO desejado (T1+T2 = 69
+features, `T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`); internamente,
+`extra_feature_ids` é computado por diferença de conjunto contra T1
+antes de chamar `build_modeling_frame` (que já inclui T1 sempre e
+rejeita overlap).
+
+**2 gaps de engenharia achados via smoke test real, não revisão
+estática.** (1) `write_predictions_versioned`/`config_hash` não
+capturava `feature_ids`/hiperparâmetro — um retreino sob config nova
+colidia com o artefato T1 legado (`ArtifactExistsError` real
+observado); corrigido incluindo os dois no payload de config quando
+explícitos. (2) `run_b4_feature_shuffle` (`src/models/baselines.py`)
+tinha `T1_FEATURE_IDS` (7) hardcoded — `ValueError: X has 7 features,
+but LGBMClassifier is expecting 62` ao rodar sob o vetor aditivo;
+corrigido com parâmetro `feature_ids` explícito.
+
+**`ADR-003` — busca de hiperparâmetro por combo, 10 piores por
+`ret_net`, 4 estágios, 463 trials novos.** Escopo: as 10 piores
+combinações symbol×resolution por `ret_net` real medido
+(`experiments/alpha_deep_analysis_2026-08-24.json`) — BTCUSDT/R3,
+BNBUSDT/R3, SOLUSDT/R1, BTCUSDT/R2, BNBUSDT/R2, BNBUSDT/R1, XRPUSDT/R1,
+ETHUSDT/R3, BTCUSDT/R1, ETHUSDT/R2. 4 estágios (`src/validation/
+t2_t1_full_feature_stage{0,1,2,3}_*.py`): Stage 0 probe (24+3 trials) →
+Stage 1 screening (293 trials) → Stage 2 confirmação-por-mediana (120
+trials, top-5 nunca argmax — correção que o design doc original já
+previa e nunca tinha sido implementada) → Stage 3 permanência (50
+trials). `N_lifetime` 288→751 nesta campanha. **Veredito: as 10
+medianas são NEGATIVAS — só BNBUSDT/R1 passa nominalmente o gate de
+permanência (4/5)**, confiabilidade desse PASS específico questionada
+pelo achado `AG-220` (abaixo). Hiperparâmetro calibrado por combo
+persistido em `config/alpha_hyperparams_by_combo.yaml` (schema próprio,
+`provenance: MEASURED`, fora do schema escalar de `constants.yaml` por
+desenho), carregado via novo `src/models/hyperparams_by_combo.py::
+load_hyperparams_by_combo`.
+
+**Aplicação real em produção — 10 combinações retreinadas com T1+T2
+aditivo (69) + hiperparâmetro calibrado por combo.** `N_lifetime`
+751→761 (+10). No meio da execução, uma **colisão cross-sessão real**
+invalidou labels já usadas com sucesso ~2h antes: uma sessão Claude
+paralela (achados `AG-221`/`AG-225`) adicionou `LabelConfig.
+entry_fill_source` a `triple_barrier.py` — o campo por si só entra no
+`config_hash`, então TODO `labels.parquet` persistido antes da mudança
+falha `verify_config_hash`, mesmo sob o valor default (bit-exato
+preservado). Causa raiz confirmada por `git diff` no arquivo (não
+suposição) — os 4 grids (15m/R1/R2/R3, 5 símbolos) foram relabelizados
+uma 3ª vez nesta sessão pra destravar o retreino real.
+
+**Ortogonalidade T1+T2 combinada (69×69), medida por combo real —
+`src/analysis/t1_t2_orthogonality_by_combo.py`.** Gap fechado: a
+medição anterior (`t2_ranking_ortogonalidade.py`) só cobria T2×T2, e só
+pra ETHUSDT/R1 — T1 nunca tinha entrado na matriz de correlação, então
+um par T1↔T2 redundante nunca era detectável. Núcleo puro
+`filter_t2_given_t1`: T1 pré-populado em `selected`, nunca candidato a
+exclusão (pedido explícito do Manager — T1 é aditivo, não encolhe); T2
+ranqueado por estabilidade (reusa `rank_by_stability`), aceito se
+`|Spearman| ≤ threshold` contra T1 fixo + T2 já aceito. Resultado nas
+10 combos reais: média 41,4/69 sobrevivem (faixa 39–43). **Achado
+novo, nunca checado antes**: `A13_dist_ema48_atr` × `B01_rsi_14` — 2
+das 7 features "núcleo" originais de T1 — têm `|Spearman|` entre 0,909
+e 0,995 nas 10 combinações, sem exceção. T1 não é excluído por desenho
+(mesma trava de sempre); decisão sobre o que fazer com o achado fica
+com o Manager — **filtro medido, ainda não aplicado** aos 10 artefatos
+reais de produção (que treinam sobre os 69 brutos).
+
+**`AG-220`/`AG-220-ADDENDUM` (achado de sessão paralela) — poder
+estatístico do gate de permanência QUESTIONADO.** 3 experimentos
+pareados reais em BTCUSDT/R1 (k=7, variando só `tau_policy`/
+`calib_split_mode`) mostraram o veredito do gate oscilando
+FALSO→VERDADEIRO→FALSO só por escolha de calibração, com
+`|delta(Camada1,Camada0)| < sigma` nas 3 variantes. Isso lança dúvida
+sobre TODO resultado medido nesta sessão com o mesmo gate — `ADR-002`,
+`ADR-003`, e as 10 combinações reais de produção, incluindo o PASS
+nominal de BNBUSDT/R1 citado acima.
+
+**`AG-221`/`AG-221-ADDENDUM` (achado de sessão paralela) — artefato de
+latência sintética no Label Engine.** `t_post` (close_time) da
+dollar-bar cai em instante arbitrário do relógio; a busca de fill por
+`mark_1m` só pode começar no próximo minuto cheio — espera forçada de
+0–60s uniformemente distribuída que NÃO existe em produção real (ordem
+posta imediatamente). Medido: `ret_gross` piora monotonicamente com o
+delay sintético, -2,64bps (0-10s) até -6,94bps (50-60s); extrapolado
+pra delay=0, edge real ~-2,2bps vs. ~-4,4bps medido —
+**aproximadamente metade de todo edge bruto negativo medido no
+projeto (M6, ablação T2→T1, `ADR-002`, `ADR-003`) pode ser este
+artefato**, não sinal econômico real. Correção proposta
+(`entry_fill_source="agg_trades"`, `TradeWindowCursor` em
+`src/labels/fill_model.py`) implementada e testada (128/128), **NÃO
+aplicada como default de produção** — decisão do Manager pendente,
+status permanece ABERTO.
+
+**`AG-234` — auto-correção de referência fantasma, achada durante esta
+própria rodada de governança.** Uma referência a "`AG-228`" citada em
+`src/models/pipeline.py` e em chat nunca virou entrada real no ledger;
+enquanto isso, a sessão paralela usou `AG-228` pra um achado não
+relacionado. Corrigido: entrada real criada como `AG-234` (próximo
+número livre real), todas as referências (`pipeline.py`,
+`evidence_ledger.yaml`, `t1_t2_orthogonality_by_combo.py`, artefato
+"Alpha — Base de Pesquisa") corrigidas via `sed`/`Edit`, verificadas
+por `grep` (zero remanescente) e YAML parse.
+
+**Governança ponta a ponta desta sessão (7 passos, pedido explícito do
+usuário).** `PLANO_MESTRE_PRINCE2.md` §11.4/Changelog atualizados
+(entrada v3.54); Road Map Vivo v2 republicado com seção dedicada à
+saga T2→T1; `architecture_gaps_log.yaml` com `AG-207`/`AG-234`;
+`constants.yaml` verificado limpo (`check_constants_provenance.py`
+exit 0); `evidence_ledger.yaml` com as entradas de `ADR-003`/
+ortogonalidade; esta seção fecha o item 7.
+
+**Pendências explícitas, nenhuma decidida unilateralmente**: (1) mudar
+o gate de avaliação do Alpha pra BPS — pedido separado do usuário,
+ainda não iniciado, exige investigar `backtest_lite.py` (muito
+modificado pela sessão paralela); (2) aplicar os conjuntos de feature
+filtrados por ortogonalidade (39–43) aos 10 artefatos reais de
+produção, hoje treinados sobre os 69 brutos; (3) trocar
+`entry_fill_source` pra `agg_trades` como default (`AG-221`); (4)
+reavaliar `ADR-002`/`ADR-003`/as 10 combinações reais à luz de
+`AG-220` (poder do gate) e `AG-221` (artefato de latência) — nenhum
+resultado negativo medido nesta sessão pode mais ser lido como
+definitivo sem essa reavaliação.
+
 <!-- check-sprint-log: skip -->
-## Estado atual (2026-08-23)
+## Estado atual (2026-08-25)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
 2026-08-16 (`4 — Feature Engine, em andamento`) — não corrigida nesta
@@ -4282,14 +4462,14 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | T1 (histórico, 2026-08-16) | "extinto — pool único de 13 features" registrado então; **superseded 2026-08-19** — ver linha "Tiering de features" abaixo, decisão nova e mais ampla (~92 features, catálogo inteiro do PRD Parte II), relação exata entre as duas decisões não reconciliada nesta atualização |
 | Tiering de features (T1/T2/T3) | **descontinuado como portão de entrada, 2026-08-19** — todas as features com fonte real wired (T1+T2, ~92 do catálogo `PRD_V3_2_UNIFICADO.md` Parte II) passam a ser canônicas; seleção delegada ao Learner/Meta-model. Registrado, **não implementado em código** (`T1_FEATURE_IDS` em `src/features/build.py:29-40` continua travado nas 10 antigas); dependência conhecida a resolver junto: `AG-038` |
 | Bloqueadores dollar-bar (AG-031/AG-042/AG-032) | **decididos E implementados** 2026-08-16 (commits `c0ac546`/`982b5d4`, pytest confirmado em cada leva — 121/105/42 passed) — detalhe em `PLANO_MESTRE_PRINCE2.md` §11.5. Resta `AG-043` (features, agora relevante também pra M4 sob R2/R3 — débito documentado via caveat, não resolvido) e itens 2/3 de `AG-042` (monitoramento), fora desta leva |
-| `N_lifetime` | **78**/60 — orçamento excedido mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); M4 (18 trials) ratificado por execução real, contagem formal em `n_lifetime.yaml` segue pendente (mesma decisão de `AG-077`, não resolvida). `AG-098` (Trilha B) estabeleceu precedente parcial pra seleção de linha symbol×resolution (1 trial por candidata individual, sempre). **+15 em 2026-08-23** (id 18) — sweep real do Alpha, 5 símbolos × R1/R2/R3, cada combinação um treino+backtest novo |
+| `N_lifetime` | **761**/60 — orçamento excedido de longe mas descontinuado como gate vinculante (`AG-077`, 2026-08-17); contador segue incrementado e auditado (DSR le `counter` de verdade, `AG-077` não resolvida). Progressão desde `AG-098`: **+15** (2026-08-23, id 18, sweep real do Alpha 5×R1/R2/R3) → **+18** (id 19, S1 tp/sl) → **+60+1+66+16+11** (ids 20-24, campanha T2→T1 Fases 0-2+confirmação) → **+13+20+5** (ids 25-27, ADR-002 Estágios 1b/2/3) = 288 → **+0** (id 28, ratificação `AG-207`, sem trial novo) → **+293+120+50** (ids 29-31, `ADR-003` Stage0-3, 10 piores combos por `ret_net`) = 751 → **+2+8** (ids 32-33, retreino real das 10 combinações em produção com T1+T2 aditivo) = **761** |
 | **M4 — Regime** | 4ª execução CONCLUÍDA (2026-08-19), resultado nulo generalizado no teste de RETORNO (deixou de decidir promoção, ADR-001 §2.7). `AG-114` (regra de gate) aplicada 2026-08-20 — `hmm_gaussian_k4_v1` declarado vencedor, **REABERTO no mesmo dia** (Gate 1 com critério ambíguo, `hmm_gaussian_k2_v1` venceria sob leitura alternativa) — **status AINDA ABERTO** quanto à metodologia. `AG-118` (Gate Efficiency) **RESOLVIDO** 2026-08-21 — sem sinal econômico detectável (`lift`~1,0, 90 células). **Apesar disso, `hmm_gaussian_k4_v1` promovido a candidato de regime CANÔNICO DE PRODUÇÃO** via override de negócio do Manager (2026-08-21) — ver seção narrativa acima e `PLANO_MESTRE_PRINCE2.md §15.13` |
 | **Trilha B — contrato Regime→Alpha→Execução** | Aberta 2026-08-19, veredito do ADR-001 recebido 2026-08-20 (ratificado). Fase A/B/C de `§15.13` (regime fora do Alpha, builder de produção, Risk Engine wired) implementam a PARTE do contrato que toca Risk — as **7 decisões residuais originais** (§15.11, arquitetura de Decision Engine/gate de posição — `AG-096` sub-decisões) **seguem explicitamente pendentes**, não resolvidas por esta rodada. **Correção 2026-08-22**: `AG-116` (horizon_bars vs. time_stop_ms) citado aqui antes como exemplo das 7 estava ERRADO — é item separado, já `fechado` (decidido e implementado 2026-08-20, opção B, ver ledger), nunca esteve bloqueado atrás do Gate 1. Detalhe: `PLANO_MESTRE_PRINCE2.md §15.11`/`§15.13` |
 | Regime → produção (Fases A-F, `§15.13`) | **Implementado 2026-08-21**: `src/models/alpha.py` (regime fora de `DESIGN_COLUMNS`), `src/regime/build_hmm.py`/`hmm_features.py` (builder novo), `src/risk/limits.py` (`regime_tradeable: bool` candidato-agnóstico), `canonical_regime_hmm_n_states=4` em `constants.yaml`. 78 testes rápidos + 4 `slow` confirmados pelo Manager. **Retreino do Alpha (`run_layer1_sprint()`) NÃO executado** — Fase A só tem efeito real depois disso, mesmo represamento da linha "Parkinson" abaixo |
 | **Meta Model** | **Desenho ponta a ponta TRAVADO, AUDITADO e REVISADO (v3), ZERO implementado** — 2026-08-22. `project_assurance` sobre a v2 achou **3 CRITICAL + 4 HIGH** (veredito "não é base sólida para implementar"): `group_matched` era o único braço de CV **sem purge/embargo**; Gate E0 sem esquema de permutação declarado (seria o gate mais fácil de passar do doc); nulo A2 replicando 1 de 5 fontes de otimismo. Corrigidos na v3; `group_matched` **removido do caminho crítico**. AGs `AG-153`-`AG-156`. `ADR-001 §3.7/§2.7` **revogado pelo Manager**; regime passa a entrar como **feature** (one-hot, nunca ordinal), fechando `AG-094` com reversão explícita da resolução que `AG-118` havia antecipado. **Grupo J desacoplado e movido para depois** (marginalidade de PnL de `p_fill` é zero por construção: `NOFILL ⟹ ret_net = 0.0`). **CatBoost descartado**, logística L2 default com LightGBM atrás de guarda de amostra — braço LightGBM ganha config de GPU quando/se o gate abrir (2026-08-22, pedido do Manager, D-02 não reaberto). Auditoria de 3 flancos: 6 CRITICAL, ~20 HIGH, 40 correções — inclusive uma **prova de impossibilidade falsa** no v1. Bloqueado por: Gate E0 (separabilidade condicional) + retreino do Alpha + `AG-151` (purge cross-símbolo). Detalhe: `docs/meta_model_design_doc_2026-08-22.md`, `PLANO_MESTRE_PRINCE2.md §15.19` |
 | **Alpha multi-ativo × multi-resolução** | **IMPLEMENTADO, TREINADO E EM ANÁLISE PROFUNDA — 2026-08-23/24**. D-01 a D-18 codificados (`§15.20.1`); D-06 integrado (`§15.20.2`). Sweep de 15 combinações: **3/15 (20%) passam o gate de permanência**, mas **0/15 têm retorno médio líquido positivo** — achado de `§15.20.3`, AUC real 0,509 médio (quase nulo). Taxa-base com significância: XRPUSDT único símbolo com sinal positivo nas 3 resoluções; `SOLUSDT/R3`/`BNBUSDT/R3` com seleção adversa confirmada. `AG-199`/`AG-200`/`AG-154` fechados; **`AG-201` (GPU) FECHADO 2026-08-24** — NCCL inviável em Windows nativo, `device_type` default `cuda→cpu` nos entry points reais, não é reversão de D-18, é reconhecer o ambiente atual (ver seção narrativa "Pós-retreino do Alpha" abaixo); **`AG-202` causa raiz confirmada 2026-08-24, FECHADO** (1ª hipótese, bug em `bars.py`, foi descartada ao ler teste existente que provava esse comportamento como deliberado; causa real é `build_dollar_bars_walkforward` nunca resetar `carry.base_value` entre fronteiras de recalibração, sintoma fechado em `dataset.py`, causa raiz em `bars.py` NÃO implementada — reprocessar todo o lake); **`AG-203` novo, ABERTO** — 3/15 combinações com duplicata residual, causa diferente de AG-202, não investigada a fundo. Metodologia de pesquisa H0-H6 + estratégia de testes propostas, `N_lifetime` +15 (counter 63→78). Artefato "Alpha — Base de Pesquisa" (abas Retreino/Calibrações) é o registro único até a versão final. Detalhe completo: `PLANO_MESTRE_PRINCE2.md §15.20.1`-`§15.20.3`, `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23` e as 3 entradas de 2026-08-24, `audit/architecture_gaps_log.yaml::AG-202`/`AG-203` |
 | **S1 — correção de `tp_atr_mult`/`sl_atr_mult` (`AG-204`)** | Sweep completo de sensibilidade (`experiments/s1_tp_sl_sensitivity_report.json`) — todas as células com edge negativo, mas produção (tp=2,0/sl=1,5) não era a melhor (3ª de 7). Manager decidiu trocar pela célula `R=1,S=3/2` (tp=1,5/sl=1,5) — `edge_atr_units` médio -0,01686 (34% menos negativo, ainda NEGATIVO — "menos pior medido", não "edge positivo"). `constants.yaml` atualizado (`provenance: MEASURED`). Todos os 20 `labels.parquet` (5 símbolos × 4 grades) reprocessados no mesmo dia, retreino do Alpha (15 combinações) disparado na sequência. Detalhe: `audit/architecture_gaps_log.yaml::AG-204`, seção narrativa "Pós-retreino do Alpha" abaixo |
-| **Ablação T2→T1 (H7) — promoção de features refutada na Fase 1** | Plano de 3 fases (substitui grade Optuna direta) pra decidir se os 62 candidatos T2 (Lote A/B/C, ver linha H5 acima) devem promover além do T1 atual (7 features). Fase 0 (ETHUSDT/R1, `N_lifetime` 96→156): piso de ruído medido (σ=0,306), nulo por permutação calibrado (P(n_better≥4)=0,10 — o 5/5 real do sweep original tem P=0,02, sinal mais forte do que a leitura agregada sugeria). Fase 1 (ranking + ortogonalidade, 39/62 sobrevivem, mapa de capacidade completo, `N_lifetime` 156→223): padrão limpo — k maior sempre melhora, árvore mais complexa sempre piora — **mas mesmo a melhor combinação fica ~2 desvios-padrão pior que o piso de ruído da Fase 0a**, T2 não supera T1 neste ativo/resolução. Decisão de escalar pra Fase 2 ou generalizar pendente do Manager. Detalhe: `docs/t2_t1_ablation_veredito_duas_analises_2026-08-24.md`, seção narrativa abaixo |
+| **Ablação T2→T1 (H7) — REFUTADA por medição (ADR-002), PROMOVIDA por override de negócio (AG-207)** | ADR-002 (screen→confirm→gate robusto a ruído de seed, ETHUSDT/R1, 9 hiperparâmetros LightGBM cobertos): **T2 não sobrevive** mesmo com metodologia completa (`pooled_sharpe` mediano -1,14, gate de permanência 1,0/5, `N_lifetime` 250→288). **Apesar do veredito negativo, o Manager RATIFICOU a promoção via `AG-207`** — decisão de negócio explícita, reconhece violar R4. Correção crítica: a promoção é ADITIVA (T1+T2=69), não substitutiva — corrigido em `pipeline.py` após o Manager apontar a implementação inicial errada. `ADR-003` (4 estágios, 10 piores combos por `ret_net`, 463 trials, `N_lifetime` 288→751): todas as 10 medianas NEGATIVAS, só BNBUSDT/R1 passa nominalmente (4/5) — confiabilidade questionada por `AG-220`. 10 combinações reais retreinadas em produção com T1+T2 aditivo + hiperparâmetro calibrado por combo (`config/alpha_hyperparams_by_combo.yaml`), `N_lifetime` 751→761. Ortogonalidade T1+T2 combinada (69×69) medida por combo real: média 41,4/69 T2 sobrevivem, achado novo de redundância DENTRO do próprio T1 (`A13_dist_ema48_atr`×`B01_rsi_14`, `|Spearman|` 0,909-0,995 nas 10 combos) — filtro medido, ainda não aplicado em produção. **2 achados de sessão paralela questionam a régua inteira**: `AG-220` (poder estatístico do gate de permanência sem sustentação — 3 experimentos pareados oscilam FALSO/VERDADEIRO só por calibração) e `AG-221` (~metade do edge bruto negativo medido no projeto pode ser artefato de latência sintética do Label Engine, correção pronta — `agg_trades` — mas não aplicada). Detalhe completo: seção narrativa "Alpha — override de negócio T2→T1" acima, `docs/ADR-002_busca_hiperparametro_robusta_a_ruido_2026-08-24.md`, `docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md` |
 | **TBM — fill gap-aware no SL (`AG-205`/`AG-206`)** | `exit_price` de SL deixa de assumir o nível nominal quando o candle que tocou já abriu além dele (gap/crash) — SL é taker/stop-market, TP nunca recebe o ajuste (maker/passivo). Corrigido nos 2 motores (escalar + vetorizado, paridade preservada). Achado colateral: `config_hash`/B15 estava cego a essa mudança de CÓDIGO (só capturava config) — novo campo `barrier_fill_policy_id` fecha o gap, força reprocessamento antes do próximo treino real. `AG-206` (piso de ATR) medido e fechado SEM implementação — 4,5M linhas reais, mínimo 1,9 bps, achado teórico não confirmado. Commits `ac8190a`/`77cfbbc`. **Labels ainda não reprocessados sob a lógica nova** — decisão do usuário, comandos prontos. Detalhe: seção narrativa "Pós-retreino do Alpha" abaixo |
 | Dados | backfill completo D01/D03/D04/D05/D07/D10/D11/F01 desde ~2019-12; D08/D09 `bookTicker` só 2023-05→2024-03 upstream |
 | Achado aberto | 2 duplicatas + 1 gap reais em `metrics` (2026-06-12/21), `data/quality_reports/quality_report_metrics_v1.json`; `AG-120` (BNBUSDT/RECENTE/R2, timestamp) segue aberto, não investigado a fundo. `AG-121` (canonicalização por retorno vs. volatilidade) — critério da MIGRAÇÃO decidido (MÉDIA); explicação econômica da divergência MÉDIA×DESVIO-PADRÃO em `RECENTE` testada com dado fresco, resultado MISTO (2/4 suporta, 1/4 contradiz, 1/4 ambíguo — ver seção narrativa acima), não é padrão limpo; `LUNA`/`FTX`/`CRYPTO_WINTER`/`ETF_HALVING` seguem com dado obsoleto (`AG-191`, parcial) |

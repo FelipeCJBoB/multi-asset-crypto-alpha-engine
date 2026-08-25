@@ -23,6 +23,7 @@ from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 CONSTANTS_PATH: Path = REPO_ROOT / "config" / "constants.yaml"
+HYPERPARAMS_BY_COMBO_PATH: Path = REPO_ROOT / "config" / "alpha_hyperparams_by_combo.yaml"
 
 DATA_ROOT: Path = REPO_ROOT / "data"
 

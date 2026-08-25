@@ -499,3 +499,45 @@ externa), não pra mais busca.
   aqui, um grid enumerado resolve sem a dívida de engenharia de uma
   dependência nova nunca usada no repo. Decisão adiada pra Fase 2, se
   ela existir.
+
+## 6. Fase 2 + confirmação (2026-08-24) — veredito final da campanha
+
+**Fase 2 executada** (`src/validation/t2_t1_capacity_map_fase2.py`,
+`N_lifetime` 223→239): extensão de fronteira sobre o vencedor da Fase 1
+(que estava no teto/piso da grade testada, não um ponto interior — "refinar
+ao redor" não se aplicava pela letra). 16 treinos novos: `k` estendido até
+39, e `num_leaves=3` testado pela primeira vez (a Fase 1 só testava teto e
+1 ponto abaixo, nunca um 3º ponto intermediário). Resultado aparente:
+`k=32, max_depth=2, num_leaves=3, min_child_samples=500` →
+`pooled_sharpe=-1,5945`, gap vs. piso de ruído da Fase 0a de só -0,75σ
+(contra ~-2,0σ da Fase 1) — quebrava os 2 padrões monotônicos "limpos" da
+Fase 1 (mais `k` sempre melhor; menos complexidade sempre melhor).
+
+**Confirmação executada** (`src/validation/t2_t1_fase2_confirmation.py`,
+`N_lifetime` 239→250) — os 2 testes que a Fase 2 tinha deixado pendentes
+antes de qualquer promoção, exatamente pela disciplina que a própria Fase
+0a existe pra impor (não confiar em 1 seed só):
+
+- **Repetição de seed (10 execuções)** no config vencedor da Fase 2:
+  `pooled_sharpe` médio = **-1,9212** (std=0,2072) — MUITO pior que o
+  -1,5945 de 1 seed só, de volta ao mesmo patamar da Fase 1 (-1,9762).
+  Gap real vs. piso de ruído: **-1,82σ**, não os -0,75σ que o ponto de
+  sorte sugeria.
+- **Gate de permanência REAL** (Camada1 vs Camada0, dado real, sem
+  permutação — diferente da Fase 0b, que testa o nulo): **n_better=0 de
+  5** — zero caminhos onde a Camada1 supera a Camada0 com esse config,
+  abaixo até do pior resultado que "não passa o gate" normalmente
+  significaria.
+
+**Veredito final da campanha Fase 0→1→2→confirmação, ETHUSDT/R1: T2 NÃO
+sobrevive à confirmação com disciplina completa de validação.** O que a
+Fase 2 reportou como "muito mais perto do piso de ruído" era artefato de
+1 seed de sorte, não progresso real — a MÉDIA de 10 seeds mostra a mesma
+ordem de grandeza negativa que a Fase 1 já tinha medido. Isso é
+exatamente o risco que a Fase 0a foi desenhada pra vigiar (σ do ruído de
+seed puro = 0,306, e o "ganho" da Fase 2 de 1 seed só, ~0,38 de Sharpe,
+está dentro dessa margem). Não há base pra generalizar nenhum config T2
+testado nesta campanha pras outras 14 combinações símbolo×resolução —
+nem pra promover T2→T1 nesta combinação específica.
+
+Custo total da campanha completa: `N_lifetime` 96→250 (154 trials).

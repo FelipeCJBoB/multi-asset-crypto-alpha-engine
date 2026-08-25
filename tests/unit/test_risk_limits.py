@@ -314,16 +314,40 @@ def test_control_13_falha_quando_fees_ja_estouram_o_orcamento() -> None:
     assert result == ControlOutcome.FAIL
 
 
-def test_control_13_estimated_cost_bate_com_exemplo_do_prd_8_5() -> None:
-    """§8.5: notional_usd=259,76 -> estimated_cost_usd=0,143."""
+def test_control_13_estimated_cost_bate_com_reconstrucao_independente() -> None:
+    """Corrigido 2026-08-24 (AG-027 fechado de verdade) -- o exemplo original
+    do PRD §8.5 (estimated_cost_usd=0,143) assumia 50/50 de qual barreira
+    toca primeiro, premissa já refutada por medição real (42,06% pooled,
+    `round_trip_cost_bps_maker_prob` em `constants.yaml`). Reconstrução
+    manual mantida (mesma fórmula de `round_trip_cost_bps`, independente
+    da implementação real) pra continuar validando `control_13_orcamento_
+    fees` contra um cálculo isolado -- só o `half=0.5` hardcoded foi
+    substituído pela constante medida real."""
     sizing = _make_sizing(notional_real=Decimal("259.76"), equity=Decimal("196.85"))
     # reconstrução manual do custo estimado, mesma fórmula de round_trip_cost_bps
     maker_fee = Decimal(str(load_constant("maker_fee")))
     taker_fee = Decimal(str(load_constant("taker_fee")))
-    half = Decimal("0.5")
-    cost_bps = (maker_fee + half * maker_fee + half * taker_fee) * Decimal(10000)
+    maker_prob = Decimal(str(load_constant("round_trip_cost_bps_maker_prob")))
+    cost_bps = (maker_fee + maker_prob * maker_fee + (1 - maker_prob) * taker_fee) * Decimal(10000)
     estimated_cost_usd = sizing.notional_real * cost_bps / Decimal(10000)
-    assert estimated_cost_usd.quantize(Decimal("0.001")) == Decimal("0.143")
+    # AG-222 (2026-08-25) -- comparar contra a IMPLEMENTACAO real, nunca
+    # contra um literal. A versao anterior fixava Decimal("0.149"), valor
+    # derivado de maker_prob=0,4206; quando a constante foi remedida para
+    # 0,4597 (geometria tp=sl=1,5 sob dollar bar) o teste quebrou apesar de
+    # a formula continuar correta -- o literal era um numero DERIVADO
+    # hardcoded, exatamente o padrao de dessincronizacao que AG-123
+    # cataloga. Agora o teste valida o que a docstring promete: que a
+    # reconstrucao independente bate com round_trip_cost_bps, seja qual for
+    # o valor da constante.
+    from src.features.groups.group_e import round_trip_cost_bps
+
+    cost_bps_impl = Decimal(str(round_trip_cost_bps(float(maker_fee), float(taker_fee))))
+    assert cost_bps.quantize(Decimal("0.000001")) == cost_bps_impl.quantize(Decimal("0.000001"))
+    # sanidade de ordem de grandeza, independente do valor exato da constante:
+    # o custo tem que ficar entre o extremo 100% maker e o extremo 100% taker
+    piso = sizing.notional_real * (maker_fee + maker_fee) * Decimal(10000) / Decimal(10000)
+    teto = sizing.notional_real * (maker_fee + taker_fee) * Decimal(10000) / Decimal(10000)
+    assert piso <= estimated_cost_usd <= teto
     # e o controle passa com folga (fees_mtd=0, orçamento ~ $5,9)
     result = limits.control_13_orcamento_fees(sizing, fees_mtd_usd=Decimal("0"))
     assert result == ControlOutcome.PASS

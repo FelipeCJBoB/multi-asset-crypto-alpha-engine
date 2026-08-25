@@ -12,6 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from .. import support
+from .._constants import load_constant
 from ..support import FloatArray
 
 
@@ -46,19 +47,24 @@ def e10f_oi_change_z_48(oi_contracts_aligned: FloatArray, window: int) -> FloatA
 def round_trip_cost_bps(maker_fee: float, taker_fee: float) -> float:
     """Custo de round-trip do caminho assimétrico `maker_in / maker_tp /
     taker_sl` (§9.1): entrada sempre maker; saída maker se o TP for tocado
-    primeiro, taker se o SL for tocado primeiro. Sem estimativa melhor da
-    probabilidade condicional de qual barreira toca primeiro nesta etapa,
-    50/50 é a leitura mais simples e é exatamente a que reproduz o
-    `c_médio(assimétrico) = 0,055%` citado textualmente em §0.2 R2 dado
-    `maker_fee=0,0002`/`taker_fee=0,0005` (`constants.yaml`):
-    `0,0002 + 0,5×0,0002 + 0,5×0,0005 = 0,00055`. Não é uma constante nova
-    — é combinação fixa de duas que já existem em `constants.yaml`, e o
-    peso 0,5 é literal (já na whitelist do lint de proveniência,
-    `tools/lint/banned_patterns.py::_ALLOWED_NUMERIC_LITERALS`)."""
-    # 0.5/0.5 = round_trip_cost_bps_maker_prob em config/constants.yaml (AG-027,
-    # 2026-08-15) -- valor ASSUMED, medição real aponta 42,06%, não 50%; não
-    # lido dinamicamente ainda (ver ressalva de escopo na entrada do yaml).
-    return (maker_fee + 0.5 * maker_fee + 0.5 * taker_fee) * 10000  # noqa: magic-number -- ver comentário acima
+    primeiro, taker se o SL for tocado primeiro.
+
+    **Corrigido 2026-08-24 (achado do usuário, AG-027 fechado de verdade).**
+    Até esta correção, a probabilidade condicional de qual barreira toca
+    primeiro era 50/50 hardcoded no corpo — apesar de `round_trip_cost_bps_
+    maker_prob` já existir declarada em `constants.yaml` desde AG-027
+    (2026-08-15), a função nunca a lia. Ruína do apostador
+    (`tp_atr_mult=2,0`/`sl_atr_mult=1,5`, distâncias assimétricas) prevê
+    P(TP primeiro)=1,5/3,5≈42,9% analítico; medição empírica real
+    (`tools/diagnostics/measure_barrier_touch_probability.py`, 5 ativos,
+    `labels.parquet`) confirma 42,06% pooled — usa o valor MEDIDO, não o
+    analítico. Agora lido de `constants.yaml` via `load_constant`, não mais
+    literal — os 7 call sites conhecidos (`group_e.py`, `cost_surface.py`,
+    `volatility_operational_effect.py`, `feasibility.py`,
+    `m3_timeframe_choice.py`, `risk/limits.py`, `s1_tp_sl_sensitivity.py`)
+    herdam a correção automaticamente, nenhuma assinatura mudou."""
+    maker_prob = float(load_constant("round_trip_cost_bps_maker_prob"))
+    return (maker_fee + maker_prob * maker_fee + (1.0 - maker_prob) * taker_fee) * 10000  # noqa: magic-number -- conversão fração->bps, não constante de domínio
 
 
 def e27f_cost_atr_ratio(atr_20_pct: FloatArray, maker_fee: float, taker_fee: float) -> FloatArray:

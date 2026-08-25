@@ -318,9 +318,18 @@ def control_13_orcamento_fees(sizing: SizingResult, *, fees_mtd_usd: Decimal) ->
     """#13 — fees do mês corrente + custo estimado deste trade <= orçamento
     mensal (`fee_budget_monthly`, já existe). Custo estimado REUSA
     `src.features.groups.group_e.round_trip_cost_bps` (Sprint 4, mesma
-    fórmula de E27f: maker na entrada, 50/50 maker-TP/taker-SL na saída,
-    §9.1) em vez de reimplementar a mistura de fees aqui — verificado contra
-    o exemplo do PRD §8.5 (`notional=259,76` -> `estimated_cost_usd=0,143`).
+    fórmula de E27f: maker na entrada, `round_trip_cost_bps_maker_prob`
+    maker-TP/`1-maker_prob` taker-SL na saída, §9.1) em vez de reimplementar
+    a mistura de fees aqui. **[CORRIGIDO 2026-08-24, AG-027]** o exemplo do
+    PRD §8.5 (`notional=259,76` -> `estimated_cost_usd=0,143`) assumia
+    peso 50/50, premissa refutada por medição real (42,06%/57,94%
+    pooled) — verificado hoje contra reconstrução independente com o
+    valor medido (`tests/unit/test_risk_limits.py`,
+    `estimated_cost_usd`), não mais contra o exemplo original do PRD.
+    O valor numérico não é citado aqui de propósito (AG-222): ele deriva de
+    `round_trip_cost_bps_maker_prob`, que já foi remedida uma vez
+    (0,4206 -> 0,4597) e precisa de outra passada se o relabel de AG-221
+    acontecer -- um número fixo nesta docstring envelheceria em silêncio.
     `fees_mtd_usd` é contador vivo injetado pelo chamador (§8.3 c13: "não é
     uma aspiração" — mas o ledger que soma `fills.fee` do mês é
     responsabilidade de outra camada, não existe em `risk/`)."""

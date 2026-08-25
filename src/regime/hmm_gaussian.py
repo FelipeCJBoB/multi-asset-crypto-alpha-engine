@@ -6,6 +6,43 @@ fora do escopo deste módulo). Cada `n_states` é um trial separado (k=2, k=3,
 k=4 são 3 chamadas distintas desta função, não um objeto parametrizável em
 lote).
 
+**Correção-relâmpago via ponto de injeção (2026-08-24, achado de varredura
+de `tools/lint/banned_patterns.py`)**: `num_em_iters`/`sticky_concentration`
+eram literais hardcoded (`_DEFAULT_NUM_EM_ITERS=100`, `_DEFAULT_
+STICKY_CONCENTRATION=10.0`), invisíveis a `constants.yaml`/governança de
+proveniência (o `int` nem era verificado pelo lint até esta rodada — só o
+`float` tinha `# noqa: magic-number`). `src.regime.build_hmm.
+build_hmm_regimes` (builder de produção do candidato canônico
+`hmm_gaussian_k4_v1`) chama `fit_hmm_gaussian` SEM passar nenhum dos dois —
+os 2 defaults deste módulo são, de fato, o que roda em produção hoje
+(confirmado por leitura direta de `build_hmm.py`, não suposto). Registrados
+em `config/constants.yaml` (`hmm_gaussian_sticky_concentration_default`/
+`hmm_gaussian_num_em_iters`, `provenance: ASSUMED`, `class: B`) com os
+MESMOS valores (10.0/100) -- esta rodada é fiação/governança, não
+recalibração.
+
+Resolvidos via `ponto de injeção`, não como default literal do parâmetro
+(mesmo padrão do §"Núcleo funcional, casca imperativa" do `CLAUDE.md`):
+`sticky_concentration`/`num_em_iters` continuam `| None = None`, e só
+chamam `load_regime_constant(...)` (IO real, leitura de
+`config/constants.yaml`) DENTRO do corpo da função, no ramo tomado quando o
+chamador omite o parâmetro. Chamador que passa valor explícito (todo teste
+de `tests/unit/test_regime_hmm_gaussian.py` exceto o smoke test dedicado,
+qualquer sweep/trial do harness Fase 3) nunca toca disco — a alternativa
+óbvia (`num_em_iters: int = load_regime_constant(...)` como default literal
+do parâmetro, avaliado 1x na DEFINIÇÃO da função, ou seja no IMPORT do
+módulo) foi descartada de propósito: isso tornaria TODO import deste
+módulo uma operação de IO, quebrando a alegação "núcleo puro, sem IO" do
+parágrafo acima de um jeito que nenhum outro módulo de `src/` faz hoje
+(confirmado: nenhum módulo em `src/` atribui `load_constant(...)` direto a
+uma constante de nível de módulo -- todo uso existente é dentro de função/
+classmethod, chamado sob demanda pela casca). O resultado aqui é HÍBRIDO,
+não puro de verdade -- honesto sobre isso, não overclaim: `fit_hmm_gaussian`
+só evita IO se o chamador injetar o valor; no caminho default (produção
+real, via `build_hmm.py`) ela toca disco, uma vez por chamada, igual a
+qualquer outra função deste pacote que já lê `constants.yaml` sob demanda
+(`classifier.py::RegimeThresholds.from_constants`, `stress.py`).
+
 **API real do `dynamax` confirmada nesta sessão (2026-08-17), não citada de
 memória** — ver `.venv/Lib/site-packages/dynamax/hidden_markov_model/`:
 
@@ -136,6 +173,7 @@ from jax import random as jax_random
 from jax import tree_util as jax_tree_util
 from numpy.typing import NDArray
 
+from ._constants import load_constant as load_regime_constant
 from .canonicalization import canonicalize_states
 
 # Ver docstring do módulo, seção "jax_enable_x64" -- consistência de
@@ -153,17 +191,14 @@ FloatArray = NDArray[np.float64]
 Float2DArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 
-_DEFAULT_NUM_EM_ITERS: int = 100
-# Concentração de Dirichlet adicionada à diagonal da matriz de transição
-# (`transition_matrix_stickiness` do dynamax, ver docstring do módulo).
-# Heurística LITERATURE-inspired (Fox et al. 2011, sticky HDP-HMM: kappa
-# precisa DOMINAR a concentração base pra viés de auto-transição ter
-# efeito prático; concentração base do dynamax é 1.1 por célula) --
-# ASSUMED, não medida contra dado real do M4 (esse dado só existe na Fase
-# 3, harness, fora do escopo deste módulo). Valor de partida razoável
-# (~9x a concentração base), fica como hiperparâmetro do trial por design
-# (plano M4, não sweep) -- Fase 3 decide o valor final ou mantém este.
-_DEFAULT_STICKY_CONCENTRATION: float = 10.0  # noqa: magic-number -- ver comentário acima
+# Nomes das entradas em `config/constants.yaml` -- única fonte do literal
+# (mesmo padrão de `_CLASSIFIER_ID_TEMPLATE` logo abaixo: 1 constante de
+# nome, nunca a string duplicada em mais de 1 lugar). Resolvidos via `load_
+# regime_constant` DENTRO de `fit_hmm_gaussian`, não aqui em nível de
+# módulo -- ver "Correção-relâmpago via ponto de injeção" no docstring do
+# módulo pra por que (import deste módulo não pode virar IO).
+_NUM_EM_ITERS_CONSTANT_NAME = "hmm_gaussian_num_em_iters"
+_STICKY_CONCENTRATION_CONSTANT_NAME = "hmm_gaussian_sticky_concentration_default"
 # Piso de regularização da covariância inicial (ver achado #1 no docstring
 # do módulo) -- mesmo estilo de piso de estabilidade numérica de
 # `bocpd.py` (`max(var, 1e-12)`), evita covariância inicial exatamente
@@ -239,7 +274,7 @@ def fit_hmm_gaussian(
     n_states: int,
     train_end_idx: int,
     seed: int,
-    num_em_iters: int = _DEFAULT_NUM_EM_ITERS,
+    num_em_iters: int | None = None,
     sticky_concentration: float | None = None,
 ) -> HMMFit | None:
     """Ajusta `GaussianHMM(n_states, emission_dim)` via `fit_em` só sobre
@@ -249,11 +284,19 @@ def fit_hmm_gaussian(
     M4 (mesma convenção de `predict_hmm_gaussian`/canonicalização) --
     função não recalcula features, só consome o array pronto.
 
-    `sticky_concentration=None` (default) resolve pra `_DEFAULT_STICKY_
-    CONCENTRATION` -- `None` explícito é o sinal de "usa o default do
-    módulo", não "sem stickiness" (`0.0` seria vanilla HMM; passar `0.0`
+    `sticky_concentration=None`/`num_em_iters=None` (ambos default) resolvem
+    pra `config/constants.yaml` (`hmm_gaussian_sticky_concentration_default`/
+    `hmm_gaussian_num_em_iters`, via `load_regime_constant` -- ver
+    "Correção-relâmpago via ponto de injeção" no docstring do módulo)
+    -- `None` explícito é o sinal de "usa o default", não "zero"/"sem
+    iteração" (`sticky_concentration=0.0` seria vanilla HMM; passar `0.0`
     explicitamente É uma forma válida de desligar o prior sticky pra
-    comparação/sweep, diferente de não passar nada).
+    comparação/sweep, diferente de não passar nada -- `num_em_iters` não
+    tem um `0` operacionalmente válido, mas o mesmo sentinela `None`
+    "usa o default" é mantido por simetria/consistência de API entre os
+    dois parâmetros). Passar QUALQUER valor explícito (`0`/`10`/`100`...)
+    nunca toca `constants.yaml` -- só o caminho `None` (chamador omitiu o
+    kwarg) executa `load_regime_constant`, real leitura de disco.
 
     Determinismo: `seed` fixa a `jax.random.PRNGKey` usada tanto pra
     inicialização k-means (média) quanto pra amostragem do prior de
@@ -301,8 +344,18 @@ def fit_hmm_gaussian(
         )
 
     emission_dim = obs.shape[1]
+    # `load_regime_constant` só é chamado nesta linha (ramo `is None`) --
+    # ver "Correção-relâmpago via ponto de injeção" no docstring do módulo.
+    # Chamador que passa valor explícito nunca executa a leitura de disco.
     resolved_sticky = (
-        _DEFAULT_STICKY_CONCENTRATION if sticky_concentration is None else sticky_concentration
+        float(load_regime_constant(_STICKY_CONCENTRATION_CONSTANT_NAME))
+        if sticky_concentration is None
+        else sticky_concentration
+    )
+    resolved_num_em_iters = (
+        int(load_regime_constant(_NUM_EM_ITERS_CONSTANT_NAME))
+        if num_em_iters is None
+        else num_em_iters
     )
 
     hmm = GaussianHMM(n_states, emission_dim, transition_matrix_stickiness=resolved_sticky)
@@ -319,7 +372,7 @@ def fit_hmm_gaussian(
     )
 
     fitted_params, log_probs = hmm.fit_em(
-        init_params, props, train_obs_jax, num_iters=num_em_iters, verbose=False
+        init_params, props, train_obs_jax, num_iters=resolved_num_em_iters, verbose=False
     )
 
     log_probs_np = np.asarray(log_probs)

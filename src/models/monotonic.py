@@ -225,3 +225,113 @@ def screen_monotone_constraints(
         constraints={f: r.constraint for f, r in results.items()},
     )
     return results
+
+
+# ============================================================================
+# AG-213 — concordância entre os DOIS alvos do pipeline. Diagnóstico puro:
+# não altera nenhuma restrição, não entra em nenhum caminho de treino.
+# ============================================================================
+
+_TP_TARGET_COL = "_y_tp_indicator"
+
+
+@dataclass(frozen=True, slots=True)
+class TargetAgreementResult:
+    feature: str
+    constraint_ret_net: int
+    constraint_tp: int
+    mean_ic_ret_net: float
+    mean_ic_tp: float
+    agree: bool
+    forced_economic: bool
+
+
+def screen_target_agreement(
+    df_train_side: pl.DataFrame,
+    feature_ids: tuple[str, ...],
+    *,
+    side: int,
+    min_consistent_envs: int | None = None,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+) -> dict[str, TargetAgreementResult]:
+    """Mede se as restrições monotônicas da Camada 1 seriam AS MESMAS se
+    derivadas do alvo que o modelo de fato treina.
+
+    **Achado (`lgbm-crypto-quant`, 2026-08-25, `AG-213`) — dois alvos no
+    mesmo pipeline.** `screen_monotone_constraints` mede IC de Spearman
+    contra `ret_net` (contínuo, líquido de custo — `target_col` default).
+    `src.models.alpha.fit_side_model` treina `y = 1 sse barrier_hit ==
+    "TP"` — binário, com `SL` e `TIME` colapsando os dois em `y = 0`
+    (`src.labels.triple_barrier._LABEL_BY_BARRIER = {"TP": 1, "TIME": 0,
+    "SL": -1}`, e `y_all = (label == 1)`). A restrição `+1`/`-1` derivada
+    da relação `feature -> ret_net` é então IMPOSTA sobre `feature ->
+    P(TP)`.
+
+    Mecanismo de falha concreto: uma feature que melhora `ret_net`
+    sobretudo tornando os desfechos `TIME` menos ruins, sem mover P(TP),
+    recebe restrição `+1` sobre P(TP) — uma forma que pode não existir,
+    ou existir invertida. `monotone_constraints` é uma restrição DURA: se
+    o sinal estiver errado, ela não degrada o modelo suavemente, ela
+    proíbe a forma correta. E o critério de permanência do §5.11 (Camada 1
+    vs Camada 0) passaria a medir o custo de uma restrição errada em vez
+    do benefício de uma certa — `permanence_pass` deixaria de significar
+    o que declara significar.
+
+    Isto NÃO decide qual alvo é o certo (é decisão de desenho, do
+    Manager): mede se a pergunta importa neste dataset. `agree=False` em
+    qualquer feature não-forçada é o sinal de que importa.
+
+    Features com restrição forçada por identidade contábil
+    (`_ECONOMIC_FORCED_CONSTRAINT`) aparecem com `forced_economic=True` e
+    `agree=True` por construção — a restrição delas não vem de IC nenhum,
+    então a linha não informa nada sobre concordância e não deve ser
+    contada como evidência a favor."""
+    if _TP_TARGET_COL in df_train_side.columns:
+        raise ValueError(
+            f"screen_target_agreement: coluna reservada {_TP_TARGET_COL!r} já existe "
+            "em df_train_side -- renomeie antes de chamar"
+        )
+    df_with_tp = df_train_side.with_columns(
+        (pl.col("label").cast(pl.Int64) == 1).cast(pl.Float64).alias(_TP_TARGET_COL)
+    )
+
+    by_ret_net = screen_monotone_constraints(
+        df_train_side,
+        feature_ids,
+        side=side,
+        target_col="ret_net",
+        min_consistent_envs=min_consistent_envs,
+        unforce_features_by_side=unforce_features_by_side,
+    )
+    by_tp = screen_monotone_constraints(
+        df_with_tp,
+        feature_ids,
+        side=side,
+        target_col=_TP_TARGET_COL,
+        min_consistent_envs=min_consistent_envs,
+        unforce_features_by_side=unforce_features_by_side,
+    )
+
+    out: dict[str, TargetAgreementResult] = {}
+    for feature in feature_ids:
+        a, b = by_ret_net[feature], by_tp[feature]
+        out[feature] = TargetAgreementResult(
+            feature=feature,
+            constraint_ret_net=a.constraint,
+            constraint_tp=b.constraint,
+            mean_ic_ret_net=a.mean_ic,
+            mean_ic_tp=b.mean_ic,
+            agree=a.constraint == b.constraint,
+            forced_economic=a.forced_economic,
+        )
+
+    n_disagree = sum(1 for r in out.values() if not r.agree and not r.forced_economic)
+    logger.info(
+        "models.monotonic.screen_target_agreement",
+        side=side,
+        n_rows_train=df_train_side.height,
+        n_features=len(feature_ids),
+        n_disagree_nao_forcadas=n_disagree,
+        detail="AG-213 -- IC medido contra ret_net vs contra indicador de TP",
+    )
+    return out

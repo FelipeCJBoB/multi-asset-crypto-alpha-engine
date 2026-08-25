@@ -55,7 +55,7 @@ def test_a05_escala_e_dimensionalmente_o1_nao_1e5() -> None:
     bars = _make_ohlcv(400)
     atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
     atr_pct = atr_abs / bars["close"]
-    out = group_a.a05_ret_vol_norm_4(bars["close"], atr_pct, lookback_bars=4)
+    out = group_a.a05_ret_vol_norm_4(bars["close"], atr_pct, lookback_bars=4, vol_norm_divisor=2.0)
     valid = out[~np.isnan(out)]
     assert valid.shape[0] > 0
     assert np.median(np.abs(valid)) < 100.0  # ordem de grandeza razoável, não 1e-5 nem 1e5
@@ -81,13 +81,17 @@ def test_a05_causalidade() -> None:
     atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
     atr_pct = atr_abs / bars["close"]
     cutoff = 150
-    out_base = group_a.a05_ret_vol_norm_4(bars["close"], atr_pct, lookback_bars=4)
+    out_base = group_a.a05_ret_vol_norm_4(
+        bars["close"], atr_pct, lookback_bars=4, vol_norm_divisor=2.0
+    )
 
     close2 = bars["close"].copy()
     close2[cutoff + 1 :] *= 1.5
     atr_abs2 = support.atr_wilder(bars["high"], bars["low"], close2, window=20)
     atr_pct2 = atr_abs2 / close2
-    out_perturbed = group_a.a05_ret_vol_norm_4(close2, atr_pct2, lookback_bars=4)
+    out_perturbed = group_a.a05_ret_vol_norm_4(
+        close2, atr_pct2, lookback_bars=4, vol_norm_divisor=2.0
+    )
 
     np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
 
@@ -325,11 +329,22 @@ def test_e10f_oi_zero_ou_negativo_nao_quebra() -> None:
     assert out.shape[0] == oi.shape[0]  # não lança, comprimento preservado
 
 
-def test_e27f_round_trip_cost_bps_reproduz_0_055_pct() -> None:
-    """`c_médio(assimétrico) = 0,055%` citado textualmente em §0.2 R2 do
-    PRD, dado maker_fee=0,0002 / taker_fee=0,0005 (constants.yaml)."""
-    cost_bps = group_e.round_trip_cost_bps(maker_fee=0.0002, taker_fee=0.0005)
-    assert cost_bps == pytest.approx(5.5)  # 0,055% = 5,5 bps
+def test_e27f_round_trip_cost_bps_le_maker_prob_medido_de_constants() -> None:
+    """Corrigido 2026-08-24 (AG-027 fechado de verdade) -- não reproduz mais
+    o `c_médio(assimétrico) = 0,055%` do PRD (§0.2 R2), citado sob a
+    premissa 50/50 já refutada por medição real (42,06% pooled,
+    `tools/diagnostics/measure_barrier_touch_probability.py`). Reconstrução
+    independente a partir da constante real (não reimplementa
+    `round_trip_cost_bps`, só o valor esperado) -- pega qualquer mudança
+    futura em `round_trip_cost_bps_maker_prob` automaticamente, sem
+    hardcode duplicado."""
+    from src.features._constants import load_constant
+
+    maker_fee, taker_fee = 0.0002, 0.0005
+    maker_prob = load_constant("round_trip_cost_bps_maker_prob")
+    expected_bps = (maker_fee + maker_prob * maker_fee + (1.0 - maker_prob) * taker_fee) * 10000
+    cost_bps = group_e.round_trip_cost_bps(maker_fee=maker_fee, taker_fee=taker_fee)
+    assert cost_bps == pytest.approx(expected_bps)
 
 
 def test_e27f_causalidade_e_positivo() -> None:

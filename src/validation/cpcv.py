@@ -790,6 +790,8 @@ def load_labels_v1(
     symbol: str = "BTCUSDT",
     tf: str = _DEFAULT_TF,
     resolution_id: str | None = None,
+    verify_config: bool = False,
+    vol_estimator_id: str | None = None,
 ) -> pl.DataFrame:
     """`data/labels/{symbol}/{grade}/{version}/labels.parquet` — insumo real
     do CPCV (Sprint 6). Levanta `FileNotFoundError` com mensagem acionável
@@ -818,7 +820,60 @@ def load_labels_v1(
             f"labels não encontrado em {path} — rode `uv run quant labels build` primeiro "
             "(src.labels.triple_barrier.build_labels_for_symbol + write_labels_atomic)"
         )
-    return pl.read_parquet(path)
+    labels = pl.read_parquet(path)
+
+    # AG-225 (2026-08-25) -- B15 no GARGALO de carregamento, não só em
+    # `models.dataset.build_modeling_frame`.
+    #
+    # Achado do mapa de impacto do relabel (AG-221): `verify_config_hash`
+    # existia num ÚNICO ponto de produção (`build_modeling_frame`, linha
+    # 315), que protege toda a cadeia de treino. Mas quatro módulos
+    # carregam labels por AQUI sem passar por lá -- `m4_critical_windows`,
+    # `m6_common_factor_hypothesis`, `calibration_diagnostics` e
+    # `backtest.fill_reconciliation` -- e consumiriam labels de um regime
+    # de config diferente sem nenhum sinal.
+    #
+    # Por que `verify_config=False` por DEFAULT, e não falha alta: análise
+    # pós-hoc legítima às vezes PRECISA ler um artefato de regime antigo
+    # (comparar antes/depois de um relabel é exatamente isso). Tornar a
+    # verificação obrigatória quebraria esse uso e empurraria os callers
+    # para `pl.read_parquet` direto, que não tem verificação nenhuma --
+    # pior que o estado atual.
+    #
+    # A lacuna, porém, deixa de ser INVISÍVEL: sem verificação explícita,
+    # o `config_hash` real do arquivo vai para o log em toda carga. Quem
+    # comparar dois números de regimes diferentes tem como descobrir, no
+    # log, que os hashes divergiam -- que é precisamente o que faltou em
+    # `AG-218` (artefato de XRPUSDT/R3 lido como se fosse de outra
+    # combinação, sem nenhum rastro).
+    file_hash = (
+        str(labels["config_hash"][0])
+        if "config_hash" in labels.columns and labels.height > 0
+        else None
+    )
+    if verify_config:
+        # import local -- evita acoplar o import de módulo de `validation`
+        # a `labels` no topo do arquivo (o contrato importlinter permite,
+        # mas o acoplamento em tempo de import não é necessário aqui).
+        from src.labels.triple_barrier import LabelConfig, verify_config_hash
+
+        execution_config = LabelConfig.from_constants(
+            estimator_id=vol_estimator_id, tf=tf, resolution_id=resolution_id
+        )
+        verify_config_hash(labels, execution_config)
+    else:
+        logger.info(
+            "validation.cpcv.load_labels_v1_sem_verificacao_de_config",
+            path=str(path),
+            symbol=symbol,
+            tf=tf,
+            resolution_id=resolution_id,
+            config_hash_do_arquivo=file_hash,
+            detail="AG-225 -- carga sem verify_config=True; o config_hash acima e o "
+            "do ARQUIVO, nao o da config vigente. Comparar numeros entre cargas com "
+            "hashes diferentes cruza regimes (ver AG-218)",
+        )
+    return labels
 
 
 if __name__ == "__main__":  # pragma: no cover — execução manual

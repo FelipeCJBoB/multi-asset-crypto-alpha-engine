@@ -64,6 +64,10 @@ logger = structlog.get_logger(__name__)
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
+# `side_hat` é Int8 pelo schema oficial de `predictions.parquet` (§5.12,
+# `PREDICTIONS_ARTIFACT_SCHEMA`) — alias próprio para `decide_side` não
+# ter que mentir o tipo de retorno como int64.
+SideArray = NDArray[np.int8]
 
 # Regime SAIU do vetor de treino do Alpha (2026-08-21) -- ADR-001 §2.7
 # decide "regime = gate de risco, não feature preditiva" (ratificado
@@ -112,7 +116,29 @@ class LGBMHyperparams:
     -- sem essa peça companheira, `subsample=0.8` era um no-op
     silencioso, toda árvore treinava sobre 100% dos dados. `subsample_
     freq=1` (bag a cada iteração, mesmo espírito do row-subsampling
-    por árvore que o XGBoost já fazia) ativa o parâmetro de verdade."""
+    por árvore que o XGBoost já fazia) ativa o parâmetro de verdade.
+
+    **`min_sum_hessian_in_leaf`/`max_bin` (achado `lgbm-crypto-quant`,
+    2026-08-25, `AG-208`):** nenhum dos dois existia -- nem aqui, nem em
+    `constants.yaml`, nem como argumento de `LGBMClassifier` --, então
+    rodavam no default de biblioteca sem entrada de proveniência (§16.10).
+    `min_sum_hessian_in_leaf` é o que mais importa dos dois, e era o que
+    estava efetivamente desligado: sob `objective="binary"` a hessiana por
+    amostra é `p(1-p)*w <= 0,25*w`, e `sample_weight` aqui é `uniqueness *
+    |ret_net|` normalizado (`src.labels.weights.apply_weights`) -- cauda
+    longa, massa concentrada nos desfechos de barreira. O default `1e-3`
+    não restringe nada nesse regime, e `min_child_samples=20` limita
+    CONTAGEM, não MASSA: uma folha pode ter 20 amostras cuja hessiana
+    somada é fração de uma observação típica -- memorização de ruído
+    exatamente no cenário de sinal fraco que o projeto declara ter
+    (§17.2, IC ~0,04).
+
+    Os dois entram com o valor de default da PRÓPRIA biblioteca (LightGBM
+    4.7.0, `uv.lock`), portanto **bit-exato** com todo artefato já
+    treinado: a correção é de PROVENIÊNCIA (o número passa a ser
+    declarado, varrível e auditável), não de valor. Mudar o valor é
+    decisão separada, pendente de sweep (`sweep_required: true` nas duas
+    entradas de `constants.yaml`)."""
 
     max_depth: int
     n_estimators: int
@@ -123,6 +149,11 @@ class LGBMHyperparams:
     lambda_l2: float
     min_child_samples: int
     num_leaves: int
+    # AG-208 -- defaults de biblioteca agora DECLARADOS. Campos com valor
+    # default para não quebrar nenhuma construção parcial existente de
+    # `LGBMHyperparams`; `from_constants` sempre os preenche do YAML.
+    min_sum_hessian_in_leaf: float = 1e-3  # noqa: magic-number -- default LightGBM 4.7.0
+    max_bin: int = 255  # noqa: magic-number -- default LightGBM 4.7.0
 
     @classmethod
     def from_constants(cls) -> LGBMHyperparams:
@@ -136,6 +167,8 @@ class LGBMHyperparams:
             lambda_l2=float(load_constant("alpha_lgbm_lambda_l2")),
             min_child_samples=int(load_constant("alpha_lgbm_min_child_samples")),
             num_leaves=int(load_constant("alpha_lgbm_num_leaves")),
+            min_sum_hessian_in_leaf=float(load_constant("alpha_lgbm_min_sum_hessian_in_leaf")),
+            max_bin=int(load_constant("alpha_lgbm_max_bin")),
         )
 
 
@@ -234,6 +267,179 @@ def _stratified_calib_split(
     return fit_idx.astype(np.int64), calib_idx.astype(np.int64)
 
 
+CALIB_SPLIT_LEGACY_RANDOM = "legacy_random_stratified"
+CALIB_SPLIT_TEMPORAL_PURGED = "temporal_purged"
+
+# AG-212 -- base do rebalanceamento de classe. `count` = comportamento
+# legado (`n_neg/n_pos`, bit-exato); `weight` = razão de MASSA
+# (`Σw_neg/Σw_pos`), coerente com o fato de o gradiente do LightGBM já ser
+# ponderado por `sample_weight`. Ver `SideModelResult.scale_pos_weight_*`.
+CLASS_BALANCE_COUNT = "count"
+CLASS_BALANCE_WEIGHT = "weight"
+
+# AG-210 -- política de resolução de `tau`. Ver `resolve_joint_tau` e
+# `run_fold`.
+TAU_POLICY_LEGACY_PER_SIDE = "legacy_per_side"
+TAU_POLICY_TOTAL_COMMON_OOF = "total_common_oof"
+
+
+def _temporal_purged_calib_split(
+    t0_ms: IntArray, t1_ms: IntArray, *, holdout_frac: float
+) -> tuple[IntArray, IntArray]:
+    """Núcleo puro (Idioma A) — sub-split interno do treino com PURGE por
+    `t1`, alternativa a `_stratified_calib_split` (`AG-209`).
+
+    **Achado (`lgbm-crypto-quant`, 2026-08-25).** `_stratified_calib_split`
+    usa `train_test_split` ALEATÓRIO. Com rótulo de triple barrier, dois
+    labels vizinhos no tempo compartilham `[t0, t1]` -- um split aleatório
+    põe quase-cópias dos dois lados da fronteira, então o calibrador
+    isotônico é ajustado sobre observações que o `fit` já viu em
+    substância. B08 ("calibrador ajustado sobre o próprio OOF") é cumprido
+    na LETRA (o sub-split existe) e violado no ESPÍRITO (o sub-split não
+    isola informação). É literalmente o fenômeno que B09 existe pra
+    impedir, aplicado no CPCV externo e não no sub-split interno --
+    mesmo pipeline, dois níveis de rigor diferentes.
+
+    Consequência mensurável: o calibrador fica otimista, e `tau` (o
+    quantil da distribuição calibrada) herda esse otimismo inteiro.
+
+    Desenho: `calib` é o BLOCO TEMPORAL CONTÍGUO final do treino
+    (`holdout_frac` das linhas, por `t0` ordenado); `fit` é o prefixo,
+    MENOS toda linha cujo `t1` alcance `min(t0)` do bloco de calibração --
+    mesma condição de overlap de intervalo de `src.validation.cpcv.
+    generate_splits` (B09), aplicada aqui dentro.
+
+    Levanta `ValueError` se o purge esvaziar o `fit` (fold degenerado):
+    falhar alto, nunca devolver um `fit` vazio que só quebraria mais
+    tarde dentro do LightGBM sem contexto."""
+    n = int(t0_ms.shape[0])
+    if n < 2:  # noqa: magic-number -- 1 linha não comporta dois lados de split
+        raise ValueError(
+            f"_temporal_purged_calib_split: n={n} linhas -- sub-split precisa de >= 2"
+        )
+    order = np.argsort(t0_ms, kind="stable")
+    n_calib = round(n * holdout_frac)
+    n_calib = max(1, min(n_calib, n - 1))
+    calib_positions = order[n - n_calib :]
+    fit_candidates = order[: n - n_calib]
+
+    calib_start = int(t0_ms[calib_positions].min())
+    # purge (B09): descarta do fit toda linha cujo intervalo de label
+    # ainda esteja ABERTO quando o bloco de calibração começa.
+    keep = t1_ms[fit_candidates] < calib_start
+    fit_positions = fit_candidates[keep]
+    if fit_positions.shape[0] == 0:
+        raise ValueError(
+            "_temporal_purged_calib_split: purge por t1 esvaziou o conjunto de fit "
+            f"(n={n}, n_calib={n_calib}, calib_start={calib_start}) -- fold degenerado, "
+            "horizonte de label cobre todo o prefixo de treino"
+        )
+    return fit_positions.astype(np.int64), calib_positions.astype(np.int64)
+
+
+def decide_side(
+    p_long: FloatArray, p_short: FloatArray, *, tau_long: float, tau_short: float
+) -> SideArray:
+    """Núcleo puro da REGRA DE DECISÃO (§5.6) — `+1`/`-1`/`0` por linha.
+
+    Extraída de `run_fold` (2026-08-25, `AG-210`) pelo mesmo motivo
+    estrutural de `src.validation.cpcv._embargo_ms`/`_g_end_effective`:
+    o solver de `tau` (`resolve_joint_tau`) e a inferência precisam usar
+    literalmente a MESMA linha de código, não duas cópias que podem
+    divergir silenciosamente. Um solver que resolvesse `tau` contra uma
+    regra ligeiramente diferente da aplicada produziria uma taxa de
+    sinal que não bate com a orçada -- e o erro seria invisível."""
+    is_long = (p_long > tau_long) & (p_long > p_short)
+    is_short = (p_short > tau_short) & (p_short > p_long) & ~is_long
+    side_hat = np.zeros(p_long.shape[0], dtype=np.int8)
+    side_hat[is_long] = 1
+    side_hat[is_short] = -1
+    return side_hat
+
+
+# Tolerância e teto de iteração da bisseção de `resolve_joint_tau`. Não são
+# constantes de domínio (não mudam nenhuma decisão econômica): são o
+# critério de parada de uma busca numérica determinística, mesma categoria
+# de `leakage.py::tolerance = 1e-6` e `_GRADE_CONSISTENCY_RTOL`.
+_JOINT_TAU_RATE_TOL = 1e-6  # noqa: magic-number
+_JOINT_TAU_MAX_ITER = 64  # noqa: magic-number
+
+
+def resolve_joint_tau(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    *,
+    target_signal_rate: float,
+) -> tuple[float, float, float]:
+    """Núcleo puro (Idioma A) — resolve o PAR `(tau_long, tau_short)` para
+    que a taxa de sinal TOTAL, sob `decide_side` completa (dominância
+    inclusa), bata `target_signal_rate`. Devolve
+    `(tau_long, tau_short, taxa_realizada)`.
+
+    **Achado (`lgbm-crypto-quant`, 2026-08-25, `AG-210`) -- o motor
+    contradiz uma constante classe A já declarada.**
+    `config/constants.yaml::fee_budget_is_per_side` tem `value: false`,
+    `provenance: DERIVED`, e a fonte diz textualmente que o orçamento
+    (§0.2 R3, `trades/mês <= (fee_budget_monthly × equity) / (N × c)`, com
+    `c` = custo POR TRADE, sem termo de lado) produz `661/ano · 1,89% das
+    barras` como contagem **TOTAL** -- e que `target_signal_rate = 0,0189`
+    foi derivado desse total (`661 / 35.064`). Mas `fit_side_model` aplica
+    o quantil `1 - target_signal_rate` a CADA LADO independentemente:
+    `tau_long` produz 1,89% no lado long E `tau_short` produz 1,89% no
+    lado short, sobre populações diferentes.
+
+    Este repo JÁ corrigiu esse mesmo erro uma vez: `src/analysis/
+    tau_diagnostics.py` tinha introduzido um fator `×2.0` ("2 lados"),
+    propagado por citação para `faixa1_5_prerequisites::fee_budget_sweep`;
+    os dois foram corrigidos e a constante `fee_budget_is_per_side` foi
+    criada exatamente para registrar a semântica. A correção, porém, foi
+    feita nos DIAGNÓSTICOS -- um grep por `fee_budget_is_per_side` em
+    `src/` só encontra docstrings e comentários: **nenhum módulo de
+    produção lê essa constante**, e o motor que de fato escolhe o
+    threshold nunca foi tocado.
+
+    Desenho do solver -- 2 incógnitas, 1 restrição, então o grau de
+    liberdade extra precisa ser fechado por uma regra declarada a priori
+    (B20: nunca por métrica OOS). A regra escolhida é **quantil comum**:
+    procura o escalar `q` tal que `tau_side = quantile(p_side, 1 - q)`
+    nos DOIS lados produza taxa total `= target_signal_rate`. Isso
+    preserva a simetria long/short do desenho atual (nenhum lado ganha
+    threshold mais frouxo por construção) e é determinístico. `rate(q)` é
+    monotônica não-decrescente em `q`, então bisseção converge.
+
+    `p_long`/`p_short` precisam vir da MESMA população de linhas (mesmo
+    `t0` na mesma posição) -- ver `run_fold`, que os avalia sobre as
+    barras comuns de treino, não sobre as sub-populações por lado."""
+    if not 0.0 < target_signal_rate < 1.0:
+        raise ValueError(
+            f"resolve_joint_tau: target_signal_rate={target_signal_rate} fora de (0, 1)"
+        )
+    if p_long.shape != p_short.shape:
+        raise ValueError(
+            f"resolve_joint_tau: p_long.shape={p_long.shape} != p_short.shape={p_short.shape} "
+            "-- os dois precisam vir da MESMA população de linhas"
+        )
+
+    def _rate_for_q(q: float) -> tuple[float, float, float]:
+        tau_l = float(np.quantile(p_long, 1.0 - q))
+        tau_s = float(np.quantile(p_short, 1.0 - q))
+        side_hat = decide_side(p_long, p_short, tau_long=tau_l, tau_short=tau_s)
+        return tau_l, tau_s, float(np.mean(side_hat != 0))
+
+    lo, hi = 0.0, 1.0
+    tau_l, tau_s, rate = _rate_for_q(target_signal_rate)
+    for _ in range(_JOINT_TAU_MAX_ITER):
+        if abs(rate - target_signal_rate) <= _JOINT_TAU_RATE_TOL:
+            break
+        mid = (lo + hi) / 2.0
+        tau_l, tau_s, rate = _rate_for_q(mid)
+        if rate < target_signal_rate:
+            lo = mid
+        else:
+            hi = mid
+    return tau_l, tau_s, rate
+
+
 @dataclass(frozen=True, slots=True)
 class SideModelResult:
     side: int
@@ -264,6 +470,39 @@ class SideModelResult:
     gain_by_column_raw: dict[str, float]
     n_train_fit: int
     n_train_calib: int
+    # --- AG-211: ESS (tamanho amostral EFETIVO) do treino deste fold/lado.
+    # `Σ uniqueness`, a leitura literal de B24/§0.2 R4 ("medir Σ
+    # uniqueness") -- soma MEDIDA, nunca uma das duas fórmulas fechadas
+    # que B24 proíbe. Achado (`lgbm-crypto-
+    # quant`, 2026-08-25): o número JÁ era calculado no repo
+    # (`src.labels.experiment_log.summarize_labels`, campo
+    # `sum_uniqueness`, marcado "N_eff medido (B24)") e gravado em
+    # `data/label_engine_runs/label_engine_runs.parquet` -- mas um grep
+    # por `sum_uniqueness` devolve 3 ocorrências, TODAS dentro do módulo
+    # que o escreve: nenhum consumidor. Em particular, ele nunca chegava
+    # ao `alpha_layer1_report.json`, que é onde `permanence_pass` é
+    # decidido -- ou seja, a decisão de permanência da Camada 1 era
+    # tomada sem que nada no relatório soubesse dizer quantas observações
+    # INDEPENDENTES a sustentam. Aqui é por fold x lado (o `n` que de
+    # fato treinou), não global por `labels.parquet`.
+    sum_uniqueness_train: float = float("nan")
+    # --- AG-212: os DOIS balanceamentos de classe, lado a lado.
+    # `scale_pos_weight` é passado ao LightGBM em CONTAGEM (`n_neg/n_pos`),
+    # mas o gradiente é ponderado por `sample_weight` (massa). O
+    # rebalanceamento EFETIVO é `scale_pos_weight * Σw_pos/Σw_neg`, que
+    # não é 1 e nunca foi medido. Não é fatal (a isotônica corrige o
+    # NÍVEL da probabilidade), mas o que a árvore vê ao CRESCER (ganho de
+    # split, `min_child_samples`, `min_sum_hessian_in_leaf`) é a
+    # distribuição ponderada, não a contagem -- então a forma aprendida
+    # depende do desalinhamento. Reportar os dois torna o desalinhamento
+    # mensurável sem mudar nada por default.
+    scale_pos_weight_count: float = float("nan")
+    scale_pos_weight_weight: float = float("nan")
+    # `t0` (epoch ms) das linhas que entraram no FIT deste lado -- insumo
+    # do modo `TAU_POLICY_TOTAL_COMMON_OOF` em `run_fold`, que precisa
+    # saber quais barras o modelo já viu para tirar `tau` das que ele não
+    # viu. `None` no caminho legado (não calculado, não usado).
+    fit_t0_ms: IntArray | None = None
 
 
 def fit_side_model(
@@ -278,6 +517,8 @@ def fit_side_model(
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
     null_permutation_seed: int | None = None,
+    calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
+    class_balance_basis: str = CLASS_BALANCE_COUNT,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -358,16 +599,66 @@ def fit_side_model(
     y_all = (train_side_df["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
     w_all = train_side_df["sample_weight"].to_numpy().astype(np.float64)
 
-    holdout_frac = float(load_constant("alpha_calibration_holdout_frac"))
-    fit_idx, calib_idx = _stratified_calib_split(
-        y_all, holdout_frac=holdout_frac, seed=_derived_seed(seed, side, 1)
+    # `t0`/`t1` são OPCIONAIS aqui, de propósito: o caminho legado desta
+    # função nunca precisou deles (o split de calibração é aleatório, o
+    # `tau` é per-side), e há chamadores de teste que montam um
+    # `train_side_df` sintético sem essas colunas. Exigi-las
+    # incondicionalmente ao introduzir AG-209/AG-210 quebrou 5 testes
+    # existentes -- achado da primeira execução real desta correção, não
+    # um contrato novo que eu possa impor de fora. As duas features novas
+    # que dependem delas falham alto e explicitamente se forem pedidas sem
+    # a coluna; o default não paga nada por elas existirem.
+    t0_ms_all = (
+        train_side_df["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        if "t0" in train_side_df.columns
+        else None
     )
+
+    holdout_frac = float(load_constant("alpha_calibration_holdout_frac"))
+    if calib_split_mode == CALIB_SPLIT_LEGACY_RANDOM:
+        fit_idx, calib_idx = _stratified_calib_split(
+            y_all, holdout_frac=holdout_frac, seed=_derived_seed(seed, side, 1)
+        )
+    elif calib_split_mode == CALIB_SPLIT_TEMPORAL_PURGED:
+        # AG-209 -- ver `_temporal_purged_calib_split`.
+        if t0_ms_all is None or "t1" not in train_side_df.columns:
+            raise ValueError(
+                f"fit_side_model: calib_split_mode={CALIB_SPLIT_TEMPORAL_PURGED!r} exige as "
+                "colunas 't0' e 't1' em train_side_df (o purge por t1 é o ponto inteiro do "
+                "modo, AG-209) -- recebido apenas "
+                f"{sorted(set(train_side_df.columns) & {'t0', 't1'})}"
+            )
+        t1_ms_all = train_side_df["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        fit_idx, calib_idx = _temporal_purged_calib_split(
+            t0_ms_all, t1_ms_all, holdout_frac=holdout_frac
+        )
+    else:
+        raise ValueError(
+            f"fit_side_model: calib_split_mode desconhecido {calib_split_mode!r} "
+            f"(esperado {CALIB_SPLIT_LEGACY_RANDOM!r} ou {CALIB_SPLIT_TEMPORAL_PURGED!r})"
+        )
     X_fit, y_fit, w_fit = X_all[fit_idx], y_all[fit_idx], w_all[fit_idx]
     X_calib, y_calib, w_calib = X_all[calib_idx], y_all[calib_idx], w_all[calib_idx]
 
+    # AG-212 -- os dois balanceamentos calculados SEMPRE (custo desprezível,
+    # duas somas), mas só um alimenta o LightGBM: quem decide é
+    # `class_balance_basis`, default `count` (bit-exato). Ver
+    # `SideModelResult.scale_pos_weight_*` para o achado completo.
     n_pos = int(y_fit.sum())
     n_neg = int(y_fit.shape[0] - n_pos)
-    scale_pos_weight = float(n_neg) / float(n_pos) if n_pos > 0 else 1.0
+    scale_pos_weight_count = float(n_neg) / float(n_pos) if n_pos > 0 else 1.0
+    w_pos = float(w_fit[y_fit == 1].sum())
+    w_neg = float(w_fit[y_fit == 0].sum())
+    scale_pos_weight_weight = (w_neg / w_pos) if w_pos > 0.0 else 1.0
+    if class_balance_basis == CLASS_BALANCE_COUNT:
+        scale_pos_weight = scale_pos_weight_count
+    elif class_balance_basis == CLASS_BALANCE_WEIGHT:
+        scale_pos_weight = scale_pos_weight_weight
+    else:
+        raise ValueError(
+            f"fit_side_model: class_balance_basis desconhecido {class_balance_basis!r} "
+            f"(esperado {CLASS_BALANCE_COUNT!r} ou {CLASS_BALANCE_WEIGHT!r})"
+        )
 
     if device_type != "cpu":
         # Achado real (`audit_engineering`, 2026-08-23): a doc oficial do
@@ -406,6 +697,16 @@ def fit_side_model(
         subsample_freq=hyper.subsample_freq,
         feature_fraction=hyper.feature_fraction,
         min_child_samples=hyper.min_child_samples,
+        # AG-208 -- os dois entram com o default da própria biblioteca
+        # (bit-exato com todo artefato já treinado); o que muda é que
+        # agora são DECLARADOS em `constants.yaml` com proveniência e
+        # `sweep_required`, em vez de herdados implicitamente. Ver
+        # docstring de `LGBMHyperparams`: `min_child_samples` limita
+        # CONTAGEM por folha, `min_sum_hessian_in_leaf` limita MASSA --
+        # com `sample_weight` de cauda longa, só o segundo restringe o
+        # que importa, e ele estava no default inerte.
+        min_sum_hessian_in_leaf=hyper.min_sum_hessian_in_leaf,
+        max_bin=hyper.max_bin,
         lambda_l2=hyper.lambda_l2,
         monotone_constraints=list(monotone_constraints),
         scale_pos_weight=scale_pos_weight,
@@ -506,6 +807,20 @@ def fit_side_model(
         gain_by_column_raw=gain_by_column,
         n_train_fit=int(fit_idx.shape[0]),
         n_train_calib=int(calib_idx.shape[0]),
+        # AG-211 -- ESS medido (Σ uniqueness), não estipulado (B24).
+        # Sobre `train_side_df` inteiro (fit + calib): é o conjunto que
+        # este lado deste fold de fato consumiu.
+        sum_uniqueness_train=float(
+            train_side_df["uniqueness"].to_numpy().astype(np.float64).sum()
+        )
+        if "uniqueness" in train_side_df.columns
+        else float("nan"),
+        scale_pos_weight_count=scale_pos_weight_count,
+        scale_pos_weight_weight=scale_pos_weight_weight,
+        # `None` quando `train_side_df` não trouxe `t0` (ver nota acima) --
+        # `_resolve_tau_on_common_bars` trata `None` como "este lado não
+        # informa quais barras viu", nunca como "não viu nenhuma".
+        fit_t0_ms=t0_ms_all[fit_idx] if t0_ms_all is not None else None,
     )
 
 
@@ -577,6 +892,105 @@ def _unique_test_bars(
     return out
 
 
+# Ocorrências mínimas ACIMA do quantil de corte para `tau` ser estimável
+# com sentido. Não é constante de domínio (não muda nenhuma decisão
+# econômica): é o piso amostral de um quantil extremo — o mesmo critério
+# de "amostra grande o bastante para ver o percentil de interesse com
+# ~10 ocorrências" que já governa a leitura de cauda neste projeto. O
+# mínimo REAL de barras é DERIVADO daqui e de `target_signal_rate`
+# (`ceil(10 / r)`), nunca estipulado como contagem fixa.
+_MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
+
+
+def _resolve_tau_on_common_bars(
+    train_bars: pl.DataFrame,
+    long_result: SideModelResult,
+    short_result: SideModelResult,
+    *,
+    feature_ids: tuple[str, ...],
+    target_signal_rate: float,
+) -> tuple[float, float, float]:
+    """Ponto de entrada com IO-zero (recebe frame em memória) do modo
+    `TAU_POLICY_TOTAL_COMMON_OOF` — resolve `(tau_long, tau_short)` sobre
+    a população que fecha os DOIS achados de `tau` de uma vez (`AG-210`):
+
+    **(1) População comum, não sub-população por lado.** `fit_side_model`
+    tira `tau` de `train_side_df`, que já passou por `side_subset`
+    (NOFILL FORA). Mas a inferência roda sobre `_unique_test_bars`, que
+    NÃO filtra NOFILL — decisão correta e documentada (§3.7: NOFILL é
+    ruído de execução, não de feature). O efeito colateral é que o
+    quantil era tirado de uma população e aplicado a outra: P(NOFILL)
+    correlaciona com volatilidade/spread, e `E27f_cost_atr_ratio`/
+    `C06_vol_ratio_12_96` estão no vetor de features — as duas populações
+    não têm a mesma distribuição de `p`. Aqui `tau` sai de
+    `_unique_test_bars(train_bars)`: MESMO filtro, MESMA função, aplicada
+    ao treino em vez do teste.
+
+    **(2) Fora do fit.** Dentro da população comum, barras cujo `t0`
+    entrou no `fit` de qualquer um dos dois lados são descartadas — o
+    modelo é otimista nelas, e um quantil tirado de probabilidades
+    otimistas não transfere. Sobram as barras que nenhum dos dois modelos
+    ajustou (as de calibração de cada lado, mais as descartadas por
+    NOFILL de ambos os lados).
+
+    Fallback explícito e LOGADO (nunca silencioso): se a população
+    out-of-fit não comportar o quantil `1 - r` com pelo menos
+    `_MIN_OCCURRENCES_ABOVE_TAU` ocorrências acima do corte, cai para a
+    população comum inteira — um `tau` levemente otimista é melhor que um
+    `tau` estimado sobre uma dezena de pontos."""
+    common = _unique_test_bars(train_bars, feature_ids=feature_ids)
+    if common.height == 0:
+        raise ValueError(
+            "_resolve_tau_on_common_bars: nenhuma barra de treino com feature válida "
+            "-- não há população sobre a qual resolver tau"
+        )
+
+    # Guard obrigatório: `fit_t0_ms=None` significa "este lado não sabe
+    # informar quais barras viu" (o `train_side_df` daquele lado não trazia
+    # `t0`), NUNCA "não viu nenhuma". Tratar `None` como conjunto vazio
+    # marcaria barras já ajustadas como out-of-fit e produziria exatamente
+    # o `tau` otimista que este modo existe pra evitar -- silenciosamente.
+    fit_t0_long, fit_t0_short = long_result.fit_t0_ms, short_result.fit_t0_ms
+    if fit_t0_long is None or fit_t0_short is None:
+        raise ValueError(
+            "_resolve_tau_on_common_bars: fit_t0_ms ausente em pelo menos um lado -- "
+            "TAU_POLICY_TOTAL_COMMON_OOF exige a coluna 't0' no train_side_df dos dois "
+            "lados para saber quais barras cada modelo ajustou (AG-210)"
+        )
+    t0_common = common["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    seen_in_fit = np.isin(t0_common, fit_t0_long) | np.isin(t0_common, fit_t0_short)
+    oof_idx = np.flatnonzero(~seen_in_fit)
+
+    min_bars = int(np.ceil(_MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    if oof_idx.shape[0] < min_bars:
+        logger.warning(
+            "models.alpha.tau_oof_insuficiente_fallback_populacao_comum",
+            n_oof=int(oof_idx.shape[0]),
+            n_common=int(common.height),
+            min_bars_required=min_bars,
+            detail="AG-210 -- população out-of-fit não comporta o quantil "
+            "1-target_signal_rate com ocorrências suficientes acima do corte; "
+            "tau resolvido sobre a população comum INTEIRA (inclui barras vistas "
+            "no fit, portanto levemente otimista)",
+        )
+        tau_frame = common
+    else:
+        tau_frame = common[oof_idx]
+
+    X_tau = build_design_matrix(tau_frame, feature_ids=feature_ids)
+    p_long = long_result.calibrator.predict(
+        np.asarray(long_result.model.predict_proba(X_tau))[:, 1]
+    )
+    p_short = short_result.calibrator.predict(
+        np.asarray(short_result.model.predict_proba(X_tau))[:, 1]
+    )
+    return resolve_joint_tau(
+        np.asarray(p_long, dtype=np.float64),
+        np.asarray(p_short, dtype=np.float64),
+        target_signal_rate=target_signal_rate,
+    )
+
+
 def run_fold(
     df_all: pl.DataFrame,
     split: CPCVSplit,
@@ -592,6 +1006,9 @@ def run_fold(
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
     null_permutation_seed: int | None = None,
+    tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
+    calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
+    class_balance_basis: str = CLASS_BALANCE_COUNT,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -647,6 +1064,8 @@ def run_fold(
         unforce_features_by_side=unforce_features_by_side,
         device_type=device_type,
         null_permutation_seed=perm_seed_long,
+        calib_split_mode=calib_split_mode,
+        class_balance_basis=class_balance_basis,
     )
     short_result = fit_side_model(
         train_short,
@@ -659,7 +1078,31 @@ def run_fold(
         unforce_features_by_side=unforce_features_by_side,
         device_type=device_type,
         null_permutation_seed=perm_seed_short,
+        calib_split_mode=calib_split_mode,
+        class_balance_basis=class_balance_basis,
     )
+
+    # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o
+    # `tau` que `fit_side_model` já computou (quantil `1 - r` da própria
+    # sub-população daquele lado). No caminho corrigido, os dois `tau` são
+    # resolvidos JUNTOS sobre a população COMUM de barras de treino -- a
+    # mesma população que a inferência vai ver -- de forma que a taxa de
+    # sinal TOTAL bata `target_signal_rate`. Ver `resolve_joint_tau`.
+    tau_long, tau_short = long_result.tau, short_result.tau
+    tau_realized_rate = float("nan")
+    if tau_policy == TAU_POLICY_TOTAL_COMMON_OOF:
+        tau_long, tau_short, tau_realized_rate = _resolve_tau_on_common_bars(
+            train_bars,
+            long_result,
+            short_result,
+            feature_ids=feature_ids,
+            target_signal_rate=target_signal_rate,
+        )
+    elif tau_policy != TAU_POLICY_LEGACY_PER_SIDE:
+        raise ValueError(
+            f"run_fold: tau_policy desconhecido {tau_policy!r} (esperado "
+            f"{TAU_POLICY_LEGACY_PER_SIDE!r} ou {TAU_POLICY_TOTAL_COMMON_OOF!r})"
+        )
 
     test_bars_unique = _unique_test_bars(test_bars, feature_ids=feature_ids)
     X_test = build_design_matrix(test_bars_unique, feature_ids=feature_ids)
@@ -669,12 +1112,24 @@ def run_fold(
     raw_short = np.asarray(short_result.model.predict_proba(X_test))[:, 1]
     p_short = short_result.calibrator.predict(raw_short)
 
-    is_long = (p_long > long_result.tau) & (p_long > p_short)
-    is_short = (p_short > short_result.tau) & (p_short > p_long) & ~is_long
-    side_hat = np.zeros(p_long.shape[0], dtype=np.int8)
-    side_hat[is_long] = 1
-    side_hat[is_short] = -1
+    # `decide_side` (AG-210) -- a MESMA função que `resolve_joint_tau` usa
+    # internamente, nunca uma segunda cópia da regra. Bit-exato com o
+    # bloco inline que existia aqui antes.
+    side_hat = decide_side(p_long, p_short, tau_long=tau_long, tau_short=tau_short)
     confidence = np.maximum(p_long, p_short)
+    logger.info(
+        "models.alpha.run_fold_tau_resolvido",
+        split_id=split.split_id,
+        tau_policy=tau_policy,
+        tau_long=tau_long,
+        tau_short=tau_short,
+        target_signal_rate=target_signal_rate,
+        # taxa in-sample da resolução conjunta (NaN no caminho legado --
+        # não é medida lá, ver AG-210) e taxa OOS de fato realizada neste
+        # fold: a segunda é diagnóstico, nunca realimenta a escolha (B20).
+        signal_rate_in_sample=tau_realized_rate,
+        signal_rate_oos=float(np.mean(side_hat != 0)) if side_hat.shape[0] else float("nan"),
+    )
 
     calibrator_id_long = f"{model_id}_side1_fold{split.split_id}_calibrator"
     calibrator_id_short = f"{model_id}_side-1_fold{split.split_id}_calibrator"
@@ -704,8 +1159,13 @@ def run_fold(
             "resolution_id": pl.Series([resolution_id_value] * n_rows, dtype=pl.Utf8),
             "p_long": p_long,
             "p_short": p_short,
-            "tau_long": pl.Series([long_result.tau] * n_rows, dtype=pl.Float64),
-            "tau_short": pl.Series([short_result.tau] * n_rows, dtype=pl.Float64),
+            # AG-210 -- os `tau` EFETIVAMENTE aplicados neste fold (iguais
+            # a `long_result.tau`/`short_result.tau` sob a política legada;
+            # resolvidos conjuntamente sob `TAU_POLICY_TOTAL_COMMON_OOF`).
+            # Persistir o aplicado, não o per-side, é o que mantém
+            # `predictions.parquet` autoexplicativo (D-05/AG-150).
+            "tau_long": pl.Series([tau_long] * n_rows, dtype=pl.Float64),
+            "tau_short": pl.Series([tau_short] * n_rows, dtype=pl.Float64),
             "score_long_raw": raw_long,
             "score_short_raw": raw_short,
             "side_hat": side_hat,
@@ -754,6 +1214,9 @@ def run_all_folds(
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
     device_type: str = "cpu",
     null_permutation_seed: int | None = None,
+    tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
+    calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
+    class_balance_basis: str = CLASS_BALANCE_COUNT,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -797,6 +1260,9 @@ def run_all_folds(
             unforce_features_by_side=unforce_features_by_side,
             device_type=device_type,
             null_permutation_seed=null_permutation_seed,
+            tau_policy=tau_policy,
+            calib_split_mode=calib_split_mode,
+            class_balance_basis=class_balance_basis,
         )
         logger.info(
             "models.alpha.run_fold_done",

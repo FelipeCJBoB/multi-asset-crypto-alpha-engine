@@ -18,12 +18,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import Any, Sequence, cast
 
 import numpy as np
 import polars as pl
 import structlog
 from numpy.typing import NDArray
+
+from src.validation import bootstrap_diff
 
 from .alpha import FoldResult
 
@@ -183,19 +185,188 @@ def backtest_by_path(
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class PathDispersionStats:
+    """AG-214 — dispersão do Sharpe ENTRE caminhos do CPCV.
+
+    **Achado (`lgbm-crypto-quant`, 2026-08-25).** O relatório do Sprint 8
+    reporta `camada1_sharpe_mean`/`camada0_sharpe_mean` e a contagem de
+    caminhos em que a Camada 1 supera a Camada 0 — mas **nenhuma medida de
+    dispersão**. Sem σ, "a Camada 1 ganhou em 4 de 5 caminhos" não tem
+    como ser lido: toda diferença menor que σ é ruído, e σ não estava
+    sendo calculado em lugar nenhum.
+
+    **Leitura obrigatória junto com o número (não é rodapé).** Os 5
+    caminhos do CPCV NÃO são 5 amostras independentes: pela construção
+    documentada em `src.validation.cpcv` (item 3 da docstring do módulo),
+    cada caminho cobre os `n_groups` grupos EXATAMENTE UMA VEZ — ou seja,
+    os 5 reconstroem o MESMO dataset, com modelos treinados em partições
+    diferentes. Logo `std_between_paths` mede variabilidade de TREINO
+    (sensibilidade do modelo à partição), **não** erro amostral do dado.
+    É o número certo para responder "esse resultado é estável à
+    partição?" e o número errado para responder "esse Sharpe é
+    distinguível de zero?" — para a segunda pergunta é preciso DSR sobre
+    `N_lifetime` (`src.validation.dsr`) e o ESS de `AG-211`."""
+
+    n_paths: int
+    mean: float
+    std_between_paths: float
+    min: float
+    max: float
+
+
+def path_dispersion_stats(by_path: dict[int, PathBacktestResult]) -> PathDispersionStats:
+    """Núcleo puro (Idioma A) — `PathDispersionStats` de um dicionário
+    `{path_id: PathBacktestResult}`. `NaN` (caminho sem trades
+    suficientes) é descartado antes de agregar, nunca propagado como se
+    fosse um Sharpe zero."""
+    finite = np.asarray(
+        [r.sharpe_naive for r in by_path.values()], dtype=np.float64
+    )
+    finite = finite[np.isfinite(finite)]
+    n = int(finite.shape[0])
+    if n == 0:
+        return PathDispersionStats(0, float("nan"), float("nan"), float("nan"), float("nan"))
+    std = float(np.std(finite, ddof=1)) if n >= _MIN_TRADES_FOR_SHARPE else float("nan")
+    return PathDispersionStats(
+        n_paths=n,
+        mean=float(np.mean(finite)),
+        std_between_paths=std,
+        min=float(np.min(finite)),
+        max=float(np.max(finite)),
+    )
+
+
+# AG-214 — política de desempate do critério de permanência (§5.11).
+TIE_LEGACY_COUNTS_AS_BETTER = "legacy_tie_counts_as_better"
+TIE_REQUIRES_MARGIN = "require_margin"
+
+
 def permanence_count(
     camada1_by_path: dict[int, PathBacktestResult],
     camada0_by_path: dict[int, PathBacktestResult],
+    *,
+    tie_policy: str = TIE_LEGACY_COUNTS_AS_BETTER,
+    min_margin: float | None = None,
 ) -> tuple[int, int]:
     """`(n_paths_melhores, n_paths_total)` — quantos dos caminhos a Camada 1
     supera a Camada 0 conceitual (mesmo `path_id` nos dois dicionários,
     §5.11 adaptado). `NaN` (sem trades suficientes) nunca conta como
-    melhora."""
+    melhora.
+
+    **Achado (`lgbm-crypto-quant`, 2026-08-25, `AG-214`).** A comparação
+    legada é `s1 >= s0`: **empate exato conta como "Camada 1 melhor"**.
+    Isso contraria diretamente a diretriz do `CLAUDE.md` de que toda regra
+    travada a priori precisa de DEFINIÇÃO OPERACIONAL de cada termo — em
+    particular de "empate" —, que existe justamente porque `AG-114`/
+    `AG-118`/`AG-122` já queimaram este projeto uma vez com um gate cujo
+    termo não estava definido. E o viés não é neutro: ele aponta sempre
+    para a mesma conclusão (manter a Camada 1), que é o desfecho que
+    custa mais `N_lifetime`.
+
+    `tie_policy` default preserva o comportamento legado **bit-exato**.
+    `TIE_REQUIRES_MARGIN` exige `s1 > s0 + min_margin` e **obriga**
+    `min_margin` explícito: não existe default inventado aqui (B23 — a
+    margem defensável é derivada de `path_dispersion_stats(...).
+    std_between_paths`, que precisa ser MEDIDA primeiro; estipular um
+    número agora seria exatamente o erro que B23 proíbe)."""
+    if tie_policy == TIE_REQUIRES_MARGIN and min_margin is None:
+        raise ValueError(
+            "permanence_count: tie_policy=TIE_REQUIRES_MARGIN exige min_margin explícito "
+            "-- não há default defensável sem medir a dispersão entre caminhos primeiro "
+            "(B23; ver path_dispersion_stats e AG-214)"
+        )
+    if tie_policy not in (TIE_LEGACY_COUNTS_AS_BETTER, TIE_REQUIRES_MARGIN):
+        raise ValueError(
+            f"permanence_count: tie_policy desconhecido {tie_policy!r} (esperado "
+            f"{TIE_LEGACY_COUNTS_AS_BETTER!r} ou {TIE_REQUIRES_MARGIN!r})"
+        )
+
     common = sorted(set(camada1_by_path) & set(camada0_by_path))
     n_better = 0
     for pid in common:
         s1 = camada1_by_path[pid].sharpe_naive
         s0 = camada0_by_path[pid].sharpe_naive
-        if np.isfinite(s1) and np.isfinite(s0) and s1 >= s0:
+        if not (np.isfinite(s1) and np.isfinite(s0)):
+            continue
+        if tie_policy == TIE_LEGACY_COUNTS_AS_BETTER:
+            if s1 >= s0:
+                n_better += 1
+        elif s1 > s0 + float(min_margin):  # type: ignore[arg-type]  # guard acima garante not-None
             n_better += 1
     return n_better, len(common)
+
+
+# ADR-004 Fase 0 (docs/ADR-004_reformulacao_alvo_regra_decisao_e_
+# inferencia_2026-08-25.md §5/§7) -- companion de `permanence_count`
+# motivado por AG-220/AG-220-ADDENDUM: 3 rodadas pareadas reais de
+# BTCUSDT/R1 mostraram |delta(sharpe)| < sigma nas 3, e o veredito
+# binário do gate oscilou FALSO->VERDADEIRO->FALSO só por escolha de
+# calibração de threshold -- o gate atual conta caminhos vencedores sem
+# nunca perguntar se a diferença é distinguível de ruído. Isto responde
+# a segunda pergunta via bootstrap por blocos (`src.validation.
+# bootstrap_diff`, núcleo genérico) sobre os `ret_net` JÁ MATERIALIZADOS
+# nesta mesma rodada -- zero retreino extra.
+
+
+def path_bar_indices(path_id: int, splits: Sequence[Any]) -> NDArray[np.int64]:
+    """União das posições de teste (`test_idx`) de todos os splits que
+    pertencem a `path_id` -- casca fina sobre `CPCVSplit`
+    (`src.validation.cpcv`), duck-typed via `.path_id`/`.test_idx` pra
+    não criar dependência de tipo só pra isso."""
+    idx = np.concatenate([np.asarray(s.test_idx) for s in splits if s.path_id == path_id])
+    return np.unique(idx).astype(np.int64)
+
+
+def camada_diff_series(
+    c1_folds: list[FoldResult],
+    c0_folds: list[FoldResult],
+    df_all: pl.DataFrame,
+    path_id: int,
+    bar_idx: NDArray[np.int64],
+) -> FloatArray:
+    """Série `r1_t - r0_t` sobre TODO o universo de barras do path
+    (`bar_idx`), não só as barras com sinal -- barra sem sinal em uma
+    camada entra como `0.0` (estratégia flat), nunca excluída nem NaN:
+    excluir mudaria a base de comparação exatamente quando as duas
+    camadas discordam sobre QUAL barra sinalizar, que é parte do que o
+    teste precisa capturar. Ordenado por `t0` -- o bootstrap por blocos
+    precisa da ordem cronológica real, não da ordem de `bar_idx`."""
+
+    def _ret_by_bar(folds: list[FoldResult]) -> pl.DataFrame:
+        trades = realize_trades([fr for fr in folds if fr.path_id == path_id], df_all)
+        filled = trades.filter(pl.col("barrier_hit") != "NOFILL").select("t0", "ret_net")
+        return bars.join(filled, on="t0", how="left").with_columns(pl.col("ret_net").fill_null(0.0))
+
+    bars = df_all[bar_idx].select("t0").sort("t0")
+    r1 = _ret_by_bar(c1_folds)["ret_net"].to_numpy().astype(np.float64)
+    r0 = _ret_by_bar(c0_folds)["ret_net"].to_numpy().astype(np.float64)
+    return r1 - r0
+
+
+def permanence_significance_by_path(
+    c1_folds: list[FoldResult],
+    c0_folds: list[FoldResult],
+    df_all: pl.DataFrame,
+    splits: Sequence[Any],
+    *,
+    n_boot: int,
+    confidence_level: float,
+    seed: int,
+) -> dict[int, bootstrap_diff.BootstrapDiffResult]:
+    """Por `path_id`, IC bootstrap da diferença Camada1-Camada0 sobre o
+    universo completo de barras do path. Companion de `permanence_count`,
+    não substituto: onde aquele conta "quantos caminhos venceram", este
+    responde "a diferença em CADA caminho é distinguível de ruído" —
+    AG-220 mostrou que nenhuma das duas perguntas é redundante com a
+    outra. `seed + path_id` mantém reprodutibilidade determinística sem
+    reamostrar os 5 caminhos com o mesmo padrão."""
+    path_ids = sorted({fr.path_id for fr in c1_folds} & {fr.path_id for fr in c0_folds})
+    out: dict[int, bootstrap_diff.BootstrapDiffResult] = {}
+    for path_id in path_ids:
+        bar_idx = path_bar_indices(path_id, splits)
+        diff = camada_diff_series(c1_folds, c0_folds, df_all, path_id, bar_idx)
+        out[path_id] = bootstrap_diff.stationary_bootstrap_ci(
+            diff, n_boot=n_boot, confidence_level=confidence_level, seed=seed + path_id
+        )
+    return out

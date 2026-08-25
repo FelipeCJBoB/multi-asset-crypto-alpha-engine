@@ -8,7 +8,13 @@ registro abaixo, e o relatório separa "violações encontradas" de "não
 automatizável — ver DoD/checklist de PR".
 
 Também aplica a Regra 1 do registro de proveniência (§16.10.2): nenhum literal
-numérico (float) solto em código de pipeline, fora de `config/constants.yaml`.
+numérico solto em código de pipeline, fora de `config/constants.yaml`. Todo
+`float` é verificado sem restrição de contexto; `int` é verificado só em
+kwarg nomeado de chamada ou default de parâmetro de função -- ver docstring
+de `_check_int_keyword_or_default_literals` pra por que o escopo de `int` é
+deliberadamente mais estreito (achado 2026-08-24: espelhar a lógica de
+`float` pra `int` sem restringir contexto gera centenas de falso positivo
+estrutural — `range(N)`, índice, slice — não bug real).
 
 Uso:
     python tools/lint/banned_patterns.py [--path src] [--strict]
@@ -30,6 +36,12 @@ from pathlib import Path
 # índices, contagens de base 0/1, sinais. Qualquer outro float literal em
 # src/ é reportado.
 _ALLOWED_NUMERIC_LITERALS: frozenset[float] = frozenset({0.0, 1.0, -1.0, 2.0, 0.5})
+
+# Espelha _ALLOWED_NUMERIC_LITERALS (mesmos 4 valores estruturais, sem o 0.5
+# fracionário que não tem equivalente inteiro) -- ver docstring de
+# _check_int_keyword_or_default_literals logo abaixo pra por que a whitelist
+# de int NÃO é uma cópia ingênua da lógica de float.
+_ALLOWED_INT_LITERALS: frozenset[int] = frozenset({-1, 0, 1, 2})
 
 _NOQA_MAGIC_NUMBER = "noqa: magic-number"
 
@@ -110,9 +122,94 @@ def _iter_py_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
 
 
+def _int_magic_number_violation(
+    path: Path, node: ast.expr, lines: list[str], context: str
+) -> Violation | None:
+    """`node` é o valor de um kwarg de chamada ou de um default de função
+    (ver `_check_int_keyword_or_default_literals`). Devolve `Violation` se
+    for um `int` literal fora da whitelist estrutural e sem `noqa`; `None`
+    caso contrário (não é `ast.Constant`, é `bool`, está na whitelist, ou
+    tem noqa na linha)."""
+    if not isinstance(node, ast.Constant):
+        return None
+    value = node.value
+    # bool é subclasse de int em Python (isinstance(True, int) is True) --
+    # True/False como kwarg/default (ex. strict=True) não é magic number.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value in _ALLOWED_INT_LITERALS:
+        return None
+    line_text = lines[node.lineno - 1] if node.lineno - 1 < len(lines) else ""
+    if _NOQA_MAGIC_NUMBER in line_text:
+        return None
+    detail = f"literal int {value!r} como {context} fora de constants.yaml"
+    return Violation("MAGIC_NUMBER", path, node.lineno, detail)
+
+
+def _check_int_keyword_or_default_literals(
+    path: Path, tree: ast.AST, lines: list[str]
+) -> list[Violation]:
+    """Regra 1 (§16.10.2), extensão pra `int` (achado de varredura: o check
+    original só olhava `float` via `isinstance(node.value, float)` -- todo
+    `int` mágico em `src/` passava 100% despercebido).
+
+    Espelhar a lógica de `float` ingenuamente (qualquer `ast.Constant`
+    inteiro solto no corpo, sem restrição de contexto) explode em falso
+    positivo: inteiro pequeno é MUITO mais comum como índice/contador/
+    tamanho estrutural (`range(10)`, `for i in range(3)`, slicing,
+    `shape[1]`, tamanho de tupla) do que como hiperparâmetro de domínio --
+    MEDIDO nesta sessão, não hipotético: uma sonda temporária que aplicava
+    o mesmo `isinstance(node.value, int) and not in _ALLOWED_INT_LITERALS`
+    de baixo SEM a restrição de contexto (kwarg/default) rodada via
+    `python tools/lint/banned_patterns.py --path src --strict` (comando
+    mecânico autorizado) achou 352 "violações" em `src/` inteiro -- contra
+    27 achados reais no escopo restrito abaixo (mais 23 `float` já
+    pré-existentes ao check de `int`), no mesmo `src/`. Confirma a ordem de
+    grandeza "centenas" citada como sinal de alarme na instrução original
+    desta tarefa -- não é o repo tendo centenas de hiperparâmetros
+    escondidos, é ruído estrutural (`range(N)`, índices de slice, literais
+    de teste/fixture) dominando a contagem sem o filtro de contexto.
+
+    Escopo adotado, deliberadamente mais estreito que o de `float`: só
+    literais `int` usados como (a) valor de KWARG NOMEADO numa chamada
+    (`ast.Call.keywords`, ex. `num_iters=100`) ou (b) DEFAULT DE PARÂMETRO
+    numa `def`/`async def` (`ast.arguments.defaults`/`kw_defaults`, ex.
+    `def f(x: int = 100)`). Essas duas posições são onde hiperparâmetro
+    numérico de fato aparece em código Python idiomático deste repo (ver
+    `_DEFAULT_NUM_EM_ITERS`/`_DEFAULT_STICKY_CONCENTRATION` em
+    `src/regime/hmm_gaussian.py`, achado real que motivou esta extensão) --
+    argumento POSICIONAL (`foo(100)`), literal em subscript/slice, e
+    literal solto em expressão/corpo continuam FORA do escopo, de propósito:
+    são estruturais na esmagadora maioria dos casos (`range(N)`, índice,
+    tamanho de tupla) e não têm marcador sintático que os distinga de um
+    hiperparâmetro real sem heurística muito mais cara (teria que inferir o
+    NOME do parâmetro posicional via assinatura da função chamada, fora do
+    alcance de um lint estático de arquivo único)."""
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                if kw.arg is None:  # **kwargs unpacking, não é kwarg nomeado
+                    continue
+                v = _int_magic_number_violation(path, kw.value, lines, f"kwarg '{kw.arg}'")
+                if v is not None:
+                    violations.append(v)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+            defaults = list(args.defaults) + [d for d in args.kw_defaults if d is not None]
+            for default_node in defaults:
+                v = _int_magic_number_violation(
+                    path, default_node, lines, f"default de parâmetro em '{node.name}'"
+                )
+                if v is not None:
+                    violations.append(v)
+    return violations
+
+
 def _check_ast(path: Path, tree: ast.AST, source: str) -> list[Violation]:
     violations: list[Violation] = []
     lines = source.splitlines()
+    violations.extend(_check_int_keyword_or_default_literals(path, tree, lines))
 
     for node in ast.walk(tree):
         # B28 — print()
