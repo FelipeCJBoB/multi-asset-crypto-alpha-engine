@@ -7,213 +7,213 @@
   "resolution_id": "R1",
   "symbol": "XRPUSDT",
   "t1_internal_correlations": {
-    "A05_ret_vol_norm_4xA13_dist_ema48_atr": 0.5123418772263074,
-    "A05_ret_vol_norm_4xB01_rsi_14": 0.6445635086096407,
-    "A05_ret_vol_norm_4xC06_vol_ratio_12_96": 0.0010373258353238853,
-    "A05_ret_vol_norm_4xD06f_taker_imbalance_z_48": 0.36545957750626934,
-    "A05_ret_vol_norm_4xE10f_oi_change_z_48": 0.07258569224388323,
-    "A05_ret_vol_norm_4xE27f_cost_atr_ratio": -0.0030229387550408902,
-    "A13_dist_ema48_atrxB01_rsi_14": 0.9527168026315113,
-    "A13_dist_ema48_atrxC06_vol_ratio_12_96": -0.07414834667458221,
-    "A13_dist_ema48_atrxD06f_taker_imbalance_z_48": 0.1284004812254383,
-    "A13_dist_ema48_atrxE10f_oi_change_z_48": 0.010634498897382957,
-    "A13_dist_ema48_atrxE27f_cost_atr_ratio": 0.0531384528252015,
-    "B01_rsi_14xC06_vol_ratio_12_96": -0.06417601705372011,
-    "B01_rsi_14xD06f_taker_imbalance_z_48": 0.20817904691772257,
-    "B01_rsi_14xE10f_oi_change_z_48": 0.03404513154533848,
-    "B01_rsi_14xE27f_cost_atr_ratio": 0.03010617696078977,
-    "C06_vol_ratio_12_96xD06f_taker_imbalance_z_48": 0.010336897537959392,
-    "C06_vol_ratio_12_96xE10f_oi_change_z_48": -0.01921350920071579,
-    "D06f_taker_imbalance_z_48xE10f_oi_change_z_48": 0.10545124079261758,
-    "E27f_cost_atr_ratioxC06_vol_ratio_12_96": -0.176899072140909,
-    "E27f_cost_atr_ratioxD06f_taker_imbalance_z_48": -0.013735513403863786,
-    "E27f_cost_atr_ratioxE10f_oi_change_z_48": -0.012129921463630488
+    "A05_ret_vol_norm_4xA13_dist_ema48_atr": 0.5124874035696403,
+    "A05_ret_vol_norm_4xB01_rsi_14": 0.6446559876768507,
+    "A05_ret_vol_norm_4xC06_vol_ratio_12_96": 0.0010094043705623412,
+    "A05_ret_vol_norm_4xD06f_taker_imbalance_z_48": 0.36580956605952836,
+    "A05_ret_vol_norm_4xE10f_oi_change_z_48": 0.07253668399963238,
+    "A05_ret_vol_norm_4xE27f_cost_atr_ratio": -0.0029570773668017624,
+    "A13_dist_ema48_atrxB01_rsi_14": 0.9527514593551167,
+    "A13_dist_ema48_atrxC06_vol_ratio_12_96": -0.07394082122064803,
+    "A13_dist_ema48_atrxD06f_taker_imbalance_z_48": 0.1286189274841092,
+    "A13_dist_ema48_atrxE10f_oi_change_z_48": 0.01057745883718609,
+    "A13_dist_ema48_atrxE27f_cost_atr_ratio": 0.05310842869596005,
+    "B01_rsi_14xC06_vol_ratio_12_96": -0.06405535085378708,
+    "B01_rsi_14xD06f_taker_imbalance_z_48": 0.2084305704560466,
+    "B01_rsi_14xE10f_oi_change_z_48": 0.03398679144523905,
+    "B01_rsi_14xE27f_cost_atr_ratio": 0.030163434340988764,
+    "C06_vol_ratio_12_96xD06f_taker_imbalance_z_48": 0.010335217192513402,
+    "C06_vol_ratio_12_96xE10f_oi_change_z_48": -0.019270177680567813,
+    "D06f_taker_imbalance_z_48xE10f_oi_change_z_48": 0.10545442007917814,
+    "E27f_cost_atr_ratioxC06_vol_ratio_12_96": -0.17711239838016882,
+    "E27f_cost_atr_ratioxD06f_taker_imbalance_z_48": -0.013640297821720672,
+    "E27f_cost_atr_ratioxE10f_oi_change_z_48": -0.012117457885073468
   },
   "t1_internal_high_corr": {
-    "A13_dist_ema48_atrxB01_rsi_14": 0.9527168026315113
+    "A13_dist_ema48_atrxB01_rsi_14": 0.9527514593551167
   },
   "t2_excluded_given_t1": [
-    "C02_atr_20_pct",
-    "C04_parkinson_vol_48",
-    "C05_garman_klass_48",
-    "C03_realized_vol_48",
-    "A11_true_range_pct",
-    "C09_range_pctile_expanding",
-    "C08_vol_pctile_rolling_1y",
     "A14_dist_ema12_atr",
-    "D02f_rel_volume_48",
     "B09_zscore_close_48",
-    "B02_rsi_48",
+    "D02f_rel_volume_48",
     "B03_roc_12",
     "A04_log_return_12",
     "A03_log_return_4",
+    "B02_rsi_48",
     "A06_ret_vol_norm_12",
-    "B10_stoch_k_14",
     "B11_bb_position_20",
+    "B10_stoch_k_14",
+    "B05_ema_slope_24",
     "A15_dist_vwap_d_atr",
     "D01f_volume_z_96",
-    "B05_ema_slope_24",
-    "D08f_trade_count_z_48",
-    "E08f_oi_notional",
-    "K04_session_us",
+    "C02_atr_20_pct",
     "D05f_taker_buy_ratio",
+    "A11_true_range_pct",
     "A07_body_ratio",
-    "E15f_toptrader_ls_z",
-    "E01f_funding_last",
+    "C09_range_pctile_expanding",
+    "K04_session_us",
     "A10_close_location",
-    "K04_session_europe"
+    "C04_parkinson_vol_48",
+    "C01_atr_20",
+    "C05_garman_klass_48",
+    "C03_realized_vol_48",
+    "D08f_trade_count_z_48",
+    "C08_vol_pctile_rolling_1y",
+    "E15f_toptrader_ls_z",
+    "K04_session_europe",
+    "E01f_funding_last"
   ],
   "t2_excluded_reason": {
     "A03_log_return_4": {
       "correlated_with": "A05_ret_vol_norm_4",
-      "spearman": 0.9730481089867289
+      "spearman": 0.9730423444211714
     },
     "A04_log_return_12": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.7452106473303922
+      "spearman": 0.7453522421904667
     },
     "A06_ret_vol_norm_12": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.7694062362548686
+      "spearman": 0.7695113649675409
     },
     "A07_body_ratio": {
       "correlated_with": "A01_log_return_1",
-      "spearman": 0.956702155998267
+      "spearman": 0.9567067300375443
     },
     "A10_close_location": {
       "correlated_with": "A01_log_return_1",
-      "spearman": 0.8281809974426528
+      "spearman": 0.8282006074351441
     },
     "A11_true_range_pct": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.7837559885257678
+      "spearman": -0.7837346443374483
     },
     "A14_dist_ema12_atr": {
       "correlated_with": "A05_ret_vol_norm_4",
-      "spearman": 0.834261530277107
+      "spearman": 0.834362652627022
     },
     "A15_dist_vwap_d_atr": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.7739969457547607
+      "spearman": 0.7730919579735952
     },
     "B02_rsi_48": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.9318593360951201
+      "spearman": 0.9319059798507551
     },
     "B03_roc_12": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.7452106461683411
+      "spearman": 0.7453522410867471
     },
     "B05_ema_slope_24": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.9091413050178325
+      "spearman": 0.9091979628146383
     },
     "B09_zscore_close_48": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": 0.9605119320539227
+      "spearman": 0.960510126797435
     },
     "B10_stoch_k_14": {
       "correlated_with": "A05_ret_vol_norm_4",
-      "spearman": 0.7672395483251647
+      "spearman": 0.7672930935793386
     },
     "B11_bb_position_20": {
       "correlated_with": "A05_ret_vol_norm_4",
-      "spearman": 0.7404764140681178
+      "spearman": 0.7405263623475135
+    },
+    "C01_atr_20": {
+      "correlated_with": "E08f_oi_notional",
+      "spearman": 0.7773921376811294
     },
     "C02_atr_20_pct": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.9999999999999988
+      "spearman": -0.9999999999999992
     },
     "C03_realized_vol_48": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.9257834970430412
+      "spearman": -0.925876540565763
     },
     "C04_parkinson_vol_48": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.9582761764534257
+      "spearman": -0.958254745485361
     },
     "C05_garman_klass_48": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.9542591770621047
+      "spearman": -0.9542402765424584
     },
     "C08_vol_pctile_rolling_1y": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.7837913372902985
+      "spearman": -0.7839808730300931
     },
     "C09_range_pctile_expanding": {
       "correlated_with": "E27f_cost_atr_ratio",
-      "spearman": -0.7273018384904678
+      "spearman": -0.7272972054376845
     },
     "D01f_volume_z_96": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": -0.7145297144283651
+      "spearman": -0.7145710613877848
     },
     "D02f_rel_volume_48": {
       "correlated_with": "A13_dist_ema48_atr",
-      "spearman": -0.7661757464135621
+      "spearman": -0.7661622594719277
     },
     "D05f_taker_buy_ratio": {
       "correlated_with": "D06f_taker_imbalance_z_48",
-      "spearman": 0.9594923034806958
+      "spearman": 0.9594404455770524
     },
     "D08f_trade_count_z_48": {
       "correlated_with": "D09f_avg_trade_size_z",
-      "spearman": -0.9681137062739045
+      "spearman": -0.9681849580477498
     },
     "E01f_funding_last": {
       "correlated_with": "E03f_funding_cum_3d",
-      "spearman": 0.7656096520839987
-    },
-    "E08f_oi_notional": {
-      "correlated_with": "C01_atr_20",
-      "spearman": 0.777265172049657
+      "spearman": 0.765124864942365
     },
     "E15f_toptrader_ls_z": {
-      "correlated_with": "E17f_retail_vs_top_spread",
-      "spearman": -0.711766418150561
+      "correlated_with": "E14f_toptrader_ls_ratio",
+      "spearman": 0.7076744633255038
     },
     "K04_session_europe": {
       "correlated_with": "K01_hour_cos",
-      "spearman": -0.8391625096154423
+      "spearman": -0.8390286628296652
     },
     "K04_session_us": {
       "correlated_with": "K01_hour_sin",
-      "spearman": -0.7027089732263984
+      "spearman": -0.7031995478545583
     }
   },
   "t2_survivors_given_t1": [
-    "C01_atr_20",
-    "C12_vol_of_vol_48",
     "E18f_taker_ls_vol_ratio",
-    "B07_efficiency_ratio_48",
     "E05f_time_to_funding_h",
-    "B08_efficiency_ratio_16",
-    "K01_hour_sin",
-    "D09f_avg_trade_size_z",
-    "C10_vol_expansion_flag",
     "A02_log_return_2",
     "B04_macd_hist_norm",
-    "E09f_oi_contracts",
-    "E17f_retail_vs_top_spread",
+    "K01_hour_sin",
     "A01_log_return_1",
+    "B07_efficiency_ratio_48",
+    "E08f_oi_notional",
+    "B08_efficiency_ratio_16",
     "K04_session_asia",
-    "E16f_global_ls_ratio",
-    "C11_vol_compression_flag",
+    "C10_vol_expansion_flag",
     "E12f_price_oi_divergence",
-    "E03f_funding_cum_3d",
-    "K08_days_since_halving",
-    "E14f_toptrader_ls_ratio",
-    "K03_is_weekend",
-    "A09_lower_wick_ratio",
     "B06_momentum_accel",
-    "K02_dow_sin",
-    "A08_upper_wick_ratio",
-    "K01_hour_cos",
+    "D09f_avg_trade_size_z",
+    "E14f_toptrader_ls_ratio",
+    "C12_vol_of_vol_48",
+    "E03f_funding_cum_3d",
+    "E09f_oi_contracts",
+    "E16f_global_ls_ratio",
     "D10f_vol_price_divergence",
-    "K02_dow_cos",
+    "E17f_retail_vs_top_spread",
+    "K03_is_weekend",
     "D04f_volume_accel",
-    "E11f_oi_change_1d",
+    "K08_days_since_halving",
+    "K01_hour_cos",
+    "K02_dow_sin",
+    "A09_lower_wick_ratio",
+    "C11_vol_compression_flag",
     "A12_gap_pct",
+    "K02_dow_cos",
+    "E11f_oi_change_1d",
+    "A08_upper_wick_ratio",
     "D07f_taker_imbalance_1m_agg"
   ]
 }

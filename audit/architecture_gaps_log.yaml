@@ -16674,3 +16674,107 @@ entries:
       justamente em regime de rajada. Os dois convivem (sao janelas e
       mecanismos diferentes), mas quem for decidir AG-230 precisa ver os
       dois numeros juntos, nao so a perda.
+
+  - id: AG-254
+    date: "2026-08-25"
+    file: "src/validation/dsr.py::sharpe_difference_block_bootstrap, src/analysis/faixa2_dsr_and_b2_check.py"
+    related_file: "src/validation/bootstrap_diff.py::select_block_length, audit/architecture_gaps_log.yaml::AG-009/AG-129 (duplicacao catalogada)"
+    found_by: "Claude -- Passo 3 do docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md, reconciliacao pedida ANTES de escrever PBO/CSCV"
+    gap: >
+      `dsr.sharpe_difference_block_bootstrap` (bloco FIXO/moving block) e
+      `bootstrap_diff.stationary_bootstrap_ci` (bloco estacionario
+      geometrico, AG-241) respondem a MESMA pergunta de fundo ("a
+      diferenca entre duas estrategias e real?") por 2 caminhos que
+      pareciam duplicados -- risco ja catalogado em AG-009/AG-129. NAO
+      sao identicos (Sharpe != media), entao um merge cego produziria o
+      numero errado pra uma das duas perguntas. O que de fato duplicava
+      sem necessidade era so o COMPRIMENTO DE BLOCO: `sharpe_difference_
+      block_bootstrap` exigia `block_size` explicito do UNICO caller real
+      (`faixa2_dsr_and_b2_check.py::_BOOTSTRAP_BLOCK_DAYS = 20`) -- numero
+      ESTIPULADO ("~3 semanas de calendario... sem esvaziar o numero de
+      blocos"), nunca medido -- B23 latente.
+    severity: "medio -- nao invalidava nenhum resultado ja usado (unico caller e analise Faixa 2 de 2026-08-09, nao um gate de producao), mas era exatamente o tipo de numero que B23 probe"
+    layer: "validation (2 nucleos estatisticos)"
+    consequence: >
+      Sem reconciliar, qualquer nova chamada de `sharpe_difference_
+      block_bootstrap` teria que inventar seu proprio numero de block_size
+      (repetindo o erro), ou os dois modulos ficariam permanentemente
+      dessincronizados quanto a "como medir dependencia serial" -- 2
+      respostas diferentes pra mesma pergunta de instrumento dentro do
+      mesmo pacote `validation`.
+    status: >
+      FECHADO 2026-08-25 -- decisao tomada: NAO fundir os dois nucleos
+      (estatisticas diferentes, Sharpe vs media, continuam servindo
+      perguntas diferentes -- documentado explicitamente na docstring de
+      `sharpe_difference_block_bootstrap`). O que foi fechado foi SO o
+      B23 latente: `block_size` agora e `int | None = None`, e quando
+      `None` MEDE via `bootstrap_diff.select_block_length` sobre a serie
+      de diferenca pareada (`returns_a - returns_b`) -- mesmo instrumento
+      que `bootstrap_diff` ja usa pro seu proprio bloco, reusado sem
+      reescrever. `block_size` explicito continua aceito, bit-exato pra
+      qualquer chamador existente. `faixa2_dsr_and_b2_check.py` atualizado
+      pra usar o default medido (`_BOOTSTRAP_BLOCK_DAYS` removido -- unico
+      caller real, sem golden test que fixasse o numero antigo,
+      confirmado por grep antes de remover). 2 testes novos
+      (`test_validation_dsr.py`), suite completa
+      (`uv run pytest tests/unit/test_validation_dsr.py -v`): 14 passed.
+      `lint-imports`: 7 kept, 0 broken (validation->validation intra-
+      pacote, sem violacao de camada).
+
+  - id: AG-245
+    date: "2026-08-25"
+    file: "experiments/t1_t2_orthogonality_{symbol}_R1.json, src/analysis/t1_t2_orthogonality_by_combo.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-227, ::AG-229, ::AG-244, docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md"
+    found_by: "Claude -- passo 3, re-executando t1_t2_orthogonality sobre os labels relabelados e conferindo o CONJUNTO de sobreviventes, nao so a contagem"
+    gap: >
+      A CONTAGEM DE FEATURES SOBREVIVENTES E ESTAVEL AO RELABEL; O CONJUNTO
+      NAO E. Re-executado por simbolo em R1 sobre os labels de AG-229:
+        simbolo    n_final  t2_survivors   conjunto
+        BTCUSDT     42->42     35->35      IDENTICO
+        SOLUSDT     40->40     33->33      saiu C01_atr_20, D08f_trade_count_z_48
+                                           entrou D09f_avg_trade_size_z, E14f_toptrader_ls_ratio
+        BNBUSDT     43->43     36->36      saiu D09f_avg_trade_size_z, K01_hour_cos
+                                           entrou D08f_trade_count_z_48, K04_session_europe
+        XRPUSDT     40->40     33->33      saiu C01_atr_20, entrou E08f_oi_notional
+      TRES de quatro simbolos trocaram features mantendo o numero exato.
+      ARMADILHA DE LEITURA, e eu quase cai nela: a primeira comparacao que
+      rodei olhava so `final_feature_set_n` e `len(t2_survivors)`. Os
+      quatro simbolos deram numeros IDENTICOS antes e depois, o que leva
+      direto a conclusao "o filtro de ortogonalidade e robusto ao relabel".
+      E o oposto do que o dado diz. So conferindo os IDs -- nao a
+      cardinalidade -- o padrao aparece.
+      Detalhe nao aleatorio: `C01_atr_20` saiu em DOIS simbolos (SOLUSDT e
+      XRPUSDT). Uma feature de ATR perder ortogonalidade contra o conjunto
+      logo apos um relabel que mudou a distribuicao de barreira e
+      coerente, nao coincidencia -- mas nao foi investigado aqui.
+    severity: "medio -- nao invalida artefato existente (o filtro nunca foi aplicado em producao), mas significa que a saida deste modulo e sensivel ao regime de label de um jeito que a metrica reportada esconde"
+    layer: "analysis (selecao de feature)"
+    consequence: >
+      (1) Se o filtro de ortogonalidade for aplicado algum dia -- AG-227
+      registra que os 10 artefatos reais de producao ainda rodam com os 69
+      brutos, SEM filtro --, o conjunto selecionado depende de qual regime
+      de label estava vigente quando o filtro rodou. Aplicar um conjunto
+      derivado dos labels pre-relabel sobre labels pos-relabel seria
+      importar uma selecao feita sob outro regime.
+      (2) A instabilidade e da mesma familia do que AG-235-ADDENDUM-2 achou
+      na geometria: uma ORDENACAO (la de celulas, aqui de features) que nao
+      sobrevive a troca de uma condicao que deveria ser secundaria. Nos dois
+      casos a metrica agregada parecia estavel e o detalhe nao estava.
+      (3) LICAO DE METODO, generalizavel: comparar cardinalidade nao e
+      comparar conjunto. Toda comparacao antes/depois de um passo de SELECAO
+      neste projeto tem que comparar os IDs selecionados, nunca so quantos
+      foram. Vale para o filtro de ortogonalidade, para stability_screen e
+      para qualquer gate que produza subconjunto.
+    status: >-
+      ABERTO -- MEDIDO em R1 para 4 simbolos (ETHUSDT nao tem par no
+      snapshot pre-relabel, entao nao e comparavel). R2/R3 em execucao para
+      completar o multi-TF pedido pelo Manager -- ate agora o modulo so
+      rodava R1, porque o CLI tem `--resolution-id` com default "R1" e
+      ninguem passava outro valor; os artefatos R2/R3 em disco eram de
+      2026-08-25 14:5x, anteriores ao relabel, e SOLUSDT/XRPUSDT nao tinham
+      R2/R3 nenhum.
+      NAO ACIONAVEL AGORA por decisao ja registrada: T1 fica intocado por
+      instrucao explicita do Manager (aditivo, nunca substitutivo, AG-207),
+      e o filtro nao esta aplicado em producao. Registrado para que, quando
+      a aplicacao do filtro for decidida, esteja documentado que a selecao
+      precisa ser refeita sobre os labels vigentes -- nao herdada.
