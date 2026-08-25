@@ -1,0 +1,149 @@
+# config/alpha_hyperparams_by_combo.yaml
+#
+# Hiperparâmetro LightGBM calibrado POR combinação (symbol, resolution_id),
+# em vez do conjunto único global de constants.yaml::alpha_lgbm_* — completa
+# D-11 (docs/alpha_model_design_doc_2026-08-22.md, "conjunto único v1,
+# ASSUMED até sweep"), que sempre previu esta possibilidade sem nunca ter
+# sido varrida antes de 2026-08-25.
+#
+# Fora do schema de constants.yaml de propósito (não é escalar único —
+# check_constants_provenance.py/check_constants_referenced.py não cobrem
+# este arquivo). Cada valor aqui é MEASURED, fonte única:
+#   ADR-003 (docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md)
+#   Estágio 2 -- vencedor por mediana de 5 seeds (não o screening de 1
+#   seed), por combinação. audit/evidence_ledger.yaml::
+#   adr003-k62-10-piores-combinacoes-veredito-2026-08-25.
+#
+# feature_ids associado: SUPPORT_FEATURE_IDS (62, src/features/build.py) --
+# SUBSTITUI T1_FEATURE_IDS (7), nunca soma. Toda combinação listada aqui
+# treina sob esse vetor, não sob T1.
+#
+# RESSALVA CRÍTICA (AG-220/AG-220-ADDENDUM, audit/architecture_gaps_log.yaml,
+# achado de sessão paralela, 2026-08-25): o gate de permanência usado pra
+# checar cada vencedor (Estágio 3 do ADR-003) foi medido, em experimento
+# pareado real sobre BTCUSDT/R1 (k=7), lendo RUÍDO da variância de path do
+# CPCV/backtest_lite, não sinal -- |delta(Camada1,Camada0)| < sigma nas 3
+# variantes testadas. Os valores abaixo são a CALIBRAÇÃO de hiperparâmetro
+# medida (Estágio 1-2, robusta a viés de seleção via mediana de 5 seeds),
+# não uma validação de que o resultado é distinguível de ruído -- ver ADR-003
+# §Resultado antes de tratar qualquer "gate passou" como sinal real.
+#
+# Cobertura: só as 10 piores combinações por ret_net (AG-207) foram
+# calibradas aqui. As outras 5 (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3 -- já
+# passavam o gate de permanência sob T1/hiperparâmetro global antes desta
+# campanha; XRPUSDT/R2, XRPUSDT/R3 -- não fizeram parte das "10 piores")
+# NÃO têm entrada aqui. `load_hyperparams_by_combo` retorna `None` pra
+# essas -- o chamador cai pro hiperparâmetro global de constants.yaml
+# (mesmo comportamento de sempre), com warning explícito, não silencioso.
+#
+# Regra de edição: MESMA disciplina do resto do projeto -- só se acrescenta
+# ao final ou se substitui uma entrada inteira quando uma nova campanha de
+# calibração medir de novo essa combinação especificamente; nunca editar um
+# valor isolado sem re-rodar a medição que o produziu.
+
+schema_version: 1
+provenance: MEASURED
+source: "ADR-003 Estágio 2 (mediana de 5 seeds), 2026-08-25"
+feature_ids_ref: "features_build.SUPPORT_FEATURE_IDS"
+
+combos:
+  BTCUSDT_R3:
+    max_depth: 2
+    num_leaves: 2
+    min_child_samples: 500
+    learning_rate: 0.03
+    subsample: 0.9
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  BNBUSDT_R3:
+    max_depth: 2
+    num_leaves: 2
+    min_child_samples: 2000
+    learning_rate: 0.03
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  SOLUSDT_R1:
+    max_depth: 2
+    num_leaves: 3
+    min_child_samples: 2000
+    learning_rate: 0.03
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 150
+    min_sum_hessian_in_leaf: 0.001
+  BTCUSDT_R2:
+    max_depth: 2
+    num_leaves: 3
+    min_child_samples: 2000
+    learning_rate: 0.03
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 150
+    min_sum_hessian_in_leaf: 0.001
+  BNBUSDT_R2:
+    max_depth: 2
+    num_leaves: 2
+    min_child_samples: 20
+    learning_rate: 0.03
+    subsample: 0.9
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  BNBUSDT_R1:
+    max_depth: 2
+    num_leaves: 3
+    min_child_samples: 2000
+    learning_rate: 0.01
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  XRPUSDT_R1:
+    max_depth: 2
+    num_leaves: 3
+    min_child_samples: 2000
+    learning_rate: 0.03
+    subsample: 0.6
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  ETHUSDT_R3:
+    max_depth: 2
+    num_leaves: 2
+    min_child_samples: 2000
+    learning_rate: 0.01
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  BTCUSDT_R1:
+    max_depth: 2
+    num_leaves: 3
+    min_child_samples: 2000
+    learning_rate: 0.03
+    subsample: 0.8
+    feature_fraction: 0.3
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001
+  ETHUSDT_R2:
+    max_depth: 2
+    num_leaves: 2
+    min_child_samples: 500
+    learning_rate: 0.01
+    subsample: 0.8
+    feature_fraction: 1.0
+    lambda_l2: 5.0
+    n_estimators: 300
+    min_sum_hessian_in_leaf: 0.001

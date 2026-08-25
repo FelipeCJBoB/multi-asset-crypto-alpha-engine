@@ -755,7 +755,14 @@ def run_layer1_sprint(
         confidence_level=float(load_constant("alpha_permanence_bootstrap_confidence_level")),
         seed=seed,
     )
-    n_paths_significant = sum(1 for r in permanence_significance.values() if r.significant)
+    n_paths_significant = sum(
+        1 for r in permanence_significance.values() if r.zero_filled.significant
+    )
+    # AG-252 -- companion signal-only, magnitude correta (zero_filled dilui
+    # point_estimate ~20-60x, medido em BTCUSDT/R1, ver PermanenceSignificanceResult).
+    n_paths_significant_signal_only = sum(
+        1 for r in permanence_significance.values() if r.signal_only.significant
+    )
 
     # --- AG-211: ESS (Σ uniqueness) por fold x lado, agregado. O número
     # que faltava para qualquer leitura honesta do Sharpe acima: `n_rows`
@@ -980,17 +987,29 @@ def run_layer1_sprint(
                 "std_between_paths, ainda nao decidida (B23/AG-214)"
             ),
             # AG-220/ADR-004 Fase 0 -- IC bootstrap por blocos da diferenca
-            # Camada1-Camada0 POR CAMINHO, sobre o universo completo de
-            # barras (zero-filled fora de sinal). Companion de
+            # Camada1-Camada0 POR CAMINHO. Companion de
             # n_paths_camada1_supera_camada0 acima, NAO substituto: aquele
             # conta vitorias por sharpe_naive, este responde se cada
             # diferenca e distinguivel de ruido. AG-220 mediu |delta| <
             # sigma em BTCUSDT/R1 nas 3 variantes de calibracao testadas --
             # leia os dois numeros juntos, nunca so o primeiro.
+            # AG-252 -- duas series, NUNCA reduzidas a uma: `zero_filled`
+            # (universo completo, zero fora de sinal) preserva a base de
+            # comparacao mas DILUI point_estimate ~20-60x (medido,
+            # BTCUSDT/R1, 96-98% das barras sao zero-zero); `signal_only`
+            # (so barras onde >=1 camada sinalizou) da a magnitude
+            # economica por trade correta. O veredito `significant`
+            # concordou nos 5 caminhos medidos, mas e 1 medicao, nao prova
+            # geral -- leia os dois campos, nunca so um.
             "permanence_significance_bootstrap": {
-                str(pid): asdict(r) for pid, r in permanence_significance.items()
+                str(pid): {
+                    "zero_filled": asdict(r.zero_filled),
+                    "signal_only": asdict(r.signal_only),
+                }
+                for pid, r in permanence_significance.items()
             },
             "n_paths_significant": n_paths_significant,
+            "n_paths_significant_signal_only": n_paths_significant_signal_only,
         },
         # --- AG-211: o `n` estatístico, não o `n` do `shape`. -------------
         "sample_size_efetivo": {

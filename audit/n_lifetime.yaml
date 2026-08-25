@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 223
+counter: 761
 
 log:
   - id: 1
@@ -549,3 +549,335 @@ log:
       escalar pra Fase 2 ou nao fica pro Manager, nao decidida aqui.
       Artefato: experiments/t2_t1_capacity_map_ETHUSDT_R1.json.
     delta: 66
+  - id: 23
+    date: "2026-08-24"
+    type: fase2_extensao_fronteira
+    description: >
+      Fase 2 da ablacao T2->T1 (docs/t2_t1_ablation_veredito_duas_
+      analises_2026-08-24.md SS4), autorizada pelo Manager ("pode seguir
+      para Fase 2") apos ver o resultado negativo da Fase 1. Desenho
+      proprio (nao literal do doc original): o vencedor da Fase 1 (k=24,
+      max_depth=2, num_leaves=2) estava na FRONTEIRA da grade testada nos
+      2 eixos (k=24 = teto testado, complexidade = piso testado) -- "refinar
+      ao redor" nao se aplica a um ponto de fronteira sem vizinhanca do
+      lado de fora. Desenho: Estagio A, grid k={24 (reusa Fase1),32,39} x
+      (depth,leaves)={(2,2) vencedor Fase1, (2,3) e (3,3) pontos
+      INTERIORES nunca testados pela Fase 1} = 9 combinacoes, 1 reusada do
+      cache (k=24/2/2/mcs=20, sem retreino); Estagio B, sweep de
+      min_child_samples={100,200,350,500} nos top-2 do Estagio A. delta=16
+      (novos treinos reais -- 8 Estagio A + 8 Estagio B, cada execucao um
+      retreino completo real, 15 splits do CPCV, mesmo criterio mecanico
+      do cabecalho deste arquivo; 1 ponto do Estagio A e 2 combinacoes do
+      Estagio B com resultado bit-identico entre si sao reportados
+      honestamente como achado de redundancia, nao ocultados -- ver
+      resultado).
+      Resultado -- quebra o padrao "limpo" da Fase 1, achado
+      metodologicamente relevante: (1) k=32 bate k=24 E k=39 em toda
+      combinacao testada -- "k maior sempre melhor" da Fase 1 NAO se
+      sustenta fora da grade original, existe otimo INTERIOR, nao no teto;
+      (2) num_leaves=3 (interior, nunca testado pela Fase 1) bate
+      num_leaves=2 (extremo que a Fase 1 chamou de "vencedor") nos 3
+      valores de k testados, sem excecao -- "menos complexidade sempre
+      melhor" da Fase 1 tambem NAO se sustenta; (3) max_depth (2 vs 3) e
+      IRRELEVANTE quando num_leaves=3 -- resultado bit-identico (confirma
+      que num_leaves e o controle de complexidade que de fato liga no
+      crescimento leaf-wise do LightGBM, max_depth=3 nunca exercitado de
+      verdade nesse regime); (4) min_child_samples nao e monotonico no
+      range testado -- 100/200/350 todos PIORES que o baseline PROD (20),
+      dentro de ~1 std do ruido de seed medido na Fase 0a (0,306), mas 500
+      rompe pra o melhor ponto geral, delta ~0,12-0,18 da vizinhanca --
+      ainda proximo do piso de ruido de 1 seed so, NAO confirmado com
+      repeticao de seed nesta fase.
+      Melhor combinacao: k=32, max_depth=2 (ou 3, irrelevante), num_leaves=3,
+      min_child_samples=500 -> pooled_sharpe=-1,5945. Gap vs piso de ruido
+      da Fase 0a (mean=-1,3658, std=0,3060): -0,2287 = -0,747 desvios-padrao
+      -- MUITO mais proximo do piso de ruido que o melhor da Fase 1
+      (-1,9762, ~-2,0 desvios-padrao). NAO e prova de que T2 supera T1 --
+      e "estatisticamente indistinguivel do piso de ruido do T1 atual",
+      nao "melhor que T1"; T1 (k=7) tambem tem pooled_sharpe negativo
+      (-1,3658 medio). NENHUMA comparacao de permanencia (Camada1 vs
+      Camada0) foi rodada nesta configuracao -- so Camada1, mesmo escopo
+      da Fase 1. Ponto novo (k=32/leaves=3/mcs=500) nao teve repeticao de
+      seed (Fase 0a-style) pra confirmar que nao e sorte de 1 seed --
+      metodologicamente pendente antes de qualquer decisao de promocao.
+      Artefato: experiments/t2_t1_capacity_map_fase2_ETHUSDT_R1.json.
+    delta: 16
+  - id: 24
+    date: "2026-08-24"
+    type: fase2_confirmacao
+    description: >
+      Confirmação da Fase 2 (docs/t2_t1_ablation_veredito_duas_analises_
+      2026-08-24.md SS4) sobre o vencedor k=32/max_depth=2/num_leaves=3/
+      min_child_samples=500 (ETHUSDT/R1) -- 2 testes que a Fase 2 tinha
+      deixado pendentes, ambos obrigatorios antes de qualquer decisao de
+      promocao/generalizacao. src/validation/t2_t1_fase2_confirmation.py.
+      Repeticao de seed: 10 execucoes completas do Camada1 travado nesse
+      config. Gate de permanencia REAL: 1 par Camada1+Camada0 (mesmo
+      config, dado REAL, sem permutacao -- diferente da Fase 0b, que
+      testava o nulo). delta = 10+1 = 11, cada execucao um retreino real
+      completo (mesmo criterio mecanico do cabecalho deste arquivo; par
+      Camada1+Camada0 = 1 trial, mesmo criterio do id=18/id=20).
+      Resultado -- REFUTA a leitura promissora da Fase 2, confirma que o
+      ponto unico de -1,5945 era sorte de seed, nao sinal real:
+      pooled_sharpe medio das 10 repeticoes = -1,9212 (std=0,2072) --
+      MUITO pior que o -1,5945 de 1 seed so, e de volta ao mesmo patamar
+      da Fase 1 (-1,9762). Gap real vs piso de ruido da Fase 0a
+      (mean=-1,3658, std=0,3060): -0,5554 = -1,82 desvio-padrao (nao os
+      -0,75s que o ponto de sorte da Fase 2 sugeria -- quase a mesma
+      magnitude negativa que a Fase 1 ja tinha medido, so que a Fase 2
+      cronologicamente "descobriu" um numero melhor por acaso, nao por
+      progresso real). Gate de permanencia real: n_better=0 de 5 -- ZERO
+      caminhos onde Camada1 supera Camada0 com esse config, nao so abaixo
+      do limiar de producao (alpha_layer1_permanence_min_paths=4), o pior
+      resultado possivel.
+      VEREDITO FINAL da campanha completa Fase 0->1->2->confirmacao,
+      ETHUSDT/R1: T2 NAO sobrevive a confirmacao com disciplina completa
+      de validacao (repeticao de seed + gate de permanencia real). A
+      leitura promissora que a Fase 2 sozinha produziu era artefato de 1
+      seed, nao achado real -- exatamente o risco que a Fase 0a foi
+      desenhada pra vigiar, e que a Fase 2 deveria ter aplicado a si
+      mesma antes de reportar como "muito mais perto do piso de ruido".
+      Nao ha base pra generalizar esse config (nem qualquer outro T2
+      testado nesta campanha) pras outras 14 combinacoes simbolo x
+      resolucao. Artefato: experiments/t2_t1_fase2_confirmation_ETHUSDT_
+      R1.json.
+    delta: 11
+  - id: 25
+    date: "2026-08-24"
+    type: adr002_estagio1b_coordenada_descendente
+    description: >
+      ADR-002 (docs/ADR-002_busca_hiperparametro_robusta_a_ruido_
+      2026-08-24.md) Estagio 1b -- correcao do gap apontado pelo Manager
+      apos o "VEREDITO FINAL" prematuro do id=24 acima ("Fase 2 nao foi
+      refutada", 5 hiperparametros LightGBM nunca tocados em nenhuma fase:
+      learning_rate/subsample/feature_fraction/lambda_l2/n_estimators).
+      Coordenada-descendente (nao grid cheio) sobre os 5, k=32/max_depth=2/
+      num_leaves=3/min_child_samples=500 (vencedor Fase 2) travado como
+      ancora -- ancora REUSADA do cache (sem retreino, reused_from_fase2=
+      true), 1 seed cada dimensao variada isoladamente ao redor do valor
+      de producao: learning_rate{0,01;0,05;0,08} (3), subsample{0,6;0,9;
+      1,0} (3), feature_fraction{0,6;0,8} (2), lambda_l2{1,0;10,0;20,0}
+      (3), n_estimators{150;500} (2) = 13 treinos novos, cada um um
+      retreino real completo (Camada1 apenas, mesmo escopo do mapa de
+      capacidade Fase1/Fase2, id=22/23). delta=13.
+      Resultado -- achado mais chamativo de toda a campanha, EXPLICITAMENTE
+      rotulado como screening de 1 seed enviesado pra cima (ADR-002 SS
+      Estagio 1, nunca reportado como estimativa final): n_estimators=150
+      (metade do valor ancora 300) -> pooled_sharpe=-0,8478, muito acima
+      de qualquer numero medido nas Fases 0-2. Demais dimensoes nao
+      melhoram o ancora (learning_rate mais alto piora monotonicamente
+      -0,03->-3,02 em lr=0,08; subsample/feature_fraction/lambda_l2 todos
+      piores ou iguais ao ancora dentro do range testado).
+      Artefato: experiments/t2_t1_stage1b_hyperparam_ETHUSDT_R1.json.
+    delta: 13
+  - id: 26
+    date: "2026-08-24"
+    type: adr002_estagio2_confirmacao_top5_mediana
+    description: >
+      ADR-002 Estagio 2 -- top-5 candidatos do pool combinado (95 no
+      total: 149 trials Fase1+Fase2 deduplicados + 13 do Estagio 1b acima,
+      por assinatura completa de 9 campos de hiperparametro) selecionados
+      por score de 1 seed (screening), CADA UM confirmado com 5 seeds
+      (`_derived_seed`, seed 42 reusado do cache como 1 dos 5 -- sem
+      retreino duplicado), vencedor final = MAIOR MEDIANA (nao argmax de 1
+      seed) -- implementa pela primeira vez a regra que o design doc da
+      Fase 2 ja previa e nunca codificou. delta=20 (5 candidatos x 4 seeds
+      novos cada, seed 42 reusado nao conta de novo).
+      Resultado -- confirma de novo o vies de selecao, agora medido
+      diretamente: o candidato de screening n_estimators=150 (id=25 acima,
+      -0,8478 em 1 seed) caiu pra median_pooled_sharpe=-1,6198 sob 5 seeds
+      (-0,85/-1,62/-1,65/-0,68/-1,68) -- selection_bias_estimate=+0,7720,
+      o MAIOR vies de selecao medido em toda a campanha (screening
+      inflacionou o candidato em quase 1 unidade de Sharpe). O vencedor
+      REAL por mediana foi outro candidato do pool (learning_rate=0,01,
+      n_estimators=300, lambda_l2=5,0, demais=producao):
+      median_pooled_sharpe=-1,1355, selection_bias_estimate=-0,1348 (NAO
+      sofreu vies -- mediana ficou melhor que a screening de 1 seed,
+      direcao oposta ao caso acima, mostrando que o vies pode ir nos dois
+      sentidos, nao so inflar). Artefato: experiments/
+      t2_t1_stage2_confirm_ETHUSDT_R1.json.
+    delta: 20
+  - id: 27
+    date: "2026-08-24"
+    type: adr002_estagio3_gate_permanencia_repetido
+    description: >
+      ADR-002 Estagio 3 -- gate de permanencia real (Camada1 vs Camada0,
+      dado real, sem permutacao) sobre o vencedor do Estagio 2 acima
+      (learning_rate=0,01/n_estimators=300/k=32/max_depth=2/num_leaves=3/
+      min_child_samples=500/lambda_l2=5,0/subsample=0,8/feature_
+      fraction=1,0), repetido 5 seeds -- nunca 1 tiro so, mesma disciplina
+      que a Fase 0b ja aplicava ao NULO, agora aplicada ao candidato REAL.
+      Cada seed = 1 par Camada1+Camada0 (mesmo criterio de contagem do
+      id=18/20/24, par=1 trial). delta=5.
+      Resultado -- VEREDITO FINAL da campanha completa Fase 0->1->2->
+      ADR-002 (substitui a leitura prematura do id=24, que nao cobria os
+      5 hiperparametros faltantes): n_better por seed = [2,3,0,1,0] de 5
+      paths cada, median_n_better=1,0 -- MUITO abaixo do limiar de
+      producao (alpha_layer1_permanence_min_paths=4).
+      permanence_pass=false. MESMO cobrindo os 5 hiperparametros
+      LightGBM que faltavam (learning_rate/subsample/feature_fraction/
+      lambda_l2/n_estimators) com selecao robusta por mediana de 5 seeds
+      (nao argmax de 1 seed), T2 (features de suporte, k=32) NAO
+      sobrevive ao gate de permanencia real em ETHUSDT/R1 -- nenhum dos 5
+      candidatos confirmados no Estagio 2 chega perto do limiar. Nao ha
+      base pra reabrir T2 nesta combinacao simbolo x resolucao sem feature
+      set ou geometria de label genuinamente diferente; generalizar pras
+      outras 14 combinacoes simbolo x resolucao continua sem
+      justificativa (mesma ressalva do id=24). Detalhe completo:
+      audit/evidence_ledger.yaml::adr002-t2-t1-stage2-3-veredito-robusto-
+      2026-08-24. Artefato: experiments/t2_t1_stage3_permanence_ETHUSDT_
+      R1.json.
+    delta: 5
+  - id: 28
+    date: "2026-08-25"
+    type: budget_override_manager
+    description: >
+      Manager RATIFICOU por escrito a promocao obrigatoria de T2->T1 pra
+      producao, reconhecendo explicitamente a violacao de R4 ("teto de
+      features = medido, nunca estipulado", uma das 5 restricoes
+      invioaveis do projeto, PLANO_MESTRE_PRINCE2.md SS0.2) e o fato de a
+      UNICA evidencia medida (Fase 0->1->2->confirmacao->ADR-002, ids
+      20-27 acima, 192 trials) apontar na direcao oposta -- T2 falhou o
+      gate de permanencia em toda configuracao testada em ETHUSDT/R1.
+      Diferente do precedente id=17 (override que autorizava estourar
+      ORCAMENTO pra aplicar uma decisao JA MEDIDA e validada, Parkinson
+      vs GK), este override aceita PROSSEGUIR CONTRA a medicao existente
+      -- registrado como decisao de NEGOCIO explicita, nao como conclusao
+      suportada por dado. Detalhe/texto verbatim:
+      audit/architecture_gaps_log.yaml::AG-207::status (ratificado
+      2026-08-25). delta=0 -- esta entrada registra a AUTORIZACAO em si,
+      nao consome trial; a busca de hiperparametro que vem a seguir
+      (escopo ainda em definicao com o Manager, ver AG-207::
+      addendum_escopo_10_piores_2026-08-25) conta normalmente quando
+      rodar de verdade, NAO e isenta por este override.
+    delta: 0
+  - id: 29
+    date: "2026-08-25"
+    type: adr003_estagio0_e_1_sondagem_e_screening
+    description: >
+      ADR-003 Estagios 0+1 -- k=62 (SUPPORT_FEATURE_IDS completo,
+      substituindo os 7 T1) nas 10 piores combinacoes simbolo x resolucao
+      por ret_net medio (id=27/AG-207 acima). Estagio 0 (24 trials, 2
+      combos representativos, BTCUSDT/R3 e XRPUSDT/R1): estrutura
+      DIVERGIU entre os 2 (num_leaves preferido diferente, min_child_
+      samples com direcoes opostas) -- regra pre-declarada no ADR-003
+      (divergencia -> grid cheio nos 10, nao estreito) aplicada. Extensao
+      de fronteira de min_child_samples (3 trials extras, XRPUSDT/R1,
+      mcs=3000/4000/6000): variacao dentro da ordem de grandeza do ruido
+      de 1 seed (spread ~0,43, sigma medido na Fase 0a ~0,3) -- teto do
+      grid do Estagio 1 mantido em mcs=2000 por decisao MEDIDA, nao
+      presumida (B23). Estagio 1 (grid estrutural completo, 12 pontos, +
+      coordenada-descendente sobre 6 hiperparametros -- os 5 do ADR-002
+      mais min_sum_hessian_in_leaf, AG-217 -- por combo): 2 combos
+      (BTCUSDT/R3, XRPUSDT/R1) reusam o grid estrutural do Estagio 0 sem
+      custo; os outros 8 rodam os 12 pontos do zero. delta = 24 (Estagio
+      0) + 3 (extensao fronteira) + 266 (Estagio 1, soma de
+      n_new_trainings real por combo: 17+29+29+29+29+29+17+29+29+29,
+      contabilizado em experiments/t2_t1_stage1_screen_{symbol}_
+      {resolution}.json cada) = 293.
+      Resultado -- padrao limpo em max_depth (2 vence nos 10, sem
+      excecao), sem padrao em num_leaves (5x2, 5x3), forte preferencia
+      por min_child_samples alto (7/10 escolhem o teto testado, 2000 --
+      MESMA situacao de fronteira-nao-extendida que a extensao acima ja
+      mostrou ser dominada por ruido de 1 seed pra XRPUSDT/R1
+      especificamente, nao extrapolado aos outros 9 sem medir).
+      min_sum_hessian_in_leaf: BIT-IDENTICO ao PROD (0,001) nos 3 valores
+      testados em TODOS os 10 combos -- hipotese do AG-217 nao se
+      confirmou empiricamente (com min_child_samples ja alto, 500-2000,
+      a restricao de CONTAGEM ja implica massa suficiente, a de HESSIANA
+      fica redundante). feature_fraction<1,0 PIOROU em 9 de 10 combos
+      (so BNBUSDT/R1 preferiu 0,8) -- contraria a hipotese do AG-217 de
+      que amostragem de coluna ajudaria com 62 features. pooled_sharpe do
+      melhor trial por combo varia de -0,0345 (BTCUSDT/R3, o melhor
+      numero de toda a campanha T2 ate agora) a -2,8404 (BTCUSDT/R1) --
+      dispersao grande entre combos, nenhum positivo. Detalhe completo
+      por combo: experiments/t2_t1_stage0_probe_*.json,
+      experiments/t2_t1_stage1_screen_*.json.
+    delta: 293
+  - id: 30
+    date: "2026-08-25"
+    type: adr003_estagio2_confirmacao_top3_por_combo
+    description: >
+      ADR-003 Estagio 2 -- top-3 candidatos do Estagio 1 de CADA um dos 10
+      combos, confirmados com mediana de 5 seeds (1 reusa o screening, 4
+      novas). delta = 10 combos x 3 candidatos x 4 seeds novas = 120.
+      Resultado -- winner's-curse mediu de novo, agora o caso mais extremo
+      da campanha inteira: BTCUSDT/R3 tinha o melhor screening de 1 seed
+      de toda a campanha T2 (-0,0345, ver id=29) -- sob mediana de 5
+      seeds, o vencedor REAL (candidato DIFERENTE do de melhor screening)
+      caiu pra -0,6476 (vies +0,513, maior ja medido neste projeto).
+      Nenhuma das 10 medianas e positiva (melhor: BNBUSDT/R3, -0,1463).
+      Detalhe por combo: experiments/t2_t1_stage2_confirm_full_*.json.
+    delta: 120
+  - id: 31
+    date: "2026-08-25"
+    type: adr003_estagio3_gate_permanencia_10_combos
+    description: >
+      ADR-003 Estagio 3 -- gate de permanencia real (Camada1 vs Camada0)
+      sobre o vencedor do Estagio 2 de CADA um dos 10 combos, repetido 5
+      seeds (par Camada1+Camada0 = 1 trial, mesmo criterio do resto do
+      ledger). delta = 10 combos x 5 seeds = 50.
+      Resultado NUMERICO: 1 de 10 combos passa nominalmente
+      (BNBUSDT/R1, median_n_better=4/5); os outros 9 ficam entre 1 e 3.
+      RESSALVA CRITICA que muda a leitura deste resultado -- achado
+      independente e simultaneo de outra sessao (persona lgbm-crypto-
+      quant), audit/architecture_gaps_log.yaml::AG-220/AG-220-ADDENDUM:
+      3 experimentos pareados reais (BTCUSDT/R1, k=7, mesmo seed/modelo/
+      dado, so variando calibracao de tau) mostraram o MESMO gate de
+      permanencia (mesma config de producao, tau_policy=legacy_per_side,
+      identica a usada aqui) oscilando FALSE->TRUE->FALSE SEM o modelo/
+      features/dado mudarem, com |delta(C1,C0)| < sigma nas 3 variantes
+      -- o gate le ruido, nao sinal, nesta arquitetura de backtest (5
+      paths do CPCV nao-independentes). O achado deles foi em k=7; nao
+      medido aqui se o mesmo vale sob k=62 (mecanismo e estrutural --
+      variancia de path do CPCV/backtest_lite -- entao a expectativa e
+      que generalize, mas isso e inferencia, nao medicao direta nesta
+      campanha). Consequencia pratica: o "1 de 10 passa" (BNBUSDT/R1)
+      NAO deve ser lido como sinal real ate sigma/dispersao por path ser
+      medido e comparado ao delta, mesmo que a decisao de negocio
+      (AG-207) ja mande promover independente do resultado. Detalhe:
+      experiments/t2_t1_stage3_permanence_full_*.json.
+    delta: 50
+  - id: 32
+    date: "2026-08-25"
+    type: retreino_real_producao_k62_por_combo
+    description: >
+      AG-207/ADR-003 aplicado de verdade em producao pela primeira vez --
+      run_layer1_sprint(feature_ids=SUPPORT_FEATURE_IDS,
+      hyper=load_hyperparams_by_combo(...)) via mecanismo novo (AG-227).
+      2 combos retreinados de verdade, artefato real persistido
+      (config_hash novo, distinto do treino legado T1, nao colide):
+      BTCUSDT/R3 e BNBUSDT/R3. Cada retreino = par Camada1+Camada0 real
+      (mesmo criterio de contagem do resto deste ledger). delta=2.
+      Resultado: BTCUSDT/R3 nao completou (crash no bug do B4, AG-227,
+      artefato de predicoes ja escrito antes do crash, valido);
+      BNBUSDT/R3 completou ponta a ponta apos o fix,
+      n_better=3/5 permanence_pass=False (RESSALVA AG-220 -- gate mede
+      ruido, nao ler como sinal). Os outros 8 combos calibrados pelo
+      ADR-003 aguardam confirmacao do Manager antes de retreinar de
+      verdade.
+    delta: 2
+  - id: 33
+    date: "2026-08-25"
+    type: retreino_real_producao_k62_por_combo
+    description: >
+      Continuacao do id=32 -- os 8 combos restantes calibrados pelo
+      ADR-003 retreinados de verdade em producao (feature_ids=
+      SUPPORT_FEATURE_IDS, hyper=load_hyperparams_by_combo por combo),
+      autorizado pelo Manager. Rodados em paralelo (8 processos), tempo
+      por combo 703-962s (contencao real de CPU medida -- vs. ~93s do
+      BNBUSDT/R3 rodado sozinho, id=32). delta=8, par Camada1+Camada0
+      real por combo.
+      Resultado (n_better/5, todos permanence_pass=False):
+      SOLUSDT/R1=2, BTCUSDT/R2=3, BNBUSDT/R2=3, BNBUSDT/R1=3,
+      XRPUSDT/R1=2, ETHUSDT/R3=3, BTCUSDT/R1=0, ETHUSDT/R2=2.
+      Com BNBUSDT/R3 (id=32, 3/5) e BTCUSDT/R3 (artefato de predicoes
+      real persistido, relatorio completo nao gerado por causa do bug
+      do B4 corrigido no meio da rodada, AG-227) -- 10 de 10 combos
+      calibrados pelo ADR-003 agora tem artefato de producao real sob
+      k=62/hiperparametro por combo. NENHUM combo passa o gate de
+      permanencia sob os hiperparametros calibrados. RESSALVA AG-220
+      se aplica a todos -- gate mede ruido de variancia de path do CPCV,
+      nao foi corrigido antes desta rodada (decisao do Manager de
+      prosseguir mesmo assim, AG-207).
+    delta: 8

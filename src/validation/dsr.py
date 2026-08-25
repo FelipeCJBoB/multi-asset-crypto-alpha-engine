@@ -34,6 +34,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
 
+from . import bootstrap_diff
+
 FloatArray = NDArray[np.float64]
 
 # Constante de Euler-Mascheroni (matemática, não de domínio) — Bailey &
@@ -204,7 +206,7 @@ def sharpe_difference_block_bootstrap(
     returns_b: FloatArray,
     *,
     n_boot: int,
-    block_size: int,
+    block_size: int | None = None,
     seed: int,
 ) -> dict[str, float]:
     """Teste de diferença de Sharpe (`SR_a - SR_b`) por bootstrap em
@@ -215,12 +217,37 @@ def sharpe_difference_block_bootstrap(
     reamostrar os PARES (não cada série isolada) preserva a correlação
     contemporânea entre as duas séries — o ponto central de um teste de
     diferença de Sharpe entre estratégias correlacionadas (mesmo ativo
-    subjacente)."""
+    subjacente).
+
+    **Reconciliação com `src.validation.bootstrap_diff` (ADR-004 Fase 3,
+    `docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md` Passo 3,
+    `AG-009`/`AG-129`).** Este módulo e `bootstrap_diff.stationary_
+    bootstrap_ci` respondem a MESMA pergunta de fundo ("a diferença
+    entre duas estratégias é real?") por dois caminhos que pareciam
+    duplicados mas NÃO são idênticos — a estatística aqui é diferença de
+    SHARPE, lá é diferença de MÉDIA; forçar um merge cego produziria o
+    número errado para uma das duas perguntas. O que de fato duplicava
+    sem necessidade era só o COMPRIMENTO DE BLOCO: esta função exigia
+    `block_size` explícito do chamador (o único caller real,
+    `faixa2_dsr_and_b2_check.py::_BOOTSTRAP_BLOCK_DAYS = 20`, era um
+    número ESTIPULADO — "~3 semanas de calendário", sem medição —, B23
+    latente). `block_size=None` (novo default) passa a MEDIR via
+    `bootstrap_diff.select_block_length` sobre a série de diferença
+    pareada (`returns_a - returns_b`) — mesmo instrumento de medição que
+    `bootstrap_diff` já usa para o seu próprio bloco, reusado aqui sem
+    reescrever. `block_size` explícito continua aceito (preserva
+    bit-exato qualquer chamador existente, incluindo os testes deste
+    módulo) — o bloco MÉTODO (moving block fixo vs. estacionário
+    geométrico) continua DIFERENTE de propósito: mover pra estacionário
+    aqui mudaria o próprio teste, não só destravaria a medição do
+    comprimento."""
     if returns_a.shape[0] != returns_b.shape[0]:
         raise ValueError(
             "sharpe_difference_block_bootstrap: series precisam ter o mesmo comprimento"
         )
     n = returns_a.shape[0]
+    if block_size is None:
+        block_size = bootstrap_diff.select_block_length(returns_a - returns_b)
     if block_size > n:
         raise ValueError("sharpe_difference_block_bootstrap: block_size maior que a serie")
     rng = np.random.default_rng(seed)

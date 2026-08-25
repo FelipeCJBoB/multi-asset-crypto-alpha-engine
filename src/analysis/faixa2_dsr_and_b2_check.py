@@ -58,11 +58,14 @@ DEFAULT_OUTPUT_PATH: Final[Path] = EXPERIMENTS_DIR / "faixa2_dsr_and_b2_check.js
 # Bootstrap do teste de diferença de Sharpe -- 2000 replicas da MESMA
 # ordem de grandeza de precisao de p-valor que os 1000 do B1
 # (config/constants.yaml::alpha_b1_n_seeds), dobrado por ser um teste de
-# diferenca (2 estatisticas por replica, nao 1). Bloco de 20 dias
-# (~3 semanas de calendario) para capturar autocorrelacao de curto prazo
-# sem esvaziar o numero de blocos independentes (>=300 dias na amostra).
+# diferenca (2 estatisticas por replica, nao 1).
 _BOOTSTRAP_N_REPS = 2000  # noqa: magic-number
-_BOOTSTRAP_BLOCK_DAYS = 20  # noqa: magic-number
+# `_BOOTSTRAP_BLOCK_DAYS` (removido, ADR-004 Fase 3, AG-254) -- era 20
+# dias ESTIPULADO ("~3 semanas de calendário... sem esvaziar o número de
+# blocos", sem medição real, B23 latente). `dsr.sharpe_difference_
+# block_bootstrap(block_size=None)` agora MEDE o bloco via `bootstrap_
+# diff.select_block_length` sobre a série de diferença pareada -- ver
+# docstring daquela função para a reconciliação completa.
 
 
 def _audited_n_lifetime() -> int:
@@ -184,7 +187,6 @@ def run_b2_comparison(symbol: str = "BTCUSDT") -> dict[str, Any]:
         strategy_daily_arr,
         b2_daily_arr,
         n_boot=_BOOTSTRAP_N_REPS,
-        block_size=_BOOTSTRAP_BLOCK_DAYS,
         seed=int(load_constant("alpha_random_seed")),
     )
 
@@ -247,3 +249,19 @@ def run_and_save_dsr_and_b2_check(*, dest_path: Path | None = None) -> Path:
         elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
     )
     return dest
+
+
+if __name__ == "__main__":  # pragma: no cover -- execucao manual
+    # AG-231 -- CLI adicionada 2026-08-25. Este modulo produz um artefato de
+    # `experiments/` que DERIVA de `labels.parquet`, entao precisa ser
+    # re-executado apos o relabel de AG-221; ate aqui so era chamavel via
+    # `python -c "from ... import run_and_save_dsr_and_b2_check as r; r()"`, o que o deixava de
+    # fora de qualquer orquestracao reproduzivel de re-execucao.
+    import sys
+
+    def _run() -> int:
+        destino = run_and_save_dsr_and_b2_check()
+        logger.info("analysis.faixa2_dsr_and_b2_check.cli_done", report_path=str(destino))
+        return 0
+
+    sys.exit(_run())

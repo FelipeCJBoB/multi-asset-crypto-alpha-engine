@@ -3587,3 +3587,68 @@ entries:
     e veredito fechado: falta IC (o bootstrap por blocos de AG-241 e o instrumento, ja implementado, nao
     aplicado aqui) e falta confirmar se o criterio de producao do gate depende do lift ou de occupancy/transition-failure
     (AG-118).'
+- id_curto: cross_symbol_ess_n_eff_2026-08-25
+  data: '2026-08-25'
+  fase: 'ADR-004 Fase 3 -- ESS transversal (AG-216/AG-255), participation ratio sobre correlacao de ret_net entre simbolos'
+  feature_ou_filtro: correlacao de ret_net diario (side=1, long) entre os 5 simbolos, grade de relogio 15m
+  symbol: POOLED_5
+  tf: 15m
+  janela: intersecao real de dias com dado nos 5 simbolos (1706 dias)
+  lado: long (side=1)
+  regime: n/a
+  metrica_tipo: n_eff_participation_ratio
+  metrica_valor: 2.0322
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/cross_symbol_ess_report.json
+  fonte_secao: n_eff / hhi_effective / correlation_matrix
+  nota: >
+    N_eff = 2,03 de 5 simbolos nominais -- correlacao par-a-par entre 0,50
+    e 0,76 (BTC-ETH mais alto 0,761; SOL-XRP mais baixo 0,4995), todos os
+    10 pares positivos e substanciais. hhi_effective = 0,492 (vs. 0,20
+    nominal se os 5 fossem independentes) -- mais que o dobro da
+    concentracao nominal. Instrumento: weighted_participation_ratio
+    (extraido de src.models.hhi.compute_effective_concentration, peso
+    uniforme 1/5, nao gain_share -- sem equivalente de importancia por
+    simbolo). ESCOPO REDUZIDO vs. a recomendacao original do AG-216-
+    ADDENDUM: mede os 5 SIMBOLOS na grade de RELOGIO 15m (ret_net bruto
+    do label, side=1 apenas), nao as 15 COMBINACOES treinadas em
+    dollar-bar que de fato alimentam dsr_n_trials (essa versao exigiria
+    reconstruir P&L realizado de 15 combinacoes, trabalho equivalente a
+    retreino parcial). Carga via cpcv.load_labels_v1(verify_config=False)
+    -- snapshot pode divergir do config_hash vigente (sessao paralela
+    ativa em LabelConfig no mesmo dia), aceitavel pq a pergunta e sobre
+    ESTRUTURA de correlacao, nao valor economico exato. Nao decidido:
+    promover N_eff=2,03 a dsr_n_trials real (decisao do Manager); versao
+    15x15/short-side fica como proximo passo explicito, nao escondido.
+- id_curto: pbo_cscv_c1_vs_c0_btcusdt_r1_2026-08-25
+  data: '2026-08-25'
+  fase: 'ADR-004 Fase 3 -- PBO via CSCV (AG-256), Camada1 vs Camada0'
+  feature_ou_filtro: PBO (Bailey et al. 2017) sobre retorno por barra, Camada1 vs Camada0, config T1-only (7 features, hiperparametro default -- NAO a config T1+T2 de producao)
+  symbol: BTCUSDT
+  tf: R1
+  janela: universo completo de barras por caminho do CPCV (T=218822)
+  lado: ambos (side_hat agregado)
+  regime: n/a
+  metrica_tipo: pbo_e_mean_logit_por_caminho
+  metrica_valor: 0.1156
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: 'scratchpad ad-hoc (nao commitado) -- script descrito em audit/architecture_gaps_log.yaml::AG-256'
+  fonte_secao: PBO por path_id, n_blocks=16, 12870 combinacoes
+  nota: >
+    5 caminhos do CPCV: PBO=0,1156/0,0000/0,2768/0,0626/0,4228
+    (path 0/1/2/3/4), mean_logit sempre POSITIVO (Camada1 pior que
+    Camada0 em todo caminho, magnitude variando). Concorda PONTO A PONTO
+    com o achado independente de bootstrap por blocos (AG-252/AG-253):
+    os 3 caminhos com PBO baixo (0,1,3) sao exatamente os 3 que o
+    bootstrap ja marcava significant=True com point_estimate negativo;
+    os 2 com PBO perto de 0,5 (2,4) sao os mesmos marcados significant=
+    False. Dois instrumentos estatisticos independentes convergindo no
+    mesmo veredito por caminho. RESSALVA CRITICA DE ESCOPO: este treino
+    usou T1_FEATURE_IDS (7 features) + hiperparametro DEFAULT -- a
+    config ANTIGA, pre-AG-207, NAO a config T1+T2 aditiva (69 features)
+    + hiperparametro calibrado por combo que esta em producao real hoje.
+    Achado NAO deve ser lido como veredito sobre o Alpha T1+T2 atual --
+    refazer sob a config real fica pendente (Fase 1, adiada pelo
+    Manager nesta sessao).

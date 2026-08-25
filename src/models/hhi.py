@@ -182,6 +182,54 @@ class EffectiveConcentrationDiagnostics:
     eigenvalues: tuple[float, ...]
 
 
+def weighted_participation_ratio(
+    correlation_matrix: FloatArray, weights: FloatArray
+) -> tuple[float, float, tuple[float, ...]]:
+    r"""Núcleo puro (Idioma A) — participation ratio dos autovalores da
+    matriz de correlação PONDERADA (`D @ C @ D`, `D = diag(sqrt(weights))`).
+    Extraído de `compute_effective_concentration` (ADR-004 Fase 3,
+    `docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md` Passo 3,
+    `AG-216`/`AG-255`) -- o gap já apontava que reusar não podia ser
+    literal (`compute_effective_concentration` exige `gain_by_column`,
+    sem equivalente pra símbolo/combinação de treino) e recomendava
+    extrair exatamente este núcleo pra uma função compartilhada.
+    `compute_effective_concentration` é agora um CASO ESPECIAL desta
+    função (peso = `gain_share`); `src.analysis.cross_symbol_ess` é
+    outro (peso = uniforme, ver docstring de lá pra por quê).
+
+    `weights` já deve somar 1 (responsabilidade do CHAMADOR, que sabe se
+    o peso é gain_share, uniforme, ou outro critério econômico — este
+    núcleo não tem opinião sobre a origem do peso, só sobre a álgebra).
+    Retorna `(n_eff, hhi_effective, eigenvalues_ordenados_descendente)`
+    -- ver docstring de `compute_effective_concentration` para a
+    derivação completa (passos 2-6) e a prova de que isto generaliza o
+    HHI nominal corretamente."""
+    n = correlation_matrix.shape[0]
+    corr_clean = np.where(np.isfinite(correlation_matrix), correlation_matrix, 0.0)
+    np.fill_diagonal(corr_clean, 1.0)
+    corr_clean = (corr_clean + corr_clean.T) / 2.0
+
+    d_sqrt = np.sqrt(weights)
+    weighted_corr = np.outer(d_sqrt, d_sqrt) * corr_clean
+    eigenvalues_raw = np.linalg.eigvalsh(weighted_corr)
+    eigenvalues_clipped = np.clip(eigenvalues_raw, 0.0, None)
+
+    sum_eig = float(eigenvalues_clipped.sum())
+    sum_eig_sq = float(np.sum(eigenvalues_clipped**2))
+    if sum_eig > 0.0 and sum_eig_sq > 0.0:
+        n_eff_value = (sum_eig**2) / sum_eig_sq
+        hhi_eff_value = sum_eig_sq / (sum_eig**2)
+    else:
+        # degenerado (pesos todos zero — não deveria acontecer, `weights`
+        # soma 1.0 por contrato do chamador, mas o guard evita divisão
+        # por zero se algum dia isso deixar de valer): equiponderado.
+        n_eff_value = float(n)
+        hhi_eff_value = 1.0 / n
+
+    eigenvalues_sorted = tuple(sorted((float(v) for v in eigenvalues_clipped), reverse=True))
+    return n_eff_value, hhi_eff_value, eigenvalues_sorted
+
+
 def compute_effective_concentration(
     correlation_matrix: FloatArray,
     gain_by_column: dict[str, float],
@@ -300,33 +348,9 @@ def compute_effective_concentration(
     else:
         weight_values = [1.0 / n_features] * n_features
     weights = dict(zip(all_columns, weight_values, strict=True))
-    w = np.asarray(weight_values, dtype=np.float64)
 
-    # sanitização (ver docstring): NaN/inf -> 0.0 fora da diagonal, 1.0 na
-    # diagonal, simetriza contra ruído de ponto flutuante.
-    corr_clean = np.where(np.isfinite(corr_input), corr_input, 0.0)
-    np.fill_diagonal(corr_clean, 1.0)
-    corr_clean = (corr_clean + corr_clean.T) / 2.0
-
-    d_sqrt = np.sqrt(w)
-    weighted_corr = np.outer(d_sqrt, d_sqrt) * corr_clean
-    eigenvalues_raw = np.linalg.eigvalsh(weighted_corr)
-    eigenvalues_clipped = np.clip(eigenvalues_raw, 0.0, None)
-
-    sum_eig = float(eigenvalues_clipped.sum())
-    sum_eig_sq = float(np.sum(eigenvalues_clipped**2))
-    if sum_eig > 0.0 and sum_eig_sq > 0.0:
-        n_eff_value = (sum_eig**2) / sum_eig_sq
-        hhi_eff_value = sum_eig_sq / (sum_eig**2)
-    else:
-        # degenerado (pesos todos zero — não deveria acontecer, w soma 1.0
-        # por construção nos dois branches acima, mas o guard evita
-        # divisão por zero se algum dia isso deixar de valer): equiponderado.
-        n_eff_value = float(n_features)
-        hhi_eff_value = 1.0 / n_features
-
-    eigenvalues_sorted = tuple(
-        sorted((float(v) for v in eigenvalues_clipped), reverse=True)
+    n_eff_value, hhi_eff_value, eigenvalues_sorted = weighted_participation_ratio(
+        corr_input, np.asarray(weight_values, dtype=np.float64)
     )
 
     return EffectiveConcentrationDiagnostics(

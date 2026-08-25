@@ -36,7 +36,7 @@ descartados."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import lightgbm as lgb
 import numpy as np
@@ -440,6 +440,139 @@ def resolve_joint_tau(
     return tau_l, tau_s, rate
 
 
+# ADR-004 Fase 2 (docs/ADR-004_reformulacao_alvo_regra_decisao_e_
+# inferencia_2026-08-25.md §4, docs/prompts/execucao_adr004_fases_1_a_3_
+# 2026-08-25.md Passo 1) -- fronteira de decisao |mu| > lambda,
+# lambda_t = max(c_t, lambda_B), substituindo o fechamento do grau de
+# liberdade por TAXA DE SINAL ORÇADA (resolve_joint_tau acima) por
+# fechamento por CUSTO. Implementado como medição opt-in (`evaluate_
+# cost_derived_lambda` em `run_fold`), NÃO como novo default de
+# `tau_policy` -- decide_side/predictions.parquet continuam bit-exatos
+# até o Manager decidir promover isto a política real de produção.
+#
+# Ponte pré-Fase-1: a Fase 1 (mu de uma regressao real) ainda não existe
+# -- `implied_mu_from_prob` traduz a probabilidade calibrada JÁ
+# existente em retorno esperado IMPLICADO, em unidades de múltiplo de
+# ATR (mesma escala de `E27f_cost_atr_ratio`), usando exatamente o
+# argumento do ADR-004 §0: sob payoff SIMÉTRICO (`tp_atr_mult ==
+# sl_atr_mult`, confirmado em `constants.yaml` desde a correção do S1,
+# 2026-08-24), P(TP) ordena quase idêntico a E[r] -- então
+#     mu = P(TP)*payoff*sigma - (1-P(TP))*payoff*sigma = payoff*(2P(TP)-1)
+# em unidades de sigma=ATR. Isto NÃO é a Fase 1 (não há regressão real,
+# não fecha AG-212/AG-213) -- é o degrau intermediário que deixa a Fase 2
+# medível sem depender da Fase 1 primeiro, exatamente a ordem de execução
+# que o prompt pede (2 -> 0 -> 3 -> 1).
+def implied_mu_from_prob(p: FloatArray, *, payoff_atr_mult: float) -> FloatArray:
+    """Núcleo puro -- ver bloco de comentário acima para a derivação e a
+    ressalva de validade (só correta sob payoff simétrico)."""
+    return payoff_atr_mult * (2.0 * p - 1.0)
+
+
+def decide_side_cost_derived(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    cost_atr_ratio: FloatArray,
+    *,
+    payoff_atr_mult: float,
+    lambda_b: float,
+) -> SideArray:
+    """Núcleo puro -- irmã de `decide_side`, mesma estrutura de dominância
+    (`is_long`/`is_short` mutuamente exclusivos), critério de aceitação
+    substituído: em vez de `p_side > tau_side` (escalar fixo), usa
+    `mu_side > max(cost_atr_ratio, lambda_b)` -- o limiar cresce com o
+    custo REAL daquela barra em vez de ser o mesmo para toda barra."""
+    mu_long = implied_mu_from_prob(p_long, payoff_atr_mult=payoff_atr_mult)
+    mu_short = implied_mu_from_prob(p_short, payoff_atr_mult=payoff_atr_mult)
+    lambda_t = np.maximum(cost_atr_ratio, lambda_b)
+    is_long = (mu_long > lambda_t) & (mu_long > mu_short)
+    is_short = (mu_short > lambda_t) & (mu_short > mu_long) & ~is_long
+    side_hat = np.zeros(p_long.shape[0], dtype=np.int8)
+    side_hat[is_long] = 1
+    side_hat[is_short] = -1
+    return side_hat
+
+
+_LAMBDA_B_RATE_TOL = 1e-6  # noqa: magic-number -- mesma tolerância de _JOINT_TAU_RATE_TOL, critério de parada numérico
+_LAMBDA_B_MAX_ITER = 64  # noqa: magic-number -- mesmo teto de _JOINT_TAU_MAX_ITER
+
+
+def resolve_joint_lambda(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    cost_atr_ratio: FloatArray,
+    *,
+    payoff_atr_mult: float,
+    target_signal_rate: float,
+) -> tuple[float, float]:
+    """Núcleo puro -- bisseciona `lambda_B` (ADR-004 §4 ponto 3) até a taxa
+    de sinal TOTAL sob `decide_side_cost_derived` bater
+    `target_signal_rate`. Retorna `(lambda_b, taxa_realizada)`.
+
+    Direção da busca é invertida em relação a `resolve_joint_tau`:
+    `rate` é DEcrescente em `lambda_b` (limiar mais alto -> menos sinal),
+    não crescente. Faixa de busca `[-payoff_atr_mult, payoff_atr_mult]` --
+    `mu` nunca sai desse intervalo (`p` ∈ [0,1]), então é a faixa inteira
+    de valores que `lambda_b` pode influenciar de fato.
+
+    Se `target_signal_rate` não for atingível dentro da faixa (o piso de
+    custo `cost_atr_ratio` já domina em todo o espectro, ou o modelo não
+    produz `mu` alto o bastante em lugar nenhum), a bisseção converge para
+    a borda mais próxima e LOGA o achado -- nunca falha silenciosamente
+    fingindo ter batido o alvo (mesmo espírito do fallback explícito de
+    `_resolve_tau_on_common_bars`)."""
+    if not 0.0 < target_signal_rate < 1.0:
+        raise ValueError(
+            f"resolve_joint_lambda: target_signal_rate={target_signal_rate} fora de (0, 1)"
+        )
+    if p_long.shape != p_short.shape or p_long.shape != cost_atr_ratio.shape:
+        raise ValueError(
+            f"resolve_joint_lambda: p_long.shape={p_long.shape}, p_short.shape="
+            f"{p_short.shape}, cost_atr_ratio.shape={cost_atr_ratio.shape} -- as três "
+            "precisam vir da MESMA população de linhas"
+        )
+
+    def _rate_for_lambda_b(lb: float) -> float:
+        side_hat = decide_side_cost_derived(
+            p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff_atr_mult, lambda_b=lb
+        )
+        return float(np.mean(side_hat != 0))
+
+    lo, hi = -payoff_atr_mult, payoff_atr_mult
+    rate_lo, rate_hi = _rate_for_lambda_b(lo), _rate_for_lambda_b(hi)
+    if target_signal_rate > rate_lo:
+        logger.warning(
+            "models.alpha.resolve_joint_lambda_alvo_inatingivel_piso_custo",
+            target_signal_rate=target_signal_rate,
+            max_rate_atingivel=rate_lo,
+            detail="piso de custo (cost_atr_ratio) ja domina lambda_b=-payoff em toda a "
+            "populacao -- taxa maxima possivel sob este regime de custo/modelo e menor "
+            "que o orcamento; retornando lambda_b=-payoff (o mais permissivo)",
+        )
+        return lo, rate_lo
+    if target_signal_rate < rate_hi:
+        logger.warning(
+            "models.alpha.resolve_joint_lambda_alvo_inatingivel_teto_payoff",
+            target_signal_rate=target_signal_rate,
+            min_rate_atingivel=rate_hi,
+            detail="mesmo no lambda_b mais restritivo (=payoff) a taxa realizada excede "
+            "o alvo -- modelo produz mu alto para uma fracao da populacao maior que o "
+            "orcamento; retornando lambda_b=+payoff (o mais restritivo)",
+        )
+        return hi, rate_hi
+    lb, rate = lo, rate_lo
+    for _ in range(_LAMBDA_B_MAX_ITER):
+        if abs(rate - target_signal_rate) <= _LAMBDA_B_RATE_TOL:
+            break
+        mid = (lo + hi) / 2.0
+        rate = _rate_for_lambda_b(mid)
+        lb = mid
+        if rate < target_signal_rate:
+            hi = mid  # rate decrescente em lambda_b -- para AUMENTAR rate, DIMINUI lambda_b
+        else:
+            lo = mid
+    return lb, rate
+
+
 @dataclass(frozen=True, slots=True)
 class SideModelResult:
     side: int
@@ -836,6 +969,9 @@ class FoldResult:
     n_train_long: int
     n_train_short: int
     n_test_bars: int
+    # ADR-004 Fase 2 -- diagnóstico opt-in (`evaluate_cost_derived_lambda`
+    # em `run_fold`), `None` no caminho legado (produção, custo zero).
+    cost_derived_lambda_diag: CostDerivedLambdaDiagnostic | None = None
 
 
 def _unique_test_bars(
@@ -991,6 +1127,93 @@ def _resolve_tau_on_common_bars(
     )
 
 
+_COST_ATR_RATIO_FEATURE_ID = "E27f_cost_atr_ratio"
+
+
+def _resolve_lambda_on_common_bars(
+    train_bars: pl.DataFrame,
+    long_result: SideModelResult,
+    short_result: SideModelResult,
+    *,
+    feature_ids: tuple[str, ...],
+    target_signal_rate: float,
+    payoff_atr_mult: float,
+) -> tuple[float, float]:
+    """Ponto de entrada com IO-zero do modo `TAU_POLICY_COST_DERIVED_
+    LAMBDA` (ADR-004 §4, medição opt-in — ver bloco de comentário acima
+    de `implied_mu_from_prob`) — resolve `lambda_b` sobre a MESMA
+    população que `_resolve_tau_on_common_bars` usa (população comum,
+    fora do fit dos dois lados quando comportável — duplicado aqui em
+    vez de fatorado, de propósito: este arquivo está sob edição
+    concorrente ativa nesta mesma data por outra sessão, e um refactor
+    da função existente é mais arriscado que ~15 linhas repetidas).
+
+    `_COST_ATR_RATIO_FEATURE_ID` já é uma feature T1 (`E27f_cost_atr_
+    ratio`) — sempre presente em `common` sem cálculo adicional."""
+    common = _unique_test_bars(train_bars, feature_ids=feature_ids)
+    if common.height == 0:
+        raise ValueError(
+            "_resolve_lambda_on_common_bars: nenhuma barra de treino com feature válida "
+            "-- não há população sobre a qual resolver lambda_b"
+        )
+    fit_t0_long, fit_t0_short = long_result.fit_t0_ms, short_result.fit_t0_ms
+    if fit_t0_long is None or fit_t0_short is None:
+        raise ValueError(
+            "_resolve_lambda_on_common_bars: fit_t0_ms ausente em pelo menos um lado -- "
+            "exige a coluna 't0' no train_side_df dos dois lados (mesmo motivo de AG-210)"
+        )
+    t0_common = common["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    seen_in_fit = np.isin(t0_common, fit_t0_long) | np.isin(t0_common, fit_t0_short)
+    oof_idx = np.flatnonzero(~seen_in_fit)
+
+    min_bars = int(np.ceil(_MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    if oof_idx.shape[0] < min_bars:
+        logger.warning(
+            "models.alpha.lambda_oof_insuficiente_fallback_populacao_comum",
+            n_oof=int(oof_idx.shape[0]),
+            n_common=int(common.height),
+            min_bars_required=min_bars,
+            detail="população out-of-fit não comporta o quantil com ocorrências "
+            "suficientes; lambda_b resolvido sobre a população comum INTEIRA",
+        )
+        lambda_frame = common
+    else:
+        lambda_frame = common[oof_idx]
+
+    X_lambda = build_design_matrix(lambda_frame, feature_ids=feature_ids)
+    p_long = long_result.calibrator.predict(
+        np.asarray(long_result.model.predict_proba(X_lambda))[:, 1]
+    )
+    p_short = short_result.calibrator.predict(
+        np.asarray(short_result.model.predict_proba(X_lambda))[:, 1]
+    )
+    cost_atr_ratio = lambda_frame[_COST_ATR_RATIO_FEATURE_ID].to_numpy().astype(np.float64)
+    return resolve_joint_lambda(
+        np.asarray(p_long, dtype=np.float64),
+        np.asarray(p_short, dtype=np.float64),
+        cost_atr_ratio,
+        payoff_atr_mult=payoff_atr_mult,
+        target_signal_rate=target_signal_rate,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CostDerivedLambdaDiagnostic:
+    """Resultado da medição opt-in do ADR-004 §4 sobre UM fold — nunca
+    realimenta `predictions`/`side_hat` de produção (ver bloco de
+    comentário acima de `implied_mu_from_prob`: é medição, não novo
+    default). `signal_rate_oos` sob a política cost-derived, ao lado de
+    `signal_rate_oos_legacy` (a política ATIVA neste fold, qualquer que
+    seja) — a comparação direta é o ponto inteiro da medição."""
+
+    lambda_b: float
+    payoff_atr_mult: float
+    signal_rate_in_sample: float
+    signal_rate_oos: float
+    signal_rate_oos_legacy: float
+    n_test_bars: int
+
+
 def run_fold(
     df_all: pl.DataFrame,
     split: CPCVSplit,
@@ -1009,6 +1232,7 @@ def run_fold(
     tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
+    evaluate_cost_derived_lambda: bool = False,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -1117,6 +1341,45 @@ def run_fold(
     # bloco inline que existia aqui antes.
     side_hat = decide_side(p_long, p_short, tau_long=tau_long, tau_short=tau_short)
     confidence = np.maximum(p_long, p_short)
+
+    # ADR-004 Fase 2 -- medição opt-in (`evaluate_cost_derived_lambda`),
+    # NUNCA realimenta `side_hat`/`predictions` acima (produção segue
+    # bit-exata sob a política ativa de `tau_policy`, qualquer que seja).
+    cost_derived_lambda_diag: CostDerivedLambdaDiagnostic | None = None
+    if evaluate_cost_derived_lambda:
+        payoff_atr_mult = float(load_constant("tp_atr_mult"))
+        lambda_b, lambda_realized_rate = _resolve_lambda_on_common_bars(
+            train_bars,
+            long_result,
+            short_result,
+            feature_ids=feature_ids,
+            target_signal_rate=target_signal_rate,
+            payoff_atr_mult=payoff_atr_mult,
+        )
+        cost_atr_ratio_test = (
+            test_bars_unique[_COST_ATR_RATIO_FEATURE_ID].to_numpy().astype(np.float64)
+        )
+        side_hat_lambda = decide_side_cost_derived(
+            p_long, p_short, cost_atr_ratio_test, payoff_atr_mult=payoff_atr_mult, lambda_b=lambda_b
+        )
+        cost_derived_lambda_diag = CostDerivedLambdaDiagnostic(
+            lambda_b=lambda_b,
+            payoff_atr_mult=payoff_atr_mult,
+            signal_rate_in_sample=lambda_realized_rate,
+            signal_rate_oos=(
+                float(np.mean(side_hat_lambda != 0)) if side_hat_lambda.shape[0] else float("nan")
+            ),
+            signal_rate_oos_legacy=(
+                float(np.mean(side_hat != 0)) if side_hat.shape[0] else float("nan")
+            ),
+            n_test_bars=int(side_hat.shape[0]),
+        )
+        logger.info(
+            "models.alpha.run_fold_cost_derived_lambda_medido",
+            split_id=split.split_id,
+            **asdict(cost_derived_lambda_diag),
+        )
+
     logger.info(
         "models.alpha.run_fold_tau_resolvido",
         split_id=split.split_id,
@@ -1197,6 +1460,7 @@ def run_fold(
         n_train_long=train_long.height,
         n_train_short=train_short.height,
         n_test_bars=test_bars_unique.height,
+        cost_derived_lambda_diag=cost_derived_lambda_diag,
     )
 
 
@@ -1217,6 +1481,7 @@ def run_all_folds(
     tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
+    evaluate_cost_derived_lambda: bool = False,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -1263,6 +1528,7 @@ def run_all_folds(
             tau_policy=tau_policy,
             calib_split_mode=calib_split_mode,
             class_balance_basis=class_balance_basis,
+            evaluate_cost_derived_lambda=evaluate_cost_derived_lambda,
         )
         logger.info(
             "models.alpha.run_fold_done",

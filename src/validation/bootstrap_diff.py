@@ -74,16 +74,46 @@ def _stationary_bootstrap_indices(n: int, block_length: float, rng: np.random.Ge
     blocos de comprimento geométrico (média `block_length`), início
     aleatório, wrap circular em `n` (série tratada como um ciclo -- a
     correção de borda padrão do método, evita viés de sub-amostrar as
-    pontas)."""
+    pontas).
+
+    **Vetorizado (AG-241-ADDENDUM/ADR-004 Fase 0, `docs/prompts/
+    execucao_adr004_fases_1_a_3_2026-08-25.md` Passo 2, risco 2).** A
+    versão original tinha um loop Python de `n` iterações -- sobre o
+    universo completo de barras, com `n_boot` na casa do milhar, isso é
+    ~1e8 iterações Python DENTRO do treino (achado real da revisão, não
+    hipotético). Reescrito para sortear os comprimentos de bloco em
+    LOTE (`rng.geometric`, vetorizado) em vez de um sorteio Bernoulli por
+    posição -- o número de blocos amostrados é ~`n/block_length`, não
+    `n`, e a montagem final via `np.repeat`/aritmética de índice também é
+    vetorizada. Distribuição idêntica à versão original: comprimento de
+    bloco ~ Geometric(1/block_length) suporte {1,2,...}, início uniforme
+    em `[0,n)`, wrap circular -- só a IMPLEMENTAÇÃO mudou, não o método.
+    Testado contra a versão original via propriedade estatística (ver
+    `tests/unit/test_validation_bootstrap_diff.py`), não byte-a-byte
+    (RNG consome em ordem diferente, resultado NÃO é bit-exato contra a
+    versão anterior -- só contra si mesma, mesma seed)."""
     p = 1.0 / float(block_length)
-    idx = np.empty(n, dtype=np.int64)
-    pos = int(rng.integers(0, n))
-    for i in range(n):
-        idx[i] = pos
-        pos = (pos + 1) % n
-        if rng.random() < p:
-            pos = int(rng.integers(0, n))
-    return idx
+    # sorteia blocos em lote suficiente para cobrir n com folga (2x o
+    # número esperado de blocos + 1, nunca menos que 1) -- se a soma
+    # ainda não cobrir n (caudas raras do geométrico), completa em outra
+    # rodada; loop aqui é sobre ROD RODADAS de sorteio em lote, não sobre
+    # posições -- tipicamente 1 iteração.
+    lengths = np.empty(0, dtype=np.int64)
+    total = 0
+    while total < n:
+        batch_size = max(1, int(np.ceil((n - total) / block_length)) * 2)
+        batch = rng.geometric(p, size=batch_size).astype(np.int64)
+        lengths = np.concatenate([lengths, batch])
+        total = int(lengths.sum())
+    cum = np.cumsum(lengths)
+    n_blocks = int(np.searchsorted(cum, n) + 1)
+    lengths = lengths[:n_blocks]
+    cum = cum[:n_blocks]
+    starts = rng.integers(0, n, size=n_blocks)
+    block_id = np.repeat(np.arange(n_blocks), lengths)
+    offsets = np.arange(int(lengths.sum())) - np.repeat(cum - lengths, lengths)
+    idx = (starts[block_id] + offsets) % n
+    return idx[:n].astype(np.int64)
 
 
 @dataclass(frozen=True, slots=True)

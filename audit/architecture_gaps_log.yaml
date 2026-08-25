@@ -16911,3 +16911,93 @@ entries:
       FRANJA como decisao separada e explicita, e decidir o par
       D09f/D08f por argumento, nao por qual delas o filtro guloso escolheu
       na ultima rodada.
+
+  - id: AG-256
+    date: "2026-08-25"
+    file: "src/validation/pbo_cscv.py"
+    related_file: "tests/unit/test_validation_pbo_cscv.py, docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md Passo 3, ADR-004 Sec6"
+    found_by: "Claude -- ADR-004 Fase 3 ('PBO -- nao existe nada; escrever do zero')"
+    gap: >
+      ADR-004 Sec6 lista PBO via CSCV (Bailey et al. 2017) como ausente
+      -- nenhum instrumento no repo responde "se eu escolher o melhor
+      candidato IN-SAMPLE, essa escolha generaliza OOS, ou e overfitting
+      ao ruido da amostra?" (pergunta de fundo por tras de toda selecao
+      ja feita no projeto -- ADR-002, ADR-003, o sweep de 15 combinacoes).
+    severity: "medio -- gap de instrumento, nao bug"
+    layer: "validation (nucleo estatistico novo)"
+    consequence: >
+      Sem PBO, nenhuma das selecoes de hiperparametro/feature-set ja
+      feitas (ADR-002, ADR-003) tem uma medida formal de o quanto a
+      escolha do "vencedor" e robusta a particao temporal vs. sorte da
+      amostra especifica.
+    status: >
+      IMPLEMENTADO E TESTADO 2026-08-25 -- `src/validation/pbo_cscv.py`,
+      fiel ao algoritmo do paper (blocos contiguos, C(S,S/2) combinacoes
+      IS/OOS, logit do posto relativo do vencedor IS no ranking OOS,
+      PBO = P(logit<=0)). `S=16` default, `provenance: LITERATURE`
+      (valor de referencia do proprio paper). 10 testes sinteticos
+      (ruido puro -> PBO~0,5; candidato dominante -> PBO baixo;
+      validacoes de forma/paridade/determinismo) -- todos passaram na
+      primeira execucao real (`uv run pytest
+      tests/unit/test_validation_pbo_cscv.py -v`, 10 passed).
+
+      APLICACAO A DADO REAL (nao so sintetico) -- BTCUSDT/R1, N=2
+      (Camada1 vs Camada0), retreino real em memoria (mesmo treino do
+      AG-252/AG-253), returns_matrix = (r1_t, r0_t) por barra, T=218822,
+      n_blocks=16 (12.870 combinacoes), por caminho do CPCV:
+        path 0: PBO=0,1156  mean_logit=+0,533  (C1 pior, robusto)
+        path 1: PBO=0,0000  mean_logit=+0,693  (C1 pior, 100% das
+                combinacoes concordam -- o mais extremo possivel p/ N=2)
+        path 2: PBO=0,2768  mean_logit=+0,310  (fraco)
+        path 3: PBO=0,0626  mean_logit=+0,606  (C1 pior, robusto)
+        path 4: PBO=0,4228  mean_logit=+0,107  (perto de ruido puro)
+      Sinal (`mean_logit` positivo em TODOS os 5 caminhos) e MAGNITUDE
+      de PBO CONCORDAM PONTO A PONTO com o achado independente de
+      AG-252/AG-253 (bootstrap CI): os 3 caminhos com PBO baixo (0, 1, 3)
+      sao EXATAMENTE os 3 que o bootstrap ja tinha marcado `significant=
+      True` com point_estimate NEGATIVO (Camada1 pior que Camada0); os
+      2 com PBO perto de 0,5 (2, 4) sao os mesmos 2 marcados `significant
+      =False`. Dois instrumentos estatisticos INDEPENDENTES (bootstrap
+      por blocos vs. CSCV) convergem no mesmo veredito por caminho --
+      nao e coincidencia de 1 metodo so.
+
+      **RESSALVA DE ESCOPO OBRIGATORIA, achada ao revisar o proprio
+      script de medicao**: este treino usou `alpha.run_all_folds(...)`
+      SEM `feature_ids`/`hyper` explicitos -- ou seja, rodou sobre
+      `T1_FEATURE_IDS` (7 features) e hiperparametro DEFAULT de
+      `constants.yaml`, a configuracao ANTIGA/pre-AG-207. NAO e uma
+      medicao da configuracao de producao ATUAL (T1+T2 aditivo, 69
+      features, hiperparametro calibrado por combo via ADR-003) --
+      aplicar a mesma pergunta do padrao desta sessao ("esta medicao foi
+      feita sobre a grade que producao usa?") da resposta NAO aqui.
+      O achado real e forte ("Camada1 T1-only e roboustamente PIOR que
+      Camada0 em 3/5 caminhos de BTCUSDT/R1, por dois instrumentos
+      independentes") mas NAO deve ser lido como um veredito sobre o
+      Alpha T1+T2 atual em producao -- isso exigiria refazer esta mesma
+      medicao (Fase 0 + PBO) com `feature_ids`/`hyper` do combo real,
+      o que nao foi feito aqui (custo de retreino adicional, fora do
+      escopo desta rodada -- Fase 1, explicitamente adiada pelo Manager
+      nesta sessao).
+      NAO decidido: refazer esta medicao sob a config T1+T2 real (proximo
+      passo natural quando a Fase 1 for retomada); usar PBO como gate
+      formal de producao (decisao do Manager).
+
+  - id: AG-216-ADDENDUM-2
+    date: "2026-08-25"
+    addendum_de: "AG-216 (entrada original) e AG-216-ADDENDUM (revisao independente da sessao ADR-003) -- esta e a implementacao real do que os dois recomendavam"
+    file: "src/analysis/cross_symbol_ess.py"
+    found_by: "Claude -- ADR-004 Fase 3, ver AG-255 para o achado completo"
+    gap: "ver AG-255 -- este addendum so atualiza o STATUS de AG-216 pra apontar pra onde o trabalho de fato aconteceu, sem reescrever a entrada original"
+    severity: "n/a -- ponteiro de status"
+    layer: "n/a"
+    consequence: "n/a"
+    status: >
+      PARCIALMENTE FECHADO 2026-08-25 -- ver AG-255 pro achado completo
+      (N_eff=2,03 de 5 simbolos, grade 15m, side=1). Fecha a recomendacao
+      de REUSAR weighted_participation_ratio (extraido de compute_
+      effective_concentration) e de resolver o alinhamento temporal (via
+      agregacao diaria, nao resample de barra). NAO fecha a recomendacao
+      de usar a matriz 15x15 (combinacoes/dollar-bar) em vez de 5x5
+      (simbolos/grade de relogio) -- essa versao segue ABERTA,
+      registrada explicitamente como proximo passo em AG-255, nao
+      esquecida.

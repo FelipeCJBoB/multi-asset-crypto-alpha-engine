@@ -103,3 +103,35 @@ def test_sharpe_difference_bootstrap_exige_mesmo_comprimento() -> None:
         dsr.sharpe_difference_block_bootstrap(
             np.zeros(10), np.zeros(20), n_boot=10, block_size=2, seed=1
         )
+
+
+def test_sharpe_difference_bootstrap_block_size_none_mede_via_bootstrap_diff() -> None:
+    """ADR-004 Fase 3 (AG-254) -- `block_size=None` (novo default) mede
+    o bloco em vez de exigir um número estipulado do chamador (B23
+    latente fechado). Resultado deve ser funcionalmente equivalente a
+    passar o mesmo valor medido explicitamente."""
+    rng = np.random.default_rng(9)
+    a = rng.normal(loc=0.02, scale=1.0, size=400)  # noqa: magic-number
+    b = rng.normal(loc=-0.01, scale=1.0, size=400)  # noqa: magic-number
+
+    result_auto = dsr.sharpe_difference_block_bootstrap(a, b, n_boot=300, seed=4)
+    assert result_auto["block_size"] >= 1
+    assert np.isfinite(result_auto["observed_diff"])
+
+    measured_block = int(result_auto["block_size"])
+    result_explicit = dsr.sharpe_difference_block_bootstrap(
+        a, b, n_boot=300, block_size=measured_block, seed=4
+    )
+    assert result_auto["block_size"] == result_explicit["block_size"]
+    assert result_auto["observed_diff"] == pytest.approx(result_explicit["observed_diff"])
+
+
+def test_sharpe_difference_bootstrap_block_size_explicito_preserva_bit_exato() -> None:
+    """Callers existentes que já passam `block_size` explícito (ex.
+    `faixa2_dsr_and_b2_check.py`, antes desta mudança) continuam
+    bit-exatos -- o valor explícito nunca é substituído pelo medido."""
+    rng = np.random.default_rng(11)
+    a = rng.normal(size=200)  # noqa: magic-number
+    b = rng.normal(size=200)  # noqa: magic-number
+    result = dsr.sharpe_difference_block_bootstrap(a, b, n_boot=50, block_size=7, seed=1)
+    assert result["block_size"] == 7  # noqa: magic-number

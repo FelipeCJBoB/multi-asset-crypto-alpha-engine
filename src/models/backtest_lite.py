@@ -324,24 +324,66 @@ def camada_diff_series(
     df_all: pl.DataFrame,
     path_id: int,
     bar_idx: NDArray[np.int64],
-) -> FloatArray:
-    """Série `r1_t - r0_t` sobre TODO o universo de barras do path
-    (`bar_idx`), não só as barras com sinal -- barra sem sinal em uma
-    camada entra como `0.0` (estratégia flat), nunca excluída nem NaN:
-    excluir mudaria a base de comparação exatamente quando as duas
+) -> tuple[FloatArray, NDArray[np.bool_]]:
+    """`(r1_t - r0_t, has_signal_t)` sobre TODO o universo de barras do
+    path (`bar_idx`), não só as barras com sinal -- barra sem sinal em
+    uma camada entra como `0.0` (estratégia flat), nunca excluída nem
+    NaN: excluir mudaria a base de comparação exatamente quando as duas
     camadas discordam sobre QUAL barra sinalizar, que é parte do que o
-    teste precisa capturar. Ordenado por `t0` -- o bootstrap por blocos
-    precisa da ordem cronológica real, não da ordem de `bar_idx`."""
+    teste precisa capturar. `has_signal_t` (`True` se QUALQUER camada
+    sinalizou naquela barra) é o que permite ao chamador (`permanence_
+    significance_by_path`) montar a leitura signal-only sem recomputar
+    `realize_trades` -- achado real (`AG-252`): a versão zero-filled DILUI
+    a magnitude do `point_estimate` (~20-60x menor, medido em BTCUSDT/R1,
+    96-98% das barras são zero-zero) — nunca deve ser lida como o efeito
+    econômico POR TRADE, só como o efeito por BARRA do backtest. Ordenado
+    por `t0` -- o bootstrap por blocos precisa da ordem cronológica real,
+    não da ordem de `bar_idx`.
+
+    **Correção (AG-252, achada ao escrever o teste unitário desta
+    função).** `bar_idx` vem de `path_bar_indices`, que por sua vez usa
+    `CPCVSplit.test_idx` -- posições em `df_all`, que tem DUAS linhas por
+    barra (`side=1` e `side=-1`, mesmo contrato de `alpha._unique_test_
+    bars`). Sem deduplicar, `bars` continha as DUAS linhas de cada barra
+    (mesmo `t0` duplicado), inflando `n_total_bars` ~2x e criando um par
+    adjacente artificial após `.sort("t0")` que distorcia a ACF/block_
+    length medidos (a mesma classe de erro que `_unique_test_bars` já
+    existe para evitar, aplicada agora aqui também)."""
 
     def _ret_by_bar(folds: list[FoldResult]) -> pl.DataFrame:
         trades = realize_trades([fr for fr in folds if fr.path_id == path_id], df_all)
         filled = trades.filter(pl.col("barrier_hit") != "NOFILL").select("t0", "ret_net")
         return bars.join(filled, on="t0", how="left").with_columns(pl.col("ret_net").fill_null(0.0))
 
-    bars = df_all[bar_idx].select("t0").sort("t0")
-    r1 = _ret_by_bar(c1_folds)["ret_net"].to_numpy().astype(np.float64)
-    r0 = _ret_by_bar(c0_folds)["ret_net"].to_numpy().astype(np.float64)
-    return r1 - r0
+    bars = (
+        df_all[bar_idx]
+        .filter(pl.col("side") == 1)
+        .unique(subset=["t0"], keep="first")
+        .select("t0")
+        .sort("t0")
+    )
+    r1_df = _ret_by_bar(c1_folds)
+    r0_df = _ret_by_bar(c0_folds)
+    r1 = r1_df["ret_net"].to_numpy().astype(np.float64)
+    r0 = r0_df["ret_net"].to_numpy().astype(np.float64)
+    has_signal = (r1 != 0.0) | (r0 != 0.0)
+    return r1 - r0, has_signal
+
+
+@dataclass(frozen=True, slots=True)
+class PermanenceSignificanceResult:
+    """Duas leituras, nunca reduzidas a uma só (mesmo princípio de
+    `TauPathRealization` pré/pós-fill em `src.analysis.tau_diagnostics`)
+    -- achado real (`AG-252`, medido em BTCUSDT/R1): `zero_filled` dilui
+    o `point_estimate` em ~20-60x contra `signal_only` (96-98% das barras
+    são zero-zero nesse combo), então `zero_filled` NUNCA deve ser lido
+    como magnitude econômica por trade -- só `signal_only` responde essa
+    pergunta. O `significant` (True/False) dos dois CONCORDOU nos 5
+    caminhos medidos, mas isso é UMA medição, não uma prova geral -- leia
+    os dois, não presuma que sempre concordam."""
+
+    zero_filled: bootstrap_diff.BootstrapDiffResult
+    signal_only: bootstrap_diff.BootstrapDiffResult
 
 
 def permanence_significance_by_path(
@@ -353,20 +395,32 @@ def permanence_significance_by_path(
     n_boot: int,
     confidence_level: float,
     seed: int,
-) -> dict[int, bootstrap_diff.BootstrapDiffResult]:
+) -> dict[int, PermanenceSignificanceResult]:
     """Por `path_id`, IC bootstrap da diferença Camada1-Camada0 sobre o
-    universo completo de barras do path. Companion de `permanence_count`,
-    não substituto: onde aquele conta "quantos caminhos venceram", este
-    responde "a diferença em CADA caminho é distinguível de ruído" —
-    AG-220 mostrou que nenhuma das duas perguntas é redundante com a
-    outra. `seed + path_id` mantém reprodutibilidade determinística sem
-    reamostrar os 5 caminhos com o mesmo padrão."""
+    universo completo de barras do path (`zero_filled`) E sobre a
+    subsérie onde pelo menos uma camada sinalizou (`signal_only`, AG-252).
+    Companion de `permanence_count`, não substituto: onde aquele conta
+    "quantos caminhos venceram", este responde "a diferença em CADA
+    caminho é distinguível de ruído" — AG-220 mostrou que nenhuma das duas
+    perguntas é redundante com a outra. `seed + path_id` mantém
+    reprodutibilidade determinística sem reamostrar os 5 caminhos com o
+    mesmo padrão; `signal_only` usa `seed + path_id + 1_000_000` (mesma
+    convenção de derivação determinística de seed do resto do projeto,
+    offset grande o bastante pra nunca colidir com nenhum `path_id`
+    real)."""
     path_ids = sorted({fr.path_id for fr in c1_folds} & {fr.path_id for fr in c0_folds})
-    out: dict[int, bootstrap_diff.BootstrapDiffResult] = {}
+    out: dict[int, PermanenceSignificanceResult] = {}
     for path_id in path_ids:
         bar_idx = path_bar_indices(path_id, splits)
-        diff = camada_diff_series(c1_folds, c0_folds, df_all, path_id, bar_idx)
-        out[path_id] = bootstrap_diff.stationary_bootstrap_ci(
+        diff, has_signal = camada_diff_series(c1_folds, c0_folds, df_all, path_id, bar_idx)
+        zero_filled = bootstrap_diff.stationary_bootstrap_ci(
             diff, n_boot=n_boot, confidence_level=confidence_level, seed=seed + path_id
         )
+        signal_only = bootstrap_diff.stationary_bootstrap_ci(
+            diff[has_signal],
+            n_boot=n_boot,
+            confidence_level=confidence_level,
+            seed=seed + path_id + 1_000_000,
+        )
+        out[path_id] = PermanenceSignificanceResult(zero_filled=zero_filled, signal_only=signal_only)
     return out

@@ -91,3 +91,48 @@ def test_stationary_bootstrap_ci_block_length_respeita_teto_n_sobre_4() -> None:
     x = rng.normal(size=40)  # noqa: magic-number -- n//4 = 10, teto apertado
     result = bd.stationary_bootstrap_ci(x, n_boot=200, confidence_level=0.95, seed=1, block_length=1000)
     assert result.block_length <= 10  # noqa: magic-number
+
+
+def test_stationary_bootstrap_indices_devolve_n_indices_validos() -> None:
+    """Vetorização (AG-241-ADDENDUM) -- forma e faixa de valores, o
+    invariante mais básico que qualquer reescrita precisa preservar."""
+    rng = np.random.default_rng(30)
+    n = 777  # noqa: magic-number -- não múltiplo redondo de nada, pega off-by-one
+    idx = bd._stationary_bootstrap_indices(n, block_length=15, rng=rng)  # noqa: magic-number
+    assert idx.shape == (n,)
+    assert idx.dtype == np.int64
+    assert int(idx.min()) >= 0
+    assert int(idx.max()) < n
+
+
+def test_stationary_bootstrap_indices_block_length_1_e_essencialmente_iid() -> None:
+    """`block_length=1` -- geometric(p=1) sempre devolve 1 (nunca > 1),
+    então todo bloco tem tamanho 1 -- equivalente a bootstrap i.i.d.
+    comum. Sanidade da reescrita vetorizada no caso degenerado."""
+    rng = np.random.default_rng(31)
+    n = 500  # noqa: magic-number
+    idx = bd._stationary_bootstrap_indices(n, block_length=1, rng=rng)
+    assert idx.shape == (n,)
+    assert int(idx.min()) >= 0
+    assert int(idx.max()) < n
+
+
+def test_stationary_bootstrap_indices_comprimento_medio_de_bloco_bate_o_alvo() -> None:
+    """Propriedade distribucional (não bit-exata contra a versão em loop
+    -- RNG consome em ordem diferente, ver docstring da função): o
+    comprimento médio de corrida (run-length) contígua na sequência
+    gerada deve ficar perto do `block_length` pedido, dentro de folga
+    estatística generosa (múltiplas réplicas, `n` grande)."""
+    rng = np.random.default_rng(32)
+    n = 20_000  # noqa: magic-number
+    block_length = 25  # noqa: magic-number
+    run_lengths: list[int] = []
+    for _ in range(20):  # noqa: magic-number -- réplicas suficientes pra estabilizar a média
+        idx = bd._stationary_bootstrap_indices(n, block_length=block_length, rng=rng)
+        is_contiguous = np.diff(idx) % n == 1  # noqa: magic-number
+        # conta o comprimento de cada corrida contígua (True) entre quebras (False)
+        breaks = np.flatnonzero(~is_contiguous)
+        boundaries = np.concatenate([[-1], breaks, [n - 2]])
+        run_lengths.extend((np.diff(boundaries)).tolist())
+    mean_run = float(np.mean(run_lengths))
+    assert block_length * 0.5 <= mean_run <= block_length * 1.5  # noqa: magic-number -- folga generosa

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import polars as pl
+import pytest
 
 from src.models import backtest_lite
 
@@ -56,6 +57,85 @@ def test_span_seconds_menos_de_2_pontos_retorna_zero() -> None:
         "UTC"
     )
     assert backtest_lite.span_seconds(t0) == 0.0
+
+
+class _FakeFoldResult:
+    """Duck-type mínimo pro contrato que `realize_trades` de fato usa
+    (`.predictions`/`.path_id`/`.variant`) -- construir um `FoldResult`
+    real exigiria `SideModelResult` completo (booster, calibrador etc.),
+    irrelevante pro que `camada_diff_series` testa (AG-252)."""
+
+    def __init__(self, predictions: pl.DataFrame, path_id: int, variant: str = "camada1") -> None:
+        self.predictions = predictions
+        self.path_id = path_id
+        self.variant = variant
+
+
+def _mk_predictions(t0: list[datetime], side_hat: list[int], fold_id: int = 0) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "t0": pl.Series(t0).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+            "side_hat": pl.Series(side_hat, dtype=pl.Int8),
+            "fold_id": pl.Series([fold_id] * len(t0), dtype=pl.Int16),
+        }
+    )
+
+
+def _mk_labels(t0: list[datetime], side: list[int], ret_net: list[float]) -> pl.DataFrame:
+    n = len(t0)
+    return pl.DataFrame(
+        {
+            "t0": pl.Series(t0).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+            "side": pl.Series(side, dtype=pl.Int8),
+            "barrier_hit": pl.Series(["TP"] * n),
+            "ret_net": pl.Series(ret_net, dtype=pl.Float64),
+            "sample_weight": pl.Series([1.0] * n),
+            "ret_gross": pl.Series(ret_net, dtype=pl.Float64),
+            "cost_entry_bps": pl.Series([0.0] * n),
+            "cost_exit_bps": pl.Series([0.0] * n),
+            "funding_bps": pl.Series([0.0] * n),
+        }
+    )
+
+
+def test_camada_diff_series_zero_filling_e_has_signal_mask() -> None:
+    """4 barras. `df_all` tem DUAS linhas por barra (side=1/side=-1, mesmo
+    contrato de `alpha._unique_test_bars`) -- `bar_idx` cobre TODAS elas
+    (como `path_bar_indices` real faria via `test_idx`), então o teste
+    também cobre a deduplicação por `side==1` (achado AG-252).
+    C1 sinaliza long em t0[0] (ret=0.01) e t0[2] (ret=0.02); C0 sinaliza
+    short em t0[1] (ret=-0.005) e long em t0[2] (MESMO ret=0.02 -- diff=0
+    ali, mas has_signal deve ser True pois as duas sinalizaram); nenhuma
+    sinaliza em t0[3]."""
+    t0 = [datetime(2024, 1, 1, h, tzinfo=UTC) for h in range(4)]
+
+    labels = pl.concat(
+        [
+            _mk_labels([t0[0]], [1], [0.01]),
+            _mk_labels([t0[0]], [-1], [-0.99]),  # não referenciado por nenhum side_hat
+            _mk_labels([t0[1]], [1], [0.99]),  # não referenciado
+            _mk_labels([t0[1]], [-1], [-0.005]),
+            _mk_labels([t0[2]], [1], [0.02]),
+            _mk_labels([t0[2]], [-1], [-0.99]),  # não referenciado
+            _mk_labels([t0[3]], [1], [0.99]),  # não referenciado -- só existe pra t0[3] aparecer em `bars`
+            _mk_labels([t0[3]], [-1], [-0.99]),  # não referenciado
+        ]
+    )
+    bar_idx = np.arange(labels.height)  # cobre as 8 linhas (2 por barra), como test_idx real faria
+
+    c1_preds = _mk_predictions([t0[0], t0[1], t0[2], t0[3]], [1, 0, 1, 0])
+    c0_preds = _mk_predictions([t0[0], t0[1], t0[2], t0[3]], [0, -1, 1, 0])
+    c1_folds = [_FakeFoldResult(c1_preds, path_id=0, variant="camada1")]
+    c0_folds = [_FakeFoldResult(c0_preds, path_id=0, variant="camada0")]
+
+    diff, has_signal = backtest_lite.camada_diff_series(c1_folds, c0_folds, labels, path_id=0, bar_idx=bar_idx)
+
+    assert diff.shape == (4,)  # deduplicado -- 4 barras, não 8 linhas
+    assert has_signal.tolist() == [True, True, True, False]
+    assert diff[0] == pytest.approx(0.01)  # só C1 sinalizou
+    assert diff[1] == pytest.approx(0.005)  # só C0 sinalizou (short ret -0.005 -> diff = 0 - (-0.005))
+    assert diff[2] == pytest.approx(0.0)  # as duas sinalizaram, MESMO ret_net -> diff=0, mas has_signal=True
+    assert diff[3] == pytest.approx(0.0)  # nenhuma sinalizou
 
 
 def test_permanence_count_conta_paths_onde_camada1_supera_camada0() -> None:
