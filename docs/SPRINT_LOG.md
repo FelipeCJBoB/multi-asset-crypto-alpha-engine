@@ -4443,6 +4443,144 @@ resultado negativo medido nesta sessão pode mais ser lido como
 definitivo sem essa reavaliação.
 
 <!-- check-sprint-log: skip -->
+## Expurgo da grade de relógio 15m — o S1 e o M6 mediam a grade errada, e o B15 estava barrando toda a produção (2026-08-25)
+
+Sessão que começou como "re-executar os experimentos depois do relabel" e
+virou outra coisa quando uma re-execução do S1 deu **delta exatamente
++0,00000** em todas as 7 células — depois de um relabel que mudou `ret_gross`
+em 3 a 5 bps nas 15 combinações (`experiments/s1_tp_sl_sensitivity_report.json`
+contra `data/label_engine_runs/label_engine_runs.parquet`). Um relabel dessa
+magnitude não pode deixar uma medição de edge inalterada, a menos que ela não
+esteja lendo o dado relabelado.
+
+Não estava. **O S1 — o sweep que DECIDIU `tp_atr_mult`/`sl_atr_mult`,
+constantes classe A — lia `data/labels/{symbol}/15m/`** (`AG-232`), a grade de
+relógio, substituída como canônica por dollar bar desde `AG-042`
+(2026-08-16). E não era um módulo: uma varredura mostrou **7 dos 16 módulos
+da Camada 0 de `analysis/`** na mesma condição (`AG-233`), dois deles
+legitimamente (`m2`/`m3` comparam grades por desenho). Número que quantifica
+a distância entre as grades: a duração **mediana real** das dollar bars é
+R1=10,2min / R2=21,5min / R3=45,1min — contra os "~15min/~30min/~1h" que a
+docstring afirmava. "15m ≈ R1" não é aproximação aceitável: são grades com
+~47% de diferença de duração.
+
+O Manager decidiu expurgar a grade 15m, mantendo só as canônicas, e pediu
+avaliação ponta a ponta antes de recomendar próximos passos
+(`docs/AVALIACAO_EXPURGO_GRADE_15M_2026-08-25.md`). A avaliação achou que o
+expurgo **não estava onde parecia**: o core já estava migrado (`tf` opera em
+XOR com `resolution_id`), a contaminação estava em `analysis/`, e havia uma
+trava dura — `tf` entra no `config_hash` incondicionalmente, então mexer nele
+invalidaria os 15 labels recém-gerados.
+
+**Fase 1 — S1 migrado e medido (`AG-240`, `AG-235`).** O motor vetorizado de
+barreira (`src/labels/barrier_sweep.py`) tinha duas amarras duras à grade de
+relógio; ambas resolvidas de forma aditiva e bit-exata em
+`src/analysis/s1_tp_sl_sensitivity.py`. Regressão que introduzi e corrigi no mesmo passo: a
+1ª versão de `_resolve_bar_ms` capturava `except Exception`, o que fazia um
+`tf` inválido ser aceito silenciosamente — o teste de falha-alta pegou;
+corrigido com whitelist explícita.
+
+Com o S1 rodando na grade certa (`src/analysis/s1_tp_sl_sensitivity.py`,
+`--resolution-id R1`), **a pergunta da geometria está respondida, e a resposta
+é "a geometria não é a alavanca"**. Armadilha de comparação
+detectada antes de concluir: as células não têm o mesmo número de estratos
+(`sl=0,75` só é viável em SOLUSDT), então a célula de "melhor edge" da tabela
+crua estava medida em 2 estratos, não 10. Comparando só as 5 células com
+cobertura completa e contabilizando o custo junto do edge, o gap varia de
+**5,95 a 6,19 bps** (`experiments/s1_tp_sl_sensitivity_report_R1.json`) —
+trocar a geometria renderia **+0,02 bps (0,3%)**. O
+mecanismo é estrutural: R:R maior melhora o edge bruto mas piora o custo, e os
+efeitos se cancelam. **Autocorreção registrada:** eu havia sugerido antes que
+barreiras mais largas reduziriam o lift exigido em ~49% — certo em pontos de
+`P(TP)`, **errado como recomendação**, porque não converti para bps
+contabilizando que o custo também muda com a geometria.
+
+**Fase 2 — M6 migrado (`AG-238`), e o resultado muda uma premissa de
+escopo.** O M6 (`src/analysis/m6_common_factor_hypothesis.py`) produziu o
+`I²=96-98%` citado como evidência em decisão de escopo multi-ativo. Na grade
+de produção o `I²` real é **61-83%**, caindo
+monotonicamente com a duração da barra. H0 segue rejeitada em todas as
+células (p<0,05) — a conclusão qualitativa sobrevive — mas a força não: em R1
+SHORT o p vai de 7e-30 para **3,8e-02**
+(`experiments/m6_common_factor_hypothesis_report_R1.json`, e os análogos `_R2`/
+`_R3`). E **a leitura por lado inverte**: no
+15m o SHORT era o lado de edge pooled ~nulo e o LONG o pior; na produção é o
+oposto nas três resoluções. Qualquer decisão apoiada em "SHORT é o lado
+neutro" está invertida (evidência por célula em
+`audit/evidence_ledger.yaml`, ids `m6_i2_r{1,2,3}_{long,short}`). Não separei
+se a causa é o relabel ou a grade — exigiria o M6 sobre a grade 15m
+*relabelada*, que não existe: o 15m foi grupo de controle e ficou em
+`mark_1m` por desenho (`src/labels/triple_barrier.py`).
+
+**O achado mais grave apareceu como efeito colateral (`AG-236`).** O M6 falhou
+nas três resoluções com `ConfigHashMismatchError`. Causa: o relabel gerou os
+labels sob `entry_fill_source="agg_trades"`, mas
+`src/labels/triple_barrier.py::from_constants` não tinha de onde ler esse
+valor — **o B15 estava barrando TODO consumidor de produção**, inclusive
+`src/models/dataset.py::build_modeling_frame` e, por ele, a cadeia inteira do
+Alpha. Os labels de 998s de processamento eram inconsumíveis. Minha primeira
+solução — trocar o default do dataclass — **quebrou 43 testes**; descartei por
+medição, não por opinião: 43 falhas não é custo de migração, é sinal de que a
+solução está na camada errada. A solução adotada é a disciplina que o repo já
+tem (§16.10): constante de domínio em `config/constants.yaml`
+(`label_entry_fill_source`) com proveniência, default técnico no dataclass
+(`src/labels/triple_barrier.py`). Custo final: 3 falhas, todas premissa antiga.
+**Efeito colateral desejado:** sob `from_constants` a grade 15m deixa de bater
+e falha alto em B15 — o expurgo acontece **por mecanismo**, não por deleção de
+arquivo.
+
+**Erro metodológico meu, registrado.** Na primeira verificação do
+`config_hash` usei um `estimator_id` que **inventei** por analogia com o padrão
+de nomes (`atr_wilder_dollar_r1_w20_v1`); o real é `parkinson_w20`. O hash não
+batia e quase atribuí a divergência ao campo `tf`. Só uma busca exaustiva
+sobre o payload expôs que nenhuma combinação fechava, o que apontou para um
+campo não registrado em `data/label_engine_runs/label_engine_runs.parquet`.
+Lição: aquele parquet não
+persiste `estimator_id` nem `barrier_fill_policy_id`, então comparar campo a
+campo contra ele dá um falso "tudo bate exceto `tf`".
+
+**`AG-237` — guardrail removido sem ninguém decidir.** Um teste que falhou por
+outro motivo revelou que `sweep_range` tinha sido **removido** de
+`tp_atr_mult` e `sl_atr_mult` (ambas classe A) na troca de valor de
+2026-08-24, junto com `sweep_required: false` — removendo o guardrail da
+§16.10 regra 4 das duas constantes de `config/constants.yaml` que governam a
+geometria de payoff inteira.
+Restaurado. O `sweep_required: false` continua, mas agora sustentado pelo S1
+na grade certa, não pela medição inválida.
+
+**`AG-239`/`AG-240` — colisão de ID que eu mesmo causei.** Duas entradas de
+`labels/` registradas nesta sessão pegaram números já ocupados por achados de
+`src/models/pipeline.py` em `audit/architecture_gaps_log.yaml`. As anteriores
+mantêm o número; as minhas foram renumeradas com
+`renumbered_from`. Nenhuma referência cruzada quebrou.
+
+**Fase 3 — guardrail (`tests/unit/test_governanca_grade_producao.py`).**
+Whitelist congelada, separada em `POR_DESENHO` (m2/m3, isentos pelo propósito)
+e `POR_ESTADO` (descrevem o repo hoje, saem quando o módulo migrar). Quebra o
+build se um módulo novo passar a ler a grade de relógio, exige motivo
+declarado por entrada, proíbe entrada morta e confere que todo módulo marcado
+MIGRADO expõe de fato `--resolution-id`. O levantamento **corrigiu minha
+própria lista**: os contaminados são **3, não 5** —
+`src/analysis/volatility_operational_effect.py` e
+`src/analysis/gk_vs_wilder_econ_regime_shift.py` não casam nenhum padrão.
+
+**`AG-241` (sessão paralela do Manager) — Fase 0 do ADR-004.** Bootstrap
+estacionário por blocos (Politis & Romano 1994) com comprimento **medido via
+ACF**, escolhido sobre o teste fechado de Ledoit-Wolf porque a fórmula HAC
+daquele tem vários pontos onde erro de sinal produz veredito confiantemente
+errado. Núcleo puro (`src/validation/bootstrap_diff.py`) + casca em
+`src/models/backtest_lite.py`, wireado em `src/models/pipeline.py`: roda sobre
+`ret_net` já materializado, zero retreino.
+8 testes sintéticos passam. **Ainda não executado sobre dado real.** Dois
+riscos levantados na revisão: o zero-filling da casca pode encurtar o block
+length medido pela ACF e estreitar o IC — produzindo justamente o falso
+positivo que a fase existe para evitar —, e o custo `O(n × n_boot)` em Python
+puro pode inviabilizar o run sobre o universo completo de barras.
+
+Suíte final: **1933 passed, 0 failed**. Commits `50b46fe`, `10fbd78`.
+
+---
+
 ## Estado atual (2026-08-25)
 
 **Nota sobre a linha "Sprint" abaixo**: mantida como estava em
@@ -4488,3 +4626,9 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | `AG-137` — decidido e fechado 2026-08-22 | Manager decidiu deletar. 104 arquivos `.parquet` stale (calibração não-causal antiga, `cadence_days` dias iniciais de cada uma das 15 células) removidos de `data/capacity/dollar_bars_r{1,2,3}/`. Verificado: 0 restante, cada célula agora começa exatamente em `SYMBOL_START_DATE + cadence_days` — gap honesto, não dado errado. Levantada e respondida no mesmo momento: a pergunta de como isso vai se comportar no Live (ver `PLANO_MESTRE_PRINCE2.md §15.15` addendum) — cold-start é um artefato de BORDA DO HISTÓRICO, não recorre no lançamento do Live pros 5 símbolos existentes (haverá anos de histórico real disponível); o gap real e ainda não resolvido é que `build_dollar_bars_walkforward` hoje é uma função de LOTE (intervalo finito), não um processo contínuo — não existe ainda o equivalente ao vivo (`src/live/` vazio, Sprint 12+). |
 | **`verify_config_hash` (B15) no caminho real de consumo** | `AG-140` FECHADO, `§15.24`. `src/models/dataset.py::build_modeling_frame` verifica `config_hash` dos labels contra a config de execução antes de montar o frame. `resolution_id` agora exige `vol_estimator_id` explícito (achado colateral). Confirmação empírica achou drift REAL contra `labels/v1` de produção — investigado (git log: nenhum parâmetro mudou, é o FORMATO do hash que migrou 5x historicamente, `AG-005`/`031`/`042`/`116`) — usuário reprocessou os 5 símbolos (`build_and_write_labels_for_symbol`/`run_and_write_labels_for_alts`), `2 passed` (era `2 failed`). `AG-138`/`AG-139` (mesmo fan-out, mesma severidade "alto") **fechados na sessão seguinte, mesmo dia** — ver linha "CLI causal + magic-number lint" abaixo. Fila real restante: `AG-141`/`142` (persistência de modelo/diagnóstico, trabalho de integração maior, não correção pontual) |
 | **CLI causal + magic-number lint (`AG-138`/`AG-139`)** | Ambos FECHADOS, `§15.25`, commit `ef7f5d3`. `build_dollar_bars.py` ganhou `--mode {single_window,walkforward}` — `walkforward` aciona `build_dollar_bars_walkforward` (recalibração causal, `AG-124`) direto do CLI, antes só via script separado; `single_window` (legado) emite `logger.warning` explícito sobre o vazamento de 18,18x. `support.py` ganhou os 2 `# noqa: magic-number` faltando — `banned_patterns.py --strict` volta a passar limpo. 4 testes novos de CLI. Dos 3 achados "alto" que travavam o gate "Data Layer 100%" (`§15.14`), os 3 estão fechados agora (`AG-138`/`139`/`140`) — resta só `08_SPLIT` (2 decisões do Manager) e o débito já aceito de `06_BARREIRAS`; achados "médio"/"baixo" do mesmo fan-out não varridos |
+| **Expurgo da grade de relógio 15m — Fases 1-3 CONCLUÍDAS** | `AG-232`/`AG-233`/`AG-235`/`AG-238`/`AG-240`. S1 e M6 migrados para R1/R2/R3 e re-medidos; guardrail `tests/unit/test_governanca_grade_producao.py` quebra o build se módulo novo de `analysis/` ler a grade de relógio. **Geometria de barreira: pergunta RESPONDIDA** — todas as células viáveis dão gap 5,95-6,19 bps, trocar renderia +0,02 bps; recomendação é NÃO trocar `tp_atr_mult`/`sl_atr_mult`. **Pendente:** Fase 4 (mover artefatos 15m para `data/labels_pre_ag221_relabel/`) e `faixa2_e2_research` (único módulo não migrado, débito registrado na whitelist) |
+| **`I²` do M6 re-medido — premissa de escopo multi-ativo enfraquecida** | `AG-238`. O `I²=96-98%` citado em decisão de escopo era da grade errada; o real na grade de produção é **61-83%**, caindo monotonicamente com a duração da barra. H0 segue rejeitada (p<0,05) mas em R1 SHORT o p vai de 7e-30 para 3,8e-02. **A leitura POR LADO inverte** — no 15m o SHORT era o lado de edge pooled ~nulo, na produção é o pior nas três resoluções: decisão apoiada em "SHORT é o lado neutro" está invertida. **Causa da inversão NÃO separada** (relabel x grade) — exigiria M6 sobre a grade 15m relabelada, que não existe. Evidência: `audit/evidence_ledger.yaml::m6_i2_r{1,2,3}_{long,short}` |
+| **B15 estava barrando toda a produção — `AG-236` FECHADO** | O relabel de `AG-229` gerou os labels sob `entry_fill_source="agg_trades"` mas `from_constants()` não tinha de onde ler o valor: `build_modeling_frame` e a cadeia inteira do Alpha falhavam em `verify_config_hash`. Resolvido por `config/constants.yaml::label_entry_fill_source` (DERIVED, classe A, sweep EXECUTADO) + default técnico no dataclass — 1ª tentativa (flipar o default do dataclass) quebrou 43 testes e foi descartada por medição. Hashes de produção reproduzidos bit-exato. **A grade 15m agora falha alto em B15 — o expurgo acontece por MECANISMO, não por deleção** |
+| **`AG-237` — guardrail de sweep removido sem decisão** | `sweep_range` tinha sido removido de `tp_atr_mult`/`sl_atr_mult` em `config/constants.yaml` (ambas classe A) na troca de valor de 2026-08-24, junto com `sweep_required: false` — removendo o guardrail da §16.10 regra 4 das duas constantes que governam a geometria de payoff. Restaurado `[1.0, 3.0]`; `sweep_required: false` mantido, mas agora sustentado pelo S1 na grade CERTA (`AG-235`), não pela medição inválida. Detectado por um teste que falhou por outro motivo |
+| **ADR-004 Fase 0 — `AG-241`, implementada e NÃO executada** | Bootstrap estacionário por blocos (Politis & Romano 1994), block length MEDIDO via ACF (B23), escolhido sobre Ledoit-Wolf porque a fórmula HAC tem pontos onde erro de sinal produz veredito confiantemente errado. Roda dentro de `run_layer1_sprint` sobre `ret_net` já materializado — zero retreino. 8 testes sintéticos passam; **nenhum resultado real ainda**. **Dois riscos a medir antes de confiar no 1º veredito:** (a) o zero-filling da casca pode encurtar o block length e estreitar o IC, produzindo o FALSO POSITIVO que a fase existe para evitar; (b) custo `O(n × n_boot)` em Python puro. Prompt de continuação: `docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md` |
+| Pendente — governança e re-execução | (1) **Road Map Vivo dessincronizado** — republicado por sessão paralela, contradiz 4 achados desta sessão (mesmo padrão `AG-080`/`AG-123`); (2) tabela antes×depois dos 78 experimentos derivados de label, pedida pelo Manager, não feita; (3) Camada 0 interrompida no `src/analysis/m3_timeframe_choice.py` — 14 módulos na fila, agora re-executáveis porque S1/M6 já migraram; (4) **`AG-230` aguarda decisão do Manager** — viés de amostra isolado em BTCUSDT (−1,9%, jan-fev/2021, `n_empty_mark_window` 0→6149): causalmente correto, mas remove barras de regime de rajada |

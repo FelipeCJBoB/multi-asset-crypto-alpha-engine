@@ -843,7 +843,7 @@ proposta a confirmar, não como verdade estabelecida:
 | **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" **Atualização 2026-08-21 — diagnósticos RODADOS, fila fechada**: `AG-118` (Gate Efficiency) implementado e **RESOLVIDO** — `lift` não desvia de 1,0 em 90 células, sem sinal econômico detectável, robusto ao candidato (k2/k3/k4). `AG-114` (candidato vencedor) foi **REABERTO** no mesmo dia por auditoria externa — Gate 1 aplicado com 2 critérios misturados (mediana vs. máximo-por-janela); sob o critério literal, `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções. Manager autorizou `hmm_gaussian_k4_v1` como candidato de regime **canônico de produção** (override de negócio explícito, não resolução do Gate 1 na época) — regime saiu do vetor de treino do Alpha, novo builder `src/regime/build_hmm.py`, Risk Engine wired de forma candidato-agnóstica. **Atualização 2026-08-21 — Gate 1 RE-OPERACIONALIZADO (§15.12.6)**: Manager travou o critério em pior-caso (não mediana), `hmm_gaussian_k2_v1` passa a falhar o Gate 1 nas 3 resoluções sob esse critério — veredito `hmm_gaussian_k4_v1` inicialmente lido como "confirmado e robusto" nesta atualização, **mas `§15.12.7` (1 dia depois, mesma trilha) refuta essa leitura como ALEGAÇÃO ESTATÍSTICA**: `AG-114` segue tecnicamente aberto quanto à metodologia (empate detectado pelo piso do p-valor em R1/R2). O que de fato sustenta `hmm_gaussian_k4_v1` como candidato canônico de produção hoje é **override de negócio explícito do Manager** (`§15.13`), não uma resolução estatística limpa do Gate 1 — não confundir as duas coisas. Detalhe completo: `§15.12.6`, `§15.12.7`, `§15.13` | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `AG-118`, `AG-122`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` §2.7, `§15.13` |
 | **Trilha B(2026-08-19/20) — Contrato Regime→Alpha→Decision Engine→Meta→Risk→Execução** — item novo, sem stage V41-N formal (achado de arquitetura transversal, não medição M-style) | não aplicável (auditoria de arquitetura, não trial de modelo) | 🟠 **Auditoria externa (`ADR-001`, 2026-08-20) devolveu veredito: 2 dos 4 mecanismos aprovados internamente REFUTADOS como especificados, 1 parcialmente errado, 1 ganhou os contratos que faltavam.** (B) gate por linha — refutado: `(símbolo,resolução)` não é entidade de posição na Binance (`AG-108`, N-01). (C) convenção de trials — sobre-conta por correlação e mantém resíduo de circularidade (`AG-111`). (D) gatilho de proteção — mecanismo revisado repete, deslocado, o mesmo defeito de paridade treino-live da versão já refutada (`AG-110`). O achado original citado aqui como "mais severo do ADR inteiro" (`AG-109`, saída executável sob GTX) foi **REFUTADO no mesmo dia** (`AG-115`, 2026-08-20, `§15.12.2`) — `src/exchange/adapter.py::place_order` segue `NotImplementedError` hoje, então a assimetria de execução que `AG-109` descrevia nunca chegou a ser um problema de produção real; ver `§15.12.2` pro argumento completo. (A) Decision Engine — sem controvérsia no mecanismo, mas faltavam os 4 contratos que tocam dinheiro (Meta→Decision→Risk→Execução→Ledger), agora propostos. Achados novos não cobertos pelas 4 rodadas internas: granularidade de lote vs. capital (`AG-112`, viés sistemático de seleção ~24× entre símbolos) e pré-filtro de custo grátis que pode eliminar metade do espaço de busca antes de qualquer backtest (`AG-113`). Decisão de arquitetura de dados também recebida: lake local endereçado por conteúdo (4 invariantes INV-A..D), status `Proposed` — pendente de ratificação formal como `D-###` (nota do próprio ADR). Recomendações fundamentadas recebidas pras 9 decisões antes pendentes (ver `§15.12`). 10 gaps originais (`AG-094`-`AG-100`), 4 rodadas de contestação adversarial interna (`AG-101`-`AG-105`), mandato corrigido (seleção offline, fixa por rodada, eliminação periódica) e tiering de features descontinuado (T1 fixo → todas canônicas, `~92` usáveis, ainda não implementado em código) seguem válidos como histórico — não invalidados pela auditoria externa, só o desenho de consumo em cima deles **Atualização 2026-08-21**: o wiring de consumo real do contrato Regime→Risk foi implementado — `src/risk/limits.py::control_01_regime_tradeavel` deixou de decodificar vocabulário `R1..R4`, passa a receber `regime_tradeable: bool` já resolvido pelo builder de regime (candidato-agnóstico, mesmo campo pra baseline ou HMM). **Atualização 2026-08-22**: `control_01_regime_tradeavel` foi DESLIGADO de `evaluate_all()` (commit `3c0d83d`) — `AG-118` mediu ausência de sinal econômico (`lift`≈1,0 em 90 células), o gate continua definido/testado/exportado mas não é chamado em produção. Detalhe: `§15.13` | `audit/architecture_gaps_log.yaml::AG-094` a `AG-113`, `§15.11`/`§15.12`/`§15.13` deste documento, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md`, `docs/brief_auditoria_externa_2026-08-19_*.md` |
 | **M5(V4.1) — Reconciliação de fill** | 0 | 🔵 **PRÓXIMA FRENTE (autorizado 2026-08-17)**, ainda 🟡 parcial — fill real medido em BTCUSDT (42,2% vs. 97,1% otimista); escopo completo (5 ativos) precisa de `predictions.parquet`/`orders.parquet` pros 4 alts (via Feature Engine + Label Engine + Alpha + `fill_simulator`, que hoje só rodaram pra BTC) — engenharia real de pipeline, 0 trials, não busca | `PRD_V4_1.md` §3.2 M5, `AG-077` |
-| **M6(V4.1) — Fator comum** | 0 | ✅ fechado (2026-08-14) — H0 rejeitada nos 2 lados (I²=96-98%), componente idiossincrático real confirmado por ativo | `PRD_V4_1.md` §3.2 M6 |
+| **M6(V4.1) — Fator comum** | 0 | ⚠️ **RE-MEDIDO 2026-08-25 (`AG-238`) — o `I²=96-98%` era da grade ERRADA.** Fechamento original (2026-08-14) mediu a grade de relógio 15m, substituída como canônica desde `AG-042` (2026-08-16). Na grade de produção: **I²=61-83%**, caindo monotonicamente com a duração da barra. H0 **segue rejeitada** em R1/R2/R3 (p<0,05), então a conclusão qualitativa sobrevive — mas a força não: em R1 SHORT o p vai de 7e-30 para **3,8e-02**. **Não cite `96-98%` como suporte de escopo multi-ativo.** E a leitura POR LADO **inverte** (ver `§11.6` addendum abaixo) | `PRD_V4_1.md` §3.2 M6 · `AG-238` |
 | V41-5 — PRD V4.2 escrito com os resultados | 0 | ⬜ não iniciado — depende de M4 fechar primeiro | `PRD_V4_1.md` Parte VIII |
 | V41-6 — Barreiras rederivadas | ≤4 | ⬜ não iniciado — depende de V41-5 | `PRD_V4_1.md` §4.1 |
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
@@ -1303,6 +1303,64 @@ ML LAYER
                                                                        ou generalizar pendente do Manager. Ver
                                                                        `docs/t2_t1_ablation_veredito_duas_
                                                                        analises_2026-08-24.md`
+                                                                       [ATUALIZADO 2026-08-25, Changelog v3.54]
+                                                                       Campanha completa: Fase 2 (extensão de
+                                                                       fronteira, achou ponto perto do piso de
+                                                                       ruído) + confirmação (repetição de seed +
+                                                                       gate real -- REFUTOU Fase 2, era sorte de
+                                                                       1 seed) + `ADR-002` (redesenho robusto a
+                                                                       viés de seleção, 5 hiperparâmetros nunca
+                                                                       testados cobertos, mediana de top-5 em vez
+                                                                       de argmax) -- veredito final confirmado:
+                                                                       T2 não sobrevive em ETHUSDT/R1, mesmo com
+                                                                       metodologia completa. **Manager RATIFICOU
+                                                                       promoção mandatória T2->T1 mesmo assim
+                                                                       (`AG-207`), decisão de NEGÓCIO explícita
+                                                                       reconhecendo violação de R4 (§0.2, "teto
+                                                                       de features = medido, nunca estipulado")
+                                                                       -- primeiro override deste tipo no
+                                                                       projeto.** `ADR-003` calibrou
+                                                                       hiperparâmetro pra essa promoção nas 10
+                                                                       piores combinações por `ret_net` (não as
+                                                                       15 inteiras). Escopo real corrigido em
+                                                                       tempo real 2x: (1) "T2 substitui T1"
+                                                                       (convenção de pesquisa) -> "T2 soma a T1"
+                                                                       (69 features, mandato real do Manager,
+                                                                       `AG-234`); (2) ortogonalidade T1+T2
+                                                                       combinada nunca medida -- medida depois,
+                                                                       média 41,4/69 sobrevivem, achado novo:
+                                                                       `A13_dist_ema48_atr`×`B01_rsi_14` (2 dos 7
+                                                                       T1 originais) correlacionados 0,91-0,995
+                                                                       nos 10 combos, sem exceção -- T1 nunca
+                                                                       tinha sido checado por redundância
+                                                                       interna. 10/10 combos com artefato real
+                                                                       de produção gravado (69 brutos, filtro
+                                                                       ainda não aplicado). 2 achados críticos
+                                                                       de sessão paralela pesam sobre TUDO isso:
+                                                                       `AG-220` (gate de permanência mede ruído
+                                                                       de variância de path do CPCV, não sinal,
+                                                                       medido em 3 experimentos pareados reais)
+                                                                       e `AG-221` (metade do edge bruto negativo
+                                                                       medido na campanha inteira é artefato de
+                                                                       latência sintética da granularidade
+                                                                       mark_1m, não mercado -- correção proposta
+                                                                       via `agg_trades`, implementada, não
+                                                                       aplicada como default). `T1_FEATURE_IDS`
+                                                                       nos módulos de produção real (`run_
+                                                                       layer1_sprint`) já aceita `feature_ids`/
+                                                                       `hyper` explícitos (`AG-227`) -- D-11 do
+                                                                       design doc do Alpha ("hiperparâmetro
+                                                                       único v1, ASSUMED até sweep") fica
+                                                                       parcialmente fechado só pras 10
+                                                                       combinações calibradas. Pendente do
+                                                                       Manager: aplicar conjunto filtrado
+                                                                       (39-43) em vez do bruto (69); decidir
+                                                                       `agg_trades`; investigação de gate em
+                                                                       BPS ainda não iniciada. Ver `docs/
+                                                                       ADR-003_hiperparametro_feature_set_
+                                                                       completo_2026-08-25.md`,
+                                                                       `audit/architecture_gaps_log.yaml::
+                                                                       AG-207/AG-220/AG-221/AG-227/AG-234`
   09b_CALIBRACAO       (inline em alpha.py — não separável hoje)       sem gate de amostra pequena (n_cal_eff)
   10_VALIDACAO         src/validation/{dsr,leakage}.py                 existe (CPCV wired em produção real via
                                                                        pipeline.py; DSR/leakage existem mas
@@ -1649,6 +1707,28 @@ que M4 já usa (Rand ajustado). M6 rodou e fechou no mesmo dia em que
 este parágrafo foi escrito (2026-08-14, antes do resultado chegar) — H0
 rejeitada nos 2 lados, I²=96-98%; ver `§11.6` linha `M6(V4.1)` pro
 resultado real.
+
+> **CORREÇÃO 2026-08-25 (`AG-238`) — o `I²=96-98%` acima está medido na
+> grade ERRADA e não deve ser citado.** O M6 lia `data/labels/{symbol}/15m/`
+> — grade de relógio, substituída como canônica por dollar bar (R1/R2/R3)
+> desde `AG-042` (2026-08-16). Re-executado nas três resoluções de produção:
+>
+> | grade | I² LONG | I² SHORT | p SHORT | edge pooled LONG / SHORT (ATR) |
+> |---|---|---|---|---|
+> | 15m (legado) | 93,92% | 97,20% | 7,2e-30 | −0,032765 / −0,000906 |
+> | **R1** | 83,28% | **60,56%** | **3,8e-02** | −0,009082 / −0,028398 |
+> | **R2** | 79,81% | 81,03% | 3,1e-04 | −0,007407 / −0,019857 |
+> | **R3** | 65,90% | 66,77% | 1,7e-02 | −0,007512 / −0,011926 |
+>
+> Três leituras: (1) H0 **segue rejeitada** em todas as células (p<0,05) —
+> a conclusão qualitativa "os ativos não são o mesmo ativo" sobrevive, mas
+> citar `96-98%` virou **overclaim**; (2) `I²` cai monotonicamente com a
+> duração da barra, então a resposta **depende da resolução** e não deve ser
+> poolada entre grades (`AG-043`); (3) **a leitura POR LADO inverte** — no
+> 15m o SHORT era o lado de edge pooled ~nulo e o LONG o pior; na grade de
+> produção é o **oposto nas três resoluções**. Qualquer decisão apoiada em
+> "SHORT é o lado neutro/barato" está invertida. Evidência:
+> `audit/evidence_ledger.yaml::m6_i2_r{1,2,3}_{long,short}`.
 
 **M5 (fill completo) — pausado inicialmente (2026-08-14) pra decisão
 explícita do Manager sobre contagem de trial.** Reli a definição exata
@@ -3288,6 +3368,28 @@ vazadora até `AG-138` ser fechado em 2026-08-23 — ver `§15.25`.
 Detalhe completo (todos os números, todas as retratações honestas
 registradas): `docs/plano_acao_ag124_pos_auditoria_2026-08-21.md`;
 ledger completo: `audit/architecture_gaps_log.yaml::AG-124` (13 addenda).
+
+> **STATUS SUPERADO 2026-08-25 (`AG-232`/`AG-235`) — o S1 deixou de ser
+> lacuna aberta, e a resposta é "a geometria não é a alavanca".** Duas
+> coisas aconteceram desde que o parágrafo abaixo foi escrito. (1) Descobriu-se
+> que o S1 lia a grade de RELÓGIO 15m (`AG-232`): a troca de `tp_atr_mult`
+> para 1,5 em 2026-08-24 foi decidida sobre uma grade que não é produção.
+> (2) Corrigido e re-executado sobre R1 (`AG-235`), com armadilha de
+> comparação detectada antes de concluir — as células não têm o mesmo número
+> de estratos, porque o filtro de R2 por símbolo torna `sl=0,75` viável só em
+> SOLUSDT. Comparando **apenas as 5 células com cobertura completa**
+> (`n_estratos=10`) e contabilizando o CUSTO junto do edge, o gap edge-custo
+> varia de **5,95 a 6,19 bps** — spread de 0,24 bps sobre um gap de ~6.
+> **Trocar a geometria renderia +0,02 bps (0,3%).** O mecanismo é estrutural:
+> R:R maior melhora o edge bruto mas piora o custo (P(TP) cai, mais saídas
+> viram taker), e os dois efeitos se cancelam — contrapartida empírica do
+> resultado teórico de que, sob martingale, o edge bruto é ZERO para qualquer
+> geometria simétrica. **Recomendação: NÃO trocar `tp_atr_mult`/`sl_atr_mult`.**
+> Ressalva honesta: a grade do S1 não cobre células mais largas (`tp=sl=3,0`);
+> estender é barato agora que o módulo roda na grade certa, mas o cancelamento
+> edge↔custo é estrutural, não específico das células testadas. Correlato:
+> `AG-237` — o `sweep_range` das duas constantes tinha sido REMOVIDO junto com
+> a troca de valor, removendo o guardrail da §16.10 regra 4; restaurado.
 
 **S1 — maior lacuna aberta do projeto, independente de tudo acima**:
 `tp_atr_mult`/`sl_atr_mult` (constantes classe A, `provenance: ASSUMED`,
@@ -5330,6 +5432,46 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ## Changelog
 
+- **v3.54 (2026-08-25)** — Ablação T2→T1: veredito final + promoção
+  mandatória. Fase 2 (extensão de fronteira) + confirmação (repetição de
+  seed + gate real, REFUTOU Fase 2) + `ADR-002` (redesenho robusto a
+  viés de seleção — mediana de top-5, não argmax; cobre os 5
+  hiperparâmetros LightGBM nunca testados) — veredito: T2 não sobrevive
+  em ETHUSDT/R1, mesmo com metodologia completa. **Manager RATIFICOU
+  promoção mandatória T2→T1 mesmo assim (`AG-207`)** — decisão de
+  NEGÓCIO explícita, reconhecendo por escrito a violação de R4 (§0.2,
+  "teto de features = medido, nunca estipulado"), primeiro override
+  deste tipo no projeto (`n_lifetime.yaml` id=28, mesmo padrão de
+  `budget_override_manager` do id=17, mas aceitando prosseguir CONTRA a
+  medição, não a favor dela). `ADR-003` calibrou hiperparâmetro pra essa
+  promoção nas 10 piores combinações por `ret_net` (não as 15 inteiras).
+  Escopo corrigido em tempo real 2×: (1) "T2 substitui T1" (convenção
+  herdada da pesquisa) → "T2 soma a T1" (69 features, mandato real,
+  `AG-234`); (2) ortogonalidade T1+T2 combinada nunca tinha sido medida
+  — medida depois nos 10 combos: média 41,4/69 sobrevivem; achado novo
+  `A13_dist_ema48_atr`×`B01_rsi_14` (2 dos 7 T1 originais) correlacionados
+  0,91-0,995 nos 10 combos sem exceção — T1 nunca tinha passado por
+  filtro formal de redundância interna. `run_layer1_sprint` ganhou
+  `feature_ids`/`hyper` explícitos (`AG-227`, 2 gaps reais de engenharia
+  corrigidos no processo: `config_hash` não capturava a config do Alpha,
+  `baselines.py::run_b4_feature_shuffle` quebrava com shape mismatch) —
+  10/10 combos com artefato real de produção gravado (69 brutos, filtro
+  de ortogonalidade medido mas ainda não aplicado). **2 achados críticos
+  de sessão paralela pesam sobre toda a campanha**: `AG-220` (gate de
+  permanência mede ruído de variância de path do CPCV, não sinal —
+  medido em 3 experimentos pareados reais, veredito oscilou
+  FALSE→TRUE→FALSE só por calibração de threshold) e `AG-221` (metade do
+  edge bruto negativo medido em TODA a campanha — M6, T2→T1, ADR-002,
+  ADR-003 — é artefato de latência sintética da granularidade `mark_1m`,
+  não mercado; correção via `agg_trades` implementada, não aplicada como
+  default). Pendente do Manager: aplicar conjunto filtrado (39-43) em
+  vez do bruto (69); decidir `agg_trades`; investigação de gate em BPS
+  ainda não concluída. Detalhe: `docs/ADR-002_busca_hiperparametro_
+  robusta_a_ruido_2026-08-24.md`, `docs/ADR-003_hiperparametro_feature_
+  set_completo_2026-08-25.md`, `audit/architecture_gaps_log.yaml::
+  AG-207/AG-217/AG-220/AG-221/AG-227/AG-234`, `audit/evidence_ledger.
+  yaml::adr003-k62-10-piores-combinacoes-veredito-2026-08-25`/
+  `t1-t2-ortogonalidade-combinada-2026-08-25`, `docs/SPRINT_LOG.md`.
 - **v3.53 (2026-08-24)** — Label Engine: fill gap-aware no SL (D4,
   `AG-205`), pedido explícito do usuário, comparação de engenharia com 2
   implementações de Triple Barrier Method de outros projetos de
