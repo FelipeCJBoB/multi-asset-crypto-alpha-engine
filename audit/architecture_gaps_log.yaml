@@ -14399,3 +14399,1778 @@ entries:
       historico, mais simbolos, ou apos algum evento de mercado extremo
       real) encontrar atr_at_t0 proximo de zero de fato.
     status: "fechado 2026-08-24 -- medido, achado nao confirmado no dado real. Nao implementado por decisao (Regra Zero)."
+
+  - id: AG-207
+    date: "2026-08-25"
+    file: "config/constants.yaml (T1_FEATURE_IDS/SUPPORT_FEATURE_IDS, src/features/build.py), PLANO_MESTRE_PRINCE2.md §0.2 R4"
+    related_file: "audit/evidence_ledger.yaml::adr002-t2-t1-stage2-3-veredito-robusto-2026-08-24, docs/ADR-002_busca_hiperparametro_robusta_a_ruido_2026-08-24.md, audit/n_lifetime.yaml ids 20-27"
+    found_by: "Claude, ao validar pedido explicito do Manager de promover T2->T1 pra full run canonico sem mais testes"
+    gap: >
+      Manager instruiu (2026-08-25, via usuario): features T2 devem virar
+      T1 OBRIGATORIAMENTE, reconhecendo explicitamente que "T2 nao se
+      mostrou melhor ou igual a T1 aqui" (unica combinacao testada,
+      ETHUSDT/R1) e que faltam 14 das 15 combinacoes simbolo x resolucao
+      pra validar isso -- mesmo assim, vai virar "full run canonico de
+      producao sem mais testes". Isso e, por definicao, um teto de
+      features ESTIPULADO, nao MEDIDO -- violacao direta de R4
+      (`PLANO_MESTRE_PRINCE2.md` §0.2: "teto de features = medido, nunca
+      estipulado"), uma das 5 restricoes invioaveis do projeto ("Codigo
+      que as viole e rejeitado mesmo passando nos testes", CLAUDE.md).
+
+      Evidencia medida disponivel (a UNICA que existe sobre esta decisao)
+      aponta na direcao OPOSTA: Fase 0->1->2->confirmacao->ADR-002
+      (Estagios 1b/2/3, `n_lifetime` ids 20-27, 192 trials novos so nesta
+      campanha) mostrou T2 (k ate 39, nunca os 62 completos) FALHANDO o
+      gate de permanencia real em TODAS as configuracoes testadas -- pior
+      caso 0/5, melhor caso (vencedor por mediana de 5 seeds, apos
+      correcao completa de vies de selecao e cobertura dos 9
+      hiperparametros do LightGBM) ainda mediana 1,0/5 caminhos, contra
+      limiar de producao >=4/5. Nao ha NENHUM ponto medido nesta campanha
+      inteira onde T2 bateu T1.
+
+      Ambiguidade adicional nao resolvida: "T2 se tornem T1" pode
+      significar (a) os 62 `SUPPORT_FEATURE_IDS` completos -- config NUNCA
+      testada nesta campanha (k maximo testado = 39); ou (b) o k=32
+      especifico que foi testado e FALHOU. Nenhuma das duas leituras tem
+      base medida pra promocao.
+    severity: "critico -- decisao afeta o vetor de features de um motor com capital REAL (R$1.000, Binance USDS-M), viola restricao inviolavel R4 nomeada, contradiz 100% da evidencia medida disponivel"
+    consequence: >
+      Se implementado sem reconciliar com R4/evidencia: motor de producao
+      passaria a treinar sob um feature set que a UNICA medicao existente
+      classifica como pior que a alternativa atual (T1, 7 features) -- risco
+      direto de capital real sob configuracao contra-indicada pelo proprio
+      processo de validacao que o projeto construiu (Fase 0-2 + ADR-002)
+      especificamente pra evitar decisoes desse tipo. Precedente tambem
+      corrosivo pra disciplina de governanca do resto do projeto -- se um
+      teto de features estipulado por decreto sobrevive aqui, R4 deixa de
+      ser inviolavel na pratica, so no papel.
+    resolved_by_commit: null
+    resolution: >
+      NAO IMPLEMENTADO -- Claude reportou a objecao ao Manager em vez de
+      executar (`PLANO_MESTRE_PRINCE2.md`/CLAUDE.md: "Discorde do Manager
+      quando o dado discordar -- apresente a medicao, nao acomode a
+      instrucao"). Full run explicitamente NAO executado (instrucao do
+      proprio Manager nesta mesma mensagem: "Nao execute full run
+      ainda"). Caminhos propostos, nenhum executado unilateralmente: (1)
+      Manager reverte a decisao a luz da evidencia; (2) Manager documenta
+      um override de negocio EXPLICITO e por escrito (mesmo padrao ja
+      usado em `n_lifetime.yaml` id=17/`AG-098` -- motivo declarado, nao
+      silencioso), aceitando a violacao de R4 conscientemente; (3)
+      resolver a ambiguidade "62 vs k testado" e rodar uma amostra pequena
+      (2-3 combinacoes adicionais, nao as 14 completas) do MESMO protocolo
+      ADR-002 antes de generalizar, custo ~38 trials cada.
+    status: "RATIFICADO 2026-08-25 -- Manager escolheu explicitamente o caminho (2): override de negocio por escrito, aceitando conscientemente a violacao de R4. Texto verbatim do Manager (via usuario): 'Autorizado e ratificado pelo Manager' + 'O objetivo deixou de ser provar q T2 tem valor para ser aplicado a producao, vamos aplicar obrigatoriamente'. Registrado como DECISAO DE NEGOCIO, nao como conclusao suportada pela medicao -- a medicao continua dizendo o oposto (ver `gap`/`consequence` acima), isso nao muda com a ratificacao. Escopo exato de features (62 SUPPORT_FEATURE_IDS completos vs k=32 testado) e o desenho da bancada de validacao (\"10 piores combinacoes\") ficaram AMBIGUOS na resposta do Manager -- Claude pediu esclarecimento antes de desenhar o proximo experimento (ver `addendum_escopo_10_piores_2026-08-25`), nao presumiu leitura unilateralmente dado o custo real de trials envolvido."
+    addendum_escopo_10_piores_2026-08-25: >
+      RESOLVIDO -- Manager confirmou via AskUserQuestion: "10 piores
+      combinacoes" = as 10 piores SIMBOLO x RESOLUCAO (leitura (a) do
+      addendum original), ranqueadas por ret_net medio mais negativo
+      (nao pooled_sharpe nem n_better do gate). Feature scope pra "T2
+      vira T1": TODOS os 62 SUPPORT_FEATURE_IDS -- e, achado colateral
+      importante desta rodada de esclarecimento, a convencao real do
+      codigo (`build_design_matrix`/`run_all_folds::feature_ids`) e
+      SUBSTITUIR os 7 T1_FEATURE_IDS, nunca somar -- "62 completos" =
+      62, nao 69 como Claude presumiu antes de checar o codigo (corrigido
+      no artefato "Alpha -- Base de Pesquisa" e no ADR-003). Lista final
+      dos 10 combos (ret_net medio, `experiments/alpha_deep_analysis_
+      2026-08-24.json`): BTCUSDT/R3(-0,0032), BNBUSDT/R3(-0,0020),
+      SOLUSDT/R1(-0,0019), BTCUSDT/R2(-0,0019), BNBUSDT/R2(-0,0016),
+      BNBUSDT/R1(-0,0015), XRPUSDT/R1(-0,0013), ETHUSDT/R3(-0,0013),
+      BTCUSDT/R1(-0,0012), ETHUSDT/R2(-0,0012). Desenho completo:
+      `docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md`.
+
+  - id: AG-208
+    date: "2026-08-25"
+    file: "src/models/alpha.py::LGBMHyperparams, config/constants.yaml"
+    related_file: "src/models/pipeline.py"
+    found_by: "Claude -- persona lgbm-crypto-quant aplicada a src/models/alpha.py e arvore completa (pedido do usuario), verificada contra o codigo real numa segunda passada de auto-validacao"
+    gap: >
+      min_sum_hessian_in_leaf e max_bin nunca existiram no repo -- nem em
+      constants.yaml, nem como argumento de LGBMClassifier -- entao
+      rodavam no default de biblioteca sem nenhuma entrada de
+      proveniencia, violando a Regra Zero (16.10). min_sum_hessian_in_leaf
+      e o que importa: sob objective="binary" a hessiana por amostra e
+      p(1-p)*w <= 0,25*w, e sample_weight aqui e uniqueness*|ret_net|
+      normalizado (cauda longa). O default 1e-3 nao restringe nada nesse
+      regime, e min_child_samples=20 limita CONTAGEM por folha, nao MASSA
+      -- uma folha pode ter 20 amostras cuja hessiana somada e fracao de
+      uma observacao tipica.
+    severity: "medio -- nao e vazamento; e regularizacao efetivamente desligada no eixo que importa para sinal fraco, mais uma lacuna de proveniencia classe B"
+    layer: "models (Alpha, Camada 1)"
+    consequence: >
+      Memorizacao de ruido em folhas de massa desprezivel, exatamente no
+      cenario de sinal fraco que o projeto declara ter (17.2, IC ~0,04).
+      Agravado pelo ADR-003 (2026-08-25): com o vetor indo de 7 para 62
+      features, o espaco de splits cresce ~9x e a restricao ausente pesa
+      muito mais do que pesava com 7.
+    status: "FECHADO 2026-08-25 -- as duas constantes registradas em config/constants.yaml (classe B, ASSUMED, sweep_required, sweep_range declarado) e wireadas em LGBMHyperparams/LGBMClassifier. VALOR = default da propria biblioteca (LightGBM 4.7.0, uv.lock), portanto BIT-EXATO com todo artefato ja treinado: esta correcao fecha PROVENIENCIA, nao valor. Mudar o valor exige o sweep, nao autorizado aqui. Achado colateral REGISTRADO E DESCARTADO no mesmo item: bin_construct_sample_cnt (default 200.000) foi avaliado e e INERTE neste dataset -- o treino por fold/lado fica abaixo desse default (BTCUSDT/R1 tem 223.172 barras totais; treino de um fold e ~4/6 disso menos purge/embargo/NOFILL) e R1 e a grade com MAIS barras entre R1/R2/R3. Nao virou constante para nao criar hiperparametro fantasma; condicao de ressurreicao anotada em constants.yaml::alpha_lgbm_max_bin."
+
+  - id: AG-209
+    date: "2026-08-25"
+    file: "src/models/alpha.py::_stratified_calib_split"
+    related_file: "src/validation/cpcv.py::generate_splits"
+    found_by: "Claude -- persona lgbm-crypto-quant"
+    gap: >
+      O sub-split interno do treino que alimenta o calibrador isotonico
+      (5.9 passo 9, B08) usa train_test_split ALEATORIO. Com rotulo de
+      triple barrier, dois labels vizinhos no tempo compartilham [t0, t1]
+      -- um split aleatorio poe quase-copias dos dois lados da fronteira,
+      entao o calibrador e ajustado sobre observacoes que o fit ja viu em
+      substancia. B08 e cumprido na LETRA (o sub-split existe) e violado
+      no ESPIRITO (o sub-split nao isola informacao). E literalmente o
+      fenomeno que B09 existe pra impedir, aplicado com rigor no CPCV
+      externo e ausente no sub-split interno -- mesmo pipeline, dois
+      niveis de rigor diferentes.
+    severity: "alto -- contamina a calibracao, e tau (o quantil da distribuicao calibrada) herda o otimismo inteiro"
+    layer: "models (Alpha, calibracao isotonica)"
+    consequence: >
+      Calibrador otimista => distribuicao de p no treino mais dispersa/
+      deslocada que no teste => tau derivado dela nao entrega a taxa de
+      sinal orcada fora da amostra. Interage diretamente com AG-210.
+    status: "MECANISMO IMPLEMENTADO 2026-08-25, default NAO flipado -- alpha.py ganhou _temporal_purged_calib_split (bloco temporal contiguo no fim do treino + purge por t1, mesma condicao de overlap de cpcv.generate_splits) e o parametro calib_split_mode em fit_side_model/run_fold/run_all_folds/run_layer1_sprint. Default CALIB_SPLIT_LEGACY_RANDOM preserva bit-exato todo artefato existente. Flipar o default e decisao do Manager (reprocessa as 15 combinacoes), nao tomada unilateralmente aqui."
+
+  - id: AG-210
+    date: "2026-08-25"
+    file: "src/models/alpha.py::fit_side_model, src/models/alpha.py::run_fold"
+    related_file: "config/constants.yaml::fee_budget_is_per_side, src/analysis/tau_diagnostics.py, src/analysis/faixa1_6_reconciliation.py"
+    found_by: "Claude -- persona lgbm-crypto-quant. NOTA DE METODO: a primeira versao deste achado foi reportada com a DIRECAO INVERTIDA (afirmei taxa de sinal MENOR que a orcada, sem fundamentar); corrigido na auto-validacao pedida pelo usuario, que encontrou fee_budget_is_per_side no constants.yaml"
+    gap: >
+      config/constants.yaml::fee_budget_is_per_side tem value: false,
+      provenance: DERIVED, e a fonte declara textualmente que o orcamento
+      (0.2 R3) produz "661/ano, 1,89% das barras" como contagem TOTAL, e
+      que target_signal_rate = 0,0189 foi derivado desse total
+      (661/35.064), sem termo de lado. Mas fit_side_model aplica o
+      quantil (1 - target_signal_rate) a CADA LADO independentemente:
+      tau_long produz 1,89% no lado long E tau_short produz 1,89% no lado
+      short, sobre populacoes diferentes. A taxa de sinal TOTAL sob a
+      regra de decisao completa nao e 1,89%.
+      Segundo componente, independente: o quantil e tirado de
+      calibrated_train_all, que (a) inclui o conjunto de FIT, onde o
+      modelo e otimista, e (b) vem de train_side_df, ja filtrado por
+      side_subset (NOFILL FORA) -- enquanto a inferencia roda sobre
+      _unique_test_bars, que NAO filtra NOFILL (decisao correta e
+      documentada, 3.7). P(NOFILL) correlaciona com volatilidade/spread,
+      e E27f_cost_atr_ratio/C06_vol_ratio_12_96 estao no vetor -- as duas
+      populacoes nao tem a mesma distribuicao de p.
+    severity: "alto -- R3 (restricao inviolavel, orcamento de fees) deixa de ser satisfeita por desenho e passa a ser satisfeita por acidente, com folga de sinal desconhecido"
+    layer: "models (Alpha, regra de decisao 5.6)"
+    consequence: >
+      O numero real de trades/mes nao e o orcado, e a direcao do desvio
+      nao foi medida. Este repo JA corrigiu este mesmo erro uma vez:
+      tau_diagnostics.py introduziu um fator x2.0 ("2 lados"), propagado
+      por citacao para faixa1_5_prerequisites::fee_budget_sweep; os dois
+      foram corrigidos e a constante fee_budget_is_per_side foi criada
+      exatamente para registrar a semantica. A correcao, porem, foi feita
+      nos DIAGNOSTICOS -- grep por fee_budget_is_per_side em src/ so
+      encontra docstrings, comentarios e testes: NENHUM modulo de
+      producao le essa constante, e o motor que de fato escolhe o
+      threshold nunca foi tocado.
+    status: "MECANISMO IMPLEMENTADO 2026-08-25, default NAO flipado -- alpha.py ganhou decide_side (regra de decisao extraida em funcao pura, para que solver e inferencia usem literalmente a MESMA linha de codigo, mesmo padrao estrutural de cpcv._embargo_ms/_g_end_effective), resolve_joint_tau (bissecao sobre um quantil COMUM aos dois lados ate a taxa TOTAL bater o orcado -- regra de fechamento do grau de liberdade extra declarada a priori, B20 preservado) e _resolve_tau_on_common_bars (resolve tau sobre _unique_test_bars(train_bars), mesma populacao que a inferencia ve, e descarta as barras vistas no fit de qualquer um dos lados). Parametro tau_policy, default TAU_POLICY_LEGACY_PER_SIDE bit-exato. run_fold agora loga tau aplicado + taxa in-sample + taxa OOS por fold. VERIFICAR PRIMEIRO, antes de flipar: src/analysis/tau_diagnostics.py::tau_realization_diagnostic JA mede a realizacao de tau OOS (pre e pos-fill) e ja rodou -- ler o output existente antes de reprocessar qualquer coisa."
+
+  - id: AG-211
+    date: "2026-08-25"
+    file: "src/models/pipeline.py::run_layer1_sprint (relatorio), src/models/alpha.py::SideModelResult"
+    related_file: "src/labels/experiment_log.py::summarize_labels, src/labels/weights.py"
+    found_by: "Claude -- persona lgbm-crypto-quant. NOTA DE METODO: a primeira versao afirmou que a soma de uniqueness 'nunca e agregada no repo', o que e FALSO; a auto-validacao encontrou experiment_log.py::summarize_labels e estreitou o achado para o que de fato se sustenta"
+    gap: >
+      O ESS (o N_eff medido que B24/0.2 R4 exigem) E calculado no repo --
+      experiment_log.py::summarize_labels, campo sum_uniqueness, marcado
+      "N_eff medido (B24)" -- e gravado em
+      data/label_engine_runs/label_engine_runs.parquet. Mas um grep por
+      sum_uniqueness devolve 3 ocorrencias, TODAS dentro do modulo que o
+      escreve: nenhum consumidor. Em particular ele nunca chegava ao
+      alpha_layer1_report.json, que e onde permanence_pass e decidido --
+      a decisao de permanencia da Camada 1 era tomada sem que nada no
+      relatorio soubesse dizer quantas observacoes INDEPENDENTES a
+      sustentam. E o que existe e global por labels.parquet, nunca por
+      fold x lado (o n que de fato treinou).
+    severity: "alto -- sem ESS no relatorio, nenhum Sharpe reportado tem como ser lido como distinguivel de zero"
+    layer: "models (relatorio do Alpha) / labels (origem do numero)"
+    consequence: >
+      permanence_pass, gates de HHI e comparacao Camada1/Camada0 eram
+      decididos sobre contagens brutas (n_rows_modeling_frame,
+      n_train_fit, n_train_calib) num dataset de rotulos sobrepostos por
+      construcao.
+    status: "FECHADO 2026-08-25 -- SideModelResult.sum_uniqueness_train (soma de uniqueness do train_side_df daquele fold/lado) e bloco sample_size_efetivo no relatorio, com a razao ESS/linhas por fold (quanto do n aparente e informacao nova). Registra explicitamente no proprio relatorio que o ESS TRANSVERSAL continua nao medido -- ver AG-216."
+
+  - id: AG-212
+    date: "2026-08-25"
+    file: "src/models/alpha.py::fit_side_model"
+    related_file: "src/labels/weights.py::apply_weights"
+    found_by: "Claude -- persona lgbm-crypto-quant"
+    gap: >
+      scale_pos_weight e passado ao LightGBM em CONTAGEM (n_neg/n_pos),
+      mas o gradiente ja e ponderado por sample_weight (MASSA:
+      uniqueness*|ret_net| normalizado). O rebalanceamento EFETIVO e
+      scale_pos_weight vezes (soma de w_pos / soma de w_neg), que nao e 1
+      e nunca foi medido. Agravante especifico deste desenho: |ret_net| e
+      pequeno justamente nos desfechos TIME, que estao inteiros em y=0 --
+      o peso sub-pondera sistematicamente as observacoes que distinguem
+      "nao-TP fraco" de "nao-TP forte", entao o alvo efetivo esta mais
+      perto de "TP vs SL" do que a docstring do modulo declara.
+    severity: "medio -- a isotonica corrige o NIVEL da probabilidade, mas nao a forma aprendida durante o crescimento da arvore (ganho de split, min_child_samples, min_sum_hessian_in_leaf), que ve a distribuicao ponderada"
+    layer: "models (Alpha, Camada 1)"
+    consequence: "desalinhamento nao medido entre a classe que o modelo tenta balancear e a massa que ele de fato otimiza"
+    status: "MEDIDO 2026-08-25, default NAO flipado -- os dois balanceamentos calculados sempre e reportados lado a lado (SideModelResult.scale_pos_weight_count/_weight e bloco class_balance no relatorio, com a razao entre eles: 1,0 = alinhados). Parametro class_balance_basis, default CLASS_BALANCE_COUNT bit-exato. Trocar a base e decisao do Manager depois de ler a razao medida."
+
+  - id: AG-213
+    date: "2026-08-25"
+    file: "src/models/monotonic.py::screen_monotone_constraints, src/models/alpha.py::fit_side_model"
+    related_file: "src/labels/triple_barrier.py::_LABEL_BY_BARRIER"
+    found_by: "Claude -- persona lgbm-crypto-quant"
+    gap: >
+      Dois alvos diferentes no mesmo pipeline, sem que a concordancia
+      entre eles tenha sido medida. screen_monotone_constraints mede IC
+      de Spearman contra ret_net (continuo, liquido de custo -- target_col
+      default). fit_side_model treina y = 1 sse barrier_hit == "TP"
+      (binario; _LABEL_BY_BARRIER = {"TP": 1, "TIME": 0, "SL": -1} e
+      y_all = (label == 1), entao SL e TIME colapsam os dois em y=0). A
+      restricao +1/-1 derivada da relacao feature->ret_net e IMPOSTA
+      sobre feature->P(TP).
+    severity: "alto -- monotone_constraints e restricao DURA: se o sinal estiver errado ela nao degrada o modelo suavemente, ela proibe a forma correta"
+    layer: "models (Alpha, Camada 1 -- restricoes monotonicas 5.3)"
+    consequence: >
+      Uma feature que melhora ret_net sobretudo tornando os desfechos
+      TIME menos ruins, sem mover P(TP), recebe restricao +1 sobre P(TP)
+      -- forma que pode nao existir ou existir invertida. E o criterio de
+      permanencia do 5.11 (Camada 1 vs Camada 0) passaria a medir o custo
+      de uma restricao errada em vez do beneficio de uma certa:
+      permanence_pass deixaria de significar o que declara significar.
+      Peso extra dado o M6 (experiments/m6_common_factor_hypothesis_report.json):
+      edge bruto INCONDICIONAL medido negativo nos dois lados (long
+      -0,0465, short -0,0048 unidades de ATR, antes de custo), entao 100%
+      do resultado tem que vir de seletividade -- e seletividade e
+      produzida exatamente por tau (AG-210) e pela definicao de alvo
+      (este item).
+    status: "INSTRUMENTO DE MEDICAO ENTREGUE 2026-08-25, resultado ainda NAO medido -- monotonic.py ganhou screen_target_agreement (roda o screening com os DOIS alvos e reporta constraint/IC lado a lado + flag agree, com forced_economic marcado para nao contar restricao contabil como evidencia de concordancia). Wireado no relatorio (target_agreement_fold0, os dois lados). Diagnostico PURO: nao altera nenhuma restricao, nao realimenta treino. Qual alvo e o certo e decisao de desenho do Manager -- este item so mede se a pergunta importa neste dataset."
+
+  - id: AG-214
+    date: "2026-08-25"
+    file: "src/models/backtest_lite.py::permanence_count"
+    related_file: "src/models/pipeline.py::run_layer1_sprint, src/validation/cpcv.py"
+    found_by: "Claude -- persona lgbm-crypto-quant"
+    gap: >
+      Duas coisas no mesmo criterio de permanencia (5.11 adaptado):
+      (1) a comparacao e s1 >= s0, entao EMPATE EXATO conta como "Camada
+      1 melhor" -- contraria diretamente a diretriz do CLAUDE.md de que
+      toda regra travada a priori precisa de definicao operacional de
+      cada termo (em particular de "empate"), diretriz que existe porque
+      AG-114/AG-118/AG-122 ja queimaram este projeto uma vez com um gate
+      cujo termo nao estava definido. O vies nao e neutro: aponta sempre
+      para manter a Camada 1, o desfecho que custa mais N_lifetime.
+      (2) o relatorio nao trazia NENHUMA medida de dispersao -- so
+      camada1_sharpe_mean/camada0_sharpe_mean --, entao "4 de 5 caminhos"
+      nao tinha escala de leitura.
+    severity: "medio-alto -- decide permanencia de camada com um teste enviesado e sem escala"
+    layer: "models (criterio de permanencia 5.11)"
+    consequence: >
+      Ressalva estrutural que precisa acompanhar o numero: os caminhos do
+      CPCV NAO sao amostras independentes -- pela construcao documentada
+      em src/validation/cpcv.py (item 3 do modulo), cada caminho cobre os
+      n_groups grupos EXATAMENTE UMA VEZ, ou seja os 5 reconstroem o
+      MESMO dataset com modelos treinados em particoes diferentes. Logo
+      std_between_paths mede sensibilidade a PARTICAO, nao erro amostral
+      do dado -- e o numero certo para "isso e estavel?" e o errado para
+      "isso e distinguivel de zero?" (para a segunda: DSR sobre
+      N_lifetime, AG-215, e ESS, AG-211).
+    status: "FECHADO PARCIALMENTE 2026-08-25 -- path_dispersion_stats (media, desvio entre caminhos, min, max) implementado e wireado no relatorio para as duas camadas, com delta_sharpe_mean explicito e a ressalva de leitura embutida no proprio dataclass. permanence_count ganhou tie_policy (default TIE_LEGACY_COUNTS_AS_BETTER, bit-exato) e TIE_REQUIRES_MARGIN, que OBRIGA min_margin explicito -- sem default inventado, porque a margem defensavel e derivada de std_between_paths, que precisa ser medida primeiro (B23). Flipar a politica depois de ler o desvio medido e decisao do Manager."
+
+  - id: AG-215
+    date: "2026-08-25"
+    file: "src/models/pipeline.py::run_layer1_sprint"
+    related_file: "src/validation/dsr.py, src/analysis/faixa2_dsr_and_b2_check.py, audit/n_lifetime.yaml"
+    found_by: "Claude -- persona lgbm-crypto-quant"
+    gap: >
+      compute_dsr (Bailey & Lopez de Prado, deflacao por maldicao do
+      vencedor) esta implementado em src/validation/dsr.py e e chamado
+      APENAS por src/analysis/faixa2_dsr_and_b2_check.py -- nunca pelo
+      relatorio do treino, que reporta Sharpe cru. Com
+      run_layer1_sprint_all_combinations rodando 15 combinacoes (5
+      simbolos x R1/R2/R3), relatar o Sharpe da melhor sem deflacionar e
+      o erro classico de maldicao do vencedor.
+    severity: "medio -- nao corrompe dado, mas permite que o numero headline da rodada seja lido como desempenho esperado quando nao e"
+    layer: "models (relatorio) / validation (dsr)"
+    consequence: "Sharpe headline sem deflacao num desenho que gera 15 candidatos correlacionados"
+    status: "FECHADO 2026-08-25 -- bloco dsr no relatorio, calculado sobre os trades pooled da Camada 1. dsr_n_trials e OBRIGATORIAMENTE explicito (default None = nao calcula, com reason declarada no proprio JSON): o N correto e N_lifetime auditado (audit/n_lifetime.yaml), decisao do Manager -- inventar um numero aqui produziria um DSR tranquilizador e falso, pior que DSR nenhum (B23). Caveat de anualizacao embutido no bloco: trades_per_year assume trades independentes e os trades sao sobrepostos, entao sr_annualized esta inflado por fator nao medido (correcao Lo 2002/16.5 segue pendente) -- ler dsr e sr_per_trade, nao o anualizado."
+
+  - id: AG-216
+    date: "2026-08-25"
+    file: "src/models/pipeline.py (escopo), src/analysis/m6_common_factor_hypothesis.py (instrumento vizinho)"
+    related_file: "experiments/m6_common_factor_hypothesis_report.json"
+    found_by: "Claude -- persona lgbm-crypto-quant, durante auto-validacao (a primeira versao do achado subestimou o repo e foi corrigida)"
+    gap: >
+      O ESS TRANSVERSAL -- quantas observacoes independentes os 5
+      simbolos correlacionados de fato representam -- nao esta medido em
+      lugar nenhum. O que existe e vizinho mas responde outra pergunta:
+      M6 (m6_common_factor_hypothesis.py) faz meta-analise formal
+      (Cochran Q / I2, DerSimonian-Laird) sobre edge_bruto_atr MEDIO por
+      simbolo, e ja rodou: I2 = 96,1% (long) / 97,8% (short), p ~
+      1e-21/1e-38, fator comum REJEITADO -- ha componente idiossincratico
+      real entre os ativos. Mas heterogeneidade de MEDIA por simbolo nao
+      e correlacao de ret_net BARRA A BARRA: dois ativos podem ter edge
+      medio muito diferente e retornos altamente correlacionados no
+      tempo, e e a segunda coisa que infla o "melhor de 15".
+    severity: "medio -- afeta a contabilidade de evidencia (N_lifetime/DSR), nao a corretude de nenhum artefato"
+    layer: "analysis / governanca de evidencia"
+    consequence: >
+      Enquanto a correlacao temporal de ret_net entre simbolos nao for
+      medida, o numero de apostas independentes representado pelas 15
+      combinacoes e desconhecido entre 1 e 15 -- e e esse numero que
+      deveria alimentar n_trials do DSR (AG-215), nao a contagem bruta de
+      combinacoes.
+    status: "ABERTO -- registrado, nao implementado nesta rodada. Medicao proposta: espectro da matriz de correlacao de ret_net entre os 5 simbolos alinhados por t0 (participation ratio, o MESMO instrumento que src/models/hhi.py::compute_effective_concentration ja usa para features -- reusar, nao reescrever). Nao e pre-requisito de nenhuma das correcoes AG-208..AG-215."
+    addendum_segunda_opiniao_2026-08-25: >
+      Revisao independente por Claude (sessao ADR-003), a pedido do
+      Manager. Matematica CONFIRMADA correta -- participation ratio
+      (N_eff = 1/Sigma(lambda^2)) do espectro de uma matriz de correlacao
+      e o instrumento certo pra "numero efetivo de apostas independentes"
+      (mesma familia de Meucci, effective number of bets, ja em uso
+      implicito em compute_effective_concentration).
+      3 ressalvas antes de implementar:
+      (1) REUSO NAO E LITERAL -- compute_effective_concentration exige
+      gain_by_column (peso vindo do LightGBM), que nao tem equivalente
+      pra simbolo. Chamar com peso uniforme (1/5) funciona
+      matematicamente mas usa um parametro desenhado pra outra coisa.
+      Recomendacao: extrair o nucleo puro (passos 2-6 da docstring --
+      congruencia ponderada + participation ratio) pra uma funcao
+      compartilhada; compute_effective_concentration vira caso
+      especial dela (peso=gain), e uma funcao nova cobre o caso de
+      simbolo (peso=uniforme ou outro criterio economico, decisao em
+      aberto) -- mesma disciplina de nucleo funcional ja praticada no
+      resto do repo.
+      (2) ALINHAMENTO "POR t0" NAO ESTA OPERACIONALMENTE DEFINIDO -- os 5
+      simbolos x 3 resolucoes tem fronteiras de dollar-bar ASSINCRONAS
+      entre si (mesmo dentro do mesmo simbolo, R1/R2/R3 nao alinham).
+      "Alinhado por t0" precisa de uma decisao explicita de resample pra
+      grade de clock-time comum (ex. 15m, infra ja existe em
+      src.analysis.volatility_comparison) ANTES de computar correlacao --
+      senao a correlacao mede ruido de alinhamento, nao coincidencia real
+      de retorno. Mesma licao que AG-214 acabou de re-aprender: regra
+      travada a priori precisa de definicao operacional de cada termo.
+      (3) ESCOPO DA MATRIZ -- correlacao entre os 5 ATIVOS (matriz 5x5,
+      por resolucao) e uma pergunta diferente de correlacao entre as 15
+      COMBINACOES/TRIALS (matriz 15x15, que e o que de fato alimenta
+      dsr_n_trials do AG-215). Recomendo a segunda -- fecha o loop
+      AG-215<->AG-216 diretamente (N_eff medido aqui vira o
+      dsr_n_trials que hoje exige valor explicito, default None).
+      Nao implementado por esta sessao -- analise/recomendacao apenas,
+      conforme pedido do Manager. Decisao de implementar fica com quem
+      possui o item (persona lgbm-crypto-quant/Manager)."
+
+  - id: AG-217
+    date: "2026-08-25"
+    file: "config/constants.yaml::alpha_lgbm_feature_fraction"
+    related_file: "docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, src/models/alpha.py"
+    found_by: "Claude -- consequencia cruzada detectada ao aplicar AG-208 e ler as entradas AG-206/AG-207 do proprio log"
+    gap: >
+      alpha_lgbm_feature_fraction = 1.0 (sem amostragem de coluna) tem
+      justificativa registrada: B19 proibe <1.0 enquanto o bagging por
+      grupo da Camada 3 nao existir. Essa justificativa foi escrita
+      quando o vetor de treino tinha 7 features (T1_FEATURE_IDS), regime
+      em que 1.0 e defensavel. O ADR-003 (ratificado pelo Manager em
+      2026-08-25) troca o vetor por TODOS os 62 SUPPORT_FEATURE_IDS --
+      substituindo, nao somando. Em sinal fraco com 62 colunas e
+      feature_fraction=1.0, toda arvore ve todas as colunas em todo split
+      e a decorrelacao entre arvores fica so por bagging de linha
+      (subsample=0,8).
+    severity: "medio -- nao e violacao de B19 (que continua valendo como escrito), e uma premissa que deixou de valer sem que a constante fosse revisitada"
+    layer: "models (Alpha, hiperparametro classe B)"
+    consequence: >
+      Combinado com AG-208 (min_sum_hessian_in_leaf no default inerte), o
+      vetor de 62 features roda com as DUAS defesas contra sobreajuste --
+      restricao de massa por folha e decorrelacao por coluna -- em
+      configuracao nao restritiva, num dataset cujo edge incondicional e
+      medido negativo (M6). Nao e afirmacao de que vai sobreajustar; e
+      constatacao de que nenhuma das duas defesas foi dimensionada para o
+      regime novo.
+    status: "ABERTO -- registrado para decisao do Manager junto do sweep do ADR-003, nao alterado aqui (mudar feature_fraction exige decidir a interacao com B19/Camada 3, fora do escopo desta rodada de correcao). Recomendacao: incluir feature_fraction e min_sum_hessian_in_leaf no MESMO sweep do feature set completo, nao em sweeps separados -- os tres interagem."
+    addendum_incorporado_ao_estagio1_2026-08-25: >
+      Incorporado por Claude (sessao ADR-003) ao Estagio 1
+      (src/validation/t2_t1_full_feature_stage1_screen.py), mesma
+      coordenada-descendente ja usada pros outros 5 hiperparametros, nao
+      grid conjunto (evita explosao combinatoria k x feature_fraction x
+      min_sum_hessian_in_leaf). feature_fraction: grid estendido pra
+      (0,3;0,5;0,8), PROD=1,0 cacheado -- constants.yaml::
+      alpha_lgbm_feature_fraction ganhou sweep_required=true,
+      sweep_range=[0,3;1,0] (nao mais false -- premissa de 7 features
+      estava desatualizada, B19 continua valendo como escrito).
+      min_sum_hessian_in_leaf: grid (0,1;1,0;5,0) dentro do sweep_range ja
+      declarado em AG-208 ([0.001, 5.0]), nao um range novo. Os 10 jobs do
+      Estagio 1 (que ja tinham comecado, sem nenhum trial real ainda
+      registrado) foram parados e relancados com o desenho corrigido --
+      custo real perdido = 0."
+
+  - id: AG-218
+    date: "2026-08-25"
+    file: "src/analysis/faixa1_5_prerequisites.py::BARS_PER_YEAR, experiments/alpha_layer1_report.json"
+    related_file: "src/analysis/tau_diagnostics.py::tau_realization_diagnostic, tests/unit/test_analysis_tau_diagnostics.py, src/models/pipeline.py::run_layer1_sprint_all_combinations"
+    found_by: "Claude -- ao reconciliar duas medicoes de taxa de sinal que discordavam por ~10x durante a execucao real das correcoes AG-208..217 (Manager autorizou rodar uv/py nesta sessao)"
+    gap: >
+      Duas faces do mesmo problema, descobertas juntas ao investigar por
+      que o XFAIL de tau_diagnostics reporta mean_ratio_to_target=0,2558
+      (taxa de sinal ABAIXO do alvo) enquanto a execucao real do fold 0 de
+      BTCUSDT/R1 com o codigo atual loga signal_rate_oos=0,0508 contra
+      target_signal_rate=0,0189 (2,7x ACIMA do alvo).
+
+      (a) CONTEUDO DO ARTEFATO. experiments/alpha_layer1_report.json -- o
+      caminho DEFAULT, sem chave de simbolo/resolucao, que
+      tau_diagnostics/faixa1_6_reconciliation leem -- contem
+      symbol=XRPUSDT, resolution_id=R3, n_rows_modeling_frame=85.903. Ou
+      seja: e o residuo da ULTIMA das 15 combinacoes a rodar, que
+      sobrescreveu as 14 anteriores. E exatamente o bug que AG-160
+      identificou e que run_layer1_sprint_all_combinations passou a evitar
+      via report_path por combinacao -- mas os 14 relatorios ja perdidos
+      nunca foram regenerados, e `ls experiments/ | grep alpha_layer1_report`
+      confirma que NAO existe nenhum arquivo por combinacao hoje. Todo
+      consumidor do caminho default esta lendo uma combinacao arbitraria
+      como se fosse "o" resultado da Camada 1.
+
+      (b) UNIDADE DO DENOMINADOR. faixa1_5_prerequisites.BARS_PER_YEAR e
+      derivado de _BAR_SECONDS = 15*60 -- densidade de barra de RELOGIO de
+      15 minutos (35.064 barras/ano). tau_realization_diagnostic usa esse
+      numero como denominador do alvo nominal (target_signal_rate *
+      BARS_PER_YEAR) e o compara contra n_signals/ano lido de um artefato
+      que e de DOLLAR BAR R3 -- grade sem espacamento de relogio constante
+      e, no caso de R3 (maior threshold_usdt), com barras muito mais
+      lentas. A razao de densidade nao foi medida aqui, mas a ordem de
+      magnitude e visivel na contagem: 85.903 linhas de modeling frame em
+      R3/XRPUSDT contra 462.813 em R1/BTCUSDT.
+    severity: "alto -- nao corrompe nenhum artefato de dado, mas torna nao-interpretavel a unica medicao de realizacao de tau que o projeto tem, e essa medicao esta codificada como invariante xfail que descreve um comportamento do motor"
+    layer: "analysis (diagnostico) / governanca de evidencia"
+    consequence: >
+      O xfail test_invariante_tau_realizado_perto_do_alvo_e_dispersao_baixa
+      documenta a conclusao "tau IN-FOLD generaliza pior OOS do que o
+      quantil nominal sugere" -- conclusao derivada de um ratio cujo
+      NUMERADOR vem de uma combinacao arbitraria (XRPUSDT/R3, face a) e
+      cujo DENOMINADOR assume densidade de barra de 15m (face b). A
+      conclusao pode continuar valendo depois de refeita a medicao, mas
+      hoje ela nao esta suportada pelo que o codigo de fato calcula.
+      Direcao: corrigidas as duas faces, o ratio se move PARA CIMA (menos
+      barras/ano no denominador real => alvo nominal menor => ratio
+      maior), o que aponta para o mesmo lado do AG-210 (taxa de sinal
+      total ACIMA do orcamento), nao para o lado oposto.
+      Esta e a MESMA classe de erro de AG-004 (escalar por TF errado,
+      constante de modulo fixa em 15m aplicada a outra grade) reaparecendo
+      num modulo novo -- AG-004 foi fechado em src/validation/cpcv.py, nao
+      no pacote analysis.
+    status: "ABERTO -- registrado, NAO corrigido nesta rodada (esta fora do escopo autorizado: as correcoes desta sessao sao AG-208..AG-217 em src/models). NAO ajustar o criterio do xfail para passar (Regra Zero, CLAUDE.md) -- o caminho e: (1) regenerar os relatorios por combinacao com report_path chaveado, que run_layer1_sprint_all_combinations ja faz; (2) tornar BARS_PER_YEAR uma funcao da grade real do artefato lido (medida de t0, nao constante de modulo), mesma correcao estrutural de AG-032/E1 (embargo_ms medido em vez de contagem de barra); (3) so entao reavaliar o invariante. Ate la, nenhum numero de tau_realization_diagnostic deve ser citado como evidencia sobre o motor atual -- inclusive a recomendacao que eu mesmo dei ao Manager em 2026-08-25 ('ler o output existente de tau_realization_diagnostic antes de reprocessar') fica RETIFICADA por este achado: o output existente nao e legivel como esta."
+
+  - id: AG-219
+    date: "2026-08-25"
+    file: "config/constants.yaml::time_stop_ms, config/constants.yaml::time_stop_bars"
+    related_file: "src/labels/triple_barrier.py, docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md, data/label_engine_runs/label_engine_runs.parquet"
+    found_by: "Claude -- medicao direta de label_engine_runs.parquet ao fundamentar o ADR-004 (Manager autorizou rodar uv/py nesta sessao); achado COLATERAL, nao era o alvo da investigacao"
+    gap: >
+      A barreira VERTICAL do triple barrier esta praticamente inativa sob
+      a grade de producao. pct_time medido por combinacao:
+      BTCUSDT/R1 = 0,0008 (0,08%), SOLUSDT/R1 = 0,0005, XRPUSDT/R1 =
+      0,0006. Na grade de RELOGIO legada (resolution_id=None) o mesmo
+      numero era 0,020-0,032 (2-3%) -- ja baixo, mas duas ordens de
+      magnitude acima.
+      Causa provavel (NAO confirmada, exige medicao propria): time_stop_ms
+      = 28.800.000 (8h) foi DERIVADO de time_stop_bars=32 x step_ms("15m")
+      = 900.000 -- ou seja, de uma contagem de barras de RELOGIO. Sob
+      dollar bar R1 (barras mais rapidas em regime liquido), 8h de relogio
+      cobre muito mais que 32 barras, entao TP ou SL quase sempre e tocado
+      antes. A propria entrada de constants.yaml admite a heranca: "a
+      suposicao de horizonte em si (8h) permanece ASSUMED e sem sweep de
+      sensibilidade feito -- este valor so reexpressa a unidade".
+    severity: "medio -- nao e bug de correcao (nada calcula errado), e um parametro de desenho que virou inerte na transicao de grade sem que ninguem medisse; um terco do triple barrier method nao esta operando"
+    layer: "labels (Label Engine, geometria do triple barrier)"
+    consequence: >
+      Tres efeitos, nenhum medido ate aqui:
+      (1) O rotulo e, na pratica, BINARIO TP-vs-SL, nao ternario. Isso
+      torna o alvo de classificacao do Alpha mais defensavel do que a
+      auditoria supunha (ver ADR-004 §0, onde o argumento "P(TP) ignora
+      TIME" foi REFUTADO por este mesmo dado) -- mas tambem significa que
+      toda posicao fica aberta ate tocar uma barreira horizontal, sem teto
+      de tempo efetivo.
+      (2) Risco de cauda de DURACAO nao limitado na pratica: sem barreira
+      vertical ativa, a distribuicao de n_bars_held tem cauda governada so
+      pela volatilidade, e a concorrencia de rotulos (uniqueness) sobe --
+      o que se ve no proprio ESS medido (razao 0,3707 sob R1 contra a
+      razao da grade legada, que deveria ser recalculada para comparar).
+      (3) `time_stop_bars`/`time_stop_ms` continuam classe A com
+      sweep_required: true e sweep_range declarado, consumindo a atencao
+      de governanca de um parametro que hoje nao morde. Varrer um
+      parametro inerte gasta N_lifetime sem informacao.
+    status: "ABERTO -- registrado, NAO corrigido (fora do escopo autorizado desta sessao, que era AG-208..AG-217 em src/models; e mexer em time_stop implica RELABEL completo das 15 combinacoes, decisao do Manager). Medicao proposta antes de qualquer decisao, toda barata e sem retreino: (a) distribuicao de n_bars_held e de duracao de relogio por combinacao, direto de labels.parquet -- quantificar a cauda que a barreira vertical deveria estar cortando; (b) qual time_stop_ms produziria pct_time em uma faixa alvo declarada a priori (ex. 5-15%), por combinacao; (c) sensibilidade de edge_bruto_atr e de sum_uniqueness a esse valor. So depois decidir se o horizonte volta a morder ou se a barreira vertical e formalmente aposentada sob dollar bar -- as duas saidas sao legitimas, o que nao e legitimo e continuar declarando um parametro classe A que nao tem efeito."
+
+  - id: AG-220
+    date: "2026-08-25"
+    file: "src/models/backtest_lite.py::permanence_count, config/constants.yaml::alpha_layer1_permanence_min_paths"
+    related_file: "src/models/alpha.py::resolve_joint_tau, experiments/alpha_layer1_report_ag208_217_diag.json, experiments/alpha_layer1_report_ag210_tau_total.json, docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md"
+    found_by: "Claude -- execucao pareada de DUAS rodadas reais BTCUSDT/R1 que diferem em UM unico parametro (tau_policy), pedida pelo Manager como verificacao das correcoes AG-208..AG-217"
+    gap: >
+      O gate de permanencia da Camada 1 (§5.11 adaptado,
+      alpha_layer1_permanence_min_paths >= 4 de 5) INVERTE seu veredito em
+      funcao de uma escolha de calibracao de threshold que ate 2026-08-25
+      nem sequer existia como parametro declarado.
+      Duas rodadas, mesmo simbolo, mesma resolucao, mesmo seed, mesmo
+      desenho de modelo, mesma janela -- diferenca UNICA = tau_policy:
+        legacy_per_side   : C1 mean=-3,1187 sigma=0,8270 ; C0 mean=-2,3979
+                            sigma=0,8340 ; delta=-0,7208 ; n_better=1/5 ;
+                            permanence_pass=FALSE
+        total_common_oof  : C1 mean=-3,0830 sigma=1,1225 ; C0 mean=-3,8928
+                            sigma=1,6777 ; delta=+0,8098 ; n_better=4/5 ;
+                            permanence_pass=TRUE
+      Achado decisivo sobre a MECANICA da inversao: a Camada 1 quase nao
+      se moveu (-3,1187 -> -3,0830, delta 0,036). Quem se moveu foi a
+      Camada 0 (-2,3979 -> -3,8928, delta -1,495). O veredito do gate
+      inverteu por degradacao do BRACO DE CONTROLE, nao por melhora do
+      braco tratado.
+      Segundo achado, independente: em NENHUMA das duas rodadas o delta e
+      distinguivel de ruido. |delta| = 0,72 < sigma ~ 0,83 na primeira;
+      |delta| = 0,81 < sigma 1,12 (e < 1,68) na segunda. As duas rodadas
+      sao consistentes com "nao ha diferenca entre as camadas" -- o gate
+      esta lendo ruido e reportando veredito binario.
+    severity: "alto -- um gate de promocao de camada cujo veredito depende de um parametro nao declarado, e que em ambos os regimes desse parametro esta abaixo do proprio ruido, nao e um gate: e um gerador de decisao aleatoria com aparencia de criterio"
+    layer: "models (criterio de permanencia §5.11) / validation (desenho de gate)"
+    consequence: >
+      (1) Qualquer decisao ja tomada com base em permanence_pass precisa
+      ser relida sabendo que o resultado depende de uma escolha de
+      calibracao de tau que nunca foi declarada nem varrida.
+      (2) O sinal de alerta e o classico: a correcao de AG-210 (defensavel
+      por argumento economico independente -- fee_budget_is_per_side=false)
+      "fez a Camada 1 passar no gate". Sem sigma, isso seria lido como
+      confirmacao de que a correcao funcionou. Com sigma (AG-214,
+      adicionado dias antes), le-se corretamente como ruido. Este e o
+      exemplo mais limpo neste repo de por que AG-214 precisava existir.
+      (3) A correcao de tau NAO entregou R3, que era seu proposito
+      declarado: taxa de sinal media por caminho foi de 3,31% (legado)
+      para 3,16% (corrigido), contra orcamento de 1,89% -- praticamente
+      inalterada, e com dispersao MAIOR (1,50% a 5,99% entre caminhos,
+      contra 2,05% a 4,47% antes). Um caminho da Camada 0 chegou a 9,23%
+      das barras (20.587 sinais), 4,9x o orcamento.
+    status: "ABERTO -- registrado com as duas rodadas em disco como evidencia (experiments/alpha_layer1_report_ag208_217_diag.json e _ag210_tau_total.json). Nenhum default alterado; tau_policy segue opt-in e o legado segue sendo o de producao. Diagnostico da causa restante, ja acionavel: o solver resolve tau IN-SAMPLE (sobre barras de treino out-of-fit) e a taxa OOS nao segue -- ou seja, a distribuicao de probabilidade calibrada no treino nao se parece com a do teste. O suspeito nomeado e AG-209 (calibrador isotonico ajustado sobre sub-split ALEATORIO de rotulos sobrepostos), que NAO foi ativado nesta rodada (calib_split_mode continuou legacy_random_stratified). Terceira rodada pareada lancada 2026-08-25 com tau_policy=total_common_oof + calib_split_mode=temporal_purged para isolar essa contribuicao (--run-tag ag209_210_calib_tau). CONCLUSAO DE DESENHO, independente do resultado dessa terceira rodada: calibrar uma fronteira de decisao por QUANTIL de probabilidade e estruturalmente fragil, porque quantis de p nao transferem entre treino e teste sob nao-estacionariedade. A saida proposta e ADR-004 §4 -- fronteira derivada do CUSTO em unidade de retorno (|mu| > lambda, lambda = max(c, lambda_B)), que nao depende de a distribuicao de p ser estavel. Esta rodada e a evidencia empirica direta a favor daquela proposta, que ate agora era so argumento."
+
+  - id: AG-220-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-220 (entrada acima, append-only -- esta e a continuacao com o TERCEIRO braco do experimento pareado, executado apos o registro original)"
+    file: "src/models/alpha.py::_temporal_purged_calib_split, src/models/alpha.py::resolve_joint_tau"
+    related_file: "experiments/alpha_layer1_report_ag209_210_calib_tau.json, docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md"
+    found_by: "Claude -- terceiro braco pareado (calib_split_mode=temporal_purged + tau_policy=total_common_oof), lancado para isolar a contribuicao de AG-209 depois que o segundo braco nao entregou R3"
+    gap: >
+      EXPERIMENTO PAREADO DE 3 BRACOS, BTCUSDT/R1, mesmo seed, mesmo
+      desenho de modelo, mesma janela. Unica variacao: as duas politicas
+      de calibracao introduzidas em AG-209/AG-210.
+        A  tau=legacy_per_side   calib=random  : taxa=3,315%  C1=-3,1187
+           sigma=0,8270  C0=-2,3979  delta=-0,7208  n_better=1/5  FALSE
+        B  tau=total_common_oof  calib=random  : taxa=3,157%  C1=-3,0830
+           sigma=1,1225  C0=-3,8928  delta=+0,8098  n_better=4/5  TRUE
+        C  tau=total_common_oof  calib=purged  : taxa=6,687%  C1=-5,1086
+           sigma=1,0912  C0=-5,0117  delta=-0,0969  n_better=2/5  FALSE
+      Orcamento declarado (constants.yaml::target_signal_rate,
+      fee_budget_is_per_side=false): 1,89% das barras / 661 trades por ano.
+      Realizado: A=1,75x  B=1,67x  C=3,54x em taxa de sinal;
+      A=1,44x  B=1,41x  C=2,81x em trades preenchidos por ano.
+      TRES CONCLUSOES, todas medidas, nenhuma inferida:
+      (1) NENHUM dos tres bracos entrega R3. A correcao de escopo/populacao
+      do quantil (braco B) mexeu 0,16 ponto percentual; adicionar a
+      calibracao purgada (braco C) DOBROU a taxa em vez de reduzi-la.
+      (2) Em TODOS os tres bracos |delta| < sigma (0,72<0,83 ; 0,81<1,12 ;
+      0,10<1,09). O gate de permanencia §5.11 nunca teve poder estatistico
+      neste dataset, em nenhuma configuracao de calibracao.
+      (3) O veredito do gate oscilou FALSE -> TRUE -> FALSE ao longo dos
+      tres bracos, governado por escolhas de calibracao de threshold que
+      nao mudam o modelo, nao mudam as features e nao mudam o dado.
+    severity: "alto -- confirma AG-220 e o estende: nao e so que o gate depende de um parametro nao declarado, e que o INSTRUMENTO de fronteira (quantil de probabilidade) nao entrega a restricao economica sob nenhuma das tres variantes testadas"
+    layer: "models (regra de decisao §5.6 + criterio de permanencia §5.11)"
+    consequence: >
+      Registro explicito e desconfortavel, para nao ficar escondido no
+      resultado agregado: as duas correcoes que EU propus e implementei
+      (AG-209 e AG-210), ativadas isoladamente, PIORARAM a metrica que
+      deveriam melhorar -- a taxa de sinal foi de 1,75x para 3,54x o
+      orcamento. Isso NAO refuta os dois achados como diagnostico: o
+      sub-split aleatorio sobre rotulos sobrepostos continua vazando
+      informacao para o calibrador (AG-209), e aplicar um quantil por lado
+      continua contradizendo fee_budget_is_per_side=false (AG-210). Os
+      dois defeitos sao reais. O que o experimento mostra e que CORRIGIR
+      DOIS DEFEITOS DE UM INSTRUMENTO ERRADO NAO O TORNA CERTO.
+      Mecanismo provavel do braco C (nao confirmado, exige medicao
+      propria): com calib_split_mode=temporal_purged, o conjunto de
+      calibracao passa a ser um BLOCO TEMPORAL CONTIGUO do fim do treino,
+      e a populacao out-of-fit sobre a qual resolve_joint_tau opera fica
+      temporalmente CONCENTRADA em vez de espalhada. Um tau calibrado num
+      unico regime de mercado transfere pior que um tau calibrado numa
+      amostra que atravessa varios -- o purge trocou vazamento por vies de
+      regime. Os dois sao defeitos; nenhum e "o certo".
+    status: "FECHA A INVESTIGACAO EMPIRICA, ABRE A DECISAO DE DESENHO. Nenhum default alterado -- producao segue no braco A (legado). As tres rodadas ficam em disco como evidencia pareada (experiments/alpha_layer1_report_{ag208_217_diag,ag210_tau_total,ag209_210_calib_tau}.json). CONSEQUENCIA DIRETA PARA O ADR-004: a proposta do §4 (fronteira derivada do CUSTO em unidade de retorno, |mu| > lambda com lambda = max(c, lambda_B), em vez de quantil de probabilidade) deixa de ser argumento teorico e passa a ser a unica saida com suporte empirico neste repo -- tres variantes de 'onde e como tirar o quantil' produziram 3,16% a 6,69% sobre o mesmo alvo de 1,89%, o que caracteriza o instrumento, nao a variante. Recomendacao ao Manager: nao varrer mais variantes de calibracao de tau (gasta N_lifetime medindo um instrumento ja caracterizado); ir direto para a Fase 1+2 do ADR-004 (alvo em unidade de retorno + fronteira lagrangiana), cujo custo e 1 retreino."
+
+  - id: AG-221
+    date: "2026-08-25"
+    file: "src/labels/triple_barrier.py::build_labels (t_post = t0), src/labels/fill_model.py::simulate_fill_arrays"
+    related_file: "docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md, experiments/m6_common_factor_hypothesis_report.json, audit/evidence_ledger.yaml, config/constants.yaml::adverse_selection_bps"
+    found_by: "Claude -- pedido do Manager para tratar com criticidade o numero 'edge bruto incondicional = -0,147 ATR' que eu mesmo havia reportado. Verificacao de simetria long/short, seguida de decomposicao do edge bruto por tempo-ate-o-fill."
+    gap: >
+      METADE do edge bruto negativo do Label Engine e ARTEFATO DE
+      GRANULARIDADE DE DADO, nao propriedade do mercado nem do sinal.
+
+      CADEIA DE EVIDENCIA (cada passo medido, nenhum inferido):
+
+      (1) ARGUMENTO DE SIMETRIA. pct_tp/pct_sl agregados sobre
+      labels.parquet cobrem long E short. Se o preco sobe 1,5 ATR antes de
+      cair 1,5 ATR, esse e o MESMO evento: TP do long e SL do short. Logo
+      P(short TP) = P(long SL), e a direcao do mercado se cancela na
+      agregacao: sob qualquer drift, pct_tp DEVE igualar pct_sl. Medido:
+      0,4022 vs 0,4898, diferenca de 8,76 pontos. Impossivel por drift.
+
+      (2) POR LADO, BTCUSDT/R1, excluindo NOFILL:
+          LONG  n=197.843  TP=0,4519  SL=0,5473  edge=-0,1431 ATR
+          SHORT n=200.497  TP=0,4491  SL=0,5500  edge=-0,1514 ATR
+      OS DOIS LADOS penalizados, em magnitude quase igual. Sob martingale
+      P(TP)=0,50 nos dois. Confirma vies estrutural, refuta drift.
+
+      (3) GEOMETRIA DESCARTADA POR LEITURA DE CODIGO. tp_price/sl_price
+      derivam de `fill_px` (triple_barrier.py:1439-1440), simetricos em
+      torno do preco de entrada REAL nos dois lados. E o desempate
+      same-bar de _first_barrier_touch (`dist_tp <= dist_sl`) favorece TP,
+      nao SL. O Label Engine nao introduz a assimetria.
+
+      (4) CAUSA LOCALIZADA -- LATENCIA SINTETICA. `t_post = t0` = close_time
+      da dollar bar, que cai em instante ARBITRARIO. `simulate_fill_arrays`
+      busca fill em candles de `mark_1m` com open_time ESTRITAMENTE
+      posterior a t_post. Resultado: existe uma espera FORCADA entre a
+      decisao e a primeira oportunidade de fill, uniformemente distribuida
+      em [0, 60s] -- que e pura fase de relogio, nao mercado, e que NAO
+      EXISTIRIA EM PRODUCAO (onde a ordem seria postada imediatamente).
+      Confirmacao empirica da uniformidade: 81,34% dos fills ocorrem no 1o
+      candle, e as 6 faixas de 10s tem n praticamente identico
+      (55.817 / 54.065 / 53.239 / 53.351 / 53.415 / 54.130).
+
+      (5) O EDGE BRUTO E FUNCAO MONOTONICA DESSA ESPERA SINTETICA:
+          delay  0-10s  n=55.817  P(TP)=0,4687  ret_gross=-2,64 bps
+          delay 10-20s  n=54.065  P(TP)=0,4545  ret_gross=-3,93 bps
+          delay 20-30s  n=53.239  P(TP)=0,4462  ret_gross=-4,84 bps
+          delay 30-40s  n=53.351  P(TP)=0,4379  ret_gross=-5,43 bps
+          delay 40-50s  n=53.415  P(TP)=0,4296  ret_gross=-6,29 bps
+          delay 50-60s  n=54.130  P(TP)=0,4242  ret_gross=-6,94 bps
+      Gradiente de -4,30 bps ao longo de 60s (-0,086 bps/s). Extrapolando
+      linearmente para delay=0: ret_gross ~ -2,2 bps, P(TP) ~ 0,473.
+    severity: "critico -- contamina TODA metrica economica ja produzida pelo projeto (edge bruto de M6, ret_net dos baselines, gates de viabilidade, o veredito de ablacao T2->T1 de AG-206/207, as tres rodadas de AG-220). Nao e vazamento de futuro (a busca continua estritamente causal, B11 respeitado) -- e um vies PESSIMISTA sistematico, o que o torna menos perigoso que um otimista, mas igualmente invalidante para qualquer decisao de 'existe edge ou nao'"
+    layer: "labels (Label Engine, simulacao de entrada) -- fronteira entre grade dollar-bar e granularidade de mark_1m"
+    consequence: >
+      DECOMPOSICAO do edge bruto medio de ~-4,4 bps por trade:
+        ~2,2 bps = artefato de latencia sintetica da granularidade de
+                   mark_1m combinada com dollar bars nao alinhadas ao
+                   relogio. NAO existe em producao. Recuperavel.
+        ~2,2 bps = residual em delay~0: selecao adversa genuina do
+                   post-only + eventual ausencia de sinal. Real.
+      Ou seja, aproximadamente METADE do "edge negativo" que motivou o
+      veredito de que o motor nao tem edge e ruido de medicao introduzido
+      pelo instrumento, nao propriedade do mercado.
+      NOTA sobre adverse_selection_bps=1,5 (classe A, ASSUMED, "placeholder
+      conservador sem medicao real"): o residual medido em delay~0 (~2,2
+      bps) esta na MESMA ORDEM do valor assumido -- a constante e mais
+      defensavel do que parecia quando comparada ao vies TOTAL de 4,4 bps.
+      Ela e reportada e NAO subtraida de ret_net (decisao documentada no
+      item 4 da docstring do modulo), o que continua correto: o efeito ja
+      entra em ret_net pela via da assimetria de barreira, subtrai-la
+      seria dupla contagem. Verificado que a constante NAO alimenta
+      feasibility/cost_surface/risk -- o Gate 0 nao foi contaminado por
+      ela.
+    status: "ABERTO -- registrado, NAO corrigido (corrigir implica RELABEL das 15 combinacoes, decisao do Manager). CORRECAO PROPOSTA, por ordem de preferencia: (a) usar agg_trades como fonte do fill de ENTRADA em vez de mark_1m -- granularidade de trade em vez de minuto, elimina a espera sintetica na origem; o repo JA baixa esse dado (src/data/download.py::download_agg_trades), entao o custo e de wiring, nao de aquisicao; (b) manter mark_1m mas medir e subtrair o vies analiticamente por faixa de delay (mais barato, menos correto -- trata sintoma); (c) alinhar t_post ao proximo minuto cheio de forma explicita e ASSUMIR a latencia, documentando-a como premissa de execucao em vez de deixa-la implicita (pior das tres: preserva o vies e so o torna visivel). TESTE DE VALIDACAO da correcao (a): reprocessar uma combinacao e verificar se ret_gross converge para o valor extrapolado de delay=0 (~-2,2 bps) e se P(TP) sobe para ~0,473. Se convergir, o vies esta caracterizado e removido; se nao, ha um segundo mecanismo nao identificado. IMPACTO EM DECISOES JA TOMADAS: toda conclusao de 'nao ha edge' baseada em ret_gross/ret_net -- incluindo M6, AG-206/AG-207 (ablacao T2->T1) e as tres rodadas de AG-220 -- foi tomada sobre numeros ~2,2 bps mais pessimistas que o real. Isso NAO reverte nenhuma delas por si so (o edge continua negativo mesmo corrigido, ~-2,2 bps brutos contra ~5,6 bps de custo explicito), mas muda a MAGNITUDE do gap a vencer e precisa ser dito antes de qualquer decisao de encerrar linha de pesquisa."
+
+  - id: AG-221-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-221 (entrada acima, append-only) -- validacao empirica da correcao proposta, autorizada pelo Manager sob a condicao 'se confirmar que reduz gap atual mesmo que ainda continue negativo'"
+    file: "src/labels/fill_model.py::simulate_fill_from_trades (NOVO), src/analysis/ag221_fill_granularity_validation.py (NOVO)"
+    related_file: "experiments/ag221_fill_granularity_BTCUSDT_R1.json, tests/unit/test_labels_fill_model.py, config/constants.yaml::adverse_selection_bps"
+    found_by: "Claude -- auto-validacao do AG-221 pedida pelo Manager, seguida da implementacao autorizada e da medicao direta em amostra"
+    gap: >
+      AUTO-VALIDACAO DO AG-221 (antes de implementar). Duas vulnerabilidades
+      reais foram testadas:
+      (a) CONFUNDIMENTO de regime -- REFUTADO. ATR mediano e constante entre
+      as faixas de espera (0,002516 / 0,002525 / 0,002506 / 0,002505 /
+      0,002508 / 0,002494; variacao 1,2%).
+      (b) O gradiente sobrevive DENTRO dos 5 quintis de volatilidade,
+      monotonico em todos, E ESCALA com a volatilidade (-1,82 bps no quintil
+      mais calmo, -5,74 no mais volatil). Essa escala e uma PREDICAO do
+      mecanismo (o preco se desloca proporcionalmente a sigma durante a
+      janela nao-observada) que nao fazia parte do argumento original --
+      confirma-lo fora da amostra do argumento e evidencia muito mais forte
+      que a correlacao inicial.
+      (c) SELECAO por NOFILL -- presente e reconhecida: pct_nofill sobe de
+      7,58% para 12,97% com a espera. Mas NOFILL significa "o preco nunca
+      voltou ao nivel" -- para long, subiu e nao voltou, ou seja um TP
+      PERDIDO. A selecao remove desproporcionalmente os casos favoraveis,
+      entao REFORCA o gradiente em vez de cria-lo. E fisicamente e o mesmo
+      mecanismo (janela nao-observada), some com a mesma correcao.
+
+      MEDICAO DIRETA DA CORRECAO (nao mais extrapolacao). Implementado
+      `simulate_fill_from_trades` (nucleo puro, granularidade de agg_trades)
+      e medida uma amostra de 195 dias / 32.980 barras de BTCUSDT/R1,
+      trocando SO a fonte do fill de ENTRADA (barreira continua em mark_1m,
+      B12; mesmas simplificacoes de fila/profundidade; fill_price ==
+      limit_price):
+        metrica              mark_1m      agg_trades    delta
+        delay mediano        36.908 ms       114 ms     -36.794 ms
+        P(TP)                 0,45409       0,49194     +0,03785
+        ret_gross            -3,883 bps    -0,797 bps   +3,086 bps
+        pct_nofill             9,54%         2,18%      -7,36 pp
+        n preenchidos          29.833        32.262     +2.429
+    severity: "critico (herda de AG-221) -- confirmado por medicao direta, nao mais por extrapolacao"
+    layer: "labels (Label Engine, simulacao de entrada)"
+    consequence: >
+      RESULTADO CENTRAL: P(TP) = 0,49194, a 0,81 ponto percentual de 0,50.
+      Sob martingale com payoff simetrico (tp_atr_mult = sl_atr_mult = 1,5)
+      o valor teorico e EXATAMENTE 0,50. Removida a latencia sintetica, o
+      processo volta a se comportar como a teoria preve -- confirmacao mais
+      forte do mecanismo do que qualquer estatistica de ajuste.
+      GANHO MAIOR QUE O EXTRAPOLADO: o AG-221 previa +2,2 bps por
+      extrapolacao linear; medido +3,09 bps. A diferenca vem do canal que a
+      extrapolacao nao capturava -- a queda de NOFILL de 9,54% para 2,18%,
+      que recupera trades favoraveis inteiros em vez de so melhorar os
+      existentes.
+      GAP CONTRA O CUSTO EXPLICITO (~5,6 bps medidos):
+        antes:  edge bruto -3,88 bps  ->  gap 9,5 bps
+        depois: edge bruto -0,80 bps  ->  gap 6,4 bps   (reducao de ~33%)
+      CONTINUA NEGATIVO -- a correcao nao cria edge, remove um vies de
+      instrumento. A condicao do Manager ("reduz gap mesmo que continue
+      negativo") esta satisfeita e verificada.
+
+      CORRECAO DE UMA LEITURA MINHA ANTERIOR, pela segunda vez nesta sessao,
+      sobre `adverse_selection_bps` (1,5 bps, classe A, ASSUMED): no AG-221
+      original eu disse que ela SUBESTIMAVA o efeito real em ~2,9x
+      (comparando contra o vies total de 4,4 bps). Com o vies de instrumento
+      removido, a selecao adversa GENUINA do post-only e o residual medido:
+      P(TP)=0,4919 contra 0,50 teorico da o edge de -0,0243 ATR ~ -0,61 bps,
+      consistente com o ret_gross medido de -0,80 bps. Ou seja a constante
+      1,5 SUPERESTIMA o efeito real em ~2x, nao subestima. A direcao da
+      minha primeira leitura estava invertida porque eu atribuia a selecao
+      adversa um vies que era majoritariamente granularidade de dado.
+    status: "IMPLEMENTADO E VALIDADO 2026-08-25, PRODUCAO NAO ALTERADA. Entregue: (1) src/labels/fill_model.py::simulate_fill_from_trades -- nucleo puro (Idioma A), zero IO, 8 testes unitarios novos (tests/unit/test_labels_fill_model.py, 19/19 passam), incluindo um que demonstra a espera sintetica lado a lado com simulate_fill_arrays; (2) src/analysis/ag221_fill_granularity_validation.py -- medicao pos-hoc, amostragem POR DIA (blocos contiguos, mesma logica de bootstrap por blocos do ADR-004 §5, e duas ordens de magnitude menos IO que amostrar barras); (3) experiments/ag221_fill_granularity_BTCUSDT_R1.json. NAO FEITO, deliberadamente: o wiring de entry_fill_source em triple_barrier.build_labels e o RELABEL das 15 combinacoes. O relabel invalida labels.parquet, predictions.parquet, todos os artefatos de modelo e todo numero ja registrado no evidence_ledger -- e decisao do Manager, nao coberta pela autorizacao 'se confirmar que reduz gap'. RESSALVA DE ESCOPO: 1 combinacao (BTCUSDT/R1) de 15, 195 dias de 2.412. O ganho de +3,09 bps nao se generaliza sem medir; simbolos menos liquidos (XRP/SOL) devem ter agg_trades mais esparso e possivelmente ganho MENOR, porque a granularidade efetiva do trade se aproxima da do minuto."
+
+  - id: AG-222
+    date: "2026-08-25"
+    file: "config/constants.yaml::round_trip_cost_bps_maker_prob"
+    related_file: "src/features/groups/group_e.py::round_trip_cost_bps, src/analysis/feasibility.py, src/risk/limits.py, src/analysis/cost_surface.py, src/analysis/volatility_operational_effect.py, src/analysis/m3_timeframe_choice.py, src/analysis/s1_tp_sl_sensitivity.py, docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md"
+    found_by: "Claude -- ao mapear a cadeia de consumo do relabel de AG-221 (pedido do Manager), rastreando quais constantes sao DERIVADAS de labels.parquet"
+    gap: >
+      `round_trip_cost_bps_maker_prob = 0,4206` tem `provenance: MEASURED`
+      e a propria fonte declara a geometria sob a qual foi medida:
+      "Ruina do apostador (tp_atr_mult=2.0/sl_atr_mult=1.5) preve P(TP
+      primeiro)=1,5/3,5=42,9% analitico; medicao empirica real
+      (tools/diagnostics/measure_barrier_touch_probability.py, 5 ativos,
+      labels.parquet) confirma 42,06% pooled".
+      Mas `tp_atr_mult` foi ALTERADO para 1,5 em 2026-08-24 (decisao do
+      Manager apos o sweep S1, ver a propria entrada de tp_atr_mult em
+      constants.yaml). Sob tp_atr_mult = sl_atr_mult = 1,5 a ruina do
+      apostador preve 50%, nao 42,9% -- e os labels R1 reais de hoje medem
+      P(TP) = 0,4541 (0,4935 sob a correcao de granularidade de AG-221).
+      A constante MEASURED foi medida sob uma geometria de barreira que
+      nao existe mais, e nao foi revisada quando a geometria mudou.
+    severity: "alto -- nao pela magnitude (0,218 bps), mas por onde vive: alimenta uma FEATURE do vetor T1 de treino (E27f_cost_atr_ratio via group_e.round_trip_cost_bps), o Gate 0 de viabilidade (feasibility.py) e o controle de risco de PRODUCAO (risk/limits.py). E o selo MEASURED faz o numero parecer confiavel -- e o pior tipo de erro de proveniencia, porque nao levanta suspeita"
+    layer: "features (E27f) / analysis (Gate 0) / risk (producao) -- constante derivada de labels"
+    consequence: >
+      round_trip_cost_bps = maker + p*maker + (1-p)*taker:
+        p=0,4206 (constante atual, geometria tp=2,0 extinta) -> 5,738 bps
+        p=0,4541 (labels atuais, tp=1,5, mark_1m)            -> 5,638 bps
+        p=0,4935 (corrigido AG-221, agg_trades)              -> 5,520 bps
+      Superestimacao atual de 0,218 bps do custo round-trip, propagada aos
+      7 call sites. Verificado que NAO ha circularidade com o Label Engine:
+      o label usa maker_fee/taker_fee por desfecho realizado, nunca esta
+      constante -- a dependencia e de mao unica (labels -> constante ->
+      feature/gate/risco).
+      Padrao recorrente: e a mesma classe de dessincronizacao de AG-123
+      (correcao aplicada num lugar, referencias ao mesmo numero nao
+      revisadas). O sweep S1 mudou tp_atr_mult e nao revisou a constante
+      derivada dele.
+    status: "ABERTO -- registrado, NAO corrigido. E PRE-REQUISITO do relabel de AG-221 (passo 1 de docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md §6) mas NAO depende dele: a constante ja esta errada hoje, sob a geometria vigente, independentemente de qualquer decisao sobre granularidade de fill. Correcao: rerodar tools/diagnostics/measure_barrier_touch_probability.py sobre os labels atuais (tp=sl=1,5) e atualizar o valor + a fonte, declarando a geometria na propria proveniencia para que a proxima mudanca de tp/sl dispare revisao. Se o relabel de AG-221 acontecer depois, a constante precisa de SEGUNDA remedicao -- e a unica do repo que precisa de duas passadas (ver §6 do mapa)."
+
+  - id: AG-222-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-222 -- passo 1 do MAPA_IMPACTO_RELABEL executado (aprovado pelo Manager), com a medicao dedicada de criticidade extrema que ele pediu para a Camada 4"
+    file: "config/constants.yaml::round_trip_cost_bps_maker_prob"
+    related_file: "docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md, tools/diagnostics/measure_barrier_touch_probability.py"
+    found_by: "Claude -- medicao direta das 15 combinacoes reais de producao"
+    gap: >
+      MEDICAO EXECUTADA sobre as 15 combinacoes (5 simbolos x R1/R2/R3),
+      geometria vigente tp=sl=1,5, grade dollar-bar real de producao.
+      P(TP|preenchido) = TP/(TP+SL+TIME), NOFILL fora do denominador
+      (NOFILL nao gera saida, logo nao gera fee de saida):
+        pooled ponderado por n_fill : 0,4597  <- ADOTADO
+        media simples das 15        : 0,4645
+        min BTCUSDT/R1              : 0,4505
+        max SOLUSDT/R3              : 0,4768
+        spread                      : 0,0263 (2,63 pontos percentuais)
+      Padrao sistematico: R1 < R2 < R3 nos CINCO simbolos (barras mais
+      lentas tocam TP com mais frequencia); simbolos quase identicos entre
+      si dentro da mesma resolucao.
+      A entrada anterior da constante JA CONTINHA a instrucao que nunca foi
+      executada -- "Empiricamente amarrado a geometria de tp_atr_mult/
+      sl_atr_mult; se essas mudarem (S1, sweep_required=true em ambas),
+      esta medicao precisa ser refeita para a nova geometria antes de
+      continuar confiavel". O sweep S1 mudou tp_atr_mult em 2026-08-24 e a
+      remedicao nao aconteceu. Nao foi falta de conhecimento -- foi falta
+      de gatilho.
+    severity: "alto (herda de AG-222) -- agora com o numero medido"
+    layer: "features (E27f) / analysis (Gate 0) / risk (producao)"
+    consequence: >
+      ESCOLHA DE ARQUITETURA REGISTRADA -- constante GLOBAL, nao por
+      (simbolo, resolucao). O gradiente por resolucao e real e sistematico,
+      mas o spread INTEIRO vale 0,079 bps de custo (5,570 a 5,649),
+      desprezivel frente ao gap de ~6 bps que o motor precisa vencer. Uma
+      constante por resolucao custaria 3 entradas novas e fiacao em 7 call
+      sites para ganhar menos de 0,1 bps. Decisao reversivel -- reavaliar
+      se o spread crescer.
+      IMPACTO NUMERICO: custo round-trip 5,738 -> 5,621 bps (a constante
+      antiga SUPERESTIMAVA o custo em 0,117 bps).
+    status: "FECHADO 2026-08-25 -- constants.yaml atualizado para 0.4597, provenance MEASURED, com a geometria E a grade declaradas na propria fonte para que a proxima mudanca de tp/sl OU de bar_type dispare revisao (o gatilho que faltava). Proveniencia historica do 0.4206 preservada no mesmo bloco, nao apagada. SEGUNDA REMEDICAO PENDENTE: sob o relabel de AG-221 o P(TP) sobe para ~0,49 (medido em 4 combinacoes) -- e a unica constante do repo que precisa de duas passadas (passos 1 e 6 do mapa)."
+
+  - id: AG-223
+    date: "2026-08-25"
+    file: "src/models/monotonic.py::_ECONOMIC_FORCED_CONSTRAINT, src/models/environments.py::assign_environments"
+    related_file: "docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, src/features/build.py::T1_FEATURE_IDS, src/features/groups/group_e.py"
+    found_by: "Claude -- ao verificar a hipotese do Manager de que a Camada 4 vai alimentar features do T2 alem do T1. O dado refutou a hipotese e revelou o problema inverso"
+    gap: >
+      VERIFICACAO DA HIPOTESE: das 62 SUPPORT_FEATURE_IDS (o vetor que o
+      ADR-003 promove a T1), NENHUMA depende de custo. Medido, nao
+      presumido -- o filtro por nome sobre SUPPORT_FEATURE_IDS devolve
+      lista vazia, e o unico call site de maker_fee/taker_fee em
+      src/features/ e build.py:728 (E27f_cost_atr_ratio).
+      O achado e o INVERSO da preocupacao. O ADR-003 SUBSTITUI T1 pelas 62
+      SUPPORT (nao soma -- confirmado no addendum_escopo_10_piores de
+      AG-207: a convencao real do codigo e SUBSTITUIR os 7 T1_FEATURE_IDS,
+      nunca somar). Logo, sob ADR-003, E27f_cost_atr_ratio SAI do vetor de
+      treino, e com ela:
+      (a) a UNICA feature de custo que o Alpha ve -- o modelo fica cego a
+          custo de execucao, num motor cujo gap contra o custo e exatamente
+          o problema a vencer;
+      (b) o mecanismo _ECONOMIC_FORCED_CONSTRAINT = {E27f_cost_atr_ratio:
+          -1} fica ORFAO: aponta para uma feature fora do vetor, entao
+          screen_monotone_constraints nunca resolve essa entrada e a
+          restricao forcada por identidade contabil (custo alto nunca pode
+          melhorar o resultado esperado, §5.3) deixa de existir
+          SILENCIOSAMENTE, sem erro;
+      (c) o eixo de custo dos 6 AMBIENTES da Camada 1 depende de
+          E27f_cost_atr_ratio (environments.py::assign_environments,
+          cost_col default E27f_cost_atr_ratio). Se a coluna sair do frame,
+          a triagem de estabilidade inteira degrada -- ponto que precisa de
+          verificacao propria ANTES do ADR-003 rodar.
+    severity: "alto -- (b) e (c) sao falhas SILENCIOSAS: nenhuma levanta excecao, as duas mudam o comportamento do treino sem sinal nenhum"
+    layer: "features / models (Camada 1: restricoes monotonicas + ambientes)"
+    consequence: >
+      Sob ADR-003 a constante round_trip_cost_bps_maker_prob (AG-222) deixa
+      de alimentar QUALQUER feature de treino -- continua alimentando so o
+      Gate 0 (feasibility.py) e o risco de producao (risk/limits.py). Isso
+      REDUZ o acoplamento da Camada 4 com o treino, o que e bom para o
+      relabel, mas ao custo de o modelo ficar cego a custo.
+    status: "ABERTO -- registrado, nao corrigido. Tres decisoes para o Manager, nenhuma tomada aqui: (1) E27f deve ser preservada no vetor sob ADR-003 (62+1, contrariando a convencao de substituicao)? (2) Se sair, _ECONOMIC_FORCED_CONSTRAINT deve virar erro explicito quando a feature referenciada nao esta em feature_ids, em vez de no-op silencioso? (3) assign_environments precisa de cost_col alternativo ou de fallback declarado? O item (2) e barato e defensavel independentemente das outras decisoes -- transformar um no-op silencioso em falha alta e a mesma disciplina de AG-140/B15."
+
+  - id: AG-224
+    date: "2026-08-25"
+    file: "tools/diagnostics/measure_barrier_touch_probability.py"
+    related_file: "config/constants.yaml::round_trip_cost_bps_maker_prob, src/validation/cpcv.py::load_labels_v1"
+    found_by: "Claude -- ao executar o passo 1 do mapa e conferir sobre QUAL dado a constante MEASURED tinha sido medida"
+    gap: >
+      O script que produz o valor MEASURED de
+      round_trip_cost_bps_maker_prob chama load_labels_v1(symbol=symbol)
+      SEM o argumento resolution_id. O default de load_labels_v1 e
+      tf=15m, resolution_id=None -- ou seja, o script mede sobre a grade de
+      RELOGIO 15m legada, nunca sobre dollar bar R1/R2/R3, que e a grade
+      canonica de producao desde AG-042 (canonical_bar_type: dollar).
+      A diferenca nao e cosmetica: P(TP) sob 15m fica em 0,465-0,475
+      (label_engine_runs, linhas com resolution_id=None) contra 0,4505-0,4768
+      sob R1/R2/R3 -- e o 0,4206 registrado na constante nao bate com
+      NENHUM dos dois, porque carregava tambem a geometria antiga (tp=2,0).
+    severity: "medio -- ferramenta de diagnostico, nao pipeline de producao; mas produz um numero que entra em constants.yaml com selo MEASURED e alimenta feature de treino, Gate 0 e risco de producao"
+    layer: "tools/diagnostics -- fronteira entre medicao e governanca de constante"
+    consequence: >
+      Qualquer remedicao futura feita com este script sem passar
+      resolution_id reproduz o mesmo erro de grade. Como a constante
+      precisa de uma SEGUNDA remedicao apos o relabel de AG-221, o script
+      SERA usado de novo -- corrigi-lo antes disso evita repetir o defeito.
+      Mesma classe de AG-004/AG-009 (parametro de grade nao propagado ate
+      onde importa), num modulo que aquelas correcoes nao alcancaram.
+    status: "ABERTO -- registrado, NAO corrigido nesta rodada. A medicao do passo 1 foi feita por contagem direta sobre os 15 labels.parquet reais, sem depender deste script, entao o valor 0.4597 NAO herda o defeito. Correcao proposta: adicionar o eixo resolution_id e reportar a matriz 5x3 em vez de um pooled unico -- e exatamente o que a medicao manual desta rodada fez, so falta codificar para virar reproduzivel."
+
+  - id: AG-225
+    date: "2026-08-25"
+    file: "src/validation/cpcv.py::load_labels_v1"
+    related_file: "src/models/dataset.py::build_modeling_frame, src/analysis/m4_critical_windows.py, src/analysis/m6_common_factor_hypothesis.py, src/analysis/calibration_diagnostics.py, src/backtest/fill_reconciliation.py"
+    found_by: "Claude -- passo 2 do MAPA_IMPACTO_RELABEL (aprovado pelo Manager)"
+    gap: >
+      B15 (config_hash do label deve bater com o da execucao) tinha UM
+      unico ponto de aplicacao em producao: models/dataset.py linha 315, em
+      build_modeling_frame. Esse ponto protege toda a cadeia de treino, mas
+      quatro modulos carregam labels por load_labels_v1 SEM passar por la
+      -- m4_critical_windows, m6_common_factor_hypothesis,
+      calibration_diagnostics e backtest.fill_reconciliation -- e
+      consumiriam labels de um regime de config diferente sem nenhum sinal.
+      CORRECAO DO PROPRIO MAPA: a versao original de
+      docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md §2 listou 13 modulos
+      como desprotegidos. Medicao direta de COMO cada um carrega mostrou
+      que o numero estava inflado: 6 usam build_modeling_frame (ja
+      protegidos), 4 nao leem labels de jeito nenhum (falso positivo do
+      grep, que pegou mencao em docstring -- feasibility, cost_surface,
+      m4_regime_comparison, volatility_comparison), e os realmente
+      desprotegidos sao os que usam load_labels_v1 ou pl.read_parquet
+      direto. Errei para MAIS no mapa.
+    severity: "medio -- nao corrompe dado; permite consumo silencioso de labels de outro regime em 4 modulos de analise/backtest"
+    layer: "validation (gargalo de carregamento) / labels (origem do contrato B15)"
+    consequence: >
+      Sem esta correcao, o relabel de AG-221 seria silencioso exatamente
+      onde o Manager mais precisa de rastreabilidade: m6 (o teste de fator
+      comum que produziu I2=96-98%) e fill_reconciliation (a reconciliacao
+      contra book real) leem labels por este caminho.
+    status: "FECHADO 2026-08-25 -- load_labels_v1 ganhou `verify_config: bool = False` + `vol_estimator_id`. Quando True, monta LabelConfig.from_constants e chama verify_config_hash (falha alta). DECISAO DE DESENHO, deliberada: o default NAO e falha alta. Analise pos-hoc legitima as vezes PRECISA ler artefato de regime antigo -- comparar antes/depois de um relabel e exatamente isso --, e tornar a verificacao obrigatoria empurraria os callers para pl.read_parquet direto, que nao tem verificacao NENHUMA: pior que o estado atual. Em vez disso, a lacuna deixa de ser INVISIVEL: sem verificacao explicita, o config_hash real do arquivo vai para o log estruturado em toda carga, com detail apontando AG-218. Import de labels feito DENTRO da funcao (nao no topo) para nao acoplar o import de modulo; contrato importlinter verificado, 7 kept / 0 broken. Regressao: 105/105 (test_validation_cpcv + test_models_dataset + test_labels_fill_model)."
+
+  - id: AG-226
+    date: "2026-08-25"
+    file: "experiments/*.json (112 arquivos), src/models/pipeline.py::run_layer1_sprint"
+    related_file: "experiments/pre_ag221_relabel/_REGIME.md, docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md"
+    found_by: "Claude -- passo 3 do MAPA_IMPACTO_RELABEL (aprovado pelo Manager), inventario classificado dos artefatos de experiments/"
+    gap: >
+      INVENTARIO MEDIDO de experiments/:
+        112 arquivos JSON no total
+         67 carregam metrica economica derivada de labels.parquet
+         45 nao dependem de labels (metadados de download, alinhamento de
+            barras, inventario de codigo, calibracao de dollar bar)
+          0 embutem config_hash  <- ZERO
+      Nenhum artefato de experimento registra sob qual regime de config foi
+      produzido. O conteudo nao se identifica: depois de um relabel, dois
+      arquivos de regimes diferentes sao indistinguiveis por inspecao, e
+      continuam ambos legiveis e plausiveis.
+      Isso ja causou dano real e registrado: AG-218 -- alpha_layer1_report.json
+      (caminho default, sem chave) continha XRPUSDT/R3, residuo da ultima
+      das 15 combinacoes a rodar, e foi lido por tau_realization_diagnostic
+      como se fosse "o" resultado da Camada 1, com denominador de barra de
+      15m aplicado a dollar bar.
+    severity: "alto -- e o mecanismo que torna QUALQUER relabel futuro irrastreavel a posteriori, e ja produziu uma conclusao errada registrada no repo"
+    layer: "experiments / governanca de artefato"
+    consequence: >
+      A tabela antes x depois pedida pelo Manager para os experimentos so e
+      construivel se o lado ANTES for preservado com marcacao EXTERNA --
+      porque o conteudo nao carrega a informacao.
+      Restricao descoberta ao executar: NAO da para simplesmente mover os
+      arquivos. Ha leitores hardcoded (EXPERIMENTS_DIR / "alpha_layer1_report.json"
+      com 5 call sites, faixa1_5_prerequisites.json com 4,
+      m4_critical_windows_report.json com 2, mais ~8 outros com 1 cada).
+      Mover quebraria todos.
+    status: "PARCIALMENTE FECHADO 2026-08-25. (1) PRESERVACAO feita: os 67 arquivos com metrica economica COPIADOS (nao movidos) para experiments/pre_ag221_relabel/, com _REGIME.md documentando o que e, por que copia e nao move, e o contexto medido do que muda. Operacao nao-destrutiva e reversivel; os leitores hardcoded continuam funcionando. (2) CORRECAO ESTRUTURAL parcial: run_layer1_sprint passa a gravar `labels_config_hash` no relatorio, extraido do labels.parquet que de fato alimentou a rodada (ja verificado por build_modeling_frame). ABERTO: os outros writers de experiments/ (analysis/*, tools/diagnostics/*) continuam sem embutir identidade de regime -- fechar isso exige passar por cada writer, trabalho aditivo nao coberto por esta rodada. Recomendacao: um helper unico de escrita de experimento que exija (symbol, resolution_id, config_hash) na assinatura, em vez de 20+ writers ad-hoc com orjson.dumps direto."
+
+  - id: AG-227
+    date: "2026-08-25"
+    file: "src/models/pipeline.py::run_layer1_sprint/run_layer1_sprint_all_combinations, src/models/baselines.py::run_b4_feature_shuffle"
+    related_file: "config/alpha_hyperparams_by_combo.yaml, src/models/hyperparams_by_combo.py, docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, AG-207"
+    found_by: "Claude -- integracao real (smoke test end-to-end) ao implementar o pedido do Manager de aplicar os hiperparametros do ADR-003 em producao"
+    gap: >
+      run_layer1_sprint/run_layer1_sprint_all_combinations nunca tinham
+      feature_ids/hyper como parametro -- produzia SEMPRE T1_FEATURE_IDS
+      (7) + hiperparametro global unico de constants.yaml (D-11,
+      "conjunto unico v1, ASSUMED ate sweep"). Ao tentar aplicar o
+      resultado do ADR-003 (k=62, hiperparametro por combo) de verdade,
+      2 problemas reais apareceram, so visiveis rodando ponta a ponta:
+      (1) write_predictions_versioned computa config_hash a partir de
+      config={"variant": ...} SEM feature_ids/hiperparametro -- retreino
+      real sob k=62 colidiria no MESMO caminho de artefato do treino
+      legado T1 (ArtifactExistsError, medido) -- ou pior, se nao
+      colidisse, o consumidor nao teria como saber qual configuracao
+      produziu qual artefato. (2) baselines.py::run_b4_feature_shuffle
+      reconstruia a matriz de entrada do modelo ja treinado com
+      build_design_matrix(test_side) (default T1_FEATURE_IDS implicito)
+      -- ValueError: X has 7 features, but LGBMClassifier is expecting
+      62 features (medido, smoke test real BTCUSDT/R3).
+    severity: "alto -- (1) e um risco de colisao/perda de rastreabilidade de artefato de producao real; (2) e uma falha garantida que bloqueia qualquer retreino real sob feature-set != T1"
+    layer: "models (Alpha, orquestracao de treino + artefato + baselines)"
+    consequence: >
+      Sem a correcao, a primeira tentativa real de aplicar AG-207/ADR-003
+      em producao teria falhado (B4) ou, numa ordem de execucao
+      diferente, poderia ter mascarado silenciosamente qual configuracao
+      gerou qual artefato persistido (colisao de config_hash).
+    resolved_by_commit: null
+    resolution: >
+      (1) config_hash agora inclui feature_ids (lista ordenada) e hyper
+      (dataclass completo) QUANDO passados explicitamente -- sentinela
+      None/False preserva bit-exato o config_hash dos 15 artefatos ja
+      persistidos (T1/hiperparametro global). (2) run_b4_feature_shuffle
+      ganhou feature_ids: tuple[str,...] = T1_FEATURE_IDS (mesmo
+      sentinela), repassado a build_design_matrix. run_layer1_sprint
+      ganhou feature_ids/hyper; run_layer1_sprint_all_combinations ganhou
+      feature_ids/use_hyperparams_by_combo (opt-in explicito, default
+      preserva comportamento de sempre). Novo config/alpha_hyperparams_
+      by_combo.yaml + src/models/hyperparams_by_combo.py::
+      load_hyperparams_by_combo -- 10 combos calibrados (ADR-003 Estagio
+      2), 5 sem entrada (fallback pro global, com warning explicito,
+      nunca silencioso). Verificado: 60 testes unitarios
+      (test_models_pipeline.py+test_models_baselines.py) passam; smoke
+      test real end-to-end (BTCUSDT/R3, depois BNBUSDT/R3 -- o primeiro
+      colidiu de proposito com o proprio artefato da tentativa anterior,
+      confirmando que a guarda de imutabilidade funciona) completou sem
+      erro, run_layer1_sprint_done real no log (elapsed_seconds=93.3,
+      n_better=3/5 permanence_pass=False -- RESSALVA AG-220 se aplica
+      igual a qualquer outro resultado deste gate).
+    status: "FECHADO 2026-08-25 -- mecanismo implementado, testado (unitario + smoke real), 2 combos (BTCUSDT/R3, BNBUSDT/R3) ja retreinados de verdade sob a config nova. Os outros 8 combos calibrados pelo ADR-003 aguardam confirmacao do Manager antes de retreinar de verdade (escrita de artefato e imutavel/irreversivel sem trabalho manual)."
+
+  - id: AG-239
+    renumbered_from: "AG-227 -- COLISAO DE ID corrigida 2026-08-25. Esta entrada foi registrada nesta sessao com um numero ja ocupado por outro achado (o de src/models/pipeline.py, que veio antes e mantem o numero original). Nenhum conteudo foi alterado, so o identificador. Referencia cruzada a AG-227 escrita ANTES desta correcao que aponte para o achado de labels/ deve ser lida como AG-239."
+    date: "2026-08-25"
+    file: "src/labels/triple_barrier.py::build_labels_with_stats, src/labels/triple_barrier.py::build_labels_for_symbol_with_stats"
+    related_file: "src/labels/fill_model.py::simulate_fill_from_trades, docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md"
+    found_by: "Claude -- passo 5 do MAPA_IMPACTO_RELABEL (aprovado pelo Manager). Passo 4 (wiring) concluido; passo 5 (relabel) medido como NAO executavel na arquitetura atual"
+    gap: >
+      PASSO 4 CONCLUIDO: LabelConfig ganhou `entry_fill_source`
+      (mark_1m default bit-exato | agg_trades), entrou no dict de
+      config_hash, tem validacao de falha alta no __post_init__, e
+      build_labels_with_stats bifurca entre simulate_fill_arrays e
+      simulate_fill_from_trades. Verificado: config_hash muda com a fonte
+      (1ea77697cdc403f9 -> 3599b765b7a53ff2), valor desconhecido levanta
+      ValueError, 111/111 testes de labels passam.
+      PASSO 5 BLOQUEADO POR VOLUME -- medido, nao estimado:
+        media               909.425 trades/dia (amostra de 3 dias: inicio,
+                            meio e fim da serie)
+        dias                2.412
+        TOTAL               2,19 bilhoes de trades (so BTCUSDT)
+        RAM como numpy      35 GB (int64 + float64 = 16 B/trade)
+        disco (parquet)     28,3 GB
+      build_labels_with_stats recebe `agg_trades: pl.DataFrame` INTEIRO em
+      memoria, mesmo padrao de `mark_1m` (que e pequeno: 1 candle/min).
+      Sob agg_trades isso nao cabe -- e sao 5 simbolos.
+      PRE-FILTRAGEM NAO RESOLVE, tambem medido: fill_timeout_ms = 900.000
+      (15 min), e 223.111 barras x 900s cobrem 2.324 dias de trades sobre
+      2.412 -- 96,4% do dataset. As janelas de fill se sobrepoem
+      massivamente; nao ha subconjunto pequeno a carregar.
+    severity: "alto -- bloqueia a execucao do relabel aprovado; NAO e defeito de corretude (nada calcula errado), e limite de arquitetura de carregamento"
+    layer: "labels (casca de carregamento) -- fronteira entre nucleo em memoria e volume de dado de trade"
+    consequence: >
+      O nucleo esta pronto e testado, mas o relabel das 15 combinacoes nao
+      pode ser disparado: carregar 35 GB por simbolo (x5) nao e viavel, e
+      chamar build_labels_with_stats por chunk de tempo quebraria as series
+      expansivas (ATR vem de bars_df, uniqueness/concurrency dependem do
+      conjunto completo do lado).
+    status: "PASSO 4 FECHADO, PASSO 5 BLOQUEADO -- aguarda decisao do Manager sobre a solucao de carregamento. SOLUCAO PROPOSTA (Idioma B do CLAUDE.md, carry/step/finish -- o padrao que src/data/bars.py ja usa): cursor DESLIZANTE de trades. O laco de build_labels processa barras em ordem cronologica de t_post, e cada uma so precisa da janela [t_post, t_post + 900s]. Um buffer que avanca com o laco e descarta trades ja passados mantem a memoria em O(janela) em vez de O(dataset): 900s de trades ~ 9.500 registros ~ 150 KB, e mesmo mantendo 2 dias inteiros de folga sao ~1,8 M registros ~ 29 MB. Viavel com margem enorme. CUSTO: e mudanca arquitetural real na casca (build_labels_for_symbol_with_stats passa a carregar por dia e alimentar o cursor), nao plumbing -- por isso nao foi feita unilateralmente dentro do escopo 'passo 5 = relabel'. ALTERNATIVA MAIS BARATA, se o Manager preferir: rodar o relabel apenas nas combinacoes de maior valor de decisao (as 4 ja medidas, ou as 10 do ADR-003) em vez das 15, carregando por janela de calendario menor -- reduz o pico de RAM proporcionalmente mas nao elimina o problema."
+
+  - id: AG-223-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-223 -- CORRECAO DE PREMISSA pelo Manager. A entrada original esta majoritariamente INVALIDADA; o que sobra dela esta delimitado abaixo"
+    file: "src/models/monotonic.py::_ECONOMIC_FORCED_CONSTRAINT, docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md"
+    related_file: "audit/architecture_gaps_log.yaml::AG-207 (addendum_escopo_10_piores_2026-08-25), AG-217"
+    found_by: "Manager -- correcao direta, 2026-08-25: 'minha ordem foi promover T2 a T1, nao substituir T1 pelas T2, ja estou corrigindo isso'"
+    gap: >
+      O AG-223 inteiro foi construido sobre a premissa de que o ADR-003
+      SUBSTITUI os 7 T1_FEATURE_IDS pelas 62 SUPPORT_FEATURE_IDS. Essa
+      premissa e FALSA. Ela veio do addendum_escopo_10_piores_2026-08-25 de
+      AG-207, que registrou "a convencao real do codigo e SUBSTITUIR os 7
+      T1_FEATURE_IDS, nunca somar" -- e isso foi, nas palavras do Manager,
+      falha de interpretacao de outra sessao, nao a ordem dele.
+      ORDEM REAL: PROMOVER T2 a T1, ou seja SOMAR. O vetor de treino passa a
+      ter 7 + 62 = 69 features, nao 62.
+      CONSEQUENCIA: os tres problemas que AG-223 levantou NAO se
+      materializam. E27f_cost_atr_ratio PERMANECE no vetor, e com ela:
+        (a) o Alpha NAO fica cego a custo -- a unica feature de custo
+            continua presente;
+        (b) _ECONOMIC_FORCED_CONSTRAINT continua resolvendo normalmente;
+        (c) assign_environments continua com o eixo de custo intacto
+            (cost_col=E27f_cost_atr_ratio segue no frame).
+      O ACHADO ORIGINAL FICA RETIRADO nesses tres pontos.
+    severity: "n/a -- entrada retificada, nao e mais um gap de arquitetura"
+    layer: "features / models"
+    consequence: >
+      O QUE SOBREVIVE, e sobrevive por razao INDEPENDENTE da premissa
+      errada: o item (b) descreve uma fragilidade estrutural real --
+      _ECONOMIC_FORCED_CONSTRAINT referencia features por STRING e, se a
+      feature referenciada nao estiver em `feature_ids`, o mecanismo vira
+      no-op SILENCIOSO (screen_monotone_constraints simplesmente nunca
+      chega naquela entrada). Isso vale sob QUALQUER leitura do ADR-003 e
+      valeria mesmo sem ele: e o mesmo padrao de AG-140 (mecanismo que
+      existe, esta testado isoladamente, e nao dispara no caminho real).
+      Transformar esse no-op em falha alta e barato e nao depende de
+      nenhuma decisao de escopo de feature.
+      REFORCA AG-217, agora com numero maior: feature_fraction=1,0 (sem
+      amostragem de coluna) foi justificado quando o vetor tinha 7
+      features. Sob a ordem REAL do Manager o vetor vai a 69 -- quase 10x,
+      nao 9x como AG-217 estimou sob a premissa de 62. A combinacao com
+      min_sum_hessian_in_leaf no default inerte (AG-208) continua sendo o
+      ponto a dimensionar antes do sweep.
+    status: "RETIFICADO 2026-08-25 -- Manager corrigiu a premissa na mesma sessao, e esta corrigindo o registro de AG-207 que a originou. Nenhuma acao pendente sobre (a) e (c). PENDENTE, por merito proprio: tornar _ECONOMIC_FORCED_CONSTRAINT explicito quando a feature referenciada nao esta em feature_ids (item (b)) -- decisao barata do Manager, sem acoplamento com escopo de feature set. NOTA DE METODO: eu apresentei (a), (b) e (c) como consequencias medidas, quando na verdade so a MEDICAO era minha (nenhuma das 62 SUPPORT depende de custo -- isso continua verdadeiro e verificado); a premissa de substituicao eu HERDEI de um registro anterior sem questionar, apesar de ela mudar completamente a conclusao. O erro nao foi medir errado, foi nao tratar a premissa herdada como hipotese a verificar com o Manager antes de derivar tres consequencias dela."
+
+  - id: AG-228
+    date: "2026-08-25"
+    file: "tests/unit/test_risk_limits.py::test_control_13_estimated_cost_bate_com_reconstrucao_independente, src/risk/limits.py::control_13_orcamento_fees"
+    related_file: "config/constants.yaml::round_trip_cost_bps_maker_prob"
+    found_by: "Claude -- regressao completa apos a remedicao de AG-222; a falha foi CAUSADA pela minha propria correcao"
+    gap: >
+      O teste declarava validar "reconstrucao independente" do custo
+      estimado, e de fato reconstruia a formula lendo maker_fee/taker_fee/
+      maker_prob de constants.yaml -- mas terminava comparando contra um
+      LITERAL: assert estimated_cost_usd.quantize(...) == Decimal("0.149").
+      Esse 0,149 e um numero DERIVADO de maker_prob=0,4206. Quando a
+      constante foi remedida para 0,4597 (AG-222), o custo real virou 0,146
+      e o teste quebrou -- apesar de a formula e a implementacao estarem
+      corretas. O teste nao validava a formula: validava um numero fixo.
+      A mesma docstring de src/risk/limits.py::control_13_orcamento_fees
+      citava `estimated_cost_usd=0,149` como referencia de producao.
+    severity: "medio -- nao e defeito de producao (o controle calcula certo); e um teste e uma docstring que envelhecem em silencio a cada remedicao de constante, e um falso alarme que consome atencao de auditoria"
+    layer: "tests / risk (documentacao)"
+    consequence: >
+      E o padrao de AG-123 (numero derivado nao revisado quando a fonte
+      muda) manifestado em TESTE, nao em documento -- e por isso mais
+      perigoso: um teste vermelho parece defeito de codigo. Como
+      round_trip_cost_bps_maker_prob ainda precisa de uma SEGUNDA remedicao
+      apos o relabel de AG-221, o mesmo teste quebraria de novo.
+    status: "FECHADO 2026-08-25 -- o teste passa a comparar a reconstrucao manual contra a IMPLEMENTACAO real (features.groups.group_e.round_trip_cost_bps), que e o que a docstring dele sempre prometeu, mais uma checagem de ordem de grandeza independente do valor da constante (custo entre o extremo 100% maker e o extremo 100% taker). Agora e imune a qualquer remedicao futura da constante. A docstring de control_13_orcamento_fees deixou de citar o numero, com a razao declarada no proprio texto. 128/128 em test_risk_limits + test_features_groups."
+
+  - id: AG-227-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-227 -- Opcao A escolhida pelo Manager ('Opcao A com certeza') e IMPLEMENTADA. O bloqueio de volume esta resolvido"
+    file: "src/labels/fill_model.py::TradeWindowCursor, src/labels/triple_barrier.py::_agg_trades_feeder_factory"
+    related_file: "tests/unit/test_labels_fill_model.py, src/labels/triple_barrier.py::build_labels_with_stats, ::build_labels_both_sides_with_stats, ::build_labels_for_symbol_with_stats"
+    found_by: "Claude -- implementacao da Opcao A aprovada pelo Manager"
+    gap: >
+      RESOLVIDO o bloqueio de 35 GB registrado na entrada original.
+      SOLUCAO: cursor deslizante (Idioma B do CLAUDE.md), em duas pecas com
+      a fronteira nucleo/casca respeitada:
+        (1) NUCLEO PURO -- fill_model.TradeWindowCursor: zero IO, buffer de
+            trades com `feed` (anexa chunk), `needs_more` (cobre o
+            horizonte?), `advance_to` (descarta o passado) e `window`
+            (fatia para o fill). Funciona porque build_labels percorre as
+            barras em ordem cronologica CRESCENTE de t_post e cada barra so
+            olha para frente -- trades anteriores nunca mais sao
+            consultados.
+        (2) CASCA -- triple_barrier._agg_trades_feeder_factory: le um DIA
+            de agg_trades por chamada, pula dias ausentes em disco (a
+            cobertura de agg_trades comeca depois da de klines em alguns
+            simbolos: XRPUSDT tem 1.711 dias contra 2.412 de BTCUSDT; dia
+            faltante vira NOFILL, que e o desfecho correto -- sem trade
+            observado nao ha fill demonstravel).
+      E uma FACTORY, nao um feeder: build_labels_both_sides_with_stats roda
+      o laco DUAS vezes (long/short) e um feeder se esgota numa passada --
+      cada lado recebe a sua propria sequencia, comecando do inicio.
+      As duas formas de entrega convergem para o MESMO caminho de codigo no
+      laco: um `agg_trades` DataFrame inteiro (teste/dataset pequeno) vira
+      internamente um feeder de chunk unico. Mesma disciplina de
+      src/data/bars.py, onde lote e streaming com 1 chunk.
+    severity: "n/a -- bloqueio resolvido"
+    layer: "labels (fill de entrada) -- nucleo puro + casca de carregamento"
+    consequence: >
+      VALIDACAO END-TO-END pelo pipeline REAL de producao
+      (build_labels_for_symbol_with_stats, BTCUSDT/R1, 2024-01-01 a
+      2024-01-31, ParkinsonEstimator(window=20)):
+        fonte        n      P(TP|fill)  NOFILL   ret_gross  tempo
+        mark_1m      5.227  0,4493      8,25%    -5,08 bps  1s
+        agg_trades   5.220  0,4942      1,19%    -0,82 bps  4s
+        DELTA                +0,0449    -7,06pp  +4,26 bps
+      Bate com a validacao independente de AG-221 (que recomputava o fill
+      por fora, sobre labels ja materializados): P(TP) ~ 0,4935 e
+      ret_gross ~ -0,71 bps para BTCUSDT/R1. Dois caminhos de calculo
+      diferentes chegando ao mesmo numero.
+      CUSTO OPERACIONAL medido: 4s para 31 dias => ~5 min por combinacao
+      (2.412 dias), ~78 min para as 15. Memoria: O(janela), nao O(dataset)
+      -- nao estourou em nenhuma execucao.
+    status: "IMPLEMENTADO E VALIDADO 2026-08-25. Entregue: (1) TradeWindowCursor com 7 testes novos, incluindo `test_cursor_reproduz_o_fill_do_dataset_inteiro` -- alimentar em chunks e deslizar produz EXATAMENTE o mesmo fill que passar o array inteiro; e essa invariante que autoriza trocar 35 GB por O(janela), e ela e verificada, nao assumida; (2) feeder de dia na casca; (3) wiring em build_labels_with_stats/both_sides/for_symbol. 150/150 nos testes de labels+dataset, ruff/mypy limpos. PRODUCAO NAO ALTERADA: entry_fill_source continua com default mark_1m, bit-exato. O relabel das 15 combinacoes esta agora EXECUTAVEL e aguarda so o disparo -- passo 5 do MAPA_IMPACTO_RELABEL deixa de estar bloqueado."
+
+  - id: AG-229
+    date: "2026-08-25"
+    file: "data/labels/{5 simbolos}/{R1,R2,R3}/v1/labels.parquet (15 artefatos), config/constants.yaml::round_trip_cost_bps_maker_prob"
+    related_file: "data/labels_pre_ag221_relabel/, experiments/ag221_relabel_antes_depois.{json,md}, experiments/ag221_baseline_labels_antes.json, src/analysis/ag221_relabel_comparison.py, docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md"
+    found_by: "Claude -- RUN DE PRODUCAO autorizado pelo Manager ('pode seguir com run de producao'), passos 4-6 do mapa de impacto"
+    gap: >
+      RELABEL DE PRODUCAO EXECUTADO. 15 combinacoes (5 simbolos x R1/R2/R3)
+      reprocessadas com entry_fill_source=agg_trades, em 998s (R1 336s,
+      R2 333s, R3 329s). Memoria O(janela) via TradeWindowCursor -- nao
+      estourou, contra os 35 GB que o caminho anterior exigiria.
+      RESULTADO (tabela completa em experiments/ag221_relabel_antes_depois.md):
+        metrica          antes            depois
+        P(TP|fill)       0,4505-0,4768    0,4917-0,4969
+        NOFILL           7,87%-10,73%     1,21%-2,17%
+        ret_gross        -4,03 a -6,70    -0,68 a -1,26 bps
+        delta                             +3,26 a +5,65 bps
+      As 15 convergem para dentro de 0,83 pp de 0,50 -- o valor teorico de
+      martingale sob payoff simetrico. Quinze medicoes independentes
+      chegando ao mesmo ponto teorico.
+      GRUPO DE CONTROLE INTACTO: as 5 combinacoes de grade de RELOGIO 15m
+      (resolution_id=None) ficaram BIT-IDENTICAS (+0.0000 em toda metrica,
+      config_hash inalterado). O relabel so rodou sob resolution_id, entao
+      o controle nao se moveu -- prova de que a mudanca atingiu exatamente
+      o escopo pretendido e nada alem.
+      TRES PADROES SISTEMATICOS, todos confirmando o mecanismo de AG-221:
+      (1) delta P(TP) DECRESCE com a resolucao (R1 ~+0,040 > R2 ~+0,030 >
+          R3 ~+0,021): R1 tem as barras mais rapidas, entao a espera
+          sintetica de 0-60s pesava proporcionalmente mais;
+      (2) delta ret_gross CRESCE com a volatilidade do simbolo (BTC +3,6 <
+          BNB +3,4 < ETH +4,1 < XRP +4,9 < SOL +5,5) -- a predicao de que
+          o vies escala com sigma, agora numa terceira dimensao
+          independente (antes: por faixa de espera, e por quintil de vol);
+      (3) o spread de P(TP) entre as 15 caiu de 0,0263 para 0,0052 --
+          removido o vies de granularidade, as combinacoes ficam 5x mais
+          homogeneas entre si.
+    severity: "n/a -- execucao planejada e autorizada, nao um gap"
+    layer: "labels (artefato de producao) / features+analysis+models (consumidores)"
+    consequence: >
+      GAP CONTRA O BREAKEVEN, media das 15 combinacoes:
+        breakeven (geometria tp=sl=1,5)  : +5,29 bps  (P(TP)* = 0,5703)
+        edge bruto ANTES  (media)        : -5,21 bps  -> gap 10,50 bps
+        edge bruto DEPOIS (media)        : -0,81 bps  -> gap  6,10 bps
+        REDUCAO DO GAP                   : 41,9%
+      Continua NEGATIVO -- o relabel nao cria edge, remove um vies de
+      instrumento. A condicao que o Manager colocou ("reduz gap atual mesmo
+      que ainda continue negativo") esta satisfeita e medida.
+      EFEITO COLATERAL POSITIVO, nao antecipado: o teste
+      test_breakeven_win_rate_refinada_mais_alta_que_naive
+      (tests/unit/test_analysis_feasibility.py), que estava VERMELHO desde
+      a rodada S1, voltou a PASSAR com a constante remedida. Era
+      consequencia da constante desatualizada, nao defeito de codigo --
+      confirmacao independente de que 0,4206 estava errado.
+      A suite foi de 1915 passed / 2 failed para 1916 passed / 1 failed.
+    status: "CONCLUIDO 2026-08-25. Passos executados do MAPA_IMPACTO_RELABEL: 4 (wiring de entry_fill_source, incl. o entrypoint de producao run_and_write_labels_dollar_bar_parkinson), 5 (relabel das 15) e 6 (2a remedicao de round_trip_cost_bps_maker_prob: 0,4597 -> 0,4942, custo 5,6209 -> 5,5173 bps). PRESERVACAO: data/labels_pre_ag221_relabel/ (363 MB, 20 arquivos) copiado ANTES da primeira escrita -- sem ele o lado ANTES da tabela nao existiria, porque write_labels_atomic substitui o parquet no lugar e config_hash distingue regimes mas nao RECUPERA valor sobrescrito (licao de AG-226/AG-218). PENDENTE, e e o trabalho grande: os 67 experimentos de experiments/ com metrica economica precisam ser RE-EXECUTADOS, nao apenas relidos -- cada JSON e saida de um pipeline que consome labels.parquet, e trocar os labels nao atualiza o JSON. Snapshot do lado ANTES ja preservado em experiments/pre_ag221_relabel/. Proximo passo proposto: inventariar quais dos ~20 entrypoints tem CLI executavel e quais precisam de uma, ANTES de disparar (re-rodar alpha_layer1_report sozinho e o run_layer1_sprint completo, ~10 min x 15 combinacoes)."
+
+  - id: AG-230
+    date: "2026-08-25"
+    file: "src/labels/triple_barrier.py::build_labels_with_stats (bloco lo_idx/hi_idx, n_empty_mark_window)"
+    related_file: "src/labels/fill_model.py::simulate_fill_from_trades, docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md, experiments/ag221_relabel_antes_depois.json"
+    found_by: "Claude -- VALIDACAO do relabel de producao pedida pelo Manager ('Valide o que ja foi feito'). A contagem de linhas mudou nas 15 combinacoes e isso nao era esperado: numero de barras de decisao nao deveria depender da fonte de fill"
+    gap: >
+      O relabel de AG-221 perdeu 0,48% das linhas no agregado (3.102.197 ->
+      3.087.155), mas a perda NAO e uniforme -- concentra-se em BTCUSDT
+      (-1,93% R1, -1,84% R2, -1,59% R3) e, dentro dele, em jan-fev de 2021
+      (4.296 das 4.297 barras perdidas em R1). Os outros quatro simbolos
+      ficam em ruido (-0,07% a +0,05%).
+      CAUSA MEDIDA (jan-fev 2021, BTCUSDT/R1, comparacao pareada de
+      LabelBuildStats): `n_empty_mark_window` vai de 0 para 6.149. Nenhum
+      outro contador explica a diferenca.
+      MECANISMO: `lo_idx = searchsorted(mark_open_time, t_entry, "left")`.
+      Sob `mark_1m`, `t_entry` E um `open_time` de candle, entao "left"
+      devolve o indice DAQUELE candle. Sob `agg_trades`, `t_entry` e o
+      instante de um trade -- cai no MEIO de um candle -- e "left" avanca
+      para o PROXIMO. A janela de avaliacao de barreira encolhe em um
+      candle. Em rajada de dollar bar (bull run de jan/2021: 32 barras
+      cabem em poucos minutos, ver AG-100 F1) a janela ZERA e a barra e
+      descartada por `if hi_idx <= lo_idx: continue`.
+      POR QUE SO BTCUSDT: os outros 4 simbolos so tem labels a partir de
+      2021-12-08 (SYMBOL_START_DATE), depois do bull run. So BTC atravessa
+      o periodo de rajada extrema.
+      EFEITO SECUNDARIO, menor e tambem medido: `n_incomplete_tail_
+      decision_bars` sobe (+4 em 3 meses). Causa: o check de NOFILL vem
+      ANTES do check de cauda incompleta no laco, entao uma barra da cauda
+      que dava NOFILL era EMITIDA, e agora que tem fill chega ao check de
+      cauda e e descartada. Isso e uma MELHORIA de correcao (a barra nao
+      tinha horizonte completo; emiti-la como NOFILL mascarava isso), mas
+      revela uma ordem de validacao trocada -- nao faz sentido simular fill
+      de uma barra que ja se sabe sem horizonte.
+    severity: "medio -- NAO e defeito de corretude (o descarte e causalmente CORRETO), e um vies de AMOSTRA nao uniforme entre simbolos, que precisa acompanhar toda leitura de antes x depois de BTCUSDT"
+    layer: "labels (fronteira entre granularidade de fill e granularidade de barreira)"
+    consequence: >
+      O descarte e causalmente correto e nao ha alternativa limpa: incluir
+      o candle que CONTEM `t_entry` usaria high/low de ANTES do fill, o que
+      seria vazamento (a barreira pareceria tocada por um movimento que
+      aconteceu antes da entrada existir). Com OHLC de 1 minuto nao ha como
+      recuperar so a parte do candle posterior a `t_entry`.
+      Mas o efeito colateral e real: remove preferencialmente barras de
+      RAJADA (alta atividade, dollar bars rapidas), que sao justamente as
+      de regime de estresse. Qualquer comparacao BTCUSDT antes x depois --
+      inclusive a tabela de experiments/ag221_relabel_antes_depois.md --
+      carrega esse vies. Os 4 alts nao carregam.
+    status: "ABERTO -- registrado com a causa medida, NAO corrigido. Tres caminhos possiveis, nenhum escolhido aqui: (a) ACEITAR e documentar (custo zero, vies de 1,9% em 1 de 5 simbolos, concentrado em 2 meses de 79); (b) avaliar a BARREIRA tambem em agg_trades, o que elimina a diferenca de granularidade na raiz mas contraria B12 (working_type MARK_PRICE -- a barreira e sobre mark, nao sobre trade) e e trabalho grande; (c) tratar a janela vazia como desfecho proprio (ex. emitir com barrier_hit especifico) em vez de descarte silencioso, preservando a linha e tornando o fenomeno contavel a posteriori -- e o mais barato dos tres e nao muda nenhuma semantica existente. Recomendacao: (c) agora, (b) so se o vies se mostrar material em alguma decisao. CORRECAO DE ORDEM, independente e barata: mover o check de cauda incompleta para ANTES da simulacao de fill."
+
+  - id: AG-231
+    date: "2026-08-25"
+    file: "src/analysis/s1_tp_sl_sensitivity.py, src/analysis/faixa2_e3_stability.py, src/analysis/faixa2_dsr_and_b2_check.py"
+    related_file: "docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md"
+    found_by: "Claude -- inventario dos entrypoints para a re-execucao dos experimentos pos-relabel (pedido do Manager)"
+    gap: >
+      Tres modulos de `src/analysis/` produzem artefatos de `experiments/`
+      que DERIVAM de `labels.parquet` -- portanto precisam ser
+      re-executados apos qualquer relabel -- mas nao tinham bloco
+      `if __name__ == "__main__"`. So eram invocaveis por
+      `python -c "from src.analysis.X import run_and_save_Y as r; r()"`,
+      forma que a propria docstring de `s1_tp_sl_sensitivity` documenta.
+      Consequencia: ficavam de fora de qualquer orquestracao reproduzivel
+      de re-execucao, e a diferenca entre "nao rodou" e "nao existe forma
+      de rodar" ficava invisivel no inventario.
+      O mais critico dos tres e `s1_tp_sl_sensitivity`: e a medicao que
+      decide a GEOMETRIA DE BARREIRA (tp_atr_mult/sl_atr_mult), da qual
+      dependem o breakeven do motor, `round_trip_cost_bps_maker_prob`
+      (AG-222) e o proprio regime de labels.
+    severity: "baixo -- nenhum defeito de calculo; e lacuna de operabilidade que so aparece quando se tenta orquestrar re-execucao em massa"
+    layer: "analysis (operabilidade de artefato)"
+    consequence: >
+      Sem CLI, os tres nao entram num runner batch e dependem de alguem
+      lembrar da forma de invocacao. Num inventario de 22 modulos, os que
+      nao tem entrada tendem a ser silenciosamente pulados -- e o S1, por
+      ser o de maior consequencia, seria o pior a pular.
+    status: "FECHADO 2026-08-25 -- os tres ganharam bloco __main__ no padrao do repo (funcao `_run() -> int` + `sys.exit`, log estruturado de conclusao, `# pragma: no cover`). Agora invocaveis por `uv run python -m src.analysis.<modulo>`. ruff/mypy limpos nos tres. Inventario completo e camadas de dependencia em docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md."
+
+  - id: AG-232
+    date: "2026-08-25"
+    file: "src/analysis/s1_tp_sl_sensitivity.py::run_s1_tp_sl_sensitivity (linha 230)"
+    related_file: "config/constants.yaml::tp_atr_mult, config/constants.yaml::sl_atr_mult, audit/architecture_gaps_log.yaml::AG-224, docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md"
+    found_by: "Claude -- ao re-executar a Camada 0 dos experimentos pos-relabel (AG-221) e notar que TODAS as 7 celulas do S1 tinham delta EXATAMENTE +0.00000 apos um relabel que mudou ret_gross em +3 a +5 bps nas 15 combinacoes"
+    gap: >
+      O S1 -- o sweep que DECIDIU a geometria de barreira de producao --
+      le a grade ERRADA. Linha 230, caminho hardcoded:
+        labels = pl.read_parquet(f"data/labels/{symbol}/15m/v1/labels.parquet")
+      E nao e so o caminho dos labels: o modulo inteiro opera em grade de
+      relogio. `load_bars_15m(symbol, start, end)` para as barras de
+      decisao, `LabelConfig.from_constants()` SEM `resolution_id`, e
+      `decision_bar_close_time_ms` derivado das barras de 15m.
+      A grade CANONICA de producao e dollar bar (R1/R2/R3) desde AG-042
+      (`canonical_bar_type: dollar`). O S1 nunca leu R1/R2/R3.
+      COMO FOI DETECTADO: apos o relabel de AG-221, que mudou ret_gross de
+      -4,03/-6,70 bps para -0,68/-1,26 bps nas 15 combinacoes dollar-bar,
+      o S1 foi re-executado e produziu edge IDENTICO ate a 5a casa decimal
+      em todas as 7 celulas. Um relabel dessa magnitude nao pode deixar uma
+      medicao de edge inalterada -- a menos que ela nao esteja lendo o dado
+      relabelado. As unicas chaves que mudaram no JSON (`r2_floor_stop_pct`,
+      `sanidade_centro_da_grade`) mudaram por causa da remedicao de
+      `round_trip_cost_bps_maker_prob` (AG-222), nao dos labels.
+      As 5 combinacoes de grade 15m foram justamente o GRUPO DE CONTROLE
+      do relabel (nao foram tocadas, por desenho) -- e e exatamente isso
+      que o S1 mede.
+    severity: "critico -- tp_atr_mult e classe A, governa toda a geometria de payoff (breakeven, round_trip_cost_bps_maker_prob, P(TP) de martingale, e o regime de label inteiro). O valor vigente 1,5 foi escolhido pelo S1 em 2026-08-24 medindo uma grade que nao e a de producao"
+    layer: "analysis (sweep de decisao) -- fronteira grade de relogio x dollar bar"
+    consequence: >
+      A decisao registrada em constants.yaml::tp_atr_mult ("CORRIGIDO
+      2026-08-24, decisao do Manager 'muda', apos S1 medir a grade") foi
+      tomada sobre a grade de relogio 15m, nao sobre R1/R2/R3. O valor
+      pode estar certo por coincidencia, mas nao esta SUPORTADO pela
+      medicao que a fonte cita.
+      Efeito em cascata ja mapeado: tp/sl definem a geometria -> a
+      geometria define P(TP) de martingale (b/(a+b)) -> que define
+      round_trip_cost_bps_maker_prob (AG-222, ja remedida DUAS vezes) ->
+      que alimenta E27f_cost_atr_ratio (feature T1), feasibility (Gate 0) e
+      risk/limits (producao).
+      E a MESMA classe de AG-224 (ferramenta de diagnostico que produz
+      numero de governanca lendo a grade legada), agora num modulo de
+      consequencia muito maior -- e num que tem design doc proprio
+      (docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md), o que
+      indica que a revisao daquele documento tambem nao pegou o problema.
+    status: "ABERTO -- registrado. BLOQUEIA a tarefa que o Manager pediu ('investigar para encontrar a melhor combinacao para as novas labels, propor com base em medicoes'): nao ha como propor geometria a partir de um sweep que le a grade errada. CORRECAO NECESSARIA, mecanica mas nao trivial (4 pontos no mesmo modulo): (1) caminho dos labels por resolution_id em vez de 15m hardcoded; (2) barras de decisao via lake.query_dollar_bars em vez de load_bars_15m; (3) LabelConfig.from_constants(estimator_id=..., resolution_id=...) -- sob dollar bar o estimator e OBRIGATORIO; (4) decision_bar_close_time_ms das dollar bars. Default `resolution_id=None` preserva o comportamento atual bit-exato, para que a comparacao com o resultado historico continue possivel. RESSALVA sobre o resultado do sweep corrigido: a analise teorica desta sessao mostra que sob martingale o edge bruto e ZERO para QUALQUER geometria, entao o que o S1 mede como 'edge por celula' e majoritariamente o vies de execucao/instrumento, nao propriedade da geometria -- o sweep corrigido precisa reportar tambem P(TIME) e ESS por celula, senao repete o erro de otimizar sobre ruido (ver docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md §5)."
+
+  - id: AG-233
+    date: "2026-08-25"
+    file: "src/analysis/ (7 modulos), docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md §2.1"
+    related_file: "audit/architecture_gaps_log.yaml::AG-042, ::AG-224, ::AG-232, src/features/_sources.py::load_bars_15m"
+    found_by: "Claude -- pergunta direta do Manager ('o canonico de producao e R1/R2/R3, mas vi em varias fases do seu trabalho citar e fazer re-run de 15m, do que se trata especificamente?'). A pergunta expos um padrao que AG-224 e AG-232 tinham pego como casos isolados"
+    gap: >
+      NAO E UM MODULO, E UM PADRAO. A grade canonica de producao e dollar
+      bar (R1/R2/R3) desde AG-042 (2026-08-16, canonical_bar_type: dollar),
+      mas SETE dos dezesseis modulos da Camada 0 de `analysis/` leem a
+      grade de RELOGIO 15m, que foi substituida:
+        s1_tp_sl_sensitivity           -- decide tp_atr_mult (AG-232, critico)
+        m6_common_factor_hypothesis    -- produziu I2=96-98% (fator comum)
+        volatility_operational_effect  -- efeito operacional de vol
+        gk_vs_wilder_econ_regime_shift -- troca de estimador de vol
+        faixa2_e2_research             -- pesquisa E2
+        m2_bar_comparison              -- LEGITIMO (compara grades por desenho)
+        m3_timeframe_choice            -- LEGITIMO (compara TFs por desenho)
+      Contra 5 que leem producao (m4_regime_comparison, m4_critical_windows
+      [misto], gate_efficiency, volatility_comparison,
+      t1_t2_orthogonality_by_combo) e 4 que nao leem labels.
+      Os dois primeiros da lista LEGITIMO existem para comparar grades --
+      ler 15m ali e o proposito. Os CINCO restantes nao: produzem conclusao
+      sobre producao medindo a grade que deixou de ser producao.
+      NUMERO MEDIDO que quantifica a distancia entre as grades: a duracao
+      MEDIANA real das dollar bars e R1=10,2min, R2=21,5min, R3=45,1min --
+      contra os "~15min/~30min/~1h" que a docstring de
+      features/_sources.py::load_bars afirma. As barras sao ~30% mais
+      rapidas que o documentado, entao "15m ~ R1" nao e aproximacao
+      aceitavel: sao grades com ~47% de diferenca de duracao.
+      NOTA sobre load_bars_15m em si: a funcao NAO e o problema. Ela e
+      legitima, e `load_bars()` ja despacha corretamente por `bar_source`
+      (time_15m | dollar_r1 | dollar_r2 | dollar_r3). O problema sao os
+      modulos de DECISAO que a chamam (ou leem labels/15m/) sem passar
+      pela grade de producao.
+    severity: "alto -- nao corrompe artefato nenhum, mas significa que uma fracao substancial das conclusoes de analise do projeto foi medida numa grade que nao e a de producao, sem que isso estivesse visivel em lugar nenhum"
+    layer: "analysis (transversal) -- residuo da migracao AG-042 nao propagado aos consumidores"
+    consequence: >
+      (1) O relabel de AG-221 (que so tocou R1/R2/R3) NAO afeta 7 dos 16
+      modulos -- re-executa-los nao muda nada, porque nao leem o dado
+      relabelado. Isso ja se confirmou na pratica: das tres primeiras
+      re-execucoes, o S1 deu edge identico ate a 5a casa decimal.
+      (2) ACHADO DE METODO, igualmente importante: o snapshot
+      experiments/pre_ag221_relabel_c0/ NAO e um baseline causal. Contem
+      artefatos de datas variadas (o M6 "antes" e de 2026-08-14, onze dias
+      antes do relabel), nao um estado consistente medido imediatamente
+      antes. Some-se que os cinco labels.parquet da grade 15m foram
+      REGRAVADOS as 14:46-14:47 de 2026-08-25 por processo EXTERNO a esta
+      sessao (verificado: nenhum teste escreve em producao -- todos usam
+      tmp_path/monkeypatch; e label_engine_runs nao registra run de tf=15m).
+      Logo, qualquer mudanca observada em modulo que le 15m mistura tres
+      causas -- labels 15m regravados por terceiros, remedicao de
+      round_trip_cost_bps_maker_prob (AG-222), e o relabel -- e NAO pode
+      ser atribuida ao relabel. Foi exatamente o caso do M6, cujos numeros
+      melhoraram (edge LONG -0,0465 -> -0,0328; I2 96,09 -> 93,92) sem que
+      a melhora seja creditavel a AG-221.
+    status: "ABERTO -- registrado com a matriz completa em docs/PLANO_REEXECUCAO_EXPERIMENTOS_ag221_2026-08-25.md §2.1. NAO corrigido: sao 5 modulos a migrar (S1 sendo o critico, ja isolado em AG-232), e a migracao de cada um exige decidir se ele deve rodar POR resolucao (R1/R2/R3 separadamente, 3x o custo) ou sobre uma so -- decisao de desenho por modulo, nao mecanica. RECOMENDACAO DE ORDEM: (1) S1 primeiro, porque decide constante classe A e bloqueia a escolha de geometria; (2) M6 em seguida, porque o I2=96-98% e citado como evidencia em decisao de escopo multi-ativo; (3) os outros tres conforme forem necessarios a alguma decisao. E, independente disso, um teste de governanca barato: falhar o build se um modulo de `analysis/` que nao seja m2/m3 referenciar `/15m/v1/labels` -- transforma o padrao inteiro em erro detectavel em vez de achado de auditoria."
+
+  - id: AG-234
+    date: "2026-08-25"
+    file: "src/models/pipeline.py::run_layer1_sprint (docstring de feature_ids/hyper)"
+    related_file: "AG-207, docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, audit/evidence_ledger.yaml::t1-t2-ortogonalidade-combinada-2026-08-25"
+    found_by: "Claude -- auto-auditoria durante a varredura de governanca ponta a ponta pedida pelo Manager"
+    gap: >
+      Erro real na primeira implementacao de AG-207 (T2 promove a T1):
+      interpretei "promover" como SUBSTITUIR (feature_ids=SUPPORT_
+      FEATURE_IDS, 62, T1 removido do vetor de treino) -- convencao
+      herdada da campanha de pesquisa T2->T1 (Fase1/Fase2/ADR-002), que
+      era deliberadamente substitutiva mas nunca foi mandato de producao.
+      O Manager corrigiu em tempo real: "nao mandei remover T1... quero
+      que somem" -- ADITIVO (69 = 7+62). 10 combinacoes ja tinham side
+      artefato real gravado sob a leitura errada (substitutiva) antes da
+      correcao.
+      Achado colateral da correcao: o codigo referenciou "AG-228" (a
+      entrada que eu disse ao Manager que ia registrar) em comentarios/
+      docstring de pipeline.py, mas a entrada NUNCA foi de fato escrita
+      -- e enquanto isso outra sessao paralela ja tinha usado AG-228 pra
+      um achado diferente (regressao de teste em control_13_orcamento_
+      fees). Numero fantasma: codigo cita um AG-NNN que aponta pro
+      achado ERRADO no ledger.
+    severity: "medio -- a mudanca de leitura (substitutivo->aditivo) foi corrigida no mesmo dia, sem impacto em decisao tomada; o numero fantasma e um risco de auditoria futura (quem ler o comentario do codigo encontra o AG-228 errado)"
+    layer: "models (Alpha, wiring de producao) / governanca (disciplina de registro)"
+    consequence: >
+      Se nao corrigido, qualquer leitura futura do comentario em
+      pipeline.py que cita "AG-228" encontraria o achado de outra sessao
+      (teste de risk/limits), nao o achado real (correcao substitutivo->
+      aditivo) -- confusao de rastreabilidade exatamente do tipo que
+      AG-123 ja catalogou (numero/referencia dessincroniza da fonte real).
+    resolved_by_commit: null
+    resolution: >
+      Registrado aqui como AG-234 (numero real, nao o AG-228 fantasma).
+      pipeline.py::run_layer1_sprint docstring corrigida pra citar AG-234
+      em vez de AG-228. Mecanismo em si (feature_ids aditivo, T1 nunca
+      removido) ja estava correto no codigo desde a correcao em tempo
+      real -- este item fecha so a referencia de documentacao/numero.
+    status: "FECHADO 2026-08-25 -- ver correcao do comentario em pipeline.py nesta mesma sessao."
+
+  - id: AG-240
+    renumbered_from: "AG-234 -- COLISAO DE ID corrigida 2026-08-25. Esta entrada foi registrada nesta sessao com um numero ja ocupado por outro achado (o de src/models/pipeline.py, que veio antes e mantem o numero original). Nenhum conteudo foi alterado, so o identificador. Referencia cruzada a AG-234 escrita ANTES desta correcao que aponte para o achado de labels/ deve ser lida como AG-240."
+    date: "2026-08-25"
+    file: "src/labels/barrier_sweep.py::resolve_barriers_vectorized, ::_resolve_bar_ms"
+    related_file: "src/analysis/s1_tp_sl_sensitivity.py, audit/architecture_gaps_log.yaml::AG-116, ::AG-232"
+    found_by: "Claude -- ao executar a Fase 1 (migrar o S1 para a grade de producao), aprovada pelo Manager"
+    gap: >
+      `resolve_barriers_vectorized` -- o motor vetorizado que o S1 usa para
+      varrer geometrias de barreira -- tinha DUAS amarras duras a grade de
+      relogio, que impediam a migracao do S1 para dollar bar:
+      (1) `bar_ms = step_ms(tf)` no topo da funcao. `step_ms` LEVANTA para
+          R1/R2/R3 por desenho (nao ha espacamento constante, AG-042),
+          entao a funcao era inchamavel sob a grade canonica.
+      (2) `horizon_end = t0 + time_stop_ms` -- horizonte em RELOGIO. Sob
+          dollar bar o horizonte de producao e CONTAGEM DE BARRA
+          (`t0_arr[i + horizon_bars]`, AG-116), que a funcao nao tinha como
+          derivar sozinha.
+      Consequencia: qualquer analise que dependesse deste motor estava
+      estruturalmente presa a 15m -- inclusive a que decide constantes
+      classe A (AG-232).
+    severity: "medio -- nao produzia numero errado; impedia a migracao, e por isso mantinha AG-232 aberto"
+    layer: "labels (motor de sweep de barreira)"
+    consequence: >
+      Sem esta correcao a Fase 1 (S1 na grade de producao) era impossivel
+      sem duplicar o motor -- o que criaria duas implementacoes de
+      resolucao de barreira divergindo com o tempo, exatamente o risco que
+      AG-009/AG-129 catalogam.
+    status: "FECHADO 2026-08-25, de forma ADITIVA e bit-exata. (1) `horizon_end_ms: IntArray | None = None` -- quando fornecido, o caller passa o horizonte JA resolvido e o nucleo nao precisa conhecer a grade (mesma disciplina de `max_feature_lookback_ms` em CPCVConfig: o que a camada nao pode inferir vira entrada explicita). Default None = `t0 + time_stop_ms`, bit-exato. (2) `_resolve_bar_ms` -- sob grade de relogio, `step_ms(tf)` como sempre; sob dollar bar, MEDE a mediana do diff de `decision_bar_close_time_ms`. Esse valor so entra na EXTRAPOLACAO de n_bars_held alem da ultima barra carregada -- nunca decide barreira, nunca entra em ret_gross/ret_net --, entao uma mediana medida e a aproximacao correta ali, e e derivada do dado, nao estipulada (B23). REGRESSAO QUE EU INTRODUZI E CORRIGI NO MESMO PASSO: a 1a versao de _resolve_bar_ms capturava `except Exception`, o que fazia um `tf` INVALIDO (typo) ser aceito silenciosamente sempre que houvesse barras de decisao -- matando a falha-alta que `test_resolve_barriers_vectorized_tf_invalido_levanta_unsupportedtimeframeerror` cobre. O teste pegou. Corrigido com whitelist explicita (`CALIBRATION_TF_BY_RESOLUTION`): so R1/R2/R3 entram no caminho medido; qualquer outro desconhecido continua levantando. 88/88 nos testes de labels."
+
+  - id: AG-235
+    date: "2026-08-25"
+    file: "src/analysis/s1_tp_sl_sensitivity.py, experiments/s1_tp_sl_sensitivity_report_R1.json"
+    related_file: "config/constants.yaml::tp_atr_mult, ::sl_atr_mult, docs/AVALIACAO_EXPURGO_GRADE_15M_2026-08-25.md"
+    found_by: "Claude -- Fase 1 concluida: S1 migrado (AG-232 fechado) e executado sobre a grade de producao R1"
+    gap: >
+      RESULTADO DA MEDICAO QUE AG-232 BLOQUEAVA. Com o S1 rodando sobre
+      R1 (dollar bar, grade canonica) em vez de 15m:
+      ARMADILHA DE COMPARACAO, detectada antes de concluir: as celulas NAO
+      tem o mesmo numero de estratos. O S1 filtra celulas por R2 POR
+      SIMBOLO (`min_viable_sl_mult = r2_floor_stop_pct / atr_median`), e
+      `sl=0,75` so e viavel em SOLUSDT (ATR 0,00409) -- os outros quatro
+      simbolos exigem sl >= 0,85-1,13. Logo `tp=1,5/sl=0,75` aparece com
+      edge +0,01051 (o "melhor" da tabela crua) mas com n_estratos=2, ou
+      seja medido SO no simbolo de maior ATR. Comparar media de 2 estratos
+      com media de 10 e vies de selecao puro.
+      COMPARACAO HONESTA -- so as 5 celulas com n_estratos=10 (5 simbolos x
+      2 lados), com o CUSTO contabilizado junto do edge:
+        celula              edge_bps   P(TP)mart  custo   GAP
+        tp=3,00 sl=1,50      -0,08      0,3333    6,00    6,08
+        tp=2,00 sl=1,50      -0,24      0,4286    5,71    5,95  <- menor
+        tp=1,50 sl=1,50      -0,47      0,5000    5,50    5,97  <- producao
+        tp=3,00 sl=2,25      -0,48      0,4286    5,71    6,19
+        tp=2,25 sl=2,25      -0,49      0,5000    5,50    5,99
+      GANHO POTENCIAL DE TROCAR A GEOMETRIA: +0,02 bps (0,3%).
+    severity: "n/a -- e um resultado de medicao, nao um defeito"
+    layer: "analysis (decisao de geometria)"
+    consequence: >
+      A GEOMETRIA NAO E A ALAVANCA. Todas as celulas viaveis dao gap de
+      5,95 a 6,19 bps -- spread de 0,24 bps sobre um gap de ~6. Nenhuma
+      escolha de tp/sl fecha o gap, e trocar a geometria de producao
+      renderia 0,3%.
+      MECANISMO, e ele e estrutural: R:R maior MELHORA o edge bruto
+      (-0,08 contra -0,47 bps) mas PIORA o custo (6,00 contra 5,50 bps),
+      porque P(TP) cai (0,333 contra 0,500) e mais saidas viram taker. Os
+      dois efeitos se cancelam quase exatamente. Isso e a contrapartida
+      empirica do resultado teorico desta mesma sessao: sob martingale o
+      edge bruto e ZERO para qualquer geometria -- o que sobra e custo, e
+      o custo varia pouco entre geometrias viaveis.
+      AUTOCORRECAO REGISTRADA: em analise anterior desta sessao eu sugeri
+      que barreiras mais largas reduziriam o lift exigido em ~49%
+      (0,0709 -> 0,0362). Isso esta CERTO em pontos de P(TP) e ERRADO como
+      recomendacao: eu nao converti para bps contabilizando que o custo
+      tambem muda com a geometria. Feito o balanco completo, a vantagem
+      desaparece. A conclusao correta e a oposta da que eu havia
+      encaminhado.
+    status: "MEDIDO 2026-08-25 para R1; R2/R3 em execucao para completar o multi-TF pedido pelo Manager. RECOMENDACAO: NAO trocar tp_atr_mult/sl_atr_mult. O valor vigente (1,5/1,5) nao e o otimo da tabela, mas a diferenca para o otimo e 0,02 bps -- muito abaixo de qualquer ruido de medicao, e trocar custaria um relabel completo das 15 combinacoes mais a invalidacao de todo artefato derivado. A decisao de geometria deixa de ser um problema aberto: esta MEDIDA e e indiferente. RESSALVA: a grade do S1 (R:R em {1; 4/3; 2} x sl em {0,75; 1,5; 2,25}) nao cobre celulas mais largas como tp=sl=3,0 (stop 0,745%, no limite de R1). Se o Manager quiser fechar a pergunta em definitivo, estender a grade e barato agora que o modulo roda na grade certa -- mas a evidencia atual sugere que o resultado seria o mesmo, porque o cancelamento edge-custo e estrutural, nao especifico das celulas testadas."
+
+  - id: AG-235-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-235 -- multi-TF completo (R1/R2/R3), fechando a tarefa de geometria pedida pelo Manager"
+    file: "experiments/s1_tp_sl_sensitivity_report_{R1,R2,R3}.json"
+    related_file: "config/constants.yaml::tp_atr_mult, ::sl_atr_mult"
+    found_by: "Claude -- S1 migrado (AG-232) executado nas tres resolucoes de producao"
+    gap: >
+      RESULTADO NAS TRES GRADES, celulas com n_estratos=10, custo
+      contabilizado, ATR mediano proprio de cada resolucao:
+        grade  gap_min  gap_atual(1,5/1,5)  ganho_potencial  spread
+        R1      6,00        6,07              +0,07           0,29
+        R2      6,09        6,09              +0,00           1,38
+        R3      6,06        6,10              +0,04           6,11
+      O ganho MAXIMO de trocar a geometria e +0,07 bps. Em R2 a geometria
+      vigente JA E a otima. O gap fica em 6,00-6,10 bps nas tres.
+      ACHADO ADICIONAL -- o spread CRESCE com a resolucao (0,29 -> 1,38 ->
+      6,11 bps). Em R3, geometrias largas sao fortemente penalizadas:
+      tp=3,00/sl=1,50 da gap de 12,17 bps contra 6,10 da vigente, e
+      tp=3,00/sl=2,25 da 10,78. Isso e o OPOSTO da previsao teorica que eu
+      havia encaminhado (barreiras largas exigiriam menos lift) -- sob
+      barras lentas (R3 ~45min), 32 barras de horizonte cobrem ~24h e o
+      edge bruto das celulas largas despenca (-5,06 e -6,17 bps).
+    severity: "n/a -- resultado de medicao"
+    layer: "analysis (decisao de geometria)"
+    consequence: >
+      tp=1,5/sl=1,5 e a UNICA celula que nao degrada em nenhuma das tres
+      resolucoes -- fica entre as melhores em R1 e R3 e e a otima em R2.
+      Isso a torna uma escolha ROBUSTA, nao apenas aceitavel: uma
+      geometria unica precisa servir as tres grades, e as alternativas que
+      ganham marginalmente em R1 perdem muito em R3.
+    status: "FECHADO 2026-08-25 -- a pergunta de geometria esta RESPONDIDA e a resposta e NAO TROCAR. Nao e 'falta medir': esta medido nas tres grades de producao, com o custo contabilizado e com o vies de n_estratos controlado. O valor vigente sobrevive por robustez multi-resolucao, nao por inercia. RESSALVA de cobertura mantida: a grade do S1 (R:R em {1;4/3;2} x sl em {0,75;1,5;2,25}) nao cobre tp=sl=3,0; dado que R3 ja penaliza fortemente as celulas mais largas testadas, a expectativa e que celulas ainda mais largas piorem -- estender a grade e barato agora, mas nao ha sinal de que mudaria o veredito."
+
+  - id: AG-236
+    date: "2026-08-25"
+    file: "src/labels/triple_barrier.py::LabelConfig.entry_fill_source, ::from_constants, config/constants.yaml::label_entry_fill_source"
+    related_file: "audit/architecture_gaps_log.yaml::AG-221, ::AG-229, ::AG-233, src/models/dataset.py::build_modeling_frame"
+    found_by: "Claude -- ao executar a Fase 2 do expurgo da grade 15m (migrar o M6), que falhou com ConfigHashMismatchError em R1/R2/R3"
+    gap: >
+      O relabel de producao (AG-229) gerou os labels R1/R2/R3 sob
+      `entry_fill_source="agg_trades"`, mas `LabelConfig` mantinha o
+      default `"mark_1m"` -- e `from_constants()`, o caminho que TODO
+      consumidor de producao usa, nao tinha de onde ler o valor real.
+      Consequencia: `config_hash` calculado != `config_hash` gravado, e
+      `verify_config_hash` (B15) barrava TODO consumidor de producao --
+      inclusive `build_modeling_frame` e, por ele, a cadeia inteira do
+      Alpha. Nao era risco latente: o M6 falhou de fato nas tres
+      resolucoes.
+      O default `"mark_1m"` estava certo QUANDO foi escolhido -- existia
+      para preservar bit-exato os artefatos ja gerados enquanto o
+      mecanismo de agg_trades era construido. Depois do relabel ele passou
+      a produzir o efeito OPOSTO ao pretendido.
+    severity: "critico -- bloqueava 100% da cadeia de producao pos-relabel; nenhum consumidor conseguia ler os labels que acabaram de ser gerados"
+    layer: "labels (contrato B15) -- fronteira config/artefato"
+    consequence: >
+      Sem correcao, o relabel de AG-229 (998s, 15 combinacoes, reducao de
+      41,9% no gap edge-custo) era inconsumivel: os labels existiam em
+      disco e nenhum modulo conseguia abri-los.
+    status: >-
+      FECHADO 2026-08-25. PRIMEIRA TENTATIVA REJEITADA POR MEDICAO: trocar
+      o default do DATACLASS para "agg_trades" alinha producao (verificado)
+      mas quebrou 43 TESTES -- fixtures sinteticas que constroem
+      LabelConfig(...) direto para exercitar o caminho de candle passariam
+      a exigir agg_trades/agg_trades_feeder, que elas nao tem nem deveriam
+      ter. Nao insisti na tentativa: 43 falhas nao e custo de migracao, e
+      sinal de que a solucao esta na camada errada.
+      SOLUCAO ADOTADA -- a disciplina que o repo ja tem (§16.10): constante
+      de dominio mora em `constants.yaml` com proveniencia declarada, o
+      dataclass guarda so um default TECNICO. `label_entry_fill_source:
+      "agg_trades"` (provenance DERIVED, classe A) entra exclusivamente por
+      `from_constants()`; `LabelConfig.entry_fill_source` segue com default
+      "mark_1m" para fixture. Resultado medido: 3 falhas em vez de 43, e as
+      3 eram testes codificando a premissa antiga (2 atualizados para
+      afirmar a arquitetura nova -- default tecnico != valor de producao --,
+      1 era AG-237, defeito independente). Suite final 1917 passed, 0
+      failed.
+      VERIFICACAO BIT-EXATA contra o disco, nao contra memoria:
+      from_constants(estimator_id="parkinson_w20", resolution_id=R)
+      reproduz R1 3599b765b7a53ff2, R2 19be840676f4c43c, R3
+      ff8dcb98fa579975 -- os tres hashes gravados nos labels.
+      ERRO METODOLOGICO MEU, REGISTRADO: na primeira verificacao usei
+      estimator_id="atr_wilder_dollar_r1_w20_v1", um id que INVENTEI por
+      analogia com o padrao de nomes; o real e "parkinson_w20". O hash nao
+      batia e eu quase atribui a divergencia ao campo `tf` (que de fato
+      diverge no parquet de runs: disco=None, from_constants="15m"). So uma
+      busca exaustiva sobre o payload -- variando tf, entry_fill_source,
+      barrier_fill_policy_id e presenca/ausencia de cada chave -- expos que
+      nenhuma combinacao fechava, o que apontou para um campo NAO
+      registrado no parquet de runs. Licao: `label_engine_runs.parquet` nao
+      persiste estimator_id nem barrier_fill_policy_id, entao comparar
+      campo a campo contra ele da falso "tudo bate exceto tf". A unica
+      verificacao valida do config_hash e reproduzi-lo inteiro.
+      EFEITO COLATERAL DESEJADO, nao acidental: sob `from_constants` a
+      grade de relogio 15m deixa de bater (calculado 6a46c39487445e5b vs
+      gravado 9492d29c36b06cb1) -- seus labels foram gerados sob mark_1m.
+      Quem ainda ler 15m por build_modeling_frame passa a falhar alto em
+      B15 em vez de produzir numero silencioso sobre uma grade que nao e
+      producao desde AG-042. E o expurgo pedido pelo Manager (AG-233)
+      acontecendo por MECANISMO, nao por delecao de arquivo. Confirmado
+      tambem que o payload do 15m e reproduzivel bit-exato com
+      tf="15m"+mark_1m+gap_aware_sl_v1, entao a divergencia e atribuivel a
+      UM campo conhecido, nao a corrupcao.
+
+  - id: AG-237
+    date: "2026-08-25"
+    file: "config/constants.yaml::tp_atr_mult, ::sl_atr_mult"
+    related_file: "tests/unit/test_analysis_cost_surface.py::test_default_grid_axes_fica_dentro_do_sweep_range_declarado, audit/architecture_gaps_log.yaml::AG-232, ::AG-235"
+    found_by: "Claude -- falha de teste colateral durante AG-236; NAO era o defeito que eu procurava"
+    gap: >
+      `sweep_range: [1.0, 3.0]` foi REMOVIDO de `tp_atr_mult` e
+      `sl_atr_mult` na alteracao de 2026-08-24 (troca de valor decidida
+      pelo S1), junto com `sweep_required: true -> false`. Ambas sao
+      CLASSE A. CLAUDE.md §Proveniencia regra 4 exige de classe A um sweep
+      de sensibilidade +-50% antes do Gate 3, e o `sweep_range` e onde essa
+      faixa vive -- removido, o guardrail deixou de existir para as duas
+      constantes que governam a geometria de payoff inteira.
+      Detectado porque
+      `test_default_grid_axes_fica_dentro_do_sweep_range_declarado`
+      levantou KeyError: 'sweep_range'. Esse teste existe exatamente para
+      garantir que a grade +-30% de `cost_surface` cabe na faixa declarada
+      -- ele nao falhou por estar desatualizado, falhou porque o dado que
+      ele confere sumiu.
+      AGRAVANTE: o `sweep_required: false` foi declarado com base no S1 de
+      2026-08-24, que lia a grade de RELOGIO 15m -- nao a de producao
+      (AG-232). Ou seja, o sweep que justificava dispensar o sweep tinha
+      sido feito na grade errada.
+    severity: "medio -- nao corrompeu artefato, mas removeu silenciosamente o guardrail de sweep de duas constantes classe A, e so foi pego por um teste que falhou por outro motivo na mesma sessao"
+    layer: "config/governanca (§16.10 regra 4)"
+    consequence: >
+      Se a falha nao tivesse aparecido junto de AG-236, duas constantes
+      classe A seguiriam sem faixa de sweep declarada ate o Gate 3 -- que e
+      justamente onde a ausencia so seria descoberta.
+    status: >-
+      FECHADO 2026-08-25. `sweep_range: [1.0, 3.0]` restaurado nas duas,
+      com `sweep_range_note` explicando a remocao e a restauracao. A faixa
+      historica continua correta: a grade real do S1 corrigido (R:R em
+      {1; 4/3; 2} x sl em {0,75; 1,5; 2,25}) esta contida nela.
+      `sweep_required: false` MANTIDO, mas agora por um motivo diferente e
+      melhor -- o S1 corrigido rodou sobre R1 (AG-235) e o resultado
+      SUSTENTA a dispensa: entre as 5 celulas com cobertura completa
+      (n_estratos=10) o gap edge-custo varia de 5,95 a 6,19 bps, spread de
+      0,24 bps sobre um gap de ~6, e trocar a geometria renderia +0,02 bps
+      (0,3%). Antes a dispensa se apoiava numa medicao na grade errada;
+      agora se apoia numa medicao na grade certa que chega a mesma
+      conclusao. O valor sobrevive, a justificativa foi substituida.
+
+  - id: AG-238
+    date: "2026-08-25"
+    file: "src/analysis/m6_common_factor_hypothesis.py, experiments/m6_common_factor_hypothesis_report_R{1,2,3}.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-233, ::AG-042, docs/AVALIACAO_EXPURGO_GRADE_15M_2026-08-25.md §6 Fase 2"
+    found_by: "Claude -- Fase 2 do expurgo da grade 15m, aprovada pelo Manager"
+    gap: >
+      RESULTADO DA MEDICAO. O M6 -- que produziu o I2=96-98% citado como
+      evidencia em decisao de ESCOPO MULTI-ATIVO -- lia a grade de relogio
+      15m. Migrado e re-executado nas tres resolucoes de producao:
+        grade        lado    edge pooled (ATR)   I2 (%)      Q    p-valor
+        15m LEGADO   LONG           -0,032765    93,92    65,75   1,8e-13
+        15m LEGADO   SHORT          -0,000906    97,20   142,78   7,2e-30
+        R1           LONG           -0,009082    83,28    23,92   8,3e-05
+        R1           SHORT          -0,028398    60,56    10,14   3,8e-02
+        R2           LONG           -0,007407    79,81    19,81   5,4e-04
+        R2           SHORT          -0,019857    81,03    21,08   3,1e-04
+        R3           LONG           -0,007512    65,90    11,73   1,9e-02
+        R3           SHORT          -0,011926    66,77    12,04   1,7e-02
+    severity: "alto -- a heterogeneidade entre ativos e a premissa que sustenta o escopo de 5 ativos; foi medida ~30 pontos percentuais acima do real"
+    layer: "analysis (evidencia de decisao de escopo)"
+    consequence: >
+      TRES leituras, em ordem de consequencia.
+      (1) A HETEROGENEIDADE E MUITO MENOR NA GRADE DE PRODUCAO. I2 cai de
+      93,92/97,20 para 60,56-83,28. O fator comum segue REJEITADO em todas
+      as celulas (p<0,05), entao a conclusao qualitativa "os ativos nao sao
+      o mesmo ativo" sobrevive -- mas a FORCA da evidencia nao: em R1 SHORT
+      o p-valor vai de 7e-30 para 3,8e-02, e em R3 os dois lados ficam em
+      ~1,8e-02. Citar "I2=96-98%" como suporte de escopo multi-ativo passou
+      a ser overclaim.
+      (2) I2 CAI MONOTONICAMENTE COM A DURACAO DA BARRA: 15m(~93-97) > R1
+      (~61-83) > R2(~80-81) > R3(~66-67). Coerente com agregacao temporal
+      -- barra mais longa integra mais ruido idiossincratico e os ativos
+      ficam mais parecidos. NAO e artefato do relabel: o mecanismo e
+      estrutural. Implica que a resposta a "os ativos sao heterogeneos?"
+      DEPENDE DA RESOLUCAO, e portanto a pergunta so tem resposta
+      condicionada a uma grade -- o que reforca a decisao do Manager de
+      reportar por resolucao e nunca pooled entre grades (AG-043).
+      (3) A LEITURA POR LADO INVERTE, e este e o achado que muda decisao.
+      Na grade 15m o SHORT tinha edge pooled praticamente nulo (-0,000906)
+      e o LONG era o lado ruim (-0,032765). Na grade de producao e o
+      OPOSTO em todas as tres resolucoes: SHORT e o lado pior (-0,0284 /
+      -0,0199 / -0,0119) e LONG e o menos ruim (-0,0091 / -0,0074 /
+      -0,0075). Qualquer decisao tomada sobre a premissa "SHORT e o lado
+      neutro/barato" esta invertida em relacao a grade de producao.
+    status: >-
+      MEDIDO 2026-08-25 nas tres resolucoes; AG-233 avanca (2 dos 5 modulos
+      contaminados migrados: S1 em AG-232/AG-235, M6 aqui). Faltam
+      volatility_operational_effect, gk_vs_wilder_econ_regime_shift e
+      faixa2_e2_research. RECOMENDACAO AO MANAGER: substituir a citacao de
+      "I2=96-98%" por "I2=61-83%, dependente da resolucao" em qualquer
+      lugar que sustente escopo multi-ativo, e revisar explicitamente
+      qualquer decisao que tenha usado o SHORT como lado neutro. NAO
+      RESOLVIDO AQUI: por que a inversao por lado acontece. As duas causas
+      candidatas -- (a) o relabel agg_trades corrigiu vies de execucao que
+      penalizava LONG e SHORT de forma assimetrica, (b) a grade de dollar
+      bar amostra os dois lados de forma diferente da grade de relogio --
+      nao foram separadas, e separa-las exige rodar o M6 sobre a grade 15m
+      RELABELADA, que nao existe (o 15m foi grupo de controle, ficou em
+      mark_1m por desenho). Registrado como pergunta aberta, nao como
+      conclusao.
+
+  - id: AG-241
+    date: "2026-08-25"
+    file: "src/validation/bootstrap_diff.py, src/models/backtest_lite.py::permanence_significance_by_path, src/models/pipeline.py::run_layer1_sprint"
+    related_file: "config/constants.yaml::alpha_permanence_bootstrap_n_boot/alpha_permanence_bootstrap_confidence_level, tests/unit/test_validation_bootstrap_diff.py, docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md"
+    found_by: "Claude -- pedido explicito do usuario ('investigacao do gate em BPS'), escopo confirmado via AskUserQuestion: fronteira de decisao (tau/lambda, ADR-004 Sec4) + correcao estatistica (ADR-004 Sec6/Fase 0) juntas"
+    gap: >
+      AG-220/AG-220-ADDENDUM mediram que o criterio de permanencia atual
+      (backtest_lite.permanence_count, contagem de caminhos por
+      sharpe_naive) nao tem poder estatistico neste dataset -- 3 rodadas
+      pareadas reais (BTCUSDT/R1) com |delta| < sigma nas 3, veredito
+      oscilando FALSO->VERDADEIRO->FALSO so por calibracao. O relatorio
+      de treino reportava n_paths_camada1_supera_camada0 como se fosse
+      um veredito, sem nenhuma leitura de significancia estatistica da
+      diferenca em si.
+    severity: "alto -- mesma severidade de AG-220, que este item comeca a mitigar (nao fecha a causa raiz, que e a fragilidade do calibrador de tau, ADR-004 Sec2/Sec4)"
+    layer: "models (relatorio/gate de permanencia) / validation (nucleo estatistico novo)"
+    consequence: >
+      Sem isto, todo permanence_pass=True/False do relatorio de treino
+      seria lido como veredito binario confiavel -- exatamente o erro
+      que AG-220 documentou estar acontecendo (a correcao de AG-210
+      "fez a Camada 1 passar no gate", leitura que so fica correta
+      depois de olhar sigma/IC).
+    status: >
+      IMPLEMENTADO 2026-08-25, NAO EXECUTADO (protocolo de execucao,
+      CLAUDE.md -- Claude nunca roda pytest/uv run). Nucleo puro
+      (src/validation/bootstrap_diff.py::stationary_bootstrap_ci,
+      select_block_length) -- bootstrap estacionario por blocos
+      (Politis & Romano 1994), comprimento de bloco MEDIDO via ACF
+      (nao estipulado, B23), escolhido em vez do teste fechado de
+      Ledoit & Wolf (2008) porque a formula HAC daquele teste tem
+      varios pontos onde um erro de sinal produziria um veredito
+      confiantemente errado, sem forma de validar empiricamente antes
+      do Manager rodar (mesmo raciocinio que motivou o proprio ADR-004
+      Sec5 a preferir bootstrap sobre formula fechada pro problema
+      irmao do ESS). Casca em backtest_lite.py::
+      permanence_significance_by_path constroi a serie pareada
+      Camada1-Camada0 POR CAMINHO sobre o universo COMPLETO de barras
+      do path (zero-filled fora de sinal, nao so as barras com trade --
+      excluir mudaria a base de comparacao exatamente quando as
+      camadas discordam sobre qual barra sinalizar). Wireado em
+      pipeline.py::run_layer1_sprint, roda sobre ret_net JA
+      MATERIALIZADO na mesma chamada de treino -- ZERO retreino extra,
+      ZERO N_lifetime consumido (mesmo raciocinio de AG-215/DSR: e
+      leitura sobre resultado ja produzido, nao busca nova). Testado
+      com 8 casos sinteticos (ruido puro/H0, deslocamento grande/H1,
+      determinismo por seed, amostra pequena, NaN, bloco persistente
+      vs. ruido branco, teto de bloco) em
+      tests/unit/test_validation_bootstrap_diff.py -- comando pronto
+      pro Manager: `uv run pytest tests/unit/test_validation_bootstrap_diff.py
+      tests/unit/test_models_backtest_lite.py -v`.
+      NAO decidido: (1) se permanence_pass deveria PASSAR A DEPENDER de
+      n_paths_significant em vez de/alem de n_better -- fica registrado
+      como companion informativo por enquanto, mudar o CRITERIO de
+      decisao e decisao do Manager, nao tomada aqui; (2) Fase 1/2 do
+      ADR-004 (alvo em unidade de retorno mu via regressao Huber/
+      quantile, fronteira |mu| > lambda substituindo o quantil de p) --
+      escopo maior, exige retreino real das combinacoes, desenho
+      apresentado ao usuario mas implementacao NAO iniciada nesta
+      rodada, aguardando aprovacao explicita separada.

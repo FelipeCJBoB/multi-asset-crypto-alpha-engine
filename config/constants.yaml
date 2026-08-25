@@ -57,28 +57,103 @@ taker_fee:
   sweep_required: false
 
 round_trip_cost_bps_maker_prob:
-  value: 0.5
-  provenance: ASSUMED
-  source: "AG-027 (audit/architecture_gaps_log.yaml, 2026-08-15): estava
-    hardcoded como literal 0.5 (x2, entrada e saída) em src/features/groups/
-    group_e.py::round_trip_cost_bps, isento do lint de proveniência via
-    tools/lint/banned_patterns.py::_ALLOWED_NUMERIC_LITERALS (frozenset com
-    0.5) -- registrado aqui pra fechar esse esconderijo. VALOR MANTIDO em
-    0.5 (não atualizado nesta rodada -- Regra Zero, número medido não se
-    otimiza de volta sozinho, decisão de mudar o valor é separada e não
-    autorizada aqui). Ruína do apostador (tp_atr_mult=2.0/sl_atr_mult=1.5)
-    prevê P(maker, TP primeiro)=42,9%, não 50%; medição empírica real
+  value: 0.4942
+  provenance: MEASURED
+  source: >
+    SEGUNDA REMEDIÇÃO 2026-08-25 (AG-221/AG-227, passo 6 do
+    docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md) -- executada APÓS o
+    relabel de produção que trocou `entry_fill_source` de `mark_1m` para
+    `agg_trades` nas 15 combinações dollar-bar. Era a única constante do
+    repo que precisava de duas passadas, e a necessidade estava declarada
+    na passada anterior (preservada abaixo), não descoberta depois.
+    MEDIÇÃO (mesma metodologia da 1ª passada -- contagem direta de
+    barrier_hit sobre as 15 combinações reais, P(TP|preenchido) =
+    TP/(TP+SL+TIME), NOFILL fora do denominador):
+      pooled ponderado por n_fill : 0,4942  <- VALOR ADOTADO
+      mínimo                      : 0,4917
+      máximo                      : 0,4969
+      spread                      : 0,0052 (0,52 pontos percentuais)
+    O spread caiu de 0,0263 (1ª passada) para 0,0052 -- as 15 combinações
+    ficaram muito mais homogêneas depois de removido o viés de
+    granularidade, o que REFORÇA a escolha de manter a constante GLOBAL em
+    vez de por (símbolo, resolução): a dispersão que já não justificava
+    3 entradas agora é 5x menor.
+    Todas as 15 convergem para dentro de 0,83 pp de 0,50 -- o valor
+    teórico de martingale sob payoff simétrico (tp=sl=1,5). Sob
+    `mark_1m` ficavam em 0,4505-0,4768.
+    EVOLUÇÃO DA CONSTANTE, para leitura histórica:
+      0,4206  original     (tp=2,0, grade de relógio 15m)  -> 5,7382 bps
+      0,4597  1ª remedição (tp=1,5, dollar bar, mark_1m)   -> 5,6209 bps
+      0,4942  2ª remedição (tp=1,5, dollar bar, agg_trades)-> 5,5173 bps
+    GATILHO DE REVISÃO (o que faltava na versão original): esta medição
+    está amarrada a TRÊS coisas -- geometria (tp_atr_mult/sl_atr_mult),
+    grade (canonical_bar_type/resolution_id) e fonte do fill de entrada
+    (LabelConfig.entry_fill_source). Mudança em qualquer uma exige
+    remedir ANTES de a constante voltar a ser confiável.
+    --- 1ª REMEDIÇÃO (valor 0.4597, superseded) ---
+    ATUALIZADO 2026-08-25 (AG-222, passo 1 aprovado pelo Manager). Valor
+    anterior 0.4206 estava obsoleto em DUAS dimensões simultâneas, e a
+    própria entrada anterior (preservada abaixo) já instruía a remedição
+    que nunca foi executada -- "se essas mudarem (S1, sweep_required=true
+    em ambas), esta medição precisa ser refeita para a nova geometria
+    antes de continuar confiável":
+      (1) GEOMETRIA -- 0.4206 foi medido sob tp_atr_mult=2.0/sl_atr_mult=1.5.
+          O sweep S1 alterou tp_atr_mult para 1.5 em 2026-08-24 (ver a
+          entrada de tp_atr_mult). Sob tp=sl=1.5 a ruína do apostador prevê
+          50%, não os 42,9% analíticos citados na justificativa antiga.
+      (2) GRADE -- tools/diagnostics/measure_barrier_touch_probability.py
+          chama load_labels_v1(symbol=symbol) SEM resolution_id, então mede
+          sobre a grade de RELÓGIO 15m legada, não sobre dollar bar
+          R1/R2/R3, que é a grade de produção desde AG-042. Achado desta
+          mesma auditoria -- o script precisa ganhar o eixo resolution_id.
+    MEDIÇÃO NOVA (2026-08-25): contagem direta de barrier_hit sobre as 15
+    combinações reais de produção (5 símbolos x R1/R2/R3),
+    data/labels/{symbol}/{R}/v1/labels.parquet, geometria vigente
+    tp=sl=1,5. P(TP|preenchido) = TP/(TP+SL+TIME), excluindo NOFILL do
+    denominador (NOFILL não gera saída, portanto não gera fee de saída).
+      pooled ponderado por n_fill : 0,4597  <- VALOR ADOTADO
+      média simples das 15        : 0,4645
+      mínimo  BTCUSDT/R1          : 0,4505
+      máximo  SOLUSDT/R3          : 0,4768
+      spread                      : 0,0263 (2,63 pontos percentuais)
+    ESCOLHA DE ARQUITETURA -- constante GLOBAL, não por (símbolo,
+    resolução). Há gradiente sistemático R1 < R2 < R3 nos 5 símbolos
+    (barras mais lentas tocam TP com mais frequência), e os símbolos são
+    quase idênticos entre si. Mas o spread inteiro vale 0,079 bps de
+    custo (5,570 a 5,649), desprezível frente ao gap de ~6 bps que o motor
+    precisa vencer -- uma constante por resolução adicionaria 3 entradas e
+    complexidade de fiação em 7 call sites para ganhar menos de 0,1 bps.
+    Reavaliar se o spread crescer.
+    IMPACTO: custo round-trip de 5,738 bps (p=0,4206) para 5,621 bps
+    (p=0,4597) -- a constante antiga SUPERESTIMAVA o custo em 0,117 bps.
+    SEGUNDA REMEDIÇÃO PENDENTE: se o relabel de AG-221 (fill de entrada
+    via agg_trades) for executado, P(TP) sobe para ~0,49 (medido em 4
+    combinações) e este valor precisa de nova passada. É a única constante
+    do repo que precisa de duas remedições -- ver
+    docs/MAPA_IMPACTO_RELABEL_ag221_2026-08-25.md §6, passos 1 e 6.
+    --- PROVENIÊNCIA HISTÓRICA (valor 0.4206, agora superseded) ---
+    "AG-027 (audit/architecture_gaps_log.yaml, 2026-08-15) mediu o viés;
+    corrigido 2026-08-24 (achado do usuário, validação de governança em
+    sessão -- constante já existia declarada aqui desde AG-027, mas
+    round_trip_cost_bps nunca a lia, permanecia com 0.5/0.5 hardcoded no
+    corpo). Ruína do apostador (tp_atr_mult=2.0/sl_atr_mult=1.5) prevê
+    P(maker, TP primeiro)=1,5/3,5=42,9% analítico; medição empírica real
     (tools/diagnostics/measure_barrier_touch_probability.py, 5 ativos,
-    labels.parquet) confirma 42,06% pooled -- viés de ~4% de subestimação
-    de custo em E27f_cost_atr_ratio, direção conhecida, não corrigido.
-    round_trip_cost_bps NÃO lê este valor dinamicamente ainda (permanece
-    função pura, literal no corpo) -- threading do valor por load_constant
-    exigiria mudar a assinatura e os 6 call sites conhecidos
-    (cost_surface.py/volatility_operational_effect.py/feasibility.py/
-    m3_timeframe_choice.py/risk/limits.py/group_e.py), fora do escopo desta
-    correção pontual de proveniência/visibilidade."
-  class: B
+    labels.parquet, contagem direta de qual barreira toca primeiro) confirma
+    42,06% pooled -- usa o valor MEDIDO, não o analítico. round_trip_cost_bps
+    (src/features/groups/group_e.py) agora lê esta constante via
+    src.features._constants.load_constant em vez do literal 0.5/0.5 -- os 7
+    call sites conhecidos (group_e.py, cost_surface.py,
+    volatility_operational_effect.py, feasibility.py, m3_timeframe_choice.py,
+    risk/limits.py, s1_tp_sl_sensitivity.py) herdam a correção automaticamente,
+    nenhuma assinatura mudou. Empiricamente amarrado à geometria de
+    tp_atr_mult/sl_atr_mult -- se essas mudarem (S1, sweep_required=true em
+    ambas), esta medição precisa ser refeita para a nova geometria antes de
+    continuar confiável (mesmo tratamento de adverse_selection_wr_cost_per_bp,
+    ver derived_from abaixo)."
+  class: A
   sweep_required: false
+  derived_from: [tp_atr_mult, sl_atr_mult]   # medição empírica condicionada a esta geometria -- refazer se ela mudar (S1)
   review_by: sprint_9
 
 bnb_discount:
@@ -176,22 +251,109 @@ risk_per_trade:
   review_by: sprint_10
 
 tp_atr_mult:
-  value: 2.0
-  provenance: ASSUMED
-  source: "herdado do PRD V2, nunca questionado até a auditoria da PARTE XVIII. Define toda a geometria de payoff — o breakeven WR de 48,1% é função direta deste número."
+  value: 1.5
+  provenance: MEASURED
+  source: >
+    CORRIGIDO 2026-08-24 (decisão do Manager, "muda", após S1 medir a
+    grade). Valor anterior (2.0, herdado do PRD V2 sem nunca ter sido
+    questionado) trocado pelo candidato validado pelo sweep S1
+    (`experiments/s1_tp_sl_sensitivity_report.json`,
+    `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`).
+    Metodologia REAL executada (nota: diverge da "metodologia decidida"
+    citada em outro lugar do PLANO_MESTRE — ADR-001 §5 item 10, payoff/
+    hurdle via distribuição de tempo-até-barreira — que NÃO foi o que
+    rodou): `edge_atr_units = frac_tp·tp_mult − frac_sl·sl_mult`
+    (`src.analysis.feasibility.edge_bruto_atr`), geometria de acerto
+    normalizada por ATR sobre a população INCONDICIONAL de
+    `labels.parquet`, SEM custo (`edge_bruto`, não `edge_liq` —
+    `custo_atr`/`captura` existem em `feasibility.py` mas não foram
+    chamados por este sweep). Grade 3×3 reparametrizada
+    (`reward_risk_ratio × sl_mult`), 2 células universalmente excluídas
+    (fora do `sweep_range` declarado), célula central reproduz produção
+    EXATO (`sanidade_centro_da_grade.reproduz_producao_exato=true`).
+    7 células válidas — TODAS com `edge_atr_units` médio NEGATIVO, célula
+    de produção (tp=2,0/sl=1,5) era a 3ª melhor de 7 (-0,02555). As 2
+    células nominalmente melhores (`R=4/3,S=3/4`→tp=1,0/sl=0,75,
+    -0,01284; `R=2,S=3/4`→tp=1,5/sl=0,75, -0,01054) são INVIÁVEIS pra
+    BTCUSDT/BNBUSDT — violam o piso R2 (`cost_stop_ratio_max` × stop,
+    `_min_viable_sl_mult`, `sl_mult=3/4` abaixo do mínimo viável desses 2
+    símbolos) — não são candidato de constante GLOBAL, só existem pra
+    3/5 símbolos. Escolhido: `R=1, S=3/2` (tp=1,5/sl=1,5, reward:risk
+    1:1) — `edge_atr_units` médio -0,01686 (34% menos negativo que
+    produção), VÁLIDO pros 5 símbolos (`n_estratos_symbol_side=10`, sem
+    exceção de R2). **Ressalva explícita, não escondida**: continua
+    edge NEGATIVO — é "menos pior medido", não "edge positivo
+    encontrado"; `edge_liq_atr` (líquido de custo) nunca foi computado
+    por este sweep, só pode piorar o número, nunca melhorar. Veredito
+    formal de "sobrevive à faixa" (§11 risco #1 do design doc) segue
+    TBD — decisão de trocar o valor foi tomada apesar disso, não porque
+    isso tenha sido resolvido.
   class: A
-  sweep_required: true
-  sweep_range: [1.0, 3.0]
-  review_by: sprint_6
+  sweep_required: false
+  sweep_range: [1.0, 3.0]   # RESTAURADO 2026-08-25 (AG-237) -- ver sweep_range_note
+  sweep_range_note: >-
+    Este `sweep_range` foi REMOVIDO junto com a troca de valor de
+    2026-08-24 (S1), e a remocao quebrou
+    tests/unit/test_analysis_cost_surface.py::
+    test_default_grid_axes_fica_dentro_do_sweep_range_declarado -- o teste
+    existe para garantir que a grade +-30% de `cost_surface` cabe dentro
+    da faixa declarada, e a faixa tinha sumido. Restaurado em [1.0, 3.0],
+    o valor historico, porque a faixa continua correta: a grade real do S1
+    corrigido (R:R em {1; 4/3; 2} x sl em {0,75; 1,5; 2,25}) esta contida
+    nela.
+    `sweep_required: false` MANTIDO, mas agora por um motivo diferente e
+    melhor. Quando foi marcado false (2026-08-24) o S1 lia a grade de
+    RELOGIO 15m, que nao e a de producao desde AG-042 -- ou seja, o sweep
+    que justificava dispensar o sweep tinha sido feito na grade errada
+    (AG-232). O S1 corrigido rodou sobre R1 (AG-235) e o resultado
+    SUSTENTA a dispensa: entre as 5 celulas com cobertura completa
+    (n_estratos=10), o gap edge-custo varia de 5,95 a 6,19 bps -- spread
+    de 0,24 bps sobre um gap de ~6. Trocar a geometria renderia +0,02 bps
+    (0,3%). O mecanismo e estrutural, nao especifico das celulas testadas:
+    R:R maior melhora o edge bruto mas piora o custo (P(TP) cai, mais
+    saidas viram taker), e os dois efeitos se cancelam. Sob martingale o
+    edge bruto e ZERO para qualquer geometria simetrica -- o que sobra e
+    custo, e custo varia pouco entre geometrias viaveis.
+  derived_from: [round_trip_cost_bps_maker_prob]   # piso R2 usado pra excluir células depende deste valor medido
+  review_by: sprint_10
 
 sl_atr_mult:
   value: 1.5
-  provenance: ASSUMED
-  source: "herdado do PRD V2, nunca questionado. Varrer em grade 2D conjunta com tp_atr_mult (§18.6 M2, prioridade 1)."
+  provenance: MEASURED
+  source: >
+    Valor NUMÉRICO não mudou (já era 1,5) — proveniência atualizada
+    2026-08-24 porque o S1 (ver `tp_atr_mult` acima) validou este ponto
+    como parte da célula `R=1,S=3/2` escolhida, não porque o número em
+    si tenha sido recalculado. Mesma ressalva de `tp_atr_mult`: edge
+    ainda negativo, veredito formal TBD.
   class: A
-  sweep_required: true
-  sweep_range: [0.75, 2.25]
-  review_by: sprint_6
+  sweep_required: false
+  sweep_range: [1.0, 3.0]   # RESTAURADO 2026-08-25 (AG-237) -- ver sweep_range_note
+  sweep_range_note: >-
+    Este `sweep_range` foi REMOVIDO junto com a troca de valor de
+    2026-08-24 (S1), e a remocao quebrou
+    tests/unit/test_analysis_cost_surface.py::
+    test_default_grid_axes_fica_dentro_do_sweep_range_declarado -- o teste
+    existe para garantir que a grade +-30% de `cost_surface` cabe dentro
+    da faixa declarada, e a faixa tinha sumido. Restaurado em [1.0, 3.0],
+    o valor historico, porque a faixa continua correta: a grade real do S1
+    corrigido (R:R em {1; 4/3; 2} x sl em {0,75; 1,5; 2,25}) esta contida
+    nela.
+    `sweep_required: false` MANTIDO, mas agora por um motivo diferente e
+    melhor. Quando foi marcado false (2026-08-24) o S1 lia a grade de
+    RELOGIO 15m, que nao e a de producao desde AG-042 -- ou seja, o sweep
+    que justificava dispensar o sweep tinha sido feito na grade errada
+    (AG-232). O S1 corrigido rodou sobre R1 (AG-235) e o resultado
+    SUSTENTA a dispensa: entre as 5 celulas com cobertura completa
+    (n_estratos=10), o gap edge-custo varia de 5,95 a 6,19 bps -- spread
+    de 0,24 bps sobre um gap de ~6. Trocar a geometria renderia +0,02 bps
+    (0,3%). O mecanismo e estrutural, nao especifico das celulas testadas:
+    R:R maior melhora o edge bruto mas piora o custo (P(TP) cai, mais
+    saidas viram taker), e os dois efeitos se cancelam. Sob martingale o
+    edge bruto e ZERO para qualquer geometria simetrica -- o que sobra e
+    custo, e custo varia pouco entre geometrias viaveis.
+  derived_from: [round_trip_cost_bps_maker_prob]
+  review_by: sprint_10
 
 time_stop_bars:
   value: 32
@@ -1547,6 +1709,67 @@ fill_timeout_ms:
   sweep_required: false
   review_by: sprint_6
 
+label_entry_fill_source:
+  value: "agg_trades"
+  provenance: DERIVED
+  source: >-
+    Fonte de preco usada para simular o FILL DE ENTRADA no Label Engine.
+    Dois valores validos, ambos causais: "mark_1m" (candle de 1 minuto --
+    caminho historico) e "agg_trades" (trades agregados, granularidade de
+    milissegundo). DERIVED da medicao de AG-221/AG-229, nao escolhido por
+    preferencia: sob mark_1m o preenchimento so pode ocorrer em fronteira
+    de minuto, mas t_post e o close_time de uma DOLLAR BAR, que cai em
+    instante arbitrario -- a diferenca injetava uma latencia SINTETICA de
+    0 a 60s entre a decisao e o fill, cobrada como custo de execucao que
+    o motor nunca pagaria. Nao era vies constante: escalava com
+    volatilidade (validado por estratificacao em quintis de ATR e pela
+    predicao de escala, AG-221). Relabel completo das 15 combinacoes
+    (AG-229) mediu o efeito: P(TP) 0,4505-0,4768 -> 0,4917-0,4969 (todas
+    dentro de 0,83pp do 0,50 de martingale, que e o valor TEORICO correto
+    para barreiras simetricas) e gap edge-custo 10,50 -> 6,10 bps
+    (-41,9%). Ou seja: cerca de metade do edge bruto negativo era
+    ARTEFATO DE MEDICAO, nao propriedade do mercado.
+    Por que a constante existe em vez de um default no dataclass
+    (AG-236): LabelConfig.entry_fill_source tem default TECNICO "mark_1m"
+    para que fixture sintetica que exercita o caminho de candle continue
+    funcionando sem precisar de agg_trades; o valor de PRODUCAO entra
+    exclusivamente por LabelConfig.from_constants(), que le esta chave.
+    Trocar o default do dataclass em vez disso quebrou 43 testes (medido).
+    EFEITO COLATERAL DESEJADO: sob from_constants o config_hash passa a
+    bater com os labels R1/R2/R3 relabelados (3599b765b7a53ff2 /
+    19be840676f4c43c / ff8dcb98fa579975) e a NAO bater com a grade de
+    relogio 15m legada (9492d29c36b06cb1) -- o expurgo pedido pelo Manager
+    (AG-233) acontecendo por MECANISMO (B15 falha alto), nao por delecao.
+  class: A
+  sweep_required: true
+  sweep_range: ["mark_1m", "agg_trades"]
+  sweep_status: EXECUTADO
+  sweep_note: >-
+    O "sweep" desta constante e a ENUMERACAO das duas fontes validas -- o
+    dominio e discreto e completo, entao +-50% nao tem significado; varrer
+    aqui e medir as duas pontas, e isso JA FOI FEITO.
+    Correcao registrada: declarei `sweep_required: false` primeiro,
+    argumentando que uma fonte domina a outra por argumento causal
+    (mark_1m e um subconjunto amostrado de agg_trades, entao a de maior
+    granularidade nao pode ser pior). O argumento continua correto, mas a
+    declaracao estava errada -- `check_constants_provenance.py` rejeitou,
+    e com razao: dispensar sweep de uma constante CLASSE A porque o
+    resultado e previsivel e exatamente o que a regra 4 existe para
+    impedir. O sweep nao foi dispensado, foi EXECUTADO.
+    Resultado medido das duas pontas (AG-221 isolou o mecanismo, AG-229
+    relabelou as 15 combinacoes de producao, 998s):
+      mark_1m    -> P(TP) 0,4505-0,4768 | gap edge-custo 10,50 bps
+      agg_trades -> P(TP) 0,4917-0,4969 | gap edge-custo  6,10 bps
+    Sob barreiras simetricas o P(TP) TEORICO de martingale e 0,50; com
+    agg_trades todas as 15 combinacoes ficam dentro de 0,83pp desse valor,
+    com mark_1m nenhuma fica. A ponta escolhida e a que reproduz o valor
+    teorico, nao a que da o numero melhor -- e a diferenca (-41,9% no gap)
+    era ARTEFATO DE MEDICAO, nao propriedade do mercado.
+    GRUPO DE CONTROLE preservado: as 5 combinacoes de grade 15m ficaram em
+    mark_1m por desenho e sairam bit-identicas, o que separa "o relabel
+    mudou o numero" de "o dado mudou sozinho".
+  review_by: sprint_6
+
 # ============================================================================
 # Camada regime — Regime Engine (Sprint 5, §4). regime_er_cutoff (0.60) e
 # regime_vol_cutoff (0.70) já existem acima (§0.2, classe A) como os cortes
@@ -1896,9 +2119,26 @@ alpha_lgbm_subsample_freq:
 alpha_lgbm_feature_fraction:
   value: 1.0
   provenance: DERIVED
-  source: "Renomeação direta de alpha_xgb_colsample_bytree (removida) -- LightGBM chama o mesmo conceito de feature_fraction (D-11/§4 do design doc do Alpha). 1.0 = sem amostragem de coluna, mesma razão original: bagging por grupo (Camada 3) ainda não implementado, <1.0 só seria banned pattern (B19) se estivesse."
+  source: >
+    Renomeação direta de alpha_xgb_colsample_bytree (removida) -- LightGBM
+    chama o mesmo conceito de feature_fraction (D-11/§4 do design doc do
+    Alpha). 1.0 = sem amostragem de coluna, razão original: bagging por
+    grupo (Camada 3) ainda não implementado, <1.0 só seria banned pattern
+    (B19) se estivesse.
+    AG-217 (2026-08-25) -- premissa parcialmente desatualizada: a razão
+    original foi escrita quando o vetor de treino tinha 7 features
+    (T1_FEATURE_IDS). ADR-003 (ratificado pelo Manager, 2026-08-25) troca
+    o vetor pelos 62 SUPPORT_FEATURE_IDS completos (substituindo, não
+    somando) -- com 62 colunas e feature_fraction=1.0, toda árvore vê
+    todas as colunas em todo split, decorrelação entre árvores só por
+    subsample (linha). Não é violação de B19 (que segue valendo como
+    escrito, bagging por grupo continua não implementado) -- é medição
+    nova cabendo dentro do sweep do ADR-003 (Estágio 1,
+    src/validation/t2_t1_full_feature_stage1_screen.py), não decisão de
+    reverter B19.
   class: B
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [0.3, 1.0]
   review_by: sprint_10
 
 alpha_lgbm_lambda_l2:
@@ -1925,6 +2165,65 @@ alpha_lgbm_num_leaves:
   class: B
   sweep_required: true
   sweep_range: [4, 64]
+  review_by: sprint_10
+
+alpha_lgbm_min_sum_hessian_in_leaf:
+  value: 0.001
+  provenance: ASSUMED
+  source: >
+    AG-208 (2026-08-25, achado da persona `lgbm-crypto-quant` sobre a
+    árvore de src/models/alpha.py). Este parâmetro NUNCA existiu no repo
+    -- nem em constants.yaml, nem como argumento de LGBMClassifier --,
+    então rodava no default de biblioteca sem nenhuma entrada de
+    proveniência (§16.10 Regra Zero). VALOR REGISTRADO = o default da
+    própria biblioteca (LightGBM 4.7.0, uv.lock), portanto bit-exato com
+    todo artefato já treinado: esta entrada corrige PROVENIÊNCIA, não
+    valor.
+    Por que importa mais que min_child_samples: sob objective="binary" a
+    hessiana por amostra é p(1-p)*w <= 0,25*w, e sample_weight neste
+    projeto é `uniqueness * |ret_net|` normalizado para média 1
+    (src/labels/weights.py::apply_weights) -- distribuição de cauda longa,
+    massa concentrada nos desfechos de barreira (TP/SL têm |ret_net|
+    grande, TIME pequeno). Nesse regime 0,001 não restringe nada, e
+    min_child_samples=20 limita CONTAGEM de amostras por folha, não MASSA:
+    uma folha pode ter 20 amostras cuja hessiana somada é fração de uma
+    observação típica. É o cenário canônico de memorização de ruído em
+    sinal fraco (§17.2 mede IC ~0,04 neste projeto).
+    O valor DEFENSÁVEL seria derivado de min_child_samples x hessiana
+    média medida no fold (algo como min_data_in_leaf * w_barra * 0,25) --
+    não estipulado aqui porque w_barra ainda não foi medido por fold/lado
+    (B23: TBD, medir junto do sweep).
+  class: B
+  sweep_required: true
+  sweep_range: [0.001, 5.0]
+  review_by: sprint_10
+
+alpha_lgbm_max_bin:
+  value: 255
+  provenance: ASSUMED
+  source: >
+    AG-208 (2026-08-25), mesma origem de alpha_lgbm_min_sum_hessian_in_leaf
+    acima. VALOR REGISTRADO = default de biblioteca (LightGBM 4.7.0),
+    bit-exato -- correção de proveniência, não de valor.
+    Racional para varrer: em sinal fraco, mais bins não melhora resolução
+    útil e aumenta a chance de um split encontrar ruído; a curva costuma
+    saturar cedo. Contrapeso específico de cripto: retorno tem cauda
+    pesada e os eventos que mais importam (cascata de liquidação, gap de
+    fim de semana) vivem exatamente na cauda -- reduzir max_bin demais
+    apaga a resolução justamente lá. Sem medição própria, não há base para
+    mover em nenhuma direção (B23).
+    NOTA de escopo, verificada e registrada para não virar achado
+    fantasma: `bin_construct_sample_cnt` (amostra usada para CONSTRUIR as
+    fronteiras de bin, default 200.000) foi avaliado no mesmo achado e
+    NÃO entra aqui -- o treino real por fold/lado fica abaixo desse
+    default (BTCUSDT/R1 tem 223.172 barras no total, e o treino de um
+    fold é ~4/6 disso menos purge/embargo/NOFILL), e R1 é a grade com
+    MAIS barras entre R1/R2/R3. O default cobre o dataset inteiro em
+    todas as 15 combinações. Só passa a importar se alguma combinação
+    ultrapassar 200.000 linhas de treino por lado.
+  class: B
+  sweep_required: true
+  sweep_range: [63, 511]
   review_by: sprint_10
 
 # --- Camada 1 — restrições monotônicas (§5.3) ---
@@ -1998,8 +2297,19 @@ alpha_t2_orthogonality_spearman_max:
     antes disso só existia como texto de regra, nunca parametrizava
     nenhum filtro de código. Nenhuma varredura de sensibilidade rodada
     -- é uma regra de governança, não um hiperparâmetro de modelo.
+    `sweep_required` corrigido pra `true` em 2026-08-24 (achado do
+    check_constants_provenance.py durante a correção de round_trip_
+    cost_bps_maker_prob, item não relacionado da mesma sessão) -- estava
+    `false` sem `derived_from`, o que o script marca como violação da
+    Regra 4 (§16.10) pra classe A. `sweep_range` é uma faixa ao redor do
+    valor de regra (não calibrada por dado, já que 0,70 vem de texto do
+    CLAUDE.md, não de medição) -- sensibilidade real (quantos T2
+    sobrevivem/quão diferente fica k_feature_sets sob outro limiar) ainda
+    não rodada, mesmo estado que as outras 14 constantes classe A ASSUMED
+    hoje (Sprint 10).
   class: A
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [0.50, 0.90]
   review_by: sprint_11
 
 alpha_calibration_holdout_frac:
@@ -2015,6 +2325,66 @@ alpha_random_seed:
   provenance: ASSUMED
   source: "Seed de determinismo (split de calibração, embaralhamento de coluna do B4, sementes do B1) — convenção arbitrária fixada por reprodutibilidade, sem significado estatístico. Mesma categoria de 'escolha de engenharia sem base' já usada em rest_request_timeout_s."
   class: D
+  sweep_required: false
+
+alpha_gate3_hhi_effective_max:
+  value: 0.25
+  provenance: ASSUMED
+  source: >
+    Achado da varredura de gaps (2026-08-24): o Gate 3.4 REAL de produção
+    (`src/models/hhi.py::gate3_4_passes`, citado literalmente no DoD do
+    CLAUDE.md -- "HHI de importância < 0,25") nunca tinha entrada aqui --
+    vivia só como default de parâmetro Python (`threshold: float = 0.25`),
+    isento do lint via `_ALLOWED_NUMERIC_LITERALS` por já ter `noqa:
+    magic-number`. Registrado agora pra fechar a lacuna de proveniência;
+    VALOR MANTIDO em 0,25 (não recalibrado nesta correção -- Regra Zero,
+    decisão de mudar o número é separada e não autorizada aqui).
+  class: A
+  sweep_required: true
+  sweep_range: [0.15, 0.40]
+  review_by: sprint_10
+
+alpha_gate3_max_share_max:
+  value: 0.30
+  provenance: ASSUMED
+  source: >
+    Companheira de `alpha_gate3_hhi_effective_max` -- mesmo achado,
+    `src/models/hhi.py::gate3_4_max_share_passes`, mesma ausência de
+    entrada em constants.yaml até esta correção (2026-08-24). VALOR
+    MANTIDO em 0,30.
+  class: A
+  sweep_required: true
+  sweep_range: [0.20, 0.45]
+  review_by: sprint_10
+
+alpha_permanence_bootstrap_n_boot:
+  value: 2000
+  provenance: LITERATURE
+  source: >
+    ADR-004 Fase 0 (docs/ADR-004_reformulacao_alvo_regra_decisao_e_
+    inferencia_2026-08-25.md §5/§7), motivado por AG-220/AG-220-ADDENDUM
+    (o critério de permanência atual conta caminhos vencedores por
+    sharpe_naive sem nunca perguntar se a diferença é distinguível de
+    ruído -- |delta| < sigma nas 3 rodadas pareadas medidas). 2000
+    réplicas é a contagem padrão citada por Efron & Tibshirani (1993,
+    "An Introduction to the Bootstrap") para IC percentil com precisão
+    razoável (~1-2% de erro no quantil de cauda) sem custo computacional
+    real (bootstrap roda sobre `ret_net` já materializado, zero
+    retreino) -- não é hiperparâmetro do Alpha, é parâmetro do
+    procedimento estatístico (`src.validation.bootstrap_diff`).
+  class: D
+  sweep_required: false
+
+alpha_permanence_bootstrap_confidence_level:
+  value: 0.95
+  provenance: LITERATURE
+  source: >
+    Convenção padrão de IC 95% (Efron & Tibshirani 1993; Politis &
+    Romano 1994, "The Stationary Bootstrap") -- mesmo nível já usado
+    implicitamente em `select_block_length` (limiar de significância da
+    ACF, `1.96/sqrt(n)`, é o quantil de 95% da normal padrão). Guardrail
+    de leitura do teste (ADR-004 §5/§7), não hiperparâmetro econômico.
+  class: C
   sweep_required: false
 
 alpha_layer1_permanence_min_paths:
@@ -2652,5 +3022,57 @@ canonical_regime_hmm_n_states:
     (occupancy do bucket de stress ~5-12% do tempo), não como
     candidato estatisticamente superior comprovado. Ver
     PLANO_MESTRE_PRINCE2.md §15.13.
+  class: B
+  sweep_required: false
+
+# Fiação/governança 2026-08-24 -- varredura achou que tools/lint/
+# banned_patterns.py só verificava literal `float` (isinstance(node.value,
+# float)), nunca `int` -- todo int mágico em qualquer lugar do repo passava
+# despercebido, blind spot maior que a whitelist de 5 valores já conhecida.
+# As 2 constantes abaixo (src/regime/hmm_gaussian.py::_DEFAULT_NUM_EM_ITERS/
+# _DEFAULT_STICKY_CONCENTRATION) são o achado real dessa varredura -- ambas
+# JÁ eram usadas em produção real (src.regime.build_hmm.build_hmm_regimes
+# chama fit_hmm_gaussian sem passar num_em_iters/sticky_concentration
+# explícito, confirmado por leitura direta de build_hmm.py, 2026-08-24 --
+# os 2 defaults do módulo são de fato o que roda em hmm_gaussian_k4_v1
+# hoje). Esta entrada é só FIAÇÃO/GOVERNANÇA -- os VALORES não mudaram
+# (10.0 e 100, exatamente como já estavam hardcoded), recalibrar é decisão
+# separada, não autorizada nesta rodada (mesma disciplina Regra Zero de
+# round_trip_cost_bps_maker_prob/feature_a05_vol_norm_divisor acima).
+hmm_gaussian_sticky_concentration_default:
+  value: 10.0
+  provenance: ASSUMED
+  source: >
+    Já era ASSUMED antes desta entrada existir -- docstring de
+    hmm_gaussian.py (_DEFAULT_STICKY_CONCENTRATION) já declarava isto como
+    "heurística LITERATURE-inspired (Fox et al. 2011, sticky HDP-HMM):
+    kappa precisa DOMINAR a concentração base pra viés de auto-transição
+    ter efeito prático; concentração base do dynamax é 1.1 por célula --
+    ASSUMED, não medida contra dado real do M4 (esse dado só existe na
+    Fase 3, harness, fora do escopo daquele módulo). Valor de partida
+    razoável (~9x a concentração base), fica como hiperparâmetro do trial
+    por design (plano M4, não sweep) -- Fase 3 decide o valor final ou
+    mantém este." Esta entrada só registra a mesma proveniência em
+    constants.yaml (Regra Zero) -- o valor sempre foi 10.0, nunca foi
+    medido/varrido contra o candidato canônico hmm_gaussian_k4_v1 real.
+  class: B
+  sweep_required: false
+
+hmm_gaussian_num_em_iters:
+  value: 100
+  provenance: ASSUMED
+  source: >
+    Literal `int` hardcoded em src/regime/hmm_gaussian.py
+    (_DEFAULT_NUM_EM_ITERS), invisível ao lint até esta rodada (blind spot
+    de banned_patterns.py só cobrir `float`, ver comentário da seção
+    acima) -- sem justificativa/medição registrada em nenhum lugar do
+    repo pra por que 100 iterações de EM (não 50, não 200); é uma
+    convenção de biblioteca comum (default de vários pacotes de EM), não
+    uma calibração contra o dado real do HMM gaussiano do M4/produção.
+    Afeta convergência do fit (mais iterações = mais chance de convergir
+    antes do critério de parada do dynamax.fit_em), não a estrutura do
+    modelo -- por isso classe B (hiperparâmetro), não A (não invalida o
+    desenho se mudar dentro de uma faixa razoável), mas ainda ASSUMED por
+    ausência total de sweep de sensibilidade medido.
   class: B
   sweep_required: false

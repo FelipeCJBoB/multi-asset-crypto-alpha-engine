@@ -138,6 +138,7 @@ def _cell_result(
     sl_mult: Fraction,
     cfg: LabelConfig,
     atr_median_side: float,
+    horizon_end_ms: np.ndarray | None = None,
 ) -> dict[str, Any]:
     tp_atr_mult, sl_atr_mult = resolve_geometry(reward_risk_ratio, sl_mult)
     resolved = resolve_barriers_vectorized(
@@ -151,6 +152,8 @@ def _cell_result(
         maker_fee=cfg.maker_fee,
         taker_fee=cfg.taker_fee,
         decision_bar_close_time_ms=decision_bar_close_time_ms,
+        tf=cfg.resolution_id if cfg.resolution_id is not None else cfg.tf,
+        horizon_end_ms=horizon_end_ms,
     )
     resolved_df = pl.DataFrame({"barrier_hit": resolved.barrier_hit})
     frac = frac_tp_sl_from_labels(resolved_df)
@@ -215,11 +218,39 @@ def _side_label(side: int) -> str:
     return "long" if side == 1 else "short"
 
 
-def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[str, Any]:
+def run_s1_tp_sl_sensitivity(
+    *,
+    symbols: tuple[str, ...] = ALL_SYMBOLS,
+    resolution_id: str | None = None,
+    vol_estimator_id: str = "parkinson_w20",
+) -> dict[str, Any]:
     """Núcleo com IO -- loop `symbol x side x célula válida`. Devolve o
     payload completo (sem `report_provenance`/timing, adicionados pelo
-    caller `run_and_save_s1_tp_sl_sensitivity`)."""
-    cfg = LabelConfig.from_constants()
+    caller `run_and_save_s1_tp_sl_sensitivity`).
+
+    `resolution_id` (AG-232/AG-233, 2026-08-25) -- `None` (default)
+    preserva bit-exato o comportamento histórico: grade de RELÓGIO 15m.
+    `"R1"`/`"R2"`/`"R3"` roda sobre a grade CANÔNICA DE PRODUÇÃO
+    (dollar bar, `AG-042`).
+
+    **Por que existe.** Até esta correção o módulo lia
+    `data/labels/{symbol}/15m/v1/labels.parquet` com o caminho HARDCODED,
+    e `load_bars_15m` para as barras de decisão -- ou seja, decidia
+    `tp_atr_mult`/`sl_atr_mult` (constantes CLASSE A) medindo uma grade
+    que deixou de ser produção em 2026-08-16. Detectado quando o relabel
+    de `AG-221` mudou `ret_gross` em +3 a +5 bps nas 15 combinações
+    dollar-bar e este sweep devolveu edge IDÊNTICO até a 5ª casa decimal.
+
+    **Rode POR RESOLUÇÃO, não pooled.** As janelas de feature do projeto
+    são em CONTAGEM DE BARRA (`AG-043`), então "48 barras" é horizonte de
+    tempo diferente em cada resolução -- agregar entre R1/R2/R3 mistura
+    horizontes. Cada chamada produz um relatório próprio."""
+    if resolution_id is not None:
+        cfg = LabelConfig.from_constants(
+            estimator_id=vol_estimator_id, resolution_id=resolution_id
+        )
+    else:
+        cfg = LabelConfig.from_constants()
     r2_floor_stop_pct = _r2_floor_stop_pct(maker_fee=cfg.maker_fee, taker_fee=cfg.taker_fee)
 
     by_symbol: dict[str, Any] = {}
@@ -227,7 +258,8 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
     production_check: dict[str, Any] | None = None
 
     for symbol in symbols:
-        labels = pl.read_parquet(f"data/labels/{symbol}/15m/v1/labels.parquet")
+        grade = resolution_id if resolution_id is not None else "15m"
+        labels = pl.read_parquet(f"data/labels/{symbol}/{grade}/v1/labels.parquet")
         t0_min, t0_max = labels["t0"].min(), labels["t0"].max()
         start = (t0_min.date() - timedelta(days=3)).isoformat()  # type: ignore[union-attr]
         end = (t0_max.date() + timedelta(days=3)).isoformat()  # type: ignore[union-attr]
@@ -235,17 +267,30 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
             symbol, "1m", start, end, source="mark_price_klines_1m", cast_prices=True
         )
         funding = lake.query_funding(symbol, start, end)
-        bars_15m = load_bars_15m(symbol, start, end)
-        decision_bar_close_time_ms = (
-            bars_15m["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
+        # AG-232 -- barras de DECISÃO da grade real, não 15m fixo.
+        bars_decisao = (
+            lake.query_dollar_bars(symbol, start, end, resolution_id=resolution_id)
+            if resolution_id is not None
+            else load_bars_15m(symbol, start, end)
         )
+        decision_bar_close_time_ms = (
+            bars_decisao["close_time"].cast(pl.Int64).to_numpy().astype(np.int64)
+        )
+        # AG-116/AG-234 -- sob dollar bar o horizonte da barreira TIME é
+        # CONTAGEM DE BARRA, não relógio. O grid de decisão é o `t0` único
+        # dos labels (um por barra, os dois lados compartilham).
+        t0_grid = np.sort(
+            labels["t0"].unique().dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        )
+        horizon_bars = int(load_constant("horizon_bars")) if resolution_id is not None else 0
         logger.info(
             "analysis.s1.symbol_data_loaded",
             symbol=symbol,
             n_labels=labels.height,
             n_mark_1m=mark_1m.height,
             n_funding=funding.height,
-            n_bars_15m=bars_15m.height,
+            n_bars_decisao=bars_decisao.height,
+            grade=grade,
         )
 
         by_symbol[symbol] = {"by_side": {}}
@@ -254,6 +299,21 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
             filled_side, atr_median_side, n_total_side, n_nofill_side = _load_side_inputs(
                 symbol, labels, side=side
             )
+            # AG-116 -- horizonte por CONTAGEM DE BARRA sob dollar bar.
+            # Trades cujo horizonte cai além do grid carregado são
+            # descartados aqui (mesma semântica de cauda incompleta de
+            # `build_labels`), porque `resolve_barriers_vectorized` LEVANTA
+            # se a janela de mark não cobrir o horizonte -- descartar antes
+            # é o que mantém a rodada inteira viável.
+            horizon_end_side: np.ndarray | None = None
+            if resolution_id is not None and filled_side.height:
+                _t0 = filled_side["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+                _idx = np.searchsorted(t0_grid, _t0, side="left") + horizon_bars
+                _ok = _idx < t0_grid.shape[0]
+                if not bool(_ok.all()):
+                    filled_side = filled_side.filter(pl.Series(_ok))
+                    _idx = _idx[_ok]
+                horizon_end_side = t0_grid[_idx]
             min_viable_sl_mult = _min_viable_sl_mult(
                 atr_median_side=atr_median_side, r2_floor_stop_pct=r2_floor_stop_pct
             )
@@ -272,6 +332,7 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
                     sl_mult=sl_mult,
                     cfg=cfg,
                     atr_median_side=atr_median_side,
+                    horizon_end_ms=horizon_end_side,
                 )
                 result["frac_nofill"] = (
                     n_nofill_side / n_total_side if n_total_side else float("nan")
@@ -326,6 +387,12 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
 
     return {
         "task": "s1_tp_sl_sensitivity",
+        # AG-232 -- identidade da GRADE medida, no proprio artefato. Sem
+        # isto, dois relatorios de grades diferentes sao indistinguiveis
+        # por inspecao (mesma licao de AG-226/AG-218).
+        "grade_medida": resolution_id if resolution_id is not None else "15m_relogio_LEGADO",
+        "resolution_id": resolution_id,
+        "config_hash": cfg.config_hash,
         "grid_declared_before_search": {
             "reward_risk_ratio": [str(r) for r in REWARD_RISK_GRID],
             "sl_atr_mult": [str(s) for s in SL_MULT_GRID],
@@ -362,16 +429,31 @@ def run_s1_tp_sl_sensitivity(*, symbols: tuple[str, ...] = ALL_SYMBOLS) -> dict[
     }
 
 
-def run_and_save_s1_tp_sl_sensitivity(*, dest_path: Path | None = None) -> Path:
+def run_and_save_s1_tp_sl_sensitivity(
+    *,
+    dest_path: Path | None = None,
+    resolution_id: str | None = None,
+    vol_estimator_id: str = "parkinson_w20",
+) -> Path:
     """Ponto de entrada MANUAL com IO. Chame:
     `uv run python -c "from src.analysis.s1_tp_sl_sensitivity import
     run_and_save_s1_tp_sl_sensitivity as r; r()"`."""
     t_start = time.perf_counter()
-    payload = run_s1_tp_sl_sensitivity()
+    payload = run_s1_tp_sl_sensitivity(
+        resolution_id=resolution_id, vol_estimator_id=vol_estimator_id
+    )
     payload["elapsed_seconds_total"] = time.perf_counter() - t_start
     payload = {**report_provenance(), **payload}
 
-    dest = dest_path if dest_path is not None else OUTPUT_PATH
+    # AG-232 -- arquivo POR GRADE. O default sem sufixo continua sendo o
+    # da grade legada, para nao orfanar leitores; dollar bar grava em
+    # arquivo proprio, nunca por cima.
+    if dest_path is not None:
+        dest = dest_path
+    elif resolution_id is not None:
+        dest = EXPERIMENTS_DIR / f"s1_tp_sl_sensitivity_report_{resolution_id}.json"
+    else:
+        dest = OUTPUT_PATH
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = dest.with_name(dest.name + ".tmp")
     blob = orjson.dumps(payload, option=orjson.OPT_INDENT_2)
@@ -386,3 +468,48 @@ def run_and_save_s1_tp_sl_sensitivity(*, dest_path: Path | None = None) -> Path:
         elapsed_seconds_total=round(payload["elapsed_seconds_total"], 1),
     )
     return dest
+
+
+if __name__ == "__main__":  # pragma: no cover -- execucao manual
+    # AG-231 -- CLI adicionada 2026-08-25. Este modulo produz um artefato de
+    # `experiments/` que DERIVA de `labels.parquet`, entao precisa ser
+    # re-executado apos o relabel de AG-221; ate aqui so era chamavel via
+    # `python -c "from ... import run_and_save_s1_tp_sl_sensitivity as r; r()"`, o que o deixava de
+    # fora de qualquer orquestracao reproduzivel de re-execucao.
+    import argparse
+    import sys
+
+    def _run() -> int:
+        ap = argparse.ArgumentParser(
+            description=(
+                "S1 -- sweep de geometria tp/sl. AG-232: use --resolution-id para "
+                "medir a grade CANONICA DE PRODUCAO (dollar bar). Sem o argumento, "
+                "mede a grade de relogio 15m LEGADA, que nao e producao desde AG-042."
+            )
+        )
+        ap.add_argument(
+            "--resolution-id",
+            default=None,
+            choices=["R1", "R2", "R3"],
+            help="grade de producao a medir; omitir = 15m legado (bit-exato historico)",
+        )
+        ap.add_argument("--vol-estimator-id", default="parkinson_w20")
+        args = ap.parse_args()
+        if args.resolution_id is None:
+            logger.warning(
+                "analysis.s1_tp_sl_sensitivity.grade_legada",
+                detail="AG-232 -- rodando sobre a grade de RELOGIO 15m, que nao e "
+                "producao desde AG-042. Para decidir tp_atr_mult/sl_atr_mult (classe A) "
+                "use --resolution-id R1|R2|R3",
+            )
+        destino = run_and_save_s1_tp_sl_sensitivity(
+            resolution_id=args.resolution_id, vol_estimator_id=args.vol_estimator_id
+        )
+        logger.info(
+            "analysis.s1_tp_sl_sensitivity.cli_done",
+            report_path=str(destino),
+            resolution_id=args.resolution_id,
+        )
+        return 0
+
+    sys.exit(_run())

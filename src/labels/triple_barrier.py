@@ -110,7 +110,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
@@ -222,6 +222,13 @@ def _ms_epoch_to_utc(expr: pl.Expr) -> pl.Expr:
 # ============================================================================
 # LabelConfig — bloco de barreiras + hash determinístico (B15)
 # ============================================================================
+
+
+# AG-221 -- fontes validas para o fill de ENTRADA. Ver
+# `LabelConfig.entry_fill_source` para o achado que motivou.
+ENTRY_FILL_SOURCE_MARK_1M = "mark_1m"
+ENTRY_FILL_SOURCE_AGG_TRADES = "agg_trades"
+_ENTRY_FILL_SOURCES = (ENTRY_FILL_SOURCE_MARK_1M, ENTRY_FILL_SOURCE_AGG_TRADES)
 
 
 @dataclass(frozen=True, slots=True)
@@ -339,6 +346,61 @@ class LabelConfig:
     ganhar mais lógica além do necessário pra fechar o gap enquanto o
     ADR-001 não está implementado."""
 
+    entry_fill_source: str = ENTRY_FILL_SOURCE_MARK_1M
+    """Default TÉCNICO do dataclass = `mark_1m`; o valor de PRODUÇÃO vive
+    em `constants.yaml::label_entry_fill_source` e entra por
+    `from_constants()` (`AG-236`).
+
+    **Por que a separação, e não um default único.** Depois do relabel de
+    `AG-229` os labels de produção passaram a ser `agg_trades`. Trocar o
+    default do DATACLASS para `agg_trades` alinharia produção — verificado,
+    o hash bate nas três resoluções — mas quebrou 43 testes: fixtures
+    sintéticas que constroem `LabelConfig(...)` direto e exercitam o
+    caminho de candle passariam a exigir `agg_trades`/`agg_trades_feeder`,
+    que elas não têm nem deveriam ter.
+
+    A disciplina do repo já resolve isso: **constante de domínio mora em
+    `constants.yaml` com proveniência declarada** (§16.10), e o dataclass
+    guarda apenas um default técnico. Assim `LabelConfig(...)` direto
+    (teste, fixture) continua no caminho de candle, e
+    `LabelConfig.from_constants(...)` (todo caminho de produção) lê a
+    fonte real.
+
+    **Consequência desejada:** sob `from_constants`, a grade de relógio 15m
+    (legada, `AG-233`) deixa de bater no `config_hash` — seus labels foram
+    gerados sob `mark_1m`. Quem ainda lê 15m por `build_modeling_frame`
+    passa a falhar alto em B15 em vez de produzir número silencioso sobre
+    uma grade que não é produção desde `AG-042`. É o expurgo pedido pelo
+    Manager acontecendo por MECANISMO, não por deleção de arquivo."""
+    """AG-221 (2026-08-25) — fonte de dado do fill de ENTRADA.
+    `"mark_1m"` (default, bit-exato) usa `fill_model.simulate_fill_arrays`
+    sobre candles de 1 minuto; `"agg_trades"` usa
+    `fill_model.simulate_fill_from_trades` sobre trades individuais.
+
+    **Por que existe.** `t_post` é o `close_time` da dollar bar — instante
+    ARBITRÁRIO, não alinhado ao relógio. Sob `"mark_1m"`, a busca de fill
+    só pode começar no `open_time` do próximo candle de 1m, criando uma
+    espera FORÇADA uniformemente distribuída em `[0, 60s]` que é pura fase
+    de relógio e **não existe em produção** (onde a ordem é postada
+    imediatamente). Medido: `ret_gross` é função monotônica dessa espera
+    (-2,64 bps na faixa 0-10 s contra -6,94 bps na faixa 50-60 s), o ATR é
+    constante entre as faixas (não é regime), o gradiente sobrevive dentro
+    dos 5 quintis de volatilidade e ESCALA com ela — predição do mecanismo,
+    confirmada.
+
+    Ganho medido em 4 combinações (200 dias cada, `src.analysis.
+    ag221_fill_granularity_validation`): `P(TP)` sobe de 0,447-0,475 para
+    **0,489-0,497** (o valor teórico de martingale sob payoff simétrico é
+    0,50) e `ret_gross` melhora +3,17 / +4,92 / +3,21 / +7,46 bps. NOFILL
+    cai de ~9 % para ~1-2 %.
+
+    **Diferente de `barrier_fill_policy_id` logo abaixo, este campo TEM
+    bifurcação de comportamento** — não é só marcador de versão para o
+    `config_hash`: `build_labels_with_stats` seleciona a função de fill por
+    ele. Entra no `config_hash` pelo mesmo motivo que aquele: uma mudança
+    de fonte de fill muda TODO `ret_net` do artefato, e `verify_config_hash`
+    (B15) precisa enxergar isso."""
+
     barrier_fill_policy_id: str = "gap_aware_sl_v1"
     """D4/AG-205 (2026-08-24) — identifica QUAL versão do algoritmo de fill
     de barreira gerou este label, mesmo papel de `estimator_id` (mas pra
@@ -363,6 +425,17 @@ class LabelConfig:
     persistidos (pré-D4), disciplina de falhar alto, não silenciar."""
 
     def __post_init__(self) -> None:
+        # AG-221 -- falha alta em fonte desconhecida. Diferente de
+        # `barrier_fill_policy_id` (marcador livre de versão), este campo
+        # SELECIONA uma função de fill em `build_labels_with_stats`: um
+        # valor não reconhecido cairia silenciosamente no ramo default e
+        # produziria labels do regime errado com um `config_hash` que
+        # afirma outra coisa -- exatamente o que B15 existe pra impedir.
+        if self.entry_fill_source not in _ENTRY_FILL_SOURCES:
+            raise ValueError(
+                f"entry_fill_source={self.entry_fill_source!r} desconhecido -- "
+                f"esperado um de {list(_ENTRY_FILL_SOURCES)} (AG-221)"
+            )
         if self.resolution_id is not None:
             if self.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
                 raise ValueError(
@@ -507,6 +580,7 @@ class LabelConfig:
             maker_fee=float(load_constant("maker_fee")),
             taker_fee=float(load_constant("taker_fee")),
             estimator_id=resolved_estimator_id,
+            entry_fill_source=str(load_constant("label_entry_fill_source")),
             tf=tf,
             resolution_id=resolution_id,
             horizon_bars=resolved_horizon_bars,
@@ -588,6 +662,7 @@ class LabelConfig:
             "resolution_id": self.resolution_id,
             "horizon_bars": self.horizon_bars,
             "barrier_fill_policy_id": self.barrier_fill_policy_id,
+            "entry_fill_source": self.entry_fill_source,
         }
         if self.bars_calibration_hash is not None:
             payload["bars_calibration_hash"] = self.bars_calibration_hash
@@ -1184,6 +1259,8 @@ def build_labels_with_stats(
     funding: pl.DataFrame,
     *,
     side: int,
+    agg_trades: pl.DataFrame | None = None,
+    agg_trades_feeder: Callable[[], tuple[IntArray, FloatArray] | None] | None = None,
     symbol: str = "BTCUSDT",
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
@@ -1241,6 +1318,25 @@ def build_labels_with_stats(
     if side not in (1, -1):
         raise ValueError(f"side deve ser 1 (long) ou -1 (short), recebido {side}")
     cfg = config if config is not None else LabelConfig.from_constants()
+
+    # AG-221 -- validação de ENTRADA, no topo: falha antes de qualquer
+    # trabalho e antes dos early returns por frame vazio. Achado da 1ª
+    # execução do teste desta correção: com o guard mais abaixo (junto da
+    # preparação dos arrays), um `bars_df` vazio retornava ANTES de o
+    # contrato ser checado -- o caller receberia um frame de labels vazio
+    # em vez de saber que pediu `agg_trades` sem fornecê-los.
+    if (
+        cfg.entry_fill_source == ENTRY_FILL_SOURCE_AGG_TRADES
+        and agg_trades is None
+        and agg_trades_feeder is None
+    ):
+        raise ValueError(
+            "build_labels_with_stats: entry_fill_source="
+            f"{ENTRY_FILL_SOURCE_AGG_TRADES!r} exige `agg_trades` (DataFrame inteiro, "
+            "para dataset pequeno/teste) OU `agg_trades_feeder` (chunks sob demanda, "
+            "AG-227 -- o caminho de produção: 2,19 bilhões de trades = 35 GB não cabem "
+            "em memória)"
+        )
 
     # AG-042 (2026-08-17) -- sob resolution_id (dollar bar) não há bar_ms
     # fixo (AG-042, espaçamento não é constante por desenho). `bar_ms`
@@ -1318,6 +1414,32 @@ def build_labels_with_stats(
     mark_close = mark["close"].cast(pl.Float64).to_numpy()
     max_mark_open_time = int(mark_open_time[-1]) if mark_open_time.size else -1
 
+    # AG-221 -- arrays de agg_trades preparados UMA VEZ fora do laço quente,
+    # mesmo padrão de `mark_*` acima (converter por linha seria O(n) de
+    # polars->numpy dentro do loop). `None` quando a fonte é `mark_1m`.
+    # AG-227 -- cursor DESLIZANTE. As duas fontes convergem para o mesmo
+    # caminho de código: um `agg_trades` inteiro vira um feeder de chunk
+    # único, então o laço abaixo não precisa saber qual foi usada (mesma
+    # disciplina de `src/data/bars.py`, onde lote é streaming com 1 chunk).
+    use_agg_trades = cfg.entry_fill_source == ENTRY_FILL_SOURCE_AGG_TRADES
+    trade_cursor = fill_model.TradeWindowCursor()
+    _feeder = agg_trades_feeder
+    if use_agg_trades and _feeder is None:
+        assert agg_trades is not None  # garantido pelo guard no topo
+        _agg_sorted = agg_trades.sort("transact_time")
+        _chunk_unico: tuple[IntArray, FloatArray] | None = (
+            _agg_sorted["transact_time"].cast(pl.Int64).to_numpy().astype(np.int64),
+            _agg_sorted["price"].cast(pl.Float64).to_numpy().astype(np.float64),
+        )
+
+        def _feed_uma_vez() -> tuple[IntArray, FloatArray] | None:
+            nonlocal _chunk_unico
+            out, _chunk_unico = _chunk_unico, None
+            return out
+
+        _feeder = _feed_uma_vez
+    _feeder_esgotado = False
+
     fund = funding.sort("calc_time")
     fund_time = fund["calc_time"].cast(pl.Int64).to_numpy().astype(np.int64)
     fund_rate = fund["last_funding_rate"].cast(pl.Float64).to_numpy()
@@ -1377,15 +1499,42 @@ def build_labels_with_stats(
             n_incomplete_tail_fill += 1
             continue
 
-        fill = fill_model.simulate_fill_arrays(
-            mark_open_time,
-            mark_low,
-            mark_high,
-            t_post_ms=t_post,
-            horizon_ms=fill_horizon_ms,
-            limit_price=limit_px,
-            side=side,
-        )
+        # AG-221 -- a fonte do fill de ENTRADA. Só isto bifurca: a
+        # avaliação de BARREIRA continua sempre em `mark_1m` (B12/B11 --
+        # `working_type` é MARK_PRICE, a barreira é sobre mark, nunca sobre
+        # trade). Ver `LabelConfig.entry_fill_source`.
+        if use_agg_trades:
+            # AG-227 -- alimenta ate cobrir o horizonte desta barra, depois
+            # DESCARTA o passado. `t_post` so cresce no laco, entao nenhum
+            # trade descartado volta a ser consultado -- e o que mantem a
+            # memoria em O(janela) em vez de O(dataset).
+            assert _feeder is not None  # garantido pelo guard no topo
+            while not _feeder_esgotado and trade_cursor.needs_more(fill_horizon_ms):
+                _chunk = _feeder()
+                if _chunk is None:
+                    _feeder_esgotado = True
+                else:
+                    trade_cursor.feed(*_chunk)
+            trade_cursor.advance_to(t_post)
+            _wt, _wp = trade_cursor.window(t_post, fill_horizon_ms)
+            fill = fill_model.simulate_fill_from_trades(
+                _wt,
+                _wp,
+                t_post_ms=t_post,
+                horizon_ms=fill_horizon_ms,
+                limit_price=limit_px,
+                side=side,
+            )
+        else:
+            fill = fill_model.simulate_fill_arrays(
+                mark_open_time,
+                mark_low,
+                mark_high,
+                t_post_ms=t_post,
+                horizon_ms=fill_horizon_ms,
+                limit_price=limit_px,
+                side=side,
+            )
 
         if fill.t_entry_ms is None:
             _append_nofill_row(
@@ -1643,6 +1792,54 @@ def build_labels(
     return labels
 
 
+# AG-227 -- FEEDER de agg_trades por dia. Esta e a CASCA (faz IO); o
+# cursor que consome os chunks (`fill_model.TradeWindowCursor`) e nucleo
+# puro. Separacao deliberada, mesma de `src/data/bars.py`.
+#
+# Por que uma FACTORY e nao um feeder: `build_labels_both_sides_with_stats`
+# roda o laco DUAS vezes (long e short), e um feeder se esgota numa
+# passada. Cada lado precisa da sua propria sequencia de chunks, comecando
+# do inicio.
+def _agg_trades_feeder_factory(
+    symbol: str, start: DateLike, end_inclusive: DateLike
+) -> Callable[[], Callable[[], tuple[IntArray, FloatArray] | None]]:
+    """Devolve uma factory: cada chamada cria um feeder novo que entrega um
+    DIA de trades por vez, em ordem cronologica, e `None` quando acabam.
+
+    Dias ausentes em disco sao PULADOS (nao levantam) -- a cobertura de
+    `agg_trades` comeca depois da de `klines` para alguns simbolos
+    (XRPUSDT: 1.711 dias contra 2.412 de BTCUSDT). Um dia faltante vira
+    NOFILL nas barras daquele intervalo, que e o desfecho correto: sem
+    trade observado, nao ha fill demonstravel."""
+    from src.data._paths import CAPACITY_DIR
+
+    d0, d1 = _as_date(start), _as_date(end_inclusive)
+    dias = [d0 + timedelta(days=i) for i in range((d1 - d0).days + 1)]
+
+    def _nova_sequencia() -> Callable[[], tuple[IntArray, FloatArray] | None]:
+        restantes = iter(dias)
+
+        def _proximo_chunk() -> tuple[IntArray, FloatArray] | None:
+            for dia in restantes:
+                caminho = CAPACITY_DIR / "agg_trades" / symbol / f"{dia.isoformat()}.parquet"
+                if not caminho.exists():
+                    continue
+                df = pl.read_parquet(
+                    caminho, columns=["transact_time", "price"]
+                ).sort("transact_time")
+                if df.is_empty():
+                    continue
+                return (
+                    df["transact_time"].cast(pl.Int64).to_numpy().astype(np.int64),
+                    df["price"].cast(pl.Float64).to_numpy().astype(np.float64),
+                )
+            return None
+
+        return _proximo_chunk
+
+    return _nova_sequencia
+
+
 def build_labels_both_sides_with_stats(
     bars_df: pl.DataFrame,
     mark_1m: pl.DataFrame,
@@ -1652,6 +1849,10 @@ def build_labels_both_sides_with_stats(
     config: LabelConfig | None = None,
     estimator: VolatilityEstimator | None = None,
     historical_filters_fallback: bool = False,
+    agg_trades_feeder_factory: Callable[
+        [], Callable[[], tuple[IntArray, FloatArray] | None]
+    ]
+    | None = None,
 ) -> tuple[pl.DataFrame, LabelBuildStats]:
     """Roda `build_labels_with_stats` para os dois lados (M_long `side=1`,
     M_short `side=-1` — B18) e aplica `weights.apply_weights` sobre o
@@ -1685,6 +1886,9 @@ def build_labels_both_sides_with_stats(
         mark_1m,
         funding,
         side=1,
+        agg_trades_feeder=(
+            agg_trades_feeder_factory() if agg_trades_feeder_factory is not None else None
+        ),
         symbol=symbol,
         config=cfg,
         estimator=estimator,
@@ -1695,6 +1899,9 @@ def build_labels_both_sides_with_stats(
         mark_1m,
         funding,
         side=-1,
+        agg_trades_feeder=(
+            agg_trades_feeder_factory() if agg_trades_feeder_factory is not None else None
+        ),
         symbol=symbol,
         config=cfg,
         estimator=estimator,
@@ -1913,6 +2120,16 @@ def build_labels_for_symbol_with_stats(
         n_funding=funding.height,
     )
 
+    # AG-227 -- sob `agg_trades`, a casca fornece uma FACTORY de feeders de
+    # dia; o nucleo desliza o cursor e nunca segura o dataset inteiro.
+    # `mark_end` (nao `end`) porque a janela de fill/barreira estica alem
+    # de `end` pelo prefetch -- os trades precisam cobrir o mesmo alcance.
+    feeder_factory = (
+        _agg_trades_feeder_factory(symbol, start, mark_end)
+        if cfg.entry_fill_source == ENTRY_FILL_SOURCE_AGG_TRADES
+        else None
+    )
+
     return build_labels_both_sides_with_stats(
         bars_df,
         mark_1m,
@@ -1921,6 +2138,7 @@ def build_labels_for_symbol_with_stats(
         config=cfg,
         estimator=estimator,
         historical_filters_fallback=historical_filters_fallback,
+        agg_trades_feeder_factory=feeder_factory,
     )
 
 

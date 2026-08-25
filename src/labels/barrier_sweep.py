@@ -85,10 +85,14 @@ from typing import Final
 
 import numpy as np
 import polars as pl
+import structlog
 from numpy.lib.stride_tricks import sliding_window_view
 from numpy.typing import NDArray
 
+from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.data.resample import step_ms
+
+logger = structlog.get_logger(__name__)
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -138,6 +142,54 @@ def _pad_int_for_windows(arr: IntArray, *, pad_bars: int, fill_value: int) -> In
     return np.concatenate([arr, np.full(pad_bars, fill_value, dtype=np.int64)])
 
 
+def _resolve_bar_ms(tf: str, decision_bar_close_time_ms: IntArray | None) -> int:
+    """AG-234 -- espaçamento de barra tolerante a grade.
+
+    Sob grade de RELÓGIO: `step_ms(tf)`, como sempre (bit-exato).
+
+    Sob DOLLAR BAR (`tf` = R1/R2/R3): `step_ms` levanta por desenho, e é
+    correto que levante -- não existe espaçamento constante (AG-042). Aí o
+    valor vem da MEDIANA do diff de `decision_bar_close_time_ms`, ou seja,
+    medido do próprio dado da rodada, nunca estipulado (B23).
+
+    Onde este valor entra: EXCLUSIVAMENTE na extrapolação de `n_bars_held`
+    para trades cujo `t1` cai além da última barra de decisão carregada.
+    Nunca decide barreira, nunca entra em `ret_gross`/`ret_net`. Uma
+    mediana medida é a aproximação correta nesse uso -- e a alternativa
+    (recusar a rodada inteira sob dollar bar) seria pior.
+
+    Levanta se a grade não for de relógio E não houver barras de decisão
+    para medir -- nesse caso não há base nenhuma para o número, e inventar
+    um seria exatamente o que B23 proíbe."""
+    # WHITELIST explícita de grade dollar-bar, não `except Exception`. A 1ª
+    # versão deste helper capturava qualquer erro de `step_ms` e caía na
+    # medição -- o que fazia um `tf` INVÁLIDO (typo, ex. "15x") ser aceito
+    # silenciosamente sempre que houvesse barras de decisão, matando a
+    # validação de falha-alta que `test_resolve_barriers_vectorized_tf_
+    # invalido_levanta_unsupportedtimeframeerror` cobre. Só R1/R2/R3 --
+    # grades legítimas sem espaçamento constante por desenho -- entram no
+    # caminho medido; qualquer outro valor desconhecido continua levantando
+    # de `step_ms`, como sempre.
+    if tf not in CALIBRATION_TF_BY_RESOLUTION:
+        return int(step_ms(tf))
+    if True:
+        if decision_bar_close_time_ms is None or decision_bar_close_time_ms.size < 2:  # noqa: magic-number -- 2 pontos e o minimo para um diff existir
+            raise ValueError(
+                f"resolve_barriers_vectorized: tf={tf!r} não é grade de relógio "
+                "(step_ms não resolve) e `decision_bar_close_time_ms` não tem pontos "
+                "suficientes para medir o espaçamento -- sem base para `bar_ms` (AG-234)"
+            ) from None
+        medido = int(np.median(np.diff(np.sort(decision_bar_close_time_ms))))
+        logger.info(
+            "labels.barrier_sweep.bar_ms_medido_da_grade",
+            tf=tf,
+            bar_ms_medido=medido,
+            detail="AG-234 -- grade sem step_ms (dollar bar); espaçamento medido da "
+            "mediana do diff das barras de decisão, usado só para extrapolar n_bars_held",
+        )
+        return medido
+
+
 def resolve_barriers_vectorized(
     filled: pl.DataFrame,
     mark_1m: pl.DataFrame,
@@ -151,6 +203,7 @@ def resolve_barriers_vectorized(
     taker_fee: float,
     tf: str = "15m",
     decision_bar_close_time_ms: IntArray | None = None,
+    horizon_end_ms: IntArray | None = None,
 ) -> ResolvedBarriers:
     """`filled`: trades JÁ preenchidos de UM lado (`barrier_hit != "NOFILL"`
     numa config qualquer — `t_entry`/`entry_price_fill`/`atr_at_t0`/`t0` não
@@ -188,13 +241,37 @@ def resolve_barriers_vectorized(
     `n_incomplete_tail` de `build_labels` — aqui é erro, não skip
     silencioso, porque `filled` já deveria vir de trades com cauda
     completa, dado que se originam de `labels/v1/labels.parquet`)."""
-    bar_ms = step_ms(tf)  # UnsupportedTimeframeError falha alto se tf desconhecido
+    # AG-234 -- `bar_ms` resolvido de forma TOLERANTE A GRADE. Sob grade de
+    # relógio, `step_ms(tf)` como sempre (bit-exato). Sob dollar bar
+    # (`tf` em R1/R2/R3) `step_ms` levanta por desenho -- não há
+    # espaçamento constante (AG-042) --, e aí o espaçamento é MEDIDO da
+    # mediana do diff de `decision_bar_close_time_ms`. `bar_ms` só é usado
+    # para EXTRAPOLAR `n_bars_held` além da última barra carregada, nunca
+    # para decidir barreira, então uma mediana medida é a aproximação
+    # correta ali -- e é derivada do dado, não estipulada (B23).
+    bar_ms = _resolve_bar_ms(tf, decision_bar_close_time_ms)
     n = filled.height
     t0 = filled["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     t_entry = filled["t_entry"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
     fill_px = filled["entry_price_fill"].to_numpy().astype(np.float64)
     atr_pct = filled["atr_at_t0"].to_numpy().astype(np.float64)
-    horizon_end = t0 + time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
+    # AG-234 -- horizonte INJETÁVEL. `None` (default) = relógio fixo
+    # `t0 + time_stop_ms`, bit-exato com todo caller existente. Sob dollar
+    # bar o horizonte de produção é CONTAGEM DE BARRA (`t0_arr[i +
+    # horizon_bars]`, AG-116) e não é derivável aqui -- quem conhece a
+    # grade é o caller, então ele passa o array já resolvido. Mesma
+    # disciplina de `max_feature_lookback_ms` em `CPCVConfig`: o parâmetro
+    # que a camada não pode inferir sozinha vira entrada explícita.
+    if horizon_end_ms is not None:
+        if horizon_end_ms.shape[0] != filled.height:
+            raise ValueError(
+                f"resolve_barriers_vectorized: horizon_end_ms tem "
+                f"{horizon_end_ms.shape[0]} entradas e `filled` tem {filled.height} "
+                "-- precisam ser paralelos (um horizonte por trade)"
+            )
+        horizon_end = horizon_end_ms.astype(np.int64)
+    else:
+        horizon_end = t0 + time_stop_ms  # AG-031/B1 -- relógio fixo, não mais * bar_ms
 
     mark = mark_1m.sort("open_time")
     mark_open_time = mark["open_time"].cast(pl.Int64).to_numpy().astype(np.int64)

@@ -2930,3 +2930,573 @@ entries:
     Veredito de "producao sobrevive a faixa testada" fica deliberadamente
     TBD (design doc SS11 risco #1) -- decisao do Manager, nao computada
     unilateralmente. `n_lifetime` +18 (id 19, counter 78->96).
+- id_curto: adr002-t2-t1-stage2-3-veredito-robusto-2026-08-24
+  fase: 'ADR-002 (docs/ADR-002_busca_hiperparametro_robusta_a_ruido_2026-08-24.md)
+    Estagios 1b+2+3 -- redesenho da campanha de ablacao T2->T1 apos o Manager
+    apontar que a "Fase 2 nao foi refutada" (id=24 do n_lifetime.yaml, que a
+    chamou prematuramente de "VEREDITO FINAL" sem cobrir learning_rate/
+    subsample/feature_fraction/lambda_l2/n_estimators, os 5 hiperparametros
+    LightGBM nunca tocados nas Fases 0-2). Correcao de metodo: selecao final
+    por MEDIANA de 5 seeds (nunca argmax de 1 seed), screening de 1 seed
+    usado so pra filtrar candidatos, gate de permanencia repetido 5x antes
+    de qualquer decisao de promocao -- exatamente o design que a Fase 2 ja
+    previa e nao tinha implementado.'
+  symbol: 'ETHUSDT'
+  tf: R1 (dollar-bar)
+  janela: 'labels/v1/labels.parquet R1, relabeled 2x nesta sessao (fix
+    tp_atr_mult/sl_atr_mult + AG-205 gap_aware_sl_v1, config_hash
+    519272f47d1b1227)'
+  lado: 'long e short, pooled'
+  regime: all (CPCV 5 paths, sem estratificacao por regime nesta etapa)
+  feature_ou_filtro: 'k=32 features T2 (vencedor Fase 2) mantido fixo;
+    coordenada-descida sobre learning_rate{0,01;0,03;0,05;0,08},
+    subsample{0,6;0,8;0,9;1,0}, feature_fraction{0,6;0,8;1,0},
+    lambda_l2{1,0;5,0;10,0;20,0}, n_estimators{150;300;500} (Estagio 1b,
+    13 treinos novos, ancora = vencedor Fase 2 reusado do cache) -> top-5
+    candidatos (pool de 95, Fase1+Fase2+1b deduplicados por assinatura de
+    9 campos) confirmados por mediana de 5 seeds (Estagio 2, 20 treinos
+    novos) -> vencedor submetido a gate de permanencia real Camada1 vs
+    Camada0 repetido 5x (Estagio 3, 5 treinos novos).'
+  metrica_tipo: 'pooled_sharpe (Camada1, mediana de 5 seeds) para
+    Estagios 1b/2; n_better/5 paths (Camada1 supera Camada0) mediana de
+    5 seeds para Estagio 3 -- mesma metrica de permanencia do gate de
+    producao (alpha_layer1_permanence_min_paths=4)'
+  metrica_valor: >
+    Estagio 1b (1 seed, screening): achado chamativo n_estimators=150 =
+    pooled_sharpe=-0,8478, o melhor numero de toda a campanha ate aqui.
+    Estagio 2 (5 seeds, mediana): ESSE MESMO candidato caiu pra
+    median_pooled_sharpe=-1,6198 (seeds: -0,85/-1,62/-1,65/-0,68/-1,68) --
+    selection_bias_estimate=+0,7720, o maior vies de selecao medido em
+    toda a campanha, confirmando de novo que 1 seed inflaciona o candidato
+    escolhido. O vencedor REAL por mediana entre os 5 confirmados foi
+    outro candidato (learning_rate=0,01, n_estimators=300, lambda_l2=5,0,
+    demais=producao k=32/max_depth=2/num_leaves=3/min_child_samples=500/
+    subsample=0,8/feature_fraction=1,0): median_pooled_sharpe=-1,1355,
+    selection_bias_estimate=-0,1348 (nao sofreu winner's-curse, ao
+    contrario -- mediana ficou MELHOR que a screening de 1 seed). Estagio
+    3 (gate de permanencia, 5 seeds) sobre esse vencedor: n_better por
+    seed = [2,3,0,1,0] de 5 paths cada, median_n_better=1,0 -- MUITO
+    abaixo do limiar de producao (>=4/5). permanence_pass=false.
+  n: 95 candidatos no pool combinado; 5 confirmados por mediana; 38
+    treinos novos nesta rodada (13 Estagio1b + 20 Estagio2 + 5 Estagio3)
+  status: vermelho
+  fonte_arquivo: experiments/t2_t1_stage1b_hyperparam_ETHUSDT_R1.json +
+    experiments/t2_t1_stage2_confirm_ETHUSDT_R1.json +
+    experiments/t2_t1_stage3_permanence_ETHUSDT_R1.json
+  fonte_secao: trials[] (1b) / confirmed[]+winner (2) / per_seed+n_better_list (3)
+  data: '2026-08-24'
+  nota: >
+    Fecha em definitivo a pergunta que a Fase 2/confirmacao (id=24 do
+    n_lifetime.yaml) tinha deixado aberta por metodologia incompleta:
+    MESMO cobrindo os 5 hiperparametros LightGBM nunca testados
+    (learning_rate/subsample/feature_fraction/lambda_l2/n_estimators) com
+    selecao robusta por mediana (nao argmax de 1 seed), T2 (k=32 features
+    de suporte) NAO sobrevive ao gate de permanencia real -- nenhum
+    candidato chega perto do limiar >=4/5. O achado mais chamativo da
+    rodada (n_estimators=150, -0,85 em 1 seed) e ele mesmo o exemplo mais
+    limpo de winner's-curse medido no projeto ate agora (vies +0,77 em
+    unidades de Sharpe) -- reforca por que a regra "nunca decidir
+    promocao com N=1" (ADR-002, agora implementada em codigo, nao so em
+    design doc) existe. Nao ha base pra reabrir T2 nesta combinacao
+    simbolo x resolucao sem feature set ou geometria de label
+    genuinamente diferente -- generalizar pra outras 14 combinacoes
+    simbolo x resolucao continua sem justificativa (mesma ressalva do
+    id=24). `n_lifetime` +38 (ids 25-27, counter 250->288).
+
+- id_curto: alpha-ag208-218-instrumentacao-ess-sigma-tau-alvo-2026-08-25
+  fase: >
+    AG-208..AG-218 -- primeira execucao real da instrumentacao introduzida
+    pela auditoria da persona lgbm-crypto-quant sobre src/models/alpha.py e
+    arvore. Rodada de DIAGNOSTICO: todas as politicas em default LEGADO
+    (tau_policy=legacy_per_side, calib_split_mode=legacy_random_stratified,
+    class_balance_basis=count) -- os numeros abaixo descrevem o motor COMO
+    ESTA HOJE, nao o corrigido. Nenhum artefato de producao foi tocado
+    (--run-tag ag208_217_diag). Zero trials novos de otimizacao: nenhum
+    hiperparametro foi buscado, e o unico treino foi o do desenho ja
+    fixado -- ver `nota` para a leitura de N_lifetime.
+  tf: R1 (dollar-bar)
+  janela: 'labels/v1/labels.parquet R1 BTCUSDT, janela cheia; 446.223 linhas
+    de modeling frame (223.111 barras x 2 lados); vol_estimator_id=
+    parkinson_w20; CPCV 6 grupos / 2 de teste = 15 splits, 5 caminhos'
+  lado: 'long e short, reportados separadamente onde a metrica e por lado'
+  regime: all (sem estratificacao por regime nesta rodada de instrumentacao)
+  feature_ou_filtro: 'T1_FEATURE_IDS de producao (7 features), desenho
+    LightGBM de producao inalterado (max_depth=3, num_leaves=8,
+    n_estimators=300, learning_rate=0,03, subsample=0,8/freq=1,
+    feature_fraction=1,0, lambda_l2=5,0, min_child_samples=20,
+    min_sum_hessian_in_leaf=1e-3 e max_bin=255 agora DECLARADOS mas com o
+    valor de default de biblioteca, portanto bit-exato -- ver AG-208)'
+  metrica_tipo: >
+    quatro medicoes NOVAS, nenhuma existia em relatorio antes: (1) ESS =
+    soma de uniqueness por fold x lado e razao ESS/linhas (AG-211);
+    (2) taxa de sinal realizada por caminho vs orcamento total de fees
+    (AG-210); (3) desvio-padrao do Sharpe ENTRE caminhos do CPCV e delta
+    entre camadas (AG-214); (4) concordancia entre os dois alvos do
+    pipeline -- restricao monotonica derivada de ret_net vs derivada do
+    indicador de TP (AG-213). Mais (5) razao entre os dois balanceamentos
+    de classe, contagem vs massa (AG-212).
+  metrica_valor: >
+    (1) ESS -- mean_ess_long=47.548,9 e mean_ess_short=48.169,5 sobre
+    ~131.070 linhas de treino por fold: razao ESS/linhas = 0,3645 (long) e
+    0,3644 (short). 36% do n aparente. Numero JA calculado no repo desde
+    sempre (src/labels/experiment_log.py::summarize_labels, campo
+    sum_uniqueness) e sem nenhum consumidor -- nunca chegava ao relatorio
+    onde permanence_pass e decidido.
+    (2) TAXA DE SINAL -- Camada 1, n_signals por caminho [5.255, 4.572,
+    9.975, 8.853, 8.323] sobre 223.111 barras = [2,36%, 2,05%, 4,47%,
+    3,97%, 3,73%], media 3,31%. Orcamento TOTAL declarado em
+    constants.yaml::target_signal_rate = 1,89% (com
+    fee_budget_is_per_side=false, isto e uma contagem TOTAL, nao por lado).
+    Razao 1,75x. Em trades PREENCHIDOS: trades_per_year por caminho
+    [677,3; 620,8; 1.264,7; 1.147,8; 1.059,7], media 954,1 contra
+    orcamento de 661/ano = 1,44x. R3 (restricao inviolavel, teto de fees)
+    NAO esta sendo satisfeita, e a dispersao entre caminhos (1,08x a
+    2,36x) mostra que nem estavelmente ela e.
+    (3) DISPERSAO -- Camada1: mean=-3,1187, std_between_paths=0,8270,
+    range [-4,0860; -2,1408]. Camada0: mean=-2,3979,
+    std_between_paths=0,8340, range [-3,4671; -1,3395].
+    delta_sharpe_mean=-0,7208. |delta| = 0,72 < sigma ~ 0,83: a diferenca
+    entre as duas camadas NAO e distinguivel da variacao de particao.
+    n_paths_camada1_supera_camada0 = 1 de 5, permanence_pass=false.
+    Ressalva estrutural que acompanha o numero: os 5 caminhos reconstroem
+    o MESMO dataset (src/validation/cpcv.py item 3), entao este sigma mede
+    sensibilidade a PARTICAO, nao erro amostral -- nao serve para "isso e
+    distinguivel de zero".
+    (4) ALVOS -- fold 0. Lado long: 2 de 6 features nao-forcadas discordam
+    (B01_rsi_14: constraint via ret_net = 0, via TP = -1;
+    D06f_taker_imbalance_z_48: idem 0 vs -1). Lado short: 1 discorda.
+    Direcao do achado e o INVERSO do antecipado na auditoria: o pipeline
+    nao impoe restricao errada, ele DEIXA DE IMPOR restricoes que o alvo
+    de treino sustenta -- ret_net (continuo, carrega magnitude) e ruidoso
+    demais para passar no criterio de 6/6 ambientes, o alvo binario passa.
+    (5) BALANCEAMENTO -- mean_scale_pos_weight_count=1,2198,
+    mean_scale_pos_weight_weight=1,6491, razao=1,3519. O modelo corrige um
+    desbalanceamento de 1,22 enquanto o desbalanceamento real em massa
+    (o que o gradiente ponderado por sample_weight de fato ve) e 1,65.
+  n: >
+    223.111 barras / 446.223 linhas de label; 15 splits x 2 variantes x 2
+    lados = 60 ajustes LightGBM; ESS medido 47,5k-48,2k por fold/lado;
+    elapsed 581,2s.
+  status: vermelho
+  fonte_arquivo: experiments/alpha_layer1_report_ag208_217_diag.json
+  fonte_secao: >
+    sample_size_efetivo (1) / camada1_backtest_by_path + policies (2) /
+    layer1_vs_layer0.camada{0,1}_sharpe_dispersion (3) /
+    target_agreement_fold0 (4) / class_balance (5)
+  data: '2026-08-25'
+  nota: >
+    CONTEXTO QUE DOMINA A LEITURA: Sharpe NEGATIVO em tudo -- Camada1
+    -3,12, Camada0 -2,40, baseline B5 (short permanente) -34,45. Isso e
+    consistente com o M6 (experiments/m6_common_factor_hypothesis_
+    report.json: edge bruto INCONDICIONAL medido negativo nos dois lados,
+    long -0,0465 e short -0,0048 unidades de ATR, ANTES de custo, com
+    I2=96,1%/97,8% rejeitando fator comum) e com os ret_net medios
+    negativos das 10 piores combinacoes registrados em AG-207. Nenhum dos
+    cinco achados acima CRIA o resultado negativo -- eles explicam por que
+    o quadro parecia menos ruim do que e: sem ESS, sem sigma, sem DSR, com
+    R3 violada por 1,75x e com o criterio de permanencia contando empate
+    exato a favor da Camada 1 (AG-214).
+    N_LIFETIME: esta rodada NAO incrementa. Nenhuma busca de parametro
+    aconteceu -- e uma execucao unica do desenho ja fixado, com
+    instrumentacao adicionada, cujo proposito e MEDIR o motor existente.
+    Pela definicao do proprio ledger ("combinacoes de parametro que exigem
+    ajuste de modelo NOVO testado contra dado real"), instrumentar e medir
+    o desenho vigente nao e um trial. Se o Manager discordar dessa
+    leitura, o incremento correto e 1 (uma configuracao, uma execucao),
+    nunca 15.
+    RESSALVA DE ESCOPO: 1 combinacao (BTCUSDT/R1) de 15. Generalizar
+    qualquer um dos cinco numeros para as outras 14 nao tem base --
+    mesma disciplina de escopo das entradas anteriores deste ledger.
+    LEITURA CONTAMINADA A EVITAR: nao citar
+    experiments/alpha_layer1_report.json (caminho default, sem chave) como
+    fonte de nada -- AG-218 mediu que esse arquivo contem XRPUSDT/R3, o
+    residuo da ultima das 15 combinacoes a rodar, e que o denominador de
+    tau_realization_diagnostic assume densidade de barra de 15m aplicada a
+    dollar bar. Os dois defeitos sao ANTERIORES a esta rodada e nao a
+    afetam (ela grava em arquivo proprio), mas invalidam qualquer
+    comparacao contra numeros historicos lidos daquele caminho.
+
+- id_curto: alpha-tau-calibracao-experimento-pareado-3-bracos-2026-08-25
+  fase: >
+    AG-220 + addendum -- experimento pareado de 3 bracos sobre a REGRA DE
+    DECISAO do Alpha (nao sobre o modelo). Objetivo: testar se os dois
+    defeitos de calibracao diagnosticados em AG-209 (calibrador isotonico
+    ajustado sobre sub-split ALEATORIO de rotulos sobrepostos) e AG-210
+    (quantil 1-target_signal_rate aplicado POR LADO quando
+    fee_budget_is_per_side=false declara o orcamento como TOTAL) explicam
+    a violacao de R3 medida na rodada de diagnostico. Desenho pareado
+    estrito: mesmo simbolo, mesma resolucao, mesmo seed
+    (alpha_random_seed=42), mesmo desenho LightGBM, mesma janela, mesmos
+    15 splits de CPCV. Varia SO a politica de calibracao da fronteira.
+  tf: R1 (dollar-bar)
+  janela: 'labels/v1/labels.parquet R1 BTCUSDT, janela cheia, 446.223
+    linhas (223.111 barras x 2 lados), vol_estimator_id=parkinson_w20'
+  lado: 'long e short (a regra de decisao acopla os dois via dominancia)'
+  regime: all
+  feature_ou_filtro: >
+    T1_FEATURE_IDS de producao (7 features), desenho LightGBM de producao
+    inalterado. NENHUM hiperparametro de modelo foi variado entre os
+    bracos -- a unica variacao e (tau_policy, calib_split_mode).
+  metrica_tipo: >
+    (1) taxa de sinal realizada OOS por caminho de CPCV, contra o
+    orcamento TOTAL declarado (target_signal_rate=0,0189 = 661 trades/ano,
+    fee_budget_is_per_side=false); (2) Sharpe naive medio e desvio ENTRE
+    caminhos por camada; (3) delta de Sharpe C1-C0 lido contra esse
+    desvio; (4) veredito do gate de permanencia §5.11
+    (alpha_layer1_permanence_min_paths >= 4 de 5).
+  metrica_valor: >
+    BRACO A (tau=legacy_per_side, calib=legacy_random) -- taxa=3,315%
+    (1,75x o orcamento), 954,1 trades/ano (1,44x); C1 mean=-3,1187
+    sigma=0,8270; C0 mean=-2,3979 sigma=0,8340; delta=-0,7208;
+    n_better=1/5; permanence_pass=FALSE.
+    BRACO B (tau=total_common_oof, calib=legacy_random) -- taxa=3,157%
+    (1,67x), 934,0 trades/ano (1,41x); C1 mean=-3,0830 sigma=1,1225;
+    C0 mean=-3,8928 sigma=1,6777; delta=+0,8098; n_better=4/5;
+    permanence_pass=TRUE.
+    BRACO C (tau=total_common_oof, calib=temporal_purged) -- taxa=6,687%
+    (3,54x), 1.858,0 trades/ano (2,81x); C1 mean=-5,1086 sigma=1,0912;
+    C0 mean=-5,0117 sigma=1,3112; delta=-0,0969; n_better=2/5;
+    permanence_pass=FALSE.
+    LEITURA 1 -- nenhum braco entrega R3. Corrigir escopo+populacao do
+    quantil (A->B) moveu a taxa 0,16 ponto percentual; adicionar a
+    calibracao purgada (B->C) DOBROU a taxa em vez de reduzi-la.
+    LEITURA 2 -- em TODOS os tres bracos |delta| < sigma entre caminhos
+    (0,72<0,83 ; 0,81<1,12 ; 0,10<1,09). O gate §5.11 nunca teve poder
+    estatistico neste dataset, sob nenhuma configuracao.
+    LEITURA 3 -- o veredito do gate oscilou FALSE -> TRUE -> FALSE
+    governado apenas por escolhas de calibracao de threshold, que nao
+    mudam modelo, features nem dado. No braco B a inversao veio da
+    DEGRADACAO do braco de controle (C0: -2,3979 -> -3,8928, delta
+    -1,495), nao da melhora do tratado (C1 moveu 0,036).
+  n: >
+    3 bracos x 15 splits x 2 variantes x 2 lados = 180 ajustes LightGBM;
+    223.111 barras por braco; elapsed 581s (A) + 1.555s (B) + ~2.000s (C).
+  status: vermelho
+  fonte_arquivo: >
+    experiments/alpha_layer1_report_ag208_217_diag.json (A) +
+    experiments/alpha_layer1_report_ag210_tau_total.json (B) +
+    experiments/alpha_layer1_report_ag209_210_calib_tau.json (C)
+  fonte_secao: >
+    camada1_backtest_by_path (taxa) / layer1_vs_layer0.camada{0,1}_sharpe_
+    dispersion + delta_sharpe_mean + n_paths_camada1_supera_camada0 +
+    permanence_pass (2-4) / policies (identidade do braco)
+  data: '2026-08-25'
+  nota: >
+    ACHADO PRINCIPAL, e ele e sobre o INSTRUMENTO, nao sobre a variante:
+    tres formas diferentes de escolher ONDE e COMO tirar o quantil de
+    probabilidade produziram taxas de sinal de 3,16% a 6,69% sobre o
+    mesmo alvo declarado de 1,89%. Calibrar uma fronteira de decisao por
+    quantil de p e estruturalmente fragil porque quantis de probabilidade
+    nao transferem entre treino e teste sob nao-estacionariedade -- o
+    solver acerta o alvo IN-SAMPLE por construcao e a taxa OOS nao segue.
+    Isto e a evidencia empirica direta a favor de ADR-004 §4 (fronteira
+    derivada do CUSTO em unidade de retorno, |mu| > lambda com lambda =
+    max(c, lambda_B)), que antes desta rodada era so argumento dimensional
+    ("uma probabilidade nao tem unidade de retorno, entao nao da para
+    escrever p > custo").
+    REGISTRO DE AUTOCRITICA: as duas correcoes testadas aqui foram
+    propostas e implementadas por mim (Claude) nesta mesma sessao. Ativadas
+    isoladamente, PIORARAM a metrica que deveriam melhorar. Os dois
+    diagnosticos seguem corretos (o sub-split aleatorio vaza; o quantil por
+    lado contradiz uma constante classe A) -- o que o experimento mostra e
+    que corrigir dois defeitos de um instrumento errado nao o torna certo.
+    N_LIFETIME: 2 incrementos propostos (bracos B e C), NAO 3 -- o braco A
+    e a rodada de diagnostico ja registrada na entrada anterior deste
+    ledger (instrumentacao do desenho vigente, sem busca de parametro). B
+    e C sao configuracoes NOVAS da regra de decisao testadas contra dado
+    real, o que se enquadra na definicao do ledger. Decisao final do
+    Manager -- nao incrementado unilateralmente.
+    RECOMENDACAO: nao varrer mais variantes de calibracao de tau. O
+    instrumento ja esta caracterizado por 3 pontos; mais pontos gastam
+    N_lifetime sem informacao nova. Ir para ADR-004 Fase 1+2 (alvo em
+    unidade de retorno + fronteira lagrangiana), custo 1 retreino.
+    RESSALVA DE ESCOPO: 1 combinacao (BTCUSDT/R1) de 15. As tres leituras
+    acima nao se generalizam sem medicao propria nas outras 14.
+- id_curto: adr003-k62-10-piores-combinacoes-veredito-2026-08-25
+  fase: 'ADR-003 (docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md)
+    Estagios 0+1+2+3 -- rollout obrigatorio de T2 (62 SUPPORT_FEATURE_IDS,
+    substituindo os 7 T1_FEATURE_IDS, AG-207 ratificado pelo Manager) nas 10
+    piores combinacoes simbolo x resolucao por ret_net medio (das 12 que
+    falham o gate original de 15, id=18 -- ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3
+    ja passam e ficam de fora). Objetivo explicito do Manager: achar os
+    melhores hiperparametros pra essa promocao mandatoria, nao decidir SE
+    promover (ja decidido).'
+  symbol: 'BTCUSDT+BNBUSDT+SOLUSDT+XRPUSDT+ETHUSDT (10 combinacoes simbolo x
+    resolucao, ver lista completa em AG-207)'
+  tf: 'dollar-bar R1/R2/R3, mistura das 3 resolucoes conforme a combinacao'
+  janela: 'labels/v1/labels.parquet, mesma janela do sweep original de 15'
+  lado: 'long e short, pooled'
+  regime: all
+  feature_ou_filtro: '62 SUPPORT_FEATURE_IDS completos (k=62, substitui os 7
+    T1). Estagio 0 (24+3 trials, 2 combos representativos): estrutura
+    DIVERGIU entre BTCUSDT/R3 e XRPUSDT/R1 -- grid cheio aplicado nos 10
+    (regra pre-declarada). Estagio 1 (293 trials, grid estrutural completo +
+    coordenada-descendente sobre 6 hiperparametros por combo -- os 5 do
+    ADR-002 mais min_sum_hessian_in_leaf, AG-217). Estagio 2 (120 trials,
+    top-3 por combo confirmados por mediana de 5 seeds). Estagio 3 (50
+    trials, gate de permanencia real repetido 5 seeds sobre o vencedor de
+    cada combo).'
+  metrica_tipo: 'pooled_sharpe (Camada1, mediana de 5 seeds) para Estagios
+    1/2; n_better/5 paths (Camada1 supera Camada0) mediana de 5 seeds para
+    Estagio 3 -- mesma metrica de permanencia do gate de producao
+    (alpha_layer1_permanence_min_paths=4)'
+  metrica_valor: >
+    Estagio 1 (1 seed, screening, 293 trials): max_depth=2 vence nos 10/10
+    sem excecao; num_leaves dividido 5x2/5x3; min_child_samples alto (2000,
+    o teto testado) vence em 7/10. min_sum_hessian_in_leaf BIT-IDENTICO ao
+    PROD (0,001) nos 10/10 combos em todos os valores testados -- hipotese
+    do AG-217 NAO confirmada (com min_child_samples ja alto, a restricao de
+    CONTAGEM ja implica massa suficiente). feature_fraction<1,0 PIOROU em
+    9/10 combos -- tambem contraria a hipotese do AG-217. Melhor screening
+    por combo: -0,0345 (BTCUSDT/R3) a -2,8404 (BTCUSDT/R1).
+    Estagio 2 (mediana de 5 seeds, 120 trials): winner's-curse mais extremo
+    da campanha inteira -- o candidato de melhor screening de BTCUSDT/R3
+    (-0,0345) caiu pra -0,6476 sob mediana (vies +0,513). NENHUMA das 10
+    medianas e positiva; melhor = BNBUSDT/R3 (-0,1463).
+    Estagio 3 (gate de permanencia, 5 seeds, 50 trials): 1 de 10 combos
+    passa nominalmente (BNBUSDT/R1, median_n_better=4/5); os outros 9 ficam
+    entre 1 e 3 de 5.
+  n: 483 (293+120+50+20 do Estagio 0, todos os trials novos desta campanha)
+  status: vermelho
+  fonte_arquivo: 'experiments/t2_t1_stage0_probe_*.json,
+    experiments/t2_t1_stage1_screen_*.json,
+    experiments/t2_t1_stage2_confirm_full_*.json,
+    experiments/t2_t1_stage3_permanence_full_*.json'
+  fonte_secao: 'best_trial (Estagios 0/1), winner (Estagio 2), median_n_better/n_better_list (Estagio 3), por arquivo/combo'
+  data: '2026-08-25'
+  nota: >
+    RESSALVA CRITICA, achado simultaneo e independente de outra sessao
+    (persona lgbm-crypto-quant, audit/architecture_gaps_log.yaml::AG-220/
+    AG-220-ADDENDUM): o MESMO gate de permanencia usado no Estagio 3 acima
+    (tau_policy=legacy_per_side, config identica a de producao) foi medido,
+    em 3 experimentos pareados reais sobre BTCUSDT/R1 (k=7, nao k=62),
+    OSCILANDO FALSE->TRUE->FALSE apenas por causa de calibracao de
+    threshold -- SEM o modelo/features/dado mudarem -- com
+    |delta(Camada1,Camada0)| < sigma nas 3 variantes testadas. Isto e, o
+    gate le RUIDO da variancia de path do CPCV/backtest_lite, nao sinal
+    real, pelo menos sob k=7. O mecanismo diagnosticado (5 paths do CPCV
+    NAO-independentes, dispersao maior que o delta medio entre camadas) e
+    estrutural, nao especifico de k=7 -- ENTAO A EXPECTATIVA e que o "1 de
+    10 passa" (BNBUSDT/R1) acima tambem esteja dentro do ruido, mas isso e
+    INFERENCIA por analogia, nao medido diretamente nesta campanha (nao
+    persistimos sigma/dispersao por path no Estagio 3, so n_better por
+    seed -- lacuna para fechar antes de qualquer leitura forte). Decisao
+    de negocio (AG-207) ja manda promover T2 independente deste resultado
+    -- o valor desta medicao e a CALIBRACAO de hiperparametro por combo,
+    nao a decisao de promover, mas mesmo assim nenhum "vencedor" aqui
+    deveria ser lido como validado sem essa ressalva.
+- id_curto: t1-t2-ortogonalidade-combinada-2026-08-25
+  fase: 'Correcao de AG-207/AG-234 -- Manager corrigiu que "T2 vira T1" e ADITIVO
+    (69 = 7+62), nao substitutivo, e pediu ortogonalidade T1+T2 combinada
+    (69x69) medida de verdade nos 10 combos reais (o filtro anterior,
+    t2-ranking-ortogonalidade, so cobria T2-vs-T2 e so ETHUSDT/R1).'
+  symbol: 'BTCUSDT+BNBUSDT+SOLUSDT+XRPUSDT+ETHUSDT (10 combinacoes, mesma
+    lista do AG-207)'
+  tf: 'dollar-bar R1/R2/R3, mistura conforme a combinacao'
+  janela: 'labels/v1/labels.parquet, relabeled 2026-08-25 (AG-221, campo
+    entry_fill_source novo, default mark_1m bit-exato)'
+  lado: 'long e short pooled (estabilidade agregada sobre 15 splits x 2 lados)'
+  regime: all
+  feature_ou_filtro: 'T1 (7) SEMPRE mantido (nunca candidato a exclusao) +
+    filtro guloso sobre T2 (62), ranqueado por estabilidade IN-FOLD, cada
+    candidato aceito SE |Spearman| <= 0,70 contra T1 + T2 ja aceitos'
+  metrica_tipo: 'Spearman rho pareado, filtro guloso (mesmo instrumento de
+    t2_ranking_ortogonalidade.py, estendido pra incluir T1 no pool
+    protegido)'
+  metrica_valor: >
+    Media dos 10 combos: 41,4 features sobrevivem de 69 (7 T1 + media de
+    34,4 de 62 T2). Faixa: 39-43 por combo (ETHUSDT/R3 pior caso=39,
+    BTCUSDT/R2=BNBUSDT/R2=BNBUSDT/R1 melhor caso=43).
+    ACHADO NOVO, ROBUSTO NOS 10 COMBOS: A13_dist_ema48_atr x B01_rsi_14
+    (dois dos 7 T1 "core") tem |Spearman| entre 0,909 e 0,995 em TODAS as
+    10 combinacoes, sem excecao -- os dois medem essencialmente a mesma
+    coisa (distancia normalizada por ATR de uma EMA de 48 barras vs RSI
+    de 48 periodos, ambos capturam momentum/posicao de preco na mesma
+    janela). A05_ret_vol_norm_4 x A13_dist_ema48_atr tambem correlaciona
+    (0,82-0,83) especificamente nas 3 combinacoes de resolucao R3.
+    Por combo (T2 sobreviventes / 62, pares T1 internos com |rho|>0,70,
+    total final):
+    BTCUSDT/R3: 33, 2, 40. BNBUSDT/R3: 35, 2, 42. SOLUSDT/R1: 33, 1, 40.
+    BTCUSDT/R2: 36, 1, 43. BNBUSDT/R2: 36, 1, 43. BNBUSDT/R1: 36, 1, 43.
+    XRPUSDT/R1: 33, 1, 40. ETHUSDT/R3: 32, 2, 39. BTCUSDT/R1: 35, 1, 42.
+    ETHUSDT/R2: 35, 1, 42.
+  n: 10 combinacoes, 69 features candidatas cada
+  status: amarelo
+  fonte_arquivo: 'experiments/t1_t2_orthogonality_{symbol}_{resolution}.json'
+  fonte_secao: 't2_survivors_given_t1, t1_internal_high_corr, final_feature_set_n'
+  data: '2026-08-25'
+  nota: >
+    T1 nunca foi formalmente checado por ortogonalidade antes -- foi
+    escolhido por curadoria/heuristica (7 features "core"), nunca por um
+    processo que garantisse ausencia de redundancia interna. O achado de
+    A13xB01 (|rho| ate 0,995) mostra que MESMO o conjunto "melhor validado"
+    tinha redundancia real nao detectada. Nao decide aqui se A13 ou B01
+    deveria sair -- T1 fica intocado por instrucao explicita do Manager
+    (aditivo, nunca substitutivo); registrado como achado pra decisao
+    futura, nao acao unilateral. Os 10 conjuntos filtrados (39-43 features
+    cada) NAO foram aplicados em producao ainda -- os 10 artefatos reais
+    de AG-207/AG-227 continuam rodando com os 69 brutos, sem filtro.
+    Proximo passo proposto (nao executado): decidir se re-treina os 10
+    combos com o conjunto filtrado (39-43) em vez do bruto (69).
+- id_curto: m6_i2_r1_long
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R1
+  janela: backfill completo por resolucao
+  lado: long
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 83.2799
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R1.json
+  fonte_secao: heterogeneity_by_side.1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R1, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=23.92 (df=4), p=8.275e-05, edge pooled=-0.009082
+    ATR. CONTRA A GRADE LEGADA 15m: I2=93.92%, p=1.792e-13, edge pooled=-0.032765. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: m6_i2_r1_short
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R1
+  janela: backfill completo por resolucao
+  lado: short
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 60.5602
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R1.json
+  fonte_secao: heterogeneity_by_side.-1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R1, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=10.14 (df=4), p=3.810e-02, edge pooled=-0.028398
+    ATR. CONTRA A GRADE LEGADA 15m: I2=97.20%, p=7.159e-30, edge pooled=-0.000906. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: m6_i2_r2_long
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R2
+  janela: backfill completo por resolucao
+  lado: long
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 79.8072
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R2.json
+  fonte_secao: heterogeneity_by_side.1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R2, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=19.81 (df=4), p=5.447e-04, edge pooled=-0.007407
+    ATR. CONTRA A GRADE LEGADA 15m: I2=93.92%, p=1.792e-13, edge pooled=-0.032765. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: m6_i2_r2_short
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R2
+  janela: backfill completo por resolucao
+  lado: short
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 81.0261
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R2.json
+  fonte_secao: heterogeneity_by_side.-1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R2, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=21.08 (df=4), p=3.051e-04, edge pooled=-0.019857
+    ATR. CONTRA A GRADE LEGADA 15m: I2=97.20%, p=7.159e-30, edge pooled=-0.000906. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: m6_i2_r3_long
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R3
+  janela: backfill completo por resolucao
+  lado: long
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 65.9034
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R3.json
+  fonte_secao: heterogeneity_by_side.1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R3, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=11.73 (df=4), p=1.946e-02, edge pooled=-0.007512
+    ATR. CONTRA A GRADE LEGADA 15m: I2=93.92%, p=1.792e-13, edge pooled=-0.032765. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'
+- id_curto: m6_i2_r3_short
+  data: '2026-08-25'
+  fase: M6 -- fator comum entre ativos, na grade de producao (AG-238)
+  feature_ou_filtro: heterogeneidade entre os 5 ativos (I-quadrado de Higgins)
+  symbol: POOLED_5
+  tf: R3
+  janela: backfill completo por resolucao
+  lado: short
+  regime: todos
+  metrica_tipo: i_squared_pct
+  metrica_valor: 66.7659
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/m6_common_factor_hypothesis_report_R3.json
+  fonte_secao: heterogeneity_by_side.-1
+  nota: 'AG-238 -- M6 re-executado na grade CANONICA de producao (R3, dollar bar) apos AG-233 expor que
+    o modulo lia a grade de RELOGIO 15m, substituida desde AG-042. Q=12.04 (df=4), p=1.709e-02, edge pooled=-0.011926
+    ATR. CONTRA A GRADE LEGADA 15m: I2=97.20%, p=7.159e-30, edge pooled=-0.000906. O fator comum segue
+    REJEITADO (p<0,05), mas a FORCA da evidencia cai muito -- citar ''I2=96-98%'' como suporte de escopo
+    multi-ativo virou overclaim. I2 cai monotonicamente com a duracao da barra (15m ~93-97 > R1 61-83
+    > R3 ~66): agregacao temporal integra ruido idiossincratico e os ativos ficam mais parecidos, entao
+    a resposta DEPENDE da resolucao e nao deve ser pooled entre grades (AG-043). ACHADO QUE MUDA DECISAO:
+    a leitura por lado INVERTE -- no 15m o SHORT era o lado de edge pooled ~nulo (-0,000906) e o LONG
+    o pior (-0,032765); na grade de producao e o oposto nas tres resolucoes. Qualquer decisao apoiada
+    em ''SHORT e o lado neutro'' esta invertida. NAO SEPARADO: se a inversao vem do relabel agg_trades
+    (AG-229) ou da grade -- separar exigiria o M6 sobre a grade 15m RELABELADA, que nao existe (15m foi
+    grupo de controle, ficou em mark_1m por desenho).'

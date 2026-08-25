@@ -729,18 +729,37 @@ def permutation_heterogeneity_test_continuous(
 
 
 def compute_metrics_for_symbol(
-    symbol: str, *, tf: str = DECISION_TF
+    symbol: str,
+    *,
+    tf: str = DECISION_TF,
+    resolution_id: str | None = None,
+    vol_estimator_id: str = "parkinson_w20",
 ) -> tuple[tuple[StratumMetrics, ...], tuple[StratumMetrics, ...]]:
     """Carrega `labels`+`regime` reais via `dataset.build_modeling_frame`
     (já corrigido pra rotear `symbol` corretamente até `load_labels_v1`,
     achado AG-015 — sem essa correção este módulo teria repetido o MESMO
     bug: features/regime de um símbolo, `barrier_hit`/`atr_at_t0` de
     outro). Retorna `(pooled_by_side, detail_by_side_and_regime)`."""
-    cfg = LabelConfig.from_constants(tf=tf)
+    # AG-233 -- grade de PRODUCAO quando `resolution_id` e passado. Ate
+    # esta correcao o modulo rodava so em DECISION_TF="15m", grade que
+    # deixou de ser producao em AG-042 (2026-08-16) -- ou seja, o
+    # I2=96-98% que este teste produziu (fator comum entre os 5 ativos,
+    # citado em decisao de escopo multi-ativo) foi medido na grade errada.
+    if resolution_id is not None:
+        cfg = LabelConfig.from_constants(
+            estimator_id=vol_estimator_id, resolution_id=resolution_id
+        )
+    else:
+        cfg = LabelConfig.from_constants(tf=tf)
     maker_fee = float(load_risk_constant("maker_fee"))
     taker_fee = float(load_risk_constant("taker_fee"))
 
-    mf = build_modeling_frame(symbol=symbol, tf=tf)
+    mf = build_modeling_frame(
+        symbol=symbol,
+        tf=tf,
+        resolution_id=resolution_id,
+        vol_estimator_id=vol_estimator_id if resolution_id is not None else None,
+    )
     data = mf.data
 
     pooled: list[StratumMetrics] = []
@@ -791,6 +810,8 @@ def run_and_save_m6_report(
     *,
     symbols: tuple[str, ...] = ALL_SYMBOLS,
     tf: str = DECISION_TF,
+    resolution_id: str | None = None,
+    vol_estimator_id: str = "parkinson_w20",
     dest_path: Path | None = None,
     max_workers: int | None = None,
 ) -> Path:
@@ -814,7 +835,13 @@ def run_and_save_m6_report(
     failed_tasks: list[str] = []
     with ProcessPoolExecutor(max_workers=min(workers, len(symbols))) as executor:
         future_to_symbol = {
-            executor.submit(compute_metrics_for_symbol, symbol, tf=tf): symbol
+            executor.submit(
+                compute_metrics_for_symbol,
+                symbol,
+                tf=tf,
+                resolution_id=resolution_id,
+                vol_estimator_id=vol_estimator_id,
+            ): symbol
             for symbol in symbols
         }
         for future in as_completed(future_to_symbol):
@@ -882,7 +909,16 @@ def run_and_save_m6_report(
             symbol: [asdict(s) for s in detail_by_symbol[symbol]] for symbol in ok_symbols
         },
     }
-    dest = dest_path if dest_path is not None else DEFAULT_REPORT_PATH
+    # AG-233 -- arquivo POR GRADE; default sem sufixo continua sendo o da
+    # grade legada, para nao orfanar leitores.
+    if dest_path is not None:
+        dest = dest_path
+    elif resolution_id is not None:
+        dest = DEFAULT_REPORT_PATH.with_name(
+            DEFAULT_REPORT_PATH.stem + f"_{resolution_id}" + DEFAULT_REPORT_PATH.suffix
+        )
+    else:
+        dest = DEFAULT_REPORT_PATH
     _atomic_write_json(payload, dest)
     logger.info(
         "analysis.m6_common_factor.done",
@@ -896,5 +932,35 @@ def run_and_save_m6_report(
     return dest
 
 
-if __name__ == "__main__":
-    run_and_save_m6_report()
+if __name__ == "__main__":  # pragma: no cover -- execucao manual
+    import argparse
+    import sys
+
+    def _run() -> int:
+        ap = argparse.ArgumentParser(
+            description=(
+                "M6 -- hipotese do fator comum entre os 5 ativos. AG-233: use "
+                "--resolution-id para medir a grade CANONICA DE PRODUCAO. Sem o "
+                "argumento, mede a grade de relogio 15m LEGADA."
+            )
+        )
+        ap.add_argument("--resolution-id", default=None, choices=["R1", "R2", "R3"])
+        ap.add_argument("--vol-estimator-id", default="parkinson_w20")
+        args = ap.parse_args()
+        if args.resolution_id is None:
+            logger.warning(
+                "analysis.m6_common_factor.grade_legada",
+                detail="AG-233 -- rodando sobre a grade de RELOGIO 15m, que nao e "
+                "producao desde AG-042. O I2 medido aqui nao descreve a grade real",
+            )
+        destino = run_and_save_m6_report(
+            resolution_id=args.resolution_id, vol_estimator_id=args.vol_estimator_id
+        )
+        logger.info(
+            "analysis.m6_common_factor.cli_done",
+            report_path=str(destino),
+            resolution_id=args.resolution_id,
+        )
+        return 0
+
+    sys.exit(_run())
