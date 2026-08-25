@@ -52,6 +52,22 @@ OUTPUT_PATH: Final[Path] = EXPERIMENTS_DIR / "s1_tp_sl_sensitivity_report.json"
 #: yaml`) -- decisão já travada e verificada no design doc (não recomputada
 #: aqui a partir de `sweep_range` genérico; os 2 pontos exatos já são fato
 #: registrado, `§11` risco #2).
+#: denominador máximo ao reconstruir a fração da geometria de produção a
+#: partir dos floats de `constants.yaml` (`AG-242`). 16 cobre com folga
+#: toda a grade declarada (maior denominador em uso: 4, em `9/4`) sem
+#: inventar frações espúrias a partir de ruído de ponto flutuante.
+#: margem de dias ao redor de [t0_min, t0_max] na query de `mark_1m`
+#: (`AG-242`, violação pré-existente de §16.10 regra 1 fechada ao passar
+#: por aqui). NÃO é parâmetro de decisão: é folga de I/O para garantir que
+#: a janela carregada cobre o horizonte das barreiras dos t0 das pontas --
+#: `time_stop_ms` é 8h, então 3 dias tem ~9x de folga. Um valor pequeno
+#: demais truncaria barreira de borda; um grande demais só custa leitura.
+#: Fica como literal nomeado, não em `constants.yaml`, porque não governa
+#: nenhum resultado -- mudá-lo não pode alterar edge, custo nem ranking.
+_MARK_QUERY_MARGIN_DAYS: Final[int] = 3  # noqa: magic-number -- ver comentário acima
+
+_RR_MAX_DENOMINATOR: Final[int] = 16  # noqa: magic-number -- ver comentário acima
+
 _UNIVERSAL_EXCLUDED_CELLS: Final[frozenset[tuple[Fraction, Fraction]]] = frozenset(
     {
         (Fraction(2, 1), Fraction(9, 4)),  # tp=4.5 -- excede o teto do sweep_range
@@ -218,6 +234,35 @@ def _side_label(side: int) -> str:
     return "long" if side == 1 else "short"
 
 
+def _production_cell_from_constants() -> dict[str, object]:
+    """Célula da grade que corresponde à geometria de produção VIGENTE,
+    derivada de `constants.yaml` (`AG-242`).
+
+    **Era hardcoded `{"4/3", "3/2", 2.0}`** — a geometria anterior a
+    2026-08-24. Quando o Manager trocou `tp_atr_mult` de 2,0 para 1,5, o
+    literal não acompanhou, e o relatório passou a declarar como "produção"
+    uma célula que produção não usa. Consequência concreta: quem lesse o
+    relatório para localizar produção na grade leria `R4/3_S3/2`
+    (edge médio `−0,00953` ATR) em vez da real `R1_S3/2` (`−0,01898`) —
+    **superestimando a posição de produção em ~2x**, e na direção
+    favorável, que é a pior direção para um erro.
+
+    Além do dado errado, o literal violava a regra 1 de §16.10 (nenhum
+    literal numérico em código de pipeline). Derivar fecha as duas coisas:
+    a célula passa a ser função das constantes, então trocar a geometria
+    nunca mais dessincroniza o relatório."""
+    tp = float(load_constant("tp_atr_mult"))
+    sl = float(load_constant("sl_atr_mult"))
+    rr = Fraction(tp / sl).limit_denominator(_RR_MAX_DENOMINATOR)
+    sl_frac = Fraction(sl).limit_denominator(_RR_MAX_DENOMINATOR)
+    return {
+        "reward_risk_ratio": str(rr),
+        "sl_atr_mult": str(sl_frac),
+        "tp_atr_mult_equivalente": tp,
+        "derivado_de": "config/constants.yaml::tp_atr_mult, ::sl_atr_mult",
+    }
+
+
 def run_s1_tp_sl_sensitivity(
     *,
     symbols: tuple[str, ...] = ALL_SYMBOLS,
@@ -261,8 +306,8 @@ def run_s1_tp_sl_sensitivity(
         grade = resolution_id if resolution_id is not None else "15m"
         labels = pl.read_parquet(f"data/labels/{symbol}/{grade}/v1/labels.parquet")
         t0_min, t0_max = labels["t0"].min(), labels["t0"].max()
-        start = (t0_min.date() - timedelta(days=3)).isoformat()  # type: ignore[union-attr]
-        end = (t0_max.date() + timedelta(days=3)).isoformat()  # type: ignore[union-attr]
+        start = (t0_min.date() - timedelta(days=_MARK_QUERY_MARGIN_DAYS)).isoformat()  # type: ignore[union-attr]
+        end = (t0_max.date() + timedelta(days=_MARK_QUERY_MARGIN_DAYS)).isoformat()  # type: ignore[union-attr]
         mark_1m = lake.query_bars(
             symbol, "1m", start, end, source="mark_price_klines_1m", cast_prices=True
         )
@@ -397,11 +442,7 @@ def run_s1_tp_sl_sensitivity(
             "reward_risk_ratio": [str(r) for r in REWARD_RISK_GRID],
             "sl_atr_mult": [str(s) for s in SL_MULT_GRID],
         },
-        "production_cell": {
-            "reward_risk_ratio": "4/3",
-            "sl_atr_mult": "3/2",
-            "tp_atr_mult_equivalente": 2.0,
-        },
+        "production_cell": _production_cell_from_constants(),
         "grid_universally_excluded": [
             f"R={r},S={s} -> tp_atr_mult={float(r) * float(s)} fora do sweep_range declarado "
             "de tp_atr_mult ([1.0,3.0], constants.yaml)"

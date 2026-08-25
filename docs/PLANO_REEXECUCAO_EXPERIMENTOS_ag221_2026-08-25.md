@@ -102,6 +102,106 @@ terceiros, remedição de `round_trip_cost_bps_maker_prob`, e o relabel).
 melhora aparente do M6 é real nos números mas não é atribuível ao relabel — e o
 S1 está inválido para decisão.
 
+### §2.3 — Quanto do parque de artefatos foi de fato re-medido (medição, 2026-08-25)
+
+O Manager pediu uma tabela "antes × depois" dos experimentos derivados de
+label. **Ela não tem 78 linhas, e a razão é o resultado:**
+
+| medição sobre `experiments/pre_ag221_relabel_c0/` | valor |
+|---|---|
+| artefatos no snapshot | **133** |
+| com par em `experiments/` | 133 (100%) |
+| **bit-idênticos ao atual** | **130** |
+| mudaram | **3** |
+| dos que mudaram, com baseline causal utilizável | **1** |
+
+Os 130 bit-idênticos **não foram re-executados** — a Camada 0 foi
+interrompida após três módulos, e os três que mudaram são exatamente esses
+três. Não é que o relabel não os afetou: é que ninguém ainda perguntou.
+Reportar isso como "130 artefatos inalterados pelo relabel" seria falso.
+
+**O que mudou, e por quê — extraído chave a chave, não presumido:**
+
+| artefato | chaves mudadas | o que de fato mudou | atribuição |
+|---|---|---|---|
+| `s1_tp_sl_sensitivity_report.json` | 14 de 1232 | **só** `min_viable_sl_mult` (10×) + `r2_floor_stop_pct` + `code_version` + tempo | remedição de `round_trip_cost_bps_maker_prob` (`AG-222`) — **nenhuma métrica de edge mudou** |
+| `m2_bar_comparison_report.json` | 1 de 850 | **só** `code_version` | nada; correto não mudar (lê barras, não labels) |
+| `m6_common_factor_hypothesis_report.json` | 693 de 931 | tudo | **NÃO atribuível** — baseline é de 2026-08-14, 11 dias antes |
+
+Sinal colateral no S1: `sanidade_centro_da_grade.reproduz_producao_exato`
+virou `True → False`. Consistente e esperado — produção migrou para
+`agg_trades`/R1, e o relatório na grade 15m segue em `mark_1m`.
+
+---
+
+### §2.4 — A comparação que **é** válida: grade legada × grade de produção
+
+Antes×depois temporal não funciona (§2.3). A comparação com significado é
+outra: **o mesmo módulo, medindo a grade errada e a grade certa.**
+
+**M6 — hipótese de fator comum (`AG-238`)**
+
+| grade | I² LONG | I² SHORT | p SHORT | edge pooled LONG / SHORT (ATR) | veredito técnico |
+|---|---|---|---|---|---|
+| 15m (legado) | 93,92% | 97,20% | 7,2e-30 | −0,032765 / −0,000906 | ❌ mede grade que não é produção |
+| **R1** | 83,28% | **60,56%** | **3,8e-02** | −0,009082 / −0,028398 | ✅ válido |
+| **R2** | 79,81% | 81,03% | 3,1e-04 | −0,007407 / −0,019857 | ✅ válido |
+| **R3** | 65,90% | 66,77% | 1,7e-02 | −0,007512 / −0,011926 | ✅ válido |
+
+**Melhorou tecnicamente?** Sim — passou a medir a grade certa. **A conclusão
+ficou mais fraca**: `I²` de 96–98% para 61–83%, e em R1 SHORT o p vai de 7e-30
+para 0,038. Um instrumento melhor produzindo uma conclusão menos confortável é
+exatamente o resultado esperado quando o instrumento anterior estava errado.
+
+**S1 — sensibilidade de geometria (`AG-235`, `AG-235-ADDENDUM-2`, `AG-242`)**
+
+Edge bruto médio por célula (unidades de ATR), só células com cobertura
+completa (`n_estratos=10`), produção marcada:
+
+| posição | R1 (5 células) | R2 (5 células) | R3 (**7** células) |
+|---|---|---|---|
+| 1º | tp 3,00 sl 1,50 · −0,00340 | tp 2,00 sl 1,50 · −0,01037 | tp 1,50 sl 0,75 · −0,00178 |
+| 2º | tp 2,00 sl 1,50 · −0,00953 | **tp 1,50 sl 1,50 · −0,01375** | tp 1,00 sl 0,75 · −0,00570 |
+| 3º | **tp 1,50 sl 1,50 · −0,01898** | tp 2,25 sl 2,25 · −0,01389 | tp 2,25 sl 2,25 · −0,00967 |
+| 4º | tp 3,00 sl 2,25 · −0,01934 | tp 3,00 sl 1,50 · −0,03194 | **tp 1,50 sl 1,50 · −0,00982** |
+| 5º | tp 2,25 sl 2,25 · −0,01960 | tp 3,00 sl 2,25 · −0,04110 | tp 2,00 sl 1,50 · −0,02503 |
+| 6º–7º | — | — | tp 3,00 sl 2,25 · −0,08244 · · tp 3,00 sl 1,50 · **−0,10043** |
+
+**O achado que R1 sozinho escondia: o ranking não sobrevive à troca de
+resolução.** `tp=3,00/sl=1,50` é a **melhor em R1** (1º de 5) e a **pior em
+R3** (7º de 7) — o edge piora ~30× entre as duas grades. `tp=2,00/sl=1,50` é
+1º em R2 e 5º em R3. Isso é assinatura de **ruído**, não de propriedade
+estável da geometria.
+
+Se o S1 tivesse rodado só em R1 e a decisão fosse "adotar a melhor célula",
+teria adotado precisamente a geometria que é a pior em R3.
+
+**Produção fica no meio em todas as três** (3º/5, 2º/5, 4º/7) — nunca a
+melhor, nunca a pior. Para um parâmetro cuja escolha é comprovadamente
+ruidosa, essa é a propriedade desejável: é a escolha que menos depende de qual
+resolução foi usada para escolher.
+
+**Diferença estrutural, registrada:** R3 tem **7** células viáveis, não 5. O
+ATR maior sob barras mais longas derruba `min_viable_sl_mult` e libera
+`sl=0,75` em mais símbolos. Comparar "melhor célula" entre resoluções compara
+conjuntos de tamanhos diferentes — a mesma armadilha de `n_estratos` que o
+`AG-235` pegou, agora no eixo da resolução.
+
+**Defeito encontrado ao montar esta tabela (`AG-242`).** O campo
+`production_cell` do relatório estava **hardcoded** em `tp=2,0/sl=1,5` — a
+geometria anterior a 2026-08-24. Quem lesse o relatório para localizar
+produção na grade leria a célula errada, e a errada aparenta ser **~2× melhor**
+que a real — erro na direção favorável, a pior direção possível. Corrigido:
+agora é derivado de `config/constants.yaml`, com campo `derivado_de` no
+próprio artefato. Relatórios R1/R2/R3 regerados.
+
+**Veredito técnico do S1: melhorou** — saiu de "inválido para decisão"
+(`AG-232`) para "respondido com duas evidências independentes". E a
+recomendação **não trocar a geometria** ficou mais forte, não mais fraca: antes
+se apoiava só em "o ganho seria +0,02 bps"; agora se apoia também em "a
+ordenação das células não sobrevive à troca de resolução".
+
+
 ### Camada 1 — dependem de `predictions.parquet` → **bloqueada** (6)
 
 `faixa1_5_prerequisites` · `faixa1_6_reconciliation` · `faixa1_7_edge_or_beta` ·

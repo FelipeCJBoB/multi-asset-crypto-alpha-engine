@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-25T20:48:42.924110+00:00",
-  "code_version": "9b31bdb",
+  "generated_at": "2026-08-25T21:52:54.385218+00:00",
+  "code_version": "f25e1df",
   "task": "s1_tp_sl_sensitivity",
   "grade_medida": "R1",
   "resolution_id": "R1",
-  "config_hash": "1ea77697cdc403f9",
+  "config_hash": "3599b765b7a53ff2",
   "grid_declared_before_search": {
     "reward_risk_ratio": [
       "1",
@@ -18,9 +18,10 @@
     ]
   },
   "production_cell": {
-    "reward_risk_ratio": "4/3",
+    "reward_risk_ratio": "1",
     "sl_atr_mult": "3/2",
-    "tp_atr_mult_equivalente": 2.0
+    "tp_atr_mult_equivalente": 1.5,
+    "derivado_de": "config/constants.yaml::tp_atr_mult, ::sl_atr_mult"
   },
   "grid_universally_excluded": [
     "R=1,S=3/4 -> tp_atr_mult=0.75 fora do sweep_range declarado de tp_atr_mult ([1.0,3.0], constants.yaml)",
@@ -1287,5 +1288,5 @@
     "reproduz_producao_exato": false
   },
   "veredito": "TBD -- criterio operacional de 'sobrevive a faixa' e decisao do Manager, nao computado aqui (design doc SS11 risco #1, confirmado 2026-08-24)",
-  "elapsed_seconds_total": 86.9537153999845
+  "elapsed_seconds_total": 93.11932169998181
 }

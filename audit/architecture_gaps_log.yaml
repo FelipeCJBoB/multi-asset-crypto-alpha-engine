@@ -16174,3 +16174,229 @@ entries:
       escopo maior, exige retreino real das combinacoes, desenho
       apresentado ao usuario mas implementacao NAO iniciada nesta
       rodada, aguardando aprovacao explicita separada.
+
+  - id: AG-250
+    date: "2026-08-25"
+    file: "src/models/alpha.py::implied_mu_from_prob/decide_side_cost_derived/resolve_joint_lambda/_resolve_lambda_on_common_bars, tests/unit/test_models_alpha_adr004_fase2.py"
+    related_file: "docs/ADR-004_reformulacao_alvo_regra_decisao_e_inferencia_2026-08-25.md Sec4, docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md Passo 1"
+    found_by: "Claude -- execucao do prompt de conclusao do ADR-004, Fase 2 (ordem 2->0->3->1)"
+    gap: >
+      ADR-004 Sec4 pede fronteira |mu| > lambda, lambda_t = max(c_t,
+      lambda_B), substituindo o fechamento do grau de liberdade de
+      resolve_joint_tau (taxa de sinal orcada) por fechamento por CUSTO.
+      Isto exige `mu` em unidade de retorno -- que so existe de verdade
+      na Fase 1 (regressao real, NAO feita ainda). Implementado como
+      PONTE pre-Fase-1: `implied_mu_from_prob` traduz a probabilidade
+      calibrada JA existente em retorno implicado via a mesma
+      justificativa do ADR-004 Sec0 (payoff simetrico, tp_atr_mult ==
+      sl_atr_mult == 1.5 desde a correcao do S1 -- P(TP) ordena quase
+      identico a E[r]): mu = payoff*(2*P(TP)-1), em unidades de multiplo
+      de ATR, mesma escala de `E27f_cost_atr_ratio` (ja uma feature T1,
+      reusada diretamente como `c_t` sem calculo novo).
+    severity: "medio -- nao e correcao de bug, e implementacao de mecanismo que faltava, explicitamente pedido"
+    layer: "models (regra de decisao)"
+    consequence: >
+      Sem isto, a Fase 2 do ADR-004 so existia como formula no papel --
+      resolve_joint_tau continuava fechando o grau de liberdade por taxa
+      orcada, nunca por custo, apesar do ADR pedir a segunda desde
+      2026-08-25.
+    status: >
+      IMPLEMENTADO e TESTADO 2026-08-25 (11 testes novos,
+      test_models_alpha_adr004_fase2.py, arquivo SEPARADO de
+      test_models_alpha_ag208_217.py para nao colidir com edicao
+      concorrente da outra sessao no mesmo dia -- `uv run pytest
+      tests/unit/test_models_alpha_adr004_fase2.py -v`, 11 passed).
+      Wireado em `run_fold`/`run_all_folds` como MEDICAO OPT-IN
+      (`evaluate_cost_derived_lambda: bool = False`, default preserva
+      bit-exato todo caller existente) -- `FoldResult.cost_derived_
+      lambda_diag` (novo campo opcional, `None` no caminho legado) grava
+      `lambda_b`/taxa realizada in-sample/OOS sob a politica cost-derived
+      LADO A LADO com a taxa OOS legada, SEM jamais realimentar `side_hat`/
+      `predictions.parquet` (schema de producao intocado, zero risco de
+      colisao com `PREDICTIONS_ARTIFACT_SCHEMA`/`config_hash`).
+      NAO decidido: promover isto a `tau_policy` real de producao (troca
+      side_hat de fato) -- decisao do Manager, pendente medicao real via
+      `evaluate_cost_derived_lambda=True` numa combinacao de verdade
+      (proximo passo natural, nao feito nesta entrada -- ver AG-251 para
+      o que FOI medido nesta rodada, que e o flip do tau_policy legado,
+      nao este mecanismo novo).
+      Suite completa (`uv run pytest -m "not slow and not integration"`)
+      permanece verde: 1944 passed, 0 failed (baseline documentado no
+      prompt era 1933 -- crescimento é exatamente os testes novos desta
+      sessão, incluindo os 8 de `AG-241`/bootstrap_diff da rodada
+      anterior).
+
+  - id: AG-251
+    date: "2026-08-25"
+    file: "src/analysis/tau_diagnostics.py::tau_realization_diagnostic (nucleo, nao alterado)"
+    related_file: "experiments/alpha_layer1_report_ag208_217_diag.json, experiments/alpha_layer1_report_ag210_tau_total.json, data/label_engine_runs/label_engine_runs.parquet, audit/architecture_gaps_log.yaml::AG-218"
+    found_by: "Claude -- VERIFICACAO PRE-FLIP pedida por docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md Passo 1 ('VERIFICAR PRIMEIRO... antes de flipar')"
+    gap: >
+      O prompt de execucao pede para flipar o DEFAULT de `tau_policy` em
+      `run_fold`/`run_all_folds` de `TAU_POLICY_LEGACY_PER_SIDE` para
+      `TAU_POLICY_TOTAL_COMMON_OOF` (mecanismo do AG-210, ja construido,
+      nunca promovido a default) -- mas exige verificar `tau_
+      realization_diagnostic` ANTES. `AG-218` ja tinha medido que esse
+      instrumento, como os callers reais o usam, e ILEGIVEL (bars_per_
+      year hardcoded em 15m de relogio aplicado a grade dollar-bar, e
+      leitura do path DEFAULT de report que so reflete a ULTIMA
+      combinacao rodada). Precisava de bars_per_year MEDIDO da grade
+      real antes de confiar em qualquer numero.
+    severity: "alto -- decisao de flipar um default de producao dependia de um instrumento que a propria auditoria anterior (AG-218) ja tinha invalidado"
+    layer: "analysis (diagnostico) / models (decisao de default)"
+    consequence: >
+      MEDICAO REAL (nao a funcao core, que ja era correta -- o caller):
+      bars_per_year real de BTCUSDT/R1 (dollar bar) = 67.627,78/ano
+      (446.223 barras / 6,598 anos, `period_start=2020-01-01`/
+      `period_end=2026-08-07`, `data/label_engine_runs/label_engine_
+      runs.parquet`) -- 1,93x o valor hardcoded de 15m de relogio
+      (35.064/ano) que os callers existentes usavam. Comparando os 2
+      bracos pareados reais de `AG-220` (mesmo simbolo/seed/janela, unica
+      variavel = tau_policy) sob este bars_per_year CORRETO:
+        LEGACY_PER_SIDE  : ratio_pre=0,9070 ratio_post=0,7464
+                           dispersion_pre=2,020 dispersion_post=2,037
+        TOTAL_COMMON_OOF : ratio_pre=0,9005 ratio_post=0,7307
+                           dispersion_pre=4,118 dispersion_post=3,894
+      As MEDIAS sao quase identicas entre as duas politicas (diferenca
+      <1pp) -- mas a DISPERSAO ENTRE OS 5 CAMINHOS DO CPCV praticamente
+      DOBRA sob TOTAL_COMMON_OOF (2,0x mais instavel, pre e pos-fill).
+      TOTAL_COMMON_OOF nao generaliza pior EM MEDIA, mas generaliza muito
+      MENOS CONSISTENTEMENTE entre particoes de treino -- exatamente o
+      tipo de instabilidade que `AG-220` ja mostrou tornar o gate de
+      permanencia sensivel a ruido de calibracao. Aumentar essa
+      dispersao pioraria, nao melhoraria, a situacao que motivou querer
+      corrigir `tau_policy` em primeiro lugar.
+    status: >
+      MEDIDO 2026-08-25, DEFAULT NAO FLIPADO -- decisao explicita de NAO
+      seguir a instrucao literal do prompt ("flipar") porque a propria
+      verificacao que o prompt pediu ANTES de flipar revelou um custo
+      real (2x dispersao) que nao era visivel sob o bars_per_year errado
+      anterior. `tau_policy` em `run_fold`/`run_all_folds` permanece
+      `TAU_POLICY_LEGACY_PER_SIDE` por default, bit-exato, todo caller de
+      producao existente inalterado. `AG-218` permanece ABERTO quanto ao
+      caller de PRODUCAO real (`faixa1_5_prerequisites.BARS_PER_YEAR`
+      hardcoded, path default sobrescrito por combinacao) -- esta entrada
+      so demonstra a metodologia correta ad-hoc, nao remedia o caller em
+      codigo. Decisao sobre promover TOTAL_COMMON_OOF (ou o mecanismo
+      cost-derived de AG-250) a default de producao fica com o Manager,
+      agora com um numero real (nao mais so teoria) para decidir.
+
+  - id: AG-242
+    date: "2026-08-25"
+    file: "src/analysis/s1_tp_sl_sensitivity.py::_production_cell_from_constants (era literal hardcoded no dict do report)"
+    related_file: "config/constants.yaml::tp_atr_mult, ::sl_atr_mult, audit/architecture_gaps_log.yaml::AG-232, ::AG-235, ::AG-237"
+    found_by: "Claude -- ao montar a tabela ANTES x DEPOIS pedida pelo Manager (passo 2 dos proximos passos), conferindo os relatorios do S1 celula a celula contra constants.yaml em vez de confiar no campo do JSON"
+    gap: >
+      O relatorio do S1 declarava como CELULA DE PRODUCAO uma geometria que
+      producao nao usa. O bloco estava hardcoded:
+        "production_cell": {"reward_risk_ratio": "4/3",
+                            "sl_atr_mult": "3/2",
+                            "tp_atr_mult_equivalente": 2.0}
+      Isso era verdade ate 2026-08-24, quando o Manager trocou tp_atr_mult
+      de 2,0 para 1,5 (decisao registrada na propria entrada de
+      constants.yaml). O literal nao acompanhou.
+      DOIS DEFEITOS NO MESMO BLOCO:
+      (1) DADO ERRADO. Quem lesse o relatorio para localizar producao na
+          grade leria `R4/3_S3/2` (edge medio -0,00953 ATR, 2o de 5 em R1)
+          em vez da real `R1_S3/2` (-0,01898, 3o de 5) -- superestimando a
+          posicao de producao em ~2x, e na direcao FAVORAVEL, que e a pior
+          direcao possivel para um erro deste tipo: faz producao parecer
+          melhor colocada do que esta.
+      (2) LITERAL NUMERICO EM CODIGO DE PIPELINE, violando a regra 1 de
+          §16.10. O guardrail existente (`check_unguarded_ratios`/
+          `banned_patterns`) nao pegou porque os valores estao dentro de
+          strings ("4/3", "3/2") e o 2.0 e um float solto num dict de
+          relatorio, nao numa expressao de calculo.
+      NAO afetava nenhum numero calculado -- edge, custo e ranking sempre
+      vieram da grade real. O defeito e de ROTULO, e por isso mais
+      perigoso que um erro de calculo: nao aparece em teste de valor.
+    severity: "medio -- nao corrompe medicao, mas rotula errado o ponto de referencia que o proprio relatorio existe para situar, e na direcao favoravel"
+    layer: "analysis (relatorio de decisao)"
+    consequence: >
+      A entrada de AG-235 foi escrita lendo este campo. A CONCLUSAO de
+      AG-235 sobrevive intacta -- ela compara o GAP edge-custo entre celulas,
+      nao a posicao de producao no ranking, e o gap continua variando so de
+      5,95 a 6,19 bps. Mas a frase "o valor vigente (1,5/1,5) nao e o otimo
+      da tabela" estava certa por acidente: eu a escrevi acreditando que
+      producao era `R4/3_S3/2`.
+    status: >-
+      FECHADO 2026-08-25. `production_cell` agora e DERIVADA de
+      config/constants.yaml (`_production_cell_from_constants`), reconstruindo
+      a fracao com `Fraction(tp/sl).limit_denominator(16)` -- 16 cobre com
+      folga toda a grade declarada (maior denominador em uso: 4, em `9/4`)
+      sem inventar fracao espuria a partir de ruido de ponto flutuante. Campo
+      `derivado_de` adicionado ao dict, para que a proveniencia esteja no
+      proprio artefato. Verificado: retorna
+      {reward_risk_ratio: "1", sl_atr_mult: "3/2", tp_atr_mult_equivalente: 1.5}
+      = celula `R1_S3/2`, que e a real. Relatorios R1/R2/R3 regerados.
+      Trocar a geometria nunca mais dessincroniza o rotulo.
+
+  - id: AG-235-ADDENDUM-2
+    renumbered_from: "AG-235-ADDENDUM -- colisao detectada e corrigida no mesmo passo 2026-08-25. Ja existia um addendum com esse id (anterior, sobre a Fase 1 do S1). Este e o SEGUNDO addendum da mesma entrada, cobrindo o multi-TF R1/R2/R3 e o efeito de AG-242. Nenhum conteudo alterado, so o identificador."
+    date: "2026-08-25"
+    addendum_de: "AG-235 -- S1 completado nas TRES resolucoes (a entrada original media so R1) e corrigido por AG-242"
+    file: "experiments/s1_tp_sl_sensitivity_report_R{1,2,3}.json"
+    found_by: "Claude -- completando o multi-TF que o Manager pediu ('quem ainda le essas barras tem que passar a ler multi time-frame R1, R2 e R3')"
+    gap: >
+      RESULTADO COMPLETO. Edge bruto medio por celula (unidades de ATR),
+      apenas celulas com cobertura completa (n_estratos=10), com a posicao
+      de producao (tp=1,5/sl=1,5) marcada:
+        R1 (5 celulas completas)
+          1o  tp=3,00 sl=1,50   -0,00340
+          2o  tp=2,00 sl=1,50   -0,00953
+          3o  tp=1,50 sl=1,50   -0,01898   <-- PRODUCAO
+          4o  tp=3,00 sl=2,25   -0,01934
+          5o  tp=2,25 sl=2,25   -0,01960
+        R2 (5 celulas completas)
+          1o  tp=2,00 sl=1,50   -0,01037
+          2o  tp=1,50 sl=1,50   -0,01375   <-- PRODUCAO
+          3o  tp=2,25 sl=2,25   -0,01389
+          4o  tp=3,00 sl=1,50   -0,03194
+          5o  tp=3,00 sl=2,25   -0,04110
+        R3 (7 celulas completas -- ATR maior torna sl=0,75 viavel em mais
+            simbolos, entao a grade viavel e MAIOR, nao a mesma)
+          1o  tp=1,50 sl=0,75   -0,00178
+          2o  tp=1,00 sl=0,75   -0,00570
+          3o  tp=2,25 sl=2,25   -0,00967
+          4o  tp=1,50 sl=1,50   -0,00982   <-- PRODUCAO
+          5o  tp=2,00 sl=1,50   -0,02503
+          6o  tp=3,00 sl=2,25   -0,08244
+          7o  tp=3,00 sl=1,50   -0,10043
+    severity: "n/a -- resultado de medicao"
+    layer: "analysis (decisao de geometria)"
+    consequence: >
+      O ACHADO NOVO, QUE R1 SOZINHO ESCONDIA: **o ranking nao e estavel
+      entre resolucoes, e a instabilidade e extrema.** A celula
+      tp=3,00/sl=1,50 e a MELHOR em R1 (1o de 5, -0,00340) e a PIOR em R3
+      (7o de 7, -0,10043) -- uma inversao completa, com o edge piorando
+      ~30x entre as duas grades. tp=2,00/sl=1,50 e 1o em R2 e 5o em R3.
+      Isso e assinatura de RUIDO, nao de propriedade estavel da geometria.
+      Se o S1 tivesse rodado so em R1 (como estava prestes a acontecer) e a
+      decisao fosse "adotar a melhor celula", teria adotado exatamente a
+      geometria que e a pior em R3.
+      REFORCA a conclusao de AG-235 por um caminho independente: nao ha
+      geometria dominante. A original argumentava a partir do CANCELAMENTO
+      edge-custo (todas as celulas dao gap 5,95-6,19 bps); esta acrescenta
+      que nem o edge BRUTO tem ordenacao estavel entre grades. Duas
+      evidencias independentes para a mesma conclusao.
+      OBSERVACAO SOBRE PRODUCAO: tp=1,5/sl=1,5 fica no MEIO do ranking em
+      todas as tres (3o/5, 2o/5, 4o/7) -- nunca a melhor, nunca a pior. Para
+      um parametro cuja escolha e comprovadamente ruidosa, ficar no meio em
+      toda grade e a propriedade que se quer: e a escolha que menos depende
+      de qual resolucao foi usada para escolher.
+      DIFERENCA ESTRUTURAL A REGISTRAR: R3 tem SETE celulas viaveis, nao
+      cinco. O ATR maior sob barras mais longas derruba
+      `min_viable_sl_mult` e libera sl=0,75 em mais simbolos. Comparar
+      "melhor celula" entre resolucoes compara conjuntos de tamanhos
+      diferentes -- a mesma armadilha de n_estratos que AG-235 pegou, agora
+      no eixo da resolucao.
+    status: >-
+      MEDIDO 2026-08-25 nas tres resolucoes. RECOMENDACAO INALTERADA E AGORA
+      MAIS FORTE: NAO trocar tp_atr_mult/sl_atr_mult. A recomendacao original
+      se apoiava em "o ganho e +0,02 bps"; agora se apoia tambem em "a
+      ordenacao das celulas nao sobrevive a troca de resolucao". Trocar a
+      geometria com base em qualquer resolucao isolada seria overfitting a
+      grade. A ressalva sobre estender a grade (celulas mais largas como
+      tp=sl=3,0) PERDE prioridade: se a ordenacao ja e instavel dentro da
+      grade atual, ampliar a grade adiciona celulas para ranquear com ruido,
+      nao informacao.
