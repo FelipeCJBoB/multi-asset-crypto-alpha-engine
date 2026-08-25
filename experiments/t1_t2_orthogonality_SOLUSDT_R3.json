@@ -1,0 +1,220 @@
+{
+  "final_feature_set_n": 40,
+  "n_t1": 7,
+  "n_t2_candidates": 62,
+  "n_t2_survivors_given_t1": 33,
+  "orthogonality_threshold": 0.7,
+  "resolution_id": "R3",
+  "symbol": "SOLUSDT",
+  "t1_internal_correlations": {
+    "A05_ret_vol_norm_4xA13_dist_ema48_atr": 0.8302609280138775,
+    "A05_ret_vol_norm_4xB01_rsi_14": 0.638023764509755,
+    "A05_ret_vol_norm_4xC06_vol_ratio_12_96": 0.007866877546642647,
+    "A05_ret_vol_norm_4xD06f_taker_imbalance_z_48": 0.36884159910889797,
+    "A05_ret_vol_norm_4xE10f_oi_change_z_48": 0.04846813335769964,
+    "A05_ret_vol_norm_4xE27f_cost_atr_ratio": -0.0026612441836175696,
+    "A13_dist_ema48_atrxB01_rsi_14": 0.9098526105191337,
+    "A13_dist_ema48_atrxC06_vol_ratio_12_96": -0.02613420545790203,
+    "A13_dist_ema48_atrxD06f_taker_imbalance_z_48": 0.3662516795676009,
+    "A13_dist_ema48_atrxE10f_oi_change_z_48": 0.05507926094407632,
+    "A13_dist_ema48_atrxE27f_cost_atr_ratio": 0.021627145356415352,
+    "B01_rsi_14xC06_vol_ratio_12_96": -0.08340873042674543,
+    "B01_rsi_14xD06f_taker_imbalance_z_48": 0.21108860943824959,
+    "B01_rsi_14xE10f_oi_change_z_48": 0.034719035740653874,
+    "B01_rsi_14xE27f_cost_atr_ratio": 0.06626459922680421,
+    "C06_vol_ratio_12_96xD06f_taker_imbalance_z_48": 0.027127920102641652,
+    "C06_vol_ratio_12_96xE10f_oi_change_z_48": -0.019112952563227814,
+    "D06f_taker_imbalance_z_48xE10f_oi_change_z_48": 0.11892191257988265,
+    "E27f_cost_atr_ratioxC06_vol_ratio_12_96": -0.21299793383738147,
+    "E27f_cost_atr_ratioxD06f_taker_imbalance_z_48": -0.027090531391919803,
+    "E27f_cost_atr_ratioxE10f_oi_change_z_48": -0.014310436477315771
+  },
+  "t1_internal_high_corr": {
+    "A05_ret_vol_norm_4xA13_dist_ema48_atr": 0.8302609280138775,
+    "A13_dist_ema48_atrxB01_rsi_14": 0.9098526105191337
+  },
+  "t2_excluded_given_t1": [
+    "E14f_toptrader_ls_ratio",
+    "E03f_funding_cum_3d",
+    "E08f_oi_notional",
+    "C02_atr_20_pct",
+    "A11_true_range_pct",
+    "C04_parkinson_vol_48",
+    "C05_garman_klass_48",
+    "C08_vol_pctile_rolling_1y",
+    "C03_realized_vol_48",
+    "D02f_rel_volume_48",
+    "B09_zscore_close_48",
+    "B04_macd_hist_norm",
+    "A15_dist_vwap_d_atr",
+    "E17f_retail_vs_top_spread",
+    "B02_rsi_48",
+    "D08f_trade_count_z_48",
+    "K04_session_europe",
+    "A03_log_return_4",
+    "B10_stoch_k_14",
+    "A04_log_return_12",
+    "B03_roc_12",
+    "B05_ema_slope_24",
+    "B11_bb_position_20",
+    "A06_ret_vol_norm_12",
+    "A14_dist_ema12_atr",
+    "D04f_volume_accel",
+    "A01_log_return_1",
+    "D05f_taker_buy_ratio",
+    "A07_body_ratio"
+  ],
+  "t2_excluded_reason": {
+    "A01_log_return_1": {
+      "correlated_with": "D06f_taker_imbalance_z_48",
+      "spearman": 0.7191438921272372
+    },
+    "A03_log_return_4": {
+      "correlated_with": "A05_ret_vol_norm_4",
+      "spearman": 0.976904278451095
+    },
+    "A04_log_return_12": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.8307560016075409
+    },
+    "A06_ret_vol_norm_12": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.8551749170241941
+    },
+    "A07_body_ratio": {
+      "correlated_with": "D06f_taker_imbalance_z_48",
+      "spearman": 0.7255531327105388
+    },
+    "A11_true_range_pct": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.7396905956800673
+    },
+    "A14_dist_ema12_atr": {
+      "correlated_with": "A05_ret_vol_norm_4",
+      "spearman": 0.8302609280138774
+    },
+    "A15_dist_vwap_d_atr": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.8258059054422588
+    },
+    "B02_rsi_48": {
+      "correlated_with": "B01_rsi_14",
+      "spearman": 0.8148247411462914
+    },
+    "B03_roc_12": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.8307560056404786
+    },
+    "B04_macd_hist_norm": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.7664949190237258
+    },
+    "B05_ema_slope_24": {
+      "correlated_with": "B01_rsi_14",
+      "spearman": 0.9009670373574508
+    },
+    "B09_zscore_close_48": {
+      "correlated_with": "A13_dist_ema48_atr",
+      "spearman": 0.7985058318453784
+    },
+    "B10_stoch_k_14": {
+      "correlated_with": "A05_ret_vol_norm_4",
+      "spearman": 0.7639293886674466
+    },
+    "B11_bb_position_20": {
+      "correlated_with": "A05_ret_vol_norm_4",
+      "spearman": 0.7412544575249094
+    },
+    "C02_atr_20_pct": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.9999999999999999
+    },
+    "C03_realized_vol_48": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.8968780391023213
+    },
+    "C04_parkinson_vol_48": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.9469836135018354
+    },
+    "C05_garman_klass_48": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.9435402453351495
+    },
+    "C08_vol_pctile_rolling_1y": {
+      "correlated_with": "E27f_cost_atr_ratio",
+      "spearman": -0.8284324558126352
+    },
+    "D02f_rel_volume_48": {
+      "correlated_with": "D01f_volume_z_96",
+      "spearman": 0.8004462316714999
+    },
+    "D04f_volume_accel": {
+      "correlated_with": "B06_momentum_accel",
+      "spearman": -0.7204126727976582
+    },
+    "D05f_taker_buy_ratio": {
+      "correlated_with": "D06f_taker_imbalance_z_48",
+      "spearman": 0.9554815533521671
+    },
+    "D08f_trade_count_z_48": {
+      "correlated_with": "D09f_avg_trade_size_z",
+      "spearman": -0.8588209246162445
+    },
+    "E03f_funding_cum_3d": {
+      "correlated_with": "E15f_toptrader_ls_z",
+      "spearman": 0.7090496141235068
+    },
+    "E08f_oi_notional": {
+      "correlated_with": "C01_atr_20",
+      "spearman": 0.721426597298362
+    },
+    "E14f_toptrader_ls_ratio": {
+      "correlated_with": "C01_atr_20",
+      "spearman": 0.7665751789901276
+    },
+    "E17f_retail_vs_top_spread": {
+      "correlated_with": "E15f_toptrader_ls_z",
+      "spearman": -0.7252858889467323
+    },
+    "K04_session_europe": {
+      "correlated_with": "K01_hour_cos",
+      "spearman": -0.8415488134102462
+    }
+  },
+  "t2_survivors_given_t1": [
+    "E16f_global_ls_ratio",
+    "E15f_toptrader_ls_z",
+    "C01_atr_20",
+    "E18f_taker_ls_vol_ratio",
+    "C10_vol_expansion_flag",
+    "D10f_vol_price_divergence",
+    "E01f_funding_last",
+    "E11f_oi_change_1d",
+    "E09f_oi_contracts",
+    "C12_vol_of_vol_48",
+    "D01f_volume_z_96",
+    "K08_days_since_halving",
+    "K04_session_us",
+    "K01_hour_cos",
+    "K03_is_weekend",
+    "D09f_avg_trade_size_z",
+    "C09_range_pctile_expanding",
+    "B08_efficiency_ratio_16",
+    "K02_dow_cos",
+    "B07_efficiency_ratio_48",
+    "E12f_price_oi_divergence",
+    "B06_momentum_accel",
+    "K01_hour_sin",
+    "A12_gap_pct",
+    "A02_log_return_2",
+    "C11_vol_compression_flag",
+    "A09_lower_wick_ratio",
+    "K02_dow_sin",
+    "A10_close_location",
+    "E05f_time_to_funding_h",
+    "K04_session_asia",
+    "A08_upper_wick_ratio",
+    "D07f_taker_imbalance_1m_agg"
+  ]
+}

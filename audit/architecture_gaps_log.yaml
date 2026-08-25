@@ -16778,3 +16778,136 @@ entries:
       e o filtro nao esta aplicado em producao. Registrado para que, quando
       a aplicacao do filtro for decidida, esteja documentado que a selecao
       precisa ser refeita sobre os labels vigentes -- nao herdada.
+
+  - id: AG-255
+    date: "2026-08-25"
+    file: "src/analysis/cross_symbol_ess.py, src/models/hhi.py::weighted_participation_ratio (extraido)"
+    related_file: "experiments/cross_symbol_ess_report.json, audit/architecture_gaps_log.yaml::AG-216/AG-215, docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md Passo 3"
+    found_by: "Claude -- ADR-004 Fase 3, ESS transversal pedido pelo AG-216, medicao real sobre os 5 simbolos (grade 15m, side=1)"
+    gap: >
+      AG-216 media que a correlacao TEMPORAL de ret_net entre os 5
+      simbolos (nao so heterogeneidade de MEDIA, ja medida por M6) nunca
+      tinha sido medida -- sem isso, dsr_n_trials (AG-215) usa a
+      contagem BRUTA de combinacoes como se fossem apostas
+      independentes. O proprio addendum recomendava reusar
+      compute_effective_concentration (participation ratio), mas
+      apontava que o reuso nao podia ser literal (exige gain_by_column,
+      sem equivalente pra simbolo) e que a matriz certa seria 15x15
+      (combinacoes) nao 5x5 (simbolos).
+    severity: "medio -- afeta contabilidade de evidencia (N_lifetime/DSR), nao corretude de artefato"
+    layer: "models (nucleo extraido) / analysis (medicao nova)"
+    consequence: >
+      MEDIDO, 5 simbolos, grade de RELOGIO 15m, side=1 (long),
+      1706 dias de calendario alinhados por intersecao real:
+        correlacao par-a-par: 0,50-0,76 (BTC-ETH mais alto, 0,761;
+        SOL-XRP mais baixo, 0,4995) -- todos os pares POSITIVOS e
+        substanciais, nenhum perto de zero.
+        N_eff = 2,03 (de 5 nominais) -- os 5 simbolos representam
+        pouco mais de 2 apostas efetivamente independentes.
+        hhi_effective = 0,492 (vs. 0,20 nominal se fossem
+        independentes) -- mais que o DOBRO da concentracao nominal.
+      Isso e uma correcao GRANDE pra qualquer dsr_n_trials que hoje trata
+      os simbolos como independentes -- tratar 5 (ou 15, combinacoes)
+      como o N de trials quando o N efetivo real e ~2 infla
+      artificialmente a confianca de qualquer Sharpe deflacionado por N.
+    status: >
+      MEDIDO 2026-08-25 -- ESCOPO EXPLICITAMENTE REDUZIDO vs. a
+      recomendacao do addendum (5x5 simbolos na grade de RELOGIO 15m
+      side=1, NAO a matriz 15x15 de combinacoes/dollar-bar que o
+      addendum preferia -- essa exigiria reconstruir ret_net realizado
+      de 15 combinacoes treinadas, trabalho equivalente a retreino
+      parcial, fora do orcamento desta rodada). Nucleo `weighted_
+      participation_ratio` extraido de `compute_effective_concentration`
+      (`src/models/hhi.py`) pra ficar generico (peso arbitrario, nao so
+      gain_share) -- `compute_effective_concentration` agora e caso
+      especial dela, bit-exato confirmado (22 testes existentes de
+      test_models_hhi.py, 0 regressao). `src/analysis/cross_symbol_ess.py`
+      novo -- carga via `cpcv.load_labels_v1(verify_config=False)` (nao
+      `build_modeling_frame`, evita computar features desnecessarias E
+      o `ConfigHashMismatchError` de uma sessao paralela ativa mexendo em
+      `LabelConfig` no mesmo dia -- aceitavel pq a pergunta e sobre
+      ESTRUTURA de correlacao, nao valor economico exato, sem comparar
+      cargas de hash diferente). Persistido em
+      `experiments/cross_symbol_ess_report.json` (escrita atomica B29).
+      3 testes novos (`tests/unit/test_analysis_cross_symbol_ess.py`).
+      Suite completa: 1953 passed, 0 failed. `lint-imports`: 7 kept, 0
+      broken. NAO decidido: usar N_eff=2,03 como dsr_n_trials real --
+      decisao do Manager, e ainda parcial (falta a versao 15x15/short
+      side pra fechar o loop AG-215 por completo).
+
+  - id: AG-245-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-245 -- multi-TF completado (R2/R3, 10 execucoes) e o padrao deixou de ser 'features trocam' para ter MECANISMO identificado"
+    file: "experiments/t1_t2_orthogonality_{symbol}_{R1,R2,R3}.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-229, ::AG-235-ADDENDUM-2, src/features/groups/group_d.py"
+    found_by: "Claude -- completando as 10 execucoes R2/R3 que faltavam e aplicando o teste de CONJUNTO (nao de cardinalidade) tambem nelas"
+    gap: >
+      ACHADO 1 -- O PADRAO E SISTEMATICO, E TEM NOME. Nas SEIS comparacoes
+      antes/depois com par no snapshot (R2 e R3), um par especifico de
+      features troca de lugar em CINCO delas:
+        `D09f_avg_trade_size_z`  SAIU  em 5 de 6
+        `D08f_trade_count_z_48`  ENTROU em 5 de 6
+      Somando as 4 comparacoes de R1 ja registradas em AG-245, o mesmo par
+      aparece de novo (SOLUSDT: saiu D08f/entrou D09f -- invertido;
+      BNBUSDT: saiu D09f/entrou D08f). Isso NAO e ruido de selecao: e uma
+      troca dirigida entre duas features do MESMO grupo (D, microestrutura
+      de trades) que medem coisas correlatas -- tamanho medio de trade
+      contra contagem de trades.
+      MECANISMO PLAUSIVEL, coerente com o que o relabel fez: AG-229 trocou
+      a fonte do fill de entrada de `mark_1m` para `agg_trades`. O label
+      passou a depender da sequencia real de trades em vez de candles de
+      1 minuto. Features derivadas de trades mudam de relacao com o alvo, e
+      dentro de um par correlato o filtro guloso de ortogonalidade passa a
+      preferir a outra. NAO VERIFICADO -- e hipotese com mecanismo, nao
+      medicao; separar exigiria rodar o filtro sobre labels mark_1m e
+      agg_trades com todo o resto identico.
+      ACHADO 2 -- A CARDINALIDADE TAMBEM MUDA, so nao sempre. AG-245
+      registrou "contagem estavel, conjunto nao" a partir de R1, onde os 4
+      simbolos comparaveis mantiveram o numero exato. Em R2/R3 isso
+      quebra: ETHUSDT R2 vai de 35 para 34 e BNBUSDT R3 de 35 para 36. A
+      formulacao correta e mais fraca do que a de AG-245: a cardinalidade
+      e QUASE estavel e por isso enganosa, nao estavel.
+      ACHADO 3 -- ESTABILIDADE ENTRE RESOLUCOES (estado atual, sem
+      comparar com o passado). Jaccard entre o conjunto de R1 e o de R3:
+        simbolo   |R1| |R2| |R3|  nucleo comum  so em 1 grade  Jaccard R1xR3
+        BTCUSDT     35   36   33            32              0         0,889
+        ETHUSDT     35   34   32            28              5         0,718
+        SOLUSDT     33   34   33            26              6         0,784
+        BNBUSDT     36   36   36            32              4         0,846
+        XRPUSDT     33   33   33            26              9         0,737
+      Existe um NUCLEO robusto (26 a 32 features presentes nas tres
+      grades) cercado por uma FRANJA que depende da resolucao -- ate 9
+      features, em XRPUSDT, aparecem em uma unica grade. BTCUSDT e o unico
+      com franja zero.
+    severity: "medio -- mesma severidade de AG-245; nao invalida artefato, mas agora com mecanismo nomeado em vez de 'features trocam'"
+    layer: "analysis (selecao de feature)"
+    consequence: >
+      (1) A distincao NUCLEO x FRANJA e acionavel de um jeito que "o
+      conjunto muda" nao era. Se o filtro de ortogonalidade for aplicado
+      algum dia (AG-227: hoje os 10 artefatos de producao rodam com os 69
+      brutos, sem filtro), o nucleo comum as tres resolucoes e defensavel;
+      a franja e escolha de UMA grade, e adotar a franja de uma resolucao
+      para as tres seria importar ruido com cara de selecao.
+      (2) O par D09f/D08f merece decisao explicita, nao herdada de um
+      filtro guloso. Sao duas features do grupo D que medem aspectos
+      correlatos do mesmo fenomeno; qual das duas entra nao deveria
+      depender de qual regime de label estava vigente no dia em que o
+      filtro rodou.
+      (3) Reforca, por um terceiro caminho independente, o padrao que
+      AG-235-ADDENDUM-2 achou na geometria e AG-244 no gate de regime: uma
+      ORDENACAO/SELECAO que parece estavel na metrica agregada e nao
+      sobrevive quando se troca uma condicao supostamente secundaria
+      (resolucao, regime de fill). Tres modulos independentes, mesmo
+      padrao -- o que sugere que a fragilidade nao esta em nenhum deles em
+      particular, e sim em quanto sinal existe para ser ordenado.
+    status: >-
+      ABERTO -- MEDIDO, 15 celulas (5 simbolos x 3 resolucoes), todas
+      re-executadas sobre os labels de AG-229 em 2026-08-25 19:08-19:35.
+      Cobertura completa agora; antes o modulo so tinha rodado R1 (default
+      do CLI) e SOLUSDT/XRPUSDT nao tinham R2/R3 nenhum.
+      SEGUE NAO ACIONAVEL por decisao ja registrada (T1 intocado, AG-207;
+      filtro nao aplicado, AG-227). O que este addendum acrescenta para
+      quando for: aplicar o NUCLEO comum as tres resolucoes, tratar a
+      FRANJA como decisao separada e explicita, e decidir o par
+      D09f/D08f por argumento, nao por qual delas o filtro guloso escolheu
+      na ultima rodada.
