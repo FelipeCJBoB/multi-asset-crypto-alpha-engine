@@ -1,0 +1,88 @@
+{
+  "gap_id": "AG-246",
+  "pergunta": "A ordenacao que este projeto usa para decidir (celulas de geometria, lift do gate de regime) e distinguivel de ruido?",
+  "gate_efficiency": {
+    "por_resolucao": {
+      "R1": {
+        "n_celulas": 10,
+        "n_significativas_ic95": 1,
+        "lift_medio": 1.0030246507334128,
+        "separation_ratio": 1.4007687901541355,
+        "exemplo_ic": {
+          "celula": "BNBUSDT|-1",
+          "lift": 0.9651,
+          "ic95": [
+            0.8954,
+            1.0402
+          ]
+        }
+      },
+      "R2": {
+        "n_celulas": 10,
+        "n_significativas_ic95": 6,
+        "lift_medio": 1.0017608381413654,
+        "separation_ratio": 2.1251969226863596,
+        "exemplo_ic": {
+          "celula": "BNBUSDT|-1",
+          "lift": 0.9925,
+          "ic95": [
+            0.9211,
+            1.0695
+          ]
+        }
+      },
+      "R3": {
+        "n_celulas": 10,
+        "n_significativas_ic95": 8,
+        "lift_medio": 1.0033522403092685,
+        "separation_ratio": 2.815436326540624,
+        "exemplo_ic": {
+          "celula": "BNBUSDT|-1",
+          "lift": 0.9084,
+          "ic95": [
+            0.8466,
+            0.9748
+          ]
+        }
+      }
+    },
+    "kendall_tau_entre_resolucoes": {
+      "R1xR2": 0.4222222222222222,
+      "R1xR3": 0.2,
+      "R2xR3": -0.1111111111111111
+    }
+  },
+  "s1_geometria": {
+    "por_resolucao": {
+      "R1": {
+        "n_celulas_cobertura_completa": 5,
+        "separation_ratio": 1.456804670883544,
+        "se_tipico_da_media": 0.004452973240168927,
+        "spread_entre_celulas": 0.016198866349820176,
+        "n_distinguiveis_da_melhor_ic95": 3,
+        "n_comparacoes": 4
+      },
+      "R2": {
+        "n_celulas_cobertura_completa": 5,
+        "separation_ratio": 2.3497662918326334,
+        "se_tipico_da_media": 0.004894422137791289,
+        "spread_entre_celulas": 0.030734323632223892,
+        "n_distinguiveis_da_melhor_ic95": 2,
+        "n_comparacoes": 4
+      },
+      "R3": {
+        "n_celulas_cobertura_completa": 7,
+        "separation_ratio": 6.270752605860993,
+        "se_tipico_da_media": 0.005177942594950123,
+        "spread_entre_celulas": 0.09864618698392832,
+        "n_distinguiveis_da_melhor_ic95": 4,
+        "n_comparacoes": 6
+      }
+    },
+    "kendall_tau_entre_resolucoes": {
+      "R1xR2": 0.2,
+      "R1xR3": -0.6,
+      "R2xR3": 0.2
+    }
+  }
+}

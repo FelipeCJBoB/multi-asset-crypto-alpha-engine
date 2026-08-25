@@ -17001,3 +17001,191 @@ entries:
       (simbolos/grade de relogio) -- essa versao segue ABERTA,
       registrada explicitamente como proximo passo em AG-255, nao
       esquecida.
+
+  - id: AG-246
+    date: "2026-08-25"
+    file: "src/analysis/ordering_fragility.py, tests/unit/test_analysis_ordering_fragility.py, experiments/ordering_fragility_report.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-235-ADDENDUM-2, ::AG-244, ::AG-245-ADDENDUM"
+    found_by: "Claude -- investigacao pedida pelo Manager ('tres modulos independentes mostraram a mesma assinatura; investigue profundo para conhecermos o problema melhor')"
+    gap: >
+      MINHA HIPOTESE ESTAVA ERRADA, E O DADO DA UMA RESPOSTA MELHOR.
+      Eu havia formulado o padrao como "aponta menos para defeito em cada
+      modulo e mais para quanto sinal existe para ser ordenado" -- isto e,
+      sugeri que nao havia sinal. Medido, e falso.
+      METODO (nada de bootstrap; forma fechada sobre contadores que os
+      relatorios ja persistem): (a) o `lift` do gate e razao de duas
+      proporcoes binomiais independentes, entao o IC sai pelo metodo delta
+      sobre o log -- mesma formula do risk ratio (Katz et al. 1978);
+      (b) o S1 persiste media/min/max do edge across 10 estratos mas nao o
+      desvio, entao sigma = range/d2(n) (Tippett 1925, carta de controle);
+      (c) Kendall tau-b entre as ordenacoes das tres resolucoes.
+      RESULTADO:
+        GATE DE REGIME     celulas com IC95 excluindo 1   separation_ratio
+          R1                        1/10                        1,40
+          R2                        6/10                        2,13
+          R3                        8/10                        2,82
+          Kendall tau: R1xR2=0,422  R1xR3=0,200  R2xR3=-0,111
+        S1 GEOMETRIA       distinguiveis da melhor        separation_ratio
+          R1                         3/4                        1,46
+          R2                         2/4                        2,35
+          R3                         4/6                        6,27
+          Kendall tau: R1xR2=0,200  R1xR3=-0,600  R2xR3=0,200
+      Em R3, OITO de dez celulas do gate tem IC95 que exclui 1, e o
+      separation_ratio do S1 e 6,27 (spread entre celulas ~19x o erro-padrao
+      de cada uma). Isso nao e ausencia de sinal. E sinal forte.
+    severity: "n/a -- e resultado de medicao, e uma autocorrecao"
+    layer: "analysis (metodo de decisao, transversal)"
+    consequence: >
+      O DIAGNOSTICO CORRETO E OUTRO: **o sinal existe, e forte, mas e LOCAL
+      e NAO TRANSPORTAVEL entre condicoes.** Tres evidencias convergem:
+      (1) Efeito real dentro de cada grade -- 8/10 celulas significativas em
+          R3, separation_ratio ate 6,27.
+      (2) Ordem NAO se reproduz entre grades -- Kendall tau de -0,600
+          (S1, R1xR3: a ordem quase se INVERTE) a -0,111 (gate, R2xR3:
+          praticamente independente). Se o efeito fosse uma propriedade da
+          geometria ou do gate, a ordem se repetiria; ela nao se repete.
+      (3) Media agregada ~1,0 no gate APESAR de celulas individualmente
+          significativas -- efeitos reais em direcoes OPOSTAS que se
+          cancelam ao agregar.
+      Isto e, o que existe e EFEITO POR CELULA sem direcao comum. Qualquer
+      decisao GLOBAL -- uma geometria para as tres resolucoes, um gate para
+      os cinco simbolos, um conjunto de features para tudo -- esta somando
+      efeitos que apontam para lados diferentes, e a soma da ~zero. Nao
+      porque nao haja o que somar: porque os termos se cancelam.
+      SEGUNDO ACHADO, MONOTONICO E ROBUSTO: o poder de separacao CRESCE com
+      a duracao da barra, nos dois modulos independentes.
+        separation_ratio    R1     R2     R3
+          gate             1,40   2,13   2,82
+          S1               1,46   2,35   6,27
+      Testado contra a hipotese de que isso fosse artefato de duas celulas
+      extremas no S1: removendo a melhor e a pior de cada grade, o padrao
+      persiste (R1 1,08 / R2 1,87 / R3 4,72). E coerente com agregacao
+      temporal reduzindo ruido de microestrutura, e casa com AG-238 (o I2
+      do M6 tambem cai monotonicamente com a duracao da barra: os ativos
+      ficam mais parecidos E o sinal fica mais separavel).
+      CONSEQUENCIA PRATICA MAIS DESCONFORTAVEL: em R1 sem as celulas
+      extremas o separation_ratio e 1,08 -- a ordenacao das celulas centrais
+      e essencialmente RUIDO --, e no gate R1 apenas 1/10 celula e
+      significativa. **R1 e a resolucao com MENOS poder de separacao, e e
+      onde a maior parte das medicoes de decisao deste projeto foi feita.**
+      O S1 original, o M6 original e o gate original todos rodaram R1
+      primeiro.
+    status: >-
+      MEDIDO 2026-08-25, modulo novo `src/analysis/ordering_fragility.py`
+      (nucleo puro, Idioma A) + 19 testes sinteticos.
+      BUG REAL QUE MEUS PROPRIOS TESTES PEGARAM, registrado porque e o tipo
+      de erro que teria virado conclusao errada: a 1a versao de
+      `kendall_tau_b` tratava um par empatado nos DOIS eixos como ramo
+      exclusivo, inflando o denominador e comprimindo |tau| em direcao a
+      zero -- ou seja, faria uma ordenacao reprodutivel PARECER ruido, que e
+      exatamente a conclusao que este modulo existe para nao errar. Os
+      valores reportados acima nao mudaram (nao ha empates no dado real),
+      mas so foi possivel afirmar isso DEPOIS de corrigir.
+      NAO CONCLUI, e nao deve ser lido como: (a) que o gate de regime deva
+      ser removido -- AG-244 segue aberto com sua propria fila de
+      verificacao; (b) que R1 deva ser abandonado -- separation_ratio baixo
+      significa que decisoes tomadas SOBRE R1 precisam de mais evidencia,
+      nao que R1 seja inutil como resolucao de operacao; (c) qualquer coisa
+      sobre o Alpha -- este modulo mede ordenacoes de analise, nao
+      desempenho de modelo.
+      PROXIMO PASSO SUGERIDO, barato: aplicar o mesmo instrumento as
+      decisoes ja tomadas que dependem de ordenacao (escolha de estimador de
+      volatilidade, escolha de classificador de regime em M4) e perguntar,
+      para cada uma, qual era o separation_ratio no momento em que foi
+      decidida.
+
+  - id: AG-247
+    date: "2026-08-25"
+    file: "src/validation/cpcv.py::load_labels_v1, src/backtest/fill_reconciliation.py::load_labels, src/labels/backfill_multi_symbol.py::run_and_write_labels_for_alts, src/analysis/calibration_diagnostics.py, src/validation/leakage.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-233, ::AG-236, ::AG-243, ::AG-225, src/models/dataset.py::build_modeling_frame"
+    found_by: "Subagente de auditoria (somente leitura), delegado pelo Manager; achados VERIFICADOS empiricamente por Claude na sessao principal"
+    gap: >
+      AUDITORIA DO CORE, a pendencia que AG-243 registrou como 'ninguem
+      fez'. AG-233 varreu `analysis/`; `src/` nunca foi. A lista de partida
+      (11 modulos) estava INCOMPLETA -- a auditoria confirmou os 9
+      verificaveis e achou mais 6: validation/leakage.py, validation/
+      _paths.py, validation/noise_floor_diagnostics.py, execution/
+      fill_simulator.py, models/pipeline.py, labels/triple_barrier.py.
+      RESULTADO ESTRUTURAL: o desenho XOR (tf vestigial sob resolution_id)
+      esta CORRETAMENTE implementado nas 4 funcoes de path (labels,
+      validation, regime, models), com guarda anti-colisao e ValueError
+      explicito. O defeito nao esta la. Esta em `tf="15m"` ser o DEFAULT em
+      cada camada do caminho: `resolution_id` precisa ser transportado por
+      4 niveis (CLI -> pipeline -> dataset -> cpcv -> _paths) e basta um
+      nivel esquecer para toda a cadeia abaixo cair em 15m. Os modulos que
+      acertam (noise_floor_diagnostics, familia t2_t1_*) acertam por tornar
+      `resolution_id` OBRIGATORIO sem default, nao pelo XOR.
+      CINCO casos B (default perigoso COM chamador real), separados por
+      protecao:
+        PROTEGIDOS por B15 (falham alto):
+          models/dataset.py::build_modeling_frame -- e, por ele,
+          pipeline.run_layer1_sprint() sem argumentos e
+          calibration_diagnostics linha 945.
+        NAO PROTEGIDOS (leem 15m em silencio):
+          validation/cpcv.py::load_labels_v1 -- `verify_config: bool =
+            False` por DEFAULT; emite logger.info, nao levanta.
+          backtest/fill_reconciliation.py::load_labels -- nao aceita
+            symbol, tf NEM resolution_id; a propria docstring admite
+            "BTCUSDT/15m hardcoded ponta a ponta".
+          analysis/calibration_diagnostics.py linha 937 -- load_labels_v1
+            nu; o MESMO relatorio faz duas cargas com regimes
+            potencialmente diferentes (937 sem verificacao, 945 com).
+          validation/leakage.py -- CLI com --tf default "15m" e
+            --resolution-id default None: o relatorio CANONICO de vazamento
+            (leakage_report.json) e o da grade legada.
+        WRITER, o pior em natureza:
+          labels/backfill_multi_symbol.py::run_and_write_labels_for_alts --
+          nao aceita resolution_id, GRAVA em data/labels/{symbol}/15m/v1/,
+          e e o `__main__` do modulo. Nao ha guarda possivel: faz o que foi
+          pedido. E o unico caminho no repo que grava naquele destino.
+      Achado adicional de categoria C: execution/fill_simulator.py linha
+      641 -- `fill_timeout_ms = timeout_bars * step_ms("15m")`, literal e
+      incondicional, TAMBEM sob resolution_id. Documentado como deliberado
+      nas linhas 625-635, mas segue sendo um numero de relogio de 15m
+      dentro do caminho dollar-bar.
+    severity: "alto -- tres caminhos de leitura e um de ESCRITA operam sobre a grade legada sem guarda, incluindo o relatorio canonico de vazamento e a reconciliacao de fill"
+    layer: "core (transversal) -- residuo da migracao AG-042 nao propagado"
+    consequence: >
+      VERIFICACAO EMPIRICA que o subagente nao pode fazer (protocolo de
+      execucao) e que a sessao principal fez, fechando as duas pontas:
+        build_modeling_frame() sem resolution_id -> levanta
+          ConfigHashMismatchError ("config_hash do label 9492d29c36b06cb1
+          != config_hash da execucao 6a46c39487445e5b"). GUARDA ATIVA,
+          confirmada, nao inferida.
+        cpcv.load_labels_v1() nu -> NAO levanta: leu 462.813 linhas da
+          grade 15m EM SILENCIO, com config_hash 9492d29c36b06cb1.
+      Ou seja: a contra-hipotese do subagente estava certa nas duas
+      direcoes. O expurgo por mecanismo de AG-236 e real, mas cobre APENAS
+      quem passa por build_modeling_frame. Quem chama load_labels_v1 direto
+      passa por baixo dele.
+      IMPLICACAO PARA AG-233: aquele achado registrou o mistero dos cinco
+      labels.parquet de 15m regravados em 2026-08-25 14:46-14:47 por
+      processo externo, sem registro em label_engine_runs. Esta auditoria
+      identifica o unico caminho no repo capaz de faze-lo:
+      `python -m src.labels.backfill_multi_symbol`. NAO e prova de que foi
+      ele -- ninguem observou a execucao --, mas fecha o conjunto de
+      suspeitos em um.
+    status: >-
+      ABERTO -- auditado e verificado, NAO corrigido. Corrigir exige mudar
+      ASSINATURA em tres casos (fill_reconciliation.load_labels,
+      calibration_diagnostics, cpcv._run_cli nao tem por onde o chamador
+      passar a grade), o que e refactor com raio de alcance real, nao
+      correcao pontual -- e o Manager nao autorizou isso.
+      PRIORIDADE SUGERIDA, por consequencia e nao por facilidade:
+      (1) `run_and_write_labels_for_alts` -- e o unico WRITER; um backfill
+          acidental grava na grade legada e pode ser exatamente o que ja
+          aconteceu (AG-233). Correcao minima: exigir resolution_id
+          explicito, ou falhar alto se ele faltar.
+      (2) `leakage.py` CLI -- o relatorio canonico de vazamento sendo o da
+          grade errada e o que tem maior consequencia de governanca: os 14
+          testes que o projeto cita como garantia rodam, por default, sobre
+          uma grade que nao e producao.
+      (3) `fill_reconciliation` -- reconciliacao e a fonte da verdade de
+          equity (B17); medir sobre 15m e medir outro motor.
+      (4) `calibration_diagnostics` -- duas cargas com regimes possivelmente
+          diferentes no mesmo relatorio e o defeito mais sutil da lista.
+      (5) `load_labels_v1(verify_config=False)` como default -- mudar isso e
+          a correcao de raiz, mas quebraria as analises pos-hoc legitimas
+          que a docstring (linhas 836-841) protege deliberadamente. Exige
+          decisao do Manager sobre qual dos dois riscos e maior, nao e
+          escolha tecnica obvia.
