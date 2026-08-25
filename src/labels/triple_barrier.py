@@ -339,6 +339,29 @@ class LabelConfig:
     ganhar mais lógica além do necessário pra fechar o gap enquanto o
     ADR-001 não está implementado."""
 
+    barrier_fill_policy_id: str = "gap_aware_sl_v1"
+    """D4/AG-205 (2026-08-24) — identifica QUAL versão do algoritmo de fill
+    de barreira gerou este label, mesmo papel de `estimator_id` (mas pra
+    lógica de fill, não de volatilidade). Existe só como marcador de
+    versão pro `config_hash` — `_first_barrier_touch`/`_gap_aware_sl_fill`
+    não leem este campo, não há bifurcação de comportamento por valor
+    (diferente de `estimator_id`, que de fato seleciona um objeto
+    `VolatilityEstimator`). Motivo de existir: até esta correção,
+    `config_hash` não capturava NENHUMA informação sobre a lógica de fill
+    de SL — uma mudança de CÓDIGO (não de config) no `_first_barrier_
+    touch` não invalidava `config_hash` nenhum, então `verify_config_hash`
+    (`src/models/dataset.py::build_modeling_frame`, wireup real do B15,
+    AG-140) aceitaria `labels.parquet` gerado sob a lógica ANTIGA como se
+    nada tivesse mudado — ponto cego real do mecanismo B15 (protege contra
+    config desatualizada, não contra lógica de geração desatualizada).
+    Default `"gap_aware_sl_v1"` (valor ÚNICO existente hoje -- SL sempre
+    gap-aware desde esta correção, sem toggle) garante que `config_hash`
+    de QUALQUER `LabelConfig` construído a partir de agora difere do de
+    qualquer config anterior a esta correção, mesmo com todos os outros
+    campos idênticos -- força `ConfigHashMismatchError` na próxima chamada
+    real de `build_modeling_frame` contra os `labels.parquet` já
+    persistidos (pré-D4), disciplina de falhar alto, não silenciar."""
+
     def __post_init__(self) -> None:
         if self.resolution_id is not None:
             if self.resolution_id not in CALIBRATION_TF_BY_RESOLUTION:
@@ -539,7 +562,19 @@ class LabelConfig:
         campo é `None` (não inclui `None` como valor, como `resolution_id`/
         `horizon_bars` fazem) — `config_hash` de qualquer config que não
         passa este campo explicitamente é bit-idêntico a antes desta
-        adição."""
+        adição.
+
+        Muda de valor de novo com AG-205 (2026-08-24) -- barrier_fill_
+        policy_id novo no payload, sempre presente (mesmo padrão de
+        resolution_id/horizon_bars, NAO o padrão omitido-quando-None de
+        bars_calibration_hash). Mudança de CODIGO, nao de config
+        (_first_barrier_touch ganhou fill gap-aware de SL, _gap_aware_
+        sl_fill), mas config_hash ate aqui so capturava campos de CONFIG,
+        deixando verify_config_hash/B15 cego a essa mudança de logica --
+        ver docstring do campo. Intencional: TODO labels.parquet gerado
+        antes desta correção (todos os 20 ja persistidos em 2026-08-24)
+        diverge por este campo, força reprocessamento antes do proximo
+        build_modeling_frame real."""
         payload: dict[str, Any] = {
             "tp_atr_mult": self.tp_atr_mult,
             "sl_atr_mult": self.sl_atr_mult,
@@ -552,6 +587,7 @@ class LabelConfig:
             "tf": self.tf,
             "resolution_id": self.resolution_id,
             "horizon_bars": self.horizon_bars,
+            "barrier_fill_policy_id": self.barrier_fill_policy_id,
         }
         if self.bars_calibration_hash is not None:
             payload["bars_calibration_hash"] = self.bars_calibration_hash

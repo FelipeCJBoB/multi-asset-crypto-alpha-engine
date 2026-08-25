@@ -9,11 +9,13 @@ as seis invariantes do §3.8."""
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+import orjson
 import polars as pl
 import pytest
 
@@ -129,6 +131,49 @@ def test_config_hash_de_constants_yaml_e_estavel() -> None:
     cfg2 = tb.LabelConfig.from_constants()
     assert cfg1.config_hash == cfg2.config_hash
     assert cfg1 == cfg2
+
+
+def test_config_hash_muda_com_barrier_fill_policy_id_diferente() -> None:
+    """D4/AG-205 -- mesma garantia B15 do teste parametrizado acima,
+    dedicada: barrier_fill_policy_id é campo do payload como qualquer
+    outro, muda o hash se mudar."""
+    base = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    changed = replace(base, barrier_fill_policy_id="algum_outro_valor")
+    assert base.config_hash != changed.config_hash
+
+
+def test_config_hash_diverge_de_labels_persistidos_antes_do_ag205() -> None:
+    """D4/AG-205 -- a garantia central desta correção: config_hash de
+    QUALQUER LabelConfig construído hoje difere do hash que a MESMA
+    combinação de parâmetros produzia ANTES de barrier_fill_policy_id
+    existir (payload replicado manualmente aqui, sem esse campo -- exatamente
+    a forma do payload pré-AG-205). Todo labels.parquet já persistido antes
+    desta correção diverge, força ConfigHashMismatchError na próxima
+    chamada real de build_modeling_frame (verify_config_hash,
+    src/models/dataset.py, AG-140). Sem isso, uma mudança de CÓDIGO (não de
+    config) em _first_barrier_touch ficaria invisível ao mecanismo B15."""
+    cfg = tb.LabelConfig(
+        2.0, 1.5, _TIME_STOP_MS_DEFAULT, 1, _ATR_WINDOW_MS_DEFAULT, 0.0002, 0.0005, "atr_wilder_w20"
+    )
+    pre_ag205_payload = {
+        "tp_atr_mult": cfg.tp_atr_mult,
+        "sl_atr_mult": cfg.sl_atr_mult,
+        "time_stop_ms": cfg.time_stop_ms,
+        "fill_timeout_ms": cfg.fill_timeout_ms,
+        "atr_window_ms": cfg.atr_window_ms,
+        "maker_fee": cfg.maker_fee,
+        "taker_fee": cfg.taker_fee,
+        "estimator_id": cfg.estimator_id,
+        "tf": cfg.tf,
+        "resolution_id": cfg.resolution_id,
+        "horizon_bars": cfg.horizon_bars,
+    }
+    pre_ag205_hash = hashlib.sha256(
+        orjson.dumps(pre_ag205_payload, option=orjson.OPT_SORT_KEYS)
+    ).hexdigest()[:16]
+    assert cfg.config_hash != pre_ag205_hash
 
 
 # ============================================================================

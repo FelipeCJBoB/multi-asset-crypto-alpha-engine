@@ -14291,7 +14291,7 @@ entries:
       ordem passiva/maker executa sempre no nivel de repouso, gap-through
       e economicamente irrelevante para TP sob a politica de execucao
       real deste projeto (maker/GTX).
-    resolved_by_commit: null
+    resolved_by_commit: "ac8190a"
     resolution: >
       _gap_aware_sl_fill (novo helper, triple_barrier.py) -- fill de SL
       vira min(sl_price, open_do_candle_que_tocou) para long, max(...)
@@ -14313,7 +14313,43 @@ entries:
       2 de paridade vetorizada (gap e no-gap). Nenhuma constante nova em
       constants.yaml -- logica puramente deterministica (min/max), sem
       parametro/threshold.
-    status: "corrigido, aguardando pytest do usuario pra confirmar (protocolo de execucao, CLAUDE.md) antes de commit"
+    status: "fechado 2026-08-24 -- 99 passed in 12.50s, commitado (ac8190a) e empurrado pra origin/master"
+
+    addendum_config_hash_cego_a_mudanca_de_codigo_2026-08-24: >
+      Achado ao responder pergunta direta do usuario ("como o Alpha atual
+      vai consumir isso, preciso rodar triple_barrier pra atualizar
+      arquivos gerados?") -- config_hash (LabelConfig) so capturava campos
+      de CONFIG (tp_atr_mult/sl_atr_mult/etc.), nunca a logica de fill em
+      si. A correcao acima muda CODIGO (_first_barrier_touch), nao nenhum
+      campo de config -- config_hash de qualquer config antes/depois desta
+      correcao seria IDENTICO, entao verify_config_hash (src/models/
+      dataset.py::build_modeling_frame, wireup real do B15, AG-140)
+      aceitaria os 20 labels.parquet ja persistidos (gerados sob a logica
+      ANTIGA) como se nada tivesse mudado -- ponto cego real do mecanismo
+      B15 (protege contra config desatualizada, nao contra logica de
+      geracao desatualizada).
+
+      Corrigido: novo campo LabelConfig.barrier_fill_policy_id (default
+      "gap_aware_sl_v1"), sempre presente no payload de config_hash (mesmo
+      padrao de resolution_id/horizon_bars, nao o padrao omitido-quando-
+      None de bars_calibration_hash) -- mesma tecnica ja usada 4x antes
+      neste mesmo campo (AG-005/tf, AG-031-B1/time_stop_ms+atr_window_ms,
+      AG-042/resolution_id, AG-116/horizon_bars): adicionar um campo novo
+      ao payload pra forcar divergencia de hash quando a semantica de
+      geracao muda. Efeito pratico: TODO labels.parquet ja persistido
+      (5 simbolos x {15m,R1,R2,R3}, gerados antes desta correcao) diverge
+      do config_hash que LabelConfig.from_constants() produz agora --
+      proxima chamada real de build_modeling_frame levanta
+      ConfigHashMismatchError ate os labels serem reprocessados (mesmo
+      mecanismo ja usado hoje no AG-204: run_and_write_labels_dollar_bar_
+      parkinson / build_and_write_labels_for_symbol / run_and_write_
+      labels_for_alts). Reprocessamento NAO disparado nesta sessao --
+      usuario confirmou que o retreino do Alpha disparado no AG-204 ja
+      finalizou (sem retreino ativo pra colidir), mas decisao de QUANDO
+      reprocessar fica com o usuario, nao automatica. 2 testes novos
+      (test_config_hash_muda_com_barrier_fill_policy_id_diferente,
+      test_config_hash_diverge_de_labels_persistidos_antes_do_ag205) em
+      tests/unit/test_labels_triple_barrier.py.
 
   - id: AG-206
     date: "2026-08-24"
