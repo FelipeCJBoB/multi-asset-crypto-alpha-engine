@@ -18634,3 +18634,98 @@ entries:
       o eixo de estabilidade temporal, senao o proximo artefato passa pelo
       mesmo caminho; (c) perseguir ou nao o momentum de BNB/XRP, que e o
       unico candidato a sinal real em pe.
+
+  # ============================================================================
+  # AG-270..AG-287 -- parecer de project_assurance sobre ADR-005 v2 (2026-08-26).
+  # Revisao independente (Agent fresco, sem o raciocinio do produtor), 18
+  # achados, veredito REPROVADO. Os dois CRITICAL foram REVERIFICADOS por
+  # medicao pela sessao principal antes de aceitos -- ver ADR-005 §11.
+  # Entradas completas no parecer; resumo canonico abaixo.
+  # ============================================================================
+
+  - id: AG-270
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2 eixo 1"
+    related_file: "experiments/ic_by_horizon_report_{R1,R2,R3}.json, audit/architecture_gaps_log.yaml::AG-265, ::AG-266"
+    found_by: "project_assurance (Agent independente) -- reverificado por medicao na sessao principal"
+    gap: >
+      O EIXO 1 DO ADR-005 REPETE, UM NIVEL ACIMA, O ERRO QUE O PROPRIO §0.1
+      CORRIGIU: tratar observacoes redundantes como independentes.
+      O criterio ">= 7 de 15 celulas" calibra sob binomial(15; 0,146),
+      presumindo 15 ensaios independentes. As 15 celulas sao 5 simbolos x 3
+      resolucoes, e as 3 resolucoes de um simbolo sao a MESMA serie de preco
+      sob thresholds diferentes.
+      MEDIDO na sessao principal, sobre os proprios relatorios: 197 de 275
+      blocos simbolo x feature (72%) sao PERFEITAMENTE concordantes nas 3
+      resolucoes (0/3 ou 3/3).
+      E16f nao tem "7 de 15 celulas" -- tem BTC 3/3, SOL 3/3, BNB 1/3,
+      ETH 0/3, XRP 0/3, isto e ~2,3 simbolos. Sob binomial(5; 0,146),
+      P(X>=3 simbolos) = 0,0247 -> 1,78 features esperadas POR ACASO entre 72.
+      E o ADR nao precisa dessa correcao para cair: pelo SEU proprio nulo,
+      retirando E18f (artefato de AG-266) das 2 observadas em k>=7, sobra 1
+      contra 0,22 esperada -> P(X>=1) = 0,197 sob Poisson. Nao significativo.
+    severity: "CRITICAL -- e a unica evidencia que sustenta L2 = {E16f}, a conclusao central do ADR-005 e a base de `feature_promotion_min_cells: 7`"
+    layer: "features (criterio de promocao) / metodo estatistico"
+    consequence: >
+      A camada L2 fica VAZIA, nao com 1 coluna. Toda a discussao de §3/§4 do
+      ADR-005 -- que usa "L2 tem UMA coluna" como o argumento que descarta a
+      Opcao B -- precisa ser refeita.
+      `feature_promotion_min_cells: 7` nao pode entrar em constants.yaml como
+      DERIVED: a derivacao esta errada.
+      CORRECAO POSSIVEL, barata: recalcular a expectativa sob H0 por SIMBOLO
+      (ou Poisson-binomial com p_c medido por celula) e reexpressar o criterio
+      em simbolos.
+    status: >-
+      ABERTO. ADR-005 marcado REPROVADO no cabecalho. Bloqueia §2.2 e os itens
+      4 e 7 de §8.
+
+  - id: AG-271
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §1.4, §2.1, §5.2, §7, §8 item 8"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, src/features/build.py::T1_FEATURE_IDS, src/regime/classifier.py:535"
+    found_by: "project_assurance (Agent independente) -- reverificado por medicao na sessao principal"
+    gap: >
+      O ADR-005 SE CONTRADIZ SOBRE AS COLUNAS QUE PROPOE APAGAR, E O LADO
+      ERRADO DA CONTRADICAO E O QUE VIRA ACAO IRREVERSIVEL.
+      §1.4 afirma "zero das 29 sem mecanismo tem sinal"; §2.1/§5.2 definem L4
+      com base nisso; §8 item 8 manda "parar de calcular L4", chamando de
+      irreversivel.
+      §7 do MESMO documento diz que A01..A06 sao "o unico candidato a sinal
+      genuino que esta investigacao produziu". VERIFICADO na ficha: A01, A02,
+      A03, A04, A05, A06 tem TODAS `veredito: SEM_MECANISMO` -- sao membros
+      de L4.
+      AGRAVANTES verificados: `A05_ret_vol_norm_4` e `B01_rsi_14` sao
+      SEM_MECANISMO e estao em T1_FEATURE_IDS (producao HOJE);
+      `B07_efficiency_ratio_48` e SEM_MECANISMO e e lido por
+      classifier.py:535 -- aplicar a regra de L4 mecanicamente derruba o gate
+      de regime.
+      §1.4 tambem e resultado de BTCUSDT/R1 SOZINHO (e a tabela de AG-265,
+      cujo status diz "rodado so em BTCUSDT/R1"), apresentado logo abaixo da
+      tabela de 15 celulas de §1.3.
+    severity: "CRITICAL -- executar §8 item 8 como escrito destruiria o unico candidato a sinal real da investigacao e removeria 2 das 7 features T1 vivas, sem que o documento diga que faz isso"
+    layer: "features (governanca de vetor)"
+    consequence: >
+      A contagem 29 de L4 nao e compativel com a definicao de L4 de §2.1
+      ("SEM_MECANISMO **sem descoberta**") -- 29 e o total, sem subtrair
+      descobertas. A regra "sem mecanismo declarado = aposentar" e refutada
+      pela propria evidencia do documento.
+      §8 item 8 nunca pode vir depois de §8 item 5 sem regra explicita de que
+      colunas sob investigacao ficam FORA da poda.
+    status: >-
+      ABERTO. Bloqueia §8 item 8 e a contagem de L4 em §5.2.
+
+  # AG-272..AG-287 -- os 16 achados HIGH/MEDIUM/LOW restantes do mesmo parecer
+  # estao resumidos por severidade em ADR-005 §11.3, com o texto integral do
+  # revisor preservado no transcript da sessao. Nenhum foi contestado; nenhum
+  # foi aplicado. Resumo dos HIGH, para o log ser navegavel sozinho:
+  #   AG-272 particao nao exaustiva (25 colunas sem camada, entre elas A13 e
+  #          E10f, T1 vivas) e sem precedencia (B07 e L1 e candidata a L4)
+  #   AG-273 violacao de B06 declarada em §9 e cometida em §2.2
+  #   AG-274 eixo 2 sem codigo nem artefato; 6 termos sem definicao operacional
+  #   AG-275 descasamento de alvo: gate mede IC contra retorno de h barras, o
+  #          Alpha treina 1{barrier == TP}
+  #   AG-276 BH ausente dos relatorios; pico_abs_t e um MAXIMO sobre 6
+  #          horizontes correlacionados alimentado ao BH como teste unico
+  #   AG-277 atribuicao errada de ADR-001 §2.7 (trata do Meta consumir o
+  #          ESTADO de regime, nao das features cruas) -- removeria E27f, T1
+  #          viva com TESE_OK
