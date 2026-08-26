@@ -19313,3 +19313,58 @@ entries:
       ADR-003 (Estagios 0-3 e config/alpha_hyperparams_by_combo.yaml) rodou
       sob um purge dimensionado para 7 features. Isso nao muda os numeros ja
       persistidos; muda o que eles significam.
+
+  - id: AG-299
+    date: "2026-08-26"
+    file: "src/analysis/feature_temporal_stability.py"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2, §11.3 (AG-274), §14.6, experiments/feature_temporal_stability_report_{R1,R2,R3}.json"
+    found_by: "sessao principal -- Manager pediu para seguir com o eixo 2 mesmo com o eixo 1 ja zerando os candidatos"
+    gap: >
+      AG-274 (project_assurance): eixo 2 (estabilidade temporal, §2.2) nao
+      tinha codigo nem artefato, e 6 termos sem definicao operacional.
+      Implementado (nucleo puro + 16 testes). DUAS das definicoes
+      operacionais foram FIXADAS POR REPRODUCAO, nao por leitura da prosa
+      -- a 1a tentativa deste modulo adivinhou errado nas duas:
+      (1) Horizonte do IC por semestre: `h=1` FIXO pra toda feature,
+          NAO o pico de cada uma (1a tentativa, errada -- so reproduzia
+          E18f, cujo pico coincide com h=1; E16f/E14f picam em h=32,
+          D06f/A01 em h=16, e usar o pico de cada um dava ratio bem
+          diferente do publicado em §2.2). A prosa de §2.2 nunca
+          especificou "no pico" -- foi suposicao deste modulo. Sem
+          justificativa economica declarada em lugar nenhum pra h=1
+          especificamente -- registrado como lacuna residual.
+      (2) "Direcao consistente" e MAIORIA DOS PROPRIOS SEMESTRES
+          (`max(n_pos,n_neg)/n_total`), NAO o sinal do pico_ic do
+          periodo inteiro (1a tentativa, errada -- so D06f discrimina:
+          maioria por contagem simples da 60%/positiva, pico_ic pondera
+          pela serie inteira e da 40%/negativa; so a maioria bate os 60%
+          publicados). Consequencia: o piso da metrica e 50%, nao 0%.
+      VERIFICACAO: os 5 casos calibrados de §2.2
+      (E18f/E16f/E14f/D06f/A01, BTCUSDT/R1) batem exatamente com h=1 +
+      maioria propria -- ratio e frac_mesma_direcao nas 3a/4a casas
+      decimais nos 5 casos, incluindo D06f reprovando na direcao (60% <
+      70%) como o documento original registra.
+    severity: "MEDIUM -- fecha o 3o dos 3 pre-requisitos de §11.5 pra v3 existir; nao muda a decisao de §14.1 (eixo 1 sozinho ja zera o pool), mas fecha o debito tecnico"
+    layer: "features (criterio de promocao) / metodo estatistico"
+    consequence: >
+      Rodado contra os 3 relatorios reais de IC por horizonte (72
+      features x 5 simbolos x 3 resolucoes = 1080 celulas de eixo 2,
+      completo, nao so os 5 casos de calibracao):
+      E18f_taker_ls_vol_ratio REPROVA o eixo 2 nas 15/15 celulas
+      (symbol x resolution) -- confirmacao INDEPENDENTE de AG-266 (fonte
+      artefato) por um teste que nunca usou nenhuma informacao sobre o
+      artefato, so estabilidade temporal pura. E16f_global_ls_ratio
+      passa em 10/15 celulas -- mas isso NAO muda §14.1: eixo 2 e
+      necessario, nao suficiente, e eixo 1 (AG-294) ja mostra que E16f
+      nao se reproduz entre simbolos o bastante pra distinguir de acaso.
+      K04_session_us (dummy de calendario) passa em 5/15 -- consistente
+      com ser ruido, nao sinal.
+    status: >-
+      FECHADO. Codigo commitado, 16 testes, 5 casos de calibracao
+      reproduzidos exatamente, artefato real persistido (3 relatorios,
+      nao smoke test -- todos os parametros sao reais, sem equity/data
+      fabricados). O 3o pre-requisito de §11.5 (eixo 2 persistido) esta
+      fechado -- os 3 agora estao: modelo nulo por simbolo (AG-294), BH
+      com unidade declarada (AG-294), eixo 2 em codigo (este). `h=1` sem
+      justificativa economica declarada continua como lacuna residual,
+      registrada, nao fabricada.

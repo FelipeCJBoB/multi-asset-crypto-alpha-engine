@@ -279,6 +279,50 @@ feature_promotion_bh_q:
   sweep_range: [0.05, 0.20]
   review_by: sprint_10
 
+feature_temporal_stability_min_points_per_semester:
+  value: 1000
+  provenance: ASSUMED
+  source: >
+    ADR-005 §2.2, eixo 2 do criterio de evidencia -- "exigindo dos que
+    tiverem n >= 1000". Piso de amostra por semestre de calendario, nao
+    medido/derivado. Consumido por src.analysis.feature_temporal_
+    stability.run_feature_temporal_stability_report (AG-274 -- eixo 2 em
+    codigo pela 1a vez).
+  class: C
+  sweep_required: true
+  sweep_range: [500, 2000]
+  review_by: sprint_10
+
+feature_temporal_stability_max_ratio:
+  value: 4.0
+  provenance: ASSUMED
+  source: >
+    ADR-005 §2.2, eixo 2 -- "max|IC_sub| / mediana|IC_sub| <= 4". Calibrado
+    olhando 5 casos conhecidos (E18f=12,57 reprova; E16f=2,98, E14f=1,50,
+    A01=2,28 passam; D06f=1,92 passa neste eixo mas reprova no de direcao)
+    -- calibracao de instrumento, nao derivacao a partir de outra
+    constante medida (§2.2, "honestidade sobre a calibracao": estes 5
+    casos NAO sao a priori pra eles mesmos, so pra colunas novas dai em
+    diante). Consumido por src.analysis.feature_temporal_stability.
+  class: B
+  sweep_required: true
+  sweep_range: [2.0, 8.0]
+  review_by: sprint_10
+
+feature_temporal_stability_min_direction_frac:
+  value: 0.70
+  provenance: ASSUMED
+  source: >
+    ADR-005 §2.2, eixo 2 -- "direcao do IC consistente em >= 70% dos
+    subperiodos". Mesma calibracao/ressalva de
+    feature_temporal_stability_max_ratio (5 casos conhecidos, nao a
+    priori pra eles mesmos). Consumido por src.analysis.
+    feature_temporal_stability.
+  class: B
+  sweep_required: true
+  sweep_range: [0.50, 0.90]
+  review_by: sprint_10
+
 risk_per_trade:
   value: 0.005
   provenance: DERIVED

@@ -3,7 +3,7 @@
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
-- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`): PROPOSTO**, não revisado. Fecha 2 dos 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada — `AG-294`, em código). Resultado: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. `L4` corrigida (21, era 29) e novo estado `defeito_construcao` (26, ortogonal, fecha `AG-272`) — 2 já investigadas (`A13`/`E10f`, `AG-295`), achado novo (`E02f_funding_z_expanding`, insumo do gate de regime) ainda sem diagnóstico. Eixo 2 (estabilidade temporal) SEGUE sem código — §14.6.
+- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO**, não revisado. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código). Resultado: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. `L4` corrigida (21, era 29) e novo estado `defeito_construcao` (26, ortogonal, fecha `AG-272`) — 2 já investigadas (`A13`/`E10f`, `AG-295`), achado novo (`E02f_funding_z_expanding`, insumo do gate de regime) ainda sem diagnóstico. Eixo 2 (estabilidade temporal, `AG-299`) rodado nas 15 células completas: `E18f` reprova em 15/15, confirmação independente de `AG-266` — §14.6.
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
 - **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
@@ -2419,10 +2419,27 @@ concentrar risco em cima. As opções de §3 ficam assim:
 
 ### §14.6 O que esta v3 ainda não fecha
 
-- **Eixo 2 (estabilidade temporal) sem código.** `§11.5` exige isso pra v3
-  "existir" de verdade — não fechado aqui. Não muda a decisão de §14.1
-  (eixo 1 sozinho já zera o pool de candidatos), mas o critério de dois
-  eixos continua sendo só prosa pra qualquer candidato futuro.
+- ~~Eixo 2 (estabilidade temporal) sem código.~~ **FECHADO 2026-08-26**
+  (`AG-299`) — a pedido do Manager, mesmo com §14.1 já zerando o pool de
+  candidatos via eixo 1 sozinho. `src/analysis/feature_temporal_
+  stability.py`, núcleo puro + 16 testes. Duas das definições
+  operacionais que faltavam (`AG-274`) foram fixadas por REPRODUÇÃO, não
+  por leitura da prosa — a 1ª tentativa deste módulo errou nas duas: o
+  horizonte do IC por semestre é `h=1` fixo (não o pico de cada feature —
+  só reproduzia `E18f`, cujo pico coincide com `h=1` por coincidência), e
+  "direção consistente" é maioria dos PRÓPRIOS semestres (não o sinal do
+  IC do período inteiro — só `D06f` discrimina as duas leituras, e só a
+  maioria bate os 60% publicados). Os 5 casos calibrados de §2.2 batem
+  exatamente com a correção (`ratio`/`frac_mesma_direção` na 3ª/4ª casa
+  decimal, incluindo `D06f` reprovando na direção como o original).
+  Rodado contra as 15 células completas (não só os 5 casos): `E18f`
+  reprova o eixo 2 em **15/15**, confirmação independente de `AG-266`
+  por um teste que nunca usou informação sobre o artefato. Os 3
+  pré-requisitos de `§11.5` estão fechados agora — modelo nulo por
+  símbolo, BH com unidade declarada (`AG-294`) e eixo 2 persistido
+  (`AG-299`). `h=1` sem justificativa econômica declarada continua
+  como lacuna residual (por que `h=1` e não o pico, ou o holding `H=5`?)
+  — registrada, não fabricada.
 - **24 das 26 colunas em `defeito_construção` não foram investigadas** —
   incluindo `E02f` (achado novo aqui, sem diagnóstico).
 - **`A01`–`A06` seguem sem resolução da tensão Pearson-vs-Spearman** (§7) —
