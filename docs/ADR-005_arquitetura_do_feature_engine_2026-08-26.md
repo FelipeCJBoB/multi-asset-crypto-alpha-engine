@@ -489,150 +489,439 @@ números diferentes.
 
 ## §12. A GRADE DE PRODUÇÃO — decisão, com a matemática financeira
 
-**Diretriz do Manager (2026-08-26):** §9 dizia "não decide a grade de
-produção — é outro eixo". Isso foi recusado: *"tem que decidir, de alguma
-forma precisa ter a matemática financeira para promover por escrito a grade
-que entra em produção"*.
+**Versão 2 desta seção.** A v1 (commit `f77b8e9`) continha dois erros de
+conta, ambos achados por revisão de levantamento econômico independente e
+corrigidos aqui: custo por trade tratado como fixo entre grades, e orçamento
+de fees multiplicado por 5 em vez de compartilhado. Os dois estão descritos
+em §12.7. A conclusão não mudou de direção; a margem mudou.
 
-**Esta seção NÃO depende das partes reprovadas em §11.** Ela não usa o
-critério de §2.2, não usa a tabela de IC e não seleciona feature nenhuma. É
-economia de execução sobre labels de produção, e sobrevive independentemente
-do que aconteça com `L2`.
+**Diretriz do Manager (2026-08-26):** §9 dizia "não decide a grade de
+produção". Recusado — *"tem que decidir, de alguma forma precisa ter a
+matemática financeira para promover por escrito a grade que entra em
+produção"*.
+
+**Esta seção NÃO depende das partes reprovadas em §11.** Não usa o critério
+de §2.2, não usa a tabela de IC, não seleciona feature. É economia de
+execução sobre labels de produção.
 
 ### §12.1 Por que `AG-260` não bastava
 
-`AG-260` comparou grades pelo **lift exigido em `P(TP)`** e concluiu R1 ≈ R2 ≫
-R3 (R3 pior). Essa métrica responde "quanto o modelo precisa melhorar a taxa
-de acerto", e ignora duas coisas que decidem dinheiro:
+`AG-260` compara grades pelo **lift exigido em `P(TP)`** e conclui R1 ≈ R2 ≫
+R3. Responde "quanto o modelo precisa melhorar a taxa de acerto" — e ignora
+que **o número de trades não é livre**. A restrição R3 do projeto
+(`fee_budget_monthly`) fixa quanto se pode gastar em fees por mês. Uma grade
+com 4× mais barras não produz 4× mais trades: produz 4× mais *candidatos* ao
+mesmo orçamento.
 
-1. **A capacidade de trades é limitada pelo orçamento de fees, não pela
-   grade.** A restrição R3 do projeto (`fee_budget_monthly`) fixa quantos
-   trades cabem por mês. Uma grade que produz 4× mais barras não produz 4×
-   mais trades — produz 4× mais *candidatos* ao mesmo orçamento.
-2. **A dispersão do retorno por trade muda com a grade.** É a dispersão que o
-   modelo explora ao selecionar; sem ela, ordenar não adianta.
+E ignora que o custo por trade **muda com a grade**. Como
+`notional = equity × risk_per_trade / stop_pct`, uma grade com stop maior
+opera nocional menor para o mesmo risco — e paga menos fee por trade.
 
-### §12.2 O achado que força a decisão: R1 viola a restrição R3
+### §12.2 O teto R1, recalculado por ativo
 
-`target_signal_rate = 0,0189` é uma **fração de barras**, `provenance: DERIVED`
-de `fee_budget_monthly`. A derivação original é da grade de relógio de 15m:
-`2880 barras/mês × 0,0189 = 54,4` — exatamente os "~55 trades/mês" que o
-`CLAUDE.md` cita. O valor foi aplicado literalmente às três grades dollar-bar,
-que têm contagens de barras completamente diferentes.
+O `CLAUDE.md` marca como `[DESATUALIZADO]` o teto de stop de 0,758%: é
+BTC-único, calculado a US$ 64.940 sob barra de relógio. `AG-190` registra que
+**nunca houve remediação**. Recalculei, com `step_size` real do snapshot de
+`exchangeInfo` e preço mediano medido por ativo:
 
-Orçamento medido: `fee_budget_monthly = 3,0%` do equity/mês ÷ custo
-round-trip de `0,0562%` = **53 trades/mês**.
+`stop_máx = (equity × risk_per_trade) / (2 × step_size × preço)`
 
-Com `target_signal_rate` fixo (medido sobre 2022-01-01..2026-08-07):
+| símbolo | `step_size` | preço mediano | `unit_notional` | **teto R1** | `stop_pct` R3 | |
+|---|---|---|---|---|---|---|
+| BTCUSDT | 0,001 | 76.558,70 | **76,56** | **0,643%** | 0,767% | **VIOLA** |
+| ETHUSDT | 0,001 | 2.768,28 | 2,77 | 17,78% | 0,922% | passa |
+| BNBUSDT | 0,01 | 628,64 | 6,29 | 7,83% | 0,750% | passa |
+| SOLUSDT | 0,01 | 145,92 | 1,46 | 33,73% | 1,262% | passa |
+| XRPUSDT | 0,1 | 1,41 | 0,14 | 348,3% | 1,010% | passa |
 
-| grade | barras/mês | trades/mês | % do orçamento |
-|---|---|---|---|
-| **R1** | 2.771–3.100 | 52,4–58,6 | **98% – 110%** |
-| R2 | 1.398–1.549 | 26,4–29,3 | 50% – 55% |
-| R3 | 697–770 | 13,2–14,5 | 25% – 27% |
+O `unit_notional` varia **542×** entre BTC e XRP — é `AG-165` com número. O
+teto de 0,758% do `CLAUDE.md` é o de BTC e é, de longe, o mais restritivo;
+aplicá-lo aos cinco ativos é exatamente o erro que `AG-190` descreve.
 
-**R1 estoura o orçamento de fees em 3 dos 5 ativos** (SOL 106%, BNB 105%,
-XRP 110%) — violação de uma restrição declarada inviolável. R2 e R3
-desperdiçam metade e três quartos da capacidade.
+**Consequência: `BTCUSDT/R3` é excluída** (stop 0,767% > teto 0,643%). Não é
+a grade que cai — é uma célula. R3 segue viável em 4 dos 5 ativos.
+
+Nota: o teto de BTC caiu de 0,758% para 0,643% porque o preço subiu de
+US$ 64.940 para US$ 76.559 — é o "teto de preço do BTC" do PRD visto pelo
+outro lado, e ele aperta conforme o preço sobe.
 
 ### §12.3 O retorno bruto por trade é idêntico nas 15 células
 
-Medido sobre `ret_net` dos labels de produção, excluindo NOFILL:
+`ret_net` dos labels de produção, excluindo NOFILL (3,04M trades):
 
-| grade | média por trade | desvio | n_fill (5 ativos) |
-|---|---|---|---|
-| R1 | −0,00063 a −0,00068 | 0,0047 – 0,0082 | 1.735.079 |
-| R2 | −0,00062 a −0,00066 | 0,0066 – 0,0115 | 870.345 |
-| R3 | −0,00062 a −0,00066 | 0,0093 – 0,0163 | 433.383 |
+| grade | média por trade | desvio |
+|---|---|---|
+| R1 | −0,00063 a −0,00068 | 0,0047 – 0,0082 |
+| R2 | −0,00062 a −0,00066 | 0,0066 – 0,0115 |
+| R3 | −0,00062 a −0,00066 | 0,0093 – 0,0163 |
 
-**A média é praticamente a mesma em todas as 15 células** (~−0,063% por
-trade). A grade não muda o retorno bruto. O que muda é o **desvio**: R3 tem
-o dobro de R1.
+**A média é a mesma em todas as 15.** A grade não muda o retorno bruto —
+muda o **desvio**, que dobra de R1 para R3. Como a média é comum, a única
+alavanca é a dispersão que o modelo pode explorar ao ordenar.
 
-Isso reformula a pergunta. Como o orçamento fixa `N = 53` trades/mês e a média
-é comum, o retorno mensal é `N · E[r | selecionado]`, e a única alavanca é
-quanta dispersão existe para o modelo explorar.
+### §12.4 Capacidade contra demanda
 
-### §12.4 A conta
+Orçamento **compartilhado** pelos 5 ativos (mesmo equity de USD 196,85):
+`3,0% × 196,85 = USD 5,9055/mês`. Custo por trade
+`= (equity × risk / stop_pct) × 5,5173 bps`, portanto menor onde o stop é
+maior. Demanda = taxa de sinal **medida** (`n_trades/n_eval_long`,
+`experiments/alpha_deep_analysis_2026-08-24.json`), não a nominal.
 
-Com seleção da fração `q = N/barras_mês` de maior score, e `ρ` = correlação
-entre score e retorno:
+| grade | ativos | custo/trade | **capacidade** | **demanda** | veredito |
+|---|---|---|---|---|---|
+| R1 | 5 | $0,1230 | 48,0 | 314,4 | **estoura 6,55×** |
+| R2 | 5 | $0,0858 | 68,8 | 153,2 | **estoura 2,23×** |
+| **R3** | 4 | $0,0570 | **103,6** | **65,1** | **cabe, 37% de folga** |
+
+**R3 é a única grade que satisfaz a restrição R3 do projeto.** E o eixo não é
+novo: o PRD já registrava *"R3 volta a ser objeção ativa, não satisfeita"* na
+grade de relógio, sem nunca ter sido reaberto por resolução.
+
+### §12.5 A conta de habilidade exigida
+
+Com seleção da fração `q = (capacidade/n_ativos)/barras_mês` de maior score:
 
 ```
-E[r | top q] ≈ μ + σ · ρ · λ(q),     λ(q) = φ(Φ⁻¹(1−q)) / q
+E[r | top q] ≈ μ + σ · ρ · λ(q),   λ(q) = φ(Φ⁻¹(1−q))/q
 ρ_mínimo = −μ / (σ · λ(q))
 ```
 
-| grade | `q` sob orçamento | `σ` | `λ(q)` | `σ·λ` | **`ρ` mínimo** |
+| grade | `q` | `σ` | `λ(q)` | **`ρ` mínimo** | ret/mês (ρ=0,05) |
 |---|---|---|---|---|---|
-| R1 | 1,81% | 0,00607 | 2,458 | 0,01492 | **0,0422** |
-| R2 | 3,60% | 0,00851 | 2,196 | 0,01869 | **0,0337** |
-| R3 | 7,24% | 0,01202 | 1,903 | 0,02288 | **0,0275** |
+| R1 | 0,333% | 0,00607 | 3,018 | 0,0344 | +1,37% |
+| R2 | 0,956% | 0,00851 | 2,680 | 0,0276 | +3,51% |
+| **R3** | 3,596% | 0,01202 | 2,197 | **0,0239** | **+7,15%** |
 
-R3 é **menos seletivo** (λ menor, porque `q` é 4× maior) e ainda assim exige
-**35% menos habilidade** que R1, porque `σ` dobra e mais que compensa.
+R3 é **menos seletivo** e ainda assim exige **31% menos habilidade** — σ dobra
+e mais que compensa o λ menor.
 
-**Validação sem supor normalidade.** A fórmula acima assume normalidade
-bivariada, e retornos de triple barrier são bimodais (TP/SL). Medido
-diretamente, ordenando por um score de correlação `ρ` controlada sobre os
-retornos reais (20 repetições, média dos 5 ativos):
+**Validado sem supor normalidade** (retorno de triple barrier é bimodal),
+ordenando por score de `ρ` controlada sobre os retornos reais, 20 repetições:
 
-| grade | `q` | ρ=0,02 | ρ=0,05 | ρ=0,10 | oracle |
-|---|---|---|---|---|---|
-| R1 | 1,81% | −0,00034 | **+0,00009** | +0,00084 | +0,01387 |
-| R2 | 3,60% | −0,00028 | +0,00030 | +0,00123 | +0,01637 |
-| R3 | 7,24% | −0,00016 | **+0,00048** | +0,00165 | +0,01937 |
+| grade | ρ=0,02 | ρ=0,05 | ρ=0,10 | oracle |
+|---|---|---|---|---|
+| R1 | −0,00034 | +0,00009 | +0,00084 | +0,01387 |
+| R2 | −0,00028 | +0,00030 | +0,00123 | +0,01637 |
+| R3 | −0,00016 | +0,00048 | +0,00165 | +0,01937 |
 
-A medição empírica confirma a analítica: R1 mal empata com `ρ = 0,05`, R3
-entrega 5× mais no mesmo `ρ`. R3 domina em **todos** os níveis de habilidade,
-e tem 40% mais teto no oracle.
+A medição confirma a analítica: R3 domina em todos os níveis de habilidade e
+tem 40% mais teto no oracle.
 
-### §12.5 Decisão
+### §12.6 Decisão
 
-| grade | ret/mês (ρ=0,05) | ret/mês (ρ=0,10) | teto oracle | `ρ` mínimo | n treino |
-|---|---|---|---|---|---|
-| R1 | +0,48% | +4,45% | +73,5% | 0,0422 | 809.035 |
-| R2 | +1,59% | +6,52% | +86,8% | 0,0337 | 405.878 |
-| **R3** | **+2,54%** | **+8,74%** | **+102,7%** | **0,0275** | 202.041 |
+**PROMOVO R3 À GRADE DE PRODUÇÃO, em 4 ativos — ETH, BNB, SOL, XRP.
+`BTCUSDT/R3` fica excluída por violar o teto R1.**
 
-**PROMOVO R3 À GRADE DE PRODUÇÃO**, com três condições que fazem parte da
-decisão e não são notas de rodapé:
+Quatro condições, que são parte da decisão:
 
-1. **`target_signal_rate` deixa de ser global.** Ele é fração de barras e
-   precisa ser resolvido por grade a partir do orçamento:
-   `q_g = N_orçamento / barras_mês(g)`. Sob R3, `q = 7,24%`, não 1,89%. Manter
-   1,89% em R3 usaria um quarto da capacidade — jogar fora três quartos do
-   motor. Esta é a mesma assimetria de `AG-249`, agora com número.
-2. **A decisão é condicional a `ρ > 0,0275`.** Nada medido até hoje mostra que
-   o modelo tem esse `ρ` — `AG-244`/`ADR-003` sugerem o contrário. R3 ser a
-   melhor grade **não significa que o motor seja positivo em R3**; significa
-   que, se houver habilidade, é onde ela rende mais, e é o alvo mais baixo a
-   vencer.
-3. **O custo é amostra de treino.** R3 tem 202k barras contra 809k de R1 —
-   um quarto. Isso corta contra, e é o argumento honesto do outro lado: menos
-   dado para estimar o `ρ` de que a decisão depende. A mitigação natural é
-   treino pooled entre ativos em R3 (202k somadas), que hoje não existe — o
-   motor treina 15 modelos isolados.
+1. **`target_signal_rate` deixa de ser global.** É fração de barras, derivada
+   para a grade de 15m (`2880 × 0,0189 = 54,4`, os "~55 trades/mês" do PRD) e
+   aplicada literalmente a três grades com contagens diferentes. Precisa ser
+   resolvido por grade a partir da capacidade:
+   `q_g = (capacidade/n_ativos)/barras_mês`.
+2. **Condicional a `ρ > 0,0239`.** Nada medido mostra que o modelo tem esse
+   `ρ`; `AG-244`/`ADR-003` sugerem o contrário — **nenhuma das 15 células tem
+   `ret_net` positivo hoje**. R3 ser a melhor grade não significa que o motor
+   seja positivo nela; significa que é o alvo mais baixo a vencer.
+3. **`BTCUSDT` sai de R3.** E o teto aperta conforme o preço sobe — precisa de
+   reavaliação periódica, não uma vez.
+4. **O custo é amostra e é heterogeneidade.** R3 tem ~40k barras por ativo
+   contra ~163k de R1. E `AG-238` mede I² caindo de 83/61 (R1) para 66/67
+   (R3): os ativos ficam **mais parecidos** em R3, o que enfraquece o
+   argumento de escopo multi-ativo justamente na grade escolhida.
 
-**Contra `AG-260`, explicitamente:** aquela medição continua correta no que
-mede. Ela ordena grades por lift exigido em `P(TP)` **sob número de trades
-livre**; esta ordena por habilidade exigida **sob orçamento de trades fixo**.
-A segunda é a pergunta certa para produção, porque o orçamento de fees é uma
-restrição inviolável do projeto e não um parâmetro. `AG-260` deve ser lido como
-"sob geometria fixa e sem restrição de capacidade" — e essa condição nunca vale
-em produção.
+### §12.7 As objeções, e por que decido assim mesmo
 
-### §12.6 O que falta medir, e não impede a decisão
+**"Os três eixos são o mesmo fato contado três vezes."** Correto. Fees,
+nocional agregado (R5) e `ret_net` real derivam todos de *menos trades ×
+nocional menor*. Por trade, R3 é igual ou **pior**: `pnl/n_trades` em BTC é
+−0,00124 (R1) contra −0,00316 (R3). R3 não tem mais edge — **gasta menos**.
+Num motor com `ret_net` negativo em 15/15, "gasta menos" é indistinguível de
+"opera menos", e o limite dessa lógica é operar zero.
 
-- **Capacidade de mercado** (profundidade de book, impacto): NÃO EXISTE
-  medição no repo. Sob R$ 1.000 de capital é provavelmente irrelevante, mas
-  é insumo faltante declarado.
-- **`ρ` real do modelo por grade.** É a quantidade de que a decisão depende, e
-  é mensurável com os artefatos existentes: correlação de Spearman entre a
-  probabilidade OOF do Alpha e `ret_net`, por célula. Deveria ser o primeiro
-  número do próximo ciclo.
-- **`fee_budget_monthly = 3,0%` é `ASSUMED`**, "sem base; inventado", classe A
-  com `sweep_range: [0.015, 0.045]`. Todo o `N = 53` deriva dele. Um sweep de
-  ±50% move `N` entre 27 e 80 trades/mês — e move `q_g`, e portanto `ρ_mínimo`,
-  em todas as grades. A **ordenação** entre grades é robusta a isso (σ não
-  muda), o **nível** não é.
+O que sustenta a decisão apesar disso: a escolha de grade não é sobre o motor
+atual, que é negativo em qualquer grade. É sobre **onde colocar a aposta se o
+modelo vier a ter habilidade**. E aí `σ` é o que decide, porque `μ` é comum.
+R3 converte qualquer `ρ` em ~5× mais retorno que R1.
+
+**`AG-260` conclui o oposto, e é o único eixo distinguível.** Ele mede lift em
+`P(TP)` **sob número de trades livre**; esta seção mede habilidade exigida
+**sob orçamento fixo**. A segunda é a pergunta de produção, porque o orçamento
+de fees é restrição inviolável e não parâmetro. Mas registro que, no eixo
+dele, R3 perde com ~5σ — e que ele é o único com significância estatística
+declarada.
+
+**`fee_budget_monthly = 0,03` é `ASSUMED`**, "sem base; inventado", classe A,
+`sweep_range: [0,015; 0,045]`. Toda a capacidade deriva dele. Um sweep de ±50%
+move a capacidade de R3 entre ~52 e ~155 trades/mês. A **ordenação** entre
+grades é robusta (σ não muda com o orçamento); o **nível** não é.
+
+**Dois erros meus na v1 desta seção**, ambos corrigidos acima: tratei o custo
+por trade como fixo entre grades (é função de `stop_pct`), e multipliquei o
+orçamento por 5 em vez de compartilhá-lo entre os ativos. O primeiro
+subestimava a vantagem de R3; o segundo inflava a capacidade de todas em 5×.
+A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
+
+### §12.8 O que falta, e não impede a decisão
+
+- **Gate 0 nunca foi executado e persistido.** `src/analysis/feasibility.py`
+  tem `trades_per_year_budget` e `breakeven_win_rate` e **não tem
+  `__main__`** — a aritmética de §12.4 existe em código e nunca virou
+  artefato. É o item de maior retorno: transforma esta seção em algo
+  reproduzível.
+- **O S1 filtra só o piso R2, nunca o teto R1.** Por isso R3 aparece com 7
+  células viáveis e R1 com 5 — a comparação entre grades foi feita sobre
+  conjuntos filtrados por critérios diferentes.
+- **`step_size`/`min_notional` em `constants.yaml` são escalares BTC-únicos.**
+  O dado por ativo já está no snapshot de `exchangeInfo`; a constante não o
+  usa. `min_notional: 50,0` nem bate com o snapshot de BTC (20).
+- **`ρ` real do modelo por célula** — a quantidade de que a decisão depende.
+  Mensurável hoje: Spearman entre a probabilidade OOF do Alpha e `ret_net`.
+- **Capacidade de mercado**: NÃO EXISTE medição. Com nocional de $78–$268,
+  provavelmente irrelevante — mas é inferência, não medição.
+
+---
+
+## §13. COMO O LIGHTGBM EXERCE A ESTRUTURA — engenharia de ML
+
+**Diretriz do Manager (2026-08-26):** *"como o LightGBM e seus arquivos .py vão
+calcular e exercer a aplicação da nova estrutura de features para cada ativo e
+time frame? Talvez metade dos problemas do desempenho das features estejam
+nesse ponto."*
+
+A suspeita estava certa. Auditoria independente do pipeline de treino, com os
+achados centrais **reverificados por execução** antes de entrarem aqui. Os três
+primeiros são defeitos de contrato, não de ajuste — nenhum deles é sobre
+escolher hiperparâmetro melhor.
+
+### §13.1 O gate de purge é dimensionado para 7 features; o treino usa 69
+
+`src/models/pipeline.py:559` chama:
+
+```python
+max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
+    tf_effective, resolution_id=resolution_id      # <- sem feature_ids
+)
+```
+
+O parâmetro `feature_ids` cai no default `T1_FEATURE_IDS` (7), embora
+`feature_ids_effective` já esteja calculado 16 linhas acima. **Verificado por
+execução:**
+
+```
+purge dimensionado hoje (default T1, 7 features) : 1.020.378.446 ms = 11,8 dias
+com o vetor real de produção (69, AG-207 aditivo): ExpandingFeatureLookbackError
+   ofensoras: C09_range_pctile_expanding, C10_vol_expansion_flag,
+              C11_vol_compression_flag, E15f_toptrader_ls_z,
+              E17f_retail_vs_top_spread
+```
+
+O gate **existe, funciona e falharia alto** — e nunca é chamado com o conjunto
+real. É precisamente a "opção A" que `AG-032` item 8 registra como escolha do
+Manager (*"a feature listada precisa ser removida do conjunto ativo OU o CPCV
+precisa rodar CONSCIENTEMENTE sem proteção de purge pra ela"*), desligada por
+omissão de um argumento.
+
+Agravante: `max_feature_window_bars` lê apenas os 10 campos de
+`_WINDOW_FIELD_NAMES`, que cobrem só janelas T1. `C08_vol_pctile_rolling_1y`
+(17.520 barras), `E03f_funding_cum_3d` (288) e `B10_stoch_k_14` não estão lá —
+então a guarda de staleness também não dispara.
+
+**O mecanismo de degradação:** o purge protege ~96 barras de alcance enquanto a
+feature de maior lookback finito do conjunto ativo alcança 17.520 — **182× a
+mais**. Uma linha de treino logo após a fronteira do bloco de teste carrega,
+dentro de `C08`/`C09`/`C10`/`C11`, estatística acumulada sobre o território de
+teste inteiro. Não é vazamento de rótulo (B09 cobre isso via `t1`) — é
+**vazamento de janela de feature**, e não há banned pattern que o nomeie.
+
+Os outros dois call sites herdam o defeito: `src/validation/leakage.py:798` (a
+suíte de vazamento reporta PASS contra uma proteção que não é a do treino) e
+`src/validation/noise_floor_diagnostics.py:86`, usada por **toda** a campanha
+`ADR-003`. Isso torna os Estágios 0–3 e o
+`config/alpha_hyperparams_by_combo.yaml` não interpretáveis.
+
+### §13.2 O filtro de warmup não filtra: `is_not_null()` deixa NaN passar
+
+`src/models/dataset.py:497-503` (`side_subset`, o lado de **treino**) tem
+`T1_FEATURE_IDS` hardcoded — sem parâmetro `feature_ids` — e filtra com
+`is_not_null()`. **Verificado por execução:**
+
+```
+Polars: is_not_null() sobre [1.0, NaN, None, 3.0] -> [True, True, False, True]
+NaN passa pelo filtro: True
+```
+
+E o efeito no dado real (BTCUSDT/R1, 16.696 barras):
+
+```
+D07f_taker_imbalance_1m_agg : 16.696 NaN de 16.696 -- ZERO valores finitos
+colunas com algum NaN       : 69 de 69
+colunas 100% mortas         : ['D07f_taker_imbalance_1m_agg']
+```
+
+`D07f` é 100% morta sob dollar bar por construção — `build.py:1038` só carrega
+`klines_1m` quando `bar_source == "time_15m"`. Ela atravessa o pipeline inteiro
+e chega ao relatório como `{"constraint": 0, "mean_ic": null,
+"n_consistent": 0}`: uma coluna inexistente ocupando 1/69 do vetor, sem erro,
+warning ou gate. Se o filtro fosse `is_not_null() & is_not_nan()`, o conjunto
+de teste seria **vazio** e o defeito teria falhado alto na primeira execução.
+Passou porque a guarda não guarda.
+
+**Assimetria treino/teste, e ela é a parte que degrada o modelo:**
+`_unique_test_bars` (`alpha.py:977`) **recebe** `feature_ids` e filtra por
+todas; `side_subset` não. As duas populações diferem sistematicamente no
+prefixo temporal de cada símbolo. LightGBM aprende uma *default direction* para
+o missing de `C08`/`C09`/`E15f` que é, na prática, um indicador de "início da
+série" — regime de 2020-2021 — e essa direção **nunca é exercida no teste**,
+porque lá aquelas linhas foram removidas. Ganho in-fold inflado por um split
+que é marcador de calendário, com zero transferência OOS.
+
+### §13.3 A regularização é dimensionada em linhas, não em observações independentes
+
+`ESS = Σ uniqueness` está medido e persistido (`AG-211`) e **nunca é consumido
+por nenhuma decisão**:
+
+| célula | linhas | **ESS** | ESS/linhas |
+|---|---|---|---|
+| BTCUSDT/R1 | 446.223 | 47.549 | 0,3645 |
+| BNBUSDT/R2 | 164.219 | 19.085 | 0,3896 |
+| ETHUSDT/R3 | 79.969 | 9.202 | 0,3896 |
+
+Razão R1/R3 = **5,17×** — e o mesmo `n_estimators=300`, `learning_rate=0,03`,
+`num_leaves=8`, `min_child_samples=20` e `max_bin=255` atende as duas.
+
+`min_child_samples` conta **linhas**. Com `ESS/linhas = 0,3645`, uma folha
+mínima de 20 linhas tem **≈7,3 observações independentes**. O erro-padrão de
+`p` nessa folha é `√(0,45·0,55/7,3) ≈ 0,184` — **±18,4 pontos percentuais**,
+contra um lift-alvo de ~5pp. **Cada folha mínima do default de produção é
+ruído com amplitude 3,7× o sinal procurado.** Foi isso que a campanha do
+`ADR-003` descobriu por força bruta ao eleger `min_child_samples = 2000` em 7
+de 10 combos.
+
+E `min_sum_hessian_in_leaf = 0,001` é **estruturalmente inerte**: sob
+`objective="binary"`, a hessiana por amostra é `p(1−p)·w`; com `p = 0,4505` e
+`w̄ ≈ 1,12`, o piso que `min_child_samples` já impõe é `≈5,5` (mcs=20) ou
+`≈555` (mcs=2000). O valor configurado está 3 a 5 ordens de grandeza abaixo do
+ponto de mordida — e o `sweep_range` declarado termina em 5,0. Evidência
+independente: no Estágio 1 do `ADR-003`, os três valores varridos
+(0,1 / 1,0 / 5,0) devolvem `pooled_sharpe = −3,2502095193836498`
+**bit-idêntico** entre si e à âncora. **30 trials foram cobrados de
+`N_lifetime` para responder uma pergunta que a álgebra já respondia.**
+
+### §13.4 As restrições monotônicas são impostas sem piso de magnitude
+
+`monotonic.py::_assign_from_ic` decide o sinal por `mean_ic > 0` e impõe a
+restrição sempre que `n_consistent >= 6`. **Não há teste sobre `|mean_ic|`.**
+No artefato real: `A08_upper_wick_ratio` recebe `+1` com `mean_ic = 0,00726`;
+`E05f_time_to_funding_h` recebe `+1` com `0,00780`. Com `ESS = 47.549`, o
+erro-padrão de um IC é `≈0,0046` — restrições saindo a **~1,6σ**.
+
+Os 6 "ambientes" não são réplicas independentes: `environments.py` particiona
+**a mesma série** por tercil de custo × regime. Sob IC nulo e independência
+ideal, `P(6/6) = 3,1%`; com 62 features × 2 lados são **~4 restrições espúrias
+esperadas** antes de contar a correlação entre ambientes.
+
+E a restrição é **dura**: se o sinal estiver errado ela não degrada
+suavemente — proíbe a forma correta. Com `num_leaves = 2..3` (o que a campanha
+elegeu), uma restrição invertida numa feature de gain alto é ~1/3 do modelo.
+
+Somado: `AG-213` já documenta que o IC é medido contra `ret_net` e a restrição
+é aplicada sobre `P(TP)`, com 3 discordâncias em 7 features T1 — e
+`fit_side_model:769` usa a constraint derivada de `ret_net` **sem consultar**
+`screen_target_agreement`. O diagnóstico existe, é reportado, e não bloqueia
+nada.
+
+### §13.5 O desenho novo
+
+Cinco mudanças de contrato. Nenhuma é escolha de hiperparâmetro.
+
+**(1) O vetor é resolvido uma vez e atravessa o pipeline inteiro.**
+`feature_ids_effective` passa a ser argumento obrigatório de
+`compute_max_feature_lookback_ms`, `side_subset`, `_unique_test_bars`,
+`leakage.run_all_leakage_tests` e `noise_floor_diagnostics`. Nenhuma dessas
+funções mantém default de `T1_FEATURE_IDS` — o default é o que permitiu o
+defeito. Um teste trava que os cinco recebem o mesmo objeto.
+
+**(2) NaN é erro, não silêncio.** Na fronteira (`build.py:879`), NaN vira null
+(`nan_to_null=True`), e o filtro passa a ser `is_not_null()` de verdade. Toda
+coluna 100% nula em qualquer célula levanta `ValueError` nomeando a coluna e a
+célula — `D07f` sob dollar bar deve **falhar o build**, não chegar ao
+relatório. O censo de nulos por coluna × célula é persistido como artefato:
+com 69 de 69 colunas contendo NaN, isso é informação de primeira ordem sobre a
+amostra efetiva e hoje não existe em lugar nenhum.
+
+**(3) A regularização escala com `ESS`, não com linhas.** Por célula:
+
+```
+min_child_samples(célula) = ceil(n_obs_independentes_alvo / (ESS/linhas))
+min_sum_hessian_in_leaf(célula) = min_child_samples × w̄ × p(1−p)
+```
+
+com `n_obs_independentes_alvo` declarado a priori (o número que decide o
+erro-padrão aceitável por folha) e `w̄`, `p` medidos in-fold. Isso substitui
+dois `ASSUMED` por uma derivação — e é o que o próprio `source` de
+`constants.yaml` já pede, com `TBD` explícito porque `w̄` "ainda não foi
+medido". `early_stopping` sobre o sub-split de calibração — que já existe, já é
+purgável e já não é o `fit` — resolve `n_estimators` por célula sem gastar
+trial.
+
+**(4) Constraint monotônica exige magnitude, não só sinal.** Piso
+`|mean_ic| ≥ k · SE(ESS)` com `k` declarado a priori; `screen_target_agreement`
+vira **bloqueio**, não relatório — discordância entre o alvo do IC (`ret_net`)
+e o alvo do modelo (`P(TP)`) zera a constraint em vez de impô-la. E
+`_ECONOMIC_FORCED_CONSTRAINT` falha alto quando a feature referenciada por
+string não está no vetor, em vez de virar no-op.
+
+**(5) A célula é a unidade de configuração, e ela declara o que usou.** O
+manifesto de cada modelo passa a conter `feature_ids`, `ESS`, `min_child_
+samples` derivado, `purge_ms` efetivo e o hash do conjunto — e a carga verifica
+`manifest.feature_ids == booster.feature_name()`. Hoje
+`alpha_hyperparams_by_combo.yaml` declara `feature_ids_ref: SUPPORT_FEATURE_IDS`
+("substitui T1, nunca soma"), premissa que o Manager **retificou** em
+`AG-223-ADDENDUM` — os hiperparâmetros foram medidos sob um vetor que não é o
+de produção, e sobre labels pré-`AG-229`. `load_hyperparams_by_combo` não
+verifica nem um nem outro.
+
+### §13.6 Interação com §12 — por que isto muda a decisão de grade
+
+`§12` decidiu R3 sob um `ρ` hipotético. `§13.3` mostra que o `ρ` **realizável**
+depende da célula: com `ESS = 9.202` em ETHUSDT/R3 e `min_child_samples = 20`,
+as folhas têm ~7,8 observações independentes sobre um total de 9.202 — o modelo
+não consegue estimar nada com granularidade útil. R3 tem a melhor economia por
+trade **e** a pior amostra; sem a correção (3), a vantagem econômica de R3 é
+consumida pela variância de estimação.
+
+Isso não inverte a decisão de grade — reforça que ela é **condicional à
+correção do pipeline**. Promover R3 com `min_child_samples = 20` seria escolher
+a grade certa e destruí-la na configuração.
+
+### §13.7 Ordem de implementação
+
+1. **`feature_ids` obrigatório nos 5 call sites** (§13.5-1). Vai fazer o gate
+   falhar alto com as 5 features expanding — comportamento correto, e força a
+   decisão do Manager sobre elas.
+2. **NaN → null na fronteira + falha alta em coluna morta** (§13.5-2). Fecha
+   `D07f` e a assimetria treino/teste.
+3. **Censo de nulos por coluna × célula**, persistido. Barato, e é o insumo de 3.
+4. **Regularização derivada de `ESS`** (§13.5-3), com `w̄` medido — fecha o
+   `TBD` que `constants.yaml` declara.
+5. **`early_stopping` sobre o split de calibração.**
+6. **Piso de magnitude nas constraints** (§13.5-4).
+7. **Manifesto completo por célula** (§13.5-5).
+
+Os itens 1 e 2 são pré-requisito de tudo: enquanto o purge for dimensionado
+para 7 features e o filtro deixar NaN passar, **nenhuma medição do Alpha é
+interpretável** — inclusive as que sustentam `AG-244`, `ADR-003` e o `ρ` de
+que §12 depende.
+
+### §13.8 O que isto responde à pergunta do Manager
+
+*"Talvez metade dos problemas do desempenho das features estejam nesse ponto."*
+
+Não dá para quantificar "metade" sem rodar as correções. O que dá para afirmar,
+verificado: **as três medições que o projeto usa para julgar features —
+`AG-244` (lift do gate), `ADR-003` (campanha de hiperparâmetro) e os
+diagnósticos de `gain` — foram todas produzidas sob um purge dimensionado para
+um décimo do vetor, com uma coluna 100% morta dentro dele e com populações de
+treino e teste filtradas por critérios diferentes.** Nenhuma delas é evidência
+sobre as features enquanto isso não for corrigido.
