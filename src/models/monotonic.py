@@ -146,8 +146,33 @@ def compute_ic_by_env(
     return out
 
 
+def se_spearman_fisher(ess: float) -> float:
+    """ADR-005 §13.14.2 (item 6 de §13.17) -- erro-padrão assintótico de
+    Spearman via aproximação de Fisher, `SE(ρ) ≈ 1/sqrt(ESS − 3)`
+    (padrão de livro-texto para o `z`-transform de uma correlação;
+    mesma família de aproximação que `§13.16.3` já usa para `SE(p)` de
+    uma proporção). `ESS` é `Σ uniqueness` do treino (AG-211, B24 --
+    soma MEDIDA, não uma das fórmulas fechadas que B24 proíbe), não a
+    contagem bruta de linhas.
+
+    Levanta `ValueError` para `ESS <= 3` -- a aproximação é indefinida
+    ali (raiz de número não-positivo), e devolver `inf`/`nan` em
+    silêncio deixaria o piso de magnitude sempre passar ou sempre
+    falhar sem que ninguém percebesse a causa."""
+    if ess <= 3.0:  # noqa: magic-number -- limite matemático da aproximação (n-3), não constante de domínio
+        raise ValueError(
+            f"se_spearman_fisher: ess={ess} <= 3 -- aproximação de Fisher indefinida "
+            "(1/sqrt(ess-3) exige ess > 3)"
+        )
+    return float(1.0 / math.sqrt(ess - 3.0))  # noqa: magic-number -- idem
+
+
 def _assign_from_ic(
-    ic_by_env: dict[str, float], *, min_consistent_envs: int
+    ic_by_env: dict[str, float],
+    *,
+    min_consistent_envs: int,
+    ic_magnitude_floor_k: float | None = None,
+    ess: float | None = None,
 ) -> tuple[int, float, int, int]:
     valid = {e: v for e, v in ic_by_env.items() if not math.isnan(v)}
     n_envs_with_data = len(valid)
@@ -161,6 +186,23 @@ def _assign_from_ic(
 
     n_consistent = sum(1 for v in valid.values() if (v > 0) == (dominant > 0))
     constraint = dominant if n_consistent >= min_consistent_envs else 0
+
+    # ADR-005 §13.14.2 (item 6) -- piso de magnitude, ADICIONAL ao teste
+    # de sinal+consistência acima, nunca no lugar dele: uma feature só
+    # ganha restrição se as DUAS condições seguram. `ess is None` quando
+    # `ic_magnitude_floor_k is None` (opt-in não pedido) -- núcleo puro,
+    # a validação "pediu o piso sem ESS" é responsabilidade do CALLER
+    # (`fit_side_model`), que é quem sabe se `uniqueness` existe.
+    if constraint != 0 and ic_magnitude_floor_k is not None:
+        if ess is None:
+            raise ValueError(
+                "_assign_from_ic: ic_magnitude_floor_k setado exige ess (Σ uniqueness) -- "
+                "responsabilidade do caller (fit_side_model) resolver antes de chamar aqui"
+            )
+        se = se_spearman_fisher(ess)
+        if abs(mean_ic) < ic_magnitude_floor_k * se:
+            constraint = 0
+
     return constraint, mean_ic, n_consistent, n_envs_with_data
 
 
@@ -172,6 +214,8 @@ def screen_monotone_constraints(
     target_col: str = "ret_net",
     min_consistent_envs: int | None = None,
     unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+    ic_magnitude_floor_k: float | None = None,
+    ess: float | None = None,
 ) -> dict[str, FeatureICResult]:
     """Núcleo da Camada 1 para UM lado, UM fold: `df_train_side` é o
     subconjunto de TREINO já filtrado por `src.models.dataset.side_subset`
@@ -187,7 +231,17 @@ def screen_monotone_constraints(
     transparência, mesmo quando não decide a restrição).
 
     `unforce_features_by_side` — ver docstring de `_forced_constraint_for`;
-    default `None` preserva o comportamento de produção exatamente."""
+    default `None` preserva o comportamento de produção exatamente.
+
+    `ic_magnitude_floor_k`/`ess` (ADR-005 §13.14.2, item 6 de §13.17) --
+    default `None` preserva o teste de sinal+consistência puro, bit-exato.
+    Quando `ic_magnitude_floor_k` é setado, uma feature só mantém a
+    restrição se ALÉM de consistente, `|mean_ic| >= k * SE(ess)`
+    (`se_spearman_fisher`) -- `ess` vira obrigatório nesse caso (falha
+    alto em `_assign_from_ic` se vier `None`). Restrições FORÇADAS por
+    identidade contábil (`_forced_constraint_for`) nunca passam por este
+    piso -- não passam pelo teste estatístico de jeito nenhum, forçado é
+    forçado."""
     if side not in (1, -1):
         raise ValueError(f"screen_monotone_constraints: side deve ser 1 ou -1, recebido {side}")
     if min_consistent_envs is None:
@@ -203,7 +257,10 @@ def screen_monotone_constraints(
         )
         forced = forced_constraint is not None
         constraint, mean_ic, n_consistent, n_with_data = _assign_from_ic(
-            ic_by_env, min_consistent_envs=min_consistent_envs
+            ic_by_env,
+            min_consistent_envs=min_consistent_envs,
+            ic_magnitude_floor_k=ic_magnitude_floor_k,
+            ess=ess,
         )
         if forced_constraint is not None:
             constraint = forced_constraint

@@ -266,3 +266,95 @@ def test_min_obs_por_ambiente_insuficiente_vira_nan() -> None:
     )
     ic = monotonic.compute_ic_by_env(tiny, "feat", "ret_net")
     assert np.isnan(ic[ENVIRONMENTS[0]])
+
+
+# ============================================================================
+# se_spearman_fisher / piso de magnitude (ic_magnitude_floor_k) --
+# ADR-005 §13.14.2, item 6 de §13.17
+# ============================================================================
+
+
+def test_se_spearman_fisher_formula_fechada() -> None:
+    # SE = 1/sqrt(ess-3) -- valor calculado à mão, não só reproduzido.
+    assert monotonic.se_spearman_fisher(103.0) == pytest.approx(0.1, abs=1e-9)  # noqa: magic-number
+
+
+def test_se_spearman_fisher_ess_pequeno_leva_a_value_error() -> None:
+    with pytest.raises(ValueError, match="ess"):
+        monotonic.se_spearman_fisher(3.0)  # noqa: magic-number
+    with pytest.raises(ValueError, match="ess"):
+        monotonic.se_spearman_fisher(1.0)
+
+
+def test_assign_from_ic_sem_floor_preserva_comportamento_legado() -> None:
+    """`ic_magnitude_floor_k=None` (default) -- comportamento idêntico a
+    antes do parâmetro existir, mesmo com `ess` minúsculo (que faria o
+    piso zerar tudo se estivesse ativo)."""
+    df = _synthetic_df(feature_sign=1, n_envs_consistent=6)  # noqa: magic-number
+    ic = monotonic.compute_ic_by_env(df, "feat", "ret_net")
+    constraint, _mean_ic, _n_consistent, _n = monotonic._assign_from_ic(
+        ic, min_consistent_envs=6, ic_magnitude_floor_k=None, ess=4.0  # noqa: magic-number
+    )
+    assert constraint == 1
+
+
+def test_assign_from_ic_floor_zera_constraint_consistente_mas_fraco() -> None:
+    """Sinal fraco (ret_net quase todo ruído, IC baixo) mas ainda
+    consistente nos 6 ambientes -- passa no teste de sinal+consistência,
+    mas `ess` baixo (SE grande) faz o piso de magnitude zerar."""
+    rng = np.random.default_rng(3)  # noqa: magic-number
+    rows: list[pl.DataFrame] = []
+    for env in ENVIRONMENTS:
+        x = rng.normal(size=200)  # noqa: magic-number
+        y = 0.001 * x + rng.normal(scale=1.0, size=200)  # noqa: magic-number -- IC fraco de propósito
+        rows.append(pl.DataFrame({"env": [env] * 200, "feat": x, "ret_net": y}))  # noqa: magic-number
+    df = pl.concat(rows, how="vertical")
+    ic = monotonic.compute_ic_by_env(df, "feat", "ret_net")
+
+    sem_floor, mean_ic, n_consistent, _n = monotonic._assign_from_ic(ic, min_consistent_envs=1)
+    assert n_consistent >= 1  # ao menos consistente o bastante pra passar sem piso
+    assert sem_floor != 0  # confirma que É a consistência que passa, sozinha
+
+    com_floor, _mean_ic2, _n_consistent2, _n2 = monotonic._assign_from_ic(
+        ic, min_consistent_envs=1, ic_magnitude_floor_k=2.0, ess=4.0  # noqa: magic-number
+    )
+    assert abs(mean_ic) < 2.0 * monotonic.se_spearman_fisher(4.0)  # noqa: magic-number -- confirma a premissa
+    assert com_floor == 0  # o piso, não a consistência, é quem derruba aqui
+
+
+def test_assign_from_ic_floor_nao_zera_sinal_forte_com_ess_grande() -> None:
+    df = _synthetic_df(feature_sign=1, n_envs_consistent=6)  # noqa: magic-number
+    ic = monotonic.compute_ic_by_env(df, "feat", "ret_net")
+    constraint, _mean_ic, _n, _nw = monotonic._assign_from_ic(
+        ic, min_consistent_envs=6, ic_magnitude_floor_k=2.0, ess=100_000.0  # noqa: magic-number
+    )
+    assert constraint == 1
+
+
+def test_assign_from_ic_floor_sem_ess_levanta_value_error() -> None:
+    df = _synthetic_df(feature_sign=1, n_envs_consistent=6)  # noqa: magic-number
+    ic = monotonic.compute_ic_by_env(df, "feat", "ret_net")
+    with pytest.raises(ValueError, match="ess"):
+        monotonic._assign_from_ic(ic, min_consistent_envs=6, ic_magnitude_floor_k=2.0, ess=None)  # noqa: magic-number
+
+
+def test_screen_monotone_constraints_floor_default_none_preserva_producao() -> None:
+    df = _synthetic_screen_df("B01_rsi_14", feature_sign=1, n_envs_consistent=6)  # noqa: magic-number
+    results = monotonic.screen_monotone_constraints(
+        df, ("B01_rsi_14",), side=1, min_consistent_envs=6  # noqa: magic-number
+    )
+    assert results["B01_rsi_14"].constraint == 1
+
+
+def test_screen_monotone_constraints_forcado_ignora_o_piso_de_magnitude() -> None:
+    """Restrição forçada por identidade contábil (`E27f_cost_atr_ratio`)
+    nunca passa pelo teste estatístico -- inclusive o piso novo. `ess`
+    minúsculo (zeraria qualquer constraint estatístico) não muda o -1
+    forçado."""
+    df = _synthetic_screen_df("E27f_cost_atr_ratio", n_envs_consistent=0)
+    results = monotonic.screen_monotone_constraints(
+        df, ("E27f_cost_atr_ratio",), side=1, min_consistent_envs=6,  # noqa: magic-number
+        ic_magnitude_floor_k=2.0, ess=4.0,  # noqa: magic-number
+    )
+    assert results["E27f_cost_atr_ratio"].constraint == -1
+    assert results["E27f_cost_atr_ratio"].forced_economic is True

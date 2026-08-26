@@ -6,12 +6,13 @@
 - **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 FOI revisada** (2ª rodada, 2026-08-26): 6 das 7 correções CONFIRMADAS por reconstrução independente; a 7ª (sincronia `§3`/`§5.2`/`§5.3`) só PARCIAL — 2 menções desatualizadas a mais achadas em `§2.1`/fim de `§2.2` (corrigidas). A 2ª rodada também achou que o defeito de `E02f`/`C07`/`D03f`/`E15f`/`E17f` citado em `§14.3` não era "sem diagnóstico" — é dívida já aberta do `AG-030` desde 2026-08-17, nunca conectada (corrigido em `§14.3`). Nenhum achado da classe do CRITICAL original desta vez.
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
-- **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Ordem de `§13.17` em execução — **itens 1, 2, 3, 3b, 4, 10 e 11b EXECUTADOS** (ver `§13.20`–`§13.22`); item 11 **parcialmente** (o GATE já pré-existia sem ter sido reconhecido como tal — `§13.22` — e o teto de capacidade por ranking de margem é código novo, opt-in, não promovido); itens 5, 6, 7, 8, 9 **bloqueados** atrás do retreino represado (decisão do Manager, 2026-08-26 — o vetor de 69 features pode cair quando a sessão paralela terminar a reprogramação).
+- **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Ordem de `§13.17` em execução — **itens 1, 2, 3, 3b, 4, 5, 6, 8, 9, 10 e 11b EXECUTADOS** (código escrito e testado; ver `§13.20`–`§13.23`); item 11 **parcialmente** (o GATE já pré-existia sem ter sido reconhecido como tal — `§13.22` — e o teto de capacidade por ranking de margem é código novo, opt-in, não promovido); item 7 **bloqueado** (decisão pendente do Manager: autorizar a reexecução). **Nenhum dos itens 5/6/8/9/11 foi promovido a default de produção** — todos opt-in, dormentes até decisão explícita. Retreino real segue represado (decisão do Manager, 2026-08-26); achado novo da varredura do dia: mesmo se reaberto, o vetor de 69 (hoje 68 — `AG-295` cortou uma) trava em `ExpandingFeatureLookbackError` antes de qualquer treino — 2 saídas nomeadas, decisão pendente (ver artefato "Pauta §13").
   - Item 1 (`feature_ids` obrigatório, 5 call sites): `AG-298`.
   - Item 2 (NaN→null na fronteira, coluna morta falha alto): `AG-300`.
   - Item 3 (censo de nulos por coluna × célula): `AG-308`.
   - Item 3b (detector de linhagem label↔registro, substitui o 3c rejeitado): `AG-309`.
   - Item 4 (peso do calibrador, opção b): `AG-312`.
+  - Itens 5/6/8/9 (nulo de permutação, piso de magnitude, regularização por ESS, early stopping em três): `§13.23`, `AG-323`–`AG-326`.
   - Item 10 (manifesto completo + verificação na carga): `§13.21`.
   - Item 11 / 11b (`p̂ > breakeven(linha)`, censo de admissibilidade): `§13.20`, `§13.22`.
 - **`AG-295` (A13/E10f, achado sobre o Alpha EM PRODUÇÃO, independente de §1–§9/§14): EXECUTADO 2026-08-26** — as 2 correções que o achado descrevia como propostas/investigadas mas não adotadas foram cortadas pra produção, aprovação explícita do Manager. `E10f_oi_change_z_48`: `registry.yaml` v1→v2 (delta calculado na cadência nativa da fonte, não mais depois do alinhamento por barra). `feature_a13_ema_window`: `scaling_invariant` `clock`→`bar_count` (`config/constants.yaml`), `ema_window=48` fixo nas 3 grades — a maquinaria de escala por `bar_source` foi removida de `src/features/build.py`. Ver addendum `2026-08-26b` na entrada `AG-295` do log e `§14.3` (correção `2026-08-26b`) pro detalhe completo.
@@ -2131,11 +2132,11 @@ novos e marco o que muda artefato.
 | **3b** | **Transação `labels ↔ registro` + gate de staleness por `config_hash`** | **`§13.11`** | não | não | **EXECUTADO** (`AG-309`) |
 | **3c** | **Reprocessar `label_engine_runs` para as 15 células atuais** | **`§13.11`** | não (append) | não | **REJEITADO** — ver `§13.11`; substituído pelo 3b + rerun real (`AG-309`, `6ec2af9`) |
 | **4** | **Decisão do Manager sobre o peso do calibrador (a/b/c)** | **`§13.10`** | **sim**, se (a)/(b) | não | **EXECUTADO**, opção (b) (`AG-312`) |
-| 5 | Nulo de permutação em todo relatório de `run_layer1_sprint` | `§13.13` | não | **não** (é nulo) | bloqueado (retreino represado) |
-| 6 | Piso de magnitude nas constraints (`|mean_ic| ≥ k·SE`) | `§13.5-4` emendado | sim | não | bloqueado (retreino represado) |
-| 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) | bloqueado (retreino represado) |
-| 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não | bloqueado, prioridade baixa (parâmetro medido inerte) |
-| 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não | bloqueado (retreino represado) |
+| 5 | Nulo de permutação em todo relatório de `run_layer1_sprint` | `§13.13` | não | **não** (é nulo) | **EXECUTADO** — código opt-in pronto e testado (`AG-323`); nunca exercitado sobre dado real, retreino represado |
+| 6 | Piso de magnitude nas constraints (`|mean_ic| ≥ k·SE`) | `§13.5-4` emendado | sim | não | **EXECUTADO** — código opt-in pronto e testado (`AG-324`); promoção a default de produção é decisão do Manager |
+| 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) | bloqueado (retreino represado) — decisão do Manager: autorizar a reexecução |
+| 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não | **EXECUTADO** — código opt-in pronto e testado (`AG-325`); prioridade baixa (parâmetro medido inerte sob a árvore rasa atual) |
+| 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não | **EXECUTADO** — código opt-in pronto e testado (`AG-326`); nunca exercitado sobre dado real, retreino represado |
 | 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não | **EXECUTADO** — schema + verificação (`§13.21`, `AG-314`); wiring em produção fechado no mesmo dia (`§13.21.1`, `AG-141`) |
 | **11** | **Regra de decisão: `p̂ > breakeven(linha)` — que é R2 por linha** | **`§13.16.4`** | **sim** (decisão, não modelo) | **não** | **PARCIAL** — gate pré-existia sem reconhecimento (`§13.22`, `AG-315`); teto por margem é código novo, opt-in; promoção a produção é decisão do Manager |
 | **11b** | **Censo de linhas que violam R2 no conjunto de treino, por célula** | **`§13.16.3`** | não | não | **EXECUTADO** (`§13.20`, `AG-296`/`AG-297`) |
@@ -2472,6 +2473,74 @@ alvo quando há oferta, e a divergência estrutural medida contra
 `resolve_joint_lambda`. `ruff`/`mypy --strict`/`banned_patterns` limpos;
 suíte completa (`-m "not slow"`) **2267 passed, 2 skipped, 2 xfailed, 0
 failed** depois desta mudança.
+
+---
+
+## §13.23 EXECUTADO — itens 5, 6, 8, 9: os quatro "fix mecânico" de `§13.14`/`§13.13` (`AG-323`–`AG-326`)
+
+Validados e aplicados a pedido explícito do Manager (*"valide e aplique cada
+Fix mecânico"*), na mesma sessão dos itens 10/11. Os quatro seguem
+**exatamente o mesmo molde** dos itens anteriores: núcleo puro testado +
+política opt-in em `fit_side_model`/`run_layer1_sprint` + default que
+preserva bit-exato todo call site existente. **Nenhum muda um artefato já
+treinado** — todos ficam dormentes até o Manager promover o default de
+produção. 41 testes novos no total; suíte completa (`-m "not slow"`)
+**2316 passed, 0 failed** ao final dos quatro.
+
+### Item 6 — piso de magnitude nas constraints (`§13.14.2`, `AG-324`)
+
+`monotonic.se_spearman_fisher` (aproximação de Fisher, `1/sqrt(ESS-3)`) +
+`ic_magnitude_floor_k` em `_assign_from_ic`/`screen_monotone_constraints`/
+`fit_side_model`. Uma feature só mantém a restrição monotônica se, além de
+consistente entre ambientes, `|mean_ic| >= k * SE(ESS)`. `k=2,0` novo
+(`alpha_monotonic_ic_magnitude_floor_k`, `ASSUMED`/classe B/sweep
+`[1,0; 3,0]`) — convenção de engenharia, não medida neste projeto,
+declarada a priori por exigência da Regra Zero. Restrições **forçadas**
+por identidade contábil (`E27f_cost_atr_ratio`) nunca passam pelo piso.
+
+### Item 8 — regularização de folha derivada de `ESS` (`§13.14.1`, `AG-325`)
+
+`alpha.derive_ess_regularization` implementa a fórmula emendada (corrige
+os dois defeitos reais que `§13.14.1` achou na proposta original de
+`§13.5-3`: omitia `scale_pos_weight`, que multiplica a hessiana; tratava
+`p(1-p)` como taxa base quando é a predição corrente da iteração). Dois
+parâmetros novos a priori (`n_obs_independentes_alvo=30`,
+`fator_conservador=0,5`). **Prioridade baixa por desenho, não por
+incerteza do código**: `§13.9.3` já mediu que o parâmetro é INERTE sob
+`num_leaves ∈ {2,3}` — só passa a morder se `max_depth` subir.
+
+### Item 5 — nulo de permutação em todo relatório (`§13.13`, `AG-323`)
+
+`pipeline.compute_permutation_null_headline` (extraída como função própria
+para ser testável sem orquestrar `run_layer1_sprint` inteiro) roda `k`
+réplicas da Camada 1 sobre os mesmos `splits`, com `label`/`ret_net`
+embaralhados (`null_permutation_seed`, mecanismo que já existia desde
+2026-08-24). `backtest_lite.percentile_rank` reporta o Sharpe real como
+**percentil** contra essa distribuição — nunca número absoluto. `k=0`
+(default) não paga nada. Custa `k` treinos completos por rodada, **zero
+`N_lifetime`** (nulo, não busca).
+
+### Item 9 — `early_stopping` em três partições (`§13.14.3`, `AG-326`)
+
+`alpha._temporal_purged_three_way_split` estende `_temporal_purged_
+calib_split` (`AG-209`) para `fit`/`stop`/`calib`, purgado por `t1` nas
+DUAS fronteiras. `early_stopping_mode=EARLY_STOPPING_THREE_WAY` exige
+`calib_split_mode=CALIB_SPLIT_TEMPORAL_PURGED` (falha alto combinado com
+split aleatório). **Achado de implementação**: `eval_set=[(X,y)]` está
+`DEPRECATED` no LightGBM 4.7.0 (`uv.lock`) — usa `eval_X`/`eval_y`
+(verificado empiricamente sem warning). Dois parâmetros novos a priori
+(`stop_frac=0,15`, `stopping_rounds=20`).
+
+### O que os quatro têm em comum, e por que nenhum foi promovido
+
+Todos os quatro **nunca rodaram sobre dado real** — o retreino segue
+represado (decisão do Manager, mesmo motivo de sempre) e, mesmo se
+reaberto, trombaria primeiro com o bloqueio do item A da pauta de decisão
+(`ExpandingFeatureLookbackError`, ver artefato "Pauta §13"). Escrever o
+código agora, testado com dado sintético, é o que a caracterização
+"mecânico" desta tarefa pedia — **promover qualquer um dos quatro a
+default de produção continua sendo decisão do Manager**, porque cada um
+muda o que o modelo treinado de fato é.
 
 ---
 

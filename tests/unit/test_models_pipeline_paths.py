@@ -764,6 +764,76 @@ def test_run_layer1_sprint_persist_model_bundles_true_com_resolution_id_usa_grad
         assert call["resolution_id"] == "R1"
 
 
+# ============================================================================
+# run_layer1_sprint(permutation_null_replicas=...) -- ADR-005 §13.13, item 5
+# de §13.17. `compute_permutation_null_headline` (o cálculo em si, IO
+# incluso) é testada isolada em test_models_pipeline.py -- aqui só o
+# ROTEAMENTO: `run_layer1_sprint` chama essa função (com que kwargs) quando
+# e só quando `permutation_null_replicas > 0`. Stuba a função inteira (não
+# `alpha.run_all_folds`) e para IMEDIATAMENTE quando ela é chamada -- não
+# precisa orquestrar backtest/DSR/baselines/decomposition pra chegar lá,
+# porque o bloco de item 5 fica DEPOIS de `write_predictions_atomic` no
+# corpo real (`alpha_sharpe_headline` depende de `backtest_by_path`, que só
+# roda depois das predictions serem gravadas).
+# ============================================================================
+
+
+def test_permutation_null_replicas_default_nunca_chama_o_calculo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default `permutation_null_replicas=0` -- mesma prova por assinatura
+    que as outras políticas opt-in do dia (`regularization_basis` etc.):
+    nenhum call site/teste existente paga o custo do nulo de permutação."""
+    import inspect
+
+    sig = inspect.signature(pipeline.run_layer1_sprint)
+    assert sig.parameters["permutation_null_replicas"].default == 0
+
+
+def test_permutation_null_replicas_k_chama_o_calculo_com_os_kwargs_certos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def _fake_compute_permutation_null_headline(*_args: Any, **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        raise _StopAfterPredictions()
+
+    monkeypatch.setattr(
+        pipeline, "compute_permutation_null_headline", _fake_compute_permutation_null_headline
+    )
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
+    monkeypatch.setattr(alpha, "run_all_folds", lambda *a, **k: [])
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "write_predictions_atomic",
+        lambda predictions, model_id, *, dest_dir=None: Path("unused"),
+    )
+
+    k = 3  # noqa: magic-number
+    with pytest.raises(_StopAfterPredictions):
+        pipeline.run_layer1_sprint(permutation_null_replicas=k)
+
+    assert len(calls) == 1
+    assert calls[0]["k_replicas"] == k
+    assert calls[0]["symbol"] == pipeline.SYMBOL
+    assert calls[0]["model_id"] == pipeline.MODEL_ID_CAMADA1
+
+
 def test_all_symbols_e_all_resolutions_universo_esperado() -> None:
     """`ALL_SYMBOLS`/`ALL_RESOLUTIONS` -- 5 símbolos (BTC + os 4 alts de
     `src.data.download.DEFAULT_SYMBOLS`), 3 resoluções (R1/R2/R3, D-02/

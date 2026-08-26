@@ -4751,7 +4751,40 @@ Suíte completa (`-m "not slow"`) verde nas três rodadas do dia: 2267
 passed (itens 10/11) → 2267 passed (confirmação pós-noqa) → **2275
 passed, 2 skipped, 2 xfailed, 0 failed** (com o wiring de `AG-141`, +8
 testes novos). `ruff`/`mypy --strict`/`banned_patterns` limpos em todos
-os módulos tocados. Itens 5, 6, 7, 8, 9 de `§13.17` seguem bloqueados —
-só se manifestam em tempo de treino, e o retreino está represado
-(decisão do Manager) até a sessão paralela terminar a reprogramação de
-features (o vetor de 69 pode cair).
+os módulos tocados.
+
+- **Pedido do Manager: "valide e aplique cada Fix mecânico" — itens 5,
+  6, 8, 9 de `§13.17` (`AG-323`–`AG-326`)** — todos aplicados como
+  código opt-in, testado, default preservando bit-exato (mesmo molde do
+  resto do dia). Item 6 (piso de magnitude, `se_spearman_fisher` +
+  `ic_magnitude_floor_k`), item 8 (regularização por ESS,
+  `derive_ess_regularization`, INERTE sob a árvore rasa atual), item 5
+  (nulo de permutação, `compute_permutation_null_headline` + `backtest_
+  lite.percentile_rank`), item 9 (`early_stopping` em 3 partições,
+  `_temporal_purged_three_way_split`, achado de implementação: `eval_
+  set` está deprecated no LightGBM 4.7.0, usa `eval_X`/`eval_y`). 6
+  constantes novas em `constants.yaml`, todas `ASSUMED`/classe B/sweep
+  declarado -- nenhuma medida neste projeto, escolhas de engenharia
+  declaradas a priori. **Nenhum dos quatro foi promovido a default de
+  produção** -- promoção é decisão do Manager, cada um muda o que o
+  modelo treinado de fato é.
+- **Achado da varredura, sharpened em decisão concreta**: o "retreino
+  represado" tem uma causa técnica imediata além da decisão de escopo
+  -- reproduzido ao vivo, `compute_max_feature_lookback_ms` com o vetor
+  ativo real (68 features, não mais 69 -- `AG-295` cortou uma) levanta <!-- check-sprint-log: skip -->
+  `ExpandingFeatureLookbackError` HOJE, nomeando 5 features de janela <!-- check-sprint-log: skip -->
+  expansiva. Já registrado (`AG-298`, 2026-08-26 mais cedo), mas nunca
+  isolado como item de decisão próprio -- duas saídas nomeadas
+  (remedir a constante de janela, ou excluir as 5 do vetor ativo, mesmo
+  caminho já usado com outras 3 via `AG-032`). Publicado como artefato
+  "Pauta §13" -- tabela completa de pendências do Manager, fix mecânico
+  e itens que ainda exigem elaboração/teste, ponta a ponta do escopo
+  `§13`.
+
+Suíte completa (`-m "not slow"`) ao final: **2316 passed, 2 skipped, 2
+xfailed, 0 failed** (+41 testes novos). `ruff`/`mypy --strict`/
+`banned_patterns` limpos em todos os módulos tocados. Item 7 de `§13.17`
+segue como decisão pendente do Manager (autorizar a reexecução do teste
+H₀, zero `N_lifetime`, critério já declarado a priori) -- não é mais
+"bloqueado por retreino", é bloqueado pela mesma trava de vetor que os
+outros quatro, mais a autorização em si.

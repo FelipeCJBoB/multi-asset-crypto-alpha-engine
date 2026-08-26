@@ -237,6 +237,39 @@ def path_dispersion_stats(by_path: dict[int, PathBacktestResult]) -> PathDispers
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PermutationNullResult:
+    """ADR-005 §13.13 (item 5 de §13.17) — o Sharpe REAL (`alpha_sharpe_
+    headline`) lido contra a distribuição do mesmo pipeline treinado
+    sobre `label`/`ret_net` embaralhados (`null_permutation_seed`,
+    `k` réplicas). Sem isto, `§13.13` mede: 69 features de ruído
+    gaussiano puro, `y`/`w` REAIS, dispara sinal a 1,77%-1,94% do alvo —
+    "uma probabilidade calibrada com dispersão própria" que não distingue
+    sinal real de artefato do pipeline. `headline_percentile` é a fração
+    dos `k` nulos que o Sharpe real supera -- `1.0` = supera todos,
+    `0.0` = não supera nenhum (pior que todo o nulo)."""
+
+    k_replicas: int
+    headline: float
+    null_sharpes: tuple[float, ...]
+    headline_percentile: float
+
+
+def percentile_rank(headline: float, null_distribution: FloatArray) -> float:
+    """Núcleo puro (Idioma A) — fração de `null_distribution` que o
+    `headline` real SUPERA (`<=`, não `<`: um nulo empatado conta a
+    favor do nulo, leitura conservadora -- não infla o percentual do
+    real por causa de empates). `NaN` em `null_distribution` (réplica
+    degenerada, caminho sem trades suficientes) é descartado antes de
+    contar, nunca tratado como se o real o tivesse batido."""
+    finite = null_distribution[np.isfinite(null_distribution)]
+    if finite.shape[0] == 0:
+        return float("nan")
+    if not np.isfinite(headline):
+        return float("nan")
+    return float(np.mean(finite <= headline))
+
+
 # AG-214 — política de desempate do critério de permanência (§5.11).
 TIE_LEGACY_COUNTS_AS_BETTER = "legacy_tie_counts_as_better"
 TIE_REQUIRES_MARGIN = "require_margin"

@@ -456,6 +456,82 @@ def _percentile_finite(values: list[float], pct: float) -> float:
     return float(np.percentile(finite, pct)) if finite.size else float("nan")
 
 
+def compute_permutation_null_headline(
+    df_all: pl.DataFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    *,
+    symbol: str,
+    resolution_id: str | None,
+    model_id: str,
+    hyper: alpha.LGBMHyperparams,
+    seed: int,
+    feature_ids: tuple[str, ...],
+    device_type: str,
+    tau_policy: str,
+    calib_split_mode: str,
+    class_balance_basis: str,
+    calib_weight_basis: str,
+    k_replicas: int,
+    headline: float,
+) -> backtest_lite.PermutationNullResult:
+    """ADR-005 §13.13 (item 5 de §13.17) -- `k_replicas` réplicas da
+    Camada 1 sobre os MESMOS `splits`, com `label`/`ret_net` embaralhados
+    (`null_permutation_seed`, herda a garantia de `fit_side_model` de
+    permutar por lado e nunca vazar estrutura entre folds do CPCV). O
+    `headline` real (`alpha_sharpe_headline`, já calculado pelo caller)
+    é reportado como PERCENTIL contra essa distribuição, nunca como
+    número absoluto -- sem isto, `1,02` de Sharpe é indistinguível, no
+    artefato, do que 69 features de ruído gaussiano puro já produzem por
+    construção do pipeline (medido em `§13.13`: dispara sinal a
+    1,77%-1,94% do alvo, `y`/`w` REAIS).
+
+    Só a Camada 1 recebe réplica de nulo -- a Camada 0 já É a variante-
+    controle (sem constraint monotônica), não precisa de um nulo próprio
+    para responder "o pipeline distingue sinal real de ruído?".
+
+    Extraída de `run_layer1_sprint` como função própria (Idioma A, só
+    que com IO -- `alpha.run_all_folds` treina de verdade) para ser
+    testável sem orquestrar o resto do pipeline: quem testa o roteamento
+    (`k=0` nunca chama, `k>0` chama com seeds distintos) faz isso
+    chamando ESTA função com `alpha.run_all_folds`/`backtest_lite.
+    backtest_by_path` stubados, não o `run_layer1_sprint` inteiro."""
+    null_sharpes: list[float] = []
+    for replica_i in range(k_replicas):
+        # Deriva um seed distinto por réplica sem repetir nenhum
+        # `seed`/`side`/`fold` já usado pelo treino real (mesma
+        # disciplina de composição de `alpha._derived_seed`, cópia local
+        # porque a necessidade aqui é mais simples -- só "um seed
+        # diferente por índice de réplica", não combinar (fold, side,
+        # propósito) como o núcleo de `alpha.py` faz).
+        null_seed = (seed * 1_000_003 + (replica_i + 1) * 97) % 2_147_483_647  # noqa: magic-number
+        null_folds = alpha.run_all_folds(
+            df_all,
+            splits,
+            variant=alpha.VARIANT_CAMADA1,
+            model_id=model_id,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            hyper=hyper,
+            seed=seed,
+            feature_ids=feature_ids,
+            device_type=device_type,
+            tau_policy=tau_policy,
+            calib_split_mode=calib_split_mode,
+            class_balance_basis=class_balance_basis,
+            calib_weight_basis=calib_weight_basis,
+            null_permutation_seed=null_seed,
+        )
+        null_by_path = backtest_lite.backtest_by_path(null_folds, df_all)
+        null_sharpes.append(_mean_finite([r.sharpe_naive for r in null_by_path.values()]))
+    percentile = backtest_lite.percentile_rank(headline, np.asarray(null_sharpes, dtype=np.float64))
+    return backtest_lite.PermutationNullResult(
+        k_replicas=k_replicas,
+        headline=headline,
+        null_sharpes=tuple(null_sharpes),
+        headline_percentile=percentile,
+    )
+
+
 def run_layer1_sprint(
     *,
     symbol: str = SYMBOL,
@@ -512,6 +588,12 @@ def run_layer1_sprint(
     # mesmo se `True`, porque `symbol`/`resolution_id` não bastam pra
     # nomear a partição sem colisão sob a grade de tempo legada.
     persist_model_bundles: bool = False,
+    # ADR-005 §13.13 (item 5 de §13.17) -- opt-in, default `0` preserva
+    # bit-exato todo call site/teste existente (nenhum treina réplica de
+    # nulo hoje). `k > 0` custa `k` treinos completos da Camada 1 (mesmo
+    # custo de `run_all_folds` sobre os mesmos splits) -- zero
+    # `N_lifetime` novo (é nulo de permutação, não busca de hiperparâmetro).
+    permutation_null_replicas: int = 0,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -879,6 +961,34 @@ def run_layer1_sprint(
     c0_sharpes = [r.sharpe_naive for r in c0_by_path.values()]
     alpha_sharpe_headline = _mean_finite(c1_sharpes)
 
+    # ADR-005 §13.13 (item 5 de §13.17) -- nulo de permutação do MESMO
+    # pipeline, ver docstring de `compute_permutation_null_headline`.
+    permutation_null_result: backtest_lite.PermutationNullResult | None = None
+    if permutation_null_replicas > 0:
+        permutation_null_result = compute_permutation_null_headline(
+            mf.data,
+            splits,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            model_id=model_id_camada1,
+            hyper=hyper,
+            seed=seed,
+            feature_ids=feature_ids_effective,
+            device_type=device_type,
+            tau_policy=tau_policy,
+            calib_split_mode=calib_split_mode,
+            class_balance_basis=class_balance_basis,
+            calib_weight_basis=calib_weight_basis,
+            k_replicas=permutation_null_replicas,
+            headline=alpha_sharpe_headline,
+        )
+        logger.info(
+            "models.pipeline.permutation_null_medido",
+            k_replicas=permutation_null_replicas,
+            headline=alpha_sharpe_headline,
+            headline_percentile=permutation_null_result.headline_percentile,
+        )
+
     # --- AG-214: dispersão ENTRE caminhos. Sem isto, "4 de 5 caminhos"
     # não tem escala de leitura -- toda diferença menor que sigma é ruído, e sigma
     # não era calculado em lugar nenhum. Ver `PathDispersionStats` para a
@@ -1158,6 +1268,12 @@ def run_layer1_sprint(
             },
             "n_paths_significant": n_paths_significant,
             "n_paths_significant_signal_only": n_paths_significant_signal_only,
+            # ADR-005 §13.13 (item 5 de §13.17) -- `None` quando
+            # `permutation_null_replicas=0` (default) -- ausência
+            # explícita, não um "não aplicável" silencioso.
+            "permutation_null": (
+                asdict(permutation_null_result) if permutation_null_result is not None else None
+            ),
         },
         # --- AG-211: o `n` estatístico, não o `n` do `shape`. -------------
         "sample_size_efetivo": {

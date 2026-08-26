@@ -176,3 +176,46 @@ def test_permanence_count_nan_nunca_conta_como_melhora() -> None:
     n_better, n_total = backtest_lite.permanence_count(c1, c0)
     assert n_total == 1
     assert n_better == 0
+
+
+# ============================================================================
+# percentile_rank -- ADR-005 §13.13, item 5 de §13.17
+# ============================================================================
+
+
+def test_percentile_rank_headline_supera_todos_os_nulos() -> None:
+    nulls = np.array([0.1, 0.2, 0.15, -0.3])  # noqa: magic-number
+    assert backtest_lite.percentile_rank(1.0, nulls) == pytest.approx(1.0)
+
+
+def test_percentile_rank_headline_nao_supera_nenhum() -> None:
+    nulls = np.array([0.1, 0.2, 0.15, 0.3])  # noqa: magic-number
+    assert backtest_lite.percentile_rank(-1.0, nulls) == pytest.approx(0.0)
+
+
+def test_percentile_rank_headline_no_meio_da_distribuicao() -> None:
+    nulls = np.array([0.0, 1.0, 2.0, 3.0])  # noqa: magic-number -- 1.5 supera 0.0 e 1.0 -> 2/4
+    assert backtest_lite.percentile_rank(1.5, nulls) == pytest.approx(0.5)
+
+
+def test_percentile_rank_empate_conta_a_favor_do_nulo() -> None:
+    """`<=`, não `<` -- leitura conservadora: um nulo empatado com o
+    headline conta como "o nulo bateu", não infla o percentual do real."""
+    nulls = np.array([1.0, 1.0, 0.5])  # noqa: magic-number
+    assert backtest_lite.percentile_rank(1.0, nulls) == pytest.approx(1.0)
+
+
+def test_percentile_rank_descarta_nan_da_distribuicao_nula() -> None:
+    nulls = np.array([0.1, float("nan"), 0.3, float("nan")])  # noqa: magic-number
+    # só 0.1 e 0.3 contam -- headline=0.2 supera só 0.1 -> 1/2
+    assert backtest_lite.percentile_rank(0.2, nulls) == pytest.approx(0.5)  # noqa: magic-number
+
+
+def test_percentile_rank_todos_os_nulos_sao_nan_devolve_nan() -> None:
+    nulls = np.array([float("nan"), float("nan")])
+    assert np.isnan(backtest_lite.percentile_rank(0.5, nulls))  # noqa: magic-number
+
+
+def test_percentile_rank_headline_nan_devolve_nan() -> None:
+    nulls = np.array([0.1, 0.2, 0.3])  # noqa: magic-number
+    assert np.isnan(backtest_lite.percentile_rank(float("nan"), nulls))

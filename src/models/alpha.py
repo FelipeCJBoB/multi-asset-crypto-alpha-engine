@@ -36,7 +36,9 @@ descartados."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
+from typing import Any
 
 import lightgbm as lgb
 import numpy as np
@@ -166,6 +168,13 @@ class LGBMHyperparams:
     # trocar um guardrail inerte por um numero inventado, que e pior.
     min_sum_hessian_in_leaf: float = 1e-3  # noqa: magic-number -- default LightGBM 4.7.0
     max_bin: int = 255  # noqa: magic-number -- default LightGBM 4.7.0
+    # ADR-005 §13.14.1 (item 8 de §13.17) -- os dois termos declarados a
+    # priori que a fórmula de regularização derivada de ESS pede.
+    # Lidos SEMPRE (custo desprezível), mas só CONSOMEM efeito quando
+    # `regularization_basis=REGULARIZATION_ESS_DERIVED` em `fit_side_
+    # model` -- default `REGULARIZATION_FIXED` ignora os dois, bit-exato.
+    ess_regularization_n_obs_independentes_alvo: float = 30.0  # noqa: magic-number -- default de biblioteca não existe aqui; valor real vem sempre de from_constants, este é só o default de dataclass
+    ess_regularization_fator_conservador: float = 0.5  # noqa: magic-number -- idem
 
     @classmethod
     def from_constants(cls) -> LGBMHyperparams:
@@ -181,6 +190,12 @@ class LGBMHyperparams:
             num_leaves=int(load_constant("alpha_lgbm_num_leaves")),
             min_sum_hessian_in_leaf=float(load_constant("alpha_lgbm_min_sum_hessian_in_leaf")),
             max_bin=int(load_constant("alpha_lgbm_max_bin")),
+            ess_regularization_n_obs_independentes_alvo=float(
+                load_constant("alpha_lgbm_ess_regularization_n_obs_independentes_alvo")
+            ),
+            ess_regularization_fator_conservador=float(
+                load_constant("alpha_lgbm_ess_regularization_fator_conservador")
+            ),
         )
 
 
@@ -310,6 +325,26 @@ CLASS_BALANCE_WEIGHT = "weight"
 CALIB_WEIGHT_SAMPLE_WEIGHT = "sample_weight"
 CALIB_WEIGHT_UNIQUENESS = "uniqueness"
 
+# ADR-005 §13.14.1 (item 8 de §13.17) -- base do piso de folha
+# (`min_child_samples`/`min_sum_hessian_in_leaf`). `fixed` = comportamento
+# legado (os dois vêm direto de `LGBMHyperparams`, bit-exato); `ess_derived`
+# = derivados de `Σ uniqueness`/`w̄`/`scale_pos_weight` pela fórmula emendada
+# de `§13.5-3` (ver `derive_ess_regularization`). Parâmetro hoje INERTE sob
+# `num_leaves ∈ {2,3}` (§13.9.3) -- promover a produção só passa a importar
+# se `max_depth` subir, decisão separada.
+REGULARIZATION_FIXED = "fixed"
+REGULARIZATION_ESS_DERIVED = "ess_derived"
+
+# ADR-005 §13.14.3 (item 9 de §13.17) -- `fixed` = comportamento legado
+# (2 partições fit/calib, sem early stopping, `n_estimators` fixo de
+# `LGBMHyperparams`); `three_way` = 3 partições fit/stop/calib com purge
+# por `t1` nas duas fronteiras (`_temporal_purged_three_way_split`),
+# `eval_set=stop` e `lgb.early_stopping`. Só compatível com
+# `calib_split_mode=CALIB_SPLIT_TEMPORAL_PURGED` -- um split aleatório não
+# tem noção de fronteira temporal para purgar.
+EARLY_STOPPING_FIXED = "fixed"
+EARLY_STOPPING_THREE_WAY = "three_way"
+
 # AG-210 -- política de resolução de `tau`. Ver `resolve_joint_tau` e
 # `run_fold`.
 TAU_POLICY_LEGACY_PER_SIDE = "legacy_per_side"
@@ -368,6 +403,119 @@ def _temporal_purged_calib_split(
             "horizonte de label cobre todo o prefixo de treino"
         )
     return fit_positions.astype(np.int64), calib_positions.astype(np.int64)
+
+
+def _temporal_purged_three_way_split(
+    t0_ms: IntArray, t1_ms: IntArray, *, stop_frac: float, calib_frac: float
+) -> tuple[IntArray, IntArray, IntArray]:
+    """ADR-005 §13.14.3 (item 9 de §13.17) -- extensão de `_temporal_
+    purged_calib_split` para TRÊS blocos temporais contíguos, cada um
+    purgado por `t1` contra a fronteira seguinte: `fit` (prefixo) / `stop`
+    (bloco do meio, `eval_set` do early stopping) / `calib` (bloco final,
+    calibrador isotônico -- MESMO papel que já tinha no split de 2).
+
+    Ordem cronológica fit -> stop -> calib (`calib` continua sendo o
+    sufixo mais recente, mesma convenção de `_temporal_purged_calib_
+    split`). Purge só precisa comparar `fit` contra o INÍCIO de `stop` --
+    `stop` já é anterior a `calib` por construção (bloco contíguo), então
+    `t1[fit] < stop_start < calib_start` vale transitivamente sem checar
+    `fit` contra `calib_start` de novo. `stop` é purgado contra o início
+    de `calib` pelo mesmo motivo que `fit` é purgado hoje contra `calib`
+    no split de 2: `stop` alimenta uma decisão (quando parar de treinar)
+    que não pode enxergar rótulo cujo `[t0,t1]` ainda esteja aberto
+    quando `calib` começa.
+
+    Levanta `ValueError` se o purge esvaziar `fit` OU `stop` -- mesma
+    disciplina de falha alta de `_temporal_purged_calib_split`, nunca um
+    conjunto vazio que só quebraria mais tarde dentro do LightGBM."""
+    n = int(t0_ms.shape[0])
+    if n < 3:  # noqa: magic-number -- 3 blocos não cabem em menos de 3 linhas
+        raise ValueError(
+            f"_temporal_purged_three_way_split: n={n} linhas -- split de 3 precisa de >= 3"
+        )
+    if stop_frac <= 0.0 or calib_frac <= 0.0 or stop_frac + calib_frac >= 1.0:
+        raise ValueError(
+            f"_temporal_purged_three_way_split: stop_frac={stop_frac}, calib_frac={calib_frac} "
+            "-- os dois precisam ser > 0 e somar < 1 (sobra pra 'fit')"
+        )
+    order = np.argsort(t0_ms, kind="stable")
+    n_calib = round(n * calib_frac)
+    n_calib = max(1, min(n_calib, n - 2))
+    n_stop = round(n * stop_frac)
+    n_stop = max(1, min(n_stop, n - n_calib - 1))
+
+    calib_positions = order[n - n_calib :]
+    stop_candidates = order[n - n_calib - n_stop : n - n_calib]
+    fit_candidates = order[: n - n_calib - n_stop]
+
+    calib_start = int(t0_ms[calib_positions].min())
+    stop_keep = t1_ms[stop_candidates] < calib_start
+    stop_positions = stop_candidates[stop_keep]
+    if stop_positions.shape[0] == 0:
+        raise ValueError(
+            "_temporal_purged_three_way_split: purge por t1 esvaziou 'stop' "
+            f"(n={n}, n_stop={n_stop}, n_calib={n_calib}, calib_start={calib_start})"
+        )
+    stop_start = int(t0_ms[stop_positions].min())
+    fit_keep = t1_ms[fit_candidates] < stop_start
+    fit_positions = fit_candidates[fit_keep]
+    if fit_positions.shape[0] == 0:
+        raise ValueError(
+            "_temporal_purged_three_way_split: purge por t1 esvaziou 'fit' "
+            f"(n={n}, n_stop={n_stop}, n_calib={n_calib}, stop_start={stop_start})"
+        )
+    return (
+        fit_positions.astype(np.int64),
+        stop_positions.astype(np.int64),
+        calib_positions.astype(np.int64),
+    )
+
+
+def derive_ess_regularization(
+    *,
+    ess: float,
+    n_rows: int,
+    w_mean: float,
+    scale_pos_weight: float,
+    n_obs_independentes_alvo: float,
+    fator_conservador: float,
+) -> tuple[int, float]:
+    """ADR-005 §13.14.1 (item 8 de §13.17) -- `min_child_samples`/`min_
+    sum_hessian_in_leaf` derivados de `ESS` em vez de estipulados. Núcleo
+    puro (Idioma A). Emenda à fórmula original de `§13.5-3` com os dois
+    termos que o reexame (`§13.19` FP2) confirmou faltarem -- `w̄` (a
+    MÉDIA, não um quantil inferior: o reexame retratou minha primeira
+    correção, a média já pegava a folha de peso baixo corretamente):
+
+        min_child_samples = ceil(n_obs_independentes_alvo * linhas/ESS)
+        min_sum_hessian_in_leaf = min_child_samples * w̄ * 0,25
+                                   / scale_pos_weight * fator_conservador
+
+    `0,25` é `p(1-p)` no pior caso (`p=0,5`), não uma constante de
+    domínio -- é a cota MATEMÁTICA do produto, válida para qualquer
+    problema binário, mesma categoria de `_BPS_PER_UNIT`.
+    `÷ scale_pos_weight` (defeito i de §13.14.1): a hessiana real inclui
+    `label_weight` -- que É `scale_pos_weight` na classe positiva
+    (verificado na fonte do LightGBM) -- e a fórmula original omitia.
+    `fator_conservador` (defeito ii): `p(1-p)` cai conforme o boosting
+    avança; um piso derivado de `p=0,5` descreve só a iteração 0."""
+    if ess <= 0.0:
+        raise ValueError(f"derive_ess_regularization: ess={ess} precisa ser > 0")
+    if scale_pos_weight <= 0.0:
+        raise ValueError(
+            f"derive_ess_regularization: scale_pos_weight={scale_pos_weight} precisa ser > 0"
+        )
+    linhas_por_obs_independente = n_rows / ess
+    min_child_samples = math.ceil(n_obs_independentes_alvo * linhas_por_obs_independente)
+    p_vezes_1_menos_p_pior_caso = 0.25  # noqa: magic-number -- cota matemática de p(1-p), não constante de domínio
+    min_sum_hessian_in_leaf = (
+        min_child_samples
+        * w_mean
+        * p_vezes_1_menos_p_pior_caso
+        / scale_pos_weight
+        * fator_conservador
+    )
+    return min_child_samples, min_sum_hessian_in_leaf
 
 
 def decide_side(
@@ -822,6 +970,13 @@ class SideModelResult:
     # saber quais barras o modelo já viu para tirar `tau` das que ele não
     # viu. `None` no caminho legado (não calculado, não usado).
     fit_t0_ms: IntArray | None = None
+    # ADR-005 §13.14.3 (item 9 de §13.17) -- tamanho do bloco `stop`
+    # (eval_set do early stopping) e a iteração real em que o boosting
+    # parou. `0`/`None` no caminho legado (`early_stopping_mode=
+    # EARLY_STOPPING_FIXED`) -- sem bloco de stop, `n_estimators` de
+    # `hyper` é a contagem exata, não um teto.
+    n_train_stop: int = 0
+    best_iteration: int | None = None
 
 
 def fit_side_model(
@@ -839,6 +994,9 @@ def fit_side_model(
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
+    regularization_basis: str = REGULARIZATION_FIXED,
+    ic_magnitude_floor_k: float | None = None,
+    early_stopping_mode: str = EARLY_STOPPING_FIXED,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -901,11 +1059,33 @@ def fit_side_model(
     inferência/backtest por construção, não por caso especial."""
     if null_permutation_seed is not None:
         train_side_df = _permute_label_and_ret_net(train_side_df, null_permutation_seed)
+
+    # ADR-005 §13.14.2 (item 6 de §13.17) -- ESS precisa estar disponível
+    # ANTES da triagem de monotonicidade, só quando o piso de magnitude é
+    # pedido. `uniqueness` opcional pelo mesmo motivo de sempre (AG-209/
+    # AG-210/AG-312): chamadores de teste montam `train_side_df` sintético
+    # sem ela. Pedir o piso sem a coluna FALHA ALTO -- um fallback
+    # silencioso pro sinal puro reintroduziria exatamente o defeito que o
+    # piso existe pra corrigir, sem deixar rastro.
+    ess_for_ic_floor: float | None = None
+    if ic_magnitude_floor_k is not None:
+        if "uniqueness" not in train_side_df.columns:
+            raise ValueError(
+                "fit_side_model: ic_magnitude_floor_k setado exige a coluna 'uniqueness' "
+                "em train_side_df (ESS para o piso de magnitude, §13.14.2) -- recebido um "
+                "frame sem ela"
+            )
+        ess_for_ic_floor = float(
+            train_side_df["uniqueness"].to_numpy().astype(np.float64).sum()
+        )
+
     ic_results = monotonic.screen_monotone_constraints(
         train_side_df,
         feature_ids,
         side=side,
         unforce_features_by_side=unforce_features_by_side,
+        ic_magnitude_floor_k=ic_magnitude_floor_k,
+        ess=ess_for_ic_floor,
     )
     if variant == VARIANT_CAMADA1:
         t1_constraints = tuple(ic_results[f].constraint for f in feature_ids)
@@ -935,7 +1115,31 @@ def fit_side_model(
     )
 
     holdout_frac = float(load_constant("alpha_calibration_holdout_frac"))
-    if calib_split_mode == CALIB_SPLIT_LEGACY_RANDOM:
+    stop_idx: IntArray | None = None
+    if early_stopping_mode == EARLY_STOPPING_THREE_WAY:
+        # ADR-005 §13.14.3 (item 9 de §13.17) -- 3 partições em vez de 2,
+        # SUBSTITUI o split acima inteiro (não compõe com ele). Só faz
+        # sentido purgado por tempo -- um split aleatório não tem
+        # fronteira temporal pra purgar contra `stop`/`calib`.
+        if calib_split_mode != CALIB_SPLIT_TEMPORAL_PURGED:
+            raise ValueError(
+                f"fit_side_model: early_stopping_mode={EARLY_STOPPING_THREE_WAY!r} exige "
+                f"calib_split_mode={CALIB_SPLIT_TEMPORAL_PURGED!r} -- um split aleatório não "
+                "tem fronteira temporal para purgar contra o bloco de stop"
+            )
+        if t0_ms_all is None or "t1" not in train_side_df.columns:
+            raise ValueError(
+                f"fit_side_model: early_stopping_mode={EARLY_STOPPING_THREE_WAY!r} exige as "
+                "colunas 't0' e 't1' em train_side_df (purge por t1 nas duas fronteiras, "
+                "§13.14.3) -- recebido apenas "
+                f"{sorted(set(train_side_df.columns) & {'t0', 't1'})}"
+            )
+        t1_ms_all = train_side_df["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        stop_frac = float(load_constant("alpha_early_stopping_stop_frac"))
+        fit_idx, stop_idx, calib_idx = _temporal_purged_three_way_split(
+            t0_ms_all, t1_ms_all, stop_frac=stop_frac, calib_frac=holdout_frac
+        )
+    elif calib_split_mode == CALIB_SPLIT_LEGACY_RANDOM:
         fit_idx, calib_idx = _stratified_calib_split(
             y_all, holdout_frac=holdout_frac, seed=_derived_seed(seed, side, 1)
         )
@@ -959,6 +1163,11 @@ def fit_side_model(
         )
     X_fit, y_fit, w_fit = X_all[fit_idx], y_all[fit_idx], w_all[fit_idx]
     X_calib, y_calib, w_calib = X_all[calib_idx], y_all[calib_idx], w_all[calib_idx]
+    X_stop, y_stop, w_stop = (
+        (X_all[stop_idx], y_all[stop_idx], w_all[stop_idx])
+        if stop_idx is not None
+        else (None, None, None)
+    )
 
     # AG-312 -- peso do calibrador, resolvido por politica. `uniqueness` e
     # coluna OPCIONAL aqui pelo mesmo motivo que `t0`/`t1` (AG-209/AG-210):
@@ -1003,6 +1212,40 @@ def fit_side_model(
             f"(esperado {CLASS_BALANCE_COUNT!r} ou {CLASS_BALANCE_WEIGHT!r})"
         )
 
+    # ADR-005 §13.14.1 (item 8 de §13.17) -- piso de folha, resolvido por
+    # política igual a `calib_weight_basis`/`class_balance_basis` acima.
+    # `FIXED` (default, produção hoje) usa os dois valores literais de
+    # `hyper` sem tocar neles -- bit-exato. `ESS_DERIVED` recalcula os
+    # dois pela fórmula emendada (`derive_ess_regularization`); pedir
+    # sem a coluna `uniqueness` FALHA ALTO, mesma disciplina de AG-312.
+    # Parâmetro hoje INERTE em produção sob `num_leaves ∈ {2,3}`
+    # (§13.9.3) -- ativar a política não muda nenhum artefato já
+    # treinado até `max_depth` subir, decisão separada.
+    if regularization_basis == REGULARIZATION_FIXED:
+        min_child_samples_resolved = hyper.min_child_samples
+        min_sum_hessian_in_leaf_resolved = hyper.min_sum_hessian_in_leaf
+    elif regularization_basis == REGULARIZATION_ESS_DERIVED:
+        if "uniqueness" not in train_side_df.columns:
+            raise ValueError(
+                f"fit_side_model: regularization_basis={REGULARIZATION_ESS_DERIVED!r} exige "
+                "a coluna 'uniqueness' em train_side_df (ESS, §13.14.1) -- recebido um frame "
+                "sem ela"
+            )
+        ess_reg = float(train_side_df["uniqueness"].to_numpy().astype(np.float64).sum())
+        min_child_samples_resolved, min_sum_hessian_in_leaf_resolved = derive_ess_regularization(
+            ess=ess_reg,
+            n_rows=train_side_df.height,
+            w_mean=float(w_fit.mean()),
+            scale_pos_weight=scale_pos_weight,
+            n_obs_independentes_alvo=hyper.ess_regularization_n_obs_independentes_alvo,
+            fator_conservador=hyper.ess_regularization_fator_conservador,
+        )
+    else:
+        raise ValueError(
+            f"fit_side_model: regularization_basis desconhecido {regularization_basis!r} "
+            f"(esperado {REGULARIZATION_FIXED!r} ou {REGULARIZATION_ESS_DERIVED!r})"
+        )
+
     if device_type != "cpu":
         # Achado real (`audit_engineering`, 2026-08-23): a doc oficial do
         # LightGBM restringe `deterministic=True` a "works only with CPU
@@ -1039,7 +1282,7 @@ def fit_side_model(
         # `LGBMHyperparams`). `subsample_freq=1` bag a cada iteração.
         subsample_freq=hyper.subsample_freq,
         feature_fraction=hyper.feature_fraction,
-        min_child_samples=hyper.min_child_samples,
+        min_child_samples=min_child_samples_resolved,
         # AG-208 -- os dois entram com o default da própria biblioteca
         # (bit-exato com todo artefato já treinado); o que muda é que
         # agora são DECLARADOS em `constants.yaml` com proveniência e
@@ -1048,7 +1291,7 @@ def fit_side_model(
         # CONTAGEM por folha, `min_sum_hessian_in_leaf` limita MASSA --
         # com `sample_weight` de cauda longa, só o segundo restringe o
         # que importa, e ele estava no default inerte.
-        min_sum_hessian_in_leaf=hyper.min_sum_hessian_in_leaf,
+        min_sum_hessian_in_leaf=min_sum_hessian_in_leaf_resolved,
         max_bin=hyper.max_bin,
         lambda_l2=hyper.lambda_l2,
         monotone_constraints=list(monotone_constraints),
@@ -1092,7 +1335,32 @@ def fit_side_model(
     # remapear `gain_by_column`/`concentration`/`monotone_constraints`
     # corretamente. Ordem idêntica a `feature_ids` (mesma que
     # `build_design_matrix` usa para montar `X_fit`).
-    model.fit(X_fit, y_fit, sample_weight=w_fit, feature_name=list(feature_ids))
+    # ADR-005 §13.14.3 (item 9 de §13.17) -- `eval_set`/`callbacks` só
+    # entram sob `early_stopping_mode=EARLY_STOPPING_THREE_WAY`; caminho
+    # legado (default) chama `.fit` exatamente como sempre, bit-exato.
+    # `n_estimators` de `hyper` vira TETO de iterações, não contagem
+    # exata -- `LGBMClassifier.predict_proba` já usa `best_iteration_`
+    # automaticamente quando o early stopping disparou (comportamento
+    # nativo do wrapper sklearn do LightGBM, não algo que este código
+    # precise fazer à mão).
+    fit_kwargs: dict[str, Any] = {"sample_weight": w_fit, "feature_name": list(feature_ids)}
+    if early_stopping_mode == EARLY_STOPPING_THREE_WAY:
+        stopping_rounds = int(load_constant("alpha_early_stopping_rounds"))
+        # `eval_X`/`eval_y` (não `eval_set=[(X,y)]`) -- achado de
+        # implementação: `eval_set` está DEPRECATED no LightGBM 4.7.0
+        # (`uv.lock`), emite `LGBMDeprecationWarning` em runtime.
+        # Verificado empiricamente que a API nova não emite warning
+        # nenhum sob `warnings.simplefilter("error")`. Never silence a
+        # warning without finding the root cause (CLAUDE.md) -- a causa
+        # aqui era literalmente "existe uma API mais nova", não algo pra
+        # suprimir.
+        fit_kwargs["eval_X"] = X_stop
+        fit_kwargs["eval_y"] = y_stop
+        fit_kwargs["eval_sample_weight"] = [w_stop]
+        fit_kwargs["callbacks"] = [
+            lgb.early_stopping(stopping_rounds=stopping_rounds, verbose=False)
+        ]
+    model.fit(X_fit, y_fit, **fit_kwargs)
 
     # `np.asarray(...)` explícito -- os stubs do LightGBM tipam
     # `predict_proba` como `list` (imprecisão conhecida da biblioteca, não
@@ -1171,6 +1439,12 @@ def fit_side_model(
         # `_resolve_tau_on_common_bars` trata `None` como "este lado não
         # informa quais barras viu", nunca como "não viu nenhuma".
         fit_t0_ms=t0_ms_all[fit_idx] if t0_ms_all is not None else None,
+        n_train_stop=int(stop_idx.shape[0]) if stop_idx is not None else 0,
+        best_iteration=(
+            int(model.best_iteration_)
+            if early_stopping_mode == EARLY_STOPPING_THREE_WAY and model.best_iteration_
+            else None
+        ),
     )
 
 

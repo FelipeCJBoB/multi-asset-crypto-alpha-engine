@@ -20954,3 +20954,172 @@ entries:
       faz). T2, sem urgencia de producao, mas consistencia com a
       correcao ja feita de A13 pesa a favor de nao deixar em aberto
       indefinidamente.
+
+  - id: AG-323
+    date: "2026-08-26"
+    file: "src/models/pipeline.py::compute_permutation_null_headline, src/models/backtest_lite.py::percentile_rank/PermutationNullResult"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.13 (item 5 de §13.17), src/models/alpha.py::fit_side_model (null_permutation_seed, ja existia)"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 5 da ordem de §13.17, autorizado pelo Manager ('valide e aplique cada Fix mecanico')"
+    gap: >
+      §13.13 mediu (2026-08-26, mesma sessao): 69 features de RUIDO
+      GAUSSIANO PURO, com y/w REAIS de BTCUSDT/R1, disparam sinal a
+      1,77%-1,94% do alvo orcado -- "uma probabilidade calibrada com
+      dispersao propria" que nao distingue sinal real de artefato do
+      pipeline. O mecanismo pra testar isso (`null_permutation_seed`,
+      ja existia em `fit_side_model` desde 2026-08-24) so era usado em
+      investigacao pontual -- nenhum relatorio de `run_layer1_sprint`
+      carregava o nulo por padrao, entao um Sharpe de 1,02 era reportado
+      como numero absoluto, indistinguivel do que ruido puro ja produz
+      por construcao.
+    severity: "MEDIA -- nao muda decisao de treino hoje (o mecanismo e opt-in), mas fecha uma lacuna real de interpretabilidade de qualquer relatorio futuro"
+    layer: "models"
+    consequence: >
+      APLICADO como `permutation_null_replicas: int = 0` em
+      `run_layer1_sprint` (opt-in, default preserva bit-exato). `k > 0`
+      chama `compute_permutation_null_headline` (funcao NOVA, extraida
+      pra ser testavel sem orquestrar o pipeline inteiro): `k` replicas
+      da Camada 1 sobre os MESMOS `splits`, cada uma com `null_
+      permutation_seed` distinto, e reporta `alpha_sharpe_headline` como
+      PERCENTIL contra essa distribuicao (`backtest_lite.percentile_
+      rank`, `<=` -- leitura conservadora, empate conta a favor do
+      nulo). So a Camada 1 recebe replica -- a Camada 0 ja e a variante-
+      controle, nao precisa de nulo proprio. Custa `k` treinos completos
+      por rodada, ZERO `N_lifetime` (e nulo de permutacao, nao busca de
+      hiperparametro). Escrito em `report["layer1_vs_layer0"]
+      ["permutation_null"]`, `None` explicito quando `k=0`.
+    status: >-
+      IMPLEMENTADO e verde -- 9 testes novos (7 em test_models_
+      backtest_lite.py para `percentile_rank`, 2 em test_models_
+      pipeline.py para `compute_permutation_null_headline` com IO
+      stubado, 2 de roteamento em test_models_pipeline_paths.py).
+      ruff/mypy --strict/banned_patterns limpos. NUNCA EXECUTADO sobre
+      dado real -- k treinos reais custam tempo de maquina, e o
+      retreino segue represado (decisao do Manager). Primeira execucao
+      real e o teste de fato do numero que sai (percentil do headline
+      contra o nulo), nao os testes unitarios que ja passam.
+
+  - id: AG-324
+    date: "2026-08-26"
+    file: "src/models/monotonic.py::se_spearman_fisher/_assign_from_ic/screen_monotone_constraints"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.14.2 (item 6 de §13.17), config/constants.yaml::alpha_monotonic_ic_magnitude_floor_k, src/models/alpha.py::fit_side_model (ic_magnitude_floor_k)"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 6 da ordem de §13.17, autorizado pelo Manager ('valide e aplique cada Fix mecanico')"
+    gap: >
+      `_assign_from_ic` atribuia restricao monotonica por SINAL puro
+      (`dominant = 1 if mean_ic > 0`) mais um teste de CONSISTENCIA
+      entre ambientes -- nenhum piso de MAGNITUDE. `mean_ic` e sempre
+      calculado e reportado, mas nunca comparado contra o erro-padrao
+      da propria estimativa. `§13.14.2` (mesma sessao) mediu as
+      discordancias entre o IC de `ret_net` e o de `P(TP)` (`AG-213`)
+      em `|mean_ic| ~= 0,007` contra `SE ~= 0,005` -- ~1,4 desvios-
+      padrao, indistinguivel de ruido amostral sob qualquer piso
+      razoavel (k>=1,4) -- e nada no codigo real filtrava isso antes de
+      decidir a restricao.
+    severity: "MEDIA -- monotone_constraints derivadas de sinal consistente mas estatisticamente fraco entram no LightGBM hoje, sem filtro de magnitude"
+    layer: "models"
+    consequence: >
+      APLICADO como `ic_magnitude_floor_k: float | None = None` em
+      `screen_monotone_constraints`/`fit_side_model` (opt-in, default
+      preserva o teste sign+consistencia puro, bit-exato). Quando
+      setado, uma feature so mantem a restricao se, ALEM de consistente,
+      `|mean_ic| >= k * SE(ESS)` -- `se_spearman_fisher` (funcao nova),
+      aproximacao de Fisher `1/sqrt(ESS-3)`, `ESS = Sigma uniqueness`
+      (AG-211, mesma definicao ja usada no resto do projeto, nao uma
+      formula fechada nova -- B24). `k` novo (`alpha_monotonic_ic_
+      magnitude_floor_k = 2,0`, ASSUMED/classe B/sweep [1,0; 3,0]) --
+      valor convencional de engenharia, nao medido neste projeto,
+      declarado a priori por exigencia da Regra Zero. Restricoes
+      FORCADAS por identidade contabil (`E27f_cost_atr_ratio`) nunca
+      passam pelo piso -- forcado e forcado, nao e teste estatistico.
+    status: >-
+      IMPLEMENTADO e verde -- 8 testes novos em test_models_monotonic.py
+      (formula fechada, ess pequeno levanta erro, piso zera sinal fraco/
+      nao zera sinal forte, falha alto sem ess, default preserva
+      producao, forcado ignora o piso) + wiring testado via
+      `fit_side_model` em test_models_alpha_item6_8_9.py.
+      ruff/mypy --strict/banned_patterns limpos. Politica NAO promovida
+      a default de producao (`pipeline.run_layer1_sprint` continua sem
+      passar `ic_magnitude_floor_k`) -- promover e decisao do Manager,
+      muda quais features recebem constraint monotonica.
+
+  - id: AG-325
+    date: "2026-08-26"
+    file: "src/models/alpha.py::derive_ess_regularization/LGBMHyperparams"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.14.1 (item 8 de §13.17), config/constants.yaml::alpha_lgbm_ess_regularization_*"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 8 da ordem de §13.17, autorizado pelo Manager ('valide e aplique cada Fix mecanico')"
+    gap: >
+      `§13.5-3` (v1) propunha `min_sum_hessian_in_leaf(celula) =
+      min_child_samples * w_barra * p(1-p)` mas nunca foi implementado
+      -- min_child_samples/min_sum_hessian_in_leaf continuavam valores
+      FIXOS de `constants.yaml`, nao derivados de ESS por celula.
+      `§13.14.1` (mesma sessao) corrigiu a formula original em 2
+      pontos reais (omitia `scale_pos_weight`, que MULTIPLICA a
+      hessiana -- verificado na fonte do LightGBM; tratava `p(1-p)`
+      como taxa base quando na verdade e a predicao CORRENTE da
+      iteracao de boosting, que cai conforme o treino avanca) e
+      retratou um 3o suposto defeito que a propria sessao tinha
+      inventado no reexame (usar `q10(w)` em vez de `w_barra` -- a
+      MEDIA ja e o lado mais restritivo, correto).
+    severity: "BAIXA -- parametro hoje INERTE em producao (num_leaves in {2,3} nunca chega perto do piso, §13.9.3); relevante so se max_depth subir, decisao separada nao tomada"
+    layer: "models"
+    consequence: >
+      APLICADO como `derive_ess_regularization` (nucleo puro) +
+      `regularization_basis: str = REGULARIZATION_FIXED` em
+      `fit_side_model` (opt-in, default usa os valores literais de
+      `LGBMHyperparams`, bit-exato). `ESS_DERIVED` recalcula os dois
+      pela formula emendada: `min_child_samples = ceil(n_obs_
+      independentes_alvo * linhas/ESS)`, `min_sum_hessian_in_leaf =
+      min_child_samples * w_barra * 0,25 / scale_pos_weight *
+      fator_conservador`. Dois novos parametros a priori
+      (`alpha_lgbm_ess_regularization_n_obs_independentes_alvo=30,0`,
+      `alpha_lgbm_ess_regularization_fator_conservador=0,5`, ambos
+      ASSUMED/classe B/sweep declarado) -- nenhum dos dois medido neste
+      projeto, escolha de engenharia declarada, nao estipulada em
+      silencio.
+    status: >-
+      IMPLEMENTADO e verde -- 3 testes de formula fechada + wiring via
+      `fit_side_model` (com/sem coluna `uniqueness`) em test_models_
+      alpha_item6_8_9.py. ruff/mypy --strict/banned_patterns limpos.
+      Politica NAO promovida a default de producao -- parametro inerte
+      sob a arvore rasa atual, prioridade baixa ate `max_depth` subir
+      (decisao separada, nao tomada).
+
+  - id: AG-326
+    date: "2026-08-26"
+    file: "src/models/alpha.py::_temporal_purged_three_way_split/fit_side_model (early_stopping_mode)"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.14.3 (item 9 de §13.17), config/constants.yaml::alpha_early_stopping_*"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 9 da ordem de §13.17, autorizado pelo Manager ('valide e aplique cada Fix mecanico')"
+    gap: >
+      `early_stopping` do LightGBM nunca foi wireado neste projeto --
+      `n_estimators` sempre foi contagem FIXA de `LGBMHyperparams`,
+      nenhum `eval_set`/callback em `fit_side_model`. `§13.5-5`
+      (v1) tinha proposto usar o split de calibracao EXISTENTE como
+      `eval_set` do early stopping -- `§13.14.3` (mesma sessao) achou
+      que isso usaria o MESMO dado duas vezes (calibra o isotonico E
+      decidiria `n_estimators`): B08 ("calibrador ajustado sobre o
+      proprio OOF") um nivel acima -- o calibrador ficaria ajustado
+      sobre o proprio conjunto de parada.
+    severity: "BAIXA -- nada em producao usa early stopping hoje; o achado e sobre uma PROPOSTA (§13.5-5), nao um defeito ja em producao"
+    layer: "models"
+    consequence: >
+      APLICADO como `_temporal_purged_three_way_split` (nucleo puro,
+      extensao de `_temporal_purged_calib_split`/AG-209 pra 3 blocos
+      contiguos -- fit/stop/calib, purge por `t1` nas DUAS fronteiras)
+      + `early_stopping_mode: str = EARLY_STOPPING_FIXED` em
+      `fit_side_model` (opt-in, default preserva 2 particoes sem early
+      stopping, bit-exato). `THREE_WAY` exige `calib_split_mode=
+      CALIB_SPLIT_TEMPORAL_PURGED` (falha alto combinado com o split
+      aleatorio -- sem nocao de fronteira temporal pra purgar). Usa
+      `eval_X`/`eval_y` (nao `eval_set=[(X,y)]` -- API deprecated no
+      LightGBM 4.7.0, achado de implementacao, verificado que a API
+      nova nao emite warning). Dois novos parametros a priori
+      (`alpha_early_stopping_stop_frac=0,15`, `alpha_early_stopping_
+      rounds=20`, ambos ASSUMED/classe B/sweep declarado).
+      `SideModelResult` ganha `n_train_stop`/`best_iteration` (0/None
+      no caminho legado).
+    status: >-
+      IMPLEMENTADO e verde -- 6 testes do nucleo puro (particao,
+      purge nas 2 fronteiras, falha alto) + 5 testes de wiring via
+      `fit_side_model` (treino real com LightGBM, combinacao invalida
+      falha alto, campos novos populados) em test_models_alpha_
+      item6_8_9.py. ruff/mypy --strict/banned_patterns limpos. Politica
+      NAO promovida a default de producao.

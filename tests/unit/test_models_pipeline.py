@@ -31,7 +31,7 @@ import pytest
 
 from src.features.build import T1_FEATURE_IDS
 from src.io import artifact as io_artifact
-from src.models import alpha, persistence, pipeline
+from src.models import alpha, backtest_lite, persistence, pipeline
 from src.models._constants import load_constant
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1, MODELS_DIR
 from src.validation.cpcv import CPCVConfig
@@ -427,6 +427,102 @@ def test_write_all_fold_model_bundles_reexecucao_sobre_particao_existente_falha(
             purge_ms_effective=1,
             root=tmp_path,
         )
+
+
+# ============================================================================
+# compute_permutation_null_headline -- ADR-005 §13.13, item 5 de §13.17
+# ============================================================================
+
+
+def _fake_path_result(sharpe: float, path_id: int = 0) -> backtest_lite.PathBacktestResult:
+    return backtest_lite.PathBacktestResult(
+        path_id=path_id,
+        n_signals=10,  # noqa: magic-number
+        n_filled_trades=10,  # noqa: magic-number
+        fill_rate=1.0,
+        sharpe_naive=sharpe,
+        mean_trade_ret=0.0,
+        std_trade_ret=0.01,  # noqa: magic-number
+        trades_per_year=100.0,  # noqa: magic-number
+    )
+
+
+def test_compute_permutation_null_headline_chama_run_all_folds_k_vezes_com_seeds_distintos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _fake_run_all_folds(*_args: object, **kwargs: object) -> list[object]:
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(alpha, "run_all_folds", _fake_run_all_folds)
+    monkeypatch.setattr(
+        backtest_lite, "backtest_by_path", lambda folds, df: {0: _fake_path_result(0.0)}
+    )
+
+    result = pipeline.compute_permutation_null_headline(
+        pl.DataFrame({"t0": []}),
+        (),
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        model_id=pipeline.MODEL_ID_CAMADA1,
+        hyper=alpha.LGBMHyperparams.from_constants(),
+        seed=1,
+        feature_ids=T1_FEATURE_IDS,
+        device_type="cpu",
+        tau_policy=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+        calib_split_mode=alpha.CALIB_SPLIT_LEGACY_RANDOM,
+        class_balance_basis=alpha.CLASS_BALANCE_COUNT,
+        calib_weight_basis=alpha.CALIB_WEIGHT_SAMPLE_WEIGHT,
+        k_replicas=4,  # noqa: magic-number
+        headline=1.0,
+    )
+    assert len(calls) == 4  # noqa: magic-number
+    assert all(c["variant"] == alpha.VARIANT_CAMADA1 for c in calls)
+    assert all(c["null_permutation_seed"] is not None for c in calls)
+    seeds = [c["null_permutation_seed"] for c in calls]
+    assert len(set(seeds)) == 4  # noqa: magic-number -- todos distintos
+    assert result.k_replicas == 4  # noqa: magic-number
+
+
+def test_compute_permutation_null_headline_percentil_correto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Headline REAL supera 3 de 4 réplicas de nulo (todas com sharpe
+    menor) -- percentil 0,75, calculado por `backtest_lite.percentile_
+    rank`, não reimplementado aqui."""
+    sharpes_por_replica = iter([0.1, 0.2, 0.3, 10.0])  # noqa: magic-number -- 3 abaixo do headline, 1 acima
+
+    def _fake_run_all_folds(*_args: object, **_kwargs: object) -> list[object]:
+        return []
+
+    def _fake_backtest_by_path(
+        folds: object, df: object
+    ) -> dict[int, backtest_lite.PathBacktestResult]:
+        return {0: _fake_path_result(next(sharpes_por_replica))}
+
+    monkeypatch.setattr(alpha, "run_all_folds", _fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", _fake_backtest_by_path)
+    result = pipeline.compute_permutation_null_headline(
+        pl.DataFrame({"t0": []}),
+        (),
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        model_id=pipeline.MODEL_ID_CAMADA1,
+        hyper=alpha.LGBMHyperparams.from_constants(),
+        seed=1,
+        feature_ids=T1_FEATURE_IDS,
+        device_type="cpu",
+        tau_policy=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+        calib_split_mode=alpha.CALIB_SPLIT_LEGACY_RANDOM,
+        class_balance_basis=alpha.CLASS_BALANCE_COUNT,
+        calib_weight_basis=alpha.CALIB_WEIGHT_SAMPLE_WEIGHT,
+        k_replicas=4,  # noqa: magic-number
+        headline=1.0,
+    )
+    assert result.null_sharpes == (0.1, 0.2, 0.3, 10.0)  # noqa: magic-number
+    assert result.headline_percentile == pytest.approx(0.75)  # noqa: magic-number
 
 
 # ============================================================================
