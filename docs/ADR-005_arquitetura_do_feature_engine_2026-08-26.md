@@ -821,11 +821,29 @@ A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
   (capacidade vs. demanda MEDIDA, que concluiu "R3 em 4 ativos") — só o
   eixo de admissibilidade de quantização + capacidade por orçamento de
   fee, sem demanda plugada (`--demand-report` não tem schema real ainda,
-  mesmo gap já registrado abaixo). Leitura direcional, não recálculo:
-  como capacidade escala ~linear com `equity` e demanda não depende de
-  `equity`, um `equity` maior só ALARGA a folga que R3 já tinha em
-  §12.4, nunca estreita — mas os números exatos de §12.4 (baseados em
-  `equity=196,85`) não foram reprocessados com `213,80`. Artefato:
+  mesmo gap já registrado abaixo).
+  **Correção 2026-08-26b (achado da própria varredura de pendências,
+  não da rodada original):** o parágrafo anterior desta entrada alegava
+  "capacidade escala ~linear com `equity`, um `equity` maior só alarga
+  a folga" — **isso está errado**, e a formula já persistida no
+  artefato mostra por quê: `capacidade_trades_mes = (fee_budget_monthly
+  × equity) / custo_trade`, onde `custo_trade = (equity × risk_per_trade
+  / stop_pct) × (cost_bps/10000)` — substituindo, `equity` se CANCELA
+  algebricamente (aparece no numerador e no denominador). Capacidade é
+  **invariante** a `equity`, não escala com ele. Confirmado empiricamente:
+  `capacidade_trades_mes_grade` R1 = 49,76 nas DUAS rodadas
+  (`equity=196,85` e `equity=213,80`), valor idêntico. O que de fato
+  escala com `equity` é só `stop_max_pct` (o teto de QUANTIZAÇÃO,
+  `stop_max = equity × risk_per_trade / (2 × unit_notional)`) — é essa
+  variável, não a capacidade, que muda entre as duas rodadas e explica
+  `BTCUSDT/R3` deixar de ser excluída. A conclusão prática (0 exclusões
+  com `equity=213,80`) continua correta; a explicação causal estava
+  errada. Isto NÃO reproduz a decisão completa de §12.4 (capacidade vs.
+  demanda MEDIDA, que concluiu "R3 em 4 ativos") — os números exatos de
+  §12.4 (baseados em `equity=196,85`) não foram reprocessados com
+  `213,80`, e não precisam ser só por causa do equity (capacidade não
+  depende dele) — precisariam ser reprocessados se a DEMANDA medida
+  mudasse, o que não foi verificado aqui. Artefato:
   `experiments/production_grade_gate_report.json` (sobrescrito, é o
   único caminho de saída do script).
 - **O S1 filtra só o piso R2, nunca o teto R1.** Por isso R3 aparece com 7
