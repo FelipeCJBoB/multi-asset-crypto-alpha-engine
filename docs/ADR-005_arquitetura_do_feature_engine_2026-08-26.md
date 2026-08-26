@@ -4,7 +4,8 @@
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
-- **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado aqui.
+- **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
+- **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
 
 Nenhum default de produção alterado, nenhuma coluna de feature removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
 
@@ -1012,3 +1013,1264 @@ diagnósticos de `gain` — foram todas produzidas sob um purge dimensionado par
 um décimo do vetor, com uma coluna 100% morta dentro dele e com populações de
 treino e teste filtradas por critérios diferentes.** Nenhuma delas é evidência
 sobre as features enquanto isso não for corrigido.
+
+---
+
+# §13 v2 — engenharia de ML, Data Science e Engenharia de Dados
+
+**Status:** PROPOSTO, não revisado por terceiro. Aditivo: `§13.1`-`§13.8`
+**não são renumeradas** (`AG-266` e commits já referenciam seções por número,
+mesma razão da nota de `§10`).
+**Autor:** persona `lgbm-crypto-quant` (`docs/prompts/lgbm-crypto-quant.md`),
+2026-08-26. **Antecessor:** `§13 v1`, persona `feature-thesis-auditor`.
+**AGs abertos por esta seção:** `AG-296`, `AG-297`.
+
+> **Regra de leitura.** Todo número foi medido contra o dado real ou lido da
+> documentação oficial da biblioteca. Onde uma hipótese foi **refutada pela
+> própria medição**, ela está em `§13.15`/`§13.19` com o resultado — não
+> removida. Seis achados meus não sobreviveram inteiros.
+
+## §13.9 Auditoria de `§13 v1` — o que sustento, o que corrijo, o que refuto
+
+`§13 v1` foi verificado item a item contra o código. **Os três achados
+centrais procedem e são graves.** Confirmo-os sem ressalva:
+
+| `§13 v1` | veredito | verificação |
+|---|---|---|
+| **§13.1** purge dimensionado para 7 features, treino usa 69 | **PROCEDE** | `pipeline.py:580` chama `compute_max_feature_lookback_ms(tf_effective, resolution_id=...)` sem `feature_ids`, com `feature_ids_effective` já resolvido em `:563` |
+| **§13.1** `_WINDOW_FIELD_NAMES` cobre só janelas T1 | **PROCEDE** | `build.py:435-446`: 10 campos, `max = 96`; `C08_vol_pctile_rolling_1y` não está entre eles |
+| **§13.2** `is_not_null()` deixa NaN passar | **PROCEDE** | `dataset.py:497-503` com `T1_FEATURE_IDS` hardcoded; `build_design_matrix` (`alpha.py:201`) é `df.select(...).to_numpy()`, que materializa null como NaN |
+| **§13.2** assimetria treino/teste | **PROCEDE, e é maior que o descrito** | `_unique_test_bars` (`alpha.py:988`) recebe `feature_ids`, `side_subset` não — ver `§13.9.1` |
+| **§13.4** constraint sem piso de magnitude | **PROCEDE** | `monotonic.py:158-163`: `dominant = 1 if mean_ic > 0`, sem qualquer teste sobre `|mean_ic|` |
+| **§13.5-1/-2/-5** vetor único, NaN→null, manifesto | **ENDOSSO integral** | são contrato, não ajuste; nada a acrescentar |
+
+Três itens de `§13 v1` **precisam de correção antes de virar
+implementação**, e um deles é aritmético:
+
+### §13.9.1 A assimetria treino/teste tem **duas** pernas, não uma
+
+`§13.2` nomeia a perna do warmup/NaN. Existe uma segunda, já registrada em
+`AG-210(b)` e citada em `ADR-004 §1 (F2)`: **`side_subset` remove `NOFILL`,
+`_unique_test_bars` não.** Treino e inferência operam sobre populações que
+diferem por dois critérios independentes, não um.
+
+**Boa notícia medida:** `ADR-004 (F2)` dimensiona essa perna em **10,7% —
+"uma barra em cada dez"**. Medido hoje sobre os labels de produção:
+
+| célula | `NOFILL` hoje | `NOFILL` citado em `ADR-004` |
+|---|---|---|
+| BTCUSDT/R1 | **1,54%** | 10,73% |
+| ETHUSDT/R1 | **1,27%** | — |
+| SOLUSDT/R1 | **2,17%** | — |
+| BNBUSDT/R1 | **1,72%** | — |
+| XRPUSDT/R1 | **1,21%** | — |
+
+O relabel de `AG-229` (fill por `agg_trades`) reduziu `NOFILL` em **7×**.
+A segunda perna encolheu de primeira ordem para ~1,5% — continua sendo
+assimetria e continua tendo que ser fechada, mas **não é mais "uma barra em
+cada dez"**, e `ADR-004` precisa da ressalva. Isso é sintoma de `§13.11`.
+
+### §13.9.2 A tabela de `§13.3` não fecha com as próprias colunas
+
+`§13.3` publica:
+
+```
+BTCUSDT/R1 | linhas 446.223 | ESS 47.549 | ESS/linhas 0,3645
+```
+
+`47.549 / 446.223 = 0,1065`, não `0,3645`. As duas colunas são **populações
+diferentes**: `ESS` vem de `SideModelResult.sum_uniqueness_train` (um lado,
+o treino de um fold) e `linhas` vem de outro lugar. Medido diretamente sobre
+`labels.parquet` de hoje:
+
+| célula | linhas (lado=1, pós-NOFILL) | `Σ uniqueness` | razão |
+|---|---|---|---|
+| BTCUSDT/R1 | 215.442 | 84.028 | **0,3900** |
+| XRPUSDT/R1 | 170.953 | 65.201 | 0,3814 |
+| BNBUSDT/R2 | 80.748 | 32.159 | 0,3983 |
+| ETHUSDT/R3 | 39.485 | 15.316 | 0,3879 |
+| SOLUSDT/R3 | 40.659 | 15.911 | 0,3913 |
+
+**A razão de `§13.3` está certa** (0,38–0,40 medido de forma independente,
+contra 0,3645–0,3896 declarado) — e a conclusão qualitativa também: ~61% do
+`n` aparente é redundância. **A coluna `linhas` é que está errada**, e o
+valor `446.223` identifica a fonte: é exatamente `n_labels` da última linha
+`BTCUSDT/R1` de `data/label_engine_runs/label_engine_runs.parquet`, que é
+**pré-relabel**. O count real hoje é 437.630 (o mesmo que `AG-230-ADDENDUM`
+usa). Sintoma de `§13.11`.
+
+### §13.9.3 `§13.3` alarma sobre uma configuração que a produção não usa em 9 de 10 células
+
+`§13.3` calcula: `min_child_samples = 20` → ~7,3 observações independentes
+por folha → erro-padrão de `±18,4 pp` contra lift-alvo de ~5 pp → *"cada
+folha mínima do default de produção é ruído com amplitude 3,7× o sinal"*.
+
+A aritmética está certa **para o default de `constants.yaml`**
+(`alpha_lgbm_min_child_samples: 20`). Mas `config/alpha_hyperparams_by_combo.yaml`
+já existe, é `provenance: MEASURED`, e diz:
+
+| `min_child_samples` | células |
+|---|---|
+| **2.000** | 7 de 10 |
+| 500 | 2 de 10 |
+| 20 | 1 de 10 (`BNBUSDT_R2`) |
+
+Com `mcs = 2000` e `ESS/linhas = 0,39`, a folha mínima tem **780
+observações independentes** → `SE(p) = √(0,25/780) = 1,79 pp`, contra o
+`±18,4 pp` de `§13.3`. **Uma ordem de grandeza de diferença.**
+
+E há um segundo motivo, mais forte, para o alarme não valer como escrito:
+as 10 células escolheram `max_depth = 2` e `num_leaves ∈ {2,3}` — **tocos**.
+Uma árvore de 2 folhas sobre 160 mil linhas não chega perto de `mcs = 2000`
+a não ser num split extremamente desbalanceado. **O guardrail não morde
+porque a árvore não tem profundidade para fazê-lo morder.**
+
+`§13.3` continua **certo no princípio** (regularização dimensionada em
+linhas, não em observações independentes) e **certo sobre o default**. O que
+ele não pode afirmar é que descreve a configuração de produção. O caminho
+`use_hyperparams_by_combo` existe em `pipeline.py:1246` — qual dos dois é
+"produção" é uma pergunta em aberto que `§13.5-5` já tangencia e que
+`§13.12` fecha.
+
+---
+
+## §13.10 **P0 — a probabilidade calibrada não é `P(TP)`. Viés medido: −13,0%**
+
+Este é o achado que mais me preocupa, e ele não aparece em `§13 v1`.
+
+### O mecanismo
+
+`alpha.py:906`:
+
+```python
+calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)
+```
+
+Regressão isotônica ponderada minimiza `Σ wᵢ(yᵢ − f(xᵢ))²`. A solução em cada
+patamar é a **média ponderada de `y`**, logo `f(x) = E_w[y | x]`.
+
+E `w` não é uniforme. `src/labels/weights.py:153`:
+
+```python
+raw_weight = (out["uniqueness"] * out["ret_net"].abs()).to_numpy()
+```
+
+`sample_weight ∝ uniqueness × |ret_net|`. Sob triple barrier, `|ret_net|` é
+**sistematicamente maior no `SL` do que no `TP`** — o custo de ida e volta
+subtrai do ganho e soma à perda. Medido:
+
+| célula | `|ret_net|` médio no TP | no SL | SL/TP |
+|---|---|---|---|
+| BTCUSDT/R1 | 0,00388 | 0,00500 | **1,29** |
+| BNBUSDT/R1 | 0,00370 | 0,00476 | 1,29 |
+| ETHUSDT/R1 | 0,00455 | 0,00568 | 1,25 |
+| SOLUSDT/R3 | 0,01399 | 0,01483 | 1,06 |
+
+O calibrador então **sub-pondera exatamente a classe positiva**.
+
+### A medição
+
+Isotônica ajustada sobre os `y` e `w` reais de BTCUSDT/R1 (lado long,
+215.442 linhas, score sintético monótono para isolar o efeito do peso):
+
+```
+P(TP) real por contagem            : 0,4967
+calibrado COM sample_weight (hoje) : 0,4323   viés = −0,0645  (−13,0%)
+calibrado SEM sample_weight        : 0,4967   viés = −0,0000
+```
+
+**A saída do calibrador não estima `P(TP)`. Estima `P(TP)` sob uma medida
+inclinada por `|ret_net|`, e o viés é de −6,45 pontos percentuais.**
+
+### Por que isso é P0
+
+1. **A régua de `§1.1` está denominada em `P(TP)`.**
+   `config/min_alpha_lift_by_combo.yaml` declara `p_tp_base`,
+   `breakeven_wr` e `min_alpha_lift_ptp` — todos por contagem. Comparar a
+   saída calibrada contra essa régua compara **duas grandezas diferentes**.
+   O lift exigido é `+7,6%` a `+15,1%`; o viés de nível é `−13,0%`. **São
+   da mesma ordem.**
+2. **Todo diagnóstico de calibração fica errado.** `src/analysis/
+   calibration_diagnostics.py` mede desvio entre probabilidade predita e
+   frequência observada. Com o predito 13% baixo por construção, a curva de
+   confiabilidade reporta um viés de modelo que é, na verdade, de
+   ponderação.
+3. **Não é o `scale_pos_weight` que salva.** Medido com LightGBM 4.7.0 (o
+   do `uv.lock`), sobre `y`/`w` reais e features de ruído puro:
+
+   | configuração | `p` médio predito |
+   |---|---|
+   | `spw = w_neg/w_pos = 1,3134` (WEIGHT, pós-`AG-272`) | 0,4999 |
+   | `spw = n_neg/n_pos = 1,0132` (COUNT, legado) | 0,4356 |
+   | `spw = 1,0` | 0,4324 |
+   | **`P(TP)` verdadeiro por contagem** | **0,4967** |
+
+   Nenhuma das três estima `P(TP)`; e o calibrador isotônico **sobrescreve o
+   nível do booster de qualquer jeito** — o número que chega ao consumidor é
+   sempre o `0,4323` ponderado.
+
+### O que **não** muda, e é importante dizer — este é o limite honesto do achado
+
+Duas coisas me impedem de chamar isto de "corrompe uma decisão automática
+hoje", e as duas foram verificadas:
+
+1. **`tau` é um quantil.** `tau = np.quantile(calibrated_train_all,
+   1 − target_signal_rate)` (`alpha.py:910`), e quantil é invariante a
+   reparametrização monótona. **A decisão de entrar em trade não muda com
+   este achado.**
+2. **`min_alpha_lift_ptp` não tem consumidor em código.** Verificado por
+   varredura: `config/min_alpha_lift_by_combo.yaml` é **escrito** por
+   `src/analysis/economic_gate.py:590` e não é lido por nenhum `.py`. A
+   régua é hoje um gate aplicado por **pessoa**, lendo o número.
+
+Então o dano atual é de **interpretação**, não de execução — e é precisamente
+por isso que a hora de corrigir é agora. O `architecture_gaps_log` já
+registra, como opção em aberto, tornar `min_alpha_lift_ptp` *"gate vinculante
+de entrada de trial"*. **No dia em que essa opção for exercida, um gate
+automático passa a comparar `0,4323` contra uma régua escrita em `0,4967`.**
+Corrigir antes custa uma decisão; corrigir depois custa uma decisão mais uma
+rodada de artefatos.
+
+Enquanto isso, o que já está errado é toda leitura numérica: régua,
+diagnóstico de calibração, e qualquer relatório que diga "o modelo prevê 52%
+de chance de TP".
+
+> Nota que reforça o ponto: o próprio `economic_gate.py:453-457` já carrega
+> uma ressalva de nível (*"a ORDENAÇÃO é robusta, o NÍVEL absoluto não"*),
+> por outro motivo — `round_trip_cost_bps_maker_prob`. São **dois** vieses
+> de nível independentes empilhados sobre a mesma régua, cada um registrado
+> num lugar diferente e nenhum dos dois no ponto de uso.
+
+### As três saídas, e a recomendação
+
+| opção | o que faz | custo | avaliação |
+|---|---|---|---|
+| **(a)** calibrador **sem** `sample_weight` | saída volta a ser `P(TP)` | muda o artefato; exige retreino | corrige o sintoma; discorda da unicidade (`B10`) no calibrador |
+| **(b)** calibrador com **`uniqueness` apenas**, sem `|ret_net|` | respeita `B10` e remove a inclinação econômica | idem | **RECOMENDADA** |
+| **(c)** manter e **renomear** | `p_hat` deixa de se chamar probabilidade; régua reescrita na mesma medida | zero código de treino | honesto, mas espalha a inclinação por todo o resto |
+
+**Recomendo (b)**, e o argumento é de primeiro princípio: `uniqueness` corrige
+**redundância estatística** (quantas observações independentes existem) e
+pertence a qualquer estimador; `|ret_net|` codifica **importância econômica**
+e pertence a uma função de decisão, não a uma estimativa de probabilidade.
+Misturar os dois num calibrador produz um objeto que não é nem uma coisa nem
+outra — que é exatamente o que a medição mostra.
+
+> **Ressalva que preciso registrar contra mim mesmo:** a opção (b) muda o
+> valor de todo modelo treinado. Se o Manager decidir (c), a decisão é
+> defensável — mas então `min_alpha_lift_by_combo.yaml` precisa ser
+> **recalculado na medida ponderada**, e nenhum documento pode voltar a
+> chamar a saída de `P(TP)`. Não fazer nem (b) nem (c) é a única opção ruim.
+
+---
+
+## §13.11 **P0 — o registro do Label Engine descreve labels que não existem mais**
+
+Achado de **Engenharia de Dados**, e ele é a causa-raiz de `§13.9.1` e
+`§13.9.2`.
+
+`data/label_engine_runs/label_engine_runs.parquet` é o registro append-only
+do Label Engine — a proveniência de todo label de produção. Medido:
+
+```
+config_hash em data/labels/BTCUSDT/R1/v1/labels.parquet : 3599b765b7a53ff2
+config_hash na última linha R1 do registro             : 67d2193fff4a1fae
+config_hash distintos no registro, para R1              : 1
+logged_at_utc máximo do registro inteiro                : 2026-08-24 01:12
+mtime de labels.parquet                                 : 2026-08-25 15:45
+```
+
+**Os hashes não batem, e o registro só conhece um.** O relabel de `AG-229`
+(2026-08-25) reescreveu as 15 combinações e **não apendou nenhuma linha de
+run**. Idêntico em `HEAD` e no working tree — não é sujeira local.
+
+Magnitude do erro que o registro carrega hoje, para `BTCUSDT/R1`:
+
+| quantidade | registro | disco (medido) | erro |
+|---|---|---|---|
+| `n_labels` | 446.223 | 437.630 | +2,0% |
+| `pct_nofill` | 0,10731 | 0,0154 | **7,0×** |
+| `sum_uniqueness` | 137.991 | 167.968 | −17,8% |
+
+### Por que isto é P0, e não higiene
+
+Porque **os documentos de decisão leem esse registro**:
+
+- `ADR-004 §0/§1` constrói `F1`, `F2` e `F3` sobre ele. `F2` ("NOFILL é
+  10,7%") está 7× errado. `F1` ("edge bruto incondicional `= (0,451 −
+  0,549)·1,5 = −0,147 ATR`") usa `P(TP) = 45,1%`; hoje `P(TP) = 49,67%`, o
+  que dá **−0,0099 ATR** — **15× menor**. O fato fundacional de um ADR
+  `PROPOSTO` mudou de ordem de grandeza sem que nada avisasse.
+- `ADR-005 §13.3` usa `linhas = 446.223` (`§13.9.2`).
+- `ADR-005 §12.4` deriva a **demanda** (`n_trades/n_eval_long`) de
+  `experiments/alpha_deep_analysis_2026-08-24.json`, de 2026-08-24 — também
+  pré-relabel. A decisão de promover **R3** compara capacidade (recalculada
+  hoje) contra demanda (medida sob outros labels).
+- Detalhe que fecha o diagnóstico: os `pct_tp`/`pct_sl` da tabela de
+  `ADR-004 §0` (0,4022 / 0,4898 para BTCUSDT/R1) **não reproduzem nem o
+  registro commitado** (0,3452 / 0,5461) **nem o disco**. Não consigo dizer
+  de onde vieram — e essa é a definição operacional do problema: hoje não
+  existe como saber a qual versão de label um número publicado pertence.
+
+### Correção proposta
+
+1. **`write_labels_atomic` e o append do registro viram uma transação.**
+   Escrever `labels.parquet` sem apendar a linha de run passa a ser
+   impossível, não improvável.
+2. **`config_hash` vira campo obrigatório de todo artefato de análise.**
+   Todo `.json` em `experiments/` que consome labels grava o `config_hash`
+   de cada célula lida.
+3. **Um gate de staleness**, barato e mecânico: um lint que, para cada
+   artefato com `config_hash` declarado, compara contra o
+   `labels.parquet` vigente e **falha** na divergência. É `B15`
+   (`config_hash` do label = o da execução) estendido de
+   *label↔execução* para *label↔análise* — mesma disciplina, fronteira
+   nova.
+4. **Reprocessar o registro** para as 15 células atuais, com a linha
+   `renumbered`/`supersedes` apontando para a entrada antiga (append-only
+   preservado, nada apagado).
+
+---
+
+## §13.12 **P1 — 10 configurações de hiperparâmetro sobre ~2 problemas independentes**
+
+`config/alpha_hyperparams_by_combo.yaml` (`provenance: MEASURED`, ADR-003
+Estágio 2, mediana de 5 seeds) entrega **10 vetores distintos**:
+
+| parâmetro | valores escolhidos |
+|---|---|
+| `min_child_samples` | 20 · 500 · 2000 |
+| `learning_rate` | 0,01 · 0,03 |
+| `n_estimators` | 150 · 300 |
+| `subsample` | 0,6 · 0,8 · 0,9 |
+| `num_leaves` | 2 · 3 |
+| `feature_fraction` | **0,3 em `BTCUSDT_R1`**, 1,0 nas outras 9 |
+
+A capacidade total (`learning_rate × n_estimators`) varia de **3,0 a 9,0**
+entre células — um fator **3** —, escolhida por busca.
+
+E o arquivo cobre **10 das 15 células**: as outras 5 caem no vetor global de
+`constants.yaml`, com warning (`pipeline.py:1248`). A grade de produção é,
+portanto, uma **mistura de células calibradas e não calibradas** — o que
+torna qualquer comparação entre grades (inclusive a de `§12`) uma comparação
+entre objetos configurados por critérios diferentes. É o mesmo defeito que
+`§12.8` já nomeia para o filtro S1 ("a comparação entre grades foi feita
+sobre conjuntos filtrados por critérios diferentes"), repetido na camada do
+hiperparâmetro.
+
+**O problema não é o valor. É o denominador.** Quantas células
+independentes existem?
+
+- **Entre símbolos:** `experiments/cross_symbol_ess_report.json` já mede,
+  pelo espectro da matriz de correlação dos 5 ativos:
+  **`n_eff = 2,03`**, `hhi_effective = 0,492`, autovalor dominante `0,682`
+  em 1.706 dias alinhados. Cinco ativos valem por dois.
+- **Entre resoluções:** `§11.1` do próprio ADR-005 mede **197 de 275 blocos
+  símbolo×feature (72%) perfeitamente concordantes** nas 3 resoluções, e
+  conclui que a unidade efetiva é o símbolo, não a célula.
+
+Compondo os dois: as 15 células valem por **~2 problemas independentes**.
+Ajustar 10 vetores de hiperparâmetro sobre ~2 problemas independentes é o
+mesmo erro que `§0.1` e `§11.1` já corrigiram duas vezes nesta linha de
+trabalho — **tratar observações redundantes como independentes** — cometido
+agora na camada do modelo, não na da feature.
+
+> `§11.1` diz textualmente: *"O mesmo erro, duas vezes na mesma linha de
+> trabalho."* Esta é a terceira, e é a mais cara: cada vetor entrou em
+> `N_lifetime` e cada um pesa na deflação do DSR.
+
+### O teste que decide, e ele é barato
+
+Não proponho apagar o arquivo. Proponho **medir se ele carrega informação**:
+
+```
+H₀: um único vetor global de hiperparâmetro é indistinguível dos 10 por célula.
+Teste: para cada célula, treinar as DUAS configurações sobre os MESMOS
+       caminhos de CPCV, com as MESMAS seeds.
+Estatística: diferença de métrica por caminho.
+Critério a priori: se |Δ| mediano < σ entre caminhos do CPCV em ≥ 8 das 10
+       células, H₀ não é rejeitada e o arquivo vira UM vetor.
+```
+
+Isso não gasta `N_lifetime` novo: é **reexecução de configurações já
+escolhidas**, não busca. E o retorno é grande — se `H₀` não cair, o projeto
+devolve 9 graus de liberdade à deflação e passa a ter **uma** configuração
+para auditar em vez de dez.
+
+**A precondição, e ela é intransponível:** este teste só é interpretável
+depois de `§13.5-1` e `§13.5-2`. `§13.8` já diz isso, e vale integralmente
+aqui.
+
+---
+
+## §13.13 **P1 — o pipeline não sabe dizer "não há sinal"**
+
+Propriedade estrutural, não bug. `tau` é definido em `alpha.py:910` como o
+quantil `1 − target_signal_rate` da distribuição de scores. **Um quantil
+sempre existe.** O modelo dispara na taxa alvo qualquer que seja o conteúdo
+informativo do vetor.
+
+Medido — 69 features de **ruído gaussiano puro**, `y`/`w` reais de
+BTCUSDT/R1, treino em 70% e teste nos 30% finais:
+
+| configuração | `sd` do score (treino) | `sd` (teste) | taxa disparada OOS | alvo |
+|---|---|---|---|---|
+| default `constants.yaml` (`nl=8, md=3, mcs=20`) | 0,01575 | 0,01554 | **1,767%** | 1,89% |
+| ADR-003 `BTCUSDT_R1` (`nl=3, mcs=2000`) | 0,01005 | 0,01003 | **1,940%** | 1,89% |
+
+**Zero sinal, e ainda assim uma "probabilidade calibrada" com dispersão
+própria e uma taxa de disparo dentro de 7% do alvo.** Nada dentro do laço de
+treino pode reportar ausência de edge — só a régua econômica de `§1.1`
+pode, e ela vive fora.
+
+**Proposta, e a peça já existe:** `fit_side_model` já aceita
+`null_permutation_seed` (`alpha.py:663`), que embaralha `label` e `ret_net`
+juntos preservando `sample_weight`. Ele é usado hoje só em investigação
+pontual. Proposta: **todo relatório de `run_layer1_sprint` passa a carregar
+o nulo de permutação do mesmo pipeline**, `k` réplicas, e reporta a métrica
+como percentil contra esse nulo — nunca como número absoluto.
+
+Sem isso, um lift de `1,02` medido é indistinguível, no artefato, dos
+`1,767%` de disparo que o ruído puro produz. Custa `k` treinos por célula e
+**zero `N_lifetime`** (é nulo, não busca).
+
+---
+
+## §13.14 Correções ao desenho de `§13.5`
+
+Três dos cinco itens de `§13.5` precisam de emenda. Os outros dois
+(`-1` vetor único, `-2` NaN→null) endosso sem alteração.
+
+### §13.14.1 `§13.5-3` — dois defeitos reais na fórmula da hessiana (e um que eu inventei e retiro)
+
+`§13.5-3` propõe:
+
+```
+min_sum_hessian_in_leaf(célula) = min_child_samples × w̄ × p(1−p)
+```
+
+> **RETRATADO — falso positivo meu, achado no reexame.** A primeira redação
+> desta v2 acusava a fórmula de ser *"redundante por construção"* por usar
+> `w̄` em vez de um quantil inferior de `w`, alegando que *"a folha a pegar
+> é a composta de linhas de peso BAIXO"*. **A direção está invertida.** Uma
+> folha com `mcs` linhas de peso baixo tem `Σw = mcs·q10(w) < mcs·w̄` — ou
+> seja, **o piso pela média exatamente a captura**, e um piso por `q10` a
+> deixaria passar por construção. Com `w̄ = 1,0157` contra mediana
+> `= 0,8153`, usar a média é o lado **mais** restritivo, que é o desejado.
+> O rótulo "redundante" também cai: com `w` indo de 0,82 (mediana) a 35,9
+> (máx), contagem e massa mordem em folhas diferentes. **`§13.5-3` está
+> certo neste eixo.** Sobram dois defeitos, os dois reais:
+
+**(i) Omite `scale_pos_weight`, que multiplica a hessiana.** Verificado na
+fonte do LightGBM (`src/objective/binary_objective.hpp`): a hessiana é
+`|r|·(sigmoid − |r|) · label_weight · weight`, e `label_weight` **é**
+`scale_pos_weight` para a classe positiva. Com `spw = 1,3134` (base WEIGHT,
+o default desde `AG-272`), as linhas positivas carregam **31% mais massa**
+do que a fórmula supõe.
+
+**(ii) Trata `p` como a taxa base, mas a hessiana é dinâmica.** `p` na
+hessiana é a **predição corrente** naquela iteração de boosting, não a taxa
+base. Conforme o boosting avança e os scores se espalham, `p(1−p)` **cai**,
+e uma restrição de massa fixa fica **progressivamente mais apertada**. Um
+piso derivado de `p̄` descreve a iteração 0 e nenhuma outra.
+
+**Emenda proposta** — a fórmula de `§13.5-3` com os dois termos que faltam:
+
+```
+min_sum_hessian_in_leaf(célula) = n_obs_independentes_alvo
+                                × (linhas/ESS)      # converte obs. indep. -> linhas
+                                × w̄                 # MÉDIA, confirmada correta acima
+                                × 0,25              # cota de p(1-p) na iteração 0
+                                ÷ scale_pos_weight  # (i): spw infla a massa real
+                                × fator_conservador # a priori, <= 1, cobre (ii)
+```
+
+com **todos** os termos medidos in-fold e `n_obs_independentes_alvo` /
+`fator_conservador` declarados a priori. E — importante — o parâmetro só
+passa a valer a pena **se `max_depth` subir**: com `num_leaves ∈ {2,3}`,
+nenhum piso de folha morde (`§13.9.3`). **Prioridade baixa**: sem a mudança
+de profundidade, esta emenda corrige uma fórmula que rege um parâmetro
+inerte.
+
+### §13.14.2 `§13.5-4` — o bloqueio proposto guarda um canal que carrega 0,08% do dado
+
+`§13.5-4` propõe transformar `screen_target_agreement` em **bloqueio**:
+discordância entre o alvo do IC (`ret_net`) e o do modelo (`P(TP)`) zera a
+constraint.
+
+O mecanismo que `AG-213` descreve para essa discordância é, na própria
+docstring de `monotonic.py:270`: *"uma feature que melhora `ret_net`
+sobretudo tornando os desfechos `TIME` menos ruins, sem mover P(TP)"*.
+
+`ADR-004 §0` já mediu, e eu confirmei nos labels de hoje: **`P(TIME)` é
+0,08%.** BTCUSDT/R1: 180 desfechos `TIME` em 215.442. ETHUSDT/R3: **4 em
+39.485**. A barreira vertical praticamente nunca é atingida.
+
+**O canal DECLARADO está fechado — mas não é o único, e a primeira redação
+desta v2 concluiu demais.**
+
+Medida a decomposição de variância de `ret_net` em BTCUSDT/R1 (lado long):
+
+```
+variância total          2,673e-05
+  entre ramos (TP/SL)    73,8%
+  DENTRO do ramo         26,2%
+```
+
+**26% da variância de `ret_net` vive dentro dos ramos** — preço de fill,
+`funding_bps`, `adverse_selection_bps`. Uma feature que se correlacione com
+fill melhor, sem mover `P(TP)`, produz discordância genuína entre os dois
+alvos por um canal que **não** é `TIME` e **não** é ruído.
+
+Então o veredito se divide:
+
+- **A justificativa de `§13.5-4` está errada** e precisa ser reescrita: o
+  mecanismo que a docstring de `AG-213` invoca carrega 0,08% do dado.
+- **A conclusão "logo não bloquear" NÃO se sustenta** como eu escrevi. Existe
+  um canal vivo de 26%.
+- **O que sobra, e é suficiente:** as discordâncias reportadas estão em
+  `|mean_ic| ≈ 0,007` contra `SE ≈ 0,005` — **~1,4σ**. Nesse nível, o
+  **piso de magnitude** (`|mean_ic| ≥ k·SE(ESS)`, `k` a priori) já as
+  elimina antes de a pergunta da concordância ter sujeito.
+
+**Recomendação revista: implementar o piso de magnitude PRIMEIRO e só então
+remedir a concordância.** Se, com constraints acima do piso, ainda houver
+discordância, ela é real (canal de 26%) e aí sim o bloqueio se justifica —
+com a justificativa certa. Bloquear agora seria empilhar um filtro sobre
+ruído que o piso já remove.
+
+`screen_target_agreement` continua **relatório** até essa remedição.
+
+### §13.14.3 `§13.5-5` — `early_stopping` sobre o split de calibração usa o mesmo dado duas vezes
+
+`§13.5-5` propõe: *"`early_stopping` sobre o sub-split de calibração — que
+já existe, já é purgável e já não é o `fit`."*
+
+O sub-split de calibração é o insumo do **calibrador isotônico**
+(`alpha.py:904-906`). Usá-lo também para escolher `n_estimators` significa
+que o calibrador é ajustado sobre o mesmo dado que **selecionou o modelo que
+ele calibra**. É `B08` de novo, um nível acima: `B08` proíbe calibrar sobre
+o próprio OOF; isto calibra sobre o próprio conjunto de parada.
+
+Com `alpha_calibration_holdout_frac = 0,25` e `num_leaves ∈ {2,3}`, o efeito
+é pequeno — mas é exatamente a classe de atalho que este projeto já pagou
+para descobrir.
+
+**Emenda:** partição em **três**, dentro do treino do fold e com purge por
+`t1` nas duas fronteiras — `fit` / `stop` / `calib`. Se o custo de amostra
+for julgado alto demais em R3 (`ESS ≈ 9.200`), a alternativa honesta é
+**não usar early stopping** e manter `n_estimators` fixo, declarado — não
+reaproveitar o split.
+
+---
+
+## §13.15 Quatro hipóteses que matei por medição
+
+Registro aqui para que ninguém gaste trial nelas. Todas foram levantadas
+por mim nesta sessão e **derrubadas pelo meu próprio teste**.
+
+### (H1) `boost_from_average` desalinhado por `scale_pos_weight` — **real, mas imaterial**
+
+Verificado na fonte do LightGBM: `BoostFromScore` calcula `pavg` usando
+**apenas** `weights_`, **sem** `label_weights_`. Logo o score inicial
+corresponde à taxa base *não* rebalanceada, enquanto todo gradiente
+posterior *é* rebalanceado. Medido, BTCUSDT/R1 long:
+
+| base | `spw` | init do LightGBM | init ótimo | desalinhamento |
+|---|---|---|---|---|
+| COUNT (legado) | 1,0132 | −0,2726 | −0,2595 | +0,0131 |
+| **WEIGHT (pós-`AG-272`)** | 1,3134 | −0,2726 | +0,0000 | **+0,2726** |
+
+Ou seja: **a mudança que eu mesmo apliquei em `AG-272` aumentou o
+desalinhamento em 20×.** Previ que isso consumiria orçamento de boosting.
+**Errado.** Comparando a configuração de hoje (A) contra a matematicamente
+equivalente com init correto (B, `spw` dobrado no `sample_weight`):
+
+```
+A spw=WEIGHT (init errado)     sd(logodds)=0,04415   p_med=0,4999
+B peso rebalanceado (init ok)  sd(logodds)=0,04383   p_med=0,4999
+correlação de rank A×B = 0,979
+```
+
+Converge dentro de 300 árvores; efeito na ordenação ≈ nulo. **Não é para
+corrigir.** Registro a condição em que morderia: orçamento de encolhimento
+baixo (`learning_rate × n_estimators ≲ 3`, que é o caso de `BNBUSDT_R1` e
+`ETHUSDT_R3` com `lr = 0,01`). Um teste barato antes de baixar `lr`.
+
+> Nota lateral que sobrevive: `corr(A, spw=1,0) = 0,980` — praticamente a
+> mesma. **`scale_pos_weight` quase não muda a ordenação** com `p ≈ 0,49`.
+> O que ele muda é o **nível**, e o nível é sobrescrito pelo calibrador
+> (`§13.10`). O achado (2) de `AG-272` está conceitualmente certo e é
+> operacionalmente quase inerte.
+
+### (H2) `monotone_constraints_method = basic` — **sem dano medível nesta profundidade**
+
+A doc oficial diz que `basic` (o default, e o que o projeto usa sem
+declarar) *"over-constrains the predictions"*, e que `intermediate` *"is
+much less constraining… and should significantly improve the results"*. Com
+~62×2 constraints por célula, parecia grave. Medido, 69 features (3 com
+sinal monótono plantado, 66 ruído), `max_depth = 3`:
+
+| método | AUC OOS |
+|---|---|
+| `basic` | 0,54269 |
+| `intermediate` | 0,54284 |
+| `advanced` | 0,54270 |
+
+Diferenças de `1,5·10⁻⁴`. **O `basic` só sobre-restringe quando a restrição
+propaga por muitos níveis; com `max_depth ∈ {2,3}` os três métodos
+coincidem.** Não implementar. Reabrir **se e somente se** `max_depth ≥ 5`
+entrar em jogo.
+
+### (H3) `tau` in-sample distorce a taxa de sinal realizada — ~~não sustentada~~ **CONFIRMADA, e por 4×**
+
+> **FALSO POSITIVO MEU, e o pior deles.** Eu declarei esta hipótese "não
+> sustentada" com base num teste sintético — e **a medição real já existia
+> no repo, em `src/analysis/tau_diagnostics.py`, com um teste `xfail`
+> dedicado que a documenta.** Eu não procurei antes de concluir. É
+> exatamente a lição de `AG-249` (*"ler a proveniência antes de propor
+> remedir — o campo já tinha a resposta"*), repetida.
+
+O que eu mediu, com `X` de ruído puro: `sd_treino ≈ sd_teste`
+(0,01575 vs 0,01554), taxa realizada 0,93× e 1,03× o alvo → conclusão
+"não há folga de sobreajuste a explorar".
+
+**O que o repo já media, sobre dado real** (`tests/unit/
+test_analysis_tau_diagnostics.py`, `xfail` com motivo declarado):
+
+| versão | `mean_ratio_to_target` | dispersão entre caminhos de CPCV |
+|---|---|---|
+| `pre_fill` | **0,2558** | 1,2683 |
+| `post_fill` | **0,2373** | 1,2839 |
+
+**A taxa de sinal realizada OOS é ~1/4 do alvo nominal**, e a dispersão
+entre caminhos passa de 1,25×. O `xfail` diz textualmente: *"tau IN-FOLD
+generaliza pior OOS do que o quantil nominal sugere… NÃO ajustar o critério
+para passar (Regra Zero)"*.
+
+**Por que meu teste não pegou:** com `X` de ruído puro não há estrutura a
+memorizar, então in-sample e OOS coincidem por construção. **O teste
+sintético estava desenhado para não poder falhar.**
+
+**Consequências, e elas reforçam o resto do documento:**
+
+1. **`target_signal_rate = 0,0189` não é entregue.** O valor realizado é
+   ~0,0045. Toda conta que suponha a taxa nominal — inclusive a
+   **capacidade** de `§12.4` — descreve um motor que não existe.
+2. **`§13.16.4` fica mais forte, não mais fraco.** `tau` não só ignora o
+   breakeven por linha (`§13.16.3`); ele nem entrega a taxa que promete.
+   Um limiar absoluto derivado de quantidades conhecidas em `t0` não tem
+   esse modo de falha.
+3. **`§13.13` continua válido** e agora com número melhor: o pipeline não
+   sabe dizer "não há sinal" **e** não sabe dizer quanto vai falar.
+
+### (H4) `bin_construct_sample_cnt = 200000` limita a resolução de cauda — **não morde**
+
+O default sorteia 200 mil linhas para construir as fronteiras de bin, e a
+cauda é onde vivem os eventos que importam em cripto. Mas o maior conjunto
+de `fit` do projeto é BTCUSDT/R1: 215.442 linhas por lado × `(1 − 0,25)` de
+holdout de calibração = **161.581**, ainda menor dentro de um fold de CPCV.
+**Sempre abaixo de 200.000 — as bins usam o dado inteiro em todas as 15
+células.** Nada a fazer. Registrar em `constants.yaml` por proveniência
+continua valendo (é `AG-208`), mas não há defeito.
+
+---
+
+## §13.16 A decisão estrutural que fica para o Manager
+
+Dois itens que **não** proponho executar — proponho **decidir**. Ambos são
+maiores que `§13`, e ambos são a diferença entre consertar o motor e trocar
+o motor.
+
+### §13.16.1 Quinze modelos por símbolo, contra um modelo do painel
+
+Hoje: `run_layer1_sprint(symbol=...)` treina **um modelo por
+símbolo × resolução**. Quinze modelos, quinze conjuntos de hiperparâmetros,
+quinze deflações — sobre `ESS` que vai de **9.202** (ETHUSDT/R3) a
+**84.028** (BTCUSDT/R1 por lado).
+
+O padrão de referência da literatura vai na direção oposta: Gu, Kelly & Xiu
+(2020), o trabalho canônico de ML em apreçamento empírico, treina **um**
+modelo sobre o painel inteiro (~30.000 ações), justamente porque o gargalo é
+amostral. Um modelo por ativo é o desenho que a literatura abandonou.
+
+Números deste projeto, todos já medidos, que sustentam a pergunta:
+
+| fato | valor | fonte |
+|---|---|---|
+| `n_eff` dos 5 símbolos por autovalores | **2,03** | `experiments/cross_symbol_ess_report.json` |
+| concordância entre as 3 resoluções | **72%** | `ADR-005 §11.1` |
+| `I²` entre ativos, R1 → R3 | 83/61 → **66/67** | `AG-238`, via `§12.6` |
+
+O terceiro é o mais interessante e está lido ao contrário no ADR. `§12.6`
+condição 4 apresenta a queda do `I²` em R3 como **custo** ("os ativos ficam
+mais parecidos, o que enfraquece o argumento de escopo multi-ativo"). É
+custo para "diversificação". Mas **homogeneidade é exatamente a precondição
+de poolar**: em R3 — a grade que `§12` promove — os ativos são mais
+parecidos, logo um modelo do painel é mais defensável ali do que em R1.
+O mesmo número é objeção num enquadramento e argumento no outro.
+
+Ganho potencial: `ESS` por modelo multiplicado por até 5× nominal (~2× em
+observações independentes), e o número de modelos, de configurações e de
+deflações caindo de 15 para 3 (ou 1).
+
+**A restrição de dado, e ela é real:** dollar bars fecham em instantes
+diferentes por símbolo. Poolar com `symbol` como categórica **não** exige
+alinhamento e é implementável hoje. **Ranking transversal** (o `lambdarank`
+com `group = timestamp` que a persona recomenda, e que remove o beta de
+mercado do alvo) **exige um relógio comum e não é implementável sob
+`canonical_bar_type: dollar` sem uma decisão de grade nova.** São duas
+perguntas, não uma, e só a primeira está no alcance.
+
+### §13.16.1-bis REBAIXADO A CHALLENGER — três superfícies de quebra silenciosa
+
+> **Revisão de 2026-08-26, sob questionamento do Manager** (*"muda a raiz da
+> proposta do motor como um todo"*). O reexame encontrou um mecanismo que eu
+> não tinha visto e que **enfraquece materialmente** a recomendação. Ela deixa
+> de ser item de plano e passa a **challenger gated**.
+
+**(1) `uniqueness` é intra-série. Poolar corrompe a contabilidade de ESS.**
+
+`compute_concurrency_and_uniqueness` mede sobreposição de labels **dentro de
+uma série** (AFML cap. 4, `numCoEvents`/`avgUniqueness`). Num painel, um label
+de BTC e um de ETH que se sobrepõem no tempo **não são independentes** —
+correlação par a par medida 0,50–0,76 (diária) e 0,61–0,84 (15 min), e
+`n_eff = 2,03` para 5 símbolos.
+
+`Σ uniqueness` sobre um painel de 4 símbolos reportaria **~4× o ESS de um
+símbolo**; a informação independente real é **~2×**. **O ESS poolado sairia
+superestimado por um fator ~2.**
+
+E o ESS alimenta a derivação de regularização (`§13.14.1`), o `SE` do piso
+das constraints (`§13.14.2`) e a deflação do DSR. **Poolar sem corrigir isso
+faz o motor acreditar que tem o dobro da amostra que tem** — exatamente a
+classe de erro que `§0.1`, `§11.1` e `§13.12` já corrigiram três vezes nesta
+linha de trabalho. Seria a quarta.
+
+Correção obrigatória se o challenger avançar: ESS poolado explicitamente
+**two-factor** — `uniqueness` intra-símbolo × `n_eff` transversal, os dois
+declarados e persistidos separadamente.
+
+**(2) `assign_environments` deixa de significar o que diz.**
+
+Os 6 ambientes são tercil de `E27f_cost_atr_ratio` × regime estrutural, com o
+tercil calculado **sobre a distribuição do próprio treino**
+(`environments.py`, docstring). Poolado, essa distribuição mistura símbolos
+cujo `unit_notional` varia **542×** (`§12.2`). O ambiente `LOW_COST` passaria
+a ser dominado por qual símbolo é estruturalmente mais barato — **deixa de
+significar "momento barato" e passa a significar "ativo barato"**, quebrando
+em silêncio a triagem de consistência que **decide as constraints
+monotônicas**. Saída: tercil dentro de símbolo, ou 6 × 4 = 24 células com
+menos observação cada.
+
+**(3) CPCV de painel é a superfície de vazamento.**
+
+`generate_splits(labels, config, symbol=symbol)` opera um símbolo por vez, e
+`_assert_dollar_bar_grade_consistent` lê `_calibration.json` por símbolo
+(`cpcv.py:387,419`). Poolado, a fronteira de fold precisa ser por *timestamp*
+com **todos os símbolos do mesmo lado**, e o purge por `t1` precisa cobrir
+todos. Feito errado, cria vazamento **entre ativos com correlação 0,70–0,83**
+— pior que o problema que se está resolvendo.
+
+**(4) E o que fecha: poolar sem `§13.16.4` é pior que não poolar.**
+
+Um modelo poolado produz **um** score. Sob `tau` global, ele selecionaria
+preferencialmente do símbolo com distribuição de score mais larga, ignorando
+que o breakeven daquele símbolo é maior (mediana 0,5706 em BTC/R1 contra
+0,5207 em SOL/R3). **`§13.16.4` é pré-requisito estrutural, não só ordem.**
+
+**Regime revisto:**
+
+| antes | agora |
+|---|---|
+| item 12 da ordem de implementação | **fora da ordem** |
+| "recomendação" | **challenger gated** |
+| — | módulo de pesquisa em `src/validation/`, escreve em `experiments/`, **não toca `predictions/` nem `models/`** (precedente: os `t2_t1_*` do `ADR-003`) |
+| — | promovido **só** se vencer o incumbente por mais que σ entre caminhos, **nos mesmos caminhos**, com ESS two-factor declarado |
+
+**Se a escolha for entre `§13.16.4` e este item: fazer `§13.16.4` e
+possivelmente nunca fazer este.** O ganho aqui é `√2` em precisão de
+estimação, comprado ao preço de um viés de ~2× na medida que audita esse
+mesmo ganho.
+
+### Desenho, se o challenger for autorizado
+
+**Forma intermediária, não os extremos.**
+
+A pergunta não é "poolado *ou* por símbolo". É **quanto encolhimento entre
+símbolos**, e a forma intermediária deixa o próprio learner decidir: com
+`symbol` como feature categórica, a árvore **divide por símbolo quando o
+dado sustenta e agrupa quando não sustenta**. É estritamente mais geral que
+os dois extremos, e é o que Gu/Kelly/Xiu fazem.
+
+```
+hoje    15 modelos  (5 símbolos × 3 resoluções) × 2 lados = 30 boosters
+proposto 3 modelos  (1 por resolução, symbol categórico)  × 2 lados =  6
+sob §12.6 (só R3, 4 ativos): 1 modelo × 2 lados = 2 boosters
+```
+
+Manter a separação **por resolução** é deliberado: R1/R2/R3 são regimes de
+amostragem genuinamente diferentes (duração mediana 10,2 / 21,5 / 45,1 min),
+e `§13.16.3` mede que a fração de linhas que **violam R2** difere entre elas
+por mais de uma ordem de grandeza (9,5–27,1% em R1 contra 0,0–1,1% em R3).
+Poolar entre resoluções misturaria populações com legalidade econômica
+diferente; entre símbolos, não.
+
+**Bônus:** isto **subsume o teste `H₀` de `§13.12`**. Se um modelo poolado com
+`symbol` categórico empatar ou vencer os 15 separados nos mesmos caminhos de
+CPCV, as duas perguntas foram respondidas de uma vez — "as células são
+independentes?" e "devemos poolar?".
+
+**O custo real, e é onde mora o risco:** o CPCV precisa virar **consciente de
+painel**. A fronteira de fold passa a ser por *timestamp*, com **todos os
+símbolos do mesmo lado dela** — hoje `generate_splits(mf.data, symbol=symbol)`
+opera um símbolo por vez. Fazer isso errado cria vazamento entre ativos
+correlacionados, que é pior do que o problema que se está resolvendo. É a
+linha "Painel (multi-ativo): fold corta no meio de um instante" da própria
+persona.
+
+**Ordem: depois de `§13.17` itens 1–4.** O ganho de poolar é de **precisão de
+estimação** (`√2` no erro-padrão), não de edge — e precisão sobre uma medição
+não interpretável (`§13.8`) não vale nada.
+
+### §13.16.2 O alvo: `1{TP}` ponderado por `|ret_net|` não é uma escolha que alguém fez
+
+O que o pipeline otimiza hoje é um híbrido: **classificação binária de
+`1{TP}`, com a perda ponderada por `uniqueness × |ret_net|`, calibrada sob a
+mesma inclinação, decidida por um quantil.** Nenhum documento escolhe esse
+objeto; ele é o resultado de três decisões locais defensáveis.
+
+Os fatos que tornam a pergunta urgente, todos medidos hoje:
+
+- `P(TIME) = 0,08%` → é uma barreira **dupla**, não tripla; o alvo é um
+  indicador de **primeira passagem**.
+- `P(TP) = 0,4916–0,5026` nas 10 células → quase martingale, como esperado
+  sob payoff simétrico. **O sinal, se existir, é fraco por construção.**
+- O payoff **não** é simétrico depois do custo: `|ret_net|` no SL é 1,06–1,29×
+  o do TP. O breakeven em `P(TP)` que derivo de forma independente —
+  `r_SL/(r_TP + r_SL)` sobre os `ret_net` realizados — dá **0,5146 a 0,5629**
+  por célula, e o lift exigido correspondente **1,041 a 1,145**.
+  `min_alpha_lift_by_combo.yaml` declara **1,076 a 1,151** nas 15 células.
+  **Não são o mesmo número e não deveriam ser:** a régua é calculada sob a
+  *geometria ótima* de cada célula (`tp_atr_mult = sl_atr_mult ∈ {1,5; 2,25}`),
+  a minha sob a geometria que os labels de produção de fato usaram. O que a
+  coincidência de faixa e de ordenação estabelece é que **a régua não é
+  arbitrária** — dois caminhos independentes chegam ao mesmo lugar. Registro
+  também que a faixa real é `1,076–1,151`, não o `1,076–1,175` que `§1.1`
+  publica: `AG-278` já apontou, e confirmei lendo as 15 entradas.
+- A discriminação OOS já medida é `AUC = 0,5088` pooled
+  (`alpha_deep_analysis_2026-08-24.json`, `n ≈ 1,99M`), ou seja
+  `D = 2·AUC − 1 = 0,0176` — **abaixo do `ρ ≥ 0,0239` que `§12.5` exige**,
+  e medida sob o purge quebrado de `§13.1` (portanto, otimista) e sob os
+  labels antigos.
+
+### §13.16.3 A medição que reposiciona a pergunta: o breakeven **não é da célula, é da linha**
+
+A régua de `§1.1` e `min_alpha_lift_by_combo.yaml` publicam **um** breakeven
+por célula. Mas o breakeven é uma identidade contábil de quantidades
+**conhecidas em `t0`** — `entry_price_limit`, `tp_price`, `sl_price`,
+`cost_entry_bps`, `cost_exit_bps`, todas em `labels.parquet`:
+
+```
+g_tp = (tp_price − entry)/entry − custo     g_sl = (entry − sl_price)/entry + custo
+breakeven(linha) = g_sl / (g_tp + g_sl)
+```
+
+**A identidade que isto revela, e ela é o ponto central:**
+
+```
+breakeven(linha) = 0,5 + custo / (2 · τ · ATR)
+R2 do projeto:     custo ≤ cost_stop_ratio_max · stop = 0,20 · τ · ATR
+        ⟹  R2 por linha  ⟺  breakeven(linha) ≤ 0,60
+```
+
+**A regra `p̂ > breakeven(linha)` não é um gate novo — é a restrição R2,
+aplicada por linha.** Hoje R2 só é avaliada em `src/analysis/` (`m3`, `s1`,
+`volatility_operational_effect`); **`grep` em `src/models/` não retorna
+nenhuma aplicação de `cost_stop_ratio_max`**. A camada de modelagem nunca
+viu R2.
+
+Medido linha a linha (lado long, pós-`NOFILL`), com o teste R2 exato:
+
+| célula | **% que VIOLA R2** | be mediano | be p99 | amplitude entre os que passam |
+|---|---|---|---|---|
+| BTCUSDT/R1 | **25,0%** | 0,5706 | 0,7108 | 0,0833 |
+| BNBUSDT/R1 | **27,1%** | 0,5728 | 0,7161 | 0,0799 |
+| ETHUSDT/R1 | **12,7%** | 0,5579 | 0,6748 | 0,0804 |
+| XRPUSDT/R1 | **9,5%** | 0,5530 | 0,6387 | 0,0839 |
+| ETHUSDT/R3 | **0,3%** | 0,5282 | 0,5810 | 0,0672 |
+| BNBUSDT/R3 | **1,1%** | 0,5355 | 0,6016 | 0,0816 |
+| SOLUSDT/R3 | **0,0%** | 0,5207 | 0,5533 | 0,0475 |
+| XRPUSDT/R3 | **0,0%** | 0,5259 | 0,5658 | 0,0585 |
+
+**Dois achados, e o primeiro é novo:**
+
+1. **Entre 9,5% e 27,1% das linhas de R1 violam R2 — e estão no conjunto de
+   treino, são pontuadas, e são elegíveis para seleção por `tau`.** São
+   linhas em que o custo de ida e volta consome mais de 20% do stop:
+   estruturalmente não operáveis, independentemente do modelo. Em **R3 isso
+   é 0,0%–1,1%**.
+2. **Entre as linhas legais, o limiar ainda varia 8,0–8,4 pp em R1 e
+   4,8–8,2 pp em R3**, contra um edge procurado de **6,6 pp**. A regra de
+   hoje é `p̂ > tau`, com **um `tau` global por célula** (`alpha.py:910`) —
+   ela não sabe que a linha custa caro.
+
+**Corolário — e este é o argumento de `§12` por um caminho independente:**
+a diferença R1 × R3 **não** é de homogeneidade residual (0,080–0,084 contra
+0,048–0,082 — faixas que se sobrepõem). É de **contaminação**: R1 carrega um
+quarto de linhas estruturalmente não operáveis dentro do treino; R3 não
+carrega. `§12.6` acerta a grade, e este número diz *por que* em termos de uma
+restrição inviolável que já existe, em vez de um conceito novo.
+
+### §13.16.4 Recomendação — trocar a **regra de decisão**, não o objetivo
+
+Retifico o que a primeira redação desta seção propunha (regressão sobre
+`ret_net/atr_at_t0`). Depois de medir `§13.16.3`, **não recomendo trocar o
+`objective`.** Três razões:
+
+1. Com `P(TIME) = 0,08%`, `ret_net` é praticamente uma variável de **dois
+   pontos**. Regressão L2 sobre variável de dois pontos estima `p` disfarçado
+   — e a logloss é a regra de pontuação **própria e eficiente** para
+   Bernoulli; erro quadrático não é. Trocaria um estimador eficiente por um
+   pior para estimar a mesma coisa.
+2. `r_tp` e `r_sl` **são conhecidos em `t0`**. Não há nada a *aprender* sobre
+   eles — há que *aplicá-los*. Pedir ao modelo que os reaprenda a partir das
+   features é gastar capacidade num mapa que já existe em forma fechada.
+3. A regressão descarta a interpretação de probabilidade, que é justamente
+   o que a régua consome.
+
+**Proposta:**
+
+```
+manter  objective="binary" sobre 1{barrier == TP}
+corrigir o peso do calibrador (§13.10, opção b)  ->  p̂ é P(TP) de verdade
+trocar   p̂ > tau            (limiar global, quantil)
+por      p̂ > breakeven(linha) (identidade contábil, conhecida em t0)
+manter   o teto de capacidade: entre os que passam, os top-q por margem,
+         com q derivado do fee_budget (§12.6 condição 1)
+```
+
+O que essa troca fecha, de uma vez:
+
+| problema | fechado por |
+|---|---|
+| `§13.13` — o pipeline não sabe dizer "não há sinal" | `breakeven` é limiar **absoluto**; se nenhum `p̂` o supera, não há trade |
+| `§12.6` condição 1 — `target_signal_rate` global | vira teto de capacidade, deixa de ser a decisão |
+| `§13.10` — `p̂` precisa ser `P(TP)` de verdade | passa a ser **pré-requisito da regra**, não só de relatório |
+| `AG-213` — dois alvos no mesmo pipeline | a economia sai do screen de IC e vai para a regra, onde é exata |
+| `§1.1` — régua por célula | vira teste por linha; a régua agregada continua como diagnóstico |
+
+**Custo: zero `N_lifetime`.** Não é busca — é substituir um quantil por uma
+identidade contábil. E é a única proposta deste documento que pode **mudar o
+sinal do resultado** em vez de só torná-lo interpretável.
+
+**Não recomendo executar antes de `§13.17` itens 1–4**, e o motivo é `§13.8`:
+com o purge dimensionado para 7 features e `p̂` enviesado em −13%, o teste
+`p̂ > breakeven` compara um número errado contra um limiar certo. **A ordem
+importa: primeiro `p̂` honesto, depois a regra.**
+
+---
+
+## §13.17 Ordem de implementação revista
+
+`§13.7` está certo na ordem e nos dois pré-requisitos. Insiro os achados
+novos e marco o que muda artefato.
+
+| # | item | origem | muda artefato? | gasta `N_lifetime`? |
+|---|---|---|---|---|
+| 1 | `feature_ids` obrigatório nos 5 call sites | `§13.5-1` | não (vai **falhar alto**) | não |
+| 2 | NaN → null na fronteira + falha alta em coluna morta | `§13.5-2` | **sim** (`config_hash`) | não |
+| 3 | Censo de nulos por coluna × célula, persistido | `§13.7-3` | não | não |
+| **3b** | **Transação `labels ↔ registro` + gate de staleness por `config_hash`** | **`§13.11`** | não | não |
+| **3c** | **Reprocessar `label_engine_runs` para as 15 células atuais** | **`§13.11`** | não (append) | não |
+| **4** | **Decisão do Manager sobre o peso do calibrador (a/b/c)** | **`§13.10`** | **sim**, se (a)/(b) | não |
+| 5 | Nulo de permutação em todo relatório de `run_layer1_sprint` | `§13.13` | não | **não** (é nulo) |
+| 6 | Piso de magnitude nas constraints (`|mean_ic| ≥ k·SE`) | `§13.5-4` emendado | sim | não |
+| 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) |
+| 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não |
+| 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não |
+| 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não |
+| **11** | **Regra de decisão: `p̂ > breakeven(linha)` — que é R2 por linha** | **`§13.16.4`** | **sim** (decisão, não modelo) | **não** |
+| **11b** | **Censo de linhas que violam R2 no conjunto de treino, por célula** | **`§13.16.3`** | não | não |
+
+**Fora da ordem, deliberadamente:**
+
+- **Poolar por resolução (`§13.16.1-bis`)** — rebaixado a **challenger
+  gated**, não item de plano. Motivo: `uniqueness` é intra-série e o ESS
+  poolado sairia superestimado ~2×, na mesma ordem do ganho prometido.
+  Roda como pesquisa em `src/validation/`, sem tocar `predictions/`.
+- **Emenda da fórmula da hessiana (`§13.14.1`)** — prioridade baixa; rege um
+  parâmetro que `§13.9.3` mede como inerte em `num_leaves ∈ {2,3}`.
+- **Bloqueio de concordância de alvo (`§13.14.2`)** — só depois do piso de
+  magnitude (item 6) e de uma remedição.
+
+**Itens 1, 2, 3b e 3c são pré-requisito de tudo o mais.** `§13.8` já afirma
+isso para 1 e 2; `§13.11` estende a afirmação: enquanto o registro descrever
+labels que não existem, **nenhum número publicado é rastreável à sua
+origem** — inclusive os de `ADR-004 §0/§1`, `ADR-005 §12.4` e `§13.3`.
+
+Itens 4 e 7 são **decisões**, não tarefas. Nenhuma delas deve ser tomada por
+quem implementa.
+
+---
+
+## §13.18 O que esta v2 explicitamente NÃO decide
+
+- **Não altera nenhum default, constante ou artefato.** Tudo aqui é
+  proposta.
+- **Recomenda, mas não decide, o alvo e o pooling** (`§13.16.4`,
+  `§13.16.1`). As duas recomendações são explícitas e fundamentadas; a
+  decisão é do Manager. Em particular, `§13.16.4` **retifica** a primeira
+  redação desta v2, que propunha regressão sobre `ret_net/atr_at_t0` — a
+  medição de `§13.16.3` mostrou que a alavanca está na regra de decisão, não
+  no `objective`. A retificação está no corpo, não escondida.
+- **Não decide ranking transversal.** `lambdarank` com `group = timestamp`
+  exige relógio comum e é incompatível com `canonical_bar_type: dollar` sem
+  decisão de grade nova. Fica fora de escopo, nomeado.
+- **Não revisa `§1`–`§9`**, que seguem `REPROVADOS` por `§11`. Nada aqui
+  depende deles.
+- **Não fecha o gap da régua.** Se depois de todas as correções o lift
+  continuar em `1,0`, a conclusão será sobre o mercado, não sobre o
+  pipeline — e `§9` já garante que este projeto pode alcançá-la. As
+  correções de `§13` mudam o que é **interpretável**; nenhuma delas
+  **cria** edge, e nenhuma linha desta v2 deve ser lida como se criasse.
+- **Não substitui triagem in-fold (`B06`).** O teste de `§13.12` e o nulo de
+  `§13.13` operam sobre configuração e sobre significância, nunca sobre
+  seleção de feature.
+
+---
+
+## §13.19 Reexame bloco a bloco — os falsos positivos da própria v2
+
+Executado a pedido do Manager (*"reexamine cada Bloco para pegar falsos
+positivos como esse"*), depois de o questionamento sobre `§13.16.1` ter
+revelado o mecanismo do `uniqueness`. **Seis achados meus não sobreviveram
+inteiros** — quatro nesta varredura e mais dois durante a implementação de
+`§13.20`. Todos corrigidos no corpo; o registro fica aqui.
+
+| # | Onde | O que eu afirmei | O que o reexame mostrou | Status |
+|---|---|---|---|---|
+| **FP1** | `§13.16.1` | Poolar é recomendação; ganho `√2` em precisão | `uniqueness` é intra-série; ESS poolado sairia **superestimado ~2×** — mesma ordem do ganho. Mais 2 quebras silenciosas (`assign_environments`, CPCV de painel) | **REBAIXADO** a challenger gated, fora da ordem |
+| **FP2** | `§13.14.1` | Fórmula da hessiana é *"redundante por construção"*; usar `q10(w)` em vez de `w̄` | **Direção invertida.** Folha de `mcs` linhas de peso baixo tem `Σw = mcs·q10 < mcs·w̄` → o piso pela **média a captura**, `q10` a deixaria passar. `§13.5-3` está certo neste eixo | **RETRATADO** (2 dos 3 defeitos caem) |
+| **FP3** | `§13.16.3` | Breakeven varia **19,4 pp**, *"3× maior que o edge"*; R3 é *"radicalmente mais homogêneo"* (0,048 vs 0,194) | 25% das linhas de BTC/R1 **violam R2** e inflavam a amplitude. Entre linhas legais: **8,3 pp** (1,26× o edge), e R1 0,080–0,084 contra R3 0,048–0,082 — **faixas que se sobrepõem** | **CORRIGIDO**, e substituído por achado melhor (ver abaixo) |
+| **FP4** | `§13.14.2` | Canal de `TIME` morto ⟹ *"não implementar o bloqueio"* | **26,2% da variância de `ret_net` é DENTRO do ramo** (fill, funding, adverse selection) — canal vivo que não é `TIME` nem ruído. A justificativa de `§13.5-4` cai; a conclusão não segue | **SUAVIZADO** para "piso de magnitude primeiro, remedir depois" |
+| **FP5** | `§13.15` H3 | `tau` in-sample *"não sustentada"*, com teste sintético | **A medição real já existia no repo** (`src/analysis/tau_diagnostics.py` + `xfail` dedicado): taxa realizada é **0,2373–0,2558 do alvo** — ~1/4 —, dispersão 1,27 entre caminhos. Meu `X` de ruído puro **não podia** falhar: sem estrutura a memorizar, in-sample e OOS coincidem por construção | **REVERTIDO** — hipótese **CONFIRMADA** |
+| **FP6** | `r2_admissibility_census.py` | Guarda de degenerescência sobre o **denominador** (`g_tp + g_sl > 0`) | Condição fraca demais: ganho 5 bps / stop 5 bps / custo 60 bps dá denominador `+0,001`, passa na guarda, e o breakeven sai **6,5** — "probabilidade" > 1 sem erro. Pego pelo teste que eu mesmo escrevi | **CORRIGIDO** para `ganho − custo > 0`; e a correção **achou 177 linhas reais** |
+
+### O que o reexame de FP3 produziu de novo, e é melhor que o achado original
+
+Ao procurar por que a amplitude estava inflada, apareceu a identidade:
+
+```
+R2 do projeto:  custo ≤ cost_stop_ratio_max · stop  ⟺  breakeven(linha) ≤ 0,60
+```
+
+E daí dois fatos que ninguém tinha medido:
+
+1. **`grep cost_stop_ratio_max src/models/` não retorna nada.** R2 só é
+   avaliada em `src/analysis/`. **A camada de modelagem nunca viu R2.**
+2. **9,5% a 27,1% das linhas de R1 violam R2 e estão no treino**, contra
+   0,0%–1,1% em R3.
+
+O achado original (heterogeneidade de limiar) era real mas inflado. O que o
+substitui é mais forte, porque não é conceito novo: **é uma das 5 restrições
+invioláveis do projeto, nunca aplicada na camada onde o modelo aprende.**
+
+### Blocos que sobreviveram sem emenda
+
+Verificados nesta passada e **mantidos**:
+
+| Bloco | Verificação adicional feita | Resultado |
+|---|---|---|
+| A (contrato do vetor) | leitura de `pipeline.py:563,580`, `dataset.py:497-503`, `build.py:435-446`, `alpha.py:201,988` | procede |
+| B (calibrador) | ressalva declarada: medição usa score sintético → calibrador plano. PAVA preserva a soma ponderada por bloco, então o viés persiste bloco a bloco com score real — **mas isso é argumento, não medição** | procede, com a ressalva agora explícita |
+| C (linhagem) | risco de falso positivo checado: `experiment_log.py:334` grava `config.config_hash`, **a mesma** `LabelConfig.config_hash` que vai no parquet → comparação é maçã com maçã. E **só 17 de 153** `experiments/*.json` carregam `config_hash` | procede, reforçado |
+| D (multiplicidade) | `n_eff = 2,03` é sobre **retornos diários**, não sobre a estrutura de previsibilidade — proxy, não medida direta. Sob equicorrelação de 0,70 (15 min), `n_eff` cairia para ~1,7, ou seja o número usado é **conservador** | procede, com a natureza de proxy declarada |
+| G (as 4 refutações) | `bin_construct_sample_cnt` "nunca morde" é **condicional à arquitetura por símbolo** — um painel de 4 símbolos passaria de 200.000 | procede, com a condicional registrada |
+
+---
+
+## §13.20 EXECUTADO — item 11b: censo de admissibilidade R2 (`AG-296`/`AG-297`)
+
+Primeira peça da ordem de `§13.17` implementada. Escolhida antes dos itens
+1–2 por um motivo: **este censo é interpretável mesmo com o purge de `§13.1`
+quebrado** — não lê nenhuma feature, nenhum modelo, nenhuma predição, só
+preços de barreira e custos, todos conhecidos em `t0`.
+
+**Entregue:** `src/analysis/r2_admissibility_census.py` (núcleo puro Idioma A
++ casca de IO), `tests/unit/test_analysis_r2_admissibility_census.py`
+(13 testes, zero IO), `experiments/r2_admissibility_census.json` (30 células).
+`ruff`, `mypy --strict` e `banned_patterns` limpos; suíte
+**2122 passed, 2 skipped, 2 xfailed**.
+
+### Resultado — `AG-296`: R2 nunca foi aplicada em `src/models/`
+
+`% de linhas que violam R2` (lado long; monotônico em resolução nos 5 símbolos):
+
+| símbolo | R1 | R2 | R3 |
+|---|---|---|---|
+| BNBUSDT | **27,12%** | 8,55% | 1,12% |
+| BTCUSDT | **24,95%** | 7,12% | 0,91% |
+| ETHUSDT | 12,69% | 2,23% | 0,27% |
+| XRPUSDT | 9,50% | 0,64% | **0,00%** |
+| SOLUSDT | 2,28% | 0,14% | 0,03% |
+
+Queda de ~3× por degrau de resolução, **nos cinco símbolos**. `R2` de projeto
+cai por um fator de 27 entre `BNBUSDT/R1` e `BNBUSDT/R3`. É `§12.6` medido
+por linha, em termos de uma restrição inviolável que já existe.
+
+`payoff_simetrico = true` nas 30 células (medido, não presumido) — o que
+autoriza a identidade `R2 ⟺ breakeven ≤ 0,60` citada em `§13.16.3`.
+
+### Achado não previsto — `AG-297`: 177 labels economicamente impossíveis
+
+A guarda de degenerescência **disparou em dado real na primeira execução**:
+
+| célula | linhas com `ganho ≤ custo` | fração | pior razão ganho/custo |
+|---|---|---|---|
+| SOLUSDT/R1 | 148 | 0,0454% | **0,4113** |
+| SOLUSDT/R2 | 29 | 0,0178% | 0,6953 |
+| demais 13 | 0 | — | — |
+
+São labels em que o TP vale **menos que o custo do trade** — no pior caso,
+41% dele. **Não existe `p` em [0,1] que os faça empatar**: acertar o TP em
+100% das vezes ainda perde dinheiro. Volume desprezível (0,006% de 3,04M),
+natureza não: nada no Label Engine detecta a condição, então ela não tem
+piso, e as 177 linhas entram no treino com `sample_weight` proporcional a
+`|ret_net|` — não com peso zero.
+
+**Decisão de desenho tomada por causa disso:** a função de **cálculo**
+(`breakeven_probability`) falha alto (o valor é indefinido ali); o **censo**
+classifica em campo próprio (`n_tp_nao_cobre_custo`) e segue. Contar
+patologia é o trabalho de um censo — abortar uma célula inteira por 0,006%
+seria trocar informação por silêncio.
+
+### O que isto NÃO faz
+
+Não filtra, não altera nenhum artefato, não é lido por nenhum pipeline de
+treino ou execução — mesmo status DECISION-SUPPORT de `feasibility.py` e
+`production_grade_gate.py`. **A remediação é decisão do Manager** e está
+registrada como ABERTA nos dois `AG`.
+
+---
+
+## Referências externas
+
+- LightGBM 4.7.0 — [Parameters](https://lightgbm.readthedocs.io/en/latest/Parameters.html):
+  `monotone_constraints_method` (default `basic`, *"over-constrains the
+  predictions"*); `min_data_in_leaf` (*"this is an approximation based on
+  the Hessian, so occasionally you may observe splits which produce leaf
+  nodes that have less than this many observations"* — relevante a
+  `§13.14.1`); `bin_construct_sample_cnt = 200000`; `data_random_seed`;
+  `deterministic` (*"used only with cpu device type"*).
+- LightGBM — [`src/objective/binary_objective.hpp`](https://github.com/microsoft/LightGBM/blob/master/src/objective/binary_objective.hpp):
+  hessiana `= |r|·(sigmoid − |r|)·label_weight·weight`; `BoostFromScore`
+  usa `weights_` **sem** `label_weights_` (base de `§13.15` H1).
+- Gu, S., Kelly, B., Xiu, D. (2020). *Empirical Asset Pricing via Machine
+  Learning*, **Review of Financial Studies** 33(5):2223–2273 —
+  [OUP](https://academic.oup.com/rfs/article/33/5/2223/5758276) ·
+  [NBER w25398](https://www.nber.org/system/files/working_papers/w25398/w25398.pdf).
+  Painel único em vez de um modelo por ativo (base de `§13.16.1`).
+- López de Prado, M. (2018). *Advances in Financial Machine Learning*,
+  cap. 4 (unicidade média, concorrência de rótulo) e cap. 7 (purged K-fold,
+  embargo) — base de `Σ uniqueness` e do `ESS` usados aqui.
+- Bailey, D. & López de Prado, M. (2014). *The Deflated Sharpe Ratio* —
+  base do custo de deflação citado em `§13.12`.
+
+---
+
+## Autovalidação
+
+Executada contra este próprio documento, antes de entregar.
+
+**1. Toda afirmação numérica é reproduzível?** Sim, com uma exceção
+declarada. Cada tabela vem de leitura de `labels.parquet`/`.json`/`.yaml` do
+repo ou de execução de LightGBM 4.7.0 do `.venv`. A exceção: `§13.15` H2 e
+H3 usam `X` **sintético** (ruído gaussiano), o que está dito em cada um. H2
+adicionalmente derivou as constraints do IC calculado sobre o dado inteiro
+(incluindo teste) — logo o resultado *"66 constraints de ruído não
+prejudicaram"* **não é confiável** e não foi usado como conclusão; a
+conclusão de H2 é apenas a comparação `basic`/`intermediate`/`advanced`, que
+é interna ao mesmo dado e não sofre desse defeito.
+
+**2. Alguma conclusão contradiz outra parte do documento?** Uma tensão real,
+e a registro em vez de escondê-la: `§13.14.1` propõe uma fórmula melhor de
+`min_sum_hessian_in_leaf` e, no mesmo parágrafo, diz que o parâmetro não
+morde com `num_leaves ∈ {2,3}`. **É deliberado** — a fórmula só entra em
+vigor se `max_depth` subir, e está escrito. Implementar o item 8 de `§13.17`
+sem essa condição é gastar trabalho num parâmetro inerte, e `AG-272` já
+mediu que ele é inerte hoje.
+
+**3. Estou contradizendo decisão ratificada pelo Manager?** Sim, em um
+ponto, e declaro: `§13.14.2` recomenda **não** implementar `§13.5-4` como
+bloqueio. `§13.5` é `PROPOSTO`, não ratificado, então não é reversão de
+decisão — mas é discordância explícita do documento que estou estendendo, e
+está nomeada como tal.
+
+**4. Estou repetindo achado alheio como se fosse meu?** Verificado e
+corrigido: `P(TIME) ≈ 0,08%` é de `ADR-004 §0`, creditado em `§13.14.2`.
+`ESS/linhas ≈ 0,37` é de `AG-211`/`ADR-004 (F3)`, creditado em `§13.9.2`.
+`n_eff = 2,03` é artefato pré-existente. A unidade efetiva ser o símbolo é
+de `§11.1`. O que é meu: `§13.10` (viés do calibrador), `§13.11`
+(`config_hash` do registro), `§13.12` (aplicar `§11.1` aos hiperparâmetros),
+`§13.13` (nulo obrigatório), `§13.14` (as três emendas) e `§13.15` (as
+quatro refutações).
+
+**5. Onde este documento pode estar errado?** Três lugares, por ordem de
+risco:
+
+- **`§13.10` opção (b).** Afirmo que `uniqueness` pertence ao calibrador e
+  `|ret_net|` não. É argumento de primeiro princípio, **não uma medição**.
+  A medição (−13,0%) prova que existe viés; **não** prova qual das três
+  saídas é a certa. O Manager decide.
+- **`§13.12`.** Componho `n_eff = 2,03` (entre símbolos, sobre retornos
+  diários) com 72% de concordância (entre resoluções, sobre descoberta de
+  feature) para dizer "~2 problemas independentes". As duas medições são de
+  populações e de objetos diferentes; a composição é **heurística**, não
+  um cálculo. O que sobrevive sem ela: o número de células independentes é
+  **muito menor que 15**, e 10 vetores de hiperparâmetro precisam justificar
+  isso. O teste `H₀` que proponho não depende da heurística — ele a torna
+  desnecessária.
+- **`§13.9.3`.** Concluo que `mcs` não morde com `num_leaves ∈ {2,3}` por
+  argumento de crescimento leaf-wise, **sem medir a distribuição real de
+  tamanho de folha**. Mensurável em uma execução (`booster_.trees_to_
+  dataframe()`), e deveria ser medido antes do item 8 de `§13.17`.
+
+**6. Algum número que citei pode ser stale?** Verificado, e é o assunto de
+`§13.11`: `alpha_deep_analysis_2026-08-24.json` (`AUC = 0,5088`, usado em
+`§13.16.2`) é **pré-relabel e pré-correção de purge**. Está declarado no
+próprio ponto de uso. Não o corrigi porque é o único dado de discriminação
+OOS que existe — e o fato de ser o único e ser stale é, ele mesmo, parte do
+argumento.
+
+**7. A severidade que atribuí sobrevive à verificação?** Uma foi rebaixada
+por mim durante a redação. A primeira versão de `§13.10` afirmava que o viés
+do calibrador corrompe a comparação contra a régua. Ao procurar o consumidor
+de `min_alpha_lift_ptp`, descobri que **não existe consumidor em código** — a
+régua é aplicada por pessoa. `§13.10` foi reescrito: o dano hoje é de
+interpretação, e vira dano de execução no dia em que a régua for automatizada
+(opção já registrada em `architecture_gaps_log`). Mantive `P0` porque a
+ordem de correção importa mais que a severidade instantânea — mas a
+severidade instantânea está declarada, não inflada.
+
+**8-bis. O reexame de `§13.19` invalida esta autovalidação?** Parcialmente,
+e é o achado mais importante sobre o próprio método. A autovalidação original
+tinha 8 perguntas e **nenhuma delas pegou os 4 falsos positivos de
+`§13.19`**. O que os pegou foi um questionamento externo do Manager sobre um
+item específico, que me obrigou a reabrir um argumento que eu já tinha dado
+por fechado. Conclusão operacional: **autovalidação por checklist detecta
+inconsistência interna e proveniência, não erro de direção em raciocínio
+próprio.** Para essa classe, o que funciona é adversarial externo — e é por
+isso que `§13.16.1-bis` foi rebaixado a challenger em vez de corrigido no
+lugar: um item que sobreviveu a uma rodada de auto-revisão e caiu na primeira
+pergunta externa não merece confiança de item de plano.
+
+**9. Foi tudo medido, ou algo foi presumido do meu conhecimento da
+biblioteca?** Duas afirmações sobre o LightGBM eu sabia antes de verificar —
+que `BoostFromScore` ignora `label_weights_`, e que `monotone_constraints_
+method` tem default `basic`. **Nas duas eu fui à fonte antes de escrever**
+(código C++ do objetivo binário; página de parâmetros da versão instalada),
+e nas duas o resultado bateu. Registro porque a ordem certa é essa, e porque
+uma delas — H1 — eu teria reportado como achado grave se tivesse parado na
+confirmação da doc e não medido o efeito.

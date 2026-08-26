@@ -19119,3 +19119,132 @@ entries:
       documentar isso explicitamente nos 3 modelos por celula). Nenhuma
       das duas e mudanca trivial de configuracao -- ambas tocam
       T1_FEATURE_IDS, portanto qualquer modelo ja treinado.
+    addendum_2026-08-26_correcao_proposta_e_medida: >
+      E10f -- correcao IMPLEMENTADA como funcao nova, separada, NAO
+      wireada em T1_FEATURE_IDS: group_e.oi_change_native_from_levels +
+      group_e.e10f_oi_change_z_48_from_native_delta +
+      _sources.load_oi_change_aligned. Em vez de alinhar o NIVEL de OI e
+      diferenciar depois (producao, onde o bug nasce), diferencia na
+      cadencia NATIVA da fonte (~5min, uma leitura real por linha) e
+      alinha o DELTA -- elimina o zero mecanico por construcao, nao por
+      filtro a posteriori. 4 testes novos (tests/unit/
+      test_features_groups.py), incluindo demonstracao do mecanismo do
+      bug com dado sintetico.
+      MEDIDO contra dado real (tools/diagnostics/
+      measure_ag295_e10f_mechanical_zeros.py, 5 simbolos, R1,
+      2026-06-08..2026-08-07): frac_delta_zero cai de 8,5%-13,0% (producao)
+      pra EXATAMENTE 0,0% (corrigido) nos 5 ativos -- confirma a magnitude
+      do defeito e a eliminacao completa. std_z sobe de ~1,00 (producao,
+      deflacionado pela mistura de zeros) pra 1,06-1,10 (corrigido).
+      frac(|z|>3) SOBE de 1,2%-1,9% pra 2,5%-3,5% sob a correcao -- na
+      direcao OPOSTA da hipotese inicial da ficha ("zeros mecanicos
+      inflam |z|"); mecanismo exato do porque nao caracterizado aqui
+      (dependeria de decompor a composicao da janela rolante de 48 em
+      cada caso), reportado sem sobre-interpretar. NAO adotado em
+      T1_FEATURE_IDS -- decisao do Manager, ver corpo do achado acima.
+      A13 -- investigado, NAO implementado (e decisao de desenho, nao bug
+      de calculo): `feature_a13_ema_window` (constants.yaml) documenta
+      escolha DELIBERADA do Manager (2026-08-15/2026-08-23) de ancorar em
+      RELOGIO, com literatura citada (Lopez de Prado 2018; Gradzki/Wojcik/
+      Lessmann 2025) para as OUTRAS 8 janelas ficarem em bar_count -- A13
+      e "a excecao deliberada, nao a regra". MAS a justificativa
+      declarada ("memoria comensuravel ao horizonte de RELOGIO do label")
+      pressupoe que o label tem horizonte em relogio -- sob
+      canonical_bar_type: dollar (AG-042), H e invariante em BARRAS (5 nas
+      3 grades), nao em relogio. A premissa que sustenta a excecao pode
+      ja nao valer sob o regime atual -- achado novo, nao decidido aqui,
+      relevante pra quem for revisitar a autorizacao de 2026-08-15/23.
+      Independente disso, o escalonamento usa duracao NOMINAL de
+      calibracao (15/30/60min) em vez da MEDIANA MEDIDA -- bug proprio,
+      valido mesmo se a ancoragem em relogio for mantida.
+
+  - id: AG-296
+    renumbered_from: "AG-295 -- quarta colisao de ID do dia com a sessao paralela (a AG-295 dela e commit 8104ba9, sobre A13/E10f); mesmo procedimento de AG-272"
+    date: "2026-08-26"
+    file: "src/models/dataset.py::side_subset, src/models/alpha.py::fit_side_model, config/constants.yaml::cost_stop_ratio_max"
+    related_file: "src/analysis/r2_admissibility_census.py, experiments/r2_admissibility_census.json, docs/ADR-005_secao13_v2_engenharia_de_ML_proposta_2026-08-26.md §13.16.3"
+    found_by: "Claude -- persona lgbm-crypto-quant, reexame de falsos positivos da propria §13 v2 a pedido do Manager"
+    gap: >
+      R2 e uma das cinco restricoes inviolaveis (CLAUDE.md §0.2):
+      custo_round_trip <= cost_stop_ratio_max * stop. Verificado por
+      varredura: `cost_stop_ratio_max` aparece em src/analysis/
+      (m3_timeframe_choice, s1_tp_sl_sensitivity, volatility_operational_
+      effect) e em NENHUM lugar de src/models/. A camada onde o Alpha
+      treina e pontua nunca viu R2.
+      Como stop = sl_atr_mult * ATR(t0) e o ATR varia barra a barra, R2 nao
+      e propriedade da celula -- e da LINHA. Medido nas 30 celulas
+      (15 combinacoes x 2 lados, labels de producao pos-AG-229), lado long:
+        simbolo    R1        R2       R3
+        BNBUSDT    27,12%    8,55%    1,12%
+        BTCUSDT    24,95%    7,12%    0,91%
+        ETHUSDT    12,69%    2,23%    0,27%
+        XRPUSDT     9,50%    0,64%    0,00%
+        SOLUSDT     2,28%    0,14%    0,03%
+      Monotonico em resolucao para os 5 simbolos, queda de ~3x por degrau.
+      Identidade que fecha o diagnostico: sob payoff simetrico
+      (payoff_simetrico=true nas 30 celulas, medido), R2 por linha
+      equivale a breakeven(linha) <= 0,5 + ratio/2 = 0,60.
+    severity: "ALTA -- restricao inviolavel do projeto nao aplicada na camada de modelagem"
+    layer: "models"
+    consequence: >
+      Ate um quarto das linhas de R1 sao estruturalmente nao operaveis
+      (o custo de ida e volta consome mais de 20% do stop) e mesmo assim
+      entram no treino, sao pontuadas e sao elegiveis para selecao por
+      tau -- que e um quantil GLOBAL por celula e nao sabe que a linha
+      custa caro. O breakeven exigido varia 8,0-8,4 pp entre linhas legais
+      de R1, contra um edge procurado de ~6,6 pp (ADR-005 §1.1).
+      REFORCA §12.6 por caminho independente: a diferenca R1 x R3 nao e de
+      homogeneidade residual (faixas se sobrepoem) -- e de CONTAMINACAO,
+      e esta expressa numa restricao que o projeto ja declara inviolavel.
+      NAO altera nenhum artefato: o censo e DECISION-SUPPORT, nenhum
+      pipeline de treino/execucao o le.
+    status: >-
+      ABERTO -- censo implementado e persistido
+      (src/analysis/r2_admissibility_census.py, nucleo puro Idioma A + 13
+      testes unitarios sem IO). A REMEDIACAO (filtrar? penalizar? decidir
+      por linha via ADR-005 §13.16.4?) e decisao do Manager e NAO foi
+      tomada aqui.
+
+  - id: AG-297
+    renumbered_from: "AG-296 -- deslocada junto com AG-296 (ver renumbered_from de la)"
+    date: "2026-08-26"
+    file: "data/labels/SOLUSDT/R1/v1/labels.parquet, data/labels/SOLUSDT/R2/v1/labels.parquet"
+    related_file: "src/labels/triple_barrier.py, src/analysis/r2_admissibility_census.py::breakeven_probability"
+    found_by: "Claude -- disparo real da guarda de degenerescencia de r2_admissibility_census na 1a execucao contra dado de producao"
+    gap: >
+      Existem labels de producao em que |tp_price - entry| e MENOR que o
+      custo de ida e volta (cost_entry_bps + cost_exit_bps). Nessas linhas
+      nao existe p em [0,1] que zere E[r]: mesmo acertando o TP em 100%
+      das vezes, o trade perde dinheiro.
+      Medido nas 15 combinacoes (3.038.807 linhas pos-NOFILL):
+        SOLUSDT/R1   148 linhas   0,0454%   pior razao ganho/custo = 0,4113
+        SOLUSDT/R2    29 linhas   0,0178%   pior razao ganho/custo = 0,6953
+        demais 13 celulas: 0
+        TOTAL 177 linhas (0,00582%)
+      No pior caso o TP vale 41% do custo do trade.
+      Achado colateral, registrado por honestidade: a PRIMEIRA versao da
+      guarda validava o DENOMINADOR ((ganho-custo)+(stop+custo) > 0), que
+      e condicao fraca demais -- com ganho 5 bps / stop 5 bps / custo 60
+      bps o denominador da +0,001, a guarda passava, e o breakeven saia
+      6,5 (uma "probabilidade" > 1) sem erro. Pego pelo teste unitario
+      escrito para a propria funcao; guarda corrigida para ganho-custo > 0.
+    severity: "BAIXA em volume (0,006%), ALTA em natureza -- label economicamente impossivel emitido sem sinal"
+    layer: "labels"
+    consequence: >
+      Volume desprezivel no agregado. O que NAO e desprezivel: nada no
+      Label Engine detecta a condicao, entao ela nao tem piso -- se a
+      geometria (tp_atr_mult), o regime de custo ou o universo de ativos
+      mudar, o numero cresce em silencio. E as 177 linhas entram no treino
+      com sample_weight proporcional a |ret_net|, ou seja NAO recebem peso
+      zero.
+      O censo CONTA essas linhas em campo proprio
+      (n_tp_nao_cobre_custo/frac_tp_nao_cobre_custo) e as exclui dos
+      quantis de breakeven, em vez de abortar a celula -- decisao de
+      desenho: a funcao de CALCULO falha alto (valor indefinido), o CENSO
+      classifica (contar patologia e o trabalho dele).
+    status: >-
+      ABERTO -- medido e persistido. Remediacao natural (assercao em
+      assert_label_invariants) NAO implementada aqui porque mudaria o
+      contrato do Label Engine e exigiria decisao sobre o que fazer com as
+      177 linhas existentes (excluir muda config_hash e exige relabel das
+      15 combinacoes, mesmo veredito de AG-230-ADDENDUM).
