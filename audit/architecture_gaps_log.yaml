@@ -17629,3 +17629,141 @@ entries:
       pre-declarada em `src/risk/limits.py` continua valendo -- melhora de
       Sharpe correlacionada com o gate reativado deve ser tratada como
       bandeira de vazamento ate prova em contrario.
+
+  - id: AG-260
+    date: "2026-08-25"
+    file: "src/analysis/economic_gate.py, config/min_alpha_lift_by_combo.yaml, config/barrier_geometry_by_combo.yaml, experiments/economic_gate_report.json"
+    related_file: "experiments/s1_tp_sl_sensitivity_report_{R1,R2,R3}.json, audit/architecture_gaps_log.yaml::AG-246, ::AG-249, ::AG-235-ADDENDUM-2, config/constants.yaml::p_target_hit"
+    found_by: "Claude, sob a persona feature-thesis-auditor -- auditoria de coerencia temporal do vetor de features que derivou para a pergunta anterior: quanto edge o motor PRECISA entregar, antes de perguntar qual feature entrega"
+    numeracao: "AG-260 escolhido com folga deliberada sobre o maior existente (AG-257) -- AG-258/AG-259 deixados livres para a sessao paralela, que compartilha este arquivo. Terceira tentativa de evitar a colisao registrada em AG-239/AG-240 e AG-257."
+    gap: >
+      A REGUA ECONOMICA DO PROJETO JA ESTAVA MEDIDA E NUNCA FOI APLICADA.
+      O S1 persiste, por celula, frac_tp (taxa de acerto base) e
+      breakeven_wr_cost_adjusted (taxa necessaria para cobrir o custo
+      round-trip). A razao entre as duas responde quanto lift em P(TP) o
+      Alpha precisa entregar para o motor EMPATAR. O veredito do proprio
+      relatorio S1 e literalmente "TBD -- criterio operacional de
+      'sobrevive a faixa' e decisao do Manager, nao computado aqui". Ou
+      seja: o numero que governa se qualquer candidato pode ser positivo
+      estava no disco desde a rodada do S1 e nenhuma decisao do projeto o
+      usou.
+      MEDIDO AGORA (186 celulas; geometria otima por grade, lift medio
+      entre os dois lados):
+        simbolo    R1                R2                R3
+        SOLUSDT    1,0796 +-0,0027   1,0759 +-0,0038   1,0934 +-0,0063
+        ETHUSDT    1,1010 +-0,0028   1,0982 +-0,0040   1,1173 +-0,0065
+        XRPUSDT    1,1004 +-0,0027   1,0998 +-0,0038   1,1232 +-0,0064
+        BTCUSDT    1,1216 +-0,0025   1,1187 +-0,0035   1,1510 +-0,0053
+        BNBUSDT    1,1260 +-0,0029   1,1245 +-0,0040   1,1349 +-0,0060
+      Contra o que existe medido: o lift do gate de regime e 1,0027
+      (AG-244) e as 10 medianas do ADR-003 sao negativas. A distancia ate
+      a regua nao e de calibracao.
+    severity: >
+      alto -- nao e defeito de corretude (nada calcula errado); e ausencia
+      de um gate. Sem ele, todo trial gasto num candidato cujo lift
+      projetado esta abaixo do exigido para a celula e N_lifetime queimado
+      para descobrir aritmetica que ja estava no disco.
+    layer: "analysis / labels (geometria) -- transversal a decisao de alocacao de trial"
+    consequence: >
+      (1) SOBRE A ESCOLHA DE GRADE, e este e o achado mais importante: R2
+      vence nos 5 simbolos e em NENHUM e distinguivel de R1 (delta de
+      0,0007 a 0,0037 contra erro de 0,0025-0,0040 por lado). "R2 e a
+      melhor grade" e RUIDO. O que E distinguivel: R3 e pior nos 5, com
+      ~5 sigma em BTCUSDT. A unica conclusao sustentavel sobre grade e
+      R1 ~ R2 >> R3. Por isso o modulo reporta stderr/IC em toda linha e
+      compara por is_distinguishable, nunca por "<" -- AG-246 registrou
+      este projeto ordenando celulas por diferenca que nao era
+      distinguivel de ruido, e um ranking nu aqui repetiria o defeito.
+      (2) CONTRADIZ a leitura ingenua de AG-246 no eixo economico: la o
+      poder de separacao entre celulas CRESCE com a duracao da barra
+      (R3 = 4,72); aqui R3 exige o MAIOR lift. Sao metricas diferentes
+      apontando em direcoes opostas -- R3 ordena melhor e paga pior. Nao
+      tratar "R3 separa mais" como argumento para escolher R3.
+      (3) GEOMETRIA POR CELULA -- a assimetria de AG-249 agora com numero:
+      a geometria de menor lift NAO e a mesma nas tres grades. Em R1, os 5
+      simbolos pedem tp=sl=2,25 contra o global tp=sl=1,5, com ganho de
+      0,019 a 0,030 e stderr ~0,002, isto e 10 a 17 sigma -- acionavel. Em
+      R2/R3 nenhuma troca se justifica: o global ja e a celula certa.
+      Fechado em codigo por src/labels/geometry_by_combo.py +
+      LabelConfig.from_constants(symbol=..., use_geometry_by_combo=True),
+      OPT-IN, com default bit-exato.
+      (4) HIPOTESE MINHA, REFUTADA PELO PROPRIO DADO: propus varrer
+      barreiras mais largas para diluir custo (c/(2m) cai com m). Medido,
+      P(TP) cai mais rapido que o breakeven e o lift exigido SOBE
+      monotonicamente com a barreira em quase toda celula. A producao ja
+      estava na melhor geometria disponivel em R2/R3.
+    ressalva_de_proveniencia: >
+      breakeven_wr_cost_adjusted deriva de round_trip_cost_bps_maker_prob,
+      cuja p_target_hit tem SEGUNDA REMEDIACAO PENDENTE registrada na
+      propria entrada de constants.yaml (medida pre-relabel AG-221/AG-229;
+      a entrada preve ~0,49 depois, que e exatamente o que os S1 por
+      resolucao mostram). O vies e COMUM a todas as celulas: a ORDENACAO e
+      robusta a ele, o NIVEL absoluto nao. Reexecutar economic_gate apos a
+      remediacao antes de tratar 1,08-1,15 como numeros finais.
+    status: >-
+      MEDIDO E FECHADO EM CODIGO, NAO APLICADO A PRODUCAO. O que existe:
+      modulo + 27 testes, as duas tabelas em config/, o mecanismo de
+      geometria por celula wireado e opt-in. O que NAO foi feito, e cada um
+      exige decisao do Manager: (a) ligar use_geometry_by_combo no backfill
+      real -- muda config_hash (B15) e obriga RELABEL das 5 celulas R1, que
+      esbarra no limite de carregamento de AG-223 (PASSO 5 BLOQUEADO,
+      cursor deslizante proposto e nao autorizado); (b) tornar
+      min_alpha_lift_ptp gate vinculante de entrada de trial; (c) decidir o
+      que fazer com R3, que e distinguivelmente pior em custo e
+      distinguivelmente melhor em ordenacao.
+
+  - id: AG-261
+    date: "2026-08-25"
+    file: "src/labels/fill_model.py, src/labels/triple_barrier.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-257, ::AG-227, commit 50b46fe, commit 956ba5d"
+    found_by: "Claude -- ao rodar mypy sobre triple_barrier.py como pre-requisito do refactor de geometria por celula; nao era o alvo da busca"
+    gap: >
+      O LABEL ENGINE ESTAVA QUEBRADO NO HEAD PUBLICADO, e ninguem sabia.
+      triple_barrier.py::build_labels_with_stats chama
+      fill_model.TradeWindowCursor() (linha 1425, INCONDICIONAL) e
+      fill_model.simulate_fill_from_trades() (linha 1520). Nenhum dos dois
+      existia em src/labels/fill_model.py. Verificado por contagem direta:
+      0 ocorrencias de TradeWindowCursor em fill_model.py nos commits
+      50b46fe, c8ccfed, f5f426e e ebecea9.
+      O consumidor entrou em 50b46fe (AG-227, cursor deslizante) JUNTO com
+      os testes (tests/unit/test_labels_fill_model.py, +315 linhas). A
+      implementacao ficou so no working tree e nunca foi commitada.
+      MEDIDO: 46 testes falhando, mypy strict com 2 erros, AttributeError
+      em toda chamada de build_labels_with_stats -- o motor nao gerava
+      label nenhum.
+    severity: >
+      critico enquanto durou -- o Label Engine e a raiz de todo artefato de
+      treino. Ja RESOLVIDO (956ba5d), mas a classe do defeito nao.
+    layer: "labels (nucleo) / processo de commit"
+    consequence: >
+      CAUSA PROXIMA, e fui eu: um `git reset --hard origin/master`
+      autorizado pelo Manager apagou o arquivo nao-commitado. Pedi a
+      autorizacao sem saber que havia trabalho nao-commitado de uma sessao
+      paralela no MESMO working tree.
+      CAUSA RAIZ, anterior e independente disso: consumidor e testes
+      entraram no repo sem a implementacao, e NEM a suite rapida NEM a
+      completa pegaram. AG-257 auditou a suite completa no mesmo dia,
+      encontrou 9 falhas e as classificou como ConfigHashMismatchError --
+      sem notar estas 46, porque o working tree sujo as mascarava: os
+      testes passavam localmente lendo um arquivo que o repositorio nao
+      tinha. Uma suite verde sobre working tree divergente do HEAD nao e
+      evidencia sobre o HEAD.
+      RECUPERACAO: blob dangling cc07f65 localizado via
+      `git fsck --unreachable` (942 blobs varridos), conteudo integro (328
+      linhas), restaurado deste blob -- nao reescrito a mao. Pos-restauracao
+      107 passed nos dois arquivos de teste de label, suite rapida 2114
+      passed / 0 failed, mypy strict limpo.
+    status: >-
+      RESOLVIDO em 956ba5d. LICAO DE PROCESSO NAO FECHADA, e ela vale mais
+      que o incidente: duas sessoes Claude no mesmo working tree e no mesmo
+      gaps log ja causaram, so em 2026-08-25, tres colisoes de ID de AG
+      (AG-239/AG-240, AG-257, e a folga deliberada de AG-260), uma colisao
+      de indice git que contaminou um commit com 114 linhas alheias, e esta
+      perda de arquivo. Nenhuma dessas e culpa de uma sessao especifica --
+      e a topologia. PROPOSTA, decisao do Manager: sessoes concorrentes
+      usam worktrees git separados (`git worktree add`), ou uma unica
+      sessao detem o direito de commit por vez. Enquanto isso nao existir,
+      a mitigacao barata e conferir `git status` + `git stash list` ANTES
+      de qualquer operacao destrutiva, e nunca tratar suite verde como
+      prova de sanidade sem antes confirmar que o working tree bate com o
+      HEAD.

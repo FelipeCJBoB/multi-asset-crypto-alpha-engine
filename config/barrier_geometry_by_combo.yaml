@@ -1,0 +1,63 @@
+# config/barrier_geometry_by_combo.yaml
+#
+# Geometria de barreira (tp_atr_mult/sl_atr_mult) por (symbol,
+# resolution_id) -- override das constantes GLOBAIS tp_atr_mult/
+# sl_atr_mult de constants.yaml, que valem UM valor para as 15
+# celulas (assimetria registrada em AG-249).
+#
+# provenance: MEASURED -- geometria de menor required_lift MEDIO
+# ENTRE OS DOIS LADOS (nao o melhor lado: o Label Engine gera long e
+# short sob a mesma geometria), sobre o grid do S1 medido por
+# resolucao (code_version=f25e1df).
+#
+# Incumbente comparado: R1_S3/2 (tp/sl de constants.yaml).
+# SO entram combos cujo ganho e DISTINGUIVEL do incumbente a 95%:
+# trocar geometria invalida config_hash de label (B15) e obriga
+# relabel -- pagar isso por um ganho dentro do erro seria comprar
+# ruido com custo real.
+#
+# Gerado por src/analysis/economic_gate.py -- NAO editar a mao.
+# Combo AUSENTE aqui = usar o global de constants.yaml (o loader
+# devolve None, o caller cai no default; nunca inventar valor).
+
+barrier_geometry:
+  BNBUSDT_R1:
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    cell_id_s1: R1_S9/4
+    required_lift_mean_sides: 1.126521
+    stderr: 0.002033
+    incumbente_required_lift: 1.164709
+    ganho: 0.038188
+  BTCUSDT_R1:
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    cell_id_s1: R1_S9/4
+    required_lift_mean_sides: 1.130138
+    stderr: 0.001775
+    incumbente_required_lift: 1.160470
+    ganho: 0.030332
+  ETHUSDT_R1:
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    cell_id_s1: R1_S9/4
+    required_lift_mean_sides: 1.111690
+    stderr: 0.002046
+    incumbente_required_lift: 1.134357
+    ganho: 0.022667
+  SOLUSDT_R1:
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    cell_id_s1: R1_S9/4
+    required_lift_mean_sides: 1.081296
+    stderr: 0.001934
+    incumbente_required_lift: 1.100185
+    ganho: 0.018889
+  XRPUSDT_R1:
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    cell_id_s1: R1_S9/4
+    required_lift_mean_sides: 1.103156
+    stderr: 0.001938
+    incumbente_required_lift: 1.125564
+    ganho: 0.022408

@@ -24,6 +24,14 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 CONSTANTS_PATH: Path = REPO_ROOT / "config" / "constants.yaml"
 
+#: Geometria de barreira calibrada por (symbol, resolution_id) -- override
+#: opcional das constantes GLOBAIS tp_atr_mult/sl_atr_mult (AG-249, gate
+#: economico). Ausencia do arquivo e caminho valido: o loader devolve {} e
+#: todo combo cai no global.
+BARRIER_GEOMETRY_BY_COMBO_PATH: Path = (
+    REPO_ROOT / "config" / "barrier_geometry_by_combo.yaml"
+)
+
 DATA_ROOT: Path = REPO_ROOT / "data"
 CAPACITY_DIR: Path = DATA_ROOT / "capacity"
 

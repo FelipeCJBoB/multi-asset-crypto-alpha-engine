@@ -64,6 +64,8 @@ from typing import Any, Final
 
 import structlog
 
+from src.labels._constants import load_constant
+
 logger = structlog.get_logger(__name__)
 
 EXPERIMENTS_DIR: Final[Path] = Path("experiments")
@@ -233,6 +235,115 @@ def best_per_combo(rows: Sequence[GateRow]) -> dict[tuple[str, str], GateRow]:
     return best
 
 
+@dataclass(frozen=True, slots=True)
+class GeometryRecommendation:
+    """Geometria recomendada para uma célula `(symbol, resolution_id)`.
+
+    O critério é o lift exigido MÉDIO ENTRE OS DOIS LADOS, não o melhor
+    lado. O Label Engine gera `long` e `short` sob a MESMA geometria, então
+    escolher pelo melhor lado otimizaria um lado às custas do outro —
+    exatamente o tipo de seleção que produz um número bonito e um motor
+    pior."""
+
+    symbol: str
+    resolution_id: str
+    cell_id: str
+    tp_atr_mult: float
+    sl_atr_mult: float
+    required_lift_mean_sides: float
+    stderr_mean_sides: float
+    incumbent_cell_id: str
+    incumbent_required_lift_mean_sides: float
+    ganho_vs_incumbente: float
+    distinguivel_do_incumbente: bool
+
+
+def _mean_over_sides(rows: Sequence[GateRow]) -> tuple[float, float]:
+    """Média do lift e erro da média sobre os lados de uma mesma geometria.
+    Os lados são amostras distintas (trades distintos), então o erro da
+    média cai por `sqrt(k)`."""
+    lifts = [r.required_lift for r in rows]
+    stderrs = [r.required_lift_stderr for r in rows]
+    k = len(lifts)
+    mean = sum(lifts) / k
+    stderr = math.sqrt(sum(s**2 for s in stderrs)) / k
+    return mean, stderr
+
+
+def find_incumbent_cell_id(rows: Sequence[GateRow], *, tp: float, sl: float) -> str:
+    """Localiza o `cell_id` da geometria vigente pelos VALORES de
+    `tp_atr_mult`/`sl_atr_mult` (de `constants.yaml`), nunca pelo nome.
+
+    O `cell_id` do S1 (`R1_S3/2`) codifica reward-ratio e stop em fração e
+    é fácil de confundir com `resolution_id` — casar por valor elimina a
+    ambiguidade e sobrevive a uma renomeação do grid."""
+    for row in rows:
+        if math.isclose(row.tp_atr_mult, tp) and math.isclose(row.sl_atr_mult, sl):
+            return row.cell_id
+    raise EconomicGateError(
+        f"geometria vigente (tp={tp}, sl={sl}) não existe no grid do S1 -- "
+        "o sweep não cobre a célula que está em produção, então não há "
+        "baseline medido para comparar nenhuma alternativa"
+    )
+
+
+def recommend_geometry_per_combo(
+    rows: Sequence[GateRow], *, incumbent_cell_id: str, z: float = _Z_95
+) -> list[GeometryRecommendation]:
+    """Para cada `(symbol, resolution_id)`, a geometria de menor lift médio
+    entre lados, comparada contra a geometria vigente em produção
+    (`incumbent_cell_id`).
+
+    `distinguivel_do_incumbente` é o campo que decide se vale mexer: um
+    ganho que não passa do erro não justifica invalidar `config_hash` de
+    label (B15) e disparar relabel."""
+    by_combo_cell: dict[tuple[str, str, str], list[GateRow]] = {}
+    for row in rows:
+        by_combo_cell.setdefault((row.symbol, row.resolution_id, row.cell_id), []).append(row)
+
+    stats: dict[tuple[str, str, str], tuple[float, float, GateRow]] = {}
+    for key, group in by_combo_cell.items():
+        mean, stderr = _mean_over_sides(group)
+        stats[key] = (mean, stderr, group[0])
+
+    combos = sorted({(s, r) for s, r, _ in stats})
+    out: list[GeometryRecommendation] = []
+    for symbol, resolution_id in combos:
+        candidates = {
+            cell_id: stats[(symbol, resolution_id, cell_id)]
+            for (s, r, cell_id) in stats
+            if s == symbol and r == resolution_id
+        }
+        incumbent = candidates.get(incumbent_cell_id)
+        if incumbent is None:
+            raise EconomicGateError(
+                f"geometria incumbente {incumbent_cell_id!r} ausente em "
+                f"{symbol}/{resolution_id} -- sem baseline não há comparação honesta"
+            )
+        best_cell_id = min(candidates, key=lambda c: candidates[c][0])
+        best_mean, best_stderr, best_row = candidates[best_cell_id]
+        inc_mean, inc_stderr, _ = incumbent
+
+        delta = inc_mean - best_mean
+        pooled = math.sqrt(best_stderr**2 + inc_stderr**2)
+        out.append(
+            GeometryRecommendation(
+                symbol=symbol,
+                resolution_id=resolution_id,
+                cell_id=best_cell_id,
+                tp_atr_mult=best_row.tp_atr_mult,
+                sl_atr_mult=best_row.sl_atr_mult,
+                required_lift_mean_sides=best_mean,
+                stderr_mean_sides=best_stderr,
+                incumbent_cell_id=incumbent_cell_id,
+                incumbent_required_lift_mean_sides=inc_mean,
+                ganho_vs_incumbente=delta,
+                distinguivel_do_incumbente=delta > z * pooled,
+            )
+        )
+    return out
+
+
 def rank_resolutions(rows: Sequence[GateRow]) -> list[dict[str, Any]]:
     """Para cada símbolo, ordena as resoluções pelo melhor lift exigido e
     marca se o 1º é DISTINGUÍVEL do 2º. Um `False` aqui significa que a
@@ -367,17 +478,81 @@ def _gate_yaml(rows: Sequence[GateRow], *, source_version: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _geometry_yaml(
+    recs: Sequence[GeometryRecommendation], *, source_version: str, incumbent_cell_id: str
+) -> str:
+    """`config/barrier_geometry_by_combo.yaml` — geometria de barreira por
+    `(symbol, resolution_id)`, consumida por `src.labels.geometry_by_combo`.
+
+    Só entram combos cujo ganho é DISTINGUÍVEL do incumbente. Trocar
+    geometria invalida `config_hash` de label (B15) e obriga relabel; fazer
+    isso por um ganho dentro do erro seria pagar custo real por ruído."""
+    lines = [
+        "# config/barrier_geometry_by_combo.yaml",
+        "#",
+        "# Geometria de barreira (tp_atr_mult/sl_atr_mult) por (symbol,",
+        "# resolution_id) -- override das constantes GLOBAIS tp_atr_mult/",
+        "# sl_atr_mult de constants.yaml, que valem UM valor para as 15",
+        "# celulas (assimetria registrada em AG-249).",
+        "#",
+        "# provenance: MEASURED -- geometria de menor required_lift MEDIO",
+        "# ENTRE OS DOIS LADOS (nao o melhor lado: o Label Engine gera long e",
+        "# short sob a mesma geometria), sobre o grid do S1 medido por",
+        f"# resolucao (code_version={source_version}).",
+        "#",
+        f"# Incumbente comparado: {incumbent_cell_id} (tp/sl de constants.yaml).",
+        "# SO entram combos cujo ganho e DISTINGUIVEL do incumbente a 95%:",
+        "# trocar geometria invalida config_hash de label (B15) e obriga",
+        "# relabel -- pagar isso por um ganho dentro do erro seria comprar",
+        "# ruido com custo real.",
+        "#",
+        "# Gerado por src/analysis/economic_gate.py -- NAO editar a mao.",
+        "# Combo AUSENTE aqui = usar o global de constants.yaml (o loader",
+        "# devolve None, o caller cai no default; nunca inventar valor).",
+        "",
+        "barrier_geometry:",
+    ]
+    aceitos = [r for r in recs if r.distinguivel_do_incumbente]
+    if not aceitos:
+        lines.append(
+            "  {}  # nenhum combo com ganho distinguivel -- geometria global permanece"
+        )
+    for rec in sorted(aceitos, key=lambda r: (r.symbol, r.resolution_id)):
+        lines.extend(
+            [
+                f"  {rec.symbol}_{rec.resolution_id}:",
+                f"    tp_atr_mult: {rec.tp_atr_mult}",
+                f"    sl_atr_mult: {rec.sl_atr_mult}",
+                f"    cell_id_s1: {rec.cell_id}",
+                f"    required_lift_mean_sides: {rec.required_lift_mean_sides:.6f}",
+                f"    stderr: {rec.stderr_mean_sides:.6f}",
+                f"    incumbente_required_lift: "
+                f"{rec.incumbent_required_lift_mean_sides:.6f}",
+                f"    ganho: {rec.ganho_vs_incumbente:.6f}",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
 def run_economic_gate_report(
     *, out_dir: Path = EXPERIMENTS_DIR, config_dir: Path = CONFIG_DIR
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     """Casca — lê os 3 relatórios S1 por resolução, aplica o núcleo,
-    persiste o relatório e a tabela de gate. Devolve `(report_path,
-    gate_yaml_path)`."""
+    persiste o relatório, a tabela de gate e a geometria recomendada.
+    Devolve `(report_path, gate_yaml_path, geometry_yaml_path)`."""
     reports = load_s1_reports(out_dir=out_dir)
     source_version = str(reports[RESOLUTIONS[0]].get("code_version", "desconhecido"))
 
     rows = build_gate_rows(reports)
     ranking = rank_resolutions(rows)
+
+    incumbent_cell_id = find_incumbent_cell_id(
+        rows,
+        tp=float(load_constant("tp_atr_mult")),
+        sl=float(load_constant("sl_atr_mult")),
+    )
+    recs = recommend_geometry_per_combo(rows, incumbent_cell_id=incumbent_cell_id)
+    n_trocas = sum(1 for r in recs if r.distinguivel_do_incumbente)
 
     n_indistinguiveis = sum(
         1 for r in ranking if r["vencedor_distinguivel_do_2o"] is False
@@ -400,6 +575,9 @@ def run_economic_gate_report(
         "n_celulas": len(rows),
         "ranking_por_simbolo": ranking,
         "n_simbolos_com_vencedor_indistinguivel": n_indistinguiveis,
+        "geometria_incumbente_cell_id": incumbent_cell_id,
+        "geometria_recomendada_por_combo": [asdict(r) for r in recs],
+        "n_combos_com_troca_de_geometria_justificada": n_trocas,
         "melhores_10_celulas": [asdict(r) for r in rows[:10]],
         "piores_5_celulas": [asdict(r) for r in rows[-5:]],
     }
@@ -412,17 +590,26 @@ def run_economic_gate_report(
         config_dir / "min_alpha_lift_by_combo.yaml",
         _gate_yaml(rows, source_version=source_version),
     )
+    geometry_path = _write_atomic(
+        config_dir / "barrier_geometry_by_combo.yaml",
+        _geometry_yaml(
+            recs, source_version=source_version, incumbent_cell_id=incumbent_cell_id
+        ),
+    )
 
     logger.info(
         "analysis.economic_gate.done",
         report_path=str(report_path.resolve()),
         gate_path=str(gate_path.resolve()),
+        geometry_path=str(geometry_path.resolve()),
         n_celulas=len(rows),
         melhor_celula=f"{rows[0].symbol}/{rows[0].resolution_id}/{rows[0].side}/{rows[0].cell_id}",
         melhor_lift=round(rows[0].required_lift, 4),
         n_simbolos_com_vencedor_indistinguivel=n_indistinguiveis,
+        geometria_incumbente=incumbent_cell_id,
+        n_combos_com_troca_justificada=n_trocas,
     )
-    return report_path, gate_path
+    return report_path, gate_path, geometry_path
 
 
 if __name__ == "__main__":

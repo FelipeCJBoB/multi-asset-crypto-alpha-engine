@@ -129,7 +129,7 @@ from src.data.resample import step_ms
 from src.exchange.filters import Filters, NoFiltersAvailableError, load_filters_asof
 from src.features.volatility import ATRWilderEstimator, Bars, VolatilityEstimator
 
-from . import fill_model, weights
+from . import fill_model, geometry_by_combo, weights
 from ._constants import load_constant
 from ._paths import LABELS_OUTPUT_DIR
 
@@ -517,6 +517,8 @@ class LabelConfig:
         tf: str = _DEFAULT_TF,
         resolution_id: str | None = None,
         horizon_bars: int | None = None,
+        symbol: str | None = None,
+        use_geometry_by_combo: bool = False,
     ) -> LabelConfig:
         """`estimator_id=None` (default) resolve para `ATRWilderEstimator`
         no `atr_window_ms` lido de `constants.yaml` — o estimador de
@@ -553,6 +555,12 @@ class LabelConfig:
         §15.12.3 item 9(iv)). Passar `horizon_bars` explícito sob `tf`
         (sem `resolution_id`) não é neutralizado aqui -- é repassado como
         veio, e `__post_init__` levanta `ValueError` (proibição AG-116)."""
+        if use_geometry_by_combo and symbol is None:
+            raise ValueError(
+                "LabelConfig.from_constants: use_geometry_by_combo=True exige symbol "
+                "explícito -- a geometria é calibrada por (symbol, resolution_id) "
+                "(AG-249), não há como resolver a célula sem os dois"
+            )
         if resolution_id is not None and estimator_id is None:
             raise ValueError(
                 "LabelConfig.from_constants: resolution_id setado exige estimator_id "
@@ -571,9 +579,26 @@ class LabelConfig:
         resolved_horizon_bars = horizon_bars
         if resolved_horizon_bars is None and resolution_id is not None:
             resolved_horizon_bars = int(load_constant("horizon_bars"))
+        # AG-249 / gate econômico -- geometria por célula. `use_geometry_by_
+        # combo=False` (default) preserva TODO caller existente bit-exato:
+        # sem a flag, os dois valores vêm do global de `constants.yaml` como
+        # sempre. Com a flag e um combo COBERTO, o override entra; com a flag
+        # e um combo AUSENTE, `load_barrier_geometry` devolve `None` e o
+        # global vale -- nunca um valor interpolado.
+        geometry = (
+            geometry_by_combo.load_barrier_geometry(symbol, resolution_id)
+            if use_geometry_by_combo and symbol is not None
+            else None
+        )
+        tp_atr_mult = (
+            geometry.tp_atr_mult if geometry is not None else float(load_constant("tp_atr_mult"))
+        )
+        sl_atr_mult = (
+            geometry.sl_atr_mult if geometry is not None else float(load_constant("sl_atr_mult"))
+        )
         return cls(
-            tp_atr_mult=float(load_constant("tp_atr_mult")),
-            sl_atr_mult=float(load_constant("sl_atr_mult")),
+            tp_atr_mult=tp_atr_mult,
+            sl_atr_mult=sl_atr_mult,
             time_stop_ms=int(load_constant("time_stop_ms")),
             fill_timeout_ms=int(load_constant("fill_timeout_ms")),
             atr_window_ms=atr_window_ms,
