@@ -17294,3 +17294,117 @@ entries:
       AG-180, `_clock_reference_bar_duration_ms` de AG-043). Auditar esse
       eixo -- "relogio de 15m como UNIDADE de calculo, nao como grade de
       leitura" -- e um trabalho separado, que ninguem fez.
+
+  - id: AG-249
+    date: "2026-08-25"
+    file: "config/constants.yaml (constantes classe A globais), src/models/pipeline.py::run_layer1_sprint, src/models/_paths.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-246, ::AG-244, ::AG-235-ADDENDUM-2, ::AG-245-ADDENDUM, ::AG-043, ::AG-222"
+    found_by: "Claude -- revisao de arquitetura da raiz pedida pelo Manager ('reveja o desenho de producao da Raiz para compreender o motivo de cada ponto')"
+    gap: >
+      A ASSIMETRIA QUE EXPLICA AG-246. Revisada a arquitetura desde a raiz,
+      o desenho tem uma assimetria estrutural que ninguem escolheu
+      explicitamente e que nao esta escrita em lugar nenhum:
+        O MODELO E POR CELULA. `run_layer1_sprint(symbol, resolution_id)`
+        treina 15 modelos independentes; artefatos chaveados por
+        `{symbol}/{grade}/{model_id}` em predictions/ e models/.
+        O ALVO E OS GUARDRAILS SAO GLOBAIS. tp_atr_mult, sl_atr_mult,
+        horizon_bars, time_stop_ms, target_signal_rate, regime_er_cutoff,
+        regime_vol_cutoff, round_trip_cost_bps_maker_prob, cost_stop_ratio_
+        max -- TODAS classe A, TODAS com um unico valor para as 15 celulas.
+      Ou seja: quinze modelos aprendem, cada um no seu proprio pedaco de
+      mundo, um alvo que foi definido uma vez so para todos.
+      CONSEQUENCIAS MEDIDAS NESTA REVISAO, nao inferidas:
+      (1) DURACAO DO TRADE ESCALA COM A BARRA. Holding mediano BTCUSDT:
+          R1 19,5min, R2 42,7min, R3 91,6min -- 4,7x entre as pontas. E
+          consequencia direta de barreiras em unidade de ATR sobre barras
+          de duracoes diferentes, nao um defeito.
+      (2) O CUSTO REAL NAO ESCALA JUNTO NO MODELO. Fracao de trades que
+          PAGAM funding: R1 8,80%, R2 17,30%, R3 31,03% -- 3,5x. Funding e
+          cobrado por tempo de exposicao, entao acompanha (1). Mas
+          `round_trip_cost_bps_maker_prob = 0,4942` e UNICO para as tres.
+          A constante que o motor usa para DECIDIR (alimenta a feature
+          E27f_cost_atr_ratio, o Gate 0 de feasibility e risk/limits)
+          captura a parte do custo que NAO varia com a resolucao (fees) e
+          ignora a que varia (funding). O custo REALIZADO entra em ret_net
+          corretamente -- o problema nao e contabilidade, e que a constante
+          de DECISAO nao distingue o que o dado mostra distinto.
+      (3) HORIZONTE MUDA DE REGIME ENTRE RESOLUCOES. horizon_bars=32 vale
+          326min em R1, 688min em R2 e 1443min em R3, contra
+          time_stop_ms=8h=480min: em R1 o limite que morde e a CONTAGEM DE
+          BARRAS, em R2/R3 e o RELOGIO. Na pratica P(TIME)~0,001 nas tres,
+          entao nenhum dos dois morde de fato -- e por isso este ponto e
+          debito de coerencia, nao bug ativo. Mas os dois limites se cruzam
+          entre resolucoes sem que ninguem tenha decidido isso (AG-043 ja
+          registrou o eixo; aqui esta o numero).
+    severity: "alto -- nao e um defeito de codigo, e o desenho que produz o efeito de AG-246, e ate agora nao estava enunciado em lugar nenhum"
+    layer: "arquitetura (transversal: labels, models, risk)"
+    consequence: >
+      POR QUE ISSO EXPLICA AG-246. Uma decisao GLOBAL sobre celulas cujos
+      otimos divergem e, por construcao, a media de otimos locais que
+      apontam para lados diferentes. AG-246 mediu os tres sintomas disso e
+      nao tinha a causa: (a) o lift do gate e significativo por celula mas
+      da ~1,0 na media -- efeitos reais que se cancelam; (b) o ranking de
+      geometria inverte entre resolucoes (Kendall tau -0,600 R1xR3); (c) a
+      selecao de features tem nucleo comum mais franja por grade. Os tres
+      sao a mesma coisa vista de tres angulos: agregacao sobre celulas
+      heterogeneas com parametro unico.
+      E EXPLICA O PADRAO MONOTONICO. O separation_ratio cresce com a
+      duracao da barra (gate 1,40/2,13/2,82; S1 1,46/2,35/6,27) porque
+      barras mais longas integram mais ruido de microestrutura -- o mesmo
+      mecanismo que faz o I2 do M6 cair com a duracao (AG-238). Nao e que
+      R3 seja "melhor": e que R3 tem menos ruido por observacao, entao
+      qualquer efeito real fica mais visivel la.
+      PARIDADE TREINO~LIVE, o eixo que o Manager pediu para preservar. O
+      principio e que o modelo aprenda o trade que a execucao de fato faz.
+      Hoje o treino e por celula e a execucao tambem sera por celula -- essa
+      parte tem paridade. O que NAO tem paridade e o custo: o modelo aprende
+      sobre um custo de decisao unico enquanto a execucao pagara um custo
+      que varia 3,5x em frequencia de funding entre R1 e R3. Um modelo
+      treinado em R3 sob a constante de R1 sistematicamente subestima o
+      proprio custo.
+    status: >-
+      ABERTO -- ANALISE E PROPOSTA, nenhuma mudanca executada. O Manager
+      pediu proposta, nao aplicacao.
+      TRES OPCOES CONSIDERADAS, com a razao de descartar duas:
+      (A) PARAMETRIZAR TUDO POR CELULA (tp/sl/horizon/cutoffs por combo).
+          DESCARTADA. Multiplicaria por 15 os graus de liberdade de
+          constantes classe A, explodindo N_lifetime e PBO. E AG-246 mostra
+          que em R1 a ordenacao das celulas centrais tem separation_ratio
+          1,08 -- e RUIDO. Parametrizar sobre ruido nao e refinar, e
+          overfitar com mais casas decimais.
+      (B) ESCOLHER UMA RESOLUCAO E DECIDIR SO NELA (R3, maior separacao).
+          DESCARTADA COMO SOLUCAO GERAL. Resolve a estatistica e quebra o
+          produto: o projeto e multi-resolucao por desenho (§15), e R3 tem
+          menos trades. Fica valida como REGRA DE EVIDENCIA (item 3 abaixo),
+          nao como escopo.
+      (C) SEPARAR O QUE E MEDIDO DO QUE E ESCOLHIDO -- RECOMENDADA.
+          O criterio e a proveniencia, nao a conveniencia:
+          1. CUSTO passa a ser POR CELULA. `round_trip_cost_bps_maker_prob`
+             e DERIVED/MEASURED, nao hiperparametro -- medir por celula NAO
+             adiciona grau de liberdade nem consome N_lifetime, so para de
+             fingir que 8,80% e 31,03% de incidencia de funding sao a mesma
+             coisa. E o unico ponto onde o dado mostra diferenca real,
+             grande e de mecanismo conhecido. Restaura a paridade
+             treino~live no eixo que hoje nao tem.
+          2. GEOMETRIA continua GLOBAL. AG-235 mediu: o ganho de trocar e
+             +0,02 bps, e AG-235-ADDENDUM-2 mostrou que a ordenacao nem
+             sobrevive a troca de resolucao. Parametrizar por celula aqui
+             seria ajustar 15 valores sobre uma ordenacao que e ruido.
+             Manter global e a decisao CERTA, e agora por um motivo medido.
+          3. REGRA DE EVIDENCIA NOVA, e o que faltava: toda decisao de
+             ordenacao passa a reportar o separation_ratio da celula em que
+             foi tomada (`src/analysis/ordering_fragility.py` ja calcula).
+             Abaixo de ~1,5 a ordenacao nao sustenta escolha -- exige mais
+             evidencia ou uma resolucao com mais separacao. Isso transforma
+             o achado de AG-246 em guardrail em vez de curiosidade.
+          4. GATE DE REGIME fica pendente de AG-244 (falta o IC), mas a
+             leitura arquitetural ja e util: cutoffs globais
+             (regime_er_cutoff=0,6 / regime_vol_cutoff=0,7) aplicados a 5
+             ativos cujos step_size diferem em 1000x (AG-165) sao a mesma
+             classe de problema que o custo.
+      PROXIMO PASSO CONCRETO E BARATO, se o Manager aprovar C: medir
+      round_trip_cost_bps_maker_prob por (symbol, resolution_id) reusando o
+      caminho que ja produziu o valor global, e comparar a dispersao entre
+      celulas contra a incerteza de cada uma -- se a dispersao nao for
+      distinguivel de ruido, a propria medicao dira que global bastava, e
+      isso tambem e resultado.
