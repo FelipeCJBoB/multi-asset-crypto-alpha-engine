@@ -19052,3 +19052,70 @@ entries:
       (ex.: horizontes alem de h=32, que §5.1 ja propunha para E16f antes
       deste achado) -- e decisao do Manager, nao desta medicao.
     status: "aberto -- aguarda decisao do Manager sobre reescrever §2.1/§3/§4 do ADR-005 para L2 vazio, ou buscar mais evidencia antes de fechar a v3"
+
+  - id: AG-295
+    date: "2026-08-26"
+    file: "src/features/groups/group_a.py::a13_dist_ema48_atr, src/features/groups/group_e.py::e10f_oi_change_z_48, src/features/build.py::T1_FEATURE_IDS"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-271 (citado como AG-272 no ADR -- ver nota de colisao abaixo)"
+    found_by: "sessao principal -- cruzando o veredito da ficha com T1_FEATURE_IDS para escrever a v3 do ADR-005, apos o Manager perguntar 'so 7 passam?'"
+    gap: >
+      DUAS DAS 7 FEATURES T1 (PRODUCAO HOJE) TEM VEREDITO PIOR QUE
+      SEM_MECANISMO -- DEFEITO DE CONSTRUCAO DOCUMENTADO, NAO SO
+      "SEM EVIDENCIA DE SINAL".
+      A13_dist_ema48_atr: veredito INCOERENTE_DIMENSIONAL. E a UNICA
+      feature do vetor ancorada em RELOGIO (EMA span=48 escalado por
+      CALIBRATION_TF_BY_RESOLUTION -- 48/24/12 barras nominais em
+      R1/R2/R3) enquanto H (o horizonte do label) e invariante em BARRAS
+      (5 nas 3 grades). Consequencia MEDIDA: h/H = 3,33 em R1, 1,67 em R2,
+      0,83 em R3 -- a MESMA feature e "confirmacao" numa grade e "gatilho"
+      noutra. A meia-vida de relogio pretendida (8h, de time_stop_ms) nao
+      bate com a entregue (2,6h em R1, erro de 3,1x) porque o escalonamento
+      usa duracao NOMINAL de calibracao (15/30/60min), nao a mediana
+      MEDIDA (9,43/19,73/41,16 min) -- outro fator 1,5-1,6x. Dispara
+      SEM_MECANISMO tambem (mecanismo economico AUSENTE), subordinado por
+      precedencia ao defeito estrutural.
+      E10f_oi_change_z_48: veredito ERRO_CATEGORICO. BUG MECANICO
+      verificavel: o delta de 1 barra de Open Interest vem de uma fonte
+      amostrada a cada 5 min de RELOGIO; sob R1 a barra tem mediana de
+      9,43 min mas p10 de 1,73 min -- para toda barra mais curta que 5min
+      (parte real da distribuicao, nao caso raro), o asof-join devolve o
+      MESMO valor da barra anterior e Δln(OI)=0 POR CONSTRUCAO MECANICA,
+      nao por ausencia de fluxo real. Isso infla o centro da distribuicao
+      usada no z-score (janela 48) e desinfla o desvio -- produzindo |z|
+      espurio e EXTREMO exatamente nas barras que por acaso cruzam um tick
+      novo da fonte, nao nas barras com sinal economico real.
+      `feature_e10f_oi_change_window: 48` e `provenance: ASSUMED, nunca
+      testada`; a unica medicao de sazonalidade de OI existente
+      (measure_funding_cycle_oi_seasonality.py) rodou sob barra de RELOGIO
+      de 15m, entao nem apoia esta janela sob dollar bar.
+      NOTA DE COLISAO DE ID: o ADR-005 §11.3 cita "AG-272" para o achado
+      relacionado (particao nao exaustiva, 25 colunas sem camada incluindo
+      A13/E10f) -- esse numero foi REUSADO por uma sessao paralela para um
+      achado totalmente diferente (metodologia de treino do LightGBM,
+      renumbered_from: AG-261). A citacao do ADR esta ORFA -- aponta pra
+      um AG-272 que hoje e outra coisa. Nao corrigido nesta entrada
+      (pertence a um sweep de citacoes, nao a este achado).
+    severity: "CRITICAL -- 2 de 7 features que decidem trade real hoje tem defeito de construcao documentado, nao so ausencia de evidencia estatistica"
+    layer: "features (construcao) / producao viva"
+    consequence: >
+      E10f alimenta o Alpha com um sinal que e, numa fracao real das
+      barras de R1 (barras <5min, que sao parte normal da distribuicao,
+      nao cauda), ARTEFATO DE JOIN travestido de extremo estatistico --
+      isso e diferente de "sem sinal": e sinal FALSO com aparencia de
+      forte. A13 muda de papel (confirmacao <-> gatilho) e de meia-vida
+      real conforme a grade, sem que nenhum consumidor (Alpha, purge de
+      CPCV, diagnosticos de gain) saiba disso -- um modelo treinado com
+      A13 em R1 e "outra feature" se aplicado a R3.
+      NENHUM dos dois foi corrigido ou removido -- T1_FEATURE_IDS continua
+      como esta, aguardando decisao do Manager. Nao e responsabilidade
+      apenas do ADR-005: e um achado sobre o Alpha EM PRODUCAO hoje,
+      independente de qualquer decisao de arquitetura de features.
+    status: >-
+      ABERTO -- achado, nao corrigido. Prioridade de correcao (nao
+      decidida aqui): E10f tem CAMINHO DE CORRECAO OBVIO (mudar a janela
+      do delta pra max(duracao_da_barra, 5min) medida, ou trocar de fonte
+      de OI); A13 exige DECISAO de desenho (ancorar em barras como o
+      resto do vetor, ou aceitar que muda de papel entre grades e
+      documentar isso explicitamente nos 3 modelos por celula). Nenhuma
+      das duas e mudanca trivial de configuracao -- ambas tocam
+      T1_FEATURE_IDS, portanto qualquer modelo ja treinado.
