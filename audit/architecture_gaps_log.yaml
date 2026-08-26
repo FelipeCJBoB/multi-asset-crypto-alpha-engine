@@ -17408,3 +17408,70 @@ entries:
       celulas contra a incerteza de cada uma -- se a dispersao nao for
       distinguivel de ruido, a propria medicao dira que global bastava, e
       isso tambem e resultado.
+
+  - id: AG-257
+    renumbered_from: "AG-250 -- colisao com a sessao paralela do Manager, que registrou AG-250 enquanto esta entrada era escrita. Ambas as sessoes compartilham o mesmo working tree e o mesmo gaps log; a que chegou primeiro mantem o numero. Nenhum conteudo alterado, so o identificador. E a segunda colisao de ID do dia (ver AG-239/AG-240) -- a faixa reservada AG-250+ para a outra sessao foi cumprida por ela, e fui EU quem invadiu."
+    date: "2026-08-25"
+    file: "tests/unit/test_models_dataset.py, tests/unit/test_analysis_attribution.py, tests/unit/test_analysis_calibration_diagnostics.py, tests/unit/test_analysis_faixa1_5_prerequisites.py, tests/unit/test_analysis_faixa1_6_reconciliation.py, tests/unit/test_labels_barrier_sweep.py, tests/unit/test_validation_leakage.py, tests/golden/test_sprint8_reproducibility.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-236, ::AG-247, ::AG-248"
+    found_by: "Claude -- ao rodar a suite COMPLETA (com integration/slow) durante a validacao de completude que o Manager pediu para AG-248"
+    gap: >
+      A SUITE RAPIDA ESCONDIA O CUSTO DE AG-236. Durante todo o dia eu
+      reportei "1933/1947/1985 passed, 0 failed" -- sempre da suite RAPIDA
+      (`-m "not slow and not integration"`), que e o ciclo default do repo.
+      Rodada a suite COMPLETA: **9 failed, 1 error, 2113 passed** (22min).
+      Verificada a causa em amostra representativa: todas
+      `ConfigHashMismatchError` -- o B15 de AG-236 barrando testes que leem
+      a grade 15m sobre DADO REAL. Um deles
+      (test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc) ja foi
+      corrigido em AG-248; os outros oito nao.
+      NAO E REGRESSAO: o mecanismo faz exatamente o que foi desenhado para
+      fazer (expurgo por B15, AG-236). E DEBITO DE TESTE -- oito testes de
+      integracao exercitam a grade legada sobre dado real e agora falham
+      alto, corretamente.
+      O QUE ISSO REVELA SOBRE O PROCESSO, e e o achado mais util aqui: um
+      guardrail introduzido com "suite verde" so foi de fato verificado
+      contra o subconjunto rapido. Os testes que tocam DADO REAL -- os
+      unicos que poderiam pegar uma mudanca de contrato de artefato -- sao
+      exatamente os excluidos do ciclo rapido, por serem lentos. A classe
+      de mudanca que AG-236 representa (trocar o config_hash de producao) e
+      precisamente a que so aparece neles.
+    severity: "medio -- nenhum artefato corrompido e nenhuma conclusao errada; mas oito testes vermelhos que ninguem via, e um habito de reportar 'suite verde' sobre um subconjunto que nao cobre a classe de mudanca em questao"
+    layer: "testes / processo"
+    consequence: >
+      CORRECAO DO QUE EU REPORTEI: as afirmacoes de "suite verde" que fiz
+      hoje valem para a suite rapida, nao para a completa. A suite completa
+      esta vermelha desde AG-236, e eu so descobri ao rodar a validacao de
+      completude no fim.
+      Os oito testes precisam de decisao, nao de correcao mecanica: cada um
+      afirma algo sobre DADO REAL de uma grade especifica. Migra-los para R1
+      muda o que eles afirmam (e exige que o artefato R1 correspondente
+      exista); marca-los como grade legada explicita preserva o que afirmam
+      mas congela cobertura na grade substituida. As duas escolhas sao
+      legitimas e a decisao e por teste, nao global.
+    status: >-
+      ABERTO -- registrado, NAO corrigido. Corrigir muda o que oito testes
+      afirmam sobre dado real, e isso e decisao do Manager.
+      LISTA EXATA (8 + 1 erro):
+        tests/golden/test_sprint8_reproducibility.py::test_fold_0_reproduz_
+          diagnostico_commitado_bit_a_bit  [ERROR]
+        tests/unit/test_analysis_attribution.py::test_integracao_real_ic_by_
+          regime_e_gain_by_side_e_feature_agreement
+        tests/unit/test_analysis_calibration_diagnostics.py::test_integracao_
+          real_run_faixa1_diagnostic
+        tests/unit/test_analysis_faixa1_5_prerequisites.py::test_run_and_save_
+          faixa1_5_ponta_a_ponta_dado_real
+        tests/unit/test_analysis_faixa1_6_reconciliation.py::test_reconcile_
+          e02f_ic_dado_real_reproduz_o_pooled_ja_persistido
+        tests/unit/test_labels_barrier_sweep.py::test_reproduz_distribuicao_
+          real_2024_long
+        tests/unit/test_models_dataset.py::test_regime_r0_e_100_por_cento_
+          warmup_sem_t1_valido
+        tests/unit/test_models_dataset.py::test_predictions_reais_do_alpha_
+          zero_sinais_em_r0
+        tests/unit/test_validation_leakage.py::test_scan_sobre_dataset_real_
+          nenhuma_feature_t1_hard_falha
+      RECOMENDACAO DE PROCESSO, independente da decisao acima: mudanca que
+      altera CONTRATO DE ARTEFATO (config_hash, schema, caminho) exige rodar
+      a suite completa antes de declarar verde -- o ciclo rapido, por
+      desenho, nao cobre o unico tipo de teste que a pegaria.
