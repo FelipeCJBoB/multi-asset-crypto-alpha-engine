@@ -1,0 +1,416 @@
+{
+  "task": "economic_gate",
+  "pergunta": "Quanto lift em P(TP) o Alpha precisa entregar para o motor empatar, por celula, e a ordenacao entre grades e distinguivel de ruido?",
+  "source_code_version": "f25e1df",
+  "formula": "required_lift = breakeven_wr_cost_adjusted / frac_tp",
+  "stderr_metodo": "delta sobre L=B/p com p binomial: sigma(L)=L*sqrt((1-p)/(p*n))",
+  "ressalva_proveniencia": "breakeven deriva de round_trip_cost_bps_maker_prob (p_target_hit com remediacao pendente, ver constants.yaml). Vies comum a todas as celulas: ordenacao robusta, nivel absoluto nao.",
+  "n_celulas": 186,
+  "ranking_por_simbolo": [
+    {
+      "symbol": "BNBUSDT",
+      "ordem": [
+        {
+          "resolution_id": "R2",
+          "required_lift": 1.124480812761574,
+          "stderr": 0.004041445176590146,
+          "cell_id": "R1_S3/2",
+          "side": "short",
+          "atr_median_bps": 35.06217215516857
+        },
+        {
+          "resolution_id": "R1",
+          "required_lift": 1.1259613294412174,
+          "stderr": 0.0028722248201659326,
+          "cell_id": "R1_S9/4",
+          "side": "short",
+          "atr_median_bps": 24.45744186906261
+        },
+        {
+          "resolution_id": "R3",
+          "required_lift": 1.1349408129884768,
+          "stderr": 0.006009454692940208,
+          "cell_id": "R1_S3/2",
+          "side": "short",
+          "atr_median_bps": 49.97459654616195
+        }
+      ],
+      "vencedor": "R2",
+      "vencedor_distinguivel_do_2o": false,
+      "delta_para_2o": 0.00148051667964344
+    },
+    {
+      "symbol": "BTCUSDT",
+      "ordem": [
+        {
+          "resolution_id": "R2",
+          "required_lift": 1.1186676761788352,
+          "stderr": 0.003454613949023653,
+          "cell_id": "R1_S3/2",
+          "side": "long",
+          "atr_median_bps": 35.66591039164517
+        },
+        {
+          "resolution_id": "R1",
+          "required_lift": 1.1215689307464758,
+          "stderr": 0.0024729414610525228,
+          "cell_id": "R1_S9/4",
+          "side": "long",
+          "atr_median_bps": 24.87960608114021
+        },
+        {
+          "resolution_id": "R3",
+          "required_lift": 1.1509578302288828,
+          "stderr": 0.005306797320286456,
+          "cell_id": "R1_S3/2",
+          "side": "long",
+          "atr_median_bps": 51.14024228436459
+        }
+      ],
+      "vencedor": "R2",
+      "vencedor_distinguivel_do_2o": false,
+      "delta_para_2o": 0.0029012545676405654
+    },
+    {
+      "symbol": "ETHUSDT",
+      "ordem": [
+        {
+          "resolution_id": "R2",
+          "required_lift": 1.0982167621023236,
+          "stderr": 0.00395466532910946,
+          "cell_id": "R1_S3/2",
+          "side": "long",
+          "atr_median_bps": 42.6472443058544
+        },
+        {
+          "resolution_id": "R1",
+          "required_lift": 1.1010497123487162,
+          "stderr": 0.002838733004894054,
+          "cell_id": "R1_S9/4",
+          "side": "long",
+          "atr_median_bps": 29.831418552814675
+        },
+        {
+          "resolution_id": "R3",
+          "required_lift": 1.1172786211055459,
+          "stderr": 0.006478328950507951,
+          "cell_id": "R4/3_S3/4",
+          "side": "long",
+          "atr_median_bps": 61.48103080193628
+        }
+      ],
+      "vencedor": "R2",
+      "vencedor_distinguivel_do_2o": false,
+      "delta_para_2o": 0.0028329502463926293
+    },
+    {
+      "symbol": "SOLUSDT",
+      "ordem": [
+        {
+          "resolution_id": "R2",
+          "required_lift": 1.0759100297231785,
+          "stderr": 0.003821940583354859,
+          "cell_id": "R1_S3/2",
+          "side": "short",
+          "atr_median_bps": 58.71805239874427
+        },
+        {
+          "resolution_id": "R1",
+          "required_lift": 1.0795679507966105,
+          "stderr": 0.0027258197335732867,
+          "cell_id": "R1_S9/4",
+          "side": "short",
+          "atr_median_bps": 40.86097218772225
+        },
+        {
+          "resolution_id": "R3",
+          "required_lift": 1.0933569755643544,
+          "stderr": 0.006281850468934843,
+          "cell_id": "R4/3_S3/4",
+          "side": "short",
+          "atr_median_bps": 84.11384927826626
+        }
+      ],
+      "vencedor": "R2",
+      "vencedor_distinguivel_do_2o": false,
+      "delta_para_2o": 0.003657921073431991
+    },
+    {
+      "symbol": "XRPUSDT",
+      "ordem": [
+        {
+          "resolution_id": "R2",
+          "required_lift": 1.0997587183743918,
+          "stderr": 0.0038423619249820773,
+          "cell_id": "R1_S3/2",
+          "side": "long",
+          "atr_median_bps": 46.61172601666833
+        },
+        {
+          "resolution_id": "R1",
+          "required_lift": 1.1004157332944846,
+          "stderr": 0.0027270977912812106,
+          "cell_id": "R1_S9/4",
+          "side": "long",
+          "atr_median_bps": 32.49896408985357
+        },
+        {
+          "resolution_id": "R3",
+          "required_lift": 1.1232450816877297,
+          "stderr": 0.006362443726528119,
+          "cell_id": "R4/3_S3/4",
+          "side": "long",
+          "atr_median_bps": 67.36627892416104
+        }
+      ],
+      "vencedor": "R2",
+      "vencedor_distinguivel_do_2o": false,
+      "delta_para_2o": 0.0006570149200928466
+    }
+  ],
+  "n_simbolos_com_vencedor_indistinguivel": 5,
+  "melhores_10_celulas": [
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "side": "short",
+      "cell_id": "R1_S3/2",
+      "tp_atr_mult": 1.5,
+      "sl_atr_mult": 1.5,
+      "n_filled": 81414,
+      "atr_median_bps": 58.71805239874427,
+      "p_tp": 0.4932566880389122,
+      "breakeven_wr": 0.5306998178891026,
+      "required_lift": 1.0759100297231785,
+      "required_lift_stderr": 0.003821940583354859,
+      "required_lift_ci95_low": 1.068419163769664,
+      "required_lift_ci95_high": 1.083400895676693
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R1",
+      "side": "short",
+      "cell_id": "R1_S9/4",
+      "tp_atr_mult": 2.25,
+      "sl_atr_mult": 2.25,
+      "n_filled": 162992,
+      "atr_median_bps": 40.86097218772225,
+      "p_tp": 0.49041057229802687,
+      "breakeven_wr": 0.5294315365847738,
+      "required_lift": 1.0795679507966105,
+      "required_lift_stderr": 0.0027258197335732867,
+      "required_lift_ci95_low": 1.0742254422483173,
+      "required_lift_ci95_high": 1.0849104593449037
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R1",
+      "side": "long",
+      "cell_id": "R1_S9/4",
+      "tp_atr_mult": 2.25,
+      "sl_atr_mult": 2.25,
+      "n_filled": 162979,
+      "atr_median_bps": 40.856970732740784,
+      "p_tp": 0.4888482565238466,
+      "breakeven_wr": 0.529434372775822,
+      "required_lift": 1.08302395622842,
+      "required_lift_stderr": 0.0027432167680920857,
+      "required_lift_ci95_low": 1.0776473501187633,
+      "required_lift_ci95_high": 1.0884005623380768
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "side": "long",
+      "cell_id": "R1_S3/2",
+      "tp_atr_mult": 1.5,
+      "sl_atr_mult": 1.5,
+      "n_filled": 81351,
+      "atr_median_bps": 58.71696293602115,
+      "p_tp": 0.4894592568007769,
+      "breakeven_wr": 0.5307003779696149,
+      "required_lift": 1.0842585375510105,
+      "required_lift_stderr": 0.003882472001594503,
+      "required_lift_ci95_low": 1.0766490321968774,
+      "required_lift_ci95_high": 1.0918680429051437
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "side": "short",
+      "cell_id": "R4/3_S3/2",
+      "tp_atr_mult": 2.0,
+      "sl_atr_mult": 1.5,
+      "n_filled": 81414,
+      "atr_median_bps": 58.71805239874427,
+      "p_tp": 0.41893286166998306,
+      "breakeven_wr": 0.4559763418782491,
+      "required_lift": 1.0884234291399353,
+      "required_lift_stderr": 0.004492512339454305,
+      "required_lift_ci95_low": 1.0796182666850491,
+      "required_lift_ci95_high": 1.0972285915948214
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R3",
+      "side": "short",
+      "cell_id": "R4/3_S3/4",
+      "tp_atr_mult": 1.0,
+      "sl_atr_mult": 0.75,
+      "n_filled": 40689,
+      "atr_median_bps": 84.11384927826626,
+      "p_tp": 0.42677382093440486,
+      "breakeven_wr": 0.4666161341068843,
+      "required_lift": 1.0933569755643544,
+      "required_lift_stderr": 0.006281850468934843,
+      "required_lift_ci95_low": 1.081044774791859,
+      "required_lift_ci95_high": 1.1056691763368498
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R2",
+      "side": "long",
+      "cell_id": "R4/3_S3/2",
+      "tp_atr_mult": 2.0,
+      "sl_atr_mult": 1.5,
+      "n_filled": 81351,
+      "atr_median_bps": 58.71696293602115,
+      "p_tp": 0.4161350198522452,
+      "breakeven_wr": 0.45597684304618236,
+      "required_lift": 1.0957425385829906,
+      "required_lift_stderr": 0.004550573727076205,
+      "required_lift_ci95_low": 1.0868235778985755,
+      "required_lift_ci95_high": 1.1046614992674058
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R1",
+      "side": "long",
+      "cell_id": "R1_S3/2",
+      "tp_atr_mult": 1.5,
+      "sl_atr_mult": 1.5,
+      "n_filled": 162979,
+      "atr_median_bps": 40.856970732740784,
+      "p_tp": 0.49627866166806767,
+      "breakeven_wr": 0.5437999525823136,
+      "required_lift": 1.0957552572470468,
+      "required_lift_stderr": 0.002734513751458656,
+      "required_lift_ci95_low": 1.090395708736683,
+      "required_lift_ci95_high": 1.1011148057574107
+    },
+    {
+      "symbol": "SOLUSDT",
+      "resolution_id": "R1",
+      "side": "long",
+      "cell_id": "R4/3_S3/2",
+      "tp_atr_mult": 2.0,
+      "sl_atr_mult": 1.5,
+      "n_filled": 162979,
+      "atr_median_bps": 40.856970732740784,
+      "p_tp": 0.426558022812755,
+      "breakeven_wr": 0.4677105333184711,
+      "required_lift": 1.0964757625102288,
+      "required_lift_stderr": 0.0031491177142163557,
+      "required_lift_ci95_low": 1.0903036051586026,
+      "required_lift_ci95_high": 1.102647919861855
+    },
+    {
+      "symbol": "ETHUSDT",
+      "resolution_id": "R2",
+      "side": "long",
+      "cell_id": "R1_S3/2",
+      "tp_atr_mult": 1.5,
+      "sl_atr_mult": 1.5,
+      "n_filled": 79140,
+      "atr_median_bps": 42.6472443058544,
+      "p_tp": 0.49353045236290116,
+      "breakeven_wr": 0.5420034153928803,
+      "required_lift": 1.0982167621023236,
+      "required_lift_stderr": 0.00395466532910946,
+      "required_lift_ci95_low": 1.0904657604252208,
+      "required_lift_ci95_high": 1.1059677637794263
+    }
+  ],
+  "piores_5_celulas": [
+    {
+      "symbol": "ETHUSDT",
+      "resolution_id": "R3",
+      "side": "short",
+      "cell_id": "R4/3_S9/4",
+      "tp_atr_mult": 3.0,
+      "sl_atr_mult": 2.25,
+      "n_filled": 39406,
+      "atr_median_bps": 61.49614074766034,
+      "p_tp": 0.28800182713292394,
+      "breakeven_wr": 0.44610772628842177,
+      "required_lift": 1.5489753336964973,
+      "required_lift_stderr": 0.012268886351883966,
+      "required_lift_ci95_low": 1.5249287581267135,
+      "required_lift_ci95_high": 1.5730219092662812
+    },
+    {
+      "symbol": "BNBUSDT",
+      "resolution_id": "R3",
+      "side": "long",
+      "cell_id": "R4/3_S9/4",
+      "tp_atr_mult": 3.0,
+      "sl_atr_mult": 2.25,
+      "n_filled": 39944,
+      "atr_median_bps": 49.98676213970243,
+      "p_tp": 0.28682655718005207,
+      "breakeven_wr": 0.45009979734491845,
+      "required_lift": 1.5692403164131468,
+      "required_lift_stderr": 0.012380881932704207,
+      "required_lift_ci95_low": 1.5449742335367962,
+      "required_lift_ci95_high": 1.5935063992894973
+    },
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R3",
+      "side": "long",
+      "cell_id": "R4/3_S9/4",
+      "tp_atr_mult": 3.0,
+      "sl_atr_mult": 2.25,
+      "n_filled": 54126,
+      "atr_median_bps": 51.14024228436459,
+      "p_tp": 0.27912648265159073,
+      "breakeven_wr": 0.4496195857115246,
+      "required_lift": 1.6108094847909704,
+      "required_lift_stderr": 0.011126798561098519,
+      "required_lift_ci95_low": 1.5890013601759656,
+      "required_lift_ci95_high": 1.6326176094059752
+    },
+    {
+      "symbol": "ETHUSDT",
+      "resolution_id": "R3",
+      "side": "long",
+      "cell_id": "R4/3_S9/4",
+      "tp_atr_mult": 3.0,
+      "sl_atr_mult": 2.25,
+      "n_filled": 39455,
+      "atr_median_bps": 61.48103080193628,
+      "p_tp": 0.2742364719300469,
+      "breakeven_wr": 0.4461119964254862,
+      "required_lift": 1.626742035024728,
+      "required_lift_stderr": 0.01332301842400104,
+      "required_lift_ci95_low": 1.6006293985423492,
+      "required_lift_ci95_high": 1.6528546715071066
+    },
+    {
+      "symbol": "BTCUSDT",
+      "resolution_id": "R3",
+      "side": "short",
+      "cell_id": "R4/3_S9/4",
+      "tp_atr_mult": 3.0,
+      "sl_atr_mult": 2.25,
+      "n_filled": 54172,
+      "atr_median_bps": 51.13607216407661,
+      "p_tp": 0.2733146274828325,
+      "breakeven_wr": 0.4496212832089063,
+      "required_lift": 1.645068496149728,
+      "required_lift_stderr": 0.01152493068706041,
+      "required_lift_ci95_low": 1.6224800469005942,
+      "required_lift_ci95_high": 1.6676569453988617
+    }
+  ]
+}

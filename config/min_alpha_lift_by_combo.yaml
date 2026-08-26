@@ -1,0 +1,200 @@
+# config/min_alpha_lift_by_combo.yaml
+#
+# Lift MÍNIMO em P(TP) que um modelo precisa entregar para o motor
+# empatar, por (symbol, resolution_id). Gate econômico anterior a
+# qualquer comparação de Sharpe/DSR/ret_net.
+#
+# provenance: DERIVED -- required_lift = breakeven_wr_cost_adjusted /
+# frac_tp, ambos MEASURED e persistidos por
+# experiments/s1_tp_sl_sensitivity_report_{R1,R2,R3}.json
+# (code_version=f25e1df).
+#
+# Gerado por src/analysis/economic_gate.py -- NÃO editar à mão.
+#
+# RESSALVA (ver docstring do módulo): breakeven deriva de
+# round_trip_cost_bps_maker_prob, cuja p_target_hit tem remediação
+# pendente registrada na própria entrada de constants.yaml. O viés é
+# comum a todas as células: a ORDENAÇÃO é robusta, o NÍVEL absoluto
+# não. Reexecutar este módulo após a remediação.
+
+min_alpha_lift_ptp:
+  BNBUSDT_R1:
+    value: 1.125961
+    stderr: 0.002872
+    ci95: [1.120332, 1.131591]
+    geometria_otima: R1_S9/4
+    side: short
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    p_tp_base: 0.487270
+    breakeven_wr: 0.548647
+    atr_median_bps: 24.46
+    n_filled: 161707
+  BNBUSDT_R2:
+    value: 1.124481
+    stderr: 0.004041
+    ci95: [1.116560, 1.132402]
+    geometria_otima: R1_S3/2
+    side: short
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.489860
+    breakeven_wr: 0.550838
+    atr_median_bps: 35.06
+    n_filled: 80621
+  BNBUSDT_R3:
+    value: 1.134941
+    stderr: 0.006009
+    ci95: [1.123162, 1.146719]
+    geometria_otima: R1_S3/2
+    side: short
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.472241
+    breakeven_wr: 0.535966
+    atr_median_bps: 49.97
+    n_filled: 39861
+  BTCUSDT_R1:
+    value: 1.121569
+    stderr: 0.002473
+    ci95: [1.116722, 1.126416]
+    geometria_otima: R1_S9/4
+    side: long
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    p_tp_base: 0.488462
+    breakeven_wr: 0.547843
+    atr_median_bps: 24.88
+    n_filled: 215413
+  BTCUSDT_R2:
+    value: 1.118668
+    stderr: 0.003455
+    ci95: [1.111897, 1.125439]
+    geometria_otima: R1_S3/2
+    side: long
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.491657
+    breakeven_wr: 0.550001
+    atr_median_bps: 35.67
+    n_filled: 108417
+  BTCUSDT_R3:
+    value: 1.150958
+    stderr: 0.005307
+    ci95: [1.140557, 1.161359]
+    geometria_otima: R1_S3/2
+    side: long
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.464971
+    breakeven_wr: 0.535162
+    atr_median_bps: 51.14
+    n_filled: 54126
+  ETHUSDT_R1:
+    value: 1.101050
+    stderr: 0.002839
+    ci95: [1.095486, 1.106614]
+    geometria_otima: R1_S9/4
+    side: long
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    p_tp_base: 0.490510
+    breakeven_wr: 0.540075
+    atr_median_bps: 29.83
+    n_filled: 156262
+  ETHUSDT_R2:
+    value: 1.098217
+    stderr: 0.003955
+    ci95: [1.090466, 1.105968]
+    geometria_otima: R1_S3/2
+    side: long
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.493530
+    breakeven_wr: 0.542003
+    atr_median_bps: 42.65
+    n_filled: 79140
+  ETHUSDT_R3:
+    value: 1.117279
+    stderr: 0.006478
+    ci95: [1.104581, 1.129976]
+    geometria_otima: R4/3_S3/4
+    side: long
+    tp_atr_mult: 1.0
+    sl_atr_mult: 0.75
+    p_tp_base: 0.429831
+    breakeven_wr: 0.480241
+    atr_median_bps: 61.48
+    n_filled: 39455
+  SOLUSDT_R1:
+    value: 1.079568
+    stderr: 0.002726
+    ci95: [1.074225, 1.084910]
+    geometria_otima: R1_S9/4
+    side: short
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    p_tp_base: 0.490411
+    breakeven_wr: 0.529432
+    atr_median_bps: 40.86
+    n_filled: 162992
+  SOLUSDT_R2:
+    value: 1.075910
+    stderr: 0.003822
+    ci95: [1.068419, 1.083401]
+    geometria_otima: R1_S3/2
+    side: short
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.493257
+    breakeven_wr: 0.530700
+    atr_median_bps: 58.72
+    n_filled: 81414
+  SOLUSDT_R3:
+    value: 1.093357
+    stderr: 0.006282
+    ci95: [1.081045, 1.105669]
+    geometria_otima: R4/3_S3/4
+    side: short
+    tp_atr_mult: 1.0
+    sl_atr_mult: 0.75
+    p_tp_base: 0.426774
+    breakeven_wr: 0.466616
+    atr_median_bps: 84.11
+    n_filled: 40689
+  XRPUSDT_R1:
+    value: 1.100416
+    stderr: 0.002727
+    ci95: [1.095071, 1.105761]
+    geometria_otima: R1_S9/4
+    side: long
+    tp_atr_mult: 2.25
+    sl_atr_mult: 2.25
+    p_tp_base: 0.487863
+    breakeven_wr: 0.536852
+    atr_median_bps: 32.50
+    n_filled: 170923
+  XRPUSDT_R2:
+    value: 1.099759
+    stderr: 0.003842
+    ci95: [1.092228, 1.107290]
+    geometria_otima: R1_S3/2
+    side: long
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.5
+    p_tp_base: 0.489658
+    breakeven_wr: 0.538506
+    atr_median_bps: 46.61
+    n_filled: 85382
+  XRPUSDT_R3:
+    value: 1.123245
+    stderr: 0.006362
+    ci95: [1.110775, 1.135715]
+    geometria_otima: R4/3_S3/4
+    side: long
+    tp_atr_mult: 1.0
+    sl_atr_mult: 0.75
+    p_tp_base: 0.423629
+    breakeven_wr: 0.475840
+    atr_median_bps: 67.37
+    n_filled: 42405
