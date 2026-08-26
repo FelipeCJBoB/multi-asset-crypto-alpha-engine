@@ -92,7 +92,13 @@ class RatioCI:
 
 
 def log_ratio_ci(
-    k1: int, n1: int, k2: int, n2: int, *, z: float = _Z_95
+    k1: int,
+    n1: int,
+    k2: int,
+    n2: int,
+    *,
+    z: float = _Z_95,
+    effective_sample_fraction: float = 1.0,
 ) -> RatioCI | None:
     """IC da razão `(k1/n1) / (k2/n2)` pelo método delta sobre o log.
 
@@ -105,11 +111,32 @@ def log_ratio_ci(
     Devolve `None` se qualquer contagem for zero: o log da razão não existe,
     e substituir por uma correção de continuidade (somar 0,5) mudaria a
     estimativa pontual sem que ninguém tivesse decidido isso.
+
+    **`effective_sample_fraction` (`AG-244`, corrigido 2026-08-25) — sem
+    isto o IC é otimista, e foi.** A fórmula binomial pressupõe observações
+    INDEPENDENTES. Labels de triple-barrier não são: os intervalos
+    `[t0, t1]` se sobrepõem, e é por isso que `uniqueness`/`sample_weight`
+    existem (§3.5, B24). Passe `sum(uniqueness) / n` da população medida;
+    a variância é inflada por `1/fração` e o IC alarga por `1/sqrt(fração)`.
+
+    Medido neste repo: `uniqueness` médio ~0,388 (estável entre símbolos e
+    resoluções, 0,384–0,390), o que alarga o IC em **1,61x**. A primeira
+    versão deste módulo usou o default `1.0` e concluiu que 8 de 10 células
+    do gate em R3 eram significativas — conclusão que NÃO sobrevive à
+    correção, e que contradizia `AG-118`, que ja tinha medido com `n_eff`
+    ponderado. Quando uma medição nova contradiz uma anterior, a hipótese
+    default deveria ser que a nova está errada; aqui estava.
     """
     if k1 <= 0 or k2 <= 0 or n1 <= 0 or n2 <= 0 or k1 > n1 or k2 > n2:
         return None
+    if not 0.0 < effective_sample_fraction <= 1.0:
+        raise ValueError(
+            "log_ratio_ci: effective_sample_fraction precisa estar em (0, 1] "
+            f"(recebido {effective_sample_fraction})"
+        )
     p1, p2 = k1 / n1, k2 / n2
-    var = (1.0 - p1) / (n1 * p1) + (1.0 - p2) / (n2 * p2)
+    n1_eff, n2_eff = n1 * effective_sample_fraction, n2 * effective_sample_fraction
+    var = (1.0 - p1) / (n1_eff * p1) + (1.0 - p2) / (n2_eff * p2)
     se = math.sqrt(var)
     log_r = math.log(p1 / p2)
     lo, hi = math.exp(log_r - z * se), math.exp(log_r + z * se)

@@ -18,7 +18,6 @@ from src.analysis.ordering_fragility import (
     sigma_from_range,
 )
 
-
 # ---------------------------------------------------------------------------
 # log_ratio_ci — IC de razão de proporções (delta method)
 # ---------------------------------------------------------------------------
@@ -146,3 +145,45 @@ def test_kendall_tau_todos_empatados_devolve_nan() -> None:
 
 def test_kendall_tau_nan_com_tamanhos_diferentes() -> None:
     assert math.isnan(kendall_tau_b([1.0, 2.0, 3.0], [1.0, 2.0]))
+
+
+# ============================================================================
+# AG-244-ADDENDUM — correção por unicidade (B24)
+# ============================================================================
+
+
+def test_effective_sample_fraction_alarga_o_ic() -> None:
+    """`AG-244-ADDENDUM` — o erro que a primeira versão deste módulo cometeu.
+
+    A fórmula binomial pressupõe observações independentes; labels de
+    triple-barrier se sobrepõem. Sem ponderar por `uniqueness` (B24) o IC
+    sai estreito demais e células não-significativas passam por
+    significativas — foi assim que eu contei 15/30 onde o correto era 7/30,
+    contradizendo `AG-118` sem notar."""
+    cheio = log_ratio_ci(1200, 10000, 1000, 10000)
+    deflacionado = log_ratio_ci(1200, 10000, 1000, 10000, effective_sample_fraction=0.3894)
+    assert cheio is not None and deflacionado is not None
+    assert cheio.point == pytest.approx(deflacionado.point), "o PONTO não muda"
+    assert deflacionado.log_se > cheio.log_se
+    # 1/sqrt(0.3894) = 1.6026
+    assert deflacionado.log_se / cheio.log_se == pytest.approx(1 / math.sqrt(0.3894), rel=1e-6)
+
+
+def test_uniqueness_pode_inverter_a_conclusao_de_significancia() -> None:
+    """O caso que importa: mesma estimativa pontual, conclusão oposta.
+
+    Se este teste falhar, a correção de unicidade deixou de ter efeito
+    prático e o módulo voltou a poder declarar significativo o que não é."""
+    cheio = log_ratio_ci(1150, 10000, 1000, 10000)
+    deflacionado = log_ratio_ci(1150, 10000, 1000, 10000, effective_sample_fraction=0.10)
+    assert cheio is not None and deflacionado is not None
+    assert cheio.excludes_one
+    assert not deflacionado.excludes_one
+
+
+@pytest.mark.parametrize("fracao", [0.0, -0.5, 1.5])
+def test_effective_sample_fraction_fora_de_0_1_levanta(fracao: float) -> None:
+    """Fração é `sum(uniqueness)/n` — por construção em (0, 1]. Valor fora
+    disso é erro de chamada, não um caso a acomodar."""
+    with pytest.raises(ValueError, match="effective_sample_fraction"):
+        log_ratio_ci(100, 1000, 100, 1000, effective_sample_fraction=fracao)

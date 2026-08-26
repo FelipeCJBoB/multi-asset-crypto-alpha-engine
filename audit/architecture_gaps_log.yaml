@@ -17535,3 +17535,97 @@ entries:
       outros step_ms("15m") em features/regime/cpcv com justificativa
       propria. Auditar o eixo "relogio de 15m como UNIDADE de calculo, nao
       como grade de leitura" e trabalho separado que ninguem fez.
+
+  - id: AG-244-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-244 -- a fila de verificacao que a entrada original propos foi executada, e o resultado INVERTE a leitura dela"
+    file: "src/analysis/ordering_fragility.py::log_ratio_ci, experiments/gate_efficiency_report.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-118, ::AG-122, ::AG-229, ::AG-249, src/risk/limits.py::control_01_regime_tradeavel"
+    found_by: "Claude -- executando o passo 1 que AG-244 propos (obter IC), a pedido do Manager"
+    gap: >
+      TRES CORRECOES, a primeira delas contra mim.
+      (1) ERRO METODOLOGICO MEU, corrigido: a 1a medicao de AG-244 usou IC
+          binomial SEM ponderar por unicidade, violando B24. Labels de
+          triple-barrier se sobrepoem -- `uniqueness` medio medido neste
+          repo e 0,3894 (notavelmente estavel: 0,384-0,390 entre os 5
+          simbolos e 3 resolucoes), entao o IC correto e 1,61x mais LARGO.
+          Sem a correcao eu contava 15/30 celulas significativas; com ela,
+          7/30. `log_ratio_ci` ganhou `effective_sample_fraction`.
+      (2) MINHA MEDICAO CONTRADIZIA AG-118 E EU NAO TINHA NOTADO. AG-118
+          mediu "IC via n_eff ponderado por uniqueness" em 90 celulas e nao
+          achou desvio de 1,0 em NENHUMA -- foi a evidencia que levou o
+          Manager a DESLIGAR `control_01_regime_tradeavel` de
+          `evaluate_all()` em 2026-08-22. Eu reportei "o lift colapsou,
+          o gate perde a justificativa" sem verificar que o gate ja estava
+          desligado, e sem reconciliar com uma medicao anterior que dizia o
+          contrario. Quando uma medicao nova contradiz uma anterior, a
+          hipotese default deveria ser que a NOVA esta errada.
+      (3) RECONCILIACAO COMPLETA, e e aqui que aparece o achado real.
+          Aplicando uniqueness E Bonferroni(30) aos dois lados do relabel:
+            cenario                                  ANTES     DEPOIS
+            sem uniqueness (meu erro)                18/30      15/30
+            com uniqueness (metodo de AG-118)         9/30       7/30
+            com uniqueness + Bonferroni(30)          *0/30*      4/30
+          ANTES do relabel: ZERO celulas -- meu metodo REPRODUZ AG-118
+          exatamente. A medicao dele estava certa para o dado que ele tinha.
+          DEPOIS do relabel: QUATRO celulas, contra 0,05 esperadas por acaso
+          sob Bonferroni (~80x).
+    severity: "alto -- a decisao de desligar o gate (2026-08-22) foi tomada sobre dado que escondia o sinal, e o mecanismo pelo qual escondia esta medido"
+    layer: "regime / risk (gate de producao, hoje desligado)"
+    consequence: >
+      AS QUATRO CELULAS TEM UM PADRAO PERFEITAMENTE SIMETRICO:
+        R3 BTCUSDT short  lift 1,1188  IC [1,0416; 1,2017]  gate UTIL
+        R3 BTCUSDT long   lift 0,8925  IC [0,8301; 0,9596]  gate PREJUDICIAL
+        R3 ETHUSDT short  lift 1,1013  IC [1,0174; 1,1922]  gate UTIL
+        R3 ETHUSDT long   lift 0,9215  IC [0,8505; 0,9983]  gate PREJUDICIAL
+      Todas em R3, todas nos dois maiores ativos, e -- o ponto -- SHORT
+      acima de 1 e LONG abaixo de 1, com magnitude quase identica (+11%,
+      -10%).
+      LEITURA: o gate NAO e "sem efeito". Ele tem DOIS efeitos reais e
+      OPOSTOS por lado, que se cancelam quando agregados. Em regime de
+      stress, proporcionalmente mais SL acontece no SHORT (bloquear evita
+      perda) e mais TP acontece no LONG (bloquear custa ganho). Medir o
+      gate com um numero unico por celula-simbolo, somando os lados, era
+      garantir ler ~1,0 independentemente de haver efeito.
+      POR QUE SO APARECE AGORA -- duas condicoes simultaneas, ambas
+      recentes: (a) o relabel de AG-229 recuperou 2,8x mais eventos em
+      regime de stress (49.719 -> 139.682, ja registrado em AG-244), porque
+      sob mark_1m a barra de RAJADA tinha janela de fill vazia e sumia da
+      amostra -- o gate era avaliado sobre uma amostra de onde o proprio
+      regime que ele detecta havia sido removido; (b) R3 e a resolucao com
+      maior poder de separacao (AG-246: separation_ratio 2,82 contra 1,40
+      em R1). Sem as duas juntas, o efeito fica abaixo do limiar.
+      E EXATAMENTE A TESE DE AG-249, agora com o caso mais nitido: decisao
+      GLOBAL sobre celulas cujos efeitos apontam para lados opostos produz
+      media ~zero por CANCELAMENTO, nao por ausencia. Aqui o cancelamento e
+      literal e simetrico.
+    status: >-
+      ABERTO -- MEDIDO, e NAO recomendo reativar o gate como estava.
+      O QUE ESTE ACHADO SUSTENTA: que a pergunta certa nao e "ligar ou
+      desligar o gate", e sim "um gate ASSIMETRICO POR LADO tem valor?".
+      A evidencia atual e compativel com bloquear entrada SHORT em stress e
+      NAO bloquear LONG -- mas compativel nao e suficiente.
+      O QUE ESTE ACHADO NAO SUSTENTA, e nao deve ser lido como:
+      (a) que o gate por lado seja rentavel -- `lift` mede PROPENSAO DE
+          EVENTO (frac_sl vs frac_tp), nao P&L. Um gate favoravel em lift
+          pode ser neutro ou negativo em retorno liquido, porque nao pesa
+          magnitude nem custo;
+      (b) que valha para o motor todo -- 4 de 30 celulas, TODAS em R3 e so
+          nos dois maiores ativos. R1 e R2 seguem sem nenhuma celula
+          significativa, e R1 e a resolucao com mais trades;
+      (c) que a decisao de 2026-08-22 tenha sido errada -- ela foi correta
+          PARA O DADO DAQUELE MOMENTO, e AG-118 mediu com rigor (foi meu
+          metodo que precisou ser corrigido para reproduzi-lo, nao o
+          contrario). O que mudou foi o dado.
+      PROXIMO PASSO PROPOSTO, e ele e barato: medir o mesmo lift POR LADO
+      sobre `ret_net` em vez de contagem de evento -- responde (a), que e a
+      objecao mais forte, sem retreino nenhum, reusando o caminho de
+      `gate_efficiency`. Se o efeito sobreviver em retorno liquido, ai sim
+      vale levar ao Manager a pergunta de um gate assimetrico; se nao
+      sobreviver, o gate segue desligado com uma justificativa MELHOR que a
+      atual (nao "sem efeito", mas "efeito real que nao se traduz em P&L").
+      NAO FAZER antes disso: reativar `control_01_regime_tradeavel`, nem
+      tratar as 4 celulas como licenca para gate por lado. A predicao
+      pre-declarada em `src/risk/limits.py` continua valendo -- melhora de
+      Sharpe correlacionada com o gate reativado deve ser tratada como
+      bandeira de vazamento ate prova em contrario.
