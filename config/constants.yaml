@@ -1121,7 +1121,7 @@ feature_a13_ema_window:
   provenance: ASSUMED
   source: "convenção herdada do PRD (§18.5.2 cita 'EMA48' nominalmente entre as janelas nunca testadas), nunca testada"
   class: B
-  scaling_invariant: clock
+  scaling_invariant: bar_count
   sweep_required: false
   review_by: sprint_8
   # scaling_invariant (2026-08-16, AG-043 -- F3, decisão DELIBERADA de
@@ -1157,6 +1157,27 @@ feature_a13_ema_window:
   # computados sobre barras de informação mantêm contagem de barra fixa
   # entre resoluções, por desenho (cada barra ~mesmo peso de informação).
   # A13 é a exceção deliberada, não a regra.
+  #
+  # REVERTIDO 2026-08-26 (`AG-295`, aprovação explícita do Manager):
+  # `scaling_invariant` volta de `clock` pra `bar_count` -- a premissa que
+  # sustentava a exceção ("span comensurável ao horizonte de RELÓGIO do
+  # label", time_stop_ms) não se sustenta sob `canonical_bar_type: dollar`
+  # (AG-042, decidido 2026-08-16, JÁ vigente quando a implementação de
+  # 2026-08-23 acima foi escrita): sob dollar bar, o horizonte real do
+  # label (H, triple barrier) é invariante em BARRAS (5 nas 3 grades
+  # R1/R2/R3), não em relógio. Ancorar A13 em relógio enquanto H é fixo em
+  # barras produzia, medido: h/H = 3,33 (R1) / 1,67 (R2) / 0,83 (R3) -- a
+  # MESMA feature muda de papel (confirmação <-> gatilho do label) e de
+  # meia-vida real conforme a grade, sem que nenhum consumidor (Alpha,
+  # purge de CPCV, diagnósticos de gain) soubesse disso. Achado original:
+  # AG-295 (2026-08-26, veredito INCOERENTE_DIMENSIONAL na ficha de tese).
+  # `ema_window=48` fixo nas 3 grades, mesmo tratamento das outras 9
+  # janelas -- código em `src/features/build.py::FeatureWindows` (a
+  # maquinaria de escala `_clock_reference_bar_duration_ms`/`_scale_
+  # clock_window_bars`/`from_constants(bar_source=...)` foi REMOVIDA, não
+  # só desligada). Bit-exato sob R1 (`ema_window` já era 48 ali); muda
+  # valores de produção sob R2 (24->48) e R3 (12->48) -- exige relabel/
+  # retrain de qualquer modelo R2/R3 treinado com a versão clock-escalada.
 
 feature_b01_rsi_window:
   value: 14

@@ -19157,6 +19157,41 @@ entries:
       Independente disso, o escalonamento usa duracao NOMINAL de
       calibracao (15/30/60min) em vez da MEDIANA MEDIDA -- bug proprio,
       valido mesmo se a ancoragem em relogio for mantida.
+    addendum_2026-08-26b_ambas_adotadas_em_producao: >
+      Aprovacao explicita do Manager na sessao principal (2026-08-26,
+      "Aprovo sua recomendacao para : A13 e E10f") sobre a recomendacao
+      desta entrada -- as DUAS correcoes cortadas pra producao.
+      E10f (commit 153733f): compute_t1_features ganha oi_change_native_
+      aligned opcional (None preserva bit-exato o caminho antigo);
+      build_t1_features (casca) sempre carrega e passa o array novo via
+      _sources.load_oi_change_aligned -- o corte real. registry.yaml v1
+      -> v2. 76/76 verde em test_features_build.py, 84/84 em groups+
+      parity.
+      A13 -- a decisao de DESENHO que o corpo do achado deixava em
+      aberto ("premissa pode ja nao valer sob o regime atual") foi
+      tomada: RECLASSIFICADO de `clock` pra `bar_count`
+      (config/constants.yaml::feature_a13_ema_window, comentario
+      REVERTIDO 2026-08-26 apenso). `ema_window=48` fixo nas 3 grades --
+      a maquinaria de escala (`_clock_reference_bar_duration_ms`/
+      `_scale_clock_window_bars`/`FeatureWindows.from_constants(bar_
+      source=...)`) foi REMOVIDA de src/features/build.py, nao so
+      desligada (dead code deletado, nao mantido por compat). Isso
+      TAMBEM fecha, de graca, o "bug proprio" citado no paragrafo
+      anterior (escalonamento por duracao NOMINAL vs MEDIANA MEDIDA) --
+      nao ha mais escalonamento nenhum pra ter esse bug. Bit-exato sob
+      R1 (ema_window ja era 48 ali); muda valores de producao sob R2
+      (24->48) e R3 (12->48). 62/62 verde em test_features_build.py
+      (76 - 16 testes da maquinaria de escala removida + 2 novos
+      provando a reversao), 84/84 em groups+parity. ruff/mypy limpos
+      (os 9 erros remanescentes de "does not explicitly export
+      attribute" em tests/unit/test_features_build.py sao debito
+      pre-existente, confirmado identico rodando mypy sobre a versao do
+      HEAD anterior a esta sessao -- nao introduzidos por esta mudanca).
+      AMBAS exigem relabel/retrain de qualquer modelo ja treinado com as
+      versoes antigas (E10f v1, A13 clock-escalado em R2/R3) -- nao
+      decidido aqui QUANDO esse retreino acontece, so que os dois
+      defeitos de construcao documentados nesta entrada nao estao mais
+      em T1_FEATURE_IDS.
 
   - id: AG-296
     renumbered_from: "AG-295 -- quarta colisao de ID do dia com a sessao paralela (a AG-295 dela e commit 8104ba9, sobre A13/E10f); mesmo procedimento de AG-272"

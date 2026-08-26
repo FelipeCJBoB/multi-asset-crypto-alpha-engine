@@ -133,87 +133,29 @@ def test_feature_windows_min_common_history_bars_from_constants() -> None:
 
 
 # ============================================================================
-# `feature_a13_ema_window` (`scaling_invariant: clock`, AG-043 F3) --
-# conversão clock<->bar-count, único campo de `FeatureWindows` afetado por
-# `bar_source`. 2026-08-23.
+# `feature_a13_ema_window` -- reversão `clock` -> `bar_count` (AG-295,
+# 2026-08-26, aprovação explícita do Manager). Até 2026-08-23, `ema_window`
+# escalava com `bar_source` (48@R1 -> 24@R2 -> 12@R3); a maquinaria de
+# escala (`_clock_reference_bar_duration_ms`/`_scale_clock_window_bars`/
+# `FeatureWindows.from_constants(bar_source=...)`) foi REMOVIDA, não só
+# desligada -- `ema_window=48` fixo nas 3 grades, mesmo tratamento das
+# outras 9 janelas.
 # ============================================================================
 
 
-def test_clock_reference_bar_duration_ms_time_15m_e_bit_exato() -> None:
-    assert build._clock_reference_bar_duration_ms("time_15m") == step_ms("15m")
-
-
-@pytest.mark.parametrize(
-    ("bar_source", "calibration_tf"),
-    [("dollar_r1", "15m"), ("dollar_r2", "30m"), ("dollar_r3", "1h")],
-)
-def test_clock_reference_bar_duration_ms_usa_calibration_tf_by_resolution(
-    bar_source: str, calibration_tf: str
-) -> None:
-    """Usa `CALIBRATION_TF_BY_RESOLUTION` (alvo FIXO de calibração) -- NUNCA
-    uma duração medida (AG-043 F2, rejeitado pelo Manager). Cross-checa
-    contra o mesmo dict que `src.data.build_dollar_bars` já expõe, não
-    duplica o valor esperado como literal solto."""
-    assert build._clock_reference_bar_duration_ms(bar_source) == step_ms(calibration_tf)
-
-
-def test_clock_reference_bar_duration_ms_bar_source_desconhecido_levanta_valueerror() -> None:
-    with pytest.raises(ValueError, match="time_15m"):
-        build._clock_reference_bar_duration_ms("dollar_r4")
-
-
-def test_scale_clock_window_bars_ratio_1_e_bit_exato() -> None:
-    assert build._scale_clock_window_bars(48, step_ms("15m")) == 48
-
-
-def test_scale_clock_window_bars_escala_conforme_formula_do_manager() -> None:
-    """`96@15m -> 48@30m -> 24@1h` (constants.yaml::feature_a13_ema_window,
-    2026-08-16) -- aqui com o valor real de A13 (48, não o 96 ilustrativo
-    do comentário original): 48@15m -> 24@30m -> 12@1h."""
-    assert build._scale_clock_window_bars(48, step_ms("30m")) == 24
-    assert build._scale_clock_window_bars(48, step_ms("1h")) == 12
-
-
-def test_scale_clock_window_bars_piso_de_1_barra() -> None:
-    assert build._scale_clock_window_bars(1, step_ms("1h") * 100) == 1
-
-
-def test_feature_windows_from_constants_bar_source_time_15m_ema_window_bit_exato() -> None:
-    windows = build.FeatureWindows.from_constants(bar_source="time_15m")
+def test_feature_windows_from_constants_ema_window_fixo_48() -> None:
+    """`ema_window` (A13) não escala mais com resolução -- `bar_count`
+    fixo, igual às outras 9 janelas de `FeatureWindows`."""
+    windows = build.FeatureWindows.from_constants()
     assert windows.ema_window == 48
 
 
-@pytest.mark.parametrize(
-    ("bar_source", "expected_ema_window"),
-    [("dollar_r1", 48), ("dollar_r2", 24), ("dollar_r3", 12)],
-)
-def test_feature_windows_from_constants_escala_ema_window_sob_resolution(
-    bar_source: str, expected_ema_window: int
-) -> None:
-    windows = build.FeatureWindows.from_constants(bar_source=bar_source)
-    assert windows.ema_window == expected_ema_window
-
-
-@pytest.mark.parametrize("bar_source", ["dollar_r1", "dollar_r2", "dollar_r3"])
-def test_feature_windows_from_constants_so_ema_window_muda_sob_resolution(
-    bar_source: str,
-) -> None:
-    """As outras 9 janelas de `FeatureWindows` são `scaling_invariant:
-    bar_count`/normalização -- decisão deliberada e específica de cada uma
-    (AG-043), não escalam com `bar_source`. Prova campo a campo, não só
-    `ema_window`, pra pegar regressão se um refactor futuro generalizar a
-    conversão sem querer."""
-    baseline = build.FeatureWindows.from_constants(bar_source="time_15m")
-    scaled = build.FeatureWindows.from_constants(bar_source=bar_source)
-    for field in dataclasses.fields(build.FeatureWindows):
-        if field.name == "ema_window":
-            continue
-        assert getattr(scaled, field.name) == getattr(baseline, field.name), field.name
-
-
-def test_feature_windows_from_constants_bar_source_desconhecido_levanta_valueerror() -> None:
-    with pytest.raises(ValueError, match="time_15m"):
-        build.FeatureWindows.from_constants(bar_source="dollar_r4")
+def test_feature_windows_from_constants_nao_aceita_mais_bar_source() -> None:
+    """A reversão de AG-295 remove o parâmetro `bar_source` de todo --
+    prova que não é só um no-op silencioso, o argumento genuinamente não
+    existe mais na assinatura."""
+    with pytest.raises(TypeError):
+        build.FeatureWindows.from_constants(bar_source="dollar_r3")  # type: ignore[call-arg]
 
 
 def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> None:

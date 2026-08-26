@@ -7,8 +7,9 @@
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
 - **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
+- **`AG-295` (A13/E10f, achado sobre o Alpha EM PRODUÇÃO, independente de §1–§9/§14): EXECUTADO 2026-08-26** — as 2 correções que o achado descrevia como propostas/investigadas mas não adotadas foram cortadas pra produção, aprovação explícita do Manager. `E10f_oi_change_z_48`: `registry.yaml` v1→v2 (delta calculado na cadência nativa da fonte, não mais depois do alinhamento por barra). `feature_a13_ema_window`: `scaling_invariant` `clock`→`bar_count` (`config/constants.yaml`), `ema_window=48` fixo nas 3 grades — a maquinaria de escala por `bar_source` foi removida de `src/features/build.py`. Ver addendum `2026-08-26b` na entrada `AG-295` do log e `§14.3` (correção `2026-08-26b`) pro detalhe completo.
 
-Nenhum default de produção alterado, nenhuma coluna de feature removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
+**Isto ALTERA defaults de produção** (parágrafo acima) — `E10f`/`A13` mudam de valor sob R2/R3 (A13 bit-exato só sob R1); exige relabel/retrain de qualquer modelo já treinado. Fora disso, nenhuma coluna de feature foi removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
 
 **Nota de numeração:** não há §10. A v1 deste ADR tinha um addendum §10 que foi absorvido por §0.2 na reescrita v2; o número ficou vago e é preservado assim porque `AG-266` e os commits já referenciam §11, §12 e §13 pelos números atuais.
 **Escopo:** desenho do vetor de features (`src/features/`), fronteira com o gate de regime e com o vetor de treino do Alpha
@@ -1196,6 +1197,36 @@ calibrado SEM sample_weight        : 0,4967   viés = −0,0000
 
 **A saída do calibrador não estima `P(TP)`. Estima `P(TP)` sob uma medida
 inclinada por `|ret_net|`, e o viés é de −6,45 pontos percentuais.**
+
+### A opção (b) deixou de ser argumento e virou medição (2026-08-26)
+
+A autovalidação desta v2 registrava, como o principal ponto fraco do
+documento, que a recomendação (b) era *"argumento de primeiro princípio,
+**não uma medição**"* — a medição provava que existe viés, não qual das três
+saídas é a certa. Isso foi fechado. `P(TP)` estimada sob cada esquema de
+peso, lado long, pós-`NOFILL`:
+
+| célula | contagem (verdadeiro) | **só `uniqueness`** (b) | `uniqueness × \|ret_net\|` (hoje) |
+|---|---|---|---|
+| BTCUSDT/R1 | 0,4967 | **0,4971** `(+0,0004)` | 0,4323 `(−0,0645)` |
+| ETHUSDT/R1 | 0,4990 | **0,4988** `(−0,0002)` | 0,4431 `(−0,0559)` |
+| BNBUSDT/R1 | 0,4916 | **0,4904** `(−0,0012)` | 0,4264 `(−0,0652)` |
+| SOLUSDT/R3 | 0,4942 | **0,4972** `(+0,0030)` | 0,4815 `(−0,0127)` |
+| XRPUSDT/R3 | 0,4959 | **0,4971** `(+0,0013)` | 0,4751 `(−0,0207)` |
+
+O viés de hoje vai de **−0,013 a −0,065**; sob (b), de **−0,0012 a +0,0030**
+— **duas ordens de grandeza menor**, e sem sinal sistemático (três células
+para cima, duas para baixo, ou seja ruído amostral e não inclinação).
+
+Isso confirma o argumento estrutural: `uniqueness` corrige **redundância
+estatística** e não se correlaciona com o desfecho; `|ret_net|` codifica
+**importância econômica** e se correlaciona com ele por construção
+(`r_SL > r_TP` por causa do custo). (b) mantém a correção que pertence a um
+estimador e remove a que pertence a uma função de decisão.
+
+**Ressalva que sobrevive:** (b) não é *provada* livre de viés — está medido
+que o mecanismo conhecido foi removido e que o resíduo é da ordem do ruído
+amostral em 5 células. Não é o mesmo que uma prova.
 
 ### Por que isso é P0
 
@@ -2448,6 +2479,28 @@ risco de `B07`. Investigação proposta, não feita: medir o "equivalente
 nativo" que o addendum do `AG-030` já pede, não recorrigir a conversão
 calendário→barra que a ficha descreve (esse caminho já foi rejeitado em
 2026-08-17).
+
+**Correção 2026-08-26b — `A13` e `E10f` cortados pro fix, `defeito_
+construcao` da ficha agora descreve implementação DESATIVADA (`AG-295`,
+aprovação explícita do Manager, ver addendum na entrada do log).** As duas
+correções que este parágrafo (acima) e o corpo de `AG-295` descreviam
+como "proposta, NÃO adotada"/"investigado, NÃO implementado" foram
+adotadas em produção nesta sessão: `E10f_oi_change_z_48` usa
+`e10f_oi_change_z_48_from_native_delta` (registry v1→v2); `feature_a13_
+ema_window` foi RECLASSIFICADO `clock`→`bar_count`
+(`config/constants.yaml`), `ema_window=48` fixo nas 3 grades — a
+maquinaria de escala em `src/features/build.py` foi removida, não só
+desligada. **Isso NÃO reclassifica A13/E10f pra fora de
+`defeito_construcao` nas contagens de `§14.1`/`§14.4`/`§14.6` abaixo —
+essa reclassificação exigiria regerar a ficha (`audit/feature_thesis/
+fichas_69_2026-08-25.yaml`) rodando o diagnóstico de novo sobre o código
+corrigido, não reescrever o veredito por inferência.** A ficha atual
+(`fichas_69_2026-08-25.yaml`) ainda descreve a implementação ANTIGA — os
+vereditos `INCOERENTE_DIMENSIONAL`(A13)/`ERRO_CATEGORICO`(E10f) são fatos
+históricos corretos sobre o código que existia até 2026-08-26, não mais
+uma descrição do código de produção hoje. Regenerar a ficha dessas 2
+colunas é trabalho pendente, não feito aqui (B23 — não estipular o
+veredito novo sem medir).
 
 ### §14.4 Tabela de camadas corrigida
 
