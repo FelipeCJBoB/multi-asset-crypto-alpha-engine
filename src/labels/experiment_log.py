@@ -27,6 +27,7 @@ import io
 import os
 import time
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ import numpy as np
 import polars as pl
 import structlog
 
-from ._paths import LABEL_ENGINE_RUNS_DIR
+from ._paths import DATA_ROOT, LABEL_ENGINE_RUNS_DIR
 from .triple_barrier import LabelBuildStats, LabelConfig
 
 logger = structlog.get_logger(__name__)
@@ -395,3 +396,106 @@ def _record_experiment_locked(
         path=str(log_path),
     )
     return log_path
+
+
+# ============================================================================
+# AG-309 (ADR-005 §13 v2 §13.11, itens 3b/3c de §13.17) -- DETECTOR de
+# divergencia entre os labels em disco e este registro.
+#
+# **O defeito que motiva.** `build_and_write_labels_for_symbol` chama
+# `write_labels_atomic` e DEPOIS `record_experiment`. E uma SEQUENCIA, nao
+# uma transacao: se a segunda falhar (ou se os labels forem escritos por
+# outro caminho), ficam labels em disco sem linha de registro -- e nada
+# detecta. Medido em 2026-08-26: `data/labels/BTCUSDT/R1/v1/labels.parquet`
+# carrega `config_hash=3599b765b7a53ff2` e a ultima linha R1 do registro
+# carrega `67d2193fff4a1fae`. Consequencia real: `ADR-004 §0/§1` construiu
+# F1/F2/F3 sobre o registro, e `pct_nofill` la diz 10,73% contra 1,54%
+# medido no disco -- 7x.
+#
+# **Por que isto NAO conserta o passado.** O `_SCHEMA` acima declara duas
+# vezes, para colunas diferentes, o principio "nao inventa retroativamente
+# o que nao foi registrado na hora". Apendar linhas de `labels_build`
+# reconstruidas afirmaria que um run aconteceu num instante em que nao
+# aconteceu, com `build_stats` que nao existem mais (sao contadores de
+# tempo de build, nao derivaveis do artefato). Seria fabricar registro de
+# auditoria para fazer um lint passar. O item 3c de §13.17, como estava
+# especificado ("reprocessar o registro"), fica REJEITADO por este motivo.
+# O que fica: o DETECTOR, para que a divergencia seja visivel e nao possa
+# reaparecer em silencio.
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class UnregisteredLabelArtifact:
+    """Um `labels.parquet` em disco cujo `config_hash` nao aparece em
+    nenhuma linha do registro para a mesma `(symbol, grade)`."""
+
+    symbol: str
+    grade: str
+    version: str
+    path: str
+    config_hash_no_disco: str
+    config_hashes_no_registro: tuple[str, ...]
+
+
+def label_artifact_config_hash(path: Path) -> str:
+    """`config_hash` de um `labels.parquet`, exigindo que seja UNICO.
+
+    Um arquivo com mais de um hash combina regimes de label diferentes --
+    mesmo espirito de `triple_barrier.verify_config_hash` (B15), aplicado
+    ao artefato em vez de ao par label/execucao."""
+    hashes = pl.read_parquet(path, columns=["config_hash"])["config_hash"].unique().to_list()
+    if len(hashes) != 1:
+        raise ValueError(
+            f"label_artifact_config_hash: {path} combina {len(hashes)} config_hash "
+            f"distintos ({sorted(hashes)}) -- um artefato que mistura regimes de label "
+            "nao descreve nenhum deles"
+        )
+    return str(hashes[0])
+
+
+def find_unregistered_label_artifacts(
+    *, labels_root: Path | None = None, log_path: Path | None = None
+) -> tuple[UnregisteredLabelArtifact, ...]:
+    """Varre `data/labels/{symbol}/{grade}/{version}/labels.parquet` e
+    devolve os que o registro nao cobre.
+
+    "Cobre" = existe ao menos uma linha com o MESMO `config_hash` E o mesmo
+    `symbol` E a mesma grade (`tf` ou `resolution_id`, o XOR do schema).
+    Casar so por `config_hash` global seria frouxo: o mesmo hash de config
+    vale para os 5 simbolos, entao um unico simbolo registrado faria os
+    outros 4 passarem."""
+    root = labels_root if labels_root is not None else DATA_ROOT / "labels"
+    registro = load_experiment_log(log_path)
+    if not root.exists():
+        return ()
+
+    por_celula: dict[tuple[str, str], set[str]] = {}
+    if not registro.is_empty():
+        for row in registro.select(["symbol", "tf", "resolution_id", "config_hash"]).to_dicts():
+            grade = row["resolution_id"] or row["tf"]
+            if grade is None or row["symbol"] is None or row["config_hash"] is None:
+                continue
+            por_celula.setdefault((str(row["symbol"]), str(grade)), set()).add(
+                str(row["config_hash"])
+            )
+
+    achados: list[UnregisteredLabelArtifact] = []
+    for path in sorted(root.glob("*/*/*/labels.parquet")):
+        version = path.parent.name
+        grade = path.parent.parent.name
+        symbol = path.parent.parent.parent.name
+        h_disco = label_artifact_config_hash(path)
+        conhecidos = por_celula.get((symbol, grade), set())
+        if h_disco not in conhecidos:
+            achados.append(
+                UnregisteredLabelArtifact(
+                    symbol=symbol,
+                    grade=grade,
+                    version=version,
+                    path=str(path),
+                    config_hash_no_disco=h_disco,
+                    config_hashes_no_registro=tuple(sorted(conhecidos)),
+                )
+            )
+    return tuple(achados)

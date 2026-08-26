@@ -19669,3 +19669,71 @@ entries:
       reprogramacao em curso pode mudar o conjunto, e o censo deve
       descrever o vetor que existe, nao um congelado no codigo.
       Reexecutar depois que a reprogramacao fechar.
+
+  - id: AG-309
+    date: "2026-08-26"
+    file: "src/labels/experiment_log.py::find_unregistered_label_artifacts, tools/lint/check_label_registry_sync.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-296 (§13.11), data/label_engine_runs/label_engine_runs.parquet, src/labels/backfill_multi_symbol.py::build_and_write_labels_for_symbol"
+    found_by: "Claude -- persona lgbm-crypto-quant, itens 3b/3c da ordem de ADR-005 §13 v2"
+    gap: >
+      AG-296 (§13.11) reportou que o registro do Label Engine descrevia
+      labels que nao existem mais, medido em BTCUSDT/R1. A varredura
+      completa mostra que e MUITO maior: 20 de 20 artefatos em disco
+      (5 simbolos x 4 grades, incluindo a legada 15m) tem config_hash que
+      o registro nao conhece. E sistematico e uniforme -- cada grade tem
+      exatamente UM hash em disco e UM hash no registro, iguais nos 5
+      simbolos:
+        grade   disco               registro
+        15m     9492d29c36b06cb1    2122d433edb4fd3a
+        R1      3599b765b7a53ff2    67d2193fff4a1fae
+        R2      19be840676f4c43c    bb273072eceda99c
+        R3      ff8dcb98fa579975    bc9772056f792e72
+      CAUSA PARCIALMENTE ESTABELECIDA, e registro o que NAO sei: o
+      `logged_at_utc` maximo do registro inteiro e 2026-08-24 01:12,
+      enquanto o `labels.parquet` de producao tem mtime 2026-08-25 15:45.
+      Nenhum append aconteceu no dia do relabel. `build_and_write_labels_
+      for_symbol` CHAMA `record_experiment` (AG-128, desde 2026-08-19),
+      entao ou o relabel usou outro caminho de escrita, ou aquela funcao
+      falhou depois do write. Nao consegui determinar qual pelos commits.
+      O que e certo: a chamada e uma SEQUENCIA, nao uma transacao -- se a
+      segunda falhar, ficam labels sem linha, e nada detectava.
+      VERIFICACAO COLATERAL, e ela e boa noticia: a config de producao
+      VIGENTE reproduz exatamente o hash de cada grade em disco
+      (LabelConfig.from_constants(resolution_id=R, estimator_id=
+      'parkinson_w20') -> 3599b765b7a53ff2 / 19be840676f4c43c /
+      ff8dcb98fa579975). Os LABELS estao certos e sao os da config atual;
+      o REGISTRO e que ficou para tras.
+    severity: "ALTA -- proveniencia ausente em 100% dos artefatos de label de producao"
+    layer: "labels"
+    consequence: >
+      Nenhum numero publicado a partir desses artefatos e rastreavel a
+      config que o gerou. Contaminacao ja documentada: ADR-004 §0/§1
+      construiu F1/F2/F3 lendo o registro -- pct_nofill la diz 10,73%
+      contra 1,54% medido no disco (7x), e o edge bruto incondicional de
+      F1 (-0,147 ATR) hoje e -0,0099 ATR (15x menor).
+      ITEM 3c DE §13.17 REJEITADO COMO ESTAVA ESPECIFICADO ("reprocessar
+      label_engine_runs para as 15 celulas"). Motivo: o proprio _SCHEMA do
+      registro declara, DUAS VEZES e para colunas diferentes, o principio
+      "nao inventa retroativamente o que nao foi registrado na hora".
+      Apendar linhas de `labels_build` reconstruidas afirmaria que um run
+      aconteceu num instante em que nao aconteceu, com `build_stats`
+      (n_warmup_dropped/n_incomplete_tail/n_tie_break) que sao contadores
+      de tempo de build e NAO sao derivaveis do artefato. Seria fabricar
+      registro de auditoria para fazer um lint passar -- exatamente o que
+      um log append-only existe para impedir.
+      O QUE FICA NO LUGAR: o DETECTOR. A divergencia passa a ser visivel e
+      nao pode reaparecer em silencio. Fecha-se de verdade quando os
+      labels forem reescritos pelo caminho que registra -- o que vai
+      acontecer no relabel que a reprogramacao de features ja implica.
+    status: >-
+      DETECTOR IMPLEMENTADO (3b). 9 testes unitarios, todos em tmp_path --
+      nenhum le o data/ real, entao nao dependem de backfill local.
+      A regra de casamento e por (symbol, grade, config_hash), NAO por
+      config_hash global: o mesmo hash de config vale para os 5 simbolos,
+      entao casar so por hash faria um simbolo registrado cobrir os
+      outros quatro. Ha teste dedicado para isso.
+      3c REJEITADO com motivo acima. A divergencia dos 20 artefatos fica
+      ABERTA e visivel ate o proximo relabel.
+      NAO ADICIONADO a lista dos 7 comandos mecanicos de auditoria do
+      CLAUDE.md: essa lista e exaustiva e por decisao do Manager (2026-08-12),
+      nao se estende por iniciativa de quem escreve o lint.
