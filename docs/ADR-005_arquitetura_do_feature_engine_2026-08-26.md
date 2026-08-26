@@ -21,7 +21,7 @@
 **Nota de numeração:** não há §10. A v1 deste ADR tinha um addendum §10 que foi absorvido por §0.2 na reescrita v2; o número ficou vago e é preservado assim porque `AG-266` e os commits já referenciam §11, §12 e §13 pelos números atuais.
 **Escopo:** desenho do vetor de features (`src/features/`), fronteira com o gate de regime e com o vetor de treino do Alpha
 **Origem:** persona `feature-thesis-auditor`, instrumentada em `AG-260` (régua econômica), `AG-263` (ficha de tese das 72 colunas), `AG-264` (barras degeneradas), `AG-265` (curva de IC por horizonte), `AG-266` (o artefato de `E18f`)
-**Evidência:** `experiments/ic_by_horizon_report_{R1,R2,R3}.json` (15 células, 2022-01-01..2026-08-07), `audit/feature_thesis/fichas_69_2026-08-25.yaml`, `config/min_alpha_lift_by_combo.yaml`
+**Evidência:** `experiments/ic_by_horizon_report_{R1,R2,R3}.json` (15 células, 2022-01-01..2026-08-07 — **nota 2026-08-26, `AG-287`:** janela mais estreita que a cobertura real de dado, que começa em 2020-01-01 para BTCUSDT e 2021-12-01 para os 4 alts, `SYMBOL_START_DATE`; a escolha de `--start 2022-01-01` na rodada real do script é deliberada — período comum aproximado entre os 5 ativos — mas não citada como tal), `audit/feature_thesis/fichas_69_2026-08-25.yaml`, `config/min_alpha_lift_by_combo.yaml`
 
 ---
 
@@ -75,13 +75,22 @@ todos os ativos no **mesmo período**. Faltava o eixo tempo — §2.2 o adiciona
 ## §1. Contexto — os fatos medidos
 
 **§1.1 A régua econômica (`AG-260`).** Para o motor apenas empatar, o Alpha
-precisa entregar lift em `P(TP)` entre **1,076 e 1,175**, conforme a célula.
+precisa entregar lift em `P(TP)` entre **1,076 e 1,151**
+(**correção 2026-08-26, `AG-278`** — a faixa "1,076 a 1,175" citada
+originalmente não existe em nenhum artefato real), conforme a célula.
 O gate de regime mede lift `1,0027` (`AG-244`); as dez medianas do `ADR-003`
 são negativas.
 
 **§1.2 A ficha de tese (`AG-263`).** Das 72 colunas, **33 não têm nenhum
 mecanismo econômico declarado** — nem no registry, nem em docstring, nem em
-`constants.yaml`.
+`constants.yaml`. **Nota 2026-08-26 (`AG-280`):** este "33" é uma contagem
+DIRETA de `mecanismo_economico: AUSENTE` na ficha; é uma população
+DIFERENTE do "29 `SEM_MECANISMO`" citado em `§1.4` — aquele é o veredito
+FINAL da ficha (já ajustado por precedência: uma coluna com
+`mecanismo_economico: AUSENTE` que TAMBÉM é `INCOERENTE_DIMENSIONAL`/
+`ERRO_CATEGORICO` conta no "33" mas não no "29", subordinada pelo defeito
+mais grave). Os dois números são reais e cada um mede a coisa certa — o
+erro seria tratá-los como a mesma contagem, não usar os dois.
 
 **§1.3 A curva de IC (`AG-265`).** 15 células, `h = 1,2,4,8,16,32` barras,
 holding medido `H = 5`. Descobertas por Benjamini-Hochberg `q = 0,10` dentro
@@ -90,15 +99,17 @@ de cada célula:
 | feature | células | veredito após §2.2 |
 |---|---|---|
 | `E18f_taker_ls_vol_ratio` | 15/15 | **QUARENTENA** — artefato (`AG-266`) |
-| `E16f_global_ls_ratio` | 7/15 | passa nos dois eixos |
+| `E16f_global_ls_ratio` | 7/15 | ~~passa nos dois eixos~~ **reprovado no eixo 1 corrigido** — `AG-294`/`AG-270` (2026-08-26): `L2` fica **vazia**, ver correção ao fim de `§2.2` |
 | `K04_session_us` | 5/15 | reprovado (abaixo do limiar de células) |
 | `C09_range_pctile_expanding` | 5/15 | reprovado |
 | `A11_true_range_pct` | 5/15 | reprovado |
 
-**§1.4 O cruzamento tese × sinal.** Zero das 29 colunas sem mecanismo têm
+**§1.4 O cruzamento tese × sinal.** Zero das 29 colunas `SEM_MECANISMO` têm
 sinal; zero das 16 dimensionalmente incoerentes têm sinal. A ficha foi feita
 lendo fórmula e registry, sem olhar retorno, e separou corretamente o
-conjunto vazio.
+conjunto vazio. (Ver nota de `§1.2` sobre "29" vs "33" serem populações
+diferentes — aqui o número certo É "29", o veredito final pós-precedência,
+que é o que importa para "quantas colunas SEM sinal E sem tese".)
 
 ---
 
@@ -108,8 +119,12 @@ conjunto vazio.
 QUARENTENA ortogonal, e governar a entrada no vetor de treino por um critério
 de evidência de DOIS EIXOS: reprodução entre células e estabilidade no tempo.**
 
-Hoje existe uma lista plana de 72 colunas: todas calculadas sempre, todas
-entregues ao Alpha, nenhuma com papel declarado. A distinção
+Hoje existe uma lista plana de 72 colunas calculáveis, nenhuma com papel
+declarado — mas **nem todas entregues ao Alpha** (**correção 2026-08-26,
+`AG-281`**: a afirmação original, "todas as 72 entregues ao Alpha", é
+falsa — o default de produção é `T1_FEATURE_IDS`, hoje só **7** colunas;
+as 65 restantes são T2, calculáveis mas fora do vetor de treino a menos
+que citadas via `extra_feature_ids`). A distinção
 `T1_FEATURE_IDS` vs `SUPPORT_FEATURE_IDS` não corresponde a fronteira real —
 `E27f` é T1 e alimenta o gate de regime; `C01`/`C02` são primitivas de cálculo
 e estão no vetor; `B07`/`C07`/`E02f` são T2 e são o insumo do classificador.
@@ -118,8 +133,8 @@ e estão no vetor; `B07`/`C07`/`E02f` são T2 e são o insumo do classificador.
 
 | Camada | O que é | Vai ao Alpha? | Membros hoje |
 |---|---|---|---|
-| **L0 — Primitiva** | insumo de cálculo de outras colunas | não | `C01_atr_20`, `C02_atr_20_pct` (`atr_20_abs` usado em 10 pontos, `atr_20_pct` em 7) |
-| **L1 — Gate de regime** | consumido por `classifier.py` | não (ADR-001 §2.7) | `B07`, `C07`, `E02f`, `E27f` |
+| **L0 — Primitiva** | insumo de cálculo de outras colunas | não | `C01_atr_20`, `C02_atr_20_pct` (`atr_20_abs` usado em 6 pontos — `A13`/`A14`/`B04`/`B05`/`A15` + a própria definição de `C02`; `atr_20_pct` em 4 — `A05`/`A06`/`B06`/`E27f`; **correção 2026-08-26, `AG-286`:** os números "10"/"7" originais eram contagem de `grep`, não de consumo real — recontados linha a linha em `src/features/build.py::compute_t1_features`) |
+| **L1 — Gate de regime** | consumido por `classifier.py` | não (**correção 2026-08-26, `AG-277`**: citação anterior de `ADR-001 §2.7` estava errada — verificado no texto real (`docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md:501`), aquela seção é *"Meta consome regime? De qual candidato/resolução?"*, trata do Meta consumir o **estado** de regime, não de regime sair do vetor de FEATURES do Alpha. `CLAUDE.md::B21` cita o mesmo `§2.7` para essa mesma afirmação — mesma imprecisão, não corrigida aqui, fora de escopo. A citação certa pra "regime só gate" não foi identificada; ficou como débito, não inventada) | `B07`, `C07`, `E02f`, `E27f` |
 | **L2 — Núcleo de sinal** | passa nos dois eixos de §2.2 | **sim** | ~~`E16f_global_ls_ratio`~~ **VAZIA** — `AG-294` (2026-08-26), ver correção ao fim de §2.2 |
 | **L3 — Em observação** | tese declarada, sem evidência suficiente | não, recalculada | ~~as `TESE_OK` restantes`~~ **17** (11 `TESE_OK` + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) — `§14.2`/`§14.3` (2026-08-26) |
 | **L4 — Aposentada** | sem mecanismo **e** sem sinal, OU construção comprovadamente quebrada sem outro papel | não, nem calculada | ~~as 29 `SEM_MECANISMO` sem descoberta~~ **43** (21 `SEM_MECANISMO` restante + 22 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) — `§14.3`/`§14.4` (2026-08-26) |
@@ -333,7 +348,7 @@ a causa de `AG-266` ser conhecida.
 | `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ **43** (`AG-271`/`AG-272`, §14.2-§14.4) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo. |
 | `L3` — tese sem evidência suficiente, OU quarentena | ~~~15~~ **17** (§14.4) | Continuam calculadas; fora do treino até reteste/correção. |
 | `L0` — primitivas | 2 | São insumo de outras colunas, não preditores. |
-| `L1` — gate de regime | 4 | `ADR-001` §2.7 já tirou regime do vetor; `E27f` é exceção deliberada (também `L2`, §14.3) — as outras 3 ficaram por inércia. |
+| `L1` — gate de regime | 4 | regime já é gate-só, não feature do Alpha (citação de `ADR-001 §2.7` corrigida em `§2.1` — a certa não identificada, ver nota lá); `E27f` é exceção deliberada (também `L2`, §14.3) — as outras 3 ficaram por inércia. |
 
 **Duas remoções que valem por si, independentes desta arquitetura:**
 
@@ -805,9 +820,14 @@ A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
   §12.4 dentro de ~3,5%), e **`BTCUSDT/R3` volta a ser excluída**
   (`stop_max_pct`=0,7585% contra `stop_pct`=0,7671%), reproduzindo a
   decisão de §12.6. `equity`/`asof` seguem parâmetros obrigatórios (B17/
-  B01). Detalhe completo: `AG-288`..`AG-293`. Mesma limitação de
+  B01). Detalhe completo: `AG-288`..`AG-293`. ~~Mesma limitação de
   `stop_pct` já registrada abaixo (usa a célula de produção GLOBAL do
-  S1, não overrides por combo) — herdada, não escondida.
+  S1, não overrides por combo) — herdada, não escondida.~~ **CORRIGIDO
+  2026-08-26b (AG-317b/B8):** `_load_production_stop_pct` agora aplica
+  override por combo de `config/barrier_geometry_by_combo.yaml` quando
+  existente (por símbolo), caindo na célula global só quando ausente —
+  mesma convenção de `cell_key` que `s1_tp_sl_sensitivity.py` já usa
+  (`_cell_key_for`, testado contra a geometria real de `BNBUSDT_R1`).
   **Rodado com o equity REAL do usuário 2026-08-26** (`--equity 213.80`
   — R$ 1.100 convertidos à cotação do dia, ~R$5,145/USD — `--asof
   2026-08-08`, mesma data de cobertura de dado, hoje ainda sem backfill

@@ -31,7 +31,7 @@ tick_size:
 step_size:
   value: 0.001
   provenance: MEASURED
-  source: "exchangeInfo BTCUSDT, LOT_SIZE — restrição dominante do projeto (§0.2 R1)"
+  source: "exchangeInfo BTCUSDT, LOT_SIZE — restrição dominante do projeto (§0.2 R1). AVISO 2026-08-26 (ADR-005 §12.8): escalar BTC-único -- AG-165/AG-190 já mediram razão de até 1000x entre step_size de ativos diferentes. src/analysis/production_grade_gate.py NÃO usa esta constante (lê o real por ativo via src.exchange.filters.load_filters_asof, snapshot de exchangeInfo) -- não reusar esta constante pra outro ativo além de BTCUSDT sem verificar primeiro."
   class: C
   sweep_required: false
 
@@ -1722,37 +1722,9 @@ feature_k04_us_end_hour:
   sweep_required: false
   review_by: sprint_8
 
-feature_k08_halving_1_date_utc:
-  value: "2012-11-28"
-  provenance: LITERATURE
-  source: "1º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 210.000). Data de calendário -- halving é definido por ALTURA DE BLOCO, não horário de relógio exato; granularidade de dia é a precisão real disponível (consistente com o nome 'days_since' da feature)."
-  class: B
-  sweep_required: false
-  review_by: sprint_8
-
-feature_k08_halving_2_date_utc:
-  value: "2016-07-09"
-  provenance: LITERATURE
-  source: "2º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 420.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
-  class: B
-  sweep_required: false
-  review_by: sprint_8
-
-feature_k08_halving_3_date_utc:
-  value: "2020-05-11"
-  provenance: LITERATURE
-  source: "3º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 630.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
-  class: B
-  sweep_required: false
-  review_by: sprint_8
-
-feature_k08_halving_4_date_utc:
-  value: "2024-04-20"
-  provenance: LITERATURE
-  source: "4º halving do Bitcoin, confirmado via pesquisa web nesta sessão (bloco 840.000). Mesma ressalva de granularidade de feature_k08_halving_1_date_utc."
-  class: B
-  sweep_required: false
-  review_by: sprint_8
+# feature_k08_halving_{1..4}_date_utc REMOVIDAS 2026-08-26 (K08_days_since_
+# halving removida, AG-263 -- ADR-005 §11.4 item 3; ver
+# src/features/groups/group_k.py e audit/architecture_gaps_log.yaml::AG-263).
 
 # ============================================================================
 # Camada features — Lote B da liberação de features (H5, 2026-08-24) —
@@ -1784,7 +1756,7 @@ feature_c08_vol_pctile_inner_window:
 feature_c08_vol_pctile_outer_window:
   value: 17520
   provenance: ASSUMED
-  source: "convenção do PRD (§2.4, C08 vol_pctile_rolling_1y, lookback tabulado 17520 barras = 1 ano a 15m), nunca testada"
+  source: "convenção do PRD (§2.4, C08 vol_pctile_rolling_1y, lookback tabulado 17520 barras), nunca testada. CORREÇÃO 2026-08-26 (AG-317): a conta original do PRD ('17520 barras = 1 ano a 15m') está ARITMETICAMENTE ERRADA -- 17520 × 15min = 182,5 dias = 6 MESES, não 1 ano (1 ano real a 15m = 35040 barras, o dobro). Sob dollar bar a distância do nome '1y' piora: 17520 barras = 114,7 dias (R1) / 240 dias (R2) / 500 dias=1,37 ano (R3) -- 4,4x de amplitude entre grades, sem ajuste por bar_source. Nome '_rolling_1y' não é verdade em nenhuma das 4 grades (15m nominal, R1, R2, R3). Não corrigido o VALOR (decisão de desenho pendente -- escalar por bar_source ou virar contagem de dias medida, ver ADR-005 §14.6/AG-317), só o texto de proveniência que descrevia a conta errada como se fosse a justificativa."
   class: B
   sweep_required: false
   review_by: sprint_8
@@ -2466,6 +2438,48 @@ alpha_lgbm_max_bin:
   sweep_range: [63, 511]
   review_by: sprint_10
 
+alpha_lgbm_ess_regularization_n_obs_independentes_alvo:
+  value: 30.0
+  provenance: ASSUMED
+  source: >
+    ADR-005 §13.14.1 (item 8 de §13.17, emenda `lgbm-crypto-quant`,
+    2026-08-26) -- número de observações INDEPENDENTES que uma folha
+    precisa carregar para o erro-padrão de `p` ficar num nível
+    considerado aceitável (`SE(p) = sqrt(0,25/n) ~= 9,1 pp` em n=30,
+    contra o edge-alvo de ~5-7 pp medido no projeto -- ainda largo, mas
+    não a ordem de grandeza do `SE` de `min_child_samples=20` sob
+    `ESS/linhas ~= 0,39` medido em §13.9.3, que dá só ~7-8 obs.
+    independentes). Não é medido -- é o "n_obs_independentes_alvo"
+    que a própria fórmula de §13.5-3 já pedia como parâmetro declarado
+    a priori, nunca antes escolhido porque a fórmula nunca tinha sido
+    implementada. Parâmetro hoje INERTE em produção: sob
+    `num_leaves in {2,3}` nenhuma árvore chega perto do piso de folha
+    que esta regularização impõe (§13.9.3) -- só passa a morder se
+    `max_depth` subir, decisão separada e não tomada aqui.
+  class: B
+  sweep_required: true
+  sweep_range: [15.0, 60.0]
+  review_by: sprint_10
+
+alpha_lgbm_ess_regularization_fator_conservador:
+  value: 0.5
+  provenance: ASSUMED
+  source: >
+    ADR-005 §13.14.1, companheiro da constante acima. Cobre o segundo
+    defeito real da fórmula original de §13.5-3: `p(1-p)` na hessiana é
+    a predição CORRENTE da iteração de boosting, não a taxa base -- ela
+    CAI conforme o boosting avança e os scores se espalham, então um
+    piso derivado da cota `0,25` (p=0,5) descreve só a iteração 0.
+    `fator_conservador <= 1` encolhe o piso para não superestimar a
+    massa disponível nas iterações tardias -- 0,5 (metade da cota da
+    iteração 0) é escolha de engenharia sem medição de como `p(1-p)`
+    de fato evolui neste projeto (B23: TBD, medir junto do sweep de
+    `max_depth` que tornaria este parâmetro ativo pela primeira vez).
+  class: B
+  sweep_required: true
+  sweep_range: [0.25, 1.0]
+  review_by: sprint_10
+
 # --- Camada 1 — restrições monotônicas (§5.3) ---
 
 alpha_monotonic_consistency_min_envs:
@@ -2501,6 +2515,30 @@ alpha_monotonic_consistency_min_envs:
   class: B
   sweep_required: false
   review_by: sprint_11
+
+alpha_monotonic_ic_magnitude_floor_k:
+  value: 2.0
+  provenance: ASSUMED
+  source: >
+    ADR-005 §13.14.2 (item 6 de §13.17, achado `lgbm-crypto-quant`,
+    2026-08-26) -- `screen_monotone_constraints` hoje atribui restrição
+    monotônica por SINAL puro (`dominant = 1 if mean_ic > 0`), sem piso
+    de magnitude. Medido: as discordâncias entre o IC de `ret_net` e o
+    de `P(TP)` (`AG-213`) ficam em `|mean_ic| ~= 0,007` contra
+    `SE ~= 0,005` -- ~1,4 desvios-padrão, indistinguível de ruído
+    amostral sob qualquer piso razoável (k>=1,4). `k=2,0` é o valor
+    convencional de "diferença de ~2 SE" usado como regra de bolso em
+    inferência estatística (heurística equivalente a um teste
+    aproximadamente bicaudal a ~95%) -- não é medido NESTE projeto, é
+    escolha de engenharia declarada a priori, exatamente pelo motivo
+    que a Regra Zero exige declarar em vez de estipular em silêncio.
+    `SE` usa a aproximação de Fisher para o erro-padrão de uma
+    correlação (`1/sqrt(ESS-3)`), com `ESS = Σ uniqueness` do treino
+    (mesma definição de `AG-211`, não uma fórmula fechada nova -- B24).
+  class: B
+  sweep_required: true
+  sweep_range: [1.0, 3.0]
+  review_by: sprint_10
 
 alpha_stability_screen_limiar:
   value: 0.02
@@ -2558,6 +2596,42 @@ alpha_calibration_holdout_frac:
   source: "PRD §5.9 passo 9 pede 'sub-split interno do treino' para a calibração isotônica (B08) mas não declara fração. Convenção de ML (holdout 75/25) escolhida sem teste — nenhuma varredura de sensibilidade rodada nesta rodada."
   class: B
   sweep_required: false
+  review_by: sprint_10
+
+alpha_early_stopping_stop_frac:
+  value: 0.15
+  provenance: ASSUMED
+  source: >
+    ADR-005 §13.14.3 (item 9 de §13.17, `lgbm-crypto-quant`, 2026-08-26)
+    -- fração do treino reservada ao bloco `stop` (eval_set do
+    `early_stopping`) quando `early_stopping_mode="three_way"`. Hoje o
+    split de calibração (`alpha_calibration_holdout_frac=0,25`) serve
+    DOIS papéis -- calibra o isotônico E decidiria `n_estimators`,
+    exatamente o "mesmo dado duas vezes" que este item corrige. `0,15`
+    escolhido para que `stop + calib = 0,40` do treino fique reservado
+    fora do `fit`, deixando `fit ~= 0,60` -- ordem de grandeza plausível
+    sem medição própria (B23: TBD, medir custo real de amostra em R3,
+    `ESS ~= 9.200`, antes de promover a produção). Menor que `calib`
+    (0,25) porque `stop` só precisa detectar overfitting agregado, não
+    calibrar uma curva de probabilidade ponto a ponto.
+  class: B
+  sweep_required: true
+  sweep_range: [0.10, 0.25]
+  review_by: sprint_10
+
+alpha_early_stopping_rounds:
+  value: 20
+  provenance: ASSUMED
+  source: >
+    ADR-005 §13.14.3, companheiro da constante acima --
+    `stopping_rounds` do callback `lgb.early_stopping`. Convenção comum
+    (~10-15% de um `n_estimators` típico deste projeto, 150-300) sem
+    medição própria neste repo. Só ativo sob
+    `early_stopping_mode="three_way"` -- caminho legado (`"fixed"`,
+    produção hoje) nunca lê esta constante.
+  class: B
+  sweep_required: true
+  sweep_range: [10, 40]
   review_by: sprint_10
 
 alpha_random_seed:

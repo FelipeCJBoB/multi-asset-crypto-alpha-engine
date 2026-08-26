@@ -19,11 +19,13 @@ backtest lê este número pra decidir uma ordem).
 
 **Fontes, todas já persistidas (nenhuma medição nova aqui):**
 - `stop_pct` de produção por (symbol, resolution_id): `stop_pct_cell` da
-  célula em `sanidade_centro_da_grade.celula_de_producao_na_grade[0]` de
-  `experiments/s1_tp_sl_sensitivity_report_{R}.json`, média long/short.
-  Mesma limitação que o próprio §12.8 já registra: usa a geometria GLOBAL
-  de produção, não overrides por combo de
-  `config/barrier_geometry_by_combo.yaml` — reportado, não escondido.
+  célula em `experiments/s1_tp_sl_sensitivity_report_{R}.json`, média
+  long/short. **AG-317b/B8 (2026-08-26): overrides por combo aplicados**
+  -- por símbolo, se `config/barrier_geometry_by_combo.yaml` tem geometria
+  calibrada pra `(symbol, resolution_id)`, a célula usada é a DAQUELE
+  combo (`_cell_key_for`); símbolo sem override cai na célula GLOBAL
+  (`sanidade_centro_da_grade.celula_de_producao_na_grade[0]`), igual
+  antes. Ver `_load_production_stop_pct`.
 - `step_size`/`min_notional` reais por ativo: `src.exchange.filters.
   load_filters_asof` (snapshot de `exchangeInfo`), não o escalar
   BTC-único de `constants.yaml` (`AG-165`/`AG-190`).
@@ -50,6 +52,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Final
 
@@ -57,10 +60,12 @@ import polars as pl
 import structlog
 from scipy.stats import norm
 
+from src.analysis.s1_tp_sl_sensitivity import _RR_MAX_DENOMINATOR
 from src.data import lake
 from src.exchange.filters import load_filters_asof
 from src.features.groups.group_e import round_trip_cost_bps
 from src.labels._constants import load_constant
+from src.labels.geometry_by_combo import load_barrier_geometry
 
 logger = structlog.get_logger(__name__)
 
@@ -281,11 +286,33 @@ def build_grade_gate_row(
 # ============================================================================
 
 
+def _cell_key_for(tp_atr_mult: float, sl_atr_mult: float) -> str:
+    """`"R{reward_risk}_S{sl_mult}"` -- MESMA convenção de célula usada por
+    `s1_tp_sl_sensitivity.py` (`_production_cell_from_constants`,
+    `_valid_cells_for_symbol`): `Fraction` limitada ao mesmo denominador
+    máximo do grid (`_RR_MAX_DENOMINATOR`, reusado por import, não
+    reimplementado com valor solto -- se o grid mudar de precisão, esta
+    função acompanha automaticamente)."""
+    rr = Fraction(tp_atr_mult / sl_atr_mult).limit_denominator(  # noqa: unguarded-ratio -- sl_atr_mult vem de constants.yaml/barrier_geometry_by_combo.yaml, multiplicador de ATR sempre > 0 por construção de domínio (mesma divisão sem guarda em s1_tp_sl_sensitivity.py::_production_cell_from_constants)
+        _RR_MAX_DENOMINATOR
+    )
+    sl_frac = Fraction(sl_atr_mult).limit_denominator(_RR_MAX_DENOMINATOR)
+    return f"R{rr}_S{sl_frac}"
+
+
 def _load_production_stop_pct(resolution_id: str, *, out_dir: Path) -> dict[str, float]:
     """`stop_pct_cell` médio (long/short) na célula de produção, por
-    símbolo, de `s1_tp_sl_sensitivity_report_{R}.json`. Mesma limitação já
-    registrada em §12.8: usa a célula de produção GLOBAL
-    (`sanidade_centro_da_grade`), não overrides por combo."""
+    símbolo, de `s1_tp_sl_sensitivity_report_{R}.json`.
+
+    **AG-317b/B8 (2026-08-26): overrides por combo aplicados.** Antes,
+    usava sempre a célula de produção GLOBAL (`sanidade_centro_da_grade`)
+    -- limitação registrada em §12.8. Agora, por símbolo: se
+    `config/barrier_geometry_by_combo.yaml` tem override pra
+    `(symbol, resolution_id)` (`src.labels.geometry_by_combo.
+    load_barrier_geometry`), a célula usada é a DAQUELE combo (mesma
+    convenção de cell_key, `_cell_key_for`); símbolo sem override cai no
+    cell_key GLOBAL, igual antes -- nunca inventa geometria pra combo
+    ausente (mesmo contrato que `geometry_by_combo.py` já documenta)."""
     path = out_dir / f"s1_tp_sl_sensitivity_report_{resolution_id}.json"
     if not path.exists():
         raise ProductionGradeGateError(
@@ -302,11 +329,17 @@ def _load_production_stop_pct(resolution_id: str, *, out_dir: Path) -> dict[str,
             f"{path}: 'sanidade_centro_da_grade.celula_de_producao_na_grade' vazio -- "
             "geometria de produção vigente não está coberta pelo grid deste sweep S1"
         )
-    cell_key = cell_keys[0]
+    global_cell_key = cell_keys[0]
 
     by_symbol = report.get("by_symbol") or {}
     out: dict[str, float] = {}
     for symbol, sym_block in by_symbol.items():
+        override = load_barrier_geometry(str(symbol), resolution_id)
+        cell_key = (
+            _cell_key_for(override.tp_atr_mult, override.sl_atr_mult)
+            if override is not None
+            else global_cell_key
+        )
         stops: list[float] = []
         for side_block in (sym_block.get("by_side") or {}).values():
             cell = (side_block.get("cells") or {}).get(cell_key)
@@ -315,6 +348,7 @@ def _load_production_stop_pct(resolution_id: str, *, out_dir: Path) -> dict[str,
         if not stops:
             raise ProductionGradeGateError(
                 f"{path}: símbolo {symbol!r} sem célula {cell_key!r} em nenhum lado"
+                + (" (override por combo)" if override is not None else "")
             )
         out[str(symbol)] = sum(stops) / len(stops)
     return out
@@ -485,9 +519,10 @@ def run_production_grade_gate_report(
         "simbolos elegiveis, nao a soma -- cada capacidade por simbolo ja assume o orcamento "
         "MENSAL COMPARTILHADO inteiro (ver aggregate_grade_capacity, ACHADO CRITICAL "
         "project_assurance 2026-08-26).",
-        "ressalva_stop_pct": "usa a celula de producao GLOBAL de cada sweep S1 "
-        "(sanidade_centro_da_grade), nao overrides por combo de "
-        "config/barrier_geometry_by_combo.yaml -- mesma limitacao ja registrada em ADR-005 §12.8.",
+        "ressalva_stop_pct": "AG-317b/B8 (2026-08-26): overrides por combo de "
+        "config/barrier_geometry_by_combo.yaml aplicados por simbolo quando existentes; "
+        "simbolo sem override cai na celula de producao GLOBAL de cada sweep S1 "
+        "(sanidade_centro_da_grade), igual ao comportamento antigo.",
         "equity_usd": equity,
         "asof": asof.isoformat(),
         "risk_per_trade": risk_per_trade,

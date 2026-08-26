@@ -222,30 +222,38 @@
 - feature: A13_dist_ema48_atr
   formula_resumida: (C_t - EMA_48) / atr_20_abs
   memoria_efetiva_barras: 16.7
-  memoria_justificativa: 'EMA span 48 -> h = 0,347·48 = 16,66 barras EM R1. `feature_a13_ema_window`
-    é a ÚNICA janela `scaling_invariant: clock` do vetor: build.py::_scale_clock_window_bars
-    escala 48 -> 24 (R2) -> 12 (R3) usando CALIBRATION_TF_BY_RESOLUTION (15m/30m/1h NOMINAIS).
-    Memória real por grade: 16,66 / 8,33 / 4,16 barras. lookback_bars=48 do registry não é
-    memória nem teto de purge válido (EMA tem suporte infinito).'
+  memoria_justificativa: 'EMA span 48 -> h = 0,347·48 = 16,66 barras, FIXO nas 3 grades desde
+    2026-08-26 (`AG-295`, ver `regenerada_2026-08-26` abaixo). `feature_a13_ema_window`
+    era a ÚNICA janela `scaling_invariant: clock` do vetor; revertida pra `bar_count` --
+    a maquinaria de escala por `bar_source` foi removida de `build.py`, não só desligada.
+    Memória real: 16,66 barras nas 3 grades, igual. `lookback_bars=48` do registry não é
+    memória nem teto de purge válido (EMA tem suporte infinito) -- ressalva que continua
+    valendo, independente da correção de escala.'
   h_sobre_H: 3.33
   papel: confirmacao
   mecanismo_economico: AUSENTE
   quem_esta_do_outro_lado: AUSENTE
-  ancoragem: relogio
+  ancoragem: bar_count
   ancoragem_defeito: null
-  nome_engana: '''48'' só é verdade em R1. Em R2 a janela real é 24, em R3 é 12 — o id da
-    feature, a fórmula do registry e o nome da coluna continuam dizendo 48 nas três grades.
-    Pior: a JUSTIFICATIVA declarada da âncora de relógio (constants.yaml: ''meia-vida comensurável
-    ao horizonte de RELÓGIO do label, time_stop_ms=8h'') não é entregue — meia-vida real em
-    R1 = 16,66 barras × 9,43 min = 157 min = 2,6 h, não 8 h; erro de 3,1x. E o escalonamento
-    usa a duração NOMINAL de calibração (15/30/60 min), não a MEDIANA MEDIDA (9,43/19,73/41,16
-    min) — outro fator 1,5-1,6x entre o relógio pretendido e o entregue.'
-  veredito: INCOERENTE_DIMENSIONAL
-  observacao: 'O defeito estrutural: H é invariante em BARRAS (5 nas 3 grades) e A13 é a única
-    feature ancorada em RELÓGIO — logo h/H varia 4x entre grades (3,33 em R1, 1,67 em R2,
-    0,83 em R3). A MESMA feature é ''confirmação'' em R1 e ''gatilho'' em R3. Um comparativo
-    multi-TF que trate A13 como a mesma variável está comparando três features diferentes.
-    Também dispara SEM_MECANISMO (mecanismo AUSENTE, subordinado por precedência).'
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'REGENERADA 2026-08-26 (ver `regenerada_2026-08-26` abaixo) -- o defeito
+    `INCOERENTE_DIMENSIONAL` original (h/H variando 4x entre grades porque A13 era a
+    única feature ancorada em RELÓGIO enquanto H é invariante em BARRAS) foi CORRIGIDO
+    em produção (`AG-295`): `ema_window=48` agora é fixo nas 3 grades, h/H=3,33 constante,
+    ''confirmação'' em R1/R2/R3 igualmente -- não muda mais de papel entre grades. O
+    veredito cai pra `SEM_MECANISMO` (não `TESE_OK`): a correção de escala não criou
+    mecanismo econômico onde não havia nenhum declarado -- `mecanismo_economico: AUSENTE`
+    continua verdade, agora sem o defeito dimensional subordinando-o por precedência.'
+  regenerada_2026-08-26: 'Ficha original (2026-08-25) descrevia a implementação clock-ancorada,
+    já corrigida no dia seguinte pela mesma sessão que a auditou (`AG-295`, aprovação
+    explícita do Manager, commit `ea8f050`). Esta entrada foi re-derivada manualmente
+    (não há script gerador da ficha -- 3 auditorias independentes por grupo, mesmo método
+    do original) sobre o código real pós-correção: `config/constants.yaml::feature_a13_ema_window`
+    (`scaling_invariant: bar_count`), `src/features/build.py::FeatureWindows` (maquinaria
+    de escala removida). Vereditos anteriores (`INCOERENTE_DIMENSIONAL`) permanecem
+    fatos históricos corretos sobre o código até 2026-08-25 -- não uma descrição errada,
+    uma descrição de uma versão anterior do código.'
 - feature: A14_dist_ema12_atr
   formula_resumida: (C_t - EMA_12) / atr_20_abs
   memoria_efetiva_barras: 4.2
@@ -260,11 +268,13 @@
   ancoragem_defeito: null
   nome_engana: null
   veredito: SEM_MECANISMO
-  observacao: 'COLISÃO EXATA EM R3: A13 escala pra ema_window=12 e A14 é fixo em 12; ambas
-    computam support.ema(close, 12) e dividem por atr_20_abs — em R3 A13 e A14 são a MESMA
-    coluna, bit a bit. Duas features distintas do registry produzindo valores idênticos quebra
-    HHI/importância (o ganho se divide entre duas colunas gêmeas) e infla a contagem do teto
-    de features (§0.2 R4). Em R2 (24 vs 12) sobrevive como par redundante, não idêntico.'
+  observacao: 'REGENERADA 2026-08-26: a colisão exata em R3 com A13 (ambas computando
+    support.ema(close, 12)/atr_20_abs sob a antiga escala clock de A13) NÃO EXISTE MAIS --
+    `AG-295` (2026-08-26) reverteu `feature_a13_ema_window` pra `bar_count` fixo em 48
+    nas 3 grades; A13 (janela 48) e A14 (janela 12, sempre foi `bar_count`) não colidem
+    em nenhuma grade agora. Fato histórico correto até 2026-08-25, resolvido como efeito
+    colateral da correção de A13, não por trabalho dedicado a A14/A13 dedup (ver `AG-263`
+    addendum e ADR-005 §5.2/§11.4).'
 - feature: A15_dist_vwap_d_atr
   formula_resumida: (C_t - VWAP_do_dia_UTC) / atr_20_abs, VWAP = Σ((H+L+C)/3·V)/ΣV desde 00:00
     UTC
@@ -1167,20 +1177,29 @@
   quem_esta_do_outro_lado: quem entra alavancado vs. o market maker/base que toma o outro
     lado e depois colhe a liquidação
   ancoragem: misto
-  ancoragem_defeito: 'T1: o Δ é de 1 BARRA sobre uma fonte amostrada a cada 5 min de RELÓGIO.
-    Em R1 a mediana da barra é 9,43 min (só 1,9 ticks da fonte por barra) e o p10 é 1,73 min
-    — para toda barra mais curta que 5 min o asof-join devolve o MESMO create_time da barra
-    anterior e Δln(OI) = 0 por construção mecânica, não por ausência de fluxo. O horizonte
-    real do delta é max(duração_da_barra, 5 min), que varia 2,9× dentro da própria R1. Zeros
-    mecânicos inflam o centro da distribuição, deflacionam o desvio da janela 48 e inflam
-    |z| exatamente nas barras que atravessam um tick da fonte.'
+  ancoragem_defeito: null
   nome_engana: null
-  veredito: ERRO_CATEGORICO
-  observacao: '`feature_e10f_oi_change_window: 48` é `provenance: ASSUMED`, ''nunca testada''.
-    A medição que existe (measure_funding_cycle_oi_seasonality.py) encontrou sazonalidade
-    fraca perto de 96 barras=24h — mas essa medição foi feita em barras de 15m; sob dollar
-    bar 96 b = 15,1h (R1), então a conclusão não transfere e não deveria ser citada como suporte
-    a nenhuma janela na grade atual.'
+  veredito: TESE_OK
+  observacao: 'REGENERADA 2026-08-26 (ver `regenerada_2026-08-26` abaixo) -- o defeito
+    `ERRO_CATEGORICO` original (T1: Δ de 1 barra sobre fonte de 5min de relógio, asof-join
+    devolvendo zero mecânico em barras curtas de R1) foi CORRIGIDO em produção (`AG-295`):
+    o delta agora é calculado na cadência NATIVA da fonte (uma leitura real por linha),
+    ANTES do alinhamento à barra -- elimina o zero mecânico por construção, medido
+    (tools/diagnostics/measure_ag295_e10f_mechanical_zeros.py): frac_delta_zero cai de
+    8,5%-13,0% pra 0,0% nos 5 ativos. `feature_e10f_oi_change_window: 48` continua
+    `provenance: ASSUMED`, ''nunca testada'' -- ressalva de janela que sobrevive
+    independente da correção mecânica. A medição de sazonalidade existente
+    (measure_funding_cycle_oi_seasonality.py) foi feita em barras de 15m e não transfere
+    pra dollar bar -- não deveria ser citada como suporte a esta janela.'
+  regenerada_2026-08-26: 'Ficha original (2026-08-25) descrevia o caminho de cálculo
+    ainda em produção na época, já corrigido no dia seguinte pela mesma sessão que a
+    auditou (`AG-295`, aprovação explícita do Manager, commit `153733f`). Esta entrada
+    foi re-derivada manualmente (não há script gerador da ficha) sobre o código real
+    pós-correção: `src/features/groups/group_e.py::e10f_oi_change_z_48_from_native_delta`
+    (caminho novo, usado sempre que `oi_change_native_aligned` é fornecido -- o que
+    `build_t1_features`, a casca de produção, sempre faz) e `registry.yaml` v1->v2.
+    O veredito `ERRO_CATEGORICO` anterior permanece fato histórico correto sobre o
+    código até 2026-08-25 -- descreve uma versão anterior, não um erro de leitura.'
 - feature: E11f_oi_change_1d
   formula_resumida: Δln(OI) sobre 48 barras (sem normalização)
   memoria_efetiva_barras: 48.0
@@ -1527,30 +1546,6 @@
     é linearmente determinada pelas outras duas; e todas são função em degrau da mesma hora
     que K01_hour_sin/cos já fornece continuamente. O vetor carrega 5 colunas para 1 grandeza
     (hora do dia).'
-- feature: K08_days_since_halving
-  formula_resumida: dias corridos desde o halving do BITCOIN mais recente ≤ t (4 datas fixas)
-  memoria_efetiva_barras: quase-constante
-  memoria_justificativa: 'memória de cálculo zero, mas o valor é uma RAMPA MONÓTONA: sobe
-    1 unidade a cada 152,7 barras em R1. Dentro de um trade (H=5 b) avança 0,033 dia. O ciclo
-    completo (1.461 dias) equivale a ~223.100 barras R1 = 44.620×H.'
-  h_sobre_H: 44620.0
-  papel: quase-constante
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
-  ancoragem: relogio
-  ancoragem_defeito: null
-  nome_engana: 'o nome afirma um mecanismo de OFERTA (redução da emissão do Bitcoin). Aplicada
-    a ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT — o que build.py:849 faz, mesmas 4 datas para os 5 símbolos
-    — não existe evento nenhum nessas datas para esses ativos: é um contador linear de tempo
-    com nome econômico emprestado. Mesmo em BTCUSDT o mecanismo age sobre emissão diária (~450
-    BTC/dia após 2024) contra bilhões de USD de giro diário, num horizonte de meses; o alvo
-    aqui tem 47 min.'
-  veredito: SEM_MECANISMO
-  observacao: 'O risco é maior que ''feature inútil''. Sendo monótona dentro de cada época
-    de 4 anos, a coluna é um proxy quase perfeito de TEMPO DE CALENDÁRIO: dentro de um fold
-    ela permite ao modelo identificar e memorizar o período de treino (e, com isso, o regime
-    de mercado daquele período); no walk-forward os valores do teste ficam SEMPRE acima do
-    suporte de treino, região onde a árvore extrapola constante — ou seja, no melhor caso
-    inerte fora da amostra e no pior caso um vetor de sobreajuste por época. Recomendação:
-    fora do vetor; se houver tese de ciclo de emissão, ela é para o Regime Engine e só para
-    BTCUSDT.'
+# K08_days_since_halving REMOVIDA 2026-08-26 -- fichas era o próprio achado
+# que fundamentou a remoção (veredito SEM_MECANISMO + risco de sobreajuste
+# por época, ver AG-263). Removida do vetor, entrada retirada da ficha.

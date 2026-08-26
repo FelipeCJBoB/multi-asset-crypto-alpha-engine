@@ -63,6 +63,29 @@ def test_r1_ceiling_violated_e_estrito_na_fronteira() -> None:
 
 
 # ============================================================================
+# _cell_key_for -- AG-317b/B8 (2026-08-26): mesma convenção de cell_key de
+# s1_tp_sl_sensitivity.py, usada pra resolver override por combo.
+# ============================================================================
+
+
+def test_cell_key_for_bate_com_geometria_real_de_barrier_geometry_by_combo() -> None:
+    """tp=2.25/sl=2.25 é a geometria real de BNBUSDT_R1 em
+    config/barrier_geometry_by_combo.yaml (cell_id_s1: 'R1_S9/4') --
+    cross-check contra dado real persistido, não só a fórmula isolada."""
+    assert pgg._cell_key_for(2.25, 2.25) == "R1_S9/4"
+
+
+def test_cell_key_for_geometria_global_de_producao() -> None:
+    """tp_atr_mult/sl_atr_mult globais de constants.yaml (produção vigente,
+    §12.2) -- razão 1,5/1,5 = R1, sl=1,5=S3/2."""
+    assert pgg._cell_key_for(1.5, 1.5) == "R1_S3/2"
+
+
+def test_cell_key_for_razao_nao_inteira() -> None:
+    assert pgg._cell_key_for(3.0, 2.0) == "R3/2_S2"
+
+
+# ============================================================================
 # cost_usd_per_trade -- §12.1/§12.7: custo é função de stop_pct, não fixo
 # ============================================================================
 

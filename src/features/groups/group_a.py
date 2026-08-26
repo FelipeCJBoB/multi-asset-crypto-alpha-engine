@@ -242,7 +242,7 @@ def a15_dist_vwap_d_atr(
     (High + Low + Close) / 3"). Cripto negocia 24/7, sem "abertura de
     sessão" tradicional (ações/futuros) — reset à meia-noite UTC é a
     adaptação natural pra um mercado contínuo, mesma convenção de
-    fronteira de dia já usada em `group_k.py` (K03/K08) deste repo.
+    fronteira de dia já usada em `group_k.py` (K03) deste repo.
 
     `polars.cum_sum().over("day_id")` reseta a soma acumulada a cada
     novo `day_id` (partição), preservando a ORDEM de aparição dentro de

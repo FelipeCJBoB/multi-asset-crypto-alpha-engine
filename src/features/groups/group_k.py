@@ -1,10 +1,18 @@
 """GRUPO K — Temporal e calendário (§2.12). Lote A da liberação de
-features (H5, 2026-08-24) — K01-K04, K08. Todas T2 (nenhuma promovida a
+features (H5, 2026-08-24) — K01-K04. Todas T2 (nenhuma promovida a
 T1 por esta implementação, §0.2 R4/§2.13). Explicitamente fora deste
 grupo: K05 (`hours_to_funding`, o próprio PRD diz "ver E05f" — alias de
 `group_e.e05f_time_to_funding_h`, não uma feature separada), K06
 ("gatilho de Risk, não feature", PRD literal) e K07 (precisa de
 calendário de vencimento de opções, fonte externa ausente).
+
+**`K08_days_since_halving` REMOVIDA 2026-08-26** (achado de `AG-263`,
+sobrevive à reprovação de `project_assurance` em `ADR-005 §11.4`, item
+3): aplicava as 4 datas de halving do BITCOIN aos 5 ativos sem eixo de
+símbolo — pra ETH/SOL/BNB/XRP é rampa monótona de calendário com nome
+econômico, eixo de sobreajuste por época dentro do fold. Ver
+`audit/architecture_gaps_log.yaml::AG-263` (achado original) e o
+addendum de remoção na mesma entrada.
 
 Única fonte de dado: o timestamp da própria barra (`close_time`, epoch
 ms) — nenhuma dependência de OHLCV/funding/OI. Núcleo 100% puro (Idioma
@@ -18,8 +26,8 @@ radianos) são definicionais, não hiperparâmetro de negócio — mesma
 classe das constantes de fórmula fechada da literatura (`4*ln2` em
 `support.parkinson_vol`, `0.34/1.34` em `support.yang_zhang_vol`) que
 `constants.yaml` já documenta como isentas de entrada própria. Fronteiras
-de SESSÃO (K04) e datas de halving (K08) SÃO decisões com proveniência
-real (`LITERATURE`, pesquisa web) e têm entrada em `constants.yaml`.
+de SESSÃO (K04) SÃO decisão com proveniência real (`LITERATURE`,
+pesquisa web) e tem entrada em `constants.yaml`.
 """
 
 from __future__ import annotations
@@ -131,28 +139,3 @@ def k04_session_us(close_time_ms: FloatArray, us_start_h: float, us_end_h: float
     return out
 
 
-def k08_days_since_halving(
-    close_time_ms: FloatArray, halving_dates_ms: tuple[int, ...]
-) -> FloatArray:
-    """Dias corridos desde o halving do Bitcoin mais recente ANTES ou NA
-    barra — §2.12 K08. `halving_dates_ms` (epoch ms, UTC 00:00 do dia do
-    halving — datas confirmadas via pesquisa web: 2012-11-28, 2016-07-09,
-    2020-05-11, 2024-04-20; halving é definido por ALTURA DE BLOCO, não
-    por horário de relógio exato — granularidade de dia é a precisão
-    real disponível, consistente com o nome "days_since" da feature),
-    vindas de `constants.yaml::feature_k08_halving_{1..4}_date_utc` via
-    `build.py::LoteAWindows.from_constants`. Barra anterior ao 1º halving
-    da tupla produz NaN (fora do domínio conhecido — não deveria ocorrer
-    no histórico real do projeto, que começa depois de 2016, mas não
-    presumido silenciosamente)."""
-    dates = np.array(sorted(halving_dates_ms), dtype=np.int64)
-    close_time_int = close_time_ms.astype(np.int64)
-    idx = np.searchsorted(dates, close_time_int, side="right") - 1
-    valid = idx >= 0
-    days = np.full(close_time_ms.shape[0], np.nan, dtype=np.float64)
-    if valid.any():
-        most_recent_halving_ms = dates[idx[valid]]
-        days[valid] = (
-            close_time_int[valid] - most_recent_halving_ms
-        ).astype(np.float64) / float(_MS_PER_DAY)
-    return days

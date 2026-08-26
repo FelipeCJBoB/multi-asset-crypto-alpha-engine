@@ -558,6 +558,17 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: >
+    PAPEL É REGIME, NÃO GATILHO (AG-322, 2026-08-26). Meia-vida efetiva
+    de Wilder janela 48 ≈ 33,3 barras (h/H=6,65 contra holding H=5) —
+    o sinal muda de nível ~6,65x mais devagar que o horizonte de trade.
+    Está classificada no grupo "Momentum e reversão" (papel esperado:
+    gatilho), mas não tem papel alternativo declarado em código (ao
+    contrário de B07, que group_b.py:20-24 já documenta como eixo do
+    Regime Engine). Também sem mecanismo econômico declarado
+    (SEM_MECANISMO na ficha de tese). Correção proposta, não
+    implementada: declarar papel de regime explícito, não mudar
+    fórmula (fórmula está correta).
 
 - id: B03_roc_12
   tier: T2
@@ -655,6 +666,15 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: >
+    PAPEL É REGIME, NÃO GATILHO (AG-322, 2026-08-26). Insumo é PREÇO
+    (não estacionário) — (C_t-μ_48) é algebricamente uma soma ponderada
+    (kernel triangular) dos últimos 48 retornos; a "reversão" que o
+    z-score implica só se completa em ~48 barras (h/H=9,6 contra
+    holding H=5). Classificada no grupo "Momentum e reversão" mas sem
+    papel alternativo declarado em código, sem mecanismo econômico
+    declarado (SEM_MECANISMO na ficha de tese). Correção proposta, não
+    implementada: declarar papel de regime explícito.
 
 - id: B11_bb_position_20
   tier: T2
@@ -720,6 +740,19 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: >
+    JANELA NÃO RECONCILIADA COM O ESTIMADOR CANÔNICO (AG-322, 2026-08-26).
+    `canonical_volatility_estimator` do projeto (config/constants.yaml)
+    é `garman_klass_w20` — janela 20, mesmo estimador Garman-Klass,
+    janela DIFERENTE de C05 (48). Duas janelas do mesmo estimador
+    convivem no repo sem nota cruzando as duas. C05 sozinha está
+    correta (sigma por barra, sem multiplicar por sqrt(window), ao
+    contrário de C03_realized_vol_48 — famílias C03/C04/C05 não são
+    comparáveis em escala entre si, mesmo achado). Defeito adicional
+    (não corrigido aqui, mudança de fórmula, decisão do Manager):
+    Garman-Klass assume duração de barra FIXA; sob dollar bar a
+    duração é variável e a barra fecha mais rápido justamente quando a
+    vol sobe — o estimador subestima sistematicamente.
 
 - id: C09_range_pctile_expanding
   tier: T2
@@ -1092,22 +1125,11 @@
   version: v1
   added: 2026-08-24
 
-- id: K08_days_since_halving
-  tier: T2
-  group: K
-  formula: "dias corridos desde o halving do Bitcoin mais recente <= t0 (datas: 2012-11-28/2016-07-09/2020-05-11/2024-04-20)"
-  sources: [close_time, "constants.yaml:feature_k08_halving_{1..4}_date_utc"]
-  lookback_bars: 1
-  min_warmup_bars: 200
-  tf: 15m
-  dtype: float64
-  range: [0.0, .inf]
-  nan_policy: "NaN se a barra for anterior ao 1º halving da tupla (fora do domínio conhecido); null antes de min_warmup_bars"
-  causal_proof: "função só do PRÓPRIO timestamp da barra + datas fixas conhecidas a priori (não medidas do dado), sem lookahead — testado em tests/unit/test_features_groups.py::test_k08_days_since_halving_correto"
-  parity_tested: true
-  version: v1
-  added: 2026-08-24
-  nota: "datas de halving confirmadas via pesquisa web nesta sessão — halving é definido por altura de bloco, não horário exato; granularidade de dia é a precisão real disponível."
+# K08_days_since_halving REMOVIDA 2026-08-26 (AG-263, sobrevive à reprovação
+# de project_assurance -- ADR-005 §11.4 item 3): aplicava as 4 datas de
+# halving do BITCOIN aos 5 ativos sem eixo de símbolo -- pra ETH/SOL/BNB/XRP
+# é rampa monótona de calendário com nome econômico, eixo de sobreajuste por
+# época dentro do fold. Ver audit/architecture_gaps_log.yaml::AG-263.
 
 # ============================================================================
 # LOTE B — liberação de features (H5, 2026-08-24). 6 features T2 novas
@@ -1186,7 +1208,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "PRD original (a 30m) cita '30 barras de 1m'; sob 15m real, sao as barras de 1m do mesmo bucket de 15min -- contagem natural=15, nao recalibrada/hardcoded. Nucleo puro em group_d.py::d07f_taker_imbalance_1m_agg; ponto de entrada com IO em _sources.py::load_taker_imbalance_1m_agg_aligned (parametro opcional, default True, em build_t1_features -- ver docstring)."
+  nota: "PRD original (a 30m) cita '30 barras de 1m'; sob 15m real, sao as barras de 1m do mesmo bucket de 15min -- contagem natural=15, nao recalibrada/hardcoded. Nucleo puro em group_d.py::d07f_taker_imbalance_1m_agg; ponto de entrada com IO em _sources.py::load_taker_imbalance_1m_agg_aligned (parametro opcional, default True, em build_t1_features -- ver docstring). AG-318 (2026-08-26): sob TODA a grade de producao real (bar_source in {dollar_r1,dollar_r2,dollar_r3} -- R1/R2/R3), o carregamento e SEMPRE pulado (build.py, gate bar_source=='time_15m') -- a coluna sai 100% NaN, sempre, em todos os simbolos/resolucoes de producao. So roda de verdade sob bar_source='time_15m', que nao e a grade de producao (AG-042). Qualquer contagem de 'features T2 disponiveis' que inclua D07f sob a grade real esta inflada em 1."
 
 - id: D10f_vol_price_divergence
   tier: T2
@@ -1220,7 +1242,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "Soma ingenua sobre janela de BARRAS contaria o mesmo valor de funding repetido ~32x (asof-join backward repete o ultimo valor conhecido em toda barra de 15m dentro do periodo de 8h) -- errado por construcao. Deteccao por timestamp (nao por mudanca de valor) e robusta ao caso raro de 2 eventos consecutivos com o MESMO valor numerico (ex. funding no cap/floor). lookback_bars=288 = 9 eventos x 32 barras/evento (8h a 15m) -- derivado, nao um numero solto; e o pior caso real usado pra proteger CPCV/purge (AG-032 item 8), nao um valor tipico."
+  nota: "Soma ingenua sobre janela de BARRAS contaria o mesmo valor de funding repetido ~32x (asof-join backward repete o ultimo valor conhecido em toda barra de 15m dentro do periodo de 8h) -- errado por construcao. Deteccao por timestamp (nao por mudanca de valor) e robusta ao caso raro de 2 eventos consecutivos com o MESMO valor numerico (ex. funding no cap/floor). lookback_bars=288 = 9 eventos x 32 barras/evento (8h a 15m) -- derivado, nao um numero solto; e o pior caso real usado pra proteger CPCV/purge (AG-032 item 8), nao um valor tipico. AG-319 (2026-08-26): 288 e o alcance a 15m NOMINAL -- sob dollar bar o alcance REAL varia por grade (72h / duracao mediana da barra): 458,1 barras em R1, 219,0 em R2, 105,0 em R3. O schema de registry so tem 1 campo lookback_bars (nao suporta valor por resolucao) -- 288 fica sub-declarado nas 3 grades reais, mais grave em R1 (1,59x). NAO corrigido pra um numero unico porque nenhum dos 4 (288/458/219/105) e certo pras outras grades -- documentado aqui em vez de trocar 1 numero errado por outro. Protecao real: compute_max_feature_lookback_ms (AG-296) ja falha alto se E03f entrar em T1_FEATURE_IDS com qualquer lookback_bars declarado > 96 sob resolution_id -- 288 ja dispara essa guarda, a imprecisao do numero exato nao muda esse fato."
 
 # ============================================================================
 # LOTE C — liberação de features (H5, 2026-08-24). 6 features T2 novas

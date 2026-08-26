@@ -18094,6 +18094,33 @@ entries:
       existe). Antes de qualquer uma, vale medir a curva de IC por horizonte
       das colunas sobreviventes: e o teste que separa "sem tese declarada"
       de "sem sinal", e nenhuma das duas foi feita ate aqui.
+    addendum_2026-08-26b_decisoes_b_e_c_executadas: >
+      Decisao (b) (A13 vs A14 em R3) RESOLVIDA COMO EFEITO COLATERAL,
+      nao por dedup dedicado: AG-295 (2026-08-26, aprovacao do Manager)
+      reverteu feature_a13_ema_window de clock pra bar_count -- A13
+      agora e 48 barras FIXO nas 3 grades (nao mais 48->24->12). Sob
+      R3, A13 (48) e A14 (12, sempre foi bar_count) NAO colidem mais em
+      nenhuma grade. Verificado: FeatureWindows.from_constants().
+      ema_window = 48 (era 12 sob bar_source=dollar_r3 antes da
+      correcao). Fichas de A13/A14/E10f regeneradas (audit/feature_
+      thesis/fichas_69_2026-08-25.yaml, campo regenerada_2026-08-26)
+      pra refletir o codigo corrigido.
+      Decisao (c) (K08) EXECUTADA 2026-08-26b: K08_days_since_halving
+      REMOVIDA -- src/features/groups/group_k.py (funcao deletada),
+      src/features/registry.yaml (entrada removida), src/features/
+      build.py (3 pontos: lista T2, LoteAWindows.k08_halving_dates_ms,
+      computacao em compute_t1_features), config/constants.yaml (4
+      constantes feature_k08_halving_{1..4}_date_utc removidas),
+      audit/feature_thesis/fichas_69_2026-08-25.yaml (entrada
+      removida), tests/unit/test_features_groups.py (2 testes
+      removidos). 144/144 verde em test_features_build+test_features_
+      groups+parity (-m "not slow"), ruff/mypy limpos,
+      check_constants_referenced/banned_patterns limpos.
+      Decisao (a) (33 colunas sem mecanismo) segue ABERTA -- e decisao
+      de escopo maior (o que fazer com cada uma), nao mecanica; ver
+      AG-316..AG-322 (2026-08-26, investigacao individual das 19 do
+      lote defeito_construcao, subconjunto das 33) para o que ja foi
+      diagnosticado.
 
   - id: AG-264
     date: "2026-08-26"
@@ -18870,6 +18897,342 @@ entries:
       passaria silenciosa.
       Suite: 2053 passed, 0 failed; ruff, mypy strict, banned_patterns e
       check_constants_provenance limpos.
+
+
+  # AG-273..AG-287 -- 1a rodada de project_assurance sobre ADR-005 v1
+  # (2026-08-26), citadas por numero em ADR-005 secao 11.3 desde a revisao
+  # original mas nunca transcritas pra entrada propria do log ate esta
+  # sessao notar a lacuna (varredura de pendencias do ADR-005, mesmo dia).
+  # Conteudo fonte: prosa condensada de secao 11.3 do ADR -- REGISTRO
+  # RETROATIVO, nao achado novo desta sessao (exceto onde marcado).
+  - id: AG-273
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §9, §2.2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-270"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b: achado já citado por número em ADR-005 §11.3 desde a 1a revisão (2026-08-26), nunca transcrito pra entrada própria do log até esta sessão notar a lacuna (varredura de pendências do ADR-005)"
+    gap: >
+      Violação de B06 (CLAUDE.md -- "tabela de IC de amostra cheia usada
+      para configurar modelo, triagem tem que ser in-fold"), declarada
+      em §9 do ADR-005 ("não substitui triagem in-fold") mas cometida em
+      §2.2, que usa a mesma tabela de IC descritiva/pós-hoc como
+      CRITÉRIO de entrada em L2 -- exatamente o uso que B06 proíbe.
+    severity: MEDIUM
+    layer: "documentação arquitetural / features (critério de promoção)"
+    consequence: >
+      O ADR propõe um critério de promoção L3->L2 baseado numa tabela
+      que o próprio documento (§9) reconhece não poder ser usada pra
+      esse fim -- contradição interna, não só imprecisão.
+    status: >-
+      ABERTO -- protocolo in-fold pra promoção L3->L2 nunca foi
+      especificado (mesmo item citado em ADR-005 §9/§14.6).
+
+  - id: AG-274
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2 eixo 2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-299 (fecha parcialmente)"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      O eixo 2 (estabilidade temporal) do critério de evidência de §2.2
+      não tinha código nem artefato na v1/v2 original, e 6 termos usados
+      na definição do critério não tinham definição operacional
+      declarada (ex. "estável" = quanto de variação tolerada; "maioria
+      dos semestres" = quantos pontos mínimos por semestre).
+    severity: HIGH
+    layer: "documentação arquitetural / analysis"
+    consequence: >
+      Critério de evidência de dois eixos, mas um dos dois eixos era só
+      prosa -- L2 dependia de uma medição que não existia.
+    status: >-
+      FECHADO PARCIALMENTE 2026-08-26 -- AG-299 implementa o eixo 2 em
+      código (src/analysis/feature_temporal_stability.py) com 2 das
+      definições operacionais fixadas por reprodução (não por leitura da
+      prosa). h=1 (horizonte do IC por semestre) segue sem justificativa
+      econômica declarada -- ver ADR-005 §14.6.
+
+  - id: AG-275
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2"
+    related_file: "src/analysis/ic_by_horizon.py, src/models/alpha.py"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      Descasamento de alvo: o gate de IC (critério de promoção de
+      feature) mede correlação de Spearman contra o retorno FUTURO de
+      `h` barras (`forward_log_return`); o Alpha treina em
+      `1{barrier == TP}` (classificação binária de qual barreira toca
+      primeiro). São alvos estatisticamente diferentes -- uma feature
+      pode ter IC alto contra retorno futuro e nenhum poder preditivo
+      sobre qual barreira toca primeiro, ou vice-versa.
+    severity: MEDIUM
+    layer: "analysis (critério de promoção) / models (alvo real de treino)"
+    consequence: >
+      O critério de evidência de §2.2 pode aprovar/reprovar features
+      pela métrica errada -- mede a pergunta que o gate faz, não a que
+      o Alpha responde.
+    status: >-
+      ABERTO -- refazer a curva de IC contra o alvo real (1{barrier==TP})
+      é trabalho pendente, não feito nesta entrada.
+
+  - id: AG-276
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-294 (fecha)"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      O critério de Benjamini-Hochberg (eixo 1) não estava nos
+      relatórios persistidos com a unidade declarada (q, p_symbol,
+      n_symbols), e `pico_abs_t` (estatística usada no eixo 1) é um
+      MÁXIMO sobre 6 horizontes correlacionados -- inflando a taxa de
+      falso positivo sem correção, já que o teste não é sobre 1
+      estatística, é sobre o maior de 6 valores dependentes.
+    severity: MEDIUM
+    layer: "analysis (critério de promoção)"
+    consequence: >
+      Sem a unidade declarada no artefato, o BH não é auditável por
+      terceiros; o máximo sobre 6 horizontes correlacionados sem
+      correção infla a taxa de descoberta além do q nominal declarado.
+    status: >-
+      FECHADO 2026-08-26 -- AG-294 (feature_promotion_criterion.py)
+      persiste q_bh/p_symbol_empirico/n_symbols no relatório. A questão
+      do máximo sobre 6 horizontes correlacionados não foi
+      especificamente re-verificada como fechada nesta entrada.
+
+  - id: AG-277
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.1"
+    related_file: "docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md §2.7, CLAUDE.md::B21"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b, reverificado contra o texto real de ADR-001 nesta sessão"
+    gap: >
+      Citação errada de `ADR-001 §2.7` pra justificar "regime saiu do
+      vetor de features do Alpha, fica só como gate". VERIFICADO nesta
+      sessão (docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_
+      base.md:501): §2.7 é "Meta consome regime? De qual candidato/
+      resolução?" -- trata do META consumir o ESTADO de regime como
+      feature, não da decisão de excluir regime cru do vetor do Alpha.
+      Achado adicional desta reverificação: `CLAUDE.md::B21` cita o
+      MESMO `§2.7` pra essa mesma afirmação -- a imprecisão pode estar
+      mais espalhada que só o ADR-005; não corrigido em CLAUDE.md nesta
+      entrada (fora de escopo).
+    severity: LOW
+    layer: "documentação arquitetural"
+    consequence: >
+      A decisão em si (regime não entra cru no vetor do Alpha) provavelmente
+      está certa -- é a CITAÇÃO que aponta pro lugar errado. Quem for
+      verificar a justificativa lendo ADR-001 §2.7 encontra outra coisa.
+    status: >-
+      CORRIGIDO PARCIALMENTE 2026-08-26b -- citação marcada como errada
+      em ADR-005 §2.1 nas duas ocorrências, sem inventar uma citação
+      nova. A citação correta pra "regime só gate" não foi identificada.
+
+  - id: AG-278
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §1.1"
+    related_file: "audit/architecture_gaps_log.yaml::AG-260"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      Faixa "entre 1,076 e 1,175" citada em §1.1 como o lift de P(TP)
+      exigido pra empatar não existe em nenhum artefato real -- a faixa
+      correta é 1,076-1,151.
+    severity: LOW
+    layer: "documentação arquitetural"
+    consequence: >
+      Número usado como referência (\"régua econômica\") em múltiplos
+      pontos do documento estava com o limite superior errado.
+    status: "CORRIGIDO 2026-08-26b -- ADR-005 §1.1 atualizado."
+
+  - id: AG-279
+    date: "2026-08-26"
+    file: "src/analysis/ic_by_horizon.py, experiments/ic_by_horizon_report_{R1,R2,R3}.json"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §0.1"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b; bug real confirmado no CÓDIGO ATUAL nesta sessão, não só no artefato"
+    gap: >
+      Relatórios persistidos (`ic_by_horizon_report_*.json`) descreviam,
+      no campo `metodo_erro`, o método de erro REFUTADO em §0.1 ("erro =
+      desvio entre elas / sqrt(h)") -- mesmo com o CÁLCULO real
+      (`ic_disjoint`) já correto (erro de uma fase, `1/sqrt(n_s-1)`).
+      Não era só artefato desatualizado: a STRING em
+      `src/analysis/ic_by_horizon.py:466-469` (código atual, não uma
+      versão antiga) descrevia o método errado -- bug de documentação
+      dentro do código de produção, confirmado por leitura direta.
+    severity: MEDIUM
+    layer: "analysis (auto-descrição de artefato)"
+    consequence: >
+      Qualquer leitor do artefato JSON (não do código-fonte) concluiria
+      que o motor usa o método de erro já refutado -- desinformação
+      persistida, mesmo com o cálculo real correto.
+    status: >-
+      CORRIGIDO 2026-08-26b -- string de `metodo_erro` corrigida em
+      `ic_by_horizon.py`; os 3 relatórios (R1/R2/R3, 5 símbolos,
+      2022-01-01..2026-08-07) regenerados com a string corrigida.
+
+  - id: AG-280
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §1.2, §1.4"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      §1.2 cita "33 colunas sem mecanismo econômico declarado" e §1.4
+      cita "29 colunas sem mecanismo" tratando os dois como a MESMA
+      população. São campos diferentes da ficha: "33" é contagem direta
+      de `mecanismo_economico: AUSENTE`; "29" é o veredito FINAL
+      `SEM_MECANISMO` (já ajustado por precedência -- uma coluna com
+      mecanismo ausente que também é `INCOERENTE_DIMENSIONAL`/
+      `ERRO_CATEGORICO` conta no 33 mas não no 29).
+    severity: MEDIUM
+    layer: "documentação arquitetural"
+    consequence: >
+      Um leitor que tratasse "33" e "29" como a mesma contagem chegaria
+      a uma conclusão errada sobre quantas colunas têm cada propriedade.
+    status: >-
+      CORRIGIDO 2026-08-26b -- ADR-005 §1.2 ganhou nota explícita
+      distinguindo as duas populações.
+
+  - id: AG-281
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2"
+    related_file: "src/features/build.py::T1_FEATURE_IDS"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      Afirmação "hoje existe uma lista plana de 72 colunas: todas
+      calculadas sempre, todas entregues ao Alpha" é falsa -- o default
+      de produção (`T1_FEATURE_IDS`) tem só 7 colunas; as outras 65 são
+      T2 (calculáveis, mas fora do vetor de treino a menos que citadas
+      via `extra_feature_ids`).
+    severity: MEDIUM
+    layer: "documentação arquitetural"
+    consequence: >
+      Descrição do estado real do sistema, usada como premissa da
+      arquitetura proposta, estava errada sobre um fato verificável em
+      1 linha de código.
+    status: "CORRIGIDO 2026-08-26b -- ADR-005 §2 atualizado."
+
+  - id: AG-282
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §5.3, §14.6"
+    related_file: "src/features/registry.yaml"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      O registry já tem um campo `tier` (T1/T2); o ADR propõe um campo
+      novo `layer` (L0-L4) sem declarar precedência/relação entre os
+      dois -- taxonomia potencialmente sobreposta, não reconciliada.
+    severity: MEDIUM
+    layer: "features (registry, desenho de schema)"
+    consequence: >
+      Sem precedência declarada, `tier`/`layer` podem divergir (uma
+      coluna T1 classificada L4, por exemplo) sem que nada no schema
+      impeça ou sinalize a inconsistência.
+    status: >-
+      ABERTO -- decisão do Manager (ver ADR-005 §14.6: o esquema
+      layer/quarentena/defeito_construcao inteiro segue proposto, nunca
+      virou campo real no registry.yaml, confirmado 0 ocorrências).
+
+  - id: AG-283
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md"
+    related_file: "audit/architecture_gaps_log.yaml::AG-207"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      O ADR-005 reverte, na prática, uma decisão já ratificada pelo
+      Manager (`AG-207`/`ADR-003`, sobre o conjunto de features T1 vivo)
+      sem declarar explicitamente que está revertendo -- a mudança
+      aparece como arquitetura nova, não como reversão de decisão
+      anterior.
+    severity: MEDIUM
+    layer: "documentação arquitetural / governança"
+    consequence: >
+      Reversão de decisão ratificada sem declaração explícita é o tipo
+      de coisa que o protocolo de "toda seção que cita o mesmo AG-NNN
+      revisada" (CLAUDE.md, Qualquer PR) existe pra pegar -- aqui
+      passou.
+    status: >-
+      ABERTO -- decisão do Manager sobre se a reversão é intencional e,
+      se for, declará-la explicitamente onde AG-207/ADR-003 são citados.
+
+  - id: AG-284
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §7"
+    related_file: "audit/architecture_gaps_log.yaml::AG-266, ::AG-313"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      "9 de 12 features mantêm sinal em 4 quartis temporais" (momentum
+      BNB/XRP, §7) não usa o nulo estatístico certo -- as 12 features já
+      são PRÉ-SELECIONADAS por terem sinal (viés de seleção não
+      corrigido), e 6 delas são colineares entre si (não são 12 ensaios
+      independentes).
+    severity: MEDIUM
+    layer: "analysis (momentum BNB/XRP)"
+    consequence: >
+      "9 de 12" soa mais forte do que é -- nem o denominador (12) nem os
+      elementos dele (independentes) sustentam a leitura ingênua de
+      "75% de robustez".
+    status: >-
+      ABERTO -- `AG-313` (2026-08-26, isola a tensão Pearson-vs-Spearman
+      de A01) avança a investigação de momentum mas não endereça
+      especificamente esta crítica do nulo estatístico do "9 de 12".
+
+  - id: AG-285
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §5.3"
+    related_file: "config/constants.yaml::feature_promotion_bh_q, feature_temporal_stability_*"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b (achado já citado inline em ADR-005 §5.3 desde a correção original)"
+    gap: >
+      As constantes do critério de promoção (`feature_promotion_bh_q`,
+      `feature_temporal_stability_max_ratio`/`min_direction_frac`/
+      `min_points_per_semester`/`min_semesters`) foram implementadas
+      como `provenance: DERIVED`, mas calibrar olhando 5 casos conhecidos
+      é o oposto de derivação formal de outra constante já medida --
+      mais próximo de `ASSUMED` honesto.
+    severity: LOW
+    layer: "config (proveniência)"
+    consequence: >
+      `DERIVED` implica uma consequência lógica de algo já medido;
+      rotular calibração-por-exemplo como `DERIVED` mascara que são
+      escolhas com julgamento embutido, não uma dedução.
+    status: >-
+      CORRIGIDO NO TEXTO 2026-08-26 (já registrado inline em ADR-005
+      §5.3 antes desta entrada existir) -- correção em código
+      (constants.yaml, trocar provenance pra ASSUMED classe B/C) não
+      verificada como feita nesta entrada.
+
+  - id: AG-286
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.1"
+    related_file: "src/features/build.py::compute_t1_features"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b, recontado linha a linha nesta sessão"
+    gap: >
+      "`atr_20_abs` usado em 10 pontos, `atr_20_pct` em 7" eram contagens
+      de `grep`, não de consumo real por feature. RECONTADO nesta sessão,
+      linha a linha em `build.py::compute_t1_features`: `atr_20_abs` tem
+      6 pontos de uso real (`A13`, `A14`, `B04`, `B05`, `A15` + a própria
+      definição de `C02`); `atr_20_pct` tem 4 (`A05`, `A06`, `B06`,
+      `E27f`).
+    severity: LOW
+    layer: "documentação arquitetural"
+    consequence: >
+      Número cosmético, sem efeito de cálculo -- mas errado se citado
+      como medida de "quantas features dependem de C01 vs C02".
+    status: "CORRIGIDO 2026-08-26b -- ADR-005 §2.1 atualizado com a recontagem."
+
+  - id: AG-287
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §1"
+    related_file: "src/labels/backfill_multi_symbol.py::SYMBOL_START_DATE"
+    found_by: "project_assurance (Agent independente) -- REGISTRO RETROATIVO 2026-08-26b"
+    gap: >
+      Janela de cobertura citada como evidência ("2022-01-01..2026-08-07")
+      é mais estreita que a cobertura real de dado: `SYMBOL_START_DATE`
+      tem BTCUSDT desde 2020-01-01 e os 4 alts desde 2021-12-01
+      (`ALT_START_DATE`). A escolha de `--start 2022-01-01` na rodada
+      real do script (`ic_by_horizon.py`) é deliberada -- período comum
+      aproximado entre os 5 ativos -- mas não estava citada como tal.
+    severity: LOW
+    layer: "documentação arquitetural"
+    consequence: >
+      Leitor podia inferir que o dado só existe a partir de 2022, quando
+      na verdade a janela foi uma escolha metodológica sobre um universo
+      de dado maior.
+    status: >-
+      CORRIGIDO 2026-08-26b -- ADR-005 §1 (evidência de §2.2) ganhou nota
+      explicando a escolha e citando a cobertura real por símbolo.
 
   # AG-288..AG-293 -- parecer de project_assurance sobre production_grade_gate.py
   # (ADR-005 §12, 2026-08-26): 1 CRITICAL + 2 HIGH + 1 MEDIUM + 1 LOW achados pelo

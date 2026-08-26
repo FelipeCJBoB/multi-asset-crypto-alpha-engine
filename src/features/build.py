@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
 from typing import Final
 
 import numpy as np
@@ -114,7 +113,6 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "K04_session_asia",
     "K04_session_europe",
     "K04_session_us",
-    "K08_days_since_halving",
     # Lote B da liberação de features (H5, 2026-08-24) -- 6 T2, cada uma
     # precisando de primitiva nova (support.rolling_correlation/rolling_
     # percentile_rank_strict, min/max rolante, reset por dia, soma por
@@ -274,26 +272,9 @@ class LoteAWindows:
     k04_europe_end_hour: float
     k04_us_start_hour: float
     k04_us_end_hour: float
-    k08_halving_dates_ms: tuple[int, ...]
 
     @classmethod
     def from_constants(cls) -> LoteAWindows:
-        halving_date_names = (
-            "feature_k08_halving_1_date_utc",
-            "feature_k08_halving_2_date_utc",
-            "feature_k08_halving_3_date_utc",
-            "feature_k08_halving_4_date_utc",
-        )
-        ms_per_second = 1000.0  # noqa: magic-number -- conversão de unidade (s -> ms), não hiperparâmetro de negócio
-        halving_dates_ms = tuple(
-            int(
-                datetime.strptime(load_constant(name), "%Y-%m-%d")
-                .replace(tzinfo=UTC)
-                .timestamp()
-                * ms_per_second
-            )
-            for name in halving_date_names
-        )
         return cls(
             a01_log_return_lag=int(load_constant("feature_a01_log_return_lag")),
             a02_log_return_lag=int(load_constant("feature_a02_log_return_lag")),
@@ -339,7 +320,6 @@ class LoteAWindows:
             k04_europe_end_hour=float(load_constant("feature_k04_europe_end_hour")),
             k04_us_start_hour=float(load_constant("feature_k04_us_start_hour")),
             k04_us_end_hour=float(load_constant("feature_k04_us_end_hour")),
-            k08_halving_dates_ms=halving_dates_ms,
         )
 
 
@@ -910,9 +890,6 @@ def compute_t1_features(
         ),
         "K04_session_us": group_k.k04_session_us(
             close_time_ms, lote_a.k04_us_start_hour, lote_a.k04_us_end_hour
-        ),
-        "K08_days_since_halving": group_k.k08_days_since_halving(
-            close_time_ms, lote_a.k08_halving_dates_ms
         ),
         # Lote B da liberação de features (H5, 2026-08-24) -- 6 T2.
         "A15_dist_vwap_d_atr": group_a.a15_dist_vwap_d_atr(

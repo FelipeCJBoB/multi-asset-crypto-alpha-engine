@@ -4,8 +4,6 @@ de unidade (ATR absoluto vs `atr_20_pct`) documentada em `group_a.py`."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import numpy as np
 import pytest
 
@@ -852,35 +850,8 @@ def test_k04_sessions_particionam_o_dia() -> None:
     np.testing.assert_array_equal(asia + europe + us, np.ones(24))
 
 
-def test_k08_days_since_halving_correto() -> None:
-    def _to_ms(date_str: str) -> int:
-        return int(
-            datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).timestamp() * 1000
-        )
-
-    halving_dates_ms = tuple(
-        _to_ms(s) for s in ("2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20")
-    )
-    day_ms = 86_400_000.0
-    close_time_ms = np.array(
-        [
-            float(_to_ms("2020-05-11")),  # exatamente no halving 3 -> 0 dias
-            float(_to_ms("2020-05-11")) + day_ms,  # 1 dia depois -> 1.0
-            float(_to_ms("2020-01-01")),  # antes do halving 3, depois do 2
-        ]
-    )
-    out = group_k.k08_days_since_halving(close_time_ms, halving_dates_ms)
-    assert out[0] == pytest.approx(0.0)
-    assert out[1] == pytest.approx(1.0)
-    expected_2 = (_to_ms("2020-01-01") - _to_ms("2016-07-09")) / day_ms
-    assert out[2] == pytest.approx(expected_2)
-
-
-def test_k08_days_since_halving_antes_do_1o_halving_e_nan() -> None:
-    halving_dates_ms = (1_000_000_000_000,)
-    out = group_k.k08_days_since_halving(np.array([0.0, 999_999_999_999.0]), halving_dates_ms)
-    assert np.isnan(out).all()
-
+# K08_days_since_halving REMOVIDA 2026-08-26 (AG-263, ADR-005 §11.4 item 3)
+# -- testes de group_k.k08_days_since_halving removidos junto com a função.
 
 # ============================================================================
 # Lote B da liberação de features (H5, 2026-08-24) — A15, B10, C08, D07f,

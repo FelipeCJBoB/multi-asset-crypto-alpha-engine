@@ -465,8 +465,13 @@ def run_ic_by_horizon_report(
         ),
         "metodo_erro": (
             "IC medio sobre as h subamostras DISJUNTAS do horizonte (offsets 0..h-1, "
-            "passo h), erro = desvio entre elas / sqrt(h). Sem formula de N_eff "
-            "constante (B24). Para h=1, erro analitico de Spearman 1/sqrt(n-1)."
+            "passo h). Erro = o de UMA fase, 1/sqrt(n_s-1) com n_s=n/h pontos "
+            "disjuntos -- NAO o desvio entre fases dividido por sqrt(h) (metodo "
+            "refutado em ADR-005 §0.1: as fases cobrem o MESMO periodo, sao "
+            "redundantes, e o desvio entre elas mede variacao de FASE, nao "
+            "incerteza estatistica). O desvio entre fases segue calculado, como "
+            "dispersao_entre_fases -- diagnostico de estabilidade, nunca erro. "
+            "Sem formula de N_eff constante (B24)."
         ),
         "resolution_id": resolution_id,
         "horizons_bars": list(horizons),
