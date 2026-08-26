@@ -17767,3 +17767,182 @@ entries:
       de qualquer operacao destrutiva, e nunca tratar suite verde como
       prova de sanidade sem antes confirmar que o working tree bate com o
       HEAD.
+
+  - id: AG-244-ADDENDUM-2
+    date: "2026-08-25"
+    addendum_de: "AG-244 -- executado o passo proposto (efeito em RETORNO, nao em contagem). O resultado aciona a bandeira de vazamento pre-declarada em src/risk/limits.py"
+    file: "experiments/gate_efficiency_report.json (details), src/validation/regime_utility.py::identify_stress_state_by_volatility, src/regime/canonicalization.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-244-ADDENDUM, ::AG-118, ::AG-122, ::AG-114, src/risk/limits.py::control_01_regime_tradeavel"
+    found_by: "Claude -- executando o proximo passo de AG-244-ADDENDUM a pedido do Manager"
+    gap: >
+      CORRECAO PREVIA, antes do resultado: o passo que eu havia proposto
+      ("medir o lift sobre ret_net em vez de contagem") era REDUNDANTE como
+      formulado, e AG-118/AG-122 ja explicavam por que -- `exit_price` e o
+      preco da barreira exatamente, entao `ret_net` e quase-deterministica
+      dado `barrier_hit` e `atr_pct`, e "nem ATR-normalizada nem bruta
+      conseguem medir risco condicional a regime alem do que atr_at_t0 ja
+      captura". Deveria ter verificado isso ANTES de propor.
+      A pergunta que sobrou, e que ninguem tinha feito porque ninguem tinha
+      visto a assimetria: o efeito POR LADO aparece em retorno?
+      RESULTADO (R3, BTCUSDT+ETHUSDT, dos `details` ja persistidos):
+        simbolo  lado    E[r|stress]  E[r|normal]    delta
+        BTCUSDT  short      -0,09221     +0,02311  -0,11532
+        BTCUSDT  long       +0,05799     -0,05577  +0,11375
+        ETHUSDT  short      -0,08475     +0,02491  -0,10966
+        ETHUSDT  long       +0,04378     -0,04650  +0,09028
+      Confirma o lift em retorno, e com simetria quase perfeita: em regime
+      de stress o SHORT perde e o LONG ganha; fora de stress, inverte.
+      Isso significa que o "stress" do HMM esta capturando DIRECAO, nao so
+      volatilidade -- o que nao e o que um detector de volatilidade
+      deveria fazer.
+      TESTE DA HIPOTESE BENIGNA -- e ela FALHOU. Se o efeito fosse vies de
+      amostra ("2020-2026 teve rallies volateis dominantes"), inverteria
+      nas janelas de queda. Estratificado pelas 5 janelas historicas:
+        janela           delta short   delta long
+        CRYPTO_WINTER       -0,17471     +0,16172
+        LUNA                -0,11594     +0,12821
+        FTX                 -0,10972     +0,11268
+        ETF_HALVING         -0,06140     +0,05204
+        RECENTE             -0,20573     +0,17788
+      CONSISTENTE NAS CINCO, mesmo sinal, magnitude da mesma ordem,
+      atravessando bear (CRYPTO_WINTER), colapsos (LUNA, FTX) e bull
+      (ETF_HALVING). Vies de amostra direcional esta REFUTADO.
+    severity: "alto -- um efeito direcional forte, estavel entre regimes de mercado opostos, sobre um motor cujo edge bruto total e NEGATIVO, e a assinatura classica de vazamento, nao de sinal"
+    layer: "regime (rotulagem de estado) / validacao"
+    consequence: >
+      A BANDEIRA PRE-DECLARADA FOI ACIONADA. `src/risk/limits.py::
+      control_01_regime_tradeavel` registra, em 2026-08-22 e antes de
+      qualquer resultado: "se algum backtest futuro, com este gate
+      reativado, mostrar melhora correlacionada com o gate estar ativo,
+      isso deve ser tratado como bandeira vermelha de vazamento/
+      overfitting -- nao como confirmacao tardia de que o gate funciona".
+      Esta e exatamente a situacao. A predicao foi escrita para este
+      momento e vale mais do que o achado.
+      ANOMALIA ECONOMICA QUE REFORCA A SUSPEITA: em LUNA e FTX -- os dois
+      maiores colapsos da historia do ativo -- o SHORT PERDE em regime de
+      stress (-0,041 e -0,032 de E[r]). Um detector de alta volatilidade
+      deveria pegar o crash, e no crash o short ganha. Existe explicacao
+      economica possivel (o estado de maior vol capturaria os repiques
+      violentos que matam short, nao a perna de queda), mas ela precisa ser
+      DEMONSTRADA, nao assumida como conveniente.
+      MECANISMO DE VAZAMENTO CANDIDATO, identificado por leitura de codigo
+      e NAO testado: o fit do HMM e por fold (B05 respeitado,
+      `m4_regime_comparison` documenta refit por fold). Mas o MAPEAMENTO
+      estado->"stress" nao e: `identify_stress_state_by_volatility` escolhe
+      o estado com maior `realized_vol_short` MEDIO -- media calculada
+      sobre o periodo inteiro que esta sendo avaliado. E
+      `canonicalization.py` ordena `canonical_id` por retorno medio, tambem
+      do periodo. Ou seja, QUAL estado e "stress" e decidido olhando o
+      resultado do proprio fold de teste. O fit e causal; o ROTULO pode nao
+      ser. Isso e a mesma familia de B05, num ponto que a auditoria de
+      AG-114/AG-118 nao cobriu porque estava olhando o fit, nao a
+      rotulagem.
+    status: >-
+      ABERTO -- NAO EXPLORAR. A recomendacao e a oposta da que um resultado
+      desta magnitude sugeriria.
+      NAO FAZER: reativar `control_01_regime_tradeavel`, montar gate
+      assimetrico por lado, ou usar regime como feature direcional. Um
+      efeito de +-0,11 ATR estavel entre bear, bull e dois colapsos, num
+      motor com edge bruto NEGATIVO, e forte demais para o contexto -- e
+      "forte demais para o contexto" e o sintoma que a predicao de
+      `risk/limits.py` mandou tratar como vazamento.
+      TESTE DECISIVO, e ele e barato e definitivo: refazer a selecao do
+      estado de stress usando SOMENTE dado anterior ao fold de teste (a
+      media de `realized_vol_short` por estado calculada no fold de TREINO,
+      aplicada ao de teste) e remedir os mesmos deltas. Se o efeito
+      sobreviver, e sinal e vale a discussao de gate; se colapsar, esta
+      explicado e o gate segue desligado com uma justificativa muito melhor
+      que a atual -- e, mais importante, `identify_stress_state_by_
+      volatility` passa a ser um defeito de causalidade a corrigir em todo
+      lugar que a usa, nao so aqui.
+      SEGUNDA VERIFICACAO, independente: conferir se `m4_critical_windows`
+      persistiu os raw_labels com o rotulo de stress resolvido POR FOLD ou
+      uma vez para a janela inteira. Se for o segundo, o vazamento esta
+      confirmado sem precisar remedir nada.
+      REGISTRO DE METODO: cheguei a este resultado por um caminho que
+      quase virou recomendacao de produto. A sequencia foi -- achei efeito,
+      testei a hipotese benigna, ela falhou, e o instinto seguinte seria
+      concluir "entao e sinal real". A pre-declaracao de 2026-08-22 e o que
+      impediu isso. Vale como precedente: quando o resultado e melhor do
+      que o contexto permite, a proxima hipotese a testar e sempre a de
+      vazamento, nunca a de descoberta.
+
+  - id: AG-244-ADDENDUM-3
+    date: "2026-08-25"
+    addendum_de: "AG-244-ADDENDUM-2 -- a segunda verificacao independente proposta la foi executada e CONFIRMA o mecanismo de vazamento, sem precisar remedir nada"
+    file: "src/analysis/gate_efficiency.py:229-237, src/validation/regime_utility.py::identify_stress_state_by_volatility"
+    related_file: "audit/architecture_gaps_log.yaml::AG-114, ::AG-118, ::AG-122, src/risk/limits.py::control_01_regime_tradeavel, src/analysis/m4_critical_windows.py"
+    found_by: "Claude -- leitura de codigo, o passo barato que AG-244-ADDENDUM-2 propos antes de qualquer remedicao"
+    gap: >
+      CONFIRMADO POR CODIGO: o rotulo de stress NAO e resolvido por fold.
+      gate_efficiency.py linha 229, docstring verbatim -- "1 celula
+      (resolucao, janela, simbolo) ... identify_stress_state_by_volatility
+      UMA VEZ so, nunca duplicado". A chamada (linha 237) recebe
+      canonical_id e realized_vol_short da JANELA INTEIRA, vindos de
+      _join_candidate_with_vol_history(regime_raw, vol_history).
+      Ou seja: QUAL dos 4 estados do HMM e stress e decidido olhando a
+      volatilidade media de todo o periodo -- inclusive o periodo cujo
+      retorno esta sendo avaliado.
+      A DISTINCAO QUE IMPORTA, mais fina que "vazamento sim/nao": o FIT do
+      HMM e causal e por fold (B05 respeitado, documentado em
+      m4_regime_comparison). O que nao e causal e a ROTULAGEM -- o mapa
+      estado_id para "este e o stress". E vazamento de SELECAO, nao de
+      preco: realized_vol_short e observavel em t, ninguem le preco futuro.
+      Mas a ESCOLHA de qual estado recebe o rotulo usa a serie inteira, e o
+      resultado e depois avaliado nessa mesma serie.
+    severity: >
+      alto -- nao corrompe artefato de producao (o gate esta desligado
+      desde 2026-08-22), mas invalida como EVIDENCIA DE SINAL qualquer
+      resultado condicionado ao rotulo de stress, incluindo o efeito
+      direcional de AG-244-ADDENDUM-2 e, em parte, as medicoes de
+      AG-114/AG-118 que usaram a mesma funcao
+    layer: "regime (rotulagem) / validacao"
+    consequence: >
+      O EFEITO DIRECIONAL DE AG-244-ADDENDUM-2 ESTA EXPLICADO o suficiente
+      para NAO ser tratado como sinal. Nao afirmo que o vazamento de
+      selecao produz TODO o efeito de 0,11 ATR -- isso exigiria a remedicao
+      com rotulo por fold. Afirmo que existe um caminho conhecido pelo qual
+      ele pode produzir efeito direcional, e que enquanto esse caminho
+      estiver aberto o resultado nao sustenta decisao.
+      ALCANCE MAIOR QUE O GATE, e por isso alto e nao medio:
+      identify_stress_state_by_volatility foi introduzida por decisao do
+      Manager em 2026-08-20 (AG-114, §15.12.1) como regra simetrica pros 4
+      candidatos sem rotulo semantico, e e usada em m4_critical_windows,
+      gate_efficiency e no proprio AG-114/AG-118. Toda conclusao que
+      dependa de "este bucket e o stress" herda a mesma fragilidade -- o
+      que inclui a evidencia que fundamentou DESLIGAR o gate. A decisao de
+      desligar continua defensavel (o mandato de nao manter em producao o
+      que nao tem efeito demonstrado nao depende desta medicao), mas a
+      EVIDENCIA citada para ela e mais fraca do que parecia.
+      NOTA DE JUSTICA COM O TRABALHO ANTERIOR: isto nao e erro de quem
+      escreveu a funcao. A alternativa obvia -- canonical_id de
+      canonicalization.py -- e PIOR, porque ordena por retorno medio (e
+      AG-114 registra a divergencia com o ADR-001, que pede volatilidade).
+      Escolher por volatilidade medida foi a decisao correta entre as
+      disponiveis; o que faltou foi a escolha ser feita com dado de TREINO
+      apenas.
+    status: >-
+      ABERTO -- confirmado por codigo, nao remedido. CORRECAO NECESSARIA e
+      localizada: identify_stress_state_by_volatility precisa aceitar uma
+      MASCARA de treino (ou receber ja so o dado de treino) e devolver o
+      mapa estado->stress ajustado ali, para ser APLICADO ao periodo de
+      teste. A funcao em si esta certa; falta o chamador dizer sobre qual
+      escopo ela pode olhar.
+      DEPOIS DA CORRECAO, remedir nesta ordem: (1) os deltas de
+      AG-244-ADDENDUM-2 -- se colapsarem, o achado direcional esta
+      encerrado e o gate segue desligado com justificativa melhor; se
+      sobreviverem, e sinal e vale a discussao de gate assimetrico; (2) o
+      lift de AG-244-ADDENDUM (4/30 celulas sob Bonferroni), pela mesma
+      razao; (3) avaliar quanto de AG-114/AG-118 depende do rotulo e
+      precisa de nota.
+      NAO FAZER enquanto isso: citar o efeito direcional como evidencia de
+      qualquer coisa, reativar o gate, ou usar regime como feature.
+      O PRECEDENTE VALE MAIS QUE O ACHADO: a predicao pre-declarada em
+      src/risk/limits.py (2026-08-22, escrita ANTES de qualquer resultado)
+      mandou tratar melhora correlacionada ao gate como bandeira de
+      vazamento, nao como descoberta. Foi ela que impediu esta sessao de
+      transformar um efeito forte numa recomendacao de produto. A sequencia
+      que quase aconteceu -- achar efeito, refutar a hipotese benigna,
+      concluir "entao e real" -- e o modo de falha mais comum em pesquisa
+      quantitativa, e o unico motivo de ter parado foi haver uma predicao
+      escrita antes.
