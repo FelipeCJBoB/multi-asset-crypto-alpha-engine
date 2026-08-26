@@ -329,6 +329,76 @@ def test_e10f_oi_zero_ou_negativo_nao_quebra() -> None:
     assert out.shape[0] == oi.shape[0]  # não lança, comprimento preservado
 
 
+# ============================================================================
+# AG-295 -- proposta de correção pra E10f (ERRO_CATEGORICO): diferenciar OI
+# na cadência NATIVA da fonte, antes do alinhamento a barra, em vez de
+# diferenciar a série já alinhada/repetida (e10f_oi_change_z_48, produção,
+# INTOCADA -- estes testes cobrem só a proposta nova).
+# ============================================================================
+
+
+def test_oi_change_native_from_levels_bate_com_diff_log_manual() -> None:
+    oi_native = np.array([90_000.0, 90_450.0, 90_200.0, 91_000.0])
+    out = group_e.oi_change_native_from_levels(oi_native)
+    esperado = np.diff(np.log(oi_native))
+    np.testing.assert_allclose(out[1:], esperado)
+    assert np.isnan(out[0])
+
+
+def test_oi_change_native_from_levels_primeiro_ponto_e_nan() -> None:
+    """Sem observação anterior, o primeiro delta é indefinido -- NaN, não
+    zero (zero afirmaria 'sem mudança', que é uma alegação diferente de
+    'não sei')."""
+    out = group_e.oi_change_native_from_levels(np.array([90_000.0, 91_000.0]))
+    assert np.isnan(out[0])
+    assert not np.isnan(out[1])
+
+
+def test_e10f_from_native_delta_e_so_rolling_zscore_sem_diff_interno() -> None:
+    """A versão corrigida não tem `Δln` interno -- a entrada já é delta.
+    Passar a MESMA série de delta direto em `support.rolling_zscore` tem
+    que bater exatamente."""
+    rng = np.random.default_rng(54)
+    delta = rng.normal(0, 0.01, 200)
+    out = group_e.e10f_oi_change_z_48_from_native_delta(delta, window=48)
+    esperado = support.rolling_zscore(delta, 48)
+    np.testing.assert_array_equal(out, esperado)
+
+
+def test_ag_295_diferenciar_antes_do_alinhamento_elimina_o_zero_mecanico() -> None:
+    """Demonstração do defeito de `e10f_oi_change_z_48` (produção) e da
+    correção proposta, com dado sintético que reproduz o mecanismo real:
+    3 barras dollar consecutivas mais curtas que o intervalo da fonte
+    (~5 min) mapeiam, via asof-join backward, pro MESMO ponto de OI.
+
+    Caminho ANTIGO (produção): alinha o NÍVEL (3 barras repetem o mesmo
+    valor), depois diferencia -- produz 2 zeros MECÂNICOS consecutivos
+    que nada têm a ver com o mercado.
+
+    Caminho NOVO (proposta): diferencia na cadência nativa (2 leituras
+    reais, 1 delta real), depois alinha o DELTA -- as 3 barras recebem o
+    MESMO delta real repetido (honesto: 'ainda não chegou leitura nova'),
+    nunca um zero fabricado pelo encontro de duas repetições."""
+    oi_native_level = np.array([100_000.0, 100_500.0])  # 2 leituras reais da fonte
+
+    # Caminho antigo: 3 barras curtas, todas asof-joined pro MESMO ponto
+    # (a 1a leitura), simulando barras mais rápidas que a fonte.
+    oi_level_aligned_3_barras = np.array(
+        [oi_native_level[0], oi_native_level[0], oi_native_level[0]]
+    )
+    delta_antigo = np.diff(np.log(oi_level_aligned_3_barras))
+    assert delta_antigo == pytest.approx([0.0, 0.0])  # zero MECANICO, nao real
+
+    # Caminho novo: delta calculado na cadencia nativa (1 delta real entre
+    # as 2 leituras), DEPOIS repetido pras 3 barras via alinhamento.
+    delta_nativo = group_e.oi_change_native_from_levels(oi_native_level)
+    delta_real = delta_nativo[1]  # unico delta real disponivel
+    assert delta_real != pytest.approx(0.0)
+    delta_novo_alinhado_3_barras = np.array([delta_real, delta_real, delta_real])
+    assert delta_novo_alinhado_3_barras == pytest.approx([delta_real] * 3)
+    assert not np.any(delta_novo_alinhado_3_barras == pytest.approx(0.0))
+
+
 def test_e27f_round_trip_cost_bps_le_maker_prob_medido_de_constants() -> None:
     """Corrigido 2026-08-24 (AG-027 fechado de verdade) -- não reproduz mais
     o `c_médio(assimétrico) = 0,055%` do PRD (§0.2 R2), citado sob a

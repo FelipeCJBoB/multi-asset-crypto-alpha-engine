@@ -337,6 +337,30 @@ def load_oi_aligned(
     return asof_align_backward(bars_15m, oi, "_ts_ms", "sum_open_interest")
 
 
+def load_oi_change_aligned(
+    bars_15m: pl.DataFrame, symbol: str, start: DateLike, end: DateLike
+) -> pl.Series:
+    """**`AG-295` — proposta de correção para `E10f`, NÃO adotada em
+    `T1_FEATURE_IDS`.** Diferente de `load_oi_aligned` (que alinha o
+    NÍVEL de OI, deixando quem consome diferenciar depois — é o que
+    `group_e.e10f_oi_change_z_48` faz, e é onde o bug mecânico nasce):
+    aqui `Δln(OI)` é calculado na cadência NATIVA da fonte
+    (`load_oi_series_deduped`, ~5 min, uma leitura real por linha),
+    ANTES do alinhamento — e só o DELTA já calculado é alinhado à barra
+    (`asof_align_backward` repete o último delta REAL conhecido entre
+    leituras da fonte, nunca fabrica um zero por coincidência de
+    timing). Consumir com
+    `group_e.e10f_oi_change_z_48_from_native_delta`, que só normaliza
+    (sem `Δln` interno — o delta já chega pronto)."""
+    oi_native = load_oi_series_deduped(symbol, start, end)
+    if oi_native.is_empty():
+        return pl.Series("oi_change_native", [None] * bars_15m.height, dtype=pl.Float64)
+    delta_native = oi_native.select("_ts_ms").with_columns(
+        oi_native["sum_open_interest"].log().diff().alias("oi_change_native")
+    )
+    return asof_align_backward(bars_15m, delta_native, "_ts_ms", "oi_change_native")
+
+
 def load_taker_imbalance_1m_agg_aligned(
     bars_15m: pl.DataFrame, symbol: str, start: DateLike | None, end: DateLike | None
 ) -> FloatArray:
