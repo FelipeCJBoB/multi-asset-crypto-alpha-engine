@@ -3,7 +3,7 @@
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
-- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 ainda não foi revisada.**
+- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 FOI revisada** (2ª rodada, 2026-08-26): 6 das 7 correções CONFIRMADAS por reconstrução independente; a 7ª (sincronia `§3`/`§5.2`/`§5.3`) só PARCIAL — 2 menções desatualizadas a mais achadas em `§2.1`/fim de `§2.2` (corrigidas). A 2ª rodada também achou que o defeito de `E02f`/`C07`/`D03f`/`E15f`/`E17f` citado em `§14.3` não era "sem diagnóstico" — é dívida já aberta do `AG-030` desde 2026-08-17, nunca conectada (corrigido em `§14.3`). Nenhum achado da classe do CRITICAL original desta vez.
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
 - **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
@@ -113,8 +113,8 @@ e estão no vetor; `B07`/`C07`/`E02f` são T2 e são o insumo do classificador.
 | **L0 — Primitiva** | insumo de cálculo de outras colunas | não | `C01_atr_20`, `C02_atr_20_pct` (`atr_20_abs` usado em 10 pontos, `atr_20_pct` em 7) |
 | **L1 — Gate de regime** | consumido por `classifier.py` | não (ADR-001 §2.7) | `B07`, `C07`, `E02f`, `E27f` |
 | **L2 — Núcleo de sinal** | passa nos dois eixos de §2.2 | **sim** | ~~`E16f_global_ls_ratio`~~ **VAZIA** — `AG-294` (2026-08-26), ver correção ao fim de §2.2 |
-| **L3 — Em observação** | tese declarada, sem evidência suficiente | não, recalculada | as `TESE_OK` restantes |
-| **L4 — Aposentada** | sem mecanismo **e** sem sinal | não, nem calculada | as 29 `SEM_MECANISMO` sem descoberta |
+| **L3 — Em observação** | tese declarada, sem evidência suficiente | não, recalculada | ~~as `TESE_OK` restantes`~~ **17** (11 `TESE_OK` + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) — `§14.2`/`§14.3` (2026-08-26) |
+| **L4 — Aposentada** | sem mecanismo **e** sem sinal, OU construção comprovadamente quebrada sem outro papel | não, nem calculada | ~~as 29 `SEM_MECANISMO` sem descoberta~~ **43** (21 `SEM_MECANISMO` restante + 22 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) — `§14.3`/`§14.4` (2026-08-26) |
 
 ### §2.2 O critério de evidência — dois eixos, ambos operacionais
 
@@ -201,12 +201,13 @@ corrigido; os únicos candidatos em `k≥2` são o artefato já quarentenado
 
 Consequência: `T1` (as 7 features originais) permanece o único vetor de
 treino defensável hoje. A Opção C (§3) continua estruturalmente correta —
-ela já separava "sem sinal hoje" de "sem mecanismo" — mas precisa ser
-reescrita em cima de `L2` vazia, não de `L2={E16f}`; §3/§4 abaixo ainda
-usam a versão antiga da tabela e **não foram atualizados** — é o próximo
-passo da v3, não decidido aqui. Detalhe completo, incluindo o achado de
-borda (`D07f_taker_imbalance_1m_agg` sem `pico_abs_t` em nenhuma das 15
-células, tratado como `p=1,0`, nunca descoberta): `AG-294`.
+ela já separava "sem sinal hoje" de "sem mecanismo". ~~§3/§4 abaixo ainda
+usam a versão antiga da tabela e não foram atualizados — é o próximo
+passo da v3, não decidido aqui.~~ **JÁ REESCRITO em `§14.5` (2026-08-26)**
+— `L2` vazia, `L4=43`; ver lá pra decisão revisada das opções, não aqui.
+Detalhe completo, incluindo o achado de borda (`D07f_taker_imbalance_1m_
+agg` sem `pico_abs_t` em nenhuma das 15 células, tratado como `p=1,0`,
+nunca descoberta): `AG-294`.
 
 ### §2.3 Quarentena — estado, não camada
 
@@ -2421,12 +2422,32 @@ citado como "a única exceção deliberada" na v1 desta seção — errado: são
 DUAS, `defeito_construcao` (flag ortogonal a qualquer camada) e `E27f`
 (dupla camada `L1`+`L2`, por desenho real do código, não folga da regra).
 
-`E02f_funding_z_expanding` (`L1`, insumo do gate de regime) é achado NOVO
-desta seção, não investigado em `AG-295` (que cobriu só `A13`/`E10f`) —
-mesma classe de risco de `B07`: se o defeito de `E02f` afetar o
-classificador de regime, o problema não é só do vetor do Alpha. Registrado
-aqui, sem diagnóstico do mecanismo — próximo item de investigação
-proposto, não feito.
+**Correção 2026-08-26 (`project_assurance`, achado novo na 2ª revisão):
+o diagnóstico de `E02f` não estava "sem mecanismo conhecido" — a v1 desta
+frase chegou a essa conclusão sem checar o addendum já existente do
+`AG-030`.** O defeito da ficha pra `E02f`/`C07`/`D03f`/`E15f`/`E17f` é o
+cap `min_common_history_bars_15m` (164.256, calibrado em contagem de
+barra de RELÓGIO) aplicado cru — mas VERIFICADO no código
+(`src/features/build.py:1163`) que esse cap está DESABILITADO
+(`min_common_history_bars = None`) sob `bar_source != "time_15m"`,
+exatamente a grade de produção (R1/R2/R3, `AG-042`). O defeito específico
+que a ficha descreve não está ativo em produção — mas isso NÃO significa
+"sem problema": desabilitar o cap reabre o problema ORIGINAL do
+`AG-030` (nenhum piso comum de histórico entre os 5 ativos sob janela
+expansiva), já registrado como dívida ABERTA desde 2026-08-17
+(`AG-030::addendum_reabertura_sob_dollar_bar_2026_08_17`, "Manager
+autorizou fechar isso... Pendente: medir um equivalente NATIVO... nenhuma
+medição nova feita ainda"). `E15f`/`E17f` (Lote C, 2026-08-24) nunca
+foram conectadas a esse addendum porque não existiam quando ele foi
+escrito. `C09`/`C10`/`C11` usam o mesmo parâmetro (verificado,
+`build.py:876-886`) mas não estão em `defeito_construcao` (vereditos
+`TESE_OK`/`SEM_MECANISMO`, não `ERRO_CATEGORICO`/`INCOERENTE_DIMENSIONAL`).
+`E02f`/`C07` são `L1` — a dívida do `AG-030` está ativa no gate de regime
+em produção hoje, não numa feature candidata hipotética; mesma classe de
+risco de `B07`. Investigação proposta, não feita: medir o "equivalente
+nativo" que o addendum do `AG-030` já pede, não recorrigir a conversão
+calendário→barra que a ficha descreve (esse caminho já foi rejeitado em
+2026-08-17).
 
 ### §14.4 Tabela de camadas corrigida
 
@@ -2500,11 +2521,13 @@ concentrar risco em cima. As opções de §3 ficam assim:
   (`AG-299`). `h=1` sem justificativa econômica declarada continua
   como lacuna residual (por que `h=1` e não o pico, ou o holding `H=5`?)
   — registrada, não fabricada.
-- **24 das 26 colunas em `defeito_construção` não foram investigadas** —
-  incluindo `E02f` (achado novo aqui, sem diagnóstico). Agora todas as 22
-  sem investigação individual têm destino de camada (`L4`, §14.3/§14.4) —
-  o que falta é o diagnóstico do MECANISMO do defeito de cada uma, não a
-  camada.
+- **19 das 26 colunas em `defeito_construção` seguem sem investigação
+  individual** (corrigido 2026-08-26 — eram 24; `A13`/`E10f` já tinham
+  `AG-295`, e `E02f`/`C07`/`D03f`/`E15f`/`E17f` agora têm diagnóstico real
+  conectado ao `AG-030` — ver correção em §14.3, não é mais "sem
+  diagnóstico"). Todas as 22 em `L4` têm destino de camada (§14.3/§14.4)
+  — o que falta pras 19 restantes é o diagnóstico do MECANISMO do defeito
+  de cada uma.
 - **`A01`–`A06` seguem sem resolução da tensão Pearson-vs-Spearman** (§7) —
   `L3`, não `L2`, precisamente por isso. A justificativa do recorte pra
   `L3` foi corrigida em §14.2 pra não depender mais de `AG-284`.

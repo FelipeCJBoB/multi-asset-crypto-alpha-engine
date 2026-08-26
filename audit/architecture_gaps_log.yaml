@@ -19737,3 +19737,80 @@ entries:
       NAO ADICIONADO a lista dos 7 comandos mecanicos de auditoria do
       CLAUDE.md: essa lista e exaustiva e por decisao do Manager (2026-08-12),
       nao se estende por iniciativa de quem escreve o lint.
+
+  # AG-310/AG-311 -- 2a rodada de project_assurance sobre ADR-005 §14 v2
+  # (2026-08-26): 6 das 7 correcoes da 1a rodada (AG-301..AG-307) CONFIRMADAS
+  # por reconstrucao independente; AG-303 (sync) so PARCIAL -- 2 mencoes
+  # desatualizadas a mais, registradas aqui como AG-310. AG-311 e achado
+  # NOVO desta rodada (nao corrige nenhum dos 7 anteriores).
+
+  - id: AG-310
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.1, §2.2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-303"
+    found_by: "project_assurance (Agent independente, 2a rodada) -- reverificado na sessao principal"
+    gap: >
+      AG-303 corrigia §3/§5.2/§5.3 mas nao cobria 2 outras mencoes
+      desatualizadas na MESMA classe (AG-123, agora recorrendo dentro da
+      propria correcao de um achado AG-123): (1) fim de §2.2 repetia, sem
+      ponteiro, o texto original "§3/§4 abaixo ainda usam a versao antiga
+      da tabela e nao foram atualizados -- e o proximo passo da v3, nao
+      decidido aqui" -- ja tinha sido corrigido em §3 (aponta pra §14.5)
+      mas nao na sua propria origem, em §2.2; (2) a tabela de §2.1 (linha
+      L4, "as 29 SEM_MECANISMO sem descoberta") nao tinha strikethrough
+      nem ponteiro, ao lado da linha L2 da MESMA tabela que ja tinha
+      recebido esse tratamento (~~E16f~~ VAZIA -- AG-294) na mesma sessao
+      de correcao; a linha L3 ("as TESE_OK restantes") tinha o mesmo
+      problema, sem refletir os cortes de momentum/quarentena de §14.2-14.3.
+    severity: MEDIUM
+    layer: "documentação arquitetural"
+    consequence: >
+      Leitor top-to-bottom (que ainda nao chegou em §14) era informado
+      incorretamente que a reconciliacao de §3/§4 "nao foi decidida",
+      quando ja tinha sido, em §14.5. Mesmo efeito da AG-303 original,
+      so que em 2 pontos que a correcao dela nao cobriu.
+    status: >-
+      CORRIGIDO 2026-08-26. §2.1: linhas L3/L4 com strikethrough +
+      numeros corrigidos + ponteiro pra §14.2/§14.3/§14.4. Fim de §2.2:
+      texto trocado por "JA REESCRITO em §14.5", com ponteiro.
+
+  - id: AG-311
+    date: "2026-08-26"
+    file: "src/features/build.py:1163, docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.3"
+    related_file: "audit/architecture_gaps_log.yaml::AG-030 (addendum_reabertura_sob_dollar_bar_2026_08_17), audit/feature_thesis/fichas_69_2026-08-25.yaml (E02f/D03f/E15f/E17f)"
+    found_by: "project_assurance (Agent independente, 2a rodada) -- reverificado na sessao principal"
+    gap: >
+      §14.3 (v2) tratava E02f_funding_z_expanding como "achado NOVO desta
+      secao... sem diagnostico do mecanismo" -- impreciso. O defeito "T4"
+      que a ficha atribui a E02f/D03f/E15f/E17f (cap
+      min_common_history_bars_15m=164256, calibrado em contagem de barra
+      de RELOGIO, aplicado cru sob dollar bar) NAO esta ativo sob
+      bar_source != "time_15m" (producao R1/R2/R3, AG-042) -- VERIFICADO
+      em build.py:1163: o cap e explicitamente DESABILITADO ali
+      (min_common_history_bars = None). Mas isso NAO significa "sem
+      problema" -- desabilitar o cap REABRE o problema ORIGINAL do
+      AG-030 (nenhum piso comum de historico entre os 5 ativos sob janela
+      expansiva), ja registrado como divida ABERTA desde 2026-08-17
+      (AG-030::addendum_reabertura_sob_dollar_bar_2026_08_17: "Manager
+      autorizou fechar isso... Pendente: medir um equivalente NATIVO...
+      nenhuma medicao nova feita ainda"). E15f/E17f (Lote C, 2026-08-24)
+      nunca foram conectadas a esse addendum porque nao existiam quando
+      foi escrito. C09/C10/C11 usam o mesmo parametro (verificado,
+      build.py:876-886) mas nao estao em defeito_construcao (vereditos
+      TESE_OK/SEM_MECANISMO, nao ERRO_CATEGORICO/INCOERENTE_DIMENSIONAL).
+    severity: MEDIUM
+    layer: "features / regime (gate de producao)"
+    consequence: >
+      Investigacao futura do "defeito de E02f/D03f/E15f/E17f" corria
+      risco de tentar corrigir um sintoma (T4, cap mal calibrado) que nao
+      ocorre em producao, em vez do problema real e ja aberto
+      (comparabilidade cross-asset zero sob janela expansiva sem piso),
+      que afeta HOJE o gate de regime via E02f/C07 (L1) -- nao so
+      features L4 sem uso.
+    status: >-
+      CORRIGIDO 2026-08-26 -- §14.3 reescrito conectando E02f/C07/D03f/
+      E15f/E17f ao addendum ja existente do AG-030, com a investigacao
+      proposta corrigida: medir o equivalente NATIVO que o addendum ja
+      pede, nao recorrigir a conversao calendario->barra que a ficha
+      descreve (caminho ja rejeitado em 2026-08-17). A MEDICAO em si
+      continua ABERTA -- nao feita nesta entrada.
