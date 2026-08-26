@@ -484,3 +484,155 @@ Quatro peças não dependem de nenhum achado acima e podem ser executadas:
 por símbolo, o eixo 2 persistido, e o BH emitido no payload com unidade
 declarada. Escrever uma v3 antes disso seria repor a mesma classe de erro com
 números diferentes.
+
+---
+
+## §12. A GRADE DE PRODUÇÃO — decisão, com a matemática financeira
+
+**Diretriz do Manager (2026-08-26):** §9 dizia "não decide a grade de
+produção — é outro eixo". Isso foi recusado: *"tem que decidir, de alguma
+forma precisa ter a matemática financeira para promover por escrito a grade
+que entra em produção"*.
+
+**Esta seção NÃO depende das partes reprovadas em §11.** Ela não usa o
+critério de §2.2, não usa a tabela de IC e não seleciona feature nenhuma. É
+economia de execução sobre labels de produção, e sobrevive independentemente
+do que aconteça com `L2`.
+
+### §12.1 Por que `AG-260` não bastava
+
+`AG-260` comparou grades pelo **lift exigido em `P(TP)`** e concluiu R1 ≈ R2 ≫
+R3 (R3 pior). Essa métrica responde "quanto o modelo precisa melhorar a taxa
+de acerto", e ignora duas coisas que decidem dinheiro:
+
+1. **A capacidade de trades é limitada pelo orçamento de fees, não pela
+   grade.** A restrição R3 do projeto (`fee_budget_monthly`) fixa quantos
+   trades cabem por mês. Uma grade que produz 4× mais barras não produz 4×
+   mais trades — produz 4× mais *candidatos* ao mesmo orçamento.
+2. **A dispersão do retorno por trade muda com a grade.** É a dispersão que o
+   modelo explora ao selecionar; sem ela, ordenar não adianta.
+
+### §12.2 O achado que força a decisão: R1 viola a restrição R3
+
+`target_signal_rate = 0,0189` é uma **fração de barras**, `provenance: DERIVED`
+de `fee_budget_monthly`. A derivação original é da grade de relógio de 15m:
+`2880 barras/mês × 0,0189 = 54,4` — exatamente os "~55 trades/mês" que o
+`CLAUDE.md` cita. O valor foi aplicado literalmente às três grades dollar-bar,
+que têm contagens de barras completamente diferentes.
+
+Orçamento medido: `fee_budget_monthly = 3,0%` do equity/mês ÷ custo
+round-trip de `0,0562%` = **53 trades/mês**.
+
+Com `target_signal_rate` fixo (medido sobre 2022-01-01..2026-08-07):
+
+| grade | barras/mês | trades/mês | % do orçamento |
+|---|---|---|---|
+| **R1** | 2.771–3.100 | 52,4–58,6 | **98% – 110%** |
+| R2 | 1.398–1.549 | 26,4–29,3 | 50% – 55% |
+| R3 | 697–770 | 13,2–14,5 | 25% – 27% |
+
+**R1 estoura o orçamento de fees em 3 dos 5 ativos** (SOL 106%, BNB 105%,
+XRP 110%) — violação de uma restrição declarada inviolável. R2 e R3
+desperdiçam metade e três quartos da capacidade.
+
+### §12.3 O retorno bruto por trade é idêntico nas 15 células
+
+Medido sobre `ret_net` dos labels de produção, excluindo NOFILL:
+
+| grade | média por trade | desvio | n_fill (5 ativos) |
+|---|---|---|---|
+| R1 | −0,00063 a −0,00068 | 0,0047 – 0,0082 | 1.735.079 |
+| R2 | −0,00062 a −0,00066 | 0,0066 – 0,0115 | 870.345 |
+| R3 | −0,00062 a −0,00066 | 0,0093 – 0,0163 | 433.383 |
+
+**A média é praticamente a mesma em todas as 15 células** (~−0,063% por
+trade). A grade não muda o retorno bruto. O que muda é o **desvio**: R3 tem
+o dobro de R1.
+
+Isso reformula a pergunta. Como o orçamento fixa `N = 53` trades/mês e a média
+é comum, o retorno mensal é `N · E[r | selecionado]`, e a única alavanca é
+quanta dispersão existe para o modelo explorar.
+
+### §12.4 A conta
+
+Com seleção da fração `q = N/barras_mês` de maior score, e `ρ` = correlação
+entre score e retorno:
+
+```
+E[r | top q] ≈ μ + σ · ρ · λ(q),     λ(q) = φ(Φ⁻¹(1−q)) / q
+ρ_mínimo = −μ / (σ · λ(q))
+```
+
+| grade | `q` sob orçamento | `σ` | `λ(q)` | `σ·λ` | **`ρ` mínimo** |
+|---|---|---|---|---|---|
+| R1 | 1,81% | 0,00607 | 2,458 | 0,01492 | **0,0422** |
+| R2 | 3,60% | 0,00851 | 2,196 | 0,01869 | **0,0337** |
+| R3 | 7,24% | 0,01202 | 1,903 | 0,02288 | **0,0275** |
+
+R3 é **menos seletivo** (λ menor, porque `q` é 4× maior) e ainda assim exige
+**35% menos habilidade** que R1, porque `σ` dobra e mais que compensa.
+
+**Validação sem supor normalidade.** A fórmula acima assume normalidade
+bivariada, e retornos de triple barrier são bimodais (TP/SL). Medido
+diretamente, ordenando por um score de correlação `ρ` controlada sobre os
+retornos reais (20 repetições, média dos 5 ativos):
+
+| grade | `q` | ρ=0,02 | ρ=0,05 | ρ=0,10 | oracle |
+|---|---|---|---|---|---|
+| R1 | 1,81% | −0,00034 | **+0,00009** | +0,00084 | +0,01387 |
+| R2 | 3,60% | −0,00028 | +0,00030 | +0,00123 | +0,01637 |
+| R3 | 7,24% | −0,00016 | **+0,00048** | +0,00165 | +0,01937 |
+
+A medição empírica confirma a analítica: R1 mal empata com `ρ = 0,05`, R3
+entrega 5× mais no mesmo `ρ`. R3 domina em **todos** os níveis de habilidade,
+e tem 40% mais teto no oracle.
+
+### §12.5 Decisão
+
+| grade | ret/mês (ρ=0,05) | ret/mês (ρ=0,10) | teto oracle | `ρ` mínimo | n treino |
+|---|---|---|---|---|---|
+| R1 | +0,48% | +4,45% | +73,5% | 0,0422 | 809.035 |
+| R2 | +1,59% | +6,52% | +86,8% | 0,0337 | 405.878 |
+| **R3** | **+2,54%** | **+8,74%** | **+102,7%** | **0,0275** | 202.041 |
+
+**PROMOVO R3 À GRADE DE PRODUÇÃO**, com três condições que fazem parte da
+decisão e não são notas de rodapé:
+
+1. **`target_signal_rate` deixa de ser global.** Ele é fração de barras e
+   precisa ser resolvido por grade a partir do orçamento:
+   `q_g = N_orçamento / barras_mês(g)`. Sob R3, `q = 7,24%`, não 1,89%. Manter
+   1,89% em R3 usaria um quarto da capacidade — jogar fora três quartos do
+   motor. Esta é a mesma assimetria de `AG-249`, agora com número.
+2. **A decisão é condicional a `ρ > 0,0275`.** Nada medido até hoje mostra que
+   o modelo tem esse `ρ` — `AG-244`/`ADR-003` sugerem o contrário. R3 ser a
+   melhor grade **não significa que o motor seja positivo em R3**; significa
+   que, se houver habilidade, é onde ela rende mais, e é o alvo mais baixo a
+   vencer.
+3. **O custo é amostra de treino.** R3 tem 202k barras contra 809k de R1 —
+   um quarto. Isso corta contra, e é o argumento honesto do outro lado: menos
+   dado para estimar o `ρ` de que a decisão depende. A mitigação natural é
+   treino pooled entre ativos em R3 (202k somadas), que hoje não existe — o
+   motor treina 15 modelos isolados.
+
+**Contra `AG-260`, explicitamente:** aquela medição continua correta no que
+mede. Ela ordena grades por lift exigido em `P(TP)` **sob número de trades
+livre**; esta ordena por habilidade exigida **sob orçamento de trades fixo**.
+A segunda é a pergunta certa para produção, porque o orçamento de fees é uma
+restrição inviolável do projeto e não um parâmetro. `AG-260` deve ser lido como
+"sob geometria fixa e sem restrição de capacidade" — e essa condição nunca vale
+em produção.
+
+### §12.6 O que falta medir, e não impede a decisão
+
+- **Capacidade de mercado** (profundidade de book, impacto): NÃO EXISTE
+  medição no repo. Sob R$ 1.000 de capital é provavelmente irrelevante, mas
+  é insumo faltante declarado.
+- **`ρ` real do modelo por grade.** É a quantidade de que a decisão depende, e
+  é mensurável com os artefatos existentes: correlação de Spearman entre a
+  probabilidade OOF do Alpha e `ret_net`, por célula. Deveria ser o primeiro
+  número do próximo ciclo.
+- **`fee_budget_monthly = 3,0%` é `ASSUMED`**, "sem base; inventado", classe A
+  com `sweep_range: [0.015, 0.045]`. Todo o `N = 53` deriva dele. Um sweep de
+  ±50% move `N` entre 27 e 80 trades/mês — e move `q_g`, e portanto `ρ_mínimo`,
+  em todas as grades. A **ordenação** entre grades é robusta a isso (σ não
+  muda), o **nível** não é.
