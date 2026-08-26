@@ -167,13 +167,55 @@ class UnsupportedBundleFormatError(Exception):
     por esta versão do código -- nunca tenta desserializar às cegas."""
 
 
+class ManifestFeatureMismatchError(Exception):
+    """`manifest.feature_ids` (ordenado) diverge de `booster.feature_name()`
+    -- item 10 de `ADR-005 §13.17` (`§13.5-5`). Sem esta checagem, um
+    booster carregado com nomes de feature diferentes do manifest
+    produziria inferência SILENCIOSAMENTE errada (`LoadedSideModel.
+    predict_proba_calibrated` seleciona colunas por `manifest.feature_ids`,
+    não pelo booster) -- falha alto em vez disso."""
+
+
 @dataclass(frozen=True, slots=True)
 class ModelBundleManifest:
     """Proveniência do bundle (mesma disciplina de `src.io.artifact.
     ArtifactManifest`, INV-B) -- `symbol`/`resolution_id`/`model_id`/
     `fold_id`/`side`/`variant` identificam a partição; `booster_format`/
     `calibrator_format` versionam o MECANISMO de serialização, não só o
-    schema de dado."""
+    schema de dado.
+
+    **`ess`/`purge_ms_effective`/`min_child_samples`/`feature_set_hash`**
+    (item 10 de `ADR-005 §13.17`, `§13.5-5`) -- a célula é a unidade de
+    configuração, e o manifest declara o que ela de fato usou:
+    `ess` é `Σ uniqueness` do TREINO deste fold/lado (`SideModelResult.
+    sum_uniqueness_train`, já medido — AG-211 — nunca uma das fórmulas
+    fechadas que B24 proíbe); `purge_ms_effective` é a saída de
+    `features.build.compute_max_feature_lookback_ms` para o vetor
+    REAL deste treino (item 1, AG-298); `feature_set_hash` é
+    `sha256` do CONJUNTO ordenado alfabeticamente de `feature_ids`
+    (join por `,`) -- "conjunto", não "vetor": não se destina a
+    substituir a checagem de ORDEM abaixo, só a detectar troca de
+    QUAIS features entraram, célula a célula, sem abrir o JSON.
+
+    **`min_child_samples` não é "derivado por ESS" ainda** (`§13.5-3`/
+    item 8 de `§13.17` seguem `ASSUMED`, não implementados -- bloqueados
+    atrás do retreino represado, decisão do Manager 2026-08-26): o campo
+    grava o valor REALMENTE usado no treino (`LGBMHyperparams.
+    min_child_samples`), o que já é proveniência honesta hoje, e passa a
+    refletir a fórmula de `§13.5-3` no dia em que o item 8 for
+    implementado -- sem precisar de outra migração de schema.
+
+    **Verificação na carga** (a outra metade do item 10): `read_model_
+    bundle` levanta `ManifestFeatureMismatchError` se `manifest.
+    feature_ids != tuple(booster.feature_name())` -- ORDENADO, não como
+    conjunto. A ordem importa de verdade: `LoadedSideModel.
+    predict_proba_calibrated` seleciona colunas por `manifest.
+    feature_ids` (não por `booster.feature_name()`) antes de virar array
+    posicional para o booster cru -- se os dois divergissem em ordem
+    (não só em conteúdo), a inferência ficaria SILENCIOSAMENTE errada
+    (colunas permutadas entregues a um booster que só respeita posição).
+    Este é exatamente o bug que a checagem existe para impedir antes que
+    aconteça, não depois."""
 
     symbol: str
     resolution_id: str
@@ -190,6 +232,10 @@ class ModelBundleManifest:
     booster_sha256: str
     calibrator_format: str
     calibrator_sha256: str
+    ess: float
+    purge_ms_effective: int
+    min_child_samples: int
+    feature_set_hash: str
 
     def to_json_bytes(self) -> bytes:
         payload: dict[str, Any] = {
@@ -208,6 +254,10 @@ class ModelBundleManifest:
             "booster_sha256": self.booster_sha256,
             "calibrator_format": self.calibrator_format,
             "calibrator_sha256": self.calibrator_sha256,
+            "ess": self.ess,
+            "purge_ms_effective": self.purge_ms_effective,
+            "min_child_samples": self.min_child_samples,
+            "feature_set_hash": self.feature_set_hash,
         }
         return orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2)
 
@@ -230,6 +280,10 @@ class ModelBundleManifest:
             booster_sha256=payload["booster_sha256"],
             calibrator_format=payload["calibrator_format"],
             calibrator_sha256=payload["calibrator_sha256"],
+            ess=payload["ess"],
+            purge_ms_effective=payload["purge_ms_effective"],
+            min_child_samples=payload["min_child_samples"],
+            feature_set_hash=payload["feature_set_hash"],
         )
 
 
@@ -310,6 +364,9 @@ def write_model_bundle(
     tau: float,
     feature_ids: tuple[str, ...],
     monotone_constraints: tuple[int, ...],
+    ess: float,
+    purge_ms_effective: int,
+    min_child_samples: int,
 ) -> ModelBundleManifest:
     """Escreve o bundle (booster + calibrador + manifest) de forma
     imutável -- mesmo padrão `.tmp` → `fsync` → `os.rename` de
@@ -358,6 +415,14 @@ def write_model_bundle(
         calibrator_bytes = _serialize_calibrator(calibrator)
         atomic_write_bytes(tmp_dir / _CALIBRATOR_NAME, calibrator_bytes)
 
+        # Hash do CONJUNTO (ordenado alfabeticamente, não na ordem de
+        # treino) -- deriva sempre de `feature_ids`, nunca aceito do
+        # caller, mesma disciplina de `booster_sha256`/`calibrator_sha256`
+        # abaixo (evita drift entre o hash gravado e o conteúdo real).
+        feature_set_hash = sha256_bytes(
+            ",".join(sorted(feature_ids)).encode("utf-8")
+        )
+
         manifest = ModelBundleManifest(
             symbol=symbol,
             resolution_id=resolution_id,
@@ -374,6 +439,10 @@ def write_model_bundle(
             booster_sha256=sha256_bytes(booster_bytes),
             calibrator_format=_CALIBRATOR_FORMAT,
             calibrator_sha256=sha256_bytes(calibrator_bytes),
+            ess=ess,
+            purge_ms_effective=purge_ms_effective,
+            min_child_samples=min_child_samples,
+            feature_set_hash=feature_set_hash,
         )
         atomic_write_bytes(tmp_dir / _MANIFEST_NAME, manifest.to_json_bytes())
 
@@ -431,6 +500,20 @@ def read_model_bundle(
     booster_bytes = (dest_dir / _BOOSTER_NAME).read_bytes()
     booster = lgb.Booster(model_str=booster_bytes.decode("utf-8"))
 
+    # Item 10 (`ADR-005 §13.17`, `§13.5-5`) -- ORDENADO, não como conjunto
+    # (ver docstring de `ManifestFeatureMismatchError`): `predict_proba_
+    # calibrated` seleciona colunas por `manifest.feature_ids`, então uma
+    # divergência de ORDEM (não só de conteúdo) produziria inferência
+    # silenciosamente errada se não fosse pega aqui.
+    booster_feature_names = tuple(booster.feature_name())
+    if manifest.feature_ids != booster_feature_names:
+        raise ManifestFeatureMismatchError(
+            f"read_model_bundle: manifest.feature_ids={manifest.feature_ids} != "
+            f"booster.feature_name()={booster_feature_names} em {dest_dir} -- bundle "
+            "corrompido ou gerado por um caminho de escrita que não passou por "
+            "write_model_bundle; recusando inferência sobre correspondência incerta"
+        )
+
     calibrator = _deserialize_calibrator((dest_dir / _CALIBRATOR_NAME).read_bytes())
 
     return LoadedSideModel(manifest=manifest, booster=booster, calibrator=calibrator)
@@ -461,6 +544,7 @@ def model_bundle_exists(
 __all__ = [
     "IsotonicCalibratorView",
     "LoadedSideModel",
+    "ManifestFeatureMismatchError",
     "ModelBundleExistsError",
     "ModelBundleManifest",
     "ModelBundleNotFoundError",

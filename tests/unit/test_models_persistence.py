@@ -12,6 +12,7 @@ Migração XGBoost -> LightGBM (D-12, `docs/alpha_model_design_doc_
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import lightgbm as lgb
@@ -21,6 +22,7 @@ import pytest
 from sklearn.isotonic import IsotonicRegression
 
 from src.models.persistence import (
+    ManifestFeatureMismatchError,
     ModelBundleExistsError,
     ModelBundleNotFoundError,
     UnsupportedBundleFormatError,
@@ -89,12 +91,22 @@ def test_write_read_round_trip_reproduz_inferencia_bit_exata(tmp_path: Path) -> 
         tau=tau,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     assert manifest.symbol == _SYMBOL
     assert manifest.resolution_id == _RESOLUTION_ID
     assert manifest.feature_ids == _FEATURE_IDS
     assert manifest.monotone_constraints == _MONOTONE
     assert manifest.tau == tau
+    assert manifest.ess == 157.5  # noqa: magic-number -- valor de fixture, ver kwargs acima
+    assert manifest.purge_ms_effective == 8_640_000  # noqa: magic-number -- idem
+    assert manifest.min_child_samples == 20  # noqa: magic-number -- idem
+    # hash do CONJUNTO -- não depende da ordem de `_FEATURE_IDS` (ver
+    # docstring de `ModelBundleManifest`), só do conteúdo.
+    esperado = hashlib.sha256(",".join(sorted(_FEATURE_IDS)).encode("utf-8")).hexdigest()
+    assert manifest.feature_set_hash == esperado
 
     loaded = read_model_bundle(
         tmp_path,
@@ -133,6 +145,9 @@ def test_write_read_round_trip_calibrador_fora_do_range_treinado(tmp_path: Path)
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     loaded = read_model_bundle(
         tmp_path,
@@ -179,6 +194,9 @@ def test_write_read_round_trip_calibrador_degenerado(tmp_path: Path) -> None:
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     loaded = read_model_bundle(
         tmp_path,
@@ -214,6 +232,9 @@ def test_predict_proba_calibrated_rejeita_coluna_faltando(tmp_path: Path) -> Non
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     loaded = read_model_bundle(
         tmp_path,
@@ -253,6 +274,9 @@ def test_predict_proba_calibrated_ignora_ordem_de_coluna_do_dataframe(tmp_path: 
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     loaded = read_model_bundle(
         tmp_path,
@@ -297,6 +321,9 @@ def test_write_model_bundle_nao_muta_booster_do_caller(tmp_path: Path) -> None:
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     assert booster.feature_name() == feature_name_antes
 
@@ -321,6 +348,9 @@ def test_write_model_bundle_grava_feature_names_no_booster(tmp_path: Path) -> No
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     loaded = read_model_bundle(
         tmp_path,
@@ -349,6 +379,9 @@ def test_write_model_bundle_imutavel_recusa_sobrescrita(tmp_path: Path) -> None:
         "tau": 0.5,
         "feature_ids": _FEATURE_IDS,
         "monotone_constraints": _MONOTONE,
+        "ess": 157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        "purge_ms_effective": 8_640_000,  # noqa: magic-number -- idem
+        "min_child_samples": 20,  # noqa: magic-number -- idem
     }
     write_model_bundle(**kwargs)
     with pytest.raises(ModelBundleExistsError):
@@ -392,6 +425,9 @@ def test_model_bundle_exists(tmp_path: Path) -> None:
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     assert model_bundle_exists(
         tmp_path,
@@ -476,6 +512,9 @@ def test_read_model_bundle_formato_de_booster_desconhecido_levanta_erro(
         tau=0.5,
         feature_ids=_FEATURE_IDS,
         monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
     )
     dest_dir = model_dir(
         tmp_path,
@@ -493,6 +532,52 @@ def test_read_model_bundle_formato_de_booster_desconhecido_levanta_erro(
     manifest_path.write_text(corrupted, encoding="utf-8")
 
     with pytest.raises(UnsupportedBundleFormatError):
+        read_model_bundle(
+            tmp_path,
+            symbol=_SYMBOL,
+            resolution_id=_RESOLUTION_ID,
+            model_id="alpha_c1_v1",
+            fold_id="fold0",
+            side=1,
+            variant="camada1",
+        )
+
+
+def test_read_model_bundle_rejeita_feature_ids_divergente_do_booster(
+    tmp_path: Path,
+) -> None:
+    """Item 10 (`ADR-005 §13.17`, `§13.5-5`) -- o bug que a checagem existe
+    para impedir: `write_model_bundle` grava um `feature_ids` que NÃO é o
+    que o booster foi de fato treinado com (erro de call site, não algo
+    que o mecanismo de serialização detectaria sozinho -- o booster real
+    fica com `feature_name()` = `_FEATURE_IDS`, mas o manifest é gravado
+    com uma PERMUTAÇÃO deles). `predict_proba_calibrated` seleciona
+    colunas por `manifest.feature_ids` -- sob essa divergência, a
+    inferência seria silenciosamente errada (colunas na ordem errada
+    entregues a um booster que só respeita posição). `read_model_bundle`
+    precisa recusar antes disso, não confiar que escrita e booster sempre
+    concordam."""
+    booster, calibrator, _x = _fit_real_side_model()
+    feature_ids_errado = tuple(reversed(_FEATURE_IDS))
+    assert feature_ids_errado != _FEATURE_IDS  # confirma que a permutação é real
+    write_model_bundle(
+        root=tmp_path,
+        symbol=_SYMBOL,
+        resolution_id=_RESOLUTION_ID,
+        model_id="alpha_c1_v1",
+        fold_id="fold0",
+        side=1,
+        variant="camada1",
+        booster=booster,
+        calibrator=calibrator,
+        tau=0.5,
+        feature_ids=feature_ids_errado,
+        monotone_constraints=_MONOTONE,
+        ess=157.5,  # noqa: magic-number -- valor de fixture (não é constante de domínio)
+        purge_ms_effective=8_640_000,  # noqa: magic-number -- idem
+        min_child_samples=20,  # noqa: magic-number -- idem
+    )
+    with pytest.raises(ManifestFeatureMismatchError):
         read_model_bundle(
             tmp_path,
             symbol=_SYMBOL,

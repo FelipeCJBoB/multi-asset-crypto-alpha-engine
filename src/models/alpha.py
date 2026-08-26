@@ -64,6 +64,7 @@ logger = structlog.get_logger(__name__)
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
+BoolArray = NDArray[np.bool_]
 # `side_hat` é Int8 pelo schema oficial de `predictions.parquet` (§5.12,
 # `PREDICTIONS_ARTIFACT_SCHEMA`) — alias próprio para `decide_side` não
 # ter que mentir o tipo de retorno como int64.
@@ -603,6 +604,149 @@ def resolve_joint_lambda(
         else:
             lo = mid
     return lb, rate
+
+
+# ADR-005 §13 v2 -- item 11 de §13.17 (`§13.16.4`): trocar `p̂ > tau`
+# (limiar global, quantil) por `p̂ > breakeven(linha)` (identidade
+# contábil, conhecida em t0) -- que É a restrição R2 (`CLAUDE.md` §0.2)
+# reescrita por linha em vez de por célula.
+#
+# Achado real ao implementar isto (`lgbm-crypto-quant`, 2026-08-26): o
+# GATE já existe em código, sem ter sido reconhecido como tal. Sob payoff
+# simétrico (`tp_atr_mult == sl_atr_mult == payoff_atr_mult`, a geometria
+# de produção vigente -- ver `src.analysis.r2_admissibility_census.
+# payoff_simetrico`), `decide_side_cost_derived` já compara `mu_side >
+# max(cost_atr_ratio, lambda_b)`; com `lambda_b = -payoff_atr_mult` (o
+# valor mais permissivo -- nunca vincula, pois `cost_atr_ratio >= 0 >
+# -payoff_atr_mult` sempre), o piso vira `cost_atr_ratio` puro, e:
+#
+#     mu > cost_atr_ratio
+#     payoff*(2p-1) > cost_atr_ratio
+#     p > 0,5 + cost_atr_ratio/(2*payoff)
+#     p > breakeven(linha)                    <- exatamente a fórmula acima
+#
+# O que NÃO pré-existe é o TETO DE CAPACIDADE que `§13.16.4` propõe:
+# "entre os que passam, os top-q por margem". `resolve_joint_lambda`
+# (mecanismo ADR-004 Fase 2 já em produção-de-medição) resolve um `lambda_
+# b` ESCALAR que vira um segundo limiar sobre `mu` -- não um ranking por
+# MARGEM (`mu - cost_atr_ratio`). Os dois mecanismos DIVERGEM quando
+# `cost_atr_ratio` varia entre linhas: um limiar escalar em `mu` trata
+# igual duas linhas de `mu` idêntico e custo diferente, mesmo que a
+# margem delas seja diferente (`test_decide_side_breakeven_topq_diverge_
+# de_lambda_threshold_quando_custo_varia` prova isso com número real, não
+# só descreve). `decide_side_breakeven_topq` abaixo é a leitura literal
+# de `§13.16.4`: gate absoluto (breakeven) + ranking por margem (não por
+# `mu` bruto) para o teto.
+#
+# Nenhuma das duas funções abaixo é chamada por `run_fold` ainda --
+# mesmo status de "medição opt-in, nunca reescreve side_hat/predictions.
+# parquet" que `evaluate_cost_derived_lambda` teve antes de `resolve_
+# joint_lambda` existir. QUAL mecanismo de teto (limiar em mu vs. ranking
+# por margem) vira produção é decisão do Manager -- item 11 é listado
+# como "decisão, não modelo" em `§13.17`, e as duas opções continuam
+# testáveis e medíveis lado a lado até essa decisão.
+
+
+def breakeven_from_cost_atr_ratio(
+    cost_atr_ratio: FloatArray, *, payoff_atr_mult: float
+) -> FloatArray:
+    """`P(TP)` de breakeven por linha, direto de `cost_atr_ratio`
+    (`E27f_cost_atr_ratio`, custo/ATR -- conhecido em `t0`, já uma
+    feature T1 de produção). Ver derivação completa no bloco de
+    comentário acima desta seção.
+
+    Mesma IDENTIDADE que `src.analysis.r2_admissibility_census.
+    breakeven_probability` mede sobre `labels.parquet` (preço) -- as duas
+    não podem compartilhar código (`models/` não importa `analysis/`,
+    `CLAUDE.md` Layer hierarchy), mas são a MESMA fórmula, sob a MESMA
+    premissa de payoff simétrico. Não verifica simetria aqui (a feature
+    de entrada já é `cost/ATR`, agnóstica a `tp_atr_mult`/`sl_atr_mult`
+    individuais) -- a premissa é de quem chama, mesma disciplina de
+    `implied_mu_from_prob`."""
+    be = 0.5 + cost_atr_ratio / (2.0 * payoff_atr_mult)  # noqa: unguarded-ratio -- payoff_atr_mult é tp_atr_mult/sl_atr_mult (classe A, sempre > 0 por construção; mesma premissa não guardada de implied_mu_from_prob)
+    return np.asarray(be, dtype=np.float64)
+
+
+def decide_side_breakeven(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    cost_atr_ratio: FloatArray,
+    *,
+    payoff_atr_mult: float,
+) -> SideArray:
+    """`p̂ > breakeven(linha)` puro, SEM teto de capacidade -- ver
+    `decide_side_breakeven_topq` para a versão completa do item 11.
+
+    Deliberadamente o caso degenerado de `decide_side_cost_derived` com
+    `lambda_b = -payoff_atr_mult`, não uma reimplementação -- mesmo
+    princípio já declarado em `decide_side`/`resolve_joint_tau` ("a mesma
+    LINHA de código, não duas cópias que podem divergir silenciosamente").
+    `test_decide_side_breakeven_bate_formula_fechada_independente` prova a
+    equivalência contra `p > breakeven` calculado à parte, não só contra
+    esta função irmã."""
+    return decide_side_cost_derived(
+        p_long,
+        p_short,
+        cost_atr_ratio,
+        payoff_atr_mult=payoff_atr_mult,
+        lambda_b=-payoff_atr_mult,
+    )
+
+
+def select_top_q_by_margin(margin: FloatArray, *, q: float) -> BoolArray:
+    """Núcleo puro do teto de capacidade do item 11. Entre linhas
+    ADMISSÍVEIS (margem `> 0`; inadmissíveis chegam com margem `-inf` e
+    nunca são selecionadas), mantém as top `ceil(q*n)` por MARGEM
+    (`mu - cost_atr_ratio`, equivalente a `p̂ - breakeven(linha)` em
+    unidades de probabilidade).
+
+    `q` vem do orçamento de fees (`target_signal_rate`, `§12.6` condição
+    1), nunca de métrica OOS (B20) -- mesma disciplina de `resolve_joint_
+    tau`/`resolve_joint_lambda`, só que aqui a seleção é por RANKING, não
+    por um segundo limiar escalar (ver bloco de comentário acima para a
+    diferença medida contra `resolve_joint_lambda`)."""
+    if not 0.0 < q <= 1.0:
+        raise ValueError(f"select_top_q_by_margin: q={q} fora de (0, 1]")
+    n = margin.shape[0]
+    keep = np.zeros(n, dtype=np.bool_)
+    if n == 0:
+        return keep
+    k = int(np.ceil(q * n))
+    ranked = np.argsort(-margin, kind="stable")[:k]
+    keep[ranked] = True
+    # Linhas inadmissíveis (margem <= 0, inclusive -inf) nunca contam,
+    # mesmo se `q` for generoso o bastante para incluí-las no top-k.
+    keep &= margin > 0.0
+    return keep
+
+
+def decide_side_breakeven_topq(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    cost_atr_ratio: FloatArray,
+    *,
+    payoff_atr_mult: float,
+    target_signal_rate: float,
+) -> SideArray:
+    """Item 11 completo (`§13.16.4`): gate = `decide_side_breakeven` (R2
+    por linha, absoluto, conhecido em `t0`); teto de capacidade =
+    `select_top_q_by_margin` sobre a margem do LADO ESCOLHIDO, com
+    `q = target_signal_rate`. Núcleo puro -- ver bloco de comentário
+    desta seção para o status (opt-in, não chamado por `run_fold` ainda)
+    e a diferença medida contra o mecanismo `resolve_joint_lambda` já
+    existente."""
+    admiss = decide_side_breakeven(
+        p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff_atr_mult
+    )
+    mu_long = implied_mu_from_prob(p_long, payoff_atr_mult=payoff_atr_mult)
+    mu_short = implied_mu_from_prob(p_short, payoff_atr_mult=payoff_atr_mult)
+    margin_long = mu_long - cost_atr_ratio
+    margin_short = mu_short - cost_atr_ratio
+    margin_chosen = np.where(
+        admiss == 1, margin_long, np.where(admiss == -1, margin_short, -np.inf)
+    )
+    keep = select_top_q_by_margin(margin_chosen, q=target_signal_rate)
+    return np.where(keep, admiss, 0).astype(np.int8)
 
 
 @dataclass(frozen=True, slots=True)

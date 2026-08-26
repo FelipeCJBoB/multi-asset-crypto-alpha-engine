@@ -4632,3 +4632,101 @@ de uma sessão; sinalizado explicitamente, não silenciado).
 | **`AG-237` — guardrail de sweep removido sem decisão** | `sweep_range` tinha sido removido de `tp_atr_mult`/`sl_atr_mult` em `config/constants.yaml` (ambas classe A) na troca de valor de 2026-08-24, junto com `sweep_required: false` — removendo o guardrail da §16.10 regra 4 das duas constantes que governam a geometria de payoff. Restaurado `[1.0, 3.0]`; `sweep_required: false` mantido, mas agora sustentado pelo S1 na grade CERTA (`AG-235`), não pela medição inválida. Detectado por um teste que falhou por outro motivo |
 | **ADR-004 Fase 0 — `AG-241`, implementada e NÃO executada** | Bootstrap estacionário por blocos (Politis & Romano 1994), block length MEDIDO via ACF (B23), escolhido sobre Ledoit-Wolf porque a fórmula HAC tem pontos onde erro de sinal produz veredito confiantemente errado. Roda dentro de `run_layer1_sprint` sobre `ret_net` já materializado — zero retreino. 8 testes sintéticos passam; **nenhum resultado real ainda**. **Dois riscos a medir antes de confiar no 1º veredito:** (a) o zero-filling da casca pode encurtar o block length e estreitar o IC, produzindo o FALSO POSITIVO que a fase existe para evitar; (b) custo `O(n × n_boot)` em Python puro. Prompt de continuação: `docs/prompts/execucao_adr004_fases_1_a_3_2026-08-25.md` |
 | Pendente — governança e re-execução | (1) **Road Map Vivo dessincronizado** — republicado por sessão paralela, contradiz 4 achados desta sessão (mesmo padrão `AG-080`/`AG-123`); (2) tabela antes×depois dos 78 experimentos derivados de label, pedida pelo Manager, não feita; (3) Camada 0 interrompida no `src/analysis/m3_timeframe_choice.py` — 14 módulos na fila, agora re-executáveis porque S1/M6 já migraram; (4) **`AG-230` aguarda decisão do Manager** — viés de amostra isolado em BTCUSDT (−1,9%, jan-fev/2021, `n_empty_mark_window` 0→6149): causalmente correto, mas remove barras de regime de rajada |
+
+---
+
+## 2026-08-26 — ADR-005 §13 v2, itens 1-4/10/11b/11 da ordem de `§13.17`
+
+**Nota de staleness explícita:** a tabela "Estado atual (2026-08-25)" acima
+não foi reconciliada com o trabalho abaixo nem com o resto do dia
+(`ADR-005` v2 completo, `§14` v2/v3, expurgo de features `AG-295`) — sinalizado
+em vez de deixar passar em silêncio (mesmo espírito da nota já existente sobre
+o número de Sprint). Quem quiser o estado real de hoje usa `git log
+--oneline` + `docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md`
+(canônico da frente de ML/Feature Engine desde 2026-08-20), não esta tabela.
+
+Persona `lgbm-crypto-quant`, convocada pelo Manager para assumir `ADR-005
+§13` depois que a sessão paralela (`feature-thesis-auditor`) fechou o
+desenho de features. Ordem de execução autorizada item a item
+(`§13.17`), **não** em lote.
+
+- **Itens 1/2/3/3b (pré-requisito de tudo, `§13.8`/`§13.11`)** —
+  `feature_ids` obrigatório nos 5 call sites (`AG-298`); NaN→null na
+  fronteira, coluna 100% nula falha o build (`AG-300`); censo de nulos
+  por coluna×célula persistido (`AG-308`); detector de linhagem
+  `labels↔registro` (`AG-309`) — achado real: o registro de
+  `label_engine_runs.parquet` descrevia labels que já não existiam mais
+  (20/20 artefatos divergentes), causa parcialmente estabelecida <!-- check-sprint-log: skip -->
+  (`build_and_write_labels_for_symbol` chama `record_experiment`, mas a
+  chamada é sequência, não transação). Item 3c ("reprocessar o registro <!-- check-sprint-log: skip -->
+  retroativamente") **rejeitado por mim mesmo** — fabricaria proveniência
+  de auditoria pra fazer um lint passar, exatamente o que um log
+  append-only existe pra impedir.
+- **Item 4 — peso do calibrador isotônico (`AG-312`)** — decisão do <!-- check-sprint-log: skip -->
+  Manager, opção (b): `IsotonicRegression.fit(..., sample_weight=w)`
+  devolve `E_w[y|x]`, não `E[y|x]`; o peso legado (`uniqueness *
+  |ret_net|`) sub-ponderava a classe positiva e enviesava a saída do
+  calibrador em até −13,0% (`P(TP)` medido 0,4967, calibrador legado <!-- check-sprint-log: skip -->
+  entregava 0,4323). Sob `uniqueness` sozinho o viés cai pra <!-- check-sprint-log: skip -->
+  `[−0,0012, +0,0030]`. Política nomeada `calib_weight_basis`, default <!-- check-sprint-log: skip -->
+  de `fit_side_model` continua legado (bit-exato), default de PRODUÇÃO
+  vira `uniqueness`. **Achado colateral não previsto por mim**, levantado
+  pela sessão paralela ao revisar a proposta: `alpha.py` escolhe o lado
+  comparando `p_long > p_short`, e os dois vinham de calibradores
+  DIFERENTES com viés diferente — viés sistemático a favor do LONG. A
+  opção (b) reduz isso (|viés| por lado de até 0,072 para no máximo
+  0,003) mas não zera o diferencial residual (+0,0005 a +0,0063) — fica
+  registrado como item aberto próprio, não argumento contra (b).
+- **Label Engine reprocessado ponta a ponta** (mesmo commit do item 4,
+  `6ec2af9`) — `run_and_write_labels_dollar_bar_parkinson` rodado pras 15
+  células reais (R1/R2/R3 × 5 símbolos). Resultado: **15/15 idênticas**
+  ao snapshot pré-rerun (mesmo `n`, mesmo `config_hash`, mesmo `NOFILL`)
+  — o risco declarado antes de rodar ("o lake pode ter crescido, o
+  arquivo pode sair diferente") não se materializou, e só dava pra saber
+  medindo. Lint de linhagem caiu de 20 divergências pra 5 — as 5 que <!-- check-sprint-log: skip -->
+  sobram são a grade de relógio 15m legada, deliberadamente não rodada
+  (exige `confirmo_grade_de_relogio_legada=True`, `AG-248`, decisão
+  explícita pendente do Manager).
+- **Item 10 — manifesto completo por célula + verificação na carga
+  (`AG-314`, `§13.21`)** — `src/models/persistence.py` (`AG-141`) já
+  existia mas não tinha `ess`/`purge_ms_effective`/`min_child_samples`/
+  hash do conjunto, e `read_model_bundle` não verificava
+  `manifest.feature_ids == booster.feature_name()` na carga — sem essa
+  checagem, um manifest com `feature_ids` na ordem errada produziria
+  inferência silenciosamente errada. `ManifestFeatureMismatchError` nova,
+  1 teste prova o bug que ela existe pra evitar. **Não fecha `AG-141`** —
+  o wiring em produção (`run_fold` chamando `write_model_bundle`) segue
+  aberto, por decisão de escopo.
+- **Item 11 — `p̂ > breakeven(linha)` (`AG-315`, `§13.22`)** — achado
+  central do dia: o GATE já existia em código sem reconhecimento, como
+  caso degenerado de `decide_side_cost_derived` (ADR-004 Fase 2,
+  `lambda_b = -payoff_atr_mult`). Verificado por 2 vias independentes
+  (contra a função irmã E contra a fórmula fechada recalculada à parte).
+  O que não existia: o teto de capacidade por RANKING de margem que o
+  ADR pede ("top-q por margem") — `resolve_joint_lambda` (mecanismo já
+  em produção-de-medição) aplica um limiar ESCALAR sobre `mu`, que
+  DIVERGE do ranking por margem quando o custo varia entre linhas
+  (provado com caso mínimo real, não só descrito). 4 funções núcleo puro
+  novas, nenhuma chamada por `run_fold` ainda — qual mecanismo de teto
+  vira produção é decisão do Manager, `§13.17` já lista o item como
+  "decisão, não modelo".
+- **Item 11b — censo de admissibilidade R2 por linha (`AG-296`/`AG-297`,
+  `§13.20`)** — R2 nunca era aplicada em `src/models/` (só em 3 módulos
+  de `analysis/`); medido por linha, R2 viola 27,12% (BNBUSDT/R1) até
+  0,00% (XRPUSDT/R3), monotônico em resolução nos 5 símbolos. Achado
+  colateral: 177 labels (0,006%) com `ganho ≤ custo` — geometricamente
+  impossível de empatar, concentrado em SOLUSDT/R1-R2.
+- **Deslize de coordenação, resolvido sem perda:** o commit `6ec2af9`
+  incluiu por acidente a entrada `AG-313` da sessão paralela (`git add`
+  amplo demais no `architecture_gaps_log.yaml` append-only). Sem dano —
+  o log é append-only, nada corrompeu — mas o código/artefato que
+  acompanhava a entrada ficou de fora do meu commit. A sessão paralela
+  commitou o resto por cima (`ee0a83d`) reconhecendo que a entrada já
+  estava logada; nenhuma duplicata, nenhuma ação corretiva necessária.
+
+Suíte completa (`-m "not slow"`) ao fim dos itens 10/11: **2267 passed, 2
+skipped, 2 xfailed, 0 failed**. `ruff`/`mypy --strict`/`banned_patterns`
+limpos em todos os módulos tocados. Itens 5, 6, 7, 8, 9 de `§13.17`
+seguem bloqueados — só se manifestam em tempo de treino, e o retreino
+está represado (decisão do Manager) até a sessão paralela terminar a
+reprogramação de features (o vetor de 69 pode cair).
