@@ -113,7 +113,7 @@ def benjamini_hochberg(p_values: Sequence[float], *, q: float) -> list[bool]:
 def symbol_is_majority_discovery(resolution_discoveries: Sequence[bool]) -> bool:
     """Um símbolo conta como "achado" se a MAIORIA das suas resoluções
     (`>=2` de 3) forem descoberta BH -- não uma célula isolada. `AG-270`:
-    97/275 blocos símbolo×feature são concordantes nas 3 resoluções
+    197/275 blocos símbolo×feature são concordantes nas 3 resoluções
     (mesma série de preço, threshold diferente) -- maioria evita que 1
     resolução ruidosa decida o símbolo sozinha."""
     if len(resolution_discoveries) != 3:

@@ -19425,3 +19425,192 @@ entries:
       caso-limite "coluna quase morta NAO e morta"). Testes de
       test_features_build.py migrados de `.is_nan()` para `.null_count()`
       -- consequencia direta e esperada de (a).
+
+  # AG-301..AG-307 -- parecer de project_assurance sobre ADR-005 §14 (v3,
+  # 2026-08-26): 1 CRITICAL + 1 HIGH + 4 MEDIUM + 2 LOW, todos reverificados
+  # por reconstrucao de conjunto/execucao na sessao principal (nao so lidos),
+  # e todos corrigidos no mesmo commit desta entrada.
+
+  - id: AG-301
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.3, §14.4"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-272"
+    found_by: "project_assurance (Agent independente) -- reverificado por reconstrucao de conjunto em codigo na sessao principal"
+    gap: >
+      A v1 de §14.4 afirmava "Verificado por conjunto: L0 uniao L1 uniao L2
+      uniao L3 uniao L4 cobre as 72 features sem faltar nenhuma". FALSO.
+      Reconstrucao por conjunto (script, nao a prosa do ADR), a partir das
+      proprias definicoes que a v1 dava pras camadas (L3 = TESE_OK restante
+      + 5 momentum; L4 = SEM_MECANISMO(29) - 8 recortes), da uniao de
+      tamanho 49, nao 72. Faltam 23 features -- todas com veredito
+      INCOERENTE_DIMENSIONAL ou ERRO_CATEGORICO que nao sao A13/E10f/E02f
+      (as unicas 3 que caiam em L1/L2 por outro motivo). A v1 de §14.3
+      criava o estado defeito_construcao pras 26 INCOERENTE_DIMENSIONAL/
+      ERRO_CATEGORICO mas nunca decidia a CAMADA delas quando nao eram ja
+      L0/L1/L2 -- e exatamente a "particao nao exaustiva" que AG-272
+      original descrevia (25 sem camada), reduzida pra 23, nao fechada,
+      apesar do titulo da secao dizer "AG-272 fechado".
+    severity: "CRITICAL -- mesma classe de erro de AG-270/AG-271 (afirmacao central falsificavel por medicao propria), falsifica a checagem que o proprio documento dizia ter feito"
+    layer: "features (governanca de vetor) / documentacao arquitetural"
+    consequence: >
+      Se ratificado com base em "AG-272 fechado", a taxonomia de 5 camadas
+      ficaria com 23 features orfas sem regra de qual camada as rege --
+      exatamente o furo original que motivou o estado defeito_construcao.
+    status: >-
+      CORRIGIDO 2026-08-26. Regra de default adicionada (§14.3): INCOERENTE_
+      DIMENSIONAL/ERRO_CATEGORICO sem outro destino -> L4 + defeito_
+      construcao=true (construcao quebrada e aposta pior que sem-mecanismo;
+      default seguro e nao calcular ate investigar). L4 recalculada:
+      21 -> 43. E18f (quarentena) recebe destino proprio: L3 + quarentena +
+      defeito_construcao. Reverificado por reconstrucao de conjunto em
+      codigo (nao prosa): uniao das 5 camadas = 72 exatas, 0 faltando,
+      0 sobrando (soma bruta 73 = 72 + 1 sobreposicao deliberada de E27f,
+      ver AG-302).
+
+  - id: AG-302
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.3, §14.4"
+    related_file: "src/regime/classifier.py:535-538, src/features/build.py:49-57"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      §14.3 da v1 declarava "nenhuma coluna fica em duas camadas ao mesmo
+      tempo; defeito_construcao e a unica excecao deliberada, por ser
+      flag, nao camada". A propria tabela de §14.4 (2 paragrafos depois)
+      documentava E27f_cost_atr_ratio como membro simultaneo de L1
+      (insumo do gate) e L2 (T1 de producao) -- uma sobreposicao real
+      entre DUAS CAMADAS, nao a flag. A regra de precedencia declarada
+      (L0>L1>L2>L3/L4>flag) deveria ter resolvido isso a favor de L1 (que
+      vem antes de L2 na ordem), mas o documento mantinha E27f nos dois
+      sem tratar como excecao.
+    severity: "HIGH -- a propria regra criada para fechar AG-272 era violada por um dos 4 membros de L1 (E27f), sem que o documento percebesse ou tratasse como excecao"
+    layer: "features (governanca de vetor)"
+    consequence: >
+      Precedencia nao era de fato "vence qualquer conflito" -- exigia
+      revisao de qual camada E27f realmente e (so gate, ou tambem treino
+      do Alpha).
+    status: >-
+      CORRIGIDO 2026-08-26. E27f declarado explicitamente como 2a excecao
+      deliberada (§14.3): dupla camada L1+L2 por DESENHO REAL do codigo
+      (E27f esta em T1_FEATURE_IDS E e lida por classifier.py,
+      simultaneamente, verificado) -- nao ambiguidade a resolver por
+      ordem. Precedencia mecanica mentiria sobre o que o codigo faz.
+
+  - id: AG-303
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §3, §5.2, §5.3"
+    related_file: "audit/architecture_gaps_log.yaml::AG-285, config/constants.yaml"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      Padrao AG-123 recorrendo: 3 secoes anteriores a §14 nao foram
+      sincronizadas apos a v1 de §14 existir. (1) §3 ainda dizia "NAO
+      ATUALIZADO apos AG-294... proximo passo da v3, nao feito aqui" --
+      mas §14.5 ja era esse proximo passo, sem ponteiro de volta. (2) §5.2
+      ainda tabulava "L4 | 29", contradizendo L4=21 (e agora 43) de
+      §14.2/§14.4. (3) §5.3 afirmava que os 3 hiperparametros de promocao
+      seriam "todos provenance: DERIVED" -- os nomes reais implementados
+      em constants.yaml sao todos ASSUMED classe B/C, exatamente como
+      AG-285 (§11.3) ja tinha apontado que deveriam ser, e nunca corrigido
+      em §5.3.
+    severity: "MEDIUM -- nao afeta producao (nada consome §14 hoje), mas e o mesmo furo de sincronizacao que ja causou consequencia grave 4x neste projeto (AG-123)"
+    layer: "documentacao arquitetural"
+    consequence: >
+      Um leitor que fosse direto a §3/§5.2/§5.3 sem ler §14 agiria sobre
+      numeros e decisoes de provenance revogados.
+    status: >-
+      CORRIGIDO 2026-08-26. §3 aponta pra §14.5; §5.2 mostra L4=43
+      (tachado, 29 antigo preservado); §5.3 corrigido pra ASSUMED classe
+      B/C com os nomes reais das constantes e a ressalva de calibracao.
+
+  - id: AG-304
+    date: "2026-08-26"
+    file: "src/analysis/feature_temporal_stability.py::evaluate_temporal_stability"
+    related_file: "tests/unit/test_analysis_feature_temporal_stability.py, config/constants.yaml::feature_temporal_stability_min_semesters"
+    found_by: "project_assurance (Agent independente) -- reverificado e corrigido na sessao principal"
+    gap: >
+      Sem piso de n_semestres_validos. Com exatamente 1 semestre valido,
+      ratio=1.0 (mediana de 1 elemento e o proprio elemento) e
+      frac_mesma_direcao=1.0 -- passa_eixo_2=True incondicionalmente,
+      independente da confiabilidade real do IC. Nenhum dos 16 testes
+      originais cobria esse caso; o codigo so levantava erro se
+      ic_by_semester estivesse completamente vazio, nao se tivesse 1
+      elemento.
+    severity: "MEDIUM -- nao mudava a decisao de §14.1 (eixo 1 ja zera o pool), mas qualquer uso futuro do eixo 2 como gate de promocao aprovaria trivialmente uma feature com so 1 semestre de historico"
+    layer: "analysis (decision-support)"
+    consequence: >
+      Uma feature nova ou um simbolo com historico curto passaria o eixo
+      2 por construcao, nao por evidencia.
+    status: >-
+      CORRIGIDO 2026-08-26. Parametro min_semesters adicionado
+      (obrigatorio, levanta FeatureTemporalStabilityError abaixo do
+      piso). Nova constante feature_temporal_stability_min_semesters=4
+      (ASSUMED, classe C, sweep [2,8]). 2 testes novos (demonstra o
+      problema sem o piso; confirma que levanta com o piso). 3
+      relatorios reais regenerados com a correcao.
+
+  - id: AG-305
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-284"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      §14.2 da v1 justificava mover A01-A06 de L4 para L3 citando §7 ("9
+      de 12 features mantem sinal em 4 quartis"). Essa mesma alegacao ja
+      tinha sido marcada como estatisticamente incorreta em AG-284
+      (§11.3 do MESMO documento): "nao tem o nulo certo (as 12 sao
+      pre-selecionadas por sinal, e 6 delas sao colineares)". A v1 de
+      §14 nunca revisitava ou corrigia AG-284 antes de usar §7 como base
+      da reclassificacao.
+    severity: "MEDIUM -- baixo impacto pratico hoje (L3 e L4 tem o mesmo efeito sobre o vetor de treino, so diferem em manter ou nao o calculo), mas era uma decisao textual construida sobre um achado que o proprio documento ja tinha invalidado"
+    layer: "features (governanca de vetor)"
+    consequence: >
+      Se A01-A06 fossem promovidas de L3 para L2 no futuro citando §7
+      como precedente, herdariam um argumento ja contestado sem nunca
+      ter sido corrigido.
+    status: >-
+      CORRIGIDO 2026-08-26. Justificativa reescrita: momentum de 1 barra
+      e categoria de mecanismo economico RECONHECIDA (autocorrelacao de
+      curto prazo, efeito classico de microestrutura), independente de
+      qualquer resultado estatistico especifico -- nao depende mais de
+      AG-284. A evidencia QUANTITATIVA de que o sinal e real continua em
+      aberto (eixo 1 corrigido, AG-294, mostra que nem A01 passa a regua
+      hoje) -- por isso o destino e L3, nao L2.
+
+  - id: AG-306
+    date: "2026-08-26"
+    file: "src/analysis/feature_promotion_criterion.py:116"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §11.1"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      Docstring de symbol_is_majority_discovery citava "97/275 blocos
+      simbolo x feature sao concordantes" -- o numero medido real
+      (AG-270, §11.1 do ADR) e 197/275 (72%). 97/275 = 35,3%,
+      inconsistente com o "72%" citado em toda outra parte do repo.
+      Typo (digito faltando).
+    severity: "LOW -- cosmetico, nao afeta o calculo (o codigo nao usa esse numero, so a docstring o cita)"
+    layer: "analysis (documentacao inline)"
+    consequence: "Citacao errada de evidencia medida num modulo que existe justamente pra ser a fonte confiavel dessa medicao."
+    status: "CORRIGIDO 2026-08-26 -- 97/275 -> 197/275."
+
+  - id: AG-307
+    date: "2026-08-26"
+    file: "src/analysis/feature_temporal_stability.py"
+    related_file: "tools/lint/check_unguarded_ratios.py"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      check_unguarded_ratios.py sinalizava as duas divisoes do nucleo de
+      evaluate_temporal_stability (max_abs/median_abs,
+      n_mesma_direcao/len(ics)) como sem checagem de sinal reconhecida --
+      ambas estruturalmente seguras (a 1a ja tinha guarda explicita
+      median_abs==0.0 num ternario que o heuristico nao reconhecia; a 2a
+      e garantida por len(ics)>=1), mas nenhuma tinha o comentario
+      `# noqa: unguarded-ratio -- <motivo>` que a convencao do proprio
+      script pede pra falso-positivo confirmado.
+    severity: "LOW -- script nao esta no pre-commit nem no CI hoje, entao nao bloqueava; higiene de convencao, nao bug"
+    layer: "analysis"
+    consequence: "Se o script for adicionado ao CI/pre-commit no futuro, essas 2 linhas quebrariam o build sem necessidade."
+    status: >-
+      CORRIGIDO 2026-08-26. Comentarios noqa adicionados na MESMA linha
+      da divisao (a v1 da correcao os tinha posicionado na linha de
+      fechamento de parenteses, nao reconhecida pelo script -- corrigido
+      e reverificado: check_unguarded_ratios.py agora reporta 2
+      suprimidas, 0 pendentes).

@@ -3,7 +3,7 @@
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
-- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO**, não revisado. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código). Resultado: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. `L4` corrigida (21, era 29) e novo estado `defeito_construcao` (26, ortogonal, fecha `AG-272`) — 2 já investigadas (`A13`/`E10f`, `AG-295`), achado novo (`E02f_funding_z_expanding`, insumo do gate de regime) ainda sem diagnóstico. Eixo 2 (estabilidade temporal, `AG-299`) rodado nas 15 células completas: `E18f` reprova em 15/15, confirmação independente de `AG-266` — §14.6.
+- **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 ainda não foi revisada.**
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
 - **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
@@ -225,14 +225,12 @@ Hoje: `E18f_taker_ls_vol_ratio`.
 
 ## §3. Opções consideradas
 
-> **NÃO ATUALIZADO após `AG-294` (2026-08-26).** As três opções abaixo,
-> junto com §4, ainda discutem `L2` como se tivesse 1 coluna (`E16f`) —
-> a correção do fim de §2.2 mede `L2` VAZIA. O argumento da Opção C
-> ("separar 'sem sinal hoje' de 'não deveria existir'") continua de pé,
-> mas os números/riscos específicos de cada opção abaixo precisam ser
-> reavaliados com `L2={}`, não `L2={E16f}` — próximo passo da v3, não
-> feito aqui de propósito (decisão de escopo do Manager, não desta
-> medição).
+> **ATUALIZADO em §14.5 (2026-08-26) — este aviso corrigido pra apontar lá,
+> achado `project_assurance` que a versão anterior desta nota nunca tinha
+> sido trocada por um ponteiro.** As três opções abaixo, junto com §4,
+> ainda discutem `L2` como se tivesse 1 coluna (`E16f`) — a correção do
+> fim de §2.2 mede `L2` VAZIA, e §14.5 já é a reavaliação das três opções
+> com `L2={}`/`L4=43`. Ler §14.5 antes de decidir a partir desta seção.
 
 ### Opção A — Manter o vetor de 72 (status quo)
 
@@ -322,11 +320,11 @@ a causa de `AG-266` ser conhecida.
 
 | Sai | Quantas | Por quê |
 |---|---|---|
-| `E18f` | 1 | **Quarentena** — artefato de fonte (`AG-266`) |
-| `L4` — sem mecanismo e sem sinal | 29 | Sem tese e sem evidência. Saem também do cálculo. |
-| `L3` — tese sem evidência suficiente | ~15 | Continuam calculadas; fora do treino até reteste. |
+| `E18f` | 1 | **Quarentena** — artefato de fonte (`AG-266`); vive em `L3` (calculada, fora do treino), com `defeito_construcao` também `true` — §14.3 |
+| `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ **43** (`AG-271`/`AG-272`, §14.2-§14.4) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo. |
+| `L3` — tese sem evidência suficiente, OU quarentena | ~~~15~~ **17** (§14.4) | Continuam calculadas; fora do treino até reteste/correção. |
 | `L0` — primitivas | 2 | São insumo de outras colunas, não preditores. |
-| `L1` — gate de regime | 4 | `ADR-001` §2.7 já tirou regime do vetor; `E27f` ficou por inércia. |
+| `L1` — gate de regime | 4 | `ADR-001` §2.7 já tirou regime do vetor; `E27f` é exceção deliberada (também `L2`, §14.3) — as outras 3 ficaram por inércia. |
 
 **Duas remoções que valem por si, independentes desta arquitetura:**
 
@@ -347,9 +345,17 @@ a causa de `AG-266` ser conhecida.
    quarentena`), não digitado. Fecha por construção a classe de bug de
    `AG-207` (lista hardcoded em `baselines.py` que divergiu da real).
 2. **O critério de promoção vira constante declarada, nos dois eixos.**
-   `feature_promotion_min_cells: 7`, `feature_promotion_max_ic_ratio: 4.0`,
-   `feature_promotion_min_direction_frac: 0.70` — todos `provenance: DERIVED`,
-   com a ressalva de calibração de §2.2 registrada na entrada.
+   Implementado (`AG-294`/`AG-299`) sob outros nomes que os originais
+   citados aqui: `feature_promotion_bh_q`, `feature_temporal_stability_
+   max_ratio`, `feature_temporal_stability_min_direction_frac`,
+   `feature_temporal_stability_min_points_per_semester`,
+   `feature_temporal_stability_min_semesters` (`config/constants.yaml`).
+   **Correção 2026-08-26 (`AG-285`, §11.3, nunca fechada até agora):**
+   não são `provenance: DERIVED` — são `ASSUMED`, classe B/C, com a
+   ressalva de calibração de §2.2 registrada em cada entrada. `DERIVED`
+   implicaria consequência de outra constante já medida; calibrar
+   olhando 5 casos conhecidos é o oposto — mais próximo de `ASSUMED`
+   honesto do que de uma derivação formal.
 3. **A ficha de tese vira pré-requisito de registry.** Nenhuma coluna nova
    entra sem `mecanismo_economico` e `quem_esta_do_outro_lado`. "É um
    indicador clássico" é reprovação.
@@ -2325,28 +2331,43 @@ decisão desta ADR.
 
 ### §14.2 `AG-271` fechado: os 8 recortes que `L4` precisa respeitar
 
-A v2 mandava aposentar as 29 `SEM_MECANISMO` sem checar sobreposição com
-produção/gate. Recortes obrigatórios, cada um por um motivo estrutural
-diferente (verificado por cruzamento de `T1_FEATURE_IDS`/gate de regime
-contra `audit/feature_thesis/fichas_69_2026-08-25.yaml`):
+**Revisado 2026-08-26 (`project_assurance` reprovou a v1 desta seção — ver
+nota no fim).** A v2 mandava aposentar as 29 `SEM_MECANISMO` sem checar
+sobreposição com produção/gate. Recortes obrigatórios, cada um por um
+motivo estrutural diferente (verificado por cruzamento de
+`T1_FEATURE_IDS`/gate de regime contra
+`audit/feature_thesis/fichas_69_2026-08-25.yaml`):
 
 | feature(s) | motivo do recorte | destino |
 |---|---|---|
-| `A01`–`A06` (6) | §7: único candidato a sinal genuíno desta investigação (momentum BNB/XRP, Spearman consistente por quartil) — o veredito `SEM_MECANISMO` da ficha está ERRADO pra este grupo, não ausente: momentum de 1 barra é mecanismo econômico clássico, só não foi reconhecido como tal na leitura da fórmula | `L3` (em observação) para `A01`/`A02`/`A03`/`A04`/`A06`; `A05` já é `L2` (é `T1`) |
+| `A01`–`A06` (6) | momentum de 1 barra é mecanismo econômico RECONHECIDO na literatura (autocorrelação de curto prazo, efeito clássico de microestrutura) — o veredito `SEM_MECANISMO` da ficha reflete que a ficha não creditou esse mecanismo, não que ele esteja ausente | `L3` (em observação) para `A01`/`A02`/`A03`/`A04`/`A06`; `A05` já é `L2` (é `T1`) |
 | `B01_rsi_14` | `T1` vivo hoje | `L2` (produção vence veredito de ficha) |
 | `B07_efficiency_ratio_48` | insumo do gate de regime (`classifier.py:535`) | `L1` |
 
-`L4` corrigida: **29 − 8 = 21** features — sem mecanismo, sem papel
-estrutural, sem candidatura a sinal. Verificado por conjunto (união das 5
-camadas cobre exatamente as 72, sem faltar nenhuma).
+**Correção 2026-08-26 (`project_assurance`, achado MEDIUM): a v1 desta
+seção justificava o recorte de `A01`–`A06` citando §7 ("9 de 12 features
+mantêm sinal em 4 quartis") — essa MESMA alegação já tinha sido marcada
+estatisticamente incorreta em `AG-284` (§11.3: "não tem o nulo certo, as 12
+são pré-selecionadas por sinal e 6 são colineares"), e a v1 nunca revisitou
+isso antes de usar §7 como base.** A justificativa acima não depende mais
+de `AG-284`: é só o reconhecimento de que "retorno defasado" é uma
+categoria de mecanismo padrão em finanças, independente de qualquer
+resultado estatístico específico — a evidência quantitativa de que o sinal
+é REAL (não só que o mecanismo é plausível) continua em aberto (eixo 1,
+`AG-294`, mostra que nem `A01` passa a régua corrigida — ver §14.1). `L3`
+é exatamente o destino certo pra essa situação: mecanismo plausível,
+evidência estatística ainda insuficiente.
 
-### §14.3 `AG-272` fechado: o estado `defeito_construção`, ortogonal, com precedência explícita
+`L4` a partir de `SEM_MECANISMO`: **29 − 8 = 21** features.
 
-A partição `L0`–`L4` nunca teve lugar pras 16 `INCOERENTE_DIMENSIONAL` + 10
-`ERRO_CATEGORICO` da ficha (26 no total). Essas não são "sem mecanismo"
-(`L4`) nem "tese sem evidência" (`L3`) — são construção que **mede algo
-diferente do que diz medir**, às vezes só numa fração das barras (`E10f`,
-`AG-295`), às vezes mudando de papel entre grades (`A13`, `AG-295`).
+### §14.3 `AG-272` — o estado `defeito_construção`, ortogonal, com precedência explícita
+
+**Revisado 2026-08-26.** A partição `L0`–`L4` nunca teve lugar pras 16
+`INCOERENTE_DIMENSIONAL` + 10 `ERRO_CATEGORICO` da ficha (26 no total).
+Essas não são "sem mecanismo" (`L4`) nem "tese sem evidência" (`L3`) — são
+construção que **mede algo diferente do que diz medir**, às vezes só numa
+fração das barras (`E10f`, `AG-295`), às vezes mudando de papel entre
+grades (`A13`, `AG-295`).
 
 Novo estado, mesmo desenho de `quarentena` (§2.3) — **ortogonal à camada,
 nunca uma camada própria**:
@@ -2355,49 +2376,85 @@ nunca uma camada própria**:
 defeito_construcao: true | false
 ```
 
-Uma coluna com `defeito_construcao: true` continua na camada que a
-precedência abaixo já decidiria (pode ser `L2` viva, como `A13`/`E10f`) — a
-flag só marca que **qualquer leitura de sinal desta coluna é suspeita até o
-defeito ser corrigido**, independente de estar ou não no vetor de treino
-hoje.
+**Correção 2026-08-26 (`project_assurance`, achado CRITICAL): a v1 desta
+seção tratava `defeito_construcao` como a única marcação que essas 26
+colunas precisavam — sem nunca decidir a CAMADA delas quando não eram já
+`L0`/`L1`/`L2` por outro motivo. Resultado medido por reconstrução de
+conjunto (não a alegação da v1, a reconstrução real): 23 das 72 features
+não caíam em NENHUMA camada — a MESMA classe de furo que `AG-272` original
+descrevia (25 sem camada), reduzida de 25 para 23, não fechada, apesar do
+título desta seção dizer "fechado".** Regra que faltava, agora explícita:
 
-**Precedência (fecha a 2ª metade de `AG-272` — nenhuma coluna fica em duas
-camadas ao mesmo tempo; `defeito_construcao` é a única exceção deliberada,
-por ser flag, não camada):**
+**Regra de default para `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`: `L4`
+(não calculada), a menos que a precedência abaixo já resolva a coluna pra
+`L0`/`L1`/`L2`/quarentena.** Justificativa: uma coluna com construção
+comprovadamente quebrada é uma aposta pior que "sem mecanismo" — não se
+sabe nem se ela mede o que diz medir, então o default seguro é NÃO
+calculá-la até alguém investigar, não deixá-la calculada por omissão (que
+é exatamente o que "24 não investigadas, sem camada" fazia na v1).
+
+**Precedência completa (versão corrigida — `E27f` é uma SEGUNDA exceção
+deliberada, não resolvida por ordem, ver abaixo):**
 
 1. `L0` (primitiva de cálculo) — vence qualquer veredito de ficha.
 2. `L1` (insumo do gate de regime) — vence `L3`/`L4`.
 3. `L2` = `T1_FEATURE_IDS` hoje — produção vence veredito de ficha.
-4. `L3`/`L4` — por veredito da ficha, com os recortes de §14.2.
-5. `defeito_construcao` — flag independente, sobre qualquer uma das 4 acima.
+4. **Quarentena** (`E18f`, §2.3) — vai pra `L3` (mesma consequência
+   operacional: calculada, fora do treino), com `quarentena: true` E
+   `defeito_construcao: true` simultâneos (o veredito dela na ficha é
+   `ERRO_CATEGORICO` — as duas flags descrevem o mesmo fato por dois
+   ângulos: fonte suspeita de artefato E construção categoricamente
+   errada).
+5. `SEM_MECANISMO` (com os recortes de §14.2) → `L4`.
+6. `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` restante (não resolvido por
+   1-4) → `L4` + `defeito_construcao: true` (regra de default acima).
+7. `TESE_OK` restante → `L3`.
 
-**3 das 26 já caem em `L1`/`L2` por essa precedência — `A13`/`E10f` (`L2`,
-`T1`) e `E02f_funding_z_expanding` (`L1`, insumo do gate de regime).**
-`E02f` é achado NOVO desta seção, não investigado em `AG-295` (que cobriu só
-`A13`/`E10f`) — mesma classe de risco de `B07`: se o defeito de `E02f`
-afetar o classificador de regime, o problema não é só do vetor do Alpha.
-Registrado aqui, sem diagnóstico do mecanismo — próximo item de investigação
+**`E27f_cost_atr_ratio` é uma exceção deliberada à regra "nenhuma coluna
+em duas camadas" — não um erro de precedência.** `E27f` está em
+`T1_FEATURE_IDS` (treina o Alpha) E é lida por `classifier.py` (gate de
+regime) — as DUAS coisas são verdade no código real, simultaneamente, não
+uma ambiguidade a resolver por ordem. Aplicar a precedência acima
+mecanicamente (que colocaria `E27f` só em `L1`, por vir antes de `L2` na
+ordem) mentiria sobre o que o código faz. `defeito_construcao` já era
+citado como "a única exceção deliberada" na v1 desta seção — errado: são
+DUAS, `defeito_construcao` (flag ortogonal a qualquer camada) e `E27f`
+(dupla camada `L1`+`L2`, por desenho real do código, não folga da regra).
+
+`E02f_funding_z_expanding` (`L1`, insumo do gate de regime) é achado NOVO
+desta seção, não investigado em `AG-295` (que cobriu só `A13`/`E10f`) —
+mesma classe de risco de `B07`: se o defeito de `E02f` afetar o
+classificador de regime, o problema não é só do vetor do Alpha. Registrado
+aqui, sem diagnóstico do mecanismo — próximo item de investigação
 proposto, não feito.
-
-Das 26: **2 têm investigação + correção proposta** (`A13`/`E10f`, `AG-295`);
-**24 não foram auditadas individualmente nesta sessão**, incluindo `E02f`
-(a única das 24 que já é insumo de produção via `L1`).
 
 ### §14.4 Tabela de camadas corrigida
 
-| Camada | Membros | Mudança vs. v2 |
+**Revisado 2026-08-26 — números recalculados e verificados por
+reconstrução de conjunto EM CÓDIGO (não a prosa deste documento), depois
+de `project_assurance` mostrar que a v1 desta tabela alegava cobertura
+completa sem tê-la de fato:**
+
+| Camada | Membros | Nota |
 |---|---|---|
 | `L0` | `C01`, `C02` (2) | sem mudança |
-| `L1` | `B07`, `C07`, `E02f`, `E27f` (4) | sem mudança de membros; ganha precedência explícita (§14.3) e a nota de `E02f` |
-| `L2` | as 7 `T1_FEATURE_IDS` | **era `{E16f}` (1), agora as 7 já em produção — `E16f` NÃO entra** (§14.1) |
-| `L3` | 16 (`TESE_OK` restantes que não são `L0`/`L1`/`L2` + `A01`/`A02`/`A03`/`A04`/`A06`) | ganha o grupo de momentum |
-| `L4` | 21 (era 29) | **−8**, recortes de §14.2 |
-| `defeito_construcao` (flag ortogonal) | 26 (3 já `L1`/`L2`: `A13`, `E10f`, `E02f`; 2 investigadas, 24 pendentes) | **novo**, fecha `AG-272` |
+| `L1` | `B07`, `C07`, `E02f`, `E27f` (4) | `E27f` também é `L2` — dupla camada deliberada (§14.3) |
+| `L2` | as 7 `T1_FEATURE_IDS` | inclui `E27f` (dupla com `L1`) — `E16f` NÃO entra (§14.1) |
+| `L3` | 17 (11 `TESE_OK` restantes + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) | +1 vs. a v1 desta tabela (ganhou `E18f`) |
+| `L4` | 43 (21 `SEM_MECANISMO` restante + 22 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) | **+22 vs. a v1 desta tabela** — é a correção do achado CRITICAL |
+| `defeito_construcao` (flag ortogonal) | 26 (3 já `L1`/`L2`: `A13`, `E10f`, `E02f`; 1 em `L3` via quarentena: `E18f`; 22 em `L4`) | fecha `AG-272` de verdade agora |
 
-Verificado por conjunto: `L0 ∪ L1 ∪ L2 ∪ L3 ∪ L4` cobre as 72 features sem
-faltar nenhuma (`defeito_construcao` sobrepõe por ser flag, não camada — 4
-sobreposições esperadas: `A13`/`E10f` em `T1`+flag, `E02f` em `L1`+flag,
-`E27f` em `T1`+`L1`).
+**Verificado por reconstrução de conjunto (script, não prosa):**
+`L0 ∪ L1 ∪ L2 ∪ L3 ∪ L4` = as 72 features exatas, `0` faltando, `0`
+sobrando. A soma bruta das 5 camadas (`2+4+7+17+43=73`) excede 72 em
+exatamente `1` — a dupla-camada deliberada de `E27f` (§14.3), não um erro
+de contagem.
+
+Das 26 em `defeito_construcao`: **2 têm investigação + correção proposta**
+(`A13`/`E10f`, `AG-295`); **24 não foram auditadas individualmente nesta
+sessão**, incluindo `E02f` (a única das 24 que já é insumo de produção via
+`L1`) e `E18f` (já tem sua própria investigação separada, `AG-266`, sobre
+a causa do artefato — não sobre a construção em si).
 
 ### §14.5 Opções, revisadas
 
@@ -2413,9 +2470,12 @@ concentrar risco em cima. As opções de §3 ficam assim:
 - **Opção C (5 camadas + quarentena + `defeito_construção`, podar `L4`
   corrigida, manter `L3` calculada) ✅** — continua a recomendação, e fica
   MAIS barata de justificar: não exige nenhuma promoção contestável (`L2`
-  não muda), só reduz o que é calculado sem propósito (`L4`, 21) e nomeia o
-  que precisa de engenharia antes de significar algo (`defeito_construção`,
-  26).
+  não muda), só reduz o que é calculado sem propósito (`L4`, **43** —
+  corrigido 2026-08-26, era 21 na v1 desta tabela, ver §14.3/§14.4) e
+  nomeia o que precisa de engenharia antes de significar algo
+  (`defeito_construção`, 26). `L4=43` (60% das 72) parar de ser calculada
+  é uma redução MAIOR do que a v1 desta seção estimava — o custo evitado
+  é maior, não menor, com a partição corrigida.
 
 ### §14.6 O que esta v3 ainda não fecha
 
@@ -2441,12 +2501,40 @@ concentrar risco em cima. As opções de §3 ficam assim:
   como lacuna residual (por que `h=1` e não o pico, ou o holding `H=5`?)
   — registrada, não fabricada.
 - **24 das 26 colunas em `defeito_construção` não foram investigadas** —
-  incluindo `E02f` (achado novo aqui, sem diagnóstico).
+  incluindo `E02f` (achado novo aqui, sem diagnóstico). Agora todas as 22
+  sem investigação individual têm destino de camada (`L4`, §14.3/§14.4) —
+  o que falta é o diagnóstico do MECANISMO do defeito de cada uma, não a
+  camada.
 - **`A01`–`A06` seguem sem resolução da tensão Pearson-vs-Spearman** (§7) —
-  `L3`, não `L2`, precisamente por isso.
-- **Nenhum código foi alterado por esta seção.** `T1_FEATURE_IDS`/
-  `registry.yaml` continuam como estavam — `layer`/`quarentena`/
-  `defeito_construcao` são desenho proposto (§5.3 item 1 da v2 ainda vale),
-  não campos que existem hoje.
-- **Não revisado por `project_assurance`.** Mesma situação de `§12`/`§13` —
-  proposto, não ratificado.
+  `L3`, não `L2`, precisamente por isso. A justificativa do recorte pra
+  `L3` foi corrigida em §14.2 pra não depender mais de `AG-284`.
+- **Nenhum código de produção foi alterado por §14.1-§14.5.**
+  `T1_FEATURE_IDS`/`registry.yaml` continuam como estavam — `layer`/
+  `quarentena`/`defeito_construcao` são desenho proposto (§5.3 item 1 da
+  v2 ainda vale), não campos que existem hoje. (`src/analysis/feature_
+  temporal_stability.py` teve um bug de código real corrigido — ver §14.7
+  — mas é módulo novo, decision-support, não produção.)
+
+### §14.7 Revisão independente (`project_assurance`, 2026-08-26) — achados e correções
+
+A v1 de §14 (§14.1-§14.6, tabela original) foi revisada por `project_assurance`
+e **REPROVADA** — 1 CRITICAL, 1 HIGH, 4 MEDIUM, 2 LOW. Todos corrigidos
+nesta versão de §14.2-§14.6, exceto onde marcado.
+
+| severidade | achado | correção |
+|---|---|---|
+| **CRITICAL** | "`AG-272` fechado"/"união cobre as 72" era FALSO — reconstrução de conjunto real dava 49, não 72 (23 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem camada nenhuma, mesma classe de furo do `AG-272` original) | Regra de default `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` → `L4` adicionada (§14.3); `L4` recalculada pra 43; reverificado por script (não prosa): união = 72 exatas |
+| **HIGH** | Regra "nenhuma coluna em duas camadas, exceto a flag" violada pelo próprio documento — `E27f` aparece em `L1` E `L2` na tabela da v1 | `E27f` declarado explicitamente como 2ª exceção deliberada (dupla camada real no código, não erro de precedência) — §14.3 |
+| MEDIUM | §3 (nota "não atualizado"), §5.2 (`L4: 29`) e §5.3 ("todos DERIVED") não foram sincronizados com §14 — padrão `AG-123` | Corrigidos (ver §3, §5.2, §5.3 abaixo) |
+| MEDIUM | `evaluate_temporal_stability` sem piso de `n_semestres_validos` — com 1 semestre, `passa_eixo_2=True` incondicional | `min_semesters` adicionado (constante nova, `feature_temporal_stability_min_semesters=4`), com teste dedicado. 3 relatórios reais regenerados |
+| MEDIUM | Recorte de `A01`-`A06` pra `L3` (§14.2) se apoiava em `§7`/"9 de 12 quartis", já invalidado por `AG-284` no mesmo documento | Justificativa reescrita: reconhecimento de mecanismo (momentum é categoria clássica), não a evidência quantitativa contestada — §14.2 |
+| LOW | Docstring de `feature_promotion_criterion.py` citava "97/275" (deveria ser "197/275", `AG-270`) | Corrigido |
+| LOW | 2 divisões em `feature_temporal_stability.py` sem comentário `noqa: unguarded-ratio` reconhecido pelo linter, apesar de estruturalmente seguras | Comentários adicionados nas linhas certas, `check_unguarded_ratios.py` confirma 0 pendentes |
+
+**Esta versão corrigida de §14 (v2) ainda NÃO foi revisada por
+`project_assurance`** — mesma situação de `§12`/`§13`: proposto, não
+ratificado. Dado que a v1 já foi reprovada uma vez com achado CRITICAL
+verificado por reconstrução independente, uma segunda rodada de revisão
+antes de tratar §14 como fechado é o padrão que este projeto já aplicou
+duas vezes (`§1`-`§9` v1→v2, `production_grade_gate.py` v1→v2) — não
+decidido aqui se/quando rodar.

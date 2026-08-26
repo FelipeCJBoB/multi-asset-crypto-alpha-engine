@@ -96,7 +96,7 @@ def test_ic_per_semester_levanta_com_shapes_diferentes() -> None:
 def test_evaluate_temporal_stability_bate_com_conta_manual() -> None:
     ic_by_semester = {0: (0.01, 2000), 1: (0.02, 2000), 2: (0.005, 2000), 3: (-0.03, 2000)}
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1
     )
     abs_ics = [0.01, 0.02, 0.005, 0.03]
     esperado_max = max(abs_ics)
@@ -118,7 +118,7 @@ def test_evaluate_temporal_stability_reproduz_e18f_reprova_nos_dois() -> None:
         3: (-0.01, 3000),
     }
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1
     )
     assert resultado.passa_ratio is False  # 12.57 >> 4
     assert resultado.frac_mesma_direcao == pytest.approx(0.5)
@@ -131,7 +131,7 @@ def test_evaluate_temporal_stability_reproduz_e16f_passa() -> None:
     ic_by_semester = {i: (-0.02 if i != 9 else 0.01, 3000) for i in range(10)}
     # max=0.02, med=0.02 -> ratio=1 (nao reproduz 2.98 exato, so a direcao passa/reprova)
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1
     )
     assert resultado.frac_mesma_direcao == pytest.approx(0.9)
     assert resultado.passa_direcao is True
@@ -160,7 +160,7 @@ def test_evaluate_temporal_stability_direcao_e_maioria_propria_nao_media_pondera
     # media = (4*-0.05 + 6*0.001)/10 = -0.0194 -> negativa, mas maioria (6/10) e positiva
     assert np.mean([v[0] for v in ic_by_semester.values()]) < 0.0
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=100.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=100.0, min_direction_frac=0.70, min_semesters=1
     )
     assert resultado.n_mesma_direcao == 6
     assert resultado.frac_mesma_direcao == pytest.approx(0.6)
@@ -168,7 +168,7 @@ def test_evaluate_temporal_stability_direcao_e_maioria_propria_nao_media_pondera
 
 def test_evaluate_temporal_stability_levanta_com_mapa_vazio() -> None:
     with pytest.raises(fts.FeatureTemporalStabilityError, match="nenhum semestre"):
-        fts.evaluate_temporal_stability({}, max_ratio=4.0, min_direction_frac=0.70)
+        fts.evaluate_temporal_stability({}, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1)
 
 
 def test_evaluate_temporal_stability_piso_da_metrica_e_50_por_cento() -> None:
@@ -177,7 +177,7 @@ def test_evaluate_temporal_stability_piso_da_metrica_e_50_por_cento() -> None:
     0% (definição operacional 2, ver docstring do módulo)."""
     ic_by_semester = {i: (0.01 if i < 5 else -0.01, 2000) for i in range(10)}
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=100.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=100.0, min_direction_frac=0.70, min_semesters=1
     )
     assert resultado.frac_mesma_direcao == pytest.approx(0.5)
 
@@ -185,7 +185,31 @@ def test_evaluate_temporal_stability_piso_da_metrica_e_50_por_cento() -> None:
 def test_evaluate_temporal_stability_ratio_infinito_quando_mediana_zero() -> None:
     ic_by_semester = {0: (0.05, 2000), 1: (0.0, 2000), 2: (-0.0, 2000)}
     resultado = fts.evaluate_temporal_stability(
-        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70
+        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1
     )
     assert resultado.ratio == float("inf")
     assert resultado.passa_ratio is False
+
+
+def test_evaluate_temporal_stability_um_semestre_passaria_trivial_sem_o_piso() -> None:
+    """Achado real de `project_assurance` (revisão do ADR-005 §14,
+    2026-08-26): com 1 único semestre válido, `ratio=1,0` (mediana de 1
+    elemento é o próprio elemento) e `frac_mesma_direcao=100%` SEMPRE --
+    `passa_eixo_2=True` incondicional, sem relação com confiabilidade
+    real. Confirma que, SEM o piso, o resultado seria trivialmente
+    positivo -- por isso `min_semesters` é obrigatório, não cosmético."""
+    ic_by_semester = {0: (0.0001, 5000)}
+    resultado_sem_piso = fts.evaluate_temporal_stability(
+        ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=1
+    )
+    assert resultado_sem_piso.ratio == pytest.approx(1.0)
+    assert resultado_sem_piso.frac_mesma_direcao == pytest.approx(1.0)
+    assert resultado_sem_piso.passa_eixo_2 is True  # trivial, e é exatamente o problema
+
+
+def test_evaluate_temporal_stability_levanta_abaixo_do_piso_de_semestres() -> None:
+    ic_by_semester = {0: (0.0001, 5000), 1: (0.0002, 5000)}
+    with pytest.raises(fts.FeatureTemporalStabilityError, match="min_semesters"):
+        fts.evaluate_temporal_stability(
+            ic_by_semester, max_ratio=4.0, min_direction_frac=0.70, min_semesters=4
+        )

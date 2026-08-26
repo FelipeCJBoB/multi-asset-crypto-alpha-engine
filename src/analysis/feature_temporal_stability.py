@@ -191,9 +191,21 @@ def evaluate_temporal_stability(
     *,
     max_ratio: float,
     min_direction_frac: float,
+    min_semesters: int,
 ) -> TemporalStabilityResult:
     """Núcleo: aplica os dois critérios do eixo 2 a `{semestre: (ic, n)}`
     já filtrado por `n >= min_points` (`ic_per_semester`).
+
+    **`min_semesters` -- achado `project_assurance` 2026-08-26 (revisão do
+    `ADR-005` §14), CONFIRMADO.** Com exatamente 1 semestre válido,
+    `median_abs_ic = max_abs_ic` (mediana de 1 elemento é o próprio
+    elemento) → `ratio = 1.0` sempre `≤ max_ratio`, e
+    `frac_mesma_direcao = 1/1 = 100%` sempre `≥ min_direction_frac` —
+    `passa_eixo_2=True` INCONDICIONALMENTE, sem relação com a
+    confiabilidade real do IC. A v1 deste módulo só levantava erro com
+    `ic_by_semester` vazio, nunca com poucos elementos. `min_semesters`
+    fecha isso: abaixo do piso, o resultado é indefinido (levanta), não
+    um "passa" vazio de conteúdo.
 
     **Definição operacional 5, CORRIGIDA por reprodução (2026-08-26).** A
     v1 deste módulo usava o sinal de `pico_ic` (IC do período inteiro) como
@@ -215,16 +227,21 @@ def evaluate_temporal_stability(
         raise FeatureTemporalStabilityError(
             "nenhum semestre com dado suficiente -- eixo 2 indefinido pra esta célula"
         )
+    if len(ic_by_semester) < min_semesters:
+        raise FeatureTemporalStabilityError(
+            f"{len(ic_by_semester)} semestre(s) válido(s) < min_semesters={min_semesters} -- "
+            "ratio/direção não são confiáveis com tão poucos pontos (ver docstring)"
+        )
 
     ics = [v[0] for v in ic_by_semester.values()]
     abs_ics = [abs(x) for x in ics]
     max_abs = max(abs_ics)
     median_abs = float(np.median(abs_ics))
-    ratio = float("inf") if median_abs == 0.0 else max_abs / median_abs
+    ratio = float("inf") if median_abs == 0.0 else max_abs / median_abs  # noqa: unguarded-ratio -- guarda no ternário
 
     n_positivos = sum(1 for ic in ics if ic > 0.0)
     n_mesma_direcao = max(n_positivos, len(ics) - n_positivos)
-    frac_mesma_direcao = n_mesma_direcao / len(ics)
+    frac_mesma_direcao = n_mesma_direcao / len(ics)  # noqa: unguarded-ratio -- len(ics)>=1, guarda no topo
 
     passa_ratio = ratio <= max_ratio
     passa_direcao = frac_mesma_direcao >= min_direction_frac
@@ -304,6 +321,7 @@ def run_feature_temporal_stability_report(
     min_points_semester = int(load_constant("feature_temporal_stability_min_points_per_semester"))
     max_ratio = float(load_constant("feature_temporal_stability_max_ratio"))
     min_direction_frac = float(load_constant("feature_temporal_stability_min_direction_frac"))
+    min_semesters = int(load_constant("feature_temporal_stability_min_semesters"))
 
     eixo1 = _load_eixo1_report(resolution_id, out_dir)
     bar_source = f"dollar_{resolution_id.lower()}"
@@ -344,13 +362,17 @@ def run_feature_temporal_stability_report(
             ic_by_sem = ic_per_semester(
                 values, fwd_return_h1, semester_ids, min_points=min_points_semester
             )
-            if not ic_by_sem:
-                por_feature[name] = {"n_semestres_validos": 0, "passa_eixo_2": False}
+            if len(ic_by_sem) < min_semesters:
+                por_feature[name] = {
+                    "n_semestres_validos": len(ic_by_sem),
+                    "passa_eixo_2": False,
+                }
                 continue
             resultado = evaluate_temporal_stability(
                 ic_by_sem,
                 max_ratio=max_ratio,
                 min_direction_frac=min_direction_frac,
+                min_semesters=min_semesters,
             )
             por_feature[name] = {
                 **asdict(resultado),
@@ -375,6 +397,7 @@ def run_feature_temporal_stability_report(
         "min_points_por_semestre": min_points_semester,
         "max_ratio": max_ratio,
         "min_direction_frac": min_direction_frac,
+        "min_semesters": min_semesters,
         "por_simbolo": por_simbolo,
         "generated_at": datetime.now(UTC).isoformat(),
     }

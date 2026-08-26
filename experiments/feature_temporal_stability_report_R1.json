@@ -6,6 +6,7 @@
   "min_points_por_semestre": 1000,
   "max_ratio": 4.0,
   "min_direction_frac": 0.7,
+  "min_semesters": 4,
   "por_simbolo": {
     "BTCUSDT": {
       "n_bars": 152926,
@@ -8573,5 +8574,5 @@
       }
     }
   },
-  "generated_at": "2026-08-26T16:17:21.463404+00:00"
+  "generated_at": "2026-08-26T18:37:44.151614+00:00"
 }

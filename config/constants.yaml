@@ -323,6 +323,23 @@ feature_temporal_stability_min_direction_frac:
   sweep_range: [0.50, 0.90]
   review_by: sprint_10
 
+feature_temporal_stability_min_semesters:
+  value: 4
+  provenance: ASSUMED
+  source: >
+    Achado `project_assurance` 2026-08-26 (revisao do ADR-005 §14): com
+    1 semestre valido, ratio=1,0 e frac_mesma_direcao=100% sempre (piso
+    trivial) -- passa_eixo_2=True incondicional, sem relacao com
+    confiabilidade real. Piso de 4 semestres (2 anos) escolhido por
+    convenincia -- pelo menos alguns periodos independentes pra a
+    metrica de dispersao/direcao ter conteudo -- nao medido/derivado.
+    Consumido por src.analysis.feature_temporal_stability.
+    evaluate_temporal_stability.
+  class: C
+  sweep_required: true
+  sweep_range: [2, 8]
+  review_by: sprint_10
+
 risk_per_trade:
   value: 0.005
   provenance: DERIVED
