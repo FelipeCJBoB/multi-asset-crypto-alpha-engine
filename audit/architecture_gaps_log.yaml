@@ -18529,3 +18529,108 @@ entries:
       Marcar como skip e melhor que deixar vermelho (vermelho cega a
       proxima regressao), mas e pior que ter o artefato -- e o artefato so
       vem com o retreino em R1.
+
+  - id: AG-266
+    date: "2026-08-26"
+    file: "src/features/groups/group_e.py::e18f_taker_ls_vol_ratio, data/capacity/metrics/*/, docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md"
+    related_file: "audit/architecture_gaps_log.yaml::AG-265, ::AG-263, experiments/ic_by_horizon_report_{R1,R2,R3}.json"
+    found_by: "Claude -- investigacao da heterogeneidade BNB/XRP pedida pelo Manager; o alvo era outro, o achado derrubou a ancora do ADR-005 que eu mesmo tinha proposto no turno anterior"
+    gap: >
+      E18f_taker_ls_vol_ratio NAO TEM SINAL -- TEM UM ARTEFATO DE FONTE QUE
+      LIGA E DESLIGA POR BLOCOS DE MESES, IDENTICO NOS 5 ATIVOS.
+      AG-265 elegeu E18f como a unica feature universal do vetor (15/15
+      celulas) e o ADR-005 a colocou como ancora da camada L2. Medindo o IC
+      MES A MES (BTCUSDT/R1, h=1) o padrao e de degrau, nao de regime:
+        2022-05 .. 2024-02   IC ~ +-0,03   (ruido)
+        2024-03              IC = +0,1263  <- liga
+        2024-04              IC = +0,0353  <- desliga
+        2024-05 .. 2025-06   IC = +0,15 a +0,19 sustentado por 13 meses
+        2025-07              IC = +0,0046  <- desliga
+        2025-08 .. 2026-05   IC ~ +-0,03   (ruido)
+        2026-06 .. 2026-08   IC = +0,09 -> +0,159 -> +0,165  <- liga de novo
+      Transicoes de um mes para o outro, com salto de 20x. E os 5 ativos
+      ligam e desligam NO MESMO periodo de calendario (Q3 de cada serie,
+      ~2024-04..2025-05, IC de +0,159 a +0,171 nos cinco).
+      Nenhum regime de mercado tem essa forma.
+    severity: >
+      critico para a decisao de arquitetura -- e a feature que AG-265
+      apontou como a unica com sinal reproduzivel entre celulas, e a base da
+      camada L2 proposta no ADR-005. Nao corrompe artefato de producao
+      (nenhum modelo foi treinado sobre esta conclusao), mas invalidaria o
+      vetor novo se aplicada.
+    layer: "features / data (fonte externa de metrics)"
+    consequence: >
+      CAUSA ISOLADA POR ELIMINACAO, com quatro testes:
+      (1) NAO e discretizacao de preco. XRP tem tick relativo 1000x o de BTC
+          e 1,68% de retornos exatamente zero, mas SOL tem MAIS retorno zero
+          (0,74%) que BNB (0,42%) e um decimo das descobertas.
+      (2) NAO e autocorrelacao de retorno. BNB tem a MENOR de todas
+          (Pearson lag-1 = +0,0009) contra BTC (-0,0122).
+      (3) NAO e a fonte de metrics mudando de cadencia ou cobertura. Todos
+          os meses de 2023-11 a 2026-08 tem 288 linhas/dia, passo de 5 min,
+          sem lacuna.
+      (4) NAO e duracao de barra. O Q2 de BTCUSDT tem MAIS barras abaixo de
+          5 min (33,7%) que o Q3 (30,3%) e IC 20x menor.
+      O TESTE DISCRIMINANTE, e ele fecha: comparar features do MESMO
+      mecanismo economico por ORIGEM, nos 4 periodos:
+        feature                     origem              DESL    LIG     DESL    LIG
+        E18f_taker_ls_vol_ratio     fonte externa 5min  -0,005 +0,172  -0,002 +0,124
+        D06f_taker_imbalance_z_48   calculada da barra  -0,003 +0,003  +0,004 +0,022
+        D05f_taker_buy_ratio        calculada da barra  -0,005 +0,003  +0,005 +0,021
+        E16f_global_ls_ratio        fonte externa 5min  -0,013 -0,010  -0,012 -0,010
+        E14f_toptrader_ls_ratio     fonte externa 5min  -0,008 -0,008  -0,006 +0,008
+      D05f/D06f medem O MESMO mecanismo (agressao de fluxo) calculado da
+      PROPRIA barra e nao mostram nada -- entao nao e o mercado. E16f/E14f
+      vem da MESMA fonte, MESMA cadencia de 5 min e mesmo asof-join, e sao
+      estaveis -- entao nao e a fonte externa em geral, nem o alinhamento.
+      O efeito e exclusivo do campo `sum_taker_long_short_vol_ratio`.
+      MECANISMO PARCIAL MEDIDO: staleness contribui mas nao explica.
+      Removendo as barras em que E18f[t] == E18f[t+1], o IC dos periodos
+      ligados cai de +0,172 para +0,106 e de +0,124 para +0,081 (~40%),
+      mas os periodos DESLIGADOS tem MAIS staleness (20,0% contra 14,8%) e
+      IC zero. Staleness amplifica; nao origina.
+      TAMBEM MEDIDO, e descarta a leitura mais simples: E18f correlaciona
+      +0,32 a +0,45 com o retorno CONTEMPORANEO da propria barra em TODOS os
+      periodos, ligados e desligados. A correlacao contemporanea e estavel;
+      so a "preditiva" liga e desliga.
+    o_que_isso_faz_com_ag265_e_adr005: >
+      AG-265 continua correto no METODO e no resto do resultado -- o que cai
+      e a interpretacao de UMA linha. "E18f em 15/15 celulas" nao e evidencia
+      de sinal universal: e evidencia de que o artefato afeta os 5 ativos ao
+      mesmo tempo, que e exatamente o que produz 15/15.
+      ADR-005 §5.1 propunha corrigir a ancoragem de E18f e trata-la como
+      ancora da camada L2. ISSO ESTA SUSPENSO. Sobra E16f_global_ls_ratio
+      (7/15), que os quatro periodos mostram ESTAVEL (-0,013 / -0,010 /
+      -0,012 / -0,010) -- a camada L2 tem 1 feature, nao 2.
+      O criterio ">= 7/15 celulas" tambem precisa de emenda: ele mede
+      reproducao entre ATIVOS e GRADES, e nao detecta artefato que atinge
+      todos os ativos no mesmo periodo. Falta o eixo TEMPO. Criterio
+      corrigido proposto: reproducao entre celulas E estabilidade entre
+      subperiodos (sem degrau).
+    heterogeneidade_bnb_xrp_o_alvo_original: >
+      PARCIALMENTE EXPLICADA, e a parte que sobra e provavelmente REAL.
+      Testado por quartil temporal em BNBUSDT/R1: das 12 primeiras features
+      descobertas, 9 mantem o SINAL do IC nos 4 quartis -- A01..A06
+      (retornos defasados) tem IC positivo consistente de +0,008 a +0,024.
+      Isso e momentum de 1 barra, estavel no tempo.
+      A tensao a resolver: a autocorrelacao de PEARSON do retorno de BNB e
+      +0,0009 (nula), mas o IC de SPEARMAN de A01 contra o retorno seguinte
+      e ~+0,017 e consistente. Pearson e Spearman divergirem nessa direcao
+      significa relacao no CORPO da distribuicao com caudas que a cancelam.
+      Nao e artefato conhecido -- e um achado proprio, e o unico candidato a
+      sinal genuino que esta investigacao produziu.
+    status: >-
+      ABERTO. NAO corrigido, NAO removido -- E18f continua no registry e no
+      calculo exatamente como estava.
+      O QUE FALTA, e nao pode ser resolvido dentro do repo: descobrir POR QUE
+      o campo `sum_taker_long_short_vol_ratio` muda de comportamento nesses
+      blocos. As hipoteses vivas sao mudanca de semantica/janela de calculo
+      pela Binance nos periodos, ou defeito no download/parse desse campo
+      especifico. As duas exigem checar a documentacao da fonte ou rebaixar
+      o dado, nenhuma das duas e medicao interna.
+      DECISOES DO MANAGER: (a) E18f sai do vetor ate a causa ser conhecida --
+      minha recomendacao, dado que 13 meses de artefato dentro da janela de
+      treino contaminariam qualquer modelo; (b) o criterio de promocao ganha
+      o eixo de estabilidade temporal, senao o proximo artefato passa pelo
+      mesmo caminho; (c) perseguir ou nao o momentum de BNB/XRP, que e o
+      unico candidato a sinal real em pe.

@@ -300,3 +300,62 @@ contagem por células precisa ser refeita.
   pós-hoc. Usá-la para escolher o vetor de treino é exatamente o que B06 proíbe
   — por isso a promoção `L3 → L2` precisa de um protocolo in-fold, e este ADR
   não o especifica.
+
+---
+
+## §10. ADDENDUM 2026-08-26 — a âncora caiu (`AG-266`)
+
+Este ADR foi escrito no mesmo dia, algumas horas antes. A investigação da
+heterogeneidade BNB/XRP (§7), que ele próprio listou como bloqueante,
+derrubou a peça central da proposta. O corpo acima fica **como foi escrito**;
+o que muda está aqui.
+
+**`E18f_taker_ls_vol_ratio` não tem sinal — tem um artefato de fonte.** O IC
+mês a mês liga e desliga em degraus: ruído até 2024-02, `+0,17` sustentado de
+2024-05 a 2025-06, ruído de 2025-08 a 2026-05, e liga de novo em 2026-06.
+Transições de um mês para o outro, salto de 20×, **nos cinco ativos no mesmo
+período de calendário**.
+
+O teste que fecha é comparar features do mesmo mecanismo por origem:
+
+| feature | origem | DESL | LIG | DESL | LIG |
+|---|---|---|---|---|---|
+| `E18f_taker_ls_vol_ratio` | fonte externa 5 min | −0,005 | **+0,172** | −0,002 | **+0,124** |
+| `D06f_taker_imbalance_z_48` | calculada da barra | −0,003 | +0,003 | +0,004 | +0,022 |
+| `D05f_taker_buy_ratio` | calculada da barra | −0,005 | +0,003 | +0,005 | +0,021 |
+| `E16f_global_ls_ratio` | fonte externa 5 min | −0,013 | −0,010 | −0,012 | −0,010 |
+| `E14f_toptrader_ls_ratio` | fonte externa 5 min | −0,008 | −0,008 | −0,006 | +0,008 |
+
+`D05f`/`D06f` medem o **mesmo mecanismo** calculado da própria barra e não
+mostram nada — não é o mercado. `E16f`/`E14f` vêm da **mesma fonte, mesma
+cadência, mesmo asof-join** e são estáveis — não é a fonte externa nem o
+alinhamento. É o campo `sum_taker_long_short_vol_ratio` especificamente.
+
+### O que muda no ADR
+
+1. **§5.1 item 1 está SUSPENSO.** Corrigir a ancoragem de `E18f` não é mais
+   prioridade — a feature sai do vetor até a causa ser conhecida. Treinar
+   sobre 13 meses de artefato dentro da janela contaminaria qualquer modelo.
+2. **A camada `L2` tem UMA feature, não duas.** Sobra `E16f_global_ls_ratio`,
+   estável nos quatro períodos (−0,013 / −0,010 / −0,012 / −0,010). Isso
+   fortalece a objeção da Opção B em §3: um vetor de 1 coluna não vence a
+   régua de `AG-260`.
+3. **O critério de `≥ 7/15` células ganha um eixo.** Ele mede reprodução
+   entre **ativos e grades** e não detecta artefato que atinge todos os
+   ativos no **mesmo período**. Foi exatamente esse cego que produziu
+   "`E18f` em 15/15". Critério corrigido: reprodução entre células **E**
+   estabilidade entre subperíodos, sem degrau.
+
+### O que a investigação de §7 achou de positivo
+
+A heterogeneidade BNB/XRP é **parcialmente real**. Por quartil temporal em
+BNBUSDT/R1, 9 das 12 primeiras features descobertas mantêm o sinal nos quatro
+quartis — `A01`..`A06` (retornos defasados) com IC de `+0,008` a `+0,024`,
+consistente. É momentum de 1 barra, estável no tempo.
+
+A tensão que fica: a autocorrelação de **Pearson** do retorno de BNB é
+`+0,0009` (nula), mas o IC de **Spearman** de `A01` contra o retorno seguinte
+é `~+0,017` e consistente. Divergirem nessa direção significa relação no
+**corpo** da distribuição com caudas que a cancelam. É o único candidato a
+sinal genuíno que esta investigação produziu, e não estava no vetor `L2`
+proposto.
