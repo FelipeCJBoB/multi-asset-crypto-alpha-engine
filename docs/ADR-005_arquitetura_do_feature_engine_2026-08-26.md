@@ -6,7 +6,14 @@
 - **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 FOI revisada** (2ª rodada, 2026-08-26): 6 das 7 correções CONFIRMADAS por reconstrução independente; a 7ª (sincronia `§3`/`§5.2`/`§5.3`) só PARCIAL — 2 menções desatualizadas a mais achadas em `§2.1`/fim de `§2.2` (corrigidas). A 2ª rodada também achou que o defeito de `E02f`/`C07`/`D03f`/`E15f`/`E17f` citado em `§14.3` não era "sem diagnóstico" — é dívida já aberta do `AG-030` desde 2026-08-17, nunca conectada (corrigido em `§14.3`). Nenhum achado da classe do CRITICAL original desta vez.
 - **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado pela sessão que escreveu a v1.
-- **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Item 11b **EXECUTADO** (§13.20, `AG-296`/`AG-297`) — código, testes e artefato; nenhum default de produção alterado.
+- **§13 v2 (engenharia de ML, Data Science, Engenharia de Dados): PROPOSTO**, não revisado. É a sessão delegada acima, entregando: audita a v1 item a item (§13.9), acrescenta 2 achados P0 e 2 P1 (§13.10–§13.13), emenda 3 dos 5 itens de §13.5 (§13.14), arquiva 4 hipóteses refutadas por medição (§13.15) e registra em §13.19 **seis achados próprios que não sobreviveram ao reexame**. Ordem de `§13.17` em execução — **itens 1, 2, 3, 3b, 4, 10 e 11b EXECUTADOS** (ver `§13.20`–`§13.22`); item 11 **parcialmente** (o GATE já pré-existia sem ter sido reconhecido como tal — `§13.22` — e o teto de capacidade por ranking de margem é código novo, opt-in, não promovido); itens 5, 6, 7, 8, 9 **bloqueados** atrás do retreino represado (decisão do Manager, 2026-08-26 — o vetor de 69 features pode cair quando a sessão paralela terminar a reprogramação).
+  - Item 1 (`feature_ids` obrigatório, 5 call sites): `AG-298`.
+  - Item 2 (NaN→null na fronteira, coluna morta falha alto): `AG-300`.
+  - Item 3 (censo de nulos por coluna × célula): `AG-308`.
+  - Item 3b (detector de linhagem label↔registro, substitui o 3c rejeitado): `AG-309`.
+  - Item 4 (peso do calibrador, opção b): `AG-312`.
+  - Item 10 (manifesto completo + verificação na carga): `§13.21`.
+  - Item 11 / 11b (`p̂ > breakeven(linha)`, censo de admissibilidade): `§13.20`, `§13.22`.
 - **`AG-295` (A13/E10f, achado sobre o Alpha EM PRODUÇÃO, independente de §1–§9/§14): EXECUTADO 2026-08-26** — as 2 correções que o achado descrevia como propostas/investigadas mas não adotadas foram cortadas pra produção, aprovação explícita do Manager. `E10f_oi_change_z_48`: `registry.yaml` v1→v2 (delta calculado na cadência nativa da fonte, não mais depois do alinhamento por barra). `feature_a13_ema_window`: `scaling_invariant` `clock`→`bar_count` (`config/constants.yaml`), `ema_window=48` fixo nas 3 grades — a maquinaria de escala por `bar_source` foi removida de `src/features/build.py`. Ver addendum `2026-08-26b` na entrada `AG-295` do log e `§14.3` (correção `2026-08-26b`) pro detalhe completo.
 
 **Isto ALTERA defaults de produção** (parágrafo acima) — `E10f`/`A13` mudam de valor sob R2/R3 (A13 bit-exato só sob R1); exige relabel/retrain de qualquer modelo já treinado. Fora disso, nenhuma coluna de feature foi removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
@@ -2078,22 +2085,22 @@ importa: primeiro `p̂` honesto, depois a regra.**
 `§13.7` está certo na ordem e nos dois pré-requisitos. Insiro os achados
 novos e marco o que muda artefato.
 
-| # | item | origem | muda artefato? | gasta `N_lifetime`? |
-|---|---|---|---|---|
-| 1 | `feature_ids` obrigatório nos 5 call sites | `§13.5-1` | não (vai **falhar alto**) | não |
-| 2 | NaN → null na fronteira + falha alta em coluna morta | `§13.5-2` | **sim** (`config_hash`) | não |
-| 3 | Censo de nulos por coluna × célula, persistido | `§13.7-3` | não | não |
-| **3b** | **Transação `labels ↔ registro` + gate de staleness por `config_hash`** | **`§13.11`** | não | não |
-| **3c** | **Reprocessar `label_engine_runs` para as 15 células atuais** | **`§13.11`** | não (append) | não |
-| **4** | **Decisão do Manager sobre o peso do calibrador (a/b/c)** | **`§13.10`** | **sim**, se (a)/(b) | não |
-| 5 | Nulo de permutação em todo relatório de `run_layer1_sprint` | `§13.13` | não | **não** (é nulo) |
-| 6 | Piso de magnitude nas constraints (`|mean_ic| ≥ k·SE`) | `§13.5-4` emendado | sim | não |
-| 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) |
-| 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não |
-| 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não |
-| 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não |
-| **11** | **Regra de decisão: `p̂ > breakeven(linha)` — que é R2 por linha** | **`§13.16.4`** | **sim** (decisão, não modelo) | **não** |
-| **11b** | **Censo de linhas que violam R2 no conjunto de treino, por célula** | **`§13.16.3`** | não | não |
+| # | item | origem | muda artefato? | gasta `N_lifetime`? | status |
+|---|---|---|---|---|---|
+| 1 | `feature_ids` obrigatório nos 5 call sites | `§13.5-1` | não (vai **falhar alto**) | não | **EXECUTADO** (`AG-298`) |
+| 2 | NaN → null na fronteira + falha alta em coluna morta | `§13.5-2` | **sim** (`config_hash`) | não | **EXECUTADO** (`AG-300`) |
+| 3 | Censo de nulos por coluna × célula, persistido | `§13.7-3` | não | não | **EXECUTADO** (`AG-308`) |
+| **3b** | **Transação `labels ↔ registro` + gate de staleness por `config_hash`** | **`§13.11`** | não | não | **EXECUTADO** (`AG-309`) |
+| **3c** | **Reprocessar `label_engine_runs` para as 15 células atuais** | **`§13.11`** | não (append) | não | **REJEITADO** — ver `§13.11`; substituído pelo 3b + rerun real (`AG-309`, `6ec2af9`) |
+| **4** | **Decisão do Manager sobre o peso do calibrador (a/b/c)** | **`§13.10`** | **sim**, se (a)/(b) | não | **EXECUTADO**, opção (b) (`AG-312`) |
+| 5 | Nulo de permutação em todo relatório de `run_layer1_sprint` | `§13.13` | não | **não** (é nulo) | bloqueado (retreino represado) |
+| 6 | Piso de magnitude nas constraints (`|mean_ic| ≥ k·SE`) | `§13.5-4` emendado | sim | não | bloqueado (retreino represado) |
+| 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) | bloqueado (retreino represado) |
+| 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não | bloqueado, prioridade baixa (parâmetro medido inerte) |
+| 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não | bloqueado (retreino represado) |
+| 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não | **EXECUTADO** — schema + verificação (`§13.21`, `AG-314`); wiring em produção segue `AG-141` (separado) |
+| **11** | **Regra de decisão: `p̂ > breakeven(linha)` — que é R2 por linha** | **`§13.16.4`** | **sim** (decisão, não modelo) | **não** | **PARCIAL** — gate pré-existia sem reconhecimento (`§13.22`, `AG-315`); teto por margem é código novo, opt-in; promoção a produção é decisão do Manager |
+| **11b** | **Censo de linhas que violam R2 no conjunto de treino, por célula** | **`§13.16.3`** | não | não | **EXECUTADO** (`§13.20`, `AG-296`/`AG-297`) |
 
 **Fora da ordem, deliberadamente:**
 
@@ -2253,6 +2260,136 @@ Não filtra, não altera nenhum artefato, não é lido por nenhum pipeline de
 treino ou execução — mesmo status DECISION-SUPPORT de `feasibility.py` e
 `production_grade_gate.py`. **A remediação é decisão do Manager** e está
 registrada como ABERTA nos dois `AG`.
+
+---
+
+## §13.21 EXECUTADO — item 10: manifesto completo por célula + verificação na carga (`AG-314`)
+
+`src/models/persistence.py` (AG-141) já existia — booster + calibrador +
+manifest, escrita atômica, formato versionado — mas **não é chamado por
+nenhum caminho de produção** (`alpha.py::run_fold`/`pipeline.py` nunca
+invocam `write_model_bundle`; achado já registrado, não novo, ver
+addendum de `AG-141` no log de 2026-08-23). Este item fecha o SCHEMA e a
+VERIFICAÇÃO que `§13.5-5` pede; a integração em produção continua sendo
+o gap separado que `AG-141` já nomeia — as duas coisas não são a mesma
+tarefa, e confundi-las estenderia o escopo deste item além do que
+`§13.17` pediu.
+
+**Entregue:**
+
+- `ModelBundleManifest` ganha `ess` (`Σ uniqueness` do treino, já medido
+  como `SideModelResult.sum_uniqueness_train`, `AG-211`), `purge_ms_
+  effective` (saída de `compute_max_feature_lookback_ms` para o vetor
+  REAL, item 1/`AG-298`), `min_child_samples` e `feature_set_hash`
+  (`sha256` do CONJUNTO ordenado alfabeticamente de `feature_ids`).
+- `min_child_samples` grava o valor REALMENTE usado no treino — não
+  "derivado por ESS" (`§13.5-3`/item 8 seguem `ASSUMED`, bloqueados atrás
+  do retreino represado). Proveniência honesta hoje; passa a refletir a
+  fórmula de `§13.5-3` no dia em que o item 8 for implementado, sem outra
+  migração de schema.
+- `read_model_bundle` levanta `ManifestFeatureMismatchError` se
+  `manifest.feature_ids != tuple(booster.feature_name())` — **ordenado,
+  não como conjunto**: `LoadedSideModel.predict_proba_calibrated` seleciona
+  colunas por `manifest.feature_ids` antes de virar array posicional para
+  o booster cru; uma divergência de ORDEM (não só de conteúdo) produziria
+  inferência silenciosamente errada se não fosse pega aqui. É exatamente
+  a checagem que `§13.5-5` pede.
+
+**Testes:** `tests/unit/test_models_persistence.py` — 10 call sites
+existentes migrados para os 3 novos kwargs obrigatórios (sem default,
+mesma disciplina de `feature_ids` no item 1: nenhum valor honesto pra
+assumir por trás do caller), round-trip estendido pra cobrir os 4 campos
+novos, + 1 teste novo que PROVA o bug que a verificação existe pra evitar
+(`feature_ids` gravado como permutação do `feature_name()` real do
+booster → `read_model_bundle` recusa). 14 testes, todos verdes.
+`ruff`/`mypy --strict`/`banned_patterns` limpos.
+
+**O que isto NÃO faz:** não fecha `AG-141` (wiring em produção segue
+aberto, por decisão de escopo, não por esquecimento) — nenhuma célula
+real ganha manifesto ainda; a infraestrutura fica pronta pra quando o
+retreino represado reabrir.
+
+---
+
+## §13.22 EXECUTADO parcial — item 11: `p̂ > breakeven(linha)` (`AG-315`)
+
+**Achado real ao implementar isto:** o GATE do item 11 já existia em
+código, sem ter sido reconhecido como tal. `ADR-004` Fase 2
+(`decide_side_cost_derived`/`resolve_joint_lambda`, medição opt-in desde
+2026-08-25) compara `mu_side > max(cost_atr_ratio, lambda_b)`. Sob payoff
+simétrico (geometria de produção vigente, medida em `§13.20` como
+`payoff_simetrico = true` nas 30 células), com `lambda_b =
+-payoff_atr_mult` (o valor mais permissivo — nunca vincula, pois
+`cost_atr_ratio >= 0 > -payoff_atr_mult` sempre) o piso vira
+`cost_atr_ratio` puro, e:
+
+```
+mu > cost_atr_ratio
+payoff*(2p-1) > cost_atr_ratio
+p > 0,5 + cost_atr_ratio/(2*payoff)
+p > breakeven(linha)                <- a fórmula de §13.16.4, exatamente
+```
+
+Verificado por dois testes independentes, não só por álgebra: um contra
+`decide_side_cost_derived(..., lambda_b=-payoff)` (a equivalência
+declarada), outro contra `p > breakeven` recalculado à parte, sem passar
+pela família de fórmula `mu`-baseada — se as duas famílias divergissem
+por erro de sinal ou escala, só o segundo teste pegaria. Os dois batem
+bit-a-bit sobre 2.000 linhas sintéticas.
+
+### O que NÃO pré-existia: o teto de capacidade por ranking de margem
+
+`§13.16.4` propõe, além do gate: *"entre os que passam, os top-q por
+margem"*. `resolve_joint_lambda` resolve um `lambda_b` **escalar**, que
+vira um SEGUNDO LIMIAR sobre `mu` — não um ranking sobre a margem
+(`mu - cost_atr_ratio`). Os dois mecanismos **divergem de verdade** quando
+`cost_atr_ratio` varia entre linhas: um limiar escalar em `mu` trata igual
+duas linhas de `mu` idêntico e custo diferente, mesmo que a margem delas
+seja diferente. Construído um caso mínimo que prova a divergência com
+número real (`test_decide_side_breakeven_topq_diverge_de_lambda_threshold_
+quando_custo_varia`): 4 linhas de `mu` idêntico, custo `[0,05; 0,55; 0,05;
+0,55]`, `target_signal_rate=0,5` — o ranking por margem retém as 2 de
+custo baixo (a leitura literal de "top-q por margem"); o limiar-em-mu não
+consegue distinguir as 4 (mu é idêntico), então qualquer `lambda_b`
+seleciona as 4 ou nenhuma, nunca 2 de 4.
+
+**Entregue (`src/models/alpha.py`):**
+
+- `breakeven_from_cost_atr_ratio` — `P(TP)` de breakeven direto de
+  `cost_atr_ratio` (`E27f_cost_atr_ratio`, já feature T1 de produção).
+  Mesma identidade que `r2_admissibility_census.breakeven_probability`
+  mede sobre preço (`labels.parquet`); as duas não compartilham código
+  (`models/` não importa `analysis/`, Layer hierarchy do `CLAUDE.md`), mas
+  são a mesma fórmula sob a mesma premissa de payoff simétrico.
+- `decide_side_breakeven` — o gate puro, wrapper deliberado de
+  `decide_side_cost_derived(..., lambda_b=-payoff_atr_mult)`, não uma
+  reimplementação (mesmo princípio de `decide_side`/`resolve_joint_tau`:
+  "a mesma LINHA de código, não duas cópias que podem divergir
+  silenciosamente").
+- `select_top_q_by_margin` — núcleo puro do ranking por margem.
+- `decide_side_breakeven_topq` — item 11 completo: gate + teto por
+  ranking.
+
+**Nenhuma das quatro é chamada por `run_fold`** — mesmo status de medição
+opt-in que `decide_side_cost_derived` teve antes de `resolve_joint_lambda`
+existir. `side_hat`/`predictions.parquet` continuam bit-exatos sob a
+política ativa (`tau_policy`). **A decisão de QUAL mecanismo de teto
+(limiar em `mu` vs. ranking por margem) vira produção é do Manager** —
+`§13.17` já lista o item 11 como "decisão, não modelo"; as duas opções
+seguem testáveis e medíveis lado a lado até essa decisão, e a promoção a
+`run_fold` real fica pra depois dela (mesmo motivo de não ter aberto essa
+frente pro item 10: sem o retreino represado reaberto, não há dado real
+pra medir a diferença entre as duas políticas de teto em produção).
+
+**Testes:** `tests/unit/test_models_alpha_breakeven_item11.py`, 12 testes
+novos — cobrem a fórmula fechada, a equivalência ao gate pré-existente
+por DUAS vias independentes, a fronteira estrita (`>`, não `>=`), o
+ranking por margem (incluindo população vazia e `q` fora de `(0,1]`), o
+teto como subconjunto estrito do gate puro, a taxa realizada batendo o
+alvo quando há oferta, e a divergência estrutural medida contra
+`resolve_joint_lambda`. `ruff`/`mypy --strict`/`banned_patterns` limpos;
+suíte completa (`-m "not slow"`) **2267 passed, 2 skipped, 2 xfailed, 0
+failed** depois desta mudança.
 
 ---
 
@@ -2630,13 +2767,42 @@ concentrar risco em cima. As opções de §3 ficam assim:
   (`AG-299`). `h=1` sem justificativa econômica declarada continua
   como lacuna residual (por que `h=1` e não o pico, ou o holding `H=5`?)
   — registrada, não fabricada.
-- **19 das 26 colunas em `defeito_construção` seguem sem investigação
-  individual** (corrigido 2026-08-26 — eram 24; `A13`/`E10f` já tinham
-  `AG-295`, e `E02f`/`C07`/`D03f`/`E15f`/`E17f` agora têm diagnóstico real
-  conectado ao `AG-030` — ver correção em §14.3, não é mais "sem
-  diagnóstico"). Todas as 22 em `L4` têm destino de camada (§14.3/§14.4)
-  — o que falta pras 19 restantes é o diagnóstico do MECANISMO do defeito
-  de cada uma.
+- ~~19 das 26 colunas em `defeito_construção` seguem sem investigação
+  individual~~ **FECHADO 2026-08-26 (item 2 dos 4 itens de continuação)**
+  — as 19 restantes (eram 24; `A13`/`E10f` já tinham `AG-295`, `E02f`/
+  `C07`/`D03f`/`E15f`/`E17f` já conectadas ao `AG-030`) foram verificadas
+  contra código real por 4 agentes independentes, agrupadas por causa
+  raiz compartilhada: **`AG-321`** — degeneração de volume sob dollar
+  bar (`D01f`/`D02f`/`D04f`/`D09f`/`D10f`: `volume ≈ threshold/preço`
+  por construção do fechamento de barra, confirmado em `src/data/
+  bars.py`; 5 transformações da MESMA quantidade degenerada, não 5
+  teses — implica contagem de graus de liberdade inflada em qualquer
+  filtro de ortogonalidade/HHI/`N_lifetime` que as trate como
+  independentes). **`AG-322`** — `B02`/`B09` (erro de TAXONOMIA: grupo
+  "momentum" sem papel alternativo declarado, ao contrário de `B07`,
+  que tem) vs. `C03`/`C04`/`C05` (erro real de CÁLCULO/especificação:
+  fator `√48≈6,93` de escala incomparável entre a "mesma família" de
+  estimador, mais ausência de normalização temporal sob duração de
+  barra variável em Parkinson/GK). **`AG-316`** — `A12` (erro de
+  DEFINIÇÃO irremediável por config: mecanismo de "gap" não existe em
+  mercado 24/7 contíguo) vs. `K01`/`K04` (erro de CALIBRAÇÃO/
+  acoplamento: mecanismo econômico real existe, mas corte de sessão mal
+  posicionado — `K04_europe` inclui 31% da abertura do caixa
+  americano). **`AG-317`** — `C08`: erro aritmético JÁ NA PRÓPRIA
+  `constants.yaml` (17520 barras a 15m = 6 meses, não 1 ano — a conta
+  original já nasceu errada, antes até da barra dollar). **`AG-318`**
+  — `D07f`: 100% NaN em toda produção real (R1/R2/R3), `registry.yaml`
+  lista como T2 disponível sem soletrar a consequência. **`AG-319`** —
+  `E03f`: footprint de purge sub-declarado (1,59×), mas a guarda que
+  isso violaria já foi corrigida por `AG-296` (falha alto hoje, não só
+  avisa — boa notícia achada no processo). **`AG-320`** — `E11f`: mesma
+  classe de bug que `A13` tinha antes da correção desta sessão (nome
+  "1d" mentindo, `LoteAWindows` não escala), ainda sem correção
+  equivalente. Nenhuma das 19 está em `T1_FEATURE_IDS` — sem urgência
+  de produção, mas o pool T2/candidatos agora tem 7 achados registrados
+  e verificados em vez de só a ficha original. `AG-321`/`AG-322`
+  renumeradas de colisão de ID com a sessão paralela (mesmo
+  procedimento de `AG-272`/`AG-296`/`AG-312`).
 - **`A01`–`A06` seguem sem resolução da tensão Pearson-vs-Spearman** (§7) —
   `L3`, não `L2`, precisamente por isso. A justificativa do recorte pra
   `L3` foi corrigida em §14.2 pra não depender mais de `AG-284`.

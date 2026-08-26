@@ -20020,3 +20020,523 @@ entries:
       A01-A06) com base nisso -- e a decisao (c) que AG-266 ja tinha
       deixado explicitamente para o Manager. Este achado da mais base
       pra essa decisao, nao a substitui.
+
+  - id: AG-314
+    date: "2026-08-26"
+    file: "src/models/persistence.py"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.21 (item 10 de §13.17), tests/unit/test_models_persistence.py, audit/architecture_gaps_log.yaml::AG-141"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 10 da ordem de §13.17, autorizado pelo Manager ('pode seguir')"
+    gap: >
+      `src/models/persistence.py` (AG-141) ja existia -- booster +
+      calibrador + manifest, escrita atomica, formato versionado -- mas o
+      manifest nao carregava `ess`/`purge_ms_effective`/`min_child_
+      samples`/hash do conjunto que `§13.5-5` pede, e `read_model_bundle`
+      nao verificava `manifest.feature_ids == booster.feature_name()` na
+      carga. Sem essa verificacao, um manifest gravado com `feature_ids`
+      divergente do booster real (erro de call site, nao algo que a
+      serializacao pegaria sozinha) produziria inferencia SILENCIOSAMENTE
+      errada -- `LoadedSideModel.predict_proba_calibrated` seleciona
+      colunas por `manifest.feature_ids`, entao uma ordem errada vira
+      colunas permutadas entregues a um booster que so respeita posicao.
+    severity: "MEDIA -- infraestrutura de auditoria/seguranca de inferencia, nao afeta producao hoje (AG-141 wiring segue aberto)"
+    layer: "models"
+    consequence: >
+      APLICADO: `ModelBundleManifest` ganhou `ess`, `purge_ms_effective`,
+      `min_child_samples`, `feature_set_hash` (sha256 do CONJUNTO
+      ordenado alfabeticamente de `feature_ids` -- nao confundir com a
+      verificacao de ORDEM abaixo, que e sobre outra coisa).
+      `min_child_samples` grava o valor REALMENTE usado no treino, nao
+      "derivado por ESS" -- item 8/§13.5-3 seguem ASSUMED, bloqueados
+      atras do retreino represado; o campo passa a refletir a formula
+      quando o item 8 for implementado, sem outra migracao de schema.
+      `read_model_bundle` levanta `ManifestFeatureMismatchError` (nova)
+      se `manifest.feature_ids != tuple(booster.feature_name())` --
+      ORDENADO, nao como conjunto, porque e a ORDEM que a selecao por
+      nome do `predict_proba_calibrated` depende para nao permutar
+      colunas em silencio. 10 call sites de teste migrados para os 3
+      kwargs novos obrigatorios (sem default -- mesma disciplina do item
+      1, feature_ids). 1 teste novo prova o bug que a checagem existe
+      pra evitar (feature_ids gravado como permutacao do feature_name()
+      real -> read_model_bundle recusa). NAO fecha AG-141 -- o wiring em
+      producao (`run_fold`/`pipeline.py` chamando `write_model_bundle`)
+      continua aberto, por decisao de escopo (item 10 e sobre o SCHEMA e
+      a VERIFICACAO, AG-141 e sobre a INTEGRACAO -- confundir as duas
+      teria estendido este item alem do que §13.17 pediu). Nenhuma
+      celula real ganha manifesto ainda.
+    status: >-
+      IMPLEMENTADO, verde. 14 testes em test_models_persistence.py (13
+      existentes + 1 novo), ruff/mypy --strict/banned_patterns limpos.
+      ABERTO E SEPARADO: AG-141 (wiring em producao).
+
+  - id: AG-315
+    date: "2026-08-26"
+    file: "src/models/alpha.py"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.22 (item 11/11b de §13.17), §13.16.4, tests/unit/test_models_alpha_breakeven_item11.py, src/models/alpha.py::decide_side_cost_derived/resolve_joint_lambda (ADR-004 Fase 2)"
+    found_by: "Claude -- persona lgbm-crypto-quant; item 11 da ordem de §13.17, autorizado pelo Manager ('pode seguir')"
+    gap: >
+      Ao implementar o item 11 (`p̂ > breakeven(linha)`, a leitura de R2
+      por linha em vez de por celula, §13.16.4), achado real: o GATE ja
+      existia em codigo, sem ter sido reconhecido como tal. ADR-004 Fase
+      2 (`decide_side_cost_derived`/`resolve_joint_lambda`, medicao
+      opt-in desde 2026-08-25) compara `mu_side > max(cost_atr_ratio,
+      lambda_b)`. Sob payoff simetrico (medido como `payoff_simetrico =
+      true` nas 30 celulas em AG-296/297), com `lambda_b =
+      -payoff_atr_mult` (o valor mais permissivo -- nunca vincula, pois
+      `cost_atr_ratio >= 0 > -payoff_atr_mult` sempre) o piso vira
+      `cost_atr_ratio` puro: `mu > cost_atr_ratio` <=> `p >
+      0,5+cost_atr_ratio/(2*payoff)` <=> `p > breakeven(linha)`,
+      exatamente a formula de §13.16.4. Verificado por 2 testes
+      independentes (contra decide_side_cost_derived com lambda_b
+      degenerado, E contra `p > breakeven` recalculado a parte sem
+      passar pela familia de formula mu-baseada) -- os dois batem
+      bit-a-bit sobre 2.000 linhas sinteticas.
+      O que NAO pre-existia: o teto de capacidade por RANKING de margem
+      que §13.16.4 pede ("entre os que passam, os top-q por margem").
+      `resolve_joint_lambda` resolve um `lambda_b` ESCALAR -- um segundo
+      LIMIAR sobre `mu`, nao um ranking sobre a margem (`mu -
+      cost_atr_ratio`). Os dois mecanismos DIVERGEM quando `cost_atr_
+      ratio` varia entre linhas -- provado com caso minimo real (4
+      linhas de mu identico, custo [0,05;0,55;0,05;0,55],
+      target_signal_rate=0,5): ranking por margem retem as 2 de custo
+      baixo (leitura literal do §13.16.4); limiar-em-mu nao distingue as
+      4 (mu identico), entao qualquer lambda_b seleciona as 4 ou
+      nenhuma, nunca 2 de 4.
+    severity: "ALTA -- item nomeado no ADR como 'o unico que pode mudar o sinal do resultado', nao so interpreta-lo (§13.16.4)"
+    layer: "models"
+    consequence: >
+      APLICADO como 4 funcoes nucleo puro NOVAS em src/models/alpha.py:
+      `breakeven_from_cost_atr_ratio` (formula fechada sobre `E27f_cost_
+      atr_ratio`, ja feature T1 de producao), `decide_side_breakeven`
+      (wrapper deliberado de decide_side_cost_derived com lambda_b
+      degenerado -- nao reimplementacao, mesmo principio ja declarado em
+      decide_side/resolve_joint_tau: "a mesma LINHA de codigo, nao duas
+      copias que podem divergir silenciosamente"), `select_top_q_by_
+      margin` (nucleo do ranking), `decide_side_breakeven_topq` (item 11
+      completo: gate + teto). NENHUMA das 4 e chamada por `run_fold` --
+      mesmo status de medicao opt-in que decide_side_cost_derived teve
+      antes de resolve_joint_lambda existir; side_hat/predictions.parquet
+      continuam bit-exatos sob a politica ativa. QUAL mecanismo de teto
+      (limiar em mu vs ranking por margem) vira producao e decisao do
+      Manager -- §13.17 ja lista o item 11 como "decisao, nao modelo".
+      Sem o retreino represado reaberto, nao ha dado real pra medir a
+      diferenca entre as duas politicas de teto em producao -- por isso
+      a promocao a run_fold nao foi aberta nesta rodada (mesmo motivo do
+      item 10 nao fechar o wiring de AG-141).
+    status: >-
+      IMPLEMENTADO parcial (gate: completo e verificado; teto por
+      margem: codigo novo, opt-in, nao promovido), verde. 12 testes
+      novos em test_models_alpha_breakeven_item11.py, ruff/mypy
+      --strict/banned_patterns limpos, suite completa (-m "not slow")
+      2267 passed, 2 skipped, 2 xfailed, 0 failed. ABERTO: decisao do
+      Manager sobre qual mecanismo de teto promover, e o wiring em
+      run_fold depois dela.
+
+  - id: AG-321
+    renumbered_from: "AG-314 -- colisao de ID com a sessao paralela (a AG-314 dela e sobre src/models/persistence.py, item 10 de §13.17); mesmo procedimento de AG-272/AG-296/AG-312"
+    date: "2026-08-26"
+    file: "src/features/groups/group_d.py (D01f/D02f/D04f/D09f/D10f), src/data/bars.py"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-245-ADDENDUM, audit/architecture_gaps_log.yaml::AG-235-ADDENDUM-2, ::AG-244"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real -- src/data/bars.py, group_d.py, AG-245-ADDENDUM"
+    gap: >
+      5 FEATURES DO GRUPO D (VOLUME) SAO 5 TRANSFORMACOES DA MESMA
+      QUANTIDADE DEGENERADA, NAO 5 TESES INDEPENDENTES -- verificado
+      contra codigo real, nao so a ficha.
+      MECANISMO (confirmado em src/data/bars.py): barra dollar fecha via
+      `bar_id = cum_value // threshold` (threshold_bars_step,
+      linhas 359-531), onde cum_value = cumsum(price*quantity).
+      _aggregate_bars (linhas 162-205) grava, por barra, volume =
+      sum(quantity) e quote_volume = sum(price*quantity). Por
+      construcao (nao aproximacao estatistica): quote_volume_por_barra
+      ~= threshold + overshoot_do_ultimo_trade -- CONSTANTE dentro da
+      janela de recalibracao do threshold (7 dias, dollar_bar_
+      walkforward_trailing_window_days, constants.yaml:2764-2776).
+      Logo volume (base) = quote_volume/VWAP_da_barra ~= threshold/preco
+      -- toda feature que normaliza/diferencia "volume" mede, na
+      pratica, uma transformacao de 1/preco, nao atividade real.
+      As 5 features sao essa mesma degeneracao vestida de formas
+      diferentes -- CONFIRMADO contra group_d.py: D01f (linhas 51-53,
+      z-score de volume) = z(1/preco); D02f (linhas 56-64, razao por
+      mediana) = mediana(preco)/preco_t; D04f (linhas 67-80, diferenca
+      de razoes de janela 4) ~= 0 por construcao (razao de serie quase-
+      constante); D09f (linhas 98-102, z-score de volume/count) ~=
+      -D08f (mesma degeneracao, sinal espelhado); D10f (linhas 148-161,
+      correlacao |ret| x z(volume)) vira proxy de efeito-alavancagem,
+      nao absorcao de liquidez -- com um SEGUNDO defeito proprio: o
+      z-score interno usa janela POR PONTO (media/desvio recalculados a
+      cada posicao), tornando a transformacao NAO-AFIM dentro de uma
+      correlacao de Pearson (que ja e invariante a afim) -- distorce a
+      correlacao de um jeito nunca declarado.
+      EVIDENCIA EMPIRICA JA EXISTENTE, NUNCA CONECTADA: AG-245-ADDENDUM
+      (2026-08-25) mede D08f/D09f trocando de lugar em 5 de 6
+      comparacoes R2/R3 num filtro de ortogonalidade, e atribui a causa
+      a "AG-229 mudou a fonte do fill" -- classificado la mesmo como
+      "MECANISMO PLAUSIVEL... NAO VERIFICADO, hipotese com mecanismo,
+      nao medicao". Confirmado por leitura direta: a explicacao
+      estrutural (identidade algebrica sob threshold fixo, independente
+      de qualquer relabel) nunca foi cogitada la.
+      ACHADO COLATERAL: docstring de group_d.py (topo do arquivo)
+      descreve a fonte de volume como klines_1m/resample_klines --
+      desatualizado. Fonte real em producao (R1/R2/R3) e barra dollar
+      (src.models.dataset._BAR_SOURCE_BY_RESOLUTION, build.py:1144).
+      NAO MEDIDO (fora do escopo desta entrada, sinalizado explicitamente
+      pelo agente): corr(volume_t, 1/preco_t) real por simbolo/resolucao,
+      e magnitude do "ruido de overshoot" do ultimo trade vs threshold
+      (o unico elo nao quantificado da cadeia logica -- a cadeia em si e
+      solida, o overshoot e o ponto fraco genuino, nao invalida o
+      argumento mas fica sem numero).
+    severity: "MEDIUM -- nenhuma das 5 esta em T1_FEATURE_IDS (producao), mas contamina o pool T2/contagem de graus de liberdade genuinos do grupo D se promovida ou contada em HHI/ortogonalidade/N_lifetime sem dedup"
+    layer: "features (construção) / analysis (contagem de graus de liberdade)"
+    consequence: >
+      Tratar D01f/D02f/D04f/D09f/D10f (+ D03f, mesmo grupo, ja conectado
+      ao AG-030 separadamente, + possivelmente D08f, fora do escopo
+      desta entrada) como 6-7 entradas separadas no filtro de
+      ortogonalidade, no HHI de importancia, ou em qualquer orcamento de
+      N_lifetime/multiple-testing INFLA artificialmente a contagem de
+      graus de liberdade genuinos do grupo -- mesmo padrao ja
+      documentado em AG-235-ADDENDUM-2 (geometria) e AG-244 (gate de
+      regime), agora um TERCEIRO mecanismo nomeado e verificado contra
+      codigo real (nao so ficha).
+    status: >-
+      ACHADO, nao corrigido -- nenhuma das 5 esta em T1_FEATURE_IDS hoje,
+      entao nao ha efeito de producao imediato. Verificacao empirica
+      completa (corr(volume,1/preco) medida, magnitude do overshoot) e
+      trabalho pendente, precisa de diagnostico novo (nao escrito aqui).
+      AG-245-ADDENDUM segue com a atribuicao de causa antiga
+      ("AG-229 relabel") registrada como estava -- nao editado (entrada
+      fechada, so ganha addendum se remediada).
+
+  - id: AG-322
+    renumbered_from: "AG-315 -- colisao de ID com a sessao paralela; mesmo procedimento de AG-272/AG-296/AG-312/AG-321"
+    date: "2026-08-26"
+    file: "src/features/groups/group_b.py (B02/B09), src/features/groups/group_c.py (C03/C04/C05), config/constants.yaml"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, config/constants.yaml::canonical_volatility_estimator"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real"
+    gap: >
+      5 FEATURES `INCOERENTE_DIMENSIONAL` (B02/B09/C03/C04/C05) --
+      MESMO VEREDITO, DUAS CAUSAS DIFERENTES, verificadas separadamente.
+      GRUPO 1 -- ERRO DE TAXONOMIA, NAO DE CALCULO (B02_rsi_48,
+      B09_zscore_close_48): formula CORRETA (confirmado: group_b.py
+      34-38 chama b01_rsi_14 so trocando janela; group_b.py:147-149 usa
+      support.rolling_zscore(close, window) direto -- ambas batem com o
+      que a ficha descreve). O defeito e que group_b.py:1-2 rotula TODO
+      o grupo "Momentum e reversao" (papel esperado: gatilho de trade no
+      horizonte de holding), mas B02 entrega h/H=6,65 (meia-vida Wilder
+      real ~33,3 barras, nao as 48 nominais -- confirmado via
+      wilder_smooth, EWMA exata com alpha=1/window) e B09 entrega
+      h/H=9,6 (reversao de preco so se completa em W=48 barras, prova
+      algebrica: (C_t-media_W) e soma ponderada dos ultimos W retornos
+      com kernel triangular). CONTRASTE DECISIVO: B07_efficiency_ratio_48
+      esta no MESMO grupo, MESMO h/H=9,6, mas NAO e rebaixada -- porque
+      group_b.py:20-24 declara um papel alternativo em codigo ("eixo de
+      particao do Regime Engine"). B02/B09 nao tem esse papel alternativo
+      declarado em lugar nenhum (docstring, registry) -- "momentum" e a
+      UNICA funcao declarada, e e dimensionalmente incompativel com o
+      que a formula entrega. Correcao correta e reclassificar/documentar
+      B02/B09 como regime (ou dar consumidor explicito, como B07 tem),
+      nao mudar a formula.
+      GRUPO 2 -- DEFEITO REAL DE CALCULO/ESPECIFICACAO (C03/C04/C05,
+      estimadores de volatilidade, mesmo sufixo _48, mesma janela):
+      C03 (group_c.py:86-88 -> support.realized_vol) multiplica por
+      sqrt(48) -- confirmado no codigo. C04/C05 (group_c.py:91-100 ->
+      support.parkinson_vol/garman_klass_vol) NAO multiplicam por
+      sqrt(window) -- confirmado por AUSENCIA no codigo. Fator sqrt(48)
+      ~= 6,93 de escala incomparavel entre "a mesma familia de
+      estimador" (fichas...:558) -- bug de INTEGRACAO/registry (trata
+      como comparavel sem normalizar), nao de formula unitaria. Defeito
+      adicional proprio de C04/C05: nem support.parkinson_vol nem
+      support.garman_klass_vol recebem parametro de duracao de barra --
+      confirmado por ausencia de qualquer termo temporal no codigo --
+      os dois estimadores assumem duracao FIXA pra estimar sigma "por
+      unidade de tempo", mas a barra dollar tem duracao VARIAVEL e fecha
+      mais rapido justamente quando a vol sobe (vies de subestimacao
+      sistematica). C05 tem AINDA um terceiro problema, so de
+      config/proveniencia: `canonical_volatility_estimator` do projeto
+      = "garman_klass_w20" (janela 20, constants.yaml:612-676) e
+      `feature_c05_garman_klass_window` = 48 (constants.yaml:1567-1574,
+      ASSUMED) -- duas janelas do MESMO estimador convivem sem nenhuma
+      nota cross-referenciando as duas (confirmado por grep -- nenhuma
+      menção mútua em nenhum lugar do arquivo).
+    severity: "MEDIUM -- nenhuma das 5 esta em T1_FEATURE_IDS; B02/B07/C01/C02 sao os unicos do grupo em producao e nao sao afetados"
+    layer: "features (construção) / analysis (classificação de grupo, registry)"
+    consequence: >
+      Grupo 1 (B02/B09): qualquer selecao de feature por "grupo momentum
+      = gatilho de curto prazo" inclui, sem aviso, 2 colunas que na
+      verdade sao regime -- infla a contagem de candidatos de momentum
+      genuinos. Grupo 2 (C03/C04/C05): comparar as 3 como "a mesma
+      familia de estimador" (ex. num filtro de ortogonalidade ou ablacao)
+      compara grandezas em escalas diferentes por um fator de 6,93x sem
+      correcao -- e C04/C05 tem viés sistemático de subestimacao sob
+      duracao de barra variavel, nao caracterizado em nenhum teste do
+      repo.
+    status: >-
+      ACHADO, nao corrigido -- nenhuma das 5 esta em T1_FEATURE_IDS hoje.
+      Correcao proposta, nao implementada: (1) B02/B09 -- declarar papel
+      de regime explicitamente (docstring + registry), nao mudar formula;
+      (2) C03 -- decidir se a familia C03/C04/C05 deve normalizar todas
+      por sqrt(window) ou nenhuma, e documentar a escolha com
+      proveniencia; (3) C04/C05 -- avaliar se o estimador precisa de
+      termo de normalizacao temporal sob duracao de barra variavel
+      (mudanca de formula, nao so de documentacao -- fora do escopo
+      desta entrada, decisao do Manager); (4) C05 -- reconciliar janela
+      48 com canonical_volatility_estimator=garman_klass_w20 (nota de
+      proveniencia cruzada, minimo).
+
+  - id: AG-316
+    date: "2026-08-26"
+    file: "src/features/groups/group_a.py (A12), src/features/groups/group_k.py (K01/K04), src/data/bars.py"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, config/constants.yaml (europe/us/asia session hours), experiments/dollar_bar_duration_p99_by_resolution.json"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real"
+    gap: >
+      5 FEATURES DE RELOGIO/CALENDARIO (A12/K01_sin/K01_cos/K04_europe/
+      K04_us) -- DUAS FAMILIAS DE DEFEITO DISTINTAS, NAO UMA CAUSA RAIZ.
+      FAMILIA 1 -- ERRO DE DEFINICAO, IRREMEDIAVEL POR CALIBRACAO
+      (A12_gap_pct, ERRO_CATEGORICO): formula confirmada (group_a.py:
+      203-211, (open-prev_close)/prev_close). Mecanismo de "gap" exige
+      descontinuidade real de sessao -- confirmado que NAO existe no
+      mercado: src/data/bars.py::_aggregate_bars (linhas 190-192) fixa
+      open/close de barra como .first()/.last() do MESMO stream
+      contiguo de trades, e threshold_bars_step (linhas 359,457,
+      480-481) garante bar_id monotonico sem nenhum trade descartado
+      entre chunks -- o trade que fecha t-1 e o que abre t sao
+      LITERALMENTE adjacentes no stream real. Buscado ativamente por
+      justificativa alternativa (proxy de choque de liquidez, etc.) --
+      NENHUMA encontrada em lugar nenhum do repo. Diferente das 4
+      abaixo, este defeito nao e corrigivel por recalibrar constante --
+      a feature mede um retorno de 1 tick, nunca um gap, e nao ha
+      parametro que resolva isso.
+      FAMILIA 2 -- ERRO DE CALIBRACAO/ACOPLAMENTO COM GRADE IRREGULAR,
+      MECANISMO ECONOMICO REAL EXISTE (K01_hour_sin/cos,
+      K04_session_europe/us, INCOERENTE_DIMENSIONAL): formulas
+      confirmadas (group_k.py:38-43,59-70 pro par sin/cos; 115-131 pros
+      blocos de sessao). Duracoes medianas de barra confirmadas em
+      artefato ja persistido (experiments/dollar_bar_duration_p99_by_
+      resolution.json: BTCUSDT R1=9,431/R2=19,726/R3=41,156 min -- nao
+      invencao). K01: 24h = 152,7 barras em R1 mas so 35,0 em R3 (recontado
+      a partir do artefato, nao so citado da ficha) -- mesma coluna e
+      "quase-constante" (30,5xH) numa grade e "regime" (7,0xH) noutra,
+      porque H=5 barras e fixo mas o horizonte de RELOGIO que 5 barras
+      cobre varia com a grade. K04: constants.yaml (europe_start/end=
+      8,0/16,0; us_start/end=16,0/24,0) confirmado, junto com Londres
+      07:00/08:00-16:00/17:00 UTC e NY 12:00/13:00-21:00/22:00 UTC
+      (mesmo arquivo) -- overlap Londres/NY recalculado do zero (nao
+      copiado da ficha) = 4h, caindo inteiro no bloco "Europa"; bloco
+      Europa (8h) inclui a abertura do caixa americano (13:30-16:00 em
+      DST = 2,5h = 31,25% do bloco). K04_session_us: overlap real com NY
+      = 5-6 de 8h (25-37,5% fora da sessao americana), abertura mais
+      informativa rotulada "Europa". Terceira feature K04 confirmada
+      (k04_session_asia, group_k.py:96-112) -- as 3 particionam 24h
+      exaustiva/mutuamente exclusiva por construcao, uma e linearmente
+      determinada pelas outras duas. DIFERENCA MATERIAL vs A12: K04
+      (group_k.py:100-109, constants.yaml:1677-1683) JA DOCUMENTA a
+      simplificacao como deliberada e reconhecida (sobreposicao real e
+      ausencia de DST admitidas em comentario) -- nao e omissao, e
+      escolha registrada com o corte no lugar errado. K04_session_asia
+      tem mecanismo proprio parcialmente real: cortes 00:00/08:00 UTC
+      coincidem com marcas de funding (group_e.py:156) -- diferente de
+      Europa/US, que nao tem essa ancora.
+      NAO MEDIDO, sinalizado como inferencia razoavel mas nao
+      verificada: o perfil intradiario "em degraus" (13:30, 00/08/16
+      UTC) que a ficha cita como argumento contra o par sin/cos -- os
+      horarios de funding estao confirmados no codigo, mas nenhum
+      artefato do repo MEDE o perfil real de volume/volatilidade por
+      hora pra confirmar a forma de degrau vs senoide.
+    severity: "MEDIUM -- A12 nao esta em T1_FEATURE_IDS; K01/K04 tambem nao. Nenhuma consequencia de producao imediata, mas A12 e ERRO_CATEGORICO irremediavel por config, o que muda a acao correta (remover/redefinir, nao ajustar parametro)"
+    layer: "features (construção) / K (calendário)"
+    consequence: >
+      A12: nenhuma correcao de parametro resolve -- a feature so deixa
+      de ser ERRO_CATEGORICO se for redefinida (ex. renomeada/reclassi-
+      ficada como "retorno de 1 tick", nao "gap") ou removida do
+      candidate pool. K01/K04: remediavel por recalibracao (mover o
+      corte de sessao pra 12h/13h UTC em vez de 16h; considerar DST;
+      documentar que o periodo de 24h de K01 cobre um numero de barras
+      diferente por grade, o que ja e um fato conhecido do projeto,
+      AG-042, so nunca conectado a estas 2 colunas especificas).
+    status: >-
+      ACHADO, nao corrigido -- nenhuma das 5 esta em T1_FEATURE_IDS
+      hoje. Medicao do perfil intradiario real (degraus vs senoide) e
+      trabalho pendente, nao feito aqui.
+
+  - id: AG-317
+    date: "2026-08-26"
+    file: "config/constants.yaml::feature_c08_vol_pctile_outer_window, src/features/groups/group_c.py::c08_vol_pctile_rolling_1y, src/features/support.py::rolling_percentile_rank_strict"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, src/features/registry.yaml"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real -- achado da propria constants.yaml, nao so da ficha"
+    gap: >
+      C08_VOL_PCTILE_ROLLING_1Y: O ID DA FEATURE PROMETE "1 ANO", A
+      PROPRIA CONSTANTS.YAML JA TEM A CONTA ERRADA DESDE ANTES DA FICHA
+      SER ESCRITA -- nao e so a barra dollar que quebra a promessa, a
+      aritmetica original (mesmo a 15m nominal) ja nasceu errada.
+      CONFIRMADO literalmente em config/constants.yaml:1787: "lookback
+      tabulado 17520 barras = 1 ano a 15m". Conta refeita do zero:
+      17520 x 15min = 262.800min = 4.380h = 182,5 DIAS = 6 MESES --
+      exatamente metade de 365 dias. Pra 1 ano real a 15m seriam 35.040
+      barras (365x96), o DOBRO de 17520. Sob a grade de producao real
+      (dollar bar), a distancia do "1 ano" so piora: 17520 barras =
+      114,7 dias (R1, 3,8 meses) / 240 dias (R2) / 500 dias (R3, 1,37
+      ano) -- 4,4x de amplitude entre grades, e a janela nao escala por
+      bar_source (LoteBWindows.from_constants(), build.py:363-371, sem
+      parametro bar_source).
+      SEGUNDO DEFEITO, mecanismo confirmado por ausencia no codigo:
+      support.rolling_percentile_rank_strict (support.py:462-526) so
+      exige count_in_window > 0 (linha 514) pra emitir valor -- NUNCA
+      exige janela cheia. registry.yaml:1168 confirma nan_policy: ">=1
+      ponto previo" (nao "janela cheia"). A feature roda com REFERENCIA
+      PARCIAL desde a 1a barra apos min_warmup_bars, sem nenhum NaN
+      sinalizando isso. Multiplo real: min_warmup_bars=200 (registry.
+      yaml:1164, RECALCULADO 2026-08-15 de 2000 pra 200 -- 10 dias ANTES
+      da ficha ter sido escrita) contra janela=17520: 17520/200 ~=
+      87,6x, nao "~9x" (a ficha usou o min_warmup_bars ANTIGO de 2000,
+      ja obsoleto quando ela foi escrita -- achado qualitativo
+      verdadeiro e NA PRATICA PIOR do que o numero da ficha sugeria).
+    severity: "MEDIUM -- C08 nao esta em T1_FEATURE_IDS (candidata T2), mas o erro aritmetico esta na PROPRIA constants.yaml, nao so numa leitura de codigo -- qualquer um que reler a proveniencia dessa constante herda a conta errada"
+    layer: "features (construção) / config (proveniência)"
+    consequence: >
+      Duas correcoes independentes, nenhuma feita: (1) o comentario de
+      proveniencia em constants.yaml precisa ser corrigido (17520
+      barras a 15m = 6 meses, nao 1 ano) -- e uma correcao de TEXTO,
+      zero efeito em calculo, mas o texto errado e a UNICA fonte que
+      alguem consultaria antes de reusar essa constante; (2) decisao de
+      desenho (nao trivial) se C08 deve escalar por bar_source (como as
+      janelas clock ja fizeram e foram revertidas, AG-295) ou virar
+      contagem de dias medida (equivalente ao que o addendum de AG-030
+      ja pede para C07/E02f/D03f/E15f/E17f -- mesma classe de problema,
+      "quanto historico cross-grade/cross-asset e comparavel", nao
+      resolvida aqui).
+    status: >-
+      ACHADO, nao corrigido -- nem a correcao de texto nem a decisao de
+      escala foram feitas. C08 nao esta em T1_FEATURE_IDS, sem urgencia
+      de producao.
+
+  - id: AG-318
+    date: "2026-08-26"
+    file: "src/features/groups/group_d.py::d07f_taker_imbalance_1m_agg, src/features/build.py::build_t1_features, src/features/registry.yaml"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real"
+    gap: >
+      D07F_TAKER_IMBALANCE_1M_AGG E 100% NaN EM TODA A PRODUCAO REAL
+      (R1/R2/R3), SEMPRE -- REGISTRY.YAML LISTA COMO T2 DISPONIVEL COM
+      `PARITY_TESTED: TRUE` SEM SOLETRAR A CONSEQUENCIA.
+      Mecanismo confirmado: o gate executavel real e build.py:1152
+      (linha atual -- a citacao original da ficha, build.py:1038, ja
+      mudou de posicao por edicoes desta mesma sessao em 26/08):
+      `if load_taker_imbalance_1m and bar_source == "time_15m":` --
+      sob QUALQUER bar_source de producao (dollar_r1/r2/r3), o
+      carregamento e pulado incondicionalmente, coluna sai NaN.
+      registry.yaml:1174-1189 confirma `parity_tested: true` (linha
+      1186) presente, e a `nan_policy` (linha 1184) MENCIONA a condicao
+      (`"NaN se... bar_source != 'time_15m'"`) -- ou seja, o MECANISMO
+      condicional esta documentado no registry; o que falta e a
+      CONSEQUENCIA pratica ("sob a grade de producao real hoje, isso
+      significa sempre") soletrada so na docstring de build.py, nunca
+      no registry, que e o artefato que um consumidor de "quantas
+      features T2 existem" consultaria primeiro.
+    severity: "MEDIUM -- feature T2 (nao produção), mas qualquer contagem de 'features T2 disponíveis' que inclua D07f sem essa ressalva está inflada em 1 sob a grade de produção real"
+    layer: "features (construção) / registry (documentação)"
+    consequence: >
+      Ironia estrutural ja registrada na ficha, confirmada: D07f e a
+      UNICA feature do grupo D com resolucao intra-barra (a que a grade
+      dollar bar MAIS se beneficiaria), e e a UNICA que nao roda sob
+      essa mesma grade. Correcao proposta, nao feita: nota explicita no
+      `nan_policy`/`observacao` do registry.yaml dizendo que sob
+      bar_source != "time_15m" (toda producao real) a coluna e sempre
+      NaN -- correcao de documentacao, zero mudanca de comportamento.
+    status: >-
+      ACHADO, nao corrigido -- feature T2, sem urgencia de producao
+      (nao consumida por T1_FEATURE_IDS nem pelo Regime Engine).
+
+  - id: AG-319
+    date: "2026-08-26"
+    file: "src/features/groups/group_e.py::e03f_funding_cum_3d, src/features/registry.yaml, src/features/build.py::compute_max_feature_lookback_ms"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-296"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real"
+    gap: >
+      E03F_FUNDING_CUM_3D: FOOTPRINT DECLARADO NO REGISTRY (288 BARRAS)
+      SUB-DECLARA O ALCANCE REAL (458,1 BARRAS EM R1, 1,59x) -- ACHADO
+      DA FICHA CONFIRMADO, MAS A GUARDA QUE ISSO VIOLARIA JA FOI
+      CORRIGIDA EM 2026-08-26 (AG-296), DEPOIS DA DATA DA FICHA (25/08).
+      Matematica da soma por evento (evita contar o mesmo valor de
+      funding ~32x via deteccao por timestamp) esta CORRETA -- nao e
+      bug de calculo. registry.yaml:1213 confirma `lookback_bars: 288`
+      (=288x15min=72h=9 eventos x 8h). Alcance real sob dollar bar R1:
+      72h/9,43min por barra = 458,1 barras -- 1,59x o declarado.
+      A ficha (25/08) descrevia a guarda de staleness como so emitindo
+      `structlog.warning`, nunca falhando o build -- ISSO MUDOU: desde
+      o commit `2238dab` (AG-296, mesma data 26/08, mas POSTERIOR a
+      ficha), `max_feature_window_bars()` (que so via 96, cego a C08/
+      E03f) foi substituida por `max_feature_lookback_bars(feature_ids)`
+      (build.py:472-507), que le o registry POR FEATURE ATIVA. Hoje,
+      `compute_max_feature_lookback_ms` (build.py:531-622) LEVANTA
+      `StaleFeatureWindowConstantError` (build.py:417-435, disparada em
+      592-603) quando window_bars > 96 sob resolution_id setado -- o
+      caso perigoso agora FALHA ALTO, nao so avisa. Se E03f fosse
+      promovida a T1_FEATURE_IDS hoje, o build FALHARIA (comportamento
+      seguro), nao vazaria silenciosamente como a ficha descrevia.
+      SEGUNDO DEFEITO (T5), confirmado: `funding_interval_hours=8` e
+      constante fixa; nos ~8 dias medidos de SOLUSDT com funding real
+      em 2h/4h (2022-11-09/18, colapso da FTX -- medicao ja existente,
+      constants.yaml, comentario de feature_e10f_oi_change_window,
+      linhas 1306-1308), dois eventos reais caem no MESMO epoch de 8h e
+      um e descartado silenciosamente -- sem NaN, sem log.
+    severity: "LOW -- E03f e T2 (registry.yaml:1209, nao em T1_FEATURE_IDS); o risco de vazamento silencioso que motivava severidade mais alta ja foi fechado por AG-296 antes mesmo desta entrada existir"
+    layer: "features (construção) / labels (purge)"
+    consequence: >
+      BOA NOTICIA REGISTRADA, NAO SO MA NOTICIA: o gap B09/B02 (guarda
+      de staleness silenciosa) que a ficha original documentava JA
+      NAO EXISTE mais -- AG-296 fechou isso como efeito colateral de
+      outro trabalho, antes de qualquer conexao com E03f especificamente
+      ter sido feita. O que sobra aberto: (1) o footprint declarado
+      (288) continua sub-declarado no registry (correcao de
+      documentacao, nao de seguranca -- a guarda ja protege mesmo com o
+      numero errado); (2) o defeito T5 (funding_interval_hours=8 fixo)
+      segue sem tratamento, afeta so os ~8 dias conhecidos de SOLUSDT.
+    status: >-
+      ACHADO, nao corrigido -- mas menos urgente do que a ficha original
+      sugeria, porque a rede de seguranca de purge (AG-296) ja existe.
+      T2, sem urgencia de producao.
+
+  - id: AG-320
+    date: "2026-08-26"
+    file: "src/features/groups/group_e.py::e11f_oi_change_1d, config/constants.yaml::feature_e11f_oi_change_lag_bars, src/features/build.py::LoteAWindows"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-295 (A13, mesma classe de bug, corrigido)"
+    found_by: "Agent independente (investigação item 2 dos 4 itens de continuação), reverificado contra codigo real"
+    gap: >
+      E11F_OI_CHANGE_1D: O ID DA FEATURE PROMETE "1 DIA", O CODIGO E A
+      PROPRIA CONSTANTS.YAML JA ADMITEM POR ESCRITO QUE ISSO NAO E
+      VERDADE -- DIVIDA DECLARADA, NUNCA CORRIGIDA. Mesma classe de bug
+      que A13 tinha ANTES da correcao desta sessao (AG-295) -- mas E11f
+      continua sem correcao.
+      CONFIRMADO literalmente em constants.yaml:1663: "nome '1d' herdado
+      do PRD original a 30m (48x30m=24h); mantido em CONTAGEM DE BARRAS
+      sob a migracao pra 15m... (nao recalibrado pra 96 barras=24h reais
+      a 15m)". Implementacao confirmada em group_e.py:177-192:
+      `Δln(oi_contracts_aligned)` puro sobre `lag_bars`, SEM
+      normalizacao (contraste explicito com E10f no proprio docstring:
+      "aqui e o delta bruto"). `LoteAWindows.from_constants()`
+      (build.py:279-343) NAO recebe bar_source -- `e11f_oi_change_lag_
+      bars=48` fixo (linha 334), nao escala por grade.
+      Contas refeitas do zero, batem exatamente: R1 = 48x9,43min =
+      452,64min = 7,544h = 0,314 DIA; R2 = 48x19,73min = 15,784h = 0,658
+      dia; R3 = 48x41,16min = 32,928h = 1,372 DIA. Amplitude 1,372/0,314
+      ~= 4,4x -- nenhuma das 3 grades entrega "1 dia".
+      DISTINCAO IMPORTANTE vs A13 (que tambem nao escala, pos-AG-295):
+      A13 nunca prometeu calendario -- o proprio ID (`A13_dist_ema48_
+      atr`) ja expoe "48" no nome, nunca "1 dia"/"1 hora". E11f, ao
+      contrario, carrega a promessa "1d" NO PROPRIO ID, nunca corrigida
+      -- essa e a correcao de ROTULO que A13 nunca precisou (so precisou
+      de correcao de ESCALA) e que E11f segue sem receber.
+    severity: "MEDIUM -- T2 (nao produção), mas e a mesma classe de defeito que ja foi CORRIGIDA em A13 (producao) nesta mesma sessao -- deixar E11f sem correcao equivalente e inconsistencia dentro do proprio repo, nao so divida isolada"
+    layer: "features (construção) / config (nomenclatura)"
+    consequence: >
+      Se E11f for promovida a T1_FEATURE_IDS no futuro sem correcao, um
+      modelo treinado em R1 rotularia "mudanca de OI em 1 dia" um sinal
+      que na verdade cobre 7,5h -- mesma classe de erro que AG-295
+      corrigiu pra A13 (papel/meia-vida real divergindo do nome
+      declarado entre grades), so que aqui ainda nao aconteceu a
+      correcao.
+    status: >-
+      ACHADO, nao corrigido -- correcao mais simples que a de A13 (so
+      renomear/redocumentar o horizonte real por grade, ou -- decisao
+      de desenho fora do escopo desta entrada -- normalizar como E10f
+      faz). T2, sem urgencia de producao, mas consistencia com a
+      correcao ja feita de A13 pesa a favor de nao deixar em aberto
+      indefinidamente.
