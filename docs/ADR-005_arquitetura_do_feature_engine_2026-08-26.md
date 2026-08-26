@@ -3,10 +3,10 @@
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
-- **§12 (grade de produção): PROPOSTO**, não revisado. Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC.
-- **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9.
+- **§12 (grade de produção): PROPOSTO**, não revisado — `project_assurance` acionado em 2026-08-26 (background). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação iniciada**: §12.4/§12.5/§12.2 agora têm núcleo puro reproduzível em `src/analysis/production_grade_gate.py` (ver §12.8) — ainda NÃO RODADO (protocolo de execução) nem revisado.
+- **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado aqui.
 
-Nenhuma implementação feita, nenhum default alterado, nenhuma coluna removida.
+Nenhum default de produção alterado, nenhuma coluna de feature removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
 
 **Nota de numeração:** não há §10. A v1 deste ADR tinha um addendum §10 que foi absorvido por §0.2 na reescrita v2; o número ficou vago e é preservado assim porque `AG-266` e os commits já referenciam §11, §12 e §13 pelos números atuais.
 **Escopo:** desenho do vetor de features (`src/features/`), fronteira com o gate de regime e com o vetor de treino do Alpha
@@ -677,11 +677,22 @@ A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
 
 ### §12.8 O que falta, e não impede a decisão
 
-- **Gate 0 nunca foi executado e persistido.** `src/analysis/feasibility.py`
-  tem `trades_per_year_budget` e `breakeven_win_rate` e **não tem
-  `__main__`** — a aritmética de §12.4 existe em código e nunca virou
-  artefato. É o item de maior retorno: transforma esta seção em algo
-  reproduzível.
+- ~~Gate 0 nunca foi executado e persistido.~~ **FECHADO em 2026-08-26**
+  por `src/analysis/production_grade_gate.py` (+ `tests/unit/
+  test_analysis_production_grade_gate.py`) — núcleo puro das 3 contas
+  desta seção (teto R1, custo/capacidade sob orçamento compartilhado,
+  `ρ_mínimo`), casca que lê `s1_tp_sl_sensitivity_report_{R}.json`
+  (`stop_pct_cell` real, não recalculado), `Filters` reais via
+  `load_filters_asof` (não o escalar BTC-único de `constants.yaml`) e
+  preço mediano real de `data.lake.query_dollar_bars`. Persiste
+  `experiments/production_grade_gate_report.json`. `equity`/`asof` são
+  parâmetros obrigatórios (nunca cache de equity, B17; nunca "hoje"
+  presumido, B01) — ainda **NÃO RODADO** (protocolo de execução do
+  Manager, `CLAUDE.md`: só o usuário roda `.py`) e **NÃO REVISADO**
+  (project_assurance pendente sobre esta §12, ver nota no topo do
+  documento). Mesma limitação de `stop_pct` já registrada abaixo (usa a
+  célula de produção GLOBAL do S1, não overrides por combo) — herdada,
+  não escondida.
 - **O S1 filtra só o piso R2, nunca o teto R1.** Por isso R3 aparece com 7
   células viáveis e R1 com 5 — a comparação entre grades foi feita sobre
   conjuntos filtrados por critérios diferentes.
