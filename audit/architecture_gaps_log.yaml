@@ -18043,3 +18043,218 @@ entries:
       existe). Antes de qualquer uma, vale medir a curva de IC por horizonte
       das colunas sobreviventes: e o teste que separa "sem tese declarada"
       de "sem sinal", e nenhuma das duas foi feita ate aqui.
+
+  - id: AG-264
+    date: "2026-08-26"
+    file: "data/capacity/dollar_bars_{r1,r2,r3}/*/, src/data/bars.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-202, src/models/alpha.py::_unique_test_bars"
+    found_by: "Claude -- guarda de join do modulo novo src/analysis/ic_by_horizon.py levantou ao detectar open_time nao-unico; nao era o alvo da busca"
+    gap: >
+      BARRAS DE DURACAO ZERO NO DADO DE PRODUCAO, EM 9 DAS 15 COMBINACOES.
+      Varredura completa das 15 celulas (2022-01-01..2026-08-07):
+        BTCUSDT/R1  n=152.926  duracao_zero=1  open_time_duplicado=1
+        ETHUSDT/R1  n=156.788  duracao_zero=1  open_time_duplicado=1
+        SOLUSDT/R1  n=165.023  duracao_zero=5  open_time_duplicado=3
+        SOLUSDT/R2  n= 82.400  duracao_zero=2  open_time_duplicado=1
+        SOLUSDT/R3  n= 41.215  duracao_zero=1  open_time_duplicado=0
+        BNBUSDT/R1  n=163.200  duracao_zero=2  open_time_duplicado=2
+        BNBUSDT/R2  n= 81.387  duracao_zero=1  open_time_duplicado=1
+        XRPUSDT/R1  n=171.098  duracao_zero=1  open_time_duplicado=0
+        XRPUSDT/R2  n= 85.468  duracao_zero=1  open_time_duplicado=0
+      Exemplo inspecionado (BTCUSDT/R1, open_time=1738626900274): duas linhas
+      com o MESMO open_time. A primeira tem close_time == open_time (duracao
+      zero), volume 0,197 BTC e quote_volume 19.947 USDT -- 0,01% do
+      threshold de ~168M que define a barra. A segunda e a barra real.
+      Uma barra que abre e fecha no mesmo instante com 0,01% do threshold nao
+      e uma barra: e residuo do gerador.
+    severity: >
+      medio -- volume minusculo (15 barras degeneradas em ~1,6M), mas a
+      chave open_time deixa de ser unica, e todo consumidor que faz join ou
+      assume unicidade herda o problema em silencio.
+    layer: "data (gerador de dollar bar)"
+    consequence: >
+      O SINTOMA JA TINHA SIDO VISTO E REMEDIADO A JUSANTE, A CAUSA NUNCA.
+      `AG-202` registrou "duplicou 2 de 223.172 barras de BTCUSDT/R1 (t0
+      identico)" e a resposta foi `.unique(subset=["t0"], keep="first")` em
+      `src/models/alpha.py::_unique_test_bars`. Isso resolve o pipeline do
+      Alpha e deixa o dado errado no disco para todo mundo mais -- e o
+      `keep="first"` daquela correcao mantem justamente a barra de duracao
+      zero quando ela vem primeiro na ordenacao, que e o oposto do desejado.
+      Este modulo trata explicitamente (dedupe por open_time mantendo o MAIOR
+      close_time, com log contando o que foi descartado), mas isso tambem e
+      remediacao de consumidor: a correcao de verdade e o gerador nao emitir
+      barra de duracao zero.
+    status: >-
+      ABERTO -- nada corrigido em `data/`. Duas decisoes do Manager: (a) o
+      gerador (`src/data/bars.py`) deve descartar barra de duracao zero na
+      emissao, o que obriga regerar as 15 grades e invalida `config_hash` a
+      jusante; (b) enquanto isso, revisar o `keep="first"` de
+      `_unique_test_bars` (AG-202), que hoje pode estar preservando a barra
+      degenerada em vez da real. (b) e barato e independente de (a).
+
+  - id: AG-265
+    date: "2026-08-26"
+    file: "src/analysis/ic_by_horizon.py, experiments/ic_by_horizon_report_R1.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-263, ::AG-260, config/constants.yaml"
+    found_by: "Claude, persona feature-thesis-auditor -- teste de IC por horizonte pedido pelo Manager apos AG-263"
+    gap: >
+      CURVA DE IC POR HORIZONTE DAS 72 COLUNAS, BTCUSDT/R1, 2022-01-01..
+      2026-08-07, 152.926 barras. Horizontes h = 1,2,4,8,16,32 barras
+      (holding medido H = 5). O teste que separa "sem tese declarada" de
+      "sem sinal", que ate aqui nunca tinha sido feito.
+      RESULTADO -- 426 pontos com estatistica finita. Sob H0 esperar-se-iam
+      19,4 pontos com |t|>=2; observados 42, entao ha mais que acaso. Sob
+      Benjamini-Hochberg q=0,10 sobrevivem 9 pontos, concentrados em TRES
+      features, todas do grupo E (derivativos/posicionamento):
+        E18f_taker_ls_vol_ratio    h=1 IC=+0,0554 |t|=20,8
+        E16f_global_ls_ratio       h=1 IC=-0,0142 |t|= 5,5
+        E12f_price_oi_divergence   h=1 IC=+0,0105 |t|= 4,1
+      Nenhuma das 26 colunas de A/B (analise tecnica classica), nenhuma de C
+      (volatilidade), nenhuma de D (volume/microestrutura) e nenhuma de K
+      (calendario) sobrevive.
+    severity: >
+      alto -- e o primeiro corte empirico do vetor, e ele nao e ambiguo:
+      3 de 72 colunas carregam sinal detectavel contra retorno futuro.
+    layer: "features (evidencia de sinal)"
+    consequence: >
+      (1) CRUZAMENTO COM A FICHA DE TESE (AG-263), e ele e o achado:
+            veredito da ficha        com sinal   sem sinal
+            TESE_OK                      2          15
+            SEM_MECANISMO                0          29
+            INCOERENTE_DIMENSIONAL       0          16
+            ERRO_CATEGORICO              1           9
+      ZERO das 29 colunas sem mecanismo economico declarado tem sinal. ZERO
+      das 16 dimensionalmente incoerentes tem sinal. A auditoria de tese foi
+      feita lendo formula e registry, sem olhar retorno nenhum, e mesmo assim
+      separou corretamente o conjunto vazio. Nao e prova causal -- e
+      convergencia entre dois metodos independentes, e ela sustenta a regra
+      "sem mecanismo nao ha tese" como criterio de triagem barato ANTES de
+      gastar medicao.
+      (2) FORMA DAS TRES CURVAS, que diz o papel de cada uma:
+        E18f DECAI monotonicamente (h=1: +0,0554 -> h=32: +0,0112). Sinal de
+          curtissimo prazo, coerente com o mecanismo declarado (agressao de
+          fluxo). No horizonte de operacao (h=4, 0,8H) ainda vale +0,0246.
+        E16f CRESCE em modulo monotonicamente (h=1: -0,0142 -> h=32:
+          -0,0419) e NAO atingiu o pico dentro da grade testada. E a unica
+          coluna do vetor com assinatura de CONTEXTO -- exatamente a banda
+          (4-20H) que AG-263 mostrou vazia. O horizonte real dela e > 32
+          barras e nao foi medido.
+        E12f e PLANO em ~+0,011 de h=1 a h=8 e cai depois -- estavel dentro
+          do horizonte de operacao.
+      (3) NENHUMA DAS TRES PICA NO HORIZONTE DE OPERACAO (h=4 a h=8, isto e
+      0,8H a 1,6H). Uma pica antes (E18f, h=1 = 0,2H, banda de ruido), outra
+      depois do fim da grade (E16f). O motor decide num horizonte onde
+      nenhuma feature do vetor tem seu melhor sinal.
+      (4) RESSALVA SOBRE E18f: a ficha a marcou ERRO_CATEGORICO (janela de
+      5 min de RELOGIO colada numa barra de FLUXO, cobrindo ~290% do fluxo
+      da barra no p10 e 15,5% no p90). O sinal e o mais forte do vetor por
+      larga margem e aparece em h=1 -- as duas coisas juntas sao consistentes
+      tanto com fluxo agressor real quanto com artefato mecanico da propria
+      barra (a janela de relogio carregando informacao sobre a duracao da
+      barra corrente). NAO promover E18f antes de separar as duas hipoteses.
+    metodo_e_uma_correcao_propria: >
+      O erro do IC NAO e o desvio entre as fases de amostragem dividido por
+      sqrt(h). A primeira versao deste modulo fez exatamente isso e produziu
+      |t| da ordem de 85 para IC de 0,04, com 65 das 72 colunas "com pico
+      significativo" -- resultado que eu quase reportei. As h subamostras
+      disjuntas cobrem o MESMO periodo de calendario em fases diferentes:
+      sao redundantes entre si, e o desvio entre elas mede variacao de fase,
+      nao incerteza. Corrigido para o erro de UMA subamostra disjunta
+      (1/sqrt(n_s - 1), n_s = pontos genuinamente nao sobrepostos), o numero
+      de colunas com pico significativo caiu de 65 para 8. O desvio entre
+      fases continua no relatorio como `dispersao_entre_fases`, rotulado
+      como diagnostico e nunca como erro.
+    b06: >
+      Este relatorio e DESCRITIVO e POS-HOC, medido sobre a serie inteira.
+      B06 proibe usar tabela de IC de amostra cheia para configurar modelo --
+      a triagem que decide feature tem que ser in-fold. O modulo vive em
+      `analysis/`, fora do contrato importlinter, e o aviso esta no payload
+      JSON e na docstring. NAO usar para escolher vetor de treino nem ajustar
+      janela.
+    status: >-
+      MEDIDO, NADA APLICADO. Rodado so em BTCUSDT/R1 -- as outras 14 celulas
+      nao foram medidas, e AG-246 ja mostrou que ordenacao neste projeto nao
+      transporta entre grades, entao NAO extrapolar. Proximos passos, em
+      ordem de valor e todos baratos: (a) estender a grade de horizonte alem
+      de 32 barras para achar o pico real de E16f, a unica candidata a
+      feature de contexto do vetor; (b) rodar as 14 celulas restantes e ver
+      se as 3 sobreviventes se repetem -- se nao se repetirem, sao locais
+      como tudo mais neste motor; (c) separar as duas hipoteses de E18f. A
+      decisao sobre remover as 29 sem mecanismo e sem sinal continua do
+      Manager, agora com evidencia dos dois lados.
+
+  - id: AG-258
+    date: "2026-08-26"
+    file: "src/validation/regime_utility.py::identify_stress_state_by_volatility, src/analysis/gate_efficiency.py, tests/unit/test_validation_regime_utility.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-244-ADDENDUM-3, ::AG-127, ::AG-114, ::AG-118, src/regime/build_hmm.py"
+    found_by: "Claude -- aplicando a correcao que AG-244-ADDENDUM-3 propos, aprovada pelo Manager"
+    gap: >
+      CORRECAO APLICADA, TESTE DECISIVO NAO CONCLUSIVO. As duas coisas
+      precisam ser ditas juntas.
+      O QUE FOI CORRIGIDO: `identify_stress_state_by_volatility` ganhou
+      `fit_mask` -- o escopo sobre o qual a media por estado e calculada.
+      `None` (default) preserva bit-exato todo chamador existente; com
+      mascara, a ESCOLHA de qual estado e "stress" usa so as posicoes
+      marcadas, e o rotulo resultante e aplicado fora delas. 5 testes novos.
+      `gate_efficiency` ganhou `causal_stress_label` (default False,
+      bit-exato) que ajusta o rotulo no primeiro terco do periodo e avalia
+      no restante -- e EXCLUI o prefixo da avaliacao, senao o vazamento
+      voltaria pela porta dos fundos.
+      DESCOBERTA QUE MUDOU O DESENHO DA CORRECAO, medida ao implementar: os
+      `RawLabels` persistidos NAO cobrem a janela critica declarada. A
+      janela LUNA declara 2021-04-01..2022-07-01 e o parquet cobre
+      2022-04-01..2022-07-01 -- sao a fatia OOS do fold, nao a janela. Por
+      isso a 1a implementacao ("rotular com dado ANTERIOR a janela")
+      produziu relatorio VAZIO: nao existe dado anterior neste artefato. O
+      prefixo interno foi o maior escopo causal que o dado permite.
+    severity: "n/a -- e correcao de mecanismo mais um resultado de medicao inconclusivo, reportado como tal"
+    layer: "regime (rotulagem) / analysis"
+    consequence: >
+      RESULTADO DO TESTE, R3, delta E[r] (stress menos normal):
+        celula           GLOBAL        n      CAUSAL       n    efeito
+        BTCUSDT long    +0,11375   47.289   +0,07507   8.147   cai 34%
+        BTCUSDT short   -0,11532   47.289   -0,06032   8.147   cai 48%
+        ETHUSDT long    +0,09028   29.722   +0,15510   8.243   sobe 72%
+        ETHUSDT short   -0,10966   29.722   -0,16653   8.243   sobe 52%
+      NAO SEPARA. Em BTCUSDT o efeito cai pela metade sob rotulo causal --
+      compativel com vazamento; em ETHUSDT ele CRESCE -- incompativel. Duas
+      direcoes opostas entre dois simbolos e o que se espera de RUIDO, nao
+      de um mecanismo.
+      POR QUE O TESTE NAO TEM PODER, e isto e o mais util aqui: reservar
+      1/3 do periodo para rotular derruba a amostra de avaliacao de ~47k
+      para ~8k (-83%), e a amostra ja era a fatia OOS de um fold. Com 5,8x
+      menos dado, a variacao entre as quatro celulas nao distingue "o
+      vazamento sumiu" de "o estimador ficou ruidoso". 34 celulas foram
+      omitidas por ficarem abaixo do piso de barras.
+      Ou seja: a hipotese de vazamento de AG-244-ADDENDUM-2/3 NAO foi
+      confirmada nem refutada. Continua sendo a explicacao mais provavel
+      (o mecanismo esta confirmado por leitura de codigo em
+      ADDENDUM-3), mas a magnitude do efeito que ela produz segue
+      desconhecida.
+    status: >-
+      PARCIALMENTE FECHADO 2026-08-26. O MECANISMO esta corrigido e
+      disponivel (`fit_mask`, testado, default bit-exato); a MEDICAO do
+      quanto ele afetava segue aberta.
+      CAMINHO DEFINITIVO, e ele e melhor que o prefixo -- descoberto ao
+      investigar: `src/regime/build_hmm.py` JA calcula `is_stress_state`
+      de forma causal, por fold, sobre o treino (correcao de `AG-127`
+      Angulo 1). O problema e que `RawLabels` (`m4_regime_comparison`)
+      persiste apenas `open_time_ms`/`close_time_ms`/`canonical_id` -- o
+      rotulo causal existe em memoria e e DESCARTADO na persistencia. Por
+      isso `gate_efficiency` e `m4_critical_windows` recalculam
+      globalmente: nao porque alguem escolheu o caminho pior, mas porque o
+      melhor nao chegou ate eles.
+      PROPOSTA: adicionar `is_stress_state` a `RawLabels` e persisti-lo.
+      Com isso os dois consumidores usam o rotulo causal SEM perder amostra
+      (nada de prefixo, nada de 1/3 reservado), e o teste decisivo passa a
+      ter o poder que hoje nao tem. Custo: um campo no dataclass, a
+      propagacao no ponto de escrita, e re-gerar os `RawLabels` -- que e
+      onde esta o custo real, porque exige re-rodar o candidato.
+      NAO FAZER antes disso: tratar o resultado acima como evidencia em
+      qualquer direcao. Ele nao tem poder estatistico para sustentar
+      conclusao, e apresenta-lo como "o vazamento explica metade do efeito"
+      (verdade em BTCUSDT) seria escolher o simbolo que confirma a
+      hipotese e ignorar o que a contradiz.
+      `m4_critical_windows` (o outro call site com o mesmo padrao global,
+      linha 1556) NAO foi tocado -- a mesma correcao se aplica, mas sem o
+      `is_stress_state` persistido ela herdaria a mesma falta de poder.

@@ -393,7 +393,10 @@ def transition_failure_rate(
 
 
 def identify_stress_state_by_volatility(
-    group_labels: IntArray, realized_vol_short: FloatArray
+    group_labels: IntArray,
+    realized_vol_short: FloatArray,
+    *,
+    fit_mask: NDArray[np.bool_] | None = None,
 ) -> int:
     """Estado canônico com maior `realized_vol_short` MÉDIO dentro do
     estado -- convenção pra identificar "stress" em candidatos sem rótulo
@@ -411,18 +414,57 @@ def identify_stress_state_by_volatility(
     com o rótulo oficial).
 
     Filtra pares não-finitos antes de agrupar -- warmup de
-    `realized_vol_short` é NaN por construção."""
+    `realized_vol_short` é NaN por construção.
+
+    **`fit_mask` (`AG-244-ADDENDUM-3`, 2026-08-26) -- o escopo sobre o qual
+    a MÉDIA por estado é calculada.** `None` (default) preserva o
+    comportamento histórico bit-exato: a média usa TODAS as observações
+    recebidas. Quando fornecido, a média -- e portanto a escolha de qual
+    estado é "stress" -- usa só as posições `True`, e o `stress_state_id`
+    resultante é para ser APLICADO fora delas.
+
+    **Por que isso importa, e não é preciosismo.** Esta função decide um
+    RÓTULO, não um número: qual dos k estados recebe o nome "stress". Se a
+    média que decide isso for calculada sobre o mesmo período em que o
+    resultado será avaliado, o rótulo carrega informação daquele período.
+    Não é vazamento de preço -- `realized_vol_short` é observável em `t` --,
+    é vazamento de SELEÇÃO, e basta para inflar qualquer efeito condicionado
+    ao rótulo.
+
+    O repo já tinha encontrado e corrigido exatamente isso em `AG-127`
+    (Ângulo 1, 2026-08-21) no caminho de PRODUÇÃO: `src/regime/build_hmm.py`
+    passou a chamar esta função dentro do loop de folds, sobre
+    `obs_2d[:train_end_idx]` decodificado, aplicando o resultado só à fatia
+    de teste. O que `AG-244-ADDENDUM-3` achou é que os caminhos de ANÁLISE
+    (`gate_efficiency`, `m4_critical_windows`) ficaram com o padrão antigo --
+    chamada única sobre a janela inteira. `fit_mask` existe para que eles
+    possam adotar a mesma disciplina sem duplicar a lógica.
+
+    Levanta se `fit_mask` não selecionar nenhuma observação finita: um
+    escopo de ajuste vazio não tem resposta, e devolver um estado arbitrário
+    seria pior que falhar."""
     if group_labels.shape != realized_vol_short.shape:
         raise ValueError(
             "identify_stress_state_by_volatility: group_labels/realized_vol_short "
             f"precisam do mesmo shape (group_labels={group_labels.shape}, "
             f"realized_vol_short={realized_vol_short.shape})"
         )
+    if fit_mask is not None and fit_mask.shape != group_labels.shape:
+        raise ValueError(
+            "identify_stress_state_by_volatility: fit_mask precisa do mesmo shape "
+            f"que group_labels (fit_mask={fit_mask.shape}, "
+            f"group_labels={group_labels.shape})"
+        )
     finite_mask = np.isfinite(realized_vol_short)
+    if fit_mask is not None:
+        finite_mask = finite_mask & fit_mask
     group_labels = group_labels[finite_mask]
     realized_vol_short = realized_vol_short[finite_mask]
     if group_labels.shape[0] == 0:
-        raise ValueError("identify_stress_state_by_volatility: nenhuma observação finita")
+        raise ValueError(
+            "identify_stress_state_by_volatility: nenhuma observação finita"
+            + (" dentro de fit_mask" if fit_mask is not None else "")
+        )
 
     unique_states = np.unique(group_labels)
     mean_vol_by_state = {

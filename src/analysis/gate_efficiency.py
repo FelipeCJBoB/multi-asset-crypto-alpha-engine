@@ -98,6 +98,18 @@ from src.validation.regime_utility import identify_stress_state_by_volatility
 
 logger = structlog.get_logger(__name__)
 
+#: `AG-244-ADDENDUM-3` -- fração do período usada para AJUSTAR o rótulo de
+#: stress no modo causal; o restante é o que se avalia. Um terço é o maior
+#: prefixo que ainda deixa a maior parte da amostra para medição, e não é um
+#: parâmetro de negócio: mudá-lo altera a precisão do rótulo, nunca uma
+#: decisão de produção.
+_FRACAO_PREFIXO_ROTULO_CAUSAL: Final[float] = 1.0 / 3.0  # noqa: magic-number -- ver comentário acima
+
+#: Piso de barras para o modo causal ter prefixo defensável. Abaixo disso a
+#: célula é omitida com aviso, nunca silenciosamente rotulada pelo caminho
+#: global (que é o vazamento que este modo existe para evitar).
+_MIN_BARS_ROTULO_CAUSAL: Final[int] = 300  # noqa: magic-number -- ver comentário acima
+
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[2]
 DEFAULT_REPORT_PATH: Final[Path] = _REPO_ROOT / "experiments" / "gate_efficiency_report.json"
 
@@ -220,6 +232,7 @@ def _gate_efficiency_for_symbol_window(
     sl_atr_mult: float,
     maker_fee: float,
     taker_fee: float,
+    causal_stress_label: bool = False,
 ) -> tuple[tuple[GateEfficiencySymbolDetail, ...], pl.DataFrame | None]:
     """1 célula (resolução, janela, símbolo) -- devolve `(rows, joined)`:
     `rows` = 1 `GateEfficiencySymbolDetail` por (side, bucket) presente;
@@ -234,12 +247,62 @@ def _gate_efficiency_for_symbol_window(
     )
     if canonical_id.shape[0] == 0:
         return (), None
-    stress_state_id = identify_stress_state_by_volatility(canonical_id, realized_vol_short)
 
     start_ms = mcw._iso_date_to_epoch_ms(window.start)
     end_ms = mcw._iso_date_to_epoch_ms(window.end)
+
+    # `AG-244-ADDENDUM-3` -- QUAL estado é "stress" é um RÓTULO, e até
+    # 2026-08-26 ele era decidido com a média de `realized_vol_short` sobre a
+    # série INTEIRA do candidato, que inclui a janela cujo resultado está
+    # sendo medido. Não é vazamento de preço (a vol é observável em `t`), é
+    # vazamento de SELEÇÃO -- e basta para inflar qualquer efeito
+    # condicionado ao rótulo. `AG-127` (Ângulo 1) já tinha encontrado e
+    # corrigido a mesma coisa no caminho de PRODUÇÃO (`build_hmm.py`, rótulo
+    # por fold sobre o treino); os caminhos de análise ficaram para trás.
+    #
+    # `causal_stress_label=True` ajusta o rótulo só com barras ANTERIORES ao
+    # início da janela e o aplica dentro dela. Default `False` preserva o
+    # comportamento histórico bit-exato, para que a comparação entre os dois
+    # seja possível -- que é justamente a medição que `AG-244-ADDENDUM-3`
+    # deixou pendente.
+    # Medido ao implementar: os `RawLabels` persistidos NÃO cobrem a janela
+    # declarada inteira -- são a fatia OOS do fold (ex. janela LUNA declara
+    # 2021-04-01..2022-07-01 e o parquet cobre 2022-04-01..2022-07-01). Logo
+    # "rotular com dado anterior à janela" é inviável: não existe dado
+    # anterior neste artefato. O escopo causal disponível é um PREFIXO do
+    # próprio período: ajusta o rótulo no primeiro terço e avalia no resto,
+    # que é a mesma disciplina de `AG-127` (rótulo do treino aplicado ao
+    # teste) no maior escopo que o dado permite.
+    fit_mask = None
+    eval_start_ms = start_ms
+    if causal_stress_label:
+        if _close_ms.shape[0] < _MIN_BARS_ROTULO_CAUSAL:
+            logger.warning(
+                "analysis.gate_efficiency.poucas_barras_para_rotulo_causal",
+                resolution_id=resolution_id,
+                symbol=symbol,
+                window=window.name,
+                n_barras=int(_close_ms.shape[0]),
+                detail=(
+                    "celula omitida sob causal_stress_label=True -- prefixo de "
+                    "ajuste ficaria pequeno demais para um rotulo defensavel "
+                    "(AG-244-ADDENDUM-3)"
+                ),
+            )
+            return (), None
+        corte_idx = int(_close_ms.shape[0] * _FRACAO_PREFIXO_ROTULO_CAUSAL)
+        corte_ms = int(_close_ms[corte_idx])
+        fit_mask = _close_ms < corte_ms
+        # A avaliação exclui o prefixo usado para rotular -- sem isso o
+        # vazamento voltaria pela porta dos fundos, apenas menor.
+        eval_start_ms = max(start_ms, corte_ms)
+        if not bool(fit_mask.any()):
+            return (), None
+    stress_state_id = identify_stress_state_by_volatility(
+        canonical_id, realized_vol_short, fit_mask=fit_mask
+    )
     window_labels = labels_full.filter(
-        (pl.col("t0").dt.epoch(time_unit="ms") >= start_ms)
+        (pl.col("t0").dt.epoch(time_unit="ms") >= eval_start_ms)
         & (pl.col("t0").dt.epoch(time_unit="ms") < end_ms)
     )
     joined = mcw._asof_join_regime_onto_labels(window_labels, regime_raw)
@@ -345,6 +408,7 @@ def compute_gate_efficiency_for_resolution(
     sl_atr_mult: float,
     maker_fee: float,
     taker_fee: float,
+    causal_stress_label: bool = False,
 ) -> tuple[tuple[GateEfficiencySymbolDetail, ...], tuple[GateEfficiencyResult, ...]]:
     """1 resolução completa -- itera (janela, símbolo) de `windows`,
     carrega `RawLabels` já persistido (`_load_raw_labels_from_parquet`,
@@ -399,6 +463,7 @@ def compute_gate_efficiency_for_resolution(
                 sl_atr_mult=sl_atr_mult,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
+                causal_stress_label=causal_stress_label,
             )
             details.extend(rows)
             if joined is None:
@@ -485,6 +550,7 @@ def run_and_save_gate_efficiency_report(
     resolutions: tuple[str, ...] = mcw.RESOLUTIONS,
     windows: tuple[mcw.CriticalWindow, ...] = mcw.CRITICAL_WINDOWS,
     dest_path: Path | None = None,
+    causal_stress_label: bool = False,
 ) -> Path:
     """Ponto de entrada com IO -- carrega `labels.parquet` 1x por símbolo
     (reusado pelas `resolutions`, labels não dependem de resolução de
@@ -519,6 +585,7 @@ def run_and_save_gate_efficiency_report(
             sl_atr_mult=sl_atr_mult,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
+            causal_stress_label=causal_stress_label,
         )
         by_resolution.append(
             {

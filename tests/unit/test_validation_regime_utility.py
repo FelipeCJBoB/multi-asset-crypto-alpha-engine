@@ -401,3 +401,57 @@ def test_identify_stress_state_levanta_value_error_nenhuma_observacao_finita() -
     vol = np.array([np.nan, np.nan], dtype=np.float64)
     with pytest.raises(ValueError, match="nenhuma observação finita"):
         identify_stress_state_by_volatility(labels, vol)
+
+
+# ============================================================================
+# AG-244-ADDENDUM-3 — fit_mask (escopo de ajuste do rótulo de stress)
+# ============================================================================
+
+
+def test_fit_mask_none_preserva_comportamento_historico() -> None:
+    """Default bit-exato — nenhum chamador existente muda de resposta."""
+    labels = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    vol = np.array([0.1, 0.1, 0.5, 0.5, 0.9, 0.9])
+    assert identify_stress_state_by_volatility(labels, vol) == 2
+    assert identify_stress_state_by_volatility(labels, vol, fit_mask=None) == 2
+
+
+def test_fit_mask_muda_o_estado_escolhido_quando_o_escopo_muda() -> None:
+    """O ponto de `AG-244-ADDENDUM-3`: qual estado é "stress" depende do
+    escopo em que a média é calculada.
+
+    Aqui o estado 2 só é o mais volátil se a SEGUNDA metade entrar na conta.
+    Restringindo o ajuste à primeira metade — o que um uso causal faria — a
+    resposta é outra. Se este teste falhar, `fit_mask` deixou de ter efeito
+    e o vazamento de seleção voltou."""
+    labels = np.array([0, 1, 2, 0, 1, 2], dtype=np.int64)
+    vol = np.array([0.1, 0.9, 0.2, 0.1, 0.2, 5.0])
+    assert identify_stress_state_by_volatility(labels, vol) == 2
+    primeira_metade = np.array([True, True, True, False, False, False])
+    assert identify_stress_state_by_volatility(labels, vol, fit_mask=primeira_metade) == 1
+
+
+def test_fit_mask_combina_com_o_filtro_de_nao_finitos() -> None:
+    """`fit_mask` não substitui o filtro de NaN — os dois se somam."""
+    labels = np.array([0, 0, 1, 1], dtype=np.int64)
+    vol = np.array([0.1, np.nan, 0.9, 0.9])
+    mask = np.array([True, True, True, False])
+    assert identify_stress_state_by_volatility(labels, vol, fit_mask=mask) == 1
+
+
+def test_fit_mask_vazio_levanta_em_vez_de_devolver_estado_arbitrario() -> None:
+    """Escopo de ajuste sem observação finita não tem resposta. Devolver um
+    estado qualquer seria pior que falhar."""
+    labels = np.array([0, 1], dtype=np.int64)
+    vol = np.array([0.1, 0.2])
+    with pytest.raises(ValueError, match="fit_mask"):
+        identify_stress_state_by_volatility(
+            labels, vol, fit_mask=np.array([False, False])
+        )
+
+
+def test_fit_mask_de_shape_errado_levanta() -> None:
+    labels = np.array([0, 1, 2], dtype=np.int64)
+    vol = np.array([0.1, 0.2, 0.3])
+    with pytest.raises(ValueError, match="mesmo shape"):
+        identify_stress_state_by_volatility(labels, vol, fit_mask=np.array([True, False]))
