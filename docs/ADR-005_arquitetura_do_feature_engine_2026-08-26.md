@@ -1,7 +1,14 @@
 # ADR-005 — Arquitetura do Feature Engine: estratificar por função e por evidência
 
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
-**Status:** **REPROVADO** na revisão independente de `project_assurance` (2026-08-26) — ver §11. Nenhuma implementação feita, nenhum default alterado, nenhuma coluna removida. **Não ratificar como está.**
+**Status por parte** (2026-08-26):
+- **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
+- **§12 (grade de produção): PROPOSTO**, não revisado. Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC.
+- **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9.
+
+Nenhuma implementação feita, nenhum default alterado, nenhuma coluna removida.
+
+**Nota de numeração:** não há §10. A v1 deste ADR tinha um addendum §10 que foi absorvido por §0.2 na reescrita v2; o número ficou vago e é preservado assim porque `AG-266` e os commits já referenciam §11, §12 e §13 pelos números atuais.
 **Escopo:** desenho do vetor de features (`src/features/`), fronteira com o gate de regime e com o vetor de treino do Alpha
 **Origem:** persona `feature-thesis-auditor`, instrumentada em `AG-260` (régua econômica), `AG-263` (ficha de tese das 72 colunas), `AG-264` (barras degeneradas), `AG-265` (curva de IC por horizonte), `AG-266` (o artefato de `E18f`)
 **Evidência:** `experiments/ic_by_horizon_report_{R1,R2,R3}.json` (15 células, 2022-01-01..2026-08-07), `audit/feature_thesis/fichas_69_2026-08-25.yaml`, `config/min_alpha_lift_by_combo.yaml`
@@ -367,8 +374,14 @@ de barra (Q2 tem mais barras curtas que Q3 e IC 20× menor).
 
 - **Não remove coluna alguma.** Tudo aqui é proposta; nenhuma coluna foi
   retirada do repo.
-- **Não decide a grade de produção.** `AG-260` mostrou R1 ≈ R2 indistinguíveis
-  e R3 pior em custo; é outro eixo.
+- ~~**Não decide a grade de produção.**~~ **SUPERADO em 2026-08-26 por §12**,
+  por diretriz do Manager: *"tem que decidir, de alguma forma precisa ter a
+  matemática financeira para promover por escrito a grade que entra em
+  produção"*. A decisão está em §12.6 — **R3 em 4 ativos**, com `BTCUSDT/R3`
+  excluída pelo teto R1 recalculado por ativo. A leitura anterior (`AG-260`,
+  "R1 ≈ R2 ≫ R3") é discutida e contestada em §12.1 e §12.7: ela mede lift
+  exigido **sob número de trades livre**, e o orçamento de fees é restrição
+  inviolável, não parâmetro.
 - **Não resolve a causa de `AG-266`.** Por que `sum_taker_long_short_vol_ratio`
   muda de comportamento em blocos de meses não é resolvível por medição
   interna — exige checar a fonte ou rebaixar o dado.
