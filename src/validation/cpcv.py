@@ -861,6 +861,35 @@ def load_labels_v1(
             estimator_id=vol_estimator_id, tf=tf, resolution_id=resolution_id
         )
         verify_config_hash(labels, execution_config)
+    elif resolution_id is None:
+        # `AG-248` (achado de `AG-247`) -- WARNING, nao info. As duas
+        # condicoes juntas -- sem verificacao E na grade de RELOGIO --
+        # descrevem exatamente o caminho pelo qual a grade substituida em
+        # `AG-042` continua sendo lida sem que nada falhe: `verify_config`
+        # e `False` por default, entao B15 nao dispara, e `tf="15m"` tambem
+        # e default em cada camada acima. Medido: 462.813 linhas carregadas
+        # deste caminho sem erro nem aviso visivel.
+        #
+        # O default de `verify_config` NAO foi trocado de proposito. A
+        # docstring desta funcao protege deliberadamente a analise pos-hoc
+        # legitima, que precisa ler artefato de regime antigo (e nao poderia
+        # se B15 fosse obrigatorio). Trocar o default resolveria este risco
+        # criando outro; qual dos dois e maior e decisao do Manager, nao
+        # escolha tecnica obvia. O que muda aqui e so o nivel do log: deixa
+        # de ser indistinguivel de uma carga de producao no meio de um
+        # `structlog` de INFO.
+        logger.warning(
+            "validation.cpcv.load_labels_v1_grade_de_relogio_sem_verificacao",
+            path=str(path),
+            symbol=symbol,
+            tf=tf,
+            config_hash_do_arquivo=file_hash,
+            detail="AG-225/AG-248 -- carga SEM verify_config=True E na grade de "
+            "RELOGIO, que nao e producao desde AG-042. O config_hash acima e o do "
+            "ARQUIVO, nao o da config vigente; comparar numeros entre cargas com "
+            "hashes diferentes cruza regimes (AG-218). Se este numero for alimentar "
+            "decisao sobre o motor atual, passe resolution_id + verify_config=True",
+        )
     else:
         logger.info(
             "validation.cpcv.load_labels_v1_sem_verificacao_de_config",
@@ -881,10 +910,62 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
     # `python -m src.validation.cpcv`; um entry point real
     # (`scripts/run_validation_cpcv.py`) chamaria `configure_logging()`
     # antes de invocar o núcleo.
+    import argparse
     import sys
 
     def _run_cli() -> int:
-        labels_df = load_labels_v1()
+        # `AG-248` (achado de `AG-247`) -- este CLI chamava `load_labels_v1()`
+        # e `generate_splits()` NUS: rodava BTCUSDT na grade de RELOGIO 15m
+        # ponta a ponta, sem verificação de B15 (o default de `verify_config`
+        # é False) e sem nenhuma forma de o usuário pedir outra grade. A
+        # grade agora é explícita e obrigatória, como no `__main__` de
+        # `src.labels.backfill_multi_symbol` e no CLI de `src.validation.
+        # leakage` -- mesma decisão, aplicada aos três.
+        parser = argparse.ArgumentParser(
+            description=(
+                "CPCV sobre labels reais. A grade e OBRIGATORIA (AG-248): a "
+                "canonica de producao e dollar bar (R1/R2/R3) desde AG-042."
+            )
+        )
+        parser.add_argument("--symbol", default="BTCUSDT")
+        parser.add_argument("--resolution-id", default=None)
+        parser.add_argument("--vol-estimator-id", default="parkinson_w20")
+        parser.add_argument(
+            "--tf",
+            default=None,
+            help="grade de RELOGIO legada -- exige intencao explicita",
+        )
+        args = parser.parse_args()
+        if args.tf is None and args.resolution_id is None:
+            raise SystemExit(
+                "\n".join(
+                    (
+                        "src.validation.cpcv exige a grade explicita (AG-248).",
+                        "",
+                        "  PRODUCAO:",
+                        "    uv run python -m src.validation.cpcv "
+                        f"--symbol {args.symbol} --resolution-id R1",
+                        "",
+                        "  GRADE LEGADA 15m:",
+                        "    uv run python -m src.validation.cpcv "
+                        f"--symbol {args.symbol} --tf 15m",
+                    )
+                )
+            )
+        if args.tf is not None and args.resolution_id is not None:
+            raise SystemExit(
+                "src.validation.cpcv: --tf e --resolution-id sao mutuamente "
+                "exclusivos (XOR de grade). Passe um dos dois."
+            )
+        labels_df = load_labels_v1(
+            symbol=args.symbol,
+            tf=args.tf if args.tf is not None else "15m",
+            resolution_id=args.resolution_id,
+            vol_estimator_id=(
+                args.vol_estimator_id if args.resolution_id is not None else None
+            ),
+            verify_config=args.resolution_id is not None,
+        )
         cpcv_result = generate_splits(labels_df)
         assert_no_train_t1_leaks_into_test(labels_df, cpcv_result)
         assert_embargo_respected(labels_df, cpcv_result)

@@ -236,7 +236,15 @@ def test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc(
     monkeypatch.setattr(bms, "build_and_write_labels_for_symbol", _fake_build_and_write)
     monkeypatch.setattr(bms, "ProcessPoolExecutor", ThreadPoolExecutor)
 
-    results = bms.run_and_write_labels_for_alts(max_workers=1)
+    # `confirmo_grade_de_relogio_legada=True` (`AG-248`) -- este teste
+    # exercita deliberadamente o writer da grade LEGADA, que desde 2026-08-25
+    # exige confirmação explícita para não ser acionado por acidente. Passar o
+    # flag aqui é declarar essa intenção, não contornar a guarda: o teste
+    # continua provando exatamente o que provava (roteamento dos 4 alts, sem
+    # BTCUSDT).
+    results = bms.run_and_write_labels_for_alts(
+        max_workers=1, confirmo_grade_de_relogio_legada=True
+    )
 
     assert set(results) == set(bms.ALT_SYMBOLS)
     assert set(seen_symbols) == set(bms.ALT_SYMBOLS)
@@ -434,3 +442,68 @@ def test_run_and_write_labels_dollar_bar_parkinson_cobre_os_5_simbolos_incluindo
         assert call["resolution_id"] == "R1"
         assert call["grade_id"] == "R1"
         assert call["estimator_id"] == "parkinson_w20"
+
+
+# ============================================================================
+# AG-248 — guardas de grade no writer (achado de AG-247)
+# ============================================================================
+
+
+def test_writer_da_grade_legada_exige_confirmacao_explicita() -> None:
+    """`AG-248` — `run_and_write_labels_for_alts` é o ÚNICO caminho no repo
+    que grava em `data/labels/{symbol}/15m/v1/`, a grade substituída como
+    canônica por dollar bar em `AG-042`.
+
+    Até 2026-08-25 ela era o `__main__` do módulo: `python -m
+    src.labels.backfill_multi_symbol` gravava na grade legada sem argumento
+    nenhum e sem aviso. `AG-233` registrou que os cinco `labels.parquet` de
+    15m foram regravados por processo externo sem registro em
+    `label_engine_runs`, e `AG-247` identificou esta função como o único
+    caminho capaz de fazê-lo.
+
+    Se este teste falhar, gravar na grade substituída voltou a ser possível
+    por acidente."""
+    with pytest.raises(ValueError, match="confirmo_grade_de_relogio_legada"):
+        bms.run_and_write_labels_for_alts(max_workers=1)
+
+
+def test_main_do_modulo_nao_grava_nada_e_exige_escolha_de_writer() -> None:
+    """`AG-248` — o `__main__` deixou de ter entrada default: a escolha da
+    grade é decisão, não default. Ele deve levantar `SystemExit` citando os
+    DOIS writers, para que quem rodar saiba qual quer."""
+    import runpy
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("src.labels.backfill_multi_symbol", run_name="__main__")
+    msg = str(exc.value)
+    assert "run_and_write_labels_dollar_bar_parkinson" in msg
+    assert "run_and_write_labels_for_alts" in msg
+    assert "AG-248" in msg
+
+
+def test_writer_de_producao_nao_sobrescreve_entry_fill_source_por_default() -> None:
+    """`AG-248` — o defeito mais perigoso que a auditoria de `AG-247`
+    encontrou neste módulo, porque era SILENCIOSO e ia na direção de desfazer
+    trabalho já feito.
+
+    `run_and_write_labels_dollar_bar_parkinson` tinha
+    `entry_fill_source: str = ENTRY_FILL_SOURCE_MARK_1M` na assinatura, e
+    aplicava esse valor por cima do que `LabelConfig.from_constants` acabava
+    de resolver. Depois de `AG-236`, `from_constants` entrega `agg_trades`
+    (de `constants.yaml::label_entry_fill_source`) — então rodar o writer de
+    PRODUÇÃO sem argumentos regravaria os 15 artefatos sob o regime de fill
+    enviesado, desfazendo o relabel de `AG-229` sem erro nem aviso.
+
+    O default agora é `None` = "não sobrescreva".
+    """
+    import inspect
+
+    sig = inspect.signature(bms.run_and_write_labels_dollar_bar_parkinson)
+    assert sig.parameters["entry_fill_source"].default is None, (
+        "entry_fill_source voltou a ter um default que sobrescreve "
+        "constants.yaml::label_entry_fill_source (AG-248)"
+    )
+    assert sig.parameters["vol_estimator_window"].default is None, (
+        "vol_estimator_window voltou a ter literal no default em vez de "
+        "derivar de constants.yaml::atr_window (AG-248/§16.10 regra 1)"
+    )

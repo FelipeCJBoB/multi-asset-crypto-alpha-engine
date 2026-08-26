@@ -44,6 +44,7 @@ cost_surface.py`/`analysis/volatility_comparison.py` já usam ao redor de
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -52,6 +53,7 @@ from typing import Final
 import structlog
 
 from src.features.volatility import ParkinsonEstimator, VolatilityEstimator
+from src.labels._constants import load_constant
 from src.labels._paths import labels_symbol_tf_dir
 from src.labels.experiment_log import record_experiment
 from src.labels.triple_barrier import (
@@ -209,8 +211,31 @@ def run_and_write_labels_for_alts(
     version: str = "v1",
     tf: str = "15m",
     max_workers: int | None = None,
+    confirmo_grade_de_relogio_legada: bool = False,
 ) -> dict[str, Path]:
-    """Ponto de entrada MANUAL — roda os 4 alts em paralelo (cada símbolo é
+    """**WRITER DA GRADE LEGADA — exige confirmação explícita (`AG-248`).**
+
+    Este é o único caminho no repo que GRAVA em
+    `data/labels/{symbol}/15m/v1/`. A grade canônica de produção é dollar
+    bar (R1/R2/R3) desde `AG-042` (2026-08-16); para produção use
+    `run_and_write_labels_dollar_bar_parkinson`.
+
+    Por que a guarda existe, e não é zelo: até 2026-08-25 esta função era o
+    `__main__` do módulo, então `uv run python -m
+    src.labels.backfill_multi_symbol` gravava na grade legada **sem
+    argumento nenhum e sem aviso**. `AG-233` registrou que os cinco
+    `labels.parquet` de 15m foram regravados em 2026-08-25 14:46–14:47 por
+    processo externo à sessão, sem registro em `label_engine_runs`, e a
+    auditoria de `AG-247` identificou esta função como o único caminho
+    capaz de fazê-lo. Não é prova de que foi ela — ninguém observou a
+    execução —, mas é motivo suficiente para que gravar na grade
+    substituída deixe de ser o comportamento default.
+
+    A função continua existindo e funcionando: reconstruir a grade legada é
+    legítimo (o grupo de controle de `AG-229` depende dela). O que deixou de
+    ser possível é fazê-lo por acidente.
+
+    Ponto de entrada MANUAL — roda os 4 alts em paralelo (cada símbolo é
     totalmente independente dos outros, mesmo padrão de
     `volatility_operational_effect.run_and_save_operational_effect_report`).
     `max_workers=None` usa `os.cpu_count()` — explícito por padrão.
@@ -227,7 +252,25 @@ def run_and_write_labels_for_alts(
     `uv run python -m src.labels.backfill_multi_symbol`
     ou `uv run python -c "from src.labels.backfill_multi_symbol import
     run_and_write_labels_for_alts as r; r()"`."""
+    if not confirmo_grade_de_relogio_legada:
+        raise ValueError(
+            "run_and_write_labels_for_alts GRAVA na grade de relógio 15m, "
+            "substituída como canônica por dollar bar (R1/R2/R3) desde AG-042. "
+            "Para produção use run_and_write_labels_dollar_bar_parkinson. "
+            "Se reconstruir a grade legada é mesmo a intenção (ex.: refazer o "
+            "grupo de controle de AG-229), passe "
+            "confirmo_grade_de_relogio_legada=True -- explicitamente, para que "
+            "a escrita fique registrada como decisão e não como default (AG-248)."
+        )
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
+    logger.warning(
+        "labels.backfill_multi_symbol.gravando_grade_legada_15m",
+        detail=(
+            "escrita CONFIRMADA na grade de relógio 15m (AG-248). Esta grade "
+            "não é produção desde AG-042 -- os artefatos gerados aqui não "
+            "devem alimentar decisão sobre o motor atual."
+        ),
+    )
     logger.info(
         "labels.backfill_multi_symbol.starting",
         n_symbols=len(symbols), start=str(start), end=str(end), tf=tf, max_workers=workers,
@@ -258,8 +301,9 @@ def run_and_write_labels_dollar_bar_parkinson(
     end: DateLike = END_DATE,
     version: str = "v1",
     resolution_id: str = "R1",
-    vol_estimator_window: int = 20,
+    vol_estimator_window: int | None = None,
     max_workers: int | None = None,
+    entry_fill_source: str | None = None,
 ) -> dict[str, Path]:
     """Fase 5 (2026-08-17, `docs/refactor_parkinson_canonico.md`) --
     reprocessa `labels/` pros 5 símbolos sob `resolution_id="R1"` +
@@ -287,13 +331,23 @@ def run_and_write_labels_dollar_bar_parkinson(
     mark_price_klines_1m/{symbol}/`) — sem pré-requisito de download
     pendente, diferente de `run_and_write_labels_for_alts` (item 1 da
     docstring do módulo, já resolvido em 2026-08-13)."""
+    # `AG-248` -- era o literal `20` no default da assinatura, violacao
+    # pre-existente de §16.10 regra 1 (pega ao passar por aqui, ja estava
+    # no HEAD). A docstring sempre afirmou que era "o mesmo `atr_window` de
+    # constants.yaml"; agora e, de fato -- deriva em vez de repetir, entao
+    # nunca mais pode divergir da constante que diz seguir.
+    window = (
+        vol_estimator_window
+        if vol_estimator_window is not None
+        else int(load_constant("atr_window"))
+    )
     workers = max_workers if max_workers is not None else (os.cpu_count() or 1)
     logger.info(
         "labels.backfill_multi_symbol.dollar_bar_parkinson_starting",
         n_symbols=len(symbols),
         end=str(end),
         resolution_id=resolution_id,
-        vol_estimator_window=vol_estimator_window,
+        vol_estimator_window=window,
         max_workers=workers,
     )
 
@@ -302,9 +356,28 @@ def run_and_write_labels_dollar_bar_parkinson(
         future_to_symbol = {}
         for symbol in symbols:
             start = SYMBOL_START_DATE[symbol]
-            estimator = ParkinsonEstimator(window=vol_estimator_window)
-            cfg = LabelConfig.from_constants(
+            estimator = ParkinsonEstimator(window=window)
+            # AG-221/AG-227 -- `entry_fill_source` propagado até o
+            # `LabelConfig` que roda no processo filho. O `cfg` é um
+            # dataclass de escalares (serializável para o
+            # ProcessPoolExecutor); a factory de feeder é criada DENTRO de
+            # `build_labels_for_symbol_with_stats`, já no filho, então
+            # nenhuma closure precisa atravessar a fronteira de processo.
+            # `AG-248` -- `entry_fill_source=None` (default) NAO sobrescreve:
+            # usa o que `from_constants` resolveu de
+            # `constants.yaml::label_entry_fill_source`, hoje "agg_trades"
+            # (`AG-236`). Ate 2026-08-25 o default deste parametro era o
+            # literal `ENTRY_FILL_SOURCE_MARK_1M`, que sobrescrevia o valor
+            # correto -- rodar este writer sem argumentos DESFARIA o relabel
+            # de producao de `AG-229` e regravaria os 15 artefatos sob o
+            # regime de fill enviesado, sem erro nem aviso.
+            cfg_base = LabelConfig.from_constants(
                 estimator_id=estimator.estimator_id, resolution_id=resolution_id
+            )
+            cfg = (
+                cfg_base
+                if entry_fill_source is None
+                else dataclasses.replace(cfg_base, entry_fill_source=entry_fill_source)
             )
             future = executor.submit(
                 build_and_write_labels_for_symbol,
@@ -330,4 +403,31 @@ def run_and_write_labels_dollar_bar_parkinson(
 
 
 if __name__ == "__main__":  # pragma: no cover — execução manual
-    run_and_write_labels_for_alts()
+    # `AG-248` -- este `__main__` chamava `run_and_write_labels_for_alts()`,
+    # ou seja, `python -m src.labels.backfill_multi_symbol` GRAVAVA na grade
+    # de relógio legada sem nenhum argumento e sem aviso. Agora não escreve
+    # nada: obriga a escolher o writer, porque a escolha da grade é decisão,
+    # não default.
+    _PRODUCAO = (
+        "uv run python -c \"from src.labels.backfill_multi_symbol import "
+        "run_and_write_labels_dollar_bar_parkinson as r; r(resolution_id='R1')\""
+    )
+    _LEGADO = (
+        "uv run python -c \"from src.labels.backfill_multi_symbol import "
+        "run_and_write_labels_for_alts as r; "
+        "r(confirmo_grade_de_relogio_legada=True)\""
+    )
+    raise SystemExit(
+        "\n".join(
+            (
+                "src.labels.backfill_multi_symbol nao tem entrada default (AG-248).",
+                "Escolha explicitamente o writer:",
+                "",
+                "  PRODUCAO -- dollar bar, grade canonica desde AG-042:",
+                f"    {_PRODUCAO}",
+                "",
+                "  GRADE LEGADA 15m -- so para reconstruir o grupo de controle:",
+                f"    {_LEGADO}",
+            )
+        )
+    )

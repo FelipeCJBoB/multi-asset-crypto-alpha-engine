@@ -1010,7 +1010,12 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             )
         )
         parser.add_argument("--symbol", default="BTCUSDT")
-        parser.add_argument("--tf", default="15m")
+        parser.add_argument(
+            "--tf",
+            default=None,
+            help="grade de RELOGIO (ex. 15m) -- legada, substituida por dollar "
+            "bar em AG-042. Passar isto exige intencao explicita (AG-248)",
+        )
         parser.add_argument(
             "--resolution-id",
             default=None,
@@ -1028,16 +1033,56 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         # symbol="BTCUSDT"/tf="15m"/resolution_id=None reproduz a mesma
         # chamada de sempre, mesmo dest_path default.
         args = _parse_args()
+        # `AG-248` -- a GRADE deixou de ter default. Antes, `--tf` caia em
+        # "15m" e `--resolution-id` em None, entao `python -m
+        # src.validation.leakage` sem flag nenhuma rodava os 14 testes contra
+        # a grade de RELOGIO -- e, pior, era exatamente esse run que escrevia
+        # no `leakage_report.json` CANONICO. O relatorio que o projeto cita
+        # como garantia de ausencia de vazamento era, por construcao, o da
+        # grade que deixou de ser producao em AG-042.
+        if args.tf is None and args.resolution_id is None:
+            raise SystemExit(
+                "\n".join(
+                    (
+                        "src.validation.leakage exige a grade explicita (AG-248).",
+                        "",
+                        "  PRODUCAO -- dollar bar, grade canonica:",
+                        "    uv run python -m src.validation.leakage "
+                        f"--symbol {args.symbol} --resolution-id R1",
+                        "",
+                        "  GRADE LEGADA 15m -- so para comparacao historica:",
+                        "    uv run python -m src.validation.leakage "
+                        f"--symbol {args.symbol} --tf 15m",
+                    )
+                )
+            )
+        if args.tf is not None and args.resolution_id is not None:
+            raise SystemExit(
+                "src.validation.leakage: --tf e --resolution-id sao mutuamente "
+                "exclusivos (XOR de grade). Passe um dos dois."
+            )
+        tf_efetivo = args.tf if args.tf is not None else "15m"
         test_results = run_all_leakage_tests(
-            symbol=args.symbol, tf=args.tf, resolution_id=args.resolution_id
-        )
-        is_default_run = (
-            args.symbol == "BTCUSDT" and args.tf == "15m" and args.resolution_id is None
+            symbol=args.symbol, tf=tf_efetivo, resolution_id=args.resolution_id
         )
         grade = args.resolution_id if args.resolution_id is not None else args.tf
+        # O `leakage_report.json` canonico passa a ser reservado a grade de
+        # PRODUCAO. Rodar na grade de relogio nunca mais sobrescreve o
+        # relatorio que o projeto cita como garantia.
+        if args.resolution_id is None:
+            logger.warning(
+                "validation.leakage.grade_de_relogio_legada",
+                grade=grade,
+                detail=(
+                    "os 14 testes rodaram contra a grade de RELOGIO, que nao e "
+                    "producao desde AG-042. O relatorio vai para um arquivo "
+                    "com sufixo -- o leakage_report.json canonico e reservado "
+                    "a grade de producao (AG-248)."
+                ),
+            )
         dest_path = (
             None
-            if is_default_run
+            if args.symbol == "BTCUSDT" and args.resolution_id is not None
             else VALIDATION_REPORTS_DIR / f"leakage_report_{args.symbol}_{grade}.json"
         )
         write_leakage_report_atomic(test_results, dest_path=dest_path)

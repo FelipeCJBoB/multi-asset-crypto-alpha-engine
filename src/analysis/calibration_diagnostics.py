@@ -909,7 +909,12 @@ def run_faixa1_diagnostic(
     return payload
 
 
-def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
+def run_and_save_faixa1_report(
+    *,
+    dest_path: Any = None,
+    resolution_id: str | None = None,
+    vol_estimator_id: str = "parkinson_w20",
+) -> Any:
     """Ponto de entrada MANUAL (mesmo padrão de `src.analysis.cost_surface.
     run_and_save_cost_surface_report`) — carrega `predictions/alpha/
     alpha_c1_v1/predictions.parquet`, `labels/v1/labels.parquet` e
@@ -934,7 +939,22 @@ def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
     )
     # T0.3 -- via cpcv.load_labels_v1() em vez de reconstruir o caminho
     # (que migrou de labels/v1/ pro layout chaveado data/labels/BTCUSDT/15m/v1/).
-    labels = cpcv.load_labels_v1()
+    #
+    # `AG-248` (achado de `AG-247`) -- as duas cargas deste relatório agora
+    # compartilham a MESMA grade, explicitamente. Antes, `load_labels_v1()`
+    # era chamada nua (sem `resolution_id`, e com `verify_config=False` por
+    # default, logo SEM verificação de B15) enquanto `build_modeling_frame`
+    # logo abaixo carregava COM verificação. Duas cargas de label no mesmo
+    # relatório, uma verificada e outra não, podendo vir de regimes
+    # diferentes -- e o relatório resultante misturaria as duas sem que nada
+    # no artefato registrasse isso. `verify_config=True` aqui alinha o rigor
+    # das duas: se a grade não for a de produção, este relatório falha alto
+    # em vez de produzir número cruzando regimes (`AG-218`).
+    labels = cpcv.load_labels_v1(
+        resolution_id=resolution_id,
+        vol_estimator_id=vol_estimator_id if resolution_id is not None else None,
+        verify_config=True,
+    )
     # `extra_feature_ids=(E02F_FEATURE,)` -- AG-032 (2026-08-23) tirou
     # `E02f_funding_z_expanding` de `T1_FEATURE_IDS`; `build_modeling_
     # frame` não inclui mais a coluna por padrão (mesmo cálculo, só não
@@ -942,7 +962,11 @@ def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
     # `ColumnNotFoundError` -- achado real durante a migração LightGBM do
     # Alpha, `E02F_FEATURE` nunca tinha sido testado ponta a ponta contra
     # dado real desde AG-032.
-    mf = ds.build_modeling_frame(extra_feature_ids=(E02F_FEATURE,))
+    mf = ds.build_modeling_frame(
+        extra_feature_ids=(E02F_FEATURE,),
+        resolution_id=resolution_id,
+        vol_estimator_id=vol_estimator_id if resolution_id is not None else None,
+    )
     regimes = mf.data.select(["t0", "regime", COST_FEATURE, E02F_FEATURE])
 
     payload = run_faixa1_diagnostic(predictions, labels, regimes)
@@ -967,4 +991,18 @@ def run_and_save_faixa1_report(*, dest_path: Any = None) -> Any:
 
 
 if __name__ == "__main__":
-    run_and_save_faixa1_report()
+    import argparse
+
+    _p = argparse.ArgumentParser(
+        description=(
+            "Diagnostico de calibracao da Faixa 1. `--resolution-id` "
+            "(AG-248): sem ele, as duas cargas de label saem da grade de "
+            "RELOGIO legada, que nao e producao desde AG-042."
+        )
+    )
+    _p.add_argument("--resolution-id", default=None)
+    _p.add_argument("--vol-estimator-id", default="parkinson_w20")
+    _a = _p.parse_args()
+    run_and_save_faixa1_report(
+        resolution_id=_a.resolution_id, vol_estimator_id=_a.vol_estimator_id
+    )

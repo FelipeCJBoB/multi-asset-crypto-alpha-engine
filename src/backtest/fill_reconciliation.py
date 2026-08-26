@@ -134,13 +134,59 @@ def load_predictions(model_id: str = MODEL_ID_CAMADA1) -> pl.DataFrame:
     return pl.read_parquet(path)
 
 
-def load_labels(version: str = "v1") -> pl.DataFrame:
+def load_labels(
+    version: str = "v1",
+    *,
+    symbol: str = "BTCUSDT",
+    tf: str = "15m",
+    resolution_id: str | None = None,
+) -> pl.DataFrame:
     """Via `cpcv.load_labels_v1()` (T0.3) -- caminho migrado de
     `labels/v1/labels.parquet` (legado) pro layout chaveado
     `data/labels/BTCUSDT/15m/v1/`; mensagem de erro/comportamento em caso
     de ausência preservados (mesma exceção, levantada dentro de
-    `load_labels_v1`)."""
-    return cpcv.load_labels_v1(version)
+    `load_labels_v1`).
+
+    **`symbol`/`tf`/`resolution_id` adicionados em 2026-08-25 (`AG-248`,
+    achado de `AG-247`).** Até então esta função não aceitava NENHUM
+    parâmetro de grade nem de símbolo: chamava `load_labels_v1(version)` nu,
+    o que resolve para `BTCUSDT` na grade de relógio `15m` — e, como
+    `verify_config` é `False` por default em `load_labels_v1`, lia a grade
+    substituída **em silêncio**, sem levantar e sem aviso. Medido: 462.813
+    linhas carregadas de `data/labels/BTCUSDT/15m/v1/` sem nenhum erro.
+
+    **Por que os defaults continuam apontando para a grade legada, e isso
+    NÃO é omissão.** As `predictions` que este módulo reconcilia
+    (`load_predictions`) também são legadas — vivem em
+    `predictions/alpha/{model_id}/`, caminho sem segmento de grade, geradas
+    antes da migração. Trocar só o lado dos labels criaria uma incoerência
+    que hoje não existe: o módulo mede a grade legada, mas mede os DOIS
+    lados nela, de forma consistente. O default certo passa a ser produção
+    quando existirem predictions de produção — não antes.
+
+    O que mudou de fato: a grade virou parâmetro explícito e auditável, e
+    rodar na legada agora emite `logger.warning` (ver `run_fill_
+    reconciliation`) em vez de ser indistinguível de rodar em produção."""
+    return cpcv.load_labels_v1(
+        version, symbol=symbol, tf=tf, resolution_id=resolution_id
+    )
+
+
+def _avisa_se_grade_legada(resolution_id: str | None, *, origem: str) -> None:
+    """`AG-248` -- reconciliação é a fonte da verdade de equity (B17). Medir
+    sobre a grade substituída é medir outro motor; se for feito, que fique
+    registrado no log e não só na cabeça de quem rodou."""
+    if resolution_id is None:
+        logger.warning(
+            "backtest.fill_reconciliation.grade_de_relogio_legada",
+            origem=origem,
+            detail=(
+                "labels e predictions carregados da grade de RELOGIO 15m, que "
+                "nao e producao desde AG-042. Os dois lados sao coerentes "
+                "entre si, entao o numero nao esta errado -- mas descreve o "
+                "motor legado, nao o atual (AG-247/AG-248)."
+            ),
+        )
 
 
 def load_orders(version: str = "v1") -> pl.DataFrame:
@@ -481,6 +527,7 @@ def run_fill_reconciliation(
 
     resolved_model_id = model_id if model_id is not None else MODEL_ID_CAMADA1
     predictions = load_predictions(resolved_model_id)
+    _avisa_se_grade_legada(None, origem="run_fill_reconciliation")
     labels = load_labels()
     orders = load_orders()
 
@@ -728,6 +775,7 @@ def run_fill_selectivity(
     (núcleo puro) — carrega `labels/v1/labels.parquet` e
     `execution/fill_simulator/v1/orders.parquet` reais."""
     _assert_window_within_measured_coverage(window_start, window_end)
+    _avisa_se_grade_legada(None, origem="run_fill_selectivity")
     labels = load_labels()
     orders = load_orders()
     return compute_fill_selectivity(

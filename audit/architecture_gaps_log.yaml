@@ -17189,3 +17189,108 @@ entries:
           que a docstring (linhas 836-841) protege deliberadamente. Exige
           decisao do Manager sobre qual dos dois riscos e maior, nao e
           escolha tecnica obvia.
+
+  - id: AG-248
+    date: "2026-08-25"
+    file: "src/labels/backfill_multi_symbol.py, src/validation/leakage.py, src/validation/cpcv.py, src/backtest/fill_reconciliation.py, src/analysis/calibration_diagnostics.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-247, ::AG-236, ::AG-233, ::AG-042, tests/unit/test_labels_backfill_multi_symbol.py"
+    found_by: "Claude -- execucao dos refactors que o Manager aprovou a partir da auditoria de AG-247"
+    gap: >
+      REFACTOR DOS CINCO CAMINHOS QUE LIAM OU ESCREVIAM NA GRADE
+      SUBSTITUIDA. AG-247 auditou e nao corrigiu; esta entrada e a
+      correcao, mais UM defeito novo que so apareceu ao mexer no codigo.
+      DEFEITO NOVO, E O MAIS PERIGOSO DOS SEIS (nao estava em AG-247):
+      `run_and_write_labels_dollar_bar_parkinson` -- o writer de PRODUCAO --
+      tinha `entry_fill_source: str = ENTRY_FILL_SOURCE_MARK_1M` na
+      assinatura, e aplicava esse valor por `dataclasses.replace` POR CIMA
+      do que `LabelConfig.from_constants` acabava de resolver. Depois de
+      AG-236, `from_constants` entrega "agg_trades" (de
+      `constants.yaml::label_entry_fill_source`). Ou seja: rodar o writer de
+      producao sem argumentos REGRAVARIA as 15 combinacoes sob o regime de
+      fill enviesado, DESFAZENDO o relabel de AG-229 -- sem erro, sem aviso,
+      e produzindo artefatos que pareceriam normais. Silencioso e na direcao
+      de destruir trabalho ja validado.
+    severity: "alto -- um dos seis desfazia silenciosamente o relabel de producao; outro era o unico caminho capaz de gravar na grade legada e era o `__main__` do modulo"
+    layer: "core (labels, validation, backtest, analysis)"
+    consequence: >
+      O QUE FOI FEITO, ponto a ponto:
+      (1) `run_and_write_labels_dollar_bar_parkinson` -- `entry_fill_source`
+          e `vol_estimator_window` passam a ser `None` por default = "nao
+          sobrescreva". O primeiro herda de `constants.yaml::
+          label_entry_fill_source`; o segundo de `constants.yaml::
+          atr_window`, fechando de passagem uma violacao PRE-EXISTENTE de
+          §16.10 regra 1 (literal `20` no default, ja presente no HEAD).
+          Verificado: `from_constants` entrega agg_trades + config_hash
+          3599b765b7a53ff2, que e o gravado nos labels de producao.
+      (2) `run_and_write_labels_for_alts` (writer da grade legada) -- exige
+          `confirmo_grade_de_relogio_legada=True` e emite `logger.warning`
+          quando confirmado. A funcao continua funcionando: reconstruir a
+          grade legada e legitimo (o grupo de controle de AG-229 depende
+          dela). O que deixou de ser possivel e faze-lo por acidente.
+      (3) `__main__` de `backfill_multi_symbol` -- nao escreve mais nada.
+          Levanta SystemExit listando os DOIS writers com o comando exato de
+          cada um. Antes, `python -m src.labels.backfill_multi_symbol`
+          gravava na grade legada sem argumento nenhum.
+      (4) `leakage.py` CLI -- a grade virou OBRIGATORIA (XOR entre `--tf` e
+          `--resolution-id`, sem default). E o `leakage_report.json`
+          CANONICO passou a ser reservado a grade de producao: rodar na
+          grade de relogio escreve em arquivo com sufixo e emite warning.
+          Antes era o contrario -- so o run default (15m) escrevia no
+          canonico, entao o relatorio que o projeto cita como garantia de
+          ausencia de vazamento era, POR CONSTRUCAO, o da grade errada.
+      (5) `cpcv.py::_run_cli` -- mesma disciplina: grade obrigatoria, XOR,
+          e `verify_config=True` automatico sob `resolution_id`. Este NAO
+          estava na minha lista de execucao inicial; apareceu na varredura
+          de completude que o Manager pediu ao final, e e exatamente o tipo
+          de item que se perde entre "auditar" e "corrigir".
+      (6) `fill_reconciliation.load_labels` -- ganhou `symbol`/`tf`/
+          `resolution_id` (antes nao aceitava NENHUM) e os dois call sites
+          emitem warning sob grade legada. DEFAULTS MANTIDOS na grade legada
+          DE PROPOSITO: as `predictions` que este modulo reconcilia tambem
+          sao legadas (`predictions/alpha/{model_id}/`, caminho sem
+          segmento de grade). Trocar so o lado dos labels criaria uma
+          incoerencia que hoje NAO existe -- o modulo mede a grade legada,
+          mas mede os dois lados nela. O default certo passa a ser producao
+          quando existirem predictions de producao, nao antes.
+      (7) `calibration_diagnostics` -- as duas cargas do MESMO relatorio
+          agora compartilham a grade explicitamente, e a que era nua passou
+          a usar `verify_config=True`. Antes uma era verificada e a outra
+          nao, podendo vir de regimes diferentes sem que nada no artefato
+          registrasse isso.
+      (8) `load_labels_v1` -- o default `verify_config=False` NAO foi
+          trocado, deliberadamente: a docstring protege a analise pos-hoc
+          legitima, que precisa ler artefato de regime antigo. Trocar
+          resolveria um risco criando outro, e qual e maior e decisao do
+          Manager. O que mudou e o NIVEL DO LOG: carga sem verificacao E na
+          grade de relogio virou `logger.warning` com instrucao, em vez de
+          um `info` indistinguivel de carga de producao.
+      TESTES QUE TRAVAM AS GUARDAS (sem eles, alguem remove a guarda sem
+      quebrar nada): 3 novos em test_labels_backfill_multi_symbol.py --
+      writer legado exige confirmacao, `__main__` nao grava e cita os dois
+      writers, e o writer de producao nao sobrescreve `entry_fill_source`
+      nem `vol_estimator_window`.
+    status: >-
+      FECHADO 2026-08-25. Suite 1985 passed, 0 failed; ruff, mypy strict e
+      banned_patterns limpos nos cinco arquivos.
+      VALIDACAO DE COMPLETUDE (o Manager pediu explicitamente "valide que
+      nao deixou nada pra tras"): varredura de TODOS os call sites de
+      `load_labels_v1` em `src/` -- nenhum resta nu. Os tres que continuam
+      sem verificacao sao deliberados e documentados: `cross_symbol_ess`
+      (`verify_config=False` explicito, justificado na docstring),
+      `m4_critical_windows` (`_HETEROGENEITY_LABELS_TF` fixo por desenho) e
+      o proprio default de `load_labels_v1` (item 8).
+      UM TESTE FOI CORRIGIDO, NAO AFROUXADO:
+      `test_run_and_write_labels_for_alts_cobre_os_4_alts_sem_btc` passou a
+      declarar `confirmo_grade_de_relogio_legada=True` -- ele exercita o
+      writer legado de proposito, entao passar o flag e declarar a intencao,
+      nao contornar a guarda.
+      NAO TRATADO, e registrado como fora de escopo: o caso C de AG-247
+      (`fill_simulator.py:641`, `fill_timeout_ms = timeout_bars *
+      step_ms("15m")` incondicional mesmo sob dollar bar). Mexer nisso muda
+      COMPORTAMENTO DE EXECUCAO, nao so a grade de leitura, e esta
+      documentado nas linhas 625-635 como decisao deliberada. Uma varredura
+      mostrou ~20 outros `step_ms("15m")` em `features/`, `regime/` e
+      `cpcv.py`, a maioria com justificativa propria (piso hibrido de
+      AG-180, `_clock_reference_bar_duration_ms` de AG-043). Auditar esse
+      eixo -- "relogio de 15m como UNIDADE de calculo, nao como grade de
+      leitura" -- e um trabalho separado, que ninguem fez.
