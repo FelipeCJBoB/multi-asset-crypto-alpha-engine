@@ -499,3 +499,11 @@ def test_defaults_de_treino_do_pipeline_sao_os_revistos_de_ag261() -> None:
         "tau_policy foi flipado -- AG-251 mediu 2x de dispersao sob a politica "
         "nova; reverter exige nova medicao, nao preferencia"
     )
+    # AG-312 (ADR-005 §13.10, item 4 de §13.17) -- DECISAO DO MANAGER,
+    # opcao (b). Peso do calibrador isotonico = `uniqueness` sozinho.
+    # Sob o peso legado a saida estimava 0,4323 quando `P(TP)` real e
+    # 0,4967 (vies -13,0%, mesma ordem do lift que a regua exige).
+    assert sig.parameters["calib_weight_basis"].default == alpha.CALIB_WEIGHT_UNIQUENESS, (
+        "calib_weight_basis voltou ao peso legado -- a saida do calibrador "
+        "deixa de estimar P(TP) e volta a ter vies de -13% (AG-312)"
+    )

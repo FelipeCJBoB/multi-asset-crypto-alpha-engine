@@ -604,8 +604,31 @@ def _test_11_calibracao_vazada() -> LeakageTestResult:
         re.compile(r"fit_side_model\(\s*test"), (_SRC_ROOT / "models",)
     )
     calib_split_from_train = bool(re.search(r"_stratified_calib_split\(\s*y_all,", source))
-    calibrator_fits_on_calib_split = (
-        "calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)" in source
+    # AG-312 -- o check era por STRING LITERAL exata e quebrou quando o peso
+    # do calibrador virou politica (`w_calib` -> `w_calib_iso`). O guard
+    # estava certo em disparar: renomear um argumento do calibrador e algo
+    # que ele DEVE notar. Mas checar o literal amarra o teste a um nome, nao
+    # a propriedade -- e a propriedade e que os TRES argumentos venham do
+    # split de CALIBRACAO, nunca de `raw_train_all` nem do teste.
+    # Passa a checar isso: score e alvo sao os do split de calibracao, e o
+    # peso e um vetor indexado por `calib_idx` (qualquer politica de
+    # AG-312), nunca `w_all`/`raw_train_all` crus.
+    _calib_fit = re.search(
+        r"calibrator\.fit\(\s*(\w+),\s*(\w+),\s*sample_weight=(\w+)\s*\)", source
+    )
+    calibrator_fits_on_calib_split = bool(
+        _calib_fit
+        and _calib_fit.group(1) == "raw_calib"
+        and _calib_fit.group(2) == "y_calib"
+        and _calib_fit.group(3).startswith("w_calib")
+        # o peso do calibrador nunca pode ser o vetor de treino inteiro
+        and _calib_fit.group(3) not in ("w_all", "w_fit")
+        # e a politica `uniqueness` precisa fatiar por `calib_idx`, nao usar
+        # `u_all` inteiro -- e o mesmo erro que `w_all` seria
+        and (
+            "w_calib_iso = u_all[calib_idx]" in source
+            or "CALIB_WEIGHT_UNIQUENESS" not in source
+        )
     )
 
     ok = bool(
@@ -622,7 +645,8 @@ def _test_11_calibracao_vazada() -> LeakageTestResult:
         f"dado de teste para fit_side_model: {only_called_with_train}. Sub-split de "
         f"calibração (_stratified_calib_split) aplicado a y_all (derivado de "
         f"train_side_df, não de X_all bruto nem do teste): {calib_split_from_train}. "
-        f"IsotonicRegression.fit chamado com raw_calib/y_calib/w_calib (não raw_train_all "
+        f"IsotonicRegression.fit chamado com raw_calib/y_calib/w_calib* fatiado por "
+        f"calib_idx, qualquer que seja a politica de peso de AG-312 (não raw_train_all "
         f"nem dado de teste): {calibrator_fits_on_calib_split}."
     )
     note = (

@@ -417,6 +417,15 @@ def run_layer1_sprint(
     # BTCUSDT/long -- `scale_pos_weight` 1,0132 contra 1,3134, 30% de
     # divergencia. A classe positiva ficava sub-ponderada em ~23%.
     class_balance_basis: str = alpha.CLASS_BALANCE_WEIGHT,
+    # `calib_weight_basis` -- AG-312 / ADR-005 §13.10, item 4 de §13.17.
+    # DECISAO DO MANAGER (2026-08-26), opcao (b): o calibrador isotonico
+    # pondera so por `uniqueness`, nao por `uniqueness * |ret_net|`. Sob o
+    # peso legado a saida do calibrador estimava 0,4323 quando `P(TP)` real
+    # e 0,4967 -- vies de -13,0%, da MESMA ORDEM do lift que a regua exige
+    # (+7,6% a +15,1%). Sob `uniqueness` o vies medido cai para [-0,0012,
+    # +0,0030] em 5 celulas. A perda do LightGBM segue com o peso completo
+    # (B10/§3.5 intactos) -- muda so o calibrador.
+    calib_weight_basis: str = alpha.CALIB_WEIGHT_UNIQUENESS,
     dsr_n_trials: int | None = None,
     feature_ids: tuple[str, ...] | None = None,
     hyper: alpha.LGBMHyperparams | None = None,
@@ -614,6 +623,7 @@ def run_layer1_sprint(
         tau_policy=tau_policy,
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
+        calib_weight_basis=calib_weight_basis,
     )
     camada0_folds = alpha.run_all_folds(
         mf.data,
@@ -629,6 +639,7 @@ def run_layer1_sprint(
         tau_policy=tau_policy,
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
+        calib_weight_basis=calib_weight_basis,
     )
 
     # --- diagnóstico por fold x lado (task A1 do CLAUDE.md) — persiste o

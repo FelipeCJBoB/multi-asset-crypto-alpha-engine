@@ -19849,3 +19849,174 @@ entries:
       pede, nao recorrigir a conversao calendario->barra que a ficha
       descreve (caminho ja rejeitado em 2026-08-17). A MEDICAO em si
       continua ABERTA -- nao feita nesta entrada.
+
+  - id: AG-312
+    renumbered_from: "AG-310 -- sexta colisao de ID do dia com a sessao paralela; mesmo procedimento de AG-296/AG-300"
+    date: "2026-08-26"
+    file: "src/models/alpha.py::fit_side_model (CALIB_WEIGHT_*), src/models/pipeline.py::run_layer1_sprint"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.10 (item 4 de §13.17), src/labels/weights.py::apply_weights, src/validation/leakage.py (teste 11)"
+    found_by: "Claude -- persona lgbm-crypto-quant; DECISAO DO MANAGER (2026-08-26), opcao (b), apos consulta a sessao paralela"
+    gap: >
+      `IsotonicRegression.fit(..., sample_weight=w)` devolve `E_w[y|x]`, nao
+      `E[y|x]`. O calibrador do Alpha era ajustado com o peso da PERDA
+      (`uniqueness * |ret_net|`), e `|ret_net|` no SL e 1,25-1,29x o do TP
+      (o custo subtrai do ganho e soma a perda) -- logo o peso sub-pondera
+      exatamente a classe positiva e a saida deixa de estimar `P(TP)`.
+      MEDIDO, `P(TP)` sob cada esquema de peso (lado long, pos-NOFILL):
+        celula        contagem   so uniqueness   uniq*|ret_net| (legado)
+        BTCUSDT/R1     0,4967    0,4971 (+0,0004)  0,4323 (-0,0645)
+        ETHUSDT/R1     0,4990    0,4988 (-0,0002)  0,4431 (-0,0559)
+        BNBUSDT/R1     0,4916    0,4904 (-0,0012)  0,4264 (-0,0652)
+        SOLUSDT/R3     0,4942    0,4972 (+0,0030)  0,4815 (-0,0127)
+        XRPUSDT/R3     0,4959    0,4971 (+0,0013)  0,4751 (-0,0207)
+      O vies legado vai de -0,013 a -0,065; sob `uniqueness` fica em
+      [-0,0012, +0,0030] -- duas ordens de grandeza menor e SEM sinal
+      sistematico (3 celulas para cima, 2 para baixo). O lift que a regua
+      exige e +7,6% a +15,1%: o vies legado e da MESMA ORDEM.
+      PRINCIPIO que decide qual peso pertence ao calibrador: `uniqueness`
+      corrige REDUNDANCIA ESTATISTICA e nao se correlaciona com o desfecho;
+      `|ret_net|` codifica IMPORTANCIA ECONOMICA e se correlaciona com ele
+      por construcao. A perda do LightGBM segue com o peso completo --
+      B10/§3.5 intactos, muda so o calibrador.
+    severity: "ALTA -- a grandeza que o motor reporta como probabilidade nao era a probabilidade"
+    layer: "models"
+    consequence: >
+      APLICADO: `calib_weight_basis`, politica nomeada no mesmo padrao de
+      `calib_split_mode`/`class_balance_basis`/`tau_policy`. Default de
+      `fit_side_model` = LEGADO (bit-exato para todo call site e teste);
+      default de PRODUCAO (`pipeline.run_layer1_sprint`) = `uniqueness`.
+      Pedir a politica nova sem a coluna `uniqueness` FALHA ALTO -- um
+      fallback silencioso para o peso legado reintroduziria exatamente o
+      vies que a politica existe para remover, e sem deixar rastro.
+      INSTRUMENTACAO PERMANENTE: `SideModelResult` ganhou
+      `p_calibrada_media` e `p_tp_contagem_calib` (o nivel do calibrador e
+      a taxa por contagem, no mesmo split). Sob um calibrador nao enviesado
+      os dois batem; a divergencia entre eles E o vies, medido em cada fold
+      e cada lado em vez de argumentado uma vez num documento.
+      ACHADO NOVO, levantado pela sessao paralela ao revisar a proposta e
+      NAO previsto por mim: `alpha.py:363` faz `p_long > p_short`, e as
+      duas probabilidades saem de calibradores DIFERENTES, cada um com o
+      peso do seu lado. As inclinacoes diferem -- BTCUSDT/R1 long -0,0645
+      contra short -0,0661; SOLUSDT/R3 long -0,0127 contra short -0,0278.
+      A escolha de lado era feita entre duas escalas que nao coincidiam,
+      com vies sistematico a favor do LONG (sempre o menos inclinado). Em
+      SOLUSDT/R3 a diferenca e 1,5 pp contra um edge procurado de 6,6 pp.
+      A opcao (b) MELHORA mas NAO ZERA: o diferencial residual medido e
+      +0,0005 a +0,0063 (3 celulas melhoram, 1 piora levemente). O que (b)
+      resolve de forma decisiva e o que importa para essa comparacao --
+      cada lado passa a estimar corretamente a SUA propria `P(TP)`, com
+      |vies| por lado caindo de ate 0,072 para no maximo 0,003.
+      COLATERAL: o teste 11 de vazamento (`src/validation/leakage.py`)
+      quebrou porque checava a STRING LITERAL
+      `calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)`. O guard
+      estava certo em disparar -- renomear um argumento do calibrador e
+      algo que ele DEVE notar. Corrigido para checar a PROPRIEDADE (os tres
+      argumentos vem do split de calibracao, o peso e fatiado por
+      `calib_idx` e nunca e `w_all`/`w_fit`), nao o nome.
+    status: >-
+      IMPLEMENTADO, verde. 7 testes novos + 1 asserção adicionada ao teste
+      que trava os defaults de producao. Nenhum modelo retreinado -- o
+      efeito so se materializa no proximo retreino, que segue represado.
+      ABERTO E SEPARADO: o diferencial entre lados descrito acima. Nao e
+      argumento contra (b) (que o reduz), e um item proprio.
+
+  - id: AG-313
+    date: "2026-08-26"
+    file: "tools/diagnostics/measure_ag266_momentum_pearson_spearman_tension.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-266, docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §7/§8 item 5, experiments/ag266_momentum_pearson_spearman_tension_report.json"
+    found_by: "Claude -- item 3 dos 4 itens de continuacao autorizados pelo Manager (2026-08-26, 'Pode seguir com todos os 4 itens')"
+    gap: >
+      AG-266 deixou em pe uma tensao nao resolvida: a autocorrelacao de
+      PEARSON do retorno de BNB e +0,0009 (nula), mas o IC de SPEARMAN de
+      A01 (retorno de 1 barra defasado) contra o retorno seguinte e
+      ~+0,017 e consistente por quartil temporal -- e o unico candidato a
+      sinal genuino que a investigacao original produziu. A hipotese
+      registrada em AG-266 era "relacao no CORPO da distribuicao com
+      caudas que a cancelam", sem isolar qual das duas (microestrutura
+      real vs. discretizacao).
+      MEDIDO (BNBUSDT/XRPUSDT/BTCUSDT/ETHUSDT/SOLUSDT, R1, historico
+      completo por simbolo, SYMBOL_START_DATE ate 2026-08-07,
+      158.436-223.169 pares validos por simbolo):
+        simbolo    n_pares   pearson    spearman   curtose(excesso)  assimetria
+        BNBUSDT    164.738   +0,000975  +0,015198  22,375            +0,124
+        XRPUSDT    173.226   -0,008131  +0,002702  122,461           +1,189
+        BTCUSDT    223.169   -0,021503  -0,004668  53,133            -0,128
+        ETHUSDT    158.436   -0,009318  +0,006040  22,273            -0,236
+        SOLUSDT    166.808   -0,011173  +0,006771  34,884            -0,023
+      Pearson de BNB reproduz o numero citado em AG-266 quase exato
+      (+0,000975 vs +0,0009); Spearman fica na mesma ordem de grandeza
+      (+0,0152 vs +0,017) -- a tensao E reproduzivel neste script,
+      independente de quem mediu primeiro.
+      DISCREPANCIA REGISTRADA, NAO RECONCILIADA: BTC aqui mede -0,0215 de
+      autocorrelacao de Pearson lag-1, nao -0,0122 como AG-266 cita.
+      Mesmo sinal, quase 2x a magnitude -- possivel diferenca de janela
+      de dado (backfill avancou) ou de tratamento de borda (dedupe
+      AG-264). Nao investigado aqui.
+      TESTE DIRETO DA HIPOTESE "caudas cancelam" (corte simetrico por
+      percentil de |A01|, 0,1% a 10%): NAO CONVERGE Pearson para perto
+      de Spearman. Pelo contrario -- pra BNB, todo nivel de corte deixa
+      Pearson NEGATIVO (-0,0007 a -0,0045), nunca mais perto de +0,015.
+      A hipotese "trim revela o sinal" e FALSEADA nesta forma simples.
+      O QUE EXPLICA A DIVERGENCIA (decomposicao do numerador de Pearson,
+      BNB): as 20 observacoes (de 164.738) com maior |contribuicao| ao
+      numerador somam 341% do numerador total -- 10 positivas e 10
+      negativas, quase se cancelando; o RESTANTE de ~164.700 observacoes
+      contribui um total LIQUIDO NEGATIVO. Pearson so fica barely-
+      positivo por um desequilibrio marginal entre um punhado de pares
+      extremos. Assinatura classica de correlacao instavel sob curtose
+      alta (BNB=22,4; normal=0).
+      ONDE O SINAL DE SPEARMAN REALMENTE VEM: retorno seguinte MEDIANO
+      (nao medio) por decil de A01 e MONOTONICO em todos os 5 simbolos
+      -- BNB vai de -0,000156 (decil 1) a +0,000224 (decil 10) de forma
+      limpa; SOL igualmente limpo; XRP tem varios decis empatados em
+      0,0 (discretizacao, ver abaixo); BTC/ETH sobem mas com leve
+      recuo no ultimo decil. O retorno MEDIO por decil (nao mediano) e
+      ruidoso/nao-monotonico em todos os simbolos -- consistente com a
+      mesma dominancia de outlier que quebra Pearson.
+      INCONSISTENCIA NAO RESOLVIDA: o padrao mediano-por-decil de BTC e
+      majoritariamente crescente (parecido com os outros 4), mas o
+      Spearman de amostra cheia de BTC deu NEGATIVO (-0,0047). A visao
+      agregada por decil nao e um substituto confiavel pro Spearman de
+      amostra cheia -- ha estrutura dentro de cada decil que a agregacao
+      esconde. Nao caracterizado aqui.
+      DISCRETIZACAO, especifica de XRP (nao testada como causa da
+      heterogeneidade BNB/XRP -- isso ja foi descartado em AG-266): XRP
+      tem curtose 122 (5-10x as outras) e 1,67% dos pares com A01/retorno
+      seguinte exatamente zero (vs 0,41% em BNB). O Spearman de XRP
+      (+0,0027) e uma ordem de grandeza mais fraco que o de BNB
+      (+0,0152) -- tratar "momentum de BNB/XRP" como o MESMO fenomeno
+      (§7/§8 item 5 do ADR-005) pode nao ser justificado; sob este
+      diagnostico, XRP parece mais proximo de "instabilidade/ruido de
+      discretizacao" e BNB mais proximo de "sinal monotonico fraco mas
+      real".
+    severity: "MEDIUM -- nao decide arquitetura nem bloqueia producao; e o unico candidato a sinal novo do vetor, decidir se vale perseguir"
+    layer: "features / analysis (pos-hoc, fora do contrato importlinter, B06)"
+    consequence: >
+      A leitura mais defensavel dos dados medidos: a tensao Pearson-vs-
+      Spearman NAO e simplesmente "outliers criam um Spearman espurio" --
+      se fosse, cortar os outliers deveria aproximar Pearson de Spearman,
+      e o oposto aconteceu (Pearson foi para negativo). E mais consistente
+      com "existe uma relacao monotonica fraca real no corpo da
+      distribuicao (visivel na mediana por decil, capturada por Spearman
+      por construcao) que Pearson simplesmente nao consegue medir de
+      forma estavel sob curtose de 20-120" -- ou seja, Pearson~0 aqui
+      NAO e evidencia forte de "sem relacao", e sim evidencia de que
+      Pearson e a ferramenta errada para retorno de cripto com esta
+      curtose. Isso pesa a favor de tratar o momentum de BNB (nao
+      necessariamente XRP) como candidato real, nao artefato -- mas e
+      uma leitura, nao uma prova; a inconsistencia do BTC (paragrafo
+      acima) mostra que a imagem nao esta completa.
+      NAO MEDIDO AQUI, proximo passo se a investigacao continuar: (1)
+      repetir o corte-de-cauda + decomposicao POR QUARTIL TEMPORAL (como
+      AG-266 fez pra Spearman), pra ver se a instabilidade de Pearson e
+      ela mesma estavel no tempo ou concentrada num periodo; (2)
+      reconciliar a discrepancia do numero de BTC; (3) caracterizar a
+      inconsistencia BTC mediana-monotonica-mas-Spearman-negativo.
+    status: >-
+      MEDIDO, artefato persistido
+      (experiments/ag266_momentum_pearson_spearman_tension_report.json,
+      todos os 5 simbolos, todos os campos, nao so os citados acima).
+      NAO DECIDIDO: se vale perseguir promocao de A01 (ou do grupo
+      A01-A06) com base nisso -- e a decisao (c) que AG-266 ja tinha
+      deixado explicitamente para o Manager. Este achado da mais base
+      pra essa decisao, nao a substitui.

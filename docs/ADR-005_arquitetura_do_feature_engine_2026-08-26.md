@@ -409,6 +409,42 @@ descobertas); autocorrelação (BNB tem a menor de todas); cadência ou cobertur
 da fonte de métricas (288 linhas/dia, sem lacuna, 2023-11..2026-08); duração
 de barra (Q2 tem mais barras curtas que Q3 e IC 20× menor).
 
+**Isolado 2026-08-26 (`AG-313`, `tools/diagnostics/measure_ag266_momentum_pearson_spearman_tension.py`, artefato em `experiments/ag266_momentum_pearson_spearman_tension_report.json`).**
+A hipótese "caudas cancelam" foi testada DIRETO — cortar simetricamente as
+observações de maior `|A01|` (0,1% a 10%) — e **não se sustenta na forma
+simples**: em vez de Pearson convergir pra perto de Spearman conforme a
+cauda é cortada, ele vai pra **negativo** em todo nível de corte (BNB:
+-0,0007 a -0,0045). O que de fato explica a divergência: as 20
+observações (de 164.738) com maior contribuição ao numerador de Pearson
+somam **341%** do numerador total (10 positivas, 10 negativas, quase se
+cancelando) — o resto de ~164.700 observações "normais" contribui um
+total líquido NEGATIVO. Pearson só fica levemente positivo por um
+desequilíbrio marginal entre um punhado de pares extremos — assinatura
+clássica de correlação instável sob curtose alta (BNB = 22,4; XRP = 122,5;
+normal = 0).
+
+**Onde o sinal de Spearman realmente mora:** o retorno seguinte MEDIANO
+(não médio) por decil de `A01` é monotônico nos 5 símbolos — limpo em
+BNB/SOL, com empates em zero (discretização) em XRP, com leve recuo no
+último decil em BTC/ETH. O retorno MÉDIO por decil é ruidoso/não-
+monotônico em todos — mesma dominância de outlier que quebra Pearson.
+Leitura mais defensável: `Pearson≈0` aqui não é evidência de "sem
+relação", é evidência de que Pearson é a ferramenta errada pra retorno de
+cripto com essa curtose — o que pesa a favor de tratar o momentum de
+**BNB** (não necessariamente XRP, cujo Spearman de +0,0027 é uma ordem de
+grandeza mais fraco que o de BNB, +0,0152, com curtose 5-10× maior) como
+candidato real. **Não é prova** — o Spearman de amostra cheia de BTC saiu
+NEGATIVO (-0,0047) apesar do padrão mediano-por-decil majoritariamente
+crescente, inconsistência não caracterizada. `AG-313` também registra uma
+discrepância não reconciliada: a autocorrelação de Pearson de BTC medida
+aqui (-0,0215) não bate com o `-0,0122` que `AG-266` cita pro mesmo
+símbolo (mesmo sinal, quase 2× a magnitude — possível diferença de janela
+de dado ou de tratamento de borda, não investigada). Faltam, se a
+investigação continuar: repetir corte+decomposição por quartil temporal;
+reconciliar essa discrepância de BTC; caracterizar a inconsistência
+mediana-vs-Spearman de BTC. **Decisão de perseguir ou não a promoção
+continua do Manager** — este achado dá mais base, não a substitui.
+
 ---
 
 ## §8. Ordem de implementação, por custo crescente

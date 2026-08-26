@@ -288,6 +288,27 @@ CALIB_SPLIT_TEMPORAL_PURGED = "temporal_purged"
 CLASS_BALANCE_COUNT = "count"
 CLASS_BALANCE_WEIGHT = "weight"
 
+# AG-312 (ADR-005 §13 v2 §13.10) -- base do peso do CALIBRADOR isotonico.
+# `sample_weight` = comportamento legado (`uniqueness * |ret_net|`, o mesmo
+# peso da PERDA); `uniqueness` = so a correcao de redundancia estatistica.
+#
+# Isotonica ponderada devolve `E_w[y|x]`, e `|ret_net|` no SL e 1,25-1,29x
+# o do TP (o custo subtrai do ganho e soma a perda), entao o peso legado
+# sub-pondera exatamente a classe positiva. MEDIDO em 5 celulas: sob o peso
+# legado a saida do calibrador estima 0,4323 quando `P(TP)` real e 0,4967
+# -- vies de -6,45 pp (-13,0%). Sob `uniqueness` sozinho o vies cai para
+# +0,0004, e nas 5 celulas fica em [-0,0012, +0,0030] -- duas ordens de
+# grandeza menor, e sem sinal sistematico (3 para cima, 2 para baixo).
+#
+# O principio, e ele decide qual dos dois pertence aqui: `uniqueness`
+# corrige REDUNDANCIA ESTATISTICA (quantas observacoes independentes
+# existem) e pertence a qualquer estimador; `|ret_net|` codifica
+# IMPORTANCIA ECONOMICA e pertence a uma funcao de DECISAO, nao a uma
+# estimativa de probabilidade. A perda do LightGBM segue com o peso
+# completo (B10/§3.5 intactos) -- o que muda e so o calibrador.
+CALIB_WEIGHT_SAMPLE_WEIGHT = "sample_weight"
+CALIB_WEIGHT_UNIQUENESS = "uniqueness"
+
 # AG-210 -- política de resolução de `tau`. Ver `resolve_joint_tau` e
 # `run_fold`.
 TAU_POLICY_LEGACY_PER_SIDE = "legacy_per_side"
@@ -642,6 +663,16 @@ class SideModelResult:
     # mensurável sem mudar nada por default.
     scale_pos_weight_count: float = float("nan")
     scale_pos_weight_weight: float = float("nan")
+    # AG-312 -- INSTRUMENTACAO do nivel do calibrador. `p_calibrada_media`
+    # e a media da saida do calibrador sobre o proprio split de calibracao;
+    # `p_tp_contagem_calib` e a `P(TP)` por CONTAGEM no mesmo split. Sob um
+    # calibrador nao enviesado os dois batem -- isotonica (ponderada ou
+    # nao) preserva a soma ponderada por bloco, entao a divergencia entre
+    # eles E o vies induzido pelo peso, medido em cada fold e cada lado em
+    # vez de argumentado. Reportar os dois torna o defeito de §13.10
+    # observavel para sempre, mesmo se a politica for revertida.
+    p_calibrada_media: float = float("nan")
+    p_tp_contagem_calib: float = float("nan")
     # `t0` (epoch ms) das linhas que entraram no FIT deste lado -- insumo
     # do modo `TAU_POLICY_TOTAL_COMMON_OOF` em `run_fold`, que precisa
     # saber quais barras o modelo já viu para tirar `tau` das que ele não
@@ -663,6 +694,7 @@ def fit_side_model(
     null_permutation_seed: int | None = None,
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
+    calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -784,6 +816,29 @@ def fit_side_model(
     X_fit, y_fit, w_fit = X_all[fit_idx], y_all[fit_idx], w_all[fit_idx]
     X_calib, y_calib, w_calib = X_all[calib_idx], y_all[calib_idx], w_all[calib_idx]
 
+    # AG-312 -- peso do calibrador, resolvido por politica. `uniqueness` e
+    # coluna OPCIONAL aqui pelo mesmo motivo que `t0`/`t1` (AG-209/AG-210):
+    # ha chamadores de teste que montam `train_side_df` sintetico sem ela.
+    # Pedir a politica nova sem a coluna falha ALTO e explicitamente, em vez
+    # de cair em silencio no peso legado -- um fallback silencioso aqui
+    # reintroduziria exatamente o vies que esta politica existe pra remover.
+    if calib_weight_basis == CALIB_WEIGHT_SAMPLE_WEIGHT:
+        w_calib_iso = w_calib
+    elif calib_weight_basis == CALIB_WEIGHT_UNIQUENESS:
+        if "uniqueness" not in train_side_df.columns:
+            raise ValueError(
+                f"fit_side_model: calib_weight_basis={CALIB_WEIGHT_UNIQUENESS!r} exige a "
+                "coluna 'uniqueness' em train_side_df (e o ponto inteiro da politica, "
+                "AG-312) -- recebido um frame sem ela"
+            )
+        u_all = train_side_df["uniqueness"].to_numpy().astype(np.float64)
+        w_calib_iso = u_all[calib_idx]
+    else:
+        raise ValueError(
+            f"fit_side_model: calib_weight_basis desconhecido {calib_weight_basis!r} "
+            f"(esperado {CALIB_WEIGHT_SAMPLE_WEIGHT!r} ou {CALIB_WEIGHT_UNIQUENESS!r})"
+        )
+
     # AG-212 -- os dois balanceamentos calculados SEMPRE (custo desprezível,
     # duas somas), mas só um alimenta o LightGBM: quem decide é
     # `class_balance_basis`, default `count` (bit-exato). Ver
@@ -903,7 +958,12 @@ def fit_side_model(
     # valor.
     raw_calib = np.asarray(model.predict_proba(X_calib))[:, 1]
     calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-    calibrator.fit(raw_calib, y_calib, sample_weight=w_calib)
+    # AG-312 -- o peso do CALIBRADOR nao e o mesmo peso da PERDA. Ver o
+    # bloco de `CALIB_WEIGHT_*` para a medicao e o principio. `w_fit` (com
+    # `|ret_net|`) segue alimentando `model.fit` acima: B10/§3.5 intactos.
+    calibrator.fit(raw_calib, y_calib, sample_weight=w_calib_iso)
+
+    p_calibrada_media = float(calibrator.predict(raw_calib).mean())
 
     raw_train_all = np.asarray(model.predict_proba(X_all))[:, 1]
     calibrated_train_all = calibrator.predict(raw_train_all)
@@ -961,6 +1021,8 @@ def fit_side_model(
         else float("nan"),
         scale_pos_weight_count=scale_pos_weight_count,
         scale_pos_weight_weight=scale_pos_weight_weight,
+        p_calibrada_media=p_calibrada_media,
+        p_tp_contagem_calib=float(y_calib.mean()) if y_calib.shape[0] else float("nan"),
         # `None` quando `train_side_df` não trouxe `t0` (ver nota acima) --
         # `_resolve_tau_on_common_bars` trata `None` como "este lado não
         # informa quais barras viu", nunca como "não viu nenhuma".
@@ -1243,6 +1305,7 @@ def run_fold(
     tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
+    calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
@@ -1306,6 +1369,7 @@ def run_fold(
         null_permutation_seed=perm_seed_long,
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
+        calib_weight_basis=calib_weight_basis,
     )
     short_result = fit_side_model(
         train_short,
@@ -1320,6 +1384,7 @@ def run_fold(
         null_permutation_seed=perm_seed_short,
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
+        calib_weight_basis=calib_weight_basis,
     )
 
     # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o
@@ -1497,6 +1562,7 @@ def run_all_folds(
     tau_policy: str = TAU_POLICY_LEGACY_PER_SIDE,
     calib_split_mode: str = CALIB_SPLIT_LEGACY_RANDOM,
     class_balance_basis: str = CLASS_BALANCE_COUNT,
+    calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
@@ -1544,6 +1610,7 @@ def run_all_folds(
             tau_policy=tau_policy,
             calib_split_mode=calib_split_mode,
             class_balance_basis=class_balance_basis,
+            calib_weight_basis=calib_weight_basis,
             evaluate_cost_derived_lambda=evaluate_cost_derived_lambda,
         )
         logger.info(
