@@ -50,6 +50,7 @@ from scipy.stats import spearmanr
 
 from src.core.provenance import report_provenance
 from src.data.resample import step_ms
+from src.features import build as features_build
 from src.models import alpha, backtest_lite, decomposition, pipeline
 from src.models import dataset as ds
 from src.models._constants import load_constant
@@ -261,7 +262,9 @@ def _train_side_per_fold(
     out: dict[int, pl.DataFrame] = {}
     for split in splits:
         train_bars = mf_data[split.train_idx]
-        out[split.split_id] = ds.side_subset(train_bars, side=side)
+        out[split.split_id] = ds.side_subset(
+            train_bars, side=side, feature_ids=features_build.T1_FEATURE_IDS
+        )
     return out
 
 

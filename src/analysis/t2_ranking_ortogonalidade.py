@@ -35,6 +35,7 @@ import orjson
 import structlog
 from scipy.stats import spearmanr
 
+from src.features import build as features_build
 from src.features.build import SUPPORT_FEATURE_IDS
 from src.models import dataset as ds
 from src.models import stability
@@ -61,7 +62,9 @@ def rank_by_stability(
     for split in splits:
         train_bars = mf_data[split.train_idx]
         for side in (1, -1):
-            train_side_df = ds.side_subset(train_bars, side=side)
+            train_side_df = ds.side_subset(
+                train_bars, side=side, feature_ids=features_build.T1_FEATURE_IDS
+            )
             results = stability.stability_screen(train_side_df, SUPPORT_FEATURE_IDS)
             for f, r in results.items():
                 if r.n_envs_with_data > 0:

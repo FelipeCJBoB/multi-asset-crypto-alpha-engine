@@ -548,7 +548,9 @@ def d4_e10f_como_candidata(
         train_bars = mf_data[split.train_idx]
         fold_entry: dict[str, Any] = {}
         for side in (1, -1):
-            train_side = ds.side_subset(train_bars, side=side)
+            train_side = ds.side_subset(
+                train_bars, side=side, feature_ids=T1_FEATURE_IDS
+            )
             df_env = assign_environments(train_side)
             ic_by_env = compute_ic_by_env(df_env, _E10F_FEATURE, "ret_net")
             screen_sign, mean_ic, n_consistent, n_with_data = _assign_from_ic(
@@ -1077,7 +1079,7 @@ def _test_side_xy(
     (`label==1`, "TP antes de SL"), aplicada ao TESTE do fold -- avaliação
     de importância precisa do desempenho em dado que o modelo não viu."""
     test_bars = mf_data[split.test_idx]
-    test_side = ds.side_subset(test_bars, side=side)
+    test_side = ds.side_subset(test_bars, side=side, feature_ids=T1_FEATURE_IDS)
     x = alpha.build_design_matrix(test_side)
     y = (test_side["label"].cast(pl.Int64) == 1).to_numpy().astype(np.int64)
     return x, y
@@ -1167,7 +1169,9 @@ def e2_prereq_permutation_importance_and_orthogonality(
             (1, "long", fold_result.long_result),
             (-1, "short", fold_result.short_result),
         ):
-            train_side = ds.side_subset(train_bars, side=side)
+            train_side = ds.side_subset(
+                train_bars, side=side, feature_ids=T1_FEATURE_IDS
+            )
             correlation_t1 = alpha._t1_correlation_matrix(train_side)
             gain_by_column = side_result.gain_by_column_raw
             correlation_by_fold_side[(split.split_id, side)] = correlation_t1

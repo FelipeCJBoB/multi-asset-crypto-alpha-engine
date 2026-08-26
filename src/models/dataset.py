@@ -481,7 +481,9 @@ def build_modeling_frame(
     )
 
 
-def side_subset(frame: pl.DataFrame, *, side: int) -> pl.DataFrame:
+def side_subset(
+    frame: pl.DataFrame, *, side: int, feature_ids: tuple[str, ...]
+) -> pl.DataFrame:
     """Sub-população de modelagem do Alpha (M_long `side=1` / M_short
     `side=-1`, B18): descarta NOFILL (§3.7 — ruído de execução, não sinal,
     instrução explícita da task) e linhas sem features T1 (warmup,
@@ -494,11 +496,39 @@ def side_subset(frame: pl.DataFrame, *, side: int) -> pl.DataFrame:
     de treino do XGBoost em si."""
     if side not in (1, -1):
         raise ValueError(f"side_subset: side deve ser 1 ou -1, recebido {side}")
+    if not feature_ids:
+        raise ValueError(
+            "side_subset: feature_ids vazio -- sem conjunto declarado nao ha warmup a "
+            "filtrar, e devolver o frame inteiro seria pior que falhar (AG-300)"
+        )
+    faltando = sorted(set(feature_ids) - set(frame.columns))
+    if faltando:
+        raise ValueError(
+            f"side_subset: coluna(s) de feature ausente(s) no frame: {faltando}. O filtro "
+            "de warmup precisa das MESMAS colunas que o trial vai treinar -- filtrar por um "
+            "subconjunto diferente e o defeito que AG-300 fecha"
+        )
     out = frame.filter(
-        (pl.col("side") == side)
-        & (pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
-        & pl.col(T1_FEATURE_IDS[0]).is_not_null()
+        (pl.col("side") == side) & (pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
     )
-    for fid in T1_FEATURE_IDS[1:]:
+    # AG-300 -- coluna 100% nula NESTE lado falha alto, ANTES do filtro.
+    # Sem isto o filtro abaixo esvazia o conjunto de treino, e "0 linhas"
+    # e um sintoma muito pior de diagnosticar do que o nome da coluna: nao
+    # diz QUAL das 69 causou. A guarda vive aqui, e nao em
+    # `build_t1_features`, porque e aqui que a consequencia aparece -- o
+    # builder generico e usado tambem por analise/paridade, que podem
+    # legitimamente olhar uma coluna morta sem treinar sobre ela.
+    mortas = sorted(fid for fid in feature_ids if out[fid].null_count() == out.height)
+    if mortas and out.height > 0:
+        raise features_build.DeadFeatureColumnError(
+            f"side_subset(side={side}): coluna(s) 100% nula(s) em {out.height} linhas do "
+            f"lado: {mortas}. Filtrar warmup por elas zera o conjunto de treino. Uma "
+            "coluna sem nenhum valor finito nao e feature -- e ausencia de dado com nome "
+            "de feature (ex. D07f_taker_imbalance_1m_agg sob dollar bar, que so tem fonte "
+            "quando bar_source == 'time_15m'). Decisao necessaria, NAO tomada aqui: tirar "
+            "a coluna do conjunto ativo para esta grade, OU prover a fonte que falta. "
+            "Ver ADR-005 §13 v2 §13.2 / AG-300."
+        )
+    for fid in feature_ids:
         out = out.filter(pl.col(fid).is_not_null())
     return out

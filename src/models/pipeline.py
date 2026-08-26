@@ -819,7 +819,9 @@ def run_layer1_sprint(
         train_bars_fold0 = mf.data[splits[fold0.fold_id].train_idx]
         for side_value, side_label in ((1, "long"), (-1, "short")):
             agreement = monotonic.screen_target_agreement(
-                ds.side_subset(train_bars_fold0, side=side_value),
+                ds.side_subset(
+                    train_bars_fold0, side=side_value, feature_ids=feature_ids_effective
+                ),
                 features_build.T1_FEATURE_IDS,
                 side=side_value,
             )

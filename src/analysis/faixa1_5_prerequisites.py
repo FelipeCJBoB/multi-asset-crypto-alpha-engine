@@ -44,6 +44,7 @@ import structlog
 from scipy.stats import spearmanr
 
 from src.core.provenance import report_provenance
+from src.features import build as features_build
 from src.models import backtest_lite
 from src.models import dataset as ds
 from src.models._constants import load_constant
@@ -741,7 +742,9 @@ def e02f_in_fold(mf_data: pl.DataFrame, splits: tuple[cpcv.CPCVSplit, ...]) -> d
         train_bars = mf_data[split.train_idx]
         fold_entry: dict[str, Any] = {}
         for side in (1, -1):
-            train_side = ds.side_subset(train_bars, side=side)
+            train_side = ds.side_subset(
+                train_bars, side=side, feature_ids=features_build.T1_FEATURE_IDS
+            )
             df_env = assign_environments(train_side)
             ic_by_env = compute_ic_by_env(df_env, _E02F_FEATURE, "ret_net")
             screen_sign, mean_ic, n_consistent, n_with_data = _assign_from_ic(

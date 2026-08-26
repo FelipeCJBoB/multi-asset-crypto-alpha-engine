@@ -248,20 +248,19 @@ def test_compute_t1_features_min_common_history_bars_capa_c07_d03f_e02f() -> Non
         bars, funding, oi, windows=windows_com_cap, apply_warmup_mask=False
     )
 
-    # `apply_warmup_mask=False` -- os arrays numpy (com `np.nan`, não Polars
-    # `None`) entram direto em `pl.DataFrame(columns)` sem passar por
-    # `apply_min_warmup_mask` (que é quem converteria pra `null` explícito
-    # via `pl.when(...).then(None)`). `.null_count()` NÃO conta `NaN` --
-    # são conceitos diferentes em Polars (achado real via pytest do
-    # usuário, 2026-08-16: a asserção original dava 0 sempre, mesmo com o
-    # mecanismo de cap funcionando corretamente). `.is_nan()` é o jeito
-    # certo de checar aqui.
+    # **Mudou em 2026-08-26 (AG-300).** Ate aqui a asserção usava
+    # `.is_nan()`: os arrays numpy entravam em `pl.DataFrame(columns)` com
+    # `np.nan` cru, e `NaN`/`null` coexistiam no mesmo Float64. Desde a
+    # correcao de fronteira (`nan_to_null=True`) so existe `null` -- que e
+    # exatamente o ponto: `is_not_null()`, o filtro de warmup, passa a
+    # filtrar de verdade. `.is_nan()` sobre uma coluna sem NaN devolve
+    # `null`, e `.sum()` ignora nulls, entao a asserção antiga daria 0.
     for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
-        head_nan_count = out_com_cap.head(n - cap)[col].is_nan().sum()
-        assert head_nan_count == n - cap, f"{col}: esperava {n - cap} NaN no início do cap"
-        # sem cap, o mesmo trecho inicial NÃO deve estar 100% NaN (prova
+        head_null_count = out_com_cap.head(n - cap)[col].null_count()
+        assert head_null_count == n - cap, f"{col}: esperava {n - cap} null no início do cap"
+        # sem cap, o mesmo trecho inicial NÃO deve estar 100% nulo (prova
         # de que o cap muda o resultado, não é um no-op)
-        assert out_sem_cap.head(n - cap)[col].is_nan().sum() < n - cap
+        assert out_sem_cap.head(n - cap)[col].null_count() < n - cap
 
     # todas as outras colunas T1/T2 (não usam min_common_history_bars) têm
     # que sair IDÊNTICAS com ou sem cap -- prova de isolamento do efeito
@@ -438,8 +437,10 @@ def test_build_t1_features_desabilita_min_common_history_bars_sob_bar_source_nao
     )
 
     for col in ("C07_vol_pctile_expanding", "D03f_volume_z_expanding", "E02f_funding_z_expanding"):
-        assert out_time15m.head(n - cap)[col].is_nan().sum() == n - cap, col
-        assert out_dollar.head(n - cap)[col].is_nan().sum() < n - cap, col
+        # AG-300 -- `null_count()` em vez de `is_nan()`: a fronteira converte
+        # NaN -> null (`nan_to_null=True`), ver nota no teste do cap acima.
+        assert out_time15m.head(n - cap)[col].null_count() == n - cap, col
+        assert out_dollar.head(n - cap)[col].null_count() < n - cap, col
 
 
 # ============================================================================

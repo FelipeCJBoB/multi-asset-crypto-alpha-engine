@@ -951,11 +951,63 @@ def compute_t1_features(
         ),
         "E18f_taker_ls_vol_ratio": group_e.e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_arr),
     }
-    df = pl.DataFrame(columns)
+    # ADR-005 §13 v2 §13.5-2 / AG-300 -- `nan_to_null=True` na FRONTEIRA
+    # numpy->Polars. Sem isto, `NaN` e `null` coexistem no mesmo Float64 e
+    # `is_not_null()` (o filtro de warmup de `src.models.dataset.
+    # side_subset`) deixa `NaN` passar -- verificado por execucao:
+    # `pl.Series([1.0, NaN, None, 3.0]).is_not_null() -> [T, T, F, T]`.
+    # A guarda nao guardava, e uma coluna 100% NaN atravessava o pipeline
+    # inteiro sem erro, warning ou gate.
+    df = pl.DataFrame(columns, nan_to_null=True)
 
     if apply_warmup_mask:
         df = apply_min_warmup_mask(df, min_warmup_bars=windows.min_warmup_bars)
     return df
+
+
+class DeadFeatureColumnError(ValueError):
+    """Uma coluna de feature saiu **100% nula** depois do warmup.
+
+    Isso nao e "feature com muito NaN" -- e ausencia de dado entregue com
+    nome de feature. Achado que motivou a guarda (`ADR-005 §13 v2 §13.2`,
+    `AG-300`): `D07f_taker_imbalance_1m_agg` e 100% morta sob dollar bar
+    por construcao (`build.py` so carrega `klines_1m` quando
+    `bar_source == "time_15m"`), atravessava o pipeline inteiro e chegava
+    ao relatorio como `{"constraint": 0, "mean_ic": null, "n_consistent": 0}`
+    -- uma coluna inexistente ocupando um lugar do vetor, sem erro, warning
+    ou gate. Passava porque o filtro de warmup usava `is_not_null()` sobre
+    um Float64 que ainda continha `NaN`; com a fronteira corrigida
+    (`nan_to_null=True`), o conjunto de teste ficaria VAZIO -- e um conjunto
+    vazio e um sintoma pior de diagnosticar do que esta excecao."""
+
+
+def assert_no_dead_feature_columns(
+    df: pl.DataFrame, *, contexto: str, min_warmup_bars: int
+) -> None:
+    """Levanta `DeadFeatureColumnError` para toda coluna de feature 100%
+    nula FORA do prefixo de warmup.
+
+    O recorte pelo warmup e o ponto: `apply_min_warmup_mask` nula o prefixo
+    de proposito, entao olhar o frame inteiro acusaria toda coluna de uma
+    serie curta. `contexto` (ex. `"BTCUSDT/dollar_r1"`) entra na mensagem
+    porque a mesma coluna pode ser viva numa celula e morta em outra --
+    dizer QUAL celula e a diferenca entre um erro acionavel e um enigma.
+
+    Nucleo puro (Idioma A): recebe o frame em memoria, nao le nada."""
+    if df.height <= min_warmup_bars:
+        return
+    corpo = df.slice(min_warmup_bars)
+    feature_cols = [c for c in df.columns if c not in _NON_FEATURE_COLUMNS]
+    mortas = sorted(c for c in feature_cols if corpo[c].null_count() == corpo.height)
+    if mortas:
+        raise DeadFeatureColumnError(
+            f"{contexto}: coluna(s) de feature 100% nula(s) fora do warmup "
+            f"({corpo.height} linhas avaliadas): {mortas}. Uma coluna sem nenhum valor "
+            "finito nao e uma feature -- e ausencia de dado com nome de feature, e ocupa "
+            "um lugar do vetor de treino sem contribuir nada. Decisao necessaria (NAO "
+            "tomada aqui): tirar a coluna do conjunto ativo para esta fonte de barra, OU "
+            "prover a fonte que falta. Ver ADR-005 §13 v2 §13.2 / AG-300."
+        )
 
 
 def apply_min_warmup_mask(df: pl.DataFrame, *, min_warmup_bars: int) -> pl.DataFrame:

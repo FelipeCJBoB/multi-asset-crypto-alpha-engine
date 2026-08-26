@@ -37,6 +37,7 @@ import polars as pl
 import structlog
 
 from src.core.provenance import report_provenance
+from src.features import build as features_build
 from src.models import dataset as ds
 from src.models import environments, stability
 from src.models._constants import _load_all, load_constant
@@ -116,7 +117,9 @@ def run_stability_screen_over_cpcv(
     for split in cpcv_result.splits:
         train_bars = df_all[split.train_idx]
         for side in SIDES:
-            train_side_df = ds.side_subset(train_bars, side=side)
+            train_side_df = ds.side_subset(
+                train_bars, side=side, feature_ids=features_build.T1_FEATURE_IDS
+            )
             n_train_rows = train_side_df.height
             df_env = environments.assign_environments(train_side_df)
             env_counts = (
@@ -312,7 +315,9 @@ def run_rpi_regime_diagnostic(df_all: pl.DataFrame) -> dict[str, dict[str, dict[
     documentada em `src.models.stability.ic_by_rpi_regime`)."""
     out: dict[str, dict[str, dict[str, float]]] = {}
     for side in SIDES:
-        side_df = ds.side_subset(df_all, side=side)
+        side_df = ds.side_subset(
+            df_all, side=side, feature_ids=features_build.T1_FEATURE_IDS
+        )
         out[str(side)] = stability.ic_by_rpi_regime(side_df, CANDIDATES_18)
     return out
 

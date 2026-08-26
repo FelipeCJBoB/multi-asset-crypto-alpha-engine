@@ -1273,8 +1273,13 @@ def run_fold(
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
-    train_long = ds.side_subset(train_bars, side=1)
-    train_short = ds.side_subset(train_bars, side=-1)
+    # AG-299 -- `feature_ids` explicito: o filtro de warmup precisa usar as
+    # MESMAS colunas que o trial vai treinar. Antes era `T1_FEATURE_IDS`
+    # hardcoded (7) enquanto `_unique_test_bars` (o lado de TESTE) ja
+    # recebia o conjunto real -- treino e teste filtrados por criterios
+    # diferentes, que e a assimetria de §13.2.
+    train_long = ds.side_subset(train_bars, side=1, feature_ids=feature_ids)
+    train_short = ds.side_subset(train_bars, side=-1, feature_ids=feature_ids)
     target_signal_rate = float(load_constant("target_signal_rate"))
 
     perm_seed_long = (

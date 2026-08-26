@@ -602,13 +602,13 @@ def _synthetic_frame() -> pl.DataFrame:
 
 def test_side_subset_descarta_nofill() -> None:
     df = _synthetic_frame()
-    out = ds.side_subset(df, side=1)
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS)
     assert "NOFILL" not in out["barrier_hit"].to_list()
 
 
 def test_side_subset_descarta_warmup_feature_nula() -> None:
     df = _synthetic_frame()
-    out = ds.side_subset(df, side=1)
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS)
     # a linha 0 (side=1, TP, mas feature nula) tem que sumir
     assert out.height == 1  # só a linha 1 (side=1, SL, sem null) sobrevive
     assert out["barrier_hit"].to_list() == ["SL"]
@@ -616,15 +616,64 @@ def test_side_subset_descarta_warmup_feature_nula() -> None:
 
 def test_side_subset_lado_short() -> None:
     df = _synthetic_frame()
-    out = ds.side_subset(df, side=-1)
+    out = ds.side_subset(df, side=-1, feature_ids=T1_FEATURE_IDS)
     assert set(out["barrier_hit"].to_list()) <= {"TP", "TIME"}
     assert "NOFILL" not in out["barrier_hit"].to_list()
+
+
+def test_side_subset_exige_feature_ids_e_nao_aceita_vazio() -> None:
+    """`AG-300` -- `feature_ids` deixou de ter default. O default (`T1_
+    FEATURE_IDS`, 7) era exatamente o defeito: o treino filtrava warmup por
+    7 colunas enquanto `_unique_test_bars` (o lado de TESTE) ja recebia o
+    conjunto real, entao treino e teste ficavam com populacoes diferentes."""
+    df = _synthetic_frame()
+    with pytest.raises(TypeError):
+        ds.side_subset(df, side=1)  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="feature_ids vazio"):
+        ds.side_subset(df, side=1, feature_ids=())
+
+
+def test_side_subset_coluna_ausente_no_frame_falha_com_o_nome() -> None:
+    df = _synthetic_frame()
+    with pytest.raises(ValueError, match="ausente"):
+        ds.side_subset(df, side=1, feature_ids=(*T1_FEATURE_IDS, "Z99_nao_existe"))
+
+
+def test_side_subset_coluna_100pct_nula_falha_alto_nomeando_a_coluna() -> None:
+    """`AG-300` -- o caso `D07f_taker_imbalance_1m_agg` sob dollar bar, em
+    forma sintetica: uma coluna sem NENHUM valor finito.
+
+    Sem esta guarda o filtro de warmup zera o conjunto de treino, e "0
+    linhas" nao diz QUAL das colunas causou. Com ela, o nome sai na
+    mensagem. Este teste tambem prova que a fronteira `nan_to_null=True`
+    (`src/features/build.py`) importa: se a coluna chegasse aqui como
+    `NaN` em vez de `null`, `is_not_null()` a deixaria passar inteira e
+    nem a guarda nem o filtro veriam problema nenhum."""
+    df = _synthetic_frame().with_columns(
+        pl.lit(None, dtype=pl.Float64).alias("D07f_taker_imbalance_1m_agg")
+    )
+    fids = (*T1_FEATURE_IDS, "D07f_taker_imbalance_1m_agg")
+    with pytest.raises(features_build.DeadFeatureColumnError) as exc:
+        ds.side_subset(df, side=1, feature_ids=fids)
+    msg = str(exc.value)
+    assert "D07f_taker_imbalance_1m_agg" in msg
+    assert "side=1" in msg
+
+
+def test_side_subset_coluna_com_UM_valor_finito_nao_e_considerada_morta() -> None:
+    """A guarda e sobre coluna MORTA (100% nula), nao sobre coluna com
+    muito nulo -- warmup longo e legitimo e nao pode falhar."""
+    df = _synthetic_frame()
+    quase_morta = [None, 1.0, None, None, None, None]
+    df = df.with_columns(pl.Series("W01_quase_morta", quase_morta, dtype=pl.Float64))
+    out = ds.side_subset(df, side=1, feature_ids=(*T1_FEATURE_IDS, "W01_quase_morta"))
+    assert out.height == 1  # so a linha 1, que tem a coluna preenchida
 
 
 def test_side_subset_side_invalido_levanta_erro() -> None:
     df = _synthetic_frame()
     with pytest.raises(ValueError):
-        ds.side_subset(df, side=0)
+        ds.side_subset(df, side=0, feature_ids=T1_FEATURE_IDS)
 
 
 # ============================================================================

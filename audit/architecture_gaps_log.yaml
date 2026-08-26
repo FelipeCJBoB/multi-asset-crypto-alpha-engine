@@ -19368,3 +19368,60 @@ entries:
       com unidade declarada (AG-294), eixo 2 em codigo (este). `h=1` sem
       justificativa economica declarada continua como lacuna residual,
       registrada, nao fabricada.
+
+  - id: AG-300
+    renumbered_from: "AG-299 -- quinta colisao de ID do dia com a sessao paralela; mesmo procedimento de AG-296/AG-297"
+    date: "2026-08-26"
+    file: "src/features/build.py (fronteira numpy->Polars), src/models/dataset.py::side_subset"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.2 e §13 v2 §13.17 item 2, audit/architecture_gaps_log.yaml::AG-210"
+    found_by: "Claude -- persona lgbm-crypto-quant, item 2 da ordem de ADR-005 §13 v2 (autorizacao do Manager: 'aplicar a producao')"
+    gap: >
+      TRES DEFEITOS ENCADEADOS, todos fechados aqui.
+      (a) FRONTEIRA: `pl.DataFrame(columns)` recebia arrays numpy com
+      `np.nan` cru. Em Polars, `NaN` e `null` sao valores DIFERENTES num
+      Float64, e `is_not_null()` deixa `NaN` passar (verificado por
+      execucao: `[1.0, NaN, None, 3.0].is_not_null() -> [T, T, F, T]`).
+      O filtro de warmup de `side_subset` usa `is_not_null()`, entao a
+      guarda nao guardava. CORRIGIDO com `nan_to_null=True`; verificado em
+      dado real (BTCUSDT/dollar_r1, 717 barras): ZERO coluna com NaN
+      remanescente.
+      (b) CONJUNTO ERRADO: `side_subset` tinha `T1_FEATURE_IDS` HARDCODED
+      (7 features, nem parametro era) enquanto `_unique_test_bars` -- o
+      lado de TESTE -- ja recebia `feature_ids` real. Treino e teste
+      filtrados por criterios diferentes: a assimetria de §13.2.
+      CORRIGIDO: `feature_ids` obrigatorio, sem default (o default era o
+      defeito), mais validacao de coluna ausente com o nome na mensagem.
+      (c) COLUNA MORTA SILENCIOSA: com (a) e (b) corrigidos, uma coluna
+      100% nula ZERA o conjunto de treino -- e "0 linhas" nao diz QUAL
+      coluna causou. CORRIGIDO: `DeadFeatureColumnError` levantada em
+      `side_subset` ANTES do filtro, nomeando a(s) coluna(s) e o lado.
+      Confirmado em dado real: `D07f_taker_imbalance_1m_agg` e 100% nula
+      sob dollar bar (717 de 717) porque `build.py` so carrega `klines_1m`
+      quando `bar_source == "time_15m"`. Ela atravessava o pipeline inteiro
+      e chegava ao relatorio como {"constraint": 0, "mean_ic": null,
+      "n_consistent": 0}.
+    severity: "ALTA -- guarda de warmup inoperante + populacoes de treino e teste divergentes"
+    layer: "features/models"
+    consequence: >
+      A guarda vive em `side_subset`, nao em `build_t1_features`, de
+      proposito: e onde a consequencia aparece. O builder generico e usado
+      tambem por analise e por testes de paridade, que podem legitimamente
+      olhar uma coluna morta sem treinar sobre ela -- falhar la bloquearia
+      trabalho que nao tem esse defeito.
+      13 call sites de `side_subset` atualizados: 3 em `src/models/`
+      (passam o `feature_ids` do trial) e 8 em `src/analysis/` (passam
+      `T1_FEATURE_IDS` explicitamente -- a escolha fica VISIVEL em vez de
+      herdada de um default).
+      MUDA A POPULACAO DE TREINO por construcao: linhas cujas features do
+      conjunto ativo estejam nulas passam a ser de fato excluidas. Nenhum
+      artefato foi regerado aqui -- o retreino esta represado por decisao
+      do Manager (2026-08-26: "faremos isso depois da outra sessao
+      terminar de reprogramar as features, esse numero de 69 pode cair").
+      Nada nesta correcao depende de o vetor ter 69 colunas: o mecanismo e
+      generico e vale para qualquer conjunto que a reprogramacao produzir.
+    status: >-
+      IMPLEMENTADO e verde. 4 testes novos em test_models_dataset.py
+      (contrato de feature_ids, coluna ausente, coluna morta nomeada, e o
+      caso-limite "coluna quase morta NAO e morta"). Testes de
+      test_features_build.py migrados de `.is_nan()` para `.null_count()`
+      -- consequencia direta e esperada de (a).

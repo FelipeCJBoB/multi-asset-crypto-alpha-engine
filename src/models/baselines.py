@@ -826,7 +826,7 @@ def run_b4_feature_shuffle(
             (1, fr.long_result.model, y_real_long, s_real_long, s_perm_long),
             (-1, fr.short_result.model, y_real_short, s_real_short, s_perm_short),
         ):
-            test_side = ds.side_subset(test_bars, side=side)
+            test_side = ds.side_subset(test_bars, side=side, feature_ids=feature_ids)
             if test_side.height == 0:
                 continue
             X = build_design_matrix(test_side, feature_ids=feature_ids)
