@@ -35,7 +35,16 @@ from src.io import artifact as io_artifact
 from src.validation import cpcv
 from src.validation import dsr as dsr_mod
 
-from . import alpha, backtest_lite, baselines, decomposition, hhi, hyperparams_by_combo, monotonic
+from . import (
+    alpha,
+    backtest_lite,
+    baselines,
+    decomposition,
+    hhi,
+    hyperparams_by_combo,
+    monotonic,
+    persistence,
+)
 from . import dataset as ds
 from ._constants import load_constant
 
@@ -50,6 +59,7 @@ from ._paths import ARTIFACT_ROOT as ARTIFACT_ROOT
 from ._paths import (
     EXPERIMENTS_DIR,
     PREDICTIONS_OUTPUT_DIR,
+    REPO_ROOT,
     models_diagnostics_symbol_tf_dir,
     predictions_symbol_tf_dir,
 )
@@ -362,6 +372,71 @@ def write_all_fold_diagnostics(
     return written
 
 
+def write_all_fold_model_bundles(
+    fold_results: list[alpha.FoldResult],
+    *,
+    symbol: str,
+    resolution_id: str,
+    hyper: alpha.LGBMHyperparams,
+    feature_ids: tuple[str, ...],
+    purge_ms_effective: int,
+    root: Path = REPO_ROOT,
+) -> list[persistence.ModelBundleManifest]:
+    """Fecha `AG-141` (item 10 de `ADR-005 §13.17`, `§13.5-5`) — a metade
+    de INTEGRAÇÃO que faltava: `src.models.persistence.write_model_bundle`
+    existia desde 2026-08-22, testado e revisado, mas nenhum caminho de
+    produção o chamava (`alpha.py::run_fold` nunca invocava). Chamada aqui,
+    NA CASCA (`pipeline.py`), não dentro de `run_fold` — os campos que o
+    manifesto precisa (`hyper`, `purge_ms_effective`, `feature_ids`) já
+    estão todos resolvidos UMA VEZ em `run_layer1_sprint`, e persistir em
+    disco é efeito colateral de IO, não parte do NÚCLEO de treino
+    (`Núcleo funcional, casca imperativa`, `CLAUDE.md`).
+
+    Opt-in (`persist_model_bundles` em `run_layer1_sprint`) -- chamador
+    explícito, nunca default. `tau` gravado é o EFETIVAMENTE APLICADO
+    (`predictions["tau_long"/"tau_short"][0]`, constante dentro do fold),
+    não `long_result.tau`/`short_result.tau` -- os dois só coincidem sob
+    `TAU_POLICY_LEGACY_PER_SIDE`; sob `TAU_POLICY_TOTAL_COMMON_OOF` o
+    per-side fica stale (`run_fold` resolve os dois juntos DEPOIS de
+    computar `long_result`/`short_result`). Mesmo motivo pelo qual
+    `predictions.parquet` persiste o aplicado, não o per-side.
+
+    `ModelBundleExistsError` propaga sem tratamento -- um bundle já
+    escrito para a mesma `(symbol, resolution_id, model_id, fold_id, side,
+    variant)` é imutável por desenho (AG-141); reexecutar
+    `run_layer1_sprint` com `persist_model_bundles=True` sobre uma
+    partição já persistida deve FALHAR, não sobrescrever nem pular em
+    silêncio."""
+    written: list[persistence.ModelBundleManifest] = []
+    for fr in fold_results:
+        fold_id = f"fold{fr.fold_id}"
+        tau_long = float(fr.predictions["tau_long"][0])
+        tau_short = float(fr.predictions["tau_short"][0])
+        for side_result, side, tau in (
+            (fr.long_result, 1, tau_long),
+            (fr.short_result, -1, tau_short),
+        ):
+            manifest = persistence.write_model_bundle(
+                root=root,
+                symbol=symbol,
+                resolution_id=resolution_id,
+                model_id=fr.model_id,
+                fold_id=fold_id,
+                side=side,
+                variant=fr.variant,
+                booster=side_result.model.booster_,
+                calibrator=side_result.calibrator,
+                tau=tau,
+                feature_ids=feature_ids,
+                monotone_constraints=side_result.monotone_constraints,
+                ess=side_result.sum_uniqueness_train,
+                purge_ms_effective=purge_ms_effective,
+                min_child_samples=hyper.min_child_samples,
+            )
+            written.append(manifest)
+    return written
+
+
 def _path_results_to_dict(by_path: dict[int, backtest_lite.PathBacktestResult]) -> dict[str, Any]:
     return {str(pid): asdict(r) for pid, r in sorted(by_path.items())}
 
@@ -429,6 +504,14 @@ def run_layer1_sprint(
     dsr_n_trials: int | None = None,
     feature_ids: tuple[str, ...] | None = None,
     hyper: alpha.LGBMHyperparams | None = None,
+    # `AG-141`/item 10 de `ADR-005 §13.17` -- opt-in, default `False`
+    # preserva bit-exato todo call site/teste existente (nenhum grava
+    # bundle de modelo hoje). Ver `write_all_fold_model_bundles`: gate
+    # adicional `path_tf is not None` (mesmo sentinela de `dest_dir_diag_
+    # c1`/`c0` abaixo) -- caminho legado plano nunca persiste bundle,
+    # mesmo se `True`, porque `symbol`/`resolution_id` não bastam pra
+    # nomear a partição sem colisão sob a grade de tempo legada.
+    persist_model_bundles: bool = False,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -678,6 +761,33 @@ def run_layer1_sprint(
     write_all_fold_diagnostics(
         camada0_folds, model_id=model_id_camada0, hyper=hyper, dest_dir=dest_dir_diag_c0
     )
+
+    # `AG-141`/item 10 de `ADR-005 §13.17` -- opt-in (`persist_model_
+    # bundles`), mesmo gate `path_tf is not None` dos dois blocos de
+    # diagnóstico acima: o caminho legado plano não persiste bundle
+    # (`symbol`/`resolution_id` não bastam pra nomear a partição sem
+    # colisão sob a grade de tempo legada, mesma razão de `dest_dir_diag_
+    # c1`/`c0`). `grade_id` (já resolvido acima) é o `resolution_id` que
+    # `write_model_bundle` grava -- `resolution_id` explícito quando a
+    # grade é dollar-bar, `tf_effective` ("15m") quando é a legada com
+    # `tf` explícito.
+    if persist_model_bundles and path_tf is not None:
+        write_all_fold_model_bundles(
+            camada1_folds,
+            symbol=symbol,
+            resolution_id=grade_id,
+            hyper=hyper,
+            feature_ids=feature_ids_effective,
+            purge_ms_effective=max_feature_lookback_ms,
+        )
+        write_all_fold_model_bundles(
+            camada0_folds,
+            symbol=symbol,
+            resolution_id=grade_id,
+            hyper=hyper,
+            feature_ids=feature_ids_effective,
+            purge_ms_effective=max_feature_lookback_ms,
+        )
 
     preds_c1 = alpha.assemble_predictions_table(camada1_folds)
     preds_c0 = alpha.assemble_predictions_table(camada0_folds)

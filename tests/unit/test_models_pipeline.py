@@ -20,6 +20,7 @@ Dois blocos, mesmo padrão de `tests/unit/test_models_alpha.py`:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,7 +31,7 @@ import pytest
 
 from src.features.build import T1_FEATURE_IDS
 from src.io import artifact as io_artifact
-from src.models import alpha, pipeline
+from src.models import alpha, persistence, pipeline
 from src.models._constants import load_constant
 from src.models.pipeline import MODEL_ID_CAMADA0, MODEL_ID_CAMADA1, MODELS_DIR
 from src.validation.cpcv import CPCVConfig
@@ -278,6 +279,154 @@ def test_write_all_fold_diagnostics_propaga_dest_dir(
     assert len(written) == 2 * 2
     assert all(path.parent == keyed_dir for path in written)
     assert not (tmp_path / "nao_deveria_ser_usado").exists()
+
+
+# ============================================================================
+# write_all_fold_model_bundles — AG-141/item 10 de ADR-005 §13.17, a metade
+# de integração que faltava (write_model_bundle existia, nada o chamava)
+# ============================================================================
+
+
+def _fake_fold_result_with_tau(
+    *, fold_id: int, path_id: int, variant: str, seed: int, tau_long: float, tau_short: float
+) -> alpha.FoldResult:
+    """`_fake_fold_result` grava `predictions=pl.DataFrame()` (vazio) porque
+    `write_fold_diagnostics_atomic` não lê essa coluna -- `write_all_fold_
+    model_bundles` lê `predictions["tau_long"/"tau_short"][0]` (o tau
+    EFETIVAMENTE aplicado, não `long_result.tau`/`short_result.tau`), então
+    precisa de um `predictions` real. `tau_long`/`tau_short` deliberadamente
+    DIFERENTES de `long_result.tau`/`short_result.tau` (que `fit_side_model`
+    resolve por conta própria, quantil da sub-população) -- é exatamente a
+    divergência que a política `TAU_POLICY_TOTAL_COMMON_OOF` produz, e o
+    teste abaixo prova que o manifesto grava o de `predictions`, não o
+    per-side."""
+    fold = _fake_fold_result(fold_id=fold_id, path_id=path_id, variant=variant, seed=seed)
+    predictions = pl.DataFrame(
+        {"tau_long": [tau_long], "tau_short": [tau_short]},
+        schema={"tau_long": pl.Float64, "tau_short": pl.Float64},
+    )
+    return dataclasses.replace(fold, predictions=predictions)
+
+
+def test_write_all_fold_model_bundles_um_bundle_por_fold_x_lado(tmp_path: Path) -> None:
+    hyper = alpha.LGBMHyperparams.from_constants()
+    folds = [
+        _fake_fold_result_with_tau(
+            fold_id=i, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=300 + i,  # noqa: magic-number
+            tau_long=0.61, tau_short=0.59,  # noqa: magic-number
+        )
+        for i in range(2)
+    ]
+
+    written = pipeline.write_all_fold_model_bundles(
+        folds,
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        hyper=hyper,
+        feature_ids=T1_FEATURE_IDS,
+        purge_ms_effective=123_456,  # noqa: magic-number
+        root=tmp_path,
+    )
+
+    assert len(written) == 2 * 2  # 2 folds x 2 lados
+    assert {(m.fold_id, m.side) for m in written} == {
+        ("fold0", 1), ("fold0", -1), ("fold1", 1), ("fold1", -1),
+    }
+    for m in written:
+        assert m.symbol == "ETHUSDT"
+        assert m.resolution_id == "R1"
+        assert m.purge_ms_effective == 123_456
+        assert m.min_child_samples == hyper.min_child_samples
+
+
+def test_write_all_fold_model_bundles_grava_tau_efetivo_nao_o_per_side(tmp_path: Path) -> None:
+    """A prova do achado central: `long_result.tau`/`short_result.tau`
+    (resolvidos por `fit_side_model`, quantil da sub-população daquele
+    lado) e o tau de `predictions` (EFETIVAMENTE aplicado por `decide_side`
+    em `run_fold`) são construídos DIFERENTES de propósito neste teste --
+    o manifesto precisa gravar o segundo, não o primeiro."""
+    hyper = alpha.LGBMHyperparams.from_constants()
+    fold = _fake_fold_result_with_tau(
+        fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=310,  # noqa: magic-number
+        tau_long=0.77, tau_short=0.73,  # noqa: magic-number
+    )
+    assert fold.long_result.tau != 0.77  # noqa: magic-number
+    assert fold.short_result.tau != 0.73  # noqa: magic-number
+
+    written = pipeline.write_all_fold_model_bundles(
+        [fold],
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        hyper=hyper,
+        feature_ids=T1_FEATURE_IDS,
+        purge_ms_effective=1,
+        root=tmp_path,
+    )
+
+    by_side = {m.side: m for m in written}
+    assert by_side[1].tau == 0.77  # noqa: magic-number
+    assert by_side[-1].tau == 0.73  # noqa: magic-number
+
+
+def test_write_all_fold_model_bundles_ess_e_o_sum_uniqueness_medido(tmp_path: Path) -> None:
+    """`_synthetic_side_frame` não tem coluna `uniqueness` -- `sum_
+    uniqueness_train` fica `NaN` por default de `SideModelResult` (AG-211:
+    NaN, não 0.0 nem uma fórmula fechada, é o valor honesto quando não foi
+    medido). O teste prova que o manifesto PASSA ADIANTE o que
+    `SideModelResult` mediu, seja o valor real ou NaN -- não silenciosamente
+    reescreve nada."""
+    hyper = alpha.LGBMHyperparams.from_constants()
+    fold = _fake_fold_result_with_tau(
+        fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=320,  # noqa: magic-number
+        tau_long=0.6, tau_short=0.6,  # noqa: magic-number
+    )
+    assert np.isnan(fold.long_result.sum_uniqueness_train)  # confirma a premissa da fixture
+
+    written = pipeline.write_all_fold_model_bundles(
+        [fold],
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        hyper=hyper,
+        feature_ids=T1_FEATURE_IDS,
+        purge_ms_effective=1,
+        root=tmp_path,
+    )
+
+    by_side = {m.side: m for m in written}
+    assert np.isnan(by_side[1].ess)
+    assert np.isnan(by_side[-1].ess)
+
+
+def test_write_all_fold_model_bundles_reexecucao_sobre_particao_existente_falha(
+    tmp_path: Path,
+) -> None:
+    """Imutabilidade do bundle (AG-141) preservada pela integração: rodar
+    de novo sobre a MESMA partição levanta `ModelBundleExistsError`, nunca
+    sobrescreve nem pula em silêncio."""
+    hyper = alpha.LGBMHyperparams.from_constants()
+    fold = _fake_fold_result_with_tau(
+        fold_id=0, path_id=0, variant=alpha.VARIANT_CAMADA1, seed=330,  # noqa: magic-number
+        tau_long=0.6, tau_short=0.6,  # noqa: magic-number
+    )
+    pipeline.write_all_fold_model_bundles(
+        [fold],
+        symbol="ETHUSDT",
+        resolution_id="R1",
+        hyper=hyper,
+        feature_ids=T1_FEATURE_IDS,
+        purge_ms_effective=1,
+        root=tmp_path,
+    )
+    with pytest.raises(persistence.ModelBundleExistsError):
+        pipeline.write_all_fold_model_bundles(
+            [fold],
+            symbol="ETHUSDT",
+            resolution_id="R1",
+            hyper=hyper,
+            feature_ids=T1_FEATURE_IDS,
+            purge_ms_effective=1,
+            root=tmp_path,
+        )
 
 
 # ============================================================================

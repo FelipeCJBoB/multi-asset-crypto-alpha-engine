@@ -2098,7 +2098,7 @@ novos e marco o que muda artefato.
 | 7 | Teste `H₀`: um vetor global vs. 10 por célula | `§13.12` | não | não (reexecução) | bloqueado (retreino represado) |
 | 8 | Regularização derivada de `ESS`, fórmula emendada | `§13.14.1` | sim | não | bloqueado, prioridade baixa (parâmetro medido inerte) |
 | 9 | `early_stopping` com partição em **três** | `§13.14.3` | sim | não | bloqueado (retreino represado) |
-| 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não | **EXECUTADO** — schema + verificação (`§13.21`, `AG-314`); wiring em produção segue `AG-141` (separado) |
+| 10 | Manifesto completo por célula + verificação na carga | `§13.5-5` | não | não | **EXECUTADO** — schema + verificação (`§13.21`, `AG-314`); wiring em produção fechado no mesmo dia (`§13.21.1`, `AG-141`) |
 | **11** | **Regra de decisão: `p̂ > breakeven(linha)` — que é R2 por linha** | **`§13.16.4`** | **sim** (decisão, não modelo) | **não** | **PARCIAL** — gate pré-existia sem reconhecimento (`§13.22`, `AG-315`); teto por margem é código novo, opt-in; promoção a produção é decisão do Manager |
 | **11b** | **Censo de linhas que violam R2 no conjunto de treino, por célula** | **`§13.16.3`** | não | não | **EXECUTADO** (`§13.20`, `AG-296`/`AG-297`) |
 
@@ -2304,10 +2304,54 @@ novos, + 1 teste novo que PROVA o bug que a verificação existe pra evitar
 booster → `read_model_bundle` recusa). 14 testes, todos verdes.
 `ruff`/`mypy --strict`/`banned_patterns` limpos.
 
-**O que isto NÃO faz:** não fecha `AG-141` (wiring em produção segue
-aberto, por decisão de escopo, não por esquecimento) — nenhuma célula
-real ganha manifesto ainda; a infraestrutura fica pronta pra quando o
-retreino represado reabrir.
+**O que isto NÃO faz (no momento em que foi escrito):** não fechava
+`AG-141` — ver `§13.21.1` abaixo, fechado na mesma sessão, algumas horas
+depois.
+
+### §13.21.1 EXECUTADO — `AG-141` fechado: wiring em produção
+
+A metade de escopo deixada de fora acima foi fechada no mesmo dia,
+mesma sessão. `src/models/pipeline.py` ganha `write_all_fold_model_
+bundles` — chamado na CASCA (`run_layer1_sprint`), não dentro de
+`alpha.py::run_fold`: os campos que o manifesto precisa (`hyper`,
+`purge_ms_effective`, `feature_ids`) já são resolvidos UMA VEZ em
+`run_layer1_sprint`, e persistir em disco é efeito colateral de IO, não
+parte do núcleo de treino (`Núcleo funcional, casca imperativa`).
+
+**Opt-in** (`persist_model_bundles: bool = False` em `run_layer1_sprint`)
+— default preserva bit-exato todo call site/teste existente, nenhum
+grava bundle hoje. Gate adicional `path_tf is not None` (mesmo sentinela
+de `dest_dir_diag_c1`/`c0`, os dois blocos de diagnóstico): o caminho
+legado plano nunca persiste bundle, mesmo com `persist_model_bundles=
+True` — `symbol`/`resolution_id` sozinhos não bastam pra nomear a
+partição sem colisão sob a grade de tempo legada.
+
+**`tau` gravado é o EFETIVAMENTE APLICADO** (`predictions["tau_long"/
+"tau_short"][0]`), não `long_result.tau`/`short_result.tau` — os dois só
+coincidem sob `TAU_POLICY_LEGACY_PER_SIDE`; sob `TAU_POLICY_TOTAL_
+COMMON_OOF` o per-side fica stale (`run_fold` resolve os dois JUNTOS
+depois de computar `long_result`/`short_result`). Mesmo motivo pelo qual
+`predictions.parquet` persiste o aplicado, não o per-side — um teste
+dedicado prova a divergência com números diferentes de propósito, não só
+com o caminho legado onde os dois coincidiriam por acaso.
+
+`ModelBundleExistsError` propaga sem tratamento — reexecutar sobre uma
+partição já persistida FALHA, nunca sobrescreve nem pula em silêncio
+(imutabilidade de `AG-141` preservada pela integração, não relaxada).
+
+**Testes:** `tests/unit/test_models_pipeline.py` (4 novos, mecânica com
+booster/calibrador reais sobre dado sintético — contagem de bundles,
+tau efetivo vs. per-side, `ess`/`NaN` passado adiante sem reescrita,
+imutabilidade na reexecução) + `tests/unit/test_models_pipeline_paths.py`
+(4 novos, roteamento — default nunca chama, `persist_model_bundles=True`
+sem `tf`/`resolution_id` explícito nunca chama, `tf`/`resolution_id`
+explícito chama as duas variantes com os kwargs corretos). `ruff`/
+`mypy --strict`/`banned_patterns` limpos; suíte completa (`-m "not
+slow"`) verde.
+
+**`AG-141` fechado.** Nenhuma célula REAL ganhou manifesto ainda — o
+efeito só se materializa quando `persist_model_bundles=True` for passado
+num run real, e o retreino segue represado (decisão do Manager).
 
 ---
 

@@ -660,6 +660,110 @@ def test_run_layer1_sprint_device_type_explicito_sobrescreve_default(
     assert all(c["device_type"] == "cuda" for c in calls)
 
 
+# ============================================================================
+# run_layer1_sprint(persist_model_bundles=...) -- roteamento até
+# write_all_fold_model_bundles (AG-141/item 10 de ADR-005 §13.17). Mesmo
+# padrão dos blocos acima: stuba CPCV/treino (splits vazio), captura os
+# kwargs reais recebidos por write_all_fold_model_bundles em vez de
+# descartá-los ou exercitar o pipeline de treino de verdade.
+# ============================================================================
+
+
+def _run_layer1_sprint_capturing_model_bundle_calls(
+    monkeypatch: pytest.MonkeyPatch, **run_kwargs: Any
+) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 42
+    )
+    monkeypatch.setattr(alpha, "run_all_folds", lambda *a, **k: [])
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    def _fake_write_all_fold_model_bundles(fold_results: list[Any], **kwargs: Any) -> list[Any]:
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        pipeline, "write_all_fold_model_bundles", _fake_write_all_fold_model_bundles
+    )
+
+    def _fake_write_predictions_atomic(
+        predictions: pl.DataFrame, model_id: str, *, dest_dir: Path | None = None
+    ) -> Path:
+        raise _StopAfterPredictions()
+
+    monkeypatch.setattr(pipeline, "write_predictions_atomic", _fake_write_predictions_atomic)
+
+    def _fake_write_predictions_versioned(*args: Any, **kwargs: Any) -> Any:
+        raise _StopAfterPredictions()
+
+    monkeypatch.setattr(pipeline, "write_predictions_versioned", _fake_write_predictions_versioned)
+
+    with pytest.raises(_StopAfterPredictions):
+        pipeline.run_layer1_sprint(**run_kwargs)
+
+    return calls
+
+
+def test_run_layer1_sprint_persist_model_bundles_default_nunca_chama(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default `persist_model_bundles=False` -- bit-exato com todo call
+    site/teste existente, nenhum grava bundle de modelo hoje."""
+    calls = _run_layer1_sprint_capturing_model_bundle_calls(monkeypatch, tf="30m")
+    assert calls == []
+
+
+def test_run_layer1_sprint_persist_model_bundles_true_mas_caminho_legado_plano_nao_chama(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`persist_model_bundles=True` sozinho não basta -- sem `tf`/
+    `resolution_id` explícito (`path_tf is None`, o caminho legado plano),
+    o gate recusa: `symbol`/`resolution_id` não bastam pra nomear uma
+    partição sem colisão sob a grade de tempo legada (mesmo motivo do
+    gate de diagnóstico, `dest_dir_diag_c1`/`c0`)."""
+    calls = _run_layer1_sprint_capturing_model_bundle_calls(
+        monkeypatch, persist_model_bundles=True
+    )
+    assert calls == []
+
+
+def test_run_layer1_sprint_persist_model_bundles_true_com_tf_explicito_chama_as_duas_variantes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _run_layer1_sprint_capturing_model_bundle_calls(
+        monkeypatch, tf="30m", persist_model_bundles=True
+    )
+    assert len(calls) == 2  # camada1 + camada0
+    for call in calls:
+        assert call["symbol"] == pipeline.SYMBOL
+        assert call["resolution_id"] == "30m"  # grade_id: tf_effective quando resolution_id é None
+        assert call["purge_ms_effective"] == 42
+        assert call["feature_ids"] == features_build.T1_FEATURE_IDS
+
+
+def test_run_layer1_sprint_persist_model_bundles_true_com_resolution_id_usa_grade_real(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _run_layer1_sprint_capturing_model_bundle_calls(
+        monkeypatch, resolution_id="R1", persist_model_bundles=True
+    )
+    assert len(calls) == 2
+    for call in calls:
+        assert call["resolution_id"] == "R1"
+
+
 def test_all_symbols_e_all_resolutions_universo_esperado() -> None:
     """`ALL_SYMBOLS`/`ALL_RESOLUTIONS` -- 5 símbolos (BTC + os 4 alts de
     `src.data.download.DEFAULT_SYMBOLS`), 3 resoluções (R1/R2/R3, D-02/

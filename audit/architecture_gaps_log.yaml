@@ -11246,7 +11246,7 @@ entries:
       produção-readiness genérico, não só uma proposta específica).
     resolved_by_commit: null
     resolution: null
-    status: "aberto -- correção recomendada: persistir booster (.ubj) + calibrador (coeficientes, não pickle sklearn) por fold x lado x variante ao final de fit_side_model/write_all_fold_diagnostics, .tmp->fsync->rename (B29, já padrão do módulo). Sequenciamento sugerido pelo agente: junto da migração LightGBM (PLANO_MESTRE §15.14, já represada) para não abrir 2 janelas separadas de 'código não bate com o que está rodando'. Decisão de quando fica pro Manager."
+    status: "FECHADO 2026-08-26 -- ver addendum wiring_producao_2026-08-26 abaixo. resolved_by_commit fica null aqui (autorreferência impossível na mesma edição que fecha a entrada); hash real é o commit desta sessão que inclui pipeline.py::write_all_fold_model_bundles + os 8 testes citados no addendum -- confira `git log --oneline -- src/models/pipeline.py` por volta de 2026-08-26 se precisar do hash exato."
 
     infraestrutura_pronta_2026-08-22: >
       **Sequenciamento revisto pelo Manager** -- em vez de esperar a
@@ -11281,6 +11281,57 @@ entries:
       variantes × 2 lados, 7 leitores downstream) sem revisão
       independente da infraestrutura primeiro. Status permanece
       ABERTO."
+
+    wiring_producao_2026-08-26: >
+      FECHADO. `src/models/pipeline.py::write_all_fold_model_bundles`,
+      chamado por `run_layer1_sprint` (opt-in, `persist_model_bundles:
+      bool = False`, default preserva bit-exato todo call site/teste
+      existente). Decisão de desenho (diferente do que o addendum acima
+      cogitava): a chamada fica na CASCA (`pipeline.py`), não dentro de
+      `alpha.py::run_fold` -- os campos que o manifesto precisa (`hyper`,
+      `purge_ms_effective`, `feature_ids`) já são resolvidos UMA VEZ em
+      `run_layer1_sprint`, e persistir em disco é efeito colateral de IO,
+      não parte do núcleo de treino (`Núcleo funcional, casca
+      imperativa`, `CLAUDE.md`) -- evita threadar `persist_root` por
+      `run_fold`/`run_all_folds` (muitos call sites/testes) só pra um
+      efeito colateral que só o orquestrador de fato precisa.
+
+      Gate adicional `path_tf is not None` (mesmo sentinela dos dois
+      blocos de diagnóstico, `dest_dir_diag_c1`/`c0`): o caminho legado
+      plano nunca persiste bundle, mesmo com `persist_model_bundles=
+      True` -- `symbol`/`resolution_id` sozinhos não bastam pra nomear a
+      partição sem colisão sob a grade de tempo legada.
+
+      Achado ao implementar: `tau` gravado no manifesto precisa ser o
+      EFETIVAMENTE APLICADO (`predictions["tau_long"/"tau_short"][0]`),
+      não `long_result.tau`/`short_result.tau` -- os dois só coincidem
+      sob `TAU_POLICY_LEGACY_PER_SIDE`; sob `TAU_POLICY_TOTAL_COMMON_OOF`
+      o per-side fica stale (`run_fold` resolve os dois JUNTOS depois de
+      computar `long_result`/`short_result`, ver `AG-210`). Mesmo motivo
+      pelo qual `predictions.parquet` já persiste o aplicado, não o
+      per-side -- um teste dedicado prova a divergência com números
+      diferentes de propósito (`test_write_all_fold_model_bundles_grava_
+      tau_efetivo_nao_o_per_side`), não só o caminho legado onde os dois
+      coincidiriam por acaso e o teste passaria por motivo errado.
+
+      `ModelBundleExistsError` propaga sem tratamento -- reexecutar
+      `run_layer1_sprint(persist_model_bundles=True)` sobre uma partição
+      já persistida FALHA, nunca sobrescreve nem pula em silêncio
+      (imutabilidade original de AG-141 preservada pela integração, não
+      relaxada).
+
+      8 testes novos (4 mecânica em `test_models_pipeline.py` com
+      booster/calibrador reais sobre dado sintético + 4 roteamento em
+      `test_models_pipeline_paths.py`, mesmo padrão stub-CPCV/splits-
+      vazio dos testes de roteamento já existentes ali).
+      `ruff`/`mypy --strict`/`banned_patterns` limpos; suíte completa
+      (`-m "not slow"`) 2275 passed, 2 skipped, 2 xfailed, 0 failed
+      (+8 sobre a rodada anterior do mesmo dia).
+
+      Nenhuma célula REAL ganhou manifesto ainda -- o efeito só se
+      materializa quando `persist_model_bundles=True` for passado num
+      run real, e o retreino segue represado (decisão do Manager,
+      2026-08-26). Ver `ADR-005 §13.21.1` pro detalhe completo.
 
   - id: AG-142
     date: "2026-08-22"

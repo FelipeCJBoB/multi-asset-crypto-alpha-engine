@@ -4723,10 +4723,35 @@ desenho de features. Ordem de execução autorizada item a item
   acompanhava a entrada ficou de fora do meu commit. A sessão paralela
   commitou o resto por cima (`ee0a83d`) reconhecendo que a entrada já
   estava logada; nenhuma duplicata, nenhuma ação corretiva necessária.
+- **Mesmo deslize, na direção oposta, também sem perda:** entre eu
+  escrever `§13.21`/`§13.22` + `AG-314`/`AG-315` (ainda não commitados)
+  e eu tentar commitá-los, a sessão paralela commitou `0f9e915` no MESMO
+  working tree — viu `AG-314`/`AG-315` já ocupados no arquivo (minhas
+  edições, ainda em disco) e renumerou os próprios achados novos pra
+  `AG-321`/`AG-322` (mesmo procedimento de colisão já usado hoje 6x).
+  O commit deles arrastou minhas edições de `ADR-005`/`architecture_
+  gaps_log.yaml` junto (working tree compartilhado). Conferido byte a
+  byte: nenhuma linha minha apareceu como remoção no diff deles, `git
+  status` bateu zero depois — meu conteúdo sobreviveu intacto, só sob a
+  mensagem de commit deles. Nada a corrigir; só registrado pra explicar
+  por que esses dois arquivos não aparecem no commit que eu de fato fiz
+  (`df113c3`, só `persistence.py`/`alpha.py`/testes/`SPRINT_LOG.md`).
+- **`AG-141` fechado no mesmo dia** (`§13.21.1`) — a metade de
+  integração do item 10 que tinha ficado de fora deliberadamente:
+  `pipeline.write_all_fold_model_bundles`, chamado por `run_layer1_
+  sprint` (opt-in, `persist_model_bundles=False` por default, gate
+  adicional `path_tf is not None`). Grava o `tau` EFETIVAMENTE aplicado
+  (de `predictions`, não o per-side de `fit_side_model`) — os dois só
+  coincidem sob a política legada; um teste prova a divergência com
+  números diferentes de propósito. `ModelBundleExistsError` propaga sem
+  tratamento -- reexecutar sobre uma partição já persistida falha, nunca
+  sobrescreve. 8 testes novos (4 mecânica + 4 roteamento). <!-- check-sprint-log: skip -->
 
-Suíte completa (`-m "not slow"`) ao fim dos itens 10/11: **2267 passed, 2
-skipped, 2 xfailed, 0 failed**. `ruff`/`mypy --strict`/`banned_patterns`
-limpos em todos os módulos tocados. Itens 5, 6, 7, 8, 9 de `§13.17`
-seguem bloqueados — só se manifestam em tempo de treino, e o retreino
-está represado (decisão do Manager) até a sessão paralela terminar a
-reprogramação de features (o vetor de 69 pode cair).
+Suíte completa (`-m "not slow"`) verde nas três rodadas do dia: 2267
+passed (itens 10/11) → 2267 passed (confirmação pós-noqa) → **2275
+passed, 2 skipped, 2 xfailed, 0 failed** (com o wiring de `AG-141`, +8
+testes novos). `ruff`/`mypy --strict`/`banned_patterns` limpos em todos
+os módulos tocados. Itens 5, 6, 7, 8, 9 de `§13.17` seguem bloqueados —
+só se manifestam em tempo de treino, e o retreino está represado
+(decisão do Manager) até a sessão paralela terminar a reprogramação de
+features (o vetor de 69 pode cair).
