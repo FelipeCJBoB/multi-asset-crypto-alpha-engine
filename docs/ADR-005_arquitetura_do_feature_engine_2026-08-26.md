@@ -3,7 +3,7 @@
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
-- **§12 (grade de produção): PROPOSTO**, não revisado — `project_assurance` acionado em 2026-08-26 (background). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação iniciada**: §12.4/§12.5/§12.2 agora têm núcleo puro reproduzível em `src/analysis/production_grade_gate.py` (ver §12.8) — ainda NÃO RODADO (protocolo de execução) nem revisado.
+- **§12 (grade de produção, decisão manual): PROPOSTO**, decisão de prosa não revisada por `project_assurance` (só o código de apoio foi). Independente das partes reprovadas — não usa o critério de §2.2 nem a tabela de IC. **Implementação em `src/analysis/production_grade_gate.py` REVISADA por `project_assurance` e REPROVADA na 1ª versão** (1 CRITICAL + 2 HIGH, `AG-288`/`AG-289`/`AG-290`) — todos corrigidos e reverificados rodando o script de verdade (ver §12.8): a correção reproduz a decisão de §12.6 (`BTCUSDT/R3` excluída, capacidade de R1 bate com §12.4 dentro de ~3,5%). `AG-293` (achado à parte, não coberto pela revisão original): o backfill de dado real está ~18 dias atrasado — a decisão em si não depende disso, mas rodar o gate com `--asof` de hoje falha até o backfill ser atualizado.
 - **§13 (engenharia de ML): PROPOSTO**, não revisado. Achados centrais reverificados por execução; independente de §1–§9. **Delegado para outra sessão** (decisão do Manager, 2026-08-26) — nada implementado aqui.
 
 Nenhum default de produção alterado, nenhuma coluna de feature removida. `src/analysis/production_grade_gate.py` é código novo, decision-support (mesmo status de `feasibility.py`) — não é consumido por nenhum pipeline de treino/execução.
@@ -677,28 +677,40 @@ A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
 
 ### §12.8 O que falta, e não impede a decisão
 
-- ~~Gate 0 nunca foi executado e persistido.~~ **FECHADO em 2026-08-26**
-  por `src/analysis/production_grade_gate.py` (+ `tests/unit/
-  test_analysis_production_grade_gate.py`) — núcleo puro das 3 contas
-  desta seção (teto R1, custo/capacidade sob orçamento compartilhado,
-  `ρ_mínimo`), casca que lê `s1_tp_sl_sensitivity_report_{R}.json`
-  (`stop_pct_cell` real, não recalculado), `Filters` reais via
-  `load_filters_asof` (não o escalar BTC-único de `constants.yaml`) e
-  preço mediano real de `data.lake.query_dollar_bars`. Persiste
-  `experiments/production_grade_gate_report.json`. `equity`/`asof` são
-  parâmetros obrigatórios (nunca cache de equity, B17; nunca "hoje"
-  presumido, B01) — ainda **NÃO RODADO** (protocolo de execução do
-  Manager, `CLAUDE.md`: só o usuário roda `.py`) e **NÃO REVISADO**
-  (project_assurance pendente sobre esta §12, ver nota no topo do
-  documento). Mesma limitação de `stop_pct` já registrada abaixo (usa a
-  célula de produção GLOBAL do S1, não overrides por combo) — herdada,
-  não escondida.
+- ~~Gate 0 nunca foi executado e persistido.~~ **FECHADO em 2026-08-26**,
+  na 2ª tentativa. A 1ª versão de `src/analysis/production_grade_gate.py`
+  (+ `tests/unit/test_analysis_production_grade_gate.py`) foi revisada por
+  `project_assurance` (Agent independente) e **REPROVADA**: 1 achado
+  CRITICAL (`AG-288` — a agregação por grade somava capacidade por
+  símbolo em vez de tirar a média, reintroduzindo o erro-v1 "orçamento ×
+  N" um nível acima) e 2 HIGH (`AG-289` — preço não escopado a `asof`,
+  lia o histórico inteiro; `AG-290` — schema de demanda incompatível com
+  o artefato citado). Os três foram corrigidos, e **`AG-289` teve uma 2ª
+  volta**: mesmo escopado a `asof`, usar MEDIANA de 30 dias ainda dava
+  preço baixo demais (viés sistemático contra ativo em tendência de alta)
+  e deixava de excluir `BTCUSDT/R3` — trocado para ÚLTIMO close da
+  janela. Rodado ao vivo (`--equity 196.85 --asof 2026-08-08`, a data
+  real de cobertura do dado — ver `AG-293`, o backfill está ~18 dias
+  atrasado): `capacidade_trades_mes_grade` R1=49,76 (bate com os 48,0 de
+  §12.4 dentro de ~3,5%), e **`BTCUSDT/R3` volta a ser excluída**
+  (`stop_max_pct`=0,7585% contra `stop_pct`=0,7671%), reproduzindo a
+  decisão de §12.6. `equity`/`asof` seguem parâmetros obrigatórios (B17/
+  B01). Detalhe completo: `AG-288`..`AG-293`. Mesma limitação de
+  `stop_pct` já registrada abaixo (usa a célula de produção GLOBAL do
+  S1, não overrides por combo) — herdada, não escondida.
 - **O S1 filtra só o piso R2, nunca o teto R1.** Por isso R3 aparece com 7
   células viáveis e R1 com 5 — a comparação entre grades foi feita sobre
   conjuntos filtrados por critérios diferentes.
-- **`step_size`/`min_notional` em `constants.yaml` são escalares BTC-únicos.**
-  O dado por ativo já está no snapshot de `exchangeInfo`; a constante não o
-  usa. `min_notional: 50,0` nem bate com o snapshot de BTC (20).
+- **`step_size` em `constants.yaml` é escalar BTC-único.** O dado por ativo
+  já está no snapshot de `exchangeInfo`; a constante não o usa —
+  `production_grade_gate.py` (abaixo) já lê o real via `load_filters_asof`,
+  em vez desta constante. ~~`min_notional: 50,0` nem bate com o snapshot de
+  BTC (20).~~ **CORRIGIDO 2026-08-26** (`AG-292`, `project_assurance`):
+  errado — o bloco `BTCUSDT` do snapshot tem `min_notional=50`, batendo
+  exatamente com `constants.yaml`; o "20" citado é de outro símbolo do
+  arquivo (lista todos os pares da Binance Futures, não só os 5 do
+  projeto). `production_grade_gate.py` nunca usa `min_notional`, então o
+  erro não afetou nenhum código — só a narrativa desta linha.
 - **`ρ` real do modelo por célula** — a quantidade de que a decisão depende.
   Mensurável hoje: Spearman entre a probabilidade OOF do Alpha e `ret_net`.
 - **Capacidade de mercado**: NÃO EXISTE medição. Com nocional de $78–$268,

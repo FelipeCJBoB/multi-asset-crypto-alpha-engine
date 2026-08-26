@@ -27,10 +27,16 @@ backtest lê este número pra decidir uma ordem).
 - `step_size`/`min_notional` reais por ativo: `src.exchange.filters.
   load_filters_asof` (snapshot de `exchangeInfo`), não o escalar
   BTC-único de `constants.yaml` (`AG-165`/`AG-190`).
-- Preço: mediana de `close` em `src.data.lake.query_dollar_bars` — dado
-  real, não suposto.
-- Demanda (taxa de sinal medida): opcional, de um relatório de análise já
-  gerado (`--demand-report`); se ausente, a linha reporta
+- Preço: ÚLTIMO `close` real numa janela `[asof - price_lookback_days_gate0,
+  asof]` (`config/constants.yaml`) via `src.data.lake.query_dollar_bars` —
+  dado real, escopado a `asof` (B01). Não é mediana/média: uma estatística
+  suavizada sobre semanas SUBESTIMA sistematicamente um ativo em tendência
+  de alta (achado real, ver docstring de `_load_reference_price`) — o
+  teto de quantização precisa do preço mais recente, não histórico.
+- Demanda (taxa de sinal medida): opcional, de um relatório com o schema
+  PRÓPRIO deste módulo (`--demand-report`, `{"by_cell": [...]}` — nenhum
+  artefato existente no repo tem esse schema hoje, precisa de um
+  adaptador dedicado); se ausente, a linha reporta
   `demanda_trades_mes_medida: null` em vez de inventar um número (B23).
 
 `equity` é parâmetro OBRIGATÓRIO, nunca constante/cache (B17 — "cache
@@ -41,9 +47,9 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
@@ -165,7 +171,7 @@ class GradeGateRow:
     symbol: str
     resolution_id: str
     step_size: float
-    price_mediano: float
+    price_referencia: float
     unit_notional: float
     stop_pct_producao: float
     stop_max_pct: float
@@ -176,12 +182,50 @@ class GradeGateRow:
     veredito: str
 
 
+def aggregate_grade_capacity(rows: Sequence[GradeGateRow]) -> dict[str, Any]:
+    """Agrega capacidade/demanda de UMA grade a partir das linhas por
+    símbolo já filtradas pra essa grade (SEM as excluídas por teto R1).
+
+    **ACHADO CRITICAL, `project_assurance` 2026-08-26.** A v1 desta
+    agregação fazia `sum(r.capacidade_trades_mes for r in elegiveis)` --
+    errado. Cada `r.capacidade_trades_mes` (`capacity_trades_per_month`)
+    já assume que AQUELE símbolo sozinho tem o orçamento MENSAL
+    COMPARTILHADO inteiro (`fee_budget_monthly * equity`, mesmo `equity`
+    pros 5 ativos). Somar N dessas linhas reconta o mesmo orçamento N
+    vezes -- reintroduz, na agregação, o erro-v1 "orçamento × N" que
+    `capacity_trades_per_month` corrige na função pura (§12.7). Medido
+    contra dado real: R1 somava 248,8 contra os 48,0 corretos de §12.4
+    (~5,18×, ≈ n_símbolos).
+
+    **Correção**, sob a suposição de DIVISÃO IGUAL do orçamento entre os
+    símbolos elegíveis: `capacidade_símbolo_real = (B/n) / custo_i`,
+    `capacidade_total = Σ (B/n)/custo_i = (B/n) · Σ(1/custo_i) =
+    média_i(B/custo_i)` -- algebricamente IDÊNTICA à média das
+    `capacidade_trades_mes` por símbolo já computadas (cada uma assume
+    `B` inteiro). Por isso a agregação correta é a MÉDIA, não a soma --
+    matematicamente equivalente a dividir o orçamento em partes iguais
+    antes de calcular. É aproximação de primeira ordem (divisão igual,
+    não a alocação ótima por custo entre símbolos) -- reportado, não
+    escondido, mesmo espírito da ressalva de `feasibility.py::
+    trades_per_year_budget`."""
+    demandas_medidas = [
+        r.demanda_trades_mes_medida for r in rows if r.demanda_trades_mes_medida is not None
+    ]
+    capacidades = [r.capacidade_trades_mes for r in rows]
+    media_capacidade = (sum(capacidades) / len(capacidades)) if capacidades else None
+    return {
+        "capacidade_trades_mes_grade": media_capacidade,
+        "demanda_trades_mes_soma_medida": sum(demandas_medidas) if demandas_medidas else None,
+        "n_simbolos_com_demanda_medida": len(demandas_medidas),
+    }
+
+
 def build_grade_gate_row(
     *,
     symbol: str,
     resolution_id: str,
     step_size: float,
-    price_mediano: float,
+    price_referencia: float,
     stop_pct_producao: float,
     equity: float,
     risk_per_trade: float,
@@ -194,9 +238,9 @@ def build_grade_gate_row(
     vem de fora -- este módulo não mede taxa de sinal, só compõe o que já
     foi medido em outro lugar; `None` quando não há medição disponível
     (nunca um número inventado, B23)."""
-    unit_notional = step_size * price_mediano
+    unit_notional = step_size * price_referencia
     smax = stop_max_pct(
-        equity=equity, risk_per_trade=risk_per_trade, step_size=step_size, price=price_mediano
+        equity=equity, risk_per_trade=risk_per_trade, step_size=step_size, price=price_referencia
     )
     violado = r1_ceiling_violated(stop_pct=stop_pct_producao, stop_max=smax)
 
@@ -220,7 +264,7 @@ def build_grade_gate_row(
         symbol=symbol,
         resolution_id=resolution_id,
         step_size=step_size,
-        price_mediano=price_mediano,
+        price_referencia=price_referencia,
         unit_notional=unit_notional,
         stop_pct_producao=stop_pct_producao,
         stop_max_pct=smax,
@@ -276,30 +320,72 @@ def _load_production_stop_pct(resolution_id: str, *, out_dir: Path) -> dict[str,
     return out
 
 
-def _load_median_price(symbol: str, resolution_id: str) -> float:
-    """Preço mediano REAL (`close`, `data.lake.query_dollar_bars`) -- não
-    suposto, não vindo de `PRICE_FILTER` (que é faixa permitida, não
-    preço de mercado)."""
-    bars = lake.query_dollar_bars(symbol, resolution_id=resolution_id)
+def _load_reference_price(
+    symbol: str, resolution_id: str, *, asof: date, lookback_days: int
+) -> float:
+    """Último `close` REAL conhecido em `[asof - lookback_days, asof]`
+    (`data.lake.query_dollar_bars`) -- não suposto, não vindo de
+    `PRICE_FILTER` (que é faixa permitida, não preço de mercado).
+    `lookback_days` é só a margem de segurança pra achar pelo menos uma
+    barra (folga contra fim de semana/gap de dado); o preço usado é o
+    ÚLTIMO da janela, não uma média/mediana sobre ela.
+
+    **ACHADO HIGH, `project_assurance` 2026-08-26, com uma 2ª volta.** A
+    v1 chamava `query_dollar_bars` SEM `start`/`end` -- lia o histórico
+    INTEIRO (desde 2021-12), ignorando `asof` (violava B01). Corrigido
+    pra MEDIANA sobre uma janela de `lookback_days`, mas isso ainda
+    produzia um resultado ERRADO na prática: rodando ao vivo com
+    `lookback_days=30`, a mediana de 30 dias de BTCUSDT saiu ~US$ 64.150
+    -- deixando `BTCUSDT/R3` NA MARGEM de não violar o teto R1
+    (diferença de ~0,0005pp), quando a intenção de §12.2/§12.6 é o preço
+    ATUAL, não uma estatística suavizada sobre um mês. Uma mediana
+    multi-semanal SUBESTIMA sistematicamente um ativo em tendência de
+    alta (exatamente o caso do BTC nesta série) -- o teto de quantização
+    precisa do preço mais recente disponível, que é o que decide o
+    nocional de uma ordem HOJE, não uma média histórica. Trocado para
+    "último close da janela"."""
+    start = asof - timedelta(days=lookback_days)
+    bars = lake.query_dollar_bars(symbol, start, asof, resolution_id=resolution_id)
     if bars.height == 0:
         raise ProductionGradeGateError(
-            f"query_dollar_bars({symbol}, {resolution_id}) devolveu 0 barras"
+            f"query_dollar_bars({symbol}, {start}..{asof}, {resolution_id}) devolveu 0 barras -- "
+            "janela sem dado, ou asof anterior ao início da série"
         )
-    return float(bars.select(pl.col("close").median()).item())
+    return float(bars.sort("close_time").select(pl.col("close").last()).item())
 
 
 def _load_demand_by_symbol_resolution(path: Path | None) -> dict[tuple[str, str], float]:
-    """Taxa de sinal medida (trades/mês), de um relatório de análise já
-    gerado -- schema `{"by_cell": [{"symbol", "resolution_id",
-    "trades_per_month"}, ...]}`. Ausente/`None` => dict vazio, cada célula
-    reporta `demanda_trades_mes_medida: null` (§12.8: 'ρ real do modelo
-    por célula' é medição pendente, não fabricada aqui)."""
+    """Taxa de sinal medida (trades/mês) -- schema PRÓPRIO deste módulo,
+    `{"by_cell": [{"symbol", "resolution_id", "trades_per_month"}, ...]}`.
+    Ausente/`None` => dict vazio, cada célula reporta
+    `demanda_trades_mes_medida: null` (§12.8: 'ρ real do modelo por
+    célula' é medição pendente, não fabricada aqui).
+
+    **ACHADO HIGH, `project_assurance` 2026-08-26.** Este schema NÃO é
+    compatível com `experiments/alpha_deep_analysis_2026-08-24.json`
+    (schema real: array top-level de `{"symbol", "resolution",
+    "decomposition": {"n_trades", ...}, "auc_real": {"n_eval_long"}}`) --
+    apesar da v1 desta docstring implicar que era. Não existe hoje,
+    neste repo, nenhuma função que derive trades/mês a partir de
+    `n_trades`/`n_eval_long`; os números de demanda de §12.4
+    (314,4/153,2/65,1) foram calculados por processo não versionado.
+    Passar `alpha_deep_analysis_2026-08-24.json` direto em
+    `--demand-report` HOJE levanta `ProductionGradeGateError` (schema
+    inesperado) -- não mais um `AttributeError` não tratado (v1). Um
+    adaptador que produza o schema `by_cell` a partir daquele relatório
+    ainda precisa ser escrito -- TBD, não fabricado aqui (B23)."""
     if path is None or not path.exists():
         return {}
     with path.open(encoding="utf-8") as fh:
-        payload: dict[str, Any] = json.load(fh)
+        payload: Any = json.load(fh)
+    if not isinstance(payload, Mapping) or "by_cell" not in payload:
+        raise ProductionGradeGateError(
+            f"{path}: schema inesperado -- esperado {{'by_cell': [...]}} no nível "
+            "superior. Este arquivo pode ser de outro relatório (schema diferente) -- "
+            "precisa de um adaptador dedicado, não é lido diretamente por este módulo."
+        )
     out: dict[tuple[str, str], float] = {}
-    for row in payload.get("by_cell", []):
+    for row in payload["by_cell"]:
         out[(str(row["symbol"]), str(row["resolution_id"]))] = float(row["trades_per_month"])
     return out
 
@@ -335,6 +421,7 @@ def run_production_grade_gate_report(
     fee_budget_monthly = float(load_constant("fee_budget_monthly"))
     maker_fee = float(load_constant("maker_fee"))
     taker_fee = float(load_constant("taker_fee"))
+    lookback_days = int(load_constant("price_lookback_days_gate0"))
     cost_bps = round_trip_cost_bps(maker_fee, taker_fee)
 
     demand = _load_demand_by_symbol_resolution(demand_report_path)
@@ -349,12 +436,14 @@ def run_production_grade_gate_report(
                     "símbolo ausente do sweep dessa resolução"
                 )
             filters = load_filters_asof(asof, symbol=symbol)
-            price = _load_median_price(symbol, resolution_id)
+            price = _load_reference_price(
+                symbol, resolution_id, asof=asof, lookback_days=lookback_days
+            )
             row = build_grade_gate_row(
                 symbol=symbol,
                 resolution_id=resolution_id,
                 step_size=float(filters.step_size),
-                price_mediano=price,
+                price_referencia=price,
                 stop_pct_producao=stop_pct_by_symbol[symbol],
                 equity=equity,
                 risk_per_trade=risk_per_trade,
@@ -376,19 +465,12 @@ def run_production_grade_gate_report(
     for resolution_id in resolutions:
         grade_rows = [r for r in rows if r.resolution_id == resolution_id]
         elegiveis = [r for r in grade_rows if r.veredito != "excluida_teto_r1"]
-        demandas_medidas = [
-            r.demanda_trades_mes_medida
-            for r in elegiveis
-            if r.demanda_trades_mes_medida is not None
-        ]
         excluidos = sorted(r.symbol for r in grade_rows if r.veredito == "excluida_teto_r1")
         resumo_por_grade[resolution_id] = {
             "n_simbolos": len(grade_rows),
             "n_excluidos_teto_r1": len(grade_rows) - len(elegiveis),
             "simbolos_excluidos_teto_r1": excluidos,
-            "capacidade_trades_mes_soma_elegiveis": sum(r.capacidade_trades_mes for r in elegiveis),
-            "demanda_trades_mes_soma_medida": sum(demandas_medidas) if demandas_medidas else None,
-            "n_simbolos_com_demanda_medida": len(demandas_medidas),
+            **aggregate_grade_capacity(elegiveis),
         }
 
     payload = {
@@ -398,7 +480,11 @@ def run_production_grade_gate_report(
         "adr_ref": "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §12",
         "formula_stop_max": "stop_max = (equity * risk_per_trade) / (2 * step_size * price)",
         "formula_custo_trade": "custo = (equity * risk_per_trade / stop_pct) * (cost_bps / 10000)",
-        "formula_capacidade": "capacidade_trades_mes = (fee_budget_monthly * equity) / custo_trade",
+        "formula_capacidade": "capacidade_trades_mes = (fee_budget_monthly * equity) / custo_trade "
+        "por simbolo; capacidade_trades_mes_grade em resumo_por_grade e a MEDIA entre os "
+        "simbolos elegiveis, nao a soma -- cada capacidade por simbolo ja assume o orcamento "
+        "MENSAL COMPARTILHADO inteiro (ver aggregate_grade_capacity, ACHADO CRITICAL "
+        "project_assurance 2026-08-26).",
         "ressalva_stop_pct": "usa a celula de producao GLOBAL de cada sweep S1 "
         "(sanidade_centro_da_grade), nao overrides por combo de "
         "config/barrier_geometry_by_combo.yaml -- mesma limitacao ja registrada em ADR-005 §12.8.",

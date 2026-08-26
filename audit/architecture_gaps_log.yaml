@@ -18819,3 +18819,188 @@ entries:
       passaria silenciosa.
       Suite: 2053 passed, 0 failed; ruff, mypy strict, banned_patterns e
       check_constants_provenance limpos.
+
+  # AG-288..AG-293 -- parecer de project_assurance sobre production_grade_gate.py
+  # (ADR-005 §12, 2026-08-26): 1 CRITICAL + 2 HIGH + 1 MEDIUM + 1 LOW achados pelo
+  # Agent independente, todos reverificados por execucao real na sessao principal
+  # (nao so lidos) -- os 4 primeiros ja corrigidos no mesmo commit. AG-293 e um
+  # achado adicional, feito pela sessao principal ao reverificar o fix do AG-289
+  # rodando o script de verdade, fora do escopo original do parecer.
+
+  - id: AG-288
+    date: "2026-08-26"
+    file: "src/analysis/production_grade_gate.py::run_production_grade_gate_report (agora aggregate_grade_capacity)"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §12.4, §12.7"
+    found_by: "project_assurance (Agent independente) -- reverificado por execucao real na sessao principal"
+    gap: >
+      resumo_por_grade['capacidade_trades_mes_soma_elegiveis'] SOMAVA a
+      capacidade por simbolo -- cada uma ja assumindo que aquele simbolo
+      sozinho tem o orcamento MENSAL COMPARTILHADO inteiro
+      (capacity_trades_per_month). Somar N linhas reconta o orcamento N
+      vezes -- reintroduz, na agregacao, o erro-v1 "orcamento x N" que a
+      funcao pura corrige (§12.7). Medido contra dado real
+      (s1_tp_sl_sensitivity_report_R1.json, equity=196,85): soma dava
+      248,8 contra os 48,0 corretos de §12.4 (~5,18x, = n_simbolos).
+      Reverificado ao vivo rodando o script: confirmado exato, 248,80.
+    severity: "CRITICAL -- inverteria a leitura de 'R1 estoura 6,55x' para aparencia de folga se o relatorio fosse lido sem desconfianca"
+    layer: "analysis"
+    consequence: >
+      O campo agregado do relatorio persistido reportaria capacidade
+      4-5x maior que a real, contradizendo a propria conclusao de
+      §12.4/§12.6 que o modulo alega reproduzir.
+    status: >-
+      CORRIGIDO 2026-08-26. Logica extraida para aggregate_grade_capacity
+      (nucleo puro, zero IO) -- agregacao trocada de soma para MEDIA
+      (algebricamente identica a dividir o orcamento em partes iguais
+      entre os simbolos elegiveis antes de calcular, ver docstring da
+      funcao). 5 testes novos cobrindo a funcao, incluindo reproducao do
+      caso medido (5 capacidades ~40-67 -> media ~50, nao soma ~249).
+      Rodado ao vivo apos o fix: capacidade_trades_mes_grade R1=49,76
+      (bate com os 48,0 do ADR dentro de ~3,5%).
+
+  - id: AG-289
+    date: "2026-08-26"
+    file: "src/analysis/production_grade_gate.py::_load_median_price (agora _load_reference_price)"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §12.2, §12.6"
+    found_by: "project_assurance (Agent independente) -- corrigido e reverificado por execucao real na sessao principal, com uma 2a volta"
+    gap: >
+      1a volta (project_assurance): _load_median_price chamava
+      query_dollar_bars SEM start/end -- lia o HISTORICO INTEIRO (desde
+      2021-12) ignorando `asof` por completo, apesar do modulo exigir
+      `asof` obrigatorio citando B01. 2a volta, achada rodando ao vivo
+      DEPOIS do primeiro fix (mediana sobre janela de 30 dias): o
+      resultado ainda estava errado -- mediana de 30d de BTCUSDT saiu
+      ~US$ 64.150, deixando BTCUSDT/R3 NA MARGEM de nao violar o teto R1
+      (diferenca de ~0,0005pp), o OPOSTO da decisao de §12.6. Uma mediana
+      multi-semanal subestima sistematicamente um ativo em tendencia de
+      alta -- o teto de quantizacao precisa do preco mais recente, nao
+      uma estatistica suavizada sobre um mes.
+    severity: "HIGH -- 2a volta confirmou que o efeito pratico invertia a exclusao de BTCUSDT/R3, a decisao central de §12.6"
+    layer: "analysis"
+    consequence: >
+      O relatorio nao era reproduzivel "as of" uma data especifica como a
+      assinatura promete, E o metodo (mediana) produzia um preco baixo
+      demais para decidir o teto de quantizacao de HOJE.
+    status: >-
+      CORRIGIDO 2026-08-26, em duas partes. (1) asof/lookback_days
+      propagados a query_dollar_bars (start/end reais, nao mais lidos o
+      historico inteiro). (2) metodo trocado de mediana para ULTIMO close
+      da janela (_load_reference_price) -- lookback_days agora e so
+      margem de seguranca pra achar >=1 barra, nao suaviza o preco.
+      price_lookback_days_gate0 adicionado a constants.yaml (classe C,
+      ASSUMED, sweep_range [3,14], MOTIVO da 2a correcao documentado no
+      source). Reverificado ao vivo: rodando com asof=2026-08-08 (data
+      real de cobertura do dado, ver AG-293), BTCUSDT/R3 volta a ser
+      EXCLUIDA (stop_max_pct=0,7585% contra stop_pct=0,7671%), batendo
+      com §12.2/§12.6 -- preco usado (US$ 64.885,40) bate quase exato com
+      o US$ 64.940 que o proprio §12.2 do ADR cita como o preco ANTES da
+      alta que levou aos US$ 76.558,70 usados na tabela publicada.
+
+  - id: AG-290
+    date: "2026-08-26"
+    file: "src/analysis/production_grade_gate.py::_load_demand_by_symbol_resolution"
+    related_file: "experiments/alpha_deep_analysis_2026-08-24.json"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      _load_demand_by_symbol_resolution espera schema {"by_cell": [...]}
+      mas o artefato citado pela docstring/ADR como fonte de demanda real
+      (experiments/alpha_deep_analysis_2026-08-24.json) e um array JSON
+      top-level com schema totalmente diferente (symbol/resolution/
+      decomposition.n_trades/auc_real.n_eval_long). Passar esse arquivo
+      via --demand-report quebrava com AttributeError NAO TRATADO (list
+      nao tem .get). Nao existe, neste repo, nenhuma funcao que derive
+      trades/mes a partir de n_trades/n_eval_long -- os numeros de
+      demanda de §12.4 (314,4/153,2/65,1) foram calculados por processo
+      nao versionado.
+    severity: "HIGH -- falha nao tratada (AttributeError) em vez de erro controlado, e alegacao de compatibilidade enganosa"
+    layer: "analysis"
+    consequence: >
+      Ninguem conseguia rodar o gate com demanda real usando o artefato
+      que o proprio ADR cita, sem antes escrever um adaptador que nao
+      existia -- e a falha real (nao a mensagem de erro) so aparecia em
+      producao, na hora de tentar usar.
+    status: >-
+      PARCIALMENTE CORRIGIDO 2026-08-26. Schema mismatch agora levanta
+      ProductionGradeGateError com mensagem acionavel (nunca mais
+      AttributeError nao tratado) -- validado com isinstance(Mapping) +
+      checagem de chave. Docstring corrigida pra NAO implicar
+      compatibilidade com alpha_deep_analysis_2026-08-24.json. O
+      ADAPTADOR (n_trades/n_eval_long -> trades/mes) continua TBD -- nao
+      fabricado (B23), fica como trabalho futuro real, nao escondido.
+
+  - id: AG-291
+    date: "2026-08-26"
+    file: "tests/unit/test_analysis_production_grade_gate.py"
+    related_file: "src/analysis/production_grade_gate.py::aggregate_grade_capacity"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      A casca inteira de production_grade_gate.py (leitura de S1, preco,
+      demanda, E a agregacao por grade) tinha ZERO cobertura de teste --
+      unit, integration ou golden. Foi essa lacuna que permitiu o AG-288
+      (CRITICAL) passar sem deteccao: cada funcao pura estava correta
+      isoladamente, mas a composicao na casca (onde o bug vivia) nao era
+      verificada por nenhum teste.
+    severity: MEDIUM
+    layer: "analysis / cobertura de teste"
+    consequence: >
+      Nenhum teste teria pego o bug de agregacao antes de rodar contra
+      dado real -- so a auditoria manual achou.
+    status: >-
+      FECHADO PARA O CASO QUE CAUSOU O AG-288: aggregate_grade_capacity
+      foi extraida da casca para nucleo puro (zero IO) especificamente
+      para ficar testavel, com 5 testes novos. O resto da casca (leitura
+      de arquivo/rede -- S1 report, exchangeInfo, dollar bars) CONTINUA
+      sem teste integration/golden -- registrado como gap real, nao
+      fechado por este commit (precisaria de fixture/skip-if-ausente,
+      fora do escopo desta correcao pontual).
+
+  - id: AG-292
+    date: "2026-08-26"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §12.8"
+    related_file: "data/raw/snapshots/exchange_info/2026-08-08.json"
+    found_by: "project_assurance (Agent independente)"
+    gap: >
+      §12.8 afirma "min_notional: 50,0 nem bate com o snapshot de BTC
+      (20)". Verificado por leitura direta do snapshot real: o bloco
+      BTCUSDT tem MIN_NOTIONAL.notional="50", batendo EXATAMENTE com
+      constants.yaml. O valor "20" citado pertence a outro simbolo do
+      snapshot (o arquivo lista todos os pares da Binance Futures, nao
+      so os 5 do projeto) -- erro de leitura na narrativa de apoio do
+      ADR, nao no dado em si.
+    severity: LOW
+    layer: "docs"
+    consequence: >
+      Nao afeta production_grade_gate.py (que nunca usa min_notional).
+      Enfraquece o argumento "step_size/min_notional globais sao
+      BTC-unicos e nao confiaveis" com um exemplo que nao se sustenta --
+      o argumento sobre step_size (5 valores diferentes entre os 5
+      ativos, medido de verdade) continua valido independentemente.
+    status: "aberto -- correcao de 1 linha em §12.8 do ADR-005, pendente"
+
+  - id: AG-293
+    date: "2026-08-26"
+    file: "data/capacity/dollar_bars_r1/, data/raw/snapshots/exchange_info/"
+    related_file: "src/analysis/production_grade_gate.py::AG-289"
+    found_by: "sessao principal -- ao reverificar o fix do AG-289 rodando production_grade_gate.py de verdade com asof=hoje (2026-08-26)"
+    gap: >
+      O backfill de dado real deste repo esta ~18 dias atrasado em
+      relacao a data do sistema. dollar_bars_r1/BTCUSDT/ para no arquivo
+      2026-08-07.parquet; o snapshot mais recente de exchangeInfo e
+      2026-08-08. Rodar production_grade_gate.py com --asof 2026-08-26
+      (a data real de hoje) levanta ProductionGradeGateError (0 barras
+      na janela de 7 dias) -- comportamento CORRETO do modulo (fail-fast,
+      B01), mas expoe que qualquer pipeline que presuma dado "atual" ate
+      hoje esta operando sobre dado de 18 dias atras sem nenhum aviso
+      proprio (a nao ser o do AG-289, que so dispara quando a janela de
+      busca fica curta o bastante pra ficar vazia).
+    severity: MEDIUM
+    layer: "data (backfill)"
+    consequence: >
+      Qualquer analise/gate que use "hoje" como asof sem checar cobertura
+      real do dado (a maioria dos scripts deste repo nao tem essa
+      checagem -- so production_grade_gate.py, por exigir asof
+      explicito, expos isso) esta implicitamente 18 dias desatualizada.
+      Nao e um bug de calculo -- e a ausencia de um alerta de staleness
+      de dado, e um lembrete de que o backfill precisa rodar de novo
+      antes de qualquer decisao de producao real (nao so este Gate 0).
+    status: "aberto -- aguarda decisao do Manager (rodar backfill, ou aceitar dado ate 2026-08-08 como base atual por ora)"

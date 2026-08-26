@@ -2,10 +2,18 @@
 
 Cobrem o NÚCLEO PURO (`stop_max_pct`, `cost_usd_per_trade`,
 `capacity_trades_per_month`, `inverse_mills_ratio`, `rho_minimo`,
-`build_grade_gate_row`) -- nenhum toca disco. A casca
-(`run_production_grade_gate_report`) lê relatórios S1 reais e barras reais
-via `data.lake` -- fora do escopo deste arquivo (precisaria de
-`integration`/skip-if-ausente, não escrito aqui)."""
+`build_grade_gate_row`, `aggregate_grade_capacity`) -- nenhum toca disco.
+A casca (`run_production_grade_gate_report`, `_load_reference_price`,
+`_load_demand_by_symbol_resolution`) lê relatórios S1 reais, barras reais
+via `data.lake` e snapshots de `exchangeInfo` -- fora do escopo deste
+arquivo (precisaria de `integration`/skip-if-ausente, não escrito aqui).
+
+`aggregate_grade_capacity` foi extraída da casca em 2026-08-26 depois que
+`project_assurance` achou um bug CRITICAL nela (soma de capacidades por
+símbolo, cada uma já assumindo o orçamento compartilhado inteiro -- ver
+docstring da função) que NENHUM teste pegou porque a lógica vivia inline
+na casca, fora de escopo deste arquivo. Os testes abaixo pra ela existem
+especificamente para que essa classe de bug não se repita sem teste."""
 
 from __future__ import annotations
 
@@ -175,7 +183,7 @@ def test_build_grade_gate_row_marca_excluida_teto_r1_quando_viola() -> None:
         symbol="BTCUSDT",
         resolution_id="R3",
         step_size=0.001,
-        price_mediano=76_558.70,
+        price_referencia=76_558.70,
         stop_pct_producao=0.00767,
         demanda_trades_mes_medida=10.0,
         **_base_kwargs(),
@@ -189,7 +197,7 @@ def test_build_grade_gate_row_marca_cabe_quando_demanda_abaixo_da_capacidade() -
         symbol="ETHUSDT",
         resolution_id="R3",
         step_size=0.001,
-        price_mediano=2_768.28,
+        price_referencia=2_768.28,
         stop_pct_producao=0.00922,
         demanda_trades_mes_medida=1.0,
         **_base_kwargs(),
@@ -203,7 +211,7 @@ def test_build_grade_gate_row_marca_estoura_orcamento_quando_demanda_excede() ->
         symbol="BTCUSDT",
         resolution_id="R1",
         step_size=0.001,
-        price_mediano=76_558.70,
+        price_referencia=76_558.70,
         stop_pct_producao=0.0037,
         demanda_trades_mes_medida=1_000_000.0,
         **_base_kwargs(),
@@ -217,7 +225,7 @@ def test_build_grade_gate_row_marca_sem_demanda_medida_quando_none() -> None:
         symbol="ETHUSDT",
         resolution_id="R3",
         step_size=0.001,
-        price_mediano=2_768.28,
+        price_referencia=2_768.28,
         stop_pct_producao=0.00922,
         demanda_trades_mes_medida=None,
         **_base_kwargs(),
@@ -232,7 +240,7 @@ def test_build_grade_gate_row_teto_r1_vence_mesmo_com_demanda_baixa() -> None:
         symbol="BTCUSDT",
         resolution_id="R3",
         step_size=0.001,
-        price_mediano=76_558.70,
+        price_referencia=76_558.70,
         stop_pct_producao=0.00767,
         demanda_trades_mes_medida=0.001,
         **_base_kwargs(),
@@ -245,7 +253,7 @@ def test_build_grade_gate_row_unit_notional_e_step_size_vezes_preco() -> None:
         symbol="XRPUSDT",
         resolution_id="R2",
         step_size=0.1,
-        price_mediano=1.41,
+        price_referencia=1.41,
         stop_pct_producao=0.006,
         demanda_trades_mes_medida=None,
         **_base_kwargs(),
@@ -260,10 +268,84 @@ def test_build_grade_gate_row_nao_levanta_para_grade_bem_formada() -> None:
         symbol="SOLUSDT",
         resolution_id="R1",
         step_size=0.01,
-        price_mediano=145.92,
+        price_referencia=145.92,
         stop_pct_producao=0.004,
         demanda_trades_mes_medida=5.0,
         **_base_kwargs(),
     )
     assert math.isfinite(row.cost_usd_por_trade)
     assert math.isfinite(row.capacidade_trades_mes)
+
+
+# ============================================================================
+# aggregate_grade_capacity -- ACHADO CRITICAL (project_assurance, 2026-08-26):
+# a v1 desta agregação SOMAVA capacidade por símbolo; cada uma já assume o
+# orçamento mensal COMPARTILHADO inteiro, então a soma reconta o orçamento
+# N vezes. A agregação correta é a MÉDIA (ver docstring da função).
+# ============================================================================
+
+
+def _row_with_capacity(capacidade: float, demanda: float | None = None) -> pgg.GradeGateRow:
+    """Linha sintética só para exercitar a agregação -- os outros campos
+    não participam de `aggregate_grade_capacity`, valores plausíveis
+    quaisquer."""
+    return pgg.GradeGateRow(
+        symbol="TESTUSDT",
+        resolution_id="R1",
+        step_size=0.001,
+        price_referencia=100.0,
+        unit_notional=0.1,
+        stop_pct_producao=0.005,
+        stop_max_pct=0.05,
+        r1_teto_violado=False,
+        cost_usd_por_trade=0.1,
+        capacidade_trades_mes=capacidade,
+        demanda_trades_mes_medida=demanda,
+        veredito="cabe" if demanda is not None else "sem_demanda_medida",
+    )
+
+
+def test_aggregate_grade_capacity_usa_media_nao_soma() -> None:
+    """O caso que a v1 errava: capacidade por símbolo cada uma assumindo
+    o orçamento inteiro -- agregar tem que dar a MÉDIA, não a soma."""
+    rows = [_row_with_capacity(40.0), _row_with_capacity(60.0)]
+    result = pgg.aggregate_grade_capacity(rows)
+    assert result["capacidade_trades_mes_grade"] == pytest.approx(50.0)
+
+
+def test_aggregate_grade_capacity_reproduz_o_bug_medido_contra_dado_real() -> None:
+    """Reprodução do achado real do `project_assurance`: 5 símbolos R1 com
+    capacidade individual ~40-67 cada (assumindo o orçamento inteiro) têm
+    que agregar para algo perto de 48-50, não perto de 249 (a soma)."""
+    capacidades = [40.6, 48.7, 66.7, 39.9, 53.0]
+    rows = [_row_with_capacity(c) for c in capacidades]
+    result = pgg.aggregate_grade_capacity(rows)
+    soma_errada = sum(capacidades)
+    media_esperada = sum(capacidades) / len(capacidades)
+    assert result["capacidade_trades_mes_grade"] == pytest.approx(media_esperada)
+    assert result["capacidade_trades_mes_grade"] < soma_errada / 2.0
+
+
+def test_aggregate_grade_capacity_demanda_e_aditiva() -> None:
+    """Diferente de capacidade, demanda REAL (trades/mês medidos) é
+    genuinamente aditiva entre símbolos -- não sofre do mesmo erro."""
+    rows = [_row_with_capacity(40.0, demanda=10.0), _row_with_capacity(60.0, demanda=15.0)]
+    result = pgg.aggregate_grade_capacity(rows)
+    assert result["demanda_trades_mes_soma_medida"] == pytest.approx(25.0)
+    assert result["n_simbolos_com_demanda_medida"] == 2
+
+
+def test_aggregate_grade_capacity_demanda_none_quando_nenhuma_medida() -> None:
+    rows = [_row_with_capacity(40.0), _row_with_capacity(60.0)]
+    result = pgg.aggregate_grade_capacity(rows)
+    assert result["demanda_trades_mes_soma_medida"] is None
+    assert result["n_simbolos_com_demanda_medida"] == 0
+
+
+def test_aggregate_grade_capacity_lista_vazia_nao_levanta() -> None:
+    """Grade onde todos os símbolos foram excluídos por teto R1 -- lista
+    vazia é um estado real (ex.: nenhum ativo elegível), não um erro."""
+    result = pgg.aggregate_grade_capacity([])
+    assert result["capacidade_trades_mes_grade"] is None
+    assert result["demanda_trades_mes_soma_medida"] is None
+    assert result["n_simbolos_com_demanda_medida"] == 0

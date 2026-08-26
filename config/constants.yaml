@@ -241,6 +241,28 @@ fee_budget_monthly:
   sweep_range: [0.015, 0.045]
   review_by: sprint_10
 
+price_lookback_days_gate0:
+  value: 7
+  provenance: ASSUMED
+  source: >
+    ACHADO HIGH (`project_assurance`, 2026-08-26, ADR-005 §12), corrigido
+    em DUAS voltas. 1ª: `_load_median_price` lia o HISTÓRICO INTEIRO de
+    dollar bars (desde 2021-12) ignorando `asof` -- violava B01. 2ª,
+    achada rodando ao vivo depois da 1ª correção: usar MEDIANA sobre 30
+    dias ainda dava resultado errado -- BTCUSDT saiu ~US$ 64.150 (mediana
+    de 30d), deixando `BTCUSDT/R3` NA MARGEM de não violar o teto R1, o
+    oposto de §12.6. Uma mediana multi-semanal subestima sistematicamente
+    um ativo em tendência de alta. Trocado para "ÚLTIMO close da janela"
+    (`_load_reference_price`) -- `lookback_days` agora é só margem de
+    segurança pra achar >=1 barra (fim de semana/gap), não define mais
+    quanto o preço é suavizado. 7 dias é conveniência não medida; o
+    sweep cobre a faixa em que isso continua sendo "achar a barra mais
+    recente", não "suavizar o preço".
+  class: C
+  sweep_required: true
+  sweep_range: [3, 14]
+  review_by: sprint_10
+
 risk_per_trade:
   value: 0.005
   provenance: DERIVED
