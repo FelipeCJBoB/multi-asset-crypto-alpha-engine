@@ -378,6 +378,16 @@ def test_run_and_save_faixa1_5_ponta_a_ponta_dado_real(tmp_path: Path) -> None:
     `labels.parquet` reais — confirma que a orquestração não quebra e que
     o JSON tem os 5 grupos de campos exigidos pelo Bloco 6, sem nenhum
     campo de veredito (`passed`/`ok`/`recommendation`/`conclusion`)."""
+    pytest.skip(
+        "AG-257 -- este teste junta `predictions/alpha/` (treinadas sob a "
+        "grade de RELOGIO 15m) com `build_modeling_frame`. Desde AG-236 o "
+        "frame na grade legada falha alto em B15 (comportamento pretendido), "
+        "e migrar o frame para R1 quebraria o join por `t0` -- as grades sao "
+        "diferentes. NAO ha predictions equivalentes em R1: o retreino sob a "
+        "grade canonica ainda nao foi persistido. GATILHO DE REATIVACAO: "
+        "quando existir `predictions/alpha/{symbol}/R1/{model_id}/"
+        "predictions.parquet`, remover este skip e repontar o teste para elas.",
+    )
     _skip_if_missing()
     dest = tmp_path / "faixa1_5_prerequisites.json"
     path = f15.run_and_save_faixa1_5(dest_path=dest)

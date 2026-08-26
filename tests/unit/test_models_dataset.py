@@ -665,7 +665,15 @@ def test_regime_r0_e_100_por_cento_warmup_sem_t1_valido() -> None:
     `n_missing_t1_first_feature` (logado por `build_modeling_frame`) já
     sugere de forma agregada."""
     _skip_if_labels_missing()
-    frame = ds.build_modeling_frame().data
+    # `AG-257` — `build_modeling_frame()` sem `resolution_id` resolve para a
+    # grade de RELÓGIO 15m, cujos labels ficaram em `mark_1m` (grupo de
+    # controle de `AG-229`); desde `AG-236` isso falha alto em B15, que é o
+    # comportamento pretendido. O que este teste afirma — que R0 é 100%
+    # warmup e não tem `t1` válido — é estrutural e não depende da grade,
+    # então MIGRA para a grade de produção em vez de ser congelado na legada.
+    frame = ds.build_modeling_frame(
+        resolution_id="R1", vol_estimator_id="parkinson_w20"
+    ).data
     r0 = frame.filter(pl.col(ds.REGIME_COL) == "R0")
     # a checagem abaixo só tem conteúdo se R0 de fato aparecer no frame —
     # um R0 vazio não provaria "100% warmup", provaria "R0 sumiu".
@@ -708,6 +716,16 @@ def test_predictions_reais_do_alpha_zero_sinais_em_r0() -> None:
     0` — porque `src.models.alpha._unique_test_bars` já filtra T1 nulo do
     lado de teste antes de qualquer inferência, então R0 nunca chega a ser
     avaliado pelo modelo, não só nunca gera sinal acima do threshold `tau`."""
+    pytest.skip(
+        "AG-257 -- este teste junta `predictions/alpha/` (treinadas sob a "
+        "grade de RELOGIO 15m) com `build_modeling_frame`. Desde AG-236 o "
+        "frame na grade legada falha alto em B15 (comportamento pretendido), "
+        "e migrar o frame para R1 quebraria o join por `t0` -- as grades sao "
+        "diferentes. NAO ha predictions equivalentes em R1: o retreino sob a "
+        "grade canonica ainda nao foi persistido. GATILHO DE REATIVACAO: "
+        "quando existir `predictions/alpha/{symbol}/R1/{model_id}/"
+        "predictions.parquet`, remover este skip e repontar o teste para elas.",
+    )
     _skip_if_predictions_missing()
     preds = pl.read_parquet(_predictions_path(MODEL_ID_CAMADA1))
     frame = ds.build_modeling_frame().data

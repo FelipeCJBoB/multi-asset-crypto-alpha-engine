@@ -76,6 +76,25 @@ def modeling_frame_and_splits() -> tuple[object, tuple[cpcv.CPCVSplit, ...]]:
     """Módulo inteiro reusa a mesma reconstrução (~20s) — os dois pares
     variante x lado do fold 0 precisam do MESMO `df_all`/`splits`, não faz
     sentido reconstruir 4x."""
+    # `AG-257` — o skip precisa estar AQUI, não no corpo do teste: esta
+    # fixture é `scope="module"` e roda no SETUP, antes de qualquer linha do
+    # teste ser alcançada. Um `pytest.skip` lá dentro nunca executaria, e o
+    # resultado seria ERROR (não SKIPPED), que é pior: erro de setup parece
+    # defeito de infraestrutura, não decisão registrada.
+    #
+    # O diagnóstico golden commitado foi gerado sob a grade de RELÓGIO 15m.
+    # Desde `AG-236` reconstruir o frame nessa grade falha alto em B15, que é
+    # o comportamento pretendido — e migrar para R1 não reproduziria um
+    # artefato bit-a-bit que foi produzido em outra grade. O teste está
+    # correto; o artefato de referência é que pertence ao regime antigo.
+    # GATILHO: quando houver diagnóstico golden regenerado sob R1, remover
+    # este skip e repontar `_GOLDEN_*` para ele.
+    pytest.skip(
+        "AG-257 -- o diagnostico golden commitado foi gerado sob a grade de "
+        "RELOGIO 15m; desde AG-236 reconstruir o frame nessa grade falha alto "
+        "em B15 (pretendido), e migrar para R1 nao reproduziria bit-a-bit um "
+        "artefato produzido em outra grade. GATILHO: regenerar o golden sob R1."
+    )
     mf = ds.build_modeling_frame()
     result = cpcv.generate_splits(mf.data)
     return mf.data, result.splits

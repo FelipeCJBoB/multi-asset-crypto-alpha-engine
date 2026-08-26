@@ -450,6 +450,16 @@ def test_reconcile_e02f_ic_dado_real_reproduz_o_pooled_ja_persistido() -> None:
     (mesma junção, mesmo alvo), só reimplementado como DataFrame
     intermediário reusável. Se divergir, ou a reimplementação está errada
     ou o artefato mudou sem re-rodar a Faixa 1 — os dois são bugs."""
+    pytest.skip(
+        "AG-257 -- este teste junta `predictions/alpha/` (treinadas sob a "
+        "grade de RELOGIO 15m) com `build_modeling_frame`. Desde AG-236 o "
+        "frame na grade legada falha alto em B15 (comportamento pretendido), "
+        "e migrar o frame para R1 quebraria o join por `t0` -- as grades sao "
+        "diferentes. NAO ha predictions equivalentes em R1: o retreino sob a "
+        "grade canonica ainda nao foi persistido. GATILHO DE REATIVACAO: "
+        "quando existir `predictions/alpha/{symbol}/R1/{model_id}/"
+        "predictions.parquet`, remover este skip e repontar o teste para elas.",
+    )
     _skip_if_missing()
     from src.analysis import faixa1_5_prerequisites as f15
     from src.models import dataset as ds

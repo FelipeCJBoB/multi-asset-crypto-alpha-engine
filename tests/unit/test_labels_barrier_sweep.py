@@ -13,6 +13,7 @@ escala menor que os 6,5 anos completos (caro demais para rodar em todo
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 
 import numpy as np
@@ -512,7 +513,17 @@ def test_reproduz_distribuicao_real_2024_long() -> None:
     if not _skip_path.exists():
         pytest.skip(f"fixture ausente no backfill local: {_skip_path}")
 
-    cfg = tb.LabelConfig.from_constants()
+    # `AG-257` -- `from_constants()` resolve `entry_fill_source` de
+    # `constants.yaml`, hoje "agg_trades" (`AG-236`). Este teste exercita o
+    # caminho de CANDLE sobre barras de 15m e não tem `agg_trades` para
+    # oferecer -- nem deveria: o que ele afirma é sobre a distribuição de
+    # barreira do motor escalar, não sobre a fonte do fill. Declarar
+    # `mark_1m` explicitamente mantém o que o teste sempre testou; herdar o
+    # default de produção o faria falhar por um motivo que não é o dele.
+    cfg = dataclasses.replace(
+        tb.LabelConfig.from_constants(),
+        entry_fill_source=tb.ENTRY_FILL_SOURCE_MARK_1M,
+    )
     start, end = "2024-01-01", "2024-12-31"
     bars_15m = lake.query_bars("BTCUSDT", "15m", start, end, source="klines_1m", cast_prices=True)
     mark_end = (datetime.fromisoformat(end) + timedelta(days=1)).date().isoformat()

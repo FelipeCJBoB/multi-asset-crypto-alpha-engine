@@ -900,6 +900,16 @@ def _skip_if_real_artifacts_missing() -> None:
 @pytest.mark.slow
 @pytest.mark.integration
 def test_integracao_real_run_faixa1_diagnostic() -> None:
+    pytest.skip(
+        "AG-257 -- este teste junta `predictions/alpha/` (treinadas sob a "
+        "grade de RELOGIO 15m) com `build_modeling_frame`. Desde AG-236 o "
+        "frame na grade legada falha alto em B15 (comportamento pretendido), "
+        "e migrar o frame para R1 quebraria o join por `t0` -- as grades sao "
+        "diferentes. NAO ha predictions equivalentes em R1: o retreino sob a "
+        "grade canonica ainda nao foi persistido. GATILHO DE REATIVACAO: "
+        "quando existir `predictions/alpha/{symbol}/R1/{model_id}/"
+        "predictions.parquet`, remover este skip e repontar o teste para elas.",
+    )
     from src.features.build import T1_FEATURE_IDS
     from src.models import dataset as ds
     from src.models._paths import PREDICTIONS_OUTPUT_DIR

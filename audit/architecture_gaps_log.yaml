@@ -18348,3 +18348,184 @@ entries:
       qualquer proposta de reativar `control_01_regime_tradeavel`, de usar
       regime como feature, ou de aplicar o filtro de ortogonalidade,
       reabre os itens correspondentes automaticamente.
+
+  - id: AG-249-ADDENDUM
+    date: "2026-08-26"
+    addendum_de: "AG-249 -- RESOLVIDO por verificacao, e contra a minha propria tese. O exemplo concreto que usei para sustenta-la nao sobrevive"
+    file: "src/features/groups/group_e.py::round_trip_cost_bps, ::e27f_cost_atr_ratio, src/risk/limits.py::control_13_orcamento_fees, config/constants.yaml::round_trip_cost_bps_maker_prob"
+    found_by: "Claude -- resolvendo os 3 itens que sobreviveram a triagem de AG-259"
+    gap: >
+      AG-249 afirmou que a assimetria de custo entre resolucoes (funding em
+      8,80% dos trades em R1 contra 31,03% em R3) era o ponto onde a
+      arquitetura "modelo por celula, alvo global" produzia dano real, e
+      propos medir `round_trip_cost_bps_maker_prob` por celula.
+      DUAS VERIFICACOES DERRUBAM ISSO:
+      (1) A MEDICAO POR CELULA JA EXISTE, e esta na propria constante. A
+          entrada de `constants.yaml` registra a 2a remedicao (2026-08-25,
+          apos o relabel): pooled 0,4942, minimo 0,4917, maximo 0,4969,
+          spread 0,0052 sobre as 15 combinacoes. E conclui, textualmente,
+          que o spread caiu 5x depois de removido o vies de granularidade e
+          que isso "REFORCA a escolha de manter a constante GLOBAL em vez
+          de por (simbolo, resolucao)". Eu propus medir algo que ja tinha
+          sido medido, e cuja medicao ja dizia o contrario da minha
+          proposta.
+      (2) O FUNDING NAO PERTENCE A ESSA CONSTANTE, e incluir seria ERRADO.
+          `round_trip_cost_bps` = (maker_fee + p*maker_fee +
+          (1-p)*taker_fee) * 10000 -- so FEES. `e27f_cost_atr_ratio` divide
+          isso por `atr_20_pct`. Fees sao conhecidas em `t0`; funding
+          depende de QUANTO TEMPO o trade fica aberto, que em `t0` e
+          futuro. Colocar funding em E27f seria vazamento temporal direto,
+          na feature, em producao.
+          O outro consumidor confirma pelo mesmo argumento:
+          `control_13_orcamento_fees` compara contra `fee_budget_monthly` --
+          orcamento de FEES. Funding nao e fee.
+    severity: "n/a -- correcao de uma afirmacao minha, nao defeito de codigo"
+    layer: "features / risk"
+    consequence: >
+      O DESENHO JA ESTA CERTO, com cada peca no lugar:
+        fees          -> E27f e control_13, conhecidas em t0, causais
+        funding       -> `funding_bps` em `labels.parquet`, contabilizado
+                         no `ret_net` REALIZADO, onde a duracao do trade
+                         ja e conhecida
+        maker/taker   -> constante global, e a homogeneidade entre as 15
+                         celulas (spread 0,0052) foi medida e justifica
+      A assimetria de funding que medi e REAL -- R3 paga funding em 3,5x
+      mais trades que R1 -- mas ela ja esta corretamente capturada onde
+      pode ser capturada sem vazar, e deliberadamente ausente onde
+      captura-la vazaria.
+      O QUE SOBREVIVE DE AG-249: a observacao arquitetural ("modelo por
+      celula, alvo global") continua verdadeira como descricao -- 15
+      modelos treinam contra constantes unicas. O que nao sobrevive e o
+      EXEMPLO que escolhi para mostrar dano. Uma tese sem exemplo que a
+      sustente e uma hipotese, nao um achado; rebaixo AG-249 a isso.
+      Se o dano existir, ele esta em outro parametro -- `horizon_bars`
+      (326min em R1 contra 1443min em R3) e o candidato mais obvio, mas
+      P(TIME)~0,001 nas tres resolucoes mostra que esse limite quase nunca
+      morde, entao tambem nao e dano medivel hoje.
+    status: >-
+      FECHADO 2026-08-26. AG-249 nao gera acao: a proposta (custo por
+      celula) foi refutada pela medicao que ja existia, e o mecanismo pelo
+      qual o funding "deveria" entrar numa decisao a priori nao existe sem
+      vazamento.
+      NAO REABRIR sem um exemplo NOVO e medido de parametro global causando
+      dano em celula especifica. A tese arquitetural fica registrada em
+      AG-249 como hipotese aberta; o que se fecha aqui e a acao proposta.
+      LICAO: propus medir por celula sem ler a proveniencia da constante
+      que ja registrava a medicao por celula. `constants.yaml` nao e so o
+      valor -- o campo `source` carrega a historia de como o valor foi
+      obtido, e nele estava a resposta. Ler a proveniencia ANTES de propor
+      remedir e mais barato que remedir.
+
+  - id: AG-230-ADDENDUM
+    date: "2026-08-26"
+    addendum_de: "AG-230 -- decidido pelo Manager na triagem de AG-259; caminho (a) ACEITAR E DOCUMENTAR, com a magnitude medida"
+    file: "data/labels/BTCUSDT/R1/v1/labels.parquet, audit/architecture_gaps_log.yaml::AG-230"
+    found_by: "Claude -- resolvendo os 3 itens que sobreviveram a triagem"
+    gap: >
+      AG-230 deixou tres caminhos e recomendou (c) -- tratar a janela de
+      mark vazia como desfecho proprio em vez de descarte silencioso.
+      Medida a magnitude para decidir com o criterio que o Manager
+      estabeleceu em AG-259 (so o que muda arquivo de producao; o resto,
+      descartar):
+        simbolo   n(R1)     linhas em jan-fev/2021
+        BTCUSDT   437.630   5.117  (1,17% do simbolo)
+        ETHUSDT   316.617       0
+        SOLUSDT   333.253       0
+        BNBUSDT   329.098       0
+        XRPUSDT   346.093       0
+      O bimestre afetado SO EXISTE em BTCUSDT -- os outros quatro comecam
+      em dez/2021. A perda de 4.297 barras e severa LOCALMENTE (84% daquele
+      bimestre) e desprezivel GLOBALMENTE: 0,244% do universo R1 dos cinco
+      simbolos (1.762.691 linhas).
+    severity: "n/a -- decisao de escopo apoiada em medicao"
+    layer: "labels"
+    consequence: >
+      (c) exigiria RELABEL COMPLETO das 15 combinacoes (998s medidos em
+      AG-229) mais a revalidacao de tudo que foi construido sobre elas hoje
+      -- inclusive os artefatos de AG-235, AG-238, AG-244 e AG-245. Pagar
+      isso para corrigir 0,244% do universo nao passa no criterio de
+      AG-259; e exatamente o tipo de investimento que a triagem existe para
+      barrar.
+      RESSALVA QUE FICA REGISTRADA, e ela e o valor real desta entrada:
+      qualquer analise que ESTRATIFIQUE POR PERIODO e olhe jan-fev/2021 em
+      BTCUSDT esta vendo ~16% do dado real daquele bimestre, nao 100%. No
+      agregado o vies e ruido; numa janela estreita ele domina. Como o
+      descarte remove preferencialmente barras de RAJADA (a causa medida em
+      AG-230: `n_empty_mark_window` 0 -> 6.149), o que sobra naquele
+      bimestre e enviesado para BAIXA atividade -- na direcao oposta a do
+      efeito que se estudaria ali.
+    status: >-
+      DECIDIDO 2026-08-26 -- caminho (a): ACEITAR e documentar. Nao ha
+      trabalho de codigo associado.
+      GATILHO DE REABERTURA: se alguma decisao passar a depender de
+      BTCUSDT em jan-fev/2021 especificamente -- uma janela critica nova
+      que cubra o periodo, ou uma analise por regime que o estratifique --
+      o vies deixa de ser desprezivel e (c) volta a mesa.
+      PENDENCIA MENOR HERDADA, nao executada: AG-230 registra que o check
+      de cauda incompleta deveria vir ANTES da simulacao de fill. E barato
+      em codigo, mas MUDA os labels -- logo exige o mesmo relabel completo
+      que (c) exigiria, e cai no mesmo veredito. Fica junto do gatilho
+      acima: se houver relabel por outro motivo, aplicar as duas coisas na
+      mesma passada.
+
+  - id: AG-257-ADDENDUM
+    date: "2026-08-26"
+    addendum_de: "AG-257 -- os 8 testes vermelhos resolvidos, decisao tomada teste a teste como a entrada original exigia"
+    file: "tests/unit/test_labels_barrier_sweep.py, tests/unit/test_models_dataset.py, tests/unit/test_analysis_attribution.py, tests/unit/test_analysis_calibration_diagnostics.py, tests/unit/test_analysis_faixa1_5_prerequisites.py, tests/unit/test_analysis_faixa1_6_reconciliation.py, tests/golden/test_sprint8_reproducibility.py"
+    found_by: "Claude -- resolvendo os 3 itens da triagem de AG-259"
+    gap: >
+      CORRECAO DE UMA AFIRMACAO DE AG-257: eu registrei que as 8 falhas eram
+      todas `ConfigHashMismatchError`. Verificado teste a teste, sao DUAS
+      causas distintas, e a distincao importa porque leva a correcoes
+      diferentes:
+      (1) `ValueError: entry_fill_source='agg_trades' exige agg_trades` --
+          efeito de AG-236 sobre teste que constroi labels com
+          `LabelConfig.from_constants()` e fornece barras 15m sem trades.
+          Caso: test_labels_barrier_sweep.
+      (2) `ConfigHashMismatchError` -- efeito de AG-236 sobre teste que
+          reconstroi o frame na grade legada. Os outros 7.
+    severity: "n/a -- correcao de registro mais trabalho de teste"
+    layer: "testes"
+    consequence: >
+      DECIDIDO TESTE A TESTE, e a divisao caiu em dois grupos naturais:
+      MIGRADOS PARA A GRADE DE PRODUCAO (2) -- o que afirmam nao depende da
+      grade, entao nao ha razao para congela-los na legada:
+        test_reproduz_distribuicao_real_2024_long -- declara
+          `entry_fill_source=mark_1m` explicitamente. Ele testa a
+          distribuicao de barreira do motor escalar sobre barras de 15m;
+          herdar o default de producao o faria falhar por um motivo que nao
+          e o dele.
+        test_regime_r0_e_100_por_cento_warmup_sem_t1_valido -- passa
+          `resolution_id="R1"`. A afirmacao (R0 e 100% warmup, sem `t1`
+          valido) e estrutural.
+      SKIP EXPLICITO COM GATILHO (6) -- presos a artefato legado, nao por
+      escolha:
+        os 5 de analysis/dataset juntam `predictions/alpha/{model_id}/`
+        (treinadas sob 15m) com `build_modeling_frame`. Migrar o frame para
+        R1 QUEBRARIA o join por `t0` -- as grades sao diferentes -- e nao
+        existe `predictions` equivalente em R1 porque o retreino sob a
+        grade canonica nao foi persistido. O teste nao esta errado; o
+        artefato que ele precisa nao existe.
+        test_sprint8_reproducibility compara bit-a-bit contra diagnostico
+        golden gerado sob 15m -- migrar para R1 nao reproduziria bit-a-bit
+        um artefato produzido em outra grade.
+      DETALHE TECNICO QUE CUSTOU UMA ITERACAO: no golden o skip precisou ir
+      para a FIXTURE, nao para o corpo do teste. A fixture e `scope="module"`
+      e roda no SETUP -- um `pytest.skip` no corpo nunca seria alcancado, e
+      o resultado ficava ERROR em vez de SKIPPED. Erro de setup parece
+      defeito de infraestrutura; skip com motivo e decisao registrada.
+    status: >-
+      FECHADO 2026-08-26. Os 7 arquivos rodam limpos: 134 passed, 6 skipped,
+      0 failed, 0 error. Suite rapida 2053 passed, 0 failed. ruff limpo nos
+      7.
+      GATILHO DE REATIVACAO declarado em cada skip, para nao depender de
+      memoria: quando existir
+      `predictions/alpha/{symbol}/R1/{model_id}/predictions.parquet`,
+      remover o skip e repontar; e quando houver diagnostico golden
+      regenerado sob R1, idem para o de reprodutibilidade.
+      O QUE ISSO NAO RESOLVE, dito explicitamente: 6 testes de integracao
+      deixaram de exercitar o caminho real. A cobertura sobre dado real
+      caiu, e o gatilho e a unica coisa que impede isso de virar permanente.
+      Marcar como skip e melhor que deixar vermelho (vermelho cega a
+      proxima regressao), mas e pior que ter o artefato -- e o artefato so
+      vem com o retreino em R1.
