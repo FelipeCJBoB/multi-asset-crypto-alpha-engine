@@ -19614,3 +19614,58 @@ entries:
       fechamento de parenteses, nao reconhecida pelo script -- corrigido
       e reverificado: check_unguarded_ratios.py agora reporta 2
       suprimidas, 0 pendentes).
+
+  - id: AG-308
+    date: "2026-08-26"
+    file: "src/analysis/feature_null_census.py, experiments/feature_null_census.json"
+    related_file: "audit/architecture_gaps_log.yaml::AG-300, docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13 v2 §13.5-2 (item 3 de §13.17)"
+    found_by: "Claude -- persona lgbm-crypto-quant, item 3 da ordem de ADR-005 §13 v2"
+    gap: >
+      §13.5-2 pedia o censo de nulos por coluna x celula como artefato
+      ("informacao de primeira ordem sobre a amostra efetiva, hoje nao
+      existe em lugar nenhum"). So virou mensuravel depois de AG-300: antes,
+      NaN e null coexistiam no mesmo Float64 e null_count() mentia por
+      omissao.
+      METRICA CENTRAL, e ela nao e `n_null`: `n_null_exclusivo` = linhas em
+      que a coluna e nula E TODAS as outras do vetor sao validas. E o unico
+      numero que responde "quanto eu recupero tirando esta coluna".
+      Reportar `n_null` superestima grosseiramente quando os nulos de
+      warmup se sobrepoem, que e o caso normal.
+      RESULTADO, 15/15 celulas, vetor de producao (69):
+        frac_retida (vetor completo)     = 0,0000  em TODAS as 15
+        frac_retida_sem_colunas_mortas   = 0,759 a 0,820
+        colunas mortas                   = 1 em todas: D07f_taker_imbalance_1m_agg
+        colunas com custo exclusivo > 0  = 1, so D07f
+      Decomposicao medida em BTCUSDT/R1 (223.172 linhas):
+        vetor completo (69)                        retencao 0,0000
+        sem D07f (68)                              retencao 0,7590
+        sem D07f e sem o bloco E (55)              retencao 0,9991
+      As 13 colunas de futures-positioning (E01f..E18f) comecam TODAS na
+      mesma linha (~24.235) -- a fonte so existe a partir de certa data.
+      Sao perfeitamente aninhadas: cada uma tem n_null de 24k a 53k e custo
+      exclusivo ZERO.
+    severity: "n/a -- medicao; a severidade esta em AG-300 (D07f) e na decisao de vetor em curso"
+    layer: "features"
+    consequence: >
+      DOIS FATOS ACIONAVEIS para a reprogramacao de features em curso:
+      (1) Com D07f no vetor, `side_subset` devolveria ZERO linhas em todas
+      as 15 celulas. Isso confirma por medicao o que §13.5-2 previa ("se o
+      filtro fosse de verdade, o conjunto seria vazio e o defeito teria
+      falhado alto na primeira execucao") -- e e exatamente o que
+      DeadFeatureColumnError (AG-300) agora impede, nomeando a coluna em
+      vez de entregar um conjunto vazio.
+      (2) O custo em linhas do vetor NAO e distribuido: e uma coluna morta
+      (catastrofica) mais UM BLOCO tudo-ou-nada de 13 colunas (~24%).
+      Podar o vetor coluna a coluna NAO recupera linha nenhuma -- nenhuma
+      outra feature tem custo exclusivo > 0. Quem decidir cortar o vetor
+      esperando recuperar amostra precisa saber disto antes, nao depois.
+      NAO REMOVE NADA. DECISION-SUPPORT, mesmo status de feasibility.py /
+      production_grade_gate.py / r2_admissibility_census.py -- nenhum
+      pipeline de treino ou execucao le este artefato.
+    status: >-
+      IMPLEMENTADO e persistido (15/15 celulas, 0 skipped). 11 testes
+      unitarios, nucleo puro sem IO. O vetor e resolvido em TEMPO DE
+      EXECUCAO (T1_FEATURE_IDS + SUPPORT_FEATURE_IDS) de proposito: a
+      reprogramacao em curso pode mudar o conjunto, e o censo deve
+      descrever o vetor que existe, nao um congelado no codigo.
+      Reexecutar depois que a reprogramacao fechar.
