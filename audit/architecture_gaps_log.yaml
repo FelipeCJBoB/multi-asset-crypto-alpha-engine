@@ -19248,3 +19248,68 @@ entries:
       contrato do Label Engine e exigiria decisao sobre o que fazer com as
       177 linhas existentes (excluir muda config_hash e exige relabel das
       15 combinacoes, mesmo veredito de AG-230-ADDENDUM).
+
+  - id: AG-298
+    date: "2026-08-26"
+    file: "src/features/build.py::compute_max_feature_lookback_ms, src/models/pipeline.py:584, src/validation/leakage.py:801, src/validation/noise_floor_diagnostics.py:91"
+    related_file: "audit/architecture_gaps_log.yaml::AG-032 (item 8), docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §13.1 e §13 v2 §13.17 item 1"
+    found_by: "Claude -- persona lgbm-crypto-quant, executando o item 1 da ordem de ADR-005 §13 v2 apos autorizacao do Manager ('aplicar a producao')"
+    gap: >
+      DUAS CORRECOES, uma dentro da outra.
+      (a) `compute_max_feature_lookback_ms` tinha `feature_ids` com DEFAULT
+      `T1_FEATURE_IDS` (7). Os 3 call sites de producao -- pipeline.py,
+      leakage.py, noise_floor_diagnostics.py -- caiam nesse default por
+      OMISSAO enquanto `run_all_folds` treinava sobre 69. O purge do CPCV
+      era dimensionado para um decimo do vetor, e a suite de vazamento
+      reportava PASS contra uma protecao que nao era a do treino. O
+      DEFAULT era o defeito; ele foi removido (parametro obrigatorio).
+      (b) Achado ao corrigir (a), e mais grave: mesmo passando o conjunto
+      certo, a janela NAO mudava. `max_feature_window_bars` le os 10
+      campos de `_WINDOW_FIELD_NAMES` (constantes de `FeatureWindows`) e
+      NAO olha para o registry nem para o conjunto ativo -- e cega a toda
+      feature cuja janela nao e uma daquelas 10 constantes. Medido sobre o
+      vetor real de producao:
+        max_feature_window_bars()                    =     96 barras
+        max_feature_lookback_bars(vetor, do registry)= 17.520 barras (C08_
+                                                       vol_pctile_rolling_1y)
+        razao = 182x
+      Nao cobertas pelos 10 campos: C08 (17.520), E03f_funding_cum_3d (288),
+      B10_stoch_k_14.
+      CORRIGIDO: nova `max_feature_lookback_bars(feature_ids)` deriva do
+      REGISTRY sobre o conjunto ativo; `compute_max_feature_lookback_ms`
+      passa a usa-la. O parametro `windows` saiu da assinatura por ter
+      ficado morto.
+    severity: "ALTA -- vazamento de janela de feature (B02/B09) entregue como se fosse protecao"
+    layer: "features"
+    consequence: >
+      CAMINHO LEGADO E BIT-EXATO, verificado: `T1_FEATURE_IDS` declara
+      maximo 96 no registry (C06_vol_ratio_12_96), o MESMO 96 que
+      `max_feature_window_bars()` devolvia -- nenhum artefato ja treinado
+      muda de valor. O teste de conversao bars->ms agora trava essa
+      coincidencia explicitamente.
+      CAMINHO DE PRODUCAO PASSA A FALHAR ALTO, em dois degraus, e isso e o
+      comportamento pretendido (AG-032 item 8, opcao A, decisao do Manager
+      de 2026-08-23 que nunca chegou a ser wireada):
+        (1) vetor de 69 -> ExpandingFeatureLookbackError nomeando as 5
+            ofensoras: C09_range_pctile_expanding, C10_vol_expansion_flag,
+            C11_vol_compression_flag, E15f_toptrader_ls_z,
+            E17f_retail_vs_top_spread;
+        (2) mesmo vetor SEM as 5 (64 features), sob resolution_id ->
+            StaleFeatureWindowConstantError: a constante
+            `max_consecutive_bar_window_duration_ms` foi MEDIDA para 96
+            barras e o conjunto exige 17.520 (182x). Ate 2026-08-26 esse
+            caso emitia WARNING e devolvia a constante mesmo assim.
+      A decisao de qual caminho tomar NAO foi tomada aqui: remedir a
+      constante (tools/diagnostics/measure_max_consecutive_bar_window_
+      duration.py) OU tirar do vetor a feature que estourou a janela.
+      `run_all_leakage_tests` ganhou `feature_ids` OBRIGATORIO pelo mesmo
+      motivo -- quem afirma ausencia de vazamento declara sobre qual vetor.
+    status: >-
+      IMPLEMENTADO e verde (2129 passed, 2 skipped, 2 xfailed). BLOQUEIA o
+      retreino no vetor de 69 ate o Manager decidir entre os dois caminhos
+      acima -- bloqueio deliberado, nao regressao.
+      CONSEQUENCIA HERDADA que precisa ser dita: como
+      noise_floor_diagnostics.py estava no default de 7, TODA a campanha do
+      ADR-003 (Estagios 0-3 e config/alpha_hyperparams_by_combo.yaml) rodou
+      sob um purge dimensionado para 7 features. Isso nao muda os numeros ja
+      persistidos; muda o que eles significam.

@@ -22,6 +22,7 @@ import yaml
 from src.data._paths import CAPACITY_DIR
 from src.data.resample import step_ms
 from src.features import _sources, build
+from src.features import registry as features_registry
 
 _FIXTURE_START = "2024-01-01"
 _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
@@ -705,35 +706,29 @@ def test_max_feature_window_bars_ignora_fees_e_warmup_usa_so_janelas() -> None:
 
 @pytest.mark.parametrize("tf", ["15m", "30m", "1h"])
 def test_compute_max_feature_lookback_ms_converte_bars_via_step_ms(tf: str) -> None:
-    """Valor conhecido (96 barras, ver `_synthetic_windows_max_96`) -> ms
-    correto pro `tf` testado. `feature_ids=()` (conjunto ativo vazio) pula
-    de propósito o gate fail-fast -- este teste cobre só a conversão
-    bars->ms, não o gate (ver
-    `test_compute_max_feature_lookback_ms_dispara_para_t1_feature_ids_real`
-    pro gate contra o conjunto ativo real)."""
-    windows = _synthetic_windows_max_96()
-    got = build.compute_max_feature_lookback_ms(tf, feature_ids=(), windows=windows)
+    """Conversão bars->ms para o `tf` testado.
+
+    **Mudou em 2026-08-26 (`AG-296`):** a janela deixou de vir de
+    `FeatureWindows` (os 10 campos de `_WINDOW_FIELD_NAMES`) e passa a vir
+    do **registry**, sobre o conjunto ativo. O parâmetro `windows` saiu da
+    assinatura por estar morto. O número não mudou: `T1_FEATURE_IDS` declara
+    máximo 96 no registry (`C06_vol_ratio_12_96`), o mesmo 96 que
+    `max_feature_window_bars()` devolvia — **o caminho legado é bit-exato**,
+    e é isso que este teste agora trava."""
+    assert build.max_feature_lookback_bars(build.T1_FEATURE_IDS) == 96
+    assert build.max_feature_window_bars() == 96, "coincidência que preserva o legado bit-exato"
+    got = build.compute_max_feature_lookback_ms(tf, build.T1_FEATURE_IDS)
     assert got == 96 * step_ms(tf)
 
 
 def test_compute_max_feature_lookback_ms_resolution_id_usa_max_consecutive_constant() -> None:
     """D-02 (`AG-159`) -- `resolution_id` setado retorna
     `max_consecutive_bar_window_duration_ms` (`constants.yaml`, MEASURED
-    direto, não multiplicado por barras -- já é a duração TOTAL medida
-    da janela). `tf` continua presente na assinatura (não usado pra
-    conversão de unidade sob dollar-bar) -- passar um `tf` de grade de
-    tempo real não deveria mudar o resultado, prova de que o parâmetro
-    correto é `resolution_id`, não `tf`. Corrigido 2026-08-23 -- antes
-    reaproveitava `label_prefetch_p99_bar_duration_ms` (proxy calibrado
-    pra outro modelo de custo, prefetch não purge); agora usa constante
-    dedicada, medida especificamente pra este uso (máximo real, não
-    p99)."""
-    windows = _synthetic_windows_max_96()
-    max_window_duration_ms = int(
-        build.load_constant("max_consecutive_bar_window_duration_ms")
-    )
+    direto, já é a duração TOTAL medida da janela). `tf` continua na
+    assinatura mas não converte unidade sob dollar-bar."""
+    max_window_duration_ms = int(build.load_constant("max_consecutive_bar_window_duration_ms"))
     got = build.compute_max_feature_lookback_ms(
-        "15m", feature_ids=(), windows=windows, resolution_id="R2"
+        "15m", build.T1_FEATURE_IDS, resolution_id="R2"
     )
     assert got == max_window_duration_ms
     assert got != 96 * step_ms("15m")
@@ -741,33 +736,59 @@ def test_compute_max_feature_lookback_ms_resolution_id_usa_max_consecutive_const
 
 def test_compute_max_feature_lookback_ms_sem_warning_quando_window_bars_bate() -> None:
     """`max_consecutive_bar_window_duration_ms` foi medido pra
-    `window_bars=96` -- `_synthetic_windows_max_96` produz exatamente
-    isso, não deveria disparar o warning de staleness."""
-    windows = _synthetic_windows_max_96()
+    `window_bars=96`, e o `T1_FEATURE_IDS` real declara exatamente 96 no
+    registry (`C06_vol_ratio_12_96`) -- não deve disparar staleness."""
+    assert build.max_feature_lookback_bars(build.T1_FEATURE_IDS) == 96
     with structlog.testing.capture_logs() as logs:
-        build.compute_max_feature_lookback_ms(
-            "15m", feature_ids=(), windows=windows, resolution_id="R2"
-        )
-    warnings = [e for e in logs if e.get("log_level") == "warning"]
-    assert not warnings
+        build.compute_max_feature_lookback_ms("15m", build.T1_FEATURE_IDS, resolution_id="R2")
+    assert not [e for e in logs if e.get("log_level") == "warning"]
 
 
-def test_compute_max_feature_lookback_ms_warning_quando_window_bars_diverge() -> None:
-    """Se o conjunto ativo de features mudar de forma que `max_feature_
-    window_bars()` deixe de ser 96 (o valor sob o qual `max_consecutive_
-    bar_window_duration_ms` foi medido), a constante persistida fica
-    desatualizada -- não falha (ainda protege), mas emite warning
-    explícito (AG-159)."""
-    windows = dataclasses.replace(_synthetic_windows_max_96(), vol_ratio_long_window=100)
+def test_compute_max_feature_lookback_ms_warning_quando_janela_e_MENOR_que_a_medida() -> None:
+    """Conjunto ativo com janela MENOR que as 96 medidas: a constante
+    SOBRE-protege (seguro), então avisa e devolve mesmo assim."""
+    curto = ("A01_log_return_1", "A07_body_ratio")
+    assert build.max_feature_lookback_bars(curto) < 96
     with structlog.testing.capture_logs() as logs:
-        got = build.compute_max_feature_lookback_ms(
-            "15m", feature_ids=(), windows=windows, resolution_id="R2"
-        )
+        got = build.compute_max_feature_lookback_ms("15m", curto, resolution_id="R2")
     warnings = [e for e in logs if e.get("log_level") == "warning"]
     assert len(warnings) == 1
     assert warnings[0]["event"] == "features.build.compute_max_feature_lookback_ms.constant_stale"
-    # a constante ainda é retornada (proteção real, só não garantida exata)
     assert got == int(build.load_constant("max_consecutive_bar_window_duration_ms"))
+
+
+def test_compute_max_feature_lookback_ms_FALHA_quando_janela_e_MAIOR_que_a_medida() -> None:
+    """**ADR-005 §13 v2 §13.1 / AG-296 -- o comportamento que mudou.**
+    Até 2026-08-26 este caso emitia warning e devolvia a constante mesmo
+    assim ("ainda protege, só não é o máximo exato"). Medido com o vetor
+    real de produção: `C08_vol_pctile_rolling_1y` declara 17.520 barras
+    contra as 96 para as quais a constante foi medida -- 182x. Uma
+    sub-cobertura dessa ordem é vazamento de janela de feature (B02/B09),
+    não imprecisão, e passa a falhar alto."""
+    com_c08 = (*build.T1_FEATURE_IDS, "C08_vol_pctile_rolling_1y")
+    assert build.max_feature_lookback_bars(com_c08) == 17_520
+    with pytest.raises(build.StaleFeatureWindowConstantError) as exc:
+        build.compute_max_feature_lookback_ms("15m", com_c08, resolution_id="R2")
+    msg = str(exc.value)
+    assert "17520" in msg and "182x" in msg
+    assert "measure_max_consecutive_bar_window_duration.py" in msg
+
+
+def test_max_feature_lookback_bars_ve_o_que_max_feature_window_bars_nao_ve() -> None:
+    """O defeito de `§13.1`, travado: `max_feature_window_bars` lê os 10
+    campos de `_WINDOW_FIELD_NAMES` e é cega a toda feature cuja janela
+    não é uma daquelas constantes. `C08` (17.520), `E03f_funding_cum_3d`
+    (288) e `B10_stoch_k_14` são exatamente esse caso."""
+    vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
+    assert build.max_feature_window_bars() == 96
+    # o vetor real dispara antes de chegar ao número (5 features expanding)
+    with pytest.raises(build.ExpandingFeatureLookbackError):
+        build.max_feature_lookback_bars(vetor_producao)
+    # sem as expanding, o alcance real aparece -- 182x o que a outra devolve
+    sem_expanding = tuple(
+        f for f in vetor_producao if features_registry.feature_lookback_bars()[f] != "expanding"
+    )
+    assert build.max_feature_lookback_bars(sem_expanding) == 17_520
 
 
 def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:
@@ -811,8 +832,8 @@ def test_compute_max_feature_lookback_ms_nao_dispara_para_t1_feature_ids_real() 
     ativo REAL (`T1_FEATURE_IDS`, default) roda de verdade sem levantar
     `ExpandingFeatureLookbackError` -- o caminho que `pipeline.py`/
     `leakage.py` usam de verdade deixou de estar bloqueado."""
-    got = build.compute_max_feature_lookback_ms("15m")
-    assert got == build.max_feature_window_bars() * step_ms("15m")
+    got = build.compute_max_feature_lookback_ms("15m", build.T1_FEATURE_IDS)
+    assert got == build.max_feature_lookback_bars(build.T1_FEATURE_IDS) * step_ms("15m")
 
 
 def test_compute_max_feature_lookback_ms_dispara_para_feature_ids_customizado_expanding() -> None:

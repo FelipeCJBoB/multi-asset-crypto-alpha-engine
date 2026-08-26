@@ -744,11 +744,22 @@ _TESTS_NEEDING_LABELS: frozenset[int] = frozenset({6, 7, 12})
 def run_all_leakage_tests(
     labels: pl.DataFrame | None = None,
     *,
+    feature_ids: tuple[str, ...],
     symbol: str = "BTCUSDT",
     tf: str = "15m",
     resolution_id: str | None = None,
 ) -> list[LeakageTestResult]:
-    """Roda os 14 testes do §11.5 na ordem da tabela. `labels` é carregado
+    """Roda os 14 testes do §11.5 na ordem da tabela.
+
+    `feature_ids` (2026-08-26, `ADR-005 §13 v2 §13.1`/`AG-296`) —
+    OBRIGATORIO, sem default, de proposito. Antes esta funcao chamava
+    `compute_max_feature_lookback_ms(tf, resolution_id=...)` sem o
+    conjunto, caindo no default de 7 features enquanto o treino real usa
+    69: a suite de vazamento reportava PASS contra uma protecao de purge
+    que NAO era a do pipeline que ela deveria auditar. Um default aqui
+    reintroduziria exatamente esse defeito, entao nao existe default --
+    quem chama declara sobre qual vetor esta afirmando ausencia de
+    vazamento. `labels` é carregado
     de `labels/v1/labels.parquet` via `cpcv.load_labels_v1()` se não
     passado — só é de fato usado pelos testes 6/7/12 (`_TESTS_NEEDING_LABELS`,
     documentando explicitamente quais dependem de dado real).
@@ -795,8 +806,11 @@ def run_all_leakage_tests(
     # models.pipeline.run_layer1_sprint precisa do MESMO resolution_id --
     # os dois call sites mudam juntos, senão a suíte de vazamento reporta
     # PASS falso sob R2/R3 enquanto o pipeline real usa proteção diferente.
+    # ADR-005 §13 v2 §13.1 / AG-296 -- `feature_ids` explicito. Antes caia
+    # no default de 7 features, entao a suite de vazamento reportava PASS
+    # contra uma protecao que NAO era a do treino (69 features).
     max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
-        tf, resolution_id=resolution_id
+        tf, feature_ids, resolution_id=resolution_id
     )
     cpcv_config = cpcv.CPCVConfig.from_constants(
         tf=tf, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms
@@ -1062,8 +1076,17 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "exclusivos (XOR de grade). Passe um dos dois."
             )
         tf_efetivo = args.tf if args.tf is not None else "15m"
+        # AG-296 -- o vetor de PRODUCAO e aditivo (T1 + T2, 69 features;
+        # AG-207/AG-234 ratificados pelo Manager), nao os 7 T1. Declarado
+        # aqui, no ponto de entrada, em vez de herdado de um default.
+        feature_ids_producao = (
+            features_build.T1_FEATURE_IDS + features_build.SUPPORT_FEATURE_IDS
+        )
         test_results = run_all_leakage_tests(
-            symbol=args.symbol, tf=tf_efetivo, resolution_id=args.resolution_id
+            feature_ids=feature_ids_producao,
+            symbol=args.symbol,
+            tf=tf_efetivo,
+            resolution_id=args.resolution_id,
         )
         grade = args.resolution_id if args.resolution_id is not None else args.tf
         # O `leakage_report.json` canonico passa a ser reservado a grade de

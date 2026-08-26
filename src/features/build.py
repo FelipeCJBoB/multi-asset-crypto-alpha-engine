@@ -454,8 +454,29 @@ número que uma rodada de correção anterior mediu como QUEBRANDO o CPCV
 — ver addendum AG-032 item 8, "não re-meça, reuse")."""
 
 
+class StaleFeatureWindowConstantError(RuntimeError):
+    """`max_consecutive_bar_window_duration_ms` foi MEDIDO para uma janela
+    de `N` barras; o conjunto ativo de features hoje exige uma janela MAIOR
+    que `N`, então a constante persistida **sub-protege** o purge do CPCV.
+
+    **Por que isto falha em vez de avisar (`AG-296`/`ADR-005 §13 v2 §13.1`).**
+    Até 2026-08-26 esta condição emitia `structlog.warning` e devolvia a
+    constante mesmo assim, com a justificativa de que ela "ainda protege, só
+    deixa de ser o máximo exato". Isso valia enquanto a divergência era
+    marginal. Medido agora com o vetor real de produção (69 features): o
+    registry declara `C08_vol_pctile_rolling_1y` com `lookback_bars: 17520`
+    contra as `96` barras para as quais a constante foi medida — **182×**.
+    Uma sub-cobertura de purge dessa ordem não é "menos exata", é vazamento
+    de janela de feature (B02/B09) entregue como se fosse proteção.
+
+    Remediação: rodar
+    `tools/diagnostics/measure_max_consecutive_bar_window_duration.py` sob o
+    conjunto ativo atual e atualizar a constante, **ou** tirar do vetor a
+    feature que estourou a janela. Nenhuma das duas é escolhida aqui."""
+
+
 def assert_no_expanding_lookback_in_active_set(
-    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
+    feature_ids: tuple[str, ...],
 ) -> None:
     """Levanta `ExpandingFeatureLookbackError` se QUALQUER id em
     `feature_ids` tiver `lookback_bars: expanding` no registry real
@@ -488,6 +509,44 @@ def assert_no_expanding_lookback_in_active_set(
         )
 
 
+def max_feature_lookback_bars(feature_ids: tuple[str, ...]) -> int:
+    """Maior `lookback_bars` FINITO declarado no **registry** para as
+    `feature_ids` dadas — o alcance real que uma feature em `t` tem para
+    trás, por feature, lido da fonte que o declara.
+
+    **Substitui `max_feature_window_bars` no cálculo do purge
+    (`ADR-005 §13 v2 §13.1`/`AG-296`).** `max_feature_window_bars` lê os 10
+    campos de `_WINDOW_FIELD_NAMES` (constantes de `FeatureWindows`) e
+    **não olha para o registry nem para o conjunto ativo**. Isso a torna
+    cega a toda feature cuja janela não é uma daquelas 10 constantes —
+    medido no vetor real de produção (69 features): `C08_vol_pctile_
+    rolling_1y` (17.520), `E03f_funding_cum_3d` (288) e `B10_stoch_k_14`
+    não estão cobertas, e a função devolve `96`. O purge era dimensionado
+    para 1/182 do alcance real.
+
+    Levanta `ExpandingFeatureLookbackError` (via
+    `assert_no_expanding_lookback_in_active_set`) antes de qualquer conta se
+    alguma feature for `expanding` — não existe máximo finito honesto nesse
+    caso, e escolher um seria inventar proteção."""
+    assert_no_expanding_lookback_in_active_set(feature_ids)
+    lookback_by_id = feature_lookback_bars()
+    faltando = sorted(fid for fid in feature_ids if fid not in lookback_by_id)
+    if faltando:
+        raise KeyError(
+            "max_feature_lookback_bars: feature(s) sem entrada no registry "
+            f"(src/features/registry.yaml): {faltando}. O purge do CPCV não pode ser "
+            "dimensionado sobre um alcance não declarado -- registre a feature ou tire-a "
+            "do conjunto ativo (nenhuma das duas é escolhida aqui)"
+        )
+    finitos = [v for fid in feature_ids if isinstance(v := lookback_by_id[fid], int)]
+    if not finitos:
+        raise ValueError(
+            "max_feature_lookback_bars: nenhuma feature com lookback finito em "
+            f"feature_ids={feature_ids!r} -- não há janela a proteger nem número a devolver"
+        )
+    return max(finitos)
+
+
 def max_feature_window_bars(windows: FeatureWindows | None = None) -> int:
     """Maior janela FINITA (em barras) entre os campos de lookback de
     `FeatureWindows` (`_WINDOW_FIELD_NAMES`) — não olha pro registry nem
@@ -511,9 +570,8 @@ _MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS: Final[int] = 96  # noqa: magic
 
 def compute_max_feature_lookback_ms(
     tf: str,
-    feature_ids: tuple[str, ...] = T1_FEATURE_IDS,
+    feature_ids: tuple[str, ...],
     *,
-    windows: FeatureWindows | None = None,
     resolution_id: str | None = None,
 ) -> int:
     """`None` (default de `resolution_id`) preserva bit-exato
@@ -562,11 +620,27 @@ def compute_max_feature_lookback_ms(
     resolution_id_setado` (`tests/unit/test_features_build.py`, AG-181):
     um refactor que trocasse essa ordem reintroduziria silenciosamente o
     risco que o gate existe pra prevenir."""
-    assert_no_expanding_lookback_in_active_set(feature_ids)
+    # `feature_ids` deixou de ter default (`ADR-005 §13 v2 §13.1`/`AG-296`):
+    # os 3 call sites de produção passavam por omissão o `T1_FEATURE_IDS` de
+    # 7 features enquanto o treino usava 69. O default ERA o defeito.
+    # A janela agora sai do REGISTRY sobre o conjunto ativo, não dos 10
+    # campos de `_WINDOW_FIELD_NAMES` -- ver `max_feature_lookback_bars`.
+    window_bars = max_feature_lookback_bars(feature_ids)
     if resolution_id is None:
-        return max_feature_window_bars(windows) * step_ms(tf)
+        return window_bars * step_ms(tf)
 
-    window_bars = max_feature_window_bars(windows)
+    if window_bars > _MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS:
+        raise StaleFeatureWindowConstantError(
+            "max_consecutive_bar_window_duration_ms foi MEDIDO para uma janela de "
+            f"{_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS} barras, mas o conjunto "
+            f"ativo ({len(feature_ids)} features) exige {window_bars} barras "
+            f"({window_bars / _MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS:.0f}x maior) "
+            "-- a constante persistida SUB-PROTEGE o purge do CPCV, o que e vazamento de "
+            "janela de feature (B02/B09), nao uma aproximacao. Remediacao (nenhuma "
+            "escolhida aqui): rodar tools/diagnostics/measure_max_consecutive_bar_window_"
+            "duration.py sob o conjunto ativo e atualizar config/constants.yaml, OU tirar "
+            "do vetor a feature que estourou a janela. Ver ADR-005 §13 v2 §13.1/AG-296."
+        )
     if window_bars != _MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS:
         logger.warning(
             "features.build.compute_max_feature_lookback_ms.constant_stale",
@@ -577,10 +651,11 @@ def compute_max_feature_lookback_ms(
             reason=(
                 "max_consecutive_bar_window_duration_ms foi medido para "
                 f"window_bars={_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS}, mas o "
-                f"conjunto ativo de features hoje produz window_bars={window_bars} -- a "
-                "constante persistida nao reflete mais o maximo exato (ainda protege, so "
-                "nao com garantia formal). Remedir com tools/diagnostics/measure_max_"
-                "consecutive_bar_window_duration.py."
+                f"conjunto ativo de features hoje produz window_bars={window_bars} -- MENOR "
+                "que o medido, entao a constante SOBRE-protege (seguro, so nao e mais o "
+                "maximo exato; o caso MAIOR falha alto em StaleFeatureWindowConstantError, "
+                "logo acima). Remedir com tools/diagnostics/measure_max_consecutive_bar_"
+                "window_duration.py."
             ),
             see="AG-159",
         )

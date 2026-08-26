@@ -83,8 +83,13 @@ def _build_mf_and_splits(
         vol_estimator_id=vol_estimator_id,
         extra_feature_ids=extra_feature_ids,
     )
+    # ADR-005 §13 v2 §13.1 / AG-296 -- o conjunto ativo deste diagnostico e
+    # T1 + o que o chamador pediu via `extra_feature_ids`. Antes caia no
+    # default de 7, o que torna TODA a campanha do ADR-003 (que usa esta
+    # funcao) nao interpretavel sobre a protecao de purge que ela declarava.
+    feature_ids_effective = features_build.T1_FEATURE_IDS + tuple(extra_feature_ids)
     max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
-        tf_effective, resolution_id=resolution_id
+        tf_effective, feature_ids_effective, resolution_id=resolution_id
     )
     cpcv_config = cpcv.CPCVConfig.from_constants(
         tf=tf_effective,

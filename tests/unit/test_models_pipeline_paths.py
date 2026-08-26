@@ -175,7 +175,9 @@ def _run_layer1_sprint_capturing_predictions_calls(
     # CPCVConfig real; este teste não é sobre essa checagem (é sobre
     # roteamento de dest_dir), mesmo bypass já usado em
     # test_validation_leakage.py.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
 
     monkeypatch.setattr(
         alpha,
@@ -279,7 +281,9 @@ def _run_layer1_sprint_capturing_core_calls(
     monkeypatch.setattr(cpcv, "generate_splits", _fake_generate_splits)
     # AG-032 item 8 -- ver comentário equivalente em
     # _run_layer1_sprint_capturing_predictions_calls acima.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     monkeypatch.setattr(
         alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
     )
@@ -300,9 +304,7 @@ def _run_layer1_sprint_capturing_core_calls(
     def _fake_write_predictions_versioned(*args: Any, **kwargs: Any) -> Any:
         raise _StopAfterPredictions()
 
-    monkeypatch.setattr(
-        pipeline, "write_predictions_versioned", _fake_write_predictions_versioned
-    )
+    monkeypatch.setattr(pipeline, "write_predictions_versioned", _fake_write_predictions_versioned)
 
     with pytest.raises(_StopAfterPredictions):
         pipeline.run_layer1_sprint(**run_kwargs)
@@ -377,7 +379,9 @@ def _run_layer1_sprint_capturing_diagnostics_calls(
         splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
     )
     monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
 
     def _fake_write_all_fold_diagnostics(
         fold_results: list[Any], *, model_id: str, hyper: Any, dest_dir: Path | None = None
@@ -386,9 +390,7 @@ def _run_layer1_sprint_capturing_diagnostics_calls(
         if len(calls) >= 2:
             raise _StopAfterDiagnostics()
 
-    monkeypatch.setattr(
-        pipeline, "write_all_fold_diagnostics", _fake_write_all_fold_diagnostics
-    )
+    monkeypatch.setattr(pipeline, "write_all_fold_diagnostics", _fake_write_all_fold_diagnostics)
 
     with pytest.raises(_StopAfterDiagnostics):
         pipeline.run_layer1_sprint(**run_kwargs)
@@ -444,7 +446,9 @@ def _run_layer1_sprint_capturing_versioned_predictions_calls(
         splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
     )
     monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     monkeypatch.setattr(
         alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
     )
@@ -471,9 +475,7 @@ def _run_layer1_sprint_capturing_versioned_predictions_calls(
             raise _StopAfterPredictions()
         return None
 
-    monkeypatch.setattr(
-        pipeline, "write_predictions_versioned", _fake_write_predictions_versioned
-    )
+    monkeypatch.setattr(pipeline, "write_predictions_versioned", _fake_write_predictions_versioned)
 
     with pytest.raises(_StopAfterPredictions):
         pipeline.run_layer1_sprint(**run_kwargs)
@@ -563,9 +565,7 @@ def test_run_layer1_sprint_all_combinations_symbols_resolutions_customizados(
         lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {"permanence_pass": True}},
     )
 
-    pipeline.run_layer1_sprint_all_combinations(
-        symbols=("BTCUSDT", "ETHUSDT"), resolutions=("R1",)
-    )
+    pipeline.run_layer1_sprint_all_combinations(symbols=("BTCUSDT", "ETHUSDT"), resolutions=("R1",))
 
     assert len(calls) == 2
     assert {(c["symbol"], c["resolution_id"]) for c in calls} == {
@@ -593,7 +593,9 @@ def _run_layer1_sprint_capturing_run_all_folds_calls(
         splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
     )
     monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
 
     def _fake_run_all_folds(*_args: Any, **kwargs: Any) -> list[Any]:
         calls.append(kwargs)

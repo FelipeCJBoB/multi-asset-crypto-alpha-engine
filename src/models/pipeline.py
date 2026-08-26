@@ -577,8 +577,12 @@ def run_layer1_sprint(
     # dollar-bar (label_prefetch_p99_bar_duration_ms), não step_ms(tf).
     # leakage.run_all_leakage_tests precisa do MESMO resolution_id -- ver
     # comentário equivalente lá, os dois call sites mudam juntos.
+    # ADR-005 §13 v2 §13.1 / AG-296 -- `feature_ids_effective` (calculado
+    # acima) passa a ser passado de verdade. Antes caia no default
+    # `T1_FEATURE_IDS` (7) por OMISSAO, enquanto `run_all_folds` treinava
+    # sobre 69: o purge era dimensionado para um decimo do vetor.
     max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
-        tf_effective, resolution_id=resolution_id
+        tf_effective, feature_ids_effective, resolution_id=resolution_id
     )
     cpcv_config = cpcv.CPCVConfig.from_constants(
         tf=tf_effective, grade_id=grade_id, max_feature_lookback_ms=max_feature_lookback_ms

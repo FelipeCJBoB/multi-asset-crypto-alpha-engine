@@ -10,6 +10,7 @@ import polars as pl
 import pytest
 
 from src.features import build as features_build
+from src.features.build import T1_FEATURE_IDS
 from src.validation import cpcv, leakage
 from src.validation._paths import labels_symbol_tf_dir
 
@@ -224,9 +225,7 @@ def test_teste_07_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
 def test_teste_12_cpcverror_de_grade_mismatch_vira_fail_nao_crash() -> None:
     labels = _make_synthetic_labels(1200, horizon_bars=1)
     config_errada = cpcv.CPCVConfig.from_constants(tf="30m", grade_id="30m")
-    result = leakage._test_12_selecao_feature_vazada(
-        labels, config=config_errada, symbol="BTCUSDT"
-    )
+    result = leakage._test_12_selecao_feature_vazada(labels, config=config_errada, symbol="BTCUSDT")
     assert result.test_id == 12
     assert result.status == leakage.LeakageStatus.FAIL
 
@@ -246,7 +245,9 @@ def test_run_all_leakage_tests_repassa_symbol_a_generate_splits_dos_testes_6_7_1
     # Este teste não é sobre essa checagem -- bypassa com um valor
     # sintético fixo, mesmo padrão de isolar a dependência que não é o
     # objeto do teste.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     real_generate_splits = cpcv.generate_splits
     symbols_recebidos: list[str | None] = []
 
@@ -260,7 +261,7 @@ def test_run_all_leakage_tests_repassa_symbol_a_generate_splits_dos_testes_6_7_1
         return real_generate_splits(labels_arg, config=config, symbol=symbol)
 
     monkeypatch.setattr(cpcv, "generate_splits", _spy_generate_splits)
-    leakage.run_all_leakage_tests(labels, symbol="ETHUSDT")
+    leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS, symbol="ETHUSDT")
     assert symbols_recebidos == ["ETHUSDT", "ETHUSDT", "ETHUSDT"]
 
 
@@ -277,7 +278,9 @@ def test_run_all_leakage_tests_grade_id_prioriza_resolution_id_sobre_tf(
     # AG-032 item 8 (Fix A) -- ver nota equivalente no teste anterior:
     # bypassa o fail-fast de features expanding, irrelevante pro que este
     # teste verifica (prioridade resolution_id > tf).
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     captured: dict[str, object] = {}
 
     class _Stop(Exception):
@@ -291,7 +294,9 @@ def test_run_all_leakage_tests_grade_id_prioriza_resolution_id_sobre_tf(
 
     monkeypatch.setattr(cpcv.CPCVConfig, "from_constants", staticmethod(_spy_from_constants))
     with pytest.raises(_Stop):
-        leakage.run_all_leakage_tests(labels, tf="30m", resolution_id="R1")
+        leakage.run_all_leakage_tests(
+            labels, feature_ids=T1_FEATURE_IDS, tf="30m", resolution_id="R1"
+        )
     assert captured == {"tf": "30m", "grade_id": "R1"}
 
 
@@ -306,9 +311,11 @@ def test_run_all_leakage_tests_retorna_14_na_ordem_da_tabela(
     # AG-032 item 8 (Fix A) -- bypassa o fail-fast de features expanding
     # (T1_FEATURE_IDS real dispara ExpandingFeatureLookbackError), fora do
     # que este teste verifica (contagem/ordem dos 14 testes).
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     labels = _make_synthetic_labels(1200, horizon_bars=1)
-    results = leakage.run_all_leakage_tests(labels)
+    results = leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS)
     assert len(results) == 14
     assert [r.test_id for r in results] == list(range(1, 15))
 
@@ -317,9 +324,13 @@ def test_run_all_leakage_tests_sentinelas_corretos_sobre_sintetico(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # AG-032 item 8 (Fix A) -- mesmo bypass, ver nota acima.
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     labels = _make_synthetic_labels(1200, horizon_bars=1)
-    results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels)}
+    results = {
+        r.test_id: r for r in leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS)
+    }
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
     assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
     # teste 11 saiu de PENDING_SPRINT_8 para PASS no Sprint 8 — ver
@@ -348,9 +359,11 @@ def test_write_leakage_report_atomic_grava_json_sem_deixar_tmp(
     assert isinstance(tmp_path, Path)
     # AG-032 item 8 (Fix A) -- bypassa o fail-fast de features expanding,
     # irrelevante pro que este teste verifica (escrita atômica do report).
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     labels = _make_synthetic_labels(200, horizon_bars=1)
-    results = leakage.run_all_leakage_tests(labels)
+    results = leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS)
     dest = tmp_path / "leakage_report.json"
     path = leakage.write_leakage_report_atomic(results, dest_path=dest)
     assert path == dest
@@ -400,10 +413,15 @@ def test_run_all_leakage_tests_sobre_dataset_real(
     que dispara `ExpandingFeatureLookbackError` contra o `T1_FEATURE_IDS`
     real (3 features `expanding` conhecidas) antes de chegar na lógica
     que este teste de fato exercita. Mesmo bypass, mesmo motivo."""
-    monkeypatch.setattr(features_build, "compute_max_feature_lookback_ms", lambda tf, **_: 0)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
     _skip_if_labels_missing(symbol)
     labels = cpcv.load_labels_v1(symbol=symbol)
-    results = {r.test_id: r for r in leakage.run_all_leakage_tests(labels, symbol=symbol)}
+    results = {
+        r.test_id: r
+        for r in leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS, symbol=symbol)
+    }
     assert len(results) == 14
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
     assert results[10].status == leakage.LeakageStatus.NOT_APPLICABLE_V1_1
@@ -440,9 +458,7 @@ def _synthetic_scan_frame(n: int = 500) -> pl.DataFrame:
 
 def test_scan_detecta_feature_vazada_e_nao_flag_feature_limpa() -> None:
     df = _synthetic_scan_frame()
-    entries = leakage.scan_feature_target_correlation(
-        df, ("clean_feature", "leaked_feature")
-    )
+    entries = leakage.scan_feature_target_correlation(df, ("clean_feature", "leaked_feature"))
     by_name = {e.feature: e for e in entries}
 
     assert abs(by_name["leaked_feature"].spearman_rho) > 0.9
@@ -456,9 +472,7 @@ def test_scan_detecta_feature_vazada_e_nao_flag_feature_limpa() -> None:
 def test_scan_threshold_bonferroni_escala_com_n_e_n_features() -> None:
     df = _synthetic_scan_frame(n=200)
     entries_1f = leakage.scan_feature_target_correlation(df, ("clean_feature",))
-    entries_2f = leakage.scan_feature_target_correlation(
-        df, ("clean_feature", "leaked_feature")
-    )
+    entries_2f = leakage.scan_feature_target_correlation(df, ("clean_feature", "leaked_feature"))
     # mais features -> threshold Bonferroni mais alto (sqrt(2) > sqrt(1))
     assert entries_2f[0].bonferroni_threshold > entries_1f[0].bonferroni_threshold
     # hard_fail_threshold é constante fixa, não escala com n_features
@@ -499,9 +513,7 @@ def test_write_correlation_scan_report_atomic_grava_json_sem_deixar_tmp(
 
     assert isinstance(tmp_path, Path)
     df = _synthetic_scan_frame()
-    entries = leakage.scan_feature_target_correlation(
-        df, ("clean_feature", "leaked_feature")
-    )
+    entries = leakage.scan_feature_target_correlation(df, ("clean_feature", "leaked_feature"))
     dest = tmp_path / "feature_leakage_scan_report.json"
     path = leakage.write_correlation_scan_report_atomic(entries, dest_path=dest)
     assert path == dest
