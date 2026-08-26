@@ -18729,3 +18729,93 @@ entries:
   #   AG-277 atribuicao errada de ADR-001 §2.7 (trata do Meta consumir o
   #          ESTADO de regime, nao das features cruas) -- removeria E27f, T1
   #          viva com TESE_OK
+
+  - id: AG-272
+    renumbered_from: "AG-261 -- terceira colisao de ID do dia com a sessao paralela, que registrou AG-261 enquanto esta entrada era escrita. Quem chegou primeiro mantem o numero. Nenhum conteudo alterado. As referencias a AG-261 DENTRO desta entrada e nos comentarios de codigo (pipeline.py, alpha.py, constants.yaml, teste) apontam para ESTA entrada, agora AG-272."
+    date: "2026-08-26"
+    file: "src/models/pipeline.py::run_layer1_sprint, src/models/alpha.py::LGBMHyperparams, config/constants.yaml (6 hiperparametros do Alpha)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-208, ::AG-209, ::AG-210, ::AG-229, ::AG-232, ::AG-251, tests/unit/test_models_pipeline.py"
+    found_by: "Claude (persona lgbm-crypto-quant) -- pergunta do Manager: falta algo na metodologia de treino do LightGBM antes do retreino em R1?"
+    gap: >
+      QUATRO ACHADOS, verificados no codigo antes de opinar. O primeiro e o
+      que mais importa e nao e um defeito de logica -- e de DEFAULT.
+      (1) AS CORRECOES DESTA SEQUENCIA ESTAVAM DESLIGADAS. `pipeline.py`
+          entregava `tau_policy=LEGACY_PER_SIDE`, `calib_split_mode=
+          LEGACY_RANDOM` e `class_balance_basis=COUNT`. Enquanto nao havia
+          retreino a horizonte, isso era preservacao bit-exata e estava
+          certo. Num retreino deixa de ser conservador: o artefato NOVO
+          herdaria defeitos que ja tem correcao pronta no repo. Em
+          particular, calibraria com sub-split ALEATORIO sobre labels de
+          triple barrier -- B08 cumprido na letra, violado no espirito.
+      (2) `scale_pos_weight` CONTRADIZIA `sample_weight`. A perda pondera
+          cada amostra por unicidade (§3.5/B10) mas o balanceamento de
+          classe era contado por CABECA. Medido em R1 pos-relabel:
+            BTCUSDT long   P(y=1) contagem 0,4967  por peso 0,4323
+                           scale_pos_weight 1,0132  contra  1,3134
+            BTCUSDT short  0,4890 / 0,4229  ->  1,0449 contra 1,3647
+            ETHUSDT long   0,4990 / 0,4431  ->  1,0040 contra 1,2570
+          ~30% de divergencia; a classe positiva ficava sub-ponderada em
+          ~23%. Nao e sutileza teorica: sao dois mecanismos do MESMO fit
+          discordando sobre o que e uma amostra.
+      (3) OS HIPERPARAMETROS SAO DO REGIME DE LABEL ANTERIOR. O sweep do
+          ADR-003 (`experiments/t2_t1_stage1b_hyperparam_*`) e de
+          2026-08-24; o relabel de AG-229 e de 2026-08-25. Os labels sobre
+          os quais `n_estimators=300` e `learning_rate=0,03` foram escolhidos
+          NAO EXISTEM MAIS. E a mesma classe de AG-232 -- valor de producao
+          citando medicao que nao se aplica.
+      (4) `min_sum_hessian_in_leaf` E UM GUARDRAIL INERTE. A hessiana da
+          binary logloss por amostra e `p(1-p)*w <= 0,25*w`, e
+          `sample_weight` e normalizado com media 1,015 (medido nos 5
+          simbolos em R1). Uma folha no piso de `min_child_samples=20`
+          carrega massa ~5,08 -- **5.080x** o valor configurado (1e-3). Quem
+          restringe folha hoje e `min_child_samples` sozinho.
+    severity: >
+      alto -- nao ha artefato corrompido hoje (o retreino nao aconteceu),
+      mas os quatro pontos ficam caros depois que 15 combinacoes estiverem
+      treinadas: os tres primeiros exigiriam RE-treinar para corrigir
+    layer: "models (metodologia de fit)"
+    consequence: >
+      CONTEXTO QUE AUMENTA O RISCO DOS QUATRO: o relabel aproximou P(TP) de
+      0,4505-0,4768 para 0,4890-0,4990. O problema virou quase perfeitamente
+      balanceado -- o que e CORRETO (0,50 e o valor teorico de martingale
+      sob payoff simetrico) mas significa que o sinal, se existir, e muito
+      fraco. Com 69 features, 300 arvores e lr=0,03 sobre um alvo 50/50, a
+      superficie para memorizar ruido e grande, e o unico guardrail de folha
+      que existe alem de `min_child_samples` esta inerte.
+      O QUE NAO MUDEI, e por que: `feature_fraction=1,0` esta certo (B19, a
+      camada 3 substitui), purge+embargo no CPCV existe, `deterministic=True`
+      esta ativo, e a AUSENCIA de early stopping e defensavel -- adiciona-lo
+      exigiria um conjunto de validacao purgado, isto e, mais um lugar por
+      onde vazar.
+    status: >-
+      APLICADO 2026-08-26, com uma decisao por ponto:
+      (1) `calib_split_mode` -> `TEMPORAL_PURGED` e `class_balance_basis` ->
+          `WEIGHT`. Os dois tem correcao pronta, testada, e nenhuma
+          contraindicacao medida.
+          `tau_policy` MANTIDO no legado -- e a decisao mais importante das
+          tres. `AG-251` executou a verificacao que `AG-210` exigia antes do
+          flip e mediu 2x de dispersao sob a politica nova. Flipar seria
+          seguir a instrucao e ignorar a medicao que a propria instrucao
+          mandou fazer.
+      (2) coberto pelo flip de `class_balance_basis`.
+      (3) Adicionado `regime_da_derivacao` aos SEIS hiperparametros do
+          Alpha, com a data do sweep e a do relabel lado a lado.
+          `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito:
+          a derivacao existiu e foi rigorosa; o que mudou foi o dado sob o
+          qual ela vale, e `ASSUMED` (escolhido sem base) apagaria essa
+          distincao. DECISAO PENDENTE DO MANAGER: re-rodar o sweep sob os
+          labels novos (custa N_lifetime) ou aceitar com a ressalva
+          anexada -- nao fazer nenhuma das duas e a unica opcao ruim.
+      (4) `min_sum_hessian_in_leaf` NAO alterado, deliberadamente. E classe
+          B com `sweep_required`; escolher um valor sem sweep seria trocar
+          um guardrail inerte por um numero inventado, que e pior (B23). O
+          que mudou foi a DOCUMENTACAO: a docstring agora registra que ele
+          nao morde e o numero medido (~5,08 contra 1e-3), para que uma
+          escolha futura seja informada.
+      TESTE QUE TRAVA OS TRES DEFAULTS adicionado
+      (`test_defaults_de_treino_do_pipeline_sao_os_revistos_de_ag261`).
+      Motivo concreto: a suite NAO quebrou quando os defaults foram
+      flipados -- prova de que nada os observava, e de que uma reversao
+      passaria silenciosa.
+      Suite: 2053 passed, 0 failed; ruff, mypy strict, banned_patterns e
+      check_constants_provenance limpos.

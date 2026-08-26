@@ -2090,6 +2090,26 @@ alpha_lgbm_n_estimators:
   class: B
   sweep_required: false
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_learning_rate:
   value: 0.03
@@ -2098,6 +2118,26 @@ alpha_lgbm_learning_rate:
   class: B
   sweep_required: false
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_subsample:
   value: 0.8
@@ -2106,6 +2146,26 @@ alpha_lgbm_subsample:
   class: B
   sweep_required: false
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_subsample_freq:
   value: 1
@@ -2140,6 +2200,26 @@ alpha_lgbm_feature_fraction:
   sweep_required: true
   sweep_range: [0.3, 1.0]
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_lambda_l2:
   value: 5.0
@@ -2157,6 +2237,26 @@ alpha_lgbm_min_child_samples:
   sweep_required: true
   sweep_range: [10, 100]
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_num_leaves:
   value: 8
@@ -2166,6 +2266,26 @@ alpha_lgbm_num_leaves:
   sweep_required: true
   sweep_range: [4, 64]
   review_by: sprint_10
+  regime_da_derivacao: >-
+    ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
+    o regime de label ANTERIOR. O sweep de hiperparametro do ADR-003
+    (experiments/t2_t1_stage1b_hyperparam_*.json) e de 2026-08-24; o relabel
+    de producao (AG-229, entry_fill_source mark_1m -> agg_trades) e de
+    2026-08-25. Os labels sobre os quais este valor foi escolhido nao existem
+    mais.
+    O QUE MUDOU no alvo, e nao e pouco: P(TP) saiu de 0,4505-0,4768 para
+    0,4890-0,4990 nas 15 combinacoes -- o problema passou a ser quase
+    perfeitamente balanceado. O ponto otimo de capacidade do modelo
+    (n_estimators, learning_rate, profundidade efetiva) nao tem por que ser o
+    mesmo sob um alvo 50/50 e sob um alvo 46/54.
+    `provenance: DERIVED` NAO foi rebaixado para ASSUMED de proposito: a
+    derivacao existiu e foi feita com rigor. O que este campo registra e que
+    ela vale para OUTRO dado -- distincao que `ASSUMED` (escolhido sem base)
+    apagaria.
+    ACAO PENDENTE, decisao do Manager: re-rodar o sweep sob os labels novos
+    (custa N_lifetime) ou aceitar o valor com esta ressalva anexada. Nao
+    fazer nenhuma das duas e a unica opcao ruim -- e o mesmo padrao de
+    AG-232, um valor de producao citando uma medicao que nao se aplica mais.
 
 alpha_lgbm_min_sum_hessian_in_leaf:
   value: 0.001

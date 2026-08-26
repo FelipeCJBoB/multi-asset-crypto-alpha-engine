@@ -152,6 +152,17 @@ class LGBMHyperparams:
     # AG-208 -- defaults de biblioteca agora DECLARADOS. Campos com valor
     # default para não quebrar nenhuma construção parcial existente de
     # `LGBMHyperparams`; `from_constants` sempre os preenche do YAML.
+    # `AG-272` (2026-08-26) -- MEDIDO que este guardrail e INERTE no regime
+    # deste projeto, e o numero fica registrado para que uma escolha futura
+    # seja informada em vez de estipulada (B23). A hessiana da binary
+    # logloss por amostra e `p(1-p)*w <= 0,25*w`; `sample_weight` aqui e
+    # normalizado com media ~1,015 (medido nos 5 simbolos em R1). Logo uma
+    # folha no piso de `min_child_samples=20` carrega massa ~5,08 -- 5.080x
+    # o valor abaixo. Quem restringe folha hoje e `min_child_samples`
+    # sozinho; este parametro nao morde em nenhum ponto.
+    # NAO alterado aqui de proposito: mexer nele mudaria o modelo, e e
+    # classe B com `sweep_required` -- escolher um valor sem sweep seria
+    # trocar um guardrail inerte por um numero inventado, que e pior.
     min_sum_hessian_in_leaf: float = 1e-3  # noqa: magic-number -- default LightGBM 4.7.0
     max_bin: int = 255  # noqa: magic-number -- default LightGBM 4.7.0
 

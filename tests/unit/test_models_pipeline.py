@@ -460,3 +460,42 @@ def test_write_predictions_versioned_rejeita_dtype_invalido(tmp_path: Path) -> N
             model_id="alpha_c1_v1",
             config={"variant": alpha.VARIANT_CAMADA1},
         )
+
+
+# ============================================================================
+# AG-272 — defaults de treino revistos antes do retreino em R1
+# ============================================================================
+
+
+def test_defaults_de_treino_do_pipeline_sao_os_revistos_de_ag261() -> None:
+    """`AG-272` — trava os três defaults que governam a metodologia de fit.
+
+    Antes do retreino em R1 eles foram revistos um a um, e a razão de cada
+    escolha é diferente:
+
+    - `calib_split_mode = TEMPORAL_PURGED` — B08 era cumprido na LETRA (o
+      sub-split existia) e violado no ESPÍRITO: `train_test_split` aleatório
+      sobre labels de triple barrier põe no conjunto de calibração vizinhos
+      que compartilham `[t0, t1]` com o treino.
+    - `class_balance_basis = WEIGHT` — inconsistência interna MEDIDA: a perda
+      pondera por `sample_weight` (unicidade) mas o `scale_pos_weight` era
+      contado por cabeça. Em R1 pós-relabel: 1,0132 contra 1,3134 em
+      BTCUSDT/long, 30% de divergência.
+    - `tau_policy = LEGACY_PER_SIDE` — deliberadamente NÃO flipado. `AG-251`
+      executou a verificação que `AG-210` exigia e mediu 2x de dispersão sob
+      a política nova. Manter o legado aqui é seguir a medição.
+
+    Sem este teste, uma reversão de qualquer um dos três passaria silenciosa:
+    a suíte não quebrou quando eles foram flipados, o que prova que nada mais
+    os observava."""
+    import inspect
+
+    from src.models import alpha, pipeline
+
+    sig = inspect.signature(pipeline.run_layer1_sprint)
+    assert sig.parameters["calib_split_mode"].default == alpha.CALIB_SPLIT_TEMPORAL_PURGED
+    assert sig.parameters["class_balance_basis"].default == alpha.CLASS_BALANCE_WEIGHT
+    assert sig.parameters["tau_policy"].default == alpha.TAU_POLICY_LEGACY_PER_SIDE, (
+        "tau_policy foi flipado -- AG-251 mediu 2x de dispersao sob a politica "
+        "nova; reverter exige nova medicao, nao preferencia"
+    )

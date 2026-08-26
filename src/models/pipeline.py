@@ -393,9 +393,30 @@ def run_layer1_sprint(
     model_id_camada0: str = MODEL_ID_CAMADA0,
     report_path: Path | None = None,
     device_type: str = "cpu",
+    # `AG-272` (2026-08-26) -- DEFAULTS REVISTOS ANTES DO RETREINO EM R1.
+    # Enquanto nao havia retreino a horizonte, manter os tres no caminho
+    # legado era preservacao bit-exata e estava certo. Num retreino deixa de
+    # ser conservador e passa a ser a escolha errada: o artefato novo herdaria
+    # defeitos que ja tem correcao pronta no repo.
+    #
+    # `tau_policy` NAO foi flipado, e a razao esta medida: `AG-251` executou a
+    # verificacao que `AG-210` exigia antes do flip e achou 2x de dispersao
+    # sob a politica nova, com o `bars_per_year` corrigido. Manter o legado
+    # aqui e seguir a medicao, nao a inercia.
     tau_policy: str = alpha.TAU_POLICY_LEGACY_PER_SIDE,
-    calib_split_mode: str = alpha.CALIB_SPLIT_LEGACY_RANDOM,
-    class_balance_basis: str = alpha.CLASS_BALANCE_COUNT,
+    # `calib_split_mode` -- B08 era cumprido na LETRA (o sub-split existia) e
+    # violado no ESPIRITO: `train_test_split` aleatorio sobre labels de triple
+    # barrier poe no conjunto de calibracao vizinhos que compartilham
+    # `[t0, t1]` com o treino. `_temporal_purged_calib_split` corta por tempo
+    # com purge por `t1`.
+    calib_split_mode: str = alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+    # `class_balance_basis` -- inconsistencia interna MEDIDA: a perda pondera
+    # cada amostra por `sample_weight` (unicidade, §3.5/B10) mas o
+    # `scale_pos_weight` era contado por CABECA. Medido em R1 pos-relabel:
+    # P(y=1) por contagem 0,4967 contra 0,4323 por massa de peso em
+    # BTCUSDT/long -- `scale_pos_weight` 1,0132 contra 1,3134, 30% de
+    # divergencia. A classe positiva ficava sub-ponderada em ~23%.
+    class_balance_basis: str = alpha.CLASS_BALANCE_WEIGHT,
     dsr_n_trials: int | None = None,
     feature_ids: tuple[str, ...] | None = None,
     hyper: alpha.LGBMHyperparams | None = None,
