@@ -18258,3 +18258,93 @@ entries:
       `m4_critical_windows` (o outro call site com o mesmo padrao global,
       linha 1556) NAO foi tocado -- a mesma correcao se aplica, mas sem o
       `is_stress_state` persistido ela herdaria a mesma falta de poder.
+
+  - id: AG-259
+    date: "2026-08-26"
+    file: "audit/architecture_gaps_log.yaml (triagem), src/risk/limits.py::evaluate_all, src/features/groups/group_e.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-230, ::AG-233, ::AG-244, ::AG-245, ::AG-246, ::AG-247, ::AG-249, ::AG-257, ::AG-258"
+    found_by: "Claude -- triagem pedida pelo Manager: rever as AG abertas por mim e manter so o que tem impacto direto em arquivo de PRODUCAO hoje; o resto descartar, o investimento nao se paga"
+    gap: >
+      TRIAGEM POR CONSUMIDOR DE PRODUCAO. Cada AG aberta por mim nesta
+      sequencia foi testada contra UMA pergunta: existe hoje um arquivo de
+      producao cuja escolha depende dela? Verificado no codigo, nao por
+      julgamento.
+      CRITERIO APLICADO E O RESULTADO DE CADA VERIFICACAO:
+      (1) `evaluate_all` (src/risk/limits.py) comeca no `control_02` -- o
+          `control_01_regime_tradeavel` NAO e consultado no caminho de
+          decisao. Confirmado por leitura da lista de controles. Logo TUDO
+          que depende do gate de regime nao tem consumidor de producao.
+      (2) `round_trip_cost_bps_maker_prob` aparece em
+          `src/features/groups/group_e.py:66` -- alimenta a feature
+          `E27f_cost_atr_ratio`, que ENTRA no vetor do Alpha -- e em
+          `src/risk/limits.py`. Producao direta, nos dois eixos.
+      (3) Filtro de ortogonalidade T1/T2: grep em `src/models/` e
+          `features/registry.yaml` nao encontra nenhum consumidor. Nao
+          aplicado (coerente com AG-227: os 10 artefatos rodam com os 69
+          brutos).
+      (4) `fill_timeout_ms` de producao vem de
+          `load_constant("fill_timeout_ms")` (triple_barrier.py:603), nao
+          do `step_ms("15m")` de `fill_simulator.py:641` -- o caso C de
+          AG-247 vive no SIMULADOR (backtest), nao no Label Engine.
+      (5) Os labels relabelados de AG-229 SAO producao -- sao o alvo que o
+          Alpha treina.
+    severity: "n/a -- e decisao de escopo, nao defeito"
+    layer: "governanca (triagem de backlog)"
+    consequence: >
+      FICA ABERTO -- tem consumidor de producao HOJE:
+        AG-249  custo global x por celula. A constante alimenta E27f
+                (feature do Alpha) e risk/limits. A assimetria medida
+                (funding em 8,80% dos trades em R1 contra 31,03% em R3,
+                com UMA constante para as tres) e o unico ponto onde o
+                dado mostra diferenca real, grande e de mecanismo
+                conhecido, sobre algo que producao consome. E DERIVED, nao
+                hiperparametro: medir por celula nao gasta N_lifetime.
+        AG-230  vies de amostra nos labels de PRODUCAO (BTCUSDT -1,9%,
+                jan-fev/2021). Decisao do Manager, ja com os dois numeros
+                na mesa (a perda, e o ganho de +181% em eventos de stress
+                que AG-244 mediu).
+        AG-257  8 testes de integracao vermelhos. Nao e producao, mas e o
+                unico tipo de teste que pega mudanca de CONTRATO DE
+                ARTEFATO -- deixa-los vermelhos cega a proxima mudanca
+                dessa classe. Custo baixo, mantido por higiene.
+      DESCARTADO -- sem consumidor de producao, investimento nao se paga:
+        AG-244 (+ADDENDUM, -2, -3) e AG-258. Todo o eixo do gate de
+                regime. O gate esta fora de `evaluate_all` desde
+                2026-08-22 por decisao do Manager, e nada em producao le
+                `is_stress_state`. O achado do efeito direcional segue
+                registrado e a suspeita de vazamento de selecao tambem --
+                mas perseguir a medicao (que exigiria re-gerar os
+                `RawLabels` com `is_stress_state` persistido, o custo real)
+                nao muda nenhum arquivo de producao. Fecha como
+                DESCARTADO-POR-ESCOPO, nao como resolvido.
+        AG-245 (+ADDENDUM). O filtro de ortogonalidade nao esta aplicado e
+                T1 esta congelado por instrucao (AG-207). Se um dia for
+                aplicado, a entrada ja diz o que fazer (usar o nucleo
+                comum as tres resolucoes, decidir a franja a parte).
+        AG-233 residual (`faixa2_e2_research`). Ja era debito com gatilho
+                declarado; o gatilho continua valendo e nao ha nada a
+                fazer ate ele disparar.
+        Caso C de AG-247 (`fill_simulator.py:641`). Vive no simulador de
+                backtest; producao le a constante do YAML. Segue
+                registrado como divida do simulador.
+      MANTIDO COMO INSTRUMENTO, nao como pendencia: AG-246 e o
+      `ordering_fragility.py`. O modulo continua util (o
+      `separation_ratio` e o IC ponderado por unicidade servem a qualquer
+      decisao de ordenacao futura), mas nao ha pendencia a perseguir --
+      a medicao ja foi feita e registrada. `fit_mask` idem: a correcao
+      esta no codigo e testada, disponivel quando alguem precisar.
+    status: >-
+      DECIDIDO 2026-08-26 pelo Manager. Backlog aberto por mim reduzido de
+      NOVE itens para TRES, e os tres tem arquivo de producao a jusante.
+      NOTA HONESTA SOBRE O QUE ISSO CUSTA: os itens descartados nao estao
+      errados nem foram refutados -- o efeito direcional de AG-244 e real
+      no dado, e a suspeita de vazamento de selecao continua sendo a
+      melhor explicacao. O que a triagem afirma e que perseguir a resposta
+      nao muda decisao nenhuma hoje. Se o gate de regime voltar a ser
+      considerado para producao, AG-244 e seus tres addenda devem ser
+      relidos ANTES de qualquer reativacao -- inclusive a predicao
+      pre-declarada em `src/risk/limits.py`, que continua valendo.
+      GATILHO DE REABERTURA, declarado agora para nao depender de memoria:
+      qualquer proposta de reativar `control_01_regime_tradeavel`, de usar
+      regime como feature, ou de aplicar o filtro de ortogonalidade,
+      reabre os itens correspondentes automaticamente.
