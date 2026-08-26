@@ -110,7 +110,7 @@ e estão no vetor; `B07`/`C07`/`E02f` são T2 e são o insumo do classificador.
 |---|---|---|---|
 | **L0 — Primitiva** | insumo de cálculo de outras colunas | não | `C01_atr_20`, `C02_atr_20_pct` (`atr_20_abs` usado em 10 pontos, `atr_20_pct` em 7) |
 | **L1 — Gate de regime** | consumido por `classifier.py` | não (ADR-001 §2.7) | `B07`, `C07`, `E02f`, `E27f` |
-| **L2 — Núcleo de sinal** | passa nos dois eixos de §2.2 | **sim** | `E16f_global_ls_ratio` |
+| **L2 — Núcleo de sinal** | passa nos dois eixos de §2.2 | **sim** | ~~`E16f_global_ls_ratio`~~ **VAZIA** — `AG-294` (2026-08-26), ver correção ao fim de §2.2 |
 | **L3 — Em observação** | tese declarada, sem evidência suficiente | não, recalculada | as `TESE_OK` restantes |
 | **L4 — Aposentada** | sem mecanismo **e** sem sinal | não, nem calculada | as 29 `SEM_MECANISMO` sem descoberta |
 
@@ -164,6 +164,48 @@ que travar critério existe para evitar (`AG-122`).
 A separação é confortável: `E18f` tem `12,57` contra `2,98` do pior aprovado —
 fator 4,2 de folga.
 
+**CORREÇÃO 2026-08-26 (`AG-294`) — a tabela do eixo 1 acima estava
+calibrada na unidade errada, e a correção implementada é PIOR para `E16f`
+do que a estimativa a mão de `AG-270`.** `project_assurance` (`AG-270`)
+já tinha achado que a unidade de independência real é o SÍMBOLO (5), não a
+CÉLULA (15) — 72% dos blocos símbolo×resolução são perfeitamente
+concordantes, e `binomial(15; 0,146)` presume 15 ensaios independentes que
+não existem. Isso foi implementado como código reproduzível
+(`src.analysis.feature_promotion_criterion`, núcleo puro + 27 testes),
+com duas correções adicionais em relação à estimativa a mão do `AG-270`:
+símbolo-descoberta é MAIORIA (`≥2/3` resoluções) BH-discovery — binário,
+não fração contínua — e `p_símbolo` é MEDIDO empiricamente sobre o painel
+(`0,0667`), não herdado do `p=0,146` de célula sem remedir. BH `q=0,10`
+agora roda de verdade (o único dado persistido antes era
+`pico_significativo`, limiar fixo `|t|≥2`, sem correção de múltiplos
+testes nenhuma).
+
+Rodado contra os 3 relatórios reais de IC por horizonte:
+
+| `k ≥` | esperado sob H₀ | observado |
+|---|---|---|
+| 1 | 21,01 | 19 |
+| 2 | 2,79 | 2 (`E18f` + `K04_session_us`, dummy de calendário) |
+| 3 | 0,19 | 1 (só `E18f`, o artefato do `AG-266`) |
+| 4 | 0,007 | 1 |
+| 5 | 9,5·10⁻⁵ | 1 |
+
+**`E16f_global_ls_ratio` cai para 1 símbolo (só `SOLUSDT`)** — dentro do
+ruído esperado em `k≥1` (observado 19 contra 21 esperado), não os ~2,3
+que `AG-270` estimou a mão. **`L2 = {}`, vazia — não `L2 = {E16f}` com 1
+coluna fraca.** Nenhuma feature nova passa no eixo 1 sob o teste
+corrigido; os únicos candidatos em `k≥2` são o artefato já quarentenado
+(`E18f`) e uma dummy de calendário sem mecanismo econômico plausível.
+
+Consequência: `T1` (as 7 features originais) permanece o único vetor de
+treino defensável hoje. A Opção C (§3) continua estruturalmente correta —
+ela já separava "sem sinal hoje" de "sem mecanismo" — mas precisa ser
+reescrita em cima de `L2` vazia, não de `L2={E16f}`; §3/§4 abaixo ainda
+usam a versão antiga da tabela e **não foram atualizados** — é o próximo
+passo da v3, não decidido aqui. Detalhe completo, incluindo o achado de
+borda (`D07f_taker_imbalance_1m_agg` sem `pico_abs_t` em nenhuma das 15
+células, tratado como `p=1,0`, nunca descoberta): `AG-294`.
+
 ### §2.3 Quarentena — estado, não camada
 
 `quarentena: true` é ortogonal à camada. Marca coluna cujo sinal é **suspeito
@@ -180,6 +222,15 @@ Hoje: `E18f_taker_ls_vol_ratio`.
 ---
 
 ## §3. Opções consideradas
+
+> **NÃO ATUALIZADO após `AG-294` (2026-08-26).** As três opções abaixo,
+> junto com §4, ainda discutem `L2` como se tivesse 1 coluna (`E16f`) —
+> a correção do fim de §2.2 mede `L2` VAZIA. O argumento da Opção C
+> ("separar 'sem sinal hoje' de 'não deveria existir'") continua de pé,
+> mas os números/riscos específicos de cada opção abaixo precisam ser
+> reavaliados com `L2={}`, não `L2={E16f}` — próximo passo da v3, não
+> feito aqui de propósito (decisão de escopo do Manager, não desta
+> medição).
 
 ### Opção A — Manter o vetor de 72 (status quo)
 

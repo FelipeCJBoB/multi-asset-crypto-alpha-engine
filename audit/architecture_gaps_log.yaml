@@ -19004,3 +19004,51 @@ entries:
       de dado, e um lembrete de que o backfill precisa rodar de novo
       antes de qualquer decisao de producao real (nao so este Gate 0).
     status: "aberto -- aguarda decisao do Manager (rodar backfill, ou aceitar dado ate 2026-08-08 como base atual por ora)"
+
+  - id: AG-294
+    date: "2026-08-26"
+    file: "src/analysis/feature_promotion_criterion.py, docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2"
+    related_file: "audit/architecture_gaps_log.yaml::AG-270, experiments/feature_promotion_criterion_report.json"
+    found_by: "sessao principal -- implementacao reproduzivel da correcao que AG-270 pediu, rodada contra os 3 relatorios reais de IC por horizonte"
+    gap: >
+      AG-270 (project_assurance) estimou a mao que E16f tinha "~2,3
+      simbolos-equivalentes" (contagem fracionaria) e nao era distinguivel
+      do acaso sob binomial(5; 0,146) herdado do p de celula. Implementado
+      em codigo (src.analysis.feature_promotion_criterion, nucleo puro +
+      testes), com DUAS correcoes adicionais em relacao a estimativa a
+      mao: (1) simbolo-descoberta e MAIORIA (>=2/3 resolucoes) BH-discovery,
+      binario, nao fracao continua; (2) p_simbolo e MEDIDO empiricamente
+      sobre o painel completo (0,0667), nao herdado do p=0,146 de celula
+      sem remedir. BH q=0,10 aplicado de verdade (nao existia em codigo
+      antes -- o unico dado persistido era pico_significativo, limiar fixo
+      |t|>=2, sem correcao de multiplos testes).
+      RESULTADO, rodado contra experiments/ic_by_horizon_report_{R1,R2,R3}.json
+      reais: E16f_global_ls_ratio cai para 1 SIMBOLO (so SOLUSDT) -- MAIS
+      FRACO que a estimativa de AG-270, nao mais forte. Tabela H0
+      corrigida (72 features, 5 simbolos, p=0,0667):
+        k>=1: esperado 21,0, observado 19 (E16f esta aqui, junto com ruido)
+        k>=2: esperado 2,79, observado 2 (E18f + K04_session_us, uma dummy
+              de calendario -- nenhum candidato a sinal real)
+        k>=3: esperado 0,19, observado 1 (SO E18f, o artefato de AG-266)
+      Achado extra: caso de borda real durante a implementacao --
+      D07f_taker_imbalance_1m_agg (coluna 100% morta, AG-213/§13) nao tem
+      pico_abs_t em NENHUMA das 15 celulas (n_points=0, ic=NaN em todo
+      horizonte) -- tratado como p=1,0 (nunca descoberta), mantendo-a no
+      denominador m=72 do BH em vez de mudar silenciosamente quantas
+      features entram na correcao.
+    severity: "CRITICAL -- confirma e FORTALECE AG-270: sob o teste corrigido, L2 nao tem 1 candidato fraco, tem ZERO"
+    layer: "features (criterio de promocao) / metodo estatistico"
+    consequence: >
+      L2 = {} (vazio), nao L2 = {E16f}. Todo §2.1/§3/§4 do ADR-005 que
+      discute "L2 tem 1 coluna" como o argumento central contra a Opcao B
+      e a favor da Opcao C precisa ser reescrito em cima de L2 vazio, nao
+      de 1 coluna fraca. A conclusao tecnica correta sob a evidencia
+      medida: NENHUMA feature nova passa no eixo 1 hoje -- T1 (7 features)
+      permanece o unico vetor de treino defensavel; L3 (TESE_OK) fica
+      "em observacao" sem promocao; a Opcao C continua estruturalmente
+      correta (separa "sem sinal hoje" de "sem mecanismo"), so precisa
+      ser reescrita para L2 vazio em vez de L2={E16f}.
+      NAO decidido aqui se isso e aceitavel ou se exige mais medicao
+      (ex.: horizontes alem de h=32, que §5.1 ja propunha para E16f antes
+      deste achado) -- e decisao do Manager, nao desta medicao.
+    status: "aberto -- aguarda decisao do Manager sobre reescrever §2.1/§3/§4 do ADR-005 para L2 vazio, ou buscar mais evidencia antes de fechar a v3"

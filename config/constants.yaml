@@ -263,6 +263,22 @@ price_lookback_days_gate0:
   sweep_range: [3, 14]
   review_by: sprint_10
 
+feature_promotion_bh_q:
+  value: 0.10
+  provenance: ASSUMED
+  source: >
+    ADR-005 §2.2, eixo 1 do criterio de evidencia -- "Descoberta por
+    Benjamini-Hochberg q=0,10". Escolha convencional de FDR (10% de falsos
+    positivos entre as descobertas), nao medida/derivada de dado deste
+    projeto. Consumida por
+    src.analysis.feature_promotion_criterion.run_feature_promotion_criterion_report
+    (AG-270 -- corrige a unidade de independencia do eixo 1 de celula
+    para simbolo).
+  class: C
+  sweep_required: true
+  sweep_range: [0.05, 0.20]
+  review_by: sprint_10
+
 risk_per_trade:
   value: 0.005
   provenance: DERIVED
