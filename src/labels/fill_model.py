@@ -61,6 +61,184 @@ class FillResult:
     fill_price: float | None
 
 
+class TradeWindowCursor:
+    """Buffer DESLIZANTE de trades — núcleo puro (`AG-227`), zero IO.
+
+    **Problema que resolve.** `simulate_fill_from_trades` precisa dos
+    trades da janela `[t_post, t_post + fill_timeout_ms]` de cada barra.
+    Passar o histórico inteiro em memória não escala: BTCUSDT tem 2,19
+    bilhões de trades (medido: 909.425/dia x 2.412 dias) = **35 GB** como
+    numpy, e são 5 símbolos. Pré-filtrar não ajuda — com
+    `fill_timeout_ms = 900_000` (15 min), a união das janelas de 223.111
+    barras cobre 96,4% do dataset.
+
+    **Por que um cursor funciona.** `build_labels_with_stats` percorre as
+    barras em ordem cronológica CRESCENTE de `t_post`, e cada barra só olha
+    para frente. Logo o acesso é estritamente monotônico: trades anteriores
+    ao `t_post` corrente nunca mais serão consultados e podem ser
+    descartados. A memória vira `O(janela)` em vez de `O(dataset)` —
+    ~9.500 trades (~150 KB) para 900 s, ou ~29 MB mantendo dois dias
+    inteiros de folga.
+
+    **Contrato de uso (a casca é quem faz IO):**
+
+        cursor = TradeWindowCursor()
+        for barra in barras:                  # t_post crescente
+            while cursor.needs_more(horizonte):
+                cursor.feed(*carrega_proximo_dia())   # <- IO, na casca
+            cursor.advance_to(t_post)          # descarta o passado
+            t, p = cursor.window(t_post, horizonte)
+
+    `feed` aceita chunks já em memória; a classe NUNCA lê disco. É a mesma
+    separação de `src/data/bars.py` (Idioma B do `CLAUDE.md`): estado
+    acumulativo num objeto puro, IO na borda.
+
+    **Ordenação é precondição, não é verificada por linha.** `feed` exige
+    chunks já ordenados por tempo e em ordem cronológica entre si (garantia
+    de `agg_trades`, que a casca confere uma vez ao carregar). Checar por
+    chamada custaria `O(n)` no caminho quente — mesma decisão de
+    `simulate_fill_from_trades`."""
+
+    __slots__ = ("_price", "_time")
+
+    def __init__(self) -> None:
+        self._time: IntArray = np.zeros(0, dtype=np.int64)
+        self._price: FloatArray = np.zeros(0, dtype=np.float64)
+
+    @property
+    def n_buffered(self) -> int:
+        return int(self._time.shape[0])
+
+    @property
+    def last_time_ms(self) -> int | None:
+        """Maior `transact_time` no buffer, ou `None` se vazio — é o que
+        `needs_more` compara contra o horizonte pedido."""
+        return int(self._time[-1]) if self._time.shape[0] else None
+
+    def feed(self, time_ms: IntArray, price: FloatArray) -> None:
+        """Anexa um chunk ao fim do buffer. Chunk vazio é no-op."""
+        if time_ms.shape[0] != price.shape[0]:
+            raise ValueError(
+                f"TradeWindowCursor.feed: time_ms tem {time_ms.shape[0]} entradas e "
+                f"price tem {price.shape[0]} -- precisam ser paralelos"
+            )
+        if time_ms.shape[0] == 0:
+            return
+        self._time = np.concatenate((self._time, time_ms.astype(np.int64)))
+        self._price = np.concatenate((self._price, price.astype(np.float64)))
+
+    def needs_more(self, horizon_ms: int) -> bool:
+        """`True` se o buffer ainda não cobre `horizon_ms` — sinal para a
+        casca alimentar mais um chunk. Buffer vazio sempre precisa de mais."""
+        last = self.last_time_ms
+        return last is None or last < horizon_ms
+
+    def advance_to(self, t_from_ms: int) -> None:
+        """Descarta trades com `transact_time <= t_from_ms` — eles nunca
+        mais serão consultados, porque `t_post` só cresce.
+
+        `<=` e não `<`: a janela de fill é ESTRITAMENTE posterior a
+        `t_post` (mesma convenção de `simulate_fill_arrays` e
+        `simulate_fill_from_trades`), então um trade exatamente em
+        `t_post` já é inelegível e pode sair."""
+        if self._time.shape[0] == 0:
+            return
+        keep_from = int(np.searchsorted(self._time, t_from_ms, side="right"))
+        if keep_from > 0:
+            self._time = self._time[keep_from:]
+            self._price = self._price[keep_from:]
+
+    def window(self, t_from_ms: int, t_to_ms: int) -> tuple[IntArray, FloatArray]:
+        """Fatia `(t_from_ms, t_to_ms]` do buffer, pronta para
+        `simulate_fill_from_trades`. Devolve VIEWS do buffer (sem cópia) —
+        o consumidor não deve mutá-las."""
+        lo = int(np.searchsorted(self._time, t_from_ms, side="right"))
+        hi = int(np.searchsorted(self._time, t_to_ms, side="right"))
+        return self._time[lo:hi], self._price[lo:hi]
+
+
+def simulate_fill_from_trades(
+    trade_time_ms: IntArray,
+    trade_price: FloatArray,
+    *,
+    t_post_ms: int,
+    horizon_ms: int,
+    limit_price: float,
+    side: int,
+) -> FillResult:
+    """Núcleo puro (Idioma A) — MESMA pergunta de `simulate_fill_arrays`,
+    resolvida sobre `agg_trades` (granularidade de TRADE) em vez de
+    `mark_1m` (granularidade de MINUTO). `AG-221`.
+
+    **Por que existe (achado medido, 2026-08-25).** `t_post` é o
+    `close_time` da dollar bar — instante ARBITRÁRIO, não alinhado ao
+    relógio. `simulate_fill_arrays` só oferece oportunidade de fill em
+    candles de `mark_1m` com `open_time` ESTRITAMENTE posterior a
+    `t_post`, então existe uma espera FORÇADA entre a decisão e a primeira
+    janela observável, uniformemente distribuída em `[0, 60s]`. Essa
+    espera é pura fase de relógio e **não existe em produção**, onde a
+    ordem é postada imediatamente.
+
+    O efeito foi medido em BTCUSDT/R1 e é de primeira ordem — `ret_gross`
+    é função monotônica dessa espera:
+
+    | espera   | P(TP)  | ret_gross |
+    |----------|--------|-----------|
+    | 0-10s    | 0,4687 | -2,64 bps |
+    | 50-60s   | 0,4242 | -6,94 bps |
+
+    Gradiente de -4,30 bps em 60 segundos. Três verificações descartaram
+    explicações alternativas: (1) o ATR mediano é constante entre as
+    faixas (0,002494-0,002525), então não é regime de volatilidade;
+    (2) o gradiente sobrevive DENTRO dos 5 quintis de volatilidade,
+    monotônico em todos; (3) o gradiente ESCALA com a volatilidade
+    (-1,82 bps no quintil mais calmo, -5,74 no mais volátil) — predição
+    do mecanismo (o preço se desloca proporcionalmente a sigma durante a
+    janela não-observada), confirmada fora do argumento original.
+
+    **Diferença de contrato para `simulate_fill_arrays`:** aqui o toque é
+    contra o PREÇO EXECUTADO de um trade real, não contra o intervalo
+    `[low, high]` de um candle agregado. Isso remove a espera sintética na
+    origem e é estritamente mais próximo da execução real — mas mantém
+    deliberadamente as MESMAS simplificações do modelo atual, para que a
+    única variável que muda seja a granularidade: sem modelo de fila, sem
+    profundidade de book, `fill_price == limit_price` sempre. Modelar fila
+    continua sendo Sprint 9.
+
+    Janela: trades com `transact_time` estritamente posterior a
+    `t_post_ms` e até `horizon_ms` inclusive — MESMA convenção de
+    `simulate_fill_arrays`, para que a comparação entre os dois seja
+    limpa (só a fonte muda).
+
+    `side=1` (compra/long): preenche no primeiro trade com `price <=
+    limit_price`. `side=-1` (venda/short): primeiro com `price >=
+    limit_price`.
+
+    `trade_time_ms`/`trade_price` precisam estar ordenados por tempo
+    ascendente (garantia de `agg_trades`, verificada pelo chamador) —
+    `argmax` sobre booleano devolve o primeiro `True`, que só é "primeiro
+    cronológico" se a ordem valer."""
+    if side not in (1, -1):
+        raise ValueError(f"side deve ser 1 (compra) ou -1 (venda), recebido {side}")
+    if horizon_ms <= t_post_ms:
+        raise ValueError(
+            f"horizon_ms ({horizon_ms}) deve ser posterior a t_post_ms ({t_post_ms})"
+        )
+
+    lo = int(np.searchsorted(trade_time_ms, t_post_ms, side="right"))
+    hi = int(np.searchsorted(trade_time_ms, horizon_ms, side="right"))
+    if hi <= lo:
+        return FillResult(None, None)
+
+    window_price = trade_price[lo:hi]
+    touch = window_price <= limit_price if side == 1 else window_price >= limit_price
+    if not bool(touch.any()):
+        return FillResult(None, None)
+
+    idx = int(np.argmax(touch))
+    return FillResult(int(trade_time_ms[lo + idx]), float(limit_price))
+
+
 def simulate_fill_arrays(
     mark_open_time_ms: IntArray,
     mark_low: FloatArray,
