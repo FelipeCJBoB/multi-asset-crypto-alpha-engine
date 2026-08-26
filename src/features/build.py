@@ -672,6 +672,7 @@ def compute_t1_features(
     vol_estimator_id: str | None = None,
     taker_imbalance_1m_agg_aligned: pl.Series | FloatArray | None = None,
     futures_positioning_aligned: Mapping[str, pl.Series | FloatArray] | None = None,
+    oi_change_native_aligned: pl.Series | FloatArray | None = None,
 ) -> pl.DataFrame:
     """Núcleo puro (sem IO) do Feature Engine T1.
 
@@ -724,6 +725,22 @@ def compute_t1_features(
     numérica de C01 de verdade, ver docstring daquela função). Qualquer
     outro valor levanta `ValueError` — nunca cai num estimador não
     solicitado silenciosamente.
+
+    `oi_change_native_aligned` (`AG-295`, correção adotada 2026-08-26) —
+    `Δln(OI)` já calculado na cadência NATIVA da fonte e alinhado à barra
+    (`_sources.load_oi_change_aligned`), usado por `E10f_oi_change_z_48`
+    no lugar de diferenciar `oi_contracts_aligned` (que repete o último
+    valor conhecido entre leituras da fonte — sob barra mais curta que os
+    5 min da fonte, isso produzia zero MECÂNICO, não ausência real de
+    mudança; medido: 8,5%-13,0% dos deltas sob R1, eliminado a 0,0% com a
+    correção). `None` (default) preserva o comportamento ANTIGO
+    (diferencia `oi_contracts_aligned`) — bit-exato pra todo caller
+    existente que não passa este argumento (testes com `bars_15m`
+    sintético, `build_regimes`, que nem usa E10f). `build_t1_features`
+    passa o array real por padrão — é onde o corte de verdade acontece.
+    **Muda o valor computado de `E10f_oi_change_z_48` em produção
+    (R1/R2/R3)** — `T1_FEATURE_IDS`, `config_hash` de qualquer modelo já
+    treinado com a versão antiga precisa de relabel/retreino.
     """
     if windows is None:
         windows = FeatureWindows.from_constants()
@@ -739,6 +756,9 @@ def compute_t1_features(
 
     funding_arr = _to_numpy(funding_last_aligned)
     oi_arr = _to_numpy(oi_contracts_aligned)
+    oi_change_native_arr = (
+        None if oi_change_native_aligned is None else _to_numpy(oi_change_native_aligned)
+    )
     n_bars = close.shape[0]
     taker_imbalance_1m_agg_arr = (
         np.full(n_bars, np.nan, dtype=np.float64)
@@ -777,6 +797,16 @@ def compute_t1_features(
         )
     atr_20_pct = group_c.c02_atr_20_pct(atr_20_abs, close)
     ema_48 = support.ema(close, windows.ema_window)
+
+    # AG-295 (correção adotada 2026-08-26): se oi_change_native_aligned foi
+    # passado (build_t1_features sempre passa), diferencia na cadência
+    # nativa da fonte, não a série já alinhada/repetida por barra (onde o
+    # zero mecânico nascia). None preserva bit-exato o comportamento antigo.
+    e10f_oi_change_z_48 = (
+        group_e.e10f_oi_change_z_48_from_native_delta(oi_change_native_arr, windows.e10f_window)
+        if oi_change_native_arr is not None
+        else group_e.e10f_oi_change_z_48(oi_arr, windows.e10f_window)
+    )
 
     # Lote A da liberação de features (H5, 2026-08-24) -- intermediários
     # reaproveitados por mais de uma coluna abaixo (evita recomputar):
@@ -817,7 +847,7 @@ def compute_t1_features(
         "E02f_funding_z_expanding": group_e.e02f_funding_z_expanding(
             funding_arr, min_common_history_bars=windows.min_common_history_bars
         ),
-        "E10f_oi_change_z_48": group_e.e10f_oi_change_z_48(oi_arr, windows.e10f_window),
+        "E10f_oi_change_z_48": e10f_oi_change_z_48,
         "C01_atr_20": atr_20_abs,
         "C02_atr_20_pct": atr_20_pct,
         "B07_efficiency_ratio_48": group_b.b07_efficiency_ratio_48(close, windows.b07_window),
@@ -1158,6 +1188,7 @@ def build_t1_features(
     bars_15m = _sources.load_bars(symbol, start, end, bar_source=bar_source)
     funding_aligned = _sources.load_funding_aligned(bars_15m, symbol, start, end)
     oi_aligned = _sources.load_oi_aligned(bars_15m, symbol, start, end)
+    oi_change_native_aligned = _sources.load_oi_change_aligned(bars_15m, symbol, start, end)
     windows = FeatureWindows.from_constants(bar_source=bar_source)
     if bar_source != "time_15m":
         windows = replace(windows, min_common_history_bars=None)
@@ -1191,4 +1222,5 @@ def build_t1_features(
         vol_estimator_id=vol_estimator_id,
         taker_imbalance_1m_agg_aligned=taker_imbalance_1m_agg_aligned,
         futures_positioning_aligned=futures_positioning_aligned,
+        oi_change_native_aligned=oi_change_native_aligned,
     )

@@ -37,23 +37,27 @@ def e10f_oi_change_z_48(oi_contracts_aligned: FloatArray, window: int) -> FloatA
     de NaN é NaN por definição do numpy, sem exceção, e se propaga
     corretamente pelo resto do cálculo.
 
-    **`AG-295` (2026-08-26): esta função tem um defeito de construção
-    documentado (ficha, `veredito: ERRO_CATEGORICO`), ainda EM PRODUÇÃO
-    — nada foi trocado aqui, `T1_FEATURE_IDS` continua chamando esta
-    versão.** `oi_contracts_aligned` já chegou alinhado por
-    `asof_align_backward`, que segura (repete) o último valor conhecido
-    de OI entre leituras da fonte (~5 min de relógio). Sob R1, a barra
-    tem mediana de 9,43 min e `p10` de 1,73 min — para toda barra mais
-    curta que 5 min (fração real da distribuição, não cauda rara), o
-    valor alinhado repete o da barra anterior, e `Δln` desta função dá
-    **zero por construção mecânica**, não por ausência de mudança real de
-    OI. Isso infla o centro/desinfla o desvio da janela de 48 usada no
-    z-score, produzindo `|z|` espúrio e extremo exatamente nas barras que
-    por acaso cruzam uma leitura nova da fonte. Correção proposta, NÃO
-    adotada em produção — `e10f_oi_change_z_48_from_native_delta`
-    abaixo, que diferencia a série na cadência NATIVA da fonte (antes do
-    alinhamento) em vez de diferenciar a série já alinhada/repetida por
-    barra (esta função)."""
+    **`AG-295` (2026-08-26): esta função tinha um defeito de construção
+    documentado (ficha, `veredito: ERRO_CATEGORICO`).** `oi_contracts_
+    aligned` chega alinhado por `asof_align_backward`, que segura (repete)
+    o último valor conhecido de OI entre leituras da fonte (~5 min de
+    relógio). Sob R1, a barra tem mediana de 9,43 min e `p10` de 1,73 min
+    — para toda barra mais curta que 5 min (fração real da distribuição,
+    não cauda rara), o valor alinhado repete o da barra anterior, e `Δln`
+    desta função dá **zero por construção mecânica**, não por ausência de
+    mudança real de OI. Isso infla o centro/desinfla o desvio da janela de
+    48 usada no z-score, produzindo `|z|` espúrio e extremo exatamente nas
+    barras que por acaso cruzam uma leitura nova da fonte.
+
+    **Cortada de produção em 2026-08-26** (aprovação explícita do Manager
+    sobre a recomendação registrada em `AG-295`) — `compute_t1_features`
+    usa `e10f_oi_change_z_48_from_native_delta` abaixo sempre que
+    `oi_change_native_aligned` é fornecido, o que `build_t1_features`
+    (casca de produção) sempre faz. Esta função permanece só como
+    fallback bit-exato para o caminho antigo quando o argumento novo é
+    `None` (compatibilidade retroativa de chamadores diretos de
+    `compute_t1_features`, ex. testes) — não é mais o caminho real de
+    produção."""
     log_oi = np.log(oi_contracts_aligned)
     n = log_oi.shape[0]
     delta = np.full(n, np.nan, dtype=np.float64)
@@ -88,10 +92,10 @@ def e10f_oi_change_z_48_from_native_delta(
 ) -> FloatArray:
     """Z-score rolante do `Δln(OI)` já calculado na cadência NATIVA e
     alinhado à barra DEPOIS de diferenciado (`oi_change_native_from_
-    levels` + `src.features._sources.load_oi_change_aligned`) — proposta
-    de substituição para `e10f_oi_change_z_48` (`AG-295`), ainda não
-    adotada em `T1_FEATURE_IDS`. Sem `np.log`/`np.diff` aqui: a entrada
-    já é a série de deltas, o alinhamento (repetir o último delta
+    levels` + `src.features._sources.load_oi_change_aligned`) — caminho
+    real de produção de `E10f_oi_change_z_48` desde 2026-08-26 (`AG-295`,
+    substitui `e10f_oi_change_z_48` acima). Sem `np.log`/`np.diff` aqui: a
+    entrada já é a série de deltas, o alinhamento (repetir o último delta
     conhecido entre leituras da fonte) já aconteceu na casca — este
     núcleo só normaliza."""
     return support.rolling_zscore(oi_change_native_aligned, window)

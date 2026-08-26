@@ -257,7 +257,7 @@
 - id: E10f_oi_change_z_48
   tier: T1
   group: E
-  formula: "z-score ROLANTE (janela 48) de delta_ln(oi_contracts_t), oi_contracts alinhado ao grid de 15m por asof-join backward sobre metrics/sum_open_interest deduplicado"
+  formula: "z-score ROLANTE (janela 48) de delta_ln(oi_contracts), delta_ln calculado na cadência NATIVA de metrics/sum_open_interest (uma leitura real por linha, ~5min) e SÓ DEPOIS alinhado ao grid de 15m por asof-join backward (repete o último delta conhecido entre leituras)"
   sources: [D04]
   lookback_bars: 48
   min_warmup_bars: 200
@@ -267,7 +267,7 @@
   nan_policy: "NaN nas primeiras 48 barras após o primeiro OI conhecido; null antes de min_warmup_bars"
   causal_proof: "asof-join backward + janela rolante fixa — testado em tests/unit/test_features_groups.py::test_e10f_causalidade"
   parity_tested: true
-  version: v1
+  version: v2
   added: 2026-08-08
   nota: >
     Fonte (data/capacity/metrics/BTCUSDT) tem 2 dias com create_time
@@ -279,6 +279,26 @@
     create_time) e log de structlog toda vez que ocorre — não silenciado,
     não hardcoded pras duas datas conhecidas (a checagem roda sobre
     qualquer intervalo pedido).
+
+    **v2 (2026-08-26, `AG-295`, aprovação explícita do Manager):**
+    substituída a fórmula v1 (`delta_ln` calculado DEPOIS do alinhamento,
+    sobre `oi_contracts_aligned` já repetido por `asof_align_backward`).
+    Sob R1 (mediana de barra 9,43min, p10 1,73min), toda barra mais curta
+    que a cadência da fonte (~5min) — fração real da distribuição, não
+    cauda rara — repetia o valor anterior e produzia `delta_ln=0` por
+    construção mecânica, não por ausência de mudança real de OI,
+    inflando/desinflando a janela de z-score e gerando `|z|` espúrio nas
+    barras que cruzam uma leitura nova. v2 diferencia ANTES do
+    alinhamento (`group_e.oi_change_native_from_levels` sobre
+    `_sources.load_oi_series_deduped`, uma linha por leitura real —
+    elimina o zero mecânico por construção), alinha o delta já pronto
+    (`_sources.load_oi_change_aligned`) e só então normaliza
+    (`group_e.e10f_oi_change_z_48_from_native_delta`). Muda valores de
+    produção — exige relabel/retrain de qualquer modelo treinado com
+    E10f v1. `group_e.e10f_oi_change_z_48` (v1) preservada como fallback
+    bit-exato só para chamadores diretos de `compute_t1_features` que não
+    passam `oi_change_native_aligned` (ex. testes antigos) — não é mais o
+    caminho de `build_t1_features` (produção real).
 
 - id: E27f_cost_atr_ratio
   tier: T1

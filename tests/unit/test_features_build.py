@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -23,6 +24,7 @@ from src.data._paths import CAPACITY_DIR
 from src.data.resample import step_ms
 from src.features import _sources, build
 from src.features import registry as features_registry
+from src.features.groups import group_e
 
 _FIXTURE_START = "2024-01-01"
 _FIXTURE_END = "2024-02-10"  # 41 dias -> 3936 barras de 15m, >> 200 de warmup
@@ -441,6 +443,89 @@ def test_build_t1_features_desabilita_min_common_history_bars_sob_bar_source_nao
         # NaN -> null (`nan_to_null=True`), ver nota no teste do cap acima.
         assert out_time15m.head(n - cap)[col].null_count() == n - cap, col
         assert out_dollar.head(n - cap)[col].null_count() < n - cap, col
+
+
+# ============================================================================
+# E10f_oi_change_z_48 -- correção AG-295 adotada em produção (2026-08-26):
+# `oi_change_native_aligned` troca o caminho antigo (diferencia a série de
+# OI já alinhada/repetida por barra) pelo novo (diferencia na cadência
+# nativa da fonte, alinha o delta). `None` preserva bit-exato o antigo.
+# ============================================================================
+
+
+def test_compute_t1_features_oi_change_native_aligned_none_preserva_bit_exato() -> None:
+    """Sem o argumento novo, `E10f` continua exatamente igual ao caminho
+    antigo (`group_e.e10f_oi_change_z_48` sobre `oi_contracts_aligned`) --
+    nenhum caller existente (que não passa o argumento) é afetado."""
+    n = 300
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(91)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+
+    out = build.compute_t1_features(bars, funding, oi, apply_warmup_mask=False)
+    esperado = group_e.e10f_oi_change_z_48(
+        oi.to_numpy(), build.FeatureWindows.from_constants().e10f_window
+    )
+    got = out["E10f_oi_change_z_48"].to_numpy()
+    np.testing.assert_allclose(got, esperado, equal_nan=True)
+
+
+def test_compute_t1_features_oi_change_native_aligned_usa_caminho_novo_quando_passado() -> None:
+    """Com o argumento novo, `E10f` usa `e10f_oi_change_z_48_from_native_
+    delta` sobre o array passado -- NÃO diferencia `oi_contracts_aligned`
+    de novo (o delta já vem pronto)."""
+    n = 300
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(92)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+    oi_change_native = pl.Series("oi_change", rng.normal(0, 0.01, n), dtype=pl.Float64)
+
+    out = build.compute_t1_features(
+        bars, funding, oi, apply_warmup_mask=False, oi_change_native_aligned=oi_change_native
+    )
+    esperado = group_e.e10f_oi_change_z_48_from_native_delta(
+        oi_change_native.to_numpy(), build.FeatureWindows.from_constants().e10f_window
+    )
+    got = out["E10f_oi_change_z_48"].to_numpy()
+    np.testing.assert_allclose(got, esperado, equal_nan=True)
+    # e diferente do caminho antigo, pra provar que a troca de fato aconteceu
+    antigo = group_e.e10f_oi_change_z_48(
+        oi.to_numpy(), build.FeatureWindows.from_constants().e10f_window
+    )
+    assert not np.allclose(got, antigo, equal_nan=True)
+
+
+def test_build_t1_features_passa_oi_change_native_aligned_por_padrao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build_t1_features` (casca de IO, produção real) SEMPRE carrega e
+    passa `oi_change_native_aligned` -- é onde o corte de AG-295 acontece
+    de fato, não em `compute_t1_features` isolada."""
+    n = 200
+    bars = _make_synthetic_bars_for_cap_test(n)
+    rng = np.random.default_rng(93)
+    funding = pl.Series("f", rng.normal(0.0001, 0.0002, n), dtype=pl.Float64)
+    oi = pl.Series("oi", 90_000.0 + np.cumsum(rng.normal(0, 200, n)), dtype=pl.Float64)
+    oi_change_native = pl.Series("oi_change", rng.normal(0, 0.01, n), dtype=pl.Float64)
+
+    chamadas: dict[str, object] = {}
+    original_compute = build.compute_t1_features
+
+    def _spy_compute_t1_features(*args: Any, **kwargs: Any) -> pl.DataFrame:
+        chamadas["oi_change_native_aligned"] = kwargs.get("oi_change_native_aligned")
+        return original_compute(*args, **kwargs)
+
+    monkeypatch.setattr(build, "compute_t1_features", _spy_compute_t1_features)
+    monkeypatch.setattr(build._sources, "load_bars", lambda *a, **k: bars)
+    monkeypatch.setattr(build._sources, "load_funding_aligned", lambda *a, **k: funding)
+    monkeypatch.setattr(build._sources, "load_oi_aligned", lambda *a, **k: oi)
+    monkeypatch.setattr(build._sources, "load_oi_change_aligned", lambda *a, **k: oi_change_native)
+
+    build.build_t1_features("BTCUSDT", "2024-01-01", "2024-01-01", apply_warmup_mask=False)
+
+    assert chamadas["oi_change_native_aligned"] is oi_change_native
 
 
 # ============================================================================
