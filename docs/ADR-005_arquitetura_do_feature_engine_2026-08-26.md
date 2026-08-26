@@ -801,6 +801,26 @@ A direção não mudou; a margem de R3 sobre R1 caiu de 35% para 31%.
   B01). Detalhe completo: `AG-288`..`AG-293`. Mesma limitação de
   `stop_pct` já registrada abaixo (usa a célula de produção GLOBAL do
   S1, não overrides por combo) — herdada, não escondida.
+  **Rodado com o equity REAL do usuário 2026-08-26** (`--equity 213.80`
+  — R$ 1.100 convertidos à cotação do dia, ~R$5,145/USD — `--asof
+  2026-08-08`, mesma data de cobertura de dado, hoje ainda sem backfill
+  novo): **as 15 células passam no teto de quantização R1 — 0
+  excluídas**, incluindo `BTCUSDT/R3` (`stop_max_pct`=0,8238% contra
+  `stop_pct`=0,7671%), que tinha sido excluída na rodada de verificação
+  acima com `equity=196,85`. Não é uma mudança de critério — é o mesmo
+  script, `equity` maior relaxa o teto de quantização por construção
+  (`stop_max = equity × risk_per_trade / (2 × unit_notional)`, cresce
+  com `equity`). **Isto NÃO reproduz a decisão completa de §12.4**
+  (capacidade vs. demanda MEDIDA, que concluiu "R3 em 4 ativos") — só o
+  eixo de admissibilidade de quantização + capacidade por orçamento de
+  fee, sem demanda plugada (`--demand-report` não tem schema real ainda,
+  mesmo gap já registrado abaixo). Leitura direcional, não recálculo:
+  como capacidade escala ~linear com `equity` e demanda não depende de
+  `equity`, um `equity` maior só ALARGA a folga que R3 já tinha em
+  §12.4, nunca estreita — mas os números exatos de §12.4 (baseados em
+  `equity=196,85`) não foram reprocessados com `213,80`. Artefato:
+  `experiments/production_grade_gate_report.json` (sobrescrito, é o
+  único caminho de saída do script).
 - **O S1 filtra só o piso R2, nunca o teto R1.** Por isso R3 aparece com 7
   células viáveis e R1 com 5 — a comparação entre grades foi feita sobre
   conjuntos filtrados por critérios diferentes.
