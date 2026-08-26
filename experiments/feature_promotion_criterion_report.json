@@ -1,0 +1,442 @@
+{
+  "task": "feature_promotion_criterion",
+  "pergunta": "ADR-005 §2.2 eixo 1, corrigido: unidade de independencia e o SIMBOLO (5), nao a CELULA (15) -- AG-270.",
+  "adr_ref": "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2, §11 (AG-270)",
+  "metodo": "BH q dentro de cada celula (resolution,symbol) sobre 72 p-valores (normal a partir de pico_abs_t); simbolo = maioria (>=2/3) das resolucoes; p_simbolo medido empiricamente sobre o painel, nao herdado do p=0,146 de celula.",
+  "q_bh": 0.1,
+  "n_features": 72,
+  "n_symbols": 5,
+  "p_symbol_empirico": 0.06666666666666667,
+  "tabela_h0": [
+    {
+      "k": 1,
+      "esperado_sob_h0": 21.006317037037032,
+      "observado": 19
+    },
+    {
+      "k": 2,
+      "esperado_sob_h0": 2.794287407407407,
+      "observado": 2
+    },
+    {
+      "k": 3,
+      "esperado_sob_h0": 0.1925688888888889,
+      "observado": 1
+    },
+    {
+      "k": 4,
+      "esperado_sob_h0": 0.006731851851851851,
+      "observado": 1
+    },
+    {
+      "k": 5,
+      "esperado_sob_h0": 9.48148148148148e-05,
+      "observado": 1
+    }
+  ],
+  "por_feature": [
+    {
+      "feature": "E18f_taker_ls_vol_ratio",
+      "n_symbols_discovery": 5,
+      "symbols_discovery": [
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    },
+    {
+      "feature": "K04_session_us",
+      "n_symbols_discovery": 2,
+      "symbols_discovery": [
+        "BNBUSDT",
+        "XRPUSDT"
+      ]
+    },
+    {
+      "feature": "A05_ret_vol_norm_4",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A13_dist_ema48_atr",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "E10f_oi_change_z_48",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "ETHUSDT"
+      ]
+    },
+    {
+      "feature": "A01_log_return_1",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A02_log_return_2",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A03_log_return_4",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A07_body_ratio",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A10_close_location",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A14_dist_ema12_atr",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "B11_bb_position_20",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "E05f_time_to_funding_h",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "XRPUSDT"
+      ]
+    },
+    {
+      "feature": "K01_hour_sin",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "XRPUSDT"
+      ]
+    },
+    {
+      "feature": "K01_hour_cos",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "K04_session_europe",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "A15_dist_vwap_d_atr",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "B10_stoch_k_14",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "BNBUSDT"
+      ]
+    },
+    {
+      "feature": "E16f_global_ls_ratio",
+      "n_symbols_discovery": 1,
+      "symbols_discovery": [
+        "SOLUSDT"
+      ]
+    },
+    {
+      "feature": "B01_rsi_14",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E27f_cost_atr_ratio",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C06_vol_ratio_12_96",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C07_vol_pctile_expanding",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D03f_volume_z_expanding",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D06f_taker_imbalance_z_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E02f_funding_z_expanding",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C01_atr_20",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C02_atr_20_pct",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B07_efficiency_ratio_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A04_log_return_12",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A06_ret_vol_norm_12",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A08_upper_wick_ratio",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A09_lower_wick_ratio",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A11_true_range_pct",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "A12_gap_pct",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B02_rsi_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B03_roc_12",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B04_macd_hist_norm",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B05_ema_slope_24",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B06_momentum_accel",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B08_efficiency_ratio_16",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "B09_zscore_close_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C03_realized_vol_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C04_parkinson_vol_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C05_garman_klass_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C09_range_pctile_expanding",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C10_vol_expansion_flag",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C11_vol_compression_flag",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C12_vol_of_vol_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D01f_volume_z_96",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D02f_rel_volume_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D04f_volume_accel",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D05f_taker_buy_ratio",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D08f_trade_count_z_48",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D09f_avg_trade_size_z",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E01f_funding_last",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E09f_oi_contracts",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E11f_oi_change_1d",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E12f_price_oi_divergence",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "K02_dow_sin",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "K02_dow_cos",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "K03_is_weekend",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "K04_session_asia",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "K08_days_since_halving",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "C08_vol_pctile_rolling_1y",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D07f_taker_imbalance_1m_agg",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "D10f_vol_price_divergence",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E03f_funding_cum_3d",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E08f_oi_notional",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E14f_toptrader_ls_ratio",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E15f_toptrader_ls_z",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    },
+    {
+      "feature": "E17f_retail_vs_top_spread",
+      "n_symbols_discovery": 0,
+      "symbols_discovery": []
+    }
+  ]
+}
