@@ -17475,3 +17475,63 @@ entries:
       altera CONTRATO DE ARTEFATO (config_hash, schema, caminho) exige rodar
       a suite completa antes de declarar verde -- o ciclo rapido, por
       desenho, nao cobre o unico tipo de teste que a pegaria.
+
+  - id: AG-232-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-232 -- FECHADO. A entrada original ficou com status ABERTO depois de a correcao ter sido feita e medida, e so apareceu num levantamento de status pedido pelo Manager no fim da sessao"
+    file: "src/analysis/s1_tp_sl_sensitivity.py"
+    found_by: "Claude -- levantamento 'o que ficou fechado e o que ficou aberto'"
+    gap: >
+      Dessincronia de status que eu mesmo causei, e e exatamente o padrao
+      que AG-123 cataloga e que eu critiquei mais cedo nesta mesma sessao:
+      a correcao foi executada, medida e commitada, e a entrada original
+      seguiu dizendo ABERTO. Quem lesse o ledger sem ler os commits
+      concluiria que o S1 ainda le a grade errada.
+    severity: "n/a -- correcao de registro"
+    layer: "governanca"
+    consequence: >
+      O S1 foi migrado (caminho dos labels por resolution_id, barras via
+      dollar bar, LabelConfig com estimator, decision_bar_close_time_ms) --
+      os 4 pontos que AG-232 exigia. Executado nas tres resolucoes, com o
+      resultado em AG-235 e AG-235-ADDENDUM-2, e o defeito de rotulo que
+      apareceu no caminho fechado em AG-242.
+    status: >-
+      FECHADO 2026-08-25, commits ba39ce0..11443bb. O que a correcao
+      PRODUZIU esta em AG-235 (geometria e indiferente, +0,02 bps) e
+      AG-235-ADDENDUM-2 (o ranking nao sobrevive a troca de resolucao).
+      Default `resolution_id=None` preserva o caminho legado bit-exato, e o
+      modulo esta na whitelist de tests/unit/test_governanca_grade_
+      producao.py marcado MIGRADO -- com teste que confere que ele expoe
+      mesmo `--resolution-id`, para que "MIGRADO" nao seja so afirmacao.
+
+  - id: AG-247-ADDENDUM
+    date: "2026-08-25"
+    addendum_de: "AG-247 -- a AUDITORIA continua valida como registro; os refactors que ela recomendava foram executados em AG-248"
+    file: "src/labels/backfill_multi_symbol.py, src/validation/leakage.py, src/validation/cpcv.py, src/backtest/fill_reconciliation.py, src/analysis/calibration_diagnostics.py"
+    found_by: "Claude -- mesmo levantamento de status"
+    gap: >
+      AG-247 foi registrado com status ABERTO porque auditava sem corrigir,
+      o que estava certo NAQUELE momento. O Manager aprovou os refactors em
+      seguida e eles foram executados (AG-248), mas a entrada original nao
+      recebeu ponteiro.
+    severity: "n/a -- correcao de registro"
+    layer: "governanca"
+    consequence: >
+      Cinco dos casos auditados foram corrigidos, mais um SEXTO que a
+      auditoria nao tinha visto e que so apareceu ao mexer no codigo (o
+      writer de producao sobrescrevendo entry_fill_source, desfazendo o
+      relabel de AG-229 em silencio). A varredura de completude achou ainda
+      um item que eu tinha perdido entre auditar e corrigir
+      (cpcv._run_cli).
+    status: >-
+      PARCIALMENTE FECHADO 2026-08-25 por AG-248, commit c8ccfed. FECHADO:
+      os cinco casos B (writer legado, __main__, leakage CLI, cpcv CLI,
+      fill_reconciliation, calibration_diagnostics) mais o defeito novo do
+      writer de producao. SEGUE ABERTO, deliberadamente: (a) o default
+      `verify_config=False` de load_labels_v1 -- trocar resolve um risco
+      criando outro, e qual e maior e decisao do Manager; (b) o caso C
+      (fill_simulator.py:641, step_ms("15m") incondicional sob dollar bar)
+      -- muda COMPORTAMENTO DE EXECUCAO, nao grade de leitura, e ha ~20
+      outros step_ms("15m") em features/regime/cpcv com justificativa
+      propria. Auditar o eixo "relogio de 15m como UNIDADE de calculo, nao
+      como grade de leitura" e trabalho separado que ninguem fez.
