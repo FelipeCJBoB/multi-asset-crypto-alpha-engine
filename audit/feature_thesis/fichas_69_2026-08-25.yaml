@@ -1,0 +1,1556 @@
+# audit/feature_thesis/fichas_69_2026-08-25.yaml
+#
+# Ficha de tese de cada coluna do vetor de features (T1 + T2 promovidas,
+# AG-207). Uma ficha por coluna: memoria efetiva REAL da saida (nao o
+# lookback_bars declarado), papel na grade, mecanismo economico e
+# ancoragem fluxo x relogio.
+#
+# CALIBRACAO USADA (medida, nao estipulada):
+#   duracao mediana da barra (BTCUSDT): R1=9,43 R2=19,73 R3=41,16 min
+#   holding H = 5 barras (mediana medida nas 3 grades, p80 ~13,6-14,0)
+#   H e invariante em BARRAS -> para janela fixa em barras, h/H e invariante
+#   bandas: ruido <0,1H | gatilho 0,25-1,0H | confirmacao 1-4H |
+#           regime 4-20H | quase-constante >20H
+#
+# METODO: 3 auditorias independentes por grupo (A+B, C+D, E+K), mesma
+# rubrica. Os achados mais graves foram REVERIFICADOS por execucao direta
+# nesta sessao antes de virar AG -- ver AG-263.
+#
+# LEITURA DO CAMPO : precedencia
+#   ERRO_CATEGORICO > INCOERENTE_DIMENSIONAL > SEM_MECANISMO > TESE_OK
+
+- feature: A01_log_return_1
+  formula_resumida: ln(C_t / C_{t-1})
+  memoria_efetiva_barras: 1
+  memoria_justificativa: retorno de 1 barra; memória = lag = 1. Bate com lookback_bars=1.
+    É o piso de memória possível numa série em barras.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Sob dollar bar 1 barra é ~9,4 min de MEDIANA, mas a dispersão de duração é o
+    próprio regime — o mesmo valor de A01 significa coisas diferentes em rajada e em estiagem,
+    sem nenhum termo que carregue essa informação.
+- feature: A02_log_return_2
+  formula_resumida: ln(C_t / C_{t-2})
+  memoria_efetiva_barras: 2
+  memoria_justificativa: retorno de 2 barras; memória = lag = 2 = lookback_bars.
+  h_sobre_H: 0.4
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'A01/A02/A03/A04 formam uma escada de lags {1,2,4,12} sem nenhum critério declarado
+    — 4 constantes ASSUMED dedicadas (''convenção do PRD, nunca testada''). A soma A01+A01(t-1)
+    reconstrói A02 exatamente: colinearidade estrutural, não estatística.'
+- feature: A03_log_return_4
+  formula_resumida: ln(C_t / C_{t-4})
+  memoria_efetiva_barras: 4
+  memoria_justificativa: retorno de 4 barras; memória = lag = 4 = lookback_bars.
+  h_sobre_H: 0.8
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: É EXATAMENTE o numerador de A05 (mesmo lag=4, em constante dedicada com o mesmo
+    valor). A05 = A03 / (atr_20_pct·2) — as duas só diferem por um divisor que é ele próprio
+    uma feature do vetor (E27f ∝ 1/atr_20_pct).
+- feature: A04_log_return_12
+  formula_resumida: ln(C_t / C_{t-12})
+  memoria_efetiva_barras: 12
+  memoria_justificativa: retorno de 12 barras; memória = lag = 12 = lookback_bars.
+  h_sobre_H: 2.4
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'B03_roc_12 = exp(A04)-1: transformação ESTRITAMENTE MONÓTONA de A04. Para LightGBM
+    (splits invariantes a monotonia) as duas carregam informação idêntica — B03 é duplicata
+    exata, não ''variante''.'
+- feature: A05_ret_vol_norm_4
+  formula_resumida: ln(C_t/C_{t-4}) / (atr_20_pct_t · 2,0)
+  memoria_efetiva_barras: 4
+  memoria_justificativa: o SINAL é o retorno de 4 barras; atr_20_pct (Wilder 20, h=13,9 barras)
+    é DENOMINADOR de normalização de escala, não fonte de sinal — não entra na memória da
+    saída. lookback_bars=4 coincide com a memória por acidente (o registry ignora a perna
+    do ATR).
+  h_sobre_H: 0.8
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: '`feature_a05_vol_norm_divisor=2,0` é ASSUMED com source declarando literalmente
+    que o PROPÓSITO do divisor não está documentado em lugar nenhum (AG-027) — uma constante
+    cujo papel ninguém sabe explicar, multiplicando a feature T1 mais antiga do vetor.'
+- feature: A06_ret_vol_norm_12
+  formula_resumida: ln(C_t/C_{t-12}) / (atr_20_pct · sqrt(12/4) · 2,0)
+  memoria_efetiva_barras: 12
+  memoria_justificativa: 'mesma leitura de A05: sinal = retorno de 12 barras; o denominador
+    (atr_20_pct × fator de escala de variância) é normalização. Memória = 12 = lookback_bars.'
+  h_sobre_H: 2.4
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: sqrt(12/4) presume retorno ~ passeio aleatório (variância linear no horizonte).
+    Sob dollar bar essa premissa é MAIS defensável que sob relógio (barra ~ pacote de informação
+    constante), mas segue não medida neste repo — é premissa herdada, não achado.
+- feature: A07_body_ratio
+  formula_resumida: (C-O)/(H-L); 0 se H=L
+  memoria_efetiva_barras: 1
+  memoria_justificativa: só OHLC da própria barra t; sem janela. Memória = 1 = lookback_bars.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'IDENTIDADE EXATA no trio A07/A08/A09: A08 + |A07| + A09 = 1 sempre (H−max(O,C)
+    + |C−O| + min(O,C)−L = H−L). Uma das três é algebricamente redundante dadas as outras
+    duas + sign(A07) — 3 slots de feature para 2 graus de liberdade.'
+- feature: A08_upper_wick_ratio
+  formula_resumida: (H - max(O,C))/(H-L); 0 se H=L
+  memoria_efetiva_barras: 1
+  memoria_justificativa: só OHLC da barra t; sem janela. Memória = 1 = lookback_bars.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: A leitura clássica de pavio ('rejeição de nível DENTRO de um intervalo de tempo
+    fixo') pressupõe barra de relógio. Sob dollar bar a fronteira é volume negociado, não
+    tempo — o pavio de uma barra de 2 min e o de uma de 40 min entram no mesmo histograma
+    sem nenhum termo que os distinga.
+- feature: A09_lower_wick_ratio
+  formula_resumida: (min(O,C) - L)/(H-L); 0 se H=L
+  memoria_efetiva_barras: 1
+  memoria_justificativa: só OHLC da barra t; sem janela. Memória = 1 = lookback_bars.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: A09 ≡ A10 em TODA barra de baixa (C<O ⇒ min(O,C)=C ⇒ as duas fórmulas colapsam
+    na mesma). Redundância condicional ao sinal do corpo, além da identidade do trio A07/A08/A09.
+- feature: A10_close_location
+  formula_resumida: (C-L)/(H-L); 0 se H=L
+  memoria_efetiva_barras: 1
+  memoria_justificativa: só H/L/C da barra t; sem janela. Memória = 1 = lookback_bars.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Close Location Value clássico. Convenção H=L→0 é DELIBERADA e testada, mas coloca
+    o caso degenerado (barra flat) no MESMO valor da barra que fecha exatamente no meio do
+    range — dois estados de mercado opostos colapsados no mesmo número.
+- feature: A11_true_range_pct
+  formula_resumida: TR_t / C_{t-1}, TR = max(H-L, |H-C_{t-1}|, |L-C_{t-1}|)
+  memoria_efetiva_barras: 2
+  memoria_justificativa: TR toca a barra t e C_{t-1}; sem suavização. Memória = 2 = lookback_bars.
+  h_sobre_H: 0.4
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'MECANISMO DISPONÍVEL E NÃO RECLAMADO: sob dollar bar o denominador de volume
+    é CONSTANTE por construção, então TR_t/C_{t-1} é literalmente ''variação de preço por
+    dólar negociado'' = impacto de preço / iliquidez de Amihud (ou λ de Kyle discretizado).
+    Isso seria uma tese real, com contraparte identificável (quem consome liquidez paga o
+    impacto). O repo NÃO declara isso em lugar nenhum — registry, docstring e constants.yaml
+    tratam A11 como ''true range percentual''. Veredito segue SEM_MECANISMO (não se credita
+    tese não escrita), mas esta é a candidata mais barata de promover a TESE_OK do grupo A.'
+- feature: A12_gap_pct
+  formula_resumida: (O_t - C_{t-1}) / C_{t-1}
+  memoria_efetiva_barras: 2
+  memoria_justificativa: 'toca O_t e C_{t-1}. Mas o CONTEÚDO não é 2 barras de informação:
+    as barras são partição CONTÍGUA do fluxo de trades (src/data/bars.py::_aggregate_bars
+    — open = price.first() do bar_id, close = price.last() do anterior), então O_t é o preço
+    do trade IMEDIATAMENTE seguinte ao último trade de t-1. A saída é um retorno de 1 TICK,
+    não um gap.'
+  h_sobre_H: 0.4
+  papel: ruido
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: misto
+  ancoragem_defeito: 'O mecanismo do ''gap'' é de RELÓGIO/CALENDÁRIO — exige descontinuidade
+    de sessão (fechamento overnight, fim de semana, leilão de abertura), onde ordens se acumulam
+    sem poder executar e o preço salta na reabertura. Cripto USDⓈ-M negocia 24/7 e as barras
+    são partição contígua do MESMO fluxo de trades: não existe intervalo entre C_{t-1} e O_t
+    em que ordens se acumulem. A feature aplica um mecanismo de fronteira de sessão sobre
+    uma fronteira de CONTAGEM DE BARRAS que, neste mercado, não tem nenhum significado de
+    calendário. Erro categórico na direção espelhada do caso canônico.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: 'Consequência mensurável e barata de checar: a distribuição de A12 deve ser
+    ~um tick_size/preço (BTC: ~1,5e-6), com massa enorme em 0 e sem cauda. Se A12 tiver variância
+    comparável a A01, isso denuncia buraco de dado (trades faltando entre barras), não sinal
+    — nos dois casos a feature não mede o que o nome diz.'
+- feature: A13_dist_ema48_atr
+  formula_resumida: (C_t - EMA_48) / atr_20_abs
+  memoria_efetiva_barras: 16.7
+  memoria_justificativa: 'EMA span 48 -> h = 0,347·48 = 16,66 barras EM R1. `feature_a13_ema_window`
+    é a ÚNICA janela `scaling_invariant: clock` do vetor: build.py::_scale_clock_window_bars
+    escala 48 -> 24 (R2) -> 12 (R3) usando CALIBRATION_TF_BY_RESOLUTION (15m/30m/1h NOMINAIS).
+    Memória real por grade: 16,66 / 8,33 / 4,16 barras. lookback_bars=48 do registry não é
+    memória nem teto de purge válido (EMA tem suporte infinito).'
+  h_sobre_H: 3.33
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: '''48'' só é verdade em R1. Em R2 a janela real é 24, em R3 é 12 — o id da
+    feature, a fórmula do registry e o nome da coluna continuam dizendo 48 nas três grades.
+    Pior: a JUSTIFICATIVA declarada da âncora de relógio (constants.yaml: ''meia-vida comensurável
+    ao horizonte de RELÓGIO do label, time_stop_ms=8h'') não é entregue — meia-vida real em
+    R1 = 16,66 barras × 9,43 min = 157 min = 2,6 h, não 8 h; erro de 3,1x. E o escalonamento
+    usa a duração NOMINAL de calibração (15/30/60 min), não a MEDIANA MEDIDA (9,43/19,73/41,16
+    min) — outro fator 1,5-1,6x entre o relógio pretendido e o entregue.'
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'O defeito estrutural: H é invariante em BARRAS (5 nas 3 grades) e A13 é a única
+    feature ancorada em RELÓGIO — logo h/H varia 4x entre grades (3,33 em R1, 1,67 em R2,
+    0,83 em R3). A MESMA feature é ''confirmação'' em R1 e ''gatilho'' em R3. Um comparativo
+    multi-TF que trate A13 como a mesma variável está comparando três features diferentes.
+    Também dispara SEM_MECANISMO (mecanismo AUSENTE, subordinado por precedência).'
+- feature: A14_dist_ema12_atr
+  formula_resumida: (C_t - EMA_12) / atr_20_abs
+  memoria_efetiva_barras: 4.2
+  memoria_justificativa: 'EMA span 12 -> h = 0,347·12 = 4,16 barras, fixo nas 3 grades (`feature_a14_ema_window`
+    é `scaling_invariant: bar_count`, decisão EXPLICITAMENTE separada de A13). lookback_bars=12
+    do registry subdeclara o suporte (EMA é infinita) e não serve de teto de purge.'
+  h_sobre_H: 0.83
+  papel: gatilho
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'COLISÃO EXATA EM R3: A13 escala pra ema_window=12 e A14 é fixo em 12; ambas
+    computam support.ema(close, 12) e dividem por atr_20_abs — em R3 A13 e A14 são a MESMA
+    coluna, bit a bit. Duas features distintas do registry produzindo valores idênticos quebra
+    HHI/importância (o ganho se divide entre duas colunas gêmeas) e infla a contagem do teto
+    de features (§0.2 R4). Em R2 (24 vs 12) sobrevive como par redundante, não idêntico.'
+- feature: A15_dist_vwap_d_atr
+  formula_resumida: (C_t - VWAP_do_dia_UTC) / atr_20_abs, VWAP = Σ((H+L+C)/3·V)/ΣV desde 00:00
+    UTC
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: 'expansiva DENTRO do dia UTC, com reset em 00:00 (cum_sum().over(day_id),
+    day_id = close_time_ms // 86.400.000). Memória = nº de barras decorridas no dia: 1 na
+    primeira barra até ~153 na última (R1, 1440/9,43). Média ao longo do dia ~76 barras. lookback_bars=96
+    do registry NÃO é a memória e NÃO é o teto real — é 24h/15min, uma conta de barra de RELÓGIO.'
+  h_sobre_H: 15.3
+  papel: regime
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'DEFEITO DE PURGE (mais grave que o veredito): lookback_bars=96 é consumido
+    por registry.feature_lookback_bars() como teto finito de proteção de CPCV/purge (AG-032
+    item 8). Sob dollar bar R1 um dia UTC tem ~153 barras — a proteção está subdimensionada
+    ~1,6x justamente na única feature de A com acumulação intradiária. R2 ~73, R3 ~35 (aí
+    96 é conservador). O teto correto é dependente de grade e o registry só admite int fixo.
+    Sobre o mecanismo: VWAP de sessão é benchmark de execução institucional — em mercado 24/7
+    não há sessão, e o próprio código declara a meia-noite UTC como ''adaptação natural'',
+    ou seja convenção, não força de mercado.'
+- feature: B01_rsi_14
+  formula_resumida: (RSI_wilder_14 - 50) / 50
+  memoria_efetiva_barras: 9.7
+  memoria_justificativa: 'suavização de Wilder com janela 14 -> h = 0,693·14 = 9,70 barras
+    (span EMA equivalente 27). lookback_bars=14 do registry é o parâmetro da recursão, NÃO
+    a memória: Wilder tem suporte infinito e ~99% do peso só se acumula em ~40 barras.'
+  h_sobre_H: 1.94
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'O próprio repo certifica a ausência: constants.yaml::feature_b01_rsi_window
+    diz textualmente ''Nenhuma base econômica encontrada em PRD/registry.yaml que amarre o
+    span do RSI ao horizonte de holding''. Não é omissão do auditor — é confissão registrada.
+    Nota de papel: RSI14 é usado no mercado como gatilho de sobrecompra/sobrevenda; com h/H=1,94
+    ele responde na escala de 2 holdings, não de entrada.'
+- feature: B02_rsi_48
+  formula_resumida: (RSI_wilder_48 - 50) / 50
+  memoria_efetiva_barras: 33.3
+  memoria_justificativa: 'Wilder janela 48 -> h = 0,693·48 = 33,26 barras (span EMA equiv.
+    95). lookback_bars=48 subdeclara em 3x: a 3 meias-vidas (~87% do peso) o suporte é ~100
+    barras.'
+  h_sobre_H: 6.65
+  papel: regime
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Está no grupo ''Momentum e reversão'' (§2.3), família cuja função declarada
+    é sinal acionável no horizonte de trade, e entrega uma variável de REGIME (6,65·H): quando
+    B02 cruza um limiar, o trade que ele deveria disparar já terminou 6 vezes. Também dispara
+    SEM_MECANISMO (subordinado por precedência). Colinear com B01 por construção (mesma primitiva,
+    mesma série, só a constante de suavização muda).'
+- feature: B03_roc_12
+  formula_resumida: (C_t - C_{t-12}) / C_{t-12}
+  memoria_efetiva_barras: 12
+  memoria_justificativa: retorno simples de 12 barras; memória = 12 = lookback_bars.
+  h_sobre_H: 2.4
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'DUPLICATA EXATA de A04_log_return_12: B03 = exp(A04) − 1, bijeção estritamente
+    crescente. Modelo baseado em split (LightGBM, §Stack) é invariante a transformação monótona
+    — as duas colunas produzem exatamente as mesmas partições. Dois slots do teto de features
+    (§0.2 R4) para uma única variável.'
+- feature: B04_macd_hist_norm
+  formula_resumida: (EMA_12 - EMA_26 - EMA_9(EMA_12-EMA_26)) / atr_20_abs
+  memoria_efetiva_barras: 9.0
+  memoria_justificativa: 'filtro passa-banda: a componente mais lenta que NÃO se cancela é
+    a EMA_26 (h = 0,347·26 = 9,02 barras); a subtração da EMA_9 remove a banda baixa (h=3,12),
+    não encurta a resposta mais lenta. lookback_bars=35 do registry é a soma 26+9 — nem memória
+    (as três EMAs têm suporte infinito) nem teto válido de purge.'
+  h_sobre_H: 1.8
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: (12,26,9) tem provenance LITERATURE ('convenção pública universal, Appel, anos
+    1970'). LITERATURE aqui atesta AUTORIDADE, não MEDIÇÃO neste mercado nem nesta grade —
+    os valores nasceram em barra DIÁRIA de ações dos anos 1970; transplantados para dollar
+    bar de cripto, o único invariante preservado é a razão 12:26:9, que ninguém mediu. Proveniência
+    não vira tese.
+- feature: B05_ema_slope_24
+  formula_resumida: (EMA_24_t - EMA_24_{t-6}) / atr_20_abs
+  memoria_efetiva_barras: 8.3
+  memoria_justificativa: a memória vem da EMA_24 (h = 0,347·24 = 8,33 barras); a diferença
+    de 6 barras é um passa-alta que desloca, não encurta o suporte (a resposta ao choque só
+    decai na escala da EMA). lookback_bars=30 (24+6) não é memória nem teto de purge.
+  h_sobre_H: 1.67
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'Duas janelas ASSUMED independentes (24 e 6) numa única feature — o espaço de
+    sweep é 2-D e nunca foi varrido (`sweep_required: false` nas duas). Mede a mesma coisa
+    que A13/A14 (derivada de uma EMA de preço) por outro caminho algébrico.'
+- feature: B06_momentum_accel
+  formula_resumida: (ret_4_t - ret_4_{t-4}) / atr_20_pct
+  memoria_efetiva_barras: 8
+  memoria_justificativa: 'toca C_t, C_{t-4} e C_{t-8}: memória = 8 barras = lookback_bars
+    (aqui o registry acerta). O atr_20_pct é normalização de escala, não sinal.'
+  h_sobre_H: 1.6
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: É exatamente A03(t) − A03(t−4), reescalado — combinação linear de dois lags
+    de uma feature já presente no vetor. Uma árvore com A03 e seus lags reconstrói B06; a
+    feature acrescenta a escolha do lag (=4), não informação nova.
+- feature: B07_efficiency_ratio_48
+  formula_resumida: '|C_t - C_{t-48}| / Σ|C_i - C_{i-1}| na janela de 48'
+  memoria_efetiva_barras: 48
+  memoria_justificativa: janela rolante fixa de 48 barras no numerador E no denominador; o
+    choque só sai da soma em t+48. Memória = 48 = lookback_bars (registry correto aqui).
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'Papel COERENTE (é usada como eixo estrutural do Regime Engine §4.2, e h/H=9,6
+    é banda de regime) — o problema é só a tese. Registro do próprio repo: 57% de consistência
+    de sinal em 7 anos, já rebaixada a T2 por isso, e constants.yaml pergunta explicitamente
+    se ''usar feature instável como eixo de regime'' é válido. Pergunta aberta desde 2026-08-15,
+    sem medição.'
+- feature: B08_efficiency_ratio_16
+  formula_resumida: '|C_t - C_{t-16}| / Σ|C_i - C_{i-1}| na janela de 16'
+  memoria_efetiva_barras: 16
+  memoria_justificativa: mesma primitiva de B07 com janela 16; memória = 16 = lookback_bars.
+  h_sobre_H: 3.2
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'O par (16,48) vem da string ''ER (16, 48)'' do PRD, que constants.yaml registra
+    como AMBÍGUA: pode ser duas features ou dois candidatos para um valor. Foi resolvida implementando
+    as duas — uma ambiguidade de leitura virou duas colunas no vetor, sem nenhuma medição
+    decidindo.'
+- feature: B09_zscore_close_48
+  formula_resumida: (C_t - μ_48) / σ_48
+  memoria_efetiva_barras: 48
+  memoria_justificativa: 'AQUI a regra do z-score se INVERTE: o insumo é o PREÇO (I(1)), não
+    uma grandeza estacionária. (C_t − μ_W) = média de (C_t − C_{t−j}) sobre j<W = soma dos
+    últimos W retornos com kernel triangular decrescente — o choque só sai em W. Memória =
+    48 (centro de massa ~W/3 ≈ 16). σ_48 é normalização. lookback_bars=48 coincide, mas por
+    razão diferente da declarada.'
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Registrada no grupo ''Momentum e REVERSÃO'' — a tese implícita de um z-score
+    de preço é reversão à média acionável. Mas a média a que ele reverte tem escala de 48
+    barras = 9,6·H: o preço leva ~10 holdings para completar a reversão que o sinal anuncia.
+    O trade fecha antes de a tese se realizar. Também dispara SEM_MECANISMO (subordinado por
+    precedência).'
+- feature: B10_stoch_k_14
+  formula_resumida: (C - min(L)_14) / (max(H)_14 - min(L)_14) · 100
+  memoria_efetiva_barras: 14
+  memoria_justificativa: 'min/max rolantes de 14 barras definem o referencial; um extremo
+    permanece no referencial até sair da janela. Memória = 14 = lookback_bars. Nota: extremos
+    são estatística de cauda — na prática a memória EFETIVA é irregular (o valor ''gruda''
+    enquanto o extremo não expira).'
+  h_sobre_H: 2.8
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Mede 'posição do close dentro do range recente' — a mesma grandeza de B09/B11
+    (posição do close em relação à distribuição recente) e de A10 (posição do close dentro
+    do range da barra). Quatro features, um conceito, quatro janelas ASSUMED diferentes (1,
+    14, 20, 48) sem nenhum critério declarado de escolha.
+- feature: B11_bb_position_20
+  formula_resumida: (C - MA_20) / (2 · σ_20)
+  memoria_efetiva_barras: 20
+  memoria_justificativa: 'mesma leitura de B09 (insumo = preço, I(1)): kernel triangular sobre
+    20 barras, choque sai em W=20. Memória = 20 = lookback_bars.'
+  h_sobre_H: 4.0
+  papel: confirmacao
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'h/H=4,00 cai EXATAMENTE na fronteira confirmação(1-4)/regime(4-20) — classificada
+    como confirmação por convenção, mas é caso de fronteira, não classificação segura. Achado
+    sobre a constante: a implementação é literalmente rolling_zscore(close,20)/2,0, e `feature_b11_bb_std_multiplier=2,0`
+    tem provenance LITERATURE (''validado via pesquisa web''). Divisor constante é NO-OP para
+    qualquer aprendiz invariante a escala (LightGBM) — foi gasta pesquisa de literatura para
+    justificar um número que não muda nada. B11 é B09 com janela 20, nada mais.'
+- feature: C01_atr_20
+  formula_resumida: ATR de Wilder janela 20 sobre true_range, unidade de preco (default);
+    sob vol_estimator_id='parkinson_w20', parkinson_vol(H,L,20)*close
+  memoria_efetiva_barras: 13.9
+  memoria_justificativa: 'support.wilder_smooth e recursao out[t]=(out[t-1]*(N-1)+v)/N, i.e.
+    EWM com alpha=1/N -- meia-vida h=0,693*20=13,86 barras, NAO as 20 do lookback_bars (que
+    e so o seed SMA + o rotulo da janela). Sob o estimador Parkinson a memoria vira a MEDIA
+    MOVEL SIMPLES de 20 barras: memoria 20, h/H=4,00. Trocar `vol_estimator_id` muda o papel
+    da feature de confirmacao (2,77) para a fronteira de regime (4,00) sem nenhum aviso --
+    a fórmula no registry nao registra isso, so a distribuicao numerica.'
+  h_sobre_H: 2.77
+  papel: confirmacao
+  mecanismo_economico: 'Clustering de volatilidade (Engle/Bollerslev): choque de vol persiste
+    porque a chegada de informacao e agrupada e porque o formador de mercado precisa de tempo
+    pra reconstruir inventario. Operacionalmente C01 e a UNIDADE que dimensiona TP/SL -- nao
+    e um sinal direcional, e a escala das barreiras.'
+  quem_esta_do_outro_lado: Formador de mercado / vendedor de volatilidade que precifica risco
+    de inventario e alarga spread quando o range realizado sobe. Como feature DIRECIONAL nao
+    ha contraparte -- C01 nao afirma direcao.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'atr_window=20 e classe A, provenance ASSUMED, ''convencao de mercado, sem teste''
+    (constants.yaml:473) -- e a classe A que dimensiona as barreiras, com sweep_required:
+    true ainda em aberto. AG-245: C01 perdeu ortogonalidade em SOLUSDT e XRPUSDT apos o relabel
+    de AG-229.'
+- feature: C02_atr_20_pct
+  formula_resumida: atr_20_abs_t / C_t -- ATR em fracao do preco
+  memoria_efetiva_barras: 13.9
+  memoria_justificativa: 'Divisao ponto-a-ponto por close_t, que nao tem janela propria; toda
+    a memoria vem herdada do numerador (C01, meia-vida de Wilder 0,693*20). lookback_bars:
+    20 no registry e o rotulo herdado de C01, nao a memoria.'
+  h_sobre_H: 2.77
+  papel: confirmacao
+  mecanismo_economico: 'Mesmo clustering de vol de C01, na unidade que a restricao economica
+    do projeto usa de verdade: a janela viavel de stop [0,275%; 0,758%] (R1/R2) e definida
+    em FRACAO do preco, entao C02 e a quantidade que determina se um trade e sequer executavel.
+    Mecanismo forte porque e restricao fisica, nao correlacao.'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: C01 e C02 sao quase perfeitamente colineares em qualquer janela curta (o preco
+    varia pouco em 20 barras) -- manter as duas no vetor e redundancia de HHI de importancia,
+    nao duas teses.
+- feature: C03_realized_vol_48
+  formula_resumida: std(log_return_1) em janela rolante 48 * sqrt(48)
+  memoria_efetiva_barras: 48
+  memoria_justificativa: Janela rolante fixa de 48 barras (support.realized_vol, rolling_std
+    com min_samples=48); a saida e uma estatistica DA janela inteira, nao uma normalizacao
+    de x_t -- memoria = W = 48, batendo com lookback_bars.
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: 'Clustering de volatilidade. Sob barreira tripla, o nivel de vol governa
+    a PROBABILIDADE DE TOQUE: barreira dimensionada por ATR_20 (memoria ~14) contra vol medida
+    em 48 barras diz se a barreira vai ser tocada antes do time stop ou se o trade morre no
+    tempo.'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: C03 devolve sigma escalado ao HORIZONTE de 48 barras (std*sqrt(48)); C04 e C05,
+    com o MESMO sufixo _48 e a mesma janela, devolvem sigma POR BARRA (support.parkinson_vol/garman_klass_vol
+    nao multiplicam por sqrt(W)). Fator sqrt(48)=6,93 de diferenca entre features que o registry
+    lista lado a lado como a mesma familia de estimador. Cada uma isolada esta correta; a
+    familia nao e comparavel. Janela 48 = ASSUMED, 'convencao do PRD, nunca testada'.
+- feature: C04_parkinson_vol_48
+  formula_resumida: 'Parkinson (1980): sqrt(mean_48(ln(H/L)^2)/(4*ln2)) -- sigma POR BARRA,
+    fracao do preco'
+  memoria_efetiva_barras: 48
+  memoria_justificativa: rolling_mean(window=48, min_samples=48) sobre ln(H/L)^2 -- media
+    simples, memoria dura exatamente W=48 barras. Bate com lookback_bars.
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: Mesmo clustering de vol de C03. O mecanismo DIFERENCIAL de C04 em relacao
+    a C03 nao e uma forca de mercado nova -- e eficiencia estatistica do estimador (~5x a
+    de close-to-close). Isso e argumento de estimacao, nao de tese economica.
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: Parkinson estima sigma POR UNIDADE DE TEMPO a partir do range dentro de um intervalo
+    de duracao FIXA. A barra dollar tem duracao variavel por construcao (R1 mediana 9,43min,
+    mas a barra fecha mais rapido justamente quando a vol sobe) -- o estimador sai sem denominador
+    temporal, e o esquema de amostragem ja atenua a propria quantidade que ele mede. Alem
+    disso Parkinson ignora gap entre barras e subestima sistematicamente com amostragem discreta.
+- feature: C05_garman_klass_48
+  formula_resumida: 'Garman-Klass (1980): sqrt(mean_48(0.5*ln(H/L)^2 - (2ln2-1)*ln(C/O)^2))
+    -- sigma POR BARRA'
+  memoria_efetiva_barras: 48
+  memoria_justificativa: Idem C04 -- rolling_mean simples de 48 barras sobre o termo GK por
+    barra. Memoria = 48, bate com lookback_bars.
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: Mesmo clustering de vol de C03/C04, agora usando O/H/L/C. De novo o
+    diferencial e eficiencia de estimador, nao mecanismo de mercado novo.
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Mesma incoerencia de duracao variavel de C04, agravada: GK assume drift zero
+    E amostragem continua em tempo fixo. Alem disso a janela e 48 aqui, enquanto `canonical_volatility_estimator`
+    do projeto e ''garman_klass_w20'' (janela 20) -- duas janelas do MESMO estimador convivendo
+    no repo sem nenhuma nota reconciliando as duas. C03/C04/C05 sao 3 medidas quase colineares
+    do mesmo objeto na mesma janela.'
+- feature: C06_vol_ratio_12_96
+  formula_resumida: realized_vol_12 / realized_vol_96 -- vol curta sobre vol longa
+  memoria_efetiva_barras: 12
+  memoria_justificativa: 'lookback_bars: 96 e a perna LENTA, que so serve de baseline quase-estatica
+    (muda pouco entre barras consecutivas). Toda a variacao barra-a-barra da razao vem da
+    perna RAPIDA (realized_vol_12). Memoria efetiva = 12, nao 96 -- fator 8 de diferenca em
+    relacao ao campo do registry.'
+  h_sobre_H: 2.4
+  papel: confirmacao
+  mecanismo_economico: 'Descasamento de escala da barreira: TP/SL sao dimensionados por ATR_20
+    (memoria ~14 barras); quando vol_12 dispara contra a baseline de 96, a barreira ja postada
+    esta apertada demais para o regime corrente e a probabilidade de SL sobe sem que nada
+    direcional tenha mudado. E um mecanismo sobre o LABEL, nao sobre o preco.'
+  quem_esta_do_outro_lado: Quem postou liquidez passiva sob o regime de vol antigo e vai ser
+    varrido -- e, do outro lado, o taker que forca o repricing. A perna rapida detecta a retirada
+    de liquidez antes do book reprecificar.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 12 e 96 sao ASSUMED, 'convencao herdada do PRD (§18.5.2), nunca testada'; o
+    proprio constants.yaml registra 57% de consistencia de sinal em 7 anos (ja rebaixada a
+    T2) e que n=12 carrega ~20,4% de erro amostral puro (1/sqrt(2n)) -- parte da instabilidade
+    pode ser ruido de amostragem, nao o fenomeno. O comentario tambem registra que a justificativa
+    '96 = 3x ciclo de funding' foi LEVANTADA e NAO CONFIRMADA em nenhuma fonte.
+- feature: C07_vol_pctile_expanding
+  formula_resumida: posto percentil de realized_vol_48_t na distribuicao EXPANSIVA de [t0_dataset,
+    t-1] (estrito)
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: 'Duas memorias distintas na mesma feature. O SINAL rankeado (realized_vol_48)
+    tem memoria 48 barras (h/H=9,60, faixa de regime). A DISTRIBUICAO DE REFERENCIA e expansiva
+    desde a origem do ativo e nunca esquece -- cresce com a serie, entao a calibracao da feature
+    e quase-constante e nao-estacionaria: o mesmo nivel de vol que era p90 em 2020 pode ser
+    p50 em 2026 sem que nada tenha mudado no mercado. h/H nao e calculavel para a referencia.'
+  h_sobre_H: null
+  papel: quase-constante
+  mecanismo_economico: 'Regime de volatilidade: em vol alta domina reversao/ruido e o custo
+    de execucao sobe; em vol baixa a barreira raramente e tocada e o trade morre no time stop.
+    C07 e o eixo que o Regime Engine (src/regime/classifier.py) usa para essa particao, nao
+    uma feature direcional.'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'AG-030/AG-032: saiu de T1_FEATURE_IDS justamente porque `lookback_bars: expanding`
+    nao tem protecao finita de purge no CPCV; continua calculada e consumida DIRETO pelo Regime
+    Engine, ou seja o risco saiu do vetor do Alpha e ficou no eixo de regime. `min_common_history_bars`
+    (AG-030) capa o inicio mas nao torna a referencia estacionaria.'
+- feature: C08_vol_pctile_rolling_1y
+  formula_resumida: posto percentil de realized_vol_48_t na distribuicao ROLANTE das ultimas
+    17520 barras (estrito, [t-17520, t-1])
+  memoria_efetiva_barras: 17520
+  memoria_justificativa: Janela de referencia finita e explicita de 17520 barras (support.rolling_percentile_rank_strict,
+    Fenwick com insercao E remocao). O sinal rankeado (realized_vol_48) responde em 48 barras,
+    mas a calibracao inteira da feature dura 17520 barras = 3504*H.
+  h_sobre_H: 3504.0
+  papel: quase-constante
+  mecanismo_economico: 'Ciclo LONGO de volatilidade de cripto -- alternancia bull/bear medida
+    em CALENDARIO (meses/anos), nao em fluxo. E exatamente por isso que o nome diz ''1y''
+    e nao ''17520 barras'': a tese so faz sentido se a janela cobrir um ciclo de calendario.'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: 'O mecanismo pretendido e de CALENDARIO (um ano de ciclo de mercado)
+    e a implementacao e contagem fixa de barras, num regime de barra cuja duracao varia por
+    resolucao E por regime de vol. A janela de referencia da MESMA feature cobre 114,7 dias
+    em R1, 240 dias em R2 e 500 dias em R3 -- 4,4x de amplitude. Nao ha nenhum ajuste por
+    `bar_source`: FeatureWindows so escala `feature_a13_ema_window` (AG-043 F3); `feature_c08_vol_pctile_outer_window`
+    e bar_count fixo.'
+  nome_engana: 'Duas contas erradas empilhadas. (1) 17520 barras x 30min = 1 ano -- e a aritmetica
+    do PRD ORIGINAL a 30m, e o proprio constants.yaml a repete errada: ''lookback tabulado
+    17520 barras = 1 ano a 15m''. A 15m, 1 ano = 35040 barras; 17520 barras x 15min = 182,5
+    dias = 6 MESES, metade do que o nome promete. (2) Em producao nao ha barra de 15m: R1=9,43min
+    -> 17520x9,43 = 165.214min = 114,7 dias (3,8 meses); R2=19,73min -> 240 dias; R3=41,16min
+    -> 500 dias (1,37 ano). O nome ''1y'' nao e verdadeiro em NENHUMA das quatro grades.'
+  veredito: ERRO_CATEGORICO
+  observacao: 'Interacao pratica com min_warmup_bars=2000: a janela so fica cheia depois de
+    17520 barras, ou seja a feature roda quase 9x o warmup declarado com referencia parcial
+    e sem nenhuma NaN sinalizando isso (nan_policy exige apenas ''>= 1 ponto previo''). C08
+    e C07 medem o mesmo objeto (realized_vol_48) com referencias diferentes.'
+- feature: C09_range_pctile_expanding
+  formula_resumida: posto percentil EXPANSIVO estrito de A11_true_range_pct (TR_t/C_{t-1})
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: 'O insumo (A11) e de UMA barra -- true range da propria barra sobre
+    o close anterior, sem janela. A referencia expansiva e que cresce com a serie e nunca
+    esquece. Entao C09 e um sinal de 1 barra (h/H=0,20, faixa de gatilho) vestido de estatistica
+    quase-constante. lookback_bars: expanding descreve so a referencia.'
+  h_sobre_H: null
+  papel: quase-constante
+  mecanismo_economico: 'Choque de liquidez de barra unica: um range muito acima do historico
+    e vacuo no book -- ordens passivas retiradas, cascata de stops, execucao a preco pior.
+    Efeito real e imediato sobre o custo de entrada maker post-only e sobre a probabilidade
+    de gap sobre a barreira.'
+  quem_esta_do_outro_lado: Quem tinha stop dentro do vacuo e foi executado pior que o preco
+    de gatilho, e o formador de mercado que retirou cotacao antes do choque.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: Sob barra dollar o proprio range por barra ja e parcialmente normalizado por
+    construcao (num choque a barra fecha rapido, cortando o range antes de ele se realizar)
+    -- a faixa dinamica de A11 e comprimida em relacao ao que seria em barra de relogio. Herda
+    a nao-estacionariedade de referencia de C07 (AG-030).
+- feature: C10_vol_expansion_flag
+  formula_resumida: 1.0 se posto percentil expansivo de C06 (vol_ratio_12_96) > 0.80, senao
+    0.0
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: Sinal de entrada = C06, memoria 12 barras (perna rapida). Referencia
+    = distribuicao expansiva de C06, quase-constante. A saida binaria nao tem memoria propria
+    alem do cruzamento do limiar.
+  h_sobre_H: null
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'O mecanismo de NIVEL (expansao de vol descalibrando a barreira) pertence a
+    C06 e ja esta capturado la. A tese INCREMENTAL de C10 e que existe uma descontinuidade
+    economica no percentil 80 -- afirmacao sem nenhuma base: feature_c10_vol_expansion_threshold
+    = 0,80, ASSUMED, ''convencao do PRD, nunca testada''. Pior, o consumidor e uma arvore
+    (LightGBM), que aprende qualquer corte sozinha a partir do posto continuo -- binarizar
+    destroi informacao sem adicionar nada. Numero redondo (0,80) tratado como tradicao.'
+- feature: C11_vol_compression_flag
+  formula_resumida: 1.0 se posto percentil expansivo de C06 (vol_ratio_12_96) < 0.20, senao
+    0.0
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: Identica a C10 -- mesmo insumo (C06, 12 barras), mesma referencia
+    expansiva, comparacao invertida.
+  h_sobre_H: null
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Mesma critica de C10 com o limiar espelhado (0,20, ASSUMED, nunca testado).
+    C10 e C11 juntas sao dois cortes do MESMO posto continuo de C06 -- se a intencao era dar
+    o posto ao modelo, o correto era registrar o posto como feature, nao dois flags. A folclorica
+    'compressao precede expansao' e clustering de vol ja embutido em C06, nao uma tese propria.
+- feature: C12_vol_of_vol_48
+  formula_resumida: desvio-padrao rolante (48) da serie realized_vol_12
+  memoria_efetiva_barras: 48
+  memoria_justificativa: 'Janela externa (rolling_std 48) domina a resposta da saida; a janela
+    interna (realized_vol_12) so alonga o WARMUP para ~60 barras. lookback_bars: 60 do registry
+    e a soma inner+outer (o proprio constants.yaml diz isso) -- e o warmup, nao a memoria.'
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: 'Incerteza sobre a propria escala das barreiras: TP/SL sao postados
+    a partir de UM ponto de ATR; quando a vol da vol e alta, esse ponto e um estimador ruim
+    do proximo horizonte de 5 barras e o par TP/SL sai mal dimensionado com frequencia. Distinto
+    de C03/C06 (nivel e razao de nivel) -- e o segundo momento, e tem consequencia operacional
+    propria.'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: '12 e 48 sao ASSUMED, ''convencao do PRD, nunca testada'', ambas com sweep_required:
+    false. Ao contrario de C03/C04/C05, C12 nao e colinear com o resto do grupo -- e a unica
+    feature de segundo momento em C.'
+- feature: D01f_volume_z_96
+  formula_resumida: (V_t - media_96) / desvio_96, V em unidade BASE do ativo
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Z-score rolante: media e desvio de 96 barras sao normalizacao quase-estatica;
+    toda a variacao barra-a-barra da saida vem de V_t. Memoria ~1 barra, nao as 96 de lookback_bars
+    -- fator 96 de diferenca.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'PRETENDIDO: surto de volume = chegada de informacao / entrada de participante
+    informado (relacao volume-volatilidade de Karpoff), que antecede continuacao. ENTREGUE
+    sob barra dollar: nada disso -- ver veredito.'
+  quem_esta_do_outro_lado: 'Pretendido: liquidez passiva sendo consumida por quem tem pressa.
+    Na implementacao real, ninguem.'
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'A barra dollar fecha quando cumsum(price*quantity) cruza `threshold` -- entao
+    quote_volume por barra ~= threshold (constante dentro da janela de calibracao de 7 dias)
+    e a coluna `volume` (base) ~= threshold/preco. D01f nao mede atividade: mede o INVERSO
+    DO PRECO em janela de 96 barras, com o sinal trocado, mais o ruido de overshoot do ultimo
+    trade. O papel efetivo (proxy de -z(preco)) contradiz frontalmente a pretensao (surto
+    de participacao). Efeito secundario: o 96 vem de 96x15min=24h (ciclo diario de volume,
+    heranca do PRD a 30m onde 48 barras=1 dia) -- em R1 sao 15,1h, entao mesmo a normalizacao
+    de sazonalidade intradiaria que o 96 justificaria deixou de valer. VERIFICAR EMPIRICAMENTE
+    antes de agir (corr(V_t, 1/P_t) por simbolo/resolucao) -- o argumento aqui e estrutural,
+    lido do codigo, nao medido.'
+- feature: D02f_rel_volume_48
+  formula_resumida: V_t / mediana_48(V)
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Mesma estrutura de D01f: a mediana de 48 barras e denominador quase-estatico,
+    a variacao vem de V_t. Memoria ~1 barra contra lookback_bars: 48.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'Pretendido: mesmo mecanismo de D01f (surto de participacao relativo
+    a baseline), com mediana em vez de media para robustez a outlier. Nao entregue sob barra
+    dollar.'
+  quem_esta_do_outro_lado: 'Pretendido: liquidez passiva consumida. Na implementacao real,
+    ninguem.'
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Mesma degeneracao estrutural de D01f (volume ~= threshold/preco sob barra dollar):
+    V_t/mediana_48(V) ~= mediana_48(P)/P_t, ou seja um oscilador de preco invertido, nao volume
+    relativo. D01f, D02f e D03f sao tres normalizacoes diferentes da MESMA quantidade degenerada
+    -- nao sao tres teses.'
+- feature: D03f_volume_z_expanding
+  formula_resumida: z-score EXPANSIVO estrito de log(1+V_t) em [t0_dataset, t-1] (Welford,
+    estado ANTES de incorporar x_t)
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Z-score: memoria da SAIDA dominada por x_t = log(1+V_t), ~1 barra.
+    `lookback_bars: expanding` descreve so a referencia (media/desvio expansivos, quase-constantes
+    e nao-estacionarios), nunca a resposta do sinal.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'Pretendido: idem D01f. Nao entregue sob barra dollar.'
+  quem_esta_do_outro_lado: 'Pretendido: liquidez passiva consumida. Na implementacao real,
+    ninguem.'
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Degeneracao de D01f agravada por referencia expansiva: log(1+V) ~= log(threshold)
+    - log(P), entao o z expansivo vira aproximadamente o negativo do z expansivo de log(preco)
+    -- uma feature de NIVEL DE PRECO nao-estacionaria, exatamente o tipo de coisa que arruina
+    generalizacao out-of-sample. Ja rebaixada a T2 por AG-032 (por falta de purge finito,
+    nao por isto). Nota adicional: o `threshold` recalibra a cada 7 dias (dollar_bar_walkforward_cadence_days),
+    entao ha um degrau semanal no nivel de V que a referencia expansiva absorve como se fosse
+    mercado.'
+- feature: D04f_volume_accel
+  formula_resumida: rel_volume_4_t - rel_volume_4_{t-4}, rel_volume_4 = V_t/mediana_4(V)
+  memoria_efetiva_barras: 4
+  memoria_justificativa: 'Diferenca de dois sinais de ~1 barra separados por 4 barras -- a
+    memoria e o VAO da diferenca, 4 barras. lookback_bars: 8 e o warmup (4 da mediana + 4
+    do deslocamento), nao a memoria; o proprio constants.yaml diz ''8 = 4+4''.'
+  h_sobre_H: 0.8
+  papel: gatilho
+  mecanismo_economico: 'Pretendido: aceleracao de participacao -- a derivada do surto, nao
+    o nivel, para separar entrada de fluxo novo de fluxo ja precificado. Nao entregue sob
+    barra dollar.'
+  quem_esta_do_outro_lado: 'Pretendido: quem esta atrasado no mesmo trade. Na implementacao
+    real, ninguem.'
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Herda a degeneracao de volume das tres anteriores; sendo uma DIFERENCA de razoes
+    ja quase constantes, e a que mais se aproxima de ruido puro do overshoot de trade. Agravante
+    proprio: a mediana de janela 4 sobre uma serie quase constante nao e um denominador robusto
+    -- e quase o proprio V_t, entao rel_volume_4 ~= 1 e a diferenca ~= 0 por construcao.'
+- feature: D05f_taker_buy_ratio
+  formula_resumida: taker_buy_volume / volume -- fracao do volume da barra iniciada por comprador
+    agressor
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Razao ponto-a-ponto dentro da propria barra, sem janela nenhuma
+    (lookback_bars: 1, unica feature do grupo em que o campo do registry bate com a memoria
+    real).'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'Desequilibrio de fluxo agressor: quem cruza o spread paga por imediatismo,
+    e a literatura de microestrutura (Kyle, Glosten-Milgrom) trata isso como o canal por onde
+    informacao privada entra no preco. Impacto e mecanico -- o agressor consome niveis do
+    book e o formador reprecifica pra reconstruir inventario.'
+  quem_esta_do_outro_lado: O formador de mercado / provedor de liquidez passiva que foi preenchido
+    no lado errado e agora carrega inventario indesejado, e vai reprecificar ou hedgear.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Sobrevive intacta a barra dollar porque e RAZAO intra-barra: o denominador
+    fixo por construcao cancela. E a construcao correta do grupo D -- as features de nivel
+    deveriam ter seguido este padrao. Em R3 (41,16min) o desequilibrio ja esta agregado para
+    fora e a razao tende a 0,5: representavel em R1/R2, nao em R3.'
+- feature: D06f_taker_imbalance_z_48
+  formula_resumida: z-score rolante (48) de (2*taker_buy_ratio_t - 1)
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Z-score rolante: a saida e dominada pelo imbalance da propria barra
+    t; a janela 48 e baseline de normalizacao. Memoria ~1 barra, nao as 48 de lookback_bars.
+    O proprio constants.yaml classifica esta janela como ''NORMALIZACAO (nao agregacao do
+    proprio sinal)'' e registra que tratar 48 como janela de agregacao foi um ''erro de categoria''
+    ja corrigido em 2026-08-15.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: Mesmo mecanismo de D05f (pressao de agressor / entrada de informacao
+    privada), com a baseline movel resolvendo o vies estrutural de cada par (alguns ativos
+    tem taker_buy_ratio medio persistentemente != 0,5).
+  quem_esta_do_outro_lado: Idem D05f -- liquidez passiva preenchida no lado errado.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Achado ja registrado no proprio registry (Faixa 1.6, Bloco 5, 2026-08-09):
+    IC pooled contra ret_net ~= -0,0003 (essencialmente zero) mas INVERTE de sinal por regime
+    estrutural (R1/R2/R4 positivo, R3 negativo). O monotone_constraints permanece -1 forcado
+    por IC 7/7 anos -- ou seja, uma restricao de monotonicidade global sobre uma feature cujo
+    sinal medido e heterogeneo por regime. Isso e tensao real, nao cosmetica, e nao tem decisao
+    associada. Como D05f: representavel em R1/R2, agregada para fora em R3.'
+- feature: D07f_taker_imbalance_1m_agg
+  formula_resumida: media de (2*taker_buy_ratio_1m - 1) das barras de 1m cujo bucket_id =
+    open_time // step_ms('15m') bate com o da barra alvo
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Media das ~15 barras de 1m DENTRO da propria barra -- e uma medida
+    intra-barra, memoria 1 barra, batendo com lookback_bars: 1. Em producao a memoria e indefinida
+    porque a feature nunca e calculada (ver veredito).'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'Refinamento de D05f/D06f: o mesmo desequilibrio de agressor, mas medido
+    com resolucao intra-barra, o que separa ''pressao sustentada ao longo da barra'' de ''um
+    unico trade grande no fim''. Persistencia do desequilibrio e o que distingue acumulacao
+    informada de ruido -- mecanismo genuinamente distinto dos irmaos.'
+  quem_esta_do_outro_lado: Idem D05f/D06f, com a distincao de quem foi preenchido cedo vs
+    tarde dentro da barra.
+  ancoragem: relogio
+  ancoragem_defeito: 'O mecanismo e de FLUXO (agressividade intra-barra) mas o bucket de agregacao
+    e uma grade de RELOGIO FIXA: `open_time // step_ms(''15m'')` em `_sources.load_taker_imbalance_1m_agg_aligned`,
+    calculado identicamente nos dois lados. Sob barra dollar (`bar_source != ''time_15m''`)
+    o bucket nao corresponde a nenhuma barra real -- e `build_t1_features` reconhece isso
+    e PULA o carregamento incondicionalmente (build.py:1038, ''Sob bar_source != time_15m
+    o carregamento e SEMPRE pulado, independente deste argumento''). Direcao do defeito e
+    o espelho do exemplo do campo (relogio na implementacao, fluxo no mecanismo), mas e o
+    mesmo tipo de erro de ancoragem.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: 'Consequencia pratica: em PRODUCAO (canonical_bar_type: dollar, R1/R2/R3) a
+    coluna D07f_taker_imbalance_1m_agg e 100% NaN, sempre, em todos os simbolos e resolucoes.
+    O registry a lista como T2 disponivel com parity_tested: true e nan_policy que nao menciona
+    ''sempre NaN em producao'' -- so a docstring de build.py registra. Toda contagem de features
+    T2 disponiveis que inclua D07f esta inflada em 1. Ironia estrutural: e a unica feature
+    do grupo D com resolucao intra-barra, exatamente a que a grade dollar bar mais precisaria,
+    e e a unica que nao roda.'
+- feature: D08f_trade_count_z_48
+  formula_resumida: z-score rolante (48) de `count` (numero de trades agregados dentro da
+    barra)
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Z-score rolante: saida dominada por count_t; a janela 48 e normalizacao.
+    Memoria ~1 barra contra lookback_bars: 48.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: Sob barra dollar, `count` = quantos trades foram necessarios para acumular
+    um valor em dolar FIXO, ou seja o inverso do valor medio por trade -- e uma medida de
+    COMPOSICAO do fluxo (muitos trades pequenos = participacao pulverizada/retail ou execucao
+    algoritmica fatiada; poucos trades grandes = ordem em bloco / participante concentrado).
+    Mecanismo real de microestrutura, e sob barra dollar ele fica MAIS limpo do que seria
+    em barra de relogio (onde count se confunde com intensidade de atividade).
+  quem_esta_do_outro_lado: Quem executa em bloco esta pagando impacto por imediatismo e revelando
+    urgencia; do outro lado, o formador que precisa absorver tamanho concentrado.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: Mas o NOME e a fórmula do registry descrevem 'contagem de trades' como se fosse
+    intensidade de atividade por unidade de TEMPO -- que e o que seria em barra de relogio.
+    Sob barra dollar a quantidade medida e outra (trades por dolar fixo). Nao e nome_engana
+    no sentido de horizonte, mas a interpretacao da feature muda de significado entre `bar_source='time_15m'`
+    e producao, sem nenhuma nota no registry. Em R3 a agregacao ja diluiu a composicao de
+    tamanho de trade.
+- feature: D09f_avg_trade_size_z
+  formula_resumida: z-score rolante (48) de volume / count
+  memoria_efetiva_barras: 1
+  memoria_justificativa: 'Z-score rolante -- saida dominada pela razao da propria barra t.
+    Memoria ~1 barra contra lookback_bars: 48.'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'Identico ao de D08f (composicao de tamanho de fluxo). Nao ha mecanismo
+    INCREMENTAL: e a mesma forca, medida pelo mesmo dado, algebricamente reordenada.'
+  quem_esta_do_outro_lado: Idem D08f.
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Sob barra dollar D09f e uma transformacao quase deterministica de D08f: volume
+    ~= threshold/P, logo avg_trade_size = volume/count ~= threshold/(P*count) -- com P quase
+    constante na janela de 48 barras, D09f ~= -D08f a menos da nao-linearidade do log. O par
+    nao e duas teses, e uma. EVIDENCIA EMPIRICA JA REGISTRADA: AG-245-ADDENDUM (2026-08-25)
+    mede que em 5 de 6 comparacoes R2/R3 do filtro de ortogonalidade ''D09f SAIU e D08f ENTROU'',
+    e o mesmo par troca de lugar em R1 -- o log chama de ''troca dirigida entre duas features
+    do mesmo grupo que medem coisas correlatas'' e atribui ao relabel de AG-229. A causa estrutural
+    (identidade algebrica sob threshold fixo) e mais simples e nao foi considerada la.'
+- feature: D10f_vol_price_divergence
+  formula_resumida: correlacao de Pearson rolante (48) entre |log_return_1| e rolling_zscore(volume,
+    48)
+  memoria_efetiva_barras: 48
+  memoria_justificativa: Correlacao rolante e uma estatistica DA janela inteira (support.rolling_correlation,
+    [t-47,t]) -- a saida muda devagar e a memoria dura W=48, batendo com lookback_bars. Diferente
+    dos z-scores do grupo, aqui a janela E a memoria.
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: 'PRETENDIDO: proxy de lambda de Kyle / capacidade de absorcao -- volume
+    alto com pouco movimento de preco significa book profundo absorvendo; movimento grande
+    com pouco volume significa livro fino e cascata de stop. Custo de execucao e probabilidade
+    de gap sobre a barreira dependem disso diretamente. ENTREGUE sob barra dollar: outra coisa
+    -- ver veredito.'
+  quem_esta_do_outro_lado: 'Pretendido: o provedor de liquidez cuja profundidade esta sendo
+    medida indiretamente.'
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Duas falhas somadas. (1) A perna de volume herda a degeneracao do grupo: volume_z
+    ~= -z(preco), entao D10f ~= -corr(|ret|, nivel de preco) em 48 barras -- um proxy tosco
+    de efeito alavancagem, nao absorcao de liquidez. Papel efetivo contradiz a pretensao.
+    (2) A z-normalizacao interna do volume e inutil e sutilmente nociva: correlacao de Pearson
+    ja e invariante a transformacao afim, entao z-scorar seria no-op se a media/desvio fossem
+    os mesmos para toda a janela -- mas cada ponto usa a media/desvio da SUA propria janela,
+    o que faz da transformacao algo nao-afim que distorce a correlacao de um jeito que ninguem
+    declarou. corr(|ret|, volume) direto seria mais limpo e teria a mesma intencao. Janela
+    48 = ASSUMED, nunca testada.'
+- feature: E01f_funding_last
+  formula_resumida: último funding liquidado, asof-join backward por timestamp (passthrough)
+  memoria_efetiva_barras: 50.9
+  memoria_justificativa: 'lookback_bars declarado = 1, mas o passthrough entrega uma função
+    ESCADA: o mesmo valor é repetido em toda barra dentro do período de 8h. A memória real
+    é a duração do degrau = 8h/duração_da_barra = 50,9 b (R1 mediana), 24,3 b (R2), 11,7 b
+    (R3). Sob R1 o degrau varia de 14,9 b (p90=32,30 min) a 277 b (p10=1,73 min) — 18,7× de
+    dispersão sobre a MESMA feature.'
+  h_sobre_H: 10.18
+  papel: regime
+  mecanismo_economico: transferência periódica de caixa entre lados do perpétuo; funding positivo
+    = comprados pagam vendidos = alavancagem comprada apinhada, e o custo de carrego pressiona
+    desalavancagem
+  quem_esta_do_outro_lado: o lado apinhado paga; quem recebe é o arbitrador de base (spot/perp
+    cash-and-carry) e o market maker que absorve o desequilíbrio
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Implementação correta (alinhamento por timestamp, não por contagem de barra).
+    Efeito colateral não registrado: o COMPRIMENTO do degrau (quantas barras carregam o mesmo
+    valor) é ele próprio um sinal de volume/volatilidade — barras rápidas produzem degraus
+    longos. Isso também degrada a unicidade dos pesos de amostra (B10): dezenas de linhas
+    com feature idêntica e labels diferentes.'
+- feature: E02f_funding_z_expanding
+  formula_resumida: z-score expansivo estrito de funding_last, capado nas últimas 164.256
+    barras
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: 'Welford desde a origem (cap AG-030). O numerador (x_t) tem a memória
+    de degrau de E01f (50,9 b em R1); o denominador é toda a história retida → a ESCALA da
+    feature é objeto de história inteira. Regra do lote: expansivo = quase-constante. lookback_bars:
+    expanding no registry (honesto).'
+  h_sobre_H: expansiva
+  papel: quase-constante
+  mecanismo_economico: funding extremo RELATIVO à própria história do ativo = apinhamento
+    de posição fora do normal daquele ativo; é o mesmo mecanismo de E01f, normalizado para
+    ser comparável entre ativos
+  quem_esta_do_outro_lado: mesma de E01f — o lado apinhado paga o arbitrador de base
+  ancoragem: misto
+  ancoragem_defeito: 'T4: o cap `min_common_history_bars_15m=164256` codifica um enunciado
+    de CALENDÁRIO (1711 dias = teto comum aos 5 ativos, 2021-12-01→2026-08-07) em CONTAGEM
+    DE BARRAS de 15m (1711 × 96). Aplicado cru sob dollar bar: R1 → 164.256 × 9,43 min = 1.075,6
+    dias (62,9% do pretendido — corta 635 dias da história dos alts); R2 → 2.250 dias e R3
+    → 4.695 dias, ambos MAIORES que o histórico existente (1711 d = 124.880 b em R2, 59.860
+    b em R3) → o cap NUNCA morde, e a garantia de comparabilidade cross-asset que AG-030 criou
+    fica INERTE em 2 das 3 resoluções de produção.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: 'O defeito não é da fórmula (Welford estrito, B02 respeitado) — é do parâmetro
+    de recorte. Consequência prática: o mesmo id de feature significa 3 coisas diferentes
+    em R1/R2/R3, e a não-comparabilidade cross-asset que motivou AG-030 volta silenciosamente
+    em R2/R3. Vale igual para E15f/E17f, C07f e D03f (mesma primitiva).'
+- feature: E03f_funding_cum_3d
+  formula_resumida: soma dos últimos 9 eventos de funding conhecidos, fronteira de evento
+    por epoch de timestamp
+  memoria_efetiva_barras: 458.1
+  memoria_justificativa: '9 eventos × 8h = 72h de RELÓGIO. Convertido à grade: 458,1 b (R1),
+    219,0 b (R2), 105,0 b (R3). O `lookback_bars: 288` do registry é a conversão a 15m (288
+    × 15 min = 72h) e NÃO descreve o alcance real em nenhuma das 3 grades de produção.'
+  h_sobre_H: 91.62
+  papel: quase-constante
+  mecanismo_economico: 'carrego ACUMULADO de 3 dias: mede quanto o lado apinhado já pagou,
+    não só a taxa instantânea; funding cumulativo alto é a medida de pressão de desalavancagem
+    que precede squeeze'
+  quem_esta_do_outro_lado: posicionado alavancado que vem sangrando carrego há 3 dias vs.
+    quem recebe (base/arbitragem)
+  ancoragem: relogio
+  ancoragem_defeito: 'A MATEMÁTICA está certa (soma por EVENTO detectado por timestamp — evita
+    contar o mesmo valor ~32×). O defeito está no FOOTPRINT DECLARADO, que é o número consumido
+    pelo purge/CPCV: 288 barras vs. 458,1 barras reais em R1 = sub-declaração de 1,59×. Pior:
+    sob dollar bar o purge usa `max_consecutive_bar_window_duration_ms`, medido para `max_feature_window_bars()=96`
+    (build.py:544) — se E03f for promovida ao conjunto ativo, o alcance real de 458 b é 4,8×
+    a janela para a qual a constante de purge foi calibrada, e a guarda de staleness só emite
+    `structlog.warning`, não falha (B09/B02 violados sem interromper o build).'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: 'Segundo defeito (T5): `funding_interval_hours=8` é constante fixa, e a fronteira
+    de evento é `close_time // 8h`. Nos períodos em que o venue liquidou em 4h/2h (o próprio
+    repo mediu isso para SOLUSDT, ~8 dias em 2022-11-09/18, comentário de `feature_e10f_oi_change_window`),
+    dois eventos reais caem no MESMO epoch e um deles é descartado — a ''soma de 9 eventos''
+    passa a cobrir mais de 72h e pular fundings, sem NaN e sem log.'
+- feature: E05f_time_to_funding_h
+  formula_resumida: horas até a próxima fronteira UTC de 8h, a partir do close_time da barra
+  memoria_efetiva_barras: instantanea
+  memoria_justificativa: cada barra depende só do próprio timestamp (memória de passado =
+    0). Mas o VALOR é um dente-de-serra de período 8h = 50,9 b (R1) / 24,3 b (R2) / 11,7 b
+    (R3); é esse período que determina o papel efetivo. Durante um trade inteiro (H=5 b =
+    47 min em R1) a feature percorre só 9,8% do ciclo.
+  h_sobre_H: 10.18
+  papel: regime
+  mecanismo_economico: 'fase do ciclo de settlement: quem não quer pagar funding fecha/reduz
+    antes da marca de 8h e reabre depois — fluxo mecânico previsível concentrado em janelas
+    de relógio fixas (o próprio repo mediu concentração de retorno extremo nos 3 horários
+    de funding, AG-124)'
+  quem_esta_do_outro_lado: quem evita o pagamento (fecha antes) vs. quem monta a posição justamente
+    para receber o funding (delta-neutro/base)
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Implementação correta e a mais limpa do grupo (aritmética de epoch, sem contagem
+    de barra). Dois cuidados: (a) T5 — o intervalo de 8h é constante `LITERATURE` enquanto
+    o dado traz `funding_interval_hours` por linha e o check 19 do próprio projeto proíbe
+    assumir 8h; num regime de 4h a feature devolve até 8,0 quando o máximo real é 4,0, fora
+    do `range` declarado no registry; (b) T6 — sob dollar bar a fase de relógio correlaciona
+    com a taxa de chegada de barra, logo com o horizonte de relógio do próprio label.'
+- feature: E08f_oi_notional
+  formula_resumida: sum_open_interest_value (USD) alinhado por asof backward (passthrough)
+  memoria_efetiva_barras: quase-constante
+  memoria_justificativa: passthrough (lookback_bars=1), mas o objeto é um NÍVEL não-estacionário
+    em USD que cresce com adoção/preço na escala de anos. A variação dentro de H=5 barras
+    (47 min em R1) é desprezível frente ao range histórico; além disso a fonte só atualiza
+    a cada 5 min de relógio (T1), então em barras rápidas o valor é literalmente repetido.
+  h_sobre_H: '>20 (nível com deriva plurianual)'
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'Nenhuma força de mercado diz que ''OI = X bilhões de USD'' implica direção
+    — o mecanismo se prende a MUDANÇA ou a EXTREMO relativo, que é o trabalho de E10f/E11f/E15f.
+    Como nível cru num modelo de árvore, o corte aprendido é um limiar absoluto válido só
+    na época em que foi aprendido: degrada por construção no walk-forward. Agrava: OI notional
+    = OI contratos × preço, logo E08f é quase colinear com o preço (E09f × close), o que reintroduz
+    nível de preço no vetor por via indireta.'
+- feature: E09f_oi_contracts
+  formula_resumida: sum_open_interest (contratos) alinhado por asof backward (passthrough)
+  memoria_efetiva_barras: quase-constante
+  memoria_justificativa: 'mesma estrutura de E08f: nível não-estacionário, atualização a cada
+    5 min de relógio (T1), variação intrabarra desprezível frente à deriva plurianual.'
+  h_sobre_H: '>20 (nível com deriva plurianual)'
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Mesma crítica de E08f, sem o acoplamento com preço. Note que E08f e E09f juntos
+    entregam implicitamente o preço médio da posição aberta (E08f/E09f) — uma terceira quantidade
+    que ninguém declarou e que nenhum teste de causalidade cobre.
+- feature: E10f_oi_change_z_48
+  formula_resumida: z-score rolante (48 b) de Δln(OI) de UMA barra
+  memoria_efetiva_barras: 1.0
+  memoria_justificativa: 'a janela 48 é NORMALIZAÇÃO, não memória (regra do lote): o sinal
+    é a variação de 1 barra. lookback_bars=48 no registry descreve o alcance do denominador,
+    não o horizonte informacional. Para referência, 48 b = 7,54h (R1) / 15,78h (R2) / 32,93h
+    (R3).'
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: abertura/fechamento agregado de posição alavancada — pico de OI = combustível
+    de liquidação sendo montado; queda de OI = desalavancagem forçada em curso
+  quem_esta_do_outro_lado: quem entra alavancado vs. o market maker/base que toma o outro
+    lado e depois colhe a liquidação
+  ancoragem: misto
+  ancoragem_defeito: 'T1: o Δ é de 1 BARRA sobre uma fonte amostrada a cada 5 min de RELÓGIO.
+    Em R1 a mediana da barra é 9,43 min (só 1,9 ticks da fonte por barra) e o p10 é 1,73 min
+    — para toda barra mais curta que 5 min o asof-join devolve o MESMO create_time da barra
+    anterior e Δln(OI) = 0 por construção mecânica, não por ausência de fluxo. O horizonte
+    real do delta é max(duração_da_barra, 5 min), que varia 2,9× dentro da própria R1. Zeros
+    mecânicos inflam o centro da distribuição, deflacionam o desvio da janela 48 e inflam
+    |z| exatamente nas barras que atravessam um tick da fonte.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: '`feature_e10f_oi_change_window: 48` é `provenance: ASSUMED`, ''nunca testada''.
+    A medição que existe (measure_funding_cycle_oi_seasonality.py) encontrou sazonalidade
+    fraca perto de 96 barras=24h — mas essa medição foi feita em barras de 15m; sob dollar
+    bar 96 b = 15,1h (R1), então a conclusão não transfere e não deveria ser citada como suporte
+    a nenhuma janela na grade atual.'
+- feature: E11f_oi_change_1d
+  formula_resumida: Δln(OI) sobre 48 barras (sem normalização)
+  memoria_efetiva_barras: 48.0
+  memoria_justificativa: diferença sobre 48 barras → alcance real de 48 barras (aqui lookback_bars=48
+    do registry está correto EM BARRAS; o que não está é a equivalência com '1 dia').
+  h_sobre_H: 9.6
+  papel: regime
+  mecanismo_economico: acumulação/liquidação de posicionamento no horizonte de um dia — quanta
+    alavancagem líquida foi montada desde ontem
+  quem_esta_do_outro_lado: entrantes alavancados vs. provedores de liquidez que precificam
+    o desequilíbrio
+  ancoragem: misto
+  ancoragem_defeito: 'A tese (''mudança de OI em UM DIA'') é um enunciado de RELÓGIO implementado
+    como contagem fixa de barra, e `LoteAWindows` não reescala por grade (T3). Conta: 48 ×
+    9,43 min = 452,6 min = 7,54h = 0,31 dia em R1; 48 × 19,73 = 15,78h = 0,66 dia em R2; 48
+    × 41,16 = 32,93h = 1,37 dia em R3. O MESMO id de feature cobre horizontes que diferem
+    4,4× entre as 3 resoluções de produção, e nenhum deles é 1 dia.'
+  nome_engana: '''oi_change_1d'' promete 24h e entrega 7,54h em R1 (fator 0,31×). Na grade
+    original de 30m do PRD, 48 × 30 min = 24h de fato — o nome é resíduo de um TF que não
+    existe mais. Nem sob 15m (12h) nem sob R1/R2/R3 a igualdade se sustenta.'
+  veredito: ERRO_CATEGORICO
+  observacao: 'A constante `feature_e11f_oi_change_lag_bars: 48` é `ASSUMED` e o próprio `source`
+    admite por escrito que o nome ''1d'' vem do PRD a 30m e que não houve recalibração. Isto
+    é dívida declarada, não descoberta — mas segue sendo erro categórico em produção, agora
+    com um fator de desvio pior do que o registrado (o comentário fala de 12h a 15m; sob R1
+    real são 7,54h).'
+- feature: E12f_price_oi_divergence
+  formula_resumida: sign(log_return_12) × sign(Δln(OI) sobre 12 barras) ∈ {-1,0,1}
+  memoria_efetiva_barras: 12.0
+  memoria_justificativa: as duas pernas usam o mesmo lag de 12 barras → alcance 12 barras.
+    12 b = 1,89h (R1) / 3,95h (R2) / 8,23h (R3).
+  h_sobre_H: 2.4
+  papel: confirmacao
+  mecanismo_economico: 'matriz clássica preço×OI: preço sobe com OI subindo = dinheiro novo
+    comprado (continuação); preço sobe com OI caindo = recompra de vendido (exaustão). É afirmação
+    sobre QUEM está movendo o preço, não sobre o preço'
+  quem_esta_do_outro_lado: no quadrante preço↑/OI↓, o vendido sendo espremido está comprando
+    de volta — a contraparte é quem estava vendido e capitulou
+  ancoragem: misto
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Melhor tese econômica do grupo E. Três ressalvas: (a) `sign()` joga fora a
+    magnitude — ''OI subiu 0,01%'' e ''OI subiu 8%'' viram o mesmo +1, e perto de zero o sinal
+    é ruído puro; (b) a perna de OI herda o piso de 5 min da fonte (T1), embora com 12 barras
+    (mínimo 20,8 min no pior caso de p10) a inflação de zeros seja muito menor que em E10f;
+    (c) o horizonte varia 4,4× entre R1 e R3 (1,89h → 8,23h) para a mesma feature — a tese
+    não diz qual dos dois é o horizonte pretendido.'
+- feature: E14f_toptrader_ls_ratio
+  formula_resumida: sum_toptrader_long_short_ratio (ponderado por posição) alinhado por asof
+    backward
+  memoria_efetiva_barras: 1.0
+  memoria_justificativa: passthrough do nível corrente, com piso de atualização de 5 min de
+    relógio (T1) — em barras R1 abaixo de 5 min o valor se repete. A PERSISTÊNCIA real do
+    nível (autocorrelação do posicionamento agregado) NÃO foi medida neste repo — TBD, não
+    estimar (B23).
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: posicionamento das contas de maior porte da Binance — proxy de fluxo
+    informado; o desvio dessas contas do próprio hábito antecede movimento com mais frequência
+    que o desvio do varejo
+  quem_esta_do_outro_lado: o varejo agregado (E16f) e o market maker, que ficam com o lado
+    oposto do que os top traders montam
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Diferente de E08f/E09f, aqui o NÍVEL cru é defensável: é uma razão adimensional
+    que orbita valores comparáveis ao longo do tempo, não um agregado que cresce com adoção.
+    Ressalva registrada: a escolha `sum_` (ponderado por posição) vs `count_` (por conta)
+    foi decisão do Manager sem medição comparativa — as duas colunas existem no schema e medem
+    coisas economicamente distintas.'
+- feature: E15f_toptrader_ls_z
+  formula_resumida: z-score expansivo estrito de E14f, capado nas últimas 164.256 barras
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: 'mesma primitiva de E02f: numerador segue o nível corrente (≈1 barra,
+    com piso de 5 min da fonte), denominador é história inteira retida → escala quase-constante.'
+  h_sobre_H: expansiva
+  papel: quase-constante
+  mecanismo_economico: posicionamento dos top traders EXTREMO relativo ao próprio histórico
+    — apinhamento informado, e o extremo é onde a assimetria de liquidação mora
+  quem_esta_do_outro_lado: varejo/market maker no lado oposto do extremo
+  ancoragem: misto
+  ancoragem_defeito: 'T4, idêntico a E02f: o cap de 164.256 barras traduz ''1711 dias de histórico
+    comum'' para contagem de barras de 15m e é aplicado cru sob dollar bar → 1.075,6 dias
+    em R1 (62,9% do pretendido) e cap inerte em R2/R3 (2.250 e 4.695 dias contra um histórico
+    de 1.711).'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: A tese é boa e a matemática (Welford estrito) também; o que quebra é o recorte
+    de história. Como o propósito declarado do cap era comparabilidade CROSS-ASSET, o defeito
+    atinge exatamente o uso multi-ativo que o projeto faz.
+- feature: E16f_global_ls_ratio
+  formula_resumida: count_long_short_ratio (ponderado por conta) alinhado por asof backward
+  memoria_efetiva_barras: 1.0
+  memoria_justificativa: passthrough do nível corrente com piso de 5 min de relógio (T1).
+    Persistência real do nível não medida (TBD).
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'apinhamento do varejo por CONTAGEM DE CONTAS — indicador contrário:
+    quando a massa de contas pequenas está do mesmo lado, é essa massa que fornece o estoque
+    de stops a ser varrido'
+  quem_esta_do_outro_lado: market maker e liquidador — a liquidação em cascata do varejo é
+    a saída de quem está do outro lado
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Contraste com E14f é deliberado e correto (contas vs. posições). O que o registry
+    NÃO diz: `count_toptrader_long_short_ratio` também existe no schema e ficou sem feature
+    — a comparação conta-a-conta entre varejo e top trader (o pareamento metodologicamente
+    limpo) não está disponível no vetor.'
+- feature: E17f_retail_vs_top_spread
+  formula_resumida: z_expansivo(global_ls_ratio) − z_expansivo(toptrader_ls_ratio)
+  memoria_efetiva_barras: expansiva
+  memoria_justificativa: diferença de dois z-scores expansivos; cada perna herda a estrutura
+    de E02f/E15f (nível corrente sobre escala de história inteira).
+  h_sobre_H: expansiva
+  papel: quase-constante
+  mecanismo_economico: 'divergência entre dinheiro informado e dinheiro desinformado — a tese
+    mais explícita do grupo: quando o varejo está comprado e o top trader vendido, existe
+    uma contraparte identificável e um estoque de liquidação identificável'
+  quem_esta_do_outro_lado: explicitamente as duas populações medidas, uma contra a outra
+  ancoragem: misto
+  ancoragem_defeito: 'T4 em DOBRO — as duas pernas usam o mesmo cap de 164.256 barras aplicado
+    cru sob dollar bar (1.075,6 dias em R1; inerte em R2/R3). O erro não se cancela na subtração:
+    as duas séries têm coberturas de dado diferentes, então o recorte desloca cada z de forma
+    diferente.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: 'Além do cap: E17f é função linear exata de E15f e do z de E16f, ambos já no
+    vetor (E15f explicitamente, o z de E16f computado internamente). Fornecer os três a um
+    modelo de árvore não adiciona informação e dilui a importância entre colunas colineares
+    — relevante para o critério de HHI < 0,25 do DoD de modelo.'
+- feature: E18f_taker_ls_vol_ratio
+  formula_resumida: sum_taker_long_short_vol_ratio (janela de 5 min da fonte) alinhado por
+    asof backward
+  memoria_efetiva_barras: 1.0
+  memoria_justificativa: passthrough, mas o objeto medido é um FLUXO agregado sobre uma janela
+    de 5 minutos de RELÓGIO, não sobre a barra.
+  h_sobre_H: 0.2
+  papel: gatilho
+  mecanismo_economico: 'agressão: quanto do volume atravessou o spread comprando vs. vendendo
+    — desequilíbrio de ordem a mercado, o mecanismo mais direto de pressão de preço que existe'
+  quem_esta_do_outro_lado: o maker passivo que absorve a agressão e depois precisa se descarregar
+  ancoragem: misto
+  ancoragem_defeito: 'Inversão fluxo×relógio: o numerador/denominador é fluxo acumulado numa
+    janela FIXA de 5 min de relógio, colado numa barra cuja janela é FIXA em dólar negociado.
+    Em barra rápida (p10 = 1,73 min) a janela de 5 min cobre ~2,9× o fluxo da própria barra
+    (e o mesmo valor é repetido em até 3 barras consecutivas); em barra lenta (p90 = 32,30
+    min) cobre 15,5% do fluxo da barra, e só a fatia final dela. A fração do fluxo da barra
+    que a feature descreve varia ~19× dentro de R1 sem nenhuma marcação.'
+  nome_engana: null
+  veredito: ERRO_CATEGORICO
+  observacao: O repo JÁ tem a versão correta deste mecanismo — D06f/D07f calculam desequilíbrio
+    de taker a partir de agg_trades sobre a própria barra. E18f entrega o mesmo conceito numa
+    janela desalinhada; se ambas entrarem no vetor, a colinearidade é alta e a versão errada
+    pode ganhar o split.
+- feature: E27f_cost_atr_ratio
+  formula_resumida: custo_round_trip_bps constante / (ATR20_pct × 10.000)
+  memoria_efetiva_barras: 13.86
+  memoria_justificativa: numerador é constante por ativo (maker/taker fee + prob. de toque
+    medida); toda a variação vem do ATR de Wilder com janela 20 → h ≈ 0,693 × 20 = 13,86 barras
+    (a regra Wilder do lote, não a janela nominal 20 do registry).
+  h_sobre_H: 2.77
+  papel: confirmacao
+  mecanismo_economico: 'razão custo/oportunidade: o custo de ida e volta é fixo e a amplitude
+    disponível não é; quando ATR encolhe, o mesmo trade deixa de pagar. É a restrição R2 (§0.2)
+    expressa barra a barra'
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: fluxo
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Única feature genuinamente ancorada em fluxo do grupo E (ATR sobre dollar bars
+    não invoca relógio) — e, com E12f, a mais coerente. Ressalva séria e já registrada no
+    próprio repo: E27f é essencialmente 1/vol e as barreiras TP/SL do label são escaladas
+    por ATR, logo o |ρ| = 0,142 com ret_net (o maior de todo o T1) é geometria do label, não
+    edge. Um modelo que aprende E27f está aprendendo o dimensionamento da própria barreira;
+    a feature é honesta como FILTRO de viabilidade e enganosa como preditor direcional.'
+- feature: K01_hour_sin
+  formula_resumida: sin(2π × hora_UTC_fracionária / 24) do close_time da barra
+  memoria_efetiva_barras: instantanea
+  memoria_justificativa: 'depende só do próprio timestamp (memória de passado = 0; lookback_bars=1
+    é honesto). O que governa o papel é o PERÍODO do ciclo: 24h = 152,7 b (R1) / 73,0 b (R2)
+    / 35,0 b (R3). Dentro de um trade (H=5 b) a fase avança 3,3% do ciclo em R1.'
+  h_sobre_H: 30.54
+  papel: quase-constante
+  mecanismo_economico: ciclo intradiário de participação — Ásia/Europa/EUA, abertura do caixa
+    americano, marcas de funding. Real para LIQUIDEZ e VOLATILIDADE; para DIREÇÃO o mecanismo
+    não é declarado por ninguém
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'A implementação é correta (timestamp puro). A incoerência é de papel: (a) T6
+    — sob dollar bar a hora do dia determina a TAXA DE CHEGADA de barra, logo o horizonte
+    de RELÓGIO do label H=5 barras muda com a hora (de ~8,7 min a ~161 min); o modelo pode
+    aprender ''nesta hora o alvo de 5 barras é diferente'' porque o alvo é OUTRO objeto, não
+    porque exista força de mercado; (b) o ciclo de 24h é 30,5×H em R1 e 7,0×H em R3 — a mesma
+    coluna é quase-constante numa grade e regime na outra; (c) um único par sin/cos representa
+    apenas o 1º harmônico, e o perfil intradiário real tem DEGRAUS (13:30 UTC, 00/08/16 UTC),
+    que nenhuma senóide de período 24h reproduz.'
+- feature: K01_hour_cos
+  formula_resumida: cos(2π × hora_UTC_fracionária / 24) do close_time da barra
+  memoria_efetiva_barras: instantanea
+  memoria_justificativa: idêntica a K01_hour_sin — o par existe só para tornar a fase contínua
+    na virada de dia; a memória e o período (152,7 b em R1) são os mesmos.
+  h_sobre_H: 30.54
+  papel: quase-constante
+  mecanismo_economico: mesmo ciclo intradiário de participação de K01_hour_sin; a coluna cos
+    não carrega mecanismo próprio, só a segunda coordenada da mesma fase
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Herda integralmente as 3 incoerências de K01_hour_sin. Adicional: para um modelo
+    de ÁRVORE o encoding sin/cos não compra nada — a árvore particiona a hora crua com cortes
+    de limiar sem precisar de continuidade; o par sin/cos existe para modelos lineares/de
+    distância e aqui só duplica a mesma informação em 2 colunas correlacionadas.'
+- feature: K02_dow_sin
+  formula_resumida: sin(2π × dia_da_semana_UTC / 7), dow=0 na quinta (época Unix)
+  memoria_efetiva_barras: instantanea
+  memoria_justificativa: só o próprio timestamp. Período do ciclo = 7 dias = 1.068,9 b (R1)
+    / 511,0 b (R2) / 244,9 b (R3). Dentro de um trade (H=5 b) a fase avança 0,47% do ciclo
+    em R1 — a coluna é literalmente constante durante qualquer operação.
+  h_sobre_H: 213.78
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Nenhuma força de mercado gera um ciclo SENOIDAL semanal. O efeito semanal real
+    em cripto é um DEGRAU (TradFi aberto/fechado), que K03_is_weekend já codifica exatamente.
+    Uma senóide de período 7 dias impõe que segunda e domingo sejam 'quase o mesmo estado'
+    e que quinta seja o oposto de domingo — afirmações que ninguém sustenta. Somado ao ponto
+    de que a coluna é constante durante qualquer trade de 47 min, é uma variável de fold,
+    não de decisão.
+- feature: K02_dow_cos
+  formula_resumida: cos(2π × dia_da_semana_UTC / 7)
+  memoria_efetiva_barras: instantanea
+  memoria_justificativa: idêntica a K02_dow_sin; período 1.068,9 b em R1.
+  h_sobre_H: 213.78
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: Mesma crítica de K02_dow_sin. Com apenas 7 valores discretos possíveis, o par
+    (sin, cos) é uma reparametrização injetiva de um fator de 7 níveis — para árvore, 2 colunas
+    contínuas onde bastaria 1 categórica, e nenhuma das duas com tese.
+- feature: K03_is_weekend
+  formula_resumida: 1.0 se sábado ou domingo UTC (dow ∈ {2,3} na convenção quinta=0), senão
+    0.0
+  memoria_efetiva_barras: 305.4
+  memoria_justificativa: a memória de cálculo é zero (só o timestamp), mas o VALOR é um bloco
+    constante de 48h = 305,4 b (R1) / 146,0 b (R2) / 70,0 b (R3). É o comprimento do bloco
+    que define o papel.
+  h_sobre_H: 61.09
+  papel: quase-constante
+  mecanismo_economico: 'TradFi fechado: sem CME, sem fluxo institucional de caixa, market
+    makers reduzem estoque e a profundidade do livro cai — o mesmo desequilíbrio move mais
+    o preço no fim de semana, e o gap de segunda repreça o que aconteceu fora do horário'
+  quem_esta_do_outro_lado: o market maker que reduziu inventário e alarga spread — quem exige
+    liquidez no fim de semana paga a ele
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'Único mecanismo de calendário do grupo K que sobrevive ao escrutínio, e a implementação
+    (timestamp puro, sem contagem de barra) está certa. Mas o papel é estritamente de CONDICIONAMENTO/regime
+    — 61×H — nunca gatilho: dentro de qualquer trade a coluna é constante. Consumi-la como
+    feature do Alpha em vez de gate de regime é usar uma variável de regime no lugar errado
+    da arquitetura.'
+- feature: K04_session_asia
+  formula_resumida: 1.0 se hora UTC ∈ [0, 8), senão 0.0
+  memoria_efetiva_barras: 50.9
+  memoria_justificativa: bloco constante de 8h = 50,9 b (R1) / 24,3 b (R2) / 11,7 b (R3);
+    memória de cálculo zero.
+  h_sobre_H: 10.18
+  papel: regime
+  mecanismo_economico: janela de participação asiática — base de traders, horário de decisão
+    de mesas locais, e as duas marcas de funding 00:00/08:00 UTC caem exatamente nas bordas
+    deste bloco
+  quem_esta_do_outro_lado: durante a janela asiática o livro é sustentado por menos participantes;
+    quem exige liquidez paga um spread maior aos poucos makers presentes
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: TESE_OK
+  observacao: 'É a única das 3 sessões cuja fronteira bate razoavelmente com a convenção real
+    citada na própria `constants.yaml` (Tóquio 00:00-09:00 UTC): cobre 8 das 9 horas. Ressalvas:
+    T6 (a hora é proxy do horizonte de relógio do label) e colinearidade perfeita — as 3 colunas
+    de K04 somam 1 por construção e são função determinística da mesma hora que K01 já entrega.'
+- feature: K04_session_europe
+  formula_resumida: 1.0 se hora UTC ∈ [8, 16), senão 0.0
+  memoria_efetiva_barras: 50.9
+  memoria_justificativa: bloco constante de 8h = 50,9 b (R1) / 24,3 b (R2) / 11,7 b (R3).
+  h_sobre_H: 10.18
+  papel: regime
+  mecanismo_economico: pretende capturar a janela de participação europeia (Londres)
+  quem_esta_do_outro_lado: 'makers e mesas europeias — mas ver nome_engana: a população realmente
+    capturada não é essa'
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: '''session_europe'' = [8,16) UTC contém 13:30-16:00 UTC, ou seja, as 2,5 primeiras
+    horas do PREGÃO DE CAIXA AMERICANO (abertura 13:30/14:30 UTC conforme DST) — a janela
+    de maior volume do dia inteiro em cripto. A coluna rotulada ''Europa'' entrega ''Europa
+    + abertura dos EUA''; 31% do bloco é sessão americana. A `constants.yaml` documenta Londres
+    como 07:00/08:00-16:00/17:00 UTC e Nova York como 12:00/13:00-21:00/22:00 UTC — pelos
+    próprios números do repo os blocos se sobrepõem em 4 horas, e a partição escolhida atribui
+    essas 4 horas inteiramente à Europa.'
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: O erro não é a simplificação de partição mutuamente exclusiva (que é decisão
+    declarada e defensável) — é ONDE o corte foi feito. Cortar em 12:00 ou 13:00 UTC separaria
+    as duas populações; cortar em 16:00 mistura a hora mais ativa do dia na sessão errada.
+    Nenhum horário de verão é tratado, o que desloca a fronteira real em 1h por ~metade do
+    ano.
+- feature: K04_session_us
+  formula_resumida: 1.0 se hora UTC ∈ [16, 24), senão 0.0
+  memoria_efetiva_barras: 50.9
+  memoria_justificativa: bloco constante de 8h = 50,9 b (R1) / 24,3 b (R2) / 11,7 b (R3).
+  h_sobre_H: 10.18
+  papel: regime
+  mecanismo_economico: pretende capturar a sessão americana
+  quem_esta_do_outro_lado: ver nome_engana — a janela capturada é majoritariamente pós-fechamento,
+    onde a contraparte institucional americana já saiu
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: '''session_us'' = [16,24) UTC EXCLUI 13:30-16:00 (a abertura do caixa americano,
+    o pico de volume) e INCLUI 21:00/22:00-24:00 (2 a 3 horas após o fechamento de NY, que
+    a própria constants.yaml situa em 21:00/22:00 UTC). Pela convenção citada no repo (NY
+    12:00/13:00-21:00/22:00 UTC), a sobreposição real entre [16,24) e a sessão de NY é de
+    5 a 6 horas de 8 — 25% a 37,5% do bloco é tempo fora da sessão americana, e a fatia mais
+    informativa dela está rotulada como Europa.'
+  veredito: INCOERENTE_DIMENSIONAL
+  observacao: 'Redundância adicional: as 3 colunas K04 somam identicamente 1, então uma delas
+    é linearmente determinada pelas outras duas; e todas são função em degrau da mesma hora
+    que K01_hour_sin/cos já fornece continuamente. O vetor carrega 5 colunas para 1 grandeza
+    (hora do dia).'
+- feature: K08_days_since_halving
+  formula_resumida: dias corridos desde o halving do BITCOIN mais recente ≤ t (4 datas fixas)
+  memoria_efetiva_barras: quase-constante
+  memoria_justificativa: 'memória de cálculo zero, mas o valor é uma RAMPA MONÓTONA: sobe
+    1 unidade a cada 152,7 barras em R1. Dentro de um trade (H=5 b) avança 0,033 dia. O ciclo
+    completo (1.461 dias) equivale a ~223.100 barras R1 = 44.620×H.'
+  h_sobre_H: 44620.0
+  papel: quase-constante
+  mecanismo_economico: AUSENTE
+  quem_esta_do_outro_lado: AUSENTE
+  ancoragem: relogio
+  ancoragem_defeito: null
+  nome_engana: 'o nome afirma um mecanismo de OFERTA (redução da emissão do Bitcoin). Aplicada
+    a ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT — o que build.py:849 faz, mesmas 4 datas para os 5 símbolos
+    — não existe evento nenhum nessas datas para esses ativos: é um contador linear de tempo
+    com nome econômico emprestado. Mesmo em BTCUSDT o mecanismo age sobre emissão diária (~450
+    BTC/dia após 2024) contra bilhões de USD de giro diário, num horizonte de meses; o alvo
+    aqui tem 47 min.'
+  veredito: SEM_MECANISMO
+  observacao: 'O risco é maior que ''feature inútil''. Sendo monótona dentro de cada época
+    de 4 anos, a coluna é um proxy quase perfeito de TEMPO DE CALENDÁRIO: dentro de um fold
+    ela permite ao modelo identificar e memorizar o período de treino (e, com isso, o regime
+    de mercado daquele período); no walk-forward os valores do teste ficam SEMPRE acima do
+    suporte de treino, região onde a árvore extrapola constante — ou seja, no melhor caso
+    inerte fora da amostra e no pior caso um vetor de sobreajuste por época. Recomendação:
+    fora do vetor; se houver tese de ciclo de emissão, ela é para o Regime Engine e só para
+    BTCUSDT.'

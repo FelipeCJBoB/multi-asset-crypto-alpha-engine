@@ -17946,3 +17946,100 @@ entries:
       concluir "entao e real" -- e o modo de falha mais comum em pesquisa
       quantitativa, e o unico motivo de ter parado foi haver uma predicao
       escrita antes.
+
+  - id: AG-263
+    date: "2026-08-25"
+    file: "audit/feature_thesis/fichas_69_2026-08-25.yaml, src/features/registry.yaml, src/features/build.py, src/features/groups/*.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-207, ::AG-043, ::AG-030, ::AG-042, ::AG-245-ADDENDUM, config/constants.yaml"
+    found_by: "Claude, persona feature-thesis-auditor -- ficha de tese das 72 colunas do vetor (T1 + T2 promovidas por AG-207), 3 auditorias independentes por grupo com a mesma rubrica; os 3 achados abaixo REVERIFICADOS por execucao direta antes de entrar aqui"
+    numeracao: "AG-263 -- AG-258/AG-259 seguem reservados para a sessao paralela (ver AG-260)"
+    gap: >
+      O VETOR DE FEATURES NAO TEM TESE. Ficha de tese produzida para as 72
+      colunas, com a memoria EFETIVA da saida calculada da formula real (nao
+      o `lookback_bars` declarado) e o papel medido contra H=5 barras:
+        veredito                  n
+        SEM_MECANISMO            29
+        TESE_OK                  17
+        INCOERENTE_DIMENSIONAL   16
+        ERRO_CATEGORICO          10
+      33 das 72 colunas nao tem NENHUM mecanismo economico declarado em
+      registry, docstring ou constants.yaml -- a justificativa disponivel e
+      "indicador classico". Sem mecanismo nao ha tese: ha mineracao, e
+      mineracao se paga na deflacao.
+      Contexto que torna isso decisivo: AG-260 mediu que o motor precisa de
+      lift de 1,08 a 1,15 em P(TP) so para empatar. E um vetor sem tese
+      declarada tentando entregar +8% a +15% de taxa de acerto.
+    severity: >
+      alto -- nao invalida artefato nenhum sozinho, mas e a explicacao mais
+      simples e mais barata para o padrao que AG-244/AG-246/ADR-003 vem
+      medindo por caminhos independentes (lift ~1,0, ordenacao nao
+      transportavel, medianas negativas).
+    layer: "features (desenho do vetor)"
+    consequence: >
+      TRES ACHADOS VERIFICADOS POR EXECUCAO NESTA SESSAO, nao herdados das
+      fichas sem checagem:
+
+      (1) VOLUME E DEGENERADO SOB DOLLAR BAR, DENTRO DA CALIBRACAO.
+      A barra fecha quando cumsum(price x qty) cruza `threshold`, entao
+      `quote_volume` e ~constante por construcao e `volume` (base) ~
+      threshold/preco. MEDIDO em BTCUSDT/R1, 2024-01-01..2024-06-30, 16.696
+      barras, 26 calibracoes distintas:
+        CV de quote_volume DENTRO da calibracao : 0,026
+        CV de volume       DENTRO da calibracao : 0,039
+        corr(volume, 1/close) media por calibracao : +0,658
+        idem na maior calibracao (n=1523)          : +0,987
+      RESSALVA DE METODO, e ela importa: a mesma correlacao medida POOLED
+      sobre as 26 calibracoes da +0,006 -- praticamente zero. O threshold
+      recalibrado (AG-124) mascara a relacao no agregado. Quem medir isso
+      sem estratificar por `threshold_quote` conclui que nao ha problema.
+      CONSEQUENCIA: as features de NIVEL de volume (D01f, D02f, D03f, D04f
+      e a perna de volume de D10f) carregam, dentro de cada janela de
+      calibracao, quase nenhuma informacao de atividade -- o que varia e o
+      inverso do preco. Nao e defeito de implementacao delas; e a barra de
+      dolar fazendo o que foi desenhada para fazer.
+
+      (2) A13 E A14 COLIDEM BIT A BIT EM R3.
+      `feature_a13_ema_window` e a UNICA janela `scaling_invariant: clock`
+      e `_scale_clock_window_bars` a leva a 48 -> 24 -> 12 (R1/R2/R3).
+      `a14_ema_window` e fixo em 12. VERIFICADO por execucao:
+        FeatureWindows.from_constants(bar_source='dollar_r3').ema_window = 12
+        LoteAWindows.from_constants().a14_ema_window                     = 12
+      Em R3 as duas colunas computam a MESMA coisa (ema(close,12)
+      normalizado por ATR) sob dois ids diferentes -- duas colunas, uma
+      feature, e as duas competem pela mesma importancia `gain`.
+
+      (3) K08_days_since_halving APLICA AS DATAS DO BITCOIN AOS 5 ATIVOS.
+      `build.py` chama `group_k.k08_days_since_halving(close_time_ms,
+      lote_a.k08_halving_dates_ms)` -- sem eixo de simbolo. As 4 datas sao
+      globais e a propria docstring diz "halving do Bitcoin". Para
+      ETH/SOL/BNB/XRP nao ha evento algum: a coluna e uma rampa monotona de
+      tempo de calendario com nome economico. Dentro do fold ela identifica
+      o periodo de treino, e no walk-forward os valores de teste caem fora
+      do suporte de treino (arvore extrapola constante) -- e um eixo de
+      sobreajuste por epoca, nao uma feature.
+    achados_nao_reverificados: >
+      As fichas registram outros achados que NAO foram reverificados por
+      execucao nesta sessao e ficam como hipotese ate medicao propria --
+      listados aqui para nao se perderem, nao para serem aplicados:
+      A15 subdimensiona o teto de purge/CPCV (lookback_bars=96 vem de conta
+      de 24h a 15m; sob R1 um dia UTC tem ~153 barras); C08_vol_pctile_
+      rolling_1y nao entrega 1 ano em nenhuma grade (17520 barras = 1 ano
+      so a 30m; 114,7 dias em R1, 500 em R3); D07f_taker_imbalance_1m_agg
+      seria 100% NaN sob dollar bar mas o registry a lista como disponivel
+      e `parity_tested: true`; E05f/E03f fixam funding_interval_hours=8
+      enquanto `src/data/checks.py` (check 19) exige derivar o intervalo do
+      dado; E10f faria delta=0 mecanico em toda barra R1 abaixo de 5 min
+      (p10=1,73 min) porque a fonte de OI e amostrada a cada 5 min de
+      relogio; B03 seria bijecao monotona de A04 (duplicata para arvore); e
+      A08+|A07|+A09 = 1 (3 colunas, 2 graus de liberdade).
+    status: >-
+      REGISTRADO, NADA REMOVIDO DO VETOR. Nenhuma coluna foi retirada,
+      nenhuma janela alterada -- este AG e diagnostico. As tres decisoes que
+      ele habilita sao do Manager: (a) o que fazer com as 33 colunas sem
+      mecanismo, dado que cada uma custa trial na selecao e deflacao no DSR;
+      (b) A13 vs A14 em R3 -- deduplicar exige decidir qual das duas some, e
+      A13 e a unica com ancoragem de relogio declarada; (c) K08 -- remover,
+      ou dar eixo de simbolo com evento real por ativo (que para 4 dos 5 nao
+      existe). Antes de qualquer uma, vale medir a curva de IC por horizonte
+      das colunas sobreviventes: e o teste que separa "sem tese declarada"
+      de "sem sinal", e nenhuma das duas foi feita ate aqui.
