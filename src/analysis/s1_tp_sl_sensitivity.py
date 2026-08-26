@@ -300,7 +300,11 @@ def run_s1_tp_sl_sensitivity(
 
     by_symbol: dict[str, Any] = {}
     cell_accum: dict[str, list[dict[str, Any]]] = {}
-    production_check: dict[str, Any] | None = None
+    # AG-262 -- células da grade cuja geometria bate com a de produção.
+    # `set` porque o laço passa por (símbolo, lado): a mesma célula é
+    # visitada várias vezes e o que importa é a identidade dela, não a
+    # contagem de visitas.
+    production_cell_keys: set[str] = set()
 
     for symbol in symbols:
         grade = resolution_id if resolution_id is not None else "15m"
@@ -386,18 +390,25 @@ def run_s1_tp_sl_sensitivity(
                 cells_out[cell_key] = result
                 cell_accum.setdefault(cell_key, []).append(result)
 
-                if reward_risk_ratio == Fraction(4, 3) and sl_mult == Fraction(3, 2):
-                    prod_tp = float(load_constant("tp_atr_mult"))
-                    prod_sl = float(load_constant("sl_atr_mult"))
-                    reproduces_prod = math.isclose(
-                        result["tp_atr_mult"], prod_tp, abs_tol=_IDENTITY_ABS_TOL
-                    ) and math.isclose(result["sl_atr_mult"], prod_sl, abs_tol=_IDENTITY_ABS_TOL)
-                    if production_check is None:
-                        production_check = {"reproduz_producao_exato": reproduces_prod}
-                    else:
-                        production_check["reproduz_producao_exato"] = (
-                            production_check["reproduz_producao_exato"] and reproduces_prod
-                        )
+                # AG-262 -- a célula de produção é identificada por VALOR de
+                # tp/sl, nunca por fração literal. O literal anterior era
+                # `Fraction(4,3)`/`Fraction(3,2)` (a geometria de ANTES de
+                # 2026-08-24): exatamente o defeito que `AG-242` corrigiu em
+                # `_production_cell_from_constants`, sobrevivendo aqui num
+                # segundo ponto do mesmo arquivo.
+                #
+                # A pergunta também mudou, porque a antiga era tautológica se
+                # resolvida por valor ("a célula com tp/sl de produção tem
+                # tp/sl de produção"). O que de fato precisa ser vigiado é se
+                # a GRADE CONTÉM a geometria de produção: se ela sair do grid
+                # declarado, todo `edge` comparado contra "o centro" é
+                # comparado contra uma célula que o sweep não mediu.
+                prod_tp = float(load_constant("tp_atr_mult"))
+                prod_sl = float(load_constant("sl_atr_mult"))
+                if math.isclose(
+                    result["tp_atr_mult"], prod_tp, abs_tol=_IDENTITY_ABS_TOL
+                ) and math.isclose(result["sl_atr_mult"], prod_sl, abs_tol=_IDENTITY_ABS_TOL):
+                    production_cell_keys.add(cell_key)
 
             by_symbol[symbol]["by_side"][side_label] = {
                 "atr_median_side": atr_median_side,
@@ -461,7 +472,21 @@ def run_s1_tp_sl_sensitivity(
         ),
         "by_symbol": by_symbol,
         "aggregate_by_cell": aggregate_by_cell,
-        "sanidade_centro_da_grade": production_check or {"reproduz_producao_exato": None},
+        # AG-262 -- pergunta corrigida: a grade CONTÉM a geometria de
+        # produção? A anterior ("reproduz_producao_exato") comparava
+        # contra uma célula literal da geometria antiga e era
+        # PERMANENTEMENTE false nos 3 relatórios -- alarme que nunca
+        # poderia passar, logo alarme que o leitor aprende a ignorar.
+        "sanidade_centro_da_grade": {
+            "producao_coberta_pela_grade": bool(production_cell_keys),
+            "celula_de_producao_na_grade": sorted(production_cell_keys) or None,
+            "nota": (
+                "producao_coberta_pela_grade=false significa que a geometria "
+                "vigente (constants.yaml::tp_atr_mult/sl_atr_mult) NAO esta no "
+                "grid varrido -- todo edge comparado contra o centro seria "
+                "comparado contra uma celula que este sweep nao mediu."
+            ),
+        },
         "veredito": (
             "TBD -- criterio operacional de 'sobrevive a faixa' e decisao do "
             "Manager, nao computado aqui (design doc SS11 risco #1, "

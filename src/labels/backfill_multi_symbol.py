@@ -53,6 +53,7 @@ from typing import Final
 import structlog
 
 from src.features.volatility import ParkinsonEstimator, VolatilityEstimator
+from src.labels import geometry_by_combo
 from src.labels._constants import load_constant
 from src.labels._paths import labels_symbol_tf_dir
 from src.labels.experiment_log import record_experiment
@@ -304,6 +305,7 @@ def run_and_write_labels_dollar_bar_parkinson(
     vol_estimator_window: int | None = None,
     max_workers: int | None = None,
     entry_fill_source: str | None = None,
+    use_geometry_by_combo: bool = False,
 ) -> dict[str, Path]:
     """Fase 5 (2026-08-17, `docs/refactor_parkinson_canonico.md`) --
     reprocessa `labels/` pros 5 símbolos sob `resolution_id="R1"` +
@@ -371,8 +373,19 @@ def run_and_write_labels_dollar_bar_parkinson(
             # correto -- rodar este writer sem argumentos DESFARIA o relabel
             # de producao de `AG-229` e regravaria os 15 artefatos sob o
             # regime de fill enviesado, sem erro nem aviso.
+            # AG-260 -- `use_geometry_by_combo=False` (default) mantém
+            # `tp_atr_mult`/`sl_atr_mult` no global de `constants.yaml`,
+            # bit-exato com toda rodada anterior. Ligado, a geometria da
+            # célula `(symbol, resolution_id)` entra quando o combo está
+            # coberto por `config/barrier_geometry_by_combo.yaml`; combo
+            # ausente cai no global (o loader devolve `None`). É por
+            # SÍMBOLO porque a calibração é por célula -- por isso esta
+            # construção fica DENTRO do laço, não fora dele.
             cfg_base = LabelConfig.from_constants(
-                estimator_id=estimator.estimator_id, resolution_id=resolution_id
+                estimator_id=estimator.estimator_id,
+                resolution_id=resolution_id,
+                symbol=symbol,
+                use_geometry_by_combo=use_geometry_by_combo,
             )
             cfg = (
                 cfg_base
@@ -394,9 +407,23 @@ def run_and_write_labels_dollar_bar_parkinson(
             symbol = future_to_symbol[future]
             results[symbol] = future.result()
 
+    # AG-260 -- qual geometria de fato rodou, por símbolo. Sem isto, um run
+    # com a flag ligada é indistinguível de um sem ela no log, e a
+    # geometria efetiva só seria recuperável reabrindo o parquet.
+    geometria_efetiva = {
+        symbol: (
+            f"tp={g.tp_atr_mult}/sl={g.sl_atr_mult} (combo)"
+            if (g := geometry_by_combo.load_barrier_geometry(symbol, resolution_id)) is not None
+            and use_geometry_by_combo
+            else "global"
+        )
+        for symbol in results
+    }
     logger.info(
         "labels.backfill_multi_symbol.dollar_bar_parkinson_done",
         n_symbols=len(results),
+        use_geometry_by_combo=use_geometry_by_combo,
+        geometria_efetiva=geometria_efetiva,
         results={k: str(v) for k, v in results.items()},
     )
     return results

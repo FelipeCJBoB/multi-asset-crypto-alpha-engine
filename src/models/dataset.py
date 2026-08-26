@@ -143,6 +143,7 @@ def build_modeling_frame(
     t0_start: str | None = None,
     t0_end: str | None = None,
     extra_feature_ids: tuple[str, ...] = (),
+    use_geometry_by_combo: bool = False,
 ) -> ModelingFrame:
     """`extra_feature_ids` (AG-032, 2026-08-23) — colunas de feature ALÉM
     de `T1_FEATURE_IDS` a incluir em `mf.data`, ex. `C07_vol_pctile_
@@ -309,8 +310,20 @@ def build_modeling_frame(
         )
 
     labels = cpcv.load_labels_v1(labels_version, symbol=symbol, tf=tf, resolution_id=resolution_id)
+    # AG-260 -- a config de VERIFICAÇÃO tem que ser resolvida sob a mesma
+    # regra de geometria que o WRITER usou (`backfill_multi_symbol.
+    # run_and_write_labels_dollar_bar_parkinson(use_geometry_by_combo=...)`),
+    # senão `verify_config_hash` compara contra uma geometria que não é a
+    # dos labels em disco e o pipeline inteiro trava em
+    # `ConfigHashMismatchError`. O default `False` mantém o par
+    # escrita/leitura no global, bit-exato -- os dois lados só migram
+    # juntos, por decisão explícita, nunca um sem o outro.
     execution_config = LabelConfig.from_constants(
-        estimator_id=vol_estimator_id, tf=tf, resolution_id=resolution_id
+        estimator_id=vol_estimator_id,
+        tf=tf,
+        resolution_id=resolution_id,
+        symbol=symbol,
+        use_geometry_by_combo=use_geometry_by_combo,
     )
     verify_config_hash(labels, execution_config)
     labels = labels.with_row_index("_pos")

@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-08-25T21:54:42.501720+00:00",
-  "code_version": "f25e1df",
+  "generated_at": "2026-08-26T00:48:40.152751+00:00",
+  "code_version": "23a9bc6",
   "task": "s1_tp_sl_sensitivity",
   "grade_medida": "R3",
   "resolution_id": "R3",
@@ -1605,8 +1605,12 @@
     }
   },
   "sanidade_centro_da_grade": {
-    "reproduz_producao_exato": false
+    "producao_coberta_pela_grade": true,
+    "celula_de_producao_na_grade": [
+      "R1_S3/2"
+    ],
+    "nota": "producao_coberta_pela_grade=false significa que a geometria vigente (constants.yaml::tp_atr_mult/sl_atr_mult) NAO esta no grid varrido -- todo edge comparado contra o centro seria comparado contra uma celula que este sweep nao mediu."
   },
   "veredito": "TBD -- criterio operacional de 'sobrevive a faixa' e decisao do Manager, nao computado aqui (design doc SS11 risco #1, confirmado 2026-08-24)",
-  "elapsed_seconds_total": 45.56468860001769
+  "elapsed_seconds_total": 33.599064100009855
 }
