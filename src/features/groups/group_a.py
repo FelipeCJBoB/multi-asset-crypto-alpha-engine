@@ -62,8 +62,17 @@ def a13_dist_ema48_atr(close: FloatArray, ema_48: FloatArray, atr_20_abs: FloatA
 
 
 # ============================================================================
-# Lote A da liberação de features (H5, 2026-08-24) — A01-A04, A06-A12, A14.
+# Lote A da liberação de features (H5, 2026-08-24) — A01-A04, A06-A11, A14.
 # Todas T2 (nenhuma promovida a T1 por esta implementação, §0.2 R4/§2.13).
+#
+# `A12_gap_pct` REMOVIDA 2026-08-27 (AG-316): media `(O_t - C_{t-1}) /
+# C_{t-1}`, "gap de sessão" — mecanismo que não existe em mercado 24/7
+# contíguo (não há fechamento/reabertura de sessão na Binance Futures).
+# O que a fórmula mede de fato ("retorno de 1 tick" entre o open e o close
+# anterior) já é coberto por A01 (log-retorno de 1 barra) — manter A12 sob
+# outro nome seria uma feature redundante disfarçada de correção. Sem
+# redefinição honesta que preserve a intenção original. Ver
+# audit/architecture_gaps_log.yaml::AG-316.
 # ============================================================================
 
 
@@ -197,17 +206,6 @@ def a11_true_range_pct(high: FloatArray, low: FloatArray, close: FloatArray) -> 
         prev_close[1:] = close[:-1]
     with np.errstate(divide="ignore", invalid="ignore"):
         out: FloatArray = tr / prev_close
-    return out
-
-
-def a12_gap_pct(open_: FloatArray, close: FloatArray) -> FloatArray:
-    """`(O_t - C_{t-1}) / C_{t-1}` — §2.2 A12."""
-    n = close.shape[0]
-    prev_close = np.full(n, np.nan, dtype=np.float64)
-    if n > 1:
-        prev_close[1:] = close[:-1]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        out: FloatArray = (open_ - prev_close) / prev_close
     return out
 
 

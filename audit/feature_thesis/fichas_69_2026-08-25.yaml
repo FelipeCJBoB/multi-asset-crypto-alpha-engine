@@ -263,32 +263,11 @@
     impacto). O repo NÃO declara isso em lugar nenhum — registry, docstring e constants.yaml
     tratam A11 como ''true range percentual''. Veredito segue SEM_MECANISMO (não se credita
     tese não escrita), mas esta é a candidata mais barata de promover a TESE_OK do grupo A.'
-- feature: A12_gap_pct
-  formula_resumida: (O_t - C_{t-1}) / C_{t-1}
-  memoria_efetiva_barras: 2
-  memoria_justificativa: 'toca O_t e C_{t-1}. Mas o CONTEÚDO não é 2 barras de informação:
-    as barras são partição CONTÍGUA do fluxo de trades (src/data/bars.py::_aggregate_bars
-    — open = price.first() do bar_id, close = price.last() do anterior), então O_t é o preço
-    do trade IMEDIATAMENTE seguinte ao último trade de t-1. A saída é um retorno de 1 TICK,
-    não um gap.'
-  h_sobre_H: 0.4
-  papel: ruido
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
-  ancoragem: misto
-  ancoragem_defeito: 'O mecanismo do ''gap'' é de RELÓGIO/CALENDÁRIO — exige descontinuidade
-    de sessão (fechamento overnight, fim de semana, leilão de abertura), onde ordens se acumulam
-    sem poder executar e o preço salta na reabertura. Cripto USDⓈ-M negocia 24/7 e as barras
-    são partição contígua do MESMO fluxo de trades: não existe intervalo entre C_{t-1} e O_t
-    em que ordens se acumulem. A feature aplica um mecanismo de fronteira de sessão sobre
-    uma fronteira de CONTAGEM DE BARRAS que, neste mercado, não tem nenhum significado de
-    calendário. Erro categórico na direção espelhada do caso canônico.'
-  nome_engana: null
-  veredito: ERRO_CATEGORICO
-  observacao: 'Consequência mensurável e barata de checar: a distribuição de A12 deve ser
-    ~um tick_size/preço (BTC: ~1,5e-6), com massa enorme em 0 e sem cauda. Se A12 tiver variância
-    comparável a A01, isso denuncia buraco de dado (trades faltando entre barras), não sinal
-    — nos dois casos a feature não mede o que o nome diz.'
+# A12_gap_pct REMOVIDA 2026-08-27 (AG-316) -- a própria ficha era o achado
+# que fundamentou a remoção (veredito ERRO_CATEGORICO: "gap" é mecanismo de
+# relógio/calendário que não existe em mercado 24/7 contíguo; a saída real é
+# um retorno de 1 tick, já coberto por A01). Removida do vetor, entrada
+# retirada da ficha. Ver audit/architecture_gaps_log.yaml::AG-316.
 - feature: A13_dist_ema48_atr
   formula_resumida: (C_t - EMA_48) / atr_20_abs
   memoria_efetiva_barras: 16.7
@@ -654,11 +633,18 @@
   ancoragem_defeito: null
   nome_engana: null
   veredito: INCOERENTE_DIMENSIONAL
-  observacao: Parkinson estima sigma POR UNIDADE DE TEMPO a partir do range dentro de um intervalo
+  observacao: 'Parkinson estima sigma POR UNIDADE DE TEMPO a partir do range dentro de um intervalo
     de duracao FIXA. A barra dollar tem duracao variavel por construcao (R1 mediana 9,43min,
     mas a barra fecha mais rapido justamente quando a vol sobe) -- o estimador sai sem denominador
     temporal, e o esquema de amostragem ja atenua a propria quantidade que ele mede. Alem
     disso Parkinson ignora gap entre barras e subestima sistematicamente com amostragem discreta.
+    EMENDA 2026-08-27 (AG-322, tratamento PARCIAL): group_c.py::c04_parkinson_vol_48 agora
+    multiplica por sqrt(window), resolvendo a escala incomparavel com C03_realized_vol_48
+    (achado separado, sobre COMPARABILIDADE entre a familia C03/C04/C05, nao sobre esta ficha).
+    O defeito QUE ESTA FICHA DESCREVE (duracao de barra fixa assumida pelo estimador, dollar
+    bar tem duracao variavel) permanece ABERTO -- veredito INCOERENTE_DIMENSIONAL nao foi
+    rebaixado, mesma disciplina de E11f (AG-320): normalizar escala e corrigir a suposicao de
+    duracao fixa sao dois problemas distintos, so o primeiro foi corrigido aqui.'
 - feature: C05_garman_klass_48
   formula_resumida: 'Garman-Klass (1980): sqrt(mean_48(0.5*ln(H/L)^2 - (2ln2-1)*ln(C/O)^2))
     -- sigma POR BARRA'
@@ -678,7 +664,12 @@
     E amostragem continua em tempo fixo. Alem disso a janela e 48 aqui, enquanto `canonical_volatility_estimator`
     do projeto e ''garman_klass_w20'' (janela 20) -- duas janelas do MESMO estimador convivendo
     no repo sem nenhuma nota reconciliando as duas. C03/C04/C05 sao 3 medidas quase colineares
-    do mesmo objeto na mesma janela.'
+    do mesmo objeto na mesma janela. EMENDA 2026-08-27 (AG-322, tratamento PARCIAL):
+    group_c.py::c05_garman_klass_48 agora multiplica por sqrt(window), resolvendo a
+    colinearidade de ESCALA com C03/C04 citada acima -- as 3 features da familia agora
+    estao na mesma convencao. O defeito QUE ESTA FICHA DESCREVE (duracao de barra fixa
+    assumida pelo estimador) permanece ABERTO -- veredito nao foi rebaixado, mesma
+    disciplina de C04/E11f.'
 - feature: C06_vol_ratio_12_96
   formula_resumida: realized_vol_12 / realized_vol_96 -- vol curta sobre vol longa
   memoria_efetiva_barras: 12
@@ -729,36 +720,37 @@
     Engine, ou seja o risco saiu do vetor do Alpha e ficou no eixo de regime. `min_common_history_bars`
     (AG-030) capa o inicio mas nao torna a referencia estacionaria.'
 - feature: C08_vol_pctile_rolling_1y
-  formula_resumida: posto percentil de realized_vol_48_t na distribuicao ROLANTE das ultimas
-    17520 barras (estrito, [t-17520, t-1])
-  memoria_efetiva_barras: 17520
-  memoria_justificativa: Janela de referencia finita e explicita de 17520 barras (support.rolling_percentile_rank_strict,
-    Fenwick com insercao E remocao). O sinal rankeado (realized_vol_48) responde em 48 barras,
-    mas a calibracao inteira da feature dura 17520 barras = 3504*H.
-  h_sobre_H: 3504.0
+  formula_resumida: posto percentil de realized_vol_48_t na distribuicao ROLANTE por TEMPO
+    (ultimos 365 dias corridos, estrito, nunca inclui t)
+  memoria_efetiva_barras: variavel por grade/simbolo (~69673 no teto conservador, R1/XRPUSDT)
+  memoria_justificativa: Janela de referencia ancorada em TEMPO (365 dias corridos), nao em
+    contagem de barras -- support.rolling_percentile_rank_strict_by_time, Fenwick com insercao
+    E remocao por ponteiro de tempo. O sinal rankeado (realized_vol_48) responde em 48 barras,
+    a calibracao da feature agora dura literalmente 365 dias em qualquer grade.
+  h_sobre_H: variavel por grade (corrigido; nao mais 3504.0 fixo -- essa contagem media a
+    janela ANTIGA em barras, que nao existe mais como grandeza fixa)
   papel: quase-constante
   mecanismo_economico: 'Ciclo LONGO de volatilidade de cripto -- alternancia bull/bear medida
     em CALENDARIO (meses/anos), nao em fluxo. E exatamente por isso que o nome diz ''1y''
-    e nao ''17520 barras'': a tese so faz sentido se a janela cobrir um ciclo de calendario.'
+    e nao um numero de barras: a tese so faz sentido se a janela cobrir um ciclo de calendario.'
   quem_esta_do_outro_lado: AUSENTE
   ancoragem: fluxo
-  ancoragem_defeito: 'O mecanismo pretendido e de CALENDARIO (um ano de ciclo de mercado)
-    e a implementacao e contagem fixa de barras, num regime de barra cuja duracao varia por
-    resolucao E por regime de vol. A janela de referencia da MESMA feature cobre 114,7 dias
-    em R1, 240 dias em R2 e 500 dias em R3 -- 4,4x de amplitude. Nao ha nenhum ajuste por
-    `bar_source`: FeatureWindows so escala `feature_a13_ema_window` (AG-043 F3); `feature_c08_vol_pctile_outer_window`
-    e bar_count fixo.'
-  nome_engana: 'Duas contas erradas empilhadas. (1) 17520 barras x 30min = 1 ano -- e a aritmetica
-    do PRD ORIGINAL a 30m, e o proprio constants.yaml a repete errada: ''lookback tabulado
-    17520 barras = 1 ano a 15m''. A 15m, 1 ano = 35040 barras; 17520 barras x 15min = 182,5
-    dias = 6 MESES, metade do que o nome promete. (2) Em producao nao ha barra de 15m: R1=9,43min
-    -> 17520x9,43 = 165.214min = 114,7 dias (3,8 meses); R2=19,73min -> 240 dias; R3=41,16min
-    -> 500 dias (1,37 ano). O nome ''1y'' nao e verdadeiro em NENHUMA das quatro grades.'
-  veredito: ERRO_CATEGORICO
-  observacao: 'Interacao pratica com min_warmup_bars=2000: a janela so fica cheia depois de
-    17520 barras, ou seja a feature roda quase 9x o warmup declarado com referencia parcial
-    e sem nenhuma NaN sinalizando isso (nan_policy exige apenas ''>= 1 ponto previo''). C08
-    e C07 medem o mesmo objeto (realized_vol_48) com referencias diferentes.'
+  ancoragem_defeito: null
+  nome_engana: null
+  veredito: SEM_MECANISMO
+  observacao: 'CORRIGIDO 2026-08-27 (AG-317): a v1 desta ficha (ERRO_CATEGORICO) descrevia
+    corretamente um defeito de codigo que existia ate 2026-08-27 -- janela de contagem de
+    barras fixa (17520) pretendendo ser "1 ano" de calendario, cobrindo 114,7-500 dias
+    conforme a grade. group_c.py::c08_vol_pctile_rolling_1y v2 ancora a janela em TEMPO
+    (support.rolling_percentile_rank_strict_by_time, feature_c08_vol_pctile_outer_window_days=365)
+    -- o defeito CATEGORICO/DIMENSIONAL esta resolvido, o nome agora e verdadeiro em qualquer
+    grade. Rebaixada para SEM_MECANISMO, nao promovida a TESE_OK: `quem_esta_do_outro_lado`
+    continua AUSENTE -- corrigir a janela nao supre uma justificativa de mecanismo economico
+    que nunca foi pesquisada (diferente de A01-A06/AG-329, nenhuma pesquisa de contraparte
+    foi feita para C08 nesta sessao). O veredito ERRO_CATEGORICO anterior permanece fato
+    historico correto sobre o codigo ate 2026-08-27, nao mais uma descricao do codigo de
+    producao hoje. Observacao original preservada: C08 e C07 medem o mesmo objeto
+    (realized_vol_48) com referencias diferentes (expansiva vs rolante-por-tempo).'
 - feature: C09_range_pctile_expanding
   formula_resumida: posto percentil EXPANSIVO estrito de A11_true_range_pct (TR_t/C_{t-1})
   memoria_efetiva_barras: expansiva
@@ -1295,7 +1287,16 @@
     admite por escrito que o nome ''1d'' vem do PRD a 30m e que não houve recalibração. Isto
     é dívida declarada, não descoberta — mas segue sendo erro categórico em produção, agora
     com um fator de desvio pior do que o registrado (o comentário fala de 12h a 15m; sob R1
-    real são 7,54h).'
+    real são 7,54h). EMENDA 2026-08-27 (AG-320, tratamento PARCIAL): `group_e.py::e11f_oi_change_z_1d`
+    agora normaliza o delta bruto por z-score rolante (mesmo padrão de E10f_oi_change_z_48,
+    `feature_e11f_oi_change_zscore_window=48`) -- resolve a inconsistência de ESCALA do delta
+    entre grades, que a recomendação registrada tratava como "a causa" do defeito. Isto NÃO
+    resolve o defeito categórico QUE ESTA FICHA DESCREVE (nome ''1d'' vs. lag_bars=48 cobrindo
+    7,54h-32,93h conforme a grade, nunca 24h) -- veredito ERRO_CATEGORICO permanece correto e
+    não foi rebaixado, diferente de A13/E10f/C08 (cujas correções resolveram o defeito
+    ESPECÍFICO que a ficha apontava). Manter o veredito é a leitura honesta: normalizar a
+    escala e corrigir o nome/calendário são dois problemas distintos, só o primeiro foi
+    corrigido aqui.'
 - feature: E12f_price_oi_divergence
   formula_resumida: sign(log_return_12) × sign(Δln(OI) sobre 12 barras) ∈ {-1,0,1}
   memoria_efetiva_barras: 12.0

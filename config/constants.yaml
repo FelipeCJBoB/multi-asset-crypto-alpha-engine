@@ -1666,6 +1666,14 @@ feature_e11f_oi_change_lag_bars:
   sweep_required: false
   review_by: sprint_8
 
+feature_e11f_oi_change_zscore_window:
+  value: 48
+  provenance: ASSUMED
+  source: "CORREÇÃO 2026-08-27 (AG-320): E11f v1 emitia o delta bruto (sem normalização), 'escala inconsistente entre grades' -- contraste explícito com E10f (já z-score). group_e.py::e11f_oi_change_z_1d agora normaliza o delta bruto (lag_bars) por z-score rolante (support.rolling_zscore). Valor 48 reaproveita a MESMA janela de feature_b02_rsi_window/o window de E10f_oi_change_z_48 -- convenção de consistência DENTRO do subgrupo (E10f/E11f medem a mesma classe de sinal, mudança de OI), nunca testada isoladamente para E11f especificamente. Classe B, sweep_range plausível [24, 96] se revisitado."
+  class: B
+  sweep_required: false
+  review_by: sprint_8
+
 feature_e12f_oi_change_lag_bars:
   value: 12
   provenance: ASSUMED
@@ -1753,10 +1761,10 @@ feature_c08_vol_pctile_inner_window:
   sweep_required: false
   review_by: sprint_8
 
-feature_c08_vol_pctile_outer_window:
-  value: 17520
-  provenance: ASSUMED
-  source: "convenção do PRD (§2.4, C08 vol_pctile_rolling_1y, lookback tabulado 17520 barras), nunca testada. CORREÇÃO 2026-08-26 (AG-317): a conta original do PRD ('17520 barras = 1 ano a 15m') está ARITMETICAMENTE ERRADA -- 17520 × 15min = 182,5 dias = 6 MESES, não 1 ano (1 ano real a 15m = 35040 barras, o dobro). Sob dollar bar a distância do nome '1y' piora: 17520 barras = 114,7 dias (R1) / 240 dias (R2) / 500 dias=1,37 ano (R3) -- 4,4x de amplitude entre grades, sem ajuste por bar_source. Nome '_rolling_1y' não é verdade em nenhuma das 4 grades (15m nominal, R1, R2, R3). Não corrigido o VALOR (decisão de desenho pendente -- escalar por bar_source ou virar contagem de dias medida, ver ADR-005 §14.6/AG-317), só o texto de proveniência que descrevia a conta errada como se fosse a justificativa."
+feature_c08_vol_pctile_outer_window_days:
+  value: 365
+  provenance: DERIVED
+  source: "DERIVADA diretamente do nome/definição da própria feature (C08_vol_pctile_rolling_1y, §2.4, '1 ano') -- não é um hiperparâmetro livre escolhido por conveniência, é a tradução literal de '1 ano' pra dias corridos. CORREÇÃO 2026-08-27 (AG-317, substitui feature_c08_vol_pctile_outer_window=17520 barras): a constante antiga expressava a janela em CONTAGEM DE BARRAS a 15m -- sob canonical_bar_type=dollar (AG-042) isso nunca era '1 ano' em nenhuma grade real (114,7 dias em R1, 240 em R2, 500 em R3 -- 4,4x de amplitude). support.rolling_percentile_rank_strict_by_time (group_c.py::c08_vol_pctile_rolling_1y) agora ancora a janela em TEMPO de calendário (365 dias × 86.400.000 ms), não em contagem de barras -- cumpre a promessa do nome em qualquer grade, à custa do número de barras dentro da janela variar por grade/regime de volume (mais barras em R1 mais rápido, menos em R3)."
   class: B
   sweep_required: false
   review_by: sprint_8

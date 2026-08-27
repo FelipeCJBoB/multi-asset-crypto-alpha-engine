@@ -174,22 +174,37 @@ def e09f_oi_contracts(oi_contracts_aligned: FloatArray) -> FloatArray:
     return oi_contracts_aligned
 
 
-def e11f_oi_change_1d(oi_contracts_aligned: FloatArray, lag_bars: int) -> FloatArray:
-    """`Δln(oi_contracts)` sobre `lag_bars` barras — §2.6 E11f. Nome
-    "1d" herdado do PRD original a 30m (48 barras × 30m = 24h); mantido
-    em CONTAGEM DE BARRAS (48) sob a migração pra 15m, mesma convenção
-    documentada em `registry.yaml` (NOTA DE TF) pras 10 features T1 —
-    não recalibrado pra 96 barras (24h reais a 15m). Diferente de E10f
-    (z-score ROLANTE do delta de 1 barra): aqui é o delta bruto de
-    `lag_bars` barras, sem z-score, mesmo padrão de A04 (`log_return_12`)
-    aplicado a OI em vez de close."""
+def e11f_oi_change_z_1d(
+    oi_contracts_aligned: FloatArray, lag_bars: int, zscore_window: int
+) -> FloatArray:
+    """Z-score ROLANTE (janela `zscore_window`) de `Δln(oi_contracts)`
+    sobre `lag_bars` barras — §2.6 E11f. Nome "1d" herdado do PRD
+    original a 30m (48 barras × 30m = 24h); mantido em CONTAGEM DE
+    BARRAS (48) sob a migração pra 15m, mesma convenção documentada em
+    `registry.yaml` (NOTA DE TF) pras 10 features T1 — não recalibrado
+    pra 96 barras (24h reais a 15m). O deslocamento `lag_bars` cobre um
+    intervalo de calendário DIFERENTE por grade (7,5h em R1, 33h em R3,
+    `AG-320`) — o mesmo tipo de inconsistência que `A13`/`E10f` tinham.
+
+    **Corrigido 2026-08-27 (`AG-320`), mesmo tratamento de E10f (`AG-295`,
+    normalizar, não só renomear/redocumentar):** até esta versão o delta
+    era emitido BRUTO, sem normalização (contraste explícito com E10f,
+    que já é z-score) — escala do delta inconsistente entre grades E
+    entre E10f/E11f, que medem a MESMA classe de sinal (mudança de OI)
+    com tratamentos diferentes sem razão declarada. `zscore_window`
+    (mesma janela=48 de `E10f_oi_change_z_48`, por consistência dentro do
+    subgrupo) normaliza o delta bruto contra sua própria distribuição
+    rolante — resolve a inconsistência de escala sem exigir redesenho de
+    janela ancorada em tempo (diferente de `C08`/`AG-317`: aqui o
+    problema é ESCALA do delta, não a definição da própria janela de
+    referência)."""
     log_oi = np.log(oi_contracts_aligned)
     n = log_oi.shape[0]
-    out = np.full(n, np.nan, dtype=np.float64)
+    raw_delta = np.full(n, np.nan, dtype=np.float64)
     if n > lag_bars:
         with np.errstate(invalid="ignore"):
-            out[lag_bars:] = log_oi[lag_bars:] - log_oi[:-lag_bars]
-    return out
+            raw_delta[lag_bars:] = log_oi[lag_bars:] - log_oi[:-lag_bars]
+    return support.rolling_zscore(raw_delta, zscore_window)
 
 
 # ============================================================================

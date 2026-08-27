@@ -526,6 +526,84 @@ def rolling_percentile_rank_strict(values: FloatArray, window: int) -> FloatArra
     return out
 
 
+def rolling_percentile_rank_strict_by_time(
+    values: FloatArray, close_time_ms: FloatArray, window_ms: int
+) -> FloatArray:
+    """Posto percentil em janela ROLANTE de TEMPO fixo (`window_ms`), não
+    de CONTAGEM de barras fixa — C08 (`AG-317`, correção 2026-08-27):
+    `rank_t = #{i : close_time_ms[t] - close_time_ms[i] <= window_ms e
+    close_time_ms[i] <= close_time_ms[t-1] : x_i "<" x_t} / #{...}`, mesma
+    convenção de "nunca inclui `t`" de `rolling_percentile_rank_strict`
+    (que esta função generaliza).
+
+    **Por que existe, além de `rolling_percentile_rank_strict`:** sob
+    `canonical_bar_type: dollar` (`AG-042`) a duração de barra é VARIÁVEL
+    — uma janela de `N` barras fixas cobre um intervalo de calendário
+    diferente conforme a grade (R1/R2/R3) e conforme o regime de volume
+    (barra fecha mais rápido quando o volume sobe). `C08_vol_pctile_
+    rolling_1y` promete no PRÓPRIO NOME "1 ano" — só uma janela ancorada
+    em TEMPO cumpre essa promessa em qualquer grade; `outer_window` fixo
+    em barras não cumpre (`AG-317`: 17.520 barras eram 114,7 dias em R1,
+    500 dias em R3, nunca 365 em nenhuma).
+
+    Mesma implementação de Fenwick tree + compressão de coordenadas de
+    `rolling_percentile_rank_strict`, só a condição de REMOÇÃO da janela
+    muda: em vez de `t - window` (offset fixo de barras), um ponteiro
+    `left` avança enquanto `close_time_ms[t] - close_time_ms[left] >=
+    window_ms` — a mesma prova de causalidade se aplica (a consulta em
+    `t` só enxerga o estado da árvore refletindo `close_time_ms[i] >
+    close_time_ms[t] - window_ms` e `i < t`, nunca `t` nem além, porque a
+    remoção roda ANTES da consulta e a inserção de `t` roda DEPOIS)."""
+    n = values.shape[0]
+    out = np.full(n, np.nan, dtype=np.float64)
+    finite_mask = ~np.isnan(values)
+    idx_finite = np.flatnonzero(finite_mask)
+    m = idx_finite.shape[0]
+    if m == 0:
+        return out
+
+    vals_finite = values[idx_finite]
+    order = np.argsort(vals_finite, kind="stable")
+    dense_rank = np.empty(m, dtype=np.int64)
+    dense_rank[order] = np.arange(m)
+    dense_rank_by_idx = np.full(n, -1, dtype=np.int64)
+    dense_rank_by_idx[idx_finite] = dense_rank
+
+    tree = np.zeros(m + 1, dtype=np.int64)
+
+    def _update(i: int, delta: int) -> None:
+        i += 1
+        while i <= m:
+            tree[i] += delta
+            i += i & (-i)
+
+    def _query_prefix(i: int) -> int:
+        s = 0
+        while i > 0:
+            s += int(tree[i])
+            i -= i & (-i)
+        return s
+
+    close_time_int = close_time_ms.astype(np.int64)
+    count_in_window = 0
+    left = 0
+    for t in range(n):
+        while left < t and close_time_int[t] - close_time_int[left] > window_ms:
+            r_remove = int(dense_rank_by_idx[left])
+            if r_remove >= 0:
+                _update(r_remove, -1)
+                count_in_window -= 1
+            left += 1
+        r_t = int(dense_rank_by_idx[t])
+        if count_in_window > 0 and r_t >= 0:
+            less = _query_prefix(r_t)
+            out[t] = less / count_in_window
+        if r_t >= 0:
+            _update(r_t, 1)
+            count_in_window += 1
+    return out
+
+
 def expanding_percentile_rank_strict(
     values: FloatArray, *, min_common_history_bars: int | None = None
 ) -> FloatArray:

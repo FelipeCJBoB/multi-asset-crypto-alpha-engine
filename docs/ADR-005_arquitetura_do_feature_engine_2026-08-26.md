@@ -138,7 +138,7 @@ e estão no vetor; `B07`/`C07`/`E02f` são T2 e são o insumo do classificador.
 | **L1 — Gate de regime** | consumido por `classifier.py` | não (**correção 2026-08-26, `AG-277`**: citação anterior de `ADR-001 §2.7` estava errada — verificado no texto real (`docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md:501`), aquela seção é *"Meta consome regime? De qual candidato/resolução?"*, trata do Meta consumir o **estado** de regime, não de regime sair do vetor de FEATURES do Alpha. `CLAUDE.md::B21` cita o mesmo `§2.7` para essa mesma afirmação — mesma imprecisão, não corrigida aqui, fora de escopo. A citação certa pra "regime só gate" não foi identificada; ficou como débito, não inventada) | `B07`, `C07`, `E02f`, `E27f` |
 | **L2 — Núcleo de sinal** | passa nos dois eixos de §2.2 | **sim** | ~~`E16f_global_ls_ratio`~~ **VAZIA** — `AG-294` (2026-08-26), ver correção ao fim de §2.2 |
 | **L3 — Em observação** | tese declarada, sem evidência suficiente | não, recalculada | ~~as `TESE_OK` restantes`~~ **17** (11 `TESE_OK` + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) — `§14.2`/`§14.3` (2026-08-26) |
-| **L4 — Aposentada** | sem mecanismo **e** sem sinal, OU construção comprovadamente quebrada sem outro papel | não, nem calculada | ~~as 29 `SEM_MECANISMO` sem descoberta~~ **43** (21 `SEM_MECANISMO` restante + 22 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) — `§14.3`/`§14.4` (2026-08-26) |
+| **L4 — Aposentada** | sem mecanismo **e** sem sinal, OU construção comprovadamente quebrada sem outro papel | não, nem calculada | ~~as 29 `SEM_MECANISMO` sem descoberta~~ ~~43~~ ~~42~~ **41** (~~21~~ ~~20~~ **21** `SEM_MECANISMO` restante + ~~22~~ ~~21~~ **20** `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) — `§14.3`/`§14.4` (2026-08-26, corrigido 2026-08-27 pela remoção de `K08`, corrigido 2026-08-27b pela remoção de `A12`, corrigido 2026-08-27c pela correção de `C08` — muda de bucket ERRO_CATEGORICO→SEM_MECANISMO, total `L4` não muda) |
 
 ### §2.2 O critério de evidência — dois eixos, ambos operacionais
 
@@ -346,7 +346,7 @@ a causa de `AG-266` ser conhecida.
 | Sai | Quantas | Por quê |
 |---|---|---|
 | `E18f` | 1 | **Quarentena** — artefato de fonte (`AG-266`); vive em `L3` (calculada, fora do treino), com `defeito_construcao` também `true` — §14.3 |
-| `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ **43** (`AG-271`/`AG-272`, §14.2-§14.4) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo. |
+| `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ ~~43~~ ~~42~~ **41** (`AG-271`/`AG-272`, §14.2-§14.4; corrigido 2026-08-27, corrigido 2026-08-27b pela remoção de `A12`) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo. |
 | `L3` — tese sem evidência suficiente, OU quarentena | ~~~15~~ **17** (§14.4) | Continuam calculadas; fora do treino até reteste/correção. |
 | `L0` — primitivas | 2 | São insumo de outras colunas, não preditores. |
 | `L1` — gate de regime | 4 | regime já é gate-só, não feature do Alpha (citação de `ADR-001 §2.7` corrigida em `§2.1` — a certa não identificada, ver nota lá); `E27f` é exceção deliberada (também `L2`, §14.3) — as outras 3 ficaram por inércia. |
@@ -763,7 +763,17 @@ Quatro condições, que são parte da decisão:
    `ret_net` positivo hoje**. R3 ser a melhor grade não significa que o motor
    seja positivo nela; significa que é o alvo mais baixo a vencer.
 3. **`BTCUSDT` sai de R3.** E o teto aperta conforme o preço sobe — precisa de
-   reavaliação periódica, não uma vez.
+   reavaliação periódica, não uma vez. **Mecanismo de gatilho decidido
+   2026-08-27 (Manager ratifica):** remedir por GATILHO DE PREÇO, não por
+   cadência de calendário — sempre que o preço do BTC subir mais que um
+   limiar (5-10%) desde a última medição do teto, não um cron fixo. O
+   mecanismo causal é direto (`stop_max ∝ 1/preço`, fórmula fechada — ver
+   `§12.2`/`src/analysis/feasibility.py`), então um gatilho ligado à
+   própria causa do aperto é mais barato e mais correto que reavaliar em
+   datas arbitrárias que podem não capturar um movimento rápido. O limiar
+   exato (5% vs. 10%) e a implementação do gatilho (job agendado vs.
+   checagem no próprio Gate 0 a cada execução) ficam como próximo passo —
+   esta entrada fixa o MECANISMO, não a constante final.
 4. **O custo é amostra e é heterogeneidade.** R3 tem ~40k barras por ativo
    contra ~163k de R1. E `AG-238` mede I² caindo de 83/61 (R1) para 66/67
    (R3): os ativos ficam **mais parecidos** em R3, o que enfraquece o
@@ -794,6 +804,17 @@ declarada.
 `sweep_range: [0,015; 0,045]`. Toda a capacidade deriva dele. Um sweep de ±50%
 move a capacidade de R3 entre ~52 e ~155 trades/mês. A **ordenação** entre
 grades é robusta (σ não muda com o orçamento); o **nível** não é.
+
+**Aceite explícito 2026-08-27 (Manager ratifica):** `ASSUMED` com o sweep
+±50% já feito é SUFICIENTE para o Gate 3 — a própria regra de proveniência
+do `CLAUDE.md` (§Proveniência, regra 4) exige sweep ±50% pra constante
+classe A antes do Gate 3, não `DERIVED`/`MEASURED`; essa condição já está
+satisfeita acima. Exigir medição real do orçamento de fee inverteria causa
+e efeito: o orçamento é decisão do Manager sobre quanto risco aceitar
+(quantos trades/mês o capital de R$ 1.000 pode absorver em custo), não uma
+grandeza observável do mercado — não existe experimento que "meça"
+`fee_budget_monthly` do jeito que se mede `spread` ou `slippage`. Fica
+`ASSUMED` classe A, permanentemente, por natureza da constante.
 
 **Dois erros meus na v1 desta seção**, ambos corrigidos acima: tratei o custo
 por trade como fixo entre grades (é função de `stop_pct`), e multipliquei o
@@ -1035,6 +1056,16 @@ Somado: `AG-213` já documenta que o IC é medido contra `ret_net` e a restriç�
 `fit_side_model:769` usa a constraint derivada de `ret_net` **sem consultar**
 `screen_target_agreement`. O diagnóstico existe, é reportado, e não bloqueia
 nada.
+
+**[ADDENDUM 2026-08-27, `AG-330`]** O piso de magnitude do item 6
+(`§13.14.2`, `AG-324`) mede a MESMA IC marginal que `AG-330` (`§14.9`)
+mostra ser a pergunta errada para features de papel filtro/custo —
+`E27f_cost_atr_ratio` só escapa disso hoje por um escape-hatch MANUAL
+(`_ECONOMIC_FORCED_CONSTRAINT`, não um gate por papel). Não bloqueia a
+promoção do item 6 a produção (o T1 atual está protegido), mas é lacuna
+estrutural para qualquer feature filtro/custo futura sem essa entrada
+manual — ver o addendum de `AG-330` para a medição completa (gain em
+produção confirma a distinção) e a proposta de solução em 2 estágios.
 
 ### §13.5 O desenho novo
 
@@ -2117,6 +2148,16 @@ com o purge dimensionado para 7 features e `p̂` enviesado em −13%, o teste
 `p̂ > breakeven` compara um número errado contra um limiar certo. **A ordem
 importa: primeiro `p̂` honesto, depois a regra.**
 
+**Ratificado explicitamente 2026-08-27 (Manager: "E = sua recomendação
+aceita").** `manter objective="binary"` deixa de ser recomendação e passa
+a decisão fechada — não é reversão de nada (`objective="binary"` já é o
+default de produção desde a migração XGBoost→LightGBM, `§14.1`; esta
+ratificação fecha a ambiguidade "recomenda mas não decide" de `§13.18`
+especificamente para o alvo, não para o pooling de `§13.16.1`, que segue
+sem decisão — ver `§13.16.1-bis`). A alavanca real de `§13`, medida, é a
+regra de decisão (`p̂ > breakeven(linha)` acima, item 11 de `§13.17`) —
+trocar o objetivo não é mais uma opção em aberto para revisitar.
+
 ---
 
 ## §13.17 Ordem de implementação revista
@@ -2166,9 +2207,11 @@ quem implementa.
 
 - **Não altera nenhum default, constante ou artefato.** Tudo aqui é
   proposta.
-- **Recomenda, mas não decide, o alvo e o pooling** (`§13.16.4`,
-  `§13.16.1`). As duas recomendações são explícitas e fundamentadas; a
-  decisão é do Manager. Em particular, `§13.16.4` **retifica** a primeira
+- **O alvo (`§13.16.4`) foi RATIFICADO pelo Manager em 2026-08-27** — manter
+  `objective="binary"`, decisão fechada, não recomendação em aberto. **O
+  pooling (`§13.16.1`/`§13.16.1-bis`) segue recomendado, mas NÃO decidido**
+  — rebaixado a challenger gated no reexame (`§13.19` FP1), sem apetite
+  para autorizar por ora. Em particular, `§13.16.4` **retifica** a primeira
   redação desta v2, que propunha regressão sobre `ret_net/atr_at_t0` — a
   medição de `§13.16.3` mostrou que a alavanca está na regra de decisão, não
   no `objective`. A retificação está no corpo, não escondida.
@@ -2474,6 +2517,24 @@ alvo quando há oferta, e a divergência estrutural medida contra
 suíte completa (`-m "not slow"`) **2267 passed, 2 skipped, 2 xfailed, 0
 failed** depois desta mudança.
 
+**Ratificado 2026-08-27 (Manager: "B = sua recomendação aceita").**
+Recomendação era **medir os dois mecanismos lado a lado no próximo
+retreino real, antes de comprometer um** — não escolher agora por álgebra.
+Ratificação aceita literalmente: nenhum mecanismo promovido, `run_fold`
+continua bit-exato. Aplicado (`AG-315` addendum): `alpha.
+compare_cap_mechanisms` — núcleo puro novo que roda os dois mecanismos
+(`resolve_joint_lambda` e `decide_side_breakeven_topq`) sobre a MESMA
+população, com o MESMO `target_signal_rate`, e reporta `n_agree`/
+`n_disagree`/`frac_agree` — pronto pra rodar sobre `predictions.parquet`
+real assim que o item 7 do reexame de `§13.17` (retreino, bloqueado por
+`AG-298`) desbloquear, sem exigir engenharia nova naquele momento. 4
+testes novos (`tests/unit/test_models_alpha_breakeven_item11.py`,
+16 no arquivo agora) — incluindo o mesmo caso mínimo de divergência já
+provado manualmente acima, agora detectado pela função de comparação.
+`ruff`/`mypy --strict`/`banned_patterns`/`check_unguarded_ratios` limpos.
+Nenhuma célula real medida ainda — depende do retreino (item A da pauta
+de decisão, sem status novo nesta rodada).
+
 ---
 
 ## §13.23 EXECUTADO — itens 5, 6, 8, 9: os quatro "fix mecânico" de `§13.14`/`§13.13` (`AG-323`–`AG-326`)
@@ -2668,6 +2729,22 @@ confirmação da doc e não medido o efeito.
 
 ## §14. v3 — arquitetura corrigida (2026-08-26): `L2` vazia, `defeito_construção` nomeado
 
+**Declaração explícita de reversão (`AG-283`, ratificada pelo Manager
+2026-08-27): esta v3 REVERTE, nos pontos onde diverge, a decisão já
+ratificada em `AG-207`/`ADR-003` sobre o conjunto `T1` vivo.** `AG-207`
+tratou o conjunto `T1` de 7 colunas como fechado por processo próprio
+(aditivo, fora desta arquitetura de camadas); esta v3 reclassifica as
+mesmas 72 colunas sob `L0`-`L4` sem reabrir `T1` em si (§14.1: nenhuma das
+7 colunas de produção muda, `L2` fica definida como "exatamente o que já
+está em produção", não por este critério tê-las validado). A reversão real
+é de ENQUADRAMENTO, não de conteúdo: onde `AG-207`/`ADR-003` são citados
+noutras seções deste documento (`§2.1`, `§8`, `§9`) como base de decisão
+sobre o vetor de treino, a v3 é a camada que substitui — não invalida a
+medição original, mas passa a ser o lugar onde a pergunta "essa coluna
+treina o Alpha" se responde daqui em diante (via `layer=L2`, não via
+citação direta a `AG-207`). Nenhuma ação em `src/models/` decorre disso —
+é reconhecimento textual, não mudança de comportamento.
+
 **Fecha parcialmente `§11.5`.** Dos 3 instrumentos que `§11.5` exige antes de
 uma v3 existir: **o modelo nulo por símbolo está pronto** (`src.analysis.
 feature_promotion_criterion`, `AG-294`) e **o BH está no payload com unidade
@@ -2735,6 +2812,22 @@ resultado estatístico específico — a evidência quantitativa de que o sinal
 evidência estatística ainda insuficiente.
 
 `L4` a partir de `SEM_MECANISMO`: **29 − 8 = 21** features.
+
+**Achado de validação 2026-08-27 — recomendação anterior de `AG-271`
+SUPERADA, não aplicada.** O artefato de pendências publicado
+(`ef8dab01-25c7-410e-8c93-ffc78768232a`) registrava uma recomendação
+minha anterior a esta seção: "mover `A05_ret_vol_norm_4`/`B01_rsi_14`
+pra `L3` junto com as outras 5, não há justificativa pra tratamento
+diferente só por já estarem em produção hoje". Essa recomendação foi
+escrita ANTES da regra de precedência de `§14.3` (item 3: `L2 =
+T1_FEATURE_IDS`, produção vence veredito de ficha) ser fixada como texto
+final desta ADR. Aplicá-la literalmente hoje tiraria `A05`/`B01` do
+vetor de treino real (`T1_FEATURE_IDS`), contradizendo o próprio `§14.1`
+("essas 7 nunca foram promovidas por este teste... mexer em produção
+sem motivo positivo não é decisão desta ADR") e o `§14.3` que este
+documento já ratificou. **Não aplicada — a tabela acima (A05/B01 → `L2`)
+é o estado correto e final.** Registrado como achado de validação, não
+como mudança de arquitetura.
 
 ### §14.3 `AG-272` — o estado `defeito_construção`, ortogonal, com precedência explícita
 
@@ -2859,20 +2952,58 @@ completa sem tê-la de fato:**
 | `L1` | `B07`, `C07`, `E02f`, `E27f` (4) | `E27f` também é `L2` — dupla camada deliberada (§14.3) |
 | `L2` | as 7 `T1_FEATURE_IDS` | inclui `E27f` (dupla com `L1`) — `E16f` NÃO entra (§14.1) |
 | `L3` | 17 (11 `TESE_OK` restantes + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) | +1 vs. a v1 desta tabela (ganhou `E18f`) |
-| `L4` | 43 (21 `SEM_MECANISMO` restante + 22 `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) | **+22 vs. a v1 desta tabela** — é a correção do achado CRITICAL |
-| `defeito_construcao` (flag ortogonal) | 26 (3 já `L1`/`L2`: `A13`, `E10f`, `E02f`; 1 em `L3` via quarentena: `E18f`; 22 em `L4`) | fecha `AG-272` de verdade agora |
+| `L4` | ~~43~~ ~~42~~ **41** (~~21~~ ~~20~~ **21** `SEM_MECANISMO` restante + ~~22~~ ~~21~~ **20** `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) | **+22 vs. a v1 desta tabela** — é a correção do achado CRITICAL; **−1 em 2026-08-27** (K08), **−1 em 2026-08-27b** (A12, removida — ver `AG-316`); total inalterado em 2026-08-27c (C08 muda de bucket, `ERRO_CATEGORICO→SEM_MECANISMO`, ver `AG-317`) |
+| `defeito_construcao` (flag ortogonal) | ~~26~~ ~~24~~ ~~23~~ **22** (1 já `L1`: `E02f`; 1 em `L3` via quarentena: `E18f`; 20 em `L4`) | fecha `AG-272` de verdade agora; **−2 em 2026-08-27** (A13/E10f), **−1 em 2026-08-27b** (A12, removida), **−1 em 2026-08-27c** (C08, corrigida — `AG-317`) |
+
+**CORREÇÃO 2026-08-27 — números acima ficaram desatualizados por trabalho
+posterior NESTA MESMA sessão, nunca propagado de volta pra esta tabela
+(mesmo padrão `AG-123` que este documento já corrigiu antes em outras
+seções).** Dois eventos, ambos já commitados antes desta correção: (1)
+`K08_days_since_halving` foi REMOVIDA por completo (`AG-263`, §5.2/§11.4
+item 3) — total de features caiu de 72 para **71**; K08 tinha veredito
+`SEM_MECANISMO` e nenhuma outra camada, então sua remoção tira 1 de `L4`
+diretamente (`21→20` na origem `SEM_MECANISMO`, `43→42` no total). (2)
+`A13`/`E10f` tiveram a ficha regenerada sobre o código já corrigido
+(`AG-295`) — `A13`: `INCOERENTE_DIMENSIONAL→SEM_MECANISMO`; `E10f`:
+`ERRO_CATEGORICO→TESE_OK`. Os DOIS já estavam em `L2` antes e depois (regra
+de precedência #3, produção vence veredito de ficha) — a camada não muda —
+mas o `defeito_construcao` deles vira `false` (a construção que causava o
+defeito foi corrigida), tirando 2 do total (`26→24`). Verificado por script
+2026-08-27 contra o estado real de `fichas_69_2026-08-25.yaml`/
+`T1_FEATURE_IDS`: `L0=2, L1=4, L2=7, L3=17, L4=42, defeito_construcao=24`,
+união `L0∪L1∪L2∪L3∪L4` = as 71 features exatas. Detalhe completo:
+`docs/investigacao_falso_negativo_eixo1_2026-08-26.md` (a mesma sessão que
+achou isso via `AG-327`-`AG-330`).
+
+**CORREÇÃO 2026-08-27b — `A12_gap_pct` REMOVIDA (`AG-316`, ver §14.6).**
+Terceiro evento na mesma cadeia do parágrafo acima, também commitado
+antes desta correção: `A12` tinha veredito `ERRO_CATEGORICO` (mecanismo de
+"gap" de sessão que não existe em mercado 24/7 contíguo) e nenhuma outra
+camada — removida por completo (função, registry, ficha, teste), mesmo
+tratamento de `K08`. Total de features cai de 71 para **70**; `L4` de 42
+para **41** (a origem era `ERRO_CATEGORICO`, não `SEM_MECANISMO` — o bucket
+`INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` cai de 22 para 21, o bucket
+`SEM_MECANISMO` continua em 20); `defeito_construcao` de 24 para **23** (A12
+estava nela). Estado real após as três correções: `L0=2, L1=4, L2=7, L3=17,
+L4=41, defeito_construcao=23`, união = 70.
 
 **Verificado por reconstrução de conjunto (script, não prosa):**
-`L0 ∪ L1 ∪ L2 ∪ L3 ∪ L4` = as 72 features exatas, `0` faltando, `0`
-sobrando. A soma bruta das 5 camadas (`2+4+7+17+43=73`) excede 72 em
-exatamente `1` — a dupla-camada deliberada de `E27f` (§14.3), não um erro
-de contagem.
+`L0 ∪ L1 ∪ L2 ∪ L3 ∪ L4` = as 70 features exatas (72 antes da remoção de
+K08/A12), `0` faltando, `0` sobrando. A soma bruta das 5 camadas
+(`2+4+7+17+41=71`) excede 70 em exatamente `1` — a dupla-camada deliberada
+de `E27f` (§14.3), não um erro de contagem.
 
-Das 26 em `defeito_construcao`: **2 têm investigação + correção proposta**
-(`A13`/`E10f`, `AG-295`); **24 não foram auditadas individualmente nesta
-sessão**, incluindo `E02f` (a única das 24 que já é insumo de produção via
-`L1`) e `E18f` (já tem sua própria investigação separada, `AG-266`, sobre
-a causa do artefato — não sobre a construção em si).
+Das 22 em `defeito_construcao` (2026-08-27c; eram 26 antes das quatro
+correções acima): **`A13`/`E10f` já tiveram a correção CONFIRMADA e a
+ficha regenerada** (`AG-295`, ver correção 2026-08-27 acima — por isso
+saíram da contagem); **`A12` foi removida** (`AG-316`, acima — sai da
+contagem por não existir mais, não por correção); **`C08` teve o
+defeito categórico corrigido** (`AG-317`, janela ancorada em tempo — sai
+da contagem por correção, permanece `L4` por `SEM_MECANISMO`); **20 não
+foram auditadas individualmente nesta sessão**, incluindo `E02f` (a
+única das 20 que já é insumo de produção via `L1`) e `E18f` (já tem sua
+própria investigação separada, `AG-266`, sobre a causa do artefato — não
+sobre a construção em si).
 
 ### §14.5 Opções, revisadas
 
@@ -2880,20 +3011,23 @@ Com `L2 = T1` (7, não 1 e não 72), a tensão da v2 (§4 — "poda agressiva
 concentra o motor numa fonte só") **desaparece**: não há nada novo pra
 concentrar risco em cima. As opções de §3 ficam assim:
 
-- **Opção A (manter as 72 no cálculo/vetor de treino)** — mesma avaliação
-  da v2: custo estatístico máximo, sem justificativa nova.
+- **Opção A (manter as ~~72~~ ~~71~~ 70 no cálculo/vetor de treino)** —
+  mesma avaliação da v2: custo estatístico máximo, sem justificativa nova.
 - **Opção B (podar pra `L2` apenas)** — deixa de ser "1 coluna instável" e
   vira **"não fazer nada"**: `L2` já é `T1`. Deixa de ser opção de risco —
   é o estado atual, por ausência de candidato.
 - **Opção C (5 camadas + quarentena + `defeito_construção`, podar `L4`
-  corrigida, manter `L3` calculada) ✅** — continua a recomendação, e fica
-  MAIS barata de justificar: não exige nenhuma promoção contestável (`L2`
-  não muda), só reduz o que é calculado sem propósito (`L4`, **43** —
-  corrigido 2026-08-26, era 21 na v1 desta tabela, ver §14.3/§14.4) e
-  nomeia o que precisa de engenharia antes de significar algo
-  (`defeito_construção`, 26). `L4=43` (60% das 72) parar de ser calculada
-  é uma redução MAIOR do que a v1 desta seção estimava — o custo evitado
-  é maior, não menor, com a partição corrigida.
+  corrigida, manter `L3` calculada) ✅ — ADOTADA E IMPLEMENTADA
+  2026-08-27** (ver `§14.11`): não exige nenhuma promoção contestável
+  (`L2` não muda), só reduz o que é calculado sem propósito (`L4`,
+  ~~43~~ ~~42~~ **41** — corrigido 2026-08-27/2026-08-27b, ver correção
+  acima) e nomeia o que precisa de engenharia antes de significar algo
+  (`defeito_construção`, ~~26~~ ~~24~~ ~~23~~ **22**). `L4=41` (~59% das 70)
+  parar de ser calculada é uma redução MAIOR do que a v1 desta seção
+  estimava — o custo evitado é maior, não menor, com a partição
+  corrigida. `A12_gap_pct` foi removida por completo em vez de só
+  parar de calcular (`AG-316`) — a única das 41 onde a decisão foi
+  "não existe redefinição honesta", não "aguarda engenharia".
 
 ### §14.6 O que esta v3 ainda não fecha
 
@@ -2915,9 +3049,17 @@ concentrar risco em cima. As opções de §3 ficam assim:
   por um teste que nunca usou informação sobre o artefato. Os 3
   pré-requisitos de `§11.5` estão fechados agora — modelo nulo por
   símbolo, BH com unidade declarada (`AG-294`) e eixo 2 persistido
-  (`AG-299`). `h=1` sem justificativa econômica declarada continua
-  como lacuna residual (por que `h=1` e não o pico, ou o holding `H=5`?)
-  — registrada, não fabricada.
+  (`AG-299`). **`h=1` justificado 2026-08-27 (Manager ratifica):**
+  mantido fixo em `h=1` para TODAS as features, não o horizonte de pico
+  de cada uma — é o mais conservador dos horizontes possíveis (detecta
+  quebra de estabilidade o mais cedo, antes que o efeito acumule ao
+  longo de `h`), e testar em `h=pico-de-cada-feature` reintroduziria um
+  grau de liberdade por feature, exatamente o tipo de escolha que o
+  critério de dois eixos existe para fechar (a mesma disciplina que
+  vetou usar o pico não corrigido no eixo 1, `AG-327`). Não é a razão
+  original de quando `h=1` foi implementado (`AG-299`) — é a
+  justificativa econômica que faltava, fixada agora e consistente com
+  a decisão já tomada.
 - ~~19 das 26 colunas em `defeito_construção` seguem sem investigação
   individual~~ **FECHADO 2026-08-26 (item 2 dos 4 itens de continuação)**
   — as 19 restantes (eram 24; `A13`/`E10f` já tinham `AG-295`, `E02f`/
@@ -2957,12 +3099,22 @@ concentrar risco em cima. As opções de §3 ficam assim:
 - **`A01`–`A06` seguem sem resolução da tensão Pearson-vs-Spearman** (§7) —
   `L3`, não `L2`, precisamente por isso. A justificativa do recorte pra
   `L3` foi corrigida em §14.2 pra não depender mais de `AG-284`.
-- **Nenhum código de produção foi alterado por §14.1-§14.5.**
+- ~~Nenhum código de produção foi alterado por §14.1-§14.5.
   `T1_FEATURE_IDS`/`registry.yaml` continuam como estavam — `layer`/
-  `quarentena`/`defeito_construcao` são desenho proposto (§5.3 item 1 da
-  v2 ainda vale), não campos que existem hoje. (`src/analysis/feature_
-  temporal_stability.py` teve um bug de código real corrigido — ver §14.7
-  — mas é módulo novo, decision-support, não produção.)
+  `quarentena`/`defeito_construcao` são desenho proposto, não campos que
+  existem hoje.~~ **FECHADO 2026-08-27 — ver §14.11.** `layer`/
+  `quarentena`/`defeito_construcao` agora são campos reais em
+  `src/features/registry.yaml` (todas as 71 entradas), validados por
+  `src/features/registry.py` (`FeatureLayerError`,
+  `TierLayerInconsistencyError`) e por `layer2_feature_ids()`, que
+  confirma `L2 == T1_FEATURE_IDS` exatamente. `T1_FEATURE_IDS` em si
+  (a lista hardcoded que `src/models/dataset.py`/`pipeline.py`
+  consomem) **não foi tocado** — fora do escopo desta sessão (§13,
+  sessão de ML delegada); `layer2_feature_ids()` é uma função de
+  DERIVAÇÃO/verificação, não substitui a fonte de verdade consumida em
+  produção. (`src/analysis/feature_temporal_stability.py` teve um bug de
+  código real corrigido — ver §14.7 — mas é módulo novo, decision-support,
+  não produção.)
 - **`L2={}` (§14.1) pode não ser uma medição limpa — investigado, não
   corrigido, 2026-08-26.** A pedido do Manager ("o que a engenharia pode
   invalidar aqui"), pesquisa externa + auditoria adversarial independente
@@ -3059,7 +3211,7 @@ backlog registrado (`AG-331`-`AG-334`), não implementado agora.
 | Diagnóstico de poder por injeção sintética antes de aceitar "sem sinal" | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
 | Teste de homogeneidade formal antes de pooling entre unidades correlacionadas | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
 | Poison-pill de nome banido no registro (bloqueio mecânico, não prosa) | **FECHADO 2026-08-27** — `src/features/registry.py::_BANNED_FEATURE_IDS`/`BannedFeatureIdError`, `AG-331` | `feature_sets.py:204-220`, `_BANNED_FEATURE_NAMES`/`BannedFeatureNameError` |
-| Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | **FECHADO 2026-08-27 — achado original REFUTADO**, `AG-332`: o mecanismo já existe (`test_features_support.py::_assert_causal`, 15 primitivas + 27 testes de feature em `test_features_groups.py`); 65/71 features com citação `causal_proof` verificada, 6 triviais sem janela. Fix real aplicado: 3 citações incompletas (`C03`/`C04`/`C05`) apontadas para a função exata | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
+| Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | **FECHADO 2026-08-27 — achado original REFUTADO**, `AG-332`: o mecanismo já existe (`test_features_support.py::_assert_causal`, 15 primitivas + 27 testes de feature em `test_features_groups.py`); 64/70 features com citação `causal_proof` verificada, 6 triviais sem janela (contagem original era 65/71 — `A12_gap_pct` foi removida em 2026-08-27b, `AG-316`, junto com seu teste de causalidade; a proporção não muda de leitura). Fix real aplicado: 3 citações incompletas (`C03`/`C04`/`C05`) apontadas para a função exata | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
 | Piso fail-loud único e nomeado (`MIN_REAL_BARS_FRACTION`), uniforme em toda feature | **NÃO IMPLEMENTADO 2026-08-27 — não se aplica**, `AG-333`: resolve barras SINTÉTICAS de grade de relógio (gaps de fim de semana), que não existem por construção em barra dollar. A preocupação adjacente real (piso de histórico comum) já é `AG-030`, já aberto — duplicar sob novo id faria uma dívida parecer duas | `volatility.py:34,244`, `_floor_mask_expr` |
 | Gate de versão treino↔live (`validate_versions_against`) | **NÃO IMPLEMENTADO 2026-08-27 — confirmado prematuro**, `AG-334`: `version` por feature já existe no registry (achado original impreciso); o que falta é o GATE, e não há caminho de serving ao vivo no repo hoje (`src/execution/` só tem simulador de backtest; `src/live/` vazio) para ele proteger | `feature_sets.py::validate_versions_against` |
 | Paridade lote↔streaming garantida por construção (roda o MESMO kernel sobre a cauda do buffer) | observado, **não uma lacuna** — ver nota abaixo | `volatility.py::_scalar_from_batch` |
@@ -3148,6 +3300,37 @@ Achados adicionais, registrados mas não centrais à decisão de hoje:
   com "há IC direcional replicado?" mede o que ela nunca alegou ter. Seu
   zero no eixo 1 é esperado, não evidência de falta de base — diferente do
   zero de `B01`/`D06f`, sem essa desculpa de papel.
+  **[ADDENDUM 2026-08-27]** Investigado a pedido do Manager — três
+  achados, ver `AG-330` no log para o texto completo: (1) o mesmo viés
+  reaparece dentro de `§13.4`/item 6 (`screen_monotone_constraints` usa a
+  MESMA IC marginal; `E27f` só está protegida hoje por um escape-hatch
+  manual, `_ECONOMIC_FORCED_CONSTRAINT`, não por um gate estrutural de
+  papel); (2) "papel filtro de viabilidade" nunca virou valor formal do
+  campo `papel:` na ficha (mesmo furo de `AG-329` — justificativa só em
+  prosa); (3) **medido em produção, não só hipotético**: `E27f` é a
+  feature de maior `gain` em 25 dos 30 blocos `pooled` de
+  `experiments/alpha_full_analysis_2026-08-24.json` (tipicamente 20-30%
+  do gain total do T1), enquanto `B01`/`D06f` (mesmo zero no eixo
+  1, sem a desculpa de papel) têm gain médio-baixo — confirma a
+  distinção que este achado propunha. Proposta de solução em 2 estágios
+  registrada no addendum: (1) relatório de agregação gain×eixo1, barato,
+  sem retreino; (2) importância por permutação in-fold sobre o booster
+  real, gated no retreino represado (verificado: nenhum `.bin` local
+  hoje). **[IMPLEMENTADO 2026-08-27]** Estágio 1 aprovado, codificado e
+  EXECUTADO (Manager autorizou `uv`/`.py` nesta sessão) —
+  `src/analysis/eixo1_gain_cross_check.py` (núcleo puro + casca, 13
+  testes, `13/13 PASSED`), lê os relatórios já persistidos e cruza
+  gain-share × descoberta do eixo 1 sem precisar de retreino. Resultado
+  real (30 blocos, piso uniforme 1/7=0,1429):
+  `E27f_cost_atr_ratio` — `contradiction_flag=True`, excesso robusto
+  (~38%, share médio 0,197); **achado novo, corrige a leitura manual
+  acima** — `C06_vol_ratio_12_96` também cruza o piso
+  (`contradiction_flag=True`, mas excesso marginal ~4%, share médio
+  0,149, inconsistente entre blocos); `B01`/`D06f` seguem sem
+  contradição. Detalhe completo e a ressalva sobre o `min_gain_share`
+  de `C06` em `AG-330::addendum_2026-08-27c`. Comando:
+  `uv run python -m src.analysis.eixo1_gain_cross_check`. Estágio 2 segue
+  gated no retreino represado.
 
 **Decisão sobre a promoção mecânica proposta:** avaliada e **recusada**
 (não executada). Promover `A01`-`A06` pra `L2` e rebaixar `E18f`
@@ -3308,3 +3491,183 @@ ferramentas de diagnóstico paralelas, `AG-294` continua sendo o eixo 1 de
 produção até uma decisão explícita do Manager (informada pelo resultado
 real dos itens 1-2) trocar isso. `A01`-`A06`/`E18f`/`registry.yaml`/
 `T1_FEATURE_IDS` não tocados.
+
+---
+
+### §14.11 Implementação do esquema `layer`/`quarentena`/`defeito_construção` + validação ponta a ponta das pendências do ADR (2026-08-27)
+
+**Contexto.** O artefato publicado "Pendências do ADR-005"
+(`ef8dab01-25c7-410e-8c93-ffc78768232a`) catalogava todo item aberto de
+`§0`-`§14` desta ADR, com recomendação escrita para cada item marcado
+"pendente decisão do Manager". Instrução do Manager 2026-08-27: ratificar
+as recomendações, mas **revalidar cada uma contra o código e a governança
+atuais antes de aplicar** — o próprio `§14.4`/`§14.5` tinham mudado entre a
+publicação do artefato e esta rodada (correção de `K08`, regeneração de
+fichas de `A13`/`E10f`). Esta seção documenta o que foi encontrado e
+aplicado nessa revalidação.
+
+**1. Esquema `layer`/`quarentena`/`defeito_construção` — adotado (`§14.6`,
+`§14.5` Opção C).** Os 3 campos, propostos desde `§14.3`, viraram reais em
+`src/features/registry.yaml` (todas as 71→70 entradas, ver correções
+abaixo) e validados em `src/features/registry.py`:
+
+- `_VALID_LAYERS = {L0,L1,L2,L3,L4}`, `FeatureLayerError` se um valor fora
+  do conjunto ou lista vazia.
+- `_VALID_T1_LAYERS = {L1,L2,L3}` — fecha `AG-282` (Manager ratifica
+  "`layer` é especialização de `tier`, não taxonomia paralela"):
+  `TierLayerInconsistencyError` se uma coluna `T1` declarar `layer` fora
+  de `{L1,L2,L3}` (T1 nunca é `L0` — primitiva não é produção — nem `L4`
+  — aposentada não deveria estar rodando). T2 pode ser qualquer `layer`
+  (é o pool de candidatas).
+- `layer2_feature_ids()` — função nova, **só deriva/verifica**, não
+  substitui `src.features.build.T1_FEATURE_IDS` como fonte de verdade
+  consumida por `src.models.dataset.build_modeling_frame`/`src.models.
+  pipeline.run_layer1_sprint` (ambos em `src/models/`, fora do escopo
+  desta sessão — rewiring de fato é trabalho da sessão de ML, `§13`, não
+  decidido aqui). Verificado por execução direta:
+  `layer2_feature_ids() == set(T1_FEATURE_IDS)` — exatas, confirma que o
+  registry concorda com o vetor real de produção sem precisar substituí-lo.
+
+24 testes novos (`tests/unit/test_features_registry.py`): tipagem real do
+`layer`, `E27f` com dupla camada `[L1,L2]`, `E18f` em quarentena+defeito,
+nenhum `T1` em `L0`/`L4`, os dois erros novos como subclasses de
+`FeatureRegistryError`, `layer2_feature_ids()` bate com `T1_FEATURE_IDS` e
+exclui quarentena. `tests/unit/test_features_build.py::_REQUIRED_FIELDS`
+sincronizado com os 3 campos novos (mesmo invariante documentado no
+docstring de `registry.py`).
+
+**2. `AG-271` — recomendação anterior SUPERADA, não aplicada (ver nota
+inline em `§14.2`).** O artefato recomendava mover `A05`/`B01` pra `L3`
+"junto com as outras 5" — escrito antes da precedência de `§14.3` (`L2`
+vence veredito de ficha) virar texto final. Aplicar hoje tiraria 2
+colunas de `T1_FEATURE_IDS` sem motivo positivo, contradizendo `§14.1`/
+`§14.3` já ratificados. Achado de validação, comunicado ao Manager — não
+uma mudança de arquitetura.
+
+**3. Correções reais de produção, cada uma com o mesmo padrão de `AG-295`
+(A13/E10f): fórmula corrigida no núcleo puro, `registry.yaml` com versão
+bumped + nota, ficha regenerada manualmente quando o veredito muda, testes
+novos, mecânica limpa. Nenhuma toca `T1_FEATURE_IDS`/`src/models/`.**
+
+| feature | `AG` | o que mudou | veredito ficha | `defeito_construção`/`layer` |
+|---|---|---|---|---|
+| `A12_gap_pct` | `AG-316` | **REMOVIDA por completo** (função, registry, ficha, teste) — "gap" não existe em mercado 24/7; sem redefinição honesta, redundante com `A01` | `ERRO_CATEGORICO` → *(removida)* | *(não existe mais)* |
+| `C08_vol_pctile_rolling_1y` | `AG-317` | janela de CONTAGEM DE BARRAS (17.520) → janela de TEMPO (365 dias, `support.rolling_percentile_rank_strict_by_time`, primitiva nova) | `ERRO_CATEGORICO` → `SEM_MECANISMO` | `true→false` / `L4` (inalterado — regra `§14.3` #5) |
+| `E11f_oi_change_1d` | `AG-320` | delta bruto → z-score rolante (`support.rolling_zscore`, mesmo padrão de `E10f`) — **parcial** | `ERRO_CATEGORICO` (mantido) | `true` / `L4` (inalterados — defeito de calendário não resolvido) |
+| `C04_parkinson_vol_48` | `AG-322` | `× √window` adicionado, só no nível da feature (não na primitiva compartilhada com `c01_atr_20_parkinson`, produção) — **parcial** | `INCOERENTE_DIMENSIONAL` (mantido) | `true` / `L4` (inalterados — defeito de duração de barra fixa não resolvido) |
+| `C05_garman_klass_48` | `AG-322` | idem C04 — **parcial** | `INCOERENTE_DIMENSIONAL` (mantido) | `true` / `L4` (inalterados) |
+
+"Parcial" é deliberado, não descuido: cada uma dessas 3 correções resolve
+a inconsistência de ESCALA/comparabilidade que a recomendação do Manager
+pedia, mas NÃO resolve o defeito categórico/dimensional específico que a
+própria ficha documenta (calendário vs. contagem de barras) — declarar
+isso explicitamente evita o overclaim que `§14.3` já corrigiu antes
+noutras seções (regra geral: um veredito só é rebaixado quando o defeito
+QUE ELE DESCREVE é o que foi corrigido, não um defeito adjacente).
+
+**4. `AG-321` (degeneração de volume, `D01f`/`D02f`/`D04f`/`D09f`/`D10f`/
+`D03f`) — documentado, não uma mudança de fórmula.** Nota cruzada nas 6
+entradas do `registry.yaml`: tratar como 1 grau de liberdade, não 6, em
+qualquer HHI/ortogonalidade/`N_lifetime` daqui em diante. Medição exata de
+`corr(volume,1/preço)` segue pendente (diagnóstico novo, fora desta
+rodada).
+
+**5. `§13` (engenharia de ML) — recomendações ratificadas textualmente,
+NADA implementado.** `src/models/` é território da sessão delegada; os
+itens de `§13.17`/`§13.20`/`§13.16.1` já avançaram por conta própria
+naquela sessão desde que o artefato foi publicado (`§13.20`-`§13.23`: item
+6 já implementado como `k=2,0`, não o `k=1` que eu havia recomendado —
+minha recomendação está superada pelo mesmo motivo de `AG-271`; itens 5/8/
+9 já implementados como opt-in; peso proporcional a `|ret_net|` já é a
+"decisão de desenho tomada" registrada em `§13.20`). Nenhuma dessas seções
+foi editada por esta sessão.
+
+**6. Contagem final, verificada por reconstrução de conjunto:** `L0=2,
+L1=4, L2=7, L3=17, L4=41, defeito_construção=22`, união = **70** features
+(72 na v2 original; −1 `K08`, −1 `A12`, ambas removidas; `C08` muda de
+bucket `ERRO_CATEGORICO→SEM_MECANISMO` dentro de `L4`, sem alterar o
+total). Suíte completa (`-m "not slow"`) verde após cada correção
+individual; mecânica (`ruff`/`mypy`/`banned_patterns`) limpa em todos os
+arquivos tocados.
+
+---
+
+## §14.11 Decisões do Manager 2026-08-27 (B/C/E/F da pauta) — validadas
+## contra código real antes de aplicar, "modo chief architect"
+
+A pedido do Manager: ratificar B/C/E/F das recomendações da pauta §13, mas
+"leia cada item no ADR e valide contra o código e arquivos de governança
+para só então aplicar" — há mudanças de outra sessão paralela (features)
+desde a rodada anterior. Cada item abaixo foi reverificado contra o
+código/registro REAL, não contra a prosa antiga da pauta, antes de
+qualquer alteração de produção.
+
+**B — teto de capacidade do item 11 (`§13.16.4`/`§13.22`, `AG-315`).**
+Ratificado: medir os dois mecanismos lado a lado no próximo retreino real,
+não escolher agora. Aplicado (sem promover nenhum): `alpha.
+compare_cap_mechanisms` — núcleo puro novo, roda `resolve_joint_lambda` e
+`decide_side_breakeven_topq` sobre a mesma população e reporta a
+divergência (`n_agree`/`n_disagree`/`frac_agree`). Ver nota em `§13.22`
+acima para os testes (4 novos) e o comando de quando o retreino
+desbloquear. **`run_fold` continua bit-exato — nenhuma promoção.**
+
+**E — objetivo (`§13.16.4`/`§13.18`).** Ratificado: manter
+`objective="binary"`. Nenhuma mudança de código — já é o default de
+produção desde a migração XGBoost→LightGBM. Documentação atualizada em
+`§13.16.4` (nota de ratificação) e `§13.18` (bullet corrigido: o alvo sai
+da lista "recomenda mas não decide", o pooling continua lá).
+
+**F — grade de relógio 15m legada (`AG-309`).** Ratificado: **não rodar**
+— "obsoleta e morta". Verificado contra o código antes de aplicar: o
+docstring de `run_and_write_labels_for_alts`
+(`src/labels/backfill_multi_symbol.py:236`) cita "o grupo de controle de
+`AG-229` depende dela" como justificativa para a função continuar
+existindo — checado `AG-229` diretamente: o grupo de controle já está
+**intacto e congelado** (bit-idêntico desde o relabel de 2026-08-25,
+confirmado no próprio achado), não depende de nenhuma execução NOVA desta
+função — a ratificação do Manager não contradiz `AG-229`, é consistente
+com ele. Rodado `check_label_registry_sync.py` contra o disco real ANTES
+de aplicar: confirma exatamente as 5 células (`{BTCUSDT,ETHUSDT,SOLUSDT,
+BNBUSDT,XRPUSDT}/15m`) como as únicas divergentes hoje — os 15 cells de
+dollar bar (R1/R2/R3) seguem fechados, "15 de 20" da pauta continua
+preciso. **Aplicado em produção:** `src.labels.experiment_log.
+KNOWN_LEGACY_GRADE_LINEAGE_GAPS` (as 5 células) +
+`UnregisteredLabelArtifact.accepted_gap` — o detector continua reportando
+as 5 (nunca fica invisível, mesmo princípio de `AG-309`: "visível e não
+pode reaparecer em silêncio"), mas `check_label_registry_sync.py` agora
+só falha (`exit 1`) em divergência FORA da lista aceita. 4 testes novos
+(`tests/unit/test_labels_registry_sync.py`, 13 no arquivo agora). Rodado
+contra dado real: `exit 0`, "nenhum gap fora da lista aceita" — confirmado
+com autorização do Manager para execução direta nesta sessão.
+
+**C — teste `H₀` do item 7 (`§13.12`).** Ratificado EM PRINCÍPIO ("assim
+que o item A destravar"): não executado, porque a precondição (item A)
+segue **bloqueada**. Reverificado ao vivo: `T1_FEATURE_IDS +
+SUPPORT_FEATURE_IDS` ainda inclui as 5 features de `lookback_bars:
+expanding` (`C09_range_pctile_expanding`, `C10_vol_expansion_flag`,
+`C11_vol_compression_flag`, `E15f_toptrader_ls_z`,
+`E17f_retail_vs_top_spread`) — `assert_no_expanding_lookback_in_active_set`
+continua levantando `ExpandingFeatureLookbackError` para o vetor ativo
+real. **Achado novo, relevante pro item A mas NÃO decidido aqui** (A não
+fez parte deste lote de ratificação): no working tree HOJE, NÃO
+commitado, uma sessão paralela adicionou um campo `layer` ao registry —
+4 das 5 features acima (`C10`/`C11`/`E15f`/`E17f`) já aparecem como
+`layer: [L4]` ("aposentada" — por definição do próprio census, "nem
+deveria ser calculada"), ainda assim seguem em `SUPPORT_FEATURE_IDS` e
+computadas por `compute_t1_features`. **Isto é trabalho EM ANDAMENTO de
+outra sessão, não commitado, sem ficha em `fichas_69_2026-08-25.yaml`
+para estas 5 features especificamente** — não tratado aqui como decisão
+tomada; só registrado para que o Manager saiba, ao decidir o item A, que
+a classificação L4 já pode estar substancialmente alinhada com a
+recomendação anterior (excluir as 5), mas ainda não é uma base estável
+pra agir sem revisão. **Nenhum código de `SUPPORT_FEATURE_IDS` tocado.**
+
+Nenhuma célula de produção (`predictions.parquet`, `models/*.bin`,
+`labels.parquet` fora da grade 15m já congelada) foi alterada por
+nenhuma das quatro ratificações. `ruff`/`mypy --strict`/`banned_patterns`/
+`check_unguarded_ratios`/`check_constants_referenced`/`check_constants_
+provenance` limpos em todos os arquivos tocados (`src/models/alpha.py`,
+`src/labels/experiment_log.py`, `tools/lint/check_label_registry_sync.py`
++ os 3 arquivos de teste correspondentes). Suíte completa (`-m "not
+slow"`) verificada depois das quatro mudanças — ver `docs/SPRINT_LOG.md`
+para o número exato.

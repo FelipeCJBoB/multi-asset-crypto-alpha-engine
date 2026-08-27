@@ -662,3 +662,77 @@ def test_rolling_percentile_rank_strict_bate_com_expanding_quando_window_e_grand
     out_rolling = support.rolling_percentile_rank_strict(values, window=30)
     out_expanding = support.expanding_percentile_rank_strict(values)
     np.testing.assert_array_equal(out_rolling, out_expanding)
+
+
+def test_rolling_percentile_rank_strict_by_time_nao_usa_indice_t() -> None:
+    rng = np.random.default_rng(67)
+    n = 60
+    values = rng.normal(0, 1, n)
+    close_time_ms = np.arange(n, dtype=np.float64) * 60_000.0  # 1 barra/min
+    window_ms = 15 * 60_000  # 15 barras equivalentes
+    out = support.rolling_percentile_rank_strict_by_time(values, close_time_ms, window_ms)
+    close_time_int = close_time_ms.astype(np.int64)
+    for t in range(16, n, 7):  # amostra alguns índices, não todos (custo)
+        prior_mask = (close_time_int[t] - close_time_int[:t] <= window_ms) & (
+            np.arange(t) < t
+        )
+        prior = values[:t][prior_mask]
+        expected = float(np.mean(prior < values[t]))
+        assert out[t] == pytest.approx(expected), f"t={t}"
+
+
+def test_rolling_percentile_rank_strict_by_time_faixa_0_1() -> None:
+    rng = np.random.default_rng(71)
+    n = 100
+    values = rng.normal(0, 1, n)
+    close_time_ms = np.arange(n, dtype=np.float64) * 60_000.0
+    out = support.rolling_percentile_rank_strict_by_time(
+        values, close_time_ms, window_ms=20 * 60_000
+    )
+    valid = out[~np.isnan(out)]
+    assert valid.shape[0] > 0
+    assert (valid >= 0.0).all() and (valid <= 1.0).all()
+
+
+def test_rolling_percentile_rank_strict_by_time_causalidade() -> None:
+    rng = np.random.default_rng(73)
+    n = 100
+    values = rng.normal(0, 1, n)
+    close_time_ms = np.arange(n, dtype=np.float64) * 60_000.0
+
+    def fn(v: np.ndarray, close_time_ms: np.ndarray) -> np.ndarray:
+        return support.rolling_percentile_rank_strict_by_time(
+            v, close_time_ms, window_ms=20 * 60_000
+        )
+
+    _assert_causal(fn, values, cutoff=60, close_time_ms=close_time_ms)
+
+
+def test_rolling_percentile_rank_strict_by_time_janela_menor_produz_nan_antes() -> None:
+    """Mesma convenção de "nunca inclui t" das outras primitivas de posto
+    percentil -- `out[0]` é sempre NaN (nenhum ponto prévio na janela)."""
+    values = np.array([5.0, 1.0, 9.0, 2.0, 7.0])
+    close_time_ms = np.array([0.0, 60_000.0, 120_000.0, 180_000.0, 240_000.0])
+    out = support.rolling_percentile_rank_strict_by_time(
+        values, close_time_ms, window_ms=3 * 60_000
+    )
+    assert np.isnan(out[0])
+
+
+def test_rolling_percentile_rank_strict_by_time_bate_com_bar_count_equidistante() -> None:
+    """Quando as barras têm duração CONSTANTE (caso degenerado, não a barra
+    dollar real), uma janela de tempo `window_ms = window_bars *
+    duracao_bar_ms` é EXATAMENTE equivalente a uma janela de contagem
+    `window_bars` -- prova de que a generalização por tempo não muda o
+    resultado no caso em que as duas noções de janela coincidem."""
+    rng = np.random.default_rng(79)
+    n = 80
+    values = rng.normal(0, 1, n)
+    bar_duration_ms = 900_000.0  # 15 minutos, constante
+    close_time_ms = np.arange(n, dtype=np.float64) * bar_duration_ms
+    window_bars = 20
+    out_by_count = support.rolling_percentile_rank_strict(values, window=window_bars)
+    out_by_time = support.rolling_percentile_rank_strict_by_time(
+        values, close_time_ms, window_ms=int(window_bars * bar_duration_ms)
+    )
+    np.testing.assert_array_equal(out_by_count, out_by_time)

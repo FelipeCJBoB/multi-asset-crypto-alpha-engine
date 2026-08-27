@@ -177,6 +177,59 @@ def test_c01_atr_20_parkinson_diverge_de_atr_wilder() -> None:
 
 
 # ============================================================================
+# C04 / C05
+# ============================================================================
+
+
+def test_c04_escala_por_sqrt_window() -> None:
+    """`c04_parkinson_vol_48` == `support.parkinson_vol(...) * sqrt(window)`
+    -- fiação (o mecanismo de `parkinson_vol` já é testado em
+    `test_features_support.py`). Corrigido 2026-08-27 (`AG-322`): prova a
+    escala nova que iguala C04 à convenção de `C03_realized_vol_48`, sem
+    tocar a primitiva compartilhada com `c01_atr_20_parkinson` (produção)."""
+    bars = _make_ohlcv(300)
+    out = group_c.c04_parkinson_vol_48(bars["high"], bars["low"], window=48)
+    expected = support.parkinson_vol(bars["high"], bars["low"], window=48) * np.sqrt(48)
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_c04_nao_afeta_c01_atr_20_parkinson() -> None:
+    """A correção de escala de C04 é aplicada só no nível da FEATURE --
+    `support.parkinson_vol` (compartilhada com `c01_atr_20_parkinson`,
+    insumo de produção via `atr_20_abs`/`atr_20_pct`) continua sem
+    `sqrt(window)`, mesmo comportamento de antes de `AG-322`."""
+    bars = _make_ohlcv(300)
+    c01_out = group_c.c01_atr_20_parkinson(bars["high"], bars["low"], bars["close"], window=20)
+    expected_c01 = support.parkinson_vol(bars["high"], bars["low"], window=20) * bars["close"]
+    np.testing.assert_array_equal(c01_out, expected_c01)
+
+
+def test_c05_escala_por_sqrt_window() -> None:
+    """`c05_garman_klass_48` == `support.garman_klass_vol(...) *
+    sqrt(window)` -- mesma disciplina de `test_c04_escala_por_sqrt_window`
+    (`AG-322`), sem tocar `support.garman_klass_vol`."""
+    bars = _make_ohlcv(300)
+    out = group_c.c05_garman_klass_48(
+        bars["high"], bars["low"], bars["open"], bars["close"], window=48
+    )
+    expected = (
+        support.garman_klass_vol(bars["high"], bars["low"], bars["open"], bars["close"], window=48)
+        * np.sqrt(48)
+    )
+    np.testing.assert_array_equal(out, expected)
+
+
+def test_c05_nao_negativo() -> None:
+    bars = _make_ohlcv(300)
+    out = group_c.c05_garman_klass_48(
+        bars["high"], bars["low"], bars["open"], bars["close"], window=48
+    )
+    valid = out[~np.isnan(out)]
+    assert valid.size > 0
+    assert (valid >= 0.0).all()
+
+
+# ============================================================================
 # C06 / C07
 # ============================================================================
 
@@ -540,18 +593,6 @@ def test_a11_reproduz_true_range_sobre_close_anterior() -> None:
     np.testing.assert_allclose(out, expected, equal_nan=True)
 
 
-def test_a12_causalidade() -> None:
-    bars = _make_ohlcv(300)
-    cutoff = 150
-    out_base = group_a.a12_gap_pct(bars["open"], bars["close"])
-
-    open2, close2 = bars["open"].copy(), bars["close"].copy()
-    open2[cutoff + 1 :] *= 1.5
-    close2[cutoff + 1 :] *= 1.5
-    out_perturbed = group_a.a12_gap_pct(open2, close2)
-    np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
-
-
 def test_a14_causalidade() -> None:
     bars = _make_ohlcv(300)
     atr_abs = support.atr_wilder(bars["high"], bars["low"], bars["close"], window=20)
@@ -787,12 +828,28 @@ def test_e11f_causalidade() -> None:
     rng = np.random.default_rng(53)
     oi = 90_000.0 + np.cumsum(rng.normal(0, 200, 300))
     cutoff = 200
-    out_base = group_e.e11f_oi_change_1d(oi, lag_bars=48)
+    out_base = group_e.e11f_oi_change_z_1d(oi, lag_bars=48, zscore_window=48)
 
     oi2 = oi.copy()
     oi2[cutoff + 1 :] *= 1.2
-    out_perturbed = group_e.e11f_oi_change_1d(oi2, lag_bars=48)
+    out_perturbed = group_e.e11f_oi_change_z_1d(oi2, lag_bars=48, zscore_window=48)
     np.testing.assert_allclose(out_base[: cutoff + 1], out_perturbed[: cutoff + 1])
+
+
+def test_e11f_reproduz_delta_bruto_mais_zscore_rolante() -> None:
+    """Corrigido 2026-08-27 (`AG-320`): `e11f_oi_change_z_1d` normaliza o
+    delta bruto de `lag_bars` barras por z-score rolante (mesmo padrão de
+    `e10f_oi_change_z_48`) -- prova de valor conhecido/composição das duas
+    primitivas já testadas separadamente."""
+    rng = np.random.default_rng(59)
+    oi = 90_000.0 + np.cumsum(rng.normal(0, 200, 300))
+    out = group_e.e11f_oi_change_z_1d(oi, lag_bars=48, zscore_window=48)
+
+    log_oi = np.log(oi)
+    raw_delta = np.full(300, np.nan)
+    raw_delta[48:] = log_oi[48:] - log_oi[:-48]
+    expected = support.rolling_zscore(raw_delta, 48)
+    np.testing.assert_array_equal(out, expected)
 
 
 def test_e12f_sinais_em_menos1_0_1() -> None:
@@ -910,10 +967,21 @@ def test_b10_faixa_0_100_e_causalidade() -> None:
     np.testing.assert_allclose(out[: cutoff + 1], out_perturbed[: cutoff + 1])
 
 
-def test_c08_reproduz_realized_vol_mais_rolling_rank() -> None:
+def test_c08_reproduz_realized_vol_mais_rolling_rank_por_tempo() -> None:
+    """Corrigido 2026-08-27 (`AG-317`): C08 v2 ancora a janela em TEMPO
+    (`rolling_percentile_rank_strict_by_time`), não em contagem de barras.
+    Sob barras equidistantes (caso deste teste), `window_ms = outer_window
+    * duracao_bar_ms` é exatamente equivalente à janela de contagem antiga
+    — mesma prova de `test_rolling_percentile_rank_strict_by_time_bate_com_
+    bar_count_equidistante` em `test_features_support.py`, aplicada ao
+    nível da feature completa."""
     bars = _make_ohlcv(300)
     log_ret = _log_return_1(bars["close"])
-    out = group_c.c08_vol_pctile_rolling_1y(log_ret, inner_window=12, outer_window=48)
+    bar_duration_ms = 900_000.0  # 15 minutos, constante
+    close_time_ms = np.arange(300, dtype=np.float64) * bar_duration_ms
+    out = group_c.c08_vol_pctile_rolling_1y(
+        log_ret, close_time_ms, inner_window=12, outer_window_ms=int(48 * bar_duration_ms)
+    )
     rv = support.realized_vol(log_ret, 12)
     expected = support.rolling_percentile_rank_strict(rv, 48)
     np.testing.assert_array_equal(out, expected)

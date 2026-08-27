@@ -46,6 +46,9 @@ _REQUIRED_FIELDS: frozenset[str] = frozenset(
         "parity_tested",
         "version",
         "added",
+        "layer",
+        "quarentena",
+        "defeito_construcao",
     }
 )
 """Mesmo conjunto de `tests/unit/test_features_build.py::_REQUIRED_FIELDS`
@@ -75,6 +78,18 @@ _BANNED_FEATURE_IDS: frozenset[str] = frozenset(
     }
 )
 
+#: Camadas canônicas do critério de evidência (ADR-005 §2.1/§14.3-§14.4).
+#: `L0` primitiva de cálculo | `L1` insumo do gate de regime | `L2` núcleo
+#: de sinal (= `T1_FEATURE_IDS` hoje) | `L3` em observação | `L4`
+#: aposentada. Uma entrada pode estar em MAIS de uma camada só no caso
+#: deliberado documentado (`E27f_cost_atr_ratio`, `L1`+`L2` — §14.3).
+_VALID_LAYERS: frozenset[str] = frozenset({"L0", "L1", "L2", "L3", "L4"})
+
+#: Camadas em que uma feature `tier="T1"` PODE estar — nunca `L0`
+#: (primitiva de cálculo, não é preditora) nem `L4` (aposentada, não
+#: deveria estar calculada/em produção). `AG-282`.
+_VALID_T1_LAYERS: frozenset[str] = frozenset({"L1", "L2", "L3"})
+
 
 class FeatureRegistryError(ValueError):
     """Entrada de `registry.yaml` sem campo obrigatório, ou com
@@ -88,6 +103,24 @@ class BannedFeatureIdError(FeatureRegistryError):
     já confirmado; reintroduzi-la exige decisão explícita do Manager (tirar
     o id de `_BANNED_FEATURE_IDS`, nunca só editar `registry.yaml` por
     baixo)."""
+
+
+class FeatureLayerError(FeatureRegistryError):
+    """`layer` de uma entrada contém um valor fora de `_VALID_LAYERS`
+    (ADR-005 §14.3-§14.4, campo real desde 2026-08-27 — antes só existia em
+    prosa/planilha, nunca em `registry.yaml`)."""
+
+
+class TierLayerInconsistencyError(FeatureRegistryError):
+    """`tier="T1"` com `layer` contendo `L0` ou `L4` — violação do invariante
+    proposto em `AG-282`: T2 pode ser qualquer camada (é o espaço de
+    candidatas), T1 só pode ser `L1`/`L2`/`L3` (produção nunca é primitiva
+    pura `L0` nem aposentada `L4` — as duas leituras são contraditórias por
+    definição: uma feature em produção não é "insumo de cálculo, não
+    preditora" nem "sem mecanismo e sem sinal, não calculada"). Detecta
+    divergência `tier`/`layer` automaticamente como erro de dado, não como
+    estado válido — exatamente a regra que `AG-282` propôs em vez de um 3º
+    campo de precedência."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +151,21 @@ class FeatureRegistryEntry:
     parity_tested: bool
     version: str
     added: str
+    layer: tuple[str, ...]
+    """Camada(s) do critério de evidência (§14.3-§14.4) — `tuple` de 1
+    elemento na maioria dos casos, 2 só para `E27f_cost_atr_ratio`
+    (`("L1", "L2")`, exceção deliberada documentada em §14.3, não erro de
+    precedência). Validado contra `_VALID_LAYERS` e o invariante `tier`/
+    `layer` (`AG-282`) em `_parse_entry` — nunca um valor livre."""
+    quarentena: bool
+    """`True` sse a coluna está em quarentena (§2.3) — sinal FORTE mas
+    suspeito de artefato de fonte, não ausência de sinal. Ortogonal à
+    camada (nunca uma camada própria). Hoje só `E18f_taker_ls_vol_ratio`."""
+    defeito_construcao: bool
+    """`True` sse a ficha de tese (`audit/feature_thesis/
+    fichas_69_2026-08-25.yaml`) marca esta coluna `INCOERENTE_DIMENSIONAL`
+    ou `ERRO_CATEGORICO` (§14.3) — construção mede algo DIFERENTE do que diz
+    medir, não "sem mecanismo". Ortogonal à camada."""
     nota: str | None = None
 
     @property
@@ -138,6 +186,28 @@ def _parse_lookback_bars(fid: str, raw_value: object) -> int | Literal["expandin
     )
 
 
+def _parse_layer(fid: str, raw_value: object, *, tier: str) -> tuple[str, ...]:
+    if not isinstance(raw_value, list) or not raw_value:
+        raise FeatureLayerError(
+            f"registry.yaml: {fid}.layer={raw_value!r} inválido — esperado lista "
+            f"não-vazia de valores em {sorted(_VALID_LAYERS)} (§14.3-§14.4)"
+        )
+    layers = tuple(str(x) for x in raw_value)
+    invalid = [x for x in layers if x not in _VALID_LAYERS]
+    if invalid:
+        raise FeatureLayerError(
+            f"registry.yaml: {fid}.layer contém valor(es) fora de "
+            f"{sorted(_VALID_LAYERS)}: {invalid} (§14.3-§14.4)"
+        )
+    if tier == "T1" and not (set(layers) & _VALID_T1_LAYERS):
+        raise TierLayerInconsistencyError(
+            f"registry.yaml: {fid} tem tier='T1' mas layer={layers!r} não contém "
+            f"nenhuma de {sorted(_VALID_T1_LAYERS)} (AG-282 — produção não pode ser "
+            "L0 primitiva pura nem L4 aposentada)"
+        )
+    return layers
+
+
 def _parse_entry(raw: dict[str, Any]) -> FeatureRegistryEntry:
     fid = str(raw.get("id", "<sem id>"))
     if fid in _BANNED_FEATURE_IDS:
@@ -153,9 +223,10 @@ def _parse_entry(raw: dict[str, Any]) -> FeatureRegistryEntry:
             f"{sorted(missing)} (§2.14)"
         )
     range_raw = raw["range"]
+    tier = str(raw["tier"])
     return FeatureRegistryEntry(
         id=fid,
-        tier=str(raw["tier"]),
+        tier=tier,
         group=str(raw["group"]),
         formula=str(raw["formula"]),
         sources=tuple(str(s) for s in raw["sources"]),
@@ -169,6 +240,9 @@ def _parse_entry(raw: dict[str, Any]) -> FeatureRegistryEntry:
         parity_tested=bool(raw["parity_tested"]),
         version=str(raw["version"]),
         added=str(raw["added"]),
+        layer=_parse_layer(fid, raw["layer"], tier=tier),
+        quarentena=bool(raw["quarentena"]),
+        defeito_construcao=bool(raw["defeito_construcao"]),
         nota=str(raw["nota"]) if raw.get("nota") is not None else None,
     )
 
@@ -199,3 +273,22 @@ def feature_lookback_bars(path: Path | None = None) -> dict[str, int | Literal["
     demais campos pra quem só precisa disso (ex. o gate fail-fast de
     `src.features.build.compute_max_feature_lookback_ms`)."""
     return {e.id: e.lookback_bars for e in load_feature_registry(path)}
+
+
+def layer2_feature_ids(path: Path | None = None) -> frozenset[str]:
+    """`{feature_id}` com `"L2" in layer` e `quarentena=False` — a
+    definição de vetor de treino que `ADR-005 §5.3` item 7 propôs
+    (`layer == "L2" and not quarentena`), derivada do `registry.yaml` real
+    em vez de um id lido de cabeça.
+
+    **Escopo deliberadamente limitado**: esta função só DERIVA o conjunto —
+    não substitui `src.features.build.T1_FEATURE_IDS` como fonte de
+    verdade consumida por `src.models.dataset.build_modeling_frame`/
+    `src.models.pipeline.run_layer1_sprint` (ambos em `src/models/`, fora
+    do escopo desta sessão — ver `tests/unit/test_features_registry.py::
+    test_layer2_feature_ids_bate_com_t1_feature_ids` pra a checagem de
+    consistência que fecha o gap SEM tocar `src/models/`). Rewiring de
+    fato é trabalho da sessão de engenharia de ML (§13), não decidido
+    aqui."""
+    entries = load_feature_registry(path)
+    return frozenset(e.id for e in entries if "L2" in e.layer and not e.quarentena)

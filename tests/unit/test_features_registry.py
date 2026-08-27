@@ -35,6 +35,9 @@ _MINIMAL_ENTRY_FINITA: dict[str, object] = {
     "parity_tested": True,
     "version": "v1",
     "added": "2026-08-21",
+    "layer": ["L2"],
+    "quarentena": False,
+    "defeito_construcao": False,
 }
 
 _MINIMAL_ENTRY_EXPANDING: dict[str, object] = {
@@ -163,3 +166,120 @@ def test_load_feature_registry_arquivo_real_nao_tem_nenhum_id_banido() -> None:
     sem decisão explícita do Manager."""
     ids_reais = {e.id for e in registry.load_feature_registry()}
     assert ids_reais.isdisjoint(registry._BANNED_FEATURE_IDS)
+
+
+# ============================================================================
+# layer/quarentena/defeito_construcao (ADR-005 §14.3-§14.4, campo real
+# desde 2026-08-27 -- antes só existia em prosa/planilha, AG-282)
+# ============================================================================
+
+
+def test_load_feature_registry_real_layer_tipado_corretamente() -> None:
+    for entry in registry.load_feature_registry():
+        assert isinstance(entry.layer, tuple) and len(entry.layer) >= 1
+        assert set(entry.layer) <= registry._VALID_LAYERS
+        assert isinstance(entry.quarentena, bool)
+        assert isinstance(entry.defeito_construcao, bool)
+
+
+def test_load_feature_registry_real_e27f_tem_dupla_camada_l1_l2() -> None:
+    """Exceção deliberada documentada em §14.3 -- E27f é insumo do gate de
+    regime E treina o Alpha, de verdade, no código real."""
+    by_id = registry.feature_registry_by_id()
+    assert by_id["E27f_cost_atr_ratio"].layer == ("L1", "L2")
+
+
+def test_load_feature_registry_real_e18f_esta_em_quarentena_e_defeito() -> None:
+    by_id = registry.feature_registry_by_id()
+    e18f = by_id["E18f_taker_ls_vol_ratio"]
+    assert e18f.quarentena is True
+    assert e18f.defeito_construcao is True
+    assert e18f.layer == ("L3",)
+
+
+def test_load_feature_registry_real_nenhum_t1_e_l0_ou_l4() -> None:
+    """Invariante AG-282, verificado de novo aqui como propriedade
+    explícita (além de já ser aplicado como gate fail-loud no parse)."""
+    for entry in registry.load_feature_registry():
+        if entry.tier == "T1":
+            assert set(entry.layer) & registry._VALID_T1_LAYERS
+            assert "L0" not in entry.layer
+            assert "L4" not in entry.layer
+
+
+def test_load_feature_registry_layer_ausente_ou_vazio_levanta_erro(tmp_path: Path) -> None:
+    entry = {**_MINIMAL_ENTRY_FINITA, "layer": []}
+    path = _write_registry(tmp_path, [entry])
+    with pytest.raises(registry.FeatureLayerError, match="layer"):
+        registry.load_feature_registry(path=path)
+
+
+def test_load_feature_registry_layer_com_valor_invalido_levanta_erro(tmp_path: Path) -> None:
+    entry = {**_MINIMAL_ENTRY_FINITA, "layer": ["L99"]}
+    path = _write_registry(tmp_path, [entry])
+    with pytest.raises(registry.FeatureLayerError, match="L99"):
+        registry.load_feature_registry(path=path)
+
+
+def test_load_feature_registry_t1_com_layer_l0_levanta_tier_layer_error(
+    tmp_path: Path,
+) -> None:
+    entry = {**_MINIMAL_ENTRY_FINITA, "layer": ["L0"]}
+    path = _write_registry(tmp_path, [entry])
+    with pytest.raises(registry.TierLayerInconsistencyError, match="T1"):
+        registry.load_feature_registry(path=path)
+
+
+def test_load_feature_registry_t1_com_layer_l4_levanta_tier_layer_error(
+    tmp_path: Path,
+) -> None:
+    entry = {**_MINIMAL_ENTRY_FINITA, "layer": ["L4"]}
+    path = _write_registry(tmp_path, [entry])
+    with pytest.raises(registry.TierLayerInconsistencyError, match="T1"):
+        registry.load_feature_registry(path=path)
+
+
+def test_load_feature_registry_t2_com_layer_l0_e_permitido(tmp_path: Path) -> None:
+    """T2 pode ser qualquer camada -- é o espaço de candidatas (AG-282)."""
+    entry = {**_MINIMAL_ENTRY_FINITA, "tier": "T2", "layer": ["L0"]}
+    path = _write_registry(tmp_path, [entry])
+    entries = registry.load_feature_registry(path=path)
+    assert entries[0].layer == ("L0",)
+
+
+def test_tier_layer_inconsistency_error_e_subclasse_de_feature_registry_error() -> None:
+    assert issubclass(registry.TierLayerInconsistencyError, registry.FeatureRegistryError)
+
+
+def test_feature_layer_error_e_subclasse_de_feature_registry_error() -> None:
+    assert issubclass(registry.FeatureLayerError, registry.FeatureRegistryError)
+
+
+# ============================================================================
+# layer2_feature_ids -- consistência com T1_FEATURE_IDS (§5.3 item 7)
+# ============================================================================
+
+
+def test_layer2_feature_ids_bate_com_t1_feature_ids() -> None:
+    """`layer=='L2' and not quarentena`, derivado do registry.yaml real,
+    tem que bater EXATAMENTE com `T1_FEATURE_IDS` (mantido à mão em
+    build.py) -- prova que as duas fontes não divergiram. Não rewireia
+    src/models/ pra consumir isto (fora de escopo, §13) -- só prova que a
+    fonte manual e a derivada concordam hoje."""
+    from src.features.build import T1_FEATURE_IDS
+
+    assert registry.layer2_feature_ids() == frozenset(T1_FEATURE_IDS)
+
+
+def test_layer2_feature_ids_exclui_quarentena(tmp_path: Path) -> None:
+    entries = [
+        {**_MINIMAL_ENTRY_FINITA, "id": "X_l2_livre", "layer": ["L2"], "quarentena": False},
+        {
+            **_MINIMAL_ENTRY_FINITA,
+            "id": "X_l2_quarentena",
+            "layer": ["L2"],
+            "quarentena": True,
+        },
+    ]
+    path = _write_registry(tmp_path, entries)
+    assert registry.layer2_feature_ids(path=path) == frozenset({"X_l2_livre"})

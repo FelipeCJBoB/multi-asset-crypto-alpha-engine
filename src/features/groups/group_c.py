@@ -89,15 +89,33 @@ def c03_realized_vol_48(log_return_1: FloatArray, window: int) -> FloatArray:
 
 
 def c04_parkinson_vol_48(high: FloatArray, low: FloatArray, window: int) -> FloatArray:
-    """Estimador de Parkinson (1980), fração do preço — §2.4 C04."""
-    return support.parkinson_vol(high, low, window)
+    """Estimador de Parkinson (1980), escalado por `√window` — §2.4 C04.
+
+    **Corrigido 2026-08-27 (`AG-322`, decisão: normalizar todas por
+    `√window`, C03/C04/C05 são "a mesma família de estimador" só se
+    tratadas na mesma convenção de escala).** `support.parkinson_vol`
+    devolve `σ` POR BARRA (média da janela, sem acumular) — escala
+    incomparável com `C03_realized_vol_48` (`support.realized_vol`, que
+    multiplica por `√window` pra devolver a vol ACUMULADA sobre a
+    janela). O `* √window` aqui é aplicado só neste nível de FEATURE, não
+    dentro de `support.parkinson_vol` — essa primitiva também alimenta
+    `c01_atr_20_parkinson` (`atr_20_abs`/`atr_20_pct` de PRODUÇÃO, insumo
+    de A05/A13/C02/C06/C07/E27f via `canonical_volatility_estimator`);
+    mudar a escala dela mudaria o ATR de produção sem ninguém pedir
+    isso — blast radius incompatível com o escopo desta correção."""
+    return support.parkinson_vol(high, low, window) * float(np.sqrt(window))
 
 
 def c05_garman_klass_48(
     high: FloatArray, low: FloatArray, open_: FloatArray, close: FloatArray, window: int
 ) -> FloatArray:
-    """Estimador de Garman-Klass (1980), fração do preço — §2.4 C05."""
-    return support.garman_klass_vol(high, low, open_, close, window)
+    """Estimador de Garman-Klass (1980), escalado por `√window` — §2.4 C05.
+
+    **Corrigido 2026-08-27 (`AG-322`), mesmo motivo/mesma disciplina de
+    `c04_parkinson_vol_48` acima** (ver docstring lá para o raciocínio
+    completo) — `* √window` aplicado só aqui, `support.garman_klass_vol`
+    não é tocada."""
+    return support.garman_klass_vol(high, low, open_, close, window) * float(np.sqrt(window))
 
 
 def c09_range_pctile_expanding(
@@ -154,16 +172,27 @@ def c11_vol_compression_flag(
 
 
 def c08_vol_pctile_rolling_1y(
-    log_return_1: FloatArray, inner_window: int, outer_window: int
+    log_return_1: FloatArray,
+    close_time_ms: FloatArray,
+    inner_window: int,
+    outer_window_ms: int,
 ) -> FloatArray:
-    """Posto percentil ROLANTE (janela `outer_window`, ~1 ano) de
-    `realized_vol_{inner_window}` — §2.4 C08 ("idem [C07_vol_pctile_
-    expanding], janela rolante de 1 ano"). Mesmo núcleo de C07
-    (`support.realized_vol`), trocando `expanding_percentile_rank_strict`
-    por `rolling_percentile_rank_strict` (`support.py`) — a diferença
-    entre C07 e C08 é só isso, não uma fórmula nova."""
+    """Posto percentil ROLANTE por TEMPO (janela `outer_window_ms`, 365
+    dias corridos) de `realized_vol_{inner_window}` — §2.4 C08 ("idem
+    [C07_vol_pctile_expanding], janela rolante de 1 ano"). Mesmo núcleo de
+    C07 (`support.realized_vol`), trocando `expanding_percentile_rank_
+    strict` por `rolling_percentile_rank_strict_by_time` (`support.py`).
+
+    **Corrigido 2026-08-27 (`AG-317`):** até esta versão a janela era
+    `outer_window` fixo em CONTAGEM de barras (17.520, calibrado a 15m) —
+    sob `canonical_bar_type: dollar` isso nunca era "1 ano" em nenhuma
+    grade real (114,7 dias em R1, 500 dias em R3). `outer_window_ms`
+    ancora a janela em TEMPO de calendário — cumpre a promessa do nome em
+    qualquer grade/regime de volume, à custa de o número de barras dentro
+    da janela variar (mais barras em R1 do que em R3, para o MESMO
+    intervalo de 365 dias)."""
     rv = support.realized_vol(log_return_1, inner_window)
-    return support.rolling_percentile_rank_strict(rv, outer_window)
+    return support.rolling_percentile_rank_strict_by_time(rv, close_time_ms, outer_window_ms)
 
 
 def c12_vol_of_vol_48(log_return_1: FloatArray, inner_window: int, outer_window: int) -> FloatArray:

@@ -62,6 +62,9 @@
 - id: A05_ret_vol_norm_4
   tier: T1
   group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t / C_{t-4}) / (atr_20_pct_t * 2)"
   sources: [D03]
   lookback_bars: 4
@@ -79,6 +82,9 @@
 - id: A13_dist_ema48_atr
   tier: T1
   group: A
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C_t - EMA_48_t) / atr_20_abs_t"
   sources: [D03]
   lookback_bars: 48
@@ -96,6 +102,9 @@
 - id: B01_rsi_14
   tier: T1
   group: B
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "(RSI_wilder_14_t - 50) / 50"
   sources: [D03]
   lookback_bars: 14
@@ -112,6 +121,9 @@
 - id: B07_efficiency_ratio_48
   tier: T2
   group: B
+  layer: [L1]
+  quarentena: false
+  defeito_construcao: false
   formula: "abs(C_t - C_{t-48}) / sum(abs(C_i - C_{i-1}) for i in [t-47, t])"
   sources: [D03]
   lookback_bars: 48
@@ -133,6 +145,9 @@
 - id: C01_atr_20
   tier: T2
   group: C
+  layer: [L0]
+  quarentena: false
+  defeito_construcao: false
   formula: "ATR de Wilder (janela 20), absoluto (unidade de preço) — default (vol_estimator_id=None). Sob vol_estimator_id='parkinson_w20' (2026-08-17, AG-036/065/074): parkinson_vol(high, low, 20) * close, mesma unidade, distribuição numérica diferente (não cosmético — ver group_c.c01_atr_20_parkinson)"
   sources: [D03]
   lookback_bars: 20
@@ -150,6 +165,9 @@
 - id: C02_atr_20_pct
   tier: T2
   group: C
+  layer: [L0]
+  quarentena: false
+  defeito_construcao: false
   formula: "atr_20_abs_t / C_t"
   sources: [D03]
   lookback_bars: 20
@@ -167,6 +185,9 @@
 - id: C06_vol_ratio_12_96
   tier: T1
   group: C
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "realized_vol_12_t / realized_vol_96_t"
   sources: [D03]
   lookback_bars: 96
@@ -183,6 +204,9 @@
 - id: C07_vol_pctile_expanding
   tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge). Continua calculada, consumida direto pelo Regime Engine (src.regime.classifier)
   group: C
+  layer: [L1]
+  quarentena: false
+  defeito_construcao: false
   formula: "posto percentil de realized_vol_48_t na distribuição EXPANSIVA de realized_vol_48 em [t0_dataset, t-1] (estrito, nunca inclui t)"
   sources: [D03]
   lookback_bars: expanding
@@ -199,6 +223,9 @@
 - id: D03f_volume_z_expanding
   tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge)
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "z-score EXPANSIVO estrito de log(1+V_t) em [t0_dataset, t-1]"
   sources: [D03]
   lookback_bars: expanding
@@ -211,6 +238,7 @@
   parity_tested: true
   version: v1
   added: 2026-08-08
+  nota: "AG-321 (2026-08-27): mesma degeneração de volume≈threshold/preço sob barra dollar compartilhada com D01f/D02f/D04f/D09f/D10f (ver nota completa em D01f_volume_z_96) — contar como 1 grau de liberdade junto com as demais em qualquer HHI/ortogonalidade/N_lifetime, não 6. Independente da conexão já existente com AG-030 (histórico comum cross-asset)."
 
 # Achado (Faixa 1.6, Bloco 5, 2026-08-09) — o IC pooled desta feature
 # contra ret_net é essencialmente zero (-0,0003), mas inverte de sinal por
@@ -225,6 +253,9 @@
 - id: D06f_taker_imbalance_z_48
   tier: T1
   group: D
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "z-score ROLANTE (janela 48) de (2*taker_buy_ratio_t - 1), taker_buy_ratio = taker_buy_volume/volume"
   sources: [D03]
   lookback_bars: 48
@@ -241,6 +272,9 @@
 - id: E02f_funding_z_expanding
   tier: T2  # AG-032, 2026-08-23 -- saiu de T1_FEATURE_IDS (lookback_bars: expanding, sem proteção finita de purge)
   group: E
+  layer: [L1]
+  quarentena: false
+  defeito_construcao: true
   formula: "z-score EXPANSIVO estrito de funding_last_t (alinhado ao grid de 15m por asof-join backward) em [t0_dataset, t-1]"
   sources: [D07]
   lookback_bars: expanding
@@ -257,6 +291,9 @@
 - id: E10f_oi_change_z_48
   tier: T1
   group: E
+  layer: [L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "z-score ROLANTE (janela 48) de delta_ln(oi_contracts), delta_ln calculado na cadência NATIVA de metrics/sum_open_interest (uma leitura real por linha, ~5min) e SÓ DEPOIS alinhado ao grid de 15m por asof-join backward (repete o último delta conhecido entre leituras)"
   sources: [D04]
   lookback_bars: 48
@@ -303,6 +340,9 @@
 - id: E27f_cost_atr_ratio
   tier: T1
   group: E
+  layer: [L1, L2]
+  quarentena: false
+  defeito_construcao: false
   formula: "custo_round_trip_bps / (atr_20_pct_t * 10000), custo_round_trip_bps = (maker_fee + 0.5*maker_fee + 0.5*taker_fee) * 10000"
   sources: [derivado, constants.yaml:maker_fee, constants.yaml:taker_fee]
   lookback_bars: 20
@@ -346,6 +386,9 @@
 - id: A01_log_return_1
   tier: T2
   group: A
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t / C_{t-1})"
   sources: [D03]
   lookback_bars: 1
@@ -362,6 +405,9 @@
 - id: A02_log_return_2
   tier: T2
   group: A
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t / C_{t-2})"
   sources: [D03]
   lookback_bars: 2
@@ -378,6 +424,9 @@
 - id: A03_log_return_4
   tier: T2
   group: A
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t / C_{t-4})"
   sources: [D03]
   lookback_bars: 4
@@ -395,6 +444,9 @@
 - id: A04_log_return_12
   tier: T2
   group: A
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t / C_{t-12})"
   sources: [D03]
   lookback_bars: 12
@@ -412,6 +464,9 @@
 - id: A06_ret_vol_norm_12
   tier: T2
   group: A
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "ln(C_t/C_{t-12}) / (atr_20_pct * sqrt(12/4) * feature_a05_vol_norm_divisor)"
   sources: [D03]
   lookback_bars: 12
@@ -429,6 +484,9 @@
 - id: A07_body_ratio
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C-O)/(H-L); 0 se H=L"
   sources: [D03]
   lookback_bars: 1
@@ -445,6 +503,9 @@
 - id: A08_upper_wick_ratio
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(H - max(O,C))/(H-L); 0 se H=L"
   sources: [D03]
   lookback_bars: 1
@@ -462,6 +523,9 @@
 - id: A09_lower_wick_ratio
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(min(O,C) - L)/(H-L); 0 se H=L"
   sources: [D03]
   lookback_bars: 1
@@ -479,6 +543,9 @@
 - id: A10_close_location
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C-L)/(H-L); 0 se H=L"
   sources: [D03]
   lookback_bars: 1
@@ -496,6 +563,9 @@
 - id: A11_true_range_pct
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "TR_t / C_{t-1}, TR_t = max(H-L, |H-C_{t-1}|, |L-C_{t-1}|)"
   sources: [D03]
   lookback_bars: 2
@@ -510,25 +580,19 @@
   added: 2026-08-24
   nota: "insumo direto de C09_range_pctile_expanding (reaproveitado, não recomputado — ver build.py::compute_t1_features)."
 
-- id: A12_gap_pct
-  tier: T2
-  group: A
-  formula: "(O_t - C_{t-1}) / C_{t-1}"
-  sources: [D03]
-  lookback_bars: 2
-  min_warmup_bars: 200
-  tf: 15m
-  dtype: float64
-  range: [-.inf, .inf]
-  nan_policy: "NaN na primeira barra (sem C_{t-1}); null antes de min_warmup_bars"
-  causal_proof: "usa só O_t e C_{t-1}, sem lookahead — testado em tests/unit/test_features_groups.py::test_a12_causalidade"
-  parity_tested: true
-  version: v1
-  added: 2026-08-24
+# A12_gap_pct REMOVIDA 2026-08-27 (AG-316): media "(O_t - C_{t-1}) / C_{t-1}",
+# "gap de sessão" -- mecanismo que não existe em mercado 24/7 contíguo (não
+# há fechamento/reabertura de sessão na Binance Futures). "Retorno de 1
+# tick" (o que A12 realmente mede) já é coberto por A01 (log-retorno de 1
+# barra) -- manter sob outro nome seria redundância disfarçada de correção.
+# Ver audit/architecture_gaps_log.yaml::AG-316.
 
 - id: A14_dist_ema12_atr
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C_t - EMA_12) / ATR_20 (absoluto)"
   sources: [D03]
   lookback_bars: 12
@@ -546,6 +610,9 @@
 - id: B02_rsi_48
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "(RSI_wilder_48_t - 50) / 50"
   sources: [D03]
   lookback_bars: 48
@@ -573,6 +640,9 @@
 - id: B03_roc_12
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C_t - C_{t-12}) / C_{t-12}"
   sources: [D03]
   lookback_bars: 12
@@ -589,6 +659,9 @@
 - id: B04_macd_hist_norm
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(MACD_{12,26} - sinal_9) / ATR_20 (absoluto), MACD=EMA_12-EMA_26, sinal=EMA_9(MACD)"
   sources: [D03]
   lookback_bars: 35
@@ -606,6 +679,9 @@
 - id: B05_ema_slope_24
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(EMA_24_t - EMA_24_{t-6}) / ATR_20 (absoluto)"
   sources: [D03]
   lookback_bars: 30
@@ -622,6 +698,9 @@
 - id: B06_momentum_accel
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "ret_4_t - ret_4_{t-4}, normalizado por atr_20_pct"
   sources: [D03]
   lookback_bars: 8
@@ -638,6 +717,9 @@
 - id: B08_efficiency_ratio_16
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "|C_t - C_{t-16}| / Σ|C_i - C_{i-1}| (i em [t-15,t])"
   sources: [D03]
   lookback_bars: 16
@@ -654,6 +736,9 @@
 - id: B09_zscore_close_48
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "(C_t - μ_48) / σ_48"
   sources: [D03]
   lookback_bars: 48
@@ -679,6 +764,9 @@
 - id: B11_bb_position_20
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C - MA_20) / (2 * σ_20)"
   sources: [D03]
   lookback_bars: 20
@@ -696,6 +784,9 @@
 - id: C03_realized_vol_48
   tier: T2
   group: C
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "σ(log_return) * sqrt(48)"
   sources: [D03]
   lookback_bars: 48
@@ -712,7 +803,10 @@
 - id: C04_parkinson_vol_48
   tier: T2
   group: C
-  formula: "Parkinson (1980): sqrt(mean_48(ln(H/L)^2) / (4*ln2))"
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
+  formula: "Parkinson (1980) escalado: sqrt(mean_48(ln(H/L)^2) / (4*ln2)) * sqrt(48)"
   sources: [D03]
   lookback_bars: 48
   min_warmup_bars: 200
@@ -722,13 +816,32 @@
   nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
   causal_proof: "janela rolante fixa [t-47,t] (support.parkinson_vol, mesma primitiva de C01 sob vol_estimator_id='parkinson_w20') — testado em tests/unit/test_features_support.py::test_parkinson_vol_causalidade"
   parity_tested: true
-  version: v1
+  version: v2
   added: 2026-08-24
+  nota: >
+    CORRIGIDO 2026-08-27 (AG-322), tratamento PARCIAL -- group_c.py::
+    c04_parkinson_vol_48 agora multiplica por sqrt(window) (aplicado só
+    no nível da FEATURE, não dentro de support.parkinson_vol -- essa
+    primitiva também alimenta c01_atr_20_parkinson, atr_20_abs/atr_20_pct
+    de PRODUÇÃO via canonical_volatility_estimator; mudar a primitiva
+    mudaria o ATR de produção). Resolve a escala incomparável com
+    C03_realized_vol_48 (que já multiplicava por sqrt(window)) -- as 3
+    features da família agora estão na MESMA convenção de escala.
+    `defeito_construcao` PERMANECE true e `layer` PERMANECE [L4] --
+    o defeito PRINCIPAL que o veredito INCOERENTE_DIMENSIONAL da ficha
+    descreve (Parkinson assume duração de barra FIXA; dollar bar tem
+    duração variável, o estimador subestima sistematicamente quando a
+    vol sobe) segue ABERTO, deliberadamente adiado (recomendação
+    original: "medir a magnitude do viés antes de justificar o custo de
+    relabel" -- decisão separada, não tomada aqui).
 
 - id: C05_garman_klass_48
   tier: T2
   group: C
-  formula: "Garman-Klass (1980): sqrt(mean_48(0.5*ln(H/L)^2 - (2*ln2-1)*ln(C/O)^2))"
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
+  formula: "Garman-Klass (1980) escalado: sqrt(mean_48(0.5*ln(H/L)^2 - (2*ln2-1)*ln(C/O)^2)) * sqrt(48)"
   sources: [D03]
   lookback_bars: 48
   min_warmup_bars: 200
@@ -738,25 +851,33 @@
   nan_policy: "NaN nas primeiras 48 barras; NaN se a média da janela for negativa (ruído numérico); null antes de min_warmup_bars"
   causal_proof: "janela rolante fixa [t-47,t] (support.garman_klass_vol, mesma primitiva de canonical_volatility_estimator) — testado em tests/unit/test_features_support.py::test_garman_klass_vol_causalidade"
   parity_tested: true
-  version: v1
+  version: v2
   added: 2026-08-24
   nota: >
     JANELA NÃO RECONCILIADA COM O ESTIMADOR CANÔNICO (AG-322, 2026-08-26).
     `canonical_volatility_estimator` do projeto (config/constants.yaml)
     é `garman_klass_w20` — janela 20, mesmo estimador Garman-Klass,
     janela DIFERENTE de C05 (48). Duas janelas do mesmo estimador
-    convivem no repo sem nota cruzando as duas. C05 sozinha está
-    correta (sigma por barra, sem multiplicar por sqrt(window), ao
-    contrário de C03_realized_vol_48 — famílias C03/C04/C05 não são
-    comparáveis em escala entre si, mesmo achado). Defeito adicional
-    (não corrigido aqui, mudança de fórmula, decisão do Manager):
+    convivem no repo sem nota cruzando as duas.
+    CORRIGIDO 2026-08-27 (AG-322), tratamento PARCIAL -- group_c.py::
+    c05_garman_klass_48 agora multiplica por sqrt(window) (aplicado só
+    no nível da FEATURE, não dentro de support.garman_klass_vol; mesma
+    disciplina de C04, ver nota lá). C05 deixa de estar "sozinha correta
+    mas incomparável" -- agora está na MESMA convenção de escala de
+    C03_realized_vol_48/C04_parkinson_vol_48. `defeito_construcao`
+    PERMANECE true e `layer` PERMANECE [L4] -- o defeito adicional
+    (mudança de fórmula, decisão do Manager, NÃO corrigido aqui):
     Garman-Klass assume duração de barra FIXA; sob dollar bar a
     duração é variável e a barra fecha mais rápido justamente quando a
-    vol sobe — o estimador subestima sistematicamente.
+    vol sobe — o estimador subestima sistematicamente. Deliberadamente
+    adiado (mesma razão de C04).
 
 - id: C09_range_pctile_expanding
   tier: T2
   group: C
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "posto percentil de true_range_pct_t (A11) na distribuição EXPANSIVA em [t0_dataset, t-1] (estrito, nunca inclui t)"
   sources: [D03]
   lookback_bars: expanding
@@ -773,6 +894,9 @@
 - id: C10_vol_expansion_flag
   tier: T2
   group: C
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "1.0 se posto percentil EXPANSIVO de vol_ratio_12_96 (C06) > 0.80, senão 0.0"
   sources: [D03]
   lookback_bars: expanding
@@ -789,6 +913,9 @@
 - id: C11_vol_compression_flag
   tier: T2
   group: C
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "1.0 se posto percentil EXPANSIVO de vol_ratio_12_96 (C06) < 0.20, senão 0.0"
   sources: [D03]
   lookback_bars: expanding
@@ -805,6 +932,9 @@
 - id: C12_vol_of_vol_48
   tier: T2
   group: C
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "σ(realized_vol_12) sobre janela rolante de 48 barras"
   sources: [D03]
   lookback_bars: 60
@@ -821,6 +951,9 @@
 - id: D01f_volume_z_96
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "(V_t - μ_96) / σ_96"
   sources: [D03]
   lookback_bars: 96
@@ -833,10 +966,14 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: "AG-321 (2026-08-27, Manager ratifica): D01f/D02f/D04f/D09f/D10f (+D03f) são 5-6 transformações da MESMA quantidade degenerada sob barra dollar — bar_id fecha via cum_value//threshold (src/data/bars.py), então quote_volume_por_barra ~= threshold (quase constante dentro da janela de recalibração de 7 dias), logo volume=quote_volume/VWAP ~= threshold/preço: toda feature que normaliza/diferencia 'volume' mede, na prática, uma transformação de 1/preço, não atividade real. Tratar como 1 GRAU DE LIBERDADE, não 5-6, em qualquer HHI/filtro de ortogonalidade/orçamento de N_lifetime daqui em diante — decisão de contagem, não mudança de fórmula (medição exata de corr(volume,1/preço) segue pendente, não invalida a conclusão qualitativa)."
 
 - id: D02f_rel_volume_48
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "V_t / mediana(V)_48"
   sources: [D03]
   lookback_bars: 48
@@ -849,10 +986,14 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: "AG-321 (2026-08-27) — mesma degeneração de volume≈threshold/preço sob barra dollar, ver nota completa em D01f_volume_z_96. Contar como 1 grau de liberdade junto com D01f/D04f/D09f/D10f/D03f, não 5-6."
 
 - id: D04f_volume_accel
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "rel_volume_4_t - rel_volume_4_{t-4}, rel_volume_4 = V_t/mediana(V)_4"
   sources: [D03]
   lookback_bars: 8
@@ -865,10 +1006,14 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: "AG-321 (2026-08-27) — D04f ~= 0 por construção (razão de série quase-constante, mesma degeneração volume≈threshold/preço), ver nota completa em D01f_volume_z_96. Contar como 1 grau de liberdade junto com D01f/D02f/D09f/D10f/D03f, não 5-6."
 
 - id: D05f_taker_buy_ratio
   tier: T2
   group: D
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "taker_buy_volume / volume"
   sources: [D03]
   lookback_bars: 1
@@ -885,6 +1030,9 @@
 - id: D08f_trade_count_z_48
   tier: T2
   group: D
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "z-score rolante (janela 48) de number_of_trades (count, klines Binance)"
   sources: [D03]
   lookback_bars: 48
@@ -901,6 +1049,9 @@
 - id: D09f_avg_trade_size_z
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "z-score rolante (janela 48) de volume/number_of_trades"
   sources: [D03]
   lookback_bars: 48
@@ -913,10 +1064,14 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
+  nota: "AG-321 (2026-08-27) — D09f ~= -D08f (mesma degeneração, sinal espelhado, volume≈threshold/preço), ver nota completa em D01f_volume_z_96. Contar como 1 grau de liberdade junto com D01f/D02f/D04f/D10f/D03f, não 5-6."
 
 - id: E01f_funding_last
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "último funding liquidado, já alinhado ao grid de 15m por asof-join backward"
   sources: [D07]
   lookback_bars: 1
@@ -933,6 +1088,9 @@
 - id: E05f_time_to_funding_h
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "horas até o próximo settlement de funding (fronteiras fixas UTC a cada 8h, alinhadas à época Unix)"
   sources: [derivado, close_time]
   lookback_bars: 1
@@ -950,6 +1108,9 @@
 - id: E09f_oi_contracts
   tier: T2
   group: E
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "sum_open_interest, já alinhado ao grid de 15m por asof-join backward"
   sources: [D04]
   lookback_bars: 1
@@ -966,23 +1127,29 @@
 - id: E11f_oi_change_1d
   tier: T2
   group: E
-  formula: "Δln(oi_contracts) sobre 48 barras (Δln = ln(oi_t) - ln(oi_{t-48}))"
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
+  formula: "z-score ROLANTE (janela 48) de Δln(oi_contracts) sobre 48 barras (Δln = ln(oi_t) - ln(oi_{t-48}))"
   sources: [D04]
   lookback_bars: 48
   min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [-.inf, .inf]
-  nan_policy: "NaN nas primeiras 48 barras após o primeiro OI conhecido; null antes de min_warmup_bars"
-  causal_proof: "asof-join backward (já testado) + deslocamento fixo [t-48,t], sem lookahead — testado em tests/unit/test_features_groups.py::test_e11f_causalidade"
+  nan_policy: "NaN nas primeiras 48+48-1 barras após o primeiro OI conhecido (48 do delta + 48 do z-score); null antes de min_warmup_bars"
+  causal_proof: "asof-join backward (já testado) + deslocamento fixo [t-48,t] + z-score rolante incluindo t (mesma convenção de E10f), sem lookahead — testado em tests/unit/test_features_groups.py::test_e11f_causalidade"
   parity_tested: true
-  version: v1
+  version: v2
   added: 2026-08-24
-  nota: "nome '1d' herdado do PRD original a 30m (48 barras=24h); mantido em CONTAGEM DE BARRAS sob 15m (não recalibrado pra 96), mesma convenção da NOTA DE TF no topo deste arquivo."
+  nota: "CORRIGIDO 2026-08-27 (AG-320), tratamento parcial -- normalizado como E10f (support.rolling_zscore, window=feature_e11f_oi_change_zscore_window=48), mesmo padrão de AG-295. `defeito_construcao` PERMANECE true e `layer` PERMANECE [L4] -- a normalização resolve a inconsistência de ESCALA do delta entre grades (o que o próprio achado tratava como 'a causa'), mas NÃO resolve o defeito CATEGÓRICO original (nome '1d' herdado do PRD a 30m; mantido em CONTAGEM DE BARRAS sob 15m -- não recalibrado pra 96, mesma convenção da NOTA DE TF no topo deste arquivo). lag_bars=48 continua cobrindo 7,54h em R1 / 15,78h em R2 / 32,93h em R3 -- nenhuma das três é '1 dia'. Ficha NÃO regenerada pra TESE_OK/SEM_MECANISMO -- seria overclaim (veredito ERRO_CATEGORICO permanece correto sobre o código de hoje, ver fichas_69_2026-08-25.yaml)."
 
 - id: E12f_price_oi_divergence
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "sign(ret_12) * sign(Δln(oi_contracts) sobre 12 barras), ∈ {-1,0,1}"
   sources: [D04, D03]
   lookback_bars: 12
@@ -999,6 +1166,9 @@
 - id: K01_hour_sin
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "sin(2*pi * hora_UTC_fracionaria / 24)"
   sources: [close_time]
   lookback_bars: 1
@@ -1015,6 +1185,9 @@
 - id: K01_hour_cos
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "cos(2*pi * hora_UTC_fracionaria / 24)"
   sources: [close_time]
   lookback_bars: 1
@@ -1031,6 +1204,9 @@
 - id: K02_dow_sin
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "sin(2*pi * dia_da_semana_UTC / 7), dow=0 em 1970-01-01 (quinta)"
   sources: [close_time]
   lookback_bars: 1
@@ -1047,6 +1223,9 @@
 - id: K02_dow_cos
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "cos(2*pi * dia_da_semana_UTC / 7)"
   sources: [close_time]
   lookback_bars: 1
@@ -1063,6 +1242,9 @@
 - id: K03_is_weekend
   tier: T2
   group: K
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "1.0 se sábado ou domingo UTC, senão 0.0"
   sources: [close_time]
   lookback_bars: 1
@@ -1079,6 +1261,9 @@
 - id: K04_session_asia
   tier: T2
   group: K
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "1.0 se hora UTC em [0,8), senão 0.0"
   sources: [close_time]
   lookback_bars: 1
@@ -1096,6 +1281,9 @@
 - id: K04_session_europe
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "1.0 se hora UTC em [8,16), senão 0.0"
   sources: [close_time]
   lookback_bars: 1
@@ -1112,6 +1300,9 @@
 - id: K04_session_us
   tier: T2
   group: K
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "1.0 se hora UTC em [16,24), senão 0.0"
   sources: [close_time]
   lookback_bars: 1
@@ -1146,6 +1337,9 @@
 - id: A15_dist_vwap_d_atr
   tier: T2
   group: A
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C_t - VWAP_dia) / ATR_20 (absoluto), VWAP_dia = cumsum(preco_tipico*volume)/cumsum(volume) desde 00:00 UTC do dia da barra t, preco_tipico=(H+L+C)/3"
   sources: [D03, close_time]
   lookback_bars: 96
@@ -1163,6 +1357,9 @@
 - id: B10_stoch_k_14
   tier: T2
   group: B
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "(C - min(L)_14) / (max(H)_14 - min(L)_14) * 100"
   sources: [D03]
   lookback_bars: 14
@@ -1180,22 +1377,29 @@
 - id: C08_vol_pctile_rolling_1y
   tier: T2
   group: C
-  formula: "posto percentil de realized_vol_48_t na distribuicao ROLANTE (ultimas 17520 barras, ~1 ano) em [t-17520, t-1] (estrito, nunca inclui t)"
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
+  formula: "posto percentil de realized_vol_48_t na distribuicao ROLANTE por TEMPO (ultimos 365 dias corridos) em [t-365d, t-1] (estrito, nunca inclui t)"
   sources: [D03]
-  lookback_bars: 17520
+  lookback_bars: 69673
   min_warmup_bars: 200
   tf: 15m
   dtype: float64
   range: [0.0, 1.0]
   nan_policy: "NaN ate haver >= 1 ponto previo de realized_vol_48 nao-NaN dentro da janela; null antes de min_warmup_bars"
-  causal_proof: "support.rolling_percentile_rank_strict -- Fenwick tree com insercao E remocao conforme a janela desliza, so indices < t -- testado em tests/unit/test_features_support.py::test_rolling_percentile_rank_strict_nao_usa_indice_t"
+  causal_proof: "support.rolling_percentile_rank_strict_by_time -- Fenwick tree com insercao E remocao por PONTEIRO DE TEMPO (close_time_ms[t]-close_time_ms[left]>=window_ms), so indices < t -- testado em tests/unit/test_features_support.py::test_rolling_percentile_rank_strict_by_time_nao_usa_indice_t"
   parity_tested: true
-  version: v1
+  version: v2
   added: 2026-08-24
+  nota: "CORRIGIDO 2026-08-27 (AG-317): v1 usava janela de CONTAGEM DE BARRAS fixa (17520, calibrada a 15m) que sob canonical_bar_type=dollar nunca era '1 ano' em nenhuma grade real (114,7 dias em R1, 500 dias em R3). v2 ancora a janela em TEMPO de calendário (365 dias, feature_c08_vol_pctile_outer_window_days) via support.rolling_percentile_rank_strict_by_time -- cumpre a promessa do nome em qualquer grade. `lookback_bars=69673` é um TETO CONSERVADOR (não um valor exato): número de barras de 365 dias sob a mediana de duração de barra mais RÁPIDA medida entre os 5 símbolos em R1 (XRPUSDT, 7,544 min/barra, experiments/dollar_bar_duration_p99_by_resolution.json) -- o número real de barras dentro da janela varia por grade/símbolo/regime de volume, sempre <= este teto na prática (R1 é a grade mais rápida das 3; XRPUSDT tem a mediana mais rápida entre os 5 símbolos). Ficha regenerada manualmente (fichas_69_2026-08-25.yaml, sem script gerador, mesmo método de AG-295/A13-E10f): ERRO_CATEGORICO -> SEM_MECANISMO (defeito de calendário-vs-barra resolvido; quem_esta_do_outro_lado segue AUSENTE, não emendado aqui -- diferente de A01-A06/AG-329, nenhuma pesquisa de mecanismo alternativo foi feita para C08 nesta sessão)."
 
 - id: D07f_taker_imbalance_1m_agg
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "media de (2*taker_buy_ratio_1m - 1) das barras de 1m dentro da barra de 15m (bucket_id = open_time // step_ms('15m'), mesmo grid dos dois lados)"
   sources: [D03, "klines_1m bruto (fonte NOVA, mesmo dataset em disco que resample_klines ja usa pra produzir bars_15m)"]
   lookback_bars: 1
@@ -1213,6 +1417,9 @@
 - id: D10f_vol_price_divergence
   tier: T2
   group: D
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "correlacao de Pearson rolante (janela 48) de |log_return_1| x volume_z_48 (volume_z_48 computado internamente, mesma janela)"
   sources: [D03]
   lookback_bars: 48
@@ -1225,11 +1432,14 @@
   parity_tested: true
   version: v1
   added: 2026-08-24
-  nota: "volume_z interno (rolling_zscore(volume,48)) -- PRD nao referencia nenhuma feature D0Xf existente com janela=48 pra volume_z (D01f=96, D03f=expansiva), self-contido evita ambiguidade."
+  nota: "volume_z interno (rolling_zscore(volume,48)) -- PRD nao referencia nenhuma feature D0Xf existente com janela=48 pra volume_z (D01f=96, D03f=expansiva), self-contido evita ambiguidade. AG-321 (2026-08-27): D10f tem um SEGUNDO defeito próprio além da degeneração de volume≈threshold/preço compartilhada com D01f/D02f/D04f/D09f/D03f (ver nota completa em D01f_volume_z_96) — o volume_z interno usa janela POR PONTO, tornando a correlação de Pearson NÃO-AFIM (distorce a correlação de um jeito nunca declarado antes desta entrada). Contar como 1 grau de liberdade junto com as demais, não 5-6."
 
 - id: E03f_funding_cum_3d
   tier: T2
   group: E
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "soma dos ultimos 9 valores de funding CONHECIDOS ate a barra t (fronteira de evento por timestamp, close_time_ms // (funding_interval_hours em ms), nao por mudanca de valor)"
   sources: [D07, close_time]
   lookback_bars: 288
@@ -1256,6 +1466,9 @@
 - id: E08f_oi_notional
   tier: T2
   group: E
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: false
   formula: "sum_open_interest_value, ja alinhado ao grid de 15m por asof-join backward"
   sources: [D04]
   lookback_bars: 1
@@ -1272,6 +1485,9 @@
 - id: E14f_toptrader_ls_ratio
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "sum_toptrader_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
   sources: [D04]
   lookback_bars: 1
@@ -1289,6 +1505,9 @@
 - id: E15f_toptrader_ls_z
   tier: T2
   group: E
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "z-score EXPANSIVO estrito de toptrader_ls_ratio_t (E14f) em [t0_dataset, t-1] (estrito, nunca inclui t)"
   sources: [D04]
   lookback_bars: expanding
@@ -1305,6 +1524,9 @@
 - id: E16f_global_ls_ratio
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: false
+  defeito_construcao: false
   formula: "count_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
   sources: [D04]
   lookback_bars: 1
@@ -1322,6 +1544,9 @@
 - id: E17f_retail_vs_top_spread
   tier: T2
   group: E
+  layer: [L4]
+  quarentena: false
+  defeito_construcao: true
   formula: "global_ls_z - toptrader_ls_z, global_ls_z = z-score expansivo estrito de global_ls_ratio (E16f) computado internamente"
   sources: [D04]
   lookback_bars: expanding
@@ -1339,6 +1564,9 @@
 - id: E18f_taker_ls_vol_ratio
   tier: T2
   group: E
+  layer: [L3]
+  quarentena: true
+  defeito_construcao: true
   formula: "sum_taker_long_short_vol_ratio, ja alinhado ao grid de 15m por asof-join backward"
   sources: [D04]
   lookback_bars: 1

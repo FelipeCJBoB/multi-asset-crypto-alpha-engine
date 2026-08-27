@@ -633,6 +633,9 @@ _REQUIRED_FIELDS = {
     "parity_tested",
     "version",
     "added",
+    "layer",
+    "quarentena",
+    "defeito_construcao",
 }
 
 
@@ -789,34 +792,37 @@ def test_compute_max_feature_lookback_ms_FALHA_quando_janela_e_MAIOR_que_a_medid
     """**ADR-005 §13 v2 §13.1 / AG-296 -- o comportamento que mudou.**
     Até 2026-08-26 este caso emitia warning e devolvia a constante mesmo
     assim ("ainda protege, só não é o máximo exato"). Medido com o vetor
-    real de produção: `C08_vol_pctile_rolling_1y` declara 17.520 barras
-    contra as 96 para as quais a constante foi medida -- 182x. Uma
-    sub-cobertura dessa ordem é vazamento de janela de feature (B02/B09),
-    não imprecisão, e passa a falhar alto."""
+    real de produção: `C08_vol_pctile_rolling_1y` declarava 17.520 barras
+    (corrigido 2026-08-27, `AG-317`, pra `69673` — teto conservador da
+    janela de 365 dias sob a mediana de duração de barra mais rápida
+    medida, ver `registry.yaml`) contra as 96 para as quais a constante
+    foi medida. Uma sub-cobertura dessa ordem é vazamento de janela de
+    feature (B02/B09), não imprecisão, e passa a falhar alto."""
     com_c08 = (*build.T1_FEATURE_IDS, "C08_vol_pctile_rolling_1y")
-    assert build.max_feature_lookback_bars(com_c08) == 17_520
+    assert build.max_feature_lookback_bars(com_c08) == 69_673
     with pytest.raises(build.StaleFeatureWindowConstantError) as exc:
         build.compute_max_feature_lookback_ms("15m", com_c08, resolution_id="R2")
     msg = str(exc.value)
-    assert "17520" in msg and "182x" in msg
+    assert "69673" in msg
     assert "measure_max_consecutive_bar_window_duration.py" in msg
 
 
 def test_max_feature_lookback_bars_ve_o_que_max_feature_window_bars_nao_ve() -> None:
     """O defeito de `§13.1`, travado: `max_feature_window_bars` lê os 10
     campos de `_WINDOW_FIELD_NAMES` e é cega a toda feature cuja janela
-    não é uma daquelas constantes. `C08` (17.520), `E03f_funding_cum_3d`
-    (288) e `B10_stoch_k_14` são exatamente esse caso."""
+    não é uma daquelas constantes. `C08` (69.673, corrigido 2026-08-27),
+    `E03f_funding_cum_3d` (288) e `B10_stoch_k_14` são exatamente esse
+    caso."""
     vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
     assert build.max_feature_window_bars() == 96
     # o vetor real dispara antes de chegar ao número (5 features expanding)
     with pytest.raises(build.ExpandingFeatureLookbackError):
         build.max_feature_lookback_bars(vetor_producao)
-    # sem as expanding, o alcance real aparece -- 182x o que a outra devolve
+    # sem as expanding, o alcance real aparece -- muito acima do que a outra devolve
     sem_expanding = tuple(
         f for f in vetor_producao if features_registry.feature_lookback_bars()[f] != "expanding"
     )
-    assert build.max_feature_lookback_bars(sem_expanding) == 17_520
+    assert build.max_feature_lookback_bars(sem_expanding) == 69_673
 
 
 def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:

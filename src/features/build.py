@@ -77,7 +77,6 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "A09_lower_wick_ratio",
     "A10_close_location",
     "A11_true_range_pct",
-    "A12_gap_pct",
     "A14_dist_ema12_atr",
     "B02_rsi_48",
     "B03_roc_12",
@@ -265,6 +264,7 @@ class LoteAWindows:
     d09f_avg_trade_size_z_window: int
     e05f_funding_interval_hours: int
     e11f_oi_change_lag_bars: int
+    e11f_oi_change_zscore_window: int
     e12f_oi_change_lag_bars: int
     k04_asia_start_hour: float
     k04_asia_end_hour: float
@@ -313,6 +313,9 @@ class LoteAWindows:
             ),
             e05f_funding_interval_hours=int(load_constant("feature_e05f_funding_interval_hours")),
             e11f_oi_change_lag_bars=int(load_constant("feature_e11f_oi_change_lag_bars")),
+            e11f_oi_change_zscore_window=int(
+                load_constant("feature_e11f_oi_change_zscore_window")
+            ),
             e12f_oi_change_lag_bars=int(load_constant("feature_e12f_oi_change_lag_bars")),
             k04_asia_start_hour=float(load_constant("feature_k04_asia_start_hour")),
             k04_asia_end_hour=float(load_constant("feature_k04_asia_end_hour")),
@@ -336,16 +339,19 @@ class LoteBWindows:
 
     b10_stoch_window: int
     c08_inner_window: int
-    c08_outer_window: int
+    c08_outer_window_ms: int
     d10f_window: int
     e03f_n_events: int
 
     @classmethod
     def from_constants(cls) -> LoteBWindows:
+        _ms_per_day = 86_400_000  # noqa: magic-number -- ms/dia, conversão de unidade, não hiperparâmetro (mesma constante de group_k.py::_MS_PER_DAY)
         return cls(
             b10_stoch_window=int(load_constant("feature_b10_stoch_window")),
             c08_inner_window=int(load_constant("feature_c08_vol_pctile_inner_window")),
-            c08_outer_window=int(load_constant("feature_c08_vol_pctile_outer_window")),
+            c08_outer_window_ms=int(
+                load_constant("feature_c08_vol_pctile_outer_window_days") * _ms_per_day
+            ),
             d10f_window=int(load_constant("feature_d10f_window")),
             e03f_n_events=int(load_constant("feature_e03f_funding_cum_n_events")),
         )
@@ -809,7 +815,6 @@ def compute_t1_features(
         "A09_lower_wick_ratio": group_a.a09_lower_wick_ratio(open_, high, low, close),
         "A10_close_location": group_a.a10_close_location(high, low, close),
         "A11_true_range_pct": a11_true_range_pct,
-        "A12_gap_pct": group_a.a12_gap_pct(open_, close),
         "A14_dist_ema12_atr": group_a.a14_dist_ema12_atr(close, a14_ema_12, atr_20_abs),
         "B02_rsi_48": group_b.b02_rsi_48(close, lote_a.b02_rsi_window),
         "B03_roc_12": group_b.b03_roc_12(close, lote_a.b03_roc_lookback_bars),
@@ -873,7 +878,9 @@ def compute_t1_features(
             close_time_ms, lote_a.e05f_funding_interval_hours
         ),
         "E09f_oi_contracts": group_e.e09f_oi_contracts(oi_arr),
-        "E11f_oi_change_1d": group_e.e11f_oi_change_1d(oi_arr, lote_a.e11f_oi_change_lag_bars),
+        "E11f_oi_change_1d": group_e.e11f_oi_change_z_1d(
+            oi_arr, lote_a.e11f_oi_change_lag_bars, lote_a.e11f_oi_change_zscore_window
+        ),
         "E12f_price_oi_divergence": group_e.e12f_price_oi_divergence(
             a04_log_return_12, oi_arr, lote_a.e12f_oi_change_lag_bars
         ),
@@ -897,7 +904,7 @@ def compute_t1_features(
         ),
         "B10_stoch_k_14": group_b.b10_stoch_k_14(high, low, close, lote_b.b10_stoch_window),
         "C08_vol_pctile_rolling_1y": group_c.c08_vol_pctile_rolling_1y(
-            log_return_1, lote_b.c08_inner_window, lote_b.c08_outer_window
+            log_return_1, close_time_ms, lote_b.c08_inner_window, lote_b.c08_outer_window_ms
         ),
         "D07f_taker_imbalance_1m_agg": taker_imbalance_1m_agg_arr,
         "D10f_vol_price_divergence": group_d.d10f_vol_price_divergence(
