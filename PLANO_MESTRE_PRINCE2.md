@@ -3109,6 +3109,38 @@ status_ratificacao_final_manager_2026_08_22`.
 > `evaluate_all()` que mudou. Corrigir aqui em vez de reescrever a
 > seção inteira (histórico preservado, não apagado).
 
+> **`[CORREÇÃO DE SINCRONIZAÇÃO, 2026-08-27 — achado por revisão
+> independente project_assurance, audit/architecture_gaps_log.yaml::
+> AG-341, CRÍTICO]`** A correção acima (2026-08-22) já restringia a
+> afirmação de "canônico" ao BUILDER de regime, não ao consumo como
+> gate — mas ainda ficava implícito que o PIPELINE DE TREINO do Alpha
+> consumia `hmm_gaussian_k4_v1`. **Isso nunca foi verdade.** Verificado
+> por leitura direta de código (não presumido): `src/models/dataset.py
+> :46,361-369` — o único ponto que monta o `ModelingFrame` real de
+> treino — importa `src.regime.build as regime_build` e chama
+> `regime_build.build_regimes(...)`, que em `src/regime/build.py:
+> 116-118` instancia `classifier.QuantileRegimeClassifier(...)
+> .classify(...)` — o classificador de quantis "legado", não
+> `build_hmm.py::build_hmm_regimes`. Grep completo do repo confirma que
+> `build_hmm_regimes` tem só 3 chamadores, todos scripts de análise/
+> pesquisa (`hmm_gap_check.py`, `gate_efficiency.py`,
+> `m4_regime_comparison.py`) — nunca `dataset.py`/`alpha.py`/
+> `pipeline.py`. **O que isso muda**: "canônico de produção" nesta
+> seção sempre descreveu uma DECISÃO (override do Manager, válida como
+> tal) que nunca chegou a ser WIREADA no pipeline real de treino — o
+> gap entre decisão e implementação nunca foi fechado, e não havia
+> registro explícito disso até agora. **O que continua verdade**: a
+> decisão do Manager (override sobre `AG-114`/`AG-118`) permanece
+> válida como decisão; `build_hmm.py` existe, é testado, e é o
+> candidato que DEVERIA ser usado. Decisão pendente (nenhuma tomada
+> nesta correção): (a) wireear `dataset.py` pra de fato consumir
+> `build_hmm_regimes` — muda comportamento real de produção, exige
+> retreino, ou (b) aceitar que o classificador de quantis é o que roda
+> hoje e tratar o wiring de HMM k=4 como trabalho futuro explícito, não
+> mais implícito. Ver `audit/architecture_gaps_log.yaml::AG-341` pro
+> achado completo, `::AG-342` (cutoffs do classificador realmente ativo
+> nunca varridos) e `::AG-343`/`::AG-344` (achados colaterais).
+
 **Estado real no momento desta decisão, não escondido:** `AG-114`
 continua **ABERTO** — a fragilidade do Gate 1 (§15.12.5 acima: sob o
 critério literal de mediana, `hmm_gaussian_k2_v1` passaria o Gate 1 e
