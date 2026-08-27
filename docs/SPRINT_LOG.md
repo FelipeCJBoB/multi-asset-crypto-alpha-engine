@@ -4964,3 +4964,98 @@ isolar débito pré-existente de regressão nova. `AG-260` ganhou addendum
 `PLANO_MESTRE_PRINCE2.md` — julgamento de que é correção arquitetural
 de implementação sobre gap já rastreado, não decisão de governança/
 roadmap nova; sinalizado ao Manager pra override se discordar.
+
+## 2026-08-27 — handoff de `src/models/` (4 achados + adendo AG-343/AG-344), validados de forma independente
+
+**Pedido do Manager: handoff de uma sessão paralela com 4 achados reais
+em `src/models/`, mais um adendo de 2 achados novos — "validar cada um
+de forma independente (não confiar cegamente na descrição) e aplicar a
+correção onde a validação confirmar".** Todos os 6 confirmados por
+leitura direta de código/medição, nenhum aceito por presunção — 2
+divergências reais entre a descrição do handoff e o que a medição
+mostrou, corrigidas antes de agir (ver abaixo).
+
+**1. CLI de `pipeline.py` revertia silenciosamente `AG-272`** — <!-- check-sprint-log: skip -->
+`_parse_args` declarava os defaults LEGADOS de `--calib-split-mode`/
+`--class-balance-basis` e sempre os passava explícitos pra `run_layer1_
+sprint`, mascarando a promoção real da função (`TEMPORAL_PURGED`/
+`WEIGHT`). Confirmado com prova de dano real: 8 relatórios em
+`experiments/*_ag207_k62.json` gravam os valores legados. Fix: `default=
+None` nos dois + `_optional_policy_kwargs` (nova função testável) só
+inclui a chave quando o usuário passa a flag — nunca mais duplica um
+literal que já vive na assinatura da função, mesmo se ela for promovida
+de novo no futuro. 4 testes novos
+(`tests/unit/test_models_pipeline_cli.py`).
+
+**2. R2 (`CLAUDE.md` §0.2) nunca era aplicada em `src/models/`, e
+`sample_weight` amplificava justamente as linhas que violam** —
+`side_subset` não filtrava por custo/stop; `apply_weights` (`uniqueness
+* |ret_net|`) dá peso MAIOR às linhas mais catastróficas. Medido contra
+o censo já existente (`experiments/r2_admissibility_census.json`,
+`AG-296`/`AG-297`): 27,12%/26,71% das linhas de BNBUSDT/R1 violam R2 —
+**divergência corrigida em relação ao handoff**: os "177 linhas" citados
+no texto original eram de uma métrica DIFERENTE (`n_tp_nao_cobre_custo`,
+o subconjunto degenerado onde nem 100% de acerto cobriria o custo,
+0,006% GLOBAL concentrado em SOLUSDT) — não a contagem de violação de
+R2 em si. Núcleo puro (`cost_fraction`/`stop_fraction`/`viola_r2`)
+movido de `src/analysis/r2_admissibility_census.py` pra um novo `src/
+labels/r2_admissibility.py` (mesmo padrão do split de `economic_gate`
+do dia anterior — `models/` não pode importar `analysis/`, mas pode
+importar `labels/`). `side_subset` ganhou `enforce_r2: bool = False`
+(opt-in, default bit-exato), repassado por `run_fold`/`run_all_folds`
+(`alpha.py`) — mesma profundidade de wiring de `evaluate_cost_derived_
+lambda` (não chega em `pipeline.py`/CLI, precedente real já existente
+no mesmo arquivo). 13 testes novos.
+
+**3. `E11f_oi_change_1d` (`defeito_construcao: true`) já entrou num
+LightGBM real sem gate nenhum** — confirmado via `monotone_constraints_
+example_fold0` em `experiments/alpha_layer1_report_BTCUSDT_R1_ag207_
+k62.json`. `T1_FEATURE_IDS`/`SUPPORT_FEATURE_IDS` são tuplas hardcoded,
+zero enforcement contra o registry. Fix: `assert_no_defeito_construcao_
+in_active_set`/`DefeitoConstrucaoFeatureError` em `features/build.py`,
+mesmo padrão EXATO de `assert_no_expanding_lookback_in_active_set`/
+`ExpandingFeatureLookbackError` (`AG-032`) já existente no mesmo
+arquivo — fail-fast, sem exclusão silenciosa, chamado em `run_layer1_
+sprint` ANTES de `build_modeling_frame` (trabalho caro de IO). 6 testes
+novos, incluindo um que prova a ordem (levanta sem tentar IO real).
+
+**4. 2 combos de `use_hyperparams_by_combo` (`AG-227`, "FECHADO
+2026-08-25") rodaram sob labels/purge stale** — confirmado por MEDIÇÃO
+direta (não presumido): `labels_config_hash` de `experiments/_
+smoketest_production_wiring_BNBUSDT_R3.json` (`a554e71d5437efdc`) não
+bate nem com o `config_hash` real de hoje (`ff8dcb98fa579975`) nem com o
+snapshot "antes do relabel AG-221" (`921fb547f8d1c7ff`) — três hashes
+distintos, confirmando múltiplas mudanças de config, não só o relabel
+citado no handoff. Artefato movido pra `experiments/_stale_use_
+hyperparams_by_combo/` (mesmo padrão de `pre_ag221_relabel/`) com
+`STALE.md`. Não localizei o artefato equivalente de BTCUSDT/R3 citado no
+handoff — `AG-227` já registra que essa tentativa colidiu de propósito
+com um artefato existente (guarda de imutabilidade); pode não ter
+persistido nada novo. `AG-227` ganhou addendum. Sem ação de re-treino
+aqui — prevista pra acontecer junto do retreino real das 15 combinações <!-- check-sprint-log: skip -->
+já autorizado, não isolada (a própria orientação do handoff).
+
+**Adendo — `AG-343`/`AG-344`, achados de uma revisão `project_assurance`
+posterior na mesma sessão paralela.** `AG-343`: docstring de `side_
+subset` afirmava que `regime` entra como one-hot no vetor de treino —
+falso desde 2026-08-21 (`alpha.py::DESIGN_COLUMNS`, ADR-001 §2.7,
+"regime = gate de risco, não feature preditiva"); corrigido. `AG-344`:
+nenhum teste travava qual regime engine `build_modeling_frame` de fato
+usa (`classifier.QuantileRegimeClassifier` via `regime_build.build_
+regimes`, não `build_hmm.build_hmm_regimes`/HMM k=4, apesar do `CLAUDE.
+md` já ter corrigido o texto — decisão de wireear HMM continua em
+aberto, fora de escopo) — 1 teste novo que levanta `AssertionError`
+explícito se `build_hmm_regimes` for chamado, travando a divergência
+código/documentação pra CI, não auditoria manual meses depois.
+
+Suíte completa (`-m "not slow"`) ao final: **2461 passed, 2 skipped, 2
+xfailed, 0 failed** (+32 testes novos desde a rodada anterior). 7 checks
+mecânicos limpos em todos os módulos tocados/novos (`src/models/
+pipeline.py`, `src/models/alpha.py`, `src/models/dataset.py`, `src/
+labels/r2_admissibility.py`, `src/analysis/r2_admissibility_census.py`,
+`src/features/build.py`, mais os 6 arquivos de teste novos/tocados) —
+comparados contra `HEAD` pré-sessão pra isolar débito pré-existente de
+regressão nova em cada um. `AG-227` ganhou addendum; nenhuma entrada
+nova em `PLANO_MESTRE_PRINCE2.md` (mesmo julgamento do item anterior —
+correção de código sobre gaps já rastreados, não decisão de
+governança/roadmap nova).

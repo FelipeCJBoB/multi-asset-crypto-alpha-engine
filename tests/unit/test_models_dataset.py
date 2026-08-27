@@ -21,9 +21,11 @@ from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
 from src.labels.triple_barrier import ConfigHashMismatchError, LabelConfig
 from src.models import dataset as ds
+from src.models._constants import load_constant
 from src.models._paths import PREDICTIONS_OUTPUT_DIR
 from src.models.pipeline import MODEL_ID_CAMADA1
 from src.regime import build as regime_build
+from src.regime import build_hmm
 from src.validation import cpcv
 from src.validation._paths import labels_symbol_tf_dir
 
@@ -115,6 +117,50 @@ def test_build_modeling_frame_roteia_symbol_version_tf_ate_load_labels_v1(
     assert calls == [
         {"version": "v1", "symbol": "ETHUSDT", "tf": "15m", "resolution_id": None}
     ]
+
+
+def test_build_modeling_frame_usa_regime_classifier_quantis_nao_hmm_k4(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`AG-344` (handoff de `src/models/`, 2026-08-27) -- trava
+    explicitamente qual regime engine `build_modeling_frame` de fato usa
+    hoje: `classifier.QuantileRegimeClassifier` (via `regime_build.
+    build_regimes`, `dataset.py:361`), NÃO `build_hmm.build_hmm_regimes`
+    (HMM k=4) -- apesar do `CLAUDE.md` ter declarado HMM k=4 canônico de
+    produção (decisão de wireear ou não continua em aberto, fora do
+    escopo deste teste). Sem este teste, uma futura divergência entre
+    código e documentação só seria pega por auditoria manual meses depois
+    -- foi exatamente o que já aconteceu uma vez (corrigido no texto de
+    `CLAUDE.md`/`PLANO_MESTRE_PRINCE2.md`, commit `d4c1d4e`, mas nunca
+    travado por teste)."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    build_regimes_calls: list[str] = []
+
+    def _fake_build_regimes(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        build_regimes_calls.append(symbol)
+        return _one_row_regime(t0)
+
+    def _hmm_nao_deveria_ser_chamado(*args: Any, **kwargs: Any) -> pl.DataFrame:
+        raise AssertionError(
+            "build_modeling_frame chamou build_hmm.build_hmm_regimes -- hoje o engine "
+            "real é classifier.QuantileRegimeClassifier via regime_build.build_regimes "
+            "(AG-344). Se isto disparou, o engine mudou de verdade -- revise este teste "
+            "E a documentação (CLAUDE.md/PLANO_MESTRE_PRINCE2.md) juntos, não só um dos dois"
+        )
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels(t0))
+    monkeypatch.setattr(
+        features_build,
+        "build_t1_features",
+        lambda symbol, start, end, **kwargs: _one_row_bar_table(t0),
+    )
+    monkeypatch.setattr(regime_build, "build_regimes", _fake_build_regimes)
+    monkeypatch.setattr(build_hmm, "build_hmm_regimes", _hmm_nao_deveria_ser_chamado)
+    _noop_verify_config_hash(monkeypatch)
+
+    ds.build_modeling_frame()
+
+    assert build_regimes_calls == ["BTCUSDT"]
 
 
 def test_build_modeling_frame_default_bate_com_load_labels_v1_sem_argumentos(
@@ -674,6 +720,75 @@ def test_side_subset_side_invalido_levanta_erro() -> None:
     df = _synthetic_frame()
     with pytest.raises(ValueError):
         ds.side_subset(df, side=0, feature_ids=T1_FEATURE_IDS)
+
+
+# ============================================================================
+# enforce_r2 -- achado real 2026-08-27 (handoff de src/models/, AG-296/
+# AG-297): R2 nunca era aplicada nesta camada. Ratio lido de constants.yaml
+# de verdade (não hardcodado) para o teste continuar válido se o valor
+# medido mudar -- só a POSIÇÃO relativa ao ratio importa aqui.
+# ============================================================================
+
+
+def _frame_for_r2(
+    *, side: int, entry: list[float], sl: list[float], cost_bps_total: list[float]
+) -> pl.DataFrame:
+    """Frame mínimo pra `enforce_r2` -- `side`/`barrier_hit`="TP" (passa o
+    filtro de NOFILL) + feature T1 preenchida (passa o filtro de warmup) +
+    as colunas de preço/custo que `viola_r2` usa. `cost_bps_total` é o
+    custo de ida e volta JÁ SOMADO -- dividido igual entre entry/exit."""
+    n = len(entry)
+    cols: dict[str, object] = {
+        "side": pl.Series([side] * n, dtype=pl.Int8),
+        "barrier_hit": pl.Series(["TP"] * n),
+        "entry_price_limit": pl.Series(entry, dtype=pl.Float64),
+        "sl_price": pl.Series(sl, dtype=pl.Float64),
+        "cost_entry_bps": pl.Series([c / 2.0 for c in cost_bps_total], dtype=pl.Float64),
+        "cost_exit_bps": pl.Series([c / 2.0 for c in cost_bps_total], dtype=pl.Float64),
+    }
+    for fid in T1_FEATURE_IDS:
+        cols[fid] = pl.Series([1.0] * n, dtype=pl.Float64)
+    return pl.DataFrame(cols)
+
+
+def _r2_frame_uma_ok_uma_viola() -> pl.DataFrame:
+    ratio = float(load_constant("cost_stop_ratio_max"))
+    stop = 0.01  # |99 - 100| / 100
+    cost_ok = 0.5 * ratio * stop  # bem dentro do limite
+    cost_viola = 2.0 * ratio * stop  # bem acima do limite
+    return _frame_for_r2(
+        side=1,
+        entry=[100.0, 100.0],
+        sl=[99.0, 99.0],
+        cost_bps_total=[cost_ok * 10_000.0, cost_viola * 10_000.0],
+    )
+
+
+def test_side_subset_enforce_r2_false_e_default_preserva_bit_exato() -> None:
+    df = _r2_frame_uma_ok_uma_viola()
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS)
+    assert out.height == 2  # nenhuma linha filtrada por R2 -- default é False
+
+
+def test_side_subset_enforce_r2_true_filtra_a_linha_que_viola() -> None:
+    df = _r2_frame_uma_ok_uma_viola()
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=True)
+    assert out.height == 1
+    # a linha que sobrevive é a de custo baixo (índice 0 do frame de entrada)
+    assert out["cost_entry_bps"].to_list()[0] < df["cost_entry_bps"].to_list()[1]
+
+
+def test_side_subset_enforce_r2_fronteira_custo_igual_ratio_vezes_stop_passa() -> None:
+    """R2 é `<=`, não `<` (`CLAUDE.md` §0.2) -- testado exatamente no ponto,
+    mesma disciplina de `test_analysis_r2_admissibility_census.py`."""
+    ratio = float(load_constant("cost_stop_ratio_max"))
+    stop = 0.01
+    cost_na_fronteira = ratio * stop
+    df = _frame_for_r2(
+        side=1, entry=[100.0], sl=[99.0], cost_bps_total=[cost_na_fronteira * 10_000.0]
+    )
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=True)
+    assert out.height == 1
 
 
 # ============================================================================

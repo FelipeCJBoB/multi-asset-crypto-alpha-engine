@@ -766,12 +766,17 @@ def test_compute_max_feature_lookback_ms_resolution_id_usa_max_consecutive_const
 
 
 def test_compute_max_feature_lookback_ms_sem_warning_quando_window_bars_bate() -> None:
-    """`max_consecutive_bar_window_duration_ms` foi medido pra
-    `window_bars=96`, e o `T1_FEATURE_IDS` real declara exatamente 96 no
-    registry (`C06_vol_ratio_12_96`) -- não deve disparar staleness."""
-    assert build.max_feature_lookback_bars(build.T1_FEATURE_IDS) == 96
+    """`max_consecutive_bar_window_duration_ms` foi remedido 2026-08-27
+    (`AG-298`/`AG-335`) pra `window_bars=288`, e o vetor de PRODUÇÃO real
+    (`T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`, sem as 5 `expanding` nem
+    `C08`) declara exatamente 288 (`E03f_funding_cum_3d`) -- não deve
+    disparar staleness. `T1_FEATURE_IDS` sozinho (96) NÃO bate mais
+    exatamente -- é o caso de warning (janela menor, sub-uso seguro),
+    coberto pelo teste de warning-quando-menor abaixo."""
+    vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
+    assert build.max_feature_lookback_bars(vetor_producao) == 288
     with structlog.testing.capture_logs() as logs:
-        build.compute_max_feature_lookback_ms("15m", build.T1_FEATURE_IDS, resolution_id="R2")
+        build.compute_max_feature_lookback_ms("15m", vetor_producao, resolution_id="R2")
     assert not [e for e in logs if e.get("log_level") == "warning"]
 
 
@@ -811,18 +816,27 @@ def test_max_feature_lookback_bars_ve_o_que_max_feature_window_bars_nao_ve() -> 
     """O defeito de `§13.1`, travado: `max_feature_window_bars` lê os 10
     campos de `_WINDOW_FIELD_NAMES` e é cega a toda feature cuja janela
     não é uma daquelas constantes. `C08` (69.673, corrigido 2026-08-27),
-    `E03f_funding_cum_3d` (288) e `B10_stoch_k_14` são exatamente esse
-    caso."""
+    `E03f_funding_cum_3d` (288) e `B10_stoch_k_14` (14) são exatamente
+    esse caso.
+
+    **Corrigido 2026-08-27 (`AG-298`/`AG-335`, item A da pauta `§13`,
+    decisão do Manager).** Até aqui o vetor real de produção disparava
+    `ExpandingFeatureLookbackError` (5 features `lookback_bars: expanding`
+    do Lote A/C, H5 2026-08-24) -- as 5 saíram do conjunto ativo, mesmo
+    tratamento de `AG-032`. **`C08_vol_pctile_rolling_1y` saiu também**
+    (mesma rodada, motivo diferente -- não é `expanding`, mas `layer: L4`
+    E `lookback_bars: 69673` provou ser um teto calibrado pra R1 que sob
+    R3 nenhum símbolo tem histórico suficiente pra cobrir, `experiments/
+    max_consecutive_bar_window_duration.json`). Sem C08, o vetor real
+    resolve pra `288` (`E03f_funding_cum_3d`, a maior janela finita que
+    sobra fora dos 10 campos rastreados por `max_feature_window_bars`)."""
     vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
     assert build.max_feature_window_bars() == 96
-    # o vetor real dispara antes de chegar ao número (5 features expanding)
-    with pytest.raises(build.ExpandingFeatureLookbackError):
-        build.max_feature_lookback_bars(vetor_producao)
-    # sem as expanding, o alcance real aparece -- muito acima do que a outra devolve
+    assert build.max_feature_lookback_bars(vetor_producao) == 288
     sem_expanding = tuple(
         f for f in vetor_producao if features_registry.feature_lookback_bars()[f] != "expanding"
     )
-    assert build.max_feature_lookback_bars(sem_expanding) == 69_673
+    assert sem_expanding == vetor_producao
 
 
 def test_compute_max_feature_lookback_ms_gate_dispara_mesmo_com_resolution_id_setado() -> None:
@@ -881,3 +895,38 @@ def test_compute_max_feature_lookback_ms_dispara_para_feature_ids_customizado_ex
         )
     msg = str(exc_info.value)
     assert "E02f_funding_z_expanding" in msg
+
+
+# ============================================================================
+# assert_no_defeito_construcao_in_active_set -- achado real 2026-08-27
+# (handoff de src/models/, AG-296/AG-297/item 3): E11f_oi_change_1d
+# (defeito_construcao=true desde AG-320) já entrou num LightGBM real sem
+# nenhum gate checando o campo. Mesmo padrão de
+# assert_no_expanding_lookback_in_active_set (ExpandingFeatureLookbackError).
+# ============================================================================
+
+
+def test_assert_no_defeito_construcao_passa_para_t1_feature_ids_real() -> None:
+    """Nenhuma das 7 `T1_FEATURE_IDS` (o default de `run_layer1_sprint`)
+    tem `defeito_construcao: true` -- o caminho comum não dispara."""
+    build.assert_no_defeito_construcao_in_active_set(build.T1_FEATURE_IDS)
+
+
+def test_assert_no_defeito_construcao_dispara_para_e11f() -> None:
+    """`E11f_oi_change_1d` tem `defeito_construcao: true` no registry real
+    (`AG-320`) -- o mesmo defeito CATEGÓRICO que já entrou num LightGBM
+    real (`experiments/alpha_layer1_report_BTCUSDT_R1_ag207_k62.json`)."""
+    with pytest.raises(build.DefeitoConstrucaoFeatureError, match="E11f_oi_change_1d"):
+        build.assert_no_defeito_construcao_in_active_set(
+            (*build.T1_FEATURE_IDS, "E11f_oi_change_1d")
+        )
+
+
+def test_assert_no_defeito_construcao_dispara_para_vetor_completo_da_campanha_t2_t1() -> None:
+    """O vetor completo (`T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`, o mesmo
+    que os scripts da campanha T2→T1 usam) inclui `E11f_oi_change_1d` --
+    prova que o gate protege o caminho real que já causou o dano, não só
+    um caso sintético."""
+    vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
+    with pytest.raises(build.DefeitoConstrucaoFeatureError, match="E11f_oi_change_1d"):
+        build.assert_no_defeito_construcao_in_active_set(vetor_producao)

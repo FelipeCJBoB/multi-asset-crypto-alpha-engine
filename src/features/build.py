@@ -26,7 +26,7 @@ from src.data.resample import step_ms
 from . import _sources, support
 from ._constants import load_constant
 from .groups import group_a, group_b, group_c, group_d, group_e, group_k
-from .registry import feature_lookback_bars
+from .registry import feature_lookback_bars, feature_registry_by_id
 from .support import FloatArray
 
 logger = structlog.get_logger(__name__)
@@ -44,6 +44,33 @@ logger = structlog.get_logger(__name__)
 #: análise pós-hoc que precise ler as 3 sobre `ModelingFrame` real usa
 #: `build_modeling_frame(..., extra_feature_ids=(...))`
 #: (`src.models.dataset`), nunca reintroduzindo-as aqui.
+#:
+#: **AG-298/AG-335 (2026-08-27, decisão do Manager, item A da pauta §13):**
+#: mesmo tratamento pras 5 features de `lookback_bars: expanding` do Lote
+#: A/C (H5, 2026-08-24) -- `C09_range_pctile_expanding`, `C10_vol_
+#: expansion_flag`, `C11_vol_compression_flag`, `E15f_toptrader_ls_z`,
+#: `E17f_retail_vs_top_spread`. Mesmo motivo estrutural de `AG-032`
+#: (janela expansiva não tem lookback finito honesto -- cresce pra sempre
+#: com o lake), reforçado por achado independente: 4 das 5 (todas exceto
+#: `C09`) já são `layer: L4` ("aposentada") no census de `AG-282`/`§14.11`
+#: -- corrobora, mas não é a razão primária da exclusão (`C09` sai pelo
+#: MESMO motivo estrutural, mesmo sendo `layer: L3`). Continuam calculadas
+#: por `compute_t1_features` e disponíveis via `extra_feature_ids`, mesmo
+#: mecanismo das 3 acima -- `E17f_retail_vs_top_spread` já é lido assim em
+#: `src/analysis/faixa2_e3_stability.py` (research track separado, não
+#: afetado por esta mudança). Fecha o bloqueio de `ExpandingFeatureLookback
+#: Error` sobre o vetor de produção (`T1_FEATURE_IDS + SUPPORT_FEATURE_
+#: IDS`) -- ver `tests/unit/test_features_build.py::
+#: test_max_feature_lookback_bars_ve_o_que_max_feature_window_bars_nao_ve`.
+#:
+#: `C08_vol_pctile_rolling_1y` SAIU também (mesma rodada) -- não é
+#: `lookback_bars: expanding`, mas `layer: L4` (mesmo census) E um
+#: segundo gate próprio: `lookback_bars: 69673` (`AG-317`) é um teto de
+#: barra calibrado pra R1 aplicado igual nas 3 grades -- medido
+#: 2026-08-27 que sob R2 a janela real chega a ~4,2 anos e sob R3 NENHUM
+#: símbolo tem 69.673 barras no histórico inteiro (`experiments/
+#: max_consecutive_bar_window_duration.json`). Ver comentário em
+#: `SUPPORT_FEATURE_IDS` abaixo pro detalhe completo.
 T1_FEATURE_IDS: tuple[str, ...] = (
     "A05_ret_vol_norm_4",
     "A13_dist_ema48_atr",
@@ -89,9 +116,9 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     "C03_realized_vol_48",
     "C04_parkinson_vol_48",
     "C05_garman_klass_48",
-    "C09_range_pctile_expanding",
-    "C10_vol_expansion_flag",
-    "C11_vol_compression_flag",
+    # C09_range_pctile_expanding/C10_vol_expansion_flag/C11_vol_compression_flag
+    # -- ver AG-298/AG-335 no bloco de comentário acima (lookback_bars:
+    # expanding, mesmo motivo estrutural de AG-032).
     "C12_vol_of_vol_48",
     "D01f_volume_z_96",
     "D02f_rel_volume_48",
@@ -119,7 +146,16 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     # a T1.
     "A15_dist_vwap_d_atr",
     "B10_stoch_k_14",
-    "C08_vol_pctile_rolling_1y",
+    # C08_vol_pctile_rolling_1y -- ver AG-298/AG-335 no bloco de comentário
+    # de topo. Motivo ADICIONAL aos outros 5: `lookback_bars: 69673`
+    # (AG-317) é um teto de barra CALIBRADO PARA R1 aplicado igual nas 3
+    # grades -- medido 2026-08-27 que sob R2 a janela real chega a
+    # ~36.561h (~4,2 anos) e sob R3 NENHUM símbolo tem 69.673 barras no
+    # histórico inteiro (`experiments/max_consecutive_bar_window_
+    # duration.json`, combos R3 pulados por dado insuficiente). `layer:
+    # L4` (aposentada, mesmo census de AG-282/§14.11) -- não é só a janela
+    # grande, é uma feature sem mecanismo/sinal que por acaso também
+    # quebra a proteção de purge entre grades.
     "D07f_taker_imbalance_1m_agg",
     "D10f_vol_price_divergence",
     "E03f_funding_cum_3d",
@@ -128,9 +164,9 @@ SUPPORT_FEATURE_IDS: tuple[str, ...] = (
     # colunas antes não lidas) -- zero primitiva nova.
     "E08f_oi_notional",
     "E14f_toptrader_ls_ratio",
-    "E15f_toptrader_ls_z",
+    # E15f_toptrader_ls_z/E17f_retail_vs_top_spread -- ver AG-298/AG-335
+    # acima (mesmo motivo, lookback_bars: expanding).
     "E16f_global_ls_ratio",
-    "E17f_retail_vs_top_spread",
     "E18f_taker_ls_vol_ratio",
 )
 
@@ -455,6 +491,51 @@ def assert_no_expanding_lookback_in_active_set(
         )
 
 
+class DefeitoConstrucaoFeatureError(ValueError):
+    """Fail-fast (achado real 2026-08-27, handoff de `src/models/`,
+    `AG-296`/`AG-297`/item 3) — o conjunto de features ATIVO contém pelo
+    menos uma feature com `defeito_construcao: true` no registry
+    (`src.features.registry`). Prova de dano real: `E11f_oi_change_1d`
+    (`defeito_construcao: true` desde `AG-320`) já entrou num LightGBM
+    real via os scripts formais da campanha T2→T1 sem nenhum gate
+    checando o campo (`experiments/alpha_layer1_report_BTCUSDT_R1_
+    ag207_k62.json::monotone_constraints_example_fold0`). Mesma decisão
+    já tomada pra `lookback_bars: expanding` (`ExpandingFeatureLookback
+    Error`, `AG-032` item 8): a feature ofensora precisa ser removida do
+    conjunto ativo OU o treino precisa rodar CONSCIENTEMENTE sobre uma
+    feature com defeito conhecido -- não é esta exceção que decide qual
+    das duas, só força a decisão a ser tomada."""
+
+
+def assert_no_defeito_construcao_in_active_set(feature_ids: tuple[str, ...]) -> None:
+    """Levanta `DefeitoConstrucaoFeatureError` se QUALQUER id em
+    `feature_ids` tiver `defeito_construcao: true` no registry real
+    (`src.features.registry.feature_registry_by_id`). Mesmo padrão de
+    `assert_no_expanding_lookback_in_active_set` -- nunca exclui a
+    feature ofensora silenciosamente.
+
+    `T1_FEATURE_IDS` (default de `run_layer1_sprint`) não dispara isto
+    hoje -- nenhuma das 7 tem `defeito_construcao: true`. Só dispara
+    quando `feature_ids` explícito inclui uma feature marcada (ex.
+    `T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`, o vetor completo da campanha
+    T2→T1, que inclui `E11f_oi_change_1d`)."""
+    registry_by_id = feature_registry_by_id()
+    offenders = sorted(
+        fid
+        for fid in feature_ids
+        if fid in registry_by_id and registry_by_id[fid].defeito_construcao
+    )
+    if offenders:
+        raise DefeitoConstrucaoFeatureError(
+            "conjunto ativo de features inclui feature(s) com defeito_construcao=true "
+            f"no registry (src/features/registry.yaml): {offenders}. Construção mede algo "
+            "DIFERENTE do que diz medir (§14.3) -- decisão necessária (NÃO tomada "
+            "automaticamente aqui): remover essas features do conjunto ativo, OU chamar "
+            "run_all_folds/fit_side_model diretamente (fora de run_layer1_sprint, que é "
+            "quem chama esta guarda) se o treino sobre elas for deliberado."
+        )
+
+
 def max_feature_lookback_bars(feature_ids: tuple[str, ...]) -> int:
     """Maior `lookback_bars` FINITO declarado no **registry** para as
     `feature_ids` dadas — o alcance real que uma feature em `t` tem para
@@ -508,10 +589,15 @@ def max_feature_window_bars(windows: FeatureWindows | None = None) -> int:
 #: `window_bars` sob o qual `max_consecutive_bar_window_duration_ms`
 #: (`config/constants.yaml`) foi medido -- metadado do PRÓPRIO valor
 #: MEASURED daquela constante (ver `source` completo no yaml), não uma
-#: constante de negócio nova. `96` == `max_feature_window_bars()` hoje
-#: (`C06_vol_ratio_12_96`) -- duplicado aqui só pra permitir a checagem
-#: de staleness sem reabrir constants.yaml em runtime.
-_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS: Final[int] = 96  # noqa: magic-number -- metadado de proveniência da constante MEASURED, não constante de negócio
+#: constante de negócio nova. **Remedido 2026-08-27 (`AG-298`/`AG-335`,
+#: item A da pauta `§13`)** -- era `96` (`max_feature_window_bars()`,
+#: cego ao registry); agora `288` == `max_feature_lookback_bars(
+#: T1_FEATURE_IDS + SUPPORT_FEATURE_IDS)` (`E03f_funding_cum_3d`), a
+#: função corrigida que lê do registry sobre o conjunto ativo real, após
+#: as 5 features `expanding` e `C08_vol_pctile_rolling_1y` saírem do
+#: conjunto ativo. Duplicado aqui só pra permitir a checagem de
+#: staleness sem reabrir constants.yaml em runtime.
+_MAX_CONSECUTIVE_BAR_WINDOW_DURATION_WINDOW_BARS: Final[int] = 288  # noqa: magic-number -- metadado de proveniência da constante MEASURED, não constante de negócio
 
 
 def compute_max_feature_lookback_ms(

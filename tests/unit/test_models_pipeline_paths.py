@@ -520,6 +520,23 @@ def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
         pipeline.run_layer1_sprint(tf="7m")
 
 
+def test_run_layer1_sprint_feature_com_defeito_construcao_levanta_cedo_sem_trabalho_caro() -> (
+    None
+):
+    """Achado real 2026-08-27 (handoff de `src/models/`, `AG-296`/`AG-297`/
+    item 3): `E11f_oi_change_1d` (`defeito_construcao: true`) já entrou num
+    LightGBM real via a campanha T2→T1 sem gate nenhum. `assert_no_defeito_
+    construcao_in_active_set` valida ANTES de `build_modeling_frame` --
+    mesmo padrão de `test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_
+    trabalho_caro`, nenhum monkeypatch: se a validação não fosse anterior
+    ao IO, este teste tentaria carregar labels/features reais e falharia
+    por outro motivo."""
+    with pytest.raises(features_build.DefeitoConstrucaoFeatureError, match="E11f_oi_change_1d"):
+        pipeline.run_layer1_sprint(
+            feature_ids=(*features_build.T1_FEATURE_IDS, "E11f_oi_change_1d")
+        )
+
+
 # ============================================================================
 # run_layer1_sprint_all_combinations — D-13 (docs/alpha_model_design_doc_
 # 2026-08-22.md §7). Monkeypatcha run_layer1_sprint INTEIRO (não seus

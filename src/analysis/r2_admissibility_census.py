@@ -56,15 +56,27 @@ from typing import Any, Final
 import numpy as np
 import polars as pl
 import structlog
-from numpy.typing import NDArray
 
 from src.labels._constants import load_constant
 from src.labels._paths import labels_symbol_tf_dir
 
-logger = structlog.get_logger(__name__)
+# Reexport explícito (`as X`, não só `import X`) -- `mypy --strict`/
+# `no_implicit_reexport` (`pyproject.toml`) trata um import simples como
+# privado ao módulo (mesmo padrão já usado em `pipeline.py` pra
+# ARTIFACT_ROOT/MODELS_DIR, AG-154, e em `analysis/economic_gate.py` pra
+# GateRow/EconomicGateError, 2026-08-27); testes deste módulo fazem
+# `census.cost_fraction`/`census.viola_r2` e precisam continuar
+# funcionando sob checagem estrita. Movido pra `src.labels.r2_
+# admissibility` em 2026-08-27 (handoff de `src/models/`, AG-296/AG-297)
+# -- `side_subset` (`models/dataset.py`) precisa da MESMA fórmula pra
+# filtrar antes do treino, e `models/` não pode importar `analysis/`.
+from src.labels.r2_admissibility import BoolArray as BoolArray
+from src.labels.r2_admissibility import FloatArray as FloatArray
+from src.labels.r2_admissibility import cost_fraction as cost_fraction
+from src.labels.r2_admissibility import stop_fraction as stop_fraction
+from src.labels.r2_admissibility import viola_r2 as viola_r2
 
-FloatArray = NDArray[np.float64]
-BoolArray = NDArray[np.bool_]
+logger = structlog.get_logger(__name__)
 
 EXPERIMENTS_DIR: Final[Path] = Path("experiments")
 SYMBOLS: Final[tuple[str, ...]] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
@@ -79,8 +91,6 @@ _REPORT_QUANTILES: Final[tuple[float, ...]] = (0.01, 0.10, 0.50, 0.90, 0.99)  # 
 #: Puramente numérica (ruído de float na reconstrução de preço de barreira),
 #: não um limiar de negócio.
 _SIMETRIA_RTOL: Final[float] = 1e-6  # noqa: magic-number -- tolerância numérica de float, não limiar de negócio
-
-_BPS_PER_UNIT: Final[float] = 10_000.0  # noqa: magic-number -- conversão de unidade
 
 
 # ============================================================================
@@ -119,19 +129,6 @@ class R2CellCensus:
     breakeven_admissivel_q: dict[str, float]
 
 
-def cost_fraction(cost_entry_bps: FloatArray, cost_exit_bps: FloatArray) -> FloatArray:
-    """Custo de ida e volta como fração do nocional (bps -> fração)."""
-    return np.asarray((cost_entry_bps + cost_exit_bps) / _BPS_PER_UNIT, dtype=np.float64)
-
-
-def stop_fraction(entry_price: FloatArray, sl_price: FloatArray) -> FloatArray:
-    """`|SL - entrada| / entrada`. Vale para os dois lados por construção:
-    em `side=+1` o SL fica abaixo da entrada, em `side=-1` acima (verificado
-    contra `labels.parquet`), e o módulo da diferença é a mesma grandeza
-    econômica nos dois casos."""
-    return np.asarray(np.abs(sl_price - entry_price) / entry_price, dtype=np.float64)
-
-
 def gain_fraction(entry_price: FloatArray, tp_price: FloatArray) -> FloatArray:
     """`|TP - entrada| / entrada`, mesma simetria de `stop_fraction`."""
     return np.asarray(np.abs(tp_price - entry_price) / entry_price, dtype=np.float64)
@@ -164,12 +161,6 @@ def breakeven_probability(
             "qualquer valor devolvido aqui seria > 1 e não é uma probabilidade"
         )
     return np.asarray(g_sl / (g_tp + g_sl), dtype=np.float64)
-
-
-def viola_r2(cost: FloatArray, stop: FloatArray, *, cost_stop_ratio_max: float) -> BoolArray:
-    """R2 literal (`CLAUDE.md` §0.2): `custo_round_trip <= ratio * stop`.
-    Devolve a máscara do que **viola**."""
-    return np.asarray(cost > (cost_stop_ratio_max * stop), dtype=np.bool_)
 
 
 def _quantis(values: FloatArray) -> dict[str, float]:

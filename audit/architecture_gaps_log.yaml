@@ -15452,6 +15452,38 @@ entries:
       n_better=3/5 permanence_pass=False -- RESSALVA AG-220 se aplica
       igual a qualquer outro resultado deste gate).
     status: "FECHADO 2026-08-25 -- mecanismo implementado, testado (unitario + smoke real), 2 combos (BTCUSDT/R3, BNBUSDT/R3) ja retreinados de verdade sob a config nova. Os outros 8 combos calibrados pelo ADR-003 aguardam confirmacao do Manager antes de retreinar de verdade (escrita de artefato e imutavel/irreversivel sem trabalho manual)."
+    addendum_2026-08-27_smoke_test_ficou_stale: >
+      ACHADO 2026-08-27 (handoff de src/models/, validado nesta sessão):
+      os 2 combos "já retreinados de verdade" acima (BTCUSDT/R3,
+      BNBUSDT/R3) carregavam labels/purge STALE já no momento do smoke
+      test -- 3 camadas: labels pré-relabel (AG-221), purge dimensionado
+      pra 7 features em vez de 62-69 (AG-298, só corrigido tecnicamente
+      2026-08-27), e convenção de vetor (substitutivo vs. aditivo) já
+      revogada. Confirmado por MEDIÇÃO direta (não presumido): o
+      `labels_config_hash` gravado em `experiments/_smoketest_
+      production_wiring_BNBUSDT_R3.json` (`a554e71d5437efdc`) não bate
+      com o `config_hash` REAL de hoje em `data/labels/BNBUSDT/R3/v1/
+      labels.parquet` (`ff8dcb98fa579975`) -- nem com o snapshot "antes
+      do relabel AG-221" (`experiments/ag221_baseline_labels_antes.
+      json`, `921fb547f8d1c7ff`) -- três hashes distintos, confirmando
+      múltiplas mudanças de config desde o smoke test, não só o relabel.
+
+      Artefato movido pra `experiments/_stale_use_hyperparams_by_combo/`
+      (mesmo padrão de diretório já usado por `pre_ag221_relabel/`) com
+      `STALE.md` explicando o porquê. Não localizei um artefato
+      equivalente distinto de BTCUSDT/R3 -- o texto acima já registra que
+      a primeira tentativa colidiu de propósito com um artefato existente
+      (`ArtifactExistsError`), então é possível que nenhum artefato NOVO
+      tenha sido persistido por ela. `models/BTCUSDT/R3/alpha_c1_v1/
+      diagnostics/` existe em disco mas não guarda `config_hash` por
+      fold -- não movido/marcado por precaução, ver `STALE.md` pro
+      detalhe.
+
+      Sem urgência de correção de governança: nenhuma decisão real se
+      apoiou nesses 2 combos (só o mecanismo em si foi validado, não os
+      números). Ação real -- re-rodar os combos afetados sob labels/
+      purge atuais -- prevista pra acontecer junto do retreino real das
+      15 combinações já autorizado pelo Manager, não isolada.
 
   - id: AG-239
     renumbered_from: "AG-227 -- COLISAO DE ID corrigida 2026-08-25. Esta entrada foi registrada nesta sessao com um numero ja ocupado por outro achado (o de src/models/pipeline.py, que veio antes e mantem o numero original). Nenhum conteudo foi alterado, so o identificador. Referencia cruzada a AG-227 escrita ANTES desta correcao que aponte para o achado de labels/ deve ser lida como AG-239."

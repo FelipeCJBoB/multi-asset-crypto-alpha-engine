@@ -37,14 +37,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+import numpy as np
 import polars as pl
 import structlog
 
 from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
+from src.labels import r2_admissibility
 from src.labels.triple_barrier import LabelConfig, verify_config_hash
 from src.regime import build as regime_build
 from src.validation import cpcv
+
+from ._constants import load_constant
 
 logger = structlog.get_logger(__name__)
 
@@ -482,18 +486,46 @@ def build_modeling_frame(
 
 
 def side_subset(
-    frame: pl.DataFrame, *, side: int, feature_ids: tuple[str, ...]
+    frame: pl.DataFrame, *, side: int, feature_ids: tuple[str, ...], enforce_r2: bool = False
 ) -> pl.DataFrame:
     """Sub-população de modelagem do Alpha (M_long `side=1` / M_short
     `side=-1`, B18): descarta NOFILL (§3.7 — ruído de execução, não sinal,
     instrução explícita da task) e linhas sem features T1 (warmup,
-    `min_warmup_bars`). NÃO filtra por regime — `regime` entra como
-    variável categórica one-hot de 5 níveis (R1..R5; R0 nunca aparece pós-
-    warmup) diretamente no vetor de treino, conforme §2.13 literal ("mais o
-    regime como variável categórica... consome mais 4 graus de liberdade").
-    Excluir R0/R5 é uma decisão isolada da DEFINIÇÃO DE AMBIENTE (§5.4,
-    Camada 1 IC screening — ver `src.models.environments`), não do conjunto
-    de treino do XGBoost em si."""
+    `min_warmup_bars`). NÃO filtra por regime.
+
+    **[CORRIGIDO 2026-08-27, `AG-343`]** Este docstring afirmava que
+    `regime` entra como variável categórica one-hot de 5 níveis
+    diretamente no vetor de treino (§2.13) -- falso desde 2026-08-21
+    (`AG-343`, handoff de `src/models/`): `src.models.alpha.DESIGN_
+    COLUMNS` removeu o one-hot de regime (ratificado pelo Manager, ADR-001
+    §2.7, "regime = gate de risco, não feature preditiva"), mantendo só as
+    7 `T1_FEATURE_IDS`. `regime` continua saindo desta função sem filtro
+    (`side_subset` nunca filtrou por ele), mas hoje é consumido só como
+    GATE de risco (`src.risk.limits::control_01_regime_tradeavel`), não
+    como feature do Alpha -- este docstring nunca foi atualizado pra
+    refletir a mudança, apesar de ser o módulo que produz a própria
+    coluna citada.
+
+    `enforce_r2` (achado real 2026-08-27, handoff de `src/models/`,
+    `AG-296`/`AG-297`): R2 -- uma das cinco restrições invioláveis,
+    `CLAUDE.md` §0.2, `custo_round_trip <= cost_stop_ratio_max * stop` --
+    nunca era aplicada nesta camada (`cost_stop_ratio_max` não aparecia em
+    nenhum lugar de `src/models/`). Como `stop` de produção é `sl_atr_mult
+    * ATR(t0)`, R2 é propriedade da LINHA, não da célula -- medido, até
+    27% das linhas de BNBUSDT/R1 violam R2 (`experiments/r2_admissibility_
+    census.json`, `src.analysis.r2_admissibility_census`). Pior: `src.
+    labels.weights.apply_weights` (`sample_weight = uniqueness *
+    |ret_net|`) dá peso MAIOR justamente às linhas mais catastróficas --
+    incluindo as que violam R2, que entravam no treino com peso pleno OU
+    maior, nunca excluídas. Default `False` preserva bit-exato todo call
+    site/teste existente. `True` filtra as linhas que violam R2 ANTES do
+    warmup, usando a MESMA fórmula de `src.analysis.r2_admissibility_
+    census` (núcleo compartilhado em `src.labels.r2_admissibility`,
+    `models/` não pode importar `analysis/`) -- a linha nunca chega no
+    cálculo de `sample_weight` rio abaixo, porque nunca entra no treino.
+    Tornar isto o default de produção é decisão do Manager, não tomada
+    aqui -- mesmo padrão opt-in de `use_geometry_by_combo`/`use_
+    hyperparams_by_combo`/`use_economic_gate`."""
     if side not in (1, -1):
         raise ValueError(f"side_subset: side deve ser 1 ou -1, recebido {side}")
     if not feature_ids:
@@ -511,6 +543,35 @@ def side_subset(
     out = frame.filter(
         (pl.col("side") == side) & (pl.col("barrier_hit").cast(pl.Utf8) != "NOFILL")
     )
+    if enforce_r2:
+        cost_stop_ratio_max = float(load_constant("cost_stop_ratio_max"))
+        cost = r2_admissibility.cost_fraction(
+            out["cost_entry_bps"].to_numpy().astype(np.float64),
+            out["cost_exit_bps"].to_numpy().astype(np.float64),
+        )
+        stop = r2_admissibility.stop_fraction(
+            out["entry_price_limit"].to_numpy().astype(np.float64),
+            out["sl_price"].to_numpy().astype(np.float64),
+        )
+        mask_viola = r2_admissibility.viola_r2(
+            cost, stop, cost_stop_ratio_max=cost_stop_ratio_max
+        )
+        n_antes_r2 = out.height
+        n_viola = int(mask_viola.sum())
+        if n_antes_r2 > 0:  # noqa: SIM108 -- if/else, não ternário: tools/lint/check_unguarded_ratios.py só reconhece guarda em ast.If/ast.Assert, não em IfExp
+            frac_viola_r2 = n_viola / n_antes_r2
+        else:
+            frac_viola_r2 = float("nan")
+        if n_viola > 0:
+            out = out.filter(pl.Series("_r2_ok", ~mask_viola))
+        logger.info(
+            "models.dataset.side_subset_r2_gate",
+            side=side,
+            n_antes=n_antes_r2,
+            n_viola_r2=n_viola,
+            frac_viola_r2=frac_viola_r2,
+            cost_stop_ratio_max=cost_stop_ratio_max,
+        )
     # AG-300 -- coluna 100% nula NESTE lado falha alto, ANTES do filtro.
     # Sem isto o filtro abaixo esvazia o conjunto de treino, e "0 linhas"
     # e um sintoma muito pior de diagnosticar do que o nome da coluna: nao

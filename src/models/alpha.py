@@ -898,6 +898,90 @@ def decide_side_breakeven_topq(
 
 
 @dataclass(frozen=True, slots=True)
+class CapMechanismComparisonResult:
+    """Item 11 -- comparação lado a lado dos dois mecanismos de teto de
+    capacidade (limiar escalar em `mu`, via `resolve_joint_lambda`, vs.
+    ranking por margem, via `decide_side_breakeven_topq`) sobre a MESMA
+    população de linhas. Núcleo puro: só MEDE a divergência, não decide
+    qual promover a produção — `§13.17` já lista o item 11 como "decisão,
+    não modelo"."""
+
+    lambda_b_resolved: float
+    signal_rate_lambda: float
+    signal_rate_topq: float
+    n_rows: int
+    n_agree: int
+    n_disagree: int
+    frac_agree: float
+
+
+def compare_cap_mechanisms(
+    p_long: FloatArray,
+    p_short: FloatArray,
+    cost_atr_ratio: FloatArray,
+    *,
+    payoff_atr_mult: float,
+    target_signal_rate: float,
+) -> CapMechanismComparisonResult:
+    """Roda os DOIS mecanismos de teto do item 11 sobre a mesma população
+    e reporta a divergência — não decide qual promover.
+    `resolve_joint_lambda` resolve o `lambda_b` escalar que bate
+    `target_signal_rate`; `decide_side_breakeven_topq` usa o MESMO
+    `target_signal_rate` como `q` do ranking por margem — a comparação é
+    sobre taxa de sinal EQUIVALENTE, não arbitrária entre os dois.
+
+    Núcleo puro (Idioma A) — roda em memória sobre arrays já calculados
+    (predições de um fold real, ou sintéticas em teste), nunca treina nem
+    lê disco. Pronto pra rodar assim que `predictions.parquet` de um
+    retreino real existir — o retreino segue represado hoje (`AG-298`,
+    `ExpandingFeatureLookbackError`); nenhuma célula real foi medida por
+    esta função ainda. Ver `test_decide_side_breakeven_topq_diverge_de_
+    lambda_threshold_quando_custo_varia` (`tests/unit/test_models_alpha_
+    breakeven_item11.py`) para o caso mínimo que prova a divergência
+    estrutural que esta função quantifica em população real.
+
+    Raises:
+        ValueError: os três arrays não têm o mesmo `shape` (mesma
+            população de linhas, precondição de todas as funções de item
+            11 já existentes)."""
+    if p_long.shape != p_short.shape or p_long.shape != cost_atr_ratio.shape:
+        raise ValueError(
+            f"compare_cap_mechanisms: p_long.shape={p_long.shape}, p_short.shape="
+            f"{p_short.shape}, cost_atr_ratio.shape={cost_atr_ratio.shape} -- as três "
+            "precisam vir da MESMA população de linhas"
+        )
+    n_rows = p_long.shape[0]
+    lambda_b, rate_lambda = resolve_joint_lambda(
+        p_long,
+        p_short,
+        cost_atr_ratio,
+        payoff_atr_mult=payoff_atr_mult,
+        target_signal_rate=target_signal_rate,
+    )
+    side_lambda = decide_side_cost_derived(
+        p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff_atr_mult, lambda_b=lambda_b
+    )
+    side_topq = decide_side_breakeven_topq(
+        p_long,
+        p_short,
+        cost_atr_ratio,
+        payoff_atr_mult=payoff_atr_mult,
+        target_signal_rate=target_signal_rate,
+    )
+    n_agree = int(np.sum(side_lambda == side_topq))
+    rate_topq = float(np.mean(side_topq != 0)) if n_rows else float("nan")
+    return CapMechanismComparisonResult(
+        lambda_b_resolved=lambda_b,
+        signal_rate_lambda=rate_lambda,
+        signal_rate_topq=rate_topq,
+        n_rows=n_rows,
+        n_agree=n_agree,
+        n_disagree=n_rows - n_agree,
+        frac_agree=(n_agree / n_rows) if n_rows else float("nan"),  # noqa: unguarded-ratio -- n_rows==0 tratado no ternário
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class SideModelResult:
     side: int
     variant: str
@@ -1725,6 +1809,7 @@ def run_fold(
     class_balance_basis: str = CLASS_BALANCE_COUNT,
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
+    enforce_r2: bool = False,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -1750,7 +1835,14 @@ def run_fold(
     docstring de lá pro desenho completo), derivado por (`split.split_id`,
     `side`) via `_derived_seed` — permutação INDEPENDENTE por split E por
     lado a partir de um único seed base, nunca embaralhado antes do split
-    (vazaria estrutura entre folds do CPCV, quebraria o purge)."""
+    (vazaria estrutura entre folds do CPCV, quebraria o purge).
+
+    `enforce_r2` (achado real 2026-08-27, handoff de `src/models/`,
+    `AG-296`/`AG-297`) -- repassado sem alteração pro `side_subset` do
+    TREINO (`train_long`/`train_short` abaixo; o lado de TESTE não muda --
+    filtrar R2 fora do treino não deveria alterar o que o modelo é
+    avaliado contra). Default `False` preserva bit-exato. Ver docstring de
+    `src.models.dataset.side_subset` pro que `True` faz."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -1759,8 +1851,10 @@ def run_fold(
     # hardcoded (7) enquanto `_unique_test_bars` (o lado de TESTE) ja
     # recebia o conjunto real -- treino e teste filtrados por criterios
     # diferentes, que e a assimetria de §13.2.
-    train_long = ds.side_subset(train_bars, side=1, feature_ids=feature_ids)
-    train_short = ds.side_subset(train_bars, side=-1, feature_ids=feature_ids)
+    train_long = ds.side_subset(train_bars, side=1, feature_ids=feature_ids, enforce_r2=enforce_r2)
+    train_short = ds.side_subset(
+        train_bars, side=-1, feature_ids=feature_ids, enforce_r2=enforce_r2
+    )
     target_signal_rate = float(load_constant("target_signal_rate"))
 
     perm_seed_long = (
@@ -1982,6 +2076,7 @@ def run_all_folds(
     class_balance_basis: str = CLASS_BALANCE_COUNT,
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
+    enforce_r2: bool = False,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -1998,7 +2093,12 @@ def run_all_folds(
     2× com o MESMO `null_permutation_seed` (uma vez `variant=
     VARIANT_CAMADA1`, outra `variant=VARIANT_CAMADA0`) produz a MESMA
     permutação nos dois braços — condição necessária pro nulo testar "as
-    duas camadas são equivalentes", não "uma é lixo, a outra é real"."""
+    duas camadas são equivalentes", não "uma é lixo, a outra é real".
+
+    `enforce_r2` (achado real 2026-08-27, handoff de `src/models/`,
+    `AG-296`/`AG-297`) -- repassado sem alteração pra `run_fold` em cada
+    split. Default `False` preserva bit-exato. Ver docstring de `src.
+    models.dataset.side_subset` pro que `True` faz."""
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 
@@ -2030,6 +2130,7 @@ def run_all_folds(
             class_balance_basis=class_balance_basis,
             calib_weight_basis=calib_weight_basis,
             evaluate_cost_derived_lambda=evaluate_cost_derived_lambda,
+            enforce_r2=enforce_r2,
         )
         logger.info(
             "models.alpha.run_fold_done",

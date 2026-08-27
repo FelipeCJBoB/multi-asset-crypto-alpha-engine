@@ -829,6 +829,17 @@ def run_layer1_sprint(
         if feature_ids is not None
         else ()
     )
+    feature_ids_effective = (
+        feature_ids if feature_ids is not None else features_build.T1_FEATURE_IDS
+    )
+    # Achado real 2026-08-27 (handoff de src/models/, AG-296/AG-297/item 3)
+    # -- fail-fast ANTES de build_modeling_frame (trabalho caro de IO),
+    # mesmo espírito de step_ms(tf) acima: uma feature com
+    # defeito_construcao=true (§14.3, ex. E11f_oi_change_1d) já entrou
+    # num LightGBM real sem gate nenhum (experiments/alpha_layer1_
+    # report_BTCUSDT_R1_ag207_k62.json). Ver docstring de
+    # assert_no_defeito_construcao_in_active_set.
+    features_build.assert_no_defeito_construcao_in_active_set(feature_ids_effective)
     mf = ds.build_modeling_frame(
         symbol=symbol,
         tf=tf_effective,
@@ -837,9 +848,6 @@ def run_layer1_sprint(
         t0_start=t0_start,
         t0_end=t0_end,
         extra_feature_ids=extra_feature_ids,
-    )
-    feature_ids_effective = (
-        feature_ids if feature_ids is not None else features_build.T1_FEATURE_IDS
     )
     # AG-032 item 8 (Fix A, 2026-08-21) -- max_feature_lookback_ms cobre o
     # "componente 96" (janela de lookback de feature de treino alcançando
@@ -1665,6 +1673,34 @@ def run_layer1_sprint_all_combinations(
     return reports
 
 
+def _optional_policy_kwargs(
+    *, calib_split_mode: str | None, class_balance_basis: str | None
+) -> dict[str, Any]:
+    """Bug real medido nesta sessão, corrigido aqui: o parser de CLI (`_parse_
+    args`, abaixo) declarava os defaults LEGADOS de `calib_split_mode`/
+    `class_balance_basis` e os passava SEMPRE, explicitamente, pra
+    `run_layer1_sprint` -- mesmo quando o usuário não passava a flag. Isso
+    mascarava silenciosamente a promoção de `AG-272` (a função em si já
+    default para `TEMPORAL_PURGED`/`WEIGHT`): 8 relatórios reais em
+    `experiments/*_ag207_k62.json` (2026-08-26) confirmam o dano --
+    gerados via CLI sem flag, gravam os valores LEGADOS porque o parser
+    sempre sobrescrevia o default certo da função com o default errado do
+    argparse.
+
+    Fix: `_parse_args` usa `default=None` pros dois -- esta função só
+    inclui a chave no dict quando o usuário passou a flag de verdade. Sem
+    ela, `run_layer1_sprint` nunca recebe o parâmetro, e usa o PRÓPRIO
+    default -- nunca mais diverge, mesmo se a função for promovida de novo
+    no futuro (o defeito original só existia porque o CLI duplicava um
+    literal que já vivia na assinatura da função)."""
+    kwargs: dict[str, Any] = {}
+    if calib_split_mode is not None:
+        kwargs["calib_split_mode"] = calib_split_mode
+    if class_balance_basis is not None:
+        kwargs["class_balance_basis"] = class_balance_basis
+    return kwargs
+
+
 if __name__ == "__main__":  # pragma: no cover — execução manual
     import argparse
     import sys
@@ -1744,23 +1780,27 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         )
         parser.add_argument(
             "--calib-split-mode",
-            default=alpha.CALIB_SPLIT_LEGACY_RANDOM,
+            default=None,
             choices=[alpha.CALIB_SPLIT_LEGACY_RANDOM, alpha.CALIB_SPLIT_TEMPORAL_PURGED],
             help=(
                 "AG-209 -- legacy_random_stratified usa train_test_split aleatorio "
                 "(rotulos sobrepostos caem dos dois lados do split); temporal_purged "
                 "usa bloco temporal contiguo + purge por t1 (B09 aplicado ao sub-split "
-                "interno, nao so ao CPCV externo)"
+                "interno, nao so ao CPCV externo). Sem a flag: usa o default de "
+                "run_layer1_sprint (AG-272 promoveu pra temporal_purged -- NAO "
+                "hardcodar um valor aqui, ver _optional_policy_kwargs)"
             ),
         )
         parser.add_argument(
             "--class-balance-basis",
-            default=alpha.CLASS_BALANCE_COUNT,
+            default=None,
             choices=[alpha.CLASS_BALANCE_COUNT, alpha.CLASS_BALANCE_WEIGHT],
             help=(
-                "AG-212 -- count usa n_neg/n_pos (contagem, comportamento atual); "
-                "weight usa a razao de MASSA, coerente com o gradiente ja ponderado "
-                "por sample_weight. Os DOIS sao sempre medidos e reportados"
+                "AG-212 -- count usa n_neg/n_pos (contagem); weight usa a razao de "
+                "MASSA, coerente com o gradiente ja ponderado por sample_weight. Os "
+                "DOIS sao sempre medidos e reportados. Sem a flag: usa o default de "
+                "run_layer1_sprint (AG-272 promoveu pra weight -- NAO hardcodar um "
+                "valor aqui, ver _optional_policy_kwargs)"
             ),
         )
         parser.add_argument(
@@ -1811,9 +1851,11 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             report_path=(EXPERIMENTS_DIR / f"alpha_layer1_report{tag}.json") if tag else None,
             device_type=args.device_type,
             tau_policy=args.tau_policy,
-            calib_split_mode=args.calib_split_mode,
-            class_balance_basis=args.class_balance_basis,
             dsr_n_trials=args.dsr_n_trials,
+            **_optional_policy_kwargs(
+                calib_split_mode=args.calib_split_mode,
+                class_balance_basis=args.class_balance_basis,
+            ),
         )
         logger.info(
             "models.pipeline.cli_done",
