@@ -22181,3 +22181,296 @@ entries:
       REAL (LightGBM, ex. `spw`/`class_balance_basis` em §13) nao
       tocadas -- confirmado que sao sobre o achado certo antes de deixar
       como estavam.
+
+  - id: AG-338
+    date: "2026-08-27"
+    file: "src/risk/sizing.py, src/risk/limits.py, src/risk/kill_switch.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-050, AG-007"
+    found_by: "Agent Project Assurance (revisão independente), src/risk/ (fecha o escopo de verificação de AG-050)"
+    gap: >
+      Verificação independente confirma e ESTENDE o disclosure original de
+      AG-050: não só `kill_switch.py`, mas `sizing.py` e `limits.py`
+      também não têm nenhum consumidor de produção real hoje.
+      `src/live/__init__.py` tem 4 linhas (só docstring + `from __future__
+      import annotations`). `src/analysis/volatility_operational_effect.py`
+      (fora do contrato de produção por desenho) só importa
+      `src.risk._constants.load_constant` em código real — `compute_sizing`/
+      `control_09a`/`control_09b` só aparecem no arquivo de TESTE
+      (`tests/unit/test_analysis_volatility_operational_effect.py`), não no
+      módulo em si. `src/regime/build_hmm.py` e `src/models/alpha.py`
+      citam `control_01_regime_tradeavel` só em COMENTÁRIO — zero import
+      real de `src.risk` em nenhum dos dois arquivos (grep direcionado,
+      não presumido) — e mesmo que importassem, `control_01` já está
+      desligado de `evaluate_all()` desde 2026-08-22 (AG-114/AG-118).
+    severity: "alto"
+    layer: "risk / boundary com live (inexistente)"
+    consequence: >
+      Risk Engine não é hoje um gate funcional de nenhum trade real — é
+      infraestrutura testada e correta isoladamente, mas órfã. Risco
+      principal não é técnico, é de processo: qualquer decisão de "Risk
+      Engine pronto" tomada sem esta checagem assumiria proteção que não
+      existe em nenhum caminho de execução real.
+    resolved_by_commit: null
+    status: >-
+      ABERTO -- fecha o escopo de verificação pedido por AG-050 (16
+      perguntas completas, 7 checks mecânicos rodados de verdade); requer
+      decisão do Manager sobre timing de `src/live/` (já roadmapped como
+      Sprint 12+, PLANO_MESTRE_PRINCE2.md).
+
+  - id: AG-339
+    date: "2026-08-27"
+    file: "src/risk/sizing.py:148,155 (compute_sizing)"
+    related_file: "audit/division_guard_audit.md (2026-08-09), audit/architecture_gaps_log.yaml::AG-338"
+    found_by: "Agent Project Assurance (revisão independente) + tools/lint/check_unguarded_ratios.py (confirmação mecânica)"
+    gap: >
+      `compute_sizing()` guarda `equity<=0` (`NonPositiveEquityError`, fix
+      de 2026-08-09) mas NÃO guarda `mark_price_d<=0` (nunca verificado)
+      nem `atr_pct_d<0` (só `==0` é guardado via `ZeroStopDistanceError`).
+      MESMA classe de bug já corrigida uma vez para `equity` em
+      `audit/division_guard_audit.md` (denominador com sinal não
+      verificado fazia `control_09a_erro_quantizacao`/
+      `control_11_nocional_maximo` passarem trivialmente sob equity
+      negativo). `check_unguarded_ratios.py` (rodado de verdade, não
+      presumido) confirma mecanicamente: linha 148
+      (`notional_req / mark_price_d`) e linha 155
+      (`abs(notional_real - notional_req) / notional_req`) sem checagem
+      de sinal na mesma função. Nenhum teste em `test_risk_sizing.py`
+      exercita `atr_pct<0` ou `mark_price<=0`.
+    severity: "alto"
+    layer: "risk / sizing (aritmética núcleo de R1)"
+    consequence: >
+      Um `mark_price` corrompido/zerado (feed stale) ou um `atr_pct`
+      negativo (bug upstream de feature) cascateia sem erro claro — na
+      melhor hipótese um `decimal.DivisionByZero` críptico sem contexto
+      de domínio; na pior, valores com sinal invertido que fariam
+      controles de risco passarem silenciosamente, exatamente como já
+      ocorreu (e foi corrigido) para `equity`. Ameaça direta a R1, a
+      restrição dominante do projeto (§0.2).
+    resolved_by_commit: null
+    status: "aberto -- recomendado fechar antes de qualquer wiring com src/live/"
+
+  - id: AG-340
+    date: "2026-08-27"
+    file: "src/regime/build_hmm.py:30, src/models/alpha.py:81, src/analysis/volatility_operational_effect.py (docstring do módulo)"
+    found_by: "Agent Project Assurance (Grep de verificação de afirmação factual, src/risk/)"
+    gap: >
+      Docstrings/comentários afirmam consumo/reuso real de
+      `src.risk.limits`/`src.risk.sizing` que não existe em código de
+      produção — só em comentário (`build_hmm.py`/`alpha.py`,
+      `control_01_regime_tradeavel` nunca importado) ou só em teste
+      (`volatility_operational_effect.py`, `compute_sizing`/
+      `control_09a`/`control_09b` só aparecem em
+      `tests/unit/test_analysis_volatility_operational_effect.py`, não no
+      módulo em si).
+    severity: "baixo"
+    layer: "documentação / precisão de docstring cross-módulo"
+    consequence: >
+      Um mantenedor futuro lendo só o docstring concluiria que existe
+      wiring real onde não há — risco de decisão baseada em afirmação
+      não verificada, o exato padrão que `project_assurance` existe para
+      pegar.
+    resolved_by_commit: null
+    status: "aberto -- correção de baixo custo (ajustar 2-3 docstrings)"
+
+  - id: AG-341
+    date: "2026-08-27"
+    file: "src/models/dataset.py:46,361-369, src/regime/build.py:116-118, CLAUDE.md (seção B21/Stack 2026)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-114, AG-118, AG-244-ADDENDUM-3, PLANO_MESTRE_PRINCE2.md §15.13"
+    found_by: "Agent Project Assurance (revisão independente), src/regime/ pré-existente (fecha o escopo de verificação de AG-050)"
+    gap: >
+      O PIPELINE REAL DE TREINO DO ALPHA MONTA O REGIME VIA CLASSIFICADOR
+      DE QUANTIS LEGADO, NÃO VIA HMM K=4 — o inverso exato do que
+      `CLAUDE.md` declara ("dynamax.GaussianHMM (k=4, hmm_gaussian_k4_v1)
+      — canônico de produção desde 2026-08-21... Classificador
+      determinístico por quantis segue existindo como caminho legado, não
+      o candidato ativo"). Prova exata: `src/models/dataset.py:46` importa
+      `src.regime.build as regime_build`; `dataset.py:361-369` chama
+      `regime_build.build_regimes(...)`; `src/regime/build.py:116-118`,
+      dentro de `build_regimes`, instancia
+      `classifier.QuantileRegimeClassifier(...).classify(features_df)`.
+      `src/regime/build_hmm.py::build_hmm_regimes` (dynamax GaussianHMM
+      k=4) existe como código mas NÃO é chamado por nenhum caminho de
+      produção — grep completo mostra só 3 chamadores, todos
+      análise/pesquisa (`hmm_gap_check.py`, `gate_efficiency.py`,
+      `m4_regime_comparison.py`), nunca `dataset.py`/`alpha.py`/
+      `pipeline.py`. O próprio docstring de `build_hmm.py:21-24` confirma:
+      "Sem persistência em disco nesta fase — não há orquestrador vivo
+      consumindo ainda." Nenhum teste (`test_models_dataset.py`, zero
+      menção a `classifier`/`build_hmm`/`QuantileRegimeClassifier`)
+      verifica qual engine de regime `dataset.py` de fato usa — a
+      divergência pôde persistir sem detecção. Achado colateral: a
+      premissa de que `AG-244-ADDENDUM-3` (vazamento em
+      `identify_stress_state_by_volatility`) estava "neutralizada
+      estruturalmente" está DESATUALIZADA — o próprio log confirma
+      `status: ABERTO`; só o uso interno em `build_hmm.py` ficou causal
+      (chama a função só sobre `train_slice`, dentro do loop de fold),
+      `gate_efficiency.py`/`m4_critical_windows.py` seguem não-causais.
+    severity: "crítico"
+    layer: "regime / models (transversal) / governança"
+    consequence: >
+      Qualquer decisão de governança, Model Card, ou medição
+      (N_lifetime/DSR) que presuma "o Alpha treina sob regime HMM k=4"
+      está factualmente errada para o caminho real de `dataset.py`.
+      Reverte a leitura do trecho B21 do `CLAUDE.md` — a governança do
+      projeto está descrevendo um sistema que não é o que roda.
+    resolved_by_commit: null
+    status: >-
+      ABERTO -- achado crítico de `project_assurance`, requer decisão do
+      Manager: (a) corrigir `CLAUDE.md`/`PLANO_MESTRE_PRINCE2.md` §15.13
+      pra refletir a realidade (classificador de quantis é o ativo, HMM
+      k=4 é código órfão de consumidor), ou (b) wireear `dataset.py` pra
+      de fato usar `build_hmm.py` (mudança de comportamento real de
+      produção, escopo grande, precisa de retreino). Nenhuma das duas foi
+      decidida nesta sessão.
+
+  - id: AG-342
+    date: "2026-08-27"
+    file: "config/constants.yaml::regime_er_cutoff, regime_vol_cutoff (+ variantes _exit), src/regime/classifier.py"
+    related_file: "audit/architecture_gaps_log.yaml::AG-249, AG-341"
+    found_by: "Agent Project Assurance (revisão independente), src/regime/ pré-existente"
+    gap: >
+      O classificador de quantis REALMENTE ativo em produção (ver AG-341)
+      depende de 4 cutoffs (er/vol, entrada/saída) com `provenance:
+      ASSUMED`, `class: A`, `sweep_required: true`, `review_by:
+      sprint_5` — nunca varridos (sem hit em `audit/evidence_ledger.yaml`
+      pra nenhum dos dois), apesar do projeto já estar em AG-34x/
+      2026-08-27, muito além de "sprint_5". Por regra do próprio
+      `CLAUDE.md` ("Constante classe A com provenance ASSUMED bloqueia
+      build de produção"), isso deveria travar build de produção — mas o
+      classificador que usa esses cutoffs treina modelos reais hoje.
+      AG-249 (achado independente, 2026-08-25) já trata esses mesmos
+      cutoffs como parâmetros globais aplicados a 5 ativos heterogêneos
+      (razão de step_size de 1000x, AG-165), reforçando que são
+      operacionais, não vestigiais.
+    severity: "alto"
+    layer: "regime / config"
+    consequence: >
+      Partição de regime que alimenta ambientes da Camada 1
+      (`models/environments.py`) e filtros de baseline
+      (`models/baselines.py`) descansa sobre hiperparâmetro nunca
+      validado por sensibilidade — contamina qualquer conclusão de
+      "ambiente X é mais consistente que Y" com um grau de liberdade não
+      medido.
+    resolved_by_commit: null
+    status: "aberto"
+
+  - id: AG-343
+    date: "2026-08-27"
+    file: "src/models/dataset.py (docstring de side_subset, linhas ~489-495)"
+    found_by: "Agent Project Assurance (revisão independente), src/regime/ pré-existente"
+    gap: >
+      Docstring de `dataset.py::side_subset` ainda afirma "regime entra
+      como variável categórica one-hot de 5 níveis... diretamente no
+      vetor de treino, conforme §2.13" — FALSO desde 2026-08-21:
+      `src/models/alpha.py:75-88` remove o one-hot de regime do
+      `DESIGN_COLUMNS` (ratificado pelo Manager, ADR-001 §2.7, "regime =
+      gate de risco, não feature preditiva"). `dataset.py` nunca foi
+      atualizado para refletir a mudança, apesar de ser o módulo que
+      produz a própria coluna citada.
+    severity: "médio"
+    layer: "documentação / models"
+    consequence: >
+      Um leitor de `dataset.py` isoladamente (sem ler `alpha.py`) conclui
+      que regime ainda é feature do Alpha — desinformação de baixo custo
+      mas real, no exato tipo de doc que o DoD do `CLAUDE.md` pede pra
+      revisar quando um `AG-NNN` é tocado (aqui, nenhum AG cobria esta
+      docstring específica até agora).
+    resolved_by_commit: null
+    status: "aberto"
+
+  - id: AG-344
+    date: "2026-08-27"
+    file: "tests/unit/test_models_dataset.py"
+    found_by: "Agent Project Assurance (revisão independente), src/regime/ pré-existente"
+    gap: >
+      Nenhum teste de integração assevera qual regime engine
+      `build_modeling_frame` usa de fato (`classifier.py` vs.
+      `build_hmm.py`). É a lacuna de cobertura que permitiu AG-341
+      permanecer indetectado.
+    severity: "médio"
+    layer: "testes / models"
+    consequence: "Divergência doc-vs-código pode se repetir/persistir sem alarme de CI."
+    resolved_by_commit: null
+    status: "aberto"
+
+  - id: AG-345
+    date: "2026-08-27"
+    file: "src/backtest/fill_reconciliation.py::load_orders, ::build_reconciliation_base, ::run_fill_reconciliation"
+    related_file: "src/execution/fill_simulator.py::write_orders_atomic, ::_run_cli, audit/architecture_gaps_log.yaml::AG-247, AG-248, AG-050"
+    found_by: "Agent Project Assurance (revisão independente), src/execution/fill_simulator.py (fecha o escopo de verificação de AG-050)"
+    gap: >
+      Mesma classe de bug que `AG-247`/`AG-248` encontraram e corrigiram
+      em `fill_reconciliation.py::load_labels` (função que lê artefato
+      sem parametrizar por símbolo, lendo a grade/símbolo errado em
+      silêncio) reaparece, não corrigida, em `load_orders()` do MESMO
+      arquivo — não foi mencionada nem no escopo de `AG-247` nem nos 5
+      casos corrigidos por `AG-248`. `load_orders(version="v1")` não
+      aceita `symbol`; `run_fill_reconciliation()` chama `load_orders()`
+      sem argumento; `build_reconciliation_base()` junta
+      `orders.select(["t_post","side","filled"])` SEM `symbol` como
+      chave, apesar do schema de `orders.parquet`
+      (`fill_simulator._ORDERS_SCHEMA`) ter coluna `symbol`. Agravante
+      estrutural do lado da escrita:
+      `execution/fill_simulator/{version}/orders.parquet` não tem
+      `{symbol}` no path, e `write_orders_atomic` SOBRESCREVE (não
+      acrescenta) a cada rodada — hoje dormente porque só BTCUSDT foi
+      rodado (mtime 2026-08-08), mas o projeto tem escopo declarado de 5
+      ativos e o trabalho de 2026-08-23 (R1/R2/R3 multi-timeframe) já
+      preparou tick_size/grade por símbolo no lado da LEITURA de
+      `fill_simulator` sem tratar o mesmo problema no lado da
+      ESCRITA/reconciliação.
+    severity: "alto"
+    layer: "backtest/execution"
+    consequence: >
+      Primeira rodada real de `fill_simulator` para um segundo símbolo
+      (ex. ETHUSDT) sob a mesma `--version` apaga silenciosamente o
+      `orders.parquet` de BTCUSDT (perda de dado, sem erro). Se o padrão
+      de acumulação multi-símbolo for adicionado ao writer sem o mesmo
+      cuidado no join, `build_reconciliation_base` casaria
+      `(t_post, side)` de QUALQUER símbolo com QUALQUER outro (todos
+      compartilham grade de relógio UTC 15m) — contaminação cruzada
+      silenciosa na função que B17 declara ser a única fonte de verdade
+      de equity/reconciliação.
+    resolved_by_commit: null
+    status: "aberto -- achado nesta revisão, não corrigido (fora do escopo de execução deste agente)"
+
+  - id: AG-346
+    date: "2026-08-27"
+    file: "src/execution/fill_simulator.py:1223"
+    found_by: "Agent Project Assurance -- python tools/lint/banned_patterns.py --path src/execution/fill_simulator.py --strict"
+    gap: >
+      `record_experiment(..., sprint: int = 9, ...)` — literal numérico
+      fora de `constants.yaml`, violação MAGIC_NUMBER mecanicamente
+      confirmada (§16.10 Regra 1). O arquivo não passa hoje no gate de
+      lint `--strict` do próprio repo.
+    severity: "baixo"
+    layer: "execution"
+    consequence: >
+      Não afeta nenhuma decisão de negócio (é um rótulo de bookkeeping do
+      log de experimentos, não um parâmetro de risco/execução), mas
+      representa uma violação ativa e mecanicamente detectável do gate
+      que o `CLAUDE.md` declara bloqueante ("Build quebra se violado").
+    resolved_by_commit: null
+    status: "aberto"
+
+  - id: AG-347
+    date: "2026-08-27"
+    file: "src/execution/fill_simulator.py:348 (_compute_markouts)"
+    found_by: "Agent Project Assurance -- python tools/lint/check_unguarded_ratios.py --path src/execution/fill_simulator.py + revisão manual"
+    gap: >
+      `side * (mid - fill_price) / fill_price` sem nenhuma validação, em
+      nenhum ponto do carregamento de bookTicker (`load_book_ticker_pair`/
+      `_book_arrays`), de que `best_bid_price`/`best_ask_price` sejam > 0
+      e não-NaN. Uma linha corrompida de bookTicker silenciaria
+      propagando NaN para `markout_mean_bps`/`markout_median_bps` do
+      horizonte inteiro (via `np.mean`/`np.median`) sem nenhum aviso ou
+      causa-raiz visível.
+    severity: "baixo"
+    layer: "execution"
+    consequence: >
+      Hipotético/não observado nos dados reais (2023-05-16..2024-03-30,
+      320 arquivos) — mas contraria a diretriz "nunca silencie sem achar
+      causa raiz": hoje um dado corrompido produziria NaN silencioso, não
+      um erro nem um contador visível.
+    resolved_by_commit: null
+    status: "aberto"
