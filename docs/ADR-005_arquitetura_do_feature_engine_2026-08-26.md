@@ -3058,7 +3058,7 @@ backlog registrado (`AG-331`-`AG-334`), não implementado agora.
 | Max-T (Westfall-Young) substituindo fórmula fechada pra pico entre horizontes | **APLICADO** (escopo horizonte, `§14.9`/`§14.10`) | `leakage_gate.py:26,36-47` |
 | Diagnóstico de poder por injeção sintética antes de aceitar "sem sinal" | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
 | Teste de homogeneidade formal antes de pooling entre unidades correlacionadas | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
-| Poison-pill de nome banido no registro (bloqueio mecânico, não prosa) | backlog, `AG-331` | `feature_sets.py:204-220`, `_BANNED_FEATURE_NAMES`/`BannedFeatureNameError` |
+| Poison-pill de nome banido no registro (bloqueio mecânico, não prosa) | **FECHADO 2026-08-27** — `src/features/registry.py::_BANNED_FEATURE_IDS`/`BannedFeatureIdError`, `AG-331` | `feature_sets.py:204-220`, `_BANNED_FEATURE_NAMES`/`BannedFeatureNameError` |
 | Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | backlog, `AG-332` | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
 | Piso fail-loud único e nomeado (`MIN_REAL_BARS_FRACTION`), uniforme em toda feature | backlog, `AG-333` | `volatility.py:34,244`, `_floor_mask_expr` |
 | Gate de versão treino↔live (`validate_versions_against`) | backlog, condicionado à operação ao vivo, `AG-334` | `feature_sets.py::validate_versions_against` |
@@ -3236,6 +3236,55 @@ real por falta de poder?" tem agora uma resposta medida: não, não na faixa
 de IC que importaria economicamente. Isso não decide sozinho se `L2={}`
 deve continuar assim — só fecha a hipótese específica que motivou toda esta
 investigação. Decisão de promoção continua sendo do Manager.
+
+### §14.10.2 `AG-328` corrigido — os 5 símbolos são ~2,4 ensaios efetivamente independentes
+
+**Executado 2026-08-27** (Manager priorizou, execução direta autorizada):
+`src/analysis/eixo1_effective_symbol_count.py` mede o número efetivo de
+símbolos independentes (Galwey 2009, `M_eff = (Σ√λᵢ)²/Σλᵢ` sobre os
+autovalores da matriz de correlação `5×5` entre os vetores de `pico_abs_t`
+de cada símbolo — correlação de RESULTADO DE TESTE medida diretamente, não
+uma proxy indireta de preço bruto) — a correção que a rejeição formal de
+homogeneidade (`§14.10.1`, `AG-328`) deixava pendente.
+
+**Resultado:** `n_eff = 2,43` (`floor = 2`), `correlação média entre pares
+= 0,848`. Os 5 símbolos se comportam como **~2,4 ensaios efetivamente
+independentes, não 5** — confirma numericamente (e mais alto que) a
+estimativa informal "0,7-0,9" citada na pesquisa externa.
+
+| `k≥` | esperado sob `n=5` (naive, `AG-294`) | esperado sob `n_eff=2` (corrigido) | observado |
+|---|---|---|---|
+| 1 | 21,01 | **9,28** | 19 |
+| 2 | 2,79 | **0,32** | 2 |
+| 3 | 0,19 | 0,00* | 1 |
+| 4 | 0,007 | 0,00* | 1 |
+| 5 | 9,5·10⁻⁵ | 0,00* | 1 |
+
+`*` `k > n_eff_floor=2` — o binomial de 2 ensaios não tem massa em `k≥3`
+por construção; não é "impossível", é o limite da aproximação (ver
+ressalva abaixo).
+
+**Leitura, com ressalva metodológica explícita.** Sob o modelo naive
+(`n=5`), `k=1` (observado 19) e `k=2` (observado 2) pareciam "dentro do
+acaso" (19 vs. 21,0; 2 vs. 2,79). Sob o modelo corrigido (`n_eff=2`), os
+MESMOS números observados ficam **muito acima** do esperado (19 vs. 9,28 —
+quase o dobro; 2 vs. 0,32 — ~6×). **Isso não é uma transformação
+distribucional exata** — substituir `n_symbols` por `n_eff` no mesmo
+binomial é uma aproximação (a contagem observada continua medida nos 5
+símbolos REAIS; só o "esperado sob H0" muda de modelo), documentada como
+tal no próprio módulo, não uma recalibração definitiva.
+
+**O que é robusto a essa ressalva:** o número `n_eff≈2,4` em si — medição
+direta, independente de qualquer tabela derivada — já basta para
+estabelecer que a tabela `k≥1..5` de `AG-294` usa um modelo (`n=5`)
+medido como errado por um fator `>2×`. Qualquer decisão futura que trate
+essa tabela como calibrada precisa primeiro decidir se adota `n_eff`, a
+alternativa de residualizar o fator de mercado comum (Fama-MacBeth/GLS,
+`§9.3` da investigação), ou outra correção — decisão do Manager, não
+tomada aqui.
+
+`experiments/eixo1_effective_symbol_count_report.json` persistido com a
+tabela completa.
 
 **Por que o item 3 não está "completo".** Decidir se o `binomial` deve ser
 substituído por pooling raw (via `Meff`) ou por residualização do fator de

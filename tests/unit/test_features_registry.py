@@ -131,3 +131,35 @@ def test_load_feature_registry_topo_nao_e_lista_levanta_erro(tmp_path: Path) -> 
     path.write_text(yaml.safe_dump({"nao": "lista"}), encoding="utf-8")
     with pytest.raises(registry.FeatureRegistryError):
         registry.load_feature_registry(path=path)
+
+
+# ============================================================================
+# Poison-pill de id banido (AG-331)
+# ============================================================================
+
+
+def test_load_feature_registry_id_banido_levanta_banned_feature_id_error(
+    tmp_path: Path,
+) -> None:
+    banned_id = next(iter(registry._BANNED_FEATURE_IDS))
+    entry = {**_MINIMAL_ENTRY_FINITA, "id": banned_id}
+    path = _write_registry(tmp_path, [entry])
+    with pytest.raises(registry.BannedFeatureIdError, match=banned_id):
+        registry.load_feature_registry(path=path)
+
+
+def test_banned_feature_id_error_e_subclasse_de_feature_registry_error() -> None:
+    """Quem já captura `FeatureRegistryError` (handler existente em
+    qualquer chamador) continua pegando o caso banido sem precisar saber do
+    tipo novo -- mesmo padrão de `BannedFeatureNameError`/
+    `FeatureLayerError` em `Laplace_Quant_V17/pipeline/features/
+    feature_sets.py` que motivou este achado (AG-331)."""
+    assert issubclass(registry.BannedFeatureIdError, registry.FeatureRegistryError)
+
+
+def test_load_feature_registry_arquivo_real_nao_tem_nenhum_id_banido() -> None:
+    """O arquivo REAL nunca deveria conter um id banido -- se este teste
+    falhar, alguém reintroduziu uma feature removida por defeito confirmado
+    sem decisão explícita do Manager."""
+    ids_reais = {e.id for e in registry.load_feature_registry()}
+    assert ids_reais.isdisjoint(registry._BANNED_FEATURE_IDS)

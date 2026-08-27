@@ -1,0 +1,53 @@
+{
+  "task": "eixo1_effective_symbol_count",
+  "pergunta": "Quantos simbolos EFETIVAMENTE independentes existem, dado o quanto os resultados de teste sao correlacionados entre eles? AG-328.",
+  "adr_ref": "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.9/§14.10; docs/investigacao_falso_negativo_eixo1_2026-08-26.md §3.2, §9.3",
+  "metodo": "matriz de correlacao 5x5 de Pearson entre os vetores de pico_abs_t (R1, 71 features com pico finito em todos os simbolos); M_eff via Galwey (2009), (sum sqrt(lambda))^2 / sum(lambda) sobre autovalores positivos; arredondado por floor (conservador) antes de entrar no binomial -- scipy.stats.binom nao aceita n nao-inteiro.",
+  "resolution_id": "R1",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "n_features_usadas": 71,
+  "n_eff_bruto": 2.429293578523094,
+  "n_eff_floor": 2,
+  "correlacao_media_pares": 0.8480567634511404,
+  "p_symbol_empirico": 0.06666666666666667,
+  "n_features_total": 72,
+  "tabela_h0_naive_vs_corrigida": [
+    {
+      "k": 1,
+      "esperado_naive_n5": 21.006317037037032,
+      "esperado_corrigido_n_eff": 9.28,
+      "observado": 19
+    },
+    {
+      "k": 2,
+      "esperado_naive_n5": 2.794287407407407,
+      "esperado_corrigido_n_eff": 0.32,
+      "observado": 2
+    },
+    {
+      "k": 3,
+      "esperado_naive_n5": 0.1925688888888889,
+      "esperado_corrigido_n_eff": 0.0,
+      "observado": 1
+    },
+    {
+      "k": 4,
+      "esperado_naive_n5": 0.006731851851851851,
+      "esperado_corrigido_n_eff": 0.0,
+      "observado": 1
+    },
+    {
+      "k": 5,
+      "esperado_naive_n5": 9.48148148148148e-05,
+      "esperado_corrigido_n_eff": 0.0,
+      "observado": 1
+    }
+  ],
+  "generated_at": "2026-08-27T11:54:29.211840+00:00"
+}

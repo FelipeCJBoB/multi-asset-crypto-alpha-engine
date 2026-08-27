@@ -21291,6 +21291,46 @@ entries:
       mercado comum antes de testar (Fama-MacBeth/GLS) -- ainda nao
       decidido, e o item que desbloqueia a extensao do max-T (`AG-327`)
       pra dimensao simbolo.
+    addendum_2026-08-27b_meff_implementado_e_executado: >
+      IMPLEMENTADO e EXECUTADO 2026-08-27 (Manager autorizou execucao
+      direta): `src/analysis/eixo1_effective_symbol_count.py` -- Meff via
+      Galwey (2009) sobre a matriz de correlacao 5x5 de Pearson entre os
+      vetores de `pico_abs_t` (R1, 71 features com pico finito nos 5
+      simbolos). Nucleo puro + 10 testes, ruff/mypy --strict/
+      banned_patterns/check_unguarded_ratios limpos.
+
+      RESULTADO MEDIDO: `n_eff_bruto=2,43` (`floor=2`),
+      `correlacao_media_pares=0,848` -- os 5 simbolos se comportam como
+      **~2,4 ensaios efetivamente independentes**, nao 5. Confirma
+      numericamente a estimativa informal "0,7-0,9" citada na pesquisa
+      externa (medida aqui de correlacao de RESULTADO DE TESTE, nao proxy
+      de preco bruto -- e ainda mais alta que a estimativa informal).
+      `experiments/eixo1_effective_symbol_count_report.json` persistido,
+      com tabela `k=1..5` naive (`n=5`) vs corrigida (`n_eff=2`) lado a
+      lado.
+
+      LEITURA, com ressalva metodologica explicita: sob `n_eff=2`, `k=1`
+      observado=19 vs esperado_corrigido=9,28 (naive dava 19 vs 21,0 --
+      parecia "dentro do acaso"; corrigido, 19 e quase o DOBRO do esperado)
+      e `k=2` observado=2 vs esperado_corrigido=0,32 (naive dava 2 vs 2,79,
+      "dentro do acaso"; corrigido, 2 e ~6x o esperado). `k=3,4,5` colapsam
+      pra `esperado_corrigido=0,0` porque `k>n_eff_floor=2` (o binomial de
+      2 ensaios nao suporta `k>=3` por construcao) -- isso NAO significa
+      "impossivel", significa que o modelo de 2 ensaios efetivos nao tem
+      uma leitura direta pra "k out of 5 simbolos REAIS" alem de `k<=n_eff`
+      -- e uma aproximacao/heuristica (substituir `n_symbols` por `n_eff`
+      no mesmo binomial), nao uma transformacao distribucional exata; a
+      contagem OBSERVADA continua sendo medida nos 5 simbolos reais, so o
+      "esperado sob H0" muda de modelo. Registrado honestamente no proprio
+      modulo e nao tratado como recalibracao definitiva.
+
+      CONSEQUENCIA PRINCIPAL, robusta a essa ressalva: o numero `n_eff~2,4`
+      em si (independente da tabela derivada) e uma medicao limpa e direta
+      -- os 5 simbolos NAO sao 5 ensaios independentes, sao ~2,4. Qualquer
+      leitura futura da tabela `k>=1..5` de `AG-294` que trate `n=5` como
+      valido esta usando um modelo ja medido como errado por um fator
+      >2x. Decisao de adotar `n_eff` (ou a alternativa de residualizar
+      fator comum) como o modelo de producao continua com o Manager.
 
   - id: AG-329
     date: "2026-08-26"
@@ -21381,6 +21421,24 @@ entries:
       carregamento se uma entrada banida reaparecer sem override explicito
       documentado.
     status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+    addendum_2026-08-27_implementado_e_verificado_status_agora_fechado: >
+      STATUS ATUALIZADO -- FECHADO 2026-08-27 (Manager priorizou -- item
+      barato do backlog de metodologia V14/V17, execucao direta
+      autorizada). IMPLEMENTADO e VERIFICADO: `src/features/registry.py`:
+      `_BANNED_FEATURE_IDS` (frozenset, hoje so `K08_days_since_
+      halving`) + `BannedFeatureIdError` (subclasse de
+      `FeatureRegistryError` -- handler existente continua pegando sem
+      mudanca), checado em `_parse_entry` ANTES da validacao de campo
+      obrigatorio -- falha alto no momento do parse pra qualquer
+      chamador de `load_feature_registry` (inclusive `src/validation/
+      leakage.py`, que ja importa deste modulo). 4 testes novos
+      (levanta com id banido, e subclasse do erro existente, arquivo
+      REAL confirmado sem nenhum id banido hoje). ruff/mypy --strict/
+      banned_patterns limpos, `uv run pytest tests/unit/test_features_
+      registry.py` 11/11 verde. (Convencao append-only deste log:
+      `status` original acima permanece intocado por design -- este
+      addendum e a fonte de verdade sobre o estado atual, nao uma
+      segunda chave `status` duplicada.)
 
   - id: AG-332
     date: "2026-08-26"

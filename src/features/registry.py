@@ -56,10 +56,38 @@ momento do parse, sempre que qualquer código chama `load_feature_registry`
 do contexto de teste."""
 
 
+#: Ids de feature BANIDOS -- removidos do vetor por defeito de construção/
+#: artefato de fonte CONFIRMADO (não "sem mecanismo", que é veredito de
+#: ficha, revisável; banido é fato de engenharia já fechado). Gate MECÂNICO
+#: no momento do parse (AG-331) -- mesma ideia de `Laplace_Quant_V17/
+#: pipeline/features/feature_sets.py::_BANNED_FEATURE_NAMES`/
+#: `BannedFeatureNameError`: um copy-paste futuro de código velho que
+#: reintroduza a entrada falha alto aqui, não depende de ninguém lembrar de
+#: checar a ficha/AG log primeiro. Nunca editar uma linha existente pra
+#: remover um id daqui -- decisão de "não é mais banido" é do Manager e
+#: fica registrada como decisão nova, não como silêncio no código.
+_BANNED_FEATURE_IDS: frozenset[str] = frozenset(
+    {
+        # AG-263, ADR-005 §11.4 item 3, 2026-08-26 — halving não é distinção
+        # econômica válida pro escopo atual (múltiplos ativos, sem histórico
+        # de halving equivalente pra ETH/SOL/BNB/XRP).
+        "K08_days_since_halving",
+    }
+)
+
+
 class FeatureRegistryError(ValueError):
     """Entrada de `registry.yaml` sem campo obrigatório, ou com
     `lookback_bars` num formato não reconhecido (nem `int` nem o literal
     `"expanding"`), ou o arquivo inteiro não sendo uma lista no topo."""
+
+
+class BannedFeatureIdError(FeatureRegistryError):
+    """Uma entrada de `registry.yaml` usa um `id` em `_BANNED_FEATURE_IDS`
+    (AG-331) — feature removida por defeito de construção/artefato de fonte
+    já confirmado; reintroduzi-la exige decisão explícita do Manager (tirar
+    o id de `_BANNED_FEATURE_IDS`, nunca só editar `registry.yaml` por
+    baixo)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +140,12 @@ def _parse_lookback_bars(fid: str, raw_value: object) -> int | Literal["expandin
 
 def _parse_entry(raw: dict[str, Any]) -> FeatureRegistryEntry:
     fid = str(raw.get("id", "<sem id>"))
+    if fid in _BANNED_FEATURE_IDS:
+        raise BannedFeatureIdError(
+            f"registry.yaml: entrada {fid!r} está em _BANNED_FEATURE_IDS (AG-331) "
+            "— removida por defeito de construção/artefato confirmado; reintroduzi-la "
+            "exige decisão explícita do Manager, nunca só editar o YAML"
+        )
     missing = _REQUIRED_FIELDS - raw.keys()
     if missing:
         raise FeatureRegistryError(

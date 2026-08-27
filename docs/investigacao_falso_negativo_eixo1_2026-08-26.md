@@ -455,3 +455,51 @@ está mais bloqueada pela pergunta "isso é falso negativo sistemático?": a
 resposta medida é não, ao menos não no sentido que este diagnóstico testou.
 `L2={}` como leitura honesta do domínio ganha peso; decisão final de
 promoção continua com o Manager.
+
+### 9.4 `AG-328` corrigido — Meff mede ~2,4 símbolos efetivamente independentes
+
+Executado 2026-08-27: `src/analysis/eixo1_effective_symbol_count.py`
+(Galwey 2009, `M_eff` sobre a matriz de correlação `5×5` de `pico_abs_t`
+entre símbolos, `R1`). **`n_eff = 2,43` (`floor=2`), correlação média entre
+pares `= 0,848`.** Confirma numericamente — e mais alto que — a estimativa
+informal "0,7-0,9" citada em §3.2: os 5 símbolos não são 5 ensaios
+independentes, são efetivamente ~2,4.
+
+Tabela corrigida (`n_eff=2`) vs. naive (`n=5`, `AG-294`):
+
+| `k≥` | naive (`n=5`) | corrigido (`n_eff=2`) | observado |
+|---|---|---|---|
+| 1 | 21,01 | 9,28 | 19 |
+| 2 | 2,79 | 0,32 | 2 |
+| 3 | 0,19 | 0,00* | 1 |
+
+`*` `k>n_eff_floor` — o binomial de 2 ensaios não tem massa em `k≥3` por
+construção (ver ressalva de interpretação abaixo, não é "impossível").
+
+**Achado que pede leitura cuidadosa:** sob o modelo naive, `k=1`/`k=2`
+pareciam "dentro do acaso". Sob o corrigido, os MESMOS observados (19, 2)
+ficam bem acima do esperado (9,28, 0,32). Isso NÃO é uma correção que torna
+tudo "menos significativo" — na direção de `k=1`/`k=2` faz o oposto.
+Ressalva honesta: substituir `n_symbols=5` por `n_eff=2` no mesmo binomial
+é uma aproximação (a contagem observada continua medida nos 5 símbolos
+reais; só o "esperado sob H0" muda de modelo), não uma transformação
+distribucional exata — documentado como tal no próprio módulo. O que é
+robusto a essa ressalva: `n_eff≈2,4` em si já estabelece que a tabela de
+`AG-294` usa um `n` medido como errado por `>2×`, independente de qual
+correção final for adotada (Meff vs. residualizar fator comum,
+Fama-MacBeth/GLS — decisão do Manager).
+
+### 9.5 Outros itens do backlog de metodologia (§14.8 do ADR): 1 fechado, 3 seguem abertos
+
+`AG-331` (poison-pill de nome banido no `registry.yaml`) — **FECHADO
+2026-08-27**, implementado em `src/features/registry.py`. `AG-332`
+(teste de perturbação no-lookahead), `AG-333` (piso fail-loud único, escopo
+grande — toda feature A-E), `AG-334` (gate de versão treino-live,
+condicionado a operação ao vivo) seguem em backlog, sem decisão de
+prioridade do Manager. `AG-329` (ficha `A01`-`A06` nunca emendada) e
+`AG-330` (eixo 1 mede a pergunta errada para papel filtro/custo) também
+seguem abertos — o primeiro é decisão de conteúdo (a ficha é fonte de
+verdade manual, não algo pra editar por inferência), o segundo exigiria
+acesso ao Alpha treinado real (`src/models/`, escopo `§13`, delegado a
+outra sessão) — nenhum dos dois é fix mecânico nem está no escopo desta
+sessão.
