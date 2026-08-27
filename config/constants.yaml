@@ -3405,3 +3405,17 @@ hmm_gaussian_num_em_iters:
     ausência total de sweep de sensibilidade medido.
   class: B
   sweep_required: false
+
+fill_simulator_log_sprint_label:
+  value: 9
+  provenance: ASSUMED
+  source: "AG-346 (audit/architecture_gaps_log.yaml, project_assurance 2026-08-27) -- src/execution/fill_simulator.py::record_experiment tinha sprint=9 como literal solto no default do parâmetro, violando o lint --strict do repo (MAGIC_NUMBER). Não é um parâmetro de risco/execução -- é só um rótulo de bookkeeping gravado append-only no log de experimentos, indicando em qual Sprint do projeto aquela linha foi gerada (congelado no Sprint em que a função foi escrita, não um contador 'sprint atual' vivo). Classe D: mudar este número não afeta nenhum cálculo/decisão, só o rótulo histórico de linhas NOVAS do log."
+  class: D
+  sweep_required: false
+
+labels_experiment_log_sprint_label:
+  value: 6
+  provenance: ASSUMED
+  source: "Mesma classe de bug de fill_simulator_log_sprint_label (achado espelho, mesma auditoria 2026-08-27) -- src/labels/experiment_log.py::record_experiment tinha sprint=6 como literal solto no default do parâmetro, mesmo MAGIC_NUMBER. Mesmo raciocínio: rótulo de bookkeeping congelado no Sprint em que este log foi criado, não contador vivo. Classe D."
+  class: D
+  sweep_required: false

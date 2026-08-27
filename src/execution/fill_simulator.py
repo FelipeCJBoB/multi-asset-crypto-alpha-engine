@@ -333,6 +333,15 @@ def _compute_markouts(
     são `None` (NOFILL) — mesma convenção de antes, agora centralizada."""
     if t_entry_ms is None or fill_price is None:
         return dict.fromkeys(_MARKOUT_HORIZONS_MS)
+    if not (np.isfinite(fill_price) and fill_price > 0):
+        # Achado de auditoria (AG-347, project_assurance, 2026-08-27):
+        # denominador de side*(mid-fill_price)/fill_price sem checagem de
+        # sinal -- preço de fill corrompido/zerado cascatearia sem erro
+        # claro (divisão por zero ou markout com sinal invertido).
+        raise ValueError(
+            f"fill_price inválido em t_entry_ms={t_entry_ms}: fill_price={fill_price!r} "
+            "-- esperado finito e > 0"
+        )
 
     last_book_time = int(book.transaction_time[-1])
     markouts: dict[str, float | None] = {}
@@ -344,7 +353,22 @@ def _compute_markouts(
             markouts[label] = None
             continue
         target_idx = _asof_index(book.transaction_time, target_ms)
-        mid = (book.best_bid_price[target_idx] + book.best_ask_price[target_idx]) / 2.0
+        best_bid = float(book.best_bid_price[target_idx])
+        best_ask = float(book.best_ask_price[target_idx])
+        if not (np.isfinite(best_bid) and best_bid > 0 and np.isfinite(best_ask) and best_ask > 0):
+            # Achado de auditoria (AG-347, project_assurance, 2026-08-27):
+            # sem esta guarda, um bookTicker corrompido (preço zerado/
+            # negativo/NaN) silenciava propagando NaN pra markout_mean_bps/
+            # markout_median_bps do horizonte inteiro (np.mean/np.median),
+            # sem nenhum aviso ou causa-raiz visível -- contraria a
+            # diretriz do projeto de nunca silenciar sem achar causa raiz.
+            raise ValueError(
+                f"bookTicker corrompido em target_idx={target_idx} "
+                f"(t_entry_ms={t_entry_ms}, horizonte={label}): "
+                f"best_bid_price={best_bid!r}, best_ask_price={best_ask!r} -- "
+                "esperado ambos finitos e > 0"
+            )
+        mid = (best_bid + best_ask) / 2.0
         markouts[label] = side * (mid - fill_price) / fill_price * _BPS_PER_UNIT
     return markouts
 
@@ -1220,20 +1244,29 @@ def record_experiment(
     *,
     fill_timeout_bars_used: int,
     tick_size_used: float,
-    sprint: int = 9,
+    sprint: int | None = None,
     notes: str = "",
     path: Path | None = None,
 ) -> Path:
     """Acrescenta uma linha ao log de experimentos do simulador de fila —
     nunca edita nem remove linhas existentes (mesma regra de
-    `src.labels.experiment_log.record_experiment`)."""
+    `src.labels.experiment_log.record_experiment`).
+
+    `sprint=None` (default, AG-346) lê `fill_simulator_log_sprint_label`
+    de `constants.yaml` — mesmo valor (9) que todo chamador existente já
+    usava como literal solto antes deste fix, comportamento bit-exato
+    preservado. `sprint` explícito continua aceito pra quem quiser
+    rotular uma linha com outro Sprint."""
     log_path = path if path is not None else EXPERIMENT_LOG_PATH
     existing = load_experiment_log(log_path)
+    sprint_label = (
+        sprint if sprint is not None else int(load_constant("fill_simulator_log_sprint_label"))
+    )
 
     row = {
         "run_id": _next_run_id(existing),
         "logged_at_utc": datetime.now(UTC),
-        "sprint": sprint,
+        "sprint": sprint_label,
         "symbol": summary.symbol,
         "period_start": summary.start,
         "period_end": summary.end,

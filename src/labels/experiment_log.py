@@ -36,6 +36,7 @@ import numpy as np
 import polars as pl
 import structlog
 
+from ._constants import load_constant
 from ._paths import DATA_ROOT, LABEL_ENGINE_RUNS_DIR
 from .triple_barrier import LabelBuildStats, LabelConfig
 
@@ -269,7 +270,7 @@ def record_experiment(
     symbol: str,
     period_start: str,
     period_end: str,
-    sprint: int = 6,
+    sprint: int | None = None,
     stage: str = "labels_build",
     notes: str = "",
     build_stats: LabelBuildStats | None = None,
@@ -285,7 +286,18 @@ def record_experiment(
     `build_labels_for_symbol_with_stats`). `None` (default) grava `null`
     nas 3 colunas -- preserva todo caller existente que só tem `labels`/
     `config` em mãos (ex. testes que constroem `labels` sinteticamente,
-    sem passar por `build_labels_with_stats`)."""
+    sem passar por `build_labels_with_stats`).
+
+    `sprint=None` (default, AG-346, mesmo achado espelho de
+    `src.execution.fill_simulator.record_experiment`) lê
+    `labels_experiment_log_sprint_label` de `constants.yaml` -- mesmo
+    valor (6) que todo chamador existente já usava como literal solto
+    antes deste fix, comportamento bit-exato preservado."""
+    sprint_label = (
+        sprint
+        if sprint is not None
+        else int(load_constant("labels_experiment_log_sprint_label"))
+    )
     log_path = path if path is not None else LOG_PATH
     lock_path = log_path.with_name(log_path.name + ".lock")
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,7 +308,7 @@ def record_experiment(
             symbol=symbol,
             period_start=period_start,
             period_end=period_end,
-            sprint=sprint,
+            sprint=sprint_label,
             stage=stage,
             notes=notes,
             build_stats=build_stats,
@@ -425,10 +437,33 @@ def _record_experiment_locked(
 # ============================================================================
 
 
+#: Celulas (symbol, grade) com divergencia de linhagem ACEITA como
+#: permanente pelo Manager (`AG-309` addendum 2026-08-27 -- "nao rodar
+#: grade de 15m legada, e obsoleta e morta"). A grade de relogio 15m saiu
+#: de producao desde `AG-042` e o Manager decidiu NAO reescrever seus
+#: labels so pra fechar este lint -- `AG-229` ja confirmou que o grupo de
+#: controle de 15m ficou BIT-IDENTICO no ultimo relabel (congelado por
+#: desenho, os labels em disco sao os originais, nunca vao "casar" com o
+#: config_hash atual do registro). Grade = "15m" (coluna `tf`), nunca
+#: `resolution_id` -- unica categoria aceita hoje; qualquer OUTRA celula
+#: (dollar bar R1/R2/R3, ou 15m de um simbolo novo) continua reportada
+#: normalmente, sem entrar aqui por engano.
+KNOWN_LEGACY_GRADE_LINEAGE_GAPS: frozenset[tuple[str, str]] = frozenset(
+    (symbol, "15m") for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
+)
+
+
 @dataclass(frozen=True, slots=True)
 class UnregisteredLabelArtifact:
     """Um `labels.parquet` em disco cujo `config_hash` nao aparece em
-    nenhuma linha do registro para a mesma `(symbol, grade)`."""
+    nenhuma linha do registro para a mesma `(symbol, grade)`.
+
+    `accepted_gap` -- `True` quando `(symbol, grade)` esta em
+    `KNOWN_LEGACY_GRADE_LINEAGE_GAPS` (ou no `accepted_gaps` explicito
+    passado ao chamador): a divergencia continua REPORTADA (nunca some da
+    lista -- "visivel e nao pode reaparecer em silencio" e o proposito
+    original do detector, `AG-309`), so deixa de contar como falha pra
+    quem decide o exit code (`tools/lint/check_label_registry_sync.py`)."""
 
     symbol: str
     grade: str
@@ -436,6 +471,7 @@ class UnregisteredLabelArtifact:
     path: str
     config_hash_no_disco: str
     config_hashes_no_registro: tuple[str, ...]
+    accepted_gap: bool = False
 
 
 def label_artifact_config_hash(path: Path) -> str:
@@ -455,7 +491,10 @@ def label_artifact_config_hash(path: Path) -> str:
 
 
 def find_unregistered_label_artifacts(
-    *, labels_root: Path | None = None, log_path: Path | None = None
+    *,
+    labels_root: Path | None = None,
+    log_path: Path | None = None,
+    accepted_gaps: frozenset[tuple[str, str]] = KNOWN_LEGACY_GRADE_LINEAGE_GAPS,
 ) -> tuple[UnregisteredLabelArtifact, ...]:
     """Varre `data/labels/{symbol}/{grade}/{version}/labels.parquet` e
     devolve os que o registro nao cobre.
@@ -464,7 +503,14 @@ def find_unregistered_label_artifacts(
     `symbol` E a mesma grade (`tf` ou `resolution_id`, o XOR do schema).
     Casar so por `config_hash` global seria frouxo: o mesmo hash de config
     vale para os 5 simbolos, entao um unico simbolo registrado faria os
-    outros 4 passarem."""
+    outros 4 passarem.
+
+    `accepted_gaps` -- default `KNOWN_LEGACY_GRADE_LINEAGE_GAPS`: celulas
+    `(symbol, grade)` nesta colecao voltam com `accepted_gap=True` em vez
+    de `False`, mas CONTINUAM na tupla devolvida -- filtrar aqui as
+    tornaria invisiveis, o oposto do proposito do detector. Quem decide se
+    `accepted_gap=True` conta como falha e o CHAMADOR (`tools/lint/
+    check_label_registry_sync.py`), nao este nucleo."""
     root = labels_root if labels_root is not None else DATA_ROOT / "labels"
     registro = load_experiment_log(log_path)
     if not root.exists():
@@ -496,6 +542,7 @@ def find_unregistered_label_artifacts(
                     path=str(path),
                     config_hash_no_disco=h_disco,
                     config_hashes_no_registro=tuple(sorted(conhecidos)),
+                    accepted_gap=(symbol, grade) in accepted_gaps,
                 )
             )
     return tuple(achados)

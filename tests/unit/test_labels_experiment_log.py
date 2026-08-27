@@ -106,6 +106,25 @@ def test_record_experiment_cria_arquivo_com_id_1(tmp_path: Path) -> None:
     assert out["experiment_id"][0] == 1
     assert out["config_hash"][0] == _CFG.config_hash
     assert out["n_labels"][0] == 2
+    # AG-346: sprint=None (default) lê labels_experiment_log_sprint_label
+    # de constants.yaml -- mesmo valor (6) que era literal solto antes.
+    assert out["sprint"][0] == 6
+
+
+def test_record_experiment_sprint_explicito_sobrescreve_default(tmp_path: Path) -> None:
+    log_path = tmp_path / "runs.parquet"
+    labels = _labels_frame(["TP", "SL"], [0.01, -0.01], [0.5, 0.5])  # noqa: magic-number
+    experiment_log.record_experiment(
+        labels,
+        _CFG,
+        symbol="BTCUSDT",
+        period_start="2024-01-01",
+        period_end="2024-01-02",
+        path=log_path,
+        sprint=42,
+    )
+    out = experiment_log.load_experiment_log(log_path)
+    assert out["sprint"][0] == 42
 
 
 def test_record_experiment_acrescenta_sem_apagar_anterior(tmp_path: Path) -> None:

@@ -303,6 +303,36 @@ def test_markout_none_quando_nofill() -> None:
     assert order.markout_30m_bps is None
 
 
+def test_compute_markouts_book_ticker_corrompido_levanta_erro() -> None:
+    """Achado de auditoria (`audit/architecture_gaps_log.yaml::AG-347`,
+    project_assurance 2026-08-27): sem esta guarda, best_bid_price/
+    best_ask_price zerado ou negativo silenciava propagando NaN pro
+    markout do horizonte inteiro."""
+    book = _book([0, 60_000], [100.0, 0.0], [1.0, 1.0], [100.2, 100.5], [1.0, 1.0])
+    with pytest.raises(ValueError, match="bookTicker corrompido"):
+        fs._compute_markouts(book, t_entry_ms=0, fill_price=100.0, side=1)
+
+
+def test_compute_markouts_book_ticker_nao_finito_levanta_erro() -> None:
+    book = _book([0, 60_000], [100.0, float("nan")], [1.0, 1.0], [100.2, 100.5], [1.0, 1.0])
+    with pytest.raises(ValueError, match="bookTicker corrompido"):
+        fs._compute_markouts(book, t_entry_ms=0, fill_price=100.0, side=1)
+
+
+def test_compute_markouts_fill_price_zero_levanta_erro() -> None:
+    """Achado irmão (`AG-347`): denominador de
+    `side*(mid-fill_price)/fill_price` sem checagem de sinal."""
+    book = _book([0, 60_000], [100.0, 101.0], [1.0, 1.0], [100.2, 101.2], [1.0, 1.0])
+    with pytest.raises(ValueError, match="fill_price inválido"):
+        fs._compute_markouts(book, t_entry_ms=0, fill_price=0.0, side=1)
+
+
+def test_compute_markouts_fill_price_negativo_levanta_erro() -> None:
+    book = _book([0, 60_000], [100.0, 101.0], [1.0, 1.0], [100.2, 101.2], [1.0, 1.0])
+    with pytest.raises(ValueError, match="fill_price inválido"):
+        fs._compute_markouts(book, t_entry_ms=0, fill_price=-100.0, side=1)
+
+
 # ============================================================================
 # _simulate_one_order_price_improved — variante de sensibilidade (item 4 da
 # investigação pós-Sprint 9): posta 1 tick melhor que o topo do livro.
@@ -954,6 +984,9 @@ def test_record_experiment_cria_e_acrescenta(tmp_path: Path) -> None:
     assert out.height == 1
     assert out["run_id"][0] == 1
     assert out["p_fill"][0] == 0.6
+    # AG-346: sprint=None (default) lê fill_simulator_log_sprint_label de
+    # constants.yaml -- mesmo valor (9) que era literal solto antes do fix.
+    assert out["sprint"][0] == 9
 
     fs.record_experiment(
         summary, fill_timeout_bars_used=1, tick_size_used=0.10, path=log_path, notes="segunda run"
@@ -961,6 +994,16 @@ def test_record_experiment_cria_e_acrescenta(tmp_path: Path) -> None:
     out2 = fs.load_experiment_log(log_path)
     assert out2.height == 2
     assert sorted(out2["run_id"].to_list()) == [1, 2]
+
+
+def test_record_experiment_sprint_explicito_sobrescreve_default(tmp_path: Path) -> None:
+    log_path = tmp_path / "runs.parquet"
+    summary = _dummy_summary()
+    fs.record_experiment(
+        summary, fill_timeout_bars_used=1, tick_size_used=0.10, path=log_path, sprint=42
+    )
+    out = fs.load_experiment_log(log_path)
+    assert out["sprint"][0] == 42
 
 
 # ============================================================================
