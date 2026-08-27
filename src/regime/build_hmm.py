@@ -23,13 +23,19 @@ consumindo ainda (`src/live/__init__.py` vazio, confirmado). Escrever um
 artefato aqui seria artefato sem consumidor, decisão deliberadamente
 adiada (ver plano, Fase B).
 
-**Contrato de saída candidato-agnóstico** (a peça que já resolve a parte
-mais delicada do design, achado do mapeamento de produção): a coluna
-`tradeable: bool` tem o MESMO nome/semântica que `src.regime.classifier.
-classify_regimes` já produz pro baseline (`TRADEABLE_COL`,
-`src.models.dataset`) — `src.risk.limits.control_01_regime_tradeavel`
-consome `regime_tradeable: bool` sem precisar traduzir vocabulário de
-candidato nenhum (baseline R1-R4 vs. HMM k=4 sem rótulo semântico)."""
+**Contrato de saída candidato-agnóstico, POR DESENHO — não ainda
+CONSUMIDO** (achado de `project_assurance` 2026-08-27, `AG-340`/`AG-341`,
+corrige afirmação anterior desta docstring): a coluna `tradeable: bool`
+tem o MESMO nome/semântica que `src.regime.classifier.classify_regimes`
+já produz pro baseline (`TRADEABLE_COL`, `src.models.dataset`) — a
+INTENÇÃO do contrato é que `src.risk.limits.control_01_regime_tradeavel`
+consuma `regime_tradeable: bool` sem precisar traduzir vocabulário de
+candidato nenhum (baseline R1-R4 vs. HMM k=4 sem rótulo semântico). Mas
+verificado por grep direto (não presumido): `src.risk.limits` NÃO
+importa nada de `src.regime.build_hmm`/`build_hmm_regimes` hoje — o
+contrato está pronto pro dia em que alguém wireear `dataset.py` pra usar
+este builder (ver `CLAUDE.md` B21, `PLANO_MESTRE_PRINCE2.md` §15.13),
+não uma descrição do que já acontece."""
 
 from __future__ import annotations
 
