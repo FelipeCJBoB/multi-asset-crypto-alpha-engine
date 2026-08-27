@@ -21162,6 +21162,40 @@ entries:
       fechado proprio, FWER real 0,0016 contra alpha nominal 0,05 ja em
       K=3).
     status: "aberto -- aguarda decisao do Manager (mudanca de metodologia de criterio de promocao, nao fix mecanico)"
+    addendum_2026-08-26b_ferramenta_implementada: >
+      A pedido do Manager ("pode comecar a priorizar correcao de fato...
+      direto na producao"), IMPLEMENTADO nesta sessao: `src/analysis/
+      eixo1_maxt_horizon_permutation.py` (max-T por permutacao/circular-
+      shift, escopo LIMITADO a dimensao horizonte -- ver docstring do
+      modulo sobre por que a dimensao simbolo fica de fora desta
+      primeira versao, condicionada ao resultado real de `AG-328`) e
+      `src/analysis/eixo1_power_diagnostic.py` (diagnostico de poder por
+      injecao sintetica, item 1 da ordem de correcao). Nucleo puro +
+      testes, ruff/mypy --strict/banned_patterns/check_unguarded_ratios
+      limpos. NUNCA EXECUTADO contra dado real -- Claude nao executa
+      `.py` (protocolo do CLAUDE.md); comandos exatos entregues ao
+      usuario. status permanece "aberto" ate a execucao real acontecer e
+      a decisao de adotar (ou nao) ser tomada pelo Manager.
+    addendum_2026-08-26c_revisao_independente_achado_high_corrigido: >
+      Revisao independente (Agent, lente estatistica -- projeto_assurance
+      adaptado) achou HIGH real ANTES da entrega ao usuario:
+      `peak_abs_t_for_series` selecionava horizonte por maior `|t|` direto,
+      nao por maior `|IC|` como `ic_by_horizon.peak_horizon` faz de
+      verdade -- reintroduzia peak-hunting nao corrigido na PROPRIA
+      candidata sintetica do diagnostico de poder (item 1), inflando a
+      taxa de deteccao medida na direcao otimista. Corrigido para
+      replicar `peak_horizon` com fidelidade (selecionar por argmax|IC|,
+      so depois ler o `|t|` DESSE horizonte); teste de regressao dedicado
+      adicionado (`monkeypatch` sobre `ic_disjoint`, discrimina as duas
+      implementacoes deterministicamente -- nao dependeria de sorte de
+      RNG). Achado MEDIUM tambem corrigido: `synthetic_correlated_series`
+      nao tinha verificacao de que `rho_true` (coeficiente de mistura)
+      correspondesse ao Spearman populacional resultante pra valores
+      intermediarios -- `measure_achieved_spearman_rho` agora MEDE isso
+      por Monte Carlo (B23), relatorio persiste `rho_alcancado_medio` ao
+      lado do `rho_true` nominal. 2 achados LOW tambem corrigidos (guarda
+      de shape em `max_abs_spearman_over_horizons`, ressalva de poder do
+      qui-quadrado documentada em `eixo1_symbol_homogeneity.py`).
 
   - id: AG-328
     date: "2026-08-26"
@@ -21195,6 +21229,16 @@ entries:
       ajustado pela correlacao realizada entre as t-estatisticas dos 5
       simbolos (Li & Ji 2005 / Galwey 2009).
     status: "aberto -- aguarda decisao do Manager"
+    addendum_2026-08-26b_ferramenta_implementada: >
+      A pedido do Manager, IMPLEMENTADO nesta sessao: `src/analysis/
+      eixo1_symbol_homogeneity.py` -- qui-quadrado de homogeneidade de
+      proporcoes (item 2 da ordem de correcao), le o relatorio real ja
+      persistido (nao recomputa o eixo 1). Nucleo puro + testes,
+      ruff/mypy --strict/banned_patterns limpos. NUNCA EXECUTADO contra
+      dado real -- comando exato entregue ao usuario. O RESULTADO desse
+      teste (rejeita ou nao homogeneidade) e o que decide se `Meff` ou
+      residualizacao de fator comum e o proximo passo -- decisao
+      pendente da execucao real, nao decidida aqui.
 
   - id: AG-329
     date: "2026-08-26"
@@ -21259,3 +21303,94 @@ entries:
       um eixo proprio (ex. importancia por permutacao/ablacao in-fold
       no Alpha real treinado), nao relaxacao do eixo 1/2 existentes.
     status: "aberto -- aguarda decisao do Manager"
+
+  - id: AG-331
+    date: "2026-08-26"
+    file: "src/features/registry.yaml, src/features/feature_sets equivalente (nao existe ainda)"
+    related_file: "Laplace_Quant_V17/pipeline/features/feature_sets.py::_BANNED_FEATURE_NAMES/BannedFeatureNameError; docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.8"
+    found_by: "leitura cruzada V14/V17 (Laplace_Quant, projeto irmao) a pedido do Manager"
+    gap: >
+      Nosso processo depende de disciplina humana pra nunca ressuscitar uma
+      feature ja sabida ruim (ex. `K08_days_since_halving`, removida nesta
+      sessao; `E18f_taker_ls_vol_ratio`, em quarentena por artefato). O V17
+      tem um gate MECANICO pra isso: `_BANNED_FEATURE_NAMES` +
+      `BannedFeatureNameError` -- um nome banido so registra com
+      `_internal=True` explicito, falha alto no REGISTRO, nao depende de
+      ninguem lembrar de checar a ficha antes de copiar-colar codigo velho.
+      Nosso `registry.yaml`/loader nao tem equivalente -- nada impede um
+      copy-paste futuro de reintroduzir uma coluna removida por defeito
+      conhecido.
+    severity: "BAIXA -- nenhum incidente registrado ainda, e uma salvaguarda preventiva barata, nao uma correcao de um bug ja acontecido"
+    layer: "features"
+    consequence: >
+      Nenhuma mudanca de codigo nesta sessao -- backlog. Se priorizado:
+      lista `_BANNED_FEATURE_NAMES` (K08, e quaisquer futuras remocoes por
+      defeito) no loader/validador de `registry.yaml`, falha alto no
+      carregamento se uma entrada banida reaparecer sem override explicito
+      documentado.
+    status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+
+  - id: AG-332
+    date: "2026-08-26"
+    file: "src/validation/leakage.py (14 testes existentes -- teste de perturbacao nao esta entre eles)"
+    related_file: "Laplace_Quant_V17/pipeline/features/spread_dynamics.py::INV-SD-no-forward-mid; docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.8"
+    found_by: "leitura cruzada V14/V17 a pedido do Manager"
+    gap: >
+      O V17 tem um teste de vazamento DETERMINISTICO, nao estatistico:
+      perturbar o valor FUTURO (ex. `spread[t+1]`) e provar que a feature
+      em `t` nao muda (`INV-SD-no-forward-mid`). E complementar ao gate
+      estatistico (Westfall-Young ou o nosso proprio `assert_no_leakage`)
+      -- pega vazamento 100% das vezes quando existe, sem depender de poder
+      estatistico (a mesma fragilidade que `AG-327` achou no eixo 1 pode,
+      em principio, existir tambem no gate de vazamento causal se ele for
+      só estatistico). Nao temos um teste de perturbacao sistematico hoje.
+    severity: "MEDIA -- nao ha evidencia de vazamento nao detectado hoje, mas e uma lacuna de COBERTURA de teste, nao um achado de bug"
+    layer: "validation"
+    consequence: >
+      Nenhuma mudanca de codigo nesta sessao -- backlog. Se priorizado:
+      teste parametrizado por feature (ou por grupo A-E) que perturba a
+      barra em `t+k` (k>=1) e afirma que o valor da feature em `t` nao
+      muda -- complementa (nao substitui) `src/validation/leakage.py`.
+    status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+
+  - id: AG-333
+    date: "2026-08-26"
+    file: "src/features/build.py, src/features/groups/*.py (pisos de completude ad hoc: min_common_history_bars, etc.)"
+    related_file: "Laplace_Quant_V17/pipeline/features/volatility.py::MIN_REAL_BARS_FRACTION/_floor_mask_expr; docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.8"
+    found_by: "leitura cruzada V14/V17 a pedido do Manager"
+    gap: >
+      O V17 tem UM piso fail-loud nomeado (`MIN_REAL_BARS_FRACTION=0,90`),
+      aplicado UNIFORMEMENTE a toda feature via um unico helper
+      (`_floor_mask_expr`) -- nao um piso ad hoc por feature. Nos temos
+      pisos pontuais (`min_common_history_bars`, `AG-030`) mas nao essa
+      doutrina unica e uniforme aplicada a todo o vetor. Relacionado (nao
+      duplicado) ao achado do BNBUSDT (`AG-328`): uma politica declarada de
+      "quanto de historico real minimo uma janela precisa pra nao virar
+      NaN" por fronteira estrutural (listagem de simbolo, recalibracao de
+      threshold R1/R2/R3, ciclo de funding) teria feito a pergunta certa
+      sobre o BNBUSDT mais cedo.
+    severity: "BAIXA-MEDIA -- nao ha evidencia de que a falta deste piso uniforme ja causou um numero errado em producao, mas e uma lacuna de doutrina que o achado do AG-328 sugere ser relevante"
+    layer: "features"
+    consequence: >
+      Nenhuma mudanca de codigo nesta sessao -- backlog, escopo grande
+      (tocaria todo grupo de feature A-E). Decisao de prioridade do
+      Manager, nao fix mecanico.
+    status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+
+  - id: AG-334
+    date: "2026-08-26"
+    file: "src/features/registry.yaml (sem campo `version` por feature)"
+    related_file: "Laplace_Quant_V17/pipeline/features/feature_sets.py::validate_versions_against/VersionMismatchError; docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.8"
+    found_by: "leitura cruzada V14/V17 a pedido do Manager"
+    gap: >
+      O V17 carimba um `version` semver por feature no treino e valida
+      contra o registry ao vivo antes de servir (`validate_versions_
+      against`), pegando divergencia treino/producao (classe de bug
+      BL-#10 do V17). Nao temos equivalente -- nenhum campo de versao por
+      feature em `registry.yaml`, nenhuma validacao antes de servir.
+    severity: "BAIXA hoje, sobe pra ALTA quando formos operar ao vivo -- o motor ainda nao esta em paper/live trading (retreino represado, decisao do Manager registrada em sessoes anteriores), entao o risco concreto (codigo de treino != codigo servindo) ainda nao existe na pratica"
+    layer: "features"
+    consequence: >
+      Nenhuma mudanca de codigo nesta sessao -- backlog explicitamente
+      condicionado a quando a operacao ao vivo for priorizada, nao antes.
+    status: "aberto -- backlog, condicionado a priorizacao de operacao ao vivo (decisao do Manager)"

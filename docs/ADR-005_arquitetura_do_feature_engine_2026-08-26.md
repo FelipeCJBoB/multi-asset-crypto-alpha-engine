@@ -3012,3 +3012,194 @@ verificado por reconstrução independente, uma segunda rodada de revisão
 antes de tratar §14 como fechado é o padrão que este projeto já aplicou
 duas vezes (`§1`-`§9` v1→v2, `production_grade_gate.py` v1→v2) — não
 decidido aqui se/quando rodar.
+
+### §14.8 Metodologia importada de `Laplace_Quant` V14/V17 — achados aplicáveis
+
+A pedido do Manager, leitura cruzada de 8 arquivos do projeto irmão
+(`Laplace_Quant`, motor forex do mesmo autor): `V14/pipeline/
+build_features_v14.py` (versão descontinuada) e 7 arquivos de
+`V17/pipeline/features/` (`base.py`, `core1_meanrev.py`, `feature_sets.py`,
+`leakage_gate.py`, `realized_vol_quotes.py`, `spread_dynamics.py`,
+`volatility.py`). Cada achado abaixo carrega um veredito de prioridade — os
+já `APLICADOS` viram trabalho desta sessão (`§14.9`/`§14.10`); o resto é
+backlog registrado (`AG-331`-`AG-334`), não implementado agora.
+
+**V14 (descontinuada) — lições de coisas tentadas e abandonadas:**
+
+- **FFD (fractional differentiation) foi removida em V17** por MEDIÇÃO, não
+  intuição: `close_fracdiff` era "um duplicado de `log_return` disfarçado de
+  estacionário" — FX M5 é `I(1,0)` (teste GPH, `n≈0,976`), sem memória
+  fracionária real. Lição B23 pura: sofisticação matemática não é sinônimo
+  de valor incremental — vale como vigilância pra qualquer feature nossa
+  futura que "pareça" sofisticada sem o teste de redundância feito de
+  propósito. Nenhuma ação — não temos FFD hoje.
+- **Regime (HMM) como FEATURE do Alpha foi abandonado em V17** (era feature
+  em V14). Convergência independente com nossa própria decisão (`B21`,
+  regime é *gate*, não feature, `ADR-001 §2.7`) — os dois projetos do mesmo
+  autor chegaram na mesma conclusão por caminhos separados. Nenhuma ação —
+  confirma decisão já tomada.
+- **Nomes que mentem sobre o que a coluna mede** (`carry_differential_t1` →
+  `carry_differential_d_minus_1`, renomeado só pra refletir a defasagem
+  real) é a MESMA classe de bug que `AG-320` já achou aqui (`E11f_oi_
+  change_1d`, nome "1d" mentindo sob grade não-relógio). Nenhuma ação nova
+  — já rastreado.
+- **Epsilon fixo trocado por piso adaptativo** (`absorption_proxy_288`,
+  `1e-10` saturava em barra quieta, trocado por piso em ATR) e
+  **discretização desnecessária trocada por contínuo** (`breakout_flow_
+  alignment`, `sign(x)*sign(y)` → produto normalizado, preserva magnitude
+  pra árvore usar) — vigilância, não achado de bug já confirmado em nós:
+  nenhuma auditoria dedicada rodada nesta sessão sobre epsilons/
+  discretizações do nosso vetor.
+
+**V17 (atual) — padrões concretos:**
+
+| achado | prioridade | referência |
+|---|---|---|
+| Max-T (Westfall-Young) substituindo fórmula fechada pra pico entre horizontes | **APLICADO** (escopo horizonte, `§14.9`/`§14.10`) | `leakage_gate.py:26,36-47` |
+| Diagnóstico de poder por injeção sintética antes de aceitar "sem sinal" | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
+| Teste de homogeneidade formal antes de pooling entre unidades correlacionadas | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
+| Poison-pill de nome banido no registro (bloqueio mecânico, não prosa) | backlog, `AG-331` | `feature_sets.py:204-220`, `_BANNED_FEATURE_NAMES`/`BannedFeatureNameError` |
+| Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | backlog, `AG-332` | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
+| Piso fail-loud único e nomeado (`MIN_REAL_BARS_FRACTION`), uniforme em toda feature | backlog, `AG-333` | `volatility.py:34,244`, `_floor_mask_expr` |
+| Gate de versão treino↔live (`validate_versions_against`) | backlog, condicionado à operação ao vivo, `AG-334` | `feature_sets.py::validate_versions_against` |
+| Paridade lote↔streaming garantida por construção (roda o MESMO kernel sobre a cauda do buffer) | observado, **não uma lacuna** — ver nota abaixo | `volatility.py::_scalar_from_batch` |
+| Camada A/B (agregar tick→bar primeiro, rolar depois) | não aplicável — não temos dado de tick | `realized_vol_quotes.py`, `spread_dynamics.py` |
+
+**Nota sobre paridade lote↔streaming, verificado, não aspiracional.**
+`tests/parity/test_features_parity.py` roda de fato — 500 últimas barras,
+tolerância `1e-8`, parametrizado sobre os 5 símbolos, skip individual se
+faltar backfill local. A diferença real de garantia: V17 prova que um
+caminho de código *genuinamente separado* (streaming) bate com o batch
+(`_scalar_from_batch` roda o MESMO kernel sobre a cauda do buffer); nosso
+teste prova algo mais estreito — que recomputar sobre um prefixo maior bate
+com o valor final ("Idioma A" do nosso próprio `CLAUDE.md`, não "Idioma B"
+carry/step/finish). Os dois são formas sancionadas pelo próprio `CLAUDE.md`
+— registrado como diferença de garantia, não como defeito.
+
+### §14.9 Investigação: o eixo 1 pode estar descartando sinal real (`AG-327`-`AG-330`)
+
+A pedido do Manager ("o que a engenharia pode invalidar aqui" —
+preocupação de falso negativo sistemático, não só falta de tese). Pesquisa
+externa + auditoria adversarial independente (agentes, lente estatística/
+ML, deliberadamente diferente da lente de "gaps de arquitetura" usada no
+resto desta sessão) — relatório completo em `docs/investigacao_falso_
+negativo_eixo1_2026-08-26.md`. Três achados verificados diretamente nos
+dados reais, antes de qualquer pesquisa:
+
+1. **As 7 features JÁ EM PRODUÇÃO (T1) também zeram no eixo 1** —
+   `B01_rsi_14`/`E27f_cost_atr_ratio`/`C06_vol_ratio_12_96`/`D06f_taker_
+   imbalance_z_48` têm **0** símbolos-descoberta; `A05`/`A13`/`E10f` têm
+   **1**. Um teste que não valida o que já é considerado útil é suspeito
+   por si só.
+2. **A tabela `k≥` tem um buraco no MEIO, não uma cauda que declina
+   suavemente** — em `k=2`/`k=3` o observado (2, 1) fica ABAIXO ou igual ao
+   esperado por acaso (2,79, 0,19); o único excesso é no extremo absoluto
+   (`k=5`, 10.000× o esperado) — e é o artefato conhecido (`E18f`). Os dois
+   ÚNICOS candidatos que passam `k≥2` (`E18f`, `K04_session_us`) têm AMBOS
+   defeito de construção confirmado na ficha (`ERRO_CATEGORICO`/
+   `INCOERENTE_DIMENSIONAL`) — zero features com tese limpa sobrevivem a
+   qualquer réplica acima do ruído.
+3. **62,5% de TODAS as descobertas (15 de 24 pares feature×símbolo) são
+   `BNBUSDT`** — taxa ~6,7× a dos outros 4 símbolos combinados. Contagem de
+   barras comparável entre os 5 (não é histórico mais curto — hipótese
+   checada e refutada). Leitura mais parcimoniosa: um fator/regime comum
+   não modelado, específico de `BNBUSDT`, na janela medida — não 15
+   mecanismos econômicos genuínos e coincidentemente concentrados num só
+   ativo.
+
+Dois problemas de desenho concretos, nomeados, cada um com um AG dedicado:
+
+- **`AG-327` — peak-hunting não corrigido.** `pico_abs_t` já é o máximo de
+  `|t|` sobre 6 horizontes, tratado por `two_sided_p_from_t` como se viesse
+  de um único teste pré-especificado (winner's curse/look-elsewhere/data
+  snooping — White 2000, Hansen 2005, Romano & Wolf 2005). Isso infla a
+  significância aparente de CADA feature — na direção OPOSTA de explicar
+  "zerou tudo" —, mas quebra a premissa de p-valores válidos que o BH da
+  camada seguinte precisa pra ter a garantia formal de FDR que alega ter.
+- **`AG-328` — `binomial(5, p_symbol)` pooled é factualmente inválido.**
+  Tratar os 5 símbolos (correlacionados 0,7-0,9 por fator de mercado
+  cripto comum) como ensaios i.i.d. é o MESMO tipo de erro que `AG-270` já
+  corrigiu uma vez (célula tratada como independente — 72% dos blocos
+  símbolo×resolução são concordantes) — dessa vez entre símbolos, nunca
+  testado antes desta investigação, e medido como falso (achado 3 acima).
+  Literatura (`Meff` — Li & Ji 2005/Galwey 2009; Fama-MacBeth/GLS;
+  Robust Variance Estimation) documenta que correlação positiva entre
+  unidades não torna um teste pooled "uniformemente mais difícil" — torna
+  a distribuição nula da contagem BIMODAL e esvazia exatamente o MEIO (2-3
+  de 5 símbolos), que é precisamente o buraco medido no achado 2 acima.
+
+Achados adicionais, registrados mas não centrais à decisão de hoje:
+
+- **`AG-329` — a justificativa "momentum reconhecido" pra `A01`-`A06`
+  (`§14.2`) nunca virou emenda formal na ficha real**, que continua
+  `SEM_MECANISMO`. Recorrência nomeada do padrão `AG-114`/`AG-122` (regra a
+  priori sem definição operacional → decisão vira julgamento ad-hoc no
+  momento de aplicar).
+- **`AG-330` — o eixo 1 mede a pergunta ERRADA para features de papel
+  filtro/custo.** `E27f_cost_atr_ratio` (T1, `TESE_OK`) é "honesta como
+  FILTRO de viabilidade e enganosa como preditor direcional" — testá-la
+  com "há IC direcional replicado?" mede o que ela nunca alegou ter. Seu
+  zero no eixo 1 é esperado, não evidência de falta de base — diferente do
+  zero de `B01`/`D06f`, sem essa desculpa de papel.
+
+**Decisão sobre a promoção mecânica proposta:** avaliada e **recusada**
+(não executada). Promover `A01`-`A06` pra `L2` e rebaixar `E18f`
+(quarentena) pra uma `L3`="aposentada" fundida com `L4` ignoraria a
+medição já feita (`L2={}`) sem corrigi-la primeiro, e repetiria o padrão
+`AG-114`/`AG-122` (`AG-329`). `L0-L4` continuam como estavam — nenhum
+código de produção, `registry.yaml`, `constants.yaml` ou ficha tocado por
+esta investigação.
+
+### §14.10 Plano de correção priorizado — em execução, aguardando dado real
+
+Ordem recomendada independentemente pelos dois agentes (pesquisa e
+auditoria): (1) diagnóstico de poder → (2) homogeneidade entre símbolos →
+(3) max-T conjunto → (4) só então reavaliar promoção. A pedido do Manager,
+os itens 1-3 têm ferramenta IMPLEMENTADA nesta sessão — núcleo puro +
+testes, 6 dos 7 comandos mecânicos autorizados aplicáveis a este código
+(`ruff`, `mypy --strict`, `banned_patterns`, `check_constants_referenced`,
+`check_constants_provenance`, `check_unguarded_ratios` — o 7º,
+`check_sprint_log_references`, audita referência de doc, não qualidade
+deste código) limpos, mais uma revisão independente (achado HIGH real
+corrigido — ver nota abaixo). **Nenhum rodado contra dado real** — Claude
+não executa `.py` (protocolo deste `CLAUDE.md`); os comandos exatos ficam
+com o usuário.
+
+**Achado da revisão independente (2026-08-26), corrigido antes da
+entrega.** `peak_abs_t_for_series` (item 1, `eixo1_power_diagnostic.py`)
+selecionava o horizonte por MAIOR `|t|` direto, não por MAIOR `|IC|` como
+`ic_by_horizon.peak_horizon` faz de verdade em produção — as duas seleções
+divergem porque `stderr` varia por horizonte. Isso reintroduzia, na própria
+candidata sintética do diagnóstico, exatamente o viés de peak-hunting que o
+diagnóstico existe para investigar (inflando a taxa de detecção medida
+além do viés de `N` já declarado). Corrigido para replicar `peak_horizon`
+com fidelidade; teste de regressão dedicado adicionado (`monkeypatch` sobre
+`ic_disjoint`, discrimina as duas implementações deterministicamente).
+Também corrigido, achado MEDIUM: `synthetic_correlated_series` não tinha
+como verificar se `rho_true` (coeficiente de mistura) correspondia ao
+Spearman populacional resultante para valores intermediários — `measure_
+achieved_spearman_rho` agora MEDE essa relação por Monte Carlo (B23) e o
+relatório persiste `rho_alcancado_medio` ao lado de `rho_true` nominal.
+
+| item | módulo | status | comando |
+|---|---|---|---|
+| 1 — diagnóstico de poder | `src/analysis/eixo1_power_diagnostic.py` | implementado, não executado | `uv run python -m src.analysis.eixo1_power_diagnostic --start 2022-01-01 --end 2026-08-07` |
+| 2 — homogeneidade entre símbolos | `src/analysis/eixo1_symbol_homogeneity.py` | implementado, não executado | `uv run python -m src.analysis.eixo1_symbol_homogeneity` |
+| 3 — max-T de horizonte | `src/analysis/eixo1_maxt_horizon_permutation.py` | implementado, ESCOPO LIMITADO à dimensão horizonte (ver docstring do módulo) — a extensão conjunta horizonte×símbolo depende do resultado real do item 2, não decidida aqui (B23) | função pura, sem CLI de relatório em lote nesta versão — uso exploratório por feature |
+| 4 — reavaliar promoção | — | bloqueado pelos itens 1-3 | — |
+
+**Por que o item 3 não está "completo".** Decidir se o `binomial` deve ser
+substituído por pooling raw (via `Meff`) ou por residualização do fator de
+mercado comum antes de testar (Fama-MacBeth/GLS) depende do RESULTADO real
+do item 2 — implementá-lo antes seria estipular uma calibração sem medir
+(B23), o mesmo erro que este ADR já corrigiu várias vezes noutras seções
+(`h=1` fixo do eixo 2, `min_semesters`, etc.). O item 3 entregue aqui
+resolve a dependência de horizonte (bem definida, sem essa ambiguidade) e
+deixa a extensão de símbolo como próximo passo explícito.
+
+**O que NÃO foi feito, deliberadamente.** Nenhum dos 3 módulos foi
+integrado como substituto de `feature_promotion_criterion.py` — são
+ferramentas de diagnóstico paralelas, `AG-294` continua sendo o eixo 1 de
+produção até uma decisão explícita do Manager (informada pelo resultado
+real dos itens 1-2) trocar isso. `A01`-`A06`/`E18f`/`registry.yaml`/
+`T1_FEATURE_IDS` não tocados.
