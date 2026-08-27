@@ -2963,6 +2963,31 @@ concentrar risco em cima. As opções de §3 ficam assim:
   v2 ainda vale), não campos que existem hoje. (`src/analysis/feature_
   temporal_stability.py` teve um bug de código real corrigido — ver §14.7
   — mas é módulo novo, decision-support, não produção.)
+- **`L2={}` (§14.1) pode não ser uma medição limpa — investigado, não
+  corrigido, 2026-08-26.** A pedido do Manager ("o que a engenharia pode
+  invalidar aqui"), pesquisa externa + auditoria adversarial independente
+  (lente estatística/ML, não arquitetura) acharam dois problemas de
+  desenho concretos no eixo 1: peak-hunting não corrigido dentro de cada
+  feature (`pico_abs_t` = máximo de 6 horizontes tratado como teste único,
+  `AG-327`) e o modelo `binomial(5, p_symbol)` pooled trata os 5 símbolos
+  como i.i.d. quando BNBUSDT descobre a uma taxa ~6,7× os outros 4
+  (`AG-328`, contagem de barras comparável entre símbolos — não é
+  histórico curto). Achado que pesa contra "a régua é só ruim": os únicos
+  2 candidatos que passam `k≥2` (`E18f`, `K04_session_us`) têm AMBOS
+  defeito de construção confirmado na ficha — o instrumento reage a
+  efeitos do tamanho de um artefato, não está cego. Uma proposta de
+  promover mecanicamente `A01`-`A06` (`L3`, "momentum reconhecido") pra
+  `L2` e rebaixar quarentena pra uma `L3`="aposentada" fundida com `L4`
+  foi avaliada e **recusada** — ignoraria a medição de `L2={}` sem
+  corrigi-la primeiro, e a justificativa "momentum reconhecido" nunca foi
+  emendada na ficha real (recorrência do padrão `AG-114`/`AG-122`,
+  `AG-329`). Detalhe completo, incluindo a ordem recomendada de correção
+  (diagnóstico de poder por injeção sintética → testar homogeneidade
+  entre símbolos → Westfall-Young max-T → só então reavaliar promoção):
+  `docs/investigacao_falso_negativo_eixo1_2026-08-26.md`. `AG-330` —
+  achado lateral: `E27f_cost_atr_ratio` (T1) nunca foi desenhada para IC
+  direcional (papel de filtro de custo, não gatilho) — seu zero no eixo 1
+  é esperado, não evidência de falta de base.
 
 ### §14.7 Revisão independente (`project_assurance`, 2026-08-26) — achados e correções
 

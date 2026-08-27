@@ -21123,3 +21123,139 @@ entries:
       falha alto, campos novos populados) em test_models_alpha_
       item6_8_9.py. ruff/mypy --strict/banned_patterns limpos. Politica
       NAO promovida a default de producao.
+
+  - id: AG-327
+    date: "2026-08-26"
+    file: "src/analysis/feature_promotion_criterion.py::p_value_from_feature_entry/two_sided_p_from_t"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2, §14.1 (AG-294); src/analysis/ic_by_horizon.py::peak_horizon (pico_abs_t = max sobre 6 horizontes); docs/investigacao_falso_negativo_eixo1_2026-08-26.md"
+    found_by: "pesquisa externa (agente) + auditoria adversarial independente (agente, lente estatistica/ML), a pedido do Manager -- 'o que voce invalida aqui com sua engenharia pode encontrar janela de uso e invalidar sua medicao'"
+    gap: >
+      `pico_abs_t` (entrada do p-valor do eixo 1) ja e o MAXIMO de `|t|`
+      sobre 6 horizontes (`DEFAULT_HORIZONS=(1,2,4,8,16,32)`), mas
+      `two_sided_p_from_t` trata esse maximo como se fosse observado
+      num unico teste pre-especificado (normal padrao direta, sem
+      correcao de selecao). Isso e o mesmo padrao descrito por 3
+      literaturas independentes sob nomes diferentes -- winner's curse
+      (genomica), look-elsewhere effect (fisica de particulas), data
+      snooping em regras de trading (White 2000, Hansen 2005, Romano &
+      Wolf 2005) -- e o proprio docstring do modulo ja admitia isso
+      (linhas 29-32) sem quantificar a consequencia: o p-valor de
+      ENTRADA do BH da camada seguinte fica sistematicamente pequeno
+      demais, o que invalida a garantia formal de FDR<=10% do BH (BH
+      exige p-valores validos/uniformes sob H0 pra funcionar). O efeito
+      NAO explica por si so o "zerou tudo" (peak-hunting infla
+      significancia, na direcao oposta) -- mas significa que a camada 2
+      nao e uma correcao calibrada em cima da camada 1, contrariando a
+      leitura implicita do modulo de que BH "resolve" a multiplicidade.
+    severity: "ALTA -- decide se `L2={}` (nenhuma feature nova promovida) e uma medicao confiavel ou um artefato de teste mal-especificado; ainda nao muda producao (L2 continua T1 de qualquer forma), mas contamina qualquer decisao futura de promocao baseada neste eixo"
+    layer: "analysis"
+    consequence: >
+      Nenhuma mudanca de codigo feita nesta sessao (fora de escopo --
+      corrigir exigiria redesenhar o eixo 1, decisao de metodologia,
+      nao fix mecanico). Recomendacao registrada em
+      `docs/investigacao_falso_negativo_eixo1_2026-08-26.md`: substituir
+      peak-hunting cru + BH fechado por um max-T tipo Westfall-Young
+      (permutacao/circular-shift sobre a grade horizonte x feature x
+      simbolo inteira, unidade de shift respeitando dollar bar --
+      precedente ja adotado por `Laplace_Quant_V17/pipeline/features/
+      leakage_gate.py` depois de refutar empiricamente um "Bonferroni"
+      fechado proprio, FWER real 0,0016 contra alpha nominal 0,05 ja em
+      K=3).
+    status: "aberto -- aguarda decisao do Manager (mudanca de metodologia de criterio de promocao, nao fix mecanico)"
+
+  - id: AG-328
+    date: "2026-08-26"
+    file: "src/analysis/feature_promotion_criterion.py::empirical_p_symbol/expected_count_at_least_k"
+    related_file: "experiments/feature_promotion_criterion_report.json; docs/investigacao_falso_negativo_eixo1_2026-08-26.md"
+    found_by: "auditoria adversarial independente (agente, lente estatistica/ML) -- contagem direta sobre feature_promotion_criterion_report.json"
+    gap: >
+      O eixo 1 testa `binomial(n_symbols=5, p_symbol_empirico=0,0667)`
+      tratando os 5 simbolos como ensaios Bernoulli i.i.d. de taxa
+      comum. Medido direto no relatorio real: dos 24 pares
+      (feature,simbolo)-descoberta totais, 15 (62,5%) sao BNBUSDT --
+      taxa de descoberta de BNBUSDT (~20,8% das 72 features) e ~6,7x a
+      taxa combinada dos outros 4 simbolos (~3,1%). Contagem de barras
+      por simbolo (`ic_by_horizon_report_{R1,R2,R3}.json`) e comparavel
+      entre os 5 (BTC 152926/ETH 156788/SOL 165023/BNB 163200/XRP
+      171098 em R1) -- a hipotese de "historico mais curto" NAO se
+      sustenta; a leitura mais parcimoniosa e um fator/regime comum nao
+      modelado especifico de BNB na janela medida (nao identificado
+      qual), nao um mecanismo economico generico replicavel. A premissa
+      de simbolos i.i.d. do modelo binomial pooled e factualmente falsa
+      nos proprios dados que o modelo usa.
+    severity: "ALTA -- o modelo pooled usado pra calibrar a tabela k>=1..5 sob H0 (base de comparacao de toda a decisao `L2={}`) esta mal-especificado; nao muda a decisao de HOJE (nenhuma feature nova bate k>=2 mesmo considerando isso), mas muda o LIMIAR real de qualquer candidata futura que descobrisse via BNB+1 outro simbolo"
+    layer: "analysis"
+    consequence: >
+      Nenhuma mudanca de codigo feita nesta sessao. Recomendacao
+      registrada na investigacao: testar homogeneidade entre as 5 taxas
+      de simbolo (ex. teste de proporcoes/likelihood-ratio) antes de
+      usar `binomial` pooled, ou residualizar o fator de mercado comum
+      por simbolo antes de testar replicacao (pratica Fama-MacBeth/GLS
+      padrao para paineis correlacionados) -- ou trocar por `Meff`
+      ajustado pela correlacao realizada entre as t-estatisticas dos 5
+      simbolos (Li & Ji 2005 / Galwey 2009).
+    status: "aberto -- aguarda decisao do Manager"
+
+  - id: AG-329
+    date: "2026-08-26"
+    file: "audit/feature_thesis/fichas_69_2026-08-25.yaml (A01-A04, A06 -- veredito SEM_MECANISMO)"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.1 (tabela de camadas, 'momentum reconhecido'), §14.2, §14.4; docs/investigacao_falso_negativo_eixo1_2026-08-26.md"
+    found_by: "auditoria adversarial independente (agente, lente estatistica/ML)"
+    gap: >
+      A tabela de camadas do ADR-005 lista `A01_log_return_1`,
+      `A02`-`A04`, `A06` como recorte para `L3` sob a justificativa
+      "momentum de 1 barra e mecanismo economico RECONHECIDO na
+      literatura" -- mas a ficha real (`fichas_69_2026-08-25.yaml`) que
+      deveria ser a fonte de verdade continua com veredito
+      `SEM_MECANISMO`, `mecanismo_economico: AUSENTE`,
+      `quem_esta_do_outro_lado: AUSENTE`, e nunca recebeu emenda
+      formal registrando a justificativa "momentum reconhecido" como
+      parte do processo que decide o veredito. A justificativa existe
+      SO na prosa do ADR, nao no artefato que o proprio processo declara
+      como decisor. Este e uma recorrencia nomeada do padrao `AG-114`/
+      `AG-122` (regra de decisao travada a priori sem definicao
+      operacional grava, decisao real acaba sendo julgamento ad-hoc no
+      momento de aplicar -- exatamente o que travar criterio existe pra
+      evitar).
+    severity: "MEDIA-ALTA -- recorrencia de um padrao de falha ja nomeado e corrigido uma vez neste projeto; se `A01`-`A06` forem promovidos citando 'momentum reconhecido' sem emendar a ficha primeiro, a promocao fica sem base auditavel no proprio artefato de origem"
+    layer: "documentation/analysis"
+    consequence: >
+      Nenhuma promocao executada nesta sessao (ver `docs/
+      investigacao_falso_negativo_eixo1_2026-08-26.md` §6 -- a proposta
+      de promocao mecanica de L3 para L2 foi avaliada e RECUSADA por
+      falta de base, este achado e uma das razoes). Fichas NAO
+      editadas -- decidir se "momentum reconhecido" e justificativa
+      suficiente pra sobrepor `SEM_MECANISMO` e decisao do Manager, nao
+      um fix mecanico; se sim, a ficha precisa de emenda formal com essa
+      justificativa ANTES de qualquer promocao, nao depois.
+    status: "aberto -- aguarda decisao do Manager"
+
+  - id: AG-330
+    date: "2026-08-26"
+    file: "src/analysis/feature_promotion_criterion.py, src/analysis/ic_by_horizon.py"
+    related_file: "audit/feature_thesis/fichas_69_2026-08-25.yaml (E27f_cost_atr_ratio, papel de filtro de viabilidade); docs/investigacao_falso_negativo_eixo1_2026-08-26.md"
+    found_by: "auditoria adversarial independente (agente, lente estatistica/ML)"
+    gap: >
+      O eixo 1/2 medem IC marginal univariado (Spearman feature x
+      retorno futuro) -- mas o consumidor real e um ensemble de arvores
+      (LightGBM) sobre rotulos triple-barrier, que captura interacao
+      (splits condicionais) que IC marginal nao ve. A propria ficha de
+      `E27f_cost_atr_ratio` (uma das 7 T1, veredito `TESE_OK`) diz:
+      "a feature e honesta como FILTRO de viabilidade e enganosa como
+      preditor direcional" -- ou seja, pelo menos 1 feature do T1 NUNCA
+      foi desenhada pra ter IC direcional cross-simbolo, e testa-la com
+      "ha IC significativo replicado em >=3 simbolos?" mede a pergunta
+      ERRADA para o papel declarado dela. O zero de `E27f` no eixo 1 e
+      portanto esperado-e-correto, nao evidencia de falta de base --
+      diferente do zero de `B01_rsi_14`/`D06f_taker_imbalance_z_48`,
+      que nao tem essa desculpa de papel na leitura feita ate agora.
+    severity: "MEDIA -- nao invalida o eixo 1 para features de papel direcional (gatilho/confirmacao), mas significa que interpretar TODO zero do T1 como 'sem base estatistica' e um erro de leitura para features de papel nao-direcional (filtro/custo)"
+    layer: "analysis"
+    consequence: >
+      Nenhuma mudanca de codigo. Recomendacao registrada na
+      investigacao: separar o T1/candidatas por `papel` declarado na
+      ficha (gatilho/confirmacao vs filtro/custo) antes de aplicar
+      qualquer eixo de IC direcional; papel filtro/custo precisaria de
+      um eixo proprio (ex. importancia por permutacao/ablacao in-fold
+      no Alpha real treinado), nao relaxacao do eixo 1/2 existentes.
+    status: "aberto -- aguarda decisao do Manager"
