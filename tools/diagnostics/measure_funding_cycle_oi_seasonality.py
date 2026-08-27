@@ -45,12 +45,13 @@ no agregado".
 
 PARTE 2 -- sazonalidade real em `Δln(oi_contracts)` alinhada ao ciclo
 medido na Parte 1. Reusa `src.features._sources.load_bars_15m`/
-`load_oi_aligned` (o mesmo alinhamento causal asof-backward que já
-alimenta `oi_contracts_aligned` em produção -- não reimplementado) e
-replica a fórmula de `group_e.py:23-34` (`np.log` + `np.diff`) SEM o
-z-score rolante -- só a série de log-diferenças. Duas medições
-complementares, deliberadamente não só uma (evita o viés de testar SÓ a
-hipótese e "achar" o que se procurava):
+`load_oi_change_aligned` (Δln calculado na cadência NATIVA da fonte,
+antes do alinhamento -- **corrigido 2026-08-27**, evita o zero mecânico
+que `AG-295` já identificou em `load_oi_aligned` + diferenciar depois,
+mesmo caminho que `group_e.e10f_oi_change_z_48_from_native_delta` usa em
+produção) -- não reimplementado. Duas medições complementares,
+deliberadamente não só uma (evita o viés de testar SÓ a hipótese e
+"achar" o que se procurava):
 
   (i) ACF + Ljung-Box nos lags 1×/2×/3× do ciclo de funding MEDIDO na
       Parte 1 (não fixado a priori em 32) -- mesmo padrão já usado em
@@ -130,7 +131,7 @@ from statsmodels.tsa.stattools import acf
 from src.analysis.volatility_comparison import END_DATE, SYMBOL_START_DATE
 from src.data import checks, lake
 from src.data._constants import load_constant as load_data_constant
-from src.features._sources import load_bars_15m, load_oi_aligned
+from src.features._sources import load_bars_15m, load_oi_change_aligned
 
 logger = structlog.get_logger(__name__)
 
@@ -276,18 +277,26 @@ def measure_funding_interval(symbol: str) -> FundingRegimeSummary | None:
 
 
 def _delta_log_oi(symbol: str, start: str, end: str) -> FloatArray:
-    """Mesma fórmula de `group_e.e10f_oi_change_z_48` (group_e.py:23-34),
-    SEM o z-score rolante -- só `Δln(oi_contracts)`, alinhado causalmente
-    ao grid de 15m via `_sources.load_bars_15m`/`load_oi_aligned` (reuso,
-    não reimplementação do asof-join)."""
+    """`Δln(oi_contracts)` na cadência NATIVA da fonte, alinhado à barra
+    DEPOIS de diferenciado -- via `_sources.load_oi_change_aligned`
+    (reuso, não reimplementação do asof-join).
+
+    **Corrigido 2026-08-27 (achado de `project_assurance`, 3ª revisão de
+    §14): esta função reimplementava a fórmula PRÉ-`AG-295` de `E10f`**
+    (diferenciar DEPOIS do alinhamento, via `load_oi_aligned` +
+    `np.diff(np.log(...))`) -- o mesmo defeito mecânico que `AG-295`
+    corrigiu em produção: sob barra mais curta que a cadência de ~5min da
+    fonte, o valor alinhado repete o da barra anterior, e `Δln` dava ZERO
+    POR CONSTRUÇÃO MECÂNICA, não por ausência real de mudança de OI --
+    contaminando exatamente a pergunta que este script existe pra
+    responder (existe sazonalidade REAL em `Δln(OI)`?). `load_oi_change_
+    aligned` calcula o delta ANTES do alinhamento (cadência nativa, uma
+    leitura real por linha) -- o zero mecânico é eliminado por
+    construção, não filtrado a posteriori (mesmo raciocínio do docstring
+    de `oi_change_native_from_levels`, `group_e.py`)."""
     bars = load_bars_15m(symbol, start, end)
-    oi = load_oi_aligned(bars, symbol, start, end)
-    oi_arr = oi.cast(pl.Float64).to_numpy().astype(np.float64)
-    log_oi = np.log(oi_arr)
-    n = log_oi.shape[0]
-    delta = np.full(n, np.nan, dtype=np.float64)
-    if n > 1:
-        delta[1:] = np.diff(log_oi)
+    delta_series = load_oi_change_aligned(bars, symbol, start, end)
+    delta: FloatArray = delta_series.cast(pl.Float64).to_numpy().astype(np.float64)
     return delta
 
 

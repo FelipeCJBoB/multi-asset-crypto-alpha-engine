@@ -276,10 +276,21 @@ def feature_lookback_bars(path: Path | None = None) -> dict[str, int | Literal["
 
 
 def layer2_feature_ids(path: Path | None = None) -> frozenset[str]:
-    """`{feature_id}` com `"L2" in layer` e `quarentena=False` — a
-    definição de vetor de treino que `ADR-005 §5.3` item 7 propôs
-    (`layer == "L2" and not quarentena`), derivada do `registry.yaml` real
-    em vez de um id lido de cabeça.
+    """`{feature_id}` com `"L2" in layer`, `quarentena=False` e
+    `defeito_construcao=False` — a definição de vetor de treino que
+    `ADR-005 §5.3` item 7 propôs (`layer == "L2" and not quarentena`),
+    derivada do `registry.yaml` real em vez de um id lido de cabeça.
+
+    **Corrigido 2026-08-27 (achado de `project_assurance`, 3ª revisão de
+    §14): o filtro original esquecia `defeito_construcao`, apesar da
+    docstring do próprio campo (`FeatureRegistryEntry.defeito_construcao`)
+    tratar os dois estados como "ortogonais à camada" da mesma forma que
+    `quarentena`.** Hoje isso não muda o conjunto retornado (nenhuma
+    entrada `L2` real tem `defeito_construcao=True`, verificado contra as
+    7 `T1_FEATURE_IDS`) — mas sem o filtro, uma feature T1 encontrada com
+    defeito de construção DEPOIS de promovida (já aconteceu com `E10f`,
+    `AG-295`) não sairia do conjunto derivado só por ganhar a flag; só a
+    demoção manual de `layer` funcionaria.
 
     **Escopo deliberadamente limitado**: esta função só DERIVA o conjunto —
     não substitui `src.features.build.T1_FEATURE_IDS` como fonte de
@@ -291,4 +302,6 @@ def layer2_feature_ids(path: Path | None = None) -> frozenset[str]:
     fato é trabalho da sessão de engenharia de ML (§13), não decidido
     aqui."""
     entries = load_feature_registry(path)
-    return frozenset(e.id for e in entries if "L2" in e.layer and not e.quarentena)
+    return frozenset(
+        e.id for e in entries if "L2" in e.layer and not e.quarentena and not e.defeito_construcao
+    )

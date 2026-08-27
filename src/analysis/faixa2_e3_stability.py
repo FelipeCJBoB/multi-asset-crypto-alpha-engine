@@ -55,11 +55,28 @@ DEFAULT_OUTPUT_PATH: Final[Path] = EXPERIMENTS_DIR / "faixa2_e3_stability.json"
 # Vencedoras do E2 (`experiments/faixa2_e2_research.json::greedy_selection.
 # selected_beyond_t1`) -- entrada FIXA aqui, não recomputada: E3 opera
 # sobre "a config vencedora" de E2, não relitiga a ortogonalidade.
+#
+# CORRIGIDO 2026-08-27 (achado de `project_assurance`, 3ª revisão de §14):
+# a tupla original tinha 10 entradas, incluindo `A12_gap_pct` e
+# `K08_days_since_halving` -- as DUAS removidas por completo do vetor de
+# produção depois (`AG-316`/2026-08-27, `AG-263`/2026-08-26; ambas em
+# `src.features.registry.py::_BANNED_FEATURE_IDS` hoje). O relatório
+# publicado sob a tupla antiga (`experiments/faixa2_e3_stability.json`,
+# gerado 2026-08-09) já mostrava as duas como as candidatas MAIS FRACAS do
+# estudo (`n_cells_survived`: A12=0/30, K08=3/30) -- não "vencedoras" apesar
+# do nome do relatório, e SEM consequência de produção (nenhuma das duas
+# chegou perto de `T1_FEATURE_IDS`). Removidas aqui pra evitar recomputar
+# via `research/research_t2.py` (reimplementação PARALELA e órfã das
+# fórmulas já banidas de `src.features.groups.group_a`/`group_k` -- rodar
+# esta tupla sem o fix produziria valores usando fórmula que a produção já
+# rejeitou, não um erro alto). Ficam **8** candidatas, não 10 -- `CANDIDATES_
+# 18`/`candidates_18` no relatório passam a ter 16 entradas, não 18; o nome
+# da constante foi mantido (mesmo espírito de `T1_FEATURE_IDS` manter o
+# nome apesar da contagem real mudar historicamente), documentado aqui em
+# vez de renomear em cascata.
 E2_SELECTED_BEYOND_T1: Final[tuple[str, ...]] = (
-    "A12_gap_pct",
     "E05f_time_to_funding_h",
     "E12f_price_oi_divergence",
-    "K08_days_since_halving",
     "H01_exchange_netflow_z",
     "E11f_oi_change_1d",
     "A08_upper_wick_ratio",

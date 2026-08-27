@@ -283,3 +283,23 @@ def test_layer2_feature_ids_exclui_quarentena(tmp_path: Path) -> None:
     ]
     path = _write_registry(tmp_path, entries)
     assert registry.layer2_feature_ids(path=path) == frozenset({"X_l2_livre"})
+
+
+def test_layer2_feature_ids_exclui_defeito_construcao(tmp_path: Path) -> None:
+    """Achado de `project_assurance` (3ª revisão de §14, 2026-08-27): o
+    filtro original esquecia `defeito_construcao`, tratando-a de forma
+    diferente de `quarentena` apesar da docstring dizer que as duas são
+    "ortogonais à camada" igualmente. Sem este teste, uma feature T1 com
+    defeito de construção confirmado DEPOIS de promovida (já aconteceu
+    com E10f, AG-295) continuaria no conjunto derivado."""
+    entries = [
+        {**_MINIMAL_ENTRY_FINITA, "id": "X_l2_livre", "layer": ["L2"], "defeito_construcao": False},
+        {
+            **_MINIMAL_ENTRY_FINITA,
+            "id": "X_l2_defeito",
+            "layer": ["L2"],
+            "defeito_construcao": True,
+        },
+    ]
+    path = _write_registry(tmp_path, entries)
+    assert registry.layer2_feature_ids(path=path) == frozenset({"X_l2_livre"})
