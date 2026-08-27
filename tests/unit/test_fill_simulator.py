@@ -972,6 +972,40 @@ def test_write_orders_atomic_e_write_summary_atomic(tmp_path: Path) -> None:
     assert payload["markout_mean_bps"]["5m"] == 1.0
 
 
+def test_write_orders_atomic_symbol_roteia_pelo_layout_keyed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Achado de auditoria (`audit/architecture_gaps_log.yaml::AG-345`,
+    project_assurance 2026-08-27): sem `symbol`, uma 2ª rodada pra outro
+    símbolo sobrescrevia silenciosamente o `orders.parquet` do símbolo
+    anterior (path legado plano, sem segmento de símbolo)."""
+    monkeypatch.setattr(
+        fs, "fill_simulator_symbol_dir", lambda symbol, *, version: tmp_path / symbol / version
+    )
+    df = fs._empty_orders_frame()
+    orders_path = fs.write_orders_atomic(df, symbol="ETHUSDT")
+    assert orders_path == tmp_path / "ETHUSDT" / "v1" / "orders.parquet"
+    assert orders_path.exists()
+
+
+def test_write_orders_atomic_dest_dir_vence_symbol(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`dest_dir` explícito (usado por testes/callers que já resolveram o
+    path) sempre vence `symbol` — não deveria nunca chamar
+    `fill_simulator_symbol_dir`."""
+
+    def _raise_se_chamado(*_a: object, **_k: object) -> Path:
+        raise AssertionError(
+            "fill_simulator_symbol_dir não deveria ser chamado quando dest_dir é dado"
+        )
+
+    monkeypatch.setattr(fs, "fill_simulator_symbol_dir", _raise_se_chamado)
+    df = fs._empty_orders_frame()
+    orders_path = fs.write_orders_atomic(df, symbol="ETHUSDT", dest_dir=tmp_path)
+    assert orders_path == tmp_path / "orders.parquet"
+
+
 def test_record_experiment_cria_e_acrescenta(tmp_path: Path) -> None:
     log_path = tmp_path / "runs.parquet"
     summary = _dummy_summary()

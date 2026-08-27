@@ -14,6 +14,7 @@ dado."""
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -32,6 +33,64 @@ def _dt(iso: str) -> datetime:
 
 def _ts_col(values: list[datetime | None]) -> pl.Series:
     return pl.Series(values).cast(pl.Datetime("ms", "UTC"))
+
+
+# ============================================================================
+# load_orders — layout legado plano vs. keyed por símbolo (AG-345)
+# ============================================================================
+
+
+def _write_dummy_orders(dest_dir: Path) -> None:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    df = pl.DataFrame(
+        {
+            "symbol": ["BTCUSDT"],
+            "t_post": [0],
+            "side": [1],
+            "limit_price": [100.0],
+            "queue_ahead_initial": [0.0],
+            "filled": [True],
+            "t_entry": [0],
+            "fill_price": [100.0],
+            "markout_1m_bps": [1.0],
+            "markout_5m_bps": [1.0],
+            "markout_30m_bps": [1.0],
+        }
+    )
+    df.write_parquet(dest_dir / "orders.parquet")
+
+
+def test_load_orders_symbol_none_le_layout_legado_plano(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Achado de auditoria (`audit/architecture_gaps_log.yaml::AG-345`,
+    project_assurance 2026-08-27): antes deste fix, `load_orders` não
+    aceitava `symbol` nenhum — `symbol=None` (novo default) preserva
+    bit-exato o caminho legado plano que já tinha dado real."""
+    monkeypatch.setattr(fr, "FILL_SIMULATOR_OUTPUT_DIR", tmp_path)
+    _write_dummy_orders(tmp_path / "v1")
+    out = fr.load_orders()
+    assert out.height == 1
+    assert out["symbol"][0] == "BTCUSDT"
+
+
+def test_load_orders_symbol_explicito_le_layout_keyed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        fr, "fill_simulator_symbol_dir", lambda symbol, *, version: tmp_path / symbol / version
+    )
+    _write_dummy_orders(tmp_path / "ETHUSDT" / "v1")
+    out = fr.load_orders(symbol="ETHUSDT")
+    assert out.height == 1
+
+
+def test_load_orders_ausente_levanta_erro_claro(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fr, "FILL_SIMULATOR_OUTPUT_DIR", tmp_path)
+    with pytest.raises(FileNotFoundError, match="orders não encontrado"):
+        fr.load_orders()
 
 
 # ============================================================================

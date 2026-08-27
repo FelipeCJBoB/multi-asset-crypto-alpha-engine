@@ -43,6 +43,15 @@ PREDICTIONS_OUTPUT_DIR: Path = REPO_ROOT / "predictions"
 # de código `src/execution/`.
 FILL_SIMULATOR_OUTPUT_DIR: Path = REPO_ROOT / "execution" / "fill_simulator"
 
+
+def fill_simulator_symbol_dir(symbol: str, *, version: str = "v1") -> Path:
+    """`execution/fill_simulator/{symbol}/{version}/` — mesma função
+    (duplicada, mesmo motivo do resto deste arquivo) de
+    `src.execution._paths.fill_simulator_symbol_dir` (`AG-345`,
+    2026-08-27). Função PURA de resolução de path, não checa existência
+    nem cria diretório."""
+    return FILL_SIMULATOR_OUTPUT_DIR / symbol / version
+
 # Registro append-only de experimentos (§11.6) — mesmo diretório que
 # `src/models/_paths.py::EXPERIMENTS_DIR` resolve; este pacote grava
 # `experiments/backtest_fill_reconciliation_report.json` ali.

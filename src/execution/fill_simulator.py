@@ -133,7 +133,12 @@ from src.data.resample import step_ms
 from src.exchange.filters import NoFiltersAvailableError, load_filters_asof
 
 from ._constants import load_constant
-from ._paths import EXECUTION_RUNS_DIR, FILL_SIMULATOR_OUTPUT_DIR, book_ticker_symbol_dir
+from ._paths import (
+    EXECUTION_RUNS_DIR,
+    FILL_SIMULATOR_OUTPUT_DIR,
+    book_ticker_symbol_dir,
+    fill_simulator_symbol_dir,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -1151,9 +1156,25 @@ def calibrate_against_real_fills(simulated: pl.DataFrame, real_fills: pl.DataFra
 
 
 def write_orders_atomic(
-    df: pl.DataFrame, *, version: str = "v1", dest_dir: Path | None = None
+    df: pl.DataFrame,
+    *,
+    version: str = "v1",
+    symbol: str | None = None,
+    dest_dir: Path | None = None,
 ) -> Path:
-    out_dir = dest_dir if dest_dir is not None else (FILL_SIMULATOR_OUTPUT_DIR / version)
+    """`symbol=None` (default, AG-345) preserva o layout LEGADO plano
+    (`FILL_SIMULATOR_OUTPUT_DIR/{version}/orders.parquet`) — bit-exato
+    pra todo caller existente. `symbol` explícito roteia pelo layout
+    keyed (`fill_simulator_symbol_dir`) — sem isso, uma 2ª rodada pra
+    outro símbolo SOBRESCREVIA silenciosamente o `orders.parquet` do
+    símbolo anterior. `dest_dir` explícito (usado por testes) sempre
+    vence os dois."""
+    if dest_dir is not None:
+        out_dir = dest_dir
+    elif symbol is not None:
+        out_dir = fill_simulator_symbol_dir(symbol, version=version)
+    else:
+        out_dir = FILL_SIMULATOR_OUTPUT_DIR / version
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_path = out_dir / "orders.parquet"
     tmp_path = dest_path.with_name(dest_path.name + ".tmp")
@@ -1170,9 +1191,21 @@ def write_orders_atomic(
 
 
 def write_summary_atomic(
-    summary: FillSimulationSummary, *, version: str = "v1", dest_dir: Path | None = None
+    summary: FillSimulationSummary,
+    *,
+    version: str = "v1",
+    symbol: str | None = None,
+    dest_dir: Path | None = None,
 ) -> Path:
-    out_dir = dest_dir if dest_dir is not None else (FILL_SIMULATOR_OUTPUT_DIR / version)
+    """Mesma semântica de `symbol`/`dest_dir` de `write_orders_atomic`
+    acima (AG-345) — `summary.json` tinha o MESMO risco de sobrescrita
+    entre símbolos, mesma raiz de path."""
+    if dest_dir is not None:
+        out_dir = dest_dir
+    elif symbol is not None:
+        out_dir = fill_simulator_symbol_dir(symbol, version=version)
+    else:
+        out_dir = FILL_SIMULATOR_OUTPUT_DIR / version
     out_dir.mkdir(parents=True, exist_ok=True)
     dest_path = out_dir / "summary.json"
     tmp_path = dest_path.with_name(dest_path.name + ".tmp")
@@ -1361,8 +1394,17 @@ def _run_cli() -> int:
         n_days_no_data=result.n_days_no_data,
     )
 
-    write_orders_atomic(result.orders, version=args.version)
-    write_summary_atomic(summary, version=args.version)
+    # AG-345: symbol=args.symbol (não None) -- o CLI real sempre tem um
+    # símbolo em mãos, então sempre roteia pelo layout keyed daqui pra
+    # frente, evitando que uma 2ª rodada pra outro símbolo sobrescreva a
+    # anterior. Consequência de transição, documentada e não escondida:
+    # a rodada real de BTCUSDT já no disco (execution/fill_simulator/v1/,
+    # layout legado, mtime 2026-08-08) fica órfã do path novo -- não
+    # migrada automaticamente por este fix; precisa de novo `_run_cli`
+    # (ou migração manual) pra aparecer em execution/fill_simulator/
+    # BTCUSDT/v1/.
+    write_orders_atomic(result.orders, version=args.version, symbol=args.symbol)
+    write_summary_atomic(summary, version=args.version, symbol=args.symbol)
     tick_size_used = _resolve_tick_size_cached(
         end,
         args.symbol,

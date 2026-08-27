@@ -61,3 +61,17 @@ def book_ticker_symbol_dir(symbol: str) -> Path:
     if not d.is_dir():
         raise FileNotFoundError(f"diretório de bookTicker não encontrado: {d}")
     return d
+
+
+def fill_simulator_symbol_dir(symbol: str, *, version: str = "v1") -> Path:
+    """`execution/fill_simulator/{symbol}/{version}/` — layout keyed por
+    símbolo (`audit/architecture_gaps_log.yaml::AG-345`, 2026-08-27).
+    Função PURA de resolução de path (mesmo padrão de
+    `src.models._paths.predictions_symbol_tf_dir`) — não checa
+    existência nem cria diretório; quem escreve faz `mkdir`, quem lê
+    decide como tratar ausência. `symbol=None` no caller (default de
+    `write_orders_atomic`/`load_orders`) preserva o layout LEGADO plano
+    (`FILL_SIMULATOR_OUTPUT_DIR/{version}/`, sem símbolo) — bit-exato
+    pra todo caller existente antes deste fix; só um `symbol` explícito
+    passa a rotear por aqui."""
+    return FILL_SIMULATOR_OUTPUT_DIR / symbol / version

@@ -81,6 +81,7 @@ from ._paths import (
     EXPERIMENTS_DIR,
     FILL_SIMULATOR_OUTPUT_DIR,
     PREDICTIONS_OUTPUT_DIR,
+    fill_simulator_symbol_dir,
 )
 
 logger = structlog.get_logger(__name__)
@@ -189,8 +190,26 @@ def _avisa_se_grade_legada(resolution_id: str | None, *, origem: str) -> None:
         )
 
 
-def load_orders(version: str = "v1") -> pl.DataFrame:
-    path = FILL_SIMULATOR_OUTPUT_DIR / version / "orders.parquet"
+def load_orders(version: str = "v1", *, symbol: str | None = None) -> pl.DataFrame:
+    """`symbol=None` (default) lê o layout LEGADO plano
+    (`FILL_SIMULATOR_OUTPUT_DIR/{version}/orders.parquet`) — bit-exato
+    com todo caller existente antes deste fix (`AG-345`,
+    `audit/architecture_gaps_log.yaml`, 2026-08-27). `symbol` explícito
+    lê o layout keyed (`fill_simulator_symbol_dir`).
+
+    Nota de assimetria deliberada com `load_labels` acima: `load_labels`
+    usa `symbol: str = "BTCUSDT"` (valor concreto) porque o layout de
+    labels SEMPRE foi keyed por símbolo (não existe "legado plano" pra
+    labels desde `AG-042`) — só faltava o parâmetro. Aqui existe um
+    layout legado REAL no disco (`execution/fill_simulator/v1/`, dado
+    real de BTCUSDT, mtime 2026-08-08) que este fix não reprocessa
+    silenciosamente — por isso `None` preserva o caminho antigo em vez
+    de assumir `"BTCUSDT"` por trás das câmeras."""
+    path = (
+        (FILL_SIMULATOR_OUTPUT_DIR / version)
+        if symbol is None
+        else fill_simulator_symbol_dir(symbol, version=version)
+    ) / "orders.parquet"
     if not path.exists():
         raise FileNotFoundError(
             f"orders não encontrado em {path} — rode "
@@ -520,16 +539,23 @@ class ReconciliationResult:
 def run_fill_reconciliation(
     *,
     model_id: str | None = None,
+    symbol: str | None = None,
     window_start: date = BOOK_TICKER_WINDOW_START,
     window_end: date = BOOK_TICKER_WINDOW_END,
 ) -> ReconciliationResult:
+    """`symbol=None` (default, `AG-345`) preserva bit-exato o
+    comportamento anterior: `load_labels()` já defaultava pra
+    `"BTCUSDT"`, `load_orders()` lê o layout legado plano (único com
+    dado real hoje). `symbol` explícito propaga pros dois — para
+    `load_orders` só faz sentido depois de uma rodada real de
+    `fill_simulator._run_cli --symbol X` sob o layout keyed novo."""
     _assert_window_within_measured_coverage(window_start, window_end)
 
     resolved_model_id = model_id if model_id is not None else MODEL_ID_CAMADA1
     predictions = load_predictions(resolved_model_id)
     _avisa_se_grade_legada(None, origem="run_fill_reconciliation")
-    labels = load_labels()
-    orders = load_orders()
+    labels = load_labels(symbol=symbol if symbol is not None else "BTCUSDT")
+    orders = load_orders(symbol=symbol)
 
     base, diagnostics = build_reconciliation_base(
         predictions, labels, orders, window_start=window_start, window_end=window_end
@@ -768,16 +794,20 @@ def compute_fill_selectivity(
 
 def run_fill_selectivity(
     *,
+    symbol: str | None = None,
     window_start: date = BOOK_TICKER_WINDOW_START,
     window_end: date = BOOK_TICKER_WINDOW_END,
 ) -> SelectivityResult:
     """IO + guard-rail de janela em torno de `compute_fill_selectivity`
     (núcleo puro) — carrega `labels/v1/labels.parquet` e
-    `execution/fill_simulator/v1/orders.parquet` reais."""
+    `execution/fill_simulator/v1/orders.parquet` reais.
+
+    `symbol=None` (default, `AG-345`) preserva o comportamento anterior
+    — mesma nota de `run_fill_reconciliation` acima."""
     _assert_window_within_measured_coverage(window_start, window_end)
     _avisa_se_grade_legada(None, origem="run_fill_selectivity")
-    labels = load_labels()
-    orders = load_orders()
+    labels = load_labels(symbol=symbol if symbol is not None else "BTCUSDT")
+    orders = load_orders(symbol=symbol)
     return compute_fill_selectivity(
         labels, orders, window_start=window_start, window_end=window_end
     )
@@ -806,14 +836,23 @@ class FillReconciliationReport:
 def build_report(
     *,
     model_id: str | None = None,
+    symbol: str | None = None,
     window_start: date = BOOK_TICKER_WINDOW_START,
     window_end: date = BOOK_TICKER_WINDOW_END,
 ) -> FillReconciliationReport:
+    """`symbol=None` (default, `AG-345`) preserva o comportamento
+    anterior — propaga pra `run_fill_reconciliation`/
+    `run_fill_selectivity`, mesma nota lá."""
     resolved_model_id = model_id if model_id is not None else MODEL_ID_CAMADA1
     reconciliation = run_fill_reconciliation(
-        model_id=resolved_model_id, window_start=window_start, window_end=window_end
+        model_id=resolved_model_id,
+        symbol=symbol,
+        window_start=window_start,
+        window_end=window_end,
     )
-    selectivity = run_fill_selectivity(window_start=window_start, window_end=window_end)
+    selectivity = run_fill_selectivity(
+        symbol=symbol, window_start=window_start, window_end=window_end
+    )
 
     by_path_limitation = (
         reconciliation.by_path_note
