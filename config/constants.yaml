@@ -2871,6 +2871,13 @@ m2_duckdb_threads:
   class: C
   sweep_required: false
 
+ag071_process_pool_heartbeat_s:
+  value: 60.0
+  provenance: ASSUMED
+  source: "AG-071 (audit/architecture_gaps_log.yaml) — nenhum future.result() em ProcessPoolExecutor tinha timeout; já travou 16h+ e teve OOM 3x na sessão de M2, e a superfície cresceu desde então (m4_critical_windows.py sozinho tem hoje 5 blocos independentes sem timeout). Decisão do usuário 2026-08-27: não adicionar timeout/kill automático ainda — falta decidir o mecanismo (matar processo do worker? deixar estado órfão? abortar a rodada inteira ou só a task travada?) — só instrumentar com log periódico de progresso (quais tasks ainda pendentes, há quanto tempo a rodada está rodando), sem matar nada. Ver src/analysis/_pool_heartbeat.py::iter_completed_with_heartbeat. 60s é escolha de conveniência (frequente o bastante pra detectar travamento em minutos numa rodada que historicamente já levou 16h+, raro o bastante pra não poluir o log rodando 12-15 tasks em paralelo) — sem medição, ASSUMED, classe D (não afeta nenhum resultado/decisão, é só observabilidade)."
+  class: D
+  sweep_required: false
+
 m1_duckdb_memory_limit_gb:
   value: 2.0
   provenance: ASSUMED

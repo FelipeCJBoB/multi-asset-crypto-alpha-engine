@@ -80,7 +80,7 @@ from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -91,6 +91,7 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.analysis._pool_heartbeat import iter_completed_with_heartbeat
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
@@ -873,7 +874,11 @@ def run_and_save_volatility_comparison_report(
             executor.submit(run_volatility_comparison_for_symbol_tf, symbol, tf): (symbol, tf)
             for symbol, tf in combos
         }
-        for future in as_completed(future_to_combo):
+        for future in iter_completed_with_heartbeat(
+            future_to_combo,
+            event_prefix="analysis.volatility_comparison",
+            heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+        ):
             symbol, tf = future_to_combo[future]
             # AG-019: future.result() isolado em try/except -- 1 task
             # falhando (exceção dentro do ProcessPoolExecutor) não pode
@@ -912,10 +917,10 @@ def run_and_save_volatility_comparison_report(
         )
 
     elapsed_s = time.perf_counter() - t0
-    # ProcessPoolExecutor.as_completed devolve em ordem de conclusão, não
-    # de submissão -- ordena pra o relatório final ser determinístico
-    # (mesmo conteúdo sempre na mesma posição, independente de qual
-    # worker terminou primeiro).
+    # iter_completed_with_heartbeat (como as_completed antes dela) devolve
+    # em ordem de conclusão, não de submissão -- ordena pra o relatório
+    # final ser determinístico (mesmo conteúdo sempre na mesma posição,
+    # independente de qual worker terminou primeiro).
     results.sort(key=lambda r: (r.symbol, r.tf))
 
     # Combinações puladas (dado insuficiente) não contam nem a favor nem
@@ -986,7 +991,11 @@ def run_and_save_volatility_comparison_report_dollar_bar(
             ): (symbol, resolution_id)
             for symbol, resolution_id in combos
         }
-        for future in as_completed(future_to_combo):
+        for future in iter_completed_with_heartbeat(
+            future_to_combo,
+            event_prefix="analysis.volatility_comparison_dollar_bar",
+            heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+        ):
             symbol, resolution_id = future_to_combo[future]
             try:
                 result = future.result()

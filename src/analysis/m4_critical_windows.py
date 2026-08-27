@@ -182,7 +182,7 @@ import multiprocessing
 import os
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Final
@@ -193,6 +193,7 @@ import polars as pl
 import structlog
 
 from src.analysis import m6_common_factor_hypothesis as m6
+from src.analysis._pool_heartbeat import iter_completed_with_heartbeat
 from src.core.provenance import report_provenance
 from src.data import lake
 from src.data._constants import load_constant as load_data_constant
@@ -2521,7 +2522,12 @@ def run_critical_windows_comparison(
                 ): symbol
                 for symbol in all_symbols
             }
-            for bocpd_future in as_completed(bocpd_future_to_symbol):
+            for bocpd_future in iter_completed_with_heartbeat(
+                bocpd_future_to_symbol,
+                event_prefix="analysis.m4_critical_windows.bocpd_full_history",
+                heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+                resolution_id=resolution_id,
+            ):
                 symbol = bocpd_future_to_symbol[bocpd_future]
                 try:
                     bocpd_full_by_symbol[symbol] = bocpd_future.result()
@@ -2570,7 +2576,12 @@ def run_critical_windows_comparison(
                     ): symbol
                     for symbol in all_symbols
                 }
-                for vol_future in as_completed(vol_future_to_symbol):
+                for vol_future in iter_completed_with_heartbeat(
+                    vol_future_to_symbol,
+                    event_prefix="analysis.m4_critical_windows.forward_vol_history",
+                    heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+                    resolution_id=resolution_id,
+                ):
                     symbol = vol_future_to_symbol[vol_future]
                     try:
                         forward_vol_by_symbol[symbol] = vol_future.result()
@@ -2629,7 +2640,13 @@ def run_critical_windows_comparison(
                 ): (window, symbol)
                 for window, symbol in cells_spec
             }
-            for future in as_completed(future_to_cell):
+            cell_labels = {f: (w.name, s) for f, (w, s) in future_to_cell.items()}
+            for future in iter_completed_with_heartbeat(
+                cell_labels,
+                event_prefix="analysis.m4_critical_windows.run_critical_windows_comparison",
+                heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+                resolution_id=resolution_id,
+            ):
                 window, symbol = future_to_cell[future]
                 try:
                     outcomes.append(future.result())
@@ -2895,7 +2912,13 @@ def run_jump_model_transferability_comparison(
                 ): (window, symbol)
                 for window, symbol in cells_spec
             }
-            for future in as_completed(future_to_cell):
+            cell_labels = {f: (w.name, s) for f, (w, s) in future_to_cell.items()}
+            for future in iter_completed_with_heartbeat(
+                cell_labels,
+                event_prefix="analysis.m4_critical_windows.jump_transferability",
+                heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+                resolution_id=resolution_id,
+            ):
                 window, symbol = future_to_cell[future]
                 try:
                     outcomes.append(future.result())
@@ -3114,7 +3137,13 @@ def run_jump_model_extended_features_comparison(
                 ): (window, symbol)
                 for window, symbol in cells_spec
             }
-            for future in as_completed(future_to_cell):
+            cell_labels = {f: (w.name, s) for f, (w, s) in future_to_cell.items()}
+            for future in iter_completed_with_heartbeat(
+                cell_labels,
+                event_prefix="analysis.m4_critical_windows.jump_extended_features",
+                heartbeat_s=float(load_data_constant("ag071_process_pool_heartbeat_s")),
+                resolution_id=resolution_id,
+            ):
                 window, symbol = future_to_cell[future]
                 try:
                     outcomes.append(future.result())
