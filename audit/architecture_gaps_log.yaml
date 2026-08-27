@@ -18327,6 +18327,49 @@ entries:
       jusante; (b) enquanto isso, revisar o `keep="first"` de
       `_unique_test_bars` (AG-202), que hoje pode estar preservando a barra
       degenerada em vez da real. (b) e barato e independente de (a).
+    addendum_2026-08-27_mecanismo_identificado: >
+      INVESTIGADO 2026-08-27 (usuário pediu aprofundar o trace antes de
+      autorizar o fix do item (a) acima). Caso concreto isolado
+      (BTCUSDT/R1, open_time=1738626900274, ~2025-02-03 23:55 UTC):
+      descartada a hipótese de dado bruto duplicado (arquivo raw do dia
+      verificado limpo — zero `agg_trade_id`/linha duplicada, sequência
+      de ID contínua sem buracos, DuckDB direto sobre
+      `data/capacity/agg_trades/BTCUSDT/2025-02-03.parquet`). O
+      mecanismo real: `threshold_quote` DIFERE entre a barra "antes"
+      (2,2719e8, ~00:13 UTC mesmo dia) e o par fantasma+real (2,1306e8)
+      — prova empírica de que uma RECALIBRAÇÃO de threshold ocorreu
+      exatamente ali. `src/data/build_dollar_bars.py::
+      build_dollar_bars_walkforward` (o gerador de PRODUÇÃO real, não
+      `m2_worker.py` — investigação inicial mirou o módulo errado) já
+      documenta esse mecanismo explicitamente na própria docstring
+      (linhas ~673-712, AG-124, 2026-08-21): trocar `carry.threshold`
+      entre períodos REINTERPRETA RETROATIVAMENTE o `leftover`
+      acumulado sob o threshold antigo — "um trade em progresso rumo ao
+      threshold ANTIGO pode fechar como sua própria barra, menor que o
+      threshold NOVO, assim que o primeiro trade do período seguinte
+      chega". Comportamento DETERMINÍSTICO e TESTADO
+      (`tests/unit/test_data_bars.py::
+      test_threshold_bars_drain_sobrevive_a_troca_de_threshold_entre_periodos`),
+      não bug desconhecido — a própria docstring já registra o efeito
+      agregado como "objeto de investigação aberta"
+      (`docs/plano_acao_ag124_pos_auditoria_2026-08-21.md` §11/§12),
+      mas como consequência CONHECIDA e ACEITA do desenho walk-forward,
+      não como defeito do gerador.
+    status_revisado_2026-08-27: >-
+      RECLASSIFICADO — item (a) do status original ("gerador deve
+      descartar barra de duração zero na emissão") NÃO deve ser
+      executado como estava proposto: "corrigir" o gerador pra nunca
+      emitir essas barras desfaria uma consequência já testada e aceita
+      do desenho AG-124 (troca causal de threshold entre períodos), não
+      corrigiria um defeito — a barra fantasma é o preço aceito de
+      recalibração causal, coerente com "conservação de valor provada
+      em teste" já citado na docstring. Item (b) (revisar `keep="first"`
+      de `_unique_test_bars`, AG-202) CONTINUA aberto e é a ação
+      relevante real — vive em `src/models/alpha.py`, fora do escopo
+      desta sessão (§13, delegado à sessão de ML). Se o efeito AGREGADO
+      (não o mecanismo, já explicado) precisar de ação, isso é o
+      trabalho já rastreado em §11/§12 do plano de ação de AG-124, não
+      um novo item.
 
   - id: AG-265
     date: "2026-08-26"
