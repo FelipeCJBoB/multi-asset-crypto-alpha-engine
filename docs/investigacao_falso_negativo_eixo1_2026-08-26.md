@@ -392,4 +392,66 @@ inteira, unidade de shift respeitando a estrutura real de dollar bar; (4) só
 depois disso, reavaliar promoção — como leitura de um critério corrigido, não
 como bypass do critério atual.
 
+---
 
+## 9. Execução real (2026-08-27) — o resultado que revisa a leitura da §3.3/§4.2/§5
+
+Itens 1 e 2 acima foram implementados e RODADOS contra dado real nesta
+sessão (Manager autorizou execução direta). Código:
+`src/analysis/eixo1_power_diagnostic.py`,
+`src/analysis/eixo1_symbol_homogeneity.py`; detalhe de implementação e
+revisão independente do código: `docs/ADR-005_arquitetura_do_feature_
+engine_2026-08-26.md` §14.9-§14.10.
+
+### 9.1 Item 2 — homogeneidade entre símbolos: REJEITADA, formalmente
+
+`uv run python -m src.analysis.eixo1_symbol_homogeneity`:
+`chi2_statistic=30,09`, `p_value=4,69e-06`, `gl=4`. Taxas: `BTCUSDT=1,39%`,
+`ETHUSDT=2,78%`, `SOLUSDT=2,78%`, `BNBUSDT=20,83%`, `XRPUSDT=5,56%`.
+Confirma numericamente o achado do §2.3/§4.3 — a premissa i.i.d. do
+`binomial(5, p_symbol)` de `AG-294` é factualmente falsa, agora com teste
+formal, não só leitura visual da tabela.
+
+### 9.2 Item 1 — diagnóstico de poder: resultado NÃO esperado, revisa a hipótese central desta investigação
+
+`uv run python -m src.analysis.eixo1_power_diagnostic --start 2022-01-01
+--end 2026-08-07` (100 sorteios de Monte Carlo por ponto, 7 pontos de
+grade, 15 células reais):
+
+| `rho_true` | Spearman alcançado | detecção `k≥1` | `k≥2` | `k≥3` |
+|---|---|---|---|---|
+| 0,00 | −0,0008 | 0% | 0% | 0% |
+| 0,01 | 0,0068 | **98%** | 87% | 66% |
+| 0,02 | 0,0191 | **100%** | 100% | 100% |
+| 0,03-0,10 | 0,028-0,097 | 100% | 100% | 100% |
+
+**A hipótese central desta investigação — que o eixo 1 pudesse ser
+"essencialmente uma função degrau", com poder só para efeito do tamanho de
+um artefato de dado (§3.3, §4.2) — NÃO SE SUSTENTA sob medição direta.** O
+pipeline detecta com quase certeza (98%) um Spearman de apenas `~0,007`, e
+com certeza total a partir de `~0,02` — precisamente a base da faixa que a
+indústria (§3.4, Alphalens/Qlib/WorldQuant) trata como "IC útil". Controle
+negativo (`rho_true=0`) não produziu nenhum falso positivo em 100 sorteios.
+
+**Isso NÃO refuta `AG-327`/`AG-328` como defeitos de desenho** — peak-
+hunting não corrigido e o binomial pooled com premissa i.i.d. rejeitada
+(§9.1) continuam reais, e valem correção por corretude/precisão. **Mas
+muda qual é a explicação mais provável para `L2={}`:** não "o teste está
+cego para sinal modesto", e sim "as 72 features candidatas genuinamente não
+carregam nem um IC marginal univariado modesto contra o retorno futuro".
+Isso é consistente com a leitura mais sóbria já registrada em §3.3 como
+possibilidade — a medição agora pesa claramente para ELA, não para a
+hipótese de teste mal calibrado que motivou a pesquisa/auditoria.
+
+### 9.3 O que isso muda na recomendação da §5/§8
+
+A ordem de prioridade original (poder → homogeneidade → max-T → reavaliar)
+continua correta como MÉTODO — mas o resultado do item 1 reduz a urgência
+do item 3 (max-T conjunto): não há mais evidência de que o pipeline atual
+esteja descartando sinal real por falta de poder na faixa que importaria.
+`AG-328` (homogeneidade rejeitada) segue como um defeito de calibração real
+do `binomial` — vale corrigir por corretude — mas a decisão de promoção não
+está mais bloqueada pela pergunta "isso é falso negativo sistemático?": a
+resposta medida é não, ao menos não no sentido que este diagnóstico testou.
+`L2={}` como leitura honesta do domínio ganha peso; decisão final de
+promoção continua com o Manager.

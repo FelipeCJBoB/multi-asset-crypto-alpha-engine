@@ -1,0 +1,121 @@
+{
+  "task": "eixo1_power_diagnostic",
+  "pergunta": "O eixo 1 (AG-294) tem poder para detectar um IC populacional realista (nao so o tamanho de um artefato de dado)? AG-327.",
+  "adr_ref": "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.9/§14.10; docs/investigacao_falso_negativo_eixo1_2026-08-26.md §3.3, §8 item 1",
+  "metodo": "injecao de serie sintetica com correlacao de Spearman populacional rho_true (referencia h=1), pico_abs_t pela MESMA matematica de ic_by_horizon.ic_disjoint, injetada como 73a candidata na familia real de 72 p-valores + BH q identico a producao, maioria >=2/3 resolucoes, taxa de deteccao por Monte Carlo (n_mc_draws sorteios).",
+  "aviso": "DIAGNOSTICO, nao decide promocao -- usa a serie de barras COMPLETA (sem mascara de warmup de producao), entao N e ligeiramente MAIOR que o real -- leitura levemente OTIMISTA do poder, declarada, nao escondida.",
+  "q_bh": 0.1,
+  "n_mc_draws": 100,
+  "k_thresholds": [
+    1,
+    2,
+    3
+  ],
+  "seed": 20260826,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "resolutions": [
+    "R1",
+    "R2",
+    "R3"
+  ],
+  "janela": {
+    "start": "2022-01-01",
+    "end": "2026-08-07"
+  },
+  "n_bars_por_celula": {
+    "R1/BTCUSDT": 152925,
+    "R1/ETHUSDT": 156787,
+    "R1/SOLUSDT": 165020,
+    "R1/BNBUSDT": 163198,
+    "R1/XRPUSDT": 171098,
+    "R2/BTCUSDT": 77174,
+    "R2/ETHUSDT": 79451,
+    "R2/SOLUSDT": 82399,
+    "R2/BNBUSDT": 81386,
+    "R2/XRPUSDT": 85468,
+    "R3/BTCUSDT": 38443,
+    "R3/ETHUSDT": 39605,
+    "R3/SOLUSDT": 41215,
+    "R3/BNBUSDT": 40300,
+    "R3/XRPUSDT": 42478
+  },
+  "curva_de_poder": [
+    {
+      "rho_true": 0.0,
+      "rho_alcancado_medio": -0.0008295670687739176,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0
+      }
+    },
+    {
+      "rho_true": 0.01,
+      "rho_alcancado_medio": 0.0067983559618958874,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 0.98,
+        "2": 0.87,
+        "3": 0.66
+      }
+    },
+    {
+      "rho_true": 0.02,
+      "rho_alcancado_medio": 0.019141367039753412,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
+    },
+    {
+      "rho_true": 0.03,
+      "rho_alcancado_medio": 0.02782130697455327,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
+    },
+    {
+      "rho_true": 0.05,
+      "rho_alcancado_medio": 0.04751545296823863,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
+    },
+    {
+      "rho_true": 0.08,
+      "rho_alcancado_medio": 0.07777250550393124,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
+    },
+    {
+      "rho_true": 0.1,
+      "rho_alcancado_medio": 0.09726249511030624,
+      "n_mc_draws": 100,
+      "detection_rate_by_k": {
+        "1": 1.0,
+        "2": 1.0,
+        "3": 1.0
+      }
+    }
+  ],
+  "generated_at": "2026-08-27T11:18:47.924759+00:00"
+}

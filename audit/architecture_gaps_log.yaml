@@ -21196,6 +21196,41 @@ entries:
       lado do `rho_true` nominal. 2 achados LOW tambem corrigidos (guarda
       de shape em `max_abs_spearman_over_horizons`, ressalva de poder do
       qui-quadrado documentada em `eixo1_symbol_homogeneity.py`).
+    addendum_2026-08-27_executado_pipeline_TEM_poder_alto_ja_em_ic_pequeno: >
+      EXECUTADO 2026-08-27 (Manager autorizou execucao direta nesta
+      sessao). `uv run python -m src.analysis.eixo1_power_diagnostic
+      --start 2022-01-01 --end 2026-08-07` (100 sorteios de MC por
+      rho_true, 7 pontos de grade, 15 celulas reais). RESULTADO MEDIDO,
+      NAO O QUE SE ESPERAVA: o pipeline atual (com peak-hunting nao
+      corrigido E binomial pooled invalido, os dois defeitos deste AG e
+      de `AG-328`) tem PODER ALTO ja em correlacao de Spearman muito
+      pequena -- taxa de deteccao (k>=1 simbolo) = 98% em Spearman
+      alcancado ~0,007 (rho_true=0,01), e 100% (k>=1,2,3 simbolos) a
+      partir de Spearman alcancado ~0,019 (rho_true=0,02). Controle
+      negativo (rho_true=0,0) deu 0% de deteccao em 100 sorteios --
+      nenhum falso positivo observado. `experiments/eixo1_power_
+      diagnostic_report.json` persistido, curva completa nos 7 pontos.
+
+      CONSEQUENCIA -- revisao da leitura original deste AG: a hipotese de
+      "o pipeline e essencialmente uma funcao degrau que so dispara pra
+      efeito do tamanho de um artefato" (levantada pela pesquisa externa
+      e pela auditoria adversarial, §3.3/§4.2 da investigacao) NAO SE
+      SUSTENTA sob medicao direta -- o pipeline detecta com quase certeza
+      um IC tao pequeno quanto 0,02 (a base inferior da faixa que a
+      industria, Alphalens/Qlib/WorldQuant, trata como "sinal util").
+      Os dois defeitos de desenho (`AG-327` peak-hunting, `AG-328`
+      binomial invalido) continuam REAIS -- nao foram refutados, a
+      homogeneidade entre simbolos continua rejeitada (addendum de
+      `AG-328`) -- mas a medicao agora aponta que eles NAO SAO a causa
+      de `L2={}`. A leitura que ganha peso: as 72 features candidatas
+      genuinamente NAO carregam nem um IC marginal univariado modesto
+      (~0,01-0,02) contra o retorno futuro -- `L2={}` e mais provavelmente
+      uma medicao sobria do dominio (cripto, barra curta, feature
+      individual) do que um artefato de teste mal calibrado. Ressalva
+      honesta que continua de pe: o diagnostico usa serie SEM mascara de
+      warmup (N levemente maior que producao, vies otimista declarado no
+      proprio payload) -- nao muda a ordem de grandeza do resultado (98%
+      de poder com folga grande sobre 0%).
 
   - id: AG-328
     date: "2026-08-26"
@@ -21239,6 +21274,23 @@ entries:
       teste (rejeita ou nao homogeneidade) e o que decide se `Meff` ou
       residualizacao de fator comum e o proximo passo -- decisao
       pendente da execucao real, nao decidida aqui.
+    addendum_2026-08-27_executado_rejeita_homogeneidade: >
+      EXECUTADO 2026-08-27 (Manager autorizou execucao direta nesta
+      sessao). `uv run python -m src.analysis.eixo1_symbol_homogeneity`
+      contra o relatorio real do eixo 1: REJEITA homogeneidade com folga
+      grande -- qui-quadrado=30,09, p=4,69e-06, gl=4. Contagem por
+      simbolo: BTCUSDT=1 (1,39%), ETHUSDT=2 (2,78%), SOLUSDT=2 (2,78%),
+      BNBUSDT=15 (20,83%), XRPUSDT=4 (5,56%) -- confirma exatamente a
+      contagem citada no achado original deste AG (15/24=62,5% em BNB) e
+      a proporcao ~6,7x. `experiments/eixo1_symbol_homogeneity_report.
+      json` persistido. CONSEQUENCIA: a premissa i.i.d. do `binomial(5,
+      p_symbol)` de `feature_promotion_criterion.py` esta FORMALMENTE
+      refutada, nao so qualitativamente suspeita -- a tabela `k>=1..5` de
+      `AG-294` nao deve ser lida como calibrada. Proxima decisao
+      (Manager): `Meff` ajustado por correlacao vs. residualizar fator de
+      mercado comum antes de testar (Fama-MacBeth/GLS) -- ainda nao
+      decidido, e o item que desbloqueia a extensao do max-T (`AG-327`)
+      pra dimensao simbolo.
 
   - id: AG-329
     date: "2026-08-26"

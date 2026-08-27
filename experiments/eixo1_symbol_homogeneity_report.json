@@ -1,0 +1,35 @@
+{
+  "task": "eixo1_symbol_homogeneity",
+  "pergunta": "Os 5 simbolos tem taxa de descoberta homogenea -- premissa que binomial(n_symbols, p_symbol) de feature_promotion_criterion.py exige? AG-328.",
+  "adr_ref": "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.9/§14.10; docs/investigacao_falso_negativo_eixo1_2026-08-26.md §3.2, §4.3, §8 item 2",
+  "metodo": "qui-quadrado de homogeneidade de proporcoes (scipy.stats.chi2_contingency), tabela simbolo x descoberta/nao-descoberta sobre as features do relatorio real do eixo 1. NAO recomputa o eixo 1 -- le o relatorio ja persistido.",
+  "fonte": "C:\\Robo MT5 Forex\\Cryptex\\Binance_Futures\\experiments\\feature_promotion_criterion_report.json",
+  "alpha": 0.05,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT"
+  ],
+  "n_features": 72,
+  "discoveries_by_symbol": {
+    "BTCUSDT": 1,
+    "ETHUSDT": 2,
+    "SOLUSDT": 2,
+    "BNBUSDT": 15,
+    "XRPUSDT": 4
+  },
+  "rate_by_symbol": {
+    "BTCUSDT": 0.013888888888888888,
+    "ETHUSDT": 0.027777777777777776,
+    "SOLUSDT": 0.027777777777777776,
+    "BNBUSDT": 0.20833333333333334,
+    "XRPUSDT": 0.05555555555555555
+  },
+  "chi2_statistic": 30.089285714285715,
+  "p_value": 4.693801067243174e-06,
+  "degrees_of_freedom": 4,
+  "homogeneo": false,
+  "generated_at": "2026-08-27T10:56:36.135144+00:00"
+}

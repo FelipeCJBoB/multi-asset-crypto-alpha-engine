@@ -3183,10 +3183,59 @@ relatório persiste `rho_alcancado_medio` ao lado de `rho_true` nominal.
 
 | item | módulo | status | comando |
 |---|---|---|---|
-| 1 — diagnóstico de poder | `src/analysis/eixo1_power_diagnostic.py` | implementado, não executado | `uv run python -m src.analysis.eixo1_power_diagnostic --start 2022-01-01 --end 2026-08-07` |
-| 2 — homogeneidade entre símbolos | `src/analysis/eixo1_symbol_homogeneity.py` | implementado, não executado | `uv run python -m src.analysis.eixo1_symbol_homogeneity` |
-| 3 — max-T de horizonte | `src/analysis/eixo1_maxt_horizon_permutation.py` | implementado, ESCOPO LIMITADO à dimensão horizonte (ver docstring do módulo) — a extensão conjunta horizonte×símbolo depende do resultado real do item 2, não decidida aqui (B23) | função pura, sem CLI de relatório em lote nesta versão — uso exploratório por feature |
-| 4 — reavaliar promoção | — | bloqueado pelos itens 1-3 | — |
+| 1 — diagnóstico de poder | `src/analysis/eixo1_power_diagnostic.py` | **EXECUTADO 2026-08-27 — PODER ALTO já em IC pequeno** (98% de detecção em Spearman alcançado ~0,007; 100% a partir de ~0,019; 0% no controle negativo — ver §14.10.1) | `uv run python -m src.analysis.eixo1_power_diagnostic --start 2022-01-01 --end 2026-08-07` |
+| 2 — homogeneidade entre símbolos | `src/analysis/eixo1_symbol_homogeneity.py` | **EXECUTADO 2026-08-27 — REJEITA homogeneidade** (χ²=30,09, p=4,69e-06, gl=4; BNBUSDT 20,83% vs. 1,39-5,56% dos outros 4) | `uv run python -m src.analysis.eixo1_symbol_homogeneity` |
+| 3 — max-T de horizonte | `src/analysis/eixo1_maxt_horizon_permutation.py` | implementado, ESCOPO LIMITADO à dimensão horizonte (ver docstring do módulo) — dado o resultado do item 1 (§14.10.1), a urgência de rodar isto em lote caiu; segue disponível para uso exploratório | função pura, sem CLI de relatório em lote nesta versão — uso exploratório por feature |
+| 4 — reavaliar promoção | — | **DESBLOQUEADO pela leitura do item 1 — ver §14.10.1**, ainda não decidido pelo Manager | — |
+
+### §14.10.1 O resultado que muda a leitura: o pipeline TEM poder, já em IC pequeno
+
+**Medido 2026-08-27, não o que a pesquisa externa/auditoria adversarial
+tinham hipotetizado.** Rodado o item 1 contra os 3 relatórios reais + as 15
+células de barras reais (100 sorteios de Monte Carlo por ponto da grade,
+`experiments/eixo1_power_diagnostic_report.json`):
+
+| `rho_true` (nominal) | Spearman alcançado (medido) | detecção `k≥1` | `k≥2` | `k≥3` |
+|---|---|---|---|---|
+| 0,00 (controle negativo) | −0,0008 | **0%** | 0% | 0% |
+| 0,01 | 0,0068 | **98%** | 87% | 66% |
+| 0,02 | 0,0191 | **100%** | 100% | 100% |
+| 0,03 | 0,0278 | 100% | 100% | 100% |
+| 0,05 | 0,0475 | 100% | 100% | 100% |
+| 0,08 | 0,0778 | 100% | 100% | 100% |
+| 0,10 | 0,0973 | 100% | 100% | 100% |
+
+**A hipótese central da investigação (§14.9, "o pipeline pode ser
+essencialmente uma função degrau que só dispara para efeito do tamanho de
+um artefato") NÃO SE SUSTENTA sob medição direta.** O pipeline detecta com
+quase certeza (98%) um Spearman tão pequeno quanto `~0,007`, e com certeza
+total (100%) a partir de `~0,02` — a base inferior da faixa que a indústria
+(Alphalens/Qlib/WorldQuant, §3.4 da investigação) trata como "IC útil". O
+controle negativo (`rho_true=0,0`) não produziu UM ÚNICO falso positivo em
+100 sorteios — o pipeline também não é frouxo na direção oposta.
+
+**Os dois defeitos de desenho continuam reais** — `AG-327` (peak-hunting
+não corrigido) e `AG-328` (binomial pooled com premissa i.i.d. rejeitada
+formalmente, `χ²=30,09`, `p=4,69e-06`, item 2 acima) não foram refutados
+por este resultado, e valem correção por corretude/precisão de calibração.
+**Mas a medição agora aponta que eles NÃO explicam `L2={}`.** A leitura que
+ganha peso: as 72 features candidatas genuinamente não carregam nem um IC
+marginal univariado modesto (`~0,01-0,02`) contra o retorno futuro — `L2={}`
+é mais provavelmente uma medição sóbria do domínio (cripto, barra curta,
+sinal individual) do que um artefato de teste mal calibrado.
+
+**Ressalva honesta, declarada desde a implementação, que não muda a ordem
+de grandeza do resultado:** o diagnóstico usa a série de barras COMPLETA
+(sem a máscara de warmup de produção), então `N` é ligeiramente maior que o
+real — viés otimista de poder, mas pequeno diante da folga medida (98% vs.
+0%, não uma diferença de poucos pontos percentuais que essa margem de `N`
+poderia apagar).
+
+**Consequência para o item 4.** A pergunta "a régua está descartando sinal
+real por falta de poder?" tem agora uma resposta medida: não, não na faixa
+de IC que importaria economicamente. Isso não decide sozinho se `L2={}`
+deve continuar assim — só fecha a hipótese específica que motivou toda esta
+investigação. Decisão de promoção continua sendo do Manager.
 
 **Por que o item 3 não está "completo".** Decidir se o `binomial` deve ser
 substituído por pooling raw (via `Meff`) ou por residualização do fator de
