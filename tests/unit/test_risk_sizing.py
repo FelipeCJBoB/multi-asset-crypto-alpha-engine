@@ -32,7 +32,9 @@ import pytest
 
 from src.exchange.filters import Filters
 from src.risk.sizing import (
+    NegativeAtrPctError,
     NonPositiveEquityError,
+    NonPositiveMarkPriceError,
     SizingResult,
     ZeroStopDistanceError,
     compute_sizing,
@@ -281,6 +283,51 @@ def test_equity_zero_levanta_non_positive_equity_error() -> None:
             equity=Decimal("0"),
             atr_pct=Decimal("0.003"),
             mark_price=_MARK_PRICE,
+            filters=filters,
+        )
+
+
+def test_atr_pct_negativo_levanta_negative_atr_pct_error() -> None:
+    """Achado de auditoria (`audit/architecture_gaps_log.yaml::AG-339`,
+    2026-08-27, `project_assurance`): `ZeroStopDistanceError` só guarda
+    `stop_pct == 0` — `atr_pct` negativo produz `stop_pct` negativo, NÃO
+    zero, e passava por aquela guarda sem erro antes deste fix."""
+    filters = _make_filters()
+    with pytest.raises(NegativeAtrPctError):
+        compute_sizing(
+            t0=_T0,
+            equity=_EQUITY,
+            atr_pct=Decimal("-0.003"),
+            mark_price=_MARK_PRICE,
+            filters=filters,
+        )
+
+
+def test_mark_price_zero_levanta_non_positive_mark_price_error() -> None:
+    filters = _make_filters()
+    with pytest.raises(NonPositiveMarkPriceError):
+        compute_sizing(
+            t0=_T0,
+            equity=_EQUITY,
+            atr_pct=Decimal("0.003"),
+            mark_price=Decimal("0"),
+            filters=filters,
+        )
+
+
+def test_mark_price_negativo_levanta_non_positive_mark_price_error() -> None:
+    """Achado de auditoria (`audit/architecture_gaps_log.yaml::AG-339`,
+    2026-08-27, `project_assurance`): `qty_raw = notional_req /
+    mark_price_d` não tinha nenhuma checagem de sinal antes deste fix —
+    um feed de mark price corrompido/negativo produziria `qty`/
+    `notional_real` com sinal invertido silenciosamente."""
+    filters = _make_filters()
+    with pytest.raises(NonPositiveMarkPriceError):
+        compute_sizing(
+            t0=_T0,
+            equity=_EQUITY,
+            atr_pct=Decimal("0.003"),
+            mark_price=Decimal("-64940"),
             filters=filters,
         )
 

@@ -71,6 +71,30 @@ class NonPositiveEquityError(ValueError):
     origem, não só num controle específico."""
 
 
+class NonPositiveMarkPriceError(ValueError):
+    """`mark_price <= 0` — mesma categoria de `NonPositiveEquityError`
+    acima, achado irmão (`audit/architecture_gaps_log.yaml::AG-339`,
+    2026-08-27, `project_assurance`): `qty_raw = notional_req /
+    mark_price_d` não tinha nenhuma checagem de sinal. Um `mark_price`
+    corrompido/zerado (feed stale) faria `qty_raw` divergir por zero ou
+    inverter de sinal silenciosamente, antes mesmo de chegar em
+    `filters.floor_to_step`. Não é caso de negócio válido — preço de
+    mercado é sempre positivo por construção; controle upstream (feed de
+    mark price) deve interceptar antes de chegar aqui."""
+
+
+class NegativeAtrPctError(ValueError):
+    """`atr_pct < 0` — mesma categoria de `ZeroStopDistanceError` acima,
+    achado irmão (`audit/architecture_gaps_log.yaml::AG-339`, 2026-08-27,
+    `project_assurance`): `ZeroStopDistanceError` só guarda `stop_pct ==
+    0`, não `< 0` — um `atr_pct` negativo (bug upstream de feature) produz
+    `stop_pct` negativo, NÃO zero, passa por aquela guarda sem erro, e
+    inverte o sinal de `notional_req` em diante silenciosamente. ATR é
+    sempre >= 0 por construção (é uma medida de amplitude); `atr_pct`
+    negativo não é caso de negócio válido — controle upstream (cálculo de
+    feature) deve interceptar antes de chegar aqui."""
+
+
 def _to_decimal(value: Decimal | float | str) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
@@ -125,7 +149,19 @@ def compute_sizing(
             "switch / reconciliação) deve interceptar antes de chegar aqui"
         )
     atr_pct_d = _to_decimal(atr_pct)
+    if atr_pct_d < 0:
+        raise NegativeAtrPctError(
+            f"atr_pct < 0 em t0={t0.isoformat()} (atr_pct={atr_pct_d}) — ATR é "
+            "sempre >= 0 por construção; controle upstream (cálculo de feature) "
+            "deve interceptar antes de chegar aqui"
+        )
     mark_price_d = _to_decimal(mark_price)
+    if mark_price_d <= 0:
+        raise NonPositiveMarkPriceError(
+            f"mark_price <= 0 em t0={t0.isoformat()} (mark_price={mark_price_d}) — "
+            "preço de mercado é sempre positivo por construção; controle upstream "
+            "(feed de mark price) deve interceptar antes de chegar aqui"
+        )
 
     risk_per_trade = _to_decimal(load_constant("risk_per_trade"))
     sl_atr_mult = _to_decimal(load_constant("sl_atr_mult"))
