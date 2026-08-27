@@ -50,7 +50,18 @@ absoluto como final antes da remediação.
 
 Núcleo puro (Idioma A, §Núcleo funcional do `CLAUDE.md`): as funções de
 cálculo recebem dado em memória e devolvem dado em memória. A casca
-(`run_economic_gate_report`) resolve arquivo, lê e persiste."""
+(`run_economic_gate_report`) resolve arquivo, lê e persiste.
+
+**Divisão de módulo (2026-08-27, `/redesign_workflow`).** `GateRow`/
+`EconomicGateError` -- e o gate de comparação candidato-vs-breakeven que
+os usa em tempo de TREINO (`evaluate_economic_gate`/
+`load_min_alpha_lift_by_combo`) -- saíram pra `src.models.economic_gate`:
+`analysis/` nunca pode virar insumo de treino/seleção (`CLAUDE.md`, Layer
+hierarchy), e esse gate estava prestes a virar exatamente isso (item G da
+pauta §13, orquestrador de trial). O que fica AQUI é só a derivação da
+tabela a partir do sweep S1 -- medição pós-hoc genuína, nunca chamada
+durante um treino real. Não "conserte" reimportando de volta pra cá --
+a direção permitida é só uma (`analysis` lê `models`, nunca o contrário)."""
 
 from __future__ import annotations
 
@@ -66,6 +77,17 @@ import structlog
 
 from src.labels._constants import load_constant
 
+# Reexport explícito (`as EconomicGateError`/`as GateRow`, não só `import
+# EconomicGateError`/`import GateRow`) -- `mypy --strict`/`no_implicit_
+# reexport` (`pyproject.toml`) trata um import simples como privado ao
+# módulo (mesmo padrão documentado em `src/models/pipeline.py` pra
+# `ARTIFACT_ROOT`/`MODELS_DIR`, AG-154); testes deste módulo fazem `eg.
+# GateRow`/`eg.EconomicGateError` e precisam continuar funcionando sob
+# checagem estrita.
+from src.models.economic_gate import EconomicGateError as EconomicGateError
+from src.models.economic_gate import GateRow as GateRow
+from src.models.economic_gate import _Z_95
+
 logger = structlog.get_logger(__name__)
 
 EXPERIMENTS_DIR: Final[Path] = Path("experiments")
@@ -79,42 +101,9 @@ RESOLUTIONS: Final[tuple[str, ...]] = ("R1", "R2", "R3")
 _BPS_PER_UNIT: Final[float] = 10_000.0  # noqa: magic-number -- conversão de unidade
 
 
-#: z para IC bilateral de 95% — quantil 0,975 da normal padrão.
-_Z_95: Final[float] = 1.959964  # noqa: magic-number -- quantil normal, não parâmetro de negócio
-
-
-class EconomicGateError(RuntimeError):
-    """Erro estrutural do gate econômico — relatório ausente, campo faltando
-    ou contagem inválida. Nunca silencia: um insumo ruim vira exceção com
-    contexto, não uma linha com `NaN` que se propaga para a decisão."""
-
-
 # ============================================================================
 # Núcleo puro — zero IO
 # ============================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class GateRow:
-    """Uma célula do gate econômico. `required_lift` é adimensional (razão
-    de duas taxas de acerto); `atr_median_bps` fica junto porque é a
-    variável que EXPLICA a ordenação (custo é fixo em bps, então o alvo é
-    mais fácil onde o ATR é maior)."""
-
-    symbol: str
-    resolution_id: str
-    side: str
-    cell_id: str
-    tp_atr_mult: float
-    sl_atr_mult: float
-    n_filled: int
-    atr_median_bps: float
-    p_tp: float
-    breakeven_wr: float
-    required_lift: float
-    required_lift_stderr: float
-    required_lift_ci95_low: float
-    required_lift_ci95_high: float
 
 
 def required_lift(p_tp: float, breakeven_wr: float) -> float:

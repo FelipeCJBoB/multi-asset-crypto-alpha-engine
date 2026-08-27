@@ -4788,3 +4788,179 @@ segue como decisão pendente do Manager (autorizar a reexecução do teste
 H₀, zero `N_lifetime`, critério já declarado a priori) -- não é mais
 "bloqueado por retreino", é bloqueado pela mesma trava de vetor que os
 outros quatro, mais a autorização em si.
+
+- **`AG-330` investigado, addendum registrado, Estágio 1 codificado e <!-- check-sprint-log: skip -->
+  EXECUTADO** — eixo 1 mede a pergunta errada pra features de papel <!-- check-sprint-log: skip -->
+  filtro/custo (`E27f_cost_atr_ratio`, T1). Medido contra gain de <!-- check-sprint-log: skip -->
+  modelos REAIS já treinados (`experiments/alpha_full_analysis_2026-08- <!-- check-sprint-log: skip -->
+  24.json`, 30 blocos): `E27f` é a feature de maior gain em 25 dos 30 <!-- check-sprint-log: skip -->
+  (~38% de excesso sobre o piso uniforme) apesar de zero descoberta no <!-- check-sprint-log: skip -->
+  eixo 1 — confirma a tese, não fica no hipotético. `src/analysis/ <!-- check-sprint-log: skip -->
+  eixo1_gain_cross_check.py` (núcleo puro + casca, 13 testes) formaliza <!-- check-sprint-log: skip -->
+  a medição, sem retreino. Achado de rigor: minha primeira leitura
+  manual (amostra de 1 bloco) errou o caso de `C06_vol_ratio_12_96`
+  (classificou "sem contradição"; a agregação completa mostra que
+  também cruza o piso, por margem bem mais fraca que `E27f`) — corrigido
+  no próprio addendum antes de reportar. Manager autorizou execução
+  direta (`uv run`/`.py`) nesta sessão.
+- **Manager ratifica B/C/E/F da "Pauta §13" — cada item revalidado
+  contra código real antes de aplicar** ("modo chief architect", houve
+  mudanças de outra sessão paralela em features desde a rodada
+  anterior). **B** (teto de capacidade, item 11): medir os dois
+  mecanismos lado a lado no próximo retreino, não escolher agora —
+  `alpha.compare_cap_mechanisms` (núcleo puro novo, 4 testes) roda <!-- check-sprint-log: skip -->
+  `resolve_joint_lambda` e `decide_side_breakeven_topq` sobre a mesma
+  população e reporta a divergência, pronto pra quando o retreino
+  desbloquear. **E** (objetivo): `objective="binary"` ratificado,
+  decisão fechada — documentação atualizada, zero código (já é o
+  default). **F** (grade 15m legada): "não rodar, obsoleta e morta" —
+  verificado contra `AG-229` antes de aplicar (grupo de controle já
+  intacto/congelado, a ratificação não contradiz nada) e contra o disco
+  real (exatamente as 5 células `{symbol}/15m` divergentes hoje, os 15
+  cells de dollar bar seguem fechados). `src.labels.experiment_log.
+  KNOWN_LEGACY_GRADE_LINEAGE_GAPS` + `accepted_gap` formalizam a exceção
+  no detector (`AG-309`) — a divergência continua visível, só deixa de
+  falhar o lint (`exit 0` confirmado contra dado real, autorização do
+  Manager pra execução direta). **C** (H₀ do item 7): ratificado em <!-- check-sprint-log: skip -->
+  princípio ("assim que item A destravar"), mas A segue bloqueado —
+  reverificado ao vivo, `ExpandingFeatureLookbackError` continua ativo
+  pras mesmas 5 features. Achado lateral registrado (`AG-335`), não <!-- check-sprint-log: skip -->
+  decidido: 4 dessas 5 já aparecem `layer: [L4]` num campo NÃO commitado
+  de uma sessão paralela (census L0-L4), sem ficha de suporte — pode
+  coincidir com a recomendação já registrada pra A, mas não é base
+  estável pra agir sem revisão; nenhum código de `SUPPORT_FEATURE_IDS`
+  tocado. `AG-315`/`AG-309` ganharam addendum cada; nenhuma célula real
+  de produção alterada pelas quatro ratificações.
+
+Suíte completa (`-m "not slow"`) ao final: **2406 passed, 2 skipped, 2
+xfailed, 0 failed** (+13 do Estágio 1 do `AG-330` + 4 do item B + 4 do
+item F = 21 testes novos desde a rodada anterior). `ruff`/`mypy
+--strict`/`banned_patterns`/`check_unguarded_ratios`/`check_constants_
+referenced`/`check_constants_provenance` limpos em todos os módulos
+tocados. Nada commitado ainda nesta rodada — pendente de o Manager
+confirmar quando fechar em commit.
+
+- **Pedido do Manager: "abra investigação ponta a ponta para os 4 itens
+  que podem ser fechados sem full run do Alpha"** — os 4 itens
+  restantes da tabela de decisão (A/C/D/G). **A fechado nos DOIS
+  degraus, não só o primeiro** (`AG-298`/`AG-335`): as 5 features
+  `lookback_bars: expanding` saíram de `SUPPORT_FEATURE_IDS` (a
+  classificação `layer: L4` que uma sessão paralela tinha deixado
+  não-commitada virou base real no meio da investigação — commitada em
+  `ff63edd` com instrução explícita do Manager por trás). Achado NOVO,
+  não resolvido só tirando as 5: sem elas, o vetor ainda exigia
+  `window_bars=69673` (`C08_vol_pctile_rolling_1y`) — medir isso de
+  verdade (depois de corrigir `tools/diagnostics/measure_max_
+  consecutive_bar_window_duration.py`, que ainda lia a função CEGA ao
+  registry, o mesmo defeito que o achado original documentou) revelou
+  que R2 exigiria ~4,2 anos de janela e **R3 não tem 69.673 barras em <!-- check-sprint-log: skip -->
+  nenhum dos 5 símbolos** — não era uma constante desatualizada, era <!-- check-sprint-log: skip -->
+  irrealizável. `C08` saiu também (também `layer: L4`) — vetor caiu <!-- check-sprint-log: skip -->
+  pra `288` bars (`E03f_funding_cum_3d`), `max_consecutive_bar_window_ <!-- check-sprint-log: skip -->
+  duration_ms` remedido sob esse valor (15/15 combinações reais, pior <!-- check-sprint-log: skip -->
+  caso SOLUSDT/R3=606,53h). Verificado end-to-end: `compute_max_ <!-- check-sprint-log: skip -->
+  feature_lookback_ms` resolve limpo pro vetor de produção real (61 <!-- check-sprint-log: skip -->
+  features, era 69) nas 3 resoluções E na grade 15m legada. **C <!-- check-sprint-log: skip -->
+  exigindo treino real, só a precondição fechou. **D** — a razão
+  "ESS pooled superestimado sem correção two-factor" ganhou precisão:
+  o fator transversal já estava medido (`n_eff=2,03`, `AG-255`,
+  2026-08-25) e tinha sido esquecido da conversa; falta compor com o
+  fator intra-símbolo, trabalho estatístico real, deliberadamente NÃO
+  tentado por risco de derivação errada. Recomendação (não autorizar
+  agora) não muda. **G** — `evaluate_economic_gate`/`load_min_alpha_
+  lift_by_combo` novos em `src/analysis/economic_gate.py` (10 testes,
+  39 no arquivo): mecanismo de comparação candidato-vs-breakeven pronto,
+  não wireado em nenhum orquestrador (nenhum existe ainda) — decisão de
+  tornar o gate binding continua do Manager.
+
+Suíte completa (`-m "not slow"`) ao final desta rodada: **2418 passed, 2
+skipped, 2 xfailed, 0 failed** (+12 testes novos desde a rodada anterior
+-- 10 de `evaluate_economic_gate`/`load_min_alpha_lift_by_combo`, 2 de
+ajuste nos testes de `test_features_build.py` que passaram a cobrir o
+vetor de produção real em vez de `T1_FEATURE_IDS` isolado).
+`ruff`/`mypy --strict`/`banned_patterns`/`check_constants_provenance`
+limpos em todos os módulos tocados (`src/features/build.py`,
+`tools/diagnostics/measure_max_consecutive_bar_window_duration.py`,
+`config/constants.yaml`, `src/analysis/economic_gate.py`,
+`tests/unit/test_features_build.py`, `tests/unit/test_economic_gate.py`).
+Nada commitado ainda.
+
+## 2026-08-27 — orquestrador de trial do gate econômico (AG-260 ponto b)
+
+**Pedido do Manager: "execute o orquestrador ponta a ponta"** — via
+`/redesign_workflow` (7 fases completas), fechando o ponto (a) do
+`status` de `AG-260` ("um orquestrador de trial pra plugar nele — não
+existe ainda"). O item G da rodada anterior (`evaluate_economic_gate`/
+`load_min_alpha_lift_by_combo`, mecanismo pronto e dormant) ganhou um
+ponto de entrada real.
+
+**Decisão de arquitetura (resposta do Manager, via pergunta explícita
+nesta sessão):** `EconomicGateError`/`GateRow`/`EconomicGateVerdict`/
+`evaluate_economic_gate`/`load_min_alpha_lift_by_combo` migraram de
+`src/analysis/economic_gate.py` para um módulo novo, `src/models/
+economic_gate.py` — essas funções estavam prestes a virar insumo real
+de TREINO (chamadas por `pipeline.py`), e `analysis/` fica fora do
+contrato `importlinter` de propósito, nunca pode virar isso (`CLAUDE.md`,
+Layer hierarchy). Confirmado contra `pyproject.toml::[tool.
+importlinter]` que a direção `analysis → models` é a permitida (nunca o
+inverso) — `analysis/economic_gate.py` reimporta `GateRow`/
+`EconomicGateError` de volta via reexport explícito (`import X as X`,
+mesmo padrão de `ARTIFACT_ROOT`/`MODELS_DIR`, `AG-154`). A derivação da
+tabela a partir do sweep S1 continua em `analysis/` — é medição pós-hoc
+genuína, não migrou.
+
+**Mecanismo novo** em `src/models/economic_gate.py`: `lookup_pre_trial_
+gate(symbol, resolution_id, *, table=None)` — ponto de injeção zero-IO,
+`None` no miss ou no retorno, nunca inventa — e `suggested_n_lifetime_
+delta(*, trained)` — devolve 1/0, NUNCA escreve em `audit/n_lifetime.
+yaml` (ledger continua mantido à mão pelo Manager, confirmado via
+pergunta direta nesta sessão sobre a relação entre os dois).
+
+**Wiring** em `src/models/pipeline.py`: `use_economic_gate: bool =
+False` em `run_layer1_sprint`/`run_layer1_sprint_all_combinations` —
+default preserva bit-exato. `True` LOGA (nunca bloqueia — "soft-flag
+apenas", decisão explícita do Manager) antes do treino (`required_lift`/
+`breakeven_wr` da célula) e depois (`report["economic_gate"]` com
+veredito por lado via `_economic_gate_verdicts_by_side`, núcleo puro que
+recebe o `GateRow` já resolvido — uma só leitura do YAML por chamada, não
+duas — e `report["n_lifetime_suggested_delta"]`).
+
+**Fase 6 (3 agentes `code-reviewer` em paralelo — corretude, simplicidade/
+DRY, convenções/arquitetura):** zero achado de corretude ≥80 confiança.
+5 achados de qualidade corrigidos antes de fechar: IO escondida na função
+de pós-treino (chamava `lookup_pre_trial_gate` de novo em vez de
+reaproveitar o já resolvido — corrigido, função virou testável sem disco);
+`_Z_95` duplicado sem motivo real (trocado por import); `logger` morto em
+`models/economic_gate.py` (removido — módulo é núcleo puro por desenho);
+campo de log `erro=` divergindo da convenção `error=` do resto do
+arquivo; namespace de log com 4 segmentos divergindo do padrão de 3.
+Docstring de `evaluate_economic_gate` também corrigida (descrevia
+`best_per_combo` como "o lado mais exigente" quando na verdade é o de
+MENOR lift — erro de descrição, sem efeito em comportamento).
+
+**O que continua em aberto, sem mudança:** SE o gate deve ser vinculante
+(ponto (b) de `AG-260`) — decisão de política de risco do Manager, fora
+do escopo desta implementação por desenho. O caminho `use_economic_
+gate=True` dentro de um `run_layer1_sprint` real (CPCV completo) não foi
+exercitado ponta a ponta — só a função `_economic_gate_verdicts_by_side`
+isolada, com dado sintético (mesmo racional de custo de `test_models_
+pipeline_paths.py`, evita pagar ~117s de retreino por um teste de
+roteamento já coberto no nível da função pura).
+
+Suíte completa (`-m "not slow"`) ao final: **2429 passed, 2 skipped, 2
+xfailed, 0 failed** (+5 testes novos desde a rodada anterior --
+`tests/unit/test_models_pipeline_economic_gate.py`; os 17 de `tests/
+unit/test_models_economic_gate.py` e o trim de `test_economic_gate.py`
+já estavam somados no `2424` intermediário desta mesma rodada). 7 checks
+mecânicos (`banned_patterns`/`check_unguarded_ratios`/`check_constants_
+referenced`/`check_constants_provenance`/`check_sprint_log_references`/
+`ruff`/`mypy --strict`) limpos em todos os módulos tocados/novos
+(`src/models/economic_gate.py`, `src/analysis/economic_gate.py`,
+`src/models/pipeline.py`, `tests/unit/test_economic_gate.py`,
+`tests/unit/test_models_economic_gate.py`, `tests/unit/test_models_
+pipeline_economic_gate.py`) — comparados contra `HEAD` pré-sessão pra
+isolar débito pré-existente de regressão nova. `AG-260` ganhou addendum
+(`audit/architecture_gaps_log.yaml`). Nenhuma entrada nova em
+`PLANO_MESTRE_PRINCE2.md` — julgamento de que é correção arquitetural
+de implementação sobre gap já rastreado, não decisão de governança/
+roadmap nova; sinalizado ao Manager pra override se discordar.

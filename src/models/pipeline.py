@@ -40,6 +40,7 @@ from . import (
     backtest_lite,
     baselines,
     decomposition,
+    economic_gate,
     hhi,
     hyperparams_by_combo,
     monotonic,
@@ -532,6 +533,83 @@ def compute_permutation_null_headline(
     )
 
 
+def _economic_gate_verdicts_by_side(
+    filled_trades: pl.DataFrame,
+    *,
+    symbol: str,
+    resolution_id: str | None,
+    threshold: economic_gate.GateRow | None,
+) -> dict[str, Any] | None:
+    """Núcleo puro (Idioma A) -- `threshold` é resolvido pelo CALLER
+    (reaproveita o `pre_trial_gate` já buscado antes do treino, não lê
+    `config/min_alpha_lift_by_combo.yaml` de novo aqui: uma só leitura por
+    chamada de `run_layer1_sprint`, não duas). Lê `filled_trades` (pooled
+    já materializado nesta rodada, MESMA convenção de `decomp_pooled`/
+    §16.6: cada bar do dataset aparece uma vez por caminho de backtest do
+    CPCV, não é amostra independente -- ver `PathDispersionStats` em
+    `backtest_lite.py`) e compara o `p_tp` ACHIEVED por lado (`side_hat`,
+    a aposta do MODELO, não o `side` do label) contra `threshold`.
+
+    **Ressalva de proveniência do erro-padrão, explícita (não escondida,
+    mesma disciplina do `caveat_anualizacao` do bloco DSR acima):**
+    `n_candidate` é a contagem POOLED sobre os 5 caminhos de backtest, não
+    um N de trades independentes -- `evaluate_economic_gate` usa esse N
+    cru na fórmula binomial de `candidate_p_tp_stderr`, então o erro-padrão
+    aqui SUBESTIMA a incerteza real (o N efetivo, ponderado por
+    `uniqueness`, é menor). Como este campo é soft-flag/só-log (nunca
+    decide nada), o impacto é limitado -- mas não confundir
+    `distinguishable=True` aqui com o mesmo rigor de `is_distinguishable`
+    em `src.analysis.economic_gate` (que usa erro pré-calculado sobre a
+    amostra medida do S1).
+
+    `None` (o dict inteiro) se `resolution_id` ou `threshold` é `None` --
+    a tabela é por grade R1/R2/R3, não existe pra grade de relógio legada
+    nem pra uma célula sem entrada em `min_alpha_lift_by_combo.yaml` (o
+    log de "sem tabela" já aconteceu no ponto pré-treino, que resolveu
+    `threshold`; não repetido aqui). Por lado, `None` sem nenhum trade
+    preenchido daquele lado -- nunca inventa. `EconomicGateError` de
+    `evaluate_economic_gate` (ex. `candidate_p_tp==0.0`, zero TP naquele
+    lado) vira `None` com log de aviso, nunca interrompe o treino real --
+    este parâmetro só informa."""
+    if resolution_id is None or threshold is None:
+        return None
+    out: dict[str, Any] = {}
+    for side_str, side_int in (("long", 1), ("short", -1)):
+        side_trades = filled_trades.filter(pl.col("side_hat") == side_int)
+        n_candidate = side_trades.height
+        if n_candidate == 0:
+            out[side_str] = None
+            continue
+        n_tp = side_trades.filter(pl.col("barrier_hit") == "TP").height
+        candidate_p_tp = n_tp / n_candidate  # noqa: unguarded-ratio -- n_candidate==0 guardado (continue) acima
+        try:
+            verdict = economic_gate.evaluate_economic_gate(
+                candidate_p_tp, n_candidate, threshold, side=side_str
+            )
+        except economic_gate.EconomicGateError as exc:
+            logger.warning(
+                "models.pipeline.economic_gate_post_trial_erro",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                side=side_str,
+                error=str(exc),
+            )
+            out[side_str] = None
+            continue
+        out[side_str] = asdict(verdict)
+        logger.info(
+            "models.pipeline.economic_gate_post_trial",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            side=side_str,
+            candidate_p_tp=candidate_p_tp,
+            n_candidate=n_candidate,
+            passes=verdict.passes,
+            distinguishable=verdict.distinguishable,
+        )
+    return out
+
+
 def run_layer1_sprint(
     *,
     symbol: str = SYMBOL,
@@ -594,6 +672,13 @@ def run_layer1_sprint(
     # custo de `run_all_folds` sobre os mesmos splits) -- zero
     # `N_lifetime` novo (é nulo de permutação, não busca de hiperparâmetro).
     permutation_null_replicas: int = 0,
+    # AG-260 ponto (b) / `/redesign_workflow` 2026-08-27 -- orquestrador de
+    # trial SOFT-FLAG. Default `False` preserva bit-exato todo call site/
+    # teste existente (nenhuma chave nova no report, nenhum log novo).
+    # `True` só LOGA/REPORTA (`report["economic_gate"]`) -- nunca bloqueia
+    # nem pula treino. Tornar isto binding é decisão FUTURA do Manager,
+    # não tomada aqui (B23).
+    use_economic_gate: bool = False,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -692,7 +777,26 @@ def run_layer1_sprint(
     `extra_feature_ids` pra `build_modeling_frame` é calculado por
     DIFERENÇA (`feature_ids` menos o que já está em `T1_FEATURE_IDS`,
     que `mf.data` sempre inclui) — o chamador passa o vetor completo que
-    quer treinar, não precisa saber dessa distinção interna."""
+    quer treinar, não precisa saber dessa distinção interna.
+
+    `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow` 2026-08-27)
+    -- orquestrador de trial pro gate econômico (`src.models.economic_
+    gate`). Default `False` preserva bit-exato: nenhum log novo, nenhuma
+    chave nova em `report`. `True` faz esta função LOGAR (nunca bloquear)
+    duas vezes: antes do treino, o `required_lift`/`breakeven_wr` exigido
+    pra esta célula (`(symbol, resolution_id)`, se existir em `config/
+    min_alpha_lift_by_combo.yaml`); depois, `report["economic_gate"]` com
+    o veredito por lado (`long`/`short`) comparando o `p_tp` ACHIEVED
+    pooled desta rodada (mesma convenção de `decomp_pooled`/§16.6, ver
+    `_economic_gate_verdicts_by_side`) contra aquele limiar, e `report[
+    "n_lifetime_suggested_delta"]` (sempre `1` quando alcançado -- esta
+    função sempre treina de verdade se chegar até aqui, nunca escreve em
+    `audit/n_lifetime.yaml` sozinha). Sem tabela pra esta célula, ou sem
+    trade preenchido de um lado, ou `resolution_id=None` (a tabela é por
+    grade R1/R2/R3, não existe pra grade de relógio legada): `None`,
+    nunca inventado. Tornar isto BINDING (bloquear um trial de verdade) é
+    decisão FUTURA do Manager, não tomada aqui -- este parâmetro só
+    informa."""
     if tf is not None:
         step_ms(tf)  # UnsupportedTimeframeError cedo — antes do trabalho caro abaixo
     # `resolution_id`/`tf` sem bar_source de Feature/Regime Engine mapeado:
@@ -769,6 +873,30 @@ def run_layer1_sprint(
         n_splits=cpcv_result.config.n_splits,
         n_backtest_paths=cpcv_result.config.n_backtest_paths,
     )
+
+    # Resolvido uma vez aqui, reaproveitado no bloco pós-treino
+    # (`_economic_gate_verdicts_by_side`, mais abaixo) -- nunca uma
+    # segunda leitura de `config/min_alpha_lift_by_combo.yaml` pra mesma
+    # chamada de `run_layer1_sprint`.
+    pre_trial_gate: economic_gate.GateRow | None = None
+    if use_economic_gate and resolution_id is not None:
+        pre_trial_gate = economic_gate.lookup_pre_trial_gate(symbol, resolution_id)
+        if pre_trial_gate is None:
+            logger.info(
+                "models.pipeline.economic_gate_pre_trial_sem_tabela",
+                symbol=symbol,
+                resolution_id=resolution_id,
+            )
+        else:
+            logger.info(
+                "models.pipeline.economic_gate_pre_trial",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                side_threshold=pre_trial_gate.side,
+                required_lift=pre_trial_gate.required_lift,
+                breakeven_wr=pre_trial_gate.breakeven_wr,
+                p_tp_base=pre_trial_gate.p_tp,
+            )
 
     hyper_explicit = hyper is not None
     hyper = hyper if hyper is not None else alpha.LGBMHyperparams.from_constants()
@@ -1406,6 +1534,13 @@ def run_layer1_sprint(
             },
         },
     }
+    if use_economic_gate:
+        report["economic_gate"] = _economic_gate_verdicts_by_side(
+            filled_c1, symbol=symbol, resolution_id=resolution_id, threshold=pre_trial_gate
+        )
+        report["n_lifetime_suggested_delta"] = economic_gate.suggested_n_lifetime_delta(
+            trained=True
+        )
     write_report_atomic(report, dest_path=report_path)
     logger.info(
         "models.pipeline.run_layer1_sprint_done",
@@ -1432,6 +1567,7 @@ def run_layer1_sprint_all_combinations(
     device_type: str = "cpu",
     feature_ids: tuple[str, ...] | None = None,
     use_hyperparams_by_combo: bool = False,
+    use_economic_gate: bool = False,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
@@ -1478,7 +1614,13 @@ def run_layer1_sprint_all_combinations(
     consultar `hyperparams_by_combo.load_hyperparams_by_combo(symbol,
     resolution_id)`; combinação sem calibração própria (5 das 15, ver
     `config/alpha_hyperparams_by_combo.yaml`) cai pro hiperparâmetro
-    global -- com warning explícito, nunca silencioso."""
+    global -- com warning explícito, nunca silencioso.
+
+    `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow`
+    2026-08-27) -- repassado IDÊNTICO às 15 chamadas de `run_layer1_
+    sprint`, mesmo padrão de `feature_ids` acima. Default `False`
+    preserva bit-exato. Ver a docstring de `run_layer1_sprint` pro que
+    `True` de fato faz (soft-flag, nunca bloqueia)."""
     reports: dict[tuple[str, str], dict[str, Any]] = {}
     for symbol in symbols:
         for resolution_id in resolutions:
@@ -1501,6 +1643,7 @@ def run_layer1_sprint_all_combinations(
                 run_tag=run_tag,
                 feature_ids_n=len(feature_ids) if feature_ids is not None else None,
                 hyper_por_combo=hyper is not None,
+                use_economic_gate=use_economic_gate,
             )
             report = run_layer1_sprint(
                 symbol=symbol,
@@ -1510,6 +1653,7 @@ def run_layer1_sprint_all_combinations(
                 device_type=device_type,
                 feature_ids=feature_ids,
                 hyper=hyper,
+                use_economic_gate=use_economic_gate,
             )
             reports[(symbol, resolution_id)] = report
     logger.info(

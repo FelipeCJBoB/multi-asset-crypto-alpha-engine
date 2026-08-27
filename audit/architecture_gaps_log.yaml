@@ -17052,6 +17052,39 @@ entries:
       (simbolos/grade de relogio) -- essa versao segue ABERTA,
       registrada explicitamente como proximo passo em AG-255, nao
       esquecida.
+    addendum_2026-08-27_conexao_com_item_d_pooling_15_modelos: >
+      INVESTIGADO 2026-08-27 (item D da pauta §13 -- "os 4 itens que
+      podem ser fechados sem full run do Alpha"; recomendacao registrada
+      contra poolar 15 modelos em 3 era, em parte: "ESS pooled sairia
+      superestimado ~2x SEM a correcao two-factor -- que nao existe
+      ainda"). Achado: o FATOR TRANSVERSAL dessa correcao two-factor JA
+      ESTA MEDIDO aqui, desde 2026-08-25 -- `n_eff=2,03` (cross-symbol,
+      via ret_net diario correlacionado, 1.706 dias reais). Nao e uma
+      medicao nova desta rodada, e a mesma que decide dsr_n_trials
+      (AG-215/AG-216) -- mas a mesma correlacao estrutural entre os 5
+      simbolos que infla dsr_n_trials tambem infla o ESS que um pooling
+      de 15 modelos assumiria.
+
+      O QUE CONTINUA FALTANDO, e NAO foi construido nesta rodada (risco
+      de correcao, nao so lacuna de wiring): a formula que COMBINA este
+      fator TRANSVERSAL (n_eff=2,03 entre simbolos) com o fator INTRA-
+      simbolo (Σ uniqueness por fold, ja medido por SideModelResult) num
+      ESS pooled unico e correto. Nao e so multiplicar os dois -- exige
+      derivacao estatistica real (os dois efeitos nao sao obviamente
+      independentes/multiplicativos), e uma derivacao errada apresentada
+      como "corrigida" seria pior que a ressalva qualitativa que ja
+      existia. Decisao deliberada: NAO tentar essa derivacao sem tempo
+      pra verifica-la direito -- fica registrada como o proximo passo
+      concreto e ESCOPADO (nao mais "correcao two-factor que nao existe",
+      e sim "combinar n_eff=2,03 transversal, ja medido, com Σ
+      uniqueness intra-simbolo, tambem ja medido"), nao construida.
+
+      NAO MUDA a recomendacao de nao autorizar pooling agora -- so torna
+      a razao (1) mais precisa e MENOS especulativa (nao "ESS sairia
+      superestimado", e sim "ESS sairia superestimado por um fator que
+      ja sabemos ser ~2x, medido, so falta compor com o fator intra-
+      simbolo corretamente"). Razoes (2) CPCV consciente de painel e (3)
+      ganho so em √2 continuam sem mudanca.
 
   - id: AG-246
     date: "2026-08-25"
@@ -17762,6 +17795,131 @@ entries:
       min_alpha_lift_ptp gate vinculante de entrada de trial; (c) decidir o
       que fazer com R3, que e distinguivelmente pior em custo e
       distinguivelmente melhor em ordenacao.
+    addendum_2026-08-27_mecanismo_do_gate_b_construido_nao_wireado: >
+      INVESTIGADO 2026-08-27 (item G da pauta §13 -- "os 4 itens que podem
+      ser fechados sem full run do Alpha"). O ponto (b) ("tornar min_
+      alpha_lift_ptp gate vinculante") tinha SO a tabela de limiar
+      (config/min_alpha_lift_by_combo.yaml, escrita por _gate_yaml) --
+      nenhuma funcao comparava o p_tp ACHIEVED de um candidato real contra
+      esse limiar, e a tabela era WRITE-ONLY (nenhum consumidor a lia de
+      volta em codigo).
+
+      APLICADO, sem tornar nada binding (decisao de politica de risco
+      continua do Manager, nao construida aqui): `src/analysis/
+      economic_gate.py` ganhou `evaluate_economic_gate` (nucleo puro --
+      compara candidate_p_tp contra threshold.breakeven_wr com a MESMA
+      disciplina estatistica do resto do modulo, distinguishable via
+      erro-padrao binomial, nunca so passes cru -- mesmo principio de
+      is_distinguishable/AG-246) e `load_min_alpha_lift_by_combo` (casca --
+      primeiro leitor real de min_alpha_lift_by_combo.yaml, reconstroi
+      GateRow completo, round-trip testado bit-exato contra _gate_yaml).
+      10 testes novos (39 no arquivo agora). Nao wireado em nenhum
+      orquestrador de trial -- nenhum existe neste repo ainda (uv run
+      quant e aspiracional). ruff/mypy --strict/banned_patterns/
+      check_unguarded_ratios/check_constants_referenced limpos.
+
+      O QUE CONTINUA SEM DECISAO (nao e meu escopo decidir): SE esse gate
+      deve ser binding, e ONDE/QUANDO ele seria chamado (nao existe ainda
+      um ponto de entrada de "trial" no codigo pra wirear). Mecanismo
+      pronto, dormant, testado -- exatamente o mesmo status que os
+      mecanismos do item 11 (AG-315) tinham antes de qualquer decisao.
+
+    addendum_2026-08-27_orquestrador_de_trial_construido: >
+      CONSTRUIDO 2026-08-27, via /redesign_workflow (7 fases: Discovery ->
+      Exploracao -> Perguntas -> Desenho -> Implementacao -> Revisao ->
+      Resumo), sob pedido explicito do Manager ("execute o orquestrador
+      ponta a ponta") em cima do texto do addendum anterior. Fecha o item
+      (a) do bloco `status` acima ("um orquestrador de trial pra plugar
+      nele -- nao existe ainda"). O item (b) ("decisao do Manager de que
+      isso deve bloquear") CONTINUA nao tomado -- fora do escopo desta
+      implementacao, por desenho.
+
+      DECISAO DE ARQUITETURA (resposta do Manager a pergunta explicita
+      feita nesta sessao, via AskUserQuestion): `EconomicGateError`/
+      `GateRow`/`EconomicGateVerdict`/`evaluate_economic_gate`/
+      `load_min_alpha_lift_by_combo` MIGRARAM de `src/analysis/
+      economic_gate.py` para um modulo novo, `src/models/economic_gate.
+      py` -- motivo: essas funcoes estavam prestes a virar insumo real de
+      TREINO (chamadas por `pipeline.py`), e `analysis/` fica fora do
+      contrato importlinter de proposito, nunca pode virar insumo de
+      treino/selecao de feature (CLAUDE.md, Layer hierarchy). Confirmado
+      via `pyproject.toml::[tool.importlinter]` que a direcao
+      `analysis -> models` e permitida (nunca o inverso) -- o modulo
+      `analysis/economic_gate.py` reimporta `GateRow`/`EconomicGateError`
+      de volta de `models/economic_gate.py` via reexport explicito
+      (`import X as X`, necessario sob mypy --strict/no_implicit_
+      reexport, mesmo padrao ja documentado em `pipeline.py` para
+      `ARTIFACT_ROOT`/`MODELS_DIR`, AG-154). O que NAO migrou: a derivacao
+      da tabela a partir do sweep S1 (`build_gate_rows`,
+      `recommend_geometry_per_combo`, `run_economic_gate_report`) --
+      continua em `analysis/`, e medicao pos-hoc genuina.
+
+      MECANISMO NOVO em `src/models/economic_gate.py`:
+      `lookup_pre_trial_gate(symbol, resolution_id, *, table=None)` --
+      ponto de injecao zero-IO (Idioma A), `None` no miss OU no retorno,
+      nunca inventa um `GateRow` -- e `suggested_n_lifetime_delta(*,
+      trained)` -- devolve 1/0, NUNCA escreve em `audit/n_lifetime.yaml`
+      (ledger continua mantido a mao pelo Manager, decisao explicita
+      desta sessao apos pergunta direta sobre o que N_lifetime tem a ver
+      com o gate).
+
+      WIRING em `src/models/pipeline.py`: parametro `use_economic_gate:
+      bool = False` em `run_layer1_sprint`/`run_layer1_sprint_all_
+      combinations`. Default preserva bit-exato (nenhum log novo, nenhuma
+      chave nova em `report`) -- confirmado pela suite completa (2429
+      passed, era 2418 antes desta mudanca, mesmo conjunto de skip/xfail
+      pre-existente). `True` faz LOGAR (nunca bloquear, decisao
+      explicita do Manager -- "Soft-flag apenas" via AskUserQuestion)
+      antes do treino (`required_lift`/`breakeven_wr` da celula, se
+      existir tabela) e depois (`report["economic_gate"]` com veredito
+      por lado via `_economic_gate_verdicts_by_side`, nucleo puro que
+      recebe `threshold: GateRow | None` ja resolvido pelo caller -- uma
+      so leitura de `min_alpha_lift_by_combo.yaml` por chamada, nao duas
+      -- e `report["n_lifetime_suggested_delta"]`). `EconomicGateError`
+      de candidato sem nenhum TP (`candidate_p_tp==0.0`) e engolida com
+      log de aviso, nunca propaga -- o parametro so informa, em nenhum
+      caminho interrompe um treino real.
+
+      RESSALVA DE PROVENIENCIA registrada explicitamente na propria
+      funcao (nao escondida): `n_candidate` usado no erro-padrao de
+      `evaluate_economic_gate` e a contagem POOLED sobre os 5 caminhos de
+      backtest do CPCV (mesma convencao de `decomp_pooled`/§16.6), nao um
+      N de trades independentes -- o erro-padrao SUBESTIMA a incerteza
+      real. Sem impacto pratico enquanto o gate for soft-flag (nao decide
+      nada), mas relevante se/quando o item (b) for decidido.
+
+      Revisao de qualidade (Fase 6, 3 agentes `code-reviewer` em
+      paralelo -- corretude, simplicidade/DRY, convencoes/arquitetura):
+      nenhum achado de corretude >=80 confianca. 5 achados de qualidade
+      corrigidos nesta mesma sessao antes de fechar: (1) IO escondida --
+      a funcao de wiring pos-treino chamava `lookup_pre_trial_gate` de
+      novo internamente em vez de reaproveitar o `GateRow` ja resolvido
+      pre-treino (corrigido: agora recebe `threshold` por parametro, zero
+      IO, zero segunda leitura do YAML, e virou testavel sem disco --
+      5 testes novos em `tests/unit/test_models_pipeline_economic_gate.
+      py`); (2) `_Z_95` duplicado em `analysis/economic_gate.py` sem
+      motivo real (o modulo ja importava outros 2 nomes do mesmo lugar --
+      trocado por import); (3) `logger`/`structlog` mortos em `models/
+      economic_gate.py` (removidos -- modulo e nucleo puro por desenho,
+      logging fica no caller); (4) campo de log `erro=` divergia da
+      convencao `error=` do resto do arquivo (corrigido); (5) namespace
+      de log com 4 segmentos (`models.pipeline.economic_gate.pre_trial`)
+      divergia do padrao de 3 segmentos do resto do arquivo (achatado
+      para `models.pipeline.economic_gate_pre_trial`). Docstring de
+      `evaluate_economic_gate` tambem corrigida: descrevia `best_per_
+      combo` como escolhendo "o lado mais exigente" quando na verdade
+      escolhe o de MENOR lift exigido (o mais facil de bater) -- erro de
+      descricao, sem efeito em comportamento.
+
+      7 checks mecanicos + suite completa limpos (comparados contra HEAD
+      pre-sessao pra isolar debito pre-existente de regressao nova -- 2
+      achados genuinamente novos, um unguarded-ratio e um erro de mypy
+      por reexport implicito, ja corrigidos antes deste addendum).
+
+      O QUE CONTINUA SEM DECISAO, EXATO COMO ANTES: SE o gate deve ser
+      binding. Este addendum fecha "o mecanismo nao tem onde plugar" --
+      nao fecha, nem tenta fechar, "o mecanismo deve bloquear um trial
+      de verdade". Essa decisao continua do Manager.
 
   - id: AG-261
     date: "2026-08-25"
@@ -19824,6 +19982,52 @@ entries:
       ADR-003 (Estagios 0-3 e config/alpha_hyperparams_by_combo.yaml) rodou
       sob um purge dimensionado para 7 features. Isso nao muda os numeros ja
       persistidos; muda o que eles significam.
+    addendum_2026-08-27_item_a_fechado_os_dois_degraus: >
+      FECHADO 2026-08-27 (item A da pauta §13, "os 4 itens que podem ser
+      fechados sem full run do Alpha" -- Manager pediu investigacao ponta
+      a ponta). Os DOIS degraus resolvidos, nao so o primeiro:
+
+      DEGRAU (1) -- ExpandingFeatureLookbackError: as 5 features
+      `lookback_bars: expanding` saem de `SUPPORT_FEATURE_IDS`
+      (`src/features/build.py`) -- opcao B da decisao original, mesmo
+      tratamento de `AG-032`. Verificado sem consumidor externo pra
+      nenhuma das 5 (grep completo em src/+tests/) alem do proprio
+      `compute_t1_features` (continua calculando todas -- extra_
+      feature_ids disponivel pra quem precisar, `E17f_retail_vs_top_
+      spread` ja usado assim em `faixa2_e3_stability.py`).
+
+      DEGRAU (2) -- StaleFeatureWindowConstantError, achado NOVO desta
+      investigacao (nao estava resolvido so por tirar as 5): sem elas, o
+      vetor ainda exigia `window_bars=69673` (`C08_vol_pctile_rolling_
+      1y`, `AG-317`). Medido 2026-08-27 (`tools/diagnostics/measure_
+      max_consecutive_bar_window_duration.py`, CORRIGIDO nesta rodada pra
+      usar `max_feature_lookback_bars` -- o script ainda lia o `N` da
+      funcao CEGA `max_feature_window_bars()`, mesmo defeito que este
+      proprio AG documentou): sob R2 a janela real chega a ~4,2 anos, e
+      sob R3 NENHUM dos 5 simbolos tem 69.673 barras no historico
+      inteiro -- `StaleFeatureWindowConstantError` nao era so uma
+      constante desatualizada, era estruturalmente IRRESOLVIVEL por
+      simples remedicao pra R3.
+
+      RESOLVIDO tirando `C08_vol_pctile_rolling_1y` de `SUPPORT_FEATURE_
+      IDS` tambem -- justificativa INDEPENDENTE da janela grande:
+      `layer: L4` (aposentada, mesmo census de `AG-282`/`§14.11`, `sem
+      mecanismo e sem sinal`). Sem C08, `max_feature_lookback_bars`
+      cai pra `288` (`E03f_funding_cum_3d`, tambem `layer: L4`) --
+      `max_consecutive_bar_window_duration_ms` REMEDIDO sob esse valor
+      (15/15 combinacoes, 0 puladas, pior caso SOLUSDT/R3=606,53h,
+      `config/constants.yaml`). Verificado end-to-end: `compute_max_
+      feature_lookback_ms` bate limpo pro vetor de producao real (61
+      features) nas 3 resolucoes E na grade 15m legada, sem excecao.
+
+      Vetor de producao: 69 -> 68 (`AG-295`) -> 61 features (69-1-5-1-1:
+      E10f do suporte ja tinha saido, agora -5 expanding, -1 C08; T1
+      continua 7). Suite completa (`-m "not slow"`) verde depois de
+      todas as mudancas -- ver `docs/SPRINT_LOG.md` pro numero exato.
+      `ruff`/`mypy --strict`/`banned_patterns`/`check_constants_
+      provenance` limpos. Retreino DEIXA de estar bloqueado por
+      `ExpandingFeatureLookbackError`/`StaleFeatureWindowConstantError`
+      -- item C (H0 do item 7) fica desbloqueado pela mesma mudanca.
 
   - id: AG-299
     date: "2026-08-26"
@@ -22097,6 +22301,23 @@ entries:
       desta sessao paralela foi commitado e revisado antes de tratar a
       classificacao L4 como base para a decisao.
     status: "aberto -- informativo, aguarda decisao do Manager sobre item A (fora do escopo desta rodada)"
+    addendum_2026-08-27b_item_a_decidido_no_mesmo_dia_layer_l4_confirmado_util: >
+      FECHADO 2026-08-27, mesmo dia -- Manager pediu investigacao ponta a
+      ponta do item A (ver `AG-298` addendum de fechamento pro detalhe
+      completo). A classificacao `layer: L4` desta sessao paralela FOI
+      commitada nesse meio tempo (`ff63edd`, "ADR-005 §14.11 -- schema
+      layer/quarentena/defeito_construcao... Instrucao do Manager:
+      ratificar recomendacoes... revalidar cada uma contra codigo/
+      governanca atuais antes de aplicar") -- deixou de ser "trabalho em
+      andamento nao revisado" e virou base real, commitada, com
+      instrucao explicita do Manager por tras. Usada como reforco
+      (nao unica razao -- `C09`, so `L3`, saiu pelo MESMO motivo
+      estrutural que as outras 4) na decisao de excluir as 5 de
+      `SUPPORT_FEATURE_IDS`. `C08_vol_pctile_rolling_1y` (tambem `L4`,
+      mesmo commit) precisou sair TAMBEM -- achado adicional desta
+      rodada, nao antecipado aqui: sua janela de 69.673 barras provou
+      ser estruturalmente incompativel com purge por bar-count entre
+      grades de cadencia diferente (R3 sem historico suficiente).
 
   # ============================================================================
   # AG-336..AG-337 -- 3a revisao de project_assurance sobre ADR-005 §14

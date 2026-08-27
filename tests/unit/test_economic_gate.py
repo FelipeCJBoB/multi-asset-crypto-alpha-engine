@@ -2,7 +2,14 @@
 
 Cobrem o NÚCLEO PURO — nenhum toca disco. A casca (`run_economic_gate_
 report`) é exercida por um teste `integration` separado, com skip-if-ausente
-sobre os relatórios S1 reais."""
+sobre os relatórios S1 reais.
+
+`evaluate_economic_gate`/`load_min_alpha_lift_by_combo` (e `GateRow`/
+`EconomicGateError`, que este módulo agora reexporta de `src.models.
+economic_gate`) migraram pra `tests/unit/test_models_economic_gate.py` no
+split de 2026-08-27 (`/redesign_workflow`) -- mesma razão do split do
+módulo em si: viraram insumo de treino, não ficam mais testados junto da
+medição pós-hoc."""
 
 from __future__ import annotations
 
