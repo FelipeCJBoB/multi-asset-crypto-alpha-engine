@@ -21365,6 +21365,33 @@ entries:
       um fix mecanico; se sim, a ficha precisa de emenda formal com essa
       justificativa ANTES de qualquer promocao, nao depois.
     status: "aberto -- aguarda decisao do Manager"
+    addendum_2026-08-27_ficha_emendada_status_agora_fechado: >
+      STATUS ATUALIZADO -- FECHADO 2026-08-27 (Manager instruiu tratativa
+      direta). `audit/feature_thesis/fichas_69_2026-08-25.yaml` emendada
+      pras 5 entradas (`A01_log_return_1`, `A02_log_return_2`,
+      `A03_log_return_4`, `A04_log_return_12`, `A06_ret_vol_norm_12`):
+      `mecanismo_economico`/`quem_esta_do_outro_lado` passam de `AUSENTE`
+      pra descricao real (autocorrelacao de curto prazo -- persistencia
+      de fluxo de ordens/execucao fatiada VWAP-TWAP, subreacao a
+      informacao -- categoria reconhecida na literatura de
+      microestrutura, NAO medicao propria deste motor); `veredito` de
+      `SEM_MECANISMO` pra `TESE_OK`. Cada `observacao` original foi
+      PRESERVADA (as 5 tinham achados independentes -- colinearidade
+      A01-A04, duplicata B03=exp(A04)-1, etc -- nao relacionados a
+      mecanismo, mantidos intactos) e ganhou um paragrafo de emenda
+      datado, citando AG-329/ADR-005 §14.2, e uma ressalva EXPLICITA:
+      TESE_OK aqui significa "mecanismo plausivel, sem defeito
+      categorico" -- NAO "sinal confirmado". A ressalva cita o resultado
+      real ja medido (`AG-327`/`AG-294`, 2026-08-27): mesmo com poder
+      alto do eixo 1 pra IC pequeno, estas colunas continuam com 0-1
+      simbolo de descoberta -- a leitura mais provavel e mecanismo
+      generico da literatura, nao confirmado para este motor
+      especificamente. Fichas permanecem `L3` (nao promovidas a `L2`) --
+      esta emenda formaliza uma decisao JA TOMADA pelo ADR (§14.2,
+      2026-08-26), nao e um julgamento novo. 71 entradas preservadas,
+      YAML validado, nenhum outro arquivo referencia o veredito antigo
+      dessas 5 (grep confirmado -- so `B02`/`B09` citam SEM_MECANISMO em
+      `registry.yaml`, features diferentes, `AG-322`, intocadas).
 
   - id: AG-330
     date: "2026-08-26"
@@ -21462,6 +21489,42 @@ entries:
       barra em `t+k` (k>=1) e afirma que o valor da feature em `t` nao
       muda -- complementa (nao substitui) `src/validation/leakage.py`.
     status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+    addendum_2026-08-27_investigado_premissa_estava_errada_status_fechado: >
+      STATUS ATUALIZADO -- FECHADO 2026-08-27, achado ORIGINAL REFUTADO
+      por investigacao direta (Manager instruiu tratativa, "pare e
+      notifique se nao fizer sentido" -- aplicavel aqui, mas com um fix
+      real entregue). O gap "nao temos teste de perturbacao sistematico"
+      e FACTUALMENTE FALSO: `tests/unit/test_features_support.py::
+      _assert_causal` e um helper generico de perturbacao (multiplica
+      a cauda futura por 3,7 e soma 991,0, confirma que o passado nao
+      muda) reaproveitado em 15 testes de primitiva (`atr_wilder`,
+      `ema`, `rsi_wilder`, `realized_vol`, `parkinson_vol`, `garman_
+      klass_vol`, `rolling_zscore`, `efficiency_ratio`, `expanding_
+      zscore_strict`, etc). `tests/unit/test_features_groups.py` tem
+      27 testes `test_XXX_causalidade` na mesma tecnica, agora no nivel
+      de FEATURE (nao so primitiva). Auditoria completa rodada (script
+      Python, nao amostragem): das 71 features reais, 65 tem citacao
+      `causal_proof` no `registry.yaml` apontando pra um teste REAL
+      (0 citacoes quebradas -- confirmado arquivo+funcao existem pras
+      65), as 6 restantes (`A07`-`A10`, `C02`, `D05f`) sao
+      genuinamente triviais (só barra `t`, sem janela -- perturbacao
+      seria vazia por construcao, nada pra testar). O padrao de V17
+      (`INV-SD-no-forward-mid`) que motivou este achado ja existe aqui,
+      so com nome/organizacao diferente -- nao faltava mecanismo,
+      faltava eu checar antes de propor construir um novo.
+
+      FIX REAL aplicado (achado adjacente, legitimo): 3 citacoes em
+      `registry.yaml` (`C03_realized_vol_48`, `C04_parkinson_vol_48`,
+      `C05_garman_klass_48`) apontavam so pro ARQUIVO (`tests/unit/
+      test_features_support.py`) sem a FUNCAO especifica -- diferente
+      do padrao `arquivo.py::funcao` usado em todo o resto do arquivo.
+      Corrigido pra citar a funcao exata (`test_realized_vol_
+      causalidade`/`test_parkinson_vol_causalidade`/`test_garman_
+      klass_vol_causalidade`), fechando a ultima lacuna de precisao de
+      citacao (mesma classe do bug real que `A13`/`AG-266` ja tinha
+      achado uma vez -- aqui nao havia citacao FALSA, so incompleta).
+      `uv run pytest tests/unit/test_features_registry.py tests/unit/
+      test_features_build.py` 73/73 verde apos o fix.
 
   - id: AG-333
     date: "2026-08-26"
@@ -21486,6 +21549,38 @@ entries:
       (tocaria todo grupo de feature A-E). Decisao de prioridade do
       Manager, nao fix mecanico.
     status: "aberto -- backlog, nao fix mecanico (decisao de prioridade do Manager)"
+    addendum_2026-08-27_investigado_nao_recomendado_como_proposto: >
+      INVESTIGADO 2026-08-27 (Manager instruiu tratativa, "pare e
+      notifique se nao fizer sentido" -- aplicavel aqui). PARADO --
+      NAO IMPLEMENTADO como proposto. `MIN_REAL_BARS_FRACTION` do V17
+      resolve um problema especifico da arquitetura DELE: barras
+      SINTETICAS de preenchimento (`is_synthetic`) numa grade de
+      RELOGIO fixo, que existem pra cobrir gaps de fim de semana/feriado
+      no mercado forex. Esse problema NAO EXISTE por construcao em barra
+      DOLLAR (`canonical_bar_type: dollar`, `AG-042`) -- uma dollar bar
+      so existe quando volume real de fato aconteceu; nao ha conceito
+      de "barra sintetica de preenchimento" pra excluir de uma janela.
+      Importar o mecanismo seria transplantar a solucao de um problema
+      que a nossa arquitetura nao tem.
+
+      A preocupacao ADJACENTE que motivou a analogia (piso de historico
+      comum entre simbolos com data de listagem diferente) JA TEM
+      mecanismo proprio e JA RASTREADO -- `min_common_history_bars`/
+      `apply_min_warmup_mask` (`src/features/build.py`), calibrado
+      especificamente pra isso (`AG-030`). `AG-030` tem um addendum
+      ABERTO desde 2026-08-17 (`addendum_reabertura_sob_dollar_bar_
+      2026_08_17` -- Manager ja autorizou fechar por ora, pendente medir
+      um equivalente NATIVO sob barra dollar, nenhuma medicao nova
+      feita) -- exatamente a mesma pergunta que este AG estava
+      reformulando sob um nome novo. Duplicar o rastreamento sob dois
+      IDs diferentes (`AG-030` e `AG-333`) faria a mesma divida parecer
+      dois problemas.
+
+      RECOMENDACAO: nao implementar o mecanismo do V17 aqui (nao se
+      aplica à arquitetura); se o Manager quiser avancar a preocupacao
+      real (piso de historico comum), fazer isso como continuacao de
+      `AG-030` (ja aberto, ja tem contexto/decisao anterior), nao como
+      item novo. Nenhum codigo alterado.
 
   - id: AG-334
     date: "2026-08-26"
@@ -21504,3 +21599,26 @@ entries:
       Nenhuma mudanca de codigo nesta sessao -- backlog explicitamente
       condicionado a quando a operacao ao vivo for priorizada, nao antes.
     status: "aberto -- backlog, condicionado a priorizacao de operacao ao vivo (decisao do Manager)"
+    addendum_2026-08-27_investigado_confirmado_prematuro_e_correcao_de_precisao: >
+      INVESTIGADO 2026-08-27 (Manager instruiu tratativa, "pare e
+      notifique se nao fizer sentido" -- aplicavel aqui). PARADO -- NAO
+      IMPLEMENTADO. Correcao de precisao ao proprio achado primeiro: o
+      texto original acima ("nenhum campo de versao por feature em
+      registry.yaml") esta IMPRECISO -- `src/features/registry.py::
+      FeatureRegistryEntry.version` EXISTE e e campo obrigatorio (`v1`
+      em toda entrada real, verificado). O que falta de verdade nao e o
+      CAMPO, e o GATE (`validate_versions_against`-style: comparar
+      versoes carimbadas no treino contra o registry ao vivo ANTES de
+      servir).
+
+      Confirmado por inspecao direta que esse gate seria prematuro:
+      `src/execution/` so tem `fill_simulator.py` (simulador de
+      BACKTEST, nao execucao ao vivo -- outra sessao trabalha nele em
+      paralelo, escopo `§13`); `src/live/__init__.py` esta vazio, sem
+      nenhum modulo real. Nao ha caminho de SERVIR predicao ao vivo
+      neste repo hoje pra o gate proteger -- construir isso agora seria
+      infraestrutura especulativa sem consumidor real, na contramao de
+      "nao adicionar funcionalidade alem do necessario". RECOMENDACAO:
+      reavaliar quando `paper run`/`live run` (hoje aspiracional na CLI
+      `quant`, nao implementado -- ver `CLAUDE.md` §Comandos) entrar em
+      escopo real. Nenhum codigo alterado.

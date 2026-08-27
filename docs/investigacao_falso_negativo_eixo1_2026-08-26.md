@@ -489,17 +489,36 @@ robusto a essa ressalva: `n_eff≈2,4` em si já estabelece que a tabela de
 correção final for adotada (Meff vs. residualizar fator comum,
 Fama-MacBeth/GLS — decisão do Manager).
 
-### 9.5 Outros itens do backlog de metodologia (§14.8 do ADR): 1 fechado, 3 seguem abertos
+### 9.5 Outros itens do backlog de metodologia (§14.8 do ADR) — tratativa 2026-08-27
 
-`AG-331` (poison-pill de nome banido no `registry.yaml`) — **FECHADO
-2026-08-27**, implementado em `src/features/registry.py`. `AG-332`
-(teste de perturbação no-lookahead), `AG-333` (piso fail-loud único, escopo
-grande — toda feature A-E), `AG-334` (gate de versão treino-live,
-condicionado a operação ao vivo) seguem em backlog, sem decisão de
-prioridade do Manager. `AG-329` (ficha `A01`-`A06` nunca emendada) e
-`AG-330` (eixo 1 mede a pergunta errada para papel filtro/custo) também
-seguem abertos — o primeiro é decisão de conteúdo (a ficha é fonte de
-verdade manual, não algo pra editar por inferência), o segundo exigiria
-acesso ao Alpha treinado real (`src/models/`, escopo `§13`, delegado a
-outra sessão) — nenhum dos dois é fix mecânico nem está no escopo desta
-sessão.
+Instrução do Manager: tratar `AG-329`/`AG-332`/`AG-333`/`AG-334`, parar e
+notificar qualquer um que não fizesse sentido para produção.
+
+- **`AG-329` (ficha `A01`-`A06` nunca emendada) — FECHADO.** Ficha emendada
+  formalizando a decisão já tomada em `ADR-005 §14.2` (não um julgamento
+  novo): `mecanismo_economico`/`quem_esta_do_outro_lado` populados,
+  `veredito` de `SEM_MECANISMO` para `TESE_OK`, com ressalva explícita de
+  que isso não é evidência de sinal — o diagnóstico de poder (`§9.2`) já
+  mostrou que essas colunas continuam com 0-1 símbolo de descoberta.
+- **`AG-332` (teste de perturbação no-lookahead) — FECHADO, achado original
+  REFUTADO.** Investigação encontrou que o mecanismo já existe e é
+  extensivamente aplicado (`test_features_support.py::_assert_causal`,
+  reaproveitado em 15 testes de primitiva + 27 testes de feature em
+  `test_features_groups.py`). Auditoria completa (script, não amostra): 65
+  das 71 features têm `causal_proof` citando um teste real verificado
+  (0 quebradas), as 6 restantes são trivialmente causais (sem janela). Fix
+  real aplicado: 3 citações incompletas (`C03`/`C04`/`C05`, apontavam só
+  pro arquivo, não a função) corrigidas.
+- **`AG-333` (piso fail-loud único) — PARADO, não se aplica.** O mecanismo
+  do V17 resolve barras SINTÉTICAS de uma grade de relógio (gaps de fim de
+  semana) — problema que não existe por construção em barra dollar (uma
+  dollar bar só existe quando há volume real). A preocupação adjacente real
+  (piso de histórico comum entre símbolos) já tem mecanismo E já é
+  rastreada sob `AG-030` (aberto desde 2026-08-17) — tratar como item novo
+  duplicaria a dívida sob dois nomes.
+- **`AG-334` (gate de versão treino-live) — PARADO, confirmado prematuro.**
+  Achado original impreciso: o campo `version` por feature já existe no
+  registry. O que falta é o GATE de validação — e não há caminho de
+  serving ao vivo no repo hoje (`src/execution/` só tem simulador de
+  backtest; `src/live/` vazio) para o gate proteger. Construir agora seria
+  infraestrutura sem consumidor real.

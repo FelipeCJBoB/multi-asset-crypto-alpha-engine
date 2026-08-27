@@ -26,60 +26,116 @@
     É o piso de memória possível numa série em barras.
   h_sobre_H: 0.2
   papel: gatilho
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
+  mecanismo_economico: Autocorrelação de curto prazo (momentum de curto horizonte), categoria
+    de mecanismo reconhecida na literatura de microestrutura — persistência de fluxo de ordens
+    (execução fatiada tipo VWAP/TWAP gera continuação na mesma direção) e subreação a informação
+    nova. Emenda ADR-005 §14.2/AG-329, 2026-08-27 — reconhecimento de categoria da literatura
+    geral, não medição própria deste motor.
+  quem_esta_do_outro_lado: Provedor de liquidez que absorve o fluxo de ordens persistente
+    (formador de mercado compensado pelo risco de inventário assumido) ou trader mais
+    lento/desinformado que ainda não reagiu à mesma informação que já move o fluxo.
   ancoragem: fluxo
   ancoragem_defeito: null
   nome_engana: null
-  veredito: SEM_MECANISMO
+  veredito: TESE_OK
   observacao: Sob dollar bar 1 barra é ~9,4 min de MEDIANA, mas a dispersão de duração é o
     próprio regime — o mesmo valor de A01 significa coisas diferentes em rajada e em estiagem,
-    sem nenhum termo que carregue essa informação.
+    sem nenhum termo que carregue essa informação. EMENDA 2026-08-27 (AG-329, formalizando
+    ADR-005 §14.2) — mecanismo_economico/quem_esta_do_outro_lado atualizados para refletir a
+    justificativa já decidida no ADR (momentum de curto prazo é categoria reconhecida na
+    literatura), que antes só existia na prosa do ADR, nunca na ficha; veredito SEM_MECANISMO
+    para TESE_OK. Isso NÃO é evidência estatística de sinal real — o diagnóstico de poder
+    (AG-327, 2026-08-27) mostra que o eixo 1 tem poder alto mesmo para IC pequeno, e esta
+    coluna continua com 0-1 símbolo de descoberta no eixo 1 (AG-294); a leitura mais provável
+    é mecanismo genérico da literatura, não confirmado para este motor especificamente.
+    Permanece L3 (em observação), não promovida a L2.
 - feature: A02_log_return_2
   formula_resumida: ln(C_t / C_{t-2})
   memoria_efetiva_barras: 2
   memoria_justificativa: retorno de 2 barras; memória = lag = 2 = lookback_bars.
   h_sobre_H: 0.4
   papel: gatilho
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
+  mecanismo_economico: Autocorrelação de curto prazo (momentum de curto horizonte), categoria
+    de mecanismo reconhecida na literatura de microestrutura — persistência de fluxo de ordens
+    (execução fatiada tipo VWAP/TWAP gera continuação na mesma direção) e subreação a informação
+    nova. Emenda ADR-005 §14.2/AG-329, 2026-08-27 — reconhecimento de categoria da literatura
+    geral, não medição própria deste motor.
+  quem_esta_do_outro_lado: Provedor de liquidez que absorve o fluxo de ordens persistente
+    (formador de mercado compensado pelo risco de inventário assumido) ou trader mais
+    lento/desinformado que ainda não reagiu à mesma informação que já move o fluxo.
   ancoragem: fluxo
   ancoragem_defeito: null
   nome_engana: null
-  veredito: SEM_MECANISMO
+  veredito: TESE_OK
   observacao: 'A01/A02/A03/A04 formam uma escada de lags {1,2,4,12} sem nenhum critério declarado
     — 4 constantes ASSUMED dedicadas (''convenção do PRD, nunca testada''). A soma A01+A01(t-1)
-    reconstrói A02 exatamente: colinearidade estrutural, não estatística.'
+    reconstrói A02 exatamente: colinearidade estrutural, não estatística. EMENDA 2026-08-27
+    (AG-329, formalizando ADR-005 §14.2) — mecanismo_economico/quem_esta_do_outro_lado
+    atualizados para refletir a justificativa já decidida no ADR (momentum de curto prazo é
+    categoria reconhecida na literatura), que antes só existia na prosa do ADR, nunca na ficha;
+    veredito SEM_MECANISMO para TESE_OK. Isso NÃO é evidência estatística de sinal real — o
+    diagnóstico de poder (AG-327, 2026-08-27) mostra que o eixo 1 tem poder alto mesmo para IC
+    pequeno, e esta coluna continua com 0-1 símbolo de descoberta no eixo 1 (AG-294); a leitura
+    mais provável é mecanismo genérico da literatura, não confirmado para este motor
+    especificamente. Permanece L3 (em observação), não promovida a L2.'
 - feature: A03_log_return_4
   formula_resumida: ln(C_t / C_{t-4})
   memoria_efetiva_barras: 4
   memoria_justificativa: retorno de 4 barras; memória = lag = 4 = lookback_bars.
   h_sobre_H: 0.8
   papel: gatilho
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
+  mecanismo_economico: Autocorrelação de curto prazo (momentum de curto horizonte), categoria
+    de mecanismo reconhecida na literatura de microestrutura — persistência de fluxo de ordens
+    (execução fatiada tipo VWAP/TWAP gera continuação na mesma direção) e subreação a informação
+    nova. Emenda ADR-005 §14.2/AG-329, 2026-08-27 — reconhecimento de categoria da literatura
+    geral, não medição própria deste motor.
+  quem_esta_do_outro_lado: Provedor de liquidez que absorve o fluxo de ordens persistente
+    (formador de mercado compensado pelo risco de inventário assumido) ou trader mais
+    lento/desinformado que ainda não reagiu à mesma informação que já move o fluxo.
   ancoragem: fluxo
   ancoragem_defeito: null
   nome_engana: null
-  veredito: SEM_MECANISMO
+  veredito: TESE_OK
   observacao: É EXATAMENTE o numerador de A05 (mesmo lag=4, em constante dedicada com o mesmo
     valor). A05 = A03 / (atr_20_pct·2) — as duas só diferem por um divisor que é ele próprio
-    uma feature do vetor (E27f ∝ 1/atr_20_pct).
+    uma feature do vetor (E27f ∝ 1/atr_20_pct). EMENDA 2026-08-27 (AG-329, formalizando ADR-005
+    §14.2) — mecanismo_economico/quem_esta_do_outro_lado atualizados para refletir a
+    justificativa já decidida no ADR (momentum de curto prazo é categoria reconhecida na
+    literatura), que antes só existia na prosa do ADR, nunca na ficha; veredito SEM_MECANISMO
+    para TESE_OK. Isso NÃO é evidência estatística de sinal real — o diagnóstico de poder
+    (AG-327, 2026-08-27) mostra que o eixo 1 tem poder alto mesmo para IC pequeno, e esta
+    coluna continua com 0-1 símbolo de descoberta no eixo 1 (AG-294); a leitura mais provável
+    é mecanismo genérico da literatura, não confirmado para este motor especificamente.
+    Permanece L3 (em observação), não promovida a L2.
 - feature: A04_log_return_12
   formula_resumida: ln(C_t / C_{t-12})
   memoria_efetiva_barras: 12
   memoria_justificativa: retorno de 12 barras; memória = lag = 12 = lookback_bars.
   h_sobre_H: 2.4
   papel: confirmacao
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
+  mecanismo_economico: Autocorrelação de curto prazo (momentum de curto horizonte), categoria
+    de mecanismo reconhecida na literatura de microestrutura — persistência de fluxo de ordens
+    (execução fatiada tipo VWAP/TWAP gera continuação na mesma direção) e subreação a informação
+    nova. Emenda ADR-005 §14.2/AG-329, 2026-08-27 — reconhecimento de categoria da literatura
+    geral, não medição própria deste motor.
+  quem_esta_do_outro_lado: Provedor de liquidez que absorve o fluxo de ordens persistente
+    (formador de mercado compensado pelo risco de inventário assumido) ou trader mais
+    lento/desinformado que ainda não reagiu à mesma informação que já move o fluxo.
   ancoragem: fluxo
   ancoragem_defeito: null
   nome_engana: null
-  veredito: SEM_MECANISMO
+  veredito: TESE_OK
   observacao: 'B03_roc_12 = exp(A04)-1: transformação ESTRITAMENTE MONÓTONA de A04. Para LightGBM
     (splits invariantes a monotonia) as duas carregam informação idêntica — B03 é duplicata
-    exata, não ''variante''.'
+    exata, não ''variante''. EMENDA 2026-08-27 (AG-329, formalizando ADR-005 §14.2) —
+    mecanismo_economico/quem_esta_do_outro_lado atualizados para refletir a justificativa já
+    decidida no ADR (momentum de curto prazo é categoria reconhecida na literatura), que antes
+    só existia na prosa do ADR, nunca na ficha; veredito SEM_MECANISMO para TESE_OK. Isso NÃO é
+    evidência estatística de sinal real — o diagnóstico de poder (AG-327, 2026-08-27) mostra
+    que o eixo 1 tem poder alto mesmo para IC pequeno, e esta coluna continua com 0-1 símbolo
+    de descoberta no eixo 1 (AG-294); a leitura mais provável é mecanismo genérico da
+    literatura, não confirmado para este motor especificamente. Permanece L3 (em observação),
+    não promovida a L2.'
 - feature: A05_ret_vol_norm_4
   formula_resumida: ln(C_t/C_{t-4}) / (atr_20_pct_t · 2,0)
   memoria_efetiva_barras: 4
@@ -105,15 +161,29 @@
     (atr_20_pct × fator de escala de variância) é normalização. Memória = 12 = lookback_bars.'
   h_sobre_H: 2.4
   papel: confirmacao
-  mecanismo_economico: AUSENTE
-  quem_esta_do_outro_lado: AUSENTE
+  mecanismo_economico: Autocorrelação de curto prazo (momentum de curto horizonte), categoria
+    de mecanismo reconhecida na literatura de microestrutura — persistência de fluxo de ordens
+    (execução fatiada tipo VWAP/TWAP gera continuação na mesma direção) e subreação a informação
+    nova. Emenda ADR-005 §14.2/AG-329, 2026-08-27 — reconhecimento de categoria da literatura
+    geral, não medição própria deste motor.
+  quem_esta_do_outro_lado: Provedor de liquidez que absorve o fluxo de ordens persistente
+    (formador de mercado compensado pelo risco de inventário assumido) ou trader mais
+    lento/desinformado que ainda não reagiu à mesma informação que já move o fluxo.
   ancoragem: fluxo
   ancoragem_defeito: null
   nome_engana: null
-  veredito: SEM_MECANISMO
+  veredito: TESE_OK
   observacao: sqrt(12/4) presume retorno ~ passeio aleatório (variância linear no horizonte).
     Sob dollar bar essa premissa é MAIS defensável que sob relógio (barra ~ pacote de informação
-    constante), mas segue não medida neste repo — é premissa herdada, não achado.
+    constante), mas segue não medida neste repo — é premissa herdada, não achado. EMENDA
+    2026-08-27 (AG-329, formalizando ADR-005 §14.2) — mecanismo_economico/quem_esta_do_outro_lado
+    atualizados para refletir a justificativa já decidida no ADR (momentum de curto prazo é
+    categoria reconhecida na literatura), que antes só existia na prosa do ADR, nunca na ficha;
+    veredito SEM_MECANISMO para TESE_OK. Isso NÃO é evidência estatística de sinal real — o
+    diagnóstico de poder (AG-327, 2026-08-27) mostra que o eixo 1 tem poder alto mesmo para IC
+    pequeno, e esta coluna continua com 0-1 símbolo de descoberta no eixo 1 (AG-294); a leitura
+    mais provável é mecanismo genérico da literatura, não confirmado para este motor
+    especificamente. Permanece L3 (em observação), não promovida a L2.
 - feature: A07_body_ratio
   formula_resumida: (C-O)/(H-L); 0 se H=L
   memoria_efetiva_barras: 1

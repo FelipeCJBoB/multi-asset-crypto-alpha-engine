@@ -704,7 +704,7 @@
   dtype: float64
   range: [0.0, .inf]
   nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
-  causal_proof: "janela rolante fixa [t-47,t] (support.realized_vol, mesma primitiva de C06) — testado em tests/unit/test_features_support.py"
+  causal_proof: "janela rolante fixa [t-47,t] (support.realized_vol, mesma primitiva de C06) — testado em tests/unit/test_features_support.py::test_realized_vol_causalidade"
   parity_tested: true
   version: v1
   added: 2026-08-24
@@ -720,7 +720,7 @@
   dtype: float64
   range: [0.0, .inf]
   nan_policy: "NaN nas primeiras 48 barras; null antes de min_warmup_bars"
-  causal_proof: "janela rolante fixa [t-47,t] (support.parkinson_vol, mesma primitiva de C01 sob vol_estimator_id='parkinson_w20') — testado em tests/unit/test_features_support.py"
+  causal_proof: "janela rolante fixa [t-47,t] (support.parkinson_vol, mesma primitiva de C01 sob vol_estimator_id='parkinson_w20') — testado em tests/unit/test_features_support.py::test_parkinson_vol_causalidade"
   parity_tested: true
   version: v1
   added: 2026-08-24
@@ -736,7 +736,7 @@
   dtype: float64
   range: [0.0, .inf]
   nan_policy: "NaN nas primeiras 48 barras; NaN se a média da janela for negativa (ruído numérico); null antes de min_warmup_bars"
-  causal_proof: "janela rolante fixa [t-47,t] (support.garman_klass_vol, mesma primitiva de canonical_volatility_estimator) — testado em tests/unit/test_features_support.py"
+  causal_proof: "janela rolante fixa [t-47,t] (support.garman_klass_vol, mesma primitiva de canonical_volatility_estimator) — testado em tests/unit/test_features_support.py::test_garman_klass_vol_causalidade"
   parity_tested: true
   version: v1
   added: 2026-08-24

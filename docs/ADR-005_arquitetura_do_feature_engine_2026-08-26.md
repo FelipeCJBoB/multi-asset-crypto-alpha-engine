@@ -3059,9 +3059,9 @@ backlog registrado (`AG-331`-`AG-334`), não implementado agora.
 | Diagnóstico de poder por injeção sintética antes de aceitar "sem sinal" | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
 | Teste de homogeneidade formal antes de pooling entre unidades correlacionadas | **APLICADO** (`§14.9`/`§14.10`) | — (não existe em V17; método deste ADR) |
 | Poison-pill de nome banido no registro (bloqueio mecânico, não prosa) | **FECHADO 2026-08-27** — `src/features/registry.py::_BANNED_FEATURE_IDS`/`BannedFeatureIdError`, `AG-331` | `feature_sets.py:204-220`, `_BANNED_FEATURE_NAMES`/`BannedFeatureNameError` |
-| Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | backlog, `AG-332` | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
-| Piso fail-loud único e nomeado (`MIN_REAL_BARS_FRACTION`), uniforme em toda feature | backlog, `AG-333` | `volatility.py:34,244`, `_floor_mask_expr` |
-| Gate de versão treino↔live (`validate_versions_against`) | backlog, condicionado à operação ao vivo, `AG-334` | `feature_sets.py::validate_versions_against` |
+| Teste de perturbação "no-lookahead" determinístico (complementa o gate estatístico) | **FECHADO 2026-08-27 — achado original REFUTADO**, `AG-332`: o mecanismo já existe (`test_features_support.py::_assert_causal`, 15 primitivas + 27 testes de feature em `test_features_groups.py`); 65/71 features com citação `causal_proof` verificada, 6 triviais sem janela. Fix real aplicado: 3 citações incompletas (`C03`/`C04`/`C05`) apontadas para a função exata | `spread_dynamics.py`, `INV-SD-no-forward-mid` |
+| Piso fail-loud único e nomeado (`MIN_REAL_BARS_FRACTION`), uniforme em toda feature | **NÃO IMPLEMENTADO 2026-08-27 — não se aplica**, `AG-333`: resolve barras SINTÉTICAS de grade de relógio (gaps de fim de semana), que não existem por construção em barra dollar. A preocupação adjacente real (piso de histórico comum) já é `AG-030`, já aberto — duplicar sob novo id faria uma dívida parecer duas | `volatility.py:34,244`, `_floor_mask_expr` |
+| Gate de versão treino↔live (`validate_versions_against`) | **NÃO IMPLEMENTADO 2026-08-27 — confirmado prematuro**, `AG-334`: `version` por feature já existe no registry (achado original impreciso); o que falta é o GATE, e não há caminho de serving ao vivo no repo hoje (`src/execution/` só tem simulador de backtest; `src/live/` vazio) para ele proteger | `feature_sets.py::validate_versions_against` |
 | Paridade lote↔streaming garantida por construção (roda o MESMO kernel sobre a cauda do buffer) | observado, **não uma lacuna** — ver nota abaixo | `volatility.py::_scalar_from_batch` |
 | Camada A/B (agregar tick→bar primeiro, rolar depois) | não aplicável — não temos dado de tick | `realized_vol_quotes.py`, `spread_dynamics.py` |
 
@@ -3134,7 +3134,14 @@ Achados adicionais, registrados mas não centrais à decisão de hoje:
   (`§14.2`) nunca virou emenda formal na ficha real**, que continua
   `SEM_MECANISMO`. Recorrência nomeada do padrão `AG-114`/`AG-122` (regra a
   priori sem definição operacional → decisão vira julgamento ad-hoc no
-  momento de aplicar).
+  momento de aplicar). **FECHADO 2026-08-27** — ficha emendada
+  (`mecanismo_economico`/`quem_esta_do_outro_lado` populados,
+  `veredito: SEM_MECANISMO → TESE_OK`), formalizando a decisão já tomada
+  aqui em `§14.2` — não um julgamento novo. Observações originais
+  (colinearidade `A01`-`A04`, duplicata `B03`=`exp(A04)-1`, etc.)
+  preservadas intactas; ressalva explícita de que `TESE_OK` não significa
+  sinal confirmado — o diagnóstico de poder (`§14.10.1`) já mostrou que
+  estas colunas continuam com 0-1 símbolo de descoberta no eixo 1.
 - **`AG-330` — o eixo 1 mede a pergunta ERRADA para features de papel
   filtro/custo.** `E27f_cost_atr_ratio` (T1, `TESE_OK`) é "honesta como
   FILTRO de viabilidade e enganosa como preditor direcional" — testá-la
