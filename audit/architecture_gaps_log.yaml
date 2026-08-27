@@ -20248,6 +20248,37 @@ entries:
       NAO ADICIONADO a lista dos 7 comandos mecanicos de auditoria do
       CLAUDE.md: essa lista e exaustiva e por decisao do Manager (2026-08-12),
       nao se estende por iniciativa de quem escreve o lint.
+    addendum_2026-08-27_grade_15m_formalizada_como_gap_aceito: >
+      RATIFICADO 2026-08-27 (Manager: "F = nao rodar grade de 15m legada.
+      E obsoleta e morta"). Verificado ANTES de aplicar: o docstring de
+      `run_and_write_labels_for_alts` cita "o grupo de controle de AG-229
+      depende dela" como razao pra funcao continuar existindo -- checado
+      AG-229 diretamente: o grupo de controle ja esta INTACTO e CONGELADO
+      (bit-identico desde o relabel de 2026-08-25, confirmado no proprio
+      achado de AG-229), nao depende de nenhuma execucao NOVA -- a
+      ratificacao do Manager NAO contradiz AG-229, e consistente com ele.
+      Rodado `check_label_registry_sync.py` contra o disco real ANTES de
+      aplicar qualquer mudanca: confirma exatamente as 5 celulas
+      ({BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT}/15m) como as UNICAS
+      divergentes hoje -- os 15 cells de dollar bar (R1/R2/R3) seguem
+      fechados.
+
+      APLICADO: `src.labels.experiment_log.KNOWN_LEGACY_GRADE_LINEAGE_
+      GAPS` (frozenset das 5 celulas symbol x "15m") + campo
+      `UnregisteredLabelArtifact.accepted_gap` (default via parametro
+      `accepted_gaps`, nao filtra do retorno -- a divergencia continua
+      REPORTADA, nunca fica invisivel, mesmo principio original do
+      detector: "visivel e nao pode reaparecer em silencio"). `tools/
+      lint/check_label_registry_sync.py` reescrito pra separar aceitos
+      de pendentes: imprime os dois grupos, so falha (exit 1) em
+      divergencia FORA da lista aceita. 4 testes novos (13 no arquivo
+      `test_labels_registry_sync.py` agora). Rodado contra dado real, com
+      autorizacao do Manager pra execucao direta nesta sessao: `exit 0`,
+      "nenhum gap fora da lista aceita". ruff/mypy --strict/
+      banned_patterns limpos (comparado contra baseline via git stash --
+      violacoes preexistentes de B28/print() no arquivo do lint nao sao
+      minhas, mesmo padrao ja presente antes da mudanca). Nenhum labels.
+      parquet reescrito -- só o detector mudou.
 
   # AG-310/AG-311 -- 2a rodada de project_assurance sobre ADR-005 §14 v2
   # (2026-08-26): 6 das 7 correcoes da 1a rodada (AG-301..AG-307) CONFIRMADAS
@@ -20606,6 +20637,28 @@ entries:
       2267 passed, 2 skipped, 2 xfailed, 0 failed. ABERTO: decisao do
       Manager sobre qual mecanismo de teto promover, e o wiring em
       run_fold depois dela.
+    addendum_2026-08-27_ratificado_medir_lado_a_lado: >
+      RATIFICADO 2026-08-27 (Manager: "B = sua recomendacao aceita" --
+      recomendacao era medir os dois mecanismos lado a lado no proximo
+      retreino real, nao escolher agora). Aplicado, sem promover nenhum
+      mecanismo: `alpha.compare_cap_mechanisms` -- nucleo puro novo que
+      roda `resolve_joint_lambda` e `decide_side_breakeven_topq` sobre a
+      MESMA populacao, com o MESMO `target_signal_rate`, e reporta
+      `n_agree`/`n_disagree`/`frac_agree`/`lambda_b_resolved`/
+      `signal_rate_lambda`/`signal_rate_topq`. Pronto pra rodar sobre
+      `predictions.parquet` real assim que o retreino desbloquear (item
+      A/`AG-298`, ainda bloqueado -- nao resolvido nesta rodada) --
+      elimina a necessidade de escrever engenharia nova naquele momento.
+      4 testes novos (16 no arquivo agora): caso minimo de divergencia
+      (mesma populacao do teste manual acima, agora detectado
+      automaticamente), populacao homogenea concorda 100% (controle
+      negativo -- a divergencia e especificamente sobre custo variavel),
+      shapes incompativeis falha alto, `signal_rate_lambda` reflete o
+      realizado da bissecao sobre populacao heterogenea. ruff/mypy
+      --strict/banned_patterns/check_unguarded_ratios limpos (git stash
+      comparado -- 0 violacao nova). `run_fold`/`predictions.parquet`
+      continuam bit-exatos -- nenhuma promocao. Nenhuma celula real
+      medida ainda (depende do retreino).
 
   - id: AG-321
     renumbered_from: "AG-314 -- colisao de ID com a sessao paralela (a AG-314 dela e sobre src/models/persistence.py, item 10 de §13.17); mesmo procedimento de AG-272/AG-296/AG-312"
@@ -20968,6 +21021,25 @@ entries:
       verde (`test_features_support/groups/build/registry.py -m "not
       slow"`); ruff/mypy/banned_patterns limpos. ADR-005 §14.4 atualizado
       (`defeito_construcao` 23→22).
+    addendum_2026-08-27b_achado_project_assurance_artefatos_persistidos_desatualizados: >-
+      Achado MEDIUM da 3ª revisão de `project_assurance` (2026-08-27,
+      ADR-005 §14): `experiments/ic_by_horizon_report_{R1,R2,R3}.json`,
+      `experiments/feature_temporal_stability_report_{R1,R2,R3}.json` e
+      `experiments/feature_promotion_criterion_report.json` (todos
+      datados 2026-08-26, ANTES desta correção) contêm estatísticas de
+      `C08_vol_pctile_rolling_1y` computadas sob a fórmula ANTIGA
+      (janela de contagem de barras, não de tempo) — mudança de
+      DEFINIÇÃO de janela, não só de escala. Risco avaliado como BAIXO,
+      não bloqueante: C08 não está em `T1_FEATURE_IDS`, e já falhava
+      k>=2 no eixo 1 antes da correção (não é candidata a promoção
+      hoje) — mas os números nesses 6 artefatos NÃO refletem o código
+      atual. Regeneração não executada nesta rodada (rodar os 3 scripts
+      geradores é trabalho de pipeline, não decisão de arquitetura) --
+      fica como próximo passo explícito antes de qualquer decisão de
+      promoção que cite esses relatórios envolvendo C08. Mesmo achado
+      se aplica a `E11f_oi_change_1d` (`AG-320`) nesses mesmos 3
+      relatórios, com risco ainda mais baixo (E11f já falhava k=0 no
+      eixo 1).
 
   - id: AG-318
     date: "2026-08-26"
@@ -21982,3 +22054,130 @@ entries:
       reavaliar quando `paper run`/`live run` (hoje aspiracional na CLI
       `quant`, nao implementado -- ver `CLAUDE.md` §Comandos) entrar em
       escopo real. Nenhum codigo alterado.
+
+  - id: AG-335
+    date: "2026-08-27"
+    file: "src/features/build.py::SUPPORT_FEATURE_IDS, src/features/registry.yaml (campo layer, NAO COMMITADO)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-298 (item A da pauta §13), docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.12, §14.3/§14.4/§14.11 (census L0-L4)"
+    found_by: "Claude -- persona lgbm-crypto-quant, revalidando item C ('autorizar reexecucao do H0 assim que item A destravar') contra o codigo real antes de aplicar, a pedido do Manager"
+    gap: >
+      Item C da pauta (§13.12, reexecucao do teste H0 do item 7) foi
+      ratificado "assim que o item A destravar" -- A e o bloqueio de
+      `ExpandingFeatureLookbackError` (`AG-298`) sobre 5 features de
+      `lookback_bars: expanding` ainda em `SUPPORT_FEATURE_IDS`
+      (`C09_range_pctile_expanding`, `C10_vol_expansion_flag`,
+      `C11_vol_compression_flag`, `E15f_toptrader_ls_z`,
+      `E17f_retail_vs_top_spread`). Reverificado ao vivo 2026-08-27: o
+      bloqueio CONTINUA ativo -- as 5 seguem em `SUPPORT_FEATURE_IDS`,
+      `compute_t1_features` continua calculando todas, o erro continua
+      sendo levantado para o vetor ativo real.
+
+      Achado lateral, NAO decidido aqui: no working tree de HOJE, sem
+      commit, uma sessao paralela adicionou um campo `layer` ao
+      `registry.yaml` (census L0-L4, §14.3/§14.4 do ADR) -- 4 das 5
+      features acima (`C10`/`C11`/`E15f`/`E17f`) ja aparecem como
+      `layer: [L4]` ("aposentada", por definicao do proprio census "nem
+      deveria ser calculada"); so `C09` continua `layer: [L3]` (em
+      observacao). Verificado: `git show HEAD:src/features/registry.yaml`
+      NAO tem o campo `layer` pra estas entradas -- e trabalho em
+      andamento, nao revisado, nao commitado. Nenhuma das 4 (`C10`/
+      `C11`/`E15f`/`E17f`) tem entrada em `audit/feature_thesis/
+      fichas_69_2026-08-25.yaml` (grep vazio) -- a classificacao L4 nao
+      vem do processo de ficha que decide veredito pras outras features,
+      vem de outro criterio ainda nao identificado por esta investigacao.
+    severity: "MEDIA -- nao bloqueia nada por si so (item C ja estava condicionado a A, que continua bloqueado), mas e informacao relevante pra quem for decidir A: a classificacao L4 (se confirmada e commitada) pode coincidir substancialmente com a recomendacao ja registrada pra A (excluir as 5 do vetor ativo)"
+    layer: "features"
+    consequence: >
+      Nenhum codigo de SUPPORT_FEATURE_IDS alterado -- item A nao fez
+      parte deste lote de decisao do Manager (so B/C/E/F), e agir sobre
+      um campo `layer` nao commitado, sem ficha de suporte, de uma sessao
+      paralela ainda em andamento seria decidir A por conta propria sem
+      autorizacao. Item C permanece bloqueado por A, sem mudanca de
+      status. Quando o Manager decidir A: verificar se o campo `layer`
+      desta sessao paralela foi commitado e revisado antes de tratar a
+      classificacao L4 como base para a decisao.
+    status: "aberto -- informativo, aguarda decisao do Manager sobre item A (fora do escopo desta rodada)"
+
+  # ============================================================================
+  # AG-336..AG-337 -- 3a revisao de project_assurance sobre ADR-005 §14
+  # (2026-08-27, Agent independente). Veredito: APROVADO COM RESSALVAS.
+  # ============================================================================
+
+  - id: AG-336
+    date: "2026-08-27"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.5, §14.11; src/features/build.py::SUPPORT_FEATURE_IDS/compute_t1_features"
+    related_file: "audit/architecture_gaps_log.yaml::AG-335 (mesmo gap visto pelo angulo do item C/§13.12 da sessao de ML), audit/architecture_gaps_log.yaml::AG-282"
+    found_by: "project_assurance (Agent independente) -- 3a revisao de §14"
+    gap: >
+      §14.5 afirmava (texto commitado em ff63edd, antes desta correcao)
+      "Opcao C... ADOTADA E IMPLEMENTADA 2026-08-27... L4=41 (~59% das
+      70) parar de ser calculada e uma reducao MAIOR... o custo evitado
+      e maior, nao menor". VERIFICADO CONTRA CODIGO REAL: FALSO. Das 41
+      features com layer=[L4] no registry, 100% (41/41) continuam em
+      SUPPORT_FEATURE_IDS/T1_FEATURE_IDS e sao efetivamente computadas
+      por compute_t1_features (build.py). Zero referencia a `.layer`/
+      `layer=` existe em build.py/dataset.py/pipeline.py (grep, 0
+      ocorrencias) -- nada no pipeline real le o campo layer pra decidir
+      o que calcular. As unicas 2 remocoes reais (A12, K08) foram
+      delecao completa de funcao/registry/ficha, mecanismo TOTALMENTE
+      SEPARADO da marcacao L4 (nao decorrem da arquitetura de camadas em
+      si).
+    severity: CRITICAL
+    layer: "features (governanca de vetor) / documentacao arquitetural"
+    consequence: >
+      A justificativa economica central da arquitetura de 5 camadas
+      (reduzir custo computacional podando L4) e falsa como
+      implementada. Mais grave: `layer: [L4]` no registry (definicao
+      propria da camada, §14.3: "nao, nem calculada") induz a crer que
+      a coluna e inerte, quando continua sendo calculada ativamente no
+      DataFrame de saida -- exatamente o tipo de doc/codigo divergente
+      que a Regra Zero deste projeto existe pra pegar. Mesmo gap ja
+      visto e documentado pela sessao de ML pelo angulo do item C/§13.12
+      (AG-335, "5 features expanding continuam em SUPPORT_FEATURE_IDS,
+      bloqueio ExpandingFeatureLookbackError segue ativo") -- as duas
+      sessoes chegaram independentemente ao mesmo fato: classificar nao
+      e podar.
+    status: >-
+      CORRIGIDO NO TEXTO 2026-08-27 (mesma sessao, apos o achado) --
+      §14.5/§14.4 reescritos pra declarar explicitamente "CLASSIFICACAO
+      IMPLEMENTADA, PODA EFETIVA NAO IMPLEMENTADA", sem afirmar reducao
+      de custo que nao existe. A PODA REAL (remover as 41 features L4 de
+      SUPPORT_FEATURE_IDS/compute_t1_features) permanece ABERTA,
+      decisao do Manager, nao decidida nesta sessao -- reduzir 41
+      features de uma vez e mudanca de superficie de calculo grande o
+      bastante pra merecer sessao dedicada (mesmo padrao de AG-295/§5.1),
+      nao efeito colateral da adocao do schema.
+
+  - id: AG-337
+    date: "2026-08-27"
+    file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §14.2, §14.3, §14.4"
+    related_file: "audit/architecture_gaps_log.yaml::AG-272 (real, LightGBM), docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §11.3 (correcao original da citacao orfa)"
+    found_by: "project_assurance (Agent independente) -- 3a revisao de §14"
+    gap: >
+      §14.2/§14.3 (titulo da secao)/§14.4 citavam "AG-272" como entrada
+      fechada valida referente a "particao nao exaustiva (25 colunas sem
+      camada)". O AG-272 REAL no log (architecture_gaps_log.yaml:18841,
+      renumbered_from AG-261) e sobre metodologia de treino do LightGBM
+      (src/models/pipeline.py), topico nao relacionado -- colisao de ID
+      do dia com a sessao paralela. §11.3 deste mesmo ADR JA reconhecia
+      a citacao orfa desde 2026-08-26 ("o achado original nao tem numero
+      dedicado no log, so esta mencao em prosa") -- mas §14.2-§14.4,
+      revisadas e commitadas em 2026-08-27 (DEPOIS dessa nota existir),
+      nunca propagaram a correcao pras proprias citacoes.
+    severity: MEDIUM
+    layer: "documentacao arquitetural / governanca (rastreabilidade de citacao)"
+    consequence: >
+      Viola o DoD do proprio CLAUDE.md ("toda outra secao que cita o
+      mesmo AG-NNN foi revisada, nao so a secao onde a mudanca
+      aconteceu") -- o mesmo padrao que AG-123 ja tinha identificado
+      como recorrente. Um leitor futuro que siga a citacao "AG-272" a
+      partir de §14.3 cai no achado errado (LightGBM), nao no achado que
+      o texto de fato descreve.
+    status: >-
+      CORRIGIDO 2026-08-27 (mesma sessao, apos o achado) -- titulo de
+      §14.3 e as 3 citacoes em corpo (§14.3, §14.4 tabela `L4`, §14.4
+      tabela `defeito_construcao`) marcadas com strikethrough + ponteiro
+      pra §11.3, mesmo padrao ja usado la. Citacoes legitimas ao AG-272
+      REAL (LightGBM, ex. `spw`/`class_balance_basis` em §13) nao
+      tocadas -- confirmado que sao sobre o achado certo antes de deixar
+      como estavam.

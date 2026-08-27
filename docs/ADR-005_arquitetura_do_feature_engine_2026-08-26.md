@@ -346,7 +346,7 @@ a causa de `AG-266` ser conhecida.
 | Sai | Quantas | Por quê |
 |---|---|---|
 | `E18f` | 1 | **Quarentena** — artefato de fonte (`AG-266`); vive em `L3` (calculada, fora do treino), com `defeito_construcao` também `true` — §14.3 |
-| `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ ~~43~~ ~~42~~ **41** (`AG-271`/`AG-272`, §14.2-§14.4; corrigido 2026-08-27, corrigido 2026-08-27b pela remoção de `A12`) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo. |
+| `L4` — sem mecanismo, sem papel estrutural, sem candidatura a sinal | ~~29~~ ~~43~~ ~~42~~ **41** (`AG-271`/~~`AG-272`~~ citação órfã ver §11.3, §14.2-§14.4; corrigido 2026-08-27, corrigido 2026-08-27b pela remoção de `A12`) | Sem tese e sem evidência, OU construção comprovadamente quebrada (`defeito_construcao`) sem outro papel. Saem também do cálculo — **classificação, não poda efetiva, ver §14.5** (achado CRITICAL de `project_assurance`, 2026-08-27). |
 | `L3` — tese sem evidência suficiente, OU quarentena | ~~~15~~ **17** (§14.4) | Continuam calculadas; fora do treino até reteste/correção. |
 | `L0` — primitivas | 2 | São insumo de outras colunas, não preditores. |
 | `L1` — gate de regime | 4 | regime já é gate-só, não feature do Alpha (citação de `ADR-001 §2.7` corrigida em `§2.1` — a certa não identificada, ver nota lá); `E27f` é exceção deliberada (também `L2`, §14.3) — as outras 3 ficaram por inércia. |
@@ -2829,7 +2829,7 @@ documento já ratificou. **Não aplicada — a tabela acima (A05/B01 → `L2`)
 é o estado correto e final.** Registrado como achado de validação, não
 como mudança de arquitetura.
 
-### §14.3 `AG-272` — o estado `defeito_construção`, ortogonal, com precedência explícita
+### §14.3 ~~`AG-272`~~ (citação órfã — ver §11.3, nenhum id dedicado no log) — o estado `defeito_construção`, ortogonal, com precedência explícita
 
 **Revisado 2026-08-26.** A partição `L0`–`L4` nunca teve lugar pras 16
 `INCOERENTE_DIMENSIONAL` + 10 `ERRO_CATEGORICO` da ficha (26 no total).
@@ -2850,9 +2850,10 @@ seção tratava `defeito_construcao` como a única marcação que essas 26
 colunas precisavam — sem nunca decidir a CAMADA delas quando não eram já
 `L0`/`L1`/`L2` por outro motivo. Resultado medido por reconstrução de
 conjunto (não a alegação da v1, a reconstrução real): 23 das 72 features
-não caíam em NENHUMA camada — a MESMA classe de furo que `AG-272` original
-descrevia (25 sem camada), reduzida de 25 para 23, não fechada, apesar do
-título desta seção dizer "fechado".** Regra que faltava, agora explícita:
+não caíam em NENHUMA camada — a MESMA classe de furo que a citação órfã
+"`AG-272`" original descrevia (25 sem camada, ver §11.3), reduzida de 25
+para 23, não fechada, apesar do título desta seção dizer "fechado".**
+Regra que faltava, agora explícita:
 
 **Regra de default para `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`: `L4`
 (não calculada), a menos que a precedência abaixo já resolva a coluna pra
@@ -2953,7 +2954,7 @@ completa sem tê-la de fato:**
 | `L2` | as 7 `T1_FEATURE_IDS` | inclui `E27f` (dupla com `L1`) — `E16f` NÃO entra (§14.1) |
 | `L3` | 17 (11 `TESE_OK` restantes + 5 momentum `A01`-`A04`/`A06` + `E18f` via quarentena) | +1 vs. a v1 desta tabela (ganhou `E18f`) |
 | `L4` | ~~43~~ ~~42~~ **41** (~~21~~ ~~20~~ **21** `SEM_MECANISMO` restante + ~~22~~ ~~21~~ **20** `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO` sem outro destino) | **+22 vs. a v1 desta tabela** — é a correção do achado CRITICAL; **−1 em 2026-08-27** (K08), **−1 em 2026-08-27b** (A12, removida — ver `AG-316`); total inalterado em 2026-08-27c (C08 muda de bucket, `ERRO_CATEGORICO→SEM_MECANISMO`, ver `AG-317`) |
-| `defeito_construcao` (flag ortogonal) | ~~26~~ ~~24~~ ~~23~~ **22** (1 já `L1`: `E02f`; 1 em `L3` via quarentena: `E18f`; 20 em `L4`) | fecha `AG-272` de verdade agora; **−2 em 2026-08-27** (A13/E10f), **−1 em 2026-08-27b** (A12, removida), **−1 em 2026-08-27c** (C08, corrigida — `AG-317`) |
+| `defeito_construcao` (flag ortogonal) | ~~26~~ ~~24~~ ~~23~~ **22** (1 já `L1`: `E02f`; 1 em `L3` via quarentena: `E18f`; 20 em `L4`) | fecha a partição sem-camada que a citação órfã ~~`AG-272`~~ descrevia (ver §11.3) de verdade agora; **−2 em 2026-08-27** (A13/E10f), **−1 em 2026-08-27b** (A12, removida), **−1 em 2026-08-27c** (C08, corrigida — `AG-317`) |
 
 **CORREÇÃO 2026-08-27 — números acima ficaram desatualizados por trabalho
 posterior NESTA MESMA sessão, nunca propagado de volta pra esta tabela
@@ -3017,17 +3018,25 @@ concentrar risco em cima. As opções de §3 ficam assim:
   vira **"não fazer nada"**: `L2` já é `T1`. Deixa de ser opção de risco —
   é o estado atual, por ausência de candidato.
 - **Opção C (5 camadas + quarentena + `defeito_construção`, podar `L4`
-  corrigida, manter `L3` calculada) ✅ — ADOTADA E IMPLEMENTADA
-  2026-08-27** (ver `§14.11`): não exige nenhuma promoção contestável
-  (`L2` não muda), só reduz o que é calculado sem propósito (`L4`,
-  ~~43~~ ~~42~~ **41** — corrigido 2026-08-27/2026-08-27b, ver correção
-  acima) e nomeia o que precisa de engenharia antes de significar algo
-  (`defeito_construção`, ~~26~~ ~~24~~ ~~23~~ **22**). `L4=41` (~59% das 70)
-  parar de ser calculada é uma redução MAIOR do que a v1 desta seção
-  estimava — o custo evitado é maior, não menor, com a partição
-  corrigida. `A12_gap_pct` foi removida por completo em vez de só
-  parar de calcular (`AG-316`) — a única das 41 onde a decisão foi
-  "não existe redefinição honesta", não "aguarda engenharia".
+  corrigida, manter `L3` calculada) ✅ — DECIDIDA; CLASSIFICAÇÃO
+  IMPLEMENTADA 2026-08-27, PODA EFETIVA **NÃO** IMPLEMENTADA (achado
+  CRITICAL de `project_assurance`, 3ª revisão, 2026-08-27 — ver
+  `§14.11`).** O que existe hoje: `registry.yaml` marca corretamente as
+  ~59% das 70 (`L4=41`) que deveriam parar de ser calculadas. O que NÃO
+  existe: nenhum código em `build.py`/`dataset.py`/`pipeline.py` lê o
+  campo `layer` pra decidir o que computar (`grep ".layer\|layer="`,
+  zero ocorrências) — as 41 features `L4` (exceto `A12`/`K08`, removidas
+  por completo, mecanismo NÃO relacionado à marcação `L4`) continuam
+  100% calculadas por `compute_t1_features`, exatamente como antes desta
+  seção. **A frase "custo evitado é maior, não menor" (texto anterior
+  desta seção) estava ERRADA — nenhum custo foi evitado ainda.** A
+  classificação é o pré-requisito correto pra podar (não dá pra podar o
+  que não está marcado), mas marcar não é podar. Poda real de `L4` do
+  `build.py`/`SUPPORT_FEATURE_IDS` fica como próximo passo explícito,
+  não decidido nesta sessão — reduzir 41 features de uma vez é uma
+  mudança de superfície de cálculo grande o bastante pra merecer sua
+  própria sessão dedicada (mesmo padrão de `AG-295`/`§5.1`), não um
+  efeito colateral silencioso da adoção do schema.
 
 ### §14.6 O que esta v3 ainda não fecha
 
@@ -3592,8 +3601,7 @@ arquivos tocados.
 
 ---
 
-## §14.11 Decisões do Manager 2026-08-27 (B/C/E/F da pauta) — validadas
-## contra código real antes de aplicar, "modo chief architect"
+### §14.12 Decisões do Manager 2026-08-27 (B/C/E/F da pauta) — validadas contra código real antes de aplicar, "modo chief architect"
 
 A pedido do Manager: ratificar B/C/E/F das recomendações da pauta §13, mas
 "leia cada item no ADR e valide contra o código e arquivos de governança
