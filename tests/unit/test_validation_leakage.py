@@ -28,8 +28,18 @@ from src.validation._paths import labels_symbol_tf_dir
 _ALL_SYMBOLS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")
 
 
-def _skip_if_labels_missing(symbol: str = "BTCUSDT") -> None:
-    path = labels_symbol_tf_dir(symbol, "v1") / "labels.parquet"
+def _skip_if_labels_missing(symbol: str = "BTCUSDT", *, resolution_id: str | None = None) -> None:
+    """`resolution_id=None` (default) checa a grade LEGADA (`tf=15m`) —
+    use `resolution_id="R1"` pra checar a grade de produção real
+    (dollar bar, `AG-042`). Achado 2026-08-27 (`project_assurance`, 3ª
+    revisão de §14): os 2 testes de vazamento que consomem dado real
+    deste arquivo checavam/carregavam a grade de 15m por default —
+    `build_modeling_frame()`/`run_all_leakage_tests()` sem argumentos
+    caem nesse default, e desde `AG-236` isso falha com
+    `ConfigHashMismatchError` contra o `labels.parquet` de 15m real
+    (B15, guarda funcionando como deveria — o defeito era nos
+    CHAMADORES, não na guarda)."""
+    path = labels_symbol_tf_dir(symbol, "v1", resolution_id=resolution_id) / "labels.parquet"
     if not path.exists():
         pytest.skip(f"{path} ausente — rode o Label Engine (Sprint 6) primeiro")
 
@@ -412,15 +422,25 @@ def test_run_all_leakage_tests_sobre_dataset_real(
     chama `features_build.compute_max_feature_lookback_ms(tf)` internamente,
     que dispara `ExpandingFeatureLookbackError` contra o `T1_FEATURE_IDS`
     real (3 features `expanding` conhecidas) antes de chegar na lógica
-    que este teste de fato exercita. Mesmo bypass, mesmo motivo."""
+    que este teste de fato exercita. Mesmo bypass, mesmo motivo.
+
+    **Corrigido 2026-08-27 (`project_assurance`, 3ª revisão de §14):**
+    até esta versão, `_skip_if_labels_missing`/`load_labels_v1`/
+    `run_all_leakage_tests` eram chamados sem `resolution_id`, caindo
+    todos na grade LEGADA de 15m (`tf="15m"` default) — não é a grade
+    de produção real (dollar bar R1, `AG-042`) desde 2026-08-16. O
+    relatório de vazamento que este teste valida passava a garantir
+    proteção contra a grade errada, silenciosamente."""
     monkeypatch.setattr(
         features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
     )
-    _skip_if_labels_missing(symbol)
-    labels = cpcv.load_labels_v1(symbol=symbol)
+    _skip_if_labels_missing(symbol, resolution_id="R1")
+    labels = cpcv.load_labels_v1(symbol=symbol, resolution_id="R1")
     results = {
         r.test_id: r
-        for r in leakage.run_all_leakage_tests(labels, feature_ids=T1_FEATURE_IDS, symbol=symbol)
+        for r in leakage.run_all_leakage_tests(
+            labels, feature_ids=T1_FEATURE_IDS, symbol=symbol, resolution_id="R1"
+        )
     }
     assert len(results) == 14
     assert results[1].status == leakage.LeakageStatus.PENDING_SPRINT_8
@@ -543,12 +563,26 @@ def test_scan_sobre_dataset_real_nenhuma_feature_t1_hard_falha() -> None:
     motivo de `E27f_cost_atr_ratio`/`C07_vol_pctile_expanding`/
     `C06_vol_ratio_12_96`/`D03f_volume_z_expanding` ficarem elevated por
     correlação estrutural com a geometria ATR-escalada do label, não
-    vazamento."""
+    vazamento.
+
+    **Corrigido 2026-08-27 (`project_assurance`, 3ª revisão de §14):**
+    `build_modeling_frame()` sem argumentos caía na grade LEGADA de 15m
+    — desde `AG-236` isso levanta `ConfigHashMismatchError` (B15) contra
+    o `labels.parquet` de 15m real, porque os labels persistidos nessa
+    grade não batem mais com o `config_hash` de execução atual. Passando
+    `resolution_id="R1"` (grade de produção real, dollar bar) o teste
+    volta a rodar contra a grade que de fato importa — e, sob
+    `resolution_id` setado, `vol_estimator_id` explícito também é
+    exigido (`AG-140`, guarda em `build_modeling_frame`): sem `bar_ms`
+    fixo sob dollar bar não há estimador default derivável, e os labels
+    reais de R1 foram gerados com `parkinson_w20`
+    (`run_and_write_labels_dollar_bar_parkinson`), mesmo valor já usado
+    em `tests/unit/test_models_dataset.py`."""
     from src.features.build import T1_FEATURE_IDS
     from src.models import dataset as ds
 
-    _skip_if_labels_missing()
-    mf = ds.build_modeling_frame()
+    _skip_if_labels_missing(resolution_id="R1")
+    mf = ds.build_modeling_frame(resolution_id="R1", vol_estimator_id="parkinson_w20")
     filled = mf.data.filter(pl.col("barrier_hit") != "NOFILL")
     entries = leakage.scan_feature_target_correlation(filled, T1_FEATURE_IDS)
     hard_failures = [e for e in entries if e.hard_fail]
