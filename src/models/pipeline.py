@@ -1931,7 +1931,22 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             help=(
                 "D-13 -- roda as 15 combinacoes (5 simbolos x {R1,R2,R3}) via "
                 "run_layer1_sprint_all_combinations() em vez de uma rodada "
-                "unica; ignora --symbol/--resolution-id/--tf/--run-tag"
+                "unica; ignora --symbol/--resolution-id/--tf/--run-tag. "
+                "Sempre passa feature_ids=T1_FEATURE_IDS explicito (AG-366, "
+                "2026-08-27) -- None nao entra no config_hash, colidiria com "
+                "artefato de uma composicao de T1 anterior"
+            ),
+        )
+        parser.add_argument(
+            "--use-hyperparams-by-combo",
+            action="store_true",
+            help=(
+                "AG-207/ADR-003 -- so com --all-combinations. False (default) "
+                "usa o hiperparametro global de constants.yaml em toda "
+                "combinacao (comportamento de sempre); True consulta "
+                "config/alpha_hyperparams_by_combo.yaml por combinacao, "
+                "caindo no global com warning explicito nas celulas sem "
+                "calibracao propria"
             ),
         )
         # --- AG-208..AG-215: politicas de correcao, todas OPT-IN. Os
@@ -2004,11 +2019,20 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
         args = _parse_args()
         if args.all_combinations:
             reports = run_layer1_sprint_all_combinations(
-                vol_estimator_id=args.vol_estimator_id, device_type=args.device_type
+                vol_estimator_id=args.vol_estimator_id,
+                device_type=args.device_type,
+                # AG-366 -- feature_ids=None nao entra no config_hash, entao
+                # nao distingue este retreino de um anterior sob outra
+                # composicao de T1_FEATURE_IDS. Passar explicito torna o
+                # config_hash correto sem mudar o que de fato treina (T1_
+                # FEATURE_IDS e o mesmo vetor que None ja resolvia).
+                feature_ids=features_build.T1_FEATURE_IDS,
+                use_hyperparams_by_combo=args.use_hyperparams_by_combo,
             )
             logger.info(
                 "models.pipeline.cli_all_combinations_done",
                 n_combinations=len(reports),
+                use_hyperparams_by_combo=args.use_hyperparams_by_combo,
             )
             return 0
         tag = f"_{args.run_tag}" if args.run_tag else ""
