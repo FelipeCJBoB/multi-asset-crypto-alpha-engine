@@ -179,11 +179,23 @@ def _run_full_vector_stage(
         use_hyperparams_by_combo=use_hyperparams_by_combo,
         n_combinations=len(symbols) * len(resolutions),
     )
+    # AG-366 -- `feature_ids=None` (o default de `run_layer1_sprint_all_
+    # combinations`) NÃO entra no `config_hash` do artefato de predições
+    # (`src/io/artifact.py::compute_config_hash`, via `alpha_train_config_
+    # extra` em `pipeline.py`) -- só entra quando explícito. Como o vetor
+    # T1 GLOBAL mudou de composição (`AG-362`, 7->22) sem `feature_ids`
+    # nunca ter sido passado explicitamente em nenhum caller de produção,
+    # `feature_ids=None` aqui colidiria (`ArtifactExistsError`) com
+    # QUALQUER artefato já persistido sob o T1 antigo (7) OU sob uma
+    # tentativa anterior deste mesmo comando -- medido ao vivo (BTCUSDT/R1,
+    # camada0, hash `4979fd69f0a404d2` já existia). Passar o vetor
+    # explícito garante um `config_hash` que reflete de fato o que foi
+    # treinado, distinto de qualquer rodada anterior sob outra composição.
     reports_raw = run_layer1_sprint_all_combinations(
         symbols=symbols,
         resolutions=resolutions,
         vol_estimator_id=vol_estimator_id,
-        feature_ids=None,
+        feature_ids=features_build.T1_FEATURE_IDS,
         use_hyperparams_by_combo=use_hyperparams_by_combo,
     )
     summary = summarize_combinations(reports_raw)
@@ -191,7 +203,7 @@ def _run_full_vector_stage(
     payload = {
         "stage": stage_name,
         "config": "22_features",
-        "feature_ids": None,
+        "feature_ids": list(features_build.T1_FEATURE_IDS),
         "feature_ids_n": len(features_build.T1_FEATURE_IDS),
         "use_hyperparams_by_combo": use_hyperparams_by_combo,
         "vol_estimator_id": vol_estimator_id,

@@ -23156,3 +23156,54 @@ entries:
       resposta reage a T1 de verdade (não é um valor travado pela
       composição atual, coincidência). `banned_patterns`/`ruff`/`mypy`
       rodados, limpos.
+
+  - id: AG-366
+    date: "2026-08-27"
+    file: "src/analysis/ag362_incremental_value_report.py"
+    related_file: "src/models/pipeline.py::run_layer1_sprint (alpha_train_config_extra), src/io/artifact.py::compute_config_hash"
+    found_by: >-
+      Claude -- crash ao vivo na 1a chamada real do driver de medição de
+      AG-362 (stage='off', BTCUSDT/R1, escrita de predictions de
+      camada0_baseline_v1).
+    gap: >
+      `run_layer1_sprint_all_combinations(feature_ids=None)` -- o default
+      -- NÃO entra no `config_hash` do artefato de predições
+      (`alpha_train_config_extra` em `pipeline.py` só adiciona a chave
+      `feature_ids` quando o parâmetro é explícito, não `None`,
+      documentado desde `AG-207`/`ADR-003` exatamente pra preservar bit-
+      exato o hash de callers legados). Consequência não antecipada:
+      `T1_FEATURE_IDS` é um vetor GLOBAL cuja composição já mudou uma vez
+      em produção (`AG-362`, 7->22) sem que nenhum caller precisasse
+      passar `feature_ids` explícito -- então dois treinos reais, um sob
+      T1=7 e outro sob T1=22, ambos chamando com `feature_ids=None`,
+      produzem o MESMO `config_hash` apesar de terem sido treinados sobre
+      dados de entrada completamente diferentes. `write_artifact` trata
+      esse artefato como imutável e recusa a escrita (`ArtifactExistsError`)
+      -- medido ao vivo: hash `4979fd69f0a404d2` já existia em disco pra
+      BTCUSDT/R1/camada0 antes desta rodada sequer começar.
+    severity: "medio -- nao corrompe dado (write_artifact recusa em vez de sobrescrever silenciosamente), mas bloqueia qualquer nova medicao/retreino que reuse feature_ids=None depois que T1_FEATURE_IDS mudar de composicao"
+    layer: "models/io (fronteira config_hash <-> composicao real do vetor de treino)"
+    consequence: >
+      Bloqueia toda tentativa de medir/retreinar sob a composição T1 atual
+      via `feature_ids=None` enquanto existir QUALQUER artefato anterior
+      (sob composição T1 diferente) no mesmo `symbol`/`resolution`/
+      `variant` -- inclusive o próprio retreino canônico que `AG-362`
+      deixou pendente. `write_artifact` está se comportando CORRETO
+      (imutabilidade é a proteção certa); o defeito é o hash não capturar
+      uma dependência real (a composição de `T1_FEATURE_IDS` no momento do
+      treino).
+    resolved_by_commit: null
+    status: >-
+      MITIGADO (não corrigido na raiz) 2026-08-27 -- `ag362_incremental_
+      value_report.py` passa `feature_ids=features_build.T1_FEATURE_IDS`
+      explícito (nunca `None`) em todas as 3 rodadas, forçando o hash a
+      capturar a composição real. Resolve o bloqueio IMEDIATO desta
+      medição. NÃO resolve a causa raiz pra callers futuros que continuem
+      usando `feature_ids=None` -- decisão em aberto pro Manager: (a)
+      `config_hash` passar a incluir sempre um snapshot de
+      `T1_FEATURE_IDS` (mesmo quando `feature_ids is None`), fechando a
+      classe de defeito por completo, ou (b) aceitar que todo retreino
+      real após uma mudança de composição de T1 precisa de `feature_ids`
+      explícito por convenção documentada. Não decidido aqui (mudança de
+      hash de TODOS os artefatos já persistidos, fora do escopo desta
+      medição pontual).
