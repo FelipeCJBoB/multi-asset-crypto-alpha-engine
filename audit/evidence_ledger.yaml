@@ -3715,7 +3715,7 @@ entries:
     alpha/), a comparacao anterior usou scratch=True. Achado NOVO desta
     extracao completa (nao capturado na comparacao pareada, que so
     guardava um resumo compacto): N_eff efetivo mediano = 2,86 de 22
-    features (HHI) -- 8 das 15 combinacoes concentram o gain em menos de
+    features (HHI) -- 7 das 15 combinacoes concentram o gain em menos de
     2,5 fatores efetivos mesmo com o vetor de 22 disponivel, contradizendo
     a premissa de "captura de interacao ampla" que motivou AG-362. 5 das
     15 (BNBUSDT_R1/R2, BTCUSDT_R1, ETHUSDT_R1, XRPUSDT_R1) tem Sharpe da
@@ -3732,3 +3732,55 @@ entries:
     define exatamente quais 5 das 15 colidem por design -- resolvem pro
     mesmo hiperparametro global que a rodada 'off' ja tinha escrito).
     Artefato visual publicado com as 15 combinacoes e todas as metricas.
+- id_curto: ag362_canonical_retrain_addendum_root_cause_2026-08-28
+  data: '2026-08-28'
+  fase: 'Revisao critica (Manager, modo ultrathink) da analise do retreino canonico -- 3 achados novos, verificados contra os 15 relatorios reais'
+  feature_ou_filtro: 'T1_FEATURE_IDS (22) + use_hyperparams_by_combo=True -- mesmo retreino de ag362_canonical_retrain_22features_hyperparam_on_2026-08-28'
+  symbol: 'BNBUSDT/BTCUSDT/ETHUSDT/XRPUSDT (mecanismo 1); todos os 5 (mecanismo 2 e 3)'
+  tf: 'R1 (mecanismo 1, 4 de 5 celulas); R1/R2/R3 (mecanismo 2 e 3)'
+  janela: historico completo por combinacao
+  lado: ambos (mecanismo 1); long especificamente (mecanismo 2)
+  regime: n/a
+  metrica_tipo: 'n_signals_camada0_por_path / eg_long_margin_por_resolucao / n_eff_factors_t1_por_regime_hiperparametro'
+  metrica_valor: 0
+  n: 5
+  status: MEDIDO
+  fonte_arquivo: experiments/alpha_layer1_report_{symbol}_{resolution}.json (camada0_backtest_by_path, economic_gate, hhi)
+  fonte_secao: camada0_backtest_by_path[*].n_signals / economic_gate.long.margin / hhi.mean_n_eff_factors_t1
+  nota: >
+    (1) Mecanismo exato das 5 combinacoes com Sharpe da Camada 0
+    indefinido (BNBUSDT_R1/R2, BTCUSDT_R1, ETHUSDT_R1, XRPUSDT_R1):
+    camada0_backtest_by_path mostra n_signals=0 e n_filled_trades=0 nos
+    5 caminhos do CPCV, nas DUAS pontas (long e short), sem excecao --
+    nao e instabilidade/variancia alta, e ausencia total e deterministica
+    de sinal da variante SEM restricao monotonica (Camada 0 e "conceitual
+    sem restricao", pipeline.py linha 3). BNBUSDT_R2 pertence a este
+    grupo mas NAO e R1 -- refuta a leitura de "problema estrutural de
+    R1" como causa unica; o eixo real e esta assinatura de zero-sinal,
+    que so CORRELACIONA com R1 em 4 de 5 casos. Precondicao pra decidir
+    "0/15 permanencia"/"22/75 caminhos" com confianca: excluir estas 5
+    (25 dos 75 caminhos) do denominador ate a causa raiz (por que o
+    modelo sem restricao monotonica nao cruza tau nestas celulas
+    especificas) ser entendida -- recalculando so sobre as 10 celulas
+    com baseline valido, caminhos vencidos sobe de 22/75 (29%) pra
+    22/50 (44%).
+    (2) Padrao de erosao de custo em R1, mais amplo que as 4 celulas
+    originais: economic_gate.long.margin e NEGATIVO em R1 nos 5 simbolos
+    (BTC -0,029 / ETH -0,023 / BNB -0,062 / XRP -0,051 / SOL -0,016) e
+    POSITIVO em R2 nos 5 (todos > 0) e em R3 nos 5 (todos > 0) --
+    monotonico R1<R2<R3 em TODOS os 5 simbolos do lado long. Lado short
+    NAO mostra o mesmo padrao (ETHUSDT/BNBUSDT/XRPUSDT pioram de R1 pra
+    R2 antes de melhorar em R3) -- consistente com o short raramente
+    passar o gate economico em qualquer resolucao (1/12 nao-nulas,
+    achado independente do Manager). Evidencia direta, sem experimento
+    novo, de que o custo/frequencia de R1 corroi especificamente a borda
+    LONG, nao o lado short (que ja nao tem borda pra corroer).
+    (3) Cruzamento observacional (nao causal) capacidade x concentracao:
+    as 5 celulas SEM calibracao propria (caem no hiperparametro global,
+    num_leaves=8) tem TODAS mean_n_eff_factors_t1 > 4,5; das 10 celulas
+    COM calibracao (num_leaves 2-3 em quase todas, ADR-005 Sec13.12), 8
+    tem mean_n_eff_factors_t1 < 3 -- so BTCUSDT_R1/R2 (calibradas) fogem
+    do padrao com N_eff alto. Suporta a hipotese de teto de capacidade
+    (nao falta de valor incremental das 15 promovidas) ANTES de rodar o
+    sweep controlado de num_leaves/max_depth ja proposto -- nao substitui
+    o sweep causal, mas justifica priorizar-lo.

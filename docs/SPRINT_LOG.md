@@ -5349,7 +5349,7 @@ Resultado agregado (idêntico ao já medido em `22_features_hyperparam_ <!-- che
 on` da comparação pareada, cross-validado): **0/15 permanence_pass**, <!-- check-sprint-log: skip -->
 22/75 caminhos vencidos, 10/27 lados no gate econômico. Achado NOVO <!-- check-sprint-log: skip -->
 desta rodada (métricas completas nunca extraídas antes): `N_eff`
-efetivo mediano = 2,86 de 22 features — 8/15 combinações concentram o
+efetivo mediano = 2,86 de 22 features — 7/15 combinações concentram o
 gain em menos de 2,5 fatores efetivos, mesmo com o vetor de 22
 disponível. 5/15 combinações têm Sharpe da Camada 0 indefinido
 (`BNBUSDT_R1/R2`, `BTCUSDT_R1`, `ETHUSDT_R1`, `XRPUSDT_R1`) — nessas o
