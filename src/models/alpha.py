@@ -96,6 +96,29 @@ VARIANT_CAMADA0 = "camada0"
 # usa para `tf`/`resolution_id`, ver docstring de lá).
 _LEGACY_RESOLUTION_LABEL = "time_15m"
 
+# ADR-005 §13.14.1 (item 8 de §13.17) -- base do piso de folha
+# (`min_child_samples`/`min_sum_hessian_in_leaf`). `fixed` = comportamento
+# legado (os dois vêm direto de `LGBMHyperparams`, bit-exato); `ess_derived`
+# = derivados de `Σ uniqueness`/`w̄`/`scale_pos_weight` pela fórmula emendada
+# de `§13.5-3` (ver `derive_ess_regularization`). Parâmetro hoje INERTE sob
+# `num_leaves ∈ {2,3}` (§13.9.3) -- promover a produção só passa a importar
+# se `max_depth` subir, decisão separada. Movida pra antes de `LGBMHyper
+# params` (2026-08-27, handoff de `src/models/`, item 1) -- vira default de
+# campo do dataclass, referência direta em vez de literal duplicado.
+REGULARIZATION_FIXED = "fixed"
+REGULARIZATION_ESS_DERIVED = "ess_derived"
+
+# ADR-005 §13.14.3 (item 9 de §13.17) -- `fixed` = comportamento legado
+# (2 partições fit/calib, sem early stopping, `n_estimators` fixo de
+# `LGBMHyperparams`); `three_way` = 3 partições fit/stop/calib com purge
+# por `t1` nas duas fronteiras (`_temporal_purged_three_way_split`),
+# `eval_set=stop` e `lgb.early_stopping`. Só compatível com
+# `calib_split_mode=CALIB_SPLIT_TEMPORAL_PURGED` -- um split aleatório não
+# tem noção de fronteira temporal para purgar. Movida pelo mesmo motivo de
+# `REGULARIZATION_FIXED` acima.
+EARLY_STOPPING_FIXED = "fixed"
+EARLY_STOPPING_THREE_WAY = "three_way"
+
 
 @dataclass(frozen=True, slots=True)
 class LGBMHyperparams:
@@ -175,9 +198,33 @@ class LGBMHyperparams:
     # model` -- default `REGULARIZATION_FIXED` ignora os dois, bit-exato.
     ess_regularization_n_obs_independentes_alvo: float = 30.0  # noqa: magic-number -- default de biblioteca não existe aqui; valor real vem sempre de from_constants, este é só o default de dataclass
     ess_regularization_fator_conservador: float = 0.5  # noqa: magic-number -- idem
+    # 2026-08-27 (handoff de `src/models/`, item 1) -- `regularization_
+    # basis`/`early_stopping_mode`/`ic_magnitude_floor_k` eram parâmetros
+    # de `fit_side_model` sem NENHUM caller acima (`run_fold`/`run_all_
+    # folds`/`run_layer1_sprint`) capaz de setá-los -- presos no mesmo
+    # teto apesar de implementados/testados (`AG-324`/`AG-325`/`AG-326`).
+    # Entram aqui (não como parâmetro novo em cada uma das 3 camadas)
+    # porque `hyper` já atravessa as 3 intacto via `hyper=hyper` -- mesmo
+    # padrão dos dois campos ESS acima. Defaults idênticos aos que `fit_
+    # side_model` já usa hoje (`REGULARIZATION_FIXED`/`EARLY_STOPPING_
+    # FIXED`/`None`) -- bit-exato pra todo caller que constrói `LGBMHyper
+    # params` sem setar os três.
+    regularization_basis: str = REGULARIZATION_FIXED
+    early_stopping_mode: str = EARLY_STOPPING_FIXED
+    ic_magnitude_floor_k: float | None = None
 
     @classmethod
-    def from_constants(cls) -> LGBMHyperparams:
+    def from_constants(cls, *, use_ic_magnitude_floor: bool = False) -> LGBMHyperparams:
+        """`use_ic_magnitude_floor` (`AG-324`) -- default `False` preserva
+        `ic_magnitude_floor_k=None` bit-exato (o campo do dataclass), apesar
+        de `alpha_monotonic_ic_magnitude_floor_k` já existir em `constants.
+        yaml` (`AG-324`, valor `2.0`). Promover pra `True` muda `monotone_
+        constraints` de produção -- exige sign-off explícito do Manager
+        (`AG-324`: "promover é decisão do Manager"), nunca automático só
+        por a constante existir. `regularization_basis`/`early_stopping_
+        mode` não têm constante equivalente (são seletor de modo de código,
+        não valor medido) -- ficam no default do campo do dataclass sem
+        precisar de parâmetro aqui."""
         return cls(
             max_depth=int(load_constant("alpha_lgbm_max_depth")),
             n_estimators=int(load_constant("alpha_lgbm_n_estimators")),
@@ -195,6 +242,11 @@ class LGBMHyperparams:
             ),
             ess_regularization_fator_conservador=float(
                 load_constant("alpha_lgbm_ess_regularization_fator_conservador")
+            ),
+            ic_magnitude_floor_k=(
+                float(load_constant("alpha_monotonic_ic_magnitude_floor_k"))
+                if use_ic_magnitude_floor
+                else None
             ),
         )
 
@@ -324,26 +376,6 @@ CLASS_BALANCE_WEIGHT = "weight"
 # completo (B10/§3.5 intactos) -- o que muda e so o calibrador.
 CALIB_WEIGHT_SAMPLE_WEIGHT = "sample_weight"
 CALIB_WEIGHT_UNIQUENESS = "uniqueness"
-
-# ADR-005 §13.14.1 (item 8 de §13.17) -- base do piso de folha
-# (`min_child_samples`/`min_sum_hessian_in_leaf`). `fixed` = comportamento
-# legado (os dois vêm direto de `LGBMHyperparams`, bit-exato); `ess_derived`
-# = derivados de `Σ uniqueness`/`w̄`/`scale_pos_weight` pela fórmula emendada
-# de `§13.5-3` (ver `derive_ess_regularization`). Parâmetro hoje INERTE sob
-# `num_leaves ∈ {2,3}` (§13.9.3) -- promover a produção só passa a importar
-# se `max_depth` subir, decisão separada.
-REGULARIZATION_FIXED = "fixed"
-REGULARIZATION_ESS_DERIVED = "ess_derived"
-
-# ADR-005 §13.14.3 (item 9 de §13.17) -- `fixed` = comportamento legado
-# (2 partições fit/calib, sem early stopping, `n_estimators` fixo de
-# `LGBMHyperparams`); `three_way` = 3 partições fit/stop/calib com purge
-# por `t1` nas duas fronteiras (`_temporal_purged_three_way_split`),
-# `eval_set=stop` e `lgb.early_stopping`. Só compatível com
-# `calib_split_mode=CALIB_SPLIT_TEMPORAL_PURGED` -- um split aleatório não
-# tem noção de fronteira temporal para purgar.
-EARLY_STOPPING_FIXED = "fixed"
-EARLY_STOPPING_THREE_WAY = "three_way"
 
 # AG-210 -- política de resolução de `tau`. Ver `resolve_joint_tau` e
 # `run_fold`.
@@ -1842,7 +1874,19 @@ def run_fold(
     TREINO (`train_long`/`train_short` abaixo; o lado de TESTE não muda --
     filtrar R2 fora do treino não deveria alterar o que o modelo é
     avaliado contra). Default `False` preserva bit-exato. Ver docstring de
-    `src.models.dataset.side_subset` pro que `True` faz."""
+    `src.models.dataset.side_subset` pro que `True` faz.
+
+    `regularization_basis`/`ic_magnitude_floor_k`/`early_stopping_mode`
+    (2026-08-27, handoff de `src/models/`, item 1, `AG-324`/`AG-325`/
+    `AG-326`) -- NÃO são parâmetros desta função. Vêm de `hyper.
+    regularization_basis`/`hyper.ic_magnitude_floor_k`/`hyper.early_
+    stopping_mode`, repassados pros dois `fit_side_model` abaixo -- `hyper`
+    já atravessa `run_layer1_sprint` -> `run_all_folds` -> `run_fold`
+    intacto, então os 3 chegam aqui de graça, sem precisar de mais um
+    parâmetro nesta assinatura (mesmo padrão dos campos ESS, já em `hyper`
+    há mais tempo). Default de cada campo em `LGBMHyperparams` reproduz o
+    que `fit_side_model` já fazia sozinha antes deste wiring -- bit-exato
+    pra todo caller que constrói `hyper` sem setar os três."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -1882,6 +1926,9 @@ def run_fold(
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
         calib_weight_basis=calib_weight_basis,
+        regularization_basis=hyper.regularization_basis,
+        ic_magnitude_floor_k=hyper.ic_magnitude_floor_k,
+        early_stopping_mode=hyper.early_stopping_mode,
     )
     short_result = fit_side_model(
         train_short,
@@ -1897,6 +1944,9 @@ def run_fold(
         calib_split_mode=calib_split_mode,
         class_balance_basis=class_balance_basis,
         calib_weight_basis=calib_weight_basis,
+        regularization_basis=hyper.regularization_basis,
+        ic_magnitude_floor_k=hyper.ic_magnitude_floor_k,
+        early_stopping_mode=hyper.early_stopping_mode,
     )
 
     # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o

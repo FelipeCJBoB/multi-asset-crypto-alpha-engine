@@ -5059,3 +5059,83 @@ regressão nova em cada um. `AG-227` ganhou addendum; nenhuma entrada
 nova em `PLANO_MESTRE_PRINCE2.md` (mesmo julgamento do item anterior —
 correção de código sobre gaps já rastreados, não decisão de
 governança/roadmap nova).
+
+## 2026-08-27 — handoff de `src/models/`, 3 desenhos de arquitetura já decididos, mais adendo `funding_bps`
+
+**Pedido do Manager: handoff de arquitetura delegada (sessão paralela,
+7 agentes read-only) — 3 itens com a DECISÃO já tomada, meu trabalho era <!-- check-sprint-log: skip -->
+validar contra o código real e implementar exatamente a decisão, mais um
+adendo pontual de 1 item.** Todos os 4 confirmados por leitura direta. <!-- check-sprint-log: skip -->
+
+**1. Wiring unificado — `regularization_basis`/`early_stopping_mode`/
+`ic_magnitude_floor_k` presos em `fit_side_model`** — os 3 (`AG-324`/
+`AG-325`/`AG-326`, "IMPLEMENTADO e verde... política NÃO promovida a
+default") tinham zero caller acima capaz de setá-los (`run_fold`/
+`run_all_folds` nunca os repassavam). Fix: os 3 viraram campos de
+`LGBMHyperparams` — `hyper` já atravessa as 3 camadas intacto, então
+`run_fold` só precisou ler `hyper.regularization_basis`/etc. e repassar
+pros dois `fit_side_model` (long/short), zero parâmetro novo em `run_
+fold`/`run_all_folds`/`run_layer1_sprint`. `LGBMHyperparams.from_
+constants(use_ic_magnitude_floor: bool = False)` fecha a desconexão
+constante↔código de `AG-324` (`alpha_monotonic_ic_magnitude_floor_k`
+agora é lida por nome) sem promover o default. Promoção a default de
+produção continua decisão do Manager nos 3 casos — não tomada aqui, como
+o handoff exigiu explicitamente. 5 testes novos. <!-- check-sprint-log: skip -->
+
+**2. `TIE_REQUIRES_MARGIN` aposentado, `permanence_pass` passa a exigir
+significância** — `ADR-004` §6 já tinha decidido que "empate" não é um
+margin escalar (nunca calibrado, B23), e sim "o IC de 95% da diferença
+exclui zero" — o mesmo instrumento que `AG-220`
+(`permanence_significance_by_path`/`n_paths_significant`) já calculava e
+o relatório ignorava. `TIE_REQUIRES_MARGIN`/`min_margin` removidos de
+`permanence_count` (só a política legada resta — o viés que `AG-214`
+documenta continua existindo nessa contagem isolada, de propósito: ela
+nunca decide sozinha). Novo `backtest_lite.permanence_pass_criterion`:
+`n_better >= min_paths_required AND n_paths_significant >=
+min_paths_required` — reusa o piso já declarado, nenhum número novo
+(B23). 8 testes novos/atualizados. <!-- check-sprint-log: skip -->
+
+**3. `baselines.py` — família B1 refinada, diagnóstico opt-in** — 4 <!-- check-sprint-log: skip -->
+funções que corrigem um viés de variância real (documentado no próprio
+módulo) tinham zero caller de produção. **Achado mais sério, registrado
+como `AG-360` novo**: a comparação que RODA DE VERDADE (`b1 = <!-- check-sprint-log: skip -->
+run_b1_random_entry(..., alpha_sharpe=alpha_sharpe_headline)`, <!-- check-sprint-log: skip -->
+`alpha_sharpe_headline` = média de 5 Sharpes) usa exatamente a <!-- check-sprint-log: skip -->
+comparação que a docstring do módulo documenta como enviesada (média
+com variância reduzida por promediação contra nulo de sorteio único) —
+inconsistência ativa entre o que o código documenta como certo e o que
+roda. Fix: `run_b1_refinement: bool = False` (opt-in, mesmo padrão de <!-- check-sprint-log: skip -->
+`persist_model_bundles`) roda as 4 funções e escreve <!-- check-sprint-log: skip -->
+`report["baselines"]["b1_refinement"]`, side-by-side com <!-- check-sprint-log: skip -->
+`b1_random_entry` — NÃO substitui (decisão maior, separada, do Manager). <!-- check-sprint-log: skip -->
+`_summarize_b1_result` extraído (DRY) pro achatamento numpy→JSON que já <!-- check-sprint-log: skip -->
+existia só pra `b1`, reusado nos 3 novos blocos que precisavam do mesmo <!-- check-sprint-log: skip -->
+achatamento.
+
+**Adendo — `AG-249` Problema A, `funding_bps` em `side_subset`.** A <!-- check-sprint-log: skip -->
+sessão paralela já tinha wireado `funding_bps` opcional em
+`src.labels.r2_admissibility.cost_fraction` (default `None`, bit-exato); <!-- check-sprint-log: skip -->
+faltava `side_subset` (o call site real de `enforce_r2`, `AG-296`/ <!-- check-sprint-log: skip -->
+`AG-297`) passar a coluna. 1 argumento em `dataset.py`, mais o mesmo <!-- check-sprint-log: skip -->
+wiring espelhado em `r2_admissibility_census.py` (censo DECISION-SUPPORT <!-- check-sprint-log: skip -->
+alinhado com o que `enforce_r2` de fato mede — escolha própria, não <!-- check-sprint-log: skip -->
+pedida explicitamente, pra evitar os dois consumidores da mesma fórmula
+divergirem). 3 testes novos (2 em `test_models_dataset.py`, mais os já <!-- check-sprint-log: skip -->
+existentes de `funding_bps` em `cost_fraction`).
+
+Suíte completa (`-m "not slow"`) ao final: **2479 passed, 2 skipped, 2
+xfailed, 0 failed** (+18 testes novos desde a rodada anterior). 7 checks
+mecânicos limpos em todos os módulos tocados/novos (`src/models/alpha.py`,
+`src/models/backtest_lite.py`, `src/models/pipeline.py`, `src/models/
+dataset.py`, `src/analysis/r2_admissibility_census.py`, mais os arquivos
+de teste tocados) — comparados contra `HEAD` corrente (que avançou 3x
+durante esta rodada, sessão paralela commitando ao vivo no mesmo
+working tree) pra isolar débito pré-existente. `AG-324`/`AG-325`/
+`AG-326`/`AG-214` ganharam addendum; `AG-360` novo registrado. Nenhuma
+entrada nova em `PLANO_MESTRE_PRINCE2.md` (mesmo julgamento das rodadas
+anteriores). Escopo deliberadamente NÃO coberto: teste de integração
+ponta a ponta de `run_b1_refinement=True` (exigiria fixture de fold real
+completo, custo/complexidade desproporcional ao risco — mecanismo já
+testado nas 4 funções individuais, mypy strict limpo na wiring nova, <!-- check-sprint-log: skip -->
+mesmo padrão de cobertura já aceito pra `evaluate_cost_derived_lambda`
+neste mesmo arquivo).

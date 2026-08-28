@@ -235,38 +235,19 @@ def test_path_dispersion_stats_tudo_nan_nao_quebra() -> None:
     assert np.isnan(stats.mean)
 
 
-def test_permanence_count_legado_conta_empate_como_melhor() -> None:
-    """Documenta o comportamento legado EXATO — este teste é o que impede
-    a correção do AG-214 de mudar o default por acidente."""
+def test_permanence_count_conta_empate_como_melhor() -> None:
+    """Documenta o comportamento EXATO de `permanence_count` -- empate
+    conta como "Camada 1 melhor" (`AG-214`). `TIE_REQUIRES_MARGIN`/
+    `min_margin` (a alternativa que existia aqui) foram aposentados
+    2026-08-27 (handoff de `src/models/`, item 2, `ADR-004` §6) sem
+    calibração nova (B23) -- o viés que este teste documenta não fica sem
+    correção: `backtest_lite.permanence_pass_criterion` (testado em
+    `test_models_backtest_lite.py`) exige TAMBÉM `n_paths_significant`,
+    então esta contagem isolada nunca decide sozinha."""
     c1 = {0: _path_result(0, 1.0), 1: _path_result(1, 2.0)}
     c0 = {0: _path_result(0, 1.0), 1: _path_result(1, 3.0)}
     n_better, n_total = backtest_lite.permanence_count(c1, c0)
-    assert (n_better, n_total) == (1, 2), "empate exato deveria contar como melhor no legado"
-
-
-def test_permanence_count_com_margem_nao_conta_empate() -> None:
-    c1 = {0: _path_result(0, 1.0), 1: _path_result(1, 2.0)}
-    c0 = {0: _path_result(0, 1.0), 1: _path_result(1, 3.0)}
-    n_better, n_total = backtest_lite.permanence_count(
-        c1, c0, tie_policy=backtest_lite.TIE_REQUIRES_MARGIN, min_margin=0.0
-    )
-    assert (n_better, n_total) == (0, 2)
-
-
-def test_permanence_count_margem_obrigatoria_quando_politica_exige() -> None:
-    """B23 — não existe default inventado para a margem: ela é derivada de
-    `std_between_paths`, que precisa ser medida antes."""
-    c1 = {0: _path_result(0, 1.0)}
-    c0 = {0: _path_result(0, 1.0)}
-    with pytest.raises(ValueError, match="exige min_margin explícito"):
-        backtest_lite.permanence_count(
-            c1, c0, tie_policy=backtest_lite.TIE_REQUIRES_MARGIN
-        )
-
-
-def test_permanence_count_rejeita_politica_desconhecida() -> None:
-    with pytest.raises(ValueError, match="tie_policy desconhecido"):
-        backtest_lite.permanence_count({}, {}, tie_policy="qualquer_coisa")
+    assert (n_better, n_total) == (1, 2), "empate exato deveria contar como melhor"
 
 
 # ============================================================================

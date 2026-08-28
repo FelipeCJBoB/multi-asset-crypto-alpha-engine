@@ -271,50 +271,40 @@ def percentile_rank(headline: float, null_distribution: FloatArray) -> float:
 
 
 # AG-214 — política de desempate do critério de permanência (§5.11).
+# `TIE_REQUIRES_MARGIN`/`min_margin` (a 2ª opção que existia aqui) foram
+# APOSENTADOS 2026-08-27 (handoff de `src/models/`, item 2, `ADR-004`
+# §6): o próprio `ADR-004` decidiu que "empate" não é um margin escalar
+# estipulado sobre `sharpe_naive` -- é "o IC de 95% da diferença exclui
+# zero" (`permanence_significance_by_path`, `AG-220`, já implementado e
+# consumido em `permanence_pass_criterion` abaixo). `min_margin` nunca
+# teve default (B23 -- não havia base pra estipular um número) e nunca
+# teve caller de produção; não recebeu calibração nova, foi substituído
+# pelo instrumento que o `ADR-004` já escolheu.
 TIE_LEGACY_COUNTS_AS_BETTER = "legacy_tie_counts_as_better"
-TIE_REQUIRES_MARGIN = "require_margin"
 
 
 def permanence_count(
     camada1_by_path: dict[int, PathBacktestResult],
     camada0_by_path: dict[int, PathBacktestResult],
-    *,
-    tie_policy: str = TIE_LEGACY_COUNTS_AS_BETTER,
-    min_margin: float | None = None,
 ) -> tuple[int, int]:
     """`(n_paths_melhores, n_paths_total)` — quantos dos caminhos a Camada 1
     supera a Camada 0 conceitual (mesmo `path_id` nos dois dicionários,
     §5.11 adaptado). `NaN` (sem trades suficientes) nunca conta como
     melhora.
 
-    **Achado (`lgbm-crypto-quant`, 2026-08-25, `AG-214`).** A comparação
-    legada é `s1 >= s0`: **empate exato conta como "Camada 1 melhor"**.
-    Isso contraria diretamente a diretriz do `CLAUDE.md` de que toda regra
+    **Achado (`lgbm-crypto-quant`, 2026-08-25, `AG-214`).** A comparação é
+    `s1 >= s0`: **empate exato conta como "Camada 1 melhor"**. Isso
+    contraria diretamente a diretriz do `CLAUDE.md` de que toda regra
     travada a priori precisa de DEFINIÇÃO OPERACIONAL de cada termo — em
     particular de "empate" —, que existe justamente porque `AG-114`/
     `AG-118`/`AG-122` já queimaram este projeto uma vez com um gate cujo
     termo não estava definido. E o viés não é neutro: ele aponta sempre
     para a mesma conclusão (manter a Camada 1), que é o desfecho que
-    custa mais `N_lifetime`.
-
-    `tie_policy` default preserva o comportamento legado **bit-exato**.
-    `TIE_REQUIRES_MARGIN` exige `s1 > s0 + min_margin` e **obriga**
-    `min_margin` explícito: não existe default inventado aqui (B23 — a
-    margem defensável é derivada de `path_dispersion_stats(...).
-    std_between_paths`, que precisa ser MEDIDA primeiro; estipular um
-    número agora seria exatamente o erro que B23 proíbe)."""
-    if tie_policy == TIE_REQUIRES_MARGIN and min_margin is None:
-        raise ValueError(
-            "permanence_count: tie_policy=TIE_REQUIRES_MARGIN exige min_margin explícito "
-            "-- não há default defensável sem medir a dispersão entre caminhos primeiro "
-            "(B23; ver path_dispersion_stats e AG-214)"
-        )
-    if tie_policy not in (TIE_LEGACY_COUNTS_AS_BETTER, TIE_REQUIRES_MARGIN):
-        raise ValueError(
-            f"permanence_count: tie_policy desconhecido {tie_policy!r} (esperado "
-            f"{TIE_LEGACY_COUNTS_AS_BETTER!r} ou {TIE_REQUIRES_MARGIN!r})"
-        )
-
+    custa mais `N_lifetime`. **Por isso esta contagem NUNCA decide
+    sozinha** — `permanence_pass_criterion` abaixo exige também que a
+    diferença seja estatisticamente distinguível de ruído
+    (`permanence_significance_by_path`), fechando exatamente o viés que
+    este parágrafo descreve."""
     common = sorted(set(camada1_by_path) & set(camada0_by_path))
     n_better = 0
     for pid in common:
@@ -322,12 +312,34 @@ def permanence_count(
         s0 = camada0_by_path[pid].sharpe_naive
         if not (np.isfinite(s1) and np.isfinite(s0)):
             continue
-        if tie_policy == TIE_LEGACY_COUNTS_AS_BETTER:
-            if s1 >= s0:
-                n_better += 1
-        elif s1 > s0 + float(min_margin):  # type: ignore[arg-type]  # guard acima garante not-None
+        if s1 >= s0:
             n_better += 1
     return n_better, len(common)
+
+
+def permanence_pass_criterion(
+    *, n_better: int, min_paths_required: int, n_paths_significant: int
+) -> bool:
+    """Critério de permanência (§5.11 adaptado) — `ADR-004` §6, achado
+    real 2026-08-27 (handoff de `src/models/`, item 2): `n_better >=
+    min_paths_required` sozinho repete o defeito que `AG-214`/`AG-220`
+    já documentaram (empate favorece sempre manter a Camada 1, contagem
+    de caminhos que reconstroem o MESMO dataset tem `n` efetivo ≈ 1) —
+    `permanence_pass` ignorava `n_paths_significant`
+    (`permanence_significance_by_path`, IC bootstrap por blocos) apesar
+    dele já estar calculado no relatório.
+
+    **Definição operacional (`CLAUDE.md`, "toda regra travada a priori
+    precisa de definição operacional"):** passa sse `n_better >=
+    min_paths_required` E `n_paths_significant >= min_paths_required` --
+    o MESMO piso pros dois lados (nenhum número novo inventado, B23; o
+    piso já é uma constante com proveniência declarada,
+    `alpha_layer1_permanence_min_paths`). Não é o veredito de três
+    estados que o `ADR-004` §6 descreve como ideal ("indeterminado" ≠
+    "false") -- é a forma booleana mais simples que fecha o viés
+    descrito, decisão de implementação registrada aqui, não uma
+    reinterpretação do ADR."""
+    return n_better >= min_paths_required and n_paths_significant >= min_paths_required
 
 
 # ADR-004 Fase 0 (docs/ADR-004_reformulacao_alvo_regra_decisao_e_

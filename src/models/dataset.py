@@ -525,7 +525,14 @@ def side_subset(
     cálculo de `sample_weight` rio abaixo, porque nunca entra no treino.
     Tornar isto o default de produção é decisão do Manager, não tomada
     aqui -- mesmo padrão opt-in de `use_geometry_by_combo`/`use_
-    hyperparams_by_combo`/`use_economic_gate`."""
+    hyperparams_by_combo`/`use_economic_gate`.
+
+    **`funding_bps` incluído no custo (`AG-249` Problema A, 2026-08-27,
+    achado da sessão paralela).** O custo passado pra `cost_fraction`
+    inclui `abs(funding_bps)` -- a mesma coluna real de `labels.parquet`,
+    já disponível no frame. Só afeta o resultado quando `enforce_r2=True`
+    (o custo entra na conta de `viola_r2`); sem `enforce_r2`, `funding_
+    bps` nunca é lido."""
     if side not in (1, -1):
         raise ValueError(f"side_subset: side deve ser 1 ou -1, recebido {side}")
     if not feature_ids:
@@ -548,6 +555,7 @@ def side_subset(
         cost = r2_admissibility.cost_fraction(
             out["cost_entry_bps"].to_numpy().astype(np.float64),
             out["cost_exit_bps"].to_numpy().astype(np.float64),
+            out["funding_bps"].to_numpy().astype(np.float64),
         )
         stop = r2_admissibility.stop_fraction(
             out["entry_price_limit"].to_numpy().astype(np.float64),

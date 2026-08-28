@@ -457,6 +457,26 @@ def _percentile_finite(values: list[float], pct: float) -> float:
     return float(np.percentile(finite, pct)) if finite.size else float("nan")
 
 
+def _summarize_b1_result(b1: baselines.B1Result) -> dict[str, Any]:
+    """`B1Result.null_sharpes` é `numpy.ndarray` -- não serializa via
+    `asdict()` cru (`write_report_atomic`/`orjson` não sabe converter).
+    Mesmo achatamento em resumo que já era feito à mão só pra `b1`
+    (`report["baselines"]["b1_random_entry"]`) antes deste helper existir
+    -- extraído aqui 2026-08-27 (handoff de `src/models/`, item 3) porque
+    o refinamento B1 (opt-in, `run_b1_refinement`) precisa do MESMO
+    achatamento em 2 lugares novos (por caminho, carry-stripped), e
+    duplicar a fórmula 3x arriscaria as cópias divergirem."""
+    return {
+        "n_seeds": b1.n_seeds,
+        "sample_size": b1.sample_size,
+        "alpha_sharpe": b1.alpha_sharpe,
+        "percentile_of_alpha": b1.percentile,
+        "null_mean": _mean_finite(list(b1.null_sharpes)),
+        "null_p50": _percentile_finite(list(b1.null_sharpes), 50.0),  # noqa: magic-number
+        "null_p95": _percentile_finite(list(b1.null_sharpes), 95.0),  # noqa: magic-number
+    }
+
+
 def compute_permutation_null_headline(
     df_all: pl.DataFrame,
     splits: tuple[cpcv.CPCVSplit, ...],
@@ -679,6 +699,17 @@ def run_layer1_sprint(
     # nem pula treino. Tornar isto binding é decisão FUTURA do Manager,
     # não tomada aqui (B23).
     use_economic_gate: bool = False,
+    # 2026-08-27 (handoff de `src/models/`, item 3) -- diagnóstico opt-in,
+    # mesmo padrão de `persist_model_bundles` acima. Default `False`
+    # preserva bit-exato todo call site/teste existente. `True` roda as 4
+    # funções de refinamento estatístico do B1 (já implementadas/testadas,
+    # órfãs até aqui) e escreve `report["baselines"]["b1_refinement"]` --
+    # NÃO substitui `report["baselines"]["b1_random_entry"]` (schema
+    # inalterado, decisão de substituir é maior/separada, do Manager).
+    # Custo medido: ~19s (histórico, n_seeds=1000, dataset menor) contra
+    # ~700-960s de runtime total por combo -- baixo o bastante pra não
+    # precisar de flag de performance própria.
+    run_b1_refinement: bool = False,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -1091,7 +1122,9 @@ def run_layer1_sprint(
     c0_by_path = backtest_lite.backtest_by_path(camada0_folds, mf.data)
     n_better, n_total = backtest_lite.permanence_count(c1_by_path, c0_by_path)
     min_paths_required = int(load_constant("alpha_layer1_permanence_min_paths"))
-    permanence_pass = n_better >= min_paths_required
+    # `permanence_pass` só é atribuído depois de `n_paths_significant` mais
+    # abaixo (`ADR-004` §6, achado real 2026-08-27, handoff de `src/
+    # models/`, item 2) -- ver `backtest_lite.permanence_pass_criterion`.
 
     c1_sharpes = [r.sharpe_naive for r in c1_by_path.values()]
     c0_sharpes = [r.sharpe_naive for r in c0_by_path.values()]
@@ -1154,6 +1187,17 @@ def run_layer1_sprint(
     # point_estimate ~20-60x, medido em BTCUSDT/R1, ver PermanenceSignificanceResult).
     n_paths_significant_signal_only = sum(
         1 for r in permanence_significance.values() if r.signal_only.significant
+    )
+    # `ADR-004` §6 / achado real 2026-08-27 (handoff de `src/models/`,
+    # item 2) -- `permanence_pass` passa a exigir também que a diferença
+    # seja estatisticamente distinguível de ruído, não só `n_better >=
+    # min_paths_required` (que sozinho repete o viés de `AG-214`: empate
+    # favorece sempre manter a Camada 1). Ver docstring de `backtest_
+    # lite.permanence_pass_criterion` pra definição operacional completa.
+    permanence_pass = backtest_lite.permanence_pass_criterion(
+        n_better=n_better,
+        min_paths_required=min_paths_required,
+        n_paths_significant=n_paths_significant,
     )
 
     # --- AG-211: ESS (Σ uniqueness) por fold x lado, agregado. O número
@@ -1277,9 +1321,69 @@ def run_layer1_sprint(
         mf.data, splits, camada1_folds, feature_ids=feature_ids_effective
     )
     b5 = baselines.run_b5_short_permanent(mf.data)
+    filled_c1 = realized_c1.filter(pl.col("barrier_hit") != "NOFILL")
+
+    # 2026-08-27 (handoff de `src/models/`, item 3) -- diagnóstico opt-in
+    # complementar a `b1` acima. Achado real: `b1` compara `alpha_sharpe_
+    # headline` (MÉDIA de `len(c1_by_path)` Sharpes, variância JÁ reduzida
+    # por promediação) contra um nulo de sorteio ÚNICO (`run_b1_random_
+    # entry`, variância de UMA amostra) -- exatamente o viés que a
+    # docstring do módulo `baselines.py` (linhas 9-16) documenta e que
+    # `run_b1_paired_variance_null` existe pra corrigir, mas nunca era
+    # chamada. As 4 funções abaixo reusam 100% da mecânica de sorteio/
+    # Sharpe já testada (`tests/unit/test_models_baselines.py`) -- nenhum
+    # caminho de código novo, só orquestração.
+    b1_refinement: dict[str, Any] | None = None
+    if run_b1_refinement:
+        path_sample_sizes = {pid: r.n_filled_trades for pid, r in c1_by_path.items()}
+        path_alpha_sharpes = {pid: r.sharpe_naive for pid, r in c1_by_path.items()}
+        b1_per_path = baselines.run_b1_per_path(
+            mf.data,
+            path_sample_sizes=path_sample_sizes,
+            path_alpha_sharpes=path_alpha_sharpes,
+        )
+        b1_paired_variance_null = baselines.run_b1_paired_variance_null(
+            mf.data,
+            path_sample_sizes=list(path_sample_sizes.values()),
+            alpha_sharpe=alpha_sharpe_headline,
+        )
+        b1_carry_stripped = baselines.run_b1_carry_stripped(mf.data, filled_c1)
+        b1_side_shuffle = baselines.run_b1_side_shuffle(
+            mf.data, realized_c1, alpha_sharpe=alpha_sharpe_headline
+        )
+        b1_refinement = {
+            "per_path": {
+                str(pid): _summarize_b1_result(r.b1) for pid, r in b1_per_path.items()
+            },
+            "paired_variance_null": {
+                "n_seeds": b1_paired_variance_null.n_seeds,
+                "path_sample_sizes": list(b1_paired_variance_null.path_sample_sizes),
+                "alpha_sharpe": b1_paired_variance_null.alpha_sharpe,
+                "percentile_of_alpha": b1_paired_variance_null.percentile,
+                "null_mean": _mean_finite(list(b1_paired_variance_null.null_replicate_means)),
+                "null_p50": _percentile_finite(
+                    list(b1_paired_variance_null.null_replicate_means), 50.0  # noqa: magic-number
+                ),
+                "null_p95": _percentile_finite(
+                    list(b1_paired_variance_null.null_replicate_means), 95.0  # noqa: magic-number
+                ),
+            },
+            "carry_stripped": _summarize_b1_result(b1_carry_stripped),
+            "side_shuffle": {
+                "n_seeds": b1_side_shuffle.n_seeds,
+                "n_signals": b1_side_shuffle.n_signals,
+                "long_prob": b1_side_shuffle.long_prob,
+                "side_distribution": b1_side_shuffle.side_distribution,
+                "mean_sample_size": b1_side_shuffle.mean_sample_size,
+                "alpha_sharpe": b1_side_shuffle.alpha_sharpe,
+                "percentile_of_alpha": b1_side_shuffle.percentile,
+                "null_mean": _mean_finite(list(b1_side_shuffle.null_sharpes)),
+                "null_p50": _percentile_finite(list(b1_side_shuffle.null_sharpes), 50.0),  # noqa: magic-number
+                "null_p95": _percentile_finite(list(b1_side_shuffle.null_sharpes), 95.0),  # noqa: magic-number
+            },
+        }
 
     # --- decomposição de PnL (§16.6) — pooled sobre as OOF de todos os 15 splits ---
-    filled_c1 = realized_c1.filter(pl.col("barrier_hit") != "NOFILL")
 
     # AG-215 -- DSR sobre os trades pooled da Camada 1, se e somente se o
     # Manager informou `N_lifetime`. `compute_dsr` já existia
@@ -1375,10 +1479,19 @@ def run_layer1_sprint(
             "delta_sharpe_mean": alpha_sharpe_headline - _mean_finite(c0_sharpes),
             "tie_policy": backtest_lite.TIE_LEGACY_COUNTS_AS_BETTER,
             "tie_policy_caveat": (
-                "politica legada: empate exato (s1 == s0) conta como 'Camada 1 melhor'. "
-                "Viés aponta sempre para manter a Camada 1 (o desfecho que custa mais "
-                "N_lifetime). Margem defensavel = derivada de camada1_sharpe_dispersion."
-                "std_between_paths, ainda nao decidida (B23/AG-214)"
+                "n_better conta empate exato (s1 == s0) como 'Camada 1 melhor' -- vies "
+                "aponta sempre para manter a Camada 1 (o desfecho que custa mais "
+                "N_lifetime). RESOLVIDO 2026-08-27 (ADR-004 Sec6, handoff de src/models/, "
+                "item 2): a alternativa de margin escalar (TIE_REQUIRES_MARGIN) foi "
+                "aposentada sem calibracao nova (B23) -- permanence_pass agora exige "
+                "TAMBEM n_paths_significant >= min_paths_required (ver permanence_pass_"
+                "criterio abaixo), fechando o vies desta contagem isolada nunca decidir "
+                "sozinha"
+            ),
+            "permanence_pass_criterio": (
+                "n_better >= min_paths_required AND n_paths_significant >= "
+                "min_paths_required -- backtest_lite.permanence_pass_criterion, "
+                "ADR-004 Sec6 / handoff de src/models/ item 2, 2026-08-27"
             ),
             # AG-220/ADR-004 Fase 0 -- IC bootstrap por blocos da diferenca
             # Camada1-Camada0 POR CAMINHO. Companion de
@@ -1505,15 +1618,7 @@ def run_layer1_sprint(
             ),
         },
         "baselines": {
-            "b1_random_entry": {
-                "n_seeds": b1.n_seeds,
-                "sample_size": b1.sample_size,
-                "alpha_sharpe": b1.alpha_sharpe,
-                "percentile_of_alpha": b1.percentile,
-                "null_mean": _mean_finite(list(b1.null_sharpes)),
-                "null_p50": _percentile_finite(list(b1.null_sharpes), 50.0),  # noqa: magic-number
-                "null_p95": _percentile_finite(list(b1.null_sharpes), 95.0),  # noqa: magic-number
-            },
+            "b1_random_entry": _summarize_b1_result(b1),
             "b2_buy_and_hold": asdict(b2),
             "b3_regime_only": asdict(b3),
             "b4_feature_shuffle": asdict(b4),
@@ -1549,6 +1654,8 @@ def run_layer1_sprint(
         report["n_lifetime_suggested_delta"] = economic_gate.suggested_n_lifetime_delta(
             trained=True
         )
+    if run_b1_refinement:
+        report["baselines"]["b1_refinement"] = b1_refinement
     write_report_atomic(report, dest_path=report_path)
     logger.info(
         "models.pipeline.run_layer1_sprint_done",

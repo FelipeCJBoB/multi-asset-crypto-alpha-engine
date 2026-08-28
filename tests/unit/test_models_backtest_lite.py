@@ -179,6 +179,41 @@ def test_permanence_count_nan_nunca_conta_como_melhora() -> None:
 
 
 # ============================================================================
+# permanence_pass_criterion -- ADR-004 §6, achado real 2026-08-27 (handoff
+# de src/models/, item 2): permanence_pass passa a exigir também
+# significância (n_paths_significant), não só n_better sozinho.
+# ============================================================================
+
+
+def test_permanence_pass_criterion_passa_quando_os_dois_criterios_batem() -> None:
+    assert backtest_lite.permanence_pass_criterion(
+        n_better=4, min_paths_required=3, n_paths_significant=3
+    )
+
+
+def test_permanence_pass_criterion_falha_quando_n_better_nao_bate() -> None:
+    assert not backtest_lite.permanence_pass_criterion(
+        n_better=2, min_paths_required=3, n_paths_significant=5
+    )
+
+
+def test_permanence_pass_criterion_falha_quando_significancia_nao_bate() -> None:
+    """O caso que este achado existe pra fechar: `n_better` sozinho
+    passaria (repetindo o viés de `AG-214`), mas a diferença não é
+    estatisticamente distinguível de ruído."""
+    assert not backtest_lite.permanence_pass_criterion(
+        n_better=5, min_paths_required=3, n_paths_significant=1
+    )
+
+
+def test_permanence_pass_criterion_fronteira_exata_passa() -> None:
+    """`>=`, não `>` -- os dois critérios na fronteira exata passam."""
+    assert backtest_lite.permanence_pass_criterion(
+        n_better=3, min_paths_required=3, n_paths_significant=3
+    )
+
+
+# ============================================================================
 # percentile_rank -- ADR-005 §13.13, item 5 de §13.17
 # ============================================================================
 

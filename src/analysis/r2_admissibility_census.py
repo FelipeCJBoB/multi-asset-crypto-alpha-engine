@@ -37,10 +37,19 @@ como diagnóstico, porque é a forma em que a régua de
 
 **Fonte:** `data/labels/{symbol}/{resolution_id}/{version}/labels.parquet`,
 colunas `entry_price_limit`/`tp_price`/`sl_price`/`cost_entry_bps`/
-`cost_exit_bps` — todas conhecidas em `t0` (o limite de entrada é postado
-em `t0`; o preço de fill não entra em nenhuma conta deste módulo). Nenhuma
-feature, nenhum modelo, nenhuma predição: este censo é interpretável mesmo
-com o purge de `§13.1` quebrado, e é por isso que ele vem antes.
+`cost_exit_bps`/`funding_bps` — todas conhecidas em `t0` (o limite de
+entrada é postado em `t0`; o preço de fill não entra em nenhuma conta
+deste módulo). Nenhuma feature, nenhum modelo, nenhuma predição: este
+censo é interpretável mesmo com o purge de `§13.1` quebrado, e é por isso
+que ele vem antes.
+
+**`funding_bps` (`AG-249` Problema A, 2026-08-27):** `census_for_cell`
+passa a coluna real -- o custo por linha agora inclui `abs(funding_bps)`
+(ver `src.labels.r2_admissibility.cost_fraction`), alinhando este censo
+com o que `src.models.dataset.side_subset` de fato mede sob `enforce_r2=
+True`. Muda o número medido (sobe -- funding cobra mais custo, nunca
+menos); `census_from_arrays` continua aceitando `funding_bps=None` por
+default pra quem chama o núcleo puro direto sem a coluna.
 """
 
 from __future__ import annotations
@@ -181,11 +190,20 @@ def census_from_arrays(
     cost_entry_bps: FloatArray,
     cost_exit_bps: FloatArray,
     cost_stop_ratio_max: float,
+    funding_bps: FloatArray | None = None,
 ) -> R2CellCensus:
-    """Núcleo: recebe as cinco colunas em memória, devolve o censo.
+    """Núcleo: recebe as colunas em memória, devolve o censo.
 
-    Testável sem tocar em disco — é o ponto inteiro do Idioma A."""
-    cost = cost_fraction(cost_entry_bps, cost_exit_bps)
+    Testável sem tocar em disco — é o ponto inteiro do Idioma A.
+
+    `funding_bps` (opcional, `AG-249` Problema A, 2026-08-27) — repassado
+    sem alteração pra `cost_fraction` (`src.labels.r2_admissibility`, ver
+    docstring de lá pro porquê do valor absoluto). Default `None`
+    preserva bit-exato todo caller/teste existente -- passar a coluna real
+    (`census_for_cell` abaixo já passa) alinha este censo DECISION-SUPPORT
+    com o que `src.models.dataset.side_subset` de fato mede sob
+    `enforce_r2=True` (mesmo achado, mesma fórmula, dois consumidores)."""
+    cost = cost_fraction(cost_entry_bps, cost_exit_bps, funding_bps)
     stop = stop_fraction(entry_price, sl_price)
     gain = gain_fraction(entry_price, tp_price)
     if np.any(stop <= 0.0):
@@ -253,6 +271,7 @@ _COLS: Final[tuple[str, ...]] = (
     "sl_price",
     "cost_entry_bps",
     "cost_exit_bps",
+    "funding_bps",
     "config_hash",
 )
 
@@ -301,6 +320,7 @@ def census_for_cell(
                 cost_entry_bps=sub["cost_entry_bps"].to_numpy().astype(np.float64),
                 cost_exit_bps=sub["cost_exit_bps"].to_numpy().astype(np.float64),
                 cost_stop_ratio_max=cost_stop_ratio_max,
+                funding_bps=sub["funding_bps"].to_numpy().astype(np.float64),
             )
         )
     return out, str(hashes[0])

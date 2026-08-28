@@ -731,12 +731,20 @@ def test_side_subset_side_invalido_levanta_erro() -> None:
 
 
 def _frame_for_r2(
-    *, side: int, entry: list[float], sl: list[float], cost_bps_total: list[float]
+    *,
+    side: int,
+    entry: list[float],
+    sl: list[float],
+    cost_bps_total: list[float],
+    funding_bps: list[float] | None = None,
 ) -> pl.DataFrame:
     """Frame mínimo pra `enforce_r2` -- `side`/`barrier_hit`="TP" (passa o
     filtro de NOFILL) + feature T1 preenchida (passa o filtro de warmup) +
     as colunas de preço/custo que `viola_r2` usa. `cost_bps_total` é o
-    custo de ida e volta JÁ SOMADO -- dividido igual entre entry/exit."""
+    custo de ida e volta JÁ SOMADO -- dividido igual entre entry/exit.
+    `funding_bps` (`AG-249` Problema A) -- default zero em toda linha,
+    não afeta os testes que não passam a intenção explícita de medir seu
+    efeito."""
     n = len(entry)
     cols: dict[str, object] = {
         "side": pl.Series([side] * n, dtype=pl.Int8),
@@ -745,6 +753,9 @@ def _frame_for_r2(
         "sl_price": pl.Series(sl, dtype=pl.Float64),
         "cost_entry_bps": pl.Series([c / 2.0 for c in cost_bps_total], dtype=pl.Float64),
         "cost_exit_bps": pl.Series([c / 2.0 for c in cost_bps_total], dtype=pl.Float64),
+        "funding_bps": pl.Series(
+            funding_bps if funding_bps is not None else [0.0] * n, dtype=pl.Float64
+        ),
     }
     for fid in T1_FEATURE_IDS:
         cols[fid] = pl.Series([1.0] * n, dtype=pl.Float64)
@@ -789,6 +800,33 @@ def test_side_subset_enforce_r2_fronteira_custo_igual_ratio_vezes_stop_passa() -
     )
     out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=True)
     assert out.height == 1
+
+
+def test_side_subset_enforce_r2_inclui_funding_bps_no_custo() -> None:
+    """`AG-249` Problema A (2026-08-27) -- uma linha exatamente na
+    fronteira de R2 (custo == ratio*stop) SEM funding passa; a MESMA
+    linha, com `funding_bps` que empurra o custo pra além da fronteira,
+    passa a violar -- prova que `enforce_r2` de fato lê a coluna."""
+    ratio = float(load_constant("cost_stop_ratio_max"))
+    stop = 0.01
+    cost_na_fronteira = ratio * stop
+    sem_funding = _frame_for_r2(
+        side=1, entry=[100.0], sl=[99.0], cost_bps_total=[cost_na_fronteira * 10_000.0]
+    )
+    out_sem_funding = ds.side_subset(
+        sem_funding, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=True
+    )
+    assert out_sem_funding.height == 1
+
+    com_funding = _frame_for_r2(
+        side=1,
+        entry=[100.0],
+        sl=[99.0],
+        cost_bps_total=[cost_na_fronteira * 10_000.0],
+        funding_bps=[1.0],  # noqa: magic-number -- qualquer valor > 0 empurra a linha além da fronteira exata
+    )
+    out = ds.side_subset(com_funding, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=True)
+    assert out.height == 0
 
 
 # ============================================================================

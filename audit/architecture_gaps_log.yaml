@@ -14724,6 +14724,27 @@ entries:
       "isso e distinguivel de zero?" (para a segunda: DSR sobre
       N_lifetime, AG-215, e ESS, AG-211).
     status: "FECHADO PARCIALMENTE 2026-08-25 -- path_dispersion_stats (media, desvio entre caminhos, min, max) implementado e wireado no relatorio para as duas camadas, com delta_sharpe_mean explicito e a ressalva de leitura embutida no proprio dataclass. permanence_count ganhou tie_policy (default TIE_LEGACY_COUNTS_AS_BETTER, bit-exato) e TIE_REQUIRES_MARGIN, que OBRIGA min_margin explicito -- sem default inventado, porque a margem defensavel e derivada de std_between_paths, que precisa ser medida primeiro (B23). Flipar a politica depois de ler o desvio medido e decisao do Manager."
+    addendum_2026-08-27_fechado_via_significancia_nao_margin: >
+      FECHADO 2026-08-27 (handoff de `src/models/`, item 2, `ADR-004`
+      §6, decisao ja tomada pelo ADR, so a implementacao faltava).
+      `TIE_REQUIRES_MARGIN`/`min_margin` -- a 2a opcao que este achado
+      abriu, nunca calibrada (nunca teve default, B23) -- foram
+      APOSENTADOS sem calibracao nova: o `ADR-004` ja tinha decidido que
+      "empate" nao e um margin escalar estipulado, e sim "o IC de 95% da
+      diferenca exclui zero" -- o mesmo instrumento que `AG-220`
+      (`permanence_significance_by_path`) ja calculava e o relatorio
+      ignorava. `permanence_count` volta a ter UMA politica so (a legada,
+      empate conta como melhor -- o vies que este achado documenta
+      continua existindo NESSA contagem isolada, de proposito: ela nunca
+      decide sozinha). Novo `backtest_lite.permanence_pass_criterion`:
+      `permanence_pass` passa a exigir `n_better >= min_paths_required
+      AND n_paths_significant >= min_paths_required` -- fecha o vies sem
+      inventar numero novo (reusa o mesmo piso ja declarado). Não é o
+      veredito de 3 estados que o `ADR-004` §6 descreve como ideal
+      ("indeterminado" != "false") -- é a forma booleana mais simples
+      que fecha o vies, registrada como decisão de implementação, não
+      reinterpretação do ADR. 8 testes novos/atualizados, suíte completa
+      e 7 checks mecânicos limpos.
 
   - id: AG-215
     date: "2026-08-25"
@@ -21561,6 +21582,27 @@ entries:
       a default de producao (`pipeline.run_layer1_sprint` continua sem
       passar `ic_magnitude_floor_k`) -- promover e decisao do Manager,
       muda quais features recebem constraint monotonica.
+    addendum_2026-08-27_teto_de_wiring_fechado: >
+      FECHADO 2026-08-27 (handoff de `src/models/`, item 1 -- "wiring
+      unificado"). O teto acima ("pipeline.run_layer1_sprint continua
+      sem passar ic_magnitude_floor_k") nao era falta de retreino, era
+      wiring puro: `run_fold`/`run_all_folds` nunca tinham como setar
+      os 3 parametros de `fit_side_model` (`regularization_basis`/
+      `ic_magnitude_floor_k`/`early_stopping_mode`, AG-324/325/326),
+      apesar de `hyper: LGBMHyperparams` ja atravessar as 3 camadas
+      intacto. Os 3 viraram campos de `LGBMHyperparams` (mesmo padrao
+      dos campos ESS ja la, AG-325) -- `run_fold` le `hyper.
+      regularization_basis`/`hyper.ic_magnitude_floor_k`/`hyper.
+      early_stopping_mode` e repassa pros dois `fit_side_model` (long/
+      short). `LGBMHyperparams.from_constants(use_ic_magnitude_floor=
+      bool=False)` -- novo parametro -- fecha a desconexao constante-
+      codigo desta entrada (`alpha_monotonic_ic_magnitude_floor_k` agora
+      e lida por nome quando pedido) SEM promover o default (`False`
+      preserva `ic_magnitude_floor_k=None`, bit-exato). Promocao a
+      default de producao CONTINUA decisao do Manager, nao tomada aqui
+      -- exatamente como este status ja dizia. 5 testes novos
+      (`tests/unit/test_models_alpha_hyperparams_wiring.py`), suite
+      completa e 7 checks mecanicos limpos.
 
   - id: AG-325
     date: "2026-08-26"
@@ -21603,6 +21645,12 @@ entries:
       Politica NAO promovida a default de producao -- parametro inerte
       sob a arvore rasa atual, prioridade baixa ate `max_depth` subir
       (decisao separada, nao tomada).
+    addendum_2026-08-27_teto_de_wiring_fechado: >
+      Ver `AG-324::addendum_2026-08-27_teto_de_wiring_fechado` -- mesmo
+      wiring unificado (`regularization_basis` virou campo de
+      `LGBMHyperparams`, `run_fold` repassa `hyper.regularization_basis`
+      pros dois `fit_side_model`). Politica continua NAO promovida a
+      default de producao aqui tambem.
 
   - id: AG-326
     date: "2026-08-26"
@@ -21644,6 +21692,16 @@ entries:
       falha alto, campos novos populados) em test_models_alpha_
       item6_8_9.py. ruff/mypy --strict/banned_patterns limpos. Politica
       NAO promovida a default de producao.
+    addendum_2026-08-27_teto_de_wiring_fechado: >
+      Ver `AG-324::addendum_2026-08-27_teto_de_wiring_fechado` -- mesmo
+      wiring unificado (`early_stopping_mode` virou campo de
+      `LGBMHyperparams`, `run_fold` repassa `hyper.early_stopping_mode`
+      pros dois `fit_side_model`). Promocao a default continua decisao
+      do Manager -- o handoff que fechou este wiring registra
+      explicitamente que `THREE_WAY` so tem precondicao de codigo zero
+      (`calib_split_mode=TEMPORAL_PURGED` ja e default de producao
+      desde `AG-209`); a 1a corrida real contra dado real E o proprio
+      ato de expor o parametro e rodar uma vez, nao feita aqui.
 
   - id: AG-327
     date: "2026-08-26"
@@ -22770,3 +22828,54 @@ entries:
       um erro nem um contador visível.
     resolved_by_commit: null
     status: "aberto"
+
+  - id: AG-360
+    date: "2026-08-27"
+    file: "src/models/pipeline.py::run_layer1_sprint, src/models/baselines.py"
+    related_file: "src/models/backtest_lite.py, tests/unit/test_models_baselines.py, docs/, experiments/ (alpha_b1_refinement_report.json, removido por d92d918)"
+    found_by: "Sessão paralela (arquitetura delegada, handoff de src/models/ item 3) -- Claude validou por leitura direta antes de aplicar o fix"
+    numeracao: >-
+      AG-360 escolhido com folga deliberada sobre o maior existente
+      (AG-347 no momento) -- mesma disciplina de AG-260 (2026-08-27,
+      folga sobre AG-257): outra sessão compartilha este arquivo em
+      tempo real e incrementa rápido.
+    gap: >
+      A comparação do B1 que RODA DE VERDADE em produção (`pipeline.py`,
+      `b1 = baselines.run_b1_random_entry(mf.data, sample_size=
+      sample_size_b1, alpha_sharpe=alpha_sharpe_headline)`, `alpha_
+      sharpe_headline = _mean_finite(c1_sharpes)`, a MÉDIA de 5 Sharpes
+      de caminhos do CPCV) usa exatamente a comparação que a própria
+      docstring do módulo `baselines.py` (linhas 9-16) documenta como
+      ENVIESADA: média de 5 caminhos (variância já reduzida por
+      promediação) contra um nulo de sorteio ÚNICO (variância de uma
+      amostra só) infla o percentil a favor do Alpha mesmo que as
+      distribuições subjacentes fossem idênticas. `run_b1_paired_
+      variance_null` existe especificamente pra corrigir isso (nulo com
+      a MESMA estrutura de promediação) -- estava implementada, testada,
+      e nunca era chamada por nenhum caminho de produção.
+    severity: >-
+      médio -- não é corrupção de dado nem bug de cálculo; é uma
+      inconsistência ativa entre o que o código documenta como
+      estatisticamente certo e o que o código de fato roda. Todo
+      `percentile_of_alpha` de `report["baselines"]["b1_random_entry"]`
+      já persistido (todos os relatórios reais até 2026-08-27) foi
+      medido sob a comparação enviesada.
+    layer: "models (baselines, orquestração de treino)"
+    consequence: >
+      Qualquer decisão que já tenha lido `b1_random_entry.percentile_
+      of_alpha` como "o Alpha bate o nulo com folga" mediu isso sob um
+      instrumento que infla o percentil por construção, não por edge
+      real -- a magnitude do viés não foi quantificada aqui (não é o
+      escopo deste achado), só a existência dele.
+    resolved_by_commit: null
+    status: >-
+      MITIGADO 2026-08-27, NÃO SUBSTITUÍDO -- `run_layer1_sprint` ganhou
+      `run_b1_refinement: bool = False` (opt-in, default bit-exato,
+      mesmo padrão de `persist_model_bundles`). `True` roda as 4 funções
+      já implementadas/testadas (`run_b1_per_path`, `run_b1_paired_
+      variance_null`, `run_b1_carry_stripped`, `run_b1_side_shuffle`) e
+      escreve `report["baselines"]["b1_refinement"]`, side-by-side com
+      `b1_random_entry` (schema inalterado, decisão de SUBSTITUIR não
+      tomada aqui -- maior, separada, do Manager). `b1_random_entry`
+      continua sendo a comparação enviesada até essa decisão acontecer;
+      este achado registra a inconsistência, não a resolve por completo.
