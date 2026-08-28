@@ -22943,3 +22943,136 @@ entries:
       entry"]` -- só as 4 funções de refinamento passaram a rodar
       JUNTO por padrão também, não substituindo nada. Decisão de
       substituir `b1_random_entry` continua em aberto, do Manager.
+
+  - id: AG-361
+    date: "2026-08-27"
+    file: "src/models/pipeline.py::run_layer1_sprint"
+    related_file: "config/constants.yaml::canonical_volatility_estimator, tests/unit/test_models_pipeline_paths.py"
+    found_by: >-
+      Claude, varredura pedida pelo Manager ("liste TODOS os runs em
+      powershell em sequencia correta, e varra novamente TODOS arquivos
+      em busca do que deixou passar despercebido") imediatamente após o
+      commit `4f3b231` (flip de `canonical_volatility_estimator` pra
+      `parkinson_w20`) -- validado por leitura direta antes de corrigir.
+    gap: >
+      `canonical_volatility_estimator` (`constants.yaml`) virou registro
+      de decisão em 2026-08-17/2026-08-27, mas `run_layer1_sprint`/
+      `run_layer1_sprint_all_combinations` (o caminho de produção real)
+      tinham `vol_estimator_id: str | None = None` sem NENHUM ponto de
+      código lendo essa constante por nome -- confirmado por grep
+      (`load_constant("canonical_volatility_estimator")`: zero
+      ocorrências antes desta correção). `None` resolvia, através de
+      `build_modeling_frame` até o núcleo em `features/build.py`
+      (linha ~811), pro ATRWilder legado, sempre -- rodar `uv run
+      python -m src.models.pipeline --all-combinations` sem `--vol-
+      estimator-id parkinson_w20` explícito revertia a decisão do
+      mesmo commit que a declarou, em silêncio, sem erro nem aviso.
+      Mesma classe de bug de `AG-272` (defaults corrigidos existindo só
+      atrás de flag que o CLI real não força).
+    severity: "alto"
+    layer: "models (orquestração de treino, casca de produção)"
+    consequence: >
+      O retreino real das 15 combinações (agendado, ainda não rodado --
+      ver `docs/SPRINT_LOG.md` 2026-08-27) teria treinado features
+      ATR-derivadas (`C01`/`C02`/`A05`/`A13`/`E27f`) sob ATRWilder, não
+      Parkinson, se o comando canônico tivesse rodado sem a flag --
+      exatamente a decisão que `4f3b231` diz ter executado, mas que na
+      prática dependeria de ninguém esquecer uma flag numa invocação
+      manual.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO 2026-08-27 (comportamento DEFAULT, não flag opt-in --
+      `CLAUDE.md` "Diretrizes de comportamento", correção pedida pelo
+      Manager no mesmo turno). `run_layer1_sprint` agora resolve
+      `vol_estimator_id_effective = vol_estimator_id ou
+      load_constant("canonical_volatility_estimator")` ANTES de chamar
+      `build_modeling_frame` -- `None` deixa de significar "ATRWilder"
+      e passa a significar "o que constants.yaml decidiu" (hoje
+      `parkinson_w20`). `run_layer1_sprint_all_combinations`/CLI não
+      precisaram de mudança própria -- já passavam `None` adiante, a
+      resolução acontece uma vez, no ponto certo. `report["vol_
+      estimator_id"]` grava o valor EFETIVO, não o parâmetro cru --
+      senão o relatório mentiria "None" mesmo com Parkinson em uso.
+      Núcleo (`features/build.py`, seleção `c01_atr_20` vs.
+      `c01_atr_20_parkinson`) INTOCADO -- `None`→ATRWilder continua
+      valendo pros ~20 call sites de pesquisa/validação que chamam
+      `build_modeling_frame` direto, sem passar por esta casca; só a
+      camada de produção mudou de significado. Legado continua
+      acessível via `vol_estimator_id="atr_wilder_w20"` explícito.
+      Testes: `test_models_pipeline_paths.py` -- assertion do teste
+      existente atualizada pro novo default, teste novo prova que o
+      legado explícito ainda vence. `banned_patterns`/`ruff`/`mypy`/
+      `check_constants_referenced` rodados, limpos.
+
+  - id: AG-362
+    date: "2026-08-27"
+    file: "src/features/build.py::T1_FEATURE_IDS, src/features/registry.yaml"
+    related_file: "docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md §2.2/§8, tests/unit/test_features_build.py"
+    found_by: >-
+      Decisão explícita do usuário/Manager (2026-08-27), depois de ler o
+      relatório de "chief architect" desta sessão sobre ADR-005 -- revisão
+      de terceiro (documento PDF externo, "Feature Approval Gate" em 7
+      portões) contrastada contra o desenho real de ADR-005 §2.2.
+    gap: >
+      O critério de promoção de ADR-005 §2.2 (Benjamini-Hochberg q=0,10 por
+      SÍMBOLO -- corrigido de célula pra símbolo em `AG-294` -- mais
+      estabilidade temporal em 10 semestres) testava cada feature ISOLADA
+      contra o alvo via correlação de posto (Spearman) marginal. Isso é
+      estruturalmente cego a INTERAÇÃO ENTRE FEATURES (em teoria da
+      informação, "informação sinérgica"/"interaction information" --
+      Ex.: McGill 1954 -- o sinal conjunto de duas variáveis pode exceder a
+      soma dos sinais marginais; nenhum teste marginal, por construção,
+      enxerga isso). O LightGBM que de fato consome essas features captura
+      interação nativamente via splits sequenciais -- o filtro de entrada
+      era calibrado pelo poder de um teste mais fraco que o instrumento
+      real que ele deveria proteger, resultando em `L2` vazia (nenhuma
+      feature nova aprovada desde a criação do critério) apesar de 15
+      features com tese econômica declarada e sinal em observação (`layer:
+      L3`) nunca terem sido de fato testadas pelo mecanismo que as
+      consome.
+    severity: "alto (desenho, não bug pontual)"
+    layer: "features (Feature Engine, critério de elegibilidade pro Alpha)"
+    consequence: >
+      15 features com tese declarada (`L3`, sem `defeito_construcao`/
+      `quarentena`) ficaram fora do vetor de treino do Alpha por até 3
+      dias (desde `§14.11`, 2026-08-27) sem nunca terem sido avaliadas
+      pelo modelo que de fato as usaria -- o filtro marginal decidia por
+      elas antes do LightGBM ter a chance. `L4` (41 features, sem
+      mecanismo e sem sinal, ou construção quebrada) continuava calculada
+      e ocupando `SUPPORT_FEATURE_IDS`/registry, custo de manutenção sem
+      benefício -- `AG-336` já tinha achado que classificar `layer` não
+      bastava, faltava a decisão de podar de fato.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO 2026-08-27, decisão explícita do usuário -- reversão do
+      GATE, não do dado medido. O filtro marginal de `AG-294`/`AG-299`
+      deixa de ser condição de ENTRADA no vetor de treino; a régua nova é
+      "o Alpha, sob CPCV purgado (B06, in-fold), ganha algo com a
+      feature" -- medição que fica com a sessão de ML (`src/models/`),
+      não com este módulo. 15 features promovidas `L3`→`L2`/`T2`→`T1`
+      (`A01/A02/A03/A04/A06/C12_vol_of_vol_48/D05f_taker_buy_ratio/
+      D08f_trade_count_z_48/E01f_funding_last/E05f_time_to_funding_h/
+      E12f_price_oi_divergence/K03_is_weekend/K04_session_asia/
+      E14f_toptrader_ls_ratio/E16f_global_ls_ratio`) -- `T1_FEATURE_IDS`
+      vai de 7 pra 22. 35 features `L4` removidas de `SUPPORT_FEATURE_
+      IDS` (não mais expostas/elegíveis) -- núcleo de cálculo
+      (`compute_t1_features`) mantido intocado por ora (remoção de
+      código morto é limpeza separada, sem consequência de leakage já
+      que `SUPPORT_FEATURE_IDS` nunca chegava ao Alpha por padrão).
+      2 exceções mantidas fora por razão ESTRUTURAL, não reabertas:
+      `E18f_taker_ls_vol_ratio` (quarentena, artefato de fonte
+      confirmado, `AG-266`) e `C09_range_pctile_expanding` (`lookback_
+      bars: expanding`, quebra purge do CPCV entre R1/R2/R3, `AG-032`/
+      `AG-298`). `registry.yaml` (`tier`+`layer` de cada uma das 15) e
+      `build.py` (as 2 tuplas + docstring) atualizados juntos, sem
+      divergência. Purga o pico de 288 barras (`E03f_funding_cum_3d`,
+      L4) do vetor de produção -- `max_feature_lookback_bars(T1+SUPPORT)`
+      volta a 96, dominado pelo próprio `T1` original -- folga maior
+      contra `max_consecutive_bar_window_duration_ms`, não menor. 91
+      testes de `test_features_build.py`/`test_features_registry.py`
+      verdes (2 reescritos pra refletir a nova composição do vetor,
+      não fraquejados -- ver diff). `banned_patterns`/`ruff`/`mypy`
+      limpos. Pendente: medir valor incremental real das 15 promovidas
+      sob CPCV purgado (decisão/execução da sessão de ML, `src/models/`,
+      fora deste escopo) -- este achado abre a elegibilidade, não prova
+      o ganho.

@@ -766,18 +766,41 @@ def test_compute_max_feature_lookback_ms_resolution_id_usa_max_consecutive_const
 
 
 def test_compute_max_feature_lookback_ms_sem_warning_quando_window_bars_bate() -> None:
-    """`max_consecutive_bar_window_duration_ms` foi remedido 2026-08-27
-    (`AG-298`/`AG-335`) pra `window_bars=288`, e o vetor de PRODUÇÃO real
-    (`T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`, sem as 5 `expanding` nem
-    `C08`) declara exatamente 288 (`E03f_funding_cum_3d`) -- não deve
-    disparar staleness. `T1_FEATURE_IDS` sozinho (96) NÃO bate mais
-    exatamente -- é o caso de warning (janela menor, sub-uso seguro),
-    coberto pelo teste de warning-quando-menor abaixo."""
-    vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
-    assert build.max_feature_lookback_bars(vetor_producao) == 288
+    """Prova o caminho "exact match, sem warning" com um `feature_ids`
+    explícito que reconstrói o pico de 288 (`E03f_funding_cum_3d`), o
+    mesmo que era o vetor de PRODUÇÃO real antes de `AG-362`.
+
+    **Mudou em 2026-08-27 (`AG-362`, poda de `L4` + promoção de `L3`):**
+    `E03f_funding_cum_3d` saiu de `SUPPORT_FEATURE_IDS` (era `layer: L4`) --
+    o vetor de produção real não bate mais em 288 por padrão (ver o teste
+    seguinte, que agora prova o caso de warning pra `vetor_producao`). Este
+    teste isola a MECÂNICA do caminho "sem warning quando bate exato" com
+    um `feature_ids` construído à mão, pra não perder a cobertura desse
+    branch só porque a composição do vetor real mudou."""
+    com_e03f = (*build.T1_FEATURE_IDS, "E03f_funding_cum_3d")
+    assert build.max_feature_lookback_bars(com_e03f) == 288
     with structlog.testing.capture_logs() as logs:
-        build.compute_max_feature_lookback_ms("15m", vetor_producao, resolution_id="R2")
+        build.compute_max_feature_lookback_ms("15m", com_e03f, resolution_id="R2")
     assert not [e for e in logs if e.get("log_level") == "warning"]
+
+
+def test_compute_max_feature_lookback_ms_vetor_producao_sobra_folga_apos_ag_361() -> None:
+    """`AG-362` (2026-08-27) podou `E03f_funding_cum_3d` (era o pico de 288)
+    de `SUPPORT_FEATURE_IDS` -- o vetor de PRODUÇÃO real hoje (`T1_
+    FEATURE_IDS + SUPPORT_FEATURE_IDS`, 22+4) volta a ser dominado pelo
+    próprio `T1` (96, `C06_vol_ratio_12_96`), já que nenhuma das 15
+    features promovidas de `L3` nem as 4 que sobraram em `SUPPORT`
+    (`C01`/`C02`/`B07`/`E18f`) passa de 48 barras. A constante calibrada
+    (288) agora SOBRE-protege o vetor real -- caso seguro de warning
+    (sub-uso), não o de "bate exato" do teste acima."""
+    vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
+    assert build.max_feature_lookback_bars(vetor_producao) == 96
+    with structlog.testing.capture_logs() as logs:
+        got = build.compute_max_feature_lookback_ms("15m", vetor_producao, resolution_id="R2")
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "features.build.compute_max_feature_lookback_ms.constant_stale"
+    assert got == int(build.load_constant("max_consecutive_bar_window_duration_ms"))
 
 
 def test_compute_max_feature_lookback_ms_warning_quando_janela_e_MENOR_que_a_medida() -> None:
@@ -815,24 +838,24 @@ def test_compute_max_feature_lookback_ms_FALHA_quando_janela_e_MAIOR_que_a_medid
 def test_max_feature_lookback_bars_ve_o_que_max_feature_window_bars_nao_ve() -> None:
     """O defeito de `§13.1`, travado: `max_feature_window_bars` lê os 10
     campos de `_WINDOW_FIELD_NAMES` e é cega a toda feature cuja janela
-    não é uma daquelas constantes. `C08` (69.673, corrigido 2026-08-27),
-    `E03f_funding_cum_3d` (288) e `B10_stoch_k_14` (14) são exatamente
-    esse caso.
+    não é uma daquelas constantes. `C08` (69.673, corrigido 2026-08-27) e
+    `B10_stoch_k_14` (14) são exemplos desse caso -- nenhum dos dois
+    passa por `_WINDOW_FIELD_NAMES` mas ambos têm `lookback_bars` real no
+    registry, e nenhum dos dois está no vetor de produção hoje (`layer:
+    L4`, podados por `AG-362`).
 
-    **Corrigido 2026-08-27 (`AG-298`/`AG-335`, item A da pauta `§13`,
-    decisão do Manager).** Até aqui o vetor real de produção disparava
-    `ExpandingFeatureLookbackError` (5 features `lookback_bars: expanding`
-    do Lote A/C, H5 2026-08-24) -- as 5 saíram do conjunto ativo, mesmo
-    tratamento de `AG-032`. **`C08_vol_pctile_rolling_1y` saiu também**
-    (mesma rodada, motivo diferente -- não é `expanding`, mas `layer: L4`
-    E `lookback_bars: 69673` provou ser um teto calibrado pra R1 que sob
-    R3 nenhum símbolo tem histórico suficiente pra cobrir, `experiments/
-    max_consecutive_bar_window_duration.json`). Sem C08, o vetor real
-    resolve pra `288` (`E03f_funding_cum_3d`, a maior janela finita que
-    sobra fora dos 10 campos rastreados por `max_feature_window_bars`)."""
+    **`AG-298`/`AG-335` (2026-08-27) resolveram o vetor de produção pra
+    288** (`E03f_funding_cum_3d`) removendo as 5 `lookback_bars: expanding`
+    e `C08`. **`AG-362` (2026-08-27, mesmo dia, decisão do Manager de
+    reverter o critério de promoção de ADR-005 §2.2) removeu `E03f`
+    também** -- era `layer: L4`, sem mecanismo/sinal, junto de mais 34
+    features L4. Sem `E03f`, o vetor de produção real volta a ser
+    dominado pelo próprio `T1_FEATURE_IDS` (96) -- prova que `max_feature_
+    lookback_bars` continua enxergando corretamente através da composição
+    do vetor mudando, não é um número travado."""
     vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
     assert build.max_feature_window_bars() == 96
-    assert build.max_feature_lookback_bars(vetor_producao) == 288
+    assert build.max_feature_lookback_bars(vetor_producao) == 96
     sem_expanding = tuple(
         f for f in vetor_producao if features_registry.feature_lookback_bars()[f] != "expanding"
     )
@@ -907,7 +930,8 @@ def test_compute_max_feature_lookback_ms_dispara_para_feature_ids_customizado_ex
 
 
 def test_assert_no_defeito_construcao_passa_para_t1_feature_ids_real() -> None:
-    """Nenhuma das 7 `T1_FEATURE_IDS` (o default de `run_layer1_sprint`)
+    """Nenhuma das 22 `T1_FEATURE_IDS` (7 originais + 15 promovidas de
+    `L3` por `AG-362`, 2026-08-27 -- o default de `run_layer1_sprint`)
     tem `defeito_construcao: true` -- o caminho comum não dispara."""
     build.assert_no_defeito_construcao_in_active_set(build.T1_FEATURE_IDS)
 
@@ -923,10 +947,20 @@ def test_assert_no_defeito_construcao_dispara_para_e11f() -> None:
 
 
 def test_assert_no_defeito_construcao_dispara_para_vetor_completo_da_campanha_t2_t1() -> None:
-    """O vetor completo (`T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`, o mesmo
-    que os scripts da campanha T2→T1 usam) inclui `E11f_oi_change_1d` --
-    prova que o gate protege o caminho real que já causou o dano, não só
-    um caso sintético."""
+    """O vetor completo (`T1_FEATURE_IDS + SUPPORT_FEATURE_IDS`) ainda
+    dispara o gate hoje -- mas por `E18f_taker_ls_vol_ratio`
+    (quarentena+defeito, `AG-266`), não mais por `E11f_oi_change_1d`.
+
+    **Mudou em 2026-08-27 (`AG-362`)**: `E11f_oi_change_1d` (`layer: L4`)
+    foi PODADO de `SUPPORT_FEATURE_IDS` -- o vetor de produção real não
+    contém mais a feature que causou o dano histórico (`experiments/
+    alpha_layer1_report_BTCUSDT_R1_ag207_k62.json`). Isso não enfraquece
+    a guarda: o teste `test_assert_no_defeito_construcao_dispara_para_e11f`
+    acima continua provando que o mecanismo funciona pra E11f explicitamente
+    (proteção contra reintrodução futura); este teste prova que o vetor
+    REAL de hoje dispara por outro motivo genuíno (`E18f`), não que parou
+    de disparar."""
     vetor_producao = build.T1_FEATURE_IDS + build.SUPPORT_FEATURE_IDS
-    with pytest.raises(build.DefeitoConstrucaoFeatureError, match="E11f_oi_change_1d"):
+    assert "E11f_oi_change_1d" not in vetor_producao
+    with pytest.raises(build.DefeitoConstrucaoFeatureError, match="E18f_taker_ls_vol_ratio"):
         build.assert_no_defeito_construcao_in_active_set(vetor_producao)

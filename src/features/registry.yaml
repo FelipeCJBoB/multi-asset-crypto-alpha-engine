@@ -384,9 +384,9 @@
 # ============================================================================
 
 - id: A01_log_return_1
-  tier: T2
+  tier: T1
   group: A
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "ln(C_t / C_{t-1})"
@@ -403,9 +403,9 @@
   added: 2026-08-24
 
 - id: A02_log_return_2
-  tier: T2
+  tier: T1
   group: A
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "ln(C_t / C_{t-2})"
@@ -422,9 +422,9 @@
   added: 2026-08-24
 
 - id: A03_log_return_4
-  tier: T2
+  tier: T1
   group: A
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "ln(C_t / C_{t-4})"
@@ -442,9 +442,9 @@
   nota: "lag=4 é o mesmo valor de feature_a05_ret_lookback_bars, mas constante DEDICADA (feature_a03_log_return_lag) — não reaproveitada entre ids, mesmo padrão do repo (ver constants.yaml)."
 
 - id: A04_log_return_12
-  tier: T2
+  tier: T1
   group: A
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "ln(C_t / C_{t-12})"
@@ -462,9 +462,9 @@
   nota: "insumo direto de E12f_price_oi_divergence (reaproveitado, não recomputado — ver build.py::compute_t1_features)."
 
 - id: A06_ret_vol_norm_12
-  tier: T2
+  tier: T1
   group: A
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "ln(C_t/C_{t-12}) / (atr_20_pct * sqrt(12/4) * feature_a05_vol_norm_divisor)"
@@ -930,9 +930,9 @@
   added: 2026-08-24
 
 - id: C12_vol_of_vol_48
-  tier: T2
+  tier: T1
   group: C
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "σ(realized_vol_12) sobre janela rolante de 48 barras"
@@ -1009,9 +1009,9 @@
   nota: "AG-321 (2026-08-27) — D04f ~= 0 por construção (razão de série quase-constante, mesma degeneração volume≈threshold/preço), ver nota completa em D01f_volume_z_96. Contar como 1 grau de liberdade junto com D01f/D02f/D09f/D10f/D03f, não 5-6."
 
 - id: D05f_taker_buy_ratio
-  tier: T2
+  tier: T1
   group: D
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "taker_buy_volume / volume"
@@ -1028,9 +1028,9 @@
   added: 2026-08-24
 
 - id: D08f_trade_count_z_48
-  tier: T2
+  tier: T1
   group: D
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "z-score rolante (janela 48) de number_of_trades (count, klines Binance)"
@@ -1067,9 +1067,9 @@
   nota: "AG-321 (2026-08-27) — D09f ~= -D08f (mesma degeneração, sinal espelhado, volume≈threshold/preço), ver nota completa em D01f_volume_z_96. Contar como 1 grau de liberdade junto com D01f/D02f/D04f/D10f/D03f, não 5-6."
 
 - id: E01f_funding_last
-  tier: T2
+  tier: T1
   group: E
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "último funding liquidado, já alinhado ao grid de 15m por asof-join backward"
@@ -1086,9 +1086,9 @@
   added: 2026-08-24
 
 - id: E05f_time_to_funding_h
-  tier: T2
+  tier: T1
   group: E
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "horas até o próximo settlement de funding (fronteiras fixas UTC a cada 8h, alinhadas à época Unix)"
@@ -1145,9 +1145,9 @@
   nota: "CORRIGIDO 2026-08-27 (AG-320), tratamento parcial -- normalizado como E10f (support.rolling_zscore, window=feature_e11f_oi_change_zscore_window=48), mesmo padrão de AG-295. `defeito_construcao` PERMANECE true e `layer` PERMANECE [L4] -- a normalização resolve a inconsistência de ESCALA do delta entre grades (o que o próprio achado tratava como 'a causa'), mas NÃO resolve o defeito CATEGÓRICO original (nome '1d' herdado do PRD a 30m; mantido em CONTAGEM DE BARRAS sob 15m -- não recalibrado pra 96, mesma convenção da NOTA DE TF no topo deste arquivo). lag_bars=48 continua cobrindo 7,54h em R1 / 15,78h em R2 / 32,93h em R3 -- nenhuma das três é '1 dia'. Ficha NÃO regenerada pra TESE_OK/SEM_MECANISMO -- seria overclaim (veredito ERRO_CATEGORICO permanece correto sobre o código de hoje, ver fichas_69_2026-08-25.yaml)."
 
 - id: E12f_price_oi_divergence
-  tier: T2
+  tier: T1
   group: E
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "sign(ret_12) * sign(Δln(oi_contracts) sobre 12 barras), ∈ {-1,0,1}"
@@ -1240,9 +1240,9 @@
   added: 2026-08-24
 
 - id: K03_is_weekend
-  tier: T2
+  tier: T1
   group: K
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "1.0 se sábado ou domingo UTC, senão 0.0"
@@ -1259,9 +1259,9 @@
   added: 2026-08-24
 
 - id: K04_session_asia
-  tier: T2
+  tier: T1
   group: K
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "1.0 se hora UTC em [0,8), senão 0.0"
@@ -1483,9 +1483,9 @@
   added: 2026-08-24
 
 - id: E14f_toptrader_ls_ratio
-  tier: T2
+  tier: T1
   group: E
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "sum_toptrader_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"
@@ -1522,9 +1522,9 @@
   added: 2026-08-24
 
 - id: E16f_global_ls_ratio
-  tier: T2
+  tier: T1
   group: E
-  layer: [L3]
+  layer: [L2]
   quarentena: false
   defeito_construcao: false
   formula: "count_long_short_ratio, ja alinhado ao grid de 15m por asof-join backward"

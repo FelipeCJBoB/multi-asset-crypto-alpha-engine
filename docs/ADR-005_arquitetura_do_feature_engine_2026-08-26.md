@@ -1,6 +1,11 @@
 # ADR-005 — Arquitetura do Feature Engine: estratificar por função e por evidência
 
 **Versão:** 2 (2026-08-26) — reescreve a v1 do mesmo dia; ver §0.2
+- **§15 (`AG-362`, 2026-08-27): DECIDIDO E EXECUTADO** — reversão explícita
+  do critério de promoção de §2.2 (teste marginal, cego a interação entre
+  features). `T1_FEATURE_IDS` 7→22, `SUPPORT_FEATURE_IDS` 54→4 (`L4`
+  podada de fato). Ler §15 antes de tratar qualquer contagem de `L2`/`L4`
+  abaixo (§1-§14) como estado atual — são histórico do que foi tentado.
 **Status por parte** (2026-08-26):
 - **§1–§9 (estratificação em camadas, critério de evidência): REPROVADO** na revisão independente de `project_assurance` — ver §11. **Não ratificar como está.**
 - **§14 (v3 — corrige `AG-270`/`AG-271`/`AG-272`/`AG-274`): PROPOSTO, v2 (2026-08-26).** A v1 desta seção foi **REVISADA por `project_assurance` e REPROVADA** — 1 CRITICAL (a alegação "`AG-272` fechado"/"união cobre as 72" era falsa: 23 features sem camada, verificado por reconstrução de conjunto) + 1 HIGH (`E27f` violava a própria regra "nenhuma coluna em duas camadas") + 4 MEDIUM + 2 LOW — ver §14.7 pro detalhe completo e as correções. Todos corrigidos nesta v2: `L4` recalculada pra **43** (era 21 antes desta correção — a v1 de §14 já tinha corrigido de 29 pra 21, mas errou ao não dar camada às `INCOERENTE_DIMENSIONAL`/`ERRO_CATEGORICO`), `E27f` declarado como 2ª exceção deliberada (dupla `L1`+`L2`), união agora verificada = 72 exatas por script. Fecha os 3 pré-requisitos de §11.5 (modelo nulo por símbolo, BH com unidade declarada, eixo 2 persistido — `AG-294`/`AG-299`, ambos em código, com um bug real corrigido no eixo 2 nesta v2 — piso de `n_semestres_validos`). Resultado central inalterado pela correção: `L2` é **vazia** sob o eixo 1 corrigido (nem `E16f` nem as 7 `T1` passam) — `L2` fica definida como as 7 `T1` de hoje, por ausência de candidato, não por validação. **Esta v2 FOI revisada** (2ª rodada, 2026-08-26): 6 das 7 correções CONFIRMADAS por reconstrução independente; a 7ª (sincronia `§3`/`§5.2`/`§5.3`) só PARCIAL — 2 menções desatualizadas a mais achadas em `§2.1`/fim de `§2.2` (corrigidas). A 2ª rodada também achou que o defeito de `E02f`/`C07`/`D03f`/`E15f`/`E17f` citado em `§14.3` não era "sem diagnóstico" — é dívida já aberta do `AG-030` desde 2026-08-17, nunca conectada (corrigido em `§14.3`). Nenhum achado da classe do CRITICAL original desta vez.
@@ -3679,3 +3684,133 @@ provenance` limpos em todos os arquivos tocados (`src/models/alpha.py`,
 + os 3 arquivos de teste correspondentes). Suíte completa (`-m "not
 slow"`) verificada depois das quatro mudanças — ver `docs/SPRINT_LOG.md`
 para o número exato.
+
+---
+
+### §14.13 Item A fechado nos dois degraus + C desbloqueado + D/G aprofundados (2026-08-27, "investigação ponta a ponta pros 4 itens que podem ser fechados sem full run do Alpha")
+
+Continuação direta de `§14.12` — A/C ficaram sem decisão naquela rodada
+(fora do lote B/E/F); D/G nunca tinham sido investigados a fundo. Pedido
+do Manager nesta rodada: fechar os 4 sem depender do retreino represado.
+
+**A — `ExpandingFeatureLookbackError`/`StaleFeatureWindowConstantError`
+(`AG-298`/`AG-335`). FECHADO nos dois degraus, não só o primeiro.**
+
+Degrau 1 — as 5 features `lookback_bars: expanding` (`C09_range_pctile_
+expanding`, `C10_vol_expansion_flag`, `C11_vol_compression_flag`,
+`E15f_toptrader_ls_z`, `E17f_retail_vs_top_spread`) saíram de
+`SUPPORT_FEATURE_IDS`, mesmo tratamento de `AG-032`. A classificação
+`layer: L4` que `§14.12` registrou como "trabalho em andamento não
+commitado" **foi commitada no meio tempo** (`ff63edd`) — deixou de ser
+informação frágil e virou reforço real (não a única razão: `C09`, só
+`L3`, sai pelo mesmo motivo estrutural das outras 4).
+
+Degrau 2, achado NOVO desta rodada — sem as 5, o vetor ainda exigia
+`window_bars=69.673` (`C08_vol_pctile_rolling_1y`, `AG-317`). Medir isso
+de verdade (depois de corrigir `tools/diagnostics/measure_max_
+consecutive_bar_window_duration.py`, que ainda lia `N` da função CEGA
+`max_feature_window_bars()` — mesmo defeito que `AG-298` documentou, um
+script que existe pra corrigir uma lacuna não pode herdar a mesma
+lacuna) mostrou que R2 chegaria a ~4,2 anos de janela e **R3 não tem
+69.673 barras em nenhum dos 5 símbolos** — `StaleFeatureWindowConstant
+Error` não era uma constante desatualizada, era um requisito
+estruturalmente irrealizável sob R3. `C08` saiu também (também `layer:
+L4`, mesmo commit) — sem ele, `max_feature_lookback_bars` cai pra `288`
+(`E03f_funding_cum_3d`). `max_consecutive_bar_window_duration_ms`
+remedido sob esse valor (15/15 combinações, 0 puladas, pior caso
+SOLUSDT/R3 = 606,53h — `config/constants.yaml`).
+
+**Verificado end-to-end** (não só por teste unitário): `compute_max_
+feature_lookback_ms` resolve limpo pro vetor de produção real (61
+features, era 69) nas 3 resoluções E na grade 15m legada, sem exceção
+nenhuma. Vetor: `T1_FEATURE_IDS` (7, inalterado) + `SUPPORT_FEATURE_IDS`
+(54, era 61 antes desta rodada — AG-295 já tinha tirado 1, mais 6 saem
+agora). Suíte completa verde depois de todas as mudanças (ver
+`docs/SPRINT_LOG.md`). `ruff`/`mypy --strict`/`banned_patterns`/`check_
+constants_provenance` limpos.
+
+**C — teste `H₀` do item 7. DESBLOQUEADO.** Precondição (item A) resolvida
+nesta mesma rodada — reverificado: `assert_no_expanding_lookback_in_
+active_set`/`compute_max_feature_lookback_ms` não disparam mais pro vetor
+real. **A reexecução em si (10 células × 2 configurações) continua
+exigindo treino real** — isso não muda: o que fecha aqui é a precondição,
+não a execução. Pronta pra disparar assim que o Manager autorizar rodar.
+
+**D — pooling de 15 modelos em 3. Recomendação sharpened, não mudou.**
+Uma das três razões contra ("ESS pooled sairia superestimado ~2× SEM
+correção two-factor, que não existe ainda") tinha um fator já MEDIDO e
+esquecido da conversa: `n_eff=2,03` transversal (`AG-255`, 2026-08-25,
+correlação real de `ret_net` diário entre os 5 símbolos, 1.706 dias).
+Isso não fecha a correção two-factor — falta compor esse fator
+transversal com o fator intra-símbolo (`Σ uniqueness` por fold, já
+medido por `SideModelResult`) numa fórmula única, e essa composição é
+trabalho estatístico real (não óbvio que os dois efeitos multipliquem
+direto) — **deliberadamente NÃO tentado nesta rodada** por risco de
+apresentar uma correção errada como se fosse certa. Recomendação
+continua: não autorizar agora; as razões (2) CPCV consciente de painel e
+(3) ganho só em `√2` seguem intactas.
+
+**G — `min_alpha_lift_ptp` como gate vinculante (`AG-260` ponto b).
+Mecanismo construído, decisão de tornar binding continua do Manager.**
+`src/analysis/economic_gate.py` ganhou `evaluate_economic_gate` (núcleo
+puro — compara `p_tp` achieved de um candidato real contra `breakeven_wr`
+da célula, com a mesma disciplina de `is_distinguishable`/`AG-246`:
+`distinguishable`, não `passes` cru, é o que deveria decidir qualquer
+gate binding) e `load_min_alpha_lift_by_combo` (primeiro leitor real de
+`config/min_alpha_lift_by_combo.yaml` — era write-only). 10 testes novos
+(39 no arquivo). Não wireado em nenhum orquestrador de trial — nenhum
+existe neste repo ainda.
+
+Nenhuma célula de `predictions.parquet`/`models/*.bin` alterada por A/C/
+D/G (A muda o VETOR de features que um retreino futuro usaria, não
+nenhum artefato já treinado — não existe artefato treinado sob o vetor
+de 61 ainda). `config/min_alpha_lift_by_combo.yaml`/`barrier_geometry_
+by_combo.yaml` não tocados (só lidos). Nada commitado ainda nesta
+rodada.
+
+---
+
+## §15. REVERSÃO do critério de promoção de §2.2 (`AG-362`, 2026-08-27)
+
+**Decisão explícita do usuário/Manager, não achado de auditoria.** O
+critério de §2.2 (BH q=0,10 por SÍMBOLO + estabilidade temporal em 10
+semestres, `AG-294`/`AG-299`) é retirado como GATE DE ENTRADA no vetor de
+treino. Motivo: é um teste MARGINAL (cada feature isolada contra o alvo
+via Spearman) — estruturalmente cego a INTERAÇÃO ENTRE FEATURES (o sinal
+de uma feature condicionado a outra; em teoria da informação, "informação
+sinérgica"/"interaction information", McGill 1954). O LightGBM que de
+fato consome essas features captura interação nativamente via splits
+sequenciais — o filtro estava calibrado pelo poder de um instrumento mais
+fraco do que o modelo real que ele deveria proteger. Resultado prático:
+`L2` ficou vazia por 3 dias (desde `§14.11`) apesar de 15 features com
+tese econômica declarada (`layer: L3`, sem `defeito_construcao`/
+`quarentena`) nunca terem sido de fato avaliadas pelo mecanismo que as
+consumiria.
+
+**Nova régua**: elegibilidade pro vetor de treino deixa de depender do
+teste marginal de §2.2. Toda feature `L3` sem defeito confirmado é
+promovida a `L2`/`T1`, EXCETO as excluídas por razão ESTRUTURAL diferente
+(engenharia, não evidência) — hoje 2: `E18f_taker_ls_vol_ratio`
+(quarentena, artefato de fonte, `AG-266`) e `C09_range_pctile_expanding`
+(`lookback_bars: expanding`, quebra purge do CPCV, `AG-032`/`AG-298`). O
+julgamento de valor real passa a ser do próprio Alpha, sob CPCV purgado
+(B06 — in-fold, nunca a tabela de IC pré-hoc como critério de escolha) —
+medição que fica com a sessão de ML (`src/models/`), fora do escopo deste
+módulo. `L4` (41 features classificadas sem mecanismo/sinal, `AG-336`) é
+podada de fato de `SUPPORT_FEATURE_IDS` nesta mesma decisão — deixam de
+ser elegíveis via `extra_feature_ids`; o núcleo de cálculo
+(`compute_t1_features`) não foi tocado (remoção de código morto fica como
+limpeza separada, sem consequência de leakage já que `SUPPORT_FEATURE_
+IDS` nunca alcançava o Alpha por padrão).
+
+`T1_FEATURE_IDS`: 7 → 22. `SUPPORT_FEATURE_IDS`: 54 → 4. Detalhe completo,
+lista das 15 promovidas e das 35 podadas, e o que muda no purge-guard
+(pico de 288 barras sai do vetor real, volta a 96): `audit/
+architecture_gaps_log.yaml::AG-362`.
+
+**O que este §15 explicitamente NÃO decide**: não substitui §2.2 por um
+protocolo formal de teste incremental in-fold (Alpha_base vs. Alpha_base
++ candidata, sob CPCV purgado) — isso é trabalho real ainda não
+especificado, e cai claramente do lado `src/models/`. §2.2 continua
+documentado acima como registro histórico do que foi tentado e por que
+não serviu — não apagado, revogado.

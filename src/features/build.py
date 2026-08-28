@@ -71,6 +71,45 @@ logger = structlog.get_logger(__name__)
 #: símbolo tem 69.673 barras no histórico inteiro (`experiments/
 #: max_consecutive_bar_window_duration.json`). Ver comentário em
 #: `SUPPORT_FEATURE_IDS` abaixo pro detalhe completo.
+# AG-362 (2026-08-27, decisão do Manager -- reversão explícita do critério
+# de promoção de ADR-005 §2.2): o gate de evidência marginal (Benjamini-
+# Hochberg por SÍMBOLO + estabilidade temporal, `AG-294`/`AG-299`) testava
+# cada feature ISOLADA contra o alvo por Spearman -- um teste estruturalmente
+# cego a INTERAÇÃO ENTRE FEATURES (o sinal de A só aparece condicionado a B;
+# em teoria da informação, "informação sinérgica"/"interaction information" --
+# nenhum teste marginal, por construção, enxerga isso). Um GBM como o
+# LightGBM captura interação nativamente via splits sequenciais -- o critério
+# de ADR-005 media a feature contra um modelo mais fraco do que o que de fato
+# a consome. Calibrar a rigorosidade do filtro pelo poder do teste marginal,
+# não pelo poder do modelo real, é o desenho falho: a régua era mais restrita
+# que o instrumento que ela deveria proteger.
+#
+# Decisão: o filtro marginal deixa de ser GATE DE ENTRADA no vetor de treino.
+# Toda feature com tese econômica declarada (`registry.yaml`, não
+# `SEM_MECANISMO`) e sem defeito de construção confirmado -- ou seja, toda
+# `layer: L3` exceto as excluídas por motivo ESTRUTURAL diferente (não é
+# "filtro apertado demais", é constraint de engenharia real, ver exceções
+# abaixo) -- é promovida a `layer: L2`/`tier: T1` e entra aqui. A pergunta
+# que decide o valor de uma feature passa a ser "o Alpha, sob CPCV purgado,
+# ganha algo com ela" (Idioma B06 -- in-fold, não a tabela de IC pré-hoc) --
+# não mais "ela sobrevive sozinha a um teste que o modelo nem usa da mesma
+# forma". Regularização (HHI/max_share, monotone_constraints, permutation
+# null) já existentes em `src/models/` seguem sendo a defesa real contra
+# ruído -- é trabalho da sessão de ML medir o valor incremental real (Alpha
+# com T1 novo vs. antigo, purgado), não trabalho deste módulo decidir por
+# antecipação com um teste mais fraco.
+#
+# 2 exceções, mantidas fora por razão ESTRUTURAL (não por rigor de filtro,
+# não reabertas por esta decisão):
+# - `E18f_taker_ls_vol_ratio`: `quarentena: true` -- artefato de FONTE
+#   confirmado (`AG-266`, liga/desliga em blocos de meses de forma alheia ao
+#   mercado). Sinal real e forte, mas de origem espúria -- promover isso
+#   seria o oposto do que a régua de qualidade deveria fazer.
+# - `C09_range_pctile_expanding`: `lookback_bars: expanding`, mesmo defeito
+#   estrutural de `AG-032`/`AG-298` -- janela sem teto finito honesto quebra
+#   a proteção de purge do CPCV entre R1/R2/R3 (B02/B09). Sai por
+#   incompatibilidade de infraestrutura, não por falta de mérito estatístico
+#   -- reavaliar preferencialmente depois que a janela ganhar um teto real.
 T1_FEATURE_IDS: tuple[str, ...] = (
     "A05_ret_vol_norm_4",
     "A13_dist_ema48_atr",
@@ -79,94 +118,45 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     "C06_vol_ratio_12_96",
     "D06f_taker_imbalance_z_48",
     "E10f_oi_change_z_48",
-)
-
-# T2 calculadas neste Sprint por serem insumo de outra camada (Regime
-# Engine, §4.2, Sprint 5) ou insumo direto de features T1 acima — não
-# entram no vetor de treino do Alpha V1, mas têm entrada de registry.
-SUPPORT_FEATURE_IDS: tuple[str, ...] = (
-    "C01_atr_20",
-    "C02_atr_20_pct",
-    "B07_efficiency_ratio_48",
-    # Lote A da liberação de features (H5, 2026-08-24) -- 47 T2, nenhuma
-    # promovida a T1 por esta implementação (§0.2 R4/§2.13). Entrar aqui
-    # (não só em ALL_OUTPUT_COLUMNS) é o que dá a cada uma cobertura
-    # AUTOMÁTICA do teste de paridade lote<->streaming global (tests/
-    # parity/test_features_parity.py) -- é a mesma razão de B07/C01/C02
-    # estarem nesta tupla acima.
+    # Promovidas de L3 (AG-362, 2026-08-27) -- momentum de 1-12 barras,
+    # tese declarada e sinal real (ADR-005 §7/§14, mais forte em BNB).
     "A01_log_return_1",
     "A02_log_return_2",
     "A03_log_return_4",
     "A04_log_return_12",
     "A06_ret_vol_norm_12",
-    "A07_body_ratio",
-    "A08_upper_wick_ratio",
-    "A09_lower_wick_ratio",
-    "A10_close_location",
-    "A11_true_range_pct",
-    "A14_dist_ema12_atr",
-    "B02_rsi_48",
-    "B03_roc_12",
-    "B04_macd_hist_norm",
-    "B05_ema_slope_24",
-    "B06_momentum_accel",
-    "B08_efficiency_ratio_16",
-    "B09_zscore_close_48",
-    "B11_bb_position_20",
-    "C03_realized_vol_48",
-    "C04_parkinson_vol_48",
-    "C05_garman_klass_48",
-    # C09_range_pctile_expanding/C10_vol_expansion_flag/C11_vol_compression_flag
-    # -- ver AG-298/AG-335 no bloco de comentário acima (lookback_bars:
-    # expanding, mesmo motivo estrutural de AG-032).
     "C12_vol_of_vol_48",
-    "D01f_volume_z_96",
-    "D02f_rel_volume_48",
-    "D04f_volume_accel",
     "D05f_taker_buy_ratio",
     "D08f_trade_count_z_48",
-    "D09f_avg_trade_size_z",
     "E01f_funding_last",
     "E05f_time_to_funding_h",
-    "E09f_oi_contracts",
-    "E11f_oi_change_1d",
     "E12f_price_oi_divergence",
-    "K01_hour_sin",
-    "K01_hour_cos",
-    "K02_dow_sin",
-    "K02_dow_cos",
     "K03_is_weekend",
     "K04_session_asia",
-    "K04_session_europe",
-    "K04_session_us",
-    # Lote B da liberação de features (H5, 2026-08-24) -- 6 T2, cada uma
-    # precisando de primitiva nova (support.rolling_correlation/rolling_
-    # percentile_rank_strict, min/max rolante, reset por dia, soma por
-    # evento) ou fonte nova (D07f, klines_1m bruto) -- nenhuma promovida
-    # a T1.
-    "A15_dist_vwap_d_atr",
-    "B10_stoch_k_14",
-    # C08_vol_pctile_rolling_1y -- ver AG-298/AG-335 no bloco de comentário
-    # de topo. Motivo ADICIONAL aos outros 5: `lookback_bars: 69673`
-    # (AG-317) é um teto de barra CALIBRADO PARA R1 aplicado igual nas 3
-    # grades -- medido 2026-08-27 que sob R2 a janela real chega a
-    # ~36.561h (~4,2 anos) e sob R3 NENHUM símbolo tem 69.673 barras no
-    # histórico inteiro (`experiments/max_consecutive_bar_window_
-    # duration.json`, combos R3 pulados por dado insuficiente). `layer:
-    # L4` (aposentada, mesmo census de AG-282/§14.11) -- não é só a janela
-    # grande, é uma feature sem mecanismo/sinal que por acaso também
-    # quebra a proteção de purge entre grades.
-    "D07f_taker_imbalance_1m_agg",
-    "D10f_vol_price_divergence",
-    "E03f_funding_cum_3d",
-    # Lote C da liberação de features (H5, 2026-08-24) -- 6 T2, extensão
-    # fina de _sources.py (mesmo arquivo `metrics` de E08f/E09f/E10f,
-    # colunas antes não lidas) -- zero primitiva nova.
-    "E08f_oi_notional",
     "E14f_toptrader_ls_ratio",
-    # E15f_toptrader_ls_z/E17f_retail_vs_top_spread -- ver AG-298/AG-335
-    # acima (mesmo motivo, lookback_bars: expanding).
     "E16f_global_ls_ratio",
+)
+
+# T2 -- insumo de outra camada (Regime Engine, `layer: L1`) ou primitiva de
+# cálculo (`layer: L0`), nunca preditoras diretas por desenho estrutural
+# (não por veredito de evidência) -- e `E18f` (quarentena, ver comentário
+# acima de `T1_FEATURE_IDS`). Continuam com entrada de registry pra dar
+# cobertura de paridade lote<->streaming.
+#
+# AG-362 (2026-08-27) reduziu esta tupla de 54 pra 4: as 35 restantes eram
+# `layer: L4` (sem mecanismo e sem sinal, ou construção comprovadamente
+# quebrada -- `AG-336`) e saíram por decisão explícita do Manager de podar
+# de fato, não só classificar. Continuam calculadas por `compute_t1_features`
+# (núcleo não filtra por esta tupla) -- a poda aqui é do VETOR EXPOSTO/
+# elegível pro Alpha, não ainda da função de cálculo em si (esse é um 2º
+# passo de limpeza de código morto, menor prioridade porque não tem
+# consequência de leakage/seleção: `build_modeling_frame` só junta
+# `T1_FEATURE_IDS` por padrão, `SUPPORT_FEATURE_IDS` nunca chega ao Alpha
+# sem `extra_feature_ids` explícito).
+SUPPORT_FEATURE_IDS: tuple[str, ...] = (
+    "C01_atr_20",
+    "C02_atr_20_pct",
+    "B07_efficiency_ratio_48",
     "E18f_taker_ls_vol_ratio",
 )
 
