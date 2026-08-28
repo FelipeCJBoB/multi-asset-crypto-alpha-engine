@@ -23076,3 +23076,83 @@ entries:
       sob CPCV purgado (decisão/execução da sessão de ML, `src/models/`,
       fora deste escopo) -- este achado abre a elegibilidade, não prova
       o ganho.
+
+  - id: AG-365
+    date: "2026-08-27"
+    file: "src/models/dataset.py::build_modeling_frame"
+    related_file: "src/features/build.py::T1_FEATURE_IDS (AG-362), src/models/dataset.py::side_subset (AG-300), tests/unit/test_models_dataset.py"
+    numeracao: >-
+      AG-365 escolhido com folga sobre AG-362 (maior existente no
+      momento) -- mesma disciplina de AG-260/AG-360: sessão paralela
+      compartilha este arquivo em tempo real.
+    found_by: >-
+      Claude -- crash real ao vivo rodando o comando de retreino
+      canônico que eu mesmo entreguei ao Manager (`uv run python -m
+      src.models.pipeline --all-combinations --vol-estimator-id
+      parkinson_w20`, 1º fold, BTCUSDT/R1), investigado por leitura
+      direta do stack trace + código antes de qualquer correção
+      (pedido explícito do Manager: "não faça remediação barata,
+      entregue solução robusta").
+    gap: >
+      `build_modeling_frame` decide `load_taker_imbalance_1m`/`load_
+      futures_positioning` (kwargs caros de `build_t1_features`, D07f =
+      klines_1m bruto + 4 colunas de metrics de futures-positioning)
+      checando SÓ `extra_feature_ids` (parâmetro de análise pós-hoc,
+      default `()`) contra `_FUTURES_POSITIONING_FEATURE_IDS` -- nunca
+      `T1_FEATURE_IDS` (o vetor de treino REAL, sempre ativo). Premissa
+      segura só enquanto T1 fosse fixo e nenhuma de suas features
+      precisasse dessas fontes (verdade quando essa checagem foi escrita:
+      audit_engineering 2026-08-24, T1 tinha 7 features). `AG-362`
+      (MESMO DIA, sessão paralela, sem coordenação) promoveu 15
+      features L3→T1 -- `T1_FEATURE_IDS` foi de 7 pra 22, incluindo
+      `E14f_toptrader_ls_ratio`/`E16f_global_ls_ratio` (2 das 6 de
+      `_FUTURES_POSITIONING_FEATURE_IDS`) DIRETO no vetor base. A
+      checagem antiga nunca olhou pra essa mudança -- `load_futures_
+      positioning` continuou resolvendo `False` incondicionalmente pra
+      QUALQUER chamada de produção (nenhum caller real passa `extra_
+      feature_ids`), mesmo com 2 features do vetor ativo precisando
+      dela. AG-362 rodou 91 testes verdes e `banned_patterns`/`ruff`/
+      `mypy` limpos (confirmado no próprio registro) porque nenhum
+      deles exercita `dataset.py` -- a mudança ficou inteiramente
+      isolada do módulo que a consome de verdade em produção. Mesma
+      classe de defeito que `AG-300` já tinha fechado uma vez em
+      `side_subset` (conjunto checado divergente do conjunto de fato
+      treinado) -- reaparece um nível acima na pilha, na decisão de
+      QUAL DADO CARREGAR, não em qual coluna filtrar.
+    severity: "alto -- bloqueia 100% do retreino canonico (--all-combinations falha no 1o fold da 1a combinacao, sem excecao possivel, ja que T1_FEATURE_IDS e o mesmo pras 15)"
+    layer: "models (src/models/dataset.py, fronteira features↔models)"
+    consequence: >
+      `uv run python -m src.models.pipeline --all-combinations` falhava
+      com `DeadFeatureColumnError` no PRIMEIRO fold de treino
+      (`side_subset(side=1)`, `E14f_toptrader_ls_ratio`/`E16f_global_
+      ls_ratio` 100% nulas em 94232 linhas) -- retreino canônico
+      inteiro bloqueado, não uma célula isolada. Sem esta correção, a
+      promoção de `AG-362` (15 features L3→T1) seria estruturalmente
+      impossível de medir sob CPCV real -- exatamente o "pendente" que
+      o próprio `AG-362` deixou em aberto pra sessão de ML.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO 2026-08-27, comportamento DEFAULT (não flag opt-in --
+      `CLAUDE.md` "Diretrizes de comportamento"). `_needs_d07f`/`_needs_
+      futures_positioning` agora checam a UNIÃO de `features_build.
+      T1_FEATURE_IDS` (sempre ativo) com `extra_feature_ids` (opcional),
+      nunca só o segundo -- correção ESTRUTURAL, não pontual: autocorrige
+      se T1 mudar de composição de novo no futuro, sem exigir
+      sincronização manual entre `features/build.py` e `models/
+      dataset.py` (a causa raiz real -- os dois módulos declaravam a
+      mesma verdade em lugares diferentes, sem checagem cruzada). Custo
+      de IO da correção: zero adicional -- as 2 features já EXIGEM esse
+      dado pra existir; a correção só faz o carregamento necessário
+      acontecer, não adiciona overhead novo. `build_regimes` (linhas
+      abaixo) NÃO tocado -- nunca depende de `T1_FEATURE_IDS`, achado
+      não se aplica lá (ver comentário próprio no código). Testes:
+      `tests/unit/test_models_dataset.py` -- 2 assertions existentes
+      atualizadas pro novo valor correto (`load_futures_positioning=
+      True` com o T1 atual), 1 case do parametrize trocado (`E14f` não
+      prova mais nada isolado, já que está em T1 incondicionalmente --
+      substituído por `E18f_taker_ls_vol_ratio`, mantida fora de T1 de
+      propósito, quarentena `AG-266`), 1 teste NOVO que monkeypatcha
+      `T1_FEATURE_IDS` pra um conjunto mínimo sintético e prova que a
+      resposta reage a T1 de verdade (não é um valor travado pela
+      composição atual, coincidência). `banned_patterns`/`ruff`/`mypy`
+      rodados, limpos.

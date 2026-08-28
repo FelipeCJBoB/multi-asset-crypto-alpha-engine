@@ -5239,3 +5239,42 @@ alta — feature ATR-derivada é insumo de 4 features do vetor T1 ativo:
 com `--vol-estimator-id parkinson_w20` explícito (redundante agora,
 mas inofensivo — deixa o comando autoexplicativo mesmo que o default
 mude de novo no futuro).
+
+### 2026-08-27 — `AG-365`: retreino canônico crashou no 1º fold, causa raiz era um furo entre `AG-362` e `AG-300` <!-- check-sprint-log: skip -->
+
+Comando de retreino (`--all-combinations --vol-estimator-id <!-- check-sprint-log: skip -->
+parkinson_w20`) rodou de verdade e crashou no 1º fold (BTCUSDT/R1) com <!-- check-sprint-log: skip -->
+`DeadFeatureColumnError` em `side_subset`: `E14f_toptrader_ls_ratio`/ <!-- check-sprint-log: skip -->
+`E16f_global_ls_ratio` 100% nulas em 94232 linhas. Pedido explícito do
+Manager: "não faça remediação barata, entregue solução robusta".
+
+Causa raiz, não sintoma: `AG-362` (sessão paralela, MESMO DIA) promoveu <!-- check-sprint-log: skip -->
+15 features L3→T1 (`T1_FEATURE_IDS` de 7 pra 22), incluindo 2 features
+que dependem de `load_futures_positioning=True` em `build_t1_features`.
+`build_modeling_frame` (`src/models/dataset.py`) decidia esse kwarg
+olhando SÓ `extra_feature_ids` (parâmetro de análise pós-hoc) contra
+`_FUTURES_POSITIONING_FEATURE_IDS` — nunca `T1_FEATURE_IDS`, o vetor de
+treino real. Premissa segura quando essa checagem foi escrita
+(`audit_engineering`, 24/08, T1 tinha 7 features, nenhuma dependente).
+`AG-362` mudou a composição de T1 sem nenhuma checagem cruzada com esse <!-- check-sprint-log: skip -->
+módulo — 91 testes verdes + lint limpo, mas nenhum deles exercita <!-- check-sprint-log: skip -->
+`dataset.py`, então a mudança ficou isolada do módulo que a consome de
+verdade em produção. Mesma classe de defeito que `AG-300` já tinha <!-- check-sprint-log: skip -->
+fechado uma vez (conjunto checado divergente do que de fato treina) —
+reaparece um nível acima, na decisão de qual dado CARREGAR.
+
+Correção estrutural: `_needs_d07f`/`_needs_futures_positioning` agora
+checam a UNIÃO de `T1_FEATURE_IDS` com `extra_feature_ids`, nunca só o
+segundo — autocorrige se T1 mudar de composição de novo, sem exigir
+sincronização manual entre `features/build.py` e `models/dataset.py`
+outra vez. Custo de IO adicional: zero — as 2 features já exigiam esse
+dado pra existir, a correção só faz o carregamento necessário
+acontecer. `tests/unit/test_models_dataset.py`: 2 assertions
+atualizadas pro valor correto, 1 case do parametrize trocado (`E14f` já
+está em T1 incondicionalmente, não prova mais nada isolado — trocado
+por `E18f_taker_ls_vol_ratio`, mantida fora de T1 por quarentena
+`AG-266`), 1 teste novo monkeypatcha `T1_FEATURE_IDS` pra provar que a
+resposta reage a T1 de verdade, não é coincidência da composição atual.
+`banned_patterns`/`ruff`/`mypy` limpos. `AG-365` registrado. Retreino <!-- check-sprint-log: skip -->
+ainda não confirmado ponta a ponta — próximo passo é o Manager rodar de
+novo o mesmo comando.

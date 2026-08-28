@@ -251,17 +251,21 @@ def test_build_modeling_frame_resolution_id_propaga_bar_source_e_vol_estimator_i
 
     assert load_labels_calls == [{"resolution_id": "R1"}]
     # load_taker_imbalance_1m/load_futures_positioning (achado real,
-    # audit_engineering, 2026-08-24): build_modeling_frame só ativa os
-    # dois quando extra_feature_ids pede D07f/futures-positioning (aqui
-    # não pede, extra_feature_ids=() por default -- ambos False);
-    # build_regimes SEMPRE passa False pros dois (nunca precisa, ver
-    # docstring de src/regime/build.py).
+    # audit_engineering, 2026-08-24, **[CORRIGIDO 2026-08-27, AG-365]**):
+    # build_modeling_frame ativa os dois quando a UNIAO de T1_FEATURE_IDS
+    # com extra_feature_ids pede D07f/futures-positioning -- aqui extra_
+    # feature_ids=() por default, mas T1_FEATURE_IDS (pós-AG-362, 22
+    # features) já inclui E14f_toptrader_ls_ratio/E16f_global_ls_ratio,
+    # então load_futures_positioning é True incondicionalmente agora
+    # (D07f continua False -- nenhuma feature T1 depende dele); build_
+    # regimes SEMPRE passa False pros dois (nunca precisa, ver docstring
+    # de src/regime/build.py).
     assert features_calls == [
         {
             "bar_source": "dollar_r1",
             "vol_estimator_id": "parkinson_w20",
             "load_taker_imbalance_1m": False,
-            "load_futures_positioning": False,
+            "load_futures_positioning": True,
         }
     ]
     assert regime_calls == [
@@ -293,12 +297,16 @@ def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
 
     ds.build_modeling_frame()
 
+    # **[CORRIGIDO 2026-08-27, AG-365]** load_futures_positioning=True
+    # mesmo sem extra_feature_ids -- T1_FEATURE_IDS (pós-AG-362) já
+    # inclui 2 features de futures-positioning, ver comentário no teste
+    # de resolution_id="R1" acima.
     assert features_calls == [
         {
             "bar_source": "time_15m",
             "vol_estimator_id": None,
             "load_taker_imbalance_1m": False,
-            "load_futures_positioning": False,
+            "load_futures_positioning": True,
         }
     ]
 
@@ -306,13 +314,18 @@ def test_build_modeling_frame_resolution_id_none_preserva_bar_source_time_15m(
 @pytest.mark.parametrize(
     ("extra_feature_ids", "expected_d07f", "expected_futures_positioning"),
     [
-        ((), False, False),
-        (("D07f_taker_imbalance_1m_agg",), True, False),
-        (("E14f_toptrader_ls_ratio",), False, True),
+        # T1_FEATURE_IDS (pós-AG-362, 22 features) já contém E14f/E16f --
+        # futures_positioning sai True mesmo sem pedir nada extra.
+        ((), False, True),
+        (("D07f_taker_imbalance_1m_agg",), True, True),
+        # E18f_taker_ls_vol_ratio (não E14f, que já está em T1 e não prova
+        # mais nada isolado) -- mantida fora de T1 de propósito (quarentena,
+        # AG-266), prova que extra_feature_ids sozinho também aciona.
+        (("E18f_taker_ls_vol_ratio",), False, True),
         (("D07f_taker_imbalance_1m_agg", "E17f_retail_vs_top_spread"), True, True),
     ],
 )
-def test_build_modeling_frame_ativa_d07f_futures_positioning_so_quando_pedido(
+def test_build_modeling_frame_ativa_d07f_futures_positioning_por_t1_ou_extra(
     monkeypatch: pytest.MonkeyPatch,
     extra_feature_ids: tuple[str, ...],
     expected_d07f: bool,
@@ -321,9 +334,14 @@ def test_build_modeling_frame_ativa_d07f_futures_positioning_so_quando_pedido(
     """Achado real (`audit_engineering`, 2026-08-24): `build_t1_features`
     default `load_taker_imbalance_1m=True`/`load_futures_positioning=
     True` pagava custo de IO real (D07f = klines_1m bruto) em TODO
-    treino do Alpha, mesmo `extra_feature_ids` não pedindo nenhuma das
-    duas -- corrigido, `build_modeling_frame` só ativa quando de fato
-    pedido."""
+    treino do Alpha, mesmo nada precisando. **[CORRIGIDO 2026-08-27,
+    AG-365]** a ativação depende da UNIÃO de `T1_FEATURE_IDS` (sempre
+    ativo) com `extra_feature_ids` (opcional) -- não só do segundo. Com
+    a composição atual de T1 (pós-`AG-362`), `load_futures_positioning`
+    já sai `True` mesmo com `extra_feature_ids=()`; o teste abaixo
+    (`..._reage_a_t1_feature_ids_tambem`) monkeypatcha `T1_FEATURE_IDS`
+    pra provar a metade da união que este parametrize sozinho não
+    consegue isolar."""
     t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
     features_calls: list[dict[str, Any]] = []
 
@@ -342,6 +360,38 @@ def test_build_modeling_frame_ativa_d07f_futures_positioning_so_quando_pedido(
 
     assert features_calls[0]["load_taker_imbalance_1m"] is expected_d07f
     assert features_calls[0]["load_futures_positioning"] is expected_futures_positioning
+
+
+def test_build_modeling_frame_ativa_futures_positioning_reage_a_t1_feature_ids_tambem(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regressão de `AG-365`: a checagem original só olhava
+    `extra_feature_ids`, nunca `T1_FEATURE_IDS` -- ficou errada em
+    silêncio quando `AG-362` (mesmo dia) promoveu features de
+    futures-positioning DIRETO pra `T1_FEATURE_IDS`. Monkeypatcha
+    `T1_FEATURE_IDS` pra um conjunto mínimo que NÃO precisa de nenhuma
+    das duas fontes, com `extra_feature_ids=()` -- prova que a resposta
+    é de fato à UNIÃO (varia com T1, não só com extra), não um valor
+    travado por coincidência da composição atual."""
+    t0 = datetime(2024, 1, 1, 0, 15, tzinfo=UTC)
+    features_calls: list[dict[str, Any]] = []
+
+    def _fake_build_t1_features(symbol: str, start: str, end: str, **kwargs: Any) -> pl.DataFrame:
+        features_calls.append(kwargs)
+        return _one_row_bar_table(t0)
+
+    monkeypatch.setattr(cpcv, "load_labels_v1", lambda *a, **k: _one_row_labels(t0))
+    monkeypatch.setattr(features_build, "build_t1_features", _fake_build_t1_features)
+    monkeypatch.setattr(
+        regime_build, "build_regimes", lambda symbol, start, end, **kwargs: _one_row_regime(t0)
+    )
+    monkeypatch.setattr(features_build, "T1_FEATURE_IDS", ("A05_ret_vol_norm_4",))
+    _noop_verify_config_hash(monkeypatch)
+
+    ds.build_modeling_frame()
+
+    assert features_calls[0]["load_taker_imbalance_1m"] is False
+    assert features_calls[0]["load_futures_positioning"] is False
 
 
 def test_build_modeling_frame_regime_nunca_pede_d07f_futures_positioning(

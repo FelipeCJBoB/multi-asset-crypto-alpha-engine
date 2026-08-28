@@ -337,16 +337,35 @@ def build_modeling_frame(
     # "auditar se o LightGBM está pronto pra receber a totalidade das
     # features"): `build_t1_features` carregava D07f (klines_1m bruto,
     # ~15-96x mais linhas que bars_15m) e as 4 colunas de metrics de
-    # E08f-E18f por padrão, SEM NENHUM caller aqui pedir -- T1_FEATURE_
-    # IDS (só 7) não usa nenhuma das duas, e ambas eram descartadas no
-    # join_cols abaixo a menos que extra_feature_ids as pedisse
-    # explicitamente. Custo de IO real pago à toa em TODO treino real
-    # do Alpha. Agora só ativado quando extra_feature_ids de fato
-    # referencia uma dessas colunas -- análise pós-hoc que precise
-    # delas continua funcionando (`extra_feature_ids=(...)`), o
-    # caminho comum (só T1_FEATURE_IDS) não paga o custo.
-    _needs_d07f = "D07f_taker_imbalance_1m_agg" in extra_feature_ids
-    _needs_futures_positioning = bool(set(extra_feature_ids) & _FUTURES_POSITIONING_FEATURE_IDS)
+    # E08f-E18f por padrão, SEM NENHUM caller aqui pedir -- na época,
+    # T1_FEATURE_IDS (só 7) não usava nenhuma das duas, e ambas eram
+    # descartadas no join_cols abaixo a menos que extra_feature_ids as
+    # pedisse explicitamente. Custo de IO real pago à toa em TODO treino
+    # real do Alpha.
+    #
+    # **[CORRIGIDO 2026-08-27, `AG-365`]** A checagem original só olhava
+    # `extra_feature_ids`, nunca `T1_FEATURE_IDS` -- premissa segura
+    # SÓ enquanto o conjunto T1 fosse fixo e nunca precisasse dessas
+    # fontes. `AG-362` (mesmo dia, sessão paralela) promoveu 15 features
+    # L3→T1 -- `T1_FEATURE_IDS` foi de 7 pra 22, incluindo
+    # `E14f_toptrader_ls_ratio`/`E16f_global_ls_ratio` (2 das 6 de
+    # `_FUTURES_POSITIONING_FEATURE_IDS`) DIRETO no vetor base, não via
+    # `extra_feature_ids`. A checagem antiga continuou devolvendo `False`
+    # incondicionalmente pra essas duas -- `load_futures_positioning`
+    # nunca ligava, as 2 colunas chegavam 100% nulas em produção,
+    # `side_subset` (`AG-300`) barrava com `DeadFeatureColumnError` no
+    # primeiro fold real (`--all-combinations`, BTCUSDT/R1, achado ao
+    # vivo rodando o retreino canônico). Mesma classe de furo que `AG-300`
+    # já tinha fechado uma vez em `side_subset` (conjunto checado
+    # diferente do conjunto de fato treinado) -- aqui reaparece um nível
+    # acima, na decisão de QUAL DADO CARREGAR, não em qual coluna filtrar.
+    # Correção estrutural, não pontual: a checagem agora olha a UNIÃO de
+    # `T1_FEATURE_IDS` (sempre ativo) com `extra_feature_ids` (opcional),
+    # nunca só o segundo -- autocorrige se T1 mudar de composição de novo
+    # no futuro, sem exigir sincronização manual entre os dois módulos.
+    _active_feature_ids = frozenset(features_build.T1_FEATURE_IDS) | frozenset(extra_feature_ids)
+    _needs_d07f = "D07f_taker_imbalance_1m_agg" in _active_feature_ids
+    _needs_futures_positioning = bool(_active_feature_ids & _FUTURES_POSITIONING_FEATURE_IDS)
 
     features_df = features_build.build_t1_features(
         symbol,
