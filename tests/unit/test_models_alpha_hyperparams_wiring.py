@@ -29,11 +29,11 @@ from src.validation.cpcv import CPCVSplit
 # ============================================================================
 
 
-def test_lgbm_hyperparams_defaults_reproduzem_o_legado_de_fit_side_model() -> None:
-    """Os defaults do dataclass têm que bater exatamente com os defaults
-    que `fit_side_model` já usava sozinha antes deste wiring -- é o que
-    garante bit-exactness pra todo `LGBMHyperparams(...)` construído sem
-    setar os três campos novos."""
+def test_lgbm_hyperparams_defaults_sao_os_promovidos_2026_08_27() -> None:
+    """**[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** -- os defaults do
+    dataclass, construído sem setar os três campos, já são o comportamento
+    CORRIGIDO (`AG-324`/`AG-325`/`AG-326`), não mais o legado. Ver
+    `CLAUDE.md` "Diretrizes de comportamento"."""
     hyper = alpha.LGBMHyperparams(
         max_depth=3,
         n_estimators=100,  # noqa: magic-number
@@ -45,27 +45,50 @@ def test_lgbm_hyperparams_defaults_reproduzem_o_legado_de_fit_side_model() -> No
         min_child_samples=20,  # noqa: magic-number
         num_leaves=3,
     )
-    assert hyper.regularization_basis == alpha.REGULARIZATION_FIXED
-    assert hyper.early_stopping_mode == alpha.EARLY_STOPPING_FIXED
+    assert hyper.regularization_basis == alpha.REGULARIZATION_ESS_DERIVED
+    assert hyper.early_stopping_mode == alpha.EARLY_STOPPING_THREE_WAY
+    # campo do dataclass -- from_constants() é quem resolve o valor real
     assert hyper.ic_magnitude_floor_k is None
 
 
-def test_from_constants_default_nao_le_ic_magnitude_floor_k() -> None:
-    """`AG-324`: promover `ic_magnitude_floor_k` a default muda `monotone_
-    constraints` de produção -- exige sign-off explícito do Manager, nunca
-    automático só porque a constante existe em `constants.yaml`."""
+def test_lgbm_hyperparams_construcao_explicita_reproduz_o_legado() -> None:
+    """O legado continua acessível, só deixou de ser o default -- quem
+    quiser reproduzir o comportamento anterior passa os três campos
+    explicitamente."""
+    hyper = alpha.LGBMHyperparams(
+        max_depth=3,
+        n_estimators=100,  # noqa: magic-number
+        learning_rate=0.1,  # noqa: magic-number
+        subsample=0.8,  # noqa: magic-number
+        subsample_freq=1,
+        feature_fraction=1.0,
+        lambda_l2=0.0,
+        min_child_samples=20,  # noqa: magic-number
+        num_leaves=3,
+        regularization_basis=alpha.REGULARIZATION_FIXED,
+        early_stopping_mode=alpha.EARLY_STOPPING_FIXED,
+    )
+    assert hyper.regularization_basis == alpha.REGULARIZATION_FIXED
+    assert hyper.early_stopping_mode == alpha.EARLY_STOPPING_FIXED
+
+
+def test_from_constants_default_le_ic_magnitude_floor_k() -> None:
+    """**[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** -- `from_constants()`
+    sem argumento nenhum já lê `alpha_monotonic_ic_magnitude_floor_k` de
+    `constants.yaml` (`AG-324`: medido, `|mean_ic| ~= 0,007` contra
+    `SE ~= 0,005`), fechando a desconexão constante↔código sem precisar de
+    `use_ic_magnitude_floor=True` explícito."""
     hyper = alpha.LGBMHyperparams.from_constants()
-    assert hyper.ic_magnitude_floor_k is None
-    assert hyper.regularization_basis == alpha.REGULARIZATION_FIXED
-    assert hyper.early_stopping_mode == alpha.EARLY_STOPPING_FIXED
-
-
-def test_from_constants_use_ic_magnitude_floor_le_a_constante_real() -> None:
-    """Fecha a desconexão de `AG-324`: `alpha_monotonic_ic_magnitude_
-    floor_k` (`constants.yaml`, `value: 2.0`) passa a ser lida por nome em
-    algum ponto real do código -- só quando pedido explicitamente."""
-    hyper = alpha.LGBMHyperparams.from_constants(use_ic_magnitude_floor=True)
     assert hyper.ic_magnitude_floor_k == pytest.approx(2.0)  # noqa: magic-number -- valor real de constants.yaml, não invenção do teste
+    assert hyper.regularization_basis == alpha.REGULARIZATION_ESS_DERIVED
+    assert hyper.early_stopping_mode == alpha.EARLY_STOPPING_THREE_WAY
+
+
+def test_from_constants_use_ic_magnitude_floor_false_reproduz_o_legado() -> None:
+    """O legado (`ic_magnitude_floor_k=None`, sinal+consistência puro)
+    continua acessível -- só deixou de ser o default."""
+    hyper = alpha.LGBMHyperparams.from_constants(use_ic_magnitude_floor=False)
+    assert hyper.ic_magnitude_floor_k is None
 
 
 # ============================================================================
@@ -147,12 +170,12 @@ def test_run_fold_repassa_os_tres_campos_de_hyper_pros_dois_lados(
         assert side_kwargs["ic_magnitude_floor_k"] == pytest.approx(3.0)  # noqa: magic-number
 
 
-def test_run_fold_default_hyper_repassa_os_defaults_legados(
+def test_run_fold_default_hyper_repassa_os_defaults_promovidos(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bit-exactness: `hyper` sem os três campos setados chega em
-    `fit_side_model` com os MESMOS defaults de sempre -- nenhum caller
-    existente muda de comportamento."""
+    """**[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** -- `hyper` sem os
+    três campos setados (`LGBMHyperparams.from_constants()`) já chega em
+    `fit_side_model` com o comportamento CORRIGIDO, não mais o legado."""
     df, split = _minimal_df_and_split()
     calls: list[dict[str, Any]] = []
 
@@ -181,6 +204,6 @@ def test_run_fold_default_hyper_repassa_os_defaults_legados(
         )
 
     for side_kwargs in calls:
-        assert side_kwargs["regularization_basis"] == alpha.REGULARIZATION_FIXED
-        assert side_kwargs["early_stopping_mode"] == alpha.EARLY_STOPPING_FIXED
-        assert side_kwargs["ic_magnitude_floor_k"] is None
+        assert side_kwargs["regularization_basis"] == alpha.REGULARIZATION_ESS_DERIVED
+        assert side_kwargs["early_stopping_mode"] == alpha.EARLY_STOPPING_THREE_WAY
+        assert side_kwargs["ic_magnitude_floor_k"] == pytest.approx(2.0)  # noqa: magic-number -- valor real de constants.yaml

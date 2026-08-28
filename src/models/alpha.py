@@ -205,26 +205,36 @@ class LGBMHyperparams:
     # teto apesar de implementados/testados (`AG-324`/`AG-325`/`AG-326`).
     # Entram aqui (não como parâmetro novo em cada uma das 3 camadas)
     # porque `hyper` já atravessa as 3 intacto via `hyper=hyper` -- mesmo
-    # padrão dos dois campos ESS acima. Defaults idênticos aos que `fit_
-    # side_model` já usa hoje (`REGULARIZATION_FIXED`/`EARLY_STOPPING_
-    # FIXED`/`None`) -- bit-exato pra todo caller que constrói `LGBMHyper
-    # params` sem setar os três.
-    regularization_basis: str = REGULARIZATION_FIXED
-    early_stopping_mode: str = EARLY_STOPPING_FIXED
+    # padrão dos dois campos ESS acima.
+    # **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27, decisão do Manager --
+    # ver CLAUDE.md "Diretrizes de comportamento"]** Os 3 já tinham decisão
+    # tomada e mecanismo testado (`AG-324`/`AG-325`/`AG-326`) -- ficavam só
+    # esperando alguém "ligar". `REGULARIZATION_ESS_DERIVED` é hoje
+    # documentado como INERTE sob `num_leaves ∈ {2,3}` (`AG-325` -- promover
+    # não muda nenhum artefato real até `max_depth` subir, decisão
+    # separada). `EARLY_STOPPING_THREE_WAY` é diferente em natureza: nunca
+    # foi exercitado contra dado real (só RNG sintético em `tests/unit/
+    # test_models_alpha_item6_8_9.py`) -- promover o default É a 1ª corrida
+    # real, não uma decisão já validada por medição prévia.
+    regularization_basis: str = REGULARIZATION_ESS_DERIVED
+    early_stopping_mode: str = EARLY_STOPPING_THREE_WAY
     ic_magnitude_floor_k: float | None = None
 
     @classmethod
-    def from_constants(cls, *, use_ic_magnitude_floor: bool = False) -> LGBMHyperparams:
-        """`use_ic_magnitude_floor` (`AG-324`) -- default `False` preserva
-        `ic_magnitude_floor_k=None` bit-exato (o campo do dataclass), apesar
-        de `alpha_monotonic_ic_magnitude_floor_k` já existir em `constants.
-        yaml` (`AG-324`, valor `2.0`). Promover pra `True` muda `monotone_
-        constraints` de produção -- exige sign-off explícito do Manager
-        (`AG-324`: "promover é decisão do Manager"), nunca automático só
-        por a constante existir. `regularization_basis`/`early_stopping_
-        mode` não têm constante equivalente (são seletor de modo de código,
-        não valor medido) -- ficam no default do campo do dataclass sem
-        precisar de parâmetro aqui."""
+    def from_constants(cls, *, use_ic_magnitude_floor: bool = True) -> LGBMHyperparams:
+        """`use_ic_magnitude_floor` (`AG-324`) -- **[PROMOVIDO A DEFAULT DE
+        PRODUÇÃO 2026-08-27, decisão do Manager]** `True` (default) lê
+        `alpha_monotonic_ic_magnitude_floor_k` (`constants.yaml`, valor
+        `2,0`, medido: `|mean_ic| ~= 0,007` contra `SE ~= 0,005` -- ~1,4
+        desvio-padrão, indistinguível de ruído sob esse piso) e passa a
+        exigir magnitude, não só sinal+consistência, pra uma feature manter
+        `monotone_constraints`. `False` preserva o comportamento anterior
+        (`ic_magnitude_floor_k=None`, sinal+consistência puro) -- passe
+        explicitamente se quiser reproduzir o legado. `regularization_
+        basis`/`early_stopping_mode` não têm constante equivalente (são
+        seletor de modo de código, não valor medido) -- ficam no default do
+        campo do dataclass (`REGULARIZATION_ESS_DERIVED`/`EARLY_STOPPING_
+        THREE_WAY`, também promovidos) sem precisar de parâmetro aqui."""
         return cls(
             max_depth=int(load_constant("alpha_lgbm_max_depth")),
             n_estimators=int(load_constant("alpha_lgbm_n_estimators")),
@@ -1841,7 +1851,7 @@ def run_fold(
     class_balance_basis: str = CLASS_BALANCE_COUNT,
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
-    enforce_r2: bool = False,
+    enforce_r2: bool = True,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -1873,8 +1883,9 @@ def run_fold(
     `AG-296`/`AG-297`) -- repassado sem alteração pro `side_subset` do
     TREINO (`train_long`/`train_short` abaixo; o lado de TESTE não muda --
     filtrar R2 fora do treino não deveria alterar o que o modelo é
-    avaliado contra). Default `False` preserva bit-exato. Ver docstring de
-    `src.models.dataset.side_subset` pro que `True` faz.
+    avaliado contra). **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]**
+    `False` reproduz o comportamento anterior. Ver docstring de `src.
+    models.dataset.side_subset` pro que `True` faz.
 
     `regularization_basis`/`ic_magnitude_floor_k`/`early_stopping_mode`
     (2026-08-27, handoff de `src/models/`, item 1, `AG-324`/`AG-325`/
@@ -1884,9 +1895,9 @@ def run_fold(
     já atravessa `run_layer1_sprint` -> `run_all_folds` -> `run_fold`
     intacto, então os 3 chegam aqui de graça, sem precisar de mais um
     parâmetro nesta assinatura (mesmo padrão dos campos ESS, já em `hyper`
-    há mais tempo). Default de cada campo em `LGBMHyperparams` reproduz o
-    que `fit_side_model` já fazia sozinha antes deste wiring -- bit-exato
-    pra todo caller que constrói `hyper` sem setar os três."""
+    há mais tempo). **[PROMOVIDOS A DEFAULT DE PRODUÇÃO 2026-08-27]** os
+    defaults de `LGBMHyperparams` já não são mais os legados -- ver
+    docstring da classe."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -2126,7 +2137,7 @@ def run_all_folds(
     class_balance_basis: str = CLASS_BALANCE_COUNT,
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
-    enforce_r2: bool = False,
+    enforce_r2: bool = True,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -2147,8 +2158,9 @@ def run_all_folds(
 
     `enforce_r2` (achado real 2026-08-27, handoff de `src/models/`,
     `AG-296`/`AG-297`) -- repassado sem alteração pra `run_fold` em cada
-    split. Default `False` preserva bit-exato. Ver docstring de `src.
-    models.dataset.side_subset` pro que `True` faz."""
+    split. **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** `False`
+    reproduz o comportamento anterior. Ver docstring de `src.models.
+    dataset.side_subset` pro que `True` faz."""
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 

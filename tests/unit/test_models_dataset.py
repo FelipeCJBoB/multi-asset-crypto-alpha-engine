@@ -634,6 +634,16 @@ def _synthetic_frame() -> pl.DataFrame:
     cols: dict[str, object] = {
         "side": pl.Series([1, 1, 1, -1, -1, -1], dtype=pl.Int8),
         "barrier_hit": pl.Series(["TP", "SL", "NOFILL", "TP", "TIME", "NOFILL"]),
+        # `enforce_r2=True` é o default de produção desde 2026-08-27 (ver
+        # CLAUDE.md "Diretrizes de comportamento") -- colunas de custo/
+        # preço folgadas o bastante pra NUNCA violar R2 (stop=5%, custo
+        # total=2bps, ratio=0,0004 << cost_stop_ratio_max=0,20), pra estes
+        # testes continuarem provando SÓ NOFILL/warmup, não R2.
+        "entry_price_limit": pl.Series([100.0] * n, dtype=pl.Float64),
+        "sl_price": pl.Series([95.0] * n, dtype=pl.Float64),
+        "cost_entry_bps": pl.Series([1.0] * n, dtype=pl.Float64),
+        "cost_exit_bps": pl.Series([1.0] * n, dtype=pl.Float64),
+        "funding_bps": pl.Series([0.0] * n, dtype=pl.Float64),
     }
     for i, fid in enumerate(T1_FEATURE_IDS):
         # última linha do lado long (índice 2, que já é NOFILL) e uma
@@ -775,10 +785,19 @@ def _r2_frame_uma_ok_uma_viola() -> pl.DataFrame:
     )
 
 
-def test_side_subset_enforce_r2_false_e_default_preserva_bit_exato() -> None:
+def test_side_subset_enforce_r2_false_reproduz_o_comportamento_anterior() -> None:
+    df = _r2_frame_uma_ok_uma_viola()
+    out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS, enforce_r2=False)
+    assert out.height == 2  # nenhuma linha filtrada por R2 -- explícito, não default
+
+
+def test_side_subset_enforce_r2_default_e_true_e_de_fato_filtra() -> None:
+    """**[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** -- sem passar
+    `enforce_r2` nenhum, o comportamento já é o corrigido (filtra a linha
+    que viola R2), não o legado."""
     df = _r2_frame_uma_ok_uma_viola()
     out = ds.side_subset(df, side=1, feature_ids=T1_FEATURE_IDS)
-    assert out.height == 2  # nenhuma linha filtrada por R2 -- default é False
+    assert out.height == 1
 
 
 def test_side_subset_enforce_r2_true_filtra_a_linha_que_viola() -> None:

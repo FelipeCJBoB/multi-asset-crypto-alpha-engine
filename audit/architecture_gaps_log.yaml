@@ -17973,6 +17973,13 @@ entries:
       binding. Este addendum fecha "o mecanismo nao tem onde plugar" --
       nao fecha, nem tenta fechar, "o mecanismo deve bloquear um trial
       de verdade". Essa decisao continua do Manager.
+    addendum_2026-08-27_soft_flag_promovido_a_default: >
+      `use_economic_gate` PROMOVIDO A DEFAULT `True` 2026-08-27, decisao
+      do Manager (`CLAUDE.md` "Diretrizes de comportamento") -- a
+      natureza SOFT-FLAG (so loga/reporta, nunca bloqueia) NAO mudou,
+      so deixou de exigir uma segunda ordem explicita pra ativar o log.
+      "O gate deve ser binding" continua exatamente a mesma decisao em
+      aberto de sempre, nao tocada por esta promocao.
 
   - id: AG-261
     date: "2026-08-25"
@@ -19969,6 +19976,25 @@ entries:
       testes unitarios sem IO). A REMEDIACAO (filtrar? penalizar? decidir
       por linha via ADR-005 §13.16.4?) e decisao do Manager e NAO foi
       tomada aqui.
+    addendum_2026-08-27_remediacao_construida_e_promovida: >
+      REMEDIACAO CONSTRUIDA E PROMOVIDA A DEFAULT 2026-08-27 (handoff de
+      `src/models/`, achado 2 -- decisao do Manager de FILTRAR, a
+      primeira das opcoes que este status deixava em aberto).
+      `src.models.dataset.side_subset` ganhou `enforce_r2: bool` --
+      filtra as linhas que violam R2 ANTES do warmup, usando a MESMA
+      formula do censo (nucleo compartilhado extraido pra `src.labels.
+      r2_admissibility`, ja que `models/` nao pode importar `analysis/`).
+      Achado colateral fechado no mesmo movimento: `src.labels.weights.
+      apply_weights` (`sample_weight = uniqueness * |ret_net|`) dava peso
+      MAIOR justamente as linhas que violam R2 (mais catastroficas) --
+      linhas filtradas nunca chegam nesse calculo. `enforce_r2`
+      PROMOVIDO A DEFAULT `True` no mesmo dia (`CLAUDE.md` "Diretrizes de
+      comportamento") -- `False` reproduz o comportamento anterior (R2
+      nunca filtrada). 8+ testes novos (`tests/unit/test_models_dataset.
+      py`, `tests/unit/test_labels_r2_admissibility.py`). "Penalizar" (a
+      2a opcao que este status citava) NAO foi construida -- filtrar ja
+      resolve o achado colateral do sample_weight, decisao do Manager foi
+      seguir so com essa.
 
   - id: AG-297
     renumbered_from: "AG-296 -- deslocada junto com AG-296 (ver renumbered_from de la)"
@@ -21603,6 +21629,16 @@ entries:
       -- exatamente como este status ja dizia. 5 testes novos
       (`tests/unit/test_models_alpha_hyperparams_wiring.py`), suite
       completa e 7 checks mecanicos limpos.
+    addendum_2026-08-27_promovido_a_default: >
+      PROMOVIDO A DEFAULT DE PRODUCAO 2026-08-27 (decisao do Manager --
+      ver `CLAUDE.md` "Diretrizes de comportamento", reversao da
+      convencao "corrigir com default=legado + flag opt-in", que fazia
+      correcoes ja decididas ficarem inertes ate uma segunda ordem
+      explicita). `LGBMHyperparams.from_constants(use_ic_magnitude_
+      floor=True)` -- novo default -- le `alpha_monotonic_ic_magnitude_
+      floor_k` sem precisar de argumento explicito. `False` continua
+      disponivel pra quem quiser reproduzir o legado. 2 testes
+      atualizados/novos pra refletir o novo default.
 
   - id: AG-325
     date: "2026-08-26"
@@ -21651,6 +21687,14 @@ entries:
       `LGBMHyperparams`, `run_fold` repassa `hyper.regularization_basis`
       pros dois `fit_side_model`). Politica continua NAO promovida a
       default de producao aqui tambem.
+    addendum_2026-08-27_promovido_a_default: >
+      PROMOVIDO A DEFAULT DE PRODUCAO 2026-08-27 -- ver `AG-324::
+      addendum_2026-08-27_promovido_a_default` (mesmo wiring, mesma
+      decisao do Manager). `regularization_basis` default vira
+      `REGULARIZATION_ESS_DERIVED` -- SEM efeito real hoje, ja
+      documentado como INERTE sob `num_leaves ∈ {2,3}` (`§13.9.3`);
+      promover o default so muda algo de verdade se `max_depth` subir
+      (decisao separada, nao tomada).
 
   - id: AG-326
     date: "2026-08-26"
@@ -21702,6 +21746,18 @@ entries:
       (`calib_split_mode=TEMPORAL_PURGED` ja e default de producao
       desde `AG-209`); a 1a corrida real contra dado real E o proprio
       ato de expor o parametro e rodar uma vez, nao feita aqui.
+    addendum_2026-08-27_promovido_a_default: >
+      PROMOVIDO A DEFAULT DE PRODUCAO 2026-08-27, decisao do Manager (ver
+      `AG-324::addendum_2026-08-27_promovido_a_default`, `CLAUDE.md`
+      "Diretrizes de comportamento"). **Ressalva registrada explicitamente,
+      diferente em NATUREZA dos outros 2 itens do wiring unificado:**
+      `EARLY_STOPPING_THREE_WAY` nunca foi exercitado contra dado real,
+      só RNG sintetico (`tests/unit/test_models_alpha_item6_8_9.py`) --
+      promover o default aqui nao e "aplicar uma correcao ja validada",
+      e a 1a exposicao real do caminho de codigo (o proprio addendum
+      anterior ja dizia isso). Se a proxima corrida real esbarrar em algo
+      inesperado (ex. comportamento do `eval_X`/`eval_y` do LightGBM em
+      escala real), e exposicao de primeira vez, nao regressao.
 
   - id: AG-327
     date: "2026-08-26"
@@ -22879,3 +22935,11 @@ entries:
       tomada aqui -- maior, separada, do Manager). `b1_random_entry`
       continua sendo a comparação enviesada até essa decisão acontecer;
       este achado registra a inconsistência, não a resolve por completo.
+    addendum_2026-08-27_promovido_a_default: >
+      `run_b1_refinement` PROMOVIDO A DEFAULT `True` 2026-08-27, decisão
+      do Manager (`CLAUDE.md` "Diretrizes de comportamento"). Não muda o
+      status acima: `b1_random_entry` (a comparação enviesada) continua
+      sendo o que roda por padrão em `report["baselines"]["b1_random_
+      entry"]` -- só as 4 funções de refinamento passaram a rodar
+      JUNTO por padrão também, não substituindo nada. Decisão de
+      substituir `b1_random_entry` continua em aberto, do Manager.

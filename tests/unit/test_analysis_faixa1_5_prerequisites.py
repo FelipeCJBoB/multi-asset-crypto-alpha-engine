@@ -321,6 +321,15 @@ def test_e02f_in_fold_roda_um_fold_pequeno_sem_levantar(monkeypatch: pytest.Monk
         "barrier_hit": ["TP"] * n,
         "ret_net": rng.normal(size=n),
         "regime": (["R1", "R2", "R3", "R4"] * (n // 4 + 1))[:n],
+        # `enforce_r2=True` é o default de produção desde 2026-08-27 (ver
+        # CLAUDE.md "Diretrizes de comportamento") -- colunas folgadas o
+        # bastante pra nunca violar R2 (stop=5%, custo total=2bps), pra
+        # este teste continuar provando só e02f_in_fold, não R2.
+        "entry_price_limit": [100.0] * n,
+        "sl_price": [95.0] * n,
+        "cost_entry_bps": [1.0] * n,
+        "cost_exit_bps": [1.0] * n,
+        "funding_bps": [0.0] * n,
     }
     for fid in T1_FEATURE_IDS:
         columns[fid] = rng.normal(size=n)

@@ -5139,3 +5139,62 @@ completo, custo/complexidade desproporcional ao risco — mecanismo já
 testado nas 4 funções individuais, mypy strict limpo na wiring nova, <!-- check-sprint-log: skip -->
 mesmo padrão de cobertura já aceito pra `evaluate_cost_derived_lambda`
 neste mesmo arquivo).
+
+## 2026-08-27 — mudança de política: correção pedida pelo Manager vira default imediatamente, não atrás de flag opt-in <!-- check-sprint-log: skip -->
+
+**Achado do Manager, direto**: reportei os 6 itens do handoff anterior <!-- check-sprint-log: skip -->
+como "corrigidos", mas nenhum estava de fato ativo em produção — todos
+opt-in, `default=False`/legado, esperando uma SEGUNDA ordem explícita
+pra "ligar". Na visão do Manager, isso é atraso, não proteção: "se eu já
+dei a ordem pra codar a mudança no arquivo de produção, não tenho que
+mandar run com a atualização". Motor em fase de descoberta de edge —
+mudar constantemente é o trabalho, `default=legado` não é a régua de
+segurança que deveria ser aqui.
+
+**`CLAUDE.md` ganhou regra nova em "Diretrizes de comportamento"**:
+correção/mudança pedida pelo Manager é o comportamento DEFAULT a partir
+do commit que a aplica, nunca atrás de flag opt-in preservando legado
+"por via das dúvidas". Duas exceções explícitas, registradas na própria
+regra: (1) quando a MEDIÇÃO recomenda contra a mudança (ex. `tau_policy` <!-- check-sprint-log: skip -->
+não foi flipado por causa de `AG-251` medir 2x de dispersão — isso é <!-- check-sprint-log: skip -->
+"discorde do Manager quando o dado discordar", situação diferente); (2) <!-- check-sprint-log: skip -->
+comparação lado-a-lado pedida explicitamente pelo próprio Manager.
+
+**6 defaults flipados nesta rodada** (os do handoff de `src/models/`
+anterior — todos já implementados/testados, só esperando o switch):
+`side_subset`/`run_fold`/`run_all_folds::enforce_r2` (`AG-296`/`AG-297`)
+`False→True`; `LGBMHyperparams.regularization_basis` (`AG-325`)
+`FIXED→ESS_DERIVED` (documentado como INERTE sob `num_leaves` atual,
+zero efeito real hoje); `LGBMHyperparams.early_stopping_mode` (`AG-326`)
+`FIXED→THREE_WAY` — **ressalva registrada explicitamente**: este é
+diferente em natureza dos outros 5, nunca foi exercitado contra dado <!-- check-sprint-log: skip -->
+real (só RNG sintético), promover o default É a 1ª exposição real, não <!-- check-sprint-log: skip -->
+aplicação de uma correção já validada por medição prévia;
+`LGBMHyperparams.from_constants(use_ic_magnitude_floor=...)`
+(`AG-324`) `False→True`; `run_layer1_sprint::use_economic_gate` <!-- check-sprint-log: skip -->
+(`AG-260`) `False→True` (natureza soft-flag não muda, só o log deixa de <!-- check-sprint-log: skip -->
+precisar de segunda ordem); `run_layer1_sprint::run_b1_refinement` <!-- check-sprint-log: skip -->
+(`AG-360`) `False→True`. <!-- check-sprint-log: skip -->
+
+**Escopo desta rodada, explícito**: só os 6 flags de HOJE. Flags <!-- check-sprint-log: skip -->
+pré-existentes de sessões anteriores (`tau_policy`, `calib_split_mode`,
+`class_balance_basis`, `use_hyperparams_by_combo`, `use_geometry_by_
+combo`) NÃO foram tocados nesta rodada — não por hesitação, mas porque
+não tenho contexto completo sobre cada um pra vouch pela correção (e
+pelo menos `tau_policy` tem medição real recomendando NÃO flipar,
+`AG-251`). Se o Manager quiser essa varredura também, é um pedido à <!-- check-sprint-log: skip -->
+parte.
+
+10 arquivos de teste ajustados pra refletir os novos defaults (fixtures
+sintéticas sem colunas de R2 precisaram ganhar `entry_price_limit`/
+`sl_price`/`cost_entry_bps`/`cost_exit_bps`/`funding_bps` pra não
+quebrar quando `enforce_r2=True` passou a ser o caminho padrão; testes
+que afirmavam "default reproduz o legado" viraram "default é o
+corrigido", com um teste explícito novo pra quem quiser o legado via
+`False`). Suíte completa (`-m "not slow"`) ao final: **2481 passed, 2
+skipped, 2 xfailed, 0 failed** (mesmo total de antes — a mudança é de
+DEFAULT, não de comportamento novo, os testes só passaram a exercitar o
+caminho que antes era só o opt-in). 7 checks mecânicos limpos. `AG-260`/
+`AG-296`/`AG-324`/`AG-325`/`AG-326`/`AG-360` ganharam addendum
+registrando a promoção — nenhuma entrada fechada foi editada, só
+addendum novo (append-only).

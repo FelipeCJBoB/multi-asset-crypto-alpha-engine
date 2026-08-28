@@ -486,7 +486,7 @@ def build_modeling_frame(
 
 
 def side_subset(
-    frame: pl.DataFrame, *, side: int, feature_ids: tuple[str, ...], enforce_r2: bool = False
+    frame: pl.DataFrame, *, side: int, feature_ids: tuple[str, ...], enforce_r2: bool = True
 ) -> pl.DataFrame:
     """Sub-população de modelagem do Alpha (M_long `side=1` / M_short
     `side=-1`, B18): descarta NOFILL (§3.7 — ruído de execução, não sinal,
@@ -523,9 +523,10 @@ def side_subset(
     census` (núcleo compartilhado em `src.labels.r2_admissibility`,
     `models/` não pode importar `analysis/`) -- a linha nunca chega no
     cálculo de `sample_weight` rio abaixo, porque nunca entra no treino.
-    Tornar isto o default de produção é decisão do Manager, não tomada
-    aqui -- mesmo padrão opt-in de `use_geometry_by_combo`/`use_
-    hyperparams_by_combo`/`use_economic_gate`.
+    **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27, decisão do Manager --
+    ver `CLAUDE.md` "Diretrizes de comportamento"]** `False` reproduz o
+    comportamento anterior (R2 nunca filtrada) -- passe explicitamente se
+    quiser isso.
 
     **`funding_bps` incluído no custo (`AG-249` Problema A, 2026-08-27,
     achado da sessão paralela).** O custo passado pra `cost_fraction`

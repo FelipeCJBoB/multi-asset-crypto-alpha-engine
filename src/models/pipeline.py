@@ -693,23 +693,25 @@ def run_layer1_sprint(
     # `N_lifetime` novo (é nulo de permutação, não busca de hiperparâmetro).
     permutation_null_replicas: int = 0,
     # AG-260 ponto (b) / `/redesign_workflow` 2026-08-27 -- orquestrador de
-    # trial SOFT-FLAG. Default `False` preserva bit-exato todo call site/
-    # teste existente (nenhuma chave nova no report, nenhum log novo).
-    # `True` só LOGA/REPORTA (`report["economic_gate"]`) -- nunca bloqueia
-    # nem pula treino. Tornar isto binding é decisão FUTURA do Manager,
-    # não tomada aqui (B23).
-    use_economic_gate: bool = False,
+    # trial SOFT-FLAG (só LOGA/REPORTA, `report["economic_gate"]` -- nunca
+    # bloqueia nem pula treino; tornar isto BINDING continua decisão
+    # FUTURA do Manager, essa parte NÃO promovida). **[Default promovido a
+    # `True` 2026-08-27, decisão do Manager -- CLAUDE.md "Diretrizes de
+    # comportamento"]** `False` reproduz o comportamento anterior (nenhum
+    # log novo, nenhuma chave nova no report).
+    use_economic_gate: bool = True,
     # 2026-08-27 (handoff de `src/models/`, item 3) -- diagnóstico opt-in,
-    # mesmo padrão de `persist_model_bundles` acima. Default `False`
-    # preserva bit-exato todo call site/teste existente. `True` roda as 4
+    # mesmo padrão de `persist_model_bundles` acima. `True` roda as 4
     # funções de refinamento estatístico do B1 (já implementadas/testadas,
     # órfãs até aqui) e escreve `report["baselines"]["b1_refinement"]` --
     # NÃO substitui `report["baselines"]["b1_random_entry"]` (schema
     # inalterado, decisão de substituir é maior/separada, do Manager).
     # Custo medido: ~19s (histórico, n_seeds=1000, dataset menor) contra
     # ~700-960s de runtime total por combo -- baixo o bastante pra não
-    # precisar de flag de performance própria.
-    run_b1_refinement: bool = False,
+    # precisar de flag de performance própria. **[Default promovido a
+    # `True` 2026-08-27, decisão do Manager]** `False` reproduz o
+    # comportamento anterior.
+    run_b1_refinement: bool = True,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -1682,7 +1684,7 @@ def run_layer1_sprint_all_combinations(
     device_type: str = "cpu",
     feature_ids: tuple[str, ...] | None = None,
     use_hyperparams_by_combo: bool = False,
-    use_economic_gate: bool = False,
+    use_economic_gate: bool = True,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
@@ -1733,9 +1735,10 @@ def run_layer1_sprint_all_combinations(
 
     `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow`
     2026-08-27) -- repassado IDÊNTICO às 15 chamadas de `run_layer1_
-    sprint`, mesmo padrão de `feature_ids` acima. Default `False`
-    preserva bit-exato. Ver a docstring de `run_layer1_sprint` pro que
-    `True` de fato faz (soft-flag, nunca bloqueia)."""
+    sprint`, mesmo padrão de `feature_ids` acima. **[Default promovido a
+    `True` 2026-08-27]** `False` reproduz o comportamento anterior. Ver a
+    docstring de `run_layer1_sprint` pro que `True` de fato faz (soft-
+    flag, nunca bloqueia)."""
     reports: dict[tuple[str, str], dict[str, Any]] = {}
     for symbol in symbols:
         for resolution_id in resolutions:
