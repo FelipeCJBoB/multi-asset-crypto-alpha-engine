@@ -3692,3 +3692,43 @@ entries:
     lifetime: quantos trials estas 3 rodadas valem (1, 3 ou 45) e
     leitura em aberto, decisao do Manager -- nao logado automaticamente
     (ver docstring de run_layer1_sprint_all_combinations).
+- id_curto: ag362_canonical_retrain_22features_hyperparam_on_2026-08-28
+  data: '2026-08-28'
+  fase: 'Retreino canonico de producao pedido pelo Manager -- 22 features (pos-AG-362) + use_hyperparams_by_combo=True, artefatos imutaveis em artifacts/predictions_alpha/'
+  feature_ou_filtro: 'T1_FEATURE_IDS completo (22) + config/alpha_hyperparams_by_combo.yaml por combinacao (10 de 15 calibradas, 5 caem no global)'
+  symbol: 'todos os 5 (BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT)'
+  tf: 'R1/R2/R3 (15 combinacoes)'
+  janela: historico completo por combinacao
+  lado: ambos
+  regime: n/a
+  metrica_tipo: 'n_permanence_pass / n_eff_factors_t1_mediano / n_combinacoes_com_camada0_sharpe_indefinido / auc_gap_b4_vs_percentil_b1'
+  metrica_valor: 0
+  n: 15
+  status: MEDIDO
+  fonte_arquivo: experiments/alpha_layer1_report_{symbol}_{resolution}.json (15 arquivos)
+  fonte_secao: layer1_vs_layer0 / hhi / baselines.b1_random_entry / baselines.b4_feature_shuffle / decomposition_pnl
+  nota: >
+    Mesmo resultado agregado ja medido em 22_features_hyperparam_on da
+    comparacao pareada (cross-validado: 0/15 permanence_pass, 22/75
+    caminhos vencidos, 10/27 lados no gate economico) -- este retreino
+    escreveu de fato o artefato canonico imutavel (artifacts/predictions_
+    alpha/), a comparacao anterior usou scratch=True. Achado NOVO desta
+    extracao completa (nao capturado na comparacao pareada, que so
+    guardava um resumo compacto): N_eff efetivo mediano = 2,86 de 22
+    features (HHI) -- 8 das 15 combinacoes concentram o gain em menos de
+    2,5 fatores efetivos mesmo com o vetor de 22 disponivel, contradizendo
+    a premissa de "captura de interacao ampla" que motivou AG-362. 5 das
+    15 (BNBUSDT_R1/R2, BTCUSDT_R1, ETHUSDT_R1, XRPUSDT_R1) tem Sharpe da
+    Camada 0 indefinido -- gate de permanencia nao interpretavel nessas,
+    e coincidem com Delta AUC (B4, real vs. features embaralhadas) alto
+    (0,12-0,15, discriminacao real) mas percentil B1 (Sharpe do Alpha vs.
+    1000 nulos de entrada aleatoria) proximo de 0 -- separacao de classe
+    boa nao convertendo em Sharpe positivo, hipotese aberta de calibracao
+    de tau ou threshold, nao necessariamente falta de sinal. 3 bugs reais
+    adicionais encontrados rodando o retreino de verdade (nao a
+    comparacao exploratoria): celulas ja escritas canonicamente por uma
+    tentativa anterior (mesma sessao) precisaram ser identificadas e
+    puladas em vez de re-treinadas (config/alpha_hyperparams_by_combo.yaml
+    define exatamente quais 5 das 15 colidem por design -- resolvem pro
+    mesmo hiperparametro global que a rodada 'off' ja tinha escrito).
+    Artefato visual publicado com as 15 combinacoes e todas as metricas.

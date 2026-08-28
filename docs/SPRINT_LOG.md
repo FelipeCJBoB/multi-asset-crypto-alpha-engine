@@ -5322,3 +5322,43 @@ revisar os 45 resultados lado a lado. `N_lifetime`: quantos trials estas <!-- ch
 3 rodadas valem (1, 3 ou 45) é leitura em aberto, decisão do Manager — <!-- check-sprint-log: skip -->
 não logado automaticamente (`run_layer1_sprint_all_combinations` <!-- check-sprint-log: skip -->
 documenta a mesma leitura em aberto desde `D-14`).
+
+### 2026-08-28 — Retreino canônico real: 22 features + `use_hyperparams_by_combo=True`, 15/15 escritos em `artifacts/predictions_alpha/` <!-- check-sprint-log: skip -->
+
+Pedido do Manager: rodar o retreino canônico de produção com o desenho
+vencedor da comparação 1v2 (`on`). CLI `--all-combinations` ganhou
+`--use-hyperparams-by-combo` e passou a sempre injetar `feature_ids=
+T1_FEATURE_IDS` explícito (fecha `AG-366` no caminho de produção,
+`src/models/pipeline.py`, commit `3c43350`).
+
+3 combinações (`BTCUSDT/R1,R2,R3`) já tinham artefato canônico completo
+de uma tentativa anterior desta mesma sessão que crashou em `ETHUSDT/R1`
+(`AG-368`, antes de `scratch` existir) — reaproveitadas, não retreinadas
+de novo. Célula sem calibração própria em `config/alpha_hyperparams_by_
+combo.yaml` (5 das 15: `SOLUSDT_R2/R3`, `ETHUSDT_R1`, `XRPUSDT_R2/R3`)
+resolve pro MESMO hiperparâmetro global que `off` já tinha escrito
+canonicamente — `write_artifact` recusou reescrever (comportamento
+correto, imutabilidade). As 7 combinações restantes (`BNBUSDT` completo,
+`ETHUSDT_R2/R3`, `SOLUSDT_R1`, `XRPUSDT_R1`) treinadas de fato agora.
+15/15 relatórios completos persistidos em `experiments/alpha_layer1_
+report_{symbol}_{resolution}.json` (5 deles + os 3 de `BTCUSDT`
+recompostos via `scratch=True` só pra recapturar o JSON de métricas — a
+predição canônica já existia e não foi reescrita).
+
+Resultado agregado (idêntico ao já medido em `22_features_hyperparam_ <!-- check-sprint-log: skip -->
+on` da comparação pareada, cross-validado): **0/15 permanence_pass**, <!-- check-sprint-log: skip -->
+22/75 caminhos vencidos, 10/27 lados no gate econômico. Achado NOVO <!-- check-sprint-log: skip -->
+desta rodada (métricas completas nunca extraídas antes): `N_eff`
+efetivo mediano = 2,86 de 22 features — 8/15 combinações concentram o
+gain em menos de 2,5 fatores efetivos, mesmo com o vetor de 22
+disponível. 5/15 combinações têm Sharpe da Camada 0 indefinido
+(`BNBUSDT_R1/R2`, `BTCUSDT_R1`, `ETHUSDT_R1`, `XRPUSDT_R1`) — nessas o
+gate de permanência não é interpretável, e coincidem com AUC real vs.
+embaralhado (B4) alta (features discriminam) mas percentil B1 baixo
+(pior que ruído aleatório em Sharpe) — separação de classe não convertendo
+em lucro, possível problema de calibração de `tau`, não de sinal.
+
+Artefato visual publicado com as 15 combinações e todas as métricas <!-- check-sprint-log: skip -->
+(permanência, gate econômico, B1/B4, HHI/N_eff, decomposição de PnL). <!-- check-sprint-log: skip -->
+`N_lifetime` deste retreino: mesma leitura em aberto da rodada anterior,
+não logada automaticamente.
