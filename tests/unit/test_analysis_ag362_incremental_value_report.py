@@ -5,6 +5,7 @@ em `test_models_pipeline*.py`), só `summarize_combinations`/
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from src.analysis import ag362_incremental_value_report as mod
@@ -39,6 +40,29 @@ def test_summarize_combinations_conta_permanence_pass_e_soma_delta_sharpe() -> N
     assert summary["delta_sharpe_mean_avg"] == (0.10 - 0.05 + 0.20) / 3
     assert set(summary["per_combo"]) == {"BTCUSDT_R1", "BTCUSDT_R2", "ETHUSDT_R1"}
     assert summary["per_combo"]["BTCUSDT_R1"]["permanence_pass"] is True
+
+
+def test_summarize_combinations_delta_sharpe_nan_nao_contamina_o_agregado() -> None:
+    """Regressão de `AG-367`: medido ao vivo em `stage=off` -- 5/15
+    combinações tinham `delta_sharpe_mean=NaN` (Sharpe indefinido em
+    algum caminho), e a soma ingênua propagava `NaN` pro agregado
+    inteiro (`nan + x == nan`), que `orjson` depois serializa como
+    `null` -- destruindo o critério de desempate silenciosamente."""
+    reports = {
+        ("BTCUSDT", "R1"): _report(
+            permanence_pass=False, delta_sharpe_mean=math.nan, n_better=0
+        ),
+        ("ETHUSDT", "R1"): _report(permanence_pass=True, delta_sharpe_mean=0.30, n_better=4),
+        ("SOLUSDT", "R1"): _report(permanence_pass=False, delta_sharpe_mean=0.10, n_better=2),
+    }
+
+    summary = mod.summarize_combinations(reports)
+
+    assert summary["n_combinations"] == 3
+    assert summary["n_delta_sharpe_non_finite"] == 1
+    assert summary["delta_sharpe_mean_sum"] == 0.40
+    assert summary["delta_sharpe_mean_avg"] == 0.20
+    assert summary["per_combo"]["BTCUSDT_R1"]["delta_sharpe_mean"] is None
 
 
 def test_summarize_combinations_vazio_nao_divide_por_zero() -> None:

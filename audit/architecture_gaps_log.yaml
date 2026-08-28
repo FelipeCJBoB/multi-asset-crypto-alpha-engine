@@ -23207,3 +23207,49 @@ entries:
       explícito por convenção documentada. Não decidido aqui (mudança de
       hash de TODOS os artefatos já persistidos, fora do escopo desta
       medição pontual).
+
+  - id: AG-367
+    date: "2026-08-27"
+    file: "src/analysis/ag362_incremental_value_report.py::summarize_combinations"
+    related_file: "src/models/pipeline.py::_mean_finite, experiments/ag362_incremental_value_stage_off.json"
+    found_by: >-
+      Claude -- inspeção manual do resultado de `stage=off` (5/15
+      combinações com `delta_sharpe_mean_sum`/`avg` = `None` no relatório
+      persistido, ao ler de volta pra decidir o vencedor 1/2).
+    gap: >
+      `delta_sharpe_mean` (`layer1_vs_layer0.delta_sharpe_mean`, `pipeline.
+      py`) pode ser `NaN` quando o Sharpe de algum caminho do CPCV fica
+      indefinido (medido: 5/15 combinações de `stage=off`, todas com
+      `n_paths_camada1_supera_camada0=0`). `summarize_combinations` somava
+      `delta_sharpe_mean` ingenuamente (`sum += x`) sem filtrar não-
+      finitos -- `nan + qualquer_coisa == nan` propaga pro agregado
+      INTEIRO da rodada (`delta_sharpe_mean_sum`/`_avg`), e
+      `write_report_atomic` (via `orjson`) serializa `NaN` como `null` no
+      disco, então o valor quebrado nem aparece como `NaN` explícito ao
+      reler -- vira silenciosamente `None`. Mesma classe de problema que
+      `_mean_finite` (`src/models/pipeline.py`) já existe pra resolver em
+      outros agregados do mesmo relatório -- não reusada aqui porque este
+      módulo é novo (`AG-362`-adjacent) e replicou a soma ingênua.
+    severity: "medio -- nao corrompe o resultado por combinacao (per_combo continua correto), mas destroi o criterio de desempate entre stage=off/on (pick_better_hyperparam_config) se qualquer rodada tiver >=1 combinacao com delta_sharpe NaN"
+    layer: "analysis (agregação de relatório, não o treino em si)"
+    consequence: >
+      Sem correção, o desempate de `pick_better_hyperparam_config` (usado
+      só quando `n_permanence_pass` empata entre `off`/`on`) compararia
+      `None >= None`/`None >= float`, levantando `TypeError` no estágio
+      `base` -- descoberto ANTES de chegar nesse ponto porque a inspeção
+      manual do relatório de `off` já mostrava o agregado quebrado.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO 2026-08-27, mesma sessão, antes do estágio `on` rodar.
+      `summarize_combinations` agora filtra `math.isfinite(delta_sharpe)`
+      antes de somar/tirar média (mesma disciplina de `_mean_finite`), e
+      reporta `n_delta_sharpe_non_finite` explicitamente no agregado (não
+      esconde a contagem de combinações descartadas). `per_combo`
+      individual também passa a gravar `None` explícito (não um `NaN` que
+      seria mascarado por `orjson` de qualquer forma) pra quem ler o JSON
+      direto entender a diferença entre "zero" e "indefinido". 1 teste
+      novo (`test_summarize_combinations_delta_sharpe_nan_nao_contamina_
+      o_agregado`), 7/7 verdes. `experiments/ag362_incremental_value_
+      stage_off.json` já persistido reprocessado in-place com a lógica
+      corrigida (sem re-treinar): `delta_sharpe_mean_sum=5,765`,
+      `n_delta_sharpe_non_finite=5`.

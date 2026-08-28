@@ -62,6 +62,7 @@ Referências: `audit/architecture_gaps_log.yaml::AG-362`;
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -112,10 +113,20 @@ def summarize_combinations(
 ) -> dict[str, Any]:
     """Núcleo puro -- agrega as N combinações de UMA rodada pelos campos
     que `run_layer1_sprint` já pré-registra em `layer1_vs_layer0`, não
-    inventa métrica nova."""
+    inventa métrica nova.
+
+    AG-367 -- `delta_sharpe_mean` pode ser `NaN` (medido: 5/15 combinações
+    de `stage=off`, todas com `n_paths_camada1_supera_camada0=0`, Sharpe
+    indefinido em algum caminho). Soma ingênua propaga `NaN` pra TODO o
+    agregado (`nan + x == nan`), e `write_report_atomic`/`orjson`
+    serializa `NaN` como `null` -- o agregado inteiro vira `None` no
+    disco, silenciosamente. Mesma disciplina de `_mean_finite` (`src/
+    models/pipeline.py`, já usada pra este exato problema alhures): filtra
+    não-finitos ANTES de agregar, e REPORTA quantos foram descartados (não
+    esconde -- CLAUDE.md 'nunca silencie sem achar a causa raiz')."""
     n_permanence_pass = 0
-    delta_sharpe_sum = 0.0
-    delta_sharpe_n = 0
+    delta_sharpe_finite: list[float] = []
+    n_delta_sharpe_non_finite = 0
     per_combo: dict[str, dict[str, Any]] = {}
     for (symbol, resolution_id), report in reports.items():
         block = report["layer1_vs_layer0"]
@@ -123,20 +134,25 @@ def summarize_combinations(
         delta_sharpe = float(block["delta_sharpe_mean"])
         if permanence_pass:
             n_permanence_pass += 1
-        delta_sharpe_sum += delta_sharpe
-        delta_sharpe_n += 1
+        if math.isfinite(delta_sharpe):
+            delta_sharpe_finite.append(delta_sharpe)
+        else:
+            n_delta_sharpe_non_finite += 1
         per_combo[f"{symbol}_{resolution_id}"] = {
             "permanence_pass": permanence_pass,
             "n_paths_camada1_supera_camada0": block["n_paths_camada1_supera_camada0"],
             "n_paths_total": block["n_paths_total"],
-            "delta_sharpe_mean": delta_sharpe,
+            "delta_sharpe_mean": delta_sharpe if math.isfinite(delta_sharpe) else None,
             "economic_gate": report.get("economic_gate"),
         }
     return {
         "n_combinations": len(reports),
         "n_permanence_pass": n_permanence_pass,
-        "delta_sharpe_mean_sum": delta_sharpe_sum,
-        "delta_sharpe_mean_avg": delta_sharpe_sum / delta_sharpe_n if delta_sharpe_n else 0.0,
+        "n_delta_sharpe_non_finite": n_delta_sharpe_non_finite,
+        "delta_sharpe_mean_sum": sum(delta_sharpe_finite) if delta_sharpe_finite else 0.0,
+        "delta_sharpe_mean_avg": (
+            sum(delta_sharpe_finite) / len(delta_sharpe_finite) if delta_sharpe_finite else 0.0
+        ),
         "per_combo": per_combo,
     }
 
