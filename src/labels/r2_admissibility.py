@@ -49,9 +49,35 @@ BoolArray = NDArray[np.bool_]
 _BPS_PER_UNIT: Final[float] = 10_000.0  # noqa: magic-number -- conversão de unidade
 
 
-def cost_fraction(cost_entry_bps: FloatArray, cost_exit_bps: FloatArray) -> FloatArray:
-    """Custo de ida e volta como fração do nocional (bps -> fração)."""
-    return np.asarray((cost_entry_bps + cost_exit_bps) / _BPS_PER_UNIT, dtype=np.float64)
+def cost_fraction(
+    cost_entry_bps: FloatArray,
+    cost_exit_bps: FloatArray,
+    funding_bps: FloatArray | None = None,
+) -> FloatArray:
+    """Custo de ida e volta como fração do nocional (bps -> fração).
+
+    `funding_bps` (opcional, `AG-249` Problema A, 2026-08-27 — achado do
+    mapa de arquitetura "custo por célula, não global"): quando passado,
+    soma `abs(funding_bps)` ao custo. Definição operacional nova, exigida
+    pra um gate travado a priori (R2): funding entra pelo VALOR ABSOLUTO,
+    não com sinal. `ret_net` (`src.labels.triple_barrier`) já usa o valor
+    COM sinal — correto pra P&L real, onde funding a favor reduz o custo
+    pago de fato. R2 pergunta algo diferente: "o trade consegue pagar o
+    custo no PIOR caso" — contar funding a favor como desconto inverteria
+    essa pergunta pra "no caso médio", que não é o que R2 mede. Antes
+    desta mudança, `cost_fraction` (já wireada em `side_subset`,
+    `AG-296`/`AG-297`) ignorava `funding_bps` apesar da coluna já existir
+    em `labels.parquet`, na mesma linha — mesmo buraco que `AG-249`
+    descreve pro lado ex-ante, mais barato de fechar aqui porque R2 já
+    opera por LINHA.
+
+    `funding_bps=None` (default) preserva bit-exato todo caller
+    existente — nenhum caller hoje soma funding; passar a coluna é opção
+    explícita de quem chama, não comportamento automático."""
+    total_bps = cost_entry_bps + cost_exit_bps
+    if funding_bps is not None:
+        total_bps = total_bps + np.abs(funding_bps)
+    return np.asarray(total_bps / _BPS_PER_UNIT, dtype=np.float64)  # noqa: unguarded-ratio — _BPS_PER_UNIT é Final=10_000.0, estruturalmente > 0
 
 
 def stop_fraction(entry_price: FloatArray, sl_price: FloatArray) -> FloatArray:

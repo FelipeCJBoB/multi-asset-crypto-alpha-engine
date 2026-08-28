@@ -28,6 +28,31 @@ def test_cost_fraction_soma_entry_e_exit_e_converte_bps_para_fracao() -> None:
     assert out == pytest.approx(np.full(2, 0.001))
 
 
+def test_cost_fraction_funding_bps_none_preserva_bit_exato() -> None:
+    """`AG-249` Problema A -- default `funding_bps=None` não pode mudar
+    nenhum resultado de caller existente (ex. `side_subset`)."""
+    sem_funding = r2.cost_fraction(np.full(2, 5.0), np.full(2, 5.0))
+    com_none_explicito = r2.cost_fraction(np.full(2, 5.0), np.full(2, 5.0), None)
+    assert sem_funding == pytest.approx(com_none_explicito)
+
+
+def test_cost_fraction_funding_bps_positivo_soma_ao_custo() -> None:
+    out = r2.cost_fraction(np.full(1, 5.0), np.full(1, 5.0), np.full(1, 2.0))
+    # 5 + 5 + |2| = 12 bps -> 0.0012
+    assert out == pytest.approx(np.full(1, 0.0012))
+
+
+def test_cost_fraction_funding_bps_negativo_soma_valor_absoluto_nao_subtrai() -> None:
+    """Definição operacional de `AG-249` Problema A: funding entra por
+    `abs()`, nunca com sinal -- funding "a favor" (negativo aqui) não pode
+    reduzir o custo abaixo do que `cost_entry_bps + cost_exit_bps` já é."""
+    sem_funding = r2.cost_fraction(np.full(1, 5.0), np.full(1, 5.0))
+    com_funding_negativo = r2.cost_fraction(np.full(1, 5.0), np.full(1, 5.0), np.full(1, -2.0))
+    assert com_funding_negativo > sem_funding
+    # 5 + 5 + |-2| = 12 bps -> 0.0012, igual ao caso positivo
+    assert com_funding_negativo == pytest.approx(np.full(1, 0.0012))
+
+
 def test_stop_fraction_e_o_modulo_da_distancia_relativa() -> None:
     out = r2.stop_fraction(_ENTRY, _SL)
     assert out == pytest.approx(np.full(3, 0.01))
