@@ -207,12 +207,23 @@ def _run_full_vector_stage(
     # camada0, hash `4979fd69f0a404d2` já existia). Passar o vetor
     # explícito garante um `config_hash` que reflete de fato o que foi
     # treinado, distinto de qualquer rodada anterior sob outra composição.
+    #
+    # AG-368 -- mesmo com `feature_ids` explícito, `stage=on` pode colidir
+    # com `stage=off` numa célula SEM calibração própria em `config/
+    # alpha_hyperparams_by_combo.yaml` (5 das 15): `hyper` resolve pra
+    # `None` de qualquer forma, então o `config_hash` fica idêntico ao de
+    # `off` -- medido ao vivo (ETHUSDT/R1, hash `2237b15540119fd0`).
+    # `scratch=True` é o mecanismo já existente de `write_artifact`
+    # (ADR-001, "iteração exploratória") pra exatamente essa situação --
+    # nenhuma das 3 rodadas deste módulo é o retreino canônico, então
+    # nenhuma delas deve escrever no caminho imutável de produção.
     reports_raw = run_layer1_sprint_all_combinations(
         symbols=symbols,
         resolutions=resolutions,
         vol_estimator_id=vol_estimator_id,
         feature_ids=features_build.T1_FEATURE_IDS,
         use_hyperparams_by_combo=use_hyperparams_by_combo,
+        scratch=True,
     )
     summary = summarize_combinations(reports_raw)
     elapsed_s = time.monotonic() - t_start
@@ -291,6 +302,7 @@ def run_stage(
         vol_estimator_id=vol_estimator_id,
         feature_ids=ORIGINAL_T1_FEATURE_IDS,
         use_hyperparams_by_combo=winner_use_hyperparams_by_combo,
+        scratch=True,  # AG-368 -- mesma razão dos 2 estágios anteriores
     )
     summary_base = summarize_combinations(reports_base)
     elapsed_s = time.monotonic() - t_start

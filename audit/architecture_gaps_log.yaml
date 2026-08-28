@@ -23253,3 +23253,48 @@ entries:
       stage_off.json` já persistido reprocessado in-place com a lógica
       corrigida (sem re-treinar): `delta_sharpe_mean_sum=5,765`,
       `n_delta_sharpe_non_finite=5`.
+
+  - id: AG-368
+    date: "2026-08-27"
+    file: "src/models/pipeline.py::run_layer1_sprint, write_predictions_versioned, run_layer1_sprint_all_combinations"
+    related_file: "src/io/artifact.py::write_artifact (scratch), src/analysis/ag362_incremental_value_report.py"
+    found_by: >-
+      Claude -- crash ao vivo na 4a combinação real de `stage=on`
+      (ETHUSDT/R1, escrita de predictions de camada0_baseline_v1),
+      mesmo após a mitigação de `AG-366` (`feature_ids` explícito).
+    gap: >
+      `AG-366` corrigiu a colisão de `config_hash` entre uma rodada
+      pré-`AG-362` e uma pós, mas não cobre colisão ENTRE as próprias 3
+      rodadas deste módulo: `use_hyperparams_by_combo=True` ("stage=on")
+      só muda `hyper` (e portanto o `config_hash`, via `alpha_train_
+      config_extra`) quando a célula TEM entrada própria em `config/
+      alpha_hyperparams_by_combo.yaml` -- 10 das 15 (`ADR-005` §13.12).
+      Nas outras 5 (ex. ETHUSDT/R1), `load_hyperparams_by_combo` retorna
+      `None` e o treino cai no MESMO hiperparâmetro global que
+      `stage=off` já usou -- `config_hash` idêntico entre as duas
+      rodadas, `ArtifactExistsError` na 2ª escrita. Medido ao vivo: hash
+      `2237b15540119fd0` já existia (escrito por `stage=off` minutos
+      antes).
+    severity: "medio -- write_artifact recusa em vez de sobrescrever silenciosamente (protecao funcionando certo); bloqueia qualquer comparacao exploratoria que rode a MESMA celula sob 2 designs que podem resolver pro mesmo hiperparametro efetivo"
+    layer: "models/io (mesma fronteira de AG-366, causa correlata mas distinta)"
+    consequence: >
+      Bloqueia `ag362_incremental_value_report.py` (e qualquer medição
+      futura do mesmo formato -- comparar N designs sobre as mesmas 15
+      células) sempre que 2 designs resolverem pro mesmo `config_hash`
+      efetivo em pelo menos 1 célula, mesmo com `feature_ids` explícito.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO 2026-08-27 -- `scratch: bool = False` adicionado a
+      `write_predictions_versioned`/`run_layer1_sprint`/`run_layer1_
+      sprint_all_combinations`, repassado até `io_artifact.write_artifact`
+      (mecanismo que já existia pra exatamente isso, ADR-001 "iteração
+      exploratória" -- só não estava threaded pelas 3 funções acima).
+      Default `False` preserva bit-exato todo call site/teste existente
+      (predições de produção continuam imutáveis; `write_artifact` sob
+      `scratch=False` continua recusando colisão). `ag362_incremental_
+      value_report.py` passa `scratch=True` nas 3 rodadas -- nenhuma das
+      3 é o retreino canônico, todas são medição exploratória por
+      desenho. 2 testes novos em `test_models_pipeline_paths.py` (default
+      `False` propaga, `True` propaga) -- 50/50 verdes na suíte de
+      `pipeline.py`/`pipeline_paths.py`. `banned_patterns`/`ruff`/`mypy`
+      limpos.

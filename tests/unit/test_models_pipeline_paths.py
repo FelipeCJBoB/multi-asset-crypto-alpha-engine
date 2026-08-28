@@ -482,6 +482,7 @@ def _run_layer1_sprint_capturing_versioned_predictions_calls(
         resolution_id: str,
         model_id: str,
         config: dict[str, Any],
+        scratch: bool = False,
     ) -> Any:
         calls.append(
             {
@@ -490,6 +491,7 @@ def _run_layer1_sprint_capturing_versioned_predictions_calls(
                 "resolution_id": resolution_id,
                 "model_id": model_id,
                 "config": config,
+                "scratch": scratch,
             }
         )
         if len(calls) >= 2:
@@ -523,12 +525,32 @@ def test_run_layer1_sprint_resolution_id_propaga_ate_write_predictions_versioned
     assert calls[0]["model_id"] == pipeline.MODEL_ID_CAMADA1
     assert calls[0]["config"] == {"variant": alpha.VARIANT_CAMADA1}
     assert calls[0]["root"] == pipeline.ARTIFACT_ROOT
+    assert calls[0]["scratch"] is False
 
     assert calls[1]["symbol"] == pipeline.SYMBOL
     assert calls[1]["resolution_id"] == "R1"
     assert calls[1]["model_id"] == pipeline.MODEL_ID_CAMADA0
     assert calls[1]["config"] == {"variant": alpha.VARIANT_CAMADA0}
     assert calls[1]["root"] == pipeline.ARTIFACT_ROOT
+    assert calls[1]["scratch"] is False
+
+
+def test_run_layer1_sprint_scratch_true_propaga_ate_write_predictions_versioned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regressão de `AG-368` (2026-08-27): `scratch=True` precisa chegar
+    ATÉ `write_predictions_versioned` pras DUAS variantes -- achado ao
+    vivo rodando `ag362_incremental_value_report.py` (2 designs
+    diferentes resolvendo pro mesmo `config_hash` numa célula sem
+    calibração própria em `alpha_hyperparams_by_combo.yaml`,
+    `ArtifactExistsError` na 2ª escrita; `scratch=True` é o mecanismo já
+    existente de `write_artifact`/ADR-001 pra iteração exploratória)."""
+    calls = _run_layer1_sprint_capturing_versioned_predictions_calls(
+        monkeypatch, resolution_id="R1", scratch=True
+    )
+
+    assert calls[0]["scratch"] is True
+    assert calls[1]["scratch"] is True
 
 
 def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:

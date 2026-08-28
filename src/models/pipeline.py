@@ -145,6 +145,7 @@ def write_predictions_versioned(
     resolution_id: str,
     model_id: str,
     config: dict[str, Any],
+    scratch: bool = False,
 ) -> io_artifact.ArtifactManifest:
     """D-06 (docs/alpha_model_design_doc_2026-08-22.md, fecha `AG-154`) --
     escreve `predictions.parquet` via `src.io.artifact.write_artifact`
@@ -178,6 +179,7 @@ def write_predictions_versioned(
         config={"model_id": model_id, **config},
         schema=alpha.PREDICTIONS_ARTIFACT_SCHEMA,
         producer_entrypoint="src.models.pipeline.run_layer1_sprint",
+        scratch=scratch,
     )
 
 
@@ -712,6 +714,17 @@ def run_layer1_sprint(
     # `True` 2026-08-27, decisão do Manager]** `False` reproduz o
     # comportamento anterior.
     run_b1_refinement: bool = True,
+    # AG-368 (2026-08-27) -- achado ao vivo rodando medição comparativa
+    # (`src/analysis/ag362_incremental_value_report.py`): 2 designs
+    # diferentes (`use_hyperparams_by_combo` on/off) podem resolver pro
+    # MESMO `hyper` efetivo numa célula sem calibração própria em
+    # `config/alpha_hyperparams_by_combo.yaml` (5 das 15) -- mesmo
+    # `config_hash`, `ArtifactExistsError` na 2ª escrita. `write_artifact`
+    # (`src/io/artifact.py`) já resolve exatamente isso via `scratch=True`
+    # ("iteração exploratória", ADR-001) -- só não estava threaded até
+    # aqui. Default `False` preserva bit-exato todo call site/teste
+    # existente (predições de produção continuam imutáveis).
+    scratch: bool = False,
 ) -> dict[str, Any]:
     """`device_type` (D-18, `docs/alpha_model_design_doc_2026-08-22.md`).
     **[CORRIGIDO 2026-08-24, AG-201]** default era `"cuda"` -- GPU
@@ -1121,6 +1134,7 @@ def run_layer1_sprint(
             resolution_id=resolution_id,
             model_id=model_id_camada1,
             config={"variant": alpha.VARIANT_CAMADA1, **alpha_train_config_extra},
+            scratch=scratch,
         )
         write_predictions_versioned(
             preds_c0,
@@ -1129,6 +1143,7 @@ def run_layer1_sprint(
             resolution_id=resolution_id,
             model_id=model_id_camada0,
             config={"variant": alpha.VARIANT_CAMADA0, **alpha_train_config_extra},
+            scratch=scratch,
         )
     else:
         # tf=None (legado, caminho plano) ou tf explícito sob grade de
@@ -1720,6 +1735,7 @@ def run_layer1_sprint_all_combinations(
     feature_ids: tuple[str, ...] | None = None,
     use_hyperparams_by_combo: bool = False,
     use_economic_gate: bool = True,
+    scratch: bool = False,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
@@ -1773,7 +1789,16 @@ def run_layer1_sprint_all_combinations(
     sprint`, mesmo padrão de `feature_ids` acima. **[Default promovido a
     `True` 2026-08-27]** `False` reproduz o comportamento anterior. Ver a
     docstring de `run_layer1_sprint` pro que `True` de fato faz (soft-
-    flag, nunca bloqueia)."""
+    flag, nunca bloqueia).
+
+    `scratch` (`AG-368`, 2026-08-27) -- repassado IDÊNTICO às 15 chamadas.
+    `False` (default) preserva o caminho de sempre: predições em
+    `artifacts/predictions_alpha/`, imutáveis, `ArtifactExistsError` se o
+    `config_hash` já existir. `True` escreve em `artifacts/scratch/
+    predictions_alpha/` e permite sobrescrita -- use quando chamar esta
+    função mais de uma vez para o MESMO `symbol`/`resolution_id` com
+    designs que podem resolver pro mesmo `config_hash` (ex. comparação
+    exploratória, não retreino canônico)."""
     reports: dict[tuple[str, str], dict[str, Any]] = {}
     for symbol in symbols:
         for resolution_id in resolutions:
@@ -1807,6 +1832,7 @@ def run_layer1_sprint_all_combinations(
                 feature_ids=feature_ids,
                 hyper=hyper,
                 use_economic_gate=use_economic_gate,
+                scratch=scratch,
             )
             reports[(symbol, resolution_id)] = report
     logger.info(
