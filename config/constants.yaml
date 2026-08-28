@@ -610,7 +610,7 @@ atr_window_ms:
   review_by: sprint_6
 
 canonical_volatility_estimator:
-  value: "garman_klass_w20"
+  value: "parkinson_w20"
   provenance: MEASURED
   source: >
     M1 (PRD_V4_1.md §3.2, experiments/volatility_comparison_report.json,
@@ -670,10 +670,29 @@ canonical_volatility_estimator:
     -- não é bloqueio técnico, é sequenciamento deliberado. Ver
     `audit/architecture_gaps_log.yaml::AG-036::
     addendum_engenharia_pronta_producao_adiada_2026_08_17`.
+    ATUALIZAÇÃO 2026-08-27 (flip executado, decisão explícita do usuário) --
+    `value` muda pra `parkinson_w20`. Confirmado por grep direto (não
+    presumido) que os 8 relatórios reais de retreino existentes hoje
+    (`experiments/alpha_layer1_report_*_ag207_k62.json`) já gravam
+    `vol_estimator_id: "parkinson_w20"` -- o Label/Feature Engine já roda
+    sob Parkinson na prática, esta entrada só alcança o que o pipeline já
+    faz. Raio de impacto técnico do flip em si é ZERO: nenhum código lê
+    esta constante por nome (`load_constant("canonical_volatility_
+    estimator")` -- zero ocorrência em `src/`), é registro de decisão,
+    não switch (mesma natureza de `canonical_bar_type`).
+    RESSALVA ABERTA, não escondida: `quantization_tolerance` (`class: A`,
+    `DERIVED` de "meia unidade de arredondamento / N_req", ver entrada
+    própria) NÃO foi revalidada sob a geometria de stop medida com
+    Parkinson -- decisão do usuário foi flipar mesmo assim, ciente da
+    lacuna, em vez de esperar essa revalidação (que segue pendente,
+    rastreada na constante `quantization_tolerance`, não aqui). Retreino
+    real do Alpha sob R1/R2/R3 com Parkinson e o reprocessamento formal
+    de `labels/`/`features/`/`regime/` pros 5 símbolos seguem com a
+    sessão de ML, fora do escopo desta constante.
   class: A
   sweep_required: true
   sweep_range: ["atr_wilder_w20", "egarch_1_1", "har_rv", "parkinson_w20", "garman_klass_w20", "realized_vol_w20", "rogers_satchell_w20", "yang_zhang_w20"]
-  review_by: camada_1_M2_M3
+  review_by: "N/A -- decisão executada 2026-08-27; pendência remanescente é quantization_tolerance, tracked lá"
 
 canonical_bar_type:
   value: "dollar"
