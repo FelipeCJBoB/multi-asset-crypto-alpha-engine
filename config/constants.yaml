@@ -542,30 +542,43 @@ label_prefetch_p99_bar_duration_ms:
   sweep_required: false
 
 max_consecutive_bar_window_duration_ms:
-  value: 1020378446
+  value: 2183515929
   provenance: MEASURED
-  source: "MEDIDO 2026-08-23 -- tools/diagnostics/measure_max_
+  source: "REMEDIDO 2026-08-27 -- tools/diagnostics/measure_max_
     consecutive_bar_window_duration.py, rodado pelo usuário sobre dado
     real (5 símbolos x 3 resoluções, 15/15 combinações, dollar bars
-    persistidas). Saída completa:
+    persistidas, 0 combos pulados). Saída completa:
     experiments/max_consecutive_bar_window_duration.json. Valor = MÁXIMO
     real (não p99) da duração de qualquer janela de
-    src.features.build.max_feature_window_bars() (96 barras no momento
-    da medição) barras CONSECUTIVAS entre as 15 combinações --
-    SOLUSDT/R3, 1.020.378.446ms (283,44h). AG-159 (D-02): dedicado
+    src.features.build.max_feature_lookback_bars(T1_FEATURE_IDS +
+    SUPPORT_FEATURE_IDS) (288 barras no momento da medição,
+    E03f_funding_cum_3d) barras CONSECUTIVAS entre as 15 combinações --
+    SOLUSDT/R3, 2.183.515.929ms (606,53h). AG-159 (D-02): dedicado
     especificamente pra proteção de purge do CPCV
     (compute_max_feature_lookback_ms), separado de
     label_prefetch_p99_bar_duration_ms (que é p99, não max, calibrado
     pro modelo de custo DIFERENTE de prefetch -- sub-cobertura tolerável
-    lá, vazamento silencioso aqui, B02/B09). Reusar o proxy de prefetch
-    media 0,472x deste valor no pior caso -- confirmado seguro na
-    prática antes desta constante existir, mas por coincidência, não
-    garantia; esta constante fecha a garantia formalmente. **Válido
-    apenas para window_bars=96** -- se
-    max_feature_window_bars() mudar (nova feature no conjunto ativo com
-    lookback maior), esta constante fica desatualizada e precisa ser
-    remedida (compute_max_feature_lookback_ms emite warning se detectar
-    essa divergência, não falha silenciosamente)."
+    lá, vazamento silencioso aqui, B02/B09).
+    **Remediação de AG-298/AG-335 (item A da pauta §13, 2026-08-27):** o
+    valor anterior (1.020.378.446ms, medido 2026-08-23) foi calibrado
+    sob window_bars=96 -- ficou stale quando o vetor ativo real provou
+    exigir window_bars=69673 (C08_vol_pctile_rolling_1y,
+    lookback_bars: expanding removidas à parte não bastavam). Medir
+    diretamente sob 69673 barras deu resultado inviável (R2 chega a
+    ~4,2 anos; R3 não tem 69673 barras em NENHUM símbolo -- ver
+    experiments/max_consecutive_bar_window_duration.json histórico via
+    git). Resolução real: C08 saiu do conjunto ativo (mesma rodada,
+    layer: L4/aposentada, ver src/features/build.py) por ser
+    estruturalmente incompatível com purge por bar-count entre grades
+    de cadência diferente, não só por medir grande -- window_bars caiu
+    pra 288 (E03f_funding_cum_3d), remedido aqui sobre esse valor.
+    **Válido apenas para window_bars=288** -- se
+    max_feature_lookback_bars(T1_FEATURE_IDS + SUPPORT_FEATURE_IDS)
+    mudar (nova feature no conjunto ativo com lookback maior, ou
+    remoção que reduza o máximo), esta constante fica desatualizada e
+    precisa ser remedida (compute_max_feature_lookback_ms emite warning
+    se detectar divergência menor, falha alto se detectar sub-cobertura
+    -- não falha silenciosamente em nenhum dos dois casos)."
   class: C
   sweep_required: false
 

@@ -784,7 +784,29 @@ def run_layer1_sprint(
     `generate_splits` aceitar `symbol` (Fase 0, Bloqueador 2) pra validar
     grade dollar-bar.
 
-    `resolution_id`/`vol_estimator_id` (Fase 4, AG-030/036/065) —
+    `vol_estimator_id` **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27,
+    handoff do Manager]** — `None` já NÃO preserva mais ATRWilder
+    bit-exato aqui: resolve pra `constants.yaml::canonical_volatility_
+    estimator` (hoje `parkinson_w20`, decisão do Manager em
+    2026-08-17/2026-08-27). Achado real que motivou a correção: a
+    constante virou registro de decisão em `constants.yaml`, mas nenhum
+    código a lia por nome — rodar `--all-combinations` sem `--vol-
+    estimator-id parkinson_w20` explícito treinava com ATRWilder legado,
+    silenciosamente, revertendo a decisão de flip do mesmo commit que a
+    declarou (mesma classe de bug de `AG-272`, achada numa varredura
+    imediatamente posterior ao flip). O núcleo que de fato escolhe o
+    estimador (`features.build`, seleção de `c01_atr_20` vs.
+    `c01_atr_20_parkinson`) continua com `None`→ATRWilder intocado —
+    aqui na CASCA de produção é onde `None` deixa de significar "não
+    escolhido" e passa a significar "use o que `constants.yaml` decidiu",
+    resolvido em `vol_estimator_id_effective` antes de `build_modeling_
+    frame` ser chamado; os ~20 call sites de pesquisa/validação que
+    chamam `build_modeling_frame`/o núcleo direto continuam recebendo
+    ATRWilder sob `None`, sem mudança de comportamento pra eles. Passar
+    `vol_estimator_id` explícito (produção ou pesquisa) sempre vence,
+    igual antes.
+
+    `resolution_id` (Fase 4, AG-030/036/065) —
     `resolution_id=None` (default) preserva bit-exato: `tf_effective =
     tf ou "15m"`, `grade_id = tf_effective`, mesmo caminho de sempre.
     `resolution_id="R1"` propaga a MESMA grade pra `build_modeling_frame`
@@ -873,11 +895,21 @@ def run_layer1_sprint(
     # report_BTCUSDT_R1_ag207_k62.json). Ver docstring de
     # assert_no_defeito_construcao_in_active_set.
     features_build.assert_no_defeito_construcao_in_active_set(feature_ids_effective)
+    # `vol_estimator_id_effective` -- [PROMOVIDO A DEFAULT DE PRODUÇÃO
+    # 2026-08-27] `None` aqui na CASCA de produção resolve pra
+    # `constants.yaml::canonical_volatility_estimator`, não mais pro
+    # ATRWilder legado do núcleo (ver docstring acima). `build_modeling_
+    # frame` recebe sempre um valor explícito a partir daqui.
+    vol_estimator_id_effective = (
+        vol_estimator_id
+        if vol_estimator_id is not None
+        else str(load_constant("canonical_volatility_estimator"))
+    )
     mf = ds.build_modeling_frame(
         symbol=symbol,
         tf=tf_effective,
         resolution_id=resolution_id,
-        vol_estimator_id=vol_estimator_id,
+        vol_estimator_id=vol_estimator_id_effective,
         t0_start=t0_start,
         t0_end=t0_end,
         extra_feature_ids=extra_feature_ids,
@@ -1453,7 +1485,10 @@ def run_layer1_sprint(
         "tf": tf,
         "resolution_id": resolution_id,
         "labels_config_hash": labels_config_hash,
-        "vol_estimator_id": vol_estimator_id,
+        # valor EFETIVO (pós-resolução do default promovido), não o
+        # parâmetro cru -- senão o relatório mentiria "None" mesmo quando
+        # Parkinson foi de fato usado.
+        "vol_estimator_id": vol_estimator_id_effective,
         "model_id_camada1": model_id_camada1,
         "model_id_camada0": model_id_camada0,
         "t0_start_filter": t0_start,
@@ -1860,7 +1895,9 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             "--vol-estimator-id",
             default=None,
             help='estimador de volatilidade explicito (ex. "parkinson_w20") -- '
-            "default None preserva ATRWilder bit-exato",
+            "[PROMOVIDO 2026-08-27] sem a flag, run_layer1_sprint resolve "
+            "pra constants.yaml::canonical_volatility_estimator (hoje "
+            "parkinson_w20), NAO MAIS ATRWilder legado",
         )
         parser.add_argument(
             "--all-combinations",

@@ -5198,3 +5198,44 @@ caminho que antes era só o opt-in). 7 checks mecânicos limpos. `AG-260`/
 `AG-296`/`AG-324`/`AG-325`/`AG-326`/`AG-360` ganharam addendum
 registrando a promoção — nenhuma entrada fechada foi editada, só
 addendum novo (append-only).
+
+### 2026-08-27 — `vol_estimator_id` também corrigido, mesma política, achado pela varredura de produção <!-- check-sprint-log: skip -->
+
+Pedido do Manager: listar os comandos PowerShell do retreino canônico e
+varrer o repo por algo que tivesse passado despercebido. Achado real:
+`config/constants.yaml::canonical_volatility_estimator` foi flipado pra <!-- check-sprint-log: skip -->
+`parkinson_w20` no commit imediatamente anterior (`4f3b231`), mas
+nenhum código lia essa constante por nome — confirmado por grep, zero
+ocorrências antes desta correção. `run_layer1_sprint`/`run_layer1_
+sprint_all_combinations` (o caminho real de produção) tinham `vol_
+estimator_id: str | None = None` resolvendo, através de `build_modeling_
+frame` até `features/build.py`, sempre pro ATRWilder legado — rodar
+`--all-combinations` sem `--vol-estimator-id parkinson_w20` explícito
+revertia a decisão do próprio commit que a declarou, em silêncio.
+Mesmo padrão do handoff de ontem (`AG-272`), achado antes de qualquer
+comando real ter rodado.
+
+Aplicada a mesma política registrada na seção acima, no mesmo turno: <!-- check-sprint-log: skip -->
+correção vira DEFAULT, não flag opt-in. `run_layer1_sprint` agora
+resolve `vol_estimator_id_effective = vol_estimator_id ou load_
+constant("canonical_volatility_estimator")` antes de chamar `build_
+modeling_frame` — `None` deixa de significar "ATRWilder" e passa a
+significar "o que `constants.yaml` decidiu" (hoje `parkinson_w20`).
+`report["vol_estimator_id"]` grava o valor efetivo, não o parâmetro
+cru. Núcleo (`features/build.py`, seleção `c01_atr_20`/`c01_atr_20_
+parkinson`) INTOCADO de propósito — só a casca de produção mudou de
+significado; os ~20 call sites de pesquisa/validação que chamam `build_
+modeling_frame` direto continuam recebendo ATRWilder sob `None`, sem
+mudança de comportamento. Legado continua acessível via `vol_estimator_
+id="atr_wilder_w20"` explícito. <!-- check-sprint-log: skip -->
+
+`tests/unit/test_models_pipeline_paths.py` — 1 assertion existente
+atualizada pro novo default (`"parkinson_w20"`, valor real de `constants.
+yaml`, não invenção do teste), 1 teste novo prova que o legado explícito
+ainda vence sobre o default. `banned_patterns`/`ruff`/`mypy`/`check_
+constants_referenced` rodados, limpos. `AG-361` registrado (severidade <!-- check-sprint-log: skip -->
+alta — feature ATR-derivada é insumo de 4 features do vetor T1 ativo:
+`A05`/`A13`/`C02`/`E27f`). Comando canônico de produção já sai correto
+com `--vol-estimator-id parkinson_w20` explícito (redundante agora,
+mas inofensivo — deixa o comando autoexplicativo mesmo que o default
+mude de novo no futuro).

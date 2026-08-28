@@ -322,7 +322,13 @@ def test_run_layer1_sprint_tf_explicito_propaga_ate_build_modeling_frame_e_cpcv(
 
     assert bmf_calls["tf"] == "30m"
     assert bmf_calls["resolution_id"] is None
-    assert bmf_calls["vol_estimator_id"] is None
+    # **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** vol_estimator_id=None
+    # não chega mais None em build_modeling_frame -- run_layer1_sprint
+    # resolve pra constants.yaml::canonical_volatility_estimator antes de
+    # chamar. "parkinson_w20" é o valor real de constants.yaml, não
+    # invenção do teste (mesma convenção de test_models_alpha_hyperparams_
+    # wiring.py::test_from_constants_default_le_ic_magnitude_floor_k).
+    assert bmf_calls["vol_estimator_id"] == "parkinson_w20"
     assert bmf_calls["symbol"] == pipeline.SYMBOL
 
     assert gs_calls["symbol"] == pipeline.SYMBOL
@@ -347,6 +353,21 @@ def test_run_layer1_sprint_resolution_id_propaga_ate_build_modeling_frame_e_cpcv
 
     cpcv_config = gs_calls["config"]
     assert cpcv_config.grade_id == "R1"
+
+
+def test_run_layer1_sprint_vol_estimator_id_explicito_legado_vence_sobre_o_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** o legado (ATRWilder)
+    continua acessível -- só deixou de ser o que `None` significa. Quem
+    passa `vol_estimator_id` explícito, mesmo o valor legado, chega
+    intacto em `build_modeling_frame` -- a resolução via `constants.yaml`
+    só entra quando o caller não decide nada."""
+    bmf_calls, _ = _run_layer1_sprint_capturing_core_calls(
+        monkeypatch, resolution_id="R1", vol_estimator_id="atr_wilder_w20"
+    )
+
+    assert bmf_calls["vol_estimator_id"] == "atr_wilder_w20"
 
 
 class _StopAfterDiagnostics(Exception):

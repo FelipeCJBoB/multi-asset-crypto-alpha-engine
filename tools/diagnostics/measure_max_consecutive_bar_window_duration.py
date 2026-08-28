@@ -14,17 +14,32 @@ PENDENTE-DE-EXECUÇÃO-HUMANA -- Claude não executa `.py` (CLAUDE.md,
 MEDIDO, mas pra um modelo de custo DIFERENTE (prefetch de `mark_1m`/
 funding, sub-cobertura tolerável e visível) do que o purge precisa
 (sub-cobertura = vazamento SILENCIOSO, B02/B09). `N` = maior janela
-FINITA de lookback entre as features do conjunto ativo
-(`src.features.build.max_feature_window_bars`, hoje 96 barras, `C06_vol_
-ratio_12_96`) -- lido dinamicamente aqui, nunca hardcoded (se o conjunto
-ativo mudar, este script acompanha sem edição).
+FINITA de lookback entre as features do conjunto ativo -- lido
+dinamicamente aqui, nunca hardcoded (se o conjunto ativo mudar, este
+script acompanha sem edição).
+
+**Corrigido 2026-08-27 (`AG-298`/`AG-335`, item A da pauta `§13`).** Até
+aqui `N` vinha de `src.features.build.max_feature_window_bars()` (só os
+10 campos de `_WINDOW_FIELD_NAMES`, cego ao registry -- 96 barras). Essa
+é EXATAMENTE a função que `AG-298` provou ser cega a `C08_vol_pctile_
+rolling_1y`/`E03f_funding_cum_3d`/`B10_stoch_k_14`. `N` agora vem de
+`max_feature_lookback_bars(T1_FEATURE_IDS + SUPPORT_FEATURE_IDS)` --
+lida do REGISTRY sobre o conjunto ativo REAL, mesma função que já
+substituiu `max_feature_window_bars` no cálculo de produção
+(`compute_max_feature_lookback_ms`). Com as 5 features `lookback_bars:
+expanding` já excluídas do conjunto ativo (`AG-335`), `N=69.673`
+(`C08_vol_pctile_rolling_1y`, `AG-317`) -- 725× o `N=96` que este script
+media antes. Medir sob o `N` errado produziria uma constante nova
+IGUALMENTE stale, só que sem ninguém perceber -- exatamente o defeito
+que este achado corrige, não seria uma correção de verdade se o script
+continuasse cego ao mesmo jeito da função que ele existe para proteger.
 
 Achado já registrado (`AG-159` addendum, `project_assurance`
-2026-08-23, medição pontual sobre 1 combinação): `max_ms` real de
-SOLUSDT/R3 chega a ~5,8x o `p99` usado -- ressalva de MAGNITUDE, não de
-UNIDADE (a unidade já foi corrigida, commit `6902352`). Este script
-generaliza essa medição pras 15 combinações reais (5 símbolos × 3
-resoluções), sobre os parquets JÁ PERSISTIDOS
+2026-08-23, medição pontual sobre 1 combinação, sob o `N=96` antigo):
+`max_ms` real de SOLUSDT/R3 chega a ~5,8x o `p99` usado -- ressalva de
+MAGNITUDE, não de UNIDADE (a unidade já foi corrigida, commit
+`6902352`). Este script generaliza essa medição pras 15 combinações
+reais (5 símbolos × 3 resoluções), sobre os parquets JÁ PERSISTIDOS
 (`data/capacity/dollar_bars_r{1,2,3}/{symbol}/*.parquet`) -- sem
 medição nova de trade bruto, só agregação sobre dado que já existe (B23:
 nada inventado, nada re-coletado).
@@ -38,14 +53,15 @@ o proxy) é decisão humana, mesmo padrão de `measure_dollar_bar_
 duration_p99_by_resolution.py` (B20: threshold nunca escolhido
 programaticamente depois de ver o resultado).
 
-**Nota de gate (2026-08-23):** até 2026-08-23 este código nunca era
-alcançado em produção real -- `assert_no_expanding_lookback_in_active_set`
-bloqueava incondicionalmente (3 features `expanding` no conjunto ativo
-T1). O Manager decidiu excluir essas 3 features do conjunto ativo
-(`AG-032`, `T1_FEATURE_IDS`) -- o gate que mascarava esta lacuna foi
-removido, então o resultado deste script deixa de ser "preparação pra um
-dia" e passa a ser pré-requisito real antes do primeiro treino sob
-`resolution_id` (R2/R3) com purge ativo.
+**Nota de gate (2026-08-23, atualizada 2026-08-27):** até 2026-08-23
+este código nunca era alcançado em produção real --
+`assert_no_expanding_lookback_in_active_set` bloqueava
+incondicionalmente. O Manager excluiu 3 features do conjunto ativo
+(`AG-032`) e depois mais 5 (`AG-032`/`AG-335`, 2026-08-27) pelo mesmo
+motivo -- o gate que mascarava esta lacuna foi removido, então o
+resultado deste script deixa de ser "preparação pra um dia" e passa a
+ser pré-requisito real antes do primeiro treino sob `resolution_id`
+(R1/R2/R3) com purge ativo.
 
 Saída: `experiments/max_consecutive_bar_window_duration.json` (escrita
 atômica, B29)."""
@@ -77,7 +93,7 @@ from src.core.provenance import report_provenance
 from src.data._paths import CAPACITY_DIR
 from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 from src.features._constants import load_constant
-from src.features.build import max_feature_window_bars
+from src.features.build import SUPPORT_FEATURE_IDS, T1_FEATURE_IDS, max_feature_lookback_bars
 
 logger = structlog.get_logger(__name__)
 
@@ -186,7 +202,7 @@ def _max_consecutive_window_duration(
 def main() -> None:
     symbols = tuple(SYMBOL_START_DATE)
     resolutions = tuple(CALIBRATION_TF_BY_RESOLUTION)
-    window_bars = max_feature_window_bars()
+    window_bars = max_feature_lookback_bars(T1_FEATURE_IDS + SUPPORT_FEATURE_IDS)
     proxy_ms = int(load_constant("label_prefetch_p99_bar_duration_ms"))
     proxy_window_ms = proxy_ms * window_bars
     logger.info(
@@ -274,8 +290,11 @@ def main() -> None:
             "open_time[i]) sobre todas as janelas de window_bars barras consecutivas, "
             "lido direto de data/capacity/dollar_bars_{r1,r2,r3}/{symbol}/*.parquet "
             "(já persistidos, AG-124 causal). window_bars = "
-            "src.features.build.max_feature_window_bars() no momento da execução "
-            "(dinâmico, não hardcoded). Responde AG-159/D-02 ressalva 3 "
+            "src.features.build.max_feature_lookback_bars(T1_FEATURE_IDS + "
+            "SUPPORT_FEATURE_IDS) no momento da execução (dinâmico, não hardcoded -- "
+            "lido do REGISTRY sobre o conjunto ativo real, corrigido 2026-08-27/AG-298; "
+            "antes vinha de max_feature_window_bars(), cego ao registry, mesmo defeito "
+            "que AG-298 documentou). Responde AG-159/D-02 ressalva 3 "
             "(docs/regime_feature_engine_design_doc_2026-08-23.md §3) -- generaliza a "
             "medição pontual de SOLUSDT/R3 (achado do project_assurance, 2026-08-23) "
             "pras 15 combinações reais."

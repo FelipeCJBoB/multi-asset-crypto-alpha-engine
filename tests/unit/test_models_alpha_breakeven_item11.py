@@ -194,7 +194,7 @@ def test_decide_side_breakeven_topq_diverge_de_lambda_threshold_quando_custo_var
     # QUALQUER lambda_b ou seleciona as 4 ou nenhuma (nunca 2 de 4 por
     # margem). Confirma a divergência estrutural, não só o resultado
     # numérico do bloco acima.
-    lambda_b, taxa = alpha.resolve_joint_lambda(
+    lambda_b, _taxa = alpha.resolve_joint_lambda(
         p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff, target_signal_rate=0.5
     )
     side_lambda = alpha.decide_side_cost_derived(
@@ -202,3 +202,75 @@ def test_decide_side_breakeven_topq_diverge_de_lambda_threshold_quando_custo_var
     )
     assert int(np.sum(side_lambda != 0)) in (0, 4)
     assert (side_lambda != 0).tolist() != (side_topq != 0).tolist()
+
+
+# ============================================================================
+# compare_cap_mechanisms -- ADR-005 §13.16.4/§13.22, Manager ratificou "medir
+# os dois lado a lado no próximo retreino real" (2026-08-27, "B = sua
+# recomendação aceita"). Núcleo pronto pra rodar sobre predictions.parquet
+# real assim que o retreino represado (item A) desbloquear.
+# ============================================================================
+
+
+def test_compare_cap_mechanisms_detecta_divergencia_no_caso_minimo() -> None:
+    """Mesma população de `test_decide_side_breakeven_topq_diverge_de_
+    lambda_threshold_quando_custo_varia` -- a função de comparação precisa
+    achar a MESMA divergência que o teste acima prova manualmente."""
+    payoff = 1.5  # noqa: magic-number
+    p_long = np.array([0.70, 0.70, 0.70, 0.70])  # noqa: magic-number
+    p_short = np.zeros(4)
+    cost_atr_ratio = np.array([0.05, 0.55, 0.05, 0.55])  # noqa: magic-number
+    result = alpha.compare_cap_mechanisms(
+        p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff, target_signal_rate=0.5
+    )
+    assert result.n_rows == 4
+    assert result.n_disagree >= 2
+    assert result.n_agree + result.n_disagree == 4
+    assert result.frac_agree == pytest.approx(result.n_agree / 4)
+
+
+def test_compare_cap_mechanisms_populacao_homogenea_concorda() -> None:
+    """Sem variação de custo entre linhas, os dois mecanismos colapsam pro
+    mesmo resultado -- a divergência é especificamente sobre custo
+    variável, não um artefato de qualquer população."""
+    payoff = 1.5  # noqa: magic-number
+    rng = np.random.default_rng(0)
+    n = 200  # noqa: magic-number
+    p_long = rng.uniform(0.3, 0.9, size=n)
+    p_short = rng.uniform(0.0, 0.4, size=n)
+    cost_atr_ratio = np.full(n, 0.1)  # noqa: magic-number -- custo CONSTANTE entre linhas
+    result = alpha.compare_cap_mechanisms(
+        p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff, target_signal_rate=0.3
+    )
+    assert result.frac_agree == pytest.approx(1.0)
+    assert result.signal_rate_topq == pytest.approx(0.3, abs=0.02)
+
+
+def test_compare_cap_mechanisms_levanta_com_shapes_incompativeis() -> None:
+    with pytest.raises(ValueError, match="MESMA população"):
+        alpha.compare_cap_mechanisms(
+            np.array([0.7, 0.7]),
+            np.array([0.1]),
+            np.array([0.1, 0.1]),
+            payoff_atr_mult=1.5,  # noqa: magic-number
+            target_signal_rate=0.3,  # noqa: magic-number
+        )
+
+
+def test_compare_cap_mechanisms_sinal_rate_lambda_e_o_realizado_da_bissecao() -> None:
+    """`signal_rate_lambda` é a taxa que `resolve_joint_lambda` de fato
+    atingiu -- reflete o retorno real da bisseção sobre uma população
+    heterogênea (`mu` variando por linha, para a bisseção convergir a uma
+    fração real, não o degenerado "tudo ou nada" de `mu` idêntico -- ver
+    `test_decide_side_breakeven_topq_diverge_de_lambda_threshold_quando_
+    custo_varia` acima para esse caso)."""
+    payoff = 1.5  # noqa: magic-number
+    rng = np.random.default_rng(1)
+    n = 500  # noqa: magic-number
+    p_long = rng.uniform(0.3, 0.9, size=n)
+    p_short = rng.uniform(0.0, 0.4, size=n)
+    cost_atr_ratio = np.full(n, 0.05)  # noqa: magic-number
+    result = alpha.compare_cap_mechanisms(
+        p_long, p_short, cost_atr_ratio, payoff_atr_mult=payoff, target_signal_rate=0.5
+    )
+    assert result.signal_rate_lambda == pytest.approx(0.5, abs=0.02)
