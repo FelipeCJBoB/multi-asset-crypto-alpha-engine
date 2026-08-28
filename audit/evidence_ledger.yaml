@@ -3652,3 +3652,43 @@ entries:
     Achado NAO deve ser lido como veredito sobre o Alpha T1+T2 atual --
     refazer sob a config real fica pendente (Fase 1, adiada pelo
     Manager nesta sessao).
+- id_curto: ag362_incremental_value_22_vs_7_features_2026-08-27
+  data: '2026-08-27'
+  fase: 'AG-362 addendum -- valor incremental das 15 features L3->T1 promovidas, decisao do Manager de rodar comparacao pareada'
+  feature_ou_filtro: 'T1_FEATURE_IDS completo (22, pos-AG-362) vs. ORIGINAL_T1_FEATURE_IDS (7, pre-AG-362) -- 3 desenhos: 22+hiperparametro_global, 22+hiperparametro_por_combo, 7+hiperparametro_por_combo (vencedor da comparacao 1v2)'
+  symbol: 'todos os 5 (BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT)'
+  tf: 'R1/R2/R3 (15 combinacoes por rodada, 45 fits totais)'
+  janela: historico completo por combinacao (sem t0_start/t0_end)
+  lado: ambos (long e short avaliados separadamente no gate economico)
+  regime: n/a
+  metrica_tipo: 'n_permanence_pass / delta_sharpe_mean_sum / n_paths_camada1_supera_camada0 / gate_economico_pass_rate, por rodada'
+  metrica_valor: 0
+  n: 15
+  status: MEDIDO
+  fonte_arquivo: experiments/ag362_incremental_value_report.json
+  fonte_secao: rodadas.{22_features_hyperparam_off,22_features_hyperparam_on,7_features_base_hyperparam_on}.summary
+  nota: >
+    ZERO das 15 combinacoes passa permanence_pass nas 3 rodadas -- nao e
+    um defeito especifico do vetor de 22 features, aparece nas 3 (off,
+    on, base). Sinal MISTO entre 22 features e a base de 7 nas metricas
+    mais finas: por soma de delta_sharpe_mean, 22+hiperparametro_por_
+    combo lidera (23,84) contra 16,86 da base -- mas dominado por 2
+    celulas isoladas (BTCUSDT/R3 e SOLUSDT/R1, ~9,6 cada, 80% da soma).
+    Por caminhos vencidos (n_paths_camada1_supera_camada0, metrica menos
+    sensivel a outlier), a BASE de 7 features lidera: 33/75 contra 22/75
+    do 22+on e 25/75 do 22+off. Por gate economico pos-trial (sinal mais
+    rigoroso que gain/AUC bruto, ADR-005 Sec13.13), a diferenca e maior
+    e tambem favorece a base: 17/25 lados passam (68%) contra 10/27
+    (37%) do 22+on e 9/30 (30%) do 22+off. Vencedor da comparacao
+    hiperparametro 1v2 (off vs on, usado como base do desenho 3): 'on',
+    por definicao operacional pre-registrada (maior n_permanence_pass,
+    empate 0=0 desempatado por soma de delta_sharpe_mean maior) --
+    ver audit/architecture_gaps_log.yaml::AG-362 (hipotese original),
+    AG-365/366/367/368 (bugs reais encontrados e corrigidos ao vivo
+    durante esta medicao). NAO decide se as 15 promovidas "ajudam" no
+    sentido proposto por AG-362 (captura de interacao via splits) --
+    mede resultado agregado, nao importancia por permutacao (Estagio 2
+    da proposta do AG-330, pendente de booster .bin persistido). N_
+    lifetime: quantos trials estas 3 rodadas valem (1, 3 ou 45) e
+    leitura em aberto, decisao do Manager -- nao logado automaticamente
+    (ver docstring de run_layer1_sprint_all_combinations).

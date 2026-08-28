@@ -1,0 +1,489 @@
+{
+  "config": "22_features",
+  "elapsed_seconds": 1297.0470000000205,
+  "feature_ids": [
+    "A05_ret_vol_norm_4",
+    "A13_dist_ema48_atr",
+    "B01_rsi_14",
+    "E27f_cost_atr_ratio",
+    "C06_vol_ratio_12_96",
+    "D06f_taker_imbalance_z_48",
+    "E10f_oi_change_z_48",
+    "A01_log_return_1",
+    "A02_log_return_2",
+    "A03_log_return_4",
+    "A04_log_return_12",
+    "A06_ret_vol_norm_12",
+    "C12_vol_of_vol_48",
+    "D05f_taker_buy_ratio",
+    "D08f_trade_count_z_48",
+    "E01f_funding_last",
+    "E05f_time_to_funding_h",
+    "E12f_price_oi_divergence",
+    "K03_is_weekend",
+    "K04_session_asia",
+    "E14f_toptrader_ls_ratio",
+    "E16f_global_ls_ratio"
+  ],
+  "feature_ids_n": 22,
+  "generated_at": "2026-08-28T03:50:14.016457+00:00",
+  "stage": "on",
+  "summary": {
+    "delta_sharpe_mean_avg": 2.38440225528881,
+    "delta_sharpe_mean_sum": 23.8440225528881,
+    "n_combinations": 15,
+    "n_delta_sharpe_non_finite": 5,
+    "n_permanence_pass": 0,
+    "per_combo": {
+      "BNBUSDT_R1": {
+        "delta_sharpe_mean": null,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.548647,
+            "candidate_p_tp": 0.48688352570828963,
+            "candidate_p_tp_stderr": 0.00611962836387721,
+            "distinguishable": false,
+            "margin": -0.06176347429171036,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "BNBUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.548647,
+            "candidate_p_tp": 0.48855641642176506,
+            "candidate_p_tp_stderr": 0.00471721517558972,
+            "distinguishable": false,
+            "margin": -0.060090583578234935,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "short",
+            "side_matches_threshold": true,
+            "symbol": "BNBUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 0,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "BNBUSDT_R2": {
+        "delta_sharpe_mean": null,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.550838,
+            "candidate_p_tp": 0.5844155844155844,
+            "candidate_p_tp_stderr": 0.01985638408198541,
+            "distinguishable": false,
+            "margin": 0.03357758441558434,
+            "passes": true,
+            "resolution_id": "R2",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "BNBUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.550838,
+            "candidate_p_tp": 0.478,
+            "candidate_p_tp_stderr": 0.0223390241505756,
+            "distinguishable": false,
+            "margin": -0.07283800000000007,
+            "passes": false,
+            "resolution_id": "R2",
+            "side": "short",
+            "side_matches_threshold": true,
+            "symbol": "BNBUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 0,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "BNBUSDT_R3": {
+        "delta_sharpe_mean": -0.0023491717849919436,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.535966,
+            "candidate_p_tp": 0.5589887640449438,
+            "candidate_p_tp_stderr": 0.01860742896058195,
+            "distinguishable": false,
+            "margin": 0.023022764044943744,
+            "passes": true,
+            "resolution_id": "R3",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "BNBUSDT"
+          },
+          "short": null
+        },
+        "n_paths_camada1_supera_camada0": 3,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "BTCUSDT_R1": {
+        "delta_sharpe_mean": null,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.547843,
+            "candidate_p_tp": 0.5189456342668863,
+            "candidate_p_tp_stderr": 0.004228630598119241,
+            "distinguishable": false,
+            "margin": -0.028897365733113634,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "BTCUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.547843,
+            "candidate_p_tp": 0.4866927406276829,
+            "candidate_p_tp_stderr": 0.003451901118523144,
+            "distinguishable": false,
+            "margin": -0.06115025937231705,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "BTCUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 0,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "BTCUSDT_R2": {
+        "delta_sharpe_mean": 0.4653701187499574,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.550001,
+            "candidate_p_tp": 0.5528771384136858,
+            "candidate_p_tp_stderr": 0.009803750992741243,
+            "distinguishable": false,
+            "margin": 0.002876138413685836,
+            "passes": true,
+            "resolution_id": "R2",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "BTCUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.550001,
+            "candidate_p_tp": 0.5132636655948553,
+            "candidate_p_tp_stderr": 0.010020559154943811,
+            "distinguishable": false,
+            "margin": -0.036737334405144706,
+            "passes": false,
+            "resolution_id": "R2",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "BTCUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 1,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "BTCUSDT_R3": {
+        "delta_sharpe_mean": 9.589047152087621,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.535162,
+            "candidate_p_tp": 0.5263157894736842,
+            "candidate_p_tp_stderr": 0.08099829095409111,
+            "distinguishable": false,
+            "margin": -0.008846210526315845,
+            "passes": false,
+            "resolution_id": "R3",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "BTCUSDT"
+          },
+          "short": null
+        },
+        "n_paths_camada1_supera_camada0": 1,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "ETHUSDT_R1": {
+        "delta_sharpe_mean": null,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.540075,
+            "candidate_p_tp": 0.5167045653314676,
+            "candidate_p_tp_stderr": 0.006609116382905725,
+            "distinguishable": false,
+            "margin": -0.02337043466853239,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "ETHUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.540075,
+            "candidate_p_tp": 0.4891837323334295,
+            "candidate_p_tp_stderr": 0.0049015204023805615,
+            "distinguishable": false,
+            "margin": -0.05089126766657048,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "ETHUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 0,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "ETHUSDT_R2": {
+        "delta_sharpe_mean": 4.9387289549085205,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.542003,
+            "candidate_p_tp": 0.5506198347107438,
+            "candidate_p_tp_stderr": 0.015988038928356586,
+            "distinguishable": false,
+            "margin": 0.008616834710743815,
+            "passes": true,
+            "resolution_id": "R2",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "ETHUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.542003,
+            "candidate_p_tp": 0.45,
+            "candidate_p_tp_stderr": 0.11124297730643495,
+            "distinguishable": false,
+            "margin": -0.092003,
+            "passes": false,
+            "resolution_id": "R2",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "ETHUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 3,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "ETHUSDT_R3": {
+        "delta_sharpe_mean": -0.2049821278181258,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.480241,
+            "candidate_p_tp": 0.5185185185185185,
+            "candidate_p_tp_stderr": 0.033997349057321616,
+            "distinguishable": false,
+            "margin": 0.038277518518518516,
+            "passes": true,
+            "resolution_id": "R3",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "ETHUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.480241,
+            "candidate_p_tp": 0.41037735849056606,
+            "candidate_p_tp_stderr": 0.03378398234181452,
+            "distinguishable": false,
+            "margin": -0.06986364150943392,
+            "passes": false,
+            "resolution_id": "R3",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "ETHUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 3,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "SOLUSDT_R1": {
+        "delta_sharpe_mean": 9.620061848093687,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.529432,
+            "candidate_p_tp": 0.5133952979770366,
+            "candidate_p_tp_stderr": 0.011687112948529334,
+            "distinguishable": false,
+            "margin": -0.016036702022963367,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "SOLUSDT"
+          },
+          "short": null
+        },
+        "n_paths_camada1_supera_camada0": 3,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "SOLUSDT_R2": {
+        "delta_sharpe_mean": -0.3105191952994951,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.5307,
+            "candidate_p_tp": 0.5499848988221081,
+            "candidate_p_tp_stderr": 0.008645882637825727,
+            "distinguishable": true,
+            "margin": 0.019284898822108154,
+            "passes": true,
+            "resolution_id": "R2",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "SOLUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.5307,
+            "candidate_p_tp": 0.5204745503252965,
+            "candidate_p_tp_stderr": 0.009773179494106554,
+            "distinguishable": false,
+            "margin": -0.010225449674703402,
+            "passes": false,
+            "resolution_id": "R2",
+            "side": "short",
+            "side_matches_threshold": true,
+            "symbol": "SOLUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 2,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "SOLUSDT_R3": {
+        "delta_sharpe_mean": -0.3221385304255733,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.466616,
+            "candidate_p_tp": 0.5616921269095182,
+            "candidate_p_tp_stderr": 0.012027047501707612,
+            "distinguishable": true,
+            "margin": 0.09507612690951822,
+            "passes": true,
+            "resolution_id": "R3",
+            "side": "long",
+            "side_matches_threshold": false,
+            "symbol": "SOLUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.466616,
+            "candidate_p_tp": 0.5060109289617486,
+            "candidate_p_tp_stderr": 0.016528295616680146,
+            "distinguishable": true,
+            "margin": 0.03939492896174862,
+            "passes": true,
+            "resolution_id": "R3",
+            "side": "short",
+            "side_matches_threshold": true,
+            "symbol": "SOLUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 2,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "XRPUSDT_R1": {
+        "delta_sharpe_mean": null,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.536852,
+            "candidate_p_tp": 0.485828800458059,
+            "candidate_p_tp_stderr": 0.008456608179522032,
+            "distinguishable": false,
+            "margin": -0.05102319954194101,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "XRPUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.536852,
+            "candidate_p_tp": 0.5095053040646991,
+            "candidate_p_tp_stderr": 0.0051233052223223306,
+            "distinguishable": false,
+            "margin": -0.027346695935300924,
+            "passes": false,
+            "resolution_id": "R1",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "XRPUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 0,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "XRPUSDT_R2": {
+        "delta_sharpe_mean": 0.5823829821549968,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.538506,
+            "candidate_p_tp": 0.5539011316259679,
+            "candidate_p_tp_stderr": 0.01213127196077172,
+            "distinguishable": false,
+            "margin": 0.01539513162596784,
+            "passes": true,
+            "resolution_id": "R2",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "XRPUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.538506,
+            "candidate_p_tp": 0.4594059405940594,
+            "candidate_p_tp_stderr": 0.015680981807163135,
+            "distinguishable": false,
+            "margin": -0.07910005940594061,
+            "passes": false,
+            "resolution_id": "R2",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "XRPUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 3,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      },
+      "XRPUSDT_R3": {
+        "delta_sharpe_mean": -0.5115794777785,
+        "economic_gate": {
+          "long": {
+            "breakeven_wr": 0.47584,
+            "candidate_p_tp": 0.5659340659340659,
+            "candidate_p_tp_stderr": 0.025978261143864066,
+            "distinguishable": true,
+            "margin": 0.09009406593406594,
+            "passes": true,
+            "resolution_id": "R3",
+            "side": "long",
+            "side_matches_threshold": true,
+            "symbol": "XRPUSDT"
+          },
+          "short": {
+            "breakeven_wr": 0.47584,
+            "candidate_p_tp": 0.47578589634664403,
+            "candidate_p_tp_stderr": 0.014557000645260722,
+            "distinguishable": false,
+            "margin": -0.000054103653355952463,
+            "passes": false,
+            "resolution_id": "R3",
+            "side": "short",
+            "side_matches_threshold": false,
+            "symbol": "XRPUSDT"
+          }
+        },
+        "n_paths_camada1_supera_camada0": 1,
+        "n_paths_total": 5,
+        "permanence_pass": false
+      }
+    }
+  },
+  "use_hyperparams_by_combo": true,
+  "vol_estimator_id": "parkinson_w20"
+}

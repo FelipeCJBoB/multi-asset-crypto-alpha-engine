@@ -5278,3 +5278,47 @@ resposta reage a T1 de verdade, não é coincidência da composição atual.
 `banned_patterns`/`ruff`/`mypy` limpos. `AG-365` registrado. Retreino <!-- check-sprint-log: skip -->
 ainda não confirmado ponta a ponta — próximo passo é o Manager rodar de
 novo o mesmo comando.
+
+### 2026-08-27/28 — `AG-362` addendum: comparação pareada 22 vs. 7 features, sob CPCV purgado <!-- check-sprint-log: skip -->
+
+Pedido do Manager: medir o valor incremental real das 15 features <!-- check-sprint-log: skip -->
+promovidas por `AG-362`, não só a hipótese. Desenho de 3 rodadas
+decidido pelo Manager: (1) `T1_FEATURE_IDS` atual (22) +
+`use_hyperparams_by_combo=False`; (2) 22 features + `True`; (3) vencedor
+de hiperparâmetro entre 1/2 aplicado a `ORIGINAL_T1_FEATURE_IDS` (7,
+pré-`AG-362`) — `src/analysis/ag362_incremental_value_report.py`, novo,
+3 estágios independentes (`--stage off/on/base`), cada um persiste antes
+do próximo. 45 fits reais (15 combinações × 3 rodadas).
+
+3 bugs reais encontrados e corrigidos ao vivo durante a execução, cada
+um registrado em `audit/architecture_gaps_log.yaml`: `AG-366`
+(`feature_ids=None` não entra no `config_hash`, colidia com artefato
+pré-`AG-362`), `AG-367` (`delta_sharpe_mean` `NaN` propagava e sumia no
+agregado via serialização `orjson`→`null`), `AG-368` (`scratch=True`
+threaded até `write_artifact`, resolve colisão de hash entre os 2
+designs de hiperparâmetro numa célula sem calibração própria).
+
+Resultado (`experiments/ag362_incremental_value_report.json`, também
+`audit/evidence_ledger.yaml::ag362_incremental_value_22_vs_7_features_
+2026-08-27`): **zero das 15 combinações passa `permanence_pass` nas 3
+rodadas** — não é defeito específico do vetor de 22, aparece nas 3.
+Sinal MISTO entre 22 features e a base de 7 features nas métricas mais
+finas: por soma de `delta_sharpe_mean`, 22+hiperparâmetro-por-combo
+lidera (23,84 contra 16,86 da base), mas dominado por 2 células isoladas
+(`BTCUSDT_R3`/`SOLUSDT_R1`, ~9,6 cada, 80% da soma). Por caminhos
+vencidos (menos sensível a outlier) e por gate econômico pós-trial
+(ADR-005 §13.13 já mostrou que gain/AUC bruto não distingue sinal de
+ruído), a BASE de 7 features lidera nas duas: 33/75 caminhos contra
+22/75 do 22+on; 17/25 lados no gate econômico (68%) contra 10/27 (37%).
+Vencedor da comparação de hiperparâmetro 1v2 (usado no desenho 3):
+`on`, por definição operacional pré-registrada (maior `n_permanence_
+pass`; empate 0=0 desempatado por soma de `delta_sharpe_mean`). <!-- check-sprint-log: skip -->
+
+Não decide se as 15 promovidas "ajudam" no sentido que `AG-362` propôs <!-- check-sprint-log: skip -->
+(captura de interação via splits) — mede resultado agregado, não
+importância por permutação (Estágio 2 da proposta do `AG-330`, pendente <!-- check-sprint-log: skip -->
+de booster `.bin` persistido). Artefato visual publicado pro Manager
+revisar os 45 resultados lado a lado. `N_lifetime`: quantos trials estas <!-- check-sprint-log: skip -->
+3 rodadas valem (1, 3 ou 45) é leitura em aberto, decisão do Manager — <!-- check-sprint-log: skip -->
+não logado automaticamente (`run_layer1_sprint_all_combinations` <!-- check-sprint-log: skip -->
+documenta a mesma leitura em aberto desde `D-14`).
