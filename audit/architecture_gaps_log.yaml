@@ -24925,3 +24925,181 @@ entries:
       Item (1) do Passo 3 fechado -- infra testada (mock+real), pronta
       pra alimentar o screening (item 2). Numero de custo corrigido e
       registrado aqui pra nao repetir o erro numa proxima estimativa.
+
+  - id: AG-375
+    date: "2026-08-29"
+    file: "WSL2 Ubuntu-22.04 (fora do repo -- apt state da VM), nenhum arquivo do repo"
+    related_file: "audit/architecture_gaps_log.yaml::AG-201 (bloqueio NCCL no Windows nativo que motivou migrar pra WSL2); tools/infra/wsl2_cuda_setup.sh (script novo que fecha este gap)"
+    found_by: "Claude, provisionando WSL2+CUDA sob ordem direta do Manager ('avance para wsl2+cuda'), 1a tentativa real de recompilar LightGBM com USE_CUDA=ON dentro do WSL2"
+    gap: >
+      `apt-get install libnccl2 libnccl-dev` (sem versao) resolveu pra
+      `2.31.2-1+cuda13.3` -- a build MAIS RECENTE disponivel no repo apt
+      da NVIDIA -- mesmo com `cuda-toolkit-12-6` instalado. O link final
+      do LightGBM (`nvlink -dlink`, ultimo passo do build, depois de 75
+      dos 76 alvos ja terem compilado) falhou com `nvlink error: Uncompress
+      failed` / `nvlink fatal: elfLink fatbinary error` -- mensagem opaca,
+      sem nenhuma pista textual de que a causa era versao de NCCL.
+
+      INVESTIGADO ATE A CAUSA RAIZ (nao aceito como "cole outra versao e
+      tente de novo"): `apt-cache show libnccl-dev=2.31.2-1+cuda13.3`
+      declara `Depends: libc6, libnccl2 (= 2.31.2-1+cuda13.3)` -- SEM
+      NENHUMA dependencia de `cuda-toolkit-*`. `apt-cache show cuda-
+      toolkit-12-6` tambem nao declara nenhuma dependencia de `libnccl*`.
+      Confirmado via `apt-cache madison`: o mesmo `libnccl2`/`libnccl-dev`
+      existe em ~15 builds paralelas, uma por combinacao NCCL-version x
+      CUDA-version (`2.24.3-1+cuda12.6`, `2.31.2-1+cuda13.3`, etc.) --
+      TODAS sob o MESMO nome de pacote, distinguidas so pelo SUFIXO da
+      string de versao. O `apt` usa esse sufixo apenas para ORDENACAO
+      textual de versao (a mais alta ganha por default), NUNCA como
+      restricao de compatibilidade -- o pareamento NCCL-versao <->
+      CUDA-toolkit-versao e responsabilidade inteiramente do OPERADOR,
+      sem nenhuma rede de seguranca do gerenciador de pacotes. `nvlink`
+      do toolkit 12.6 nao consegue decodificar o formato de fatbinary
+      comprimido embutido em `libnccl_static.a` de uma build feita com o
+      toolchain 13.3 -- daí "Uncompress failed", sintoma de baixo nivel
+      de uma causa de alto nivel (par de versao errado) que nenhuma
+      camada do apt sinalizou.
+    severity: "alto -- bloqueava 100% do objetivo da sessao (LightGBM+CUDA real), mensagem de erro nao aponta pra causa raiz, achavel so por leitura de `Depends`/`apt-cache madison`, nao por tentativa-e-erro"
+    layer: "infraestrutura WSL2 -- gap de empacotamento apt da NVIDIA (upstream), nao bug de codigo deste repo"
+    consequence: >
+      Qualquer provisionamento futuro deste ambiente (maquina nova, WSL2
+      resetado, outro desenvolvedor) que rode `apt install libnccl2
+      libnccl-dev` sem pin explicito repete o MESMO bloqueio, sem
+      nenhum aviso do apt -- o link so falha no ULTIMO passo do build
+      do LightGBM (depois de ~10min de compilacao), nao na instalacao do
+      pacote. Sem registrar isso, o proximo a tentar (inclusive uma
+      sessao futura minha) reproduziria a mesma investigacao do zero.
+    resolved_by_commit: null
+    resolution: >
+      Corrigido nesta sessao instalando a build EXATA que casa com o
+      toolkit (`apt-get --allow-downgrades install libnccl2=2.24.3-1
+      +cuda12.6 libnccl-dev=2.24.3-1+cuda12.6`), confirmado pelo build
+      completar (`Built lightgbm==4.7.0`) e por um treino CUDA real
+      rodar (accuracy=0.9974, dado sintetico) e depois com dado real do
+      projeto (Camada0 e Camada1, 1 fold cada, `device_type=cuda`, ambos
+      OK). SOLUCAO ROBUSTA aplicada nesta rodada (nao so o fix pontual):
+      `tools/infra/wsl2_cuda_setup.sh` (novo) declara `CUDA_TOOLKIT_
+      VERSION`/`NCCL_VERSION` como as DUAS metades do MESMO par, lado a
+      lado, com comentario explicito de que apt nao garante o casamento
+      -- e roda `apt-mark hold libnccl2 libnccl-dev` depois de instalar,
+      pra um `apt upgrade` futuro (mesmo dentro da mesma maquina) nao
+      puxar de volta a versao desencontrada silenciosamente. Reprodutivel
+      do zero via este script, nao mais via 6 comandos manuais lembrados
+      de cabeca.
+    status: "fechado 2026-08-29 -- ver tools/infra/wsl2_cuda_setup.sh"
+
+  - id: AG-376
+    date: "2026-08-29"
+    file: "WSL2 Ubuntu-22.04 (fora do repo -- venv local), nenhum arquivo do repo"
+    related_file: "audit/architecture_gaps_log.yaml::AG-375 (achado irmao, mesma sessao de provisionamento); tools/infra/wsl2_cuda_setup.sh (fecha este gap)"
+    found_by: "Claude, validando que o LightGBM+CUDA recompilado (AG-375) de fato treina via `uv run python` -- 1a chamada real logo apos o build reportar sucesso"
+    gap: >
+      Imediatamente apos `uv pip install lightgbm --no-binary lightgbm
+      --config-settings=cmake.define.USE_CUDA=ON --reinstall` reportar
+      sucesso (`Built lightgbm==4.7.0`), a PROXIMA chamada de `uv run
+      python <script>` (sem nenhuma flag especial) reinstalou 3 pacotes
+      silenciosamente ANTES de rodar o script -- entre eles `lightgbm`,
+      de volta pro wheel padrao do PyPI (CPU-only). O treino imediatamente
+      seguinte falhou com `LightGBMError: CUDA Tree Learner was not
+      enabled in this build` -- a mesma mensagem do bloqueio original
+      (`AG-201`), agora reintroduzida pelo proprio fluxo de trabalho, nao
+      por falta de CUDA.
+
+      CAUSA RAIZ (verificado, nao presumido): `uv run` executa uma
+      sincronizacao implicita do venv contra `uv.lock`/`pyproject.toml`
+      ANTES de rodar qualquer comando -- comportamento DOCUMENTADO e
+      intencional do uv (garante reprodutibilidade: o venv nunca diverge
+      do lockfile sem que o lockfile mude primeiro). `uv pip install
+      --reinstall` e uma mutacao IMPERATIVA, fora de banda, que o
+      lockfile nunca registra -- da perspectiva do `uv run`, essa mutacao
+      E DRIFT A SER CORRIGIDO, nao um estado a preservar. Confirmado
+      isolando a causa: `uv run --no-sync python -c "import lightgbm;
+      print(lightgbm.__file__)"` (que pula a sincronizacao) apontava pro
+      wheel CPU do PyPI -- ou seja, a reversao ja tinha acontecido na
+      chamada ANTERIOR de `uv run` sem `--no-sync`, nao era uma race
+      condition nem um bug do uv em si.
+
+      Pesquisa web confirmou que este e o comportamento OFICIAL do uv
+      (nao um bug reportavel) -- ha um mecanismo suportado pra declarar
+      uma fonte alternativa de pacote de forma que o PROPRIO lockfile a
+      reconheca (`[tool.uv.sources]` com `extra = "..."`, documentado
+      para exatamente este caso -- torch cpu vs gpu por index separado).
+      MAS: issues abertas do proprio projeto uv (astral-sh/uv#17732,
+      #17967, checadas nesta investigacao) documentam que essa combinacao
+      especifica (`tool.uv.sources` condicionado por `extra`) hoje
+      DERRUBA dependencias transitivas da resolucao DEFAULT (sem extra)
+      em alguns casos -- ou seja, tentar essa rota arriscaria quebrar
+      justamente o caminho CPU/Windows que e o de producao real deste
+      projeto, pra resolver um problema que so afeta o ambiente
+      GPU/WSL2, opcional e experimental.
+    severity: "alto -- reverte silenciosamente a mudanca inteira desta sessao a cada `uv run` normal, sem erro nem aviso ate a PROXIMA tentativa de treino sob GPU falhar"
+    layer: "infraestrutura -- semantica de sincronizacao do uv (comportamento documentado da ferramenta, nao bug), colidindo com um build local fora do lockfile"
+    consequence: >
+      Sem correcao, qualquer sessao futura (minha ou do usuario) que rode
+      `uv run` normalmente dentro do WSL2 -- mesmo por engano, mesmo um
+      comando nao relacionado a LightGBM -- reverte o build CUDA de volta
+      pro wheel CPU sem nenhum sinal, e a proxima tentativa de treino sob
+      GPU falha com uma mensagem que parece dizer "CUDA nunca foi
+      compilado", nao "foi compilado e foi revertido" -- diagnostico
+      enganoso pra quem nao souber desta causa.
+    resolved_by_commit: null
+    resolution: >
+      Decisao deliberada de NAO perseguir `tool.uv.sources`/`extra`
+      (risco real e verificado pro caminho CPU/Windows de producao,
+      contra beneficio so no ambiente GPU/WSL2 opcional) -- corrigido
+      tratando o venv CUDA como INTEIRAMENTE fora do gerenciamento do
+      lockfile deste projeto, de proposito, nao como lacuna. `tools/
+      infra/wsl2_cuda_setup.sh` cria e usa um venv SEPARADO
+      (`UV_PROJECT_ENVIRONMENT`/`VIRTUAL_ENV` apontando pra fora do
+      repo, `~/.venvs/binance-futures-cuda`) e documenta explicitamente:
+      treino sob GPU chama o interpretador desse venv DIRETO
+      (`~/.venvs/binance-futures-cuda/bin/python -m ...`), nunca `uv
+      run`/`uv sync` nesse contexto. Isso tambem fecha `AG-377` (venv
+      compartilhado) pela mesma mudanca -- os dois achados tem a mesma
+      correcao estrutural.
+    status: "fechado 2026-08-29 -- ver tools/infra/wsl2_cuda_setup.sh; reavaliar tool.uv.sources+extra se/quando astral-sh/uv#17732 e #17967 fecharem"
+
+  - id: AG-377
+    date: "2026-08-29"
+    file: ".venv/ (fora do repo -- gitignored, mas fisicamente dentro do diretorio do repo)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-375, AG-376 (achados irmaos, mesma sessao); tools/infra/wsl2_cuda_setup.sh (fecha este gap)"
+    found_by: "Claude, rodando `uv run ruff`/`uv run mypy` do lado WINDOWS logo apos os comandos de setup do WSL2 -- `uv` do Windows parou de funcionar"
+    gap: >
+      `uv sync`/`uv pip install` disparados de DENTRO do WSL2, com o
+      `cwd` apontando pro repo via `/mnt/c/Robo MT5 Forex/Cryptex/
+      Binance_Futures` (necessario pra alcancar o `pyproject.toml` real,
+      unico, sem clonar o repo uma 2a vez -- decisao ja travada
+      anteriormente nesta investigacao, evitar 2 copias de working tree
+      e o que ja causou um incidente real registrado em sessao anterior),
+      resolveram `.venv/` relativo a esse `cwd` -- exatamente o MESMO
+      caminho fisico no disco NTFS que o `uv` do Windows nativo tambem
+      usa. `uv sync` do WSL2 reescreveu esse `.venv/` compartilhado em
+      layout Linux (criou `.venv/lib64 -> lib`, symlink POSIX). A
+      PROXIMA chamada de `uv run`/`uv sync` do lado WINDOWS falhou:
+      `error: failed to remove file '...\.venv\lib64': Acesso negado
+      (os error 5)` -- o driver NTFS do Windows nao consegue apagar um
+      reparse point criado pelo subsistema WSL2/DrvFs pelas APIs normais
+      que o `uv` (Rust, chamadas Win32 padrao) usa.
+    severity: "alto -- corrompeu o ambiente de desenvolvimento WINDOWS (o caminho de producao real deste projeto), nao so o experimento WSL2; `ruff`/`mypy`/`pytest` do lado Windows pararam de rodar ate a correcao"
+    layer: "infraestrutura -- venv Python e layout especifico de SO (Windows: Scripts/python.exe, sem symlink POSIX; Linux: bin/python3, com symlinks tipo lib64->lib) e os dois NUNCA podem compartilhar o mesmo diretorio fisico, mesmo quando o REPO em si e compartilhado de proposito via /mnt/c/"
+    consequence: >
+      Corrigido na hora recriando `.venv/` do zero do lado Windows (`rm
+      -rf` via WSL2 -- unica forma de apagar o symlink corrompido de
+      verdade -- seguido de `uv sync` do lado Windows) -- sem perda de
+      trabalho (`.venv/` e gitignored, artefato de build, nao trabalho
+      do usuario), mas foi um bloqueio real de ~10 minutos no meio da
+      sessao, e teria sido pior (achado mais tarde, com mais trabalho
+      Windows perdido no meio) numa sequencia de comandos diferente.
+    resolved_by_commit: null
+    resolution: >
+      Mesma correcao estrutural de `AG-376`: `tools/infra/wsl2_cuda_
+      setup.sh` fixa `UV_PROJECT_ENVIRONMENT=$HOME/.venvs/binance-
+      futures-cuda` (fora da arvore do repo, nativo do WSL2, nunca
+      alcancavel via caminho Windows) ANTES de qualquer `uv sync`/`uv
+      pip install` -- e o script tambem grava essa variavel no `~/.
+      bashrc` do WSL2 (idempotente, so adiciona se ainda nao presente),
+      entao mesmo um terminal WSL2 futuro aberto sem rodar o script de
+      novo ja nao tem `.venv/` dentro do repo como default. Repo continua
+      unico (`/mnt/c/...`, sem 2a copia) -- so o venv passa a ser
+      OBRIGATORIAMENTE separado por SO, nunca mais compartilhado.
+    status: "fechado 2026-08-29 -- ver tools/infra/wsl2_cuda_setup.sh; .venv/ do lado Windows recriado e confirmado saudavel (81 testes-alvo passando) antes de prosseguir"
