@@ -24221,6 +24221,10 @@ entries:
       sequencial, ~12-16min/célula já medido) -- CANCELADO pelo Manager
       antes de terminar (ver AG-371-ADDENDUM-10 pro motivo real, não só
       "ainda falta A e B" -- a contaminação abaixo é o motivo mais sério).
+      FECHADO em AG-371-ADDENDUM-14 (2026-08-28) -- retreino canônico
+      real, 15/15 células, 36 features limpo (sem sessão paralela): zero
+      células com Camada0 zerado, o freio de E27f não reintroduz o
+      defeito original em nenhuma delas.
 
   - id: AG-371-ADDENDUM-10
     date: "2026-08-28"
@@ -24307,6 +24311,12 @@ entries:
       `AG-371-ADDENDUM-8`, mas sem a sessão paralela rodando no meio); (3)
       como as duas sessões (esta e a de Lote D/D2) devem coordenar daqui
       pra frente pra não pisar em artefato compartilhado de novo.
+      FECHADO em AG-371-ADDENDUM-14 (2026-08-28): (1) T1=36 ratificado
+      pelo Manager, travado; (2) respondido por ADDENDUM-11 (MDA limpo
+      sob 36) e reconfirmado por retreino de pipeline completo (não só
+      MDA) em ADDENDUM-14 -- duas medições independentes concordam,
+      nenhuma mostra Camada0 zerado; (3) moot, vetor parou de se mover,
+      consolidado em commit único (d07db7c) antes do retreino real.
     nota_sessao_lote_d2: >
       Confirmado do lado da sessão de Lote D/D2 (a mesma que este achado
       cita como fonte da contaminação): a leitura acima está correta.
@@ -24664,3 +24674,62 @@ entries:
       .py -- suite completa ainda nao rodada pelo Manager). Desbloqueia a
       execucao real de ADDENDUM-12(a) fundida com o item (3) cancelado;
       segue aguardando ordem do Manager pra disparar o treino de verdade.
+
+  - id: AG-371-ADDENDUM-14
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-13 -- braco global do Passo 1 disparado sob autorizacao explicita do Manager ('Manager autoriza voce rodare uv e .py, pode executar'), fecha ADDENDUM-9 e a maior parte de ADDENDUM-10"
+    file: "experiments/alpha_layer1_report_{symbol}_{resolution_id}_global.json (15 arquivos), tools/diagnostics/extract_ag371_passo1_kpis.py"
+    found_by: "Claude, retreino canonico real (uv run python -m src.models.pipeline --all-combinations --vol-estimator-id parkinson_w20 --report-tag-suffix _global), 15/15 celulas, ~20min total, 0 erro"
+    gap: >
+      Retreino canonico REAL das 15 celulas, hiperparametro GLOBAL, 36
+      T1_FEATURE_IDS ratificados, sem sessao paralela rodando no meio
+      (working tree consolidado em d07db7c antes de disparar).
+      FECHA AG-371-ADDENDUM-9: n_signals de Camada0 (CAMADA0_CONSTRAINED_
+      FEATURES, so E27f_cost_atr_ratio) medido nas 15 celulas -- ZERO
+      celulas com Camada0 zerado (n_signals=0). Faixa observada: 692
+      (ETHUSDT/R3) a 11690 (XRPUSDT/R1). O freio de E27f nao reintroduz o
+      defeito original (isotonica saturando em tau=1.0) em nenhuma
+      celula sob 36 features.
+      FECHA a maior parte de AG-371-ADDENDUM-10: pergunta (1) [qual T1
+      autoritativo] ja resolvida por ratificacao direta do Manager (36);
+      pergunta (2) [remedir item D limpo] respondida por ADDENDUM-11
+      (MDA limpo sob 36) E agora por este retreino completo de pipeline
+      (nao so MDA) -- duas medicoes independentes concordam, nenhuma
+      mostra Camada0 zerado; pergunta (3) [coordenacao entre sessoes]
+      moot -- vetor parou de se mover, consolidado em commit unico antes
+      do retreino.
+      ACHADO NOVO, nao esperado, relevante pro desenho do item (2)/(3):
+      NENHUMA das 15 celulas passa o gate de permanencia
+      (permanence_pass=False em 15/15) sob hiperparametro GLOBAL e 36
+      features. `n_paths_camada1_supera_camada0` varia 0-5 (mediana=2);
+      so XRPUSDT_R1 chega a n_better=4, mas n_paths_significant=2 la
+      (falha o criterio AND). ETHUSDT_R1 e ETHUSDT_R3 tem n_better=5
+      (Camada1 vence em TODOS os paths) mas n_paths_significant=2 e 0
+      respectivamente -- vitoria nominal sem significancia estatistica
+      na maioria dos paths, o proprio padrao que motivou AG-220
+      originalmente. Sharpe medio (ambas camadas, todas as 15 celulas)
+      e NEGATIVO sem excecao, faixa -0,06 (XRPUSDT/R2, Camada0) a -7,64
+      (ETHUSDT/R1, Camada1). ETHUSDT_R3 -- Camada1 e Camada0 produzem
+      exatamente os MESMOS n_signals/sharpe (692 sinais,
+      sharpe=-0,3839..., identico as 15 casas decimais) -- consistente
+      com o IC-screening daquela celula so ter marcado E27f para
+      constraint em Camada1 tambem, colapsando as duas variantes ao
+      mesmo modelo por construcao; nao e bug, e checavel comparando
+      monotone_constraints_example_fold0 das duas.
+    severity: "informativo -- fecha 2 addenda pendentes; o achado novo (gate 0/15 sob global) e insumo direto, nao urgencia nova, pro desenho ja fechado de ADDENDUM-12 (item 2/3 usam DSR/PBO, nao o n_better bruto, exatamente porque este padrao — vitoria nominal sem significancia — e o que ADG-220 ja tinha sinalizado como ruido)"
+    layer: "models (Camada0/Camada1) + validacao (gate de permanencia)"
+    consequence: >
+      AG-371-ADDENDUM-9 e AG-371-ADDENDUM-10: FECHADOS, ver status
+      abaixo. Desenho de ADDENDUM-12(a) ["quais celulas entram na
+      campanha de recalibracao"] agora tem dado real pra aplicar: sob a
+      definicao la travada (falhar = nao (n_better>=4 AND n_significant
+      >=4), incorporando AG-220), as 15 celulas falham sob hiperparametro
+      global -- candidatas todas, sujeito ao braco by-combo (rodando)
+      mostrar se o hiperparametro calibrado (ADR-003, 10/15 celulas)
+      muda esse quadro em alguma delas antes de escopar a campanha nova.
+    resolved_by_commit: null
+    status: >-
+      Dados reais no disco (15 relatorios _global). Aguardando braco
+      by-combo (rodando em background) pra fechar a comparacao completa
+      de ADDENDUM-12(a) e alimentar o artefato de KPIs pedido pelo
+      Manager.
