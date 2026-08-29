@@ -784,55 +784,63 @@ def test_run_layer1_sprint_all_combinations_resolve_feature_ids_antes_do_loader(
     assert seen == [features_build.T1_FEATURE_IDS]
 
 
-def test_run_layer1_sprint_all_combinations_marca_report_em_feature_mismatch(
+def test_run_layer1_sprint_all_combinations_passa_feature_mismatch_como_parametro(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AG-371 -- `allow_feature_mismatch=True` + loader sinalizando
-    mismatch precisa deixar rastro no JSON persistido
-    (`report["hyperparam_feature_mismatch"]`), não só em log -- é a única
-    forma de quem consome o artefato depois saber que aquele `hyper` não
-    foi validado pro vetor que treinou de fato."""
-    reports_seen: list[dict[str, Any]] = []
+    """AG-371-ADDENDUM-16 (2026-08-29) -- regressão real: a versão antiga
+    mutava `report["hyperparam_feature_mismatch"]` DEPOIS de receber o
+    dict de volta de `run_layer1_sprint`, que já tinha gravado o JSON em
+    disco (`write_report_atomic`) ANTES de retornar -- a mutação só
+    afetava a cópia em memória, o arquivo persistido nunca carregava a
+    chave (medido real: os 15 relatórios `_bycombo` do braço by-combo
+    desta sessão, 10/15 com mismatch genuíno, nenhum com a chave no JSON).
+    Fix: `hyperparam_feature_mismatch` vira PARÂMETRO de `run_layer1_
+    sprint`, resolvido pelo chamador ANTES da chamada -- este teste prova
+    que o kwarg chega, não que o dict de retorno mude (isso agora é
+    responsabilidade de `run_layer1_sprint`, coberto pelos testes dele
+    próprio)."""
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         hyperparams_by_combo,
         "load_hyperparams_by_combo",
         lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), True),
     )
+    monkeypatch.setattr(
+        pipeline,
+        "run_layer1_sprint",
+        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {}},
+    )
 
-    def _fake_run(**kwargs: Any) -> dict[str, Any]:
-        report: dict[str, Any] = {"layer1_vs_layer0": {}}
-        reports_seen.append(report)
-        return report
-
-    monkeypatch.setattr(pipeline, "run_layer1_sprint", _fake_run)
-
-    reports = pipeline.run_layer1_sprint_all_combinations(
+    pipeline.run_layer1_sprint_all_combinations(
         symbols=("BTCUSDT",),
         resolutions=("R1",),
         use_hyperparams_by_combo=True,
         allow_feature_mismatch=True,
     )
 
-    assert reports[("BTCUSDT", "R1")]["hyperparam_feature_mismatch"] is True
+    assert calls[0]["hyperparam_feature_mismatch"] is True
 
 
-def test_run_layer1_sprint_all_combinations_sem_mismatch_nao_marca_report(
+def test_run_layer1_sprint_all_combinations_sem_mismatch_passa_false(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         hyperparams_by_combo,
         "load_hyperparams_by_combo",
         lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), False),
     )
     monkeypatch.setattr(
-        pipeline, "run_layer1_sprint", lambda **kwargs: {"layer1_vs_layer0": {}}
+        pipeline,
+        "run_layer1_sprint",
+        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {}},
     )
 
-    reports = pipeline.run_layer1_sprint_all_combinations(
+    pipeline.run_layer1_sprint_all_combinations(
         symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
     )
 
-    assert "hyperparam_feature_mismatch" not in reports[("BTCUSDT", "R1")]
+    assert calls[0]["hyperparam_feature_mismatch"] is False
 
 
 def test_run_layer1_sprint_all_combinations_propaga_mismatch_error_por_default(

@@ -680,6 +680,18 @@ def run_layer1_sprint(
     dsr_n_trials: int | None = None,
     feature_ids: tuple[str, ...] | None = None,
     hyper: alpha.LGBMHyperparams | None = None,
+    # AG-371-ADDENDUM-16 (2026-08-29) -- resolvido pelo CHAMADOR (
+    # `run_layer1_sprint_all_combinations`, via `hyperparams_by_combo.
+    # load_hyperparams_by_combo`) ANTES desta chamada; default `False`
+    # preserva bit-exato todo call site/teste existente. Precisa entrar
+    # no `report` ANTES de `write_report_atomic` (abaixo) -- setar essa
+    # chave no dict DEPOIS que esta função retorna (o que
+    # `run_layer1_sprint_all_combinations` fazia até agora) só muda a
+    # cópia em memória do chamador, nunca o JSON já gravado em disco
+    # (achado real: os 15 relatórios `_bycombo` do braço by-combo real
+    # desta sessão NUNCA carregaram a chave no arquivo, apesar de 10/15
+    # células terem `feature_mismatch=True` de verdade).
+    hyperparam_feature_mismatch: bool = False,
     # `AG-141`/item 10 de `ADR-005 §13.17` -- opt-in, default `False`
     # preserva bit-exato todo call site/teste existente (nenhum grava
     # bundle de modelo hoje). Ver `write_all_fold_model_bundles`: gate
@@ -1801,6 +1813,11 @@ def run_layer1_sprint(
         )
     if run_b1_refinement:
         report["baselines"]["b1_refinement"] = b1_refinement
+    # AG-371-ADDENDUM-16 -- precisa entrar ANTES do write (mesma chave que
+    # `run_layer1_sprint_all_combinations` marcava DEPOIS de receber o
+    # dict de volta, tarde demais pro JSON já persistido acima).
+    if hyperparam_feature_mismatch:
+        report["hyperparam_feature_mismatch"] = True
     write_report_atomic(report, dest_path=report_path)
     logger.info(
         "models.pipeline.run_layer1_sprint_done",
@@ -1970,13 +1987,19 @@ def run_layer1_sprint_all_combinations(
                 hyper=hyper,
                 use_economic_gate=use_economic_gate,
                 scratch=scratch,
+                # AG-371-ADDENDUM-16 -- precisa ir COMO PARÂMETRO (não
+                # mutar `report` depois de receber de volta): `run_layer1_
+                # sprint` já grava o JSON em disco antes de retornar
+                # (`write_report_atomic`), então mutar o dict aqui só
+                # mudava a cópia em memória -- os 15 relatórios `_bycombo`
+                # reais desta sessão nunca carregaram a chave, achado ao
+                # comparar o hash esperado (a1ec4831894d2136, vetor de 62
+                # extinto) contra o hash ativo (6469fc3ac89d3f43, 36
+                # atual) e ver `hyperparam_feature_mismatch` ausente em
+                # TODAS as 15 células mesmo com 10/15 genuinamente
+                # mismatched.
+                hyperparam_feature_mismatch=feature_mismatch,
             )
-            # AG-371 -- marca o report mesmo sob `allow_feature_mismatch=
-            # True` (única forma de o consumidor do JSON persistido saber
-            # que este `hyper` não foi validado pro vetor que treinou de
-            # fato, sem precisar reler log).
-            if feature_mismatch:
-                report["hyperparam_feature_mismatch"] = True
             reports[(symbol, resolution_id)] = report
     logger.info(
         "models.pipeline.run_layer1_sprint_all_combinations_done",

@@ -24806,6 +24806,67 @@ entries:
       coexistir e aceitavel dado que sao rastreaveis.
     resolved_by_commit: null
     status: >-
-      Codigo corrigido e testado. Braco by-combo relancado com --scratch
-      em background, aguardando conclusao real antes de fechar
-      ADDENDUM-12(a)/alimentar o artefato de KPIs.
+      Codigo corrigido e testado. Braco by-combo relancado com --scratch,
+      concluido com sucesso (exit 0), 15/15 relatorios _bycombo no disco.
+      Os 6 artefatos canonicos orfaos (BTCUSDT/R1-R3, Camada1 E Camada0 --
+      nao so Camada1, hyper e o MESMO parametro pras duas camadas, ver
+      pipeline.py::run_layer1_sprint) movidos por decisao do Manager pra
+      artifacts/predictions_alpha/_ag371_bycombo_pre_scratch_fix/ (nao
+      trackeado por git, mv simples). Achado NOVO ao validar os 15
+      relatorios _bycombo pos-conclusao: ver AG-371-ADDENDUM-16 (bug
+      separado, achado ao checar se o mismatch de fato marcava o JSON).
+
+  - id: AG-371-ADDENDUM-16
+    date: "2026-08-29"
+    addendum_de: "AG-371-ADDENDUM-15 -- validando os 15 relatorios _bycombo pos-conclusao antes de alimentar o artefato de KPIs pedido pelo Manager"
+    file: "src/models/pipeline.py::run_layer1_sprint (novo parametro), run_layer1_sprint_all_combinations (chamador corrigido), tests/unit/test_models_pipeline_paths.py"
+    found_by: "Claude, checando por que hyperparam_feature_mismatch nao aparecia em NENHUM dos 15 relatorios _bycombo apesar de 10/15 celulas terem entrada calibrada -- reproduziu load_hyperparams_by_combo isolado (mismatch=True correto), isolou o bug na propagacao"
+    gap: >
+      Bug de ORDEM DE EXECUCAO, nao de logica: `run_layer1_sprint_all_
+      combinations` calculava `feature_mismatch` corretamente (confirmado
+      isolado: hash esperado a1ec4831894d2136 -- vetor de 62 extinto --
+      != hash ativo 6469fc3ac89d3f43 -- 36 atual -- para as 10 celulas
+      calibradas), mas so marcava `report["hyperparam_feature_mismatch"]
+      = True` DEPOIS de `run_layer1_sprint` retornar. `run_layer1_sprint`
+      ja grava `write_report_atomic(report, dest_path=report_path)` ANTES
+      de retornar -- a mutacao do chamador so afetava a copia em memoria
+      do dict, nunca alcancava o JSON persistido. Mecanismo inteiro
+      (construido nesta mesma sessao, AG-371 original) esteve QUEBRADO
+      desde o commit que o introduziu -- nunca exercitado de verdade ate
+      o braco by-combo rodar pela 1a vez sobre as 15 combinacoes.
+      CONFIRMADO nos 15 relatorios _bycombo reais: 0/15 com a chave no
+      JSON, apesar de 10/15 (todas as calibradas) serem mismatch=True de
+      verdade -- quem lesse esses relatorios sem saber deste bug
+      concluiria (errado) que nenhuma celula estava sob hiperparametro
+      desatualizado.
+    severity: "alto -- o proprio mecanismo de rastreabilidade que AG-371 existe pra garantir (nunca deixar um hiperparametro stale entrar sem marca explicita) estava silenciosamente inerte; exatamente a classe de erro que este AG inteiro foi aberto pra fechar"
+    layer: "models/pipeline (ordem de escrita vs mutacao de dict)"
+    consequence: >
+      Fix: `hyperparam_feature_mismatch: bool = False` vira PARAMETRO de
+      `run_layer1_sprint` (nao mais mutacao pos-retorno) -- o proprio
+      chamador ja resolvia o valor ANTES de invocar `run_layer1_sprint`
+      (via `load_hyperparams_by_combo`), so faltava passar pra frente em
+      vez de tentar corrigir depois. `run_layer1_sprint` inclui a chave
+      no dict ANTES de `write_report_atomic`, mesmo padrao ja usado por
+      `economic_gate`/`b1_refinement` (campos condicionais adicionados
+      antes do write, nunca depois). 2 testes reescritos (verificam o
+      KWARG passado a `run_layer1_sprint`, nao mais o dict de retorno de
+      um fake que nao refletia o comportamento real) + validacao end-to-
+      end REAL (nao so mock): rodou BTCUSDT/R1 de verdade via
+      `run_layer1_sprint_all_combinations(use_hyperparams_by_combo=True,
+      allow_feature_mismatch=True, scratch=True)`, confirmou a chave
+      True tanto no dict em memoria quanto no JSON persistido em disco.
+      Suite `tests/unit -k models -m "not slow"`: 393 passed, 1 skipped
+      (pre-existente). ruff/mypy/banned_patterns limpos.
+      PENDENTE: os 15 relatorios _bycombo ja persistidos (rodada real
+      pos-ADDENDUM-15, pre-ADDENDUM-16) NAO tem a chave corrigida --
+      precisam ser regravados (rerun barato, mesmo config_hash/scratch,
+      so o campo de metadado do relatorio muda) antes de alimentar o
+      artefato de KPIs, senao o artefato reportaria "nenhum mismatch" de
+      forma incorreta pras 10 celulas calibradas.
+    resolved_by_commit: null
+    status: >-
+      Codigo corrigido e testado (mock + real). Relancando braco by-combo
+      mais uma vez (barato, ja validado que o mecanismo de treino em si
+      esta correto desde ADDENDUM-15) pra que os 15 relatorios finais
+      carreguem o metadado certo antes do artefato de KPIs.
