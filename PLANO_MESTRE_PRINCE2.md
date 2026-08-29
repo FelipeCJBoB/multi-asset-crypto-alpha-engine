@@ -693,18 +693,21 @@ ainda.
 | stage | item agendado | fonte |
 |---|---|---|
 | ~~Sprint 6 (Label Engine) — sweep `tp_atr_mult`/`sl_atr_mult`~~ — **SUPERSEDIDO 2026-08-17** | `V41-6` (`§11.6`) rederiva por distribuição de MFE, não por grid sweep — muda o MÉTODO, não só o valor. `time_stop_bars`/`atr_window` como constantes isoladas (fora do escopo de barreira) seguem `AG-031`/`AG-046`, seção própria | `PRD_V4_1.md` §4.1, `§11.6` |
-| **S1 — verificação de robustez de `tp_atr_mult`/`sl_atr_mult` (§16.10 regra 4) — EXECUTADO 2026-08-24** | Linha NOVA, não substitui a de cima — propósito diferente (robustez do valor JÁ escolhido, nunca busca de novo ótimo, ver design doc §2). Retomado após retratação do Manager de 2026-08-22 (motivo: Alpha retreinado de verdade com LightGBM nesta sessão). Resultado: célula de produção reproduz exato (sanidade OK); **TODAS as 7 células válidas têm `edge_atr_units` médio negativo**, inclusive a produção — achado convergente com AUC~0,51 do Alpha (metodologia independente, população incondicional, sem modelo). `veredito` de "sobrevive à faixa" fica `TBD` (decisão do Manager, não computada). `N_lifetime` +18 (counter 78→96). **[CORREÇÃO 2026-08-24, Changelog v3.51, `AG-204`]** apesar do veredito formal continuar `TBD`, o Manager decidiu trocar a constante de produção pela célula `R=1,S=3/2` (tp=1,5/sl=1,5) — "menos pior medido", não "edge positivo" — 20 `labels.parquet` reprocessados, retreino do Alpha redisparado | `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`, `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24`, `audit/architecture_gaps_log.yaml::AG-204` |
+| **S1 — verificação de robustez de `tp_atr_mult`/`sl_atr_mult` (§16.10 regra 4) — EXECUTADO 2026-08-24** | Linha NOVA, não substitui a de cima — propósito diferente (robustez do valor JÁ escolhido, nunca busca de novo ótimo, ver design doc §2). Retomado após retratação do Manager de 2026-08-22 (motivo: Alpha retreinado de verdade com LightGBM nesta sessão). Resultado: célula de produção reproduz exato (sanidade OK); **TODAS as 7 células válidas têm `edge_atr_units` médio negativo**, inclusive a produção — achado convergente com AUC~0,51 do Alpha (metodologia independente, população incondicional, sem modelo). `veredito` de "sobrevive à faixa" fica `TBD` (decisão do Manager, não computada). `N_lifetime` +18 (counter 78→96). **[CORREÇÃO 2026-08-24, Changelog v3.51, `AG-204`]** apesar do veredito formal continuar `TBD`, o Manager decidiu trocar a constante de produção pela célula `R=1,S=3/2` (tp=1,5/sl=1,5) — "menos pior medido", não "edge positivo" — 20 `labels.parquet` reprocessados, retreino do Alpha redisparado. **[SUPERADO 2026-08-25, `AG-232`/`AG-235`]** a medição acima leu a grade de RELÓGIO 15m, não a de produção (R1/R2/R3) — reexecutada sobre R1: gap edge-custo real 5,95-6,19bps em todas as células viáveis, trocar renderia +0,02bps (0,3%). Recomendação final: NÃO trocar `tp_atr_mult`/`sl_atr_mult` — geometria não é a alavanca. Detalhe completo do callout de correção: linha ~3404 deste documento | `docs/s1_design_doc_sweep_tp_sl_reward_risk_2026-08-22.md`, `audit/evidence_ledger.yaml::s1-tp-sl-sensitivity-2026-08-24`, `audit/architecture_gaps_log.yaml::AG-204,AG-232,AG-235` |
 | Sprint 10 (não redefinido por V4.1) | sweep `cost_stop_ratio_max`, `fee_budget_monthly`, `max_notional_multiple` | `config/constants.yaml` |
 | Sprint 11 (não redefinido por V4.1) | sweep `alpha_stability_screen_limiar` | `config/constants.yaml` |
 | Sprint 16 (não redefinido por V4.1 — Paper/experimento RPI, §9.5.1) | sweep `adverse_selection_bps` | `config/constants.yaml` |
 | ~~Quando reprocessamento dollar-bar concluir~~ — **fechado 2026-08-17** | remedição de M1 (Parkinson bate GK em 12/15, Manager decidiu Parkinson canônico); engenharia + reprocessamento real de `labels/`/leakage validado pros 5 símbolos sob R1; só falta retreino real do Alpha (código pronto, `--resolution-id`/`--vol-estimator-id` no CLI, não executado por decisão do Manager) | `audit/architecture_gaps_log.yaml::AG-036`, `docs/refactor_parkinson_canonico.md`, §11.5 |
-| Decisão do Manager, sem stage travado ainda | retreino real de Alpha Camada 1 sob `resolution_id="R1"`+`vol_estimator_id="parkinson_w20"` (5 símbolos) + flip de `canonical_volatility_estimator.value` — comando pronto, agendado junto de outras mudanças já previstas no roadmap, não como run isolado | `docs/refactor_parkinson_canonico.md`, `audit/n_lifetime.yaml` id 17 |
+| ~~Decisão do Manager, sem stage travado ainda~~ — **RESOLVIDO 2026-08-27/28** | flip de `canonical_volatility_estimator.value` pra `parkinson_w20` aplicado em produção (commit `4f3b231`) + wiring do default real (`AG-361`, mesmo dia — a constante não tinha código lendo-a por nome, `--all-combinations` sem `--vol-estimator-id` explícito revertia a decisão em silêncio). Retreino de Alpha Camada 1 sob R1+Parkinson aconteceu, mas não isolado como esta linha previa — junto da mudança muito maior de `T1_FEATURE_IDS` (7→22, `AG-362`), ver `§15.29` | `docs/refactor_parkinson_canonico.md`, `audit/n_lifetime.yaml` id 17, `audit/architecture_gaps_log.yaml::AG-361`, `§15.29` |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **decididos e implementados 2026-08-16** | 3 bloqueadores dollar-bar (`AG-031` horizonte do label, `AG-042` redefinição M15/M30/H1, `AG-032` embargo CPCV) — detalhe linha a linha em §11.5 | `docs/refactor_dollar_bar_canonico.md`, §11.5 |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | remédio pra `AG-030` (janela expansiva não-comparável cross-asset) — implementado, testado (94 passed), M6 desbloqueado | `audit/architecture_gaps_log.yaml::AG-030` |
 | ~~Decisão do Manager, sem stage travado ainda~~ — **fechado 2026-08-16** | convenção de contagem de trial pra sweep classe A (1 trial em bloco vs. N por ponto) — registrada em `audit/n_lifetime.yaml`, autorizada pelo Manager. **`N_lifetime` descontinuado 2026-08-17 como orçamento vinculante — ver nota abaixo** | `audit/architecture_gaps_log.yaml::AG-039` |
 | Decisão do Manager, sem stage travado ainda | `AG-050` (achado de arquitetura, não item de PRD): `src/risk/`, `src/execution/`, `src/regime/` nunca passaram por revisão independente (§6.4) — diferente de `src/labels/`, que tem histórico denso disso; `risk/sizing.py`/`limits.py`/`kill_switch.py` batem 4/4 eixos de materialidade. **Parcialmente endereçado 2026-08-17/18** — os 4 módulos NOVOS de `src/regime/` criados pra M4 (`canonicalization.py`/`bocpd.py`/`jump_model.py`/`hmm_gaussian.py`) já passaram por `audit_engineering`/`project_assurance` (Fase 5 do M4, commits `6be5960`/`7486620`/`8c1ba16`/`e1e6ff4`/`b131e02`); o código PRÉ-EXISTENTE do módulo (`build.py`/`classifier.py`/`stress.py`) continua sem essa revisão — `AG-050` não fechado, só reduzido em escopo | `audit/architecture_gaps_log.yaml::AG-050` |
 | Decisão do Manager, sem stage travado ainda | `AG-055` (achado de arquitetura, não item de PRD): 5 constantes `provenance: MEASURED` sem fonte verificável (`maker_fee`, `taker_fee`, `bnb_discount`, `capital_inicial_brl`, `usd_brl_ref`) — nenhuma classe A, não bloqueia build, mas rótulo semanticamente frágil | `audit/architecture_gaps_log.yaml::AG-055` |
-| Backlog condicionado a `AG-036` (extinção do T1) virar trabalho real — **adicionado ao roadmap 2026-08-17, autorizado pelo Manager** | `AG-038`: `src/analysis/faixa2_caminho_b.py:1229` deriva índice posicional via nome→posição no vetor T1 (`idx_reduced = [T1_FEATURE_IDS.index(f)...]`) — ponto de acoplamento que a varredura original de extinção do T1 não tinha contado. Severidade baixa, não bloqueia nada hoje — só não pode faltar no checklist quando `AG-036` virar implementação real | `audit/architecture_gaps_log.yaml::AG-038` |
+| Backlog condicionado a `AG-036` (extinção do T1) virar trabalho real — **adicionado ao roadmap 2026-08-17, autorizado pelo Manager** — **[REABRIR, 2026-08-28]** o gatilho original supunha extinção do T1; o gatilho real virou CHURN de composição (7→22→29→36 no mesmo dia/janela, `§15.29`), mecanismo diferente do previsto — item continua válido, mas o texto original não cobre este cenário; verificar `faixa2_caminho_b.py:1229` contra o `T1_FEATURE_IDS` real antes de fechar, não reescrever sem checar o código | `audit/architecture_gaps_log.yaml::AG-038` |
+| Decisão pendente do Manager — **adicionado 2026-08-28** | `AG-362` reverte o critério de promoção marginal (`ADR-005 §2.2`) por decisão direta; `T1_FEATURE_IDS` 7→22 commitado, retreino canônico real sob 22 features tem sinal misto (0/15 `permanence_pass`). `AG-371` acha e corrige um viés estrutural real de Camada 0 (`E27f` domina 93% do gain), mas a VALIDAÇÃO da correção fica confundida por uma sessão paralela que mudou `T1_FEATURE_IDS` no meio do teste (22→29→36, Lote D/D2, `ADR-006`, não commitados). Decisão pendente: qual vetor é autoritativo, e se remedir a correção de `E27f` sob 22 features limpo | `audit/architecture_gaps_log.yaml::AG-362,AG-371,AG-371-ADDENDUM-10`, `§15.29` |
+| Decisão pendente do Manager — **adicionado 2026-08-28** | `AG-342`: os 4 cutoffs do classificador de regime REALMENTE ativo (`regime_er_cutoff`/`regime_vol_cutoff`, entrada/saída) são classe A `provenance: ASSUMED`, `sweep_required: true`, `review_by: sprint_5` — nunca varridos apesar do projeto estar muito além do sprint 5; por regra do próprio `CLAUDE.md` isso deveria bloquear build de produção, e não bloqueia | `audit/architecture_gaps_log.yaml::AG-342`, `§15.29` |
+| ~~Decisão pendente do Manager~~ — **CORRIGIDO 2026-08-28, mesma sessão (ainda não commitado)** | `AG-373`: `A17_true_range_per_overshoot` (Lote D/D2) tinha defeito dimensional real (`TR/overshoot` não era adimensional) — redesenhada pra `A17_log_tr_per_overshoot_ratio`, razão de 2 quantidades adimensionais em `ln1p`, verificada por teste de invariância a nível de preço | `audit/architecture_gaps_log.yaml::AG-373`, `§15.29`, `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md` (addendum) |
 
 **`N_lifetime` DESCONTINUADO como orçamento vinculante (2026-08-17,
 decisão do Manager: "pode descontinuar, não nos será útil pra esse
@@ -719,8 +722,16 @@ descontinuar o contador sem redefinir o que substitui essas duas coisas
 deixa **Gate 6 e o critério de encerramento #5 sem definição operacional
 clara**. Não inventei uma substituição aqui (decisão estatística/de
 governança que não é minha pra tomar sozinho) — registrado como
-`AG-077`, decisão pendente do Manager sobre o que (se algo) substitui a
-penalidade de multiple-testing no Gate 6.
+`AG-077`. **Decisão do Manager, 2026-08-28, `AG-077` FECHADO**: nada
+substitui a penalidade de multiple-testing por outra fórmula — o
+próprio Gate 6 deixa de ser "DSR final com `N_lifetime`=60" e passa a
+ser resultado empírico ("pronto" = lucro entregue em Live Demo). O
+critério de encerramento #5 (`PRD_V4_1.md` §6.5, guardrail contra busca
+infinita, pergunta diferente de "quando declarar sucesso") não foi
+tocado por esta decisão. Detalhe completo, incluindo o novo gap que essa
+decisão abriu (definição operacional de "lucro"/"Live Demo" ainda
+pendente): `§11.6` abaixo, `audit/architecture_gaps_log.yaml::AG-077`/
+`AG-374`.
 
 **Regra de leitura:** sweeps desta tabela (Sprint 10/11/16) não custam
 `N_lifetime` — a mecânica de "conta quando roda" segue documentada por
@@ -752,7 +763,7 @@ escrito no fim, é o estado real.
 | `data` (`src/data/build_dollar_bars.py`) | calibração causal do threshold dollar-bar (`build_dollar_bars_walkforward`) decidida e reprocessada em produção real — `trailing_window_days=7`/`cadence_days=7`, 5 símbolos × 3 resoluções, 15/15 células sem erro | ✅ pronto — decisão + reprocessamento real (`AG-124`, `§15.15`); CLI (`--mode single_window\|walkforward`) fechado (`AG-138`, commit `ef7f5d3`) | `AG-034` addendum, `AG-124`, `AG-138` |
 | `monitoring` (`src/monitoring/dollar_bar_drift.py`) | alarme de deriva de threshold (item 2) | ✅ pronto — `evaluate_drift`/`measure_new_window_drift`, 12 testes, medido com número real (BTCUSDT `drift_ratio=18,18x`) — **linha corrigida 2026-08-17, estava desatualizada** (dizia "não iniciado"; achado ao sincronizar a governança). Zero caller de produção/live ainda — só invocação manual (mesma disciplina de escopo de `build_dollar_bars.py`), decisão explícita de não comissionar `project_assurance` (abaixo do limiar de materialidade, mesma lógica de `AG-050`) | `AG-042::addendum_item2_alarme_de_deriva_2026_08_16` |
 | `monitoring` (regra de incremento de `calibration_version`, item 3) | regra formal de QUANDO/COMO recalibrar em produção | ⬜ não iniciado — Manager aceitou `calibration_scope="validation"` como base da produção por enquanto (mitigado pelo alarme de deriva do item 2), item 3 em si continua aberto, decisão de negócio | `AG-042::addendum_decisao_calibration_scope_2026_08_17` |
-| `features` (M1, `src/features/volatility.py`) | remedição dos 8/6 candidatos sob grade dollar (5 símbolos × R1/R2/R3) | ✅ pronto — Parkinson bate GK em 12/15 combinações (`AG-065`/`AG-074`), Manager decidiu Parkinson canônico 2026-08-17. **DECIDIDO, NÃO DEPLOYADO**: `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` — GK segue em produção até o retreino real (linha abaixo) rodar | `AG-036` addendums `medicao_completa`/`decisao_manager_2026_08_17` |
+| `features` (M1, `src/features/volatility.py`) | remedição dos 8/6 candidatos sob grade dollar (5 símbolos × R1/R2/R3) | ✅ pronto — Parkinson bate GK em 12/15 combinações (`AG-065`/`AG-074`), Manager decidiu Parkinson canônico 2026-08-17. **DEPLOYADO 2026-08-27** (commit `4f3b231`): `constants.yaml::canonical_volatility_estimator.value` = `parkinson_w20`, Parkinson em produção. Gap de wiring achado e fechado no mesmo dia (`AG-361` — a constante não tinha código lendo-a por nome) | `AG-036` addendums `medicao_completa`/`decisao_manager_2026_08_17`, `AG-361`, `§15.29` |
 | `labels`/`features`/`regime`/orquestração (Parkinson+dollar-bar, Fases 0-4) | `LabelConfig.resolution_id`, `vol_estimator_id` selecionável em `build_t1_features`/`build_regimes`, `build_modeling_frame`/`run_layer1_sprint`/`leakage.py`/`fill_reconciliation.py` parametrizados por grade única (`resolution_id="R1"` deriva `bar_source`/`grade_id`, nunca dois parâmetros independentes) | ✅ pronto — 1305/1305 sem regressão, commits `5df33c3` (labels), `3449471` (features), `9a4c3c5` (regime), `b5760fe` (orquestração) | `docs/refactor_parkinson_canonico.md`, `AG-036` addendum `engenharia_pronta_producao_adiada_2026_08_17` |
 | `data` (reprocessamento real de `labels/`, 5 símbolos, R1+Parkinson) | `data/labels/{symbol}/R1/v1/labels.parquet` — BTCUSDT 463.034/ETHUSDT 328.452/SOLUSDT 327.461/BNBUSDT 328.440/XRPUSDT 327.488 linhas; labels 15m de produção confirmados intocados | ✅ pronto — executado 2026-08-17, `run_and_write_labels_dollar_bar_parkinson()` | `src/labels/backfill_multi_symbol.py`, `docs/refactor_parkinson_canonico.md` |
 | `validation` (14 testes de vazamento contra R1, 5 símbolos) | 12 PASS/0 FAIL/2 sentinela em TODOS os 5 — zero vazamento | ✅ pronto — executado 2026-08-17, CLI nova (`--resolution-id`) | `data/validation_reports/leakage_report_{symbol}_R1.json` |
@@ -837,7 +848,7 @@ proposta a confirmar, não como verdade estabelecida:
 | item | trials | status | referência |
 |---|---|---|---|
 | Camada 0 — T0.1-T0.6 (V41-0), T0.5 baseline janela comum (V41-1) | 0 | ✅ fechada — `G-C0-1..7` todos citados como cumpridos no texto do PRD | `PRD_V4_1.md` §3.1 |
-| **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DECIDIDO, NÃO DEPLOYADO** — `constants.yaml::canonical_volatility_estimator.value` continua `garman_klass_w20` (é o que roda em produção hoje); vira `parkinson_w20` só quando o retreino real do Alpha Camada 1 rodar (§11.4) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065` |
+| **M1(V4.1) — Volatilidade** | 0 | ✅ medido (2026-08-11/12) — GK venceu originalmente, **remedido sob dollar-bar nesta sessão** (2026-08-17): Parkinson vence 12/15, Manager decidiu Parkinson canônico. **DEPLOYADO 2026-08-27** (commit `4f3b231`) — `constants.yaml::canonical_volatility_estimator.value` = `parkinson_w20`, roda em produção; gap de wiring achado e fechado no mesmo dia (`AG-361`) | `PRD_V4_1.md` §3.2 M1, `AG-036`/`AG-065`, `AG-361`, `§15.29` |
 | **M2(V4.1) — Barra** | 0 | ✅ medido e decidido — dollar bar canônico (`canonical_bar_type=dollar`) | `PRD_V4_1.md` §3.2 M2, `AG-034` |
 | **M3(V4.1) — Timeframe** | 0 | ✅ medido (2026-08-14) — BTC não-monótono em TF, achado real; decisão de qual TF adotar fica pra V41-5 (ainda não escrito) | `PRD_V4_1.md` §3.2 M3 |
 | **M4(V4.1) — Regime** | `≤18` ratificado de fato pela execução real (6 candidatos × 3 resoluções) — **contagem formal em `N_lifetime` segue pendente de `AG-077`** (mesma decisão de sempre, não resolvida por esta atualização) | 🟡 **4ª execução real CONCLUÍDA (2026-08-19) com AG-090/091/092/093 corrigidas e auditadas — resultado nulo generalizado, tratado como achado válido, não como estudo com bug.** Todos os 18 p-valores de permutação (6 candidatos × 3 resoluções, por lado) ficaram entre 0,30 e 0,85 — nenhuma célula significativa, incluindo BOCPD (líder sob a métrica clássica de I², depois identificada como artefato de autocorrelação intra-regime via correção de permutação em bloco, não heterogeneidade real). Jump Model com poder estatístico inexistente (mediana de 4 episódios/célula, mínimo 1, em 100% das 102 células) — resultados dele não interpretáveis, 3 problemas independentes combinados (decode não-causal confinado ao fold, poder nulo, λ calibrado numa fatia só de BTC nunca retestada). 2 auditorias externas brutas processadas + validação cruzada própria (código real + literatura: Adams & MacKay 2007, Nystrup/Cortese/Shu, Winkler et al., Bailey/López de Prado) — resultado categorizado em redesenho/fix mecânico/habilitação/rejeitado, documento próprio: `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`. **M4 PAUSADO** (decisão do Manager, 2026-08-19) — a sequência de retomada (transferibilidade de λ do Jump Model → recalibração de `hazard_lambda` restrita a pré-teste → enriquecimento do painel diagnóstico → congelamento + locked holdout → veredito final) não recomeça até a Trilha B (linha abaixo) travar o contrato downstream, porque escolher candidato de regime sem saber o contrato de consumo mede a pergunta errada. **Atualização 2026-08-20 — Trilha B travou (ADR-001 ratificado, §15.12) e mudou o critério de retomada, não só destravou a data**: ADR-001 §2.7 decide regime como GATE (papel 2), não FEATURE (papel 1), na v1 — "gate não precisa prever, precisa evitar". O resultado nulo do M4 mediu heterogeneidade de RETORNO (utilidade de feature), pergunta que deixou de importar pra decisão de promoção. A pergunta que importa agora (heterogeneidade de VOLATILIDADE futura, occupancy do estado de stress, transition failure rate, detection delay — qualidade como gate) nunca foi medida, apesar de já estar catalogada como extensão barata em `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md` ("fix mecânico") — registrado como `AG-114`. Retomada de M4 aguarda autorização do Manager pra rodar esses 4 diagnósticos antes do veredito final, não mais só "esperar a Trilha B" **Atualização 2026-08-21 — diagnósticos RODADOS, fila fechada**: `AG-118` (Gate Efficiency) implementado e **RESOLVIDO** — `lift` não desvia de 1,0 em 90 células, sem sinal econômico detectável, robusto ao candidato (k2/k3/k4). `AG-114` (candidato vencedor) foi **REABERTO** no mesmo dia por auditoria externa — Gate 1 aplicado com 2 critérios misturados (mediana vs. máximo-por-janela); sob o critério literal, `hmm_gaussian_k2_v1` venceria em 2 das 3 resoluções. Manager autorizou `hmm_gaussian_k4_v1` como candidato de regime **canônico de produção** (override de negócio explícito, não resolução do Gate 1 na época) — regime saiu do vetor de treino do Alpha, novo builder `src/regime/build_hmm.py`, Risk Engine wired de forma candidato-agnóstica. **Atualização 2026-08-21 — Gate 1 RE-OPERACIONALIZADO (§15.12.6)**: Manager travou o critério em pior-caso (não mediana), `hmm_gaussian_k2_v1` passa a falhar o Gate 1 nas 3 resoluções sob esse critério — veredito `hmm_gaussian_k4_v1` inicialmente lido como "confirmado e robusto" nesta atualização, **mas `§15.12.7` (1 dia depois, mesma trilha) refuta essa leitura como ALEGAÇÃO ESTATÍSTICA**: `AG-114` segue tecnicamente aberto quanto à metodologia (empate detectado pelo piso do p-valor em R1/R2). O que de fato sustenta `hmm_gaussian_k4_v1` como candidato canônico de produção hoje é **override de negócio explícito do Manager** (`§15.13`), não uma resolução estatística limpa do Gate 1 — não confundir as duas coisas. Detalhe completo: `§15.12.6`, `§15.12.7`, `§15.13` | `PRD_V4_1.md` §3.2 M4 (secundário), `AG-075`, `AG-077`, `AG-083` a `AG-093`, `AG-114`, `AG-118`, `AG-122`, `docs/m4_regime_plano_execucao.md`, `docs/m4_regime_auditoria_externa_2026-08-19_validacao_cruzada.md`, `docs/ADR-001_arquitetura_artefatos_e_contratos_2026-08-19_base.md` §2.7, `§15.13` |
@@ -850,20 +861,20 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
 | V41-10 — Meta-Model + Grupo J | ≤2 | 🟡 **desenho travado v3 (auditoria adversarial + `project_assurance`), ZERO implementado** (2026-08-22, `§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature; **Grupo J desacoplado e movido para DEPOIS** (marginalidade de PnL zero por construção do label). Bloqueado pelo Gate E0 e pelo retreino do Alpha | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19` |
-| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2` |
+| — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração) | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
-| V41-12 — DSR final, `N_lifetime`=60 | 0 | ⬜ não iniciado — Gate 6 | `PRD_V4_1.md` §6.1 |
+| V41-12 — ~~DSR final, `N_lifetime`=60~~ — **REDEFINIDO 2026-08-28** | 0 | 🟡 Gate 6 = lucro entregue em Live Demo (`AG-077`, fechado). Definição operacional: "lucro" = PnL positivo E distinguível de ruído (mesmo framework de `economic_gate.py::is_distinguishable`); "Live Demo" = capital real reduzido (não testnet/paper), dentro de `capital_inicial_brl` (R$ 1.000, §0); janela mínima 1 mês. **N mínimo de trades e semântica AND/OR entre janela e N seguem TBD** (`AG-374`, parcial) | `PRD_V4_1.md` §6.1, `audit/architecture_gaps_log.yaml::AG-077`, `AG-374` |
 
 **Regra desta aba:** mesma de §11.5 — nenhuma linha muda de status sem
 commit real apontável. `N_lifetime` orçado pra V4.1 completa era 15
 trials (M4=6, V41-6=4, V41-7=3, V41-10=2) sobre a base de 45 —
 **descontinuado como gate vinculante 2026-08-17** (decisão do Manager,
 `§11.4`) — M4/V41-6/V41-7/V41-10 não ficam mais bloqueadas por
-`counter=63 > 60`. `V41-12` (linha acima, "DSR final com
-`N_lifetime`=60") e o critério de encerramento #5 (`PRD_V4_1.md` §6.5)
-ficam **sem definição operacional clara** até o Manager decidir o que
-(se algo) substitui a penalidade de multiple-testing no Gate 6 — ver
-`AG-077`.
+`counter=63 > 60`. `V41-12` (linha acima) e o critério de encerramento
+#5 (`PRD_V4_1.md` §6.5) ficaram **sem definição operacional clara** até
+o Manager decidir o que (se algo) substitui a penalidade de multiple-
+testing no Gate 6 — **decisão tomada 2026-08-28, ver `AG-077`
+(fechado)/`AG-374` (novo gap aberto pela própria decisão) logo abaixo**.
 
 **Nota de proveniência, 2026-08-18 (achado ao atualizar a governança):**
 a aritmética acima ("M4=6... base de 45") é texto HISTÓRICO da época em
@@ -887,6 +898,52 @@ individual por candidata = 1 trial, nunca colapsa por resultado da
 rodada) — não fecha `AG-077` sozinha (é sobre uma dimensão nova, não
 sobre o Gate 6 em geral), mas é o tipo de precedente que a decisão final
 de `AG-077` provavelmente vai precisar reconciliar.
+
+**Atualização, 2026-08-28 (`AG-077` FECHADO) — Gate 6 deixa de ser
+estatístico, vira empírico.** Decisão direta do Manager: "o que define
+'pronto' é entregar lucro Live Demo". Nada substitui `N_lifetime`/DSR
+por outra fórmula de multiple-testing — o próprio Gate 6 (`V41-12`,
+linha acima) deixa de ser "DSR final com N_lifetime=60" e passa a ser
+resultado empírico real (lucro em ambiente de Live Demo). Escopo da
+mudança: só o Gate 6 POSITIVO (definição de sucesso/conclusão) — os
+critérios de ENCERRAMENTO #5/#6 de `PRD_V4_1.md §6.5` (guardrail contra
+busca infinita sem edge) e os Gates 0-5 (promoção de artefato/constante
+individual, `§16.1`/`§16.10`) são mecanismos distintos, não tocados por
+esta decisão. `src/validation/dsr.py`/`_audited_n_lifetime()` (código
+real que ainda lê `N_lifetime`) também não foi tocado — se deve ser
+removido, marcado non-binding, ou mantido como diagnóstico auxiliar é
+decisão de implementação separada, ainda não tomada.
+
+**Fechar `AG-077` abriu um gap novo** (`AG-374`, mesma disciplina de
+`AG-114`/`AG-118`/`AG-122` — toda regra de decisão travada a priori
+precisa de definição operacional de cada termo, `CLAUDE.md`) — **2 dos 3
+termos já definidos no mesmo dia, via 3 perguntas diretas ao Manager**:
+
+- **"Lucro"** = PnL positivo **E** distinguível de ruído — mesmo
+  framework já usado em `economic_gate.py::is_distinguishable`/`AG-246`
+  (método delta, erro combinado), aplicado ao PnL realizado de Live Demo
+  (não a um backtest). Rejeitado explicitamente "qualquer PnL positivo
+  uma vez" — vulnerável a variância de amostra pequena.
+- **"Live Demo"** = capital real reduzido, dentro do `capital_inicial_
+  brl` já travado (R$ 1.000, `§0`) — NÃO testnet, NÃO paper trading. Só
+  capital real prova liquidez/slippage/fill real — e esta sessão já
+  mediu que isso importa de verdade (fill 42,2% vs. 97,1% otimista,
+  `PRD_V4_1.md §6.5` critério 3).
+- **Capital/janela — PARCIAL**: capital R$ 1.000 (mesmo de cima, não é
+  grau de liberdade livre), janela mínima 1 mês corrido. **N mínimo de
+  trades continua TBD, não inventado** (B23) — candidato de precedência
+  no próprio repo (`evidence_ledger.yaml::n>=200` pra status "verde") foi
+  calibrado pra amostra de BACKTEST, não pro ritmo real de sinal de Live
+  Demo (`AG-371` já mostrou células que ficam dias sem sinal) — aplicar
+  sem checar factibilidade repetiria o erro que este próprio gap existe
+  pra evitar. Semântica entre janela e N (as duas condições precisam
+  valer, ou uma basta) também não travada ainda.
+
+Sem consequência imediata — o projeto está longe de ter um candidato
+real a Live Demo hoje (`AG-371`) — mas fechar isso antes de existir um
+candidato na mesa evita o mesmo viés que B20 (`PRD_V4_1.md §6.3`) já
+existe pra prevenir em outro contexto. Detalhe completo:
+`audit/architecture_gaps_log.yaml::AG-374`.
 
 ---
 
@@ -4258,6 +4315,25 @@ reconhecer que a decisão não se sustenta neste ambiente até migração
 Linux/cloud. Ver `audit/architecture_gaps_log.yaml::AG-201`, Changelog
 v3.50.
 
+**[CORREÇÃO 2026-08-29, Changelog v3.57] Migração Linux/cloud ACONTECEU
+— GPU real funciona.** "sem prazo definido" (2026-08-24) estava
+desatualizado em menos de uma semana: `tools/infra/wsl2_cuda_setup.sh`
+provisiona WSL2 Ubuntu-22.04 + CUDA Toolkit 12.6 + NCCL 2.24.3 (pareados
+explicitamente — `AG-375` achou que apt não garante o casamento entre os
+dois) + LightGBM 4.7.0 recompilado com `USE_CUDA=ON`, confirmado com
+treino real (dado sintético e dado real do projeto, Camada0 e Camada1,
+`device_type="cuda"`, ambos OK). O bloqueio estrutural descrito acima
+(NCCL exige Linux) segue tecnicamente correto — a correção é que "Linux"
+não exigia trocar de máquina, só rodar dentro do WSL2 na mesma máquina
+Windows. `device_type="cpu"` continua o default de produção (benchmark
+CPU-vs-GPU real ainda não executado); `cuda` agora é uma opção que
+funciona de verdade, não uma opção teórica. 3 bugs de infra adicionais
+achados nesse provisionamento (`AG-375`/`AG-376`/`AG-377`) e 1 bug de
+crash do LightGBM CUDA Tree Learner exposto pela busca Optuna
+(`AG-378`, bug upstream confirmado `microsoft/LightGBM#6512`) — ver
+Changelog v3.57 e Road Map Vivo v2, seção "Alpha — Optuna real substitui
+campanha manual + GPU via WSL2".
+
 **E. `AG-202` (médio, sintoma mitigado, causa raiz ABERTA) — `t0` duplicado.**
 2 de 223.172 barras de BTCUSDT/R1 (0,0009%) produzem linhas duplicadas em
 `mf.data`, rastreado até o join de features/regime dentro de
@@ -5448,6 +5524,184 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 
 ---
 
+### 15.29 `AG-362` reabre L3→T1 por decisão direta (poda `ADR-005 §2.2`), retreino canônico sob 22 features é misto, e `AG-371` acha — mas não termina de validar — um viés estrutural de Camada 0 (2026-08-27/28)
+
+**Origem.** `ADR-005` (`docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md`,
+2026-08-26/27) estratificou o catálogo (~90 features) por camada de
+evidência (`L1`-`L4`) e travou um critério de promoção `L3`→`L2` via
+Benjamini-Hochberg marginal por símbolo (`§2.2`, corrigido de célula pra
+símbolo em `AG-294`) + estabilidade temporal — ~50 achados de engenharia
+nesses 2 dias (censo de nulos, purge dimensionado pelo vetor real,
+detector de linhagem label↔registro, R2 nunca aplicada em `src/models/`,
+`AG-298` a `AG-336`), não detalhados aqui (ver `SPRINT_LOG` 2026-08-26/27
+e o próprio ADR). Resultado do critério: `L2` ficou VAZIA — zero promoção
+desde a criação do gate — apesar de 15 features `L3` com tese declarada e
+sem defeito confirmado.
+
+**`AG-362` (2026-08-27) — o Manager reverte o GATE, não o dado medido.**
+Achado que motivou: o teste marginal é estruturalmente cego a interação
+entre features (informação sinérgica, McGill 1954); o LightGBM que de
+fato consome o vetor captura interação via splits sequenciais, então o
+filtro de ENTRADA era calibrado por um instrumento mais fraco que o
+modelo que deveria proteger. Decisão direta do Manager: feature `L3` com
+tese declarada e sem `defeito_construcao`/`quarentena` confirmado passa a
+ser promovível sem protocolo formal de medição prévia — a régua nova é
+"o Alpha, sob CPCV purgado, ganha algo com a feature", medição que fica
+com `src/models/`, não mais gate de entrada em `src/features/`. 15
+features `L3`→`T1` (momentum A01-A04/A06, `C12_vol_of_vol_48`,
+`D05f_taker_buy_ratio`, `D08f_trade_count_z_48`, `E01f_funding_last`,
+`E05f_time_to_funding_h`, `E12f_price_oi_divergence`, `K03_is_weekend`,
+`K04_session_asia`, `E14f_toptrader_ls_ratio`, `E16f_global_ls_ratio`) —
+`T1_FEATURE_IDS` vai de **7 pra 22**; 35 features `L4` saem de
+`SUPPORT_FEATURE_IDS` (poda real, endereça o achado de `AG-336` —
+"classificar `layer` não bastava, faltava podar"). 91 testes verdes,
+`banned_patterns`/`ruff`/`mypy` limpos — mas nenhum exercitava
+`src/models/dataset.py`, o consumidor real.
+
+**A mudança ficou isolada do módulo que a consome (`AG-365`).**
+`build_modeling_frame` decidia carregar dado caro de futures-positioning
+olhando só `extra_feature_ids` (parâmetro de análise pós-hoc), nunca
+`T1_FEATURE_IDS` (o vetor real) — 2 das 15 promovidas (`E14f`/`E16f`)
+dependem desse dado; retreino canônico crashava no 1º fold
+(`DeadFeatureColumnError`). Corrigido estruturalmente (união dos dois
+conjuntos, não sincronização manual) — mesma classe de defeito que
+`AG-300` já tinha fechado uma vez, um nível abaixo na pilha. 3 bugs
+adicionais de engenharia de medição (`AG-366` config_hash não capturava
+composição de T1 sob `feature_ids=None`; `AG-367` `NaN` de Sharpe
+indefinido contaminava o agregado; `AG-368` colisão de hash entre
+designs de hiperparâmetro) achados e corrigidos ao vivo durante a própria
+medição de valor incremental.
+
+**Valor incremental das 15 promovidas — medido, resultado misto.**
+Desenho de 3 rodadas (`off`/`on`/`base`) sobre as 15 combinações reais,
+sob CPCV purgado: **zero das 15 passa `permanence_pass` em qualquer das
+3** — 22 features não é pior nem melhor que a base de 7 nesse critério
+binário. Nas métricas finas o sinal é MISTO: por soma de
+`delta_sharpe_mean`, 22+hiperparâmetro-por-combo lidera (23,84 vs 16,86),
+dominado por 2 células isoladas (80% da soma); por caminhos vencidos e
+gate econômico pós-trial, a base de 7 lidera nos dois (33/75 vs 22/75;
+17/25 vs 10/27 lados). Vencedor de hiperparâmetro (decide o desenho do
+retreino canônico): "on" (por combo), por definição pré-registrada.
+
+**Retreino canônico real (2026-08-28) — 22 features + hiperparâmetro por
+combo, 15/15 escritas em `artifacts/predictions_alpha/`.** Resultado
+idêntico ao já medido na comparação pareada: **0/15 `permanence_pass`**,
+22/75 caminhos vencidos, 10/27 lados no gate econômico. Achado novo:
+`N_eff` efetivo mediano = **2,86 de 22 features** — 7/15 combinações
+concentram o gain em menos de 2,5 fatores efetivos mesmo com o vetor de
+22 disponível, CONTRA a premissa de "captura de interação ampla" que
+motivou `AG-362`. 5/15 (`BNBUSDT_R1/R2`, `BTCUSDT_R1`, `ETHUSDT_R1`,
+`XRPUSDT_R1`) têm Sharpe da Camada 0 indefinido — discriminação real
+(Delta AUC B4 0,12-0,15) não convertendo em Sharpe positivo (percentil
+B1 baixo), hipótese aberta de calibração de `tau`.
+
+**`AG-371` — causa dupla das 5 células zeradas.** (1) Hiperparâmetro
+stale: `config/alpha_hyperparams_by_combo.yaml` (10 combos) foi calibrado
+25/08 pra um vetor de 62 features que `AG-362` já não deixou existir
+nessa forma — nunca recalibrado. Trava fail-closed implementada e
+VERIFICADA (autorização de execução do Manager): hash de conteúdo do
+vetor confirma mismatch real; `HyperparamFeatureMismatchError` bloqueia
+o arquivo stale até recalibração. (2) Viés estrutural, mais fundo (7
+addenda): as 5 células têm `n_signals=0` nos 5 caminhos do CPCV, nas
+duas pontas — ausência determinística de sinal, só na variante SEM
+restrição monotônica (Camada 0, por desenho). Mecanismo: `E27f_cost_
+atr_ratio` (maior `|IC|` entre as 22) domina **93% do gain** de Camada 0;
+2 hipóteses de correção via hiperparâmetro puro (`feature_fraction`,
+`lambda_l2`) TESTADAS e REFUTADAS por medição direta — espaço de
+hiperparâmetro padrão exaurido, causa é estrutural (nenhum freio contra
+feature contínua de alta correlação dominar a busca gulosa de split).
+Correção AUTORIZADA pelo Manager: restrição monotônica só em `E27f`
+dentro de Camada 0 — promovida a comportamento DEFAULT (política
+`34ae285`, não flag), 391 testes verdes.
+
+**[SUPERADO 2026-08-29, Changelog v3.57]** O mecanismo do item (1) acima
+(`config/alpha_hyperparams_by_combo.yaml` + `HyperparamFeatureMismatchError`
+fail-closed) foi **removido**, não recalibrado — decisão do Manager de
+aposentar o YAML estático inteiro (já tinha ficado *stale* uma vez de
+verdade, é a própria origem deste parágrafo) em favor de Optuna real
+gravando resultado como artefato content-addressed (`AG-371-ADDENDUM-18`,
+commit `40b8255`). A trava fail-closed descrita acima cumpriu seu papel
+histórico (impediu o retreino canônico de ler um arquivo stale sem
+avisar) e deixa de existir como código — a classe de bug que ela vigiava
+fica fechada por construção no mecanismo novo. O achado estrutural do
+item (2) (`E27f` dominando 93% do gain, correção monotônica) não é
+afetado por esta mudança — é ortogonal ao mecanismo de hiperparâmetro por
+combo.
+
+**Confundido antes de confirmado — sessão paralela mudou o vetor embaixo
+da investigação, retreino de validação cancelado (`AG-371-ADDENDUM-10`,
+severidade CRÍTICA).** O retreino disparado pra validar a correção de
+`E27f` foi CANCELADO pelo Manager a meio caminho; investigando por que o
+log mostrava `feature_ids_n=36` (esperado 22), achou-se uma 2ª sessão
+autorizada rodando NO MESMO working tree, não commitada:
+`T1_FEATURE_IDS` foi de 22 (HEAD) pra 29 (Lote D, `AG-372`/`ADR-006`) e
+depois 36 (Lote D2) enquanto `AG-371` corria. Checado por timestamp
+exato contra `git diff` de `build.py`: o teste que isola
+hiperparâmetro-stale-vs-estrutural (`ADDENDUM-3`) rodou limpo sob 22
+features, conclusão sobrevive; mas o TESTE DA PRÓPRIA CORREÇÃO de `E27f`
+(`ADDENDUM-8`, "n_signals 0→2407") comparou um baseline sob 22 features
+contra um "corrigido" sob 36 — 2 variáveis mudando ao mesmo tempo, não
+dá pra atribuir a melhoria só à correção. O código promovido continua
+correto por construção; a MEDIÇÃO que justificou promovê-lo está
+confundida, não refutada. **2 decisões seguem em aberto do Manager**:
+(1) qual `T1_FEATURE_IDS` é autoritativo agora — 22 (commitado), 29 ou 36
+(Lote D/D2, só no working tree); (2) remedir a correção de `E27f` sob 22
+features limpo antes de confiar na promoção.
+
+**Achado irmão, mesma sessão de Lote D/D2 — `AG-373`, CORRIGIDO no
+mesmo dia.** `A17_true_range_per_overshoot` (uma das 14 features do Lote
+D/D2) tinha defeito dimensional real: `TR_t` (unidade de preço) dividido
+por `overshoot_t` (unidade de notional em dólar) não cancelava — a razão
+tinha unidade residual `1/coin`, ao contrário de todas as outras 13
+features do lote. Risco de deriva de escala dentro do histórico de um
+único símbolo (preço nominal variando por ordens de grandeza ao longo
+dos anos de treino), eixo diferente do confundidor entre-símbolos já
+mitigado por treinar por `(symbol, resolution_id)`. Achado por auditoria
+independente (persona ML Feature Engineer, autorizada pelo Manager),
+confirmado por leitura direta de `support.true_range`/`bars.py::_value`.
+Corrigido por normalização estrutural — renomeada `A17_log_tr_per_
+overshoot_ratio`, razão de 2 quantidades adimensionais (`TR/C_{t-1}`,
+`overshoot/threshold_quote`) em `ln1p` — verificada por teste que prova
+invariância a nível de preço (falharia sob a fórmula antiga). Detalhe
+completo: `AG-373`, addendum de `ADR-006`.
+
+**Regime — 1 gap fechado, 1 gap novo aberto.**
+`canonical_volatility_estimator.value` flipado pra `parkinson_w20` em
+produção (commit `4f3b231`, 2026-08-27, decisão do Manager) — fecha o
+"DECIDIDO, NÃO DEPLOYADO" rastreado desde 2026-08-17 (`§11.4`/`§11.6`).
+Achado no mesmo dia: a constante não tinha NENHUM código lendo-a por
+nome — `--all-combinations` sem `--vol-estimator-id` explícito revertia
+a decisão em silêncio (`AG-361`, mesma classe de `AG-341`/`AG-365`) —
+corrigido pela mesma política (default agora lê a constante). `AG-341`
+(HMM k=4 nunca wireado no pipeline real, `dataset.py` usa
+`QuantileRegimeClassifier`) **já corrigido em `§15.13` por commit
+`d4c1d4e`, sem ação pendente aqui**. Achado NOVO e ABERTO, mesma revisão
+`project_assurance`: `AG-342` — os 4 cutoffs do classificador REALMENTE
+ativo (`regime_er_cutoff`/`regime_vol_cutoff`, entrada/saída) são classe
+A `provenance: ASSUMED`, `sweep_required: true`, `review_by: sprint_5`
+— nunca varridos apesar do projeto estar muito além do sprint 5; por
+regra do próprio `CLAUDE.md` isso deveria bloquear build de produção, e
+não bloqueia.
+
+**Registro à parte** (`CLAUDE.md`, sem consequência de dado): regra nova
+(commit `34ae285`, 2026-08-27) — correção pedida pelo Manager vira
+comportamento DEFAULT a partir do commit que a aplica, nunca opt-in
+"por via das dúvidas" — e split estrutural em `.claude/rules/
+execution-exceptions.md`/`behavior-notes.md` (`a656312`, mesmo dia).
+Explica por que vários achados desta seção (`AG-296`, `AG-324`-`326`,
+`AG-360`, `AG-361`) viraram default imediato.
+
+**Nota de estado, pra não confundir quem ler daqui pra frente**: no
+momento em que esta seção foi escrita, `T1_FEATURE_IDS` tem **22**
+features no HEAD commitado (`730b2ec`); **29** (Lote D) e **36** (Lote
+D2) existem só no working tree de uma sessão paralela, ainda não
+commitados, ainda não reconciliados com `AG-371`. Nenhuma afirmação
+nesta seção deve ser lida como "T1 tem 36 features" sendo verdade de
+produção — decisão de qual vetor é autoritativo pendente do Manager
+(`AG-371-ADDENDUM-10`).
+
+---
+
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)
@@ -5463,6 +5717,108 @@ cabeçalhos (`## `/`### `) confirma nenhum título removido por acidente
 ---
 
 ## Changelog
+
+- **v3.57 (2026-08-29)** — `AG-371` FECHADO por reformulação arquitetural
+  (`ADDENDUM-18`, commit `40b8255`): Optuna real (`optuna>=4.0`,
+  dependência declarada desde sempre, nunca importada em `src/` até
+  agora) substitui `config/alpha_hyperparams_by_combo.yaml` — o YAML
+  estático que já tinha ficado *stale* uma vez de verdade — e a campanha
+  manual de grade/coordinate-descent que o alimentava. Escopo estrito
+  `src/models/` (produção; `src/validation/` é medição, intocado).
+  `src/models/hyperparams_optuna.py` (novo): TPESampler sobre 12 campos
+  de `LGBMHyperparams`; Camada1 e Camada0 recebem *studies* independentes
+  (comparação de ablação exige HPO nos dois lados — Probst et al.,
+  *Tunability*, JMLR 20(53) — não o achado histórico do próprio `AG-371`
+  que o Manager pediu explicitamente pra não usar como âncora de
+  desenho); resultado vencedor por `(symbol, resolution_id, variant)`
+  gravado como artefato content-addressed via `src.io.artifact` — fecha a
+  classe de bug do YAML *por construção*, hash muda sozinho se
+  `feature_ids`/`search_space`/`variant` mudarem. Itens (b)/(c) do status
+  PARCIAL anterior de `AG-371` (teste diferencial + recalibração sob 22
+  features) ficam OBSOLETOS, não executados — a pergunta que faziam
+  deixou de existir junto com o arquivo que a motivava.
+
+  Autorização direta do Manager pra Claude executar `uv run`/`pytest`
+  nesta sessão (com limite explícito: não rodar a campanha completa sob
+  CPU) permitiu avançar de verdade pra infraestrutura WSL2+CUDA (GPU real
+  — RTX 4060 Ti) em vez de só planejamento: `tools/infra/wsl2_cuda_
+  setup.sh` (novo, idempotente, 7 passos) provisiona CUDA Toolkit 12.6 +
+  NCCL 2.24.3 + LightGBM 4.7.0 recompilado com `USE_CUDA=ON`, confirmado
+  com treino real (dado sintético e dado real do projeto, Camada0 e
+  Camada1). `AG-201` (GPU/CUDA inviável no Windows nativo) deixa de ser
+  bloqueio — corrigido não no Windows nativo, mas migrando o treino GPU
+  pro WSL2. 3 bugs de infra encontrados e corrigidos via investigação até
+  causa raiz (não tentativa-e-erro), registrados como `AG-375`/`AG-376`/
+  `AG-377` (commit `b6d16c4`): NCCL/CUDA-toolkit desencontrados (zero
+  dependência apt cruzada entre os dois, confirmado via `apt-cache show`/
+  `madison`); `uv run` revertendo silenciosamente o build CUDA pro wheel
+  CPU (comportamento oficial documentado do uv — `tool.uv.sources`+
+  `extra` avaliado e rejeitado por risco real ao caminho CPU/Windows de
+  produção, issues abertas `astral-sh/uv#17732`/`#17967`); `.venv/`
+  compartilhado Windows/WSL2 corrompido (mesmo caminho físico NTFS,
+  layouts de venv incompatíveis entre SOs). Os 3 corrigidos pela mesma
+  mudança estrutural: venv CUDA isolado inteiramente fora do lockfile do
+  projeto (`UV_PROJECT_ENVIRONMENT` separado).
+
+  `AG-378` (commit `f15ca8e`): crash `[CUDA] an illegal memory access`
+  (processo inteiro morre, sem exceção Python capturável) bisecado à
+  causa exata — `max_bin>256` (limite de índice de 8 bits), confirmado
+  como bug upstream conhecido e ainda sem patch (`microsoft/LightGBM
+  #6512`); reprodução deste projeto é mais precisa que a da issue
+  original (dataset pequeno, ~40k barras, limite exato 256/257).
+  `CudaMaxBinUnsupportedError` nova em `fit_side_model` + `catch=` no
+  `study.optimize` convertem o crash de processo em trial falhado
+  tratável pelo Optuna, sem derrubar a campanha inteira; `sweep_range` de
+  `max_bin` NÃO capado por device (mantém `config_hash` portável entre
+  devices, decisão deliberada). Achado colateral exposto só depois deste
+  fix: "todos os trials falharam" virou estado alcançável (15/15 numa
+  rodada real de smoke test) — guarda nova antes de `study.best_trial`
+  levanta `ValueError` explícito em vez do erro opaco do SQLAlchemy.
+
+  Campanha Optuna real (~8h CPU pior caso, medido em `AG-371-ADDENDUM-17`)
+  e benchmark CPU-vs-GPU seguem NÃO EXECUTADOS — pendentes do usuário
+  disparar. Road Map Vivo v2 republicado com seção dedicada; gap de
+  reconciliação 2026-08-26/27/28 (`AG-362`–`AG-370`, retreino canônico
+  sob `T1_FEATURE_IDS` reestruturado 7→22) declarado explicitamente no
+  artefato, não reconstruído nesta rodada (fora do escopo pedido pelo
+  Manager — "atualize governança" sobre o trabalho desta sessão, não um
+  sweep histórico represado).
+
+- **v3.56 (2026-08-28)** — `AG-077` FECHADO (decisão direta do Manager):
+  Gate 6 deixa de ser "DSR final com `N_lifetime`=60" — "pronto" agora é
+  lucro entregue em Live Demo, não penalidade estatística de multiple-
+  testing. Critérios de encerramento #5/#6 (`PRD_V4_1.md` §6.5,
+  guardrail de abandono) e Gates 0-5 (promoção de artefato/constante)
+  não foram tocados — mudança escopada só ao Gate 6 positivo.
+  `src/validation/dsr.py` não alterado — decisão de implementação
+  (remover/marcar non-binding/manter como diagnóstico auxiliar) separada,
+  ainda não tomada. Abriu `AG-374` (aberto): "lucro em Live Demo" ainda
+  sem definição operacional (o que conta como lucro, sobre qual capital/
+  duração, o que é exatamente "Live Demo") — mesma disciplina de
+  `AG-114`/`AG-118`/`AG-122`. `§11.4`/`§11.6`/`PRD_V4_1.md` §6.1/§6.5/
+  V41-12 atualizados com pointers.
+
+- **v3.55 (2026-08-28)** — `§15.29`: `AG-362` reverte o critério de
+  promoção marginal de `ADR-005 §2.2` (decisão direta do Manager, não
+  mais protocolo de medição formal) — `T1_FEATURE_IDS` 7→22 (commitado);
+  retreino canônico real sob 22 features + hiperparâmetro por combo:
+  0/15 `permanence_pass`, sinal misto. `AG-371`: achado e corrigido um
+  viés estrutural real de Camada 0 (`E27f` domina 93% do gain sem freio
+  monotônico) — mas a VALIDAÇÃO da correção ficou confundida por uma
+  sessão paralela que mudou `T1_FEATURE_IDS` no meio do teste (22→29→36,
+  Lote D/D2, `ADR-006`, ainda não commitados) — decisão pendente do
+  Manager sobre qual vetor é autoritativo, e se remedir sob 22 limpo
+  antes de confiar na promoção. `AG-373`: `A17_true_range_per_overshoot`
+  tinha defeito dimensional real (`TR/overshoot` não era adimensional) —
+  CORRIGIDO no mesmo dia, redesenhada pra `A17_log_tr_per_overshoot_
+  ratio`, verificada por teste de invariância a nível de preço.
+  `canonical_
+  volatility_estimator` flipado pra `parkinson_w20` em produção (fecha
+  gap aberto desde 2026-08-17), gap de wiring achado e fechado no mesmo
+  dia (`AG-361`). `AG-342` novo (aberto): cutoffs do classificador de
+  regime ativo nunca varridos, classe A `ASSUMED`. `§11.4`/`§11.6`
+  atualizados (linhas S1, retreino Parkinson, Alpha multi-ativo,
+  M1(V4.1)); Road Map Vivo v2 a republicar.
 
 - **v3.54 (2026-08-25)** — Ablação T2→T1: veredito final + promoção
   mandatória. Fase 2 (extensão de fronteira) + confirmação (repetição de

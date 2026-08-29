@@ -5362,3 +5362,333 @@ Artefato visual publicado com as 15 combinações e todas as métricas <!-- chec
 (permanência, gate econômico, B1/B4, HHI/N_eff, decomposição de PnL). <!-- check-sprint-log: skip -->
 `N_lifetime` deste retreino: mesma leitura em aberto da rodada anterior,
 não logada automaticamente.
+
+### 2026-08-28 — `AG-372`/ADR-006: 7 features novas (momentum/reversão/impacto) construídas em torno do H real medido <!-- check-sprint-log: skip -->
+
+Usuário auditou o veredito do retreino contra `fichas_69_2026-08-25.yaml` <!-- check-sprint-log: skip -->
+(A07-A11 candlestick, B02-B11 momentum/reversão) e mostrou que boa parte
+das rejeições vinha de parâmetro herdado de indicador de barra de relógio,
+nunca recalibrado pro motor real — não falta de mecanismo. Medi `H` de
+verdade: `n_bars_held` (labels.parquet, população completa exceto NOFILL)
+tem mediana=1, p75=3, estável entre BTCUSDT/SOLUSDT × R1/R2/R3. <!-- check-sprint-log: skip -->
+
+Desenvolvido com `/feature-dev:feature-dev` (Fases 1-5), autorização <!-- check-sprint-log: skip -->
+explícita do Manager pra "focar no plano ponta a ponta": 7 features, direto
+a T1 (não L3 primeiro) — `A11_true_range_pct` (reativada, estava `layer:
+L4`, já reprovada uma vez sob o gate marginal antigo, tese NOVA de impacto
+de preço, override deliberado não coberto pela anistia de `AG-362`),
+`A16_return_3`, `A17_true_range_per_overshoot`, `B12_close_location_h3` <!-- check-sprint-log: skip -->
+(consolida A10/B09/B10/B11), `B13_extension_h3`, `B14_rejection_after_ <!-- check-sprint-log: skip -->
+extension` (feature de exaustão, conceito novo), `B15_efficiency_ratio_h3`. <!-- check-sprint-log: skip -->
+`T1_FEATURE_IDS` 22→29. Detalhe completo: `docs/ADR-006_momentum_reversao_ <!-- check-sprint-log: skip -->
+impacto_dollar_bar_2026-08-28.md`. <!-- check-sprint-log: skip -->
+
+`quote_volume`/`threshold_quote` (colunas de dollar bar já persistidas, <!-- check-sprint-log: skip -->
+nunca extraídas pelo Feature Engine até agora) alimentam A17 — achado no
+caminho: `quote_volume` cru é quase degenerado sob dollar bar (`AG-321`,
+~igual ao threshold), a quantidade que varia de verdade é o overshoot
+(`quote_volume - threshold_quote`).
+
+12 testes de causalidade/faixa novos (`tests/unit/test_features_groups. <!-- check-sprint-log: skip -->
+py`). `banned_patterns`/`ruff`/`mypy` limpos nos arquivos tocados.
+`registry.yaml` (76 entradas) validado por `yaml.safe_load`. NÃO validado
+por execução real (protocolo): `test_layer2_feature_ids_bate_com_t1_
+feature_ids` e a suíte de paridade lote↔streaming, que agora cobre as 7
+novas automaticamente. Comando de validação entregue ao Manager, não
+rodado por Claude.
+
+Nota de processo permanente adicionada ao cabeçalho de `src/features/ <!-- check-sprint-log: skip -->
+registry.yaml`: sequência de gate (algébrica → mecanismo → horizonte →
+redundância → walk-forward/incremental → LightGBM → SHAP) — SHAP/gain só
+como confirmação pós-hoc, nunca descoberta primária, mesma disciplina que
+`AG-371` já mostrou ser necessária (importância pode estar contaminada por <!-- check-sprint-log: skip -->
+hiperparâmetro desincronizado do vetor).
+
+Nenhuma medição de valor incremental real ainda — mesma ressalva que <!-- check-sprint-log: skip -->
+`AG-362` já registrou pras 15 anteriores. Retreino sob o vetor de 29 é
+decisão separada, ainda não tomada.
+
+### 2026-08-28 — Lote D2: 7 candle features novas por raciocínio próprio + spec do usuário validado, `T1_FEATURE_IDS` 29→36 <!-- check-sprint-log: skip -->
+
+Usuário perguntou por que nenhuma candle feature tinha sido desenvolvida <!-- check-sprint-log: skip -->
+por raciocínio próprio (não só reconsolidação das antigas), depois trouxe
+uma especificação técnica externa (~20 famílias, Pandas/numpy, pipeline de <!-- check-sprint-log: skip -->
+8 gates), com autorização condicional: "você pode criar mais se validado". <!-- check-sprint-log: skip -->
+
+Validação ANTES de implementar rejeitou boa parte do spec: Pandas inteiro <!-- check-sprint-log: skip -->
+(viola B26); `candle_open_gap` já é `A12_gap_pct`, removida por `AG-316`
+(gap de sessão não existe em cripto 24/7); família wick/position re-deriva <!-- check-sprint-log: skip -->
+a identidade algébrica de A07-A10 e ainda escondia uma redundância NOVA que <!-- check-sprint-log: skip -->
+o spec do usuário não tinha percebido (`open_location = close_location −
+A07`); família Z-score (N∈{5,10,20,50}) repete o erro de janela nunca <!-- check-sprint-log: skip -->
+calibrada contra H. Sobraram 6 candidatos genuinamente novos do spec + 1 <!-- check-sprint-log: skip -->
+(engolfo) de raciocínio próprio anterior ao spec = 7 implementadas:
+`A18_body_log`, `A19_log_range`, `A20_log_duration`, `A21_log_dollar_
+velocity`, `B16_log_range_ratio_1`, `B17_directional_pressure_h3`, `B18_
+engulfing_atr`. `T1_FEATURE_IDS` 29→36. Detalhe completo: addendum Lote D2
+em `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md` e
+`AG-372::addendum_lote_d2`.
+
+Achado no caminho: `A20_log_duration` é CONSTANTE (não `NaN`) sob <!-- check-sprint-log: skip -->
+`bar_source=time_15m` (duração fixa ~15min por definição), quebrando
+`test_t1_ortogonalidade_spearman_2anos` (stddev=0 zera a matriz de <!-- check-sprint-log: skip -->
+correlação) — corrigido excluindo a coluna do teste de correlação, não do
+vetor real (que roda sob dollar bar).
+
+9 testes de causalidade/edge-case novos. Diferente do Lote D anterior, <!-- check-sprint-log: skip -->
+desta vez VALIDADO por execução real (autorização ampla do Manager nesta
+sessão): suíte alvo de features 196 passed; suíte completa 2524 passed, 2
+skipped, 3 failed. As 3 falhas são pré-existentes/não relacionadas —
+`tests/unit/test_analysis_tau_diagnostics.py` quebra com `trades_per_year
+=None` num `experiments/alpha_layer1_report.json` real modificado pelo
+retreino que o usuário rodou mais cedo nesta sessão; módulo `src/analysis/
+tau_diagnostics.py` não foi tocado por este lote. Achado separado, ainda
+não investigado — sinalizar ao Manager. `T1_FEATURE_IDS` (36) confirmado
+idêntico a `layer2_feature_ids()` via `uv run python` real. `banned_
+patterns`/`check_unguarded_ratios`/`ruff`/`mypy` limpos nos arquivos
+tocados (1 `noqa` obsoleto removido em `tools/lint/check_unguarded_ratios.
+py`, achado cosmético do ruff sem relação com este lote).
+
+Mesma ressalva de sempre: abre elegibilidade, não prova o ganho. Retreino <!-- check-sprint-log: skip -->
+sob o vetor de 36 é decisão separada, ainda não tomada.
+
+**Nota de staleness explícita (2026-08-28, protocolo "atualizar <!-- check-sprint-log: skip -->
+governança"):** a tabela "Estado atual (2026-08-25)" (acima, `§linha
+4584`) e a nota de staleness anterior (`§linha 4640`, dated 2026-08-26,
+que já apontava pra `ADR-005` como canônico) estão AINDA MAIS
+desatualizadas agora — nem citam `AG-362` (reversão do critério de
+promoção T2→T1, 2026-08-27), nem o retreino canônico real sob 22
+features, nem `AG-371` (zero-sinal em 5 células), nem `ADR-006`/`AG-372`
+(Lote D/D2, `T1_FEATURE_IDS` 22→36, ainda não commitado no momento desta
+nota). Quem quiser o estado real usa `git log --oneline` +
+`docs/ADR-005_arquitetura_do_feature_engine_2026-08-26.md` (Feature
+Engine até 2026-08-26) + `docs/ADR-006_momentum_reversao_impacto_dollar_
+bar_2026-08-28.md` (Feature Engine 2026-08-28 em diante) +
+`audit/architecture_gaps_log.yaml` (append-only, sempre a fonte mais
+recente por construção) — nunca a tabela "Estado atual" isolada.
+
+### 2026-08-28 (continuação) — Validação ML das 14 features + achado crítico de contaminação cross-sessão + `AG-373` corrigido <!-- check-sprint-log: skip -->
+
+Manager pediu agente sob persona de ML Feature Engineer pra validar <!-- check-sprint-log: skip -->
+ponta a ponta a matemática financeira das 14 features do Lote D/D2, mais
+"atualize governança". Dois agentes em paralelo.
+
+**Validação das 14 features**: 11/14 PASS sem ressalva. 2 gaps de teste <!-- check-sprint-log: skip -->
+baratos corrigidos (`test_b12_guarda_range_flat_produz_ponto_medio`,
+`test_compute_t1_features_b14_usa_a16_deslocado_um_bar`). 1 achado real <!-- check-sprint-log: skip -->
+— `A17_true_range_per_overshoot` não era adimensional (`TR` em unidade <!-- check-sprint-log: skip -->
+de preço, `overshoot` em notional) — logado como `AG-373`. <!-- check-sprint-log: skip -->
+
+**Achado crítico, independente da validação de features**: reconciliação <!-- check-sprint-log: skip -->
+de governança contra 96 commits descobriu uma SESSÃO PARALELA autorizada
+rodando no mesmo working tree, investigando `AG-371` (zero-sinal em 5 <!-- check-sprint-log: skip -->
+células) — e ela já tinha documentado (`AG-371-ADDENDUM-10`, severidade <!-- check-sprint-log: skip -->
+CRÍTICA) que o Lote D/D2 desta sessão contaminou a validação da correção <!-- check-sprint-log: skip -->
+de `E27f` dela: o teste comparou baseline sob 22 features contra <!-- check-sprint-log: skip -->
+"corrigido" sob 36 (Lote D2 já tinha aterrissado no working tree
+compartilhado quando aquele retreino rodou). Confirmado por leitura
+direta da entrada. Nenhuma ação destrutiva tomada por nenhum dos dois
+lados; 3 decisões seguem explicitamente do Manager (qual `T1_FEATURE_
+IDS` é autoritativo — 22/29/36; remedir `E27f` sob 22 limpo; como as 2
+sessões devem coordenar). `PLANO_MESTRE_PRINCE2.md` ganhou `§15.29`
+sincronizando tudo isso, sem tomar nenhuma das 3 decisões.
+
+**`AG-373` corrigido no mesmo dia** (não deixado como achado aberto — <!-- check-sprint-log: skip -->
+defeito de FÓRMULA, dimensional analysis não precisa de medição pra
+decidir): `A17_true_range_per_overshoot` → `A17_log_tr_per_overshoot_
+ratio` — `ln1p((TR_t/C_{t-1})/(overshoot_t/threshold_quote_t))`, razão
+de 2 quantidades adimensionais (a primeira é literalmente `A11`), `ln1p`
+no mesmo estilo de A18-A21/B16 do lote. Verificado por
+`test_a17_invariante_a_nivel_de_preco` (escala preço por 37×, saída não
+muda — teria falhado sob a fórmula antiga). Achado secundário no
+caminho: `build.py` não definia `threshold_quote` no branch
+`bar_source=time_15m`, corrigido. Suíte alvo de features: 199 passed. <!-- check-sprint-log: skip -->
+`registry.yaml` (`version: v2`), `ADR-006` (addendum), `AG-373` (status) <!-- check-sprint-log: skip -->
+atualizados. Nada disso resolve a pergunta maior de qual `T1_FEATURE_IDS` <!-- check-sprint-log: skip -->
+é autoritativo — só corrige a matemática de uma feature que só existe
+nas versões 29/36. <!-- check-sprint-log: skip -->
+
+### 2026-08-28 (continuação) — `AG-077` FECHADO: "pronto" redefinido de DSR/`N_lifetime` para lucro em Live Demo <!-- check-sprint-log: skip -->
+
+Manager, decisão direta: "pode fechar AG077, o que define 'pronto' é <!-- check-sprint-log: skip -->
+entregar lucro Live Demo." Resposta à pergunta que `AG-077` (2026-08-17)
+tinha deixado registrada em aberto desde a descontinuação de `N_lifetime`
+como orçamento vinculante: "o que substitui a penalidade de multiple-
+testing no Gate 6/DSR". Resposta: nada substitui por outra fórmula <!-- check-sprint-log: skip -->
+estatística — o próprio Gate 6 (`PRD_V4_1.md::V41-12`, "DSR final com <!-- check-sprint-log: skip -->
+`N_lifetime`=60") deixa de ser a definição de sucesso do projeto, <!-- check-sprint-log: skip -->
+substituído por resultado empírico real (lucro em Live Demo).
+
+Escopo da mudança, registrado explicitamente pra não confundir: só o <!-- check-sprint-log: skip -->
+Gate 6 POSITIVO (quando declarar sucesso). Os critérios de encerramento
+#5/#6 (`PRD_V4_1.md` §6.5 — guardrail contra busca infinita sem edge,
+pergunta de quando ABANDONAR, diferente de "quando declarar pronto") e
+os Gates 0-5 (promoção de artefato/constante individual) não foram
+tocados. `src/validation/dsr.py`/`_audited_n_lifetime()` (código real que
+ainda lê `N_lifetime`) também não foi alterado — decisão de
+implementação (remover, marcar non-binding, ou manter como diagnóstico
+auxiliar) separada, ainda não tomada.
+
+Fechar `AG-077` abriu um gap novo, registrado à parte (`AG-374`, mesma <!-- check-sprint-log: skip -->
+disciplina de `AG-114`/`AG-118`/`AG-122` já citada no `CLAUDE.md`): "lucro
+em Live Demo" ainda não tem definição operacional — o que conta como
+"lucro" (PnL positivo uma vez, ou distinguível de ruído sobre amostra
+mínima?), o que é exatamente "Live Demo" (testnet/paper/capital real
+reduzido?), sobre qual capital e por quanto tempo. Sem consequência
+imediata (projeto longe de ter candidato real a Live Demo hoje, `AG-371`)
+— mas decidir isso antes de existir um candidato na mesa evita o mesmo
+viés que B20 já existe pra prevenir noutro contexto. `PLANO_MESTRE_
+PRINCE2.md` (`§11.4`/`§11.6`, changelog v3.56) e `PRD_V4_1.md` (§6.1/§6.5/
+V41-12, pointers de 1 linha, sem reescrita) atualizados.
+
+**Continuação, mesmo dia — `AG-374` 2/3 termos definidos.** 3 perguntas <!-- check-sprint-log: skip -->
+diretas ao Manager (`AskUserQuestion`), as 3 recomendadas aceitas.
+"Lucro" = PnL positivo E distinguível de ruído (mesmo framework de
+`economic_gate.py::is_distinguishable`/`AG-246`, não "PnL>0 uma vez" —
+rejeitado por vulnerável a variância de amostra pequena). "Live Demo" =
+capital real reduzido, dentro de `capital_inicial_brl` (R$ 1.000, `§0`)
+— não testnet, não paper (só capital real prova liquidez/slippage/fill
+real, e esta sessão já mediu que isso importa — fill 42,2% vs. 97,1%
+otimista). Capital/janela PARCIAL: R$ 1.000, mínimo 1 mês — **N mínimo
+de trades continua TBD**, não inventado (B23): candidato de precedência
+(`evidence_ledger.yaml::n>=200`) foi calibrado pra amostra de backtest,
+não pro ritmo real de sinal de Live Demo (`AG-371` já mostrou células
+que ficam dias sem sinal), aplicar sem checar factibilidade repetiria o
+erro que o próprio `AG-374` existe pra evitar. `AG-374` status:
+PARCIALMENTE FECHADO. `PLANO_MESTRE_PRINCE2.md` §11.4/§11.6 atualizados
+com a definição operacional; `audit/architecture_gaps_log.yaml::AG-374`
+ganhou campo `resolution`.
+
+### 2026-08-29 — `AG-371` fechado por Optuna real (não recalibração); GPU real via WSL2+CUDA; `AG-375`-`AG-378` <!-- check-sprint-log: skip -->
+
+Manager decidiu aposentar `config/alpha_hyperparams_by_combo.yaml` — o <!-- check-sprint-log: skip -->
+YAML estático que já tinha ficado *stale* de verdade uma vez (a própria
+origem de `AG-371`) — e a campanha manual de grade/coordinate-descent que
+o alimentava, substituindo por Optuna real (`optuna>=4.0`, dependência
+declarada desde sempre, nunca importada em `src/` até agora). Escopo
+estrito `src/models/` (produção; `src/validation/` é medição, intocado
+por pedido explícito). Commit `40b8255`.
+
+`src/models/hyperparams_optuna.py` (novo): TPESampler sobre 12 campos de <!-- check-sprint-log: skip -->
+`LGBMHyperparams` (8 já tinham `sweep_range`; `learning_rate`/
+`n_estimators`/`subsample`/`lambda_l2` ganharam agora, por decisão do
+Manager). Duas perguntas de desenho tiradas deliberadamente do histórico
+do próprio `AG-371` (Manager pediu explicitamente pra não usar como
+âncora) e resolvidas por pesquisa de metodologia atual: Camada1 e Camada0
+recebem *studies* Optuna independentes, não uma herdando da outra
+(comparação de ablação exige HPO nos dois lados — Probst et al.,
+*Tunability*, JMLR 20(53)); resultado vencedor por
+`(symbol, resolution_id, variant)` gravado como artefato content-
+addressed via `src.io.artifact` em vez de outro YAML estático — fecha a
+classe de bug inteira por CONSTRUÇÃO, hash muda sozinho se `feature_ids`/
+`search_space`/`variant` mudarem. `src/models/hyperparams_by_combo.py`
+reescrito (sem tupla, sem `HyperparamFeatureMismatchError`/
+`allow_feature_mismatch` — deixam de ser estado alcançável em runtime).
+`src/models/pipeline.py::run_layer1_sprint` ganha `hyper_camada1`/
+`hyper_camada0`. `config/alpha_hyperparams_by_combo.yaml` removido
+(`git rm`, histórico preservado). Itens (b)/(c) do status PARCIAL
+anterior de `AG-371` (teste diferencial + recalibração sob 22 features)
+ficam OBSOLETOS — a pergunta que faziam deixou de existir junto com o
+arquivo. `AG-371-ADDENDUM-18` registra o fechamento;
+`audit/architecture_gaps_log.yaml::AG-375`-`AG-378` recebem também
+`resolved_by_commit` real nesta rodada de governança (estavam `null`
+apesar de `status: fechado` — corrigido).
+
+Testes reais (autorização explícita do Manager pra `uv run`/`pytest` <!-- check-sprint-log: skip -->
+nesta sessão, com limite explícito: não rodar a campanha completa sob
+CPU): suíte alvo verde, 2 bugs próprios achados e corrigidos pelos
+próprios testes antes do commit — `max_depth` erroneamente incluído nos
+campos buscáveis (contradiz o desenho — redundante com `num_leaves` sob
+crescimento leaf-wise, já documentado); `SchemaValidationError` em
+`write_search_artifact` por inferência de dtype `Null` do Polars sobre
+DataFrame de 1 linha com `None` (corrigido com `schema=` explícito). <!-- check-sprint-log: skip -->
+
+**Avance para WSL2+CUDA** — infraestrutura real de GPU (RTX 4060 Ti), <!-- check-sprint-log: skip -->
+não só planejamento. `tools/infra/wsl2_cuda_setup.sh` (novo, idempotente,
+7 passos) provisiona CUDA Toolkit 12.6 + NCCL 2.24.3 + LightGBM 4.7.0
+recompilado com `USE_CUDA=ON`. `AG-201` ("GPU/CUDA inviável no Windows
+nativo") deixa de ser bloqueio — a correção não foi rodar no Windows, foi
+migrar o treino GPU pro WSL2 na mesma máquina. Confirmado com treino CUDA
+real: dado sintético (accuracy=0,9974) e depois dado real do projeto <!-- check-sprint-log: skip -->
+(Camada0 e Camada1, 1 fold cada, `device_type=cuda`, ambos OK). <!-- check-sprint-log: skip -->
+
+3 bugs de infraestrutura investigados até causa raiz (pedido direto do <!-- check-sprint-log: skip -->
+Manager: "estude e investigue a raiz... correção robusta sem remediação
+barata", depois "pode implementar") — `audit/architecture_gaps_log.yaml
+::AG-375`/`AG-376`/`AG-377`, commit `b6d16c4`:
+
+- **NCCL/CUDA-toolkit desencontrados** (`AG-375`) — `apt-get install <!-- check-sprint-log: skip -->
+  libnccl2` sem versão resolvia pra `2.31.2-1+cuda13.3` (build mais
+  recente do repo apt da NVIDIA) mesmo com toolkit 12.6 instalado; link
+  final do LightGBM falhava com `nvlink error: Uncompress failed`,
+  mensagem opaca. Causa raiz via `apt-cache show`/`madison`: NCCL e
+  CUDA-toolkit têm ZERO dependência apt cruzada — o apt nunca garante o
+  pareamento de versão, é responsabilidade inteira do operador. Corrigido
+  fixando o par exato (`libnccl2=2.24.3-1+cuda12.6`) +
+  `apt-mark hold` (protege contra `apt upgrade` futuro puxar de volta a
+  versão desencontrada).
+- **`uv run` revertia o build CUDA pro wheel CPU** (`AG-376`) — <!-- check-sprint-log: skip -->
+  comportamento OFICIAL e documentado do uv (sincronização implícita
+  contra o lockfile antes de qualquer comando), não bug. `tool.uv.sources`
+  +`extra` (a rota "correta" documentada pelo uv) avaliado e REJEITADO —
+  issues abertas do próprio projeto uv (`astral-sh/uv#17732`/`#17967`)
+  arriscariam quebrar o caminho CPU/Windows de produção real deste
+  projeto pra resolver um problema só do ambiente GPU/WSL2 opcional.
+  Corrigido isolando o venv CUDA inteiramente fora do lockfile
+  (`UV_PROJECT_ENVIRONMENT` separado, `~/.venvs/binance-futures-cuda`,
+  nunca `uv run`/`uv sync` nesse contexto).
+- **`.venv/` compartilhado Windows/WSL2 corrompido** (`AG-377`) — mesmo <!-- check-sprint-log: skip -->
+  caminho físico NTFS, layouts de venv incompatíveis entre SOs (`uv sync`
+  do WSL2 criou `.venv/lib64` symlink POSIX; `uv` do Windows não
+  conseguia mais remover, `Acesso negado`). Corrigido pela mesma
+  separação de `AG-376` — ambiente Windows recriado do zero e confirmado
+  saudável antes de prosseguir.
+
+**Crash real bisecado à causa exata** (`AG-378`, commit `f15ca8e`) — <!-- check-sprint-log: skip -->
+`[CUDA] an illegal memory access`, processo inteiro morre, sem exceção
+Python capturável. Bisecado campo a campo dos 12 hiperparâmetros
+buscados: só `max_bin` reproduz; por valor exato, `max_bin=256` treina
+limpo, `257` crasha — limite EXATO de um índice de bin de 8 bits.
+Confirmado como bug upstream conhecido e ainda sem patch
+(`microsoft/LightGBM#6512`) — a reprodução deste projeto é mais precisa
+que a da issue original (dataset pequeno, ~40k barras, vs. "dataset
+grande" citado lá). ~57% do `sweep_range` atual de `max_bin` (256-511)
+está na zona insegura sob CUDA. Corrigido com `CudaMaxBinUnsupportedError`
+nova em `fit_side_model` (antes de `LGBMClassifier.fit()` rodar) +
+`catch=` no `study.optimize` — crash de processo vira trial falhado
+tratável (mesmo mecanismo que já existe pra NaN), não derruba a campanha
+inteira. `sweep_range` NÃO capado por device (manteria `config_hash`
+portável entre devices, decisão deliberada — documentada no docstring de
+`compute_search_config_hash`). Achado colateral, só exposto depois deste
+fix (antes o processo crashava antes de qualquer trial completar): "todos
+os trials falharam" virou estado alcançável (15/15 numa rodada real de <!-- check-sprint-log: skip -->
+smoke test, seed=7, ETHUSDT/R3) — sem guarda, `study.best_trial` levantava <!-- check-sprint-log: skip -->
+`ValueError: Record does not exist` opaco do SQLAlchemy; guarda nova
+levanta `ValueError` explícito com contagem sucesso/falha + caminho do
+storage sqlite.
+
+**Pendente**: campanha Optuna real (~8h CPU pior caso, medido em <!-- check-sprint-log: skip -->
+`AG-371-ADDENDUM-17`) e benchmark CPU-vs-GPU real seguem NÃO EXECUTADOS —
+o usuário decide quando disparar. `ModelBundleManifest` continua sem
+campo `device_type` (`AG-196`, gap pré-existente, não tocado). `src/
+analysis/ag362_incremental_value_report.py` muda de comportamento
+(`use_hyperparams_by_combo=True` sem `allow_feature_mismatch` passa de
+"falha alto se stale" pra "cai no global com warning") — avisado, fora do
+escopo `src/models/` desta rodada.
+
+**Governança**: `PLANO_MESTRE_PRINCE2.md` Changelog `v3.57`, correção <!-- check-sprint-log: skip -->
+inline em §15.20 (alínea D, `AG-201`) e §15.29 (`AG-371`, marca
+`[SUPERADO]`); Road Map Vivo v2 republicado com seção dedicada "Alpha —
+Optuna real substitui campanha manual + GPU via WSL2" — gap de
+reconciliação 2026-08-26/27/28 (`AG-362`-`AG-370`, retreino canônico sob
+`T1_FEATURE_IDS` reestruturado 7→22) declarado explicitamente no
+artefato, não reconstruído nesta rodada (fora do escopo pedido — "atualize
+governança" sobre o trabalho desta sessão, não um sweep histórico
+represado de 3 dias). <!-- check-sprint-log: skip -->
+
+**Nota de staleness, mesma disciplina de sempre**: a tabela "Estado <!-- check-sprint-log: skip -->
+atual (2026-08-25)" (`§linha 4584`) segue não-reconciliada — nem cita
+`AG-362` a `AG-378`. Quem quiser o estado real usa `git log --oneline` +
+`audit/architecture_gaps_log.yaml` (append-only, sempre a fonte mais
+recente por construção) + `PLANO_MESTRE_PRINCE2.md` Changelog `v3.57`,
+não esta tabela.

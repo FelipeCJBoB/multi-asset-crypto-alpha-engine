@@ -24926,6 +24926,52 @@ entries:
       pra alimentar o screening (item 2). Numero de custo corrigido e
       registrado aqui pra nao repetir o erro numa proxima estimativa.
 
+  - id: AG-371-ADDENDUM-18
+    date: "2026-08-29"
+    addendum_de: "AG-371 -- fecha a entrada principal E os itens (b)/(c) que ficavam ABERTOS no status anterior, por mudanca de arquitetura, nao por recalibracao do arquivo antigo"
+    file: "src/models/hyperparams_optuna.py (novo), src/models/hyperparams_by_combo.py (reescrito), src/models/pipeline.py, config/alpha_hyperparams_by_combo.yaml (removido)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-362 (mudanca de T1_FEATURE_IDS que expos o gap original)"
+    found_by: "Claude, executando decisao do Manager de aposentar a campanha manual de grade/coordinate-descent e o YAML estatico que ela alimentava, substituindo por Optuna real (optuna>=4.0, dependencia declarada desde sempre mas nunca importada em src/)"
+    gap: >
+      Nao e um gap novo -- e o fechamento do gap original. `AG-371` ficava
+      `PARCIAL`: item (a) (guarda de hash fail-closed) fechado, mas (b)
+      teste diferencial e (c) recalibracao sob o vetor de 22 features
+      seguiam ABERTOS, decisao do Manager pendente. Esta sessao nao fez
+      (b)/(c) -- tornou a pergunta que eles faziam OBSOLETA: nao existe
+      mais um YAML estatico calibrado uma vez pra recalibrar; o vencedor
+      por `(symbol, resolution_id, variant)` agora e um artefato content-
+      addressed (`src.io.artifact`), cujo hash muda sozinho se
+      `feature_ids`/`search_space`/`variant` mudarem -- a classe de bug
+      inteira (artefato calibrado pra um vetor de features que nao existe
+      mais, lido sem checagem) fica fechada POR CONSTRUCAO, nao por
+      disciplina de quem lembra de recalibrar.
+    severity: "informativo -- fecha por reformulacao arquitetural, nao remedia o mesmo mecanismo"
+    layer: "models (orquestracao de treino + busca de hiperparametro)"
+    consequence: >
+      `HyperparamFeatureMismatchError`/`allow_feature_mismatch` (mecanismo
+      de guarda do item (a) original) deixam de ser estado alcancavel em
+      runtime -- removidos, nao deprecados atras de flag (`config/
+      alpha_hyperparams_by_combo.yaml` tambem removido, `git rm`, historico
+      preservado). Qualquer consumidor fora de `src/models/` que ainda
+      espere esse arquivo ou essa excecao quebra explicitamente, nao
+      silenciosamente -- unico caso conhecido, `src/analysis/
+      ag362_incremental_value_report.py`, avisado mas fora do escopo desta
+      rodada (`use_hyperparams_by_combo=True` sem `allow_feature_mismatch`
+      passa de "falha alto se stale" pra "cai no global com warning", jah
+      existente, nao regressao silenciosa).
+    resolved_by_commit: "40b8255"
+    status: >-
+      AG-371 FECHADO nesta rodada -- entrada principal e ADDENDUM-1..17
+      seguem como registro historico do mecanismo antigo (nunca reescritos),
+      este addendum e a marca de fechamento. Campanha Optuna real ainda nao
+      rodada em producao (custo pior-caso ~8h CPU, medido em ADDENDUM-17) --
+      pendente de o usuario disparar via CLI de `hyperparams_optuna.py`.
+      3 bugs de infra WSL2+CUDA encontrados testando o parametro
+      `device_type` desta mesma mudanca viraram `AG-375`/`AG-376`/`AG-377`
+      (commit `b6d16c4`); 1 bug de crash do LightGBM CUDA Tree Learner
+      exposto pela busca Optuna virou `AG-378` (commit `f15ca8e`) -- ver
+      entradas dedicadas abaixo, mesma sessao.
+
   - id: AG-375
     date: "2026-08-29"
     file: "WSL2 Ubuntu-22.04 (fora do repo -- apt state da VM), nenhum arquivo do repo"
@@ -24969,7 +25015,7 @@ entries:
       do LightGBM (depois de ~10min de compilacao), nao na instalacao do
       pacote. Sem registrar isso, o proximo a tentar (inclusive uma
       sessao futura minha) reproduziria a mesma investigacao do zero.
-    resolved_by_commit: null
+    resolved_by_commit: "b6d16c4"
     resolution: >
       Corrigido nesta sessao instalando a build EXATA que casa com o
       toolkit (`apt-get --allow-downgrades install libnccl2=2.24.3-1
@@ -25042,7 +25088,7 @@ entries:
       GPU falha com uma mensagem que parece dizer "CUDA nunca foi
       compilado", nao "foi compilado e foi revertido" -- diagnostico
       enganoso pra quem nao souber desta causa.
-    resolved_by_commit: null
+    resolved_by_commit: "b6d16c4"
     resolution: >
       Decisao deliberada de NAO perseguir `tool.uv.sources`/`extra`
       (risco real e verificado pro caminho CPU/Windows de producao,
@@ -25090,7 +25136,7 @@ entries:
       do usuario), mas foi um bloqueio real de ~10 minutos no meio da
       sessao, e teria sido pior (achado mais tarde, com mais trabalho
       Windows perdido no meio) numa sequencia de comandos diferente.
-    resolved_by_commit: null
+    resolved_by_commit: "b6d16c4"
     resolution: >
       Mesma correcao estrutural de `AG-376`: `tools/infra/wsl2_cuda_
       setup.sh` fixa `UV_PROJECT_ENVIRONMENT=$HOME/.venvs/binance-
@@ -25158,7 +25204,7 @@ entries:
       campanha real de 30 trials/combo teria alta chance de crashar antes
       de terminar, sem log útil, cada incidente parecendo um problema
       novo de infraestrutura em vez do MESMO bug já identificado.
-    resolved_by_commit: null
+    resolved_by_commit: "f15ca8e"
     resolution: >
       `CudaMaxBinUnsupportedError` (nova, `alpha.py`) levantada em
       `fit_side_model` ANTES de `LGBMClassifier.fit()` rodar, quando
