@@ -135,6 +135,35 @@ T1_FEATURE_IDS: tuple[str, ...] = (
     "K04_session_asia",
     "E14f_toptrader_ls_ratio",
     "E16f_global_ls_ratio",
+    # Lote D (2026-08-28, `AG-372`, ADR-006) -- família momentum/reversão/
+    # impacto reconstruída em torno do H real medido nesta sessão
+    # (n_bars_held mediana=1, p75=3, estável entre R1/R2/R3). Promovidas
+    # direto a T1 por decisão explícita do Manager (2026-08-28), incluindo
+    # A11 -- que NÃO é uma promoção de rotina: estava `layer: L4`
+    # ("aposentada"), já testada e REPROVADA sob o gate de correlação
+    # marginal (ADR-005 §1.3, 5/15 células) antes desse gate ser abolido
+    # (AG-362). Reativada aqui com tese NOVA (deslocamento de preço por
+    # atividade monetária, não a leitura antiga "true range percentual"
+    # genérica) -- override deliberado, registrado em AG-372, não uma
+    # rehidratação automática da anistia de AG-362 (que cobre só L3).
+    "A11_true_range_pct",
+    "A16_return_3",
+    "A17_log_tr_per_overshoot_ratio",
+    "B12_close_location_h3",
+    "B13_extension_h3",
+    "B14_rejection_after_extension",
+    "B15_efficiency_ratio_h3",
+    # Lote D2 (2026-08-28, `AG-372`) -- validação da especificação de
+    # Candle Features proposta pelo usuário; 7 sobreviventes depois da
+    # auditoria algébrica (a maioria da especificação original reinventa
+    # A07-A10, já consolidados em B12, ou o A12 já removido por AG-316).
+    "A18_body_log",
+    "A19_log_range",
+    "A20_log_duration",
+    "A21_log_dollar_velocity",
+    "B16_log_range_ratio_1",
+    "B17_directional_pressure_h3",
+    "B18_engulfing_atr",
 )
 
 # T2 -- insumo de outra camada (Regime Engine, `layer: L1`) ou primitiva de
@@ -168,6 +197,20 @@ ALL_OUTPUT_COLUMNS: tuple[str, ...] = (
 )
 
 _NON_FEATURE_COLUMNS = frozenset({"open_time", "close_time"})
+
+
+def resolve_feature_ids(feature_ids: tuple[str, ...] | None) -> tuple[str, ...]:
+    """Única fonte de verdade pra resolver `feature_ids=None` -> vetor de
+    treino ativo (`T1_FEATURE_IDS`). Extraída de `src.models.pipeline.
+    run_layer1_sprint` (AG-371, 2026-08-28) -- antes dessa extração, a
+    mesma regra vivia só ali, e `run_layer1_sprint_all_combinations`
+    precisava do vetor RESOLVIDO antes de chamar `run_layer1_sprint` (pra
+    validar `hyperparams_by_combo` contra o vetor certo, não contra o
+    `feature_ids` cru que pode ser `None`) sem ter acesso a essa
+    resolução -- teria que duplicá-la, e duplicação de regra de fallback
+    foi exatamente o tipo de descompasso que causou o AG-371 original
+    (duas fontes de verdade divergindo sem ninguém perceber)."""
+    return feature_ids if feature_ids is not None else T1_FEATURE_IDS
 
 
 def _to_numpy(series: pl.Series | FloatArray) -> FloatArray:
@@ -380,6 +423,44 @@ class LoteBWindows:
             ),
             d10f_window=int(load_constant("feature_d10f_window")),
             e03f_n_events=int(load_constant("feature_e03f_funding_cum_n_events")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LoteDWindows:
+    """Janelas das 13 features novas do Lote D (2026-08-28, `AG-372`/
+    ADR-006 — família momentum/reversão/impacto/candle reconstruída em
+    torno do `H` real medido nesta sessão; Lote D2 é a mesma leva,
+    segunda rodada de validação da especificação de Candle Features).
+    Dataclass SEPARADA (mesmo motivo de `LoteAWindows`/`LoteBWindows`) —
+    as janelas com valor compartilhado (1 ou 3) têm constante PRÓPRIA em
+    `constants.yaml` cada uma — mesma disciplina de "constante dedicada
+    por feature, não reaproveitada entre ids diferentes" já documentada
+    em `group_a.py::_log_return_n`. `A18-A21`/`B18` (Lote D2) não têm
+    campo aqui: nenhuma tem janela/lag configurável (fórmulas de 1
+    barra ou razão fixa entre `t`/`t-1`, sem hiperparâmetro de
+    negócio)."""
+
+    a16_return_lag_bars: int
+    b12_close_location_window: int
+    b13_extension_window: int
+    b15_efficiency_ratio_window: int
+    b16_log_range_ratio_lag_bars: int
+    b17_directional_pressure_window: int
+
+    @classmethod
+    def from_constants(cls) -> LoteDWindows:
+        return cls(
+            a16_return_lag_bars=int(load_constant("feature_a16_return_lag_bars")),
+            b12_close_location_window=int(load_constant("feature_b12_close_location_window")),
+            b13_extension_window=int(load_constant("feature_b13_extension_window")),
+            b15_efficiency_ratio_window=int(load_constant("feature_b15_efficiency_ratio_window")),
+            b16_log_range_ratio_lag_bars=int(
+                load_constant("feature_b16_log_range_ratio_lag_bars")
+            ),
+            b17_directional_pressure_window=int(
+                load_constant("feature_b17_directional_pressure_window")
+            ),
         )
 
 
@@ -775,6 +856,7 @@ def compute_t1_features(
     taker_buy_volume = bars_15m["taker_buy_volume"].cast(pl.Float64).to_numpy()
     trade_count = bars_15m["count"].cast(pl.Float64).to_numpy()
     close_time_ms = bars_15m["close_time"].cast(pl.Float64).to_numpy()
+    open_time_ms = bars_15m["open_time"].cast(pl.Float64).to_numpy()
 
     funding_arr = _to_numpy(funding_last_aligned)
     oi_arr = _to_numpy(oi_contracts_aligned)
@@ -799,6 +881,27 @@ def compute_t1_features(
         taker_ls_vol_ratio_arr = _to_numpy(futures_positioning_aligned["taker_ls_vol_ratio"])
     lote_a = LoteAWindows.from_constants()
     lote_b = LoteBWindows.from_constants()
+    lote_d = LoteDWindows.from_constants()
+
+    # Lote D (2026-08-28, AG-372/ADR-006) -- `quote_volume`/`threshold_quote`
+    # só existem sob bar_source dollar_r{1,2,3} (`src/data/schemas.py::
+    # _DOLLAR_BARS_COLUMNS`); a grade time_15m (`resample_klines`) não tem
+    # as duas colunas. `overshoot` sai NaN inteiro sob time_15m -- mesmo
+    # tratamento de "fonte ausente" já usado pros arrays opcionais acima
+    # (taker_imbalance_1m_agg_arr etc.), não um erro.
+    if "quote_volume" in bars_15m.columns and "threshold_quote" in bars_15m.columns:
+        quote_volume = bars_15m["quote_volume"].cast(pl.Float64).to_numpy()
+        threshold_quote = bars_15m["threshold_quote"].cast(pl.Float64).to_numpy()
+        overshoot = quote_volume - threshold_quote
+    else:
+        quote_volume = np.full(n_bars, np.nan, dtype=np.float64)
+        threshold_quote = np.full(n_bars, np.nan, dtype=np.float64)
+        overshoot = np.full(n_bars, np.nan, dtype=np.float64)
+    # Lote D2 (2026-08-28, AG-372) -- duration_s reaproveitada por A20/A21.
+    # open_time/close_time existem sob QUALQUER bar_source (time_15m
+    # inclusive) -- diferente de quote_volume, A20 não vira NaN sob a grade
+    # legada, só degenera pra quase-constante (ver docstring de A20).
+    duration_s = (close_time_ms - open_time_ms) / 1000.0  # noqa: magic-number -- ms->s
 
     n = close.shape[0]
     log_return_1 = np.full(n, np.nan, dtype=np.float64)
@@ -842,6 +945,20 @@ def compute_t1_features(
     e15f_toptrader_ls_z = group_e.e15f_toptrader_ls_z(
         toptrader_ls_ratio_arr, min_common_history_bars=windows.min_common_history_bars
     )
+
+    # Lote D (2026-08-28, AG-372/ADR-006) -- intermediários reaproveitados:
+    # A16 é insumo direto de B13/B14 (B14 precisa da versão DESLOCADA, ver
+    # abaixo); realized_vol_h3 é insumo só de B13.
+    a16_return_3 = group_a.a16_return_3(close, lote_d.a16_return_lag_bars)
+    # `ret_h_prior[t] = a16_return_3[t-1]` -- a extensão de H barras já
+    # ENCERRADA em t-1, nunca a que inclui a barra atual (B14 precisa
+    # comparar "o que já aconteceu antes de t" contra "o que t faz agora",
+    # não os dois sobre a mesma janela -- ver docstring de
+    # group_b.b14_rejection_after_extension).
+    ret_h_prior = np.full(n, np.nan, dtype=np.float64)
+    if n > 1:
+        ret_h_prior[1:] = a16_return_3[:-1]
+    realized_vol_h3 = support.realized_vol(log_return_1, lote_d.b13_extension_window)
 
     columns: dict[str, object] = {
         "open_time": bars_15m["open_time"],
@@ -1000,6 +1117,38 @@ def compute_t1_features(
             min_common_history_bars=windows.min_common_history_bars,
         ),
         "E18f_taker_ls_vol_ratio": group_e.e18f_taker_ls_vol_ratio(taker_ls_vol_ratio_arr),
+        # Lote D (2026-08-28, AG-372/ADR-006) -- 6 novas, T1 direto por
+        # decisão do Manager (CLAUDE.md "Diretrizes de comportamento").
+        "A16_return_3": a16_return_3,
+        # AG-373 (2026-08-28, mesma sessão) -- A17 redesenhada de "TR/
+        # overshoot" cru (defeito dimensional real, achado por auditoria)
+        # pra razão adimensional em log1p, ver docstring da função.
+        "A17_log_tr_per_overshoot_ratio": group_a.a17_log_tr_per_overshoot_ratio(
+            high, low, close, overshoot, threshold_quote
+        ),
+        "B12_close_location_h3": group_b.b12_close_location_h3(
+            high, low, close, lote_d.b12_close_location_window
+        ),
+        "B13_extension_h3": group_b.b13_extension_h3(a16_return_3, realized_vol_h3),
+        "B14_rejection_after_extension": group_b.b14_rejection_after_extension(
+            ret_h_prior, log_return_1, atr_20_pct
+        ),
+        "B15_efficiency_ratio_h3": group_b.b15_efficiency_ratio_h3(
+            close, lote_d.b15_efficiency_ratio_window
+        ),
+        # Lote D2 (2026-08-28, AG-372) -- validação da especificação de
+        # Candle Features proposta pelo usuário, 7 sobreviventes.
+        "A18_body_log": group_a.a18_body_log(open_, close),
+        "A19_log_range": group_a.a19_log_range(high, low),
+        "A20_log_duration": group_a.a20_log_duration(open_time_ms, close_time_ms),
+        "A21_log_dollar_velocity": group_a.a21_log_dollar_velocity(quote_volume, duration_s),
+        "B16_log_range_ratio_1": group_b.b16_log_range_ratio_1(
+            high, low, lote_d.b16_log_range_ratio_lag_bars
+        ),
+        "B17_directional_pressure_h3": group_b.b17_directional_pressure_h3(
+            open_, close, lote_d.b17_directional_pressure_window
+        ),
+        "B18_engulfing_atr": group_b.b18_engulfing_atr(open_, close, atr_20_abs),
     }
     # ADR-005 §13 v2 §13.5-2 / AG-300 -- `nan_to_null=True` na FRONTEIRA
     # numpy->Polars. Sem isto, `NaN` e `null` coexistem no mesmo Float64 e

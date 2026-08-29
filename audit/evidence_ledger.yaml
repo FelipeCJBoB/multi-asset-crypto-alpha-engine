@@ -3784,3 +3784,36 @@ entries:
     (nao falta de valor incremental das 15 promovidas) ANTES de rodar o
     sweep controlado de num_leaves/max_depth ja proposto -- nao substitui
     o sweep causal, mas justifica priorizar-lo.
+
+- id_curto: h_holding_horizon_n_bars_held_2026-08-28
+  data: '2026-08-28'
+  fase: 'Preparacao do Lote D/D2 de features (AG-372/ADR-006) -- medir o H real do motor antes de calibrar janela de qualquer feature nova de momentum/reversao/impacto, em vez de herdar janela de indicador classico de barra de relogio'
+  feature_ou_filtro: 'n_bars_held (labels.parquet, populacao completa exceto NOFILL, ambos os lados)'
+  symbol: 'BTCUSDT/SOLUSDT'
+  tf: 'R1/R2/R3 (contagem de barras, dollar bar)'
+  janela: historico completo por combinacao symbol x resolucao
+  lado: ambos
+  regime: n/a
+  metrica_tipo: 'n_bars_held_mediana / n_bars_held_p25 / n_bars_held_p75'
+  metrica_valor: 1
+  n: 'TBD -- confirmar populacao exata por combinacao, nao registrada no momento da medicao'
+  status: MEDIDO
+  fonte_arquivo: 'labels.parquet (query ad-hoc via uv run python, NAO persistida como script -- proveniencia honesta: nao ha caminho de reproducao automatica desta medicao especifica ainda, so o resultado)'
+  fonte_secao: coluna n_bars_held
+  nota: >
+    Mediana=1, p25 em {0,1} (varia por combinacao), p75=3 -- ESTAVEL
+    entre resolucoes (R1 tem ~4x mais barras que R3 pro mesmo simbolo/
+    periodo, mas o holding em CONTAGEM DE BARRAS nao muda, achado em si,
+    nao esperado a priori). Usado para fixar `H=3` (p75, nao a mediana --
+    captura o holding tipico incluindo a cauda mais lenta) como base das
+    6 constantes novas de janela/lag em `config/constants.yaml`
+    (`feature_a16_return_lag_bars`, `feature_b12_close_location_window`,
+    `feature_b13_extension_window`, `feature_b15_efficiency_ratio_window`,
+    `feature_b17_directional_pressure_window`; `feature_b16_log_range_
+    ratio_lag_bars` usa lag=1 deliberadamente, granularidade mais fina
+    que H). Ressalva ja registrada em `ADR-006`: mede a populacao de
+    LABEL inteira (geometria de barreira), nao o holding condicionado as
+    linhas onde o Alpha de fato sinaliza -- pode divergir um pouco, sem
+    razao forte para divergir em ordem de grandeza. Detalhe completo:
+    `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md`,
+    `audit/architecture_gaps_log.yaml::AG-372`.

@@ -90,6 +90,28 @@ DESIGN_COLUMNS: tuple[str, ...] = T1_FEATURE_IDS
 VARIANT_CAMADA1 = "camada1"
 VARIANT_CAMADA0 = "camada0"
 
+# AG-371 (2026-08-28, decisão do Manager, MEDIDO antes de promover --
+# AG-371-ADDENDUM-6/7/8) -- Camada0 SEM restrição nenhuma (`monotone_
+# constraints=0` em toda feature) deixa `E27f_cost_atr_ratio` dominar
+# 57-97% do gain do ensemble inteiro (5 células zeradas, 15 folds
+# amostrados, `AG-371-ADDENDUM-6`) -- 3 eixos de hiperparâmetro puro
+# (`num_leaves`/`min_child_samples`, `feature_fraction`, `lambda_l2`)
+# testados e REFUTADOS como correção (`AG-371-ADDENDUM-3/7`); a raiz é
+# estrutural (busca gulosa de split sem freio de forma sobre uma feature
+# contínua de alta correlação marginal), não hiperparâmetro. Restringir
+# SÓ esta feature (mesma direção que a triagem de IC já aplica em
+# Camada1, `screen_monotone_constraints` abaixo -- não um valor
+# hardcoded) resolve o defeito mecânico por completo, medido em
+# BNBUSDT/R1 CPCV completo (`AG-371-ADDENDUM-8`): `n_signals` 0->2407,
+# `camada0_sharpe_mean` NaN->-4,54 (número real), `hhi` 0,87->0,069,
+# `E27f` sai do top-6 de gain. NÃO torna Camada0 lucrativo (nem deveria
+# -- baseline fraco por desenho) -- torna o gate de permanência
+# MENSURÁVEL (Camada1 vs número real, não Camada1 vs NaN/zero mecânico).
+# Lista de 1 elemento hoje -- estrutura pronta pra crescer se outra
+# feature mostrar o mesmo padrão de dominância no futuro, mas cada
+# adição exige a MESMA disciplina de medição (nunca por suspeita).
+CAMADA0_CONSTRAINED_FEATURES: frozenset[str] = frozenset({"E27f_cost_atr_ratio"})
+
 # Legado de path/schema (D-03/D-05, `predictions.parquet`) -- valor da
 # coluna `resolution_id` quando o caller não passa uma grade dollar-bar
 # explícita (mesmo sentinela `None` que `pipeline.run_layer1_sprint` já
@@ -1216,7 +1238,19 @@ def fit_side_model(
     if variant == VARIANT_CAMADA1:
         t1_constraints = tuple(ic_results[f].constraint for f in feature_ids)
     elif variant == VARIANT_CAMADA0:
-        t1_constraints = tuple(0 for _ in feature_ids)
+        # AG-371 (2026-08-28, decisão do Manager, promovido a default de
+        # produção -- AG-371-ADDENDUM-8) -- Camada0 continua sem
+        # restrição de forma em 21 das 22 features (baseline fraco por
+        # desenho, intocado); `CAMADA0_CONSTRAINED_FEATURES` (hoje só
+        # `E27f_cost_atr_ratio`) usa a MESMA direção que a triagem de IC
+        # já calculou pra Camada1 acima (`ic_results`, não um valor
+        # hardcoded) -- não é um modelo econômico novo sendo injetado em
+        # Camada0, é o mesmo freio que já existiria se a feature também
+        # estivesse sujeita à triagem normal.
+        t1_constraints = tuple(
+            ic_results[f].constraint if f in CAMADA0_CONSTRAINED_FEATURES else 0
+            for f in feature_ids
+        )
     else:
         raise ValueError(f"fit_side_model: variant desconhecida {variant!r}")
     monotone_constraints = t1_constraints

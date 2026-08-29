@@ -897,9 +897,13 @@ def run_layer1_sprint(
         if feature_ids is not None
         else ()
     )
-    feature_ids_effective = (
-        feature_ids if feature_ids is not None else features_build.T1_FEATURE_IDS
-    )
+    # AG-371 (2026-08-28) -- resolução extraída pra `features_build.
+    # resolve_feature_ids`, única fonte de verdade: `run_layer1_sprint_
+    # all_combinations` precisa do vetor JÁ RESOLVIDO antes de chamar esta
+    # função (pra validar `hyperparams_by_combo` contra o vetor certo,
+    # nunca contra um `feature_ids=None` cru) -- duplicar esta linha lá
+    # seria a mesma classe de descompasso que causou o AG-371 original.
+    feature_ids_effective = features_build.resolve_feature_ids(feature_ids)
     # Achado real 2026-08-27 (handoff de src/models/, AG-296/AG-297/item 3)
     # -- fail-fast ANTES de build_modeling_frame (trabalho caro de IO),
     # mesmo espírito de step_ms(tf) acima: uma feature com
@@ -1122,27 +1126,85 @@ def run_layer1_sprint(
         # `config={"variant": ...}` -- e portanto o MESMO `config_hash` dos
         # 15 artefatos já persistidos -- pra todo caller que não passa os
         # 2 parâmetros novos.
-        alpha_train_config_extra: dict[str, Any] = {}
+        #
+        # AG-371-ADDENDUM-5/10 (2026-08-28) -- achado colateral da mesma
+        # disciplina: `tau_policy`/`calib_split_mode`/`class_balance_
+        # basis`/`calib_weight_basis` mudam calibração/peso/tau de fato
+        # (afetam `predictions.parquet`), mas NUNCA entravam no hash, em
+        # NENHUMA circunstância -- diferente de `feature_ids`/`hyper`, os
+        # 4 não têm sentinela `None`/opt-in (são sempre uma string
+        # concreta, `run_layer1_sprint` já os resolve com default antes
+        # daqui), então entram SEMPRE, sem gate condicional -- não existe
+        # "não especificado" pra eles pra preservar bit-exato. Efeito
+        # colateral aceito e esperado: todo config_hash writeable a partir
+        # daqui muda em relação aos artefatos já persistidos (mesmo pra
+        # quem roda com os defaults de sempre) -- é a MESMA disciplina de
+        # `schema_version` em `compute_config_hash` (V-08: mudança de
+        # schema nunca reusa artefato antigo em silêncio), aplicada aqui
+        # como mudança de CONTEÚDO do dict de config, não de schema_
+        # version formal (o schema do parquet em si não mudou).
+        alpha_train_config_extra: dict[str, Any] = {
+            "tau_policy": tau_policy,
+            "calib_split_mode": calib_split_mode,
+            "class_balance_basis": class_balance_basis,
+            "calib_weight_basis": calib_weight_basis,
+        }
         if feature_ids is not None:
             alpha_train_config_extra["feature_ids"] = sorted(feature_ids)
         if hyper_explicit:
             alpha_train_config_extra["hyper"] = asdict(hyper)
-        write_predictions_versioned(
-            preds_c1,
-            root=ARTIFACT_ROOT,
-            symbol=symbol,
-            resolution_id=resolution_id,
-            model_id=model_id_camada1,
-            config={"variant": alpha.VARIANT_CAMADA1, **alpha_train_config_extra},
-            scratch=scratch,
-        )
+        try:
+            write_predictions_versioned(
+                preds_c1,
+                root=ARTIFACT_ROOT,
+                symbol=symbol,
+                resolution_id=resolution_id,
+                model_id=model_id_camada1,
+                config={"variant": alpha.VARIANT_CAMADA1, **alpha_train_config_extra},
+                scratch=scratch,
+            )
+        except io_artifact.ArtifactExistsError:
+            # AG-371-ADDENDUM-8 (2026-08-28) -- Camada1 não muda com a
+            # promoção de `CAMADA0_CONSTRAINED_FEATURES` (só Camada0 é
+            # afetada); pra célula onde a config de Camada1 já é idêntica
+            # à de um retreino canônico anterior, `config_hash` bate e
+            # `write_artifact` recusa por desenho (V-05, imutabilidade).
+            # Mesma disciplina de confiança já usada pelo AG-368
+            # (`config_hash` igual => config de treino declarada igual =>
+            # mesmo artefato sob determinismo) -- não é silenciar erro,
+            # é o comportamento ESPERADO quando só Camada0 precisa de
+            # artefato novo. `scratch=True` nunca cai aqui (write_artifact
+            # já limpa e sobrescreve antes do rename nesse modo).
+            logger.info(
+                "models.pipeline.camada1_artifact_ja_existe_reusado",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                detail="config de Camada1 inalterada pela promocao de "
+                "CAMADA0_CONSTRAINED_FEATURES -- artefato canonico ja "
+                "existente reusado, nao regravado",
+            )
         write_predictions_versioned(
             preds_c0,
             root=ARTIFACT_ROOT,
             symbol=symbol,
             resolution_id=resolution_id,
             model_id=model_id_camada0,
-            config={"variant": alpha.VARIANT_CAMADA0, **alpha_train_config_extra},
+            config={
+                "variant": alpha.VARIANT_CAMADA0,
+                **alpha_train_config_extra,
+                # AG-371-ADDENDUM-8 (2026-08-28) -- só na config de
+                # Camada0 (Camada1 acima fica intocada de propósito,
+                # preserva o config_hash/artefato dela) -- entra no hash
+                # pra um retreino sob a correção nunca colidir com um
+                # artefato pré-correção sob o MESMO feature_ids/hyper
+                # (mesma disciplina AG-207/ADR-003 documentada acima:
+                # "todo campo que muda a lógica de geração entra no
+                # hash"). Lista vazia é impossível hoje (`CAMADA0_
+                # CONSTRAINED_FEATURES` sempre tem >=1 elemento), mas
+                # `sorted()` de um frozenset garante ordem estável pro
+                # hash mesmo se a lista crescer.
+                "camada0_constrained_features": sorted(alpha.CAMADA0_CONSTRAINED_FEATURES),
+            },
             scratch=scratch,
         )
     else:
@@ -1734,8 +1796,10 @@ def run_layer1_sprint_all_combinations(
     device_type: str = "cpu",
     feature_ids: tuple[str, ...] | None = None,
     use_hyperparams_by_combo: bool = False,
+    allow_feature_mismatch: bool = False,
     use_economic_gate: bool = True,
     scratch: bool = False,
+    report_tag_suffix: str = "",
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """D-13 (docs/alpha_model_design_doc_2026-08-22.md, §7) -- driver fino
     que chama `run_layer1_sprint` uma vez por (symbol, resolution_id), 15
@@ -1780,9 +1844,24 @@ def run_layer1_sprint_all_combinations(
     repassado IDÊNTICO às 15 chamadas -- mesmo vetor de treino em toda
     combinação. `use_hyperparams_by_combo=True` faz cada chamada
     consultar `hyperparams_by_combo.load_hyperparams_by_combo(symbol,
-    resolution_id)`; combinação sem calibração própria (5 das 15, ver
-    `config/alpha_hyperparams_by_combo.yaml`) cai pro hiperparâmetro
-    global -- com warning explícito, nunca silencioso.
+    resolution_id, feature_ids_effective=...)`; combinação sem
+    calibração própria (5 das 15, ver `config/alpha_hyperparams_by_
+    combo.yaml`) cai pro hiperparâmetro global -- com warning explícito,
+    nunca silencioso.
+
+    **`allow_feature_mismatch` (AG-371, 2026-08-28) -- default `False`.**
+    `load_hyperparams_by_combo` valida `feature_ids` resolvido (via
+    `features_build.resolve_feature_ids`) contra o vetor sob o qual
+    `alpha_hyperparams_by_combo.yaml` foi de fato calibrado (hash de
+    conteúdo, não nome de símbolo -- ver docstring do loader). Mismatch
+    levanta `HyperparamFeatureMismatchError` por padrão: hiperparâmetro
+    calibrado (ADR-003, 25/08) pra um vetor virou stale quando `AG-362`
+    (27/08) reestruturou `T1_FEATURE_IDS` sem recalibrar este arquivo, e
+    o retreino canônico de 28/08 injetou o hiperparâmetro errado sem
+    checagem nenhuma -- o gap que este parâmetro fecha. `True` rebaixa
+    pra warning explícito e grava `report["hyperparam_feature_mismatch"]
+    = True` -- só pra comparação exploratória deliberada (mesmo espírito
+    de `scratch=True`, AG-368); NUNCA usar em retreino canônico.
 
     `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow`
     2026-08-27) -- repassado IDÊNTICO às 15 chamadas de `run_layer1_
@@ -1798,15 +1877,41 @@ def run_layer1_sprint_all_combinations(
     predictions_alpha/` e permite sobrescrita -- use quando chamar esta
     função mais de uma vez para o MESMO `symbol`/`resolution_id` com
     designs que podem resolver pro mesmo `config_hash` (ex. comparação
-    exploratória, não retreino canônico)."""
+    exploratória, não retreino canônico).
+
+    `report_tag_suffix` (AG-371-ADDENDUM-13, 2026-08-28) -- default `""`
+    preserva bit-a-bit o `report_path`/`run_tag` de sempre
+    (`alpha_layer1_report_{symbol}_{resolution_id}.json`). Gap real: os
+    artefatos de modelo já são content-addressed por `config_hash` (não
+    colidem entre `use_hyperparams_by_combo=False` e `True`), mas o
+    `report_path` desta função NÃO depende do hiperparâmetro -- rodar as
+    15 combinações duas vezes (ex. braço global + braço by-combo, mesma
+    comparação do item (2)/(3) fundidos) faz a segunda chamada
+    SOBRESCREVER o relatório-resumo da primeira, mesmo elas escrevendo em
+    artefatos de modelo distintos. Passar um sufixo (ex. `"_global"` /
+    `"_bycombo"`) mantém os dois relatórios-resumo lado a lado sem exigir
+    mover arquivo manualmente entre as duas rodadas."""
+    # AG-371 -- resolvido UMA vez (mesmo vetor pras 15 chamadas, ver
+    # docstring de `feature_ids` acima), usando a mesma fonte de verdade
+    # que `run_layer1_sprint` usa internamente pra `feature_ids=None`
+    # (`features_build.resolve_feature_ids`) -- é o vetor que precisa
+    # validar contra `hyperparams_by_combo`, não o `feature_ids` cru que
+    # pode ser `None`.
+    feature_ids_effective = features_build.resolve_feature_ids(feature_ids)
     reports: dict[tuple[str, str], dict[str, Any]] = {}
     for symbol in symbols:
         for resolution_id in resolutions:
-            run_tag = f"{symbol}_{resolution_id}"
+            run_tag = f"{symbol}_{resolution_id}{report_tag_suffix}"
             report_path = EXPERIMENTS_DIR / f"alpha_layer1_report_{run_tag}.json"
             hyper: alpha.LGBMHyperparams | None = None
+            feature_mismatch = False
             if use_hyperparams_by_combo:
-                hyper = hyperparams_by_combo.load_hyperparams_by_combo(symbol, resolution_id)
+                hyper, feature_mismatch = hyperparams_by_combo.load_hyperparams_by_combo(
+                    symbol,
+                    resolution_id,
+                    feature_ids_effective=feature_ids_effective,
+                    allow_feature_mismatch=allow_feature_mismatch,
+                )
                 if hyper is None:
                     logger.warning(
                         "models.pipeline.hyperparams_by_combo_ausente",
@@ -1821,6 +1926,7 @@ def run_layer1_sprint_all_combinations(
                 run_tag=run_tag,
                 feature_ids_n=len(feature_ids) if feature_ids is not None else None,
                 hyper_por_combo=hyper is not None,
+                hyperparam_feature_mismatch=feature_mismatch,
                 use_economic_gate=use_economic_gate,
             )
             report = run_layer1_sprint(
@@ -1834,6 +1940,12 @@ def run_layer1_sprint_all_combinations(
                 use_economic_gate=use_economic_gate,
                 scratch=scratch,
             )
+            # AG-371 -- marca o report mesmo sob `allow_feature_mismatch=
+            # True` (única forma de o consumidor do JSON persistido saber
+            # que este `hyper` não foi validado pro vetor que treinou de
+            # fato, sem precisar reler log).
+            if feature_mismatch:
+                report["hyperparam_feature_mismatch"] = True
             reports[(symbol, resolution_id)] = report
     logger.info(
         "models.pipeline.run_layer1_sprint_all_combinations_done",
@@ -1949,6 +2061,21 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "calibracao propria"
             ),
         )
+        parser.add_argument(
+            "--allow-feature-mismatch",
+            action="store_true",
+            help=(
+                "AG-371 -- so com --use-hyperparams-by-combo. False (default, "
+                "SEMPRE em retreino canonico) FALHA ALTO "
+                "(HyperparamFeatureMismatchError) se o hiperparametro por "
+                "combo foi calibrado sob um vetor de features diferente do "
+                "que esta rodando agora (hash de conteudo, config/"
+                "alpha_hyperparams_by_combo.yaml::feature_ids_hash). True "
+                "rebaixa pra warning + marca "
+                "report['hyperparam_feature_mismatch']=True -- so pra "
+                "comparacao exploratoria deliberada, nunca canonico"
+            ),
+        )
         # --- AG-208..AG-215: politicas de correcao, todas OPT-IN. Os
         # defaults abaixo reproduzem o comportamento legado bit-a-bit --
         # rodar sem nenhuma destas flags produz exatamente o artefato de
@@ -2003,6 +2130,20 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             ),
         )
         parser.add_argument(
+            "--report-tag-suffix",
+            default="",
+            help=(
+                "AG-371-ADDENDUM-13 -- so com --all-combinations. Sufixo "
+                "aplicado ao nome do relatorio-resumo por combinacao "
+                "(alpha_layer1_report_{symbol}_{resolution_id}{sufixo}.json), "
+                "para rodar o mesmo --all-combinations mais de uma vez (ex. "
+                "braco global vs braco --use-hyperparams-by-combo) sem a "
+                "segunda chamada sobrescrever o relatorio da primeira. Nao "
+                "afeta artefato de modelo (ja content-addressed por "
+                "config_hash)."
+            ),
+        )
+        parser.add_argument(
             "--device-type",
             default="cpu",
             choices=["cuda", "cpu", "gpu"],
@@ -2028,11 +2169,15 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 # FEATURE_IDS e o mesmo vetor que None ja resolvia).
                 feature_ids=features_build.T1_FEATURE_IDS,
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
+                allow_feature_mismatch=args.allow_feature_mismatch,
+                report_tag_suffix=args.report_tag_suffix,
             )
             logger.info(
                 "models.pipeline.cli_all_combinations_done",
                 n_combinations=len(reports),
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
+                allow_feature_mismatch=args.allow_feature_mismatch,
+                report_tag_suffix=args.report_tag_suffix,
             )
             return 0
         tag = f"_{args.run_tag}" if args.run_tag else ""

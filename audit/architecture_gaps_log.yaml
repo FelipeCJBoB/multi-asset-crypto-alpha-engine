@@ -5930,7 +5930,39 @@ entries:
       (Regime, `PRD_V4_1.md` §3.2) e M5 (Reconciliação de fill, escopo
       completo 5 ativos) são a PRÓXIMA FRENTE de trabalho, por
       instrução direta do Manager -- refletido em `§11.6`.
-    status: "aberto -- decisão do Manager pendente sobre o que (se algo) substitui N_lifetime no cálculo de DSR/Gate 6; M4+M5 priorizados, trabalho real ainda não iniciado"
+    resolution_final: >
+      FECHADO 2026-08-28. Decisão direta do Manager: "o que define
+      'pronto' é entregar lucro Live Demo" -- resposta à pergunta
+      original desta entrada ("o que substitui a penalidade de multiple-
+      testing no Gate 6/DSR"). Nada substitui `N_lifetime`/DSR por OUTRA
+      fórmula estatística -- o próprio Gate 6 (`PRD_V4_1.md::V41-12`,
+      "DSR final com N_lifetime=60") deixa de ser a definição de
+      conclusão do projeto. Critério novo: resultado empírico real
+      (lucro em ambiente de Live Demo), não estatística de multiple-
+      testing sobre trials de pesquisa. Escopo da mudança: Gate 6 (a
+      definição de "pronto"/sucesso do projeto), NÃO os critérios de
+      encerramento #5/#6 de `PRD_V4_1.md §6.5` ("N_lifetime>60 sem
+      Camada 2 fechada" / "DSR final<0,50") -- esses são condição de
+      ABANDONAR o projeto (guardrail contra busca infinita sem edge),
+      pergunta diferente de "quando declarar sucesso"; não foram
+      revogados por esta decisão, e não devem ser tratados como tal sem
+      instrução própria. `Gate 0-5` (gates de promoção de artefato/
+      constante individual, `§16.1`/`§16.10`) também são um mecanismo
+      distinto, não tocado aqui.
+      **Novo gap aberto por esta própria decisão, registrado em
+      `AG-374`** (mesma disciplina de `AG-114`/`AG-118`/`AG-122`,
+      `CLAUDE.md` "Diretrizes de comportamento" -- toda regra de decisão
+      travada a priori precisa de definição operacional de cada termo):
+      "lucro em Live Demo" ainda não tem definição operacional (o que
+      conta como "lucro", sobre qual capital/duração, o que é
+      exatamente "Live Demo" -- testnet, paper, ou capital real
+      reduzido). Fechar AG-077 não fecha AG-374.
+      `src/validation/dsr.py`/`_audited_n_lifetime()` (código real que
+      ainda lê `N_lifetime`) NÃO foi tocado nesta decisão -- se o código
+      deve ser removido, marcado non-binding, ou mantido como
+      diagnóstico auxiliar (não mais gate) é decisão de implementação
+      separada, ainda não tomada.
+    status: "FECHADO -- ver resolution_final. Sucedido por AG-374 (definição operacional do novo critério, aberto)"
 
   - id: AG-078
     date: "2026-08-17"
@@ -23298,3 +23330,1337 @@ entries:
       `False` propaga, `True` propaga) -- 50/50 verdes na suíte de
       `pipeline.py`/`pipeline_paths.py`. `banned_patterns`/`ruff`/`mypy`
       limpos.
+
+  - id: AG-371
+    date: "2026-08-28"
+    file: "config/alpha_hyperparams_by_combo.yaml, src/models/pipeline.py::run_layer1_sprint_all_combinations"
+    related_file: "docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, audit/architecture_gaps_log.yaml::AG-362, AG-207"
+    numeracao: "AG-371, folga sobre AG-368 (maior no momento) -- mesma disciplina de AG-260/AG-360/AG-365."
+    found_by: >-
+      Claude, respondendo à contra-análise do usuário sobre o veredito do
+      retreino canônico -- ao verificar o cruzamento N_eff × hiperparâmetro
+      por combo que o usuário propôs, li o cabeçalho de `config/alpha_
+      hyperparams_by_combo.yaml` por completo em vez de só os valores.
+    gap: >
+      `config/alpha_hyperparams_by_combo.yaml` (10 combos calibrados,
+      ADR-003 Estágio 2, `2026-08-25`) foi calibrado sob `feature_ids_ref:
+      "features_build.SUPPORT_FEATURE_IDS"` -- 62 features, SUBSTITUINDO
+      `T1_FEATURE_IDS` (7 na época), nunca somando (cabeçalho do próprio
+      arquivo, literal: "SUBSTITUI T1_FEATURE_IDS (7), nunca soma"). `AG-362`
+      (`2026-08-27`, sessão paralela, sem coordenação) reestruturou
+      completamente o vetor -- `T1_FEATURE_IDS` virou 22 (promoção aditiva
+      de L3), `SUPPORT_FEATURE_IDS` caiu de 54 pra 4. O arquivo de
+      hiperparâmetro por combo nunca foi recalibrado depois disso. `run_
+      layer1_sprint_all_combinations(use_hyperparams_by_combo=True)` chama
+      `hyperparams_by_combo.load_hyperparams_by_combo(symbol, resolution_id)`
+      -- SEM NENHUM parâmetro de `feature_ids`, sem checagem de
+      compatibilidade -- e injeta esses hiperparâmetros (`num_leaves` 2-3,
+      `min_child_samples` até 2000) DIRETO no treino sob o vetor de 22
+      atual, calibrado que foi pra um vetor de 62 substitutivo que não
+      existe mais nesta forma. `hyper` é o MESMO objeto passado pra
+      Camada 1 E Camada 0 (`run_layer1_sprint`, verificado por leitura --
+      as duas chamadas de `alpha.run_all_folds` compartilham `hyper=hyper`),
+      então o descompasso afeta as duas variantes igualmente.
+    severity: "alto -- contamina a leitura de 10/15 células do retreino canônico de 2026-08-27/28, incluindo a hipótese de 'teto de capacidade' que motivaria o próximo sweep"
+    layer: "models (orquestração de treino) + config (hiperparâmetro por combo)"
+    consequence: >
+      Achado observacional do usuário (8 de 10 células calibradas com
+      N_eff&lt;3, contra todas as 5 não-calibradas com N_eff&gt;4,5) fica
+      confundido: não dá pra separar "teto de capacidade real do desenho
+      atual" de "hiperparâmetro calibrado pra um vetor que não existe mais".
+      Cruzamento à parte: 4 das 5 células com Camada 0 zerada (n_signals=0
+      nos 5 caminhos, achado do usuário, verificado byte a byte) usam
+      hiperparâmetro calibrado sob este descompasso (BTCUSDT/R1,
+      BNBUSDT/R1, BNBUSDT/R2, XRPUSDT/R1) -- `num_leaves` raso + `min_
+      child_samples` até 2000 SEM a restrição monotônica que a Camada 1
+      tem pode ser o mecanismo que degenera o fit sem restrição a score
+      quase constante. A 5ª célula zerada (ETHUSDT/R1) usa hiperparâmetro
+      GLOBAL, não este arquivo -- o mecanismo acima não a explica sozinho,
+      acende luz amarela pra uma causa adicional ou uma variante do mesmo
+      modo de falha fora deste arquivo.
+    resolved_by_commit: null
+    status: >-
+      PARCIAL -- item (a) implementado E VERIFICADO (2026-08-28, autorização
+      explícita do Manager pra execução nesta sessão, CLAUDE.md "Execução --
+      quem roda o quê"). `tools/diagnostics/backfill_ag371_hyperparams_
+      feature_hash.py` rodou: `feature_ids_hash` real do vetor de 62
+      SUPPORT_FEATURE_IDS de 25/08 = `a1ec4831894d2136`, gravado no header de
+      `config/alpha_hyperparams_by_combo.yaml`; hash do `T1_FEATURE_IDS`
+      atual (22) = `563ec7733a390c49` -- CONFIRMADO diferente
+      (`bate_com_calibracao=False`), prova ao vivo de que o mismatch é real,
+      não hipotético. `uv run pytest tests/unit/test_models_hyperparams_by_
+      combo.py tests/unit/test_models_pipeline_paths.py -m "not slow"`: 42/42
+      verdes (`ruff`/`mypy`/`banned_patterns` já limpos antes disso). Com o
+      hash real gravado, `use_hyperparams_by_combo=True` HOJE levanta
+      `HyperparamFeatureMismatchError` pras 10 combinações calibradas até a
+      recalibração (item (c)) acontecer -- comportamento correto e
+      pretendido, não regressão. Desenho final difere do esboço original
+      desta entrada em 2 pontos, ambos achados durante a implementação:
+      (1) hash de CONTEÚDO (`feature_ids_hash`, `compute_feature_ids_hash`
+      em `src/models/hyperparams_by_combo.py`), não comparação por NOME de
+      símbolo (`feature_ids_ref`) -- a causa raiz do AG-362 foi o CONTEÚDO
+      de `T1_FEATURE_IDS` mudar mantendo o NOME, checagem por nome não
+      pegaria uma repetição futura do mesmo defeito; (2) fail-CLOSED por
+      default (`HyperparamFeatureMismatchError`, `raise`, não warning) --
+      já existia warning pra "combinação sem calibração" e isso não
+      impediu ninguém de confiar no retreino contaminado de 28/08; warning
+      novo repetiria o mesmo erro. `load_hyperparams_by_combo` ganhou
+      `feature_ids_effective` obrigatório + `allow_feature_mismatch=False`
+      (escape hatch explícito, marca `report["hyperparam_feature_
+      mismatch"]=True`, nunca usar em retreino canônico); resolução de
+      `feature_ids=None` extraída pra `features_build.resolve_feature_ids`
+      (única fonte de verdade, evita duplicar a regra de fallback no
+      call site que precisa do vetor resolvido ANTES de chamar `run_
+      layer1_sprint`). `config/alpha_hyperparams_by_combo.yaml` ganhou
+      `feature_ids_hash: null` -- arquivo fica INUTILIZÁVEL sob `use_
+      hyperparams_by_combo=True` até `tools/diagnostics/backfill_ag371_
+      hyperparams_feature_hash.py` rodar e o valor logado ser colado no
+      YAML (script não escreve sozinho, mesma disciplina de `calibrate_
+      jump_model_penalty_per_asset.py` -- decisão/edição de config fica
+      com quem roda). Ver `AG-371-ADDENDUM` pra um 3º caso de mismatch
+      achado durante esta implementação, fora do retreino canônico
+      original. (b)/(c) continuam ABERTOS, decisão do Manager: (b) rerun
+      das 4 células com `use_hyperparams_by_combo=False` é teste
+      DIFERENCIAL contra um hiperparâmetro global também `ASSUMED`/nunca
+      medido (`constants.yaml::alpha_lgbm_num_leaves`/`min_child_samples`),
+      não "controle limpo" -- ETHUSDT/R1 já roda hiperparâmetro global e
+      zera mesmo assim, é o teste de controle mais barato disponível
+      (zero retreino novo) pra separar as 2 hipóteses concorrentes; (c)
+      recalibração real sob o vetor de 22 atual também precisa decidir se
+      calibra Camada 0/Camada 1 separadamente -- `evidence_ledger.yaml::
+      adr003-k62-...` confirma que a seleção de vencedor nos Estágios 1/2
+      da campanha de 25/08 usou só `pooled_sharpe (Camada1)`; Camada0
+      (`monotone_constraints=0`, sem restrição nenhuma, `alpha.py`) nunca
+      foi alvo de otimização própria, só entrou como referência de gate
+      no Estágio 3 -- recalibrar sob o vetor certo sem endereçar isso
+      pode preservar o mesmo mecanismo de degeneração que o AG-371
+      suspeita pras 4 células zeradas que passam por este arquivo.
+
+  - id: AG-371-ADDENDUM
+    date: "2026-08-28"
+    addendum_de: "AG-371 -- 3º caso de mismatch, achado durante a
+      implementação da trava (a), no PRÓPRIO script cujo resultado
+      motivou rodar o retreino canônico com use_hyperparams_by_combo=True"
+    file: "src/analysis/ag362_incremental_value_report.py::run_stage
+      (estágio 'base', linha ~299-315)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-371,
+      docs/SPRINT_LOG.md 2026-08-28"
+    found_by: >-
+      Claude, desenhando a trava (a) do AG-371 -- ao decidir ONDE ela
+      precisava viver (não só em `load_hyperparams_by_combo`, também em
+      todo call site de `run_layer1_sprint_all_combinations`), fui checar
+      os outros call sites reais e li `ag362_incremental_value_report.py`
+      por completo.
+    gap: >
+      `run_stage(stage="base")` mede "valor incremental de 7->22
+      features" comparando contra `ORIGINAL_T1_FEATURE_IDS` (snapshot
+      congelado do T1 de 7 features PRÉ-AG-362, linha ~86-91) mantendo
+      `use_hyperparams_by_combo=winner_use_hyperparams_by_combo` --
+      constante entre os 3 estágios (off/on/base) por desenho, pra isolar
+      o eixo de contagem de features. `winner_use_hyperparams_by_combo`
+      é `True` sempre que o estágio "on" vence a comparação off/on
+      (`pick_better_hyperparam_config`) -- e "on" venceu de fato
+      (`SPRINT_LOG` 2026-08-28: "desenho vencedor da comparação 1v2
+      (on)"). Ou seja: o estágio "base", que produziu o número citado
+      como base de comparação pra decidir rodar o retreino canônico com
+      `use_hyperparams_by_combo=True`, rodou o vetor de 7 features sob um
+      hiperparâmetro calibrado (ADR-003, 25/08) pra um vetor de 62 --
+      TERCEIRA combinação incompatível, distinta da que o AG-371 original
+      documenta (22 features + hiper stale no retreino canônico em si).
+    severity: "médio -- não contamina o retreino canônico diretamente
+      (isso é o AG-371 original), mas pode ter contaminado a MEDIÇÃO que
+      motivou escolher use_hyperparams_by_combo=True pra rodá-lo"
+    layer: "analysis (comparação exploratória) + models (mesmo loader do
+      AG-371)"
+    consequence: >
+      Não dá pra saber, sem remedir, se "on vence off" (a decisão que
+      motivou o retreino canônico de 28/08) é reprodutível sob hiperparâmetro
+      validado pro vetor certo em cada estágio, ou se o resultado do
+      estágio "base" já carregava o mesmo viés que o AG-371 documenta no
+      retreino canônico -- os 3 estágios (off/on/base) não são igualmente
+      confiáveis: off/on comparam 22 features com hiper global vs.
+      por-combo (ambos aplicados ao MESMO vetor, comparação válida); base
+      aplica o hiper por-combo (calibrado pra 62) a um vetor de 7,
+      combinação nunca medida em lugar nenhum.
+    resolved_by_commit: null
+    status: >-
+      NÃO corrigido de propósito -- a trava do AG-371 (`Hyperparam
+      FeatureMismatchError`, fail-closed por default) já faz esta chamada
+      falhar alto se re-rodada hoje com `winner_use_hyperparams_by_combo=
+      True`, então o gap fica MECANICAMENTE fechado (não pode mais rodar
+      contaminado em silêncio) sem decisão de metodologia pré-tomada.
+      Decisão pendente do Manager, 2 caminhos: (i) estágio "base" sempre
+      roda com hiperparâmetro global (`use_hyperparams_by_combo=False`
+      fixo, não `winner_use_hyperparams_by_combo`) -- isola o eixo de
+      contagem de features de verdade, mas quebra a comparação "mesmo
+      hiperparâmetro nos 3 estágios" que o desenho original buscava; (ii)
+      `allow_feature_mismatch=True` explícito nesse call site -- mantém o
+      desenho original, mas o resultado do estágio "base" continua sem
+      validação, só documentado como tal via `report["hyperparam_
+      feature_mismatch"]`. Comentário inline já deixado no código
+      apontando pra esta entrada (`src/analysis/ag362_incremental_value_
+      report.py`, linha ~299).
+
+  - id: AG-371-ADDENDUM-2
+    date: "2026-08-28"
+    addendum_de: "AG-371 item (b) -- teste diferencial, ETHUSDT/R1 como
+      controle de graça (já rodado sob hiperparâmetro global, zero custo
+      de retreino novo)"
+    file: "experiments/alpha_layer1_report_ETHUSDT_R1.json"
+    found_by: >-
+      Claude, iniciando o item (b) -- ETHUSDT/R1 é a 5ª célula zerada que
+      o AG-371 original já identificou como rodando hiperparâmetro
+      GLOBAL (não está nas 10 combinações de `alpha_hyperparams_by_
+      combo.yaml`), então o dado já existe em disco, sem precisar de
+      retreino novo.
+    gap: >
+      `camada0_backtest_by_path` de ETHUSDT/R1 tem `n_signals: 0` nas 5
+      paths -- IDÊNTICO ao padrão das 4 células contaminadas pelo
+      hiperparâmetro stale, mas sob `num_leaves=8`/`min_child_samples=20`
+      (global, `constants.yaml`), não `num_leaves=2-3`/`min_child_
+      samples` até 2000 (por-combo). `camada0_sharpe_by_path`/`_mean` são
+      `None` (não zero -- indefinido, `n_paths=0` no dispersion), 100%
+      consistente com `n_signals=0` (sem trade, sem Sharpe calculável).
+      `n_rows_modeling_frame=316617`, `n_rows_train_{long,short}_by_fold`
+      entre ~54k-87k por lado -- NÃO é escassez de dado. `b4_feature_
+      shuffle` (Camada1, não Camada0 diretamente, mas mesmo vetor/dado)
+      mostra `auc_real_pooled=0,565` contra `auc_permuted_pooled=0,4996`
+      -- features discriminam acima de ruído; `b1_random_entry.
+      percentile_of_alpha=0,0` -- Sharpe de Camada1 pior que TODOS os
+      1000 seeds nulos. Combinação: sinal existe (AUC), mas não converte
+      em trade nem em Sharpe positivo em NENHUMA camada -- padrão
+      consistente com problema de CALIBRAÇÃO/THRESHOLD (`tau_policy:
+      legacy_per_side`), não de ausência de sinal bruto.
+    severity: "informativo -- evidência a favor de H1 (teto de capacidade/
+      calibração do vetor de 22 features) pra esta célula específica,
+      não prova as outras 4"
+    layer: "models (Camada0/Camada1, calibração de tau)"
+    consequence: >
+      ETHUSDT/R1 zera SEM passar pelo hiperparâmetro stale do AG-371 --
+      prova, só por si, que "hiperparâmetro stale" NÃO É explicação
+      suficiente pra TODO o fenômeno de zeramento observado no retreino
+      canônico de 28/08. Não decide se as outras 4 células (BNBUSDT_R1/
+      R2, BTCUSDT_R1, XRPUSDT_R1) compartilham esta causa (teto/
+      calibração) ou se têm a contaminação do AG-371 como causa
+      ADICIONAL/dominante -- é exatamente o que o rerun das 4 (script
+      abaixo, rodando) mede.
+    resolved_by_commit: null
+    status: >-
+      Achado, não uma correção -- alimenta a decisão do Manager sobre
+      onde investir o próximo esforço (calibração de tau vs. capacidade
+      de features vs. recalibração de hiperparâmetro). `tools/
+      diagnostics/measure_ag371_hyperparam_vs_feature_ceiling.py` rerodou
+      as outras 4 células sob hiperparâmetro global -- RESULTADO
+      (2026-08-28, mesma sessão): **4/4 confirmam H1**. `n_signals=0` nas
+      5 paths em BNBUSDT_R1, BNBUSDT_R2, BTCUSDT_R1, XRPUSDT_R1 mesmo sob
+      `num_leaves=8`/`min_child_samples=20` global (idêntico ao original
+      contaminado, `camada0_sharpe_mean=nan` nas 4). `b4_feature_shuffle`
+      confirma sinal real acima de ruído nas 4 (`auc_real_pooled`:
+      BNBUSDT_R1=0,651, BNBUSDT_R2=0,518, BTCUSDT_R1=0,653,
+      XRPUSDT_R1=0,538 -- todos > `auc_permuted_pooled`~0,50), mesmo
+      padrão de ETHUSDT_R1. Ver `AG-371-ADDENDUM-3` pro veredito
+      consolidado (5/5 células, hiperparâmetro stale REFUTADO como causa
+      do zeramento).
+
+  - id: AG-372
+    date: "2026-08-28"
+    file: "src/features/build.py, src/features/groups/group_a.py, src/features/groups/group_b.py, src/features/registry.yaml, config/constants.yaml"
+    related_file: "docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md, audit/feature_thesis/fichas_69_2026-08-25.yaml, audit/architecture_gaps_log.yaml::AG-321, AG-362"
+    numeracao: "AG-372, folga sobre AG-371 (maior no momento) -- mesma disciplina de AG-260/AG-360/AG-365/AG-371."
+    found_by: >-
+      Claude -- desenvolvimento planejado com `/feature-dev:feature-dev`,
+      execução ponta a ponta autorizada explicitamente pelo Manager
+      2026-08-28, respondendo a uma sessão de crítica rigorosa do usuário
+      sobre o veredito do retreino canônico (auditoria de A07-A11/B02-B11
+      contra `fichas_69_2026-08-25.yaml`, H real medido de `n_bars_held`).
+    gap: >
+      7 features novas/reativadas construídas em torno do `H` real medido
+      nesta sessão (`n_bars_held` mediana=1, p75=3, `labels.parquet`
+      população completa, BTCUSDT/SOLUSDT x R1/R2/R3, estável entre
+      resoluções): `A11_true_range_pct` (reativada, `layer: L4`→`L2`,
+      tese nova de impacto de preço, NÃO a anistia de `AG-362` que cobre
+      só L3), `A16_return_3`, `A17_true_range_per_overshoot`, `B12_close_
+      location_h3` (consolida A10/B09/B10/B11), `B13_extension_h3`,
+      `B14_rejection_after_extension` (feature de exaustão, conceito
+      novo), `B15_efficiency_ratio_h3`. Detalhe completo/tese de cada
+      uma: `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.
+      md`.
+    severity: "médio -- expansão deliberada do vetor de treino, sem consequência de leakage (mesmo padrão de leitura das 22 anteriores), mas sem medição de valor incremental ainda"
+    layer: "features (Feature Engine)"
+    consequence: >
+      `T1_FEATURE_IDS` vai de 22 pra 29. Todas as 7 promovidas direto a
+      T1 por decisão explícita do Manager (autorização "focar no plano
+      ponta a ponta"), sem medição de valor incremental real -- mesma
+      ressalva que `AG-362` já registrou pras 15 anteriores ("abre
+      elegibilidade, não prova o ganho"). O retreino canônico atual
+      (15 combinações, vetor de 22) NÃO inclui essas 7 -- precisa rodar
+      de novo sob o vetor de 29 pra medir efeito real, decisão separada.
+    resolved_by_commit: null
+    status: >-
+      IMPLEMENTADO. `LoteDWindows` (build.py) + extração condicional de
+      `quote_volume`/`threshold_quote` (NaN sob bar_source=time_15m, só
+      dollar_r{1,2,3} tem as 2 colunas) + 7 entradas em `columns` dict de
+      `compute_t1_features` + 7 entradas em `registry.yaml` (A11 revisada,
+      6 novas) + 4 constantes novas em `constants.yaml` (`feature_a16_
+      return_lag_bars`/`feature_b12_close_location_window`/`feature_b13_
+      extension_window`/`feature_b15_efficiency_ratio_window`, todas
+      `provenance: MEASURED`, valor 3). 12 testes de causalidade/faixa
+      novos em `tests/unit/test_features_groups.py`. `banned_patterns`/
+      `ruff`/`mypy`/`check_constants_referenced` (índice staged, falso
+      "ausente" até `git add`) rodados nos arquivos tocados, limpos.
+      `registry.yaml` (YAML syntax) validado via `yaml.safe_load`.
+      NÃO VALIDADO por Claude (protocolo de execução, CLAUDE.md): `uv run
+      pytest tests/unit/test_features_groups.py tests/unit/
+      test_features_build.py tests/unit/test_features_registry.py -m "not
+      slow" -q` -- especificamente `test_layer2_feature_ids_bate_com_t1_
+      feature_ids` (prova que `registry.yaml` layer/tier bate com `build.
+      py::T1_FEATURE_IDS`) e `test_paridade_lote_streaming_ultimas_500_
+      barras` (cobre as 7 novas automaticamente, agora que estão em
+      T1_FEATURE_IDS) -- ambos esperados verdes por leitura manual do
+      código, não confirmados por execução real.
+    addendum_gate_principle: >
+      Nota de processo adicionada ao cabeçalho de `src/features/
+      registry.yaml` (decisão do Manager, opção "nota leve" sobre "ADR
+      formal"): sequência auditoria algébrica → mecanismo → horizonte →
+      redundância → [walk-forward/incremental, pendente] → LightGBM →
+      SHAP, aplicada nesta rodada (os 3 primeiros passos feitos aqui, os
+      2 últimos continuam pendentes, mesmo trabalho que `AG-362` já
+      deixou registrado como não feito).
+    addendum_lote_d2: >
+      2026-08-28, mesma sessão. Usuário perguntou diretamente por que
+      nenhuma candle feature tinha sido desenvolvida por raciocínio
+      próprio (não só reconsolidação das antigas), depois forneceu uma
+      especificação técnica externa (~20 famílias, Pandas/numpy, pipeline
+      de 8 gates), autorização condicional explícita ("você pode criar
+      mais se validado"). Validação mecânica + de domínio ANTES de
+      implementar: Pandas do spec rejeitado por inteiro (B26); `candle_
+      open_gap` é `A12_gap_pct` já removida (`AG-316`, gap de sessão não
+      existe em cripto 24/7), não reimplementada; família wick/position
+      re-deriva a identidade algébrica de A07-A10 -- achada uma
+      redundância NOVA que o próprio spec do usuário não tinha percebido
+      (`open_location = close_location - A07`), família inteira
+      rejeitada; família Z-score (N em {5,10,20,50}) repete o erro de
+      janela nunca calibrada contra H (mesmo defeito de B02/B09/B04/B05),
+      rejeitada. Resultado: 6 candidatos genuinamente novos do spec +
+      1 (engolfo, B18) de raciocínio próprio anterior ao spec = 7
+      features implementadas -- `A18_body_log`, `A19_log_range`, `A20_
+      log_duration`, `A21_log_dollar_velocity`, `B16_log_range_ratio_1`,
+      `B17_directional_pressure_h3`, `B18_engulfing_atr`. `T1_FEATURE_
+      IDS` 29→36. Achado técnico no caminho: `A20_log_duration` é
+      CONSTANTE (não NaN) sob `bar_source=time_15m` -- diferente de A17/
+      A21 (NaN sob esse grid) -- quebrou `test_t1_ortogonalidade_
+      spearman_2anos` (stddev=0 na coluna zera a matriz de correlação,
+      NaN != NaN quebra a checagem de simetria); corrigido excluindo A20
+      do teste de correlação (não do vetor real). 9 testes novos de
+      causalidade/edge-case. VALIDADO POR EXECUÇÃO REAL nesta sessão
+      (autorização ampla do Manager, "Manager autoriza você executar uv e
+      py"): suíte alvo de features 196 passed; suíte completa 2524
+      passed, 2 skipped, 3 failed -- as 3 falhas são em `tests/unit/
+      test_analysis_tau_diagnostics.py` (`src/analysis/tau_diagnostics.
+      py`, TypeError sobre `trades_per_year=None` num `experiments/
+      alpha_layer1_report.json` real modificado por retreino anterior
+      desta sessão), módulo não tocado por este lote, não bloqueia --
+      reportado como achado separado. `T1_FEATURE_IDS` (36) confirmado
+      idêntico a `layer2_feature_ids()` via `uv run python` real.
+      `banned_patterns`/`check_unguarded_ratios`/`ruff`/`mypy` limpos nos
+      arquivos tocados (1 `noqa` obsoleto removido em `tools/lint/check_
+      unguarded_ratios.py`, achado cosmético do ruff, sem relação
+      semântica com este lote). Detalhe completo: `docs/ADR-006_momentum_
+      reversao_impacto_dollar_bar_2026-08-28.md` (addendum Lote D2).
+      Mesma ressalva de `AG-362`/deste `AG-372` acima: abre
+      elegibilidade, não prova o ganho -- retreino sob o vetor de 36 é
+      decisão separada, ainda não tomada.
+
+  - id: AG-371-ADDENDUM-3
+    date: "2026-08-28"
+    addendum_de: "AG-371 item (b) -- veredito consolidado do teste
+      diferencial (AG-371-ADDENDUM-2 + rerun das outras 4 células)"
+    file: "tools/diagnostics/measure_ag371_hyperparam_vs_feature_ceiling.py,
+      experiments/alpha_layer1_report_{BNBUSDT_R1,BNBUSDT_R2,BTCUSDT_R1,
+      XRPUSDT_R1}.json (scratch=True, não canônico)"
+    found_by: "Claude, rerun autorizado pelo Manager (2026-08-28,
+      'Pode seguir para item b'), executado em background nesta sessão"
+    gap: >
+      As 4 células com `n_signals=0` (Camada0) sob hiperparâmetro
+      calibrado STALE (AG-371) foram rerodadas com `use_hyperparams_
+      by_combo=False` (hiperparâmetro GLOBAL, `num_leaves=8`, `min_
+      child_samples=20` -- muito menos restritivo que o por-combo,
+      `num_leaves=2-3`, `min_child_samples` até 2000). RESULTADO: **4/4
+      continuam com `n_signals=0` nas 5 paths, idêntico ao original**
+      (`camada0_sharpe_mean=nan` nas 4). Somado a `ETHUSDT_R1`
+      (`AG-371-ADDENDUM-2`, já rodava hiperparâmetro global e já zerava),
+      **5/5 células zeradas mantêm o zeramento independente de qual
+      hiperparâmetro (stale ou global) treina Camada0**. `b4_feature_
+      shuffle` confirma sinal real > ruído nas 5 (`auc_real_pooled`:
+      BNBUSDT_R1=0,651, BNBUSDT_R2=0,518, BTCUSDT_R1=0,653,
+      XRPUSDT_R1=0,538, ETHUSDT_R1=0,565 -- todos claramente acima de
+      `auc_permuted_pooled`~0,50).
+    severity: "alto -- redireciona a prioridade de investigação: a causa
+      do zeramento de Camada0 não é o hiperparâmetro (nem stale nem
+      global), então corrigir só o hiperparâmetro (item (c) original) não
+      resolve o zeramento"
+    layer: "models (Camada0: `monotone_constraints=0`, calibração
+      isotônica, `tau_policy=legacy_per_side`)"
+    consequence: >
+      A hipótese que abriu esta investigação inteira (Manager: '8 de 10
+      células calibradas com N_eff baixo, contra todas as 5 não-
+      calibradas com N_eff alto -- será hiperparâmetro ou teto real?')
+      tem agora resposta parcial, mais específica que 'teto de
+      capacidade': o padrão de ZERAMENTO de Camada0 (n_signals=0,
+      distinto de N_eff baixo) é INDEPENDENTE do hiperparâmetro nas 5
+      células testadas -- sobrevive tanto ao stale quanto ao global.
+      Como as 5 têm sinal real (AUC > ruído) mas zero trade em QUALQUER
+      hiperparâmetro, o mecanismo mais provável não é capacidade de
+      árvore (`num_leaves`/`min_child_samples`, eixo que este teste
+      variou) e sim algo upstream ou downstream da árvore em si:
+      calibração isotônica sobre `Camada0` sem `monotone_constraints`
+      (produz distribuição de score sistematicamente diferente de
+      Camada1?), ou o `tau_policy=legacy_per_side` (threshold de entrada)
+      nunca cruzado pela distribuição resultante. Recalibrar `alpha_
+      hyperparams_by_combo.yaml` sob o vetor de 22 (item (c) original)
+      continua correto de se fazer (fecha o AG-371 em si, hiperparâmetro
+      stale é um problema real de proveniência/reprodutibilidade
+      independente disto), mas **não deve ser vendido como a correção
+      do zeramento observado no retreino de 28/08** -- são dois problemas
+      distintos que esta investigação apenas parecia conectar.
+    resolved_by_commit: null
+    status: >-
+      ABERTO -- achado consolidado, correção NÃO proposta aqui (fora do
+      escopo do item (b), que era só separar as hipóteses). Recomendação
+      de próximo passo, decisão do Manager: investigar a calibração de
+      Camada0 especificamente -- (i) comparar a distribuição de score
+      bruto (pré-isotônica) de Camada0 vs Camada1 nas 5 células zeradas,
+      mesma pergunta que motivou perceber `monotone_constraints=0` em
+      Camada0 (`AG-371` original); (ii) checar se `tau` efetivo (pós-
+      `legacy_per_side`) está fora do range de score que Camada0 de fato
+      produz nessas 5 células, o que zeraria `n_signals` por construção
+      independente de quão bom o modelo é. Nenhum destes dois itens foi
+      medido nesta sessão -- é o próximo `item` a abrir, não decidido
+      unilateralmente aqui.
+
+  - id: AG-371-ADDENDUM-4
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-3 -- investigação ponta a ponta dos
+      itens (i)/(ii) que ficaram como próximo passo, autorizada pelo
+      Manager ('Comece a investigação ponta a ponta')"
+    file: "src/models/alpha.py::decide_side (563-580), ::fit_side_model
+      (1490-1508), src/models/backtest_lite.py::realize_trades/
+      backtest_by_path, artifacts/predictions_alpha/ (leitura direta dos
+      parquets reais, 2 células: BNBUSDT/R1 config_hash=3bedf23375596cb1
+      vs 13cc78c54437a238, BTCUSDT/R1 config_hash=3a914db71e5f1d5f vs
+      13cc78c54437a238)"
+    found_by: >-
+      Claude -- mapeamento de mecanismo via subagente Explore (leitura de
+      código, sem escrita) seguido de verificação empírica direta nos
+      parquets já persistidos (leitura, sem retreino).
+    gap: >
+      MECANISMO CONFIRMADO, código + dado real, 2 células independentes:
+      `tau_long`/`tau_short` da Camada0 bate EXATAMENTE `1.0` (teto de
+      `IsotonicRegression(y_min=0.0, y_max=1.0)`, `fit_side_model`,
+      `alpha.py:1498`) em 15/15 folds. `decide_side` (`alpha.py:575`) usa
+      desigualdade ESTRITA: `p_long > tau_long`. Como `p_long` também é
+      clipado no mesmo teto `1.0`, `1.0 > 1.0` nunca é verdadeiro --
+      `side_hat=0` em toda barra, mecanicamente, garantido por construção
+      quando o quantil de `tau` (percentil 98,11, `target_signal_rate=
+      0,0189`, `alpha.py:1508`) cai dentro do platô saturado do
+      calibrador. `n_signals` (`backtest_lite.py`) é só `count(side_hat
+      != 0)` -- nenhum filtro de regime/custo intermediário, confirmado
+      por leitura completa do caminho.
+      CAUSA DO PLATÔ: raw score do LightGBM (`score_long_raw`, PRÉ-
+      isotônica) já vem massivamente saturado em Camada0 -- 47-52% de
+      TODAS as linhas (não só uma cauda) com `score_long_raw > 0,9`,
+      contra <2% documentado em Camada1 no mesmo vetor/dado
+      (`AG-371-ADDENDUM-2`, ETHUSDT/R1). Verificado em DUAS células
+      (BNBUSDT/R1, BTCUSDT/R1) e em AMBOS os regimes de hiperparâmetro
+      (stale por-combo `num_leaves=3`/`min_child_samples=2000` E global
+      `num_leaves=8`/`min_child_samples=20`) -- frações praticamente
+      idênticas nos dois regimes (BNBUSDT/R1: 0,5204 stale vs 0,5207
+      global; BTCUSDT/R1: 0,4918 stale vs 0,4918 global) -- CONFIRMA
+      `AG-371-ADDENDUM-3` (H1: hiperparâmetro não é a causa) com o
+      artefato certo desta vez (ver nota de metodologia abaixo). TODAS as
+      linhas do parquet são `is_oof=True` -- a saturação acontece em dado
+      de TESTE (fora da amostra de treino), não é memorização simples de
+      treino vazando pra leitura.
+      NOTA DE METODOLOGIA (achado colateral, não o gap principal): o
+      primeiro comparativo desta investigação comparou o artefato ERRADO
+      -- `config_hash` (`src.io.artifact.compute_config_hash`, via
+      `alpha_train_config_extra` em `pipeline.py:1129-1133`) só inclui
+      `hyper` quando `hyper_explicit=True` (hyper passado explícito, não
+      `None`). Isso significa que MÚLTIPLOS artefatos imutáveis
+      genuinamente diferentes (hiper stale explícito vs hiper global
+      implícito) coexistem sob `config_hash` DIFERENTES pro mesmo
+      (symbol, resolution, variant, feature_ids) -- 2 arquivos canônicos
+      de Camada0/BNBUSDT/R1 (`13cc78c54437a238` 00:05, sem hyper no hash;
+      `3bedf23375596cb1` 06:17, com hyper no hash) coexistem no MESMO
+      diretório imutável. O primeiro rerun do item (b) comparou contra
+      `13cc78c54437a238` por engano (parecia ser o stale por ser mais
+      antigo cronologicamente na sessão) -- na verdade também usava hiper
+      global/implícito, o que produziu bytes IDÊNTICOS ao rerun (LightGBM
+      `deterministic=True`, mesma seed/split/hiper = mesmo resultado bit-
+      a-bit, comportamento CORRETO, não bug). Identificado o artefato
+      certo (`hyper_explicit=True`, valores batendo com o YAML) via
+      `config.json` de cada `config_hash`, o teste foi refeito e a
+      conclusão original (H1) se sustenta -- mas por um caminho diferente
+      do que o rerun automatizado do item (b) mediu sozinho.
+    severity: "alto -- resolve o mecanismo de n_signals=0 (não é mais
+      hipótese); médio, separado -- config_hash sem hyper implícito é uma
+      lacuna de proveniência real (2 artefatos imutáveis coexistindo pra
+      'a mesma' célula sem nenhum ponteiro de qual é 'o' canônico além do
+      último report_path sobrescrito)"
+    layer: "models (Camada0: IsotonicRegression + decide_side +
+      target_signal_rate) + io (write_artifact/config_hash, achado
+      colateral)"
+    consequence: >
+      `AG-371` (hiperparâmetro stale) e o zeramento de `n_signals` são
+      CONFIRMADOS como problemas independentes -- recalibrar `alpha_
+      hyperparams_by_combo.yaml` sob o vetor de 22 (item (c)) corrige o
+      AG-371 em si (proveniência), mas não muda o zeramento, porque a
+      causa é o par (isotônica sem `monotone_constraints` + `tau` por
+      quantil com desigualdade estrita) reagindo a um raw score já
+      saturado ANTES de qualquer calibração. A pergunta que continua
+      aberta -- por que o LightGBM não-restrito de Camada0 produz raw
+      score > 0,9 em quase metade de TODO o dataset OOF, em 2 símbolos
+      diferentes, 2 hiperparâmetros diferentes -- não foi respondida
+      aqui: é a causa-da-causa, um nível mais fundo (leakage? feature
+      degenerada/quase-binária dominando o gain? artefato da própria
+      grade de dollar-bar interagindo com ausência de restrição
+      monotônica?). Achado colateral do `config_hash` (ver nota de
+      metodologia) é reproduzível e real, mas não decide sozinho se é
+      classificado como novo AG -- fica pra o Manager decidir.
+    resolved_by_commit: null
+    status: >-
+      Mecanismo do zeramento RESOLVIDO por investigação (não é mais
+      hipótese aberta) -- nenhuma correção de código proposta ou aplicada
+      aqui, escopo era só "investigação ponta a ponta". 3 decisões
+      pendentes do Manager, independentes entre si: (1) a causa-da-causa
+      (por que Camada0 satura) -- próxima investigação, não iniciada;
+      (2) correção de desenho pro zeramento em si -- candidatos óbvios
+      NÃO avaliados aqui (ex. `target_signal_rate` mais baixo não ajuda
+      se o platô cobre >47% da massa; `IsotonicRegression` com folga do
+      teto; `tau_policy` alternativa; desigualdade `>=` não resolveria,
+      seria só mudar ONDE a borda cai) -- qualquer escolha aqui muda
+      comportamento de produção, decisão do Manager, não de Claude;
+      (3) o achado colateral de `config_hash`/`hyper_explicit` -- abrir
+      como AG novo ou tratar como nota dentro deste, decisão do Manager.
+
+  - id: AG-371-ADDENDUM-5
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-4 -- varredura de completude pedida
+      explicitamente pelo Manager ('varra e valide que não deixou
+      nenhum achado de fora') antes de sequenciar as decisões"
+    file: "audit/architecture_gaps_log.yaml (revisão de todo o thread
+      AG-371..AG-371-ADDENDUM-4), src/models/pipeline.py (linhas 635-680,
+      1129-1151)"
+    found_by: "Claude, varredura de completude sob pedido direto"
+    gap: >
+      Duas lacunas reais na síntese anterior (`AG-371-ADDENDUM-4`),
+      nenhuma delas muda o veredito já registrado, mas ambas precisavam
+      de fechamento antes de decisão de sequência:
+      (1) COBERTURA INCOMPLETA -- `ADDENDUM-4` verificou o mecanismo
+      (`tau=1,0` exato + score bruto saturado, robusto a hiperparâmetro)
+      só em 2 das 5 células zeradas (BNBUSDT/R1, BTCUSDT/R1) com o
+      artefato correto identificado; as outras 2 células-por-combo
+      (BNBUSDT/R2, XRPUSDT/R1) tinham a mesma ambiguidade de `config_
+      hash` sem terem sido reverificadas com o artefato certo (só o
+      relatório do subagente, que pode ter tido o mesmo problema de
+      seleção que o rerun automatizado teve). REFEITO agora: BNBUSDT/R2
+      (`config_hash=c9db95f1b9ac74fc` stale vs `13cc78c54437a238`
+      global) e XRPUSDT/R1 (`a0e37c5d2b200141` vs `13cc78c54437a238`) --
+      **confirmado nas 2**, `n_signals=0`/`tau_max=1,0` nos dois regimes
+      de hiperparâmetro. Cobertura agora é 5/5 (as 2 novas + BNBUSDT/R1 e
+      BTCUSDT/R1 já confirmadas + ETHUSDT/R1, que nunca teve ambiguidade
+      por não ser célula calibrada). Fração de saturação varia por
+      célula (16-22% em BNBUSDT/R2 e XRPUSDT/R1, contra 47-52% em
+      BNBUSDT/R1 e BTCUSDT/R1) -- MAS todas MUITO acima do 1,89%
+      (`target_signal_rate`) necessário pra quebrar o mecanismo, então a
+      conclusão qualitativa (H1, robusto a hiperparâmetro) não muda em
+      nenhuma célula.
+      (2) ESCOPO ESTREITO DEMAIS -- o achado colateral (`ADDENDUM-4`,
+      nota de metodologia) foi descrito como sendo sobre `hyper`
+      especificamente. Releitura de `alpha_train_config_extra`
+      (`pipeline.py:1129-1133`) confirma que é mais amplo: `feature_ids`
+      e `hyper` são os ÚNICOS 2 campos que entram no `config_hash` (e
+      `hyper` só condicionalmente). `tau_policy`, `calib_split_mode`,
+      `class_balance_basis`, `calib_weight_basis` -- todos parâmetros de
+      `run_layer1_sprint` que MUDAM o conteúdo de `predictions.parquet`
+      de fato (afetam calibração/peso/tau) -- NUNCA entram no hash, em
+      NENHUMA circunstância, explícito ou não. Risco prático HOJE
+      contido (todo call site de produção usa o mesmo default único pros
+      4 -- só `hyper` foi de fato variado via `use_hyperparams_by_combo`
+      até agora), mas é a MESMA classe de lacuna estrutural, não um caso
+      isolado de `hyper`.
+      Achado adicional, colateral do colateral: `13cc78c54437a238`
+      (Camada0, 22 features, hiper implícito) é hoje um artefato ÓRFÃO
+      no lake imutável de BNBUSDT/R1 -- nenhum `report_path`/consumidor
+      real aponta pra ele (o report canônico reflete a escrita mais
+      recente, `3bedf23375596cb1`, 06:17). Ocupa espaço e pode confundir
+      um leitor futuro que não saiba checar `config.json::hyper` antes de
+      escolher qual `config_hash` ler.
+    severity: "baixo -- não muda nenhum veredito já registrado, fecha
+      cobertura e amplia precisão do achado colateral"
+    layer: "models (pipeline.py, escopo do config_hash) + processo
+      (varredura de completude)"
+    consequence: >
+      Nenhuma. Achados (1) e (2) são fechamento de rigor, não mudança de
+      direção -- a decisão (3) do `ADDENDUM-4` ("achado colateral do
+      config_hash -- abrir como AG novo ou nota") precisa ser reformulada
+      com o escopo AMPLIADO (4 campos, não 1) antes do Manager decidir,
+      é isso que este addendum corrige.
+    resolved_by_commit: null
+    status: >-
+      Varredura concluída. Lista de decisões pendentes CONSOLIDADA (única
+      fonte de verdade a partir daqui, substitui a lista de 3 itens do
+      `ADDENDUM-4`) -- 5 itens, A-E, apresentados ao Manager para
+      sequenciamento fora deste arquivo (no canal de decisão, não aqui):
+      (A) item (c) original -- recalibração de `alpha_hyperparams_by_
+      combo.yaml` sob o vetor de 22, incluindo a sub-decisão Camada0/
+      Camada1 separado ou não (não resolve o zeramento, é proveniência);
+      (B) `AG-371-ADDENDUM` original -- estágio "base" de `ag362_
+      incremental_value_report.py`, opção (i) hiperparâmetro global fixo
+      vs (ii) `allow_feature_mismatch=True` explícito;
+      (C) causa-da-causa do zeramento -- por que Camada0 satura (16-52%
+      de score bruto >0,9 em 5 células, 2 hiperparâmetros);
+      (D) correção de desenho pro zeramento em si -- candidatos não
+      avaliados (target_signal_rate, folga no teto do calibrador,
+      tau_policy alternativa);
+      (E) achado colateral do `config_hash` -- ESCOPO AMPLIADO (4 campos:
+      tau_policy/calib_split_mode/class_balance_basis/calib_weight_basis,
+      não só hyper) -- 3 sub-opções (AG novo formal; expandir `alpha_
+      train_config_extra` pros 4 campos; varredura leve nos outros 14
+      cells por artefatos órfãos duplicados).
+
+  - id: AG-371-ADDENDUM-6
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-4/5 -- item (C) da ordem de sequência
+      do Manager ('C > D > E, atacar agora com solução robusta')"
+    file: "models/{BNBUSDT,BTCUSDT,XRPUSDT,ETHUSDT}/{R1,R2}/
+      alpha_c0_baseline_v1/diagnostics/fold_*.json (gain_by_column real,
+      leitura), src/features/groups/group_e.py::e27f_cost_atr_ratio,
+      src/labels/triple_barrier.py (tp_atr_mult/sl_atr_mult),
+      data/labels/BNBUSDT/R1/v1/labels.parquet (leitura direta)"
+    found_by: "Claude, item (C) sob ordem do Manager"
+    gap: >
+      CAUSA-DA-CAUSA, parcialmente resolvida -- o QUÊ está solidamente
+      confirmado, o PORQUÊ tem hipótese revisada (a primeira foi testada
+      e REFUTADA, não forçada a caber).
+      O QUÊ (confirmado, `gain_by_column` real de `models/.../
+      diagnostics/fold_{N}_long.json`, já persistido, sem retreino):
+      `E27f_cost_atr_ratio` é a feature #1 por gain em Camada0 em TODAS
+      as 5 células zeradas, em TODOS os 15 folds amostrados (3 por
+      célula) -- share de 57% a 97% do gain total, `hhi` de 0,34 a 0,94.
+      Em Camada1 (mesmo dado, mesmo fold), gain é difuso -- top feature
+      de fold_0/BNBUSDT-R1 é `C12_vol_of_vol_48` com 27%, `hhi=0,12`,
+      `n_eff_factors_t1=5,89` (vs `1,14` em Camada0). Consistente com
+      `E27f` já ser a feature de MAIOR |IC| entre as 22 (`AG-371-
+      ADDENDUM-4`, ETHUSDT/R1: `mean_ic=-0,038`, 5-10x maior em módulo
+      que qualquer outra) -- a diferença é que Camada1 (com `monotone_
+      constraints=-1` sobre ela) CONTÉM essa exploração; Camada0 (sem
+      restrição nenhuma) não.
+      HIPÓTESE 1, TESTADA E REFUTADA: `E27f = custo_round_trip_bps /
+      (atr_20_pct×10000)` (`group_e.py:127-128`) é matematicamente
+      `~constante/ATR`. `tp_atr_mult=sl_atr_mult=1,5` (`constants.yaml`,
+      SIMÉTRICO) -- hipótese inicial era que `E27f` codifica se o
+      TIME-stop censura o trade antes de TP/SL (barreira estreita em
+      baixa-ATR/alto-E27f = mais fácil tocar TP-ou-SL antes do prazo).
+      MEDIDO DIRETO em `labels.parquet` (BNBUSDT/R1, side=long, 329k
+      linhas, 10 e depois 50 buckets por percentil de ATR): `p(TIME)`
+      é ~0 em TODOS os buckets (não é o mecanismo -- TIME-stop quase
+      nunca acontece, independente de ATR); `p(TP)` fica entre 45-51%
+      em TODOS os buckets, sem tendência monotônica forte o bastante
+      pra explicar sozinha 93% de gain concentrado numa única feature.
+      Hipótese REJEITADA pela medição direta, não presumida.
+      HIPÓTESE 2, PLAUSÍVEL, NÃO TOTALMENTE PROVADA: `E27f` é contínua,
+      alta cardinalidade, alcance dinâmico grande (ATR varia ordens de
+      magnitude ao longo da amostra) E tem a maior correlação marginal
+      real (IC) entre as 22 features. Isso a torna candidata natural a
+      SOBREAJUSTE VIA BUSCA GULOSA DE SPLIT: uma árvore SEM restrição
+      monotônica pode testar centenas de pontos de corte candidatos
+      nessa única feature contínua e "dobrar a aposta" no sinal mais
+      forte disponível, encontrando partições estreitas que capturam
+      RUÍDO específico da janela de treino/calibração, não relação
+      genuína -- clássico problema de comparações múltiplas em busca de
+      split, o motivo estrutural de existir `monotone_constraints`/
+      regularização de forma em primeiro lugar. `monotone_constraints=-1`
+      em Camada1 BLOQUEIA essa exploração de alta resolução, forçando
+      relação monótona simples -- por isso o gain se redistribui pras
+      outras features lá. NÃO testei isso de ponta a ponta (ex.: AUC
+      de um modelo de 1 feature só com E27f, comparação in-sample vs
+      OOF isolando o efeito, partial dependence) -- é a hipótese líder,
+      não um fato estabelecido.
+    severity: "alto -- confirma que Camada0 tem UMA fraqueza estrutural
+      específica e identificável (ausência de qualquer freio contra
+      exploração de alta resolução de uma feature contínua de alta
+      correlação), não um problema difuso de 'capacidade' -- isso
+      restringe MUITO o espaço de correções válidas pro item (D)"
+    layer: "models (Camada0: regularização de forma/split search)"
+    consequence: >
+      Item (D) não precisa esperar a Hipótese 2 ser 100% provada pra
+      agir -- qualquer correção robusta precisa endereçar a FRAQUEZA
+      estrutural confirmada (Camada0 sem freio contra dominância de
+      feature única de alta cardinalidade), não só o sintoma (tau=1,0).
+      Isso elimina candidatos de remediação barata que só mexem no tau/
+      calibrador (ex. baixar target_signal_rate, dar folga no teto do
+      IsotonicRegression) -- esses tratariam o SINTOMA (onde o corte
+      cai) sem tocar a CAUSA (o modelo continuaria gerando confiança
+      espúria concentrada numa feature, só que abaixo do teto -- ainda
+      assim sinal não-econômico, só que sem o zeramento mecânico que
+      pelo menos torna o defeito visível hoje).
+    resolved_by_commit: null
+    status: >-
+      Investigação concluída dentro do escopo pedido (causa mecânica
+      confirmada, causa-da-causa com hipótese forte mas não provada a
+      100%). Segue direto pro item (D) sob a mesma ordem do Manager --
+      ver entrada seguinte para a correção proposta.
+
+  - id: AG-371-ADDENDUM-7
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-6 -- item (D) da ordem do Manager,
+      'solução robusta, sem remediação barata'"
+    file: "tools/diagnostics/measure_ag371_camada0_feature_fraction_fix.py,
+      tools/diagnostics/measure_ag371_camada0_lambda_l2_fix.py"
+    found_by: "Claude, item (D), 2 hipóteses testadas empiricamente
+      (retreino real, BNBUSDT/R1, scratch=True, 15 folds CPCV completos
+      por config)"
+    gap: >
+      DUAS hipóteses de correção via hiperparâmetro puro, ambas
+      REFUTADAS por medição direta -- não presumidas, testadas:
+      (1) `feature_fraction` (colsample por árvore) em 0,7/0,5/0,3 contra
+      o baseline 1,0 -- mecanismo esperado: impedir `E27f_cost_atr_ratio`
+      de estar disponível em toda árvore, forçando parte do ensemble a
+      usar outras features. RESULTADO: `n_signals_total_camada0=0` nos 3
+      valores, idêntico ao baseline. Explicação mecanística pós-hoc:
+      boosting é sequencial/aditivo -- mesmo com 30% de chance de `E27f`
+      aparecer por árvore, ~90 das 300 árvores ainda a usariam
+      (amostragem é por ÁRVORE, não por split -- `feature_fraction_
+      bynode`, resampling por nó, não existe hoje em `LGBMHyperparams`),
+      acumulando log-odds suficiente pra saturar de qualquer forma.
+      (2) `lambda_l2` (regularização L2 do VALOR da folha, mecanismo
+      ortogonal -- não impede a escolha da feature, amortece a
+      magnitude da contribuição) em 20/50/100 contra o baseline 5,0 (4x/
+      10x/20x). RESULTADO: `n_signals_total_camada0=0` nos 3 valores,
+      idêntico ao baseline.
+      Combinado com `AG-371-ADDENDUM-3` (capacidade de árvore --
+      `num_leaves`/`min_child_samples`, stale vs global, já refutado):
+      **os 3 eixos de regularização hiperparamétrica padrão do LightGBM
+      disponíveis em `LGBMHyperparams` foram testados e nenhum resolve**.
+      Não é mais um problema de ajuste fino -- é estrutural: Camada0, por
+      DESENHO (`monotone_constraints=0` em toda feature, `alpha.py:
+      1218-1219`), não tem NENHUM freio contra uma feature de alta
+      correlação marginal dominar o ensemble inteiro, e nenhum hiper-
+      parâmetro dentro do espaço já varrido consegue substituir essa
+      ausência de restrição de forma.
+    severity: "alto -- fecha definitivamente a via 'ajustar hiperparâmetro
+      resolve' e força a decisão pro nível estrutural (definição de
+      Camada0), que tem implicação em TODAS as 15 células, não só as 5
+      zeradas"
+    layer: "models (Camada0: espaço de hiperparâmetro exaurido, decisão
+      resta em desenho de restrição de forma/feature-set)"
+    consequence: >
+      Qualquer correção robusta pra (D) precisa mexer em ALGO que hoje é
+      fixo por DESENHO (não por hiperparâmetro): ou dar a Camada0 alguma
+      restrição de forma (quebra sua definição de 'baseline sem
+      restrição', usada como comparador no gate de permanência), ou
+      remover/tratar `E27f_cost_atr_ratio` de forma assimétrica entre
+      Camada0/Camada1 (quebra a garantia de 'mesmo conjunto de features'
+      que dá validade à comparação Camada1-vs-Camada0). As duas mudam o
+      que o gate de permanência SIGNIFICA nas 15 células -- não é uma
+      correção local, decisão de metodologia do Manager.
+    resolved_by_commit: null
+    status: >-
+      ABERTO -- 3 candidatos estruturais levantados, nenhum implementado,
+      recomendação dada mas decisão pendente do Manager (mensagem
+      separada no canal de decisão, não neste arquivo): (i) `monotone_
+      constraints` completo em Camada0 (colapsaria Camada0≈Camada1,
+      descartado -- gate de permanência ficaria trivial); (ii)
+      quarentena de `E27f_cost_atr_ratio` só em Camada0 (quebra paridade
+      de feature-set entre as camadas); (iii) [RECOMENDADO] restrição
+      monotônica SÓ em `E27f_cost_atr_ratio` dentro de Camada0,
+      mantendo as outras 21 features livres -- preserva paridade de
+      feature-set (mesma lista nas 2 camadas) E preserva Camada0 como
+      baseline mais fraco (só 1 de 22 features ganha restrição, resto
+      continua sem domínio econômico nenhum) E ataca exatamente o
+      mecanismo confirmado (`AG-371-ADDENDUM-6`). Complementar,
+      independente da escolha entre (i)/(ii)/(iii): um gate de
+      concentração de gain (`max_share`/`hhi` já calculados, `pipeline.
+      py:271-272`) que falha alto se um fold saturar numa única feature
+      acima de um limiar -- teria pego este defeito em 25-27/08, antes
+      de 15 células rodarem contaminadas; defesa em profundidade, NUNCA
+      substituto de (i)/(ii)/(iii) (só isso, sem mexer na causa, seria a
+      remediação barata que o Manager pediu pra evitar).
+
+  - id: AG-371-ADDENDUM-8
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-7 -- Manager pediu o impacto concreto
+      da opção (iii) recomendada antes de decidir; medido, não presumido"
+    file: "src/models/alpha.py::fit_side_model/run_fold/run_all_folds,
+      src/models/pipeline.py::run_layer1_sprint (parâmetro EXPERIMENTAL
+      `camada0_forced_constraints`, default `None`, não wireado em
+      nenhum call site de produção), tools/diagnostics/measure_ag371_
+      camada0_e27f_constraint_fix.py"
+    found_by: "Claude, medição direta (retreino real, CPCV completo, 15
+      folds, BNBUSDT/R1, scratch=True) sob autorização de execução do
+      Manager nesta sessão"
+    gap: >
+      IMPACTO MEDIDO de restringir SÓ `E27f_cost_atr_ratio` (`constraint
+      -1`, mesma direção que a triagem de IC já usa em Camada1) dentro
+      de Camada0, mantendo as outras 21 features livres -- BNBUSDT/R1,
+      CPCV completo (15 folds), comparado ao baseline sem constraint
+      nenhum (`AG-371-ADDENDUM-4/6`):
+      MECÂNICA (fold 0, `gain_by_column` real, `models/BNBUSDT/R1/
+      alpha_c0_baseline_v1/diagnostics/fold_0_long.json`): `hhi` 0,87 ->
+      0,069 (fica MAIS diffuso que Camada1, que tinha 0,12); `max_share`
+      0,93 -> 0,154; `n_eff_factors_t1` 1,14 -> 7,47 (Camada1 tinha
+      5,89); `n_features_over_1pct` 2 -> 24; `E27f_cost_atr_ratio` sai
+      do top-6 de gain inteiramente (era 93%, top feature agora é
+      `C12_vol_of_vol_48` a 15,4%, mesma feature que já liderava
+      Camada1). O gain REALMENTE se redistribui, não é um artefato de
+      outra saturação surgindo em outro lugar.
+      RESULTADO EM BACKTEST (CPCV completo, 15 folds, 5 paths):
+      `n_signals_total_camada0`: 0 -> **2407**. `camada0_sharpe_mean`:
+      `NaN` (indefinido) -> **-4,537** (número real, computável).
+      `n_paths_camada1_supera_camada0`: indefinido -> **1 de 5**.
+      `permanence_pass`: continua `False`. Gate econômico: `long`
+      `margin=-0,086`/`distinguishable=False`, `short` `margin=-0,059`/
+      `distinguishable=False` -- ambos ainda reprovam.
+      LEITURA: a correção resolve o DEFEITO MECÂNICO (zeramento por
+      saturação do calibrador) por completo -- Camada0 agora produz um
+      modelo com gain genuinamente diffuso e um Sharpe DEFINIDO, não
+      `NaN`. NÃO torna Camada0 lucrativo -- e não deveria: Camada0 é o
+      baseline FRACO do gate de permanência por desenho; um Sharpe de
+      -4,5, ainda pior que Camada1 (-4,10) na mesma célula, é o
+      resultado ESPERADO de um baseline sem conhecimento econômico. O
+      que muda não é "Camada0 fica bom" -- é "a comparação Camada1-vs-
+      Camada0 agora é uma comparação real entre 2 números, não Camada1
+      contra `NaN`/zero mecânico".
+    severity: "informativo -- confirma que a opção (iii) resolve o
+      sintoma mecânico completamente, sem alterar a conclusão econômica
+      de fundo (BNBUSDT/R1 continua sem edge distinguível de ruído em
+      NENHUMA camada)"
+    layer: "models (Camada0, parâmetro experimental já implementado e
+      testado, não wireado em produção)"
+    consequence: >
+      Item (D) tem agora um candidato IMPLEMENTADO (como parâmetro
+      opt-in, `camada0_forced_constraints`, bit-exato por default) e
+      MEDIDO numa célula real -- falta: (1) decisão do Manager pra
+      promover a default de produção (mudança de definição de Camada0
+      nas 15 células); (2) se promovido, substituir o `-1` hardcoded
+      deste teste pela leitura real de `ic_results['E27f_cost_atr_
+      ratio'].constraint` por fold/lado (a mesma triagem que Camada1 já
+      faz), não fixo -- nota já deixada no script de teste; (3) rodar
+      nas outras 4 células zeradas (BNBUSDT/R2, BTCUSDT/R1, XRPUSDT/R1,
+      ETHUSDT/R1) e idealmente nas 10 não-zeradas também, pra confirmar
+      que não piora nenhuma célula que hoje passa; (4) decidir se o gate
+      de concentração de gain (item 4 do `ADDENDUM-7`) entra junto, como
+      defesa em profundidade.
+    resolved_by_commit: null
+    status: >-
+      Medição concluída, aguardando decisão do Manager pra promover a
+      produção (não promovido, `camada0_forced_constraints=None`
+      continua o comportamento de sempre em todo call site real hoje).
+
+  - id: AG-371-ADDENDUM-9
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-8 -- promoção a produção canônica,
+      autorizada pelo Manager ('Totalmente aprovado, pode transformar em
+      produção canônico ponta a ponta')"
+    file: "src/models/alpha.py::CAMADA0_CONSTRAINED_FEATURES/
+      fit_side_model, src/models/pipeline.py::run_layer1_sprint (config
+      de Camada0 no write), tests/unit/test_models_pipeline_paths.py"
+    found_by: "Claude, implementação sob autorização direta do Manager"
+    gap: >
+      4 mudanças de código pra promover o achado de `AG-371-ADDENDUM-8`
+      a comportamento DEFAULT (não mais atrás de parâmetro experimental,
+      CLAUDE.md "correção pedida pelo Manager é o comportamento DEFAULT
+      -- nunca atrás de flag opt-in"):
+      (1) `alpha.CAMADA0_CONSTRAINED_FEATURES: frozenset[str] =
+      frozenset({"E27f_cost_atr_ratio"})` -- constante de produção,
+      documentada, ao lado de `VARIANT_CAMADA0`.
+      (2) `fit_side_model`: o ramo `VARIANT_CAMADA0` agora lê `ic_
+      results[f].constraint` (a MESMA triagem de IC que Camada1 já usa,
+      recalculada por fold/lado -- não o `-1` hardcoded do teste de
+      `ADDENDUM-8`) pra toda feature em `CAMADA0_CONSTRAINED_FEATURES`,
+      `0` pras outras 21. Sem flag -- incondicional.
+      (3) Parâmetro EXPERIMENTAL `camada0_forced_constraints` (existia
+      só nesta sessão, `fit_side_model`/`run_fold`/`run_all_folds`/
+      `run_layer1_sprint`) REMOVIDO -- superado pelo mecanismo
+      permanente, não faz sentido manter 2 caminhos.
+      (4) `config_hash`: config de Camada0 (só dela -- Camada1
+      intocada, preserva o artefato dela) ganhou `camada0_constrained_
+      features: sorted(CAMADA0_CONSTRAINED_FEATURES)` -- sem isso, um
+      retreino sob a correção colidiria (`ArtifactExistsError`) com o
+      artefato pré-correção sob o MESMO `feature_ids`/`hyper_explicit`
+      (achado ao desenhar a promoção, não hipotético -- `config_hash`
+      nunca incluiu nada sobre a FORMA de Camada0, só `feature_ids`/
+      `hyper`). Write de Camada1 envolto em `try/except ArtifactExists
+      Error` -- pra células onde a config de Camada1 é idêntica a um
+      artefato canônico já existente (mesma disciplina de confiança já
+      usada pelo AG-368), o retreino completo dos 15 não crasha na
+      primeira colisão esperada.
+      VALIDAÇÃO: 1 teste ajustado (`test_run_layer1_sprint_resolution_
+      id_propaga_ate_write_predictions_versioned`, expectativa de
+      `config` desatualizada -- corrigido, não afrouxado). Suíte
+      `tests/unit -k models -m "not slow"`: **391 passed, 1 skipped
+      (pré-existente, sem relação), 0 failures**. `ruff`/`mypy`/
+      `banned_patterns` limpos nos 3 arquivos de produção tocados.
+    severity: "alto -- muda o comportamento de produção de Camada0 em
+      TODAS as 15 células, não só as 5 zeradas"
+    layer: "models (Camada0, config_hash) + testes"
+    consequence: >
+      Retreino canônico REAL disparado logo em seguida (mesma sessão,
+      ver entrada seguinte) -- as 10 células que já passavam o gate
+      antes desta correção também retreinam, então esta entrada não
+      fecha até esse resultado ser conferido.
+    resolved_by_commit: null
+    status: >-
+      Código promovido e testado. `N_lifetime`: NÃO registrado -- mesma
+      leitura em aberto já documentada em `run_layer1_sprint_all_
+      combinations` (D-14): decisão do Manager se uma correção de
+      DESENHO (não busca de hiperparâmetro) que já estava fixada conta
+      como trial novo, não decidida aqui (B23). Retreino canônico das 15
+      células rodando em background nesta sessão (~3-4h estimado,
+      sequencial, ~12-16min/célula já medido) -- CANCELADO pelo Manager
+      antes de terminar (ver AG-371-ADDENDUM-10 pro motivo real, não só
+      "ainda falta A e B" -- a contaminação abaixo é o motivo mais sério).
+
+  - id: AG-371-ADDENDUM-10
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-9 -- Manager pediu cancelar o retreino
+      ('ainda falta A e B'); ao investigar por que o log mostrava
+      feature_ids_n=36 (esperado 22), achei uma contaminação real"
+    file: "src/features/build.py (sessão paralela, não commitada,
+      T1_FEATURE_IDS 22->29->36), docs/SPRINT_LOG.md (entradas Lote
+      D/Lote D2), docs/ADR-006_momentum_reversao_impacto_dollar_bar_
+      2026-08-28.md"
+    found_by: "Claude, investigando `feature_ids_n=36` no log do
+      retreino cancelado -- git diff HEAD revelou 1004 arquivos
+      modificados no working tree, `git status`"
+    gap: >
+      HÁ UMA SESSÃO PARALELA rodando no MESMO working tree, autorizada
+      pelo Manager (SPRINT_LOG documenta "autorização explícita do
+      Manager" / "autorização ampla do Manager nesta sessão" pras 2
+      entradas de Lote D/D2) -- trabalho LEGÍTIMO, não lixo, não
+      commitado ainda: `T1_FEATURE_IDS` foi de 22 (HEAD, commit
+      `730b2ec`) pra 29 (Lote D, `AG-372`/ADR-006, 7 features momentum/
+      reversão/impacto) e depois pra 36 (Lote D2, +7 candle features).
+      `git diff HEAD` mostra 1004 arquivos modificados no total
+      (features/build.py, constants.yaml, SPRINT_LOG.md, experiments/*,
+      models/*/diagnostics/* -- mistura de mudanças MINHAS e da sessão
+      paralela nos mesmos arquivos de artefato).
+      IMPACTO REAL, verificado por timestamp exato de cada teste desta
+      sessão contra o `git diff` do `build.py`: `AG-371-ADDENDUM-3` (item
+      b, teste diferencial das 4 células, 17:17-17:26) rodou sob **22
+      features** -- LIMPO, conclusão (H1, hiperparâmetro não explica o
+      zeramento) permanece válida. `AG-371-ADDENDUM-7` (`feature_
+      fraction` 18:43-18:57 E `lambda_l2` 18:51-18:57) rodaram sob **29
+      features** (Lote D já tinha aterrissado, Lote D2 ainda não) --
+      CONTAMINADO relativo ao que reportei ("mesma célula/desenho" da
+      investigação original de 22). `AG-371-ADDENDUM-8` (teste da
+      correção de E27f, 19:10-19:12) rodou sob **36 features** (Lote D2
+      já tinha aterrissado) -- CONTAMINADO da forma mais séria: o
+      resultado "n_signals 0->2407" comparou um BASELINE sob 22 features
+      (lido de `models/BNBUSDT/R1/alpha_c0_baseline_v1/diagnostics/`
+      pré-existente, gerado pelo retreino canônico original) contra um
+      "FIXED" sob 36 features -- 2 variáveis mudando ao mesmo tempo
+      (restrição de E27f E +14 features novas), não uma comparação
+      controlada. NÃO DÁ PRA ATRIBUIR a melhoria observada só à correção
+      de E27f -- pode ser parcial ou totalmente efeito de ter mais
+      features diluindo a concentração de gain, independente de
+      qualquer `monotone_constraints`.
+    severity: "crítico -- a validação empírica que motivou promover
+      `CAMADA0_CONSTRAINED_FEATURES` a default de produção (AG-371-
+      ADDENDUM-9) está confundida, não refutada -- pode estar certa,
+      mas não foi medida de forma limpa"
+    layer: "processo (concorrência entre sessões) + models (validação
+      empírica do item D)"
+    consequence: >
+      O CÓDIGO promovido (`CAMADA0_CONSTRAINED_FEATURES`, constante,
+      lógica em `fit_side_model`, fix de `config_hash`) continua correto
+      por CONSTRUÇÃO -- não depende de quantas features existem, só
+      aplica a restrição na feature nomeada quando ela está presente. O
+      que está em dúvida é só a MEDIÇÃO de impacto que justificou
+      promover. Duas leituras possíveis, não decididas aqui: (i) a
+      correção de E27f teria funcionado de qualquer forma sob 22
+      features também (só não foi medida limpa) -- provável, dado que
+      o mecanismo confirmado em `AG-371-ADDENDUM-6` (E27f domina 93% do
+      gain SOB 22 features, medido antes de qualquer contaminação) é
+      robusto e não depende de quantas outras features existem; (ii) o
+      efeito observado é majoritariamente das 14 features novas, e a
+      correção de E27f sozinha, sob 22 features, teria efeito menor. Só
+      remedir sob 22 features limpo resolve -- não presumido aqui (B23).
+      NÃO decide também a pergunta maior e mais urgente: qual é o
+      `T1_FEATURE_IDS` AUTORITATIVO agora -- 22 (HEAD commitado), 29
+      (Lote D) ou 36 (Lote D2)? Isso afeta diretamente o item (A) que o
+      Manager quer fechar em seguida: recalibrar `alpha_hyperparams_by_
+      combo.yaml` contra qual vetor, se o vetor real está em movimento
+      no mesmo working tree, em outra sessão, agora?
+    resolved_by_commit: null
+    status: >-
+      ABERTO -- reportado ao Manager antes de prosseguir pra (A)/(B), de
+      propósito (CLAUDE.md "avisar quando itens pausados desbloqueiam" --
+      aqui é o inverso, um item ativo fica bloqueado por informação
+      nova). NENHUMA ação destrutiva tomada (working tree da sessão
+      paralela intocado, nada revertido/descartado). Decisão pendente do
+      Manager: (1) qual T1_FEATURE_IDS é autoritativo pra (A)/(B)/
+      qualquer retreino real agora -- 22, 29 ou 36; (2) se remedir o
+      item (D) sob 22 features limpo antes de confiar na promoção de
+      `CAMADA0_CONSTRAINED_FEATURES` (~6-10min, mesmo desenho de
+      `AG-371-ADDENDUM-8`, mas sem a sessão paralela rodando no meio); (3)
+      como as duas sessões (esta e a de Lote D/D2) devem coordenar daqui
+      pra frente pra não pisar em artefato compartilhado de novo.
+    nota_sessao_lote_d2: >
+      Confirmado do lado da sessão de Lote D/D2 (a mesma que este achado
+      cita como fonte da contaminação): a leitura acima está correta.
+      Nenhuma ação foi tomada aqui pra "resolver" a favor de 22/29/36 --
+      a decisão continua do Manager, não desta sessão. Ver `AG-373` (achado
+      independente, mesma sessão) pra uma ressalva adicional sobre A17
+      especificamente, caso a decisão penda pra 29/36.
+
+  - id: AG-373
+    date: "2026-08-28"
+    file: "src/features/groups/group_a.py, src/features/registry.yaml"
+    related_file: "audit/architecture_gaps_log.yaml::AG-372, AG-321, AG-371-ADDENDUM-10, docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md"
+    numeracao: "AG-373, folga sobre AG-372 (maior no momento antes deste) -- mesma disciplina de AG-260/AG-360/AG-365/AG-371/AG-372."
+    found_by: >-
+      Agente `feature-dev:code-reviewer` sob persona de ML Feature
+      Engineer especialista em LightGBM/quant, invocado pelo Manager
+      pra validar ponta a ponta a matemática financeira das 14 features
+      do Lote D/D2 -- achado CONFIRMADO por leitura direta do código
+      (Claude, sessão principal) antes de virar entrada de governança.
+    gap: >
+      `A17_true_range_per_overshoot` (`group_a.py:223-248`, `registry.
+      yaml:~662`) é a ÚNICA das 14 features do Lote D/D2 que NÃO é
+      adimensional. `TR_t` (via `support.true_range`, `support.py:47-63`)
+      tem unidade de PREÇO (mesma unidade de `high`/`low`/`close`, ex.
+      "$/BTC"). `overshoot_t = quote_volume_t - threshold_quote_t` tem
+      unidade de NOTIONAL em dólar puro (`_value = price * quantity`
+      somado por trade, `src/data/bars.py:184,197`). A razão `TR/
+      overshoot` tem unidade `1/coin` -- não cancela, ao contrário de
+      TODAS as outras 13 features do lote (log-retornos, razões preço/
+      preço, ou normalizadas por ATR -- mesma disciplina que `group_a.py`
+      já aplica explicitamente pra A05 vs A13 no próprio cabeçalho do
+      módulo). Consequência: como o preço nominal de cada símbolo varia
+      por ordens de grandeza ao longo do histórico de treino (2021-12 a
+      2026-08+), `TR_t` cresce sistematicamente com o nível de preço do
+      próprio ativo ao longo do calendário, enquanto `overshoot_t` segue
+      um processo distinto (tamanho típico do trade que fecha a barra,
+      recalibrado por `threshold_quote` periodicamente) -- risco de
+      deriva DENTRO do histórico de um único símbolo, eixo diferente do
+      confundidor "nível de preço ENTRE símbolos" já documentado em
+      `registry.yaml` (mitigado porque o Alpha treina por `(symbol,
+      resolution_id)`, não pooled).
+      Achado secundário, mesma feature: `nan_policy`/docstring afirmam
+      que `overshoot_t<=0` "não deveria acontecer por construção do
+      dollar bar" -- impreciso. `src/data/bars.py:534-538` e
+      `build_dollar_bars.py:660-662` confirmam que a barra final de
+      qualquer stream (símbolo x resolução) é subdimensionada por
+      construção (nunca atinge o threshold) -- `overshoot<=0` acontece de
+      fato, 1x por (símbolo,resolução) no histórico completo, não é
+      hipotético. A guarda em código (`np.where(overshoot>0.0, ..., nan)`)
+      já trata isso corretamente -- isto NÃO é bug funcional, só um
+      comentário que poderia levar alguém a remover a guarda no futuro
+      por achá-la desnecessária.
+    severity: "alto -- defeito estrutural real (não hipotético) numa feature já promovida direto a T1/L2; a régua deste próprio repositório trataria isso como não-negociável em qualquer outra feature (ver tratamento de A05/A13)"
+    layer: "features (Feature Engine) -- A17 especificamente"
+    consequence: >
+      Não bloqueia build hoje (nenhum retreino rodou ainda sob A17 --
+      T1_FEATURE_IDS de 22/29/36 conforme AG-371-ADDENDUM-10 acima, A17
+      só existe nas versões 29/36, ainda não commitadas). Mas se
+      permanecer sem correção/medição, qualquer comparação futura entre
+      A17 e A11 (a feature irmã, testada lado a lado deliberadamente,
+      ver ADR-006) em pé de igualdade está viesada -- A17 carrega uma
+      fonte de variância (deriva de nível de preço) que A11 não tem
+      (A11 normaliza por `C_{t-1}`, mesmo lado da razão, adimensional de
+      verdade). SHAP/gain de A17 vs A11 sem corrigir isso primeiro violaria
+      o próprio "princípio de gate" (algébrica -> mecanismo -> horizonte ->
+      redundância -> ... -> SHAP) que `registry.yaml`/`AG-372` já
+      formalizaram.
+    resolved_by_commit: null
+    status: >-
+      CORRIGIDO nesta mesma sessão (2026-08-28), ainda não commitado.
+      Escolhida a opção (b) do desenho original desta entrada --
+      correção estrutural, não só medição -- por ser defeito de FÓRMULA
+      (dimensional analysis não precisa de dado pra decidir, só
+      aritmética; `Meça antes de afirmar` do CLAUDE.md não se aplica a
+      "a fórmula está errada", só a "o efeito é grande o suficiente pra
+      importar"). `A17_true_range_per_overshoot` renomeada pra `A17_log_
+      tr_per_overshoot_ratio`: `ln1p((TR_t/C_{t-1})/(overshoot_t/
+      threshold_quote_t))` -- razão de 2 quantidades adimensionais
+      (`TR/C_{t-1}` == A11; `overshoot/threshold_quote` == fração do
+      threshold excedida), `ln1p` domando a cauda pesada (mesmo
+      tratamento que A18-A21/B16 já aplicam no lote). Verificado por
+      teste direto (`test_a17_invariante_a_nivel_de_preco`, escala
+      high/low/close por 37x e confirma saída invariante -- FALHARIA sob
+      a v1 defeituosa). `group_a.py`/`build.py`/`registry.yaml` (`version:
+      v2`)/`tests/unit/test_features_groups.py`/`test_features_build.py`
+      atualizados. Achado secundário corrigido no caminho: `build.py`
+      não definia `threshold_quote` no branch `else` (bar_source=
+      time_15m) -- corrigido, os 3 arrays (`quote_volume`/`threshold_
+      quote`/`overshoot`) saem `NaN` juntos sob a grade legada agora.
+      Suíte alvo de features: 199 passed. `banned_patterns`/`ruff`/
+      `mypy` limpos; `check_unguarded_ratios` tem 1 falso positivo
+      esperado (guarda via variável `valid` intermediária, revisado e
+      confirmado seguro -- mesma classe de limitação já documentada no
+      cabeçalho do próprio script). Detalhe completo: addendum em
+      `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md`.
+      2 gaps de teste menores (BAIXA/BAIXA-MÉDIA, mesma auditoria) TAMBÉM
+      corrigidos nesta sessão: `test_b12_guarda_range_flat_produz_ponto_
+      medio` (branch degenerado de `B12_close_location_h3` sem cobertura)
+      e `test_compute_t1_features_b14_usa_a16_deslocado_um_bar` (shift
+      `t-1` de `ret_h_prior` em `B14` sem teste de integração fim-a-fim,
+      só o núcleo puro estava testado) -- ambos verdes, sem mudança de
+      comportamento.
+
+  - id: AG-371-ADDENDUM-11
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-8/9 -- itens (4) e (1) da ordem do Manager pos-ratificacao de 36 features T1 ('Sem remediacao barata, busque por solucao matematica financeira')"
+    file: "src/models/pipeline.py (config_hash ampliado), tests/unit/test_models_pipeline_paths.py, tools/diagnostics/measure_ag371_mda_per_feature_camada0.py"
+    related_file: "src/models/baselines.py::run_b4_feature_shuffle, AFML (Lopez de Prado) cap. 8 -- MDI vs MDA"
+    found_by: "Claude, itens (4)/(1) sob ordem explicita do Manager"
+    gap: >
+      ITEM (4) -- config_hash (alpha_train_config_extra, pipeline.
+      run_layer1_sprint) ganhou tau_policy/calib_split_mode/
+      class_balance_basis/calib_weight_basis, SEMPRE (sem gate
+      condicional -- os 4 nunca tem sentinela "nao especificado",
+      diferente de feature_ids/hyper). Efeito aceito: todo config_hash
+      futuro muda em relacao aos artefatos ja persistidos, mesma
+      disciplina de schema_version/V-08. 1 teste ajustado (valores
+      esperados, nao relaxados). Suite models completa: 391 passed,
+      1 skipped (pre-existente), 0 failures.
+      ITEM (1) -- MDA (Mean Decrease Accuracy, AFML cap. 8, embaralha
+      UMA feature de cada vez no teste OOF, mede queda de AUC -- ao
+      contrario de MDI/gain_by_column, NAO e enviesado por
+      cardinalidade/alcance dinamico) medido pra TODAS as 36
+      T1_FEATURE_IDS, BTCUSDT/R1, Camada0, sob os 36 features atuais
+      (limpo -- sem sessao paralela rodando no meio desta vez).
+      Sem restricao: E27f_cost_atr_ratio MDA=0,1867 (18,7 pontos de
+      AUC), rank 1 de 36 -- 2o colocado (E01f_funding_last)
+      MDA=0,0009, ~200x menor. Com a restricao atual (producao,
+      CAMADA0_CONSTRAINED_FEATURES): E27f MDA=-0,0004 (~zero,
+      indistinguivel de ruido), rank 36 de 36 -- nova lider A11_
+      true_range_pct MDA=0,032, quase 6x menor que o que E27f tinha
+      sozinha sem restricao.
+      LEITURA, revisando AG-371-ADDENDUM-6: a hipotese de que a
+      dominancia de E27f fosse artefato de VIES DE MDI (cardinalidade
+      alta, alcance dinamico grande favorecendo busca gulosa de split)
+      e REFUTADA pela medicao -- MDA, que nao sofre esse vies, confirma
+      um poder preditivo OOS genuino e concentrado em E27f, nao um
+      artefato de metrica. O achado de AG-371-ADDENDUM-4 (sinal
+      classificatorio real, Sharpe deeply negativo -- separacao de
+      classe nao convertendo em lucro) segue de pe e agora tem apoio
+      mais forte: E27f discrimina o alvo genuinamente bem (AUC), mas
+      isso nao e alfa direcional economico.
+    severity: "informativo -- item (1) fechado com fundamento mais rigoroso que o disponivel em AG-371-ADDENDUM-6/8 (MDA, nao so MDI/HHI); confirma que a correcao promovida elimina a contribuicao preditiva de E27f quase por completo, nao so o gain, e que o vetor de 36 nao produziu NENHUM outro ofensor de magnitude comparavel"
+    layer: "models (Camada0) + validacao estatistica"
+    consequence: >
+      Item (1) fechado -- freio de Camada0 confirmado suficiente sob os
+      36 features atuais, medido limpo (sem contaminacao de sessao
+      paralela desta vez). Nenhuma feature nova do Lote D/D2 emergiu
+      como ofensora sob MDA (top da lista constrangida e A11,
+      MDA=0,032 -- ordem de grandeza abaixo do que justificaria
+      constranger). Segue pro item (2), que reusa a MESMA disciplina de
+      rigor (DSR/PBO, ver entrada seguinte) em vez de heuristica
+      "N piores" nao fundamentada.
+    resolved_by_commit: null
+    status: >-
+      Itens (4) e (1) da ordem do Manager CONCLUIDOS e medidos.
+      tools/diagnostics/measure_ag371_mda_per_feature_camada0.py fica
+      como ferramenta reusavel -- rodar de novo se outra celula/
+      feature precisar do mesmo diagnostico (ex. depois de item (2)
+      promover novo hiperparametro por combo, ou se uma feature futura
+      mostrar HHI alto em models/*/diagnostics/).
+
+  - id: AG-374
+    date: "2026-08-28"
+    file: "PRD_V4_1.md §6.1/§6.5/V41-12 (Gate 6), PLANO_MESTRE_PRINCE2.md §11.4"
+    related_file: "audit/architecture_gaps_log.yaml::AG-077 (fechado por esta decisão), AG-114, AG-118, AG-122 (mesma classe de gap -- gate travado a priori sem definição operacional)"
+    numeracao: "AG-374, folga sobre AG-373 (maior número plano no momento) -- ADDENDUM-N de AG-371 seguem numeração própria, não conflita."
+    found_by: >-
+      Claude, ao fechar AG-077 por instrução direta do Manager ("pode
+      fechar AG077, o que define 'pronto' é entregar lucro Live Demo")
+      -- aplicando a regra já existente do próprio CLAUDE.md ("toda
+      regra de decisão travada a priori... precisa de DEFINIÇÃO
+      OPERACIONAL de cada termo... senão a decisão real é tomada por
+      julgamento na hora de aplicar, exatamente o viés que travar a
+      priori existe pra evitar").
+    gap: >
+      A nova definição de "pronto"/Gate 6 do projeto ("entregar lucro em
+      Live Demo", substituindo "DSR final com N_lifetime=60",
+      `AG-077`) ainda não tem definição operacional de nenhum dos 3
+      termos que carregam ambiguidade real:
+      (1) o que conta como "lucro" -- qualquer PnL positivo acumulado
+      uma vez, ou positivo de forma distinguível de ruído/custo sobre
+      uma amostra mínima de trades/dias (o próprio projeto já trata
+      "distinguível de ruído" como padrão em outro lugar, ex.
+      `economic_gate.py::is_distinguishable`, `AG-246`
+      `ordering_fragility.py` -- mesma disciplina se aplicaria aqui)?
+      (2) o que é exatamente "Live Demo" -- testnet Binance (sem risco,
+      preços reais), paper trading (livro próprio, preços reais, sem
+      exchange), ou capital real reduzido (risco real, ainda que
+      pequeno)? Cada um tem implicação distinta pro que "lucro" prova
+      (testnet não prova fricção de execução real; paper não prova
+      liquidez/slippage real; capital real prova os dois, mas exige
+      autorização de risco que o projeto ainda não discutiu, `§0`
+      "capital é restrição estrutural").
+      (3) sobre qual capital e por quanto tempo -- o `capital_inicial_
+      brl` já declarado (`R$ 1.000`, `§0`) ou outro; janela mínima
+      antes de julgar "entregou" (1 semana? 1 mês? N trades mínimo,
+      dado que o motor pode ficar dias sem sinal em algumas células,
+      `AG-371`)?
+    severity: "alto -- sem definição operacional, a decisão real de \"chegamos\" ou \"não chegamos\" fica pro julgamento de quem estiver olhando o resultado na hora, o mesmo viés que AG-114/AG-118/AG-122 já mostraram ser caro de corrigir depois de já ter acontecido"
+    layer: "process/governança (definição de Gate 6, não código)"
+    consequence: >
+      Nenhuma consequência imediata -- o projeto está longe de qualquer
+      candidato a Live Demo hoje (Camada 0 de 5/15 células ainda com
+      Sharpe indefinido, `AG-371`; `T1_FEATURE_IDS` só ratificado em 36
+      nesta mesma sessão). Mas definir isso ANTES de haver um candidato
+      real na mesa evita exatamente o viés que travar a priori existe
+      pra prevenir -- decidir "lucro" depois de já ver o resultado é o
+      mesmo modo de falha de B20 (`PRD_V4_1.md §6.3`, "escolha de
+      combinação de execução após ver resultado").
+    resolved_by_commit: null
+    resolution: >
+      PARCIAL, 2026-08-28 (mesma sessão, via 3 perguntas diretas ao
+      Manager, `AskUserQuestion`). Termos (1) e (2) DEFINIDOS:
+      (1) "lucro" = PnL positivo E distinguível de ruído -- mesmo
+      framework já usado em `economic_gate.py::is_distinguishable`
+      (método delta, erro combinado), aplicado ao PnL realizado de Live
+      Demo contra zero (ou contra custo), não a um backtest. Barra
+      escolhida deliberadamente acima de "PnL>0 uma vez" (rejeitada
+      explicitamente por vulnerável a variância de amostra pequena).
+      (2) "Live Demo" = capital real reduzido, dentro do `capital_
+      inicial_brl` (R$ 1.000, `§0`) já travado como restrição estrutural
+      -- NÃO testnet, NÃO paper trading. Escolhido porque só capital
+      real prova liquidez/slippage/fill real, e esta sessão já mediu que
+      isso importa (fill 42,2% vs. 97,1% otimista, `PRD_V4_1.md §6.5`
+      critério 3).
+      (3) PARCIALMENTE definido: capital = R$ 1.000 (mesmo de (2), não é
+      grau de liberdade livre); janela mínima = 1 mês corrido. **N
+      mínimo de trades continua TBD -- não inventado aqui (B23)**: a
+      opção escolhida pelo Manager foi "1 mês OU N trades mínimo", sem N
+      numérico. Candidato de precedência no próprio repo:
+      `evidence_ledger.yaml` usa `n>=200` como limiar de status "verde"
+      -- mas esse número foi calibrado pra AMOSTRA DE BACKTEST, não pro
+      RITMO real de sinal de Live Demo (`AG-371` já mostrou células que
+      ficam dias sem sinal); aplicar 200 sem checar se é factível dentro
+      de 1 mês seria repetir o mesmo erro que este próprio AG existe pra
+      evitar (número sem base local). Interpretação operacional proposta
+      (não confirmada): julgar "entregou" só quando AMBAS as condições
+      valerem (1 mês decorrido E N trades mínimo atingido), não "OU" --
+      "OU" deixaria uma célula de sinal raro passar no gate por tempo
+      decorrido sozinho, sem amostra suficiente pra (1) ser calculável
+      de verdade.
+    status: "PARCIALMENTE FECHADO -- (1) e (2) definidos e travados; (3) capital/janela definidos, N mínimo de trades e a semântica AND/OR entre janela e N seguem TBD, a resolver quando houver medição real de ritmo de sinal por célula ou quando um candidato real a Live Demo existir, o que vier primeiro"
+
+  - id: AG-371-ADDENDUM-12
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-11 -- item (2) da ordem do Manager, desenho fundamentado em matematica financeira real (DSR/PBO), nao heuristica ad hoc"
+    file: "src/validation/dsr.py::compute_dsr, src/validation/pbo_cscv.py::compute_pbo, audit/n_lifetime.yaml, audit/architecture_gaps_log.yaml::AG-077"
+    related_file: "docs/ADR-003_hiperparametro_feature_set_completo_2026-08-25.md, audit/architecture_gaps_log.yaml::AG-207, AG-220/AG-220-ADDENDUM"
+    found_by: "Claude, desenhando item (2) sob ordem direta do Manager"
+    gap: >
+      ACHADO QUE MUDA O DESENHO DE (2), antes de qualquer trial novo
+      rodar: audit/n_lifetime.yaml::status = "descontinuado_2026_08_17
+      -- nao bloqueia mais trabalho" -- decisao direta do Manager
+      (AG-077, 2026-08-17: "N_lifetime... foi mal implementado desde
+      o comeco"). AG-077 esta ABERTO ate hoje -- nenhuma substituicao
+      de metodologia de controle de multiple-testing pro DSR/Gate 6 foi
+      decidida. Ou seja: nao posso alimentar dsr_n_trials com o
+      contador de N_lifetime (761 hoje) pra corrigir o Sharpe da
+      campanha de (2) -- seria usar um mecanismo que o proprio Manager
+      ja invalidou, sem resolver AG-077 unilateralmente (e decisao de
+      governanca, nao minha pra tomar).
+      SOLUCAO ENCONTRADA, sem depender de AG-077: src/validation/
+      dsr.py::compute_dsr (Bailey & Lopez de Prado 2014, DSR) e
+      src/validation/pbo_cscv.py::compute_pbo (Bailey/Borwein/Lopez
+      de Prado/Zhu 2017, PBO via CSCV) JA EXISTEM neste repo, JA
+      TESTADOS (24 testes verdes, test_validation_dsr.py/
+      test_validation_pbo_cscv.py), e NUNCA foram aplicados a nenhuma
+      campanha real -- inclusive a propria campanha ADR-003 que so usou
+      mediana-de-5-seeds (corrige vies de selecao, mas nao deflaciona
+      por numero de trials nem testa se a selecao generaliza OOS).
+      compute_dsr aceita n_trials como parametro LOCAL da chamada --
+      nao precisa de N_lifetime; usar o numero de trials da PROPRIA
+      campanha de (2) e aplicacao padrao, literal, da formula original
+      de Bailey & Lopez de Prado (que nunca exigiu um contador
+      "lifetime" -- essa extensao e deste projeto, e e exatamente a
+      parte descontinuada). compute_pbo responde diretamente a
+      pergunta que AG-207/ADR-003 nunca testou: "o hiperparametro
+      vencedor (melhor IS) generaliza OOS, ou a vitoria e
+      indistinguivel de escolha ao acaso?" -- resposta direta ao
+      "winner's-curse mais extremo ja medido no projeto" (n_lifetime.
+      yaml id=30, vies +0,513).
+    severity: "alto -- redesenha o item (2) inteiro; sem isso, a nova campanha repetiria o MESMO erro metodologico do ADR-003 original (nenhuma correcao formal de selecao/generalizacao, so mediana de seeds), com um vetor de features diferente mas o mesmo buraco"
+    layer: "validation (DSR/PBO) + models (campanha de calibracao)"
+    consequence: >
+      Desenho de (2), respondendo as perguntas que ficaram em aberto
+      (sem arbitrar corte, medido):
+      (a) QUAIS CELULAS -- medir o gate de permanencia das 15 sob 36
+      features + hiperparametro GLOBAL primeiro (natural ponte com o
+      item (3) cancelado) -- toda celula que falhar entra na campanha,
+      sem cortar em "N piores" arbitrario (fecha o buraco 10-vs-12 do
+      AG-207 original). "Falhar" definido incorporando AG-220
+      (dispersao de path do CPCV) -- nao so n_better<4/5 bruto, que
+      ja esta medido como leitor de ruido.
+      (b) CAMADA0/CAMADA1 SEPARADO -- sim, campanhas independentes (a
+      original so otimizou Camada1 -- Falha 3 do AG-371 original,
+      documentada desde o comeco desta investigacao).
+      (c) CORRECAO DE VIES DE SELECAO -- compute_dsr(returns, n_trials=
+      <trials desta campanha>, trades_per_year=...) sobre o Sharpe de
+      CADA celula calibrada -- reporta Sharpe DEFLACIONADO, nao bruto/
+      mediana simples.
+      (d) TESTE DE OVERFITTING DA SELECAO -- compute_pbo sobre a
+      matriz T x N de candidatos testados no screening de CADA celula
+      -- celula com pbo perto de 0,5 (ou pior) NAO e promovida, mesmo
+      que o hiperparametro vencedor pareca bom -- a vitoria e
+      estatisticamente indistinguivel de sorte.
+      NAO resolve AG-077 (decisao de governanca maior, DSR-com-
+      N_lifetime pro Gate 6 formal do projeto) -- item (2) usa DSR/PBO
+      no escopo PROPRIO da campanha, deliberadamente mais estreito.
+    resolved_by_commit: null
+    status: >-
+      Desenho fechado, fundamentado, NENHUM trial novo disparado ainda.
+      Aguardando ordem do Manager pra iniciar a execucao (custo real de
+      compute -- rodar (a) primeiro, sob hiperparametro global das 15
+      celulas sob 36, e o mesmo trabalho que o item (3) cancelado ja
+      ia fazer -- proponho fundir esses dois passos em vez de rodar 2x).
+
+  - id: AG-371-ADDENDUM-13
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-12 -- mapeamento do estado real antes de consolidar sequencia de execucao dos itens (1)/(2)/(3), sob ordem direta do Manager"
+    file: "src/models/pipeline.py::run_layer1_sprint_all_combinations, tests/unit/test_models_pipeline_paths.py"
+    found_by: "Claude, mapeando se run_layer1_sprint_all_combinations ja suporta os 2 bracos (global vs by-combo) fundidos que ADDENDUM-12(a) propoe, antes de entregar o comando exato ao Manager"
+    gap: >
+      run_layer1_sprint_all_combinations calcula report_path SEMPRE como
+      EXPERIMENTS_DIR/alpha_layer1_report_{symbol}_{resolution_id}.json,
+      sem depender de use_hyperparams_by_combo/allow_feature_mismatch.
+      Os artefatos de MODELO ja sao content-addressed por config_hash
+      (nao colidem entre o braco global e o braco by-combo, hiperparametro
+      diferente = hash diferente) -- mas o RELATORIO-RESUMO (JSON com
+      Sharpe/permanence_pass/etc, o que os passos de pos-processamento de
+      ADDENDUM-12 precisam ler) colide: rodar --all-combinations 2x
+      (braco global, depois braco --use-hyperparams-by-combo
+      --allow-feature-mismatch) faria a 2a chamada SOBRESCREVER o
+      relatorio-resumo da 1a antes de qualquer comparacao ser possivel.
+      Sem esse fix, a fusao proposta em ADDENDUM-12(a)/(status) exigiria
+      mover arquivo manualmente entre as 2 rodadas -- exatamente o tipo de
+      passo manual fragil que este projeto evita.
+    severity: "medio -- nao bloqueia nenhum trial ja disparado (nenhum foi), mas bloquearia silenciosamente a leitura do braco global assim que o braco by-combo rodasse por cima, sem erro nenhum sinalizando a perda"
+    layer: "models/pipeline (orquestracao)"
+    consequence: >
+      Fix aditivo, escopo minimo: parametro novo report_tag_suffix: str =
+      "" (default preserva bit-a-bit o nome de sempre, teste existente
+      test_run_layer1_sprint_all_combinations_roda_5x3_com_report_path_
+      unico continua verde sem alteracao), threaded em run_tag/report_path
+      e exposto via --report-tag-suffix no CLI. NAO toca model_id nem
+      config_hash -- so o nome do relatorio-resumo. 1 teste novo
+      (test_run_layer1_sprint_all_combinations_report_tag_suffix_evita_
+      sobrescrita) cobre o caso novo. Com isso, o braco fundido de
+      ADDENDUM-12(a)/(status) + item (3) cancelado fica executavel em 2
+      chamadas de CLI (--report-tag-suffix _global / _bycombo), sem
+      terceira rodada nem edicao manual de arquivo entre elas.
+    resolved_by_commit: null
+    status: >-
+      Fix de wiring aplicado e testado (Write/Edit, nao e execucao de
+      .py -- suite completa ainda nao rodada pelo Manager). Desbloqueia a
+      execucao real de ADDENDUM-12(a) fundida com o item (3) cancelado;
+      segue aguardando ordem do Manager pra disparar o treino de verdade.

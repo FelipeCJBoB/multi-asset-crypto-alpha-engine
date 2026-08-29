@@ -40,11 +40,32 @@
 # ao final ou se substitui uma entrada inteira quando uma nova campanha de
 # calibração medir de novo essa combinação especificamente; nunca editar um
 # valor isolado sem re-rodar a medição que o produziu.
+#
+# AG-371 (2026-08-28) -- `feature_ids_hash` abaixo é a TRAVA que faltava:
+# `AG-362` (27/08) reestruturou `T1_FEATURE_IDS` (7->22) sem recalibrar
+# este arquivo, e o retreino canônico de 28/08 injetou este hiperparâmetro
+# (calibrado sob os 62 `SUPPORT_FEATURE_IDS` de 25/08, substitutivo, já
+# extinto nessa forma) sob o vetor novo sem checagem nenhuma --
+# `src.models.hyperparams_by_combo.load_hyperparams_by_combo` agora
+# recusa (`HyperparamFeatureMismatchError`) se o hash de conteúdo do
+# vetor ativo não bater com `feature_ids_hash` aqui. `feature_ids_hash`
+# é hash de CONTEÚDO (via `compute_feature_ids_hash`), não do nome
+# `feature_ids_ref` -- a causa raiz do AG-371 foi o NOME do vetor ficar
+# igual enquanto o CONTEÚDO mudava; recalibrar (AG-371 item (c), já
+# priorizado) regrava as duas chaves juntas, sempre.
 
 schema_version: 1
 provenance: MEASURED
 source: "ADR-003 Estágio 2 (mediana de 5 seeds), 2026-08-25"
 feature_ids_ref: "features_build.SUPPORT_FEATURE_IDS"
+# Hash de conteúdo (sha256[:16] de {"feature_ids": sorted(...)}, schema_
+# version "alpha_hyperparams_by_combo_feature_ids_v1") do vetor de 62
+# SUPPORT_FEATURE_IDS de 25/08 (commit 10fbd78, ADR-003) -- preenchido
+# por `tools/diagnostics/backfill_ag371_hyperparams_feature_hash.py`,
+# nunca à mão (AG-371: um valor digitado errado aqui destrava o mesmo
+# buraco que esta trava existe pra fechar). `null` = arquivo ainda não
+# migrado -- `load_hyperparams_by_combo` recusa nesse estado, de propósito.
+feature_ids_hash: "a1ec4831894d2136"
 
 combos:
   BTCUSDT_R3:

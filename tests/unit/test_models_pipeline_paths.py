@@ -28,7 +28,7 @@ import pytest
 
 from src.data.resample import UnsupportedTimeframeError
 from src.features import build as features_build
-from src.models import alpha, dataset, pipeline
+from src.models import alpha, dataset, hyperparams_by_combo, pipeline
 from src.models._paths import (
     MODELS_DIR,
     PREDICTIONS_OUTPUT_DIR,
@@ -520,17 +520,38 @@ def test_run_layer1_sprint_resolution_id_propaga_ate_write_predictions_versioned
         monkeypatch, resolution_id="R1"
     )
 
+    # AG-371-ADDENDUM-10 (2026-08-28) -- config de AMBAS as variantes
+    # ganhou tau_policy/calib_split_mode/class_balance_basis/calib_
+    # weight_basis (sempre, sem gate condicional -- os 4 nunca têm
+    # sentinela "não especificado", `run_layer1_sprint` já resolve pro
+    # default concreto antes daqui). Valores abaixo são os defaults da
+    # função (nenhum passado explícito neste teste).
+    base_config_extra = {
+        "tau_policy": alpha.TAU_POLICY_LEGACY_PER_SIDE,
+        "calib_split_mode": alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+        "class_balance_basis": alpha.CLASS_BALANCE_WEIGHT,
+        "calib_weight_basis": alpha.CALIB_WEIGHT_UNIQUENESS,
+    }
+
     assert calls[0]["symbol"] == pipeline.SYMBOL
     assert calls[0]["resolution_id"] == "R1"
     assert calls[0]["model_id"] == pipeline.MODEL_ID_CAMADA1
-    assert calls[0]["config"] == {"variant": alpha.VARIANT_CAMADA1}
+    assert calls[0]["config"] == {"variant": alpha.VARIANT_CAMADA1, **base_config_extra}
     assert calls[0]["root"] == pipeline.ARTIFACT_ROOT
     assert calls[0]["scratch"] is False
 
     assert calls[1]["symbol"] == pipeline.SYMBOL
     assert calls[1]["resolution_id"] == "R1"
     assert calls[1]["model_id"] == pipeline.MODEL_ID_CAMADA0
-    assert calls[1]["config"] == {"variant": alpha.VARIANT_CAMADA0}
+    # AG-371-ADDENDUM-8 (2026-08-28) -- config de Camada0 ganhou
+    # `camada0_constrained_features` (entra no config_hash de propósito,
+    # pra um retreino sob a correção nunca colidir com um artefato
+    # pré-correção); Camada1 continua sem essa chave.
+    assert calls[1]["config"] == {
+        "variant": alpha.VARIANT_CAMADA0,
+        **base_config_extra,
+        "camada0_constrained_features": sorted(alpha.CAMADA0_CONSTRAINED_FEATURES),
+    }
     assert calls[1]["root"] == pipeline.ARTIFACT_ROOT
     assert calls[1]["scratch"] is False
 
@@ -632,6 +653,140 @@ def test_run_layer1_sprint_all_combinations_symbols_resolutions_customizados(
         ("BTCUSDT", "R1"),
         ("ETHUSDT", "R1"),
     }
+
+
+def test_run_layer1_sprint_all_combinations_report_tag_suffix_evita_sobrescrita(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-371-ADDENDUM-13 -- rodar --all-combinations 2x (ex. braço global +
+    braço by-combo) sem sufixo faz a 2a chamada sobrescrever o report_path
+    da 1a (mesmo nome, artefato de modelo já é content-addressed e não
+    colide). `report_tag_suffix` diferencia o nome do relatório-resumo;
+    default "" preserva o nome de sempre (coberto pelo teste acima)."""
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        pipeline,
+        "run_layer1_sprint",
+        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {}},
+    )
+
+    pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT",), resolutions=("R1",), report_tag_suffix="_bycombo"
+    )
+
+    expected = pipeline.EXPERIMENTS_DIR / "alpha_layer1_report_BTCUSDT_R1_bycombo.json"
+    assert calls[0]["report_path"] == expected
+
+
+# ============================================================================
+# run_layer1_sprint_all_combinations x hyperparams_by_combo -- AG-371
+# (2026-08-28). `load_hyperparams_by_combo` monkeypatchado direto (não o
+# YAML real) -- estes testes cobrem só o THREADING de
+# feature_ids_effective/allow_feature_mismatch/report["hyperparam_
+# feature_mismatch"], não a lógica de hash em si (isso é
+# test_models_hyperparams_by_combo.py).
+# ============================================================================
+
+
+def test_run_layer1_sprint_all_combinations_resolve_feature_ids_antes_do_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-371 -- `feature_ids=None` (sentinela) precisa chegar em
+    `load_hyperparams_by_combo` já resolvido pro vetor ativo
+    (`features_build.T1_FEATURE_IDS`), não como `None` cru -- é o mesmo
+    vetor que `run_layer1_sprint` resolve internamente
+    (`features_build.resolve_feature_ids`); duas fontes de verdade
+    divergindo foi a causa raiz do AG-371 original."""
+    seen: list[tuple[str, ...]] = []
+
+    def _fake_load(
+        symbol: str,
+        resolution_id: str,
+        *,
+        feature_ids_effective: tuple[str, ...],
+        **kwargs: Any,
+    ) -> tuple[None, bool]:
+        seen.append(feature_ids_effective)
+        return None, False
+
+    monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", _fake_load)
+    monkeypatch.setattr(
+        pipeline, "run_layer1_sprint", lambda **kwargs: {"layer1_vs_layer0": {}}
+    )
+
+    pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
+    )
+
+    assert seen == [features_build.T1_FEATURE_IDS]
+
+
+def test_run_layer1_sprint_all_combinations_marca_report_em_feature_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-371 -- `allow_feature_mismatch=True` + loader sinalizando
+    mismatch precisa deixar rastro no JSON persistido
+    (`report["hyperparam_feature_mismatch"]`), não só em log -- é a única
+    forma de quem consome o artefato depois saber que aquele `hyper` não
+    foi validado pro vetor que treinou de fato."""
+    reports_seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        hyperparams_by_combo,
+        "load_hyperparams_by_combo",
+        lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), True),
+    )
+
+    def _fake_run(**kwargs: Any) -> dict[str, Any]:
+        report: dict[str, Any] = {"layer1_vs_layer0": {}}
+        reports_seen.append(report)
+        return report
+
+    monkeypatch.setattr(pipeline, "run_layer1_sprint", _fake_run)
+
+    reports = pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT",),
+        resolutions=("R1",),
+        use_hyperparams_by_combo=True,
+        allow_feature_mismatch=True,
+    )
+
+    assert reports[("BTCUSDT", "R1")]["hyperparam_feature_mismatch"] is True
+
+
+def test_run_layer1_sprint_all_combinations_sem_mismatch_nao_marca_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hyperparams_by_combo,
+        "load_hyperparams_by_combo",
+        lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), False),
+    )
+    monkeypatch.setattr(
+        pipeline, "run_layer1_sprint", lambda **kwargs: {"layer1_vs_layer0": {}}
+    )
+
+    reports = pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
+    )
+
+    assert "hyperparam_feature_mismatch" not in reports[("BTCUSDT", "R1")]
+
+
+def test_run_layer1_sprint_all_combinations_propaga_mismatch_error_por_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`allow_feature_mismatch=False` (default) -- a exceção do loader
+    precisa propagar até o chamador do CLI/script, não ser engolida."""
+
+    def _fake_load(*args: Any, **kwargs: Any) -> Any:
+        raise hyperparams_by_combo.HyperparamFeatureMismatchError("mismatch de teste")
+
+    monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", _fake_load)
+
+    with pytest.raises(hyperparams_by_combo.HyperparamFeatureMismatchError):
+        pipeline.run_layer1_sprint_all_combinations(
+            symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
+        )
 
 
 def _run_layer1_sprint_capturing_run_all_folds_calls(
