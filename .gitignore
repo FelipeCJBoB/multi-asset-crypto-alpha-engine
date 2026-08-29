@@ -56,6 +56,12 @@ data/*
 # grande (parquet + manifest), não git.
 /artifacts/
 
+# AG-371 (2026-08-29, src.models.hyperparams_optuna) -- storage sqlite nativo
+# do Optuna (estado interno de trial, não o resultado vencedor -- esse vai
+# em /artifacts/, acima). Mesma categoria de /artifacts/: binário grande,
+# local/reconstrutível rerodando a campanha, nunca git.
+/optuna_studies/
+
 # Artefatos de modelo — versionados por outro mecanismo (registry), não git
 models/*.bin
 models/*.json
