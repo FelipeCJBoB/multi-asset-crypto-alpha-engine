@@ -33,6 +33,7 @@ exige apagar o log parcial dela antes de re-rodar."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import math
 import sys
@@ -168,16 +169,76 @@ def run_stage1_screen_one_cell_layer(
     return trials
 
 
+def all_cell_layers() -> list[tuple[str, str, str]]:
+    return [
+        (symbol, resolution_id, variant)
+        for symbol in ALL_SYMBOLS
+        for resolution_id in ALL_RESOLUTIONS
+        for variant in ALL_VARIANTS
+    ]
+
+
 def run_stage1_screen_all(*, device_type: str = "cpu") -> None:
-    n_cell_layers = len(ALL_SYMBOLS) * len(ALL_RESOLUTIONS) * len(ALL_VARIANTS)
-    logger.info("ag371_stage1.all_start", n_cell_layers=n_cell_layers)
-    for symbol in ALL_SYMBOLS:
-        for resolution_id in ALL_RESOLUTIONS:
-            for variant in ALL_VARIANTS:
-                run_stage1_screen_one_cell_layer(
-                    symbol, resolution_id, variant, device_type=device_type
-                )
-    logger.info("ag371_stage1.all_done", n_cell_layers=n_cell_layers)
+    """Sequencial, 1 processo -- default, preserva o comportamento de
+    sempre. Ver `run_stage1_screen_all_parallel` pra paralelismo real."""
+    combos = all_cell_layers()
+    logger.info("ag371_stage1.all_start", n_cell_layers=len(combos))
+    for symbol, resolution_id, variant in combos:
+        run_stage1_screen_one_cell_layer(symbol, resolution_id, variant, device_type=device_type)
+    logger.info("ag371_stage1.all_done", n_cell_layers=len(combos))
+
+
+def _screen_one_cell_layer_worker(args: tuple[str, str, str, str]) -> str:
+    """Alvo picklable pra `ProcessPoolExecutor` -- roda em processo
+    separado do SO, cada um com seu próprio `n_jobs=-1` do LightGBM. NÃO
+    retorna `list[TrialResult]` (evita serializar de volta um payload
+    grande via pipe entre processos, sem necessidade -- os trials já
+    ficam persistidos em disco por `append_trial_result_jsonl` dentro do
+    próprio worker); só confirma qual célula-camada terminou."""
+    symbol, resolution_id, variant, device_type = args
+    run_stage1_screen_one_cell_layer(symbol, resolution_id, variant, device_type=device_type)
+    return f"{symbol}_{resolution_id}_{variant}"
+
+
+def run_stage1_screen_all_parallel(*, max_workers: int = 2, device_type: str = "cpu") -> None:
+    """Paralelismo em nível de PROCESSO do SO (`ProcessPoolExecutor`), não
+    threads -- `alpha.py` já chama LightGBM com `n_jobs=-1` (usa todos os
+    núcleos disponíveis POR trial), então paralelizar trials/células-
+    camada é sobre núcleos OCIOSOS entre um fold e outro do CPCV (medido
+    real, 2026-08-29: 1 trial sozinho consome ~61% de 12 núcleos — o CPCV
+    roda os 15 folds em série dentro de `run_all_folds`, não em paralelo
+    — sobra ~27-39% ocioso). `max_workers=2` é o default, não "o máximo
+    possível" — 2 processos concorrentes já se aproxima de saturar os 12
+    núcleos (2×~61%≈full); mais que isso arrisca disputa de núcleo
+    (context-switch/cache thrashing) reduzindo o throughput total em vez
+    de aumentar, não medido além disso nesta sessão."""
+    combos = all_cell_layers()
+    pending = [c for c in combos if not read_trial_results_jsonl_bool(*c)]
+    logger.info(
+        "ag371_stage1.all_parallel_start",
+        n_cell_layers=len(combos), n_pending=len(pending), max_workers=max_workers,
+    )
+    if not pending:
+        logger.info("ag371_stage1.all_parallel_nada_pendente")
+        return
+
+    tasks = [
+        (symbol, resolution_id, variant, device_type)
+        for symbol, resolution_id, variant in pending
+    ]
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as pool:
+        for done in pool.map(_screen_one_cell_layer_worker, tasks):
+            logger.info("ag371_stage1.all_parallel_cell_layer_done", cell_layer=done)
+    logger.info("ag371_stage1.all_parallel_done", n_cell_layers=len(combos))
+
+
+def read_trial_results_jsonl_bool(symbol: str, resolution_id: str, variant: str) -> bool:
+    """`True` se a célula-camada já tem log (qualquer conteúdo) -- mesma
+    granularidade de retomada de `run_stage1_screen_one_cell_layer`, só
+    pra filtrar o pool de trabalho ANTES de submeter ao
+    `ProcessPoolExecutor` (não vale a pena gastar um worker só pra ele
+    checar e devolver na hora)."""
+    return bool(hs.read_trial_results_jsonl(trial_log_path(symbol, resolution_id, variant)))
 
 
 def _run_cli() -> int:
@@ -194,12 +255,28 @@ def _run_cli() -> int:
     parser.add_argument("--resolution-id", default=None)
     parser.add_argument("--variant", default=None, choices=list(ALL_VARIANTS))
     parser.add_argument("--device-type", default="cpu")
+    parser.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help=(
+            "2026-08-29 -- so com --all (sem --symbol/--resolution-id/--variant). "
+            "1 (default) roda sequencial, 1 processo -- bit-exato ao comportamento "
+            "de sempre. >1 usa ProcessPoolExecutor -- ver docstring de "
+            "run_stage1_screen_all_parallel pro porque de 2 ser o default recomendado "
+            "(medido real: n_jobs=-1 do LightGBM ja usa ~61%% dos 12 nucleos POR "
+            "trial sozinho -- 2 processos concorrentes se aproxima de saturar, mais "
+            "que isso arrisca disputa de nucleo)"
+        ),
+    )
     args = parser.parse_args()
 
     if args.symbol and args.resolution_id and args.variant:
         run_stage1_screen_one_cell_layer(
             args.symbol, args.resolution_id, args.variant, device_type=args.device_type
         )
+    elif args.max_parallel > 1:
+        run_stage1_screen_all_parallel(max_workers=args.max_parallel, device_type=args.device_type)
     else:
         run_stage1_screen_all(device_type=args.device_type)
     return 0

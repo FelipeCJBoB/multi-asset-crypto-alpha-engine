@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -140,3 +140,83 @@ def test_best_finite_todos_nan_nao_crasha() -> None:
     all_nan = [_fake_trial_result(f"t{i}", float("nan"), {}) for i in range(3)]
     result = s1._best_finite(all_nan)
     assert result.trial_id in {"t0", "t1", "t2"}
+
+
+def test_all_cell_layers_tem_30_combinacoes_sem_repeticao() -> None:
+    combos = s1.all_cell_layers()
+    assert len(combos) == 30
+    assert len(set(combos)) == 30
+    assert all(c[2] in (alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0) for c in combos)
+
+
+def test_read_trial_results_jsonl_bool_reflete_conteudo_do_log(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(s1, "_STAGE1_DIR", tmp_path)
+    assert s1.read_trial_results_jsonl_bool("BTCUSDT", "R1", alpha.VARIANT_CAMADA1) is False
+
+    fake = _fake_trial_result("t0", 1.0, {})
+    hs.append_trial_result_jsonl(fake, s1.trial_log_path("BTCUSDT", "R1", alpha.VARIANT_CAMADA1))
+    assert s1.read_trial_results_jsonl_bool("BTCUSDT", "R1", alpha.VARIANT_CAMADA1) is True
+
+
+def test_screen_one_cell_layer_worker_chama_com_os_args_certos_e_retorna_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def _fake(symbol: str, resolution_id: str, variant: str, *, device_type: str) -> list[Any]:
+        calls.append((symbol, resolution_id, variant))
+        assert device_type == "cpu"
+        return []
+
+    monkeypatch.setattr(s1, "run_stage1_screen_one_cell_layer", _fake)
+
+    cell_layer_id = s1._screen_one_cell_layer_worker(
+        ("BTCUSDT", "R1", alpha.VARIANT_CAMADA1, "cpu")
+    )
+
+    assert calls == [("BTCUSDT", "R1", alpha.VARIANT_CAMADA1)]
+    assert cell_layer_id == f"BTCUSDT_R1_{alpha.VARIANT_CAMADA1}"
+
+
+class _FakePoolExecutor:
+    """Substitui `ProcessPoolExecutor` por execução direta, síncrona, no
+    mesmo processo -- prova o que é submetido (filtro de pendentes,
+    max_workers) sem gastar o custo de subir processos reais do SO num
+    teste unitário."""
+
+    submitted: ClassVar[list[tuple[str, str, str, str]]] = []
+    max_workers_used: ClassVar[int] = 0
+
+    def __init__(self, max_workers: int) -> None:
+        _FakePoolExecutor.max_workers_used = max_workers
+
+    def __enter__(self) -> _FakePoolExecutor:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
+
+    def map(self, fn: Any, tasks: list[tuple[str, str, str, str]]) -> list[str]:
+        _FakePoolExecutor.submitted = list(tasks)
+        return [fn(t) for t in tasks]
+
+
+def test_run_stage1_screen_all_parallel_pula_celulas_ja_feitas(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(s1, "_STAGE1_DIR", tmp_path)
+    # BTCUSDT/R1/camada1 "ja feito" -- nao deve entrar no pool de trabalho.
+    fake = _fake_trial_result("t0", 1.0, {})
+    hs.append_trial_result_jsonl(fake, s1.trial_log_path("BTCUSDT", "R1", alpha.VARIANT_CAMADA1))
+
+    monkeypatch.setattr(s1, "run_stage1_screen_one_cell_layer", lambda *a, **k: [])
+    monkeypatch.setattr(s1.concurrent.futures, "ProcessPoolExecutor", _FakePoolExecutor)
+
+    s1.run_stage1_screen_all_parallel(max_workers=2)
+
+    submitted_cells = {(s, r, v) for s, r, v, _dt in _FakePoolExecutor.submitted}
+    assert ("BTCUSDT", "R1", alpha.VARIANT_CAMADA1) not in submitted_cells
+    assert len(submitted_cells) == 29
+    assert _FakePoolExecutor.max_workers_used == 2
