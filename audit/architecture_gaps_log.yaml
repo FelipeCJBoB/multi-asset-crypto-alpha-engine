@@ -24870,3 +24870,58 @@ entries:
       mais uma vez (barato, ja validado que o mecanismo de treino em si
       esta correto desde ADDENDUM-15) pra que os 15 relatorios finais
       carreguem o metadado certo antes do artefato de KPIs.
+
+  - id: AG-371-ADDENDUM-17
+    date: "2026-08-29"
+    addendum_de: "AG-371-ADDENDUM-12 -- item (1) do desenho do Passo 3 (infra de trial reusavel), + correcao de uma estimativa de custo errada que passei ao Manager"
+    file: "src/validation/hyperparam_search.py (novo), tests/unit/test_validation_hyperparam_search.py (novo)"
+    found_by: "Claude, mapeando a infra real da ADR-003 (agente Explore) antes de desenhar a campanha nova do Passo 3; correcao veio de challenge direto do Manager sobre o numero de horas"
+    gap: >
+      DOIS achados nesta entrada, o segundo mais serio que o primeiro.
+      (1) GAP DE INFRA, real: nenhum trial de nenhum estagio da ADR-003
+      persistiu Sharpe por path completo -- so o agregado sobrevive em
+      disco, Estagios 2/3 nem isso. Sem isso, `src.validation.pbo_cscv.
+      compute_pbo` (item d de ADDENDUM-12) nao tem matriz T×N pra rodar
+      depois de uma campanha terminar -- precisa ser persistido DURANTE.
+      (2) ERRO DE MEDICAO MEU, mais serio: passei ao Manager um calculo
+      de ~57,4h de CPU pra ADR-003 (10 celulas, majoritariamente Camada1)
+      e projetei ~150-170h pra uma campanha nova (15 celulas x 2 camadas)
+      SEM MEDIR EU MESMO -- relayed a soma de `elapsed_seconds` de um
+      sub-agente sem verificar, e presumi timing da era 62-features como
+      referencia pra uma campanha sob 36. O Manager contestou direto
+      ("nada passou de meia hora"). Medi de verdade, agora, sob os 36
+      features atuais: 1 trial real (Camada1, 15 folds do CPCV, BTCUSDT/
+      R1 -- a MAIOR das 15 celulas, 437k linhas) = 32,6s. Setup (`_build_
+      mf_and_splits`, 1x por celula) = ~28s. Smoke test real adicional
+      (ETHUSDT/R3, a MENOR celula, 80k linhas) = ~10,7s/trial. O numero
+      de 150h+ que passei ao Manager estava errado por 1-2 ordens de
+      grandeza -- nao por ma-fe, por nao ter medido antes de afirmar
+      (exatamente o que CLAUDE.md "Meca antes de afirmar" existe pra
+      evitar, e eu violei).
+    severity: "alto -- um numero de custo errado por 15-20x quase bloqueou uma decisao real do Manager (rodar campanha completa vs cortar escopo); B23/medicao-antes-de-afirmar existe precisamente pra isto"
+    layer: "validation (infra nova) + processo (disciplina de medicao)"
+    consequence: >
+      `src/validation/hyperparam_search.py` novo: `TrialResult`
+      (dataclass, 9 campos de hiperparametro + Sharpe/n_signals/n_filled/
+      fill_rate/trades_per_year POR PATH, nao so agregado -- fecha o gap
+      de PBO) + `run_one_trial` (fatoracao unica da sequencia `_build_mf_
+      and_splits -> alpha.run_all_folds -> backtest_by_path`, duplicada
+      em 6+ scripts da ADR-002/003 sem contrato publico nem teste) +
+      `append_trial_result_jsonl`/`read_trial_results_jsonl` (log
+      incremental, append+flush+fsync por linha -- NAO espera a campanha
+      inteira terminar pra persistir algo, precedente real de crash
+      tardio em AG-365). 7 testes novos (mock da fronteira de treino +
+      round-trip real em disco via tmp_path). Suite `tests/unit -k
+      "models or validation" -m "not slow"`: 610 passed, 1 skipped
+      (pre-existente). ruff/mypy/banned_patterns limpos. Validado com 2
+      trials REAIS (nao so mock) sob ETHUSDT/R3, confirmando pooled_
+      sharpe/sharpe_by_path/persistencia round-trip com dado de verdade.
+      Custo real da campanha completa (15 celulas x 2 camadas, ~30
+      trials/celula-camada) recalculado: pior caso (todas do tamanho de
+      BTCUSDT/R1) ~8h de CPU -- provavelmente bem menos, dado que so 2-3
+      das 15 celulas sao desse tamanho.
+    resolved_by_commit: null
+    status: >-
+      Item (1) do Passo 3 fechado -- infra testada (mock+real), pronta
+      pra alimentar o screening (item 2). Numero de custo corrigido e
+      registrado aqui pra nao repetir o erro numa proxima estimativa.
