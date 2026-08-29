@@ -141,6 +141,34 @@ REGULARIZATION_ESS_DERIVED = "ess_derived"
 EARLY_STOPPING_FIXED = "fixed"
 EARLY_STOPPING_THREE_WAY = "three_way"
 
+# Achado real (2026-08-29, sessão WSL2+CUDA): bug upstream CONFIRMADO e
+# ABERTO no LightGBM 4.7.0 -- `device_type="cuda"` levanta `[CUDA] an
+# illegal memory access was encountered` (`cuda_data_partition.cu`,
+# `std::terminate`, mata o PROCESSO inteiro, não uma exceção Python
+# capturável) sempre que `max_bin > 256`. Bisecado campo a campo neste
+# projeto (12 hiperparâmetros testados isolados contra o default -- só
+# `max_bin` reproduz) e depois por valor exato (255/256 OK, 257 crasha,
+# mesmo em dataset PEQUENO, ~40k barras -- mais preciso que o relato
+# upstream, que só cita "max_bin grande" + dataset de 4M linhas):
+# https://github.com/microsoft/LightGBM/issues/6512 (aberta, sem patch,
+# sem workaround dos mantenedores, atribuída a um dev CUDA do projeto).
+# 256 = exatamente o maior valor representável num índice de bin de 8
+# bits (0-255, 256 valores) -- assinatura clássica de buffer/índice que
+# não foi alargado quando `max_bin` passa de 1 byte pra 2. Guarda aqui
+# (não só no espaço de busca do Optuna) protege QUALQUER chamador que
+# passe `device_type="cuda"` com `max_bin` alto, não só a busca --
+# converte um crash de processo (indistinguível de qualquer outro
+# travamento, sem chance de diagnóstico) num erro Python claro e
+# recuperável.
+_CUDA_MAX_BIN_SAFE_LIMIT = 256  # noqa: magic-number -- limite empírico de bug upstream, não parâmetro de domínio quant
+
+
+class CudaMaxBinUnsupportedError(Exception):
+    """`device_type="cuda"` + `max_bin > 256` -- crash upstream conhecido
+    do LightGBM (issue #6512, aberta). Levantada ANTES de `LGBMClassifier.
+    fit()` rodar, de propósito -- a alternativa (deixar rodar) mata o
+    processo inteiro via `std::terminate`, sem chance de captura."""
+
 
 @dataclass(frozen=True, slots=True)
 class LGBMHyperparams:
@@ -1406,6 +1434,17 @@ def fit_side_model(
             f"(esperado {REGULARIZATION_FIXED!r} ou {REGULARIZATION_ESS_DERIVED!r})"
         )
 
+    if device_type == "cuda" and hyper.max_bin > _CUDA_MAX_BIN_SAFE_LIMIT:
+        raise CudaMaxBinUnsupportedError(
+            f"fit_side_model: device_type='cuda' com max_bin={hyper.max_bin} "
+            f"(> {_CUDA_MAX_BIN_SAFE_LIMIT}) -- bug upstream conhecido do "
+            "LightGBM 4.7.0, CUDA Tree Learner trava o processo inteiro "
+            "('[CUDA] an illegal memory access', cuda_data_partition.cu) "
+            "sem exceção Python capturável nesse regime. Ver "
+            "https://github.com/microsoft/LightGBM/issues/6512 (aberta, "
+            "sem patch) e o comentário em _CUDA_MAX_BIN_SAFE_LIMIT acima. "
+            "Use max_bin <= 256 sob CUDA, ou device_type='cpu'."
+        )
     if device_type != "cpu":
         # Achado real (`audit_engineering`, 2026-08-23): a doc oficial do
         # LightGBM restringe `deterministic=True` a "works only with CPU

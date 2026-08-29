@@ -564,11 +564,24 @@ def run_search_for_combo(
         sampler_name=sampler_name,
         sampler_seed=sampler_seed_resolved,
     )
-    study_name = f"alpha_hyperparams_{symbol}_{resolution_id}_{variant}_{config_hash[:8]}"
+    # `device_type` ENTRA aqui (study_name/sqlite), mesmo NÃO entrando no
+    # config_hash do artefato final (ver compute_search_config_hash) --
+    # achado real rodando o benchmark CPU-vs-GPU desta sessão: sem isso,
+    # `load_if_exists=True` faz um study já completo sob CPU ser "resumido"
+    # (0 trials novos) quando alguém roda de novo só trocando device_type,
+    # devolvendo os MESMOS resultados sem treinar nada no device novo --
+    # silencioso, sem erro. O artefato vencedor continua device-portável
+    # (é só o NÚMERO final); o processo de EXPLORAÇÃO (quais trials já
+    # rodaram) não é -- misturar trials CPU/GPU no mesmo study também
+    # violaria a ressalva de determinismo do AG-196 (GPU não é bit-exato
+    # ao CPU) dentro da própria história de otimização do sampler.
+    study_name = (
+        f"alpha_hyperparams_{symbol}_{resolution_id}_{variant}_{device_type}_{config_hash[:8]}"
+    )
 
     storage_dir_resolved = storage_dir if storage_dir is not None else OPTUNA_STUDIES_DIR
     storage_dir_resolved.mkdir(parents=True, exist_ok=True)
-    db_name = f"{symbol}_{resolution_id}_{variant}.db"
+    db_name = f"{symbol}_{resolution_id}_{variant}_{device_type}.db"
     db_path = storage_dir_resolved / db_name  # noqa: unguarded-ratio -- Path.__truediv__, não divisão
 
     study = optuna.create_study(
@@ -604,8 +617,42 @@ def run_search_for_combo(
             device_type=device_type,
             search_space=search_space,
         )
-        study.optimize(objective, n_trials=n_remaining, n_jobs=1)
+        # `catch=(alpha.CudaMaxBinUnsupportedError,)` -- achado real
+        # (2026-08-29, bisecado neste projeto até o campo/valor exato):
+        # `device_type="cuda"` + `max_bin > 256` mata o PROCESSO inteiro
+        # via `std::terminate` (bug upstream aberto, LightGBM#6512) se
+        # deixado chegar em `LGBMClassifier.fit()`. `alpha.fit_side_model`
+        # já converte isso num `CudaMaxBinUnsupportedError` ANTES de
+        # chamar `fit()` -- aqui, `catch=` diz ao Optuna pra tratar essa
+        # exceção especifica como "trial falhou" (mesmo mecanismo que já
+        # existe pra objective retornando NaN) e seguir pro próximo trial,
+        # em vez de propagar e derrubar a campanha inteira por um valor de
+        # `max_bin` que o sampler só ia aprender a evitar se sobrevivesse
+        # pra ver o resultado.
+        study.optimize(
+            objective, n_trials=n_remaining, n_jobs=1, catch=(alpha.CudaMaxBinUnsupportedError,)
+        )
 
+    # Achado real (2026-08-29, ao validar o fix de `CudaMaxBinUnsupportedError`
+    # acima): capturar a exceção corretamente TORNA alcançável um estado que
+    # antes nunca acontecia (o processo crashava antes de qualquer trial
+    # terminar) -- "todos os N trials falharam" (nan/`CudaMaxBinUnsupported
+    # Error`/outro). Sem esta guarda, `study.best_trial` levanta `ValueError:
+    # Record does not exist` (SQLAlchemy, de dentro do storage do Optuna) --
+    # tecnicamente correto, mas opaco: não diz QUANTOS trials rodaram nem
+    # POR QUE nenhum completou. FCN -- nunca deixar esse diagnóstico pra
+    # quem lê o traceback decifrar sozinho.
+    n_complete = sum(1 for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE)
+    if n_complete == 0:
+        n_fail = sum(1 for t in study.trials if t.state == optuna.trial.TrialState.FAIL)
+        raise ValueError(
+            f"run_search_for_combo: 0 de {len(study.trials)} trials completaram "
+            f"com sucesso para {symbol}/{resolution_id}/{variant} ({n_fail} "
+            "falharam) -- nenhum hiperparâmetro válido pra reportar. Motivos "
+            "de falha (nan / CudaMaxBinUnsupportedError / outro) estão no log "
+            "de cada trial acima, não resumidos aqui -- study_name="
+            f"{study_name!r} em {db_path}."
+        )
     best_trial = study.best_trial
     best_hyper = dataclasses.replace(base_hyper, **best_trial.params)
 

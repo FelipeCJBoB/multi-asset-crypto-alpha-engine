@@ -25103,3 +25103,95 @@ entries:
       unico (`/mnt/c/...`, sem 2a copia) -- so o venv passa a ser
       OBRIGATORIAMENTE separado por SO, nunca mais compartilhado.
     status: "fechado 2026-08-29 -- ver tools/infra/wsl2_cuda_setup.sh; .venv/ do lado Windows recriado e confirmado saudavel (81 testes-alvo passando) antes de prosseguir"
+
+  - id: AG-378
+    date: "2026-08-29"
+    file: "src/models/alpha.py::fit_side_model (guarda nova, ~linha 1409), src/models/hyperparams_optuna.py::run_search_for_combo (catch= no study.optimize, guarda de 0-completos antes de study.best_trial)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-375/376/377 (mesma sessao de infra WSL2+CUDA); https://github.com/microsoft/LightGBM/issues/6512 (bug upstream, aberta)"
+    found_by: "Claude, benchmark CPU-vs-GPU real (5 trials Optuna, ETHUSDT/R3) pedido pelo Manager -- crash reproduzido 2x identico, bisecado campo a campo e depois por valor exato sob ordem direta do Manager ('estude e investigue a raiz... recomenda solucao', depois 'pode implementar')"
+    gap: >
+      `device_type="cuda"` (LightGBM 4.7.0, CUDA Tree Learner) mata o
+      PROCESSO INTEIRO -- `std::terminate`, `[CUDA] an illegal memory
+      access was encountered` em `cuda_data_partition.cu`, sem exceção
+      Python capturável -- sempre que `max_bin > 256`. Bisecado neste
+      projeto até a causa exata: dos 12 campos de `LGBMHyperparams` que
+      `hyperparams_optuna.build_search_space` varia, testados um a um
+      isolado contra o default (que treina limpo), só `max_bin` reproduz;
+      testado depois por valor exato: `max_bin=256` treina limpo,
+      `max_bin=257` crasha -- limite EXATO do maior valor representável
+      num índice de bin de 8 bits (0-255, 256 valores), assinatura
+      clássica de buffer/índice não alargado quando o bin count passa de
+      1 byte pra 2. CONFIRMADO como bug upstream conhecido, não algo
+      específico deste projeto: `microsoft/LightGBM#6512` ("[CUDA]
+      illegal memory access when using CUDA and large max_bin and large
+      dataset"), aberta, sem patch, sem workaround dos mantenedores,
+      atribuída a um dev CUDA do projeto. A reprodução desta sessão é
+      MAIS PRECISA que a da issue upstream (que só cita "max_bin grande"
+      +"dataset de 4M linhas" -- aqui o limite exato é 256/257, e
+      reproduz num dataset PEQUENO, ~40k barras, sem precisar de "large
+      dataset").
+
+      Consequência direta pro Optuna (`alpha_lgbm_max_bin.sweep_range =
+      [63, 511]`, `constants.yaml`): qualquer trial que o TPESampler
+      sugira com `max_bin > 256` sob `device_type="cuda"` derrubava a
+      CAMPANHA INTEIRA (não só o trial), sem log estruturado, sem chance
+      de diagnóstico -- indistinguível de qualquer outro travamento do
+      WSL2/driver/hardware sem a investigação bisecada desta sessão.
+      ~57% do `sweep_range` atual (256 a 511) está na zona insegura sob
+      CUDA -- não é caso de borda raro, é a MAIORIA do espaço de busca
+      hoje.
+
+      Achado colateral, exposto só depois deste fix (antes o processo
+      crashava antes de qualquer trial completar, então este estado
+      nunca era alcançado): com `catch=` capturando o crash e trials
+      falhando limpo, ficou alcançável "todos os N trials falharam" (nan
+      + `CudaMaxBinUnsupportedError` juntos, medido real: 15/15 falharam
+      numa rodada de smoke test com seed=7 em ETHUSDT/R3) -- sem guarda,
+      `study.best_trial` levantava `ValueError: Record does not exist`
+      (SQLAlchemy, de dentro do storage do Optuna), correto mas opaco.
+    severity: "alto -- bloqueava qualquer campanha Optuna real sob device_type=cuda (a maioria dos trials cairia na zona insegura de max_bin mais cedo ou mais tarde), com um modo de falha (crash de processo) que não dá NENHUM diagnostico sem uma sessao de bisseccao dedicada"
+    layer: "models (fit_side_model) + validation de busca (hyperparams_optuna) -- workaround de bug upstream de biblioteca, nao bug de logica deste projeto"
+    consequence: >
+      Sem correção, a decisão "device_type=cuda vale a pena" (item 5 do
+      plano original de infra WSL2, benchmark obrigatório antes de
+      qualquer default) nunca teria dado resultado limpo -- toda
+      campanha real de 30 trials/combo teria alta chance de crashar antes
+      de terminar, sem log útil, cada incidente parecendo um problema
+      novo de infraestrutura em vez do MESMO bug já identificado.
+    resolved_by_commit: null
+    resolution: >
+      `CudaMaxBinUnsupportedError` (nova, `alpha.py`) levantada em
+      `fit_side_model` ANTES de `LGBMClassifier.fit()` rodar, quando
+      `device_type=="cuda" and hyper.max_bin > 256` -- converte o crash
+      de processo num erro Python claro, citando a issue upstream e o
+      limite exato, alcançável por QUALQUER chamador (não só a busca
+      Optuna). `run_search_for_combo` passa
+      `catch=(alpha.CudaMaxBinUnsupportedError,)` pro `study.optimize` --
+      Optuna trata como trial falhado (mesmo mecanismo que já existe pra
+      NaN) e segue pro próximo, sem derrubar a campanha. Guarda nova
+      antes de `study.best_trial`: se 0 trials completaram, levanta
+      `ValueError` explícito com contagem de sucesso/falha e o caminho do
+      storage sqlite, em vez do erro opaco do SQLAlchemy.
+
+      Deliberadamente NÃO alterado: `alpha_lgbm_max_bin.sweep_range` em
+      `constants.yaml` continua `[63, 511]` (não capado condicionalmente
+      por device dentro de `build_search_space` -- avaliado e descartado:
+      faria o espaço de busca e o `config_hash` dependerem de
+      `device_type`, que hoje é deliberadamente PORTÁVEL entre devices,
+      ver docstring de `hyperparams_optuna.compute_search_config_hash`).
+      A busca sob CPU continua explorando o range completo; sob CUDA, o
+      sampler aprende a evitar a região insegura via trials falhados
+      (mesmo mecanismo que já lida com regiões que produzem NaN por
+      motivo de dado/sinal) -- mais simples e mais genérico que manter
+      um cap device-específico à mão, que ficaria desatualizado se este
+      bug upstream for corrigido numa versão futura do LightGBM.
+
+      Validado real (não só mecânico): o benchmark que crashava 2x antes
+      (5 trials, ETHUSDT/R3, seed=123) completou as 5 tentativas sem
+      derrubar o processo (3 falharam por `CudaMaxBinUnsupportedError`,
+      2 por NaN pré-existente); rodada de 15 trials (seed=7) também sem
+      crash, incluindo o caso "todos falharam" produzindo o `ValueError`
+      novo em vez do erro opaco. Suíte completa `-m "not slow"`: 2556
+      passed, 3 falhas pré-existentes não relacionadas
+      (test_analysis_tau_diagnostics.py, já documentado).
+    status: "fechado 2026-08-29 -- workaround aplicado neste projeto; bug upstream (LightGBM#6512) segue aberto, reavaliar se/quando corrigirem"
