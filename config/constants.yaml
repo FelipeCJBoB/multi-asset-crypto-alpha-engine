@@ -1464,6 +1464,66 @@ feature_a06_ret_lookback_bars:
   sweep_required: false
   review_by: sprint_8
 
+feature_a16_return_lag_bars:
+  value: 3
+  provenance: MEASURED
+  source: "H real do motor medido 2026-08-28 (sessão de feature engineering pós-AG-362): n_bars_held (labels.parquet, população completa exceto NOFILL, os 2 lados) tem mediana=1, p75=3, estável entre BTCUSDT/SOLUSDT x R1/R2/R3 -- ver docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md. Preenche o gap entre A02 (lag 2) e A03 (lag 4) na escala que de fato importa pro horizonte de holding, não um lag arbitrário."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 5]
+  review_by: sprint_9
+
+feature_b12_close_location_window:
+  value: 3
+  provenance: MEASURED
+  source: "mesma medição de H que feature_a16_return_lag_bars (n_bars_held p75=3) -- consolida A10/B09/B10/B11 (4 features medindo 'posição do close na distribuição recente' sob janelas 1/48/14/20 nunca calibradas contra H real, veredito SEM_MECANISMO/INCOERENTE_DIMENSIONAL em audit/feature_thesis/fichas_69_2026-08-25.yaml) numa família única, na escala certa."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 5]
+  review_by: sprint_9
+
+feature_b13_extension_window:
+  value: 3
+  provenance: MEASURED
+  source: "mesma medição de H que feature_a16_return_lag_bars -- janela de 'extensão' (|retorno|/vol realizada) pra tese de reversão precisa estar na escala do holding period, não numa janela emprestada de indicador clássico de barra de relógio."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 5]
+  review_by: sprint_9
+
+feature_b16_log_range_ratio_lag_bars:
+  value: 1
+  provenance: MEASURED
+  source: "H real do motor medido 2026-08-28 (n_bars_held mediana=1) -- expansão/compressão de range EM 1 barra, a granularidade mais fina possível, casada com a mediana exata de H, não um lag emprestado de indicador de barra de relógio."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 3]
+  review_by: sprint_9
+
+feature_b17_directional_pressure_window:
+  value: 3
+  provenance: MEASURED
+  source: "mesma medição de feature_a16_return_lag_bars (n_bars_held p75=3) -- pressão direcional via corpo (Σbody/Σ|body|) na escala do holding period, ângulo de medição distinto de B15 (que usa close-a-close, não corpo)."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 5]
+  review_by: sprint_9
+
+feature_b15_efficiency_ratio_window:
+  value: 3
+  provenance: MEASURED
+  source: "mesma medição de H que feature_a16_return_lag_bars -- efficiency_ratio (B07/B08 já existentes, janelas 48/16) na escala do holding period, pra medir consistência direcional do movimento que o trade de fato captura, não de um regime mais lento."
+  class: B
+  scaling_invariant: bar_count
+  sweep_required: true
+  sweep_range: [1, 5]
+  review_by: sprint_9
+
 feature_a14_ema_window:
   value: 12
   provenance: ASSUMED
@@ -2220,7 +2280,8 @@ alpha_lgbm_n_estimators:
   provenance: DERIVED
   source: "Renomeação direta de alpha_xgb_n_estimators (removida), mesmo nome/semântica no LightGBM (D-11). Proveniência original: PRD §5.10, 'early stopping no fold' citado mas não implementado (ver docstring de src/models/alpha.py)."
   class: B
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [100, 800]
   review_by: sprint_10
   regime_da_derivacao: >-
     ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
@@ -2248,7 +2309,8 @@ alpha_lgbm_learning_rate:
   provenance: DERIVED
   source: "Renomeação direta de alpha_xgb_learning_rate (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.learning_rate, nunca testado."
   class: B
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [0.005, 0.1]
   review_by: sprint_10
   regime_da_derivacao: >-
     ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
@@ -2276,7 +2338,8 @@ alpha_lgbm_subsample:
   provenance: DERIVED
   source: "Renomeação direta de alpha_xgb_subsample (removida), mesmo nome no LightGBM (D-11). Proveniência original: PRD §5.10 xgboost_base.subsample, nunca testado. CORREÇÃO 2026-08-23 (achado audit_engineering): 'mesmo nome, sem mudança de valor' descrevia só o nome -- o EFEITO só é idêntico ao XGBoost com alpha_lgbm_subsample_freq >= 1 também setado (LightGBM exige o parâmetro companheiro pra ativar bagging; default da lib é 0 = desabilitado). Ver alpha_lgbm_subsample_freq abaixo."
   class: B
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [0.5, 1.0]
   review_by: sprint_10
   regime_da_derivacao: >-
     ATENCAO (AG-272, 2026-08-26) -- a busca que sustenta este valor rodou sob
@@ -2358,7 +2421,8 @@ alpha_lgbm_lambda_l2:
   provenance: DERIVED
   source: "Renomeação direta de alpha_xgb_reg_lambda (removida), LightGBM chama lambda_l2 (D-11/§4 do design doc do Alpha)."
   class: B
-  sweep_required: false
+  sweep_required: true
+  sweep_range: [0.1, 50.0]
   review_by: sprint_10
 
 alpha_lgbm_min_child_samples:
@@ -2519,6 +2583,63 @@ alpha_lgbm_ess_regularization_fator_conservador:
   sweep_required: true
   sweep_range: [0.25, 1.0]
   review_by: sprint_10
+
+# --- Optuna — meta-parâmetros de busca (src/models/hyperparams_optuna.py) ---
+# Substituem a campanha manual de grade/coordinate-descent (ADR-002/003) que
+# produzia config/alpha_hyperparams_by_combo.yaml -- aposentado (AG-371 já
+# tinha mostrado esse YAML estático ficar stale a cada mudança de vetor de
+# features). Estes 3 são meta-parâmetros de MÉTODO da busca (quantos trials,
+# qual sampler, onde persistir o study) -- não hiperparâmetro de modelo; os
+# hiperparâmetros de modelo continuam sendo os alpha_lgbm_* acima, com
+# sweep_range já declarado, lido dinamicamente por build_search_space.
+
+alpha_optuna_n_trials:
+  value: 30
+  provenance: ASSUMED
+  source: >
+    Custo medido em AG-371-ADDENDUM-17 (audit/architecture_gaps_log.yaml,
+    2026-08-28): 1 trial completo (15 folds do CPCV) = 32,6s pior caso
+    (BTCUSDT/R1, maior célula, 437k linhas), 10,7s melhor caso (ETHUSDT/R3,
+    80k linhas), CPU serial. 30 trials/combo/camada * 15 combos * 2 camadas
+    (Camada1 e Camada0 independentes, cada ablação exige HPO própria pra ser
+    válida) ~= 8h CPU serial pior caso -- orçamento de tempo escolhido pra
+    caber numa janela overnight, não resultado de nenhuma medição
+    estatística de convergência do sampler TPE.
+  class: B
+  sweep_required: false
+  review_by: "TBD -- Manager define o sprint de revisão"
+
+alpha_optuna_sampler:
+  value: "tpe"
+  provenance: ASSUMED
+  source: >
+    TPESampler (Optuna, optuna.samplers.TPESampler) -- default da própria
+    biblioteca, recomendado para orçamento de dezenas de trials num espaço
+    misto contínuo+inteiro (12 campos, ver build_search_space); grid exigiria
+    discretizar cada campo contínuo arbitrariamente, random não usa a
+    informação de trials anteriores dentro de um orçamento tão apertado
+    quanto alpha_optuna_n_trials. Seletor de método, não hiperparâmetro de
+    modelo -- não muda o que é aprendido pelos dados, só como o espaço é
+    explorado.
+  class: D
+  sweep_required: false
+
+alpha_optuna_storage_backend:
+  value: "sqlite"
+  provenance: ASSUMED
+  source: >
+    sqlite (Optuna RDBStorage local, um arquivo por symbol/resolution_id/
+    variant) + load_if_exists=True permite retomar uma campanha após
+    crash/interrupção sem perder trials já rodados -- custo pior-caso
+    medido ~8h CPU serial (ver alpha_optuna_n_trials acima) torna isso não-
+    opcional, mesmo precedente de AG-365 (retreino canônico de horas
+    perdido por crash tardio, sem checkpoint). Proporcional a 1 máquina/
+    1 GPU (o ambiente real deste projeto) -- o storage URL do Optuna troca
+    pra Postgres/MySQL sem mudar a objective function se algum dia isso
+    escalar pra múltiplas máquinas; não superengenheirado agora sem
+    necessidade medida.
+  class: D
+  sweep_required: false
 
 # --- Camada 1 — restrições monotônicas (§5.3) ---
 

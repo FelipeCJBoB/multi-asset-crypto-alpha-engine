@@ -19,6 +19,7 @@ treino em si (já coberto por `tests/golden/test_sprint8_reproducibility.py`/
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -743,11 +744,16 @@ def test_run_layer1_sprint_all_combinations_report_tag_suffix_evita_sobrescrita(
 
 # ============================================================================
 # run_layer1_sprint_all_combinations x hyperparams_by_combo -- AG-371
-# (2026-08-28). `load_hyperparams_by_combo` monkeypatchado direto (não o
-# YAML real) -- estes testes cobrem só o THREADING de
-# feature_ids_effective/allow_feature_mismatch/report["hyperparam_
-# feature_mismatch"], não a lógica de hash em si (isso é
-# test_models_hyperparams_by_combo.py).
+# (2026-08-29, reescrito). `load_hyperparams_by_combo` monkeypatchado
+# direto (não o artefato Optuna real) -- estes testes cobrem só o
+# THREADING de feature_ids_effective/variant/hyper_camada1/hyper_camada0,
+# não a lógica de resolução de artefato em si (isso é
+# test_models_hyperparams_by_combo.py). `HyperparamFeatureMismatchError`/
+# `allow_feature_mismatch` deixaram de existir junto com o YAML estático
+# que essa checagem protegia -- sob o artefato content-addressed, uma
+# combinação/camada calibrada sob outro vetor de features simplesmente não
+# é encontrada (hash diferente), caindo no MESMO fallback "sem calibração
+# própria" que já existia, sem exceção nem flag de escape em runtime.
 # ============================================================================
 
 
@@ -759,18 +765,21 @@ def test_run_layer1_sprint_all_combinations_resolve_feature_ids_antes_do_loader(
     (`features_build.T1_FEATURE_IDS`), não como `None` cru -- é o mesmo
     vetor que `run_layer1_sprint` resolve internamente
     (`features_build.resolve_feature_ids`); duas fontes de verdade
-    divergindo foi a causa raiz do AG-371 original."""
-    seen: list[tuple[str, ...]] = []
+    divergindo foi a causa raiz do AG-371 original. O loader é consultado
+    2x por combinação (uma por `variant` -- Camada1 e Camada0 recebem
+    studies Optuna independentes)."""
+    seen: list[tuple[str, tuple[str, ...]]] = []
 
     def _fake_load(
         symbol: str,
         resolution_id: str,
+        variant: str,
         *,
         feature_ids_effective: tuple[str, ...],
         **kwargs: Any,
-    ) -> tuple[None, bool]:
-        seen.append(feature_ids_effective)
-        return None, False
+    ) -> alpha.LGBMHyperparams | None:
+        seen.append((variant, feature_ids_effective))
+        return None
 
     monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", _fake_load)
     monkeypatch.setattr(
@@ -781,55 +790,36 @@ def test_run_layer1_sprint_all_combinations_resolve_feature_ids_antes_do_loader(
         symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
     )
 
-    assert seen == [features_build.T1_FEATURE_IDS]
+    assert seen == [
+        (alpha.VARIANT_CAMADA1, features_build.T1_FEATURE_IDS),
+        (alpha.VARIANT_CAMADA0, features_build.T1_FEATURE_IDS),
+    ]
 
 
-def test_run_layer1_sprint_all_combinations_passa_feature_mismatch_como_parametro(
+def test_run_layer1_sprint_all_combinations_passa_hyper_por_camada(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AG-371-ADDENDUM-16 (2026-08-29) -- regressão real: a versão antiga
-    mutava `report["hyperparam_feature_mismatch"]` DEPOIS de receber o
-    dict de volta de `run_layer1_sprint`, que já tinha gravado o JSON em
-    disco (`write_report_atomic`) ANTES de retornar -- a mutação só
-    afetava a cópia em memória, o arquivo persistido nunca carregava a
-    chave (medido real: os 15 relatórios `_bycombo` do braço by-combo
-    desta sessão, 10/15 com mismatch genuíno, nenhum com a chave no JSON).
-    Fix: `hyperparam_feature_mismatch` vira PARÂMETRO de `run_layer1_
-    sprint`, resolvido pelo chamador ANTES da chamada -- este teste prova
-    que o kwarg chega, não que o dict de retorno mude (isso agora é
-    responsabilidade de `run_layer1_sprint`, coberto pelos testes dele
-    próprio)."""
+    """AG-371 (2026-08-29) -- Camada1 e Camada0 recebem hiperparâmetro de
+    studies Optuna INDEPENDENTES (comparação de ablação válida exige HPO
+    nos dois lados, ver docstring de `hyperparams_optuna`) -- este teste
+    prova que os dois valores DISTINTOS chegam em `run_layer1_sprint` via
+    `hyper_camada1`/`hyper_camada0`, não mais um único `hyper`
+    compartilhado."""
+    hyper_c1 = dataclasses.replace(alpha.LGBMHyperparams.from_constants(), num_leaves=11)
+    hyper_c0 = dataclasses.replace(alpha.LGBMHyperparams.from_constants(), num_leaves=22)
+
+    def _fake_load(
+        symbol: str,
+        resolution_id: str,
+        variant: str,
+        *,
+        feature_ids_effective: tuple[str, ...],
+        **kwargs: Any,
+    ) -> alpha.LGBMHyperparams | None:
+        return hyper_c1 if variant == alpha.VARIANT_CAMADA1 else hyper_c0
+
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        hyperparams_by_combo,
-        "load_hyperparams_by_combo",
-        lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), True),
-    )
-    monkeypatch.setattr(
-        pipeline,
-        "run_layer1_sprint",
-        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {}},
-    )
-
-    pipeline.run_layer1_sprint_all_combinations(
-        symbols=("BTCUSDT",),
-        resolutions=("R1",),
-        use_hyperparams_by_combo=True,
-        allow_feature_mismatch=True,
-    )
-
-    assert calls[0]["hyperparam_feature_mismatch"] is True
-
-
-def test_run_layer1_sprint_all_combinations_sem_mismatch_passa_false(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        hyperparams_by_combo,
-        "load_hyperparams_by_combo",
-        lambda *a, **kw: (alpha.LGBMHyperparams.from_constants(), False),
-    )
+    monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", _fake_load)
     monkeypatch.setattr(
         pipeline,
         "run_layer1_sprint",
@@ -840,24 +830,32 @@ def test_run_layer1_sprint_all_combinations_sem_mismatch_passa_false(
         symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
     )
 
-    assert calls[0]["hyperparam_feature_mismatch"] is False
+    assert calls[0]["hyper_camada1"] is hyper_c1
+    assert calls[0]["hyper_camada0"] is hyper_c0
 
 
-def test_run_layer1_sprint_all_combinations_propaga_mismatch_error_por_default(
+def test_run_layer1_sprint_all_combinations_sem_calibracao_cai_pro_global(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`allow_feature_mismatch=False` (default) -- a exceção do loader
-    precisa propagar até o chamador do CLI/script, não ser engolida."""
+    """Combinação/camada sem artefato Optuna ainda gravado sob o hash
+    ativo (`load_hyperparams_by_combo` retorna `None`) -- `hyper_camada{0,
+    1}=None` chega em `run_layer1_sprint`, que resolve pro hiperparâmetro
+    global internamente (mesmo fallback de sempre, com warning explícito
+    -- ver `models.pipeline.hyperparams_by_combo_ausente`)."""
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        pipeline,
+        "run_layer1_sprint",
+        lambda **kwargs: calls.append(kwargs) or {"layer1_vs_layer0": {}},
+    )
 
-    def _fake_load(*args: Any, **kwargs: Any) -> Any:
-        raise hyperparams_by_combo.HyperparamFeatureMismatchError("mismatch de teste")
+    pipeline.run_layer1_sprint_all_combinations(
+        symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
+    )
 
-    monkeypatch.setattr(hyperparams_by_combo, "load_hyperparams_by_combo", _fake_load)
-
-    with pytest.raises(hyperparams_by_combo.HyperparamFeatureMismatchError):
-        pipeline.run_layer1_sprint_all_combinations(
-            symbols=("BTCUSDT",), resolutions=("R1",), use_hyperparams_by_combo=True
-        )
+    assert calls[0]["hyper_camada1"] is None
+    assert calls[0]["hyper_camada0"] is None
 
 
 def _run_layer1_sprint_capturing_run_all_folds_calls(

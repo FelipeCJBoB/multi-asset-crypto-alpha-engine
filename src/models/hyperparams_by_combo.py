@@ -1,155 +1,96 @@
-"""Loader de `config/alpha_hyperparams_by_combo.yaml` — hiperparâmetro
-LightGBM calibrado por (symbol, resolution_id), `AG-207`/`ADR-003`
-(2026-08-25). Completa D-11 (`docs/alpha_model_design_doc_2026-08-22.md`,
-"conjunto único v1, ASSUMED até sweep").
+"""Loader de hiperparâmetro LightGBM por `(symbol, resolution_id, variant)`
+— fonte trocada de `config/alpha_hyperparams_by_combo.yaml` (YAML estático,
+aposentado) para o artefato Optuna content-addressed produzido por
+`src.models.hyperparams_optuna` (decisão do Manager, 2026-08-29).
 
-Só as 10 combinações cobertas pela campanha têm entrada — as outras 5
-retornam `None` (`load_hyperparams_by_combo`), caminho explícito pro
-chamador cair no hiperparâmetro global de `constants.yaml`, nunca
-inventado aqui.
+**Por que o YAML foi aposentado, não só recalibrado de novo.** O arquivo
+estático calibrado em 25/08 (`ADR-003`) já ficou stale uma vez de verdade
+(`AG-371`): `T1_FEATURE_IDS` mudou de conteúdo (7→22→29→36) sem ninguém
+recalibrar, e só uma trava de hash checada em runtime
+(`HyperparamFeatureMismatchError`) impediu o hiperparâmetro errado de
+entrar num retreino canônico. Sob o artefato content-addressed, essa
+classe de bug deixa de ser um ESTADO alcançável em runtime: um vetor de
+features (ou espaço de busca) diferente produz um `config_hash` diferente
+— ou seja, literalmente outro artefato. `entry ausente` (hash não bate)
+mapeia 1:1 pro mesmo fallback de sempre ("sem calibração pra essa
+combinação, cai pro hiperparâmetro global"), sem precisar de exceção nem
+flag de escape.
 
-Cache simples em memória, mesmo padrão de `_constants.py` deste pacote —
-o arquivo não muda durante a vida do processo.
-
-**Trava de compatibilidade de vetor (AG-371, 2026-08-28).** A campanha
-que gerou este arquivo (25/08) calibrou sob UM vetor de features
-específico (`feature_ids_ref`/`feature_ids_hash` no header do YAML). O
-hiperparâmetro resultante (`num_leaves` raso, `min_child_samples` alto)
-é MEDIDO pra esse vetor — não generaliza automaticamente pra outro
-(achado real: a campanha de 25/08 mediu sob `SUPPORT_FEATURE_IDS`, 62
-features; `AG-362`, 27/08, reestruturou `T1_FEATURE_IDS` pra 22 sem
-recalibrar este arquivo; o retreino canônico de 28/08 injetou o
-hiperparâmetro stale sob o vetor novo sem checagem nenhuma). Por isso
-`load_hyperparams_by_combo` exige `feature_ids_effective` — o vetor
-REALMENTE resolvido que vai treinar (nunca `None`; ver
-`src.features.build.resolve_feature_ids`) — e verifica por HASH de
-conteúdo (`compute_feature_ids_hash`), não por nome de símbolo: a causa
-raiz do AG-371 foi justamente `T1_FEATURE_IDS` mudar de CONTEÚDO (7->22)
-mantendo o NOME, então uma checagem por string de nome não pegaria uma
-repetição futura do mesmo defeito."""
+Cache simples em memória — `constants.yaml` (que `compute_search_config_
+hash` lê) não muda durante a vida do processo, mesmo padrão do resto do
+pacote."""
 
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
 
 import structlog
-import yaml
 
-from src.io.artifact import compute_config_hash
+from src.io import artifact as io_artifact
 
-from ._paths import HYPERPARAMS_BY_COMBO_PATH
+from . import hyperparams_optuna
+from ._constants import load_constant
+from ._paths import ARTIFACT_ROOT
 from .alpha import LGBMHyperparams
 
 logger = structlog.get_logger(__name__)
 
-_cache: dict[str, Any] | None = None
-
-_HYPER_FIELDS = (
-    "max_depth", "num_leaves", "min_child_samples",
-    "learning_rate", "subsample", "feature_fraction", "lambda_l2", "n_estimators",
-    "min_sum_hessian_in_leaf",
-)
-
-_FEATURE_IDS_HASH_SCHEMA_VERSION = "alpha_hyperparams_by_combo_feature_ids_v1"
-
-
-class HyperparamFeatureMismatchError(Exception):
-    """AG-371 — `feature_ids_effective` recebido não bate com o vetor sob
-    o qual `alpha_hyperparams_by_combo.yaml` foi calibrado (hash de
-    conteúdo, `feature_ids_hash` do header). Hiperparâmetro calibrado pra
-    um vetor não generaliza pra outro sem medição nova — injetar mesmo
-    assim reproduziria o AG-371 original. Mesmo padrão de
-    `ConfigHashMismatchError` (`src.labels.triple_barrier`, B15): "teste
-    que quebra o build, não item de checklist" — nunca um warning que se
-    perde em log de 15 combinações."""
-
-
-def compute_feature_ids_hash(feature_ids: tuple[str, ...]) -> str:
-    """Fingerprint de CONTEÚDO do vetor de features, não do nome do
-    símbolo Python que o carrega (`T1_FEATURE_IDS` pode mudar de conteúdo
-    mantendo o nome — foi exatamente a causa raiz do AG-371). Ordena
-    antes de serializar: hiperparâmetro é propriedade do CONJUNTO de
-    features, não da ordem das colunas — reordenar `T1_FEATURE_IDS` sem
-    mudar seu conteúdo não deveria acender falso-positivo. Mesmo
-    mecanismo de `compute_config_hash` (`src.io.artifact`, usado por
-    `config_hash`/`ConfigHashMismatchError`), não um hash novo inventado
-    aqui."""
-    return compute_config_hash(
-        {"feature_ids": sorted(feature_ids)},
-        schema_version=_FEATURE_IDS_HASH_SCHEMA_VERSION,
-    )
-
-
-def _load_all() -> dict[str, Any]:
-    global _cache
-    if _cache is None:
-        with HYPERPARAMS_BY_COMBO_PATH.open(encoding="utf-8") as f:
-            loaded: dict[str, Any] = yaml.safe_load(f) or {}
-            _cache = loaded
-    return _cache
+_HYPER_FIELD_NAMES: tuple[str, ...] = tuple(f.name for f in dataclasses.fields(LGBMHyperparams))
 
 
 def load_hyperparams_by_combo(
     symbol: str,
     resolution_id: str,
+    variant: str,
     *,
     feature_ids_effective: tuple[str, ...],
     base: LGBMHyperparams | None = None,
-    allow_feature_mismatch: bool = False,
-) -> tuple[LGBMHyperparams | None, bool]:
-    """Retorna `(hyper, feature_mismatch)`. `hyper=None` se a combinação
-    não foi calibrada por esta campanha — o chamador decide o fallback
-    (`LGBMHyperparams.from_constants()`), não decidido silenciosamente
-    aqui; nesse caso `feature_mismatch` é sempre `False` (não há
-    hiperparâmetro calibrado pra validar contra nada).
-
-    `feature_ids_effective` (AG-371, 2026-08-28) — vetor de features
-    REALMENTE resolvido que vai treinar agora (nunca `None`; resolva com
-    `src.features.build.resolve_feature_ids` antes de chamar). Comparado
-    por hash de conteúdo contra `feature_ids_hash` do header do YAML.
-
-    Mismatch (ou header sem `feature_ids_hash`, ex. arquivo pré-AG-371
-    nunca migrado) -> `HyperparamFeatureMismatchError`, default. Fail-
-    CLOSED de propósito: silenciar isso de volta pra warning é o que já
-    causou o AG-371 (o warning de "combinação sem calibração" já existia
-    e não impediu ninguém de confiar no retreino contaminado).
-    `allow_feature_mismatch=True` rebaixa pra warning explícito e retorna
-    `feature_mismatch=True` -- o chamador decide o que fazer com o flag
-    (ex. marcar o report como contaminado); esta função não escreve em
-    artefato. Só pra comparação exploratória deliberada (mesmo espírito
-    de `scratch=True`, AG-368) -- nunca em retreino canônico.
+) -> LGBMHyperparams | None:
+    """Retorna `None` se esta combinação `(symbol, resolution_id, variant)`
+    nunca teve uma campanha Optuna real gravar um artefato sob o hash de
+    configuração ATIVO (feature vector + espaço de busca + n_trials +
+    sampler + seed, ver `hyperparams_optuna.compute_search_config_hash`) —
+    o chamador decide o fallback (`LGBMHyperparams.from_constants()`), não
+    decidido silenciosamente aqui. Isso cobre TANTO "nunca rodou campanha
+    pra esta combinação" QUANTO "rodou, mas sob um vetor de features (ou
+    espaço de busca) diferente do atual" — as duas situações são
+    indistinguíveis de propósito (o hash simplesmente não bate), mesma
+    disciplina fail-closed que a versão anterior deste loader tinha, só
+    que garantida pela imutabilidade content-addressed do artefato em vez
+    de uma exceção checada em runtime.
 
     `base` (default `None` → `LGBMHyperparams.from_constants()`) fornece
-    os campos que o YAML não declara (`subsample_freq`, `max_bin`) — o
-    arquivo só lista os 9 campos que a campanha de fato variou."""
-    payload = _load_all()
-    key = f"{symbol}_{resolution_id}"
-    combos = payload.get("combos", {})
-    entry = combos.get(key)
-    if entry is None:
-        return None, False
-    expected_hash = payload.get("feature_ids_hash")
-    actual_hash = compute_feature_ids_hash(feature_ids_effective)
-    feature_mismatch = expected_hash is None or expected_hash != actual_hash
-    if feature_mismatch:
-        message = (
-            "hyperparams_by_combo: feature_ids_hash do YAML "
-            f"({expected_hash!r}) != hash do vetor ativo ({actual_hash!r}) "
-            f"para {key} -- hiperparâmetro calibrado (AG-207/ADR-003) pra "
-            "outro vetor de features, nunca revalidado (AG-371). Recalibre "
-            "config/alpha_hyperparams_by_combo.yaml sob o vetor atual antes "
-            "de usar use_hyperparams_by_combo=True em produção."
-        )
-        if not allow_feature_mismatch:
-            raise HyperparamFeatureMismatchError(message)
-        logger.warning(
-            "models.hyperparams_by_combo.feature_ids_mismatch_allowed",
-            symbol=symbol,
-            resolution_id=resolution_id,
-            expected_hash=expected_hash,
-            actual_hash=actual_hash,
-        )
+    valor de partida antes de aplicar os campos do artefato — na prática
+    quase vestigial hoje (`write_search_artifact` grava os 16 campos
+    completos de `LGBMHyperparams`, não só os buscados), mantido por
+    compatibilidade de assinatura/testabilidade."""
+    n_trials = int(load_constant("alpha_optuna_n_trials"))
+    sampler_name = str(load_constant("alpha_optuna_sampler"))
+    sampler_seed = int(load_constant("alpha_random_seed"))
+    config_hash = hyperparams_optuna.compute_search_config_hash(
+        feature_ids_effective,
+        variant=variant,
+        n_trials=n_trials,
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed,
+    )
+    exists = io_artifact.artifact_exists(
+        root=ARTIFACT_ROOT,
+        stage=hyperparams_optuna.OPTUNA_HYPERPARAMS_STAGE,
+        config_hash=config_hash,
+        symbol=symbol,
+        resolution=resolution_id,
+    )
+    if not exists:
+        return None
+    df, _manifest = io_artifact.read_artifact(
+        root=ARTIFACT_ROOT,
+        stage=hyperparams_optuna.OPTUNA_HYPERPARAMS_STAGE,
+        config_hash=config_hash,
+        symbol=symbol,
+        resolution=resolution_id,
+    )
+    row = df.row(0, named=True)
+    overrides = {name: row[name] for name in _HYPER_FIELD_NAMES if name in row}
     base_hyper = base if base is not None else LGBMHyperparams.from_constants()
-    overrides = {f: entry[f] for f in _HYPER_FIELDS if f in entry}
-    return dataclasses.replace(base_hyper, **overrides), feature_mismatch
+    return dataclasses.replace(base_hyper, **overrides)

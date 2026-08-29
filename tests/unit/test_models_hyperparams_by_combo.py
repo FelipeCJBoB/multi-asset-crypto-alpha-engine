@@ -1,138 +1,156 @@
-"""Testes de `src.models.hyperparams_by_combo` -- foco na trava de
-compatibilidade de vetor de features (AG-371, `audit/architecture_gaps_
-log.yaml`, 2026-08-28): hiperparâmetro calibrado (ADR-003, 25/08) sob um
-vetor de features específico não pode ser injetado silenciosamente sob
-outro vetor sem medição nova (a campanha de 25/08 mediu sob os 62
-`SUPPORT_FEATURE_IDS` da época; `AG-362`, 27/08, reestruturou
-`T1_FEATURE_IDS` sem recalibrar este arquivo -- exatamente o que o
-retreino canônico de 28/08 injetou sem checagem).
+"""Testes de `src.models.hyperparams_by_combo` -- loader por `(symbol,
+resolution_id, variant)` lendo do artefato Optuna content-addressed
+(`AG-371`, 2026-08-29), não mais do YAML estático `config/alpha_
+hyperparams_by_combo.yaml` (aposentado) nem de uma checagem de hash em
+runtime (`HyperparamFeatureMismatchError`/`allow_feature_mismatch`,
+removidos -- ver docstring do módulo pra por quê essa classe de bug deixa
+de ser alcançável por construção sob content-addressing).
 
-`_cache` monkeypatchado direto (mesmo padrão do loader de `_constants.py`
-citado na docstring do módulo) -- nenhum teste aqui toca o YAML real de
-`config/alpha_hyperparams_by_combo.yaml`."""
+`io_artifact.artifact_exists`/`read_artifact` monkeypatchados direto --
+nenhum teste aqui toca disco real nem `config/constants.yaml` é mockado
+(os 3 metaparâmetros Optuna e os `sweep_range` que `compute_search_config_
+hash` lê já existem de verdade no arquivo real; o valor exato do hash não
+importa aqui, só se `artifact_exists`/`read_artifact` foram chamados)."""
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
+import polars as pl
 import pytest
 
+from src.io import artifact as io_artifact
 from src.models import hyperparams_by_combo as mod
 from src.models.alpha import LGBMHyperparams
 
-_FEATURE_IDS_A = ("A01", "A02", "A03")
-_FEATURE_IDS_B = ("B01", "B02")
+_FEATURE_IDS = ("A01", "A02", "A03")
 
-_COMBO_ENTRY = {
+# Conjunto COMPLETO de 16 campos de LGBMHyperparams + 11 colunas de
+# metadado -- mesmo formato que `hyperparams_optuna.write_search_artifact`
+# grava de verdade (ver `ALPHA_HYPERPARAMS_OPTUNA_SCHEMA`).
+_HYPER_ROW: dict[str, Any] = {
+    "symbol": "BTCUSDT",
+    "resolution_id": "R1",
+    "variant": "camada1",
+    "device_type": "cpu",
+    "best_value": 1.23,
+    "n_trials_run": 30,
+    "sampler_name": "tpe",
+    "sampler_seed": 42,
+    "study_name": "alpha_hyperparams_BTCUSDT_R1_camada1_deadbeef",
+    "dsr": None,
+    "dsr_n_trials": None,
     "max_depth": 2,
-    "num_leaves": 3,
-    "min_child_samples": 2000,
+    "n_estimators": 300,
     "learning_rate": 0.03,
     "subsample": 0.8,
+    "subsample_freq": 1,
     "feature_fraction": 1.0,
     "lambda_l2": 5.0,
-    "n_estimators": 300,
+    "min_child_samples": 2000,
+    "num_leaves": 3,
     "min_sum_hessian_in_leaf": 0.001,
+    "max_bin": 255,
+    "ess_regularization_n_obs_independentes_alvo": 30.0,
+    "ess_regularization_fator_conservador": 0.5,
+    "regularization_basis": "ess_derived",
+    "early_stopping_mode": "three_way",
+    "ic_magnitude_floor_k": 2.0,
 }
 
 
-@pytest.fixture(autouse=True)
-def _reset_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mod, "_cache", None, raising=False)
-
-
-def _set_payload(monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]) -> None:
-    monkeypatch.setattr(mod, "_cache", payload)
-
-
-def test_compute_feature_ids_hash_e_independente_de_ordem() -> None:
-    assert mod.compute_feature_ids_hash(("A01", "A02", "A03")) == mod.compute_feature_ids_hash(
-        ("A03", "A01", "A02")
+def _fake_manifest() -> io_artifact.ArtifactManifest:
+    return io_artifact.ArtifactManifest(
+        stage="alpha_hyperparams_optuna",
+        schema_version="1.0.0",
+        producer_version="test",
+        producer_entrypoint="test",
+        symbol="BTCUSDT",
+        resolution="R1",
+        config_hash="deadbeefdeadbeef",
+        input_manifest_hash=None,
+        upstream=(),
+        created_at_ns=0,
+        n_rows=1,
+        primary_key=("variant",),
+        files=(),
+        content_hash="deadbeefdeadbeef",
     )
 
 
-def test_compute_feature_ids_hash_muda_com_conteudo() -> None:
-    assert mod.compute_feature_ids_hash(_FEATURE_IDS_A) != mod.compute_feature_ids_hash(
-        _FEATURE_IDS_B
+def test_combo_sem_artefato_retorna_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nenhum artefato sob o hash ativo -- cobre TANTO 'nunca rodou
+    campanha' QUANTO 'rodou sob outro vetor de features/espaço de busca'
+    (indistinguíveis de propósito, ver docstring do módulo)."""
+    monkeypatch.setattr(io_artifact, "artifact_exists", lambda **kwargs: False)
+
+    result = mod.load_hyperparams_by_combo(
+        "BTCUSDT", "R1", "camada1", feature_ids_effective=_FEATURE_IDS
     )
 
+    assert result is None
 
-def test_combo_sem_calibracao_retorna_none_sem_checar_hash(
+
+def test_combo_com_artefato_retorna_hyper(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(io_artifact, "artifact_exists", lambda **kwargs: True)
+    monkeypatch.setattr(
+        io_artifact,
+        "read_artifact",
+        lambda **kwargs: (pl.DataFrame([_HYPER_ROW]), _fake_manifest()),
+    )
+
+    result = mod.load_hyperparams_by_combo(
+        "BTCUSDT", "R1", "camada1", feature_ids_effective=_FEATURE_IDS
+    )
+
+    assert isinstance(result, LGBMHyperparams)
+    assert result.num_leaves == 3
+    assert result.learning_rate == 0.03
+    assert result.ic_magnitude_floor_k == 2.0
+
+
+def test_base_explicito_e_sobreposto_pelos_campos_do_artefato(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`entry is None` (5 das 15 combinações) pula a checagem de feature
-    -- não há hiperparâmetro calibrado pra validar contra nada, mesmo que
-    `feature_ids_hash` do header também esteja ausente/errado."""
-    _set_payload(monkeypatch, {"feature_ids_hash": None, "combos": {}})
+    """`base` fornece só o ponto de partida -- `write_search_artifact`
+    grava os 16 campos COMPLETOS (não só os historicamente buscados), então
+    todo campo do artefato sobrepõe `base`, nunca o contrário."""
+    monkeypatch.setattr(io_artifact, "artifact_exists", lambda **kwargs: True)
+    monkeypatch.setattr(
+        io_artifact,
+        "read_artifact",
+        lambda **kwargs: (pl.DataFrame([_HYPER_ROW]), _fake_manifest()),
+    )
+    custom_base = dataclasses.replace(LGBMHyperparams.from_constants(), max_depth=99)
 
-    hyper, mismatch = mod.load_hyperparams_by_combo(
-        "BTCUSDT", "R1", feature_ids_effective=_FEATURE_IDS_A
+    result = mod.load_hyperparams_by_combo(
+        "BTCUSDT", "R1", "camada1", feature_ids_effective=_FEATURE_IDS, base=custom_base
     )
 
-    assert hyper is None
-    assert mismatch is False
+    assert isinstance(result, LGBMHyperparams)
+    assert result.max_depth == 2
 
 
-def test_hash_bate_retorna_hyper_sem_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    expected_hash = mod.compute_feature_ids_hash(_FEATURE_IDS_A)
-    _set_payload(
-        monkeypatch,
-        {"feature_ids_hash": expected_hash, "combos": {"BTCUSDT_R1": _COMBO_ENTRY}},
+def test_lookup_usa_stage_e_partition_corretos(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plumbing real: `stage`/`symbol`/`resolution` chegam em `artifact_
+    exists` exatamente como `hyperparams_optuna.OPTUNA_HYPERPARAMS_STAGE`
+    declara -- não um literal duplicado que pudesse divergir."""
+    from src.models import hyperparams_optuna
+
+    captured: dict[str, Any] = {}
+
+    def _fake_exists(**kwargs: Any) -> bool:
+        captured.update(kwargs)
+        return False
+
+    monkeypatch.setattr(io_artifact, "artifact_exists", _fake_exists)
+
+    mod.load_hyperparams_by_combo(
+        "BTCUSDT", "R1", "camada1", feature_ids_effective=_FEATURE_IDS
     )
 
-    hyper, mismatch = mod.load_hyperparams_by_combo(
-        "BTCUSDT", "R1", feature_ids_effective=_FEATURE_IDS_A
-    )
-
-    assert isinstance(hyper, LGBMHyperparams)
-    assert hyper.num_leaves == 3
-    assert mismatch is False
-
-
-def test_hash_diferente_levanta_por_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """AG-371 -- comportamento DEFAULT é fail-closed. O warning que já
-    existia pra 'combinação sem calibração' não impediu ninguém de
-    confiar no retreino contaminado de 28/08; um segundo warning aqui
-    repetiria o mesmo erro."""
-    stale_hash = mod.compute_feature_ids_hash(_FEATURE_IDS_B)
-    _set_payload(
-        monkeypatch,
-        {"feature_ids_hash": stale_hash, "combos": {"BTCUSDT_R1": _COMBO_ENTRY}},
-    )
-
-    with pytest.raises(mod.HyperparamFeatureMismatchError):
-        mod.load_hyperparams_by_combo("BTCUSDT", "R1", feature_ids_effective=_FEATURE_IDS_A)
-
-
-def test_feature_ids_hash_ausente_no_header_levanta(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Header sem `feature_ids_hash` (`null`, arquivo pré-AG-371 nunca
-    migrado) -- fail-closed, não silenciosamente aceito como 'sem
-    checagem disponível'."""
-    _set_payload(monkeypatch, {"combos": {"BTCUSDT_R1": _COMBO_ENTRY}})
-
-    with pytest.raises(mod.HyperparamFeatureMismatchError):
-        mod.load_hyperparams_by_combo("BTCUSDT", "R1", feature_ids_effective=_FEATURE_IDS_A)
-
-
-def test_allow_feature_mismatch_rebaixa_pra_warning_e_retorna_hyper(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """`allow_feature_mismatch=True` -- só pra comparação exploratória
-    deliberada (mesmo espírito de `scratch=True`, AG-368): não levanta,
-    mas o `mismatch=True` de volta precisa sobreviver pro chamador marcar
-    o report como contaminado."""
-    stale_hash = mod.compute_feature_ids_hash(_FEATURE_IDS_B)
-    _set_payload(
-        monkeypatch,
-        {"feature_ids_hash": stale_hash, "combos": {"BTCUSDT_R1": _COMBO_ENTRY}},
-    )
-
-    hyper, mismatch = mod.load_hyperparams_by_combo(
-        "BTCUSDT",
-        "R1",
-        feature_ids_effective=_FEATURE_IDS_A,
-        allow_feature_mismatch=True,
-    )
-
-    assert isinstance(hyper, LGBMHyperparams)
-    assert mismatch is True
+    assert captured["stage"] == hyperparams_optuna.OPTUNA_HYPERPARAMS_STAGE
+    assert captured["symbol"] == "BTCUSDT"
+    assert captured["resolution"] == "R1"
+    assert isinstance(captured["config_hash"], str)

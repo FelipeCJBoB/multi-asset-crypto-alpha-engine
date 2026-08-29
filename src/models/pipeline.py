@@ -680,18 +680,17 @@ def run_layer1_sprint(
     dsr_n_trials: int | None = None,
     feature_ids: tuple[str, ...] | None = None,
     hyper: alpha.LGBMHyperparams | None = None,
-    # AG-371-ADDENDUM-16 (2026-08-29) -- resolvido pelo CHAMADOR (
-    # `run_layer1_sprint_all_combinations`, via `hyperparams_by_combo.
-    # load_hyperparams_by_combo`) ANTES desta chamada; default `False`
-    # preserva bit-exato todo call site/teste existente. Precisa entrar
-    # no `report` ANTES de `write_report_atomic` (abaixo) -- setar essa
-    # chave no dict DEPOIS que esta função retorna (o que
-    # `run_layer1_sprint_all_combinations` fazia até agora) só muda a
-    # cópia em memória do chamador, nunca o JSON já gravado em disco
-    # (achado real: os 15 relatórios `_bycombo` do braço by-combo real
-    # desta sessão NUNCA carregaram a chave no arquivo, apesar de 10/15
-    # células terem `feature_mismatch=True` de verdade).
-    hyperparam_feature_mismatch: bool = False,
+    # AG-371 (2026-08-29, decisão do Manager) -- Camada1/Camada0 recebem
+    # studies Optuna INDEPENDENTES (`src.models.hyperparams_optuna`), não
+    # uma herdando da outra (comparação de ablação válida exige HPO nos
+    # dois lados, ver docstring do módulo). Sentinela `None` nos dois cai
+    # no comportamento de `hyper` acima (legado, mesmo hiperparâmetro pras
+    # duas camadas) -- preserva bit-exato todo call site/teste existente
+    # que só passa `hyper=`. Quando QUALQUER um dos dois é explícito, cada
+    # camada usa o seu (a outra cai pro legado `hyper` só se ELA continuar
+    # `None`) -- ver resolução completa logo após a docstring desta função.
+    hyper_camada1: alpha.LGBMHyperparams | None = None,
+    hyper_camada0: alpha.LGBMHyperparams | None = None,
     # `AG-141`/item 10 de `ADR-005 §13.17` -- opt-in, default `False`
     # preserva bit-exato todo call site/teste existente (nenhum grava
     # bundle de modelo hoje). Ver `write_all_fold_model_bundles`: gate
@@ -859,6 +858,19 @@ def run_layer1_sprint(
     que `mf.data` sempre inclui) — o chamador passa o vetor completo que
     quer treinar, não precisa saber dessa distinção interna.
 
+    `hyper_camada1`/`hyper_camada0` (2026-08-29, `AG-371`,
+    `src.models.hyperparams_optuna`) — camada de resolução POR CIMA de
+    `hyper`, nunca substitui: `hyper_camada1 if hyper_camada1 is not None
+    else hyper if hyper is not None else LGBMHyperparams.from_constants()`,
+    e simétrico para Camada0. Todo call site/teste que só passa `hyper=`
+    (ou nenhum dos três) continua bit-exato — as duas camadas usam o MESMO
+    valor resolvido, exatamente como antes desta mudança. `hyperparams_
+    by_combo.load_hyperparams_by_combo` agora resolve por `variant`
+    (studies Optuna independentes por camada, comparação de ablação
+    válida) — `run_layer1_sprint_all_combinations` chama o loader 2x por
+    combinação e passa o resultado aqui via estes dois parâmetros novos,
+    não mais via `hyper` compartilhado.
+
     `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow` 2026-08-27)
     -- orquestrador de trial pro gate econômico (`src.models.economic_
     gate`). Default `False` preserva bit-exato: nenhum log novo, nenhuma
@@ -1000,8 +1012,27 @@ def run_layer1_sprint(
                 p_tp_base=pre_trial_gate.p_tp,
             )
 
-    hyper_explicit = hyper is not None
-    hyper = hyper if hyper is not None else alpha.LGBMHyperparams.from_constants()
+    # AG-371 (2026-08-29) -- `hyper_camada1`/`hyper_camada0` resolvem POR
+    # CIMA do legado `hyper` compartilhado, nunca o substituem (ver
+    # docstring acima). `*_explicit` alimenta o `config_hash` de CADA
+    # camada separadamente, mais abaixo -- não é mais um único `hyper_
+    # explicit` compartilhado.
+    hyper_camada1_explicit = hyper_camada1 is not None or hyper is not None
+    hyper_camada0_explicit = hyper_camada0 is not None or hyper is not None
+    resolved_hyper_camada1 = (
+        hyper_camada1
+        if hyper_camada1 is not None
+        else hyper
+        if hyper is not None
+        else alpha.LGBMHyperparams.from_constants()
+    )
+    resolved_hyper_camada0 = (
+        hyper_camada0
+        if hyper_camada0 is not None
+        else hyper
+        if hyper is not None
+        else alpha.LGBMHyperparams.from_constants()
+    )
     seed = int(load_constant("alpha_random_seed"))
 
     camada1_folds = alpha.run_all_folds(
@@ -1011,7 +1042,7 @@ def run_layer1_sprint(
         model_id=model_id_camada1,
         symbol=symbol,
         resolution_id=resolution_id,
-        hyper=hyper,
+        hyper=resolved_hyper_camada1,
         seed=seed,
         feature_ids=feature_ids_effective,
         device_type=device_type,
@@ -1027,7 +1058,7 @@ def run_layer1_sprint(
         model_id=model_id_camada0,
         symbol=symbol,
         resolution_id=resolution_id,
-        hyper=hyper,
+        hyper=resolved_hyper_camada0,
         seed=seed,
         feature_ids=feature_ids_effective,
         device_type=device_type,
@@ -1068,10 +1099,16 @@ def run_layer1_sprint(
         else None
     )
     write_all_fold_diagnostics(
-        camada1_folds, model_id=model_id_camada1, hyper=hyper, dest_dir=dest_dir_diag_c1
+        camada1_folds,
+        model_id=model_id_camada1,
+        hyper=resolved_hyper_camada1,
+        dest_dir=dest_dir_diag_c1,
     )
     write_all_fold_diagnostics(
-        camada0_folds, model_id=model_id_camada0, hyper=hyper, dest_dir=dest_dir_diag_c0
+        camada0_folds,
+        model_id=model_id_camada0,
+        hyper=resolved_hyper_camada0,
+        dest_dir=dest_dir_diag_c0,
     )
 
     # `AG-141`/item 10 de `ADR-005 §13.17` -- opt-in (`persist_model_
@@ -1088,7 +1125,7 @@ def run_layer1_sprint(
             camada1_folds,
             symbol=symbol,
             resolution_id=grade_id,
-            hyper=hyper,
+            hyper=resolved_hyper_camada1,
             feature_ids=feature_ids_effective,
             purge_ms_effective=max_feature_lookback_ms,
         )
@@ -1096,7 +1133,7 @@ def run_layer1_sprint(
             camada0_folds,
             symbol=symbol,
             resolution_id=grade_id,
-            hyper=hyper,
+            hyper=resolved_hyper_camada0,
             feature_ids=feature_ids_effective,
             purge_ms_effective=max_feature_lookback_ms,
         )
@@ -1155,16 +1192,22 @@ def run_layer1_sprint(
         # schema nunca reusa artefato antigo em silêncio), aplicada aqui
         # como mudança de CONTEÚDO do dict de config, não de schema_
         # version formal (o schema do parquet em si não mudou).
-        alpha_train_config_extra: dict[str, Any] = {
+        # AG-371 (2026-08-29) -- `hyper` do payload de config_hash agora É
+        # POR CAMADA (`hyper_camada1_explicit`/`resolved_hyper_camada1` vs
+        # o par de Camada0, abaixo), não mais uma chave compartilhada:
+        # desde que as duas camadas podem vir de studies Optuna
+        # INDEPENDENTES (ver docstring de `hyper_camada1`/`hyper_camada0`
+        # acima), o hiperparâmetro de Camada1 mudar não pode mais colidir
+        # com o config_hash de Camada0 sob o MESMO hiperparâmetro antigo
+        # compartilhado -- cada write usa só o seu próprio.
+        alpha_train_config_common: dict[str, Any] = {
             "tau_policy": tau_policy,
             "calib_split_mode": calib_split_mode,
             "class_balance_basis": class_balance_basis,
             "calib_weight_basis": calib_weight_basis,
         }
         if feature_ids is not None:
-            alpha_train_config_extra["feature_ids"] = sorted(feature_ids)
-        if hyper_explicit:
-            alpha_train_config_extra["hyper"] = asdict(hyper)
+            alpha_train_config_common["feature_ids"] = sorted(feature_ids)
         try:
             write_predictions_versioned(
                 preds_c1,
@@ -1172,7 +1215,15 @@ def run_layer1_sprint(
                 symbol=symbol,
                 resolution_id=resolution_id,
                 model_id=model_id_camada1,
-                config={"variant": alpha.VARIANT_CAMADA1, **alpha_train_config_extra},
+                config={
+                    "variant": alpha.VARIANT_CAMADA1,
+                    **alpha_train_config_common,
+                    **(
+                        {"hyper": asdict(resolved_hyper_camada1)}
+                        if hyper_camada1_explicit
+                        else {}
+                    ),
+                },
                 scratch=scratch,
             )
         except io_artifact.ArtifactExistsError:
@@ -1204,7 +1255,12 @@ def run_layer1_sprint(
                 model_id=model_id_camada0,
                 config={
                     "variant": alpha.VARIANT_CAMADA0,
-                    **alpha_train_config_extra,
+                    **alpha_train_config_common,
+                    **(
+                        {"hyper": asdict(resolved_hyper_camada0)}
+                        if hyper_camada0_explicit
+                        else {}
+                    ),
                     # AG-371-ADDENDUM-8 (2026-08-28) -- só na config de
                     # Camada0 (Camada1 acima fica intocada de propósito,
                     # preserva o config_hash/artefato dela) -- entra no hash
@@ -1294,7 +1350,7 @@ def run_layer1_sprint(
             symbol=symbol,
             resolution_id=resolution_id,
             model_id=model_id_camada1,
-            hyper=hyper,
+            hyper=resolved_hyper_camada1,
             seed=seed,
             feature_ids=feature_ids_effective,
             device_type=device_type,
@@ -1813,11 +1869,6 @@ def run_layer1_sprint(
         )
     if run_b1_refinement:
         report["baselines"]["b1_refinement"] = b1_refinement
-    # AG-371-ADDENDUM-16 -- precisa entrar ANTES do write (mesma chave que
-    # `run_layer1_sprint_all_combinations` marcava DEPOIS de receber o
-    # dict de volta, tarde demais pro JSON já persistido acima).
-    if hyperparam_feature_mismatch:
-        report["hyperparam_feature_mismatch"] = True
     write_report_atomic(report, dest_path=report_path)
     logger.info(
         "models.pipeline.run_layer1_sprint_done",
@@ -1844,7 +1895,6 @@ def run_layer1_sprint_all_combinations(
     device_type: str = "cpu",
     feature_ids: tuple[str, ...] | None = None,
     use_hyperparams_by_combo: bool = False,
-    allow_feature_mismatch: bool = False,
     use_economic_gate: bool = True,
     scratch: bool = False,
     report_tag_suffix: str = "",
@@ -1884,32 +1934,28 @@ def run_layer1_sprint_all_combinations(
     primeiro -- não inventada aqui (B23, mesma disciplina de nunca
     estipular faixa/contagem sem medir).
 
-    `feature_ids`/`use_hyperparams_by_combo` (2026-08-25, `AG-207`/
-    `ADR-003`) -- sentinelas `None`/`False` preservam bit-exato o
-    comportamento de sempre (T1_FEATURE_IDS, hiperparâmetro único global
-    de `constants.yaml`, D-11) pra todo call site/teste existente.
-    `feature_ids` explícito (ex. `features_build.SUPPORT_FEATURE_IDS`) é
-    repassado IDÊNTICO às 15 chamadas -- mesmo vetor de treino em toda
-    combinação. `use_hyperparams_by_combo=True` faz cada chamada
-    consultar `hyperparams_by_combo.load_hyperparams_by_combo(symbol,
-    resolution_id, feature_ids_effective=...)`; combinação sem
-    calibração própria (5 das 15, ver `config/alpha_hyperparams_by_
-    combo.yaml`) cai pro hiperparâmetro global -- com warning explícito,
-    nunca silencioso.
-
-    **`allow_feature_mismatch` (AG-371, 2026-08-28) -- default `False`.**
-    `load_hyperparams_by_combo` valida `feature_ids` resolvido (via
-    `features_build.resolve_feature_ids`) contra o vetor sob o qual
-    `alpha_hyperparams_by_combo.yaml` foi de fato calibrado (hash de
-    conteúdo, não nome de símbolo -- ver docstring do loader). Mismatch
-    levanta `HyperparamFeatureMismatchError` por padrão: hiperparâmetro
-    calibrado (ADR-003, 25/08) pra um vetor virou stale quando `AG-362`
-    (27/08) reestruturou `T1_FEATURE_IDS` sem recalibrar este arquivo, e
-    o retreino canônico de 28/08 injetou o hiperparâmetro errado sem
-    checagem nenhuma -- o gap que este parâmetro fecha. `True` rebaixa
-    pra warning explícito e grava `report["hyperparam_feature_mismatch"]
-    = True` -- só pra comparação exploratória deliberada (mesmo espírito
-    de `scratch=True`, AG-368); NUNCA usar em retreino canônico.
+    `feature_ids`/`use_hyperparams_by_combo` (2026-08-29, `AG-371`,
+    `src.models.hyperparams_optuna`) -- sentinelas `None`/`False`
+    preservam bit-exato o comportamento de sempre (T1_FEATURE_IDS,
+    hiperparâmetro único global de `constants.yaml`, D-11) pra todo call
+    site/teste existente. `feature_ids` explícito (ex. `features_build.
+    SUPPORT_FEATURE_IDS`) é repassado IDÊNTICO às 15 chamadas -- mesmo
+    vetor de treino em toda combinação. `use_hyperparams_by_combo=True`
+    faz cada chamada consultar `hyperparams_by_combo.load_hyperparams_
+    by_combo(symbol, resolution_id, variant, feature_ids_effective=...)`
+    DUAS vezes por combinação (uma por `variant` -- Camada1 e Camada0
+    recebem studies Optuna independentes, ver docstring do módulo
+    `hyperparams_optuna`), repassadas via `hyper_camada1`/`hyper_camada0`
+    a `run_layer1_sprint` (não mais um único `hyper` compartilhado).
+    Combinação/camada sem campanha Optuna real ainda gravada sob o hash
+    de configuração ativo cai pro hiperparâmetro global -- com warning
+    explícito, nunca silencioso. Fonte trocada de `config/alpha_
+    hyperparams_by_combo.yaml` (YAML estático, aposentado por já ter
+    ficado stale uma vez de verdade, `AG-371`) pro artefato content-
+    addressed -- staleness deixa de ser um estado checado em runtime
+    (`HyperparamFeatureMismatchError`/`allow_feature_mismatch`, removidos)
+    e passa a ser impossível por construção (hash diferente = artefato
+    diferente).
 
     `use_economic_gate` (AG-260 ponto (b), `/redesign_workflow`
     2026-08-27) -- repassado IDÊNTICO às 15 chamadas de `run_layer1_
@@ -1951,20 +1997,28 @@ def run_layer1_sprint_all_combinations(
         for resolution_id in resolutions:
             run_tag = f"{symbol}_{resolution_id}{report_tag_suffix}"
             report_path = EXPERIMENTS_DIR / f"alpha_layer1_report_{run_tag}.json"
-            hyper: alpha.LGBMHyperparams | None = None
-            feature_mismatch = False
+            hyper_camada1: alpha.LGBMHyperparams | None = None
+            hyper_camada0: alpha.LGBMHyperparams | None = None
             if use_hyperparams_by_combo:
-                hyper, feature_mismatch = hyperparams_by_combo.load_hyperparams_by_combo(
+                hyper_camada1 = hyperparams_by_combo.load_hyperparams_by_combo(
                     symbol,
                     resolution_id,
+                    alpha.VARIANT_CAMADA1,
                     feature_ids_effective=feature_ids_effective,
-                    allow_feature_mismatch=allow_feature_mismatch,
                 )
-                if hyper is None:
+                hyper_camada0 = hyperparams_by_combo.load_hyperparams_by_combo(
+                    symbol,
+                    resolution_id,
+                    alpha.VARIANT_CAMADA0,
+                    feature_ids_effective=feature_ids_effective,
+                )
+                if hyper_camada1 is None or hyper_camada0 is None:
                     logger.warning(
                         "models.pipeline.hyperparams_by_combo_ausente",
                         symbol=symbol,
                         resolution_id=resolution_id,
+                        camada1_ausente=hyper_camada1 is None,
+                        camada0_ausente=hyper_camada0 is None,
                         fallback="hiperparametro global de constants.yaml",
                     )
             logger.info(
@@ -1973,8 +2027,8 @@ def run_layer1_sprint_all_combinations(
                 resolution_id=resolution_id,
                 run_tag=run_tag,
                 feature_ids_n=len(feature_ids) if feature_ids is not None else None,
-                hyper_por_combo=hyper is not None,
-                hyperparam_feature_mismatch=feature_mismatch,
+                hyper_camada1_por_combo=hyper_camada1 is not None,
+                hyper_camada0_por_combo=hyper_camada0 is not None,
                 use_economic_gate=use_economic_gate,
             )
             report = run_layer1_sprint(
@@ -1984,21 +2038,10 @@ def run_layer1_sprint_all_combinations(
                 report_path=report_path,
                 device_type=device_type,
                 feature_ids=feature_ids,
-                hyper=hyper,
+                hyper_camada1=hyper_camada1,
+                hyper_camada0=hyper_camada0,
                 use_economic_gate=use_economic_gate,
                 scratch=scratch,
-                # AG-371-ADDENDUM-16 -- precisa ir COMO PARÂMETRO (não
-                # mutar `report` depois de receber de volta): `run_layer1_
-                # sprint` já grava o JSON em disco antes de retornar
-                # (`write_report_atomic`), então mutar o dict aqui só
-                # mudava a cópia em memória -- os 15 relatórios `_bycombo`
-                # reais desta sessão nunca carregaram a chave, achado ao
-                # comparar o hash esperado (a1ec4831894d2136, vetor de 62
-                # extinto) contra o hash ativo (6469fc3ac89d3f43, 36
-                # atual) e ver `hyperparam_feature_mismatch` ausente em
-                # TODAS as 15 células mesmo com 10/15 genuinamente
-                # mismatched.
-                hyperparam_feature_mismatch=feature_mismatch,
             )
             reports[(symbol, resolution_id)] = report
     logger.info(
@@ -2107,27 +2150,13 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
             "--use-hyperparams-by-combo",
             action="store_true",
             help=(
-                "AG-207/ADR-003 -- so com --all-combinations. False (default) "
-                "usa o hiperparametro global de constants.yaml em toda "
-                "combinacao (comportamento de sempre); True consulta "
-                "config/alpha_hyperparams_by_combo.yaml por combinacao, "
-                "caindo no global com warning explicito nas celulas sem "
-                "calibracao propria"
-            ),
-        )
-        parser.add_argument(
-            "--allow-feature-mismatch",
-            action="store_true",
-            help=(
-                "AG-371 -- so com --use-hyperparams-by-combo. False (default, "
-                "SEMPRE em retreino canonico) FALHA ALTO "
-                "(HyperparamFeatureMismatchError) se o hiperparametro por "
-                "combo foi calibrado sob um vetor de features diferente do "
-                "que esta rodando agora (hash de conteudo, config/"
-                "alpha_hyperparams_by_combo.yaml::feature_ids_hash). True "
-                "rebaixa pra warning + marca "
-                "report['hyperparam_feature_mismatch']=True -- so pra "
-                "comparacao exploratoria deliberada, nunca canonico"
+                "AG-371/src.models.hyperparams_optuna -- so com "
+                "--all-combinations. False (default) usa o hiperparametro "
+                "global de constants.yaml em toda combinacao (comportamento "
+                "de sempre); True consulta o artefato Optuna content-"
+                "addressed por combinacao+camada (Camada1 e Camada0 "
+                "independentes), caindo no global com warning explicito "
+                "nas celulas/camadas sem campanha propria ainda rodada"
             ),
         )
         parser.add_argument(
@@ -2138,13 +2167,11 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "False (default) escreve em artifacts/predictions_alpha/ "
                 "(canonico, imutavel, ArtifactExistsError se config_hash ja "
                 "existir). True escreve em artifacts/scratch/ "
-                "predictions_alpha/ (permite sobrescrita) -- OBRIGATORIO "
-                "junto com --allow-feature-mismatch: uma celula sem entrada "
-                "em alpha_hyperparams_by_combo.yaml cai no hiperparametro "
-                "global nos DOIS bracos (by-combo e global), produzindo o "
-                "MESMO config_hash de um retreino canonico ja existente -- "
-                "sem --scratch, a 2a escrita crasha o driver inteiro "
-                "(medido real, ver AG-371-ADDENDUM-15)"
+                "predictions_alpha/ (permite sobrescrita) -- use quando uma "
+                "celula sem campanha Optuna propria (fallback global nos "
+                "dois bracos, --use-hyperparams-by-combo vs sem a flag) "
+                "produzir o MESMO config_hash de um retreino canonico ja "
+                "existente (medido real, ver AG-371-ADDENDUM-15)"
             ),
         )
         # --- AG-208..AG-215: politicas de correcao, todas OPT-IN. Os
@@ -2240,7 +2267,6 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 # FEATURE_IDS e o mesmo vetor que None ja resolvia).
                 feature_ids=features_build.T1_FEATURE_IDS,
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
-                allow_feature_mismatch=args.allow_feature_mismatch,
                 report_tag_suffix=args.report_tag_suffix,
                 scratch=args.scratch,
             )
@@ -2248,7 +2274,6 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "models.pipeline.cli_all_combinations_done",
                 n_combinations=len(reports),
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
-                allow_feature_mismatch=args.allow_feature_mismatch,
                 report_tag_suffix=args.report_tag_suffix,
                 scratch=args.scratch,
             )

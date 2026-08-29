@@ -1,0 +1,710 @@
+"""Busca real de hiperparâmetro LightGBM do Alpha via Optuna — produção,
+escopo `src/models/` (decisão do Manager, 2026-08-29: `src/validation/` é
+outra frente, medição, não tocada/importada aqui).
+
+`optuna>=4.0` é dependência declarada em `pyproject.toml` desde sempre, mas
+nunca foi importada em nenhum lugar do `src/` até este módulo — toda busca
+de hiperparâmetro até aqui (ADR-002/ADR-003) foi grade manual + coordinate
+descent, cujo resultado virou `config/alpha_hyperparams_by_combo.yaml`
+(aposentado por este módulo — ver `hyperparams_by_combo.py`). Esse YAML já
+quebrou de verdade uma vez (`AG-371`): ficou stale quando `T1_FEATURE_IDS`
+mudou de conteúdo (7→22→29→36) sem recalibração. Este módulo fecha essa
+classe de bug por CONSTRUÇÃO — o resultado vencedor é gravado como
+artefato content-addressed (`src.io.artifact`, mesmo mecanismo que
+predictions/labels já usam), então um vetor de features (ou espaço de
+busca) diferente é literalmente outro artefato; nunca dá pra ler um stale
+por engano, sem exceção/flag de escape checada em runtime.
+
+**Camada1 e Camada0 recebem studies independentes** (`variant` é parâmetro
+obrigatório de `run_search_for_combo`, nunca um herdando do outro). A
+comparação Camada1-vs-Camada0 é estruturalmente um teste de ablação
+(feature set completo vs. baseline restrito), e hiperparâmetro precisa ser
+reotimizado nos dois lados pra isolar o efeito que está sendo medido —
+ver Probst et al., *Tunability*, JMLR 20(53) — não é reprise de um achado
+antigo deste projeto (o Manager pediu explicitamente para não ancorar
+nisso), é a mesma exigência de qualquer comparação de ablação válida.
+
+**Espaço de busca — introspecção dinâmica, não lista Python paralela.**
+Um campo de `LGBMHyperparams` entra na busca sse a constante
+`alpha_lgbm_{campo}` correspondente declara `class: B` + `sweep_range` em
+`constants.yaml` — mesma disciplina que fechou o `AG-371` (duas fontes de
+verdade sobre "o que varia" é exatamente a classe de bug já vista aqui).
+
+**Padrão de retrain vs. campanha de HPO** segue a prática de
+champion-challenger de MLOps de produção: a campanha Optuna (cara, ~8h
+pior caso, disparada manualmente via CLI deste módulo) é um evento
+OCASIONAL que produz/atualiza o artefato; o retreino de rotina
+(`pipeline.run_layer1_sprint_all_combinations`) continua barato e não
+dispara busca nova — só lê o artefato mais recente pelo hash da
+configuração ativa (`hyperparams_by_combo.load_hyperparams_by_combo`)."""
+
+from __future__ import annotations
+
+import dataclasses
+import functools
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import optuna
+import polars as pl
+import structlog
+
+from src.data import download
+from src.features import build as features_build
+from src.io import artifact as io_artifact
+from src.io.schema import ArtifactSchema, ColumnSpec
+from src.validation import cpcv
+from src.validation import dsr as dsr_mod
+
+from . import alpha, backtest_lite
+from . import dataset as ds
+from ._constants import load_constant, load_constant_entry
+from ._paths import ARTIFACT_ROOT, OPTUNA_STUDIES_DIR
+
+logger = structlog.get_logger(__name__)
+
+OPTUNA_HYPERPARAMS_STAGE = "alpha_hyperparams_optuna"
+
+# Duplicado deliberadamente de `pipeline.ALL_SYMBOLS`/`ALL_RESOLUTIONS`
+# (mesma fonte real — `ds.SYMBOL_DEFAULT`/`download.DEFAULT_SYMBOLS` — não
+# um literal hardcoded que possa divergir) em vez de importado de lá:
+# `pipeline.py` já importa `hyperparams_by_combo`, que importa este módulo
+# — importar `pipeline` daqui fecharia um ciclo. Mesma tática já usada
+# entre os `_paths.py` de cada pacote (ver docstring de `_paths.py`).
+ALL_SYMBOLS: tuple[str, ...] = (ds.SYMBOL_DEFAULT, *download.DEFAULT_SYMBOLS)
+ALL_RESOLUTIONS: tuple[str, ...] = ("R1", "R2", "R3")
+ALL_VARIANTS: tuple[str, ...] = (alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0)
+
+_SEARCH_SPACE_VERSION = "v1"
+
+# Campo elegível <=> `alpha_lgbm_{campo}` existe em constants.yaml com
+# `class: B` + `sweep_range` (checado em `build_search_space`) — este dict
+# só declara o TIPO de cada campo numérico de `LGBMHyperparams` (pra saber
+# `suggest_int` vs `suggest_float`), nunca se ele de fato entra na busca.
+# Campos de `LGBMHyperparams` de propósito ausentes daqui (nunca elegíveis,
+# mesmo que alguém adicione `sweep_range` à constante por engano):
+# `regularization_basis`/`early_stopping_mode` (seletor de modo de código,
+# já promovido a default de produção por decisão do Manager 2026-08-27 —
+# buscar sobre eles reabriria uma decisão travada por porta lateral) e
+# `ic_magnitude_floor_k` (idem, e é `float | None`, não numérico puro).
+_FIELD_KIND: dict[str, str] = {
+    "n_estimators": "int",
+    "learning_rate": "float",
+    "subsample": "float",
+    "subsample_freq": "int",
+    "feature_fraction": "float",
+    "lambda_l2": "float",
+    "min_child_samples": "int",
+    "num_leaves": "int",
+    "min_sum_hessian_in_leaf": "float",
+    "max_bin": "int",
+    "ess_regularization_n_obs_independentes_alvo": "float",
+    "ess_regularization_fator_conservador": "float",
+}
+
+# Ordem 1:1 com os campos de `LGBMHyperparams` (`alpha.py:191-243`) --
+# usado pra montar o schema do artefato E a linha gravada por
+# `write_search_artifact` a partir de `dataclasses.asdict(best_hyper)`.
+_HYPER_COLUMN_SPECS: tuple[ColumnSpec, ...] = (
+    ColumnSpec(name="max_depth", dtype="Int64", nullable=False),
+    ColumnSpec(name="n_estimators", dtype="Int64", nullable=False),
+    ColumnSpec(name="learning_rate", dtype="Float64", nullable=False),
+    ColumnSpec(name="subsample", dtype="Float64", nullable=False),
+    ColumnSpec(name="subsample_freq", dtype="Int64", nullable=False),
+    ColumnSpec(name="feature_fraction", dtype="Float64", nullable=False),
+    ColumnSpec(name="lambda_l2", dtype="Float64", nullable=False),
+    ColumnSpec(name="min_child_samples", dtype="Int64", nullable=False),
+    ColumnSpec(name="num_leaves", dtype="Int64", nullable=False),
+    ColumnSpec(name="min_sum_hessian_in_leaf", dtype="Float64", nullable=False),
+    ColumnSpec(name="max_bin", dtype="Int64", nullable=False),
+    ColumnSpec(
+        name="ess_regularization_n_obs_independentes_alvo", dtype="Float64", nullable=False
+    ),
+    ColumnSpec(name="ess_regularization_fator_conservador", dtype="Float64", nullable=False),
+    ColumnSpec(name="regularization_basis", dtype="Utf8", nullable=False),
+    ColumnSpec(name="early_stopping_mode", dtype="Utf8", nullable=False),
+    ColumnSpec(name="ic_magnitude_floor_k", dtype="Float64", nullable=True),
+)
+
+ALPHA_HYPERPARAMS_OPTUNA_SCHEMA = ArtifactSchema(
+    schema_version="1.0.0",
+    primary_key=("variant",),
+    columns=(
+        ColumnSpec(name="symbol", dtype="Utf8", nullable=False, role="partition"),
+        ColumnSpec(name="resolution_id", dtype="Utf8", nullable=False, role="partition"),
+        ColumnSpec(name="variant", dtype="Utf8", nullable=False, role="key"),
+        ColumnSpec(name="device_type", dtype="Utf8", nullable=False),
+        ColumnSpec(name="best_value", dtype="Float64", nullable=False),
+        ColumnSpec(name="n_trials_run", dtype="Int64", nullable=False),
+        ColumnSpec(name="sampler_name", dtype="Utf8", nullable=False),
+        ColumnSpec(name="sampler_seed", dtype="Int64", nullable=False),
+        ColumnSpec(name="study_name", dtype="Utf8", nullable=False),
+        ColumnSpec(name="dsr", dtype="Float64", nullable=True),
+        ColumnSpec(name="dsr_n_trials", dtype="Int64", nullable=True),
+        *_HYPER_COLUMN_SPECS,
+    ),
+)
+
+# Tipado pelo sampler concreto (não `BaseSampler`) de propósito -- só
+# "tpe" é suportado hoje (ValueError explícito em `run_search_for_combo`
+# pra qualquer outro nome), e `BaseSampler.__init__` não declara `seed`
+# (é específico de cada sampler concreto); tipar largo aqui esconderia
+# esse mismatch do mypy em vez de sinalizá-lo se um sampler sem `seed`
+# for adicionado no futuro sem ajustar a chamada em `run_search_for_combo`.
+_SAMPLER_BY_NAME: dict[str, type[optuna.samplers.TPESampler]] = {
+    "tpe": optuna.samplers.TPESampler,
+}
+
+# Regra explícita, não hardcode por nome de campo: um `sweep_range` cujo
+# `high/low` passa desta razão vira busca em escala log (`min_sum_hessian_
+# in_leaf [0.001, 5.0]`, razão ~3700x, é o caso que motivou a regra — mas
+# ela se aplica a QUALQUER campo, incluindo os 4 novos abertos nesta rodada,
+# sem lista de exceção mantida à mão).
+_LOG_SCALE_RATIO_THRESHOLD = 10.0  # noqa: magic-number -- engenharia (heurística de forma do espaço de busca), não parâmetro de domínio quant
+
+
+@dataclass(frozen=True, slots=True)
+class _SearchDim:
+    kind: str  # "int" | "float"
+    low: float
+    high: float
+    log: bool
+
+
+def build_search_space() -> dict[str, _SearchDim]:
+    """Introspecção dinâmica: um campo de `LGBMHyperparams` entra sse a
+    constante `alpha_lgbm_{campo}` existe, `class == "B"`, e `sweep_range`
+    está declarado. Não depende de `feature_ids`/dataset algum — função
+    pura sobre `constants.yaml`, testável sem Optuna."""
+    space: dict[str, _SearchDim] = {}
+    for field_name, kind in _FIELD_KIND.items():
+        try:
+            entry = load_constant_entry(f"alpha_lgbm_{field_name}")
+        except KeyError:
+            continue
+        if entry.get("class") != "B":
+            continue
+        sweep_range = entry.get("sweep_range")
+        if sweep_range is None:
+            continue
+        low, high = float(sweep_range[0]), float(sweep_range[1])
+        ratio = high / low if low > 0.0 else 0.0  # noqa: unguarded-ratio -- guardado pelo `if low>0.0`
+        log = low > 0.0 and ratio > _LOG_SCALE_RATIO_THRESHOLD
+        space[field_name] = _SearchDim(kind=kind, low=low, high=high, log=log)
+    return space
+
+
+def _search_config_payload(
+    feature_ids_effective: tuple[str, ...],
+    *,
+    variant: str,
+    n_trials: int,
+    sampler_name: str,
+    sampler_seed: int,
+) -> dict[str, Any]:
+    """Payload hasheado por `compute_search_config_hash`/`write_search_
+    artifact` — a MESMA função dos dois lados (escrita e leitura) garante
+    que o hash nunca diverge por um dict montado de dois jeitos diferentes.
+    `search_space` entra por VALOR (não só `_SEARCH_SPACE_VERSION`): se
+    `constants.yaml::alpha_lgbm_*.sweep_range` mudar sem ninguém lembrar de
+    bumpar a versão, o hash muda sozinho -- mesmo mecanismo que já fecha
+    staleness de `feature_ids` (`compute_feature_ids_hash`, YAML aposentado
+    por este módulo)."""
+    space = build_search_space()
+    return {
+        "feature_ids": sorted(feature_ids_effective),
+        "search_space_version": _SEARCH_SPACE_VERSION,
+        "search_space": {
+            name: [dim.kind, dim.low, dim.high, dim.log] for name, dim in sorted(space.items())
+        },
+        "variant": variant,
+        "n_trials": n_trials,
+        "sampler_name": sampler_name,
+        "sampler_seed": sampler_seed,
+    }
+
+
+def compute_search_config_hash(
+    feature_ids_effective: tuple[str, ...],
+    *,
+    variant: str,
+    n_trials: int,
+    sampler_name: str,
+    sampler_seed: int,
+) -> str:
+    """`device_type`/`(symbol, resolution_id)` ficam FORA do hash --
+    partição de path (symbol/resolution_id) ou coluna de payload
+    (device_type, ver `write_search_artifact`), não identidade da busca: o
+    vencedor numérico é portável entre devices, só o PROCESSO de busca em
+    si carrega a ressalva de determinismo de `AG-196` (device_type != "cpu"
+    já loga warning dentro de `alpha.fit_side_model`)."""
+    payload = _search_config_payload(
+        feature_ids_effective,
+        variant=variant,
+        n_trials=n_trials,
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed,
+    )
+    return io_artifact.compute_config_hash(
+        payload, schema_version=ALPHA_HYPERPARAMS_OPTUNA_SCHEMA.schema_version
+    )
+
+
+def build_search_frame(
+    symbol: str,
+    resolution_id: str,
+    *,
+    vol_estimator_id: str | None = None,
+    feature_ids: tuple[str, ...] | None = None,
+) -> tuple[ds.ModelingFrame, tuple[cpcv.CPCVSplit, ...], tuple[str, ...]]:
+    """Replica `pipeline.run_layer1_sprint` (linhas ~895-971: resolve
+    `feature_ids_effective`, valida `defeito_construcao`, resolve
+    `vol_estimator_id_effective`, monta `mf`/`splits`) -- NÃO importada de
+    `src/validation/` (escopo desta rodada é só `src/models/`, decisão do
+    Manager). Chamada 1x por combinação por `run_search_for_combo`, reusada
+    entre todos os trials da mesma campanha (mesmo padrão de custo já
+    medido em `AG-371-ADDENDUM-17`: setup ~28s pago 1x, treino 10-33s por
+    trial, repetido)."""
+    extra_feature_ids = (
+        tuple(f for f in feature_ids if f not in features_build.T1_FEATURE_IDS)
+        if feature_ids is not None
+        else ()
+    )
+    feature_ids_effective = features_build.resolve_feature_ids(feature_ids)
+    features_build.assert_no_defeito_construcao_in_active_set(feature_ids_effective)
+    vol_estimator_id_effective = (
+        vol_estimator_id
+        if vol_estimator_id is not None
+        else str(load_constant("canonical_volatility_estimator"))
+    )
+    mf = ds.build_modeling_frame(
+        symbol=symbol,
+        tf="15m",
+        resolution_id=resolution_id,
+        vol_estimator_id=vol_estimator_id_effective,
+        t0_start=None,
+        t0_end=None,
+        extra_feature_ids=extra_feature_ids,
+    )
+    max_feature_lookback_ms = features_build.compute_max_feature_lookback_ms(
+        "15m", feature_ids_effective, resolution_id=resolution_id
+    )
+    cpcv_config = cpcv.CPCVConfig.from_constants(
+        tf="15m", grade_id=resolution_id, max_feature_lookback_ms=max_feature_lookback_ms
+    )
+    cpcv_result = cpcv.generate_splits(mf.data, config=cpcv_config, symbol=symbol)
+    return mf, cpcv_result.splits, feature_ids_effective
+
+
+def _suggest_value(trial: optuna.Trial, field_name: str, dim: _SearchDim) -> int | float:
+    if dim.kind == "int":
+        return trial.suggest_int(field_name, round(dim.low), round(dim.high), log=dim.log)
+    return trial.suggest_float(field_name, dim.low, dim.high, log=dim.log)
+
+
+def _objective(
+    trial: optuna.Trial,
+    *,
+    mf: ds.ModelingFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    feature_ids_effective: tuple[str, ...],
+    base_hyper: alpha.LGBMHyperparams,
+    seed: int,
+    device_type: str,
+    search_space: dict[str, _SearchDim],
+) -> float:
+    """`seed` FIXO por study inteiro (nunca `trial.suggest_int` sobre
+    seed) -- ruído de seed já medido neste projeto
+    (`audit/n_lifetime.yaml` id=20: `pooled_sharpe std~=0,31` variando só
+    seed com hiperparâmetro fixo); sortear seed por trial contaminaria a
+    superfície de resposta que o sampler TPE aprende. `tau_policy`/
+    `calib_split_mode`/`class_balance_basis`/`calib_weight_basis`/
+    `enforce_r2` passados EXPLÍCITOS -- nunca herdados dos bare defaults de
+    `alpha.run_all_folds`, que são o regime LEGADO pré-`AG-272`, não o de
+    produção (herdar silenciosamente otimizaria hiperparâmetro pro
+    problema errado)."""
+    # `dict[str, Any]`, não `dict[str, int | float]` -- mypy não consegue
+    # verificar `**kwargs` heterogêneo contra os tipos por campo de
+    # `dataclasses.replace` de qualquer forma (mesmo idioma já usado em
+    # `hyperparams_by_combo.py::load_hyperparams_by_combo`'s `overrides`).
+    suggested: dict[str, Any] = {
+        name: _suggest_value(trial, name, dim) for name, dim in search_space.items()
+    }
+    hyper = dataclasses.replace(base_hyper, **suggested)
+    folds = alpha.run_all_folds(
+        mf.data,
+        splits,
+        variant=variant,
+        model_id="hyperparam_optuna_trial",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        hyper=hyper,
+        seed=seed,
+        feature_ids=feature_ids_effective,
+        device_type=device_type,
+        tau_policy=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+        calib_split_mode=alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+        class_balance_basis=alpha.CLASS_BALANCE_WEIGHT,
+        calib_weight_basis=alpha.CALIB_WEIGHT_UNIQUENESS,
+        enforce_r2=True,
+    )
+    by_path = backtest_lite.backtest_by_path(folds, mf.data)
+    sharpes = [r.sharpe_naive for r in by_path.values() if math.isfinite(r.sharpe_naive)]
+    pooled = (
+        sum(sharpes) / len(sharpes)  # noqa: unguarded-ratio -- guardado pelo `if sharpes` abaixo
+        if sharpes
+        else float("nan")
+    )
+    trial.set_user_attr("sharpe_by_path", {str(pid): r.sharpe_naive for pid, r in by_path.items()})
+    trial.set_user_attr("n_signals_total", sum(r.n_signals for r in by_path.values()))
+    # `pooled` pode ser NaN (todos os paths sem trade preenchido) -- Optuna
+    # já marca o trial como FAIL automaticamente quando o objective devolve
+    # NaN (comportamento nativo da lib desde 2.x), não reinventado aqui.
+    return pooled
+
+
+def _compute_dsr_post_hoc(
+    *,
+    mf: ds.ModelingFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    feature_ids_effective: tuple[str, ...],
+    best_hyper: alpha.LGBMHyperparams,
+    seed: int,
+    device_type: str,
+    dsr_n_trials: int,
+) -> float | None:
+    """Leitura PÓS-HOC do vencedor, nunca objective ao vivo -- otimizar por
+    DSR ao vivo seria circular (a paisagem de `n_trials` muda a cada trial
+    desta própria campanha). Retreina 1x sob `best_hyper` (custo aceito,
+    ~10-33s) porque `study.best_trial` só guarda o valor escalar do
+    objective, não os retornos por trade que `compute_dsr` exige."""
+    folds = alpha.run_all_folds(
+        mf.data,
+        splits,
+        variant=variant,
+        model_id="hyperparam_optuna_best_dsr",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        hyper=best_hyper,
+        seed=seed,
+        feature_ids=feature_ids_effective,
+        device_type=device_type,
+        tau_policy=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+        calib_split_mode=alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+        class_balance_basis=alpha.CLASS_BALANCE_WEIGHT,
+        calib_weight_basis=alpha.CALIB_WEIGHT_UNIQUENESS,
+        enforce_r2=True,
+    )
+    realized = backtest_lite.realize_trades(folds, mf.data)
+    filled = realized.filter(pl.col("barrier_hit") != "NOFILL")
+    rets = filled["ret_net"].to_numpy().astype(np.float64)
+    span = backtest_lite.span_seconds(filled["t0"])
+    _, trades_per_year = backtest_lite.sharpe_naive(rets, span_seconds=span)
+    try:
+        dsr_result = dsr_mod.compute_dsr(
+            rets, n_trials=dsr_n_trials, trades_per_year=trades_per_year
+        )
+    except ValueError as exc:
+        logger.warning(
+            "models.hyperparams_optuna.dsr_pos_hoc_falhou",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            variant=variant,
+            error=str(exc),
+        )
+        return None
+    return float(dsr_result.dsr)
+
+
+@dataclass(frozen=True, slots=True)
+class OptunaSearchResult:
+    symbol: str
+    resolution_id: str
+    variant: str
+    best_hyper: alpha.LGBMHyperparams
+    best_value: float
+    n_trials_run: int
+    sampler_name: str
+    sampler_seed: int
+    device_type: str
+    study_name: str
+    dsr: float | None
+    dsr_n_trials: int | None
+
+
+def write_search_artifact(
+    result: OptunaSearchResult,
+    *,
+    feature_ids_effective: tuple[str, ...],
+    root: Path = ARTIFACT_ROOT,
+    scratch: bool = False,
+) -> io_artifact.ArtifactManifest:
+    """Grava via `io_artifact.write_artifact` -- content-addressed,
+    imutável (V-05), `scratch=True` pra iteração exploratória. Payload tem
+    os 16 campos COMPLETOS de `best_hyper` (não só os buscados) -- torna o
+    artefato autocontido: se o hiperparâmetro global de `constants.yaml`
+    mudar depois, um artefato antigo não herda silenciosamente um valor
+    novo."""
+    config = _search_config_payload(
+        feature_ids_effective,
+        variant=result.variant,
+        n_trials=result.n_trials_run,
+        sampler_name=result.sampler_name,
+        sampler_seed=result.sampler_seed,
+    )
+    row: dict[str, Any] = {
+        "symbol": result.symbol,
+        "resolution_id": result.resolution_id,
+        "variant": result.variant,
+        "device_type": result.device_type,
+        "best_value": result.best_value,
+        "n_trials_run": result.n_trials_run,
+        "sampler_name": result.sampler_name,
+        "sampler_seed": result.sampler_seed,
+        "study_name": result.study_name,
+        "dsr": result.dsr,
+        "dsr_n_trials": result.dsr_n_trials,
+        **dataclasses.asdict(result.best_hyper),
+    }
+    # `schema=` explícito (não inferido) -- colunas nullable com valor
+    # `None` único (`dsr`/`dsr_n_trials`, quando a campanha não pediu DSR
+    # pós-hoc) fariam Polars inferir `Null`, não `Float64`/`Int64`, e
+    # `validate_schema` recusaria (achado real, suíte de testes desta
+    # rodada). `ALPHA_HYPERPARAMS_OPTUNA_SCHEMA.polars_schema()` é a MESMA
+    # fonte que `validate_schema` usa para comparar -- nunca diverge.
+    df = pl.DataFrame([row], schema=ALPHA_HYPERPARAMS_OPTUNA_SCHEMA.polars_schema())
+    return io_artifact.write_artifact(
+        df,
+        root=root,
+        stage=OPTUNA_HYPERPARAMS_STAGE,
+        symbol=result.symbol,
+        resolution=result.resolution_id,
+        config=config,
+        schema=ALPHA_HYPERPARAMS_OPTUNA_SCHEMA,
+        producer_entrypoint="src.models.hyperparams_optuna.run_search_for_combo",
+        scratch=scratch,
+    )
+
+
+def run_search_for_combo(
+    *,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    vol_estimator_id: str | None = None,
+    feature_ids: tuple[str, ...] | None = None,
+    device_type: str = "cpu",
+    n_trials: int | None = None,
+    sampler_seed: int | None = None,
+    dsr_n_trials: int | None = None,
+    storage_dir: Path | None = None,
+    scratch: bool = False,
+) -> OptunaSearchResult:
+    """Executa (ou retoma) 1 study Optuna real e persiste o vencedor.
+    `n_trials`/`sampler_seed` sentinela `None` resolve de `constants.yaml`
+    (`alpha_optuna_n_trials`/`alpha_random_seed`) -- mesmo padrão sentinela
+    já usado em `pipeline.run_layer1_sprint`. `storage_dir` sentinela
+    `None` resolve pra `OPTUNA_STUDIES_DIR` (sqlite local, um arquivo por
+    `symbol_resolution_id_variant`, `load_if_exists=True` -- resumível após
+    crash, custo pior-caso medido ~8h CPU serial pra campanha completa,
+    `AG-371-ADDENDUM-17`). Trials rodam SEQUENCIAIS (`n_jobs=1`) de
+    propósito: `alpha.fit_side_model` já usa `n_jobs=-1` dentro do
+    LightGBM -- paralelizar trials por cima oversubscreveria CPU (ou
+    disputaria a única GPU, depois do WSL2)."""
+    if variant not in ALL_VARIANTS:
+        raise ValueError(
+            f"run_search_for_combo: variant={variant!r} desconhecido -- "
+            f"esperado um de {ALL_VARIANTS}"
+        )
+
+    mf, splits, feature_ids_effective = build_search_frame(
+        symbol, resolution_id, vol_estimator_id=vol_estimator_id, feature_ids=feature_ids
+    )
+
+    n_trials_resolved = (
+        n_trials if n_trials is not None else int(load_constant("alpha_optuna_n_trials"))
+    )
+    seed = int(load_constant("alpha_random_seed"))
+    sampler_seed_resolved = sampler_seed if sampler_seed is not None else seed
+    sampler_name = str(load_constant("alpha_optuna_sampler"))
+    sampler_cls = _SAMPLER_BY_NAME.get(sampler_name)
+    if sampler_cls is None:
+        raise ValueError(
+            f"alpha_optuna_sampler={sampler_name!r} não suportado -- "
+            f"esperado um de {sorted(_SAMPLER_BY_NAME)}"
+        )
+    storage_backend = str(load_constant("alpha_optuna_storage_backend"))
+    if storage_backend != "sqlite":
+        raise ValueError(
+            f"alpha_optuna_storage_backend={storage_backend!r} não suportado -- "
+            "só 'sqlite' implementado nesta rodada"
+        )
+
+    search_space = build_search_space()
+    if not search_space:
+        raise ValueError(
+            "build_search_space() vazio -- nenhum alpha_lgbm_* com class='B' + "
+            "sweep_range declarado em constants.yaml"
+        )
+    base_hyper = alpha.LGBMHyperparams.from_constants()
+
+    config_hash = compute_search_config_hash(
+        feature_ids_effective,
+        variant=variant,
+        n_trials=n_trials_resolved,
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed_resolved,
+    )
+    study_name = f"alpha_hyperparams_{symbol}_{resolution_id}_{variant}_{config_hash[:8]}"
+
+    storage_dir_resolved = storage_dir if storage_dir is not None else OPTUNA_STUDIES_DIR
+    storage_dir_resolved.mkdir(parents=True, exist_ok=True)
+    db_name = f"{symbol}_{resolution_id}_{variant}.db"
+    db_path = storage_dir_resolved / db_name  # noqa: unguarded-ratio -- Path.__truediv__, não divisão
+
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=sampler_cls(seed=sampler_seed_resolved),
+        storage=f"sqlite:///{db_path.resolve()}",
+        study_name=study_name,
+        load_if_exists=True,
+    )
+    n_already_run = len(study.trials)
+    n_remaining = max(0, n_trials_resolved - n_already_run)
+    logger.info(
+        "models.hyperparams_optuna.study_start",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        study_name=study_name,
+        n_already_run=n_already_run,
+        n_remaining=n_remaining,
+        device_type=device_type,
+    )
+    if n_remaining > 0:
+        objective = functools.partial(
+            _objective,
+            mf=mf,
+            splits=splits,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            variant=variant,
+            feature_ids_effective=feature_ids_effective,
+            base_hyper=base_hyper,
+            seed=seed,
+            device_type=device_type,
+            search_space=search_space,
+        )
+        study.optimize(objective, n_trials=n_remaining, n_jobs=1)
+
+    best_trial = study.best_trial
+    best_hyper = dataclasses.replace(base_hyper, **best_trial.params)
+
+    dsr_value: float | None = None
+    if dsr_n_trials is not None:
+        dsr_value = _compute_dsr_post_hoc(
+            mf=mf,
+            splits=splits,
+            symbol=symbol,
+            resolution_id=resolution_id,
+            variant=variant,
+            feature_ids_effective=feature_ids_effective,
+            best_hyper=best_hyper,
+            seed=seed,
+            device_type=device_type,
+            dsr_n_trials=dsr_n_trials,
+        )
+
+    # `FrozenTrial.value` é `float | None` nos stubs do Optuna (cobre
+    # trials PRUNED/FAILED) -- `study.best_trial` é sempre COMPLETE por
+    # contrato da própria lib (só considera trials com valor real pra
+    # decidir o "melhor"), então `None` aqui seria bug do Optuna, não
+    # estado esperado -- assert explícito, não silenciado com `or 0.0`.
+    assert best_trial.value is not None, "study.best_trial sem value -- contrato do Optuna violado"
+    result = OptunaSearchResult(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        best_hyper=best_hyper,
+        best_value=float(best_trial.value),
+        n_trials_run=len(study.trials),
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed_resolved,
+        device_type=device_type,
+        study_name=study_name,
+        dsr=dsr_value,
+        dsr_n_trials=dsr_n_trials,
+    )
+    write_search_artifact(result, feature_ids_effective=feature_ids_effective, scratch=scratch)
+    logger.info(
+        "models.hyperparams_optuna.study_done",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        best_value=result.best_value,
+        n_trials_run=result.n_trials_run,
+        dsr=result.dsr,
+    )
+    return result
+
+
+def _run_cli() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Campanha Optuna real de busca de hiperparametro LightGBM do Alpha -- "
+            "substitui config/alpha_hyperparams_by_combo.yaml (AG-371). Escreve o "
+            "vencedor como artefato content-addressed (artifacts/alpha_hyperparams_optuna/)."
+        )
+    )
+    parser.add_argument("--symbol", type=str, default=None, choices=ALL_SYMBOLS)
+    parser.add_argument("--resolution-id", type=str, default=None, choices=ALL_RESOLUTIONS)
+    parser.add_argument("--variant", type=str, default=None, choices=ALL_VARIANTS)
+    parser.add_argument("--all-combinations", action="store_true")
+    parser.add_argument("--n-trials", type=int, default=None)
+    parser.add_argument("--device-type", type=str, default="cpu", choices=["cpu", "cuda", "gpu"])
+    parser.add_argument("--sampler-seed", type=int, default=None)
+    parser.add_argument("--dsr-n-trials", type=int, default=None)
+    parser.add_argument("--scratch", action="store_true")
+    parser.add_argument("--vol-estimator-id", type=str, default=None)
+    args = parser.parse_args()
+
+    if args.all_combinations:
+        symbols: tuple[str, ...] = ALL_SYMBOLS
+        resolutions: tuple[str, ...] = ALL_RESOLUTIONS
+        variants: tuple[str, ...] = ALL_VARIANTS
+    else:
+        if args.symbol is None or args.resolution_id is None:
+            parser.error("--symbol e --resolution-id são obrigatórios sem --all-combinations")
+        symbols = (args.symbol,)
+        resolutions = (args.resolution_id,)
+        variants = (args.variant,) if args.variant is not None else ALL_VARIANTS
+
+    for symbol in symbols:
+        for resolution_id in resolutions:
+            for variant in variants:
+                run_search_for_combo(
+                    symbol=symbol,
+                    resolution_id=resolution_id,
+                    variant=variant,
+                    vol_estimator_id=args.vol_estimator_id,
+                    device_type=args.device_type,
+                    n_trials=args.n_trials,
+                    sampler_seed=args.sampler_seed,
+                    dsr_n_trials=args.dsr_n_trials,
+                    scratch=args.scratch,
+                )
+
+
+if __name__ == "__main__":
+    _run_cli()

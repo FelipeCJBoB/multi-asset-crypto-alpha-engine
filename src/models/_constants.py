@@ -42,3 +42,20 @@ def load_constant(name: str) -> Any:
             "(toda constante precisa de 'value' + proveniência, §16.10)"
         )
     return entry["value"]
+
+
+def load_constant_entry(name: str) -> dict[str, Any]:
+    """Como `load_constant`, mas devolve a entrada INTEIRA (`class`,
+    `sweep_required`, `sweep_range`, `provenance`...), não só `value`.
+    Usado por `hyperparams_optuna.py::build_search_space` para decidir
+    dinamicamente quais campos de `LGBMHyperparams` entram na busca (campo
+    elegível <=> a constante `alpha_lgbm_{campo}` correspondente declara
+    `class: B` + `sweep_range` — nunca uma lista Python paralela mantida à
+    mão, mesma disciplina que fechou o `AG-371`)."""
+    entry = _load_all().get(name)
+    if not isinstance(entry, dict) or "value" not in entry:
+        raise KeyError(
+            f"constante '{name}' ausente ou malformada em {CONSTANTS_PATH} "
+            "(toda constante precisa de 'value' + proveniência, §16.10)"
+        )
+    return entry

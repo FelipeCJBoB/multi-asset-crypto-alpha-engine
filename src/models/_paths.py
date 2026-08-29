@@ -23,7 +23,6 @@ from src.data.build_dollar_bars import CALIBRATION_TF_BY_RESOLUTION
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 CONSTANTS_PATH: Path = REPO_ROOT / "config" / "constants.yaml"
-HYPERPARAMS_BY_COMBO_PATH: Path = REPO_ROOT / "config" / "alpha_hyperparams_by_combo.yaml"
 
 DATA_ROOT: Path = REPO_ROOT / "data"
 
@@ -47,6 +46,16 @@ PREDICTIONS_OUTPUT_DIR: Path = REPO_ROOT / "predictions"
 # "lake" (ADR-001 não trava um nome literal pra raiz, só o layout interno
 # de `artifact_dir`).
 ARTIFACT_ROOT: Path = REPO_ROOT / "artifacts"
+
+# `optuna_studies/{symbol}_{resolution_id}_{variant}.db` (sqlite, um arquivo
+# por combinação+camada) — storage nativo do Optuna para as campanhas de
+# `src.models.hyperparams_optuna` (substitui a campanha manual que produzia
+# `config/alpha_hyperparams_by_combo.yaml`). Irmão de `ARTIFACT_ROOT`/
+# `DATA_ROOT` no topo do repo; o RESULTADO vencedor de cada study (o que
+# produção de fato consome) vai para `ARTIFACT_ROOT` via `write_artifact`
+# content-addressed, não aqui — este diretório guarda só o estado interno
+# do Optuna (todos os trials, para resumabilidade após crash, ver AG-365).
+OPTUNA_STUDIES_DIR: Path = REPO_ROOT / "optuna_studies"
 
 # Layout chaveado do PRD_V4_1.md T0.3 (§3.1): `predictions/alpha/{symbol}/
 # {tf}/{model_id}/`.
