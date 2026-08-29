@@ -24729,7 +24729,83 @@ entries:
       muda esse quadro em alguma delas antes de escopar a campanha nova.
     resolved_by_commit: null
     status: >-
-      Dados reais no disco (15 relatorios _global). Aguardando braco
-      by-combo (rodando em background) pra fechar a comparacao completa
-      de ADDENDUM-12(a) e alimentar o artefato de KPIs pedido pelo
+      Dados reais no disco (15 relatorios _global). O braco by-combo
+      CRASHOU na 1a tentativa (ver AG-371-ADDENDUM-15) -- causa raiz
+      corrigida, braco relancado com --scratch. Aguardando esse resultado
+      pra fechar a comparacao completa de ADDENDUM-12(a) e alimentar o
+      artefato de KPIs pedido pelo
       Manager.
+
+  - id: AG-371-ADDENDUM-15
+    date: "2026-08-28"
+    addendum_de: "AG-371-ADDENDUM-14 -- braco by-combo do Passo 1 crashou (exit 1) ao rodar de verdade pela 1a vez"
+    file: "src/models/pipeline.py::run_layer1_sprint (write de Camada0), _run_cli (--scratch novo), tests/unit/test_models_pipeline_paths.py"
+    found_by: "Claude, investigando causa raiz do crash (task-notification 'failed', log de output vazio -- log em si nao ajudou, causa raiz achada por leitura de codigo + reconstrucao da ordem de iteracao)"
+    gap: >
+      `uv run python -m src.models.pipeline --all-combinations --use-
+      hyperparams-by-combo --allow-feature-mismatch --report-tag-suffix
+      _bycombo` (sem --scratch) crashou na 4a celula (ETHUSDT/R1, a 1a
+      das 5 sem entrada em config/alpha_hyperparams_by_combo.yaml --
+      confirmado: so existem 3 relatorios _bycombo no disco, BTCUSDT/
+      R1-R3, todas COM calibracao propria).
+      CAUSA RAIZ (nao remediacao de sintoma): celula sem entrada ->
+      `load_hyperparams_by_combo` retorna `(None, False)` -> `hyper=None`
+      passado a `run_layer1_sprint` -- EXATAMENTE o mesmo `hyper=None`
+      que o braco GLOBAL ja usou pra essa celula minutos antes. Config de
+      Camada0 (`feature_ids`=36/`camada0_constrained_features`/policies,
+      SEM `hyper` porque `hyper_explicit=False`) fica IDENTICA nos dois
+      bracos -> MESMO `config_hash` -> `write_predictions_versioned` do
+      braco by-combo recusa por `ArtifactExistsError` (V-05, imutavel) --
+      SEM captura. O write de Camada1 JA tinha try/except desde
+      `AG-371-ADDENDUM-9`, mas por um motivo DIFERENTE (config de Camada1
+      colide quando so Camada0 muda, dentro do MESMO braco); ninguem
+      tinha aplicado o mesmo raciocinio de volta pro caso simetrico
+      (config de Camada0 colide quando NENHUMA das duas muda, ENTRE
+      bracos) -- gap que so existia porque `use_hyperparams_by_combo=
+      True` nunca tinha rodado de verdade sobre as 15 combinacoes nesta
+      sessao antes de agora.
+      ACHADO ADICIONAL, mais importante que o crash em si: `AG-368`
+      (2026-08-27) ja tinha documentado EXATAMENTE este cenario ("2
+      designs diferentes podem resolver pro MESMO hiper efetivo numa
+      celula sem calibracao propria... ArtifactExistsError na 2a
+      escrita") e ja tinha construido o mecanismo certo pra ele --
+      `scratch=True`, ja threaded ate `write_predictions_versioned` nos
+      DOIS writes. O bug real nao e so "Camada0 sem try/except" -- e que
+      a chamada desta sessao rodou uma comparacao explicitamente marcada
+      como exploratoria (`allow_feature_mismatch=True`, cuja propria
+      docstring diz "nunca em retreino canonico") SEM `--scratch`, porque
+      o CLI nunca expunha essa flag pra `--all-combinations` (existia so
+      como parametro de funcao). Rodar sem scratch tambem grava as 10
+      celulas COM calibracao propria (config_hash genuinamente distinto,
+      write bem-sucedido) direto no artefato CANONICO -- 3 delas
+      (BTCUSDT/R1-R3) ja estao la, vindas da tentativa que crashou, antes
+      do --scratch existir.
+    severity: "alto -- sem o fix, QUALQUER comparacao exploratoria via --use-hyperparams-by-combo --allow-feature-mismatch sobre as 15 combinacoes crasha na 1a celula sem calibracao propria; e o mecanismo certo (scratch) existia mas nao era alcancavel via CLI"
+    layer: "models/pipeline (orquestracao + persistencia de artefato)"
+    consequence: >
+      2 correcoes, nao 1: (1) write de Camada0 ganhou o MESMO try/except
+      `ArtifactExistsError` que Camada1 ja tinha (defesa em profundidade,
+      simetrica, cobre qualquer futuro retreino nao-scratch que colida
+      por acaso) -- log
+      `models.pipeline.camada0_artifact_ja_existe_reusado`. (2) flag nova
+      `--scratch` no CLI, threaded ate `run_layer1_sprint_all_
+      combinations(scratch=...)` (o parametro de funcao ja existia e ja
+      propagava, so faltava o CLI). Braco by-combo RELANCADO com
+      --scratch. 1 teste novo
+      (test_run_layer1_sprint_camada0_artifact_existente_nao_crasha)
+      prova que o write de Camada0 agora captura a excecao e o run
+      prossegue. Suite `tests/unit -k models -m "not slow"`: 393 passed,
+      1 skipped (pre-existente), 0 failures. ruff/mypy/banned_patterns
+      limpos.
+      PENDENTE, nao decidido aqui: os 3 artefatos canonicos de Camada1
+      (BTCUSDT/R1-R3, by-combo, `hyperparam_feature_mismatch=True` no
+      report) que ficaram em `artifacts/predictions_alpha/` da tentativa
+      que crashou -- distinguiveis por config_hash e auditaveis via
+      report, nao apagados (nenhuma acao destrutiva tomada). Decisao do
+      Manager se vale a pena remover/mover pra scratch manualmente ou se
+      coexistir e aceitavel dado que sao rastreaveis.
+    resolved_by_commit: null
+    status: >-
+      Codigo corrigido e testado. Braco by-combo relancado com --scratch
+      em background, aguardando conclusao real antes de fechar
+      ADDENDUM-12(a)/alimentar o artefato de KPIs.

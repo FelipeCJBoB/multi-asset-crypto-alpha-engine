@@ -1183,30 +1183,61 @@ def run_layer1_sprint(
                 "CAMADA0_CONSTRAINED_FEATURES -- artefato canonico ja "
                 "existente reusado, nao regravado",
             )
-        write_predictions_versioned(
-            preds_c0,
-            root=ARTIFACT_ROOT,
-            symbol=symbol,
-            resolution_id=resolution_id,
-            model_id=model_id_camada0,
-            config={
-                "variant": alpha.VARIANT_CAMADA0,
-                **alpha_train_config_extra,
-                # AG-371-ADDENDUM-8 (2026-08-28) -- só na config de
-                # Camada0 (Camada1 acima fica intocada de propósito,
-                # preserva o config_hash/artefato dela) -- entra no hash
-                # pra um retreino sob a correção nunca colidir com um
-                # artefato pré-correção sob o MESMO feature_ids/hyper
-                # (mesma disciplina AG-207/ADR-003 documentada acima:
-                # "todo campo que muda a lógica de geração entra no
-                # hash"). Lista vazia é impossível hoje (`CAMADA0_
-                # CONSTRAINED_FEATURES` sempre tem >=1 elemento), mas
-                # `sorted()` de um frozenset garante ordem estável pro
-                # hash mesmo se a lista crescer.
-                "camada0_constrained_features": sorted(alpha.CAMADA0_CONSTRAINED_FEATURES),
-            },
-            scratch=scratch,
-        )
+        try:
+            write_predictions_versioned(
+                preds_c0,
+                root=ARTIFACT_ROOT,
+                symbol=symbol,
+                resolution_id=resolution_id,
+                model_id=model_id_camada0,
+                config={
+                    "variant": alpha.VARIANT_CAMADA0,
+                    **alpha_train_config_extra,
+                    # AG-371-ADDENDUM-8 (2026-08-28) -- só na config de
+                    # Camada0 (Camada1 acima fica intocada de propósito,
+                    # preserva o config_hash/artefato dela) -- entra no hash
+                    # pra um retreino sob a correção nunca colidir com um
+                    # artefato pré-correção sob o MESMO feature_ids/hyper
+                    # (mesma disciplina AG-207/ADR-003 documentada acima:
+                    # "todo campo que muda a lógica de geração entra no
+                    # hash"). Lista vazia é impossível hoje (`CAMADA0_
+                    # CONSTRAINED_FEATURES` sempre tem >=1 elemento), mas
+                    # `sorted()` de um frozenset garante ordem estável pro
+                    # hash mesmo se a lista crescer.
+                    "camada0_constrained_features": sorted(alpha.CAMADA0_CONSTRAINED_FEATURES),
+                },
+                scratch=scratch,
+            )
+        except io_artifact.ArtifactExistsError:
+            # AG-371-ADDENDUM-15 (2026-08-28) -- achado real, não
+            # hipotético: braço by-combo (--use-hyperparams-by-combo
+            # --allow-feature-mismatch) crashou (exit 1) na 4a célula
+            # (ETHUSDT/R1, a 1a das 5 sem calibração própria em
+            # config/alpha_hyperparams_by_combo.yaml). Causa raiz --
+            # célula sem entrada -> `hyper=None` (fallback global) nos
+            # DOIS braços -> config de Camada0 (feature_ids/hyper=None/
+            # camada0_constrained_features/policies, tudo idêntico) ->
+            # MESMO config_hash do artefato que o braço global já tinha
+            # escrito minutos antes -> ArtifactExistsError sem captura,
+            # propaga e mata o driver `--all-combinations` inteiro (não
+            # só a célula). O write de Camada1 já tinha exatamente esta
+            # proteção desde AG-371-ADDENDUM-9 (comentário acima) -- essa
+            # entrada explicava POR QUE ela existe (config de Camada1
+            # colide quando só Camada0 muda), mas o mesmo raciocínio se
+            # aplica de volta: config de Camada0 colide quando NENHUMA
+            # das duas camadas muda (célula sem calibração própria,
+            # hyper=None nos dois braços) -- gap simétrico que só
+            # apareceu ao rodar de verdade o braço by-combo pela
+            # primeira vez nesta sessão, nunca exercitado antes.
+            logger.info(
+                "models.pipeline.camada0_artifact_ja_existe_reusado",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                detail="config de Camada0 identica a um artefato canonico "
+                "ja existente (tipico quando a celula nao tem hiperparametro "
+                "por combo proprio e hyper=None nos dois bracos) -- "
+                "artefato reusado, nao regravado",
+            )
     else:
         # tf=None (legado, caminho plano) ou tf explícito sob grade de
         # TEMPO (resolution_id continua None) -- write_predictions_versioned
@@ -2076,6 +2107,23 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 "comparacao exploratoria deliberada, nunca canonico"
             ),
         )
+        parser.add_argument(
+            "--scratch",
+            action="store_true",
+            help=(
+                "AG-368/AG-371-ADDENDUM-15 -- so com --all-combinations. "
+                "False (default) escreve em artifacts/predictions_alpha/ "
+                "(canonico, imutavel, ArtifactExistsError se config_hash ja "
+                "existir). True escreve em artifacts/scratch/ "
+                "predictions_alpha/ (permite sobrescrita) -- OBRIGATORIO "
+                "junto com --allow-feature-mismatch: uma celula sem entrada "
+                "em alpha_hyperparams_by_combo.yaml cai no hiperparametro "
+                "global nos DOIS bracos (by-combo e global), produzindo o "
+                "MESMO config_hash de um retreino canonico ja existente -- "
+                "sem --scratch, a 2a escrita crasha o driver inteiro "
+                "(medido real, ver AG-371-ADDENDUM-15)"
+            ),
+        )
         # --- AG-208..AG-215: politicas de correcao, todas OPT-IN. Os
         # defaults abaixo reproduzem o comportamento legado bit-a-bit --
         # rodar sem nenhuma destas flags produz exatamente o artefato de
@@ -2171,6 +2219,7 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
                 allow_feature_mismatch=args.allow_feature_mismatch,
                 report_tag_suffix=args.report_tag_suffix,
+                scratch=args.scratch,
             )
             logger.info(
                 "models.pipeline.cli_all_combinations_done",
@@ -2178,6 +2227,7 @@ if __name__ == "__main__":  # pragma: no cover — execução manual
                 use_hyperparams_by_combo=args.use_hyperparams_by_combo,
                 allow_feature_mismatch=args.allow_feature_mismatch,
                 report_tag_suffix=args.report_tag_suffix,
+                scratch=args.scratch,
             )
             return 0
         tag = f"_{args.run_tag}" if args.run_tag else ""

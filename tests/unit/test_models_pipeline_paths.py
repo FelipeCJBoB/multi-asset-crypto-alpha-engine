@@ -28,6 +28,7 @@ import pytest
 
 from src.data.resample import UnsupportedTimeframeError
 from src.features import build as features_build
+from src.io import artifact as io_artifact
 from src.models import alpha, dataset, hyperparams_by_combo, pipeline
 from src.models._paths import (
     MODELS_DIR,
@@ -572,6 +573,68 @@ def test_run_layer1_sprint_scratch_true_propaga_ate_write_predictions_versioned(
 
     assert calls[0]["scratch"] is True
     assert calls[1]["scratch"] is True
+
+
+class _StopAfterCamada0ArtifactCollision(Exception):
+    pass
+
+
+def test_run_layer1_sprint_camada0_artifact_existente_nao_crasha(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AG-371-ADDENDUM-15 (2026-08-28) -- achado real ao rodar o braço
+    by-combo do Passo 1: célula sem entrada em `alpha_hyperparams_by_combo
+    .yaml` cai em `hyper=None` nos DOIS braços (global e by-combo),
+    produzindo config de Camada0 idêntica a um artefato canônico já
+    escrito pelo braço global -- `ArtifactExistsError` sem captura (só
+    Camada1 tinha o try/except desde `AG-371-ADDENDUM-9`) matava
+    `run_layer1_sprint_all_combinations` inteiro na primeira célula sem
+    calibração própria. Prova que o write de Camada0 agora captura
+    `ArtifactExistsError` e o run PROSSEGUE (chega em `backtest_by_path`,
+    a próxima etapa real do corpo) em vez de propagar."""
+    fake_mf = dataset.ModelingFrame(
+        data=pl.DataFrame({"t0": []}), t1_feature_ids=(), regime_labels_present=()
+    )
+    monkeypatch.setattr(dataset, "build_modeling_frame", lambda *a, **k: fake_mf)
+    fake_cpcv_result = SimpleNamespace(
+        splits=(), config=SimpleNamespace(n_splits=0, n_backtest_paths=0)
+    )
+    monkeypatch.setattr(cpcv, "generate_splits", lambda *a, **k: fake_cpcv_result)
+    monkeypatch.setattr(
+        features_build, "compute_max_feature_lookback_ms", lambda tf, feature_ids, **_: 0
+    )
+    monkeypatch.setattr(
+        alpha, "assemble_predictions_table", lambda fold_results: _empty_predictions_df()
+    )
+
+    write_calls: list[str] = []
+
+    def _fake_write_predictions_versioned(
+        predictions: pl.DataFrame,
+        *,
+        root: Path,
+        symbol: str,
+        resolution_id: str,
+        model_id: str,
+        config: dict[str, Any],
+        scratch: bool = False,
+    ) -> Any:
+        write_calls.append(config["variant"])
+        if config["variant"] == alpha.VARIANT_CAMADA0:
+            raise io_artifact.ArtifactExistsError("config_hash ja existe -- artefato canonico")
+        return None
+
+    monkeypatch.setattr(pipeline, "write_predictions_versioned", _fake_write_predictions_versioned)
+    monkeypatch.setattr(
+        pipeline.backtest_lite,
+        "backtest_by_path",
+        lambda *a, **k: (_ for _ in ()).throw(_StopAfterCamada0ArtifactCollision()),
+    )
+
+    with pytest.raises(_StopAfterCamada0ArtifactCollision):
+        pipeline.run_layer1_sprint(resolution_id="R1")
+
+    assert write_calls == [alpha.VARIANT_CAMADA1, alpha.VARIANT_CAMADA0]
 
 
 def test_run_layer1_sprint_tf_invalido_levanta_cedo_sem_trabalho_caro() -> None:
