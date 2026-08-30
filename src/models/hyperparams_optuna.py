@@ -806,7 +806,20 @@ class ConfirmedCandidate:
     """1 combinação de hiperparâmetro FIXA (top-K do screening), testada sob
     N seeds novas. `selection_bias_estimate` = `screening_value` (1 seed,
     otimista) menos `median_pooled_sharpe` (N seeds) -- réplica direta da
-    métrica que o ADR-002 mediu como +0,772 no pior caso."""
+    métrica que o ADR-002 mediu como +0,772 no pior caso.
+
+    `seed_pooled_edge_bps`/`median_pooled_edge_bps` (AG-383-ADDENDUM, gate
+    duplo pedido pelo Manager 2026-08-30) -- `PathBacktestResult.mean_trade_
+    ret` já é edge bruto em bps (ret_net já vem em bps de
+    `triple_barrier.py`, não fração), pooled entre paths pela MESMA
+    convenção do Sharpe (média simples entre paths, não ponderada por nº de
+    trade). `seed_pooled_trade_count` é o denominador de cobertura (soma de
+    `n_filled_trades` entre paths) -- existe só pra impedir que o gate de
+    edge seja "vencido" por um hiperparâmetro que fica seletivo demais
+    (poucos trades, média dominada por outlier de cauda); FILTRAR sinal é
+    papel do Meta-model (`§15.19`, ainda não implementado), não do Alpha --
+    este piso é só confiabilidade estatística da média, não um mecanismo de
+    seleção novo."""
 
     hyper: alpha.LGBMHyperparams
     screening_value: float
@@ -814,6 +827,10 @@ class ConfirmedCandidate:
     seed_path_sharpe: dict[int, dict[int, float]]
     median_pooled_sharpe: float
     selection_bias_estimate: float
+    seed_pooled_edge_bps: dict[int, float]
+    seed_pooled_trade_count: dict[int, int]
+    median_pooled_edge_bps: float
+    median_trade_count: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -891,6 +908,8 @@ def confirm_top_k_multi_seed(
         hyper = dataclasses.replace(base_hyper, **trial.params)
         seed_pooled: dict[int, float] = {}
         seed_paths: dict[int, dict[int, float]] = {}
+        seed_pooled_edge: dict[int, float] = {}
+        seed_trade_count: dict[int, int] = {}
         for seed in confirmation_seeds:
             folds = alpha.run_all_folds(
                 mf.data,
@@ -919,8 +938,21 @@ def confirm_top_k_multi_seed(
             )
             seed_pooled[seed] = pooled
             seed_paths[seed] = {pid: r.sharpe_naive for pid, r in by_path.items()}
+            edges = [r.mean_trade_ret for r in by_path.values() if math.isfinite(r.mean_trade_ret)]
+            pooled_edge = (
+                sum(edges) / len(edges)  # noqa: unguarded-ratio -- guardado pelo `if edges`
+                if edges
+                else float("nan")
+            )
+            seed_pooled_edge[seed] = pooled_edge
+            seed_trade_count[seed] = sum(r.n_filled_trades for r in by_path.values())
         finite_pooled = [v for v in seed_pooled.values() if math.isfinite(v)]
         median_pooled = float(np.median(finite_pooled)) if finite_pooled else float("nan")
+        finite_edge = [v for v in seed_pooled_edge.values() if math.isfinite(v)]
+        median_pooled_edge = float(np.median(finite_edge)) if finite_edge else float("nan")
+        median_trade_count = (
+            float(np.median(list(seed_trade_count.values()))) if seed_trade_count else 0.0
+        )
         screening_value = float(trial.value) if trial.value is not None else float("nan")
         candidates.append(
             ConfirmedCandidate(
@@ -930,6 +962,10 @@ def confirm_top_k_multi_seed(
                 seed_path_sharpe=seed_paths,
                 median_pooled_sharpe=median_pooled,
                 selection_bias_estimate=screening_value - median_pooled,
+                seed_pooled_edge_bps=seed_pooled_edge,
+                seed_pooled_trade_count=seed_trade_count,
+                median_pooled_edge_bps=median_pooled_edge,
+                median_trade_count=median_trade_count,
             )
         )
         logger.info(
@@ -940,6 +976,8 @@ def confirm_top_k_multi_seed(
             screening_value=screening_value,
             median_pooled_sharpe=median_pooled,
             selection_bias_estimate=screening_value - median_pooled,
+            median_pooled_edge_bps=median_pooled_edge,
+            median_trade_count=median_trade_count,
         )
 
     def _sort_key(c: ConfirmedCandidate) -> float:
@@ -957,6 +995,8 @@ def confirm_top_k_multi_seed(
         winner_median_pooled_sharpe=winner.median_pooled_sharpe,
         winner_screening_value=winner.screening_value,
         winner_selection_bias=winner.selection_bias_estimate,
+        winner_median_pooled_edge_bps=winner.median_pooled_edge_bps,
+        winner_median_trade_count=winner.median_trade_count,
     )
     return ConfirmationResult(
         symbol=symbol,
@@ -979,7 +1019,28 @@ class PairedGateResult:
     (não corrigida aqui): este gate já foi medido oscilando FALSE→TRUE→
     FALSE só por calibração — um `permanence_pass=True` aqui é mais
     confiável que o de 1 seed (viés de seleção removido), mas não resolve
-    o poder estatístico questionado pelo `AG-220`."""
+    o poder estatístico questionado pelo `AG-220`.
+
+    `edge_gate_pass`/`dual_gate_pass` (AG-383-ADDENDUM, pedido do Manager
+    2026-08-30) -- `permanence_pass` é RELATIVO (Camada1 bate Camada0 em
+    Sharpe, consistência sob variância); um hiperparâmetro pode passar
+    nisso com edge bruto nulo/negativo (baixa variância, média perto de 0).
+    `edge_gate_pass` exige ABSOLUTO: a Camada1 vencedora (candidata real a
+    promoção -- Camada0 é só referência, nunca promovida sozinha) precisa
+    de `median_pooled_edge_bps > alpha_layer1_permanence_min_edge_bps`
+    (break-even é o piso, não magnitude arbitrária) SOB cobertura mínima
+    (`median_trade_count >= alpha_layer1_permanence_min_trades`, piso de
+    confiabilidade estatística da média, não seleção de sinal). O piso de
+    cobertura existe deliberadamente pra não deixar o gate ser vencido por
+    um hiperparâmetro que fica seletivo demais -- decidir QUAIS sinais
+    valem a pena executar é papel do Meta-model (`§15.19`, ainda travado em
+    desenho, zero implementado), não do Alpha; o Alpha continua sendo
+    julgado só pela qualidade do score bruto (`score_alpha_raw`) sob a
+    MESMA regra de entrada fixa (`tau_policy=TAU_POLICY_LEGACY_PER_SIDE`)
+    já usada no Sharpe -- nenhum mecanismo de seletividade novo é
+    introduzido pelo gate de edge. `dual_gate_pass = permanence_pass AND
+    edge_gate_pass` -- só combos que sobrevivem aos dois testes (relativo E
+    absoluto) são candidatos reais a promoção."""
 
     symbol: str
     resolution_id: str
@@ -989,6 +1050,12 @@ class PairedGateResult:
     median_n_better: float
     permanence_min_paths: int
     permanence_pass: bool
+    edge_min_bps: float
+    edge_min_trades: int
+    winner_median_pooled_edge_bps: float
+    winner_median_trade_count: float
+    edge_gate_pass: bool
+    dual_gate_pass: bool
 
 
 def confirm_combo_paired(
@@ -1033,6 +1100,17 @@ def confirm_combo_paired(
     median_n_better = float(np.median(list(n_better_by_seed.values())))
     permanence_pass = median_n_better >= permanence_min_paths
 
+    edge_min_bps = float(load_constant("alpha_layer1_permanence_min_edge_bps"))
+    edge_min_trades = int(load_constant("alpha_layer1_permanence_min_trades"))
+    winner_edge = camada1.winner.median_pooled_edge_bps
+    winner_trades = camada1.winner.median_trade_count
+    edge_gate_pass = (
+        math.isfinite(winner_edge)
+        and winner_edge > edge_min_bps
+        and winner_trades >= edge_min_trades
+    )
+    dual_gate_pass = permanence_pass and edge_gate_pass
+
     logger.info(
         "models.hyperparams_optuna.confirm_combo_paired_done",
         symbol=symbol,
@@ -1041,6 +1119,12 @@ def confirm_combo_paired(
         median_n_better=median_n_better,
         permanence_min_paths=permanence_min_paths,
         permanence_pass=permanence_pass,
+        winner_median_pooled_edge_bps=winner_edge,
+        winner_median_trade_count=winner_trades,
+        edge_min_bps=edge_min_bps,
+        edge_min_trades=edge_min_trades,
+        edge_gate_pass=edge_gate_pass,
+        dual_gate_pass=dual_gate_pass,
     )
     return PairedGateResult(
         symbol=symbol,
@@ -1051,6 +1135,12 @@ def confirm_combo_paired(
         median_n_better=median_n_better,
         permanence_min_paths=permanence_min_paths,
         permanence_pass=permanence_pass,
+        edge_min_bps=edge_min_bps,
+        edge_min_trades=edge_min_trades,
+        winner_median_pooled_edge_bps=winner_edge,
+        winner_median_trade_count=winner_trades,
+        edge_gate_pass=edge_gate_pass,
+        dual_gate_pass=dual_gate_pass,
     )
 
 
@@ -1065,6 +1155,10 @@ def _paired_gate_to_json(result: PairedGateResult) -> dict[str, Any]:
                 "median_pooled_sharpe": c.winner.median_pooled_sharpe,
                 "selection_bias_estimate": c.winner.selection_bias_estimate,
                 "seed_pooled_sharpe": c.winner.seed_pooled_sharpe,
+                "median_pooled_edge_bps": c.winner.median_pooled_edge_bps,
+                "median_trade_count": c.winner.median_trade_count,
+                "seed_pooled_edge_bps": c.winner.seed_pooled_edge_bps,
+                "seed_pooled_trade_count": c.winner.seed_pooled_trade_count,
             },
             "candidates": [
                 {
@@ -1072,6 +1166,8 @@ def _paired_gate_to_json(result: PairedGateResult) -> dict[str, Any]:
                     "screening_value": cand.screening_value,
                     "median_pooled_sharpe": cand.median_pooled_sharpe,
                     "selection_bias_estimate": cand.selection_bias_estimate,
+                    "median_pooled_edge_bps": cand.median_pooled_edge_bps,
+                    "median_trade_count": cand.median_trade_count,
                 }
                 for cand in c.candidates
             ],
@@ -1084,6 +1180,12 @@ def _paired_gate_to_json(result: PairedGateResult) -> dict[str, Any]:
         "median_n_better": result.median_n_better,
         "permanence_min_paths": result.permanence_min_paths,
         "permanence_pass": result.permanence_pass,
+        "edge_min_bps": result.edge_min_bps,
+        "edge_min_trades": result.edge_min_trades,
+        "winner_median_pooled_edge_bps": result.winner_median_pooled_edge_bps,
+        "winner_median_trade_count": result.winner_median_trade_count,
+        "edge_gate_pass": result.edge_gate_pass,
+        "dual_gate_pass": result.dual_gate_pass,
         "camada1": _confirmation_to_json(result.camada1),
         "camada0": _confirmation_to_json(result.camada0),
     }
@@ -1156,6 +1258,8 @@ def _run_confirmation_cli(args: Any) -> None:
         "models.hyperparams_optuna.confirmation_campaign_done",
         n_combos=len(results),
         n_permanence_pass=sum(1 for r in results if r.permanence_pass),
+        n_edge_gate_pass=sum(1 for r in results if r.edge_gate_pass),
+        n_dual_gate_pass=sum(1 for r in results if r.dual_gate_pass),
         summary_path=str(summary_path),
     )
 

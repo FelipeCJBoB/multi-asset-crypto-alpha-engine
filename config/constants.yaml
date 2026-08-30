@@ -2878,6 +2878,48 @@ alpha_layer1_permanence_min_paths:
   sweep_required: false
   review_by: sprint_11
 
+alpha_layer1_permanence_min_edge_bps:
+  value: 0.0
+  provenance: DERIVED
+  source: >
+    Gate duplo pedido pelo Manager (2026-08-30, mesma sessão que confirmou
+    AG-383): alpha_layer1_permanence_min_paths mede consistência RELATIVA
+    (Camada1 bate Camada0 em Sharpe, sob variância) mas não impede que um
+    hiperparâmetro passe com edge bruto nulo/negativo (baixa variância
+    disfarçando média perto de 0 — o mesmo modo de falha que motivou medir
+    viés de seleção no AG-383, +0,309 de Sharpe pooled em média). Este piso
+    é ABSOLUTO: break-even (0,0) é o único limite economicamente definido
+    de "existe edge" — não é magnitude escolhida por conveniência, é a
+    fronteira matemática entre lucro e prejuízo, por isso não segue a
+    convenção de quantil-medido dos guardrails classe C. Computado sobre
+    `PathBacktestResult.mean_trade_ret` (já em bps — `ret_net` sai assim de
+    `triple_barrier.py`, não fração) pooled entre os 5 paths do CPCV, MESMA
+    regra de entrada fixa (`tau_policy=TAU_POLICY_LEGACY_PER_SIDE`) usada
+    pelo Sharpe — não introduz seletividade nova, só troca a estatística
+    agregada. Ver `alpha_layer1_permanence_min_trades` pro piso de
+    cobertura que impede o gate de ser vencido via seletividade extrema.
+  class: B
+  sweep_required: false
+  review_by: sprint_11
+
+alpha_layer1_permanence_min_trades:
+  value: 30
+  provenance: LITERATURE
+  source: >
+    Piso de cobertura amostral pra confiabilidade da média de `ret_net`
+    pooled usada em `alpha_layer1_permanence_min_edge_bps` (n>=30, regra
+    prática de aproximação normal via CLT — mesma classe de citação
+    literal-de-convenção que `alpha_b1_n_seeds` acima, não estatística
+    ajustada aos dados deste projeto). Sem este piso, um hiperparâmetro
+    poderia "passar" no gate de edge só ficando seletivo demais (poucos
+    trades, média dominada por 1-2 outliers de cauda) — decidir QUAIS
+    sinais executar é papel do Meta-model (`§15.19` do Plano Mestre, ainda
+    travado em desenho, zero implementado), não do Alpha; este piso é só
+    confiabilidade estatística da média medida, nenhum mecanismo de
+    seleção de sinal novo é introduzido no Alpha por causa dele.
+  class: C
+  sweep_required: false
+
 # --- Baselines nulos (§16.1) ---
 
 alpha_b1_n_seeds:
@@ -3572,3 +3614,11 @@ labels_experiment_log_sprint_label:
   source: "Mesma classe de bug de fill_simulator_log_sprint_label (achado espelho, mesma auditoria 2026-08-27) -- src/labels/experiment_log.py::record_experiment tinha sprint=6 como literal solto no default do parâmetro, mesmo MAGIC_NUMBER. Mesmo raciocínio: rótulo de bookkeeping congelado no Sprint em que este log foi criado, não contador vivo. Classe D."
   class: D
   sweep_required: false
+
+meta_include_nofill_in_training:
+  value: false
+  provenance: ASSUMED
+  source: "docs/meta_model_design_doc_2026-08-22.md §11 (D-04/§3.3 item 4). Decisão de POLÍTICA, não derivação: NOFILL tem ret_net = 0,0 por construção, logo não carrega informação de PnL-por-trade e y_meta seria sempre 0. A v1 do design doc marcou isto DERIVED; a revisão independente (achado #40) corrigiu para ASSUMED, porque a derivação prova que PREVER PREENCHIMENTO tem ΔPnL zero, NÃO que NOFILL deva sair do treino do Meta -- são coisas diferentes. Efeito em pass_rate e em rotação de capital NÃO MEDIDO. Independente deste valor, as linhas NOFILL permanecem no meta_training_set (só saem do treino): o denominador do ablation §9 precisa da população completa. Classe B: é hiperparâmetro de treino, e a ablação booleana é barata."
+  class: B
+  sweep_required: true
+  sweep_range: [false, true]

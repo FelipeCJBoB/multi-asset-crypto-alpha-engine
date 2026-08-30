@@ -541,3 +541,152 @@ def test_confirm_combo_paired_gate_pass_quando_c1_supera_c0_nos_2_paths(
     assert result.median_n_better == pytest.approx(2.0)  # noqa: magic-number
     assert result.permanence_min_paths == 4  # noqa: magic-number -- alpha_layer1_permanence_min_paths real
     assert result.permanence_pass is False  # median_n_better(2) < permanence_min_paths(4)
+
+    # Gate de edge bruto (AG-383-ADDENDUM) -- _fake_path_result fixa
+    # mean_trade_ret=0.01 (positivo, > edge_min_bps=0.0) e n_filled_trades=8
+    # por path; pooled entre os 2 paths falsos = 8+8=16 < edge_min_trades=30
+    # real -- falha por COBERTURA, não por sinal, prova que os dois testes
+    # do gate de edge são independentes.
+    assert result.edge_min_bps == pytest.approx(0.0)
+    assert result.edge_min_trades == 30  # noqa: magic-number -- alpha_layer1_permanence_min_trades real
+    assert result.winner_median_pooled_edge_bps == pytest.approx(0.01)  # noqa: magic-number
+    assert result.winner_median_trade_count == pytest.approx(16.0)  # noqa: magic-number -- 8+8, 2 paths
+    assert result.edge_gate_pass is False  # cobertura (16) < piso (30)
+    assert result.dual_gate_pass is False  # nem permanence nem edge passam aqui
+
+
+def test_confirm_combo_paired_edge_gate_passa_com_edge_positivo_e_cobertura_suficiente(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Variante local de `_patch_confirmation_plumbing` com cobertura real
+    (`n_filled_trades=20`/path x 2 paths = 40 >= piso de 30) e edge positivo
+    -- prova que `edge_gate_pass` PODE ser True quando sinal e cobertura
+    andam juntos, isolado de `permanence_pass` (que continua False aqui, só
+    2 paths simulados nunca atingem o piso de 4/5 -- não é o alvo deste
+    teste, mesma ressalva já documentada no teste irmão acima)."""
+
+    def fake_path_result_cobertura_boa(path_id: int, sharpe: float) -> Any:
+        return backtest_lite.PathBacktestResult(
+            path_id=path_id,
+            n_signals=25,
+            n_filled_trades=20,
+            fill_rate=0.8,
+            sharpe_naive=sharpe,
+            mean_trade_ret=0.02,
+            std_trade_ret=0.02,
+            trades_per_year=100.0,
+        )
+
+    monkeypatch.setattr(
+        mod, "build_search_frame", lambda *a, **k: (_FAKE_MF, (), ("A01",))
+    )
+    monkeypatch.setattr(mod, "_precompute_monotone_screens", lambda *a, **k: {})
+
+    def fake_run_all_folds(df: pl.DataFrame, splits: tuple[Any, ...], **kwargs: Any) -> Any:
+        return {"seed": kwargs["seed"], "num_leaves": kwargs["hyper"].num_leaves}
+
+    def fake_backtest_by_path(folds: Any, df: pl.DataFrame) -> dict[int, Any]:
+        base = folds["num_leaves"] + folds["seed"] / 100.0
+        return {
+            0: fake_path_result_cobertura_boa(0, base),
+            1: fake_path_result_cobertura_boa(1, base + 0.5),
+        }
+
+    monkeypatch.setattr(alpha, "run_all_folds", fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", fake_backtest_by_path)
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA1,
+        trials_num_leaves=[40, 50],
+    )
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA0,
+        trials_num_leaves=[10, 20],
+    )
+
+    result = mod.confirm_combo_paired(
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        top_k=1,
+        confirmation_seeds=(1, 2),
+        n_trials=30,
+        sampler_seed=42,
+        storage_dir=tmp_path,
+    )
+
+    assert result.winner_median_pooled_edge_bps == pytest.approx(0.02)  # noqa: magic-number
+    assert result.winner_median_trade_count == pytest.approx(40.0)  # noqa: magic-number -- 20+20
+    assert result.edge_gate_pass is True
+    assert result.dual_gate_pass is False  # permanence_pass segue False (só 2 paths simulados)
+
+
+def test_confirm_combo_paired_edge_gate_falha_por_sinal_mesmo_com_cobertura_boa(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mesma cobertura suficiente do teste irmão, mas `mean_trade_ret`
+    negativo -- prova que o piso de sinal (`edge_min_bps=0,0`) reprova
+    independentemente da cobertura, o outro eixo do gate duplo."""
+
+    def fake_path_result_edge_negativo(path_id: int, sharpe: float) -> Any:
+        return backtest_lite.PathBacktestResult(
+            path_id=path_id,
+            n_signals=25,
+            n_filled_trades=20,
+            fill_rate=0.8,
+            sharpe_naive=sharpe,
+            mean_trade_ret=-0.03,
+            std_trade_ret=0.02,
+            trades_per_year=100.0,
+        )
+
+    monkeypatch.setattr(
+        mod, "build_search_frame", lambda *a, **k: (_FAKE_MF, (), ("A01",))
+    )
+    monkeypatch.setattr(mod, "_precompute_monotone_screens", lambda *a, **k: {})
+
+    def fake_run_all_folds(df: pl.DataFrame, splits: tuple[Any, ...], **kwargs: Any) -> Any:
+        return {"seed": kwargs["seed"], "num_leaves": kwargs["hyper"].num_leaves}
+
+    def fake_backtest_by_path(folds: Any, df: pl.DataFrame) -> dict[int, Any]:
+        base = folds["num_leaves"] + folds["seed"] / 100.0
+        return {
+            0: fake_path_result_edge_negativo(0, base),
+            1: fake_path_result_edge_negativo(1, base + 0.5),
+        }
+
+    monkeypatch.setattr(alpha, "run_all_folds", fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", fake_backtest_by_path)
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA1,
+        trials_num_leaves=[40, 50],
+    )
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA0,
+        trials_num_leaves=[10, 20],
+    )
+
+    result = mod.confirm_combo_paired(
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        top_k=1,
+        confirmation_seeds=(1, 2),
+        n_trials=30,
+        sampler_seed=42,
+        storage_dir=tmp_path,
+    )
+
+    assert result.winner_median_pooled_edge_bps == pytest.approx(-0.03)  # noqa: magic-number
+    assert result.winner_median_trade_count == pytest.approx(40.0)  # noqa: magic-number -- cobertura OK
+    assert result.edge_gate_pass is False  # sinal negativo, apesar da cobertura suficiente
+    assert result.dual_gate_pass is False
