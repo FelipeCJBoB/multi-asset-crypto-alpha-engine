@@ -25477,7 +25477,7 @@ entries:
       fit()` sob CUDA nao ter vantagem de parede neste volume de dado
       (9-40k linhas/fold), e tentar contornar isso com concorrencia
       pioura, nao melhora.
-    resolved_by_commit: null
+    resolved_by_commit: "c5f5e75"
     resolution: >
       Nenhuma mudanca de codigo -- achado e conclusao, nao bug. Registrado
       pra nao repetir a investigacao/hipotese numa sessao futura sem
