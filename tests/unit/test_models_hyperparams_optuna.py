@@ -549,7 +549,7 @@ def test_confirm_combo_paired_gate_pass_quando_c1_supera_c0_nos_2_paths(
     # do gate de edge são independentes.
     assert result.edge_min_bps == pytest.approx(0.0)
     assert result.edge_min_trades == 30  # noqa: magic-number -- alpha_layer1_permanence_min_trades real
-    assert result.winner_median_pooled_edge_bps == pytest.approx(0.01)  # noqa: magic-number
+    assert result.winner_median_pooled_edge_bps == pytest.approx(100.0)  # noqa: magic-number -- 0,01 fração * _BPS_PER_UNIT
     assert result.winner_median_trade_count == pytest.approx(16.0)  # noqa: magic-number -- 8+8, 2 paths
     assert result.edge_gate_pass is False  # cobertura (16) < piso (30)
     assert result.dual_gate_pass is False  # nem permanence nem edge passam aqui
@@ -619,7 +619,7 @@ def test_confirm_combo_paired_edge_gate_passa_com_edge_positivo_e_cobertura_sufi
         storage_dir=tmp_path,
     )
 
-    assert result.winner_median_pooled_edge_bps == pytest.approx(0.02)  # noqa: magic-number
+    assert result.winner_median_pooled_edge_bps == pytest.approx(200.0)  # noqa: magic-number -- 0,02 fração * _BPS_PER_UNIT
     assert result.winner_median_trade_count == pytest.approx(40.0)  # noqa: magic-number -- 20+20
     assert result.edge_gate_pass is True
     assert result.dual_gate_pass is False  # permanence_pass segue False (só 2 paths simulados)
@@ -686,7 +686,7 @@ def test_confirm_combo_paired_edge_gate_falha_por_sinal_mesmo_com_cobertura_boa(
         storage_dir=tmp_path,
     )
 
-    assert result.winner_median_pooled_edge_bps == pytest.approx(-0.03)  # noqa: magic-number
+    assert result.winner_median_pooled_edge_bps == pytest.approx(-300.0)  # noqa: magic-number -- -0,03 fração * _BPS_PER_UNIT
     assert result.winner_median_trade_count == pytest.approx(40.0)  # noqa: magic-number -- cobertura OK
     assert result.edge_gate_pass is False  # sinal negativo, apesar da cobertura suficiente
     assert result.dual_gate_pass is False

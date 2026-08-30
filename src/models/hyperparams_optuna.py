@@ -45,7 +45,7 @@ import functools
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 import optuna
@@ -164,6 +164,20 @@ _SAMPLER_BY_NAME: dict[str, type[optuna.samplers.TPESampler]] = {
 # ela se aplica a QUALQUER campo, incluindo os 4 novos abertos nesta rodada,
 # sem lista de exceção mantida à mão).
 _LOG_SCALE_RATIO_THRESHOLD = 10.0  # noqa: magic-number -- engenharia (heurística de forma do espaço de busca), não parâmetro de domínio quant
+
+# Fator de conversão fração -> pontos-base -- definição matemática, mesma
+# categoria/valor de `src.labels.triple_barrier._BPS_PER_UNIT` (não
+# importado de lá -- é `_`-privado daquele módulo, e o fator em si é
+# aritmética pura, não estado compartilhado). `PathBacktestResult.
+# mean_trade_ret` vem de `ret_net`, que É FRAÇÃO (`ret_gross = side *
+# (exit_price/fill_px - 1.0)`, sem nenhum `* 10_000` em `triple_barrier.py`
+# -- só `cost_entry_bps`/`cost_exit_bps`/`funding_bps` são convertidos pra
+# bps explicitamente lá). Sem esta conversão, `alpha_layer1_permanence_
+# min_edge_bps`/`median_pooled_edge_bps` estariam nomeados "bps" mas
+# carregando fração (achado real, corrigido nesta sessão -- valores follow-
+# up direto da campanha real: -0,000516 de fração vira -5,16 bps, não
+# -0,000516 bps).
+_BPS_PER_UNIT: Final[int] = 10_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -810,10 +824,13 @@ class ConfirmedCandidate:
 
     `seed_pooled_edge_bps`/`median_pooled_edge_bps` (AG-383-ADDENDUM, gate
     duplo pedido pelo Manager 2026-08-30) -- `PathBacktestResult.mean_trade_
-    ret` já é edge bruto em bps (ret_net já vem em bps de
-    `triple_barrier.py`, não fração), pooled entre paths pela MESMA
-    convenção do Sharpe (média simples entre paths, não ponderada por nº de
-    trade). `seed_pooled_trade_count` é o denominador de cobertura (soma de
+    ret` é FRAÇÃO (`ret_net`/`ret_gross` de `triple_barrier.py` nunca
+    passam por `* _BPS_PER_UNIT`, só `cost_entry_bps`/`cost_exit_bps`/
+    `funding_bps` são convertidos lá), escalado aqui por `_BPS_PER_UNIT`
+    (10_000) pra virar bps de verdade -- achado real corrigido nesta
+    sessão. Pooled entre paths pela MESMA convenção do Sharpe (média
+    simples entre paths, não ponderada por nº de trade). `seed_pooled_
+    trade_count` é o denominador de cobertura (soma de
     `n_filled_trades` entre paths) -- existe só pra impedir que o gate de
     edge seja "vencido" por um hiperparâmetro que fica seletivo demais
     (poucos trades, média dominada por outlier de cauda); FILTRAR sinal é
@@ -938,7 +955,11 @@ def confirm_top_k_multi_seed(
             )
             seed_pooled[seed] = pooled
             seed_paths[seed] = {pid: r.sharpe_naive for pid, r in by_path.items()}
-            edges = [r.mean_trade_ret for r in by_path.values() if math.isfinite(r.mean_trade_ret)]
+            edges = [
+                r.mean_trade_ret * _BPS_PER_UNIT
+                for r in by_path.values()
+                if math.isfinite(r.mean_trade_ret)
+            ]
             pooled_edge = (
                 sum(edges) / len(edges)  # noqa: unguarded-ratio -- guardado pelo `if edges`
                 if edges

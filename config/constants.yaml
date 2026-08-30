@@ -2892,8 +2892,11 @@ alpha_layer1_permanence_min_edge_bps:
     de "existe edge" — não é magnitude escolhida por conveniência, é a
     fronteira matemática entre lucro e prejuízo, por isso não segue a
     convenção de quantil-medido dos guardrails classe C. Computado sobre
-    `PathBacktestResult.mean_trade_ret` (já em bps — `ret_net` sai assim de
-    `triple_barrier.py`, não fração) pooled entre os 5 paths do CPCV, MESMA
+    `PathBacktestResult.mean_trade_ret` (é FRAÇÃO — `ret_net`/`ret_gross` de
+    `triple_barrier.py` nunca passam por `* _BPS_PER_UNIT`, só os campos
+    `cost_*_bps`/`funding_bps` são convertidos lá — achado real corrigido
+    2026-08-30; `hyperparams_optuna.py` escala por `_BPS_PER_UNIT=10_000`
+    antes de comparar com este piso) pooled entre os 5 paths do CPCV, MESMA
     regra de entrada fixa (`tau_policy=TAU_POLICY_LEGACY_PER_SIDE`) usada
     pelo Sharpe — não introduz seletividade nova, só troca a estatística
     agregada. Ver `alpha_layer1_permanence_min_trades` pro piso de
