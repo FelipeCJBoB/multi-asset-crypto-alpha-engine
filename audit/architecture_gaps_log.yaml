@@ -25416,3 +25416,76 @@ entries:
       devices, antes/depois -- ver `consequence` acima.
     resolved_by_commit: "d422f10"
     status: "fechado 2026-08-29 -- otimizacao real aplicada e medida nos dois devices; achado honesto registrado (CUDA nao supera CPU neste tamanho de dado mesmo isolando o trabalho CPU-bound) -- decisao de qual device usar na campanha real fica com o Manager"
+
+  - id: AG-381
+    date: "2026-08-29"
+    file: "nenhum arquivo do repo -- medicao pura, nenhuma mudanca de codigo"
+    related_file: "audit/architecture_gaps_log.yaml::AG-379/AG-380 (mesma sessao/investigacao de performance CUDA)"
+    numeracao: "AG-381, folga sobre AG-380 (maior no momento)."
+    found_by: "Claude, ordem direta do Manager -- hipotese de que a GPU ociosa (~55% medido no AG-380, Gerenciador de Tarefas) indicava que rodar mais de 1 combo/trial concorrente na mesma GPU revelaria a vantagem real do CUDA; pedido explicito de medir throughput agregado E o efeito no resultado individual"
+    gap: >
+      HIPOTESE REFUTADA por medicao real, nao aceita por raciocinio. 2
+      combos (ETHUSDT/R3 e BTCUSDT/R1, camada1, 5 trials cada, mesmo
+      `sampler_seed`) rodados SOLO (sequencial, um de cada vez) e depois
+      CONCORRENTE (2 processos Python simultaneos, mesma GPU, lancados
+      juntos):
+
+      Solo (soma dos dois, sequencial): ETHUSDT/R3 3m51,8s + BTCUSDT/R1
+      14m33,1s = **18m24,9s** pra 10 trials totais.
+
+      Concorrente (os dois ao mesmo tempo, teto = o mais lento):
+      ETHUSDT/R3 3m56,1s (quase igual ao solo, +4s) + BTCUSDT/R1
+      **22m23,0s** (+54% vs solo) = **22m23,0s** de parede total pros
+      mesmos 10 trials.
+
+      **Concorrencia pioura o throughput agregado em vez de melhorar**
+      (22m23s > 18m25s) -- o oposto da hipotese. O combo PEQUENO
+      (ETHUSDT/R3) quase nao foi afetado; o combo GRANDE (BTCUSDT/R1)
+      foi penalizado pesado, e de forma IMPREVISIVEL: um trial isolado
+      (trial 2, treino real nao pego pelo guard de max_bin) levou
+      ~15m41s sob concorrencia -- ordens de grandeza acima do custo
+      esperado por trial (~2-3min solo pra este combo maior). Outro
+      trial do mesmo combo (trial 4) levou ~2m28s, proximo do normal --
+      a variabilidade em si e o achado: contencao de GPU sem CUDA MPS
+      (nao suportado em GPU de consumidor) nao distribui o overhead de
+      forma previsivel entre processos, faz troca de contexto cara e
+      concentra o prejuizo de forma desigual.
+
+      Efeito no RESULTADO individual (2a pergunta do Manager): nao achado
+      nenhum. Trials que completam produzem valores reais, finitos,
+      nao-degenerados (ex. ETHUSDT trial 2 concorrente: Sharpe
+      -0,00444278774498418, trial 4: -0,6124037444003344) -- o padrao de
+      sucesso/falha por trial e determinado pelos hiperparametros
+      amostrados (mesmo `sampler_seed` -> mesma sequencia TPE
+      independente do symbol, confirmado: trial 2 teve os MESMOS
+      parametros pra ETHUSDT e BTCUSDT, resultados diferentes por serem
+      dados diferentes, nao por concorrencia). no exception/crash NOVO
+      atribuivel a concorrencia -- as falhas observadas foram os MESMOS
+      mecanismos ja conhecidos (`AG-378` max_bin>256, NaN por
+      zero-sinal), nao um modo de falha novo do GPU-sharing.
+    severity: "informativo -- nao bloqueia nada, mas evita repetir a hipotese sem medir de novo; acao concreta (nao paralelizar trials/combos na mesma GPU) evita reintroduzir um regressao real de performance"
+    layer: "infraestrutura -- WSL2 + GPU de consumidor sem CUDA MPS, nao codigo deste projeto"
+    consequence: >
+      Confirma que `study.optimize(..., n_jobs=1)` (trials sequenciais
+      dentro de 1 study) e a paralelizacao entre `--all-combinations`
+      (que hoje tambem roda os combos em loop sequencial, nao
+      concorrente) estao CORRETOS como estao -- nao ha ganho de
+      throughput agregado em paralelizar submissoes concorrentes pra
+      GPU neste hardware (RTX 4060 Ti, consumidor, sem MPS). Fecha a
+      pergunta "por que CPU as vezes empata/supera CUDA" levantada apos
+      `AG-380` -- nao e falta de concorrencia, e o proprio `LGBMClassifier.
+      fit()` sob CUDA nao ter vantagem de parede neste volume de dado
+      (9-40k linhas/fold), e tentar contornar isso com concorrencia
+      pioura, nao melhora.
+    resolved_by_commit: null
+    resolution: >
+      Nenhuma mudanca de codigo -- achado e conclusao, nao bug. Registrado
+      pra nao repetir a investigacao/hipotese numa sessao futura sem
+      antes ler esta entrada. Recomendacao pratica: rodar a campanha real
+      (15 combinacoes x 2 camadas) SEQUENCIAL, como o CLI ja faz por
+      padrao (`--all-combinations`), em CPU (mais simples, sem a
+      ressalva de nao-bit-exatidao do `AG-196`, sem depender do
+      workaround do `AG-379`, e empiricamente tao rapido quanto CUDA
+      neste hardware) -- decisao final de qual device usar continua com
+      o Manager.
+    status: "fechado 2026-08-29 -- hipotese testada e refutada com medicao real, dois combos, solo vs concorrente, throughput agregado E resultado individual"
