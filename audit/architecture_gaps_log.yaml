@@ -25241,3 +25241,95 @@ entries:
       passed, 3 falhas pré-existentes não relacionadas
       (test_analysis_tau_diagnostics.py, já documentado).
     status: "fechado 2026-08-29 -- workaround aplicado neste projeto; bug upstream (LightGBM#6512) segue aberto, reavaliar se/quando corrigirem"
+
+  - id: AG-379
+    date: "2026-08-29"
+    file: "src/models/alpha.py::fit_side_model (workaround, ~linha 1469), tools/diagnostics/investigate_cuda_zero_signal_ethusdt_r3.py (novo, bisseccao), tests/unit/test_models_alpha_cuda_scale_pos_weight_workaround.py (novo)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-375/376/377/378 (mesma sessao de infra WSL2+CUDA -- este eh a causa raiz completa do achado colateral 'zero-sinal' que AG-378 registrou sem diagnosticar); https://github.com/microsoft/LightGBM/issues/6960 (sintoma relacionado, dataset gigante, gatilho diferente)"
+    numeracao: "AG-379, folga sobre AG-378 (maior no momento)."
+    found_by: "Claude, ordem direta do Manager ('root-causar a fundo... teste todas as suas recomendacoes... avance', via skill /engineering:debug) apos reportar o achado colateral do AG-378 como nao investigado a fundo"
+    gap: >
+      `scale_pos_weight` NATIVO do LightGBM (parametro do construtor de
+      `LGBMClassifier`), sob `device_type="cuda"`, produz booster
+      DEGENERADO -- 1 arvore, 0 splits em qualquer no, `predict_proba`
+      CONSTANTE pra 100% da populacao -- sempre que usado JUNTO com
+      `lambda_l2 > 0`. Bisseccionado ate a combinacao MINIMA e
+      determinística: nenhum dos dois sozinho quebra (`scale_pos_
+      weight` sem `lambda_l2`: treina normal; `lambda_l2` sem `scale_
+      pos_weight` -- ou com `scale_pos_weight=1.0` -- treina normal);
+      juntos, quebram SEMPRE, testado com desvio de apenas 0,1% de 1.0
+      (`scale_pos_weight=1.001`) e qualquer `lambda_l2` de 1e-6 a 5.0.
+      Reproduzido em 2 datasets/simbolos diferentes (ETHUSDT/R3 ~9,6k
+      linhas de fit, BTCUSDT/R1 ~30k+), ambos os lados (long/short),
+      com hiperparametro default E buscado -- nao e caso de borda, e o
+      caso NORMAL de producao (`scale_pos_weight` real nunca e
+      exatamente 1.0 com desbalanceamento de classe real; `lambda_l2` e
+      hiperparametro central, nunca zero por desenho). Descartado como
+      causa via bisseccao real (nao suposicao): `monotone_constraints`,
+      `deterministic`/`force_row_wise`, `min_child_samples`, `min_sum_
+      hessian_in_leaf`, `max_bin` (ja fora da zona insegura do AG-378),
+      `n_jobs`, `feature_name`, tamanho/simbolo do dataset.
+
+      Investigacao adicional, ordem do Manager ("comece por device_type=
+      'gpu'/OpenCL em diante"): (1) `device_type="gpu"` (OpenCL) NAO e
+      opcao viavel neste ambiente -- o build atual so tem `USE_CUDA=ON`
+      (falha limpo, "GPU Tree Learner was not enabled in this build");
+      recompilar exigiria `-DUSE_GPU=1` E um ICD OpenCL da NVIDIA que o
+      WSL2 NAO expõe pra GPUs de consumo (`/etc/OpenCL/vendors/` nao
+      existe, `/usr/lib/wsl/lib/` tem libs de CUDA/encode/ML mas
+      nenhuma `libnvidia-opencl.so`) -- lacuna do driver WSL2 da
+      NVIDIA, nao algo que `apt install` resolve. (2) LightGBM 4.7.0
+      (instalado) E a versao estavel mais recente (`gh api .../tags`,
+      2026-07-18) -- os 15 commits em `main` desde entao (checados um a
+      um) sao docs/CI/testes pandas, nenhum toca CUDA/gain/split/
+      regularizacao -- atualizar versao nao resolveria. (3) `use_
+      quantized_grad=True` (parametro CUDA/CPU do LightGBM) "resolve" o
+      sintoma de crash/1-arvore (builder 50 arvores) mas produz modelo
+      PIOR ainda -- correlacao com o CPU ~0 (`bins=4`) ou `predict_
+      proba` CONSTANTE de novo sob mais bins de quantizacao
+      (`bins=16/64/256`) -- FALSO POSITIVO, descartado (auto-suspeita:
+      "n_trees>1" sozinho NAO prova modelo funcional, precisa checar
+      correlacao/variancia contra baseline).
+    severity: "critico -- device_type=cuda estava COMPLETAMENTE inutilizavel pra treino real de producao (nao so a busca Optuna que AG-378 cobria) ate este fix; sintoma silencioso (sem crash, sem excecao) faria qualquer consumidor confiar num booster morto sem aviso"
+    layer: "models (fit_side_model) -- workaround de bug upstream de biblioteca (LightGBM CUDA Tree Learner), nao bug de logica deste projeto"
+    consequence: >
+      Sem correcao: `AG-375`/`376`/`377` (WSL2+CUDA provisionado, treino
+      "confirmado OK") e `AG-378` (guarda de crash) davam a impressao de
+      que GPU real funcionava -- na verdade NENHUM treino de producao
+      real (`scale_pos_weight` sempre != 1.0, `lambda_l2` sempre > 0)
+      teria produzido modelo utilizavel sob CUDA. A verificacao "1 fold
+      cada, ambos OK" de `AG-375` checou ausencia de crash, nao presenca
+      de sinal -- gap de verificacao corrigido aqui tambem (ver `AG-375`
+      addendum implicito nesta entrada, nao reescrito la por disciplina
+      append-only).
+    resolved_by_commit: null
+    resolution: >
+      `fit_side_model` (`src/models/alpha.py`) -- quando `device_type !=
+      "cpu"` E `scale_pos_weight != 1.0`: `scale_pos_weight` e dobrado
+      DENTRO de `w_fit` (linhas da classe positiva `*= scale_pos_
+      weight`) em vez de passado como parametro nativo ao `LGBMClassifier`
+      (`scale_pos_weight=None` nesse caso). CPU intocado por construcao
+      (branch nunca entra, `scale_pos_weight=1.0` tambem nunca entra --
+      multiplicar por 1.0 seria no-op mas o codigo nem chega a copiar
+      `w_fit`). Validado com hardware CUDA real (WSL2, nao so mecanico):
+      correlacao com o modelo CPU equivalente entre 0,9508 e 0,9998 em 4
+      combinacoes reais (BTCUSDT/R1 long/short, ETHUSDT/R3 long/short),
+      dentro da ressalva ja aceita de nao-bit-exatidao sob GPU (`AG-196`,
+      warning ja existente em `fit_side_model`) -- contra correlacao
+      indefinida/zero (booster morto) do caminho nativo antes do fix.
+      3 testes novos (`tests/unit/test_models_alpha_cuda_scale_pos_
+      weight_workaround.py`) cobrem CPU bit-exato preservado, CUDA
+      dobrando o peso corretamente, e o caso de borda `scale_pos_
+      weight==1.0` (branch nunca toca `w_fit`) -- rodam sem hardware
+      CUDA (monkeypatch de `lgb.LGBMClassifier` forcando delegacao real
+      em CPU, so a LOGICA de `fit_side_model` sob a string `device_
+      type="cuda"` e exercitada). Suite alvo (`models_alpha or models_
+      pipeline or models_hyperparams`, `-m "not slow"`): 191 passed, 1
+      skipped (pre-existente, sem relacao), 0 failed -- zero regressao
+      no caminho CPU. Script de bisseccao preservado em `tools/
+      diagnostics/investigate_cuda_zero_signal_ethusdt_r3.py` (11
+      rodadas reais documentadas no docstring, reproduz do zero).
+
+      Nao reportado upstream ainda (LightGBM/GitHub) -- decisao
+      pendente do Manager, acao publica fora do repo.
+    status: "fechado 2026-08-29 -- CUDA real utilizavel em producao agora; bug upstream nao reportado ainda, causa raiz exata (por que lambda_l2+scale_pos_weight juntos zeram o gain no CUDA Tree Learner) nao investigada a nivel de codigo C++/CUDA do LightGBM, so isolada empiricamente a nivel de parametro Python"

@@ -1466,6 +1466,34 @@ def fit_side_model(
                 "para o plano de tolerância numérica se isso quebrar"
             ),
         )
+    # AG-379 (2026-08-29, bisecção campo-a-campo até combinação mínima):
+    # `scale_pos_weight` NATIVO do LightGBM, sob `device_type="cuda"`,
+    # produz booster DEGENERADO (0 splits em qualquer árvore, `predict_
+    # proba` constante em toda a população) sempre que `lambda_l2>0` E
+    # `scale_pos_weight!=1.0` juntos -- confirmado com desvio de apenas
+    # 0,1% de 1.0 (`scale_pos_weight=1.001`), qualquer `lambda_l2>0`
+    # testado (0.1 a 5.0), 2 datasets/símbolos diferentes, com/sem
+    # `monotone_constraints`, com/sem `deterministic`/`force_row_wise`.
+    # Bug do LightGBM 4.7.0 CUDA Tree Learner (não deste projeto) --
+    # sintoma "no further splits with positive gain" já visto em contexto
+    # não relacionado (dataset N>=1,75e8, github.com/microsoft/LightGBM/
+    # issues/6960); aqui reproduz com N~1e4, gatilho é a combinação
+    # regularização L2 + reweight de classe, não tamanho de dataset.
+    # `use_quantized_grad=True` "resolve" o crash mas produz modelo pior
+    # ainda (correlação ~0 com o CPU, ou `predict_proba` de novo
+    # constante sob mais bins de quantização -- testado, descartado).
+    # Workaround validado: dobrar `scale_pos_weight` DENTRO de `w_fit`
+    # (linhas da classe positiva `*= scale_pos_weight`) e NUNCA passar o
+    # parâmetro nativo sob device diferente de CPU -- correlação ~0,95-
+    # 0,96 com o modelo CPU equivalente (dentro da ressalva já aceita de
+    # não-bit-exatidão sob GPU, ver warning acima), contra 0 (booster
+    # morto) do caminho nativo. `scale_pos_weight=1.0` nunca entra aqui
+    # (multiplicar por 1.0 é no-op) -- branch intocado nesse caso.
+    scale_pos_weight_param: float | None = scale_pos_weight
+    if device_type != "cpu" and scale_pos_weight != 1.0:
+        w_fit = w_fit.copy()
+        w_fit[y_fit == 1] *= scale_pos_weight
+        scale_pos_weight_param = None
     model = lgb.LGBMClassifier(
         objective="binary",
         max_depth=hyper.max_depth,
@@ -1494,7 +1522,7 @@ def fit_side_model(
         max_bin=hyper.max_bin,
         lambda_l2=hyper.lambda_l2,
         monotone_constraints=list(monotone_constraints),
-        scale_pos_weight=scale_pos_weight,
+        scale_pos_weight=scale_pos_weight_param,
         random_state=_derived_seed(seed, side, 2),
         n_jobs=-1,
         # D-18: GPU obrigatória em produção (device_type="cuda", passado
