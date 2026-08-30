@@ -562,3 +562,86 @@ def test_nofill_com_y_meta_nulo_sai_da_taxa_base_mas_fica_na_celula() -> None:
 def test_frame_projetado_demais_levanta_em_vez_de_calcular_errado() -> None:
     with pytest.raises(md.MetaDatasetError, match="build_meta_signal_table"):
         md.compute_uniqueness_divergence(pl.DataFrame({"meta_split_id": [0], "role": ["train"]}))
+
+
+# ---------------------------------------------------------------------------
+# §5 CORRIGIDO — o peso não pode carregar um peso de classe não declarado
+# ---------------------------------------------------------------------------
+
+
+def _mk_tabela_para_peso() -> pl.DataFrame:
+    """Reproduz a ESTRUTURA real medida em BTCUSDT/R1: barreiras simétricas
+    de ATR, e `|ret_net|` sistematicamente MAIOR nos perdedores por causa da
+    assimetria de custo maker/taker (saída no TP é maker, no SL é taker).
+    `atr_at_t0` é o mesmo nos dois lados — é a magnitude EM RISCO, conhecida
+    em `t0` e independente do resultado."""
+    return pl.DataFrame(
+        {
+            "meta_split_id": [0] * 6,
+            "role": [md.ROLE_TRAIN] * 6,
+            "uniqueness_subpop": [1.0] * 6,
+            "atr_at_t0": [0.0015, 0.0015, 0.0020, 0.0020, 0.0010, 0.0010],
+            # y=1 -> +0.0019 (saída maker); y=0 -> -0.0030 (saída taker).
+            "ret_net": [0.0019, -0.0030, 0.0019, -0.0030, 0.0019, -0.0030],
+            "y_meta": [1, 0, 1, 0, 1, 0],
+        }
+    )
+
+
+def test_peso_nao_carrega_peso_de_classe_implicito() -> None:
+    """§5 corrigido — a fórmula ANTERIOR (`uniqueness * |ret_net|`) produzia
+    um peso de classe medido de 1,61:1 a favor dos perdedores, que ninguém
+    escolheu e que desloca a escala de `p_meta` sem calibrador rio abaixo
+    para absorver (D-07). Este teste é a trava: se alguém voltar a ponderar
+    por uma quantidade que depende do resultado, a razão sai de 1."""
+    out = md._meta_sample_weight(_mk_tabela_para_peso())
+    w = out["meta_sample_weight"].to_numpy()
+    y = out["y_meta"].to_numpy()
+    razao = w[y == 0].mean() / w[y == 1].mean()
+    assert razao == pytest.approx(1.0, abs=1e-9), "peso de classe implícito precisa ser 1"
+
+    # A fórmula antiga, no MESMO dado, para deixar o contraste explícito.
+    antiga = out["uniqueness_subpop"].to_numpy() * np.abs(out["ret_net"].to_numpy())
+    razao_antiga = antiga[y == 0].mean() / antiga[y == 1].mean()
+    assert razao_antiga > 1.5, "a fórmula antiga de fato pesava mais os perdedores"
+
+
+def test_peso_preserva_a_ordenacao_por_magnitude_em_risco() -> None:
+    """Trocar `|ret_net|` por `atr_at_t0` elimina o viés de classe SEM
+    perder a ênfase econômica: eventos com barreira mais larga continuam
+    pesando mais."""
+    out = md._meta_sample_weight(_mk_tabela_para_peso())
+    w = out["meta_sample_weight"].to_numpy()
+    atr = out["atr_at_t0"].to_numpy()
+    # ATR 0.0020 > 0.0015 > 0.0010 -> pesos na mesma ordem.
+    assert w[2] > w[0] > w[4]
+    assert w[3] > w[1] > w[5]
+    assert np.corrcoef(w, atr)[0, 1] == pytest.approx(1.0)
+
+
+def test_peso_normalizado_para_media_um_no_treino() -> None:
+    out = md._meta_sample_weight(_mk_tabela_para_peso())
+    treino = out.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert float(treino["meta_sample_weight"].mean()) == pytest.approx(1.0)
+
+
+def test_peso_nao_usa_ret_net_de_forma_nenhuma() -> None:
+    """Guarda estrutural: multiplicar `ret_net` por 100 não pode mudar o
+    peso. Se mudar, alguém reintroduziu dependência do resultado."""
+    base = _mk_tabela_para_peso()
+    alterada = base.with_columns(ret_net=pl.col("ret_net") * 100.0)
+    w_base = md._meta_sample_weight(base)["meta_sample_weight"].to_numpy()
+    w_alt = md._meta_sample_weight(alterada)["meta_sample_weight"].to_numpy()
+    assert np.allclose(w_base, w_alt)
+
+
+def test_diagnostico_reporta_o_peso_de_classe_implicito() -> None:
+    """A métrica existe porque um comentário não teria pego o defeito de
+    1,61 — um número reportado por fold pega."""
+    tabela = _mk_meta_table().with_columns(
+        meta_sample_weight=pl.Series([2.0, 1.0, 2.0, 1.0, 1.0, 1.0])
+    )
+    diag = md.compute_uniqueness_divergence(tabela)
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    # y = [1,0,1,0] com pesos [2,1,2,1] -> mean(w|y=0)=1, mean(w|y=1)=2.
+    assert treino["weight_class_ratio"][0] == pytest.approx(0.5)

@@ -3817,3 +3817,112 @@ entries:
     razao forte para divergir em ordem de grandeza. Detalhe completo:
     `docs/ADR-006_momentum_reversao_impacto_dollar_bar_2026-08-28.md`,
     `audit/architecture_gaps_log.yaml::AG-372`.
+
+- id_curto: peso_de_classe_implicito_em_uniqueness_x_abs_ret_net_2026-08-30
+  data: '2026-08-30'
+  fase: 'F2 do Meta-model (docs/meta_model_design_doc_2026-08-22.md Sec5) -- medir n_eff_subpop antes de escolher learner. O achado abaixo apareceu como efeito colateral da medicao obrigatoria de corr(|ret_net|, y_meta) que o proprio Sec5 exige.'
+  feature_ou_filtro: 'meta_sample_weight = uniqueness_subpop * |ret_net| (formula do Sec5 do design doc do Meta, identica a src.labels.weights.apply_weights usada em producao pelo Alpha)'
+  symbol: BTCUSDT
+  tf: 'R1 (dollar bar), variante camada1'
+  janela: 'meta_training_set completo -- 11.859 linhas de treino com y_meta nao-nulo, de 12.138 linhas de treino'
+  lado: ambos
+  regime: n/a
+  metrica_tipo: 'peso_de_classe_implicito = mean(w | y=0) / mean(w | y=1); eta2 = fracao da variancia de |ret_net| explicada pela classe; corr(|ret_net|, y_meta)'
+  metrica_valor: 1.6082
+  n: 11859
+  status: MEDIDO
+  fonte_arquivo: 'artifacts/predictions_alpha/config_hash=3765daed058f7d32/symbol=BTCUSDT/resolution=R1/part-0000.parquet + data/labels/BTCUSDT/R1/v1/labels.parquet, via src.models.meta_dataset.compute_uniqueness_divergence'
+  fonte_secao: 'Sec5 (pesos e unicidade, D-10)'
+  nota: >
+    ACHADO: ponderar por |ret_net| sob barreiras de ATR FIXAS nao e
+    "enfase economica no evento" -- e majoritariamente um PESO DE CLASSE.
+    Medido: eta2 = 0,4872 (a classe explica 48,7% da variancia de
+    |ret_net|), corr(|ret_net|, y_meta) = -0,698, e o peso resultante
+    equivale a 1,6082:1 a favor da classe NEGATIVA. Nunca escolhido,
+    nunca declarado, nunca medido antes desta sessao.
+
+    CAUSA RAIZ, medida e nao inferida: as barreiras hoje sao SIMETRICAS
+    (tp_atr_mult = sl_atr_mult = 1,5) e o retorno BRUTO e simetrico
+    (+0,002261 no TP vs -0,002269 no SL, como manda a geometria). A
+    assimetria inteira vem do CUSTO DE EXECUCAO -- cost_exit_bps = 2,00
+    no TP (fill maker no limite) e 5,00 no SL (fill taker no stop).
+    Liquido: E[|ret_net| | y=1] = 0,001860 e E[|ret_net| | y=0] =
+    0,002968, razao 0,63.
+
+    O design doc do Meta (Sec5) afirmava o OPOSTO em magnitude E direcao:
+    "com tp_atr_mult = 2.0 e sl_atr_mult = 1.5, E[|ret_net| | y=1] ~=
+    1,33 x E[|ret_net| | y=0]". Os dois multiplicadores citados estao
+    desatualizados (hoje 1,5/1,5) e a conclusao esta invertida.
+
+    A `uniqueness` NAO participa do vies: razao de classe 1,0049,
+    corr(uniqueness, y_meta) = -0,0089. O vies e todo de |ret_net|.
+
+    POR QUE IMPORTA: um peso de classe no TREINO desloca a escala de
+    p_meta, e D-07 removeu o calibrador que absorveria o deslocamento --
+    p_meta deixa de estimar P(y=1|X). A assimetria de custo TP/SL e
+    economicamente real, mas o lugar dela e a REGRA DE DECISAO (tau_meta,
+    Sec8.3), onde e parametro declarado; no peso de treino ela entra duas
+    vezes e sem controle.
+
+    CORRECAO APLICADA (mesma sessao): meta_sample_weight passa a ser
+    uniqueness_subpop * atr_at_t0 -- a magnitude EM RISCO, conhecida em
+    t0, nunca funcao do resultado. Medido sobre o MESMO dado: razao de
+    classe 1,596 -> 0,997; corr(peso, y) -0,698 -> 0,006; eta2 0,487 ->
+    0,000; e corr(atr_at_t0, |ret_net|) DENTRO da classe = 0,89 (y=0) /
+    0,97 (y=1), ou seja a ordenacao economica que justificava ponderar
+    por magnitude e PRESERVADA. atr_at_t0 ja vem em unidades de retorno
+    (mediana 0,00148), nao de preco.
+
+    ESCOPO NAO CORRIGIDO -- decisao do Manager: src.labels.weights.
+    apply_weights usa a MESMA formula para o ALPHA em producao, com peso
+    de classe implicito medido em 1,3027 (labels.sample_weight,
+    populacao TP/SL de BTCUSDT/R1). Corrigir la muda o treino de todo o
+    motor e invalidaria as medicoes em disco.
+
+    Guarda contra recorrencia: weight_class_ratio entra como campo de
+    UniquenessDivergenceDiagnostic e e reportado por fold. Um comentario
+    nao teria pego 1,61; um numero por fold pega.
+
+- id_curto: n_eff_subpop_meta_btcusdt_r1_camada1_2026-08-30
+  data: '2026-08-30'
+  fase: 'F2 do Meta-model -- entregavel declarado do Sec15.2: n_eff_subpop medido decide o gate de GBM (Sec7.3) e o N de Sec14.2'
+  feature_ou_filtro: 'n_eff_subpop = soma de uniqueness recalculada na subpopulacao sinalizada, grao (symbol, side_hat) dentro de cada (meta_split_id, role)'
+  symbol: BTCUSDT
+  tf: 'R1 (dollar bar), variante camada1'
+  janela: 'meta_training_set completo -- 18.280 linhas (12.138 treino + 6.142 teste), 15 meta-folds, 12 com linhas de treino'
+  lado: ambos
+  regime: n/a
+  metrica_tipo: 'n_eff_subpop total / mediana / minimo por meta-fold (treino); uniqueness_inflation_ratio'
+  metrica_valor: 652.54
+  n: 12138
+  status: MEDIDO
+  fonte_arquivo: 'src.models.meta_dataset.compute_uniqueness_divergence sobre artifacts/predictions_alpha/config_hash=3765daed058f7d32 (BTCUSDT/R1) + data/labels/BTCUSDT/R1/v1'
+  fonte_secao: 'Sec5 (UniquenessDivergenceDiagnostic) / Sec15.2 (F2)'
+  nota: >
+    n_eff_subpop: total 10.220,17 no treino; mediana por meta-fold
+    652,54; minimo 140,72; maximo 1.863,94.
+    uniqueness_inflation_ratio mediana = 2,4340 -- recalcular na
+    subpopulacao inflou a unicidade ~2,4x, que e o comportamento
+    ESPERADO sob taxa de sinal de ~3,4%. Um ratio proximo de 1 teria
+    sido alarme de bug de agrupamento, nao propriedade do dado.
+
+    CONSEQUENCIA PARA Sec7.3 (escolha de learner): com 7 colunas no
+    design matrix sob regime HMM k=4 (score_alpha_raw_z, p_alpha,
+    margin, side_hat, 3 dummies de regime drop-first), o EPV medido e
+    93 na mediana e 20 no PIOR fold -- ambos acima de
+    meta_min_events_per_variable = 10. A logistica L2 e sustentada em
+    todos os folds com folga. O gate de GBM continua dependendo de
+    meta_min_neff_for_gbm, que permanece TBD (B23, nao inventado aqui).
+
+    CONTEXTO DE ESCASSEZ, medido no mesmo passo: das 15 combinacoes
+    (fold do Alpha), so 8 produzem QUALQUER sinal -- folds 0,1,2,3,5,6,7
+    e 10 ficam em zero. 6.142 sinais em 411.600 linhas de predicao. E o
+    pooling cross-simbolo rende menos que o nominal (cross_symbol_ess
+    2026-08-25: N_eff = 2,03 de 5 simbolos).
+
+    RESSALVA DE ESCOPO: medido com regime_source = quantile_classifier_v1
+    porque os artefatos de regime HMM k=4 ainda estavam sendo gerados. A
+    medicao NAO depende do regime: n_eff_subpop, inflation_ratio,
+    concorrencia e pesos sao funcao de (t0, t1, symbol, side_hat,
+    atr_at_t0) apenas -- o regime so entra no one-hot e no meta_status.
+    Vale identica sob HMM k=4.

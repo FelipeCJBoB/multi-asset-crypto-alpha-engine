@@ -823,9 +823,15 @@ para cada meta-fold, sobre as linhas de TREINO daquele fold:
     groupby(symbol, side_hat) -> sort(t0)
         -> compute_concurrency_and_uniqueness(t0_ms, t1_ms)
     concatenar
-meta_sample_weight = uniqueness_subpop * |ret_net|,
+meta_sample_weight = uniqueness_subpop * atr_at_t0,
                      normalizado para média 1 DENTRO do treino do fold
 ```
+
+> **[CORRIGIDO 2026-08-30 — era `|ret_net|`, e a justificativa que
+> sustentava `|ret_net|` estava errada em magnitude E em direção.]** Ver o
+> bloco "Por que o peso deixou de ser `|ret_net|`" abaixo. Registro
+> completo:
+> `audit/evidence_ledger.yaml::peso_de_classe_implicito_em_uniqueness_x_abs_ret_net_2026-08-30`.
 
 Sem o `groupby`, a chamada ou levanta `ValueError` (linhas concatenadas por
 `fold_id` não são ordenadas) ou conta um evento de BTC como concorrente de um
@@ -838,24 +844,89 @@ agrupamento.
 dado ρ = 0,70–0,83), precisa ser decisão declarada com proveniência, não
 efeito colateral da assinatura.*
 
-**Correção da justificativa (a v1 estava factualmente errada).** A v1 mandava
-escrever no docstring: *"é o módulo, não o sinal — não vaza `y_meta`"*.
-**Falso:** com `tp_atr_mult = 2.0` e `sl_atr_mult = 1.5`
-(`constants.yaml:178-193`), `E[|ret_net| | y=1] ≈ 1,33 × E[|ret_net| | y=0]`
-— o módulo é quase um classificador do sinal. A justificativa correta:
+### Por que o peso deixou de ser `|ret_net|` (correção medida, 2026-08-30)
 
-> Peso derivado de rótulos de **treino** não é vazamento. Ele **é**
-> correlacionado com o alvo, por construção das barreiras 2,0/1,5 — e a
-> consequência é que o modelo não estima `P(y=1|X)`, estima uma versão
-> inclinada, concentrada em eventos de alta volatilidade.
+**A v2 corrigiu a v1 e errou de novo, na direção oposta.** A v1 mandava
+escrever *"é o módulo, não o sinal — não vaza `y_meta`"*. A v2 chamou isso
+de falso e escreveu: *"com `tp_atr_mult = 2.0` e `sl_atr_mult = 1.5`,
+`E[|ret_net| | y=1] ≈ 1,33 × E[|ret_net| | y=0]`"*. **Medido, as duas
+premissas caem:**
 
-**Consequências que a v1 não tirava:** (a) o painel §9 precisa reportar
+| afirmação da v2 | medido (BTCUSDT/R1, camada1, n=11.859) |
+|---|---|
+| `tp_atr_mult = 2.0`, `sl_atr_mult = 1.5` | **1,5 / 1,5** — barreiras simétricas |
+| `E[\|ret_net\| \| y=1] ≈ 1,33 × E[\|ret_net\| \| y=0]` | **0,63 ×** — razão invertida |
+
+**Causa raiz, medida e não inferida.** O retorno **bruto** é simétrico
+(`+0,002261` no TP contra `−0,002269` no SL, exatamente como manda 1,5/1,5).
+A assimetria inteira vem do **custo de execução**: sair no TP é fill maker
+(`cost_exit_bps = 2,00`), sair no SL é fill taker (`cost_exit_bps = 5,00`).
+
+**O defeito que isso produzia.** Sob barreiras de ATR fixas, `|ret_net|`
+quase não mede "magnitude econômica do evento" — mede a classe:
+
+```
+η² (fração da variância de |ret_net| explicada pela CLASSE) = 0,4872
+corr(|ret_net|, y_meta)                                     = −0,698
+peso de classe implícito, mean(w|y=0) / mean(w|y=1)         =  1,6082
+```
+
+Ou seja: `uniqueness_subpop × |ret_net|` é, na prática, **um peso de classe
+de 1,61:1 a favor dos perdedores** — nunca escolhido, nunca declarado,
+nunca medido antes desta sessão. A `uniqueness` não participa
+(`corr(uniqueness, y_meta) = −0,0089`, razão de classe 1,0049); o viés é
+todo de `|ret_net|`.
+
+**Por que isso importa mais do que parece.** Um peso de classe no TREINO
+desloca a escala de `p_meta`, e **D-07 removeu o calibrador** que absorveria
+o deslocamento — então `p_meta` deixa de estimar `P(y=1|X)` e passa a
+estimar uma versão inclinada, sem nada rio abaixo que corrija. A assimetria
+de custo TP/SL é econômica e real, mas o lugar dela é a **regra de decisão**
+(`tau_meta`, §8.3), onde é parâmetro declarado — não o peso de treino, onde
+entra duas vezes e sem controle.
+
+**Por que `atr_at_t0` é a substituta certa, e não um remendo.** Ela é a
+escala da barreira (`k × ATR`) a menos de uma constante, logo a magnitude
+**em risco** do evento: conhecida em `t0`, nunca função do resultado. Medido
+sobre o mesmo dado:
+
+| propriedade | `\|ret_net\|` | `atr_at_t0` |
+|---|---|---|
+| peso de classe implícito | 1,596 | **0,997** |
+| `corr(peso, y_meta)` | −0,698 | **0,006** |
+| η² (classe explica) | 0,487 | **0,000** |
+| `corr` com `\|ret_net\|` **dentro** da classe | — | **0,89** (y=0) / **0,97** (y=1) |
+
+Elimina o peso de classe acidental e a dependência do alvo, e **preserva** a
+ordenação econômica que justificava ponderar por magnitude. `atr_at_t0` já
+vem em unidades de retorno (mediana 0,00148), não de preço.
+
+O multiplicador da barreira é omitido de propósito: sob normalização para
+média 1 dentro do fold, qualquer constante positiva cancela.
+
+**Guarda contra recorrência:** `weight_class_ratio` entra como campo de
+`UniquenessDivergenceDiagnostic` e é reportado por fold. Deve ficar ≈ 1. Um
+comentário não teria pego 1,61; um número por fold pega.
+
+**FORA DE ESCOPO desta correção, escalado ao Manager:**
+`src.labels.weights.apply_weights` usa a **mesma fórmula**
+(`sample_weight = uniqueness × |ret_net|`) para o **Alpha em produção**, com
+peso de classe implícito medido em **1,3027**. Corrigir lá muda o treino de
+todo o motor e invalidaria as medições em disco — é decisão do Manager, não
+efeito colateral desta seção.
+
+**Consequências que permanecem válidas:** (a) o painel §9 precisa reportar
 **accuracy ponderada e taxa base ponderada** ao lado das não-ponderadas —
 comparar accuracy não-ponderada com um modelo ponderado pode acusar "abaixo
 do acaso" num modelo funcionando; (b) medir `corr(|ret_net|, y_meta)` no
-fold — se for alta, `weight_hhi` deixa de ser diagnóstico e vira gate.
+fold continua obrigatório — não mais para decidir se `weight_hhi` vira gate
+(o peso não depende mais de `ret_net`), e sim como **monitor da premissa**:
+se essa correlação mudar de magnitude, a geometria de barreira ou a
+estrutura de custo mudou, e o §8.3 precisa ser revisitado.
 
-**Diagnóstico obrigatório** (`UniquenessDivergenceDiagnostic`):
+**Diagnóstico obrigatório** (`UniquenessDivergenceDiagnostic`) —
+**IMPLEMENTADO** em `src.models.meta_dataset.compute_uniqueness_divergence`
+(F2, 2026-08-30), com `weight_class_ratio` acrescentado à lista original:
 `n_eff_universe_restricted`, `n_eff_subpop`, `uniqueness_inflation_ratio`,
 `mean_concurrency` de ambos, `weight_hhi` (HHI de `meta_sample_weight` —
 **sobre linhas**, e `hhi.compute_concentration` recebe dict coluna→ganho

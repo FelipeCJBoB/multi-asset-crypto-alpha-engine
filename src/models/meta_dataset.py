@@ -116,10 +116,14 @@ def regime_levels_for_source(regime_source: str) -> tuple[str, ...]:
 #: Colunas que NUNCA podem entrar no design matrix do Meta. `t1` está aqui
 #: porque é insumo de purge e de unicidade, não informação disponível em
 #: `t0`; `ret_net`/`barrier_hit`/`y_meta` são o futuro; `fill_assumed` é
-#: derivado do futuro; os pesos e as unicidades são função do alvo (§5: com
-#: `tp_atr_mult=2.0` e `sl_atr_mult=1.5`, `E[|ret_net| | y=1]` fica cerca de
-#: 1,33 vezes `E[|ret_net| | y=0]` — o módulo é quase um classificador do
-#: próprio sinal).
+#: derivado do futuro; `meta_sample_weight` e as unicidades são calculadas
+#: sobre a população de treino e não são informação disponível em `t0`.
+#:
+#: `ret_net` merece nota: com barreiras simétricas (`tp_atr_mult =
+#: sl_atr_mult = 1.5`) e a assimetria de custo maker/taker entre TP e SL,
+#: `|ret_net|` medido tem 48,7% da variância explicada pela CLASSE — é
+#: quase um classificador do próprio alvo. Por isso ele saiu também do
+#: PESO (§5 corrigido, ver `_meta_sample_weight`), não só do design matrix.
 META_FORBIDDEN_FEATURES: frozenset[str] = frozenset(
     {
         "t1",
@@ -559,20 +563,64 @@ def _uniqueness_subpop(table: pl.DataFrame) -> pl.DataFrame:
 
 
 def _meta_sample_weight(table: pl.DataFrame) -> pl.DataFrame:
-    """§5 — `uniqueness_subpop × |ret_net|`, normalizado para média 1
-    DENTRO do treino de cada meta-fold.
+    """§5 CORRIGIDO — `uniqueness_subpop × atr_at_t0`, normalizado para
+    média 1 DENTRO do treino de cada meta-fold.
 
-    Justificativa de por que isto NÃO é vazamento, corrigida em relação à
-    v1 do documento (que mandava escrever "é o módulo, não o sinal"):
-    **é falso** — com `tp_atr_mult = 2.0` e `sl_atr_mult = 1.5`,
-    `E[|ret_net| | y=1] ≈ 1,33 × E[|ret_net| | y=0]`, então o módulo é quase
-    um classificador do alvo. A justificativa correta é outra: peso derivado
-    de rótulos de TREINO não é vazamento; ele É correlacionado com o alvo,
-    por construção das barreiras, e a consequência é que o modelo não estima
-    `P(y=1|X)` e sim uma versão inclinada, concentrada em eventos de alta
-    volatilidade. Quem comparar accuracy do Meta contra uma taxa base
-    NÃO-ponderada vai ler "abaixo do acaso" num modelo funcionando (§9)."""
-    bruto = pl.col("uniqueness_subpop") * pl.col("ret_net").abs()
+    **Por que NÃO é mais `|ret_net|`** (medido em 2026-08-30 sobre
+    BTCUSDT/R1 camada1, 11.859 linhas de treino; ver
+    `audit/evidence_ledger.yaml`):
+
+    O documento justificava `|ret_net|` dizendo que com `tp_atr_mult = 2.0`
+    e `sl_atr_mult = 1.5` teríamos `E[|ret_net| | y=1] ≈ 1,33 ×
+    E[|ret_net| | y=0]`. Duas coisas estavam erradas. Primeiro, as barreiras
+    hoje são **simétricas** (`tp_atr_mult = sl_atr_mult = 1.5`). Segundo, e
+    pior, a razão medida é **invertida**: `E[|ret_net| | y=1] = 0,63 ×
+    E[|ret_net| | y=0]`. Bruto as saídas são simétricas (±0,00226, como
+    manda 1,5/1,5); a assimetria inteira vem do CUSTO DE EXECUÇÃO — sair no
+    TP é fill maker (2 bps), sair no SL é fill taker (5 bps).
+
+    A consequência é que `|ret_net|` sob barreiras de ATR fixas quase não é
+    "magnitude econômica do evento": **48,7% da sua variância é explicada
+    pela CLASSE** (η²), e o peso resultante equivale a um **peso de classe
+    de 1,61:1 a favor dos perdedores** — nunca escolhido, nunca declarado,
+    nunca medido até aqui. `uniqueness` não tem parte nisso
+    (`corr(uniqueness, y) = −0,009`); o viés é todo de `|ret_net|`.
+
+    **Por que isso importa mais do que parece.** Um peso de classe no
+    TREINO desloca a escala de `p_meta`, e D-07 removeu o calibrador que
+    absorveria o deslocamento — então `p_meta` deixa de estimar
+    `P(y=1|X)` e passa a estimar uma versão inclinada, sem nada rio abaixo
+    que corrija. A assimetria de custo TP/SL é econômica e real, mas o
+    lugar dela é a REGRA DE DECISÃO (`tau_meta`, §8.3), onde é um parâmetro
+    declarado — não o peso de treino, onde entra duas vezes e sem controle.
+
+    **Por que `atr_at_t0` é a substituta certa, e não um remendo.** Ela é a
+    escala da barreira (`k × ATR`) a menos de uma constante, e portanto a
+    magnitude EM RISCO do evento — conhecida em `t0`, nunca função do
+    resultado. Medido, sobre o mesmo dado:
+
+        razão de peso entre classes:  1,596  ->  0,997
+        corr(peso, y_meta):          -0,698  ->  0,006
+        η² (classe explica):          0,487  ->  0,000
+        corr com |ret_net| DENTRO da classe:   0,89 (y=0) / 0,97 (y=1)
+
+    Ou seja: elimina o peso de classe acidental e a dependência do alvo, e
+    **preserva** a ordenação econômica que justificava ponderar por
+    magnitude. `atr_at_t0` já vem em unidades de RETORNO (mediana 0,00148),
+    não de preço — não há divisão por preço a fazer.
+
+    O multiplicador da barreira (`sl_atr_mult`) é omitido de propósito: sob
+    normalização para média 1 dentro do fold, qualquer constante positiva
+    cancela. Lê-lo aqui criaria uma dependência de constante numericamente
+    inerte. Omissão deliberada, não esquecimento.
+
+    **FORA DO ESCOPO desta correção, e reportado ao Manager:**
+    `src.labels.weights.apply_weights` usa a MESMA fórmula
+    (`sample_weight = uniqueness × |ret_net|`) para o ALPHA, com peso de
+    classe implícito medido em **1,303**. Corrigir lá muda o treino de todo
+    o motor e invalidaria as medições em disco — é decisão do Manager, não
+    efeito colateral desta função."""
+    bruto = pl.col("uniqueness_subpop") * pl.col("atr_at_t0")
     so_treino = pl.when(pl.col("role") == ROLE_TRAIN).then(bruto).otherwise(None)
     media_treino = so_treino.mean().over("meta_split_id")
     return table.with_columns(
@@ -813,6 +861,15 @@ class UniquenessDivergenceDiagnostic:
     #: classificador do alvo. Nesse caso `weight_hhi` deixa de ser
     #: diagnóstico e vira gate. Medido, não presumido.
     corr_abs_ret_y_meta: float
+    #: `mean(w | y=0) / mean(w | y=1)` — o PESO DE CLASSE IMPLÍCITO que a
+    #: fórmula de ponderação produz. Deve ficar ≈ 1: qualquer coisa longe
+    #: disso é um peso de classe que ninguém escolheu, e que desloca a
+    #: escala de `p_meta` sem calibrador rio abaixo para absorver (D-07).
+    #:
+    #: Esta métrica existe porque a fórmula ANTERIOR (`uniqueness vezes
+    #: |ret_net|`) produzia 1,61 sem que nada no pipeline percebesse. Um
+    #: comentário não teria pego; um número reportado por fold pega.
+    weight_class_ratio: float
     #: §9 — comparar accuracy ponderada contra taxa base NÃO-ponderada
     #: acusaria "abaixo do acaso" num modelo funcionando. As duas saem
     #: juntas para que ninguém use a errada.
@@ -867,10 +924,17 @@ def _diagnostic_for_cell(cell: pl.DataFrame) -> UniquenessDivergenceDiagnostic:
         base_unweighted = float(y.mean())
         base_weighted = float((y * w).sum() / w.sum()) if float(w.sum()) > 0.0 else float("nan")
         corr = _corr(abs_ret, y)
+        w_neg, w_pos = w[y == 0.0], w[y == 1.0]
+        class_ratio = (
+            float(w_neg.mean() / w_pos.mean())
+            if w_neg.size > 0 and w_pos.size > 0 and float(w_pos.mean()) > 0.0
+            else float("nan")
+        )
     else:
         base_unweighted = float("nan")
         base_weighted = float("nan")
         corr = float("nan")
+        class_ratio = float("nan")
 
     return UniquenessDivergenceDiagnostic(
         meta_split_id=int(cell["meta_split_id"][0]),
@@ -886,6 +950,7 @@ def _diagnostic_for_cell(cell: pl.DataFrame) -> UniquenessDivergenceDiagnostic:
         weight_hhi=weight_hhi,
         weight_n_eff=(1.0 / weight_hhi if weight_hhi > 0.0 else float("nan")),
         corr_abs_ret_y_meta=corr,
+        weight_class_ratio=class_ratio,
         base_rate_unweighted=base_unweighted,
         base_rate_weighted=base_weighted,
     )
@@ -939,6 +1004,8 @@ def compute_uniqueness_divergence(table: pl.DataFrame) -> pl.DataFrame:
         n_eff_subpop_min_treino=_as_float(treino["n_eff_subpop"].min()),
         inflation_ratio_mediana=_as_float(treino["uniqueness_inflation_ratio"].median()),
         weight_hhi_mediana=_as_float(treino["weight_hhi"].median()),
+        # Deve ficar ≈ 1. Longe disso = peso de classe não declarado (§5).
+        weight_class_ratio_mediana=_as_float(treino["weight_class_ratio"].median()),
         corr_abs_ret_y_meta_mediana=_as_float(treino["corr_abs_ret_y_meta"].median()),
     )
     return diag
