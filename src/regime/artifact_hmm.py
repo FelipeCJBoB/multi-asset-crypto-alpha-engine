@@ -4,7 +4,11 @@ artefato versionado, via a camada `src.io.artifact` (ADR-001).
 **Por que este módulo existe — medição, não preferência de arquitetura.**
 `build_hmm.build_hmm_regimes` refita o HMM a CADA fold do walk-forward
 ancorado trimestral, sobre a série completa de dollar bars do símbolo
-(437.630 barras em BTCUSDT/R1). Medido em 2026-08-30: mais de 15 minutos
+(223.160 barras em BTCUSDT/R1 -- contagem de OBSERVAÇÕES do HMM, não de
+linhas de `labels.parquet`, que tem 2 por barra e por isso soma 437.630;
+os dois números foram confundidos na primeira medição desta sessão,
+corrigido depois de medir a geometria real dos 19 folds do walk-forward).
+Medido em 2026-08-30: mais de 15 minutos
 para UM símbolo, sem terminar. Recomputar isso dentro de cada
 `dataset.build_modeling_frame` é impraticável para 5 símbolos × 3
 resoluções, e pior: tornaria o custo de montar um frame de modelagem

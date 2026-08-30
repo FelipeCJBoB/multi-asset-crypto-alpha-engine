@@ -131,7 +131,9 @@ class ScoreRankTransform:
     ordenados); o teste é mapeado através dela por busca binária. Uma
     linha de teste acima de todo o treino recebe 1,0; abaixo de todo,
     0,0. É a mesma disciplina de B03, aplicada a uma transformação que
-    não é um `StandardScaler` e por isso poderia passar despercebida."""
+    não usa nenhuma classe de escalonamento do sklearn — e por isso
+    poderia passar despercebida por um grep que procura só por essas
+    classes nomeadas (ver `_GLOBAL_SCALER_PATTERN` acima)."""
 
     sorted_train_values: FloatArray
 

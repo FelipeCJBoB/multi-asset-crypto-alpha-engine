@@ -6,6 +6,27 @@ fora do escopo deste módulo). Cada `n_states` é um trial separado (k=2, k=3,
 k=4 são 3 chamadas distintas desta função, não um objeto parametrizável em
 lote).
 
+**Convergência antecipada do EM (2026-08-30, achado ao medir o custo real
+do backfill de regime persistido, `src/regime/artifact_hmm.py`).**
+`fit_hmm_gaussian` sempre rodou `hmm.fit_em(..., num_iters=100)`
+incondicionalmente -- 100 iterações, mesmo quando o EM converge muito
+antes. Medido: o backfill de BTCUSDT/R1 (19 folds do walk-forward
+ancorado) levou mais de 2h40 de relógio por símbolo, e o custo por
+iteração (~7,4s a 50.000 observações, medido nesta sessão) domina sobre o
+overhead de recompilar `fit_em` a cada chamada (~2s) -- ou seja, rodar
+iterações a mais que o necessário é o desperdício real, não um artefato
+de como a função é chamada. `_fit_em_until_converged` (abaixo) resolve
+isso chamando `fit_em` em blocos pequenos e parando quando a
+log-verossimilhança marginal para de melhorar mais que
+`hmm_gaussian_em_convergence_tol` -- sem reimplementar o EM, sem mudar o
+que é computado em cada iteração, só quantas rodam. `hmm_gaussian_
+num_em_iters` muda de papel (era "sempre roda isso", vira "teto máximo");
+o valor (100) não mudou, só a proveniência em `constants.yaml`.
+Magnitude real da economia: `TBD -- medir com 1 símbolo`
+(`docs/meta_model_design_doc_2026-08-22.md` §13, mesma disciplina B23) --
+o mecanismo está implementado e testado com dado sintético; a medição
+sobre dado real fica para quando o backfill for retomado.
+
 **Correção-relâmpago via ponto de injeção (2026-08-24, achado de varredura
 de `tools/lint/banned_patterns.py`)**: `num_em_iters`/`sticky_concentration`
 eram literais hardcoded (`_DEFAULT_NUM_EM_ITERS=100`, `_DEFAULT_
@@ -199,6 +220,12 @@ IntArray = NDArray[np.int64]
 # módulo pra por que (import deste módulo não pode virar IO).
 _NUM_EM_ITERS_CONSTANT_NAME = "hmm_gaussian_num_em_iters"
 _STICKY_CONCENTRATION_CONSTANT_NAME = "hmm_gaussian_sticky_concentration_default"
+# 2026-08-30 -- `hmm_gaussian_num_em_iters` MUDA DE PAPEL aqui: era "número
+# de iterações que sempre roda", vira "teto máximo, com saída antecipada
+# por convergência" (ver `_fit_em_until_converged`). O valor (100)
+# continua o mesmo -- só a semântica muda, e por isso a proveniência dele
+# em `constants.yaml` foi atualizada, não o número.
+_EM_CONVERGENCE_TOL_CONSTANT_NAME = "hmm_gaussian_em_convergence_tol"
 # Piso de regularização da covariância inicial (ver achado #1 no docstring
 # do módulo) -- mesmo estilo de piso de estabilidade numérica de
 # `bocpd.py` (`max(var, 1e-12)`), evita covariância inicial exatamente
@@ -206,6 +233,21 @@ _STICKY_CONCENTRATION_CONSTANT_NAME = "hmm_gaussian_sticky_concentration_default
 _INIT_COV_EPSILON: float = 1e-12  # noqa: magic-number -- ver comentário acima
 
 _CLASSIFIER_ID_TEMPLATE = "hmm_gaussian_k{n_states}_v1"
+
+# Tamanho do bloco de iterações por chamada a `hmm.fit_em` no laço de
+# convergência (`_fit_em_until_converged`, abaixo). NÃO é constante de
+# domínio -- não muda o resultado final dado um `max_iters`/`tol` fixos,
+# só a granularidade de quando a checagem de convergência é feita (mesma
+# categoria de `_JOINT_TAU_MAX_ITER` em `alpha.py`).
+#
+# MEDIDO em 2026-08-30 (T=50.000, k=4, 2 dims, CPU): cada chamada a
+# `hmm.fit_em(...)` paga ~2s de overhead fixo (JIT da closure `em_step`,
+# recompilada a cada chamada Python -- `dynamax.ssm.SSM.fit_em` não
+# cacheia entre chamadas) mais ~7,4s POR ITERAÇÃO nesse tamanho de fold.
+# Ou seja, o overhead de recompilar a cada bloco é pequeno frente ao custo
+# de uma iteração real -- blocos de 5 mantêm esse overhead abaixo de ~3%
+# do tempo total mesmo se a convergência só chegar perto do teto.
+_EM_CONVERGENCE_CHUNK_SIZE = 5  # noqa: magic-number -- ver comentário acima
 
 
 def hmm_gaussian_classifier_id(n_states: int) -> str:
@@ -225,7 +267,14 @@ class HMMFit:
     `train_end_idx`) existem pra trilha de auditoria (SR 11-7): `seed`/
     `sticky_concentration` reproduzem o fit exatamente, `final_log_prob`
     permite o harness (Fase 3) comparar qualidade de convergência entre
-    fits sem precisar guardar a curva de `log_probs` inteira."""
+    fits sem precisar guardar a curva de `log_probs` inteira.
+
+    `n_em_iters_run`/`em_converged` (2026-08-30, correção do custo medido
+    do backfill de regime -- ver `_fit_em_until_converged`): quantas
+    iterações de fato rodaram e se pararam por convergência ou por
+    atingir o teto. Sem isso, um fold que converge em 12 iterações e um
+    que precisa das 100 são indistinguíveis de fora -- e a decisão de
+    baixar/subir o teto (`hmm_gaussian_num_em_iters`) ficaria sem dado."""
 
     params: Any
     n_states: int
@@ -234,6 +283,8 @@ class HMMFit:
     seed: int
     sticky_concentration: float
     final_log_prob: float
+    n_em_iters_run: int
+    em_converged: bool
 
     @property
     def classifier_id(self) -> str:
@@ -268,6 +319,88 @@ def _scale_aware_init_covariance(train_obs: Float2DArray, n_states: int) -> Any:
     return result
 
 
+def _fit_em_until_converged(
+    hmm: GaussianHMM,
+    init_params: Any,
+    props: Any,
+    train_obs_jax: Any,
+    *,
+    max_iters: int,
+    tol: float,
+) -> tuple[Any, FloatArray, int, bool]:
+    """EM em blocos de `_EM_CONVERGENCE_CHUNK_SIZE` iterações, parando
+    assim que a log-verossimilhança marginal parar de melhorar mais que
+    `tol` (RELATIVO, não absoluto -- ver por quê no docstring de
+    `hmm_gaussian_em_convergence_tol`).
+
+    **Correção 2026-08-30, achada ao medir o custo real do backfill de
+    regime.** `fit_hmm_gaussian` chamava `hmm.fit_em(..., num_iters=100)`
+    incondicionalmente -- as 100 iterações rodavam mesmo quando o EM já
+    tinha convergido muito antes, porque `dynamax.ssm.SSM.fit_em` não tem
+    critério de parada por convergência, só um teto fixo. Medido
+    (BTCUSDT/R1, walk-forward completo): mais de 2h40 de relógio por
+    símbolo pra rodar os 19 folds. Este helper reduz o desperdício sem
+    mudar o QUE é computado -- não é uma reformulação do EM, é o mesmo
+    `fit_em` chamado em blocos menores com uma condição de parada.
+
+    **Por que chamar `fit_em` em blocos, em vez de mudar `num_iters` uma
+    vez só.** `fit_em` não expõe um critério de parada nativo -- só
+    `num_iters` fixo. A alternativa (reimplementar o laço de EM com
+    `jax.lax.while_loop` sobre as primitivas `e_step`/`m_step` do
+    `dynamax`) trocaria uma função de biblioteca testada por uma
+    reimplementação própria do mesmo algoritmo -- risco maior que o
+    problema que resolve. Chamar `fit_em` repetidas vezes, encadeando
+    `params` de um bloco pro próximo, é matematicamente idêntico a uma
+    única chamada com a SOMA das iterações: o M-step do `GaussianHMM` é
+    de forma fechada e **sem estado entre chamadas**
+    (`initialize_m_step_state` devolve `None`,
+    `dynamax/hidden_markov_model/models/gaussian_hmm.py:569-575`, e não há
+    amostragem de `PRNGKey` dentro de `fit_em` -- só na inicialização,
+    fora deste helper) -- confirmado por medição direta nesta sessão:
+    4 blocos de 10 encadeados reproduzem bit-a-bit a curva de
+    `log_probs` de uma única chamada com `num_iters=40`.
+
+    **Overhead de chamar em blocos, medido, não suposto.** Cada chamada a
+    `fit_em` paga ~2s de recompilação (a closure `em_step` é recriada
+    a cada chamada Python, `dynamax` não cacheia entre chamadas) contra
+    ~7,4s por iteração REAL num fold de 50.000 observações -- overhead
+    de recompilar é a MENOR parte do custo, não a maior. Blocos de
+    `_EM_CONVERGENCE_CHUNK_SIZE=5` mantêm esse overhead abaixo de ~3% do
+    tempo total mesmo no pior caso (convergência só perto do teto).
+
+    Retorna `(fitted_params, log_probs_concatenados, n_iters_run,
+    converged)`. `converged=False` quando o teto foi atingido sem a
+    melhora cair abaixo de `tol` -- não é erro, é o comportamento
+    ANTERIOR (sempre rodar até o teto), preservado como fallback."""
+    params = init_params
+    log_prob_chunks: list[FloatArray] = []
+    n_run = 0
+    prev_chunk_last: float | None = None
+    converged = False
+    while n_run < max_iters:
+        step = min(_EM_CONVERGENCE_CHUNK_SIZE, max_iters - n_run)
+        params, log_probs = hmm.fit_em(params, props, train_obs_jax, num_iters=step, verbose=False)
+        chunk = np.asarray(log_probs)
+        log_prob_chunks.append(chunk)
+        n_run += step
+        if not bool(np.all(np.isfinite(chunk))):
+            # Não decide aqui se é degenerado -- `fit_hmm_gaussian` já tem
+            # essa checagem (`_all_finite` sobre `fitted_params`/curva
+            # completa) e é o único lugar que decide levantar/retornar
+            # `None`. Só para de iterar: continuar bombeando um EM que já
+            # produziu NaN/Inf não converge, só desperdiça mais tempo.
+            break
+        chunk_last = float(chunk[-1])
+        if prev_chunk_last is not None:
+            denom = abs(prev_chunk_last) if prev_chunk_last != 0.0 else 1.0
+            rel_delta = abs(chunk_last - prev_chunk_last) / denom
+            if rel_delta < tol:
+                converged = True
+                break
+        prev_chunk_last = chunk_last
+    return params, np.concatenate(log_prob_chunks), n_run, converged
+
+
 def fit_hmm_gaussian(
     obs: Float2DArray,
     *,
@@ -276,6 +409,7 @@ def fit_hmm_gaussian(
     seed: int,
     num_em_iters: int | None = None,
     sticky_concentration: float | None = None,
+    em_convergence_tol: float | None = None,
 ) -> HMMFit | None:
     """Ajusta `GaussianHMM(n_states, emission_dim)` via `fit_em` só sobre
     `obs[:train_end_idx]` (`B05`, refit por fold expansivo ancorado --
@@ -284,19 +418,29 @@ def fit_hmm_gaussian(
     M4 (mesma convenção de `predict_hmm_gaussian`/canonicalização) --
     função não recalcula features, só consome o array pronto.
 
-    `sticky_concentration=None`/`num_em_iters=None` (ambos default) resolvem
-    pra `config/constants.yaml` (`hmm_gaussian_sticky_concentration_default`/
-    `hmm_gaussian_num_em_iters`, via `load_regime_constant` -- ver
-    "Correção-relâmpago via ponto de injeção" no docstring do módulo)
-    -- `None` explícito é o sinal de "usa o default", não "zero"/"sem
-    iteração" (`sticky_concentration=0.0` seria vanilla HMM; passar `0.0`
-    explicitamente É uma forma válida de desligar o prior sticky pra
-    comparação/sweep, diferente de não passar nada -- `num_em_iters` não
-    tem um `0` operacionalmente válido, mas o mesmo sentinela `None`
-    "usa o default" é mantido por simetria/consistência de API entre os
-    dois parâmetros). Passar QUALQUER valor explícito (`0`/`10`/`100`...)
-    nunca toca `constants.yaml` -- só o caminho `None` (chamador omitiu o
-    kwarg) executa `load_regime_constant`, real leitura de disco.
+    `sticky_concentration=None`/`num_em_iters=None`/`em_convergence_tol=None`
+    (os três default) resolvem pra `config/constants.yaml`
+    (`hmm_gaussian_sticky_concentration_default`/`hmm_gaussian_num_em_iters`/
+    `hmm_gaussian_em_convergence_tol`, via `load_regime_constant` -- ver
+    "Correção-relâmpago via ponto de injeção" e "Convergência antecipada do
+    EM" no docstring do módulo) -- `None` explícito é o sinal de "usa o
+    default", não "zero"/"sem iteração" (`sticky_concentration=0.0` seria
+    vanilla HMM; passar `0.0` explicitamente É uma forma válida de desligar
+    o prior sticky pra comparação/sweep, diferente de não passar nada --
+    `num_em_iters`/`em_convergence_tol` não têm um `0` operacionalmente
+    válido, mas o mesmo sentinela `None` "usa o default" é mantido por
+    simetria/consistência de API entre os três parâmetros). Passar QUALQUER
+    valor explícito nunca toca `constants.yaml` -- só o caminho `None`
+    (chamador omitiu o kwarg) executa `load_regime_constant`, real leitura
+    de disco.
+
+    `num_em_iters` agora é o TETO MÁXIMO de iterações, não mais o número
+    fixo que sempre roda -- `em_convergence_tol` decide quando parar antes
+    disso (ver `_fit_em_until_converged`). Passar `em_convergence_tol` MUITO
+    pequeno (ex. `0.0`) ou `float("-inf")` desativa a parada antecipada de
+    fato -- a melhora relativa nunca fica ABAIXO de um piso não-positivo --
+    e reproduz o comportamento anterior a esta correção, útil pra quem
+    precisa da curva de convergência completa até o teto.
 
     Determinismo: `seed` fixa a `jax.random.PRNGKey` usada tanto pra
     inicialização k-means (média) quanto pra amostragem do prior de
@@ -357,6 +501,14 @@ def fit_hmm_gaussian(
         if num_em_iters is None
         else num_em_iters
     )
+    # Mesmo ponto de injeção do par acima -- `constants.yaml` só é lido se
+    # o chamador não fixou o próprio teto/tolerância (permite teste
+    # determinístico com poucas iterações sem tocar disco).
+    resolved_em_tol = (
+        float(load_regime_constant(_EM_CONVERGENCE_TOL_CONSTANT_NAME))
+        if em_convergence_tol is None
+        else em_convergence_tol
+    )
 
     hmm = GaussianHMM(n_states, emission_dim, transition_matrix_stickiness=resolved_sticky)
     rng_key = jax_random.PRNGKey(seed)
@@ -371,11 +523,14 @@ def fit_hmm_gaussian(
         emissions=init_params.emissions._replace(covs=scale_aware_covs)
     )
 
-    fitted_params, log_probs = hmm.fit_em(
-        init_params, props, train_obs_jax, num_iters=resolved_num_em_iters, verbose=False
+    fitted_params, log_probs_np, n_em_iters_run, em_converged = _fit_em_until_converged(
+        hmm,
+        init_params,
+        props,
+        train_obs_jax,
+        max_iters=resolved_num_em_iters,
+        tol=resolved_em_tol,
     )
-
-    log_probs_np = np.asarray(log_probs)
     if not _all_finite(fitted_params) or not bool(np.all(np.isfinite(log_probs_np))):
         logger.warning(
             "regime.hmm_gaussian.fit_degenerate_non_finite",
@@ -406,6 +561,8 @@ def fit_hmm_gaussian(
         seed=seed,
         sticky_concentration=float(resolved_sticky),
         final_log_prob=float(log_probs_np[-1]),
+        n_em_iters_run=n_em_iters_run,
+        em_converged=em_converged,
     )
 
 

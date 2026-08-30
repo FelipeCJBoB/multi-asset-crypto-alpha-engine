@@ -11,7 +11,6 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from sklearn.metrics import adjusted_rand_score
 
 # `_all_finite` é privado -- importado direto mesmo assim, mesmo padrão de
 # `test_regime_classifier.py` (`_run_state_machine = classifier._run_state_machine`):
@@ -20,9 +19,14 @@ from sklearn.metrics import adjusted_rand_score
 # antes mesmo de chegar no EM -- não alcançável por uma chamada pública
 # "normal" de `fit_hmm_gaussian` (ver teste dedicado mais abaixo), então o
 # helper que detectaria esse ramo é testado isoladamente aqui.
+from dynamax.hidden_markov_model import GaussianHMM
+from jax import random as jax_random
+from sklearn.metrics import adjusted_rand_score
+
 from src.regime.hmm_gaussian import (
     HMMFit,
     _all_finite,
+    _fit_em_until_converged,
     fit_hmm_gaussian,
     hmm_gaussian_classifier_id,
     predict_hmm_gaussian,
@@ -425,3 +429,143 @@ def test_hmmfit_e_dataclass_frozen() -> None:
     assert isinstance(fit, HMMFit)
     with pytest.raises(AttributeError):
         fit.n_states = 99  # type: ignore[misc]
+
+
+# ============================================================================
+# _fit_em_until_converged -- correção de 2026-08-30 (custo real do backfill)
+# ============================================================================
+
+
+def _mk_hmm_and_init(obs: np.ndarray, *, n_states: int = 2, seed: int = 0):
+    hmm = GaussianHMM(n_states, obs.shape[1], transition_matrix_stickiness=10.0)
+    params, props = hmm.initialize(
+        jax_random.PRNGKey(seed), method="kmeans", emissions=jnp.asarray(obs)
+    )
+    return hmm, params, props
+
+
+@pytest.mark.slow
+def test_convergencia_para_antes_do_teto_com_tolerancia_frouxa() -> None:
+    """**O teste central da correção.** Clusters bem separados convergem
+    rápido -- com uma tolerância frouxa o EM precisa parar bem antes do
+    teto de 100. Se isto falhar, a correção não está economizando nada."""
+    obs, _ = _two_cluster_obs(n_per_cluster=200, seed=1, sep=3.0, scale=0.05)
+    hmm, params, props = _mk_hmm_and_init(obs, seed=1)
+
+    _fitted, log_probs, n_run, converged = _fit_em_until_converged(
+        hmm, params, props, jnp.asarray(obs), max_iters=100, tol=1e-3
+    )
+
+    assert converged is True
+    assert n_run < 100, "convergência frouxa precisa parar bem antes do teto"
+    assert log_probs.shape[0] == n_run
+
+
+@pytest.mark.slow
+def test_tolerancia_impossivel_roda_ate_o_teto_como_antes() -> None:
+    """`tol` não-positivo nunca dispara (`rel_delta < tol` com `tol <= 0`
+    nunca é verdadeiro) -- preserva o comportamento ANTERIOR à correção:
+    sempre rodar até o teto. Isto é o fallback, não um caso de borda raro."""
+    obs, _ = _two_cluster_obs(n_per_cluster=50, seed=2)
+    hmm, params, props = _mk_hmm_and_init(obs, seed=2)
+
+    _fitted, log_probs, n_run, converged = _fit_em_until_converged(
+        hmm, params, props, jnp.asarray(obs), max_iters=20, tol=0.0
+    )
+
+    assert converged is False
+    assert n_run == 20
+    assert log_probs.shape[0] == 20
+
+
+@pytest.mark.slow
+def test_chunking_e_bit_exato_contra_uma_chamada_unica() -> None:
+    """A garantia central que sustenta a correção: chamar `fit_em` em
+    blocos encadeados PRECISA ser matematicamente idêntico a uma única
+    chamada com a soma das iterações -- o M-step do `GaussianHMM` é de
+    forma fechada e sem estado entre chamadas (`initialize_m_step_state`
+    devolve `None`), e não há amostragem de `PRNGKey` dentro de `fit_em`.
+    Com `tol=0.0` (nunca converge), o helper roda os 20 em blocos de 5;
+    comparado contra uma chamada direta e única de `fit_em(num_iters=20)`
+    sobre os MESMOS `params`/`props` iniciais, os dois precisam bater
+    bit-a-bit."""
+    obs, _ = _two_cluster_obs(n_per_cluster=50, seed=3)
+    obs_jax = jnp.asarray(obs)
+
+    hmm_a, params_a, props_a = _mk_hmm_and_init(obs, seed=3)
+    fitted_chunked, log_probs_chunked, n_run, converged = _fit_em_until_converged(
+        hmm_a, params_a, props_a, obs_jax, max_iters=20, tol=0.0
+    )
+    assert converged is False and n_run == 20
+
+    hmm_b, params_b, props_b = _mk_hmm_and_init(obs, seed=3)
+    fitted_direct, log_probs_direct = hmm_b.fit_em(
+        params_b, props_b, obs_jax, num_iters=20, verbose=False
+    )
+
+    assert np.allclose(log_probs_chunked, np.asarray(log_probs_direct), rtol=0.0, atol=0.0)
+    assert np.allclose(
+        np.asarray(fitted_chunked.emissions.means),
+        np.asarray(fitted_direct.emissions.means),
+        rtol=0.0,
+        atol=0.0,
+    )
+
+
+def test_para_de_iterar_ao_ver_log_prob_nao_finito() -> None:
+    """Se um bloco produzir NaN/Inf, o helper para de bombear iterações
+    inúteis -- a DECISÃO de levantar/retornar `None` continua sendo de
+    `fit_hmm_gaussian` (via `_all_finite` sobre a curva completa); este
+    helper só evita desperdiçar mais tempo depois que já degenerou."""
+    obs, _ = _two_cluster_obs(n_per_cluster=20, seed=5)
+    hmm, params, props = _mk_hmm_and_init(obs, seed=5)
+
+    call_count = {"n": 0}
+    real_fit_em = hmm.fit_em
+
+    def _fit_em_fake(p, pr, o, *, num_iters, verbose):
+        call_count["n"] += 1
+        fitted, log_probs = real_fit_em(p, pr, o, num_iters=num_iters, verbose=verbose)
+        if call_count["n"] >= 2:
+            log_probs = log_probs.at[-1].set(jnp.nan)
+        return fitted, log_probs
+
+    hmm.fit_em = _fit_em_fake  # type: ignore[method-assign]
+    _fitted, log_probs, n_run, converged = _fit_em_until_converged(
+        hmm, params, props, jnp.asarray(obs), max_iters=100, tol=1e-9
+    )
+
+    assert converged is False
+    assert n_run == 10, "parou no 2o bloco (2 blocos de 5), não rodou os 100"
+    assert not np.all(np.isfinite(log_probs))
+
+
+# ============================================================================
+# Integração: fit_hmm_gaussian expõe n_em_iters_run/em_converged (§HMMFit)
+# ============================================================================
+
+
+@pytest.mark.slow
+def test_fit_hmm_gaussian_reporta_convergencia_antecipada_com_tolerancia_frouxa() -> None:
+    obs, _ = _two_cluster_obs(n_per_cluster=200, seed=6, sep=3.0, scale=0.05)
+    fit = fit_hmm_gaussian(
+        obs, n_states=2, train_end_idx=obs.shape[0], seed=6,
+        num_em_iters=100, em_convergence_tol=1e-3
+    )
+    assert fit is not None
+    assert fit.em_converged is True
+    assert fit.n_em_iters_run < 100
+
+
+@pytest.mark.slow
+def test_fit_hmm_gaussian_com_tol_zero_reproduz_comportamento_anterior() -> None:
+    """`em_convergence_tol=0.0` explícito é o botão de escape descrito no
+    docstring: reproduz rodar até o teto, igual ao comportamento de antes
+    desta correção."""
+    obs, _ = _two_cluster_obs(n_per_cluster=30, seed=7)
+    fit = fit_hmm_gaussian(
+        obs, n_states=2, train_end_idx=obs.shape[0], seed=7, num_em_iters=15, em_convergence_tol=0.0
+    )
+    assert fit is not None
+    assert fit.em_converged is False
+    assert fit.n_em_iters_run == 15

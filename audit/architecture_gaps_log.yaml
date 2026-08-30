@@ -25839,3 +25839,22 @@ entries:
       A mesma troca e aplicavel aqui.
     resolved_by_commit: null
     status: "ABERTO -- NAO corrigido de proposito. Mudar apply_weights muda o treino de TODO o motor e invalida as medicoes em disco (os 15 combos do evidence_ledger, a campanha Optuna de AG-382/AG-383). E decisao do Manager, com retreino associado, nao efeito colateral da correcao do Meta. Severidade alta."
+
+  - id: AG-384-ADDENDUM-1
+    date: "2026-08-30"
+    addendum_de: "AG-384 -- corrige numero citado no gap original, nao reverte a conclusao (o backfill de fato custa horas por simbolo)"
+    file: "src/regime/artifact_hmm.py, docs/SPRINT_LOG.md"
+    related_file: "audit/architecture_gaps_log.yaml::AG-384"
+    found_by: "Claude, medindo a geometria real dos folds do walk-forward ancorado ao investigar a otimizacao de EM pedida pelo Manager"
+    gap: >
+      AG-384 (e o commit 9becbaa/§15.30) citavam "437.630 barras" para
+      BTCUSDT/R1 -- ERRADO. Esse numero e a contagem de LINHAS de
+      `labels.parquet` (2 por barra, uma por lado), nao de observacoes do
+      HMM. Medido com precisao (lake.query_dollar_bars + hmm_features.
+      input_obs + valid_start_idx, BTCUSDT/R1): 223.160 barras reais,
+      19 folds do walk-forward ancorado (treino inicial 2 anos, passo
+      trimestral), soma das janelas de treino = 2.766.942 (~12,4x o
+      tamanho da serie, esperado sob refit EXPANSIVO -- nao deslizante).
+      O custo medido em horas por simbolo nao muda; so o numero citado.
+    resolved_by_commit: null
+    status: "fechado 2026-08-30 -- corrigido em src/regime/artifact_hmm.py e docs/SPRINT_LOG.md (secao 'o backfill de regime HMM foi interrompido'). AG-384 original mantido intacto (append-only), este addendum e a correcao registrada."

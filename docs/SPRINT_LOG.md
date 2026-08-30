@@ -5737,7 +5737,9 @@ Resolvido com adaptador de schema em `src/models/dataset.py`
 (`regime_source`) mais persistência como artefato versionado em
 `src/regime/artifact_hmm.py`, depois de **medido** que `build_hmm_regimes`
 custa **horas por símbolo** — mais de 2h40 de relógio e ~8.840 s de CPU em
-BTCUSDT/R1 (437.630 barras), ver `src/regime/artifact_hmm.py`. Preenche o
+BTCUSDT/R1 (223.160 barras -- 437.630 era a contagem de linhas de
+`labels.parquet`, 2 por barra, corrigido depois de medir a geometria real
+dos folds). Preenche o
 `TBD — medir` do §13 do design doc na dimensão tempo.
 
 O default de `regime_source` segue o classificador por quantis, e isso não
@@ -5868,3 +5870,85 @@ padrão de risco que a memória do projeto já registra.
 segue não-reconciliada e agora também não cita `AG-379` a `AG-388`. Fonte
 real: `git log --oneline`, `audit/architecture_gaps_log.yaml`
 (append-only) e `PLANO_MESTRE_PRINCE2.md` §15.30.
+
+
+---
+
+## 2026-08-30 (adendo) — o backfill de regime HMM foi interrompido, e a otimização de EM identificada foi aplicada <!-- check-sprint-log: skip -->
+
+Continuação da seção anterior. Os 5 backfills de `regime_hmm_backfill`
+(um por símbolo, R1) ficaram rodando **~7,8 h de CPU cada, ~39 h no
+total, zero terminado** — questionado pelo Manager (*"qual necessidade de
+backfill hmm?"*), que expôs uma confusão real: nenhum código escrito até
+F4 (`src/models/meta.py`, `src/models/meta_dataset.py`) chama
+`read_regime_hmm` — os testes de F1-F4 usam `regime_source=
+quantile_classifier_v1` ou fixtures sintéticas com rótulos `S0..S3`. O
+artefato real só é necessário para (a) rodar `regime_stability_diagnostic`
+(§6.2) sobre dado real — pré-requisito de D-01, mas exige só **1 símbolo**,
+não 5 — e (b) o E0 vinculante, que nem começou (bloqueado por P0/P1).
+Os 5 processos foram encerrados sem produzir artefato.
+
+**Correção de citação, mesma sessão**: "437.630 barras" citado no commit
+`9becbaa`, em `AG-384` e nesta seção estava ERRADO — é a contagem de
+linhas de `labels.parquet` (2 por barra, uma por lado), não de
+observações do HMM. Medido com precisão: **223.160 barras** em
+BTCUSDT/R1, **19 folds** do walk-forward ancorado, soma das janelas de
+treino = 2.766.942 (~12,4× o tamanho da série, esperado sob refit
+expansivo). Corrigido em `src/regime/artifact_hmm.py` e nesta seção;
+`AG-384` (fechado, append-only) ganhou `AG-384-ADDENDUM-1` em vez de ser
+editado.
+
+**Otimização aplicada: EM para de rodar iterações desperdiçadas.**
+Medido, isolando causa (não suposto) em `src/regime/hmm_gaussian.py`:
+`dynamax.ssm.SSM.fit_em` não tem critério de parada por convergência —
+as 100 iterações de `hmm_gaussian_num_em_iters` sempre rodavam por
+inteiro, mesmo quando o EM já tinha convergido bem antes. Microbenchmark
+direto (T=50.000, k=4, 2 dims, CPU, medido nesta sessão) isolou onde o
+tempo vai (`_EM_CONVERGENCE_CHUNK_SIZE`, `src/regime/hmm_gaussian.py`):
+cada chamada a `fit_em` paga ~2s de recompilação (a closure `em_step` é
+recriada a cada chamada Python, sem cache entre chamadas) contra ~7,4s
+por iteração REAL nesse tamanho de fold — ou seja, o custo (mesmo
+arquivo) é dominado por ITERAÇÃO, não por recompilar, o que valida
+chamar `fit_em` em blocos pequenos sem medo de "pagar compile de novo a
+cada bloco".
+
+`src.regime.hmm_gaussian._fit_em_until_converged` (novo, ver
+`config/constants.yaml::hmm_gaussian_em_convergence_tol`): chama
+`fit_em` em blocos de 5 iterações, encadeando `params`, e para quando a
+melhora RELATIVA da log-verossimilhança marginal cai abaixo do limiar
+(`1e-6`, `ASSUMED`, classe B, **`sweep_required: true`** — corrigindo de propósito o erro já
+cometido com `hmm_gaussian_num_em_iters`, que nasceu `sweep_required:
+false` sem justificativa e nunca foi varrida). `hmm_gaussian_num_em_iters`
+(`config/constants.yaml`) muda de papel — de "sempre roda isto" para
+"teto máximo" —, valor inalterado (100), só a proveniência foi atualizada.
+
+**Garantia validada, não suposta**: chamar `fit_em` em blocos é
+matematicamente idêntico a uma única chamada com a soma das iterações — o
+M-step do `GaussianHMM` é de forma fechada e sem estado entre chamadas
+(`initialize_m_step_state` devolve `None`), e não há amostragem de
+`PRNGKey` dentro de `fit_em`. Confirmado por
+`test_chunking_e_bit_exato_contra_uma_chamada_unica`
+(`tests/unit/test_regime_hmm_gaussian.py`): 4 blocos de 5 iterações
+encadeados reproduzem **bit-a-bit** a curva de `log_probs` e os
+parâmetros finais de uma única chamada com `num_iters=20`.
+
+`HMMFit` ganha `n_em_iters_run`/`em_converged` — sem isso, um fold que
+converge em 12 iterações e um que precisa das 100 são indistinguíveis de
+fora, e a decisão de ajustar o teto ficaria sem dado. `em_convergence_tol
+<= 0.0` explícito desativa a parada antecipada de fato (nunca dispara) e
+reproduz o comportamento anterior à correção — botão de escape, não
+efeito colateral.
+
+**Magnitude real da economia: `TBD — medir com 1 símbolo`** (B23,
+`docs/meta_model_design_doc_2026-08-22.md` §13) — decisão explícita do
+Manager de deixar a medição sobre dado real para quando o backfill for
+retomado. O que está pronto agora é o MECANISMO, testado com dado
+sintético (22 testes em `tests/unit/test_regime_hmm_gaussian.py`,
+incluindo o teste de convergência antecipada real, o de bit-exatidão do
+chunking, e o de fallback com `tol=0.0`) — zero regressão na suíte
+existente (16/16 do módulo, incluindo o teste de reprodutibilidade
+bit-a-bit e o de colapso degenerado, ambos passando com a correção
+ativa).
+
+`audit/architecture_gaps_log.yaml::AG-384-ADDENDUM-1` registra a
+correção do número de barras.

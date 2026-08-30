@@ -3612,13 +3612,51 @@ hmm_gaussian_num_em_iters:
     repo pra por que 100 iterações de EM (não 50, não 200); é uma
     convenção de biblioteca comum (default de vários pacotes de EM), não
     uma calibração contra o dado real do HMM gaussiano do M4/produção.
-    Afeta convergência do fit (mais iterações = mais chance de convergir
-    antes do critério de parada do dynamax.fit_em), não a estrutura do
-    modelo -- por isso classe B (hiperparâmetro), não A (não invalida o
-    desenho se mudar dentro de uma faixa razoável), mas ainda ASSUMED por
-    ausência total de sweep de sensibilidade medido.
+
+    MUDANÇA DE PAPEL (2026-08-30, `src.regime.hmm_gaussian.
+    _fit_em_until_converged`): até aqui era "número de iterações que
+    SEMPRE roda" -- medido, custava >2h40 de relógio por símbolo pro
+    backfill completo (19 folds), porque `dynamax.ssm.SSM.fit_em` não tem
+    parada por convergência nativa e as 100 iterações rodavam mesmo
+    quando o EM já tinha convergido bem antes. Agora é o TETO MÁXIMO,
+    com saída antecipada decidida por `hmm_gaussian_em_convergence_tol`.
+    O valor (100) NÃO mudou -- só o papel: continua sendo "o máximo que
+    o EM pode rodar", só que agora é alcançado apenas quando a
+    convergência não chega antes dele, em vez de sempre.
   class: B
   sweep_required: false
+
+hmm_gaussian_em_convergence_tol:
+  value: 1.0e-6
+  provenance: ASSUMED
+  source: >
+    src/regime/hmm_gaussian.py::_fit_em_until_converged (2026-08-30) --
+    limiar de melhora RELATIVA da log-verossimilhança marginal entre
+    blocos de iteração do EM abaixo do qual o fit é declarado convergido
+    e a iteração para, mesmo antes do teto de
+    hmm_gaussian_num_em_iters. RELATIVO, não absoluto, porque a
+    log-verossimilhança é uma SOMA sobre T observações -- seu valor
+    absoluto escala com o tamanho da janela de treino (que cresce de
+    ~70k pra ~220k observações ao longo dos 19 folds do walk-forward
+    ancorado), então um limiar absoluto teria significado diferente em
+    cada fold.
+
+    Escolhido por analogia com `_JOINT_TAU_RATE_TOL` (`src/models/
+    alpha.py`, mesma ordem de grandeza, mesma categoria -- critério de
+    parada de uma busca/otimização numérica determinística), não
+    medido contra o dado real do HMM: 1e-6 é conservador (tende a rodar
+    MAIS iterações que o estritamente necessário, nunca menos) de
+    propósito -- o risco simétrico já registrado pra
+    hmm_gaussian_num_em_iters (parar cedo demais mata o desenho sem
+    motivo) se aplica aqui do mesmo jeito, e não há como testar a
+    sensibilidade sem medir contra dado real primeiro (TBD -- medir com
+    1 símbolo, docs/meta_model_design_doc_2026-08-22.md §13, mesma
+    disciplina B23). CORREÇÃO DELIBERADA sobre o erro já cometido com
+    hmm_gaussian_num_em_iters: aquela ficou sweep_required=false sem
+    justificativa e nunca foi varrida -- esta nasce sweep_required=true.
+  class: B
+  sweep_required: true
+  sweep_range: [1.0e-8, 1.0e-4]
 
 fill_simulator_log_sprint_label:
   value: 9
