@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 2111
+counter: 2561
 
 log:
   - id: 1
@@ -958,4 +958,35 @@ log:
       `audit/architecture_gaps_log.yaml::AG-383` e no artefato
       "Alpha — Base de Pesquisa" (secao H9). Decisao de promocao dos 2
       combos que passam fica com o Manager.
+    delta: 450
+  - id: 36
+    date: "2026-08-30"
+    type: confirmacao_multi_seed_gate_duplo_sharpe_edge_bruto
+    description: >
+      SEGUNDA execucao real da confirmacao multi-seed (mesmos top-3
+      candidatos, mesmas 5 seeds do id=35) -- pedido do Manager pra medir
+      TAMBEM edge bruto (median_pooled_edge_bps > 0, cobertura minima de
+      30 trades pooled) ao lado do Sharpe pareado ja existente, gate duplo
+      registrado em `audit/architecture_gaps_log.yaml::AG-383` (addendum
+      2026-08-30). E um RETREINO REAL novo, nao reanalise de cache -- os
+      450 modelos foram re-treinados do zero sob o codigo do gate duplo
+      (commits ee46c25/00bbc4a), contabilizado a parte do id=35 (N_lifetime
+      nunca decrementa, cada execucao real conta, mesmo repetindo os
+      mesmos candidatos/seeds de uma rodada anterior).
+
+      450/450 retreinos sem falha, 1h53m01s (11:32:05 -> 13:25:06, mais
+      lento que o id=35 -- 1h12m53s -- provavelmente contencao de CPU com
+      outras tarefas da mesma sessao, nao investigado a fundo).
+
+      Resultado do gate duplo: n_permanence_pass=2 (Sharpe, igual ao
+      id=35), n_edge_gate_pass=7, n_dual_gate_pass=1. **So BTCUSDT/R3
+      sobrevive aos dois testes** (median_n_better=4,0, winner_edge=
+      +3,46bps, 1864 trades). ETHUSDT/R1 (passava so em Sharpe, id=35)
+      FALHA no edge bruto (winner_edge=-6,09bps apesar de median_n_
+      better=4,0) -- confirma exatamente o modo de falha que motivou
+      pedir o gate duplo: consistencia relativa sem edge economico real.
+      Detalhamento completo por combo em `audit/architecture_gaps_
+      log.yaml::AG-383` (addendum) e no artefato "Alpha — Base de
+      Pesquisa" (secao H10). Decisao de promocao do 1 combo que passa
+      fica com o Manager.
     delta: 450

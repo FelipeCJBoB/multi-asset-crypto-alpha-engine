@@ -25651,4 +25651,42 @@ entries:
       aberta (o proprio achado de alta variancia entre seeds desta
       rodada e argumento a favor de revisitar o poder estatistico do
       gate antes de qualquer promocao, nao so pra estes 2 combos).
-    status: "fechado 2026-08-30 -- campanha de confirmacao real executada com sucesso total (450/450, 0 falhas), resultado confirmado registrado (2/15 combos passam o gate), decisao de promocao pendente do Manager"
+    addendum_gate_duplo_edge_bruto_2026_08_30: >
+      SUPERSEDE o resultado "2/15" acima. Pedido do Manager (mesma sessao):
+      `alpha_layer1_permanence_min_paths` mede consistencia RELATIVA
+      (Camada1 bate Camada0 em Sharpe) mas nao garante edge economico
+      ABSOLUTO -- um combo podia passar com edge bruto nulo/negativo.
+      Implementado gate duplo (`AG-383-ADDENDUM`, commits `ee46c25`/
+      `00bbc4a`): `edge_gate_pass` exige `median_pooled_edge_bps > 0`
+      (break-even, unico limite economico real -- `alpha_layer1_
+      permanence_min_edge_bps=0.0`) sob cobertura minima de 30 trades
+      pooled (`alpha_layer1_permanence_min_trades`, regra CLT), calculado
+      sobre `PathBacktestResult.mean_trade_ret` do MESMO `backtest_by_path`/
+      `tau_policy` fixo ja usado pelo Sharpe -- nenhuma seletividade nova,
+      papel do Alpha preservado (decidir QUAIS sinais executar continua
+      sendo escopo do Meta-model, `§15.19`, nao implementado).
+
+      **Bug real encontrado e corrigido no processo** (commit `00bbc4a`):
+      a 1a versao do gate rotulou `mean_trade_ret` como "ja em bps" --
+      errado, `triple_barrier.py::ret_net`/`ret_gross` sao FRACAO (nunca
+      multiplicados por `_BPS_PER_UNIT=10_000`, so os campos `cost_*_bps`
+      sao). Corrigido antes de qualquer decisao de promocao ser tomada em
+      cima do numero errado -- o sinal (>0/<0) e invariante ao fator de
+      escala, entao nenhum veredito de gate mudou por causa deste bug, so
+      a MAGNITUDE reportada.
+
+      Recampanha real completa (450 retreinos, 0 falhas, 1h53m01s,
+      11:32:05->13:25:06) rodada com o gate corrigido:
+      `n_permanence_pass=2, n_edge_gate_pass=7, n_dual_gate_pass=1`.
+      **Sob o gate duplo, so `BTCUSDT/R3` sobrevive** (median_n_better=4,0,
+      winner_edge=+3,46bps, 1864 trades pooled). `ETHUSDT/R1` -- um dos 2
+      que passava so em Sharpe -- FALHA no edge bruto (winner_edge=
+      -6,09bps, apesar de median_n_better=4,0): exatamente o modo de falha
+      que motivou o gate duplo, Sharpe-consistente mas economicamente
+      negativo. Tabela completa (15 combos, ambos os gates) publicada no
+      artefato "Alpha -- Base de Pesquisa", secao H10.
+      `N_lifetime` incrementado com o numero REAL desta recampanha (450,
+      `audit/n_lifetime.yaml::id=36`) -- SEGUNDO retreino completo dos
+      mesmos candidatos, contabilizado a parte do id=35 (nunca decrementa,
+      cada execucao real conta).
+    status: "fechado 2026-08-30, SUPERSEDIDO pelo addendum de gate duplo na mesma data -- sob Sharpe+edge bruto, so 1/15 combo (BTCUSDT/R3) sobrevive; decisao de promocao pendente do Manager"
