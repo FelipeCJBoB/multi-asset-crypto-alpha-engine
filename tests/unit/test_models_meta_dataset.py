@@ -15,6 +15,7 @@ import polars as pl
 import pytest
 
 from src.models import dataset as ds
+from src.models import hhi
 from src.models import meta_dataset as md
 from src.validation import cpcv
 
@@ -376,7 +377,10 @@ def test_estabilidade_de_regime_expoe_rank_trocado_entre_folds() -> None:
     diag = md.regime_stability_diagnostic(tabela)
 
     ranks = {
-        (r[0], r[1]): r[3] for r in diag.select(ds.REGIME_FOLD_COL, "regime", "mediana_caracteristica", "rank_no_fold").iter_rows()
+        (r[0], r[1]): r[3]
+        for r in diag.select(
+            ds.REGIME_FOLD_COL, "regime", "mediana_caracteristica", "rank_no_fold"
+        ).iter_rows()
     }
     assert ranks[(0, "S1")] == 1, "S1 é o menos volátil no fold 0"
     assert ranks[(1, "S1")] == 2, "e o MAIS volátil no fold 1 — rótulo não comparável"
@@ -394,3 +398,167 @@ def test_estabilidade_de_regime_ignora_o_sentinela() -> None:
     diag = md.regime_stability_diagnostic(tabela)
     assert diag.height == 1
     assert diag["regime"].to_list() == ["S0"]
+
+
+# ---------------------------------------------------------------------------
+# F2 — divergência de unicidade (§5)
+# ---------------------------------------------------------------------------
+
+
+def test_hhi_de_participacoes_uniformes_e_um_sobre_n() -> None:
+    """Núcleo puro extraído de `compute_concentration`. Uniforme é o caso de
+    máxima diluição: HHI = 1/n."""
+    assert hhi.hhi_from_shares((0.25, 0.25, 0.25, 0.25)) == pytest.approx(0.25)
+    assert hhi.hhi_from_shares((1.0,)) == pytest.approx(1.0)
+    assert hhi.hhi_from_shares((0.5, 0.5)) == pytest.approx(0.5)
+
+
+def test_hhi_concentrado_tende_a_um() -> None:
+    concentrado = hhi.hhi_from_shares((0.97, 0.01, 0.01, 0.01))
+    diluido = hhi.hhi_from_shares((0.25, 0.25, 0.25, 0.25))
+    assert concentrado > diluido
+    assert concentrado == pytest.approx(0.9412)
+
+
+def test_as_float_nao_transforma_zero_em_nan() -> None:
+    """Regressão do bug real que este helper substituiu: o idioma
+    `float(x.mean() or float("nan"))` avalia `0.0 or nan` como `nan`, então
+    uma média legitimamente ZERO virava "não computável". Zero acontece de
+    verdade — uma célula só de NOFILL tem `meta_sample_weight` zero em toda
+    linha."""
+    assert md._as_float(0.0) == 0.0
+    assert md._as_float(0) == 0.0
+    assert md._as_float(3.5) == pytest.approx(3.5)
+    assert np.isnan(md._as_float(None))
+
+
+def _mk_meta_table() -> pl.DataFrame:
+    """Duas células: treino (4 linhas) e teste (2 linhas) do meta-fold 0.
+
+    A subpopulação é DELIBERADAMENTE mais única que o universo
+    (`uniqueness_subpop` > `uniqueness_universe`), que é o comportamento
+    esperado sob taxa de sinal de ~3%: contra todas as barras um evento tem
+    muitos concorrentes; contra só os sinalizados, poucos."""
+    return pl.DataFrame(
+        {
+            "meta_split_id": [0, 0, 0, 0, 0, 0],
+            "role": [md.ROLE_TRAIN] * 4 + [md.ROLE_TEST] * 2,
+            "uniqueness_universe": [0.1, 0.1, 0.2, 0.2, 0.1, 0.1],
+            "uniqueness_subpop": [0.5, 0.5, 1.0, 1.0, 0.5, 0.5],
+            "concurrency_universe": [10, 10, 5, 5, 10, 10],
+            "concurrency_subpop": [2, 2, 1, 1, 2, 2],
+            "meta_sample_weight": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "y_meta": [1, 0, 1, 0, 1, 0],
+            "ret_net": [0.02, -0.01, 0.03, -0.015, 0.02, -0.01],
+        }
+    )
+
+
+def test_divergencia_entrega_n_eff_subpop_por_celula() -> None:
+    """§5/F2 — `n_eff_subpop` é O entregável: é ele que decide o gate de GBM
+    (§7.3) e o N de §14.2."""
+    diag = md.compute_uniqueness_divergence(_mk_meta_table())
+
+    assert diag.height == 2, "uma linha por (meta_split_id, role)"
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["n_eff_subpop"][0] == pytest.approx(3.0)  # 0.5+0.5+1.0+1.0
+    assert treino["n_eff_universe_restricted"][0] == pytest.approx(0.6)
+    assert treino["n_rows"][0] == 4
+
+
+def test_inflation_ratio_maior_que_um_e_o_esperado() -> None:
+    """Recalcular na subpopulação DEVE inflar a unicidade. Um ratio perto de
+    1 seria o alarme: significaria que mudar o grão não mudou nada, o que
+    sob ~3% de taxa de sinal apontaria bug de agrupamento antes de apontar
+    propriedade do dado."""
+    diag = md.compute_uniqueness_divergence(_mk_meta_table())
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["uniqueness_inflation_ratio"][0] == pytest.approx(5.0)
+    assert treino["mean_concurrency_universe"][0] == pytest.approx(7.5)
+    assert treino["mean_concurrency_subpop"][0] == pytest.approx(1.5)
+
+
+def test_weight_hhi_uniforme_da_um_sobre_n_e_n_eff_igual_a_linhas() -> None:
+    """Pesos todos iguais ⇒ nenhuma linha domina ⇒ `weight_n_eff` == número
+    de linhas. É a leitura que torna o número interpretável."""
+    diag = md.compute_uniqueness_divergence(_mk_meta_table())
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["weight_hhi"][0] == pytest.approx(0.25)
+    assert treino["weight_n_eff"][0] == pytest.approx(4.0)
+
+
+def test_weight_hhi_expoe_concentracao_em_poucos_eventos() -> None:
+    tabela = _mk_meta_table().with_columns(
+        meta_sample_weight=pl.Series([100.0, 0.01, 0.01, 0.01, 1.0, 1.0])
+    )
+    diag = md.compute_uniqueness_divergence(tabela)
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["weight_hhi"][0] > 0.99
+    assert treino["weight_n_eff"][0] < 1.1, "4 linhas, mas ~1 linha efetiva"
+
+
+def test_peso_total_zero_da_nan_nao_zero() -> None:
+    """Uma célula só de NOFILL tem `|ret_net| = 0` em toda linha, logo peso
+    total zero. HHI zero significaria "perfeitamente diluído" — o oposto da
+    verdade. `nan` é a resposta honesta."""
+    tabela = _mk_meta_table().with_columns(
+        meta_sample_weight=pl.Series([0.0] * 6)
+    )
+    diag = md.compute_uniqueness_divergence(tabela)
+    assert np.isnan(diag["weight_hhi"][0])
+
+
+def test_taxa_base_ponderada_e_nao_ponderada_saem_juntas() -> None:
+    """§9 — comparar accuracy PONDERADA contra taxa base NÃO-ponderada
+    acusaria "abaixo do acaso" num modelo funcionando. As duas juntas para
+    que ninguém use a errada por acidente."""
+    tabela = _mk_meta_table().with_columns(
+        meta_sample_weight=pl.Series([3.0, 1.0, 3.0, 1.0, 1.0, 1.0])
+    )
+    diag = md.compute_uniqueness_divergence(tabela)
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["base_rate_unweighted"][0] == pytest.approx(0.5)
+    # Os positivos carregam peso 3 e os negativos peso 1 -> 6/8.
+    assert treino["base_rate_weighted"][0] == pytest.approx(0.75)
+    assert treino["base_rate_weighted"][0] != treino["base_rate_unweighted"][0]
+
+
+def test_corr_abs_ret_com_alvo_e_medida_nao_presumida() -> None:
+    """§5 — se `|ret_net|` for muito correlacionado com `y_meta`, o peso
+    deixa de ser diagnóstico e `weight_hhi` vira gate. A v1 do design doc
+    afirmava que o peso "não vaza porque é o módulo, não o sinal"; isso é
+    FALSO com barreiras 2,0/1,5, e a medição existe para não repetir a
+    afirmação sem checar."""
+    diag = md.compute_uniqueness_divergence(_mk_meta_table())
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    # |ret| dos positivos (0.02, 0.03) > |ret| dos negativos (0.01, 0.015).
+    # Valor exato ≈ 0,845 — conferido à mão, não uma faixa inventada (B23).
+    assert treino["corr_abs_ret_y_meta"][0] == pytest.approx(0.8452, abs=1e-3)
+    assert treino["corr_abs_ret_y_meta"][0] > 0.8
+
+
+def test_corr_devolve_nan_em_fold_sem_variancia_no_alvo() -> None:
+    """8 dos 15 folds do Alpha não produzem sinal nenhum — um fold com
+    `y_meta` constante é caso REAL, não hipotético. `nan` é a resposta;
+    `np.corrcoef` sozinho daria `nan` COM um RuntimeWarning de divisão por
+    zero, e silenciar warning sem achar a causa é proibido."""
+    tabela = _mk_meta_table().with_columns(y_meta=pl.Series([1, 1, 1, 1, 1, 1]))
+    diag = md.compute_uniqueness_divergence(tabela)
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert np.isnan(treino["corr_abs_ret_y_meta"][0])
+    assert treino["base_rate_unweighted"][0] == pytest.approx(1.0)
+
+
+def test_nofill_com_y_meta_nulo_sai_da_taxa_base_mas_fica_na_celula() -> None:
+    """§3.3 item 4 — NOFILL fica no frame (o denominador do ablation precisa
+    da população completa) mas não entra no alvo."""
+    tabela = _mk_meta_table().with_columns(y_meta=pl.Series([1, 0, None, None, 1, 0]))
+    diag = md.compute_uniqueness_divergence(tabela)
+    treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
+    assert treino["n_rows"][0] == 4, "as 4 linhas continuam na célula"
+    assert treino["base_rate_unweighted"][0] == pytest.approx(0.5), "só as 2 treináveis"
+
+
+def test_frame_projetado_demais_levanta_em_vez_de_calcular_errado() -> None:
+    with pytest.raises(md.MetaDatasetError, match="build_meta_signal_table"):
+        md.compute_uniqueness_divergence(pl.DataFrame({"meta_split_id": [0], "role": ["train"]}))

@@ -44,6 +44,8 @@ Manager como correção de especificação, não como divergência silenciosa.
 
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
+
 import numpy as np
 import polars as pl
 import structlog
@@ -56,6 +58,7 @@ from src.validation import cpcv
 from . import dataset as ds
 from ._constants import load_constant
 from .backtest_lite import join_signals_to_labels
+from .hhi import hhi_from_shares
 
 logger = structlog.get_logger(__name__)
 
@@ -531,15 +534,27 @@ def _uniqueness_subpop(table: pl.DataFrame) -> pl.DataFrame:
     `role` entra no grão junto com `meta_split_id` (decisão deste módulo,
     não do documento): calcular a concorrência sobre treino ∪ teste faria a
     densidade do teste entrar no peso do treino — precisamente o defeito (c)
-    que a regra existe para corrigir."""
+    que a regra existe para corrigir.
+
+    `concurrency_subpop` é PERSISTIDA junto, não descartada.
+    `compute_concurrency_and_uniqueness` devolve as duas, e a concorrência é
+    insumo obrigatório do `UniquenessDivergenceDiagnostic` (§5). Jogá-la
+    fora aqui e recomputá-la depois seria repetir literalmente o padrão que
+    `AG-150` registrou sobre o `tau` do Alpha — calculado e descartado, e
+    depois faltando exatamente onde importava."""
     partes: list[pl.DataFrame] = []
     chaves = ("meta_split_id", "role", "symbol", "side_hat")
     for _chave, grupo in table.group_by(chaves, maintain_order=True):
         ordenado = grupo.sort("t0")
         t0_ms = ordenado["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
         t1_ms = ordenado["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
-        _concorrencia, unicidade = compute_concurrency_and_uniqueness(t0_ms, t1_ms)
-        partes.append(ordenado.with_columns(uniqueness_subpop=pl.Series(unicidade)))
+        concorrencia, unicidade = compute_concurrency_and_uniqueness(t0_ms, t1_ms)
+        partes.append(
+            ordenado.with_columns(
+                uniqueness_subpop=pl.Series(unicidade),
+                concurrency_subpop=pl.Series(concorrencia),
+            )
+        )
     return pl.concat(partes, how="vertical")
 
 
@@ -575,7 +590,18 @@ def _meta_sample_weight(table: pl.DataFrame) -> pl.DataFrame:
 #: base do harness. `_pos` é a chave posicional contra `train_idx`/`test_idx`
 #: (§4.7); `t1` é purge e unicidade e NUNCA feature; `uniqueness` é o valor
 #: do universo, mantido só como diagnóstico contra o recalculado (§5).
-_CARRY_FROM_DENSE: tuple[str, ...] = ("_pos", "t1", "atr_at_t0", "uniqueness", "regime")
+_CARRY_FROM_DENSE: tuple[str, ...] = (
+    "_pos",
+    "t1",
+    "atr_at_t0",
+    "uniqueness",
+    # `concurrency` do UNIVERSO — o denominador contra o qual a concorrência
+    # recalculada na subpopulação é comparada (§5). Sem ele não há como
+    # distinguir "a subpopulação é mais única porque é esparsa" de "a
+    # subpopulação é mais única porque o cálculo mudou de grão".
+    "concurrency",
+    "regime",
+)
 
 _SIGNAL_COLUMNS_FROM_PREDICTIONS: tuple[str, ...] = (
     "t0",
@@ -705,6 +731,7 @@ def build_meta_signal_table(
         variant=pl.lit(variant),
         donor_rule=pl.lit(donor_rule),
         uniqueness_universe=pl.col("uniqueness"),
+        concurrency_universe=pl.col("concurrency"),
     )
     tabela = _derive_side_projected_columns(tabela)
     tabela = _derive_target(tabela, include_nofill=include_nofill)
@@ -738,3 +765,180 @@ def build_meta_signal_table(
         include_nofill_in_training=include_nofill,
     )
     return tabela
+
+
+# ---------------------------------------------------------------------------
+# F2 — divergência de unicidade (§5). Entrega o `n_eff_subpop` MEDIDO, que
+# decide o gate de GBM (§7.3) e o N de §14.2.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class UniquenessDivergenceDiagnostic:
+    """Uma célula `(meta_split_id, role)` do diagnóstico obrigatório do §5.
+
+    **Nenhum limiar é declarado aqui, de propósito (B23).** O design doc
+    manda derivar o limiar de `weight_hhi` do HHI do Alpha
+    (`hhi_importancia`), e o de `n_eff` de uma medição que ainda não
+    existe. Inventar um número redondo agora seria criar exatamente o tipo
+    de gate sem definição operacional que `AG-114`/`AG-122` registram como
+    modo de falha. Isto REPORTA; quem decide é o Manager."""
+
+    meta_split_id: int
+    role: str
+    n_rows: int
+    #: Σ `uniqueness` do UNIVERSO, restrita às linhas desta subpopulação.
+    n_eff_universe_restricted: float
+    #: Σ `uniqueness_subpop` — a medida honesta de tamanho de amostra desta
+    #: célula (B24). É este número que o §7.3 usa para decidir GBM vs
+    #: logística, e o §14.2 para dimensionar N.
+    n_eff_subpop: float
+    #: `n_eff_subpop / n_eff_universe_restricted`. > 1 é o ESPERADO: a
+    #: subpopulação é esparsa, logo cada evento é mais único nela do que
+    #: contra todas as barras. Um valor próximo de 1 é o sinal de alarme —
+    #: significaria que recalcular na subpopulação não mudou nada, o que
+    #: sob taxa de sinal de ~3% não deveria acontecer e apontaria bug de
+    #: agrupamento antes de apontar propriedade do dado.
+    uniqueness_inflation_ratio: float
+    mean_concurrency_universe: float
+    mean_concurrency_subpop: float
+    #: HHI de `meta_sample_weight` SOBRE LINHAS. Mede se o treino desta
+    #: célula está concentrado em poucos eventos.
+    weight_hhi: float
+    #: `1 / weight_hhi` — o mesmo número em "linhas equivalentes", que é
+    #: mais fácil de comparar com `n_rows` do que uma razão adimensional.
+    weight_n_eff: float
+    #: §5 — se `|ret_net|` for muito correlacionado com `y_meta`, o peso
+    #: deixa de ser só "quanto este evento importa" e vira quase um
+    #: classificador do alvo. Nesse caso `weight_hhi` deixa de ser
+    #: diagnóstico e vira gate. Medido, não presumido.
+    corr_abs_ret_y_meta: float
+    #: §9 — comparar accuracy ponderada contra taxa base NÃO-ponderada
+    #: acusaria "abaixo do acaso" num modelo funcionando. As duas saem
+    #: juntas para que ninguém use a errada.
+    base_rate_unweighted: float
+    base_rate_weighted: float
+
+
+def _as_float(value: object) -> float:
+    """Agregação de polars (`mean`/`median`/`min`) devolve um union type, e
+    `None` quando o frame está vazio.
+
+    Escrito como função, e não como `float(x.mean() or float("nan"))`:
+    aquele idioma tem um bug real — `0.0 or nan` avalia para `nan`, então
+    uma média legitimamente ZERO seria reportada como "não computável".
+    Zero é um valor perfeitamente possível aqui (uma célula só de NOFILL
+    tem `meta_sample_weight` zero em toda linha)."""
+    if value is None:
+        return float("nan")
+    return float(value)  # type: ignore[arg-type]
+
+
+def _corr(x: FloatArray, y: FloatArray) -> float:
+    """Pearson com guarda de variância zero. `np.corrcoef` devolve `nan`
+    com um `RuntimeWarning` de divisão por zero quando um dos vetores é
+    constante — e um fold em que todo `y_meta` é 0 é um caso REAL aqui (8
+    dos 15 folds do Alpha não produzem sinal nenhum). `nan` é a resposta
+    certa; o warning é ruído que esconderia um problema de verdade."""
+    if x.size < 2 or float(np.std(x)) == 0.0 or float(np.std(y)) == 0.0:
+        return float("nan")
+    return float(np.corrcoef(x, y)[0, 1])
+
+
+def _diagnostic_for_cell(cell: pl.DataFrame) -> UniquenessDivergenceDiagnostic:
+    n_eff_universe = float(cell["uniqueness_universe"].sum())
+    n_eff_subpop = float(cell["uniqueness_subpop"].sum())
+    pesos = cell["meta_sample_weight"].to_numpy().astype(np.float64)
+    soma_pesos = float(pesos.sum())
+    if soma_pesos > 0.0:
+        shares = pesos / soma_pesos
+        weight_hhi = hhi_from_shares(tuple(float(s) for s in shares))
+    else:
+        # Peso total zero acontece de verdade: uma célula só de NOFILL tem
+        # `|ret_net| = 0` em toda linha. `nan` em vez de 0.0 — HHI zero
+        # significaria "perfeitamente diluído", o oposto da verdade.
+        weight_hhi = float("nan")
+
+    treinaveis = cell.filter(pl.col("y_meta").is_not_null())
+    if treinaveis.height > 0:
+        y = treinaveis["y_meta"].to_numpy().astype(np.float64)
+        abs_ret = treinaveis["ret_net"].abs().to_numpy().astype(np.float64)
+        w = treinaveis["meta_sample_weight"].to_numpy().astype(np.float64)
+        base_unweighted = float(y.mean())
+        base_weighted = float((y * w).sum() / w.sum()) if float(w.sum()) > 0.0 else float("nan")
+        corr = _corr(abs_ret, y)
+    else:
+        base_unweighted = float("nan")
+        base_weighted = float("nan")
+        corr = float("nan")
+
+    return UniquenessDivergenceDiagnostic(
+        meta_split_id=int(cell["meta_split_id"][0]),
+        role=str(cell["role"][0]),
+        n_rows=cell.height,
+        n_eff_universe_restricted=n_eff_universe,
+        n_eff_subpop=n_eff_subpop,
+        uniqueness_inflation_ratio=(
+            n_eff_subpop / n_eff_universe if n_eff_universe > 0.0 else float("nan")
+        ),
+        mean_concurrency_universe=_as_float(cell["concurrency_universe"].mean()),
+        mean_concurrency_subpop=_as_float(cell["concurrency_subpop"].mean()),
+        weight_hhi=weight_hhi,
+        weight_n_eff=(1.0 / weight_hhi if weight_hhi > 0.0 else float("nan")),
+        corr_abs_ret_y_meta=corr,
+        base_rate_unweighted=base_unweighted,
+        base_rate_weighted=base_weighted,
+    )
+
+
+def compute_uniqueness_divergence(table: pl.DataFrame) -> pl.DataFrame:
+    """§5 — `UniquenessDivergenceDiagnostic` por `(meta_split_id, role)`.
+
+    **É este o entregável de F2**: `n_eff_subpop` medido, que o §15.2 marca
+    como o insumo que decide o gate de GBM (§7.3) e o N de §14.2. Sem ele,
+    a escolha de learner seria feita por julgamento na hora — o viés que
+    travar o critério a priori existe para evitar.
+
+    Devolve um frame (uma linha por célula) em vez de uma lista de
+    dataclasses porque o consumidor natural é escrita de artefato e log
+    estruturado; `UniquenessDivergenceDiagnostic` continua sendo o contrato
+    tipado de cada linha."""
+    faltando = sorted(
+        c
+        for c in (
+            "meta_split_id",
+            "role",
+            "uniqueness_universe",
+            "uniqueness_subpop",
+            "concurrency_universe",
+            "concurrency_subpop",
+            "meta_sample_weight",
+            "y_meta",
+            "ret_net",
+        )
+        if c not in table.columns
+    )
+    if faltando:
+        raise MetaDatasetError(
+            f"compute_uniqueness_divergence: faltam {faltando} — o frame precisa vir de "
+            "`build_meta_signal_table`, não de um subconjunto já projetado."
+        )
+
+    linhas = [
+        asdict(_diagnostic_for_cell(cell))
+        for _chave, cell in table.group_by(("meta_split_id", "role"), maintain_order=True)
+    ]
+    diag = pl.DataFrame(linhas).sort(["meta_split_id", "role"])
+    treino = diag.filter(pl.col("role") == ROLE_TRAIN)
+    logger.info(
+        "models.meta_dataset.uniqueness_divergence",
+        n_celulas=diag.height,
+        # Agregados sobre TREINO — é o que decide learner e N.
+        n_eff_subpop_total_treino=_as_float(treino["n_eff_subpop"].sum()),
+        n_eff_subpop_mediana_treino=_as_float(treino["n_eff_subpop"].median()),
+        n_eff_subpop_min_treino=_as_float(treino["n_eff_subpop"].min()),
+        inflation_ratio_mediana=_as_float(treino["uniqueness_inflation_ratio"].median()),
+        weight_hhi_mediana=_as_float(treino["weight_hhi"].median()),
+        corr_abs_ret_y_meta_mediana=_as_float(treino["corr_abs_ret_y_meta"].median()),
+    )
+    return diag

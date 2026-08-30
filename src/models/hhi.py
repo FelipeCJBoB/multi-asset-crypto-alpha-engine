@@ -20,6 +20,7 @@ DEVEM coincidir)."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -60,6 +61,27 @@ class ConcentrationDiagnostics:
     # explícita usa `hhi`/`max_share` (os dois agregados que de fato entram
     # em gate, §5.8) já como `Metric`.
     shares: dict[str, float]
+
+
+def hhi_from_shares(shares: Sequence[float]) -> float:
+    """Núcleo puro (Idioma A) — Herfindahl-Hirschman sobre participações
+    que JÁ somam 1: `Σ sᵢ²`.
+
+    Extraído de `compute_concentration` pelo mesmo motivo estrutural que
+    levou `weighted_participation_ratio` a ser extraída de
+    `compute_effective_concentration` (ADR-004 Fase 3, `AG-216`/`AG-255`):
+    a função pública exige `gain_by_column`, um dicionário coluna→ganho,
+    e existe consumidor legítimo com OUTRO grão. Aqui o consumidor é
+    `meta_dataset`, que precisa do HHI de `meta_sample_weight` **sobre
+    LINHAS** (§5 do design doc do Meta) — reusar `compute_concentration`
+    exigiria fabricar um dicionário `{"row_0": w0, ...}` e devolveria um
+    `Metric` com `n_semantics="features"`, que seria factualmente errado
+    sobre linhas. Melhor compartilhar a álgebra e deixar cada chamador
+    rotular o próprio `n`.
+
+    Normalização é responsabilidade do CHAMADOR — este núcleo não tem
+    opinião sobre a origem do peso, só sobre a conta."""
+    return float(sum(s * s for s in shares))
 
 
 def compute_concentration(
@@ -126,7 +148,7 @@ def compute_concentration(
         )
 
     shares = {col: max(gain_by_column.get(col, 0.0), 0.0) / total_gain for col in all_columns}
-    hhi_value = sum(s * s for s in shares.values())
+    hhi_value = hhi_from_shares(tuple(shares.values()))
     max_share_value = max(shares.values())
     n_over_1pct = sum(1 for s in shares.values() if s > _SHARE_PCT_THRESHOLD)
     return ConcentrationDiagnostics(
