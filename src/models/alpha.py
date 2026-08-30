@@ -1155,6 +1155,49 @@ class SideModelResult:
     best_iteration: int | None = None
 
 
+def compute_monotone_screen(
+    train_side_df: pl.DataFrame,
+    feature_ids: tuple[str, ...],
+    *,
+    side: int,
+    unforce_features_by_side: dict[str, frozenset[int]] | None = None,
+    ic_magnitude_floor_k: float | None = None,
+) -> dict[str, monotonic.FeatureICResult]:
+    """Extraído de `fit_side_model` (AG-380, 2026-08-29) -- ESS (só quando
+    `ic_magnitude_floor_k` é pedido, §13.14.2) + `monotonic.screen_
+    monotone_constraints`, exatamente a mesma sequência que já vivia
+    inline aqui. Existe como função própria por 2 motivos: (1) reusar sem
+    duplicar a lógica (a duplicação já foi causa real de bug neste
+    projeto -- `AG-371`, `AG-362`, várias entradas), (2) permitir que
+    `hyperparams_optuna.run_search_for_combo` pré-compute o resultado UMA
+    VEZ por `(fold, side)` e reuse via `fit_side_model(...,
+    monotone_screen_override=...)` nos N trials de uma campanha -- medido
+    real via `cProfile`: ~0,56s/chamada, ~39% do custo de um trial
+    completo, e o resultado é IDÊNTICO em toda a campanha porque nem
+    `ic_magnitude_floor_k` nem `unforce_features_by_side` fazem parte do
+    espaço de busca do Optuna (`hyperparams_optuna._FIELD_KIND`)."""
+    ess_for_ic_floor: float | None = None
+    if ic_magnitude_floor_k is not None:
+        if "uniqueness" not in train_side_df.columns:
+            raise ValueError(
+                "compute_monotone_screen: ic_magnitude_floor_k setado exige a coluna "
+                "'uniqueness' em train_side_df (ESS para o piso de magnitude, §13.14.2) -- "
+                "recebido um frame sem ela"
+            )
+        ess_for_ic_floor = float(
+            train_side_df["uniqueness"].to_numpy().astype(np.float64).sum()
+        )
+
+    return monotonic.screen_monotone_constraints(
+        train_side_df,
+        feature_ids,
+        side=side,
+        unforce_features_by_side=unforce_features_by_side,
+        ic_magnitude_floor_k=ic_magnitude_floor_k,
+        ess=ess_for_ic_floor,
+    )
+
+
 def fit_side_model(
     train_side_df: pl.DataFrame,
     *,
@@ -1173,6 +1216,7 @@ def fit_side_model(
     regularization_basis: str = REGULARIZATION_FIXED,
     ic_magnitude_floor_k: float | None = None,
     early_stopping_mode: str = EARLY_STOPPING_FIXED,
+    monotone_screen_override: dict[str, monotonic.FeatureICResult] | None = None,
 ) -> SideModelResult:
     """Treina UM binário (`M_long` se `side=1`, `M_short` se `side=-1`)
     sobre `train_side_df` — já filtrado por `src.models.dataset.
@@ -1232,7 +1276,15 @@ def fit_side_model(
     consequência `scale_pos_weight` computado abaixo, sai igual ao run
     real). Escopo é só TREINO — o lado de teste de `run_fold` nunca passa
     por esta função, preservando o resultado econômico real na
-    inferência/backtest por construção, não por caso especial."""
+    inferência/backtest por construção, não por caso especial.
+
+    `monotone_screen_override` (AG-380, 2026-08-29) — pula `compute_
+    monotone_screen` (ESS + `screen_monotone_constraints`) quando quem
+    chama já tem o resultado calculado pra este `(fold, side)` exato.
+    Default `None` preserva bit-exato todo call site existente — não
+    compatível com `null_permutation_seed` setado (o override reflete
+    dado NÃO permutado; só `run_search_for_combo`, que nunca permuta,
+    passa isso)."""
     if null_permutation_seed is not None:
         train_side_df = _permute_label_and_ret_net(train_side_df, null_permutation_seed)
 
@@ -1243,26 +1295,27 @@ def fit_side_model(
     # sem ela. Pedir o piso sem a coluna FALHA ALTO -- um fallback
     # silencioso pro sinal puro reintroduziria exatamente o defeito que o
     # piso existe pra corrigir, sem deixar rastro.
-    ess_for_ic_floor: float | None = None
-    if ic_magnitude_floor_k is not None:
-        if "uniqueness" not in train_side_df.columns:
-            raise ValueError(
-                "fit_side_model: ic_magnitude_floor_k setado exige a coluna 'uniqueness' "
-                "em train_side_df (ESS para o piso de magnitude, §13.14.2) -- recebido um "
-                "frame sem ela"
-            )
-        ess_for_ic_floor = float(
-            train_side_df["uniqueness"].to_numpy().astype(np.float64).sum()
+    # AG-380 (2026-08-29) -- `monotone_screen_override` pula a triagem
+    # inteira (ESS + `screen_monotone_constraints`, ~0,56s/chamada medido
+    # via cProfile real, ~39% do custo de UM trial completo) quando quem
+    # chama já a computou antes -- ela NUNCA depende de `hyper` além de
+    # `ic_magnitude_floor_k` (que o Optuna nunca busca, ver `_FIELD_KIND`
+    # em `hyperparams_optuna.py`), então é IDÊNTICA em toda campanha de
+    # busca (mesmo fold/lado, N trials) -- recalculá-la a cada trial é
+    # trabalho redundante puro, não uma questão de CPU-vs-GPU (achado real
+    # ao investigar por que a GPU não saturava, ver comentário no CLI de
+    # `hyperparams_optuna.py`). Default `None` preserva bit-exato todo
+    # call site existente -- só `run_search_for_combo` passa isso.
+    if monotone_screen_override is not None:
+        ic_results = monotone_screen_override
+    else:
+        ic_results = compute_monotone_screen(
+            train_side_df,
+            feature_ids,
+            side=side,
+            unforce_features_by_side=unforce_features_by_side,
+            ic_magnitude_floor_k=ic_magnitude_floor_k,
         )
-
-    ic_results = monotonic.screen_monotone_constraints(
-        train_side_df,
-        feature_ids,
-        side=side,
-        unforce_features_by_side=unforce_features_by_side,
-        ic_magnitude_floor_k=ic_magnitude_floor_k,
-        ess=ess_for_ic_floor,
-    )
     if variant == VARIANT_CAMADA1:
         t1_constraints = tuple(ic_results[f].constraint for f in feature_ids)
     elif variant == VARIANT_CAMADA0:
@@ -1953,6 +2006,8 @@ def run_fold(
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
     enforce_r2: bool = True,
+    monotone_screen_override_by_side: dict[int, dict[str, monotonic.FeatureICResult]]
+    | None = None,
 ) -> FoldResult:
     """`symbol`/`resolution_id` (D-03, `docs/alpha_model_design_doc_
     2026-08-22.md`) — colunas explícitas no schema de saída, mesma classe
@@ -1998,7 +2053,12 @@ def run_fold(
     parâmetro nesta assinatura (mesmo padrão dos campos ESS, já em `hyper`
     há mais tempo). **[PROMOVIDOS A DEFAULT DE PRODUÇÃO 2026-08-27]** os
     defaults de `LGBMHyperparams` já não são mais os legados -- ver
-    docstring da classe."""
+    docstring da classe.
+
+    `monotone_screen_override_by_side` (AG-380) -- repassado sem alteração
+    pros dois `fit_side_model`, indexado por `side` (`1`/`-1`). Default
+    `None` preserva bit-exato -- só `run_all_folds` chamado por
+    `hyperparams_optuna.run_search_for_combo` passa isso."""
     train_bars = df_all[split.train_idx]
     test_bars = df_all[split.test_idx]
 
@@ -2041,6 +2101,11 @@ def run_fold(
         regularization_basis=hyper.regularization_basis,
         ic_magnitude_floor_k=hyper.ic_magnitude_floor_k,
         early_stopping_mode=hyper.early_stopping_mode,
+        monotone_screen_override=(
+            monotone_screen_override_by_side.get(1)
+            if monotone_screen_override_by_side is not None
+            else None
+        ),
     )
     short_result = fit_side_model(
         train_short,
@@ -2059,6 +2124,11 @@ def run_fold(
         regularization_basis=hyper.regularization_basis,
         ic_magnitude_floor_k=hyper.ic_magnitude_floor_k,
         early_stopping_mode=hyper.early_stopping_mode,
+        monotone_screen_override=(
+            monotone_screen_override_by_side.get(-1)
+            if monotone_screen_override_by_side is not None
+            else None
+        ),
     )
 
     # AG-210 -- resolução de `tau`. No caminho legado, cada lado usa o
@@ -2239,6 +2309,10 @@ def run_all_folds(
     calib_weight_basis: str = CALIB_WEIGHT_SAMPLE_WEIGHT,
     evaluate_cost_derived_lambda: bool = False,
     enforce_r2: bool = True,
+    monotone_screen_override_by_split_side: dict[
+        tuple[int, int], dict[str, monotonic.FeatureICResult]
+    ]
+    | None = None,
 ) -> list[FoldResult]:
     """`feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
@@ -2261,7 +2335,16 @@ def run_all_folds(
     `AG-296`/`AG-297`) -- repassado sem alteração pra `run_fold` em cada
     split. **[PROMOVIDO A DEFAULT DE PRODUÇÃO 2026-08-27]** `False`
     reproduz o comportamento anterior. Ver docstring de `src.models.
-    dataset.side_subset` pro que `True` faz."""
+    dataset.side_subset` pro que `True` faz.
+
+    `monotone_screen_override_by_split_side` (AG-380) -- indexado por
+    `(split.split_id, side)`, repassado a `run_fold` como o sub-dict
+    daquele split (`{1: ..., -1: ...}`). Default `None` preserva
+    bit-exato -- só `hyperparams_optuna.run_search_for_combo` passa isso,
+    pré-computado 1x fora do loop de trials do Optuna (a triagem de
+    monotonicidade nunca depende de hiperparâmetro buscado, recalculá-la
+    por trial é trabalho redundante puro -- ~39% do custo de um trial,
+    medido via `cProfile`)."""
     hyper = hyper if hyper is not None else LGBMHyperparams.from_constants()
     seed = seed if seed is not None else int(load_constant("alpha_random_seed"))
 
@@ -2294,6 +2377,14 @@ def run_all_folds(
             calib_weight_basis=calib_weight_basis,
             evaluate_cost_derived_lambda=evaluate_cost_derived_lambda,
             enforce_r2=enforce_r2,
+            monotone_screen_override_by_side=(
+                {
+                    1: monotone_screen_override_by_split_side[(split.split_id, 1)],
+                    -1: monotone_screen_override_by_split_side[(split.split_id, -1)],
+                }
+                if monotone_screen_override_by_split_side is not None
+                else None
+            ),
         )
         logger.info(
             "models.alpha.run_fold_done",

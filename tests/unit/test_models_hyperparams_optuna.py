@@ -193,6 +193,7 @@ def _run_objective_once(
             seed=seed,
             device_type="cpu",
             search_space=_SMALL_SEARCH_SPACE,
+            monotone_screen_cache={},
         )
 
     study.optimize(objective, n_trials=1)
@@ -212,6 +213,9 @@ def test_objective_passa_politicas_de_producao_explicitas(monkeypatch: pytest.Mo
     assert captured["enforce_r2"] is True
     assert captured["variant"] == alpha.VARIANT_CAMADA1
     assert captured["device_type"] == "cpu"
+    # AG-380 -- o cache pré-computado (aqui, `{}` de propósito) chega
+    # intacto em `run_all_folds`, nunca recalculado dentro de `_objective`.
+    assert captured["monotone_screen_override_by_split_side"] == {}
 
 
 def test_objective_usa_pooled_sharpe_como_metrica(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,6 +255,7 @@ def test_seed_fixo_em_todos_os_trials(monkeypatch: pytest.MonkeyPatch) -> None:
             seed=7,
             device_type="cpu",
             search_space=_SMALL_SEARCH_SPACE,
+            monotone_screen_cache={},
         )
 
     study.optimize(objective, n_trials=3)

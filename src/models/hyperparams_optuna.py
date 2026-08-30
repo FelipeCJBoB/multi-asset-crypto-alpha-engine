@@ -59,7 +59,7 @@ from src.io.schema import ArtifactSchema, ColumnSpec
 from src.validation import cpcv
 from src.validation import dsr as dsr_mod
 
-from . import alpha, backtest_lite
+from . import alpha, backtest_lite, monotonic
 from . import dataset as ds
 from ._constants import load_constant, load_constant_entry
 from ._paths import ARTIFACT_ROOT, OPTUNA_STUDIES_DIR
@@ -305,6 +305,42 @@ def _suggest_value(trial: optuna.Trial, field_name: str, dim: _SearchDim) -> int
     return trial.suggest_float(field_name, dim.low, dim.high, log=dim.log)
 
 
+def _precompute_monotone_screens(
+    mf: ds.ModelingFrame,
+    splits: tuple[cpcv.CPCVSplit, ...],
+    feature_ids_effective: tuple[str, ...],
+    base_hyper: alpha.LGBMHyperparams,
+) -> dict[tuple[int, int], dict[str, monotonic.FeatureICResult]]:
+    """AG-380 (2026-08-29, `cProfile` real) -- `alpha.compute_monotone_
+    screen` NÃO depende de nenhum campo buscado pelo Optuna
+    (`ic_magnitude_floor_k` fica sempre em `base_hyper`, nunca em
+    `_SEARCH_SPACE`/`_FIELD_KIND`; `unforce_features_by_side` é sempre
+    `None` em produção) -- então o resultado é IDÊNTICO em todo trial de
+    uma mesma campanha. Medido: ~0,56s/chamada, ~39% do custo de UM
+    trial completo (`run_all_folds`, 15 splits × 2 lados = 30 chamadas).
+    Pré-computa 1x aqui (fora do loop de trials) em vez de deixar cada
+    trial recalcular -- reduz o custo por trial em ~39%, em QUALQUER
+    `device_type` (não é uma otimização de GPU, é eliminar trabalho
+    redundante puro). Replica a mesma sequência `side_subset` que
+    `alpha.run_fold` já faz internamente (train_bars -> side_subset por
+    lado) -- duplicação deliberada de 2 linhas, não vale importar/expor
+    um helper novo de `alpha.py` só pra isso."""
+    cache: dict[tuple[int, int], dict[str, monotonic.FeatureICResult]] = {}
+    for split in splits:
+        train_bars = mf.data[split.train_idx]
+        for side in (1, -1):
+            train_side_df = ds.side_subset(
+                train_bars, side=side, feature_ids=feature_ids_effective, enforce_r2=True
+            )
+            cache[(split.split_id, side)] = alpha.compute_monotone_screen(
+                train_side_df,
+                feature_ids_effective,
+                side=side,
+                ic_magnitude_floor_k=base_hyper.ic_magnitude_floor_k,
+            )
+    return cache
+
+
 def _objective(
     trial: optuna.Trial,
     *,
@@ -318,6 +354,7 @@ def _objective(
     seed: int,
     device_type: str,
     search_space: dict[str, _SearchDim],
+    monotone_screen_cache: dict[tuple[int, int], dict[str, monotonic.FeatureICResult]],
 ) -> float:
     """`seed` FIXO por study inteiro (nunca `trial.suggest_int` sobre
     seed) -- ruído de seed já medido neste projeto
@@ -328,7 +365,12 @@ def _objective(
     `enforce_r2` passados EXPLÍCITOS -- nunca herdados dos bare defaults de
     `alpha.run_all_folds`, que são o regime LEGADO pré-`AG-272`, não o de
     produção (herdar silenciosamente otimizaria hiperparâmetro pro
-    problema errado)."""
+    problema errado).
+
+    `monotone_screen_cache` (AG-380) -- `_precompute_monotone_screens`,
+    calculado 1x por `run_search_for_combo` antes do loop de trials,
+    reusado aqui em TODO trial (a triagem de monotonicidade não muda com
+    o hiperparâmetro buscado)."""
     # `dict[str, Any]`, não `dict[str, int | float]` -- mypy não consegue
     # verificar `**kwargs` heterogêneo contra os tipos por campo de
     # `dataclasses.replace` de qualquer forma (mesmo idioma já usado em
@@ -353,6 +395,7 @@ def _objective(
         class_balance_basis=alpha.CLASS_BALANCE_WEIGHT,
         calib_weight_basis=alpha.CALIB_WEIGHT_UNIQUENESS,
         enforce_r2=True,
+        monotone_screen_override_by_split_side=monotone_screen_cache,
     )
     by_path = backtest_lite.backtest_by_path(folds, mf.data)
     sharpes = [r.sharpe_naive for r in by_path.values() if math.isfinite(r.sharpe_naive)]
@@ -604,6 +647,13 @@ def run_search_for_combo(
         device_type=device_type,
     )
     if n_remaining > 0:
+        # AG-380 (2026-08-29) -- calculado 1x aqui, fora do loop de
+        # `n_remaining` trials -- `_precompute_monotone_screens` explica o
+        # motivo (a triagem não muda com o hiperparâmetro buscado; medido
+        # ~39% do custo de um trial completo via `cProfile`).
+        monotone_screen_cache = _precompute_monotone_screens(
+            mf, splits, feature_ids_effective, base_hyper
+        )
         objective = functools.partial(
             _objective,
             mf=mf,
@@ -616,6 +666,7 @@ def run_search_for_combo(
             seed=seed,
             device_type=device_type,
             search_space=search_space,
+            monotone_screen_cache=monotone_screen_cache,
         )
         # `catch=(alpha.CudaMaxBinUnsupportedError,)` -- achado real
         # (2026-08-29, bisecado neste projeto até o campo/valor exato):

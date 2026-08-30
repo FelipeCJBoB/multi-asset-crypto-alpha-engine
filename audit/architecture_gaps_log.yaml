@@ -25333,3 +25333,85 @@ entries:
       pendente do Manager, acao publica fora do repo.
     resolved_by_commit: "a9ec32d"
     status: "fechado 2026-08-29 -- CUDA real utilizavel em producao agora; bug upstream nao reportado ainda, causa raiz exata (por que lambda_l2+scale_pos_weight juntos zeram o gain no CUDA Tree Learner) nao investigada a nivel de codigo C++/CUDA do LightGBM, so isolada empiricamente a nivel de parametro Python"
+
+  - id: AG-380
+    date: "2026-08-29"
+    file: "src/models/alpha.py::compute_monotone_screen (novo, extraido de fit_side_model), fit_side_model/run_fold/run_all_folds (parametro override aditivo), src/models/hyperparams_optuna.py::_precompute_monotone_screens (novo) + _objective/run_search_for_combo, tools/diagnostics/profile_optuna_trial_cuda_cpu_split.py (novo), tests/unit/test_models_alpha_monotone_screen_cache.py (novo), tests/unit/test_models_hyperparams_optuna.py (3 testes existentes ajustados pro novo parametro obrigatorio)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-379 (mesma sessao, GPU do usuario mostrando ~55% de uso com mergulhos no Gerenciador de Tarefas apos o fix do AG-379 foi o gatilho desta investigacao)"
+    numeracao: "AG-380, folga sobre AG-379 (maior no momento)."
+    found_by: "Claude, ordem direta do Manager -- observou via Gerenciador de Tarefas que a GPU nao ficava perto de 100% durante a campanha real (screenshot: ~55% no engine CUDA, com 2 mergulhos nitidos ate quase zero) e pediu para mover a fatia CPU-bound pro device e medir contra o benchmark de 5 trials ja existente (4m40s CUDA / 4m46s CPU)"
+    gap: >
+      Nao era um gap de arquitetura -- era uma OPORTUNIDADE de performance
+      real, achada por medicao (`cProfile` de 1 trial completo, `tools/
+      diagnostics/profile_optuna_trial_cuda_cpu_split.py`) em vez de
+      atender ao pedido literal (mover pra GPU) sem antes medir onde o
+      tempo ia. Breakdown real de 1 trial (`run_all_folds`, 15 splits x 2
+      lados, excluindo o setup de dado que so paga 1x por combo):
+      43,18s totais -- `LGBMClassifier.fit()` real (GPU) = 20,97s (49%);
+      `monotonic.screen_monotone_constraints` (correlacao de Spearman,
+      CPU, via `scipy.stats.spearmanr`) = 16,72s (39% -- quase tao caro
+      quanto o treino em si); resto ~12%.
+
+      Achado que MUDA a recomendacao do pedido original: `screen_
+      monotone_constraints` NAO depende de nenhum campo que o Optuna
+      busca -- `ic_magnitude_floor_k` fica sempre em `base_hyper`
+      (nunca em `_FIELD_KIND`/`_SEARCH_SPACE`), `unforce_features_by_
+      side` e sempre `None` em producao. Logo o resultado e IDENTICO em
+      TODO trial de uma mesma campanha (mesmo fold/lado, N trials) --
+      recalcula-lo por trial e trabalho redundante PURO, nao uma
+      questao de CPU-vs-GPU. "Mover pra device" teria sido esforco (e
+      risco de correcao numerica futura, GPU nao suporta scipy nativamente)
+      pra otimizar algo que nem precisava rodar de novo.
+    severity: "medio -- nao bloqueava nada (AG-379 ja deixava CUDA funcional), mas ~17-21% de tempo de parede desperdicado em toda campanha real, CPU ou CUDA, apos o fix do AG-379"
+    layer: "models (fit_side_model/run_fold/run_all_folds) + validation de busca (hyperparams_optuna) -- otimizacao de custo, nao correcao de bug"
+    consequence: >
+      Sem a otimizacao, a campanha real completa (15 combinacoes x 2
+      camadas x 30 trials) pagaria ~39% de tempo por trial em trabalho
+      redundante -- em QUALQUER device escolhido. Medido real, 5 trials,
+      ETHUSDT/R3/camada1: CUDA 4m40,4s -> 3m51,8s (-17%); CPU 4m46,5s ->
+      3m47,7s (-21%). Achado colateral honesto: CPU continua
+      MARGINALMENTE mais rapido que CUDA mesmo depois de isolar o
+      trabalho CPU-bound (3m47,7s vs 3m51,8s -- 4s de diferenca, ruido)
+      -- a hipotese de que a fatia CPU-bound escondia a vantagem real da
+      GPU NAO se confirmou; o proprio `LGBMClassifier.fit()` sob CUDA
+      nao mostra vantagem de tempo de parede neste tamanho de dado
+      (9-40k linhas/fold), so de `user`-time (menos nucleos de CPU
+      ocupados, mesmo relogio de parede).
+    resolved_by_commit: null
+    resolution: >
+      `alpha.py::compute_monotone_screen` (novo) -- extrai a sequencia
+      ESS + `screen_monotone_constraints` que vivia inline em `fit_side_
+      model`, sem mudar comportamento (mesma logica, so isolada em
+      funcao propria -- reuso sem duplicacao, disciplina que ja evitou
+      bug real neste projeto varias vezes, `AG-371`/`AG-362`).
+      `fit_side_model` ganha `monotone_screen_override` (dict opcional,
+      default `None` preserva bit-exato); `run_fold` ganha `monotone_
+      screen_override_by_side` (roteia por `side`); `run_all_folds`
+      ganha `monotone_screen_override_by_split_side` (roteia por
+      `(split_id, side)`) -- os 3 aditivos, zero risco pra qualquer call
+      site existente (`run_layer1_sprint`/producao real nunca passa
+      isso). `hyperparams_optuna._precompute_monotone_screens` (novo)
+      calcula o cache 1x em `run_search_for_combo`, ANTES do loop de
+      trials, so quando `n_remaining > 0` (nao desperdica calculo se o
+      study ja estiver completo/resumido) -- passado por `functools.
+      partial` pra `_objective`, que repassa pra `run_all_folds` em todo
+      trial.
+
+      Validado: 4 testes novos (`tests/unit/test_models_alpha_monotone_
+      screen_cache.py`) provam (1) `compute_monotone_screen` bate
+      exatamente com o que `fit_side_model` ja produzia sem override;
+      (2) override produz modelo BIT-IDENTICO (`predict_proba` igual
+      via `np.testing.assert_array_equal`) ao caminho sem override; (3)
+      o calculo interno de fato NUNCA roda quando o override e passado
+      (monkeypatch faz a funcao real levantar se chamada); (4) `run_
+      fold` roteia o sub-dict certo pro `side` certo, nunca trocado. 3
+      testes pre-existentes em `test_models_hyperparams_optuna.py`
+      ajustados pro novo parametro `monotone_screen_cache` (agora
+      obrigatorio em `_objective`, sem default -- so chamado via
+      `functools.partial` dentro de `run_search_for_combo`). Suite alvo
+      completa (`models_alpha or models_pipeline or models_hyperparams
+      or models_monotonic`, `-m "not slow"`): 217 passed, 1 skipped
+      (pre-existente), 0 failed -- zero regressao. Medicao real de
+      tempo de parede via hardware CUDA WSL2 (nao so mecanico), 2
+      devices, antes/depois -- ver `consequence` acima.
+    status: "fechado 2026-08-29 -- otimizacao real aplicada e medida nos dois devices; achado honesto registrado (CUDA nao supera CPU neste tamanho de dado mesmo isolando o trabalho CPU-bound) -- decisao de qual device usar na campanha real fica com o Manager"
