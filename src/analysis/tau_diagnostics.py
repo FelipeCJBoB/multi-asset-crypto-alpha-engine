@@ -233,7 +233,13 @@ def _annualize_path(entry: dict[str, Any], *, path_source: str) -> tuple[Metric,
     `NOT_COMPUTABLE` em vez de dividir por algo degenerado."""
     n_signals = int(entry["n_signals"])
     n_filled = int(entry["n_filled_trades"])
-    filled_per_year_value = float(entry["trades_per_year"])
+    raw_trades_per_year = entry["trades_per_year"]
+    # `backtest_by_path` serializa NaN (caminho sem nenhum trade preenchido)
+    # como `null` de JSON -- `float(None)` explodiria antes da guarda de
+    # `period_valid` abaixo ter a chance de tratar isso como degenerado.
+    filled_per_year_value = (
+        float(raw_trades_per_year) if raw_trades_per_year is not None else float("nan")
+    )
 
     period_valid = (
         n_filled > 0 and math.isfinite(filled_per_year_value) and filled_per_year_value > 0.0
