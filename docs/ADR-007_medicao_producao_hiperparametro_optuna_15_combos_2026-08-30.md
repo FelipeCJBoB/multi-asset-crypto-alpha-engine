@@ -1,6 +1,6 @@
 # ADR-007: Arquitetura de medição de hiperparâmetro em produção — 15 combos, gate duplo, guardrails contra falso-positivo
 
-**Status:** Proposta — item 1 aguardando confirmação de orçamento antes de executar
+**Status:** Validada 2026-08-30 (revisão pós-aprovação corrigiu o escopo do Item 1 — ver `## Correção de validação` abaixo) — item 1 aguardando comando explícito pra executar
 **Date:** 2026-08-30
 **Deciders:** Manager (Felipe)
 
@@ -68,6 +68,46 @@ orçamento deve ser explícito por item, não ilimitado; Camada1/Camada0
 continuam com o MESMO desenho de ablação (decisão do Manager, não
 reaberta aqui).
 
+## Correção de validação (2026-08-30, mesma sessão, antes de qualquer execução)
+
+Ao revalidar esta ADR (pedido explícito do Manager, "cuidado com falsos
+positivos"), recomputei a média de edge bruto por SÍMBOLO (3 resoluções
+cada) e achei uma inconsistência real na versão original do Item 1:
+
+| símbolo | edge médio (3 resoluções) | padrão |
+|---|---|---|
+| `ETHUSDT` | **-6,98 bps** | negativo nas 3, sem exceção — **pior que `BNBUSDT`** |
+| `BNBUSDT` | -5,51 bps | negativo nas 3, sem exceção |
+| `BTCUSDT` | +2,61 bps | 2 de 3 positivas |
+| `XRPUSDT` | +6,66 bps | 2 de 3 positivas |
+| `SOLUSDT` | +10,51 bps | 3 de 3 positivas |
+
+A lista original de "8 combos promissores" excluía `BNBUSDT` e `R1`
+mecanicamente, sem recalcular a média por símbolo — resultado:
+**`ETHUSDT/R2` (-1,66bps) e `ETHUSDT/R3` (-13,19bps, o PIOR edge de
+todas as 15 combinações) ficavam dentro do orçamento expandido**, e
+`SOLUSDT/R1` (+1,17bps, individualmente positivo) ficava fora só por ser
+R1. `ETHUSDT` tem o MESMO padrão que motivou deprioritizar `BNBUSDT`
+(negativo nas 3 resoluções) — só passou despercebido porque
+`ETHUSDT/R1` passa o gate de Sharpe (`n_better=4,0`), mascarando o edge
+bruto ruim nas 3 resoluções.
+
+**Correção**: aplicar a MESMA regra de forma consistente — símbolo com
+edge médio negativo nas 3 resoluções fica fora do orçamento expandido.
+`BNBUSDT` E `ETHUSDT` saem (não só `BNBUSDT`). `R1` continua fora mesmo
+recalculado só sobre os 3 símbolos restantes (`BTC`/`SOL`/`XRP`): média
+R1 = -3,30bps, ainda a pior das 3 resoluções. **Item 1 passa de 8 pra 6
+combos**: `BTCUSDT/R2`, `BTCUSDT/R3`, `SOLUSDT/R2`, `SOLUSDT/R3`,
+`XRPUSDT/R2`, `XRPUSDT/R3`. Custo cai proporcionalmente (ver tabela de
+orçamento atualizada abaixo). `SOLUSDT/R1` fica deprioritizado apesar do
+edge individual positivo — critério aplicado por GRUPO (símbolo ou
+resolução, n=3 ou n=5), não por célula individual (n=1, amostra fraca
+demais pra decidir sozinha, mesma ressalva já registrada no Item 5).
+
+Também verificado nesta revisão: `scipy.stats.false_discovery_control`
+(Item 4) existe de verdade na versão instalada (`scipy 1.18.0`,
+`uv.lock`) — citação conferida, não assumida.
+
 ## Decision
 
 Adotar **6 itens sequenciados por dependência e custo**, cada um com
@@ -75,31 +115,32 @@ orçamento declarado ANTES de rodar (mesma disciplina do `ADR-002`), 4
 deles com plano de execução real e 2 como decisão de escopo (não
 executados nesta ADR).
 
-### Item 1 — Orçamento de busca expandido, escopado nos 8 combos promissores
+### Item 1 — Orçamento de busca expandido, escopado nos 6 combos promissores
 
 `alpha_optuna_n_trials` 30→150 (regra prática ~10-20× a dimensionalidade
-da busca — 12 campos buscados). **Só nos 8 combos que já mostram edge
-bruto positivo ou próximo**: `BTCUSDT/R2`, `BTCUSDT/R3`, `ETHUSDT/R2`,
-`ETHUSDT/R3`, `SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — os
-7 restantes (`BNBUSDT` completo + `R1` dos outros 4 símbolos) ficam de
-fora deste orçamento (economia de 47% do custo total de expandir pra
+da busca — 12 campos buscados). **Só nos 6 combos cujo SÍMBOLO tem edge
+bruto médio positivo (3 de 3 resoluções, ou 2 de 3) E que não são R1**
+(ver `## Correção de validação` acima): `BTCUSDT/R2`, `BTCUSDT/R3`,
+`SOLUSDT/R2`, `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` — os 9 restantes
+(`BNBUSDT` completo, `ETHUSDT` completo, `R1` de `BTC`/`SOL`/`XRP`) ficam
+de fora deste orçamento (economia de 60% do custo total de expandir pra
 15/15).
 
-- Custo: 8 combos × 2 camadas × 150 trials = 2.400 trials novos.
-- Tempo estimado: 2.400 × 9,1-15s ≈ **6h-10h CPU** (faixa larga porque o
-  custo por trial já variou nesta sessão por contenção; medir os
+- Custo: 6 combos × 2 camadas × 150 trials = 1.800 trials novos.
+- Tempo estimado: 1.800 × 9,1-15s ≈ **4,5h-7,5h CPU** (faixa larga porque
+  o custo por trial já variou nesta sessão por contenção; medir os
   primeiros ~100 trials reais antes de comprometer a estimativa final,
   mesma disciplina do `AG-371-ADDENDUM-17`).
-- `N_lifetime`: +2.400.
+- `N_lifetime`: +1.800.
 
-### Item 2 — Confirmação mais profunda, sobre os mesmos 8 combos
+### Item 2 — Confirmação mais profunda, sobre os mesmos 6 combos
 
 `top_k` 3→6 candidatos confirmados, `confirmation_seeds` 5→10 seeds —
 sobre o estudo JÁ expandido do Item 1 (zero busca nova).
 
-- Custo: 8 combos × 6 candidatos × 10 seeds × 2 camadas = 960 retreinos.
-- Tempo estimado: 960 × ~12s (média medida) ≈ **3h-4h CPU**.
-- `N_lifetime`: +960.
+- Custo: 6 combos × 6 candidatos × 10 seeds × 2 camadas = 720 retreinos.
+- Tempo estimado: 720 × ~12s (média medida) ≈ **2,4h CPU**.
+- `N_lifetime`: +720.
 - **Não reduz rigor por aumentar `K`** — a seleção final continua por
   MEDIANA entre seeds (nunca argmax), a mesma disciplina que já corrigiu
   o winner's-curge medido (`AG-383`, viés médio +0,309); mais candidatos
@@ -149,7 +190,7 @@ de taxa-base E sobre qualquer veredito de gate duplo daqui pra frente.
   retroativamente à tabela de taxa-base do H0-H7 do artefato E ao
   resultado do Item 1/2 quando sair.
 
-### Item 5 — Critério operacional de poda (`BNBUSDT` + `R1`)
+### Item 5 — Critério operacional de poda (`BNBUSDT` + `ETHUSDT` + `R1`)
 
 Trava a priori, com definição operacional explícita (regra do
 `CLAUDE.md` — decisão travada sem definição de termo é o viés que travar
@@ -164,9 +205,9 @@ a priori existe pra evitar):
 > calibrada `<20%`, piso arbitrário sujeito a revisão — `sweep_required`
 > registrado em `constants.yaml`).
 
-Até lá, `BNBUSDT`/`R1` ficam **deprioritizados** (fora do Item 1/2), não
-removidos — continuam existindo nos artefatos já gerados (H8-H11), só não
-recebem o orçamento expandido nesta rodada.
+Até lá, `BNBUSDT`/`ETHUSDT`/`R1` ficam **deprioritizados** (fora do Item
+1/2), não removidos — continuam existindo nos artefatos já gerados
+(H8-H11), só não recebem o orçamento expandido nesta rodada.
 
 - Custo: zero trial novo — decisão + constante nova em `constants.yaml`
   (`alpha_prune_min_edge_bps_threshold`, `alpha_prune_max_gate_fpr` —
@@ -187,12 +228,12 @@ ser decidido separadamente.
 
 | item | trials/retreinos novos | tempo estimado | depende de |
 |---|---|---|---|
-| 1 — busca expandida (8 combos) | 2.400 | 6h-10h | nada, pode começar já |
-| 2 — confirmação profunda (8 combos) | 960 | 3h-4h | Item 1 completo |
+| 1 — busca expandida (6 combos) | 1.800 | 4,5h-7,5h | nada, pode começar já |
+| 2 — confirmação profunda (6 combos) | 720 | ~2,4h | Item 1 completo |
 | 3 — calibração `AG-220` (3 combos) | 300 | ~1h | independente, pode rodar em paralelo ao Item 1 |
-| **total** | **3.660** | **~10h-15h CPU** | — |
+| **total** | **2.820** | **~8h-10,5h CPU** | — |
 
-`N_lifetime`: 2.636 (counter atual, id=37) → **~6.296** ao final dos 3
+`N_lifetime`: 2.636 (counter atual, id=37) → **~5.456** ao final dos 3
 itens. Itens 4/5 não consomem `N_lifetime` (são código/decisão, não
 retreino).
 
@@ -200,11 +241,12 @@ retreino).
 
 ### Option A: Expandir tudo (15 combos, todos os itens juntos) — REJEITADA
 
-Custo ≈ 1,875× o desenhado (todos os 15 em vez de 8 promissores +
-3 de calibração) — **~19h-28h CPU** só nos itens 1-2. Rejeitada porque
-gasta orçamento igual em combos já mostrando sinal fraco (`BNBUSDT`/`R1`)
-e em combos promissores, quando o Item 5 já declara um critério de poda
-que deveria vir DEPOIS de medir com orçamento de verdade, não antes.
+Custo ≈ 2,5× o desenhado nos Itens 1-2 (15 combos em vez de 6
+promissores) — 4.500+1.800=6.300 trials/retreinos, **~15h-23h CPU** só
+nos itens 1-2. Rejeitada porque gasta orçamento igual em combos já
+mostrando sinal fraco (`BNBUSDT`/`ETHUSDT`/`R1`) e em combos promissores,
+quando o Item 5 já declara um critério de poda que deveria vir DEPOIS de
+medir com orçamento de verdade, não antes.
 
 ### Option B: Não expandir nada, aceitar H8-H11 como veredito final — REJEITADA
 
@@ -215,7 +257,7 @@ frágil demais pra decisão de escopo do projeto inteiro. Rejeitada por
 não responder ao pedido explícito do Manager de tratar isso como
 medição obrigatória, não opcional.
 
-### Option C (escolhida): Itens 1-3 escopados (8+3 combos) + Itens 4-5 sem custo de trial + Item 6 como decisão separada
+### Option C (escolhida): Itens 1-3 escopados (6+3 combos) + Itens 4-5 sem custo de trial + Item 6 como decisão separada
 
 Meio-termo: cobre as 4 lacunas mais baratas de fechar (#1/#2/#3/#4 via
 Itens 1/2/3/4) com orçamento real declarado, trata a poda como decisão
@@ -227,16 +269,18 @@ cara — fica registrada como risco aberto.
 
 A pergunta central não é "qual orçamento acha o hiperparâmetro ótimo" —
 é "qual orçamento é grande o bastante pra não repetir o erro de tratar
-um resultado de 30 trials como veredito final, sem gastar 1875+ trials
+um resultado de 30 trials como veredito final, sem gastar trials
 adicionais em combos que 2 métricas independentes (edge bruto + win
-rate) já sugerem fraco". Option A é mais completa mas cara demais pra
-decisão de escopo que ainda depende de calibrar o próprio instrumento de
-medição (`AG-220`, Item 3) antes de confiar no resultado. Option C é o
-ponto que resolve a lacuna mais urgente (orçamento raso) sem gastar nos
-7 combos que a poda (Item 5) provavelmente vai descartar de qualquer
-forma — se errar (7 combos deprioritizados escondem edge real), o custo
-de descobrir depois é rodar o mesmo Item 1 neles, não maior que rodar
-agora.
+rate), agregadas por SÍMBOLO (não por célula isolada — a correção de
+validação acima é exatamente essa disciplina aplicada), já sugerem
+fraco". Option A é mais completa mas cara demais pra decisão de escopo
+que ainda depende de calibrar o próprio instrumento de medição
+(`AG-220`, Item 3) antes de confiar no resultado. Option C é o ponto que
+resolve a lacuna mais urgente (orçamento raso) sem gastar nos 9 combos
+que a poda (Item 5) provavelmente vai descartar de qualquer forma — se
+errar (9 combos deprioritizados escondem edge real em algum deles), o
+custo de descobrir depois é rodar o mesmo Item 1 neles, não maior que
+rodar agora.
 
 ## Consequences
 
@@ -244,7 +288,7 @@ agora.
   cada resultado futuro carrega o orçamento que o produziu (30 vs. 150
   trials) e a calibração de falso-positivo do gate que o julgou, em vez
   de um número solto.
-- **Fica mais difícil**: obter resposta rápida — ~10h-15h CPU antes da
+- **Fica mais difícil**: obter resposta rápida — ~8h-10,5h CPU antes da
   próxima leitura de "quantos combos passam", contra as ~4h totais que
   H8-H11 levaram até aqui.
 - **Precisa ser revisitado**: se o Item 3 (calibração `AG-220`) mostrar
@@ -266,13 +310,13 @@ agora.
    não introduzir literal novo no lugar do antigo.
 2. [ ] `alpha_optuna_n_trials` 30→150 em `constants.yaml` (source
    atualizada com a regra prática TPE ~10-20×dimensionalidade).
-3. [ ] Rodar Item 1 (busca expandida, 8 combos) — medir os primeiros
-   ~100 trials reais antes de confirmar a estimativa de 6h-10h.
+3. [ ] Rodar Item 1 (busca expandida, 6 combos) — medir os primeiros
+   ~100 trials reais antes de confirmar a estimativa de 4,5h-7,5h.
 4. [ ] Rodar Item 3 (calibração `AG-220`, 3 combos) — pode rodar em
    paralelo ao Item 1 se houver capacidade de CPU sem contenção
    (`AG-381` já mediu que concorrência real piora throughput ~54% neste
    hardware — avaliar antes de paralelizar de verdade).
-5. [ ] Rodar Item 2 (confirmação profunda, 8 combos) — só depois do
+5. [ ] Rodar Item 2 (confirmação profunda, 6 combos) — só depois do
    Item 1 completo.
 6. [ ] Implementar correção FDR (Item 4) — `src/validation/` ou
    `src/analysis/`, testada, aplicada à tabela de taxa-base existente e
