@@ -3625,3 +3625,10 @@ meta_include_nofill_in_training:
   class: B
   sweep_required: true
   sweep_range: [false, true]
+
+meta_leakage_control_lambda_grid:
+  value: [0.0, 0.05, 0.1, 0.2, 0.4]
+  provenance: ASSUMED
+  source: "docs/meta_model_design_doc_2026-08-22.md §4.3 -- grade de intensidade do CONTROLE POSITIVO sintético de vazamento (F3), declarada A PRIORI (B20). Injeta p_alpha' = (1-lambda)*p_alpha + lambda*y_meta e exige que o harness de avaliação detecte lambda; se não detectar um vazamento INJETADO, também não detectaria um real, e nada que ele reporte é interpretável. lambda=0 é o braço de controle (nenhuma injeção) e precisa estar na grade -- sem ele não há linha de base contra a qual comparar. O topo em 0,4 é grande o bastante para que qualquer harness funcional acuse, sem chegar a 1,0 (que substituiria p_alpha PELO alvo e testaria aritmética, não o pipeline). sweep_required FALSE de propósito: varrer a grade do próprio controle seria buscar sobre a busca, exatamente o que R5 do design doc caracteriza como falha de desenho."
+  class: C
+  sweep_required: false

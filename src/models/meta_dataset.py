@@ -44,6 +44,8 @@ Manager como correção de especificação, não como divergência silenciosa.
 
 from __future__ import annotations
 
+import itertools
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -1009,3 +1011,152 @@ def compute_uniqueness_divergence(table: pl.DataFrame) -> pl.DataFrame:
         corr_abs_ret_y_meta_mediana=_as_float(treino["corr_abs_ret_y_meta"].median()),
     )
     return diag
+
+
+# ---------------------------------------------------------------------------
+# F3 — CONTROLE POSITIVO sintético de vazamento (§4.3).
+#
+# GATE BLOQUEANTE de F6: se o harness não detecta um vazamento INJETADO, ele
+# também não detectaria um real, e nada que ele reporte é interpretável.
+#
+# Isto substitui a mitigação que a v2 do design doc propunha para R1
+# (comparar dois braços de doador, `path_matched` vs `group_matched`). O
+# controle positivo é ESTRITAMENTE melhor: é falsificável por construção, em
+# vez de depender de dois braços concordarem — e `group_matched` saiu do
+# caminho crítico por não ter purge (D-08 da v3).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class LeakagePositiveControlResult:
+    """Resultado do controle positivo. `detected` é o GATE.
+
+    O critério é declarado sem inventar limiar (B23): a métrica precisa ser
+    ESTRITAMENTE crescente ao longo da grade de `lambda`, e o valor em
+    `lambda` máximo precisa superar o de `lambda = 0`. Nenhuma tolerância
+    numérica é fabricada — "monotonicamente" é o que o §4.3 pede, e empate
+    reprova. Os valores brutos saem junto para que a decisão seja
+    auditável, não só o booleano."""
+
+    lambda_grid: tuple[float, ...]
+    metric_by_lambda: tuple[float, ...]
+    detected: bool
+    reason: str
+
+
+def inject_synthetic_leakage(
+    table: pl.DataFrame, lam: float, *, column: str = "p_alpha"
+) -> pl.DataFrame:
+    """§4.3 — injeta vazamento calibrável: `p_alpha' = (1-λ)·p_alpha + λ·y_meta`.
+
+    **Só `p_alpha` é perturbado, de propósito.** `margin` e
+    `score_alpha_raw` são correlacionadas com `p_alpha` e perturbá-las
+    junto dobraria o vazamento efetivo por unidade de λ — a monotonicidade
+    em λ deixaria de ser interpretável como sensibilidade do harness e
+    passaria a medir quantos canais foram contaminados. Um canal, um knob.
+
+    **Linhas com `y_meta` nulo (NOFILL) ficam INTOCADAS.** Não há rótulo
+    para vazar nelas; imputar 0 injetaria um viés sistemático contra o
+    lado positivo em vez de vazamento, e o resultado do controle passaria
+    a depender da fração de NOFILL da célula.
+
+    `lam = 0.0` devolve a coluna byte a byte igual — é o braço de controle,
+    e precisa ser exatamente o baseline, não uma aproximação dele."""
+    if not 0.0 <= lam <= 1.0:
+        raise MetaDatasetError(
+            f"inject_synthetic_leakage: lambda={lam} fora de [0, 1]. λ=1 substituiria "
+            "p_alpha PELO alvo, o que testa aritmética e não o pipeline."
+        )
+    if column not in table.columns:
+        raise MetaDatasetError(
+            f"inject_synthetic_leakage: coluna {column!r} ausente — o frame precisa vir "
+            "de `build_meta_signal_table`."
+        )
+    if lam == 0.0:
+        return table
+    vazado = (1.0 - lam) * pl.col(column) + lam * pl.col("y_meta").cast(pl.Float64)
+    return table.with_columns(
+        pl.when(pl.col("y_meta").is_null()).then(pl.col(column)).otherwise(vazado).alias(column)
+    )
+
+
+def run_leakage_positive_control(
+    table: pl.DataFrame,
+    evaluate: Callable[[pl.DataFrame], float],
+    *,
+    lambda_grid: Sequence[float] | None = None,
+) -> LeakagePositiveControlResult:
+    """Roda o controle positivo: injeta cada `lambda` da grade a priori e
+    chama `evaluate` sobre o frame contaminado.
+
+    `evaluate` recebe o `meta_training_set` com `p_alpha` já contaminado e
+    devolve UMA métrica OOS (em F6 será o Sharpe OOS do braço A1). É
+    injetado como parâmetro em vez de importado para que este harness não
+    dependa do learner — F3 vem ANTES de F4 na sequência do §15.2, e um
+    controle que só pudesse rodar depois do modelo existir chegaria tarde
+    demais para o que ele protege.
+
+    **O gate:** `detected == False` ⟹ F6 NÃO RODA. Um harness cego a um
+    vazamento de λ=0,4 é cego a qualquer vazamento real, e todo número que
+    ele produzir é ruído com aparência de resultado."""
+    grid = tuple(
+        float(x)
+        for x in (
+            lambda_grid
+            if lambda_grid is not None
+            else load_constant("meta_leakage_control_lambda_grid")
+        )
+    )
+    if len(grid) < 2:
+        raise MetaDatasetError(
+            f"run_leakage_positive_control: grade {grid} tem menos de 2 pontos — "
+            "sem baseline não há o que comparar."
+        )
+    if grid[0] != 0.0:
+        raise MetaDatasetError(
+            f"run_leakage_positive_control: grade {grid} não começa em λ=0. O braço "
+            "sem injeção é a linha de base do controle e não pode faltar."
+        )
+    if list(grid) != sorted(grid):
+        raise MetaDatasetError(
+            f"run_leakage_positive_control: grade {grid} fora de ordem — a checagem de "
+            "monotonicidade pressupõe λ crescente."
+        )
+
+    metricas = tuple(float(evaluate(inject_synthetic_leakage(table, lam))) for lam in grid)
+
+    if any(not np.isfinite(m) for m in metricas):
+        return LeakagePositiveControlResult(
+            lambda_grid=grid,
+            metric_by_lambda=metricas,
+            detected=False,
+            reason=(
+                "métrica não-finita em algum λ — o harness não produziu um número "
+                "comparável, e um controle que não compara não controla nada."
+            ),
+        )
+    crescente = all(b > a for a, b in itertools.pairwise(metricas))
+    if not crescente:
+        return LeakagePositiveControlResult(
+            lambda_grid=grid,
+            metric_by_lambda=metricas,
+            detected=False,
+            reason=(
+                "métrica NÃO é estritamente crescente em λ. O harness não enxerga "
+                "vazamento injetado — logo também não enxergaria vazamento real. "
+                "GATE: F6 não roda (§4.3)."
+            ),
+        )
+    logger.info(
+        "models.meta_dataset.leakage_positive_control",
+        lambda_grid=grid,
+        metric_by_lambda=metricas,
+        detected=True,
+        ganho_lambda_max_sobre_baseline=metricas[-1] - metricas[0],
+    )
+    return LeakagePositiveControlResult(
+        lambda_grid=grid,
+        metric_by_lambda=metricas,
+        detected=True,
+        reason="métrica estritamente crescente em λ — o harness detecta vazamento injetado.",
+    )

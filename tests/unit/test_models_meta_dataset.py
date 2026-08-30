@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from src.models import dataset as ds
 from src.models import hhi
@@ -645,3 +646,127 @@ def test_diagnostico_reporta_o_peso_de_classe_implicito() -> None:
     treino = diag.filter(pl.col("role") == md.ROLE_TRAIN)
     # y = [1,0,1,0] com pesos [2,1,2,1] -> mean(w|y=0)=1, mean(w|y=1)=2.
     assert treino["weight_class_ratio"][0] == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# F3 — controle positivo sintético de vazamento (§4.3), GATE de F6
+# ---------------------------------------------------------------------------
+
+
+def _mk_tabela_vazamento() -> pl.DataFrame:
+    """6 linhas, das quais 2 são NOFILL (`y_meta` nulo)."""
+    return pl.DataFrame(
+        {
+            "p_alpha": [0.4, 0.6, 0.45, 0.55, 0.5, 0.5],
+            "y_meta": [1, 0, 1, 0, None, None],
+            "margin": [0.1, -0.1, 0.05, -0.05, 0.0, 0.0],
+        },
+        schema_overrides={"y_meta": pl.Int8},
+    )
+
+
+def test_lambda_zero_devolve_o_frame_intocado() -> None:
+    """λ=0 é o braço de CONTROLE e precisa ser o baseline exato, não uma
+    aproximação dele."""
+    base = _mk_tabela_vazamento()
+    assert_frame_equal(md.inject_synthetic_leakage(base, 0.0), base, check_exact=True)
+
+
+def test_injecao_move_p_alpha_na_direcao_do_alvo() -> None:
+    out = md.inject_synthetic_leakage(_mk_tabela_vazamento(), 0.5)
+    p = out["p_alpha"].to_list()
+    # y=1: 0.5*0.4 + 0.5*1 = 0.7   |   y=0: 0.5*0.6 + 0.5*0 = 0.3
+    assert p[0] == pytest.approx(0.7)
+    assert p[1] == pytest.approx(0.3)
+
+
+def test_injecao_nao_toca_linhas_sem_rotulo() -> None:
+    """NOFILL não tem `y_meta` para vazar. Imputar 0 injetaria viés contra o
+    lado positivo em vez de vazamento, e o resultado do controle passaria a
+    depender da fração de NOFILL da célula."""
+    out = md.inject_synthetic_leakage(_mk_tabela_vazamento(), 0.9)
+    assert out["p_alpha"].to_list()[4:] == [0.5, 0.5]
+
+
+def test_injecao_so_toca_p_alpha() -> None:
+    """Um canal, um knob — perturbar `margin` junto dobraria o vazamento por
+    unidade de λ e a monotonicidade deixaria de ser interpretável."""
+    base = _mk_tabela_vazamento()
+    out = md.inject_synthetic_leakage(base, 0.5)
+    assert out["margin"].to_list() == base["margin"].to_list()
+
+
+@pytest.mark.parametrize("lam", [-0.1, 1.5])
+def test_lambda_fora_do_intervalo_levanta(lam: float) -> None:
+    with pytest.raises(md.MetaDatasetError, match="fora de"):
+        md.inject_synthetic_leakage(_mk_tabela_vazamento(), lam)
+
+
+def _avaliador_sensivel(table: pl.DataFrame) -> float:
+    """Métrica que ENXERGA `p_alpha`: separação média entre as classes."""
+    t = table.filter(pl.col("y_meta").is_not_null())
+    pos = t.filter(pl.col("y_meta") == 1)["p_alpha"].mean()
+    neg = t.filter(pl.col("y_meta") == 0)["p_alpha"].mean()
+    return float(pos) - float(neg)  # type: ignore[arg-type]
+
+
+def test_harness_detecta_vazamento_com_avaliador_sensivel() -> None:
+    resultado = md.run_leakage_positive_control(
+        _mk_tabela_vazamento(), _avaliador_sensivel
+    )
+    assert resultado.detected is True
+    assert resultado.lambda_grid == (0.0, 0.05, 0.1, 0.2, 0.4), "grade a priori de constants.yaml"
+    assert resultado.metric_by_lambda[0] < resultado.metric_by_lambda[-1]
+
+
+def test_harness_REPROVA_com_avaliador_cego() -> None:
+    """**O teste mais importante de F3.** Um controle positivo que não pode
+    reprovar não controla nada. Com um avaliador que ignora `p_alpha`, o
+    gate TEM de fechar — e a mensagem tem de dizer que F6 não roda."""
+    resultado = md.run_leakage_positive_control(
+        _mk_tabela_vazamento(), lambda _t: 0.42
+    )
+    assert resultado.detected is False
+    assert "F6 não roda" in resultado.reason
+    assert len(set(resultado.metric_by_lambda)) == 1, "métrica constante: harness cego"
+
+
+def test_harness_reprova_metrica_nao_monotonica() -> None:
+    valores = iter([0.1, 0.5, 0.2, 0.9, 1.0])
+    resultado = md.run_leakage_positive_control(
+        _mk_tabela_vazamento(), lambda _t: next(valores)
+    )
+    assert resultado.detected is False
+    assert "crescente" in resultado.reason
+
+
+def test_harness_reprova_metrica_nao_finita() -> None:
+    """Um harness que devolve `nan` não comparou nada — e um controle que
+    não compara não controla."""
+    valores = iter([0.1, float("nan"), 0.3, 0.4, 0.5])
+    resultado = md.run_leakage_positive_control(
+        _mk_tabela_vazamento(), lambda _t: next(valores)
+    )
+    assert resultado.detected is False
+    assert "não-finita" in resultado.reason
+
+
+def test_grade_precisa_comecar_em_zero() -> None:
+    with pytest.raises(md.MetaDatasetError, match="linha de base"):
+        md.run_leakage_positive_control(
+            _mk_tabela_vazamento(), _avaliador_sensivel, lambda_grid=(0.1, 0.2)
+        )
+
+
+def test_grade_precisa_estar_ordenada() -> None:
+    with pytest.raises(md.MetaDatasetError, match="fora de ordem"):
+        md.run_leakage_positive_control(
+            _mk_tabela_vazamento(), _avaliador_sensivel, lambda_grid=(0.0, 0.4, 0.2)
+        )
+
+
+def test_grade_de_um_ponto_so_levanta() -> None:
+    with pytest.raises(md.MetaDatasetError, match="sem baseline"):
+        md.run_leakage_positive_control(
+            _mk_tabela_vazamento(), _avaliador_sensivel, lambda_grid=(0.0,)
+        )
