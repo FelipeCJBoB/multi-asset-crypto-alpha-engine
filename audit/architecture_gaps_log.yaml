@@ -25550,7 +25550,7 @@ entries:
       resultado desta campanha pra producao real SEM confirmacao
       multi-seed repetiria exatamente o erro que a Fase 2/ADR-002/
       ADR-003 ja documentaram e corrigiram.
-    resolved_by_commit: null
+    resolved_by_commit: "6a86a03"
     resolution: >
       Nao ha "resolucao" -- e um registro de execucao real, nao um bug.
       Artefatos gravados como content-addressed reais
