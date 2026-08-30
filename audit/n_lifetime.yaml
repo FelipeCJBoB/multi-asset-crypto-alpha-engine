@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 761
+counter: 1661
 
 log:
   - id: 1
@@ -881,3 +881,44 @@ log:
       nao foi corrigido antes desta rodada (decisao do Manager de
       prosseguir mesmo assim, AG-207).
     delta: 8
+  - id: 34
+    date: "2026-08-30"
+    type: campanha_optuna_real_15_combos_x_2_camadas
+    description: >
+      Primeira campanha Optuna REAL do projeto (substitui a antiga
+      campanha manual de grade/coordinate-descent, AG-371/AG-371-
+      ADDENDUM-18). `run_search_for_combo` via CLI (`src/models/
+      hyperparams_optuna.py --all-combinations --device-type cpu`),
+      autorizado pelo Manager apos investigacao completa de CUDA (AG-
+      379/AG-380/AG-381 -- CUDA funciona mas nao supera CPU neste
+      hardware/tamanho de dado, decisao final foi CPU). TPESampler,
+      30 trials por (symbol, resolution_id, variant) -- 15 combinacoes
+      x 2 camadas (Camada1 monotonica + Camada0 baseline, studies
+      INDEPENDENTES cada uma, ver docstring de `run_search_for_combo`)
+      = 900 trials reais, cada um um retreino completo (15 folds CPCV x
+      2 lados) + backtest real. 900/900 trials completaram com sucesso,
+      ZERO falhas (nem CudaMaxBinUnsupportedError -- nao aplicavel sob
+      CPU -- nem NaN de Sharpe indefinido). Tempo total medido: 2h16m33s
+      (23:50:01 -> 02:06:34) -- MUITO abaixo da estimativa pior-caso de
+      ~8h (`AG-371-ADDENDUM-17`), confirma a propria ressalva do
+      addendum ("provavelmente bem menos, dado que so 2-3 das 15
+      celulas sao do tamanho de BTCUSDT/R1"). 30 artefatos content-
+      addressed gravados em producao real (`scratch=False`),
+      `artifacts/alpha_hyperparams_optuna/`.
+
+      RESSALVA CRITICA, mesma disciplina que ja fechou este projeto
+      contra o proprio winner's-curse varias vezes (ADR-002 Fase 2,
+      ADR-003 Estagio 1b): `best_value` reportado por estudo e o
+      MAXIMO de 30 trials sob 1 unica seed de dado -- NAO passou pela
+      confirmacao de mediana-sobre-multiplas-seeds nem pelo gate de
+      permanencia real (Camada1 vs Camada0 pareado, n_better/5) que a
+      producao ja exige antes de promover qualquer resultado. Varios
+      `best_value` positivos apareceram (10/15 combos em Camada1) --
+      historico do projeto (ADR-002: +0,772 de vies de selecao medido
+      no pior caso) mostra que numeros assim tipicamente NAO sobrevivem
+      a confirmacao. Resultado registrado como achado de BUSCA, nao
+      como decisao de promocao -- ver aba "Alpha — Base de Pesquisa"
+      (artefato publicado) e `audit/architecture_gaps_log.yaml::AG-382`
+      pro detalhamento completo por combo e o proximo passo real
+      (confirmacao multi-seed antes de qualquer promocao).
+    delta: 900

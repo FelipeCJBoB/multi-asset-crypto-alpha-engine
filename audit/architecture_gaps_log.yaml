@@ -25489,3 +25489,85 @@ entries:
       neste hardware) -- decisao final de qual device usar continua com
       o Manager.
     status: "fechado 2026-08-29 -- hipotese testada e refutada com medicao real, dois combos, solo vs concorrente, throughput agregado E resultado individual"
+
+  - id: AG-382
+    date: "2026-08-30"
+    file: "artifacts/alpha_hyperparams_optuna/ (30 artefatos novos, producao real), optuna_studies/*.db (30 studies, sqlite, gitignored), audit/n_lifetime.yaml::id=34 (+900)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-371-ADDENDUM-18 (fecha o YAML estatico que esta campanha substitui), AG-379/AG-380/AG-381 (infra CUDA/CPU que motivou a decisao de device desta campanha); https://claude.ai/code/artifact/cbe9da64-66a6-41c3-9873-ae93225f0fda (Alpha -- Base de Pesquisa, detalhamento completo por combo)"
+    numeracao: "AG-382, folga sobre AG-381 (maior no momento)."
+    found_by: "Claude, autorizacao direta do Manager ('pode rodar full run CPU') apos a investigacao completa de CUDA vs CPU (AG-379/380/381) concluir que CPU e a escolha certa pra este hardware"
+    gap: >
+      Nao e um gap -- e o registro da PRIMEIRA campanha real de busca de
+      hiperparametro via Optuna do projeto, substituindo em definitivo a
+      campanha manual de grade/coordinate-descent que originou o `AG-
+      371`. `uv run python -m src.models.hyperparams_optuna --all-
+      combinations --device-type cpu` -- 15 combinacoes symbol×resolution
+      x 2 variantes (Camada1 monotonica + Camada0 baseline, studies
+      Optuna INDEPENDENTES cada uma) x 30 trials/study = 900 trials
+      reais, cada um um retreino completo (15 folds CPCV x 2 lados) +
+      backtest real via `backtest_lite.backtest_by_path`.
+
+      **900/900 trials completaram com sucesso, ZERO falhas** -- nem
+      `CudaMaxBinUnsupportedError` (nao aplicavel sob CPU) nem NaN de
+      Sharpe indefinido (zero-sinal), diferente do que os smoke tests
+      sob CUDA desta mesma sessao mostraram repetidamente (`AG-378`/
+      `AG-379`). **Tempo total medido: 2h16m33s** (23:50:01 ->
+      02:06:34) -- muito abaixo do pior-caso de ~8h estimado em
+      `AG-371-ADDENDUM-17`, confirma a propria ressalva do addendum
+      ("provavelmente bem menos, so 2-3 das 15 celulas sao do tamanho
+      de BTCUSDT/R1"). Ganho adicional do `AG-380` (cache de triagem
+      monotonica, ~17-21% por trial) tambem contribuiu, nao isolado
+      desta medicao.
+
+      Achado observacional (nao investigado a fundo, registrado pra
+      contexto): varios `study_name` diferentes convergiram pro MESMO
+      hiperparametro vencedor (ex. `BNBUSDT/R3` e `XRPUSDT/R3`,
+      camada0, parametros identicos, `best_value` diferente) --
+      consistente com `sampler_seed` fixo (`alpha_random_seed=42`) em
+      TODAS as 30 studies independentes: os primeiros trials do TPE
+      (fase de exploracao aleatoria antes de acumular historico
+      Bayesiano suficiente) sao a MESMA sequencia de parametros em
+      toda study, e um ponto "genericamente razoavel" (ex. `max_depth`
+      raso) pode ganhar o argmax em varias studies por coincidencia --
+      nao e um bug, e uma propriedade esperada de sampler_seed
+      compartilhado entre studies independentes.
+    severity: "informativo -- infraestrutura funcionou de ponta a ponta como desenhado (AG-371/AG-379/AG-380), sem achado de bug novo"
+    layer: "models (orquestracao de busca) + producao (artefatos reais escritos)"
+    consequence: >
+      **RESSALVA CRITICA, nao uma consequencia de bug -- disciplina B23/
+      winner's-curse que ja fechou este projeto contra si mesmo varias
+      vezes (ADR-002 Fase 2: vies de selecao medido +0,772; ADR-003
+      Estagio 1: winner's-curse ainda mais extremo).** `best_value` de
+      cada study e o MAXIMO de 30 trials sob 1 unica seed de dado (nao
+      confirmado por mediana-sobre-multiplas-seeds nem pelo gate de
+      permanencia real pareado Camada1-vs-Camada0 que a producao ja
+      exige). 10 de 15 combos (Camada1) reportam `best_value` POSITIVO
+      -- contraste real com o historico do projeto (0/15 combinacoes
+      com retorno medio liquido positivo, sweep 2026-08-23; todas as
+      medianas negativas em ADR-002/ADR-003) -- mas o padrao historico
+      DESTE MESMO PROJETO e que numeros de 1-seed-melhor-de-N
+      tipicamente NAO sobrevivem confirmacao. Promover qualquer
+      resultado desta campanha pra producao real SEM confirmacao
+      multi-seed repetiria exatamente o erro que a Fase 2/ADR-002/
+      ADR-003 ja documentaram e corrigiram.
+    resolved_by_commit: null
+    resolution: >
+      Nao ha "resolucao" -- e um registro de execucao real, nao um bug.
+      Artefatos gravados como content-addressed reais
+      (`artifacts/alpha_hyperparams_optuna/`, `scratch=False`),
+      consumiveis por `hyperparams_by_combo.load_hyperparams_by_combo`
+      no proximo retreino de rotina (`run_layer1_sprint_all_
+      combinations`). `N_lifetime` incrementado com o numero REAL (900,
+      nao estimativa), `audit/n_lifetime.yaml::id=34`. Detalhamento
+      completo por combo (tabela de 30 linhas, hiperparametro vencedor,
+      comparacao Camada1 vs Camada0) publicado no artefato "Alpha --
+      Base de Pesquisa" (link acima), nova secao "H8 -- campanha Optuna
+      real completa".
+
+      **Proximo passo real, nao executado aqui**: confirmacao multi-
+      seed (mesmo padrao ja usado no ADR-002/ADR-003 -- mediana de 5
+      seeds sobre os candidatos top, gate de permanencia real pareado)
+      antes de tratar qualquer `best_value` desta campanha como edge
+      real. Decisao de quando/se rodar essa confirmacao fica com o
+      Manager.
+    status: "fechado 2026-08-30 -- campanha real executada com sucesso total (900/900, 0 falhas), resultado bruto registrado com ressalva explicita de winner's-curse, confirmacao multi-seed e decisao pendente"
