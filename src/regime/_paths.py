@@ -23,6 +23,13 @@ CONSTANTS_PATH: Path = REPO_ROOT / "config" / "constants.yaml"
 
 DATA_ROOT: Path = REPO_ROOT / "data"
 
+# Raiz dos artefatos VERSIONADOS (`src.io.artifact`, camada ADR-001) —
+# mesma definição e mesmo valor de `src.models._paths.ARTIFACT_ROOT`.
+# Duplicada aqui, e não importada de `models`, porque `regime` é produtor
+# e `models` é consumidor: importar do consumidor inverteria a dependência
+# (e `src/regime/_paths.py` já repete `REPO_ROOT` pelo mesmo motivo).
+ARTIFACT_ROOT: Path = REPO_ROOT / "artifacts"
+
 # Layout §1.2/§4.6 do PRD (pré-V4.1, legado): `data/regimes/{version}/
 # regimes.parquet`, irmão de `data/features/{version}/` e
 # `data/labels/{version}/`.

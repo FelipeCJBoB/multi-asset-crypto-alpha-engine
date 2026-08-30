@@ -1,0 +1,740 @@
+"""Montagem do `meta_training_set` — camada 2 (meta-labeling), F1 de
+`docs/meta_model_design_doc_2026-08-22.md` (§3 contrato, §4.3 regra de
+doador, §4.7 seleção posicional, §5 pesos, §6 regime, §10.1 asserções).
+
+**O que este módulo faz, em uma frase.** Pega as predições OOF do Alpha,
+liga cada sinal (`side_hat != 0`) ao resultado REAL daquele lado nos
+labels, e organiza as linhas em meta-folds sob a regra `path_matched` —
+produzindo a tabela que o Meta treina.
+
+**O que ele recusa a fazer.** Nunca imputa `tau`, nunca degrada em
+silêncio, nunca deixa uma linha de treino entrar sem purge. As quatro
+asserções do §10.1 rodam em `assert_no_meta_leakage` e levantam
+`MetaLeakageError` — nunca `assert` (some sob `python -O`), nunca
+`filter()` (mascara a causa raiz).
+
+**A regra de doador (`path_matched`, D-08/§4.3).** Para o meta-fold `s`
+(split `s` do Alpha, path `p`):
+
+    TESTE  = `fold_id == s`        e `_pos ∈ splits[s].test_idx`
+    TREINO = `fold_id ∈ path(p)\\{s}` e `_pos ∈ splits[s].train_idx`
+
+A interseção posicional com `train_idx` **não é redundante** — `train_idx`
+é o único objeto que carrega purge + embargo (`cpcv.py`). Uma
+implementação que colete as linhas do path só por `fold_id` e esqueça a
+interseção satisfaz as outras três asserções, produz um dataset MAIOR
+(parece melhor) e **desliga B09 inteiro em silêncio**. É o modo de falha
+mais provável deste módulo, e é o que a asserção (b) do §10.1 existe para
+pegar.
+
+**`group_matched` não está implementado, de propósito** (D-08 da v3): é o
+único dos dois braços sem purge e sem embargo, exige uma primitiva de
+purge por bloco arbitrário que `cpcv.py` não tem (`AG-153`), e nunca teve
+o lado do TESTE definido. É trabalho futuro (F9), não Meta v1 — pedir por
+ele levanta, não devolve um resultado silenciosamente pior.
+
+**DESVIO REGISTRADO do §3.1 (chave primária).** O documento declara
+`(symbol, t0, side_hat, fold_id, variant, model_id)`. Essa tupla **não é
+única** sob `path_matched`: um path tem 3 splits, então uma linha com
+`fold_id = f` é TREINO de 2 meta-folds (os outros dois splits do path de
+`f`) e TESTE de 1 — três linhas de saída com a mesma tupla. A chave real
+precisa de `meta_split_id`. Implementado assim aqui, e reportado ao
+Manager como correção de especificação, não como divergência silenciosa.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import polars as pl
+import structlog
+from numpy.typing import NDArray
+
+from src.labels.weights import compute_concurrency_and_uniqueness
+from src.regime.classifier import REGIME_LABELS
+from src.validation import cpcv
+
+from . import dataset as ds
+from ._constants import load_constant
+from .backtest_lite import join_signals_to_labels
+
+logger = structlog.get_logger(__name__)
+
+FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
+BoolArray = NDArray[np.bool_]
+
+# ---------------------------------------------------------------------------
+# Contratos
+# ---------------------------------------------------------------------------
+
+#: Regra de doador do caminho crítico (D-08). `group_matched` é F9, não v1.
+DONOR_RULE_PATH_MATCHED = "path_matched"
+DONOR_RULE_GROUP_MATCHED = "group_matched"
+
+ROLE_TRAIN = "train"
+ROLE_TEST = "test"
+
+META_STATUS_OK = "OK"
+META_STATUS_UNSEEN_REGIME = "UNSEEN_REGIME"
+META_STATUS_INSUFFICIENT_SAMPLE = "INSUFFICIENT_SAMPLE"
+
+#: Prefixo do one-hot. Existe para desfazer a ambiguidade de nome entre
+#: NÍVEL DE REGIME e `resolution_id` (a grade de barra) — sob o
+#: classificador por quantis os níveis eram `R0..R5` e a grade é
+#: `R1`/`R2`/`R3`; ler `R1` num schema sem prefixo era genuinamente
+#: ambíguo. Sob o HMM os níveis são `S0..S{k-1}` (`dataset.hmm_state_labels`),
+#: o que remove a ambiguidade na origem.
+REGIME_OHE_PREFIX = "regime_ohe_"
+
+
+def regime_levels_for_source(regime_source: str) -> tuple[str, ...]:
+    """Níveis do one-hot, FIXOS A PRIORI dado o classificador (§6.3) —
+    nunca derivados do fold: níveis derivados do fold fariam o número de
+    colunas mudar por fold, e sob canonicalização por retorno "estado 2 <
+    estado 3" não significa volatilidade (`AG-121`), então ordinal seria uma
+    relação inventada.
+
+    Sob o HMM devolve só os `k` estados REAIS — o sentinela `NO_DECODE` não
+    ganha dummy de propósito: a política declarada para ele é VETO (§6.4),
+    e uma coluna que o modelo pudesse ponderar contradiria a política."""
+    if regime_source == ds.REGIME_SOURCE_HMM_K4:
+        n_states = int(load_constant("canonical_regime_hmm_n_states"))
+        return tuple(
+            n for n in ds.hmm_state_labels(n_states) if n != ds.REGIME_NO_DECODE_LABEL
+        )
+    if regime_source == ds.REGIME_SOURCE_QUANTILE_V1:
+        return tuple(REGIME_LABELS)
+    raise MetaDatasetError(
+        f"regime_source={regime_source!r} desconhecido — o Meta precisa dos níveis "
+        "fixos a priori para montar o one-hot, e inferi-los do dado observado seria "
+        "exatamente o que §6.3 proíbe."
+    )
+
+#: Colunas que NUNCA podem entrar no design matrix do Meta. `t1` está aqui
+#: porque é insumo de purge e de unicidade, não informação disponível em
+#: `t0`; `ret_net`/`barrier_hit`/`y_meta` são o futuro; `fill_assumed` é
+#: derivado do futuro; os pesos e as unicidades são função do alvo (§5: com
+#: `tp_atr_mult=2.0` e `sl_atr_mult=1.5`, `E[|ret_net| | y=1]` fica cerca de
+#: 1,33 vezes `E[|ret_net| | y=0]` — o módulo é quase um classificador do
+#: próprio sinal).
+META_FORBIDDEN_FEATURES: frozenset[str] = frozenset(
+    {
+        "t1",
+        "barrier_hit",
+        "ret_net",
+        "y_meta",
+        "fill_assumed",
+        "meta_sample_weight",
+        "uniqueness_universe",
+        "uniqueness_subpop",
+    }
+)
+
+#: Discriminador de artefato pré-D-15 (§3.5, reconciliado em `AG-162`): a
+#: AUSÊNCIA destas duas colunas, não uma `schema_version` desconhecida —
+#: os artefatos legados não têm versão desconhecida, têm versão inexistente.
+_ALPHA_TAU_COLUMNS: tuple[str, ...] = ("tau_long", "tau_short")
+
+_SIDE_LONG = 1
+_SIDE_SHORT = -1
+_NOFILL = "NOFILL"
+
+
+class MetaDatasetError(Exception):
+    """Erro de contrato na montagem do `meta_training_set`."""
+
+
+class LegacyPredictionsError(MetaDatasetError):
+    """`predictions.parquet` do Alpha sem `tau_long`/`tau_short` — artefato
+    anterior a D-15 (`AG-162`). Sem essas colunas o Meta não consegue
+    derivar `tau_alpha` (§3.5), e derivar errado é pior que parar."""
+
+
+class MetaLeakageError(MetaDatasetError):
+    """Uma das quatro asserções estruturais do §10.1 falhou. `raise`, nunca
+    `assert` (some sob `python -O`), nunca `filter()` (mascara a causa)."""
+
+
+# ---------------------------------------------------------------------------
+# Regra de doador
+# ---------------------------------------------------------------------------
+
+
+def donor_folds_for_path_matched(
+    cpcv_result: cpcv.CPCVResult,
+) -> dict[int, frozenset[int]]:
+    """Para cada meta-fold `s`, o conjunto de folds do Alpha autorizados a
+    DOAR linhas de treino: os outros splits do MESMO path (§4.3).
+
+    Por que o mesmo path, e não qualquer fold: `_path_assignment` usa
+    1-fatoração round-robin, então dentro de um `path_id` os blocos de teste
+    PARTICIONAM os grupos — logo `(symbol, t0)` é único dentro do path e não
+    há pseudo-replicação. Um doador de outro path reintroduziria a mesma
+    barra várias vezes com `p_alpha` de modelos diferentes."""
+    splits_by_path: dict[int, set[int]] = {}
+    for split in cpcv_result.splits:
+        splits_by_path.setdefault(split.path_id, set()).add(split.split_id)
+    return {
+        split.split_id: frozenset(splits_by_path[split.path_id] - {split.split_id})
+        for split in cpcv_result.splits
+    }
+
+
+# ---------------------------------------------------------------------------
+# Guardas
+# ---------------------------------------------------------------------------
+
+
+def assert_alpha_predictions_has_tau(predictions: pl.DataFrame, *, origem: str) -> None:
+    """§3.5 — levanta com o caminho do artefato e a instrução de retreinar."""
+    faltando = [c for c in _ALPHA_TAU_COLUMNS if c not in predictions.columns]
+    if faltando:
+        raise LegacyPredictionsError(
+            f"predições do Alpha em {origem} não têm {faltando} — artefato anterior a "
+            "D-15/AG-162, sem tau persistido. O Meta deriva tau_alpha = tau_long se "
+            "side_hat == 1 senão tau_short (§3.5) e não tem como fazer isso aqui. "
+            "Retreine o Alpha (src.models.pipeline.run_layer1_sprint) sobre esta célula."
+        )
+
+
+def assert_dense_frame_matches_splits(
+    dense: pl.DataFrame, cpcv_result: cpcv.CPCVResult
+) -> None:
+    """§4.7, guarda falsificável — os splits precisam ter sido gerados sobre
+    ESTE frame denso, senão `train_idx`/`test_idx` indexam outra coisa e a
+    seleção posicional vira lixo silencioso. Substitui o grep proposto na v1
+    do documento, que seria driblável por import indireto."""
+    n_splits_rows = int(cpcv_result.group_id.shape[0])
+    if dense.height != n_splits_rows:
+        raise MetaDatasetError(
+            f"frame denso tem {dense.height} linhas mas os splits do CPCV foram "
+            f"gerados sobre {n_splits_rows} — `train_idx`/`test_idx` são POSICIONAIS "
+            "(§4.7) e indexariam linhas erradas. Gere os splits sobre o mesmo frame "
+            "que você está passando aqui."
+        )
+
+
+def _test_masks_by_fold(
+    cpcv_result: cpcv.CPCVResult, n_rows: int
+) -> dict[int, BoolArray]:
+    masks: dict[int, BoolArray] = {}
+    for split in cpcv_result.splits:
+        mask = np.zeros(n_rows, dtype=bool)
+        mask[split.test_idx] = True
+        masks[split.split_id] = mask
+    return masks
+
+
+def _train_masks_by_split(
+    cpcv_result: cpcv.CPCVResult, n_rows: int
+) -> dict[int, BoolArray]:
+    masks: dict[int, BoolArray] = {}
+    for split in cpcv_result.splits:
+        mask = np.zeros(n_rows, dtype=bool)
+        mask[split.train_idx] = True
+        masks[split.split_id] = mask
+    return masks
+
+
+def assert_no_meta_leakage(table: pl.DataFrame, cpcv_result: cpcv.CPCVResult) -> None:
+    """As QUATRO asserções falsificáveis do §10.1.
+
+    `is_oof` não está entre elas de propósito: é constante `True` por
+    construção do Alpha, então asseri-lo é tautologia — exatamente a crítica
+    que o §10.1 faz à v1 do documento.
+
+        (a) toda linha:       `_pos ∈ splits[fold_id].test_idx`
+        (b) linhas de TREINO: `_pos ∈ splits[meta_split_id].train_idx`
+        (c) linhas de TREINO: `fold_id != meta_split_id`
+        (d) proveniência:     `n_unique(calibrator_id) == 2 × n_unique(fold_id)`
+                              e `n_unique(model_id) == 1`
+
+    (b) é a mais importante. Sem ela, uma implementação que colete as linhas
+    do path por `fold_id` e esqueça a interseção posicional passa em (a),
+    (c) e (d), produz um dataset maior — e desliga purge e embargo inteiros
+    sem emitir um aviso sequer.
+
+    **ACHADO (2026-08-30): (c) é redundante sob a geometria REAL do CPCV.**
+    O §10.1 apresenta as quatro como independentes. Não são: uma linha de
+    treino com `fold_id == meta_split_id = s` precisaria de
+    `_pos ∈ test_idx[s]` (por (a)) E `_pos ∈ train_idx[s]` (por (b)), e
+    esses conjuntos são disjuntos por construção — logo (b) sempre dispara
+    antes e (c) é inalcançável. Mantida mesmo assim: é barata, e não depende
+    da disjunção continuar valendo. Um esquema de CV com blocos sobrepostos
+    (o espaço que `AG-153` abre) quebraria essa premissa em silêncio, e aí
+    (c) passa a ser a única a pegar o caso."""
+    if table.height == 0:
+        return
+    n_rows = int(cpcv_result.group_id.shape[0])
+    pos = table["_pos"].to_numpy().astype(np.int64)
+    fold_id = table["fold_id"].to_numpy().astype(np.int64)
+    meta_split_id = table["meta_split_id"].to_numpy().astype(np.int64)
+    is_train = (table["role"] == ROLE_TRAIN).to_numpy()
+
+    test_masks = _test_masks_by_fold(cpcv_result, n_rows)
+    train_masks = _train_masks_by_split(cpcv_result, n_rows)
+
+    # (a) — toda linha veio do bloco de TESTE do fold que a produziu.
+    for f in np.unique(fold_id):
+        sel = fold_id == f
+        if int(f) not in test_masks:
+            raise MetaLeakageError(
+                f"§10.1(a): fold_id={int(f)} não existe entre os splits do CPCV"
+            )
+        fora = ~test_masks[int(f)][pos[sel]]
+        if bool(fora.any()):
+            raise MetaLeakageError(
+                f"§10.1(a): {int(fora.sum())} linha(s) com fold_id={int(f)} têm `_pos` "
+                "FORA de splits[fold_id].test_idx — a predição não é OOF para aquela "
+                "linha. Isto é B07 acontecendo."
+            )
+
+    # (b) — linhas de treino respeitam purge + embargo do meta-fold.
+    for s in np.unique(meta_split_id[is_train]):
+        sel = is_train & (meta_split_id == s)
+        fora = ~train_masks[int(s)][pos[sel]]
+        if bool(fora.any()):
+            raise MetaLeakageError(
+                f"§10.1(b): {int(fora.sum())} linha(s) de TREINO do meta-fold {int(s)} "
+                "têm `_pos` fora de splits[meta_split_id].train_idx — purge e embargo "
+                "(B09) NÃO foram aplicados a elas. Provável causa: seleção por "
+                "`fold_id` sem a interseção posicional (§4.3)."
+            )
+
+    # (c) — o doador nunca é o próprio meta-fold.
+    auto_doacao = is_train & (fold_id == meta_split_id)
+    if bool(auto_doacao.any()):
+        raise MetaLeakageError(
+            f"§10.1(c): {int(auto_doacao.sum())} linha(s) de TREINO têm "
+            "fold_id == meta_split_id — o meta-fold estaria treinando sobre as "
+            "predições do próprio fold que ele testa."
+        )
+
+    # (d) — proveniência: 2 calibradores por fold (um por lado), 1 model_id.
+    n_model_id = int(table["model_id"].n_unique())
+    if n_model_id != 1:
+        raise MetaLeakageError(
+            f"§10.1(d): {n_model_id} `model_id` distintos na mesma tabela — misturar "
+            "dois runs do Alpha misturaria escalas de probabilidade SEM ERRO. "
+            "Monte um `meta_training_set` por run."
+        )
+    # §10.1(d), CORRIGIDO CONTRA O DADO REAL (2026-08-30).
+    #
+    # O documento manda asserir `n_unique(calibrator_id) == 2 * n_unique(fold_id)`.
+    # Medido sobre `artifacts/predictions_alpha` (BTCUSDT/R1, camada1, 15 folds):
+    # o valor observado é 10, não 30 — e nunca é 30 em nenhum dos runs em disco
+    # (10, 12, 18, 26 conforme a rodada). Dois motivos independentes, ambos
+    # estruturais e nenhum deles um defeito do Alpha:
+    #   (i)  existe o valor literal "n/a" para linhas sem sinal;
+    #   (ii) só 8 dos 15 folds produzem QUALQUER sinal (folds 0,1,2,3,5,6,7,10
+    #        ficam em zero), e um par (fold, lado) que nunca sinaliza não
+    #        aparece no artefato.
+    # A asserção do documento reprovaria todo artefato real que existe.
+    #
+    # A substituta é MAIS forte, não mais fraca: em vez de contar, verifica a
+    # correspondência estrutural linha a linha — o calibrador que carimbou a
+    # linha tem de ser exatamente o do `(fold_id, side_hat)` daquela linha.
+    # Uma contagem certa com atribuição trocada passaria na regra do
+    # documento e é pega por esta.
+    esperado = (
+        pl.col("model_id")
+        + "_side"
+        + pl.col("side_hat").cast(pl.Utf8)
+        + "_fold"
+        + pl.col("fold_id").cast(pl.Utf8)
+        + "_calibrator"
+    )
+    divergentes = table.filter(pl.col("calibrator_id") != esperado)
+    if divergentes.height > 0:
+        amostra = divergentes.select("fold_id", "side_hat", "calibrator_id").head(3)
+        raise MetaLeakageError(
+            f"§10.1(d): {divergentes.height} linha(s) com `calibrator_id` que não "
+            "corresponde ao par (fold_id, side_hat) da própria linha — a probabilidade "
+            "foi calibrada por um calibrador de OUTRO fold ou de OUTRO lado, o que "
+            f"quebra a comparabilidade de `p_alpha`. Amostra:\n{amostra}"
+        )
+
+
+def assert_design_matrix_is_clean(columns: tuple[str, ...]) -> None:
+    """Mesma disciplina de `DESIGN_COLUMNS` no Alpha: o design matrix é
+    validado contra `META_FORBIDDEN_FEATURES` antes de qualquer fit."""
+    proibidas = sorted(set(columns) & META_FORBIDDEN_FEATURES)
+    if proibidas:
+        raise MetaLeakageError(
+            f"design matrix do Meta contém coluna(s) proibida(s): {proibidas}. "
+            "São o futuro (`ret_net`/`barrier_hit`/`y_meta`), derivadas do futuro "
+            "(`fill_assumed`), ou função do alvo (`meta_sample_weight`/`uniqueness_*`). "
+            "`t1` é insumo de purge e unicidade, nunca feature."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Peças de montagem
+# ---------------------------------------------------------------------------
+
+
+def _derive_side_projected_columns(table: pl.DataFrame) -> pl.DataFrame:
+    """`p_alpha`/`score_alpha_raw`/`tau_alpha` são DERIVADAS por seleção de
+    lado, nunca colunas físicas do Alpha (§3.2/§3.5/§21). `tau_alpha` segue
+    o mesmo padrão já provado de `p_alpha` em vez de introduzir um segundo
+    mecanismo de derivação só para si — foi a reconciliação de `AG-162`."""
+    is_long = pl.col("side_hat") == _SIDE_LONG
+    return table.with_columns(
+        p_alpha=pl.when(is_long).then(pl.col("p_long")).otherwise(pl.col("p_short")),
+        score_alpha_raw=pl.when(is_long)
+        .then(pl.col("score_long_raw"))
+        .otherwise(pl.col("score_short_raw")),
+        tau_alpha=pl.when(is_long).then(pl.col("tau_long")).otherwise(pl.col("tau_short")),
+        # `margin` é projetada no lado: para um short, `p_short - p_long` é a
+        # margem a favor da decisão tomada (§3.2).
+        margin=pl.col("side_hat").cast(pl.Float64) * (pl.col("p_long") - pl.col("p_short")),
+    )
+
+
+def _derive_target(table: pl.DataFrame, *, include_nofill: bool) -> pl.DataFrame:
+    """§3.3 — `y_meta = 1[ret_net > 0]`, PnL líquida.
+
+    Quatro coisas que é fácil errar seguindo o AFML ao pé da letra:
+    1. `ret_net` JÁ vem projetado no lado (`triple_barrier` emite uma linha
+       por lado). NÃO multiplicar por `side` de novo — dupla projeção.
+    2. `ret_net == 0.0` exato → `y_meta = 0`.
+    3. `TIME` não é caso especial: o snippet 3.7 do AFML usa `sign(ret·side)`
+       e o Exercício 3.3 sugere 0 na vertical; o livro não trava. A regra
+       daqui é `1[ret_net > 0]` inclusive em TIME.
+    4. `y_meta` ≠ label do Alpha. O Alpha treina `1[barrier_hit == "TP"]`; o
+       Meta treina PnL líquida. **A assimetria é o mecanismo** — o Alpha não
+       otimiza custo nem funding."""
+    fill_assumed = pl.col("barrier_hit") != _NOFILL
+    y_bruto = (pl.col("ret_net") > 0.0).cast(pl.Int8)
+    y_meta = y_bruto if include_nofill else pl.when(fill_assumed).then(y_bruto).otherwise(None)
+    return table.with_columns(
+        fill_assumed=fill_assumed,
+        y_meta=y_meta.cast(pl.Int8),
+    )
+
+
+def _regime_one_hot(table: pl.DataFrame, regime_levels: tuple[str, ...]) -> pl.DataFrame:
+    """One-hot drop-first sobre níveis FIXOS A PRIORI (§6.3).
+
+    O nível de referência (dropado) é o primeiro de `regime_levels`. Uma
+    linha cujo `regime` não está entre os níveis conhecidos ficaria com
+    TODAS as dummies em 0 — que sob drop-first é exatamente a codificação
+    do nível de referência, ou seja **predição errada em vez de erro**. É o
+    caso que a v1 do documento não viu, e sob o HMM ele não é raro: o
+    sentinela `NO_DECODE` cobre os 2 primeiros anos de cada símbolo
+    (`m1_walkforward_initial_train_years`), um bloco contíguo de calendário
+    que cai inteiro no grupo 0 da partição cronológica do CPCV.
+
+    Por isso a marcação acontece AQUI, junto do one-hot, e não num passo
+    posterior que alguém pudesse esquecer de chamar. A política declarada
+    para `meta_status != OK` é VETO (§6.4), coerente com D-05 ("não
+    aposte") — e as mesmas linhas ficam fora do TREINO, senão o modelo
+    aprenderia sobre uma codificação que sabemos estar errada."""
+    regime_utf8 = pl.col("regime").cast(pl.Utf8)
+    conhecido = regime_utf8.is_in(list(regime_levels))
+    dummies = [
+        (regime_utf8 == nivel).cast(pl.Int8).alias(f"{REGIME_OHE_PREFIX}{nivel}")
+        for nivel in regime_levels[1:]  # drop-first
+    ]
+    return table.with_columns(*dummies).with_columns(
+        meta_status=pl.when(conhecido)
+        .then(pl.lit(META_STATUS_OK))
+        .otherwise(pl.lit(META_STATUS_UNSEEN_REGIME))
+    )
+
+
+def regime_stability_diagnostic(
+    table: pl.DataFrame, *, characteristic: str = "atr_at_t0"
+) -> pl.DataFrame:
+    """§6.2 — mede a estabilidade do mapeamento estado↔característica entre
+    folds de canonicalização do HMM. **Pré-requisito de D-01**, a rodar
+    ANTES de qualquer treino do Meta.
+
+    O problema que ela existe para detectar: sob o HMM a canonicalização é
+    por fold do walk-forward, por retorno ascendente com desempate por
+    variância (`build_hmm`). Logo `S2` do fold 3 e `S2` do fold 7 estão
+    ligados apenas por *rank de retorno dentro do próprio fold* — não são o
+    mesmo objeto. Empilhá-los numa coluna one-hot única pressupõe uma
+    comparabilidade que ninguém verificou. Se o efeito real existir com
+    sinal oposto em folds distintos, ele **cancela**, e D-01 é rejeitada
+    por artefato de rotulagem em vez de por ausência de sinal — os dois
+    resultados são indistinguíveis sem esta medição.
+
+    `characteristic` default `atr_at_t0`: é volatilidade, é conhecida em
+    `t0` (nunca o alvo), e já está no `meta_training_set` (§3.2).
+
+    Devolve uma linha por `(regime_fold_id, regime)` com a mediana e a
+    contagem da característica, mais o RANK daquele estado dentro do seu
+    fold. Comparar os ranks entre folds é o teste: se o estado `S2` é o 3º
+    mais volátil num fold e o 1º noutro, o rótulo não é comparável.
+
+    **Sem limiar de aprovação declarado, de propósito (B23).** O design doc
+    não trava um; inventar um aqui seria exatamente o que `AG-114`/`AG-122`
+    documentam como o modo de falha de "gate sem definição operacional".
+    Reporta o número; quem decide o critério é o Manager."""
+    if ds.REGIME_FOLD_COL not in table.columns:
+        raise MetaDatasetError(
+            f"regime_stability_diagnostic exige a coluna {ds.REGIME_FOLD_COL!r}, que só "
+            "existe sob `regime_source=hmm_gaussian_k4_v1` "
+            "(`dataset.build_modeling_frame`). Sob o classificador por quantis não há "
+            "canonicalização por fold e esta medição não se aplica."
+        )
+    por_estado = (
+        table.filter(pl.col("regime") != ds.REGIME_NO_DECODE_LABEL)
+        .group_by([ds.REGIME_FOLD_COL, "regime"])
+        .agg(
+            mediana_caracteristica=pl.col(characteristic).median(),
+            n_linhas=pl.len(),
+        )
+    )
+    return por_estado.with_columns(
+        rank_no_fold=pl.col("mediana_caracteristica")
+        .rank(method="ordinal")
+        .over(ds.REGIME_FOLD_COL)
+    ).sort([ds.REGIME_FOLD_COL, "regime"])
+
+
+def _assert_regime_join_is_total(table: pl.DataFrame) -> None:
+    """§6.4 — 100% das linhas com `regime` não-nulo. Nulo levanta com
+    contagem e intervalo. NUNCA imputação silenciosa."""
+    n_nulo = int(table["regime"].null_count())
+    if n_nulo == 0:
+        return
+    nulos = table.filter(pl.col("regime").is_null())
+    t0_min = str(nulos["t0"].min())
+    t0_max = str(nulos["t0"].max())
+    raise MetaDatasetError(
+        f"§6.4: {n_nulo} linha(s) sem `regime` após o join, de {table.height} — "
+        f"intervalo t0 [{t0_min}, {t0_max}]. O join de regime é "
+        "exato (não as-of), então nulo significa cobertura faltando no artefato de "
+        "regime, não tolerância mal escolhida. Nunca imputado."
+    )
+
+
+def _uniqueness_subpop(table: pl.DataFrame) -> pl.DataFrame:
+    """§5/D-10 — unicidade RECALCULADA na subpopulação, com o grão
+    `(symbol, side_hat)` explícito, dentro de cada `(meta_split_id, role)`.
+
+    Herdar `uniqueness` do universo está errado por três motivos: (a) a
+    concorrência foi contada contra todas as barras, não contra a população
+    sinalizada; (b) a normalização "média 1" não vale num subconjunto; (c)
+    concorrência global conta vizinhos que estão no bloco de TESTE, então o
+    peso de uma linha de treino codificaria a densidade de sinal do teste.
+
+    Sem o `groupby(symbol, side_hat)` a chamada ou levanta `ValueError`
+    (linhas concatenadas por `fold_id` não vêm ordenadas por `t0`) ou conta
+    um evento de BTC como concorrente de um de ETH e um short como
+    concorrente de um long — e `n_eff_subpop` sairia subestimado por ~5×,
+    mandando todo fold para `INSUFFICIENT_SAMPLE`. Isso seria lido como "a
+    amostra matou o desenho" quando foi um bug de agrupamento.
+
+    `role` entra no grão junto com `meta_split_id` (decisão deste módulo,
+    não do documento): calcular a concorrência sobre treino ∪ teste faria a
+    densidade do teste entrar no peso do treino — precisamente o defeito (c)
+    que a regra existe para corrigir."""
+    partes: list[pl.DataFrame] = []
+    chaves = ("meta_split_id", "role", "symbol", "side_hat")
+    for _chave, grupo in table.group_by(chaves, maintain_order=True):
+        ordenado = grupo.sort("t0")
+        t0_ms = ordenado["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        t1_ms = ordenado["t1"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+        _concorrencia, unicidade = compute_concurrency_and_uniqueness(t0_ms, t1_ms)
+        partes.append(ordenado.with_columns(uniqueness_subpop=pl.Series(unicidade)))
+    return pl.concat(partes, how="vertical")
+
+
+def _meta_sample_weight(table: pl.DataFrame) -> pl.DataFrame:
+    """§5 — `uniqueness_subpop × |ret_net|`, normalizado para média 1
+    DENTRO do treino de cada meta-fold.
+
+    Justificativa de por que isto NÃO é vazamento, corrigida em relação à
+    v1 do documento (que mandava escrever "é o módulo, não o sinal"):
+    **é falso** — com `tp_atr_mult = 2.0` e `sl_atr_mult = 1.5`,
+    `E[|ret_net| | y=1] ≈ 1,33 × E[|ret_net| | y=0]`, então o módulo é quase
+    um classificador do alvo. A justificativa correta é outra: peso derivado
+    de rótulos de TREINO não é vazamento; ele É correlacionado com o alvo,
+    por construção das barreiras, e a consequência é que o modelo não estima
+    `P(y=1|X)` e sim uma versão inclinada, concentrada em eventos de alta
+    volatilidade. Quem comparar accuracy do Meta contra uma taxa base
+    NÃO-ponderada vai ler "abaixo do acaso" num modelo funcionando (§9)."""
+    bruto = pl.col("uniqueness_subpop") * pl.col("ret_net").abs()
+    so_treino = pl.when(pl.col("role") == ROLE_TRAIN).then(bruto).otherwise(None)
+    media_treino = so_treino.mean().over("meta_split_id")
+    return table.with_columns(
+        meta_sample_weight=pl.when(media_treino > 0.0)
+        .then(bruto / media_treino)
+        .otherwise(0.0)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Orquestração
+# ---------------------------------------------------------------------------
+
+#: Colunas que `join_signals_to_labels` traz de `dense` ALÉM das colunas
+#: base do harness. `_pos` é a chave posicional contra `train_idx`/`test_idx`
+#: (§4.7); `t1` é purge e unicidade e NUNCA feature; `uniqueness` é o valor
+#: do universo, mantido só como diagnóstico contra o recalculado (§5).
+_CARRY_FROM_DENSE: tuple[str, ...] = ("_pos", "t1", "atr_at_t0", "uniqueness", "regime")
+
+_SIGNAL_COLUMNS_FROM_PREDICTIONS: tuple[str, ...] = (
+    "t0",
+    "side_hat",
+    "fold_id",
+    "p_long",
+    "p_short",
+    "tau_long",
+    "tau_short",
+    "score_long_raw",
+    "score_short_raw",
+    "model_id",
+    "calibrator_id",
+    "is_oof",
+)
+
+
+def build_meta_signal_table(
+    *,
+    dense: pl.DataFrame,
+    predictions: pl.DataFrame,
+    cpcv_result: cpcv.CPCVResult,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    donor_rule: str = DONOR_RULE_PATH_MATCHED,
+    regime_source: str = ds.REGIME_SOURCE_HMM_K4,
+    origem: str = "<memória>",
+) -> pl.DataFrame:
+    """Monta o `meta_training_set` (§3.2) para UM `(symbol, resolution_id,
+    variant)`.
+
+    `dense` é o frame DENSO (`dataset.build_modeling_frame(...).data`) sobre
+    o qual `cpcv_result` foi gerado — a seleção do subconjunto sinalizado é
+    POSICIONAL (§4.7), nunca por regeneração de splits sobre o subconjunto:
+    `assert_grade_consistent` sobre subconjunto esparso ou passa em silêncio
+    (ramo dollar-bar, que lê `_calibration.json` e nunca olha `labels`) ou
+    quebra com `CPCVError` espúrio (ramo de tempo).
+
+    `variant` (`camada1`/`camada0`) entra na chave para que misturar as duas
+    seja impossível por engano, não só desaconselhado."""
+    if donor_rule != DONOR_RULE_PATH_MATCHED:
+        raise MetaDatasetError(
+            f"donor_rule={donor_rule!r} não implementado. `{DONOR_RULE_GROUP_MATCHED}` é "
+            "F9/trabalho futuro (D-08 da v3): exige uma primitiva de purge por bloco "
+            "arbitrário que `cpcv.py` não tem (AG-153), e nunca teve o lado do TESTE "
+            "definido. Devolver um resultado sem purge seria pior que levantar."
+        )
+    assert_dense_frame_matches_splits(dense, cpcv_result)
+    assert_alpha_predictions_has_tau(predictions, origem=origem)
+
+    include_nofill = bool(load_constant("meta_include_nofill_in_training"))
+
+    dense_indexed = dense.with_row_index(name="_pos").with_columns(
+        # `with_row_index` devolve UInt32, que `src.io.schema._DTYPE_BY_NAME`
+        # não conhece — `Int64` é o menor tipo suportado que cobre o índice.
+        pl.col("_pos").cast(pl.Int64)
+    )
+
+    regime_levels = regime_levels_for_source(regime_source)
+    # `regime_fold_id` só existe sob o HMM, e é o insumo da medição de
+    # estabilidade do §6.2 — sem ele o one-hot de regime não é auditável.
+    carry = _CARRY_FROM_DENSE
+    if regime_source == ds.REGIME_SOURCE_HMM_K4:
+        if ds.REGIME_FOLD_COL not in dense.columns:
+            raise MetaDatasetError(
+                f"regime_source=hmm_gaussian_k4_v1 mas o frame denso não tem "
+                f"{ds.REGIME_FOLD_COL!r}. Gere o frame com "
+                "`dataset.build_modeling_frame(..., regime_source='hmm_gaussian_k4_v1')` "
+                "— o classificador por quantis não produz esta coluna, e sem ela a "
+                "estabilidade cross-fold do rótulo (§6.2) fica não-verificável."
+            )
+        carry = (*carry, ds.REGIME_FOLD_COL)
+
+    sinais = predictions.filter(pl.col("side_hat") != 0).select(
+        list(_SIGNAL_COLUMNS_FROM_PREDICTIONS)
+    )
+    ligado = join_signals_to_labels(sinais, dense_indexed, carry=carry)
+    _assert_regime_join_is_total(ligado)
+
+    doadores = donor_folds_for_path_matched(cpcv_result)
+    n_rows = int(cpcv_result.group_id.shape[0])
+    test_masks = _test_masks_by_fold(cpcv_result, n_rows)
+    train_masks = _train_masks_by_split(cpcv_result, n_rows)
+
+    pos = ligado["_pos"].to_numpy().astype(np.int64)
+    fold_id = ligado["fold_id"].to_numpy().astype(np.int64)
+
+    blocos: list[pl.DataFrame] = []
+    for split in cpcv_result.splits:
+        s = split.split_id
+        # TESTE — a barra saiu do bloco de teste DESTE fold.
+        sel_teste = (fold_id == s) & test_masks[s][pos]
+        if bool(sel_teste.any()):
+            blocos.append(
+                ligado.filter(pl.Series(sel_teste)).with_columns(
+                    meta_split_id=pl.lit(s, dtype=pl.Int16),
+                    path_id=pl.lit(split.path_id, dtype=pl.Int64),
+                    role=pl.lit(ROLE_TEST),
+                )
+            )
+        # TREINO — doador é outro fold do MESMO path, E a posição precisa
+        # estar em `train_idx` do meta-fold. A segunda condição é a que
+        # carrega purge + embargo; sem ela B09 desliga em silêncio (§10.1b).
+        sel_treino = np.isin(fold_id, list(doadores[s])) & train_masks[s][pos]
+        if bool(sel_treino.any()):
+            blocos.append(
+                ligado.filter(pl.Series(sel_treino)).with_columns(
+                    meta_split_id=pl.lit(s, dtype=pl.Int16),
+                    path_id=pl.lit(split.path_id, dtype=pl.Int64),
+                    role=pl.lit(ROLE_TRAIN),
+                )
+            )
+
+    if not blocos:
+        raise MetaDatasetError(
+            f"nenhuma linha sobreviveu à seleção posicional para {symbol}/{resolution_id}/"
+            f"{variant} — nenhum sinal do Alpha caiu simultaneamente no bloco de teste do "
+            "seu fold e no train_idx/test_idx de algum meta-fold. Verifique se "
+            "`predictions` e `cpcv_result` vieram do MESMO run."
+        )
+
+    tabela = pl.concat(blocos, how="vertical")
+    tabela = tabela.with_columns(
+        symbol=pl.lit(symbol),
+        resolution_id=pl.lit(resolution_id),
+        variant=pl.lit(variant),
+        donor_rule=pl.lit(donor_rule),
+        uniqueness_universe=pl.col("uniqueness"),
+    )
+    tabela = _derive_side_projected_columns(tabela)
+    tabela = _derive_target(tabela, include_nofill=include_nofill)
+    tabela = _regime_one_hot(tabela, regime_levels)
+    tabela = _uniqueness_subpop(tabela)
+    tabela = _meta_sample_weight(tabela)
+
+    assert_no_meta_leakage(tabela, cpcv_result)
+
+    logger.info(
+        "models.meta_dataset.build_meta_signal_table",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        donor_rule=donor_rule,
+        regime_source=regime_source,
+        regime_levels=regime_levels,
+        n_linhas=tabela.height,
+        n_treino=int((tabela["role"] == ROLE_TRAIN).sum()),
+        n_teste=int((tabela["role"] == ROLE_TEST).sum()),
+        n_meta_folds=int(tabela["meta_split_id"].n_unique()),
+        n_nofill=int((tabela["barrier_hit"] == _NOFILL).sum()),
+        n_unseen_regime=int((tabela["meta_status"] == META_STATUS_UNSEEN_REGIME).sum()),
+        # §6.4 pede as duas contagens SEPARADAS: sentinela "sem decode" do
+        # HMM e nível fora do conjunto conhecido são causas diferentes com a
+        # mesma política (veto). Somá-las esconderia qual das duas dominou.
+        n_regime_no_decode=int((tabela["regime"] == ds.REGIME_NO_DECODE_LABEL).sum()),
+        n_teste_vetado=int(
+            ((tabela["role"] == ROLE_TEST) & (tabela["meta_status"] != META_STATUS_OK)).sum()
+        ),
+        include_nofill_in_training=include_nofill,
+    )
+    return tabela

@@ -45,6 +45,7 @@ from src.features import build as features_build
 from src.features.build import T1_FEATURE_IDS
 from src.labels import r2_admissibility
 from src.labels.triple_barrier import LabelConfig, verify_config_hash
+from src.regime import artifact_hmm as regime_artifact_hmm
 from src.regime import build as regime_build
 from src.validation import cpcv
 
@@ -56,6 +57,47 @@ SYMBOL_DEFAULT = "BTCUSDT"
 
 REGIME_COL = "regime"
 TRADEABLE_COL = "tradeable"
+
+# --------------------------------------------------------------------------
+# Fonte de regime (`regime_source`) — adaptador de schema, não parâmetro
+# cosmético.
+#
+# `build_regimes` (classificador por quantis) emite uma coluna `regime`
+# Utf8 com níveis nominais `R0..R5`. `build_hmm.build_hmm_regimes` emite
+# `canonical_id` (Int64, `0..k-1`, com `-1` de sentinela "sem decode") e
+# `fold_id` — NENHUMA coluna chamada `regime`. Trocar um pelo outro falha
+# com `ColumnNotFoundError`, nunca em silêncio; por isso a tradução mora
+# numa função explícita (`_build_regimes_hmm_adapted`) e não num `if`
+# espalhado pelo corpo de `build_modeling_frame`.
+#
+# POR QUE O DEFAULT CONTINUA O CLASSIFICADOR POR QUANTIS. Isto NÃO é
+# "correção do Manager atrás de flag opt-in" (`CLAUDE.md`, diretrizes de
+# comportamento): `hmm_gaussian_k4_v1` é o candidato canônico decidido por
+# `AG-114`, mas a coluna `regime` deste frame é consumida hoje pelo GATE DE
+# RISCO de produção (`src.risk.limits::control_01_regime_tradeavel`), não
+# pelo vetor do Alpha (regime saiu dele em 2026-08-21). Trocar o default
+# aqui mudaria o comportamento do gate de risco de carona numa mudança
+# feita para o Meta — decisão do Manager, separada e explícita, não efeito
+# colateral. O Meta pede HMM explicitamente.
+REGIME_SOURCE_QUANTILE_V1 = "quantile_classifier_v1"
+REGIME_SOURCE_HMM_K4 = "hmm_gaussian_k4_v1"
+_REGIME_SOURCES = (REGIME_SOURCE_QUANTILE_V1, REGIME_SOURCE_HMM_K4)
+
+#: Fold de canonicalização do HMM (walk-forward ancorado trimestral). É uma
+#: partição DIFERENTE dos folds do CPCV/Alpha — por isso NÃO se chama
+#: `fold_id`: a colisão de nome com `predictions.fold_id` produziria um join
+#: silenciosamente errado no `meta_training_set`.
+REGIME_FOLD_COL = "regime_fold_id"
+
+#: Rótulo do sentinela `canonical_id = -1` ("sem decode"). Materializado
+#: como nível nomeado em vez de nulo porque §6.4 do design doc do Meta
+#: exige política declarada (VETO) e contagem reportada — nulo silencioso
+#: viraria imputação por omissão. Com `m1_walkforward_initial_train_years`
+#: os 2 primeiros anos de CADA símbolo caem aqui, num bloco contíguo de
+#: calendário: não é caso de borda.
+REGIME_NO_DECODE_LABEL = "NO_DECODE"
+_HMM_NO_DECODE_SENTINEL = -1
+_HMM_STATE_PREFIX = "S"
 
 # Folga de calendário ao redor de [min(t0), max(t0)] dos labels para
 # reconstruir features/regime sobre o MESMO intervalo sem cortar a borda —
@@ -135,6 +177,70 @@ class ModelingFrame:
     data: pl.DataFrame
     t1_feature_ids: tuple[str, ...]
     regime_labels_present: tuple[str, ...]
+    #: Qual classificador produziu a coluna `regime`. Default preserva o
+    #: comportamento histórico; consumidores que precisam saber (o Meta
+    #: precisa — os níveis do one-hot dependem disto) leem daqui em vez de
+    #: inferir do conteúdo da coluna.
+    regime_source: str = REGIME_SOURCE_QUANTILE_V1
+
+
+def hmm_state_labels(n_states: int) -> tuple[str, ...]:
+    """Níveis nominais do HMM canonicalizado, FIXOS A PRIORI dado `k`.
+
+    `S0..S{k-1}` em vez de `R0..R5` de propósito: são espaços de nome
+    distintos (`R1` é `resolution_id`, grade de barra, e `R1` também era um
+    nível do classificador por quantis — a ambiguidade já existia e não
+    vale propagá-la). O sentinela entra como nível nomeado, não como nulo.
+    """
+    return (
+        *(f"{_HMM_STATE_PREFIX}{i}" for i in range(n_states)),
+        REGIME_NO_DECODE_LABEL,
+    )
+
+
+def _build_regimes_hmm_adapted(
+    symbol: str, start: str, end: str, *, resolution_id: str
+) -> pl.DataFrame:
+    """Adaptador de schema HMM → contrato de `regime` deste módulo (§6.1 do
+    design doc do Meta, que nomeia exatamente esta função como o trabalho
+    real da migração).
+
+    Traduz `canonical_id` (Int64, `-1` = sem decode) em `regime` (Utf8,
+    `S0..S{k-1}` + `NO_DECODE`) e renomeia `fold_id` → `regime_fold_id`.
+
+    A renomeação NÃO é cosmética: `build_hmm` chama de `fold_id` o fold do
+    walk-forward ancorado que canonicalizou aquele trecho, e o Alpha chama
+    de `fold_id` o split do CPCV. São partições diferentes; deixar as duas
+    com o mesmo nome faria o `meta_training_set` juntar uma na outra sem
+    erro nenhum.
+
+    **Advertência de comparabilidade (§6.2, pré-requisito de D-01).** A
+    canonicalização do HMM é POR FOLD (`build_hmm`, por retorno ascendente
+    com desempate por variância), então `S2` do fold 3 e `S2` do fold 7
+    estão ligados apenas por rank de retorno dentro do próprio fold — não
+    são o mesmo objeto. Empilhá-los numa única coluna one-hot pressupõe uma
+    comparabilidade que precisa ser MEDIDA antes de qualquer treino; é para
+    isso que `regime_fold_id` sai daqui em vez de ser descartado.
+
+    **LÊ de artefato versionado, nunca refita.** `build_hmm_regimes` refita
+    o HMM a cada fold do walk-forward: medido em >15 min para UM símbolo
+    (BTCUSDT/R1, 437.630 barras) sem terminar. Fazer isso dentro de
+    `build_modeling_frame` tornaria o custo de montar um frame dependente
+    de um refit de modelo — coisa que nenhum outro insumo do pipeline faz.
+    Artefato ausente levanta `RegimeHmmArtifactMissingError` com o comando
+    que o produz; jamais cai num refit de fallback."""
+    hmm = regime_artifact_hmm.read_regime_hmm(
+        symbol, start, end, resolution_id=resolution_id
+    )
+    return hmm.select(
+        pl.col("t0"),
+        pl.when(pl.col("canonical_id") == _HMM_NO_DECODE_SENTINEL)
+        .then(pl.lit(REGIME_NO_DECODE_LABEL))
+        .otherwise(pl.lit(_HMM_STATE_PREFIX) + pl.col("canonical_id").cast(pl.Utf8))
+        .alias(REGIME_COL),
+        pl.col("tradeable"),
+        pl.col("fold_id").alias(REGIME_FOLD_COL),
+    )
 
 
 def build_modeling_frame(
@@ -148,6 +254,7 @@ def build_modeling_frame(
     t0_end: str | None = None,
     extra_feature_ids: tuple[str, ...] = (),
     use_geometry_by_combo: bool = False,
+    regime_source: str = REGIME_SOURCE_QUANTILE_V1,
 ) -> ModelingFrame:
     """`extra_feature_ids` (AG-032, 2026-08-23) — colunas de feature ALÉM
     de `T1_FEATURE_IDS` a incluir em `mf.data`, ex. `C07_vol_pctile_
@@ -381,15 +488,31 @@ def build_modeling_frame(
     # colunas de futures-positioning, incondicionalmente (não depende de
     # `extra_feature_ids`, que é escopo só do frame de FEATURES, não do
     # de regime). `False`/`False` explícitos, mesmo achado acima.
-    regimes_df = regime_build.build_regimes(
-        symbol,
-        start,
-        end,
-        bar_source=bar_source,
-        vol_estimator_id=vol_estimator_id,
-        load_taker_imbalance_1m=False,
-        load_futures_positioning=False,
-    )
+    if regime_source not in _REGIME_SOURCES:
+        raise ValueError(
+            f"build_modeling_frame: regime_source={regime_source!r} desconhecido — "
+            f"esperado um de {_REGIME_SOURCES}"
+        )
+    if regime_source == REGIME_SOURCE_HMM_K4:
+        if resolution_id is None:
+            raise ValueError(
+                "build_modeling_frame: regime_source=hmm_gaussian_k4_v1 exige "
+                "`resolution_id` explícito — `build_hmm_regimes` opera sobre a grade "
+                "dollar-bar, não sobre grade de relógio."
+            )
+        regimes_df = _build_regimes_hmm_adapted(
+            symbol, start, end, resolution_id=resolution_id
+        )
+    else:
+        regimes_df = regime_build.build_regimes(
+            symbol,
+            start,
+            end,
+            bar_source=bar_source,
+            vol_estimator_id=vol_estimator_id,
+            load_taker_imbalance_1m=False,
+            load_futures_positioning=False,
+        )
 
     bar_table = features_df.with_columns(
         pl.col("open_time").cast(pl.Int64).alias("_open_time_ms"),
@@ -428,10 +551,17 @@ def build_modeling_frame(
             "mantida a barra real (maior close_time) por open_time",
         )
 
+    # `regime_fold_id` só existe sob o HMM (é o fold de canonicalização do
+    # walk-forward). Sob o classificador por quantis não há canonicalização
+    # por fold, logo a coluna não existe e não é inventada.
+    _regime_extra_cols = (
+        [pl.col(REGIME_FOLD_COL)] if regime_source == REGIME_SOURCE_HMM_K4 else []
+    )
     regime_small = regimes_df.select(
         pl.col("t0").dt.epoch(time_unit="ms").alias("_open_time_ms"),
         pl.col("regime").cast(pl.Utf8).alias(REGIME_COL),
         pl.col("tradeable"),
+        *_regime_extra_cols,
     )
     # (2) regime_small por open_time, mantendo a ÚLTIMA avaliação na ordem
     # sequencial original (sem reordenar) -- o classificador processa
@@ -461,6 +591,7 @@ def build_modeling_frame(
         *extra_feature_ids,
         REGIME_COL,
         TRADEABLE_COL,
+        *([REGIME_FOLD_COL] if regime_source == REGIME_SOURCE_HMM_K4 else []),
     ]
     merged = labels2.join(bar_table.select(join_cols), on="_close_time_ms", how="left")
     merged = merged.sort("_pos").drop(["_pos", "_close_time_ms"])
@@ -498,9 +629,17 @@ def build_modeling_frame(
         n_missing_regime=n_missing_regime,
         n_missing_t1_first_feature=n_missing_feat,
         regimes_present=regimes_present,
+        regime_source=regime_source,
+        # §6.4 do design doc do Meta — o bloco sem decode do HMM não é caso
+        # de borda (são os 2 primeiros anos de cada símbolo, contíguos em
+        # calendário), então a contagem é reportada, nunca só descartada.
+        n_regime_no_decode=int((merged[REGIME_COL] == REGIME_NO_DECODE_LABEL).sum()),
     )
     return ModelingFrame(
-        data=merged, t1_feature_ids=T1_FEATURE_IDS, regime_labels_present=regimes_present
+        data=merged,
+        t1_feature_ids=T1_FEATURE_IDS,
+        regime_labels_present=regimes_present,
+        regime_source=regime_source,
     )
 
 
