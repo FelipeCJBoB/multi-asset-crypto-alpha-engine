@@ -30,6 +30,7 @@ def _fake_path_result(path_id: int, sharpe: float) -> backtest_lite.PathBacktest
         mean_trade_ret=0.001,
         std_trade_ret=0.01,
         trades_per_year=100.0 + path_id,
+        win_rate=0.5,
     )
 
 

@@ -212,6 +212,7 @@ def _path_result(path_id: int, sharpe: float) -> backtest_lite.PathBacktestResul
         mean_trade_ret=0.0,
         std_trade_ret=1.0,
         trades_per_year=100.0,
+        win_rate=0.5,
     )
 
 

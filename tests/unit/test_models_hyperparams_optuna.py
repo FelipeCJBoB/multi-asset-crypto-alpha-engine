@@ -158,6 +158,7 @@ _FAKE_PATH_RESULT = backtest_lite.PathBacktestResult(
     mean_trade_ret=0.01,
     std_trade_ret=0.02,
     trades_per_year=100.0,
+    win_rate=0.5,
 )
 _SMALL_SEARCH_SPACE = {"num_leaves": mod._SearchDim(kind="int", low=4.0, high=8.0, log=False)}
 
@@ -340,6 +341,7 @@ def _fake_path_result(path_id: int, sharpe: float) -> Any:
         mean_trade_ret=0.01,
         std_trade_ret=0.02,
         trades_per_year=100.0,
+        win_rate=0.5,
     )
 
 
@@ -575,6 +577,7 @@ def test_confirm_combo_paired_edge_gate_passa_com_edge_positivo_e_cobertura_sufi
             mean_trade_ret=0.02,
             std_trade_ret=0.02,
             trades_per_year=100.0,
+            win_rate=0.5,
         )
 
     monkeypatch.setattr(
@@ -642,6 +645,7 @@ def test_confirm_combo_paired_edge_gate_falha_por_sinal_mesmo_com_cobertura_boa(
             mean_trade_ret=-0.03,
             std_trade_ret=0.02,
             trades_per_year=100.0,
+            win_rate=0.5,
         )
 
     monkeypatch.setattr(

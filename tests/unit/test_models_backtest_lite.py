@@ -150,6 +150,7 @@ def test_permanence_count_conta_paths_onde_camada1_supera_camada0() -> None:
             mean_trade_ret=0.0,
             std_trade_ret=0.01,
             trades_per_year=100.0,
+            win_rate=0.5,
         )
 
     c1 = {0: _mk(0, 0.5), 1: _mk(1, -0.2), 2: _mk(2, 1.0)}
@@ -170,6 +171,7 @@ def test_permanence_count_nan_nunca_conta_como_melhora() -> None:
             mean_trade_ret=float("nan"),
             std_trade_ret=float("nan"),
             trades_per_year=float("nan"),
+            win_rate=float("nan"),
         )
 
     c1 = {0: _mk(float("nan"))}

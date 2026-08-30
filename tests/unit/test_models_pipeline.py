@@ -444,6 +444,7 @@ def _fake_path_result(sharpe: float, path_id: int = 0) -> backtest_lite.PathBack
         mean_trade_ret=0.0,
         std_trade_ret=0.01,  # noqa: magic-number
         trades_per_year=100.0,  # noqa: magic-number
+        win_rate=0.5,  # noqa: magic-number
     )
 
 

@@ -213,6 +213,7 @@ class PathBacktestResult:
     mean_trade_ret: float
     std_trade_ret: float
     trades_per_year: float
+    win_rate: float
 
 
 def backtest_by_path(
@@ -238,6 +239,11 @@ def backtest_by_path(
         std_ret = (
             float(np.std(rets, ddof=1)) if rets.size >= _MIN_TRADES_FOR_SHARPE else float("nan")
         )
+        # `ret_net > 0`, não `barrier_hit == "TP"` -- TIME pode fechar
+        # positivo ou negativo dependendo do preço no timeout, e SL raro
+        # (gap) pode fechar melhor que o nominal (fill_model.py) -- taxa de
+        # acerto ECONÔMICA (fechou no lucro), não taxa de acerto do rótulo.
+        win_rate = float(np.mean(rets > 0.0)) if rets.size else float("nan")
         out[path_id] = PathBacktestResult(
             path_id=path_id,
             n_signals=n_signals,
@@ -247,6 +253,7 @@ def backtest_by_path(
             mean_trade_ret=mean_ret,
             std_trade_ret=std_ret,
             trades_per_year=tpy,
+            win_rate=win_rate,
         )
     logger.info(
         "models.backtest_lite.backtest_by_path",
