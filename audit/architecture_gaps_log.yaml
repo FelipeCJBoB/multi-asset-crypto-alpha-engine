@@ -25571,3 +25571,84 @@ entries:
       real. Decisao de quando/se rodar essa confirmacao fica com o
       Manager.
     status: "fechado 2026-08-30 -- campanha real executada com sucesso total (900/900, 0 falhas), resultado bruto registrado com ressalva explicita de winner's-curse, confirmacao multi-seed e decisao pendente"
+
+  - id: AG-383
+    date: "2026-08-30"
+    file: "experiments/alpha_optuna_confirmation_*.json (30 arquivos, um por symbol/resolution_id), experiments/alpha_optuna_confirmation_summary_*.json, audit/n_lifetime.yaml::id=35 (+450)"
+    related_file: "audit/architecture_gaps_log.yaml::AG-382 (campanha bruta que esta confirmacao corrige), AG-220 (ressalva de poder estatistico do gate de permanencia, ainda aberta e reforcada pelo achado desta rodada); https://claude.ai/code/artifact/cbe9da64-66a6-41c3-9873-ae93225f0fda (Alpha -- Base de Pesquisa, secao H9)"
+    numeracao: "AG-383, folga sobre AG-382 (maior no momento)."
+    found_by: "Claude, autorizacao direta do Manager ('Pode executar a campanha inteira, nao precisa medir custo real com 1 combo') apos o Manager pedir o desenho do protocolo de confirmacao multi-seed"
+    gap: >
+      Nao e um gap -- e o registro da campanha de CONFIRMACAO real que
+      corrige a ressalva de winner's-curse deixada explicita no
+      `AG-382`. `uv run python -m src.models.hyperparams_optuna
+      --confirm --all-combinations --top-k 3 --confirmation-seeds 101
+      202 303 404 505 --device-type cpu` -- reusa os 900 trials JA
+      COMPLETOS do `AG-382` (zero busca nova): para cada (symbol,
+      resolution_id, variant), le a study salva, seleciona os top-3
+      trials por `value` (screening), re-treina cada candidato de
+      hiperparametro FIXO sob 5 seeds novas (101/202/303/404/505),
+      escolhe o vencedor por MEDIANA de Sharpe pooled entre seeds (nao
+      pelo argmax de screening), e calcula o gate de permanencia
+      (`n_better`/5, Camada1 vs Camada0 pareado por path) diretamente
+      dos proprios runs de confirmacao -- sem precisar de um "Estagio
+      3" separado como o ADR-002 exigiu. 15 combos x 2 variantes x 3
+      candidatos x 5 seeds = 450 retreinos completos reais (15 folds
+      CPCV x 2 lados + backtest cada um). **450/450 completaram sem
+      erro.** Tempo total medido: 1h12m53s (09:34:43 -> 10:47:36) --
+      ~9,72s/retreino, proximo do ~9,10s/trial medido na campanha
+      bruta do `AG-382` (2h16m33s/900), sem anomalia de custo por
+      unidade.
+
+      **Vies de selecao medido diretamente (nao estimado)**: em 28 dos
+      30 pares (symbol, resolution_id, variant), `screening_value` (o
+      `best_value` bruto do AG-382) SUPERESTIMA `median_pooled_sharpe`
+      (o valor confirmado) -- media do vies de selecao sobre as 30
+      studies = **+0,309** de Sharpe pooled (min=-0,177, max=+0,840).
+      Mesma ordem de grandeza do vies historico deste projeto (ADR-002
+      Fase 2: +0,772 no pior caso medido, 1 unico candidato) -- aqui
+      medido como MEDIA sobre 30 selecoes independentes, nao um unico
+      caso, e ainda assim positivo e material em quase todas.
+    severity: "informativo -- gate funcionou exatamente como desenhado pra evitar promocao de falso positivo; achado real e QUANTITATIVO (o tamanho do vies medido), nao um bug"
+    layer: "models (orquestracao de confirmacao) + producao (decisao de promocao, ainda nao tomada)"
+    consequence: >
+      **Resultado confirmado e MUITO mais sobrio que a manchete bruta
+      do AG-382 (10/15 combos com `best_value` positivo em Camada1).**
+      Sob o gate de permanencia real (`alpha_layer1_permanence_min_
+      paths=4`, `median_n_better>=4` sobre 5 seeds de confirmacao),
+      **apenas 2 dos 15 combos passam**: `BTCUSDT/R3` (median_n_
+      better=4.0, seeds={101:1, 202:3, 303:4, 404:4, 505:4}) e
+      `ETHUSDT/R1` (median_n_better=4.0, seeds={101:3, 202:5, 303:2,
+      404:5, 505:4}). Os outros 13 combos ficam entre median_n_
+      better=0.0 (`ETHUSDT/R2`) e 3.0 (`BTCUSDT/R2`, `BNBUSDT/R2`,
+      `XRPUSDT/R1`) -- todos abaixo do limiar. Taxa de aprovacao real
+      (2/15 = 13,3%) fica ABAIXO da taxa historica do sweep de
+      2026-08-23 (3/15 = 20%), nao acima -- a campanha Optuna real NAO
+      superou a busca manual anterior sob o mesmo gate, apesar do
+      `best_value` bruto sugerir o contrario.
+
+      Variancia entre seeds dentro do MESMO combo e alta o bastante
+      pra ser, sozinha, evidencia a favor da ressalva `AG-220` (poder
+      estatistico do gate): ex. `BTCUSDT/R2` variou de n_better=2 a 5
+      so trocando a seed de confirmacao (mesmo hiperparametro fixo,
+      mesma variante) -- span de 3 pontos em 5 possiveis. Usar UMA
+      seed de confirmacao em vez da mediana de 5 teria dado veredito
+      oposto dependendo de qual seed calhasse de ser escolhida, em
+      varios combos.
+    resolved_by_commit: "7dd1a2f"
+    resolution: >
+      Nao ha "resolucao" -- e um registro de execucao real. Resultado
+      completo por combo (tabela de 30 linhas: screening_value vs
+      median_pooled_sharpe vs selection_bias, mais a tabela de 15
+      linhas do gate pareado) publicado no artefato "Alpha -- Base de
+      Pesquisa" (link acima), nova secao "H9 -- confirmacao multi-seed
+      da campanha Optuna". `N_lifetime` incrementado com o numero REAL
+      (450, nao estimativa), `audit/n_lifetime.yaml::id=35`.
+
+      **Decisao de promocao dos 2 combos que passam (`BTCUSDT/R3`,
+      `ETHUSDT/R1`) para `hyperparams_by_combo`/producao NAO tomada
+      aqui** -- fica com o Manager, junto com a ressalva `AG-220` ainda
+      aberta (o proprio achado de alta variancia entre seeds desta
+      rodada e argumento a favor de revisitar o poder estatistico do
+      gate antes de qualquer promocao, nao so pra estes 2 combos).
+    status: "fechado 2026-08-30 -- campanha de confirmacao real executada com sucesso total (450/450, 0 falhas), resultado confirmado registrado (2/15 combos passam o gate), decisao de promocao pendente do Manager"

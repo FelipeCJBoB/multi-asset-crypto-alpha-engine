@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 1661
+counter: 2111
 
 log:
   - id: 1
@@ -922,3 +922,40 @@ log:
       pro detalhamento completo por combo e o proximo passo real
       (confirmacao multi-seed antes de qualquer promocao).
     delta: 900
+  - id: 35
+    date: "2026-08-30"
+    type: confirmacao_multi_seed_15_combos_x_2_camadas
+    description: >
+      Confirmacao multi-seed (protocolo ADR-002/ADR-003 adaptado) sobre
+      os candidatos top da campanha Optuna real do id=34. `uv run
+      python -m src.models.hyperparams_optuna --confirm --all-
+      combinations --top-k 3 --confirmation-seeds 101 202 303 404 505
+      --device-type cpu`, autorizado pelo Manager ("Pode executar a
+      campanha inteira, nao precisa medir custo real com 1 combo").
+      Zero busca nova -- reusa os 900 trials ja completos: top-3
+      candidatos por study (screening) x 5 seeds novas x 2 camadas x 15
+      combos = 450 retreinos completos reais (15 folds CPCV x 2 lados +
+      backtest cada um). 450/450 completaram sem erro. Tempo total
+      medido: 1h12m53s (09:34:43 -> 10:47:36) -- ~9,72s/retreino,
+      consistente com ~9,10s/trial da campanha bruta (id=34).
+
+      Vies de selecao medido direto: media +0,309 de Sharpe pooled
+      (screening_value - median_pooled_sharpe) sobre as 30 studies
+      (min=-0,177, max=+0,840) -- mesma ordem de grandeza do +0,772
+      historico do ADR-002 Fase 2, agora confirmado como fenomeno
+      sistematico, nao um unico caso extremo.
+
+      Resultado do gate de permanencia real (median_n_better/5,
+      Camada1 vs Camada0 pareado por path, calculado direto dos runs
+      de confirmacao): APENAS 2 de 15 combos passam (median_n_better
+      >= alpha_layer1_permanence_min_paths=4) -- BTCUSDT/R3 (4.0) e
+      ETHUSDT/R1 (4.0). Os outros 13 ficam entre 0.0 (ETHUSDT/R2) e 3.0
+      (BTCUSDT/R2, BNBUSDT/R2, XRPUSDT/R1). Taxa de aprovacao real
+      (2/15=13,3%) fica ABAIXO da taxa historica do sweep manual de
+      2026-08-23 (3/15=20%) -- contraste direto com a manchete otimista
+      do best_value bruto (10/15 positivos em Camada1, id=34).
+      Detalhamento completo por combo em
+      `audit/architecture_gaps_log.yaml::AG-383` e no artefato
+      "Alpha — Base de Pesquisa" (secao H9). Decisao de promocao dos 2
+      combos que passam fica com o Manager.
+    delta: 450
