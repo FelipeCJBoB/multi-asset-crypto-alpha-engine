@@ -25302,7 +25302,6 @@ entries:
       de sinal -- gap de verificacao corrigido aqui tambem (ver `AG-375`
       addendum implicito nesta entrada, nao reescrito la por disciplina
       append-only).
-    resolved_by_commit: null
     resolution: >
       `fit_side_model` (`src/models/alpha.py`) -- quando `device_type !=
       "cpu"` E `scale_pos_weight != 1.0`: `scale_pos_weight` e dobrado
@@ -25332,4 +25331,5 @@ entries:
 
       Nao reportado upstream ainda (LightGBM/GitHub) -- decisao
       pendente do Manager, acao publica fora do repo.
+    resolved_by_commit: "a9ec32d"
     status: "fechado 2026-08-29 -- CUDA real utilizavel em producao agora; bug upstream nao reportado ainda, causa raiz exata (por que lambda_l2+scale_pos_weight juntos zeram o gain no CUDA Tree Learner) nao investigada a nivel de codigo C++/CUDA do LightGBM, so isolada empiricamente a nivel de parametro Python"
