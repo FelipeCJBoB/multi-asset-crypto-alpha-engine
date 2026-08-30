@@ -5692,3 +5692,179 @@ atual (2026-08-25)" (`§linha 4584`) segue não-reconciliada — nem cita
 `audit/architecture_gaps_log.yaml` (append-only, sempre a fonte mais
 recente por construção) + `PLANO_MESTRE_PRINCE2.md` Changelog `v3.57`,
 não esta tabela.
+
+---
+
+## 2026-08-30 — Meta-model F0-F3, regime canônico vira HMM k=4, e o peso de treino ponderava a CLASSE <!-- check-sprint-log: skip -->
+
+Execução de `docs/meta_model_design_doc_2026-08-22.md` (v3, travado desde
+22/08) sob autorização direta do Manager: *"F0-F8 completo"*, *"rodar E0
+com o critério como está"*, *"N_lifetime não é mais gate"*. Entregue nesta
+rodada: **F0, F1, F2, F3**. Detalhe completo em `PLANO_MESTRE_PRINCE2.md`
+§15.30.
+
+### O desenho envelheceu 201 commits <!-- check-sprint-log: skip -->
+
+Levantamento dos gates externos do §15.2 de
+`docs/meta_model_design_doc_2026-08-22.md`, antes de escrever código.
+**E1 e E2 caíram** (Data Layer destravado em 23/08; Alpha retreinado 2× em
+23/08 e 28/08, `tau_long`/`tau_short` já no schema de
+`src/models/alpha.py`) — e sobraram exatamente os dois que o documento
+tratava como pré-requisito mecânico: **P0** (validação do nulo do Gate E0,
+nunca executada) e **P1**/`AG-151` (purge cross-símbolo ausente em
+`src/validation/cpcv.py`). O E0 vinculante segue não executado.
+
+Outras premissas que não sobreviveram à conferência contra o código:
+§14.3 afirmava que `predictions.parquet` não tem manifesto (falso desde
+`AG-154`, ver `src/models/pipeline.py`); §1.3 listava
+`ExpandingFeatureLookbackError` como bloqueio ativo (destravado em
+`src/features/build.py`); §3.4 argumenta assumindo 10 features T1 —
+`src/features/build.py` tem 36 hoje.
+
+### O regime canônico não tinha caminho de produção
+
+Correção do Manager no meio da execução: *"regime é HMM k=4"*. Apuração
+(`AG-388` vizinhos; entrada `AG-384`): `canonical_regime_hmm_n_states = 4`
+com `provenance: MEASURED` por `AG-114` em `config/constants.yaml`, mas
+**zero artefatos HMM em disco**, e o único chamador de
+`build_hmm_regimes` fora de teste era `src/regime/hmm_gap_check.py`.
+`src/models/dataset.py` entregava o classificador por quantis (`R0..R5`).
+Um comentário em `src/analysis/gate_efficiency.py` já chamava
+`src/regime/build_hmm.py` de *"o caminho de PRODUÇÃO"* — aspiração
+registrada como fato.
+
+Resolvido com adaptador de schema em `src/models/dataset.py`
+(`regime_source`) mais persistência como artefato versionado em
+`src/regime/artifact_hmm.py`, depois de **medido** que `build_hmm_regimes`
+custa **horas por símbolo** — mais de 2h40 de relógio e ~8.840 s de CPU em
+BTCUSDT/R1 (437.630 barras), ver `src/regime/artifact_hmm.py`. Preenche o
+`TBD — medir` do §13 do design doc na dimensão tempo.
+
+O default de `regime_source` segue o classificador por quantis, e isso não
+é correção atrás de flag: a coluna `regime` alimenta o gate de risco de
+produção em `src/risk/limits.py`, e trocar o default mudaria o gate de
+carona numa mudança feita para o Meta (§15.30).
+
+### O achado que mais muda o desenho: o peso ponderava a classe
+
+Medindo `corr(|ret_net|, y_meta)` — que o próprio §5 do design doc manda
+medir — sobre BTCUSDT/R1 camada1, n = 11.859 linhas de treino, via
+`src/models/meta_dataset.py`:
+
+| medida | valor |
+|---|---|
+| η² (a classe explica a variância de `\|ret_net\|`) | **0,4872** |
+| `corr(\|ret_net\|, y_meta)` | **−0,698** |
+| peso de classe implícito `mean(w\|y=0)/mean(w\|y=1)` | **1,6082** |
+
+Registro completo em `audit/evidence_ledger.yaml`. Ou seja:
+`meta_sample_weight = uniqueness_subpop × |ret_net|` era, na prática, **um
+peso de classe de 1,61:1 a favor dos perdedores** — nunca escolhido, nunca
+declarado. A `uniqueness` é inocente, `corr` com `y` de −0,009 (§5).
+
+**Causa raiz medida** (`data/labels/BTCUSDT/R1/v1/labels.parquet`): as
+barreiras hoje são simétricas, `tp_atr_mult = sl_atr_mult = 1,5` em
+`config/constants.yaml`, e o retorno bruto é simétrico (+0,002261 no TP
+contra −0,002269 no SL). A assimetria inteira vem do **custo de
+execução** — saída maker de 2,00 bps no TP contra taker de 5,00 bps no SL.
+O design doc afirmava o oposto em magnitude **e** direção (*"com
+`tp_atr_mult = 2.0`… ≈ 1,33 ×"*); o medido é **0,63 ×** (§5).
+
+Importa porque peso de classe no treino desloca a escala de `p_meta`, e
+D-07 removeu o calibrador que absorveria o deslocamento (§8.3 de
+`docs/meta_model_design_doc_2026-08-22.md`). A assimetria de custo é real,
+mas o lugar dela é a regra de decisão (`tau_meta`), como parâmetro
+declarado — não o peso de treino, onde entra duas vezes e sem controle.
+
+Corrigido em `src/models/meta_dataset.py` para `uniqueness_subpop ×
+atr_at_t0` (a magnitude **em risco**, conhecida em `t0`). Verificado sobre
+dado real nos 12 folds, commit `1382097`:
+
+| propriedade | antes | depois (`1382097`) |
+|---|---|---|
+| peso de classe implícito | 1,6082 | **1,0026** (0,98–1,09) |
+| `corr(peso, y_meta)` | −0,698 | **0,006** |
+| η² | 0,487 | **0,000** |
+| `\|base_ponderada − base_bruta\|` (§9) | ~0,12 | **0,0042** |
+| `corr(atr, \|ret_net\|)` **dentro** da classe (§5) | — | **0,89 / 0,97** |
+
+Medido por `src/models/meta_dataset.py` sobre dado real.
+
+Elimina o viés e preserva a ordenação econômica; `n_eff_subpop` fica
+inalterado (`src/models/meta_dataset.py`) — só o peso mudou.
+
+**O mesmo defeito existe no Alpha**: `src/labels/weights.py` usa a mesma
+fórmula, com peso de classe medido em **1,3027**. Aberto como `AG-388` em
+`audit/architecture_gaps_log.yaml`, **não** corrigido de carona — mudar lá
+muda o treino de todo o motor e invalida as medições em disco.
+
+### F2 entregou o número que ele existia para entregar <!-- check-sprint-log: skip -->
+
+`n_eff_subpop` sobre BTCUSDT/R1 camada1, via `src/models/meta_dataset.py`:
+**total 10.220,17** no treino, **mediana 652,54** por meta-fold, **mínimo
+140,72**; `uniqueness_inflation_ratio` mediana **2,4340** — recalcular na
+subpopulação inflou ~2,4×, o esperado sob taxa de sinal de ~3,4% (§4.7).
+Um ratio perto de 1 teria sido alarme de bug de agrupamento.
+
+**Consequência para §7.3:** com 7 colunas no design matrix sob HMM k=4, o
+**EPV medido é 93 na mediana e 20 no pior fold** — acima de
+`meta_min_events_per_variable = 10` (`config/constants.yaml`). A logística
+L2 é sustentada com folga em todos os folds. `meta_min_neff_for_gbm`
+permanece `TBD` (B23, não inventado).
+
+**Escassez, medida no mesmo passo** (`artifacts/predictions_alpha/`): das
+15 combinações de fold do Alpha, **só 8 produzem qualquer sinal**; 6.142
+sinais em 411.600 linhas de predição; o `meta_training_set` fica com
+18.280 linhas — 12.138 treino e 6.142 teste. Somado ao `N_eff = 2,03 de 5
+símbolos` do `cross_symbol_ess` em `audit/evidence_ledger.yaml` e ao
+**1/15 combos sobrevivendo ao gate duplo** (`AG-383-addendum`, sessão
+paralela, commit `63081ee`), a viabilidade de amostra do Meta é bem mais
+apertada do que o design doc supõe.
+
+### Quatro correções de especificação, todas medidas
+
+Todas contra `artifacts/predictions_alpha/` real, aplicadas em
+`src/models/meta_dataset.py`:
+
+1. **§10.1(d) está errado** — manda asserir `n_calibrator_id == 2 ×
+   n_folds`, ou 30 para 15 folds; o real nunca é 30 (10, 12, 18 ou 26),
+   porque existe o valor `"n/a"` e porque 8 dos 15 folds não sinalizam.
+   Substituída por verificação estrutural linha a linha, validada com 0
+   divergências em 6.142 linhas de sinal.
+2. **§10.1(c) é redundante** dadas (a) e (b) — `test_idx[s]` e
+   `train_idx[s]` são disjuntos por construção de `src/validation/cpcv.py`.
+3. **A chave primária do §3.1 não é única** — falta `meta_split_id`: sob
+   `path_matched` uma linha é treino de 2 meta-folds e teste de 1.
+4. **§12 aponta para o writer errado** — `write_predictions_atomic` nunca
+   é chamado no ramo `resolution_id` de `src/models/pipeline.py`.
+
+### Rede de reprodutibilidade, antes de tocar em `cpcv.py`
+
+`tests/golden/test_validation_cpcv_pooling_non_regression.py` capturou o
+baseline bit-a-bit dos **15 combos** (5 símbolos × R1/R2/R3) por SHA-256
+de `train_idx`/`test_idx`/`group_id` — contagens iguais não provam que os
+índices são os mesmos (commit `7b86a16`). Achado colateral (`AG-386`):
+**não existe hoje nenhum golden ativo sobre a grade R1/R2/R3**, porque
+`tests/golden/test_sprint8_reproducibility.py` está inteiramente `skip`ado
+por `AG-257`.
+
+### Governança
+
+`AG-384` (fechado no mesmo commit), `AG-385`, `AG-386`, `AG-387` e
+`AG-388` abertos em `audit/architecture_gaps_log.yaml`; 2 achados em
+`audit/evidence_ledger.yaml`; 2 constantes novas em
+`config/constants.yaml` (`meta_include_nofill_in_training`,
+`meta_leakage_control_lambda_grid`), ambas com proveniência declarada;
+§15.30 no Plano Mestre. Commits: `7b86a16` (F0), `9becbaa` (F1),
+`c5ea25d` (F2), `1382097` (§5), `034f01d` (F3).
+
+**Nota de procedência — sessão paralela no mesmo working tree.**
+`config/constants.yaml::meta_include_nofill_in_training` foi escrita nesta
+sessão mas entrou no repo por `ee46c25`, cuja mensagem trata do gate de
+permanência. Conteúdo íntegro; a justificativa está em `9becbaa`. Mesmo
+padrão de risco que a memória do projeto já registra.
+
+**Nota de staleness**: a tabela "Estado atual (2026-08-25)" (linha 4584) <!-- check-sprint-log: skip -->
+segue não-reconciliada e agora também não cita `AG-379` a `AG-388`. Fonte
+real: `git log --oneline`, `audit/architecture_gaps_log.yaml`
+(append-only) e `PLANO_MESTRE_PRINCE2.md` §15.30.

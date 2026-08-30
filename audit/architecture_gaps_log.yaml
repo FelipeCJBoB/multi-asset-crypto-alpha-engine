@@ -25690,3 +25690,152 @@ entries:
       mesmos candidatos, contabilizado a parte do id=35 (nunca decrementa,
       cada execucao real conta).
     status: "fechado 2026-08-30, SUPERSEDIDO pelo addendum de gate duplo na mesma data -- sob Sharpe+edge bruto, so 1/15 combo (BTCUSDT/R3) sobrevive; decisao de promocao pendente do Manager"
+
+  - id: AG-384
+    date: "2026-08-30"
+    file: "src/regime/build_hmm.py, src/models/dataset.py, config/constants.yaml::canonical_regime_hmm_n_states"
+    related_file: "AG-114 (declarou hmm_gaussian_k4_v1 vencedor); docs/meta_model_design_doc_2026-08-22.md Sec6.1 (previu que a migracao nao seria drop-in)"
+    numeracao: "AG-384, folga sobre AG-383 (maior no momento)."
+    found_by: "Claude, ao executar a correcao direta do Manager 'regime e HMM k=4' durante F1 do Meta"
+    gap: >
+      hmm_gaussian_k4_v1 era canonico por DECISAO (AG-114,
+      canonical_regime_hmm_n_states value 4, provenance MEASURED) mas NAO
+      TINHA CAMINHO DE PRODUCAO NENHUM. Verificado: zero artefatos HMM em
+      disco (find data models experiments -ipath "*hmm*" vazio); o unico
+      chamador de build_hmm_regimes fora de teste era
+      src/regime/hmm_gap_check.py (triagem); build_regimes (o que
+      dataset.build_modeling_frame de fato chama) nao aceita escolher
+      classificador -- grep por classifier_id|hmm|candidate em
+      src/regime/build.py volta vazio. O frame de modelagem entregava o
+      classificador por QUANTIS (R0..R5), nao o HMM.
+
+      Agravante de leitura: um comentario em
+      src/analysis/gate_efficiency.py:260 ja se referia a build_hmm.py
+      como "o caminho de PRODUCAO" -- era aspiracao registrada como fato,
+      e qualquer leitor do log acreditaria nela.
+
+      Consequencia medida ao corrigir: build_hmm_regimes refita o HMM a
+      cada fold do walk-forward ancorado e custa HORAS por simbolo (mais
+      de 2h40 de relogio, ~8.840s de CPU, BTCUSDT/R1 com 437.630 barras)
+      -- nao e viavel recomputar dentro de build_modeling_frame, e faria
+      o custo de montar um frame depender de um refit de modelo, coisa
+      que nenhum outro insumo do pipeline faz (labels, features e
+      predicoes sao todos lidos de artefato).
+    resolved_by_commit: "9becbaa"
+    status: "fechado 2026-08-30 -- src/regime/artifact_hmm.py persiste o HMM como artefato versionado (io.artifact); src/models/regime_hmm_backfill.py orquestra (mora em models/ porque derivar a janela le labels, e o contrato de camada proibe regime->labels); dataset.build_modeling_frame ganha regime_source com adaptador de schema. read_regime_hmm NUNCA cai em refit de fallback -- levanta com o comando que produz o artefato. Default de regime_source segue o classificador por quantis: trocar mudaria o gate de risco de producao (risk.limits::control_01_regime_tradeavel) de carona, decisao separada do Manager."
+
+  - id: AG-385
+    date: "2026-08-30"
+    file: "src/models/dataset.py:179 (declaracao), :634 (escrita)"
+    related_file: "AG-150 (mesma classe: tau calculado e descartado no Alpha)"
+    numeracao: "AG-385."
+    found_by: "Claude, pergunta direta do Manager sobre onde regime_labels_present e consumido em producao"
+    gap: >
+      ModelingFrame.regime_labels_present e um campo WRITE-ONLY. Grep no
+      repo inteiro: 2 ocorrencias em src/ (a declaracao do campo e a
+      escrita no construtor) e 9 em tests/, TODAS passando
+      regime_labels_present=() como argumento de construtor. Zero
+      leituras do atributo em qualquer lugar.
+
+      Nao e de graca: dataset.py:630 faz sorted(unique()) sobre a coluna
+      de regime inteira a cada build_modeling_frame so para preenche-lo.
+      Mesma classe de defeito que AG-150 registrou sobre o tau do Alpha
+      -- diagnostico calculado e descartado.
+
+      Ha um uso legitimo disponivel e nao explorado: os niveis OBSERVADOS
+      comparados contra os niveis A PRIORI
+      (meta_dataset.regime_levels_for_source) sao exatamente o detector
+      do cenario Sec6.4 do design doc do Meta (regime presente no teste e
+      ausente do treino). NAO substituir o campo pelos niveis a priori --
+      sao conceitos diferentes (observado vs declarado), e a substituicao
+      destruiria a unica informacao que ele carrega.
+    resolved_by_commit: null
+    status: "aberto -- severidade baixa (custo de uma varredura por build, sem efeito em decisao). Candidato a virar guarda real no Meta em vez de ser deletado."
+
+  - id: AG-386
+    date: "2026-08-30"
+    file: "tests/golden/test_sprint8_reproducibility.py (skipado integralmente), tests/golden/test_validation_cpcv_pooling_non_regression.py (novo)"
+    related_file: "AG-257 (motivo do skip), AG-236 (grade 15m falha alto em B15), AG-151 (a mudanca que exigiu a rede de seguranca)"
+    numeracao: "AG-386."
+    found_by: "Claude, ao montar a rede de nao-regressao antes de tocar em cpcv.py (F0 do Meta)"
+    gap: >
+      Nao existe hoje nenhum teste golden ATIVO sobre a grade R1/R2/R3.
+      tests/golden/test_sprint8_reproducibility.py -- o unico golden de
+      reprodutibilidade de treino do repo -- esta inteiramente skipado
+      por AG-257: o baseline commitado foi gerado sob a grade de RELOGIO
+      15m, e desde AG-236 reconstruir o frame nessa grade falha alto em
+      B15 (comportamento pretendido). Ou seja: o motor de PRODUCAO
+      (dollar-bar R1/R2/R3) roda sem rede de reprodutibilidade, e roda
+      assim desde AG-236.
+
+      Mitigado PARCIALMENTE nesta rodada por
+      test_validation_cpcv_pooling_non_regression.py, que captura o
+      fingerprint bit-a-bit dos 15 combos (5 simbolos x R1/R2/R3) do
+      CPCVResult -- edges_ms mais SHA-256 de group_id/train_idx/test_idx
+      (contagens iguais nao provam que os indices sao os mesmos). Cobre
+      cpcv.py; NAO cobre o pipeline de treino ponta a ponta, e usa
+      max_feature_lookback_ms=0 em vez do valor real de producao.
+    resolved_by_commit: null
+    status: "aberto -- reduzido, nao fechado. GATILHO: regenerar o golden de treino sob R1 e repontar test_sprint8_reproducibility.py, removendo o skip de AG-257."
+
+  - id: AG-387
+    date: "2026-08-30"
+    file: "src/models/backtest_lite.py::realize_trades (ramo de early-return vs ramo real)"
+    related_file: "docs/meta_model_design_doc_2026-08-22.md Sec12/Sec14.5 (F0, o refator que expos o defeito)"
+    numeracao: "AG-387."
+    found_by: "Claude, durante o refator puro de F0 (extracao de join_signals_to_labels)"
+    gap: >
+      realize_trades devolve SCHEMAS DIFERENTES nos seus dois ramos. O
+      early-return (lista de folds vazia) declara "side" como pl.Int8 no
+      schema literal; o ramo real faz join com left_on t0/side_hat e
+      right_on t0/side, e polars 1.9+ DESCARTA a chave da direita num
+      left join -- o frame real nao tem a coluna side.
+
+      Inocuo hoje porque nenhum consumidor le side (se lesse, o ramo real
+      ja teria quebrado). Vira armadilha assim que alguem escrever
+      select("side"): funciona contra fixture vazia e quebra contra dado
+      real, que e a ordem exata em que um teste unitario e escrito.
+
+      PRESERVADO de proposito no refator de F0 (criterio de refator puro,
+      Sec14.5 -- corrigir de carona teria invalidado a prova de
+      equivalencia bit-a-bit). Pinado por
+      test_f0_side_nao_sai_no_resultado_divergencia_conhecida, que afirma
+      a divergencia em vez de esconde-la.
+    resolved_by_commit: null
+    status: "aberto -- severidade baixa hoje, deliberadamente nao corrigido junto do refator. A correcao, quando vier, precisa ser um commit proprio."
+
+  - id: AG-388
+    date: "2026-08-30"
+    file: "src/labels/weights.py::apply_weights (sample_weight = uniqueness * abs(ret_net))"
+    related_file: "audit/evidence_ledger.yaml::peso_de_classe_implicito_em_uniqueness_x_abs_ret_net_2026-08-30; docs/meta_model_design_doc_2026-08-22.md Sec5 (corrigido para o Meta no mesmo dia)"
+    numeracao: "AG-388."
+    found_by: "Claude, durante F2 do Meta -- a medicao obrigatoria de corr(abs(ret_net), y_meta) que o proprio Sec5 exige"
+    gap: >
+      O peso de treino do ALPHA em producao carrega um peso de classe
+      implicito de 1,3027, nunca escolhido e nunca declarado.
+
+      Mecanismo, medido para o Meta e estruturalmente identico aqui: sob
+      barreiras de ATR fixas e SIMETRICAS (tp_atr_mult = sl_atr_mult =
+      1,5), abs(ret_net) quase nao mede magnitude do evento -- mede a
+      CLASSE. O retorno BRUTO e simetrico (+0,002261 no TP contra
+      -0,002269 no SL); a assimetria inteira vem do CUSTO DE EXECUCAO
+      (saida maker de 2,00 bps no TP contra taker de 5,00 bps no SL).
+      Medido no meta_training_set: eta2 = 0,4872 da variancia de
+      abs(ret_net) explicada pela classe, corr = -0,698. Medido
+      diretamente em labels.sample_weight (populacao TP/SL de
+      BTCUSDT/R1): media 0,8807 no TP contra 1,1473 no SL, razao 1,3027.
+
+      Por que importa: peso de classe no treino desloca a escala da
+      probabilidade estimada. No Meta isso e agudo porque D-07 removeu o
+      calibrador; no Alpha existe calibracao isotonica, que absorve PARTE
+      do deslocamento -- mas a isotonica e ajustada sobre o proprio dado
+      ponderado, entao "absorve" nao e o mesmo que "neutraliza", e isso
+      nao foi medido.
+
+      A correcao aplicada no Meta (trocar abs(ret_net) por atr_at_t0, a
+      magnitude EM RISCO conhecida em t0) zerou o efeito la: razao de
+      classe 1,6082 para 1,0026, corr(peso, y) -0,698 para 0,006,
+      preservando corr(atr, abs(ret_net)) de 0,89/0,97 DENTRO da classe.
+      A mesma troca e aplicavel aqui.
+    resolved_by_commit: null
+    status: "ABERTO -- NAO corrigido de proposito. Mudar apply_weights muda o treino de TODO o motor e invalida as medicoes em disco (os 15 combos do evidence_ledger, a campanha Optuna de AG-382/AG-383). E decisao do Manager, com retreino associado, nao efeito colateral da correcao do Meta. Severidade alta."
