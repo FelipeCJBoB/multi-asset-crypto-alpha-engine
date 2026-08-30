@@ -78,6 +78,87 @@ def span_seconds(t0_series: pl.Series) -> float:
     return float((t_max - t_min).total_seconds())
 
 
+# `ret_gross`/`cost_entry_bps`/`cost_exit_bps`/`funding_bps` entram além
+# de `ret_net`/`sample_weight` porque `src.models.decomposition` (§16.6)
+# precisa dos três termos ORIGINAIS do label, não só o líquido — ver
+# docstring daquele módulo. `t0`/`side` são as duas chaves do join.
+# Promovida de local de `realize_trades` a constante de módulo em F0
+# (`docs/meta_model_design_doc_2026-08-22.md` §12/§15.2) — o Meta precisa
+# das MESMAS colunas base, e duas cópias divergiriam em silêncio.
+JOIN_BASE_COLUMNS: tuple[str, ...] = (
+    "t0",
+    "side",
+    "barrier_hit",
+    "ret_net",
+    "sample_weight",
+    "ret_gross",
+    "cost_entry_bps",
+    "cost_exit_bps",
+    "funding_bps",
+)
+
+
+def join_signals_to_labels(
+    signals: pl.DataFrame, df_all: pl.DataFrame, *, carry: Sequence[str] = ()
+) -> pl.DataFrame:
+    """Núcleo puro do join sinal→label: liga cada `(t0, side_hat)` ao
+    resultado REAL daquele lado em `df_all`. Extraído de `realize_trades`
+    (F0 de `docs/meta_model_design_doc_2026-08-22.md` §12, critério de
+    refator puro em §14.5) pelo mesmo motivo estrutural que levou
+    `alpha.decide_side` a ser extraída de `run_fold`: o Meta precisa juntar
+    sinal e label com EXATAMENTE a mesma semântica que o harness de
+    avaliação usa, não com uma segunda cópia que pode divergir sem aviso.
+
+    `carry` — colunas ADICIONAIS de `df_all` a trazer junto, além de
+    `JOIN_BASE_COLUMNS`. O `meta_training_set` (§3.2) precisa de `t1`,
+    `atr_at_t0` e `uniqueness`; `t1` entra para purge e unicidade e
+    **nunca** como feature (`META_FORBIDDEN_FEATURES`). Default `()`
+    reproduz o comportamento anterior de `realize_trades` byte a byte —
+    nenhum chamador existente passa este argumento.
+
+    Left join: linhas cujo lado sinalizado deu `NOFILL` são PRESERVADAS
+    (`barrier_hit == "NOFILL"`), nunca descartadas aqui — quem quer só
+    trades executados filtra explicitamente, quem mede taxa de
+    preenchimento precisa do denominador completo. É também o que o §3.3
+    item 4 do design doc do Meta exige (NOFILL fica no frame com
+    `y_meta = null`; o denominador do ablation precisa da população
+    completa), ao contrário de `dataset.side_subset`, que descarta NOFILL.
+
+    **`side` NÃO sai no resultado.** Polars descarta a chave da direita
+    (`right_on`) num left join, então o frame devolvido carrega `side_hat`
+    e não `side`. O early-return de `realize_trades` declara `side` no
+    schema literal e diverge disto — divergência PRESERVADA aqui de
+    propósito: este é um refator puro (§14.5), o defeito é anterior a ele
+    e foi registrado como achado em vez de corrigido de carona."""
+    duplicadas = tuple(c for c in carry if c in JOIN_BASE_COLUMNS)
+    if duplicadas:
+        raise ValueError(
+            f"join_signals_to_labels: carry={duplicadas} já está em "
+            "JOIN_BASE_COLUMNS — pedir a mesma coluna duas vezes produz um "
+            "select inválido. Remova da lista de carry."
+        )
+    ausentes = tuple(c for c in carry if c not in df_all.columns)
+    if ausentes:
+        raise ValueError(
+            f"join_signals_to_labels: carry={ausentes} não existe em df_all "
+            f"— colunas disponíveis: {sorted(df_all.columns)}."
+        )
+    colididas = tuple(c for c in carry if c in signals.columns)
+    if colididas:
+        raise ValueError(
+            f"join_signals_to_labels: carry={colididas} também existe em "
+            "signals — polars sufixaria a coluna da direita com '_right' e o "
+            "chamador leria a errada sem erro nenhum. Renomeie antes de juntar."
+        )
+    joined = signals.join(
+        df_all.select([*JOIN_BASE_COLUMNS, *carry]),
+        left_on=["t0", "side_hat"],
+        right_on=["t0", "side"],
+        how="left",
+    )
+    return joined.with_columns(pl.col("barrier_hit").cast(pl.Utf8))
+
+
 def realize_trades(fold_results: list[FoldResult], df_all: pl.DataFrame) -> pl.DataFrame:
     """Junta os sinais (`side_hat != 0`) de todos os `fold_results` ao
     resultado REAL do lado sinalizado em `df_all` (`labels/v1/labels.parquet`
@@ -85,7 +166,11 @@ def realize_trades(fold_results: list[FoldResult], df_all: pl.DataFrame) -> pl.D
     lado sinalizado deu `NOFILL` são preservadas com `barrier_hit ==
     "NOFILL"` (não descartadas aqui) — quem quiser só os trades
     EXECUTADOS filtra explicitamente, quem quer medir taxa de preenchimento
-    do sinal precisa do denominador completo."""
+    do sinal precisa do denominador completo.
+
+    O join em si vive em `join_signals_to_labels` desde F0 — esta função
+    ficou com o que é específico do harness: achatar `fold_results` em um
+    frame de sinais e o early-return de schema literal."""
     parts: list[pl.DataFrame] = []
     for fr in fold_results:
         sig = fr.predictions.filter(pl.col("side_hat") != 0).select(
@@ -96,14 +181,6 @@ def realize_trades(fold_results: list[FoldResult], df_all: pl.DataFrame) -> pl.D
             pl.lit(fr.variant, dtype=pl.Utf8).alias("variant"),
         )
         parts.append(sig)
-    # `ret_gross`/`cost_entry_bps`/`cost_exit_bps`/`funding_bps` entram além
-    # de `ret_net`/`sample_weight` porque `src.models.decomposition` (§16.6)
-    # precisa dos três termos ORIGINAIS do label, não só o líquido — ver
-    # docstring daquele módulo.
-    _JOIN_COLUMNS = (
-        "t0", "side", "barrier_hit", "ret_net", "sample_weight",
-        "ret_gross", "cost_entry_bps", "cost_exit_bps", "funding_bps",
-    )
     if not parts:
         return pl.DataFrame(
             schema={
@@ -123,13 +200,7 @@ def realize_trades(fold_results: list[FoldResult], df_all: pl.DataFrame) -> pl.D
             }
         )
     all_signals = pl.concat(parts, how="vertical")
-    joined = all_signals.join(
-        df_all.select(list(_JOIN_COLUMNS)),
-        left_on=["t0", "side_hat"],
-        right_on=["t0", "side"],
-        how="left",
-    )
-    return joined.with_columns(pl.col("barrier_hit").cast(pl.Utf8))
+    return join_signals_to_labels(all_signals, df_all)
 
 
 @dataclass(frozen=True, slots=True)

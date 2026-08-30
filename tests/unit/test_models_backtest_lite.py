@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from src.models import backtest_lite
 
@@ -254,3 +255,184 @@ def test_percentile_rank_todos_os_nulos_sao_nan_devolve_nan() -> None:
 def test_percentile_rank_headline_nan_devolve_nan() -> None:
     nulls = np.array([0.1, 0.2, 0.3])  # noqa: magic-number
     assert np.isnan(backtest_lite.percentile_rank(float("nan"), nulls))
+
+
+# ---------------------------------------------------------------------------
+# F0 -- `join_signals_to_labels` extraída de `realize_trades`
+# (`docs/meta_model_design_doc_2026-08-22.md` §12, critério de refator puro
+# em §14.5). O critério declarado é IGUALDADE BIT-A-BIT, não "os testes
+# passam" -- por isso o teste abaixo reconstrói a expressão pré-refator
+# inline e compara frame contra frame, em vez de só exercitar a função nova.
+#
+# Nota de marcador: estes testes NÃO levam `golden`. Neste repo `golden`
+# significa "reprodutibilidade bit-a-bit contra artefato VERSIONADO, depois
+# de retreinar algo de verdade" (`CLAUDE.md`, tabela de marcadores) --
+# `tests/golden/test_sprint8_reproducibility.py` é quem cumpre esse papel.
+# O que segue é a prova direta de equivalência, sobre fixture sintética.
+# ---------------------------------------------------------------------------
+
+
+def _mk_labels_meta(t0: list[datetime], side: list[int], ret_net: list[float]) -> pl.DataFrame:
+    """`_mk_labels` mais as 3 colunas que o `meta_training_set` (§3.2) puxa
+    por `carry`. Local ao bloco de F0 de propósito: mexer na fixture
+    compartilhada mudaria a entrada de testes que já passam."""
+    n = len(t0)
+    return _mk_labels(t0, side, ret_net).with_columns(
+        t1=pl.Series(t0).cast(pl.Datetime("ms")).dt.replace_time_zone("UTC"),
+        atr_at_t0=pl.Series([10.0] * n, dtype=pl.Float64),  # noqa: magic-number
+        uniqueness=pl.Series([0.5] * n, dtype=pl.Float64),  # noqa: magic-number
+    )
+
+
+def _t0_seq(n: int) -> list[datetime]:
+    base = datetime(2024, 1, 1, tzinfo=UTC)
+    return [base + timedelta(minutes=15 * i) for i in range(n)]  # noqa: magic-number
+
+
+def test_f0_realize_trades_bit_a_bit_identico_ao_join_pre_refator() -> None:
+    """§14.5 -- o refator é puro sse o frame devolvido é IDÊNTICO ao que a
+    expressão inline anterior produzia. `assert_frame_equal` com
+    `check_exact=True` compara valor, dtype, ordem de coluna e ordem de
+    linha; qualquer um dos quatro divergindo reprova."""
+    t0 = _t0_seq(6)
+    fold_results = [
+        _FakeFoldResult(_mk_predictions(t0[:3], [1, -1, 0], fold_id=0), path_id=0),
+        _FakeFoldResult(_mk_predictions(t0[3:], [1, 0, -1], fold_id=1), path_id=1),
+    ]
+    df_all = _mk_labels(t0, [1, -1, 1, 1, -1, -1], [0.01, -0.02, 0.03, 0.04, -0.05, 0.06])
+
+    obtido = backtest_lite.realize_trades(fold_results, df_all)  # type: ignore[arg-type]
+
+    # Expressão EXATA de `realize_trades` antes de F0, transcrita aqui como
+    # oráculo -- inclusive a tupla de colunas, que era local à função.
+    parts = [
+        fr.predictions.filter(pl.col("side_hat") != 0).select(
+            pl.col("t0"),
+            pl.col("side_hat"),
+            pl.col("fold_id"),
+            pl.lit(fr.path_id, dtype=pl.Int64).alias("path_id"),
+            pl.lit(fr.variant, dtype=pl.Utf8).alias("variant"),
+        )
+        for fr in fold_results
+    ]
+    join_columns_pre_refator = (
+        "t0",
+        "side",
+        "barrier_hit",
+        "ret_net",
+        "sample_weight",
+        "ret_gross",
+        "cost_entry_bps",
+        "cost_exit_bps",
+        "funding_bps",
+    )
+    esperado = (
+        pl.concat(parts, how="vertical")
+        .join(
+            df_all.select(list(join_columns_pre_refator)),
+            left_on=["t0", "side_hat"],
+            right_on=["t0", "side"],
+            how="left",
+        )
+        .with_columns(pl.col("barrier_hit").cast(pl.Utf8))
+    )
+
+    assert_frame_equal(obtido, esperado, check_exact=True, check_dtypes=True)
+
+
+def test_f0_join_base_columns_congela_a_tupla_pre_refator() -> None:
+    """A constante promovida a módulo precisa ser EXATAMENTE a tupla que era
+    local -- inclusive na ordem, que define a ordem de coluna do resultado."""
+    assert backtest_lite.JOIN_BASE_COLUMNS == (
+        "t0",
+        "side",
+        "barrier_hit",
+        "ret_net",
+        "sample_weight",
+        "ret_gross",
+        "cost_entry_bps",
+        "cost_exit_bps",
+        "funding_bps",
+    )
+
+
+def test_f0_carry_traz_as_colunas_do_meta_sem_alterar_as_base() -> None:
+    """§3.2 -- o `meta_training_set` precisa de `t1`/`atr_at_t0`/`uniqueness`
+    além das colunas base. `carry` acrescenta no fim, nunca reordena."""
+    t0 = _t0_seq(4)
+    signals = _mk_predictions(t0, [1, -1, 1, -1])
+    df_all = _mk_labels_meta(t0, [1, -1, 1, -1], [0.01, -0.02, 0.03, -0.04])
+
+    sem_carry = backtest_lite.join_signals_to_labels(signals, df_all)
+    com_carry = backtest_lite.join_signals_to_labels(
+        signals, df_all, carry=("t1", "atr_at_t0", "uniqueness")
+    )
+
+    assert com_carry.columns == [*sem_carry.columns, "t1", "atr_at_t0", "uniqueness"]
+    assert_frame_equal(
+        com_carry.select(sem_carry.columns), sem_carry, check_exact=True, check_dtypes=True
+    )
+
+
+def test_f0_nofill_e_preservado_nunca_descartado() -> None:
+    """§3.3 item 4 -- NOFILL fica no frame (o denominador do ablation precisa
+    da população completa), ao contrário de `dataset.side_subset`."""
+    t0 = _t0_seq(3)
+    signals = _mk_predictions(t0, [1, 1, 1])
+    df_all = _mk_labels(t0, [1, 1, 1], [0.01, 0.0, 0.03]).with_columns(
+        barrier_hit=pl.Series(["TP", "NOFILL", "SL"])
+    )
+
+    out = backtest_lite.join_signals_to_labels(signals, df_all)
+
+    assert out.height == 3
+    assert out["barrier_hit"].to_list() == ["TP", "NOFILL", "SL"]
+
+
+def test_f0_side_nao_sai_no_resultado_divergencia_conhecida() -> None:
+    """Pina o defeito PRÉ-EXISTENTE encontrado durante F0, sem corrigi-lo:
+    polars descarta a chave da direita (`right_on`) num left join, então o
+    frame real NÃO tem `side` -- mas o early-return de `realize_trades`
+    declara `"side": pl.Int8` no schema literal. Os dois ramos da mesma
+    função devolvem schemas diferentes. Hoje é inócuo (nenhum consumidor lê
+    `side`); vira armadilha assim que alguém escrever `.select("side")`
+    contra uma fixture vazia. Este teste existe para que a correção, quando
+    vier, seja deliberada e não de carona num refator."""
+    t0 = _t0_seq(2)
+    signals = _mk_predictions(t0, [1, -1])
+    df_all = _mk_labels(t0, [1, -1], [0.01, -0.02])
+
+    real = backtest_lite.join_signals_to_labels(signals, df_all)
+    vazio = backtest_lite.realize_trades([], df_all)
+
+    assert "side" not in real.columns
+    assert "side" in vazio.columns
+    assert set(vazio.columns) != set(real.columns)
+
+
+def test_f0_carry_com_coluna_ja_nas_base_levanta() -> None:
+    t0 = _t0_seq(2)
+    signals = _mk_predictions(t0, [1, -1])
+    df_all = _mk_labels_meta(t0, [1, -1], [0.01, -0.02])
+    with pytest.raises(ValueError, match="JOIN_BASE_COLUMNS"):
+        backtest_lite.join_signals_to_labels(signals, df_all, carry=("ret_net",))
+
+
+def test_f0_carry_com_coluna_ausente_levanta() -> None:
+    t0 = _t0_seq(2)
+    signals = _mk_predictions(t0, [1, -1])
+    df_all = _mk_labels(t0, [1, -1], [0.01, -0.02])
+    with pytest.raises(ValueError, match="existe em df_all"):
+        backtest_lite.join_signals_to_labels(signals, df_all, carry=("uniqueness",))
+
+
+def test_f0_carry_que_colide_com_signals_levanta_em_vez_de_sufixar() -> None:
+    """Sem esta guarda polars renomearia a coluna da direita para
+    `fold_id_right` e o chamador leria a errada sem erro nenhum."""
+    t0 = _t0_seq(2)
+    signals = _mk_predictions(t0, [1, -1])
+    df_all = _mk_labels(t0, [1, -1], [0.01, -0.02]).with_columns(
+        fold_id=pl.Series([9, 9], dtype=pl.Int16)  # noqa: magic-number
+    )
+    with pytest.raises(ValueError, match="existe em signals"):
+        backtest_lite.join_signals_to_labels(signals, df_all, carry=("fold_id",))
