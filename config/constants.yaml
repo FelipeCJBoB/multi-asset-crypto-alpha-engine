@@ -2594,17 +2594,33 @@ alpha_lgbm_ess_regularization_fator_conservador:
 # sweep_range já declarado, lido dinamicamente por build_search_space.
 
 alpha_optuna_n_trials:
-  value: 30
+  value: 150
   provenance: ASSUMED
   source: >
-    Custo medido em AG-371-ADDENDUM-17 (audit/architecture_gaps_log.yaml,
-    2026-08-28): 1 trial completo (15 folds do CPCV) = 32,6s pior caso
-    (BTCUSDT/R1, maior célula, 437k linhas), 10,7s melhor caso (ETHUSDT/R3,
-    80k linhas), CPU serial. 30 trials/combo/camada * 15 combos * 2 camadas
-    (Camada1 e Camada0 independentes, cada ablação exige HPO própria pra ser
-    válida) ~= 8h CPU serial pior caso -- orçamento de tempo escolhido pra
-    caber numa janela overnight, não resultado de nenhuma medição
-    estatística de convergência do sampler TPE.
+    ATUALIZADO 2026-08-30 (ADR-007, Item 1) -- valor anterior era 30
+    (ver histórico abaixo). 30 trials para 12 dimensões buscadas
+    (`_FIELD_KIND`, hyperparams_optuna.py) é ~10-20x abaixo da regra
+    prática de orçamento para TPE (Bergstra & Bengio, Optuna docs) --
+    ainda ASSUMED (não é resultado de medição de convergência do sampler
+    neste projeto), mas alinhado à regra prática em vez de escolhido só
+    pela janela de tempo disponível. Escopo real desta rodada: só os 6
+    combos com edge bruto médio positivo por símbolo e resolução != R1
+    (`docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_
+    2026-08-30.md` -- correção de validação: BTCUSDT/SOLUSDT/XRPUSDT x
+    R2/R3; BNBUSDT/ETHUSDT/R1 deprioritizados por padrão de edge negativo
+    medido em H8-H11, não removidos em definitivo). 6 combos x 2 camadas
+    x 150 trials = 1.800 trials novos, ~4,5h-7,5h CPU estimado (9,1-15s/
+    trial, faixa medida em AG-382/id=35-37).
+
+    Histórico (valor anterior, 30): custo medido em AG-371-ADDENDUM-17
+    (audit/architecture_gaps_log.yaml, 2026-08-28): 1 trial completo (15
+    folds do CPCV) = 32,6s pior caso (BTCUSDT/R1, maior célula, 437k
+    linhas), 10,7s melhor caso (ETHUSDT/R3, 80k linhas), CPU serial. 30
+    trials/combo/camada * 15 combos * 2 camadas (Camada1 e Camada0
+    independentes, cada ablação exige HPO própria pra ser válida) ~= 8h
+    CPU serial pior caso -- orçamento de tempo escolhido pra caber numa
+    janela overnight, não resultado de nenhuma medição estatística de
+    convergência do sampler TPE.
   class: B
   sweep_required: false
   review_by: "TBD -- Manager define o sprint de revisão"
