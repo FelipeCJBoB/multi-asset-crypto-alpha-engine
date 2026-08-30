@@ -755,6 +755,411 @@ def run_search_for_combo(
     return result
 
 
+# ============================================================================
+# Confirmação multi-seed (2026-08-30) -- mesma disciplina do ADR-002/ADR-003
+# (screen 1 seed -> confirma top-K por MEDIANA de N seeds -> gate de
+# permanência pareado), aplicada ao resultado da campanha Optuna real em vez
+# de repetir a busca. `best_value` de `run_search_for_combo` é o MÁXIMO de
+# `n_trials` sob 1 seed só -- winner's-curse medido real neste projeto
+# (ADR-002: +0,772 de viés) exige confirmação antes de qualquer promoção.
+# ============================================================================
+
+
+def _load_existing_study(
+    *,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    feature_ids_effective: tuple[str, ...],
+    device_type: str,
+    n_trials: int,
+    sampler_name: str,
+    sampler_seed: int,
+    storage_dir: Path,
+) -> optuna.Study:
+    """Reconstrói o MESMO `study_name`/`db_path` que `run_search_for_combo`
+    já usou pra gravar -- nunca globa por padrão de nome (`compute_search_
+    config_hash` é a única fonte de verdade do nome, mesma disciplina de
+    `AG-371`: 2 formas de achar "o mesmo" study é a classe de bug que já
+    mordeu este projeto)."""
+    config_hash = compute_search_config_hash(
+        feature_ids_effective,
+        variant=variant,
+        n_trials=n_trials,
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed,
+    )
+    study_name = (
+        f"alpha_hyperparams_{symbol}_{resolution_id}_{variant}_{device_type}_{config_hash[:8]}"
+    )
+    db_path = storage_dir / f"{symbol}_{resolution_id}_{variant}_{device_type}.db"  # noqa: unguarded-ratio -- Path.__truediv__
+    if not db_path.exists():
+        raise FileNotFoundError(
+            f"_load_existing_study: {db_path} não existe -- rode run_search_for_combo "
+            f"pra {symbol}/{resolution_id}/{variant}/{device_type} antes de confirmar"
+        )
+    return optuna.load_study(study_name=study_name, storage=f"sqlite:///{db_path.resolve()}")
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmedCandidate:
+    """1 combinação de hiperparâmetro FIXA (top-K do screening), testada sob
+    N seeds novas. `selection_bias_estimate` = `screening_value` (1 seed,
+    otimista) menos `median_pooled_sharpe` (N seeds) -- réplica direta da
+    métrica que o ADR-002 mediu como +0,772 no pior caso."""
+
+    hyper: alpha.LGBMHyperparams
+    screening_value: float
+    seed_pooled_sharpe: dict[int, float]
+    seed_path_sharpe: dict[int, dict[int, float]]
+    median_pooled_sharpe: float
+    selection_bias_estimate: float
+
+
+@dataclass(frozen=True, slots=True)
+class ConfirmationResult:
+    symbol: str
+    resolution_id: str
+    variant: str
+    top_k: int
+    confirmation_seeds: tuple[int, ...]
+    candidates: tuple[ConfirmedCandidate, ...]
+    winner: ConfirmedCandidate
+
+
+def confirm_top_k_multi_seed(
+    *,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    top_k: int,
+    confirmation_seeds: tuple[int, ...],
+    device_type: str = "cpu",
+    vol_estimator_id: str | None = None,
+    feature_ids: tuple[str, ...] | None = None,
+    n_trials: int | None = None,
+    sampler_seed: int | None = None,
+    storage_dir: Path | None = None,
+) -> ConfirmationResult:
+    """Estágio 2+3 do ADR-002/ADR-003, adaptado: pega os `top_k` trials
+    COMPLETE já gravados por `run_search_for_combo` (leitura, zero treino
+    novo) e re-treina CADA um sob `confirmation_seeds` (hiperparâmetro FIXO
+    -- não é busca, é reavaliação de um ponto já escolhido). Vencedor
+    decidido pela MEDIANA entre seeds, não pelo `best_value` de 1 seed que
+    o screening reportou. `seed_path_sharpe` (Sharpe por caminho do CPCV,
+    por seed) fica disponível pra `confirm_combo_paired` computar o gate de
+    permanência SEM precisar de um "Estágio 3" com treino novo -- mesma
+    rodada de confirmação serve pros dois propósitos."""
+    mf, splits, feature_ids_effective = build_search_frame(
+        symbol, resolution_id, vol_estimator_id=vol_estimator_id, feature_ids=feature_ids
+    )
+    n_trials_resolved = (
+        n_trials if n_trials is not None else int(load_constant("alpha_optuna_n_trials"))
+    )
+    base_seed = int(load_constant("alpha_random_seed"))
+    sampler_seed_resolved = sampler_seed if sampler_seed is not None else base_seed
+    sampler_name = str(load_constant("alpha_optuna_sampler"))
+    storage_dir_resolved = storage_dir if storage_dir is not None else OPTUNA_STUDIES_DIR
+    base_hyper = alpha.LGBMHyperparams.from_constants()
+
+    study = _load_existing_study(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        feature_ids_effective=feature_ids_effective,
+        device_type=device_type,
+        n_trials=n_trials_resolved,
+        sampler_name=sampler_name,
+        sampler_seed=sampler_seed_resolved,
+        storage_dir=storage_dir_resolved,
+    )
+    complete_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if not complete_trials:
+        raise ValueError(
+            f"confirm_top_k_multi_seed: study {study.study_name!r} não tem nenhum trial "
+            "COMPLETE -- nada pra confirmar"
+        )
+    complete_trials.sort(key=lambda t: t.value, reverse=True)  # type: ignore[arg-type, return-value]
+    top_trials = complete_trials[:top_k]
+
+    monotone_screen_cache = _precompute_monotone_screens(
+        mf, splits, feature_ids_effective, base_hyper
+    )
+
+    candidates: list[ConfirmedCandidate] = []
+    for trial in top_trials:
+        hyper = dataclasses.replace(base_hyper, **trial.params)
+        seed_pooled: dict[int, float] = {}
+        seed_paths: dict[int, dict[int, float]] = {}
+        for seed in confirmation_seeds:
+            folds = alpha.run_all_folds(
+                mf.data,
+                splits,
+                variant=variant,
+                model_id="hyperparam_optuna_confirm",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                hyper=hyper,
+                seed=seed,
+                feature_ids=feature_ids_effective,
+                device_type=device_type,
+                tau_policy=alpha.TAU_POLICY_LEGACY_PER_SIDE,
+                calib_split_mode=alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+                class_balance_basis=alpha.CLASS_BALANCE_WEIGHT,
+                calib_weight_basis=alpha.CALIB_WEIGHT_UNIQUENESS,
+                enforce_r2=True,
+                monotone_screen_override_by_split_side=monotone_screen_cache,
+            )
+            by_path = backtest_lite.backtest_by_path(folds, mf.data)
+            sharpes = [r.sharpe_naive for r in by_path.values() if math.isfinite(r.sharpe_naive)]
+            pooled = (
+                sum(sharpes) / len(sharpes)  # noqa: unguarded-ratio -- guardado pelo `if sharpes`
+                if sharpes
+                else float("nan")
+            )
+            seed_pooled[seed] = pooled
+            seed_paths[seed] = {pid: r.sharpe_naive for pid, r in by_path.items()}
+        finite_pooled = [v for v in seed_pooled.values() if math.isfinite(v)]
+        median_pooled = float(np.median(finite_pooled)) if finite_pooled else float("nan")
+        screening_value = float(trial.value) if trial.value is not None else float("nan")
+        candidates.append(
+            ConfirmedCandidate(
+                hyper=hyper,
+                screening_value=screening_value,
+                seed_pooled_sharpe=seed_pooled,
+                seed_path_sharpe=seed_paths,
+                median_pooled_sharpe=median_pooled,
+                selection_bias_estimate=screening_value - median_pooled,
+            )
+        )
+        logger.info(
+            "models.hyperparams_optuna.confirmation_candidate_done",
+            symbol=symbol,
+            resolution_id=resolution_id,
+            variant=variant,
+            screening_value=screening_value,
+            median_pooled_sharpe=median_pooled,
+            selection_bias_estimate=screening_value - median_pooled,
+        )
+
+    def _sort_key(c: ConfirmedCandidate) -> float:
+        return c.median_pooled_sharpe if math.isfinite(c.median_pooled_sharpe) else -math.inf
+
+    candidates.sort(key=_sort_key, reverse=True)
+    winner = candidates[0]
+    logger.info(
+        "models.hyperparams_optuna.confirmation_done",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        top_k=top_k,
+        n_seeds=len(confirmation_seeds),
+        winner_median_pooled_sharpe=winner.median_pooled_sharpe,
+        winner_screening_value=winner.screening_value,
+        winner_selection_bias=winner.selection_bias_estimate,
+    )
+    return ConfirmationResult(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        top_k=top_k,
+        confirmation_seeds=confirmation_seeds,
+        candidates=tuple(candidates),
+        winner=winner,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PairedGateResult:
+    """Gate de permanência real (Camada1 vs. Camada0, pareado por caminho do
+    CPCV), calculado das MESMAS rodadas de `confirm_top_k_multi_seed` --
+    `n_better` por seed = nº de caminhos onde o vencedor confirmado da
+    Camada1 supera o vencedor confirmado da Camada0 em Sharpe; veredito
+    pela MEDIANA entre seeds (nunca de 1 seed isolada). RESSALVA `AG-220`
+    (não corrigida aqui): este gate já foi medido oscilando FALSE→TRUE→
+    FALSE só por calibração — um `permanence_pass=True` aqui é mais
+    confiável que o de 1 seed (viés de seleção removido), mas não resolve
+    o poder estatístico questionado pelo `AG-220`."""
+
+    symbol: str
+    resolution_id: str
+    camada1: ConfirmationResult
+    camada0: ConfirmationResult
+    n_better_by_seed: dict[int, int]
+    median_n_better: float
+    permanence_min_paths: int
+    permanence_pass: bool
+
+
+def confirm_combo_paired(
+    *,
+    symbol: str,
+    resolution_id: str,
+    top_k: int,
+    confirmation_seeds: tuple[int, ...],
+    device_type: str = "cpu",
+    vol_estimator_id: str | None = None,
+    feature_ids: tuple[str, ...] | None = None,
+    n_trials: int | None = None,
+    sampler_seed: int | None = None,
+    storage_dir: Path | None = None,
+) -> PairedGateResult:
+    """Confirma Camada1 e Camada0 independentemente (`confirm_top_k_multi_
+    seed` 2x — nunca uma herdando o vencedor da outra, mesma exigência de
+    ablação válida do módulo inteiro) e computa o gate de permanência
+    pareado sobre os 2 vencedores confirmados."""
+    kwargs: dict[str, Any] = {
+        "symbol": symbol,
+        "resolution_id": resolution_id,
+        "top_k": top_k,
+        "confirmation_seeds": confirmation_seeds,
+        "device_type": device_type,
+        "vol_estimator_id": vol_estimator_id,
+        "feature_ids": feature_ids,
+        "n_trials": n_trials,
+        "sampler_seed": sampler_seed,
+        "storage_dir": storage_dir,
+    }
+    camada1 = confirm_top_k_multi_seed(variant=alpha.VARIANT_CAMADA1, **kwargs)
+    camada0 = confirm_top_k_multi_seed(variant=alpha.VARIANT_CAMADA0, **kwargs)
+
+    permanence_min_paths = int(load_constant("alpha_layer1_permanence_min_paths"))
+    n_better_by_seed: dict[int, int] = {}
+    for seed in confirmation_seeds:
+        c1_paths = camada1.winner.seed_path_sharpe[seed]
+        c0_paths = camada0.winner.seed_path_sharpe[seed]
+        common = set(c1_paths) & set(c0_paths)
+        n_better_by_seed[seed] = sum(1 for p in common if c1_paths[p] > c0_paths[p])
+    median_n_better = float(np.median(list(n_better_by_seed.values())))
+    permanence_pass = median_n_better >= permanence_min_paths
+
+    logger.info(
+        "models.hyperparams_optuna.confirm_combo_paired_done",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        n_better_by_seed=n_better_by_seed,
+        median_n_better=median_n_better,
+        permanence_min_paths=permanence_min_paths,
+        permanence_pass=permanence_pass,
+    )
+    return PairedGateResult(
+        symbol=symbol,
+        resolution_id=resolution_id,
+        camada1=camada1,
+        camada0=camada0,
+        n_better_by_seed=n_better_by_seed,
+        median_n_better=median_n_better,
+        permanence_min_paths=permanence_min_paths,
+        permanence_pass=permanence_pass,
+    )
+
+
+def _paired_gate_to_json(result: PairedGateResult) -> dict[str, Any]:
+    def _confirmation_to_json(c: ConfirmationResult) -> dict[str, Any]:
+        return {
+            "top_k": c.top_k,
+            "confirmation_seeds": list(c.confirmation_seeds),
+            "winner": {
+                "hyper": dataclasses.asdict(c.winner.hyper),
+                "screening_value": c.winner.screening_value,
+                "median_pooled_sharpe": c.winner.median_pooled_sharpe,
+                "selection_bias_estimate": c.winner.selection_bias_estimate,
+                "seed_pooled_sharpe": c.winner.seed_pooled_sharpe,
+            },
+            "candidates": [
+                {
+                    "hyper": dataclasses.asdict(cand.hyper),
+                    "screening_value": cand.screening_value,
+                    "median_pooled_sharpe": cand.median_pooled_sharpe,
+                    "selection_bias_estimate": cand.selection_bias_estimate,
+                }
+                for cand in c.candidates
+            ],
+        }
+
+    return {
+        "symbol": result.symbol,
+        "resolution_id": result.resolution_id,
+        "n_better_by_seed": result.n_better_by_seed,
+        "median_n_better": result.median_n_better,
+        "permanence_min_paths": result.permanence_min_paths,
+        "permanence_pass": result.permanence_pass,
+        "camada1": _confirmation_to_json(result.camada1),
+        "camada0": _confirmation_to_json(result.camada0),
+    }
+
+
+def _run_confirmation_cli(args: Any) -> None:
+    """AG-382-ADDENDUM (2026-08-30) -- confirmação multi-seed (top-K,
+    mediana, gate pareado) sobre os resultados já gravados pela campanha
+    real. Nunca sob `--all-combinations` implícito: cada (symbol,
+    resolution_id) roda os 2 braços (Camada1+Camada0) via `confirm_combo_
+    paired`. Escreve 1 JSON por combo em `experiments/` (mesma convenção já
+    usada por `t2_t1_capacity_map_*.json`/`noise_floor_diagnostics_*.json`)
+    -- nunca sobrescreve silenciosamente um relatório existente do mesmo
+    dia (achado real: sem timestamp no nome, uma rodada abortada e
+    re-lançada perderia o relatório da rodada anterior sem aviso)."""
+    import json
+    from datetime import UTC, datetime
+
+    confirmation_seeds = tuple(args.confirmation_seeds)
+    if args.all_combinations:
+        symbols: tuple[str, ...] = ALL_SYMBOLS
+        resolutions: tuple[str, ...] = ALL_RESOLUTIONS
+    else:
+        if args.symbol is None or args.resolution_id is None:
+            raise SystemExit("--symbol e --resolution-id são obrigatórios sem --all-combinations")
+        symbols = (args.symbol,)
+        resolutions = (args.resolution_id,)
+
+    out_dir = Path("experiments")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run_stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+    results: list[PairedGateResult] = []
+    for symbol in symbols:
+        for resolution_id in resolutions:
+            result = confirm_combo_paired(
+                symbol=symbol,
+                resolution_id=resolution_id,
+                top_k=args.top_k,
+                confirmation_seeds=confirmation_seeds,
+                device_type=args.device_type,
+                vol_estimator_id=args.vol_estimator_id,
+                n_trials=args.n_trials,
+                sampler_seed=args.sampler_seed,
+            )
+            results.append(result)
+            out_path = (
+                out_dir
+                / f"alpha_optuna_confirmation_{symbol}_{resolution_id}_{run_stamp}.json"
+            )
+            out_path.write_text(
+                json.dumps(_paired_gate_to_json(result), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info(
+                "models.hyperparams_optuna.confirmation_report_written",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                path=str(out_path),
+                permanence_pass=result.permanence_pass,
+                median_n_better=result.median_n_better,
+            )
+
+    summary_path = out_dir / f"alpha_optuna_confirmation_summary_{run_stamp}.json"
+    summary_path.write_text(
+        json.dumps([_paired_gate_to_json(r) for r in results], indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    logger.info(
+        "models.hyperparams_optuna.confirmation_campaign_done",
+        n_combos=len(results),
+        n_permanence_pass=sum(1 for r in results if r.permanence_pass),
+        summary_path=str(summary_path),
+    )
+
+
 def _run_cli() -> None:
     import argparse
 
@@ -775,7 +1180,23 @@ def _run_cli() -> None:
     parser.add_argument("--dsr-n-trials", type=int, default=None)
     parser.add_argument("--scratch", action="store_true")
     parser.add_argument("--vol-estimator-id", type=str, default=None)
+    # AG-382-ADDENDUM -- confirmação multi-seed (top-K + mediana + gate
+    # pareado) sobre uma campanha JÁ RODADA -- nunca junto de uma busca
+    # nova na mesma invocação (2 responsabilidades distintas, mesmo CLI).
+    parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--top-k", type=int, default=3)  # noqa: magic-number -- default do protocolo proposto
+    parser.add_argument(
+        "--confirmation-seeds",
+        type=int,
+        nargs="+",
+        default=[101, 202, 303, 404, 505],
+        help="Seeds novas pra confirmação -- NUNCA reusa alpha_random_seed da busca original.",
+    )
     args = parser.parse_args()
+
+    if args.confirm:
+        _run_confirmation_cli(args)
+        return
 
     if args.all_combinations:
         symbols: tuple[str, ...] = ALL_SYMBOLS

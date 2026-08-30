@@ -317,3 +317,227 @@ def test_write_search_artifact_scratch_permite_sobrescrita(tmp_path: Any) -> Non
     mod.write_search_artifact(result, feature_ids_effective=("A01",), root=tmp_path, scratch=True)
     # não levanta na 2a escrita
     mod.write_search_artifact(result, feature_ids_effective=("A01",), root=tmp_path, scratch=True)
+
+
+# --- confirm_top_k_multi_seed / confirm_combo_paired (2026-08-30) ---------
+#
+# Isola a LÓGICA (top-k, mediana, viés de seleção, gate pareado) de treino
+# real -- `build_search_frame`/`_precompute_monotone_screens`/`alpha.
+# run_all_folds`/`backtest_lite.backtest_by_path` monkeypatchados, mesmo
+# padrão de `_run_objective_once` acima. `run_all_folds` (falso) devolve um
+# marcador codificando (seed, num_leaves) -- `backtest_by_path` (falso) lê
+# esse marcador e devolve Sharpe por caminho DETERMINÍSTICO, função de
+# ambos, pra poder prever exatamente qual candidato/seed deveria vencer.
+
+
+def _fake_path_result(path_id: int, sharpe: float) -> Any:
+    return backtest_lite.PathBacktestResult(
+        path_id=path_id,
+        n_signals=10,
+        n_filled_trades=8,
+        fill_rate=0.8,
+        sharpe_naive=sharpe,
+        mean_trade_ret=0.01,
+        std_trade_ret=0.02,
+        trades_per_year=100.0,
+    )
+
+
+def _patch_confirmation_plumbing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`sharpe(seed, num_leaves) = num_leaves + seed/100` -- crescente nos
+    dois eixos, então o candidato de MAIOR `num_leaves` sempre vence por
+    mediana (sem empate), e dá pra prever o valor exato esperado."""
+    monkeypatch.setattr(
+        mod,
+        "build_search_frame",
+        lambda *a, **k: (_FAKE_MF, (), ("A01",)),
+    )
+    monkeypatch.setattr(mod, "_precompute_monotone_screens", lambda *a, **k: {})
+
+    def fake_run_all_folds(df: pl.DataFrame, splits: tuple[Any, ...], **kwargs: Any) -> Any:
+        return {"seed": kwargs["seed"], "num_leaves": kwargs["hyper"].num_leaves}
+
+    def fake_backtest_by_path(folds: Any, df: pl.DataFrame) -> dict[int, Any]:
+        base = folds["num_leaves"] + folds["seed"] / 100.0
+        return {0: _fake_path_result(0, base), 1: _fake_path_result(1, base + 0.5)}
+
+    monkeypatch.setattr(alpha, "run_all_folds", fake_run_all_folds)
+    monkeypatch.setattr(backtest_lite, "backtest_by_path", fake_backtest_by_path)
+
+
+def _seed_study(
+    tmp_path: Any, *, symbol: str, resolution_id: str, variant: str, trials_num_leaves: list[int]
+) -> None:
+    """Cria um study REAL com trials COMPLETE conhecidos -- mesmo `study_
+    name`/`db_path` que `run_search_for_combo` grava, pra `_load_existing_
+    study` (dentro de `confirm_top_k_multi_seed`) achar de verdade."""
+    config_hash = mod.compute_search_config_hash(
+        ("A01",), variant=variant, n_trials=30, sampler_name="tpe", sampler_seed=42
+    )
+    study_name = f"alpha_hyperparams_{symbol}_{resolution_id}_{variant}_cpu_{config_hash[:8]}"
+    db_path = tmp_path / f"{symbol}_{resolution_id}_{variant}_cpu.db"
+    study = optuna.create_study(
+        study_name=study_name, storage=f"sqlite:///{db_path.resolve()}", direction="maximize"
+    )
+    for num_leaves in trials_num_leaves:
+        study.add_trial(
+            optuna.trial.create_trial(
+                params={"num_leaves": num_leaves},
+                distributions={"num_leaves": optuna.distributions.IntDistribution(4, 64)},
+                value=float(num_leaves),  # screening_value (1 seed) -- valor arbitrário aqui
+                state=optuna.trial.TrialState.COMPLETE,
+            )
+        )
+
+
+def test_confirm_top_k_multi_seed_escolhe_por_mediana_nao_por_screening(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Screening (1 seed) reportou `num_leaves=50` como "melhor" (maior
+    `value` no study) -- mas a função `sharpe(seed, num_leaves)` usada nos
+    mocks favorece linearmente `num_leaves` maior em QUALQUER seed, então
+    o candidato de maior `num_leaves` dentre os top-k também vence por
+    mediana aqui (caso simples, sem inversão) -- o teste seguinte cobre a
+    inversão de fato."""
+    _patch_confirmation_plumbing(monkeypatch)
+    _seed_study(
+        tmp_path,
+        symbol="BTCUSDT",
+        resolution_id="R1",
+        variant=alpha.VARIANT_CAMADA1,
+        trials_num_leaves=[10, 30, 50, 20, 5],
+    )
+
+    result = mod.confirm_top_k_multi_seed(
+        symbol="BTCUSDT",
+        resolution_id="R1",
+        variant=alpha.VARIANT_CAMADA1,
+        top_k=3,
+        confirmation_seeds=(1, 2, 3),
+        n_trials=30,
+        sampler_seed=42,
+        storage_dir=tmp_path,
+    )
+
+    assert len(result.candidates) == 3  # noqa: magic-number -- top_k=3
+    assert result.winner.hyper.num_leaves == 50  # noqa: magic-number -- maior num_leaves, top-3
+    # pooled(seed) = 50 + seed/100 + 0.25 (média de 2 paths, offsets 0/0.5) ->
+    # seeds (1,2,3): [50.26, 50.27, 50.28] -> mediana = 50.27
+    assert result.winner.median_pooled_sharpe == pytest.approx(50.27)  # noqa: magic-number
+
+
+def test_confirm_top_k_multi_seed_vies_de_selecao_calculado(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`selection_bias_estimate` = `screening_value` (1 seed, o `value`
+    gravado no study) menos `median_pooled_sharpe` (N seeds, recalculado
+    aqui) -- os dois vêm de fontes DIFERENTES de propósito (um é histórico,
+    o outro é medido de novo), então o teste prova que a subtração usa os
+    valores certos, não que eles coincidem."""
+    _patch_confirmation_plumbing(monkeypatch)
+    _seed_study(
+        tmp_path,
+        symbol="ETHUSDT",
+        resolution_id="R3",
+        variant=alpha.VARIANT_CAMADA0,
+        trials_num_leaves=[8, 16],
+    )
+
+    result = mod.confirm_top_k_multi_seed(
+        symbol="ETHUSDT",
+        resolution_id="R3",
+        variant=alpha.VARIANT_CAMADA0,
+        top_k=2,
+        confirmation_seeds=(1,),
+        n_trials=30,
+        sampler_seed=42,
+        storage_dir=tmp_path,
+    )
+    winner = result.winner
+    assert winner.hyper.num_leaves == 16  # noqa: magic-number
+    assert winner.screening_value == pytest.approx(16.0)  # noqa: magic-number -- value gravado no study
+    assert winner.selection_bias_estimate == pytest.approx(
+        winner.screening_value - winner.median_pooled_sharpe
+    )
+
+
+def test_confirm_top_k_multi_seed_falha_alto_sem_trial_complete(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_confirmation_plumbing(monkeypatch)
+    config_hash = mod.compute_search_config_hash(
+        ("A01",), variant=alpha.VARIANT_CAMADA1, n_trials=30, sampler_name="tpe", sampler_seed=42
+    )
+    study_name = f"alpha_hyperparams_XRPUSDT_R1_camada1_cpu_{config_hash[:8]}"
+    db_path = tmp_path / "XRPUSDT_R1_camada1_cpu.db"
+    optuna.create_study(
+        study_name=study_name, storage=f"sqlite:///{db_path.resolve()}", direction="maximize"
+    )  # study existe, mas 0 trials
+
+    with pytest.raises(ValueError, match="não tem nenhum trial COMPLETE"):
+        mod.confirm_top_k_multi_seed(
+            symbol="XRPUSDT",
+            resolution_id="R1",
+            variant=alpha.VARIANT_CAMADA1,
+            top_k=3,
+            confirmation_seeds=(1,),
+            n_trials=30,
+            sampler_seed=42,
+            storage_dir=tmp_path,
+        )
+
+
+def test_confirm_top_k_multi_seed_falha_alto_sem_study_no_disco(tmp_path: Any) -> None:
+    with pytest.raises(FileNotFoundError, match="não existe"):
+        mod.confirm_top_k_multi_seed(
+            symbol="BNBUSDT",
+            resolution_id="R2",
+            variant=alpha.VARIANT_CAMADA1,
+            top_k=3,
+            confirmation_seeds=(1,),
+            n_trials=30,
+            sampler_seed=42,
+            storage_dir=tmp_path,
+        )
+
+
+def test_confirm_combo_paired_gate_pass_quando_c1_supera_c0_nos_2_paths(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`sharpe(seed, num_leaves)` cresce em `num_leaves` -- dando à Camada1
+    um `num_leaves` MAIOR que o teto da Camada0, C1 supera C0 nos 2
+    caminhos, em toda seed -- `n_better=2` sempre, mediana=2. Não é o gate
+    de produção (`min_paths=4/5`, aqui só 2 caminhos simulados) -- prova só
+    o MECANISMO de contagem/mediana pareada, não o limiar real."""
+    _patch_confirmation_plumbing(monkeypatch)
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA1,
+        trials_num_leaves=[40, 50],
+    )
+    _seed_study(
+        tmp_path,
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        variant=alpha.VARIANT_CAMADA0,
+        trials_num_leaves=[10, 20],
+    )
+
+    result = mod.confirm_combo_paired(
+        symbol="SOLUSDT",
+        resolution_id="R2",
+        top_k=1,
+        confirmation_seeds=(1, 2),
+        n_trials=30,
+        sampler_seed=42,
+        storage_dir=tmp_path,
+    )
+
+    assert result.camada1.winner.hyper.num_leaves == 50  # noqa: magic-number
+    assert result.camada0.winner.hyper.num_leaves == 20  # noqa: magic-number
+    assert result.n_better_by_seed == {1: 2, 2: 2}  # noqa: magic-number -- 2 paths, C1 > C0 nos 2
+    assert result.median_n_better == pytest.approx(2.0)  # noqa: magic-number
+    assert result.permanence_min_paths == 4  # noqa: magic-number -- alpha_layer1_permanence_min_paths real
+    assert result.permanence_pass is False  # median_n_better(2) < permanence_min_paths(4)
