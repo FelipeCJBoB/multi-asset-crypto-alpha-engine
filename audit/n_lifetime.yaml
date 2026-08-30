@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 2561
+counter: 2636
 
 log:
   - id: 1
@@ -990,3 +990,32 @@ log:
       Pesquisa" (secao H10). Decisao de promocao do 1 combo que passa
       fica com o Manager.
     delta: 450
+  - id: 37
+    date: "2026-08-30"
+    type: recomputo_win_rate_gain_15_vencedores_camada1_h10
+    description: >
+      Recomputo diagnostico sobre os 15 vencedores Camada1 JA CONFIRMADOS
+      do id=36 (H10, gate duplo) -- NAO reabre selecao de candidato, NAO
+      roda busca nova. Pedido do Manager: adicionar win rate e ranking de
+      gain por feature a tabela H10, que nao tinham sido capturados nas
+      rodadas anteriores. Reusa hiperparametro JA confirmado por combo,
+      retreina sob as MESMAS 5 seeds de confirmacao (101/202/303/404/505)
+      -- 15 combos x 5 seeds = 75 retreinos reais (nao 450, evita
+      redundancia de reavaliar os outros 2 candidatos/camada0 que ja
+      foram medidos no id=36).
+
+      75/75 sem falha. Cross-check bit-exato: Sharpe/edge recomputados
+      aqui batem EXATAMENTE com os valores ja registrados no id=36
+      (determinismo sob CPU confirmado). Win rate mediano por combo:
+      47,08% (ETHUSDT/R3, pior) a 55,92% (SOLUSDT/R3, melhor) -- nenhum
+      combo passa de ~56%, consistente com a magnitude modesta do edge
+      bruto medido. Gain por feature (booster_.feature_importance,
+      somado entre lados/folds/seeds por combo) publicado como nova
+      secao H11 do artefato "Alpha — Base de Pesquisa" -- achado
+      observacional: BTC/ETH/BNB concentram gain em features de
+      volatilidade/range (A19_log_range/A11_true_range_pct/C12_vol_
+      of_vol_48), SOLUSDT foge do padrao e concentra em funding/
+      posicionamento (E16f_global_ls_ratio/E01f_funding_last/E27f_
+      cost_atr_ratio), XRPUSDT misto -- nao investigado a fundo, so
+      registrado.
+    delta: 75
