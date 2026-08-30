@@ -25414,4 +25414,5 @@ entries:
       (pre-existente), 0 failed -- zero regressao. Medicao real de
       tempo de parede via hardware CUDA WSL2 (nao so mecanico), 2
       devices, antes/depois -- ver `consequence` acima.
+    resolved_by_commit: "d422f10"
     status: "fechado 2026-08-29 -- otimizacao real aplicada e medida nos dois devices; achado honesto registrado (CUDA nao supera CPU neste tamanho de dado mesmo isolando o trabalho CPU-bound) -- decisao de qual device usar na campanha real fica com o Manager"
