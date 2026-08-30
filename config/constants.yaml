@@ -3632,3 +3632,19 @@ meta_leakage_control_lambda_grid:
   source: "docs/meta_model_design_doc_2026-08-22.md §4.3 -- grade de intensidade do CONTROLE POSITIVO sintético de vazamento (F3), declarada A PRIORI (B20). Injeta p_alpha' = (1-lambda)*p_alpha + lambda*y_meta e exige que o harness de avaliação detecte lambda; se não detectar um vazamento INJETADO, também não detectaria um real, e nada que ele reporte é interpretável. lambda=0 é o braço de controle (nenhuma injeção) e precisa estar na grade -- sem ele não há linha de base contra a qual comparar. O topo em 0,4 é grande o bastante para que qualquer harness funcional acuse, sem chegar a 1,0 (que substituiria p_alpha PELO alvo e testaria aritmética, não o pipeline). sweep_required FALSE de propósito: varrer a grade do próprio controle seria buscar sobre a busca, exatamente o que R5 do design doc caracteriza como falha de desenho."
   class: C
   sweep_required: false
+
+meta_logit_c:
+  value: 1.0
+  provenance: ASSUMED
+  source: "docs/meta_model_design_doc_2026-08-22.md §11 (D-02/§7.2) -- inverso da regularização L2 do learner do Meta (LogisticRegression(penalty='l2', C=..., solver='lbfgs')). Convenção do sklearn (C=1.0 é o default), ponto de partida neutro, sem base própria neste domínio. CORREÇÃO DA v3 SOBRE A v1: o sweep_range era [0.5, 2.0] rotulado como '±50%', mas 2,0 é +100% -- ±50% é o critério que CLAUDE.md §16.10 item 4 nomeia, então a faixa real é [0.5, 1.5]."
+  class: B
+  sweep_required: true
+  sweep_range: [0.5, 1.5]
+
+meta_min_events_per_variable:
+  value: 10
+  provenance: LITERATURE
+  source: "docs/meta_model_design_doc_2026-08-22.md §11/§7.3 -- piso de EPV (events per variable) que decide se um meta-fold AJUSTA MODELO ou cai em pass-through. TRANSPLANTADA, e a transferência NÃO foi validada: EPV=10 foi estabelecida para regressão logística NÃO-PENALIZADA contando EVENTOS BRUTOS independentes (Peduzzi et al. 1996); aqui é aplicada a logística L2 contando Σ uniqueness_subpop da classe minoritária. Duas substituições, nenhuma validada -- por isso LITERATURE com ressalva, nunca DERIVED. DUAS CORREÇÕES DA v3 SOBRE A v1: (a) estava declarada classe C, violando a regra 'guardrails classe C são quantis, nunca número redondo' (CLAUDE.md §Proveniência) -- 10 é o número redondo arquetípico, e a constante decide se um fold ajusta modelo, o que é classe B no mínimo; (b) estava com sweep_required false, o que deixaria o risco SIMÉTRICO sem teste -- não só 'baixar o EPV para fazer caber' (R4), mas o EPV estar ERRADO POR TRANSPLANTE e matar o desenho sem motivo. MEDIDO em F2 (2026-08-30, BTCUSDT/R1 camada1): com 7 colunas no design matrix o EPV realizado é 93 na mediana e 20 no pior meta-fold -- a logística L2 é sustentada com folga em todos os folds sob este piso."
+  class: B
+  sweep_required: true
+  sweep_range: [5, 20]
