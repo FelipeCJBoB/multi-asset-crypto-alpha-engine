@@ -1,6 +1,6 @@
 # ADR-007: Arquitetura de medição de hiperparâmetro em produção — 15 combos, gate duplo, guardrails contra falso-positivo
 
-**Status:** Item 1 concluído 2026-08-30 (1.800/1.800 trials, 0 falhas, 2h32m18s) — Item 2 concluído 2026-08-31 (720/720 confirmações, 0 falhas, 1h00m51s — **ZERO dos 6 combos passam o gate duplo**; `BTCUSDT/R3`, único combo que passava sob H10, não sobrevive ao orçamento maior) — Item 4 concluído (FDR aplicado à taxa-base H0-H7) — Item 3 em preparação, Item 5 aguarda Item 3 (ver Action Items)
+**Status:** Itens 1-5 concluídos 2026-08-31. Item 1: 1.800/1.800 trials. Item 2: 720/720 confirmações, **ZERO dos 6 combos passam o gate duplo**. Item 3: 300/300 retreinos, FPR do gate duplo sob ruído = 8,0%/0,0%/0,0% (bem abaixo do piso de confiança) — o gate não é impossível de passar por acaso, reforça que a ausência de sinal do Item 2 é real. Item 4: FDR aplicado à taxa-base H0-H7 (7/15→4/15 BH→3/15 BY); ainda não aplicado ao resultado dos Itens 1-2 (estatística de teste correta não decidida, lacuna registrada). Item 5: critério de poda registrado com as 2 pré-condições agora satisfeitas por dado real; decisão de aplicar fica com o Manager. Item 6 (walk-forward real) permanece fora do escopo desta ADR. Ver Action Items pro detalhamento por item.
 **Date:** 2026-08-30
 **Deciders:** Manager (Felipe)
 
@@ -319,12 +319,23 @@ rodar agora.
    `audit/n_lifetime.yaml::id=38` e o artefato "ADR-007 — Painel de
    Execução" pro detalhamento completo. Não tratado como sinal real até
    o Item 2.
-4. [ ] Rodar Item 3 (calibração `AG-220`, 3 combos representativos:
-   `BTCUSDT/R3`, `ETHUSDT/R1`, `BNBUSDT/R1`) — código e testes prontos
-   (`src/validation/ag220_dual_gate_calibration.py`, commit `28708f2`),
-   aguardava só o Item 2 terminar pra evitar contenção de CPU (`AG-381`
-   já mediu ~54% de piora de throughput sob concorrência neste
-   hardware) — Item 2 concluiu 2026-08-31 00:12:11, próximo passo real.
+4. [x] Rodar Item 3 (calibração `AG-220`, 3 combos representativos:
+   `BTCUSDT/R3`, `ETHUSDT/R1`, `BNBUSDT/R1`) — CONCLUÍDO 2026-08-31,
+   300/300 retreinos, 0 falhas nesta execução final (2 bugs reais
+   encontrados e corrigidos durante o lançamento — `vol_estimator_id`
+   não resolvido sob `R3`, commit `4bfdf6f`; `feature_ids=None`
+   sobrescrevendo o default real de `run_all_folds`, commit `73fceae` —
+   nenhum dos dois era capturável pelos 3 testes com mock existentes).
+   Uma queda de energia real interrompeu a campanha durante `ETHUSDT/R1`
+   (26/50 repeats perdidos, sem checkpoint neste módulo — refeitos do
+   zero). Taxa de falso-positivo do gate duplo sob ruído puro:
+   `BTCUSDT/R3`=8,0%, `ETHUSDT/R1`=0,0%, `BNBUSDT/R1`=0,0% — todos bem
+   abaixo do piso de confiança `alpha_prune_max_gate_fpr=0,20`. Achado
+   central: o gate NÃO é impossível de passar por acaso (8% de chance
+   em `BTCUSDT/R3`); o Item 2 medir ZERO combos passando de verdade não
+   é explicado por um instrumento quebrado. Ver
+   `audit/n_lifetime.yaml::id=40` e o artefato "ADR-007 — Painel de
+   Execução" pro detalhamento completo.
 5. [x] Rodar Item 2 (confirmação profunda, 6 combos) — CONCLUÍDO
    2026-08-31, 720/720 confirmações, 0 falhas, 1h00m51s
    (23:11:20→00:12:11). **ZERO dos 6 combos passam o gate duplo.**
@@ -349,8 +360,18 @@ rodar agora.
    proporção, testada contra 50% via binomial — não decidido ainda,
    registrar como lacuna aberta, não inventar a estatística sem
    validar).
-7. [ ] Registrar constantes de poda (Item 5) em `constants.yaml` — sem
-   aplicar a poda ainda (condicional ao resultado dos Itens 1/3).
-8. [ ] `audit/architecture_gaps_log.yaml` — nova entrada (`AG-384` ou
-   próximo livre) referenciando esta ADR, ao fechar cada item.
-9. [ ] `docs/SPRINT_LOG.md` — nova seção ao fechar o primeiro item real.
+7. [x] Registrar constantes de poda (Item 5) em `constants.yaml` —
+   CONCLUÍDO, commit `0f89735` (`alpha_prune_min_edge_bps_threshold=0,0`,
+   `alpha_prune_max_gate_fpr=0,20`). Não aplicado ainda — critério tem
+   as DUAS pré-condições de dado real agora disponíveis (Item 1: edge
+   bruto por combo; Item 3: FPR do gate, todos os 3 combos testados
+   `<0,20`, confirmando o gate confiável o bastante pra basear decisão),
+   mas a decisão de PODAR de verdade (mudar `ALL_SYMBOLS`/escopo de
+   treino) é maior que esta ADR sozinha decide — fica com o Manager,
+   como já era o entendimento original antes desta ADR existir.
+8. [x] `audit/architecture_gaps_log.yaml` — `AG-389` (estatística de
+   teste da FDR sobre Itens 1-2 não decidida) e `AG-390` (módulo do
+   Item 3 sem checkpoint incremental, custo real realizado na queda de
+   energia) — ambos ABERTOS, registrados, não corrigidos nesta sessão
+   (fora do pedido original de cada item).
+9. [x] `docs/SPRINT_LOG.md` — nova seção ao fechar o ADR (ver abaixo).

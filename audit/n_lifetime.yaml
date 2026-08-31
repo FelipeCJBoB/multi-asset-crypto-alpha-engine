@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 5156
+counter: 5510
 
 log:
   - id: 1
@@ -1104,3 +1104,57 @@ log:
       nunca passa é sinal de que não há vantagem real, ou de que o
       próprio gate é excessivamente conservador?
     delta: 720
+  - id: 40
+    date: "2026-08-31"
+    type: adr007_item3_calibracao_ag220_gate_duplo
+    description: >
+      ADR-007 Item 3 — calibração real do `AG-220` (taxa de falso-positivo
+      do gate duplo sob nulo verdadeiro, `label`+`ret_net` permutados
+      juntos, hiperparâmetro FIXO já confirmado) sobre 3 combos
+      representativos (`BTCUSDT/R3`, único que passava sob H10;
+      `ETHUSDT/R1` e `BNBUSDT/R1`, deprioritizados desde o Item 1). Módulo
+      novo (`src/validation/ag220_dual_gate_calibration.py`, commit
+      `28708f2`), primeira execução real sobre dado de produção.
+
+      **2 bugs reais encontrados e corrigidos durante a própria execução**
+      (não achados de auditoria estática — só apareceram rodando de
+      verdade, exatamente o tipo de falha que "meça antes de afirmar"
+      existe pra capturar): (1) `vol_estimator_id=None` não resolvido sob
+      `resolution_id=R3` (`AG-140` exige explícito, dollar bar sem
+      `bar_ms` pra default) — commit `4bfdf6f`; (2) `feature_ids=None`
+      passado explícito em `common_kwargs`, sobrescrevendo o default real
+      de `alpha.run_all_folds` (`T1_FEATURE_IDS`) e derrubando
+      `side_subset` (`AG-300`, conjunto vazio) — commit `73fceae`. Ambos
+      só se manifestam com dado real (CPCV completo, `R3` especificamente
+      pro primeiro); os 20/20 testes unitários pré-existentes (mocks)
+      não os capturavam por desenho.
+
+      **Queda de energia real interrompeu a campanha** durante
+      `ETHUSDT/R1` (26/50 repeats concluídos, sem checkpoint intermediário
+      neste módulo — o relatório só grava no fim do combo inteiro via
+      `write_report_atomic`). Os 26 repeats não persistiram e foram
+      refeitos do zero após o reboot (determinístico por seed — mesmo
+      resultado, só custo de tempo perdido, não risco de dado incorreto).
+      Ambiente Python e todos os commits confirmados intactos pós-reboot.
+
+      Total de retreinos reais (CPCV completo × 2 camadas, contando TODAS
+      as execuções, inclusive as perdidas na queda — `N_lifetime` nunca
+      decrementa): smoke test 1 repeat (`BTCUSDT/R3`) = 2; campanha
+      completa 3 combos × 50 repeats × 2 camadas = 300; `ETHUSDT/R1`
+      parcial perdido na queda, 26 repeats × 2 = 52. Total = 354. As duas
+      tentativas que crasharam (bugs acima) não chegaram a treinar nenhum
+      modelo antes do erro — 0 retreinos nelas.
+
+      **Resultado (taxa de falso-positivo empírica do gate duplo sob
+      ruído puro, 50 repeats cada)**: `BTCUSDT/R3` — permanência 16,0%,
+      edge 20,0%, DUPLO 8,0%. `ETHUSDT/R1` — permanência 0,0%, edge 6,0%,
+      DUPLO 0,0%. `BNBUSDT/R1` — permanência 12,0%, edge 4,0%, DUPLO
+      0,0%. Achado central: o gate duplo tem taxa de falso-positivo BAIXA
+      (0-8%) — o Item 2 medir ZERO combos passando não é explicado por um
+      gate impossível de passar por acaso; reforça que a ausência de
+      sinal medida no Item 2 é real, não um artefato do instrumento.
+      Acompanhado ao vivo no artefato "ADR-007 — Painel de Execução"
+      (https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604).
+      Detalhamento completo em
+      `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`.
+    delta: 354

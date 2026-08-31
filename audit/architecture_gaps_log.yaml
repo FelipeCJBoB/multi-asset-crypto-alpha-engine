@@ -25858,3 +25858,56 @@ entries:
       O custo medido em horas por simbolo nao muda; so o numero citado.
     resolved_by_commit: null
     status: "fechado 2026-08-30 -- corrigido em src/regime/artifact_hmm.py e docs/SPRINT_LOG.md (secao 'o backfill de regime HMM foi interrompido'). AG-384 original mantido intacto (append-only), este addendum e a correcao registrada."
+
+  - id: AG-389
+    date: "2026-08-31"
+    file: "src/validation/fdr_correction.py; ADR-007 Item 2 (audit/n_lifetime.yaml::id=39)"
+    related_file: "docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md Action Item 6"
+    numeracao: "AG-389."
+    found_by: "Claude, ao fechar o ADR-007 -- Item 4 (correcao FDR) foi implementado e aplicado a taxa-base H0-H7, mas o pedido original tambem previa aplicar ao resultado dos Itens 1-2."
+    gap: >
+      `apply_fdr_correction` espera um p-valor bilateral por combo
+      (`two_sided_p_from_z`), mas o Item 2 nao produz isso -- produz
+      `median_n_better` (0-5, contagem de paths onde Camada1 bate
+      Camada0 sob 10 seeds) e `winner_median_pooled_edge_bps` por
+      combo, nenhum dos dois um teste de hipotese formal com p-valor
+      pronto.
+
+      Candidato natural nao validado: testar `n_better>=4` sobre as 10
+      seeds como proporcao de sucesso contra a hipotese nula H0:
+      p=0,5 (Camada1 e Camada0 empatam em expectativa) via teste
+      binomial exato -- mas isso reencaixa o problema como "sucesso/
+      fracasso por seed" quando o dado real e `n_better` (0-5) por
+      seed, nao um binario -- a escolha de que threshold BINARIZAR
+      antes do teste (>=4? >=3?) ja e uma decisao estatistica, nao
+      mecanica, que nao deveria ser tomada so pra encaixar no formato
+      que `fdr_correction.py` ja aceita.
+    resolved_by_commit: null
+    status: "ABERTO -- registrado no ADR-007 como lacuna, nao decidido. Correcao FDR sobre a taxa-base (H0-H7, z-scores reais) ja fechada e aplicada (commit 5a322c6); esta entrada e so a parte que falta (Itens 1-2). Nao e um bug -- e uma decisao de desenho estatistico pendente, do Manager ou de nova medicao dedicada."
+
+  - id: AG-390
+    date: "2026-08-31"
+    file: "src/validation/ag220_dual_gate_calibration.py::run_dual_gate_permutation_null"
+    related_file: "audit/n_lifetime.yaml::id=40; src/models/hyperparams_optuna.py (contraste -- sqlite + load_if_exists=True)"
+    numeracao: "AG-390."
+    found_by: "Claude, queda de energia real durante a campanha do ADR-007 Item 3 (2026-08-31, ~06h)."
+    gap: >
+      `run_dual_gate_permutation_null` acumula `n_repeats` (default 50)
+      repeticoes em memoria e so grava o relatorio (`write_report_
+      atomic`) UMA VEZ, no fim do loop inteiro -- ao contrario de
+      `hyperparams_optuna.py::run_search_for_combo`, que usa Optuna com
+      `storage=sqlite:///...` e `load_if_exists=True`, resumavel por
+      desenho (perde no maximo o trial em andamento se o processo
+      cair).
+
+      Custo real realizado, nao hipotetico: a queda de energia de
+      2026-08-31 interrompeu `ETHUSDT/R1` em 26/50 repeats -- os 26
+      (52 retreinos completos, camada1+camada0) nao persistiram e
+      foram refeitos do zero apos o reboot (~19 minutos de CPU
+      perdidos). Determinismo por seed garante que o resultado refeito
+      e identico, entao nao ha risco de dado incorreto -- so custo de
+      tempo, que teria sido zero com checkpoint incremental por
+      repeat (ex. grava `per_repeat` a cada iteracao, ou usa o mesmo
+      padrao sqlite do Optuna).
+    resolved_by_commit: null
+    status: "ABERTO -- nao corrigido nesta sessao (fora do pedido original do Item 3, que era medir, nao endurecer o modulo contra falha de infraestrutura). Vale a pena se este modulo for reusado em campanhas maiores (mais combos, mais repeats) onde o custo de perder progresso cresce -- decisao do Manager se compensa o esforco de implementar checkpoint incremental agora ou so quando o proximo uso justificar."

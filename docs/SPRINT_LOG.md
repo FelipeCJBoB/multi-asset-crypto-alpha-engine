@@ -6003,3 +6003,68 @@ disparando falso positivo no teste #8 de `src/validation/leakage.py`
 (replicação walk-forward), ambos ainda bloqueados pela mesma cadeia — P0
 (validação do nulo), P1/`AG-151` (purge cross-símbolo) e o Gate E0 não
 executado, ver `§15.30`.
+
+---
+
+## 2026-08-31 — ADR-007 fecha: Itens 1-5, ZERO combos sobrevivem ao gate duplo sob confirmação profunda <!-- check-sprint-log: skip -->
+
+`docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`
+— resposta ao pedido do Manager de medir, com Optuna real e rigor contra
+falso-positivo, os 5 gaps abertos após `AG-382`/`AG-383` (H10). 5 itens
+concluídos nesta sessão, Item 6 (walk-forward real) explicitamente fora
+do escopo.
+
+**Item 1** (busca expandida, `alpha_optuna_n_trials` 30→150, 6 combos com
+edge bruto médio positivo — `BTCUSDT`/`SOLUSDT`/`XRPUSDT` × R2/R3):
+1.800/1.800 trials, 0 falhas, 2h32m18s. Achado: `SOLUSDT/R2` com
+`best_value` extremo nas DUAS camadas (22,22/8,96 vs. p95≈0,82 da
+campanha) — não tratado como sinal real, aguardou confirmação.
+
+**Item 2** (confirmação profunda, top-6 candidatos × 10 seeds × 2
+camadas): 720/720 confirmações, 0 falhas, 1h00m51s. **ZERO dos 6 combos
+passam o gate duplo.** `BTCUSDT/R3` — único combo que passava sob a
+confirmação original (H10, `median_n_better=4,0`) — cai para `2,5` sob o
+orçamento maior (`n_better_by_seed` varia de 1 a 5 só trocando seed, o
+mesmo hiperparâmetro vencedor). `SOLUSDT/R2` confirma a anomalia do
+Item 1 como ruído puro de screening (viés de seleção medido +8,356, o
+maior já registrado no projeto, recorde anterior +0,772 do `ADR-002`).
+
+**Item 3** (calibração real do `AG-220`, taxa de falso-positivo do gate
+duplo sob permutação nula, 3 combos representativos): módulo novo
+(`src/validation/ag220_dual_gate_calibration.py`) revelou **2 bugs reais**
+só na primeira execução com dado real — `vol_estimator_id` não resolvido
+sob `R3` (`commit 4bfdf6f`) e `feature_ids=None` sobrescrevendo o default
+real de `run_all_folds` (`commit 73fceae`), nenhum capturável pelos
+testes com mock. Uma **queda de energia real** interrompeu a campanha
+durante `ETHUSDT/R1` (26/50 repeats perdidos, sem checkpoint neste
+módulo — `AG-390` registrado, refeitos do zero após confirmar ambiente e
+commits intactos). Resultado final, 300/300 retreinos: FPR do gate duplo
+sob ruído puro = 8,0% (`BTCUSDT/R3`) / 0,0% (`ETHUSDT/R1`) / 0,0%
+(`BNBUSDT/R1`) — bem abaixo do piso de confiança (`alpha_prune_max_gate_
+fpr=0,20`). Achado central: o gate NÃO é impossível de passar por acaso;
+o Item 2 medir ZERO combos passando de verdade não é explicado por um
+instrumento quebrado — a ausência de sinal é real.
+
+**Item 4** (correção de múltiplas comparações, BH+BY lado a lado —
+`src/validation/fdr_correction.py`): aplicada à taxa-base H0-H7 (15
+z-scores reais do artefato "Alpha — Base de Pesquisa"): 7/15
+significativos sem correção → 4/15 sob BH → 3/15 sob BY. Ainda não
+aplicada ao resultado dos Itens 1-2 — a estatística de teste correta
+(`median_n_better` não é um p-valor pronto) não foi decidida, registrada
+<!-- check-sprint-log: skip -->
+como `AG-389`, aberta.
+
+**Item 5** (critério operacional de poda — `alpha_prune_min_edge_bps_
+threshold`/`alpha_prune_max_gate_fpr`, `constants.yaml`): registrado, não
+aplicado. As duas pré-condições de dado real agora existem (edge por
+combo do Item 1, FPR do gate do Item 3, todos bem abaixo do piso) — a
+decisão de aplicar a poda de verdade (mudar o escopo de treino) fica com
+o Manager.
+
+`N_lifetime`: 2.636 → 5.510 só nesta ADR (`id=38` a `id=40`,
+`audit/n_lifetime.yaml`). Acompanhado ao vivo no artefato "ADR-007 —
+Painel de Execução"
+(`https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604`).
+2 gaps novos abertos e não corrigidos (`AG-389`, `AG-390`) — ambos
+decisões de desenho/investimento de engenharia, não bugs, deliberadamente
+fora do escopo desta ADR.
