@@ -6191,3 +6191,19 @@ ficaram deliberadamente ABERTOS, registrados em `AG-392`. <!-- check-sprint-log:
 Dashboard atualizado com os 2 achados (seções "Correção pós-Fase-8" e
 "Auditoria de engenharia"), tabela da Fase 8 corrigida (`oos_folds_ <!-- check-sprint-log: skip -->
 usados` agora por lado, não por combo).
+
+<!-- check-sprint-log: skip -->
+**Decisão final** (mesmo dia, 3a rodada): Manager delegou "decida sobre
+os thresholds propostos e os 4 achados do AG-392" ao Chief Architect. <!-- check-sprint-log: skip -->
+Sweep de sensibilidade ±50%+ (classe A, 0 trials) rodado contra os 10 <!-- check-sprint-log: skip -->
+combo×variant reais em `min_folds ∈ {5,8,10,15,20}` × `significance_
+level ∈ {0,01;0,025;0,05;0,075;0,10}` — veredito composto 0/10 em TODA <!-- check-sprint-log: skip -->
+a grade, 0/10 com sequer 1 lado passando Model em qualquer α testado.
+`alpha_gate_data_min_folds_usados=10`/`alpha_gate_model_significance_
+level=0,05` **travados**. `AG-392`: item 1 (i.i.d.) medido — <!-- check-sprint-log: skip -->
+autocorrelação lag-1 do AUC entre folds, 4/5 séries reais NEGATIVAS <!-- check-sprint-log: skip -->
+(mean=-0,216) — não sustenta teste anti-conservador, resolvido sem
+correção. Item 2 (denominadores) resolvido por decisão, not-a-bug.
+Item 3 (piso de 10) medido — <!-- check-sprint-log: skip --> |Sharpe| máximo cai monotonicamente com
+`n` (10-14: 23,0 → 50+: 5,5), sem blow-up em bucket ≥10 — piso <!-- check-sprint-log: skip -->
+validado. Item 4 (`Metric`) adiado deliberadamente, backlog.

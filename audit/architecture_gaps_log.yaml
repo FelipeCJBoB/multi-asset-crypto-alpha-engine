@@ -25949,7 +25949,7 @@ entries:
       folds computaveis, nao sobrevive a exigencia de significancia
       estatistica real. Achado FICA MAIS FORTE, nao mais fraco.
     resolved_by_commit: null
-    status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. Threshold em si (questao 1) agora tem base MEDIDA (`DERIVED`/`LITERATURE`, ver adendo acima), mas ainda `class: A`+`sweep_required: true` -- decisao FINAL de travar o valor segue do Manager. 1 questao pendente segue aberta: se/como o walk-forward real passa a ser um gate OBRIGATORIO no pipeline de promocao (hoje so roda como auditoria pos-hoc, depois do candidato ja promovido, nao antes) -- Manager confirmou 2026-08-31 que segue pos-hoc por enquanto, nao decisao final."
+    status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. ADENDO 2026-08-31 (2a rodada, mesmo dia): Manager delegou 'decida sobre os thresholds propostos' ao Chief Architect -- sweep de sensibilidade +-50%+ (classe A) rodado (0 trials): veredito composto fica em 0/10 em TODA a grade testada (min_folds em {5,8,10,15,20} x significance_level em {0,01;0,025;0,05;0,075;0,10}), conclusao robusta a escolha exata do limiar. DECIDIDO: os 2 valores (`alpha_gate_data_min_folds_usados=10`, `alpha_gate_model_significance_level=0,05`) travados, ver `review_by` de cada constante em `constants.yaml`. Questao 2 (walk-forward pos-hoc vs. gate obrigatorio) segue como o Manager confirmou -- pos-hoc por enquanto, nao decisao final. NENHUM dos 5 candidatos promovidos em `ADR-007` sobrevive ao gate duplo desta auditoria, sob thresholds agora travados (nao mais propostos)."
 
   - id: AG-392
     date: "2026-08-31"
@@ -26010,4 +26010,40 @@ entries:
       DoD minimo (docstring com unidade/proveniencia) atendido em todos,
       mas sem o tipo forte.
     resolved_by_commit: null
-    status: "ABERTO -- 4 itens de metodologia/desenho, deliberadamente NAO corrigidos nesta rodada (exigem medicao adicional ou decisao de escopo maior, nao so edicao de codigo -- skill audit_engineering: 'achado revela necessidade de refator estrutural -> reportar e sugerir sessao dedicada'). Nenhum bloqueia producao (walk-forward segue pos-hoc, AG-391). Prioridade sugerida: item 1 (medir direcao do efeito i.i.d.) antes de qualquer decisao de tornar o gate Model obrigatorio."
+    status: >
+      3 DE 4 RESOLVIDOS 2026-08-31 (2a rodada, mesmo dia -- Manager
+      delegou "decida... os 4 achados do AG-392" ao Chief Architect):
+
+      Item 1 (i.i.d.) -- MEDIDO (0 trials): autocorrelacao lag-1 do AUC
+      entre folds consecutivos, 5 series reais com dado suficiente --
+      4 de 5 NEGATIVAS (mean=-0,216, median=-0,292), so 1 positiva
+      (+0,854). Autocorrelacao predominantemente negativa/proxima de
+      zero NAO sustenta a hipotese de teste anti-conservador (exigiria
+      positiva sistematica) -- consistente com a contra-hipotese do
+      segundo revisor (ruido intra-fold tenderia a tornar mais
+      conservador). RESOLVIDO: nenhuma correcao necessaria agora;
+      reabrir se campanha futura com mais folds/combo permitir medicao
+      mais robusta (amostra atual de 5 series e pequena).
+
+      Item 2 (denominadores Data/Model desalinhados) -- RESOLVIDO por
+      decisao: nao e bug, e by-design (documentado nos 2 niveis,
+      `GateVerdict` ja expoe `n_folds_usados` E `n_folds_auc_by_side`
+      separadamente, `model_card.py` corrigido pra usar o nivel certo
+      em cada campo -- commit `e812ab1`). Nenhuma acao adicional.
+
+      Item 3 (piso de 10 reusado sem validacao propria) -- MEDIDO (0
+      trials): Sharpe por faixa de `n_filled_trades` sobre os folds
+      usaveis reais -- |Sharpe| maximo cai monotonicamente com n
+      (10-14: max=23,0 mean=7,06; 15-19: max=5,5; 20-29: max=6,8; 30-49:
+      max=5,6; 50+: max=5,5) -- sem blow-up patologico em NENHUM bucket
+      >=10 (contra o 47.163,5 original em n=2). RESOLVIDO: piso de 10
+      validado empiricamente tambem pro papel de confiabilidade de
+      Sharpe, nao so herdado por analogia.
+
+      Item 4 (`Metric`/`Unit` nao adotado, inconsistencia sistemica) --
+      ADIADO deliberadamente (decisao, nao pendencia): refator
+      estrutural tocando os 5 modulos da ADR-008, sem defeito funcional
+      associado (skill audit_engineering: "achado revela necessidade de
+      refator estrutural -> reportar e sugerir sessao dedicada", nao
+      implementar reativamente). Backlog, baixa prioridade, revisitar
+      se/quando `Metric` virar iniciativa mais ampla no repo.

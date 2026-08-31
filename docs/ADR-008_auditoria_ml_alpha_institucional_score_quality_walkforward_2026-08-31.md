@@ -33,13 +33,14 @@ FORTE e mais honesto que a versão anterior, não uma reversão de sorte.
 `regime_stability_pct`/`generalization_gap_pct` ficam `TBD`
 deliberadamente (B23) — não medidos em nenhuma fase anterior desta ADR;
 medir exigiria retreino real fora do orçamento já autorizado. Achado
-consolidado, ainda sem decisão FINAL do Manager sobre como agir (nenhum
-candidato promovido em ADR-007 sobrevive ao gate duplo desta auditoria;
-os 2 novos thresholds seguem `class: A`/`sweep_required: true`,
-propostos nesta sessão, não travados formalmente). **Auditoria de
-engenharia** (`audit_engineering`, Workflow adversarial) sobre os 5
-módulos novos desta ADR achou e corrigiu 6 defeitos reais confirmados
-(bucketing não-determinístico, correlação/AUC degenerada em amostra
+consolidado — **nenhum candidato promovido em ADR-007 sobrevive ao
+gate duplo desta auditoria**, sob thresholds agora TRAVADOS (Manager
+delegou a decisão ao Chief Architect, item 15 — sweep de sensibilidade
+±50%+ confirma 0/10 em toda a grade testada, robusto à escolha exata
+do limiar). **Auditoria de engenharia** (`audit_engineering`, Workflow
+adversarial) sobre os 5 módulos novos desta ADR achou e corrigiu 6
+defeitos reais confirmados (bucketing não-determinístico, correlação/
+AUC degenerada em amostra
 minúscula, diagnóstico de treino por lado descartado, gate estatístico
 sem FDR e com convenção divergente em `std=0`, métrica de nível errado
 no cartão final, `None` vazando pra campo `float`) — veredito final
@@ -564,3 +565,27 @@ decididas por conta própria.
     `MIN_OCCURRENCES_ABOVE_TAU=10` reusado sem validação própria pro
     papel de confiabilidade de Sharpe; `Metric`/`Unit` não adotado
     (inconsistência sistêmica do pacote, não regressão isolada).
+15. [x] Decisão sobre thresholds propostos + os 4 achados do `AG-392`
+    (Manager delegou explicitamente ao Chief Architect, mesma sessão).
+    **Thresholds**: sweep de sensibilidade ±50%+ (classe A, 0 trials,
+    reavaliação do mesmo dado já computado) rodado contra `min_folds ∈
+    {5,8,10,15,20}` × `significance_level ∈ {0,01;0,025;0,05;0,075;
+    0,10}` — o veredito composto fica em **0/10 em TODA a grade
+    testada**, e nenhum combo tem sequer 1 lado passando o gate Model
+    em NENHUM `alpha` testado. Conclusão robusta à escolha exata do
+    limiar — **valores travados** em `alpha_gate_data_min_folds_
+    usados=10`/`alpha_gate_model_significance_level=0,05`, sem
+    justificativa pra mudar. **AG-392**: item 1 (i.i.d.) MEDIDO —
+    autocorrelação lag-1 do AUC entre folds, 5 séries reais, 4/5
+    NEGATIVAS (mean=-0,216) — não sustenta a hipótese de teste
+    anti-conservador, resolvido sem correção adicional (amostra pequena,
+    reabrir se campanha maior permitir medição mais robusta). Item 2
+    (denominadores desalinhados) resolvido por decisão — not-a-bug,
+    já documentado nos 2 níveis. Item 3 (piso de 10 sem validação
+    própria) MEDIDO — |Sharpe| máximo cai monotonicamente com `n`
+    (10-14: máx=23,0; 50+: máx=5,5), sem blow-up patológico em nenhum
+    bucket ≥10 (contra 47.163,5 em `n=2`) — piso validado
+    empiricamente também pro papel de Sharpe. Item 4 (`Metric` não
+    adotado) ADIADO deliberadamente — refator estrutural sem defeito
+    funcional, backlog. Detalhamento completo em `AG-391`/`AG-392`
+    (adendos 2026-08-31) e `constants.yaml::source:` de cada constante.

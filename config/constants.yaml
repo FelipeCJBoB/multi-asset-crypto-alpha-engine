@@ -3124,10 +3124,24 @@ alpha_gate_data_min_folds_usados:
     (initial_train_years=2 + passo trimestral, 12-19 folds totais) e
     estruturalmente insuficiente pra este piso, achado real registrado
     em AG-391, nao um efeito colateral do numero escolhido.
+
+    SWEEP DE SENSIBILIDADE (2026-08-31, exigido por classe A antes do
+    Gate 3, 0 trials -- reavaliacao do mesmo dado ja computado, sem
+    retreino): testado contra os 10 combo×variant reais em min_folds in
+    {5, 8, 10, 15, 20}. Gate Data isolado: 4/10 passam em min_folds=5,
+    1/10 em min_folds=8, 0/10 a partir de min_folds=10 -- sensivel na
+    faixa baixa, mas o VEREDITO COMPOSTO (Data AND Alpha AND Model nos
+    2 lados) fica em 0/10 em TODA a grade testada (min_folds x
+    significance_level, 9 combinacoes, ver AG-392/decisao abaixo) --
+    a conclusao qualitativa (nenhum candidato sobrevive) e robusta a
+    escolha exata do limiar dentro do range. DECISAO (2026-08-31,
+    delegada explicitamente pelo Manager ao Chief Architect): valor
+    travado em 10, nao ha justificativa pra mudar dado que o veredito
+    composto e insensivel ao limiar dentro do range plausivel.
   class: A
   sweep_required: true
   sweep_range: [5, 20]
-  review_by: "TBD -- Manager decide"
+  review_by: "2026-08-31 -- decidido (Chief Architect, delegacao explicita do Manager); revisar se uma nova campanha walk-forward com mais folds por combo mudar o quadro"
 
 alpha_gate_model_significance_level:
   value: 0.05
@@ -3153,10 +3167,37 @@ alpha_gate_model_significance_level:
     stats`, `tstat = mean/(std/sqrt(n))`) usa a dispersao REAL medida
     por combo×variant×lado em vez de comparar contra um numero fixo
     alheio a ela.
+
+    SWEEP DE SENSIBILIDADE (2026-08-31, exigido por classe A antes do
+    Gate 3, 0 trials): testado contra os 20 combo×variant×lado reais em
+    alpha in {0,01; 0,025; 0,05; 0,075; 0,10} -- **0/10 combo×variant
+    com sequer 1 LADO passando o gate Model em QUALQUER alpha testado**
+    (nenhum AUC medio e estatisticamente distinguivel de moeda honesta
+    em nenhum nivel de significancia razoavel, nao so em 0,05). Veredito
+    composto tambem 0/10 em toda a grade (ver acima). DECISAO
+    (2026-08-31, delegada explicitamente pelo Manager ao Chief
+    Architect): valor travado em 0,05 (convencao Fisher 1925) -- o
+    resultado e insensivel ao alpha escolhido dentro do range plausivel,
+    nao ha ganho em mudar.
+
+    AG-392 item 1 (folds do walk-forward ancorado violam premissa i.i.d.
+    do teste-t, direcao do efeito nao medida) -- MEDIDO nesta mesma
+    rodada: autocorrelacao lag-1 do AUC entre folds consecutivos, 5
+    series reais com dado suficiente (n>=4 pontos cada) -- 4 de 5
+    NEGATIVAS (mean=-0,216, median=-0,292, min=-0,813), so 1 positiva
+    (+0,854). Autocorrelacao predominantemente negativa/proxima de zero
+    NAO sustenta a hipotese de que o teste-t e anti-conservador (que
+    exigiria autocorrelacao POSITIVA sistematica) -- consistente com a
+    contra-hipotese do segundo revisor (ruido amostral intra-fold, com
+    n_trades mediano de apenas 20,5, infla o desvio-padrao entre-folds e
+    tenderia a tornar o teste mais conservador, nao menos). DECISAO:
+    nenhuma correcao adicional necessaria agora -- amostra de 5 series
+    e pequena, reavaliar se uma campanha futura com mais folds por combo
+    permitir medicao mais robusta.
   class: A
   sweep_required: true
   sweep_range: [0.01, 0.10]
-  review_by: "TBD -- Manager decide"
+  review_by: "2026-08-31 -- decidido (Chief Architect, delegacao explicita do Manager); revisar se uma nova campanha walk-forward com mais folds por combo mudar o quadro"
 
 # --- Baselines nulos (§16.1) ---
 

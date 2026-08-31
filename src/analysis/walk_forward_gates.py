@@ -8,14 +8,18 @@ criterion`/`hhi.gate3_4_passes` (não a de `edge_gate_pass`, que é lógica
 inline duplicada em 2 call sites — a ADR-008 cita os 3 como padrão-alvo,
 mas só os 2 primeiros seguem a forma núcleo/casca completa).
 
-O trabalho real desta fase não é código — é decisão do Manager sobre os
-limiares (`CLAUDE.md` §Proveniência). Sem decisão explícita, os 2
-thresholds (`alpha_gate_data_min_folds_usados`/`alpha_gate_model_
-significance_level`) entram `provenance: DERIVED`/`LITERATURE` +
+Os 2 thresholds (`alpha_gate_data_min_folds_usados`/`alpha_gate_model_
+significance_level`) têm `provenance: DERIVED`/`LITERATURE` +
 `sweep_required: true` (`config/constants.yaml`, ver derivação completa
 lá) — o gate Alpha reusa `alpha_layer1_permanence_min_edge_bps` (já
 `DERIVED`), o mesmo conceito de "existe edge líquido" que
 `edge_gate_pass` já testa sobre CPCV, aqui testado sobre walk-forward.
+**Decisão travada (2026-08-31, delegação explícita do Manager ao Chief
+Architect)**: sweep de sensibilidade ±50%+ (classe A) confirma que o
+veredito composto fica em 0/10 em TODA a grade testada (`min_folds`×
+`significance_level`) — a conclusão é robusta à escolha exata do
+limiar, ver `source:` de cada constante em `constants.yaml` pro sweep
+completo.
 
 **Correção 2026-08-31 (pós-Fase 8, "investigar e medir os thresholds
 corretamente" — Manager):** os 2 originais (`alpha_gate_data_min_frac_
