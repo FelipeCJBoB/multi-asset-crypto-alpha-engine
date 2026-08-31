@@ -1,6 +1,10 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Proposta
+**Status:** Fases 0-2 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
+`33e8e10`, `5bb5224`) — Fase 3 (gap fit/stop/calib) pronta pra começar,
+Fase 4 (walk-forward real) aguarda medir 1 fold antes de orçamento,
+Fases 6/7 aguardam decisão do Manager (thresholds de gate / dependência
+`shap` nova).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -304,11 +308,25 @@ decididas por conta própria.
 
 ## Action Items
 
-1. [ ] Fase 0 — `report_provenance()` em `alpha_layer1_report_*.json`.
-2. [ ] Fase 1 — `score_quality` (IC/Rank IC/IC IR do score, AUC/PR-AUC/
-   LogLoss/Brier, Q10-Q1) no `report` de `run_layer1_sprint`.
-3. [ ] Fase 2 — feature audit stats, label audit, export de trajetória
-   Optuna, regime stratification por tempo.
+1. [x] Fase 0 — `report_provenance()` em `alpha_layer1_report_*.json` —
+   CONCLUÍDO, commit `b03109c`.
+2. [x] Fase 1 — `score_quality` (IC/Rank IC/IC IR do score, AUC/PR-AUC/
+   LogLoss/Brier, Q10-Q1) no `report` de `run_layer1_sprint` —
+   CONCLUÍDO, commit `b03109c`. Módulo vive em `src/models/score_quality.py`
+   (não `src/analysis/` — import-linter proíbe `src.models` de importar
+   `src.analysis`). 10 testes, zero custo de `N_lifetime`.
+3. [x] Fase 2 — CONCLUÍDO, 4/4 itens:
+   - `column_distribution_stats` (feature audit, mean/std/percentis) —
+     commit `62453b8`.
+   - `label_audit.py` (distribuição ternária + binária do target,
+     momentos de `ret_net`, autocorrelação lag-1) — commit `5189923`.
+   - `export_trial_trajectory` (trajetória completa do Optuna, não só o
+     vencedor) — commit `33e8e10`.
+   - `stratified_by_time` (hour/day_of_week/month/quarter) — commit
+     `5bb5224`.
+   29 testes novos no total, zero custo de `N_lifetime`. Sweep completo
+   do repo (2.699 testes) — 2.698 verdes, 1 falha pré-existente não
+   relacionada (artefato local já modificado antes desta ADR existir).
 4. [ ] Fase 3 — `train_val_test_gap` sobre `fit`/`stop`/`calib`.
 5. [ ] Fase 4 — adaptar `alpha.run_fold` pra `generate_anchored_walk_forward_splits`;
    medir 1 fold real antes de declarar orçamento total; rodar walk-forward
