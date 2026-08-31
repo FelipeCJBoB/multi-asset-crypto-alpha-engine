@@ -72,6 +72,8 @@ def _gate_verdict(
         edge_bps_mean=5.0,  # noqa: magic-number
         alpha_gate_pass=alpha_pass,
         auc_mean_by_side={"long": 0.55, "short": float("nan")},  # noqa: magic-number
+        auc_std_by_side={"long": 0.10, "short": float("nan")},  # noqa: magic-number
+        n_folds_auc_by_side={"long": 8, "short": 0},  # noqa: magic-number
         model_gate_pass_by_side={"long": model_long_pass, "short": False},
     )
 

@@ -3084,49 +3084,78 @@ alpha_layer1_permanence_min_trades:
 
 # --- ADR-008 Fase 6: gates codificados (Data/Model/Alpha) sobre o
 # artefato de walk-forward real (Fase 4) + stability matrix (Fase 5).
-# Sem decisão explícita do Manager sobre os limiares (ADR-008 §Fase 6),
-# os 2 novos entram ASSUMED + sweep_required — mesmo padrão já usado em
-# `alpha_prune_max_gate_fpr`/`alpha_gate3_hhi_effective_max`. O gate
-# Alpha não precisa de constante nova: reusa `alpha_layer1_permanence_
-# min_edge_bps` acima (já DERIVED) — mesmo conceito de "existe edge
-# líquido" que `edge_gate_pass` já testa sobre CPCV, aqui testado sobre
-# walk-forward.
+# Correção 2026-08-31 (pós-Fase 8, "investigar e medir os thresholds
+# corretamente" -- Manager): os 2 originais (`alpha_gate_data_min_frac_
+# folds_usados`=0,5, `alpha_gate_model_min_auc`=0,52) eram ASSUMED
+# explicitamente marcados "ARBITRÁRIO por ora" no source: anterior --
+# nenhuma medição/literatura os embasava. Substituídos por versões
+# DERIVED da FORMA do gate, não só do número -- ver `src/analysis/
+# walk_forward_gates.py` (correção 2026-08-31 na docstring do módulo)
+# pro raciocínio completo. O gate Alpha não precisa de constante nova:
+# reusa `alpha_layer1_permanence_min_edge_bps` acima (já DERIVED) --
+# mesmo conceito de "existe edge líquido" que `edge_gate_pass` já testa
+# sobre CPCV, aqui testado sobre walk-forward.
 
-alpha_gate_data_min_frac_folds_usados:
-  value: 0.5
-  provenance: ASSUMED
+alpha_gate_data_min_folds_usados:
+  value: 10
+  provenance: DERIVED
   source: >
-    ADR-008 Fase 6 — Gate Data: fração mínima de folds walk-forward com
-    trades suficientes (`n_folds_usados / n_folds_total`, nível
-    combo×variant) pra confiar no resto da medição (Model/Alpha gates)
-    daquele combo. 0,5 (maioria simples) é ARBITRÁRIO por ora — nenhuma
-    medição/literatura o embasa ainda; a taxa de fold degenerado REAL
-    medida na campanha completa (2026-08-31, n_lifetime id=42) variou de
-    8% (SOLUSDT/R2, 1/12) a 68% (XRPUSDT/R3/C0, 6/12 — o melhor caso),
-    então este piso já reprova a maioria dos 10 combos×variant medidos
-    sob o valor default — acompanhar de perto quando o Manager decidir.
+    ADR-008 Fase 6 (corrigido 2026-08-31): piso ABSOLUTO de folds
+    walk-forward usáveis (não-degenerados) por combo×variant, substitui
+    `alpha_gate_data_min_frac_folds_usados` (fração, ASSUMED,
+    aposentado) -- a forma FRAÇÃO penaliza de forma desigual combos com
+    `n_folds_total` diferente (12 vs 19 nesta campanha) pro MESMO
+    requisito real: observações independentes suficientes pra um
+    teste-t (ver `alpha_gate_model_significance_level` abaixo) não ser
+    dominado por ruído de amostra pequena. n=10 é o piso prático mais
+    citado na literatura de inferência via distribuição t (regra geral
+    de "amostra pequena" em estatística aplicada -- abaixo disso o IC
+    t é extremamente sensível a assimetria/outliers; a mesma ordem de
+    grandeza (n=20) aparece em estudos de reliability de walk-forward
+    para preditores de erro, o que a torna conservadora, não permissiva).
+    Nao e derivacao fechada por formula (por isso `class: A` +
+    `sweep_required`, nao `class: C`), mas e o mesmo principio de piso
+    de contagem ja adotado neste repo em `alpha.MIN_OCCURRENCES_ABOVE_
+    TAU`=10 para confiabilidade de estatistica agregada sobre trades --
+    aqui aplicado ao nivel de FOLD, nao de trade, pela mesma razao.
+    Consequencia medida contra a campanha real (2026-08-31, n_lifetime
+    id=42): NENHUM dos 10 combo×variant atinge n_folds_usados>=10 (max
+    real = 8, BTCUSDT/R2/camada1) -- o teto de folds do desenho atual
+    (initial_train_years=2 + passo trimestral, 12-19 folds totais) e
+    estruturalmente insuficiente pra este piso, achado real registrado
+    em AG-391, nao um efeito colateral do numero escolhido.
   class: A
   sweep_required: true
-  sweep_range: [0.3, 0.8]
+  sweep_range: [5, 20]
   review_by: "TBD -- Manager decide"
 
-alpha_gate_model_min_auc:
-  value: 0.52
-  provenance: ASSUMED
+alpha_gate_model_significance_level:
+  value: 0.05
+  provenance: LITERATURE
   source: >
-    ADR-008 Fase 6 — Gate Model: piso de ROC-AUC out-of-time (médio
-    sobre os folds usáveis, `src.analysis.stability_matrix`, nível
-    combo×variant×lado) pra considerar que o classificador discrimina
-    melhor que uma moeda honesta com margem — 0,50 exato seria
-    tecnicamente "sem poder preditivo detectável", nunca um piso de
-    aprovação. 0,52 é ARBITRÁRIO por ora (margem pequena, não medida
-    nem citada de literatura específica deste domínio) — a campanha
-    completa (2026-08-31) mediu AUC médio perto de 0,50 na maioria dos
-    combos/lados (às vezes exatamente 0,500, desvio-padrão 0,000), então
-    este piso já reprova a maioria sob o valor default.
+    ADR-008 Fase 6 (corrigido 2026-08-31): nivel de significancia do
+    teste-t unicaudal de uma amostra (H0: AUC_medio<=0,5 vs H1:
+    AUC_medio>0,5) que substitui `alpha_gate_model_min_auc` (piso fixo
+    0,52, ASSUMED, aposentado) -- ver `src/analysis/walk_forward_
+    gates.py::model_gate_passes`. 0,05 e a convencao cientifica quase
+    universal desde Fisher (1925) para teste unicaudal, LITERATURE por
+    convencao estatistica, nao ASSUMED por conveniencia. Motivo da
+    mudanca de FORMA (nao so do numero): medido via formula de
+    Hanley-McNeil (1982) para o erro-padrao de AUC sob H0 (SE^2 =
+    (n_pos+n_neg+1)/(12*n_pos*n_neg)) contra os 62 fold-lado reais desta
+    campanha (n_trades por fold-lado usado no AUC: mediana=20,5,
+    p25=10) -- SE(AUC|H0=0,5) fica entre 0,13 (mediana) e 0,19 (p25)
+    POR FOLD, ou seja um piso fixo de 0,52 esta a 0,10-0,15 (menos de 1
+    desvio-padrao) de 0,50: dentro do proprio ruido de amostragem de UM
+    fold, sem poder estatistico real pra distinguir sinal de ruido.
+    Teste-t sobre mean/std/n ja computados por `stability_matrix`
+    (mesmo padrao ja estabelecido em `score_quality._ic_dispersion_
+    stats`, `tstat = mean/(std/sqrt(n))`) usa a dispersao REAL medida
+    por combo×variant×lado em vez de comparar contra um numero fixo
+    alheio a ela.
   class: A
   sweep_required: true
-  sweep_range: [0.5, 0.6]
+  sweep_range: [0.01, 0.10]
   review_by: "TBD -- Manager decide"
 
 # --- Baselines nulos (§16.1) ---
