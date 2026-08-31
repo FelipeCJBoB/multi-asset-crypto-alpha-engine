@@ -432,6 +432,26 @@ pipeline termina aí.
 
 ### 5.5 Investigação — por que `SOLUSDT/R2` "travou" (pergunta do Manager, respondida com dado real)
 
+> **Correção (2026-08-31, achado da auditoria adversarial — Seção 15, `AG-393` item 2):**
+> o texto abaixo, publicado originalmente nesta seção e no painel ao vivo, cita o
+> hiperparâmetro ERRADO. O candidato efetivamente promovido e testado no
+> walk-forward para `SOLUSDT/R2` é o de `run_stamp=20260830T143204Z` ("H10",
+> top-3/5-seeds — ver `config/constants.yaml::alpha_production_hyperparam_override`),
+> não o do Item 2 do ADR-007 (top-6/10-seeds) de onde vinha o "recorde +8,356"
+> citado abaixo. O candidato real tem viés de seleção medido em apenas **+0,357**
+> — uma ordem de grandeza menor — e ainda assim mostra a MAIOR divergência
+> CPCV-vs-walk-forward dos 5 candidatos. Recomputando com o artefato CPCV
+> canônico correto (o texto original usava um artefato genérico desatualizado,
+> anterior ao run de produção), os gaps CPCV-vs-WF ficam MAIORES em todos os 5
+> combos (+5,7 a +74,3bps), e não há correlação entre viés medido e tamanho do
+> gap em NENHUM dos 5 (Spearman ≈0,10-0,40, n=5, não significativo). **A
+> pergunta "por que CPCV diverge do walk-forward real" segue SEM explicação
+> medida para nenhum dos 5 candidatos** — mais fraco do que o texto abaixo
+> sugeria. Isso não muda o achado "0/20" (nenhum dos 6 ângulos testados pela
+> auditoria adversarial encontrou motivo para revertê-lo ou enfraquecê-lo — ver
+> Seção 15) — só corrige a causa-raiz atribuída à divergência de `SOLUSDT/R2`
+> especificamente. Texto original mantido abaixo por transparência histórica.
+
 Não é bug do walk-forward — é a confirmação fora-da-amostra de um achado
 que o ADR-007 já tinha marcado como suspeito ANTES desta auditoria rodar.
 Fold a fold, `SOLUSDT/R2` tem `n_signals=0` em 8 dos 12 trimestres — o
@@ -867,11 +887,10 @@ quem continuar):
   não adotam o padrão de tipagem `Metric`/`Unit` já usado em outras partes
   do motor — inconsistência sistêmica, sem defeito funcional, backlog de
   baixa prioridade.
-- Uma auditoria adversarial adicional, focada especificamente em tentar
-  REFUTAR a conclusão "0/20" (não apenas revisar a implementação que a
-  produziu), estava em andamento no momento em que este documento foi
-  gerado — seu resultado, se confirmar ou qualificar o achado, deve ser
-  lido como adendo a este documento, não substituí-lo.
+- `AG-393` (aberto, ver Seção 15): gap de dado real em `BTCUSDT/R2` (2022)
+  ainda não corrigido; bug de calibrador isotônico colapsando para
+  constante em `SOLUSDT/R2` ainda não corrigido. Nenhum dos dois muda
+  "0/20", mas ambos precisam de ação de código/dado, não só de texto.
 
 ---
 
@@ -884,9 +903,47 @@ quem continuar):
 | Artefato "ADR-007 — Painel de Execução" (abas "Run Canônico — 5 Candidatos" e "ADR-008 — Fases 0-8") | Fonte direta de todas as tabelas numéricas transcritas neste documento. |
 | `config/constants.yaml::alpha_production_hyperparam_override` | Registro formal da decisão de promoção dos 5 candidatos (Seção 1.4) — inclui critério por combo e timestamps de origem. |
 | `config/constants.yaml::alpha_gate_data_min_folds_usados` / `alpha_gate_model_significance_level` | Constantes travadas dos 2 gates corrigidos (Seções 10-11). |
-| `audit/architecture_gaps_log.yaml` (`AG-391`, `AG-392`) | Furos de arquitetura/metodologia registrados por esta auditoria, com status de resolução. |
+| `audit/architecture_gaps_log.yaml` (`AG-391`, `AG-392`, `AG-393`) | Furos de arquitetura/metodologia registrados por esta auditoria, com status de resolução. |
 | `audit/n_lifetime.yaml` (`id=38` a `id=42`) | Orçamento de trials/retreinos gasto nas campanhas do ADR-007 e ADR-008. |
 | `experiments/alpha_walk_forward_{symbol}_{resolution_id}.json` (5 arquivos) | Artefatos brutos da campanha walk-forward real (Fase 4) — fonte de todas as tabelas das Seções 5-9. |
 | Commit `e812ab1` | Auditoria de engenharia adversarial (Seção 12) — 6 correções aplicadas. |
+| Workflow adversarial `wf_84bd452c-67a` (2026-08-31) | Auditoria adversarial do RESULTADO desta ADR (Seção 15) — 6 investigadores + segundo revisor cético cada. |
+
+---
+
+## 15. Adendo — Auditoria adversarial do RESULTADO (pós-publicação, 2026-08-31)
+
+Depois da publicação inicial deste documento, o Manager pediu uma segunda
+camada de auditoria — não sobre a qualidade do CÓDIGO que produziu "0/20"
+(isso já tinha sido feito, Seção 12), mas sobre se a própria CONCLUSÃO
+estatística é confiável. Um workflow com **6 investigadores independentes**
+tentou ativamente REFUTAR "0/20, nenhum dos 5 candidatos sobrevive",
+cobrindo Fase 4 (mecânica do walk-forward), Fase 5 (stability matrix), Fase
+6 (gates) e a decisão final — cada achado revisado por um **segundo agente
+cético independente** antes de aceito, mesmo padrão de dupla verificação já
+usado na Seção 12.
+
+### 15.1 Os 6 ângulos testados
+
+| # | Ângulo | O que tentou refutar | Veredito |
+|---|---|---|---|
+| 1 | Vazamento temporal (*purge*) | Purge por `t1`, causalidade das 36 features do vetor T1, isolamento do calibrador/`tau` entre treino e teste | **Sustenta.** Purge reproduzido fold a fold fora do código auditado, bate exatamente. Nenhuma feature não-causal encontrada. Único ponto fraco identificado (hiperparâmetro selecionado sob CPCV com visibilidade da própria janela de teste) empurra a favor de aprovação, não de reprovação — logo reprovar mesmo assim é achado *mais* forte, não mais fraco. |
+| 2 | Viés de sobrevivência (exclusão de fold degenerado) | Recalcular o agregado sem excluir os folds com poucos trades | **Sustenta**, por um mecanismo diferente do hipotetizado: excluir folds degenerados é **conservador** (esconde edge, nunca infla) — incluí-los todos inverteria o sinal em 4 dos 10 combos. Mesmo assim "0/20" sobrevive porque o gate Model (não o Data) reprova as 20 células sob qualquer convenção de agregação testada — p-valor mínimo 0,062 mesmo no cenário mais favorável possível aos candidatos. |
+| 3 | AUC out-of-time ≈ 0,50 | Inversão de sinal/rótulo entre `y_true` e `y_score` | **Sustenta.** Sem inversão em nenhuma das 3 camadas de código verificadas (rótulo, decisão de lado, agregação). Achado colateral: quase metade dos AUCs (38/76) são exatamente 0,500 porque o score do modelo colapsou para um valor constante nesses folds — não é "sem sinal medido", é "sem sinal *possível* de medir" ali. Irrelevante para o veredito: o gate Data (máximo real de 8 folds usáveis, piso é 10) já reprova as 20 linhas por conta própria, independente de qualquer valor de AUC. |
+| 4 | Divergência CPCV vs. walk-forward | Se o viés de seleção (*winner's curse*) explica por que o CPCV via edge positivo e o walk-forward real não | **Sustenta o veredito, mas corrige uma explicação já publicada** — ver Seção 15.2. |
+| 5 | Integridade de dado na janela de teste (2023-2026) | Gaps/nulos em features explicando sinais ausentes | **Sustenta na janela original pedida**, mas achou um problema real fora dela — ver Seção 15.2. |
+| 6 | Recomputo independente do "0/20" | Reimplementar os 3 gates do zero, sem importar nenhum código já auditado, e comparar | **Sustenta, célula por célula, inclusive sob o cenário mais permissivo possível** (incluindo todos os folds degenerados no agregado). O resultado é **sobredeterminado**: o gate Data e o gate Model, cada um sozinho, já reprovam as 20 linhas — não é preciso os dois concordarem para chegar em "0/20". |
+
+**Síntese do painel:** nenhum dos 6 ângulos encontrou um defeito que revertesse ou enfraquecesse "0/20, nenhum dos 5 candidatos sobrevive". A conclusão da ADR-008 é robusta a esta segunda camada de ceticismo.
+
+### 15.2 Três achados novos e reais (não estavam na ADR-008 original) — registrados em `AG-393`
+
+1. **`BTCUSDT/R2` tem um bug real de qualidade de dado em 2022, ainda não corrigido.** Um bloco de coluna nula em `data/capacity/metrics/BTCUSDT` (banda de tamanho de arquivo cai de ~15,8KB para ~9-11KB por cerca de 4 meses, mesmo padrão nos 4 símbolos, schema de parquet idêntico — assinatura de coluna nula, não de dia de coleta faltando) degrada, via um filtro de exclusão já existente no motor (barra sai da população de teste se qualquer uma das 36 features do vetor T1 for nula), 4 dos 19 folds de teste desse combo especificamente — o único dos 5 candidatos cuja janela de walk-forward alcança 2022 (os outros 4 começam em outubro de 2023, com população de teste saudável em 100% dos folds). **Não muda "0/20" hoje** (mesmo recuperando os 4 folds, os gates Model/Alpha continuariam improváveis para este combo) — mas o gate Data de `BTCUSDT/R2` (hoje 7-8 de 10 folds usáveis, o mais próximo do piso entre os 5 candidatos) não é uma medição definitiva até esse dado ser corrigido e a campanha ser re-rodada.
+
+2. **A explicação publicada para a divergência de `SOLUSDT/R2` citava o hiperparâmetro errado — já corrigido na Seção 5.5 acima.** O texto original (e o painel ao vivo, no momento da publicação inicial deste documento) atribuía a queda de sinal do walk-forward ao viés de seleção "recorde do projeto" (+8,356) medido no Item 2 do ADR-007 — mas esse não é o candidato que foi promovido nem testado no walk-forward real. O candidato efetivamente usado tem viés de seleção de apenas +0,357, uma ordem de grandeza menor, e ainda assim mostra a maior divergência CPCV-vs-walk-forward dos 5 candidatos. Recomputando com o artefato CPCV canônico correto, a divergência não tem correlação mensurável com o viés de seleção em **nenhum** dos 5 candidatos (Spearman ≈0,10-0,40, não significativo, n=5) — a pergunta "por que CPCV diverge do real" segue genuinamente em aberto para todos os 5, não só para 4 como o ADR-008 original supunha.
+
+3. **Bug de pipeline real e ainda não corrigido: o calibrador isotônico de `SOLUSDT/R2` colapsa para uma saída constante em pelo menos 1 fold real.** No fold de teste do 3º trimestre de 2024 (lado *short*), Camada0 e Camada1 produzem `score_quality` byte-idêntico (Brier, log-loss, PR-AUC, perfil de decil — tudo igual a 16 dígitos significativos) apesar de terem boosters diferentes com gain real e distinto — só é possível se as duas calibradoras isotônicas colapsarem para a mesma constante (mesmos rótulos/linhas de treino entre as camadas, só as features mudam). Consistente com "zero sinal" nesse fold específico (não resgata o candidato), mas é um defeito de pipeline distinto do já corrigido em `score_quality.py` (piso de amostra n≥5) e ainda não corrigido.
+
+**Nenhum dos 3 achados muda "0/20".** O item 2 já foi corrigido no corpo deste documento (Seção 5.5). Os itens 1 e 3 são correções de código/dado, não de texto — registradas em `AG-393`, status ABERTO, nenhuma decisão de correção tomada unilateralmente.
 
 *Fim do documento.*

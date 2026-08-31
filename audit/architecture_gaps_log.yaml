@@ -26047,3 +26047,90 @@ entries:
       refator estrutural -> reportar e sugerir sessao dedicada", nao
       implementar reativamente). Backlog, baixa prioridade, revisitar
       se/quando `Metric` virar iniciativa mais ampla no repo.
+
+  - id: AG-393
+    date: "2026-08-31"
+    file: "data/capacity/metrics/BTCUSDT/ (2022); src/models/alpha.py::unique_test_bars; config/constants.yaml::alpha_production_hyperparam_override; SOLUSDT/R2 (calibrador isotonico)"
+    related_file: "AG-391; AG-392; docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md; docs/AUDITORIA_EXTERNA_run_canonico_e_adr008_fases_0-8_2026-08-31.md; experiments/alpha_walk_forward_BTCUSDT_R2.json; experiments/alpha_walk_forward_SOLUSDT_R2.json"
+    numeracao: "AG-393."
+    found_by: "Workflow adversarial (2026-08-31) -- 6 investigadores independentes tentando REFUTAR a conclusao 'ADR-008: 0/20, nenhum dos 5 candidatos sobrevive' (nao uma auditoria de qualidade de codigo -- do RESULTADO/metodologia), cada achado verificado por um segundo revisor cetico independente antes de aceito. Pedido do Manager, mesma sessao que fechou AG-391/AG-392 -- opcao explicita 'Auditoria adversarial multi-agente (recomendado)'."
+    gap: >
+      Nenhum dos 6 angulos testados (vazamento temporal/purge, vies de
+      sobrevivencia por exclusao de fold degenerado, inversao de sinal
+      no AUC, explicacao de vies de selecao pra divergencia CPCV-vs-
+      walk-forward, integridade de dado na janela de teste,
+      recomputo independente do veredito "0/20" a partir do zero)
+      encontrou motivo para reverter ou enfraquecer "0/20" -- o
+      recomputo independente (angulo 6, sem importar
+      `walk_forward_gates.py`/`model_card.py`) reproduz as 20 linhas
+      digito a digito, e o resultado e sobredeterminado (gate Data E
+      gate Model cada um sozinho ja reprova as 20 celulas). Mas o
+      processo achou 3 defeitos REAIS, novos, nao conhecidos antes
+      desta auditoria:
+
+      1. `BTCUSDT/R2` tem um bloco real de coluna nula em
+      `data/capacity/metrics/BTCUSDT` durante 2022 (banda de tamanho de
+      arquivo cai de ~15,8KB pra ~9-11KB por ~4 meses, mesmo timing nos
+      4 simbolos, schema de parquet identico -- assinatura de coluna
+      nula, nao de dia faltando). Via o filtro de listwise deletion ja
+      existente em `alpha.py::unique_test_bars` (barra sai da populacao
+      de teste se QUALQUER uma das 36 features T1 for nula), isso zera/
+      degrada 4 dos 19 folds de teste desse combo (`test_start`
+      2022-Q1/Q2/Q3/Q4 -- `n_test_bars` cai pra 8/672/0/400 contra
+      1977-2557 nos folds saudaveis de 2023+). `BTCUSDT/R2` e o UNICO
+      dos 5 candidatos cuja janela de walk-forward alcanca 2022 (os
+      outros 4 comecam em 2023-10, populacao saudavel em 100% dos
+      folds). Nao muda "0/20" hoje -- mesmo recuperando os 4 folds, os
+      gates Model/Alpha continuariam improvaveis -- mas o gate Data
+      desse combo especifico (hoje 7-8/10, abaixo do piso) NAO e uma
+      medicao definitiva ate o dado de 2022 ser corrigido e a campanha
+      re-rodada.
+
+      2. A explicacao publicada (aba "ADR-008" do artefato "ADR-007 --
+      Painel de Execucao", secao "Investigacao -- por que SOLUSDT/R2
+      travou", e replicada em `docs/AUDITORIA_EXTERNA_..._2026-08-31.md`
+      secao 5.5 antes desta correcao) para a queda de sinal de
+      `SOLUSDT/R2` no walk-forward citava o vies de selecao "recorde do
+      projeto" (+8,356) medido no Item 2 do ADR-007 (top-6/10-seeds) --
+      mas esse NAO e o hiperparametro que foi promovido nem testado no
+      walk-forward. `config/constants.yaml::alpha_production_hyperparam_
+      override` mostra que `SOLUSDT_R2` usa o candidato H10
+      (`run_stamp=20260830T143204Z`, top-3/5-seeds), cujo vies de
+      selecao medido e +0,357 -- uma ordem de grandeza MENOR -- e que,
+      mesmo assim, mostra a MAIOR divergencia CPCV-vs-walk-forward dos
+      5 candidatos. Recomputando com o artefato CPCV canonico correto
+      (o `alpha_layer1_report_{combo}.json` generico estava
+      desatualizado, mtime anterior ao run canonico -- o certo e
+      `..._adr007canonico.json`), os gaps CPCV-vs-WF ficam MAIORES em
+      todos os 5 combos (+5,7 a +74,3bps), e nao ha correlacao entre
+      vies medido e tamanho do gap em NENHUM dos 5 (Spearman ~0,10-0,40,
+      n=5, nao significativo). A pergunta "por que CPCV diverge do
+      walk-forward real" segue SEM explicacao medida para nenhum dos 5
+      candidatos, nao so pra 4 -- mais fraco do que o texto publicado
+      sugeria, precisa de correcao.
+
+      3. Bug de pipeline real, distinto do ja corrigido em
+      `score_quality.py` (piso n>=5): o calibrador isotonico de
+      `SOLUSDT/R2` colapsa pra uma constante em pelo menos 1 fold real
+      (`fold_id=3`, lado short) -- `camada0` e `camada1` desse fold
+      produzem `score_quality_by_side` BYTE-IDENTICO (`brier_score`,
+      `log_loss`, `pr_auc`, `decile_profile`, tudo igual a 16 digitos
+      significativos) apesar de terem boosters diferentes (gain
+      distinto, nao-nulo, confirmado por diff dos 2 blocos do JSON) --
+      so possivel se as duas calibradoras isotonicas colapsarem pra
+      output constante (mesmos rotulos/linhas de treino entre camadas,
+      so as features mudam). Nao corrigido ainda; consistente com "zero
+      sinal" nesse fold (nao resgata o candidato), mas e um defeito de
+      pipeline real e nao documentado antes desta auditoria.
+    resolved_by_commit: null
+    status: >
+      ABERTO -- veredito "0/20" da ADR-008 NAO muda por nenhum dos 3
+      itens (confirmado pelo recomputo independente do angulo 6, que
+      nao depende de nenhum deles). Item 2 exige correcao de TEXTO
+      publicado (dashboard + `AUDITORIA_EXTERNA...md`) -- aplicada nesta
+      mesma sessao. Itens 1 e 3 sao correcoes de CODIGO/DADO nao
+      aplicadas ainda -- nenhuma decidida unilateralmente; ficam
+      registradas para o Manager priorizar (item 1 e pre-requisito pra
+      tratar o gate Data de `BTCUSDT/R2` como medicao final; item 3 e
+      um bug de calibracao que pode reincidir em combos futuros com
+      populacao de treino minuscula por lado).
