@@ -1848,7 +1848,13 @@ def _unique_test_bars(
 # ~10 ocorrências" que já governa a leitura de cauda neste projeto. O
 # mínimo REAL de barras é DERIVADO daqui e de `target_signal_rate`
 # (`ceil(10 / r)`), nunca estipulado como contagem fixa.
-_MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
+#
+# Público (sem `_`) desde ADR-008 Fase 4 -- `src.models.walk_forward.
+# min_test_bars_for_non_degenerate_fold` reusa a MESMA constante pro
+# critério de "fold degenerado" (barras de teste insuficientes pra uma
+# leitura com sentido), em vez de declarar um segundo "10" independente
+# que pudesse divergir deste com o tempo.
+MIN_OCCURRENCES_ABOVE_TAU = 10  # noqa: magic-number
 
 
 def _resolve_tau_on_common_bars(
@@ -1884,7 +1890,7 @@ def _resolve_tau_on_common_bars(
 
     Fallback explícito e LOGADO (nunca silencioso): se a população
     out-of-fit não comportar o quantil `1 - r` com pelo menos
-    `_MIN_OCCURRENCES_ABOVE_TAU` ocorrências acima do corte, cai para a
+    `MIN_OCCURRENCES_ABOVE_TAU` ocorrências acima do corte, cai para a
     população comum inteira — um `tau` levemente otimista é melhor que um
     `tau` estimado sobre uma dezena de pontos."""
     common = _unique_test_bars(train_bars, feature_ids=feature_ids)
@@ -1910,7 +1916,7 @@ def _resolve_tau_on_common_bars(
     seen_in_fit = np.isin(t0_common, fit_t0_long) | np.isin(t0_common, fit_t0_short)
     oof_idx = np.flatnonzero(~seen_in_fit)
 
-    min_bars = int(np.ceil(_MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    min_bars = int(np.ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
     if oof_idx.shape[0] < min_bars:
         logger.warning(
             "models.alpha.tau_oof_insuficiente_fallback_populacao_comum",
@@ -1979,7 +1985,7 @@ def _resolve_lambda_on_common_bars(
     seen_in_fit = np.isin(t0_common, fit_t0_long) | np.isin(t0_common, fit_t0_short)
     oof_idx = np.flatnonzero(~seen_in_fit)
 
-    min_bars = int(np.ceil(_MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    min_bars = int(np.ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
     if oof_idx.shape[0] < min_bars:
         logger.warning(
             "models.alpha.lambda_oof_insuficiente_fallback_populacao_comum",

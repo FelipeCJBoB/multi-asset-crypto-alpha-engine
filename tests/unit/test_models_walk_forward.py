@@ -46,6 +46,10 @@ def test_sem_overlap_de_t1_treino_e_teste_intactos() -> None:
     assert out.n_purged == 0
     assert out.n_train_candidate == 20  # noqa: magic-number
     assert out.split_id == 0
+    # path_id == fold_id (não 0 fixo) -- ver docstring do módulo:
+    # backtest_lite.backtest_by_path agrupa por path_id, precisa de 1
+    # valor distinto por fold pra tratar cada fold como seu próprio
+    # "caminho" de 1 fold.
     assert out.path_id == 0
     assert out.test_groups == ()
     assert out.train_groups == ()
@@ -84,7 +88,11 @@ def test_purge_esvaziando_treino_levanta_valueerror() -> None:
         wf.walk_forward_split_to_cpcv_split(split, unique_t0, t0_ms, t1_ms)
 
 
-def test_split_id_reflete_fold_id_do_walk_forward_split() -> None:
+def test_split_id_e_path_id_refletem_fold_id_do_walk_forward_split() -> None:
+    """`path_id == fold_id` (não `0` fixo) -- ver docstring do módulo:
+    `backtest_lite.backtest_by_path` agrupa por `path_id`, precisa de 1
+    valor distinto por fold pra tratar cada fold de walk-forward como
+    seu próprio "caminho" de 1 fold, reusando essa função já testada."""
     unique_t0 = np.arange(0, 10, dtype=np.int64) * 1_000  # noqa: magic-number
     t1 = unique_t0 + 100  # noqa: magic-number
     t0_ms, t1_ms = _duas_linhas_por_barra(unique_t0, t1)
@@ -93,6 +101,7 @@ def test_split_id_reflete_fold_id_do_walk_forward_split() -> None:
     out = wf.walk_forward_split_to_cpcv_split(split, unique_t0, t0_ms, t1_ms)
 
     assert out.split_id == 7  # noqa: magic-number
+    assert out.path_id == 7  # noqa: magic-number
 
 
 def test_ultimo_fold_test_end_idx_igual_ao_comprimento_da_timeline() -> None:
