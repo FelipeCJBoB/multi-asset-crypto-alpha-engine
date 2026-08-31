@@ -8,24 +8,35 @@ AUC, gain, decile} sobre esse mesmo artefato e achou um quadro mais
 sério: AUC out-of-time perto de 0,5 (sem poder discriminativo real) em
 quase todos os candidatos, dispersão de IC entre folds muito maior que
 a média (ruído, não sinal estável), e gain concentrado em 1-2 features
-na maioria dos combos. Fase 6 codificou 3 gates (Data/Model/Alpha) com
-thresholds `ASSUMED` (decisão de limiar pendente do Manager) e rodou
-contra os 5 candidatos: **0 de 10 combo×variant passam os 3 gates
-simultaneamente**. Fase 7 (SHAP, dependência aprovada pelo Manager)
-cruzou gain nativo × SHAP — taxa de concordância varia de 0,00 a 1,00
-entre combos/lados, em vários casos o gain nativo e o SHAP apontam
-features DIFERENTES como #1 (ex. `XRPUSDT/R3/camada1 long`,
-concordância 0,00). Fase 8 (cartão final) consolidou as 6 métricas reais
-de 0-7 por (combo, variant, lado) — 20 linhas (5 combos × 2 camadas × 2
-lados); na granularidade de LADO (não combo inteiro), **1 de 20**
-(`XRPUSDT/R3/camada0/short`, AUC=0,522, feature_stability=0,17 — instável)
-passa os 3 gates; nenhum combo passa nos DOIS lados simultaneamente, o
-que é **consistente** com o "0 de 10" da Fase 6 (que já exigia ambos os
-lados). `regime_stability_pct`/`generalization_gap_pct` ficam `TBD`
+na maioria dos combos. Fase 6 codificou 3 gates (Data/Model/Alpha),
+inicialmente com 2 thresholds `ASSUMED` explicitamente marcados
+"arbitrário por ora" — rodou contra os 5 candidatos: **0 de 10
+combo×variant passam os 3 gates simultaneamente**. Fase 7 (SHAP,
+dependência aprovada pelo Manager) cruzou gain nativo × SHAP — taxa de
+concordância varia de 0,00 a 1,00 entre combos/lados, em vários casos o
+gain nativo e o SHAP apontam features DIFERENTES como #1 (ex.
+`XRPUSDT/R3/camada1 long`, concordância 0,00). Fase 8 (cartão final)
+consolidou as 6 métricas reais de 0-7 por (combo, variant, lado) — 20
+linhas (5 combos × 2 camadas × 2 lados). **Correção pós-Fase-8
+(2026-08-31, "investigar e medir os thresholds corretamente" — Manager):**
+os 2 thresholds `ASSUMED` da Fase 6 foram medidos contra os 62 fold-lado
+reais da campanha e revelou-se que a FORMA do gate, não só o número,
+estava errada — gate Model virou teste-t de uma amostra (Hanley-McNeil
+1982 mostrou `SE(AUC|H0=0,5)` entre 0,13 e 0,19 POR FOLD, um piso fixo
+de 0,52 sem poder estatístico real); gate Data virou piso ABSOLUTO de
+folds usáveis (não fração, que penalizava desigual combos com
+`n_folds_total` diferente). Sob a forma corrigida: **0 de 20
+combo×variant×lado** passa os 3 gates (o único caso que passava antes,
+`XRPUSDT/R3/camada0/short`, tinha só `n=2` folds computáveis — não
+sobrevive à exigência de significância estatística real) — achado MAIS
+FORTE e mais honesto que a versão anterior, não uma reversão de sorte.
+`regime_stability_pct`/`generalization_gap_pct` ficam `TBD`
 deliberadamente (B23) — não medidos em nenhuma fase anterior desta ADR;
 medir exigiria retreino real fora do orçamento já autorizado. Achado
-consolidado, ainda sem decisão do Manager sobre como agir (nenhum
-candidato promovido em ADR-007 sobrevive ao gate duplo desta auditoria).
+consolidado, ainda sem decisão FINAL do Manager sobre como agir (nenhum
+candidato promovido em ADR-007 sobrevive ao gate duplo desta auditoria;
+os 2 novos thresholds seguem `class: A`/`sweep_required: true`,
+propostos nesta sessão, não travados formalmente).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -399,13 +410,16 @@ decididas por conta própria.
    não sinal estável; gain concentrado em 1-2 features na maioria dos
    combos (`A04_log_return_12` domina em quase todos). Quadro mais
    sério que o "bruto" da Fase 4 — ainda sem decisão de como agir.
-7. [x] Fase 6 — commit `a821801`. `src/analysis/walk_forward_gates.py` —
-   3 gates (Data/Model/Alpha), mesmo padrão de `backtest_lite.
+7. [x] Fase 6 — commit `a821801`, **corrigido `42a859f`** (2026-08-31,
+   ver Item 13). `src/analysis/walk_forward_gates.py` — 3 gates
+   (Data/Model/Alpha), mesmo padrão de `backtest_lite.
    permanence_pass_criterion`/`hhi.gate3_4_passes` (núcleo puro +
    threshold em `constants.yaml` + campo no report). **Decisão do
-   Manager sobre threshold PENDENTE** — 2 constantes novas entram
-   `ASSUMED`+`sweep_required` (`alpha_gate_data_min_frac_folds_usados`=
-   0,5; `alpha_gate_model_min_auc`=0,52); o gate Alpha reusa
+   Manager sobre threshold PENDENTE** — 2 constantes novas, hoje
+   `alpha_gate_data_min_folds_usados`=10 (`DERIVED`) e `alpha_gate_
+   model_significance_level`=0,05 (`LITERATURE`), corrigidas do original
+   `alpha_gate_data_min_frac_folds_usados`=0,5/`alpha_gate_model_min_
+   auc`=0,52 (`ASSUMED`, aposentados); o gate Alpha reusa
    `alpha_layer1_permanence_min_edge_bps` (já `DERIVED`). **As
    DEFINIÇÕES dos 3 gates (não só os limiares) também são proposta
    minha na ausência de especificação do Manager sobre o que cada gate
@@ -443,12 +457,14 @@ decididas por conta própria.
     exigiria retreino real fora do orçamento já autorizado. `gate_pass`
     = AND codificado dos 3 gates da Fase 6, nunca julgamento manual. 6
     testes novos. Consolidação real rodada sobre os 5×2=10 combo×variant
-    (20 linhas combo×variant×lado): **1 de 20** passa os 3 gates na
-    granularidade de LADO (`XRPUSDT/R3/camada0/short`, AUC=0,522,
-    `feature_stability_pct`=0,17 — instável); **nenhum combo passa nos
-    DOIS lados simultaneamente** — consistente com o "0 de 10" da Fase 6
-    (que já exige ambos os lados). Nenhum dos 5 candidatos promovidos em
-    `ADR-007` sobrevive ao gate duplo desta auditoria.
+    (20 linhas combo×variant×lado): sob os thresholds ORIGINAIS da Fase
+    6 (ASSUMED), 1 de 20 passava (`XRPUSDT/R3/camada0/short`, AUC=0,522,
+    `feature_stability_pct`=0,17 — já instável); **corrigido no Item 13
+    (2026-08-31) para 0 de 20** sob os thresholds medidos — o único caso
+    que passava tinha só `n=2` folds computáveis, não sobrevive à
+    exigência de significância estatística real do novo gate Model.
+    Nenhum dos 5 candidatos promovidos em `ADR-007` sobrevive ao gate
+    duplo desta auditoria, sob nenhuma das duas versões do threshold.
 10. [x] Alimentar cada fase concluída na aba "Run Canônico — 5
     Candidatos" do artefato "ADR-007 — Painel de Execução", republicação
     incremental — Fases 0-8 documentadas.
@@ -460,3 +476,33 @@ decididas por conta própria.
     `ASSUMED` da Fase 6; se walk-forward vira gate obrigatório).
 12. [x] `docs/SPRINT_LOG.md` — seção "2026-08-31 — ADR-008 fecha"
     adicionada ao fechar a Fase 8 (todas as 9 fases).
+13. [x] Correção pós-fechamento — commit `42a859f` (2026-08-31, mesmo
+    dia, pedido explícito do Manager "investigar e medir os thresholds
+    corretamente"). Os 2 thresholds `ASSUMED` da Fase 6 (explicitamente
+    marcados "arbitrário por ora" no `source:` original) foram medidos
+    contra os 62 fold-lado reais da campanha — revelou-se que a FORMA do
+    gate, não só o número, estava errada:
+    - **Model**: `SE(AUC|H0=0,5)` via Hanley-McNeil (1982) fica entre
+      0,13 (mediana de `n_trades`=20,5) e 0,19 (p25=10) POR FOLD — um
+      piso fixo de 0,52 está a menos de 1 desvio-padrão de amostragem de
+      UM fold, sem poder estatístico real. Substituído por teste-t de
+      uma amostra unicaudal (H0: AUC_médio≤0,5), mesmo padrão já
+      estabelecido em `score_quality._ic_dispersion_stats`.
+    - **Data**: a forma FRAÇÃO penalizava desigual combos com
+      `n_folds_total` diferente (12 vs 19) pro MESMO requisito real —
+      piso ABSOLUTO de observações independentes. Substituído por
+      `n_folds_usados>=10`, mesma ordem de grandeza já adotada no repo
+      em `alpha.MIN_OCCURRENCES_ABOVE_TAU` (a nível de trade — aqui a
+      nível de fold, mesmo princípio).
+
+    Novas constantes: `alpha_gate_data_min_folds_usados`=10 (`DERIVED`),
+    `alpha_gate_model_significance_level`=0,05 (`LITERATURE`, convenção
+    Fisher 1925) — ambas `class: A`/`sweep_required: true`, decisão
+    final ainda do Manager. Consequência medida, honesta: **0 de 20**
+    combo×variant×lado passa os 3 gates sob a forma corrigida (era "1 de
+    20" sob o threshold fixo antigo — o único caso que passava,
+    `XRPUSDT/R3/camada0/short`, tinha só `n=2` folds computáveis, não
+    sobrevive à exigência de significância real). 16+6 testes
+    reescritos, `scipy.stats.t` reusado (já em uso no repo,
+    `src/regime/bocpd.py`). Mecânico limpo, sweep completo (`-m "not
+    slow"`): 2802 passed, mesma 1 falha pré-existente não relacionada.

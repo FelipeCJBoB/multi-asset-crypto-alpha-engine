@@ -25936,5 +25936,17 @@ entries:
       `feature_stability_pct`=17%, instavel) -- **nenhum combo passa nos
       2 lados simultaneamente**, ou seja **0 dos 5 candidatos promovidos
       sobrevivem ao gate duplo desta segunda auditoria**.
+
+      ADENDO 2026-08-31 (mesmo dia, commit `42a859f`): Manager pediu
+      "investigar e medir os thresholds corretamente" -- os 2 ASSUMED
+      (`alpha_gate_data_min_frac_folds_usados=0,5`, `alpha_gate_model_
+      min_auc=0,52`) foram medidos contra os 62 fold-lado reais da
+      campanha e substituidos por `alpha_gate_data_min_folds_usados=10`
+      (`DERIVED`, piso absoluto) e `alpha_gate_model_significance_
+      level=0,05` (`LITERATURE`, teste-t via Hanley-McNeil). Sob a forma
+      corrigida, **0 de 20** passa (nao mais 1 de 20) -- o unico caso
+      que passava antes (`XRPUSDT/R3/camada0/short`) tinha so `n=2`
+      folds computaveis, nao sobrevive a exigencia de significancia
+      estatistica real. Achado FICA MAIS FORTE, nao mais fraco.
     resolved_by_commit: null
-    status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. 2 questoes pendentes de decisao do Manager, nao resolvidas aqui: (1) os thresholds `ASSUMED` dos gates de `ADR-008` Fase 6 (`alpha_gate_data_min_frac_folds_usados=0,5`, `alpha_gate_model_min_auc=0,52`) precisam de decisao/sweep antes de virar criterio vinculante; (2) se/como o walk-forward real passa a ser um gate OBRIGATORIO no pipeline de promocao (hoje so roda como auditoria pos-hoc, depois do candidato ja promovido, nao antes)."
+    status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. Threshold em si (questao 1) agora tem base MEDIDA (`DERIVED`/`LITERATURE`, ver adendo acima), mas ainda `class: A`+`sweep_required: true` -- decisao FINAL de travar o valor segue do Manager. 1 questao pendente segue aberta: se/como o walk-forward real passa a ser um gate OBRIGATORIO no pipeline de promocao (hoje so roda como auditoria pos-hoc, depois do candidato ja promovido, nao antes) -- Manager confirmou 2026-08-31 que segue pos-hoc por enquanto, nao decisao final."
