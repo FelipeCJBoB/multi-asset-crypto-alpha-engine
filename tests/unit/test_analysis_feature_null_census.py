@@ -13,6 +13,8 @@ grosseiramente quando os nulos de warmup se sobrepõem — o caso normal).
 
 from __future__ import annotations
 
+import math
+
 import polars as pl
 import pytest
 
@@ -161,3 +163,87 @@ def test_bar_source_por_resolucao_vem_do_dataset_nao_de_uma_copia() -> None:
         assert census._bar_source_for(res) == expected
     with pytest.raises(ValueError, match="R9"):
         census._bar_source_for("R9")
+
+
+# ============================================================================
+# ADR-008 Fase 2 — column_distribution_stats (mean/std/percentis/min/max)
+# ============================================================================
+
+
+def test_column_distribution_stats_valores_conferidos_a_mao() -> None:
+    """`A_col = [1,2,3,4,5]` (sem nulo) -- mean=3,0, std(ddof=1)=sqrt(2,5),
+    min=1,0, max=5,0, mediana(p50)=3,0 -- valores de livro-texto, não
+    aproximados."""
+    df = _frame(A_col=[1.0, 2.0, 3.0, 4.0, 5.0])
+    out = census.column_distribution_stats(df, (_A,))
+    assert len(out) == 1
+    s = out[0]
+    assert s.feature_id == _A
+    assert s.dtype == "Float64"
+    assert s.n_valid == 5
+    assert s.mean == pytest.approx(3.0)
+    assert s.std == pytest.approx(2.5**0.5)
+    assert s.p50 == pytest.approx(3.0)
+    assert s.min == pytest.approx(1.0)
+    assert s.max == pytest.approx(5.0)
+
+
+def test_column_distribution_stats_ignora_nulos_no_calculo() -> None:
+    """`[1, null, 3]` -- mean/min/max ignoram o `null` (mean=2,0, não
+    tratar `null` como `0.0`, que daria mean=1,333...)."""
+    df = _frame(A_col=[1.0, None, 3.0])
+    out = census.column_distribution_stats(df, (_A,))
+    s = out[0]
+    assert s.n_valid == 2
+    assert s.mean == pytest.approx(2.0)
+    assert s.min == pytest.approx(1.0)
+    assert s.max == pytest.approx(3.0)
+
+
+def test_column_distribution_stats_coluna_100pct_nula_devolve_nan_nao_erro() -> None:
+    df = _frame(A_col=[None, None, None])
+    out = census.column_distribution_stats(df, (_A,))
+    s = out[0]
+    assert s.n_valid == 0
+    assert math.isnan(s.mean)
+    assert math.isnan(s.std)
+    assert math.isnan(s.p50)
+
+
+def test_column_distribution_stats_um_valor_so_std_nan() -> None:
+    """`std` amostral (`ddof=1`) é indefinido com 1 ponto -- `NaN`, não
+    `ZeroDivisionError`."""
+    df = _frame(A_col=[1.0])
+    out = census.column_distribution_stats(df, (_A,))
+    assert out[0].n_valid == 1
+    assert math.isnan(out[0].std)
+    assert out[0].mean == pytest.approx(1.0)
+
+
+def test_column_distribution_stats_coluna_ausente_levanta_keyerror() -> None:
+    df = _frame(A_col=[1.0, 2.0])
+    with pytest.raises(KeyError, match="Z99"):
+        census.column_distribution_stats(df, (_A, "Z99_nao_existe"))
+
+
+def test_column_distribution_stats_feature_ids_vazio_levanta() -> None:
+    df = _frame(A_col=[1.0, 2.0])
+    with pytest.raises(ValueError, match="vazio"):
+        census.column_distribution_stats(df, ())
+
+
+def test_census_from_frame_mescla_distribuicao_no_por_coluna_sem_quebrar_schema() -> None:
+    """`por_coluna` continua tendo os campos de `ColumnNullStats` (schema
+    existente, D0/backward-compat) E ganha os de `ColumnDistributionStats`
+    (aditivo) -- os dois convivem no mesmo dict por feature."""
+    df = _frame(A_col=[1.0, 2.0, 3.0], B_col=[1.0, 1.0, 1.0])
+    c = census.census_from_frame(
+        df, (_A, _B), symbol="TESTUSDT", resolution_id="R1", bar_source="dollar_r1"
+    )
+    by_feature = {d["feature_id"]: d for d in c.por_coluna}
+    # campos antigos continuam presentes
+    assert "n_null" in by_feature[_A]
+    assert "n_null_exclusivo" in by_feature[_A]
+    # campos novos entraram
+    assert by_feature[_A]["mean"] == pytest.approx(2.0)
+    assert by_feature[_B]["std"] == pytest.approx(0.0)

@@ -146,6 +146,86 @@ def column_null_stats(
     return tuple(out)
 
 
+@dataclass(frozen=True, slots=True)
+class ColumnDistributionStats:
+    """ADR-008 Fase 2 — estatística descritiva por feature (bloco 7 do
+    consultor: dtype/missing%/mean/std/percentis/min/max). `missing%` já
+    vive em `ColumnNullStats.frac_null` (não duplicado aqui) — esta
+    classe cobre só o que faltava. Calculada sobre valores NÃO-nulos
+    apenas (`drop_nulls`) — incluir `null` na média/percentil
+    silenciosamente os trataria como `0.0`, mentira maior que reportar
+    `NaN` quando a coluna é 100% nula."""
+
+    feature_id: str
+    dtype: str
+    n_valid: int
+    mean: float
+    std: float
+    p01: float
+    p05: float
+    p50: float
+    p95: float
+    p99: float
+    min: float
+    max: float
+
+
+def column_distribution_stats(
+    df: pl.DataFrame, feature_ids: tuple[str, ...]
+) -> tuple[ColumnDistributionStats, ...]:
+    """Núcleo puro, mesmo contrato de erro de `column_null_stats` (coluna
+    ausente falha alto, `feature_ids` vazio falha alto)."""
+    faltando = sorted(set(feature_ids) - set(df.columns))
+    if faltando:
+        raise KeyError(
+            f"column_distribution_stats: coluna(s) ausente(s) no frame: {faltando}"
+        )
+    if not feature_ids:
+        raise ValueError("column_distribution_stats: feature_ids vazio -- nada a medir")
+
+    out: list[ColumnDistributionStats] = []
+    for fid in feature_ids:
+        dtype_str = str(df.schema[fid])
+        col = df[fid].cast(pl.Float64).drop_nulls()
+        n_valid = col.len()
+        if n_valid == 0:
+            nan = float("nan")
+            out.append(
+                ColumnDistributionStats(
+                    feature_id=fid,
+                    dtype=dtype_str,
+                    n_valid=0,
+                    mean=nan,
+                    std=nan,
+                    p01=nan,
+                    p05=nan,
+                    p50=nan,
+                    p95=nan,
+                    p99=nan,
+                    min=nan,
+                    max=nan,
+                )
+            )
+            continue
+        out.append(
+            ColumnDistributionStats(
+                feature_id=fid,
+                dtype=dtype_str,
+                n_valid=n_valid,
+                mean=float(col.mean()),  # type: ignore[arg-type]
+                std=float(col.std(ddof=1)) if n_valid >= 2 else float("nan"),  # type: ignore[arg-type]
+                p01=float(col.quantile(0.01, interpolation="linear")),  # type: ignore[arg-type] # noqa: magic-number -- percentil padrao (1%), nao constante de dominio
+                p05=float(col.quantile(0.05, interpolation="linear")),  # type: ignore[arg-type] # noqa: magic-number -- percentil padrao (5%), nao constante de dominio
+                p50=float(col.quantile(0.50, interpolation="linear")),  # type: ignore[arg-type] # noqa: magic-number -- mediana, nao constante de dominio
+                p95=float(col.quantile(0.95, interpolation="linear")),  # type: ignore[arg-type] # noqa: magic-number -- percentil padrao (95%), nao constante de dominio
+                p99=float(col.quantile(0.99, interpolation="linear")),  # type: ignore[arg-type] # noqa: magic-number -- percentil padrao (99%), nao constante de dominio
+                min=float(col.min()),  # type: ignore[arg-type]
+                max=float(col.max()),  # type: ignore[arg-type]
+            )
+        )
+    return tuple(out)
+
+
 def census_from_frame(
     df: pl.DataFrame,
     feature_ids: tuple[str, ...],
@@ -156,10 +236,16 @@ def census_from_frame(
 ) -> CellNullCensus:
     """Núcleo: monta o censo de uma célula a partir do frame já construído."""
     stats = column_null_stats(df, feature_ids)
+    dist_stats_by_feature = {
+        s.feature_id: asdict(s) for s in column_distribution_stats(df, feature_ids)
+    }
     n_todas_validas = df.select(feature_ids).drop_nulls().height
     mortas = sorted(s.feature_id for s in stats if s.primeira_linha_valida == -1)
     por_coluna = sorted(
-        (asdict(s) for s in stats),
+        (
+            {**asdict(s), **dist_stats_by_feature[s.feature_id]}
+            for s in stats
+        ),
         key=lambda d: (-int(d["n_null_exclusivo"]), -int(d["n_null"]), str(d["feature_id"])),
     )
     vivas = tuple(f for f in feature_ids if f not in set(mortas))
