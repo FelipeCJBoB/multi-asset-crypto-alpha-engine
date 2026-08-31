@@ -3006,6 +3006,22 @@ alpha_b1_n_seeds:
   class: C
   sweep_required: false
 
+fdr_significance_level:
+  value: 0.05
+  provenance: LITERATURE
+  source: >
+    ADR-007 Item 4 (2026-08-30) -- piso convencional de significância da
+    literatura de FDR (Benjamini-Hochberg 1995 usa 0,05 no exemplo
+    canônico do paper original) -- citação textual, não estatística
+    ajustada a este projeto (mesma classe de alpha_b1_n_seeds acima).
+    Nome deliberadamente SEM prefixo `alpha_` -- colidiria com a
+    convenção deste projeto de que `alpha_*` é o modelo Alpha (Camada1/
+    Camada0), não o "nível alpha" genérico da literatura estatística de
+    FDR -- os dois usos da palavra "alpha" não têm relação, e um prefixo
+    compartilhado sugeriria uma que não existe.
+  class: C
+  sweep_required: false
+
 # --- Decomposição de PnL carry/direcional (§16.6, RF-029) ---
 
 alpha_gate3_carry_share_max:
