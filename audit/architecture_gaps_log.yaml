@@ -25911,3 +25911,30 @@ entries:
       padrao sqlite do Optuna).
     resolved_by_commit: null
     status: "ABERTO -- nao corrigido nesta sessao (fora do pedido original do Item 3, que era medir, nao endurecer o modulo contra falha de infraestrutura). Vale a pena se este modulo for reusado em campanhas maiores (mais combos, mais repeats) onde o custo de perder progresso cresce -- decisao do Manager se compensa o esforco de implementar checkpoint incremental agora ou so quando o proximo uso justificar."
+
+  - id: AG-391
+    date: "2026-08-31"
+    file: "docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md"
+    related_file: "docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md; src/models/walk_forward.py; src/analysis/{stability_matrix,walk_forward_gates,model_card}.py"
+    numeracao: "AG-391."
+    found_by: "Claude, ADR-008 (9 fases, walk-forward real rodado sobre os 5 candidatos promovidos pelo ADR-007 na mesma sessao)."
+    gap: >
+      O pipeline de promocao a producao (`ADR-007`, gate duplo sobre
+      CPCV) nao inclui avaliacao walk-forward real fora-da-amostra no
+      TEMPO antes de promover um candidato -- CPCV embaralha caminhos,
+      walk-forward nao. Os mesmos 5 candidatos que passaram o gate duplo
+      do `ADR-007` (`n_lifetime id=41`, todos com edge positivo) foram
+      reavaliados sob walk-forward ancorado real (`ADR-008` Fases 4-8,
+      `n_lifetime id=42`) e o quadro diverge de forma severa: taxa alta
+      de fold degenerado em TODOS os 5 (`SOLUSDT/R2`=1/12 folds usaveis
+      nas 2 camadas), AUC out-of-time perto de 0,50 (sem poder
+      discriminativo real) na maioria dos combos/lados, dispersao de IC
+      entre folds tipicamente MAIOR que a propria media (ruido, nao
+      sinal), e sob os 3 gates codificados da Fase 6/8 (Data/Model/
+      Alpha, thresholds `ASSUMED` pendentes de decisao do Manager)
+      **apenas 1 de 20 combo×variant×lado passa** (e mesmo esse com
+      `feature_stability_pct`=17%, instavel) -- **nenhum combo passa nos
+      2 lados simultaneamente**, ou seja **0 dos 5 candidatos promovidos
+      sobrevivem ao gate duplo desta segunda auditoria**.
+    resolved_by_commit: null
+    status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. 2 questoes pendentes de decisao do Manager, nao resolvidas aqui: (1) os thresholds `ASSUMED` dos gates de `ADR-008` Fase 6 (`alpha_gate_data_min_frac_folds_usados=0,5`, `alpha_gate_model_min_auc=0,52`) precisam de decisao/sweep antes de virar criterio vinculante; (2) se/como o walk-forward real passa a ser um gate OBRIGATORIO no pipeline de promocao (hoje so roda como auditoria pos-hoc, depois do candidato ja promovido, nao antes)."

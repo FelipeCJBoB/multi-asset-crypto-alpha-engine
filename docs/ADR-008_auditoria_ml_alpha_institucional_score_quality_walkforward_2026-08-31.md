@@ -1,21 +1,31 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-7 concluídas 2026-08-31 (commits `b03109c`..`5ca3500`,
-lista completa nos Action Items) — Fase 4 rodou a campanha real sobre os
-5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold degenerado.
-Fase 5 (stability matrix) cruzou Fold × {IC, AUC, gain, decile} sobre
-esse mesmo artefato e achou um quadro mais sério: AUC out-of-time perto
-de 0,5 (sem poder discriminativo real) em quase todos os candidatos,
-dispersão de IC entre folds muito maior que a média (ruído, não sinal
-estável), e gain concentrado em 1-2 features na maioria dos combos. Fase
-6 codificou 3 gates (Data/Model/Alpha) com thresholds `ASSUMED`
-(decisão de limiar pendente do Manager) e rodou contra os 5 candidatos:
-**0 de 10 combo×variant passam os 3 gates simultaneamente**. Fase 7
-(SHAP, dependência aprovada pelo Manager) cruzou gain nativo × SHAP —
-taxa de concordância varia de 0,00 a 1,00 entre combos/lados, em vários
-casos o gain nativo e o SHAP apontam features DIFERENTES como #1 (ex.
-`XRPUSDT/R3/camada1 long`, concordância 0,00). Achado bruto, ainda sem
-decisão de como agir. Só falta Fase 8 (cartão final, consolida 0-7).
+**Status:** TODAS as fases (0-8) concluídas 2026-08-31 (commits
+`b03109c`..`b96fca5`, lista completa nos Action Items) — Fase 4 rodou a
+campanha real sobre os 5 candidatos (`n_lifetime` id=42) e achou taxa
+alta de fold degenerado. Fase 5 (stability matrix) cruzou Fold × {IC,
+AUC, gain, decile} sobre esse mesmo artefato e achou um quadro mais
+sério: AUC out-of-time perto de 0,5 (sem poder discriminativo real) em
+quase todos os candidatos, dispersão de IC entre folds muito maior que
+a média (ruído, não sinal estável), e gain concentrado em 1-2 features
+na maioria dos combos. Fase 6 codificou 3 gates (Data/Model/Alpha) com
+thresholds `ASSUMED` (decisão de limiar pendente do Manager) e rodou
+contra os 5 candidatos: **0 de 10 combo×variant passam os 3 gates
+simultaneamente**. Fase 7 (SHAP, dependência aprovada pelo Manager)
+cruzou gain nativo × SHAP — taxa de concordância varia de 0,00 a 1,00
+entre combos/lados, em vários casos o gain nativo e o SHAP apontam
+features DIFERENTES como #1 (ex. `XRPUSDT/R3/camada1 long`,
+concordância 0,00). Fase 8 (cartão final) consolidou as 6 métricas reais
+de 0-7 por (combo, variant, lado) — 20 linhas (5 combos × 2 camadas × 2
+lados); na granularidade de LADO (não combo inteiro), **1 de 20**
+(`XRPUSDT/R3/camada0/short`, AUC=0,522, feature_stability=0,17 — instável)
+passa os 3 gates; nenhum combo passa nos DOIS lados simultaneamente, o
+que é **consistente** com o "0 de 10" da Fase 6 (que já exigia ambos os
+lados). `regime_stability_pct`/`generalization_gap_pct` ficam `TBD`
+deliberadamente (B23) — não medidos em nenhuma fase anterior desta ADR;
+medir exigiria retreino real fora do orçamento já autorizado. Achado
+consolidado, ainda sem decisão do Manager sobre como agir (nenhum
+candidato promovido em ADR-007 sobrevive ao gate duplo desta auditoria).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -421,10 +431,32 @@ decididas por conta própria.
    **Achado real**: taxa de concordância gain×SHAP varia de 0,00 a 1,00
    entre combos/lados — em vários casos apontam features DIFERENTES
    como #1 (ex. `XRPUSDT/R3/camada1 long`, concordância 0,00).
-9. [ ] Fase 8 — cartão final / model card, consolidação de 0-7.
-10. [ ] Alimentar cada fase concluída na aba "Run Canônico — 5
+9. [x] Fase 8 — commit `b96fca5`. `src/analysis/model_card.py` —
+    `ModelCard` por (combo, variant, lado), 8 métricas do consultor: 6
+    REAIS extraídas de artefatos já escritos (`test_auc`/`test_rank_ic`/
+    `q10_minus_q1_bps` via `stability_matrix` Fase 5; `ic_ir` derivado
+    `mean/std`; `oos_folds_usados`/`oos_folds_total` via walk-forward
+    Fase 4; `feature_stability_pct` via `top_feature_frequency_by_side`
+    Fase 5) + 2 `TBD`/`None` deliberados (B23) —
+    `regime_stability_pct`/`generalization_gap_pct` nunca foram medidos
+    para os candidatos do walk-forward em nenhuma fase anterior; medir
+    exigiria retreino real fora do orçamento já autorizado. `gate_pass`
+    = AND codificado dos 3 gates da Fase 6, nunca julgamento manual. 6
+    testes novos. Consolidação real rodada sobre os 5×2=10 combo×variant
+    (20 linhas combo×variant×lado): **1 de 20** passa os 3 gates na
+    granularidade de LADO (`XRPUSDT/R3/camada0/short`, AUC=0,522,
+    `feature_stability_pct`=0,17 — instável); **nenhum combo passa nos
+    DOIS lados simultaneamente** — consistente com o "0 de 10" da Fase 6
+    (que já exige ambos os lados). Nenhum dos 5 candidatos promovidos em
+    `ADR-007` sobrevive ao gate duplo desta auditoria.
+10. [x] Alimentar cada fase concluída na aba "Run Canônico — 5
     Candidatos" do artefato "ADR-007 — Painel de Execução", republicação
-    incremental.
-11. [ ] `audit/architecture_gaps_log.yaml` — referenciar esta ADR ao
-    fechar cada fase, se algum gap novo for descoberto no caminho.
-12. [ ] `docs/SPRINT_LOG.md` — nova seção ao fechar a primeira fase real.
+    incremental — Fases 0-8 documentadas.
+11. [x] `audit/architecture_gaps_log.yaml` — `AG-391` registrado: o
+    pipeline de promoção (`ADR-007`, gate duplo sobre CPCV) não inclui
+    walk-forward real fora-da-amostra no tempo antes de promover; os
+    mesmos 5 candidatos promovidos não sobrevivem ao gate duplo desta
+    ADR. `ABERTO` — 2 decisões pendentes do Manager (thresholds
+    `ASSUMED` da Fase 6; se walk-forward vira gate obrigatório).
+12. [x] `docs/SPRINT_LOG.md` — seção "2026-08-31 — ADR-008 fecha"
+    adicionada ao fechar a Fase 8 (todas as 9 fases).

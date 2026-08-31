@@ -6068,3 +6068,80 @@ Painel de Execução"
 2 gaps novos abertos e não corrigidos (`AG-389`, `AG-390`) — ambos
 decisões de desenho/investimento de engenharia, não bugs, deliberadamente
 fora do escopo desta ADR.
+
+## 2026-08-31 — ADR-008 fecha: 9 fases, walk-forward real + gates codificados + SHAP + cartão final — nenhum dos 5 candidatos do ADR-007 sobrevive <!-- check-sprint-log: skip -->
+
+`docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md`
+— especificação do Manager (14 blocos + prioridade 10: leakage, walk-
+forward, Rank IC, IC IR, quantile returns, feature/SHAP stability, regime
+stability, reprodutibilidade), validada via `/engineering:system-design`
+e sequenciada em 9 fases por dependência. Todas as 9 concluídas na mesma
+sessão do fechamento do `ADR-007` acima — motivo direto: os 5 candidatos
+que o `ADR-007` tinha acabado de promover via CPCV nunca tinham sido
+avaliados sob walk-forward real fora-da-amostra no tempo.
+
+<!-- check-sprint-log: skip -->
+**Fases 0-3** (infraestrutura de medição, zero custo de retreino):
+`score_quality.py` novo (IC/Rank IC/IC IR/AUC/PR-AUC/LogLoss/Brier/Q10-Q1
+sobre o `confidence` calibrado — nunca medido antes pro output final do
+modelo), feature/label audit, export completo da trajetória Optuna,
+estratificação temporal, `train_val_test_gap` sobre os sub-splits
+`fit`/`stop`/`calib`. 40+ testes novos, zero regressão.
+
+<!-- check-sprint-log: skip -->
+**Fase 4** (walk-forward real, ancorado, `initial_train_years=2`, passo
+trimestral): campanha completa autorizada pelo Manager ("Orçamento =
+Completo") sobre os 5 candidatos × 2 camadas, 10 runs, ~117s treino real. <!-- check-sprint-log: skip -->
+Critério operacional de "fold degenerado" definido pelo Manager
+("Fold degenerado = Defina") e corrigido em campo depois de um primeiro
+critério (via `n_test_bars`) produzir Sharpe patológico (47.163,5 sobre 2
+trades) — corrigido pra gatear em `n_filled_trades < 10`
+(`alpha.MIN_OCCURRENCES_ABOVE_TAU`). 2 bugs reais adicionais achados só
+rodando de verdade: `mf.data` com 2 linhas/barra não-monótono em `t0`;
+fold com 0 barras de teste válidas quebrando `predict_proba`. **Achado
+bruto**: taxa de fold degenerado alta em TODOS os 5 candidatos
+(`SOLUSDT/R2`=1/12 usável nas 2 camadas), Sharpe/edge majoritariamente
+NEGATIVOS — quadro bem diferente do CPCV que embasou a promoção
+(`n_lifetime id=41`, todos positivos). `n_lifetime id=42` (delta=5).
+
+**Fase 5** (stability matrix — cruza Fold × IC/AUC/gain/decile, mede
+DISPERSÃO entre folds, não só tabula): **AUC out-of-time perto de 0,50**
+na maioria dos combos/lados (às vezes exatamente 0,500, std=0,000);
+dispersão de IC entre folds tipicamente MAIOR que a própria média (ex.
+`BTCUSDT/R2` long: mean=0,035 std=0,512 — ruído, não sinal); gain
+concentrado em 1-2 features na maioria dos combos.
+
+<!-- check-sprint-log: skip -->
+**Fase 6** (gates codificados Data/Model/Alpha, mesmo padrão de
+`backtest_lite.permanence_pass_criterion`): thresholds `ASSUMED`
+(decisão de limiar do Manager pendente) — rodado contra os 5 candidatos: <!-- check-sprint-log: skip -->
+**0 de 10 combo×variant passam os 3 gates simultaneamente**. <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+**Fase 7** (SHAP, dependência `shap>=0.49.1` aprovada pelo Manager —
+custo medido antes de escalar, 0,005s/fold, desprezível): concordância <!-- check-sprint-log: skip -->
+gain nativo × SHAP varia de 0,00 a 1,00 entre combos/lados — em 6 de 20 <!-- check-sprint-log: skip -->
+linhas os dois métodos apontam features DIFERENTES como #1. <!-- check-sprint-log: skip -->
+
+**Fase 8** (cartão final, consolida 0-7 — `src/analysis/model_card.py`):
+8 métricas do consultor por (combo, variant, lado), 6 REAIS + 2 `TBD`
+deliberados (B23 — `regime_stability_pct`/`generalization_gap_pct` nunca
+medidos, exigiriam retreino fora do orçamento). Veredito = AND codificado
+dos 3 gates da Fase 6. **1 de 20 combo×variant×lado passa** na
+granularidade de lado (`XRPUSDT/R3/camada0/short`, e mesmo assim com
+`feature_stability_pct`=17% — instável); **nenhum combo passa nos DOIS
+lados** — consistente com o "0 de 10" da Fase 6.
+
+<!-- check-sprint-log: skip -->
+**Conclusão consolidada, reportada ao Manager sem decisão unilateral**:
+sob avaliação walk-forward estritamente fora-da-amostra no tempo,
+nenhum dos 5 candidatos promovidos em `ADR-007` demonstra edge robusto <!-- check-sprint-log: skip -->
+— cobertura de dado insuficiente, poder discriminativo próximo de moeda
+honesta, atribuição de feature instável. Quadro estruturalmente diferente
+do que embasou a promoção original via CPCV.
+
+99+ testes novos ao longo das 9 fases, zero regressão na suíte completa
+em cada fase fechada. Detalhamento completo (tabelas fold-a-fold,
+combo×lado) na aba "ADR-008 — Fases 0-8" do artefato "ADR-007 — Painel
+de Execução"
+(`https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604`).
