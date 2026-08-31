@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 5510
+counter: 5515
 
 log:
   - id: 1
@@ -1158,3 +1158,37 @@ log:
       Detalhamento completo em
       `docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md`.
     delta: 354
+  - id: 41
+    date: "2026-08-31"
+    type: adr007_run_canonico_5_candidatos_promovidos
+    description: >
+      Run canônico de produção (`run_layer1_sprint`, seed fixa
+      `alpha_random_seed`, sem busca) sobre os 5 combos promovidos por
+      decisão explícita do Manager (`alpha_production_hyperparam_override`,
+      `constants.yaml`) — `BTCUSDT/R2`, `SOLUSDT/R2`, `SOLUSDT/R3`,
+      `XRPUSDT/R2`, `XRPUSDT/R3`. 5/5 sem falha, 358,8s total
+      (98,9+87,8+51,3+70,3+50,5s por combo). Retreino real de produção,
+      não busca/confirmação — 1 retreino completo (Camada1+Camada0, 15
+      splits CPCV cada) por combo.
+
+      Resultado real (Camada1, mediana sobre 5 paths, seed única de
+      produção — não confundir com mediana de 10 seeds do Item 2):
+      `BTCUSDT/R2` sharpe=0,865 edge=+13,61bps win_rate=57,0%;
+      `SOLUSDT/R2` sharpe=0,543 edge=+16,65bps win_rate=56,1%;
+      `SOLUSDT/R3` sharpe=0,705 edge=+30,06bps win_rate=60,9% (o
+      melhor do lote); `XRPUSDT/R2` sharpe=0,889 edge=+16,49bps
+      win_rate=56,9%; `XRPUSDT/R3` sharpe=0,636 edge=+21,02bps
+      win_rate=55,1%. Todos com `n_paths_camada1_supera_camada0` < 4/5
+      (gate duplo continua não confirmado sob este dado — consistente
+      com o Item 2, a promoção é uma decisão do Manager, não uma
+      aprovação do gate).
+
+      Ranking de gain por feature (todas as 36, `src.analysis.
+      attribution.gain_by_side`, agregado long+short) extraído pra
+      dashboard de investigação — achado real: 3 features com gain
+      médio <1% nos 5 candidatos (`K04_session_asia`=0,26%,
+      `E12f_price_oi_divergence`=0,08%, `K03_is_weekend`=0,01%,
+      literalmente zero em 3 dos 5 combos) — candidatas reais a poda,
+      não estimativa. Detalhamento completo na nova aba "Run Canônico —
+      5 Candidatos" do artefato "ADR-007 — Painel de Execução".
+    delta: 5
