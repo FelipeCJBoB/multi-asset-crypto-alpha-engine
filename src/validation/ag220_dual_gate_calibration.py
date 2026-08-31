@@ -73,7 +73,18 @@ def run_dual_gate_permutation_null(
         if n_repeats is not None
         else int(load_constant("alpha_ag220_calibration_n_repeats"))
     )
-    mf, splits = _build_mf_and_splits(symbol, resolution_id, vol_estimator_id)
+    # `_build_mf_and_splits` (noise_floor_diagnostics.py) repassa
+    # `vol_estimator_id` direto pra `ds.build_modeling_frame`, sem
+    # resolver sentinela -- sob `resolution_id="R3"` (dollar bar sem
+    # `bar_ms` pra derivar default, AG-140) isso levanta `ValueError`.
+    # Mesmo padrão de resolução de `hyperparams_optuna.py::_search_setup`
+    # (linhas 292-296): `None` -> `canonical_volatility_estimator`.
+    vol_estimator_id_effective = (
+        vol_estimator_id
+        if vol_estimator_id is not None
+        else str(load_constant("canonical_volatility_estimator"))
+    )
+    mf, splits = _build_mf_and_splits(symbol, resolution_id, vol_estimator_id_effective)
     model_seed = int(load_constant("alpha_random_seed"))
     permanence_min_paths = int(load_constant("alpha_layer1_permanence_min_paths"))
     edge_min_bps = float(load_constant("alpha_layer1_permanence_min_edge_bps"))
