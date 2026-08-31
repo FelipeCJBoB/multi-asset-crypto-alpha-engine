@@ -2664,6 +2664,45 @@ alpha_optuna_confirm_seeds:
   class: B
   sweep_required: false
 
+alpha_prune_min_edge_bps_threshold:
+  value: 0.0
+  provenance: DERIVED
+  source: >
+    ADR-007 Item 5 (2026-08-30) -- critério OPERACIONAL de poda
+    definitiva de símbolo/resolução do treino do Alpha, registrado aqui
+    SEM ser aplicado ainda (condicional ao resultado dos Itens 1 e 3 --
+    ver ADR-007 §Item 5, regra do CLAUDE.md contra decisão travada sem
+    definição operacional, AG-114/AG-118/AG-122). Poda exige: edge
+    bruto médio (`winner_median_pooled_edge_bps`, `AG-383`-addendum)
+    calculado sobre TODAS as resoluções do símbolo (ou todos os
+    símbolos da resolução) `< 0,0` bps SOB o orçamento expandido do
+    Item 1 (`alpha_optuna_n_trials=150`, não os 30 originais) — mesma
+    fronteira matemática de break-even que `alpha_layer1_permanence_
+    min_edge_bps` já usa (0,0 não é magnitude arbitrária, é o único
+    limite econômico real).
+  class: B
+  sweep_required: false
+  review_by: "TBD -- Manager decide após Item 1+3 completos (ADR-007)"
+
+alpha_prune_max_gate_fpr:
+  value: 0.20
+  provenance: ASSUMED
+  source: >
+    ADR-007 Item 5 (2026-08-30) -- segunda metade do critério de poda
+    (com `alpha_prune_min_edge_bps_threshold` acima, as DUAS condições
+    precisam bater — não travar a poda num instrumento sem poder
+    estatístico medido). Piso de taxa de falso-positivo do gate duplo
+    (`false_positive_rate_dual_gate`, medido pelo Item 3, `src.
+    validation.ag220_dual_gate_calibration`) ABAIXO do qual o gate é
+    considerado confiável o bastante pra basear uma poda nele. 0,20 é
+    ARBITRÁRIO por ora (não medido nem citado de literatura) —
+    `sweep_required: true` deliberado: única forma de calibrar isso é
+    comparar contra o resultado real do Item 3 quando sair, não antes.
+  class: B
+  sweep_required: true
+  sweep_range: [0.10, 0.30]
+  review_by: "TBD -- Manager decide após Item 3 completo (ADR-007)"
+
 alpha_ag220_calibration_n_repeats:
   value: 50
   provenance: LITERATURE
