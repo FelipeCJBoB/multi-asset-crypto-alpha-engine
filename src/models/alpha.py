@@ -1074,6 +1074,21 @@ def compare_cap_mechanisms(
 
 
 @dataclass(frozen=True, slots=True)
+class InSampleSegmentScores:
+    """ADR-008 Fase 3 — score CALIBRADO + `label` + `ret_net` de UM
+    segmento IN-SAMPLE (`fit`/`stop`/`calib`) do MESMO fold/lado que
+    treinou o modelo — nunca o teste do fold (OOF), população OPOSTA à
+    de `FoldResult.predictions`. Existe só para medir o "generalization
+    gap" (`score_quality` OOF vs. estas métricas in-sample) — nunca
+    consumida por nenhuma decisão de produção/gate."""
+
+    n: int
+    calibrated_score: FloatArray
+    label: IntArray
+    ret_net: FloatArray
+
+
+@dataclass(frozen=True, slots=True)
 class SideModelResult:
     side: int
     variant: str
@@ -1153,6 +1168,14 @@ class SideModelResult:
     # `hyper` é a contagem exata, não um teto.
     n_train_stop: int = 0
     best_iteration: int | None = None
+    # ADR-008 Fase 3 -- segmentos in-sample (fit/stop/calib) do MESMO
+    # fold/lado que treinou o modelo, usados só para medir o
+    # generalization gap contra `score_quality` (OOF). `stop_segment` é
+    # `None` fora de `EARLY_STOPPING_THREE_WAY` (mesma condição de
+    # `stop_idx`/`n_train_stop`).
+    fit_segment: InSampleSegmentScores | None = None
+    stop_segment: InSampleSegmentScores | None = None
+    calib_segment: InSampleSegmentScores | None = None
 
 
 def compute_monotone_screen(
@@ -1690,6 +1713,22 @@ def fit_side_model(
         correlation_t1, gain_by_column, feature_ids
     )
 
+    # ADR-008 Fase 3 -- score CALIBRADO + label + ret_net por segmento
+    # in-sample (fit/stop/calib), população OPOSTA à de `FoldResult.
+    # predictions` (OOF). `ret_net_all` na MESMA ordem de linha que
+    # `X_all`/`y_all` (ambos derivados de `train_side_df` sem reordenar).
+    ret_net_all = train_side_df["ret_net"].to_numpy().astype(np.float64)
+
+    def _segment(idx: IntArray | None) -> InSampleSegmentScores | None:
+        if idx is None:
+            return None
+        return InSampleSegmentScores(
+            n=int(idx.shape[0]),
+            calibrated_score=calibrated_train_all[idx],
+            label=y_all[idx],
+            ret_net=ret_net_all[idx],
+        )
+
     return SideModelResult(
         side=side,
         variant=variant,
@@ -1725,6 +1764,9 @@ def fit_side_model(
             if early_stopping_mode == EARLY_STOPPING_THREE_WAY and model.best_iteration_
             else None
         ),
+        fit_segment=_segment(fit_idx),
+        stop_segment=_segment(stop_idx),
+        calib_segment=_segment(calib_idx),
     )
 
 

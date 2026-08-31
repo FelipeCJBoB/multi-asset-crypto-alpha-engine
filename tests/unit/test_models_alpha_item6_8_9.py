@@ -292,3 +292,84 @@ def test_three_way_n_train_fit_stop_calib_somam_o_total() -> None:
     # sem overlap entre os 3 blocos (partição), mas PODE haver purge --
     # a soma é <= n, nunca >.
     assert result.n_train_fit + result.n_train_stop + result.n_train_calib <= df.height
+
+
+# ============================================================================
+# ADR-008 Fase 3 -- `InSampleSegmentScores` (`fit_segment`/`stop_segment`/
+# `calib_segment`) -- score CALIBRADO + `label` + `ret_net` de cada
+# sub-split in-sample, nunca exposto antes (só a CONTAGEM -- `n_train_fit`/
+# `n_train_calib`/`n_train_stop`, testada acima -- já existia). Existe pra
+# `score_quality.compute_train_val_test_gap` medir o generalization gap
+# sem precisar re-treinar.
+# ============================================================================
+
+
+def test_default_fixed_popula_fit_e_calib_segment_stop_none() -> None:
+    """Caminho legado (`EARLY_STOPPING_FIXED` + `CALIB_SPLIT_LEGACY_RANDOM`,
+    default de `_base_kwargs`) -- `fit`/`calib` existem, `stop` não (mesma
+    condição de `n_train_stop==0`/`best_iteration is None`, já testada
+    acima)."""
+    df = _frame_com_t0_t1_uniqueness()
+    result = alpha.fit_side_model(df, **_base_kwargs())
+
+    assert result.fit_segment is not None
+    assert result.calib_segment is not None
+    assert result.stop_segment is None
+    assert result.fit_segment.n == result.n_train_fit
+    assert result.calib_segment.n == result.n_train_calib
+
+
+def test_segment_arrays_tem_shape_n_e_dtype_certo() -> None:
+    df = _frame_com_t0_t1_uniqueness()
+    result = alpha.fit_side_model(df, **_base_kwargs())
+
+    seg = result.fit_segment
+    assert seg is not None
+    assert seg.calibrated_score.shape == (seg.n,)
+    assert seg.label.shape == (seg.n,)
+    assert seg.ret_net.shape == (seg.n,)
+    assert set(np.unique(seg.label).tolist()) <= {0, 1}
+    # saída do calibrador isotônico (`y_min=0.0, y_max=1.0`) -- sempre
+    # dentro do intervalo, nunca fora.
+    assert bool((seg.calibrated_score >= 0.0).all())
+    assert bool((seg.calibrated_score <= 1.0).all())
+
+
+def test_fit_e_calib_segment_particionam_o_ret_net_sob_split_legado() -> None:
+    """Split legado (`CALIB_SPLIT_LEGACY_RANDOM`, default) não purga nada
+    -- `fit`+`calib` é uma partição EXATA de todas as linhas de
+    `train_side_df`, sem overlap, sem sobra. Reconstrói o multiset
+    completo de `ret_net` pra provar que os valores de cada segmento vêm
+    das linhas certas, não um array inventado/desalinhado."""
+    df = _frame_com_t0_t1_uniqueness(n=120)  # noqa: magic-number
+    result = alpha.fit_side_model(df, **_base_kwargs())
+
+    assert result.fit_segment is not None
+    assert result.calib_segment is not None
+    combined = np.concatenate([result.fit_segment.ret_net, result.calib_segment.ret_net])
+    esperado = df["ret_net"].to_numpy().astype(np.float64)
+    np.testing.assert_array_equal(np.sort(combined), np.sort(esperado))
+
+
+def test_three_way_popula_os_3_segmentos_com_n_certo() -> None:
+    df = _frame_com_t0_t1_uniqueness(n=300)  # noqa: magic-number
+    result = alpha.fit_side_model(
+        df,
+        **_base_kwargs(),
+        early_stopping_mode=alpha.EARLY_STOPPING_THREE_WAY,
+        calib_split_mode=alpha.CALIB_SPLIT_TEMPORAL_PURGED,
+    )
+
+    assert result.fit_segment is not None
+    assert result.stop_segment is not None
+    assert result.calib_segment is not None
+    assert result.fit_segment.n == result.n_train_fit
+    assert result.stop_segment.n == result.n_train_stop
+    assert result.calib_segment.n == result.n_train_calib
+
+    # cada valor de `ret_net` de cada segmento veio de fato de uma linha
+    # real de `df` -- purge pode remover linhas (soma <= n, já provado
+    # acima), mas nunca inventa um valor que não estava lá.
+    universo = set(df["ret_net"].to_numpy().astype(np.float64).tolist())
+    for seg in (result.fit_segment, result.stop_segment, result.calib_segment):
+        assert set(seg.ret_net.tolist()) <= universo

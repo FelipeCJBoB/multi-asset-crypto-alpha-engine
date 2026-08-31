@@ -33,7 +33,18 @@ layering; `q10_minus_q1_bps` abaixo é um bucketing por rank muito mais
 simples, só a métrica de spread, não o perfil completo com CI95/t-stat
 que `attribution.py` já cobre para uso exploratório). Long e short nunca
 são pooled num único número: são classificadores/calibradores distintos,
-misturar os dois inventaria uma população que não existe."""
+misturar os dois inventaria uma população que não existe.
+
+**`compute_train_val_test_gap` (ADR-008 Fase 3)** — mesmas métricas
+aplicadas aos 3 sub-splits IN-SAMPLE que treinaram o modelo
+(`fit`/`stop`/`calib`, via `alpha.SideModelResult.fit_segment`/
+`stop_segment`/`calib_segment`), pooled entre folds do combo. Nunca a
+mesma população de `compute_score_quality` (OOF) — existe só para medir
+o generalization gap (`gap_fit_minus_stop`) contra o número OOF, nunca
+consumida por decisão de produção/gate. `y_true` usa a MESMA convenção
+de vitória econômica (`ret_net > 0`, não `label` bruto) que
+`compute_score_quality` — necessário pra `fit`/`stop`/`calib` e OOF
+serem comparáveis pela mesma definição."""
 
 from __future__ import annotations
 
@@ -44,6 +55,8 @@ import polars as pl
 import structlog
 from scipy.stats import rankdata
 from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, roc_auc_score
+
+from .alpha import FoldResult, InSampleSegmentScores
 
 logger = structlog.get_logger(__name__)
 
@@ -58,6 +71,16 @@ _SIDE_LABEL_BY_HAT: dict[int, str] = {1: "long", -1: "short"}
 _T0_DTYPE = pl.Datetime(time_unit="ms", time_zone="UTC")
 _MIN_CLASSES_FOR_AUC = 2  # noqa: magic-number -- roc_auc_score exige as 2 classes presentes
 _MIN_FOLDS_FOR_DISPERSION = 2  # noqa: magic-number -- desvio-padrão amostral (ddof=1) exige >=2 pontos
+_GAP_FIELDS: tuple[str, ...] = (
+    "roc_auc",
+    "pr_auc",
+    "log_loss",
+    "brier_score",
+    "pearson_ic",
+    "spearman_ic_pooled",
+    "ic_ir",
+    "q10_minus_q1_bps",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +285,138 @@ def compute_score_quality(
             roc_auc=result.roc_auc,
             spearman_ic_pooled=result.spearman_ic_pooled,
             ic_ir=result.ic_ir,
+        )
+
+    return tuple(results)
+
+
+@dataclass(frozen=True, slots=True)
+class TrainValTestGapResult:
+    """ADR-008 Fase 3 — mesma forma de `ScoreQualityResult`, mas sobre os
+    3 sub-splits IN-SAMPLE (`fit`/`stop`/`calib`) do MESMO fold/lado que
+    treinou o modelo — nunca o OOF (`compute_score_quality`). `stop` é
+    `None` fora de `EARLY_STOPPING_THREE_WAY` (nenhum fold do combo usou
+    o modo three-way). `gap_fit_minus_stop` mede o "generalization gap"
+    clássico train-vs-holdout: positivo em `roc_auc`/`ic_ir` = o modelo
+    performa melhor no que ele viu direto no gradiente (`fit`) do que no
+    bloco reservado pro early stopping (`stop`) — sinal de overfit;
+    dict vazio (não `NaN` por campo) se `stop` é `None`."""
+
+    side: str
+    fit: ScoreQualityResult | None
+    stop: ScoreQualityResult | None
+    calib: ScoreQualityResult | None
+    gap_fit_minus_stop: dict[str, float]
+
+
+def _score_quality_from_segments(
+    segments: list[InSampleSegmentScores], *, side: str
+) -> ScoreQualityResult | None:
+    """Pool de N segmentos in-sample (1 por fold, mesmo lado, mesmo
+    sub-split fit/stop/calib) na MESMA forma de `ScoreQualityResult` que
+    `compute_score_quality` produz para OOF — permite comparação direta
+    campo a campo entre `report["score_quality"]` e
+    `report["train_val_test_gap"]`. `None` se nenhum segmento tem `n>0`
+    (ex. `stop` fora de `EARLY_STOPPING_THREE_WAY`)."""
+    segments_nao_vazios = [s for s in segments if s.n > 0]
+    if not segments_nao_vazios:
+        return None
+
+    calibrated_score = np.concatenate([s.calibrated_score for s in segments_nao_vazios])
+    ret_net = np.concatenate([s.ret_net for s in segments_nao_vazios]).astype(np.float64)
+    # vitória ECONÔMICA (`ret_net > 0`), nunca `label` bruto -- mesma
+    # convenção de `compute_score_quality` acima (ver docstring do
+    # módulo), necessária pra OOF e in-sample serem comparáveis pela
+    # MESMA definição de "acerto".
+    y_true = (ret_net > 0.0).astype(np.int64)
+
+    auc, pr_auc, ll, brier = _classification_metrics(y_true, calibrated_score)
+    pearson_ic = _pearson_ic(calibrated_score, ret_net)
+    spearman_pooled = _spearman_ic(calibrated_score, ret_net)
+    q_spread = _q10_minus_q1_bps(calibrated_score, ret_net)
+
+    fold_ics: list[float] = []
+    for s in segments_nao_vazios:
+        ic = _spearman_ic(s.calibrated_score.astype(np.float64), s.ret_net.astype(np.float64))
+        if not np.isnan(ic):
+            fold_ics.append(ic)
+
+    ic_mean, ic_median, ic_std, ic_ir, pct_positive, ic_tstat = _ic_dispersion_stats(fold_ics)
+
+    return ScoreQualityResult(
+        side=side,
+        n_trades=int(calibrated_score.shape[0]),
+        n_folds_com_ic=len(fold_ics),
+        roc_auc=auc,
+        pr_auc=pr_auc,
+        log_loss=ll,
+        brier_score=brier,
+        pearson_ic=pearson_ic,
+        spearman_ic_pooled=spearman_pooled,
+        spearman_ic_mean_por_fold=ic_mean,
+        spearman_ic_median_por_fold=ic_median,
+        spearman_ic_std_por_fold=ic_std,
+        ic_ir=ic_ir,
+        pct_ic_positive=pct_positive,
+        ic_tstat=ic_tstat,
+        q10_minus_q1_bps=q_spread,
+    )
+
+
+def compute_train_val_test_gap(
+    fold_results: list[FoldResult],
+) -> tuple[TrainValTestGapResult, ...]:
+    """Aplica as métricas de `compute_score_quality` aos 3 sub-splits
+    in-sample já existentes (`alpha.py::_temporal_purged_three_way_split`,
+    via `SideModelResult.fit_segment`/`stop_segment`/`calib_segment`),
+    pooled entre TODOS os folds do combo — mesmo padrão de pooling entre
+    folds que `compute_score_quality` já usa. Um resultado por lado com
+    pelo menos 1 sub-split não-vazio; lado totalmente ausente (não
+    deveria acontecer — todo fold treina os 2 lados) fica fora da
+    tupla."""
+    results: list[TrainValTestGapResult] = []
+    for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
+        side_results = [
+            fr.long_result if side_value == 1 else fr.short_result for fr in fold_results
+        ]
+        fit_segments = [r.fit_segment for r in side_results if r.fit_segment is not None]
+        stop_segments = [r.stop_segment for r in side_results if r.stop_segment is not None]
+        calib_segments = [r.calib_segment for r in side_results if r.calib_segment is not None]
+
+        fit_result = _score_quality_from_segments(fit_segments, side=side_label)
+        stop_result = _score_quality_from_segments(stop_segments, side=side_label)
+        calib_result = _score_quality_from_segments(calib_segments, side=side_label)
+
+        if fit_result is None and stop_result is None and calib_result is None:
+            continue
+
+        gap: dict[str, float] = {}
+        if fit_result is not None and stop_result is not None:
+            for field_name in _GAP_FIELDS:
+                fit_v = getattr(fit_result, field_name)
+                stop_v = getattr(stop_result, field_name)
+                gap[field_name] = (
+                    float("nan")
+                    if (np.isnan(fit_v) or np.isnan(stop_v))
+                    else float(fit_v - stop_v)
+                )
+
+        results.append(
+            TrainValTestGapResult(
+                side=side_label,
+                fit=fit_result,
+                stop=stop_result,
+                calib=calib_result,
+                gap_fit_minus_stop=gap,
+            )
+        )
+        logger.info(
+            "analysis.train_val_test_gap.computed",
+            side=side_label,
+            n_fit=fit_result.n_trades if fit_result else 0,
+            n_stop=stop_result.n_trades if stop_result else 0,
+            n_calib=calib_result.n_trades if calib_result else 0,
+            gap_roc_auc=gap.get("roc_auc"),
         )
 
     return tuple(results)

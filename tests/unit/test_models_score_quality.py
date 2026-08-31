@@ -13,6 +13,7 @@ import polars as pl
 import pytest
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 
+from src.models import alpha
 from src.models import score_quality as sq
 
 _T0_DTYPE = pl.Datetime(time_unit="ms", time_zone="UTC")
@@ -271,3 +272,147 @@ def test_compute_score_quality_coluna_ausente_em_labels_levanta_valueerror() -> 
     labels = _labels_df([{"t0": _t0s(1)[0], "side": 1, "ret_net": 0.001}]).drop("ret_net")
     with pytest.raises(ValueError, match="ret_net"):
         sq.compute_score_quality(predictions, labels)
+
+
+# ============================================================================
+# compute_train_val_test_gap — ADR-008 Fase 3. Mesmas fórmulas de
+# `compute_score_quality` acima, aplicadas aos segmentos IN-SAMPLE
+# (`fit`/`stop`/`calib`) em vez do join OOF. Fakes duck-typed mínimos
+# (mesmo padrão de `_FakeFoldResult` em `test_models_backtest_lite.py`) --
+# construir um `SideModelResult`/`FoldResult` real exigiria booster/
+# calibrador/HHI completos, irrelevante pro que esta função lê
+# (`.fit_segment`/`.stop_segment`/`.calib_segment`, `.long_result`/
+# `.short_result`).
+# ============================================================================
+
+
+def _segment(
+    calibrated_score: list[float], label: list[int], ret_net: list[float]
+) -> alpha.InSampleSegmentScores:
+    return alpha.InSampleSegmentScores(
+        n=len(calibrated_score),
+        calibrated_score=np.array(calibrated_score, dtype=np.float64),
+        label=np.array(label, dtype=np.int64),
+        ret_net=np.array(ret_net, dtype=np.float64),
+    )
+
+
+class _FakeSideModelResult:
+    def __init__(
+        self,
+        fit_segment: alpha.InSampleSegmentScores | None = None,
+        stop_segment: alpha.InSampleSegmentScores | None = None,
+        calib_segment: alpha.InSampleSegmentScores | None = None,
+    ) -> None:
+        self.fit_segment = fit_segment
+        self.stop_segment = stop_segment
+        self.calib_segment = calib_segment
+
+
+class _FakeFoldResult:
+    def __init__(
+        self, long_result: _FakeSideModelResult, short_result: _FakeSideModelResult
+    ) -> None:
+        self.long_result = long_result
+        self.short_result = short_result
+
+
+def test_compute_train_val_test_gap_fit_separacao_perfeita_mesma_formula_score_quality() -> None:
+    """Mesmo cenário de separação perfeita de
+    `test_compute_score_quality_separacao_perfeita_auc_1_e_ic_positivo`,
+    mas sobre o segmento `fit` in-sample -- prova que a agregação usa
+    EXATAMENTE a mesma fórmula (cross-check direto contra sklearn), não
+    uma versão paralela divergente. `stop`/`calib` ausentes (short sem
+    nenhum segmento) -- só `long` aparece na tupla."""
+    calibrated_score = [0.1, 0.4, 0.6, 0.9]  # noqa: magic-number
+    ret_net = [-0.002, -0.001, 0.003, 0.004]  # noqa: magic-number
+    label = [0, 0, 1, 1]
+    fit_seg = _segment(calibrated_score, label, ret_net)
+    fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=fit_seg), _FakeSideModelResult())
+
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+
+    assert len(out) == 1
+    r = out[0]
+    assert r.side == "long"
+    assert r.fit is not None
+    assert r.fit.n_trades == 4
+    y_true = np.array([0, 0, 1, 1])
+    assert r.fit.roc_auc == pytest.approx(float(roc_auc_score(y_true, np.array(calibrated_score))))
+    assert r.stop is None
+    assert r.calib is None
+    assert r.gap_fit_minus_stop == {}
+
+
+def test_compute_train_val_test_gap_pool_fit_entre_2_folds() -> None:
+    seg_a = _segment([0.2, 0.8], [0, 1], [-0.001, 0.002])  # noqa: magic-number
+    seg_b = _segment([0.3, 0.9], [0, 1], [-0.002, 0.003])  # noqa: magic-number
+    fold_a = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_a), _FakeSideModelResult())
+    fold_b = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_b), _FakeSideModelResult())
+
+    out = sq.compute_train_val_test_gap([fold_a, fold_b])  # type: ignore[arg-type]
+
+    r = out[0]
+    assert r.fit is not None
+    assert r.fit.n_trades == 4  # 2 + 2 pooled entre os 2 folds
+    assert r.fit.n_folds_com_ic == 2  # 1 IC por fold, ambos computáveis (n=2 >= 2)
+
+
+def test_compute_train_val_test_gap_deltas_conferidos_a_mao() -> None:
+    """`fit` com separação perfeita (roc_auc=1,0), `stop` com separação
+    invertida (roc_auc=0,0) -- `gap_fit_minus_stop["roc_auc"]` tem que
+    ser exatamente 1,0-0,0=1,0, não uma aproximação."""
+    fit_seg = _segment([0.1, 0.9], [0, 1], [-0.001, 0.002])  # noqa: magic-number
+    stop_seg = _segment([0.9, 0.1], [0, 1], [-0.001, 0.002])  # noqa: magic-number
+    fold = _FakeFoldResult(
+        _FakeSideModelResult(fit_segment=fit_seg, stop_segment=stop_seg), _FakeSideModelResult()
+    )
+
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    r = out[0]
+
+    assert r.fit is not None
+    assert r.stop is not None
+    assert r.fit.roc_auc == pytest.approx(1.0)
+    assert r.stop.roc_auc == pytest.approx(0.0)
+    assert r.gap_fit_minus_stop["roc_auc"] == pytest.approx(1.0)
+
+
+def test_compute_train_val_test_gap_y_true_e_vitoria_economica_nao_label_bruto() -> None:
+    """`label` (TP/not-TP bruto) e `ret_net>0` (vitória econômica)
+    DIVERGEM deliberadamente aqui -- se a implementação usasse `label`
+    bruto como `y_true`, `roc_auc` seria 0,0 (ordem invertida); usando
+    vitória econômica (mesma convenção de `compute_score_quality`), é
+    1,0. Prova que a convenção documentada é real, não só descrita."""
+    calibrated_score = [0.1, 0.9]  # noqa: magic-number
+    label = [1, 0]  # oposto do sinal de `ret_net` abaixo, de propósito
+    ret_net = [-0.001, 0.002]  # noqa: magic-number -- vitória econômica = [0, 1], oposto de `label`
+    seg = _segment(calibrated_score, label, ret_net)
+    fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg), _FakeSideModelResult())
+
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    r = out[0]
+
+    assert r.fit is not None
+    assert r.fit.roc_auc == pytest.approx(1.0)
+
+
+def test_compute_train_val_test_gap_nenhum_segmento_em_nenhum_lado_devolve_tupla_vazia() -> None:
+    fold = _FakeFoldResult(_FakeSideModelResult(), _FakeSideModelResult())
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    assert out == ()
+
+
+def test_compute_train_val_test_gap_segmento_n_zero_tratado_como_ausente() -> None:
+    """Segmento com `n=0` (arrays vazios) não deve contaminar o pool nem
+    aparecer como um resultado `NaN` -- tratado como ausente, mesmo
+    contrato de lado sem trade em `compute_score_quality`."""
+    seg_vazio = alpha.InSampleSegmentScores(
+        n=0,
+        calibrated_score=np.array([], dtype=np.float64),
+        label=np.array([], dtype=np.int64),
+        ret_net=np.array([], dtype=np.float64),
+    )
+    fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_vazio), _FakeSideModelResult())
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    assert out == ()

@@ -1339,6 +1339,12 @@ def run_layer1_sprint(
     # `df_all` que `backtest_by_path` já usa).
     c1_score_quality = score_quality.compute_score_quality(preds_c1, mf.data)
     c0_score_quality = score_quality.compute_score_quality(preds_c0, mf.data)
+    # ADR-008 Fase 3 -- gap fit/stop/calib (generalization gap in-sample vs.
+    # OOF do bloco acima), mesmo zero-retreino -- lê os `*_segment` já
+    # anexados a `SideModelResult` por `alpha.fit_side_model` durante o
+    # treino que já rodou.
+    c1_train_val_test_gap = score_quality.compute_train_val_test_gap(camada1_folds)
+    c0_train_val_test_gap = score_quality.compute_train_val_test_gap(camada0_folds)
     n_better, n_total = backtest_lite.permanence_count(c1_by_path, c0_by_path)
     min_paths_required = int(load_constant("alpha_layer1_permanence_min_paths"))
     # `permanence_pass` só é atribuído depois de `n_paths_significant` mais
@@ -1806,6 +1812,15 @@ def run_layer1_sprint(
         "score_quality": {
             "camada1_by_side": [asdict(r) for r in c1_score_quality],
             "camada0_by_side": [asdict(r) for r in c0_score_quality],
+        },
+        # ADR-008 Fase 3 -- mesma forma de "score_quality", mas sobre os
+        # 3 sub-splits IN-SAMPLE (fit/stop/calib) que treinaram o modelo,
+        # nunca o OOF acima. `gap_fit_minus_stop` dentro de cada entrada
+        # mede overfit (fit vs. o bloco reservado pro early stopping);
+        # dict vazio quando o combo não roda EARLY_STOPPING_THREE_WAY.
+        "train_val_test_gap": {
+            "camada1_by_side": [asdict(r) for r in c1_train_val_test_gap],
+            "camada0_by_side": [asdict(r) for r in c0_train_val_test_gap],
         },
         "hhi": {
             "long_by_fold": hhi_values_long,
