@@ -2703,6 +2703,52 @@ alpha_prune_max_gate_fpr:
   sweep_range: [0.10, 0.30]
   review_by: "TBD -- Manager decide após Item 3 completo (ADR-007)"
 
+alpha_production_hyperparam_override:
+  value:
+    SOLUSDT_R3: "20260831T024607Z"
+    XRPUSDT_R2: "20260830T143204Z"
+    XRPUSDT_R3: "20260830T143204Z"
+    BTCUSDT_R2: "20260830T143204Z"
+    SOLUSDT_R2: "20260830T143204Z"
+  provenance: ASSUMED
+  source: >
+    Decisão explícita do Manager (2026-08-31) — override do gate duplo
+    calibrado (ADR-007 Itens 2/3: ZERO/6 combos passam o gate sob
+    confirmação profunda; FPR do próprio gate medido em 0-8% pelo Item
+    3, confiável — a ausência de aprovação automática NÃO é falha de
+    instrumento). Critério: MENOR viés de seleção de Camada1 (screening
+    − mediana confirmada) entre as duas medições reais disponíveis por
+    combo — H10 (top-3, 5 seeds, busca de 30 trials, `AG-382`/`AG-383`)
+    vs. Item 2 desta ADR (top-6, 10 seeds, busca de 150 trials) — SALVO
+    quando o gap de viés é trivial E o gap de edge líquido é real (achado
+    do Manager, mesma sessão, ao revisar o mapeamento inicial): `SOLUSDT/
+    R3` tem gap de viés desprezível (0,172 vs 0,185) mas ganho de edge
+    real e robusto no Item 2 (+6,3bps, 9/10 seeds positivas em faixa
+    16,6-39,3bps, já verificado por seed) — usa Item 2 (`depois`), não
+    H10. `XRPUSDT/R3` é o caso oposto: ganho de edge do Item 2 é ruído
+    (+0,6bps) contra gap de viés real (0,216→0,467) e distribuição por
+    seed mais dispersa/instável (3/10 seeds <6bps, 1 negativa) — usa H10
+    (`antes`). Os outros 3 (`BTCUSDT/R2`, `SOLUSDT/R2`, `XRPUSDT/R2`)
+    não têm conflito: H10 vence em edge E em viés nos dois, sem
+    ambiguidade. `BTCUSDT/R3` (único combo que já passou H10 em algum
+    momento) deliberadamente FORA desta lista — decisão do Manager de
+    focar nos 5, não nos 6 medidos.
+
+    `run_stamp` aponta pro JSON real em `experiments/alpha_optuna_
+    confirmation_{symbol}_{resolution_id}_{run_stamp}.json` (schema
+    `AG-383`-addendum, campo `camada{1,0}.winner.hyper`). Consumido por
+    `src.models.hyperparams_by_combo.load_production_override`, checado
+    ANTES do mecanismo automático content-addressed
+    (`load_hyperparams_by_combo`) em `pipeline.run_layer1_sprint_all_
+    combinations` — override explícito, não redescoberta automática (o
+    hash content-addressed não pode representar honestamente um
+    "vencedor confirmado" pós-hoc entre 6 candidatos × 10 seeds sob um
+    `n_trials`/`sampler_seed` de estudo único, e forjar esses campos pra
+    bater o hash atual falsificaria a proveniência que o mecanismo
+    `AG-371` existe pra proteger).
+  class: B
+  sweep_required: false
+
 alpha_ag220_calibration_n_repeats:
   value: 50
   provenance: LITERATURE

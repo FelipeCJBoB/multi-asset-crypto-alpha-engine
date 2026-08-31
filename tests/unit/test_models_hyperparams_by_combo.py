@@ -132,6 +132,69 @@ def test_base_explicito_e_sobreposto_pelos_campos_do_artefato(
     assert result.max_depth == 2
 
 
+_CONFIRMATION_JSON: dict[str, Any] = {
+    "symbol": "SOLUSDT",
+    "resolution_id": "R3",
+    "camada1": {"winner": {"hyper": {"num_leaves": 18, "learning_rate": 0.0177}}},
+    "camada0": {"winner": {"hyper": {"num_leaves": 44, "learning_rate": 0.0063}}},
+}
+
+
+def test_production_override_ausente_retorna_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Combo fora de `alpha_production_hyperparam_override` -- mesmo
+    contrato de "ausente" que `load_hyperparams_by_combo` já usa (cai pro
+    próximo nível do fallback chain, decidido pelo CALLER)."""
+    monkeypatch.setattr(mod, "load_constant", lambda name: {})
+
+    result = mod.load_production_override("BTCUSDT", "R1", "camada1")
+
+    assert result is None
+
+
+def test_production_override_presente_le_vencedor_confirmado_real(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Combo presente no override -- lê `camada{variant}.winner.hyper` do
+    JSON real de confirmação (`hyperparams_optuna.py --confirm`), nunca
+    recalcula, nunca chama o mecanismo content-addressed."""
+    (tmp_path / "alpha_optuna_confirmation_SOLUSDT_R3_20260831T024607Z.json").write_text(
+        __import__("json").dumps(_CONFIRMATION_JSON), encoding="utf-8"
+    )
+    monkeypatch.setattr(mod, "EXPERIMENTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        mod,
+        "load_constant",
+        lambda name: {"SOLUSDT_R3": "20260831T024607Z"},
+    )
+
+    result_c1 = mod.load_production_override("SOLUSDT", "R3", "camada1")
+    result_c0 = mod.load_production_override("SOLUSDT", "R3", "camada0")
+
+    assert isinstance(result_c1, LGBMHyperparams)
+    assert result_c1.num_leaves == 18
+    assert result_c1.learning_rate == 0.0177
+    assert isinstance(result_c0, LGBMHyperparams)
+    assert result_c0.num_leaves == 44
+
+
+def test_production_override_run_stamp_sem_json_levanta_erro_claro(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`alpha_production_hyperparam_override` aponta pra um run_stamp sem
+    JSON real gravado -- falha alto com mensagem acionável, nunca em
+    silêncio (Regra Zero) -- diferente de "combo ausente", que é `None`
+    esperado."""
+    monkeypatch.setattr(mod, "EXPERIMENTS_DIR", tmp_path)
+    monkeypatch.setattr(
+        mod, "load_constant", lambda name: {"SOLUSDT_R3": "20990101T000000Z"}
+    )
+
+    with pytest.raises(FileNotFoundError, match="load_production_override"):
+        mod.load_production_override("SOLUSDT", "R3", "camada1")
+
+
 def test_lookup_usa_stage_e_partition_corretos(monkeypatch: pytest.MonkeyPatch) -> None:
     """Plumbing real: `stage`/`symbol`/`resolution` chegam em `artifact_
     exists` exatamente como `hyperparams_optuna.OPTUNA_HYPERPARAMS_STAGE`

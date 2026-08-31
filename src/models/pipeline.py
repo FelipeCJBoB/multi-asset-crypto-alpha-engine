@@ -1999,7 +1999,25 @@ def run_layer1_sprint_all_combinations(
             report_path = EXPERIMENTS_DIR / f"alpha_layer1_report_{run_tag}.json"
             hyper_camada1: alpha.LGBMHyperparams | None = None
             hyper_camada0: alpha.LGBMHyperparams | None = None
-            if use_hyperparams_by_combo:
+            # Override manual (decisão explícita do Manager, `alpha_
+            # production_hyperparam_override`) vence a descoberta
+            # automática -- checado independente de `use_hyperparams_by_
+            # combo`, que só controla o mecanismo AUTOMÁTICO content-
+            # addressed. Ausência aqui (combo não listado) cai pro
+            # comportamento de sempre, sem mudança.
+            hyper_camada1 = hyperparams_by_combo.load_production_override(
+                symbol, resolution_id, alpha.VARIANT_CAMADA1
+            )
+            hyper_camada0 = hyperparams_by_combo.load_production_override(
+                symbol, resolution_id, alpha.VARIANT_CAMADA0
+            )
+            if hyper_camada1 is not None or hyper_camada0 is not None:
+                logger.info(
+                    "models.pipeline.hyperparams_production_override_aplicado",
+                    symbol=symbol,
+                    resolution_id=resolution_id,
+                )
+            elif use_hyperparams_by_combo:
                 hyper_camada1 = hyperparams_by_combo.load_hyperparams_by_combo(
                     symbol,
                     resolution_id,

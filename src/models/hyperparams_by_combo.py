@@ -23,6 +23,7 @@ pacote."""
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import structlog
 
@@ -30,12 +31,59 @@ from src.io import artifact as io_artifact
 
 from . import hyperparams_optuna
 from ._constants import load_constant
-from ._paths import ARTIFACT_ROOT
+from ._paths import ARTIFACT_ROOT, EXPERIMENTS_DIR
 from .alpha import LGBMHyperparams
 
 logger = structlog.get_logger(__name__)
 
 _HYPER_FIELD_NAMES: tuple[str, ...] = tuple(f.name for f in dataclasses.fields(LGBMHyperparams))
+
+
+def load_production_override(
+    symbol: str, resolution_id: str, variant: str, *, base: LGBMHyperparams | None = None
+) -> LGBMHyperparams | None:
+    """Override MANUAL, fora do mecanismo automático content-addressed —
+    decisão explícita do Manager registrada em
+    `alpha_production_hyperparam_override` (`constants.yaml`, proveniência
+    completa lá). Checado pelo CALLER (`pipeline.run_layer1_sprint_all_
+    combinations`) ANTES de `load_hyperparams_by_combo`: um combo aqui
+    presente vence a descoberta automática; um combo ausente devolve
+    `None` e cai pro próximo nível do mesmo fallback chain (mecanismo
+    automático, depois `LGBMHyperparams.from_constants()`) — mesmo
+    contrato de "ausente" que `load_hyperparams_by_combo` já usa, não um
+    novo tipo de falha silenciosa.
+
+    Lê o vencedor CONFIRMADO (não o de screening) direto do JSON real de
+    `hyperparams_optuna.py --confirm` (`AG-383`-addendum, gate duplo) —
+    nunca recalcula, nunca gera novo dado, só aponta pro `run_stamp` já
+    registrado na constante. `variant` (`alpha.VARIANT_CAMADA1`/
+    `VARIANT_CAMADA0`, valores `"camada1"`/`"camada0"`) bate 1:1 com a
+    chave de topo do JSON — sem tradução necessária."""
+    overrides: dict[str, str] = load_constant("alpha_production_hyperparam_override")
+    run_stamp = overrides.get(f"{symbol}_{resolution_id}")
+    if run_stamp is None:
+        return None
+    path = (
+        EXPERIMENTS_DIR
+        / f"alpha_optuna_confirmation_{symbol}_{resolution_id}_{run_stamp}.json"
+    )
+    if not path.exists():
+        raise FileNotFoundError(
+            f"load_production_override: {path} não existe -- "
+            "alpha_production_hyperparam_override (constants.yaml) aponta "
+            "pra um run_stamp que não tem JSON de confirmação real gravado"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    overrides_hyper = data[variant]["winner"]["hyper"]
+    base_hyper = base if base is not None else LGBMHyperparams.from_constants()
+    logger.info(
+        "models.hyperparams_by_combo.production_override_aplicado",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        run_stamp=run_stamp,
+    )
+    return dataclasses.replace(base_hyper, **overrides_hyper)
 
 
 def load_hyperparams_by_combo(
