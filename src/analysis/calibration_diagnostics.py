@@ -438,6 +438,53 @@ def stratified_by_cost_tercile(df_side: pl.DataFrame) -> dict[str, Any]:
     return out
 
 
+# ============================================================================
+# ADR-008 Fase 2 (bloco 10/consultor) — estratificação por tempo de calendário
+# ============================================================================
+
+#: `t0.dt.<método>()` por granularidade — polars nativo, sem reimplementar
+#: aritmética de calendário. `day_of_week`: convenção polars `.dt.weekday()`
+#: é 1=segunda..7=domingo (ISO 8601), não 0-indexado.
+_TIME_GRANULARITY_EXTRACTORS: dict[str, str] = {
+    "hour": "hour",
+    "day_of_week": "weekday",
+    "month": "month",
+    "quarter": "quarter",
+}
+
+
+def stratified_by_time(df_side: pl.DataFrame, *, granularity: str) -> dict[str, Any]:
+    """Mesmo padrão de `stratified_by_regime`/`stratified_by_cost_tercile`
+    — só a fonte do bucket muda (derivado de `t0` via `.dt.<método>()` do
+    polars, não uma coluna categórica já existente). `granularity` ∈
+    `{"hour", "day_of_week", "month", "quarter"}` — pergunta do consultor
+    (bloco 10): "em que condições de TEMPO o modelo deixa de funcionar?",
+    não só regime/vol/liquidez estrutural (já cobertos pelas duas funções
+    irmãs acima)."""
+    if granularity not in _TIME_GRANULARITY_EXTRACTORS:
+        raise ValueError(
+            f"stratified_by_time: granularity={granularity!r} desconhecida -- "
+            f"opções: {sorted(_TIME_GRANULARITY_EXTRACTORS)}"
+        )
+    method = _TIME_GRANULARITY_EXTRACTORS[granularity]
+    with_bucket = df_side.with_columns(
+        getattr(pl.col("t0").dt, method)().alias("_time_bucket")
+    )
+    out: dict[str, Any] = {}
+    buckets = sorted(
+        v for v in with_bucket["_time_bucket"].unique().to_list() if v is not None
+    )
+    for bucket in buckets:
+        sub = with_bucket.filter(pl.col("_time_bucket") == bucket)
+        profile = decile_profile(sub)
+        out[str(bucket)] = {
+            "n_total": sub.height,
+            "decile_profile": profile,
+            "correlations": _rank_correlations(profile),
+        }
+    return out
+
+
 def congruent_incongruent_subsets(
     predictions: pl.DataFrame,
     labels: pl.DataFrame,

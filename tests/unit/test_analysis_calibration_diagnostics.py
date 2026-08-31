@@ -301,6 +301,74 @@ def test_stratified_by_cost_tercile_amostra_insuficiente_devolve_zeros() -> None
 
 
 # ============================================================================
+# ADR-008 Fase 2 (bloco 10/consultor) -- stratified_by_time
+# ============================================================================
+
+
+def test_stratified_by_time_hour_agrupa_por_hora_do_dia() -> None:
+    """24 trades, 1 por hora (0..23) -- cada bucket de hora tem n_total=1."""
+    t0s = [_BASE + timedelta(hours=i) for i in range(24)]
+    rows = [
+        {"t0": t0s[i], "confidence": float(i), "barrier_hit": "TP", "ret_net": 0.001}
+        for i in range(24)
+    ]
+    out = cd.stratified_by_time(_pop_df(rows), granularity="hour")
+    assert set(out.keys()) == {str(h) for h in range(24)}
+    for h in range(24):
+        assert out[str(h)]["n_total"] == 1
+
+
+def test_stratified_by_time_day_of_week_convencao_polars_1_segunda_7_domingo() -> None:
+    """`_BASE` = 2024-01-01, uma SEGUNDA -- 7 dias consecutivos cobrem
+    weekday 1..7 (convenção ISO 8601 do polars), um trade por dia."""
+    t0s = _t0s(7)
+    rows = [
+        {"t0": t0s[i], "confidence": float(i), "barrier_hit": "TP", "ret_net": 0.001}
+        for i in range(7)
+    ]
+    out = cd.stratified_by_time(_pop_df(rows), granularity="day_of_week")
+    assert set(out.keys()) == {str(d) for d in range(1, 8)}
+    # 2024-01-01 e segunda-feira -- weekday()==1 (ISO), primeiro dia da lista
+    assert out["1"]["n_total"] == 1
+
+
+def test_stratified_by_time_quarter_agrupa_meses_no_mesmo_trimestre() -> None:
+    """Jan+Fev (Q1) e Abr (Q2) -- 2 trimestres distintos."""
+    rows = [
+        {
+            "t0": datetime(2024, 1, 15, tzinfo=UTC),
+            "confidence": 0.1,
+            "barrier_hit": "TP",
+            "ret_net": 0.001,
+        },
+        {
+            "t0": datetime(2024, 2, 15, tzinfo=UTC),
+            "confidence": 0.2,
+            "barrier_hit": "TP",
+            "ret_net": 0.001,
+        },
+        {
+            "t0": datetime(2024, 4, 15, tzinfo=UTC),
+            "confidence": 0.3,
+            "barrier_hit": "TP",
+            "ret_net": 0.001,
+        },
+    ]
+    out = cd.stratified_by_time(_pop_df(rows), granularity="quarter")
+    assert set(out.keys()) == {"1", "2"}
+    assert out["1"]["n_total"] == 2  # jan+fev
+    assert out["2"]["n_total"] == 1  # abr
+
+
+def test_stratified_by_time_granularity_invalida_levanta_valueerror() -> None:
+    df = _pop_df(
+        [{"t0": _t0s(1)[0], "confidence": 0.5, "barrier_hit": "TP", "ret_net": 0.001}]
+    )
+    with pytest.raises(ValueError, match="year_invalida_que_nao_existe"):
+        cd.stratified_by_time(df, granularity="year_invalida_que_nao_existe")
+
+
+# ============================================================================
 # congruent_incongruent_subsets — reproduz o achado da Fase E
 # ============================================================================
 
