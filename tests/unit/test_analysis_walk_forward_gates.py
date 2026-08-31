@@ -120,6 +120,8 @@ def _stability_result(auc_long: float, auc_short: float) -> sm.StabilityMatrixRe
             },
         },
         top_feature_frequency_by_side={"long": {}, "short": {}},
+        top_shap_feature_frequency_by_side={"long": {}, "short": {}},
+        gain_shap_agreement_rate_by_side={"long": float("nan"), "short": float("nan")},
     )
 
 

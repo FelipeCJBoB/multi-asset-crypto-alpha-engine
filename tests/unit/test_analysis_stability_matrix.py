@@ -20,10 +20,11 @@ def _fold(
     *,
     degenerado: bool = False,
     gain_by_side: dict[str, dict[str, float]] | None = None,
+    shap_by_side: dict[str, dict[str, float]] | None = None,
     score_quality_by_side: dict[str, dict[str, Any]] | None = None,
     decile_profile_by_side: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    fold: dict[str, Any] = {
         "fold_id": fold_id,
         "degenerado": degenerado,
         "gain_by_column_by_side": gain_by_side if gain_by_side is not None else {},
@@ -32,6 +33,12 @@ def _fold(
             decile_profile_by_side if decile_profile_by_side is not None else {}
         ),
     }
+    # deliberadamente OPCIONAL na fixture (não setado por default) --
+    # prova que artefatos do schema antigo (pré-Fase 7, sem esta chave)
+    # não quebram `build_stability_matrix`.
+    if shap_by_side is not None:
+        fold["shap_mean_abs_by_side"] = shap_by_side
+    return fold
 
 
 def _payload(
@@ -243,3 +250,152 @@ def test_build_stability_matrix_propaga_metadados_do_payload() -> None:
     assert out.n_folds_total == 12  # noqa: magic-number
     assert out.n_folds_usados == 4  # noqa: magic-number
     assert out.rows == ()
+
+
+# ============================================================================
+# SHAP (ADR-008 Fase 7) -- top_feature_by_shap, top_shap_feature_
+# frequency_by_side, gain_shap_agreement_rate_by_side
+# ============================================================================
+
+
+def test_build_stability_matrix_sem_chave_shap_top_feature_by_shap_e_none() -> None:
+    """Artefato do schema antigo (pré-Fase 7, `_fold` sem `shap_by_side`)
+    não quebra -- `top_feature_by_shap` fica `None`, `share` fica `NaN`,
+    mesma convenção de ausência dos outros eixos."""
+    payload = _payload(
+        [_fold(0, gain_by_side={"long": {"A": 1.0}})],
+        n_folds_total=1,
+        n_folds_usados=1,
+    )
+
+    out = _build(payload)
+
+    row = next(r for r in out.rows if r.side == "long")
+    assert row.top_feature_by_shap is None
+    assert np.isnan(row.top_feature_shap_share)
+
+
+def test_build_stability_matrix_top_feature_por_shap_conferido_a_mao() -> None:
+    payload = _payload(
+        [
+            _fold(
+                0,
+                gain_by_side={"long": {"A": 1.0}},
+                shap_by_side={"long": {"A": 0.1, "B": 0.3, "C": 0.05}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            ),
+        ],
+        n_folds_total=1,
+        n_folds_usados=1,
+    )
+
+    out = _build(payload)
+
+    row = next(r for r in out.rows if r.side == "long")
+    assert row.top_feature_by_shap == "B"
+    assert row.top_feature_shap_share == pytest.approx(0.3 / 0.45)  # noqa: magic-number
+
+
+def test_build_stability_matrix_shap_vazio_ou_zero_devolve_none() -> None:
+    payload = _payload(
+        [
+            _fold(0, gain_by_side={"long": {"A": 1.0}}, shap_by_side={"long": {}}),
+            _fold(
+                1,
+                gain_by_side={"long": {"A": 1.0}},
+                shap_by_side={"long": {"A": 0.0, "B": 0.0}},
+            ),
+        ],
+        n_folds_total=2,
+        n_folds_usados=2,
+    )
+
+    out = _build(payload)
+
+    assert len(out.rows) == 2
+    for row in out.rows:
+        assert row.top_feature_by_shap is None
+        assert np.isnan(row.top_feature_shap_share)
+
+
+def test_build_stability_matrix_top_shap_feature_frequency_conferida_a_mao() -> None:
+    """3 folds long: SHAP aponta A 2x, B 1x -> frequência {A: 2/3, B: 1/3}."""
+    payload = _payload(
+        [
+            _fold(
+                i,
+                gain_by_side={"long": {"A": 1.0}},
+                shap_by_side={"long": {"A": 0.9, "B": 0.1}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            )
+            for i in range(2)
+        ]
+        + [
+            _fold(
+                2,
+                gain_by_side={"long": {"A": 1.0}},
+                shap_by_side={"long": {"A": 0.1, "B": 0.9}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            )
+        ],
+        n_folds_total=3,  # noqa: magic-number
+        n_folds_usados=3,  # noqa: magic-number
+    )
+
+    out = _build(payload)
+
+    freq = out.top_shap_feature_frequency_by_side["long"]
+    assert list(freq.keys()) == ["A", "B"]
+    assert freq["A"] == pytest.approx(2.0 / 3.0)  # noqa: magic-number
+    assert freq["B"] == pytest.approx(1.0 / 3.0)  # noqa: magic-number
+
+
+def test_build_stability_matrix_gain_shap_agreement_rate_conferida_a_mao() -> None:
+    """3 folds long: fold 0/1 gain e SHAP concordam (A), fold 2 divergem
+    (gain=A, SHAP=B) -> taxa de concordância = 2/3."""
+    payload = _payload(
+        [
+            _fold(
+                0,
+                gain_by_side={"long": {"A": 10.0, "B": 1.0}},  # noqa: magic-number
+                shap_by_side={"long": {"A": 0.9, "B": 0.1}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            ),
+            _fold(
+                1,
+                gain_by_side={"long": {"A": 10.0, "B": 1.0}},  # noqa: magic-number
+                shap_by_side={"long": {"A": 0.9, "B": 0.1}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            ),
+            _fold(
+                2,
+                gain_by_side={"long": {"A": 10.0, "B": 1.0}},  # noqa: magic-number
+                shap_by_side={"long": {"A": 0.1, "B": 0.9}},  # noqa: magic-number
+                score_quality_by_side={"long": _sq(0.5, 0.6, 0.7, 10)},  # noqa: magic-number
+                decile_profile_by_side={"long": _decile(5.0)},  # noqa: magic-number
+            ),
+        ],
+        n_folds_total=3,  # noqa: magic-number
+        n_folds_usados=3,  # noqa: magic-number
+    )
+
+    out = _build(payload)
+
+    assert out.gain_shap_agreement_rate_by_side["long"] == pytest.approx(2.0 / 3.0)  # noqa: magic-number
+
+
+def test_build_stability_matrix_agreement_rate_nan_sem_linha_com_os_dois_tops() -> None:
+    payload = _payload(
+        [_fold(0, gain_by_side={"long": {"A": 1.0}})],  # sem shap_by_side
+        n_folds_total=1,
+        n_folds_usados=1,
+    )
+
+    out = _build(payload)
+
+    assert np.isnan(out.gain_shap_agreement_rate_by_side["long"])
