@@ -860,7 +860,7 @@ proposta a confirmar, não como verdade estabelecida:
 | V41-7 — Pesos + Features | ≤3 | ⬜ não iniciado — depende de V41-6 | `PRD_V4_1.md` §4.2 |
 | V41-8 — Controle 19 (risco agregado) + sizing por ativo | 0 | 🟡 **parcial** — Controle 19 (`control_19_risco_agregado`, `src/risk/limits.py`) IMPLEMENTADO 2026-08-17, desacoplado da sequência (`AG-081`, autorizado pelo Manager): risco já quantificado (§5.3, ρ≈0,91 = 4,82x, cap efetivo 2 posições), não precisava esperar V41-5/6/7. `NOT_COMPUTABLE` em produção até existir rastreador de posições live + série de correlação (Sprint 12+). `aggregate_risk_max` (classe A, `ASSUMED`) e "sizing por ativo" (§5.4) seguem não iniciados. **[CORRIGIDO 2026-08-22, `AG-144`]**: `ρ≈0,91` nunca teve janela/proveniência declarada — remedido sobre dado real (5 símbolos, log-retornos 15m, 4 janelas): média entre pares fica em 0,70 (histórica completa) a 0,83 (180d), nunca 0,91; instável (range até 0,23/par). Multiplicador de 5 posições recalculado: 4,36x-4,65x, não 4,82x — mas **o cap efetivo de 2 posições é ROBUSTO à correção** (precisaria ρ≤0,167 pra N=3 caber no limite de 1,00%, nenhuma janela medida chega perto). Achado colateral: a mesma correlação mais baixa/instável enfraquece a leitura de que os 5 ativos "seriam ~1 aposta só" (§2.8) — converge com `M6` (Fator Comum, H0 rejeitada, I²=96-98%, componente idiossincrático real). Detalhe completo: `audit/evidence_ledger.yaml::ag144-correlacao-cross-asset-15m-4-janelas`, `audit/architecture_gaps_log.yaml::AG-144` | `PRD_V4_1.md` §5.3, `AG-081`, `AG-144` |
 | V41-9 — Calibração + `confidence_rank` | 0 | ⬜ não iniciado — `confidence_rank` existe (§5.12 do V3.2) mas nunca foi avaliado | `PRD_V4_1.md` §4.4 |
-| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🟢 **F0-F3 implementados** (2026-08-30, `§15.30`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30); **Grupo J desacoplado e movido para DEPOIS**. O gate "retreino do Alpha" CAIU (feito 2× em 08-23/08-28). Restam: Gate E0 não executado, `P0` (validação do nulo) e `P1`/`AG-151` (purge cross-símbolo) abertos. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc (E0 + 2 braços de doador + F6 + F6b + sweep + ablação) por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30` |
+| V41-10 — Meta-Model + Grupo J | ≤2 ⚠️ | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`); desenho travado v3 em 2026-08-22 (`§15.19`) — ADR-001 §3.7/§2.7 revogado pelo Manager; regime entra como feature, fonte **HMM k=4** por decisão do Manager (2026-08-30); **Grupo J desacoplado e movido para DEPOIS**. O gate "retreino do Alpha" CAIU (feito 2× em 08-23/08-28). Restam: Gate E0 não executado, `P0` (validação do nulo) e `P1`/`AG-151` (purge cross-símbolo) abertos. ⚠️ **o orçamento `≤2` é inconsistente** com a contabilidade do §11 do próprio design doc (E0 + 2 braços de doador + F6 + F6b + sweep + ablação) por 1-2 ordens de grandeza — não reconciliado; `N_lifetime` deixou de ser gate vinculante em `AG-077` | `docs/meta_model_design_doc_2026-08-22.md`, `§15.19`, `§15.30` |
 | — (novo, sem V41-N formal — item de arquitetura, não medição M-style) | Alpha multi-ativo × multi-resolução (LightGBM + GPU) | 🟢 **IMPLEMENTADO E TREINADO DE VERDADE (2026-08-23, `§15.20.2`)** — D-01 a D-18 codificados (`§15.20.1`), D-06 integrado (escopo estreito, fecha `AG-154`), 4 bugs reais achados e fechados rodando pela primeira vez contra dado de produção (`AG-199`/`AG-200`/`AG-202` fechados; `AG-201` aberto — GPU/CUDA inviável no Windows nativo, treino real rodou em CPU). Primeiro sweep completo (5 símbolos × R1/R2/R3 = 15 combinações): **3/15 (20%) passam o gate de permanência** (ETHUSDT/R1, SOLUSDT/R2, SOLUSDT/R3) — achado misto real, registrado em `audit/evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`, não decisão de promoção pra produção ainda. **Atualização 2026-08-27/28 (`AG-207`→`AG-362`→`AG-371`, ver `§15.29`)**: o sweep de 3/15 acima ficou obsoleto em 3 camadas — override T2→T1 (`AG-207`), reversão do gate marginal de `ADR-005 §2.2` (`AG-362`, `T1_FEATURE_IDS` 7→22), retreino canônico real sob 22 features (**0/15 `permanence_pass`**, sinal misto). `AG-371` corrigiu um viés estrutural real de Camada 0, mas a validação ficou CONFUNDIDA por uma sessão paralela mudando `T1_FEATURE_IDS` no meio do teste (22→29→36, últimos 2 não commitados) — decisão pendente do Manager sobre qual vetor é autoritativo. **Não citar "3/15 (20%)" nem "0/15" como veredito definitivo sem ler `§15.29`**. **[CORREÇÃO 2026-08-29, Changelog v3.57]** `AG-201` ("GPU/CUDA inviável no Windows nativo") **corrigido** — GPU real funciona via WSL2, ver §15.20 alínea D; `AG-371` **FECHADO** por reformulação (Optuna real substitui o YAML estático de hiperparâmetro por combo, não recalibração) | `docs/alpha_model_design_doc_2026-08-22.md`, `§15.20`, `§15.20.2`, `§15.29` |
 | V41-11 — Walk-forward + PBO + Lo | 0 | ⬜ não iniciado — `src/validation/walk_forward.py` não existe ainda | `PRD_V4_1.md` §4.6/§4.7 |
 | V41-12 — ~~DSR final, `N_lifetime`=60~~ — **REDEFINIDO 2026-08-28** | 0 | 🟡 Gate 6 = lucro entregue em Live Demo (`AG-077`, fechado). Definição operacional: "lucro" = PnL positivo E distinguível de ruído (mesmo framework de `economic_gate.py::is_distinguishable`); "Live Demo" = capital real reduzido (não testnet/paper), dentro de `capital_inicial_brl` (R$ 1.000, §0); janela mínima 1 mês. **N mínimo de trades e semântica AND/OR entre janela e N seguem TBD** (`AG-374`, parcial) | `PRD_V4_1.md` §6.1, `audit/architecture_gaps_log.yaml::AG-077`, `AG-374` |
@@ -1424,7 +1424,7 @@ ML LAYER
                                                                        não são gate de nada) -- ver linha 1205
                                                                        da tabela de cross-reference abaixo,
                                                                        as duas se complementam, não contradizem
-  11_META_MODEL        (src/models/meta_dataset.py — F0-F3 de §15.19/§15.30)  movido de 08 pra cá, pós-learner
+  11_META_MODEL        (src/models/meta.py+meta_dataset.py — F0-F5 de §15.19/§15.30/§15.31)  movido de 08 pra cá, pós-learner
   11b_DECISION_ENGINE  (não existe — PRD_V3_2 Parte VII §7.1-7.3)       AG-095 (2026-08-19): consome regime.tradeable
                                                                         direto, ficou fora deste modelo até agora.
                                                                         AG-143 (2026-08-22, aberto): o Gate 01
@@ -1477,7 +1477,7 @@ LIVE TRADING LAYER
 | `09_LEARNER` | sem equivalente ativo | `AG-079` fechado — gatilho de reabertura declarado em §4.3, não decisão sem critério. **[ATUALIZADO 2026-08-23]** deixou de ser hipotético: LightGBM treinado de verdade em 15 combinações reais (`§15.20.2`), resultado 3/15 gate de permanência — ver `evidence_ledger.yaml::alpha-lightgbm-sweep-15-combinacoes-2026-08-23`. **[NOVO 2026-08-24]** `AG-204` corrige `tp_atr_mult`/`sl_atr_mult` de produção pós-S1, retreino redisparado; ablação T2→T1 (H7) refuta promoção na Fase 1 — ver linha `09_LEARNER` da tabela ASCII acima |
 | `09b_CALIBRACAO` | V41-9 (Calibração+`confidence_rank`) | ⬜ não iniciado |
 | `10_VALIDACAO` | V41-11 (Walk-forward+PBO+Lo) | ⬜ não iniciado, `walk_forward.py` não existe. **Nota de leitura (`stage_readiness_audit`, 2026-08-22): esta linha e a linha `10_VALIDACAO` da tabela ASCII acima não se contradizem** — CPCV (`cpcv.py`) está completo e wired em produção real (`pipeline.py`); DSR/leakage (`dsr.py`/`leakage.py`) existem e são maduros mas não são gate de nada; PBO/CSCV e `walk_forward.py` (medição de decaimento do Alpha treinado, diferente de `volatility_walkforward.py`/`regime_utility.py`, que são seleção de componente M1/M4) simplesmente não existem — as duas linhas, juntas, dão o quadro completo |
-| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟢 **F0-F3 implementados** (2026-08-30, `§15.30`): `src/models/meta_dataset.py` (`build_meta_signal_table`, regra de doador `path_matched`, 4 asserções §10.1, `UniquenessDivergenceDiagnostic`, controle positivo de vazamento), `src/regime/artifact_hmm.py` (regime HMM k=4 persistido). F4-F8 pendentes. O gate do retreino do Alpha CAIU (retreino feito 2× em 08-23/08-28); o Gate E0 segue não executado e depende de `P0`/`P1` (`AG-151`) |
+| `11_META_MODEL` | V41-10 (Meta-Model) — **Grupo J desacoplado, movido para depois** (`§15.19`) | 🟢 **F0-F5 implementados** (2026-08-30, `§15.30`/`§15.31`): `src/models/meta_dataset.py` (`build_meta_signal_table`, regra de doador `path_matched`, 4 asserções §10.1, `UniquenessDivergenceDiagnostic`, controle positivo de vazamento), `src/regime/artifact_hmm.py` (regime HMM k=4 persistido), `src/models/meta.py` (`LogitL2Meta`/`BlockedGBMMeta`, `resolve_tau_meta` §8.3, `apply_meta_filter` veto-em-zero D-05, `write_meta_fold_bundle` D-17). F6-F8 pendentes. O gate do retreino do Alpha CAIU (retreino feito 2× em 08-23/08-28); o Gate E0 segue não executado e depende de `P0`/`P1` (`AG-151`) |
 | `11b_DECISION_ENGINE` | sem equivalente de medição | ⬜ não iniciado — `AG-095` (2026-08-19): estágio adicionado à tabela nesta data, existia no PRD_V3_2 (Parte VII) desde sempre mas nunca tinha entrado neste modelo; consome `regime.tradeable` (gate 01, §7.3) — consumidor real de Regime. **[DESATUALIZADO, `AG-123`]** lista original citava "Alpha" como um dos consumidores de Regime — caiu na Fase A de `§15.13` (2026-08-21): regime SAIU do vetor de treino do Alpha (`DESIGN_COLUMNS` só as 10 features T1), ADR-001 §2.7 ratificado (regime = gate, não feature). Consumidores reais hoje: Risk (`§15.13` Fase C, hoje desligado — ver `12_RISK_ENGINE`), Decision Engine (esta linha, não implementado — `AG-143`), Meta/Execução (não implementados) |
 | `12_RISK_ENGINE` | V41-8 (Controle 19+sizing) | 🟡 parcial — Controle 19 implementado (`AG-081`), sizing por ativo não. **[DESATUALIZADO, 3ª ocorrência confirmada `AG-123`]** "Regime wired" foi DESLIGADO de `evaluate_all()` em 2026-08-22 (`AG-114`/`AG-118`, commit `3c0d83d`) — função mantida definida/testada/exportada, não chamada |
 | `13_EXECUCAO` | sem equivalente de medição hoje | RPI vs. post-only (`§9.5.1`, `AG-078`) é Sprint 16, ainda distante |
@@ -5840,6 +5840,95 @@ commit `9becbaa`.
 
 ---
 
+### 15.31 Meta-model — F4/F5 (learner, tau_meta, serialização), e a otimização de EM do regime HMM (2026-08-30)
+
+Continuação direta de `§15.30`, mesmo dia.
+
+**F4 — `src/models/meta.py`.** `MetaLearner` (Protocol runtime-checkable):
+`fit`/`predict_score`/`coefficient_shares`/`serialize`. `predict_score`,
+nunca `predict_proba` (§7.1) — o consumo é por quantil in-fold e D-07
+removeu o calibrador, então o nome não pode sugerir probabilidade
+calibrada. `LogitL2Meta` (default e único habilitado) e `BlockedGBMMeta`
+(levanta em todos os métodos — não é placeholder, é o gate de §7.3
+materializado num objeto que falha em vez de um comentário que alguém
+pode não ler). `assert_sample_sufficient` (piso EPV sobre `Σ
+uniqueness_subpop` da classe minoritária, recalculado por fold) e
+`check_design_rank` (substitui a guarda de "variância zero" da v1, que
+não pega colinearidade — arquétipo real: `regime_tradeable`).
+
+`ScoreRankTransform` implementa a correção da v3 sobre o §3.4: o default
+do design matrix é `rank(score_alpha_raw)` dentro do fold, não z-score —
+`score_*_raw` já é `predict_proba(...)[:,1]`, já vive em `[0,1]`; a
+não-comparabilidade entre folds é do MAPEAMENTO score→P(y), que z-score
+(linear) não corrige. A implementação respeita B03 de um jeito que o
+design doc não detalhava: a CDF empírica é ajustada NO TREINO e o teste é
+mapeado através dela por busca binária — um `rankdata` sobre treino ∪
+teste vazaria de um jeito invisível a `leakage.py` (o teste #11 procura
+`fit` de objeto sklearn, e `rankdata` não tem `fit` nenhum).
+
+Warning investigado até a causa raiz, não silenciado: o §7.2 escreve
+`LogisticRegression(penalty="l2", ...)` literalmente; medido que
+`scikit-learn` 1.9.0 deprecou `penalty` (será removido em 1.10) — trocado
+por `l1_ratio=0.0`, portável também ao piso 1.5 de `pyproject.toml`.
+
+**F5 — `tau_meta` in-fold (§8.3) + serialização com linhagem (D-17).**
+`resolve_tau_meta`: grade de quantis a priori
+(`meta_tau_grid_quantiles`), escolhe o que MAXIMIZA a PnL líquida in-fold
+do subconjunto aceito, empate decidido pelo MENOR pass-rate. Corrige o
+mesmo defeito que a v3 já tinha identificado no epsilon de empate da v1
+(`1e-6` sobre PnL somada nunca dispara, reduz a regra a argmax puro):
+`meta_tau_tie_epsilon = 0,00055174`, `DERIVED` da mesma fórmula de
+`round_trip_cost_bps` (`maker_fee=0,0002`, `taker_fee=0,0005`,
+`round_trip_cost_bps_maker_prob=0,4942`) — verificado por cálculo direto
+nesta sessão, não copiado de proposta anterior sem checar. Teste
+dedicado reproduz o defeito exato: um gap de PnL de 0,0002 (maior que o
+`1e-6` da v1, menor que o custo real de 1 trade) não é tratado como
+empate sob o epsilon antigo e É tratado como empate sob o corrigido.
+
+`apply_meta_filter` — veto-em-zero contra AFML §10.3 (D-05): a função não
+tem nenhum caminho que produza valor de sinal diferente de `side_hat` ou
+`0` — é garantia estrutural, não um teste que poderia ser esquecido.
+
+`write_meta_fold_bundle`/`read_meta_fold_bundle`/`score_from_bundle` —
+junta o learner serializado com `tau_meta` e a linhagem
+(`alpha_model_id`/`meta_split_id`/`variant`/`resolution_id`) num ÚNICO
+artefato atômico: os dois só fazem sentido juntos na inferência, e
+escrevê-los separado abriria janela de inconsistência (processo morto no
+meio, disco cheio). A linhagem aqui é só DADO — o enforcement de
+coerência é trabalho de F7, que lê o campo mas não é escrito por F5.
+
+**Regressão própria achada e corrigida no caminho**: o teste #8 de
+`leakage.py` (grep estático por scaler global) começou a falhar porque a
+docstring de `ScoreRankTransform` continha o token literal
+`StandardScaler` ao explicar que a transformação NÃO é uma — falso
+positivo do grep, corrigido reescrevendo sem o token, sem enfraquecer o
+teste.
+
+**A otimização de EM identificada em `§15.30` foi aplicada** (pedido
+direto do Manager, depois de matar os 5 backfills — nenhum código até F5
+chama `read_regime_hmm`, a necessidade real era só medir; ver
+`docs/SPRINT_LOG.md`, seção "o backfill de regime HMM foi interrompido").
+`src.regime.hmm_gaussian._fit_em_until_converged`: chama `fit_em` em
+blocos de 5 iterações, para quando a melhora relativa da
+log-verossimilhança cai abaixo de `hmm_gaussian_em_convergence_tol`
+(nova, `1e-6`, `ASSUMED`, classe B, `sweep_required: true` — corrigindo
+de propósito o erro já cometido com `hmm_gaussian_num_em_iters`, que
+nasceu `sweep_required: false` sem justificativa). Garantia validada, não
+suposta: chamar `fit_em` em blocos é bit-a-bit idêntico a uma única
+chamada com a soma das iterações (M-step de forma fechada e sem estado
+entre chamadas). Magnitude real da economia: `TBD — medir com 1 símbolo`
+(decisão explícita do Manager de deixar a medição para quando o backfill
+for retomado). Correção de citação: "437.630 barras" (commit `9becbaa`,
+`AG-384`) estava errado — são **223.160** observações reais; `AG-384`
+(fechado) não foi editado, `AG-384-ADDENDUM-1` registra a correção
+(append-only).
+
+**Testes**: 36 em `test_models_meta.py` (F4+F5), 22 em
+`test_regime_hmm_gaussian.py` (16 pré-existentes + 6 novos, zero
+regressão). 254 passed no conjunto dos módulos do Meta. Commits:
+`d0168d6` (F4), `326e05c` (otimização de EM + correções), `6707ca7` (F5).
+
+---
 ## Fontes desta pesquisa
 
 - [PRINCE2.com — Os 7 princípios, temas e processos](https://www.prince2.com/eur/blog/the-7-principles-themes-and-processes-of-prince2)

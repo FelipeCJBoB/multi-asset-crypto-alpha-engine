@@ -5952,3 +5952,54 @@ ativa).
 
 `audit/architecture_gaps_log.yaml::AG-384-ADDENDUM-1` registra a
 correção do número de barras.
+
+
+---
+
+## 2026-08-30 (continuação) — Meta F4/F5: learner, tau_meta e serialização <!-- check-sprint-log: skip -->
+
+Ver `PLANO_MESTRE_PRINCE2.md` §15.31 para o detalhe completo. Resumo:
+
+`src/models/meta.py` (F4, commit `d0168d6`): `MetaLearner`
+(`fit`/`predict_score`/`coefficient_shares`/`serialize`), `LogitL2Meta`
+(default e único habilitado abaixo do gate de §7.3) e `BlockedGBMMeta`
+(levanta em todos os métodos — o gate materializado num objeto, não um
+comentário). `ScoreRankTransform` implementa a hierarquia corrigida do
+§3.4: posto de `score_alpha_raw` ajustado NO TREINO do fold, não
+z-score — a razão estrutural é que `score_*_raw` já vive em `[0,1]`
+(`predict_proba(...)[:,1]`), então a não-comparabilidade entre folds é do
+mapeamento score→P(y), que uma transformação linear não corrige.
+
+`src/models/meta.py` (F5, commit `6707ca7`): `resolve_tau_meta` (§8.3) —
+grade de quantis a priori, maximiza PnL líquida in-fold do subconjunto
+aceito, empate pelo menor pass-rate. Corrige o epsilon de empate vazio da
+v1 (`meta_tau_tie_epsilon = 0,00055174`, `DERIVED` do custo de round-trip
+de 1 trade, mesma fórmula de `round_trip_cost_bps` em
+`src/features/groups/group_e.py`). `apply_meta_filter` (veto-em-zero,
+D-05) e `write_meta_fold_bundle`/`read_meta_fold_bundle` (D-17, junta
+learner + `tau_meta` + linhagem num artefato atômico só).
+
+`src/regime/hmm_gaussian.py` (commit `326e05c`): a otimização de
+convergência antecipada do EM identificada na seção anterior foi
+aplicada — `_fit_em_until_converged` chama `fit_em` em blocos de 5
+iterações (`src/regime/hmm_gaussian.py`) e para quando a melhora relativa
+da log-verossimilhança cai abaixo de `hmm_gaussian_em_convergence_tol`
+(nova constante). Garantia de bit-exatidão do chunking validada por
+teste dedicado, não suposta. Magnitude real da economia fica
+`TBD — medir com 1 símbolo` (decisão do Manager, mesmo arquivo).
+Correção de citação, registrada em `audit/architecture_gaps_log.yaml`
+(`AG-384-ADDENDUM-1`): eram 223.160 barras reais em BTCUSDT/R1
+(mesmo arquivo), não 437.630 (contagem de linhas de `labels.parquet`).
+
+**Testes** (`tests/unit/test_models_meta.py`,
+`tests/unit/test_regime_hmm_gaussian.py`): 254 passed no conjunto dos
+módulos do Meta, zero regressão. Uma regressão própria achada e
+corrigida no caminho: docstring de `ScoreRankTransform`
+(`src/models/meta.py`) continha o token literal `StandardScaler`,
+disparando falso positivo no teste #8 de `src/validation/leakage.py`
+(grep estático por scaler global).
+
+**Próximo passo**: F6 (ablação `meta_ablation.py`, 4 braços A0-A3) e F6b
+(replicação walk-forward), ambos ainda bloqueados pela mesma cadeia — P0
+(validação do nulo), P1/`AG-151` (purge cross-símbolo) e o Gate E0 não
+executado, ver `§15.30`.
