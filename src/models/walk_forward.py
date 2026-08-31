@@ -51,11 +51,14 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import lightgbm as lgb
 import numpy as np
 import polars as pl
+import shap
 import structlog
 from numpy.typing import NDArray
 
+from src.features.build import T1_FEATURE_IDS
 from src.validation.cpcv import CPCVSplit
 from src.validation.volatility_walkforward import (
     WalkForwardSplit,
@@ -191,6 +194,27 @@ def _ms_to_iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat()
 
 
+def _shap_mean_abs_by_feature(
+    model: lgb.LGBMClassifier, x_test: alpha.FloatArray, feature_ids: tuple[str, ...]
+) -> dict[str, float]:
+    """ADR-008 Fase 7 — média de `|SHAP value|` por feature sobre `x_test`
+    (`shap.TreeExplainer`, exato pra árvores de decisão, não uma
+    aproximação amostrada). Medição real (2026-08-31, `BTCUSDT/R2`
+    fold_id=1, 672 linhas × 36 features): 0,005s — custo desprezível
+    sobre o treino (0,68s), sem necessidade de orçamento separado.
+
+    `shap_values` pode devolver `list[ndarray]` (1 array por classe —
+    contrato de versões antigas do shap pra classificador binário) ou
+    um `ndarray` único (a classe positiva direto — o que a versão
+    instalada devolve na prática) -- trata os dois formatos, não supõe
+    um sem checar."""
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(x_test)
+    values = shap_values[1] if isinstance(shap_values, list) else shap_values
+    mean_abs = np.abs(values).mean(axis=0)
+    return {fid: float(v) for fid, v in zip(feature_ids, mean_abs, strict=True)}
+
+
 @dataclass(frozen=True, slots=True)
 class WalkForwardFoldMetrics:
     fold_id: int
@@ -221,6 +245,14 @@ class WalkForwardFoldMetrics:
     # quality_by_side`/`decile_profile_by_side`, que dependem de ter
     # trade OOF -- treinar não exige ter sinalizado).
     gain_by_column_by_side: dict[str, dict[str, float]]
+    # ADR-008 Fase 7 -- média de |SHAP value| por feature sobre o bloco
+    # de teste do fold (`shap.TreeExplainer`, exato pra árvores de
+    # decisão). Mesmo contrato de presença de `gain_by_column_by_side`
+    # ("long"/"short" sempre presentes quando o fold treinou) -- eixo
+    # COMPLEMENTAR ao gain nativo do booster (SHAP explica CONTRIBUIÇÃO
+    # à predição por linha, gain nativo conta uso em split; concordam
+    # ou divergem é o que a stability matrix audita).
+    shap_mean_abs_by_side: dict[str, dict[str, float]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,9 +372,11 @@ def run_walk_forward_for_combo(
                     score_quality_by_side={},
                     decile_profile_by_side={},
                     # `run_fold` nunca chamado -- nenhum `SideModelResult`
-                    # existe pra este fold, gain fica vazio (honesto: não
-                    # treinou, não tem gain, não é `0.0` inventado).
+                    # existe pra este fold, gain/SHAP ficam vazios
+                    # (honesto: não treinou, não tem gain/SHAP, não é
+                    # `0.0` inventado).
                     gain_by_column_by_side={},
+                    shap_mean_abs_by_side={},
                 )
             )
             continue
@@ -390,6 +424,21 @@ def run_walk_forward_for_combo(
             "long": dict(fold_result.long_result.gain_by_column_raw),
             "short": dict(fold_result.short_result.gain_by_column_raw),
         }
+        # ADR-008 Fase 7 -- SHAP (TreeExplainer, exato pra árvores),
+        # eixo complementar ao gain nativo. Recomputa `x_test` (o
+        # `run_fold` já monta o mesmo internamente pra inferência, mas
+        # não o expõe) via as MESMAS 2 funções públicas que ele usa por
+        # baixo -- zero edição em `alpha.run_fold`.
+        test_bars_unique = alpha.unique_test_bars(mf_data[cpcv_split.test_idx])
+        x_test = alpha.build_design_matrix(test_bars_unique)
+        shap_by_side = {
+            "long": _shap_mean_abs_by_feature(
+                fold_result.long_result.model, x_test, T1_FEATURE_IDS
+            ),
+            "short": _shap_mean_abs_by_feature(
+                fold_result.short_result.model, x_test, T1_FEATURE_IDS
+            ),
+        }
         n_filled_trades = path_result.n_filled_trades if path_result else 0
         # degenerado = poucos TRADES REALIZADOS, não poucas barras de
         # teste (ver docstring de `min_trades_for_non_degenerate_fold` --
@@ -421,6 +470,7 @@ def run_walk_forward_for_combo(
                 score_quality_by_side=sq_by_side,
                 decile_profile_by_side=decile_by_side,
                 gain_by_column_by_side=gain_by_side,
+                shap_mean_abs_by_side=shap_by_side,
             )
         )
         if degenerado:

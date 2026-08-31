@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import lightgbm as lgb
 import numpy as np
 import polars as pl
 import pytest
@@ -111,12 +112,32 @@ def _synthetic_mf_data(n_days: int = 1095, seed: int = 0) -> pl.DataFrame:  # no
     return pl.concat(blocks, how="vertical")
 
 
+def _tiny_fitted_model(n_features: int, *, seed: int) -> lgb.LGBMClassifier:
+    """Modelo LightGBM real, mas minúsculo e treinado sobre dado
+    sintético descartável -- só pra `shap.TreeExplainer` (ADR-008 Fase
+    7) ter um booster de verdade pra explicar. Reusado por TODOS os
+    folds fake de uma chamada (não recriado a cada fold) -- o conteúdo
+    do modelo é irrelevante pro que este arquivo testa (orquestração),
+    só a FORMA (LGBMClassifier fitted, `n_features_` batendo com
+    `x_test`) importa."""
+    rng = np.random.default_rng(seed)
+    n = 20  # noqa: magic-number -- minúsculo de propósito, só pra caber num booster válido
+    x = rng.normal(size=(n, n_features))
+    y = rng.integers(0, 2, size=n)
+    model = lgb.LGBMClassifier(n_estimators=5, max_depth=2, verbosity=-1)  # noqa: magic-number
+    model.fit(x, y)
+    return model
+
+
 class _FakeSideModelResult:
     """Duck-type mínimo pro contrato que `run_walk_forward_for_combo` lê
-    de `SideModelResult` (só `.gain_by_column_raw`, ADR-008 Fase 5)."""
+    de `SideModelResult` (`.gain_by_column_raw` da Fase 5, `.model` da
+    Fase 7 -- precisa ser um booster REAL pra `shap.TreeExplainer`
+    funcionar, não dá pra fingir)."""
 
-    def __init__(self, gain_by_column_raw: dict[str, float]) -> None:
+    def __init__(self, gain_by_column_raw: dict[str, float], model: lgb.LGBMClassifier) -> None:
         self.gain_by_column_raw = gain_by_column_raw
+        self.model = model
 
 
 class _FakeFoldResult:
@@ -127,17 +148,30 @@ class _FakeFoldResult:
     `_FakeFoldResult` em `test_models_backtest_lite.py`."""
 
     def __init__(
-        self, predictions: pl.DataFrame, *, path_id: int, variant: str, n_test_bars: int
+        self,
+        predictions: pl.DataFrame,
+        *,
+        path_id: int,
+        variant: str,
+        n_test_bars: int,
+        long_model: lgb.LGBMClassifier,
+        short_model: lgb.LGBMClassifier,
     ) -> None:
         self.predictions = predictions
         self.path_id = path_id
         self.variant = variant
         self.n_test_bars = n_test_bars
-        self.long_result = _FakeSideModelResult({T1_FEATURE_IDS[0]: 1.0})
-        self.short_result = _FakeSideModelResult({T1_FEATURE_IDS[1]: 2.0})  # noqa: magic-number
+        self.long_result = _FakeSideModelResult({T1_FEATURE_IDS[0]: 1.0}, long_model)
+        self.short_result = _FakeSideModelResult({T1_FEATURE_IDS[1]: 2.0}, short_model)  # noqa: magic-number
 
 
 def _make_fake_run_fold(degenerate_fold_id: int | None = None):
+    # Modelos compartilhados por TODOS os folds fake desta chamada --
+    # treinados 1 vez só (custo desprezível, mas sem sentido repetir por
+    # fold já que o conteúdo é irrelevante pro que este arquivo testa).
+    long_model = _tiny_fitted_model(len(T1_FEATURE_IDS), seed=1)
+    short_model = _tiny_fitted_model(len(T1_FEATURE_IDS), seed=2)  # noqa: magic-number
+
     def _fake_run_fold(
         mf_data_arg: pl.DataFrame,
         split: CPCVSplit,
@@ -167,7 +201,14 @@ def _make_fake_run_fold(degenerate_fold_id: int | None = None):
                 "confidence": pl.Series(np.linspace(0.5, 0.9, n) if n else [], dtype=pl.Float64),  # noqa: magic-number
             }
         )
-        return _FakeFoldResult(predictions, path_id=split.path_id, variant=variant, n_test_bars=n)
+        return _FakeFoldResult(
+            predictions,
+            path_id=split.path_id,
+            variant=variant,
+            n_test_bars=n,
+            long_model=long_model,
+            short_model=short_model,
+        )
 
     return _fake_run_fold
 
@@ -326,3 +367,25 @@ def test_run_walk_forward_popula_gain_e_decile_por_lado_de_fold_treinado(
     assert "long" in fold0.decile_profile_by_side
     assert "short" not in fold0.decile_profile_by_side
     assert len(fold0.decile_profile_by_side["long"]["buckets"]) == 10  # noqa: magic-number
+
+
+def test_run_walk_forward_popula_shap_por_lado_de_fold_treinado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-008 Fase 7 -- `shap_mean_abs_by_side` vem populado (`|SHAP|`
+    médio sobre o bloco de teste real, via `shap.TreeExplainer` sobre o
+    booster de verdade do fake) pra todo fold treinado, "long"/"short"
+    SEMPRE presentes (mesmo contrato de `gain_by_column_by_side` --
+    treinar não exige ter sinalizado, diferente de `score_quality_by_
+    side`)."""
+    mf_data = _synthetic_mf_data()
+    monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold())
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert set(fold0.shap_mean_abs_by_side.keys()) == {"long", "short"}
+    for side in ("long", "short"):
+        by_feature = fold0.shap_mean_abs_by_side[side]
+        assert set(by_feature.keys()) == set(T1_FEATURE_IDS)
+        assert all(v >= 0.0 for v in by_feature.values())  # |SHAP| nunca negativo
