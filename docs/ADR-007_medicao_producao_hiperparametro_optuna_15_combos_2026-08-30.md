@@ -1,6 +1,6 @@
 # ADR-007: Arquitetura de medição de hiperparâmetro em produção — 15 combos, gate duplo, guardrails contra falso-positivo
 
-**Status:** Validada 2026-08-30 (revisão pós-aprovação corrigiu o escopo do Item 1 — ver `## Correção de validação` abaixo) — item 1 aguardando comando explícito pra executar
+**Status:** Item 1 concluído 2026-08-30 (1.800/1.800 trials, 0 falhas, 2h32m18s — ver Action Items) — Item 2 aguardando comando explícito pra executar
 **Date:** 2026-08-30
 **Deciders:** Manager (Felipe)
 
@@ -310,8 +310,14 @@ rodar agora.
    não introduzir literal novo no lugar do antigo.
 2. [ ] `alpha_optuna_n_trials` 30→150 em `constants.yaml` (source
    atualizada com a regra prática TPE ~10-20×dimensionalidade).
-3. [ ] Rodar Item 1 (busca expandida, 6 combos) — medir os primeiros
-   ~100 trials reais antes de confirmar a estimativa de 4,5h-7,5h.
+3. [x] Rodar Item 1 (busca expandida, 6 combos) — CONCLUÍDO 2026-08-30,
+   1.800/1.800 trials, 0 falhas, 2h32m18s real (bem abaixo da estimativa
+   de 4,5h-7,5h — ~5,08s/trial medido, não os 9,1-15s de campanhas
+   anteriores). Achado: `SOLUSDT/R2` com as 2 camadas em `best_value`
+   extremo (22,22/8,96 vs. p95≈0,82 da campanha) — ver
+   `audit/n_lifetime.yaml::id=38` e o artefato "ADR-007 — Painel de
+   Execução" pro detalhamento completo. Não tratado como sinal real até
+   o Item 2.
 4. [ ] Rodar Item 3 (calibração `AG-220`, 3 combos) — pode rodar em
    paralelo ao Item 1 se houver capacidade de CPU sem contenção
    (`AG-381` já mediu que concorrência real piora throughput ~54% neste

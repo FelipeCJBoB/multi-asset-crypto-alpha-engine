@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 2636
+counter: 4436
 
 log:
   - id: 1
@@ -1019,3 +1019,39 @@ log:
       cost_atr_ratio), XRPUSDT misto -- nao investigado a fundo, so
       registrado.
     delta: 75
+  - id: 38
+    date: "2026-08-30"
+    type: adr007_item1_busca_expandida_6_combos
+    description: >
+      ADR-007 Item 1 -- busca Optuna expandida (alpha_optuna_n_trials
+      30->150) sobre os 6 combos com edge bruto medio positivo por
+      simbolo e resolucao != R1 (BTCUSDT/SOLUSDT/XRPUSDT x R2/R3;
+      BNBUSDT/ETHUSDT/R1 deprioritizados -- correcao de validacao do
+      ADR-007, ETHUSDT tinha o mesmo padrao de edge negativo que
+      BNBUSDT, so mascarado pelo gate de Sharpe em ETHUSDT/R1). 6
+      combos x 2 camadas x 150 trials = 1.800 trials novos.
+
+      1.800/1.800 sem falha, 0 erros. Tempo total medido: 2h32m18s
+      (20:30:05 -> 23:02:23) -- MUITO abaixo da estimativa de 4,5h-7,5h
+      (~5,08s/trial medido, vs. 9,1-15s/trial das campanhas anteriores
+      -- celulas menores em media, sem contencao de CPU relevante
+      apesar de sessao concorrente ativa no mesmo repositorio local,
+      Meta F3/F4).
+
+      best_value por study (screening, 1 seed, sujeito a vies de
+      selecao ja medido +0,309 em media, AG-383 -- nao e resultado
+      confirmado):
+      BTCUSDT/R2 C1=1,1706 C0=0,8557; BTCUSDT/R3 C1=1,3812 C0=1,5264;
+      SOLUSDT/R2 C1=22,2236 C0=8,9603 (ANOMALIA -- ~27x e ~11x o p95 de
+      0,824 medido sobre 754+ trials da campanha ate aquele ponto; as
+      DUAS camadas extremas no mesmo combo, nao so 1 trial de sorte
+      isolado -- nao tratado como sinal real, aguarda Item 2);
+      SOLUSDT/R3 C1=2,7738 C0=1,2558; XRPUSDT/R2 C1=2,0063 C0=1,1529;
+      XRPUSDT/R3 C1=3,3146 C0=0,8809.
+
+      Acompanhado ao vivo no artefato "ADR-007 -- Painel de Execucao"
+      (https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604).
+      Proximo passo real: Item 2 (confirmacao multi-seed, top-6, mediana
+      de 10 seeds) -- unico jeito de saber se SOLUSDT/R2 e achado real
+      ou artefato de screening.
+    delta: 1800
