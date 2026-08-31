@@ -2664,6 +2664,25 @@ alpha_optuna_confirm_seeds:
   class: B
   sweep_required: false
 
+alpha_ag220_calibration_n_repeats:
+  value: 50
+  provenance: LITERATURE
+  source: >
+    ADR-007 Item 3 (2026-08-30) -- calibração real do AG-220 (falso-
+    positivo do gate duplo) via nulo por permutação. Mesmo valor já
+    usado na Fase 0b do ADR-002 (2026-08-24, revisado de 20 pra 50 na
+    própria rodada anterior por "precisão de cauda pra limiar α=0,05")
+    -- 50 repetições dá granularidade de 1/50=0,02 na cauda da
+    distribuição empírica, suficiente pra distinguir um limiar de
+    significância de 5% sem inflar o orçamento (50 x 2 camadas x 3
+    combos representativos = 300 retreinos, ~1h estimado). Não é
+    resultado de um cálculo de poder estatístico formal (por isso
+    LITERATURE, não DERIVED) -- é a repetição deliberada do mesmo
+    orçamento já usado uma vez neste projeto pro mesmo tipo de
+    pergunta.
+  class: B
+  sweep_required: false
+
 alpha_optuna_sampler:
   value: "tpe"
   provenance: ASSUMED
