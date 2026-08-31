@@ -28,6 +28,7 @@ import polars as pl
 import structlog
 from numpy.typing import NDArray
 
+from src.core.provenance import report_provenance
 from src.data import download
 from src.data.resample import step_ms
 from src.features import build as features_build
@@ -45,6 +46,7 @@ from . import (
     hyperparams_by_combo,
     monotonic,
     persistence,
+    score_quality,
 )
 from . import dataset as ds
 from ._constants import load_constant
@@ -1330,6 +1332,13 @@ def run_layer1_sprint(
     # --- backtest por caminho + critério de permanência (§5.11 adaptado) ---
     c1_by_path = backtest_lite.backtest_by_path(camada1_folds, mf.data)
     c0_by_path = backtest_lite.backtest_by_path(camada0_folds, mf.data)
+    # ADR-008 Fase 1 -- qualidade do SCORE final (classificação formal +
+    # IC/Rank IC/IC IR/Q10-Q1), nunca calculada antes pro output do
+    # modelo (só por feature individual, monotonic.py). Zero retreino --
+    # lê `preds_c1`/`preds_c0` (OOF já materializado) + `mf.data` (mesmo
+    # `df_all` que `backtest_by_path` já usa).
+    c1_score_quality = score_quality.compute_score_quality(preds_c1, mf.data)
+    c0_score_quality = score_quality.compute_score_quality(preds_c0, mf.data)
     n_better, n_total = backtest_lite.permanence_count(c1_by_path, c0_by_path)
     min_paths_required = int(load_constant("alpha_layer1_permanence_min_paths"))
     # `permanence_pass` só é atribuído depois de `n_paths_significant` mais
@@ -1791,6 +1800,13 @@ def run_layer1_sprint(
         },
         "camada1_backtest_by_path": _path_results_to_dict(c1_by_path),
         "camada0_backtest_by_path": _path_results_to_dict(c0_by_path),
+        # ADR-008 Fase 1 -- 1 entrada por lado (long/short) com trade
+        # válido; lado sem nenhum trade fica ausente da lista, não some
+        # como NaN (mesmo contrato de `score_quality.compute_score_quality`).
+        "score_quality": {
+            "camada1_by_side": [asdict(r) for r in c1_score_quality],
+            "camada0_by_side": [asdict(r) for r in c0_score_quality],
+        },
         "hhi": {
             "long_by_fold": hhi_values_long,
             "short_by_fold": hhi_values_short,
@@ -1860,6 +1876,11 @@ def run_layer1_sprint(
             },
         },
     }
+    # ADR-008 Fase 0 -- paridade com todo outro relatório do projeto
+    # (leakage_report.json, faixa1_calibration_diagnostic.json), que já
+    # chama `report_provenance()`; `alpha_layer1_report_*.json` era o
+    # único sem `generated_at`/`code_version`.
+    report.update(report_provenance())
     if use_economic_gate:
         report["economic_gate"] = _economic_gate_verdicts_by_side(
             filled_c1, symbol=symbol, resolution_id=resolution_id, threshold=pre_trial_gate
