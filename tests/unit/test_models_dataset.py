@@ -730,7 +730,7 @@ def test_side_subset_lado_short() -> None:
 def test_side_subset_exige_feature_ids_e_nao_aceita_vazio() -> None:
     """`AG-300` -- `feature_ids` deixou de ter default. O default (`T1_
     FEATURE_IDS`, 7) era exatamente o defeito: o treino filtrava warmup por
-    7 colunas enquanto `_unique_test_bars` (o lado de TESTE) ja recebia o
+    7 colunas enquanto `unique_test_bars` (o lado de TESTE) ja recebia o
     conjunto real, entao treino e teste ficavam com populacoes diferentes."""
     df = _synthetic_frame()
     with pytest.raises(TypeError):
@@ -911,7 +911,7 @@ def test_side_subset_enforce_r2_inclui_funding_bps_no_custo() -> None:
 # (`T1_FEATURE_IDS`) ainda não têm histórico suficiente nessas barras para
 # produzir valor não-nulo — é warmup estrutural, não um efeito do modelo:
 # `src.models.dataset.side_subset` (treino) e
-# `src.models.alpha._unique_test_bars` (inferência/teste) filtram QUALQUER
+# `src.models.alpha.unique_test_bars` (inferência/teste) filtram QUALQUER
 # linha com T1 nulo antes de o Alpha ver o dado, então R0 nunca teve
 # população válida para gerar sinal, independente de `tau` ou de qualquer
 # outro hiperparâmetro.
@@ -952,7 +952,7 @@ def test_regime_r0_e_100_por_cento_warmup_sem_t1_valido() -> None:
     assert r0.height > 0, msg
     # linha só conta como "T1 completo" se as 10 features forem não-nulas
     # simultaneamente — `pl.all_horizontal` é a versão vetorizada exata do
-    # "AND" que `side_subset`/`_unique_test_bars` aplicam feature a feature.
+    # "AND" que `side_subset`/`unique_test_bars` aplicam feature a feature.
     tem_t1_completo = pl.all_horizontal([pl.col(fid).is_not_null() for fid in T1_FEATURE_IDS])
     n_r0_com_t1_completo = r0.filter(tem_t1_completo).height
     assert n_r0_com_t1_completo == 0
@@ -984,7 +984,7 @@ def test_predictions_reais_do_alpha_zero_sinais_em_r0() -> None:
 
     Achado mais forte do que o exigido, também verificado aqui: NENHUMA
     linha de `predictions.parquet` cai em R0, nem sequer com `side_hat ==
-    0` — porque `src.models.alpha._unique_test_bars` já filtra T1 nulo do
+    0` — porque `src.models.alpha.unique_test_bars` já filtra T1 nulo do
     lado de teste antes de qualquer inferência, então R0 nunca chega a ser
     avaliado pelo modelo, não só nunca gera sinal acima do threshold `tau`."""
     pytest.skip(

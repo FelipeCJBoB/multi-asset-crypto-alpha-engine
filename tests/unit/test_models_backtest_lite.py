@@ -101,7 +101,7 @@ def _mk_labels(t0: list[datetime], side: list[int], ret_net: list[float]) -> pl.
 
 def test_camada_diff_series_zero_filling_e_has_signal_mask() -> None:
     """4 barras. `df_all` tem DUAS linhas por barra (side=1/side=-1, mesmo
-    contrato de `alpha._unique_test_bars`) -- `bar_idx` cobre TODAS elas
+    contrato de `alpha.unique_test_bars`) -- `bar_idx` cobre TODAS elas
     (como `path_bar_indices` real faria via `test_idx`), então o teste
     também cobre a deduplicação por `side==1` (achado AG-252).
     C1 sinaliza long em t0[0] (ret=0.01) e t0[2] (ret=0.02); C0 sinaliza

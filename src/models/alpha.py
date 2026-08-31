@@ -1787,7 +1787,7 @@ class FoldResult:
     cost_derived_lambda_diag: CostDerivedLambdaDiagnostic | None = None
 
 
-def _unique_test_bars(
+def unique_test_bars(
     test_bars_all_sides: pl.DataFrame, *, feature_ids: tuple[str, ...] = T1_FEATURE_IDS
 ) -> pl.DataFrame:
     """Uma linha por `t0` (feature não depende de lado) — usa as linhas de
@@ -1797,6 +1797,14 @@ def _unique_test_bars(
     com `feature_ids` válido (fora do warmup) — NÃO filtra por NOFILL (ver
     docstring do módulo: inferência roda em toda barra, NOFILL só importa
     para treino/backtest).
+
+    Público (sem `_`) desde ADR-008 Fase 4 — `src.models.walk_forward.
+    run_walk_forward_for_combo` reusa a MESMA função pra checar ANTES de
+    chamar `run_fold` se o bloco de teste de um fold tem alguma barra
+    válida (achado real: um fold com 0 barras válidas faz `run_fold`
+    quebrar dentro do `predict_proba` do LightGBM — `ValueError` de
+    array vazio — DEPOIS de já ter treinado os dois lados; checar antes
+    evita o treino desperdiçado e trata como fold degenerado).
 
     `feature_ids` (2026-08-24, `docs/t2_t1_promotion_ablation_design_doc_
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato o
@@ -1871,14 +1879,14 @@ def _resolve_tau_on_common_bars(
 
     **(1) População comum, não sub-população por lado.** `fit_side_model`
     tira `tau` de `train_side_df`, que já passou por `side_subset`
-    (NOFILL FORA). Mas a inferência roda sobre `_unique_test_bars`, que
+    (NOFILL FORA). Mas a inferência roda sobre `unique_test_bars`, que
     NÃO filtra NOFILL — decisão correta e documentada (§3.7: NOFILL é
     ruído de execução, não de feature). O efeito colateral é que o
     quantil era tirado de uma população e aplicado a outra: P(NOFILL)
     correlaciona com volatilidade/spread, e `E27f_cost_atr_ratio`/
     `C06_vol_ratio_12_96` estão no vetor de features — as duas populações
     não têm a mesma distribuição de `p`. Aqui `tau` sai de
-    `_unique_test_bars(train_bars)`: MESMO filtro, MESMA função, aplicada
+    `unique_test_bars(train_bars)`: MESMO filtro, MESMA função, aplicada
     ao treino em vez do teste.
 
     **(2) Fora do fit.** Dentro da população comum, barras cujo `t0`
@@ -1893,7 +1901,7 @@ def _resolve_tau_on_common_bars(
     `MIN_OCCURRENCES_ABOVE_TAU` ocorrências acima do corte, cai para a
     população comum inteira — um `tau` levemente otimista é melhor que um
     `tau` estimado sobre uma dezena de pontos."""
-    common = _unique_test_bars(train_bars, feature_ids=feature_ids)
+    common = unique_test_bars(train_bars, feature_ids=feature_ids)
     if common.height == 0:
         raise ValueError(
             "_resolve_tau_on_common_bars: nenhuma barra de treino com feature válida "
@@ -1969,7 +1977,7 @@ def _resolve_lambda_on_common_bars(
 
     `_COST_ATR_RATIO_FEATURE_ID` já é uma feature T1 (`E27f_cost_atr_
     ratio`) — sempre presente em `common` sem cálculo adicional."""
-    common = _unique_test_bars(train_bars, feature_ids=feature_ids)
+    common = unique_test_bars(train_bars, feature_ids=feature_ids)
     if common.height == 0:
         raise ValueError(
             "_resolve_lambda_on_common_bars: nenhuma barra de treino com feature válida "
@@ -2071,7 +2079,7 @@ def run_fold(
     2026-08-24.md` §5.2) — default `T1_FEATURE_IDS` preserva bit-exato
     todo call site de produção; repassado sem alteração pros dois
     `fit_side_model` (treino) E pro filtro de warmup/`build_design_matrix`
-    do lado de TESTE (`_unique_test_bars`/`X_test` abaixo) — os dois lados
+    do lado de TESTE (`unique_test_bars`/`X_test` abaixo) — os dois lados
     (treino/teste) têm que usar o MESMO vetor de features, senão o modelo
     treinado com k colunas recebe um `X_test` de shape errado na
     inferência.
@@ -2112,7 +2120,7 @@ def run_fold(
 
     # AG-299 -- `feature_ids` explicito: o filtro de warmup precisa usar as
     # MESMAS colunas que o trial vai treinar. Antes era `T1_FEATURE_IDS`
-    # hardcoded (7) enquanto `_unique_test_bars` (o lado de TESTE) ja
+    # hardcoded (7) enquanto `unique_test_bars` (o lado de TESTE) ja
     # recebia o conjunto real -- treino e teste filtrados por criterios
     # diferentes, que e a assimetria de §13.2.
     train_long = ds.side_subset(train_bars, side=1, feature_ids=feature_ids, enforce_r2=enforce_r2)
@@ -2201,7 +2209,7 @@ def run_fold(
             f"{TAU_POLICY_LEGACY_PER_SIDE!r} ou {TAU_POLICY_TOTAL_COMMON_OOF!r})"
         )
 
-    test_bars_unique = _unique_test_bars(test_bars, feature_ids=feature_ids)
+    test_bars_unique = unique_test_bars(test_bars, feature_ids=feature_ids)
     X_test = build_design_matrix(test_bars_unique, feature_ids=feature_ids)
 
     raw_long = np.asarray(long_result.model.predict_proba(X_test))[:, 1]

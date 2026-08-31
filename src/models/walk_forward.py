@@ -262,10 +262,63 @@ def run_walk_forward_for_combo(
     min_test_bars = min_test_bars_for_non_degenerate_fold(target_signal_rate)
     model_id = f"{model_id_prefix}_{symbol}_{resolution_id}_{variant}"
 
-    fold_results: list[alpha.FoldResult] = []
-    cpcv_splits: list[CPCVSplit] = []
+    def _fold_boundaries_iso(wf_split: WalkForwardSplit) -> tuple[str, str, str, str]:
+        test_end_bar_idx = min(wf_split.test_end_idx, unique_t0_ms.shape[0]) - 1
+        return (
+            _ms_to_iso(int(unique_t0_ms[0])),
+            _ms_to_iso(int(unique_t0_ms[wf_split.train_end_idx - 1])),
+            _ms_to_iso(int(unique_t0_ms[wf_split.test_start_idx])),
+            _ms_to_iso(int(unique_t0_ms[test_end_bar_idx])),
+        )
+
+    fold_metrics: list[WalkForwardFoldMetrics] = []
+    pending: list[tuple[WalkForwardSplit, CPCVSplit, alpha.FoldResult]] = []
     for wf_split in wf_splits:
         cpcv_split = walk_forward_split_to_cpcv_split(wf_split, unique_t0_ms, t0_ms, t1_ms)
+        train_start_iso, train_end_iso, test_start_iso, test_end_iso = _fold_boundaries_iso(
+            wf_split
+        )
+
+        # Achado real (BTCUSDT/R2, fold_id=2, 2026-08-31, primeira execução
+        # real da campanha): um fold com 0 barras de teste válidas
+        # (`alpha.unique_test_bars` vazio -- ex. gap de dado real numa
+        # feature específica, ver E14f_toptrader_ls_ratio) faz `alpha.
+        # run_fold` quebrar dentro do `predict_proba` do LightGBM
+        # (`ValueError` de array vazio) DEPOIS de já ter treinado os dois
+        # lados -- checar aqui evita o treino desperdiçado e trata como
+        # degenerado direto, sem chamar `run_fold`.
+        test_bars_check = alpha.unique_test_bars(mf_data[cpcv_split.test_idx])
+        if test_bars_check.height == 0:
+            logger.warning(
+                "models.walk_forward.fold_sem_barra_de_teste_valida",
+                symbol=symbol,
+                resolution_id=resolution_id,
+                variant=variant,
+                fold_id=wf_split.fold_id,
+                detail="0 barras de teste com feature valida -- fold pulado (run_fold "
+                "quebraria no predict_proba), tratado como degenerado direto",
+            )
+            fold_metrics.append(
+                WalkForwardFoldMetrics(
+                    fold_id=wf_split.fold_id,
+                    train_start=train_start_iso,
+                    train_end=train_end_iso,
+                    test_start=test_start_iso,
+                    test_end=test_end_iso,
+                    n_train_bars=int(cpcv_split.train_idx.shape[0]),
+                    n_purged=int(cpcv_split.n_purged),
+                    n_test_bars=0,
+                    degenerado=True,
+                    sharpe=float("nan"),
+                    edge_bps=float("nan"),
+                    win_rate=float("nan"),
+                    n_signals=0,
+                    n_filled_trades=0,
+                    score_quality_by_side={},
+                )
+            )
+            continue
+
         fold_result = alpha.run_fold(
             mf_data,
             cpcv_split,
@@ -281,8 +334,7 @@ def run_walk_forward_for_combo(
             class_balance_basis=class_balance_basis,
             calib_weight_basis=calib_weight_basis,
         )
-        cpcv_splits.append(cpcv_split)
-        fold_results.append(fold_result)
+        pending.append((wf_split, cpcv_split, fold_result))
         logger.info(
             "models.walk_forward.fold_concluido",
             symbol=symbol,
@@ -294,22 +346,24 @@ def run_walk_forward_for_combo(
             n_test_bars=fold_result.n_test_bars,
         )
 
-    by_path = backtest_lite.backtest_by_path(fold_results, mf_data)
+    fold_results_ok = [fr for _, _, fr in pending]
+    by_path = backtest_lite.backtest_by_path(fold_results_ok, mf_data) if fold_results_ok else {}
 
-    fold_metrics: list[WalkForwardFoldMetrics] = []
-    for wf_split, cpcv_split, fold_result in zip(wf_splits, cpcv_splits, fold_results, strict=True):
+    for wf_split, cpcv_split, fold_result in pending:
         path_result = by_path.get(cpcv_split.path_id)
         sq = score_quality.compute_score_quality(fold_result.predictions, mf_data)
         sq_by_side = {r.side: asdict(r) for r in sq}
         degenerado = fold_result.n_test_bars < min_test_bars
-        test_end_bar_idx = min(wf_split.test_end_idx, unique_t0_ms.shape[0]) - 1
+        train_start_iso, train_end_iso, test_start_iso, test_end_iso = _fold_boundaries_iso(
+            wf_split
+        )
         fold_metrics.append(
             WalkForwardFoldMetrics(
                 fold_id=wf_split.fold_id,
-                train_start=_ms_to_iso(int(unique_t0_ms[0])),
-                train_end=_ms_to_iso(int(unique_t0_ms[wf_split.train_end_idx - 1])),
-                test_start=_ms_to_iso(int(unique_t0_ms[wf_split.test_start_idx])),
-                test_end=_ms_to_iso(int(unique_t0_ms[test_end_bar_idx])),
+                train_start=train_start_iso,
+                train_end=train_end_iso,
+                test_start=test_start_iso,
+                test_end=test_end_iso,
                 n_train_bars=int(cpcv_split.train_idx.shape[0]),
                 n_purged=int(cpcv_split.n_purged),
                 n_test_bars=fold_result.n_test_bars,
@@ -337,6 +391,7 @@ def run_walk_forward_for_combo(
                 "deste combo -- fold excluido do agregado, mantido no artefato",
             )
 
+    fold_metrics.sort(key=lambda fm: fm.fold_id)
     usaveis = [fm for fm in fold_metrics if not fm.degenerado]
     stat_lists = {name: [getattr(fm, name) for fm in usaveis] for name in _AGGREGATE_STAT_NAMES}
     per_stat = {name: _aggregate_stats(values) for name, values in stat_lists.items()}

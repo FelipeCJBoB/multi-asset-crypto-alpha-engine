@@ -299,10 +299,10 @@ def test_unique_test_bars_feature_ids_filtra_warmup_pelo_vetor_certo() -> None:
     t2_values[2] = None
     df = df.with_columns(pl.Series("T2_CANDIDATE_A", t2_values, dtype=pl.Float64))
 
-    out_t1_only = alpha._unique_test_bars(df)
+    out_t1_only = alpha.unique_test_bars(df)
     assert out_t1_only.height == 5  # T1 sozinho não vê o NULL da T2
 
-    out_com_t2 = alpha._unique_test_bars(df, feature_ids=T1_FEATURE_IDS + extra)
+    out_com_t2 = alpha.unique_test_bars(df, feature_ids=T1_FEATURE_IDS + extra)
     assert out_com_t2.height == 4  # exclui a barra NULL na T2 candidata
 
 

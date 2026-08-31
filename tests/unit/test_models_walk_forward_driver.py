@@ -19,6 +19,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from src.features.build import T1_FEATURE_IDS
 from src.models import alpha
 from src.models import walk_forward as wf
 from src.validation.cpcv import CPCVSplit
@@ -85,22 +86,25 @@ def _synthetic_mf_data(n_days: int = 1095, seed: int = 0) -> pl.DataFrame:  # no
     ones = pl.Series(np.ones(n_days), dtype=pl.Float64)
     blocks = []
     for side, ret in ((1, ret_net), (-1, -ret_net)):
-        blocks.append(
-            pl.DataFrame(
-                {
-                    "t0": t0,
-                    "t1": t1,
-                    "side": pl.Series([side] * n_days, dtype=pl.Int8),
-                    "barrier_hit": pl.Series(["TP"] * n_days, dtype=pl.Utf8),
-                    "ret_net": pl.Series(ret, dtype=pl.Float64),
-                    "sample_weight": ones,
-                    "ret_gross": pl.Series(ret, dtype=pl.Float64),
-                    "cost_entry_bps": zeros,
-                    "cost_exit_bps": zeros,
-                    "funding_bps": zeros,
-                }
-            )
-        )
+        cols: dict[str, object] = {
+            "t0": t0,
+            "t1": t1,
+            "side": pl.Series([side] * n_days, dtype=pl.Int8),
+            "barrier_hit": pl.Series(["TP"] * n_days, dtype=pl.Utf8),
+            "ret_net": pl.Series(ret, dtype=pl.Float64),
+            "sample_weight": ones,
+            "ret_gross": pl.Series(ret, dtype=pl.Float64),
+            "cost_entry_bps": zeros,
+            "cost_exit_bps": zeros,
+            "funding_bps": zeros,
+        }
+        # `alpha.unique_test_bars` (precheck do driver ANTES de chamar
+        # `alpha.run_fold`) exige as 36 colunas de T1_FEATURE_IDS
+        # presentes e não-nulas -- sem isso todo fold seria descartado
+        # como "0 barras de teste válidas", mascarando o resto do teste.
+        for fid in T1_FEATURE_IDS:
+            cols[fid] = pl.Series(rng.normal(size=n_days), dtype=pl.Float64)
+        blocks.append(pl.DataFrame(cols))
     return pl.concat(blocks, how="vertical")
 
 
@@ -179,6 +183,60 @@ def test_run_walk_forward_gera_1_fold_por_wf_split(monkeypatch: pytest.MonkeyPat
     assert result.n_folds_total == len(expected_splits)
     assert len(result.fold_results) == len(expected_splits)
     assert result.n_folds_total > 1  # noqa: magic-number -- teste sem sentido com 1 fold só
+
+
+def test_run_walk_forward_pula_run_fold_quando_teste_tem_zero_barras_validas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Achado real (`BTCUSDT/R2`, execução real da campanha, 2026-08-31):
+    um fold cujo bloco de teste inteiro tem uma feature 100% nula faz
+    `alpha.run_fold` quebrar (`predict_proba` sobre array vazio) DEPOIS
+    de já ter treinado os dois lados. O driver checa `alpha.unique_test_
+    bars` ANTES de chamar `run_fold` -- prova aqui que `run_fold` NUNCA é
+    chamado pro fold degenerado (0 barras), mas ele continua no
+    artefato."""
+    mf_data = _synthetic_mf_data()
+    primeiro_feature = T1_FEATURE_IDS[0]
+
+    # Fronteira REAL do teste do fold_id=0 -- calculada, não estimada por
+    # offset de dias (trimestre civil não cai num múltiplo fixo de dias).
+    from src.validation.volatility_walkforward import generate_anchored_walk_forward_splits
+
+    t0_ms_all = mf_data["t0"].dt.epoch(time_unit="ms").to_numpy().astype(np.int64)
+    unique_t0_ms_all = np.unique(t0_ms_all)
+    fold0_split = generate_anchored_walk_forward_splits(unique_t0_ms_all, initial_train_years=2)[0]
+    janela_nula_ini = datetime.fromtimestamp(
+        int(unique_t0_ms_all[fold0_split.test_start_idx]) / 1000, tz=UTC
+    )
+    janela_nula_fim = datetime.fromtimestamp(
+        int(unique_t0_ms_all[fold0_split.test_end_idx - 1]) / 1000, tz=UTC
+    ) + timedelta(seconds=1)
+    mf_data = mf_data.with_columns(
+        pl.when((pl.col("t0") >= janela_nula_ini) & (pl.col("t0") < janela_nula_fim))
+        .then(None)
+        .otherwise(pl.col(primeiro_feature))
+        .alias(primeiro_feature)
+    )
+
+    chamadas: list[int] = []
+    fake = _make_fake_run_fold()
+
+    def _fake_run_fold_rastreado(
+        mf_data_arg: pl.DataFrame, split: CPCVSplit, **kwargs: Any
+    ) -> _FakeFoldResult:
+        chamadas.append(split.split_id)
+        return fake(mf_data_arg, split, **kwargs)
+
+    monkeypatch.setattr(alpha, "run_fold", _fake_run_fold_rastreado)
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.degenerado is True
+    assert fold0.n_test_bars == 0
+    assert fold0.score_quality_by_side == {}
+    assert 0 not in chamadas  # run_fold NUNCA chamado pro fold degenerado
+    assert len(chamadas) == result.n_folds_total - 1  # todos os outros, sim
 
 
 def test_run_walk_forward_marca_fold_degenerado_e_exclui_do_agregado(
