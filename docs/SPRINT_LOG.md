@@ -6145,3 +6145,49 @@ em cada fase fechada. Detalhamento completo (tabelas fold-a-fold,
 combo×lado) na aba "ADR-008 — Fases 0-8" do artefato "ADR-007 — Painel
 de Execução"
 (`https://claude.ai/code/artifact/ed42926f-90e2-4acd-bf61-58a9e05d9604`).
+
+## 2026-08-31 (continuação) — thresholds da Fase 6 medidos + auditoria de engenharia dos 5 módulos novos <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+Manager pediu, na mesma sessão do fechamento acima: (1) "investigar e
+medir os thresholds corretamente" (Fase 6 tinha 2 constantes `ASSUMED` <!-- check-sprint-log: skip -->
+explicitamente marcadas "arbitrário por ora"); (2) auditoria de <!-- check-sprint-log: skip -->
+engenharia (skill `audit_engineering`) nos 5 módulos novos da ADR-008, <!-- check-sprint-log: skip -->
+com correção real, não remediação; (3) mapear e preencher lacunas na <!-- check-sprint-log: skip -->
+aba do dashboard.
+
+<!-- check-sprint-log: skip -->
+**Thresholds** (commit `42a859f`): medidos contra os 62 fold-lado reais
+da campanha. Gate Model virou teste-t de uma amostra (Hanley-McNeil
+1982 mostrou `SE(AUC|H0=0,5)` entre 0,13-0,19 por fold — um piso fixo
+de 0,52 não tinha poder estatístico real). Gate Data virou piso
+ABSOLUTO de folds usáveis (`n≥10`, mesma ordem de `alpha.MIN_
+OCCURRENCES_ABOVE_TAU`) em vez de fração (penalizava desigual combos
+com `n_folds_total` diferente). Sob a forma corrigida: **0 de 20** <!-- check-sprint-log: skip -->
+(era "1 de 20" sob o threshold antigo — o único caso que passava tinha <!-- check-sprint-log: skip -->
+só `n=2` folds computáveis). <!-- check-sprint-log: skip -->
+
+**Auditoria de engenharia** (commit `e812ab1`): Workflow com 5 agentes
+(1 por módulo) + verificação adversarial por segundo revisor cético
+independente — achou 6 defeitos CONFIRMADOS reais, todos corrigidos:
+bucketing de decil não-determinístico (`score_quality.py`); correlação/
+AUC degenerada com `n=2` (`score_quality.py`, achado real materializado <!-- check-sprint-log: skip -->
+em artefato: `roc_auc=1.0` sobre 2 trades); diagnóstico de população de <!-- check-sprint-log: skip -->
+treino por lado calculado e descartado (`walk_forward.py`); gate
+estatístico sem correção de múltiplas comparações nem p-valor exposto,
+e convenção divergente em `std==0` (`walk_forward_gates.py`, módulo
+reescrito na mesma sessão); métrica de nível COMBO exibida como se
+fosse por LADO no cartão final, materializado no único candidato que
+passava a auditoria (`model_card.py`); `None`/JSON-`null` vazando pra
+campo tipado `float` (`stability_matrix.py`). 9 testes novos, sweep
+completo 2811 passed. Veredito final não muda (0/20), mas fica mais
+rigoroso. 4 achados de metodologia mais profundos (teste-t assume
+folds i.i.d. mas walk-forward ancorado tem treino sobreposto —
+direção do efeito NÃO medida; denominadores Data/Model desalinhados;
+piso de Sharpe reusado sem validação própria; `Metric` não adotado)
+ficaram deliberadamente ABERTOS, registrados em `AG-392`. <!-- check-sprint-log: skip -->
+
+<!-- check-sprint-log: skip -->
+Dashboard atualizado com os 2 achados (seções "Correção pós-Fase-8" e
+"Auditoria de engenharia"), tabela da Fase 8 corrigida (`oos_folds_ <!-- check-sprint-log: skip -->
+usados` agora por lado, não por combo).

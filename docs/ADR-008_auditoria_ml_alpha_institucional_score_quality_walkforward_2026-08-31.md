@@ -36,7 +36,15 @@ medir exigiria retreino real fora do orçamento já autorizado. Achado
 consolidado, ainda sem decisão FINAL do Manager sobre como agir (nenhum
 candidato promovido em ADR-007 sobrevive ao gate duplo desta auditoria;
 os 2 novos thresholds seguem `class: A`/`sweep_required: true`,
-propostos nesta sessão, não travados formalmente).
+propostos nesta sessão, não travados formalmente). **Auditoria de
+engenharia** (`audit_engineering`, Workflow adversarial) sobre os 5
+módulos novos desta ADR achou e corrigiu 6 defeitos reais confirmados
+(bucketing não-determinístico, correlação/AUC degenerada em amostra
+minúscula, diagnóstico de treino por lado descartado, gate estatístico
+sem FDR e com convenção divergente em `std=0`, métrica de nível errado
+no cartão final, `None` vazando pra campo `float`) — veredito final
+(0/20) não muda, mas ficou mais rigoroso; 4 achados de metodologia mais
+profundos ficaram deliberadamente em aberto (`AG-392`). Ver Item 14.
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -506,3 +514,53 @@ decididas por conta própria.
     reescritos, `scipy.stats.t` reusado (já em uso no repo,
     `src/regime/bocpd.py`). Mecânico limpo, sweep completo (`-m "not
     slow"`): 2802 passed, mesma 1 falha pré-existente não relacionada.
+14. [x] Auditoria de engenharia (`audit_engineering`, Workflow — 5
+    agentes, 1 por módulo novo da ADR-008, 4-lente completa + segundo
+    revisor cético independente por módulo) — commit `e812ab1`. 6
+    achados CONFIRMADOS (não falsos-positivos) corrigidos com solução
+    robusta:
+    - `score_quality.py`: bucketing de decil não-determinístico entre
+      execuções (`.join()` do Polars sem ordem garantida + desempate por
+      ordem de chegada) — corrigido com `.sort([confidence, t0])`.
+    - `score_quality.py`: correlação/AUC computada com `n=2` (sempre
+      degenerada em ±1,0/0,0/1,0), abaixo do piso já adotado em
+      `monotonic._MIN_OBS_PER_ENV=5` — achado real materializado
+      (`n_trades=2, roc_auc=1.0` num fold real). Corrigido com piso
+      `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS=5`.
+    - `walk_forward.py`: `n_train_bars` media linhas 2-lados PRÉ-filtro
+      (unidade errada), `FoldResult.n_train_long`/`n_train_short` (a
+      população REAL pós-filtro) descartados — classe "diagnóstico
+      calculado e descartado". Corrigido: renomeado + 2 campos novos.
+    - `walk_forward_gates.py` (reescrito na mesma sessão, sem segunda
+      revisão até então): sem correção de múltiplas comparações nem
+      p-valor exposto (apesar de `fdr_correction.py` já existir);
+      `std==0,0` decidia por aprovação automática, divergindo da
+      convenção do módulo-irmão citado como espelho. Corrigido:
+      `model_gate_p_value`/`apply_fdr_to_model_gates` novos, `std==0,0`
+      agora sempre falha.
+    - `model_card.py`: `oos_folds_usados` de nível COMBO exibido junto
+      de métricas por LADO — materializado no único candidato que
+      passava a auditoria (`XRPUSDT/R3/camada0/short`: mostrava
+      `oos_folds_usados=6` quando o `n` real que sustentava o AUC=0,522
+      era 2). Corrigido: lê `n_folds_auc_by_side[side]`.
+    - `stability_matrix.py`: `None` (JSON `null`, `orjson` serializa
+      `NaN` como `null`) vazava pra campo tipado `float`. Corrigido:
+      `_float_or_nan` novo.
+
+    9 testes novos, mecânico limpo, sweep completo: 2811 passed (+9),
+    mesma 1 falha pré-existente não relacionada. Re-rodado contra os
+    10 combo×variant reais: **veredito não muda (0/20)**, mas
+    `oos_folds_usados` por lado agora reflete o `n` real (ex.
+    `XRPUSDT/R3/camada0/short`: 6→2). **Nota importante**: o fix de
+    `score_quality.py` (piso N, sort determinístico) só afeta PRÓXIMOS
+    retreinos — os artefatos JSON reais em disco foram escritos pelo
+    código ANTIGO, não foram retreinados nesta rodada (exigiria nova
+    campanha real, fora do escopo de correção de auditoria). 4 achados
+    de metodologia/desenho ficaram deliberadamente ABERTOS (exigem
+    medição ou decisão maior, não só código) — registrados em `AG-392`:
+    teste-t assume folds i.i.d. mas walk-forward ancorado tem treino
+    sobreposto (premissa violada confirmada, direção do efeito NÃO
+    medida); denominadores Data (combo) vs Model (lado) desalinhados;
+    `MIN_OCCURRENCES_ABOVE_TAU=10` reusado sem validação própria pro
+    papel de confiabilidade de Sharpe; `Metric`/`Unit` não adotado
+    (inconsistência sistêmica do pacote, não regressão isolada).

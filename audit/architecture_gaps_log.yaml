@@ -25950,3 +25950,64 @@ entries:
       estatistica real. Achado FICA MAIS FORTE, nao mais fraco.
     resolved_by_commit: null
     status: "ABERTO -- achado consolidado (9 fases, `ADR-008` fechada), reportado ao Manager sem decisao unilateral sobre os 5 candidatos. Threshold em si (questao 1) agora tem base MEDIDA (`DERIVED`/`LITERATURE`, ver adendo acima), mas ainda `class: A`+`sweep_required: true` -- decisao FINAL de travar o valor segue do Manager. 1 questao pendente segue aberta: se/como o walk-forward real passa a ser um gate OBRIGATORIO no pipeline de promocao (hoje so roda como auditoria pos-hoc, depois do candidato ja promovido, nao antes) -- Manager confirmou 2026-08-31 que segue pos-hoc por enquanto, nao decisao final."
+
+  - id: AG-392
+    date: "2026-08-31"
+    file: "src/models/score_quality.py; src/models/walk_forward.py; src/analysis/stability_matrix.py; src/analysis/walk_forward_gates.py; src/analysis/model_card.py"
+    related_file: "audit/code_reviews/ (nenhum arquivo salvo -- auditoria rodada via Workflow, resultado direto na conversa); src/validation/fdr_correction.py; AG-391"
+    numeracao: "AG-392."
+    found_by: "Workflow audit_engineering (2026-08-31) -- 5 agentes (1 por modulo novo da ADR-008), 4-lente completa (FS/FI/FT/FCN) + verificacao adversarial por segundo revisor cetico independente por modulo. Pedido do Manager: 'invoque skill audit engineering nos novos arquivos... maxima criticidade e engenharia'."
+    gap: >
+      Auditoria adversarial dos 5 modulos novos da ADR-008 (Fases 1/3/4/
+      5/6/7/8) achou 6 defeitos CONFIRMADOS reais (ja corrigidos, commit
+      `e812ab1` -- bucketing de decil nao-deterministico, piso de N
+      degenerado em correlacao/AUC, diagnostico de treino por lado
+      descartado, gate estatistico sem p-valor/FDR e com convencao
+      divergente em std=0, oos_folds_usados de nivel errado no cartao
+      final, None/JSON-null vazando pra campo float). Além dos
+      corrigidos, a auditoria deixou em aberto DELIBERADAMENTE (nao
+      corrigido nesta rodada -- exige medicao ou decisao de desenho
+      maior, nao so codigo):
+
+      1. `walk_forward_gates.py::model_gate_p_value` -- o teste-t de
+      uma amostra trata os folds do walk-forward ANCORADO (treino
+      NUNCA encolhe, so expande -- cada fold e superset do anterior)
+      como i.i.d., violando a premissa classica de independencia
+      (Dietterich 1998; Nadeau & Bengio, correcao pra CV com treino
+      sobreposto). A PREMISSA violada e real e confirmada em codigo,
+      mas a DIRECAO do efeito (anti-conservador vs. conservador) NAO
+      foi medida -- o segundo revisor notou uma forca em sentido
+      contrario (ruido amostral intra-fold, mediana de 20,5 trades,
+      infla o `std` entre-folds e tornaria o teste MAIS conservador,
+      nao menos) que o auditor original nao considerou. Nao decidir
+      sem medir (`CLAUDE.md`, "meca antes de afirmar").
+
+      2. Gate Data (nivel COMBO, `n_folds_usados`) e gate Model (nivel
+      LADO, `n_folds_auc_by_side[side]`) usam denominadores de "quantos
+      folds sao suficientes" desalinhados -- documentado como distinto
+      de proposito, mas o composto em `model_card.py` nao reconcilia:
+      um lado pode ter poucos folds com AUC computavel mesmo quando o
+      combo inteiro passa o piso de 10. Nao e bug (cada gate mede o que
+      diz medir), e uma lacuna de desenho -- unificar exigiria decidir
+      se o piso de evidencia deveria ser por combo ou por lado, decisao
+      de metodologia, nao so codigo.
+
+      3. `walk_forward.py::min_trades_for_non_degenerate_fold` reusa
+      `alpha.MIN_OCCURRENCES_ABOVE_TAU=10` (piso desenhado pra
+      confiabilidade de LEITURA DE CAUDA/quantil) pro papel NOVO de
+      confiabilidade de `std(ret_net, ddof=1)` sobre poucos trades (o
+      caso que motivou o criterio, `SOLUSDT/R2` fold_id=9, tinha n=2 --
+      nada valida empiricamente que n=10 ja basta pro papel novo, so
+      que 10>2). Sugestao do segundo revisor: medir descritivamente (0
+      trials, sobre `experiments/alpha_walk_forward_*.json` ja
+      gravado) o Sharpe maximo observado em folds com n entre 10 e 20,
+      antes de considerar o piso validado pro papel de Sharpe.
+
+      4. `src.core.metric.Metric`/`Unit`/`not_computable` (padrao ja
+      adotado em `attribution.py`/`hhi.py`/`decomposition.py`) NAO foi
+      adotado em nenhum dos 5 modulos novos da ADR-008 -- inconsistencia
+      SISTEMICA do pacote inteiro (nao regressao de 1 arquivo isolado),
+      DoD minimo (docstring com unidade/proveniencia) atendido em todos,
+      mas sem o tipo forte.
+    resolved_by_commit: null
+    status: "ABERTO -- 4 itens de metodologia/desenho, deliberadamente NAO corrigidos nesta rodada (exigem medicao adicional ou decisao de escopo maior, nao so edicao de codigo -- skill audit_engineering: 'achado revela necessidade de refator estrutural -> reportar e sugerir sessao dedicada'). Nenhum bloqueia producao (walk-forward segue pos-hoc, AG-391). Prioridade sugerida: item 1 (medir direcao do efeito i.i.d.) antes de qualquer decisao de tornar o gate Model obrigatorio."
