@@ -694,3 +694,53 @@ def test_confirm_combo_paired_edge_gate_falha_por_sinal_mesmo_com_cobertura_boa(
     assert result.winner_median_trade_count == pytest.approx(40.0)  # noqa: magic-number -- cobertura OK
     assert result.edge_gate_pass is False  # sinal negativo, apesar da cobertura suficiente
     assert result.dual_gate_pass is False
+
+
+# ============================================================================
+# ADR-008 Fase 2 (item 12/consultor) -- export_trial_trajectory
+# ============================================================================
+
+
+def _study_with_trials(n_trials: int) -> optuna.Study:
+    """Study Optuna REAL, em memória (sem SQLite), com `n_trials`
+    completos -- objetivo trivial, não treina nada, só exercita a
+    mecânica real de `trials_dataframe()`."""
+    study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=1))
+    study.optimize(lambda trial: trial.suggest_float("x", 0.0, 1.0), n_trials=n_trials)
+    return study
+
+
+def test_export_trial_trajectory_grava_todos_os_trials_nao_so_o_vencedor(tmp_path: Any) -> None:
+    study = _study_with_trials(5)
+
+    out_path = mod.export_trial_trajectory(
+        study, symbol="BTCUSDT", resolution_id="R2", variant="camada1", root=tmp_path
+    )
+
+    assert out_path.exists()
+    assert out_path.name == "alpha_optuna_trials_BTCUSDT_R2_camada1.parquet"
+    df = pl.read_parquet(out_path)
+    assert df.height == 5  # todos os 5 trials, não só o best_trial
+    assert "value" in df.columns
+    assert "params_x" in df.columns
+    assert "number" in df.columns
+
+
+def test_export_trial_trajectory_e_atomico_tmp_nao_sobra(tmp_path: Any) -> None:
+    study = _study_with_trials(2)
+    mod.export_trial_trajectory(
+        study, symbol="SOLUSDT", resolution_id="R3", variant="camada0", root=tmp_path
+    )
+    assert not (tmp_path / "alpha_optuna_trials_SOLUSDT_R3_camada0.parquet.tmp").exists()
+
+
+def test_export_trial_trajectory_cria_diretorio_se_ausente(tmp_path: Any) -> None:
+    study = _study_with_trials(1)
+    root = tmp_path / "nested" / "dir"
+    assert not root.exists()
+
+    out_path = mod.export_trial_trajectory(
+        study, symbol="XRPUSDT", resolution_id="R2", variant="camada1", root=root
+    )
+
+    assert out_path.exists()

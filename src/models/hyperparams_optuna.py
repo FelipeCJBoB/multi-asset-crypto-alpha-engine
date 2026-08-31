@@ -42,7 +42,9 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import io
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -62,7 +64,7 @@ from src.validation import dsr as dsr_mod
 from . import alpha, backtest_lite, monotonic
 from . import dataset as ds
 from ._constants import load_constant, load_constant_entry
-from ._paths import ARTIFACT_ROOT, OPTUNA_STUDIES_DIR
+from ._paths import ARTIFACT_ROOT, EXPERIMENTS_DIR, OPTUNA_STUDIES_DIR
 
 logger = structlog.get_logger(__name__)
 
@@ -498,6 +500,53 @@ class OptunaSearchResult:
     dsr_n_trials: int | None
 
 
+def export_trial_trajectory(
+    study: optuna.Study,
+    *,
+    symbol: str,
+    resolution_id: str,
+    variant: str,
+    root: Path = EXPERIMENTS_DIR,
+) -> Path:
+    """ADR-008 Fase 2 (item 12/consultor) — exporta a trajetória COMPLETA
+    de trials (todos, não só o vencedor). `study.trials_dataframe()` é
+    nativo do Optuna (`number`/`params_*`/`value`/`state`/`datetime_
+    start`/`datetime_complete` — `training_time` é a diferença dos dois
+    últimos, não recalculada aqui) — hoje esse dado só existe dentro do
+    SQLite do study (`OPTUNA_STUDIES_DIR`), ilegível sem reabrir o
+    `Study` em Python. `OOS_metric` por trial individual NÃO está aqui —
+    só o vencedor passa por confirmação multi-seed
+    (`confirm_top_k_multi_seed`), calculá-lo pra todo trial custaria N×
+    mais retreino sem orçamento declarado (registrado como lacuna
+    conhecida em `docs/ADR-008_...md`, não decidido silenciosamente).
+
+    **Por que isso importa** (B23, mesma disciplina de
+    `selection_bias_estimate`): "o melhor modelo teve Sharpe X" e
+    "testamos N configurações e escolhemos a que maximizou X" são
+    afirmações diferentes — a segunda carrega viés de seleção que só é
+    auditável se a trajetória inteira sobreviver, não só o vencedor."""
+    df = pl.from_pandas(study.trials_dataframe())
+    root.mkdir(parents=True, exist_ok=True)
+    out_path = root / f"alpha_optuna_trials_{symbol}_{resolution_id}_{variant}.parquet"
+    tmp_path = out_path.with_name(out_path.name + ".tmp")
+    buffer = io.BytesIO()
+    df.write_parquet(buffer)
+    with tmp_path.open("wb") as fh:
+        fh.write(buffer.getvalue())
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, out_path)
+    logger.info(
+        "models.hyperparams_optuna.trial_trajectory_exported",
+        symbol=symbol,
+        resolution_id=resolution_id,
+        variant=variant,
+        n_trials=df.height,
+        path=str(out_path),
+    )
+    return out_path
+
+
 def write_search_artifact(
     result: OptunaSearchResult,
     *,
@@ -757,6 +806,7 @@ def run_search_for_combo(
         dsr_n_trials=dsr_n_trials,
     )
     write_search_artifact(result, feature_ids_effective=feature_ids_effective, scratch=scratch)
+    export_trial_trajectory(study, symbol=symbol, resolution_id=resolution_id, variant=variant)
     logger.info(
         "models.hyperparams_optuna.study_done",
         symbol=symbol,
