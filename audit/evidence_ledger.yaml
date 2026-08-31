@@ -3926,3 +3926,141 @@ entries:
     concorrencia e pesos sao funcao de (t0, t1, symbol, side_hat,
     atr_at_t0) apenas -- o regime so entra no one-hot e no meta_status.
     Vale identica sob HMM k=4.
+
+- id_curto: adr007-zero-de-6-combos-gate-duplo-2026-08-31
+  data: '2026-08-31'
+  fase: 'ADR-007 Itens 1-4 (campanha Optuna real substitui config/alpha_hyperparams_by_combo.yaml,
+    AG-371) -- resposta ao pedido do Manager de medir, com rigor contra falso-positivo,
+    os 5 gaps abertos apos AG-382/AG-383 (H10)'
+  symbol: 'BTCUSDT+SOLUSDT+XRPUSDT (6 combos: BTCUSDT/R2, BTCUSDT/R3, SOLUSDT/R2,
+    SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 -- os 6 com edge bruto medio positivo em >=2
+    de 3 resolucoes e nao-R1, ver ADR-007 secao "Correcao de validacao")'
+  tf: 'dollar-bar R2/R3, Camada1 e Camada0'
+  janela: 'dado de producao atual em disco no momento da campanha (2026-08-30/31)'
+  lado: 'pooled -- gate de permanencia agrega long+short por path'
+  regime: all
+  feature_ou_filtro: 'src.models.hyperparams_optuna.py -- TPESampler sobre 12 campos
+    de LGBMHyperparams, studies independentes por (symbol, resolution_id, variant)'
+  metrica_tipo: 'Item 1: n_trials/best_value por combo (screening). Item 2: median_n_better
+    sobre 10 seeds de confirmacao (gate de permanencia real, mesmo criterio de
+    alpha-lightgbm-sweep-15-combinacoes-2026-08-23) + vies de selecao (best_value do
+    screening menos mediana da confirmacao)'
+  metrica_valor: >
+    Item 1 (1.800/1.800 trials, 0 falhas, 2h32m18s): SOLUSDT/R2 com best_value
+    extremo nas 2 camadas (22,22/8,96) vs. p95~=0,82 da campanha inteira -- ~27x
+    o p95, marcado suspeito, nao tratado como sinal ate confirmacao.
+
+    Item 2 (720/720 confirmacoes, 10 seeds x top-6 x 2 camadas): **ZERO dos 6
+    combos passa o gate duplo** (piso >=4,0, mesmo criterio empirico ja
+    registrado em alpha-lightgbm-sweep-15-combinacoes-2026-08-23) --
+    median_n_better: BTCUSDT/R3=2,5 (unico que passava sob a confirmacao H10
+    original, caiu com orcamento maior -- n_better_by_seed varia de 1 a 5 so
+    trocando seed, mesmo hiperparametro vencedor); BTCUSDT/R2=3,0; SOLUSDT/R2=2,5;
+    SOLUSDT/R3=3,0; XRPUSDT/R2=2,0; XRPUSDT/R3=2,5.
+
+    SOLUSDT/R2 confirma a anomalia do Item 1 como ruido PURO de screening:
+    vies de selecao (winner's-curse) = **+8,356 -- recorde do projeto**
+    (recorde anterior: +0,772, ADR-002, ETHUSDT/R1 k=32).
+  n: 6
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_optuna_confirmation_{symbol}_{resolution_id}_*.json
+    (6 combos, confirmacao mais recente 2026-08-31) + audit/n_lifetime.yaml::id=38-39'
+  fonte_secao: 'docs/ADR-007_medicao_producao_hiperparametro_optuna_15_combos_2026-08-30.md,
+    Itens 1 e 2'
+  nota: >
+    Classificado VERMELHO -- achado negativo explicito, nao ambiguo (diferente do
+    AMARELO do sweep de 2026-08-23, que era resultado misto). ZERO de 6 combos
+    sobrevive a confirmacao profunda, apos a campanha ter sido expandida
+    especificamente pra dar a cada candidato a melhor chance real de passar
+    (150 trials/combo/camada, nao os 30 originais).
+
+    Apesar deste achado, o Manager autorizou override manual promovendo 5
+    candidatos (BTCUSDT/R2, SOLUSDT/R2, SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3 --
+    BTCUSDT/R3 excluido deliberadamente) a producao canonica --
+    config/constants.yaml::alpha_production_hyperparam_override,
+    N_lifetime 2.636->5.510 (id=38-40). Decisao de negocio registrada como tal,
+    nao resolucao estatistica do gate.
+
+    CONSEQUENCIA MEDIDA EM SEGUIDA (ver adr008-walkforward-real-0-de-20-2026-08-31):
+    os mesmos 5 candidatos, avaliados sob walk-forward real fora-da-amostra no
+    tempo (mecanismo diferente do CPCV usado aqui), tambem nao sobrevivem --
+    achado convergente, nao contraditorio, entre 2 metodologias de validacao
+    independentes.
+
+- id_curto: adr008-walkforward-real-0-de-20-2026-08-31
+  data: '2026-08-31'
+  fase: 'ADR-008 Fases 4-8 + correcao pos-Fase-8 (thresholds medidos) -- auditoria
+    institucional ML/Alpha sobre os 5 candidatos promovidos em ADR-007 apesar da
+    reprovacao (ver adr007-zero-de-6-combos-gate-duplo-2026-08-31)'
+  symbol: 'BTCUSDT+SOLUSDT+XRPUSDT (5 combos promovidos: BTCUSDT/R2, SOLUSDT/R2,
+    SOLUSDT/R3, XRPUSDT/R2, XRPUSDT/R3)'
+  tf: 'dollar-bar R2/R3, Camada1 e Camada0, walk-forward ancorado (initial_train_years=2,
+    passo trimestral civil)'
+  lado: 'long e short separados (gates codificados sao por lado)'
+  regime: all
+  feature_ou_filtro: 'src.models.walk_forward.run_walk_forward_for_combo (retreino
+    real por fold) + src.analysis.{stability_matrix,walk_forward_gates,model_card}
+    (auditoria pos-hoc)'
+  metrica_tipo: 'Fase 5: AUC out-of-time medio/dispersao por combo x variant x lado.
+    Fase 6/correcao: gate Data (n_folds_usados>=10, piso absoluto DERIVED) + gate
+    Model (teste-t unicaudal H0:AUC<=0,5, alpha=0,05 LITERATURE) + gate Alpha
+    (edge_bps>0) -- veredito composto AND dos 3'
+  metrica_valor: >
+    Fase 4 (walk-forward real, 10 runs, 3 bugs reais corrigidos rodando pela 1a
+    vez): taxa de fold degenerado alta em TODOS os 5 candidatos (SOLUSDT/R2=1/12
+    folds usaveis nas 2 camadas -- o pior caso, n_signals=0 em 8/12 trimestres).
+    Sharpe/edge_bps agregados majoritariamente NEGATIVOS -- oposto ao CPCV que
+    embasou a promocao (n_lifetime id=41, todos positivos).
+
+    Fase 5 (stability matrix): AUC out-of-time perto de 0,50 (as vezes exatamente
+    0,500, std=0,000) na maioria dos combos/lados -- sem poder discriminativo real
+    detectavel fora da amostra. Dispersao de IC entre folds tipicamente MAIOR que
+    a propria media (ex. BTCUSDT/R2 long: mean=0,035 std=0,512) -- ruido, nao
+    sinal estavel. Gain concentrado em 1-2 features na maioria dos combos.
+
+    Fase 6 + correcao pos-Fase-8 (thresholds medidos contra os 62 fold-lado
+    reais, nao mais ASSUMED): **0 de 20 combo x variant x lado** passa os 3
+    gates simultaneamente (era "1 de 20" sob o threshold fixo original -- o
+    unico caso que passava, XRPUSDT/R3/camada0/short, tinha so n=2 folds
+    computaveis, nao sobrevive a exigencia de significancia estatistica real).
+    Sweep de sensibilidade +-50%+ (classe A) confirma: veredito composto fica em
+    0/10 em TODA a grade testada (min_folds em {5,8,10,15,20} x significance_level
+    em {0,01;0,025;0,05;0,075;0,10}) -- conclusao robusta a escolha do limiar.
+
+    Fase 7 (SHAP): concordancia gain nativo x SHAP varia de 0,00 a 1,00 entre
+    combos/lados -- em 6 de 20 linhas os 2 metodos apontam features DIFERENTES
+    como #1. Por gain, A04_log_return_12 vence 10/20 linhas; por SHAP, ZERO
+    (0/20) -- SHAP consistentemente prefere E16f_global_ls_ratio (11/20) ou
+    E05f_time_to_funding_h (7/20).
+  n: 20
+  status: vermelho
+  fonte_arquivo: 'experiments/alpha_walk_forward_{symbol}_{resolution_id}.json (5
+    arquivos) + audit/n_lifetime.yaml::id=42'
+  fonte_secao: 'docs/ADR-008_auditoria_ml_alpha_institucional_score_quality_walkforward_2026-08-31.md,
+    Fases 4-8 + Item 13 (correcao de thresholds) + Item 15 (decisao final)'
+  nota: >
+    Classificado VERMELHO -- achado negativo explicito e consolidado, mesma
+    severidade que adr007-zero-de-6-combos-gate-duplo-2026-08-31, do qual este
+    achado e continuacao direta (mesmos 5 candidatos, metodologia diferente,
+    conclusao convergente).
+
+    Auditoria de engenharia adversarial (5 agentes + segundo revisor cetico por
+    modulo, mesma sessao) achou e corrigiu 6 defeitos reais nos modulos desta
+    ADR (bucketing de decil nao-deterministico, correlacao/AUC degenerada com
+    n=2, diagnostico de treino por lado descartado, gate estatistico sem FDR e
+    com convencao divergente em std=0, metrica de nivel errado no cartao final,
+    None/JSON-null vazando pra campo float) -- veredito final NAO mudou apos as
+    correcoes (permanece 0/20), mas ficou mais rigoroso, nao e artefato de bug.
+
+    2 achados de metodologia mais profundos, registrados em AG-392, foram
+    tambem medidos nesta mesma rodada (nao neste ledger, ja que sao achados de
+    ARQUITETURA/desenho do proprio instrumento de medicao, nao achado
+    estatistico sobre os candidatos -- ver audit/architecture_gaps_log.yaml):
+    autocorrelacao lag-1 do AUC entre folds predominantemente NEGATIVA (4 de 5
+    series reais, mean=-0,216) -- nao sustenta a hipotese de que o teste-t do
+    gate Model seja anti-conservador; |Sharpe| maximo cai monotonicamente com
+    n_filled_trades, sem blow-up patologico em nenhum bucket >=10 (validando o
+    piso reusado de alpha.MIN_OCCURRENCES_ABOVE_TAU pro papel novo).
+
+    Decisao sobre os 5 candidatos em producao (mante-los, reverter a promocao,
+    ou outra acao) NAO foi tomada nesta ADR -- fica com o Manager.
