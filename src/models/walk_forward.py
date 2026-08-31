@@ -19,6 +19,20 @@ generalizar a assinatura de `run_fold` (a alternativa que o ADR-008
 também considerava) evita qualquer edição na função mais testada do
 motor — zero risco novo pra ela.
 
+**Achado real (execução real contra `BTCUSDT/R2`, não hipotético):**
+`generate_anchored_walk_forward_splits` exige `open_time_ms` estritamente
+crescente (`np.searchsorted`), mas `mf.data`/`labels` (o `df_all` que
+`alpha.run_fold` de fato fatia) tem DUAS linhas por barra — uma por lado
+(`side=1`/`side=-1`, mesma garantia de `labels.parquet` já documentada em
+`alpha._unique_test_bars`) — `t0` REPETE e não é globalmente monótono.
+Por isso os índices de `WalkForwardSplit` (posições numa timeline
+ÚNICA/ordenada, `unique_t0_ms`, gerada pelo chamador via `np.unique`) são
+traduzidos aqui em FRONTEIRAS DE TEMPO (timestamp), aplicadas como filtro
+booleano sobre `t0_ms`/`t1_ms` do `df_all` de 2 linhas/barra — nunca como
+posição direta (as duas timelines têm tamanhos diferentes). Mesmo idioma
+de `src.validation.cpcv.generate_splits`, que já resolve purge por
+comparação de VALOR (`t0_ms`/`t1_ms`), não por posição.
+
 Campos de `CPCVSplit` sem equivalente sob uma única fronteira cronológica
 contígua (CPCV tem grupos combinatórios espalhados no tempo, com purge E
 embargo nos dois sentidos; walk-forward ancorado tem só 1 fronteira, teste
@@ -38,30 +52,47 @@ IntArray = NDArray[np.int64]
 
 
 def walk_forward_split_to_cpcv_split(
-    wf_split: WalkForwardSplit, t0_ms: IntArray, t1_ms: IntArray
+    wf_split: WalkForwardSplit,
+    unique_t0_ms: IntArray,
+    t0_ms: IntArray,
+    t1_ms: IntArray,
 ) -> CPCVSplit:
-    """`t0_ms`/`t1_ms` — arrays paralelos ao `df_all` que gerou `wf_split`
-    (mesma convenção de `alpha._temporal_purged_calib_split`: núcleo puro,
-    a extração de `df_all["t0"]`/`df_all["t1"]` fica a cargo do chamador,
-    computada uma vez fora do loop de folds).
+    """`unique_t0_ms` — timeline ÚNICA e ordenada de `t0` (1 valor por
+    barra, `np.unique` sobre o `t0` de `df_all`) usada pra GERAR
+    `wf_split` (`generate_anchored_walk_forward_splits` exige índice
+    estritamente crescente). `t0_ms`/`t1_ms` — arrays paralelos ao
+    `df_all` REAL de 2 linhas/barra que `alpha.run_fold` vai fatiar
+    (mesma convenção de `alpha._temporal_purged_calib_split`: núcleo
+    puro, a extração de `df_all["t0"]`/`df_all["t1"]` fica a cargo do
+    chamador, computada uma vez fora do loop de folds).
 
     Purge (B09, mesmo idioma de `_temporal_purged_calib_split`): descarta
     do treino toda linha cujo `t1` ainda esteja ABERTO quando o bloco de
     teste começa. Levanta `ValueError` se o purge esvaziar o treino
     inteiro — fold degenerado, falha alta em vez de treinar sobre 0
     linhas."""
-    test_start = int(t0_ms[wf_split.test_start_idx])
-    train_candidates = np.arange(wf_split.train_end_idx, dtype=np.int64)
-    keep = t1_ms[train_candidates] < test_start
+    n_unique = unique_t0_ms.shape[0]
+    test_start_time = int(unique_t0_ms[wf_split.test_start_idx])
+    # `test_end_idx` pode ser o comprimento da timeline única (último
+    # fold, "até o fim da série") -- sem entrada em `unique_t0_ms` pra
+    # ler; `t0_ms.max() + 1` fecha o intervalo à direita sem excluir a
+    # última barra real (comparação é `< test_end_time`, exclusiva).
+    test_end_time = (
+        int(unique_t0_ms[wf_split.test_end_idx])
+        if wf_split.test_end_idx < n_unique
+        else int(t0_ms.max()) + 1
+    )
+
+    train_candidates = np.flatnonzero(t0_ms < test_start_time)
+    keep = t1_ms[train_candidates] < test_start_time
     train_idx = train_candidates[keep]
     if train_idx.shape[0] == 0:
         raise ValueError(
             "walk_forward_split_to_cpcv_split: purge por t1 esvaziou o treino do "
-            f"fold_id={wf_split.fold_id} (train_end_idx={wf_split.train_end_idx}, "
-            f"test_start={test_start}) -- fold degenerado, horizonte de label cobre "
-            "todo o prefixo de treino"
+            f"fold_id={wf_split.fold_id} (test_start_time={test_start_time}) -- fold "
+            "degenerado, horizonte de label cobre todo o prefixo de treino"
         )
-    test_idx = np.arange(wf_split.test_start_idx, wf_split.test_end_idx, dtype=np.int64)
+    test_idx = np.flatnonzero((t0_ms >= test_start_time) & (t0_ms < test_end_time))
     return CPCVSplit(
         split_id=wf_split.fold_id,
         path_id=0,
