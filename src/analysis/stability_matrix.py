@@ -107,6 +107,23 @@ def _dispersion(values: list[float]) -> dict[str, float]:
     }
 
 
+def _float_or_nan(value: float | None) -> float:
+    """`None` (JSON `null` — `orjson.dumps` serializa `NaN`/`Infinity`
+    como `null` automaticamente, `json.load` devolve `None`, ver
+    `src.io.artifact`) normalizado pra `float("nan")` explícito —
+    correção 2026-08-31 (achado real de `audit_engineering`, confirmado
+    contra artefato real: `experiments/alpha_walk_forward_BTCUSDT_R2.
+    json`, `camada0` fold_id=6, `score_quality_by_side.long.roc_auc`
+    grava `null`). Sem isso, `None` vazava pra um campo tipado `float`
+    de `StabilityRow`, violando o contrato de tipo silenciosamente —
+    mascarado hoje só pela coerção implícita `None->NaN` que `np.
+    asarray(..., dtype=np.float64)` faz dentro de `_dispersion`, mas
+    quebra qualquer consumo direto de `.rows` (ex. `min(rows, key=
+    lambda r: r.roc_auc)` levanta `TypeError`, `'<' not supported
+    between 'NoneType' and 'float'`)."""
+    return float("nan") if value is None else value
+
+
 def _top_feature(importance: dict[str, float]) -> tuple[str | None, float]:
     """`(feature, share)` — a feature de MAIOR importância (gain bruto
     OU `|SHAP|` médio, mesma fórmula pros dois eixos) e sua fração do
@@ -138,7 +155,7 @@ def _top_feature_frequency(
         assert feature is not None  # já filtrado acima -- só pra mypy
         counts[feature] = counts.get(feature, 0) + 1
     n = len(side_rows)
-    return dict(sorted(((f, c / n) for f, c in counts.items()), key=lambda kv: -kv[1]))
+    return dict(sorted(((f, c / n) for f, c in counts.items()), key=lambda kv: -kv[1]))  # noqa: unguarded-ratio -- n=len(side_rows)>=1 ja garantido pelo early-return acima nesta funcao
 
 
 def _gain_shap_agreement_rate(rows: list[StabilityRow], side: str) -> float:
@@ -155,7 +172,7 @@ def _gain_shap_agreement_rate(rows: list[StabilityRow], side: str) -> float:
     if not side_rows:
         return float("nan")
     n_agree = sum(1 for r in side_rows if r.top_feature_by_gain == r.top_feature_by_shap)
-    return n_agree / len(side_rows)
+    return n_agree / len(side_rows)  # noqa: unguarded-ratio -- len(side_rows)>=1 ja garantido pelo early-return acima nesta funcao
 
 
 def build_stability_matrix(
@@ -192,10 +209,14 @@ def build_stability_matrix(
                     fold_id=fr["fold_id"],
                     side=side,
                     n_trades=sq["n_trades"] if sq else 0,
-                    ic_spearman_pooled=sq["spearman_ic_pooled"] if sq else float("nan"),
-                    roc_auc=sq["roc_auc"] if sq else float("nan"),
-                    log_loss=sq["log_loss"] if sq else float("nan"),
-                    q10_minus_q1_bps=decile["q10_minus_q1_bps"] if decile else float("nan"),
+                    ic_spearman_pooled=(
+                        _float_or_nan(sq["spearman_ic_pooled"]) if sq else float("nan")
+                    ),
+                    roc_auc=_float_or_nan(sq["roc_auc"]) if sq else float("nan"),
+                    log_loss=_float_or_nan(sq["log_loss"]) if sq else float("nan"),
+                    q10_minus_q1_bps=(
+                        _float_or_nan(decile["q10_minus_q1_bps"]) if decile else float("nan")
+                    ),
                     top_feature_by_gain=top_feature_gain,
                     top_feature_gain_share=top_share_gain,
                     top_feature_by_shap=top_feature_shap,

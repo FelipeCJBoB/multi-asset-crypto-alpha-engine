@@ -58,15 +58,42 @@ def test_model_gate_menos_de_2_folds_sempre_falha() -> None:
     assert wfg.model_gate_passes(0.9, 0.05, 1, significance_level=0.05) is False  # noqa: magic-number
 
 
-def test_model_gate_std_zero_passa_se_media_acima_de_0_5() -> None:
-    """Dispersão zero com >=2 folds -- todos os folds deram o mesmo AUC;
-    teste-t degenera (divisão por zero), decide direto pela média."""
-    assert wfg.model_gate_passes(0.6, 0.0, 3, significance_level=0.05) is True  # noqa: magic-number
-
-
-def test_model_gate_std_zero_falha_se_media_igual_ou_abaixo_de_0_5() -> None:
+def test_model_gate_std_zero_sempre_falha_mesmo_com_media_acima_de_0_5() -> None:
+    """Correção 2026-08-31, rodada 2 (achado de audit_engineering) --
+    dispersão zero com >=2 folds (teste-t degenera, divisão por zero)
+    NÃO decide mais pela média sozinho -- diverge da convenção do
+    módulo-irmão citado como espelho (`score_quality._ic_dispersion_
+    stats` devolve NaN no mesmo caso). Ausência de teste válido nunca é
+    aprovação por omissão, mesmo com média>0,5."""
+    assert wfg.model_gate_passes(0.6, 0.0, 3, significance_level=0.05) is False  # noqa: magic-number
     assert wfg.model_gate_passes(0.5, 0.0, 3, significance_level=0.05) is False  # noqa: magic-number
     assert wfg.model_gate_passes(0.45, 0.0, 3, significance_level=0.05) is False  # noqa: magic-number
+
+
+def test_model_gate_p_value_std_zero_e_nan_nao_zero_nem_um() -> None:
+    """`model_gate_p_value` devolve NaN (não 0,0/1,0 inventado) quando
+    std=0 -- sem teste válido, não há p-valor a reportar, mesmo achado
+    da correção acima."""
+    assert math.isnan(wfg.model_gate_p_value(0.6, 0.0, 3))  # noqa: magic-number
+    assert math.isnan(wfg.model_gate_p_value(0.45, 0.0, 3))  # noqa: magic-number
+
+
+def test_model_gate_p_value_menos_de_2_folds_e_nan() -> None:
+    assert math.isnan(wfg.model_gate_p_value(0.9, 0.05, 1))  # noqa: magic-number
+
+
+def test_model_gate_p_value_conferido_a_mao_contra_scipy_t_sf() -> None:
+    """p = P(T > t_stat) unicaudal (H1: AUC>0,5), via `scipy.stats.t.sf`
+    -- mesma estatística de `model_gate_passes`, exposta como p-valor em
+    vez de booleano."""
+    auc_mean, auc_std, n = 0.65, 0.10, 8  # noqa: magic-number
+    t_stat = (auc_mean - 0.5) / (auc_std / math.sqrt(n))
+    expected_p = float(student_t.sf(t_stat, df=n - 1))
+    assert wfg.model_gate_p_value(auc_mean, auc_std, n) == pytest.approx(expected_p)
+    # p < alpha <=> model_gate_passes -- mesma fonte de verdade
+    assert (expected_p < 0.05) == wfg.model_gate_passes(  # noqa: magic-number
+        auc_mean, auc_std, n, significance_level=0.05
+    )
 
 
 def test_model_gate_conferido_a_mao_contra_scipy_t_ppf() -> None:
@@ -228,3 +255,67 @@ def test_evaluate_gates_zero_folds_totais_frac_nan_data_gate_falha() -> None:
 
     assert math.isnan(verdict.frac_folds_usados)
     assert verdict.data_gate_pass is False
+
+
+# ============================================================================
+# apply_fdr_to_model_gates -- correção de múltiplas comparações sobre um
+# LOTE de GateVerdict (correção 2026-08-31, rodada 2, achado de
+# audit_engineering: p-valor não exposto, sem correção de FDR)
+# ============================================================================
+
+
+def _minimal_gate_verdict(*, combo: str, p_long: float, p_short: float) -> wfg.GateVerdict:
+    return wfg.GateVerdict(
+        combo=combo,
+        variant="camada1",
+        n_folds_total=12,  # noqa: magic-number
+        n_folds_usados=10,  # noqa: magic-number
+        frac_folds_usados=10.0 / 12.0,  # noqa: magic-number
+        data_gate_pass=True,
+        edge_bps_mean=5.0,  # noqa: magic-number
+        alpha_gate_pass=True,
+        auc_mean_by_side={"long": 0.6, "short": 0.6},  # noqa: magic-number
+        auc_std_by_side={"long": 0.1, "short": 0.1},  # noqa: magic-number
+        n_folds_auc_by_side={"long": 10, "short": 10},  # noqa: magic-number
+        auc_p_value_by_side={"long": p_long, "short": p_short},
+        model_gate_pass_by_side={"long": p_long < 0.05, "short": p_short < 0.05},  # noqa: magic-number
+    )
+
+
+def test_apply_fdr_to_model_gates_exclui_nan_da_familia() -> None:
+    """Célula sem teste válido (`p_value=NaN`, ex. `std==0,0`/`n_folds<2`)
+    nunca entra na família FDR -- não é `p=1,0` inventado, é ausente do
+    conjunto de hipóteses simultâneas testado."""
+    verdicts = [
+        _minimal_gate_verdict(combo="BTCUSDT/R2", p_long=0.001, p_short=0.04),
+        _minimal_gate_verdict(combo="SOLUSDT/R2", p_long=0.03, p_short=float("nan")),
+        _minimal_gate_verdict(combo="XRPUSDT/R3", p_long=0.5, p_short=0.5),
+    ]
+
+    results = wfg.apply_fdr_to_model_gates(verdicts, significance_level=0.05)
+
+    assert "SOLUSDT/R2/camada1/short" not in results
+    assert set(results.keys()) == {
+        "BTCUSDT/R2/camada1/long",
+        "BTCUSDT/R2/camada1/short",
+        "SOLUSDT/R2/camada1/long",
+        "XRPUSDT/R3/camada1/long",
+        "XRPUSDT/R3/camada1/short",
+    }
+
+
+def test_apply_fdr_to_model_gates_p_valor_bruto_e_bilateral_2x_o_unicaudal() -> None:
+    """`apply_fdr_correction` espera p-valor bilateral já convertido pelo
+    chamador (docstring dela) -- `model_gate_p_value` é unicaudal, então
+    `apply_fdr_to_model_gates` converte via `min(2*p, 1.0)` antes de
+    passar adiante."""
+    verdicts = [_minimal_gate_verdict(combo="BTCUSDT/R2", p_long=0.001, p_short=0.4)]  # noqa: magic-number
+
+    results = wfg.apply_fdr_to_model_gates(verdicts, significance_level=0.05)
+
+    assert results["BTCUSDT/R2/camada1/long"].p_value_raw == pytest.approx(0.002)  # noqa: magic-number
+    assert results["BTCUSDT/R2/camada1/short"].p_value_raw == pytest.approx(0.8)  # noqa: magic-number
+
+
+def test_apply_fdr_to_model_gates_lista_vazia_devolve_dict_vazio() -> None:
+    assert wfg.apply_fdr_to_model_gates([], significance_level=0.05) == {}

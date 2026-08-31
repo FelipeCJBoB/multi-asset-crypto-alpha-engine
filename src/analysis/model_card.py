@@ -31,10 +31,27 @@ As outras 6 são REAIS, extraídas dos artefatos já escritos:
 StabilityMatrixResult.dispersion_by_metric_and_side` (Fase 5); `ic_ir`
 é DERIVADO ali mesmo (`mean/std`, mesma fórmula de `score_quality.
 _ic_dispersion_stats`, não uma sexta métrica nova calculada do zero);
-`oos_folds_usados`/`oos_folds_total` vêm do artefato de walk-forward
-(Fase 4); `feature_stability_pct` é a frequência do feature #1 por gain
-nativo entre os folds usáveis (`top_feature_frequency_by_side`, Fase
-5) — o valor MÁXIMO do dict, já ordenado decrescente."""
+`oos_folds_total` vem do artefato de walk-forward (Fase 4, nível
+combo×variant); `feature_stability_pct` é a frequência do feature #1
+por gain nativo entre os folds usáveis (`top_feature_frequency_by_side`,
+Fase 5) — o valor MÁXIMO do dict, já ordenado decrescente.
+
+**Correção 2026-08-31 (achado real de `audit_engineering`, confirmado e
+materializado em dado real — ver `AG-391` adendo):** `oos_folds_usados`
+media, ANTES desta correção, `walk_forward_payload["n_folds_usados"]`
+— uma contagem de nível COMBO (ambos os lados), idêntica pros dois
+lados do mesmo combo×variant, exibida ao lado de métricas genuinamente
+POR LADO (`test_auc`/`test_rank_ic`/`feature_stability_pct`). A
+contagem correta por lado (`gate_verdict.n_folds_auc_by_side[side]` —
+quantos folds de fato tinham AUC computável PARA AQUELE LADO
+especificamente, calculada em `walk_forward_gates.py` a partir do
+MESMO `stability`) já existia e era descartada. Materializado: o único
+candidato que passou os 3 gates na campanha real
+(`XRPUSDT/R3/camada0/short`) mostrava `test_auc=0,522` ao lado de
+`oos_folds_usados=6`, quando o número real de folds que sustentavam
+aquele AUC era 2 — a diferença só foi percebida porque um humano teve
+que investigar fora do cartão. `oos_folds_usados` agora lê `gate_
+verdict.n_folds_auc_by_side[side]`, não mais o payload bruto."""
 
 from __future__ import annotations
 
@@ -57,6 +74,11 @@ class ModelCard:
     test_rank_ic: float
     ic_ir: float
     q10_minus_q1_bps: float
+    # `oos_folds_usados` -- POR LADO (folds com AUC computável PARA ESTE
+    # LADO, correção 2026-08-31, ver docstring do módulo). `oos_folds_
+    # total` -- nível COMBO (mesmo valor nos 2 lados, teto de folds do
+    # walk-forward daquele combo x variant) -- os dois NÃO são a mesma
+    # população, não somar/comparar cegamente entre lados.
     oos_folds_usados: int
     oos_folds_total: int
     feature_stability_pct: float
@@ -109,7 +131,7 @@ def build_model_card(
         test_rank_ic=ic_mean,
         ic_ir=_ic_ir(ic_mean, ic_std),
         q10_minus_q1_bps=q_mean,
-        oos_folds_usados=walk_forward_payload["n_folds_usados"],
+        oos_folds_usados=gate_verdict.n_folds_auc_by_side[side],
         oos_folds_total=walk_forward_payload["n_folds_total"],
         feature_stability_pct=feature_stability_pct,
         regime_stability_pct=None,

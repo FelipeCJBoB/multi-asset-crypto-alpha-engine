@@ -79,6 +79,7 @@ _SIDE_LABEL_BY_HAT: dict[int, str] = {1: "long", -1: "short"}
 _T0_DTYPE = pl.Datetime(time_unit="ms", time_zone="UTC")
 _MIN_CLASSES_FOR_AUC = 2  # noqa: magic-number -- roc_auc_score exige as 2 classes presentes
 _MIN_FOLDS_FOR_DISPERSION = 2  # noqa: magic-number -- desvio-padrão amostral (ddof=1) exige >=2 pontos
+_MIN_OBS_FOR_SMALL_SAMPLE_METRICS = 5  # noqa: magic-number -- mesmo piso de src.models.monotonic._MIN_OBS_PER_ENV (correção 2026-08-31, audit_engineering/ADR-008): n<5 produz correlação/AUC degenerada (n=2 sempre dá ±1,0/1,0), achado real materializado em experiments/alpha_walk_forward_BTCUSDT_R2.json (fold_id=10, n_trades=2, spearman_ic=0,9999.../roc_auc=1.0/pr_auc=1.0)
 _GAP_FIELDS: tuple[str, ...] = (
     "roc_auc",
     "pr_auc",
@@ -116,7 +117,13 @@ def _classification_metrics(
 ) -> tuple[float, float, float, float]:
     """`NaN` se só 1 classe estiver presente (AUC/PR-AUC/LogLoss
     indefinidos, não "ruins") — mesma convenção já usada em
-    `src.models.baselines._pool_auc`, não inventada aqui."""
+    `src.models.baselines._pool_auc`, não inventada aqui. `NaN` também
+    se `n < _MIN_OBS_FOR_SMALL_SAMPLE_METRICS` — com amostra minúscula
+    (ex. n=2) o AUC tende a ser exatamente 0,0/1,0 por separação
+    perfeita ao acaso, não por poder discriminativo real (correção
+    2026-08-31, ver docstring da constante)."""
+    if y_true.shape[0] < _MIN_OBS_FOR_SMALL_SAMPLE_METRICS:
+        return float("nan"), float("nan"), float("nan"), float("nan")
     if np.unique(y_true).shape[0] < _MIN_CLASSES_FOR_AUC:
         return float("nan"), float("nan"), float("nan"), float("nan")
     auc = float(roc_auc_score(y_true, y_score))
@@ -128,7 +135,13 @@ def _classification_metrics(
 
 def _pearson_ic(x: np.ndarray, y: np.ndarray) -> float:
     """`NaN` se qualquer lado for constante — mesma convenção de
-    `_spearman_ic` (correlação indefinida, não zero)."""
+    `_spearman_ic` (correlação indefinida, não zero). `NaN` também se
+    `n < _MIN_OBS_FOR_SMALL_SAMPLE_METRICS` — com 2-4 pontos a
+    correlação de Pearson é quase sempre ±1,0 (linha por 2 pontos),
+    não informativa (correção 2026-08-31, mesmo piso de `_spearman_ic`
+    abaixo)."""
+    if x.shape[0] < _MIN_OBS_FOR_SMALL_SAMPLE_METRICS:
+        return float("nan")
     if x.std() == 0.0 or y.std() == 0.0:
         return float("nan")
     return float(np.corrcoef(x, y)[0, 1])
@@ -138,8 +151,14 @@ def _spearman_ic(x: np.ndarray, y: np.ndarray) -> float:
     """Cópia deliberada de `src.analysis.ic_by_horizon.spearman_ic` (ver
     docstring do módulo pra por quê não é importada) — mesmo contrato
     byte a byte: `NaN` se qualquer lado for constante, `rankdata` com
-    empates resolvidos por média."""
-    if x.shape[0] < 2:
+    empates resolvidos por média. Piso `n < _MIN_OBS_FOR_SMALL_SAMPLE_
+    METRICS` (correção 2026-08-31) — mesmo piso já adotado em
+    `src.models.monotonic._MIN_OBS_PER_ENV` pro mesmo tipo de
+    correlação: com `n=2-4`, Spearman degenera pra exatamente ±1,0
+    (ou empate), contaminando estatísticas agregadas por fold/segmento
+    sem carregar informação real (achado real de auditoria, ver
+    constante)."""
+    if x.shape[0] < _MIN_OBS_FOR_SMALL_SAMPLE_METRICS:
         return float("nan")
     rx = rankdata(x)
     ry = rankdata(y)
@@ -160,7 +179,7 @@ def _decile_buckets(confidence: np.ndarray, ret_net: np.ndarray) -> list[tuple[i
     if n < _N_DECILES_Q_SPREAD:
         return None
     order = np.argsort(confidence, kind="stable")
-    decile_idx = (np.arange(n) * _N_DECILES_Q_SPREAD) // n
+    decile_idx = (np.arange(n) * _N_DECILES_Q_SPREAD) // n  # noqa: unguarded-ratio -- n>=_N_DECILES_Q_SPREAD ja garantido pelo early-return acima nesta funcao
     ret_sorted = ret_net[order]
     return [
         (int((decile_idx == d).sum()), float(ret_sorted[decile_idx == d].mean()))
@@ -195,7 +214,7 @@ def _ic_dispersion_stats(fold_ics: list[float]) -> tuple[float, float, float, fl
     if std == 0.0:
         return mean, median, std, float("nan"), pct_positive, float("nan")
     ic_ir = mean / std
-    tstat = mean / (std / np.sqrt(n))
+    tstat = mean / (std / np.sqrt(n))  # noqa: unguarded-ratio -- std!=0.0 e n>=_MIN_FOLDS_FOR_DISPERSION ja garantidos pelos 2 early-return acima nesta funcao
     return mean, median, std, ic_ir, pct_positive, tstat
 
 
@@ -225,15 +244,31 @@ def _join_oof_predictions_to_labels(
     """Join `predictions` (`is_oof & side_hat==side_value`) contra
     `labels_small` por `(t0, side_hat=side)`, `NOFILL` descartado —
     núcleo compartilhado de `compute_score_quality`/`compute_decile_
-    profile` (a MESMA população nas duas, nunca diverge)."""
+    profile` (a MESMA população nas duas, nunca diverge).
+
+    `.sort([_CONFIDENCE_COL, "t0"])` no final (correção 2026-08-31) —
+    Polars não garante ordem de linha em `.join()` (hash join, ordem
+    pode variar entre execuções/máquinas), e `_decile_buckets` desempata
+    platôs de `confidence` idêntica (comuns sob calibrador isotônico,
+    função-degrau) via `np.argsort(..., kind="stable")`, que só preserva
+    a ordem que as linhas JÁ tinham na entrada — sem este sort, o
+    resultado do desempate (e portanto `q10_minus_q1_bps`) não é
+    reprodutível entre execuções. Mesmo padrão de
+    `attribution.py::_deciles_for_side` (`joined.sort([_CONFIDENCE_COL,
+    "t0"])`), citado como convenção-espelho na docstring do módulo mas
+    até esta correção não replicado aqui."""
     preds_side = (
         predictions.filter(pl.col("is_oof") & (pl.col("side_hat") == side_value))
         .select(["t0", "side_hat", "fold_id", _CONFIDENCE_COL])
         .with_columns(pl.col("t0").cast(_T0_DTYPE))
     )
-    return preds_side.join(
-        labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
-    ).filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+    return (
+        preds_side.join(
+            labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+        )
+        .filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+        .sort([_CONFIDENCE_COL, "t0"])
+    )
 
 
 def compute_score_quality(

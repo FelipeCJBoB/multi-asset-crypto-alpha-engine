@@ -120,6 +120,47 @@ def test_build_stability_matrix_uma_linha_por_lado_treinado_short_sem_trade_fica
     assert short_row.top_feature_by_gain == "B"  # gain existe mesmo sem trade
 
 
+def test_build_stability_matrix_none_do_json_null_normalizado_pra_nan() -> None:
+    """Correção 2026-08-31 (achado real de audit_engineering, confirmado
+    contra artefato real): `orjson.dumps` serializa `NaN` como `null`;
+    `json.load` devolve `None`, não `float("nan")` -- o schema REAL em
+    disco carrega `None` nesses campos quando a métrica é indefinida
+    (ex. só 1 classe presente), não `NaN` como as fixtures anteriores
+    fingiam. `StabilityRow` (campos tipados `float`) tem que normalizar
+    pra `NaN` explícito, nunca deixar `None` vazar."""
+    payload = _payload(
+        [
+            _fold(
+                0,
+                gain_by_side={"long": {"A": 1.0}},
+                score_quality_by_side={
+                    "long": {
+                        "n_trades": 2,  # noqa: magic-number
+                        "spearman_ic_pooled": None,
+                        "roc_auc": None,
+                        "log_loss": None,
+                    }
+                },
+                decile_profile_by_side={"long": {"q10_minus_q1_bps": None}},
+            ),
+        ],
+        n_folds_total=1,
+        n_folds_usados=1,
+    )
+
+    out = _build(payload)
+
+    row = out.rows[0]
+    assert row.n_trades == 2  # noqa: magic-number -- inteiro real, nunca None aqui
+    assert isinstance(row.ic_spearman_pooled, float) and np.isnan(row.ic_spearman_pooled)
+    assert isinstance(row.roc_auc, float) and np.isnan(row.roc_auc)
+    assert isinstance(row.log_loss, float) and np.isnan(row.log_loss)
+    assert isinstance(row.q10_minus_q1_bps, float) and np.isnan(row.q10_minus_q1_bps)
+    # consumo direto de .rows (o caso que quebrava com None cru) agora funciona
+    pior_fold = min(out.rows, key=lambda r: r.roc_auc if not np.isnan(r.roc_auc) else float("inf"))
+    assert pior_fold is row
+
+
 def test_build_stability_matrix_top_feature_por_gain_conferido_a_mao() -> None:
     payload = _payload(
         [

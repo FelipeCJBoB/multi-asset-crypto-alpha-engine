@@ -222,7 +222,15 @@ class WalkForwardFoldMetrics:
     train_end: str
     test_start: str
     test_end: str
-    n_train_bars: int
+    # Linhas CANDIDATAS ao treino pós-purge, 2 lados somados, ANTES do
+    # filtro por lado/R2/warmup (`ds.side_subset` dentro de `alpha.
+    # run_fold`) -- correção 2026-08-31 (audit_engineering/ADR-008):
+    # renomeado de `n_train_bars` (nome enganoso, não é contagem de
+    # barras -- é `cpcv_split.train_idx.shape[0]`, 2 linhas por barra).
+    # Informativo (paridade com o log de purge), NUNCA usar pra
+    # diagnosticar população real de treino -- usar `n_train_long`/
+    # `n_train_short` abaixo pra isso.
+    n_train_rows_candidatas: int
     n_purged: int
     n_test_bars: int
     degenerado: bool
@@ -231,6 +239,15 @@ class WalkForwardFoldMetrics:
     win_rate: float
     n_signals: int
     n_filled_trades: int
+    # População REAL de treino por lado, pós-filtro (`ds.side_subset`,
+    # R2/warmup/NOFILL já aplicados) -- `alpha.FoldResult.n_train_long`/
+    # `n_train_short`, calculados por `run_fold` e antes DESCARTADOS
+    # aqui (achado de auditoria 2026-08-31, classe "diagnóstico
+    # calculado e descartado"). `0` nos 2 quando o fold é degenerado por
+    # 0 barras de teste válidas (run_fold nunca chamado, honesto -- não
+    # treinou, não tem população de treino a reportar).
+    n_train_long: int
+    n_train_short: int
     # 1 entrada por lado com trade válido (mesmo contrato de
     # `score_quality.compute_score_quality`) -- lado sem trade fica
     # ausente do dict, não aparece com `NaN`.
@@ -360,7 +377,7 @@ def run_walk_forward_for_combo(
                     train_end=train_end_iso,
                     test_start=test_start_iso,
                     test_end=test_end_iso,
-                    n_train_bars=int(cpcv_split.train_idx.shape[0]),
+                    n_train_rows_candidatas=int(cpcv_split.train_idx.shape[0]),
                     n_purged=int(cpcv_split.n_purged),
                     n_test_bars=0,
                     degenerado=True,
@@ -369,6 +386,8 @@ def run_walk_forward_for_combo(
                     win_rate=float("nan"),
                     n_signals=0,
                     n_filled_trades=0,
+                    n_train_long=0,
+                    n_train_short=0,
                     score_quality_by_side={},
                     decile_profile_by_side={},
                     # `run_fold` nunca chamado -- nenhum `SideModelResult`
@@ -404,7 +423,9 @@ def run_walk_forward_for_combo(
             variant=variant,
             fold_id=wf_split.fold_id,
             n_folds_total=len(wf_splits),
-            n_train_bars=int(cpcv_split.train_idx.shape[0]),
+            n_train_rows_candidatas=int(cpcv_split.train_idx.shape[0]),
+            n_train_long=fold_result.n_train_long,
+            n_train_short=fold_result.n_train_short,
             n_test_bars=fold_result.n_test_bars,
         )
 
@@ -456,7 +477,7 @@ def run_walk_forward_for_combo(
                 train_end=train_end_iso,
                 test_start=test_start_iso,
                 test_end=test_end_iso,
-                n_train_bars=int(cpcv_split.train_idx.shape[0]),
+                n_train_rows_candidatas=int(cpcv_split.train_idx.shape[0]),
                 n_purged=int(cpcv_split.n_purged),
                 n_test_bars=fold_result.n_test_bars,
                 degenerado=degenerado,
@@ -467,6 +488,8 @@ def run_walk_forward_for_combo(
                 win_rate=path_result.win_rate if path_result else float("nan"),
                 n_signals=path_result.n_signals if path_result else 0,
                 n_filled_trades=n_filled_trades,
+                n_train_long=fold_result.n_train_long,
+                n_train_short=fold_result.n_train_short,
                 score_quality_by_side=sq_by_side,
                 decile_profile_by_side=decile_by_side,
                 gain_by_column_by_side=gain_by_side,

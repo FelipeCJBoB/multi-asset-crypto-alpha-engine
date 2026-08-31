@@ -74,6 +74,7 @@ def _gate_verdict(
         auc_mean_by_side={"long": 0.55, "short": float("nan")},  # noqa: magic-number
         auc_std_by_side={"long": 0.10, "short": float("nan")},  # noqa: magic-number
         n_folds_auc_by_side={"long": 8, "short": 0},  # noqa: magic-number
+        auc_p_value_by_side={"long": 0.03, "short": float("nan")},  # noqa: magic-number
         model_gate_pass_by_side={"long": model_long_pass, "short": False},
     )
 
@@ -102,6 +103,29 @@ def test_build_model_card_metricas_reais_conferidas_a_mao() -> None:
     assert card.oos_folds_usados == 8  # noqa: magic-number
     assert card.oos_folds_total == 12  # noqa: magic-number
     assert card.feature_stability_pct == pytest.approx(0.75)  # noqa: magic-number
+
+
+def test_build_model_card_oos_folds_usados_e_por_lado_nao_nivel_combo() -> None:
+    """Correção 2026-08-31 (achado real de audit_engineering, confirmado
+    e materializado -- ver AG-391 adendo): `oos_folds_usados` tem que
+    vir de `gate_verdict.n_folds_auc_by_side[side]` (POR LADO), não de
+    `walk_forward_payload["n_folds_usados"]` (nível COMBO, igual nos 2
+    lados). Fixture: `_payload()["n_folds_usados"]`=8 mas `_gate_
+    verdict().n_folds_auc_by_side["short"]`=0 -- se o código lesse o
+    payload bruto (bug antigo), `oos_folds_usados` do lado short sairia
+    8, igual ao long, escondendo que NENHUM fold tinha AUC computável
+    pro short."""
+    stability = _stability()
+    gate_verdict = _gate_verdict()
+
+    card_long = mc.build_model_card(_payload(), stability, gate_verdict, side="long")
+    card_short = mc.build_model_card(_payload(), stability, gate_verdict, side="short")
+
+    assert card_long.oos_folds_usados == 8  # noqa: magic-number
+    assert card_short.oos_folds_usados == 0
+    assert card_long.oos_folds_usados != card_short.oos_folds_usados
+    # oos_folds_total continua nivel-combo, IGUAL nos 2 lados (documentado)
+    assert card_long.oos_folds_total == card_short.oos_folds_total == 12  # noqa: magic-number
 
 
 def test_build_model_card_2_metricas_ficam_tbd_none() -> None:

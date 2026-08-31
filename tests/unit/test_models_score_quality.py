@@ -48,17 +48,18 @@ def _labels_df(rows: list[dict[str, object]]) -> pl.DataFrame:
 
 
 def test_compute_score_quality_separacao_perfeita_auc_1_e_ic_positivo() -> None:
-    """4 trades long: confidence crescente, ret_net crescente (2 losses
-    baixa confiança, 2 wins alta confiança) -- separação perfeita,
-    AUC=1,0 exato, IC de Spearman = 1,0 exato (mesma ordem)."""
-    t0s = _t0s(4)
-    confidence = [0.1, 0.4, 0.6, 0.9]
-    ret_net = [-0.002, -0.001, 0.003, 0.004]
+    """5 trades long (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`=5,
+    correção 2026-08-31): confidence crescente, ret_net crescente (3
+    losses baixa confiança, 2 wins alta confiança) -- separação
+    perfeita, AUC=1,0 exato, IC de Spearman = 1,0 exato (mesma ordem)."""
+    t0s = _t0s(5)
+    confidence = [0.1, 0.3, 0.5, 0.7, 0.9]
+    ret_net = [-0.003, -0.002, -0.001, 0.002, 0.004]
     pred_rows = [
         {"t0": t0s[i], "side_hat": 1, "confidence": confidence[i], "fold_id": 0}
-        for i in range(4)
+        for i in range(5)
     ]
-    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": ret_net[i]} for i in range(4)]
+    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": ret_net[i]} for i in range(5)]
     predictions = _predictions_df(pred_rows)
     labels = _labels_df(label_rows)
 
@@ -67,18 +68,46 @@ def test_compute_score_quality_separacao_perfeita_auc_1_e_ic_positivo() -> None:
     assert len(out) == 1
     r = out[0]
     assert r.side == "long"
-    assert r.n_trades == 4
+    assert r.n_trades == 5
     assert r.roc_auc == pytest.approx(1.0)
     assert r.spearman_ic_pooled == pytest.approx(1.0)
-    assert np.isnan(r.q10_minus_q1_bps)  # n=4 < 10 decis -- indefinido, nao zero
+    assert np.isnan(r.q10_minus_q1_bps)  # n=5 < 10 decis -- indefinido, nao zero
     assert r.pearson_ic == pytest.approx(np.corrcoef(confidence, ret_net)[0, 1])
     # cross-check direto contra sklearn sobre o MESMO subconjunto -- prova
     # que a seleção de dado (join/filtro) bate, não reimplementa a fórmula
-    y_true = np.array([0, 0, 1, 1])
+    y_true = np.array([0, 0, 0, 1, 1])
     y_score = np.array(confidence)
     assert r.roc_auc == pytest.approx(float(roc_auc_score(y_true, y_score)))
     assert r.log_loss == pytest.approx(float(log_loss(y_true, y_score, labels=[0, 1])))
     assert r.brier_score == pytest.approx(float(brier_score_loss(y_true, y_score)))
+
+
+def test_compute_score_quality_amostra_menor_que_5_todas_metricas_nan() -> None:
+    """Correção 2026-08-31 (achado real de auditoria, `AG-391`): com
+    `n<5` trades, classificação (AUC/PR-AUC/LogLoss/Brier) e correlação
+    (Pearson/Spearman) ficam `NaN`, mesmo sob separação perfeita --
+    n=2-4 produz correlação/AUC degenerada (sempre ±1,0/0,0/1,0), não
+    informativa. Mesmo piso de `src.models.monotonic._MIN_OBS_PER_ENV`."""
+    for n in (2, 3, 4):
+        t0s = _t0s(n)
+        confidence = [0.1 + 0.2 * i for i in range(n)]
+        ret_net = [-0.002 + 0.001 * i for i in range(n)]
+        pred_rows = [
+            {"t0": t0s[i], "side_hat": 1, "confidence": confidence[i], "fold_id": 0}
+            for i in range(n)
+        ]
+        label_rows = [{"t0": t0s[i], "side": 1, "ret_net": ret_net[i]} for i in range(n)]
+        out = sq.compute_score_quality(_predictions_df(pred_rows), _labels_df(label_rows))
+
+        assert len(out) == 1, f"n={n}"
+        r = out[0]
+        assert r.n_trades == n
+        assert np.isnan(r.roc_auc), f"n={n}"
+        assert np.isnan(r.pr_auc), f"n={n}"
+        assert np.isnan(r.log_loss), f"n={n}"
+        assert np.isnan(r.brier_score), f"n={n}"
+        assert np.isnan(r.pearson_ic), f"n={n}"
+        assert np.isnan(r.spearman_ic_pooled), f"n={n}"
 
 
 def test_compute_score_quality_q10_menos_q1_conferido_a_mao() -> None:
@@ -104,15 +133,16 @@ def test_compute_score_quality_classe_unica_classificacao_nan_mas_ic_computado()
     Brier indefinidos (NaN, mesma convenção de
     `src.models.baselines._pool_auc`), mas o IC de Spearman continua
     computável (mede ranking contra retorno CONTÍNUO, não contra a classe
-    binária)."""
-    t0s = _t0s(3)
+    binária). 5 trades (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`,
+    correção 2026-08-31)."""
+    t0s = _t0s(5)
     pred_rows = [
         {"t0": t0s[i], "side_hat": 1, "confidence": c, "fold_id": 0}
-        for i, c in enumerate([0.2, 0.5, 0.8])
+        for i, c in enumerate([0.2, 0.35, 0.5, 0.65, 0.8])
     ]
     label_rows = [
         {"t0": t0s[i], "side": 1, "ret_net": r}
-        for i, r in enumerate([0.001, 0.002, 0.003])
+        for i, r in enumerate([0.001, 0.0015, 0.002, 0.0025, 0.003])
     ]
     out = sq.compute_score_quality(_predictions_df(pred_rows), _labels_df(label_rows))
 
@@ -126,7 +156,8 @@ def test_compute_score_quality_classe_unica_classificacao_nan_mas_ic_computado()
 
 
 def test_compute_score_quality_dispersao_de_ic_por_fold_conferida_a_mao() -> None:
-    """3 folds, cada um com 3 trades e correlação perfeita interna mas
+    """3 folds, cada um com 5 trades (piso `_MIN_OBS_FOR_SMALL_SAMPLE_
+    METRICS`, correção 2026-08-31) e correlação perfeita interna mas
     MAGNITUDE diferente de retorno por fold (não afeta o IC de Spearman,
     que é invariante a escala) -- aqui construo folds com sinal de IC
     OPOSTO (2 folds IC=+1,0, 1 fold IC=-1,0) para ter uma dispersão real
@@ -134,15 +165,19 @@ def test_compute_score_quality_dispersao_de_ic_por_fold_conferida_a_mao() -> Non
     explicitamente abaixo, não assumido."""
     pred_rows = []
     label_rows = []
-    t0s = _t0s(9)
+    t0s = _t0s(15)
     # fold 0: IC=+1 (confidence e ret_net andam juntos)
     # fold 1: IC=+1
     # fold 2: IC=-1 (confidence e ret_net invertidos)
-    fold_confidences = [[0.1, 0.5, 0.9], [0.2, 0.4, 0.8], [0.9, 0.5, 0.1]]
-    fold_rets = [[0.001, 0.002, 0.003], [0.001, 0.002, 0.003], [0.001, 0.002, 0.003]]
+    fold_confidences = [
+        [0.1, 0.3, 0.5, 0.7, 0.9],
+        [0.15, 0.35, 0.55, 0.75, 0.95],
+        [0.9, 0.7, 0.5, 0.3, 0.1],
+    ]
+    ret_net_seq = [0.001, 0.002, 0.003, 0.004, 0.005]
     idx = 0
     for fold_id in range(3):
-        for j in range(3):
+        for j in range(5):
             pred_rows.append(
                 {
                     "t0": t0s[idx],
@@ -151,7 +186,7 @@ def test_compute_score_quality_dispersao_de_ic_por_fold_conferida_a_mao() -> Non
                     "fold_id": fold_id,
                 }
             )
-            label_rows.append({"t0": t0s[idx], "side": 1, "ret_net": fold_rets[fold_id][j]})
+            label_rows.append({"t0": t0s[idx], "side": 1, "ret_net": ret_net_seq[j]})
             idx += 1
 
     out = sq.compute_score_quality(_predictions_df(pred_rows), _labels_df(label_rows))
@@ -171,17 +206,18 @@ def test_compute_score_quality_dispersao_de_ic_por_fold_conferida_a_mao() -> Non
 
 
 def test_compute_score_quality_um_fold_so_dispersao_nan() -> None:
-    """1 fold só -- IC mean/median existem, mas std/IC_IR/t-stat exigem
-    >=2 pontos (desvio-padrão amostral indefinido com 1 ponto) -- `NaN`,
-    não `ZeroDivisionError`."""
-    t0s = _t0s(3)
+    """1 fold só, 5 trades (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`,
+    correção 2026-08-31) -- IC mean/median existem, mas std/IC_IR/t-stat
+    exigem >=2 FOLDS (desvio-padrão amostral indefinido com 1 ponto) --
+    `NaN`, não `ZeroDivisionError`."""
+    t0s = _t0s(5)
     pred_rows = [
         {"t0": t0s[i], "side_hat": 1, "confidence": c, "fold_id": 0}
-        for i, c in enumerate([0.1, 0.5, 0.9])
+        for i, c in enumerate([0.1, 0.3, 0.5, 0.7, 0.9])
     ]
     label_rows = [
         {"t0": t0s[i], "side": 1, "ret_net": r}
-        for i, r in enumerate([0.001, 0.002, 0.003])
+        for i, r in enumerate([0.001, 0.002, 0.003, 0.004, 0.005])
     ]
     out = sq.compute_score_quality(_predictions_df(pred_rows), _labels_df(label_rows))
     r = out[0]
@@ -327,6 +363,36 @@ def test_compute_decile_profile_q10_minus_q1_bate_com_score_quality() -> None:
     assert score_quality_out[0].q10_minus_q1_bps == pytest.approx(decile_out[0].q10_minus_q1_bps)
 
 
+def test_compute_decile_profile_deterministico_sob_ordem_de_entrada_com_confidence_empatada() -> (
+    None
+):
+    """Correção 2026-08-31 (achado real de auditoria) -- `.join()` do
+    Polars não garante ordem de linha entre execuções (hash join), e
+    `_decile_buckets` desempata platôs de `confidence` idêntica (comuns
+    sob calibrador isotônico, função-degrau) via `argsort(kind="stable")`,
+    que só preserva a ordem de CHEGADA das linhas. `_join_oof_
+    predictions_to_labels` agora ordena por `[confidence, t0]` antes de
+    devolver -- alimentar as MESMAS linhas em ordem de entrada DIFERENTE
+    tem que produzir o MESMO resultado (desempatado por `t0`, nunca por
+    ordem de chegada)."""
+    t0s = _t0s(12)  # noqa: magic-number
+    confidences = [0.3] * 6 + [0.7] * 6  # 2 platos de 6 -- forca empate real
+    ret_nets = [float(i) / 10_000.0 for i in range(12)]  # noqa: magic-number -- distinto por t0
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": 1, "confidence": confidences[i], "fold_id": 0}
+        for i in range(12)  # noqa: magic-number
+    ]
+    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": ret_nets[i]} for i in range(12)]  # noqa: magic-number
+
+    out_forward = sq.compute_decile_profile(_predictions_df(pred_rows), _labels_df(label_rows))
+    out_reversed = sq.compute_decile_profile(
+        _predictions_df(list(reversed(pred_rows))), _labels_df(list(reversed(label_rows)))
+    )
+
+    assert out_forward[0].buckets == out_reversed[0].buckets
+    assert out_forward[0].q10_minus_q1_bps == out_reversed[0].q10_minus_q1_bps
+
+
 def test_compute_decile_profile_menos_de_10_trades_ausente_da_tupla() -> None:
     t0s = _t0s(5)
     pred_rows = [
@@ -413,21 +479,22 @@ def test_compute_train_val_test_gap_fit_separacao_perfeita_mesma_formula_score_q
     mas sobre o segmento `fit` in-sample -- prova que a agregação usa
     EXATAMENTE a mesma fórmula (cross-check direto contra sklearn), não
     uma versão paralela divergente. `stop`/`calib` ausentes (short sem
-    nenhum segmento) -- só `long` aparece na tupla."""
-    calibrated_score = [0.1, 0.4, 0.6, 0.9]  # noqa: magic-number
-    ret_net = [-0.002, -0.001, 0.003, 0.004]  # noqa: magic-number
-    label = [0, 0, 1, 1]
+    nenhum segmento) -- só `long` aparece na tupla. 5 trades (piso
+    `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`, correção 2026-08-31)."""
+    calibrated_score = [0.1, 0.3, 0.5, 0.7, 0.9]  # noqa: magic-number
+    ret_net = [-0.003, -0.002, -0.001, 0.002, 0.004]  # noqa: magic-number
+    label = [0, 0, 0, 1, 1]
     fit_seg = _segment(calibrated_score, label, ret_net)
     fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=fit_seg), _FakeSideModelResult())
 
-    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[list-item]
 
     assert len(out) == 1
     r = out[0]
     assert r.side == "long"
     assert r.fit is not None
-    assert r.fit.n_trades == 4
-    y_true = np.array([0, 0, 1, 1])
+    assert r.fit.n_trades == 5
+    y_true = np.array([0, 0, 0, 1, 1])
     assert r.fit.roc_auc == pytest.approx(float(roc_auc_score(y_true, np.array(calibrated_score))))
     assert r.stop is None
     assert r.calib is None
@@ -435,30 +502,45 @@ def test_compute_train_val_test_gap_fit_separacao_perfeita_mesma_formula_score_q
 
 
 def test_compute_train_val_test_gap_pool_fit_entre_2_folds() -> None:
-    seg_a = _segment([0.2, 0.8], [0, 1], [-0.001, 0.002])  # noqa: magic-number
-    seg_b = _segment([0.3, 0.9], [0, 1], [-0.002, 0.003])  # noqa: magic-number
+    """2 folds, 5 trades cada (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`
+    por segmento, correção 2026-08-31) -- pool de 10 trades, 1 IC por
+    fold, ambos computáveis."""
+    seg_a = _segment(
+        [0.1, 0.3, 0.5, 0.7, 0.9],  # noqa: magic-number
+        [0, 0, 0, 1, 1],
+        [-0.003, -0.002, -0.001, 0.002, 0.003],  # noqa: magic-number
+    )
+    seg_b = _segment(
+        [0.15, 0.35, 0.55, 0.75, 0.95],  # noqa: magic-number
+        [0, 0, 0, 1, 1],
+        [-0.004, -0.002, -0.001, 0.003, 0.004],  # noqa: magic-number
+    )
     fold_a = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_a), _FakeSideModelResult())
     fold_b = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_b), _FakeSideModelResult())
 
-    out = sq.compute_train_val_test_gap([fold_a, fold_b])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold_a, fold_b])  # type: ignore[list-item]
 
     r = out[0]
     assert r.fit is not None
-    assert r.fit.n_trades == 4  # 2 + 2 pooled entre os 2 folds
-    assert r.fit.n_folds_com_ic == 2  # 1 IC por fold, ambos computáveis (n=2 >= 2)
+    assert r.fit.n_trades == 10  # 5 + 5 pooled entre os 2 folds
+    assert r.fit.n_folds_com_ic == 2  # 1 IC por fold, ambos computáveis (n=5 >= 5)
 
 
 def test_compute_train_val_test_gap_deltas_conferidos_a_mao() -> None:
     """`fit` com separação perfeita (roc_auc=1,0), `stop` com separação
     invertida (roc_auc=0,0) -- `gap_fit_minus_stop["roc_auc"]` tem que
-    ser exatamente 1,0-0,0=1,0, não uma aproximação."""
-    fit_seg = _segment([0.1, 0.9], [0, 1], [-0.001, 0.002])  # noqa: magic-number
-    stop_seg = _segment([0.9, 0.1], [0, 1], [-0.001, 0.002])  # noqa: magic-number
+    ser exatamente 1,0-0,0=1,0, não uma aproximação. 5 trades por
+    segmento (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`, correção
+    2026-08-31)."""
+    ret_net = [-0.004, -0.003, -0.002, 0.001, 0.002]  # noqa: magic-number -- vitoria = [0,0,0,1,1]
+    label = [0, 0, 0, 1, 1]
+    fit_seg = _segment([0.1, 0.3, 0.5, 0.7, 0.9], label, ret_net)  # noqa: magic-number
+    stop_seg = _segment([0.9, 0.7, 0.5, 0.3, 0.1], label, ret_net)  # noqa: magic-number
     fold = _FakeFoldResult(
         _FakeSideModelResult(fit_segment=fit_seg, stop_segment=stop_seg), _FakeSideModelResult()
     )
 
-    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[list-item]
     r = out[0]
 
     assert r.fit is not None
@@ -471,16 +553,18 @@ def test_compute_train_val_test_gap_deltas_conferidos_a_mao() -> None:
 def test_compute_train_val_test_gap_y_true_e_vitoria_economica_nao_label_bruto() -> None:
     """`label` (TP/not-TP bruto) e `ret_net>0` (vitória econômica)
     DIVERGEM deliberadamente aqui -- se a implementação usasse `label`
-    bruto como `y_true`, `roc_auc` seria 0,0 (ordem invertida); usando
+    bruto como `y_true`, `roc_auc` seria baixo (ordem invertida); usando
     vitória econômica (mesma convenção de `compute_score_quality`), é
-    1,0. Prova que a convenção documentada é real, não só descrita."""
-    calibrated_score = [0.1, 0.9]  # noqa: magic-number
-    label = [1, 0]  # oposto do sinal de `ret_net` abaixo, de propósito
-    ret_net = [-0.001, 0.002]  # noqa: magic-number -- vitória econômica = [0, 1], oposto de `label`
+    1,0. Prova que a convenção documentada é real, não só descrita. 5
+    trades (piso `_MIN_OBS_FOR_SMALL_SAMPLE_METRICS`, correção
+    2026-08-31)."""
+    calibrated_score = [0.1, 0.3, 0.5, 0.7, 0.9]  # noqa: magic-number
+    label = [1, 1, 1, 0, 0]  # oposto do sinal de `ret_net` abaixo, de proposito
+    ret_net = [-0.004, -0.003, -0.002, 0.002, 0.003]  # noqa: magic-number -- vitoria = [0,0,0,1,1]
     seg = _segment(calibrated_score, label, ret_net)
     fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg), _FakeSideModelResult())
 
-    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[list-item]
     r = out[0]
 
     assert r.fit is not None
@@ -489,7 +573,7 @@ def test_compute_train_val_test_gap_y_true_e_vitoria_economica_nao_label_bruto()
 
 def test_compute_train_val_test_gap_nenhum_segmento_em_nenhum_lado_devolve_tupla_vazia() -> None:
     fold = _FakeFoldResult(_FakeSideModelResult(), _FakeSideModelResult())
-    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[list-item]
     assert out == ()
 
 
@@ -504,5 +588,5 @@ def test_compute_train_val_test_gap_segmento_n_zero_tratado_como_ausente() -> No
         ret_net=np.array([], dtype=np.float64),
     )
     fold = _FakeFoldResult(_FakeSideModelResult(fit_segment=seg_vazio), _FakeSideModelResult())
-    out = sq.compute_train_val_test_gap([fold])  # type: ignore[arg-type]
+    out = sq.compute_train_val_test_gap([fold])  # type: ignore[list-item]
     assert out == ()

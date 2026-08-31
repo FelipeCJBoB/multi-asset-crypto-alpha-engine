@@ -49,6 +49,39 @@ NENHUM dos 10 combo×variant da campanha real atinge `n_folds_usados>=10`
 estruturalmente insuficiente pra este piso. Achado real, registrado em
 `AG-391` — não um efeito colateral do número escolhido.
 
+**Correção 2026-08-31, rodada 2 (achado real de `audit_engineering`
+sobre este próprio módulo — auditoria adversarial confirmou 2 achados
+P1, ver `audit/architecture_gaps_log.yaml::AG-391` adendo):**
+
+1. **Múltiplas comparações sem correção, p-valor nem exposto.**
+   `model_gate_passes` decidia `pass`/`fail` por combo×variant×lado a
+   `significance_level=0,05` fixo, célula a célula, sem nunca calcular
+   nem devolver o p-valor — inviabilizando a correção de FDR que
+   `src.validation.fdr_correction` (BH+BY) já implementa e que o
+   `ADR-007` Item 4 aplicou um dia antes, na MESMA sessão, pro mesmo
+   tipo de problema ("cuidado com falsos positivos", pedido do
+   Manager). Sob 20 células testadas (5 combos × 2 camadas × 2 lados),
+   o número esperado de "passes" por puro acaso sob H0 universal, sem
+   correção, é ≈20×0,05=1 — e foi exatamente 1 antes desta correção.
+   `model_gate_p_value` agora expõe o p-valor bruto; `GateVerdict.
+   auc_p_value_by_side` carrega-o; `apply_fdr_to_model_gates` (novo,
+   abaixo) aplica BH+BY sobre um LOTE de `GateVerdict`s via a mesma
+   `apply_fdr_correction` já testada — `evaluate_gates` continua
+   operando célula a célula (é uma auditoria pós-hoc, sem caller de
+   produção ainda, `AG-391`), mas quem for consolidar um lote real deve
+   usar `apply_fdr_to_model_gates`, não o veredito bruto por célula.
+2. **`auc_std==0,0` decidia só pela média — divergia da convenção do
+   módulo-irmão citado como espelho.** `score_quality._ic_dispersion_
+   stats` retorna `NaN` (falha) no mesmo caso degenerado (dispersão
+   zero); este módulo decidia `auc_mean > 0.5` (aprovação automática).
+   Risco assimétrico real: com `n_trades` mediano de 20,5 por fold
+   (docstring acima), AUC idêntico em múltiplos folds por coincidência
+   de amostra pequena é alcançável, e o lado errado pra "decidir
+   sozinho" num gate de capital real é o permissivo. Corrigido — `std
+   ==0,0` agora sempre falha (mesma convenção "NaN/ausência de teste
+   válido nunca é aprovação por omissão" já aplicada ao resto do
+   módulo), nunca mais decide pela média.
+
 **Definições operacionais** (as 3 perguntas que cada gate responde —
 propostas aqui na AUSÊNCIA de decisão explícita do Manager sobre O QUE
 cada gate mede, não só o limiar; sujeitas a correção):
@@ -75,6 +108,7 @@ cada gate mede, não só o limiar; sujeitas a correção):
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -82,6 +116,7 @@ import numpy as np
 from scipy.stats import t as student_t
 
 from src.analysis.stability_matrix import StabilityMatrixResult
+from src.validation.fdr_correction import FdrResult, apply_fdr_correction
 
 _SIDES: tuple[str, ...] = ("long", "short")
 _MIN_FOLDS_FOR_TTEST = 2  # noqa: magic-number -- desvio-padrão amostral (ddof=1) exige >=2 pontos, mesmo piso de score_quality._MIN_FOLDS_FOR_DISPERSION
@@ -94,23 +129,40 @@ def data_gate_passes(n_folds_usados: int, *, min_folds: int) -> bool:
     return n_folds_usados >= min_folds
 
 
+def model_gate_p_value(auc_mean: float, auc_std: float, n_folds: int) -> float:
+    """P-valor UNICAUDAL do teste-t de uma amostra (H0: AUC_médio<=0,5,
+    H1: AUC_médio>0,5) — `NaN` se não computável (`auc_mean`/`auc_std`
+    não-finito, ou `n_folds<2`, sem desvio-padrão amostral não há teste
+    possível). `std==0,0` com `n_folds>=2` (correção 2026-08-31, rodada
+    2 — ver docstring do módulo) também devolve `NaN`, nunca decide pela
+    média sozinho — mesma convenção de `score_quality._ic_dispersion_
+    stats` no mesmo caso degenerado. Núcleo compartilhado de
+    `model_gate_passes` (decisão por célula) e `apply_fdr_to_model_
+    gates` (correção de múltiplas comparações sobre um lote)."""
+    if not math.isfinite(auc_mean) or not math.isfinite(auc_std):
+        return float("nan")
+    if n_folds < _MIN_FOLDS_FOR_TTEST:
+        return float("nan")
+    if auc_std == 0.0:
+        return float("nan")
+    t_stat = (auc_mean - 0.5) / (auc_std / math.sqrt(n_folds))  # noqa: unguarded-ratio -- auc_std!=0.0 e n_folds>=2 ja garantidos pelos early-return acima nesta funcao, sqrt(n_folds) nunca e 0
+    return float(student_t.sf(t_stat, df=n_folds - 1))
+
+
 def model_gate_passes(
     auc_mean: float, auc_std: float, n_folds: int, *, significance_level: float
 ) -> bool:
     """Definição operacional: ver docstring do módulo, eixo "Model" —
     teste-t de uma amostra unicaudal, H0: AUC_médio<=0,5 vs H1:
-    AUC_médio>0,5, ao nível `significance_level`. `NaN`/`n_folds<2`
-    sempre falha (sem desvio-padrão amostral não há teste possível, não
-    é aprovação por omissão)."""
-    if not math.isfinite(auc_mean) or not math.isfinite(auc_std):
+    AUC_médio>0,5, ao nível `significance_level`, célula a célula (sem
+    correção de múltiplas comparações — ver `apply_fdr_to_model_gates`
+    pra consolidar um LOTE de células com FDR). `NaN` (inclui `n_folds<2`
+    e `std==0,0`) sempre falha — ausência de teste válido nunca é
+    aprovação por omissão."""
+    p_value = model_gate_p_value(auc_mean, auc_std, n_folds)
+    if math.isnan(p_value):
         return False
-    if n_folds < _MIN_FOLDS_FOR_TTEST:
-        return False
-    if auc_std == 0.0:
-        return auc_mean > 0.5
-    t_stat = (auc_mean - 0.5) / (auc_std / math.sqrt(n_folds))  # noqa: unguarded-ratio -- auc_std!=0.0 e n_folds>=2 ja garantidos pelos 2 early-return acima nesta funcao, sqrt(n_folds) nunca e 0
-    t_crit = float(student_t.ppf(1.0 - significance_level, df=n_folds - 1))
-    return t_stat > t_crit
+    return p_value < significance_level
 
 
 def alpha_gate_passes(edge_bps_mean: float, *, min_edge_bps: float) -> bool:
@@ -133,6 +185,10 @@ class GateVerdict:
     auc_mean_by_side: dict[str, float]
     auc_std_by_side: dict[str, float]
     n_folds_auc_by_side: dict[str, int]
+    # P-valor bruto (unicaudal), NÃO ajustado por múltiplas comparações
+    # -- ver `apply_fdr_to_model_gates` pra consolidar um LOTE de
+    # GateVerdict com BH+BY (correção 2026-08-31, rodada 2).
+    auc_p_value_by_side: dict[str, float]
     model_gate_pass_by_side: dict[str, bool]
 
 
@@ -162,17 +218,20 @@ def evaluate_gates(
     auc_mean_by_side: dict[str, float] = {}
     auc_std_by_side: dict[str, float] = {}
     n_folds_auc_by_side: dict[str, int] = {}
+    auc_p_value_by_side: dict[str, float] = {}
     model_gate_pass_by_side: dict[str, bool] = {}
     for side in _SIDES:
         disp = stability.dispersion_by_metric_and_side[side]["roc_auc"]
         auc_mean = disp["mean"]
         auc_std = disp["std"]
         n_folds_auc = int(disp["n"])
+        p_value = model_gate_p_value(auc_mean, auc_std, n_folds_auc)
         auc_mean_by_side[side] = auc_mean
         auc_std_by_side[side] = auc_std
         n_folds_auc_by_side[side] = n_folds_auc
-        model_gate_pass_by_side[side] = model_gate_passes(
-            auc_mean, auc_std, n_folds_auc, significance_level=model_significance_level
+        auc_p_value_by_side[side] = p_value
+        model_gate_pass_by_side[side] = (
+            not math.isnan(p_value) and p_value < model_significance_level
         )
 
     return GateVerdict(
@@ -187,5 +246,44 @@ def evaluate_gates(
         auc_mean_by_side=auc_mean_by_side,
         auc_std_by_side=auc_std_by_side,
         n_folds_auc_by_side=n_folds_auc_by_side,
+        auc_p_value_by_side=auc_p_value_by_side,
         model_gate_pass_by_side=model_gate_pass_by_side,
     )
+
+
+def apply_fdr_to_model_gates(
+    verdicts: Sequence[GateVerdict], *, significance_level: float | None = None
+) -> dict[str, FdrResult]:
+    """Correção 2026-08-31, rodada 2 (achado real de `audit_engineering`
+    sobre este módulo) — consolida o gate Model de um LOTE de
+    `GateVerdict` (ex. os 5 combos × 2 camadas × 2 lados = 20 células da
+    campanha real) via `src.validation.fdr_correction.apply_fdr_
+    correction` (BH+BY, já testado, já usado no `ADR-007` Item 4 pro
+    mesmo problema) — em vez do veredito bruto por célula (`GateVerdict.
+    model_gate_pass_by_side`, sem correção de múltiplas comparações,
+    anti-conservador sob 20 testes simultâneos a `alpha=0,05` cada).
+
+    `p_value` de cada célula é UNICAUDAL (H1: AUC>0,5); `apply_fdr_
+    correction` espera p-valor BILATERAL já convertido pelo chamador
+    (ver docstring dela) — `p_bilateral = min(2*p_unicaudal, 1.0)`,
+    identidade padrão pra distribuições simétricas (t de Student é
+    simétrica em torno de 0). Células com `p_value=NaN` (sem teste
+    válido — `n_folds<2`/`std==0,0`) são EXCLUÍDAS da família testada
+    (nunca entram como p=1,0 nem como p=0,0 — não fazem parte do
+    conjunto de hipóteses simultâneas, já que nenhum teste foi de fato
+    realizado ali).
+
+    Retorna `{f"{combo}/{variant}/{side}": FdrResult}` — chame com o
+    resultado `.significant_bh`/`.significant_by` no lugar de
+    `GateVerdict.model_gate_pass_by_side` bruto pra qualquer
+    consolidação real de mais de 1 célula."""
+    p_values: dict[str, float] = {}
+    for verdict in verdicts:
+        for side in _SIDES:
+            p_one_sided = verdict.auc_p_value_by_side[side]
+            if math.isnan(p_one_sided):
+                continue
+            label = f"{verdict.combo}/{verdict.variant}/{side}"
+            p_values[label] = min(2.0 * p_one_sided, 1.0)
+    results = apply_fdr_correction(p_values, significance_level=significance_level)
+    return {r.label: r for r in results}

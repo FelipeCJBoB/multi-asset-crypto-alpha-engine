@@ -13,7 +13,7 @@ sintético."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import lightgbm as lgb
 import numpy as np
@@ -156,16 +156,22 @@ class _FakeFoldResult:
         n_test_bars: int,
         long_model: lgb.LGBMClassifier,
         short_model: lgb.LGBMClassifier,
+        n_train_long: int = 0,
+        n_train_short: int = 0,
     ) -> None:
         self.predictions = predictions
         self.path_id = path_id
         self.variant = variant
         self.n_test_bars = n_test_bars
+        self.n_train_long = n_train_long
+        self.n_train_short = n_train_short
         self.long_result = _FakeSideModelResult({T1_FEATURE_IDS[0]: 1.0}, long_model)
         self.short_result = _FakeSideModelResult({T1_FEATURE_IDS[1]: 2.0}, short_model)  # noqa: magic-number
 
 
-def _make_fake_run_fold(degenerate_fold_id: int | None = None):
+def _make_fake_run_fold(
+    degenerate_fold_id: int | None = None,
+) -> Callable[..., _FakeFoldResult]:
     # Modelos compartilhados por TODOS os folds fake desta chamada --
     # treinados 1 vez só (custo desprezível, mas sem sentido repetir por
     # fold já que o conteúdo é irrelevante pro que este arquivo testa).
@@ -192,6 +198,9 @@ def _make_fake_run_fold(degenerate_fold_id: int | None = None):
         if degenerate_fold_id is not None and split.split_id == degenerate_fold_id:
             test_bars = test_bars.head(1)
         n = test_bars.height
+        train_bars = mf_data_arg[split.train_idx]
+        n_train_long = train_bars.filter(pl.col("side") == 1).height
+        n_train_short = train_bars.filter(pl.col("side") == -1).height
         predictions = pl.DataFrame(
             {
                 "t0": test_bars["t0"],
@@ -208,6 +217,8 @@ def _make_fake_run_fold(degenerate_fold_id: int | None = None):
             n_test_bars=n,
             long_model=long_model,
             short_model=short_model,
+            n_train_long=n_train_long,
+            n_train_short=n_train_short,
         )
 
     return _fake_run_fold
@@ -237,6 +248,16 @@ def test_run_walk_forward_gera_1_fold_por_wf_split(monkeypatch: pytest.MonkeyPat
     assert result.n_folds_total == len(expected_splits)
     assert len(result.fold_results) == len(expected_splits)
     assert result.n_folds_total > 1  # noqa: magic-number -- teste sem sentido com 1 fold só
+    # Correção 2026-08-31 (audit_engineering/ADR-008) -- populacao REAL de
+    # treino por lado, nao mais descartada: todo fold treinado (nao pulado
+    # por 0 barras de teste) tem n_train_long/short > 0, e nao sao mais
+    # iguais a n_train_rows_candidatas (que soma os 2 lados PRE-filtro).
+    fold_treinado = next(fm for fm in result.fold_results if fm.n_test_bars > 0)
+    assert fold_treinado.n_train_long > 0
+    assert fold_treinado.n_train_short > 0
+    assert fold_treinado.n_train_long + fold_treinado.n_train_short <= (
+        fold_treinado.n_train_rows_candidatas
+    )
 
 
 def test_run_walk_forward_pula_run_fold_quando_teste_tem_zero_barras_validas(
