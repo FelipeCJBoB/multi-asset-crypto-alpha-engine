@@ -1,9 +1,13 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-3 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
-`33e8e10`, `5bb5224`, `404a7dd`) — Fase 4 (walk-forward real) aguarda
-medir 1 fold antes de orçamento, Fases 6/7 aguardam decisão do Manager
-(thresholds de gate / dependência `shap` nova).
+**Status:** Fases 0-4 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
+`33e8e10`, `5bb5224`, `404a7dd`, `8df739c`, `f63f6ce`, `095a920`,
+`60ad4bd`, `d5dd85d`, `c836435`) — Fase 4 rodou a campanha real completa
+sobre os 5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold
+degenerado em todos eles (`SOLUSDT/R2` com só 1/12 fold usável),
+achado bruto ainda sem decisão de como agir. Fase 5 (stability matrix)
+pronta pra começar, Fases 6/7 aguardam decisão do Manager (thresholds
+de gate / dependência `shap` nova).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -338,9 +342,29 @@ decididas por conta própria.
    convenção `ret_net>0`). Sweep completo (2.745 testes) — 2.742 verdes,
    1 falha pré-existente não relacionada (mesmo artefato local do item
    3), 2 skipped, 2 xfailed — zero regressão.
-5. [ ] Fase 4 — adaptar `alpha.run_fold` pra `generate_anchored_walk_forward_splits`;
-   medir 1 fold real antes de declarar orçamento total; rodar walk-forward
-   completo sobre os 5 candidatos promovidos.
+5. [x] Fase 4 — commits `8df739c`/`f63f6ce`/`095a920`/`60ad4bd`/`d5dd85d`/
+   `c836435`. `walk_forward_split_to_cpcv_split` (adaptador fino,
+   `WalkForwardSplit`→`CPCVSplit`, purge por `t1`) +
+   `run_walk_forward_for_combo` (driver: gera splits ancorados, roda
+   `alpha.run_fold` por fold, reusa `backtest_lite.backtest_by_path` +
+   `score_quality.compute_score_quality`, agrega mean/median/std/min/max
+   sobre folds não-degenerados). Critério operacional de fold degenerado
+   definido pelo Manager (2026-08-31): `n_filled_trades <
+   alpha.MIN_OCCURRENCES_ABOVE_TAU` (10) — corrigido em campo real depois
+   de um primeiro critério (por `n_test_bars`) produzir um Sharpe
+   patológico (47.163,5 sobre 2 trades, `SOLUSDT/R2` fold_id=9). 2 bugs
+   reais adicionais corrigidos por execução real (não hipotética):
+   `mf.data` com 2 linhas/barra não-monótono em `t0`; fold com 0 barras
+   de teste válidas quebrando `alpha.run_fold` dentro do `predict_proba`.
+   19 testes novos. Medição de 1 fold real: 0,6s — campanha completa
+   sobre os 5 candidatos autorizada ("Orçamento = Completo"): 10 runs
+   (5 combos × 2 camadas), ~117s de treino + ~100s de IO, zero falha.
+   **Achado bruto, sem decisão de como agir**: taxa de fold degenerado
+   alta em TODOS os 5 candidatos (`SOLUSDT/R2`=1/12 usável nas 2
+   camadas), Sharpe/edge_bps agregados majoritariamente negativos —
+   quadro bem diferente do CPCV (`n_lifetime` id=41, todos positivos).
+   `n_lifetime` id=42 (delta=5). Artefatos: `experiments/alpha_walk_
+   forward_{symbol}_{resolution_id}.json` (5 arquivos).
 6. [ ] Fase 5 — stability matrix parcial (Fold × IC/AUC/gain/decile).
 7. [ ] Fase 6 — gates codificados — **aguarda decisão de threshold do
    Manager** (ou registra `ASSUMED`+`sweep_required`).
