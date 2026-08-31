@@ -59,7 +59,7 @@
 
 schema_version: 1
 status: "descontinuado_2026_08_17 -- nao bloqueia mais trabalho, ver AG-077 pro que substitui DSR/Gate 6"
-counter: 5515
+counter: 5520
 
 log:
   - id: 1
@@ -1191,4 +1191,58 @@ log:
       literalmente zero em 3 dos 5 combos) — candidatas reais a poda,
       não estimativa. Detalhamento completo na nova aba "Run Canônico —
       5 Candidatos" do artefato "ADR-007 — Painel de Execução".
+    delta: 5
+  - id: 42
+    date: "2026-08-31"
+    type: adr008_fase4_walk_forward_real_5_candidatos
+    description: >
+      Walk-forward real ancorado (`src.models.walk_forward.
+      run_walk_forward_for_combo`, ADR-008 Fase 4) sobre os mesmos 5
+      combos promovidos do id 41 -- `BTCUSDT/R2`, `SOLUSDT/R2`,
+      `SOLUSDT/R3`, `XRPUSDT/R2`, `XRPUSDT/R3` -- Camada1 E Camada0,
+      hiperparâmetro CONFIRMADO (mesmo `alpha_production_hyperparam_
+      override`, sem busca nova). `initial_train_years=2` (`constants.
+      yaml::m1_walkforward_initial_train_years`, protocolo M1), passo
+      trimestral civil ancorado (treino nunca encolhe, só expande).
+      10/10 runs sem falha, ~117s de treino real total + ~100s de
+      `build_modeling_frame` (5 combos × ~20s, carregado 1 vez por
+      combo, reusado entre as 2 camadas) -- ordem de MINUTOS, não horas
+      (medição prévia de 1 fold real, BTCUSDT/R2 fold_id=0: 0,6s,
+      confirmada representativa).
+
+      **Achado real, não hipotético, motivou 2 correções de desenho
+      antes deste número final valer (ambas já commitadas,
+      `f63f6ce`/`60ad4bd`/`d5dd85d`):** (1) `mf.data` tem 2 linhas/barra
+      (por lado), não é globalmente monótono em `t0` -- quebrava
+      `generate_anchored_walk_forward_splits` na primeira execução real.
+      (2) um fold com 0 barras de teste válidas quebrava `alpha.run_fold`
+      dentro do `predict_proba` do LightGBM, DEPOIS de já ter treinado
+      os dois lados. (3) o critério original de "fold degenerado"
+      gateava em `n_test_bars` (população de inferência) em vez de
+      `n_filled_trades` (população REAL das métricas agregadas) --
+      `SOLUSDT/R2` fold_id=9 tinha `n_test_bars=2097` mas só 2 trades
+      reais, e `sharpe_naive` sobre 2 trades quase-idênticos explodiu
+      pra 47.163,5 (não filtra amostra pequena por desenho), distorcendo
+      o agregado inteiro daquele combo (mean=15.720,5 sobre 12 folds
+      antes da correção). Corrigido pra gatear em `n_filled_trades <
+      MIN_OCCURRENCES_ABOVE_TAU` (10) direto.
+
+      **Achado real mais importante — taxa de folds degenerados alta em
+      TODOS os 5 candidatos, mesmo após a correção:**
+      `BTCUSDT/R2` 8/19 (camada1) e 7/19 (camada0) usáveis;
+      `SOLUSDT/R2` 1/12 usável nas DUAS camadas (hiperparâmetro
+      confirmado idêntico entre camada1/camada0 pra este combo --
+      verificado no JSON de confirmação, não é bug de carregamento);
+      `SOLUSDT/R3` 4/12 e 3/12; `XRPUSDT/R2` 6/12 e 4/12; `XRPUSDT/R3`
+      4/12 e 6/12. Sharpe/edge_bps agregados (sobre os folds usáveis)
+      majoritariamente NEGATIVOS -- diferente do quadro do id 41 (CPCV,
+      todos positivos) -- `BTCUSDT/R2` é o único combo com edge positivo
+      nas 2 camadas (7,90bps/1,35bps). Isso NÃO foi comparado formalmente
+      contra o id 41 nem interpretado como veredito sobre os candidatos
+      -- reportado ao Manager como achado bruto, decisão de como agir
+      pendente (ADR-008 Fase 5, stability matrix, e/ou revisão de
+      `initial_train_years`/critério de fold degenerado ficam em aberto).
+      Artefatos completos: `experiments/alpha_walk_forward_{symbol}_
+      {resolution_id}.json` (5 arquivos, camada1+camada0 cada, schema
+      completo por fold + agregado).
     delta: 5
