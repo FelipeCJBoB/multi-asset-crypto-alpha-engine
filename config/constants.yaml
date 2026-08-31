@@ -3082,6 +3082,53 @@ alpha_layer1_permanence_min_trades:
   class: C
   sweep_required: false
 
+# --- ADR-008 Fase 6: gates codificados (Data/Model/Alpha) sobre o
+# artefato de walk-forward real (Fase 4) + stability matrix (Fase 5).
+# Sem decisão explícita do Manager sobre os limiares (ADR-008 §Fase 6),
+# os 2 novos entram ASSUMED + sweep_required — mesmo padrão já usado em
+# `alpha_prune_max_gate_fpr`/`alpha_gate3_hhi_effective_max`. O gate
+# Alpha não precisa de constante nova: reusa `alpha_layer1_permanence_
+# min_edge_bps` acima (já DERIVED) — mesmo conceito de "existe edge
+# líquido" que `edge_gate_pass` já testa sobre CPCV, aqui testado sobre
+# walk-forward.
+
+alpha_gate_data_min_frac_folds_usados:
+  value: 0.5
+  provenance: ASSUMED
+  source: >
+    ADR-008 Fase 6 — Gate Data: fração mínima de folds walk-forward com
+    trades suficientes (`n_folds_usados / n_folds_total`, nível
+    combo×variant) pra confiar no resto da medição (Model/Alpha gates)
+    daquele combo. 0,5 (maioria simples) é ARBITRÁRIO por ora — nenhuma
+    medição/literatura o embasa ainda; a taxa de fold degenerado REAL
+    medida na campanha completa (2026-08-31, n_lifetime id=42) variou de
+    8% (SOLUSDT/R2, 1/12) a 68% (XRPUSDT/R3/C0, 6/12 — o melhor caso),
+    então este piso já reprova a maioria dos 10 combos×variant medidos
+    sob o valor default — acompanhar de perto quando o Manager decidir.
+  class: A
+  sweep_required: true
+  sweep_range: [0.3, 0.8]
+  review_by: "TBD -- Manager decide"
+
+alpha_gate_model_min_auc:
+  value: 0.52
+  provenance: ASSUMED
+  source: >
+    ADR-008 Fase 6 — Gate Model: piso de ROC-AUC out-of-time (médio
+    sobre os folds usáveis, `src.analysis.stability_matrix`, nível
+    combo×variant×lado) pra considerar que o classificador discrimina
+    melhor que uma moeda honesta com margem — 0,50 exato seria
+    tecnicamente "sem poder preditivo detectável", nunca um piso de
+    aprovação. 0,52 é ARBITRÁRIO por ora (margem pequena, não medida
+    nem citada de literatura específica deste domínio) — a campanha
+    completa (2026-08-31) mediu AUC médio perto de 0,50 na maioria dos
+    combos/lados (às vezes exatamente 0,500, desvio-padrão 0,000), então
+    este piso já reprova a maioria sob o valor default.
+  class: A
+  sweep_required: true
+  sweep_range: [0.5, 0.6]
+  review_by: "TBD -- Manager decide"
+
 # --- Baselines nulos (§16.1) ---
 
 alpha_b1_n_seeds:
