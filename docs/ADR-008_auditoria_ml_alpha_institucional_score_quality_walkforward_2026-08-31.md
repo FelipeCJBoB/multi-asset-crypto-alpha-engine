@@ -1,13 +1,15 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-4 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
-`33e8e10`, `5bb5224`, `404a7dd`, `8df739c`, `f63f6ce`, `095a920`,
-`60ad4bd`, `d5dd85d`, `c836435`) — Fase 4 rodou a campanha real completa
-sobre os 5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold
-degenerado em todos eles (`SOLUSDT/R2` com só 1/12 fold usável),
-achado bruto ainda sem decisão de como agir. Fase 5 (stability matrix)
-pronta pra começar, Fases 6/7 aguardam decisão do Manager (thresholds
-de gate / dependência `shap` nova).
+**Status:** Fases 0-5 concluídas 2026-08-31 (commits `b03109c`..`365f104`,
+lista completa nos Action Items) — Fase 4 rodou a campanha real sobre os
+5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold degenerado.
+Fase 5 (stability matrix) cruzou Fold × {IC, AUC, gain, decile} sobre
+esse mesmo artefato e achou um quadro mais sério: AUC out-of-time perto
+de 0,5 (sem poder discriminativo real) em quase todos os candidatos,
+dispersão de IC entre folds muito maior que a média (ruído, não sinal
+estável), e gain concentrado em 1-2 features na maioria dos combos.
+Achado bruto, ainda sem decisão de como agir. Fases 6/7 aguardam decisão
+do Manager (thresholds de gate / dependência `shap` nova).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -365,7 +367,22 @@ decididas por conta própria.
    quadro bem diferente do CPCV (`n_lifetime` id=41, todos positivos).
    `n_lifetime` id=42 (delta=5). Artefatos: `experiments/alpha_walk_
    forward_{symbol}_{resolution_id}.json` (5 arquivos).
-6. [ ] Fase 5 — stability matrix parcial (Fold × IC/AUC/gain/decile).
+6. [x] Fase 5 — commits `b3959c7`/`365f104`. `score_quality.compute_
+   decile_profile` (perfil completo de 10 decis, não só o spread Q10-Q1)
+   + `WalkForwardFoldMetrics.gain_by_column_by_side`/`decile_profile_
+   by_side` (Fase 4 já calculava tudo isso internamente, só faltava
+   expor) + `src.analysis.stability_matrix.build_stability_matrix`
+   (cruza Fold × {IC, AUC/LogLoss, gain, decile}, mede DISPERSÃO entre
+   folds e frequência de top-feature-por-gain, não só tabula). 16
+   testes novos, zero regressão (2771 testes da suíte completa).
+   **Achado real, rodado contra os 5 artefatos regenerados**: AUC
+   out-of-time perto de 0,5 (às vezes exatamente 0,500, std=0,000) na
+   maioria dos combos/lados — sem poder discriminativo real detectável
+   fora da amostra; dispersão de IC entre folds tipicamente MAIOR que a
+   própria média (ex. `BTCUSDT/R2` long: mean=0,035 std=0,512) — ruído,
+   não sinal estável; gain concentrado em 1-2 features na maioria dos
+   combos (`A04_log_return_12` domina em quase todos). Quadro mais
+   sério que o "bruto" da Fase 4 — ainda sem decisão de como agir.
 7. [ ] Fase 6 — gates codificados — **aguarda decisão de threshold do
    Manager** (ou registra `ASSUMED`+`sweep_required`).
 8. [ ] Fase 7 — SHAP — **aguarda aprovação de dependência nova do
