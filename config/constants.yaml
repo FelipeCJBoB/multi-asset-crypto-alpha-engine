@@ -3702,3 +3702,49 @@ meta_min_events_per_variable:
   class: B
   sweep_required: true
   sweep_range: [5, 20]
+
+meta_tau_grid_quantiles:
+  value: [0.0, 0.25, 0.50, 0.75, 0.90]
+  provenance: ASSUMED
+  source: >
+    docs/meta_model_design_doc_2026-08-22.md §11/§8.3 -- grade a priori de
+    quantis candidatos a tau_meta (D-07), declarada A PRIORI (B20).
+    sweep_required FALSE de propósito: varrer a própria grade seria
+    "buscar sobre a busca" -- exatamente o que R5 do design doc
+    caracteriza como falha de desenho (a v1 tinha isto com
+    sweep_required=true e a v3 corrigiu para false, mesma disciplina
+    aplicada aqui). A escolha DENTRO da grade não é livre -- é decidida
+    por resolve_tau_meta maximizando PnL líquida in-fold do subconjunto
+    aceito, com empate por meta_tau_tie_epsilon.
+  class: B
+  sweep_required: false
+
+meta_tau_tie_epsilon:
+  value: 0.00055174
+  provenance: DERIVED
+  source: >
+    docs/meta_model_design_doc_2026-08-22.md §11/§8.3 -- unidade de
+    "empate" na escolha de tau_meta: PnL somada in-fold sobre trades
+    aceitos, em FRAÇÃO de equity (mesma unidade de ret_net). Derivado do
+    custo de round-trip de 1 trade médio -- "empate" = a diferença de PnL
+    entre dois quantis candidatos não paga nem um trade extra. Mesma
+    fórmula de src.features.groups.group_e.round_trip_cost_bps(maker_fee,
+    taker_fee), sem o *10000 (aqui em fração, não bps):
+    (maker_fee + maker_prob*maker_fee + (1-maker_prob)*taker_fee).
+    Com maker_fee=0,0002, taker_fee=0,0005, round_trip_cost_bps_maker_prob=
+    0,4942 (valores vigentes em config/constants.yaml nesta data):
+    (0,0002 + 0,4942*0,0002 + 0,5058*0,0005) = 0,00055174. Verificado por
+    cálculo direto nesta sessão (uv run python), não copiado de proposta
+    anterior sem checar.
+
+    CORREÇÃO DA v1: `1e-6` sobre PnL somada nunca dispara -- reduz a regra
+    a argmax puro e apaga a preferência estrutural (menos trades, R3
+    folgado) que a cláusula de empate existe para expressar.
+
+    GATILHO DE REVISÃO: snapshot congelado, não recalculado em runtime a
+    partir dos pais -- remedir sempre que maker_fee/taker_fee/
+    round_trip_cost_bps_maker_prob mudarem (já remedido 2x historicamente,
+    ver derived_from de outras constantes que dependem do mesmo pai).
+  class: C
+  sweep_required: false
+  derived_from: [round_trip_cost_bps_maker_prob, maker_fee, taker_fee]

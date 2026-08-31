@@ -33,9 +33,10 @@ heterogeneidade de mapeamento.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import polars as pl
@@ -315,16 +316,14 @@ class LogitL2Meta:
             return dict.fromkeys(nomes, 0.0)
         return {nome: float(c / total) for nome, c in zip(nomes, coef, strict=True)}
 
-    def serialize(self, dest: Path) -> None:
-        """D-17/§14.4 — sem `pickle`/`joblib` do objeto sklearn.
-
-        Persiste `coef_`/`intercept_` como JSON: a inferência ao vivo é um
-        produto escalar mais uma sigmoid, e não precisa de sklearn no
-        runtime. Mesma disciplina que `persistence.py` já provou bit-exata
-        para o calibrador isotônico do Alpha (arrays crus mais `np.interp`,
-        nunca o objeto serializado)."""
+    def _payload(self) -> dict[str, Any]:
+        """Núcleo puro da serialização — sem IO, reusado por `serialize`
+        (artefato isolado) e por `write_meta_fold_bundle` (F5, junta com
+        `tau_meta`/linhagem num único arquivo atômico). Extraído pelo
+        mesmo motivo estrutural de sempre neste repo: duas cópias do
+        mesmo dicionário divergiriam em silêncio."""
         model = self._fitted()
-        payload = {
+        return {
             "format": _SERIALIZED_FORMAT,
             "coef": [float(v) for v in model.coef_[0]],
             "intercept": float(model.intercept_[0]),
@@ -335,7 +334,17 @@ class LogitL2Meta:
             # declarada para que ninguém procure por um que nunca existiu.
             "calibrator": None,
         }
-        atomic_write_bytes(dest, json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
+
+    def serialize(self, dest: Path) -> None:
+        """D-17/§14.4 — sem `pickle`/`joblib` do objeto sklearn.
+
+        Persiste `coef_`/`intercept_` como JSON: a inferência ao vivo é um
+        produto escalar mais uma sigmoid, e não precisa de sklearn no
+        runtime. Mesma disciplina que `persistence.py` já provou bit-exata
+        para o calibrador isotônico do Alpha (arrays crus mais `np.interp`,
+        nunca o objeto serializado)."""
+        blob = json.dumps(self._payload(), indent=2, sort_keys=True).encode("utf-8")
+        atomic_write_bytes(dest, blob)
 
 
 class BlockedGBMMeta:
@@ -448,3 +457,200 @@ def n_events_effective(train: pl.DataFrame) -> float:
     por_classe = treinaveis.group_by("y_meta").agg(n_eff=pl.col("uniqueness_subpop").sum())
     minimo = por_classe["n_eff"].min()
     return 0.0 if minimo is None else float(minimo)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# F5 — tau_meta in-fold (§8.3) + serialização com linhagem (D-17)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class TauMetaResolution:
+    """Resultado de `resolve_tau_meta` — o quantil escolhido e o rastro
+    completo da grade, para que a decisão seja auditável, não só o número
+    final. `pnl_by_quantile`/`pass_rate_by_quantile` saem alinhados a
+    `quantile_grid`, na mesma ordem."""
+
+    tau_meta: float
+    quantile_chosen: float
+    quantile_grid: tuple[float, ...]
+    pnl_by_quantile: tuple[float, ...]
+    pass_rate_by_quantile: tuple[float, ...]
+    tie_broken: bool
+
+
+def resolve_tau_meta(
+    scores_train: FloatArray,
+    ret_net_train: FloatArray,
+    *,
+    quantile_grid: Sequence[float] | None = None,
+    tie_epsilon: float | None = None,
+) -> TauMetaResolution:
+    """§8.3 — `tau_meta` é o quantil da distribuição de `p_meta` do PRÓPRIO
+    TREINO do fold (mesmo mecanismo do Alpha, `alpha.py::resolve_joint_tau`)
+    que MAXIMIZA a PnL líquida in-fold do subconjunto aceito
+    (`scores_train >= tau`), com empate decidido pelo MENOR pass-rate.
+
+    **Por que quantil, e não um valor absoluto de score.** Quantil é
+    invariante a transformação monótona (§8.3) — calibrar `p_meta` depois
+    não mudaria o conjunto aceito, então a superfície de vazamento B08 sai
+    do escopo por construção, não por disciplina de quem implementa.
+
+    **Restrição do contrato, herdada do §8.3 e não resolvida aqui.** A
+    invariância acima vale para UMA transformação monótona por fold. Sob
+    `path_matched`, `p_alpha` no mesmo treino vem de até 5 isotônicas
+    diferentes (uma por doador) — a MISTURA de monótonas distintas não é
+    ela própria monótona. Este contrato é aproximado, não exato, sob
+    doadores múltiplos; registrado como limitação conhecida, não como
+    "resolvido por invariância" indevidamente generalizado.
+
+    **Correção da v1 sobre o epsilon de empate.** `1e-6` sobre PnL somada
+    (fração de equity) nunca dispara — reduz a regra a argmax puro e apaga
+    a preferência estrutural que a cláusula de empate existe para expressar
+    (menos trades, R3 folgado, contra o otimismo do argmax sobre ruído
+    in-fold). O `tie_epsilon` correto é o PnL de UM trade médio: o custo de
+    round-trip (`meta_tau_tie_epsilon`, `config/constants.yaml`, `DERIVED`
+    de `round_trip_cost_bps_maker_prob`) — "empate" passa a significar
+    literalmente "a diferença de PnL não paga nem um trade a mais".
+
+    `ret_net_train` já vem projetado no lado (mesma convenção de `y_meta`,
+    `meta_dataset.py`) — não multiplicar por `side_hat` de novo.
+
+    Levanta se `scores_train`/`ret_net_train` tiverem tamanhos diferentes
+    ou se a grade estiver vazia — as duas são falhas de contrato do
+    chamador, não casos degenerados do fold (esses são "todo quantil dá
+    pass-rate zero", que a função trata sem levantar, ver abaixo)."""
+    grid_source = (
+        quantile_grid
+        if quantile_grid is not None
+        else load_constant("meta_tau_grid_quantiles")
+    )
+    grid = tuple(float(q) for q in grid_source)
+    eps = float(tie_epsilon if tie_epsilon is not None else load_constant("meta_tau_tie_epsilon"))
+    if scores_train.shape != ret_net_train.shape:
+        raise MetaLearnerError(
+            f"resolve_tau_meta: scores_train.shape={scores_train.shape} != "
+            f"ret_net_train.shape={ret_net_train.shape}"
+        )
+    if len(grid) == 0:
+        raise MetaLearnerError("resolve_tau_meta: quantile_grid vazia — nada para escolher.")
+
+    taus = [float(np.quantile(scores_train, q)) for q in grid]
+    pnl_by_q: list[float] = []
+    pass_rate_by_q: list[float] = []
+    n = scores_train.shape[0]
+    for tau in taus:
+        aceito = scores_train >= tau
+        pnl_by_q.append(float(ret_net_train[aceito].sum()) if n > 0 else 0.0)
+        pass_rate_by_q.append(float(aceito.sum()) / n if n > 0 else 0.0)
+
+    pnl_arr = np.asarray(pnl_by_q, dtype=np.float64)
+    melhor_pnl = float(pnl_arr.max())
+    # Empate: todo quantil cuja PnL fica a menos de `eps` do melhor. Com
+    # eps=0 (grade degenerada/teste) isto se reduz ao empate exato --
+    # nunca produz lista vazia, porque o próprio melhor sempre entra.
+    empatados = [i for i, pnl in enumerate(pnl_by_q) if (melhor_pnl - pnl) <= eps]
+    escolhido = min(empatados, key=lambda i: pass_rate_by_q[i])
+    tie_broken = len(empatados) > 1
+
+    logger.info(
+        "models.meta.resolve_tau_meta",
+        quantile_grid=grid,
+        quantile_chosen=grid[escolhido],
+        tau_meta=taus[escolhido],
+        pnl_by_quantile=pnl_by_q,
+        pass_rate_by_quantile=pass_rate_by_q,
+        tie_epsilon=eps,
+        n_empatados=len(empatados),
+        tie_broken=tie_broken,
+    )
+    return TauMetaResolution(
+        tau_meta=taus[escolhido],
+        quantile_chosen=grid[escolhido],
+        quantile_grid=grid,
+        pnl_by_quantile=tuple(pnl_by_q),
+        pass_rate_by_quantile=tuple(pass_rate_by_q),
+        tie_broken=tie_broken,
+    )
+
+
+def apply_meta_filter(side_hat: IntArray, p_meta: FloatArray, *, tau_meta: float) -> IntArray:
+    """§8.1/§8.2 — `side_final = side_hat` se `p_meta >= tau_meta`, senão 0.
+
+    **Veto-em-zero, contra AFML §10.3 (D-05).** O snippet do livro usa
+    `m = side · (2Φ(z) − 1)`; com `p < 0,5` isso pode dar `m < 0`, e
+    `side · m` INVERTE o lado — contradizendo o próprio §3.6 do mesmo
+    livro. Em meta-labeling `p = P(o primário acertou)`; `p < 0,5`
+    significa "não aposte", nunca "aposte ao contrário". Esta função não
+    tem nenhum caminho que produza um valor de sinal diferente de
+    `side_hat` ou `0` — é a garantia estrutural, não um teste que poderia
+    ser esquecido."""
+    if side_hat.shape != p_meta.shape:
+        raise MetaLearnerError(
+            f"apply_meta_filter: side_hat.shape={side_hat.shape} != p_meta.shape={p_meta.shape}"
+        )
+    aceito = p_meta >= tau_meta
+    return np.where(aceito, side_hat, 0).astype(np.int8)
+
+
+def write_meta_fold_bundle(
+    learner: LogitL2Meta,
+    dest: Path,
+    *,
+    tau_meta: float,
+    alpha_model_id: str,
+    meta_split_id: int,
+    variant: str,
+    resolution_id: str,
+) -> None:
+    """D-17/§14.4 — junta o learner serializado com `tau_meta` e a
+    linhagem num ÚNICO artefato, escrito atomicamente.
+
+    **Por que um arquivo só, não dois.** `tau_meta` e o learner só fazem
+    sentido JUNTOS na inferência (`apply_meta_filter` precisa dos dois) —
+    escrevê-los em dois arquivos separados abriria uma janela onde um
+    existe e o outro não (processo morto no meio, disco cheio), e um
+    consumidor poderia carregar um par inconsistente sem erro nenhum.
+
+    **Linhagem, não enforcement.** `alpha_model_id`/`resolution_id`
+    persistidos aqui são só DADO — a checagem de coerência ("este Meta foi
+    treinado sobre ESTE Alpha") é trabalho de F7 (§10, teste #10/#11
+    estendido), que lê este campo mas não é escrita por esta função. F5
+    persiste; F7 verifica."""
+    payload = {
+        **learner._payload(),  # mesmo módulo -- LogitL2Meta é definida logo acima
+        "tau_meta": float(tau_meta),
+        "alpha_model_id": alpha_model_id,
+        "meta_split_id": int(meta_split_id),
+        "variant": variant,
+        "resolution_id": resolution_id,
+    }
+    atomic_write_bytes(dest, json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
+
+
+def read_meta_fold_bundle(src: Path) -> dict[str, Any]:
+    """Contraparte de leitura de `write_meta_fold_bundle` — só desserializa,
+    não reconstrói `LogitL2Meta` (a inferência ao vivo faz o produto
+    escalar direto sobre `coef`/`intercept`, sem sklearn no runtime, mesma
+    disciplina provada para o calibrador isotônico do Alpha)."""
+    payload: dict[str, Any] = json.loads(src.read_text(encoding="utf-8"))
+    campos_obrigatorios = {
+        "format", "coef", "intercept", "column_names", "tau_meta", "alpha_model_id",
+    }
+    faltando = sorted(campos_obrigatorios - set(payload))
+    if faltando:
+        raise MetaLearnerError(
+            f"read_meta_fold_bundle: {src} não tem {faltando} -- bundle incompleto."
+        )
+    return payload
+
+
+def score_from_bundle(payload: dict[str, Any], X: FloatArray) -> FloatArray:
+    """Reconstrução SEM sklearn: produto escalar mais sigmoid, a partir do
+    payload de `write_meta_fold_bundle`/`read_meta_fold_bundle`. É a mesma
+    conta que `LogitL2Meta.predict_score` faz via `predict_proba` — esta
+    versão é a que roda em produção, sem carregar o objeto sklearn."""
+    coef = np.asarray(payload["coef"], dtype=np.float64)
+    intercept = float(payload["intercept"])
+    z = X @ coef + intercept
+    return np.asarray(1.0 / (1.0 + np.exp(-z)), dtype=np.float64)

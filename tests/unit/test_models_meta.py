@@ -299,3 +299,194 @@ def test_gbm_bloqueado_ainda_satisfaz_o_protocolo() -> None:
     """A interface precisa ser a mesma — trocar de learner não pode exigir
     mudar o orquestrador."""
     assert isinstance(meta.BlockedGBMMeta(), meta.MetaLearner)
+
+
+# ---------------------------------------------------------------------------
+# F5 — resolve_tau_meta (§8.3, D-07)
+# ---------------------------------------------------------------------------
+
+
+def test_tau_meta_escolhe_o_quantil_de_maior_pnl() -> None:
+    """Caso sem empate: scores crescem, e os trades que sobrevivem a um
+    corte mais alto são justamente os mais lucrativos -- a grade deve
+    escolher o corte que maximiza a PnL in-fold do subconjunto aceito."""
+    scores = np.array([0.1, 0.3, 0.5, 0.7, 0.9], dtype=np.float64)
+    ret_net = np.array([-0.02, -0.01, 0.01, 0.02, 0.03], dtype=np.float64)
+    grid = (0.0, 0.5, 0.9)
+
+    resultado = meta.resolve_tau_meta(scores, ret_net, quantile_grid=grid, tie_epsilon=0.0)
+
+    # q=0.9 -> tau=quantile(scores,0.9), aceita só o topo (0.03) -> PnL=0.03
+    # q=0.5 -> aceita metade de cima -> PnL=0.02+0.03=0.05 (maior)
+    # q=0.0 -> aceita tudo -> PnL=0.03 (soma de todos)
+    assert resultado.quantile_chosen == pytest.approx(0.5)
+    assert resultado.tie_broken is False
+
+
+def test_tau_meta_empate_real_e_decidido_pelo_menor_pass_rate() -> None:
+    """**O teste central de F5.** Dois quantis dão PnL IDÊNTICA (porque os
+    trades extras que o quantil mais frouxo aceita têm ret_net=0 exato) --
+    empate genuíno, e a regra manda vencer o de MENOR pass-rate (menos
+    trades, preferência estrutural contra o otimismo do argmax)."""
+    scores = np.array([0.1, 0.2, 0.3, 0.4, 0.9], dtype=np.float64)
+    # As 4 primeiras linhas têm ret_net=0 -- aceitá-las ou não não muda a
+    # PnL somada, só o pass-rate.
+    ret_net = np.array([0.0, 0.0, 0.0, 0.0, 0.05], dtype=np.float64)
+    grid = (0.0, 0.5, 0.9)
+
+    resultado = meta.resolve_tau_meta(scores, ret_net, quantile_grid=grid, tie_epsilon=1e-9)
+
+    assert resultado.tie_broken is True
+    # q=0.9 tem o MENOR pass-rate entre os empatados (só a última linha).
+    assert resultado.quantile_chosen == pytest.approx(0.9)
+
+
+def test_epsilon_da_v1_perdia_empate_que_o_epsilon_correto_pega() -> None:
+    """**Regressão exata do achado da v3.** Fixture com um gap de PnL entre
+    dois quantis DELIBERADAMENTE maior que `1e-6` (o epsilon vazio da v1,
+    que "nunca dispara" na prática) mas menor que o custo de round-trip de
+    1 trade (`meta_tau_tie_epsilon` real, ~0,00055) -- a diferença entre os
+    dois candidatos não paga nem um trade a mais, e É esse o "empate" que
+    o §8.3 quer capturar. Com o epsilon da v1 o par NÃO seria tratado como
+    empate (viraria argmax puro); com o epsilon correto, é."""
+    scores = np.array([0.1, 0.2, 0.5, 0.9], dtype=np.float64)
+    # q=0.0 aceita tudo: PnL = 0.01 + 0.01 + 0.05 = 0.07
+    # q=0.5 aceita as 2 últimas: PnL = 0.01 + 0.05 = 0.06 -- gap = 0.01... grande
+    # demais; ajustar pra um gap fino, dentro da janela [1e-6, epsilon real).
+    ret_net = np.array([0.0, 0.0002, 0.0, 0.05], dtype=np.float64)
+    grid = (0.0, 0.5)
+
+    com_epsilon_da_v1 = meta.resolve_tau_meta(scores, ret_net, quantile_grid=grid, tie_epsilon=1e-6)
+    com_epsilon_correto = meta.resolve_tau_meta(
+        scores, ret_net, quantile_grid=grid, tie_epsilon=0.00055174
+    )
+
+    assert com_epsilon_da_v1.tie_broken is False, "1e-6 é fino demais pra pegar este gap real"
+    assert com_epsilon_correto.tie_broken is True, "o custo de 1 trade pega o mesmo gap"
+    # Entre os empatados, o epsilon correto prefere o de MENOR pass-rate.
+    assert com_epsilon_correto.quantile_chosen == pytest.approx(0.5)
+
+
+def test_epsilon_zero_e_empate_exato_bit_a_bit() -> None:
+    """`tie_epsilon=0.0` ainda pega EMPATE EXATO (diferença de PnL
+    exatamente zero) -- não é "nunca empata", é "só empata quando a
+    diferença é literalmente zero". A distinção importa: um epsilon fino
+    demais para gaps REAIS ainda captura o caso degenerado de PnL
+    idêntica bit-a-bit (ex. os candidatos extras só têm ret_net=0)."""
+    scores = np.array([0.1, 0.2, 0.3, 0.4, 0.9], dtype=np.float64)
+    ret_net = np.array([0.0, 0.0, 0.0, 0.0, 0.05], dtype=np.float64)
+    grid = (0.0, 0.5, 0.9)
+
+    resultado = meta.resolve_tau_meta(scores, ret_net, quantile_grid=grid, tie_epsilon=0.0)
+
+    assert resultado.tie_broken is True, "as 3 PnLs são EXATAMENTE 0,05 -- empate bit-a-bit"
+    assert resultado.quantile_chosen == pytest.approx(0.9), "menor pass-rate entre os empatados"
+
+
+def test_tau_meta_e_invariante_a_transformacao_monotona() -> None:
+    """§8.3 -- quantil é invariante a monótona: aplicar uma transformação
+    estritamente crescente aos scores não pode mudar QUAL LINHA é aceita,
+    só o valor numérico de `tau_meta`."""
+    scores = np.array([0.05, 0.3, 0.55, 0.8, 0.95], dtype=np.float64)
+    ret_net = np.array([-0.03, 0.01, 0.02, -0.01, 0.04], dtype=np.float64)
+    grid = (0.0, 0.25, 0.5, 0.75)
+
+    base = meta.resolve_tau_meta(scores, ret_net, quantile_grid=grid, tie_epsilon=0.0)
+    transformado = meta.resolve_tau_meta(scores**3, ret_net, quantile_grid=grid, tie_epsilon=0.0)
+
+    aceito_base = scores >= base.tau_meta
+    aceito_transformado = (scores**3) >= transformado.tau_meta
+    np.testing.assert_array_equal(aceito_base, aceito_transformado)
+
+
+def test_tau_meta_grade_vazia_levanta() -> None:
+    with pytest.raises(meta.MetaLearnerError, match="vazia"):
+        meta.resolve_tau_meta(
+            np.array([0.1]), np.array([0.0]), quantile_grid=(), tie_epsilon=0.0
+        )
+
+
+def test_tau_meta_shapes_incompativeis_levanta() -> None:
+    with pytest.raises(meta.MetaLearnerError, match="shape"):
+        meta.resolve_tau_meta(
+            np.array([0.1, 0.2]), np.array([0.0]), quantile_grid=(0.5,), tie_epsilon=0.0
+        )
+
+
+def test_tau_meta_le_constantes_reais_por_default() -> None:
+    """Sem grid/epsilon explícitos, lê `config/constants.yaml` -- prova de
+    que o ponto de injeção funciona com os valores REAIS do repo, não só
+    com o que os outros testes passam de propósito."""
+    rng = np.random.default_rng(0)
+    scores = rng.uniform(0, 1, size=200)
+    ret_net = rng.normal(0, 0.01, size=200)
+    resultado = meta.resolve_tau_meta(scores, ret_net)
+    assert resultado.quantile_grid == (0.0, 0.25, 0.50, 0.75, 0.90)
+    assert resultado.quantile_chosen in resultado.quantile_grid
+
+
+# ---------------------------------------------------------------------------
+# apply_meta_filter (§8.1/§8.2, D-05/D-06) -- veto-em-zero
+# ---------------------------------------------------------------------------
+
+
+def test_filtro_mantem_side_hat_quando_p_meta_passa() -> None:
+    side_hat = np.array([1, -1, 1], dtype=np.int8)
+    p_meta = np.array([0.8, 0.9, 0.7], dtype=np.float64)
+    out = meta.apply_meta_filter(side_hat, p_meta, tau_meta=0.6)
+    np.testing.assert_array_equal(out, side_hat)
+
+
+def test_filtro_nunca_inverte_o_lado_so_zera() -> None:
+    """**A garantia central de D-05.** Mesmo com p_meta bem abaixo de 0,5
+    (o cenário em que o snippet do AFML §10.3 inverteria o lado), o único
+    valor possível além de `side_hat` é ZERO -- nunca `-side_hat`."""
+    side_hat = np.array([1, -1, 1, -1], dtype=np.int8)
+    p_meta = np.array([0.01, 0.02, 0.99, 0.98], dtype=np.float64)
+    out = meta.apply_meta_filter(side_hat, p_meta, tau_meta=0.5)
+    assert set(np.unique(out).tolist()) <= {-1, 0, 1}
+    assert out.tolist() == [0, 0, 1, -1]
+
+
+def test_filtro_shapes_incompativeis_levanta() -> None:
+    with pytest.raises(meta.MetaLearnerError, match="shape"):
+        meta.apply_meta_filter(np.array([1, -1]), np.array([0.5]), tau_meta=0.5)
+
+
+# ---------------------------------------------------------------------------
+# write_meta_fold_bundle / read_meta_fold_bundle / score_from_bundle (D-17)
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_junta_learner_e_tau_meta_num_arquivo_so(tmp_path: Path) -> None:
+    learner, x_te, nomes = _fit_logit()
+    dest = tmp_path / "fold_bundle.json"
+
+    meta.write_meta_fold_bundle(
+        learner,
+        dest,
+        tau_meta=0.42,
+        alpha_model_id="alpha_c1_v1",
+        meta_split_id=3,
+        variant="camada1",
+        resolution_id="R1",
+    )
+    payload = meta.read_meta_fold_bundle(dest)
+
+    assert payload["tau_meta"] == pytest.approx(0.42)
+    assert payload["alpha_model_id"] == "alpha_c1_v1"
+    assert payload["meta_split_id"] == 3
+    assert payload["variant"] == "camada1"
+    assert payload["resolution_id"] == "R1"
+    assert payload["calibrator"] is None
+    assert payload["column_names"] == list(nomes)
+
+    reconstruido = meta.score_from_bundle(payload, x_te)
+    assert np.allclose(reconstruido, learner.predict_score(x_te))
+
+
+def test_bundle_incompleto_levanta_ao_ler(tmp_path: Path) -> None:
+    dest = tmp_path / "incompleto.json"
+    dest.write_text(json.dumps({"format": "x"}), encoding="utf-8")
+    with pytest.raises(meta.MetaLearnerError, match="incompleto"):
+        meta.read_meta_fold_bundle(dest)
