@@ -1,6 +1,6 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-6 concluídas 2026-08-31 (commits `b03109c`..`a821801`,
+**Status:** Fases 0-7 concluídas 2026-08-31 (commits `b03109c`..`5ca3500`,
 lista completa nos Action Items) — Fase 4 rodou a campanha real sobre os
 5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold degenerado.
 Fase 5 (stability matrix) cruzou Fold × {IC, AUC, gain, decile} sobre
@@ -10,9 +10,12 @@ dispersão de IC entre folds muito maior que a média (ruído, não sinal
 estável), e gain concentrado em 1-2 features na maioria dos combos. Fase
 6 codificou 3 gates (Data/Model/Alpha) com thresholds `ASSUMED`
 (decisão de limiar pendente do Manager) e rodou contra os 5 candidatos:
-**0 de 10 combo×variant passam os 3 gates simultaneamente**. Achado
-bruto, ainda sem decisão de como agir. Fase 7 aguarda decisão do Manager
-(dependência `shap` nova).
+**0 de 10 combo×variant passam os 3 gates simultaneamente**. Fase 7
+(SHAP, dependência aprovada pelo Manager) cruzou gain nativo × SHAP —
+taxa de concordância varia de 0,00 a 1,00 entre combos/lados, em vários
+casos o gain nativo e o SHAP apontam features DIFERENTES como #1 (ex.
+`XRPUSDT/R3/camada1 long`, concordância 0,00). Achado bruto, ainda sem
+decisão de como agir. Só falta Fase 8 (cartão final, consolida 0-7).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -400,8 +403,24 @@ decididas por conta própria.
    correção. 14 testes novos. Rodado contra os 5 candidatos: **0 de 10
    combo×variant passam os 3 gates simultaneamente** sob os thresholds
    propostos — consistente com os achados brutos das Fases 4/5.
-8. [ ] Fase 7 — SHAP — **aguarda aprovação de dependência nova do
-   Manager**.
+8. [x] Fase 7 — commits `5ebe611`/`00abf25`/`5ca3500`. Dependência
+   `shap>=0.49.1` aprovada pelo Manager (2026-08-31, resposta direta ao
+   blocker desta ADR) — override de mypy adicionado (mesmo padrão de
+   `lightgbm`/`optuna`/`scipy`/`sklearn`, sem stubs publicados).
+   `shap.TreeExplainer` por fold (`x_test` recomputado via `alpha.
+   unique_test_bars`/`alpha.build_design_matrix`, zero edição em `alpha.
+   run_fold`) — `WalkForwardFoldMetrics.shap_mean_abs_by_side`. Medição
+   real antes de rodar em escala (B23): 0,005s sobre 672 linhas × 36
+   features, custo desprezível sobre o treino (0,68s). `stability_
+   matrix.py` estendido pra cruzar gain nativo × SHAP
+   (`gain_shap_agreement_rate_by_side`/`top_shap_feature_frequency_
+   by_side`). 17 testes novos/estendidos. Artefatos regenerados sob o
+   MESMO `n_lifetime` id=42 (retreino determinístico idêntico, sharpe/
+   edge_bps/win_rate confirmados iguais ao run anterior — só a medição
+   SHAP é nova, não é trial novo, não incrementa `N_lifetime`).
+   **Achado real**: taxa de concordância gain×SHAP varia de 0,00 a 1,00
+   entre combos/lados — em vários casos apontam features DIFERENTES
+   como #1 (ex. `XRPUSDT/R3/camada1 long`, concordância 0,00).
 9. [ ] Fase 8 — cartão final / model card, consolidação de 0-7.
 10. [ ] Alimentar cada fase concluída na aba "Run Canônico — 5
     Candidatos" do artefato "ADR-007 — Painel de Execução", republicação
