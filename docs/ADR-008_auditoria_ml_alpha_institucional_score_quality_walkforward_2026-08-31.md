@@ -1,10 +1,9 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-2 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
-`33e8e10`, `5bb5224`) — Fase 3 (gap fit/stop/calib) pronta pra começar,
-Fase 4 (walk-forward real) aguarda medir 1 fold antes de orçamento,
-Fases 6/7 aguardam decisão do Manager (thresholds de gate / dependência
-`shap` nova).
+**Status:** Fases 0-3 concluídas 2026-08-31 (commits `b03109c`, `62453b8`,
+`33e8e10`, `5bb5224`, `404a7dd`) — Fase 4 (walk-forward real) aguarda
+medir 1 fold antes de orçamento, Fases 6/7 aguardam decisão do Manager
+(thresholds de gate / dependência `shap` nova).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -327,7 +326,18 @@ decididas por conta própria.
    29 testes novos no total, zero custo de `N_lifetime`. Sweep completo
    do repo (2.699 testes) — 2.698 verdes, 1 falha pré-existente não
    relacionada (artefato local já modificado antes desta ADR existir).
-4. [ ] Fase 3 — `train_val_test_gap` sobre `fit`/`stop`/`calib`.
+4. [x] Fase 3 — `train_val_test_gap` sobre `fit`/`stop`/`calib` — commit
+   `404a7dd`. `InSampleSegmentScores` (novo) + 3 campos opcionais em
+   `SideModelResult` (`fit_segment`/`stop_segment`/`calib_segment`),
+   populados em `fit_side_model` sem retreino extra;
+   `score_quality.compute_train_val_test_gap` aplica as mesmas fórmulas
+   de `compute_score_quality` aos 3 sub-splits, `y_true`=vitória
+   econômica (mesma convenção do OOF); `report["train_val_test_gap"]`
+   wireado em `pipeline.py`. 11 testes novos (multiset de `ret_net`
+   reconstruído a mão, cross-check sklearn, prova explícita da
+   convenção `ret_net>0`). Sweep completo (2.745 testes) — 2.742 verdes,
+   1 falha pré-existente não relacionada (mesmo artefato local do item
+   3), 2 skipped, 2 xfailed — zero regressão.
 5. [ ] Fase 4 — adaptar `alpha.run_fold` pra `generate_anchored_walk_forward_splits`;
    medir 1 fold real antes de declarar orçamento total; rodar walk-forward
    completo sobre os 5 candidatos promovidos.
