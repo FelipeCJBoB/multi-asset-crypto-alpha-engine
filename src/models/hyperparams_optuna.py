@@ -1083,8 +1083,8 @@ def confirm_combo_paired(
     *,
     symbol: str,
     resolution_id: str,
-    top_k: int,
-    confirmation_seeds: tuple[int, ...],
+    top_k: int | None = None,
+    confirmation_seeds: tuple[int, ...] | None = None,
     device_type: str = "cpu",
     vol_estimator_id: str | None = None,
     feature_ids: tuple[str, ...] | None = None,
@@ -1095,12 +1095,27 @@ def confirm_combo_paired(
     """Confirma Camada1 e Camada0 independentemente (`confirm_top_k_multi_
     seed` 2x — nunca uma herdando o vencedor da outra, mesma exigência de
     ablação válida do módulo inteiro) e computa o gate de permanência
-    pareado sobre os 2 vencedores confirmados."""
+    pareado sobre os 2 vencedores confirmados.
+
+    `top_k`/`confirmation_seeds` (ADR-007 Item 2, 2026-08-30) -- default
+    `None` resolve de `alpha_optuna_confirm_top_k`/`alpha_optuna_confirm_
+    seeds` (`constants.yaml`), mesmo padrão sentinela de `n_trials`/
+    `sampler_seed` já usado aqui. Passar explícito sempre funciona --
+    testes existentes (valores fixos passados direto) preservados
+    bit-a-bit."""
+    top_k_resolved = (
+        top_k if top_k is not None else int(load_constant("alpha_optuna_confirm_top_k"))
+    )
+    confirmation_seeds_resolved = (
+        confirmation_seeds
+        if confirmation_seeds is not None
+        else tuple(int(s) for s in load_constant("alpha_optuna_confirm_seeds"))
+    )
     kwargs: dict[str, Any] = {
         "symbol": symbol,
         "resolution_id": resolution_id,
-        "top_k": top_k,
-        "confirmation_seeds": confirmation_seeds,
+        "top_k": top_k_resolved,
+        "confirmation_seeds": confirmation_seeds_resolved,
         "device_type": device_type,
         "vol_estimator_id": vol_estimator_id,
         "feature_ids": feature_ids,
@@ -1113,7 +1128,7 @@ def confirm_combo_paired(
 
     permanence_min_paths = int(load_constant("alpha_layer1_permanence_min_paths"))
     n_better_by_seed: dict[int, int] = {}
-    for seed in confirmation_seeds:
+    for seed in confirmation_seeds_resolved:
         c1_paths = camada1.winner.seed_path_sharpe[seed]
         c0_paths = camada0.winner.seed_path_sharpe[seed]
         common = set(c1_paths) & set(c0_paths)
@@ -1225,7 +1240,11 @@ def _run_confirmation_cli(args: Any) -> None:
     import json
     from datetime import UTC, datetime
 
-    confirmation_seeds = tuple(args.confirmation_seeds)
+    # ADR-007 Item 2 -- None (default do CLI) deixa confirm_combo_paired
+    # resolver de alpha_optuna_confirm_seeds/alpha_optuna_confirm_top_k
+    # (constants.yaml); só materializa a tupla aqui quando o usuário passou
+    # valor explícito no CLI.
+    confirmation_seeds = tuple(args.confirmation_seeds) if args.confirmation_seeds else None
     if args.all_combinations:
         symbols: tuple[str, ...] = ALL_SYMBOLS
         resolutions: tuple[str, ...] = ALL_RESOLUTIONS
@@ -1309,13 +1328,20 @@ def _run_cli() -> None:
     # pareado) sobre uma campanha JÁ RODADA -- nunca junto de uma busca
     # nova na mesma invocação (2 responsabilidades distintas, mesmo CLI).
     parser.add_argument("--confirm", action="store_true")
-    parser.add_argument("--top-k", type=int, default=3)  # noqa: magic-number -- default do protocolo proposto
+    # ADR-007 Item 2 (2026-08-30) -- default None resolve de
+    # alpha_optuna_confirm_top_k/alpha_optuna_confirm_seeds (constants.yaml)
+    # dentro de confirm_combo_paired, mesmo padrão sentinela de --n-trials
+    # acima. Literal antigo (3 / 5 seeds) promovido pra constants.yaml.
+    parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument(
         "--confirmation-seeds",
         type=int,
         nargs="+",
-        default=[101, 202, 303, 404, 505],
-        help="Seeds novas pra confirmação -- NUNCA reusa alpha_random_seed da busca original.",
+        default=None,
+        help=(
+            "Seeds novas pra confirmação -- NUNCA reusa alpha_random_seed da "
+            "busca original. Default: alpha_optuna_confirm_seeds (constants.yaml)."
+        ),
     )
     args = parser.parse_args()
 

@@ -2625,6 +2625,45 @@ alpha_optuna_n_trials:
   sweep_required: false
   review_by: "TBD -- Manager define o sprint de revisão"
 
+alpha_optuna_confirm_top_k:
+  value: 6
+  provenance: ASSUMED
+  source: >
+    ADR-007 Item 2 (2026-08-30) -- valor anterior era 3, hardcoded como
+    default de argparse em hyperparams_optuna.py::_run_cli, nunca
+    declarado aqui (achado da própria auditoria do ADR-007, Action Item
+    1: "promover default hardcoded pra constants.yaml antes de mudar o
+    valor"). Aumentado pra reduzir a lacuna #2 documentada no ADR-007: o
+    vencedor real por mediana pode não estar entre os top-3 candidatos
+    de screening de 1 seed (já medido enviesado, +0,309 em média,
+    AG-383) -- mais candidatos confirmados reduz a chance de descartar
+    o vencedor real antes de medir, sem afrouxar o critério de escolha
+    entre eles (seleção final continua por MEDIANA entre seeds, nunca
+    argmax). Não é resultado de medição de convergência -- orçamento
+    escolhido: 6 combos x 6 candidatos x 10 seeds x 2 camadas = 720
+    retreinos, ~2,4h estimado (ver alpha_optuna_confirm_seeds abaixo).
+  class: B
+  sweep_required: false
+
+alpha_optuna_confirm_seeds:
+  value: [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010]
+  provenance: ASSUMED
+  source: >
+    ADR-007 Item 2 (2026-08-30) -- valor anterior era [101,202,303,404,
+    505] (5 seeds), hardcoded como default de argparse, nunca declarado
+    aqui (mesmo achado de auditoria da constante irmã acima). Estendido
+    pra 10 seeds pela MESMA sequência aritmética (passo 101) já usada
+    nas 5 originais -- reduz a lacuna #4 do ADR-007 (variância alta já
+    medida entre seeds de confirmação: BTCUSDT/R2 variou n_better de 2
+    a 5 só trocando seed, AG-383/id=36). As sementes em si são
+    arbitrárias por desenho -- não precisam ser "aleatórias de
+    verdade", só precisam ser DIFERENTES entre si e diferentes de
+    alpha_random_seed=42 (a seed da busca original, nunca reusada aqui
+    -- reusar contaminaria a confirmação com a mesma realização de
+    ruído que já escolheu o candidato).
+  class: B
+  sweep_required: false
+
 alpha_optuna_sampler:
   value: "tpe"
   provenance: ASSUMED
