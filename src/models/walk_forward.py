@@ -128,26 +128,40 @@ def walk_forward_split_to_cpcv_split(
     )
 
 
-def min_test_bars_for_non_degenerate_fold(target_signal_rate: float) -> int:
-    """Piso de barras de TESTE válidas (pós `alpha._unique_test_bars`,
-    mesma contagem de `FoldResult.n_test_bars`) pra um fold de
-    walk-forward não ser degenerado — critério operacional definido a
-    priori (Manager, 2026-08-31, ADR-008 Fase 4): "fold degenerado" =
-    `n_test_bars < min_test_bars_for_non_degenerate_fold(target_signal_
-    rate)`.
+def min_trades_for_non_degenerate_fold() -> int:
+    """Piso de TRADES REALIZADOS (`PathBacktestResult.n_filled_trades`,
+    a população que `sharpe`/`edge_bps`/`win_rate` de fato agregam) pra
+    um fold de walk-forward não ser degenerado — critério operacional
+    definido a priori (Manager, 2026-08-31, ADR-008 Fase 4): "fold
+    degenerado" = `n_filled_trades < min_trades_for_non_degenerate_fold()`.
 
-    Reusa `alpha.MIN_OCCURRENCES_ABOVE_TAU` (10 — o mesmo piso de
-    "amostra grande o bastante pra ver o percentil de interesse com ~10
-    ocorrências" já usado por `alpha._resolve_tau_on_common_bars`),
-    aplicado aqui ao número ESPERADO de SINAIS no fold (`n_test_bars *
-    target_signal_rate`) em vez de ocorrências acima de um quantil —
-    mesmo princípio estatístico ("preciso de ~10 pontos pra uma leitura
-    de cauda ter sentido"), população diferente. DERIVADO de `target_
-    signal_rate` (nunca uma contagem fixa de barras) pela mesma razão
-    que a constante que reusa já é derivada — dois `target_signal_rate`
-    diferentes (ex. combos com risco/custo diferente) produzem pisos de
-    barra DIFERENTES, corretamente."""
-    return int(np.ceil(alpha.MIN_OCCURRENCES_ABOVE_TAU / target_signal_rate))
+    **Correção de desenho, achada por execução real (não hipotética) —
+    campanha completa sobre os 5 candidatos, `SOLUSDT/R2` fold_id=9,
+    2026-08-31.** A primeira versão gateava em `n_test_bars` (a
+    população de INFERÊNCIA, pós `alpha.unique_test_bars`) derivando um
+    piso de barras via `ceil(MIN_OCCURRENCES_ABOVE_TAU / target_signal_
+    rate)` — assumia implicitamente `n_signals ≈ n_test_bars *
+    target_signal_rate`. Essa suposição QUEBRA quando a taxa de sinal
+    REALIZADA diverge muito da nominal (achado real: fold_id=9 tinha
+    `n_test_bars=2097` — bem acima do piso derivado — mas só
+    `n_filled_trades=2`, porque `confidence` raramente cruzou `tau`
+    nessa janela). `sharpe_naive` não filtra amostra pequena por
+    desenho (`_MIN_TRADES_FOR_SHARPE=2` em `backtest_lite.py` só evita
+    `ddof=1` sobre <2 pontos, não é piso de confiabilidade) — sobre 2
+    trades quase-idênticos, `std` fica perto de zero sem ZERAR, e
+    `mean/std` explode (Sharpe=47.163,5 medido, não hipotético).
+    Consequência real: o AGREGADO (`mean`) de `SOLUSDT/R2` ficava
+    dominado por um único fold com 2 trades (15.720,5 de mean sharpe
+    sobre 12 folds -- ~1/12 do valor patológico).
+
+    Gatear direto em `n_filled_trades` (a população REAL da estatística,
+    não uma PROJEÇÃO dela) fecha a classe inteira de erro por
+    construção, não só o caso medido. Reusa `alpha.MIN_OCCURRENCES_
+    ABOVE_TAU` (10 — o mesmo piso de "amostra grande o bastante pra uma
+    leitura de cauda ter sentido" já usado por `alpha._resolve_tau_on_
+    common_bars`) diretamente, sem conversão via taxa nominal — não há
+    mais população intermediária a projetar."""
+    return alpha.MIN_OCCURRENCES_ABOVE_TAU
 
 
 def _aggregate_stats(values: list[float]) -> dict[str, float]:
@@ -207,7 +221,7 @@ class WalkForwardResult:
     n_folds_total: int
     n_folds_degenerados: int
     n_folds_usados: int
-    min_test_bars_threshold: int
+    min_trades_threshold: int
     fold_results: tuple[WalkForwardFoldMetrics, ...]
     aggregate: dict[str, dict[str, float]]
 
@@ -220,7 +234,6 @@ def run_walk_forward_for_combo(
     variant: str,
     hyper: alpha.LGBMHyperparams,
     seed: int,
-    target_signal_rate: float,
     device_type: str = "cpu",
     tau_policy: str = alpha.TAU_POLICY_LEGACY_PER_SIDE,
     calib_split_mode: str = alpha.CALIB_SPLIT_TEMPORAL_PURGED,
@@ -259,7 +272,7 @@ def run_walk_forward_for_combo(
             f"(série curta demais pra initial_train_years={initial_train_years_eff})"
         )
 
-    min_test_bars = min_test_bars_for_non_degenerate_fold(target_signal_rate)
+    min_trades = min_trades_for_non_degenerate_fold()
     model_id = f"{model_id_prefix}_{symbol}_{resolution_id}_{variant}"
 
     def _fold_boundaries_iso(wf_split: WalkForwardSplit) -> tuple[str, str, str, str]:
@@ -353,7 +366,13 @@ def run_walk_forward_for_combo(
         path_result = by_path.get(cpcv_split.path_id)
         sq = score_quality.compute_score_quality(fold_result.predictions, mf_data)
         sq_by_side = {r.side: asdict(r) for r in sq}
-        degenerado = fold_result.n_test_bars < min_test_bars
+        n_filled_trades = path_result.n_filled_trades if path_result else 0
+        # degenerado = poucos TRADES REALIZADOS, não poucas barras de
+        # teste (ver docstring de `min_trades_for_non_degenerate_fold` --
+        # correção de desenho a partir de execução real, SOLUSDT/R2
+        # fold_id=9: sharpe patológico sobre n=2 trades apesar de
+        # n_test_bars alto).
+        degenerado = n_filled_trades < min_trades
         train_start_iso, train_end_iso, test_start_iso, test_end_iso = _fold_boundaries_iso(
             wf_split
         )
@@ -374,7 +393,7 @@ def run_walk_forward_for_combo(
                 ),
                 win_rate=path_result.win_rate if path_result else float("nan"),
                 n_signals=path_result.n_signals if path_result else 0,
-                n_filled_trades=path_result.n_filled_trades if path_result else 0,
+                n_filled_trades=n_filled_trades,
                 score_quality_by_side=sq_by_side,
             )
         )
@@ -385,10 +404,10 @@ def run_walk_forward_for_combo(
                 resolution_id=resolution_id,
                 variant=variant,
                 fold_id=wf_split.fold_id,
-                n_test_bars=fold_result.n_test_bars,
-                min_test_bars_threshold=min_test_bars,
-                detail="barras de teste validas insuficientes pro target_signal_rate "
-                "deste combo -- fold excluido do agregado, mantido no artefato",
+                n_filled_trades=n_filled_trades,
+                min_trades_threshold=min_trades,
+                detail="trades realizados insuficientes pra sharpe/edge_bps/win_rate "
+                "terem sentido -- fold excluido do agregado, mantido no artefato",
             )
 
     fold_metrics.sort(key=lambda fm: fm.fold_id)
@@ -418,7 +437,7 @@ def run_walk_forward_for_combo(
         n_folds_total=len(fold_metrics),
         n_folds_degenerados=len(fold_metrics) - len(usaveis),
         n_folds_usados=len(usaveis),
-        min_test_bars_threshold=min_test_bars,
+        min_trades_threshold=min_trades,
         fold_results=tuple(fold_metrics),
         aggregate=aggregate,
     )

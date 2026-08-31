@@ -1,5 +1,5 @@
 """Testes de `src.models.walk_forward.run_walk_forward_for_combo` +
-`min_test_bars_for_non_degenerate_fold`/`_aggregate_stats` — ADR-008
+`min_trades_for_non_degenerate_fold`/`_aggregate_stats` — ADR-008
 Fase 4. `alpha.run_fold` é MOCKADO (mesmo padrão de `test_models_
 alpha_hyperparams_wiring.py`/`test_models_backtest_lite.py::
 _FakeFoldResult`): construir um `SideModelResult` real por fold exigiria
@@ -29,13 +29,16 @@ _BASE = datetime(2020, 1, 1, tzinfo=UTC)
 
 
 # ============================================================================
-# min_test_bars_for_non_degenerate_fold / _aggregate_stats -- núcleo puro
+# min_trades_for_non_degenerate_fold / _aggregate_stats -- núcleo puro
 # ============================================================================
 
 
-def test_min_test_bars_formula_derivada_do_target_signal_rate() -> None:
-    assert wf.min_test_bars_for_non_degenerate_fold(0.02) == 500  # noqa: magic-number -- ceil(10/0.02)
-    assert wf.min_test_bars_for_non_degenerate_fold(0.5) == 20  # noqa: magic-number -- ceil(10/0.5)
+def test_min_trades_for_non_degenerate_fold_e_a_constante_de_alpha() -> None:
+    """Sem conversão via `target_signal_rate` (correção de desenho, ver
+    docstring da função) -- gateia direto na população REAL das
+    estatísticas agregadas (`n_filled_trades`), mesma constante que
+    `alpha._resolve_tau_on_common_bars` já usa pro mesmo princípio."""
+    assert wf.min_trades_for_non_degenerate_fold() == alpha.MIN_OCCURRENCES_ABOVE_TAU
 
 
 def test_aggregate_stats_conferido_a_mao() -> None:
@@ -158,14 +161,13 @@ def _make_fake_run_fold(degenerate_fold_id: int | None = None):
     return _fake_run_fold
 
 
-def _base_kwargs(target_signal_rate: float = 0.5) -> dict[str, Any]:  # noqa: magic-number
+def _base_kwargs() -> dict[str, Any]:
     return {
         "symbol": "BTCUSDT",
         "resolution_id": "R2",
         "variant": alpha.VARIANT_CAMADA1,
         "hyper": alpha.LGBMHyperparams.from_constants(),
         "seed": 1,
-        "target_signal_rate": target_signal_rate,
         "initial_train_years": 2,  # noqa: magic-number -- 3 anos de dado, deixa 1 ano de teste
     }
 
@@ -245,14 +247,15 @@ def test_run_walk_forward_marca_fold_degenerado_e_exclui_do_agregado(
     mf_data = _synthetic_mf_data()
     monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold(degenerate_fold_id=0))
 
-    # target_signal_rate alto -> min_test_bars baixo (20) -- fold 0 forçado
-    # pra 1 barra de teste cai abaixo, os outros (~1 trimestre = ~90
-    # barras) ficam acima.
-    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs(target_signal_rate=0.5))
+    # fold 0 forçado pra 1 barra de teste -> 1 trade realizado (o fake
+    # sinaliza 100% das barras) < min_trades_for_non_degenerate_fold()
+    # (10) -- os outros folds (~1 trimestre = ~90 trades) ficam acima.
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
 
     fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
     assert fold0.degenerado is True
     assert fold0.n_test_bars == 1
+    assert fold0.n_filled_trades < wf.min_trades_for_non_degenerate_fold()
     assert result.n_folds_degenerados == 1
     assert result.n_folds_usados == result.n_folds_total - 1
     # o fold degenerado continua PRESENTE no artefato (auditável), só não
