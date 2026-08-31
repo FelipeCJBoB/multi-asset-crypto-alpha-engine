@@ -1,15 +1,18 @@
 # ADR-008: Camada de auditoria ML/Alpha institucional — qualidade de score, walk-forward real, gates codificados
 
-**Status:** Fases 0-5 concluídas 2026-08-31 (commits `b03109c`..`365f104`,
+**Status:** Fases 0-6 concluídas 2026-08-31 (commits `b03109c`..`a821801`,
 lista completa nos Action Items) — Fase 4 rodou a campanha real sobre os
 5 candidatos (`n_lifetime` id=42) e achou taxa alta de fold degenerado.
 Fase 5 (stability matrix) cruzou Fold × {IC, AUC, gain, decile} sobre
 esse mesmo artefato e achou um quadro mais sério: AUC out-of-time perto
 de 0,5 (sem poder discriminativo real) em quase todos os candidatos,
 dispersão de IC entre folds muito maior que a média (ruído, não sinal
-estável), e gain concentrado em 1-2 features na maioria dos combos.
-Achado bruto, ainda sem decisão de como agir. Fases 6/7 aguardam decisão
-do Manager (thresholds de gate / dependência `shap` nova).
+estável), e gain concentrado em 1-2 features na maioria dos combos. Fase
+6 codificou 3 gates (Data/Model/Alpha) com thresholds `ASSUMED`
+(decisão de limiar pendente do Manager) e rodou contra os 5 candidatos:
+**0 de 10 combo×variant passam os 3 gates simultaneamente**. Achado
+bruto, ainda sem decisão de como agir. Fase 7 aguarda decisão do Manager
+(dependência `shap` nova).
 **Date:** 2026-08-31
 **Deciders:** Manager (Felipe)
 
@@ -383,8 +386,20 @@ decididas por conta própria.
    não sinal estável; gain concentrado em 1-2 features na maioria dos
    combos (`A04_log_return_12` domina em quase todos). Quadro mais
    sério que o "bruto" da Fase 4 — ainda sem decisão de como agir.
-7. [ ] Fase 6 — gates codificados — **aguarda decisão de threshold do
-   Manager** (ou registra `ASSUMED`+`sweep_required`).
+7. [x] Fase 6 — commit `a821801`. `src/analysis/walk_forward_gates.py` —
+   3 gates (Data/Model/Alpha), mesmo padrão de `backtest_lite.
+   permanence_pass_criterion`/`hhi.gate3_4_passes` (núcleo puro +
+   threshold em `constants.yaml` + campo no report). **Decisão do
+   Manager sobre threshold PENDENTE** — 2 constantes novas entram
+   `ASSUMED`+`sweep_required` (`alpha_gate_data_min_frac_folds_usados`=
+   0,5; `alpha_gate_model_min_auc`=0,52); o gate Alpha reusa
+   `alpha_layer1_permanence_min_edge_bps` (já `DERIVED`). **As
+   DEFINIÇÕES dos 3 gates (não só os limiares) também são proposta
+   minha na ausência de especificação do Manager sobre o que cada gate
+   mede** — documentado como tal na docstring do módulo, sujeito a
+   correção. 14 testes novos. Rodado contra os 5 candidatos: **0 de 10
+   combo×variant passam os 3 gates simultaneamente** sob os thresholds
+   propostos — consistente com os achados brutos das Fases 4/5.
 8. [ ] Fase 7 — SHAP — **aguarda aprovação de dependência nova do
    Manager**.
 9. [ ] Fase 8 — cartão final / model card, consolidação de 0-7.
