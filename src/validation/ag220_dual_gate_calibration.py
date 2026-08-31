@@ -103,7 +103,12 @@ def run_dual_gate_permutation_null(
             "symbol": symbol,
             "resolution_id": resolution_id,
             "seed": model_seed,
-            "feature_ids": None,
+            # `mf.t1_feature_ids` (nunca `None`) -- `run_all_folds` aceita
+            # `feature_ids=None` sintaticamente mas `side_subset` exige
+            # conjunto não-vazio pra filtrar warmup (`AG-300`); achado real
+            # na primeira execução desta campanha (BTCUSDT/R3, crash em
+            # `run_fold_start` do path 0).
+            "feature_ids": mf.t1_feature_ids,
             "device_type": device_type,
             "tau_policy": alpha.TAU_POLICY_LEGACY_PER_SIDE,
             "calib_split_mode": alpha.CALIB_SPLIT_TEMPORAL_PURGED,
