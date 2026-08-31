@@ -275,6 +275,96 @@ def test_compute_score_quality_coluna_ausente_em_labels_levanta_valueerror() -> 
 
 
 # ============================================================================
+# compute_decile_profile — ADR-008 Fase 5 (eixo "decile returns" da
+# stability matrix). MESMA população/join de compute_score_quality
+# (_join_oof_predictions_to_labels) — reusa as mesmas fixtures.
+# ============================================================================
+
+
+def test_compute_decile_profile_conferido_a_mao() -> None:
+    """Mesmo fixture de `test_compute_score_quality_q10_menos_q1_
+    conferido_a_mao` — 20 trades long, `confidence` estritamente
+    crescente, `ret_net=i/10_000`. Decil `d` (1-indexado) cobre ranks
+    `[2(d-1), 2(d-1)+1]` -> `mean_ret_net_bps = (4d-3)/2`, `n_trades=2`
+    em CADA um dos 10 decis — valores exatos, não aproximados."""
+    t0s = _t0s(20)  # noqa: magic-number
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": 1, "confidence": float(i) / 19.0, "fold_id": 0}
+        for i in range(20)  # noqa: magic-number
+    ]
+    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": float(i) / 10_000.0} for i in range(20)]  # noqa: magic-number
+    out = sq.compute_decile_profile(_predictions_df(pred_rows), _labels_df(label_rows))
+
+    assert len(out) == 1
+    r = out[0]
+    assert r.side == "long"
+    assert r.n_trades == 20  # noqa: magic-number
+    assert len(r.buckets) == 10  # noqa: magic-number
+    for d in range(1, 11):
+        bucket = r.buckets[d - 1]
+        assert bucket.decile == d
+        assert bucket.n_trades == 2  # noqa: magic-number
+        assert bucket.mean_ret_net_bps == pytest.approx((4 * d - 3) / 2)
+    assert r.q10_minus_q1_bps == pytest.approx(18.0)  # noqa: magic-number
+
+
+def test_compute_decile_profile_q10_minus_q1_bate_com_score_quality() -> None:
+    """`q10_minus_q1_bps` tem que ser IDÊNTICO entre as duas funções sobre
+    o mesmo dado -- mesma população (`_join_oof_predictions_to_labels`
+    compartilhada) e mesmo `_decile_buckets` por baixo."""
+    t0s = _t0s(15)  # noqa: magic-number
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": 1, "confidence": float(i) / 14.0, "fold_id": 0}
+        for i in range(15)  # noqa: magic-number
+    ]
+    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": float(i) / 10_000.0} for i in range(15)]  # noqa: magic-number
+    predictions = _predictions_df(pred_rows)
+    labels = _labels_df(label_rows)
+
+    score_quality_out = sq.compute_score_quality(predictions, labels)
+    decile_out = sq.compute_decile_profile(predictions, labels)
+
+    assert score_quality_out[0].q10_minus_q1_bps == pytest.approx(decile_out[0].q10_minus_q1_bps)
+
+
+def test_compute_decile_profile_menos_de_10_trades_ausente_da_tupla() -> None:
+    t0s = _t0s(5)
+    pred_rows = [
+        {"t0": t0s[i], "side_hat": 1, "confidence": float(i), "fold_id": 0} for i in range(5)
+    ]
+    label_rows = [{"t0": t0s[i], "side": 1, "ret_net": 0.001} for i in range(5)]  # noqa: magic-number
+    out = sq.compute_decile_profile(_predictions_df(pred_rows), _labels_df(label_rows))
+
+    assert out == ()
+
+
+def test_compute_decile_profile_predictions_vazio_devolve_tupla_vazia() -> None:
+    predictions = pl.DataFrame(
+        schema={
+            "t0": _T0_DTYPE,
+            "side_hat": pl.Int8,
+            "is_oof": pl.Boolean,
+            "fold_id": pl.Int16,
+            "confidence": pl.Float64,
+        }
+    )
+    labels_stub = pl.DataFrame({"t0": pl.Series([], dtype=_T0_DTYPE)})
+
+    out = sq.compute_decile_profile(predictions, labels_stub)
+
+    assert out == ()
+
+
+def test_compute_decile_profile_coluna_ausente_em_predictions_levanta_valueerror() -> None:
+    predictions = _predictions_df(
+        [{"t0": _t0s(1)[0], "side_hat": 1, "confidence": 0.5, "fold_id": 0}]
+    ).drop("fold_id")
+    labels = _labels_df([{"t0": _t0s(1)[0], "side": 1, "ret_net": 0.001}])  # noqa: magic-number
+    with pytest.raises(ValueError, match="fold_id"):
+        sq.compute_decile_profile(predictions, labels)
+
+
+# ============================================================================
 # compute_train_val_test_gap — ADR-008 Fase 3. Mesmas fórmulas de
 # `compute_score_quality` acima, aplicadas aos segmentos IN-SAMPLE
 # (`fit`/`stop`/`calib`) em vez do join OOF. Fakes duck-typed mínimos

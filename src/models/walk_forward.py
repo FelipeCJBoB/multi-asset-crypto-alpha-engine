@@ -211,6 +211,16 @@ class WalkForwardFoldMetrics:
     # `score_quality.compute_score_quality`) -- lado sem trade fica
     # ausente do dict, não aparece com `NaN`.
     score_quality_by_side: dict[str, dict[str, Any]]
+    # ADR-008 Fase 5 (stability matrix, eixo "decile returns") -- mesmo
+    # contrato de ausência: lado com <10 trades fica fora do dict.
+    decile_profile_by_side: dict[str, dict[str, Any]]
+    # ADR-008 Fase 5 (eixo "feature gain") -- gain BRUTO por coluna
+    # deste fold (`SideModelResult.gain_by_column_raw`, já calculado por
+    # `fit_side_model`, sem custo adicional). "long"/"short" sempre
+    # presentes (o fold sempre treina os 2 lados, diferente de `score_
+    # quality_by_side`/`decile_profile_by_side`, que dependem de ter
+    # trade OOF -- treinar não exige ter sinalizado).
+    gain_by_column_by_side: dict[str, dict[str, float]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +338,11 @@ def run_walk_forward_for_combo(
                     n_signals=0,
                     n_filled_trades=0,
                     score_quality_by_side={},
+                    decile_profile_by_side={},
+                    # `run_fold` nunca chamado -- nenhum `SideModelResult`
+                    # existe pra este fold, gain fica vazio (honesto: não
+                    # treinou, não tem gain, não é `0.0` inventado).
+                    gain_by_column_by_side={},
                 )
             )
             continue
@@ -366,6 +381,15 @@ def run_walk_forward_for_combo(
         path_result = by_path.get(cpcv_split.path_id)
         sq = score_quality.compute_score_quality(fold_result.predictions, mf_data)
         sq_by_side = {r.side: asdict(r) for r in sq}
+        # ADR-008 Fase 5 -- eixos "decile returns" (mesma população de
+        # `sq`, join compartilhado por baixo) e "feature gain" (já
+        # calculado por `fit_side_model`, zero custo adicional aqui).
+        decile_profile = score_quality.compute_decile_profile(fold_result.predictions, mf_data)
+        decile_by_side = {r.side: asdict(r) for r in decile_profile}
+        gain_by_side = {
+            "long": dict(fold_result.long_result.gain_by_column_raw),
+            "short": dict(fold_result.short_result.gain_by_column_raw),
+        }
         n_filled_trades = path_result.n_filled_trades if path_result else 0
         # degenerado = poucos TRADES REALIZADOS, não poucas barras de
         # teste (ver docstring de `min_trades_for_non_degenerate_fold` --
@@ -395,6 +419,8 @@ def run_walk_forward_for_combo(
                 n_signals=path_result.n_signals if path_result else 0,
                 n_filled_trades=n_filled_trades,
                 score_quality_by_side=sq_by_side,
+                decile_profile_by_side=decile_by_side,
+                gain_by_column_by_side=gain_by_side,
             )
         )
         if degenerado:

@@ -111,10 +111,19 @@ def _synthetic_mf_data(n_days: int = 1095, seed: int = 0) -> pl.DataFrame:  # no
     return pl.concat(blocks, how="vertical")
 
 
+class _FakeSideModelResult:
+    """Duck-type mínimo pro contrato que `run_walk_forward_for_combo` lê
+    de `SideModelResult` (só `.gain_by_column_raw`, ADR-008 Fase 5)."""
+
+    def __init__(self, gain_by_column_raw: dict[str, float]) -> None:
+        self.gain_by_column_raw = gain_by_column_raw
+
+
 class _FakeFoldResult:
     """Duck-type mínimo pro contrato que `run_walk_forward_for_combo`/
     `backtest_lite.backtest_by_path` de fato usam (`.predictions`/
-    `.path_id`/`.variant`/`.n_test_bars`) -- mesmo padrão de
+    `.path_id`/`.variant`/`.n_test_bars`/`.long_result.gain_by_column_
+    raw`/`.short_result.gain_by_column_raw`) -- mesmo padrão de
     `_FakeFoldResult` em `test_models_backtest_lite.py`."""
 
     def __init__(
@@ -124,6 +133,8 @@ class _FakeFoldResult:
         self.path_id = path_id
         self.variant = variant
         self.n_test_bars = n_test_bars
+        self.long_result = _FakeSideModelResult({T1_FEATURE_IDS[0]: 1.0})
+        self.short_result = _FakeSideModelResult({T1_FEATURE_IDS[1]: 2.0})  # noqa: magic-number
 
 
 def _make_fake_run_fold(degenerate_fold_id: int | None = None):
@@ -237,6 +248,10 @@ def test_run_walk_forward_pula_run_fold_quando_teste_tem_zero_barras_validas(
     assert fold0.degenerado is True
     assert fold0.n_test_bars == 0
     assert fold0.score_quality_by_side == {}
+    # run_fold nunca chamado -- nenhum SideModelResult existe, gain/decile
+    # ficam vazios (honesto: não treinou, não tem gain, não é 0.0 inventado).
+    assert fold0.decile_profile_by_side == {}
+    assert fold0.gain_by_column_by_side == {}
     assert 0 not in chamadas  # run_fold NUNCA chamado pro fold degenerado
     assert len(chamadas) == result.n_folds_total - 1  # todos os outros, sim
 
@@ -284,3 +299,30 @@ def test_run_walk_forward_schema_do_agregado_bate_com_adr_008(
     assert set(result.aggregate.keys()) == {"mean", "median", "std", "min", "max"}
     for stat_dict in result.aggregate.values():
         assert set(stat_dict.keys()) == {"sharpe", "edge_bps", "win_rate"}
+
+
+def test_run_walk_forward_popula_gain_e_decile_por_lado_de_fold_treinado(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-008 Fase 5 (stability matrix) -- eixos "feature gain" e
+    "decile returns" vêm populados pra todo fold que de fato treinou
+    (não-degenerado, ~90 trades por fold aqui, >= 10 -- decile
+    computável). `gain_by_column_by_side` reflete exatamente o que
+    `_FakeFoldResult` devolveu (`long_result`/`short_result`), sem
+    transformação."""
+    mf_data = _synthetic_mf_data()
+    monkeypatch.setattr(alpha, "run_fold", _make_fake_run_fold())
+
+    result = wf.run_walk_forward_for_combo(mf_data, **_base_kwargs())
+
+    fold0 = next(fm for fm in result.fold_results if fm.fold_id == 0)
+    assert fold0.degenerado is False
+    assert fold0.gain_by_column_by_side == {
+        "long": {T1_FEATURE_IDS[0]: 1.0},
+        "short": {T1_FEATURE_IDS[1]: 2.0},  # noqa: magic-number
+    }
+    # o fake só sinaliza side_hat=1 (long) -- short fica sem trade, mesmo
+    # contrato de ausência de `score_quality_by_side`.
+    assert "long" in fold0.decile_profile_by_side
+    assert "short" not in fold0.decile_profile_by_side
+    assert len(fold0.decile_profile_by_side["long"]["buckets"]) == 10  # noqa: magic-number

@@ -44,7 +44,15 @@ o generalization gap (`gap_fit_minus_stop`) contra o número OOF, nunca
 consumida por decisão de produção/gate. `y_true` usa a MESMA convenção
 de vitória econômica (`ret_net > 0`, não `label` bruto) que
 `compute_score_quality` — necessário pra `fit`/`stop`/`calib` e OOF
-serem comparáveis pela mesma definição."""
+serem comparáveis pela mesma definição.
+
+**`compute_decile_profile` (ADR-008 Fase 5)** — perfil COMPLETO de 10
+decis (não só o spread `Q10-Q1` que `ScoreQualityResult.q10_minus_q1_
+bps` já expõe) — eixo "decile returns" da stability matrix
+(`src.analysis.stability_matrix`, cruza Fold × {IC, AUC/LogLoss, feature
+gain, decile returns}). MESMA população/join que `compute_score_quality`
+(`_join_oof_predictions_to_labels`, extraído pra não divergir entre as
+duas) — os dois resultados são comparáveis linha a linha."""
 
 from __future__ import annotations
 
@@ -140,20 +148,31 @@ def _spearman_ic(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.corrcoef(rx, ry)[0, 1])
 
 
-def _q10_minus_q1_bps(confidence: np.ndarray, ret_net: np.ndarray) -> float:
-    """Bucketing por RANK (não `qcut` por valor — mesmo motivo de
+def _decile_buckets(confidence: np.ndarray, ret_net: np.ndarray) -> list[tuple[int, float]] | None:
+    """`[(n_trades, mean_ret_net), ...]` por decil (1..10, rank-based).
+    Bucketing por RANK (não `qcut` por valor — mesmo motivo de
     `attribution.confidence_deciles_by_side`: platôs de `confidence`
     idêntica do calibrador isotônico colapsariam decis sob `qcut`).
-    `NaN` se `n < N_DECILES` (decil 1 ou 10 ficaria vazio)."""
+    `None` se `n < N_DECILES` (decil 1 ou 10 ficaria vazio) — núcleo
+    compartilhado de `_q10_minus_q1_bps` (só os extremos) e
+    `compute_decile_profile` (perfil completo, ADR-008 Fase 5)."""
     n = confidence.shape[0]
     if n < _N_DECILES_Q_SPREAD:
-        return float("nan")
+        return None
     order = np.argsort(confidence, kind="stable")
     decile_idx = (np.arange(n) * _N_DECILES_Q_SPREAD) // n
     ret_sorted = ret_net[order]
-    q1_mean = float(ret_sorted[decile_idx == 0].mean())
-    q10_mean = float(ret_sorted[decile_idx == _N_DECILES_Q_SPREAD - 1].mean())
-    return (q10_mean - q1_mean) * _BPS_PER_UNIT
+    return [
+        (int((decile_idx == d).sum()), float(ret_sorted[decile_idx == d].mean()))
+        for d in range(_N_DECILES_Q_SPREAD)
+    ]
+
+
+def _q10_minus_q1_bps(confidence: np.ndarray, ret_net: np.ndarray) -> float:
+    buckets = _decile_buckets(confidence, ret_net)
+    if buckets is None:
+        return float("nan")
+    return (buckets[-1][1] - buckets[0][1]) * _BPS_PER_UNIT
 
 
 def _ic_dispersion_stats(fold_ics: list[float]) -> tuple[float, float, float, float, float, float]:
@@ -180,6 +199,43 @@ def _ic_dispersion_stats(fold_ics: list[float]) -> tuple[float, float, float, fl
     return mean, median, std, ic_ir, pct_positive, tstat
 
 
+def _validate_predictions_columns(predictions: pl.DataFrame, fn_name: str) -> None:
+    required_pred = ("t0", "side_hat", "is_oof", "fold_id", _CONFIDENCE_COL)
+    ausentes_pred = tuple(c for c in required_pred if c not in predictions.columns)
+    if ausentes_pred:
+        raise ValueError(
+            f"{fn_name}: predictions sem {ausentes_pred} -- "
+            f"colunas disponíveis: {sorted(predictions.columns)}"
+        )
+
+
+def _validate_labels_columns(labels: pl.DataFrame, fn_name: str) -> None:
+    required_labels = ("t0", "side", _BARRIER_HIT_COL, _RET_NET_COL)
+    ausentes_labels = tuple(c for c in required_labels if c not in labels.columns)
+    if ausentes_labels:
+        raise ValueError(
+            f"{fn_name}: labels sem {ausentes_labels} -- "
+            f"colunas disponíveis: {sorted(labels.columns)}"
+        )
+
+
+def _join_oof_predictions_to_labels(
+    predictions: pl.DataFrame, labels_small: pl.DataFrame, side_value: int
+) -> pl.DataFrame:
+    """Join `predictions` (`is_oof & side_hat==side_value`) contra
+    `labels_small` por `(t0, side_hat=side)`, `NOFILL` descartado —
+    núcleo compartilhado de `compute_score_quality`/`compute_decile_
+    profile` (a MESMA população nas duas, nunca diverge)."""
+    preds_side = (
+        predictions.filter(pl.col("is_oof") & (pl.col("side_hat") == side_value))
+        .select(["t0", "side_hat", "fold_id", _CONFIDENCE_COL])
+        .with_columns(pl.col("t0").cast(_T0_DTYPE))
+    )
+    return preds_side.join(
+        labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
+    ).filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+
+
 def compute_score_quality(
     predictions: pl.DataFrame, labels: pl.DataFrame
 ) -> tuple[ScoreQualityResult, ...]:
@@ -191,13 +247,7 @@ def compute_score_quality(
     população de `win_rate`/`sharpe_naive`) — lado sem trade nenhum fica
     ausente da tupla, não aparece com `NaN` (mesmo contrato de
     `confidence_deciles_by_side`)."""
-    required_pred = ("t0", "side_hat", "is_oof", "fold_id", _CONFIDENCE_COL)
-    ausentes_pred = tuple(c for c in required_pred if c not in predictions.columns)
-    if ausentes_pred:
-        raise ValueError(
-            f"compute_score_quality: predictions sem {ausentes_pred} -- "
-            f"colunas disponíveis: {sorted(predictions.columns)}"
-        )
+    _validate_predictions_columns(predictions, "compute_score_quality")
     # Sem nenhuma predição (0 folds -- ex. permutation_null_replicas>0
     # interrompe antes de treinar, mesmo cenário de teste de
     # `backtest_lite.realize_trades`), não há o que juntar contra
@@ -207,13 +257,7 @@ def compute_score_quality(
     # caso degenerado.
     if predictions.height == 0:
         return ()
-    required_labels = ("t0", "side", _BARRIER_HIT_COL, _RET_NET_COL)
-    ausentes_labels = tuple(c for c in required_labels if c not in labels.columns)
-    if ausentes_labels:
-        raise ValueError(
-            f"compute_score_quality: labels sem {ausentes_labels} -- "
-            f"colunas disponíveis: {sorted(labels.columns)}"
-        )
+    _validate_labels_columns(labels, "compute_score_quality")
 
     labels_small = labels.select(["t0", "side", _BARRIER_HIT_COL, _RET_NET_COL]).with_columns(
         pl.col("t0").cast(_T0_DTYPE)
@@ -221,14 +265,7 @@ def compute_score_quality(
 
     results: list[ScoreQualityResult] = []
     for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
-        preds_side = (
-            predictions.filter(pl.col("is_oof") & (pl.col("side_hat") == side_value))
-            .select(["t0", "side_hat", "fold_id", _CONFIDENCE_COL])
-            .with_columns(pl.col("t0").cast(_T0_DTYPE))
-        )
-        joined = preds_side.join(
-            labels_small, left_on=["t0", "side_hat"], right_on=["t0", "side"], how="inner"
-        ).filter(pl.col(_BARRIER_HIT_COL).cast(pl.Utf8) != _NOFILL)
+        joined = _join_oof_predictions_to_labels(predictions, labels_small, side_value)
 
         if joined.height == 0:
             logger.warning("analysis.score_quality.sem_trades_no_lado", side=side_label)
@@ -285,6 +322,89 @@ def compute_score_quality(
             roc_auc=result.roc_auc,
             spearman_ic_pooled=result.spearman_ic_pooled,
             ic_ir=result.ic_ir,
+        )
+
+    return tuple(results)
+
+
+@dataclass(frozen=True, slots=True)
+class DecileBucket:
+    decile: int  # 1..10, 1 = confidence mais baixa, 10 = mais alta
+    n_trades: int
+    mean_ret_net_bps: float
+
+
+@dataclass(frozen=True, slots=True)
+class DecileProfileResult:
+    side: str
+    n_trades: int
+    buckets: tuple[DecileBucket, ...]  # sempre 10, decile 1..10 em ordem
+    q10_minus_q1_bps: float
+
+
+def compute_decile_profile(
+    predictions: pl.DataFrame, labels: pl.DataFrame
+) -> tuple[DecileProfileResult, ...]:
+    """Perfil COMPLETO de 10 decis de `confidence` × `ret_net` médio
+    (ADR-008 Fase 5 — eixo "decile returns" da stability matrix,
+    `src.analysis.stability_matrix`) — não só o spread `Q10-Q1` que
+    `ScoreQualityResult.q10_minus_q1_bps` já expõe. MESMA
+    população/join/contrato de colunas de `compute_score_quality`
+    (`_join_oof_predictions_to_labels`) — os dois resultados são
+    comparáveis linha a linha, incluindo `q10_minus_q1_bps` (mesmo
+    valor, calculado sobre o mesmo `_decile_buckets`).
+
+    Um `DecileProfileResult` por lado com pelo menos `_N_DECILES_Q_
+    SPREAD` (10) trades preenchidos — lado sem trade suficiente pro
+    bucketing fica ausente da tupla, mesmo contrato de `compute_score_
+    quality` (nunca aparece com decis `NaN`)."""
+    _validate_predictions_columns(predictions, "compute_decile_profile")
+    if predictions.height == 0:
+        return ()
+    _validate_labels_columns(labels, "compute_decile_profile")
+
+    labels_small = labels.select(["t0", "side", _BARRIER_HIT_COL, _RET_NET_COL]).with_columns(
+        pl.col("t0").cast(_T0_DTYPE)
+    )
+
+    results: list[DecileProfileResult] = []
+    for side_value, side_label in _SIDE_LABEL_BY_HAT.items():
+        joined = _join_oof_predictions_to_labels(predictions, labels_small, side_value)
+        if joined.height == 0:
+            logger.warning(
+                "analysis.score_quality.decile_profile_sem_trades_no_lado", side=side_label
+            )
+            continue
+
+        ret_net = joined[_RET_NET_COL].to_numpy().astype(np.float64)
+        confidence = joined[_CONFIDENCE_COL].to_numpy().astype(np.float64)
+        buckets_raw = _decile_buckets(confidence, ret_net)
+        if buckets_raw is None:
+            logger.warning(
+                "analysis.score_quality.decile_profile_amostra_insuficiente",
+                side=side_label,
+                n_trades=joined.height,
+                n_deciles=_N_DECILES_Q_SPREAD,
+                detail="menos de 10 trades -- decil 1 ou 10 ficaria vazio, perfil indefinido",
+            )
+            continue
+
+        buckets = tuple(
+            DecileBucket(decile=i + 1, n_trades=n, mean_ret_net_bps=mean * _BPS_PER_UNIT)
+            for i, (n, mean) in enumerate(buckets_raw)
+        )
+        result = DecileProfileResult(
+            side=side_label,
+            n_trades=joined.height,
+            buckets=buckets,
+            q10_minus_q1_bps=buckets[-1].mean_ret_net_bps - buckets[0].mean_ret_net_bps,
+        )
+        results.append(result)
+        logger.info(
+            "analysis.score_quality.decile_profile_computed",
+            side=side_label,
+            n_trades=result.n_trades,
+            q10_minus_q1_bps=result.q10_minus_q1_bps,
         )
 
     return tuple(results)
